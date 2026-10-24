@@ -1,0 +1,28 @@
+version: 1
+resolution:
+  - 2160p
+  - 1440p
+  - 1080p
+  - 720p
+  - 480p
+quality:
+  - remux
+  - web-dl
+  - webrip
+  - bluray
+  - bdrip
+  - hdtv
+language:
+  - chs
+  - cht
+  - sc
+  - tc
+  - jpn
+  - eng
+special_markers:
+  - special
+  - ncop
+  - nced
+group_brackets:
+  - '['
+  - ']'

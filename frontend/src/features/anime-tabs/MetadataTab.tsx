@@ -1,0 +1,441 @@
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { toast } from "../../ui/toast";
+import {
+  isVersionConflict,
+  patchAnimeMetadata,
+  reevaluateAnimeReleases,
+  toUserMessage,
+  type AnimeMetadata,
+  type AnimeMetadataDraft,
+  type AnimeMetadataPreview,
+} from "../../lib/api/client";
+import { metadataDraftFromOwner, valuesEqual } from "../../lib/draft";
+import { useSavePart } from "../../lib/saveParts";
+import { MetadataFields } from "../anime-forms/MetadataFields";
+import { Pencil } from "lucide-react";
+import { StateBlock, ConflictBlock, Input, Button } from "../../ui";
+import type { AnimeTabHost, DraftTabHost, OwnerTabHost } from "./host";
+import { useOwnerEdit } from "./useOwnerEdit";
+import { t } from "../../lib/i18n";
+
+// The metadata tab's sole implementation: before subscribing it writes the shared in-memory draft
+// (saved as a whole candidate); after subscribing it is the owner draft, committed by the dialog
+// footer's single save as one PATCH (title, bindings, media kind, season, year, release format
+// and total episodes together). Every control except the title edits the draft directly; the
+// title is fixed and becomes editable only through "edit", with "save title" writing it back into
+// the draft.
+
+/** An external request to open the match dialog; seq increments each time so the same site can open again. */
+export type MetadataMatchRequest = { provider: "bgm" | "tmdb"; seq: number };
+
+export function MetadataTab({
+  host,
+  readOnly = false,
+  matchRequest,
+  onPreviewChange,
+}: {
+  host: AnimeTabHost;
+  /** A read-only workspace (a retired owner): shows the effective values, renders no editing entry. */
+  readOnly?: boolean;
+  matchRequest?: MetadataMatchRequest;
+  /**
+   * owner 模式：有未保存编辑时上报完整的未保存元数据（与保存提交的 PATCH 同形，
+   * 不含版本），没有时上报 undefined。RSS tab 用它预览，不改变保存模型。
+   */
+  onPreviewChange?: (preview: AnimeMetadataPreview | undefined) => void;
+}) {
+  // The controlled matchProvider: MetadataFields's internal MetadataMatchDialog completes the search and the selection backfill.
+  const [matchProvider, setMatchProvider] = useState<"bgm" | "tmdb">();
+  useEffect(() => {
+    if (matchRequest && !readOnly) setMatchProvider(matchRequest.provider);
+  }, [matchRequest, readOnly]);
+  if (host.mode === "draft") {
+    return (
+      <DraftMetadataTab host={host} matchProvider={matchProvider} onMatchProviderChange={setMatchProvider} />
+    );
+  }
+  return (
+    <OwnerMetadataTab
+      host={host}
+      readOnly={readOnly}
+      matchProvider={matchProvider}
+      onMatchProviderChange={setMatchProvider}
+      onPreviewChange={onPreviewChange}
+    />
+  );
+}
+
+// --- Title row -----------------------------------------------------------------------
+//
+// The title is a fixed value: written at subscribing (a draft defaults to the site title) and
+// afterwards untouched by site or metadata changes. It displays read-only at rest and becomes
+// editable through "edit"; "save title" writes it back into the caller's draft (an owner commits
+// through the footer's single save) and "cancel" drops the input. The title may not be empty.
+
+function TitleRow({
+  idPrefix,
+  value,
+  readOnly = false,
+  onChange,
+}: {
+  idPrefix: string;
+  /** The current title (the value already written into the draft). */
+  value: string;
+  readOnly?: boolean;
+  onChange: (next: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState("");
+  const [error, setError] = useState<string>();
+  const labelId = `${idPrefix}-title-label`;
+
+  function startEdit() {
+    setText(value);
+    setError(undefined);
+    setEditing(true);
+  }
+
+  function cancel() {
+    setEditing(false);
+    setError(undefined);
+  }
+
+  function save() {
+    const trimmed = text.trim();
+    if (trimmed === "") {
+      setError(t("tabs.metadata.titleRequired"));
+      return;
+    }
+    if (trimmed !== value) onChange(trimmed);
+    setEditing(false);
+    setError(undefined);
+  }
+
+  return (
+    <section className="title-row" aria-labelledby={labelId}>
+      <div className="title-row-inner">
+        <span id={labelId} className="title-row-label text-body">
+          {t("tabs.metadata.title")}
+        </span>
+        {editing ? (
+          <>
+            <Input
+              aria-label={t("tabs.metadata.title")}
+              value={text}
+              aria-invalid={error !== undefined}
+              autoFocus
+              onChange={(event) => {
+                setText(event.target.value);
+                setError(undefined);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  save();
+                } else if (event.key === "Escape") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  cancel();
+                }
+              }}
+              controlSize="sm"
+              className="tw:flex-1"
+            />
+            <Button size="sm" variant="primary" onClick={save}>
+              {t("tabs.metadata.saveTitle")}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={cancel}>
+              {t("act.cancel")}
+            </Button>
+          </>
+        ) : (
+          <>
+            <span className="title-row-value text-body" title={value}>
+              {value}
+            </span>
+            {!readOnly && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="title-row-edit"
+                onClick={startEdit}
+                aria-label={t("tabs.metadata.editTitleAria")}
+              >
+                <Pencil className="metadata-icon" />
+                {t("act.edit")}
+              </Button>
+            )}
+          </>
+        )}
+      </div>
+      {error && (
+        <p role="alert" className="title-row-error text-caption">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function MetadataTabView({
+  idPrefix,
+  title,
+  readOnly = false,
+  value,
+  onValueChange,
+  onTotalEpisodesChange,
+  onMediaKindChange,
+  mediaKindOverride,
+  searchTitle,
+  matchProvider,
+  onMatchProviderChange,
+  blocked,
+  busy = false,
+}: {
+  idPrefix: string;
+  title: ReactNode;
+  readOnly?: boolean;
+  value: AnimeMetadataDraft;
+  onValueChange: (next: AnimeMetadataDraft) => void;
+  onTotalEpisodesChange: (total: number | null) => void;
+  onMediaKindChange: (next: "tv" | "movie" | null) => void;
+  mediaKindOverride?: "tv" | "movie" | null;
+  searchTitle: string;
+  matchProvider?: "bgm" | "tmdb";
+  onMatchProviderChange: (provider: "bgm" | "tmdb" | undefined) => void;
+  blocked?: ReactNode;
+  busy?: boolean;
+}) {
+  const asSave =
+    <A,>(fn: (arg: A) => void) =>
+    async (arg: A) => {
+      fn(arg);
+      return true;
+    };
+  return (
+    <div className="metadata-stack">
+      {blocked}
+      {title}
+      <MetadataFields
+        idPrefix={idPrefix}
+        title={searchTitle}
+        value={value}
+        onChange={onValueChange}
+        busy={busy}
+        readOnly={readOnly}
+        directEdit
+        showSeason
+        onSaveTotalEpisodes={readOnly ? undefined : asSave(onTotalEpisodesChange)}
+        onSaveMediaKind={readOnly ? undefined : asSave(onMediaKindChange)}
+        mediaKindOverride={mediaKindOverride}
+        showYear
+        matchProvider={readOnly ? undefined : matchProvider}
+        onMatchProviderChange={readOnly ? undefined : onMatchProviderChange}
+      />
+    </div>
+  );
+}
+
+// --- Draft: writes the shared in-memory draft directly -------------------------------------
+
+function DraftMetadataTab({
+  host,
+  matchProvider,
+  onMatchProviderChange,
+}: {
+  host: DraftTabHost;
+  matchProvider?: "bgm" | "tmdb";
+  onMatchProviderChange: (provider: "bgm" | "tmdb" | undefined) => void;
+}) {
+  const { draft, onDraftChange } = host;
+  // A draft's title defaults to the site title; subscribing writes it as the fixed title (title_override wins).
+  const draftTitle = draft.title_override?.trim() || draft.title;
+  const setMetadata = (metadata: AnimeMetadataDraft) => onDraftChange({ ...draft, metadata });
+  return (
+    <MetadataTabView
+      idPrefix="draft"
+      title={
+        <TitleRow
+          idPrefix="draft"
+          value={draftTitle}
+          onChange={(title) => onDraftChange({ ...draft, title, title_override: null })}
+        />
+      }
+      searchTitle={draftTitle}
+      value={draft.metadata}
+      onValueChange={setMetadata}
+      onTotalEpisodesChange={(total) => setMetadata({ ...draft.metadata, total_episodes: total })}
+      onMediaKindChange={(next) => setMetadata({ ...draft.metadata, media_kind_override: next })}
+      mediaKindOverride={draft.metadata.media_kind_override}
+      matchProvider={matchProvider}
+      onMatchProviderChange={onMatchProviderChange}
+    />
+  );
+}
+
+// --- Owner: one draft, one PATCH from the footer ---------------------------------------------
+
+type OwnerMetadataEdit = {
+  metadata: AnimeMetadataDraft;
+  /** The fixed title (non-empty); sent as title_override on save. */
+  titleOverride: string;
+  mediaKindOverride: "tv" | "movie" | null;
+};
+
+/** The fixed title lives in title_override, written at subscribing. When older data has it empty, the title at subscribe time is the fallback. */
+function ownerEditFrom(metadata: AnimeMetadata, baseTitle: string): OwnerMetadataEdit {
+  return {
+    metadata: metadataDraftFromOwner(metadata),
+    titleOverride: metadata.title_override?.trim() || baseTitle,
+    mediaKindOverride: metadata.media_kind_override ?? null,
+  };
+}
+
+function normalizedTitle(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+}
+
+/** The unsaved field count (title, Bangumi, TMDB, media kind, year, season and total episodes each count as one). */
+function metadataChangeCount(saved: OwnerMetadataEdit, edit: OwnerMetadataEdit): number {
+  let n = 0;
+  if (normalizedTitle(saved.titleOverride) !== normalizedTitle(edit.titleOverride)) n += 1;
+  if (saved.mediaKindOverride !== edit.mediaKindOverride) n += 1;
+  if (!valuesEqual(saved.metadata.bgm ?? null, edit.metadata.bgm ?? null)) n += 1;
+  if (!valuesEqual(saved.metadata.tmdb ?? null, edit.metadata.tmdb ?? null)) n += 1;
+  if ((saved.metadata.year ?? null) !== (edit.metadata.year ?? null)) n += 1;
+  if ((saved.metadata.season ?? null) !== (edit.metadata.season ?? null)) n += 1;
+  if ((saved.metadata.total_episodes ?? null) !== (edit.metadata.total_episodes ?? null)) n += 1;
+  return n;
+}
+
+const editEqual = (a: OwnerMetadataEdit, b: OwnerMetadataEdit) => metadataChangeCount(a, b) === 0;
+
+/** One edit's complete metadata value: the save's PATCH minus the version, also the RSS preview's input. */
+function metadataPreviewFromEdit(edit: OwnerMetadataEdit): AnimeMetadataPreview {
+  return {
+    bgm: edit.metadata.bgm ?? null,
+    tmdb: edit.metadata.tmdb ?? null,
+    title_override: normalizedTitle(edit.titleOverride),
+    media_kind_override: edit.mediaKindOverride,
+    total_episodes: edit.metadata.total_episodes ?? null,
+    year: edit.metadata.year ?? null,
+    season: edit.metadata.season ?? null,
+  };
+}
+
+function OwnerMetadataTab({
+  host,
+  readOnly,
+  matchProvider,
+  onMatchProviderChange,
+  onPreviewChange,
+}: {
+  host: OwnerTabHost;
+  readOnly: boolean;
+  matchProvider?: "bgm" | "tmdb";
+  onMatchProviderChange: (provider: "bgm" | "tmdb" | undefined) => void;
+  onPreviewChange?: (preview: AnimeMetadataPreview | undefined) => void;
+}) {
+  const { animeID, workspace, onChanged } = host;
+  const baseTitle = workspace.managed_anime.title;
+  const saved = useMemo(() => ownerEditFrom(workspace.metadata, baseTitle), [workspace.metadata, baseTitle]);
+  const { edit, setEdit, baseline, markSaved } = useOwnerEdit<OwnerMetadataEdit>(saved, editEqual);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const [conflict, setConflict] = useState<number>();
+  // Between a successful save and the re-read, the CAS version follows the server's response.
+  const [savedVersion, setSavedVersion] = useState<{ base: number; next: number }>();
+  const metadataVersion =
+    savedVersion && savedVersion.base === workspace.metadata.version ? savedVersion.next : workspace.metadata.version;
+
+  const count = !readOnly && edit && baseline ? metadataChangeCount(baseline, edit) : 0;
+
+  // Unsaved metadata serves only the RSS preview: saving and discarding still go through the footer's single save.
+  const preview = count > 0 && edit ? metadataPreviewFromEdit(edit) : undefined;
+  const previewKey = preview ? JSON.stringify(preview) : "";
+  useEffect(() => {
+    onPreviewChange?.(previewKey ? (JSON.parse(previewKey) as AnimeMetadataPreview) : undefined);
+  }, [previewKey, onPreviewChange]);
+  useEffect(() => () => onPreviewChange?.(undefined), [onPreviewChange]);
+
+  // The title never affects release evaluation; changes to the other fields (bindings, media
+  // kind, season, year, total episodes) schedule a re-evaluation whose failure never drags the
+  // save down.
+  const save = useCallback(async () => {
+    if (!edit || !baseline) return { ok: true as const };
+    const reevaluate =
+      metadataChangeCount({ ...baseline, titleOverride: edit.titleOverride }, edit) > 0;
+    setBusy(true);
+    setError(undefined);
+    setConflict(undefined);
+    try {
+      const result = await patchAnimeMetadata(animeID, {
+        expected_version: metadataVersion,
+        ...metadataPreviewFromEdit(edit),
+      });
+      setSavedVersion({ base: workspace.metadata.version, next: result.version });
+      markSaved(edit);
+      onChanged();
+      let message = t("tabs.metadata.saved");
+      if (reevaluate) {
+        try {
+          const scheduled = await reevaluateAnimeReleases(animeID);
+          message = t("tabs.metadata.savedReevaluated", { n: scheduled.scheduled_count });
+        } catch {
+          toast.error(t("tabs.metadata.reevaluateFailed"));
+        }
+      }
+      return { ok: true as const, message };
+    } catch (cause) {
+      if (isVersionConflict(cause)) setConflict(cause.currentVersion);
+      setError(toUserMessage(cause, t("tabs.metadata.saveFailed")));
+      return { ok: false as const };
+    } finally {
+      setBusy(false);
+    }
+  }, [animeID, baseline, edit, markSaved, metadataVersion, onChanged, workspace.metadata.version]);
+
+  useSavePart("metadata", { count, label: t("tabs.names.metadata"), busy, save });
+
+  // A 409 refresh: re-read the workspace (along onChanged's refetch path), keeping local edits.
+  function refreshAfterConflict() {
+    setConflict(undefined);
+    setError(undefined);
+    onChanged();
+  }
+
+  if (!edit) return <StateBlock kind="busy" title={t("tabs.metadata.reading")} />;
+  const effectiveTitle = normalizedTitle(edit.titleOverride) ?? baseTitle;
+  return (
+    <MetadataTabView
+      idPrefix="owner"
+      title={
+        <TitleRow
+          idPrefix="owner"
+          value={readOnly ? (normalizedTitle(saved.titleOverride) ?? baseTitle) : effectiveTitle}
+          readOnly={readOnly}
+          onChange={(titleOverride) => setEdit({ ...edit, titleOverride })}
+        />
+      }
+      searchTitle={effectiveTitle}
+      readOnly={readOnly}
+      busy={busy}
+      value={edit.metadata}
+      onValueChange={(metadata) => setEdit({ ...edit, metadata })}
+      onTotalEpisodesChange={(total) => setEdit({ ...edit, metadata: { ...edit.metadata, total_episodes: total } })}
+      onMediaKindChange={(mediaKindOverride) => setEdit({ ...edit, mediaKindOverride })}
+      mediaKindOverride={edit.mediaKindOverride}
+      matchProvider={matchProvider}
+      onMatchProviderChange={onMatchProviderChange}
+      blocked={
+        <>
+          {conflict !== undefined && (
+            <ConflictBlock currentVersion={conflict} message={error} onRefresh={refreshAfterConflict} />
+          )}
+          {conflict === undefined && error && <StateBlock kind="error" title={error} />}
+        </>
+      }
+    />
+  );
+}

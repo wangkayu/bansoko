@@ -1,0 +1,117 @@
+package reltitletags
+
+import (
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+
+	acquisitiondomain "bansoko/internal/acquisition/domain"
+)
+
+func TestExtractProjectsNonEpisodeCanonicalAttributes(t *testing.T) {
+	if err := Ready(); err != nil {
+		t.Fatalf("embedded reltitle must load: %v", err)
+	}
+	cases := []struct {
+		title string
+		want  []string
+	}{
+		{"[SampleGroup] Sample Title - 03 [1080p][CHS].mp4", []string{"resolution:1080p", "container:MP4", "sub_lang:SC"}},
+		{"[Group] Show [1080p][720p][CHS][CHT] - 03", []string{"resolution:1080p", "resolution:720p", "sub_lang:SC", "sub_lang:TC"}},
+		{"[Group] Show 1-12 [1080p][Baha][WEBRIP]", []string{"resolution:1080p", "source_type:WEBRip", "platform:BAHA"}},
+	}
+	for _, tc := range cases {
+		got := Extract(tc.title)
+		if got.Diagnostic != "" || got.Schema != Schema || got.Implementation != ImplementationVersion || !strings.HasPrefix(got.ConfigDigest, "lexicon:sha256:") {
+			t.Fatalf("%q: unexpected envelope %+v", tc.title, got)
+		}
+		if !reflect.DeepEqual(got.Tags, tc.want) {
+			t.Fatalf("%q: tags = %v, want %v", tc.title, got.Tags, tc.want)
+		}
+		for _, tag := range got.Tags {
+			dimension, _, _ := acquisitiondomain.SplitTag(tag)
+			if !IsDimension(dimension) {
+				t.Fatalf("%q: tag %q is outside the title dimensions", tc.title, tag)
+			}
+		}
+	}
+}
+
+func TestExtractNeverCarriesEpisodeIdentity(t *testing.T) {
+	got := Extract("[Group] Show S02E05 v2 [1080p]")
+	for _, tag := range got.Tags {
+		dimension, _, _ := acquisitiondomain.SplitTag(tag)
+		switch dimension {
+		case "episode", "season", "title", "group", "version", "episode_range":
+			t.Fatalf("episode/identity attribute leaked: %v", got.Tags)
+		}
+	}
+}
+
+func TestExtractIsDeterministicAndBounded(t *testing.T) {
+	title := "[Group] Show - 07 [WebRip 1080p HEVC-10bit AAC][简繁内封字幕]"
+	first, second := Extract(title), Extract(title)
+	if !reflect.DeepEqual(first, second) {
+		t.Fatalf("not deterministic: %+v vs %+v", first, second)
+	}
+	if got := Extract(strings.Repeat("a", MaxTitleBytes+1)); got.Diagnostic != acquisitiondomain.TitleTagDiagnosticParseFailed || len(got.Tags) != 0 {
+		t.Fatalf("oversized title: %+v", got)
+	}
+	if got := Extract("   "); got.Diagnostic != "" || len(got.Tags) != 0 {
+		t.Fatalf("blank title: %+v", got)
+	}
+}
+
+func TestVocabularyComesFromCanonicalDictionary(t *testing.T) {
+	vocabulary := Vocabulary()
+	if len(vocabulary) != len(Dimensions) {
+		t.Fatalf("vocabulary dimensions = %d", len(vocabulary))
+	}
+	for index, entry := range vocabulary {
+		if entry.Dimension != Dimensions[index] || len(entry.Values) == 0 {
+			t.Fatalf("vocabulary[%d] = %+v", index, entry)
+		}
+	}
+	if value, ok := CanonicalValue("source_type", "webrip"); !ok || value != "WEBRip" {
+		t.Fatalf("CanonicalValue(source_type, webrip) = %q, %v", value, ok)
+	}
+	if _, ok := CanonicalValue("resolution", "1081p"); ok {
+		t.Fatal("unknown value accepted")
+	}
+}
+
+func TestImplementationVersionMatchesVendoredSource(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "..", "..", "third_party", "reltitle", "SOURCE.md"))
+	if err != nil {
+		t.Fatalf("read SOURCE.md: %v", err)
+	}
+	commit := strings.TrimPrefix(ImplementationVersion, "reltitle@")
+	if !strings.Contains(string(source), "(`"+commit+"`)") {
+		t.Fatalf("SOURCE.md does not record the pinned commit %s", commit)
+	}
+}
+
+func TestExtractFreezesTitleAndGroupAsValueTags(t *testing.T) {
+	got := Extract("[SampleGroup] Sample Title - 03 [1080p][CHS].mp4")
+	if got.Schema != acquisitiondomain.TitleTagSchema {
+		t.Fatalf("schema = %q", got.Schema)
+	}
+	if want := []string{"title:Sample Title", "group:SampleGroup"}; !reflect.DeepEqual(got.ValueTags, want) {
+		t.Fatalf("name tags = %v, want %v", got.ValueTags, want)
+	}
+	for _, tag := range got.Tags {
+		if dimension, _, _ := acquisitiondomain.SplitTag(tag); dimension == "title" || dimension == "group" {
+			t.Fatalf("name attribute leaked into filter tags: %v", got.Tags)
+		}
+	}
+	for _, tag := range got.ValueTags {
+		if dimension, _, _ := acquisitiondomain.SplitTag(tag); dimension != "title" && dimension != "group" {
+			t.Fatalf("non-name attribute in name tags: %v", got.ValueTags)
+		}
+	}
+	if blank := Extract("  "); len(blank.ValueTags) != 0 {
+		t.Fatalf("blank title name tags = %v", blank.ValueTags)
+	}
+}

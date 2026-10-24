@@ -1,0 +1,75 @@
+# PostgreSQL gate shard assignment: which package runs in which container job.
+#
+# The container lane (`.github/workflows/ci.yml`, jobs `postgres-integration-shard-N`)
+# runs three jobs in parallel; each one passes `BANSOKO_TEST_PG_SHARD=<n>/3` to
+# `scripts/ci/test-integration.sh`, which selects exactly the packages assigned to
+# that shard here. Without the variable the script still runs the full set, so
+# host-runner and local runs are unchanged.
+#
+# This file and `scripts/ci/postgres-packages.txt` must describe the same set:
+# `scripts/ci/check-ci-shards.sh` fails closed on a missing, duplicated or unknown
+# package, on a shard outside 1..3, and when the workflow does not ask for
+# exactly these three shards.
+#
+# Assignment follows the VM per-package `ok` durations measured 2026-10-19 with the
+# template-database reset (task 10-19-faster-gates): fileoperation/application 499s,
+# runtime/migrations 357s, filemaintenance 59s, rss/application 37s, everything else
+# under 25s. `internal/fileoperation/application` is filesystem-bound (xfs on the
+# container lane is ~2x the VM's filesystem), so it is the whole of shard 1 and the lane's
+# floor. Shards 2 and 3 are balanced to ~380s / ~350s on the VM: `runtime/migrations`
+# keeps shard 2 (database-bound, replays real migrations) and the DB-bound
+# application packages moved to shard 3 next to the filesystem-heavy ones.
+
+# shard 1: the single longest package, which sets the floor for the lane.
+1	./internal/fileoperation/application
+
+# shard 2: migration replay plus the cheap packages. Migrations run first inside
+# the job, exactly as they do in the unsharded lane, because their fixtures
+# deliberately leave the schema non-baseline.
+2	./cmd/bansoko-server
+2	./internal/anime/adapter/persistence
+2	./internal/catalog/adapter/persistence
+2	./internal/deployment
+2	./internal/downloadcompletion
+2	./internal/identitymetadata/adapter/persistence
+2	./internal/integration
+2	./internal/namingvars/adapter/persistence
+2	./internal/namingvars/editor
+2	./internal/observability/application
+2	./internal/release/facts
+2	./internal/retention/adapter/persistence
+2	./internal/runtime/identity
+2	./internal/runtime/migrations
+
+# shard 3: the remaining filesystem- and transaction-heavy packages.
+3	./internal/accesscontrol/application
+3	./internal/acquisition/target
+3	./internal/acquisition/terminal/application
+3	./internal/anime/draft/application
+3	./internal/anime/oneshot/application
+3	./internal/anime/ownership/application
+3	./internal/artifact/application
+3	./internal/automation/application
+3	./internal/backup/application
+3	./internal/download/application
+3	./internal/episodetitle
+3	./internal/episodetitle/namingfacts
+3	./internal/filemaintenance
+3	./internal/filemanager/persistence
+3	./internal/parserpolicy
+3	./internal/plugintarget/application
+3	./internal/reconciliation/application
+3	./internal/retention/application
+3	./internal/rss/application
+3	./internal/runtime/database
+3	./internal/runtime/worker
+3	./internal/selection/application
+3	./internal/update/application
+3	./internal/update/fence
+3	./internal/workitems
+3	./cmd/bansoko-bootstrap
+3	./internal/anime/application
+3	./internal/anime/readmodel/application
+3	./internal/catalog/application
+3	./internal/configuration/application
+3	./internal/transport/httpapi

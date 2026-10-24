@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="b">
+  <title id="b">bansoko</title>
+  <g transform="rotate(-30 32 32)">
+    <rect x="7" y="22" width="50" height="20" rx="10" fill="#F4AC8B" stroke="#D97F5B" stroke-width="2"/>
+    <g fill="#D97F5B">
+      <circle cx="14" cy="29" r="1.6"/><circle cx="14" cy="35" r="1.6"/>
+      <circle cx="19" cy="29" r="1.6"/><circle cx="19" cy="35" r="1.6"/>
+      <circle cx="45" cy="29" r="1.6"/><circle cx="45" cy="35" r="1.6"/>
+      <circle cx="50" cy="29" r="1.6"/><circle cx="50" cy="35" r="1.6"/>
+    </g>
+    <rect x="25" y="25" width="14" height="14" rx="3.5" fill="#FBE4D3" stroke="#D97F5B" stroke-width="1.8"/>
+    <path d="M30.2 28.6 L30.2 35.4 L36 32 Z" fill="#E4572E"/>
+  </g>
+</svg>

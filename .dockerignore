@@ -1,0 +1,78 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# 文档
+*.md
+# The image is the distribution, so the licence travels with it; the
+# third-party notice list is generated inside the build, not stored here.
+docs/
+.local-artifacts/
+
+# 运行时数据（下载/库/qB），永远不属于镜像
+bansoko-downloads/
+bansoko-library/
+qbittorrent/
+
+# 构建产物
+bansoko
+bansoko-*
+bansoko-server
+server
+bin/
+builds/
+tmp/
+dist/
+frontend/dev-dist/
+!frontend/dist/
+!frontend/dist/**
+
+# 日志
+logs/
+*.log
+
+# 数据库
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+backups/
+data/*.db
+
+# Local config material is not part of the image.
+config/
+configs/
+
+# Node.js
+node_modules/
+frontend/node_modules/
+frontend/dev-dist/
+
+# Go
+vendor/
+
+# IDE
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*.swo
+*~
+
+# 测试
+*_test.go
+test_*.go
+
+# 临时文件
+*.tmp
+*.bak
+*.backup
+
+# The image builds fixed commands; only scripts/ shell files are context.
+*.sh
+!scripts/*.sh
+
+# Release
+release/
+releases/

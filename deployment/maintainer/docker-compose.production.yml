@@ -1,0 +1,159 @@
+# Bansoko — production immutable Compose bundle.
+#
+# THIS IS THE PRODUCTION AUTHORITY. It is generated-consumed by the P0.7
+# reproducible builder (scripts/ci/build-release.sh). The historical
+# release-restore/recovery rehearsal is not a production Compose dependency.
+# Rules (enforced by scripts/ci/check-release.sh
+# and scripts/ci/check-boundary.sh):
+#   - no `build:` sections, no mutable tags, no source mounts, no checkout
+#     runtime dependency: every image reference is `name@sha256:<digest>`;
+#   - exactly one deployment-owned state bind mount (/config) carrying the
+#     generated secrets file (secrets.json), the recovery-signal directory and
+#     update/bootstrap workspace; download roots are DB owner configuration
+#     (the qB connection's save/downloader roots) and a library directory is a
+#     naming-template value (an absolute path the operator renders to), never a
+#     container mount in this file. The qB sidecar overlay is
+#     deployment/maintainer/docker-compose.qbittorrent.yml;
+#   - one application service: the image ENTRYPOINT is the embedded-update
+#     bootstrap wrapper, which migrates the selected tree's schema with the
+#     schema-owner BANSOKO_DATABASE_URL, provisions the runtime login role and
+#     then serves with the derived runtime connection. There is no separate
+#     migration service. The updates volume carries the durable journal plus
+#     staging/release trees;
+#   - healthcheck uses /api/v1/livez (process liveness only); readiness is
+#     /readyz and must not be gated on DB-ping /system/health.
+#
+# Production uses the embedded updater only: `/app/bootstrap` consumes signed
+# payloads from the persistent updates volume and owns migration, handoff,
+# readiness, and rollback. Optional supervisor/recovery source and protocol
+# remain historical/manual and are outside this Compose graph.
+#
+# The digest is injected by the builder as BANSOKO_BUNDLE_IMAGE_DIGEST (full
+# `sha256:...`). The development source-build compose
+# (deployment/maintainer/docker-compose.dev.yml) is DEVELOPMENT-ONLY and shares
+# no authority with this file, and the repository-root compose.yaml is the
+# published test image, not this bundle.
+name: bansoko
+
+services:
+  postgres:
+    image: postgres@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+    container_name: bansoko-postgres
+    environment:
+      POSTGRES_DB: ${BANSOKO_DB_NAME:-bansoko}
+      POSTGRES_USER: ${BANSOKO_DB_USER:-bansoko}
+      POSTGRES_PASSWORD: ${BANSOKO_DB_PASSWORD:?BANSOKO_DB_PASSWORD must be set}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      # Loopback-only host binding: the host-side bansoko-recovery resume gate and
+      # pg_restore path reach the deployment database from the deployment host
+      # The host port is deployment-owned (BANSOKO_DB_PORT); a host-native postgres
+      # may already hold the default 5432.
+      - "127.0.0.1:${BANSOKO_DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${BANSOKO_DB_USER:-bansoko} -d ${BANSOKO_DB_NAME:-bansoko}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  app:
+    image: ${BANSOKO_BUNDLE_IMAGE_REPOSITORY:-wangkayu/bansoko}@${BANSOKO_BUNDLE_IMAGE_DIGEST:?BANSOKO_BUNDLE_IMAGE_DIGEST (sha256:...) must be injected by the builder}
+    container_name: bansoko-app
+    environment:
+      # The only database input: the schema owner (POSTGRES_USER of the bundled
+      # postgres). The bootstrap migrates with it, converges the fixed runtime
+      # login role `bansoko_app` with a generated password and serves with that
+      # segregated role, which cannot run DDL, alter/disable triggers or set
+      # session_replication_role.
+      BANSOKO_DATABASE_URL: postgres://${BANSOKO_DB_USER:-bansoko}:${BANSOKO_DB_PASSWORD:?BANSOKO_DB_PASSWORD must be set}@postgres:5432/${BANSOKO_DB_NAME:-bansoko}?sslmode=disable
+      # Production is embedded-only (same as the image default); no
+      # host-supervisor claim transport is configured in this base manifest.
+      BANSOKO_UPDATE_MODE: embedded
+      # Also the image default; kept explicit so the update fixtures can switch
+      # this bundle to a test environment.
+      BANSOKO_ENVIRONMENT: production
+      # Optional deployment-owned package source. Leave unset for a safe
+      # unconfigured instance or point at a signed public HTTPS manifest. The
+      # update client is always anonymous; there is no credential surface.
+      BANSOKO_UPDATE_MANIFEST_URL: ${BANSOKO_UPDATE_MANIFEST_URL:-}
+      # Optional release-discovery channel. Set this (with the package root)
+      # instead of BANSOKO_UPDATE_MANIFEST_URL to let the instance resolve the newest
+      # signed release CI published, without naming a version. The channel is a
+      # locator only: the named manifest, payload, signature and sequence floor
+      # stay authoritative. Setting both sources fails closed at startup.
+      BANSOKO_UPDATE_CHANNEL_URL: ${BANSOKO_UPDATE_CHANNEL_URL:-}
+      BANSOKO_UPDATE_PACKAGE_ROOT: ${BANSOKO_UPDATE_PACKAGE_ROOT:-}
+      # This must identify the exact immutable image digest running this
+      # service. Derive it directly from the bundle image selector; a second
+      # independently supplied base digest would let readiness describe a
+      # different image than Compose actually starts.
+      BANSOKO_BASE_IMAGE_DIGEST: ${BANSOKO_BUNDLE_IMAGE_DIGEST:?BANSOKO_BUNDLE_IMAGE_DIGEST (sha256:...) must be injected by the builder}
+      BANSOKO_UPDATES_ROOT: /var/lib/bansoko/updates
+      # Runtime file-effect ownership (PUID/PGID) is deployment-owned. The
+      # download roots and the directories the naming templates render are
+      # WebUI configuration (DB owner config), not here.
+      # Should match the host account that owns the media directories
+      # (`id -u` / `id -g`). The container starts as root, prepares /config and
+      # the updates volume for this account and then runs as it.
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      # Optional outbound HTTP(S) proxy (standard container variables, off by
+      # default). Internet clients (RSS, providers, metadata, notifications,
+      # update channel) use it; the downloader connection never does. Use the
+      # upper-case names, and keep localhost/127.0.0.1 in NO_PROXY.
+      # HTTP_PROXY: http://192.168.1.2:7890
+      # HTTPS_PROXY: http://192.168.1.2:7890
+      # NO_PROXY: localhost,127.0.0.1,postgres
+    # Optional DNS servers and static host entries for this container (off by
+    # default). extra_hosts entries are written to /etc/hosts and are subject
+    # to the same public-address checks as any other DNS answer.
+    # dns:
+    #   - 1.1.1.1
+    #   - 223.5.5.5
+    # extra_hosts:
+    #   - "api.telegram.org:149.154.167.220"
+    volumes:
+      # Deployment-owned state dir (/config): generated secrets (secrets.json;
+      # keep it with the database), recovery signal and update/bootstrap
+      # workspace (bound to the host's BANSOKO_CONFIG_DIR). Long syntax keeps the
+      # `${BANSOKO_CONFIG_DIR:?}` placeholder intact under `compose config
+      # --no-interpolate`.
+      - type: bind
+        source: ${BANSOKO_CONFIG_DIR:?BANSOKO_CONFIG_DIR must be set}
+        target: /config
+      # Durable embedded-update workspace: journal.json, staging/, releases/
+      # and `current`/`previous` pointers. Named volume keeps /app immutable.
+      - type: volume
+        source: updates
+        target: /var/lib/bansoko/updates
+    ports:
+      - "${BANSOKO_APP_PORT:-8000}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/v1/livez"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+    # Bounded Docker log rotation: Runtime Log is consumed through container
+    # output; the local driver keeps the ring on disk without a second daemon.
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  postgres_data:
+  updates:

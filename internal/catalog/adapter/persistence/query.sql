@@ -1,0 +1,172 @@
+-- Provider snapshot retention persistence is static and bounded.
+
+-- name: PurgeExpiredProviderCatalogSnapshots :execresult
+DELETE FROM provider_catalog_snapshots AS snapshot
+WHERE snapshot.id IN (
+    SELECT snapshot.id
+    FROM provider_catalog_snapshots AS snapshot
+    WHERE snapshot.status <> 'running'
+      AND snapshot.retention_until <= CURRENT_TIMESTAMP
+      AND EXISTS (
+          SELECT 1
+          FROM provider_catalog_snapshots AS newer
+          WHERE newer.provider = snapshot.provider
+            AND newer.season = snapshot.season
+            AND newer.version > snapshot.version
+            AND newer.status IN ('fresh', 'withdrawn', 'zero_result')
+      )
+      AND NOT (
+          snapshot.status IN ('fresh', 'withdrawn', 'zero_result')
+          AND snapshot.version = (
+              SELECT MAX(latest.version)
+              FROM provider_catalog_snapshots AS latest
+              WHERE latest.provider = snapshot.provider
+                AND latest.season = snapshot.season
+                AND latest.status IN ('fresh', 'withdrawn', 'zero_result')
+          )
+      )
+    ORDER BY snapshot.retention_until, snapshot.id
+    LIMIT $1
+);
+
+-- name: PurgeExpiredProviderGroupSnapshots :execresult
+DELETE FROM provider_group_snapshots AS snapshot
+WHERE snapshot.id IN (
+    SELECT snapshot.id
+    FROM provider_group_snapshots AS snapshot
+    WHERE snapshot.retention_until <= CURRENT_TIMESTAMP
+      AND EXISTS (
+          SELECT 1
+          FROM provider_group_snapshots AS newer
+          WHERE newer.provider = snapshot.provider
+            AND newer.catalog_entry_ref = snapshot.catalog_entry_ref
+            AND newer.version > snapshot.version
+      )
+      AND snapshot.version < (
+          SELECT MAX(latest.version)
+          FROM provider_group_snapshots AS latest
+          WHERE latest.provider = snapshot.provider
+            AND latest.catalog_entry_ref = snapshot.catalog_entry_ref
+      )
+    ORDER BY snapshot.retention_until, snapshot.id
+    LIMIT $1
+);
+
+-- name: ReadLatestProviderFeedSnapshot :one
+SELECT
+    snapshot.id,
+    snapshot.provider,
+    snapshot.provider_entry_ref,
+    snapshot.provider_group_ref,
+    snapshot.version,
+    snapshot.fetched_at,
+    snapshot.fresh_until,
+    snapshot.content_hash,
+    snapshot.hash_schema,
+    snapshot.projection_schema,
+    CASE WHEN snapshot.fresh_until > CURRENT_TIMESTAMP THEN 'fresh' ELSE 'stale' END AS freshness
+FROM provider_feed_snapshots AS snapshot
+WHERE snapshot.provider = $1
+  AND snapshot.provider_entry_ref = $2
+  AND snapshot.provider_group_ref = $3
+ORDER BY snapshot.version DESC
+LIMIT 1;
+
+-- name: ReadProviderFeedSnapshotByID :one
+SELECT
+    snapshot.id,
+    snapshot.provider,
+    snapshot.provider_entry_ref,
+    snapshot.provider_group_ref,
+    snapshot.version,
+    snapshot.fetched_at,
+    snapshot.fresh_until,
+    snapshot.content_hash,
+    snapshot.hash_schema,
+    snapshot.projection_schema,
+    CASE WHEN snapshot.fresh_until > CURRENT_TIMESTAMP THEN 'fresh' ELSE 'stale' END AS freshness
+FROM provider_feed_snapshots AS snapshot
+WHERE snapshot.id = $1;
+
+-- name: ReadProviderFeedSnapshotSeeds :many
+SELECT
+    seed.id,
+    seed.stable_seed_key,
+    seed.locator,
+    seed.locator_display,
+    seed.title,
+    seed.published_at,
+    seed.size_bytes,
+    seed.info_hash,
+    seed.payload_digest,
+    seed.torrent_filename,
+    seed.torrent_state,
+    seed.torrent_error_code,
+    seed.torrent_error_reason,
+    seed.torrent_version,
+    seed.info_hash_v1,
+    seed.info_hash_v2,
+    seed.payload,
+    seed.payload_digest AS blob_payload_digest,
+    seed.manifest_torrent_parser_version,
+    seed.manifest_torrent_name,
+    seed.manifest_total_size_bytes,
+    seed.manifest_file_count,
+    seed.manifest_projection_digest,
+    seed.files,
+    seed.anibt_tags
+FROM provider_feed_snapshot_seeds AS seed
+WHERE seed.snapshot_id = $1
+ORDER BY seed.published_at DESC NULLS LAST, seed.stable_seed_key, seed.id;
+
+-- name: AllocateProviderFeedSnapshotVersion :one
+SELECT (COALESCE(MAX(version), 0) + 1)::BIGINT AS version
+FROM provider_feed_snapshots
+WHERE provider = $1
+  AND provider_entry_ref = $2
+  AND provider_group_ref = $3;
+
+-- name: PublishProviderFeedSnapshot :one
+SELECT publish_feed_snapshot(
+    sqlc.arg(id)::text,sqlc.arg(provider)::text,sqlc.arg(provider_entry_ref)::text,sqlc.arg(provider_group_ref)::text,
+    sqlc.arg(expected_version)::bigint,sqlc.arg(fetched_at)::timestamptz,sqlc.arg(content_hash)::text,
+    sqlc.arg(seeds)::jsonb,sqlc.arg(payloads)::bytea[]
+)::text AS id;
+
+-- name: PurgeExpiredProviderFeedSnapshots :execresult
+-- An expired snapshot is purged when a newer version of its group exists, or when
+-- it is the latest of a provider group that no active subscription uses: the
+-- seed facts, torrent manifests and payloads fetched for a show nobody
+-- subscribed to are re-fetched on demand, so they age out instead of
+-- accumulating. The latest snapshot of a group an active subscription still
+-- uses is exempt, and custom-source snapshots keep the superseded-only rule.
+DELETE FROM provider_feed_snapshots AS snapshot
+WHERE snapshot.id IN (
+    SELECT snapshot.id
+    FROM provider_feed_snapshots AS snapshot
+    WHERE snapshot.retention_until <= CURRENT_TIMESTAMP
+      AND (
+          snapshot.version < (
+              SELECT MAX(latest.version)
+              FROM provider_feed_snapshots AS latest
+              WHERE latest.provider = snapshot.provider
+                AND latest.provider_entry_ref = snapshot.provider_entry_ref
+                AND latest.provider_group_ref = snapshot.provider_group_ref
+          )
+          OR (
+              snapshot.provider IN ('anibt', 'mikan')
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM rss_sources AS source
+                  JOIN subscriptions AS subscription ON subscription.id = source.subscription_id
+                  WHERE source.source_kind = 'provider_group'
+                    AND source.provider = snapshot.provider
+                    AND source.provider_entry_ref = snapshot.provider_entry_ref
+                    AND source.provider_group_ref = snapshot.provider_group_ref
+                    AND subscription.state = 'active'
+              )
+          )
+      )
+    ORDER BY snapshot.retention_until, snapshot.id
+    LIMIT $1
+);

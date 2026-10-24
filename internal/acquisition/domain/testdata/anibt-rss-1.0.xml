@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Trimmed from https://anibt.net/rss/anime.xml?bgmId=517057 (2026-10-11).
+     The third item reproduces the observed subtitle=NONE shape, which has no
+     anibt:language field. -->
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:anibt="https://anibt.net/xmlns/rss/1.0/">
+  <channel>
+    <title>【我推的孩子】 第三季</title>
+    <link>https://anibt.net/anime/517057</link>
+    <item>
+      <title>[SampleGroup] 【我推的孩子】 第三季 / Oshi no Ko S3 - 09 [WebRip 1080p HEVC-10bit AAC][简繁内封字幕]</title>
+      <link>https://anibt.net/release/rel_ELlQ5vDd4Aqu</link>
+      <guid isPermaLink="false">rel_ELlQ5vDd4Aqu</guid>
+      <pubDate>Fri, 17 Jul 2026 02:26:25 +0800</pubDate>
+      <anibt:type>anime</anibt:type>
+      <anibt:releaseId>rel_ELlQ5vDd4Aqu</anibt:releaseId>
+      <anibt:torrentUrl>https://anibt.net/api/torrent/rel_ELlQ5vDd4Aqu.torrent</anibt:torrentUrl>
+      <anibt:bgmId>517057</anibt:bgmId>
+      <anibt:episode>9</anibt:episode>
+      <anibt:episodeKey>9</anibt:episodeKey>
+      <anibt:version>v1</anibt:version>
+      <anibt:groupName>SampleGroup</anibt:groupName>
+      <anibt:groupSlug>samplegroup</anibt:groupSlug>
+      <anibt:resolution>1080p</anibt:resolution>
+      <anibt:language>CHS</anibt:language>
+      <anibt:language>CHT</anibt:language>
+      <anibt:subtitle>INTERNAL</anibt:subtitle>
+      <anibt:format>MKV</anibt:format>
+      <anibt:fileSize>536333566</anibt:fileSize>
+      <anibt:customTag>HEVC</anibt:customTag>
+      <anibt:customTag>10bit</anibt:customTag>
+      <anibt:customTag>WEBRip</anibt:customTag>
+      <anibt:customTag>AAC</anibt:customTag>
+      <description><![CDATA[<p>trimmed</p>]]></description>
+      <enclosure url="https://anibt.net/api/torrent/rel_ELlQ5vDd4Aqu.torrent" length="536333566" type="application/x-bittorrent" />
+    </item>
+    <item>
+      <title>[7³ACG] 【我推的孩子】/Oshi no Ko S01 | 25-35 [简繁字幕] BDrip 1080p AV1 OPUS 2.0</title>
+      <link>https://anibt.net/release/rel_M_8_RXhEpRco</link>
+      <guid isPermaLink="false">rel_M_8_RXhEpRco</guid>
+      <anibt:resolution>1080p</anibt:resolution>
+      <anibt:language>CHS</anibt:language>
+      <anibt:language>CHT</anibt:language>
+      <anibt:subtitle>INTERNAL</anibt:subtitle>
+      <anibt:format>MKV</anibt:format>
+      <anibt:customTag>AV1</anibt:customTag>
+      <anibt:customTag>BDRip</anibt:customTag>
+      <anibt:customTag>OPUS</anibt:customTag>
+      <enclosure url="https://anibt.net/api/torrent/rel_M_8_RXhEpRco.torrent" length="5312653424" type="application/x-bittorrent" />
+    </item>
+    <item>
+      <title>[Raws] Oshi no Ko S3 - 09 [WEB-DL 720p AVC AAC]</title>
+      <link>https://anibt.net/release/rel_raw_none</link>
+      <guid isPermaLink="false">rel_raw_none</guid>
+      <anibt:resolution>720p</anibt:resolution>
+      <anibt:subtitle>NONE</anibt:subtitle>
+      <anibt:format>MP4</anibt:format>
+      <anibt:customTag>AVC</anibt:customTag>
+      <anibt:customTag>avc</anibt:customTag>
+      <anibt:customTag>WEB-DL</anibt:customTag>
+      <enclosure url="https://anibt.net/api/torrent/rel_raw_none.torrent" length="300000000" type="application/x-bittorrent" />
+    </item>
+    <item>
+      <title>[Group] Oshi no Ko S3 - 10 [1080p]</title>
+      <link>https://anibt.net/release/rel_no_tags</link>
+      <guid isPermaLink="false">rel_no_tags</guid>
+      <anibt:releaseId>rel_no_tags</anibt:releaseId>
+      <enclosure url="https://anibt.net/api/torrent/rel_no_tags.torrent" length="1" type="application/x-bittorrent" />
+    </item>
+  </channel>
+</rss>

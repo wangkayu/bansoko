@@ -1,0 +1,176 @@
+# Logs
+logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Local workspace / agent state
+.planning/
+.opencode/
+.local-artifacts/
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Historical third-party reference checkout; keep it out of fresh clones.
+autobangumi/
+
+# ----------------------
+# Python
+# ----------------------
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+.build/
+.venv/
+venv/
+env/
+ENV/
+.env
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ----------------------
+# Node / 前端
+# ----------------------
+dev-dist/
+frontend/node_modules/
+frontend/dist/
+frontend/dev-dist/
+frontend/.vite/
+
+# ----------------------
+# 数据库 / 本地数据
+# ----------------------
+*.sqlite3
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+data/*.db
+data/*.sqlite*
+
+# ----------------------
+# 构建 / 发布产物
+# ----------------------
+bin/
+builds/
+# Generated release outputs.
+/release/
+/releases/
+tmp/
+/bansoko
+/bansoko-*
+/bansoko-server
+/server
+/bansoko-migrate
+/bansoko-recovery
+/bansoko-supervisor
+/bansoko-release
+/bansoko
+/disposable-db-check
+*.tar.gz
+*.tar.gz.sha256
+*.sha256
+
+# ----------------------
+# 覆盖率 & 测试输出
+# ----------------------
+coverage.xml
+
+# ----------------------
+# 配置文件（防止敏感信息泄露）
+# ----------------------
+config/config.yaml
+config/config.*.yaml
+!config/config.example.yaml
+!config/config.development.yaml
+.env
+.env.local
+.env.production
+.ci-credentials.env
+.issue-credentials.env
+.tmdb-credentials.env
+
+# ----------------------
+# 其他
+# ----------------------
+.cursor/
+backup/
+# The in-app backup feature package is source, not a backup artifact.
+!/internal/backup/
+gitmiss/
+db-init/
+
+# E2E storage volumes
+bansoko-downloads/
+bansoko-library/
+
+# State written by the root compose.yaml (quickstart deployment)
+/config/
+/data/
+
+# E2E env (contains credentials)
+.env.e2e
+
+# Playwright generated state and results
+frontend/playwright/
+frontend/test-results/
+
+# qBittorrent runtime config
+qbittorrent/
+!internal/download/qbittorrent/
+!internal/download/qbittorrent/**
+
+# Development environment: specs, tasks and agent entry files live in the
+# private bansoko-dev repository, cloned at .trellis/ and linked into place by
+# .trellis/link-overlay.sh. This repository tracks code only.
+/.trellis/
+/CLAUDE.md
+/AGENTS.md
+/internal/CLAUDE.md
+/frontend/CLAUDE.md
+/.claude/
+/.agents/skills/trellis-*
+/skills-lock.json
+
+# Playwright reports
+frontend/playwright-report/
+playwright-report/
+
+# Editor/agent session state (never commit)
+.zcode/
+.workbuddy/
+
+# GUI test screenshots (browser verification artifacts)
+gui-test-screenshots/
+
+# Playwright MCP session artifacts
+.playwright-mcp/
+
+# Scratch copies left by scripts/verify/real-effect-browser-db-comparator-mutation-test.py if it is killed
+frontend/scripts/snapshot-mutants-*/
+/.tmp/
+/.gotmp/
+.claude/worktrees/

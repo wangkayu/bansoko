@@ -1,0 +1,329 @@
+updated_at: "2026-03-06"
+description: "Promotion rules from note -> typed attributes"
+
+defaults:
+  action: replace_note_type
+  source: note_promote_dict
+  keep_note_if_promoted: false
+
+rules:
+  - id: note_to_source_web
+    match:
+      note_values_case_insensitive: ["WEB", "WEBRIP", "WEB-RIP", "WEB RIP"]
+    promote_to:
+      type: source_type
+      normalized: WEBRip
+
+  - id: note_to_source_webdl
+    match:
+      note_values_case_insensitive: ["WEBDL", "WEB-DL", "WEB DL"]
+    promote_to:
+      type: source_type
+      normalized: WEB-DL
+
+  - id: note_to_source_tvrip
+    match:
+      note_values_case_insensitive: ["TVRIP", "TV-RIP"]
+    promote_to:
+      type: source_type
+      normalized: HDTV
+
+  - id: note_to_source_bd
+    match:
+      note_values_case_insensitive: ["BD", "BDRIP", "BLURAY", "BLU-RAY"]
+    promote_to:
+      type: source_type
+      normalized: BDRip
+
+  - id: note_to_source_dvd
+    match:
+      note_values_case_insensitive: ["DVD"]
+    promote_to:
+      type: source_type
+      normalized: DVD
+
+  - id: note_to_platform
+    match:
+      note_values_case_insensitive: ["NF", "NETFLIX", "CR", "BAHA", "ABEMA", "UNEXT", "AMZN", "AMAZON", "AT-X", "BS11"]
+    promote_to:
+      type: platform
+      normalized_from_token: true
+
+  - id: note_to_sub_flag_multi
+    match:
+      note_values_case_insensitive: ["MULTI", "MULTISUB"]
+    promote_to:
+      type: sub_flag
+      normalized: MULTI
+
+  - id: note_to_sub_flag_subs
+    match:
+      note_values_case_insensitive: ["SUBS", "SUB"]
+    promote_to:
+      type: sub_flag
+      normalized: soft
+
+  - id: note_to_sub_flag_vost
+    match:
+      note_values_case_insensitive: ["VOSTFR", "VOSTEN", "VF"]
+    promote_to:
+      type: sub_flag
+      normalized: soft
+
+  - id: note_to_release_status
+    match:
+      note_values_case_insensitive: ["END", "FIN", "COMPLETE", "FINAL"]
+    promote_to:
+      type: release_status
+      normalized_from_token: true
+
+  - id: note_to_contents_movie
+    match:
+      note_values_case_insensitive: ["MOVIE"]
+    promote_to:
+      type: contents
+      normalized: MOVIE
+
+  - id: note_to_resolution_1080p
+    match:
+      note_values_case_insensitive: ["1080P"]
+    promote_to:
+      type: resolution
+      normalized: 1080p
+
+  - id: note_to_resolution_fhd
+    match:
+      note_values_case_insensitive: ["FHD", "FULLHD", "FULL HD"]
+    promote_to:
+      type: resolution
+      normalized: 1080p
+
+  - id: note_to_resolution_720p
+    match:
+      note_values_case_insensitive: ["720P"]
+    promote_to:
+      type: resolution
+      normalized: 720p
+
+  - id: note_to_resolution_2160p
+    match:
+      note_values_case_insensitive: ["2160P", "4K"]
+    promote_to:
+      type: resolution
+      normalized: 2160p
+
+  - id: note_to_resolution_480p
+    match:
+      note_values_case_insensitive: ["480P"]
+    promote_to:
+      type: resolution
+      normalized: 480p
+
+  - id: note_to_resolution_4320p
+    match:
+      note_values_case_insensitive: ["4320P", "8K"]
+    promote_to:
+      type: resolution
+      normalized: 4320p
+
+  - id: note_to_resolution_576p
+    match:
+      note_values_case_insensitive: ["576P"]
+    promote_to:
+      type: resolution
+      normalized: 576p
+
+  - id: note_to_resolution_540p
+    match:
+      note_values_case_insensitive: ["540P"]
+    promote_to:
+      type: resolution
+      normalized: 540p
+
+  - id: note_to_resolution_360p
+    match:
+      note_values_case_insensitive: ["360P"]
+    promote_to:
+      type: resolution
+      normalized: 360p
+
+  - id: note_to_resolution_1440x1080
+    match:
+      note_values_case_insensitive: ["1440X1080"]
+    promote_to:
+      type: resolution
+      normalized: 1440x1080
+
+  - id: note_to_content_rating_age_restricted
+    match:
+      note_values_case_insensitive: ["AGE_RESTRICTED"]
+    promote_to:
+      type: content_rating
+      normalized: AGE_RESTRICTED
+
+  - id: note_to_edition_bdmv
+    match:
+      note_values_case_insensitive: ["BDMV"]
+    promote_to:
+      type: edition
+      normalized: BDMV
+
+  - id: note_to_edition_dvd_iso
+    match:
+      note_values_case_insensitive: ["DVD_ISO", "DVDISO"]
+    promote_to:
+      type: edition
+      normalized: DVD_ISO
+
+  - id: note_to_version_rev
+    match:
+      note_values_case_insensitive: ["REV"]
+    promote_to:
+      type: version
+      normalized: rev
+
+  - id: note_to_hdr
+    match:
+      note_values_case_insensitive: ["HDR"]
+    promote_to:
+      type: hdr
+      normalized: HDR
+
+  - id: note_to_video_codec_hevc
+    match:
+      note_values_case_insensitive: ["HEVC", "H265", "X265", "H.265"]
+    promote_to:
+      type: video_codec
+      normalized: HEVC
+
+  - id: note_to_video_codec_avc
+    match:
+      note_values_case_insensitive: ["AVC", "H264", "X264", "H.264"]
+    promote_to:
+      type: video_codec
+      normalized: AVC
+
+  - id: note_to_video_codec_mpeg2
+    match:
+      note_values_case_insensitive: ["MPEG2", "MPEG-2"]
+    promote_to:
+      type: video_codec
+      normalized: MPEG2
+
+  - id: note_to_audio_codec_aac
+    match:
+      note_values_case_insensitive: ["AAC"]
+    promote_to:
+      type: audio_codec
+      normalized: AAC
+
+  - id: note_to_audio_codec_flac
+    match:
+      note_values_case_insensitive: ["FLAC"]
+    promote_to:
+      type: audio_codec
+      normalized: FLAC
+
+  - id: note_to_audio_codec_opus
+    match:
+      note_values_case_insensitive: ["OPUS"]
+    promote_to:
+      type: audio_codec
+      normalized: OPUS
+
+  - id: note_to_audio_codec_ac3
+    match:
+      note_values_case_insensitive: ["AC3"]
+    promote_to:
+      type: audio_codec
+      normalized: AC3
+
+  - id: note_to_container_mkv
+    match:
+      note_values_case_insensitive: ["MKV"]
+    promote_to:
+      type: container
+      normalized: MKV
+
+  - id: note_to_container_mp4
+    match:
+      note_values_case_insensitive: ["MP4"]
+    promote_to:
+      type: container
+      normalized: MP4
+
+  - id: note_to_container_avi
+    match:
+      note_values_case_insensitive: ["AVI"]
+    promote_to:
+      type: container
+      normalized: AVI
+
+  - id: note_to_container_ts
+    match:
+      note_values_case_insensitive: ["TS", "M2TS"]
+    promote_to:
+      type: container
+      normalized_from_token: true
+
+  - id: note_to_container_iso
+    match:
+      note_values_case_insensitive: ["ISO"]
+    promote_to:
+      type: container
+      normalized: ISO
+
+  - id: note_to_bit_depth_hi10p
+    match:
+      note_values_case_insensitive: ["HI10P"]
+    promote_to:
+      type: bit_depth
+      normalized: "10bit"
+
+  - id: note_to_bit_depth_10bit
+    match:
+      note_values_case_insensitive: ["10BIT"]
+    promote_to:
+      type: bit_depth
+      normalized: "10bit"
+
+  - id: note_to_edition_uhd_variants
+    match:
+      note_values_case_insensitive: ["UHD", "UHDRIP", "UHD_BDRIP"]
+    promote_to:
+      type: edition
+      normalized_from_token: true
+
+  - id: note_to_edition_disc_variants
+    match:
+      note_values_case_insensitive: ["DVD9", "JDVD", "R2J", "LASER_DISC_BOX", "BD_BOX"]
+    promote_to:
+      type: edition
+      normalized_from_token: true
+
+  - id: note_to_edition_restore_4k_2k
+    match:
+      note_values_case_insensitive: ["RESTORE_4K_2K_EDITION"]
+    promote_to:
+      type: edition
+      normalized: "RESTORE_4K_2K_EDITION"
+
+  - id: note_to_pack_profile_curated
+    match:
+      note_values_case_insensitive: ["CURATED_PACK"]
+    promote_to:
+      type: pack_profile
+      normalized: "curated_pack"
+
+note_whitelist:
+  # 未命中 promotion 且属于白名单的 note 保留
+  - 检索
+  - 检索用
+  - 招募翻译
+  - 招募校对
+  - 招募时轴
+  - END
+  - FIN
+  - COMPLETE
+  - 新番
+  - HI_RES

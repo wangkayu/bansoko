@@ -1,0 +1,75 @@
+-- Observability retention SQL is static and allowlisted; the migration chain is authoritative.
+
+-- name: PurgePluginDeliveryAttempts :execresult
+DELETE FROM plugin_delivery_attempts AS attempt
+WHERE attempt.id IN (
+    SELECT attempt.id
+    FROM plugin_delivery_attempts AS attempt
+    JOIN plugin_deliveries AS delivery ON delivery.id = attempt.plugin_delivery_id
+    WHERE attempt.retention_until <= CURRENT_TIMESTAMP
+      -- unknown is terminal once its retry budget is spent (delivery_id dedupe
+      -- made every resend at-least-once); its live WorkItem guard follows.
+      AND delivery.state IN ('delivered', 'failed', 'unknown')
+      AND (attempt.response_received_at IS NOT NULL OR attempt.error_code IS NOT NULL)
+      AND NOT EXISTS (
+          SELECT 1
+          FROM work_items AS item
+          WHERE item.owner_type = 'plugin_delivery' AND item.owner_id = delivery.id
+      )
+    ORDER BY attempt.retention_until, attempt.id
+    LIMIT $1
+);
+
+-- name: PurgePluginDeliveries :execresult
+DELETE FROM plugin_deliveries AS delivery
+WHERE delivery.id IN (
+    SELECT delivery.id
+    FROM plugin_deliveries AS delivery
+    WHERE delivery.retention_until <= CURRENT_TIMESTAMP
+      AND delivery.state IN ('delivered', 'failed', 'unknown')
+      AND NOT EXISTS (
+          SELECT 1
+          FROM plugin_delivery_attempts AS attempt
+          WHERE attempt.plugin_delivery_id = delivery.id
+      )
+      -- A delivery with a live WorkItem waits for it to finish.
+      AND NOT EXISTS (
+          SELECT 1
+          FROM work_items AS item
+          WHERE item.owner_type = 'plugin_delivery' AND item.owner_id = delivery.id
+      )
+    ORDER BY delivery.retention_until, delivery.id
+    LIMIT $1
+);
+
+-- name: PurgeSubscriptionLogEntries :execresult
+DELETE FROM subscription_log_entries AS entry
+WHERE entry.id IN (
+    SELECT entry.id
+    FROM subscription_log_entries AS entry
+    WHERE entry.retention_until <= CURRENT_TIMESTAMP
+    ORDER BY entry.retention_until, entry.id
+    LIMIT $1
+);
+
+-- name: PurgeAutomationDispatchRuns :execresult
+DELETE FROM automation_dispatch_runs AS dispatch
+WHERE dispatch.id IN (
+    SELECT dispatch.id
+    FROM automation_dispatch_runs AS dispatch
+    WHERE dispatch.retention_until <= CURRENT_TIMESTAMP
+      AND dispatch.state IN ('completed', 'partial', 'failed')
+    ORDER BY dispatch.retention_until, dispatch.id
+    LIMIT $1
+);
+
+-- name: PurgeDiagnosticEpisodes :execresult
+DELETE FROM diagnostic_episodes AS episode
+WHERE episode.id IN (
+    SELECT episode.id
+    FROM diagnostic_episodes AS episode
+    WHERE episode.retention_until <= CURRENT_TIMESTAMP
+      AND episode.succeeded_after_at IS NOT NULL
+    ORDER BY episode.retention_until, episode.id
+    LIMIT $1
+);

@@ -1,0 +1,8 @@
+package animeconfig
+
+import animedomain "bansoko/internal/anime/domain"
+
+// The domain owns the frozen value so AnimeDraft can carry it without a cycle.
+type BusinessSnapshot = animedomain.BusinessSnapshot
+type RetentionValue = animedomain.RetentionValue
+type ProgramReferences = animedomain.ProgramReferences

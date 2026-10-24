@@ -1,0 +1,479 @@
+# Single trusted GitHub workflow on self-hosted runners. Every required gate
+# precedes publication: the signed test release (channel branch on this
+# repository, trusted image on Docker Hub) and the multi-arch Docker Hub
+# image. The
+# repository-scoped host runner owns
+# native qB/browser and BuildKit, so only work this repository's own pushes
+# originate may run here: a pull_request event checks out and executes the
+# submitted tree, which on a public repository would let a fork run arbitrary
+# code on the host runner. Contributions are validated by fetching them into a
+# branch of this repository and pushing or dispatching that branch instead.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: bansoko-ci
+  # A new main push supersedes the previous run. The gates hold no state worth
+  # keeping, and leaving the previous run in place made every pushed fix wait
+  # for up to an hour of superseded work on the host runner. Release
+  # effects stay safe under cancellation: immutable package uploads are
+  # idempotent (PUT accepting 201/409) and the channel advance is a signed
+  # conditional write on the blob SHA, so a cancelled run cannot leave a
+  # half-published version. See scripts/ci/ci-release-dag-test.rb.
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  # ci-release-trust.py reads this run's job results through the API.
+  actions: read
+
+# Measured runner egress to proxy.golang.org can time out before any gate runs.
+# Use a checksum-verified HTTPS module mirror; retain upstream fallback and sumdb.
+env:
+  GOPROXY: https://goproxy.cn,https://proxy.golang.org,direct
+  # Container jobs run as root over a workspace the host runner user owns;
+  # checkout only trusts it inside its own temporary HOME, so every later git
+  # call would refuse it as dubious ownership.
+  GIT_CONFIG_COUNT: '1'
+  GIT_CONFIG_KEY_0: safe.directory
+  GIT_CONFIG_VALUE_0: '*'
+
+
+jobs:
+  persistence-freshness:
+    name: persistence freshness
+    runs-on: [self-hosted, bansoko-ci]
+    container: golang:1.26.10-bookworm
+    timeout-minutes: 30
+    steps:
+      - name: install checkout prerequisites
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends nodejs ruby
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: verify event SHA
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: install sqlc
+        # The module fetch is the only network step of this lane; a proxy or
+        # sum.golang.org timeout is retried and named instead of failing the
+        # freshness verdict (run 65 lost the lane to one sumdb timeout).
+        run: |
+          for attempt in 1 2 3; do
+            GOTOOLCHAIN=local go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 && exit 0
+            echo "sqlc install attempt ${attempt} failed; retrying" >&2
+            sleep $((attempt * 10))
+          done
+          echo "sqlc install failed after 3 attempts (network fetch, not a freshness failure)" >&2
+          exit 1
+      - name: run every persistence freshness check
+        run: bash scripts/ci/ci-persistence-freshness.sh
+  contract-boundary:
+    name: contract + boundary
+    needs: [persistence-freshness]
+    runs-on: [self-hosted, bansoko-ci]
+    container: golang:1.26.10-bookworm
+    timeout-minutes: 30
+    steps:
+      - name: install the job's tools
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends nodejs ruby ca-certificates curl gnupg
+          # `check-production-compose.sh` fails closed without the docker CLI and
+          # the compose plugin; compose config parsing needs no daemon, so the
+          # client packages are enough.
+          install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+          echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" > /etc/apt/sources.list.d/docker.list
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends docker-ce-cli docker-compose-plugin
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: verify event SHA
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      # The runner gives each job a fresh container, so GOMODCACHE starts empty and
+      # every job downloads the full module graph. Run 21's PostgreSQL job failed at
+      # `setup failed` because one `testify@v1.11.1` fetch to proxy.golang.org hit an
+      # i/o timeout, so the download is its own retried step instead of riding on the
+      # first compile.
+      - name: warm the module cache (retried; egress is not reliable)
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if go mod download; then
+              echo "module cache warmed on attempt $attempt"
+              exit 0
+            fi
+            echo "go mod download attempt $attempt failed" >&2
+            sleep $((attempt * 15))
+          done
+          echo "go mod download failed after 5 attempts" >&2
+          exit 1
+      - name: contract, boundary, write-entry inventory and persistence freshness
+        run: |
+          set -eu
+          ruby scripts/ci/ci-release-dag-test.rb
+          ruby scripts/ci/ci-release-dag-mutation-test.rb
+          go mod download
+          bash scripts/ci/ci-contract-boundary.sh
+
+  go-unit-static:
+    name: go unit + static
+    runs-on: [self-hosted, bansoko-ci]
+    container: golang:1.26.10-bookworm
+    timeout-minutes: 45
+    steps:
+      - name: install node for actions/checkout and ruby for the gate scripts
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends nodejs ruby python3
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: verify event SHA
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      # The runner gives each job a fresh container, so GOMODCACHE starts empty and
+      # every job downloads the full module graph. Run 21's PostgreSQL job failed at
+      # `setup failed` because one `testify@v1.11.1` fetch to proxy.golang.org hit an
+      # i/o timeout, so the download is its own retried step instead of riding on the
+      # first compile.
+      - name: warm the module cache (retried; egress is not reliable)
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if go mod download; then
+              echo "module cache warmed on attempt $attempt"
+              exit 0
+            fi
+            echo "go mod download attempt $attempt failed" >&2
+            sleep $((attempt * 15))
+          done
+          echo "go mod download failed after 5 attempts" >&2
+          exit 1
+      - name: build, vet, database-free unit tests (no skips)
+        run: bash scripts/ci/ci-unit-static.sh
+
+  frontend-quality:
+    name: frontend quality
+    runs-on: [self-hosted, bansoko-ci]
+    container: node:22-bookworm
+    timeout-minutes: 45
+    steps:
+      - name: enable pnpm
+        run: corepack enable && corepack prepare pnpm@11.1.2 --activate
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: verify event SHA
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: install, typecheck, tokens, lint, unit tests, build
+        run: bash scripts/ci/ci-frontend-quality.sh
+
+  # Known-vulnerability scan (SEC-033). Non-blocking on purpose: the advisory
+  # databases change independently of the commit under test, so a newly
+  # published advisory for an existing dependency must not block an unrelated
+  # merge or release, and the scan needs vuln.go.dev / the npm registry, which
+  # this runner's egress does not reliably reach. A red job is still visible on
+  # every run; a clean scan is a public-release checklist item, and findings are
+  # fixed or accepted in frontend/pnpm-workspace.yaml with the reason.
+  vulnerability-scan-go:
+    name: vulnerability scan (go, non-blocking)
+    runs-on: [self-hosted, bansoko-ci]
+    container: golang:1.26.10-bookworm
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - name: install node for actions/checkout
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends nodejs
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: verify event SHA
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: govulncheck with the release image toolchain
+        run: bash scripts/ci/check-vulns.sh go
+
+  vulnerability-scan-frontend:
+    name: vulnerability scan (frontend, non-blocking)
+    runs-on: [self-hosted, bansoko-ci]
+    container: node:22-bookworm
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - name: enable pnpm
+        run: corepack enable && corepack prepare pnpm@11.1.2 --activate
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: verify event SHA
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: pnpm audit of shipped dependencies
+        run: bash scripts/ci/check-vulns.sh frontend
+
+  # The PostgreSQL acceptance set is one serial `-p 1` lane because its packages
+  # share one database. That lane measured 44 minutes on this runner, and a
+  # single package (`internal/fileoperation/application`, 18 minutes on the xfs
+  # workspace) sets the floor, so it is split across three jobs that each own a
+  # PostgreSQL service and run in parallel. The assignment is explicit in
+  # `scripts/ci/postgres-shards.txt`; `scripts/ci/check-ci-shards.sh` proves it covers
+  # `scripts/ci/postgres-packages.txt` exactly, and the release job depends on all
+  # three so one missing shard cannot publish.
+  postgres-integration-shard-1:
+    name: postgres integration (shard 1/3)
+    runs-on: [self-hosted, bansoko-ci]
+    container: golang:1.26.10-bookworm
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: harness
+          POSTGRES_PASSWORD: harness
+          POSTGRES_DB: bansoko_test_disp
+        options: >-
+          --health-cmd "pg_isready -U harness"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: install node for actions/checkout and ruby for the gate scripts
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends nodejs ruby
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: verify event SHA
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      # The runner gives each job a fresh container, so GOMODCACHE starts empty and
+      # every job downloads the full module graph. Run 21's PostgreSQL job failed at
+      # `setup failed` because one `testify@v1.11.1` fetch to proxy.golang.org hit an
+      # i/o timeout, so the download is its own retried step instead of riding on the
+      # first compile.
+      - name: warm the module cache (retried; egress is not reliable)
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if go mod download; then
+              echo "module cache warmed on attempt $attempt"
+              exit 0
+            fi
+            echo "go mod download attempt $attempt failed" >&2
+            sleep $((attempt * 15))
+          done
+          echo "go mod download failed after 5 attempts" >&2
+          exit 1
+      - name: serial PostgreSQL gate (shard 1/3)
+        env:
+          # The service is addressed by its service key on the job network, the
+          # same way the monorepo addresses its postgres service.
+          # `require-disposable-db.sh` refuses any non-disposable target.
+          BANSOKO_TEST_DATABASE_URL: postgres://harness:harness@postgres:5432/bansoko_test_disp?sslmode=disable
+          BANSOKO_TEST_DB_DISPOSABLE: '1'
+          BANSOKO_TEST_PG_SHARD: 1/3
+        # File-effect fixtures live on the workspace volume (the host
+        # filesystem) rather than the container's overlayfs /tmp.
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/.tmp" "$GITHUB_WORKSPACE/.gotmp"
+          export TMPDIR="$GITHUB_WORKSPACE/.tmp"
+          # t.TempDir() uses GOTMPDIR, so pointing it away from TMPDIR keeps
+          # the fixture tree apart from the go toolchain's own scratch.
+          export GOTMPDIR="$GITHUB_WORKSPACE/.gotmp"
+          echo "TMPDIR filesystem: $(stat -f -c %T "$TMPDIR")"
+          echo "GOTMPDIR filesystem: $(stat -f -c %T "$GOTMPDIR")"
+          bash scripts/ci/test-integration.sh
+
+  postgres-integration-shard-2:
+    name: postgres integration (shard 2/3)
+    runs-on: [self-hosted, bansoko-ci]
+    container: golang:1.26.10-bookworm
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: harness
+          POSTGRES_PASSWORD: harness
+          POSTGRES_DB: bansoko_test_disp
+        options: >-
+          --health-cmd "pg_isready -U harness"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: install node for actions/checkout and ruby for the gate scripts
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends nodejs ruby
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: verify event SHA
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: warm the module cache (retried; egress is not reliable)
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if go mod download; then
+              echo "module cache warmed on attempt $attempt"
+              exit 0
+            fi
+            echo "go mod download attempt $attempt failed" >&2
+            sleep $((attempt * 15))
+          done
+          echo "go mod download failed after 5 attempts" >&2
+          exit 1
+      - name: serial PostgreSQL gate (shard 2/3)
+        env:
+          BANSOKO_TEST_DATABASE_URL: postgres://harness:harness@postgres:5432/bansoko_test_disp?sslmode=disable
+          BANSOKO_TEST_DB_DISPOSABLE: '1'
+          BANSOKO_TEST_PG_SHARD: 2/3
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/.tmp" "$GITHUB_WORKSPACE/.gotmp"
+          export TMPDIR="$GITHUB_WORKSPACE/.tmp"
+          export GOTMPDIR="$GITHUB_WORKSPACE/.gotmp"
+          echo "TMPDIR filesystem: $(stat -f -c %T "$TMPDIR")"
+          echo "GOTMPDIR filesystem: $(stat -f -c %T "$GOTMPDIR")"
+          bash scripts/ci/test-integration.sh
+
+  postgres-integration-shard-3:
+    name: postgres integration (shard 3/3)
+    runs-on: [self-hosted, bansoko-ci]
+    container: golang:1.26.10-bookworm
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: harness
+          POSTGRES_PASSWORD: harness
+          POSTGRES_DB: bansoko_test_disp
+        options: >-
+          --health-cmd "pg_isready -U harness"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: install node for actions/checkout and ruby for the gate scripts
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends nodejs ruby
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: verify event SHA
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: warm the module cache (retried; egress is not reliable)
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if go mod download; then
+              echo "module cache warmed on attempt $attempt"
+              exit 0
+            fi
+            echo "go mod download attempt $attempt failed" >&2
+            sleep $((attempt * 15))
+          done
+          echo "go mod download failed after 5 attempts" >&2
+          exit 1
+      - name: serial PostgreSQL gate (shard 3/3)
+        env:
+          BANSOKO_TEST_DATABASE_URL: postgres://harness:harness@postgres:5432/bansoko_test_disp?sslmode=disable
+          BANSOKO_TEST_DB_DISPOSABLE: '1'
+          BANSOKO_TEST_PG_SHARD: 3/3
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/.tmp" "$GITHUB_WORKSPACE/.gotmp"
+          export TMPDIR="$GITHUB_WORKSPACE/.tmp"
+          export GOTMPDIR="$GITHUB_WORKSPACE/.gotmp"
+          echo "TMPDIR filesystem: $(stat -f -c %T "$TMPDIR")"
+          echo "GOTMPDIR filesystem: $(stat -f -c %T "$GOTMPDIR")"
+          bash scripts/ci/test-integration.sh
+
+  qb-real-chain:
+    name: qB real chain
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: [self-hosted, bansoko-release-vm]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: verify event SHA
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: real-chain set over disposable PostgreSQL
+        run: bash scripts/ci/ci-host-postgres.sh qb
+
+  fixture-browser:
+    name: browser fixture lane
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: [self-hosted, bansoko-release-vm]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: verify event SHA
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: desktop + mobile fixture browser lane
+        env:
+          BANSOKO_CI_BROWSERS_PREINSTALLED: '1'
+        run: bash scripts/ci/ci-fixture-browser.sh
+
+  test-release:
+    name: trusted isolated test release
+    needs: [contract-boundary, go-unit-static, frontend-quality, postgres-integration-shard-1, postgres-integration-shard-2, postgres-integration-shard-3, qb-real-chain, fixture-browser]
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: [self-hosted, bansoko-release-vm]
+    timeout-minutes: 60
+    # The GitHub destination writes the channel branch and this version's files
+    # with the workflow's own token, so the job needs write access to contents.
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: verify event SHA
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: verify protected main and required results
+        env:
+          BANSOKO_RELEASE_READ_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/ci/ci-release-trust.py
+      - name: build image
+        env:
+          BANSOKO_RELEASE_REF_PROTECTED: 'true'
+          BANSOKO_REQUIRED_RESULTS: ${{ toJSON(needs) }}
+          # The trusted image goes to the public Docker Hub repository, so the
+          # only registry credential is the Hub token.
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: python3 scripts/ci/ci-test-release.py image
+      - name: publish immutable package
+        env:
+          BANSOKO_RELEASE_REF_PROTECTED: 'true'
+          BANSOKO_REQUIRED_RESULTS: ${{ toJSON(needs) }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          BANSOKO_RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+          BANSOKO_RELEASE_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/ci/ci-test-release.py publish
+      - name: advance signed channel
+        env:
+          BANSOKO_RELEASE_REF_PROTECTED: 'true'
+          BANSOKO_REQUIRED_RESULTS: ${{ toJSON(needs) }}
+          BANSOKO_RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+          BANSOKO_RELEASE_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/ci/ci-test-release.py channel
+
+  docker-hub:
+    name: Docker Hub multi-arch image
+    needs: [contract-boundary, go-unit-static, frontend-quality, postgres-integration-shard-1, postgres-integration-shard-2, postgres-integration-shard-3, qb-real-chain, fixture-browser]
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: [self-hosted, bansoko-release-vm]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: verify event SHA
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: verify protected main and required results
+        env:
+          BANSOKO_RELEASE_READ_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/ci/ci-release-trust.py
+      - name: build and push linux/amd64 + linux/arm64
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: bash scripts/ci/ci-dockerhub-publish.sh

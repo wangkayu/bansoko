@@ -1,0 +1,14 @@
+package: generated
+output: internal/transport/httpapi/generated/oapi.gen.go
+generate:
+  models: true
+  chi-server: false
+  std-http-server: true
+output-options:
+  skip-prune: true
+compatibility:
+  # Keep the historical enum constant names (TypeName + PascalCase(value)).
+  # oapi-codegen renamed plain enum values to value-only constants starting
+  # in v2.4; flipping this back keeps the generated diff minimal and avoids
+  # touching every generated-constant call site in production code.
+  old-enum-conflicts: true

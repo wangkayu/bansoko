@@ -1,0 +1,195 @@
+updated_at: "2025-01-17"
+description: "推理规则配置 - Content Type推理和Contents降级规则"
+
+# ============================================================================
+# Content Type推理规则 (优先级从高到低)
+# ============================================================================
+
+content_type_inference:
+  # 优先级1: Movie (最高)
+  - name: "movie_by_index"
+    priority: 100
+    condition:
+      has_movie_index: true
+      no_episode_range: true
+      has_season: false
+      has_season_range: false
+    result: "MOVIE"
+    confidence: 0.95
+    description: "有movie_index字段,例如: 劇場版第1部"
+  
+  - name: "movie_by_sp_kind"
+    priority: 95
+    condition:
+      sp_kind: "MOVIE"
+      no_episode_range: true
+      has_season: false
+      has_season_range: false
+    result: "MOVIE"
+    confidence: 0.95
+    description: "sp_kind为MOVIE"
+  
+  - name: "movie_by_keyword"
+    priority: 90
+    condition:
+      has_movie_keyword: true
+      no_episode_range: true
+      has_season: false
+      has_season_range: false
+    result: "MOVIE"
+    confidence: 0.85
+    description: "包含Movie关键词"
+    keywords:
+      - "movie"
+      - "themovie"
+      - "劇場版"
+      - "剧场版"
+      - "映画"
+      - "eiga"
+      - "gekijouban"
+      - "大电影"
+      - "大電影"
+
+  - name: "movie_by_year_and_tech"
+    priority: 85
+    condition:
+      has_year: true
+      has_tech: true
+      no_episode: true
+      no_episode_range: true
+      has_season: false
+      has_sp_kind: false
+      has_pack_kind: false
+    result: "MOVIE"
+    confidence: 0.75
+    description: "PT标准电影发布: Title + Year + Tech (无season/episode/range)"
+
+  - name: "movie_by_tech_and_keyword"
+    priority: 83
+    condition:
+      has_tech: true
+      no_episode: true
+      no_episode_range: true
+      has_season: false
+      has_pack_kind: false
+      has_sp_kind: false
+      has_movie_index: false
+      has_movie_keyword: true
+      no_year: true
+    result: "MOVIE"
+    confidence: 0.7
+    description: "电影关键词+Tech（无年份）时推断为MOVIE；不再对纯Tech无关键词样本做电影推断"
+  
+  # 优先级2: TV Episode
+  - name: "tv_ep_by_episode"
+    priority: 80
+    condition:
+      has_episode: true
+      no_episode_range: true
+      no_movie_keyword: true
+    result: "TV_EP"
+    confidence: 0.9
+    description: "有单集编号,无episode_range,无movie关键词"
+  
+  # 优先级3: Pack/Batch
+  - name: "batch_by_pack_kind"
+    priority: 70
+    condition:
+      has_pack_kind: true
+    result: "BATCH"
+    confidence: 0.95
+    description: "有pack_kind字段"
+    pack_keywords:
+      - "全集"
+      - "合集"
+      - "batch"
+      - "complete"
+      - "修正合集"
+      - "完结"
+      - "完結"
+      - "pack"
+      - "collection"
+      - "boxset"
+      - "box set"
+      - "全话"
+      - "全話"
+      - "bdrip"
+      - "bd-rip"
+      - "bd rip"
+      - "dvdrip"
+      - "dvd-rip"
+      - "dvd rip"
+      - "bdmv"
+      - "dvdiso"
+      - "dvd iso"
+      - "bluray"
+      - "blu-ray"
+      - "bdremux"
+      - "bd remux"
+
+  - name: "batch_by_movie_index_range"
+    priority: 67
+    condition:
+      has_movie_index_range: true
+    result: "BATCH"
+    confidence: 0.95
+    description: "有movie_index_range字段,例如: Movie 01-03"
+  
+  - name: "batch_by_episode_range"
+    priority: 65
+    condition:
+      has_episode_range: true
+    result: "BATCH"
+    confidence: 0.95
+    description: "有episode_range字段,例如: 01-12"
+
+  - name: "batch_by_season_range"
+    priority: 63
+    condition:
+      has_season_range: true
+    result: "BATCH"
+    confidence: 0.95
+    description: "有season_range字段,例如: S1-S2 (多季度/连续季度pack)"
+  
+  - name: "season_pack"
+    priority: 60
+    condition:
+      has_season: true
+      no_episode: true
+      has_tech: true
+    result: "BATCH"
+    confidence: 0.9
+    description: "Season Pack: 有Season marker但没有episode number"
+    examples:
+      - "Clevatess S01 ... 1080p BluRay"
+      - "Onmyoji S01 1080p NF WEB-DL"
+
+  - name: "season_pack_no_tech"
+    priority: 58
+    condition:
+      has_season: true
+      no_episode: true
+      no_episode_range: true
+      has_movie_index: false
+      no_movie_keyword: true
+    result: "BATCH"
+    confidence: 0.6
+    description: "Season Pack: 有Season marker但没有episode number (tech attrs missing)"
+
+  # 优先级4: Special
+  - name: "special_by_sp_kind"
+    priority: 50
+    condition:
+      has_sp_kind: true
+    result: "SPECIAL"
+    confidence: 0.85
+    description: "有sp_kind字段 (SP/OVA/OAD/ONA/EX)"
+  
+  # 默认: 未知
+  - name: "unknown"
+    priority: 0
+    condition:
+      default: true
+    result: "UNKNOWN"
+    confidence: 0.5
+    description: "无法确定Content Type"

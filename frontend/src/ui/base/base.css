@@ -1,0 +1,80 @@
+/* Base UI + Tailwind layer for ui/base.
+   - `tw:` prefix keeps Tailwind utilities apart from index.css semantic classes
+     (.text-title/.text-body/.text-caption) and the static u-* utilities.
+   - No Tailwind preflight: index.css already ships its own reset, inside
+     `@layer base`. The layer order is declared in index.css; it is repeated
+     here so the order stays the same whichever stylesheet the browser sees
+     first (this file ships with the lazily loaded dialog chunks).
+   - Utilities live in `@layer utilities` and beat the reset. They still lose
+     to unlayered rules (u-*, semantic classes), so never
+     mix a tw: utility with such a class for the same property on one node.
+   - Colors resolve to the existing HSL channel tokens, so the `.dark` class
+     owned by next-themes switches these utilities with no dark: variants. */
+@layer properties, theme, base, utilities;
+
+@import "tailwindcss/theme.css" layer(theme) prefix(tw);
+@import "tailwindcss/utilities.css" layer(utilities) prefix(tw);
+
+/* Phone layout: container (viewport) width ≤ 600px.
+   Tailwind's own max-[600px] means `width < 600px`, i.e. exclusive. */
+@custom-variant phone (@media (width <= 600px));
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-border: hsl(var(--border));
+  --color-ring: hsl(var(--ring));
+  /* Carries its own alpha (bare channels plus `/ a`); do not add a /opacity modifier. */
+  --color-overlay: hsl(var(--overlay));
+  --color-online: hsl(var(--status-online));
+  --color-offline: hsl(var(--status-offline));
+  --color-warning: hsl(var(--status-warning));
+  --font-display: var(--font-display);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --radius-control: var(--radius);
+  --radius-dialog: var(--radius-dialog);
+  /* Soft shadows: values defined on :root/.dark in index.css. */
+  --shadow-1: var(--shadow-1);
+  --shadow-2: var(--shadow-2);
+  /* Type scale step for dense badges (same size as the .text-badge semantic class). */
+  --text-badge: 0.625rem;
+  --text-badge--line-height: 1;
+}
+
+/* Motion tokens. Use them behind `tw:motion-safe:` so prefers-reduced-motion
+   gets the end state with no movement. One short, decelerating curve for
+   everything: panes slide a little and fade, revealed content drops in. */
+@theme {
+  --animate-pane-forward: pane-forward 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-pane-back: pane-back 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-reveal: reveal 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-fade-in: fade-in 160ms ease-out both;
+
+  @keyframes pane-forward {
+    from { opacity: 0; transform: translateX(16px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes pane-back {
+    from { opacity: 0; transform: translateX(-16px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes reveal {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+}

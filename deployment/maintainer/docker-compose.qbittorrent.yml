@@ -1,0 +1,45 @@
+# Optional qBittorrent sidecar for the production Embedded deployment. Use it as
+# an overlay in the same project as docker-compose.production.yml:
+#
+#   docker compose -f deployment/maintainer/docker-compose.production.yml \
+#     -f deployment/maintainer/docker-compose.qbittorrent.yml --env-file .env up -d
+#
+# It adds the qBittorrent service and mounts one named download volume at
+# /downloads in both containers. The WebUI qB connection must use
+# download_root=/downloads and downloader_root=/downloads. qBittorrent
+# credentials remain user-owned configuration; do not put them here.
+services:
+  app:
+    volumes:
+      - type: volume
+        source: downloads
+        target: /downloads
+
+  qbittorrent:
+    image: ghcr.io/linuxserver/qbittorrent@sha256:55f15d44396315551f87294a176efae733b16e283f38980308e46073950257c6
+    container_name: bansoko-qbittorrent
+    restart: unless-stopped
+    environment:
+      # Same account as the app (PUID/PGID in .env), so both own the downloads.
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: Asia/Shanghai
+      WEBUI_PORT: "8087"
+    ports:
+      - "${BANSOKO_QB_WEBUI_PORT:-8087}:8087"
+    volumes:
+      - type: bind
+        source: ${BANSOKO_QB_CONFIG_DIR:?BANSOKO_QB_CONFIG_DIR must be set}
+        target: /config
+      - type: volume
+        source: downloads
+        target: /downloads
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  downloads:
+    name: ${BANSOKO_QB_DOWNLOADS_VOLUME:-bansoko_downloads}

@@ -1,0 +1,86 @@
+# DEVELOPMENT-ONLY source-build compose (contributors). This file is NOT the
+# production bundle: it builds from the working tree (build: sections), uses no
+# pinned digests and is only a local dev / real-effect fixture entry point. The
+# production authority is deployment/maintainer/docker-compose.production.yml,
+# whose images are digest-pinned by the P0.7 reproducible builder.
+name: bansoko
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: bansoko-postgres
+    environment:
+      POSTGRES_DB: ${BANSOKO_DB_NAME:-bansoko}
+      POSTGRES_USER: ${BANSOKO_DB_USER:-bansoko}
+      POSTGRES_PASSWORD: ${BANSOKO_DB_PASSWORD:?BANSOKO_DB_PASSWORD must be set}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${BANSOKO_DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${BANSOKO_DB_USER:-bansoko} -d ${BANSOKO_DB_NAME:-bansoko}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${BANSOKO_VERSION:-dev}
+        SOURCE_COMMIT: ${BANSOKO_SOURCE_COMMIT:-unknown}
+        BUILD_ID: ${BANSOKO_BUILD_ID:-development}
+        BUILD_TIME: ${BANSOKO_BUILD_TIME:-unknown}
+        BUILD_DIRTY: ${BANSOKO_BUILD_DIRTY:-true}
+    container_name: bansoko-app
+    environment:
+      # Schema owner. The bootstrap migrates with it, derives the runtime
+      # login and generates the secrets into /config on first start.
+      BANSOKO_DATABASE_URL: postgres://${BANSOKO_DB_USER:-bansoko}:${BANSOKO_DB_PASSWORD:?BANSOKO_DB_PASSWORD must be set}@postgres:5432/${BANSOKO_DB_NAME:-bansoko}?sslmode=disable
+      BANSOKO_ENVIRONMENT: ${BANSOKO_ENVIRONMENT:-production}
+      # Host account that owns the media directories (`id -u` / `id -g`).
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+    volumes:
+      # Generated secrets (secrets.json) and app config.
+      - ${BANSOKO_CONFIG_DIR:-./bansoko-config}:/config
+      # qB shared download tree: the same host directory is bound into both
+      # this app (/downloads) and a qBittorrent container (see
+      # deployment/maintainer/docker-compose.qbittorrent.yml). The WebUI-configured qB connection
+      # points save_root at /downloads (qB view) and downloader_root at
+      # /downloads (app view). Root values are DB owner config, not env.
+      - ./bansoko-downloads:/downloads
+      # Media library anchor: naming templates render absolute targets under
+      # /library, so the host directory MUST stay a mount target or rendered
+      # targets land in the ephemeral container layer.
+      - ./bansoko-library:/library
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${BANSOKO_APP_PORT:-8000}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/v1/system/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  postgres_data:

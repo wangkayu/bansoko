@@ -1,0 +1,219 @@
+updated_at: "2026-03-06"
+description: "Canonical normalized values for parser v2.5 dictionary pipeline"
+
+canonical:
+  source_type:
+    - WEBRip
+    - WEB-DL
+    - BDRip
+    - BluRay
+    - BD
+    - DVDRip
+    - VCDRip
+    - HDTV
+    - HDRip
+    - DVD
+    - Remux
+    - VHS
+    - TS
+    - HDTC
+    - HDTS
+    - CAM
+    - LD
+    - TC
+
+  platform:
+    - NETFLIX
+    - CR
+    - BAHA
+    - ABEMA
+    - UNEXT
+    - AMZN
+    - MA # Movies Anywhere; DTS-HD MA is an audio codec marker
+    - MW # meWATCH
+    - BILIBILI
+    - AT-X
+    - BS11
+    - BS-EX
+    - CS-EX1
+    - WOWOW
+    - DISNEY_PLUS
+    - APPLE_TV_PLUS
+    - HIDIVE
+    - ADN
+    - VIUTV
+    - YTB
+    - LNTV
+    - YUZUKITV
+    - FOD
+    - TVB
+    - MUSE
+    - IQIYI
+    - HOY
+    - RTHK
+    - HULU
+    - DISNEY_NOW
+    - CATCHPLAY_PLUS
+    - OCEANVEIL
+    - NHK_ONE
+    - TWITTER
+    - VIU
+    - WETV
+    - VIKI
+    - IVI
+
+  sub_flag:
+    - hard
+    - soft
+    - ex
+
+  sub_lang:
+    - RAW
+    - MULTI
+    - ZH
+    - SC
+    - TC
+    - JPSC
+    - JPTC
+    - JPN
+    - ENG
+    - KOR
+    - FRA
+    - SPA
+    - CAT
+    - RUS
+    - DEU
+    - ITA
+    - POR
+    - ARA
+    - IND
+    - THA
+    - POL
+    - MSA
+    - VIE
+
+  audio_flag:
+    - DUB
+    - ENGLISH_DUB
+    - DUAL_AUDIO
+    - MULTI_AUDIO
+    - ATMOS
+
+  audio_lang:
+    - CMN
+    - YUE
+    - JPN
+    - ENG
+    - FRA
+    - RUS
+    - SPA
+    - KOR
+
+  resolution:
+    - 4320p
+    - 2160p
+    - 1080p
+    - 720p
+    - 480p
+    - 576p
+    - 540p
+    - 360p
+    - 1440x1080
+
+  video_codec:
+    - HEVC
+    - AVC
+    - AV1
+    - MPEG2
+    - QUICKTIME
+    - XVID
+
+  audio_codec:
+    - AAC
+    - AC3
+    - EAC3
+    - E-AC-3
+    - FLAC
+    - MP3
+    - OPUS
+    - DTS
+    - DTSHD
+    - DTSHDMA
+    - TRUEHD
+    - PCM
+
+  container:
+    - MKV
+    - MP4
+    - AVI
+    - TS
+    - ISO
+    - M2TS
+
+  note_whitelist:
+    # 仅保留在 note 的业务备注（示例）
+    - 招募翻译
+    - 招募校对
+    - 招募时轴
+    - 检索
+    - 检索用
+    - 新番
+    - END
+    - FIN
+    - COMPLETE
+
+  mappings:
+    pack_kind_to_source_type:
+      bdrip: BDRip
+      dvdrip: DVDRip
+      dvdiso: DVD
+      dvd: DVD
+      webrip: WEBRip
+      web-rip: WEBRip
+      webdl: WEB-DL
+      web-dl: WEB-DL
+      bluray: BluRay
+      blu-ray: BluRay
+      bd: BD
+      hdtv: HDTV
+      hdtvrip: HDTV
+      hdrip: HDRip
+    source_type_aliases:
+      tc: TC
+      hdcam: CAM
+      telesync: TS
+    platform_aliases:
+      muse asia: MUSE
+      museasia: MUSE
+      iqi: IQIYI
+      disney now: DISNEY_NOW
+    audio_codec_aliases:
+      ddp: EAC3
+      e-ac3: EAC3
+      dd: AC3
+      dts-hdma: DTSHDMA
+      dtshdma: DTSHDMA
+      dts-hd: DTSHD
+      dts-hd-ma: DTSHDMA
+      dts-hdmalossless: DTSHDMA
+    audio_flag_aliases:
+      dual: DUAL_AUDIO
+      dual audio: DUAL_AUDIO
+      dual_audio: DUAL_AUDIO
+      dubbed: DUB
+      japanese dub: DUB
+      japanese_dub: DUB
+      chinese dub: DUB
+      chinese_dub: DUB
+      spanish dub: DUB
+      spanish_dub: DUB
+      japanese audio: MULTI_AUDIO
+      japanese_audio: MULTI_AUDIO
+      audio_jpn: MULTI_AUDIO
+      audio_eng+jpn: MULTI_AUDIO
+      audio_chn+jpn: MULTI_AUDIO
+      audio_chn+eng+jpn: MULTI_AUDIO
+    audio_lang_aliases:
+      chn: CMN
+      chinese: CMN
+      mandarin: CMN
