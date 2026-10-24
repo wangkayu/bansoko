@@ -1,0 +1,197 @@
+// C2 copy: anime / catalog / file / retention / settings.
+
+import type { CopyShape } from "./types";
+import type { animeCopy, catalogCopy, fileCopy, retentionCopy, settingsCopy } from "./zh-CN.core";
+
+export const enAnimeCopy = {
+  metadata: {
+    missing: "Not linked to {names}",
+    paused: "Automatic downloads paused: not linked to {names}",
+    waiting: "Waiting for a {names} link",
+    link: "Link {name}",
+    unknownNames: "Bangumi or TMDB",
+    complete: "Metadata complete",
+  },
+  offset: {
+    label: "Episode offset",
+  },
+  maintenance: {
+    policySaved: "Retention saved",
+    policySaveFailed: "Failed to save retention",
+    policyMissing: "No retention settings yet",
+    noScan: "No scans yet. You can run a scan manually.",
+    placements: "Imported files",
+    noPlacements: "No verified imported files",
+    noAlignment: "No alignment history yet. It appears once auto-alignment is turned on.",
+  },
+  fileEffect: {
+    saveFailed: "Failed to save import settings",
+    loadFailed: "Failed to load import settings",
+  },
+  unclassifiedHint: "How to handle video files whose episode number can't be detected",
+  unclassifiedHelpLabel: "About files without an episode number",
+  unclassifiedHelp: "\"Skip\" (default) leaves these files alone. \"Import as unknown content\" places them in the unknown content folder with their original names; the subscription does not manage them afterwards. This setting is copied from Defaults when you subscribe and afterwards only affects this anime.",
+  state: {
+    pending: "Not started",
+    active: "Subscribed",
+    stopped: "Stopped",
+    ended: "Ended",
+    ongoing: "Ongoing",
+    draft: "Not subscribed",
+    subscribing: "Subscribing…",
+  },
+  ended: {
+    banner: "The subscription has ended. This page is read-only and no longer refreshes or downloads automatically.",
+  },
+  pending: {
+    banner: "Not started. Nothing is refreshed or downloaded",
+    helpLabel: "Help: subscription not started",
+    help: "Set up subgroups and rules, then select Start subscription. Until then the RSS tab only shows which torrents the current settings accept or filter. Nothing is downloaded or saved.",
+  },
+  newReleasesOnly: {
+    label: "New releases only",
+    description: "Releases published before the subscription was created are not downloaded automatically",
+    locked: "Can't be changed after the subscription starts. To change it, end the subscription and subscribe again",
+    helpLabel: "Help: new releases only",
+    help: "The cutoff is when the subscription was created. Releases published earlier, or without a publish time, show as Published before subscribing: they are not downloaded automatically and rule changes don't re-check them. Releases published while the subscription is not started are handled normally. To get one of them, select Retry on it in the RSS tab; the rules still apply.",
+    saveFailed: "Failed to save New releases only",
+  },
+  start: "Start subscription",
+  starting: "Starting…",
+  started: "Subscription started",
+  startFailed: "Failed to start the subscription",
+  subscribe: "Subscribe",
+  draftExists: "A draft already exists. Reload, or save over it with the latest version.",
+  revision: {
+    aria: "Subscription settings",
+  },
+  draftRefresh: "Refreshing only checks for groups and doesn't change settings",
+  rules: {
+    endedHint: "The subscription has ended, so rules can't be changed. To make changes, subscribe again.",
+    endedAria: "Rules of the ended subscription",
+    titleFilter: "Title Filter",
+  },
+  subgroups: {
+    endedHint: "The subscription has ended, so group settings can't be changed. Showing the selection in effect before it ended.",
+  },
+  sources: {
+    defaultScore: "Default score",
+    groupNameWithTag: "{name} ({tag})",
+    groupShortId: "#{id}",
+    score: "Score {n}",
+    finalScore: "Final score {n}",
+    noFinalScore: "Not scored",
+    breakdownSiteDefault: "Site default {n}",
+    breakdownPinned: "Fixed score {n}",
+    breakdownKeyword: "Keyword “{keyword}” {n}",
+    breakdownTotal: "Total {n}",
+    breakdownBlacklisted: "Excluded by the {site} blacklist",
+    breakdownNotWhitelisted: "Not on the {site} whitelist",
+    breakdownWhitelisted: "On the {site} whitelist",
+    breakdownAlways: "Set to Required",
+    breakdownNever: "Set to Excluded",
+    policyHint: "Auto: competes for slots by score. Required: always subscribed. Excluded: never subscribed.",
+    countHint: "Groups that count toward the limit compete for slots by score",
+    selected: "Selected",
+    unselected: "Not selected",
+  },
+} as const satisfies CopyShape<typeof animeCopy>;
+
+export const enCatalogCopy = {
+  locateFailed: "Couldn't find this subscription. The list was refreshed. Try again.",
+  changed: "The subscription changed. The list was refreshed. Try again.",
+  ended: "Ended the subscription to \"{title}\"",
+  endFailed: "Failed to end the subscription to \"{title}\"",
+  endTitle: "End Subscription to \"{title}\"?",
+  endConfirm: "End Subscription",
+  emptySubscribed: "No subscribed anime",
+  endTooltip: "End Subscription",
+  deleteLocal: "Delete Local Records",
+  deleteLocalTitle: "Delete Local Records for \"{title}\"?",
+} as const satisfies CopyShape<typeof catalogCopy>;
+
+export const enFileCopy = {
+  operationTitle: "Import method",
+  operation: {
+    copy: "Copy",
+    move: "Move",
+    hardlink: "Hardlink",
+  },
+  collisionTitle: "When a file exists",
+  collision: {
+    fail: "Skip",
+    versioned: "Add version number",
+    overwrite: "Overwrite",
+  },
+  collisionOverwriteNote: "Overwrite permanently deletes the existing file, including files already in the library. The replaced episode is removed from its anime.",
+  unclassifiedTitle: "Files without an episode number",
+  unclassified: {
+    skip: "Skip",
+    route: "Import as unknown content",
+  },
+} as const satisfies CopyShape<typeof fileCopy>;
+
+export const enRetentionCopy = {
+  admissionTitle: "Versions to keep per episode",
+  admission: {
+    all: "Keep all",
+    per_group: "Best per group",
+    single_copy: "One per episode",
+  },
+} as const satisfies CopyShape<typeof retentionCopy>;
+
+export const enSettingsCopy = {
+  nav: {
+    title: "Settings",
+    label: "Settings categories",
+    backToList: "All Settings",
+    account: "Account",
+    connections: "Connections",
+    download: "Download & Import",
+    anibt: "AniBT",
+    mikan: "Mikan",
+    policy: "Group Limit & Alignment",
+    hidden: "Hidden Anime",
+    rules: "Default Rules",
+    vars: "Naming Variables",
+    unclassified: "Unclassified Files",
+    retention: "Retention",
+    automation: "Scheduled Tasks",
+    notifications: "Notifications",
+    updates: "Updates",
+    backup: "Backups",
+    token: "API Tokens",
+    groupService: "Services",
+    groupDefaults: "Subscription policy",
+    groupSite: "Sites",
+    groupSystem: "System",
+    leaveSectionConfirm: "Leaving this section discards unsaved changes. Saved changes are not affected.",
+  },
+  account: {
+    title: "Account",
+    usernameTitle: "Username",
+    usernameHint: "Used at sign-in, up to 128 characters",
+    changeUsername: "Change Username",
+    usernameDialogTitle: "Change Username",
+    usernameDialogDescription: "Takes effect immediately. Sign in with the new username.",
+    newUsername: "New username",
+    passwordTitle: "Password",
+    passwordHint: "Changing it signs out other devices",
+    changePassword: "Change Password",
+    passwordDialogTitle: "Change Password",
+    passwordDialogDescription: "Changing it signs out other devices; API tokens stay valid.",
+    currentPassword: "Current password",
+    newPassword: "New password (12–1024 characters)",
+    confirmPassword: "Confirm new password",
+    save: "Save",
+    savedUsername: "Username updated",
+    savedPassword: "Password updated",
+    savedPasswordRevoked: "Password updated. Other devices were signed out.",
+    passwordMismatch: "The new passwords do not match",
+    newUsernameRequired: "Enter a new username",
+  },
+  edit: {
+    close: "Close",
+    discardConfirm: "Closing discards unsaved changes. Saved changes are not affected.",
+  },
+} as const satisfies CopyShape<typeof settingsCopy>;

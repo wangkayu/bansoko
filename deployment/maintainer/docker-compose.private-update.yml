@@ -1,0 +1,31 @@
+# Private Gitea Generic Package update overlay.
+# Use together with docker-compose.production.yml only when the update source is
+# private. The token file stays on the deployment host and is mounted only into
+# the app container as a read-only Compose secret at the container path named
+# by BANSOKO_UPDATE_AUTH_TOKEN_FILE.
+#
+# The only private auth mode is gitea_pat: a read-only Gitea PAT (scope
+# `read:package` plus `read:repository` for the private raw locator branch) is
+# sent as `Authorization: token <PAT>`. The header is built
+# internally, so BANSOKO_UPDATE_CREDENTIAL_HEADER is fixed to Authorization and no
+# other value (the retired GitLab DEPLOY-TOKEN header included) is accepted.
+#
+# Docker Compose v5.5 实测可能忽略 Compose file secret 的 uid/gid/mode；不要把
+# 下面的 mode 当作 host 文件权限的替代。部署前 host secret 必须是只有一行的
+# PAT（允许末尾 LF），权限为 0400 或 0440，并且 app 容器用户实际可读。
+# app 以 PUID:PGID（默认 1000:1000）运行，secret 需对该组可读，示例：
+#   chown root:1000 secret && chmod 0440 secret
+services:
+  app:
+    environment:
+      BANSOKO_UPDATE_AUTH_MODE: gitea_pat
+      BANSOKO_UPDATE_AUTH_TOKEN_FILE: /run/secrets/update-deploy-token
+      BANSOKO_UPDATE_CREDENTIAL_HEADER: Authorization
+    secrets:
+      - source: update_deploy_token
+        target: update-deploy-token
+        mode: 0440
+
+secrets:
+  update_deploy_token:
+    file: ${BANSOKO_UPDATE_CREDENTIAL_HOST_FILE:?BANSOKO_UPDATE_CREDENTIAL_HOST_FILE must point to a host-side read-only PAT file}

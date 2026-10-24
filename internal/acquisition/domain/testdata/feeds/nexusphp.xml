@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Synthetic NexusPHP torrentrss.php feed. Host and passkey are fake. -->
+<rss version="2.0">
+  <channel>
+    <title>PT Example Torrents</title>
+    <link>https://pt.example.test</link>
+    <description>Latest torrents</description>
+    <language>zh-cn</language>
+    <ttl>60</ttl>
+    <item>
+      <title>[Example Group] Example Show - 03 [1080p][CHS]</title>
+      <link>https://pt.example.test/details.php?id=1234&amp;hit=1</link>
+      <description><![CDATA[Example Show 03]]></description>
+      <author>anonymous@pt.example.test (anonymous)</author>
+      <category domain="https://pt.example.test/torrents.php?cat=405">Anime</category>
+      <comments><![CDATA[https://pt.example.test/details.php?id=1234&cmtpage=0#startcomments]]></comments>
+      <enclosure url="https://pt.example.test/download.php?id=1234&amp;passkey=fedcba9876543210fedcba9876543210&amp;https=1" length="734003200" type="application/x-bittorrent" />
+      <guid isPermaLink="false">0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c</guid>
+      <pubDate>Tue, 20 Oct 2026 12:00:00 +0800</pubDate>
+    </item>
+  </channel>
+</rss>

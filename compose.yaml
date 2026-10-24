@@ -1,0 +1,82 @@
+# Bansoko — the deployment entry point. `docker compose up -d` in this directory
+# starts the published test image together with PostgreSQL; nothing has to be
+# configured. The maintainer composes (source build, digest-pinned production
+# bundle) live in deployment/maintainer/ and are not part of this file.
+#
+# On every start the app migrates its own schema, creates its runtime
+# database login, and on first start generates its keys into ./config
+# (secrets.json). Check for updates in Settings.
+# Optional overrides go into a .env file next to this one (see .env.example).
+#
+# The app runs as PUID:PGID (default 1000:1000). PUID/PGID should match the host
+# account that owns the media directories (`id -u` / `id -g`). The app container
+# starts as root, prepares ./config for that account and then runs as it.
+services:
+  postgres:
+    image: postgres@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+    environment:
+      # Fixed internal credentials: the database is reachable only on the
+      # Compose network (no published port).
+      POSTGRES_DB: bansoko
+      POSTGRES_USER: bansoko
+      POSTGRES_PASSWORD: bansoko
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bansoko -d bansoko"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  app:
+    image: wangkayu/bansoko:test
+    environment:
+      # Schema-owner connection (must be able to create roles). Point it at an
+      # existing PostgreSQL to use that instead of the bundled one.
+      BANSOKO_DATABASE_URL: ${BANSOKO_DATABASE_URL:-postgres://bansoko:bansoko@postgres:5432/bansoko?sslmode=disable}
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-Etc/UTC}
+      # Keep update state under the existing config mount: no second
+      # application-state volume is needed just for channel updates.
+      BANSOKO_UPDATES_ROOT: /config/updates
+      # Optional outbound proxy for RSS, metadata and notifications; the
+      # downloader connection never uses it. Keep postgres in NO_PROXY.
+      # HTTP_PROXY: http://192.168.1.2:7890
+      # HTTPS_PROXY: http://192.168.1.2:7890
+      # NO_PROXY: localhost,127.0.0.1,postgres
+    volumes:
+      # Back up secrets.json with the database. /config/updates is app-owned
+      # disposable state: keep it across recreation, never back it up or edit it.
+      - ./config:/config
+      # Only a default playground: point this at (or add mounts for) your real
+      # download/library directories, then set the download root and library
+      # root in the app settings to paths inside the container.
+      - ./data:/data
+    ports:
+      - "${BANSOKO_APP_PORT:-8000}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/v1/livez"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  postgres_data:

@@ -1,0 +1,18 @@
+{
+  "schema_version": "group-translation-v1",
+  "data_version": "seed-2026-07-15",
+  "items": [
+    {
+      "canonical_key": "anibt-ani",
+      "display_name": "ANi",
+      "aliases": ["Ani"],
+      "provider_refs": [{"provider": "anibt", "external_ref": "ANi"}]
+    },
+    {
+      "canonical_key": "mikan-raw",
+      "display_name": "Raw / Unknown",
+      "aliases": ["生肉", "Unknown"],
+      "provider_refs": [{"provider": "mikan", "external_ref": "202"}]
+    }
+  ]
+}

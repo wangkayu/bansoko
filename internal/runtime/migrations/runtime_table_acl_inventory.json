@@ -1,0 +1,1253 @@
+[
+  {
+    "table": "acquisition_targets",
+    "privileges": [],
+    "reason": "no runtime DML; owner SQL functions are the only writers and keep the shared writer/lock and cleanup leaf order",
+    "direct_access": [
+      "internal/acquisition/target/adapter/persistence/query.sql",
+      "internal/acquisition/target/adapter/persistence/generated/query.sql.go",
+      "internal/acquisition/target/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "acquisition owner functions",
+    "exit_condition": "all shared writers and row-lock readers migrated; leaf deletion retired; explicit same-slice ACL negative tests"
+  },
+  {
+    "table": "alignment_operations",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/filemaintenance/local_owner_cleanup.go",
+      "internal/filemaintenance/operations.go",
+      "internal/retention/adapter/persistence/query.sql (maintenance retention cleaners: terminal rows only)"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "anime_business_configs",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/anime/application/provisioner.go",
+      "internal/anime/application/business_provisioner.go",
+      "internal/anime/draft/application/business_apply.go",
+      "internal/anime/ownership/application/patch.go",
+      "internal/parserpolicy/service.go",
+      "internal/filemaintenance/retention_policy.go",
+      "internal/filemaintenance/file_effect_policy.go",
+      "internal/filemaintenance/local_owner_cleanup.go",
+      "internal/workitems/oneshot_retention.go",
+      "internal/workitems/adapter/persistence/query.sql",
+      "internal/workitems/adapter/persistence/generated/query.sql.go",
+      "internal/workitems/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "anime_config_candidate_revisions",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/anime/draft/application/candidate_revision.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "anime_config_candidates",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/anime/ownership/application/delete_subscription.go",
+      "internal/anime/adapter/persistence/query.sql",
+      "internal/anime/adapter/persistence/generated/query.sql.go",
+      "internal/anime/adapter/persistence/generated/querier.go",
+      "internal/anime/draft/application/candidate_revision.go",
+      "internal/anime/draft/application/candidate.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "anime_config_overrides",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/anime/application/read_helpers.go",
+      "internal/workitems/adapter/persistence/query.sql",
+      "internal/workitems/adapter/persistence/generated/query.sql.go",
+      "internal/workitems/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "anime_metadata",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/anime/application/provisioner.go",
+      "internal/anime/ownership/application/metadata_patch.go",
+      "internal/anime/ownership/application/match_metadata.go",
+      "internal/automation/application/dispatcher.go",
+      "internal/workitems/adapter/persistence/query.sql",
+      "internal/workitems/adapter/persistence/generated/query.sql.go",
+      "internal/workitems/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "api_tokens",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/accesscontrol/application/service.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "artifact_files",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "acquisition graph rows written by the listed owners next to the owner-held SQL functions",
+    "direct_access": [
+      "internal/testutil/animetest/animetest.go",
+      "internal/artifact/application/service.go",
+      "internal/workitems/adapter/persistence/query.sql",
+      "internal/workitems/adapter/persistence/generated/query.sql.go",
+      "internal/workitems/adapter/persistence/generated/querier.go",
+      "internal/fileoperation/application/binding.go"
+    ],
+    "closure_slice": "acquisition owner functions",
+    "exit_condition": "all shared writers and row-lock readers migrated; leaf deletion retired; explicit same-slice ACL negative tests"
+  },
+  {
+    "table": "artifacts",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "acquisition graph rows written by the listed owners next to the owner-held SQL functions",
+    "direct_access": [
+      "internal/testutil/animetest/animetest.go",
+      "internal/workitems/adapter/persistence/query.sql",
+      "internal/workitems/adapter/persistence/generated/query.sql.go",
+      "internal/workitems/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "acquisition owner functions",
+    "exit_condition": "all shared writers and row-lock readers migrated; leaf deletion retired; explicit same-slice ACL negative tests"
+  },
+  {
+    "table": "attr_rule_versions",
+    "privileges": [
+      "INSERT"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/attrrules/adapter/persistence/query.sql",
+      "internal/attrrules/adapter/persistence/generated/query.sql.go",
+      "internal/attrrules/adapter/persistence/generated/querier.go",
+      "internal/testutil/frozenpolicy/business.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "auth_sessions",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/accesscontrol/application/owner_recovery.go",
+      "internal/accesscontrol/application/service.go",
+      "internal/accesscontrol/application/owner_bootstrap.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "automation_dispatch_runs",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/automation/application/service.go",
+      "internal/automation/application/dispatcher.go",
+      "internal/observability/adapter/persistence/query.sql",
+      "internal/observability/adapter/persistence/generated/query.sql.go",
+      "internal/observability/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "automation_schedules",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/automation/application/service.go",
+      "internal/automation/application/dispatcher.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "catalog_suppressions",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/catalog/application/suppression_service.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "cleanup_operations",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/filemaintenance/local_owner_cleanup.go",
+      "internal/filemaintenance/cleanup.go",
+      "internal/filemaintenance/adapter/persistence/query.sql",
+      "internal/filemaintenance/adapter/persistence/generated/query.sql.go",
+      "internal/filemaintenance/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "connections",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/testutil/animetest/animetest.go",
+      "internal/configuration/application/service.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "deployment_recovery_runs",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/deployment/pgstore.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "diagnostic_episodes",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/workitems/oneshot_retention.go (one-shot reclaim D-a leaf deletion)",
+      "internal/observability/application/writer.go",
+      "internal/observability/adapter/persistence/query.sql",
+      "internal/observability/adapter/persistence/generated/query.sql.go",
+      "internal/observability/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "download_completions",
+    "privileges": [
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "download completion owner, guarded by download_completions_guard; no runtime DELETE",
+    "direct_access": [
+      "internal/downloadcompletion/store.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "download_tasks",
+    "privileges": [
+      "DELETE"
+    ],
+    "column_privileges": [
+      "INSERT",
+      "UPDATE"
+    ],
+    "excluded_column_prefixes": [
+      "submit_"
+    ],
+    "reason": "acquisition graph rows written by the listed owners next to the owner-held SQL functions",
+    "direct_access": [
+      "internal/testutil/acquisitionfixture/download.go",
+      "internal/workitems/adapter/persistence/query.sql",
+      "internal/workitems/adapter/persistence/generated/query.sql.go",
+      "internal/workitems/adapter/persistence/generated/querier.go",
+      "internal/download/application/service.go (loadTask row lock)",
+      "internal/workitems/adapter/persistence/query.sql (owner version row lock)",
+      "internal/fileoperation/application/{prepare,prepared_plan_capture,subtitle_publication}.go (task row locks)"
+    ],
+    "closure_slice": "acquisition owner functions",
+    "exit_condition": "all shared writers and row-lock readers migrated; leaf deletion retired; explicit same-slice ACL negative tests"
+  },
+  {
+    "table": "embedded_update_locks",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/update/fence/adapter/persistence/query.sql",
+      "internal/update/fence/adapter/persistence/generated/query.sql.go",
+      "internal/update/fence/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "episode_title_cache",
+    "privileges": [
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "lookup-cache upserts from the listed application code (reads run under the runtime reader grant)",
+    "direct_access": [
+      "internal/episodetitle/cached.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "file_manager_operations",
+    "privileges": [
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "user file operation owner, guarded by file_manager_operations_guard; no runtime DELETE",
+    "direct_access": [
+      "internal/filemanager/persistence/commands.go",
+      "internal/filemanager/persistence/store.go",
+      "internal/filemaintenance/user_operation_execute.go",
+      "internal/filemaintenance/user_operation_reconcile.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "file_operations",
+    "privileges": [
+      "DELETE"
+    ],
+    "column_privileges": [
+      "INSERT",
+      "UPDATE"
+    ],
+    "excluded_column_prefixes": [
+      "publication_",
+      "import_retry_"
+    ],
+    "reason": "acquisition graph rows written by the listed owners next to the owner-held SQL functions",
+    "direct_access": [
+      "internal/testutil/animetest/animetest.go",
+      "internal/workitems/adapter/persistence/query.sql",
+      "internal/workitems/adapter/persistence/generated/query.sql.go",
+      "internal/workitems/adapter/persistence/generated/querier.go",
+      "internal/fileoperation/application/handler.go",
+      "internal/fileoperation/application/service.go",
+      "internal/fileoperation/application/overwrite_checkpoint.go",
+      "internal/fileoperation/application/prepare.go",
+      "internal/fileoperation/application/reconcile.go"
+    ],
+    "closure_slice": "acquisition owner functions",
+    "exit_condition": "all shared writers and row-lock readers migrated; leaf deletion retired; explicit same-slice ACL negative tests"
+  },
+  {
+    "table": "filemaintenance_policies",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/filemaintenance/local_owner_cleanup.go",
+      "internal/filemaintenance/policy/policy.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "global_config_sections",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/configuration/application/global_sections.go",
+      "internal/filemaintenance/file_effect_policy.go",
+      "internal/filemaintenance/retention_policy.go",
+      "internal/parserpolicy/service.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "idempotency_records",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/plugintarget/application/service.go",
+      "internal/rss/application/release_retry.go",
+      "internal/anime/ownership/application/match_metadata.go",
+      "internal/anime/draft/application/service.go",
+      "internal/workitems/adapter/persistence/query.sql",
+      "internal/workitems/adapter/persistence/generated/query.sql.go",
+      "internal/workitems/adapter/persistence/generated/querier.go",
+      "internal/retention/adapter/persistence/query.sql (maintenance retention cleaners: terminal rows only)"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "instance_bootstrap",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/runtime/identity/install.go",
+      "internal/accesscontrol/application/owner_recovery.go",
+      "internal/accesscontrol/application/service.go",
+      "internal/accesscontrol/application/owner_bootstrap.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "local_accounts",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/accesscontrol/application/owner_recovery.go",
+      "internal/accesscontrol/application/owner_bootstrap.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "managed_anime",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/testutil/animetest/animetest.go",
+      "internal/anime/ownership/application/metadata_patch.go",
+      "internal/anime/oneshot/application/acquire_seed_once.go",
+      "internal/anime/ownership/application/delete_subscription.go",
+      "internal/anime/draft/application/service.go",
+      "internal/workitems/adapter/persistence/query.sql",
+      "internal/workitems/adapter/persistence/generated/query.sql.go",
+      "internal/workitems/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "media_fact_files",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/release/facts/adapter/persistence/media/query.sql",
+      "internal/release/facts/adapter/persistence/media/generated/query.sql.go",
+      "internal/release/facts/adapter/persistence/media/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "media_fact_snapshots",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/release/facts/adapter/persistence/media/query.sql",
+      "internal/release/facts/adapter/persistence/media/generated/query.sql.go",
+      "internal/release/facts/adapter/persistence/media/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "media_poster_cache",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/identitymetadata/adapter/persistence/query.sql",
+      "internal/identitymetadata/adapter/persistence/generated/query.sql.go",
+      "internal/identitymetadata/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "metadata_work_titles",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML (metadata work titles)",
+    "direct_access": [
+      "internal/identitymetadata/adapter/persistence/work_titles.go",
+      "internal/acquisition/terminal/application/work_titles.go",
+      "internal/namingvars/adapter/persistence/release_evidence.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "naming_template_library",
+    "privileges": [
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/configuration/application/naming_templates.go",
+      "internal/configuration/application/global_sections.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "naming_vars_versions",
+    "privileges": [
+      "INSERT"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/testutil/frozenpolicy/business.go",
+      "internal/namingvars/adapter/persistence/query.sql",
+      "internal/namingvars/adapter/persistence/generated/query.sql.go",
+      "internal/namingvars/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "network_routes",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/configuration/application/service.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "notification_admissions",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/plugintarget/application/admission_retry.go",
+      "internal/workitems/oneshot_retention.go (one-shot reclaim D-a leaf deletion)",
+      "internal/plugintarget/application/admission_resolver.go",
+      "internal/plugintarget/application/admission_ledger.go",
+      "internal/retention/adapter/persistence/query.sql (maintenance retention cleaners: terminal rows only)"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "offset_migration_generations",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/filemaintenance/local_owner_cleanup.go",
+      "internal/filemaintenance/offset_migration_planner.go",
+      "internal/filemaintenance/offset_migration_admission.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "offset_migration_plans",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/filemaintenance/local_owner_cleanup.go",
+      "internal/filemaintenance/offset_migration_planner.go",
+      "internal/filemaintenance/offset_migration_execute.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "one_shot_acquisitions",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/anime/adapter/persistence/query.sql",
+      "internal/anime/adapter/persistence/generated/query.sql.go",
+      "internal/anime/adapter/persistence/generated/querier.go",
+      "internal/workitems/adapter/persistence/query.sql",
+      "internal/workitems/adapter/persistence/generated/query.sql.go",
+      "internal/workitems/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "one_shot_execution_attempts",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/workitems/oneshot_retention.go",
+      "internal/anime/adapter/persistence/query.sql",
+      "internal/anime/adapter/persistence/generated/query.sql.go",
+      "internal/anime/adapter/persistence/generated/querier.go",
+      "internal/workitems/adapter/persistence/query.sql",
+      "internal/workitems/adapter/persistence/generated/query.sql.go",
+      "internal/workitems/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "placement_companions",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "companion relation owned by file maintenance; the one-shot reclaim deletes the temporary graph's companions",
+    "direct_access": [
+      "internal/workitems/oneshot_retention.go (one-shot reclaim D-a leaf deletion)",
+      "internal/filemaintenance/companions.go",
+      "internal/filemaintenance/companions_backfill.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "placement_coverage",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/filemaintenance/offset_migration_execute.go",
+      "internal/filemaintenance/placement.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "placement_obligations",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "acquisition graph rows written by the listed owners next to the owner-held SQL functions",
+    "direct_access": [
+      "internal/workitems/oneshot_retention.go (one-shot reclaim D-a leaf deletion)",
+      "internal/testutil/animetest/animetest.go",
+      "internal/fileoperation/application/placement_retry.go"
+    ],
+    "closure_slice": "acquisition owner functions",
+    "exit_condition": "all shared writers and row-lock readers migrated; leaf deletion retired; explicit same-slice ACL negative tests"
+  },
+  {
+    "table": "placements",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/workitems/oneshot_retention.go (one-shot reclaim D-a leaf deletion)",
+      "internal/filemaintenance/local_owner_cleanup.go",
+      "internal/filemaintenance/offset_migration_execute.go",
+      "internal/filemaintenance/decisions.go",
+      "internal/filemaintenance/operations.go",
+      "internal/filemaintenance/calibration.go",
+      "internal/filemaintenance/replacement_recovery_adoption.go",
+      "internal/filemaintenance/placement.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "plugin_deliveries",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/plugintarget/application/admission_retry.go",
+      "internal/plugintarget/application/handler.go",
+      "internal/plugintarget/application/service.go",
+      "internal/plugintarget/application/business_delivery.go",
+      "internal/observability/adapter/persistence/query.sql",
+      "internal/observability/adapter/persistence/generated/query.sql.go",
+      "internal/observability/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "plugin_delivery_attempts",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/plugintarget/application/handler.go",
+      "internal/observability/adapter/persistence/query.sql",
+      "internal/observability/adapter/persistence/generated/query.sql.go",
+      "internal/observability/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "plugin_target_configs",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/plugintarget/application/service.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "provider_catalog_entries",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/catalog/application/provider_service.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "provider_catalog_preferences",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/catalog/application/provider_service.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "provider_catalog_snapshots",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/catalog/application/provider_service.go",
+      "internal/catalog/adapter/persistence/query.sql",
+      "internal/catalog/adapter/persistence/generated/query.sql.go",
+      "internal/catalog/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "provider_feed_snapshots",
+    "privileges": [
+      "DELETE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/catalog/adapter/persistence/query.sql",
+      "internal/catalog/adapter/persistence/generated/query.sql.go",
+      "internal/catalog/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "provider_group_dictionary",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/catalog/adapter/persistence/group_dictionary.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "provider_group_refresh_health",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/automation/application/dispatcher.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "provider_group_scope_generations",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/automation/application/selection_recompute.go",
+      "internal/automation/application/group_availability.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "provider_group_selections",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/anime/ownership/application/patch.go",
+      "internal/automation/application/group_availability.go",
+      "internal/automation/application/dispatcher.go",
+      "internal/workitems/adapter/persistence/query.sql",
+      "internal/workitems/adapter/persistence/generated/query.sql.go",
+      "internal/workitems/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "provider_group_snapshots",
+    "privileges": [
+      "DELETE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/catalog/adapter/persistence/query.sql",
+      "internal/catalog/adapter/persistence/generated/query.sql.go",
+      "internal/catalog/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "provider_image_cache",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/identitymetadata/adapter/persistence/query.sql",
+      "internal/identitymetadata/adapter/persistence/generated/query.sql.go",
+      "internal/identitymetadata/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "reconciliation_files",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/workitems/oneshot_retention.go (one-shot reclaim D-a leaf deletion)",
+      "internal/filemaintenance/local_owner_cleanup.go",
+      "internal/filemaintenance/calibration.go",
+      "internal/reconciliation/application/scanhandler.go",
+      "internal/retention/adapter/persistence/query.sql (maintenance retention cleaners: terminal rows only)"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "reconciliation_scans",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/workitems/oneshot_retention.go (one-shot reclaim D-a leaf deletion)",
+      "internal/filemaintenance/local_owner_cleanup.go",
+      "internal/reconciliation/application/owner.go",
+      "internal/filemaintenance/calibration.go",
+      "internal/reconciliation/application/worker_recovery.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "release_candidate_facts",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/release/facts/adapter/persistence/candidate/query.sql",
+      "internal/release/facts/adapter/persistence/candidate/generated/query.sql.go",
+      "internal/release/facts/adapter/persistence/candidate/generated/querier.go",
+      "internal/workitems/adapter/persistence/query.sql",
+      "internal/workitems/adapter/persistence/generated/query.sql.go",
+      "internal/workitems/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "release_torrent_inputs",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/workitems/adapter/persistence/query.sql",
+      "internal/workitems/adapter/persistence/generated/query.sql.go",
+      "internal/workitems/adapter/persistence/generated/querier.go",
+      "internal/rss/application/torrent_input.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "releases",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/testutil/acquisitionfixture/download.go",
+      "internal/testutil/animetest/animetest.go",
+      "internal/rss/application/release_retry.go",
+      "internal/anime/oneshot/application/acquire_seed_once.go",
+      "internal/workitems/adapter/persistence/query.sql",
+      "internal/workitems/adapter/persistence/generated/query.sql.go",
+      "internal/workitems/adapter/persistence/generated/querier.go",
+      "internal/rss/application/refresh.go",
+      "internal/rss/application/worker_recovery.go",
+      "internal/rss/application/evaluate.go",
+      "internal/rss/application/release_discovered.go",
+      "internal/acquisition/terminal/application/accept_service.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "replacement_decisions",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/workitems/oneshot_retention.go (one-shot reclaim D-a leaf deletion)",
+      "internal/filemaintenance/local_owner_cleanup.go",
+      "internal/filemaintenance/decisions.go",
+      "internal/filemaintenance/replacement_recovery_adoption.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "routine_activities",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/workitems/oneshot_retention.go (one-shot reclaim D-a leaf deletion)",
+      "internal/observability/application/writer.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "rss_provider_circuits",
+    "privileges": [
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "RSS provider circuit owner upsert from the RSS refresh outcome writers",
+    "direct_access": [
+      "internal/rss/application/refresh_backoff.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while the RSS refresh owner writes the provider circuit; update inventory before changing privileges"
+  },
+  {
+    "table": "rss_source_runtime",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/anime/draft/application/service.go",
+      "internal/automation/application/dispatcher.go",
+      "internal/workitems/adapter/persistence/query.sql",
+      "internal/workitems/adapter/persistence/generated/query.sql.go",
+      "internal/workitems/adapter/persistence/generated/querier.go",
+      "internal/rss/application/refresh.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "rss_sources",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/testutil/animetest/animetest.go",
+      "internal/anime/ownership/application/rss_source_actions.go",
+      "internal/anime/oneshot/application/acquire_seed_once.go",
+      "internal/anime/draft/application/service.go",
+      "internal/automation/application/dispatcher.go",
+      "internal/workitems/adapter/persistence/query.sql",
+      "internal/workitems/adapter/persistence/generated/query.sql.go",
+      "internal/workitems/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "secret_values",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/testutil/animetest/animetest.go",
+      "internal/configuration/adapter/persistence/query.sql",
+      "internal/configuration/adapter/persistence/generated/query.sql.go",
+      "internal/configuration/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "seed_torrent_cache",
+    "privileges": [
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/catalog/adapter/persistence/seed_torrent_cache.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "subscription_log_entries",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/observability/application/writer.go",
+      "internal/observability/adapter/persistence/query.sql",
+      "internal/observability/adapter/persistence/generated/query.sql.go",
+      "internal/observability/adapter/persistence/generated/querier.go",
+      "internal/workitems/adapter/persistence/query.sql",
+      "internal/workitems/adapter/persistence/generated/query.sql.go",
+      "internal/workitems/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "subscriptions",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/testutil/animetest/animetest.go",
+      "internal/anime/ownership/application/patch.go",
+      "internal/anime/oneshot/application/acquire_seed_once.go",
+      "internal/anime/draft/application/service.go",
+      "internal/workitems/adapter/persistence/query.sql",
+      "internal/workitems/adapter/persistence/generated/query.sql.go",
+      "internal/workitems/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  }
+]

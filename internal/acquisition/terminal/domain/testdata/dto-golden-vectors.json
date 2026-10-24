@@ -1,0 +1,936 @@
+{
+  "fixture_schema_version": 1,
+  "canonical_version": "acquisition-canonical-v1",
+  "definitions": {
+    "absent": {
+      "state": "absent",
+      "value": null,
+      "reason_code": null
+    },
+    "unavailable": {
+      "state": "unavailable",
+      "value": null,
+      "reason_code": "MISSING_METADATA"
+    },
+    "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "time": "2026-10-03T01:02:03.123456Z",
+    "mapping": {
+      "remote_root": "/downloads",
+      "application_root": "/data",
+      "semantics_version": "posix-components-v1"
+    },
+    "namespace": {
+      "endpoint": "https://qb.example.invalid/",
+      "instance_fingerprint": {
+        "$fixture": "absent"
+      },
+      "adapter_version": "qb-v1",
+      "path_mapping": {
+        "$fixture": "mapping"
+      }
+    },
+    "provider_binding": {
+      "connection": {
+        "ref": "qb-1",
+        "version": 1
+      },
+      "namespace": {
+        "$fixture": "namespace"
+      },
+      "credential_ref": {
+        "state": "known",
+        "value": {
+          "ref": "secret-ref-1",
+          "version": 1
+        },
+        "reason_code": null
+      }
+    },
+    "source": {
+      "kind": "one_shot_seed",
+      "release": {
+        "$fixture": "absent"
+      },
+      "stable_item_key": {
+        "$fixture": "absent"
+      },
+      "title": {
+        "state": "known",
+        "value": "<进击的巨人> 12.5",
+        "reason_code": null
+      },
+      "published_at": {
+        "$fixture": "unavailable"
+      },
+      "provider": {
+        "$fixture": "absent"
+      },
+      "group": {
+        "$fixture": "unavailable"
+      },
+      "payload_digest": {
+        "$fixture": "digest"
+      },
+      "manifest_digest": {
+        "$fixture": "digest"
+      },
+      "infohash_v1": {
+        "state": "known",
+        "value": "1111111111111111111111111111111111111111",
+        "reason_code": null
+      },
+      "infohash_v2": {
+        "$fixture": "absent"
+      },
+      "locator_display": {
+        "state": "known",
+        "value": "seed.torrent",
+        "reason_code": null
+      },
+      "locator_digest": {
+        "$fixture": "absent"
+      },
+      "download_provider": {
+        "state": "known",
+        "value": {
+          "$fixture": "provider_binding"
+        },
+        "reason_code": null
+      },
+      "torrent_size": {
+        "state": "known",
+        "value": 1,
+        "reason_code": null
+      },
+      "torrent_file_count": {
+        "state": "known",
+        "value": 1,
+        "reason_code": null
+      }
+    },
+    "selection": {
+      "mode": "rules",
+      "rules_digest": {
+        "$fixture": "digest"
+      },
+      "explicit_refs": []
+    },
+    "variant": {
+      "directory_template": "${Anime.Title}",
+      "video_filename_template": "${File.OriginalName}"
+    },
+    "naming_section": {
+      "language": "js-naming-1",
+      "movie": {
+        "$fixture": "variant"
+      },
+      "unknown": {
+        "$fixture": "variant"
+      },
+      "tv": {
+        "$fixture": "variant"
+      },
+      "preset": null,
+      "subtitle_suffix_template": ""
+    },
+    "parser_selection": {
+      "kind": "regex",
+      "config": null,
+      "config_fingerprint": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "config_version": "regex-config-v1",
+      "implementation_version": "regex-v1",
+      "output_contract_version": "episode-evidence-v1",
+      "normalizer_version": "episode-normalizer-v1",
+      "resolver_version": "episode-identity-v1",
+      "offset": 0
+    },
+    "config": {
+      "identity": {
+        "kind": "one_shot",
+        "intent_digest": {
+          "$fixture": "digest"
+        }
+      },
+      "effective_digest": {
+        "$fixture": "digest"
+      },
+      "sections": [
+        {
+          "section_key": "file_effect",
+          "schema_version": "file-effect-v1",
+          "config_version": 0,
+          "value": {
+            "collision_policy": "fail",
+            "operation": "copy"
+          }
+        },
+        {
+          "section_key": "file_rules",
+          "schema_version": "file-rules-v1",
+          "config_version": 0,
+          "value": {
+            "must_contain": "",
+            "not_in": ""
+          }
+        },
+        {
+          "section_key": "naming_rules",
+          "schema_version": "naming-rules-v1",
+          "config_version": 0,
+          "value": {
+            "$fixture": "naming_section"
+          }
+        },
+        {
+          "section_key": "parser",
+          "schema_version": "parser-section-v1",
+          "config_version": 0,
+          "value": {
+            "episode_patterns": []
+          }
+        },
+        {
+          "section_key": "release_rules",
+          "schema_version": "release-rules-v1",
+          "config_version": 0,
+          "value": {
+            "must_contain": "",
+            "not_in": ""
+          }
+        },
+        {
+          "section_key": "subgroups",
+          "schema_version": "subgroups-v1",
+          "config_version": 0,
+          "value": {
+            "entries": [],
+            "max_rss": 3,
+            "name_keywords": null,
+            "provider_defaults": null
+          }
+        }
+      ],
+      "parser": {
+        "selection": {
+          "state": "known",
+          "value": {
+            "$fixture": "parser_selection"
+          },
+          "reason_code": null
+        },
+        "provenance": {
+          "$fixture": "absent"
+        },
+        "runtime_version": "parser-v1"
+      },
+      "vars": {
+        "mode": "disabled",
+        "runtime_version": "naming-vars-v1"
+      },
+      "rules_version": {
+        "$fixture": "absent"
+      }
+    },
+    "media": {
+      "title": {
+        "state": "known",
+        "value": "进击的巨人",
+        "reason_code": null
+      },
+      "title_override": {
+        "$fixture": "absent"
+      },
+      "provider_title": {
+        "$fixture": "absent"
+      },
+      "bgm": {
+        "$fixture": "absent"
+      },
+      "tmdb": {
+        "state": "known",
+        "value": {
+          "work_ref": "tmdb-1",
+          "kind": "tv",
+          "season": 0,
+          "version": 1
+        },
+        "reason_code": null
+      },
+      "group": {
+        "$fixture": "unavailable"
+      },
+      "identity": {
+        "$fixture": "unavailable"
+      },
+      "quality": {
+        "$fixture": "unavailable"
+      },
+      "bgm_titles": {
+        "$fixture": "absent"
+      },
+      "tmdb_titles": {
+        "state": "known",
+        "value": {
+          "title_cn": null,
+          "original_title": null,
+          "year": 2020
+        },
+        "reason_code": null
+      }
+    },
+    "delivery": {
+      "operation": "copy",
+      "intent": "ensure_present",
+      "collision": "block",
+      "route": {
+        "mode": "unclassified",
+        "root": {
+          "state": "known",
+          "value": "/media",
+          "reason_code": null
+        },
+        "path_mapping": {
+          "state": "known",
+          "value": {
+            "$fixture": "mapping"
+          },
+          "reason_code": null
+        }
+      },
+      "naming": {
+        "schema_version": "naming-rules-v1",
+        "templates": {
+          "$fixture": "naming_section"
+        },
+        "vars_choice": "disabled",
+        "runtime_version": "js-naming-1"
+      },
+      "source_cleanup": {
+        "mode": "none"
+      },
+      "replacements": []
+    },
+    "stage_budget": {
+      "max_attempts": 5,
+      "attempt_timeout_seconds": 120,
+      "wall_seconds": 86400
+    },
+    "limits": {
+      "policy_version": 1,
+      "prepare_timeout_seconds": 120,
+      "download_wait_seconds": 604800,
+      "stall_seconds": 21600,
+      "submit": {
+        "max_attempts": 5,
+        "attempt_timeout_seconds": 90,
+        "wall_seconds": 86400
+      },
+      "sync": {
+        "poll_interval_seconds": 60,
+        "attempt_timeout_seconds": 60,
+        "max_consecutive_errors": 5,
+        "max_total_errors": 100,
+        "max_polls": 10081
+      },
+      "inspect": {
+        "max_attempts": 5,
+        "attempt_timeout_seconds": 300,
+        "wall_seconds": 86400
+      },
+      "plan": {
+        "$fixture": "stage_budget"
+      },
+      "file": {
+        "max_attempts": 5,
+        "attempt_timeout_seconds": 300,
+        "wall_seconds": 86400
+      },
+      "reconcile": {
+        "wall_seconds": 86400,
+        "attempt_timeout_seconds": 60,
+        "max_lookups": 100
+      },
+      "settlement": {
+        "max_errors": 5,
+        "attempt_timeout_seconds": 120,
+        "lease_seconds": 60,
+        "heartbeat_seconds": 15
+      },
+      "handoff": {
+        "$fixture": "stage_budget"
+      },
+      "retention": {
+        "detail_seconds": 2592000,
+        "receipt_after_accept_seconds": 2592000,
+        "receipt_after_terminal_seconds": 5184000
+      }
+    },
+    "placement": {
+      "mode": "observe_for_instance",
+      "managed_anime_ref": "anime-1",
+      "expected_placement": {
+        "$fixture": "absent"
+      }
+    },
+    "input": {
+      "schema_version": 1,
+      "source": {
+        "$fixture": "source"
+      },
+      "selection": {
+        "$fixture": "selection"
+      },
+      "config": {
+        "$fixture": "config"
+      },
+      "media": {
+        "$fixture": "media"
+      },
+      "delivery": {
+        "$fixture": "delivery"
+      },
+      "limits": {
+        "$fixture": "limits"
+      },
+      "placement": {
+        "$fixture": "placement"
+      }
+    },
+    "object_identity": {
+      "kind": "local_fs",
+      "device": "18446744073709551615",
+      "inode": "9007199254740993"
+    },
+    "location": {
+      "namespace_digest": {
+        "$fixture": "digest"
+      },
+      "root": "/media",
+      "relative_path": "进击的巨人.mkv",
+      "canonical_path": "/media/进击的巨人.mkv"
+    },
+    "object": {
+      "location": {
+        "$fixture": "location"
+      },
+      "file_type": "regular",
+      "size": 9007199254740993,
+      "identity": {
+        "$fixture": "object_identity"
+      },
+      "observed_at": {
+        "$fixture": "time"
+      }
+    },
+    "identity": {
+      "state": "resolved",
+      "kind": "tv_episode",
+      "shape": "single",
+      "raw_episode": {
+        "state": "known",
+        "value": "12.5",
+        "reason_code": null
+      },
+      "episode": {
+        "state": "known",
+        "value": "12.5",
+        "reason_code": null
+      },
+      "offset": 0,
+      "selected_source": {
+        "state": "known",
+        "value": "file_parser",
+        "reason_code": null
+      },
+      "coverage_keys": [
+        "tv:s0:e12.5"
+      ],
+      "alternatives": [],
+      "conflicts": [],
+      "failure_code": null,
+      "resolver_version": "episode-identity-v1",
+      "input_digest": {
+        "$fixture": "digest"
+      }
+    },
+    "quality_missing": {
+      "state": "missing",
+      "value": null,
+      "reason_code": null,
+      "raw_digest": null
+    },
+    "quality": {
+      "group": {
+        "$fixture": "quality_missing"
+      },
+      "languages": {
+        "state": "value",
+        "value": [
+          "zh"
+        ],
+        "reason_code": null,
+        "raw_digest": null
+      },
+      "resolution": {
+        "state": "value",
+        "value": "1080p",
+        "reason_code": null,
+        "raw_digest": null
+      },
+      "source": {
+        "state": "unknown",
+        "value": null,
+        "reason_code": "QUALITY_UNKNOWN",
+        "raw_digest": {
+          "$fixture": "digest"
+        }
+      },
+      "revision": {
+        "state": "conflict",
+        "value": null,
+        "reason_code": "QUALITY_CONFLICT",
+        "raw_digest": {
+          "$fixture": "digest"
+        }
+      },
+      "size": {
+        "state": "value",
+        "value": 9007199254740993,
+        "reason_code": null,
+        "raw_digest": null
+      },
+      "mapping_version": {
+        "state": "known",
+        "value": "facts-map-v1",
+        "reason_code": null
+      },
+      "parser_provenance": {
+        "$fixture": "unavailable"
+      },
+      "profile": {
+        "$fixture": "unavailable"
+      },
+      "rules_version": {
+        "state": "known",
+        "value": 1,
+        "reason_code": null
+      }
+    },
+    "replay": {
+      "File.Media.Resolution": {
+        "state": "known",
+        "value": "1080p",
+        "reason_code": null
+      },
+      "File.Media.VideoCodec": {
+        "$fixture": "unavailable"
+      },
+      "File.Media.Container": {
+        "state": "known",
+        "value": "mkv",
+        "reason_code": null
+      },
+      "Parsed.Language.Code": {
+        "state": "known",
+        "value": "zh",
+        "reason_code": null
+      },
+      "Parsed.Episode.Display": {
+        "state": "known",
+        "value": "12.5",
+        "reason_code": null
+      },
+      "Source.GroupName": {
+        "$fixture": "unavailable"
+      },
+      "Source.Group": {
+        "state": "known",
+        "value": "anibt:samplegroup",
+        "reason_code": null
+      },
+      "Release.OriginalTitle": {
+        "state": "known",
+        "value": "<进击的巨人> 12.5",
+        "reason_code": null
+      },
+      "Release.FrozenEpisode.Display": {
+        "$fixture": "unavailable"
+      },
+      "Anime.BGM.WorkID": {
+        "$fixture": "absent"
+      },
+      "Anime.TMDB.WorkID": {
+        "state": "known",
+        "value": "tmdb-1",
+        "reason_code": null
+      }
+    },
+    "file_fact": {
+      "schema_version": 1,
+      "locator": {
+        "final_object": {
+          "state": "known",
+          "value": {
+            "$fixture": "object"
+          },
+          "reason_code": null
+        },
+        "source_cleanup": "not_required"
+      },
+      "content_source": {
+        "payload_digest": {
+          "state": "known",
+          "value": {
+            "$fixture": "digest"
+          },
+          "reason_code": null
+        },
+        "manifest_digest": {
+          "state": "known",
+          "value": {
+            "$fixture": "digest"
+          },
+          "reason_code": null
+        },
+        "infohash_v1": {
+          "state": "known",
+          "value": "1111111111111111111111111111111111111111",
+          "reason_code": null
+        },
+        "infohash_v2": {
+          "$fixture": "absent"
+        },
+        "file_ref": {
+          "state": "known",
+          "value": "file-1",
+          "reason_code": null
+        },
+        "original_name": {
+          "state": "known",
+          "value": "进击的巨人.mkv",
+          "reason_code": null
+        },
+        "relative_path": {
+          "state": "known",
+          "value": "进击的巨人.mkv",
+          "reason_code": null
+        },
+        "media_kind": {
+          "state": "known",
+          "value": "video",
+          "reason_code": null
+        },
+        "title": {
+          "state": "known",
+          "value": "<进击的巨人> 12.5",
+          "reason_code": null
+        },
+        "group": {
+          "$fixture": "unavailable"
+        },
+        "provider": {
+          "$fixture": "absent"
+        },
+        "locator_display": {
+          "state": "known",
+          "value": "seed.torrent",
+          "reason_code": null
+        },
+        "release": {
+          "$fixture": "absent"
+        },
+        "source": {
+          "$fixture": "absent"
+        }
+      },
+      "identity_coverage": {
+        "identity": {
+          "state": "known",
+          "value": {
+            "$fixture": "identity"
+          },
+          "reason_code": null
+        },
+        "coverage_schema": "episode-identity-v1",
+        "coverage_keys": [
+          "tv:s0:e12.5"
+        ]
+      },
+      "quality": {
+        "state": "known",
+        "value": {
+          "$fixture": "quality"
+        },
+        "reason_code": null
+      },
+      "render_inputs": {
+        "replay": {
+          "$fixture": "replay"
+        },
+        "binding": {
+          "state": "known",
+          "value": {
+            "media_kind": "tv",
+            "season": 0,
+            "season_bound": true,
+            "bgm_work_id": {
+              "$fixture": "absent"
+            },
+            "tmdb_work_id": {
+              "state": "known",
+              "value": "tmdb-1",
+              "reason_code": null
+            },
+            "effective_title": {
+              "state": "known",
+              "value": "进击的巨人",
+              "reason_code": null
+            },
+            "extension": {
+              "state": "known",
+              "value": "mkv",
+              "reason_code": null
+            }
+          },
+          "reason_code": null
+        },
+        "vars": {
+          "$fixture": "absent"
+        },
+        "naming_schema": {
+          "state": "known",
+          "value": "naming-rules-v1",
+          "reason_code": null
+        },
+        "naming_digest": {
+          "state": "known",
+          "value": {
+            "$fixture": "digest"
+          },
+          "reason_code": null
+        },
+        "render_program_version": {
+          "state": "known",
+          "value": "js-naming-1",
+          "reason_code": null
+        }
+      },
+      "source_offset": {
+        "source": {
+          "$fixture": "absent"
+        },
+        "override": {
+          "$fixture": "absent"
+        },
+        "used_offset": {
+          "state": "known",
+          "value": 0,
+          "reason_code": null
+        },
+        "media_kind": {
+          "state": "known",
+          "value": "tv",
+          "reason_code": null
+        },
+        "season": {
+          "state": "known",
+          "value": 0,
+          "reason_code": null
+        },
+        "season_bound": {
+          "state": "known",
+          "value": true,
+          "reason_code": null
+        },
+        "video_count": {
+          "state": "known",
+          "value": 1,
+          "reason_code": null
+        }
+      },
+      "provenance": {
+        "mode": "native",
+        "acquisition_ref": {
+          "state": "known",
+          "value": "acq-1",
+          "reason_code": null
+        },
+        "operation_ref": {
+          "$fixture": "absent"
+        },
+        "artifact_ref": {
+          "$fixture": "absent"
+        },
+        "artifact_file_ref": {
+          "$fixture": "absent"
+        },
+        "media_snapshot": {
+          "$fixture": "absent"
+        },
+        "delivery_digest": {
+          "state": "known",
+          "value": {
+            "$fixture": "digest"
+          },
+          "reason_code": null
+        },
+        "exact_selection": {
+          "$fixture": "absent"
+        },
+        "missing_paths": [
+          "/content_source/group",
+          "/quality/value/parser_provenance",
+          "/quality/value/profile",
+          "/render_inputs/replay/File.Media.VideoCodec",
+          "/render_inputs/replay/Release.FrozenEpisode.Display",
+          "/render_inputs/replay/Source.GroupName"
+        ]
+      }
+    },
+    "closure": {
+      "kind": "local_join",
+      "executor_session": "boot-1:call-1",
+      "boot_nonce": "boot-1",
+      "call_nonce": "call-1",
+      "covered_steps": [
+        "publish_target"
+      ],
+      "joined_at": {
+        "$fixture": "time"
+      },
+      "observer_version": "fixture-executor-v1"
+    }
+  },
+  "vectors": [
+    {
+      "id": "GV01",
+      "type": "SourceV1",
+      "domain": "acquisition-input:source:v1",
+      "definition": "source",
+      "expected_sha256": "d638e67be9bab4a6ad902967d2dd2d07361b241606f16a99747d14156ac92794",
+      "expected_bytes": 1555
+    },
+    {
+      "id": "GV02",
+      "type": "SelectionV1",
+      "domain": "acquisition-input:selection:v1",
+      "definition": "selection",
+      "expected_sha256": "094453b881632523212c8b1a9d8680f4012aa4b94c9045a354284c305e596fa8",
+      "expected_bytes": 124
+    },
+    {
+      "id": "GV03",
+      "type": "ConfigV1",
+      "domain": "acquisition-input:config:v1",
+      "definition": "config",
+      "expected_sha256": "2175c86b7321765e42b43902635e2a2bbe6afa39365969da8b67790221977c7e",
+      "expected_bytes": 1974
+    },
+    {
+      "id": "GV04",
+      "type": "MediaV1",
+      "domain": "acquisition-input:media:v1",
+      "definition": "media",
+      "expected_sha256": "9e8bf8552deea2bf252bf2d3cfb6f77d2e7306c195b874e06f56ee6454ce69fa",
+      "expected_bytes": 788
+    },
+    {
+      "id": "GV05",
+      "type": "DeliveryV1",
+      "domain": "acquisition-input:delivery:v1",
+      "definition": "delivery",
+      "expected_sha256": "86b113f62cd8e32ab2011d691f03c438183b3fa9eeff8721e22f0c001605cc0f",
+      "expected_bytes": 844
+    },
+    {
+      "id": "GV06",
+      "type": "LimitsV1",
+      "domain": "acquisition-input:limits:v1",
+      "definition": "limits",
+      "expected_sha256": "6fdfaf9ae0341ff3a0ddcc3f35707135e6edc81dba99b4fc353a3611cef942f7",
+      "expected_bytes": 931
+    },
+    {
+      "id": "GV07",
+      "type": "PlacementV1",
+      "domain": "acquisition-input:placement:v1",
+      "definition": "placement",
+      "expected_sha256": "76c74ec8c435f1ff49ae527da5b1c86e5ea3f5c61b770a05c2b13ba325104b05",
+      "expected_bytes": 133
+    },
+    {
+      "id": "GV08",
+      "type": "AcquisitionInputV1",
+      "domain": "acquisition-input:v1",
+      "definition": "input",
+      "expected_sha256": "4b79df31913bc8f13b09c36eba35263c035f1b72ac33230f7252887010733542",
+      "expected_bytes": 6446
+    },
+    {
+      "id": "GV09",
+      "type": "FileFactV1",
+      "domain": "placement-file-facts:v1",
+      "definition": "file_fact",
+      "expected_sha256": "bbe5290e81e02fa431812815c2132dafbeb1e7b343e20e2c670b94cdb74b6014",
+      "expected_bytes": 6291
+    },
+    {
+      "id": "GV10",
+      "type": "ClosureV1",
+      "domain": "acquisition-effect-closure:v1",
+      "definition": "closure",
+      "expected_sha256": "85b06d50374d73178886f5721874a53eda5172df21488a98a2b791b2f628b299",
+      "expected_bytes": 218
+    }
+  ],
+  "negative_vectors": [
+    {
+      "id": "NV01",
+      "type": "PlacementV1",
+      "raw": "{\"mode\":\"none\",\"mode\":\"none\"}",
+      "expected_reason": "DUPLICATE_KEY"
+    },
+    {
+      "id": "NV02",
+      "type": "PlacementV1",
+      "raw": "{}",
+      "expected_reason": "MISSING_KEY"
+    },
+    {
+      "id": "NV03",
+      "type": "FrozenValue",
+      "raw": "{\"state\":\"absent\",\"value\":null,\"reason_code\":null,\"extra\":null}",
+      "expected_reason": "UNKNOWN_KEY"
+    },
+    {
+      "id": "NV04",
+      "type": "FrozenValueInt64",
+      "raw": "{\"state\":\"known\",\"value\":1e0,\"reason_code\":null}",
+      "expected_reason": "INTEGER_TOKEN_INVALID"
+    },
+    {
+      "id": "NV05",
+      "type": "PlacementV1",
+      "raw": "{\"mode\":\"none\"}{}",
+      "expected_reason": "TRAILING_TOKEN"
+    },
+    {
+      "id": "NV06",
+      "type": "FrozenValue",
+      "raw": "{\"state\":\"known\",\"value\":\"\\u0000\",\"reason_code\":null}",
+      "expected_reason": "NUL_FORBIDDEN"
+    },
+    {
+      "id": "NV07",
+      "type": "PlacementV1",
+      "raw": "{\"mode\":\"none\",\"managed_anime_ref\":null,\"expected_placement\":null}",
+      "expected_reason": "UNION_BRANCH_INVALID"
+    },
+    {
+      "id": "NV08",
+      "type": "QualityFieldString",
+      "raw": "{\"state\":\"value\",\"value\":null,\"reason_code\":null,\"raw_digest\":null}",
+      "expected_reason": "NULL_NOT_ALLOWED"
+    }
+  ]
+}

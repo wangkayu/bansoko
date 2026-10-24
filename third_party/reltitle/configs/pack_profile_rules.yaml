@@ -1,0 +1,83 @@
+updated_at: "2026-03-07"
+description: "Canonical pack_profile inference rules (config-driven)."
+
+rules:
+  - id: "movie_special_mix"
+    enabled: true
+    priority: 100
+    when:
+      requires_contents_all: ["MOVIE", "SPECIAL"]
+    emit: "movie_special_mix"
+
+  - id: "movie_series_mix"
+    enabled: true
+    priority: 95
+    when:
+      requires_contents_all: ["MOVIE", "TV"]
+    emit: "movie_series_mix"
+
+  - id: "season_movie_mix"
+    enabled: true
+    priority: 90
+    when:
+      requires_contents_all: ["MOVIE"]
+      has_season: true
+    emit: "season_movie_mix"
+
+  - id: "season_range_movie_mix"
+    enabled: true
+    priority: 89
+    when:
+      requires_contents_all: ["MOVIE"]
+      has_season_range: true
+    emit: "season_movie_mix"
+
+  - id: "movie_only"
+    enabled: true
+    priority: 85
+    when:
+      content_kind_in: ["MOVIE"]
+      requires_contents_all: ["MOVIE"]
+      forbid_contents_any: ["SPECIAL", "TV", "OVA", "OAD", "ONA", "EX"]
+    emit: "movie_only"
+
+  - id: "movie_batch_mix"
+    enabled: true
+    priority: 80
+    when:
+      content_kind_in: ["BATCH"]
+      requires_contents_all: ["MOVIE"]
+    emit: "movie_batch_mix"
+
+  - id: "special_only"
+    enabled: true
+    priority: 75
+    when:
+      content_kind_in: ["SPECIAL"]
+      requires_contents_any: ["SPECIAL", "SP", "OVA", "OAD", "ONA", "EX"]
+      forbid_contents_any: ["MOVIE", "TV"]
+      min_contents_distinct: 1
+    emit: "special_only"
+
+  - id: "special_batch_mix"
+    enabled: true
+    priority: 70
+    when:
+      content_kind_in: ["BATCH"]
+      requires_contents_any: ["SPECIAL", "SP", "OVA", "OAD", "ONA", "EX"]
+      forbid_contents_any: ["MOVIE"]
+    emit: "special_batch_mix"
+
+  - id: "mixed_contents"
+    enabled: true
+    priority: 10
+    when:
+      pack_kind_in: ["mixed_contents"]
+    emit: "mixed_contents"
+
+  - id: "contents"
+    enabled: true
+    priority: 5
+    when:
+      pack_kind_in: ["contents"]
+    emit: "contents"

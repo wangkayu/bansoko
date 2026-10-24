@@ -1,0 +1,37 @@
+// 模板变量目录（命名与通知共用）：分组、搜索、可得时机与旧版提示。
+// 各变量自身的名称和说明来自生成的 facts.generated.ts。
+
+export const templateFactsCopy = {
+  searchLabel: "搜索变量",
+  searchPlaceholder: "按名称或路径搜索",
+  noMatch: "没有匹配的变量",
+  insertHint: "点击插入到当前编辑的模板",
+  phaseExecution: "执行时",
+  phaseExecutionHint: "处理文件时才有值，预览中显示为占位",
+  nullable: "可为空",
+  example: "例 {value}",
+  placeholderHint: "下载后确定的值：{path}",
+  placeholder: "〈{label}〉",
+  roots: {
+    anime: "番剧",
+    bgm: "Bangumi",
+    tmdb: "TMDB",
+    release: "发布",
+    ep: "集数",
+    sub: "字幕",
+    torrent: "种子",
+    file: "文件",
+    out: "入库目标",
+    op: "入库操作",
+    event: "事件",
+    result: "结果",
+    download: "下载",
+    rt: "reltitle 解析值",
+    anibt: "AniBT 标签",
+    vars: "自定义变量",
+    mikan: "Mikan 来源组",
+    media: "媒体",
+    release_title: "发布标题",
+    files: "文件清单",
+  },
+} as const;

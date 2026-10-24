@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:anibt="https://anibt.net/xmlns/rss/1.0/">
+  <channel>
+    <title>进击的巨人</title>
+    <link>https://anibt.net/anime/698032</link>
+    <description>AniBT RSS feed for bgmId 698032</description>
+    <atom:link href="https://anibt.net/rss/anime.xml?bgmId=698032" rel="self" type="application/rss+xml" />
+    <ttl>2</ttl>
+    <item>
+      <title>[示例协作组] 进击的巨人 剧场版 [02][1080P][简体内嵌]</title>
+      <link>https://anibt.net/release/rel_gXq43BXIlSAT</link>
+      <guid isPermaLink="false">rel_gXq43BXIlSAT</guid>
+      <pubDate>Sat, 17 Oct 2026 23:51:09 +0800</pubDate>
+      <anibt:type>anime</anibt:type>
+      <anibt:releaseId>rel_gXq43BXIlSAT</anibt:releaseId>
+      <anibt:releasePageUrl>https://anibt.net/release/rel_gXq43BXIlSAT</anibt:releasePageUrl>
+      <anibt:torrentUrl>https://anibt.net/api/torrent/rel_gXq43BXIlSAT.torrent</anibt:torrentUrl>
+      <anibt:bgmId>698032</anibt:bgmId>
+      <anibt:animeTitle>进击的巨人</anibt:animeTitle>
+      <anibt:animeTitleEnglish>Attack on Titan</anibt:animeTitleEnglish>
+      <anibt:releaseTitle>[示例协作组] 进击的巨人 剧场版 [02][1080P][简体内嵌]</anibt:releaseTitle>
+      <anibt:episode>2</anibt:episode>
+      <anibt:episodeKey>2</anibt:episodeKey>
+      <anibt:version>v1</anibt:version>
+      <anibt:groupName>示例协作组</anibt:groupName>
+      <anibt:groupSlug>sample-group</anibt:groupSlug>
+      <anibt:resolution>1080p</anibt:resolution>
+      <anibt:language>CHS</anibt:language>
+      <anibt:subtitle>EMBEDDED</anibt:subtitle>
+      <anibt:format>MP4</anibt:format>
+      <anibt:fileSize>114029245</anibt:fileSize>
+      <anibt:customTag>AVC</anibt:customTag>
+      <anibt:customTag>8bit</anibt:customTag>
+      <anibt:customTag>AAC</anibt:customTag>
+      <description></description>
+      <torrent xmlns="https://anibt.moe/xmlns/0.1/">
+        <link>https://anibt.net/release/rel_gXq43BXIlSAT</link>
+        <contentLength>114029245</contentLength>
+        <pubDate>2026-10-17T23:51:09+08:00</pubDate>
+        <infohash>44c9a9119c7694330b79d5e39a191a194eabea27</infohash>
+        <filename>[示例协作组] 进击的巨人 剧场版 [02][1080P][简体内嵌]</filename>
+      </torrent>
+      <enclosure url="https://anibt.net/api/torrent/rel_gXq43BXIlSAT.torrent" length="114029245" type="application/x-bittorrent" />
+    </item>
+<item>
+      <title>[示例协作组] 进击的巨人 剧场版 [02][1080P][繁体内嵌]</title>
+      <link>https://anibt.net/release/rel_RWabvqI5tFx-</link>
+      <guid isPermaLink="false">rel_RWabvqI5tFx-</guid>
+      <pubDate>Sat, 17 Oct 2026 23:51:06 +0800</pubDate>
+      <anibt:type>anime</anibt:type>
+      <anibt:releaseId>rel_RWabvqI5tFx-</anibt:releaseId>
+      <anibt:releasePageUrl>https://anibt.net/release/rel_RWabvqI5tFx-</anibt:releasePageUrl>
+      <anibt:torrentUrl>https://anibt.net/api/torrent/rel_RWabvqI5tFx-.torrent</anibt:torrentUrl>
+      <anibt:bgmId>698032</anibt:bgmId>
+      <anibt:animeTitle>进击的巨人</anibt:animeTitle>
+      <anibt:animeTitleEnglish>Attack on Titan</anibt:animeTitleEnglish>
+      <anibt:releaseTitle>[示例协作组] 进击的巨人 剧场版 [02][1080P][繁体内嵌]</anibt:releaseTitle>
+      <anibt:episode>2</anibt:episode>
+      <anibt:episodeKey>2</anibt:episodeKey>
+      <anibt:version>v1</anibt:version>
+      <anibt:groupName>示例协作组</anibt:groupName>
+      <anibt:groupSlug>sample-group</anibt:groupSlug>
+      <anibt:resolution>1080p</anibt:resolution>
+      <anibt:language>CHT</anibt:language>
+      <anibt:subtitle>EMBEDDED</anibt:subtitle>
+      <anibt:format>MP4</anibt:format>
+      <anibt:fileSize>113990702</anibt:fileSize>
+      <anibt:customTag>AVC</anibt:customTag>
+      <anibt:customTag>8bit</anibt:customTag>
+      <anibt:customTag>AAC</anibt:customTag>
+      <description></description>
+      <torrent xmlns="https://anibt.moe/xmlns/0.1/">
+        <link>https://anibt.net/release/rel_RWabvqI5tFx-</link>
+        <contentLength>113990702</contentLength>
+        <pubDate>2026-10-17T23:51:06+08:00</pubDate>
+        <infohash>b896ae8feaa5ccbe2772b69c29670f475408c75e</infohash>
+        <filename>[示例协作组] 进击的巨人 剧场版 [02][1080P][繁体内嵌]</filename>
+      </torrent>
+      <enclosure url="https://anibt.net/api/torrent/rel_RWabvqI5tFx-.torrent" length="113990702" type="application/x-bittorrent" />
+    </item>
+<item>
+      <title>[示例协作组] 进击的巨人 剧场版 [02][1080P][简繁内封]</title>
+      <link>https://anibt.net/release/rel_CJzwBwBwVuqI</link>
+      <guid isPermaLink="false">rel_CJzwBwBwVuqI</guid>
+      <pubDate>Sat, 17 Oct 2026 23:51:02 +0800</pubDate>
+      <anibt:type>anime</anibt:type>
+      <anibt:releaseId>rel_CJzwBwBwVuqI</anibt:releaseId>
+      <anibt:releasePageUrl>https://anibt.net/release/rel_CJzwBwBwVuqI</anibt:releasePageUrl>
+      <anibt:torrentUrl>https://anibt.net/api/torrent/rel_CJzwBwBwVuqI.torrent</anibt:torrentUrl>
+      <anibt:bgmId>698032</anibt:bgmId>
+      <anibt:animeTitle>进击的巨人</anibt:animeTitle>
+      <anibt:animeTitleEnglish>Attack on Titan</anibt:animeTitleEnglish>
+      <anibt:releaseTitle>[示例协作组] 进击的巨人 剧场版 [02][1080P][简繁内封]</anibt:releaseTitle>
+      <anibt:episode>2</anibt:episode>
+      <anibt:episodeKey>2</anibt:episodeKey>
+      <anibt:version>v1</anibt:version>
+      <anibt:groupName>示例协作组</anibt:groupName>
+      <anibt:groupSlug>sample-group</anibt:groupSlug>
+      <anibt:resolution>1080p</anibt:resolution>
+      <anibt:language>CHS</anibt:language>
+      <anibt:language>CHT</anibt:language>
+      <anibt:subtitle>INTERNAL</anibt:subtitle>
+      <anibt:format>MKV</anibt:format>
+      <anibt:fileSize>98855866</anibt:fileSize>
+      <anibt:customTag>HEVC</anibt:customTag>
+      <anibt:customTag>10bit</anibt:customTag>
+      <anibt:customTag>AAC</anibt:customTag>
+      <description></description>
+      <torrent xmlns="https://anibt.moe/xmlns/0.1/">
+        <link>https://anibt.net/release/rel_CJzwBwBwVuqI</link>
+        <contentLength>98855866</contentLength>
+        <pubDate>2026-10-17T23:51:02+08:00</pubDate>
+        <infohash>41c6e613acd3a62ed65d38cca41b5fd9dc3237d1</infohash>
+        <filename>[示例协作组] 进击的巨人 剧场版 [02][1080P][简繁内封]</filename>
+      </torrent>
+      <enclosure url="https://anibt.net/api/torrent/rel_CJzwBwBwVuqI.torrent" length="98855866" type="application/x-bittorrent" />
+    </item>
+<item>
+      <title>[示例协作组] 进击的巨人 剧场版 [01][1080P][简体内嵌]</title>
+      <link>https://anibt.net/release/rel_M3a2ze9yXBGA</link>
+      <guid isPermaLink="false">rel_M3a2ze9yXBGA</guid>
+      <pubDate>Thu, 15 Oct 2026 12:35:14 +0800</pubDate>
+      <anibt:type>anime</anibt:type>
+      <anibt:releaseId>rel_M3a2ze9yXBGA</anibt:releaseId>
+      <anibt:releasePageUrl>https://anibt.net/release/rel_M3a2ze9yXBGA</anibt:releasePageUrl>
+      <anibt:torrentUrl>https://anibt.net/api/torrent/rel_M3a2ze9yXBGA.torrent</anibt:torrentUrl>
+      <anibt:bgmId>698032</anibt:bgmId>
+      <anibt:animeTitle>进击的巨人</anibt:animeTitle>
+      <anibt:animeTitleEnglish>Attack on Titan</anibt:animeTitleEnglish>
+      <anibt:releaseTitle>[示例协作组] 进击的巨人 剧场版 [01][1080P][简体内嵌]</anibt:releaseTitle>
+      <anibt:episode>1</anibt:episode>
+      <anibt:episodeKey>1</anibt:episodeKey>
+      <anibt:version>v1</anibt:version>
+      <anibt:groupName>示例协作组</anibt:groupName>
+      <anibt:groupSlug>sample-group</anibt:groupSlug>
+      <anibt:resolution>1080p</anibt:resolution>
+      <anibt:language>CHS</anibt:language>
+      <anibt:subtitle>EMBEDDED</anibt:subtitle>
+      <anibt:format>MP4</anibt:format>
+      <anibt:fileSize>114148888</anibt:fileSize>
+      <anibt:customTag>AVC</anibt:customTag>
+      <anibt:customTag>8bit</anibt:customTag>
+      <anibt:customTag>AAC</anibt:customTag>
+      <description></description>
+      <torrent xmlns="https://anibt.moe/xmlns/0.1/">
+        <link>https://anibt.net/release/rel_M3a2ze9yXBGA</link>
+        <contentLength>114148888</contentLength>
+        <pubDate>2026-10-15T12:35:14+08:00</pubDate>
+        <infohash>16ee128edf8fde83943da3bc6302d285e91505ad</infohash>
+        <filename>[示例协作组] 进击的巨人 剧场版 [01][1080P][简体内嵌]</filename>
+      </torrent>
+      <enclosure url="https://anibt.net/api/torrent/rel_M3a2ze9yXBGA.torrent" length="114148888" type="application/x-bittorrent" />
+    </item>
+  </channel>
+</rss>

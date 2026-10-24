@@ -1,0 +1,560 @@
+package main
+
+import (
+	"bytes"
+	"crypto/ed25519"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"os"
+	"strings"
+
+	hardeningdomain "bansoko/internal/hardening/domain"
+	"bansoko/internal/releasecontract"
+	updateapplication "bansoko/internal/update/application"
+	updatechannel "bansoko/internal/update/channel"
+	"bansoko/internal/update/packagemaker"
+)
+
+func main() {
+	if err := run(os.Args[1:]); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func run(args []string) error {
+	if len(args) == 0 {
+		return errors.New("usage: bansoko-release <keygen|sign|verify|validate-schema|verify-embedded|artifact-sign|artifact-verify|pack-payload|channel-sign|channel-verify|channel-gate> [flags]")
+	}
+	switch args[0] {
+	case "keygen":
+		return keygen(args[1:])
+	case "artifact-sign":
+		return artifactSign(args[1:])
+	case "artifact-verify":
+		return artifactVerify(args[1:])
+	case "pack-payload":
+		return packPayload(args[1:])
+	case "sign":
+		return sign(args[1:])
+	case "verify":
+		return verify(args[1:])
+	case "validate-schema":
+		return validateSchema(args[1:])
+	case "verify-embedded":
+		return verifyEmbedded(args[1:])
+	case "channel-sign":
+		return channelSign(args[1:])
+	case "channel-verify":
+		return channelVerify(args[1:])
+	case "channel-gate":
+		return channelGate(args[1:])
+	default:
+		return fmt.Errorf("unsupported bansoko-release command %q", args[0])
+	}
+}
+
+// packPayload builds the deterministic embedded-update payload archive and
+// prints a JSON summary with the bare-hex sha256 digest and byte size.
+func packPayload(args []string) error {
+	flags := flag.NewFlagSet("pack-payload", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	serverBinary := flags.String("server-binary", "", "compiled server binary")
+	migrateBinary := flags.String("migrate-binary", "", "compiled bansoko-migrate binary")
+	migrationsDir := flags.String("migrations-dir", "", "db/migrations directory with forward-only SQL")
+	frontendDist := flags.String("frontend-dist", "", "built frontend dist directory (index.html required)")
+	defaultsDir := flags.String("defaults-dir", "", "release defaults directory (attr-rules.yaml required)")
+	output := flags.String("output", "", "payload archive output path (.tar.gz)")
+	sourceDateEpoch := flags.Int64("source-date-epoch", 0, "deterministic SOURCE_DATE_EPOCH")
+	formatVersion := flags.String("format-version", hardeningdomain.EmbeddedUpdateFormatV1, "embedded update format version")
+	releaseID := flags.String("release-id", "", "release identifier")
+	version := flags.String("version", "", "release version")
+	sourceCommit := flags.String("source-commit", "", "source commit")
+	buildID := flags.String("build-id", "", "build id recorded in release-metadata.json")
+	targetSchemaVersion := flags.String("target-schema-version", "", "target schema migration version")
+	platform := flags.String("platform", "", "target platform (GOOS)")
+	architecture := flags.String("architecture", "", "target architecture (GOARCH)")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	result, err := packagemaker.BuildEmbeddedPayload(packagemaker.Options{
+		ServerBinaryPath:  *serverBinary,
+		MigrateBinaryPath: *migrateBinary,
+		MigrationsDir:     *migrationsDir,
+		FrontendDistDir:   *frontendDist,
+		DefaultsDir:       *defaultsDir,
+		OutputPath:        *output,
+		SourceDateEpoch:   *sourceDateEpoch,
+		Metadata: packagemaker.Metadata{
+			FormatVersion:       *formatVersion,
+			ReleaseID:           *releaseID,
+			Version:             *version,
+			SourceCommit:        *sourceCommit,
+			BuildID:             *buildID,
+			TargetSchemaVersion: *targetSchemaVersion,
+			Platform:            *platform,
+			Architecture:        *architecture,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(result)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(data))
+	return nil
+}
+
+func artifactSign(args []string) error {
+	flags := flag.NewFlagSet("artifact-sign", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	digest := flags.String("digest", "", "sha256 artifact digest")
+	privatePath := flags.String("private-key", "", "hex/base64 encoded Ed25519 private key")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*digest) == "" || strings.TrimSpace(*privatePath) == "" {
+		return errors.New("--digest and --private-key are required")
+	}
+	privateKey, err := readKey(*privatePath, ed25519.PrivateKeySize)
+	if err != nil {
+		return fmt.Errorf("read private key: %w", err)
+	}
+	signature, err := hardeningdomain.SignArtifactDigest(ed25519.PrivateKey(privateKey), *digest)
+	if err != nil {
+		return err
+	}
+	fmt.Println(signature)
+	return nil
+}
+
+func artifactVerify(args []string) error {
+	flags := flag.NewFlagSet("artifact-verify", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	digest := flags.String("digest", "", "sha256 artifact digest")
+	signature := flags.String("signature", "", "base64 artifact signature")
+	publicPath := flags.String("public-key", "", "hex/base64 encoded Ed25519 public key")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*digest) == "" || strings.TrimSpace(*signature) == "" || strings.TrimSpace(*publicPath) == "" {
+		return errors.New("--digest, --signature and --public-key are required")
+	}
+	publicKey, err := readKey(*publicPath, ed25519.PublicKeySize)
+	if err != nil {
+		return fmt.Errorf("read public key: %w", err)
+	}
+	if err := hardeningdomain.VerifyArtifactDigestSignature(ed25519.PublicKey(publicKey), *digest, *signature); err != nil {
+		return err
+	}
+	fmt.Println("artifact signature verified")
+	return nil
+}
+
+func keygen(args []string) error {
+	flags := flag.NewFlagSet("keygen", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	privatePath := flags.String("private-key", "", "output path for the private key")
+	publicPath := flags.String("public-key", "", "output path for the public key")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*privatePath) == "" || strings.TrimSpace(*publicPath) == "" {
+		return errors.New("--private-key and --public-key are required")
+	}
+	publicKey, privateKey, err := hardeningdomain.GenerateSigningKey()
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(*privatePath, []byte(hex.EncodeToString(privateKey)), 0o600); err != nil {
+		return fmt.Errorf("write private key: %w", err)
+	}
+	if err := os.WriteFile(*publicPath, []byte(hex.EncodeToString(publicKey)), 0o644); err != nil {
+		return fmt.Errorf("write public key: %w", err)
+	}
+	fingerprint := hardeningdomain.HashArtifact(publicKey)
+	fmt.Printf("public_key_fingerprint=%s\n", fingerprint)
+	return nil
+}
+
+func sign(args []string) error {
+	flags := flag.NewFlagSet("sign", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	inputPath := flags.String("input", "", "unsigned manifest JSON")
+	outputPath := flags.String("output", "", "signed manifest JSON")
+	privatePath := flags.String("private-key", "", "hex/base64 encoded Ed25519 private key")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*inputPath) == "" || strings.TrimSpace(*outputPath) == "" || strings.TrimSpace(*privatePath) == "" {
+		return errors.New("--input, --output and --private-key are required")
+	}
+	manifest, err := readManifest(*inputPath)
+	if err != nil {
+		return err
+	}
+	privateKey, err := readKey(*privatePath, ed25519.PrivateKeySize)
+	if err != nil {
+		return fmt.Errorf("read private key: %w", err)
+	}
+	if err := manifest.Sign(ed25519.PrivateKey(privateKey)); err != nil {
+		return fmt.Errorf("sign release manifest: %w", err)
+	}
+	data, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode signed release manifest: %w", err)
+	}
+	data = append(data, '\n')
+	if err := os.WriteFile(*outputPath, data, 0o644); err != nil {
+		return fmt.Errorf("write signed release manifest: %w", err)
+	}
+	digest, err := manifest.CanonicalDigest()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("manifest_digest=%s\n", digest)
+	return nil
+}
+
+func verify(args []string) error {
+	flags := flag.NewFlagSet("verify", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	manifestPath := flags.String("manifest", "", "signed manifest JSON")
+	publicPath := flags.String("public-key", "", "hex/base64 encoded Ed25519 public key")
+	artifactPath := flags.String("artifact", "", "optional artifact file to digest")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*manifestPath) == "" || strings.TrimSpace(*publicPath) == "" {
+		return errors.New("--manifest and --public-key are required")
+	}
+	manifest, err := readManifest(*manifestPath)
+	if err != nil {
+		return err
+	}
+	publicKey, err := readKey(*publicPath, ed25519.PublicKeySize)
+	if err != nil {
+		return fmt.Errorf("read public key: %w", err)
+	}
+	if err := manifest.VerifySignature(ed25519.PublicKey(publicKey)); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*artifactPath) != "" {
+		payload, err := os.ReadFile(*artifactPath)
+		if err != nil {
+			return fmt.Errorf("read artifact: %w", err)
+		}
+		if digest := hardeningdomain.HashArtifact(payload); digest != manifest.ArtifactDigest {
+			return fmt.Errorf("artifact digest mismatch: got %s want %s", digest, manifest.ArtifactDigest)
+		}
+	}
+	digest, err := manifest.CanonicalDigest()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("verified version=%s manifest_digest=%s\n", manifest.Version, digest)
+	return nil
+}
+
+func validateSchema(args []string) error {
+	flags := flag.NewFlagSet("validate-schema", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	manifestPath := flags.String("manifest", "", "manifest JSON")
+	allowEmptyImages := flags.Bool("allow-empty-images", false, "rehearsal-only empty images exception")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*manifestPath) == "" {
+		return errors.New("--manifest is required")
+	}
+	if *allowEmptyImages && os.Getenv("BANSOKO_REHEARSAL") != "1" {
+		return errors.New("--allow-empty-images is rehearsal-only and requires BANSOKO_REHEARSAL=1")
+	}
+	if err := releasecontract.ValidateCurrent(*manifestPath, *allowEmptyImages); err != nil {
+		return err
+	}
+	fmt.Println("current manifest schema verified")
+	return nil
+}
+
+// verify-embedded validates a bundle manifest that declares an embedded
+// update payload: manifest signature + embedded segment consistency +
+// optional payload archive digest.
+func verifyEmbedded(args []string) error {
+	flags := flag.NewFlagSet("verify-embedded", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	manifestPath := flags.String("manifest", "", "signed manifest JSON")
+	publicPath := flags.String("public-key", "", "hex/base64 encoded Ed25519 public key")
+	payloadPath := flags.String("payload", "", "optional payload .tar.gz to digest against the declared payload_digest")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*manifestPath) == "" || strings.TrimSpace(*publicPath) == "" {
+		return errors.New("--manifest and --public-key are required")
+	}
+	manifest, err := readManifest(*manifestPath)
+	if err != nil {
+		return err
+	}
+	publicKey, err := readKey(*publicPath, ed25519.PublicKeySize)
+	if err != nil {
+		return fmt.Errorf("read public key: %w", err)
+	}
+	if err := manifest.VerifySignature(ed25519.PublicKey(publicKey)); err != nil {
+		return fmt.Errorf("manifest signature: %w", err)
+	}
+	if err := manifest.ValidateForEmbeddedUpdate(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*payloadPath) != "" {
+		data, err := os.ReadFile(*payloadPath)
+		if err != nil {
+			return fmt.Errorf("read payload: %w", err)
+		}
+		digest := hardeningdomain.HashArtifact(data)
+		if digest != manifest.EmbeddedUpdate.PayloadDigest {
+			return fmt.Errorf("payload digest mismatch: got %s want %s", digest, manifest.EmbeddedUpdate.PayloadDigest)
+		}
+	}
+	fmt.Printf("verified embedded payload release_id=%s sequence=%d\n", manifest.ReleaseID, manifest.ReleaseSequence)
+	return nil
+}
+
+func readManifest(path string) (hardeningdomain.ReleaseManifest, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return hardeningdomain.ReleaseManifest{}, fmt.Errorf("read manifest: %w", err)
+	}
+	var manifest hardeningdomain.ReleaseManifest
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&manifest); err != nil {
+		return hardeningdomain.ReleaseManifest{}, fmt.Errorf("decode manifest: %w", err)
+	}
+	return manifest, nil
+}
+
+func readKey(path string, size int) ([]byte, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	value := strings.TrimSpace(string(data))
+	if decoded, err := hex.DecodeString(value); err == nil && len(decoded) == size {
+		return decoded, nil
+	}
+	if decoded, err := base64.RawStdEncoding.DecodeString(value); err == nil && len(decoded) == size {
+		return decoded, nil
+	}
+	if len(data) == size {
+		return data, nil
+	}
+	return nil, fmt.Errorf("key must decode to %d bytes", size)
+}
+
+// channelSign builds and signs one release-discovery document from the exact
+// published release bytes. Every identity field comes from the manifest that
+// was read back out of the package registry, never from the caller's
+// environment, so the channel can never name a release other than the one the
+// deployment will actually verify.
+func channelSign(args []string) error {
+	flags := flag.NewFlagSet("channel-sign", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	manifestPath := flags.String("manifest", "", "published signed release manifest JSON")
+	payloadPath := flags.String("payload", "", "published embedded update payload archive")
+	manifestURL := flags.String("manifest-url", "", "immutable manifest URL the channel points at")
+	channelName := flags.String("channel", "", "channel name (for example: test)")
+	expectSequence := flags.Int64("expect-release-sequence", 0, "required release sequence (CI pipeline identity); 0 disables the check")
+	publicPath := flags.String("public-key", "", "hex/base64 encoded Ed25519 public key")
+	privatePath := flags.String("private-key", "", "hex/base64 encoded Ed25519 private key")
+	outputPath := flags.String("output", "", "signed channel document output path")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*manifestPath) == "" || strings.TrimSpace(*payloadPath) == "" ||
+		strings.TrimSpace(*manifestURL) == "" || strings.TrimSpace(*channelName) == "" ||
+		strings.TrimSpace(*publicPath) == "" || strings.TrimSpace(*privatePath) == "" ||
+		strings.TrimSpace(*outputPath) == "" {
+		return errors.New("--manifest, --payload, --manifest-url, --channel, --public-key, --private-key and --output are required")
+	}
+	publicKey, err := readKey(*publicPath, ed25519.PublicKeySize)
+	if err != nil {
+		return fmt.Errorf("read public key: %w", err)
+	}
+	manifestData, err := os.ReadFile(*manifestPath)
+	if err != nil {
+		return fmt.Errorf("read published manifest: %w", err)
+	}
+	manifest, digest, err := updateapplication.VerifyManifestDocument(manifestData, ed25519.PublicKey(publicKey))
+	if err != nil {
+		return fmt.Errorf("published release manifest rejected: %w", err)
+	}
+	if manifest.EmbeddedUpdate == nil {
+		return errors.New("published release manifest has no embedded update segment")
+	}
+	if expect := *expectSequence; expect > 0 && manifest.ReleaseSequence != expect {
+		return fmt.Errorf("published release sequence %d does not match the expected pipeline identity %d", manifest.ReleaseSequence, expect)
+	}
+	if err := updateapplication.VerifyPayloadFile(*payloadPath, manifest.EmbeddedUpdate, ed25519.PublicKey(publicKey)); err != nil {
+		return fmt.Errorf("published payload rejected: %w", err)
+	}
+	// The URL must be one the deployment's own source policy accepts, so a
+	// published channel can never point outside an installable package path.
+	if _, err := updateapplication.ResolvePackageSource(*manifestURL, "", updateapplication.UpdateHTTPSourceConfig{}); err != nil {
+		return fmt.Errorf("channel manifest url rejected: %w", err)
+	}
+	document := updatechannel.Document{
+		SchemaVersion:   updatechannel.SchemaVersion,
+		Channel:         strings.TrimSpace(*channelName),
+		ReleaseID:       manifest.ReleaseID,
+		Version:         manifest.Version,
+		ReleaseSequence: manifest.ReleaseSequence,
+		ManifestURL:     *manifestURL,
+		ManifestDigest:  digest,
+		SourceCommit:    manifest.SourceCommit,
+		PublishedAt:     manifest.PublishedAt.UTC(),
+	}
+	privateKey, err := readKey(*privatePath, ed25519.PrivateKeySize)
+	if err != nil {
+		return fmt.Errorf("read private key: %w", err)
+	}
+	if err := document.Sign(ed25519.PrivateKey(privateKey)); err != nil {
+		return fmt.Errorf("sign channel document: %w", err)
+	}
+	data, err := json.MarshalIndent(document, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode signed channel document: %w", err)
+	}
+	data = append(data, '\n')
+	if err := os.WriteFile(*outputPath, data, 0o644); err != nil {
+		return fmt.Errorf("write signed channel document: %w", err)
+	}
+	identity, err := json.Marshal(channelIdentity(document))
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s\n", identity)
+	return nil
+}
+
+// channelVerify proves a channel document against the deployment's trusted
+// public key and prints its identity for scripting.
+func channelVerify(args []string) error {
+	flags := flag.NewFlagSet("channel-verify", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	documentPath := flags.String("document", "", "signed channel document JSON")
+	publicPath := flags.String("public-key", "", "hex/base64 encoded Ed25519 public key")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*documentPath) == "" || strings.TrimSpace(*publicPath) == "" {
+		return errors.New("--document and --public-key are required")
+	}
+	publicKey, err := readKey(*publicPath, ed25519.PublicKeySize)
+	if err != nil {
+		return fmt.Errorf("read public key: %w", err)
+	}
+	data, err := os.ReadFile(*documentPath)
+	if err != nil {
+		return fmt.Errorf("read channel document: %w", err)
+	}
+	document, err := updatechannel.Decode(data)
+	if err != nil {
+		return err
+	}
+	if err := document.VerifySignature(ed25519.PublicKey(publicKey)); err != nil {
+		return err
+	}
+	identity, err := json.Marshal(channelIdentity(document))
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s\n", identity)
+	return nil
+}
+
+// channelIdentity is the machine-readable channel summary CI compares between
+// the published document and the one it is about to publish.
+func channelIdentity(document updatechannel.Document) map[string]any {
+	return map[string]any{
+		"schema_version":   document.SchemaVersion,
+		"channel":          document.Channel,
+		"release_id":       document.ReleaseID,
+		"version":          document.Version,
+		"release_sequence": document.ReleaseSequence,
+		"manifest_digest":  document.ManifestDigest,
+		"manifest_url":     document.ManifestURL,
+	}
+}
+
+// channelGate refuses a candidate discovery document that would move the
+// channel backwards or sideways. Publication is the only mutable step in the
+// release path, so the rule is explicit and lives here instead of in shell
+// arithmetic: the candidate must either repeat the published release exactly
+// (an idempotent retry) or advance the release sequence.
+func channelGate(args []string) error {
+	flags := flag.NewFlagSet("channel-gate", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	publishedPath := flags.String("published", "", "published channel document, if one exists")
+	candidatePath := flags.String("candidate", "", "candidate channel document")
+	publicPath := flags.String("public-key", "", "hex/base64 encoded Ed25519 public key")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*candidatePath) == "" || strings.TrimSpace(*publicPath) == "" {
+		return errors.New("--candidate and --public-key are required")
+	}
+	publicKey, err := readKey(*publicPath, ed25519.PublicKeySize)
+	if err != nil {
+		return fmt.Errorf("read public key: %w", err)
+	}
+	candidateData, err := os.ReadFile(*candidatePath)
+	if err != nil {
+		return fmt.Errorf("read candidate channel: %w", err)
+	}
+	candidate, err := updatechannel.Decode(candidateData)
+	if err != nil {
+		return err
+	}
+	if err := candidate.VerifySignature(ed25519.PublicKey(publicKey)); err != nil {
+		return fmt.Errorf("candidate channel rejected: %w", err)
+	}
+	publishedPathValue := strings.TrimSpace(*publishedPath)
+	if publishedPathValue == "" {
+		fmt.Printf("no published channel document; publishing release %s (sequence %d)\n", candidate.ReleaseID, candidate.ReleaseSequence)
+		return nil
+	}
+	publishedData, err := os.ReadFile(publishedPathValue)
+	if err != nil {
+		return fmt.Errorf("read published channel: %w", err)
+	}
+	published, err := updatechannel.Decode(publishedData)
+	if err != nil {
+		return err
+	}
+	if err := published.VerifySignature(ed25519.PublicKey(publicKey)); err != nil {
+		return fmt.Errorf("published channel rejected: %w", err)
+	}
+	if published.Channel != candidate.Channel {
+		return fmt.Errorf("candidate channel %q does not match the published channel %q", candidate.Channel, published.Channel)
+	}
+	switch {
+	case candidate.ReleaseSequence > published.ReleaseSequence:
+		fmt.Printf("channel advances %s (sequence %d) -> %s (sequence %d)\n",
+			published.ReleaseID, published.ReleaseSequence, candidate.ReleaseID, candidate.ReleaseSequence)
+		return nil
+	case candidate.ReleaseSequence == published.ReleaseSequence &&
+		bytes.Equal(candidateData, publishedData):
+		fmt.Printf("channel already names %s (sequence %d); republishing the same release\n", candidate.ReleaseID, candidate.ReleaseSequence)
+		return nil
+	default:
+		return fmt.Errorf("refusing to move channel %q from %s (sequence %d) to %s (sequence %d): a channel may only advance or repeat the published release",
+			candidate.Channel, published.ReleaseID, published.ReleaseSequence, candidate.ReleaseID, candidate.ReleaseSequence)
+	}
+}

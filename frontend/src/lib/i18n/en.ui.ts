@@ -1,0 +1,100 @@
+// Copy for shared components (ui/*) and label helpers (lib/labels).
+
+import type { CopyShape } from "./types";
+import type { statusCopy, uiCopy } from "./zh-CN.ui";
+
+export const enUiCopy = {
+  confirm: "Confirm",
+  cancel: "Cancel",
+  close: "Close",
+  show: "Show",
+  hide: "Hide",
+  provider: { custom: "Custom", library: "Subscribed" },
+  tagPlaceholder: "Type and press Enter to add",
+  tagEmpty: "(empty)",
+  tagRemove: "Remove {tag}",
+  subtitles: {
+    formats: "Subtitles {n}",
+    formatUnknown: "SUB",
+    duplicate: "Same name; another subtitle is kept",
+    noTargetDetail: "No target path",
+    language: "Language",
+    noLanguage: "No language; no language suffix",
+    languageFromFile: "from the file name",
+    languageFromRelease: "from the release title",
+    expand: "Show subtitles for {name} ({n})",
+    collapse: "Hide subtitles for {name} ({n})",
+  },
+  fileUnits: {
+    videos: "Videos: {n}",
+    videosPartial: "Videos: {placed}/{total}",
+    subtitles: "Subtitles: {n}",
+    subtitlesPartial: "Subtitles: {placed}/{total}",
+    others: "Other files: {n}",
+    files: "Files: {n}",
+  },
+  errorBoundary: {
+    title: "Something went wrong on this page",
+    hint: "Try again. If it keeps happening, reload the page.",
+    retry: "Retry",
+    reload: "Reload",
+  },
+} as const satisfies CopyShape<typeof uiCopy>;
+
+export const enStatusCopy = {
+  download: {
+    submitting: "Sending",
+    downloading: "Downloading",
+    completed: "Downloaded",
+    waiting_retry: "Waiting to retry",
+    failed: "Download failed",
+  },
+  artifact: {
+    pending: "Waiting to verify",
+    verified: "Verified",
+    waiting_retry: "Waiting to retry",
+    failed: "Verification failed",
+  },
+  fileOperation: {
+    running: "Importing",
+    completed: "Imported",
+    waiting_retry: "Waiting to retry",
+    failed: "Import failed",
+  },
+  health: {
+    unknown: "Unknown",
+    ready: "OK",
+    degraded: "Unstable",
+    failed: "Failed",
+  },
+  routine: {
+    catalog_refresh: "Catalog refresh",
+    provider_refresh: "Site refresh",
+    rss_refresh: "RSS refresh",
+    metadata_match: "Metadata auto-match",
+    automation_dispatch: "Task dispatch",
+    retention_pass: "Data cleanup",
+    file_manager_operation: "File manager",
+  },
+  logKind: {
+    subscription_created: "Subscribed",
+    subscription_started: "Started",
+    subscription_stopped: "Stopped",
+    subscription_resumed: "Resumed",
+    metadata_applied: "Metadata updated",
+    group_changed: "Group changed",
+    policy_changed: "Settings changed",
+    rss_new_content: "New content",
+    rss_refresh_failed: "Refresh failed",
+    release_processed: "Torrent processed",
+    download_changed: "Download status",
+    artifact_verified: "File verification",
+    placement_changed: "Import location",
+    replacement_decided: "Replacement",
+    cleanup_completed: "Cleanup done",
+    file_alignment_completed: "Imported",
+    file_alignment_failed: "Import failed",
+    acquisition_settled: "Result",
+    other: "Subscription",
+  },
+} as const satisfies CopyShape<typeof statusCopy>;

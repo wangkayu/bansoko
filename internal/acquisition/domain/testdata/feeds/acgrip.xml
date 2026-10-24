@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:torrent="http://xmlns.ezrss.it/0.1/" xmlns:media="http://search.yahoo.com/mrss/">
+  <channel>
+    <title>ACG.RIP</title>
+    <description>ACG.RIP has super cow power</description>
+    <link>https://acg.rip/.xml?term=1080p</link>
+    <ttl>1800</ttl>
+    <item>
+      <title>[SampleGroup] FX战士久留美 / FX Senshi Kurumi-chan - 01 [WebRip 1080p HEVC-10bit AAC ASSx2]</title>
+      <description></description>
+      <pubDate>Mon, 19 Oct 2026 04:14:08 -0700</pubDate>
+      <link>https://acg.rip/t/365651</link>
+      <guid>https://acg.rip/t/365651</guid>
+      <enclosure url="https://acg.rip/t/365651.torrent" type="application/x-bittorrent"/>
+      <torrent:contentLength>381096960</torrent:contentLength>
+      <media:content url="https://acg.rip/t/365651.torrent" fileSize="381096960"/>
+    </item>
+<item>
+      <title>[示例协作组] 飙马野郎 JOJO的奇妙冒险 / Steel Ball Run： JoJo no Kimyou na Bouken [05][1080P][简繁内封]</title>
+      <description></description>
+      <pubDate>Mon, 19 Oct 2026 00:26:52 -0700</pubDate>
+      <link>https://acg.rip/t/365650</link>
+      <guid>https://acg.rip/t/365650</guid>
+      <enclosure url="https://acg.rip/t/365650.torrent" type="application/x-bittorrent"/>
+      <torrent:contentLength>866700288</torrent:contentLength>
+      <media:content url="https://acg.rip/t/365650.torrent" fileSize="866700288"/>
+    </item>
+<item>
+      <title>[示例协作组] 飙马野郎 JOJO的奇妙冒险 / Steel Ball Run： JoJo no Kimyou na Bouken [05][1080P][繁体内嵌]</title>
+      <description></description>
+      <pubDate>Mon, 19 Oct 2026 00:26:47 -0700</pubDate>
+      <link>https://acg.rip/t/365649</link>
+      <guid>https://acg.rip/t/365649</guid>
+      <enclosure url="https://acg.rip/t/365649.torrent" type="application/x-bittorrent"/>
+      <torrent:contentLength>816470016</torrent:contentLength>
+      <media:content url="https://acg.rip/t/365649.torrent" fileSize="816470016"/>
+    </item>
+<item>
+      <title>[示例协作组] 飙马野郎 JOJO的奇妙冒险 / Steel Ball Run： JoJo no Kimyou na Bouken [05][1080P][简体内嵌]</title>
+      <description></description>
+      <pubDate>Mon, 19 Oct 2026 00:26:40 -0700</pubDate>
+      <link>https://acg.rip/t/365648</link>
+      <guid>https://acg.rip/t/365648</guid>
+      <enclosure url="https://acg.rip/t/365648.torrent" type="application/x-bittorrent"/>
+      <torrent:contentLength>816783360</torrent:contentLength>
+      <media:content url="https://acg.rip/t/365648.torrent" fileSize="816783360"/>
+    </item>
+  </channel>
+</rss>
+

@@ -1,0 +1,23 @@
+# Group List Configuration
+# 字幕组知识库,用于辅助 token 识别和结构识别
+#
+# 核心理念:
+# - 这是 Parser 的知识库,不是匹配系统
+# - 用于帮助识别"这是一个字幕组"
+# - 不区分 HEAD GROUP 和 TAILGROUP
+# - 不做名称替换,只提升识别置信度
+
+last_updated: 2026-01-31
+description: 字幕组知识库,用于辅助 Parser 的 token 识别和结构识别
+groups:
+  - name: SomeGroup
+    patterns:
+      - SomeGroup
+  - name: 三明治摆烂组
+    patterns:
+      - 三明治摆烂组
+usage_notes: |-
+  1. 这是 Parser 的知识库,不是匹配系统
+  2. patterns 用于识别 token 是否为字幕组
+  3. Parser 输出原始值,不做名称替换
+  4. 名称匹配和替换由下游匹配系统完成

@@ -1,0 +1,19 @@
+# pnpm 11 removed onlyBuiltDependencies in favour of allowBuilds; pnpm 10 only
+# honors onlyBuiltDependencies and silently ignores unknown keys. Keep both so
+# local dev (10.x) and the pinned Docker build (11.x) run the native build
+# scripts for @swc/core and esbuild.
+allowBuilds:
+  "@swc/core": true
+  esbuild: true
+onlyBuiltDependencies:
+  - "@swc/core"
+  - esbuild
+# SEC-033: advisories reviewed and accepted (scripts/ci/check-vulns.sh). Both
+# are fixed only in react-router 7.18; this app is a client-only HashRouter SPA:
+# GHSA-337j-9hxr-rhxg affects SSR hydration (none here), GHSA-wrjc-x8rr-h8h6
+# needs a <Link>/navigate target an attacker controls (every target here is a
+# fixed in-app route). Revisit when moving to react-router 7.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-337j-9hxr-rhxg
+    - GHSA-wrjc-x8rr-h8h6

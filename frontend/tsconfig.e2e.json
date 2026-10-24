@@ -1,0 +1,11 @@
+{
+  // e2e fixture mock 契约门禁：spec 与 fixtures 里的 mock 响应用 openapi 生成
+  // 类型（satisfies / 返回类型注解）约束，契约漂移在 pnpm typecheck 时暴露，
+  // 而不是等浏览器 lane 红了再追。Playwright 自身只做转译不做类型检查，所以
+  // 必须显式纳入一个 tsconfig。
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["e2e", "src/vite-env.d.ts", "playwright.config.ts"]
+}
