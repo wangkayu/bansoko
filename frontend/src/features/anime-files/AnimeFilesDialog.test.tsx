@@ -249,4 +249,68 @@ describe("AnimeFilesDialog", () => {
     expect(screen.queryByRole("button", { name: t("tabs.files.rerun") })).toBeNull();
     expect(screen.queryByRole("button", { name: t("tabs.files.scan") })).toBeNull();
   });
+
+  it("recovers with the full frozen token, closes only on success and rescans", async () => {
+    const posts: { url: string; body: unknown }[] = [];
+    const missing = fileRow({
+      status: "missing",
+      recovery: { generation: 3, target_path: "/library/Show/Season 01/Show - E01.mkv", size_bytes: 4096, placement_version: 7, fingerprint: "meta:size=4096", companions: 1 },
+      actions: { align: notApplicable("nothing_to_align"), rerun: available, release: available, recover: available },
+    });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/files/recover") && init?.method === "POST") {
+        posts.push({ url, body: JSON.parse(String(init.body)) });
+        return jsonResponse({ placement_id: "p-1", generation: 3, target_path: "/library/Show/Season 01/Show - E01.mkv", replay: false, companions: 1 }, 200);
+      }
+      if (url.includes("/reconciliations/scan") && init?.method === "POST") {
+        return jsonResponse({ state: "running", generation: 4 }, 202);
+      }
+      return jsonResponse(filesView([missing]));
+    }));
+    renderFiles();
+
+    const list = await screen.findByRole("list", { name: t("tabs.files.title") });
+    fireEvent.click(within(list).getByRole("button", { name: t("policy.fileEffect.recover") }));
+    await screen.findByRole("dialog");
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: t("policy.fileEffect.recover") }));
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0]!.body).toEqual({
+      placement_id: "p-1",
+      generation: 3,
+      target_path: "/library/Show/Season 01/Show - E01.mkv",
+      fingerprint: "meta:size=4096",
+      placement_version: 7,
+    });
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith(t("policy.fileEffect.recovered")));
+    // The confirm dialog (recovery target line) closes after the success;
+    // only the outer files dialog remains.
+    await waitFor(() => expect(screen.queryByText(t("policy.fileEffect.recoverTarget", { path: "/library/Show/Season 01/Show - E01.mkv" }))).toBeNull());
+  });
+
+  it("keeps the recover dialog open with the typed reason on a refusal", async () => {
+    let posts = 0;
+    const missing = fileRow({
+      status: "missing",
+      recovery: { generation: 3, target_path: "/library/Show/Season 01/Show - E01.mkv", size_bytes: 4096, placement_version: 7, fingerprint: "meta:size=4096", companions: 0 },
+      actions: { align: notApplicable("nothing_to_align"), rerun: available, release: available, recover: available },
+    });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/files/recover") && init?.method === "POST") {
+        posts += 1;
+        return jsonResponse({ code: "ANIME_FILES_RECOVER_REFUSED", message: "x", details: [{ code: "target_changed", message: "x" }] }, 409);
+      }
+      return jsonResponse(filesView([missing]));
+    }));
+    renderFiles();
+
+    const list = await screen.findByRole("list", { name: t("tabs.files.title") });
+    fireEvent.click(within(list).getByRole("button", { name: t("policy.fileEffect.recover") }));
+    await screen.findByRole("dialog");
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: t("policy.fileEffect.recover") }));
+    await waitFor(() => expect(posts).toBe(1));
+    expect(await screen.findByRole("dialog")).toHaveTextContent(reasonLabel("target_changed") ?? "");
+    expect(toastMock.success).not.toHaveBeenCalled();
+  });
 });

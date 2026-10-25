@@ -685,13 +685,15 @@ func provideCoreApplicationGraph(
 	reconciliationService.SetTargetObserver(acquisitiontarget.NewScanner(targetStore, acquisitiontarget.FilesystemProbe{}))
 	// Scan-alignment recovery probe: the composition root injects the
 	// filemaintenance renderer (dependency direction filemaintenance ->
-	// reconciliation) and the library's no-follow file observer, so a scan
-	// may record recovery CANDIDATE facts for missing placements. The probe
-	// only stats exact rendered paths; recovery itself stays behind the
-	// user's explicit confirm command.
+	// reconciliation), the library's no-follow file observer and the SQL
+	// occupancy read, so a scan may record recovery CANDIDATE facts for
+	// missing placements whose COMPLETE rendered unit is free of other
+	// owners. The probe only stats exact rendered paths; recovery itself
+	// stays behind the user's explicit confirm command.
 	reconciliationService.SetRecoveryProbe(
 		fileMaintenanceGraph.namingRenderer,
 		filesystem.OSFileObserver{},
+		filemaintenance.NewRecoveryOccupancy(db),
 	)
 	rssService.SetCandidateFactsRepository(fileMaintenanceGraph.candidateFactsRepo)
 	rssService.SetMediaFactsStore(fileMaintenanceGraph.mediaFactsStore)

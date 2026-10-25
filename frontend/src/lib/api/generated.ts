@@ -1061,7 +1061,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description The explicit recovery confirm of a scan alignment recovery candidate. The scan froze the candidate (the rendered target was missing and a file was observed exactly there); this confirm re-verifies every frozen fact inside one transaction — the file still sits at the target with the observed size and identity, the companions still match their frozen paths, and no other file owns the target — and then re-attaches the placement (and its present companions) to that path. No byte is moved, copied, overwritten or deleted; only ownership rows re-point. Replaying the same confirm returns the same result without a second journal entry. A refusal is 409 ANIME_FILES_RECOVER_REFUSED with details[0].code one of `owner_retired`, `not_started`, `candidate_gone`, `scan_changed`, `placement_changed`, `target_missing`, `target_changed`, `target_occupied` or `companion_occupied`.
+        /** @description The explicit recovery confirm of a scan alignment recovery candidate. The scan froze the candidate (the rendered target was missing and the COMPLETE rendered unit — video and every companion — was observed at its rendered paths free of other owners); this confirm re-verifies every frozen fact inside one transaction — the file still sits at the target with the observed size and identity, EVERY companion still sits at its frozen path with its frozen identity, and no other file owns any unit path — and then re-attaches the placement AND its companions to those paths as one atomic unit. A single missing or changed companion refuses the whole confirm (companion_missing / companion_occupied) and nothing is re-attached. No byte is moved, copied, overwritten or deleted; only ownership rows re-point. Replaying the same confirm returns the same result without a second journal entry. A refusal is 409 ANIME_FILES_RECOVER_REFUSED with details[0].code one of `owner_retired`, `not_started`, `candidate_gone`, `scan_changed`, `scan_running`, `placement_changed`, `target_missing`, `target_changed`, `target_occupied`, `companion_missing` or `companion_occupied`.
          *      */
         post: operations["recoverAnimeFile"];
         delete?: never;
@@ -6725,12 +6725,15 @@ export interface components {
             target_path: string;
             /** Format: int64 */
             size_bytes: number;
-            /** @description Companion files the candidate froze with the video. */
+            /**
+             * Format: int64
+             * @description The placement row version frozen with the candidate; pass it to the recover endpoint.
+             */
+            placement_version: number;
+            /** @description Metadata fingerprint the scan observed at the target; pass it to the recover endpoint. */
+            fingerprint: string;
+            /** @description Companion files frozen with the candidate. Recovery is atomic: the confirm succeeds only when every companion still sits at its frozen path, otherwise the whole unit is refused. */
             companions: number;
-            /** @description How many companions the scan observed at their rendered targets. */
-            companions_present: number;
-            /** @description Every active companion relation was observed; false leaves a gap the confirm reports but does not block. */
-            companions_complete: boolean;
         };
         AnimeFilesScan: {
             /** @enum {string} */
@@ -6784,6 +6787,15 @@ export interface components {
              * @description The scan generation the caller read (AnimeFile.recovery.generation); a newer generation answers scan_changed.
              */
             generation: number;
+            /** @description The rendered target the caller read (AnimeFile.recovery.target_path); a mismatch answers target_changed. */
+            target_path: string;
+            /** @description The metadata fingerprint the caller read (AnimeFile.recovery.fingerprint); a mismatch answers target_changed. */
+            fingerprint: string;
+            /**
+             * Format: int64
+             * @description The placement row version the caller read (AnimeFile.recovery.placement_version); a mismatch answers placement_changed.
+             */
+            placement_version: number;
         };
         AnimeFileRecoverResult: {
             placement_id: components["schemas"]["ID"];
@@ -6793,15 +6805,13 @@ export interface components {
              */
             generation: number;
             /** @description The path the file now owns (the candidate's rendered target). */
-            target_path?: string;
+            target_path: string;
             /** Format: date-time */
             recovered_at?: string;
             /** @description True when this confirm had already committed; the same result replays. */
             replay: boolean;
-            /** @description Companion files re-attached with the video. */
-            companions?: number;
-            /** @description Frozen companions no longer found at their targets; the video still recovers and nothing is dropped. */
-            companions_missing?: number;
+            /** @description Companion files re-attached with the video (the unit is atomic; a missing companion would have refused the confirm). */
+            companions: number;
         };
         CompanionIssueView: {
             video_path: string;

@@ -3072,18 +3072,24 @@ type AnimeFileCompanionStatus string
 
 // AnimeFileRecoverInput defines model for AnimeFileRecoverInput.
 type AnimeFileRecoverInput struct {
+	// Fingerprint The metadata fingerprint the caller read (AnimeFile.recovery.fingerprint); a mismatch answers target_changed.
+	Fingerprint string `json:"fingerprint"`
+
 	// Generation The scan generation the caller read (AnimeFile.recovery.generation); a newer generation answers scan_changed.
 	Generation  int64 `json:"generation"`
 	PlacementId ID    `json:"placement_id"`
+
+	// PlacementVersion The placement row version the caller read (AnimeFile.recovery.placement_version); a mismatch answers placement_changed.
+	PlacementVersion int64 `json:"placement_version"`
+
+	// TargetPath The rendered target the caller read (AnimeFile.recovery.target_path); a mismatch answers target_changed.
+	TargetPath string `json:"target_path"`
 }
 
 // AnimeFileRecoverResult defines model for AnimeFileRecoverResult.
 type AnimeFileRecoverResult struct {
-	// Companions Companion files re-attached with the video.
-	Companions *int `json:"companions,omitempty"`
-
-	// CompanionsMissing Frozen companions no longer found at their targets; the video still recovers and nothing is dropped.
-	CompanionsMissing *int `json:"companions_missing,omitempty"`
+	// Companions Companion files re-attached with the video (the unit is atomic; a missing companion would have refused the confirm).
+	Companions int `json:"companions"`
 
 	// Generation The confirmed candidate's scan generation.
 	Generation  int64      `json:"generation"`
@@ -3094,23 +3100,23 @@ type AnimeFileRecoverResult struct {
 	Replay bool `json:"replay"`
 
 	// TargetPath The path the file now owns (the candidate's rendered target).
-	TargetPath *string `json:"target_path,omitempty"`
+	TargetPath string `json:"target_path"`
 }
 
 // AnimeFileRecovery defines model for AnimeFileRecovery.
 type AnimeFileRecovery struct {
-	// Companions Companion files the candidate froze with the video.
+	// Companions Companion files frozen with the candidate. Recovery is atomic: the confirm succeeds only when every companion still sits at its frozen path, otherwise the whole unit is refused.
 	Companions int `json:"companions"`
 
-	// CompanionsComplete Every active companion relation was observed; false leaves a gap the confirm reports but does not block.
-	CompanionsComplete bool `json:"companions_complete"`
-
-	// CompanionsPresent How many companions the scan observed at their rendered targets.
-	CompanionsPresent int `json:"companions_present"`
+	// Fingerprint Metadata fingerprint the scan observed at the target; pass it to the recover endpoint.
+	Fingerprint string `json:"fingerprint"`
 
 	// Generation The scan generation that froze the candidate; pass it to the recover endpoint.
 	Generation int64 `json:"generation"`
-	SizeBytes  int64 `json:"size_bytes"`
+
+	// PlacementVersion The placement row version frozen with the candidate; pass it to the recover endpoint.
+	PlacementVersion int64 `json:"placement_version"`
+	SizeBytes        int64 `json:"size_bytes"`
 
 	// TargetPath The rendered target where the scan observed the file.
 	TargetPath string `json:"target_path"`

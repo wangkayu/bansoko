@@ -35,12 +35,15 @@ type Service struct {
 	workItems *workitems.Store
 	eventHub  *events.Hub
 	now       func() time.Time
-	// recoveryTargets and recoveryObserver are the optional scan-alignment
-	// recovery ports: the composition root injects the filemaintenance
-	// renderer and the library filesystem observer. Unwired ports keep the
-	// probe inert (candidates are never written).
-	recoveryTargets  RecoveryTargetRenderer
-	recoveryObserver FileObserver
+	// recoveryTargets, recoveryObserver and recoveryOccupancy are the
+	// optional scan-alignment recovery ports: the composition root injects the
+	// filemaintenance renderer, the library filesystem observer and the SQL
+	// occupancy read over the same ownership surface the file manager
+	// enforces. Unwired ports keep the probe inert (candidates are never
+	// written).
+	recoveryTargets    RecoveryTargetRenderer
+	recoveryObserver   FileObserver
+	recoveryOccupancy  RecoveryOccupancyChecker
 }
 
 // TargetObserver refreshes the latest TargetObservation rows of one instance
@@ -77,15 +80,16 @@ func (s *Service) SetTargetObserver(observer TargetObserver) {
 	}
 }
 
-// SetRecoveryProbe wires the scan-alignment recovery probe (renderer plus
-// no-follow file observer). A nil renderer or observer keeps the probe
+// SetRecoveryProbe wires the scan-alignment recovery probe (renderer, no-follow
+// file observer and the SQL occupancy read). Any nil port keeps the probe
 // inert.
-func (s *Service) SetRecoveryProbe(targets RecoveryTargetRenderer, observer FileObserver) {
+func (s *Service) SetRecoveryProbe(targets RecoveryTargetRenderer, observer FileObserver, occupancy RecoveryOccupancyChecker) {
 	if s == nil {
 		return
 	}
 	s.recoveryTargets = targets
 	s.recoveryObserver = observer
+	s.recoveryOccupancy = occupancy
 }
 
 // SetEventHub wires the optional in-process read-model invalidation boundary.

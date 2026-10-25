@@ -20,9 +20,10 @@ func (s *Server) ListAnimeFiles(w http.ResponseWriter, r *http.Request, animeID 
 }
 
 // RecoverAnimeFile is the explicit recovery confirm of a frozen scan
-// candidate: re-verifies every frozen fact and re-attaches the placement to
-// the file the user adopted. A refusal is a typed 409; nothing moved on any
-// path.
+// candidate: re-verifies every frozen fact (including the caller's
+// target/fingerprint/version token) and re-attaches the placement and its
+// complete companion unit to the files the user adopted. A refusal is a
+// typed 409; nothing moved on any path.
 func (s *Server) RecoverAnimeFile(w http.ResponseWriter, r *http.Request, animeID generated.ManagedAnimeID) {
 	var input generated.AnimeFileRecoverInput
 	if err := decodeJSON(w, r, &input); err != nil {
@@ -33,7 +34,14 @@ func (s *Server) RecoverAnimeFile(w http.ResponseWriter, r *http.Request, animeI
 		writeError(w, r, badRequest("VALIDATION_FAILED", "generation must be at least 1"))
 		return
 	}
-	result, err := s.deps.FileMaintenance.RecoverAnimeFileApplication(r.Context(), string(animeID), string(input.PlacementId), input.Generation)
+	command := filemaintenance.AnimeFileRecoverCommand{
+		PlacementID:      string(input.PlacementId),
+		Generation:       input.Generation,
+		TargetPath:       input.TargetPath,
+		Fingerprint:      input.Fingerprint,
+		PlacementVersion: input.PlacementVersion,
+	}
+	result, err := s.deps.FileMaintenance.RecoverAnimeFileApplication(r.Context(), string(animeID), command)
 	if err != nil {
 		writeError(w, r, mapAnimeFilesRecoverError(err))
 		return
@@ -41,7 +49,9 @@ func (s *Server) RecoverAnimeFile(w http.ResponseWriter, r *http.Request, animeI
 	writeJSON(w, r.Context(), http.StatusOK, generated.AnimeFileRecoverResult{
 		PlacementId: generated.ID(result.PlacementID),
 		Generation:  result.Generation,
+		TargetPath:  result.TargetPath,
 		Replay:      result.Replay,
+		Companions:  result.Companions,
 	})
 }
 
@@ -113,10 +123,12 @@ var animeFilesRecoverRefusals = map[string]string{
 	filemaintenance.AnimeFilesReasonNotStarted:      "The subscription has not been started.",
 	filemaintenance.RecoveryReasonCandidateGone:     "The recovery candidate is gone; scan the files again.",
 	filemaintenance.RecoveryReasonScanChanged:       "A newer scan exists; read the files again.",
+	filemaintenance.RecoveryReasonScanRunning:       "A scan is running; read the files again after it settles.",
 	filemaintenance.RecoveryReasonPlacementChanged:  "The file row changed since the scan.",
 	filemaintenance.RecoveryReasonTargetMissing:     "The file is no longer at the recorded path.",
 	filemaintenance.RecoveryReasonTargetChanged:     "The file at the recorded path has changed.",
 	filemaintenance.RecoveryReasonTargetOccupied:    "Another file already owns that path.",
+	filemaintenance.RecoveryReasonCompanionMissing:  "A companion file of the unit is no longer at its recorded path.",
 	filemaintenance.RecoveryReasonCompanionOccupied: "A companion path has changed or is taken.",
 }
 
@@ -164,12 +176,12 @@ func mapAnimeFileRecovery(view *filemaintenance.AnimeFileRecoveryView) *generate
 		return nil
 	}
 	return &generated.AnimeFileRecovery{
-		Generation:         view.Generation,
-		TargetPath:         view.TargetPath,
-		SizeBytes:          view.SizeBytes,
-		Companions:         view.Companions,
-		CompanionsPresent:  view.CompanionsPresent,
-		CompanionsComplete: view.CompanionsComplete,
+		Generation:       view.Generation,
+		TargetPath:       view.TargetPath,
+		SizeBytes:        view.SizeBytes,
+		PlacementVersion: view.PlacementVersion,
+		Fingerprint:      view.Fingerprint,
+		Companions:       view.Companions,
 	}
 }
 

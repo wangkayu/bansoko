@@ -58,19 +58,39 @@ func (f *fakeObserver) ObserveFile(_ context.Context, path string) (domain.FileO
 	return domain.FileObservation{}, errors.New("not found")
 }
 
-// probeService builds the minimal service for the DB-free probe tests: only
-// the two recovery ports are read.
-func probeService(renderer RecoveryTargetRenderer, observer FileObserver) *Service {
-	return &Service{recoveryTargets: renderer, recoveryObserver: observer}
+// fakeOccupancy records the asked path set; empty means free.
+type fakeOccupancy struct {
+	asked    [][]string
+	occupied map[string]bool
+}
+
+func (f *fakeOccupancy) RecoveryTargetsOccupied(_ context.Context, paths []string, _ string) (bool, error) {
+	f.asked = append(f.asked, paths)
+	for _, path := range paths {
+		if f.occupied[path] {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// probeService builds the minimal service for the DB-free probe tests: the
+// three recovery ports are the whole read surface.
+func probeService(renderer RecoveryTargetRenderer, observer FileObserver, occupancy RecoveryOccupancyChecker) *Service {
+	return &Service{recoveryTargets: renderer, recoveryObserver: observer, recoveryOccupancy: occupancy}
 }
 
 // probeScene: one all-locators-missing placement with a subtitle companion,
-// whose rendered video target exists at the exact rendered path.
-func probeScene() ([]ownedPlacement, *fakeRenderer, *fakeObserver) {
+// whose rendered video target exists at the exact rendered path with the
+// placement's frozen expected size, and a live row version to freeze.
+func probeScene() ([]ownedPlacement, *fakeRenderer, *fakeObserver, *fakeOccupancy) {
 	placements := []ownedPlacement{{
-		ID:           "plc-1",
-		PhysicalPath: "/library/Show/raw ep1.mkv",
-		Companions:   []ownedCompanion{{ID: "c-1", Path: "/library/Show/raw ep1.zh.ass", MediaKind: "subtitle"}},
+		ID:                "plc-1",
+		PhysicalPath:      "/library/Show/raw ep1.mkv",
+		Version:           4,
+		OperationSize:     4096,
+		SourceFingerprint: "sha:source",
+		Companions:        []ownedCompanion{{ID: "c-1", Path: "/library/Show/raw ep1.zh.ass", MediaKind: "subtitle", SizeBytes: 64, Version: 2}},
 	}}
 	renderer := &fakeRenderer{
 		targets:    map[string]string{"plc-1": "/library/Show/Season 01/EP 01.mkv"},
@@ -80,15 +100,17 @@ func probeScene() ([]ownedPlacement, *fakeRenderer, *fakeObserver) {
 		"/library/Show/Season 01/EP 01.mkv":    {Fingerprint: "meta:size=4096", SizeBytes: 4096},
 		"/library/Show/Season 01/EP 01.zh.ass": {Fingerprint: "meta:size=64", SizeBytes: 64},
 	}}
-	return placements, renderer, observer
+	return placements, renderer, observer, &fakeOccupancy{occupied: map[string]bool{}}
 }
 
 // The probe stats only the exact rendered video and companion paths (no
 // directory enumeration: the asked list is the whole stat surface) and freezes
-// one candidate beside the unchanged missing disposition semantics.
+// one candidate beside the unchanged missing disposition semantics: the row
+// version, the frozen old path, the frozen expected size, the complete
+// companion unit with its own versions, and the occupancy verdict.
 func TestProbeRecoveryCandidatesStatsOnlyRenderedTargets(t *testing.T) {
-	placements, renderer, observer := probeScene()
-	candidates := probeService(renderer, observer).probeRecoveryCandidates(context.Background(), "a1", 7, placements)
+	placements, renderer, observer, occupancy := probeScene()
+	candidates := probeService(renderer, observer, occupancy).probeRecoveryCandidates(context.Background(), "a1", 7, placements)
 	if len(candidates) != 1 {
 		t.Fatalf("candidates = %d, want 1", len(candidates))
 	}
@@ -99,45 +121,89 @@ func TestProbeRecoveryCandidatesStatsOnlyRenderedTargets(t *testing.T) {
 	if candidate.Generation != 7 || candidate.SizeBytes != 4096 || candidate.TargetFingerprint != "meta:size=4096" {
 		t.Fatalf("candidate facts = %+v", candidate)
 	}
+	if candidate.PlacementVersion != 4 {
+		t.Fatalf("placement_version = %d, want the frozen row version 4", candidate.PlacementVersion)
+	}
+	if candidate.OldPhysicalPath != "/library/Show/raw ep1.mkv" {
+		t.Fatalf("old_physical_path = %q, want the scan-time row path", candidate.OldPhysicalPath)
+	}
 	if len(candidate.Companions) != 1 {
 		t.Fatalf("companions = %+v", candidate.Companions)
 	}
 	companion := candidate.Companions[0]
-	if companion.ID != "c-1" || companion.State != "present" || companion.Fingerprint == nil || companion.SizeBytes != 64 {
+	if companion.ID != "c-1" || companion.Fingerprint != "meta:size=64" || companion.SizeBytes != 64 {
 		t.Fatalf("companion fact = %+v", companion)
 	}
-	if !candidate.CompanionsComplete {
-		t.Fatal("companions_complete = false, want true")
+	if companion.Version != 2 {
+		t.Fatalf("companion version = %d, want the frozen row version 2", companion.Version)
+	}
+	if companion.TargetPath != "/library/Show/Season 01/EP 01.zh.ass" {
+		t.Fatalf("companion target = %q", companion.TargetPath)
 	}
 	if len(observer.asked) != 2 {
 		t.Fatalf("stat surface = %v, want exactly the rendered video + companion paths", observer.asked)
 	}
+	if len(occupancy.asked) != 1 {
+		t.Fatalf("occupancy surface = %v, want one check over both unit paths", occupancy.asked)
+	}
 }
 
-// A companion not found at its rendered path freezes a null observation and
-// marks the candidate incomplete: the confirm still recovers the video but the
-// gap stays visible.
-func TestProbeRecoveryCandidatesIncompleteCompanions(t *testing.T) {
-	placements, renderer, observer := probeScene()
+// A companion not found at its rendered path disqualifies the whole unit: the
+// candidate is atomic, so an incomplete unit freezes nothing at all.
+func TestProbeRecoveryCandidatesIncompleteCompanionsWriteNothing(t *testing.T) {
+	placements, renderer, observer, occupancy := probeScene()
 	delete(observer.files, "/library/Show/Season 01/EP 01.zh.ass")
-	candidates := probeService(renderer, observer).probeRecoveryCandidates(context.Background(), "a1", 7, placements)
-	if len(candidates) != 1 || candidates[0].CompanionsComplete {
-		t.Fatalf("candidates = %+v, want one incomplete candidate", candidates)
-	}
-	companion := candidates[0].Companions[0]
-	if companion.State != "missing" || companion.Fingerprint != nil {
-		t.Fatalf("companion fact = %+v, want a missing null-observation", companion)
+	candidates := probeService(renderer, observer, occupancy).probeRecoveryCandidates(context.Background(), "a1", 7, placements)
+	if candidates != nil {
+		t.Fatalf("candidates = %+v, want none for an incomplete unit", candidates)
 	}
 }
 
 // A missing rendered video target freezes nothing: no observation at the exact
 // path means no candidate (the disposition stays plain missing).
 func TestProbeRecoveryCandidatesMissingTargetWritesNothing(t *testing.T) {
-	placements, renderer, observer := probeScene()
+	placements, renderer, observer, occupancy := probeScene()
 	delete(observer.files, "/library/Show/Season 01/EP 01.mkv")
-	candidates := probeService(renderer, observer).probeRecoveryCandidates(context.Background(), "a1", 7, placements)
+	candidates := probeService(renderer, observer, occupancy).probeRecoveryCandidates(context.Background(), "a1", 7, placements)
 	if candidates != nil {
 		t.Fatalf("candidates = %+v, want none", candidates)
+	}
+}
+
+// A size mismatch against the placement's frozen expected size (the
+// calibration identity priority) disqualifies the file: it is not the
+// placement's own content re-rendered under the new naming.
+func TestProbeRecoveryCandidatesRejectsSizeMismatch(t *testing.T) {
+	placements, renderer, observer, occupancy := probeScene()
+	observer.files["/library/Show/Season 01/EP 01.mkv"] = domain.FileObservation{
+		Fingerprint: "meta:size=999", SizeBytes: 999,
+	}
+	candidates := probeService(renderer, observer, occupancy).probeRecoveryCandidates(context.Background(), "a1", 7, placements)
+	if candidates != nil {
+		t.Fatalf("candidates = %+v, want none on size mismatch", candidates)
+	}
+}
+
+// A target that equals any of the placement's own locators is not a recovery
+// (it is the file sitting where the row already points): no candidate.
+func TestProbeRecoveryCandidatesRejectsLocatorTarget(t *testing.T) {
+	placements, renderer, observer, occupancy := probeScene()
+	renderer.targets["plc-1"] = placements[0].PhysicalPath
+	candidates := probeService(renderer, observer, occupancy).probeRecoveryCandidates(context.Background(), "a1", 7, placements)
+	if candidates != nil {
+		t.Fatalf("candidates = %+v, want none when the target is a locator", candidates)
+	}
+}
+
+// An occupied unit (another active placement/companion or unfinished owner
+// holds the target or any companion path) disqualifies the candidate: no
+// second owner, ever.
+func TestProbeRecoveryCandidatesRejectsOccupiedUnit(t *testing.T) {
+	placements, renderer, observer, occupancy := probeScene()
+	occupancy.occupied["/library/Show/Season 01/EP 01.mkv"] = true
+	candidates := probeService(renderer, observer, occupancy).probeRecoveryCandidates(context.Background(), "a1", 7, placements)
+	if candidates != nil {
+		t.Fatalf("candidates = %+v, want none when the unit is occupied", candidates)
 	}
 }
 
@@ -145,9 +211,9 @@ func TestProbeRecoveryCandidatesMissingTargetWritesNothing(t *testing.T) {
 // retries): no render result means no stats and no candidates, and the scan
 // itself still lands its missing dispositions.
 func TestProbeRecoveryCandidatesDegradeOnRenderFailure(t *testing.T) {
-	placements, renderer, observer := probeScene()
+	placements, renderer, observer, occupancy := probeScene()
 	renderer.err = errors.New("naming template broken")
-	candidates := probeService(renderer, observer).probeRecoveryCandidates(context.Background(), "a1", 7, placements)
+	candidates := probeService(renderer, observer, occupancy).probeRecoveryCandidates(context.Background(), "a1", 7, placements)
 	if candidates != nil {
 		t.Fatalf("candidates = %+v, want none on render failure", candidates)
 	}
@@ -156,19 +222,29 @@ func TestProbeRecoveryCandidatesDegradeOnRenderFailure(t *testing.T) {
 	}
 }
 
+// An occupancy read failure degrades too: the ownership surface could not be
+// read, so nothing may be frozen.
+func TestProbeRecoveryCandidatesDegradeOnOccupancyFailure(t *testing.T) {
+	placements, renderer, observer, _ := probeScene()
+	candidates := probeService(renderer, observer, nil).probeRecoveryCandidates(context.Background(), "a1", 7, placements)
+	if candidates != nil {
+		t.Fatalf("candidates = %+v, want none when occupancy is unwired", candidates)
+	}
+}
+
 // Unwired ports keep the probe inert; a cancelled context stops before any
 // further work.
 func TestProbeRecoveryCandidatesInertAndCancellable(t *testing.T) {
-	placements, renderer, observer := probeScene()
-	if got := probeService(nil, observer).probeRecoveryCandidates(context.Background(), "a1", 7, placements); got != nil {
+	placements, renderer, observer, occupancy := probeScene()
+	if got := probeService(nil, observer, occupancy).probeRecoveryCandidates(context.Background(), "a1", 7, placements); got != nil {
 		t.Fatalf("candidates without renderer = %+v, want none", got)
 	}
-	if got := probeService(renderer, nil).probeRecoveryCandidates(context.Background(), "a1", 7, placements); got != nil {
+	if got := probeService(renderer, nil, occupancy).probeRecoveryCandidates(context.Background(), "a1", 7, placements); got != nil {
 		t.Fatalf("candidates without observer = %+v, want none", got)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if got := probeService(renderer, observer).probeRecoveryCandidates(ctx, "a1", 7, placements); got != nil {
+	if got := probeService(renderer, observer, occupancy).probeRecoveryCandidates(ctx, "a1", 7, placements); got != nil {
 		t.Fatalf("candidates on cancelled context = %+v, want none", got)
 	}
 }

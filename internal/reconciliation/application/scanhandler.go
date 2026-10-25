@@ -151,20 +151,18 @@ func (s *Service) handleScan(ctx context.Context, claim workitems.Claim) (worker
 		observation.companions = observeCompanions(placement.Companions, found)
 		observations = append(observations, observation)
 	}
-
 	// Scan-alignment recovery probe: for placements missing at every locator,
 	// stat the exact rendered target (current naming rules) through the
 	// no-follow observer. A candidate is an immutable FACT written beside the
-	// missing disposition; nothing is ever auto-recovered from it.
+	// missing disposition; nothing is ever auto-recovered from it. The probe
+	// receives the loaded placements so it can freeze the row's version,
+	// frozen expected size and current path into the candidate.
 	recoveryCandidates := map[string][]recoveryCandidateFact{}
-	if s.recoveryTargets != nil && s.recoveryObserver != nil {
+	if s.recoveryTargets != nil && s.recoveryObserver != nil && s.recoveryOccupancy != nil {
 		missing := make([]ownedPlacement, 0, len(observations))
-		for _, observation := range observations {
+		for i, observation := range observations {
 			if observation.file == nil {
-				missing = append(missing, ownedPlacement{
-					ID:         observation.placementID,
-					Companions: companionsOf(placements, observation.placementID),
-				})
+				missing = append(missing, placements[i])
 			}
 		}
 		for _, candidate := range s.probeRecoveryCandidates(ctx, claim.Owner.ID, owner.Generation, missing) {
@@ -307,12 +305,22 @@ type ownedPlacement struct {
 	// current path first, then frozen provenance fallbacks (e.g. the original
 	// download source of a file_operation placement).
 	LocatorPaths []string
-	// Companions are the placement's registered active companion sidecars
-	//, observed at their registered current path for presence and size.
+	// Version is the placement row's frozen version at load time; the recovery
+	// probe freezes it in the candidate so the confirm's CAS update can demand
+	// the row the scan saw (a changed row refuses as placement_changed).
+	Version int64
+	// Frozen identity fingerprints (the typed envelopes the placement was
+	// admitted with) and the producing operation's observed/expected target
+	// size: together they give the recovery probe the placement's frozen
+	// expected size under the calibration identity's own priority.
+	SourceFingerprint string
+	TargetFingerprint string
+	OperationSize     int64
 	Companions []ownedCompanion
 }
 
-// ownedCompanion is one registered companion sidecar of a placement.
+// ownedCompanion is one registered companion sidecar of a placement, with
+// its row version for the recovery confirm's CAS update.
 type ownedCompanion struct {
 	ID        string
 	Path      string
@@ -320,6 +328,7 @@ type ownedCompanion struct {
 	Suffix    string
 	Extension string
 	SizeBytes int64
+	Version   int64
 }
 
 // companionObservation is the scan result of one companion: present, missing
@@ -373,7 +382,9 @@ func companionsOf(placements []ownedPlacement, placementID string) []ownedCompan
 func (s *Service) loadOwnedPlacements(ctx context.Context, animeID string) ([]ownedPlacement, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT p.id, p.physical_path, op.source_path,
-       COALESCE(f.resolution, ''), COALESCE(f."group", ''), COALESCE(f.language, '')
+       COALESCE(f.resolution, ''), COALESCE(f."group", ''), COALESCE(f.language, ''),
+       p.version, p.source_fingerprint, p.target_fingerprint,
+       COALESCE(op.observed_target_size_bytes, op.expected_size_bytes, 0)
 FROM placements p
 LEFT JOIN file_operations op ON op.id = p.source_owner_ref
   AND p.source_evidence_type = 'file_operation'
@@ -390,7 +401,9 @@ ORDER BY p.created_at, p.id`, animeID)
 		var placement ownedPlacement
 		var sourcePath sql.NullString
 		if err := rows.Scan(&placement.ID, &placement.PhysicalPath, &sourcePath,
-			&placement.Resolution, &placement.Group, &placement.Language); err != nil {
+			&placement.Resolution, &placement.Group, &placement.Language,
+			&placement.Version, &placement.SourceFingerprint, &placement.TargetFingerprint,
+			&placement.OperationSize); err != nil {
 			return nil, fmt.Errorf("scan owned placement: %w", err)
 		}
 		placement.LocatorPaths = []string{placement.PhysicalPath}
@@ -413,7 +426,7 @@ ORDER BY p.created_at, p.id`, animeID)
 		ids = append(ids, placement.ID)
 	}
 	companionRows, err := s.db.QueryContext(ctx, `
-SELECT id, placement_id, current_path, media_kind, suffix, original_extension, size_bytes
+SELECT id, placement_id, current_path, media_kind, suffix, original_extension, size_bytes, version
 FROM placement_companions
 WHERE placement_id = ANY($1) AND state = 'active'
 ORDER BY placement_id, current_path`, ids)
@@ -424,8 +437,7 @@ ORDER BY placement_id, current_path`, ids)
 	for companionRows.Next() {
 		var companion ownedCompanion
 		var placementID string
-		if err := companionRows.Scan(&companion.ID, &placementID, &companion.Path, &companion.MediaKind, &companion.Suffix, &companion.Extension, &companion.SizeBytes); err != nil {
-			return nil, fmt.Errorf("scan placement companion: %w", err)
+		if err := companionRows.Scan(&companion.ID, &placementID, &companion.Path, &companion.MediaKind, &companion.Suffix, &companion.Extension, &companion.SizeBytes, &companion.Version); err != nil {
 		}
 		if i, ok := index[placementID]; ok {
 			placements[i].Companions = append(placements[i].Companions, companion)
@@ -447,9 +459,6 @@ type placementObservation struct {
 	companions   []companionObservation
 }
 
-// commitBatch persists one batch of Placement observations (ON CONFLICT DO
-// NOTHING: idempotent re-entry) and advances the owner checkpoint in the same
-// transaction, with the claim fencing token.
 // commitBatch persists one batch of Placement observations (ON CONFLICT DO
 // NOTHING: idempotent re-entry) and advances the owner checkpoint in the same
 // transaction, with the claim fencing token. recoveryCandidates carries the

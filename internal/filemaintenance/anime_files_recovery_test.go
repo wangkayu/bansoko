@@ -4,7 +4,7 @@ import "testing"
 
 // recoveryBase returns a missing placement with a frozen candidate at its own
 // rendered target: the shape the scan leaves behind for an all-locator-missing
-// row it also observed at the target.
+// row whose COMPLETE rendered unit it observed at the rendered paths.
 func recoveryBase() animeFilesFacts {
 	facts := animeFilesBase()
 	facts.Diffs = []PathDiffView{{
@@ -14,7 +14,7 @@ func recoveryBase() animeFilesFacts {
 	}}
 	facts.Placements[0].Recovery = &animeFilesRecoveryCandidate{
 		PlacementID: "p1", TargetPath: "/lib/Show/Season 01/Show - E01.mkv", Generation: 3,
-		SizeBytes: 4096, Companions: 1, CompanionsPresent: 1, CompanionsComplete: true,
+		SizeBytes: 4096, PlacementVersion: 7, Fingerprint: "meta:size=4096", Companions: 1,
 	}
 	facts.RecoveryReady = true
 	return facts
@@ -22,15 +22,21 @@ func recoveryBase() animeFilesFacts {
 
 // The confirm rides on the row: candidate present, row missing, read current
 // and nothing in flight — otherwise the action refuses with the gate reason
-// and no candidate ever means nothing_to_recover.
+// and no candidate ever means nothing_to_recover. The view exposes the frozen
+// tokens (generation, target, fingerprint, placement version) the confirm
+// echoes back.
 func TestDeriveAnimeFilesRecoveryActionGates(t *testing.T) {
 	t.Run("available with candidate on a current missing row", func(t *testing.T) {
 		row := deriveAnimeFiles(recoveryBase()).Files[0]
 		if !row.Actions.Recover.Available {
 			t.Fatalf("recover = %+v, want available", row.Actions.Recover)
 		}
-		if row.Recovery == nil || row.Recovery.Generation != 3 || row.Recovery.SizeBytes != 4096 || !row.Recovery.CompanionsComplete {
-			t.Fatalf("recovery view = %+v", row.Recovery)
+		view := row.Recovery
+		if view == nil || view.Generation != 3 || view.SizeBytes != 4096 {
+			t.Fatalf("recovery view = %+v", view)
+		}
+		if view.PlacementVersion != 7 || view.Fingerprint != "meta:size=4096" || view.Companions != 1 {
+			t.Fatalf("recovery tokens = %+v", view)
 		}
 	})
 	t.Run("not missing", func(t *testing.T) {

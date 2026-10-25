@@ -87,13 +87,14 @@ type AnimeFileRecoveryView struct {
 	Generation int64
 	TargetPath string
 	SizeBytes  int64
-	// Companions is the frozen companion count; CompanionsPresent how many
-	// the scan observed at their rendered targets; CompanionsComplete says
-	// every active companion relation was observed (a gap reports why the
-	// recovery keeps the video and drops nothing).
-	Companions         int
-	CompanionsPresent  int
-	CompanionsComplete bool
+	// The frozen identity tokens the confirm echoes back: a stale dialog
+	// (row re-pointed or re-rendered since) can never act.
+	PlacementVersion int64
+	Fingerprint      string
+	// Companions is the frozen companion count. Recovery is atomic over the
+	// whole unit: the confirm refuses unless EVERY companion still sits at
+	// its frozen path, so there is no partial-present report.
+	Companions int
 }
 
 // AnimeFileCompanionView is one bound companion of a video row.
@@ -227,19 +228,20 @@ type animeFilesAlignmentOp struct {
 }
 
 // animeFilesRecoveryCandidate is the frozen scan fact of one placement's
-// all-locator-missing target: the file the user may re-adopt by explicit
-// confirm. It mirrors the candidate the scan wrote; the confirm re-verifies
-// every field before the placement re-attaches.
+// all-locator-missing target: the COMPLETE rendered unit the user may
+// re-adopt by explicit confirm. It mirrors the candidate the scan wrote;
+// the confirm re-verifies every field (including the placement version and
+// target fingerprint tokens) before the placement re-attaches.
 type animeFilesRecoveryCandidate struct {
-	PlacementID string
-	TargetPath  string
-	Generation  int64
-	SizeBytes   int64
-	// Companions reports the frozen companion count and how many the scan
-	// observed present at the rendered companion targets.
-	Companions         int
-	CompanionsPresent  int
-	CompanionsComplete bool
+	PlacementID      string
+	TargetPath       string
+	Generation       int64
+	SizeBytes        int64
+	PlacementVersion int64
+	Fingerprint      string
+	// Companions is the frozen companion count; the confirm requires ALL of
+	// them at their frozen paths, so there is no partial-present state.
+	Companions int
 }
 
 type animeFilesScanOwner struct {
@@ -383,6 +385,22 @@ SELECT NOT EXISTS(SELECT 1 FROM reconciliation_files
 	return facts, nil
 }
 
+// recoveryScanLive reports whether a scan or its calibration is still in
+// flight for the anime: the generation the user reads (and would confirm)
+// could re-decide the rows under them. Read-model and confirm share the gate
+// so the offered action and the accepted action agree.
+func recoveryScanLive(ctx context.Context, q queryer, animeID string) (bool, error) {
+	var live bool
+	err := q.QueryRowContext(ctx, `
+SELECT EXISTS(SELECT 1 FROM work_items
+              WHERE owner_type = 'file_maintenance' AND owner_id = $1
+                AND kind IN ('reconciliation_scan', 'reconciliation_calibrate')
+                AND state IN ('available', 'leased'))`, animeID).Scan(&live)
+	if err != nil {
+		return false, fmt.Errorf("read recovery scan liveness: %w", err)
+	}
+	return live, nil
+}
 func loadAnimeFilesOwner(ctx context.Context, q queryer, animeID string) (animeFilesOwner, bool, error) {
 	var owner animeFilesOwner
 	err := q.QueryRowContext(ctx, `
@@ -552,21 +570,34 @@ WHERE placement_id = ANY($1) AND state = 'active' ORDER BY placement_id, current
 }
 
 // loadAnimeFilesRecovery attaches each placement's frozen recovery candidate
-// from the anime's latest calibrated generation (side-effect free: it reads
-// only the facts the scan wrote). A candidate already confirmed
-// (facts.recovered_generation) is done: the row reads as aligned again.
+// from the anime's LATEST calibrated generation (side-effect free: it reads
+// only the facts the scan wrote). Gate (review fix #2): the read model
+// answers only while that generation is still the newest decided one and no
+// scan or calibration is live — a dialog captured on an older generation
+// can never act (the confirm re-checks the same gate), so it is not even
+// offered. A candidate already confirmed (facts.recovered_generation) is
+// done: the row reads as aligned again.
 func loadAnimeFilesRecovery(ctx context.Context, db *sql.DB, animeID string, placements []animeFilesPlacement) error {
 	if len(placements) == 0 {
+		return nil
+	}
+	latest, _, err := latestCalibratedGeneration(ctx, db, animeID)
+	if err != nil {
+		return err
+	}
+	if live, err := recoveryScanLive(ctx, db, animeID); err != nil {
+		return err
+	} else if live || latest == 0 {
 		return nil
 	}
 	rows, err := db.QueryContext(ctx, `
 SELECT rf.facts->>'placement_id',
        rf.facts->'recovery_candidates'
 FROM reconciliation_files rf
-WHERE rf.managed_anime_id = $1 AND rf.disposition = 'missing'
+WHERE rf.managed_anime_id = $1 AND rf.generation = $2
+  AND rf.disposition = 'missing'
   AND rf.facts->'recovery_candidates' IS NOT NULL
-  AND NOT (rf.facts ? 'recovered_generation')
-ORDER BY rf.generation DESC`, animeID)
+  AND NOT (rf.facts ? 'recovered_generation')`, animeID, latest)
 	if err != nil {
 		return fmt.Errorf("read recovery candidates: %w", err)
 	}
@@ -597,20 +628,14 @@ ORDER BY rf.generation DESC`, animeID)
 				break
 			}
 			seen[placementID] = true
-			present := 0
-			for _, companion := range candidate.Companions {
-				if companion.State == "present" {
-					present++
-				}
-			}
 			placements[at].Recovery = &animeFilesRecoveryCandidate{
-				PlacementID:        candidate.PlacementID,
-				TargetPath:         candidate.TargetPath,
-				Generation:         candidate.Generation,
-				SizeBytes:          candidate.SizeBytes,
-				Companions:         len(candidate.Companions),
-				CompanionsPresent:  present,
-				CompanionsComplete: candidate.CompanionsComplete,
+				PlacementID:      candidate.PlacementID,
+				TargetPath:       candidate.TargetPath,
+				Generation:       candidate.Generation,
+				SizeBytes:        candidate.SizeBytes,
+				Companions:       len(candidate.Companions),
+				PlacementVersion: candidate.PlacementVersion,
+				Fingerprint:      candidate.TargetFingerprint,
 			}
 			break
 		}
@@ -834,15 +859,19 @@ func deriveAnimeFiles(f animeFilesFacts) AnimeFilesView {
 		row.Actions.Release = availability(releaseReason)
 
 		// Recover: the scan froze a candidate for this row (its target was
-		// missing and a file was stat'ed there). Available only while the
-		// read is current and nothing is in flight; the confirm's own
-		// transaction re-verifies every frozen fact again.
+		// missing and the COMPLETE rendered unit was free of other owners).
+		// Available only while the read is current and nothing is in flight;
+		// the confirm's own transaction re-verifies every frozen fact again
+		// (unit is atomic: video + companions or nothing).
 		if placement.Recovery != nil {
 			candidate := placement.Recovery
 			row.Recovery = &AnimeFileRecoveryView{
-				Generation: candidate.Generation, TargetPath: candidate.TargetPath, SizeBytes: candidate.SizeBytes,
-				Companions: candidate.Companions, CompanionsPresent: candidate.CompanionsPresent,
-				CompanionsComplete: candidate.CompanionsComplete,
+				Generation:       candidate.Generation,
+				TargetPath:       candidate.TargetPath,
+				SizeBytes:        candidate.SizeBytes,
+				PlacementVersion: candidate.PlacementVersion,
+				Fingerprint:      candidate.Fingerprint,
+				Companions:       candidate.Companions,
 			}
 			recoverReason := ""
 			switch {

@@ -2321,25 +2321,30 @@ paths:
         description: >
           Confirm the recovery of one file the user adopted by hand: the file
           found at the path the file's latest scan expected but did not find.
-          Pass the placement_id and the scan generation you read from
-          list_anime_files; the same confirm replays as the same result. A
-          refused confirm is 409 ANIME_FILES_RECOVER_REFUSED with the reason
-          in details[0].code and no state changed.
+          Pass the placement_id, generation, target_path, fingerprint and
+          placement_version you read from list_anime_files; the same confirm
+          replays as the same result. A refused confirm is 409
+          ANIME_FILES_RECOVER_REFUSED with the reason in details[0].code and
+          no state changed.
       description: >
         The explicit recovery confirm of a scan alignment recovery candidate.
-        The scan froze the candidate (the rendered target was missing and a
-        file was observed exactly there); this confirm re-verifies every
-        frozen fact inside one transaction — the file still sits at the target
-        with the observed size and identity, the companions still match their
-        frozen paths, and no other file owns the target — and then re-attaches
-        the placement (and its present companions) to that path. No byte is
-        moved, copied, overwritten or deleted; only ownership rows re-point.
+        The scan froze the candidate (the rendered target was missing and the
+        COMPLETE rendered unit — video and every companion — was observed at
+        its rendered paths free of other owners); this confirm re-verifies
+        every frozen fact inside one transaction — the file still sits at the
+        target with the observed size and identity, EVERY companion still
+        sits at its frozen path with its frozen identity, and no other file
+        owns any unit path — and then re-attaches the placement AND its
+        companions to those paths as one atomic unit. A single missing or
+        changed companion refuses the whole confirm (companion_missing /
+        companion_occupied) and nothing is re-attached. No byte is moved,
+        copied, overwritten or deleted; only ownership rows re-point.
         Replaying the same confirm returns the same result without a second
         journal entry. A refusal is 409 ANIME_FILES_RECOVER_REFUSED with
         details[0].code one of `owner_retired`, `not_started`,
-        `candidate_gone`, `scan_changed`, `placement_changed`,
-        `target_missing`, `target_changed`, `target_occupied` or
-        `companion_occupied`.
+        `candidate_gone`, `scan_changed`, `scan_running`, `placement_changed`,
+        `target_missing`, `target_changed`, `target_occupied`,
+        `companion_missing` or `companion_occupied`.
       parameters:
         - $ref: '#/components/parameters/ManagedAnimeID'
       requestBody:
@@ -15748,8 +15753,8 @@ components:
     AnimeFileRecovery:
       type: object
       additionalProperties: false
-      required: [generation, target_path, size_bytes, companions,
-                 companions_present, companions_complete]
+      required: [generation, target_path, size_bytes, placement_version,
+                 fingerprint, companions]
       properties:
         generation:
           type: integer
@@ -15765,20 +15770,23 @@ components:
           type: integer
           format: int64
           minimum: 0
+        placement_version:
+          type: integer
+          format: int64
+          minimum: 0
+          description: The placement row version frozen with the candidate;
+            pass it to the recover endpoint.
+        fingerprint:
+          type: string
+          description: Metadata fingerprint the scan observed at the target;
+            pass it to the recover endpoint.
         companions:
           type: integer
           minimum: 0
-          description: Companion files the candidate froze with the video.
-        companions_present:
-          type: integer
-          minimum: 0
           description: >-
-            How many companions the scan observed at their rendered targets.
-        companions_complete:
-          type: boolean
-          description: >-
-            Every active companion relation was observed; false leaves a gap
-            the confirm reports but does not block.
+            Companion files frozen with the candidate. Recovery is atomic:
+            the confirm succeeds only when every companion still sits at its
+            frozen path, otherwise the whole unit is refused.
     AnimeFilesScan:
       type: object
       additionalProperties: false
@@ -15873,7 +15881,8 @@ components:
     AnimeFileRecoverInput:
       type: object
       additionalProperties: false
-      required: [placement_id, generation]
+      required: [placement_id, generation, target_path, fingerprint,
+                 placement_version]
       properties:
         placement_id:
           $ref: '#/components/schemas/ID'
@@ -15887,10 +15896,25 @@ components:
           description: >-
             The scan generation the caller read (AnimeFile.recovery.generation);
             a newer generation answers scan_changed.
+        target_path:
+          type: string
+          description: The rendered target the caller read
+            (AnimeFile.recovery.target_path); a mismatch answers target_changed.
+        fingerprint:
+          type: string
+          description: The metadata fingerprint the caller read
+            (AnimeFile.recovery.fingerprint); a mismatch answers target_changed.
+        placement_version:
+          type: integer
+          format: int64
+          minimum: 0
+          description: The placement row version the caller read
+            (AnimeFile.recovery.placement_version); a mismatch answers
+            placement_changed.
     AnimeFileRecoverResult:
       type: object
       additionalProperties: false
-      required: [placement_id, generation, replay]
+      required: [placement_id, generation, target_path, replay, companions]
       properties:
         placement_id:
           $ref: '#/components/schemas/ID'
@@ -15914,13 +15938,8 @@ components:
         companions:
           type: integer
           minimum: 0
-          description: Companion files re-attached with the video.
-        companions_missing:
-          type: integer
-          minimum: 0
-          description: >-
-            Frozen companions no longer found at their targets; the video
-            still recovers and nothing is dropped.
+          description: Companion files re-attached with the video (the unit is
+            atomic; a missing companion would have refused the confirm).
     CompanionIssueView:
       type: object
       additionalProperties: false
