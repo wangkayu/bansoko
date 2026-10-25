@@ -2,11 +2,14 @@ package application
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	animedomain "bansoko/internal/anime/domain"
 	"bansoko/internal/apperrors"
+	"bansoko/internal/attrrules"
 )
 
 // sourceGroupDisplayName is the single place an admission decides what the
@@ -54,5 +57,52 @@ func TestSourceGroupDisplayNameNeverFallsBackToTheIdentity(t *testing.T) {
 	}
 	if request.GroupName == providerSeed.ProviderGroupRef {
 		t.Fatal("target request group name is the provider group identity")
+	}
+}
+
+// A keyword search seed has no recorded group observation, so its mount name can
+// only come from the release title. The identity (a search-scope digest) is never
+// substituted, and a title without a marker answers the neutral label instead of
+// failing the download over a cosmetic fact.
+func TestSearchSeedGroupDisplayNameUsesTheTitleNeverTheIdentity(t *testing.T) {
+	rulesPath := filepath.Join("..", "..", "..", "..", "deployment", "defaults", "attr-rules.yaml")
+	rulesData, err := os.ReadFile(rulesPath)
+	if err != nil {
+		t.Fatalf("read shipped attribute rules: %v", err)
+	}
+	rules, err := attrrules.Parse(rulesData, rulesPath)
+	if err != nil {
+		t.Fatalf("parse shipped attribute rules: %v", err)
+	}
+	fingerprint, err := attrrules.Canonical(rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := attrrules.SetActive(rules, string(fingerprint)); err != nil {
+		t.Fatalf("activate attribute rules: %v", err)
+	}
+
+	seed := SelectedSeed{
+		Provider:         animedomain.ProviderKindMikan,
+		ProviderEntryRef: "search-scope:" + strings.Repeat("a", 64),
+		ProviderGroupRef: "search-query:" + strings.Repeat("b", 64),
+		Title:            "[示例字幕组] 示例作品 - 03 [1080p]",
+	}
+	if name := searchSeedGroupDisplayName(seed); name != "示例字幕组" {
+		t.Fatalf("named search seed group = %q, want the title's own marker", name)
+	}
+	if searchSeedGroupDisplayName(seed) == seed.ProviderGroupRef || searchSeedGroupDisplayName(seed) == seed.ProviderEntryRef {
+		t.Fatal("the search scope digest was used as a display name")
+	}
+
+	unmarked := seed
+	unmarked.Title = "示例作品 - 03 [1080p]"
+	if name := searchSeedGroupDisplayName(unmarked); name != "unknown" {
+		t.Fatalf("unmarked search seed group = %q, want the neutral label", name)
+	}
+	untitled := seed
+	untitled.Title = "   "
+	if name := searchSeedGroupDisplayName(untitled); name != "unknown" {
+		t.Fatalf("untitled search seed group = %q, want the neutral label", name)
 	}
 }

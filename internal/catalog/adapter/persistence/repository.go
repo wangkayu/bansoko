@@ -194,8 +194,10 @@ func (r *Repository) readProviderFeedSnapshot(ctx context.Context, queries *gene
 	}
 	snapshot := catalogdomain.ProviderFeedSnapshot{
 		ID: row.ID, Provider: row.Provider, ProviderEntryRef: row.ProviderEntryRef, ProviderGroupRef: row.ProviderGroupRef,
-		Version: row.Version, FetchedAt: row.FetchedAt, FreshUntil: row.FreshUntil, ContentHash: row.ContentHash,
-		HashSchema: row.HashSchema, FreshnessState: catalogdomain.FeedSnapshotFreshness(row.Freshness), Seeds: seeds,
+		Version: row.Version, FetchedAt: row.FetchedAt, FreshUntil: row.FreshUntil, RetentionUntil: row.RetentionUntil, ContentHash: row.ContentHash,
+		HashSchema: row.HashSchema, SnapshotKind: catalogdomain.FeedSnapshotKind(row.SnapshotKind),
+		SearchParserVersion: row.SearchParserVersion.String,
+		FreshnessState:      catalogdomain.FeedSnapshotFreshness(row.Freshness), Seeds: seeds,
 	}
 	if row.ProjectionSchema.Valid {
 		snapshot.ProjectionSchema = row.ProjectionSchema.String

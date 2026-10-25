@@ -97,7 +97,7 @@ func TestSearchProviderQueryBoundsReturnQueryInvalid(t *testing.T) {
 		ProviderAniBT: HTTPReader{Endpoint: "https://anibt.invalid"},
 	}, nil)
 
-	for name, query := range map[string]string{"empty": "", "too long": strings.Repeat("a", 257)} {
+	for name, query := range map[string]string{"empty": "", "too long": strings.Repeat("a", 257), "too long multibyte": strings.Repeat("界", 257)} {
 		_, err := service.SearchProvider(context.Background(), ProviderAniBT, query)
 		if !errors.Is(err, ErrSearchQueryInvalid) {
 			t.Fatalf("%s query: error = %v, want ErrSearchQueryInvalid", name, err)
@@ -108,16 +108,65 @@ func TestSearchProviderQueryBoundsReturnQueryInvalid(t *testing.T) {
 	}
 }
 
-// TestSearchProviderCapabilityStillNotSupported guards the existing mapping:
+// The program-search q bound has the same character semantics as the seed
+// search contract; multibyte input is not rejected merely for its byte length.
+func TestSearchProviderAccepts256MultibyteCharacters(t *testing.T) {
+	query := strings.Repeat("界", 256)
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		if got := r.URL.Query().Get("q"); got != query {
+			t.Errorf("upstream q has %d characters, want 256", len([]rune(got)))
+		}
+		io.WriteString(w, `{"ok":true,"data":[]}`)
+	}))
+	defer upstream.Close()
+	service := NewProviderService(nil, map[string]Reader{ProviderAniBT: HTTPReader{Endpoint: upstream.URL}}, nil)
+	if _, err := service.SearchProvider(context.Background(), ProviderAniBT, query); err != nil {
+		t.Fatalf("256-character query: %v", err)
+	}
+	if upstreamCalls != 1 {
+		t.Fatalf("upstream calls = %d, want 1", upstreamCalls)
+	}
+}
+
+// TestSearchProviderCapabilityStillNotSupported guards the capability mapping:
 // a provider whose reader does not implement Searcher keeps returning
-// ErrSearchNotSupported after the query-validation split.
+// ErrSearchNotSupported after the query-validation split, so the sentinel keeps
+// meaning "this provider has no keyword search at all".
 func TestSearchProviderCapabilityStillNotSupported(t *testing.T) {
 	service := NewProviderService(nil, map[string]Reader{
-		ProviderMikan: &MikanHTTPReader{},
+		ProviderMikan: seasonOnlyReader{},
 	}, nil)
 
 	_, err := service.SearchProvider(context.Background(), ProviderMikan, "x")
 	if !errors.Is(err, ErrSearchNotSupported) {
 		t.Fatalf("error = %v, want ErrSearchNotSupported", err)
 	}
+}
+
+// Both discovery providers expose a keyword program search now: Mikan answers it
+// from the Home/Search program block instead of the retired SEARCH_NOT_SUPPORTED
+// answer. The fake endpoint below is not a valid URL on purpose, so the call
+// proves the capability path is taken (an upstream failure) and not the
+// capability refusal.
+func TestSearchProviderReachesBothDiscoveryProviders(t *testing.T) {
+	service := NewProviderService(nil, map[string]Reader{
+		ProviderAniBT: HTTPReader{Endpoint: "https://anibt.invalid"},
+		ProviderMikan: &MikanHTTPReader{},
+	}, nil)
+	for _, provider := range []string{ProviderAniBT, ProviderMikan} {
+		_, err := service.SearchProvider(context.Background(), provider, "示例作品")
+		if errors.Is(err, ErrSearchNotSupported) {
+			t.Fatalf("%s still reports no keyword search: %v", provider, err)
+		}
+	}
+}
+
+// seasonOnlyReader implements only the season read, i.e. a provider with no
+// keyword search surface.
+type seasonOnlyReader struct{}
+
+func (seasonOnlyReader) ReadSeason(context.Context, string, domain.ReadHints) (domain.ReadResult, error) {
+	return domain.ReadResult{}, nil
 }

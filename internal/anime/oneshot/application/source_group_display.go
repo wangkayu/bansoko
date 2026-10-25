@@ -6,8 +6,10 @@ import (
 	"errors"
 	"strings"
 
+	acquisitiondomain "bansoko/internal/acquisition/domain"
 	animedomain "bansoko/internal/anime/domain"
 	"bansoko/internal/apperrors"
+	"bansoko/internal/attrrules"
 )
 
 // sourceGroupDisplayName resolves the display name of the selected seed's
@@ -76,4 +78,30 @@ LIMIT 1`, provider, entryRef, groupRef).Scan(&name)
 // source group has no recorded display name.
 func sourceGroupUnavailableError() error {
 	return &apperrors.Business{Status: 422, Code: "SOURCE_GROUP_UNAVAILABLE", Message: "所选种子的来源组没有可用的显示名，请重新发现分组后再试。"}
+}
+
+// searchSeedGroupDisplayName resolves the display name a keyword search seed's
+// one-shot mount records. A search seed has no catalog entry and no provider
+// group, so no recorded group observation can name it. The release title's own
+// group marker — read by the pinned release-title parser — is the only statement
+// about it, and it is a display fact, never an identity.
+//
+// A title without a marker answers the same neutral label every unnamed source
+// uses. The alternative would be to fall back to the provider group identity,
+// which for a search row is a search-scope digest: exactly the identity-as-name
+// substitution this resolver exists to prevent.
+func searchSeedGroupDisplayName(seed SelectedSeed) string {
+	const unnamedGroupLabel = "unknown"
+	title := strings.TrimSpace(seed.Title)
+	if title == "" {
+		return unnamedGroupLabel
+	}
+	rules, _, err := attrrules.Current()
+	if err != nil {
+		return unnamedGroupLabel
+	}
+	if name := strings.TrimSpace(acquisitiondomain.ParseReleaseFacts(title, rules).GroupName); name != "" {
+		return name
+	}
+	return unnamedGroupLabel
 }
