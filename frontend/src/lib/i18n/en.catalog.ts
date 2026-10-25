@@ -173,7 +173,20 @@ export const enFeedSiteCopy = {
 
 export const enGlobalSearchCopy = {
   keywordAria: "Search keywords",
+  modeAria: "Search type",
+  modeProgram: "Anime",
+  modeSeed: "Torrents",
+  providerAria: "Site",
   placeholder: "Search anime by keyword",
+  seedPlaceholder: "Search torrents by keyword",
+  seedHint: "Combine the title, group, episode or resolution with spaces for sharper results",
+  seedWindowNote: "Keyword search shows at most the first 100 results",
   clearAria: "Clear keywords",
   start: "Enter keywords to start searching",
+  noMatchSeed: "No matching torrents",
+  resultSummary: "{n} results",
+  loadMore: "Load more",
+  stale: "The search results expired. Search again.",
+  searchAgain: "Search again",
+  downloadSeed: "Download",
 } as const satisfies CopyShape<typeof globalSearchCopy>;

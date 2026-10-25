@@ -80,4 +80,10 @@ export const oneshotCopy = {
   retryFailed: "重试未提交的种子",
   resultOk: "已开始下载",
   resultFailed: "未提交",
+
+  // 搜索种子的单个一次性下载
+  searchTitle: "下载种子",
+  searchStale: "搜索结果已过期，请重新搜索",
+  searchFiles: "共 {count} 个文件 · {size}",
+  downloadOne: "下载",
 } as const;

@@ -207,8 +207,7 @@ export const authCopy = {
 } as const;
 
 export const searchCopy = {
-  title: "搜索番剧",
-  inSite: "在 {site} 中搜索",
+  title: "搜索",
   noMatch: "没有匹配的番剧",
 } as const;
 
