@@ -8,7 +8,6 @@ const QUERY_INVALID = "查询条件无效，请调整后重试";
 const NOT_READY = "服务尚未配置完成，请联系管理员";
 const DRAFT_CHANGED = "草稿已被修改，请刷新后重新编辑";
 const FEED_STALE = "种子列表已过期，请先刷新种子列表";
-const SEARCH_STALE = "搜索结果已过期，请重新搜索";
 const FEED_INVALID = "种子列表无效，请重新获取";
 const RSS_ADDRESS = "RSS 地址无效或不安全，请检查后重试";
 const GROUP_NOT_SELECTED = "该字幕组未选中，请先选择字幕组";
@@ -134,12 +133,6 @@ export const errorCopy = {
   SEED_IDENTITY_REQUIRED: "种子信息不完整，请刷新种子列表",
   SEED_INVALID: "种子信息有误，请刷新种子列表",
   SEED_LOCATOR_UNSAFE: "种子地址不安全，无法下载",
-
-  // --- 搜索快照 ---
-  SEARCH_SNAPSHOT_SCOPE_INVALID: SEARCH_STALE,
-  SEARCH_SNAPSHOT_CURSOR_INVALID: SEARCH_STALE,
-  PROVIDER_SEARCH_NOT_CONFIGURED: "该站点未开启搜索，请先在设置中配置",
-  PROVIDER_SEARCH_ENDPOINT_UNAVAILABLE: NOT_READY,
   SEED_PAYLOAD_READER_NOT_CONFIGURED: NOT_READY,
   EVALUATE_INPUT_MISSING: REFRESH_RETRY,
   INPUT_SOURCE_INVALID: BAD_REQUEST,

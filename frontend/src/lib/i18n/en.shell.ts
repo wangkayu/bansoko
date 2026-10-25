@@ -217,7 +217,8 @@ export const enAuthCopy = {
 } as const satisfies CopyShape<typeof authCopy>;
 
 export const enSearchCopy = {
-  title: "Search",
+  title: "Search Anime",
+  inSite: "Searching {site}",
   noMatch: "No matching anime",
 } as const satisfies CopyShape<typeof searchCopy>;
 

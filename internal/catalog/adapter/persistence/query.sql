@@ -61,12 +61,9 @@ SELECT
     snapshot.version,
     snapshot.fetched_at,
     snapshot.fresh_until,
-    snapshot.retention_until,
     snapshot.content_hash,
     snapshot.hash_schema,
     snapshot.projection_schema,
-    snapshot.snapshot_kind,
-    snapshot.search_parser_version,
     CASE WHEN snapshot.fresh_until > CURRENT_TIMESTAMP THEN 'fresh' ELSE 'stale' END AS freshness
 FROM provider_feed_snapshots AS snapshot
 WHERE snapshot.provider = $1
@@ -84,12 +81,9 @@ SELECT
     snapshot.version,
     snapshot.fetched_at,
     snapshot.fresh_until,
-    snapshot.retention_until,
     snapshot.content_hash,
     snapshot.hash_schema,
     snapshot.projection_schema,
-    snapshot.snapshot_kind,
-    snapshot.search_parser_version,
     CASE WHEN snapshot.fresh_until > CURRENT_TIMESTAMP THEN 'fresh' ELSE 'stale' END AS freshness
 FROM provider_feed_snapshots AS snapshot
 WHERE snapshot.id = $1;
@@ -136,8 +130,7 @@ WHERE provider = $1
 SELECT publish_feed_snapshot(
     sqlc.arg(id)::text,sqlc.arg(provider)::text,sqlc.arg(provider_entry_ref)::text,sqlc.arg(provider_group_ref)::text,
     sqlc.arg(expected_version)::bigint,sqlc.arg(fetched_at)::timestamptz,sqlc.arg(content_hash)::text,
-    sqlc.arg(seeds)::jsonb,sqlc.arg(payloads)::bytea[],sqlc.arg(snapshot_kind)::text,
-    sqlc.narg(search_parser_version)::text
+    sqlc.arg(seeds)::jsonb,sqlc.arg(payloads)::bytea[]
 )::text AS id;
 
 -- name: PurgeExpiredProviderFeedSnapshots :execresult
@@ -160,12 +153,6 @@ WHERE snapshot.id IN (
                 AND latest.provider_entry_ref = snapshot.provider_entry_ref
                 AND latest.provider_group_ref = snapshot.provider_group_ref
           )
-          -- A search snapshot is never a subscription source, so the 'no active
-          -- subscription' branch cannot decide it: it would keep every searched
-          -- query forever. It ages out on its own short retention once expired,
-          -- like the superseded snapshots above. Its own freshness window, not
-          -- this purge, is what stops an expired search from being expanded.
-          OR snapshot.snapshot_kind = 'search'
           OR (
               snapshot.provider IN ('anibt', 'mikan')
               AND NOT EXISTS (

@@ -57,10 +57,7 @@ func seedExpansionSeed(t *testing.T, infoHash string, state string) catalogdomai
 func seedExpansionSnapshot(seed catalogdomain.ProviderFeedSnapshotSeed) catalogdomain.ProviderFeedSnapshot {
 	return catalogdomain.ProviderFeedSnapshot{
 		ID: "snap-1", Provider: "mikan", ProviderEntryRef: "123", ProviderGroupRef: "456",
-		// The row always states its kind; expansion proves it, so a fixture that
-		// omits it is not a snapshot the store could ever return.
-		SnapshotKind: catalogdomain.FeedSnapshotKindProviderFeed,
-		Version:      3, ContentHash: catalogdomain.DigestBytes([]byte("snapshot-content")),
+		Version: 3, ContentHash: catalogdomain.DigestBytes([]byte("snapshot-content")),
 		HashSchema: catalogdomain.ProviderFeedSnapshotContentHashSchema,
 		// Freshness is stated explicitly so the test never depends on wall time.
 		FreshnessState: catalogdomain.FeedSnapshotFresh,

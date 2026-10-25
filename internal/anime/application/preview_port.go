@@ -28,28 +28,11 @@ var ErrProviderFeedSnapshotRefreshRequired = errors.New("provider feed snapshot 
 // SeedPreviewSourceFromProviderFeedSnapshot); the composition root wires it.
 type SeedPreviewSource interface {
 	FetchEntryGroupSnapshotByID(ctx context.Context, provider, entryRef, groupRef string, identity animecatalogdomain.ProviderRSSPreviewIdentity) (SeedPreviewSnapshot, error)
-
 	// ReadSeedPayload reads the exact verified torrent bytes of one seed in one
 	// persisted snapshot. Admission uses it instead of fetching the locator
 	// again, so the bytes the user reviewed are the bytes the downloader
 	// receives. A missing, stale, legacy or mismatching identity fails closed.
 	ReadSeedPayload(ctx context.Context, provider, entryRef, groupRef string, identity animecatalogdomain.ProviderRSSPreviewIdentity, stableSeedKey string) (SeedPayload, error)
-}
-
-// SearchSeedPreviewSource is the optional extension that serves exact keyword
-// search snapshots. It is an extension instead of a member of SeedPreviewSource
-// so a source that never serves search keeps its narrow contract, and so a
-// consumer that needs search has to ask for it explicitly.
-type SearchSeedPreviewSource interface {
-	FetchSearchSnapshotByID(ctx context.Context, provider, scopeRef, queryRef string, identity animecatalogdomain.ProviderRSSPreviewIdentity) (SeedPreviewSnapshot, error)
-}
-
-// SearchSeedPayloadSource is the optional extension that serves one search seed's
-// exact verified bytes. Admission uses it for a search seed exactly like
-// SeedPreviewSource.ReadSeedPayload serves a feed seed: the bytes a user expanded
-// are the bytes the downloader receives.
-type SearchSeedPayloadSource interface {
-	ReadSearchSeedPayload(ctx context.Context, provider, scopeRef, queryRef string, identity animecatalogdomain.ProviderRSSPreviewIdentity, stableSeedKey string) (animecatalogdomain.ProviderFeedSnapshotSeed, error)
 }
 
 // SeedPayload is one seed's exact persisted torrent bytes with the identity
@@ -105,37 +88,9 @@ func SeedPreviewSourceFromProviderFeedSnapshot(
 	return seedPreviewByIDFunc{fetch: fetch, readPayload: readPayload}
 }
 
-// SeedPreviewSourceWithKeywordSearch adds the exact keyword-search snapshot reads
-// to the same source: the snapshot read (SearchSeedPreviewSource) and the seed's
-// verified bytes (SearchSeedPayloadSource). The composition root wires it where
-// the catalog service can serve search snapshots; a one-shot search admission then
-// proves the seed belongs to that exact search snapshot instead of a feed, and
-// receives the bytes expansion already verified rather than a fresh fetch.
-//
-// Both search reads are required arguments: a source built without the payload
-// read would answer SEED_PAYLOAD_READER_NOT_CONFIGURED at admission time, which is
-// exactly the production gap this constructor exists to close.
-func SeedPreviewSourceWithKeywordSearch(
-	fetch func(ctx context.Context, provider, entryRef, groupRef string, identity animecatalogdomain.ProviderRSSPreviewIdentity) (animecatalogdomain.ProviderRSSPreviewResult, error),
-	readPayload func(ctx context.Context, provider, entryRef, groupRef string, identity animecatalogdomain.ProviderRSSPreviewIdentity, stableSeedKey string) (animecatalogdomain.ProviderFeedSnapshotSeed, error),
-	fetchSearch func(ctx context.Context, provider, scopeRef, queryRef string, identity animecatalogdomain.ProviderRSSPreviewIdentity) (animecatalogdomain.ProviderRSSPreviewResult, error),
-	readSearchPayload func(ctx context.Context, provider, scopeRef, queryRef string, identity animecatalogdomain.ProviderRSSPreviewIdentity, stableSeedKey string) (animecatalogdomain.ProviderFeedSnapshotSeed, error),
-) SeedPreviewSource {
-	return seedPreviewByIDFunc{
-		fetch: fetch, readPayload: readPayload,
-		fetchSearch: fetchSearch, readSearchPayload: readSearchPayload,
-	}
-}
-
 type seedPreviewByIDFunc struct {
 	fetch       func(ctx context.Context, provider, entryRef, groupRef string, identity animecatalogdomain.ProviderRSSPreviewIdentity) (animecatalogdomain.ProviderRSSPreviewResult, error)
 	readPayload func(ctx context.Context, provider, entryRef, groupRef string, identity animecatalogdomain.ProviderRSSPreviewIdentity, stableSeedKey string) (animecatalogdomain.ProviderFeedSnapshotSeed, error)
-	// fetchSearch is optional: a source that never serves search snapshots
-	// leaves it nil, and a search read then fails closed.
-	fetchSearch func(ctx context.Context, provider, scopeRef, queryRef string, identity animecatalogdomain.ProviderRSSPreviewIdentity) (animecatalogdomain.ProviderRSSPreviewResult, error)
-	// readSearchPayload is optional for the same reason: a search seed's bytes are
-	// only reachable when the source serves search snapshots at all.
-	readSearchPayload func(ctx context.Context, provider, scopeRef, queryRef string, identity animecatalogdomain.ProviderRSSPreviewIdentity, stableSeedKey string) (animecatalogdomain.ProviderFeedSnapshotSeed, error)
 }
 
 // seedPreviewRefreshRequired maps the catalog exact-read sentinels onto the one
@@ -170,43 +125,6 @@ func (f seedPreviewByIDFunc) ReadSeedPayload(ctx context.Context, provider, entr
 		payload.TorrentFilename = *seed.TorrentFilename
 	}
 	return payload, nil
-}
-
-// ReadSearchSeedPayload reads a search seed's exact verified bytes through the
-// search snapshot's own path, so a search seed is never served by the feed
-// payload reader (which would resolve a provider entry/group scope a search row
-// does not have). The same fail-closed rules as ReadSeedPayload apply: a missing
-// read is 503, an exact-identity refusal is the typed refresh outcome, and bytes
-// without a digest are not a payload.
-func (f seedPreviewByIDFunc) ReadSearchSeedPayload(ctx context.Context, provider, scopeRef, queryRef string, identity animecatalogdomain.ProviderRSSPreviewIdentity, stableSeedKey string) (animecatalogdomain.ProviderFeedSnapshotSeed, error) {
-	if f.readSearchPayload == nil {
-		return animecatalogdomain.ProviderFeedSnapshotSeed{}, &apperrors.Business{Status: 503, Code: "SEED_PAYLOAD_READER_NOT_CONFIGURED", Message: "The persisted keyword search seed payload reader is not configured."}
-	}
-	seed, err := f.readSearchPayload(ctx, provider, scopeRef, queryRef, identity, stableSeedKey)
-	if err != nil {
-		return animecatalogdomain.ProviderFeedSnapshotSeed{}, seedPreviewRefreshRequired(err)
-	}
-	if len(seed.Payload) == 0 || seed.PayloadDigest == nil {
-		return animecatalogdomain.ProviderFeedSnapshotSeed{}, fmt.Errorf("%w: seed %s has no retained torrent payload", ErrProviderFeedSnapshotRefreshRequired, stableSeedKey)
-	}
-	if got := animecatalogdomain.DigestBytes(seed.Payload); got != *seed.PayloadDigest {
-		return animecatalogdomain.ProviderFeedSnapshotSeed{}, fmt.Errorf("%w: seed %s payload digest does not match its bytes", ErrProviderFeedSnapshotRefreshRequired, stableSeedKey)
-	}
-	return seed, nil
-}
-
-// FetchSearchSnapshotByID reads one exact search snapshot. A source without a
-// search read fails closed: the search kind must never be answered from a feed
-// snapshot.
-func (f seedPreviewByIDFunc) FetchSearchSnapshotByID(ctx context.Context, provider, scopeRef, queryRef string, identity animecatalogdomain.ProviderRSSPreviewIdentity) (SeedPreviewSnapshot, error) {
-	if f.fetchSearch == nil {
-		return SeedPreviewSnapshot{}, fmt.Errorf("%w: keyword search snapshots are not served by this source", ErrProviderFeedSnapshotRefreshRequired)
-	}
-	result, err := f.fetchSearch(ctx, provider, scopeRef, queryRef, identity)
-	if err != nil {
-		return SeedPreviewSnapshot{}, seedPreviewRefreshRequired(err)
-	}
-	return f.seedPreviewFacts(result), nil
 }
 
 func (f seedPreviewByIDFunc) FetchEntryGroupSnapshotByID(ctx context.Context, provider, entryRef, groupRef string, identity animecatalogdomain.ProviderRSSPreviewIdentity) (SeedPreviewSnapshot, error) {

@@ -9,7 +9,6 @@ const QUERY_INVALID = "Invalid query. Adjust it and try again.";
 const NOT_READY = "The service is not fully set up. Contact your administrator.";
 const DRAFT_CHANGED = "The draft was changed elsewhere. Refresh and edit again.";
 const FEED_STALE = "The torrent list is out of date. Refresh the torrent list first.";
-const SEARCH_STALE = "The search results expired. Search again.";
 const FEED_INVALID = "The torrent list is invalid. Fetch it again.";
 const RSS_ADDRESS = "The RSS address is invalid or unsafe. Check it and try again.";
 const GROUP_NOT_SELECTED = "This group is not selected. Select the group first.";
@@ -135,12 +134,6 @@ export const enErrorCopy = {
   SEED_IDENTITY_REQUIRED: "Torrent details are incomplete. Refresh the torrent list.",
   SEED_INVALID: "Torrent details are invalid. Refresh the torrent list.",
   SEED_LOCATOR_UNSAFE: "The torrent address is unsafe and cannot be downloaded",
-
-  // --- Search snapshots ---
-  SEARCH_SNAPSHOT_SCOPE_INVALID: SEARCH_STALE,
-  SEARCH_SNAPSHOT_CURSOR_INVALID: SEARCH_STALE,
-  PROVIDER_SEARCH_NOT_CONFIGURED: "Search is not set up for this site. Configure it in Settings first.",
-  PROVIDER_SEARCH_ENDPOINT_UNAVAILABLE: NOT_READY,
   SEED_PAYLOAD_READER_NOT_CONFIGURED: NOT_READY,
   EVALUATE_INPUT_MISSING: REFRESH_RETRY,
   INPUT_SOURCE_INVALID: BAD_REQUEST,

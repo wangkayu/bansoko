@@ -9,18 +9,6 @@ import (
 // when the schedule cannot be read.
 const defaultPreviewFreshWindow = 15 * time.Minute
 
-// defaultSearchFreshWindow is the fresh window of a keyword search snapshot. A
-// search is not a scheduled feed: nothing refreshes it, so borrowing the RSS
-// refresh interval would make a result a user is still reading stale within
-// minutes. It gets its own hour, well inside the 24-hour retention the
-// publication function applies.
-const defaultSearchFreshWindow = time.Hour
-
-// searchFreshWindow is the single fresh window of search snapshots.
-func (s *Service) searchFreshWindow() time.Duration {
-	return defaultSearchFreshWindow
-}
-
 // previewFreshWindow is the single fresh window of provider and custom feed
 // preview snapshots: one RSS refresh interval, so a preview is reused exactly
 // as long as the scheduled refresh would not have looked again.

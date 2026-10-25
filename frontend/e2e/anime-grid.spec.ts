@@ -1817,7 +1817,7 @@ test.describe("AnimeGrid", () => {
     await expect(pageDialog(page)).toHaveCount(0);
 
     const cases: { query: string; name: string }[] = [
-      { query: "tool=search", name: "搜索" },
+      { query: "tool=search", name: "搜索番剧" },
       { query: "log=diagnostics", name: "日志" },
     ];
     for (const { query, name } of cases) {

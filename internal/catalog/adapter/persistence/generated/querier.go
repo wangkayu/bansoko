@@ -23,8 +23,7 @@ type Querier interface {
 	//  SELECT publish_feed_snapshot(
 	//      $1::text,$2::text,$3::text,$4::text,
 	//      $5::bigint,$6::timestamptz,$7::text,
-	//      $8::jsonb,$9::bytea[],$10::text,
-	//      $11::text
+	//      $8::jsonb,$9::bytea[]
 	//  )::text AS id
 	PublishProviderFeedSnapshot(ctx context.Context, arg PublishProviderFeedSnapshotParams) (string, error)
 	// Provider snapshot retention persistence is static and bounded.
@@ -78,12 +77,6 @@ type Querier interface {
 	//                  AND latest.provider_entry_ref = snapshot.provider_entry_ref
 	//                  AND latest.provider_group_ref = snapshot.provider_group_ref
 	//            )
-	//            -- A search snapshot is never a subscription source, so the 'no active
-	//            -- subscription' branch cannot decide it: it would keep every searched
-	//            -- query forever. It ages out on its own short retention once expired,
-	//            -- like the superseded snapshots above. Its own freshness window, not
-	//            -- this purge, is what stops an expired search from being expanded.
-	//            OR snapshot.snapshot_kind = 'search'
 	//            OR (
 	//                snapshot.provider IN ('anibt', 'mikan')
 	//                AND NOT EXISTS (
@@ -136,12 +129,9 @@ type Querier interface {
 	//      snapshot.version,
 	//      snapshot.fetched_at,
 	//      snapshot.fresh_until,
-	//      snapshot.retention_until,
 	//      snapshot.content_hash,
 	//      snapshot.hash_schema,
 	//      snapshot.projection_schema,
-	//      snapshot.snapshot_kind,
-	//      snapshot.search_parser_version,
 	//      CASE WHEN snapshot.fresh_until > CURRENT_TIMESTAMP THEN 'fresh' ELSE 'stale' END AS freshness
 	//  FROM provider_feed_snapshots AS snapshot
 	//  WHERE snapshot.provider = $1
@@ -160,12 +150,9 @@ type Querier interface {
 	//      snapshot.version,
 	//      snapshot.fetched_at,
 	//      snapshot.fresh_until,
-	//      snapshot.retention_until,
 	//      snapshot.content_hash,
 	//      snapshot.hash_schema,
 	//      snapshot.projection_schema,
-	//      snapshot.snapshot_kind,
-	//      snapshot.search_parser_version,
 	//      CASE WHEN snapshot.fresh_until > CURRENT_TIMESTAMP THEN 'fresh' ELSE 'stale' END AS freshness
 	//  FROM provider_feed_snapshots AS snapshot
 	//  WHERE snapshot.id = $1

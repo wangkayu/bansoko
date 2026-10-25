@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/http"
 	"os"
 	"time"
 
@@ -28,7 +27,6 @@ import (
 	catalogretentionpersistence "bansoko/internal/catalog/adapter/persistence"
 	catalogapplication "bansoko/internal/catalog/application"
 	configurationapplication "bansoko/internal/configuration/application"
-	configurationdomain "bansoko/internal/configuration/domain"
 	downloadapplication "bansoko/internal/download/application"
 	"bansoko/internal/download/qbittorrent"
 	"bansoko/internal/downloadcompletion"
@@ -215,7 +213,6 @@ func provideHTTPServerBase(
 	releaseRetry httpapi.ReleaseRetryService,
 	oneshoot *oneshotapplication.Service,
 	catalog httpapi.CatalogService,
-	seedSearch httpapi.SeedSearchService,
 	connections httpapi.ConnectionConfigService,
 	manualRetry httpapi.ManualRetryService,
 	automation httpapi.AutomationService,
@@ -243,7 +240,6 @@ func provideHTTPServerBase(
 		ReleaseRetry:       releaseRetry,
 		OneShot:            oneshoot,
 		Catalog:            catalog,
-		SeedSearch:         seedSearch,
 		Connections:        connections,
 		ManualRetry:        manualRetry,
 		Automation:         automation,
@@ -436,7 +432,6 @@ type applicationGraph struct {
 	metadataSearcher     *metadataadapter.SearchService
 	observabilityService *observabilityapplication.Service
 	catalogService       *catalogapplication.Service
-	seedSearch           catalogapplication.SeedSearchApplication
 	retentionJanitor     *retentionapplication.Service
 	oneShotRetention     *workitems.OneShotRetentionService
 	acquisitionSettle    *acquisitionsettlement.SettlementService
@@ -493,8 +488,8 @@ func provideApplicationGraph(
 	fileOperationService.SetDiagnosticRecorder(observabilityService, logger)
 
 	catalogReaders := map[string]catalogapplication.Reader{
-		catalogapplication.ProviderAniBT: catalogadapter.ConfiguredReader{Provider: catalogapplication.ProviderAniBT, Connections: catalogDBSource, ClientResolver: runtimeConfiguration, AllowPrivateHosts: fixtureAllowlist, Resolver: fixtureResolver},
-		catalogapplication.ProviderMikan: catalogadapter.ConfiguredReader{Provider: catalogapplication.ProviderMikan, Connections: catalogDBSource, Recorder: observabilityService, ClientResolver: runtimeConfiguration, AllowPrivateHosts: fixtureAllowlist, Resolver: fixtureResolver},
+		catalogapplication.ProviderAniBT: catalogadapter.ConfiguredReader{Provider: catalogapplication.ProviderAniBT, Connections: catalogDBSource, ClientResolver: runtimeConfiguration},
+		catalogapplication.ProviderMikan: catalogadapter.ConfiguredReader{Provider: catalogapplication.ProviderMikan, Connections: catalogDBSource, Recorder: observabilityService, ClientResolver: runtimeConfiguration},
 	}
 	catalogService := catalogapplication.NewProviderService(db, catalogReaders, catalogapplication.NewSubscriptionItemReader(db))
 	catalogService.SetEventHub(eventHub)
@@ -528,31 +523,13 @@ func provideApplicationGraph(
 	// acquisition uses, while the preview fetcher above deliberately has neither.
 	catalogService.SetSeedTorrentCache(catalogretentionpersistence.NewRepository(db))
 	catalogService.SetSeedTorrentFetcher(acquisitionapplication.HTTPTorrentMetadataReader{AllowPrivateHosts: fixtureAllowlist, Resolver: fixtureResolver})
-	// Keyword search resolves its upstream endpoint from the same typed provider
-	// connection the catalog readers use, and runs under the same SSRF-safe
-	// transport; a request never names an endpoint. Both sites are reached over
-	// the one saved connection per provider, and the fallback is the official
-	// public base, exactly like a catalog refresh.
-	seedSearch := catalogapplication.SeedSearchApplication{
-		Service:           catalogService,
-		Endpoints:         catalogSearchEndpoints{connections: catalogDBSource, clients: runtimeConfiguration},
-		Resolver:          fixtureResolver,
-		AllowPrivateHosts: fixtureAllowlist,
-	}
 	// Custom-source previews follow the same lazy rule as provider previews: a
 	// snapshot stores the RSS facts, and expansion fetches the torrent on demand.
 	catalogService.SetCustomSnapshotApplication(catalogapplication.CustomSnapshotApplication{Revisions: draftService, Owners: draftService, Fetcher: customSnapshotNetworkFetcher{fetcher: acquisitionapplication.ConfiguredCustomRSSFetcher{Connections: catalogDBSource, ClientResolver: runtimeConfiguration, ParseTorrentMetadata: false, AllowPrivateHosts: fixtureAllowlist, Resolver: fixtureResolver}}, Snapshots: catalogretentionpersistence.NewRepository(db)})
 	provisioner := animeapplication.NewProvisioner(fileMaintenanceGraph.parserPolicies)
-	// One seed preview source serves both feed and keyword-search snapshots: the
-	// exact snapshot read and the seed's verified bytes, for both kinds. A search
-	// seed therefore proves its snapshot through the search read and receives the
-	// bytes the search expansion verified — never the feed payload reader, which
-	// resolves a provider entry/group scope a search row does not have.
-	seedPreviews := animeapplication.SeedPreviewSourceWithKeywordSearch(
+	seedPreviews := animeapplication.SeedPreviewSourceFromProviderFeedSnapshot(
 		catalogService.ReadProviderEntryRSSByIdentity,
 		catalogService.ReadProviderEntrySeedPayload,
-		seedSearch.FetchSearchSnapshotByID,
-		seedSearch.ReadSearchSeedPayload,
 	)
 	oneShotService, err := oneshotapplication.NewService(db, oneshotapplication.Dependencies{
 		SeedPreviews:       seedPreviews,
@@ -599,7 +576,7 @@ func provideApplicationGraph(
 	return &applicationGraph{
 		retryService: retryService, catalogDBSource: catalogDBSource,
 		metadataSearcher: metadataSearcher, observabilityService: observabilityService,
-		catalogService: catalogService, seedSearch: seedSearch, retentionJanitor: retentionJanitor,
+		catalogService: catalogService, retentionJanitor: retentionJanitor,
 		oneShotRetention: oneShotRetention, oneShotService: oneShotService,
 		acquisitionSettle: acquisitionSettle,
 	}, nil
@@ -948,55 +925,4 @@ func provideFileMaintenanceService(
 	)
 	service.SetPathDiff(pathDiffService)
 	return service
-}
-
-// catalogSearchEndpoints resolves the typed upstream endpoint and client for one
-// provider keyword search. It mirrors ConfiguredReader: a saved enabled
-// connection wins, no enabled connection falls back to the official public base,
-// and an ambiguous configuration is a real error instead of a silent choice. A
-// search request therefore never names or influences its endpoint.
-type catalogSearchEndpoints struct {
-	connections catalogadapter.ConnectionSource
-	clients     catalogadapter.ConnectionHTTPClientResolver
-}
-
-func (r catalogSearchEndpoints) ResolveSearchEndpoint(ctx context.Context, provider string) (string, *http.Client, error) {
-	if r.connections == nil {
-		return "", nil, errors.New("catalog search connection source is not configured")
-	}
-	var kind configurationdomain.ConnectionKind
-	switch provider {
-	case catalogapplication.ProviderAniBT:
-		kind = configurationdomain.ConnectionAniBT
-	case catalogapplication.ProviderMikan:
-		kind = configurationdomain.ConnectionMikan
-	default:
-		return "", nil, fmt.Errorf("unsupported catalog provider %q", provider)
-	}
-	connections, err := r.connections.ListConnections(ctx)
-	if err != nil {
-		return "", nil, fmt.Errorf("list %s connections: %w", provider, err)
-	}
-	connection, err := configurationdomain.SelectSingleEnabledConnection(connections, kind)
-	if err != nil {
-		if !errors.Is(err, configurationdomain.ErrNoEnabledConnection) {
-			return "", nil, err
-		}
-		fallback, ok := configurationdomain.DefaultConnectionForKind(kind)
-		if !ok {
-			return "", nil, err
-		}
-		connection = fallback
-	}
-	var client *http.Client
-	if connection.NetworkRouteID != "" {
-		if r.clients == nil {
-			return "", nil, errors.New("catalog search network route client is not configured")
-		}
-		client, err = r.clients.ClientForConnection(ctx, connection)
-		if err != nil {
-			return "", nil, fmt.Errorf("resolve catalog search network route: %w", err)
-		}
-	}
-	return connection.Endpoint, client, nil
 }

@@ -4,10 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 
-	acquisitionapplication "bansoko/internal/acquisition/application"
 	"bansoko/internal/catalog/application"
 	"bansoko/internal/catalog/domain"
 	configurationdomain "bansoko/internal/configuration/domain"
@@ -28,12 +26,10 @@ type ConnectionHTTPClientResolver interface {
 // direct client apply. A saved enabled connection still overrides the
 // default, including its base URL and egress route.
 type ConfiguredReader struct {
-	Provider          string
-	Connections       ConnectionSource
-	ClientResolver    ConnectionHTTPClientResolver
-	Recorder          observabilityport.Recorder
-	AllowPrivateHosts []string
-	Resolver          func(context.Context, string) ([]net.IP, error)
+	Provider       string
+	Connections    ConnectionSource
+	ClientResolver ConnectionHTTPClientResolver
+	Recorder       observabilityport.Recorder
 }
 
 func (r ConfiguredReader) ReadSeason(ctx context.Context, season string, hints domain.ReadHints) (domain.ReadResult, error) {
@@ -89,10 +85,9 @@ func (r ConfiguredReader) ReadSeason(ctx context.Context, season string, hints d
 	}
 }
 
-// Search performs a side-effect-free provider keyword search. Both discovery
-// providers expose one; a future provider without one still returns the typed
-// not-supported error. The shared SSRF-safe transport is applied here as well as
-// on seed search, so a saved endpoint or redirect cannot reach a private host.
+// Search performs a side-effect-free provider keyword search. Only AniBT
+// exposes a public search endpoint; Mikan has no public search surface, so it
+// returns a typed not-supported error that the transport maps to 422.
 func (r ConfiguredReader) Search(ctx context.Context, query string, hints domain.ReadHints) (domain.ReadResult, error) {
 	if r.Connections == nil {
 		return domain.ReadResult{}, errors.New("catalog connection source is not configured")
@@ -103,7 +98,7 @@ func (r ConfiguredReader) Search(ctx context.Context, query string, hints domain
 	case application.ProviderAniBT:
 		kind = configurationdomain.ConnectionAniBT
 	case application.ProviderMikan:
-		kind = configurationdomain.ConnectionMikan
+		return domain.ReadResult{}, application.ErrSearchNotSupported
 	default:
 		return domain.ReadResult{}, fmt.Errorf("unsupported catalog provider %q", provider)
 	}
@@ -132,19 +127,5 @@ func (r ConfiguredReader) Search(ctx context.Context, query string, hints domain
 			return domain.ReadResult{}, fmt.Errorf("resolve catalog network route: %w", err)
 		}
 	}
-	client, err = acquisitionapplication.SSRFClientForProvider(client, r.Resolver, r.AllowPrivateHosts, nil)
-	if err != nil {
-		return domain.ReadResult{}, fmt.Errorf("%w: configure catalog search transport: %v", application.ErrProviderUpstream, err)
-	}
-	// Both sites now expose a keyword search: AniBT through its BGM search API and
-	// Mikan through the Home/Search recommendation block. A provider without one
-	// still answers ErrSearchNotSupported, which the transport maps to 422.
-	switch provider {
-	case application.ProviderAniBT:
-		return (application.HTTPReader{Endpoint: connection.Endpoint, Client: client}).Search(ctx, query, hints)
-	case application.ProviderMikan:
-		return (application.MikanHTTPReader{Endpoint: connection.Endpoint, Client: client, Recorder: r.Recorder}).Search(ctx, query, hints)
-	default:
-		return domain.ReadResult{}, fmt.Errorf("unsupported catalog provider %q", provider)
-	}
+	return (application.HTTPReader{Endpoint: connection.Endpoint, Client: client}).Search(ctx, query, hints)
 }

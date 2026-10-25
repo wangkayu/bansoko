@@ -79,10 +79,4 @@ export const enOneshotCopy = {
   retryFailed: "Retry the ones that failed",
   resultOk: "Download started",
   resultFailed: "Not submitted",
-
-  // Single one-shot download from a search seed
-  searchTitle: "Download torrent",
-  searchStale: "The search results expired. Search again.",
-  searchFiles: "{count} files · {size}",
-  downloadOne: "Download",
 } as const satisfies CopyShape<typeof oneshotCopy>;

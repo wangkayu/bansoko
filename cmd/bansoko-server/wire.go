@@ -165,7 +165,6 @@ func initializeHTTPServer(
 	releaseRetry httpapi.ReleaseRetryService,
 	oneshoot *oneshotapplication.Service,
 	catalog httpapi.CatalogService,
-	seedSearch httpapi.SeedSearchService,
 	connections httpapi.ConnectionConfigService,
 	manualRetry httpapi.ManualRetryService,
 	automation httpapi.AutomationService,

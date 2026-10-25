@@ -101,11 +101,7 @@ for package in "${postgres_packages[@]}"; do
   esac
 done
 if ((${#package_set[@]} > 0)); then
-  # The live Mikan search readers are provider opt-in tests, declared like the
-  # unit lane's AniBT opt-in: their skip is an explicit public-network choice,
-  # never a quietly shrunk gate.
-  BANSOKO_TEST_SKIP_ALLOW="TestMikanRealProgramSearch|TestMikanRealSeedSearch" \
-    "$run_gate" pg-packages -p 1 "${package_set[@]}" -count=1 -timeout 1500s
+  "$run_gate" pg-packages -p 1 "${package_set[@]}" -count=1 -timeout 1500s
 fi
 
 if [[ "$shard_integration" == 1 ]]; then

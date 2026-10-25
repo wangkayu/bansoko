@@ -64,7 +64,6 @@ func TestSecretPropertiesArePinned(t *testing.T) {
 		"RSSListSeedFacts.locator_display",
 		"RSSSourceDraft.locator",
 		"Release.stable_item_key",
-		"SeedSearchSnapshotSeed.download_url",
 		"SelectedReleaseIdentity.stable_item_key",
 		"SelectedSeed.locator",
 		"SourceFacts.identity_value",
@@ -119,7 +118,6 @@ func TestSecretRevealingOperationsArePinned(t *testing.T) {
 		"discoverProviderEntryGroups",
 		"fetchCustomSnapshot",
 		"fetchOwnerCustomSnapshot",
-		"fetchSeedSearchSnapshot",
 		"getAnimeBusinessEdit",
 		"getAnimeConfigCandidate",
 		"getAnimeWorkspace",
@@ -131,7 +129,6 @@ func TestSecretRevealingOperationsArePinned(t *testing.T) {
 		"previewProviderEntryRSS",
 		"readAnimeRSSListView",
 		"readProviderEntryRSS",
-		"readSeedSearchSnapshot",
 		"saveAnimeConfigCandidate",
 	}
 	if !reflect.DeepEqual(got, want) {

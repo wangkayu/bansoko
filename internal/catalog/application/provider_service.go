@@ -57,7 +57,7 @@ func (s *Service) SearchProvider(ctx context.Context, provider, query string) (d
 	if err := validateCatalogProvider(provider); err != nil {
 		return domain.ReadResult{}, err
 	}
-	if query == "" || utf8.RuneCountInString(query) > 256 {
+	if query == "" || len(query) > 256 {
 		// The OpenAPI contract bounds q to 1..256 characters; a violating
 		// query is caller input, not a provider capability problem, so it
 		// must not reuse ErrSearchNotSupported (issue #9).

@@ -106,7 +106,7 @@ Look around:
 | List subscribed anime with state, metadata hold, RSS health, progress | `get_subscriptions` | `listAnime` | `bansoko list` |
 | Read one anime's whole pipeline | `get_workspace` | `getAnimeWorkspace` | `bansoko status` |
 | Wait until the pipeline settles (stable = every task completed or failed) | `poll_workspace` | `getAnimeWorkspace` | `bansoko wait` |
-| Search a provider catalog for programs (AniBT and Mikan) | `search_anime` | `searchProviderCatalog` | `bansoko search` |
+| Search the AniBT catalog (Mikan returns `SEARCH_NOT_SUPPORTED`) | `search_anime` | `searchProviderCatalog` | `bansoko search` |
 | Search Bangumi or TMDB for a metadata binding | `search_metadata` | `searchMetadata` | `bansoko metadata search` |
 | Parse a release title | `parse_title` | `parseReleaseTitle` | `bansoko parse-title` |
 | Parse a torrent's file list | `parse_torrent` | `parseTorrentFiles` | `bansoko parse-torrent` |
@@ -273,8 +273,7 @@ Every HTTP error body is `{"code", "message", "request_id", "current_version"?, 
 | `BUSINESS_SNAPSHOT_REQUIRED` | 422 | The draft carries no business snapshot; pass it through `load_business_preset` |
 | `BUSINESS_SNAPSHOT_INVALID` | 422 | The draft's business snapshot or its digest was changed by hand; load it again |
 | `ORIGIN_NOT_SUBSCRIBABLE` | 422 | A draft with `origin: oneshot` cannot be subscribed |
-| `SEARCH_NOT_SUPPORTED` | 422 | The provider exposes no keyword search at all |
-| `PROVIDER_RATE_LIMITED` | 429 | The provider refused a keyword search (429/503) and supplied its own `Retry-After`; wait that long before searching again |
+| `SEARCH_NOT_SUPPORTED` | 422 | The provider has no search (Mikan) |
 | `INPUT_SOURCE_INVALID` | 400 | The preview or one-shot input mixes sources or names none |
 | `CANDIDATE_REVISION_REQUIRED` | 409 | The candidate has no saved revision yet |
 | `CANDIDATE_ALREADY_ACTIVATED` | 409 | The candidate is already linked to an anime |

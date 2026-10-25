@@ -54,11 +54,7 @@ type SeedTorrentFetcher interface {
 // The locator is resolved server-side from that snapshot, so a caller never
 // supplies a fetch target.
 type EnsureSeedTorrentInput struct {
-	Provider string
-	// SnapshotKind names the kind of snapshot the identity belongs to. An empty
-	// value is the ordinary provider feed; a keyword search names "search" and
-	// carries its two derived refs in ProviderEntryRef/ProviderGroupRef.
-	SnapshotKind     catalogdomain.FeedSnapshotKind
+	Provider         string
 	ProviderEntryRef string
 	ProviderGroupRef string
 	SnapshotID       string
@@ -103,26 +99,13 @@ func (s *Service) SetSeedTorrentFetcher(fetcher SeedTorrentFetcher) {
 // cache miss. Concurrent expansions of the same locator share one fetch, which
 // keeps a burst of clicks inside the provider's rate limit.
 func (s *Service) EnsureSeedTorrent(ctx context.Context, input EnsureSeedTorrentInput) (SeedTorrentFact, error) {
-	// An unnamed kind is derived from the two refs, never assumed: a caller that
-	// omits it cannot choose which kind its identity is read as, and a caller
-	// that names one still has to match the persisted row (VerifyKind).
-	if input.SnapshotKind == "" {
-		input.SnapshotKind = SnapshotKindFromRefs(input.ProviderEntryRef, input.ProviderGroupRef)
-	}
-	// The kind, not the provider, decides which scope shape is legal: a feed
-	// expansion carries a provider entry/group scope through the feed validator,
-	// while a search expansion carries the two derived hashed refs. Both then go
-	// through exactly the same exact-identity read and identity checks.
-	if err := validateExpansionScope(input); err != nil {
-		return SeedTorrentFact{}, err
-	}
-	if err := validateFeedSnapshotScope(input.Provider, input.ProviderEntryRef, input.ProviderGroupRef); err != nil && input.SnapshotKind != catalogdomain.FeedSnapshotKindSearch {
+	if err := validateFeedSnapshotScope(input.Provider, input.ProviderEntryRef, input.ProviderGroupRef); err != nil {
 		return SeedTorrentFact{}, err
 	}
 	if strings.TrimSpace(input.StableSeedKey) == "" {
 		return SeedTorrentFact{}, &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "SEED_IDENTITY_REQUIRED", Message: "The seed identity is required."}
 	}
-	preview, err := s.readSnapshotIdentityForKind(ctx, input.Provider, input.ProviderEntryRef, input.ProviderGroupRef, input.SnapshotKind, catalogdomain.ProviderRSSPreviewIdentity{
+	preview, err := s.ReadProviderEntryRSSByIdentity(ctx, input.Provider, input.ProviderEntryRef, input.ProviderGroupRef, catalogdomain.ProviderRSSPreviewIdentity{
 		SnapshotID: input.SnapshotID, SnapshotVersion: input.SnapshotVersion, ContentHash: input.ContentHash,
 	})
 	if err != nil {
@@ -265,44 +248,6 @@ func (s *Service) fetchAndCacheSeedTorrent(ctx context.Context, seed catalogdoma
 		return SeedTorrentFact{}, err
 	}
 	return SeedTorrentFact{Manifest: manifest, PayloadDigest: digest, State: SeedTorrentStateAvailable}, nil
-}
-
-// validateExpansionScope enforces the kind's scope shape before any read. A feed
-// expansion is the feed scope validator above; a search expansion must carry the
-// two derived hashed refs, which is the only form a search snapshot has.
-// readSnapshotIdentityForKind resolves the exact snapshot an expansion names and
-// proves it is the kind that expansion is allowed to act on. The search kind is
-// read through the search-scope path, so a search seed can never be expanded from
-// a feed identity and a feed seed can never be expanded from a search one.
-func (s *Service) readSnapshotIdentityForKind(ctx context.Context, provider, entryRef, groupRef string, kind catalogdomain.FeedSnapshotKind, identity catalogdomain.ProviderRSSPreviewIdentity) (catalogdomain.ProviderRSSPreviewResult, error) {
-	if kind == catalogdomain.FeedSnapshotKindSearch {
-		snapshot, err := s.readSearchSnapshotIdentity(ctx, provider, entryRef, groupRef, identity)
-		if err != nil {
-			return catalogdomain.ProviderRSSPreviewResult{}, feedSnapshotRefreshRequired(err)
-		}
-		return mapProviderFeedSnapshot(snapshot), nil
-	}
-	return s.ReadProviderEntryRSSByIdentity(ctx, provider, entryRef, groupRef, identity)
-}
-
-func validateExpansionScope(input EnsureSeedTorrentInput) error {
-	switch input.SnapshotKind {
-	case "", catalogdomain.FeedSnapshotKindProviderFeed, catalogdomain.FeedSnapshotKindCustom:
-		return nil
-	case catalogdomain.FeedSnapshotKindSearch:
-		if err := catalogdomain.ValidateSearchSnapshotRef(input.ProviderEntryRef, catalogdomain.SearchSnapshotScopePrefix); err != nil {
-			return &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "SEARCH_SNAPSHOT_SCOPE_INVALID", Message: safeProviderReason(err.Error())}
-		}
-		if err := catalogdomain.ValidateSearchSnapshotRef(input.ProviderGroupRef, catalogdomain.SearchSnapshotQueryPrefix); err != nil {
-			return &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "SEARCH_SNAPSHOT_SCOPE_INVALID", Message: safeProviderReason(err.Error())}
-		}
-		if err := validateCatalogProvider(input.Provider); err != nil {
-			return &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "PROVIDER_KIND_INVALID", Message: "Provider must be anibt or mikan."}
-		}
-		return nil
-	default:
-		return &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "SEED_KIND_INVALID", Message: "The snapshot kind is unknown."}
-	}
 }
 
 // ensureSeedTorrentSeed locates one seed by its stable key.
