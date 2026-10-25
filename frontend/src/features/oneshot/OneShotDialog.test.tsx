@@ -9,7 +9,7 @@ import { namingFactLabel, reasonLabel } from "../../lib/i18n/reasons";
 import type { CatalogEntryView } from "../../lib/providers/viewmodels";
 import { preset as businessPreset } from "../../testing/businessPreset";
 import { OneShotDialog } from "./OneShotDialog";
-
+import type { SearchSeedBrowse } from "./useOneShotSeeds";
 const toastMock = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() }));
 vi.mock("sonner", () => ({ toast: toastMock }));
 
@@ -110,6 +110,8 @@ type Scenario = {
   discovery?: { status: number; body?: unknown };
   view?: RSSListView;
   viewStatus?: number;
+  /** The error body for a non-200 read (defaults to a generic INTERNAL). */
+  viewErrorBody?: unknown;
   candidate?: unknown;
   customFetch?: { status: number; body?: unknown };
   download?: (stableSeedKey: string) => Download | "network";
@@ -271,7 +273,7 @@ function stubFetch(scenario: Scenario) {
     if (url.endsWith("/anime/rss-list-view")) {
       record(JSON.parse(String(init?.body)));
       if (scenario.viewStatus && scenario.viewStatus !== 200) {
-        return Response.json({ code: "INTERNAL", message: "内部错误" }, { status: scenario.viewStatus });
+        return Response.json(scenario.viewErrorBody ?? { code: "INTERNAL", message: "内部错误" }, { status: scenario.viewStatus });
       }
       const body = calls.at(-1)!.body as Parameters<NonNullable<Scenario["viewFor"]>>[0];
       return Response.json(scenario.viewFor?.(body) ?? scenario.view ?? viewOf([seedGroup()]));
@@ -1149,5 +1151,144 @@ describe("OneShotDialog 自定义预设", () => {
     expect(body).not.toHaveProperty("candidate_id");
     // The candidate is only ever read: no request writes back to the preset (the stub fails write requests outright).
     expect(calls.filter((call) => call.url.includes("/anime-config-candidates/")).length).toBeGreaterThan(0);
+  });
+});
+
+describe("OneShotDialog 搜索快照来源", () => {
+  // Search fixtures use placeholder names only (never real releases, groups or refs).
+  const SEARCH_SCOPE_REF = "search-scope:deadbeefcafe0011";
+  const SEARCH_QUERY_REF = "search-query:0011deadbeefcafe";
+  const SEARCH_CONTENT_HASH = "search-hash-1";
+  const SEARCH_SNAPSHOT_ID = "search-snap-1";
+
+  /** The read model's projection of one search snapshot: a single group whose server-side display name is the query_ref placeholder. */
+  const searchGroupView = (items: RSSListItem[] = [
+    seedItem("seed-a", SEED_A, { snapshot_id: SEARCH_SNAPSHOT_ID }),
+    seedItem("seed-b", SEED_B, { snapshot_id: SEARCH_SNAPSHOT_ID }),
+  ]) =>
+    viewOf([
+      seedGroup({
+        scope: { provider: "anibt", provider_entry_ref: SEARCH_SCOPE_REF, provider_group_ref: SEARCH_QUERY_REF },
+        display_name: SEARCH_QUERY_REF,
+        feed: { state: "fresh", snapshot_id: SEARCH_SNAPSHOT_ID, snapshot_version: 1, content_hash: SEARCH_CONTENT_HASH },
+        items,
+      }),
+    ]);
+
+  const searchBrowse: SearchSeedBrowse = {
+    provider: "anibt",
+    query: "搜索关键词甲",
+    snapshot: {
+      provider: "anibt",
+      scope_ref: SEARCH_SCOPE_REF,
+      query_ref: SEARCH_QUERY_REF,
+      query: "搜索关键词甲",
+      snapshot_id: SEARCH_SNAPSHOT_ID,
+      snapshot_version: 1,
+      content_hash: SEARCH_CONTENT_HASH,
+      freshness: "fresh",
+      total_seeds: 2,
+      window: 20,
+      retention_seconds: 86400,
+      seeds: [],
+    },
+    preselectSeedKey: "seed-a",
+    titleHint: "示例作品",
+  };
+
+  function renderSearchDialog(search: SearchSeedBrowse = searchBrowse, onOpenRecords?: () => void) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={client}>
+        <OneShotDialog open search={search} onClose={() => {}} onOpenRecords={onOpenRecords} />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("打开即读：单一列表没有字幕组层，读请求携带搜索身份与 origin=oneshot 草稿，点击的种子已预选", async () => {
+    stubFetch({ view: searchGroupView() });
+    renderSearchDialog();
+
+    expect(await findSeed(SEED_A)).toBeChecked();
+    expect(await findSeed(SEED_B)).not.toBeChecked();
+    // A search source has a single seed list: no subgroup layer.
+    expect(screen.queryByRole("button", { name: t("oneshot.backToGroups") })).not.toBeInTheDocument();
+    // The header renders the keyword the user searched plus the site, never the placeholder query_ref.
+    expect(screen.getAllByText("搜索关键词甲").length).toBeGreaterThan(0);
+    expect(screen.getByText(/AniBT/)).toBeInTheDocument();
+    expect(screen.queryByText(new RegExp(SEARCH_QUERY_REF))).not.toBeInTheDocument();
+
+    expect(reads()).toHaveLength(1);
+    expect(reads()[0]!.body).toMatchObject({
+      input_source: "current_input",
+      one_shot: true,
+      feed: [
+        {
+          provider: "anibt",
+          provider_entry_ref: SEARCH_SCOPE_REF,
+          provider_group_ref: SEARCH_QUERY_REF,
+          snapshot_id: SEARCH_SNAPSHOT_ID,
+          snapshot_version: 1,
+          content_hash: SEARCH_CONTENT_HASH,
+        },
+      ],
+      draft: { origin: "oneshot", title: "示例作品", instance_label: "示例作品", rss_sources: [] },
+    });
+  });
+
+  it("第二步：标题编辑同步 instance_label，提交按快照身份与编辑后的草稿", async () => {
+    stubFetch({ view: searchGroupView() });
+    renderSearchDialog();
+    await findSeed(SEED_A);
+    // The clicked seed was preselected: straight to step two.
+    fireEvent.click(button(t("oneshot.nextWithCount", { n: 1 })));
+    await screen.findByRole("heading", { name: t("oneshot.configTitle") });
+
+    const title = screen.getByRole("textbox", { name: t("field.title") });
+    expect(title).toHaveValue("示例作品");
+    const readsBefore = reads().length;
+    fireEvent.change(title, { target: { value: "改名作品" } });
+    await waitFor(() => expect(reads().length).toBeGreaterThan(readsBefore));
+    expect(reads().at(-1)!.body).toMatchObject({ one_shot: true, draft: { title: "改名作品", instance_label: "改名作品" } });
+
+    fireEvent.click(button(t("oneshot.create", { n: 1 })));
+    await waitFor(() => expect(screen.getByText(t("oneshot.resultOk"))).toBeInTheDocument());
+    const call = calls.find((entry) => entry.url.includes("/seeds/seed-a/download"))!;
+    expect(call.url).toContain(`/provider-feed-snapshots/${SEARCH_SNAPSHOT_ID}/seeds/seed-a/download`);
+    expect(call.body).toMatchObject({
+      provider: "anibt",
+      provider_entry_ref: SEARCH_SCOPE_REF,
+      provider_group_ref: SEARCH_QUERY_REF,
+      snapshot_version: 1,
+      content_hash: SEARCH_CONTENT_HASH,
+      input_source: "current_input",
+      draft: { origin: "oneshot", title: "改名作品", instance_label: "改名作品", rss_sources: [] },
+    });
+  });
+
+  it("读取返回 409：提示重新搜索，不提供重试，也不静默重发", async () => {
+    stubFetch({ viewStatus: 409, viewErrorBody: { code: "FEED_SNAPSHOT_REFRESH_REQUIRED", message: "expired" } });
+    renderSearchDialog();
+
+    expect(await screen.findByText(t("oneshot.searchStale"))).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: t("act.retry") })).not.toBeInTheDocument();
+    expect(reads()).toHaveLength(1);
+  });
+
+  it("提交时快照已过期：行内提示重新搜索，不静默重发", async () => {
+    stubFetch({
+      view: searchGroupView(),
+      download: () => ({ status: 409, body: { code: "FEED_SNAPSHOT_REFRESH_REQUIRED", message: "expired" } }),
+    });
+    renderSearchDialog();
+    await findSeed(SEED_A);
+    fireEvent.click(button(t("oneshot.nextWithCount", { n: 1 })));
+    await screen.findByRole("heading", { name: t("oneshot.configTitle") });
+
+    fireEvent.click(button(t("oneshot.create", { n: 1 })));
+    await waitFor(() => expect(downloads()).toHaveLength(1));
+    expect(await screen.findByText(t("oneshot.resultFailed"))).toBeInTheDocument();
+    expect(screen.getByText(t("oneshot.searchStale"))).toBeInTheDocument();
+    expect(downloads()).toHaveLength(1);
   });
 });

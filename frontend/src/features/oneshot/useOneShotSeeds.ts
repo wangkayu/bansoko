@@ -17,7 +17,9 @@ import {
   type ProviderRSSPreviewResult,
   type RSSListObservationRef,
   type RSSListView,
+  type SeedSearchSnapshotView,
 } from "../../lib/api/client";
+import { createEmptyDraft } from "../../lib/draft";
 import { configKeys } from "../../lib/queryKeys";
 import type { CatalogEntryView } from "../../lib/providers/viewmodels";
 import type { CustomSnapshotRequest } from "../catalog/CustomSnapshotFetchButton";
@@ -28,7 +30,7 @@ import { reasonLabel } from "../../lib/i18n/reasons";
 import { t } from "../../lib/i18n";
 
 // Where "browse seeds" gets its seeds. A one-shot task names its seeds directly and is not limited
-//   by subgroup selection: both paths use the one-shot browse read (one_shot).
+//   by subgroup selection: all three paths use the one-shot browse read (one_shot).
 //   - provider entries (anibt/mikan): discover subgroups first and list only the groups; only an
 //     entered group fetches its seed list (a fresh seed list is reused as-is, otherwise fetched
 //     once), then the read model is read over the entered groups. No group's seeds are fetched up
@@ -36,6 +38,10 @@ import { t } from "../../lib/i18n";
 //   - custom preset: a single seed list with no subgroup layer; an explicit fetch, then read
 //     directly. The configuration is this task's own draft (loaded from the preset; edits never
 //     write back to it).
+//   - keyword search: the snapshot of one search read as a single seed list with no subgroup
+//     layer. The draft is the origin=oneshot form the admission path defines (no entry, no RSS
+//     source, title prefilled from the clicked seed). A search identity is refreshed only by
+//     searching again: a typed 409 surfaces as "search again", never a silent re-fetch.
 //
 // No business rule is judged here: downloadability, filter outcomes and target paths all come from the server's read model.
 
@@ -50,7 +56,7 @@ export type OneShotGroupEntry = {
 };
 
 export type OneShotSeedSource = {
-  kind: "provider" | "custom";
+  kind: "provider" | "custom" | "search";
   /** This task's configuration: the loaded draft (provider comes from the global config, custom from the preset). */
   draft: AnimeDraft | undefined;
   /** The write entry for this task's draft. Changes only this task, never a subscription or a preset. */
@@ -66,6 +72,8 @@ export type OneShotSeedSource = {
   /** A read-model re-read in flight. */
   pending: boolean;
   error?: string;
+  /** search only: the snapshot identity expired. The only way forward is a new search, so no retry is offered. */
+  stale?: boolean;
   /** The group whose seed list is being fetched. */
   openingGroup?: string;
   /** Entering a group failed: the group and the reason. */
@@ -92,16 +100,24 @@ export type OneShotSeedSource = {
 };
 
 /**
- * 一次性下载入口的种子来源。两条路径的 hook 都被调用（React 规则），由 `enabled`
- * 让未选中的那条不做任何事。`entry` 变化时弹窗以 `key` 重挂载。
+ * 一次性下载入口的种子来源。三条路径的 hook 都被调用（React 规则），由 `enabled`
+ * 让未选中的那条不做任何事。`entry`/`search` 变化时弹窗以 `key` 重挂载。
  */
-export function useOneShotSeedSource({ entry, enabled }: { entry: CatalogEntryView; enabled: boolean }): OneShotSeedSource {
-  const isProvider = entry.source === "anibt" || entry.source === "mikan";
+export function useOneShotSeedSource({
+  entry,
+  search,
+  enabled,
+}: {
+  entry?: CatalogEntryView;
+  search?: SearchSeedBrowse;
+  enabled: boolean;
+}): OneShotSeedSource {
+  const isProvider = !search && (entry?.source === "anibt" || entry?.source === "mikan");
   const provider = useProviderSeedSource({ entry, enabled: enabled && isProvider });
-  const custom = useCustomSeedSource({ entry, enabled: enabled && !isProvider });
-  return isProvider ? provider : custom;
+  const custom = useCustomSeedSource({ entry, enabled: enabled && !search && !isProvider && entry !== undefined });
+  const searched = useSearchSeedSource({ search, enabled: enabled && search !== undefined });
+  return search ? searched : isProvider ? provider : custom;
 }
-
 /** The contract requires every read to carry the group cap; one-shot browsing is not rate-limited per group. */
 const ITEMS_PER_GROUP = 100;
 
@@ -109,7 +125,12 @@ const ITEMS_PER_GROUP = 100;
  * 展开一个未展开的种子。请求只带快照身份，locator 由服务端从快照读取，因此前端既不
  * 参与取数也不参与判定。返回为空表示已可用。
  */
-async function expandSeed(row: OneShotSeedRow, provider: "anibt" | "mikan" | "custom") {
+/** A search snapshot identity is only refreshable by searching again (never silently re-fetched). */
+function isSearchRefreshRequired(cause: unknown): boolean {
+  return cause instanceof ApiError && cause.code === "FEED_SNAPSHOT_REFRESH_REQUIRED";
+}
+
+async function expandSeed(row: OneShotSeedRow, provider: "anibt" | "mikan" | "custom", refreshRequiredCopy?: string) {
   try {
     const result = await expandSnapshotSeed(row.snapshotID, row.stableSeedKey, {
       provider,
@@ -122,6 +143,7 @@ async function expandSeed(row: OneShotSeedRow, provider: "anibt" | "mikan" | "cu
     if (result.state !== "available") return { error: reasonLabel(result.error_code) ?? t("rss.expandFailed") };
     return {};
   } catch (cause) {
+    if (refreshRequiredCopy !== undefined && isSearchRefreshRequired(cause)) return { error: refreshRequiredCopy };
     return { error: toUserMessage(cause, t("rss.expandFailed")) };
   }
 }
@@ -147,12 +169,12 @@ function feedRefOf(result: ProviderRSSPreviewResult): PreviewFeedSnapshotRef {
 
 type DiscoveredGroup = { key: string; groupRef: string; name: string };
 
-function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView; enabled: boolean }): OneShotSeedSource {
-  const provider: "anibt" | "mikan" = entry.source === "mikan" ? "mikan" : "anibt";
-  const providerEntryRef = entry.providerEntryRef;
+function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | undefined; enabled: boolean }): OneShotSeedSource {
+  const provider: "anibt" | "mikan" = entry?.source === "mikan" ? "mikan" : "anibt";
+  const providerEntryRef = entry?.providerEntryRef ?? "";
   const queryClient = useQueryClient();
   // The task draft is taken once: a one-shot task loads the global config directly (it inherits no subscription configuration).
-  const seededRef = useRef<AnimeDraft>(draftFromEntry(entry));
+  const seededRef = useRef<AnimeDraft>(entry ? draftFromEntry(entry) : createEmptyDraft());
   const [draft, setDraft] = useState<AnimeDraft>(seededRef.current);
   /** Whether the draft carried in the Global business snapshot; both reading and creating the task require it non-empty (the server fails closed). */
   const [businessReady, setBusinessReady] = useState(false);
@@ -409,8 +431,8 @@ async function fetchExactCustomSnapshot(request: CustomSnapshotRequest): Promise
   };
 }
 
-function useCustomSeedSource({ entry, enabled }: { entry: CatalogEntryView; enabled: boolean }): OneShotSeedSource {
-  const candidateId = entry.candidateId;
+function useCustomSeedSource({ entry, enabled }: { entry: CatalogEntryView | undefined; enabled: boolean }): OneShotSeedSource {
+  const candidateId = entry?.candidateId;
   const queryClient = useQueryClient();
   const [candidate, setCandidate] = useState<AnimeConfigCandidate>();
   const [draft, setDraft] = useState<AnimeDraft>();
@@ -551,6 +573,156 @@ function useCustomSeedSource({ entry, enabled }: { entry: CatalogEntryView; enab
     fetchRequired: Boolean(request) && draft !== undefined && !snapshot && !fetchBusy,
     fetchBusy,
     fetchSeeds: () => void fetchSeeds(),
+    reload: () => setAttempt((value) => value + 1),
+  };
+}
+
+// --- search: one keyword search snapshot as a single seed list --------------------------
+
+/**
+ * 一次关键词搜索的浏览上下文：搜索结果点击进同一个 OneShotDialog。快照身份（scope_ref/
+ * query_ref 充当 entry/group 引用，加 snapshot_id/version/content_hash）原样回传给读模型与
+ * 提交；查询文本服务端不回传（只存摘要，分组名只是占位），header 与列表标题用这里的 query。
+ */
+export type SearchSeedBrowse = {
+  provider: "anibt" | "mikan";
+  /** The keyword the user ran; rendered as the source label (the server stores only its digest). */
+  query: string;
+  /** The fetch response of this search: the identity every later read and submission names verbatim. */
+  snapshot: SeedSearchSnapshotView;
+  /** The clicked seed's stable key: its row starts selected once the list renders. */
+  preselectSeedKey?: string;
+  /** The clicked seed's parsed work-title candidate: the editable title default (the query is the fallback). */
+  titleHint?: string | null;
+};
+
+function useSearchSeedSource({ search, enabled }: { search: SearchSeedBrowse | undefined; enabled: boolean }): OneShotSeedSource {
+  const provider = search?.provider ?? "anibt";
+  const queryClient = useQueryClient();
+  const [draft, setDraft] = useState<AnimeDraft>();
+  const [loadError, setLoadError] = useState<string>();
+  const [attempt, setAttempt] = useState(0);
+
+  // The task draft is the origin=oneshot form the admission path defines: no entry, no RSS source,
+  // title prefilled from the clicked seed (the query as fallback), instance_label following the title —
+  // the server validates both as non-empty from the very first read, so both are set at creation.
+  const initialTitle = search?.titleHint?.trim() || search?.query.trim() || "";
+  useEffect(() => {
+    if (!enabled || !search) return;
+    let active = true;
+    setDraft(undefined);
+    setLoadError(undefined);
+    const seeded: AnimeDraft = {
+      ...createEmptyDraft(),
+      origin: "oneshot",
+      rss_sources: [],
+      title: initialTitle,
+      instance_label: initialTitle,
+    };
+    void withGlobalBusiness(seeded, queryClient.fetchQuery({ queryKey: configKeys.businessPreset, queryFn: getBusinessPreset }))
+      .then((loaded) => {
+        if (active) setDraft(loaded);
+      })
+      .catch((cause) => {
+        if (active) setLoadError(toUserMessage(cause, t("oneshot.loadSeedsFailed")));
+      });
+    return () => {
+      active = false;
+    };
+  }, [attempt, enabled, queryClient, search, initialTitle]);
+
+  const feedRef = useMemo<PreviewFeedSnapshotRef | undefined>(
+    () =>
+      search
+        ? {
+            provider,
+            provider_entry_ref: search.snapshot.scope_ref,
+            provider_group_ref: search.snapshot.query_ref,
+            snapshot_id: search.snapshot.snapshot_id,
+            snapshot_version: search.snapshot.snapshot_version,
+            content_hash: search.snapshot.content_hash,
+          }
+        : undefined,
+    [search, provider],
+  );
+
+  const [view, setView] = useState<RSSListView>();
+  const [pending, setPending] = useState(false);
+  const [viewError, setViewError] = useState<string>();
+  const [stale, setStale] = useState(false);
+  const readSeq = useRef(0);
+
+  // The one-shot browse read over the single search identity: the read model projects the search
+  // snapshot's complete result set as one group. A typed 409 means the identity expired; it is
+  // surfaced as "search again" (stale) and never silently re-issued.
+  const readView = useCallback(
+    async (current: AnimeDraft | undefined, offset: number) => {
+      if (!current || !feedRef) return;
+      const seq = ++readSeq.current;
+      setPending(true);
+      setViewError(undefined);
+      try {
+        const result = await readAnimeRSSListView({
+          input_source: "current_input",
+          draft: structuredClone(current),
+          feed: [feedRef],
+          one_shot: true,
+          limit_per_group: ITEMS_PER_GROUP,
+          ...(offset !== 0 ? { episode_offset: offset } : {}),
+        });
+        if (result === null || typeof result !== "object" || !Array.isArray(result.groups)) throw new Error(t("rss.listBadFormat"));
+        if (seq === readSeq.current) {
+          setStale(false);
+          setView(result);
+        }
+      } catch (cause) {
+        if (seq !== readSeq.current) return;
+        if (isSearchRefreshRequired(cause)) {
+          setStale(true);
+          setViewError(t("oneshot.searchStale"));
+        } else {
+          setViewError(toUserMessage(cause, t("oneshot.previewFailed")));
+        }
+      } finally {
+        if (seq === readSeq.current) setPending(false);
+      }
+    },
+    [feedRef],
+  );
+
+  // The first read runs once the draft (with its business snapshot) is in hand; a reload restarts it.
+  const firstRead = useRef(false);
+  useEffect(() => {
+    firstRead.current = false;
+    setView(undefined);
+    setViewError(undefined);
+    setStale(false);
+  }, [attempt, search]);
+  useEffect(() => {
+    if (!enabled || !draft || firstRead.current) return;
+    firstRead.current = true;
+    void readView(draft, 0);
+  }, [enabled, draft, readView]);
+
+  const expand = useCallback((row: OneShotSeedRow) => expandSeed(row, provider, t("oneshot.searchStale")), [provider]);
+  const groups = useMemo(() => seedGroupsOf(view), [view]);
+  return {
+    kind: "search",
+    draft,
+    setDraft,
+    initialOffset: 0,
+    groupEntries: [],
+    groups,
+    loading: enabled && loadError === undefined && viewError === undefined && (draft === undefined || (view === undefined && pending)),
+    pending,
+    error: loadError ?? viewError,
+    stale,
+    openGroup: async () => {},
+    refreshGroup: async () => false,
+    expand,
+    preview: readView,
+    fetchRequired: false,
+    fetchBusy: false,
     reload: () => setAttempt((value) => value + 1),
   };
 }

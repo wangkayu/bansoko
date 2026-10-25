@@ -79,4 +79,6 @@ export const enOneshotCopy = {
   retryFailed: "Retry the ones that failed",
   resultOk: "Download started",
   resultFailed: "Not submitted",
+
+  searchStale: "The search results expired. Search again.",
 } as const satisfies CopyShape<typeof oneshotCopy>;

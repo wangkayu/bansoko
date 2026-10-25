@@ -80,4 +80,7 @@ export const oneshotCopy = {
   retryFailed: "重试未提交的种子",
   resultOk: "已开始下载",
   resultFailed: "未提交",
+
+  // 搜索快照来源：身份过期只能重新搜索，没有可重试的刷新
+  searchStale: "搜索结果已过期，请重新搜索",
 } as const;

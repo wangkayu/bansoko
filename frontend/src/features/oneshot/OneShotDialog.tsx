@@ -2,6 +2,7 @@ import { Fragment, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { toast } from "../../ui/toast";
 import {
+  ApiError,
   downloadSnapshotSeed,
   newUUID,
   toUserMessage,
@@ -39,7 +40,7 @@ import {
 import { REVEAL_MS, Reveal, SeedBrowser } from "./SeedBrowser";
 import { OneShotParserSelect } from "./OneShotParserSelect";
 import { useOneShotParserOptions } from "./parserOptions";
-import { useOneShotSeedSource } from "./useOneShotSeeds";
+import { useOneShotSeedSource, type SearchSeedBrowse } from "./useOneShotSeeds";
 
 // The one-shot download: a centered dialog opened by a card's "browse seeds". Two steps:
 //   1. Catalog: subgroups listed first, and entering a group fetches its seed list and renders all
@@ -225,17 +226,24 @@ function SeedRender({
 export function OneShotDialog({
   open,
   entry,
+  search,
   onClose,
   onOpenRecords,
 }: {
   open: boolean;
-  entry: CatalogEntryView;
+  /** The catalog entry whose seeds are browsed; exactly one of entry/search is given. */
+  entry?: CatalogEntryView;
+  /** A keyword-search snapshot: a clicked search result browses its seeds in this same dialog. */
+  search?: SearchSeedBrowse;
   onClose: () => void;
   /** Jumps to the execution record (the one-shot filter); no entry renders when the host has not wired it. */
   onOpenRecords?: () => void;
 }) {
-  const source = useOneShotSeedSource({ entry, enabled: open });
-  // Expansion and re-reads happen in effects and clicks: callbacks are taken from a ref to stay current.
+  const source = useOneShotSeedSource({ entry, search, enabled: open });
+  // The header's source label: the entry title, or the keyword the user searched (the server
+  // never echoes the query text, so a search source renders the text the frontend itself holds).
+  const sourceLabel = entry?.title ?? search?.query ?? "";
+  const site = entry?.source ?? search?.provider ?? "anibt";
   const sourceRef = useRef(source);
   sourceRef.current = source;
 
@@ -266,14 +274,26 @@ export function OneShotDialog({
   // Selection survives filters, groups and re-reads: a filter is only a view, and a re-read changes row content, never identity.
   const selectedRows = useMemo(() => allRows.filter((row) => selected.has(row.key)), [allRows, selected]);
 
-  // Step one's navigation: the subgroup list first, then a group's seeds. A custom source has a
-//   single seed list and no subgroup layer.
+  // A search-opened dialog starts with the clicked seed selected (once its row exists; the row
+  // content may change on re-reads but its identity never does, so this fires exactly once).
+  const preselectDone = useRef(false);
+  useEffect(() => {
+    if (preselectDone.current || !search?.preselectSeedKey) return;
+    const row = allRows.find((candidate) => candidate.stableSeedKey === search.preselectSeedKey);
+    if (!row) return;
+    preselectDone.current = true;
+    if (selectableRow(row)) setSelected((current) => new Set(current).add(row.key));
+  }, [allRows, search]);
+
+  // Step one's navigation: the subgroup list first, then a group's seeds. A custom preset and a
+  // keyword search both have a single seed list and no subgroup layer.
   const [activeGroupKey, setActiveGroupKey] = useState<string>();
   const [direction, setDirection] = useState<"forward" | "back">("forward");
-  const customGroup = source.kind === "custom" ? source.groups[0] : undefined;
-  const activeGroup = customGroup ?? source.groups.find((group) => group.key === activeGroupKey);
+  const singleList = source.kind !== "provider";
+  const singleGroup = singleList ? source.groups[0] : undefined;
+  const activeGroup = singleGroup ?? source.groups.find((group) => group.key === activeGroupKey);
   const activeEntry = source.groupEntries.find((group) => group.key === activeGroupKey);
-  const level: "groups" | "seeds" = source.kind === "custom" || activeGroupKey !== undefined ? "seeds" : "groups";
+  const level: "groups" | "seeds" = singleList || activeGroupKey !== undefined ? "seeds" : "groups";
   const needle = filter.trim().toLowerCase();
   const selectableVisible = useMemo(
     () => (activeGroup?.rows ?? []).filter((row) => (!needle || row.title.toLowerCase().includes(needle)) && selectableRow(row)),
@@ -430,7 +450,9 @@ export function OneShotDialog({
   // Why submission is blocked (rendering only).
   const createBlock: string | undefined = !draft
     ? t("addPreset.loading")
-    : !offsetValid
+    : !draft.title.trim()
+      ? t("config.validation.titleRequired")
+      : !offsetValid
       ? t("rss.offsetInvalid")
       : pendingSubmit.some(needsExpand)
         ? t("oneshot.expanding")
@@ -460,6 +482,12 @@ export function OneShotDialog({
     return key;
   }
 
+  /** Why one seed's submission failed; an expired search identity has no refresh, only a new search. */
+  function submitErrorOf(cause: unknown): string {
+    if (source.kind === "search" && cause instanceof ApiError && cause.code === "FEED_SNAPSHOT_REFRESH_REQUIRED") return t("oneshot.searchStale");
+    return toUserMessage(cause, t("rss.oneShotFailed"));
+  }
+
   async function create(targets: OneShotSeedRow[]) {
     if (targets.length === 0 || !draft) return;
     setSubmitting(true);
@@ -479,7 +507,7 @@ export function OneShotDialog({
         await downloadSnapshotSeed(row.snapshotID, row.stableSeedKey, input, idempotencyKeyFor(row, input));
         next.push({ key: row.key, ok: true });
       } catch (cause) {
-        next.push({ key: row.key, ok: false, error: toUserMessage(cause, t("rss.oneShotFailed")) });
+        next.push({ key: row.key, ok: false, error: submitErrorOf(cause) });
       }
     }
     setOutcomes((previous) => {
@@ -609,10 +637,10 @@ export function OneShotDialog({
       title={t("oneshot.title")}
       description={
         <span className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
-          <span className="tw:min-w-0 tw:truncate" title={entry.title}>
-            {entry.title}
+          <span className="tw:min-w-0 tw:truncate" title={sourceLabel}>
+            {sourceLabel}
           </span>
-          <span>· {providerLabel(entry.source)}</span>
+          <span>· {providerLabel(site)}</span>
         </span>
       }
       footer={
@@ -669,12 +697,15 @@ export function OneShotDialog({
                 kind="error"
                 title={source.error}
                 action={
-                  <Button size="sm" onClick={source.reload}>
-                    {t("act.retry")}
-                  </Button>
+                  // An expired search identity cannot be re-read usefully; the copy already says to search again.
+                  source.stale ? undefined : (
+                    <Button size="sm" onClick={source.reload}>
+                      {t("act.retry")}
+                    </Button>
+                  )
                 }
               />
-            ) : source.kind === "custom" && source.loading ? (
+            ) : singleList && source.loading ? (
               <StateBlock kind="busy" title={t("oneshot.seeding")} />
             ) : source.fetchRequired || source.fetchBusy ? (
               <StateBlock
@@ -704,9 +735,9 @@ export function OneShotDialog({
           openError={source.openError}
           onOpenGroup={openGroup}
           activeGroup={activeGroup}
-          activeTitle={activeGroup?.name ?? activeEntry?.name ?? ""}
+          activeTitle={source.kind === "search" ? sourceLabel : (activeGroup?.name ?? activeEntry?.name ?? "")}
           activeLoading={
-            source.kind === "custom"
+            singleList
               ? activeGroup === undefined && source.pending
               : activeGroupKey !== undefined &&
                 activeGroup === undefined &&
@@ -827,7 +858,15 @@ export function OneShotDialog({
                     id="oneshot-title"
                     aria-label={t("field.title")}
                     value={draft.title}
-                    onChange={(event) => source.setDraft({ ...draft, title: event.target.value })}
+                    onChange={(event) =>
+                      // A search draft's instance_label follows the title: the server requires both
+                      // non-empty from the first read on, so they are edited as one.
+                      source.setDraft(
+                        source.kind === "search"
+                          ? { ...draft, title: event.target.value, instance_label: event.target.value }
+                          : { ...draft, title: event.target.value },
+                      )
+                    }
                   />
                 </Field>
                 <MetadataFields
