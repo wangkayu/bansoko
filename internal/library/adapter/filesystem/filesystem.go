@@ -2691,6 +2691,18 @@ func sameMutationFileObservation(left, right domain.FileObservation) bool {
 	if !sameFileObservation(left, right) {
 		return false
 	}
+	if domain.IsMetadataFingerprint(left.Fingerprint) || domain.IsMetadataFingerprint(right.Fingerprint) {
+		// A network remount may change the client device number. Cleanup's
+		// path-level identity is size + inode; retain the stronger generation or
+		// change-marker evidence without reintroducing device equality.
+		if !fileidentity.IsPresent(left.Identity) || !fileidentity.IsPresent(right.Identity) || left.Identity.Inode != right.Identity.Inode {
+			return false
+		}
+		if left.Identity.GenerationNanos != 0 && right.Identity.GenerationNanos != 0 {
+			return left.Identity.GenerationNanos == right.Identity.GenerationNanos
+		}
+		return left.ChangeNanos != 0 && right.ChangeNanos != 0 && left.ChangeNanos == right.ChangeNanos
+	}
 	if handleEvidenceComplete(left.HandleEvidence) && handleEvidenceComplete(right.HandleEvidence) {
 		return fileidentity.MatchesHandleEvidence(left.HandleEvidence, right.HandleEvidence)
 	}

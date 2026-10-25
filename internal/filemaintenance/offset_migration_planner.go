@@ -356,6 +356,9 @@ func (s *OffsetMigrationService) planOffsetMigrationCandidate(ctx context.Contex
 	if len(operation.fingerprint) == 0 {
 		return blockedOffsetOperation(operation, "fingerprint_invalid", "placement target fingerprint is not a JSON object"), nil
 	}
+	if _, err := offsetSourceFingerprintValue(candidate.targetFingerprint); err != nil {
+		return blockedOffsetOperation(operation, "fingerprint_invalid", fmt.Sprintf("placement target fingerprint is unsupported: %v", err)), nil
+	}
 
 	raw := *oldIdentity.RawEpisode
 	source := *oldIdentity.SelectedSource

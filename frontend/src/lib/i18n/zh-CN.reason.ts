@@ -372,6 +372,7 @@ export const reasonCopy = {
   placement_changed: "该文件的状态已变化",
   target_changed: "该位置的文件已变化",
   companion_occupied: "附属文件的位置已变化或被占用",
+  placement_handoff_pending: "文件仍在完成入库，请稍后重试",
   coverage_unresolved: "未识别季和集",
   render_facts_unavailable: "命名模板缺少所需信息",
   calibration_scan_missing: "缺少文件扫描结果",

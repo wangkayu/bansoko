@@ -1,12 +1,14 @@
 package filemaintenance
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"os"
 
 	"bansoko/internal/fileidentity"
+	executorpkg "bansoko/internal/filemaintenance/executor"
 	"bansoko/internal/library/domain"
 )
 
@@ -35,8 +37,35 @@ func decodeCleanupAttempt(raw []byte) (cleanupAttemptEvidence, error) {
 }
 
 func completeCleanupObservation(observation domain.FileObservation, fingerprint string) bool {
-	return observation.Fingerprint != "" && observation.Fingerprint == fingerprint &&
+	return cleanupObservationMatchesFingerprint(observation, fingerprint) &&
 		observation.SizeBytes >= 0 && fileidentity.IsPresent(observation.Identity)
+}
+
+// observeCleanupFile uses the observation mode of the frozen identity. The
+// legacy SHA-256 path is unchanged. A recovered placement instead freezes a
+// metadata envelope, so its cleanup must use no-follow path metadata and must
+// never turn into a full-file content read merely to make the comparison work.
+func observeCleanupFile(ctx context.Context, executor executorpkg.CleanupFileExecutor, path, fingerprint string) (domain.FileObservation, error) {
+	if _, metadata := metadataFingerprintValue(fingerprint); metadata {
+		observer, ok := executor.(executorpkg.CleanupMetadataFileObserver)
+		if !ok {
+			return domain.FileObservation{}, errors.New("cleanup metadata observer is not wired")
+		}
+		return observer.ObserveMetadataFile(ctx, path)
+	}
+	return executor.Observe(ctx, path)
+}
+
+func cleanupObservationMatchesFingerprint(observation domain.FileObservation, frozen string) bool {
+	if expectedValue, metadata := metadataFingerprintValue(frozen); metadata {
+		expected, ok := domain.ParseMetadataFingerprint(expectedValue)
+		if !ok {
+			return false
+		}
+		actual, ok := domain.ParseMetadataFingerprint(observation.Fingerprint)
+		return ok && observation.SizeBytes == expected.SizeBytes && domain.MetadataFactsMatch(actual, expected)
+	}
+	return observation.Fingerprint != "" && observation.Fingerprint == frozen
 }
 
 func frozenSourceObservation(raw []byte, fingerprint string) (domain.FileObservation, error) {
@@ -66,6 +95,18 @@ func frozenObservation(raw []byte, fingerprint string) (domain.FileObservation, 
 }
 
 func sameFrozenCleanupObservation(actual, expected domain.FileObservation) bool {
+	metadata := domain.IsMetadataFingerprint(actual.Fingerprint) || domain.IsMetadataFingerprint(expected.Fingerprint)
+	if metadata {
+		if !cleanupObservationMatchesFingerprint(actual, expected.Fingerprint) || actual.SizeBytes != expected.SizeBytes {
+			return false
+		}
+		// Network mounts may change their client-side device number. Path-level
+		// cleanup identity is size + inode; device never participates.
+		if !fileidentity.IsPresent(actual.Identity) || !fileidentity.IsPresent(expected.Identity) || actual.Identity.Inode != expected.Identity.Inode {
+			return false
+		}
+		return actual.Identity.GenerationNanos == 0 || expected.Identity.GenerationNanos == 0 || actual.Identity.GenerationNanos == expected.Identity.GenerationNanos
+	}
 	return actual.Fingerprint == expected.Fingerprint && actual.SizeBytes == expected.SizeBytes && fileidentity.Matches(actual.Identity, expected.Identity)
 }
 

@@ -59,6 +59,11 @@ SELECT EXISTS(
   SELECT 1 FROM placement_companions c
    WHERE c.current_path COLLATE "C" = ANY($1::text[])
      AND c.state = 'active' AND c.placement_id <> $2
+) OR EXISTS(
+  SELECT 1 FROM placements p
+  JOIN placement_obligations po ON po.file_operation_id = p.source_owner_ref
+   WHERE p.id = $2 AND p.source_evidence_type = 'file_operation'
+     AND po.state IN ('pending', 'waiting_retry')
 ) OR EXISTS(SELECT 1 FROM (` + recoveryUnfinishedOwners + `) h
             WHERE h.path COLLATE "C" = ANY($1::text[]))`
 

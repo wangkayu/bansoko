@@ -46,6 +46,14 @@ func ObserveLike(ctx context.Context, observer FileObserver, path, reference str
 	return observer.Observe(ctx, path)
 }
 
+// CleanupMetadataFileObserver is the no-content-read observation mode used
+// when a cleanup froze a placement's metadata fingerprint envelope. Executors
+// without this port cannot perform that mode; callers fail closed rather than
+// silently falling back to a content hash.
+type CleanupMetadataFileObserver interface {
+	ObserveMetadataFile(context.Context, string) (domain.FileObservation, error)
+}
+
 // CleanupFileExecutor performs verified quarantine, purge, and restore effects.
 type CleanupFileExecutor interface {
 	Observe(context.Context, string) (domain.FileObservation, error)

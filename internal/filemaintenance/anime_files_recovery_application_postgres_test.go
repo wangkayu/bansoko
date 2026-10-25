@@ -61,11 +61,15 @@ func recoveryRules() naming.NamingRules {
 func newRecoveryApplicationScene(t *testing.T) *recoveryApplicationScene {
 	t.Helper()
 	fixture := newCalibrationFixture(t)
+	return seedRecoveryApplicationScene(t, fixture, "anime-rec-0")
+}
+
+func seedRecoveryApplicationScene(t *testing.T, fixture *calibrationFixture, animeID string) *recoveryApplicationScene {
+	t.Helper()
 	db := fixture.db
-	const animeID = "anime-rec-0"
 	rules := recoveryRules()
 
-	observedPath := "/library/Show/raw ep1.mkv"
+	observedPath := "/library/" + animeID + "/raw ep1.mkv"
 	seedCompletedGenerationWithRenderChains(t, db, animeID, 1, map[string]string{observedPath: "meta:size=4096"}, rules)
 
 	var chain placedRenderChain
@@ -95,15 +99,16 @@ func newRecoveryApplicationScene(t *testing.T) *recoveryApplicationScene {
 	// Every NOT NULL / CHECK column of the baseline is supplied.
 	const companionDigest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	const companionMetadata = "meta:size=64;dev=2;ino=12"
+	companionKey := "cmp-" + strings.TrimPrefix(animeID, "anime-")
 	var companionID string
 	if err := db.QueryRow(`
 INSERT INTO placement_companions
 (id, placement_id, managed_anime_id, source_ref, registration, media_kind, suffix,
  original_extension, current_path, size_bytes, fingerprint, state, version)
-VALUES ('cmp-rec-0', $1, $2, 'src:cmp-rec-0', 'adopted', 'subtitle', 'zh',
+VALUES ($5, $1, $2, 'src:' || $5, 'adopted', 'subtitle', 'zh',
         'ass', $3, 64, $4, 'active', 2)
 RETURNING id`,
-		chain.PlacementID, animeID, "/library/Show/raw ep1.zh.ass", companionDigest).Scan(&companionID); err != nil {
+		chain.PlacementID, animeID, observedPath+".zh.ass", companionDigest, companionKey).Scan(&companionID); err != nil {
 		t.Fatalf("seed companion: %v", err)
 	}
 	companionTarget := companionRenderPath(t, renderer, animeID, chain.PlacementID, companionID)

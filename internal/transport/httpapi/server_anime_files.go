@@ -130,6 +130,7 @@ var animeFilesRecoverRefusals = map[string]string{
 	filemaintenance.RecoveryReasonTargetOccupied:    "Another file already owns that path.",
 	filemaintenance.RecoveryReasonCompanionMissing:  "A companion file of the unit is no longer at its recorded path.",
 	filemaintenance.RecoveryReasonCompanionOccupied: "A companion path has changed or is taken.",
+	filemaintenance.RecoveryReasonPlacementHandoff:  "The file is still finishing import; try again after it settles.",
 }
 
 // mapAnimeFilesRecoverError turns the typed confirm refusal into the 409

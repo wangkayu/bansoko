@@ -165,7 +165,7 @@ func (s *OffsetMigrationExecuteService) offsetBusinessHandler() worker.Handler {
 			Operation: domain.OperationMove, SourcePath: op.OldTargetPath, TargetPath: op.NewTargetPath,
 			SourceFingerprint: op.SourceFingerprint, CollisionPolicy: domain.CollisionBlock,
 		}
-		sourceFingerprint, err := offsetSourceFingerprintHex(op.SourceFingerprint)
+		sourceFingerprint, err := offsetSourceFingerprintValue(op.SourceFingerprint)
 		if err != nil {
 			writer := offsetMigrationTerminalWriter(op.ID, nextVersion, OffsetMigrationOperationFailed, "offset_fingerprint_invalid", safeReason(err))
 			return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "failed", ReasonCode: "offset_fingerprint_invalid", Reason: safeReason(err)}, writer), nil
@@ -261,16 +261,16 @@ func (s *OffsetMigrationService) admitOffsetMigrationWorkItemTx(ctx context.Cont
 	return err
 }
 
-// offsetSourceFingerprintHex extracts the pure sha256 hex value from the
-// frozen placement fingerprint. The placement fingerprint is persisted as a
-// JSONB document ({algorithm, value[, size_bytes]}), while the filesystem
-// executor and observer compare plain hex only. Non-JSON input is passed
-// through untouched (legacy plain fingerprints).
+// offsetSourceFingerprintValue unwraps the frozen placement fingerprint for
+// filesystem execution and observation. SHA-256 keeps its historical plain-hex
+// behavior; a recovery metadata envelope yields its raw meta: value so the
+// existing ObserveLike/filesystem path performs no-follow size+inode checks.
+// Non-JSON input is passed through untouched (legacy plain fingerprints).
 // errOffsetPlacementInactive: the checkpoint found the plan's placement no
 // longer active; nothing was written.
 var errOffsetPlacementInactive = errors.New("offset migration placement is not active")
 
-func offsetSourceFingerprintHex(frozen string) (string, error) {
+func offsetSourceFingerprintValue(frozen string) (string, error) {
 	trimmed := strings.TrimSpace(frozen)
 	if !strings.HasPrefix(trimmed, "{") {
 		return trimmed, nil
@@ -280,13 +280,26 @@ func offsetSourceFingerprintHex(frozen string) (string, error) {
 		return "", fmt.Errorf("decode offset source fingerprint: %w", err)
 	}
 	var algorithm, value string
-	if err := json.Unmarshal(fields["algorithm"], &algorithm); err != nil || algorithm != "sha256" {
-		return "", errors.New("offset source fingerprint algorithm must be sha256")
+	if err := json.Unmarshal(fields["algorithm"], &algorithm); err != nil {
+		return "", errors.New("offset source fingerprint algorithm is invalid")
 	}
-	if err := json.Unmarshal(fields["value"], &value); err != nil || !isHexFingerprint(value) {
+	if err := json.Unmarshal(fields["value"], &value); err != nil {
 		return "", errors.New("offset source fingerprint value is invalid")
 	}
-	return value, nil
+	switch algorithm {
+	case "sha256":
+		if !isHexFingerprint(value) {
+			return "", errors.New("offset source fingerprint value is invalid")
+		}
+		return value, nil
+	case "metadata":
+		if _, ok := domain.ParseMetadataFingerprint(value); !ok {
+			return "", errors.New("offset source metadata fingerprint is invalid")
+		}
+		return value, nil
+	default:
+		return "", errors.New("offset source fingerprint algorithm must be sha256 or metadata")
+	}
 }
 
 func isHexFingerprint(value string) bool {
@@ -305,20 +318,21 @@ func resolveOffsetTargetPath(target string) string {
 	return filepath.Clean(target)
 }
 
-// offsetFingerprintsEqual compares two fingerprint representations (plain
-// hex or {algorithm,value} JSON) by their hex value.
+// offsetFingerprintsEqual compares two frozen/observed representations after
+// unwrapping their typed envelopes. Metadata uses size+inode (device excluded);
+// SHA-256 keeps the previous case-insensitive digest comparison.
 func offsetFingerprintsEqual(left, right string) bool {
-	if domain.IsMetadataFingerprint(left) || domain.IsMetadataFingerprint(right) {
-		// Path-level identity (size, inode when both know it); a metadata
-		// fingerprint never equals a content digest.
-		return domain.MetadataFingerprintsMatch(left, right)
-	}
-	leftHex, leftErr := offsetSourceFingerprintHex(left)
-	rightHex, rightErr := offsetSourceFingerprintHex(right)
+	leftValue, leftErr := offsetSourceFingerprintValue(left)
+	rightValue, rightErr := offsetSourceFingerprintValue(right)
 	if leftErr != nil || rightErr != nil {
 		return strings.EqualFold(strings.TrimSpace(left), strings.TrimSpace(right))
 	}
-	return strings.EqualFold(leftHex, rightHex)
+	if domain.IsMetadataFingerprint(leftValue) || domain.IsMetadataFingerprint(rightValue) {
+		// Path-level identity (size, inode when both know it); a metadata
+		// fingerprint never equals a content digest.
+		return domain.MetadataFingerprintsMatch(leftValue, rightValue)
+	}
+	return strings.EqualFold(leftValue, rightValue)
 }
 
 // persistAttempt freezes the durable attempt checkpoint and moves the
@@ -567,7 +581,14 @@ WHERE attempt IS NOT NULL AND state IN ('running', 'effect_unknown')`)
 		// The persisted target is absolute; normalize it exactly like the
 		// executor does before observing and committing.
 		targetPath = filepath.Clean(targetPath)
-		observed, err := executorpkg.ObserveLike(ctx, s.observer, targetPath, fingerprint)
+		reference, err := offsetSourceFingerprintValue(fingerprint)
+		if err != nil {
+			result := deployment.ReconcileResult{State: deployment.StateConflict, Effect: deployment.EffectUnknown,
+				Reason: fmt.Sprintf("offset migration operation %s fingerprint is invalid: %v", operationID, err)}
+			firstIssue = &result
+			continue
+		}
+		observed, err := executorpkg.ObserveLike(ctx, s.observer, targetPath, reference)
 		if err != nil {
 			return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectUnknown,
 				Reason: safeReason(err)}, nil

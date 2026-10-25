@@ -439,7 +439,7 @@ func resumeOverwriteOperation(op *AlignmentOperation) (domain.FileOperation, boo
 	if json.Unmarshal(op.OverwriteRecovery, &recovery) != nil {
 		return domain.FileOperation{}, false
 	}
-	fingerprint, err := offsetSourceFingerprintHex(op.SourceFingerprint)
+	fingerprint, err := offsetSourceFingerprintValue(op.SourceFingerprint)
 	if err != nil {
 		return domain.FileOperation{}, false
 	}

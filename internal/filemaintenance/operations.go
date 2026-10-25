@@ -377,7 +377,7 @@ func (s *AlignmentService) alignmentBusinessHandler() worker.Handler {
 			// A video and its companions are one unit: nothing moves while
 			// any target in the unit holds a file the mode does not allow
 			// replacing.
-			sourceFingerprint, err := offsetSourceFingerprintHex(op.SourceFingerprint)
+			sourceFingerprint, err := offsetSourceFingerprintValue(op.SourceFingerprint)
 			if err == nil {
 				outcome, err := s.videoUnitPrecheck(ctx, op, sourceFingerprint, collision)
 				if err != nil {
@@ -452,7 +452,7 @@ func (s *AlignmentService) alignmentBusinessHandler() worker.Handler {
 		if err != nil {
 			return worker.Outcome{}, err
 		}
-		sourceFingerprint, err := offsetSourceFingerprintHex(op.SourceFingerprint)
+		sourceFingerprint, err := offsetSourceFingerprintValue(op.SourceFingerprint)
 		if err != nil {
 			writer := alignmentSettleWriter(op, nextVersion, AlignmentFailed, "alignment_fingerprint_invalid", safeReason(err), "")
 			return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "failed", ReasonCode: "alignment_fingerprint_invalid", Reason: safeReason(err)}, writer), nil

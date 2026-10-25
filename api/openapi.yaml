@@ -2345,7 +2345,8 @@ paths:
         details[0].code one of `owner_retired`, `not_started`,
         `candidate_gone`, `scan_changed`, `scan_running`, `placement_changed`,
         `target_missing`, `target_changed`, `target_occupied`,
-        `companion_missing` or `companion_occupied`.
+        `companion_missing`, `companion_occupied` or
+        `placement_handoff_pending`.
       parameters:
         - $ref: '#/components/parameters/ManagedAnimeID'
       requestBody:

@@ -366,6 +366,7 @@ export const enReasonCopy = {
   placement_changed: "The file row has changed",
   target_changed: "The file at the recorded path has changed",
   companion_occupied: "A sidecar path has changed or is taken",
+  placement_handoff_pending: "The file is still finishing import; try again later",
   coverage_unresolved: "Season and episode not recognized",
   render_facts_unavailable: "The naming template is missing required information",
   calibration_scan_missing: "Missing file scan results",

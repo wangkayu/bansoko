@@ -1,12 +1,29 @@
 package httpapi
 
 import (
+	"errors"
+	"net/http"
 	"testing"
 	"time"
 
 	filemaintenance "bansoko/internal/filemaintenance"
 	"bansoko/internal/transport/httpapi/generated"
 )
+
+func TestMapAnimeFilesRecoverErrorMapsPlacementHandoff(t *testing.T) {
+	mapped := mapAnimeFilesRecoverError(&filemaintenance.AnimeFilesRecoverRefusal{
+		Code: filemaintenance.RecoveryReasonPlacementHandoff,
+	})
+	var apiErr *APIError
+	if !errors.As(mapped, &apiErr) {
+		t.Fatalf("mapped refusal has type %T, want *APIError", mapped)
+	}
+	if apiErr.Status != http.StatusConflict || apiErr.Code != "ANIME_FILES_RECOVER_REFUSED" ||
+		len(apiErr.Details) != 1 || apiErr.Details[0].Code != filemaintenance.RecoveryReasonPlacementHandoff ||
+		apiErr.Details[0].Message == "" {
+		t.Fatalf("mapped placement handoff refusal = %+v", apiErr)
+	}
+}
 
 func TestMapPlacementViewsPreservesShapeAndFields(t *testing.T) {
 	createdAt := time.Unix(123, 0).UTC()

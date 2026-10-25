@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -138,6 +139,7 @@ const (
 	RecoveryReasonTargetOccupied    = "target_occupied"
 	RecoveryReasonCompanionOccupied = "companion_occupied"
 	RecoveryReasonCompanionMissing  = "companion_missing"
+	RecoveryReasonPlacementHandoff  = "placement_handoff_pending"
 )
 
 // ---- recovery observer port ----------------------------------------------
@@ -202,8 +204,8 @@ type AnimeFileRecoverCommand struct {
 //     may hold the target or any companion path (no second owner, ever);
 //  8. the placement re-attaches (physical_path = target, target fingerprint
 //     refreshed to the observed metadata facts through the typed envelope the
-//     column contract holds, source_evidence_type = `recovery`,
-//     snapshot_generation = the confirmed generation) under a CAS guard on
+//     column contract holds, source_evidence_type is preserved, and
+//     recovery_generation = the confirmed generation) under a CAS guard on
 //     the frozen version, and every companion re-attaches at its frozen path
 //     with its OWN version CAS — keeping its existing hex digest, its
 //     existing identity is never rewritten (no content re-read, no forged
@@ -223,7 +225,17 @@ func (s *Service) RecoverAnimeFileApplication(ctx context.Context, animeID strin
 		return result, &AnimeFilesRecoverRefusal{Code: RecoveryReasonCandidateGone}
 	}
 	db := s.placements.db
-	owner, found, err := loadAnimeFilesOwner(ctx, db, animeID)
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return result, err
+	}
+	defer tx.Rollback()
+
+	// Fence the owner graph inside the confirm transaction. Lock the owner and
+	// subscription before the placement, the same order used by retirement and
+	// replacement settlement; the journal's subscription FK must never be the
+	// first subscription lock taken after a placement lock.
+	owner, found, err := lockRecoveryOwnerTx(ctx, tx, animeID)
 	if err != nil {
 		return result, err
 	}
@@ -233,12 +245,6 @@ func (s *Service) RecoverAnimeFileApplication(ctx context.Context, animeID strin
 	if reason := owner.manualActionReason(); reason != "" {
 		return result, &AnimeFilesRecoverRefusal{Code: reason}
 	}
-
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return result, err
-	}
-	defer tx.Rollback()
 
 	// (2) the read the user confirmed is still the newest decided generation
 	// and nothing is in flight (a live scan could re-decide this row).
@@ -288,6 +294,18 @@ func (s *Service) RecoverAnimeFileApplication(ctx context.Context, animeID strin
 	if !ok || placement.State != "active" || placement.VerificationState != "verified" {
 		return result, &AnimeFilesRecoverRefusal{Code: RecoveryReasonPlacementChanged}
 	}
+	// A file-operation handoff proves the placement against the operation's
+	// immutable path and SHA-256 evidence. Re-pointing either while that handoff
+	// is unfinished would strand its continuation permanently. Lock every
+	// obligation row (including terminal ones) so a concurrent retry cannot
+	// reopen it after this check and before commit.
+	pending, err := lockRecoveryPlacementObligationsTx(ctx, tx, command.PlacementID)
+	if err != nil {
+		return result, err
+	}
+	if pending {
+		return result, &AnimeFilesRecoverRefusal{Code: RecoveryReasonPlacementHandoff}
+	}
 	if placement.RecoveryGeneration == candidate.Generation {
 		// Replay: the committed confirm owns this exact generation. Re-verify
 		// the world is still the one the confirm created, then answer without
@@ -324,10 +342,12 @@ func (s *Service) RecoverAnimeFileApplication(ctx context.Context, animeID strin
 		return result, err
 	}
 
-	// (7) no second owner on the target or any companion path.
-	paths := []string{candidate.TargetPath}
-	for _, companion := range candidate.Companions {
-		paths = append(paths, companion.TargetPath)
+	// (7) Serialize the complete rendered unit, not just one companion or the
+	// video. The row locks above belong to different placements and cannot stop
+	// two confirms from both passing an unlocked occupancy SELECT.
+	paths := recoveryCandidatePaths(candidate)
+	if err := lockRecoveryTargetPathsTx(ctx, tx, paths); err != nil {
+		return result, err
 	}
 	occupied, err := recoveryTargetsOccupiedTx(ctx, tx, paths, command.PlacementID)
 	if err != nil {
@@ -405,9 +425,9 @@ func (s *Service) replayRecoveryConfirm(
 		}
 		return result, err
 	}
-	paths := []string{candidate.TargetPath}
-	for _, companion := range candidate.Companions {
-		paths = append(paths, companion.TargetPath)
+	paths := recoveryCandidatePaths(candidate)
+	if err := lockRecoveryTargetPathsTx(ctx, tx, paths); err != nil {
+		return result, err
 	}
 	occupied, err := recoveryTargetsOccupiedTx(ctx, tx, paths, candidate.PlacementID)
 	if err != nil {
@@ -447,6 +467,26 @@ type recoveryPlacementRow struct {
 	UpdatedAt          time.Time
 }
 
+// lockRecoveryOwnerTx fences lifecycle and subscription writability inside the
+// confirm transaction. managed_anime FOR SHARE excludes a concurrent retirement;
+// subscriptions FOR UPDATE both validates the current state and establishes the
+// settlement-compatible subscription -> placement lock order.
+func lockRecoveryOwnerTx(ctx context.Context, tx *sql.Tx, animeID string) (animeFilesOwner, bool, error) {
+	var owner animeFilesOwner
+	err := tx.QueryRowContext(ctx, `SELECT lifecycle_state FROM managed_anime WHERE id = $1 FOR SHARE`, animeID).Scan(&owner.Lifecycle)
+	if errors.Is(err, sql.ErrNoRows) {
+		return owner, false, nil
+	}
+	if err != nil {
+		return owner, false, fmt.Errorf("lock recovery anime lifecycle: %w", err)
+	}
+	err = tx.QueryRowContext(ctx, `SELECT state FROM subscriptions WHERE managed_anime_id = $1 FOR UPDATE`, animeID).Scan(&owner.SubscriptionState)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return owner, false, fmt.Errorf("lock recovery subscription: %w", err)
+	}
+	return owner, true, nil
+}
+
 // readRecoveryPlacementTx locks the placement row (FOR UPDATE) and reads the
 // identity facts the confirm re-verifies.
 func readRecoveryPlacementTx(ctx context.Context, tx *sql.Tx, animeID, placementID string) (recoveryPlacementRow, bool, error) {
@@ -469,6 +509,37 @@ FOR UPDATE`, placementID, animeID).
 		row.UpdatedAt = updatedAt.Time
 	}
 	return row, true, nil
+}
+
+// lockRecoveryPlacementObligationsTx locks the placement's durable handoff
+// obligations and reports whether any still owes work. Terminal rows are locked
+// too: otherwise a failed -> waiting_retry retry could race this check and
+// recreate the orphan the refusal is meant to prevent.
+func lockRecoveryPlacementObligationsTx(ctx context.Context, tx *sql.Tx, placementID string) (bool, error) {
+	rows, err := tx.QueryContext(ctx, `
+SELECT po.state FROM placement_obligations po
+JOIN placements p ON p.source_evidence_type = 'file_operation'
+                AND p.source_owner_ref = po.file_operation_id
+WHERE p.id = $1
+FOR UPDATE OF po`, placementID)
+	if err != nil {
+		return false, fmt.Errorf("lock recovery placement obligations: %w", err)
+	}
+	defer rows.Close()
+	pending := false
+	for rows.Next() {
+		var state string
+		if err := rows.Scan(&state); err != nil {
+			return false, err
+		}
+		if state == "pending" || state == "waiting_retry" {
+			pending = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	return pending, nil
 }
 
 // recoveryScanLiveTx reports whether a scan or its calibration is still in
@@ -540,6 +611,44 @@ func recoveryTargetOccupiedTx(ctx context.Context, tx *sql.Tx, path, exceptPlace
 		return true, nil
 	}
 	return recoveryPathsOccupied(ctx, tx, []string{cleaned}, exceptPlacementID)
+}
+
+// recoveryCandidatePaths is the complete ownership unit whose occupancy must
+// be serialized and revalidated: video plus every frozen companion.
+func recoveryCandidatePaths(candidate recoveryCandidateFact) []string {
+	paths := make([]string, 0, len(candidate.Companions)+1)
+	paths = append(paths, candidate.TargetPath)
+	for _, companion := range candidate.Companions {
+		paths = append(paths, companion.TargetPath)
+	}
+	return paths
+}
+
+// lockRecoveryTargetPathsTx serializes recovery admissions by canonical target
+// path. Sorting and deduplicating gives every request the same lock order. The
+// hash is only a lock key (collisions merely serialize extra requests); the
+// subsequent full-path occupancy reads remain the ownership authority.
+func lockRecoveryTargetPathsTx(ctx context.Context, tx *sql.Tx, paths []string) error {
+	cleaned := make([]string, 0, len(paths))
+	seen := make(map[string]struct{}, len(paths))
+	for _, path := range paths {
+		path = filepath.Clean(strings.TrimSpace(path))
+		if path == "" || path == "." {
+			return &AnimeFilesRecoverRefusal{Code: RecoveryReasonTargetOccupied}
+		}
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		cleaned = append(cleaned, path)
+	}
+	sort.Strings(cleaned)
+	for _, path := range cleaned {
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('anime_file_recovery:' || $1, 0))`, path); err != nil {
+			return fmt.Errorf("lock recovery target path: %w", err)
+		}
+	}
+	return nil
 }
 
 // recoveryTargetsOccupiedTx reports whether ANY of the unit paths is already
@@ -647,6 +756,17 @@ WHERE id = $1 AND state = 'active' AND placement_id = $4 AND version = $5`,
 	// moved, the new companion left behind at the old directory).
 	if err := verifyRecoveryUnitMembership(ctx, tx, input.candidate); err != nil {
 		return err
+	}
+	// Commit-point occupancy proof covers the COMPLETE target unit after both
+	// CAS updates, not merely the companion membership set. The advisory locks
+	// are still held, so another recovery cannot commit between this read and
+	// our commit; a pre-existing non-recovery owner is still refused here.
+	occupied, err := recoveryTargetsOccupiedTx(ctx, tx, recoveryCandidatePaths(input.candidate), input.candidate.PlacementID)
+	if err != nil {
+		return err
+	}
+	if occupied {
+		return &AnimeFilesRecoverRefusal{Code: RecoveryReasonTargetOccupied}
 	}
 	if err := s.appendRecoveryActivityTx(ctx, tx, input); err != nil {
 		return err
