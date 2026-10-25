@@ -155,9 +155,13 @@ if grep -nE 'BANSOKO_BOOTSTRAP_MIGRATE_MODE' "$compose"; then
 fi
 
 # The durable embedded-update workspace (journal + staging/releases trees)
-# must live on its own named volume; /app stays immutable.
-if ! grep -qE 'source: updates$' "$compose" || ! grep -qE '/var/lib/bansoko/updates' "$compose"; then
-  fail "production compose must mount the updates named volume at /var/lib/bansoko/updates"
+# lives inside the one state mount (the config bind); /app stays immutable and
+# no separate updates volume exists.
+if grep -qE 'source: updates$' "$compose" || grep -qE '/var/lib/bansoko/updates' "$compose"; then
+  fail "production compose must keep updates under the config mount, not a separate volume"
+fi
+if ! grep -qE 'BANSOKO_UPDATES_ROOT:[[:space:]]*/config/updates([[:space:]]|$)' "$compose"; then
+  fail "production compose must set BANSOKO_UPDATES_ROOT=/config/updates"
 fi
 
 # Backups are downloads and uploads; the server keeps no backup storage.
@@ -209,4 +213,4 @@ if [[ "$failures" -gt 0 ]]; then
   echo "check-production-compose: FAILED with $failures violation(s)" >&2
   exit 1
 fi
-echo "check-production-compose: PASSED (digest-only, no build:, no mutable tags, no migration service or entrypoint override, updates volume mounted, /config bind + PUID/PGID present, single owner DATABASE_URL incl. env.example)"
+echo "check-production-compose: PASSED (digest-only, no build:, no mutable tags, no migration service or entrypoint override, updates under /config, /config bind + PUID/PGID present, single owner DATABASE_URL incl. env.example)"

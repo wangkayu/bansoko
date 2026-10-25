@@ -18,15 +18,15 @@
 #     bootstrap wrapper, which migrates the selected tree's schema with the
 #     schema-owner BANSOKO_DATABASE_URL, provisions the runtime login role and
 #     then serves with the derived runtime connection. There is no separate
-#     migration service. The updates volume carries the durable journal plus
-#     staging/release trees;
+#     migration service. The config mount carries the durable update workspace
+#     (journal plus staging/release trees) at BANSOKO_UPDATES_ROOT=/config/updates;
 #   - healthcheck uses /api/v1/livez (process liveness only); readiness is
 #     /readyz and must not be gated on DB-ping /system/health.
 #
 # Production uses the embedded updater only: `/app/bootstrap` consumes signed
-# payloads from the persistent updates volume and owns migration, handoff,
-# readiness, and rollback. Optional supervisor/recovery source and protocol
-# remain historical/manual and are outside this Compose graph.
+# payloads into the updates workspace under the config mount and owns
+# migration, handoff, readiness, and rollback. Optional supervisor/recovery
+# source and protocol remain historical/manual and are outside this graph.
 #
 # The digest is injected by the builder as BANSOKO_BUNDLE_IMAGE_DIGEST (full
 # `sha256:...`). The development source-build compose
@@ -96,13 +96,16 @@ services:
       # independently supplied base digest would let readiness describe a
       # different image than Compose actually starts.
       BANSOKO_BASE_IMAGE_DIGEST: ${BANSOKO_BUNDLE_IMAGE_DIGEST:?BANSOKO_BUNDLE_IMAGE_DIGEST (sha256:...) must be injected by the builder}
-      BANSOKO_UPDATES_ROOT: /var/lib/bansoko/updates
+      # Updates live inside the one state mount: the config bind is the single
+      # application-state surface (secrets, recovery, updates), so channel
+      # updates need no second volume.
+      BANSOKO_UPDATES_ROOT: /config/updates
       # Runtime file-effect ownership (PUID/PGID) is deployment-owned. The
       # download roots and the directories the naming templates render are
       # WebUI configuration (DB owner config), not here.
       # Should match the host account that owns the media directories
       # (`id -u` / `id -g`). The container starts as root, prepares /config and
-      # the updates volume for this account and then runs as it.
+      # the updates tree inside it for this account and then runs as it.
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
       # Optional outbound HTTP(S) proxy (standard container variables, off by
@@ -129,11 +132,6 @@ services:
       - type: bind
         source: ${BANSOKO_CONFIG_DIR:?BANSOKO_CONFIG_DIR must be set}
         target: /config
-      # Durable embedded-update workspace: journal.json, staging/, releases/
-      # and `current`/`previous` pointers. Named volume keeps /app immutable.
-      - type: volume
-        source: updates
-        target: /var/lib/bansoko/updates
     ports:
       - "${BANSOKO_APP_PORT:-8000}:8080"
     depends_on:
@@ -156,4 +154,3 @@ services:
 
 volumes:
   postgres_data:
-  updates:
