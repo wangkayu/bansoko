@@ -34,8 +34,9 @@ scenario_selector="${BANSOKO_FM_E2E_SCENARIOS:-}"
 if [[ -z "$scenario_selector" && "${BANSOKO_FM_E2E_OFFSET_ALIGNMENT:-0}" == "1" ]]; then scenario_selector=all; fi
 if [[ -n "$scenario_selector" ]]; then
   # Scenario 8 (scan-alignment recovery) has its own selector entry and is
-  # deliberately NOT part of the default set: the seven-scenario lane keeps its
-  # meaning until the recovery backend lands on this branch.
+  # deliberately NOT part of the default set: the default `all` alias stays the
+  # seven scenarios the negative-proof wrapper pins and reports on. Run the
+  # recovery scenario explicitly with BANSOKO_FM_E2E_SCENARIOS=8.
   [[ "$scenario_selector" != all ]] || scenario_selector="1,2,3,4,5,6,7"
   case ",$scenario_selector," in *,,*|*,*[!1-8,]*) echo "invalid BANSOKO_FM_E2E_SCENARIOS: $scenario_selector" >&2; exit 2 ;; esac
   requested_selector="$scenario_selector"
@@ -751,14 +752,20 @@ if [[ "${BANSOKO_FM_E2E_OFFSET_ALIGNMENT:-0}" == "1" ]]; then
   calibration_generation() {
     $PSQL -tAc "SELECT COALESCE(MAX(generation),0) FROM reconciliation_files WHERE managed_anime_id='anime-e2e' AND disposition IS NOT NULL" | tr -d '[:space:]'
   }
-  wait_calibration_after() {
-    local before="$1" deadline=$(( $(date +%s) + 180 )) current
+  # Wait for the calibration of ONE specific scan generation, never merely for
+  # "the newest calibrated generation moved". A previous scenario's scan can
+  # still be calibrating when this one is submitted: waiting for any advance
+  # returns as soon as THAT older generation lands, and the preview then reads
+  # the previous generation's rows (observed: scenario 6's drift preview showed
+  # the pre-move paths of scenario 5's scan).
+  wait_calibration_generation() {
+    local want="$1" deadline=$(( $(date +%s) + 180 )) current
     while (( $(date +%s) < deadline )); do
       current="$(calibration_generation)"
-      if [[ -n "$current" && "$current" -gt "$before" ]]; then return 0; fi
+      if [[ -n "$current" && "$current" -ge "$want" ]]; then return 0; fi
       sleep 2
     done
-    echo "calibration generation did not advance past $before within 180s" >&2
+    echo "calibration generation $want was not reached within 180s (last=$(calibration_generation))" >&2
     return 1
   }
   # Expected target of the single drifting row for one file path, read from the
@@ -788,8 +795,7 @@ print(matches[0].get("expected_path") or "")' "$2"
   # One manual scan plus the calibration generation it produces, so the preview
   # reflects the drift the scenario just created on disk.
   scan_and_calibrate() {
-    local label="$1" before request
-    before="$(calibration_generation)"
+    local label="$1" submitted request
     # A scan owner admits one generation at a time. Scenario 5's browser step
     # leaves its own rescan behind when it settles, so submitting here without
     # waiting first races that scan. A refused submit surfaces as an untyped 500
@@ -817,8 +823,13 @@ print(matches[0].get("expected_path") or "")' "$2"
       echo "scan submit for $label was refused; waiting for the running scan to settle before retrying" >&2
       sleep 5
     done
-    wait_sql "SELECT state FROM reconciliation_scans WHERE managed_anime_id='anime-e2e' ORDER BY generation DESC LIMIT 1" completed
-    wait_calibration_after "$before"
+    # Bind both waits to the generation THIS submit returned. Waiting on the
+    # newest scan/calibration row lets an earlier scenario's in-flight work
+    # satisfy the wait, and the preview then describes the wrong generation.
+    submitted="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["generation"])' <"$summary_dir/$label-scan-submit.json")"
+    [[ "$submitted" =~ ^[0-9]+$ ]] || { echo "scan submit for $label returned no usable generation: $(cat "$summary_dir/$label-scan-submit.json")" >&2; exit 1; }
+    wait_sql "SELECT state FROM reconciliation_scans WHERE managed_anime_id='anime-e2e' AND generation=$submitted" completed
+    wait_calibration_generation "$submitted"
   }
   observe_disk() {
     local label="$1" path="$2"
@@ -1524,7 +1535,7 @@ for row in view.get("files") or []:
         "$api/anime/anime-e2e/files/recover" || true
     } | tee -a "$durable_evidence_dir/scenario-8-diagnostics.txt" >&2
     echo "scenario 8: generation $s8_generation froze no recovery candidate for placement $s8_placement_id at $s8_target (facts->recovery_candidates=$s8_candidates)." >&2
-    echo "scenario 8: this branch has no scan-alignment recovery backend (design .trellis/tasks/10-25-scan-alignment-recovery), so the scenario is in place and fails here on purpose." >&2
+    echo "scenario 8: the probe must freeze a candidate here (both locators missing, rendered unit on disk at the frozen size, no other owner). No candidate is a real backend failure: read the diagnostics above for the probe, renderer, occupancy and size evidence." >&2
     exit 1
   fi
   s8_candidate_version="$(s8_candidate_field "$s8_candidates" placement_version)"

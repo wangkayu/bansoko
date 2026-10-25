@@ -68,7 +68,7 @@ static_checks() {
       failed=1
     fi
   done
-  # Scenario 8 is the recovery lane's future acceptance case. It must exist as
+  # Scenario 8 is the scan-alignment recovery acceptance case. It must exist as
   # its own guarded block, be driven only by the explicit selector, and must
   # assert the ownership invariant the recovery confirm exists to protect.
   # Without these, a future edit could drop the scenario silently and the lane
