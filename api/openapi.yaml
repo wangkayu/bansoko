@@ -2309,6 +2309,60 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+  /anime/{managed_anime_id}/files/recover:
+    post:
+      tags: [FileMaintenance]
+      operationId: recoverAnimeFile
+      x-scope: write
+      x-mcp:
+        tool: recover_anime_file
+        group: files
+        write: true
+        description: >
+          Confirm the recovery of one file the user adopted by hand: the file
+          found at the path the file's latest scan expected but did not find.
+          Pass the placement_id and the scan generation you read from
+          list_anime_files; the same confirm replays as the same result. A
+          refused confirm is 409 ANIME_FILES_RECOVER_REFUSED with the reason
+          in details[0].code and no state changed.
+      description: >
+        The explicit recovery confirm of a scan alignment recovery candidate.
+        The scan froze the candidate (the rendered target was missing and a
+        file was observed exactly there); this confirm re-verifies every
+        frozen fact inside one transaction — the file still sits at the target
+        with the observed size and identity, the companions still match their
+        frozen paths, and no other file owns the target — and then re-attaches
+        the placement (and its present companions) to that path. No byte is
+        moved, copied, overwritten or deleted; only ownership rows re-point.
+        Replaying the same confirm returns the same result without a second
+        journal entry. A refusal is 409 ANIME_FILES_RECOVER_REFUSED with
+        details[0].code one of `owner_retired`, `not_started`,
+        `candidate_gone`, `scan_changed`, `placement_changed`,
+        `target_missing`, `target_changed`, `target_occupied` or
+        `companion_occupied`.
+      parameters:
+        - $ref: '#/components/parameters/ManagedAnimeID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnimeFileRecoverInput'
+      responses:
+        '200':
+          description: The recovery was confirmed (or had already been).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnimeFileRecoverResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /file-maintenance/decisions:
     get:
       tags: [FileMaintenance]
@@ -15616,7 +15670,7 @@ components:
     AnimeFileActions:
       type: object
       additionalProperties: false
-      required: [align, rerun, release]
+      required: [align, rerun, release, recover]
       properties:
         align:
           $ref: '#/components/schemas/AnimeFileAction'
@@ -15624,6 +15678,12 @@ components:
           $ref: '#/components/schemas/AnimeFileAction'
         release:
           $ref: '#/components/schemas/AnimeFileAction'
+        recover:
+          $ref: '#/components/schemas/AnimeFileAction'
+          description: >-
+            Confirm the recovery of the file the scan found at the rendered
+            target (row has `recovery`). Unavailable with nothing_to_recover
+            when the scan froze no candidate for the row.
     AnimeFile:
       type: object
       additionalProperties: false
@@ -15673,12 +15733,52 @@ components:
           type: string
         alignment:
           $ref: '#/components/schemas/AnimeFileAlignment'
+        recovery:
+          $ref: '#/components/schemas/AnimeFileRecovery'
+          description: >-
+            The frozen recovery candidate when the latest scan found the
+            file's rendered target missing and observed a file exactly there.
+            Present only then; the confirm action acts on it.
         actions:
           $ref: '#/components/schemas/AnimeFileActions'
         companions:
           type: array
           items:
             $ref: '#/components/schemas/AnimeFileCompanion'
+    AnimeFileRecovery:
+      type: object
+      additionalProperties: false
+      required: [generation, target_path, size_bytes, companions,
+                 companions_present, companions_complete]
+      properties:
+        generation:
+          type: integer
+          format: int64
+          minimum: 1
+          description: >-
+            The scan generation that froze the candidate; pass it to the
+            recover endpoint.
+        target_path:
+          type: string
+          description: The rendered target where the scan observed the file.
+        size_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        companions:
+          type: integer
+          minimum: 0
+          description: Companion files the candidate froze with the video.
+        companions_present:
+          type: integer
+          minimum: 0
+          description: >-
+            How many companions the scan observed at their rendered targets.
+        companions_complete:
+          type: boolean
+          description: >-
+            Every active companion relation was observed; false leaves a gap
+            the confirm reports but does not block.
     AnimeFilesScan:
       type: object
       additionalProperties: false
@@ -15770,6 +15870,57 @@ components:
           type: integer
           minimum: 0
           description: Alignment operations newly admitted (files and bound subtitles).
+    AnimeFileRecoverInput:
+      type: object
+      additionalProperties: false
+      required: [placement_id, generation]
+      properties:
+        placement_id:
+          $ref: '#/components/schemas/ID'
+          description: >-
+            The file row whose frozen recovery candidate is confirmed
+            (AnimeFile.placement_id).
+        generation:
+          type: integer
+          format: int64
+          minimum: 1
+          description: >-
+            The scan generation the caller read (AnimeFile.recovery.generation);
+            a newer generation answers scan_changed.
+    AnimeFileRecoverResult:
+      type: object
+      additionalProperties: false
+      required: [placement_id, generation, replay]
+      properties:
+        placement_id:
+          $ref: '#/components/schemas/ID'
+        generation:
+          type: integer
+          format: int64
+          minimum: 1
+          description: The confirmed candidate's scan generation.
+        target_path:
+          type: string
+          description: >-
+            The path the file now owns (the candidate's rendered target).
+        recovered_at:
+          type: string
+          format: date-time
+        replay:
+          type: boolean
+          description: >-
+            True when this confirm had already committed; the same result
+            replays.
+        companions:
+          type: integer
+          minimum: 0
+          description: Companion files re-attached with the video.
+        companions_missing:
+          type: integer
+          minimum: 0
+          description: >-
+            Frozen companions no longer found at their targets; the video
+            still recovers and nothing is dropped.
     CompanionIssueView:
       type: object
       additionalProperties: false

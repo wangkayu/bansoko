@@ -23,7 +23,7 @@ function fileRow(overrides: Partial<AnimeFile>): AnimeFile {
     relative_path: "Show/EP 01.mkv",
     size_bytes: 1024,
     status: "aligned",
-    actions: { align: notApplicable("nothing_to_align"), rerun: notApplicable("file_not_missing"), release: notApplicable("file_not_missing") },
+    actions: { align: notApplicable("nothing_to_align"), rerun: notApplicable("file_not_missing"), release: notApplicable("file_not_missing"), recover: notApplicable("nothing_to_recover") },
     companions: [],
     ...overrides,
   };
@@ -135,7 +135,7 @@ describe("AnimeFilesDialog", () => {
       relative_path: "Show/EP 02.mkv",
       status: "misaligned",
       target_relative_path: "Show/Season 01/Show - E02.mkv",
-      actions: { align: available, rerun: notApplicable("file_not_missing"), release: notApplicable("file_not_missing") },
+      actions: { align: available, rerun: notApplicable("file_not_missing"), release: notApplicable("file_not_missing"), recover: notApplicable("nothing_to_recover") },
       companions: [{ id: "c-1", media_kind: "subtitle", path: "/library/Show/EP 02.ass", relative_path: "Show/EP 02.ass", size_bytes: 10, status: "misaligned", target_relative_path: "Show/Season 01/Show - E02.ass" }],
     });
     const missing = fileRow({ placement_id: "p-3", group_name: "GroupA", relative_path: "Show/EP 03.mkv", status: "missing" });
@@ -188,7 +188,7 @@ describe("AnimeFilesDialog", () => {
   it("aligns one row with the read generation, and reports a refusal through the reason catalog", async () => {
     const posts: { url: string; body: unknown }[] = [];
     let denied = false;
-    const misaligned = fileRow({ status: "misaligned", target_relative_path: "Show/Season 01/Show - E01.mkv", actions: { align: available, rerun: notApplicable("file_not_missing"), release: notApplicable("file_not_missing") } });
+    const misaligned = fileRow({ status: "misaligned", target_relative_path: "Show/Season 01/Show - E01.mkv", actions: { align: available, rerun: notApplicable("file_not_missing"), release: notApplicable("file_not_missing"), recover: notApplicable("nothing_to_recover") } });
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith("/files/align") && init?.method === "POST") {
@@ -214,7 +214,7 @@ describe("AnimeFilesDialog", () => {
   });
 
   it("re-runs a missing file through release retry and shows the denial reason", async () => {
-    const missing = fileRow({ status: "missing", actions: { align: notApplicable("nothing_to_align"), rerun: available, release: available } });
+    const missing = fileRow({ status: "missing", actions: { align: notApplicable("nothing_to_align"), rerun: available, release: available, recover: notApplicable("nothing_to_recover") } });
     const posts: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -236,7 +236,7 @@ describe("AnimeFilesDialog", () => {
   });
 
   it("disables an unavailable action with its reason and hides actions when read-only", async () => {
-    const missing = fileRow({ status: "changed", actions: { align: notApplicable("nothing_to_align"), rerun: notApplicable("owner_retired"), release: notApplicable("owner_retired") } });
+    const missing = fileRow({ status: "changed", actions: { align: notApplicable("nothing_to_align"), rerun: notApplicable("owner_retired"), release: notApplicable("owner_retired"), recover: notApplicable("nothing_to_recover") } });
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(filesView([missing]))));
     const first = renderFiles();
     const rerun = await screen.findByRole("button", { name: t("tabs.files.rerun") });

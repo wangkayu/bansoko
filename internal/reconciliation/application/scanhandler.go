@@ -152,6 +152,26 @@ func (s *Service) handleScan(ctx context.Context, claim workitems.Claim) (worker
 		observations = append(observations, observation)
 	}
 
+	// Scan-alignment recovery probe: for placements missing at every locator,
+	// stat the exact rendered target (current naming rules) through the
+	// no-follow observer. A candidate is an immutable FACT written beside the
+	// missing disposition; nothing is ever auto-recovered from it.
+	recoveryCandidates := map[string][]recoveryCandidateFact{}
+	if s.recoveryTargets != nil && s.recoveryObserver != nil {
+		missing := make([]ownedPlacement, 0, len(observations))
+		for _, observation := range observations {
+			if observation.file == nil {
+				missing = append(missing, ownedPlacement{
+					ID:         observation.placementID,
+					Companions: companionsOf(placements, observation.placementID),
+				})
+			}
+		}
+		for _, candidate := range s.probeRecoveryCandidates(ctx, claim.Owner.ID, owner.Generation, missing) {
+			recoveryCandidates[candidate.PlacementID] = append(recoveryCandidates[candidate.PlacementID], candidate)
+		}
+	}
+
 	start := (progress.LastCommittedBatch + 1) * batchSize
 	if start > len(observations) {
 		start = len(observations)
@@ -166,7 +186,7 @@ func (s *Service) handleScan(ctx context.Context, claim workitems.Claim) (worker
 			end = len(observations)
 		}
 		batch := observations[start:end]
-		if err := s.commitBatch(ctx, claim, owner, batchIndex, batch); err != nil {
+		if err := s.commitBatch(ctx, claim, owner, batchIndex, batch, recoveryCandidates); err != nil {
 			if ctx.Err() != nil {
 				return worker.Outcome{}, ctx.Err()
 			}
@@ -336,6 +356,17 @@ func observeCompanions(companions []ownedCompanion, found map[string]domain.Scan
 	return observations
 }
 
+// companionsOf returns the registered companions of one placement from the
+// loaded scan set (used by the recovery probe's missing list).
+func companionsOf(placements []ownedPlacement, placementID string) []ownedCompanion {
+	for _, placement := range placements {
+		if placement.ID == placementID {
+			return placement.Companions
+		}
+	}
+	return nil
+}
+
 // loadOwnedPlacements returns the instance's verified active Placements as the
 // scan's expected observation set, each with its bounded locator paths.
 // Replaced/superseded and unverified rows are never observed here.
@@ -419,7 +450,11 @@ type placementObservation struct {
 // commitBatch persists one batch of Placement observations (ON CONFLICT DO
 // NOTHING: idempotent re-entry) and advances the owner checkpoint in the same
 // transaction, with the claim fencing token.
-func (s *Service) commitBatch(ctx context.Context, claim workitems.Claim, owner *ScanOwner, batchIndex int, batch []placementObservation) error {
+// commitBatch persists one batch of Placement observations (ON CONFLICT DO
+// NOTHING: idempotent re-entry) and advances the owner checkpoint in the same
+// transaction, with the claim fencing token. recoveryCandidates carries the
+// per-placement recovery candidates probed before batching (nil disables).
+func (s *Service) commitBatch(ctx context.Context, claim workitems.Claim, owner *ScanOwner, batchIndex int, batch []placementObservation, recoveryCandidates map[string][]recoveryCandidateFact) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -454,6 +489,12 @@ func (s *Service) commitBatch(ctx context.Context, claim workitems.Claim, owner 
 			sum := sha256.Sum256([]byte(observation.placementID))
 			fingerprint = "missing-" + hex.EncodeToString(sum[:8])
 			disposition = "missing"
+			// Immutable recovery candidates, when the rendered target exists:
+			// ride in the facts JSONB beside the unchanged disposition (the
+			// 256KB column budget bounds the document at write time).
+			if candidates := recoveryCandidates[observation.placementID]; len(candidates) > 0 {
+				facts["recovery_candidates"] = candidates
+			}
 		}
 		facts["disposition"] = disposition
 		if len(observation.companions) > 0 {

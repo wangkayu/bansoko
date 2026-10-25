@@ -683,6 +683,16 @@ func provideCoreApplicationGraph(
 	// Every reconciliation scan run also refreshes the instance's latest
 	// TargetObservation rows (stat only), the RSS row status's file facts.
 	reconciliationService.SetTargetObserver(acquisitiontarget.NewScanner(targetStore, acquisitiontarget.FilesystemProbe{}))
+	// Scan-alignment recovery probe: the composition root injects the
+	// filemaintenance renderer (dependency direction filemaintenance ->
+	// reconciliation) and the library's no-follow file observer, so a scan
+	// may record recovery CANDIDATE facts for missing placements. The probe
+	// only stats exact rendered paths; recovery itself stays behind the
+	// user's explicit confirm command.
+	reconciliationService.SetRecoveryProbe(
+		fileMaintenanceGraph.namingRenderer,
+		filesystem.OSFileObserver{},
+	)
 	rssService.SetCandidateFactsRepository(fileMaintenanceGraph.candidateFactsRepo)
 	rssService.SetMediaFactsStore(fileMaintenanceGraph.mediaFactsStore)
 	rssService.SetReplacementAdmission(fileMaintenanceGraph.replacementDecisions)
@@ -893,6 +903,7 @@ func provideFileMaintenanceService(
 	db *sql.DB,
 	fileMaintenanceGraph *fileMaintenanceGraph,
 	reconciliationService *reconciliationapplication.Service,
+	observabilityService *observabilityapplication.Service,
 	logger observabilityport.RuntimeLogger,
 ) httpapi.FileMaintenanceService {
 	service := filemaintenance.NewService(
@@ -918,6 +929,11 @@ func provideFileMaintenanceService(
 	// (test graphs) keeps the variant typed-unavailable while plain alignment
 	// stays cache-first unaffected.
 	service.SetMetadataWorkRefresher(fileMaintenanceGraph.metadataRefresher)
+	// The recovery confirm re-stats the candidate's frozen target and each
+	// present companion through the library's no-follow observer and records
+	// the confirm in the business journal; an unwired port fails closed.
+	service.SetRecoveryObserver(filesystem.OSFileObserver{})
+	service.SetRecoveryActivityWriter(observabilityService)
 	pathDiffService := filemaintenance.NewPathDiffService(
 		db,
 		fileMaintenanceGraph.namingRenderer,

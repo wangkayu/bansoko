@@ -3,6 +3,7 @@ package filemaintenance
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -42,16 +43,21 @@ const AnimeFileSizeMismatch = "size_mismatch"
 // Action reasons. They travel as reason codes and are shown only through the
 // copy catalog.
 const (
-	AnimeFilesReasonOwnerRetired       = "owner_retired"
-	AnimeFilesReasonNotStarted         = "not_started"
-	AnimeFilesReasonScanRunning        = "scan_running"
-	AnimeFilesReasonScanChanged        = "scan_changed"
-	AnimeFilesReasonAlignmentRunning   = "alignment_in_progress"
-	AnimeFilesReasonRescanRequired     = "rescan_required"
-	AnimeFilesReasonNothingToAlign     = "nothing_to_align"
-	AnimeFilesReasonFileNotMissing     = "file_not_missing"
-	AnimeFilesReasonSourceUnavailable  = "source_release_unavailable"
-	AnimeFilesReasonScanRequired       = "scan_required"
+	AnimeFilesReasonOwnerRetired      = "owner_retired"
+	AnimeFilesReasonNotStarted        = "not_started"
+	AnimeFilesReasonScanRunning       = "scan_running"
+	AnimeFilesReasonScanChanged       = "scan_changed"
+	AnimeFilesReasonAlignmentRunning  = "alignment_in_progress"
+	AnimeFilesReasonRescanRequired    = "rescan_required"
+	AnimeFilesReasonNothingToAlign    = "nothing_to_align"
+	AnimeFilesReasonFileNotMissing    = "file_not_missing"
+	AnimeFilesReasonSourceUnavailable = "source_release_unavailable"
+	AnimeFilesReasonScanRequired      = "scan_required"
+	// AnimeFilesReasonRecoveryGate is why a recovery confirm is unavailable
+	// for a row whose candidate exists but the read is stale or busy: a
+	// newer generation decided, or an alignment is in flight. The confirm's
+	// own transaction re-checks the same gate.
+	AnimeFilesReasonRecoveryGate       = "recovery_unavailable"
 	animeFilesMaxPlacements            = 500
 	animeFilesPathDiffPage             = 500
 	animeFilesAlignmentStateInProgress = "in_progress"
@@ -73,6 +79,23 @@ type AnimeFileAlignmentView struct {
 	ReasonCode string
 }
 
+// AnimeFileRecoveryView is the frozen recovery candidate of one file row:
+// the target the alignment renderer produced for the placement, the file the
+// scan stat'ed there, and the companions frozen with it. The confirm
+// endpoint re-verifies every fact before ownership re-attaches.
+type AnimeFileRecoveryView struct {
+	Generation int64
+	TargetPath string
+	SizeBytes  int64
+	// Companions is the frozen companion count; CompanionsPresent how many
+	// the scan observed at their rendered targets; CompanionsComplete says
+	// every active companion relation was observed (a gap reports why the
+	// recovery keeps the video and drops nothing).
+	Companions         int
+	CompanionsPresent  int
+	CompanionsComplete bool
+}
+
 // AnimeFileCompanionView is one bound companion of a video row.
 type AnimeFileCompanionView struct {
 	ID                 string
@@ -91,6 +114,9 @@ type AnimeFileActions struct {
 	Align   AnimeFileAction
 	Rerun   AnimeFileAction
 	Release AnimeFileAction
+	// Recover is the explicit recovery confirm of a frozen scan candidate;
+	// unavailable (nothing_to_recover) on rows without one.
+	Recover AnimeFileAction
 }
 
 // AnimeFileView is one managed video file.
@@ -117,6 +143,10 @@ type AnimeFileView struct {
 	Alignment          *AnimeFileAlignmentView
 	Actions            AnimeFileActions
 	Companions         []AnimeFileCompanionView
+	// Recovery is the frozen scan candidate when the latest scan found the
+	// file's target missing and stat'ed the file there: the file the user may
+	// re-adopt by explicit confirm. Nil = nothing to recover.
+	Recovery *AnimeFileRecoveryView
 }
 
 // AnimeFilesScanView is the scan state of the tab: running while a scan or
@@ -177,6 +207,9 @@ type animeFilesPlacement struct {
 	Coverage            []string
 	Companions          []animeFilesCompanion
 	RedownloadRequested bool
+	// Recovery is the placement's frozen recovery candidate from the latest
+	// calibrated generation, if the scan froze one.
+	Recovery *animeFilesRecoveryCandidate
 }
 
 type animeFilesCompanion struct {
@@ -191,6 +224,22 @@ type animeFilesAlignmentOp struct {
 	CompanionID    string
 	State          string
 	FailureCode    string
+}
+
+// animeFilesRecoveryCandidate is the frozen scan fact of one placement's
+// all-locator-missing target: the file the user may re-adopt by explicit
+// confirm. It mirrors the candidate the scan wrote; the confirm re-verifies
+// every field before the placement re-attaches.
+type animeFilesRecoveryCandidate struct {
+	PlacementID string
+	TargetPath  string
+	Generation  int64
+	SizeBytes   int64
+	// Companions reports the frozen companion count and how many the scan
+	// observed present at the rendered companion targets.
+	Companions         int
+	CompanionsPresent  int
+	CompanionsComplete bool
 }
 
 type animeFilesScanOwner struct {
@@ -211,6 +260,11 @@ type animeFilesFacts struct {
 	Diffs            []PathDiffView
 	Alignments       []animeFilesAlignmentOp
 	AlignmentLive    bool
+	// RecoveryReady marks the scan-generation invariant that admits a
+	// recovery confirm: the files view is not stale behind a newer
+	// generation and nothing is in flight. Per-row availability still
+	// requires the placement's own frozen candidate.
+	RecoveryReady bool
 	// AlignmentMoved is set when an alignment of this generation completed a
 	// move and nothing is in flight any more: the rows below still describe the
 	// paths observed before that move.
@@ -312,6 +366,18 @@ SELECT EXISTS(SELECT 1 FROM alignment_operations
               WHERE managed_anime_id = $1 AND scan_generation = $2 AND state = 'completed')`,
 			animeID, facts.Generation).Scan(&facts.AlignmentMoved); err != nil {
 			return facts, fmt.Errorf("read settled alignments: %w", err)
+		}
+	}
+	if facts.Generation > 0 && !facts.AlignmentLive {
+		// The recovery gate of this read: the generation the rows describe is
+		// still the newest decided generation (no newer calibration has
+		// landed) and nothing is in flight. A stale view must not offer a
+		// confirm whose own transaction would refuse it as scan_changed.
+		if err := db.QueryRowContext(ctx, `
+SELECT NOT EXISTS(SELECT 1 FROM reconciliation_files
+              WHERE managed_anime_id = $1 AND generation > $2 AND disposition IS NOT NULL)`,
+			animeID, facts.Generation).Scan(&facts.RecoveryReady); err != nil {
+			return facts, fmt.Errorf("read recovery readiness: %w", err)
 		}
 	}
 	return facts, nil
@@ -476,7 +542,89 @@ WHERE placement_id = ANY($1) AND state = 'active' ORDER BY placement_id, current
 	if err := companions.Close(); err != nil {
 		return nil, err
 	}
-	return placements, companions.Err()
+	if err := companions.Err(); err != nil {
+		return nil, err
+	}
+	if err := loadAnimeFilesRecovery(ctx, db, animeID, placements); err != nil {
+		return nil, err
+	}
+	return placements, nil
+}
+
+// loadAnimeFilesRecovery attaches each placement's frozen recovery candidate
+// from the anime's latest calibrated generation (side-effect free: it reads
+// only the facts the scan wrote). A candidate already confirmed
+// (facts.recovered_generation) is done: the row reads as aligned again.
+func loadAnimeFilesRecovery(ctx context.Context, db *sql.DB, animeID string, placements []animeFilesPlacement) error {
+	if len(placements) == 0 {
+		return nil
+	}
+	rows, err := db.QueryContext(ctx, `
+SELECT rf.facts->>'placement_id',
+       rf.facts->'recovery_candidates'
+FROM reconciliation_files rf
+WHERE rf.managed_anime_id = $1 AND rf.disposition = 'missing'
+  AND rf.facts->'recovery_candidates' IS NOT NULL
+  AND NOT (rf.facts ? 'recovered_generation')
+ORDER BY rf.generation DESC`, animeID)
+	if err != nil {
+		return fmt.Errorf("read recovery candidates: %w", err)
+	}
+	defer rows.Close()
+	seen := map[string]bool{}
+	for rows.Next() {
+		var placementID string
+		var raw []byte
+		if err := rows.Scan(&placementID, &raw); err != nil {
+			return err
+		}
+		if seen[placementID] {
+			continue
+		}
+		var document struct {
+			RecoveryCandidates []recoveryCandidateFact `json:"recovery_candidates"`
+		}
+		if err := json.Unmarshal(raw, &document); err != nil {
+			return fmt.Errorf("decode recovery candidates: %w", err)
+		}
+		for i := len(document.RecoveryCandidates) - 1; i >= 0; i-- {
+			candidate := document.RecoveryCandidates[i]
+			if candidate.PlacementID != placementID {
+				continue
+			}
+			at, ok := indexForPlacement(placements, placementID)
+			if !ok || seen[placementID] {
+				break
+			}
+			seen[placementID] = true
+			present := 0
+			for _, companion := range candidate.Companions {
+				if companion.State == "present" {
+					present++
+				}
+			}
+			placements[at].Recovery = &animeFilesRecoveryCandidate{
+				PlacementID:        candidate.PlacementID,
+				TargetPath:         candidate.TargetPath,
+				Generation:         candidate.Generation,
+				SizeBytes:          candidate.SizeBytes,
+				Companions:         len(candidate.Companions),
+				CompanionsPresent:  present,
+				CompanionsComplete: candidate.CompanionsComplete,
+			}
+			break
+		}
+	}
+	return rows.Err()
+}
+
+func indexForPlacement(placements []animeFilesPlacement, id string) (int, bool) {
+	for i := range placements {
+		if placements[i].ID == id {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 func loadAnimeFilesAlignments(ctx context.Context, db *sql.DB, animeID string, generation int64) ([]animeFilesAlignmentOp, error) {
@@ -684,6 +832,35 @@ func deriveAnimeFiles(f animeFilesFacts) AnimeFilesView {
 			releaseReason = AnimeFilesReasonOwnerRetired
 		}
 		row.Actions.Release = availability(releaseReason)
+
+		// Recover: the scan froze a candidate for this row (its target was
+		// missing and a file was stat'ed there). Available only while the
+		// read is current and nothing is in flight; the confirm's own
+		// transaction re-verifies every frozen fact again.
+		if placement.Recovery != nil {
+			candidate := placement.Recovery
+			row.Recovery = &AnimeFileRecoveryView{
+				Generation: candidate.Generation, TargetPath: candidate.TargetPath, SizeBytes: candidate.SizeBytes,
+				Companions: candidate.Companions, CompanionsPresent: candidate.CompanionsPresent,
+				CompanionsComplete: candidate.CompanionsComplete,
+			}
+			recoverReason := ""
+			switch {
+			case row.Status != AnimeFileMissing:
+				recoverReason = AnimeFilesReasonRecoveryGate
+			case manualReason != "":
+				recoverReason = manualReason
+			case scanRunning:
+				recoverReason = AnimeFilesReasonScanRunning
+			case f.AlignmentLive:
+				recoverReason = AnimeFilesReasonAlignmentRunning
+			case !f.RecoveryReady:
+				recoverReason = AnimeFilesReasonScanChanged
+			}
+			row.Actions.Recover = availability(recoverReason)
+		} else {
+			row.Actions.Recover = AnimeFileAction{Available: false, ReasonCode: "nothing_to_recover"}
+		}
 		view.Files = append(view.Files, row)
 	}
 

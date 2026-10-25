@@ -249,6 +249,10 @@ type FileMaintenanceService interface {
 	// positive-cache re-pull before the alignment is admitted (the adapter
 	// shares the ownership application's re-pull).
 	AlignAnimeFilesWithRefreshApplication(ctx context.Context, animeID string, generation int64, placementIDs []string) (filemaintenance.AnimeFilesAlignResult, error)
+	// RecoverAnimeFileApplication is the explicit recovery confirm: it
+	// re-attaches the user-adopted file at a frozen scan candidate to the
+	// placement that rendered it, after re-verifying every frozen fact.
+	RecoverAnimeFileApplication(ctx context.Context, animeID, placementID string, expectedGeneration int64) (filemaintenance.AnimeFilesRecoverResult, error)
 }
 
 // CandidateFactsService serves the versioned release candidate facts.
