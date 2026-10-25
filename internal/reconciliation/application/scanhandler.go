@@ -315,8 +315,15 @@ type ownedPlacement struct {
 	// expected size under the calibration identity's own priority.
 	SourceFingerprint string
 	TargetFingerprint string
-	OperationSize     int64
-	Companions        []ownedCompanion
+	// OperationSize is the producing file operation's observed/expected target
+	// size, NULL when no operation recorded one (or no operation joined at all:
+	// a placement whose source evidence is not a file operation, or a released
+	// one). It is deliberately nullable: defaulting a missing size to 0 would
+	// let a zero-byte unrelated file satisfy the candidate's size check and be
+	// frozen as confirmable, which is exactly the "no size, no guess" rule the
+	// recovery candidate promises.
+	OperationSize sql.NullInt64
+	Companions    []ownedCompanion
 }
 
 // ownedCompanion is one registered companion sidecar of a placement, with
@@ -384,7 +391,7 @@ func (s *Service) loadOwnedPlacements(ctx context.Context, animeID string) ([]ow
 SELECT p.id, p.physical_path, op.source_path,
        COALESCE(f.resolution, ''), COALESCE(f."group", ''), COALESCE(f.language, ''),
        p.version, p.source_fingerprint, p.target_fingerprint,
-       COALESCE(op.observed_target_size_bytes, op.expected_size_bytes, 0)
+       COALESCE(op.observed_target_size_bytes, op.expected_size_bytes)
 FROM placements p
 LEFT JOIN file_operations op ON op.id = p.source_owner_ref
   AND p.source_evidence_type = 'file_operation'
@@ -438,6 +445,10 @@ ORDER BY placement_id, current_path`, ids)
 		var companion ownedCompanion
 		var placementID string
 		if err := companionRows.Scan(&companion.ID, &placementID, &companion.Path, &companion.MediaKind, &companion.Suffix, &companion.Extension, &companion.SizeBytes, &companion.Version); err != nil {
+			// A swallowed decode error would carry a zero-value companion
+			// (empty id, empty path, zero size) into the recovery probe and
+			// the unit read: fail the whole load instead.
+			return nil, fmt.Errorf("scan placement companion: %w", err)
 		}
 		if i, ok := index[placementID]; ok {
 			placements[i].Companions = append(placements[i].Companions, companion)

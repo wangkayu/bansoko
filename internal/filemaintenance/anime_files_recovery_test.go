@@ -18,6 +18,9 @@ func recoveryBase() animeFilesFacts {
 	facts.Placements[0].Recovery = &animeFilesRecoveryCandidate{
 		PlacementID: "p1", TargetPath: "/lib/Show/Season 01/Show - E01.mkv", Generation: 3,
 		SizeBytes: 4096, PlacementVersion: 7, Fingerprint: "meta:size=4096", Companions: 1,
+		CompanionTargets: []animeFilesRecoveryCompanionTarget{{
+			ID: "c1", TargetPath: "/lib/Show/Season 01/Show - E01.zh.ass",
+		}},
 	}
 	facts.RecoveryReady = true
 	return facts
@@ -156,6 +159,36 @@ func TestDeriveAnimeFilesRecoveryRequiresCurrentRender(t *testing.T) {
 		row := deriveAnimeFiles(facts).Files[0]
 		if row.Actions.Recover.Available || row.Actions.Recover.ReasonCode != AnimeFilesReasonRescanRequired {
 			t.Fatalf("recover = %+v, want %s", row.Actions.Recover, AnimeFilesReasonRescanRequired)
+		}
+	})
+	t.Run("companion target moved by a rule change", func(t *testing.T) {
+		// The defect this case pins: the same companion COUNT, but the
+		// companion now renders somewhere else. A count-only gate offered the
+		// confirm button here, and the confirm's own transaction then refused
+		// companion_missing — the UI promised an action it had to reject.
+		facts := recoveryBase()
+		facts.Placements[0].Companions = []animeFilesCompanion{{ID: "c1", MediaKind: "subtitle", Path: "/lib/Show/raw ep1.zh.ass", SizeBytes: 64}}
+		movedTarget := "/lib/Show/Season 01/Show - E01.zh.forced.ass"
+		facts.Diffs[0].Companions = []CompanionPathDiffView{{
+			ID: "c1", FilePath: "/lib/Show/raw ep1.zh.ass", MediaKind: "subtitle",
+			ExpectedPath: &movedTarget,
+		}}
+		row := deriveAnimeFiles(facts).Files[0]
+		if row.Actions.Recover.Available || row.Actions.Recover.ReasonCode != AnimeFilesReasonRescanRequired {
+			t.Fatalf("recover = %+v, want %s for a moved companion target",
+				row.Actions.Recover, AnimeFilesReasonRescanRequired)
+		}
+	})
+	t.Run("frozen companion targets missing from the candidate", func(t *testing.T) {
+		// A candidate that claims companions but carries no frozen targets
+		// cannot be verified: fail closed instead of offering it.
+		facts := recoveryBase()
+		facts.Placements[0].Recovery.CompanionTargets = nil
+		facts.Placements[0].Companions = []animeFilesCompanion{{ID: "c1", MediaKind: "subtitle", Path: "/lib/Show/raw ep1.zh.ass", SizeBytes: 64}}
+		row := deriveAnimeFiles(facts).Files[0]
+		if row.Actions.Recover.Available || row.Actions.Recover.ReasonCode != AnimeFilesReasonRescanRequired {
+			t.Fatalf("recover = %+v, want %s for an unverifiable unit",
+				row.Actions.Recover, AnimeFilesReasonRescanRequired)
 		}
 	})
 	t.Run("whole unit still renders to the frozen paths", func(t *testing.T) {

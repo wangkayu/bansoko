@@ -346,4 +346,78 @@ describe("AnimeFilesDialog", () => {
     // A refusal never triggers the follow-up scan.
     expect(scanPosts).toHaveLength(0);
   });
+
+  it("shows the server-projected relative target in the recover dialog", async () => {
+    const missing = fileRow({
+      status: "missing",
+      recovery: { generation: 3, target_path: "/library/Show/Season 01/Show - E01.mkv", target_relative_path: "Show/Season 01/Show - E01.mkv", size_bytes: 4096, placement_version: 7, fingerprint: "meta:size=4096", companions: 0 },
+      actions: { align: notApplicable("nothing_to_align"), rerun: available, release: available, recover: available },
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(filesView([missing]))));
+    renderFiles();
+
+    const list = await screen.findByRole("list", { name: t("tabs.files.title") });
+    fireEvent.click(within(list).getByRole("button", { name: t("policy.fileEffect.recover") }));
+    const dialog = await screen.findByRole("dialog");
+    // The contract projects the target relative to the library root; the
+    // dialog must render that projection and never compose/reveal an absolute
+    // path of its own.
+    expect(within(dialog).getByText(t("policy.fileEffect.recoverTarget", { path: "Show/Season 01/Show - E01.mkv" }))).toBeTruthy();
+    expect(within(dialog).queryByText(/\/library\//)).toBeNull();
+  });
+
+  it("clears a previous refusal reason when the dialog is reopened", async () => {
+    const recoverPosts: number[] = [];
+    let refused = true;
+    const missing = fileRow({
+      status: "missing",
+      recovery: { generation: 3, target_path: "/library/Show/Season 01/Show - E01.mkv", target_relative_path: "Show/Season 01/Show - E01.mkv", size_bytes: 4096, placement_version: 7, fingerprint: "meta:size=4096", companions: 0 },
+      actions: { align: notApplicable("nothing_to_align"), rerun: available, release: available, recover: available },
+    });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/files/recover") && init?.method === "POST") {
+        recoverPosts.push(1);
+        if (refused) {
+          return jsonResponse({ code: "ANIME_FILES_RECOVER_REFUSED", message: "x", details: [{ code: "target_changed", message: "x" }] }, 409);
+        }
+        return jsonResponse({ placement_id: "p-1", generation: 3, target_path: "/library/Show/Season 01/Show - E01.mkv", replay: false, companions: 0 }, 200);
+      }
+      if (url.endsWith("/reconciliation/scans") && init?.method === "POST") {
+        return jsonResponse({ state: "running", generation: 4 }, 202);
+      }
+      return jsonResponse(filesView([missing]));
+    }));
+    renderFiles();
+
+    const list = await screen.findByRole("list", { name: t("tabs.files.title") });
+    // First attempt: refused, the reason stays inline.
+    fireEvent.click(within(list).getByRole("button", { name: t("policy.fileEffect.recover") }));
+    await screen.findByRole("dialog");
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: t("policy.fileEffect.recover") }));
+    await waitFor(() => expect(recoverPosts).toHaveLength(1));
+    expect(await screen.findByRole("dialog")).toHaveTextContent(reasonLabel("target_changed") ?? "");
+
+    // Close and reopen: the stale refusal must not greet the user again. The
+    // files dialog stays mounted, so the recover confirm is the innermost one.
+    const recoverDialog = () => {
+      const dialogs = screen.getAllByRole("dialog");
+      return dialogs[dialogs.length - 1]!;
+    };
+    fireEvent.click(within(recoverDialog()).getByRole("button", { name: t("act.cancel") }));
+    await waitFor(() =>
+      expect(screen.queryByText(t("policy.fileEffect.recoverConfirmBody"))).toBeNull(),
+    );
+    fireEvent.click(within(list).getByRole("button", { name: t("policy.fileEffect.recover") }));
+    await waitFor(() =>
+      expect(screen.queryByText(t("policy.fileEffect.recoverConfirmBody"))).not.toBeNull(),
+    );
+    expect(recoverDialog()).not.toHaveTextContent(reasonLabel("target_changed") ?? "");
+
+    // And a subsequent success works from a clean slate.
+    refused = false;
+    fireEvent.click(within(recoverDialog()).getByRole("button", { name: t("policy.fileEffect.recover") }));
+    await waitFor(() => expect(recoverPosts).toHaveLength(2));
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith(t("policy.fileEffect.recovered")));
+  });
 });

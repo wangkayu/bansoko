@@ -121,12 +121,15 @@ const (
 
 // ---- recovery observer port ----------------------------------------------
 
-// RecoveryFileObserver re-stats one explicit path without following symlinks
-// and without reading content (domain.MetadataFingerprint: size + dev + ino).
-// The library filesystem adapter implements it; the port keeps this owner
-// testable without a real disk.
+// RecoveryFileObserver re-stats one explicit path with a no-follow METADATA
+// observation: size and identity (dev + ino), never content. The candidate
+// froze a domain.MetadataFingerprint, so the confirm must observe in the same
+// mode: a content-hashing observation (OSFileObserver.ObserveFile) returns a
+// SHA-256 digest that ParseMetadataFingerprint rejects, which would make every
+// confirm answer target_changed. The library filesystem adapter implements
+// this port; it keeps this owner testable without a real disk.
 type RecoveryFileObserver interface {
-	ObserveFile(ctx context.Context, path string) (domain.FileObservation, error)
+	ObserveMetadataFile(ctx context.Context, path string) (domain.FileObservation, error)
 }
 
 // SetRecoveryObserver wires the confirm's re-stat port; nil fails closed.
@@ -249,7 +252,7 @@ func (s *Service) RecoverAnimeFileApplication(ctx context.Context, animeID strin
 	// (4b) the CURRENT naming rules must still render the whole unit to the
 	// frozen paths: a rule change after the scan moves the target, and the
 	// old path must never be re-attached (both confirm and replay).
-	if err := verifyRecoveryRenderedTargets(ctx, s.recoveryTargetRenderer(), animeID, candidate); err != nil {
+	if err := verifyRecoveryRenderedTargets(ctx, s.recoveryTargetRenderer(), tx, animeID, candidate); err != nil {
 		var refusal *AnimeFilesRecoverRefusal
 		if errors.As(err, &refusal) {
 			return result, refusal
@@ -264,7 +267,7 @@ func (s *Service) RecoverAnimeFileApplication(ctx context.Context, animeID strin
 	if !ok || placement.State != "active" || placement.VerificationState != "verified" {
 		return result, &AnimeFilesRecoverRefusal{Code: RecoveryReasonPlacementChanged}
 	}
-	if placement.SourceEvidenceType == "recovery" && placement.SnapshotGeneration == candidate.Generation {
+	if placement.RecoveryGeneration == candidate.Generation {
 		// Replay: the committed confirm owns this exact generation. Re-verify
 		// the world is still the one the confirm created, then answer without
 		// touching any row.
@@ -401,7 +404,7 @@ func (s *Service) replayRecoveryConfirm(
 // observeRecoveryTarget stats one candidate path no-follow; an error becomes
 // the typed target_missing refusal (a cancelled context passes through).
 func observeRecoveryTarget(ctx context.Context, observer RecoveryFileObserver, path string) (domain.FileObservation, error) {
-	observation, err := observer.ObserveFile(ctx, path)
+	observation, err := observer.ObserveMetadataFile(ctx, path)
 	if err != nil {
 		if ctx.Err() != nil {
 			return domain.FileObservation{}, ctx.Err()
@@ -417,7 +420,7 @@ type recoveryPlacementRow struct {
 	State              string
 	VerificationState  string
 	SourceEvidenceType string
-	SnapshotGeneration int64
+	RecoveryGeneration int64
 	Version            int64
 	PhysicalPath       string
 	UpdatedAt          time.Time
@@ -430,11 +433,11 @@ func readRecoveryPlacementTx(ctx context.Context, tx *sql.Tx, animeID, placement
 	var updatedAt sql.NullTime
 	err := tx.QueryRowContext(ctx, `
 SELECT p.state, p.verification_state, p.source_evidence_type,
-       COALESCE(p.snapshot_generation, 0), p.version, p.physical_path, p.updated_at
+       COALESCE(p.recovery_generation, 0), p.version, p.physical_path, p.updated_at
 FROM placements p WHERE p.id = $1 AND p.managed_anime_id = $2
 FOR UPDATE`, placementID, animeID).
 		Scan(&row.State, &row.VerificationState, &row.SourceEvidenceType,
-			&row.SnapshotGeneration, &row.Version, &row.PhysicalPath, &updatedAt)
+			&row.RecoveryGeneration, &row.Version, &row.PhysicalPath, &updatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return recoveryPlacementRow{}, false, nil
 	}
@@ -488,7 +491,7 @@ func verifyRecoveryCompanionsTx(ctx context.Context, observer RecoveryFileObserv
 // refuses the whole confirm (no partial recovery).
 func verifyRecoveryCompanionStats(ctx context.Context, observer RecoveryFileObserver, candidate recoveryCandidateFact) error {
 	for _, companion := range candidate.Companions {
-		observation, err := observer.ObserveFile(ctx, companion.TargetPath)
+		observation, err := observer.ObserveMetadataFile(ctx, companion.TargetPath)
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -553,6 +556,20 @@ type writeRecoveryOwnershipInput struct {
 // contract holds, the identity is re-pointed, never forged); each companion
 // re-attaches under a CAS on its own version and KEEPS its existing hex
 // digest and size — a companion's content identity is never rewritten.
+//
+// The update deliberately does NOT touch source_evidence_type. Recovery
+// changes where the bytes live, not where the placement came from: rewriting
+// the source evidence to 'recovery' produces a ZOMBIE OWNER — state stays
+// 'active' while every lineage reader joins on
+// `source_evidence_type = 'file_operation'` and stops seeing the row:
+// render facts (render_facts.go), the scan's operation size join
+// (scanhandler.go), replacement candidate selection (replacement_trigger.go),
+// the replacement decision's active placement set (decisions.go), companion
+// binding (companions.go) and placement obligation retry
+// (fileoperation/placement_recovery*.go). The row would stay visible in the
+// files list while being invisible to rendering, replacement, subtitle
+// binding and retry at once. The replay identity therefore lives in its own
+// `recovery_generation` column.
 func (s *Service) writeRecoveryOwnershipTx(ctx context.Context, tx *sql.Tx, input writeRecoveryOwnershipInput) error {
 	targetFingerprint, err := json.Marshal(map[string]any{
 		"algorithm":  "metadata",
@@ -566,8 +583,7 @@ func (s *Service) writeRecoveryOwnershipTx(ctx context.Context, tx *sql.Tx, inpu
 UPDATE placements SET
   physical_path = $2,
   target_fingerprint = $3,
-  source_evidence_type = 'recovery',
-  snapshot_generation = $4,
+  recovery_generation = $4,
   version = version + 1,
   updated_at = $5
 WHERE id = $1 AND state = 'active' AND verification_state = 'verified' AND version = $6`,
@@ -600,6 +616,16 @@ WHERE id = $1 AND state = 'active' AND placement_id = $4 AND version = $5`,
 		if affected != 1 {
 			return fmt.Errorf("recovery companion %s changed concurrently", companion.ID)
 		}
+	}
+	// Commit-point membership re-check: the renderer runs on the pool, so the
+	// pre-check's snapshot cannot be held for the whole confirm. Re-reading the
+	// active unit here — inside the same transaction, after the CAS updates and
+	// before the journal — is what makes the unit atomic at the point that
+	// matters: if a companion was registered concurrently, the whole confirm
+	// rolls back instead of committing a split unit (video + frozen companions
+	// moved, the new companion left behind at the old directory).
+	if err := verifyRecoveryUnitMembership(ctx, tx, input.candidate); err != nil {
+		return err
 	}
 	if err := s.appendRecoveryActivityTx(ctx, tx, input); err != nil {
 		return err
@@ -658,15 +684,27 @@ func (s *Service) SetRecoveryActivityWriter(writer observabilityport.ActivityWri
 	}
 }
 
-// activeRecoveryUnitCompanions reads the placement's CURRENT active companion
-// unit (ids only, ordered) so the render check compares against what the unit
-// is now, not just what the scan froze: a companion registered or retired
-// since the scan makes the frozen unit stale.
-func activeRecoveryUnitCompanions(ctx context.Context, db *sql.DB, placementID string) ([]string, error) {
-	rows, err := db.QueryContext(ctx, `
+// recoveryUnitCompanionIDsSQL is the ONE read of the placement's CURRENT
+// active companion membership. The confirm runs it inside its transaction (the
+// commit-point re-check) so membership and the CAS updates it guards come from
+// the same snapshot; the render pre-check reuses it through the transaction it
+// already holds.
+const recoveryUnitCompanionIDsSQL = `
 SELECT c.id FROM placement_companions c
 WHERE c.placement_id = $1 AND c.state = 'active'
-ORDER BY c.id`, placementID)
+ORDER BY c.id`
+
+// activeRecoveryUnitCompanionsTx reads the unit membership through the
+// confirm's own transaction. Reading through the pool instead would be a
+// TOCTOU: a companion registered between the pre-check and the commit would
+// stay behind at the old directory while the video and the frozen companions
+// moved, splitting the unit.
+func activeRecoveryUnitCompanionsTx(ctx context.Context, tx *sql.Tx, placementID string) ([]string, error) {
+	return scanRecoveryUnitCompanionIDs(tx.QueryContext(ctx, recoveryUnitCompanionIDsSQL, placementID))
+}
+
+// scanRecoveryUnitCompanionIDs drains the membership rows of either reader.
+func scanRecoveryUnitCompanionIDs(rows *sql.Rows, err error) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read recovery unit companions: %w", err)
 	}
@@ -690,34 +728,27 @@ ORDER BY c.id`, placementID)
 //     scan moves the target, and the old scanned path must never be
 //     re-attached;
 //   - the active companion id set must equal the frozen one (an added or
-//     retired companion makes the frozen unit stale);
+//     retired companion makes the frozen unit stale), read through the
+//     confirm's transaction so it is the same snapshot the CAS updates guard;
 //   - every rendered path must equal the frozen path byte for byte.
+//
+// The membership read is transactional, but the render itself is not: rendering
+// runs on the pool and cannot join the transaction (it reads naming rules and
+// episode facts through their own queries). That is why
+// writeRecoveryOwnershipTx calls verifyRecoveryUnitMembership a second time
+// after its CAS updates and before the journal: the pre-check here narrows the
+// window, the commit-point check closes it.
 //
 // A missing render is target_changed for the video and companion_missing for
 // a companion (the reason the operator can act on); an I/O failure is
 // returned as the underlying error so the caller fails closed without
 // pretending the unit changed.
-func verifyRecoveryRenderedTargets(ctx context.Context, renderer *NamingTargetRenderer, animeID string, candidate recoveryCandidateFact) error {
+func verifyRecoveryRenderedTargets(ctx context.Context, renderer *NamingTargetRenderer, tx *sql.Tx, animeID string, candidate recoveryCandidateFact) error {
 	if renderer == nil {
 		return &AnimeFilesRecoverRefusal{Code: RecoveryReasonTargetChanged}
 	}
-	activeIDs, err := activeRecoveryUnitCompanions(ctx, renderer.db, candidate.PlacementID)
-	if err != nil {
+	if err := verifyRecoveryUnitMembership(ctx, tx, candidate); err != nil {
 		return err
-	}
-	if len(activeIDs) != len(candidate.Companions) {
-		return &AnimeFilesRecoverRefusal{Code: RecoveryReasonCompanionMissing}
-	}
-	frozen := make(map[string]recoveryCompanionFact, len(candidate.Companions))
-	for _, companion := range candidate.Companions {
-		frozen[companion.ID] = companion
-	}
-	for _, id := range activeIDs {
-		if _, ok := frozen[id]; !ok {
-			// A companion registered after the scan: the frozen unit is
-			// not the current unit.
-			return &AnimeFilesRecoverRefusal{Code: RecoveryReasonCompanionMissing}
-		}
 	}
 	targets, err := renderer.RenderPlacementTargets(ctx, animeID, []string{candidate.PlacementID})
 	if err != nil {
@@ -730,6 +761,33 @@ func verifyRecoveryRenderedTargets(ctx context.Context, renderer *NamingTargetRe
 	for _, companion := range candidate.Companions {
 		path, ok := targets[companion.ID]
 		if !ok || !sameCleanPath(path, companion.TargetPath) {
+			return &AnimeFilesRecoverRefusal{Code: RecoveryReasonCompanionMissing}
+		}
+	}
+	return nil
+}
+
+// verifyRecoveryUnitMembership requires the placement's CURRENT active
+// companion id set to equal the frozen one exactly (same ids, same count). It
+// runs twice: as the render pre-check, and again at the commit point after the
+// CAS updates, so a companion registered while the confirm was in flight can
+// never be left behind at the old directory.
+func verifyRecoveryUnitMembership(ctx context.Context, tx *sql.Tx, candidate recoveryCandidateFact) error {
+	activeIDs, err := activeRecoveryUnitCompanionsTx(ctx, tx, candidate.PlacementID)
+	if err != nil {
+		return err
+	}
+	if len(activeIDs) != len(candidate.Companions) {
+		return &AnimeFilesRecoverRefusal{Code: RecoveryReasonCompanionMissing}
+	}
+	frozen := make(map[string]recoveryCompanionFact, len(candidate.Companions))
+	for _, companion := range candidate.Companions {
+		frozen[companion.ID] = companion
+	}
+	for _, id := range activeIDs {
+		if _, ok := frozen[id]; !ok {
+			// A companion registered after the scan: the frozen unit is not
+			// the current unit, and committing now would split it.
 			return &AnimeFilesRecoverRefusal{Code: RecoveryReasonCompanionMissing}
 		}
 	}

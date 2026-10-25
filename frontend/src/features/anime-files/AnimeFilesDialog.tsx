@@ -332,7 +332,13 @@ function FileRow(props: {
               label={t("policy.fileEffect.recover")}
               busy={busy === "recover"}
               disabled={locked}
-              onClick={() => setRecoverOpen(true)}
+              onClick={() => {
+                // A refusal from a previous attempt belongs to THAT attempt:
+                // reopening the dialog starts a new decision, so the stale
+                // reason must not greet the user as if it were already true.
+                setRecoverError(undefined);
+                setRecoverOpen(true);
+              }}
             />
           </span>
         )}
@@ -393,7 +399,12 @@ function FileRow(props: {
           }
         >
           <p className="tw:m-0 tw:text-sm">{t("policy.fileEffect.recoverConfirmBody")}</p>
-          <p className="tw:m-0 tw:text-sm tw:wrap-anywhere">{t("policy.fileEffect.recoverTarget", { path: file.recovery.target_path })}</p>
+          {/* The contract projects the target relative to the view root so the
+              client never composes an absolute path; target_path is only a
+              fallback for a response that predates the field. */}
+          <p className="tw:m-0 tw:text-sm tw:wrap-anywhere">
+            {t("policy.fileEffect.recoverTarget", { path: file.recovery.target_relative_path ?? file.recovery.target_path })}
+          </p>
           {file.recovery.companions > 0 ? (
             <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">
               {t("policy.fileEffect.recoverCompanions", { n: file.recovery.companions })}

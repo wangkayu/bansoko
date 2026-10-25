@@ -43,7 +43,7 @@ type fakeRecoveryObserver struct {
 	asked []string
 }
 
-func (f *fakeRecoveryObserver) ObserveFile(_ context.Context, path string) (domain.FileObservation, error) {
+func (f *fakeRecoveryObserver) ObserveMetadataFile(_ context.Context, path string) (domain.FileObservation, error) {
 	f.asked = append(f.asked, path)
 	if observation, ok := f.files[path]; ok {
 		return observation, nil

@@ -245,6 +245,19 @@ type animeFilesRecoveryCandidate struct {
 	// Companions is the frozen companion count; the confirm requires ALL of
 	// them at their frozen paths, so there is no partial-present state.
 	Companions int
+	// CompanionTargets is each frozen companion's identity and rendered
+	// target, in the order the scan froze them. The read model compares these
+	// path for path against the CURRENT render: a count alone would offer a
+	// confirm button for a unit whose companions now render elsewhere (and
+	// whose confirm transaction must therefore refuse it).
+	CompanionTargets []animeFilesRecoveryCompanionTarget
+}
+
+// animeFilesRecoveryCompanionTarget is one frozen companion of a recovery
+// candidate: which companion, and where the scan froze its target.
+type animeFilesRecoveryCompanionTarget struct {
+	ID         string
+	TargetPath string
 }
 
 type animeFilesScanOwner struct {
@@ -635,6 +648,7 @@ WHERE rf.managed_anime_id = $1 AND rf.generation = $2
 				Generation:       candidate.Generation,
 				SizeBytes:        candidate.SizeBytes,
 				Companions:       len(candidate.Companions),
+				CompanionTargets: recoveryCompanionTargets(candidate.Companions),
 				PlacementVersion: candidate.PlacementVersion,
 				Fingerprint:      candidate.TargetFingerprint,
 			}
@@ -954,9 +968,20 @@ func recoveryLiveReason(candidate *animeFilesRecoveryCandidate, diff PathDiffVie
 		return AnimeFilesReasonRescanRequired
 	}
 	// Companion membership: the frozen count must still match the placement's
-	// active unit, and every frozen companion must still render to the path
-	// the scan froze.
+	// active unit.
 	if len(placement.Companions) != candidate.Companions {
+		return AnimeFilesReasonRescanRequired
+	}
+	// Companion targets: EVERY frozen companion must still render to the exact
+	// path the scan froze. Comparing only the count (as this gate used to) let
+	// the read model offer a confirm button for a unit whose companion now
+	// renders elsewhere — a button whose own transaction must refuse with
+	// companion_missing. Path-by-path comparison keeps the offer and the
+	// refusal in agreement.
+	//
+	// A candidate that reports companions but carries no frozen targets cannot
+	// be verified: fail closed rather than offer an unverifiable unit.
+	if len(candidate.CompanionTargets) != candidate.Companions {
 		return AnimeFilesReasonRescanRequired
 	}
 	rendered := make(map[string]CompanionPathDiffView, len(diff.Companions))
@@ -967,16 +992,33 @@ func recoveryLiveReason(candidate *animeFilesRecoveryCandidate, diff PathDiffVie
 		}
 		rendered[key] = companion
 	}
-	for _, companion := range placement.Companions {
-		view, ok := rendered[companion.ID]
+	for _, frozen := range candidate.CompanionTargets {
+		view, ok := rendered[frozen.ID]
 		if !ok {
-			view, ok = rendered["path:"+filepath.Clean(companion.Path)]
+			return AnimeFilesReasonRescanRequired
 		}
-		if !ok || view.ExpectedPath == nil || *view.ExpectedPath == "" {
+		if view.ExpectedPath == nil || *view.ExpectedPath == "" ||
+			!samePath(filepath.Clean(*view.ExpectedPath), filepath.Clean(frozen.TargetPath)) {
 			return AnimeFilesReasonRescanRequired
 		}
 	}
 	return ""
+}
+
+// recoveryCompanionTargets projects the frozen companion facts onto the read
+// model's comparable shape.
+func recoveryCompanionTargets(companions []recoveryCompanionFact) []animeFilesRecoveryCompanionTarget {
+	if len(companions) == 0 {
+		return nil
+	}
+	targets := make([]animeFilesRecoveryCompanionTarget, 0, len(companions))
+	for _, companion := range companions {
+		targets = append(targets, animeFilesRecoveryCompanionTarget{
+			ID:         companion.ID,
+			TargetPath: companion.TargetPath,
+		})
+	}
+	return targets
 }
 
 // videoStatus maps the latest calibration row of a placement to its status.

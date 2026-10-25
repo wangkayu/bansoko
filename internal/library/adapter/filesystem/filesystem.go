@@ -2727,6 +2727,19 @@ func (OSFileObserver) ObserveFile(ctx context.Context, path string) (domain.File
 	return observeFile(path)
 }
 
+// ObserveMetadataFile returns the complete path-level observation of path
+// without reading its content: the size-aware twin of ObserveMetadata, for
+// callers that need the frozen size as well as the fingerprint (the scan
+// alignment recovery probe freezes both). Its Fingerprint is a
+// domain.MetadataFingerprint, so a candidate frozen here is comparable with
+// the same observation mode at confirm time.
+func (OSFileObserver) ObserveMetadataFile(ctx context.Context, path string) (domain.FileObservation, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.FileObservation{}, err
+	}
+	return observeFileMetadata(path)
+}
+
 // ObserveMetadata returns the path-level metadata fingerprint of path
 // (domain.MetadataFingerprint) without reading its content. Callers holding a
 // metadata fingerprint (a scan-derived alignment source) compare with it.

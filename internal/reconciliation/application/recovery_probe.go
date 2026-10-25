@@ -23,8 +23,14 @@ type RecoveryTargetRenderer interface {
 // FileObserver stats one explicit path without following symlinks and without
 // reading any content: the recovery probe re-uses the scan's no-follow,
 // regular-file-only observer (domain.MetadataFingerprint = size+dev+ino).
+// FileObserver re-stats ONE explicit path with a no-follow metadata
+// observation: size and identity, no content read. The recovery probe only
+// needs the frozen size and a fingerprint comparable with the confirm's, so
+// the port is deliberately metadata-only — a content-hashing observation would
+// both violate the scan's "never read content" contract and freeze a digest
+// the confirm's metadata comparison can never match.
 type FileObserver interface {
-	ObserveFile(ctx context.Context, path string) (domain.FileObservation, error)
+	ObserveMetadataFile(ctx context.Context, path string) (domain.FileObservation, error)
 }
 
 // RecoveryOccupancyChecker reports whether any of the exact paths is already
@@ -196,7 +202,7 @@ func probeOneRecoveryCandidate(
 	if ctx.Err() != nil {
 		return recoveryCandidateFact{}, false
 	}
-	observation, err := observer.ObserveFile(ctx, target)
+	observation, err := observer.ObserveMetadataFile(ctx, target)
 	if err != nil {
 		// Missing, non-regular or unreadable target: no candidate this run.
 		return recoveryCandidateFact{}, false
@@ -245,7 +251,7 @@ func probeRecoveryCompanions(
 		if ctx.Err() != nil {
 			return nil, false
 		}
-		observation, err := observer.ObserveFile(ctx, target)
+		observation, err := observer.ObserveMetadataFile(ctx, target)
 		if err != nil || observation.SizeBytes != companion.SizeBytes {
 			return nil, false
 		}
@@ -282,8 +288,8 @@ func (p ownedPlacement) frozenExpectedSize() (int64, bool) {
 			return size, true
 		}
 	}
-	if p.OperationSize >= 0 {
-		return p.OperationSize, true
+	if p.OperationSize.Valid {
+		return p.OperationSize.Int64, true
 	}
 	return 0, false
 }

@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
 
@@ -50,7 +51,7 @@ type fakeObserver struct {
 	asked []string
 }
 
-func (f *fakeObserver) ObserveFile(_ context.Context, path string) (domain.FileObservation, error) {
+func (f *fakeObserver) ObserveMetadataFile(_ context.Context, path string) (domain.FileObservation, error) {
 	f.asked = append(f.asked, path)
 	if observation, ok := f.files[path]; ok {
 		return observation, nil
@@ -88,7 +89,7 @@ func probeScene() ([]ownedPlacement, *fakeRenderer, *fakeObserver, *fakeOccupanc
 		ID:                "plc-1",
 		PhysicalPath:      "/library/Show/raw ep1.mkv",
 		Version:           4,
-		OperationSize:     4096,
+		OperationSize:     sql.NullInt64{Int64: 4096, Valid: true},
 		SourceFingerprint: "sha:source",
 		Companions:        []ownedCompanion{{ID: "c-1", Path: "/library/Show/raw ep1.zh.ass", MediaKind: "subtitle", SizeBytes: 64, Version: 2}},
 	}}
@@ -274,7 +275,7 @@ func TestProbeRecoveryCandidatesAcceptsCompanionAlreadyAtTarget(t *testing.T) {
 // cannot be proven to be the placement's own content, so nothing is frozen.
 func TestProbeRecoveryCandidatesRejectsUnknownFrozenSize(t *testing.T) {
 	placements, renderer, observer, occupancy := probeScene()
-	placements[0].OperationSize = -1
+	placements[0].OperationSize = sql.NullInt64{}
 	placements[0].SourceFingerprint = "sha:source"
 	placements[0].TargetFingerprint = ""
 	candidates := probeService(renderer, observer, occupancy).probeRecoveryCandidates(context.Background(), "a1", 7, placements)

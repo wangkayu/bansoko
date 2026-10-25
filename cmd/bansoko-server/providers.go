@@ -692,6 +692,11 @@ func provideCoreApplicationGraph(
 	// stays behind the user's explicit confirm command.
 	reconciliationService.SetRecoveryProbe(
 		fileMaintenanceGraph.namingRenderer,
+		// METADATA observation, never ObserveFile: the probe freezes a
+		// metadata fingerprint into the candidate, and the confirm compares
+		// with domain.MetadataFingerprintsMatch. A content digest here would
+		// be rejected by ParseMetadataFingerprint and turn every confirm into
+		// target_changed.
 		filesystem.OSFileObserver{},
 		filemaintenance.NewRecoveryOccupancy(db),
 	)
@@ -932,8 +937,12 @@ func provideFileMaintenanceService(
 	// stays cache-first unaffected.
 	service.SetMetadataWorkRefresher(fileMaintenanceGraph.metadataRefresher)
 	// The recovery confirm re-stats the candidate's frozen target and each
-	// present companion through the library's no-follow observer and records
-	// the confirm in the business journal; an unwired port fails closed.
+	// present companion through the library's no-follow METADATA observer and
+	// records the confirm in the business journal; an unwired port fails
+	// closed. The port is ObserveMetadataFile (stat + identity), not
+	// ObserveFile (SHA-256 of the content): the confirm compares metadata
+	// fingerprints, and a content digest would never match the frozen
+	// candidate.
 	service.SetRecoveryObserver(filesystem.OSFileObserver{})
 	service.SetRecoveryActivityWriter(observabilityService)
 	pathDiffService := filemaintenance.NewPathDiffService(
