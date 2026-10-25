@@ -17,15 +17,44 @@ import (
 // fixtures below are placeholder titles, placeholder groups and placeholder
 // entry refs: no real upstream sample is checked into the repository.
 
-// mikanProgramSearchHTML is the shape Home/Search serves: a recommendation block
-// of program links plus the torrent rows this parser deliberately ignores.
+// mikanProgramSearchHTML is the shape Home/Search serves: the central
+// recommendation container (its own 相关推荐 header, the ad banners the anchor
+// selector must skip, then the an-ul list of program links) plus the torrent
+// rows this parser deliberately ignores.
 func mikanProgramSearchHTML() string {
 	return `<!DOCTYPE html>
 <html><body>
-<div class="search-result-recommend">
-  <a href="/Home/Bangumi/1001" title="示例作品 第一季"><img data-src="/images/1001.jpg" /></a>
-  <a href="/Home/Bangumi/1002" title="示例作品 第二季"><img src="/images/1002.jpg" /></a>
-  <a href="/Home/Bangumi/1001" title="示例作品 第一季"><img data-src="/images/1001.jpg" /></a>
+<div class="central-container">
+  <div class="header2"><span class="header2-text">相关推荐</span></div>
+  <div style="margin-top: 10px; margin-bottom: 10px;">
+    <a href="https://ads.example.test/banner"><img src="/images/ad.jpg" /></a>
+  </div>
+  <ul class="list-inline an-ul" style="margin-top:20px;">
+    <li>
+      <a href="/Home/Bangumi/1001" target="_blank">
+        <span data-src="/images/Bangumi/1001.jpg" class="b-lazy"></span>
+        <div class="an-info"><div class="an-info-group">
+          <div class="an-text" title="示例作品 第一季">示例作品 第一季</div>
+        </div></div>
+      </a>
+    </li>
+    <li>
+      <a href="/Home/Bangumi/1002" target="_blank">
+        <span data-src="/images/Bangumi/1002.jpg" class="b-lazy"></span>
+        <div class="an-info"><div class="an-info-group">
+          <div class="an-text" title="示例作品 第二季">示例作品 第二季</div>
+        </div></div>
+      </a>
+    </li>
+    <li>
+      <a href="/Home/Bangumi/1001" target="_blank">
+        <span data-src="/images/Bangumi/1001.jpg" class="b-lazy"></span>
+        <div class="an-info"><div class="an-info-group">
+          <div class="an-text" title="示例作品 第一季">示例作品 第一季</div>
+        </div></div>
+      </a>
+    </li>
+  </ul>
 </div>
 <div class="js-search-results-row">
   <a href="/Home/Bangumi/9999" title="其他区域作品">不得作为检索结果</a>
@@ -88,7 +117,7 @@ func TestMikanProgramSearchReadsOnlyTheRecommendationBlock(t *testing.T) {
 	if result.Entries[0].ProviderEntryRef != "1001" || result.Entries[0].Title != "示例作品 第一季" {
 		t.Fatalf("first entry = %+v", result.Entries[0])
 	}
-	if cover := result.Entries[0].SourceHint["cover"]; cover != "/images/1001.jpg" {
+	if cover := result.Entries[0].SourceHint["cover"]; cover != "/images/Bangumi/1001.jpg" {
 		t.Fatalf("cover = %v", cover)
 	}
 	// The torrent rows on the same page are never read as programs.
