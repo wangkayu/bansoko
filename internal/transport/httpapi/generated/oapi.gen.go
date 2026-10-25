@@ -7187,26 +7187,26 @@ type RSSListViewInput struct {
 	// Draft Required for current_input; unused by other modes.
 	Draft *AnimeDraft `json:"draft"`
 
-	// EpisodeOffset Optional preview-only episode offset. It shifts the file-level parse and render of a group that has no offset of its own, so a non-zero offset previews exactly what a one-shot request carrying that offset would render. A group's own offset wins: a persisted owner link keeps its stored offset, and a draft group with a matching draft source keeps that source's episode_offset, in both cases regardless of this input, so the preview never rewrites a stored offset or invents a second offset rule. Omitted or null means 0. This is a pure read and never changes the episode_offset a later one-shot request carries. With one_shot it is the offset of every group.
+	// EpisodeOffset Preview-only episode offset. Shifts the file-level parse and render of a group with no offset of its own, so a non-zero offset previews exactly what a one-shot request with that offset would render. A group's own offset wins: a persisted owner link keeps its stored offset and a draft group with a matching draft source keeps that source's episode_offset, so the preview never rewrites a stored offset or invents a second rule. Omitted or null means 0; a pure read that never changes the episode_offset a later one-shot request carries. With one_shot it is the offset of every group.
 	EpisodeOffset *int `json:"episode_offset"`
 
-	// Feed Optional advisory snapshot identities for current_input, candidate_revision, and the owner modes of a pending subscription. The server matches these to effective-selected groups; absent selected identities require snapshot acquisition, and unmatched identities are returned as unused_feed_identities.
+	// Feed Optional advisory snapshot identities for current_input, candidate_revision, and pending-subscription owner modes. Matched to effective-selected groups; absent selected identities require snapshot acquisition; unmatched ones return as unused_feed_identities.
 	Feed        *[]PreviewFeedSnapshotRef   `json:"feed,omitempty"`
 	InputSource RSSListViewInputInputSource `json:"input_source"`
 
-	// LimitPerGroup Maximum number of persisted Release items returned per group in owner and owner_draft modes. Defaults to 100; maximum is 500.
+	// LimitPerGroup Maximum persisted Release items per group in owner and owner_draft modes. Defaults to 100; maximum 500.
 	LimitPerGroup *int `json:"limit_per_group,omitempty"`
 
 	// ManagedAnimeId Required for owner and owner_draft modes.
 	ManagedAnimeId *ID `json:"managed_anime_id"`
 
-	// MetadataPreview owner_draft only; the complete unsaved metadata value, overlaid on the persisted metadata for this read only and never written. Validated exactly like the metadata PATCH; an invalid value fails the read with 422 and field errors under metadata_preview.
+	// MetadataPreview owner_draft only; the complete unsaved metadata value, overlaid on the persisted metadata for this read only and never written. Validated exactly like the metadata PATCH; an invalid value fails the read with 422 field errors under metadata_preview.
 	MetadataPreview *AnimeMetadataPreview `json:"metadata_preview"`
 
-	// Observation current_input only. The persisted provider group observation (the snapshot_version group discovery returned) whose groups are listed next to the draft's configured ones. Observed groups nobody configured take the provider default policy, ranked together with the configured groups under max_rss. A pure read: the observation must belong to the draft's own provider and catalog entry, and an observation that is no longer retained is reported on the view instead of failing the request.
+	// Observation current_input only. The persisted provider group observation (the snapshot_version group discovery returned) whose groups are listed next to the draft's configured ones; observed groups nobody configured take the provider default policy, ranked with the configured ones under max_rss. A pure read: the observation must belong to the draft's provider and entry, and one no longer retained is reported on the view instead of failing the request.
 	Observation *RSSListObservationRef `json:"observation"`
 
-	// OneShot Omitted or false is the ordinary read. current_input only (400 INPUT_SOURCE_INVALID with any other mode). Reads the draft as a one-shot browse. A one-shot names its seed directly and is not bound by group selection, so every configured and observed group is listed with its supplied snapshot and seeds regardless of the draft's selection, and its one_shot download action never answers group_not_selected. Every group previews with episode_offset (the one-shot request's own offset), never a draft source's or a link's. A custom draft binds the exact persisted custom snapshot its single feed identity names (it must exist under that identity) instead of a scope derived from a saved revision, so an unsaved one-shot configuration previews the seed it will download. Still a pure read.
+	// OneShot Omitted or false: the ordinary read. current_input only (400 INPUT_SOURCE_INVALID with any other mode). Reads the draft as a one-shot browse: a one-shot names its seed directly and is not bound by group selection, so every configured and observed group is listed with its supplied snapshot and seeds regardless of the draft's selection, and its one_shot download action never answers group_not_selected. Every group previews with episode_offset (the one-shot request's own offset), never a draft source's or a link's. A custom draft binds the exact persisted custom snapshot its single feed identity names instead of a saved-revision scope, so an unsaved one-shot configuration previews the seed it will download. An origin=one_shot draft binds the exact persisted search snapshot its single feed identity names (the refs carry the snapshot's scope/query pair); a missing, stale or expired identity fails 409 FEED_SNAPSHOT_REFRESH_REQUIRED, never re-searched. A pure read.
 	OneShot *bool `json:"one_shot,omitempty"`
 
 	// Revision Required for candidate_revision; with candidate_id, the saved preset revision that scopes a custom current_input draft's source snapshot. Forbidden in the owner modes.
@@ -7893,9 +7893,12 @@ type SeedSearchSnapshotSeed struct {
 	SizeBytes  *int64  `json:"size_bytes"`
 
 	// StableSeedKey Stable identity within this search snapshot.
-	StableSeedKey string                             `json:"stable_seed_key"`
-	Title         string                             `json:"title"`
-	TorrentState  SeedSearchSnapshotSeedTorrentState `json:"torrent_state"`
+	StableSeedKey string `json:"stable_seed_key"`
+	Title         string `json:"title"`
+
+	// TitleHint Work-title candidate parsed from the release title for display only. It is never a work identity and never a subscription or download input; a caller may use it as the editable title default.
+	TitleHint    *string                            `json:"title_hint"`
+	TorrentState SeedSearchSnapshotSeedTorrentState `json:"torrent_state"`
 }
 
 // SeedSearchSnapshotSeedTorrentState defines model for SeedSearchSnapshotSeed.TorrentState.

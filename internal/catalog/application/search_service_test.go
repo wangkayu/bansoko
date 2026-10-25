@@ -150,9 +150,13 @@ func TestFetchSearchSnapshotPersistsASearchKindSnapshot(t *testing.T) {
 	if preview.Seeds[0].InfoHash == nil || *preview.Seeds[0].InfoHash != "fab1cfcf83daaffeb8a3cb7bb1e0329125d93b3e" {
 		t.Fatalf("seed identity = %+v", preview.Seeds[0])
 	}
-	// Display-only title facts are parsed for the row and never become identity.
+	// Display-only title facts are parsed for the row and never become identity;
+	// the parsed work-title candidate pre-fills nothing on its own.
 	if preview.Seeds[0].GroupName != "示例字幕组" || preview.Seeds[0].Resolution != "1080p" {
 		t.Fatalf("display facts = %+v", preview.Seeds[0])
+	}
+	if preview.Seeds[0].TitleHint != "示例作品" {
+		t.Fatalf("title hint = %q, want the parsed work-title candidate", preview.Seeds[0].TitleHint)
 	}
 }
 

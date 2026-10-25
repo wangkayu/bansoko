@@ -196,8 +196,12 @@ func provideReadmodelService(db *sql.DB, ownership *ownershipapplication.Service
 		SeedPreviews: animeapplication.SeedPreviewSourceFromProviderFeedSnapshot(catalog.ReadProviderEntryRSSByIdentity, catalog.ReadProviderEntrySeedPayload),
 		// The manifest source is the read-only half of lazy expansion: the list
 		// renders the manifests the snapshot or the expansion cache already
-		// proves, and fetches nothing itself.
-		SeedTorrentManifests: animeapplication.SeedTorrentManifestsFromProviderFeedSnapshot(catalog.ReadSeedTorrentManifests),
+		// proves, and fetches nothing itself. The search read joins it so a
+		// one-shot browse over a keyword-search snapshot renders the same way.
+		SeedTorrentManifests: animeapplication.SeedTorrentManifestsWithKeywordSearch(
+			catalog.ReadSeedTorrentManifests,
+			catalogapplication.SeedSearchApplication{Service: catalog}.ReadSearchSeedTorrentManifests,
+		),
 		MediaFacts:           mediaFacts,
 		// The RSS row of an imported file shows the new path with the same
 		// renderer the per-anime files dialog uses.

@@ -73,6 +73,15 @@ type SeedTorrentManifestSource interface {
 	ReadSeedTorrentManifests(ctx context.Context, provider, entryRef, groupRef string, identity animecatalogdomain.ProviderRSSPreviewIdentity) (map[string]*animecatalogdomain.TorrentManifest, error)
 }
 
+// SearchSeedTorrentManifestSource is the optional extension that serves the
+// expansion-cache manifest read for an exact keyword search snapshot. It is an
+// extension for the same reason SearchSeedPreviewSource is: a source that never
+// serves search keeps its narrow contract, and a consumer that needs the search
+// read has to ask for it explicitly.
+type SearchSeedTorrentManifestSource interface {
+	ReadSearchSeedTorrentManifests(ctx context.Context, provider, scopeRef, queryRef string, identity animecatalogdomain.ProviderRSSPreviewIdentity) (map[string]*animecatalogdomain.TorrentManifest, error)
+}
+
 // SeedTorrentManifestsFromProviderFeedSnapshot adapts the catalog
 // exact-identity cache read into the port without importing the catalog
 // application package.
@@ -89,6 +98,47 @@ func (f seedTorrentManifestsByIDFunc) ReadSeedTorrentManifests(ctx context.Conte
 		return nil, &apperrors.Business{Status: 503, Code: "SEED_TORRENT_CACHE_NOT_CONFIGURED", Message: "The seed torrent cache reader is not configured."}
 	}
 	manifests, err := f(ctx, provider, entryRef, groupRef, identity)
+	if err != nil {
+		return nil, seedPreviewRefreshRequired(err)
+	}
+	return manifests, nil
+}
+
+// seedTorrentManifests is the struct adapter behind both manifest reads: the
+// feed read is required, the search read is optional, and a nil search read
+// fails closed exactly like a source that never serves search snapshots.
+type seedTorrentManifests struct {
+	read       func(ctx context.Context, provider, entryRef, groupRef string, identity animecatalogdomain.ProviderRSSPreviewIdentity) (map[string]*animecatalogdomain.TorrentManifest, error)
+	readSearch func(ctx context.Context, provider, scopeRef, queryRef string, identity animecatalogdomain.ProviderRSSPreviewIdentity) (map[string]*animecatalogdomain.TorrentManifest, error)
+}
+
+// SeedTorrentManifestsWithKeywordSearch adds the exact keyword-search snapshot
+// cache read to the same manifest source: the composition root wires it where
+// the catalog can serve search snapshots, so the one-shot browse over a search
+// snapshot renders the manifests its expansions already proved.
+func SeedTorrentManifestsWithKeywordSearch(
+	read func(ctx context.Context, provider, entryRef, groupRef string, identity animecatalogdomain.ProviderRSSPreviewIdentity) (map[string]*animecatalogdomain.TorrentManifest, error),
+	readSearch func(ctx context.Context, provider, scopeRef, queryRef string, identity animecatalogdomain.ProviderRSSPreviewIdentity) (map[string]*animecatalogdomain.TorrentManifest, error),
+) SeedTorrentManifestSource {
+	return seedTorrentManifests{read: read, readSearch: readSearch}
+}
+
+func (s seedTorrentManifests) ReadSeedTorrentManifests(ctx context.Context, provider, entryRef, groupRef string, identity animecatalogdomain.ProviderRSSPreviewIdentity) (map[string]*animecatalogdomain.TorrentManifest, error) {
+	if s.read == nil {
+		return nil, &apperrors.Business{Status: 503, Code: "SEED_TORRENT_CACHE_NOT_CONFIGURED", Message: "The seed torrent cache reader is not configured."}
+	}
+	manifests, err := s.read(ctx, provider, entryRef, groupRef, identity)
+	if err != nil {
+		return nil, seedPreviewRefreshRequired(err)
+	}
+	return manifests, nil
+}
+
+func (s seedTorrentManifests) ReadSearchSeedTorrentManifests(ctx context.Context, provider, scopeRef, queryRef string, identity animecatalogdomain.ProviderRSSPreviewIdentity) (map[string]*animecatalogdomain.TorrentManifest, error) {
+	if s.readSearch == nil {
+		return nil, &apperrors.Business{Status: 503, Code: "SEED_TORRENT_CACHE_NOT_CONFIGURED", Message: "The keyword search seed torrent cache reader is not configured."}
+	}
+	manifests, err := s.readSearch(ctx, provider, scopeRef, queryRef, identity)
 	if err != nil {
 		return nil, seedPreviewRefreshRequired(err)
 	}

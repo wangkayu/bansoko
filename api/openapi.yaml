@@ -3541,7 +3541,6 @@ paths:
       tags: [Catalog]
       operationId: fetchSeedSearchSnapshot
       x-scope: write
-      x-surface-keep: "human: the keyword torrent search view is delivered backend-first (slice S1-S4); the dual-mode search dialog is slice S5 and is the only intended caller. No MCP tool by design: it persists a batch of seeds and the first release does not expose keyword search to agents"
       description: >-
         Run one keyword torrent search against one provider and persist its
         results as an immutable search snapshot. This is a write because it
@@ -3592,7 +3591,6 @@ paths:
       tags: [Catalog]
       operationId: readSeedSearchSnapshot
       x-scope: read
-      x-surface-keep: "human: reads one page of the keyword search result list the fetch above produced; the dual-mode search dialog (slice S5) is the only intended caller. Not an MCP tool, for the same reason the fetch is not one"
       description: >-
         Read a bounded window of one exact search snapshot identity. It never
         contacts the provider and never falls back to the latest snapshot: a
@@ -6699,7 +6697,7 @@ components:
             owner_draft only; the complete unsaved metadata value, overlaid on
             the persisted metadata for this read only and never written.
             Validated exactly like the metadata PATCH; an invalid value fails
-            the read with 422 and field errors under metadata_preview.
+            the read with 422 field errors under metadata_preview.
         feed:
           type: array
           maxItems: 32
@@ -6707,10 +6705,10 @@ components:
             $ref: '#/components/schemas/PreviewFeedSnapshotRef'
           description: >-
             Optional advisory snapshot identities for current_input,
-            candidate_revision, and the owner modes of a pending
-            subscription. The server matches these to effective-selected
-            groups; absent selected identities require snapshot acquisition, and
-            unmatched identities are returned as unused_feed_identities.
+            candidate_revision, and pending-subscription owner modes. Matched
+            to effective-selected groups; absent selected identities require
+            snapshot acquisition; unmatched ones return as
+            unused_feed_identities.
         observation:
           allOf:
             - $ref: '#/components/schemas/RSSListObservationRef'
@@ -6718,52 +6716,52 @@ components:
           description: >-
             current_input only. The persisted provider group observation (the
             snapshot_version group discovery returned) whose groups are listed
-            next to the draft's configured ones. Observed groups nobody
-            configured take the provider default policy, ranked together with
-            the configured groups under max_rss. A pure read: the observation
-            must belong to the draft's own provider and catalog entry, and an
-            observation that is no longer retained is reported on the view
-            instead of failing the request.
+            next to the draft's configured ones; observed groups nobody
+            configured take the provider default policy, ranked with the
+            configured ones under max_rss. A pure read: the observation must
+            belong to the draft's provider and entry, and one no longer
+            retained is reported on the view instead of failing the request.
         limit_per_group:
           type: integer
           minimum: 1
           maximum: 500
           default: 100
           description: >-
-            Maximum number of persisted Release items returned per group in
-            owner and owner_draft modes. Defaults to 100; maximum is 500.
+            Maximum persisted Release items per group in owner and owner_draft
+            modes. Defaults to 100; maximum 500.
         episode_offset:
           type: integer
           nullable: true
           minimum: -1000
           maximum: 1000
           description: >-
-            Optional preview-only episode offset. It shifts the file-level
-            parse and render of a group that has no offset of its own, so a
-            non-zero offset previews exactly what a one-shot request carrying
-            that offset would render. A group's own offset wins: a persisted
-            owner link keeps its stored offset, and a draft group with a
-            matching draft source keeps that source's episode_offset, in both
-            cases regardless of this input, so the preview never rewrites a
-            stored offset or invents a second offset rule. Omitted or null
-            means 0. This is a pure read and never changes the episode_offset a
-            later one-shot request carries. With one_shot it is the offset of
-            every group.
+            Preview-only episode offset. Shifts the file-level parse and render
+            of a group with no offset of its own, so a non-zero offset
+            previews exactly what a one-shot request with that offset would
+            render. A group's own offset wins: a persisted owner link keeps its
+            stored offset and a draft group with a matching draft source keeps
+            that source's episode_offset, so the preview never rewrites a
+            stored offset or invents a second rule. Omitted or null means 0; a
+            pure read that never changes the episode_offset a later one-shot
+            request carries. With one_shot it is the offset of every group.
         one_shot:
           type: boolean
           description: >-
-            Omitted or false is the ordinary read. current_input only (400 INPUT_SOURCE_INVALID with any other mode).
-            Reads the draft as a one-shot browse. A one-shot names its seed
+            Omitted or false: the ordinary read. current_input only (400 INPUT_SOURCE_INVALID with any other mode).
+            Reads the draft as a one-shot browse: a one-shot names its seed
             directly and is not bound by group selection, so every configured
             and observed group is listed with its supplied snapshot and seeds
             regardless of the draft's selection, and its one_shot download
             action never answers group_not_selected. Every group previews with
             episode_offset (the one-shot request's own offset), never a draft
             source's or a link's. A custom draft binds the exact persisted
-            custom snapshot its single feed identity names (it must exist under
-            that identity) instead of a scope derived from a saved revision, so
-            an unsaved one-shot configuration previews the seed it will
-            download. Still a pure read.
+            custom snapshot its single feed identity names instead of a
+            saved-revision scope, so an unsaved one-shot configuration
+            previews the seed it will download. An origin=one_shot draft
+            binds the exact persisted search snapshot its single feed
+            identity names (the refs carry the snapshot's scope/query pair);
+            a missing, stale or expired identity fails 409
+            FEED_SNAPSHOT_REFRESH_REQUIRED, never re-searched. A pure read.
     RSSListViewVersions:
       type: object
       additionalProperties: false
@@ -11801,6 +11799,14 @@ components:
           nullable: true
           description: >-
             Resolution parsed from the release title for display only.
+        title_hint:
+          type: string
+          maxLength: 512
+          nullable: true
+          description: >-
+            Work-title candidate parsed from the release title for display
+            only. It is never a work identity and never a subscription or
+            download input; a caller may use it as the editable title default.
     SeedSearchSnapshotView:
       type: object
       additionalProperties: false

@@ -55,7 +55,10 @@ type SearchSeedPreviewSeed struct {
 	// Display-only facts parsed from the release title. They never identify a
 	// provider group or a work: a search row has neither, and the parse below
 	// exists so the list can show a resolution or a group name.
-	GroupName  string
+	GroupName string
+	// TitleHint is the parsed work-title candidate. It only ever pre-fills the
+	// editable title of a one-shot confirmation; it is not a work identity.
+	TitleHint  string
 	Resolution string
 }
 
@@ -317,6 +320,54 @@ func (a SeedSearchApplication) ReadSearchSeedPayload(ctx context.Context, provid
 	}, nil
 }
 
+// ReadSearchSeedTorrentManifests returns the manifests the lazy expansion cache
+// can already prove for one exact search snapshot, keyed by stable seed key. It
+// is the search counterpart of ReadSeedTorrentManifests: the snapshot identity
+// is verified exactly like the search read itself, the seed locators come from
+// that snapshot, and the answer comes from the cache alone — no provider request
+// and no write, so a list read stays side-effect free. A seed whose snapshot
+// still carries its own manifest is left out: that projection was sealed with
+// the snapshot's bytes and stays the caller's first choice.
+func (a SeedSearchApplication) ReadSearchSeedTorrentManifests(ctx context.Context, provider, scopeRef, queryRef string, identity catalogdomain.ProviderRSSPreviewIdentity) (map[string]*catalogdomain.TorrentManifest, error) {
+	preview, err := a.FetchSearchSnapshotByID(ctx, provider, scopeRef, queryRef, identity)
+	if err != nil {
+		return nil, err
+	}
+	if a.Service == nil || a.Service.seedTorrentCache == nil {
+		return nil, &apperrors.Business{Status: http.StatusServiceUnavailable, Code: "SEED_TORRENT_CACHE_NOT_CONFIGURED", Message: "Seed torrent caching is not configured on this server."}
+	}
+	locators := make([]string, 0, len(preview.Seeds))
+	keysByLocator := make(map[string][]string, len(preview.Seeds))
+	for _, seed := range preview.Seeds {
+		if seed.Manifest != nil {
+			continue
+		}
+		locator := strings.TrimSpace(seed.DownloadURL)
+		if locator == "" {
+			continue
+		}
+		if _, seen := keysByLocator[locator]; !seen {
+			locators = append(locators, locator)
+		}
+		keysByLocator[locator] = append(keysByLocator[locator], seed.StableSeedKey)
+	}
+	if len(locators) == 0 {
+		return map[string]*catalogdomain.TorrentManifest{}, nil
+	}
+	cached, err := a.Service.seedTorrentCache.ReadSeedTorrentCaches(ctx, locators)
+	if err != nil {
+		return nil, err
+	}
+	manifests := make(map[string]*catalogdomain.TorrentManifest, len(cached))
+	for locator, entry := range cached {
+		for _, key := range keysByLocator[locator] {
+			manifest := entry.Manifest
+			manifests[key] = &manifest
+		}
+	}
+	return manifests, nil
+}
+
 func (a SeedSearchApplication) search(ctx context.Context, provider, endpoint string, client *http.Client, query string) (SeedSearchResult, error) {
 	switch provider {
 	case ProviderAniBT:
@@ -407,6 +458,9 @@ func mapSearchSnapshot(snapshot catalogdomain.ProviderFeedSnapshot, query string
 		for _, value := range tags.ValueTags {
 			if name, ok := strings.CutPrefix(value, "group:"); ok && row.GroupName == "" {
 				row.GroupName = name
+			}
+			if name, ok := strings.CutPrefix(value, "title:"); ok && row.TitleHint == "" {
+				row.TitleHint = name
 			}
 		}
 		preview.Seeds = append(preview.Seeds, row)

@@ -1113,6 +1113,12 @@ func (s *Service) composeRSSListViewFor(
 		if err == nil {
 			groupEntries, err = rssListGroupEntriesFor(draft, effective, previewOffset, oneShot)
 		}
+	} else if draft.Origin == animedomain.SubscriptionOriginOneshot {
+		// The search one-shot browse. An origin=oneshot draft is the form the
+		// admission path binds to one exact keyword search snapshot, so the list
+		// read resolves that snapshot and nothing else; a ref that names a feed
+		// snapshot is refused rather than answered from it.
+		previews, groupEntries, err = s.resolveSearchSnapshotProjection(ctx, draft, feed, previewOffset)
 	} else {
 		// An origin whose snapshot cannot be resolved still lists its draft's
 		// groups. They carry no seeds, and the shared overlap pass at the end of
