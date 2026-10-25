@@ -86,8 +86,14 @@ func probeService(renderer RecoveryTargetRenderer, observer FileObserver, occupa
 // placement's frozen expected size, and a live row version to freeze.
 func probeScene() ([]ownedPlacement, *fakeRenderer, *fakeObserver, *fakeOccupancy) {
 	placements := []ownedPlacement{{
-		ID:                "plc-1",
-		PhysicalPath:      "/library/Show/raw ep1.mkv",
+		ID:           "plc-1",
+		PhysicalPath: "/library/Show/raw ep1.mkv",
+		// LocatorPaths is what production actually loads (scanhandler.go: the
+		// authoritative current path first, then the frozen source provenance).
+		// A zero-value slice made the locator guard untestable: ranging over an
+		// empty slice never runs the body, so the exclusion test below passed for
+		// an unrelated reason (the locator path had no observation at all).
+		LocatorPaths:      []string{"/library/Show/raw ep1.mkv", "/downloads/raw ep1.mkv"},
 		Version:           4,
 		OperationSize:     sql.NullInt64{Int64: 4096, Valid: true},
 		SourceFingerprint: "sha:source",
@@ -100,6 +106,13 @@ func probeScene() ([]ownedPlacement, *fakeRenderer, *fakeObserver, *fakeOccupanc
 	observer := &fakeObserver{files: map[string]domain.FileObservation{
 		"/library/Show/Season 01/EP 01.mkv":    {Fingerprint: "meta:size=4096", SizeBytes: 4096},
 		"/library/Show/Season 01/EP 01.zh.ass": {Fingerprint: "meta:size=64", SizeBytes: 64},
+		// The locator paths are stat-able at the SAME frozen size: when a
+		// render returns one of them, only the locator guard can reject it.
+		// Without these entries the exclusion tests would pass because the
+		// path had no observation at all, which is what made the guard
+		// untested before.
+		"/library/Show/raw ep1.mkv": {Fingerprint: "meta:size=4096", SizeBytes: 4096},
+		"/downloads/raw ep1.mkv":    {Fingerprint: "meta:size=4096", SizeBytes: 4096},
 	}}
 	return placements, renderer, observer, &fakeOccupancy{occupied: map[string]bool{}}
 }
@@ -187,12 +200,32 @@ func TestProbeRecoveryCandidatesRejectsSizeMismatch(t *testing.T) {
 
 // A target that equals any of the placement's own locators is not a recovery
 // (it is the file sitting where the row already points): no candidate.
+//
+// Both locator kinds are covered because production fills both (the
+// authoritative current path and the frozen source provenance). The fixture
+// deliberately registers an SAME-SIZED observation at each locator path, so the
+// only thing that can reject the candidate is the locator guard itself: a
+// zero-value LocatorPaths slice (the previous fixture) ranged over nothing and
+// left this guard completely unexercised.
 func TestProbeRecoveryCandidatesRejectsLocatorTarget(t *testing.T) {
-	placements, renderer, observer, occupancy := probeScene()
-	renderer.targets["plc-1"] = placements[0].PhysicalPath
-	candidates := probeService(renderer, observer, occupancy).probeRecoveryCandidates(context.Background(), "a1", 7, placements)
-	if candidates != nil {
-		t.Fatalf("candidates = %+v, want none when the target is a locator", candidates)
+	for _, locator := range []string{
+		"/library/Show/raw ep1.mkv", // the authoritative current path
+		"/downloads/raw ep1.mkv",    // the frozen source provenance
+	} {
+		t.Run(locator, func(t *testing.T) {
+			placements, renderer, observer, occupancy := probeScene()
+			// The render lands on a locator, and that path DOES carry a
+			// matching-size file: without the guard this would freeze a
+			// candidate for a file that never moved.
+			if _, ok := observer.files[locator]; !ok {
+				t.Fatalf("fixture must stat %q at the frozen size", locator)
+			}
+			renderer.targets["plc-1"] = locator
+			candidates := probeService(renderer, observer, occupancy).probeRecoveryCandidates(context.Background(), "a1", 7, placements)
+			if candidates != nil {
+				t.Fatalf("candidates = %+v, want none when the target is locator %q", candidates, locator)
+			}
+		})
 	}
 }
 
@@ -284,6 +317,93 @@ func TestProbeRecoveryCandidatesRejectsUnknownFrozenSize(t *testing.T) {
 	}
 	if len(observer.asked) != 0 {
 		t.Fatalf("stats = %v, want none without a frozen size", observer.asked)
+	}
+}
+
+// The frozen expected size has a three-level priority (the calibration
+// identity's own): placement metadata fingerprint size, then the typed
+// fingerprint envelope's size_bytes, then the producing operation's
+// observed/expected target size. Every level must be pinned with the OTHER
+// levels present and CONTRADICTORY, otherwise the tests only prove "some size
+// was found", not which one won. The old fixture set only OperationSize, so the
+// first two levels were never exercised and reordering the priority was
+// invisible.
+//
+// Each test states its contradiction explicitly (same file, three sizes) and
+// asserts both the frozen candidate size AND that the observation matching the
+// LOSING size is rejected.
+func TestProbeRecoveryFrozenSizeMetadataFingerprintWins(t *testing.T) {
+	placements, renderer, observer, occupancy := probeScene()
+	// Three contradictory sizes: 4096 (metadata), 5000 (envelope), 6000 (op).
+	placements[0].TargetFingerprint = "meta:size=4096;dev=2;ino=11"
+	placements[0].SourceFingerprint = `{"algorithm":"metadata","value":"x","size_bytes":5000}`
+	placements[0].OperationSize = sql.NullInt64{Int64: 6000, Valid: true}
+
+	candidates := probeService(renderer, observer, occupancy).probeRecoveryCandidates(context.Background(), "a1", 7, placements)
+	if len(candidates) != 1 {
+		t.Fatalf("candidates = %+v, want 1 (the metadata size matches the file on disk)", candidates)
+	}
+	if candidates[0].SizeBytes != 4096 {
+		t.Fatalf("frozen size = %d, want the metadata fingerprint's 4096", candidates[0].SizeBytes)
+	}
+
+	// And the losing sizes really are losing: a file at the envelope's 5000
+	// must not be adoptable. A second scene is built from scratch (rather than
+	// reusing the placement above) so the assertion cannot be affected by any
+	// state the first probe call left behind.
+	placements2, renderer2, observer2, occupancy2 := probeScene()
+	placements2[0].TargetFingerprint = "meta:size=4096;dev=2;ino=11"
+	placements2[0].SourceFingerprint = `{"algorithm":"metadata","value":"x","size_bytes":5000}`
+	placements2[0].OperationSize = sql.NullInt64{Int64: 6000, Valid: true}
+	observer2.files["/library/Show/Season 01/EP 01.mkv"] = domain.FileObservation{
+		Fingerprint: "meta:size=5000", SizeBytes: 5000,
+	}
+	if got := probeService(renderer2, observer2, occupancy2).probeRecoveryCandidates(context.Background(), "a1", 7, placements2); got != nil {
+		t.Fatalf("candidates = %+v, want none when the file has the LOSING envelope size", got)
+	}
+}
+
+func TestProbeRecoveryFrozenSizeTypedEnvelopeWins(t *testing.T) {
+	placements, renderer, observer, occupancy := probeScene()
+	// No metadata fingerprint (level 1 absent), envelope 4096 vs op 6000.
+	placements[0].TargetFingerprint = `{"algorithm":"metadata","value":"x","size_bytes":4096}`
+	placements[0].SourceFingerprint = "sha:source"
+	placements[0].OperationSize = sql.NullInt64{Int64: 6000, Valid: true}
+	observer.files["/library/Show/Season 01/EP 01.mkv"] = domain.FileObservation{
+		Fingerprint: "meta:size=4096", SizeBytes: 4096,
+	}
+
+	candidates := probeService(renderer, observer, occupancy).probeRecoveryCandidates(context.Background(), "a1", 7, placements)
+	if len(candidates) != 1 {
+		t.Fatalf("candidates = %+v, want 1 (the envelope size matches the file on disk)", candidates)
+	}
+	if candidates[0].SizeBytes != 4096 {
+		t.Fatalf("frozen size = %d, want the typed envelope's 4096", candidates[0].SizeBytes)
+	}
+
+	// A file at the losing operation size must not be adoptable.
+	_, renderer2, observer2, occupancy2 := probeScene()
+	observer2.files["/library/Show/Season 01/EP 01.mkv"] = domain.FileObservation{
+		Fingerprint: "meta:size=6000", SizeBytes: 6000,
+	}
+	if got := probeService(renderer2, observer2, occupancy2).probeRecoveryCandidates(context.Background(), "a1", 7, []ownedPlacement{placements[0]}); got != nil {
+		t.Fatalf("candidates = %+v, want none when the file has the LOSING operation size", got)
+	}
+}
+
+func TestProbeRecoveryFrozenSizeOperationWins(t *testing.T) {
+	placements, renderer, observer, occupancy := probeScene()
+	// Only the operation records a size: the last resort.
+	placements[0].TargetFingerprint = "sha:target"
+	placements[0].SourceFingerprint = "sha:source"
+	placements[0].OperationSize = sql.NullInt64{Int64: 4096, Valid: true}
+
+	candidates := probeService(renderer, observer, occupancy).probeRecoveryCandidates(context.Background(), "a1", 7, placements)
+	if len(candidates) != 1 {
+		t.Fatalf("candidates = %+v, want 1 (the operation size matches the file on disk)", candidates)
+	}
+	if candidates[0].SizeBytes != 4096 {
+		t.Fatalf("frozen size = %d, want the operation's 4096", candidates[0].SizeBytes)
 	}
 }
 

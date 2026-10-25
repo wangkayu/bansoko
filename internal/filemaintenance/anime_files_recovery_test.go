@@ -21,6 +21,14 @@ func recoveryBase() animeFilesFacts {
 		CompanionTargets: []animeFilesRecoveryCompanionTarget{{
 			ID: "c1", TargetPath: "/lib/Show/Season 01/Show - E01.zh.ass",
 		}},
+		// currentTargets is what the CURRENT naming rules render for the same
+		// unit; the liveness gate compares the frozen target against it. It is
+		// filled at load time by the renderer the confirm re-renders with, so a
+		// DB-free derivation fixture has to carry it explicitly.
+		currentTargets: map[string]string{
+			"p1": "/lib/Show/Season 01/Show - E01.mkv",
+			"c1": "/lib/Show/Season 01/Show - E01.zh.ass",
+		},
 	}
 	facts.RecoveryReady = true
 	return facts
@@ -113,11 +121,16 @@ func TestDeriveAnimeFilesRecoveryViewSurvivesRetirement(t *testing.T) {
 // generation liveness: the confirm re-renders under the anime's live naming
 // rules and refuses a unit that moved, so the button must be unavailable with
 // a rescan reason instead of promising a confirm that would be refused.
+// The liveness gate must compare the FROZEN unit against what the current
+// naming rules render for the same unit, through the renderer instance the
+// confirm re-renders with. These cases therefore manipulate currentTargets
+// (the load-time render) and NOT the calibration projection: a real missing
+// row carries no calibration ExpectedPath, so gating on that would refuse
+// every real candidate (the defect this suite pins).
 func TestDeriveAnimeFilesRecoveryRequiresCurrentRender(t *testing.T) {
 	t.Run("video target re-rendered by a rule change", func(t *testing.T) {
 		facts := recoveryBase()
-		facts.Diffs[0].ExpectedPath = strPtr("/lib/Show/Season 01/Show - E01v2.mkv")
-		facts.Diffs[0].Differs = true
+		facts.Placements[0].Recovery.currentTargets["p1"] = "/lib/Show/Season 01/Show - E01v2.mkv"
 		row := deriveAnimeFiles(facts).Files[0]
 		if row.Actions.Recover.Available || row.Actions.Recover.ReasonCode != AnimeFilesReasonRescanRequired {
 			t.Fatalf("recover = %+v, want %s", row.Actions.Recover, AnimeFilesReasonRescanRequired)
@@ -125,16 +138,18 @@ func TestDeriveAnimeFilesRecoveryRequiresCurrentRender(t *testing.T) {
 	})
 	t.Run("video target no longer renders", func(t *testing.T) {
 		facts := recoveryBase()
-		facts.Diffs[0].ExpectedPath = nil
-		facts.Diffs[0].TargetUnavailable = "coverage_unresolved"
+		delete(facts.Placements[0].Recovery.currentTargets, "p1")
 		row := deriveAnimeFiles(facts).Files[0]
 		if row.Actions.Recover.Available || row.Actions.Recover.ReasonCode != AnimeFilesReasonRescanRequired {
 			t.Fatalf("recover = %+v, want %s", row.Actions.Recover, AnimeFilesReasonRescanRequired)
 		}
 	})
 	t.Run("render failed", func(t *testing.T) {
+		// A render failure is not an answer about the unit: the load leaves
+		// currentTargets nil and the gate fails closed instead of offering an
+		// action whose confirm would have to re-render anyway.
 		facts := recoveryBase()
-		facts.Diffs[0].TargetUnavailable = "target_render_failed"
+		facts.Placements[0].Recovery.currentTargets = nil
 		row := deriveAnimeFiles(facts).Files[0]
 		if row.Actions.Recover.Available || row.Actions.Recover.ReasonCode != AnimeFilesReasonRescanRequired {
 			t.Fatalf("recover = %+v, want %s", row.Actions.Recover, AnimeFilesReasonRescanRequired)
@@ -154,8 +169,7 @@ func TestDeriveAnimeFilesRecoveryRequiresCurrentRender(t *testing.T) {
 	})
 	t.Run("companion no longer renders", func(t *testing.T) {
 		facts := recoveryBase()
-		facts.Placements[0].Companions = []animeFilesCompanion{{ID: "c1", MediaKind: "subtitle", Path: "/lib/Show/raw ep1.zh.ass", SizeBytes: 64}}
-		facts.Diffs[0].Companions = []CompanionPathDiffView{{ID: "c1", FilePath: "/lib/Show/raw ep1.zh.ass", MediaKind: "subtitle"}}
+		delete(facts.Placements[0].Recovery.currentTargets, "c1")
 		row := deriveAnimeFiles(facts).Files[0]
 		if row.Actions.Recover.Available || row.Actions.Recover.ReasonCode != AnimeFilesReasonRescanRequired {
 			t.Fatalf("recover = %+v, want %s", row.Actions.Recover, AnimeFilesReasonRescanRequired)
@@ -167,12 +181,7 @@ func TestDeriveAnimeFilesRecoveryRequiresCurrentRender(t *testing.T) {
 		// confirm button here, and the confirm's own transaction then refused
 		// companion_missing — the UI promised an action it had to reject.
 		facts := recoveryBase()
-		facts.Placements[0].Companions = []animeFilesCompanion{{ID: "c1", MediaKind: "subtitle", Path: "/lib/Show/raw ep1.zh.ass", SizeBytes: 64}}
-		movedTarget := "/lib/Show/Season 01/Show - E01.zh.forced.ass"
-		facts.Diffs[0].Companions = []CompanionPathDiffView{{
-			ID: "c1", FilePath: "/lib/Show/raw ep1.zh.ass", MediaKind: "subtitle",
-			ExpectedPath: &movedTarget,
-		}}
+		facts.Placements[0].Recovery.currentTargets["c1"] = "/lib/Show/Season 01/Show - E01.zh.forced.ass"
 		row := deriveAnimeFiles(facts).Files[0]
 		if row.Actions.Recover.Available || row.Actions.Recover.ReasonCode != AnimeFilesReasonRescanRequired {
 			t.Fatalf("recover = %+v, want %s for a moved companion target",
@@ -184,7 +193,6 @@ func TestDeriveAnimeFilesRecoveryRequiresCurrentRender(t *testing.T) {
 		// cannot be verified: fail closed instead of offering it.
 		facts := recoveryBase()
 		facts.Placements[0].Recovery.CompanionTargets = nil
-		facts.Placements[0].Companions = []animeFilesCompanion{{ID: "c1", MediaKind: "subtitle", Path: "/lib/Show/raw ep1.zh.ass", SizeBytes: 64}}
 		row := deriveAnimeFiles(facts).Files[0]
 		if row.Actions.Recover.Available || row.Actions.Recover.ReasonCode != AnimeFilesReasonRescanRequired {
 			t.Fatalf("recover = %+v, want %s for an unverifiable unit",
@@ -192,13 +200,9 @@ func TestDeriveAnimeFilesRecoveryRequiresCurrentRender(t *testing.T) {
 		}
 	})
 	t.Run("whole unit still renders to the frozen paths", func(t *testing.T) {
+		// The candidate's frozen unit and the current render agree exactly:
+		// this is the only shape that may offer the action.
 		facts := recoveryBase()
-		facts.Placements[0].Companions = []animeFilesCompanion{{ID: "c1", MediaKind: "subtitle", Path: "/lib/Show/raw ep1.zh.ass", SizeBytes: 64}}
-		companionTarget := "/lib/Show/Season 01/Show - E01.zh.ass"
-		facts.Diffs[0].Companions = []CompanionPathDiffView{{
-			ID: "c1", FilePath: "/lib/Show/raw ep1.zh.ass", MediaKind: "subtitle",
-			ExpectedPath: &companionTarget,
-		}}
 		row := deriveAnimeFiles(facts).Files[0]
 		if !row.Actions.Recover.Available {
 			t.Fatalf("recover = %+v, want available for a live unit", row.Actions.Recover)

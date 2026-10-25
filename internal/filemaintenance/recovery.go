@@ -67,11 +67,9 @@ WHERE rf.managed_anime_id = $1 AND rf.generation = $2
 	if err != nil {
 		return recoveryCandidateFact{}, false, fmt.Errorf("read recovery candidate: %w", err)
 	}
-	var document struct {
-		RecoveryCandidates []recoveryCandidateFact `json:"recovery_candidates"`
-	}
-	if err := json.Unmarshal(factsRaw, &document); err != nil {
-		return recoveryCandidateFact{}, false, fmt.Errorf("decode recovery candidate: %w", err)
+	document, err := decodeRecoveryCandidatesDocument(factsRaw)
+	if err != nil {
+		return recoveryCandidateFact{}, false, err
 	}
 	for i := len(document.RecoveryCandidates) - 1; i >= 0; i-- {
 		if candidate := document.RecoveryCandidates[i]; candidate.PlacementID == placementID {
@@ -79,6 +77,29 @@ WHERE rf.managed_anime_id = $1 AND rf.generation = $2
 		}
 	}
 	return recoveryCandidateFact{}, false, nil
+}
+
+// recoveryCandidatesDocument is the JSONB shape a decided scan leaves on the
+// observation row: recovery_candidates is a JSON ARRAY of the probe's frozen
+// facts, riding in the row's facts OBJECT beside placement_id and the missing
+// disposition. Both readers of the candidate (the confirm above, the files
+// read model) decode through decodeRecoveryCandidatesDocument so the two
+// shapes can never drift: one write shape, one decode shape.
+type recoveryCandidatesDocument struct {
+	RecoveryCandidates []recoveryCandidateFact `json:"recovery_candidates"`
+}
+
+// decodeRecoveryCandidatesDocument decodes a whole facts object into the
+// candidates document. Callers pass what the scan wrote — the OBJECT rf.facts,
+// never the ARRAY rf.facts->'recovery_candidates' (unmarshalling the array
+// into the object shape fails, and it failed the real read model exactly that
+// way on the first candidate-bearing row a user opened).
+func decodeRecoveryCandidatesDocument(raw []byte) (recoveryCandidatesDocument, error) {
+	var document recoveryCandidatesDocument
+	if err := json.Unmarshal(raw, &document); err != nil {
+		return recoveryCandidatesDocument{}, fmt.Errorf("decode recovery candidates: %w", err)
+	}
+	return document, nil
 }
 
 // ---- confirm result and typed refusals -----------------------------------
