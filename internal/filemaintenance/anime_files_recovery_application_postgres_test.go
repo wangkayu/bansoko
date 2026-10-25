@@ -7,6 +7,7 @@ import (
 	"errors"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"bansoko/internal/library/domain"
@@ -235,25 +236,40 @@ func (o *staticObserver) ObserveMetadataFile(_ context.Context, path string) (do
 }
 
 // seedUnfinishedOwner inserts a non-terminal owner holding one path, which is
-// what the shared occupancy read refuses on. It uses
-// file_manager_operations rather than file_operations on purpose: a
-// file_operations row needs the whole acquisition -> download_tasks ->
-// artifacts -> artifact_files chain because the baseline's
-// validate_file_operation_artifact trigger (001_baseline.sql) demands a
-// VERIFIED artifact whose version and source fingerprint match, and that chain
-// is irrelevant to the question these tests ask. file_manager_operations has
-// no such trigger and the occupancy read treats its ready/running rows as
-// unfinished owners exactly like pending/running file operations, so the test
-// stays about occupancy and nothing else.
+// what the shared occupancy read refuses on.
+//
+// Two schema facts shaped this fixture, and getting either wrong fails the
+// insert rather than the assertion:
+//
+//  1. It uses file_manager_operations, not file_operations. A file_operations
+//     row needs the whole acquisition -> download_tasks -> artifacts ->
+//     artifact_files chain, because the baseline's
+//     validate_file_operation_artifact trigger demands a VERIFIED artifact
+//     whose version and source fingerprint match. That chain is irrelevant to
+//     the question these tests ask. file_manager_operations has no such
+//     trigger, and the occupancy read treats its ready/running rows as
+//     unfinished owners exactly like pending/running file operations.
+//
+//  2. The column list is the FINAL shape, not the baseline's. The baseline is
+//     immutable and forward migrations stack on top of it:
+//     db/migrations/009_file_manager_without_root.sql drops root_key,
+//     root_path, target_root_key and target_root_path and re-creates
+//     file_manager_operations_target_check. Inserting the baseline's columns
+//     fails with 42703 on any migrated database. The columns written here are
+//     exactly the ones internal/filemanager/persistence/commands.go:212 writes
+//     when the file manager admits an operation.
+//
+// The re-created target_check is satisfied by ('move', source, target):
+// operation <> 'delete' so target_path must be non-NULL (it is), and 'move' is
+// not in ('delete', 'copy') so target_path <> source_path must hold, which the
+// callers guarantee by passing the video's raw source and its rendered target.
 func seedUnfinishedOwner(t *testing.T, db *sql.DB, id, state, sourcePath, targetPath string) {
 	t.Helper()
 	if _, err := db.Exec(`
 INSERT INTO file_manager_operations
-(id, idempotency_key, request_digest, actor, operation, root_key, root_path,
- target_root_key, target_root_path, source_path, target_path,
+(id, idempotency_key, request_digest, actor, operation, source_path, target_path,
  expected_size_bytes, collision, state, version)
-VALUES ($1, $1, $2, 'web', 'move', 'library', '/library',
-        'library', '/library', $3, $4, 4096, 'block', $5, 1)`,
+VALUES ($1, $1, $2, 'web', 'move', $3, $4, 4096, 'block', $5, 1)`,
 		id, strings.Repeat("a", 64), sourcePath, targetPath, state); err != nil {
 		t.Fatalf("seed unfinished owner %s: %v", id, err)
 	}
@@ -421,29 +437,28 @@ func TestRecoverAnimeFileApplicationReplayIsIdempotent(t *testing.T) {
 	}
 }
 
-// commitPointObserver registers a second companion as a SIDE EFFECT of the
-// confirm's own observation, i.e. exactly between the pre-check that narrowed
-// the window and the commit. The name set is read once (the pre-check); after
-// that every observation call performs the registration and merely answers the
-// frozen identity, so the pre-check passes and only the commit-point re-check
-// can catch the newcomer.
-type commitPointObserver struct {
-	files      map[string]domain.FileObservation
-	armed      bool
-	register   func()
-	registered bool
+// rulesRacingNamingRulesSource registers the companion from inside the
+// renderer's rules fetch. That call sits exactly in the window the test
+// needs: the membership pre-check has already read the active id set (so the
+// newcomer is invisible to it), and the confirm has not yet taken FOR UPDATE
+// on the placement row (so the INSERT cannot deadlock on the placement_id
+// foreign key). Registering from the file observer instead would deadlock: by
+// the first observation the confirm already holds FOR UPDATE on the placement
+// row and the INSERT would need FOR KEY SHARE on the same row for the
+// placement_id foreign key.
+type rulesRacingNamingRulesSource struct {
+	NamingRulesSource
+	once      sync.Once
+	register  func()
+	requested bool
 }
 
-func (o *commitPointObserver) ObserveMetadataFile(_ context.Context, path string) (domain.FileObservation, error) {
-	observation, ok := o.files[path]
-	if !ok {
-		return domain.FileObservation{}, errors.New("not found")
-	}
-	if o.armed && !o.registered {
-		o.registered = true
-		o.register()
-	}
-	return observation, nil
+func (r *rulesRacingNamingRulesSource) EffectiveNamingRules(ctx context.Context, animeID string) (naming.NamingRules, error) {
+	r.once.Do(func() {
+		r.requested = true
+		r.register()
+	})
+	return r.NamingRulesSource.EffectiveNamingRules(ctx, animeID)
 }
 
 // A companion registered while the confirm is in flight splits the unit: the
@@ -451,37 +466,80 @@ func (o *commitPointObserver) ObserveMetadataFile(_ context.Context, path string
 // the old directory. The commit-point re-check (inside the transaction, after
 // the CAS updates, before the journal) must refuse and roll the whole confirm
 // back — nothing persists.
+//
+// The registration is injected through the renderer's rules fetch (see
+// rulesRacingNamingRulesSource): after the membership pre-check read the unit,
+// before the confirm takes its FOR UPDATE lock. Registering at observation
+// time would deadlock instead of testing (FOR UPDATE vs the foreign key's
+// FOR KEY SHARE on the same placement row).
 func TestRecoverAnimeFileApplicationRefusesConcurrentlyRegisteredCompanion(t *testing.T) {
 	scene := newRecoveryApplicationScene(t)
-	observer := &commitPointObserver{files: scene.files}
-	observer.register = func() {
-		if _, err := scene.db.Exec(`
+
+	register := func() {
+		tag, err := scene.db.Exec(`
 INSERT INTO placement_companions
 (id, placement_id, managed_anime_id, source_ref, registration, media_kind, suffix,
  original_extension, current_path, size_bytes, fingerprint, state, version)
 VALUES ('cmp-late', $1, $2, 'src:cmp-late', 'adopted', 'subtitle', 'en',
-        'ass', '/library/Show/raw ep1.en.ass', 48, $3, 'active', 1)`,
+        'ass', '/library/Show/raw ep1.en.ass', 48, $3, 'active', 1)
+ON CONFLICT (source_ref) DO NOTHING`,
 			scene.candidate.PlacementID, scene.animeID,
-			"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"); err != nil {
+			"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210")
+		if err != nil {
 			t.Errorf("register concurrent companion: %v", err)
+			return
+		}
+		if affected, err := tag.RowsAffected(); err != nil {
+			t.Errorf("read concurrent registration result: %v", err)
+		} else if affected != 1 {
+			t.Errorf("concurrent companion registration affected %d rows, want 1", affected)
 		}
 	}
+	rules := &rulesRacingNamingRulesSource{
+		NamingRulesSource: fakeNamingRulesSource{rules: scene.rules},
+		register:          register,
+	}
+	// The file observer stays a pure static double: registering from an
+	// observation would run AFTER the confirm took FOR UPDATE on the placement
+	// row and deadlock against its own foreign key (see above). Only the rules
+	// hook registers, and it registers exactly once.
+	observer := &staticObserver{files: scene.files}
 
 	before := scene.snapshot(t)
-	service := scene.service(observer)
+	// Wire the renderer by hand (instead of scene.service) so it races through
+	// `rules`; everything else matches scene.service exactly.
+	renderer := NewNamingTargetRenderer(scene.db, rules)
+	service := NewService(nil, nil, nil, NewPlacementService(scene.db, nil, nil), nil)
+	service.SetPathDiff(NewPathDiffService(scene.db, renderer, nil))
+	service.SetRecoveryObserver(observer)
+
 	_, err := service.RecoverAnimeFileApplication(context.Background(), scene.animeID, scene.command())
 	if err == nil {
 		t.Fatal("confirm with a concurrently registered companion succeeded")
 	}
-	if !observer.registered {
-		t.Fatal("the observer never registered the concurrent companion: the test verified nothing")
+	if !rules.requested {
+		t.Fatal("the renderer never fetched naming rules: the registration was never injected mid-confirm")
 	}
 	var refusal *AnimeFilesRecoverRefusal
 	if !errors.As(err, &refusal) || refusal.Code != RecoveryReasonCompanionMissing {
 		t.Fatalf("refusal = %v, want %s", err, RecoveryReasonCompanionMissing)
 	}
-	// The rollback must leave the recovered row exactly as it was: the video
-	// was never re-pointed, no version bumped, no journal entry written.
+
+	// The newcomer must really be in the database — otherwise every assertion
+	// below would pass vacuously against a registration that never happened.
+	var lateState string
+	if err := scene.db.QueryRow(
+		`SELECT state FROM placement_companions WHERE id = 'cmp-late'`).Scan(&lateState); err != nil {
+		t.Fatalf("the concurrently registered companion is not in the database: %v", err)
+	}
+	if lateState != "active" {
+		t.Fatalf("concurrently registered companion state = %q, want active", lateState)
+	}
+
+	// The rollback must leave the recovered unit exactly as it was: the video
+	// was never re-pointed, no version bumped, no journal entry written. The
+	// newcomer survives (it is not the confirm's to undo), the recovery does
+	// not happen.
 	after := scene.snapshot(t)
 	if after != before {
 		t.Fatalf("concurrent registration mutated the recovered unit:\nbefore = %+v\nafter  = %+v", before, after)
