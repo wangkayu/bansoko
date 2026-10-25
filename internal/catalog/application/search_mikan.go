@@ -232,12 +232,19 @@ func readBoundedBody(body io.Reader, maxSize int64) ([]byte, error) {
 	return payload, nil
 }
 
-// mikanProgramEntries reads the recommendation block of Home/Search. Only the
-// block the site labels as related programs is read: the page's torrent rows are
-// never consulted here, and a page whose block lost its shape is a schema
+// mikanRecommendLabel is the site's own header for the related-program block
+// on the search page; it anchors the parser to that block.
+const mikanRecommendLabel = "相关推荐"
+
+// mikanProgramEntries reads the page's related-program recommendation block:
+// the central container whose header2 text carries the site's own label. The
+// block the site labels as related programs is read: the page's torrent rows
+// are never consulted here, and a page whose block lost its shape is a schema
 // mismatch instead of an empty program list.
 func mikanProgramEntries(document *goquery.Document) ([]catalogdomain.Entry, error) {
-	block := document.Find(".search-result-recommend, [data-search-recommend], .relevant-recommend").First()
+	block := document.Find("div.central-container").FilterFunction(func(_ int, container *goquery.Selection) bool {
+		return strings.Contains(container.Find("span.header2-text").First().Text(), mikanRecommendLabel)
+	}).First()
 	if block.Length() == 0 {
 		return nil, errors.New("Mikan program search recommendation block is missing")
 	}
@@ -252,7 +259,18 @@ func mikanProgramEntries(document *goquery.Document) ([]catalogdomain.Entry, err
 		if _, exists := seen[ref]; exists {
 			return true
 		}
-		title := strings.TrimSpace(selectionAttr(link, "title"))
+		// The item title lives in the an-text block: its title attribute first,
+		// then its text; the anchor itself is the last resort.
+		title := ""
+		if text := link.Find(".an-text").First(); text.Length() > 0 {
+			title = strings.TrimSpace(selectionAttr(text, "title"))
+			if title == "" {
+				title = strings.TrimSpace(text.Text())
+			}
+		}
+		if title == "" {
+			title = strings.TrimSpace(selectionAttr(link, "title"))
+		}
 		if title == "" {
 			title = strings.TrimSpace(link.Text())
 		}
@@ -260,8 +278,10 @@ func mikanProgramEntries(document *goquery.Document) ([]catalogdomain.Entry, err
 			return true
 		}
 		seen[ref] = struct{}{}
+		// The cover is lazy-loaded: a b-lazy element carrying data-src, or a
+		// plain img when the site hands one over.
 		cover := ""
-		if image := link.Find("img").First(); image.Length() > 0 {
+		if image := link.Find("span.b-lazy, img").First(); image.Length() > 0 {
 			cover = strings.TrimSpace(selectionAttr(image, "data-src"))
 			if cover == "" {
 				cover = strings.TrimSpace(selectionAttr(image, "src"))

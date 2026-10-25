@@ -76,7 +76,7 @@ func TestConfiguredReaderSearchesMikanPrograms(t *testing.T) {
 	var gotPath, gotQuery string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath, gotQuery = r.URL.Path, r.URL.Query().Get("searchstr")
-		_, _ = w.Write([]byte(`<html><body><div class="search-result-recommend"></div></body></html>`))
+		_, _ = w.Write([]byte(`<html><body><div class="central-container"><div class="header2"><span class="header2-text">相关推荐</span></div><ul class="list-inline an-ul"></ul></div></body></html>`))
 	}))
 	defer server.Close()
 	reader := ConfiguredReader{
