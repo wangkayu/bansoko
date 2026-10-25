@@ -4945,6 +4945,8 @@ export interface components {
             group_name?: string | null;
             /** @description Resolution parsed from the release title for display only. */
             resolution?: string | null;
+            /** @description Work-title candidate parsed from the release title for display only. It is never a work identity and never a subscription or download input; a caller may use it as the editable title default. */
+            title_hint?: string | null;
         };
         /** @description One immutable keyword search snapshot and a bounded window of its seeds. `total_seeds` counts the complete result set the snapshot identity covers; `seeds` is the window this response renders. A search snapshot is short-lived (24 hours), is never a group or a subscription source, and is refreshed only by fetching the same query again. */
         SeedSearchSnapshotView: {

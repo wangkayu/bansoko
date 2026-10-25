@@ -16,6 +16,7 @@ import {
 import { createEmptyDraft } from "../../lib/draft";
 import { withGlobalBusiness } from "../anime-config/businessDraft";
 import { formatBytes } from "../../lib/labels";
+import { providerLabel } from "../../lib/providers/registry";
 import { t } from "../../lib/i18n";
 import { Button, Dialog, Field, Input, StateBlock } from "../../ui/base";
 
@@ -74,7 +75,11 @@ export function SearchSeedOneShotDialog({
   const [manifest, setManifest] = useState<TorrentManifestView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retryToken, setRetryToken] = useState(0);
-  const [title, setTitle] = useState(seed.title);
+  // The title default follows the same rule as every one-shot entry: the best title this
+  // torrent can offer. The catalog entry supplies it for the poster path; here the release
+  // title's parsed work-title candidate does, and a failed parse honestly yields an empty
+  // field the owner fills in. It is an editable default, never an identity.
+  const [title, setTitle] = useState(seed.title_hint ?? "");
   const [offsetText, setOffsetText] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -172,6 +177,16 @@ export function SearchSeedOneShotDialog({
       tier="M"
       fixedHeight
       title={t("oneshot.searchTitle")}
+      // The same header anatomy as the catalog one-shot: the release title takes the
+      // anchor slot an entry title fills there, because a search row has no entry.
+      description={
+        <span className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+          <span className="tw:min-w-0 tw:truncate" title={seed.title}>
+            {seed.title}
+          </span>
+          <span>· {providerLabel(provider)}</span>
+        </span>
+      }
     >
       {error && !manifest ? (
         <StateBlock

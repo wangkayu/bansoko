@@ -3541,7 +3541,6 @@ paths:
       tags: [Catalog]
       operationId: fetchSeedSearchSnapshot
       x-scope: write
-      x-surface-keep: "human: the keyword torrent search view is delivered backend-first (slice S1-S4); the dual-mode search dialog is slice S5 and is the only intended caller. No MCP tool by design: it persists a batch of seeds and the first release does not expose keyword search to agents"
       description: >-
         Run one keyword torrent search against one provider and persist its
         results as an immutable search snapshot. This is a write because it
@@ -3592,7 +3591,6 @@ paths:
       tags: [Catalog]
       operationId: readSeedSearchSnapshot
       x-scope: read
-      x-surface-keep: "human: reads one page of the keyword search result list the fetch above produced; the dual-mode search dialog (slice S5) is the only intended caller. Not an MCP tool, for the same reason the fetch is not one"
       description: >-
         Read a bounded window of one exact search snapshot identity. It never
         contacts the provider and never falls back to the latest snapshot: a
@@ -11801,6 +11799,14 @@ components:
           nullable: true
           description: >-
             Resolution parsed from the release title for display only.
+        title_hint:
+          type: string
+          maxLength: 512
+          nullable: true
+          description: >-
+            Work-title candidate parsed from the release title for display
+            only. It is never a work identity and never a subscription or
+            download input; a caller may use it as the editable title default.
     SeedSearchSnapshotView:
       type: object
       additionalProperties: false

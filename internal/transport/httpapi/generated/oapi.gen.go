@@ -7893,9 +7893,12 @@ type SeedSearchSnapshotSeed struct {
 	SizeBytes  *int64  `json:"size_bytes"`
 
 	// StableSeedKey Stable identity within this search snapshot.
-	StableSeedKey string                             `json:"stable_seed_key"`
-	Title         string                             `json:"title"`
-	TorrentState  SeedSearchSnapshotSeedTorrentState `json:"torrent_state"`
+	StableSeedKey string `json:"stable_seed_key"`
+	Title         string `json:"title"`
+
+	// TitleHint Work-title candidate parsed from the release title for display only. It is never a work identity and never a subscription or download input; a caller may use it as the editable title default.
+	TitleHint    *string                            `json:"title_hint"`
+	TorrentState SeedSearchSnapshotSeedTorrentState `json:"torrent_state"`
 }
 
 // SeedSearchSnapshotSeedTorrentState defines model for SeedSearchSnapshotSeed.TorrentState.

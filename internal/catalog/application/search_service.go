@@ -55,7 +55,10 @@ type SearchSeedPreviewSeed struct {
 	// Display-only facts parsed from the release title. They never identify a
 	// provider group or a work: a search row has neither, and the parse below
 	// exists so the list can show a resolution or a group name.
-	GroupName  string
+	GroupName string
+	// TitleHint is the parsed work-title candidate. It only ever pre-fills the
+	// editable title of a one-shot confirmation; it is not a work identity.
+	TitleHint  string
 	Resolution string
 }
 
@@ -407,6 +410,9 @@ func mapSearchSnapshot(snapshot catalogdomain.ProviderFeedSnapshot, query string
 		for _, value := range tags.ValueTags {
 			if name, ok := strings.CutPrefix(value, "group:"); ok && row.GroupName == "" {
 				row.GroupName = name
+			}
+			if name, ok := strings.CutPrefix(value, "title:"); ok && row.TitleHint == "" {
+				row.TitleHint = name
 			}
 		}
 		preview.Seeds = append(preview.Seeds, row)

@@ -60,6 +60,7 @@ const seedOne: SeedSearchSnapshotSeed = {
   torrent_state: "available",
   group_name: "Example Group",
   resolution: "1080p",
+  title_hint: "示例作品",
 };
 const seedTwo: SeedSearchSnapshotSeed = { ...seedOne, stable_seed_key: "seed-key-2", title: "[Example Group] 示例作品 02 [1080p]" };
 const seedThree: SeedSearchSnapshotSeed = { ...seedOne, stable_seed_key: "seed-key-3", title: "[Example Group] 示例作品 03 [1080p]" };
@@ -553,7 +554,9 @@ describe("GlobalSearchDialog 种子检索模式", () => {
     });
 
     const dialog = await screen.findByRole("dialog", { name: t("oneshot.searchTitle") });
-    expect(within(dialog).getByDisplayValue(seedOne.title)).toBeInTheDocument();
+    // 标题默认值 = 解析出的作品名候选（同海报入口的 entry.title 角色），原始发布标题退到 header 锚点行。
+    expect(within(dialog).getByDisplayValue(seedOne.title_hint!)).toBeInTheDocument();
+    expect(within(dialog).getByText(seedOne.title)).toBeInTheDocument();
     expect(
       within(dialog).getByText(t("oneshot.searchFiles", { count: 2, size: formatBytes(2048) })),
     ).toBeInTheDocument();
@@ -575,8 +578,8 @@ describe("GlobalSearchDialog 种子检索模式", () => {
     });
     const draft = body.draft as { origin: string; title: string; instance_label: string; rss_sources: unknown[] };
     expect(draft.origin).toBe("oneshot");
-    expect(draft.title).toBe(seedOne.title);
-    expect(draft.instance_label).toBe(seedOne.title);
+    expect(draft.title).toBe(seedOne.title_hint);
+    expect(draft.instance_label).toBe(seedOne.title_hint);
     // 搜索种子不是 RSS 来源：不伪造 locator，draft 的来源列表为空；默认偏移 0 不携带顶层字段。
     expect(draft.rss_sources).toEqual([]);
     expect(body.episode_offset).toBeUndefined();
@@ -617,6 +620,27 @@ describe("GlobalSearchDialog 种子检索模式", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: t("oneshot.downloadOne") }));
     await waitFor(() => expect(downloadCalls).toHaveLength(1));
     expect((downloadCalls[0]!.body as Record<string, unknown>).episode_offset).toBeUndefined();
+  });
+
+  it("无解析候选时标题初始为空：手填前不能提交，填写后提交所填值", async () => {
+    renderDialog();
+    seedFetchResult = { status: 200, body: seedSnapshotView({ seeds: [{ ...seedOne, title_hint: null }] }) };
+    switchToSeedMode();
+    await submitSeedSearch("示例作品");
+    await screen.findByText(seedOne.title);
+    fireEvent.click(within(screen.getAllByRole("listitem")[0]!).getByRole("button", { name: t("globalSearch.downloadSeed") }));
+    const dialog = await screen.findByRole("dialog", { name: t("oneshot.searchTitle") });
+
+    // 解析无果 → 标题诚实为空（不退回原始发布标题），空标题禁用提交。
+    expect(within(dialog).getByLabelText(t("field.title"))).toHaveValue("");
+    expect(within(dialog).getByRole("button", { name: t("oneshot.downloadOne") })).toBeDisabled();
+
+    fireEvent.change(within(dialog).getByLabelText(t("field.title")), { target: { value: "手填作品名" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("oneshot.downloadOne") }));
+    await waitFor(() => expect(downloadCalls).toHaveLength(1));
+    const draft = (downloadCalls[0]!.body as { draft: { title: string; instance_label: string } }).draft;
+    expect(draft.title).toBe("手填作品名");
+    expect(draft.instance_label).toBe("手填作品名");
   });
 
   it("非零集数偏移走请求顶层字段，不进 draft 的来源列表", async () => {
@@ -672,7 +696,7 @@ describe("GlobalSearchDialog 种子检索模式", () => {
     expect(downloadCalls[1]!.idempotencyKey).toBe(firstKey);
 
     // 标题改变 → 请求体变化 → 新键。
-    fireEvent.change(within(dialog).getByDisplayValue(seedOne.title), { target: { value: "改名后" } });
+    fireEvent.change(within(dialog).getByDisplayValue(seedOne.title_hint!), { target: { value: "改名后" } });
     fireEvent.click(within(dialog).getByRole("button", { name: t("oneshot.downloadOne") }));
     await waitFor(() => expect(downloadCalls).toHaveLength(3));
     expect(downloadCalls[2]!.idempotencyKey).not.toBe(firstKey);

@@ -92,6 +92,10 @@ func mapSeedSearchPreview(preview catalogapplication.SearchSeedPreview) generate
 			group := seed.GroupName
 			row.GroupName = &group
 		}
+		if seed.TitleHint != "" {
+			hint := seed.TitleHint
+			row.TitleHint = &hint
+		}
 		if seed.Resolution != "" {
 			resolution := seed.Resolution
 			row.Resolution = &resolution
