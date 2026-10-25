@@ -7,6 +7,21 @@
 # auth enabled); BANSOKO_SKIP_AUTH is forbidden by the harness.
 set -euo pipefail
 umask 077
+# Negative path (see scripts/verify/filemaintenance-e2e-negative.sh):
+# destroying one owned placement file must make this lane fail loudly instead of
+# passing. The switch is explicit and unset in every normal run; the seven
+# scenarios and their assertions keep their default behaviour.
+# Parsed before the platform/tool guards so the refusal is checkable anywhere.
+negative_mode="${BANSOKO_FM_E2E_NEGATIVE:-}"
+case "$negative_mode" in
+  ''|old-source-missing|new-placement-missing) ;;
+  *) echo "filemaintenance-e2e: unknown BANSOKO_FM_E2E_NEGATIVE: $negative_mode (expected old-source-missing or new-placement-missing)" >&2; exit 2 ;;
+esac
+if [[ -n "$negative_mode" && -n "${BANSOKO_FM_E2E_SCENARIOS:-}" ]]; then
+  echo 'filemaintenance-e2e: BANSOKO_FM_E2E_NEGATIVE owns the run; BANSOKO_FM_E2E_SCENARIOS must be unset' >&2
+  exit 2
+fi
+
 for tool in bash go python3 curl docker; do
   if ! command -v "$tool" >/dev/null 2>&1; then echo "filemaintenance-e2e: required command missing before harness setup: $tool" >&2; exit 2; fi
 done
@@ -547,6 +562,32 @@ E2EMOVIE
   echo "movie chain seeded"
 fi
 
+# Negative runs destroy one owned placement file, then let the unchanged
+# assertions decide. The destroy step is guarded by the explicit switch parsed at
+# the top of this script, records the file it removed, and refuses to continue if
+# the file survived: a negative run whose fixture is intact would prove nothing.
+negative_inject() {
+  local label="$1" path="$2"
+  if [[ ! -e "$path" ]]; then
+    echo "negative mode ${negative_mode}: $label is already absent before injection: $path" >&2
+    exit 1
+  fi
+  printf '{"negative_mode":"%s","label":"%s","path":"%s","sha256":"%s"}\n' \
+    "$negative_mode" "$label" "$path" "$(shasum -a 256 "$path" | awk '{print $1}')" \
+    >>"$summary_dir/negative-injection.jsonl"
+  rm -f -- "$path"
+  if [[ -e "$path" ]]; then
+    echo "negative mode ${negative_mode}: failed to destroy $label at $path" >&2
+    exit 1
+  fi
+  echo "negative mode ${negative_mode}: destroyed $label at $path"
+}
+
+if [[ "$negative_mode" == old-source-missing ]]; then
+  # Destroy the superseded source the quarantine stage must move. The chain
+  # then cannot converge and the unchanged assertions below must reject it.
+  negative_inject superseded-source "$old_file"
+fi
 echo "== waiting for the automatic chain =="
 wait_chain() {
   local deadline=$(( $(date +%s) + 1100 ))
@@ -568,7 +609,14 @@ wait_chain() {
     # Receipt-backed maintenance cleanup quarantines the superseded file and,
     # with grace 0, purges it; a blocked cleanup is a terminal failure here.
     if [[ "$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE managed_anime_id='anime-e2e' AND state='blocked'")" -gt 0 ]]; then
-      echo "cleanup blocked: $($PSQL -tAc "SELECT failure_code || ': ' || coalesce(failure_reason,'') FROM cleanup_operations WHERE managed_anime_id='anime-e2e' AND state='blocked'")" >&2
+      echo "cleanup blocked: $($PSQL -tAc "SELECT failure_code || ': ' || coalesce(reason,'') FROM cleanup_operations WHERE managed_anime_id='anime-e2e' AND state='blocked'")" >&2
+      return 1
+    fi
+    # A cleanup that exhausted its attempt budget lands in `failed`, not in
+    # `blocked`; without this read the run would wait out the deadline and
+    # report a timeout instead of the typed reason that actually applies.
+    if [[ "$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE managed_anime_id='anime-e2e' AND state='failed'")" -gt 0 ]]; then
+      echo "cleanup failed: $($PSQL -tAc "SELECT failure_code || ': ' || coalesce(reason,'') || ' (state=failed)' FROM cleanup_operations WHERE managed_anime_id='anime-e2e' AND state='failed'")" >&2
       return 1
     fi
     cleanup_purged="$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE managed_anime_id='anime-e2e' AND state='purged'")"
@@ -606,6 +654,11 @@ echo "== assertions =="
 old_state="$($PSQL -tAc "SELECT state FROM placements WHERE id='plc-old'")"
 new_path="$($PSQL -tAc "SELECT physical_path FROM placements WHERE source_evidence_type='file_operation' LIMIT 1")"
 quarantine_path="$($PSQL -tAc "SELECT quarantine_path FROM cleanup_operations WHERE managed_anime_id='anime-e2e'" | tr -d '\r')"
+if [[ "$negative_mode" == new-placement-missing ]]; then
+  # Destroy the file the settled chain left at its new placement path. The
+  # `-f "$new_path"` assertion below must name it, not time out elsewhere.
+  negative_inject new-placement "$new_path"
+fi
 [[ "$old_state" == "superseded" ]] || { echo "old placement not superseded: $old_state" >&2; exit 1; }
 [[ -f "$new_path" ]] || { echo "new placement file missing: $new_path" >&2; exit 1; }
 [[ ! -e "$old_file" ]] || { echo "superseded source still present after purge: $old_file" >&2; exit 1; }
@@ -734,8 +787,27 @@ print(matches[0].get("expected_path") or "")' "$2"
   scan_and_calibrate() {
     local label="$1" before request
     before="$(calibration_generation)"
-    request="file022-$label-$(date +%s)-$RANDOM"
-    api_post /reconciliation/scans "{\"managed_anime_id\":\"anime-e2e\",\"tree_top\":\"$library_root\",\"trigger\":\"manual\",\"request_id\":\"$request\"}" >"$summary_dir/$label-scan-submit.json"
+    # A scan owner admits one generation at a time. Scenario 5's browser step
+    # leaves its own rescan behind when it settles, so submitting here without
+    # waiting first races that scan. A refused submit surfaces as an untyped 500
+    # rather than a typed conflict, so it names nothing about the fixture: wait
+    # for the owner to leave `running` and retry instead of failing the lane on a
+    # scheduling race.
+    local attempt
+    for attempt in 1 2 3 4 5 6; do
+      wait_sql "SELECT state FROM reconciliation_scans WHERE managed_anime_id='anime-e2e' ORDER BY generation DESC LIMIT 1" completed 300 || true
+      request="file022-$label-$(date +%s)-$RANDOM"
+      if api_post /reconciliation/scans "{\"managed_anime_id\":\"anime-e2e\",\"tree_top\":\"$library_root\",\"trigger\":\"manual\",\"request_id\":\"$request\"}" >"$summary_dir/$label-scan-submit.json" 2>"$summary_dir/$label-scan-submit.err"; then
+        break
+      fi
+      if (( attempt == 6 )); then
+        echo "scan submit for $label was refused 6 times while no other scan was running" >&2
+        cat "$summary_dir/$label-scan-submit.err" >&2 || true
+        exit 1
+      fi
+      echo "scan submit for $label was refused; waiting for the running scan to settle before retrying" >&2
+      sleep 5
+    done
     wait_sql "SELECT state FROM reconciliation_scans WHERE managed_anime_id='anime-e2e' ORDER BY generation DESC LIMIT 1" completed
     wait_calibration_after "$before"
   }
@@ -810,7 +882,6 @@ print(matches[0].get("expected_path") or "")' "$2"
   cp "$second_download" "$second_path"
   second_hash="$(fingerprint "$second_path")"
   second_fp='{"algorithm":"sha256","value":"'$second_hash'","size_bytes":65536}'
-  second_fp_source='{"algorithm":"sha256","value":"'$second_hash'"}'
   second_payload_digest="sha256:$(repeat_hex d)"
   second_manifest_digest="sha256:$(repeat_hex 9)"
   second_file_ref="$(torrent_file_ref "$second_payload_digest" 'EP05.mkv')"
@@ -919,7 +990,7 @@ E2ESECOND
       fi
       movie_cleanup_blocked="$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE managed_anime_id='anime-e2e-m' AND state='blocked'" | tr -d '[:space:]')"
       if [[ "$movie_cleanup_blocked" -gt 0 ]]; then
-        echo "scenario 7 movie cleanup blocked: $($PSQL -tAc "SELECT failure_code || ': ' || coalesce(failure_reason,'') FROM cleanup_operations WHERE managed_anime_id='anime-e2e-m' AND state='blocked'")" >&2
+        echo "scenario 7 movie cleanup blocked: $($PSQL -tAc "SELECT failure_code || ': ' || coalesce(reason,'') FROM cleanup_operations WHERE managed_anime_id='anime-e2e-m' AND state='blocked'")" >&2
         exit 1
       fi
       movie_placed="$($PSQL -tAc "SELECT count(*) FROM placements WHERE managed_anime_id='anime-e2e-m' AND source_evidence_type='file_operation' AND state='active' AND verification_state='verified'" | tr -d '[:space:]')"
@@ -1056,7 +1127,6 @@ E2ESECOND
   rules_workspace="$(api_get /anime/anime-e2e/workspace)"
   printf '%s' "$rules_workspace" | python3 -c 'import json,sys;json.dump(json.load(sys.stdin)["rules"],open(sys.argv[1],"w"))' "$summary_dir/scenario-4-rules-before.json"
   rules="$(cat "$summary_dir/scenario-4-rules-before.json")"
-	rules_version="$(printf '%s' "$rules" | python3 -c 'import json,sys;print(json.load(sys.stdin)["version"])')"
   # The edited template must render an absolute directory: save-time validation
   # renders against the fixed sample and refuses a relative result with
   # NAMING_TARGET_NOT_ABSOLUTE. A "Rule Drift" literal would therefore be a
