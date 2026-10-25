@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"bansoko/internal/library/domain"
@@ -155,23 +156,47 @@ func companionRenderPath(t *testing.T, renderer *NamingTargetRenderer, animeID, 
 }
 
 // seedRecoveryCandidate writes the frozen candidate into the generation's
-// reconciliation_files row exactly as the scan's probe does: the disposition
-// stays missing and the candidates ride in facts.
+// reconciliation_files row exactly as a decided scan leaves it: the CALIBRATED
+// disposition column says missing, and the candidate rides in facts.
+//
+// The disposition COLUMN is what matters here, not the facts key. The read
+// model and the confirm both find the newest decided generation through
+// latestCalibratedGeneration, which reads
+//
+//	SELECT MAX(generation) FROM reconciliation_files
+//	 WHERE managed_anime_id = $1 AND disposition IS NOT NULL
+//
+// seedCompletedGeneration deliberately leaves that column NULL: it models the
+// scan's observation half and every other caller runs the real calibration
+// afterwards (internal/filemaintenance/calibration.go fills the column). This
+// fixture skips calibration, so it must fill the column itself — otherwise
+// latest is always 0 and every confirm short-circuits to scan_changed before
+// reaching any of the behaviour under test.
 func seedRecoveryCandidate(t *testing.T, db *sql.DB, animeID string, candidate recoveryCandidateFact) {
 	t.Helper()
 	document, err := json.Marshal(map[string]any{
 		"placement_id":        candidate.PlacementID,
-		"disposition":         "missing",
+		"disposition":         DispositionMissing,
 		"recovery_candidates": []recoveryCandidateFact{candidate},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`
-UPDATE reconciliation_files SET facts = facts || $3::jsonb
-WHERE managed_anime_id = $1 AND generation = $2 AND facts->>'placement_id' = $4`,
-		animeID, candidate.Generation, string(document), candidate.PlacementID); err != nil {
+	tag, err := db.Exec(`
+UPDATE reconciliation_files
+   SET facts = facts || $3::jsonb,
+       disposition = $5
+ WHERE managed_anime_id = $1 AND generation = $2 AND facts->>'placement_id' = $4`,
+		animeID, candidate.Generation, string(document), candidate.PlacementID, DispositionMissing)
+	if err != nil {
 		t.Fatalf("seed recovery candidate: %v", err)
+	}
+	if affected, err := tag.RowsAffected(); err != nil {
+		t.Fatal(err)
+	} else if affected != 1 {
+		// A silently unmatched UPDATE would leave the fixture half-seeded and
+		// every confirm would then fail for the wrong reason.
+		t.Fatalf("seeded %d recovery rows, want exactly 1", affected)
 	}
 }
 
@@ -209,26 +234,44 @@ func (o *staticObserver) ObserveMetadataFile(_ context.Context, path string) (do
 	return domain.FileObservation{}, errors.New("not found")
 }
 
-// seedUnfinishedFileOperation inserts a non-terminal file operation holding
-// one path, using only the columns the baseline makes NOT NULL (file_operations
-// has no managed_anime_id or kind column; its owner wiring hangs off
-// acquisition_id/file_ref). The occupancy read treats pending/running/
-// waiting_retry operations as unfinished owners, which is what makes the
-// target (or a companion path) unavailable to the confirm.
-func seedUnfinishedFileOperation(t *testing.T, db *sql.DB, id, state, sourcePath, targetPath string) {
+// seedUnfinishedOwner inserts a non-terminal owner holding one path, which is
+// what the shared occupancy read refuses on. It uses
+// file_manager_operations rather than file_operations on purpose: a
+// file_operations row needs the whole acquisition -> download_tasks ->
+// artifacts -> artifact_files chain because the baseline's
+// validate_file_operation_artifact trigger (001_baseline.sql) demands a
+// VERIFIED artifact whose version and source fingerprint match, and that chain
+// is irrelevant to the question these tests ask. file_manager_operations has
+// no such trigger and the occupancy read treats its ready/running rows as
+// unfinished owners exactly like pending/running file operations, so the test
+// stays about occupancy and nothing else.
+func seedUnfinishedOwner(t *testing.T, db *sql.DB, id, state, sourcePath, targetPath string) {
 	t.Helper()
 	if _, err := db.Exec(`
-INSERT INTO file_operations
-(id, artifact_id, artifact_version, artifact_file_id, operation, source_path,
- target_path, source_fingerprint, collision_policy, frozen_render_snapshot,
- frozen_config_snapshot, state, idempotency_key, version, acquisition_id,
- file_ref, postprocessing_plan_id, file_ready_at, file_wall_until,
- file_max_attempts, file_attempt_timeout_seconds)
-VALUES ($1, 'art-' || $1, 1, 'af-' || $1, 'move', $2, $3, '{"sha256":"fp"}'::jsonb,
-        'block', '{}'::jsonb, '{}'::jsonb, $4, $1, 1, 'acq-' || $1, 'file-' || $1,
-        'plan-' || $1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '1 day', 3, 60)`,
-		id, sourcePath, targetPath, state); err != nil {
-		t.Fatalf("seed unfinished file operation %s: %v", id, err)
+INSERT INTO file_manager_operations
+(id, idempotency_key, request_digest, actor, operation, root_key, root_path,
+ target_root_key, target_root_path, source_path, target_path,
+ expected_size_bytes, collision, state, version)
+VALUES ($1, $1, $2, 'web', 'move', 'library', '/library',
+        'library', '/library', $3, $4, 4096, 'block', $5, 1)`,
+		id, strings.Repeat("a", 64), sourcePath, targetPath, state); err != nil {
+		t.Fatalf("seed unfinished owner %s: %v", id, err)
+	}
+}
+
+// seedDecidedGeneration seeds an observation generation and marks it decided,
+// which is what the real calibration half does for every row
+// (internal/filemaintenance/calibration.go). seedCompletedGeneration alone
+// leaves `disposition` NULL on purpose — it models the scan's observation half
+// — so a test that needs the row to count as the newest DECIDED generation
+// must say so explicitly instead of relying on a NULL it did not intend.
+func seedDecidedGeneration(t *testing.T, db *sql.DB, animeID string, generation int64, paths map[string]string, disposition string) {
+	t.Helper()
+	seedCompletedGeneration(t, db, animeID, generation, paths)
+	if _, err := db.Exec(`
+UPDATE reconciliation_files SET disposition = $3
+ WHERE managed_anime_id = $1 AND generation = $2`, animeID, generation, disposition); err != nil {
+		t.Fatalf("decide generation %d: %v", generation, err)
 	}
 }
 
@@ -555,8 +598,24 @@ func TestRecoverAnimeFileApplicationRefusesNewerGeneration(t *testing.T) {
 	scene := newRecoveryApplicationScene(t)
 	service := scene.service(&staticObserver{files: scene.files})
 
-	// A newer generation lands (a fresh scan decided rows after the read).
-	seedCompletedGeneration(t, scene.db, scene.animeID, scene.generation+1, map[string]string{"/library/Show/other.mkv": "meta:size=1"})
+	// A newer generation lands and is DECIDED (a fresh scan's calibration ran
+	// after the read). It must be decided, not merely observed: the gate reads
+	// the newest generation with disposition IS NOT NULL, so an undecided
+	// generation would leave the read current and this test would be asserting
+	// scan_changed for the wrong reason.
+	seedDecidedGeneration(t, scene.db, scene.animeID, scene.generation+1,
+		map[string]string{"/library/Show/other.mkv": "meta:size=1"}, DispositionPresent)
+
+	// Prove the gate can actually see the newer generation before asserting the
+	// refusal: otherwise a fixture mistake would hide behind the same reason.
+	latest, _, err := latestCalibratedGeneration(context.Background(), scene.db, scene.animeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if latest != scene.generation+1 {
+		t.Fatalf("latest decided generation = %d, want %d: the fixture did not land a decided generation",
+			latest, scene.generation+1)
+	}
 	scene.assertRefusal(t, service, RecoveryReasonScanChanged)
 }
 
@@ -643,7 +702,7 @@ func TestRecoverAnimeFileApplicationRefusesUnfinishedOwner(t *testing.T) {
 	service := scene.service(&staticObserver{files: scene.files})
 
 	// An unfinished file operation still holds the target path.
-	seedUnfinishedFileOperation(t, scene.db, "op-unfinished", "running", "/library/Show/raw ep1.mkv", scene.candidate.TargetPath)
+	seedUnfinishedOwner(t, scene.db, "op-unfinished", "running", "/library/Show/raw ep1.mkv", scene.candidate.TargetPath)
 	scene.assertRefusal(t, service, RecoveryReasonTargetOccupied)
 }
 
@@ -653,7 +712,7 @@ func TestRecoverAnimeFileApplicationRefusesOccupiedCompanion(t *testing.T) {
 	scene := newRecoveryApplicationScene(t)
 	service := scene.service(&staticObserver{files: scene.files})
 
-	seedUnfinishedFileOperation(t, scene.db, "op-companion", "pending",
+	seedUnfinishedOwner(t, scene.db, "op-companion", "ready",
 		"/library/Show/raw ep1.zh.ass", scene.candidate.Companions[0].TargetPath)
 	before := scene.snapshot(t)
 	_, err := service.RecoverAnimeFileApplication(context.Background(), scene.animeID, scene.command())
