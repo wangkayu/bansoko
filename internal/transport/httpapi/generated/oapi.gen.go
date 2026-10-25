@@ -8559,7 +8559,7 @@ type TitleTagFacts struct {
 	// Implementation Pinned parser, "reltitle@<commit>".
 	Implementation string `json:"implementation"`
 
-	// Schema reltitle-attrs-v1. The block also freezes the reltitle title and group for the reltitle naming namespace; they are not filter tags and are not listed here.
+	// Schema reltitle-attrs-v1. The block also freezes the reltitle title, group and release version for the reltitle naming namespace; they are not filter tags and are not listed here.
 	Schema string   `json:"schema"`
 	Tags   []string `json:"tags"`
 }

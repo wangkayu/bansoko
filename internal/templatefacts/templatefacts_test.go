@@ -11,10 +11,10 @@ func TestReltitleValuesProjectTitleTagSet(t *testing.T) {
 	set := &acquisitiondomain.TitleTagSet{
 		Schema:    acquisitiondomain.TitleTagSchema,
 		Tags:      []string{"resolution:1080p", "resolution:720p", "source_type:WEBRip", "video_codec:HEVC", "audio_codec:AAC", "container:MKV", "sub_lang:TC", "sub_lang:SC", "sub_flag:hard"},
-		ValueTags: []string{"title:进击的巨人", "group:示例字幕组"},
+		ValueTags: []string{"title:进击的巨人", "group:示例字幕组", "version:v2"},
 	}
 	got := ReltitleValues(set)
-	want := Values{"Title": "进击的巨人", "Subgroup": "示例字幕组", "Resolution": "1080p+720p", "Source": "WEBRip", "Codec": "HEVC", "SubLang": "SC+TC", "SubFlag": "hard"}
+	want := Values{"Title": "进击的巨人", "Subgroup": "示例字幕组", "Version": "v2", "Resolution": "1080p+720p", "Source": "WEBRip", "Codec": "HEVC", "SubLang": "SC+TC", "SubFlag": "hard"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ReltitleValues = %#v, want %#v", got, want)
 	}
@@ -26,9 +26,9 @@ func TestReltitleValuesProjectTitleTagSet(t *testing.T) {
 	}
 }
 
-func TestReltitleUnknownSchemaHasNoTitleOrSubgroup(t *testing.T) {
-	// A set of an unknown schema is not trusted for ValueTags: even a stray name tag is not read.
-	set := &acquisitiondomain.TitleTagSet{Schema: "reltitle-attrs-v0", Tags: []string{"resolution:1080p"}, ValueTags: []string{"title:Leaked"}}
+func TestReltitleUnknownSchemaHasNoValueTags(t *testing.T) {
+	// A set of an unknown schema is not trusted for ValueTags: even a stray value tag is not read.
+	set := &acquisitiondomain.TitleTagSet{Schema: "reltitle-attrs-v0", Tags: []string{"resolution:1080p"}, ValueTags: []string{"title:Leaked", "version:v2"}}
 	got := ReltitleValues(set)
 	if !reflect.DeepEqual(got, Values{"Resolution": "1080p"}) {
 		t.Fatalf("unknown-schema projection = %#v", got)
@@ -128,7 +128,7 @@ func TestFieldKeysAreTemplateIdentifiers(t *testing.T) {
 			seen[field.Key] = true
 		}
 	}
-	if len(ReltitleFields) != 7 || len(AniBTTagFields) != 5 {
+	if len(ReltitleFields) != 8 || len(AniBTTagFields) != 5 {
 		t.Fatalf("field counts = %d/%d", len(ReltitleFields), len(AniBTTagFields))
 	}
 }

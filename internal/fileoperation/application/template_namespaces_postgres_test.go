@@ -39,9 +39,9 @@ func TestFilePlanRendersFrozenTemplateNamespaces(t *testing.T) {
 	}{
 		{
 			name:        "frozen_values",
-			sourceFacts: `{"group_name":"Test Group","identity_kind":"guid","identity_value":"file-test","anibt":{"schema":"anibt-rss-1.0","tags":["language:CHT","language:CHS","tag:HEVC","tag:10bit"]},"title_tags":{"schema":"reltitle-attrs-v1","implementation":"reltitle@ca671af","tags":["resolution:1080p","sub_lang:SC"],"value_tags":["title:Frozen Title","group:Frozen Group"]}}`,
-			template:    "[${rt.subgroup}] ${rt.title} [${rt.sub_lang}][${anibt.language}][${anibt.tag}].${file.ext}",
-			wantBase:    "[Frozen Group] Frozen Title [SC][CHS+CHT][10bit+HEVC].mkv",
+			sourceFacts: `{"group_name":"Test Group","identity_kind":"guid","identity_value":"file-test","anibt":{"schema":"anibt-rss-1.0","tags":["language:CHT","language:CHS","tag:HEVC","tag:10bit"]},"title_tags":{"schema":"reltitle-attrs-v1","implementation":"reltitle@ca671af","tags":["resolution:1080p","sub_lang:SC"],"value_tags":["title:Frozen Title","group:Frozen Group","version:v2"]}}`,
+			template:    "[${rt.subgroup}] ${rt.title} ${rt.version} [${rt.sub_lang}][${anibt.language}][${anibt.tag}].${file.ext}",
+			wantBase:    "[Frozen Group] Frozen Title v2 [SC][CHS+CHT][10bit+HEVC].mkv",
 		},
 		{
 			name:        "non_anibt_release",

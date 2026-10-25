@@ -2,8 +2,9 @@
 // the vendored reltitle parser (third_party/reltitle). It only projects
 // non-episode canonical attributes ("type:value"); episode, season and every
 // other identity-bearing output stay out, so the title row of tag_filters can
-// never influence episode identity. Title and group are projected separately
-// (ValueTags) for the template namespace and are never filter tags.
+// never influence episode identity. Title, group and release version are
+// projected separately (ValueTags) for the template namespace and are never
+// filter tags.
 package reltitletags
 
 import (
@@ -280,12 +281,13 @@ var valueDimensions = []struct {
 }{
 	{reltitlemodel.AttrTitle, acquisitiondomain.TitleValueDimensionTitle},
 	{reltitlemodel.AttrGroup, acquisitiondomain.TitleValueDimensionGroup},
+	{reltitlemodel.AttrVersion, acquisitiondomain.TitleValueDimensionVersion},
 }
 
-// projectValues freezes the template-only values "title:<v>" and
-// "group:<v>": title before group, each dimension's values de-duplicated
-// (case-insensitively) and sorted. An empty, oversized or multi-line value is
-// dropped, so it reads as missing rather than truncated.
+// projectValues freezes the template-only values "title:<v>", "group:<v>"
+// and "version:<v>": title before group before version, each dimension's values
+// de-duplicated (case-insensitively) and sorted. An empty, oversized or
+// multi-line value is dropped, so it reads as missing rather than truncated.
 func projectValues(attributes []reltitlemodel.Attribute) []string {
 	tags := []string{}
 	for _, name := range valueDimensions {

@@ -29,7 +29,7 @@ var varsInputSystemPaths = []string{
 // them were frozen: a stored input may lack them (it keeps its exact canonical
 // form and digest), while every new input carries them. Keyed by root, then
 // leaf.
-var VarsInputOptionalMembers = map[string][]string{"anime": {"season"}}
+var VarsInputOptionalMembers = map[string][]string{"anime": {"season"}, "rt": {"version"}}
 
 // VarsInputFacts returns the registered facts of the Vars v2 input, in a
 // stable order: the system facts, then rt.*, then anibt.*.

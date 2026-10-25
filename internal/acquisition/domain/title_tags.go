@@ -16,8 +16,8 @@ type TitleTagSet struct {
 	// Tags are "type:value", de-duplicated, sorted.
 	Tags []string
 	// ValueTags are reltitle values frozen for the template value namespace
-	// only ("title:<v>", "group:<v>"). They are never filter tags and never
-	// episode identity.
+	// only ("title:<v>", "group:<v>", "version:<v>"). They are never filter
+	// tags and never episode identity.
 	ValueTags []string
 	// Diagnostic explains an empty set (parser unavailable or failed); empty
 	// when the parse succeeded, even if it found no tag.
@@ -30,8 +30,9 @@ const TitleTagSchema = "reltitle-attrs-v1"
 
 // Title tag value dimensions (ValueTags).
 const (
-	TitleValueDimensionTitle = "title"
-	TitleValueDimensionGroup = "group"
+	TitleValueDimensionTitle   = "title"
+	TitleValueDimensionGroup   = "group"
+	TitleValueDimensionVersion = "version"
 )
 
 // Title tag diagnostics. None of them fails the release; an empty set fails a

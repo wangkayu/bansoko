@@ -4572,7 +4572,7 @@ export interface components {
         };
         /** @description The title-parse tags frozen when the release was observed, with the parser that read them. An empty list is a real fact; diagnostic (reltitle_unavailable, reltitle_parse_failed) explains a failed read. */
         TitleTagFacts: {
-            /** @description reltitle-attrs-v1. The block also freezes the reltitle title and group for the reltitle naming namespace; they are not filter tags and are not listed here. */
+            /** @description reltitle-attrs-v1. The block also freezes the reltitle title, group and release version for the reltitle naming namespace; they are not filter tags and are not listed here. */
             schema: string;
             /** @description Pinned parser, "reltitle@<commit>". */
             implementation: string;

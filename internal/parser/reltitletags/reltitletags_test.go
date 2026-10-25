@@ -48,6 +48,9 @@ func TestExtractNeverCarriesEpisodeIdentity(t *testing.T) {
 			t.Fatalf("episode/identity attribute leaked: %v", got.Tags)
 		}
 	}
+	if want := []string{"title:Show", "group:Group", "version:v2"}; !reflect.DeepEqual(got.ValueTags, want) {
+		t.Fatalf("value tags = %v, want %v", got.ValueTags, want)
+	}
 }
 
 func TestExtractIsDeterministicAndBounded(t *testing.T) {
@@ -93,7 +96,7 @@ func TestImplementationVersionMatchesVendoredSource(t *testing.T) {
 	}
 }
 
-func TestExtractFreezesTitleAndGroupAsValueTags(t *testing.T) {
+func TestExtractFreezesTitleGroupAndVersionAsValueTags(t *testing.T) {
 	got := Extract("[SampleGroup] Sample Title - 03 [1080p][CHS].mp4")
 	if got.Schema != acquisitiondomain.TitleTagSchema {
 		t.Fatalf("schema = %q", got.Schema)
@@ -107,8 +110,8 @@ func TestExtractFreezesTitleAndGroupAsValueTags(t *testing.T) {
 		}
 	}
 	for _, tag := range got.ValueTags {
-		if dimension, _, _ := acquisitiondomain.SplitTag(tag); dimension != "title" && dimension != "group" {
-			t.Fatalf("non-name attribute in name tags: %v", got.ValueTags)
+		if dimension, _, _ := acquisitiondomain.SplitTag(tag); dimension != "title" && dimension != "group" && dimension != "version" {
+			t.Fatalf("non-template attribute in value tags: %v", got.ValueTags)
 		}
 	}
 	if blank := Extract("  "); len(blank.ValueTags) != 0 {
