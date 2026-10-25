@@ -113,6 +113,11 @@ type SelectedSeed struct {
 	// predate the durable input snapshot, so a new read model must not enter
 	// that hash. The snapshot wire value below carries it instead.
 	AniBTTags *acquisitiondomain.StoredAniBTTags `json:"-"`
+	// SnapshotKind names the kind of snapshot the seed belongs to. It is written
+	// by the server (never read from a request body) so replay identity is
+	// unchanged, and it is what lets a human adapter prove the seed came from a
+	// keyword search instead of a feed.
+	SnapshotKind string `json:"-"`
 }
 
 const maxOneShotInputSnapshotBytes = 262144
@@ -381,11 +386,57 @@ func (s *Service) readPersistedSeedPayload(ctx context.Context, seed SelectedSee
 	if s.seedPreviews == nil {
 		return animeapplication.TorrentPayload{}, &apperrors.Business{Status: 503, Code: "SEED_PREVIEW_UNAVAILABLE", Message: "The persisted provider seed source is not configured."}
 	}
-	stored, err := s.seedPreviews.ReadSeedPayload(ctx, string(seed.Provider), seed.ProviderEntryRef, seed.ProviderGroupRef, animecatalogdomain.ProviderRSSPreviewIdentity{
+	identity := animecatalogdomain.ProviderRSSPreviewIdentity{
 		SnapshotID:      seed.SnapshotID,
 		SnapshotVersion: seed.SnapshotVersion,
 		ContentHash:     seed.SnapshotContentHash,
-	}, seed.StableSeedKey)
+	}
+	var stored animeapplication.SeedPayload
+	var err error
+	if seed.SnapshotKind == string(animecatalogdomain.FeedSnapshotKindSearch) {
+		// A search seed's bytes are reached only through the search snapshot the
+		// caller expanded from; a source without the search read fails closed.
+		searchSource, ok := s.seedPreviews.(animeapplication.SearchSeedPreviewSource)
+		if !ok {
+			return animeapplication.TorrentPayload{}, &apperrors.Business{Status: 503, Code: "SEED_PREVIEW_UNAVAILABLE", Message: "Keyword search snapshots are not served by this server."}
+		}
+		snapshot, fetchErr := searchSource.FetchSearchSnapshotByID(ctx, string(seed.Provider), seed.ProviderEntryRef, seed.ProviderGroupRef, identity)
+		if fetchErr != nil {
+			if errors.Is(fetchErr, animeapplication.ErrProviderFeedSnapshotRefreshRequired) {
+				return animeapplication.TorrentPayload{}, &apperrors.Business{Status: 422, Code: "SEED_PREVIEW_STALE", Message: animeapplication.SafeReason(fetchErr.Error())}
+			}
+			return animeapplication.TorrentPayload{}, fetchErr
+		}
+		var fact *animeapplication.SeedPreviewFact
+		for index := range snapshot.Seeds {
+			if snapshot.Seeds[index].StableSeedKey == seed.StableSeedKey {
+				fact = &snapshot.Seeds[index]
+				break
+			}
+		}
+		if fact == nil {
+			return animeapplication.TorrentPayload{}, &apperrors.Business{Status: 422, Code: "SEED_PREVIEW_STALE", Message: "所选种子已不在当前检索快照中，请重新检索后再试。"}
+		}
+		payloadSource, ok := s.seedPreviews.(animeapplication.SearchSeedPayloadSource)
+		if !ok {
+			return animeapplication.TorrentPayload{}, &apperrors.Business{Status: 503, Code: "SEED_PREVIEW_UNAVAILABLE", Message: "Keyword search seed payloads are not served by this server."}
+		}
+		payloadSeed, payloadErr := payloadSource.ReadSearchSeedPayload(ctx, string(seed.Provider), seed.ProviderEntryRef, seed.ProviderGroupRef, identity, seed.StableSeedKey)
+		if payloadErr != nil {
+			stored, err = animeapplication.SeedPayload{}, payloadErr
+		} else {
+			digest := ""
+			if payloadSeed.PayloadDigest != nil {
+				digest = *payloadSeed.PayloadDigest
+			}
+			stored = animeapplication.SeedPayload{Bytes: payloadSeed.Payload, PayloadDigest: digest, StableSeedKey: payloadSeed.StableSeedKey, Manifest: payloadSeed.Manifest}
+			if payloadSeed.TorrentFilename != nil {
+				stored.TorrentFilename = *payloadSeed.TorrentFilename
+			}
+		}
+	} else {
+		stored, err = s.seedPreviews.ReadSeedPayload(ctx, string(seed.Provider), seed.ProviderEntryRef, seed.ProviderGroupRef, identity, seed.StableSeedKey)
+	}
 	if err != nil {
 		if errors.Is(err, animeapplication.ErrProviderFeedSnapshotRefreshRequired) {
 			return animeapplication.TorrentPayload{}, &apperrors.Business{Status: 422, Code: "SEED_PREVIEW_STALE", Message: animeapplication.SafeReason(err.Error())}
@@ -797,9 +848,23 @@ FOR UPDATE`, input.CandidateID).Scan(&candidateCurrentRevision, &candidateCurren
 	// so the frozen source facts and the rendered names agree. It resolves
 	// before the first write: a seed whose group has no recorded name refuses
 	// the command without creating any owner row.
-	groupName, err := sourceGroupDisplayName(ctx, tx, draft, seed)
-	if err != nil {
-		return OneShotAdmissionResult{}, err
+	var groupName string
+	if seed.SnapshotKind == string(animecatalogdomain.FeedSnapshotKindSearch) {
+		// A keyword search seed has no catalog entry and no provider group, so
+		// there is no recorded group observation to read a display name from. The
+		// name comes from the one source that can state it for such a seed: the
+		// selected release title's own group marker, read by the pinned title
+		// parser. It is a display fact, never a group identity. When the title has
+		// no marker the placeholder records the same stable "unknown" label every
+		// other group-less source uses, instead of inventing a name or reusing the
+		// search-scope digest.
+		groupName = searchSeedGroupDisplayName(seed)
+	} else {
+		var err error
+		groupName, err = sourceGroupDisplayName(ctx, tx, draft, seed)
+		if err != nil {
+			return OneShotAdmissionResult{}, err
+		}
 	}
 
 	animeID := uuid.NewString()
@@ -1502,7 +1567,19 @@ func (s *Service) verifyHumanSeedPreviewBinding(ctx context.Context, seed Select
 		return animeapplication.SeedPreviewFact{}, &apperrors.Business{Status: 422, Code: "SEED_PREVIEW_STALE", Message: "所选种子缺少服务端预览快照身份，请重新打开「查看种子」后再试。"}
 	}
 	identity := animecatalogdomain.ProviderRSSPreviewIdentity{SnapshotID: seed.SnapshotID, SnapshotVersion: seed.SnapshotVersion, ContentHash: seed.SnapshotContentHash}
-	snapshot, err := s.seedPreviews.FetchEntryGroupSnapshotByID(ctx, string(seed.Provider), seed.ProviderEntryRef, seed.ProviderGroupRef, identity)
+	var snapshot animeapplication.SeedPreviewSnapshot
+	var err error
+	if seed.SnapshotKind == string(animecatalogdomain.FeedSnapshotKindSearch) {
+		// A search seed is proven against its search snapshot, never against a
+		// feed: the source must serve search snapshots and the row must be one.
+		searchSource, ok := s.seedPreviews.(animeapplication.SearchSeedPreviewSource)
+		if !ok {
+			return animeapplication.SeedPreviewFact{}, &apperrors.Business{Status: 503, Code: "SEED_PREVIEW_UNAVAILABLE", Message: "Keyword search snapshots are not served by this server."}
+		}
+		snapshot, err = searchSource.FetchSearchSnapshotByID(ctx, string(seed.Provider), seed.ProviderEntryRef, seed.ProviderGroupRef, identity)
+	} else {
+		snapshot, err = s.seedPreviews.FetchEntryGroupSnapshotByID(ctx, string(seed.Provider), seed.ProviderEntryRef, seed.ProviderGroupRef, identity)
+	}
 	if err != nil {
 		if errors.Is(err, animeapplication.ErrProviderFeedSnapshotRefreshRequired) {
 			return animeapplication.SeedPreviewFact{}, &apperrors.Business{Status: 422, Code: "SEED_PREVIEW_STALE", Message: "所选种子已不在当前预览快照中，请重新打开「查看种子」后再试。"}
@@ -1588,6 +1665,17 @@ func validateAcquireSeedCaller(caller AcquireSeedCaller, draft animedomain.Anime
 	case AcquireSeedCallerHuman:
 		if draft.Origin == animedomain.SubscriptionOriginCustom {
 			return validateHumanCustomSeedBinding(draft, seed, input)
+		}
+		if seed.SnapshotKind == string(animecatalogdomain.FeedSnapshotKindSearch) {
+			// The narrow search exception: a keyword search has no catalog entry to
+			// bind a draft to, so the search one-shot carries a complete
+			// origin=oneshot draft of its own (the form the server already accepts
+			// for an agent draft, here reached by a human capability) plus the exact
+			// search snapshot. Everything after this check still runs: the seed's
+			// exact snapshot identity, its strong content identity and the payload
+			// verification. A search seed can never be admitted against a
+			// candidate revision, and a non-search seed can never use this form.
+			return validateHumanSearchSeedBinding(draft, seed, input)
 		}
 		if draft.Origin == animedomain.SubscriptionOriginOneshot {
 			return &apperrors.Business{Status: 422, Code: "ONE_SHOT_CALLER_INVALID", Message: "A human one-shot request carries a custom or discovery-provider draft; an origin=oneshot draft is the agent form."}
@@ -1751,6 +1839,9 @@ func normalizeDigestHex(value string) string {
 // accepted at the boundary for compatibility but is never advertised in the
 // public contract; an empty digest clears the optional identity.
 func canonicalSelectedSeed(seed SelectedSeed) SelectedSeed {
+	// Every entry path freezes the same routing fact from the refs; a locator-form
+	// request and its reference form therefore cannot diverge before admission.
+	seed.SnapshotKind = string(catalogapplication.SnapshotKindFromRefs(seed.ProviderEntryRef, seed.ProviderGroupRef))
 	if seed.ExpectedPayloadDigest == nil {
 		return seed
 	}
@@ -2012,4 +2103,36 @@ func buildOneShotFeedItem(payload animeapplication.TorrentPayload, seed Selected
 		Provider:  string(seed.Provider),
 		AniBTTags: acquisitiondomain.AniBTTagSetFromStored(seed.AniBTTags),
 	}
+}
+
+// validateHumanSearchSeedBinding is the narrow, search-only exception to the
+// human caller matrix. A keyword search snapshot has no catalog entry and no
+// provider group, so no existing draft binding can describe it. The exception
+// admits exactly one shape:
+//
+//   - the seed names a `search` snapshot (never a feed or custom one),
+//   - the draft is a complete origin=oneshot draft captured as current_input
+//     (never a saved candidate revision), and
+//   - the seed's two refs are the derived hashed search scope, not an entry or a
+//     group.
+//
+// It does not relax the provider or custom rules for any other seed, does not
+// give a human the agent authorization form, and leaves the exact snapshot
+// identity, the strong content identity, the expansion and the payload
+// verification afterwards untouched.
+func validateHumanSearchSeedBinding(draft animedomain.AnimeDraft, seed SelectedSeed, input AcquireSeedInput) error {
+	if draft.Origin != animedomain.SubscriptionOriginOneshot {
+		return &apperrors.Business{Status: 422, Code: "ONE_SHOT_CALLER_INVALID", Message: "A keyword search one-shot requires the complete origin=oneshot draft of the selected release."}
+	}
+	if !input.isCurrentInput() {
+		return &apperrors.Business{Status: 422, Code: "ONE_SHOT_CALLER_INVALID", Message: "A keyword search one-shot is a current_input admission; it cannot bind to a saved candidate revision."}
+	}
+	if seed.Provider != animedomain.ProviderKindAnibt && seed.Provider != animedomain.ProviderKindMikan {
+		return &apperrors.Business{Status: 422, Code: "ONE_SHOT_CALLER_INVALID", Message: "A keyword search seed names a discovery provider."}
+	}
+	if !strings.HasPrefix(seed.ProviderEntryRef, animecatalogdomain.SearchSnapshotScopePrefix) ||
+		!strings.HasPrefix(seed.ProviderGroupRef, animecatalogdomain.SearchSnapshotQueryPrefix) {
+		return &apperrors.Business{Status: 422, Code: "ONE_SHOT_CALLER_INVALID", Message: "A keyword search seed carries the derived search scope of its snapshot."}
+	}
+	return nil
 }

@@ -8,6 +8,7 @@ import (
 	animeapplication "bansoko/internal/anime/application"
 	animedomain "bansoko/internal/anime/domain"
 	"bansoko/internal/apperrors"
+	catalogapplication "bansoko/internal/catalog/application"
 	animecatalogdomain "bansoko/internal/catalog/domain"
 )
 
@@ -51,7 +52,23 @@ func (s *Service) DownloadSnapshotSeed(ctx context.Context, input SnapshotSeedDo
 	identity := animecatalogdomain.ProviderRSSPreviewIdentity{
 		SnapshotID: input.SnapshotID, SnapshotVersion: input.SnapshotVersion, ContentHash: input.ContentHash,
 	}
-	snapshot, err := s.seedPreviews.FetchEntryGroupSnapshotByID(ctx, input.Provider, input.ProviderEntryRef, input.ProviderGroupRef, identity)
+	// The kind is derived from the refs the caller named and is only a routing
+	// hint: the source proves the persisted row's own kind, so a forged ref pair
+	// cannot reach another kind's snapshot.
+	kind := catalogapplication.SnapshotKindFromRefs(input.ProviderEntryRef, input.ProviderGroupRef)
+	var snapshot animeapplication.SeedPreviewSnapshot
+	var err error
+	if kind == animecatalogdomain.FeedSnapshotKindSearch {
+		// A keyword search snapshot is read through the search read; a source
+		// without it fails closed instead of falling back to a feed snapshot.
+		searchSource, ok := s.seedPreviews.(animeapplication.SearchSeedPreviewSource)
+		if !ok {
+			return OneShotAdmissionResult{}, &apperrors.Business{Status: 503, Code: "SEED_PREVIEW_UNAVAILABLE", Message: "Keyword search snapshots are not served by this server."}
+		}
+		snapshot, err = searchSource.FetchSearchSnapshotByID(ctx, input.Provider, input.ProviderEntryRef, input.ProviderGroupRef, identity)
+	} else {
+		snapshot, err = s.seedPreviews.FetchEntryGroupSnapshotByID(ctx, input.Provider, input.ProviderEntryRef, input.ProviderGroupRef, identity)
+	}
 	if err != nil {
 		if errors.Is(err, animeapplication.ErrProviderFeedSnapshotRefreshRequired) {
 			return OneShotAdmissionResult{}, &apperrors.Business{Status: 422, Code: "SEED_PREVIEW_STALE", Message: animeapplication.SafeReason(err.Error())}
@@ -82,6 +99,7 @@ func (s *Service) DownloadSnapshotSeed(ctx context.Context, input SnapshotSeedDo
 		SnapshotVersion:     input.SnapshotVersion,
 		SnapshotContentHash: input.ContentHash,
 		StableSeedKey:       input.StableSeedKey,
+		SnapshotKind:        string(kind),
 	}, *fact)
 
 	admission := AcquireSeedInput{

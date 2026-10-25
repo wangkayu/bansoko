@@ -1,6 +1,7 @@
 package persistence
 
 import (
+	"database/sql"
 	"encoding/json"
 	"time"
 
@@ -58,9 +59,21 @@ type feedFileDeclaration struct {
 	Language   *string `json:"language"`
 }
 
+// publicationSnapshotKind is the kind written for one publication. An empty
+// kind is the ordinary provider feed: every snapshot written before the
+// column existed was a published feed or a custom feed, and those callers
+// never set it.
+func publicationSnapshotKind(input catalogdomain.ProviderFeedSnapshotWrite) string {
+	return string(input.NormalizedKind())
+}
+
 func feedPublication(input catalogdomain.ProviderFeedSnapshotWrite, version int64) (generated.PublishProviderFeedSnapshotParams, error) {
 	params := generated.PublishProviderFeedSnapshotParams{ID: uuid.NewString(), Provider: input.Provider, ProviderEntryRef: input.ProviderEntryRef,
-		ProviderGroupRef: input.ProviderGroupRef, ExpectedVersion: version, FetchedAt: input.FetchedAt, ContentHash: input.ContentHash, Payloads: make([][]byte, 0)}
+		ProviderGroupRef: input.ProviderGroupRef, ExpectedVersion: version, FetchedAt: input.FetchedAt, ContentHash: input.ContentHash, Payloads: make([][]byte, 0),
+		SnapshotKind: publicationSnapshotKind(input),
+		SearchParserVersion: sql.NullString{
+			String: input.SearchParserVersion, Valid: input.SearchParserVersion != "",
+		}}
 	seeds := make([]feedSeedDeclaration, 0, len(input.Seeds))
 	// One capacity pass keeps Files non-nil (an absent manifest marshals as an
 	// empty array, never null) without reading a nil manifest.

@@ -68,6 +68,61 @@ func (s ProviderFeedSnapshot) VerifyIdentity(identity ProviderRSSPreviewIdentity
 	return nil
 }
 
+// FeedSnapshotKind states what one persisted feed snapshot authorizes.
+//
+//   - provider_feed is the published feed of one provider catalog entry and
+//     group: the subscription and saved-revision surface.
+//   - custom is a custom source's frozen feed: the saved-revision and
+//     pending-subscription surface.
+//   - search is one keyword search over one provider: a short-lived,
+//     non-subscribable authorization snapshot. It is never a group, a
+//     subscription source, a discovery result or a saved-revision custom feed,
+//     and every exact read, expansion, download and admission checks it.
+//
+// The kind is deliberately outside the canonical content hash: every snapshot
+// published before the column existed is a provider or custom feed, and
+// folding the kind in would make all of them fail closed.
+type FeedSnapshotKind string
+
+const (
+	FeedSnapshotKindProviderFeed FeedSnapshotKind = "provider_feed"
+	FeedSnapshotKindCustom       FeedSnapshotKind = "custom"
+	FeedSnapshotKindSearch       FeedSnapshotKind = "search"
+)
+
+// Prefixes of the two refs a search snapshot carries. The scope ref binds the
+// provider, the resolved upstream base and the normalized query, so two
+// providers, two configured endpoints or two queries never share a snapshot;
+// the query ref binds only the normalized query and is what the read model may
+// show. Neither can be mistaken for a provider entry ref or a group ref.
+const (
+	SearchSnapshotScopePrefix = "search-scope:"
+	SearchSnapshotQueryPrefix = "search-query:"
+)
+
+func (k FeedSnapshotKind) valid() bool {
+	switch k {
+	case FeedSnapshotKindProviderFeed, FeedSnapshotKindCustom, FeedSnapshotKindSearch:
+		return true
+	default:
+		return false
+	}
+}
+
+// ValidateSearchSnapshotRef checks one search scope or query ref in isolation.
+func ValidateSearchSnapshotRef(value, prefix string) error {
+	if prefix != SearchSnapshotScopePrefix && prefix != SearchSnapshotQueryPrefix {
+		return errors.New("unsupported search snapshot reference prefix")
+	}
+	if len(value) != len(prefix)+64 || !strings.HasPrefix(value, prefix) {
+		return fmt.Errorf("search snapshot reference must be %s<64 lowercase hex>", prefix)
+	}
+	if _, err := hex.DecodeString(value[len(prefix):]); err != nil {
+		return fmt.Errorf("search snapshot reference must be %s<64 lowercase hex>", prefix)
+	}
+	return nil
+}
+
 type ProviderFeedSnapshotSeed struct {
 	StableSeedKey  string
 	Locator        string
@@ -110,14 +165,34 @@ type ProviderFeedSnapshotWrite struct {
 	Provider         string
 	ProviderEntryRef string
 	ProviderGroupRef string
-	FetchedAt        time.Time
-	FreshUntil       time.Time
-	ContentHash      string
-	HashSchema       string
+	// SnapshotKind is the authorization kind of this write. An empty value is
+	// the ordinary provider feed (or the custom feed for provider="custom"),
+	// so every pre-existing caller keeps its meaning unchanged.
+	SnapshotKind FeedSnapshotKind
+	// SearchParserVersion is the signed-in provider parser that produced a
+	// search snapshot. It is empty for feed/custom writes and immutable evidence
+	// for search reads, including reads after the original fetch response.
+	SearchParserVersion string
+	FetchedAt           time.Time
+	FreshUntil          time.Time
+	ContentHash         string
+	HashSchema          string
 	// ProjectionSchema names the file-projection schema every available seed's
 	// manifest was derived with. It is empty for a pre-v3 write.
 	ProjectionSchema string
 	Seeds            []ProviderFeedSnapshotSeed
+}
+
+// NormalizedKind is the single reading of an empty SnapshotKind: an omitted
+// kind names the provider feed, or the custom feed for a custom provider.
+func (s ProviderFeedSnapshotWrite) NormalizedKind() FeedSnapshotKind {
+	if s.SnapshotKind != "" {
+		return s.SnapshotKind
+	}
+	if s.Provider == "custom" {
+		return FeedSnapshotKindCustom
+	}
+	return FeedSnapshotKindProviderFeed
 }
 
 type ProviderFeedSnapshot struct {
@@ -128,10 +203,17 @@ type ProviderFeedSnapshot struct {
 	Version          int64
 	FetchedAt        time.Time
 	FreshUntil       time.Time
+	RetentionUntil   time.Time
 	ContentHash      string
 	// HashSchema names the canonical content-hash schema the stored hash used;
 	// it is always ProviderFeedSnapshotContentHashSchema.
 	HashSchema string
+	// SnapshotKind is the authorization kind this persisted row states. It is
+	// read from the row, never accepted from a caller.
+	SnapshotKind FeedSnapshotKind
+	// SearchParserVersion is persisted only for search snapshots and is returned
+	// by every exact read as parser evidence.
+	SearchParserVersion string
 	// ProjectionSchema names the file-projection schema the stored manifests
 	// were derived with.
 	ProjectionSchema string
@@ -156,6 +238,22 @@ func (s ProviderFeedSnapshot) Identity() ProviderRSSPreviewIdentity {
 	return ProviderRSSPreviewIdentity{SnapshotID: s.ID, SnapshotVersion: s.Version, ContentHash: s.ContentHash}
 }
 
+// VerifyKind proves the persisted snapshot is the kind the caller's use case is
+// allowed to act on. A feed read, a search read, an expansion, a download and a
+// one-shot admission all name the kind they require, so a search row can never
+// serve a subscription surface and a subscription row can never be used as a
+// search authorization. A mismatch is an identity mismatch, never a silent
+// substitution.
+func (s ProviderFeedSnapshot) VerifyKind(want FeedSnapshotKind) error {
+	if !want.valid() {
+		return fmt.Errorf("%w: unsupported required snapshot kind %q", ErrProviderFeedSnapshotIdentityMismatch, want)
+	}
+	if s.SnapshotKind != want {
+		return fmt.Errorf("%w: persisted snapshot %s is %q, not %q", ErrProviderFeedSnapshotIdentityMismatch, s.ID, s.SnapshotKind, want)
+	}
+	return nil
+}
+
 func validCustomSnapshotRef(value, prefix string) bool {
 	if len(value) != len(prefix)+64 || !strings.HasPrefix(value, prefix) {
 		return false
@@ -178,9 +276,46 @@ func (s ProviderFeedSnapshotWrite) Validate() error {
 	if strings.TrimSpace(s.ProviderGroupRef) == "" || len(s.ProviderGroupRef) > 256 {
 		return errors.New("provider feed snapshot group reference is required and bounded")
 	}
-	if s.Provider == "custom" {
+	// The kind decides which scope shape is legal, and no caller can widen it:
+	// a search write carries the two derived hashed refs and nothing shaped like a
+	// provider entry or group, while a feed write does the opposite.
+	kind := s.NormalizedKind()
+	if !kind.valid() {
+		return fmt.Errorf("unsupported feed snapshot kind %q", kind)
+	}
+	if kind != FeedSnapshotKindSearch && s.SearchParserVersion != "" {
+		return errors.New("only a search snapshot carries a search parser version")
+	}
+	switch kind {
+	case FeedSnapshotKindCustom:
+		if s.Provider != "custom" {
+			return errors.New("a custom snapshot requires the custom provider")
+		}
 		if !validCustomSnapshotRef(s.ProviderEntryRef, "custom-source:") || !validCustomSnapshotRef(s.ProviderGroupRef, "custom-group:") {
 			return errors.New("custom snapshot requires exact hashed source/group scope")
+		}
+	case FeedSnapshotKindSearch:
+		if s.Provider == "custom" {
+			return errors.New("a search snapshot requires a discovery provider")
+		}
+		if s.SearchParserVersion == "" || len(s.SearchParserVersion) > 64 {
+			return errors.New("a search snapshot requires a bounded parser version")
+		}
+		if err := ValidateSearchSnapshotRef(s.ProviderEntryRef, SearchSnapshotScopePrefix); err != nil {
+			return err
+		}
+		if err := ValidateSearchSnapshotRef(s.ProviderGroupRef, SearchSnapshotQueryPrefix); err != nil {
+			return err
+		}
+	case FeedSnapshotKindProviderFeed:
+		if s.Provider == "custom" {
+			return errors.New("a provider feed snapshot requires a discovery provider")
+		}
+		// A published feed names a real catalog entry and group. A ref in the
+		// search namespace is a derived search scope wearing the feed kind, and
+		// accepting it would let one kind address the other's purged/kept rows.
+		if strings.HasPrefix(s.ProviderEntryRef, SearchSnapshotScopePrefix) || strings.HasPrefix(s.ProviderGroupRef, SearchSnapshotQueryPrefix) {
+			return errors.New("a provider feed snapshot must not carry a search snapshot scope")
 		}
 	}
 	if s.FetchedAt.IsZero() || s.FreshUntil.Before(s.FetchedAt) {

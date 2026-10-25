@@ -622,7 +622,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Finite one-shot download of one seed that already exists in an exact persisted provider feed snapshot. The request carries identities only: the locator, title, published time and strong content identity are read server-side from that snapshot. The torrent bytes are the ones the lazy expansion cache holds for that locator: an already expanded seed is served from cache, and a seed that was never expanded is fetched once with the identity verification the expand endpoint applies and then cached, so the download and the row the user reviewed never disagree. A missing, stale, superseded, unexpandable or mismatching snapshot is a typed refresh-required failure with zero owner or qBittorrent writes. */
+        /** @description Finite one-shot download of one seed that already exists in an exact persisted provider feed snapshot. The request carries identities only: the locator, title, published time and strong content identity are read server-side from that snapshot. The torrent bytes are the ones the lazy expansion cache holds for that locator: an already expanded seed is served from cache, and a seed that was never expanded is fetched once with the identity verification the expand endpoint applies and then cached, so the download and the row the user reviewed never disagree. A missing, stale, superseded, unexpandable or mismatching snapshot is a typed refresh-required failure with zero owner or qBittorrent writes. A keyword search snapshot follows the same rules: expansion caches its seed's verified bytes and this endpoint downloads them, so a searched release needs no separate download path. A search admission must be a current_input one-shot carrying the complete draft. */
         post: operations["downloadSnapshotSeed"];
         delete?: never;
         options?: never;
@@ -1574,8 +1574,44 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Side-effect-free provider keyword search. Returns the same catalog item shape as season browsing; no snapshot, WorkItem, or product write is created. Only AniBT exposes a public search endpoint; Mikan returns 422 SEARCH_NOT_SUPPORTED. */
+        /** @description Side-effect-free provider keyword search over programs. Returns the same catalog item shape as season browsing, so a hit goes through the existing discovery, draft and subscription path; no snapshot, WorkItem, or product write is created. Search a program here; search torrents with fetchSeedSearchSnapshot, which persists the short-lived search snapshot a one-shot download needs. */
         get: operations["searchProviderCatalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/catalog/providers/{provider}/seed-search-snapshots:fetch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Run one keyword torrent search against one provider and persist its results as an immutable search snapshot. This is a write because it contacts the upstream and appends a snapshot row, even though it creates no subscription, ownership, group, WorkItem or torrent byte.
+         *     Only the free-text query is caller input: the upstream endpoint, the query normalization and the snapshot scope are derived server-side, so a request can never name a URL, a catalog entry, a group, a seed key or torrent bytes. The two sites are queried the same way (a space-composed query of work, subtitle group, episode and resolution); the first release offers no source-specific or in-result filter.
+         *     The snapshot identity covers the complete result set; `limit` only bounds how many seeds this response renders. A search snapshot is a `search` kind: it is never a group, a subscription source or a saved-revision custom feed, it is not refreshed by provider refresh, and it expires after 24 hours. Expanding and downloading a seed from it uses the same exact-identity endpoints as a feed seed and the same strong-identity verification; there is no second download path. This endpoint is human only and has no MCP tool: it persists a batch of seeds, and the first release does not expose keyword search to agents. */
+        post: operations["fetchSeedSearchSnapshot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/catalog/providers/{provider}/seed-search-snapshots/{snapshot_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read a bounded window of one exact search snapshot identity. It never contacts the provider and never falls back to the latest snapshot: a missing, superseded, stale or differently-kinded snapshot is a typed refresh-required failure. `scope_ref` and `query_ref` are the two derived refs the fetch returned, and they are matched against the persisted row before any seed is rendered. */
+        get: operations["readSeedSearchSnapshot"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2736,7 +2772,7 @@ export interface components {
         ID: string;
         /** Format: int64 */
         Version: number;
-        /** @description One persisted seed to download. Only identities are accepted: the locator, title, published time and strong content identity are read from the named snapshot server-side, so a browser never echoes back the raw source location. A provider=custom seed names the frozen custom-source and custom-group identities of a custom/oneshot draft source's own feed snapshot, so the same second step downloads a custom seed without any new locator ever leaving the server. */
+        /** @description One persisted seed to download. Only identities are accepted: the locator, title, published time and strong content identity are read from the named snapshot server-side, so a browser never echoes back the raw source location. A provider=custom seed names the frozen custom-source and custom-group identities of a custom/oneshot draft source's own feed snapshot, so the same second step downloads a custom seed without any new locator ever leaving the server. A keyword search seed is the same shape: provider_entry_ref/provider_group_ref are the derived search-scope and search-query refs, the server proves the named snapshot is the `search` kind, and the admission must be a current_input one-shot. */
         SnapshotSeedDownloadInput: {
             provider: components["schemas"]["SnapshotSeedProvider"];
             provider_entry_ref: string;
@@ -2751,7 +2787,7 @@ export interface components {
             /** @description The one episode offset of this one-shot. It is written to the one-shot's placeholder RSS link and frozen into the input snapshot and the idempotency request identity; it is never read from an existing subscription, link or the submitted draft. Omitted means 0. Out of range is a 422 OFFSET_OUT_OF_RANGE with zero writes. */
             episode_offset?: number;
         };
-        /** @description One seed of one exact persisted snapshot to expand. It carries identities only, exactly like SnapshotSeedDownloadInput: the stable seed key is the path segment and the locator, title and published identity are read server-side from the snapshot, so expansion can only ever fetch the locator the snapshot already published for that seed. */
+        /** @description One seed of one exact persisted snapshot to expand. It carries identities only, exactly like SnapshotSeedDownloadInput: the stable seed key is the path segment and the locator, title and published identity are read server-side from the snapshot, so expansion can only ever fetch the locator the snapshot already published for that seed. A keyword search seed names its derived search-scope/search-query refs the same way, and the server proves the snapshot's own kind before expanding. */
         SnapshotSeedExpandInput: {
             provider: components["schemas"]["SnapshotSeedProvider"];
             provider_entry_ref: string;
@@ -4883,6 +4919,64 @@ export interface components {
             snapshot_version: components["schemas"]["Version"];
             groups: components["schemas"]["ProviderGroupDiscoveryGroup"][];
         };
+        /** @description One keyword torrent search. Only the free-text query is accepted: the endpoint, the normalization and the snapshot scope are derived server-side, so no URL, entry, group, seed key or torrent byte can be supplied. `limit` bounds the seed window of the response, not the snapshot identity, which still covers the complete result set. */
+        SeedSearchSnapshotInput: {
+            /** @description A space-composed keyword query. Combine the work title with a subtitle group, an episode number or a resolution to narrow the upstream result (for example "示例作品 示例字幕组 03"); both sites match the text themselves and the first release adds no filter. */
+            query: string;
+            /** @description How many seeds this response renders. Both sites answer at most 100 keyword results, so a larger value is clamped rather than promising a wider window. */
+            limit?: number;
+        };
+        SeedSearchSnapshotSeed: {
+            /** @description Stable identity within this search snapshot. */
+            stable_seed_key: string;
+            title: string;
+            /** Format: date-time */
+            published_at?: string | null;
+            /** @description Torrent download URL. It can embed a credential, so it stays a display fact for the caller that fetched the snapshot; an expand or download names the snapshot identity plus stable_seed_key instead and the server resolves the locator itself. */
+            download_url: string;
+            /** Format: int64 */
+            size_bytes?: number | null;
+            /** @description Content identity the provider published for this seed, when it published one. A search row without it is expanded and cached like a feed row, and the expanded torrent's own hash becomes the identity. */
+            info_hash?: string | null;
+            expected_payload_digest?: string | null;
+            /** @enum {string} */
+            torrent_state: "available" | "unavailable" | "not_applicable";
+            /** @description Subtitle group name parsed from the release title for display only. It is never a provider group identity and never a subscription or download input. */
+            group_name?: string | null;
+            /** @description Resolution parsed from the release title for display only. */
+            resolution?: string | null;
+        };
+        /** @description One immutable keyword search snapshot and a bounded window of its seeds. `total_seeds` counts the complete result set the snapshot identity covers; `seeds` is the window this response renders. A search snapshot is short-lived (24 hours), is never a group or a subscription source, and is refreshed only by fetching the same query again. */
+        SeedSearchSnapshotView: {
+            /** @enum {string} */
+            provider: "anibt" | "mikan";
+            scope_ref: string;
+            query_ref: string;
+            /** @description The normalized query, echoed by the fetch that ran it. A later read does not echo it: the query text is not persisted, only its digest. */
+            query?: string | null;
+            snapshot_id: components["schemas"]["ID"];
+            snapshot_version: components["schemas"]["Version"];
+            content_hash: string;
+            /** Format: date-time */
+            fetched_at?: string;
+            /**
+             * Format: date-time
+             * @description The freshness window of this search snapshot. An expired snapshot requires a new search; it is never silently re-issued.
+             */
+            fresh_until?: string;
+            /** @enum {string} */
+            freshness: "fresh" | "stale" | "missing";
+            total_seeds: number;
+            /** @description How many seeds this response renders at most. */
+            window: number;
+            /** @description Pass this opaque value to read the next window; absent at the end. */
+            next_cursor?: string | null;
+            /** @description The derived retention of a search snapshot (86400 seconds). After it, the snapshot may be purged, including its latest version. */
+            retention_seconds: number;
+            /** @description The versioned reader that produced this snapshot's seed facts, for diagnosis when an upstream layout changes. */
+            parser?: string | null;
+            seeds: components["schemas"]["SeedSearchSnapshotSeed"][];
+        };
         ProviderRSSPreviewInput: {
             group_ref: string;
         };
@@ -5110,7 +5204,7 @@ export interface components {
                 done: boolean;
             } | null;
         };
-        /** @description Finite one-shot admission body with two mutually exclusive config input sources. input_source=current_input carries the complete unsaved draft: no candidate row is required, the server resolves the draft against the current globals and the global parser-policy default inside the admission transaction and freezes the captured input as the execution identity. input_source=saved_revision carries candidate_id plus revision and admits against that exact immutable revision. A legacy body with candidate_id+revision and no input_source is accepted with the unchanged saved-revision parsing, selection semantics and replay identity. Carrying a draft together with candidate_id/revision, or a discriminator naming a different source than the supplied fields, is a 400 INPUT_SOURCE_INVALID with zero writes. A one-shot names its seed directly: it is never bound by the configuration's group selection, and the seed's exact persisted snapshot is what proves it exists. A human discovery-provider draft (anibt or mikan) admits a seed of its own catalog entry from any of that entry's groups. A human custom draft admits only a custom seed: under input_source=saved_revision the server derives the custom-source and custom-group identities from the revision's own frozen locator and group under the exact candidate revision identity, and a seed carrying any other entry/group is a 422 SEED_PREVIEW_STALE with zero writes; under input_source=current_input the draft is the one-shot's own unsaved configuration (never written back to the preset), so no saved scope applies and the seed's persisted custom snapshot is the binding. A human origin=oneshot draft is 422 ONE_SHOT_CALLER_INVALID. The agent authorization boundary is unchanged: an agent request still needs a complete origin=oneshot draft and an explicit authorization snapshot, and a human request never gains agent reach. */
+        /** @description Finite one-shot admission body with two mutually exclusive config input sources. input_source=current_input carries the complete unsaved draft: no candidate row is required, the server resolves the draft against the current globals and the global parser-policy default inside the admission transaction and freezes the captured input as the execution identity. input_source=saved_revision carries candidate_id plus revision and admits against that exact immutable revision. A legacy body with candidate_id+revision and no input_source is accepted with the unchanged saved-revision parsing, selection semantics and replay identity. Carrying a draft together with candidate_id/revision, or a discriminator naming a different source than the supplied fields, is a 400 INPUT_SOURCE_INVALID with zero writes. A one-shot names its seed directly: it is never bound by the configuration's group selection, and the seed's exact persisted snapshot is what proves it exists. A human discovery-provider draft (anibt or mikan) admits a seed of its own catalog entry from any of that entry's groups. A human custom draft admits only a custom seed: under input_source=saved_revision the server derives the custom-source and custom-group identities from the revision's own frozen locator and group under the exact candidate revision identity, and a seed carrying any other entry/group is a 422 SEED_PREVIEW_STALE with zero writes; under input_source=current_input the draft is the one-shot's own unsaved configuration (never written back to the preset), so no saved scope applies and the seed's persisted custom snapshot is the binding. A human origin=oneshot draft is 422 ONE_SHOT_CALLER_INVALID except for one keyword search seed: its refs are the derived search-scope/search-query pair, and it requires a current_input admission plus the exact fresh search snapshot. That narrow exception does not admit a feed or custom seed, a saved revision, or a seed without the search snapshot identity. The agent authorization boundary is unchanged: an agent request still needs a complete origin=oneshot draft and an explicit authorization snapshot, and a human request never gains agent reach. */
         AcquireSeedOnceInput: {
             /**
              * @description Config input source discriminator. Omitted means the legacy saved-revision body (candidate_id + revision).
@@ -7596,10 +7690,10 @@ export interface components {
                 "application/json": components["schemas"]["ErrorResponse"];
             };
         };
-        /** @description Too many failed sign-in attempts for this client; retry after the Retry-After seconds (LOGIN_RATE_LIMITED). */
+        /** @description This client is being rate limited (LOGIN_RATE_LIMITED for sign-in, PROVIDER_RATE_LIMITED when the provider answered 429/503). Retry after the Retry-After seconds; when the provider supplied its own wait it is that value. */
         TooManyRequests: {
             headers: {
-                /** @description Seconds before another sign-in attempt is accepted. */
+                /** @description Seconds before another attempt is accepted. */
                 "Retry-After"?: number;
                 [name: string]: unknown;
             };
@@ -7723,6 +7817,10 @@ export interface components {
         IdempotencyKey: string;
         /** @description Provider namespace for the catalog. */
         CatalogProvider: "anibt" | "mikan";
+        /** @description The derived search scope the fetch returned. It binds provider, resolved upstream base and normalized query, and it is matched against the persisted snapshot before any seed is rendered. */
+        SeedSearchScopeRef: string;
+        /** @description The derived query identity the fetch returned. The query text itself is never persisted, so this digest is how a caller proves it is reading the snapshot of the same query. */
+        SeedSearchQueryRef: string;
         /** @description External provider-scoped catalog-entry reference. Unique only within its provider and never a formal ManagedAnime owner identity, so it is always paired with the provider path segment. */
         CatalogProviderEntryRef: string;
         /** @description Season identifier in canonical YYYY-term form (e.g. 2026-summer). Terms: winter, spring, summer, fall. */
@@ -10596,6 +10694,75 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             422: components["responses"]["Unprocessable"];
+        };
+    };
+    fetchSeedSearchSnapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Provider namespace for the catalog. */
+                provider: components["parameters"]["CatalogProvider"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SeedSearchSnapshotInput"];
+            };
+        };
+        responses: {
+            /** @description The newly persisted search snapshot and its seed window. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeedSearchSnapshotView"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    readSeedSearchSnapshot: {
+        parameters: {
+            query: {
+                /** @description The derived search scope the fetch returned. It binds provider, resolved upstream base and normalized query, and it is matched against the persisted snapshot before any seed is rendered. */
+                scope_ref: components["parameters"]["SeedSearchScopeRef"];
+                /** @description The derived query identity the fetch returned. The query text itself is never persisted, so this digest is how a caller proves it is reading the snapshot of the same query. */
+                query_ref: components["parameters"]["SeedSearchQueryRef"];
+                snapshot_version: components["schemas"]["Version"];
+                content_hash: string;
+                /** @description The next_cursor returned by the previous window of this exact snapshot. */
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Provider namespace for the catalog. */
+                provider: components["parameters"]["CatalogProvider"];
+                snapshot_id: components["schemas"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The seed window of that exact search snapshot. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeedSearchSnapshotView"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+            503: components["responses"]["Unavailable"];
         };
     };
     refreshCatalogProvider: {

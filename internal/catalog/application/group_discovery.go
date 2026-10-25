@@ -176,6 +176,12 @@ func (s *Service) ReadProviderEntryRSSByIdentity(ctx context.Context, provider, 
 	if snapshot.Provider != provider || snapshot.ProviderEntryRef != catalogEntryRef || snapshot.ProviderGroupRef != groupRef {
 		return catalogdomain.ProviderRSSPreviewResult{}, fmt.Errorf("%w: snapshot %s belongs to %s/%s/%s", catalogdomain.ErrProviderFeedSnapshotIdentityMismatch, snapshot.ID, snapshot.Provider, snapshot.ProviderEntryRef, snapshot.ProviderGroupRef)
 	}
+	// A feed read accepts a published provider feed or a custom feed and nothing
+	// else: a search snapshot authorizes a keyword result, not a subscription
+	// surface, even when a caller names it by an exact identity.
+	if err := snapshot.VerifyKind(feedSnapshotKindForProvider(provider)); err != nil {
+		return catalogdomain.ProviderRSSPreviewResult{}, err
+	}
 	if err := snapshot.VerifyIdentity(identity); err != nil {
 		return catalogdomain.ProviderRSSPreviewResult{}, err
 	}
@@ -217,6 +223,12 @@ func (s *Service) ReadProviderEntrySeedPayload(ctx context.Context, provider, ca
 	}
 	if snapshot.Provider != provider || snapshot.ProviderEntryRef != catalogEntryRef || snapshot.ProviderGroupRef != groupRef {
 		return catalogdomain.ProviderFeedSnapshotSeed{}, fmt.Errorf("%w: snapshot %s belongs to %s/%s/%s", catalogdomain.ErrProviderFeedSnapshotIdentityMismatch, snapshot.ID, snapshot.Provider, snapshot.ProviderEntryRef, snapshot.ProviderGroupRef)
+	}
+	// The bytes a downloader receives come only from a feed snapshot of the kind
+	// its provider owns. A search snapshot's bytes are reached exclusively through
+	// the search expansion path, which checks the same kind itself.
+	if err := snapshot.VerifyKind(feedSnapshotKindForProvider(provider)); err != nil {
+		return catalogdomain.ProviderFeedSnapshotSeed{}, err
 	}
 	if err := snapshot.VerifyIdentity(identity); err != nil {
 		return catalogdomain.ProviderFeedSnapshotSeed{}, err
@@ -365,7 +377,23 @@ func (s *Service) PreviewProviderEntryRSS(ctx context.Context, provider, catalog
 	return s.RefreshProviderEntryRSS(ctx, provider, catalogEntryRef, groupRef)
 }
 
+// feedSnapshotKindForProvider is the kind a feed-shaped read requires for one
+// provider: the frozen custom feed for a custom source, the published provider
+// feed for a discovery provider. A search snapshot never matches it.
+func feedSnapshotKindForProvider(provider string) catalogdomain.FeedSnapshotKind {
+	if provider == "custom" {
+		return catalogdomain.FeedSnapshotKindCustom
+	}
+	return catalogdomain.FeedSnapshotKindProviderFeed
+}
+
+// validateFeedSnapshotScope accepts the two feed-shaped scopes and refuses a
+// search scope outright: search snapshots are addressed by derived hashed refs,
+// never by a provider entry/group, so a request cannot smuggle one in here.
 func validateFeedSnapshotScope(provider, entryRef, groupRef string) error {
+	if strings.HasPrefix(entryRef, catalogdomain.SearchSnapshotScopePrefix) || strings.HasPrefix(groupRef, catalogdomain.SearchSnapshotQueryPrefix) {
+		return &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "SEARCH_SNAPSHOT_SCOPE_INVALID", Message: "A keyword search snapshot is not a provider feed scope."}
+	}
 	if provider == "custom" {
 		if len(entryRef) != 78 || len(groupRef) != 77 || !strings.HasPrefix(entryRef, "custom-source:") || !strings.HasPrefix(groupRef, "custom-group:") {
 			return &apperrors.Business{Status: 422, Code: "CUSTOM_SNAPSHOT_SCOPE_INVALID", Message: "Exact custom snapshot scope is required."}

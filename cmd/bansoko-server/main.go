@@ -624,6 +624,7 @@ func main() {
 		rssService,
 		oneShotService,
 		catalogService,
+		applicationGraph.seedSearch,
 		httpConfigService,
 		retryService,
 		automationService,

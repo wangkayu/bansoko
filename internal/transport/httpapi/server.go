@@ -332,10 +332,14 @@ type Dependencies struct {
 	ImportRetry ImportRetryService
 	// Backup is set after construction (SetBackup); the backup endpoints
 	// answer 503 until it is wired.
-	Backup             BackupService
-	OneShot            OneShotService
-	MediaRecognition   MediaRecognitionService
-	Catalog            CatalogService
+	Backup           BackupService
+	OneShot          OneShotService
+	MediaRecognition MediaRecognitionService
+	Catalog          CatalogService
+	// SeedSearch owns keyword torrent search and its short-lived snapshots. It is
+	// the same catalog application service the catalog endpoints use, exposed
+	// under its own port so the transport never depends on its internals.
+	SeedSearch         SeedSearchService
 	Connections        ConnectionConfigService
 	ManualRetry        ManualRetryService
 	Automation         AutomationService
