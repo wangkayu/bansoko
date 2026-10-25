@@ -636,6 +636,14 @@ WHERE id = $1 AND state = 'active' AND placement_id = $4 AND version = $5`,
 // appendRecoveryActivityTx records the confirm in the durable business
 // journal. The dedupe key makes a replay of the same confirm (same placement,
 // same generation) a no-op instead of a second entry.
+//
+// A nil writer skips the entry instead of failing the confirm — the same
+// entity-committed-activity-optional tradeoff as
+// internal/filemaintenance/decisions.go:803 (replacement_decisions),
+// internal/filemanager/persistence/commands.go:429 (release) and
+// internal/filemaintenance/cleanup.go:1062 (cleanup): the ownership change is
+// the effect, the journal entry is its record. The composition root always
+// wires an observability service, so the skip is a test-only path.
 func (s *Service) appendRecoveryActivityTx(ctx context.Context, tx *sql.Tx, input writeRecoveryOwnershipInput) error {
 	if s.recoveryActivity == nil {
 		return nil
