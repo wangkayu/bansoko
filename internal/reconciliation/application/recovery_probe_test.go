@@ -248,3 +248,53 @@ func TestProbeRecoveryCandidatesInertAndCancellable(t *testing.T) {
 		t.Fatalf("candidates on cancelled context = %+v, want none", got)
 	}
 }
+
+// A companion already sitting at its rendered target is NOT a reason to
+// refuse: the user moved the video into place and the companion was already
+// correct, which is a legitimate complete unit. Presence at the target is
+// decided by the no-follow stat, not by comparing the companion's recorded
+// path.
+func TestProbeRecoveryCandidatesAcceptsCompanionAlreadyAtTarget(t *testing.T) {
+	placements, renderer, observer, occupancy := probeScene()
+	placements[0].Companions[0].Path = "/library/Show/Season 01/EP 01.zh.ass"
+	candidates := probeService(renderer, observer, occupancy).probeRecoveryCandidates(context.Background(), "a1", 7, placements)
+	if len(candidates) != 1 {
+		t.Fatalf("candidates = %+v, want 1 when the companion already sits at its target", candidates)
+	}
+	if len(candidates[0].Companions) != 1 || candidates[0].Companions[0].ID != "c-1" {
+		t.Fatalf("companions = %+v, want the complete unit", candidates[0].Companions)
+	}
+	if candidates[0].Companions[0].TargetPath != "/library/Show/Season 01/EP 01.zh.ass" {
+		t.Fatalf("companion target = %q", candidates[0].Companions[0].TargetPath)
+	}
+}
+
+// A placement with nothing recording a size (no metadata fingerprint, no typed
+// envelope, no operation size) has no known expected size: the observed file
+// cannot be proven to be the placement's own content, so nothing is frozen.
+func TestProbeRecoveryCandidatesRejectsUnknownFrozenSize(t *testing.T) {
+	placements, renderer, observer, occupancy := probeScene()
+	placements[0].OperationSize = -1
+	placements[0].SourceFingerprint = "sha:source"
+	placements[0].TargetFingerprint = ""
+	candidates := probeService(renderer, observer, occupancy).probeRecoveryCandidates(context.Background(), "a1", 7, placements)
+	if candidates != nil {
+		t.Fatalf("candidates = %+v, want none when no expected size was recorded", candidates)
+	}
+	if len(observer.asked) != 0 {
+		t.Fatalf("stats = %v, want none without a frozen size", observer.asked)
+	}
+}
+
+// One companion whose observed size disagrees with its frozen expected size
+// disqualifies the WHOLE unit: the unit is atomic, never partially adopted.
+func TestProbeRecoveryCandidatesRejectsCompanionSizeMismatch(t *testing.T) {
+	placements, renderer, observer, occupancy := probeScene()
+	observer.files["/library/Show/Season 01/EP 01.zh.ass"] = domain.FileObservation{
+		Fingerprint: "meta:size=65", SizeBytes: 65,
+	}
+	candidates := probeService(renderer, observer, occupancy).probeRecoveryCandidates(context.Background(), "a1", 7, placements)
+	if candidates != nil {
+		t.Fatalf("candidates = %+v, want none on companion size mismatch", candidates)
+	}
+}

@@ -250,20 +250,41 @@ describe("AnimeFilesDialog", () => {
     expect(screen.queryByRole("button", { name: t("tabs.files.scan") })).toBeNull();
   });
 
-  it("recovers with the full frozen token, closes only on success and rescans", async () => {
-    const posts: { url: string; body: unknown }[] = [];
+  it("shows the recovered target inline as a library-relative hint", async () => {
     const missing = fileRow({
       status: "missing",
-      recovery: { generation: 3, target_path: "/library/Show/Season 01/Show - E01.mkv", size_bytes: 4096, placement_version: 7, fingerprint: "meta:size=4096", companions: 1 },
+      recovery: { generation: 3, target_path: "/library/Show/Season 01/Show - E01.mkv", target_relative_path: "Show/Season 01/Show - E01.mkv", size_bytes: 4096, placement_version: 7, fingerprint: "meta:size=4096", companions: 0 },
+      actions: { align: notApplicable("nothing_to_align"), rerun: available, release: available, recover: available },
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(filesView([missing]))));
+    renderFiles();
+
+    const list = await screen.findByRole("list", { name: t("tabs.files.title") });
+    // The row says what the scan found and where, using the relative path the
+    // server computed: the browser never assembles an absolute path itself.
+    expect(
+      within(list).getByText(t("policy.fileEffect.recoverFound", { path: "Show/Season 01/Show - E01.mkv" })),
+    ).toBeInTheDocument();
+    expect(within(list).queryByText(/\/library\//)).toBeNull();
+  });
+
+  it("recovers with the full frozen token, closes only on success and rescans", async () => {
+    const recoverPosts: { url: string; body: unknown }[] = [];
+    const scanPosts: unknown[] = [];
+    const missing = fileRow({
+      status: "missing",
+      recovery: { generation: 3, target_path: "/library/Show/Season 01/Show - E01.mkv", target_relative_path: "Show/Season 01/Show - E01.mkv", size_bytes: 4096, placement_version: 7, fingerprint: "meta:size=4096", companions: 1 },
       actions: { align: notApplicable("nothing_to_align"), rerun: available, release: available, recover: available },
     });
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith("/files/recover") && init?.method === "POST") {
-        posts.push({ url, body: JSON.parse(String(init.body)) });
+        recoverPosts.push({ url, body: JSON.parse(String(init.body)) });
         return jsonResponse({ placement_id: "p-1", generation: 3, target_path: "/library/Show/Season 01/Show - E01.mkv", replay: false, companions: 1 }, 200);
       }
-      if (url.includes("/reconciliations/scan") && init?.method === "POST") {
+      // The real client POSTs /reconciliation/scans (no per-anime path suffix).
+      if (url.endsWith("/reconciliation/scans") && init?.method === "POST") {
+        scanPosts.push(JSON.parse(String(init.body)));
         return jsonResponse({ state: "running", generation: 4 }, 202);
       }
       return jsonResponse(filesView([missing]));
@@ -274,8 +295,8 @@ describe("AnimeFilesDialog", () => {
     fireEvent.click(within(list).getByRole("button", { name: t("policy.fileEffect.recover") }));
     await screen.findByRole("dialog");
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: t("policy.fileEffect.recover") }));
-    await waitFor(() => expect(posts).toHaveLength(1));
-    expect(posts[0]!.body).toEqual({
+    await waitFor(() => expect(recoverPosts).toHaveLength(1));
+    expect(recoverPosts[0]!.body).toEqual({
       placement_id: "p-1",
       generation: 3,
       target_path: "/library/Show/Season 01/Show - E01.mkv",
@@ -286,20 +307,30 @@ describe("AnimeFilesDialog", () => {
     // The confirm dialog (recovery target line) closes after the success;
     // only the outer files dialog remains.
     await waitFor(() => expect(screen.queryByText(t("policy.fileEffect.recoverTarget", { path: "/library/Show/Season 01/Show - E01.mkv" }))).toBeNull());
+    // The success path triggers exactly one full rescan for the anime, and the
+    // row is released (no stuck recover busy).
+    await waitFor(() => expect(scanPosts).toHaveLength(1));
+    expect(scanPosts[0]).toMatchObject({ managed_anime_id: "anime-1", trigger: "manual" });
+    expect(within(list).getByRole("button", { name: t("policy.fileEffect.recover") })).toBeEnabled();
   });
 
   it("keeps the recover dialog open with the typed reason on a refusal", async () => {
-    let posts = 0;
+    const recoverPosts: number[] = [];
+    const scanPosts: unknown[] = [];
     const missing = fileRow({
       status: "missing",
-      recovery: { generation: 3, target_path: "/library/Show/Season 01/Show - E01.mkv", size_bytes: 4096, placement_version: 7, fingerprint: "meta:size=4096", companions: 0 },
+      recovery: { generation: 3, target_path: "/library/Show/Season 01/Show - E01.mkv", target_relative_path: "Show/Season 01/Show - E01.mkv", size_bytes: 4096, placement_version: 7, fingerprint: "meta:size=4096", companions: 0 },
       actions: { align: notApplicable("nothing_to_align"), rerun: available, release: available, recover: available },
     });
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith("/files/recover") && init?.method === "POST") {
-        posts += 1;
+        recoverPosts.push(1);
         return jsonResponse({ code: "ANIME_FILES_RECOVER_REFUSED", message: "x", details: [{ code: "target_changed", message: "x" }] }, 409);
+      }
+      if (url.endsWith("/reconciliation/scans") && init?.method === "POST") {
+        scanPosts.push(JSON.parse(String(init.body)));
+        return jsonResponse({ state: "running", generation: 4 }, 202);
       }
       return jsonResponse(filesView([missing]));
     }));
@@ -309,8 +340,10 @@ describe("AnimeFilesDialog", () => {
     fireEvent.click(within(list).getByRole("button", { name: t("policy.fileEffect.recover") }));
     await screen.findByRole("dialog");
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: t("policy.fileEffect.recover") }));
-    await waitFor(() => expect(posts).toBe(1));
+    await waitFor(() => expect(recoverPosts).toHaveLength(1));
     expect(await screen.findByRole("dialog")).toHaveTextContent(reasonLabel("target_changed") ?? "");
     expect(toastMock.success).not.toHaveBeenCalled();
+    // A refusal never triggers the follow-up scan.
+    expect(scanPosts).toHaveLength(0);
   });
 });

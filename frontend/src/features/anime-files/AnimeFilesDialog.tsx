@@ -290,6 +290,9 @@ function FileRow(props: {
       // API success closes it and triggers the fresh scan.
       const reason = deniedReason(cause, "ANIME_FILES_RECOVER_REFUSED");
       setRecoverError(reason ? reasonText(reason) : toUserMessage(cause, t("policy.fileEffect.recoverFailed")));
+    } finally {
+      // Both paths release the row: a success must not leave it stuck busy
+      // after the follow-up scan replaces the row.
       setBusy(undefined);
     }
   }
@@ -334,6 +337,11 @@ function FileRow(props: {
           </span>
         )}
       </div>
+      {file.recovery ? (
+        <p className="tw:m-0 tw:text-xs tw:text-muted-foreground tw:wrap-anywhere">
+          {t("policy.fileEffect.recoverFound", { path: file.recovery.target_relative_path })}
+        </p>
+      ) : null}
       {file.companions.length > 0 ? (
         <ul className="tw:m-0 tw:grid tw:list-none tw:gap-1 tw:pl-4">
           {file.companions.map((companion) => (

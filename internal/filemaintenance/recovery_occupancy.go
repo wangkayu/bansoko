@@ -41,19 +41,36 @@ func (o *RecoveryOccupancy) RecoveryTargetsOccupied(ctx context.Context, paths [
 	if len(cleaned) == 0 {
 		return true, nil
 	}
-	var occupied bool
-	err := o.db.QueryRowContext(ctx, `
+	return recoveryPathsOccupied(ctx, o.db, cleaned, exceptPlacementID)
+}
+
+// recoveryPathOccupancyQuery is the one occupancy read shared by the scan's
+// recovery probe and the confirm's own re-verification: a path is taken when
+// another ACTIVE placement or companion relation owns it, or when any
+// non-terminal owner still holds it (the same surface the file manager
+// refuses new operations on). Sharing the text keeps the two decisions from
+// drifting apart.
+const recoveryPathOccupancyQuery = `
 SELECT EXISTS(
   SELECT 1 FROM placements p
    WHERE p.physical_path COLLATE "C" = ANY($1::text[])
      AND p.state = 'active' AND p.id <> $2
 ) OR EXISTS(
   SELECT 1 FROM placement_companions c
-   WHERE c.current_path = ANY($1::text[])
+   WHERE c.current_path COLLATE "C" = ANY($1::text[])
      AND c.state = 'active' AND c.placement_id <> $2
-) OR EXISTS(SELECT 1 FROM (`+recoveryUnfinishedOwners+`) h WHERE h.path COLLATE "C" = ANY($1::text[]))`,
-		cleaned, exceptPlacementID).Scan(&occupied)
-	if err != nil {
+) OR EXISTS(SELECT 1 FROM (` + recoveryUnfinishedOwners + `) h
+            WHERE h.path COLLATE "C" = ANY($1::text[]))`
+
+// recoveryPathsOccupied runs the shared occupancy read. An empty path list is
+// occupied by construction (nothing to re-attach); a read failure is an
+// error so both callers fail closed.
+func recoveryPathsOccupied(ctx context.Context, q queryer, paths []string, exceptPlacementID string) (bool, error) {
+	if q == nil || len(paths) == 0 {
+		return true, nil
+	}
+	var occupied bool
+	if err := q.QueryRowContext(ctx, recoveryPathOccupancyQuery, paths, exceptPlacementID).Scan(&occupied); err != nil {
 		return false, fmt.Errorf("read recovery target occupancy: %w", err)
 	}
 	return occupied, nil

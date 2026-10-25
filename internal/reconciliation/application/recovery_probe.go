@@ -39,10 +39,10 @@ type RecoveryOccupancyChecker interface {
 
 // recoveryCandidateFact is the immutable recovery candidate a scan writes into
 // reconciliation_files.facts when a placement's current path AND every bounded
-// provenance locator are missing, its rendered target exists as a regular file
-// with the placement's frozen expected size, the COMPLETE companion unit sits
-// at its rendered paths with the registered sizes, and no other owner holds
-// any of those paths. Disposition stays "missing": a candidate changes no
+// provenance locator are missing, while the COMPLETE file group — the video and
+// every companion — is found at the paths the current naming rules render, at
+// the frozen expected sizes, and no other owner holds any of those paths.
+// Disposition stays "missing": a candidate changes no
 // ownership and never auto-recovers; the user's explicit confirm (POST
 // /anime/{id}/files/recover) is the only path that re-attaches the file.
 //
@@ -84,11 +84,11 @@ type recoveryCandidateFact struct {
 // recoveryCompanionFact freezes one companion's stat result at its rendered
 // path plus the row version the confirm's CAS update demands.
 type recoveryCompanionFact struct {
-	ID              string `json:"id"`
-	Version         int64  `json:"version"`
-	TargetPath      string `json:"target_path"`
-	Fingerprint     string `json:"fingerprint"`
-	SizeBytes       int64  `json:"size_bytes"`
+	ID          string `json:"id"`
+	Version     int64  `json:"version"`
+	TargetPath  string `json:"target_path"`
+	Fingerprint string `json:"fingerprint"`
+	SizeBytes   int64  `json:"size_bytes"`
 }
 
 // probeRecoveryCandidates renders the current naming targets of every all-
@@ -237,11 +237,11 @@ func probeRecoveryCompanions(
 			// incomplete by construction.
 			return nil, false
 		}
-		if sameCleanPath(companion.Path, target) {
-			// The companion still sits at its current path; the scan's own
-			// companion observation already decided its fate.
-			return nil, false
-		}
+		// A companion already sitting at its rendered target is the healthy
+		// half of a legitimate unit (the user moved the video, the companion
+		// was already right). Whether the target holds the companion is
+		// decided by the no-follow stat below, never by comparing paths: the
+		// confirm re-verifies the companion's metadata and CAS version
 		if ctx.Err() != nil {
 			return nil, false
 		}

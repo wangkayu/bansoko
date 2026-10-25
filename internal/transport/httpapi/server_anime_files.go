@@ -176,12 +176,13 @@ func mapAnimeFileRecovery(view *filemaintenance.AnimeFileRecoveryView) *generate
 		return nil
 	}
 	return &generated.AnimeFileRecovery{
-		Generation:       view.Generation,
-		TargetPath:       view.TargetPath,
-		SizeBytes:        view.SizeBytes,
-		PlacementVersion: view.PlacementVersion,
-		Fingerprint:      view.Fingerprint,
-		Companions:       view.Companions,
+		Generation:         view.Generation,
+		TargetPath:         view.TargetPath,
+		TargetRelativePath: view.TargetRelativePath,
+		SizeBytes:          view.SizeBytes,
+		PlacementVersion:   view.PlacementVersion,
+		Fingerprint:        view.Fingerprint,
+		Companions:         view.Companions,
 	}
 }
 

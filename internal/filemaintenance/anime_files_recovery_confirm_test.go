@@ -146,6 +146,47 @@ func TestRecoveryRefusalCodes(t *testing.T) {
 	}
 }
 
+// A companion is identified by size plus metadata fingerprint exactly like the
+// video: a device-only change (same size, same inode, new dev) is accepted,
+// while an inode or size change refuses the whole unit. Companions keep their
+// hex digest in the CHECK-guarded column, so no meta fingerprint is written.
+func TestRecoveryCompanionIdentityIgnoresDevice(t *testing.T) {
+	unit := func() (recoveryCandidateFact, map[string]domain.FileObservation) {
+		candidate, files := recoveryConfirmScene()
+		return candidate, files
+	}
+
+	t.Run("device-only change is accepted", func(t *testing.T) {
+		candidate, files := unit()
+		files[candidate.Companions[0].TargetPath] = domain.FileObservation{
+			Fingerprint: "meta:size=64;dev=9;ino=12", SizeBytes: 64,
+		}
+		if err := verifyRecoveryCompanionStats(context.Background(), &fakeRecoveryObserver{files: files}, candidate); err != nil {
+			t.Fatalf("remounted companion refused: %v", err)
+		}
+	})
+	t.Run("inode change is rejected", func(t *testing.T) {
+		candidate, files := unit()
+		files[candidate.Companions[0].TargetPath] = domain.FileObservation{
+			Fingerprint: "meta:size=64;dev=2;ino=99", SizeBytes: 64,
+		}
+		err := verifyRecoveryCompanionStats(context.Background(), &fakeRecoveryObserver{files: files}, candidate)
+		if err == nil || err.Error() != "ANIME_FILES_RECOVER_REFUSED: companion_occupied" {
+			t.Fatalf("inode change = %v, want companion_occupied", err)
+		}
+	})
+	t.Run("size change is rejected", func(t *testing.T) {
+		candidate, files := unit()
+		files[candidate.Companions[0].TargetPath] = domain.FileObservation{
+			Fingerprint: "meta:size=65;dev=2;ino=12", SizeBytes: 65,
+		}
+		err := verifyRecoveryCompanionStats(context.Background(), &fakeRecoveryObserver{files: files}, candidate)
+		if err == nil || err.Error() != "ANIME_FILES_RECOVER_REFUSED: companion_occupied" {
+			t.Fatalf("size change = %v, want companion_occupied", err)
+		}
+	})
+}
+
 // The metadata fingerprint comparison the confirm uses excludes the device
 // number: an NFS remount (same size, same inode, new dev) must not read as a
 // content change, while any size or inode change fails closed.

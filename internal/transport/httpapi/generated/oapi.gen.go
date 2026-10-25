@@ -3088,7 +3088,7 @@ type AnimeFileRecoverInput struct {
 
 // AnimeFileRecoverResult defines model for AnimeFileRecoverResult.
 type AnimeFileRecoverResult struct {
-	// Companions Companion files re-attached with the video (the unit is atomic; a missing companion would have refused the confirm).
+	// Companions Companion files re-attached with the video (a missing companion would have refused the confirm).
 	Companions int `json:"companions"`
 
 	// Generation The confirmed candidate's scan generation.
@@ -3105,7 +3105,7 @@ type AnimeFileRecoverResult struct {
 
 // AnimeFileRecovery defines model for AnimeFileRecovery.
 type AnimeFileRecovery struct {
-	// Companions Companion files frozen with the candidate. Recovery is atomic: the confirm succeeds only when every companion still sits at its frozen path, otherwise the whole unit is refused.
+	// Companions Companion files frozen with the candidate. The confirm succeeds only when every companion still sits at its frozen path; if one is missing or changed, nothing is recovered.
 	Companions int `json:"companions"`
 
 	// Fingerprint Metadata fingerprint the scan observed at the target; pass it to the recover endpoint.
@@ -3118,8 +3118,11 @@ type AnimeFileRecovery struct {
 	PlacementVersion int64 `json:"placement_version"`
 	SizeBytes        int64 `json:"size_bytes"`
 
-	// TargetPath The rendered target where the scan observed the file.
+	// TargetPath The rendered target where the scan found the complete file group.
 	TargetPath string `json:"target_path"`
+
+	// TargetRelativePath target_path relative to the view root; display this instead of composing a path on the client.
+	TargetRelativePath string `json:"target_relative_path"`
 }
 
 // AnimeFilesAlignInput defines model for AnimeFilesAlignInput.

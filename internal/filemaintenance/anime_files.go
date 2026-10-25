@@ -86,7 +86,10 @@ type AnimeFileAlignmentView struct {
 type AnimeFileRecoveryView struct {
 	Generation int64
 	TargetPath string
-	SizeBytes  int64
+	// TargetRelativePath is TargetPath relative to the view root, so the client
+	// displays the library-relative target without composing a path itself.
+	TargetRelativePath string
+	SizeBytes          int64
 	// The frozen identity tokens the confirm echoes back: a stale dialog
 	// (row re-pointed or re-rendered since) can never act.
 	PlacementVersion int64
@@ -575,8 +578,7 @@ WHERE placement_id = ANY($1) AND state = 'active' ORDER BY placement_id, current
 // answers only while that generation is still the newest decided one and no
 // scan or calibration is live — a dialog captured on an older generation
 // can never act (the confirm re-checks the same gate), so it is not even
-// offered. A candidate already confirmed (facts.recovered_generation) is
-// done: the row reads as aligned again.
+// offered.
 func loadAnimeFilesRecovery(ctx context.Context, db *sql.DB, animeID string, placements []animeFilesPlacement) error {
 	if len(placements) == 0 {
 		return nil
@@ -596,8 +598,7 @@ SELECT rf.facts->>'placement_id',
 FROM reconciliation_files rf
 WHERE rf.managed_anime_id = $1 AND rf.generation = $2
   AND rf.disposition = 'missing'
-  AND rf.facts->'recovery_candidates' IS NOT NULL
-  AND NOT (rf.facts ? 'recovered_generation')`, animeID, latest)
+  AND rf.facts->'recovery_candidates' IS NOT NULL`, animeID, latest)
 	if err != nil {
 		return fmt.Errorf("read recovery candidates: %w", err)
 	}
@@ -874,6 +875,13 @@ func deriveAnimeFiles(f animeFilesFacts) AnimeFilesView {
 				Companions:       candidate.Companions,
 			}
 			recoverReason := ""
+			// Live gate: the candidate is only offered while the CURRENT
+			// render of this placement and of every frozen companion still
+			// equals the frozen target. A naming-rule change, an
+			// unrenderable placement, or a companion membership change
+			// since the scan means the frozen unit is not what the confirm
+			// would produce: the user must rescan instead.
+			liveReason := recoveryLiveReason(candidate, diff, observed, placement)
 			switch {
 			case row.Status != AnimeFileMissing:
 				recoverReason = AnimeFilesReasonRecoveryGate
@@ -883,6 +891,8 @@ func deriveAnimeFiles(f animeFilesFacts) AnimeFilesView {
 				recoverReason = AnimeFilesReasonScanRunning
 			case f.AlignmentLive:
 				recoverReason = AnimeFilesReasonAlignmentRunning
+			case liveReason != "":
+				recoverReason = liveReason
 			case !f.RecoveryReady:
 				recoverReason = AnimeFilesReasonScanChanged
 			}
@@ -912,6 +922,11 @@ func deriveAnimeFiles(f animeFilesFacts) AnimeFilesView {
 		row := &view.Files[i]
 		row.RelativePath = relativeTo(view.Root, row.Path)
 		row.TargetRelativePath = relativePointer(view.Root, row.TargetPath)
+		if row.Recovery != nil {
+			// The scan found the file at this target: show it library-relative
+			// rather than composing an absolute path in the client.
+			row.Recovery.TargetRelativePath = relativeTo(view.Root, row.Recovery.TargetPath)
+		}
 		for j := range row.Companions {
 			companion := &row.Companions[j]
 			companion.RelativePath = relativeTo(view.Root, companion.Path)
@@ -919,6 +934,49 @@ func deriveAnimeFiles(f animeFilesFacts) AnimeFilesView {
 		}
 	}
 	return view
+}
+
+// recoveryLiveReason decides whether the frozen candidate is still what the
+// CURRENT naming rules would render for this placement's whole unit. It
+// returns an empty string when the frozen candidate is live and the reason
+// code to show otherwise.
+//
+// The read model gates here because the confirm re-renders and refuses a
+// changed unit: offering a button whose own transaction must refuse it would
+// be a lie. A missing observation row, an unrenderable placement
+// (TargetUnavailable / nil ExpectedPath) and a companion membership change
+// are all "the unit is not the frozen one" and require a rescan.
+func recoveryLiveReason(candidate *animeFilesRecoveryCandidate, diff PathDiffView, observed bool, placement animeFilesPlacement) string {
+	if !observed || diff.ExpectedPath == nil || *diff.ExpectedPath == "" || diff.TargetUnavailable != "" {
+		return AnimeFilesReasonRescanRequired
+	}
+	if !samePath(filepath.Clean(*diff.ExpectedPath), filepath.Clean(candidate.TargetPath)) {
+		return AnimeFilesReasonRescanRequired
+	}
+	// Companion membership: the frozen count must still match the placement's
+	// active unit, and every frozen companion must still render to the path
+	// the scan froze.
+	if len(placement.Companions) != candidate.Companions {
+		return AnimeFilesReasonRescanRequired
+	}
+	rendered := make(map[string]CompanionPathDiffView, len(diff.Companions))
+	for _, companion := range diff.Companions {
+		key := companion.ID
+		if key == "" {
+			key = "path:" + filepath.Clean(companion.FilePath)
+		}
+		rendered[key] = companion
+	}
+	for _, companion := range placement.Companions {
+		view, ok := rendered[companion.ID]
+		if !ok {
+			view, ok = rendered["path:"+filepath.Clean(companion.Path)]
+		}
+		if !ok || view.ExpectedPath == nil || *view.ExpectedPath == "" {
+			return AnimeFilesReasonRescanRequired
+		}
+	}
+	return ""
 }
 
 // videoStatus maps the latest calibration row of a placement to its status.

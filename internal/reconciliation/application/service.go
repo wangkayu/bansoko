@@ -41,9 +41,9 @@ type Service struct {
 	// occupancy read over the same ownership surface the file manager
 	// enforces. Unwired ports keep the probe inert (candidates are never
 	// written).
-	recoveryTargets    RecoveryTargetRenderer
-	recoveryObserver   FileObserver
-	recoveryOccupancy  RecoveryOccupancyChecker
+	recoveryTargets   RecoveryTargetRenderer
+	recoveryObserver  FileObserver
+	recoveryOccupancy RecoveryOccupancyChecker
 }
 
 // TargetObserver refreshes the latest TargetObservation rows of one instance

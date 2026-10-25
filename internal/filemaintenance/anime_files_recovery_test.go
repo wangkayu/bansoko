@@ -10,7 +10,10 @@ func recoveryBase() animeFilesFacts {
 	facts.Diffs = []PathDiffView{{
 		PlacementID: "p1", FilePath: "/lib/Show/raw ep1.mkv", Disposition: DispositionMissing,
 		ExpectedPath: strPtr("/lib/Show/Season 01/Show - E01.mkv"),
-		Companions:   []CompanionPathDiffView{},
+		Companions: []CompanionPathDiffView{{
+			ID: "c1", FilePath: "/lib/Show/raw ep1.zh.ass", MediaKind: "subtitle",
+			ExpectedPath: strPtr("/lib/Show/Season 01/Show - E01.zh.ass"),
+		}},
 	}}
 	facts.Placements[0].Recovery = &animeFilesRecoveryCandidate{
 		PlacementID: "p1", TargetPath: "/lib/Show/Season 01/Show - E01.mkv", Generation: 3,
@@ -101,4 +104,71 @@ func TestDeriveAnimeFilesRecoveryViewSurvivesRetirement(t *testing.T) {
 	if row.Recovery == nil || row.Recovery.TargetPath != "/lib/Show/Season 01/Show - E01.mkv" {
 		t.Fatalf("recovery = %+v", row.Recovery)
 	}
+}
+
+// The read model gates the offered action on the CURRENT render, not just on
+// generation liveness: the confirm re-renders under the anime's live naming
+// rules and refuses a unit that moved, so the button must be unavailable with
+// a rescan reason instead of promising a confirm that would be refused.
+func TestDeriveAnimeFilesRecoveryRequiresCurrentRender(t *testing.T) {
+	t.Run("video target re-rendered by a rule change", func(t *testing.T) {
+		facts := recoveryBase()
+		facts.Diffs[0].ExpectedPath = strPtr("/lib/Show/Season 01/Show - E01v2.mkv")
+		facts.Diffs[0].Differs = true
+		row := deriveAnimeFiles(facts).Files[0]
+		if row.Actions.Recover.Available || row.Actions.Recover.ReasonCode != AnimeFilesReasonRescanRequired {
+			t.Fatalf("recover = %+v, want %s", row.Actions.Recover, AnimeFilesReasonRescanRequired)
+		}
+	})
+	t.Run("video target no longer renders", func(t *testing.T) {
+		facts := recoveryBase()
+		facts.Diffs[0].ExpectedPath = nil
+		facts.Diffs[0].TargetUnavailable = "coverage_unresolved"
+		row := deriveAnimeFiles(facts).Files[0]
+		if row.Actions.Recover.Available || row.Actions.Recover.ReasonCode != AnimeFilesReasonRescanRequired {
+			t.Fatalf("recover = %+v, want %s", row.Actions.Recover, AnimeFilesReasonRescanRequired)
+		}
+	})
+	t.Run("render failed", func(t *testing.T) {
+		facts := recoveryBase()
+		facts.Diffs[0].TargetUnavailable = "target_render_failed"
+		row := deriveAnimeFiles(facts).Files[0]
+		if row.Actions.Recover.Available || row.Actions.Recover.ReasonCode != AnimeFilesReasonRescanRequired {
+			t.Fatalf("recover = %+v, want %s", row.Actions.Recover, AnimeFilesReasonRescanRequired)
+		}
+	})
+	t.Run("companion membership changed since the scan", func(t *testing.T) {
+		facts := recoveryBase()
+		// The frozen candidate counts one companion; a second active
+		// companion registered after the scan means the unit is no longer
+		// the one the confirm would re-render.
+		facts.Placements[0].Companions = append(facts.Placements[0].Companions,
+			animeFilesCompanion{ID: "c2", MediaKind: "subtitle", Path: "/lib/Show/raw ep1.en.ass", SizeBytes: 48})
+		row := deriveAnimeFiles(facts).Files[0]
+		if row.Actions.Recover.Available || row.Actions.Recover.ReasonCode != AnimeFilesReasonRescanRequired {
+			t.Fatalf("recover = %+v, want %s", row.Actions.Recover, AnimeFilesReasonRescanRequired)
+		}
+	})
+	t.Run("companion no longer renders", func(t *testing.T) {
+		facts := recoveryBase()
+		facts.Placements[0].Companions = []animeFilesCompanion{{ID: "c1", MediaKind: "subtitle", Path: "/lib/Show/raw ep1.zh.ass", SizeBytes: 64}}
+		facts.Diffs[0].Companions = []CompanionPathDiffView{{ID: "c1", FilePath: "/lib/Show/raw ep1.zh.ass", MediaKind: "subtitle"}}
+		row := deriveAnimeFiles(facts).Files[0]
+		if row.Actions.Recover.Available || row.Actions.Recover.ReasonCode != AnimeFilesReasonRescanRequired {
+			t.Fatalf("recover = %+v, want %s", row.Actions.Recover, AnimeFilesReasonRescanRequired)
+		}
+	})
+	t.Run("whole unit still renders to the frozen paths", func(t *testing.T) {
+		facts := recoveryBase()
+		facts.Placements[0].Companions = []animeFilesCompanion{{ID: "c1", MediaKind: "subtitle", Path: "/lib/Show/raw ep1.zh.ass", SizeBytes: 64}}
+		companionTarget := "/lib/Show/Season 01/Show - E01.zh.ass"
+		facts.Diffs[0].Companions = []CompanionPathDiffView{{
+			ID: "c1", FilePath: "/lib/Show/raw ep1.zh.ass", MediaKind: "subtitle",
+			ExpectedPath: &companionTarget,
+		}}
+		row := deriveAnimeFiles(facts).Files[0]
+		if !row.Actions.Recover.Available {
+			t.Fatalf("recover = %+v, want available for a live unit", row.Actions.Recover)
+		}
+	})
 }

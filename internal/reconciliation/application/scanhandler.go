@@ -316,7 +316,7 @@ type ownedPlacement struct {
 	SourceFingerprint string
 	TargetFingerprint string
 	OperationSize     int64
-	Companions []ownedCompanion
+	Companions        []ownedCompanion
 }
 
 // ownedCompanion is one registered companion sidecar of a placement, with

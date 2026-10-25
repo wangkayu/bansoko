@@ -1061,7 +1061,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description The explicit recovery confirm of a scan alignment recovery candidate. The scan froze the candidate (the rendered target was missing and the COMPLETE rendered unit — video and every companion — was observed at its rendered paths free of other owners); this confirm re-verifies every frozen fact inside one transaction — the file still sits at the target with the observed size and identity, EVERY companion still sits at its frozen path with its frozen identity, and no other file owns any unit path — and then re-attaches the placement AND its companions to those paths as one atomic unit. A single missing or changed companion refuses the whole confirm (companion_missing / companion_occupied) and nothing is re-attached. No byte is moved, copied, overwritten or deleted; only ownership rows re-point. Replaying the same confirm returns the same result without a second journal entry. A refusal is 409 ANIME_FILES_RECOVER_REFUSED with details[0].code one of `owner_retired`, `not_started`, `candidate_gone`, `scan_changed`, `scan_running`, `placement_changed`, `target_missing`, `target_changed`, `target_occupied`, `companion_missing` or `companion_occupied`.
+        /** @description The explicit recovery confirm of a scan alignment recovery candidate. The scan froze the candidate (the placement's current and provenance locators were all missing, while the COMPLETE file group — video and every companion — was found at the paths the current naming rules render, free of other owners); this confirm re-verifies every frozen fact inside one transaction — the file still sits at the target with the observed size and identity, EVERY companion still sits at its frozen path with its frozen identity, and no other file owns any unit path — and then re-attaches the placement AND its companions to those paths together. A single missing or changed companion refuses the whole confirm (companion_missing / companion_occupied) and nothing is re-attached. No byte is moved, copied, overwritten or deleted; only ownership rows re-point. Replaying the same confirm returns the same result without a second journal entry. A refusal is 409 ANIME_FILES_RECOVER_REFUSED with details[0].code one of `owner_retired`, `not_started`, `candidate_gone`, `scan_changed`, `scan_running`, `placement_changed`, `target_missing`, `target_changed`, `target_occupied`, `companion_missing` or `companion_occupied`.
          *      */
         post: operations["recoverAnimeFile"];
         delete?: never;
@@ -6721,8 +6721,10 @@ export interface components {
              * @description The scan generation that froze the candidate; pass it to the recover endpoint.
              */
             generation: number;
-            /** @description The rendered target where the scan observed the file. */
+            /** @description The rendered target where the scan found the complete file group. */
             target_path: string;
+            /** @description target_path relative to the view root; display this instead of composing a path on the client. */
+            target_relative_path: string;
             /** Format: int64 */
             size_bytes: number;
             /**
@@ -6732,7 +6734,7 @@ export interface components {
             placement_version: number;
             /** @description Metadata fingerprint the scan observed at the target; pass it to the recover endpoint. */
             fingerprint: string;
-            /** @description Companion files frozen with the candidate. Recovery is atomic: the confirm succeeds only when every companion still sits at its frozen path, otherwise the whole unit is refused. */
+            /** @description Companion files frozen with the candidate. The confirm succeeds only when every companion still sits at its frozen path; if one is missing or changed, nothing is recovered. */
             companions: number;
         };
         AnimeFilesScan: {
@@ -6810,7 +6812,7 @@ export interface components {
             recovered_at?: string;
             /** @description True when this confirm had already committed; the same result replays. */
             replay: boolean;
-            /** @description Companion files re-attached with the video (the unit is atomic; a missing companion would have refused the confirm). */
+            /** @description Companion files re-attached with the video (a missing companion would have refused the confirm). */
             companions: number;
         };
         CompanionIssueView: {

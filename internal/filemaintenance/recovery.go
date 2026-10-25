@@ -246,7 +246,17 @@ func (s *Service) RecoverAnimeFileApplication(ctx context.Context, animeID strin
 	result.Generation = candidate.Generation
 	result.TargetPath = candidate.TargetPath
 
-	// (4) the placement under lock.
+	// (4b) the CURRENT naming rules must still render the whole unit to the
+	// frozen paths: a rule change after the scan moves the target, and the
+	// old path must never be re-attached (both confirm and replay).
+	if err := verifyRecoveryRenderedTargets(ctx, s.recoveryTargetRenderer(), animeID, candidate); err != nil {
+		var refusal *AnimeFilesRecoverRefusal
+		if errors.As(err, &refusal) {
+			return result, refusal
+		}
+		return result, err
+	}
+
 	placement, ok, err := readRecoveryPlacementTx(ctx, tx, animeID, command.PlacementID)
 	if err != nil {
 		return result, err
@@ -485,7 +495,10 @@ func verifyRecoveryCompanionStats(ctx context.Context, observer RecoveryFileObse
 			}
 			return &AnimeFilesRecoverRefusal{Code: RecoveryReasonCompanionMissing}
 		}
-		if observation.SizeBytes != companion.SizeBytes || strings.TrimSpace(observation.Fingerprint) != companion.Fingerprint {
+		// Same identity contract as the video: size plus metadata fingerprint
+		// (path + size + inode), with the device number excluded so an NFS
+		// remount is not a change. A size or inode change fails closed.
+		if observation.SizeBytes != companion.SizeBytes || !domain.MetadataFingerprintsMatch(observation.Fingerprint, companion.Fingerprint) {
 			return &AnimeFilesRecoverRefusal{Code: RecoveryReasonCompanionOccupied}
 		}
 	}
@@ -493,37 +506,34 @@ func verifyRecoveryCompanionStats(ctx context.Context, observer RecoveryFileObse
 }
 
 // recoveryTargetOccupiedTx reports whether the exact path is already owned by
-// another active placement or companion relation (no second owner, ever).
+// another active placement or companion relation, or held by any unfinished
+// owner. Confirm and replay both go through it, and it is the SAME read the
+// scan probe performs (recoveryPathOccupancyQuery), so the offered candidate
+// and the accepted confirm can never disagree about ownership.
 func recoveryTargetOccupiedTx(ctx context.Context, tx *sql.Tx, path, exceptPlacementID string) (bool, error) {
 	cleaned := filepath.Clean(strings.TrimSpace(path))
 	if cleaned == "" {
 		return true, nil
 	}
-	var occupied bool
-	err := tx.QueryRowContext(ctx, `
-SELECT EXISTS(
-  SELECT 1 FROM placements p
-  WHERE p.physical_path COLLATE "C" = $1 AND p.state = 'active' AND p.id <> $2
-) OR EXISTS(
-  SELECT 1 FROM placement_companions c
-  WHERE c.current_path COLLATE "C" = $1 AND c.state = 'active' AND c.placement_id <> $2
-)`, cleaned, exceptPlacementID).Scan(&occupied)
-	if err != nil {
-		return false, fmt.Errorf("read recovery target occupancy: %w", err)
-	}
-	return occupied, nil
+	return recoveryPathsOccupied(ctx, tx, []string{cleaned}, exceptPlacementID)
 }
 
 // recoveryTargetsOccupiedTx reports whether ANY of the unit paths is already
-// owned by another active placement or companion relation.
+// taken. The whole unit is checked in one read so a partially-occupied unit
+// refuses atomically.
 func recoveryTargetsOccupiedTx(ctx context.Context, tx *sql.Tx, paths []string, exceptPlacementID string) (bool, error) {
+	cleaned := make([]string, 0, len(paths))
 	for _, path := range paths {
-		occupied, err := recoveryTargetOccupiedTx(ctx, tx, path, exceptPlacementID)
-		if err != nil || occupied {
-			return occupied, err
+		trimmed := filepath.Clean(strings.TrimSpace(path))
+		if trimmed != "" {
+			cleaned = append(cleaned, trimmed)
 		}
 	}
-	return false, nil
+	if len(cleaned) != len(paths) {
+		// A unit path that cleans to nothing is a malformed unit: fail closed.
+		return true, nil
+	}
+	return recoveryPathsOccupied(ctx, tx, cleaned, exceptPlacementID)
 }
 
 type writeRecoveryOwnershipInput struct {
@@ -646,6 +656,96 @@ func (s *Service) SetRecoveryActivityWriter(writer observabilityport.ActivityWri
 	if s != nil {
 		s.recoveryActivity = writer
 	}
+}
+
+// activeRecoveryUnitCompanions reads the placement's CURRENT active companion
+// unit (ids only, ordered) so the render check compares against what the unit
+// is now, not just what the scan froze: a companion registered or retired
+// since the scan makes the frozen unit stale.
+func activeRecoveryUnitCompanions(ctx context.Context, db *sql.DB, placementID string) ([]string, error) {
+	rows, err := db.QueryContext(ctx, `
+SELECT c.id FROM placement_companions c
+WHERE c.placement_id = $1 AND c.state = 'active'
+ORDER BY c.id`, placementID)
+	if err != nil {
+		return nil, fmt.Errorf("read recovery unit companions: %w", err)
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// verifyRecoveryRenderedTargets re-renders, under the anime's CURRENT naming
+// rules, the placement's target and the target of every CURRENTLY active
+// companion, and requires the result to be EXACTLY the frozen unit:
+//
+//   - the renderer is required (nil fails closed): a rule change after the
+//     scan moves the target, and the old scanned path must never be
+//     re-attached;
+//   - the active companion id set must equal the frozen one (an added or
+//     retired companion makes the frozen unit stale);
+//   - every rendered path must equal the frozen path byte for byte.
+//
+// A missing render is target_changed for the video and companion_missing for
+// a companion (the reason the operator can act on); an I/O failure is
+// returned as the underlying error so the caller fails closed without
+// pretending the unit changed.
+func verifyRecoveryRenderedTargets(ctx context.Context, renderer *NamingTargetRenderer, animeID string, candidate recoveryCandidateFact) error {
+	if renderer == nil {
+		return &AnimeFilesRecoverRefusal{Code: RecoveryReasonTargetChanged}
+	}
+	activeIDs, err := activeRecoveryUnitCompanions(ctx, renderer.db, candidate.PlacementID)
+	if err != nil {
+		return err
+	}
+	if len(activeIDs) != len(candidate.Companions) {
+		return &AnimeFilesRecoverRefusal{Code: RecoveryReasonCompanionMissing}
+	}
+	frozen := make(map[string]recoveryCompanionFact, len(candidate.Companions))
+	for _, companion := range candidate.Companions {
+		frozen[companion.ID] = companion
+	}
+	for _, id := range activeIDs {
+		if _, ok := frozen[id]; !ok {
+			// A companion registered after the scan: the frozen unit is
+			// not the current unit.
+			return &AnimeFilesRecoverRefusal{Code: RecoveryReasonCompanionMissing}
+		}
+	}
+	targets, err := renderer.RenderPlacementTargets(ctx, animeID, []string{candidate.PlacementID})
+	if err != nil {
+		return fmt.Errorf("render recovery unit targets: %w", err)
+	}
+	video, ok := targets[candidate.PlacementID]
+	if !ok || !sameCleanPath(video, candidate.TargetPath) {
+		return &AnimeFilesRecoverRefusal{Code: RecoveryReasonTargetChanged}
+	}
+	for _, companion := range candidate.Companions {
+		path, ok := targets[companion.ID]
+		if !ok || !sameCleanPath(path, companion.TargetPath) {
+			return &AnimeFilesRecoverRefusal{Code: RecoveryReasonCompanionMissing}
+		}
+	}
+	return nil
+}
+
+// recoveryTargetRenderer is the renderer the confirm re-renders through: the
+// SAME instance the files read model previews with (s.pathDiff.renderer), so
+// the target a user sees and the target the confirm demands can never be
+// produced by two different rule sets. nil stays nil and fails closed in
+// verifyRecoveryRenderedTargets.
+func (s *Service) recoveryTargetRenderer() *NamingTargetRenderer {
+	if s == nil || s.pathDiff == nil {
+		return nil
+	}
+	return s.pathDiff.renderer
 }
 
 // sameCleanPath compares two paths after cleaning (the scan's own path
