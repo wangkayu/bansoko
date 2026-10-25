@@ -181,3 +181,96 @@ func TestCanonicalContentHashIsStableAcrossTheEmptyAcquisitionState(t *testing.T
 		t.Fatalf("empty state normalizes to %q", implicit.NormalizedTorrentState())
 	}
 }
+
+// A persisted snapshot authorizes exactly one kind. The exact readers, the
+// expansion, the download and one-shot admission all name the kind they need,
+// so a search row can never back a subscription surface and a feed row can
+// never back a search authorization.
+func TestProviderFeedSnapshotVerifyKindIsExact(t *testing.T) {
+	search := testFeedSnapshot()
+	search.SnapshotKind = FeedSnapshotKindSearch
+	if err := search.VerifyKind(FeedSnapshotKindSearch); err != nil {
+		t.Fatalf("a search row was rejected as a search snapshot: %v", err)
+	}
+	for _, wrong := range []FeedSnapshotKind{FeedSnapshotKindProviderFeed, FeedSnapshotKindCustom} {
+		if err := search.VerifyKind(wrong); !errors.Is(err, ErrProviderFeedSnapshotIdentityMismatch) {
+			t.Fatalf("search row read as %q: error = %v, want identity mismatch", wrong, err)
+		}
+	}
+	feed := testFeedSnapshot()
+	feed.SnapshotKind = FeedSnapshotKindProviderFeed
+	if err := feed.VerifyKind(FeedSnapshotKindSearch); !errors.Is(err, ErrProviderFeedSnapshotIdentityMismatch) {
+		t.Fatalf("feed row read as a search snapshot: error = %v, want identity mismatch", err)
+	}
+	if err := feed.VerifyKind(FeedSnapshotKind("made_up")); !errors.Is(err, ErrProviderFeedSnapshotIdentityMismatch) {
+		t.Fatalf("unknown required kind: error = %v, want identity mismatch", err)
+	}
+}
+
+// A search write is the only kind allowed to carry the two derived hashed
+// refs, and it may not carry anything shaped like a provider entry or group.
+// The two feed kinds keep their own scope rules, unchanged.
+func TestProviderFeedSnapshotWriteKindScopesAreClosed(t *testing.T) {
+	scope := "search-scope:" + strings.Repeat("a", 64)
+	query := "search-query:" + strings.Repeat("b", 64)
+	base := ProviderFeedSnapshotWrite{
+		Provider: "mikan", ProviderEntryRef: scope, ProviderGroupRef: query,
+		FetchedAt: time.Now().UTC(), FreshUntil: time.Now().UTC().Add(time.Hour),
+		ContentHash: "sha256:" + strings.Repeat("a", 64),
+		HashSchema:  ProviderFeedSnapshotContentHashSchema, ProjectionSchema: TorrentManifestProjectionSchema,
+	}
+	search := base
+	search.SnapshotKind = FeedSnapshotKindSearch
+	search.SearchParserVersion = "mikan-search-v1"
+	if err := search.Validate(); err != nil {
+		t.Fatalf("exact search scope was rejected: %v", err)
+	}
+
+	// A search snapshot with a provider entry/group scope is refused: the kind
+	// is what makes the refs mean "derived search scope", not a real group.
+	providerScope := search
+	providerScope.ProviderEntryRef, providerScope.ProviderGroupRef = "1001", "12"
+	if err := providerScope.Validate(); err == nil {
+		t.Fatal("a search snapshot with a provider entry/group scope was accepted")
+	}
+	customProvider := search
+	customProvider.Provider = "custom"
+	if err := customProvider.Validate(); err == nil {
+		t.Fatal("a custom-provider search snapshot was accepted")
+	}
+	unknownKind := search
+	unknownKind.SnapshotKind = FeedSnapshotKind("archive")
+	if err := unknownKind.Validate(); err == nil {
+		t.Fatal("an unknown snapshot kind was accepted")
+	}
+
+	// The feed kinds must not claim a search scope.
+	feed := base
+	feed.SnapshotKind = FeedSnapshotKindProviderFeed
+	if err := feed.Validate(); err == nil {
+		t.Fatal("a provider feed snapshot with a search scope was accepted")
+	}
+	// An omitted kind keeps the historical meaning, so every pre-existing write
+	// path is unchanged.
+	legacy := ProviderFeedSnapshotWrite{
+		Provider: "mikan", ProviderEntryRef: "1001", ProviderGroupRef: "12",
+		FetchedAt: time.Now().UTC(), FreshUntil: time.Now().UTC().Add(time.Hour),
+		ContentHash: "sha256:" + strings.Repeat("a", 64),
+		HashSchema:  ProviderFeedSnapshotContentHashSchema, ProjectionSchema: TorrentManifestProjectionSchema,
+	}
+	if got := legacy.NormalizedKind(); got != FeedSnapshotKindProviderFeed {
+		t.Fatalf("omitted provider kind normalized to %q", got)
+	}
+	if err := legacy.Validate(); err != nil {
+		t.Fatalf("legacy provider feed write was rejected: %v", err)
+	}
+	legacy.Provider = "custom"
+	legacy.ProviderEntryRef = "custom-source:" + strings.Repeat("c", 64)
+	legacy.ProviderGroupRef = "custom-group:" + strings.Repeat("d", 64)
+	if got := legacy.NormalizedKind(); got != FeedSnapshotKindCustom {
+		t.Fatalf("omitted custom kind normalized to %q", got)
+	}
+	if err := legacy.Validate(); err != nil {
+		t.Fatalf("legacy custom write was rejected: %v", err)
+	}
+}

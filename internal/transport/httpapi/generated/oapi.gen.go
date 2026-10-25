@@ -2024,6 +2024,26 @@ const (
 	SOCKS5RouteInputKindSocks5 SOCKS5RouteInputKind = "socks5"
 )
 
+// Defines values for SeedSearchSnapshotSeedTorrentState.
+const (
+	SeedSearchSnapshotSeedTorrentStateAvailable     SeedSearchSnapshotSeedTorrentState = "available"
+	SeedSearchSnapshotSeedTorrentStateNotApplicable SeedSearchSnapshotSeedTorrentState = "not_applicable"
+	SeedSearchSnapshotSeedTorrentStateUnavailable   SeedSearchSnapshotSeedTorrentState = "unavailable"
+)
+
+// Defines values for SeedSearchSnapshotViewFreshness.
+const (
+	SeedSearchSnapshotViewFreshnessFresh   SeedSearchSnapshotViewFreshness = "fresh"
+	SeedSearchSnapshotViewFreshnessMissing SeedSearchSnapshotViewFreshness = "missing"
+	SeedSearchSnapshotViewFreshnessStale   SeedSearchSnapshotViewFreshness = "stale"
+)
+
+// Defines values for SeedSearchSnapshotViewProvider.
+const (
+	SeedSearchSnapshotViewProviderAnibt SeedSearchSnapshotViewProvider = "anibt"
+	SeedSearchSnapshotViewProviderMikan SeedSearchSnapshotViewProvider = "mikan"
+)
+
 // Defines values for SelectionMode.
 const (
 	SelectionModeAuto   SelectionMode = "auto"
@@ -2407,6 +2427,18 @@ const (
 	RefreshCatalogProviderParamsProviderMikan RefreshCatalogProviderParamsProvider = "mikan"
 )
 
+// Defines values for ReadSeedSearchSnapshotParamsProvider.
+const (
+	ReadSeedSearchSnapshotParamsProviderAnibt ReadSeedSearchSnapshotParamsProvider = "anibt"
+	ReadSeedSearchSnapshotParamsProviderMikan ReadSeedSearchSnapshotParamsProvider = "mikan"
+)
+
+// Defines values for FetchSeedSearchSnapshotParamsProvider.
+const (
+	FetchSeedSearchSnapshotParamsProviderAnibt FetchSeedSearchSnapshotParamsProvider = "anibt"
+	FetchSeedSearchSnapshotParamsProviderMikan FetchSeedSearchSnapshotParamsProvider = "mikan"
+)
+
 // Defines values for UnsuppressCatalogEntryParamsProvider.
 const (
 	UnsuppressCatalogEntryParamsProviderAnibt UnsuppressCatalogEntryParamsProvider = "anibt"
@@ -2484,7 +2516,7 @@ type AccountUpdateResult struct {
 	Owner                OwnerAccount `json:"owner"`
 }
 
-// AcquireSeedOnceInput Finite one-shot admission body with two mutually exclusive config input sources. input_source=current_input carries the complete unsaved draft: no candidate row is required, the server resolves the draft against the current globals and the global parser-policy default inside the admission transaction and freezes the captured input as the execution identity. input_source=saved_revision carries candidate_id plus revision and admits against that exact immutable revision. A legacy body with candidate_id+revision and no input_source is accepted with the unchanged saved-revision parsing, selection semantics and replay identity. Carrying a draft together with candidate_id/revision, or a discriminator naming a different source than the supplied fields, is a 400 INPUT_SOURCE_INVALID with zero writes. A one-shot names its seed directly: it is never bound by the configuration's group selection, and the seed's exact persisted snapshot is what proves it exists. A human discovery-provider draft (anibt or mikan) admits a seed of its own catalog entry from any of that entry's groups. A human custom draft admits only a custom seed: under input_source=saved_revision the server derives the custom-source and custom-group identities from the revision's own frozen locator and group under the exact candidate revision identity, and a seed carrying any other entry/group is a 422 SEED_PREVIEW_STALE with zero writes; under input_source=current_input the draft is the one-shot's own unsaved configuration (never written back to the preset), so no saved scope applies and the seed's persisted custom snapshot is the binding. A human origin=oneshot draft is 422 ONE_SHOT_CALLER_INVALID. The agent authorization boundary is unchanged: an agent request still needs a complete origin=oneshot draft and an explicit authorization snapshot, and a human request never gains agent reach.
+// AcquireSeedOnceInput Finite one-shot admission body with two mutually exclusive config input sources. input_source=current_input carries the complete unsaved draft: no candidate row is required, the server resolves the draft against the current globals and the global parser-policy default inside the admission transaction and freezes the captured input as the execution identity. input_source=saved_revision carries candidate_id plus revision and admits against that exact immutable revision. A legacy body with candidate_id+revision and no input_source is accepted with the unchanged saved-revision parsing, selection semantics and replay identity. Carrying a draft together with candidate_id/revision, or a discriminator naming a different source than the supplied fields, is a 400 INPUT_SOURCE_INVALID with zero writes. A one-shot names its seed directly: it is never bound by the configuration's group selection, and the seed's exact persisted snapshot is what proves it exists. A human discovery-provider draft (anibt or mikan) admits a seed of its own catalog entry from any of that entry's groups. A human custom draft admits only a custom seed: under input_source=saved_revision the server derives the custom-source and custom-group identities from the revision's own frozen locator and group under the exact candidate revision identity, and a seed carrying any other entry/group is a 422 SEED_PREVIEW_STALE with zero writes; under input_source=current_input the draft is the one-shot's own unsaved configuration (never written back to the preset), so no saved scope applies and the seed's persisted custom snapshot is the binding. A human origin=oneshot draft is 422 ONE_SHOT_CALLER_INVALID except for one keyword search seed: its refs are the derived search-scope/search-query pair, and it requires a current_input admission plus the exact fresh search snapshot. That narrow exception does not admit a feed or custom seed, a saved revision, or a seed without the search snapshot identity. The agent authorization boundary is unchanged: an agent request still needs a complete origin=oneshot draft and an explicit authorization snapshot, and a human request never gains agent reach.
 type AcquireSeedOnceInput struct {
 	CandidateId *ID `json:"candidate_id,omitempty"`
 
@@ -7834,6 +7866,79 @@ type SaveAnimeConfigCandidateInput struct {
 	Draft AnimeDraft `json:"draft"`
 }
 
+// SeedSearchSnapshotInput One keyword torrent search. Only the free-text query is accepted: the endpoint, the normalization and the snapshot scope are derived server-side, so no URL, entry, group, seed key or torrent byte can be supplied. `limit` bounds the seed window of the response, not the snapshot identity, which still covers the complete result set.
+type SeedSearchSnapshotInput struct {
+	// Limit How many seeds this response renders. Both sites answer at most 100 keyword results, so a larger value is clamped rather than promising a wider window.
+	Limit *int `json:"limit,omitempty"`
+
+	// Query A space-composed keyword query. Combine the work title with a subtitle group, an episode number or a resolution to narrow the upstream result (for example "示例作品 示例字幕组 03"); both sites match the text themselves and the first release adds no filter.
+	Query string `json:"query"`
+}
+
+// SeedSearchSnapshotSeed defines model for SeedSearchSnapshotSeed.
+type SeedSearchSnapshotSeed struct {
+	// DownloadUrl Torrent download URL. It can embed a credential, so it stays a display fact for the caller that fetched the snapshot; an expand or download names the snapshot identity plus stable_seed_key instead and the server resolves the locator itself.
+	DownloadUrl           string  `json:"download_url"`
+	ExpectedPayloadDigest *string `json:"expected_payload_digest"`
+
+	// GroupName Subtitle group name parsed from the release title for display only. It is never a provider group identity and never a subscription or download input.
+	GroupName *string `json:"group_name"`
+
+	// InfoHash Content identity the provider published for this seed, when it published one. A search row without it is expanded and cached like a feed row, and the expanded torrent's own hash becomes the identity.
+	InfoHash    *string    `json:"info_hash"`
+	PublishedAt *time.Time `json:"published_at"`
+
+	// Resolution Resolution parsed from the release title for display only.
+	Resolution *string `json:"resolution"`
+	SizeBytes  *int64  `json:"size_bytes"`
+
+	// StableSeedKey Stable identity within this search snapshot.
+	StableSeedKey string                             `json:"stable_seed_key"`
+	Title         string                             `json:"title"`
+	TorrentState  SeedSearchSnapshotSeedTorrentState `json:"torrent_state"`
+}
+
+// SeedSearchSnapshotSeedTorrentState defines model for SeedSearchSnapshotSeed.TorrentState.
+type SeedSearchSnapshotSeedTorrentState string
+
+// SeedSearchSnapshotView One immutable keyword search snapshot and a bounded window of its seeds. `total_seeds` counts the complete result set the snapshot identity covers; `seeds` is the window this response renders. A search snapshot is short-lived (24 hours), is never a group or a subscription source, and is refreshed only by fetching the same query again.
+type SeedSearchSnapshotView struct {
+	ContentHash string     `json:"content_hash"`
+	FetchedAt   *time.Time `json:"fetched_at,omitempty"`
+
+	// FreshUntil The freshness window of this search snapshot. An expired snapshot requires a new search; it is never silently re-issued.
+	FreshUntil *time.Time                      `json:"fresh_until,omitempty"`
+	Freshness  SeedSearchSnapshotViewFreshness `json:"freshness"`
+
+	// NextCursor Pass this opaque value to read the next window; absent at the end.
+	NextCursor *string `json:"next_cursor"`
+
+	// Parser The versioned reader that produced this snapshot's seed facts, for diagnosis when an upstream layout changes.
+	Parser   *string                        `json:"parser"`
+	Provider SeedSearchSnapshotViewProvider `json:"provider"`
+
+	// Query The normalized query, echoed by the fetch that ran it. A later read does not echo it: the query text is not persisted, only its digest.
+	Query    *string `json:"query"`
+	QueryRef string  `json:"query_ref"`
+
+	// RetentionSeconds The derived retention of a search snapshot (86400 seconds). After it, the snapshot may be purged, including its latest version.
+	RetentionSeconds int                      `json:"retention_seconds"`
+	ScopeRef         string                   `json:"scope_ref"`
+	Seeds            []SeedSearchSnapshotSeed `json:"seeds"`
+	SnapshotId       ID                       `json:"snapshot_id"`
+	SnapshotVersion  Version                  `json:"snapshot_version"`
+	TotalSeeds       int                      `json:"total_seeds"`
+
+	// Window How many seeds this response renders at most.
+	Window int `json:"window"`
+}
+
+// SeedSearchSnapshotViewFreshness defines model for SeedSearchSnapshotView.Freshness.
+type SeedSearchSnapshotViewFreshness string
+
+// SeedSearchSnapshotViewProvider defines model for SeedSearchSnapshotView.Provider.
+type SeedSearchSnapshotViewProvider string
+
 // SelectedReleaseIdentity Public identity projection of the exact persisted release selected at admission; private execution facts remain only in the internal frozen owner snapshot.
 type SelectedReleaseIdentity struct {
 	ManagedAnimeId ID      `json:"managed_anime_id"`
@@ -7913,7 +8018,7 @@ type SelectedSeedInput struct {
 // SelectionMode defines model for SelectionMode.
 type SelectionMode string
 
-// SnapshotSeedDownloadInput One persisted seed to download. Only identities are accepted: the locator, title, published time and strong content identity are read from the named snapshot server-side, so a browser never echoes back the raw source location. A provider=custom seed names the frozen custom-source and custom-group identities of a custom/oneshot draft source's own feed snapshot, so the same second step downloads a custom seed without any new locator ever leaving the server.
+// SnapshotSeedDownloadInput One persisted seed to download. Only identities are accepted: the locator, title, published time and strong content identity are read from the named snapshot server-side, so a browser never echoes back the raw source location. A provider=custom seed names the frozen custom-source and custom-group identities of a custom/oneshot draft source's own feed snapshot, so the same second step downloads a custom seed without any new locator ever leaving the server. A keyword search seed is the same shape: provider_entry_ref/provider_group_ref are the derived search-scope and search-query refs, the server proves the named snapshot is the `search` kind, and the admission must be a current_input one-shot.
 type SnapshotSeedDownloadInput struct {
 	CandidateId *ID         `json:"candidate_id"`
 	ContentHash string      `json:"content_hash"`
@@ -7934,7 +8039,7 @@ type SnapshotSeedDownloadInput struct {
 // SnapshotSeedDownloadInputInputSource defines model for SnapshotSeedDownloadInput.InputSource.
 type SnapshotSeedDownloadInputInputSource string
 
-// SnapshotSeedExpandInput One seed of one exact persisted snapshot to expand. It carries identities only, exactly like SnapshotSeedDownloadInput: the stable seed key is the path segment and the locator, title and published identity are read server-side from the snapshot, so expansion can only ever fetch the locator the snapshot already published for that seed.
+// SnapshotSeedExpandInput One seed of one exact persisted snapshot to expand. It carries identities only, exactly like SnapshotSeedDownloadInput: the stable seed key is the path segment and the locator, title and published identity are read server-side from the snapshot, so expansion can only ever fetch the locator the snapshot already published for that seed. A keyword search seed names its derived search-scope/search-query refs the same way, and the server proves the snapshot's own kind before expanding.
 type SnapshotSeedExpandInput struct {
 	ContentHash string `json:"content_hash"`
 
@@ -8749,6 +8854,12 @@ type ReleaseID = ID
 // RouteID defines model for RouteID.
 type RouteID = ID
 
+// SeedSearchQueryRef defines model for SeedSearchQueryRef.
+type SeedSearchQueryRef = string
+
+// SeedSearchScopeRef defines model for SeedSearchScopeRef.
+type SeedSearchScopeRef = string
+
 // ToTime defines model for ToTime.
 type ToTime = time.Time
 
@@ -8925,6 +9036,27 @@ type SetCatalogPreferenceParamsProvider string
 
 // RefreshCatalogProviderParamsProvider defines parameters for RefreshCatalogProvider.
 type RefreshCatalogProviderParamsProvider string
+
+// ReadSeedSearchSnapshotParams defines parameters for ReadSeedSearchSnapshot.
+type ReadSeedSearchSnapshotParams struct {
+	// ScopeRef The derived search scope the fetch returned. It binds provider, resolved upstream base and normalized query, and it is matched against the persisted snapshot before any seed is rendered.
+	ScopeRef SeedSearchScopeRef `form:"scope_ref" json:"scope_ref"`
+
+	// QueryRef The derived query identity the fetch returned. The query text itself is never persisted, so this digest is how a caller proves it is reading the snapshot of the same query.
+	QueryRef        SeedSearchQueryRef `form:"query_ref" json:"query_ref"`
+	SnapshotVersion Version            `form:"snapshot_version" json:"snapshot_version"`
+	ContentHash     string             `form:"content_hash" json:"content_hash"`
+
+	// Cursor The next_cursor returned by the previous window of this exact snapshot.
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ReadSeedSearchSnapshotParamsProvider defines parameters for ReadSeedSearchSnapshot.
+type ReadSeedSearchSnapshotParamsProvider string
+
+// FetchSeedSearchSnapshotParamsProvider defines parameters for FetchSeedSearchSnapshot.
+type FetchSeedSearchSnapshotParamsProvider string
 
 // UnsuppressCatalogEntryParamsProvider defines parameters for UnsuppressCatalogEntry.
 type UnsuppressCatalogEntryParamsProvider string
@@ -9323,6 +9455,9 @@ type PreviewProviderEntryRSSJSONRequestBody = ProviderRSSPreviewInput
 
 // SetCatalogPreferenceJSONRequestBody defines body for SetCatalogPreference for application/json ContentType.
 type SetCatalogPreferenceJSONRequestBody = CatalogPreferenceInput
+
+// FetchSeedSearchSnapshotJSONRequestBody defines body for FetchSeedSearchSnapshot for application/json ContentType.
+type FetchSeedSearchSnapshotJSONRequestBody = SeedSearchSnapshotInput
 
 // SuppressCatalogEntryJSONRequestBody defines body for SuppressCatalogEntry for application/json ContentType.
 type SuppressCatalogEntryJSONRequestBody = CatalogSuppressionInput
@@ -11720,6 +11855,12 @@ type ServerInterface interface {
 
 	// (POST /catalog/providers/{provider}/seasons/{season}/refresh)
 	RefreshCatalogProvider(w http.ResponseWriter, r *http.Request, provider RefreshCatalogProviderParamsProvider, season CatalogSeason)
+
+	// (GET /catalog/providers/{provider}/seed-search-snapshots/{snapshot_id})
+	ReadSeedSearchSnapshot(w http.ResponseWriter, r *http.Request, provider ReadSeedSearchSnapshotParamsProvider, snapshotId ID, params ReadSeedSearchSnapshotParams)
+
+	// (POST /catalog/providers/{provider}/seed-search-snapshots:fetch)
+	FetchSeedSearchSnapshot(w http.ResponseWriter, r *http.Request, provider FetchSeedSearchSnapshotParamsProvider)
 
 	// (GET /catalog/suppressions)
 	ListCatalogSuppressions(w http.ResponseWriter, r *http.Request)
@@ -14511,6 +14652,156 @@ func (siw *ServerInterfaceWrapper) RefreshCatalogProvider(w http.ResponseWriter,
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RefreshCatalogProvider(w, r, provider, season)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReadSeedSearchSnapshot operation middleware
+func (siw *ServerInterfaceWrapper) ReadSeedSearchSnapshot(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "provider" -------------
+	var provider ReadSeedSearchSnapshotParamsProvider
+
+	err = runtime.BindStyledParameterWithOptions("simple", "provider", r.PathValue("provider"), &provider, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "provider", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "snapshot_id" -------------
+	var snapshotId ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "snapshot_id", r.PathValue("snapshot_id"), &snapshotId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "snapshot_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReadSeedSearchSnapshotParams
+
+	// ------------- Required query parameter "scope_ref" -------------
+
+	if paramValue := r.URL.Query().Get("scope_ref"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "scope_ref"})
+		return
+	}
+
+	err = runtime.BindQueryParameter("form", true, true, "scope_ref", r.URL.Query(), &params.ScopeRef)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "scope_ref", Err: err})
+		return
+	}
+
+	// ------------- Required query parameter "query_ref" -------------
+
+	if paramValue := r.URL.Query().Get("query_ref"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "query_ref"})
+		return
+	}
+
+	err = runtime.BindQueryParameter("form", true, true, "query_ref", r.URL.Query(), &params.QueryRef)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "query_ref", Err: err})
+		return
+	}
+
+	// ------------- Required query parameter "snapshot_version" -------------
+
+	if paramValue := r.URL.Query().Get("snapshot_version"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "snapshot_version"})
+		return
+	}
+
+	err = runtime.BindQueryParameter("form", true, true, "snapshot_version", r.URL.Query(), &params.SnapshotVersion)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "snapshot_version", Err: err})
+		return
+	}
+
+	// ------------- Required query parameter "content_hash" -------------
+
+	if paramValue := r.URL.Query().Get("content_hash"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "content_hash"})
+		return
+	}
+
+	err = runtime.BindQueryParameter("form", true, true, "content_hash", r.URL.Query(), &params.ContentHash)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "content_hash", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "cursor", r.URL.Query(), &params.Cursor)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "limit", r.URL.Query(), &params.Limit)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReadSeedSearchSnapshot(w, r, provider, snapshotId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// FetchSeedSearchSnapshot operation middleware
+func (siw *ServerInterfaceWrapper) FetchSeedSearchSnapshot(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "provider" -------------
+	var provider FetchSeedSearchSnapshotParamsProvider
+
+	err = runtime.BindStyledParameterWithOptions("simple", "provider", r.PathValue("provider"), &provider, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "provider", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.FetchSeedSearchSnapshot(w, r, provider)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -18905,6 +19196,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("GET "+options.BaseURL+"/catalog/providers/{provider}/seasons/{season}/preference", wrapper.ReadCatalogPreference)
 	m.HandleFunc("PUT "+options.BaseURL+"/catalog/providers/{provider}/seasons/{season}/preference", wrapper.SetCatalogPreference)
 	m.HandleFunc("POST "+options.BaseURL+"/catalog/providers/{provider}/seasons/{season}/refresh", wrapper.RefreshCatalogProvider)
+	m.HandleFunc("GET "+options.BaseURL+"/catalog/providers/{provider}/seed-search-snapshots/{snapshot_id}", wrapper.ReadSeedSearchSnapshot)
+	m.HandleFunc("POST "+options.BaseURL+"/catalog/providers/{provider}/seed-search-snapshots:fetch", wrapper.FetchSeedSearchSnapshot)
 	m.HandleFunc("GET "+options.BaseURL+"/catalog/suppressions", wrapper.ListCatalogSuppressions)
 	m.HandleFunc("DELETE "+options.BaseURL+"/catalog/suppressions/{provider}/{provider_entry_ref}", wrapper.UnsuppressCatalogEntry)
 	m.HandleFunc("PUT "+options.BaseURL+"/catalog/suppressions/{provider}/{provider_entry_ref}", wrapper.SuppressCatalogEntry)

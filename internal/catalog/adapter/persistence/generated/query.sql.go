@@ -47,20 +47,23 @@ const publishProviderFeedSnapshot = `-- name: PublishProviderFeedSnapshot :one
 SELECT publish_feed_snapshot(
     $1::text,$2::text,$3::text,$4::text,
     $5::bigint,$6::timestamptz,$7::text,
-    $8::jsonb,$9::bytea[]
+    $8::jsonb,$9::bytea[],$10::text,
+    $11::text
 )::text AS id
 `
 
 type PublishProviderFeedSnapshotParams struct {
-	ID               string
-	Provider         string
-	ProviderEntryRef string
-	ProviderGroupRef string
-	ExpectedVersion  int64
-	FetchedAt        time.Time
-	ContentHash      string
-	Seeds            json.RawMessage
-	Payloads         [][]byte
+	ID                  string
+	Provider            string
+	ProviderEntryRef    string
+	ProviderGroupRef    string
+	ExpectedVersion     int64
+	FetchedAt           time.Time
+	ContentHash         string
+	Seeds               json.RawMessage
+	Payloads            [][]byte
+	SnapshotKind        string
+	SearchParserVersion sql.NullString
 }
 
 // PublishProviderFeedSnapshot
@@ -68,7 +71,8 @@ type PublishProviderFeedSnapshotParams struct {
 //	SELECT publish_feed_snapshot(
 //	    $1::text,$2::text,$3::text,$4::text,
 //	    $5::bigint,$6::timestamptz,$7::text,
-//	    $8::jsonb,$9::bytea[]
+//	    $8::jsonb,$9::bytea[],$10::text,
+//	    $11::text
 //	)::text AS id
 func (q *Queries) PublishProviderFeedSnapshot(ctx context.Context, arg PublishProviderFeedSnapshotParams) (string, error) {
 	row := q.db.QueryRowContext(ctx, publishProviderFeedSnapshot,
@@ -81,6 +85,8 @@ func (q *Queries) PublishProviderFeedSnapshot(ctx context.Context, arg PublishPr
 		arg.ContentHash,
 		arg.Seeds,
 		pq.Array(arg.Payloads),
+		arg.SnapshotKind,
+		arg.SearchParserVersion,
 	)
 	var id string
 	err := row.Scan(&id)
@@ -165,6 +171,12 @@ WHERE snapshot.id IN (
                 AND latest.provider_entry_ref = snapshot.provider_entry_ref
                 AND latest.provider_group_ref = snapshot.provider_group_ref
           )
+          -- A search snapshot is never a subscription source, so the 'no active
+          -- subscription' branch cannot decide it: it would keep every searched
+          -- query forever. It ages out on its own short retention once expired,
+          -- like the superseded snapshots above. Its own freshness window, not
+          -- this purge, is what stops an expired search from being expanded.
+          OR snapshot.snapshot_kind = 'search'
           OR (
               snapshot.provider IN ('anibt', 'mikan')
               AND NOT EXISTS (
@@ -204,6 +216,12 @@ WHERE snapshot.id IN (
 //	                AND latest.provider_entry_ref = snapshot.provider_entry_ref
 //	                AND latest.provider_group_ref = snapshot.provider_group_ref
 //	          )
+//	          -- A search snapshot is never a subscription source, so the 'no active
+//	          -- subscription' branch cannot decide it: it would keep every searched
+//	          -- query forever. It ages out on its own short retention once expired,
+//	          -- like the superseded snapshots above. Its own freshness window, not
+//	          -- this purge, is what stops an expired search from being expanded.
+//	          OR snapshot.snapshot_kind = 'search'
 //	          OR (
 //	              snapshot.provider IN ('anibt', 'mikan')
 //	              AND NOT EXISTS (
@@ -285,9 +303,12 @@ SELECT
     snapshot.version,
     snapshot.fetched_at,
     snapshot.fresh_until,
+    snapshot.retention_until,
     snapshot.content_hash,
     snapshot.hash_schema,
     snapshot.projection_schema,
+    snapshot.snapshot_kind,
+    snapshot.search_parser_version,
     CASE WHEN snapshot.fresh_until > CURRENT_TIMESTAMP THEN 'fresh' ELSE 'stale' END AS freshness
 FROM provider_feed_snapshots AS snapshot
 WHERE snapshot.provider = $1
@@ -304,17 +325,20 @@ type ReadLatestProviderFeedSnapshotParams struct {
 }
 
 type ReadLatestProviderFeedSnapshotRow struct {
-	ID               string
-	Provider         string
-	ProviderEntryRef string
-	ProviderGroupRef string
-	Version          int64
-	FetchedAt        time.Time
-	FreshUntil       time.Time
-	ContentHash      string
-	HashSchema       string
-	ProjectionSchema sql.NullString
-	Freshness        string
+	ID                  string
+	Provider            string
+	ProviderEntryRef    string
+	ProviderGroupRef    string
+	Version             int64
+	FetchedAt           time.Time
+	FreshUntil          time.Time
+	RetentionUntil      time.Time
+	ContentHash         string
+	HashSchema          string
+	ProjectionSchema    sql.NullString
+	SnapshotKind        string
+	SearchParserVersion sql.NullString
+	Freshness           string
 }
 
 // ReadLatestProviderFeedSnapshot
@@ -327,9 +351,12 @@ type ReadLatestProviderFeedSnapshotRow struct {
 //	    snapshot.version,
 //	    snapshot.fetched_at,
 //	    snapshot.fresh_until,
+//	    snapshot.retention_until,
 //	    snapshot.content_hash,
 //	    snapshot.hash_schema,
 //	    snapshot.projection_schema,
+//	    snapshot.snapshot_kind,
+//	    snapshot.search_parser_version,
 //	    CASE WHEN snapshot.fresh_until > CURRENT_TIMESTAMP THEN 'fresh' ELSE 'stale' END AS freshness
 //	FROM provider_feed_snapshots AS snapshot
 //	WHERE snapshot.provider = $1
@@ -348,9 +375,12 @@ func (q *Queries) ReadLatestProviderFeedSnapshot(ctx context.Context, arg ReadLa
 		&i.Version,
 		&i.FetchedAt,
 		&i.FreshUntil,
+		&i.RetentionUntil,
 		&i.ContentHash,
 		&i.HashSchema,
 		&i.ProjectionSchema,
+		&i.SnapshotKind,
+		&i.SearchParserVersion,
 		&i.Freshness,
 	)
 	return i, err
@@ -365,26 +395,32 @@ SELECT
     snapshot.version,
     snapshot.fetched_at,
     snapshot.fresh_until,
+    snapshot.retention_until,
     snapshot.content_hash,
     snapshot.hash_schema,
     snapshot.projection_schema,
+    snapshot.snapshot_kind,
+    snapshot.search_parser_version,
     CASE WHEN snapshot.fresh_until > CURRENT_TIMESTAMP THEN 'fresh' ELSE 'stale' END AS freshness
 FROM provider_feed_snapshots AS snapshot
 WHERE snapshot.id = $1
 `
 
 type ReadProviderFeedSnapshotByIDRow struct {
-	ID               string
-	Provider         string
-	ProviderEntryRef string
-	ProviderGroupRef string
-	Version          int64
-	FetchedAt        time.Time
-	FreshUntil       time.Time
-	ContentHash      string
-	HashSchema       string
-	ProjectionSchema sql.NullString
-	Freshness        string
+	ID                  string
+	Provider            string
+	ProviderEntryRef    string
+	ProviderGroupRef    string
+	Version             int64
+	FetchedAt           time.Time
+	FreshUntil          time.Time
+	RetentionUntil      time.Time
+	ContentHash         string
+	HashSchema          string
+	ProjectionSchema    sql.NullString
+	SnapshotKind        string
+	SearchParserVersion sql.NullString
+	Freshness           string
 }
 
 // ReadProviderFeedSnapshotByID
@@ -397,9 +433,12 @@ type ReadProviderFeedSnapshotByIDRow struct {
 //	    snapshot.version,
 //	    snapshot.fetched_at,
 //	    snapshot.fresh_until,
+//	    snapshot.retention_until,
 //	    snapshot.content_hash,
 //	    snapshot.hash_schema,
 //	    snapshot.projection_schema,
+//	    snapshot.snapshot_kind,
+//	    snapshot.search_parser_version,
 //	    CASE WHEN snapshot.fresh_until > CURRENT_TIMESTAMP THEN 'fresh' ELSE 'stale' END AS freshness
 //	FROM provider_feed_snapshots AS snapshot
 //	WHERE snapshot.id = $1
@@ -414,9 +453,12 @@ func (q *Queries) ReadProviderFeedSnapshotByID(ctx context.Context, id string) (
 		&i.Version,
 		&i.FetchedAt,
 		&i.FreshUntil,
+		&i.RetentionUntil,
 		&i.ContentHash,
 		&i.HashSchema,
 		&i.ProjectionSchema,
+		&i.SnapshotKind,
+		&i.SearchParserVersion,
 		&i.Freshness,
 	)
 	return i, err
