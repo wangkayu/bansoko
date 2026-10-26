@@ -427,6 +427,7 @@ var allowedKinds = [...]string{
 	workitems.KindReconciliationScan,
 	workitems.KindAlignmentExecute,
 	workitems.KindReplacementEvaluate,
+	workitems.KindReplacementFallback,
 	workitems.KindCleanupDelete,
 	// P3.8 reconciliation closure kinds: calibration and the two generation
 	// consumers (DB-bound, light lane). They must be claimable or the worker

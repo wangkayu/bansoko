@@ -92,6 +92,7 @@ type ReplacementDecisionService struct {
 	cleanup    *CleanupService
 	mediaFacts facts.MediaRepository
 	activity   observabilityport.ActivityWriter
+	workItems  *workitems.Store
 }
 
 // NewReplacementDecisionService wires the decision owner.

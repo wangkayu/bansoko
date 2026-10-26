@@ -116,6 +116,10 @@ const (
 	KindReconciliationScan  = "reconciliation_scan"
 	KindAlignmentExecute    = "alignment_execute"
 	KindReplacementEvaluate = "replacement_evaluate"
+	// KindReplacementFallback is the fallback query of one anime: after an
+	// instance acquisition settles, the best release each freed pool skipped as
+	// covered_in_flight is evaluated again. It reads and enqueues only.
+	KindReplacementFallback = "replacement_fallback"
 	// KindCleanupDelete deletes one managed replacement loser: path-level
 	// identity check, capture into a private namespace and purge, all inside
 	// one claim. There is no quarantine or grace period.
@@ -185,7 +189,7 @@ var ownerKinds = map[string]struct {
 	OwnerArtifact:         {kinds: []string{KindArtifactInspect}},
 	OwnerFileOperation:    {kinds: []string{KindFileExecute}},
 	OwnerPluginDelivery:   {kinds: []string{KindPluginDeliver}},
-	OwnerFileMaintenance:  {kinds: []string{KindReconciliationScan, KindReplacementEvaluate, KindReconciliationCalibrate, KindReconciliationConsumeAlignment, KindReconciliationConsumeReplacement}},
+	OwnerFileMaintenance:  {kinds: []string{KindReconciliationScan, KindReplacementEvaluate, KindReplacementFallback, KindReconciliationCalibrate, KindReconciliationConsumeAlignment, KindReconciliationConsumeReplacement}},
 	OwnerAlignment:        {kinds: []string{KindAlignmentExecute}},
 	OwnerCleanup:          {kinds: []string{KindCleanupDelete}},
 	// Offset migration operations are durable typed owners. The execute handler

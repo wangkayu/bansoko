@@ -376,6 +376,7 @@ func provideFileMaintenanceGraph(
 
 	replacementDecisions := filemaintenance.NewReplacementDecisionService(db)
 	replacementDecisions.SetMediaFactsStore(mediaFactsStore)
+	replacementDecisions.SetWorkItems(workStore)
 	cleanupService := filemaintenance.NewCleanupService(db)
 	// A cleanup capture is bounded by the anchor its composition root injects;
 	// the file manager has no root layer, so that anchor is the deployment's
@@ -919,6 +920,7 @@ func provideWorkerGraph(
 		{kind: workitems.KindAlignmentExecute, handler: alignmentOperations.ExecuteHandler()},
 		{kind: workitems.KindOffsetMigrationExecute, handler: offsetMigrationExecute.ExecuteHandler()},
 		{kind: workitems.KindReplacementEvaluate, handler: replacementDecisions.EvaluateHandler()},
+		{kind: workitems.KindReplacementFallback, handler: replacementDecisions.FallbackHandler()},
 		{kind: workitems.KindCleanupDelete, handler: cleanupService.DeleteHandler()},
 		{kind: workitems.KindFileManagerExecute, handler: userOperations.ExecuteHandler()},
 		{kind: workitems.KindCompletionExecute, handler: downloadCompletion.Handler()},

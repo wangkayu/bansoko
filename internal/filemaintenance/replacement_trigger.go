@@ -85,16 +85,52 @@ func (s *ReplacementTriggerService) TriggerPolicySaved(ctx context.Context, anim
 // bumped on stop/resume), reads the latest Placement facts from the paused
 // period, and never replays a pre-stop decision id (the frozen decision
 // digest carries the new Subscription version).
+// It also enqueues the fallback query: an acquisition that settled while the
+// subscription was stopped triggered nothing, so the pools it freed are
+// queried now.
 func (s *ReplacementTriggerService) TriggerSubscriptionResumed(ctx context.Context, animeID string) error {
-	return s.trigger(ctx, TriggerSubscriptionResumed, animeID, "")
+	if err := s.trigger(ctx, TriggerSubscriptionResumed, animeID, ""); err != nil {
+		return err
+	}
+	return s.triggerFallback(ctx, TriggerSubscriptionResumed, animeID)
 }
 
 // TriggerGenerationCompleted is the replacement consumer entry of a completed
 // reconciliation generation (the closure child dispatches it). It is gated by
 // the same phase-1 active check as every other trigger; the neutral scan and
 // alignment consumers are independent and never pass through this port.
+// A completed scan also runs the fallback query (owner ruling 16: a scan is
+// one of the comparison moments).
 func (s *ReplacementTriggerService) TriggerGenerationCompleted(ctx context.Context, animeID string) error {
-	return s.trigger(ctx, TriggerGenerationCompleted, animeID, "")
+	if err := s.trigger(ctx, TriggerGenerationCompleted, animeID, ""); err != nil {
+		return err
+	}
+	return s.triggerFallback(ctx, TriggerGenerationCompleted, animeID)
+}
+
+// triggerFallback enqueues the anime's replacement_fallback item in its own
+// transaction; a stopped or missing subscription enqueues nothing.
+func (s *ReplacementTriggerService) triggerFallback(ctx context.Context, reason, animeID string) error {
+	if s == nil || s.db == nil || s.workItems == nil {
+		err := errors.New("replacement trigger is not fully wired")
+		s.recordFailure(ctx, animeID, err)
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		s.recordFailure(ctx, animeID, err)
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := EnqueueFallbackTx(ctx, tx, s.workItems, animeID, reason); err != nil {
+		s.recordFailure(ctx, animeID, err)
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		s.recordFailure(ctx, animeID, err)
+		return err
+	}
+	return nil
 }
 
 // trigger is the single typed entry. Phase-1 admission: a stopped or missing
