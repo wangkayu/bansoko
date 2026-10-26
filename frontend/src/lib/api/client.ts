@@ -1059,6 +1059,27 @@ export function searchProviderCatalog(
   });
 }
 
+export type SeedSearchSnapshotInput = Schema<"SeedSearchSnapshotInput">;
+export type SeedSearchSnapshotView = Schema<"SeedSearchSnapshotView">;
+export type SeedSearchSnapshotSeed = Schema<"SeedSearchSnapshotSeed">;
+
+/**
+ * Runs one keyword torrent search and persists its results as a short-lived search
+ * snapshot. It is a write (x-scope write): the upstream is contacted and a snapshot row
+ * is appended, even though no subscription or owner is created. The returned identity
+ * (snapshot_id + snapshot_version + content_hash plus the derived scope_ref/query_ref)
+ * covers the complete result set, and the response renders that whole seed window.
+ */
+export function fetchSeedSearchSnapshot(
+  provider: "anibt" | "mikan",
+  input: SeedSearchSnapshotInput,
+): Promise<SeedSearchSnapshotView> {
+  return request(`/catalog/providers/${encodePathSegment(provider)}/seed-search-snapshots:fetch`, {
+    method: "POST",
+    body: input,
+  });
+}
+
 export function refreshCatalogProvider(
   provider: "anibt" | "mikan",
   season: string,

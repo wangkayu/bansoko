@@ -27,10 +27,16 @@ function Controlled({
   searcher,
   initial = { bgm: null, tmdb: null },
   onChange,
+  title = "沉默魔女的秘密",
+  matchQueryCandidates,
+  onMatchTitle,
 }: {
   searcher: MetadataSearcher;
   initial?: AnimeMetadataDraft;
   onChange?: (next: AnimeMetadataDraft) => void;
+  title?: string;
+  matchQueryCandidates?: string[];
+  onMatchTitle?: (title: string) => void;
 }) {
   const [value, setValue] = useState<AnimeMetadataDraft>(initial);
   const [matchProvider, setMatchProvider] = useState<MetadataProvider>();
@@ -40,7 +46,9 @@ function Controlled({
       <button onClick={() => setMatchProvider("tmdb")}>匹配 TMDB</button>
       <MetadataFields
         idPrefix="test"
-        title="沉默魔女的秘密"
+        title={title}
+        matchQueryCandidates={matchQueryCandidates}
+        onMatchTitle={onMatchTitle}
         value={value}
         onChange={(next) => {
           setValue(next);
@@ -502,6 +510,64 @@ describe("MetadataFields 季度行", () => {
     expect(onChange).toHaveBeenLastCalledWith(
       expect.objectContaining({ season: 12, tmdb: { work_id: "265010", media_kind: "tv", season: 2 } }),
     );
+  });
+});
+
+describe("MetadataMatchDialog 检索词候选与作品名回传", () => {
+  const groupName = () => t("forms.queryCandidatesAria");
+
+  it("不传候选：初始搜索词是当前标题，没有候选标签", async () => {
+    render(<Controlled searcher={searcherReturning([])} />);
+    clickMatch("bgm");
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("textbox", { name: t("forms.titleQuery") })).toHaveValue("沉默魔女的秘密");
+    expect(within(dialog).queryByRole("group", { name: groupName() })).not.toBeInTheDocument();
+  });
+
+  it("标题为空：第一个候选作初始搜索词，其余渲染为标签，点击替换搜索词并搜索", async () => {
+    const searcher = searcherReturning([]);
+    render(<Controlled searcher={searcher} title="" matchQueryCandidates={["作品乙", "作品甲", "关键词"]} />);
+    clickMatch("bgm");
+    const dialog = await screen.findByRole("dialog");
+    const input = within(dialog).getByRole("textbox", { name: t("forms.titleQuery") });
+    expect(input).toHaveValue("作品乙");
+    const chips = within(within(dialog).getByRole("group", { name: groupName() })).getAllByRole("button");
+    expect(chips.map((chip) => chip.textContent)).toEqual(["作品甲", "关键词"]);
+
+    fireEvent.click(chips[0]!);
+    await waitFor(() => expect(searcher.search).toHaveBeenCalledWith("bgm", "作品甲"));
+    expect(input).toHaveValue("作品甲");
+  });
+
+  it("标题非空：以标题为初始搜索词，候选标签仍可用", async () => {
+    render(<Controlled searcher={searcherReturning([])} matchQueryCandidates={["候选一"]} />);
+    clickMatch("bgm");
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("textbox", { name: t("forms.titleQuery") })).toHaveValue("沉默魔女的秘密");
+    expect(within(within(dialog).getByRole("group", { name: groupName() })).getAllByRole("button")).toHaveLength(1);
+  });
+
+  it("确认匹配把作品名传出：本地化名优先，退回原名；手动 TMDB ID 不传", async () => {
+    const onMatchTitle = vi.fn();
+    const searcher = searcherReturning([{ ...bgmCandidate, title: "", originalTitle: "Original Name" }]);
+    render(<Controlled searcher={searcher} onMatchTitle={onMatchTitle} />);
+    clickMatch("bgm");
+    let dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: t("forms.search") }));
+    fireEvent.click(await within(dialog).findByRole("option", { name: /Original Name/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: t("forms.confirmMatch") }));
+    expect(onMatchTitle).toHaveBeenLastCalledWith("Original Name");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+    onMatchTitle.mockClear();
+    clickMatch("tmdb");
+    dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText(t("forms.tmdbIdAria")), { target: { value: "259972" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("forms.useTmdbId") }));
+    await pickSeason(dialog, t("grid.tabCustom"));
+    fireEvent.change(within(dialog).getByLabelText(t("forms.customSeasonAria")), { target: { value: "3" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("forms.confirmMatch") }));
+    expect(onMatchTitle).not.toHaveBeenCalled();
   });
 });
 

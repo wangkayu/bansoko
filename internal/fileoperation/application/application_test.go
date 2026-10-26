@@ -106,7 +106,7 @@ func TestBuildNamingContextAndRenderTarget(t *testing.T) {
 		metadataBGM: sql.NullString{String: "bgm-1", Valid: true}, tmdbWorkID: sql.NullString{String: "tmdb-1", Valid: true},
 		tmdbMediaKind: sql.NullString{String: "tv", Valid: true}, tmdbSeason: sql.NullInt64{Int64: 2, Valid: true},
 		rawFacts:    json.RawMessage(`{"title":"[Group] Anime title - 01 [1080p HEVC][CHS]"}`),
-		sourceFacts: []byte(`{"anibt":{"schema":"anibt-rss-1.0","tags":["resolution:1080p","subtitle:INTERNAL","language:CHS","format:MKV","tag:HEVC"]},"title_tags":{"schema":"reltitle-attrs-v1","implementation":"reltitle@x","tags":["resolution:1080p","source_type:WEBRip","video_codec:HEVC","sub_lang:SC","sub_flag:soft"],"value_tags":["title:Anime title","group:Group"]}}`),
+		sourceFacts: []byte(`{"anibt":{"schema":"anibt-rss-1.0","tags":["resolution:1080p","subtitle:INTERNAL","language:CHS","format:MKV","tag:HEVC"]},"title_tags":{"schema":"reltitle-attrs-v1","implementation":"reltitle@x","tags":["resolution:1080p","source_type:WEBRip","video_codec:HEVC","sub_lang:SC","sub_flag:soft"],"value_tags":["title:Anime title","group:Group","version:v2"]}}`),
 	}, artifactFileContext{
 		sourcePath: "/downloads/source.mkv", mediaKind: "video", sizeBytes: 42,
 		fingerprint: fingerprintJSONForTest(digest, 42), facts: json.RawMessage(`{"resolution":"1080p","video_codec":"HEVC","container":"mkv"}`),

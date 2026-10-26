@@ -24,6 +24,11 @@ func TestVarsInputV1AcceptsTheBuiltFactObject(t *testing.T) {
 	if err := Validate("VarsInputV1", v); err != nil {
 		t.Fatal(err)
 	}
+	// Inputs frozen before rt.version was introduced remain valid unchanged.
+	delete(v.Object["facts"].Object["rt"].Object, "version")
+	if err := Validate("VarsInputV1", v); err != nil {
+		t.Fatalf("old input without rt.version rejected: %v", err)
+	}
 	// The object is closed: an unknown member is refused.
 	v.Object["facts"].Object["anime"].Object["kind"] = Value{Kind: KindString, String: "tv"}
 	if err := Validate("VarsInputV1", v); err == nil {

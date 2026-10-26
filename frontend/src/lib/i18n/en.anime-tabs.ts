@@ -205,6 +205,7 @@ export const enFormsCopy = {
   autoSearch: "Auto Search",
   noCandidates: "No matching entries found. Search again later, or leave it unmatched.",
   candidatesAria: "Match results",
+  queryCandidatesAria: "Suggested queries",
   yearUnknown: "Year unknown",
   suggestedSeason: "Suggested: Season {n}",
   selectedPrefix: "Selected",

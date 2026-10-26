@@ -48,15 +48,16 @@ type Field struct {
 	Text        Text
 }
 
-// ReltitleFields are the exposed reltitle fields, in catalog order: the six
-// default-on fields. Episode-semantics outputs are not exposed at present
-// (the authoritative episode stays the system fact); other whitelisted
-// outputs stay unexposed until per-field enabling exists. sub_flag is the
-// flat AttrSubFlag projection release.subtitle_mode and the sub.lang_name
-// type tail derive from; the canonical dictionary pins it to hard / soft / ex.
+// ReltitleFields are the exposed reltitle fields, in catalog order.
+// Episode-semantics outputs are not exposed at present (the authoritative
+// episode stays the system fact); other whitelisted outputs stay unexposed
+// until per-field enabling exists. sub_flag is the flat AttrSubFlag projection
+// release.subtitle_mode and the sub.lang_name type tail derive from; the
+// canonical dictionary pins it to hard / soft / ex.
 var ReltitleFields = []Field{
 	{Key: "Title", Name: "title", Dimension: acquisitiondomain.TitleValueDimensionTitle, Description: "Title reltitle read from the release title.", SampleValue: "进击的巨人", Label: Text{"标题", "Title"}, Text: Text{"reltitle 从发布标题读出的作品标题。", "Title reltitle read from the release title."}},
 	{Key: "Subgroup", Name: "subgroup", Dimension: acquisitiondomain.TitleValueDimensionGroup, Description: "Release group reltitle read from the release title.", SampleValue: "SampleGroup", Label: Text{"字幕组", "Group"}, Text: Text{"reltitle 从发布标题读出的字幕组。", "Group reltitle read from the release title."}},
+	{Key: "Version", Name: "version", Dimension: acquisitiondomain.TitleValueDimensionVersion, Description: "Release version reltitle read from the release title.", SampleValue: "v2", Label: Text{"发布版本", "Release version"}, Text: Text{"reltitle 从发布标题读出的发布版本，例如 v2；标题没有版本标记时为空。", "Release version reltitle read from the release title, such as v2. Empty when the title has no version marker."}},
 	{Key: "Resolution", Name: "resolution", Dimension: "resolution", Description: "Resolution reltitle read from the release title.", SampleValue: "1080p", Label: Text{"分辨率", "Resolution"}, Text: Text{"reltitle 从发布标题读出的分辨率。", "Resolution reltitle read from the release title."}},
 	{Key: "Source", Name: "source", Dimension: "source_type", Description: "Source type reltitle read from the release title.", SampleValue: "WEBRip", Label: Text{"片源", "Source"}, Text: Text{"reltitle 从发布标题读出的片源类型。", "Source type reltitle read from the release title."}},
 	{Key: "Codec", Name: "codec", Dimension: "video_codec", Description: "Video codec reltitle read from the release title.", SampleValue: "HEVC", Label: Text{"编码", "Codec"}, Text: Text{"reltitle 从发布标题读出的视频编码。", "Video codec reltitle read from the release title."}},
@@ -192,8 +193,9 @@ func FromTagSets(title *acquisitiondomain.TitleTagSet, anibt *acquisitiondomain.
 	return Facts{Reltitle: ReltitleValues(title), AniBTTags: AniBTTagValues(anibt)}
 }
 
-// ReltitleValues projects a frozen title tag set. Title and Subgroup come only
-// from the ValueTags of a set of the current schema; the other fields from its tags.
+// ReltitleValues projects a frozen title tag set. Title, Subgroup and Version
+// come only from the ValueTags of a set of the current schema; the other fields
+// from its tags.
 func ReltitleValues(set *acquisitiondomain.TitleTagSet) Values {
 	values := Values{}
 	if set == nil {

@@ -128,6 +128,7 @@ export const gridCopy = {
 
 export const actCopy = {
   cancel: "取消",
+  back: "返回",
   close: "关闭",
   retry: "重试",
   save: "保存",
@@ -173,7 +174,14 @@ export const feedSiteCopy = {
 
 export const globalSearchCopy = {
   keywordAria: "搜索关键词",
+  modeAria: "搜索类型",
+  modeProgram: "番剧",
+  modeSeed: "种子",
+  providerAria: "站点",
   placeholder: "输入关键词搜索番剧",
+  seedPlaceholder: "输入关键词搜索种子",
+  seedHint: "用空格组合作品、字幕组、集数或分辨率，结果更精确",
   clearAria: "清除关键词",
   start: "输入关键词开始搜索",
+  noMatchSeed: "没有匹配的种子",
 } as const;

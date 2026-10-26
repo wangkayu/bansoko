@@ -472,6 +472,7 @@ func TestWriteErrorKnownApplicationErrorsAreQuiet(t *testing.T) {
 		{name: "not found", err: &apperrors.NotFound{Resource: "anime", ID: "anime-1"}, status: http.StatusNotFound},
 		{name: "version conflict", err: &apperrors.VersionConflict{Owner: "anime", CurrentVersion: 3}, status: http.StatusConflict},
 		{name: "business", err: &apperrors.Business{Status: http.StatusServiceUnavailable, Code: "SERVICE_BUSY", Message: "try again"}, status: http.StatusServiceUnavailable},
+		{name: "scan in progress", err: &apperrors.Business{Status: http.StatusConflict, Code: "SCAN_IN_PROGRESS", Message: "A scan is already running for this instance. Try again after it finishes."}, status: http.StatusConflict, code: "SCAN_IN_PROGRESS"},
 		{name: "bad request", err: &apperrors.BadRequest{Code: "REQUEST_INVALID", Message: "invalid"}, status: http.StatusBadRequest},
 		{name: "validation", err: &apperrors.Validation{Code: "VALIDATION_FAILED"}, status: http.StatusUnprocessableEntity},
 		{

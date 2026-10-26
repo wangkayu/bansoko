@@ -1,11 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
-import {
-  searchProviderCatalog,
-  toUserMessage,
-  type CatalogItem,
-} from "../../lib/api/client";
+import { fetchSeedSearchSnapshot, searchProviderCatalog, toUserMessage, type CatalogItem } from "../../lib/api/client";
 import { blacklistKey, useBlacklist } from "../../lib/blacklist";
 import { getCatalogProvider, providerLabel } from "../../lib/providers/registry";
 import { BrowseCard } from "./card";
@@ -14,33 +10,38 @@ import type { CatalogProvider } from "../../lib/providers/port";
 import type { CatalogEntryView, ProviderKey } from "../../lib/providers/viewmodels";
 import { catalogKeys } from "./queries";
 import { StateBlock } from "../../ui/StateBlock";
-import { Dialog, Input } from "../../ui/base";
+import { Dialog, Input, Segmented } from "../../ui/base";
 import { Button } from "../../ui/base/controls";
 import { loadAnimeConfigDialog } from "../anime-config/loadAnimeConfigDialog";
 import { loadOneShotDialog } from "../oneshot/loadOneShotDialog";
+import type { SearchSeedBrowse } from "../oneshot/useOneShotSeeds";
 import { t } from "../../lib/i18n";
 
 const AnimeConfigDialogEntry = lazy(loadAnimeConfigDialog);
 const OneShotDialogEntry = lazy(loadOneShotDialog);
 
-// GlobalSearchDialog — the app's single anime search entry (the top-bar review: the catalog toolbar
-//   no longer has search). It reuses the provider keyword-search contract (searchProviderCatalog).
-//   Only AniBT supports keyword search (Mikan answers 422 SEARCH_NOT_SUPPORTED), so there is no
-//   single-option site dropdown — one line under the query field says search within AniBT, going
-//   back to a selector once another site joins. Results are catalog entry candidates (not torrents);
-//   clicking a candidate walks AnimeGrid's result->config path: mapCatalogItem maps the entry and
-//   hands it to the same AnimeConfigDialogEntry (the draft derives from its internal draftFromEntry),
-//   with no duplicated config dialog.
-//   Results render as browse-area poster cards (BrowseCard): a card click opens the config dialog
-//   (where subscribing completes), and the strip's browse icon is the other path — it opens the
-//   one-shot download entry (the two-step dialog) without ever entering subscription configuration.
-//   Hidden anime never appear in results (matching the catalog columns); they are viewable only in
-//   settings' hidden-anime section.
-//   Closing the dialog discards the transient search context; after a successful subscription the
-//   catalog query invalidates so the catalog page reflects the latest state.
+// GlobalSearchDialog — the app's single search entry (the top-bar review: the catalog toolbar
+//   no longer has search). One dialog, two modes, both sites (AniBT / Mikan):
+//   - 番剧 mode reuses the provider keyword-search contract (searchProviderCatalog, a pure read).
+//     Results are catalog entry candidates; a card click walks AnimeGrid's result->config path
+//     (mapCatalogItem + the same AnimeConfigDialogEntry, where subscribing completes), and the
+//     strip's browse icon opens the one-shot download entry. Hidden anime never appear in results.
+//   - 种子 mode runs the provider torrent search: one POST persists the keyword result as a
+//     short-lived search snapshot. A successful search opens the standard one-shot download flow
+//     directly (OneShotDialog with the search snapshot as its seed source; step one lists the
+//     snapshot's whole window with select/expand) — no intermediate result list is rendered,
+//     because every row of it opened the same dialog. An empty result stays here as the no-match
+//     empty state. Torrents found by search are never a subscription source.
+//   Both one-shot entries (a candidate's browse icon and a direct search) get a back affordance:
+//   back reopens this dialog — the candidate path with its program results intact, the keyword
+//   path back at the seed input window (the search runs again from there).
+//   Closing the search dialog discards the transient search context; after a successful
+//   subscription the catalog query invalidates so the catalog page reflects the latest state.
 
-// Providers supporting keyword search (the declared list).
-const SEARCH_PROVIDER = "anibt" satisfies ProviderKey;
+type SearchMode = "program" | "seed";
+type SearchSite = "anibt" | "mikan";
+
+const SEARCH_PROVIDERS: readonly SearchSite[] = ["anibt", "mikan"];
 
 type CandidateTarget = {
   providerKey: ProviderKey;
@@ -65,50 +66,107 @@ export function GlobalSearchDialog({
 
   const queryClient = useQueryClient();
   const [keyword, setKeyword] = useState("");
+  const [mode, setMode] = useState<SearchMode>("program");
+  const [site, setSite] = useState<SearchSite>("anibt");
+
+  // 番剧 mode: idle (never searched) and empty (searched, no results) are two distinct empty states.
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string>();
   const [items, setItems] = useState<CatalogItem[]>([]);
-  // idle (never searched) and empty (searched, no results) are two distinct empty states.
   const [searched, setSearched] = useState(false);
+
+  // 种子 mode: one POST per query; a successful search hands the whole snapshot to the standard
+  //   one-shot flow, so only the busy/error/no-match states live here.
+  const [seedSearching, setSeedSearching] = useState(false);
+  const [seedError, setSeedError] = useState<string>();
+  const [seedNoMatch, setSeedNoMatch] = useState(false);
+
   // The request sequence: a slow response must never overwrite a newer search's results.
   const requestSeq = useRef(0);
   const [configTarget, setConfigTarget] = useState<CandidateTarget | null>(null);
+  const [seedTarget, setSeedTarget] = useState<CandidateTarget | null>(null);
+  const [searchSeedTarget, setSearchSeedTarget] = useState<SearchSeedBrowse | null>(null);
   const hidden = useBlacklist();
   const shownItems = useMemo(() => {
     const hiddenKeys = new Set(hidden.map((entry) => entry.key));
     return items.filter((item) => !hiddenKeys.has(blacklistKey(item.provider, item.provider_entry_ref)));
   }, [hidden, items]);
-  const [seedTarget, setSeedTarget] = useState<CandidateTarget | null>(null);
 
-  // Closing discards the transient context (query/results/error); in-flight requests are dropped with it.
+  // Closing discards the transient context (query/results/error); in-flight requests are dropped
+  // with it. A second-level dialog opened from here suppresses the discard: its back button
+  // reopens this window with its context intact, and the discard runs once that dialog is gone.
   useEffect(() => {
-    if (open) return;
+    if (open || configTarget || seedTarget || searchSeedTarget) return;
     requestSeq.current += 1;
     setKeyword("");
     setItems([]);
     setError(undefined);
     setSearching(false);
     setSearched(false);
-  }, [open]);
+    setSeedSearching(false);
+    setSeedError(undefined);
+    setSeedNoMatch(false);
+  }, [open, configTarget, seedTarget, searchSeedTarget]);
+
+  function resetResults() {
+    requestSeq.current += 1;
+    setItems([]);
+    setError(undefined);
+    setSearching(false);
+    setSearched(false);
+    setSeedSearching(false);
+    setSeedError(undefined);
+    setSeedNoMatch(false);
+  }
 
   async function runSearch() {
     const q = keyword.trim();
-    if (!q || searching) return;
+    if (!q) return;
+    // The busy guard runs before a sequence number is taken: a second submit while a request
+    // is in flight is a no-op, never an invalidation that strands the in-flight response
+    // (its seq would stop matching and `searching` would never clear).
+    if (mode === "program" ? searching : seedSearching) return;
     const seq = ++requestSeq.current;
-    setSearching(true);
-    setError(undefined);
+    if (mode === "program") {
+      setSearching(true);
+      setError(undefined);
+      try {
+        const result = await searchProviderCatalog(site, q);
+        if (seq !== requestSeq.current) return;
+        setItems(result);
+        setSearched(true);
+      } catch (cause) {
+        if (seq !== requestSeq.current) return;
+        setItems([]);
+        setSearched(true);
+        setError(toUserMessage(cause, t("grid.searchFailed")));
+      } finally {
+        if (seq === requestSeq.current) setSearching(false);
+      }
+      return;
+    }
+    // The fetch response's own seed window only decides emptiness: the one-shot flow reads the
+    // persisted snapshot (the site's whole search window, at most 100 rows) through the read model.
+    setSeedSearching(true);
+    setSeedError(undefined);
+    setSeedNoMatch(false);
     try {
-      const result = await searchProviderCatalog(SEARCH_PROVIDER, q);
+      const view = await fetchSeedSearchSnapshot(site, { query: q });
       if (seq !== requestSeq.current) return;
-      setItems(result);
-      setSearched(true);
+      if (view.seeds.length === 0) {
+        setSeedNoMatch(true);
+        return;
+      }
+      // No intermediate result list: every row of it opened the same dialog, so a successful
+      // search hands the whole snapshot to the standard one-shot flow and closes this window
+      // (back from there returns to the seed input window).
+      setSearchSeedTarget({ provider: site, query: q, snapshot: view });
+      onOpenChange(false);
     } catch (cause) {
       if (seq !== requestSeq.current) return;
-      setItems([]);
-      setSearched(true);
-      setError(toUserMessage(cause, t("grid.searchFailed")));
+      setSeedError(toUserMessage(cause, t("grid.searchFailed")));
     } finally {
-      if (seq === requestSeq.current) setSearching(false);
+      if (seq === requestSeq.current) setSeedSearching(false);
     }
   }
 
@@ -123,7 +181,8 @@ export function GlobalSearchDialog({
   }
 
   // The same mapping path as a candidate click, but aimed at browse seeds; the search dialog closes
-//   too, so dialogs never stack.
+  //   too, so dialogs never stack. Back from the one-shot flow reopens this dialog with the
+  //   program results intact (the results live on, unlike the keyword path, which has no list).
   function openSeeds(item: CatalogItem) {
     const providerKey = item.provider;
     setSeedTarget({
@@ -134,13 +193,56 @@ export function GlobalSearchDialog({
     onOpenChange(false);
   }
 
+  function backFromSeeds() {
+    setSeedTarget(null);
+    onOpenChange(true);
+  }
+
+  // The keyword path has no result list to return to: back lands on the seed input window (mode
+  // and site stay as they were; the keyword is cleared for a fresh search).
+  function backFromSearchSeeds() {
+    setSearchSeedTarget(null);
+    setKeyword("");
+    setSeedNoMatch(false);
+    onOpenChange(true);
+  }
+
   function handleSubscribed() {
     void queryClient.invalidateQueries({ queryKey: catalogKeys.all });
   }
 
+  const busy = mode === "program" ? searching : seedSearching;
+
   return (
     <>
       <Dialog open={open} onRequestClose={() => onOpenChange(false)} tier="M" fixedHeight title={t("search.title")}>
+        <div className="tw:mb-2 tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+          <Segmented<SearchMode>
+            size="compact"
+            aria-label={t("globalSearch.modeAria")}
+            value={mode}
+            onValueChange={(next) => {
+              if (next === mode) return;
+              setMode(next);
+              resetResults();
+            }}
+            options={[
+              { value: "program", label: t("globalSearch.modeProgram") },
+              { value: "seed", label: t("globalSearch.modeSeed") },
+            ]}
+          />
+          <Segmented<SearchSite>
+            size="compact"
+            aria-label={t("globalSearch.providerAria")}
+            value={site}
+            onValueChange={(next) => {
+              if (next === site) return;
+              setSite(next);
+              resetResults();
+            }}
+            options={SEARCH_PROVIDERS.map((key) => ({ value: key, label: providerLabel(key) }))}
+          />
+        </div>
         <form
           className="global-search-form"
           onSubmit={(event) => {
@@ -152,7 +254,7 @@ export function GlobalSearchDialog({
             <div className="tw:relative">
               <Input
                 aria-label={t("globalSearch.keywordAria")}
-                placeholder={t("globalSearch.placeholder")}
+                placeholder={mode === "program" ? t("globalSearch.placeholder") : t("globalSearch.seedPlaceholder")}
                 value={keyword}
                 onChange={(event) => setKeyword(event.target.value)}
                 className="tw:pr-8"
@@ -169,46 +271,67 @@ export function GlobalSearchDialog({
               ) : null}
             </div>
           </div>
-          <Button variant="primary" type="submit" disabled={searching || !keyword.trim()}>
-            {searching ? t("grid.searching") : t("grid.search")}
+          <Button variant="primary" type="submit" disabled={busy || !keyword.trim()}>
+            {busy ? t("grid.searching") : t("grid.search")}
           </Button>
         </form>
-        <p className="tw:mt-2 tw:mb-0 tw:text-xs tw:text-muted-foreground">{t("search.inSite", { site: providerLabel(SEARCH_PROVIDER) })}</p>
 
-        <div className="global-search-results" aria-live="polite">
-          {error ? (
-            <StateBlock
-              kind="error"
-              title={error}
-              action={
-                <Button size="sm" disabled={searching} onClick={() => void runSearch()}>
-                  {t("grid.retry")}
-                </Button>
-              }
-            />
-          ) : searching ? (
-            <StateBlock kind="busy" title={t("grid.searchingNow")} />
-          ) : !searched ? (
-            <StateBlock kind="empty" title={t("globalSearch.start")} />
-          ) : shownItems.length === 0 ? (
-            <StateBlock kind="empty" title={t("search.noMatch")} description={t("grid.searchRetryHint")} />
-          ) : (
-            <ul className="global-search-list">
-              {shownItems.map((item) => {
-                const entry = mapCatalogItem(item, item.provider);
-                return (
-                  <li key={`${item.provider}:${item.provider_entry_ref}`}>
-                    <BrowseCard
-                      entry={entry}
-                      onOpenConfig={() => openCandidate(item)}
-                      onBrowseSeeds={() => openSeeds(item)}
-                    />
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
+        {mode === "program" ? (
+          <div className="global-search-results" aria-live="polite">
+            {error ? (
+              <StateBlock
+                kind="error"
+                title={error}
+                action={
+                  <Button size="sm" disabled={searching} onClick={() => void runSearch()}>
+                    {t("grid.retry")}
+                  </Button>
+                }
+              />
+            ) : searching ? (
+              <StateBlock kind="busy" title={t("grid.searchingNow")} />
+            ) : !searched ? (
+              <StateBlock kind="empty" title={t("globalSearch.start")} />
+            ) : shownItems.length === 0 ? (
+              <StateBlock kind="empty" title={t("search.noMatch")} description={t("grid.searchRetryHint")} />
+            ) : (
+              <ul className="global-search-list">
+                {shownItems.map((item) => {
+                  const entry = mapCatalogItem(item, item.provider);
+                  return (
+                    <li key={`${item.provider}:${item.provider_entry_ref}`}>
+                      <BrowseCard
+                        entry={entry}
+                        onOpenConfig={() => openCandidate(item)}
+                        onBrowseSeeds={() => openSeeds(item)}
+                      />
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        ) : (
+          <div className="global-search-results" aria-live="polite">
+            {seedError ? (
+              <StateBlock
+                kind="error"
+                title={seedError}
+                action={
+                  <Button size="sm" disabled={seedSearching} onClick={() => void runSearch()}>
+                    {t("grid.retry")}
+                  </Button>
+                }
+              />
+            ) : seedSearching ? (
+              <StateBlock kind="busy" title={t("grid.searchingNow")} />
+            ) : seedNoMatch ? (
+              <StateBlock kind="empty" title={t("globalSearch.noMatchSeed")} description={t("grid.searchRetryHint")} />
+            ) : (
+              <StateBlock kind="empty" title={t("globalSearch.start")} description={t("globalSearch.seedHint")} />
+            )}
+          </div>
+        )}
       </Dialog>
 
       {/* The config dialog after a candidate click: the same AnimeConfigDialogEntry AnimeGrid uses
@@ -235,6 +358,21 @@ export function GlobalSearchDialog({
             open
             entry={seedTarget.entry}
             onClose={() => setSeedTarget(null)}
+            onBack={backFromSeeds}
+            onOpenRecords={onOpenRecords}
+          />
+        </Suspense>
+      )}
+      {/* A successful keyword search's one-shot download: the same two-step dialog, seeded from
+       *  the search snapshot; back returns to the seed input window. */}
+      {searchSeedTarget && (
+        <Suspense fallback={null}>
+          <OneShotDialogEntry
+            key={`${searchSeedTarget.provider}:${searchSeedTarget.snapshot.snapshot_id}`}
+            open
+            search={searchSeedTarget}
+            onClose={() => setSearchSeedTarget(null)}
+            onBack={backFromSearchSeeds}
             onOpenRecords={onOpenRecords}
           />
         </Suspense>

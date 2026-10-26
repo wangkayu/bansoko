@@ -162,7 +162,7 @@ func (s *Service) SubmitScan(ctx context.Context, input ScanSubmitInput) (ScanVi
 	owner, created, err := startScanOwnerTx(ctx, tx, s.now().UTC(), animeID, scope, fingerprint)
 	if err != nil {
 		if errors.Is(err, ErrScanInProgress) {
-			return ScanView{}, &scanConflict{code: "SCAN_IN_PROGRESS"}
+			return ScanView{}, scanInProgressError()
 		}
 		return ScanView{}, err
 	}
@@ -343,10 +343,17 @@ func fingerprintFor(input ScanSubmitInput) string {
 	return hex.EncodeToString(digest[:])
 }
 
-type scanConflict struct{ code string }
-
-func (e *scanConflict) Error() string { return e.code }
-func (e *scanConflict) Code() string  { return e.code }
+// scanInProgressError is the typed conflict for a submit that lands while the
+// instance's generation is still running: the contract answers 409
+// SCAN_IN_PROGRESS, and the transport maps apperrors.Business without a
+// per-condition special case.
+func scanInProgressError() error {
+	return &apperrors.Business{
+		Status:  409,
+		Code:    "SCAN_IN_PROGRESS",
+		Message: "A scan is already running for this instance. Try again after it finishes.",
+	}
+}
 
 func nullableString(value string) *string {
 	if value == "" {

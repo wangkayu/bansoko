@@ -128,6 +128,7 @@ export const enGridCopy = {
 
 export const enActCopy = {
   cancel: "Cancel",
+  back: "Back",
   close: "Close",
   retry: "Retry",
   save: "Save",
@@ -173,7 +174,14 @@ export const enFeedSiteCopy = {
 
 export const enGlobalSearchCopy = {
   keywordAria: "Search keywords",
+  modeAria: "Search type",
+  modeProgram: "Anime",
+  modeSeed: "Torrents",
+  providerAria: "Site",
   placeholder: "Search anime by keyword",
+  seedPlaceholder: "Search torrents by keyword",
+  seedHint: "Combine the title, group, episode or resolution with spaces for sharper results",
   clearAria: "Clear keywords",
   start: "Enter keywords to start searching",
+  noMatchSeed: "No matching torrents",
 } as const satisfies CopyShape<typeof globalSearchCopy>;

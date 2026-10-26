@@ -26,14 +26,14 @@ func renderNamespaceTemplate(t *testing.T, source string, ctx NamingContext) (st
 
 func TestNamespaceRootsRenderFrozenValues(t *testing.T) {
 	ctx := namespaceContext(
-		templatefacts.Values{"Title": "进击的巨人", "Subgroup": "示例字幕组", "SubLang": "SC+TC"},
+		templatefacts.Values{"Title": "进击的巨人", "Subgroup": "示例字幕组", "Version": "v2", "SubLang": "SC+TC"},
 		templatefacts.Values{"Language": "CHS+CHT", "Tag": "10bit+HEVC"},
 	)
-	got, err := renderNamespaceTemplate(t, "[${rt.subgroup}] ${rt.title} [${rt.sub_lang}][${anibt.language}][${anibt.tag}].${file.ext}", ctx)
+	got, err := renderNamespaceTemplate(t, "[${rt.subgroup}] ${rt.title} ${rt.version} [${rt.sub_lang}][${anibt.language}][${anibt.tag}].${file.ext}", ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "[示例字幕组] 进击的巨人 [SC+TC][CHS+CHT][10bit+HEVC].mkv"; got != want {
+	if want := "[示例字幕组] 进击的巨人 v2 [SC+TC][CHS+CHT][10bit+HEVC].mkv"; got != want {
 		t.Fatalf("rendered %q, want %q", got, want)
 	}
 	// The `context.` alias reaches the same roots.

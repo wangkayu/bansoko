@@ -1113,6 +1113,12 @@ func (s *Service) composeRSSListViewFor(
 		if err == nil {
 			groupEntries, err = rssListGroupEntriesFor(draft, effective, previewOffset, oneShot)
 		}
+	} else if draft.Origin == animedomain.SubscriptionOriginOneshot {
+		// The search one-shot browse. An origin=oneshot draft is the form the
+		// admission path binds to one exact keyword search snapshot, so the list
+		// read resolves that snapshot and nothing else; a ref that names a feed
+		// snapshot is refused rather than answered from it.
+		previews, groupEntries, err = s.resolveSearchSnapshotProjection(ctx, draft, feed, previewOffset)
 	} else {
 		// An origin whose snapshot cannot be resolved still lists its draft's
 		// groups. They carry no seeds, and the shared overlap pass at the end of
@@ -1886,13 +1892,16 @@ func seedTitleTags(title string) *[]string {
 }
 
 // draftVarsAnimeEvidence is the Vars anime evidence of a configuration draft:
-// the draft title, its override, the provider catalog title the subscription
-// will freeze, and the binding (what an acceptance of this draft freezes) and
-// the bound works' recorded titles. A draft names no managed anime yet.
+// the draft title, the fixed title an acceptance writes as the override, the
+// provider catalog title the subscription will freeze, and the binding (what
+// an acceptance of this draft freezes) and the bound works' recorded titles. A
+// draft names no managed anime yet.
 func (s *Service) draftVarsAnimeEvidence(ctx context.Context, draft animedomain.AnimeDraft) (namingvars.AnimeEvidence, error) {
 	evidence := namingvars.AnimeEvidence{AnimeTitle: draft.Title}
-	if draft.TitleOverride != nil {
-		evidence.AnimeTitleOverride = strings.TrimSpace(*draft.TitleOverride)
+	// Acceptance freezes the edited title as title_override, which outranks
+	// every provider and metadata title; the preview must rank it the same.
+	if fixed := animeapplication.FixedTitle(draft.Title, draft.TitleOverride); fixed != nil {
+		evidence.AnimeTitleOverride = *fixed
 	}
 	providerTitle, err := s.draftProviderTitle(ctx, draft)
 	if err != nil {

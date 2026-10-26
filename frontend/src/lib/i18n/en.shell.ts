@@ -218,7 +218,6 @@ export const enAuthCopy = {
 
 export const enSearchCopy = {
   title: "Search Anime",
-  inSite: "Searching {site}",
   noMatch: "No matching anime",
 } as const satisfies CopyShape<typeof searchCopy>;
 

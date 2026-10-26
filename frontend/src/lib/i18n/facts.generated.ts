@@ -357,6 +357,10 @@ export const factsCopy = {
       label: "reltitle 标题",
       description: "解析值：reltitle 从发布标题读出的作品标题。",
     },
+    version: {
+      label: "reltitle 发布版本",
+      description: "解析值：reltitle 从发布标题读出的发布版本，例如 v2；标题没有版本标记时为空。",
+    },
   },
   sub: {
     lang: {
@@ -795,6 +799,10 @@ export const enFactsCopy = {
     title: {
       label: "reltitle Title",
       description: "Parsed: Title reltitle read from the release title.",
+    },
+    version: {
+      label: "reltitle Release version",
+      description: "Parsed: Release version reltitle read from the release title, such as v2. Empty when the title has no version marker.",
     },
   },
   sub: {

@@ -176,6 +176,12 @@ func (s *Service) ReadProviderEntryRSSByIdentity(ctx context.Context, provider, 
 	if snapshot.Provider != provider || snapshot.ProviderEntryRef != catalogEntryRef || snapshot.ProviderGroupRef != groupRef {
 		return catalogdomain.ProviderRSSPreviewResult{}, fmt.Errorf("%w: snapshot %s belongs to %s/%s/%s", catalogdomain.ErrProviderFeedSnapshotIdentityMismatch, snapshot.ID, snapshot.Provider, snapshot.ProviderEntryRef, snapshot.ProviderGroupRef)
 	}
+	// A feed read accepts a published provider feed or a custom feed and nothing
+	// else: a search snapshot authorizes a keyword result, not a subscription
+	// surface, even when a caller names it by an exact identity.
+	if err := snapshot.VerifyKind(feedSnapshotKindForProvider(provider)); err != nil {
+		return catalogdomain.ProviderRSSPreviewResult{}, err
+	}
 	if err := snapshot.VerifyIdentity(identity); err != nil {
 		return catalogdomain.ProviderRSSPreviewResult{}, err
 	}
@@ -217,6 +223,12 @@ func (s *Service) ReadProviderEntrySeedPayload(ctx context.Context, provider, ca
 	}
 	if snapshot.Provider != provider || snapshot.ProviderEntryRef != catalogEntryRef || snapshot.ProviderGroupRef != groupRef {
 		return catalogdomain.ProviderFeedSnapshotSeed{}, fmt.Errorf("%w: snapshot %s belongs to %s/%s/%s", catalogdomain.ErrProviderFeedSnapshotIdentityMismatch, snapshot.ID, snapshot.Provider, snapshot.ProviderEntryRef, snapshot.ProviderGroupRef)
+	}
+	// The bytes a downloader receives come only from a feed snapshot of the kind
+	// its provider owns. A search snapshot's bytes are reached exclusively through
+	// the search expansion path, which checks the same kind itself.
+	if err := snapshot.VerifyKind(feedSnapshotKindForProvider(provider)); err != nil {
+		return catalogdomain.ProviderFeedSnapshotSeed{}, err
 	}
 	if err := snapshot.VerifyIdentity(identity); err != nil {
 		return catalogdomain.ProviderFeedSnapshotSeed{}, err
@@ -365,7 +377,23 @@ func (s *Service) PreviewProviderEntryRSS(ctx context.Context, provider, catalog
 	return s.RefreshProviderEntryRSS(ctx, provider, catalogEntryRef, groupRef)
 }
 
+// feedSnapshotKindForProvider is the kind a feed-shaped read requires for one
+// provider: the frozen custom feed for a custom source, the published provider
+// feed for a discovery provider. A search snapshot never matches it.
+func feedSnapshotKindForProvider(provider string) catalogdomain.FeedSnapshotKind {
+	if provider == "custom" {
+		return catalogdomain.FeedSnapshotKindCustom
+	}
+	return catalogdomain.FeedSnapshotKindProviderFeed
+}
+
+// validateFeedSnapshotScope accepts the two feed-shaped scopes and refuses a
+// search scope outright: search snapshots are addressed by derived hashed refs,
+// never by a provider entry/group, so a request cannot smuggle one in here.
 func validateFeedSnapshotScope(provider, entryRef, groupRef string) error {
+	if strings.HasPrefix(entryRef, catalogdomain.SearchSnapshotScopePrefix) || strings.HasPrefix(groupRef, catalogdomain.SearchSnapshotQueryPrefix) {
+		return &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "SEARCH_SNAPSHOT_SCOPE_INVALID", Message: "A keyword search snapshot is not a provider feed scope."}
+	}
 	if provider == "custom" {
 		if len(entryRef) != 78 || len(groupRef) != 77 || !strings.HasPrefix(entryRef, "custom-source:") || !strings.HasPrefix(groupRef, "custom-group:") {
 			return &apperrors.Business{Status: 422, Code: "CUSTOM_SNAPSHOT_SCOPE_INVALID", Message: "Exact custom snapshot scope is required."}
@@ -399,12 +427,22 @@ func mapFeedItemsToSnapshotSeeds(items []acquisitiondomain.FeedItem) ([]catalogd
 		if locator == "" {
 			return nil, fmt.Errorf("feed item %d has no download URL", index)
 		}
+		// The published identity names the seed whenever it can be stored as a
+		// key. A missing identity, and one longer than the key bound, falls back
+		// to the item's own facts: Mikan publishes the release title as its
+		// guid, and a long CJK title passes 256 bytes, so without the fallback
+		// one such row would make the whole page unusable.
 		key := strings.TrimSpace(item.GUID)
-		if key == "" {
-			key = catalogdomain.DigestBytes([]byte(locator + "\x00" + item.Title + "\x00" + item.Published.UTC().Format(time.RFC3339Nano)))
+		if key == "" || len(key) > catalogdomain.MaxProviderFeedStableKeyLength {
+			key = feedItemDigestKey(item, locator)
 		}
 		if _, exists := seen[key]; exists {
 			key = fmt.Sprintf("%s#%d", key, index)
+			// A repeated identity at the very top of the bound leaves it again
+			// once the disambiguating suffix is appended.
+			if len(key) > catalogdomain.MaxProviderFeedStableKeyLength {
+				key = catalogdomain.DigestBytes([]byte(key))
+			}
 		}
 		seen[key] = struct{}{}
 		seed := catalogdomain.ProviderFeedSnapshotSeed{
@@ -471,6 +509,14 @@ func mapFeedItemsToSnapshotSeeds(items []acquisitiondomain.FeedItem) ([]catalogd
 		seeds = append(seeds, seed)
 	}
 	return seeds, nil
+}
+
+// feedItemDigestKey is the content-derived name of one item: the same locator,
+// title and published time always produce the same key, so an item without a
+// storable published identity still keeps a stable name inside its snapshot and
+// across snapshots of the same answer.
+func feedItemDigestKey(item acquisitiondomain.FeedItem, locator string) string {
+	return catalogdomain.DigestBytes([]byte(locator + "\x00" + item.Title + "\x00" + item.Published.UTC().Format(time.RFC3339Nano)))
 }
 
 // acquisitionStateFor derives one item's torrent state from the facts the

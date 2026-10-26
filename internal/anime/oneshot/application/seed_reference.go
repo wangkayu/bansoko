@@ -9,6 +9,7 @@ import (
 	animedomain "bansoko/internal/anime/domain"
 	animeport "bansoko/internal/anime/port"
 	"bansoko/internal/apperrors"
+	catalogapplication "bansoko/internal/catalog/application"
 	animecatalogdomain "bansoko/internal/catalog/domain"
 )
 
@@ -50,6 +51,11 @@ func seedReferenceStale(message string) error {
 // in it, or a supplied fact that differs from it is SEED_PREVIEW_STALE with no
 // writes. Admission then verifies the resolved seed exactly as it verifies a
 // locator-form seed (persisted payload, strong identity, preview binding).
+//
+// The kind the two refs name decides which read serves the reference. A search
+// scope is answered only by the search read, and a feed scope only by the feed
+// read: the source proves the persisted row's own kind afterwards, so neither
+// ref pair can reach the other kind's snapshot.
 func (s *Service) resolveSeedReference(ctx context.Context, reference SelectedSeed) (SelectedSeed, error) {
 	if err := validateSeedReference(reference); err != nil {
 		return SelectedSeed{}, err
@@ -60,10 +66,23 @@ func (s *Service) resolveSeedReference(ctx context.Context, reference SelectedSe
 	identity := animecatalogdomain.ProviderRSSPreviewIdentity{
 		SnapshotID: reference.SnapshotID, SnapshotVersion: reference.SnapshotVersion, ContentHash: reference.SnapshotContentHash,
 	}
-	snapshot, err := s.seedPreviews.FetchEntryGroupSnapshotByID(ctx, string(reference.Provider), reference.ProviderEntryRef, reference.ProviderGroupRef, identity)
+	kind := catalogapplication.SnapshotKindFromRefs(reference.ProviderEntryRef, reference.ProviderGroupRef)
+	var (
+		snapshot animeapplication.SeedPreviewSnapshot
+		err      error
+	)
+	if kind == animecatalogdomain.FeedSnapshotKindSearch {
+		searchSource, ok := s.seedPreviews.(animeapplication.SearchSeedPreviewSource)
+		if !ok {
+			return SelectedSeed{}, &apperrors.Business{Status: 503, Code: "SEED_PREVIEW_UNAVAILABLE", Message: "Keyword search snapshots are not served by this server."}
+		}
+		snapshot, err = searchSource.FetchSearchSnapshotByID(ctx, string(reference.Provider), reference.ProviderEntryRef, reference.ProviderGroupRef, identity)
+	} else {
+		snapshot, err = s.seedPreviews.FetchEntryGroupSnapshotByID(ctx, string(reference.Provider), reference.ProviderEntryRef, reference.ProviderGroupRef, identity)
+	}
 	if err != nil {
 		if errors.Is(err, animeapplication.ErrProviderFeedSnapshotRefreshRequired) {
-			return SelectedSeed{}, seedReferenceStale("The referenced feed snapshot is missing, superseded or stale. Refresh the feed snapshot and choose the seed again.")
+			return SelectedSeed{}, seedReferenceStale(referenceSnapshotStaleMessage(kind))
 		}
 		var business *apperrors.Business
 		if errors.As(err, &business) {
@@ -75,7 +94,7 @@ func (s *Service) resolveSeedReference(ctx context.Context, reference SelectedSe
 		snapshot.ProviderEntryRef != reference.ProviderEntryRef || snapshot.ProviderGroupRef != reference.ProviderGroupRef ||
 		snapshot.SnapshotID != reference.SnapshotID || snapshot.SnapshotVersion != reference.SnapshotVersion ||
 		snapshot.ContentHash != reference.SnapshotContentHash {
-		return SelectedSeed{}, seedReferenceStale("The referenced feed snapshot is not the current one for this group. Refresh the feed snapshot and choose the seed again.")
+		return SelectedSeed{}, seedReferenceStale(referenceNotCurrentMessage(kind))
 	}
 	for index := range snapshot.Seeds {
 		fact := snapshot.Seeds[index]
@@ -84,11 +103,42 @@ func (s *Service) resolveSeedReference(ctx context.Context, reference SelectedSe
 		}
 		resolved := seedFromSnapshotFact(reference, fact)
 		if !referenceFactsAgree(reference, resolved) {
-			return SelectedSeed{}, seedReferenceStale("A seed fact in the request differs from the referenced snapshot. Read the feed snapshot again and resend the reference.")
+			return SelectedSeed{}, seedReferenceStale(referenceFactDisagreesMessage(kind))
 		}
 		return resolved, nil
 	}
-	return SelectedSeed{}, seedReferenceStale("The referenced seed is not in that feed snapshot. Read the feed snapshot again and choose the seed.")
+	return SelectedSeed{}, seedReferenceStale(referenceKeyMissingMessage(kind))
+}
+
+// referenceSnapshotStaleMessage names the snapshot a reference failed on in the
+// words that snapshot's own surface uses, so a search refusal never tells the
+// caller to refresh a feed that was never read.
+func referenceSnapshotStaleMessage(kind animecatalogdomain.FeedSnapshotKind) string {
+	if kind == animecatalogdomain.FeedSnapshotKindSearch {
+		return "The referenced search snapshot is missing, superseded or stale. Run the search again and choose the seed again."
+	}
+	return "The referenced feed snapshot is missing, superseded or stale. Refresh the feed snapshot and choose the seed again."
+}
+
+func referenceNotCurrentMessage(kind animecatalogdomain.FeedSnapshotKind) string {
+	if kind == animecatalogdomain.FeedSnapshotKindSearch {
+		return "The referenced search snapshot is not the current one for this query. Run the search again and choose the seed again."
+	}
+	return "The referenced feed snapshot is not the current one for this group. Refresh the feed snapshot and choose the seed again."
+}
+
+func referenceFactDisagreesMessage(kind animecatalogdomain.FeedSnapshotKind) string {
+	if kind == animecatalogdomain.FeedSnapshotKindSearch {
+		return "A seed fact in the request differs from the referenced search snapshot. Read the search result again and resend the reference."
+	}
+	return "A seed fact in the request differs from the referenced snapshot. Read the feed snapshot again and resend the reference."
+}
+
+func referenceKeyMissingMessage(kind animecatalogdomain.FeedSnapshotKind) string {
+	if kind == animecatalogdomain.FeedSnapshotKindSearch {
+		return "The referenced seed is not in that search snapshot. Run the search again and choose the seed."
+	}
+	return "The referenced seed is not in that feed snapshot. Read the feed snapshot again and choose the seed."
 }
 
 // seedFromSnapshotFact builds the locator-form seed for one persisted snapshot
@@ -96,6 +146,11 @@ func (s *Service) resolveSeedReference(ctx context.Context, reference SelectedSe
 // time is the snapshot's instant in UTC (the catalog persists it in UTC), so the
 // resolved seed does not depend on the database session time zone. The digest
 // spelling is canonicalized exactly as a locator-form request is.
+//
+// The snapshot kind is derived from the same two refs that identify the
+// snapshot, never copied from the caller: a request body cannot state it, and
+// both identity-only entry points (a reference and a download) must freeze the
+// same seed for the same snapshot.
 func seedFromSnapshotFact(reference SelectedSeed, fact animeapplication.SeedPreviewFact) SelectedSeed {
 	seed := SelectedSeed{
 		Provider:            animedomain.ProviderKind(reference.Provider),
@@ -105,6 +160,7 @@ func seedFromSnapshotFact(reference SelectedSeed, fact animeapplication.SeedPrev
 		SnapshotVersion:     reference.SnapshotVersion,
 		SnapshotContentHash: reference.SnapshotContentHash,
 		StableSeedKey:       reference.StableSeedKey,
+		SnapshotKind:        string(catalogapplication.SnapshotKindFromRefs(reference.ProviderEntryRef, reference.ProviderGroupRef)),
 		Locator:             fact.DownloadURL,
 		Title:               fact.Title,
 	}

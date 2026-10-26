@@ -2,14 +2,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RSSListItem, RSSListGroup, RSSListView } from "../../lib/api/client";
+import type { RSSListItem, RSSListGroup, RSSListView, SeedSearchSnapshotSeed } from "../../lib/api/client";
 import { createEmptyDraft, createEmptySourceDraft } from "../../lib/draft";
 import { t } from "../../lib/i18n";
 import { namingFactLabel, reasonLabel } from "../../lib/i18n/reasons";
 import type { CatalogEntryView } from "../../lib/providers/viewmodels";
 import { preset as businessPreset } from "../../testing/businessPreset";
 import { OneShotDialog } from "./OneShotDialog";
-
+import type { SearchSeedBrowse } from "./useOneShotSeeds";
 const toastMock = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() }));
 vi.mock("sonner", () => ({ toast: toastMock }));
 
@@ -110,6 +110,8 @@ type Scenario = {
   discovery?: { status: number; body?: unknown };
   view?: RSSListView;
   viewStatus?: number;
+  /** The error body for a non-200 read (defaults to a generic INTERNAL). */
+  viewErrorBody?: unknown;
   candidate?: unknown;
   customFetch?: { status: number; body?: unknown };
   download?: (stableSeedKey: string) => Download | "network";
@@ -271,7 +273,7 @@ function stubFetch(scenario: Scenario) {
     if (url.endsWith("/anime/rss-list-view")) {
       record(JSON.parse(String(init?.body)));
       if (scenario.viewStatus && scenario.viewStatus !== 200) {
-        return Response.json({ code: "INTERNAL", message: "内部错误" }, { status: scenario.viewStatus });
+        return Response.json(scenario.viewErrorBody ?? { code: "INTERNAL", message: "内部错误" }, { status: scenario.viewStatus });
       }
       const body = calls.at(-1)!.body as Parameters<NonNullable<Scenario["viewFor"]>>[0];
       return Response.json(scenario.viewFor?.(body) ?? scenario.view ?? viewOf([seedGroup()]));
@@ -1149,5 +1151,251 @@ describe("OneShotDialog 自定义预设", () => {
     expect(body).not.toHaveProperty("candidate_id");
     // The candidate is only ever read: no request writes back to the preset (the stub fails write requests outright).
     expect(calls.filter((call) => call.url.includes("/anime-config-candidates/")).length).toBeGreaterThan(0);
+  });
+});
+
+function searchSeed(key: string, hint: string): SeedSearchSnapshotSeed {
+  return {
+    stable_seed_key: key,
+    title: `release ${key}`,
+    download_url: `https://example.invalid/${key}.torrent`,
+    torrent_state: "available",
+    title_hint: hint,
+  };
+}
+
+describe("OneShotDialog 搜索快照来源", () => {
+  // Search fixtures use placeholder names only (never real releases, groups or refs).
+  const SEARCH_SCOPE_REF = "search-scope:deadbeefcafe0011";
+  const SEARCH_QUERY_REF = "search-query:0011deadbeefcafe";
+  const SEARCH_CONTENT_HASH = "search-hash-1";
+  const SEARCH_SNAPSHOT_ID = "search-snap-1";
+
+  /** The read model's projection of one search snapshot: a single group whose server-side display name is the query_ref placeholder. */
+  const searchGroupView = (items: RSSListItem[] = [
+    seedItem("seed-a", SEED_A, { snapshot_id: SEARCH_SNAPSHOT_ID }),
+    seedItem("seed-b", SEED_B, { snapshot_id: SEARCH_SNAPSHOT_ID }),
+  ]) =>
+    viewOf([
+      seedGroup({
+        scope: { provider: "anibt", provider_entry_ref: SEARCH_SCOPE_REF, provider_group_ref: SEARCH_QUERY_REF },
+        display_name: SEARCH_QUERY_REF,
+        feed: { state: "fresh", snapshot_id: SEARCH_SNAPSHOT_ID, snapshot_version: 1, content_hash: SEARCH_CONTENT_HASH },
+        items,
+      }),
+    ]);
+
+  const searchBrowse: SearchSeedBrowse = {
+    provider: "anibt",
+    query: "搜索关键词甲",
+    snapshot: {
+      provider: "anibt",
+      scope_ref: SEARCH_SCOPE_REF,
+      query_ref: SEARCH_QUERY_REF,
+      query: "搜索关键词甲",
+      snapshot_id: SEARCH_SNAPSHOT_ID,
+      snapshot_version: 1,
+      content_hash: SEARCH_CONTENT_HASH,
+      freshness: "fresh",
+      total_seeds: 2,
+      retention_seconds: 86400,
+      seeds: [
+        searchSeed("seed-a", "作品甲"),
+        searchSeed("seed-b", "作品乙"),
+        searchSeed("seed-c", "作品乙"),
+        searchSeed("seed-d", " "),
+      ],
+    },
+  };
+  const SEED_C = "[组A] 测试番剧 - 03 [1080p]";
+  const threeSeedView = () =>
+    searchGroupView([
+      seedItem("seed-a", SEED_A, { snapshot_id: SEARCH_SNAPSHOT_ID }),
+      seedItem("seed-b", SEED_B, { snapshot_id: SEARCH_SNAPSHOT_ID }),
+      seedItem("seed-c", SEED_C, { snapshot_id: SEARCH_SNAPSHOT_ID }),
+    ]);
+  const tmdbCandidate = {
+    provider: "tmdb",
+    provider_work_id: "777",
+    title: "匹配作品名",
+    original_title: "Matched Original",
+    media_kind: "tv",
+    details_status: "available",
+    seasons: [{ season_number: 1, name: "第一季", episode_count: 12, air_date: "2024-04-01", is_special: false }],
+    suggested_season: 1,
+    year: 2024,
+    score: 1,
+  };
+  const searchLabel = t("oneshot.searchSourceLabel", { query: "搜索关键词甲" });
+
+  function renderSearchDialog(search: SearchSeedBrowse = searchBrowse, onOpenRecords?: () => void, onBack?: () => void) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={client}>
+        <OneShotDialog open search={search} onClose={() => {}} onOpenRecords={onOpenRecords} onBack={onBack} />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("打开即读：单一列表没有字幕组层，读请求携带搜索身份与 origin=oneshot 草稿，检索词仅作请求内占位", async () => {
+    stubFetch({ view: searchGroupView() });
+    renderSearchDialog();
+
+    expect(await findSeed(SEED_A)).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: SEED_B })).not.toBeChecked();
+    // A search source has a single seed list: no subgroup layer.
+    expect(screen.queryByRole("button", { name: t("oneshot.backToGroups") })).not.toBeInTheDocument();
+    // The header renders a source label (the keyword the user searched, not a work title) plus the site, never the placeholder query_ref.
+    expect(screen.getAllByText(searchLabel).length).toBeGreaterThan(0);
+    expect(screen.queryByText("搜索关键词甲")).not.toBeInTheDocument();
+    expect(screen.getByText(/AniBT/)).toBeInTheDocument();
+    expect(screen.queryByText(new RegExp(SEARCH_QUERY_REF))).not.toBeInTheDocument();
+
+    expect(reads()).toHaveLength(1);
+    expect(reads()[0]!.body).toMatchObject({
+      input_source: "current_input",
+      one_shot: true,
+      feed: [
+        {
+          provider: "anibt",
+          provider_entry_ref: SEARCH_SCOPE_REF,
+          provider_group_ref: SEARCH_QUERY_REF,
+          snapshot_id: SEARCH_SNAPSHOT_ID,
+          snapshot_version: 1,
+          content_hash: SEARCH_CONTENT_HASH,
+        },
+      ],
+      draft: { origin: "oneshot", title: "搜索关键词甲", instance_label: "搜索关键词甲", rss_sources: [] },
+    });
+  });
+
+  it("第二步：标题初始为空且不发预览请求；填写标题后才带真实标题请求，并同步 instance_label，提交按快照身份与编辑后的草稿", async () => {
+    stubFetch({ view: searchGroupView() });
+    renderSearchDialog();
+    await advanceToSettings([SEED_A]);
+
+    const title = screen.getByRole("textbox", { name: t("field.title") });
+    expect(title).toHaveValue("");
+    // The empty title shows the hint instead of a preview, and no read is issued past the browse read.
+    expect(screen.getByText(t("oneshot.titleEmptyPreview"))).toBeInTheDocument();
+    // The phone summary never shows a target rendered under the request-only placeholder title.
+    const summaryBar = document.querySelector("[data-oneshot-summary]");
+    expect(summaryBar?.textContent).toContain(t("oneshot.titleEmptyPreview"));
+    expect(summaryBar?.textContent).not.toContain("搜索关键词甲");
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(reads()).toHaveLength(1);
+    expect(button(t("oneshot.create", { n: 1 }))).toBeDisabled();
+    const readsBefore = reads().length;
+    fireEvent.change(title, { target: { value: "改名作品" } });
+    await waitFor(() => expect(reads().length).toBeGreaterThan(readsBefore));
+    expect(reads().at(-1)!.body).toMatchObject({ one_shot: true, draft: { title: "改名作品", instance_label: "改名作品" } });
+    expect(screen.queryByText(t("oneshot.titleEmptyPreview"))).not.toBeInTheDocument();
+
+    fireEvent.click(button(t("oneshot.create", { n: 1 })));
+    await waitFor(() => expect(screen.getByText(t("oneshot.resultOk"))).toBeInTheDocument());
+    const call = calls.find((entry) => entry.url.includes("/seeds/seed-a/download"))!;
+    expect(call.url).toContain(`/provider-feed-snapshots/${SEARCH_SNAPSHOT_ID}/seeds/seed-a/download`);
+    expect(call.body).toMatchObject({
+      provider: "anibt",
+      provider_entry_ref: SEARCH_SCOPE_REF,
+      provider_group_ref: SEARCH_QUERY_REF,
+      snapshot_version: 1,
+      content_hash: SEARCH_CONTENT_HASH,
+      input_source: "current_input",
+      draft: { origin: "oneshot", title: "改名作品", instance_label: "改名作品", rss_sources: [] },
+    });
+  });
+
+  it("匹配检索词候选：取勾选种子的 title_hint，去重、按次数降序，检索词兜底；点击标签替换搜索词并搜索", async () => {
+    stubFetch({ view: threeSeedView(), metadataCandidates: [tmdbCandidate] });
+    renderSearchDialog();
+    await advanceToSettings([SEED_A, SEED_B, SEED_C]);
+
+    fireEvent.click(button(t("forms.matchProvider", { provider: t("forms.providerTmdb") })));
+    const match = await screen.findByRole("dialog", { name: t("forms.matchTitle", { provider: "TMDB" }) });
+    // The title is empty: the most frequent hint seeds the search box.
+    const input = within(match).getByRole("textbox", { name: t("forms.titleQuery") });
+    expect(input).toHaveValue("作品乙");
+    const chips = within(within(match).getByRole("group", { name: t("forms.queryCandidatesAria") })).getAllByRole("button");
+    expect(chips.map((chip) => chip.textContent)).toEqual(["作品甲", "搜索关键词甲"]);
+
+    fireEvent.click(chips[0]!);
+    await waitFor(() => expect(calls.some((call) => call.url.includes("/metadata/search") && call.url.includes(encodeURIComponent("作品甲")))).toBe(true));
+    expect(input).toHaveValue("作品甲");
+    const after = within(within(match).getByRole("group", { name: t("forms.queryCandidatesAria") })).getAllByRole("button");
+    expect(after.map((chip) => chip.textContent)).toEqual(["作品乙", "搜索关键词甲"]);
+  });
+
+  it("确认匹配：标题为空时回填作品名（同时带上元数据）；标题已有时不覆盖", async () => {
+    stubFetch({ view: threeSeedView(), metadataCandidates: [tmdbCandidate] });
+    renderSearchDialog();
+    await advanceToSettings([SEED_A]);
+
+    async function matchOnce() {
+      fireEvent.click(button(t("forms.matchProvider", { provider: t("forms.providerTmdb") })));
+      const match = await screen.findByRole("dialog", { name: t("forms.matchTitle", { provider: "TMDB" }) });
+      fireEvent.click(within(match).getByRole("button", { name: t("forms.search") }));
+      fireEvent.click(await within(match).findByRole("option", { name: /匹配作品名/ }));
+      fireEvent.click(within(match).getByRole("button", { name: t("forms.confirmMatch") }));
+    }
+
+    await matchOnce();
+    const title = screen.getByRole("textbox", { name: t("field.title") });
+    await waitFor(() => expect(title).toHaveValue("匹配作品名"));
+    await waitFor(() =>
+      expect(reads().at(-1)!.body).toMatchObject({
+        draft: { title: "匹配作品名", instance_label: "匹配作品名", metadata: { tmdb: { work_id: "777" }, year: 2024 } },
+      }),
+    );
+
+    fireEvent.change(title, { target: { value: "我的标题" } });
+    fireEvent.click(within(screen.getByRole("region", { name: t("forms.tmdb") })).getByRole("button", { name: t("forms.clearAria", { label: t("forms.tmdb") }) }));
+    await matchOnce();
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: t("forms.matchTitle", { provider: "TMDB" }) })).not.toBeInTheDocument());
+    expect(title).toHaveValue("我的标题");
+  });
+
+  it("读取返回 409：提示重新搜索，不提供重试，也不静默重发", async () => {
+    stubFetch({ viewStatus: 409, viewErrorBody: { code: "FEED_SNAPSHOT_REFRESH_REQUIRED", message: "expired" } });
+    renderSearchDialog();
+
+    expect(await screen.findByText(t("oneshot.searchStale"))).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: t("act.retry") })).not.toBeInTheDocument();
+    expect(reads()).toHaveLength(1);
+  });
+
+  it("带返回入口打开：第一步页脚以「返回」代替「取消」，点击只回调返回不关闭", async () => {
+    stubFetch({ view: searchGroupView() });
+    const onBack = vi.fn();
+    const onClose = vi.fn();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <OneShotDialog open search={searchBrowse} onClose={onClose} onBack={onBack} />
+      </QueryClientProvider>,
+    );
+    await findSeed(SEED_A);
+
+    // The left footer slot is the back affordance, not cancel (the host reopens its search window).
+    expect(screen.queryByRole("button", { name: t("act.cancel") })).not.toBeInTheDocument();
+    fireEvent.click(button(t("act.back")));
+    expect(onBack).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("提交时快照已过期：行内提示重新搜索，不静默重发", async () => {
+    stubFetch({
+      view: searchGroupView(),
+      download: () => ({ status: 409, body: { code: "FEED_SNAPSHOT_REFRESH_REQUIRED", message: "expired" } }),
+    });
+    renderSearchDialog();
+    await advanceToSettings([SEED_A]);
+    fireEvent.change(screen.getByRole("textbox", { name: t("field.title") }), { target: { value: "改名作品" } });
+
+    fireEvent.click(button(t("oneshot.create", { n: 1 })));
+    await waitFor(() => expect(downloads()).toHaveLength(1));
+    expect(await screen.findByText(t("oneshot.resultFailed"))).toBeInTheDocument();
+    expect(screen.getByText(t("oneshot.searchStale"))).toBeInTheDocument();
+    expect(downloads()).toHaveLength(1);
   });
 });

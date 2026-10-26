@@ -202,6 +202,7 @@ required_paths = {
   "/parser-catalog" => ["get"],
   "/parse/torrent-files" => ["post"],
   "/catalog/providers/{provider}/search" => ["get"],
+  "/catalog/providers/{provider}/seed-search-snapshots:fetch" => ["post"],
   "/file-manager/mounts" => ["get"],
   "/file-manager/entries" => ["get"],
   "/file-manager/entry" => ["get"],
