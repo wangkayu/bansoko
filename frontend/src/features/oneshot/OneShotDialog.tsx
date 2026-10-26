@@ -624,6 +624,7 @@ export function OneShotDialog({
     t("forms.rules.namingTitle"),
   ]);
 
+  const awaitingTitle = source.kind === "search" && !!draft && !draft.title.trim();
   // The phone's sticky summary: seed count → the first target (shorthand) + empties.
   const summary = useMemo(() => {
     if (selectedRows.length === 0) return undefined;
@@ -631,7 +632,10 @@ export function OneShotDialog({
     const targets = files.flatMap((file) => (file.rendered_target ? [file.rendered_target] : []));
     const facts = [...new Set(files.flatMap((file) => file.empty_facts ?? []))];
     let target: string;
-    if (targets.length > 0) {
+    // A search draft without a title has only placeholder-rendered targets (see useOneShotSeeds): show the prompt instead.
+    if (awaitingTitle) {
+      target = t("oneshot.titleEmptyPreview");
+    } else if (targets.length > 0) {
       target = shortTarget(targets[0]!);
       if (targets.length > 1) target = `${target} ${t("oneshot.summaryMore", { n: targets.length })}`;
     } else if (selectedRows.some(needsExpand) || (files.length === 0 && source.pending)) {
@@ -643,7 +647,7 @@ export function OneShotDialog({
       target = namingPendingLabel(failed.reason_code) ?? namingFailureDetail(failed.reason_code, failed.empty_facts) ?? t("oneshot.targetMissing");
     }
     return { text: t("oneshot.summary", { n: selectedRows.length, target }), facts };
-  }, [selectedRows, source.pending]);
+  }, [selectedRows, source.pending, awaitingTitle]);
 
   const stepIntro = (
     <p className="text-caption tw:m-0 tw:text-muted-foreground">
@@ -853,7 +857,7 @@ export function OneShotDialog({
               <StateBlock kind="error" title={source.error} />
             ) : selectedRows.length === 0 ? (
               <StateBlock kind="empty" title={t("oneshot.selectToPreview")} />
-            ) : source.kind === "search" && draft && !draft.title.trim() ? (
+            ) : awaitingTitle ? (
               <StateBlock kind="empty" title={t("oneshot.titleEmptyPreview")} />
             ) : (
               <ul className="tw:m-0 tw:grid tw:list-none tw:gap-2 tw:p-0">

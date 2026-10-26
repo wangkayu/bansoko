@@ -1278,6 +1278,10 @@ describe("OneShotDialog 搜索快照来源", () => {
     expect(title).toHaveValue("");
     // The empty title shows the hint instead of a preview, and no read is issued past the browse read.
     expect(screen.getByText(t("oneshot.titleEmptyPreview"))).toBeInTheDocument();
+    // The phone summary never shows a target rendered under the request-only placeholder title.
+    const summaryBar = document.querySelector("[data-oneshot-summary]");
+    expect(summaryBar?.textContent).toContain(t("oneshot.titleEmptyPreview"));
+    expect(summaryBar?.textContent).not.toContain("搜索关键词甲");
     await new Promise((resolve) => setTimeout(resolve, 600));
     expect(reads()).toHaveLength(1);
     expect(button(t("oneshot.create", { n: 1 }))).toBeDisabled();
