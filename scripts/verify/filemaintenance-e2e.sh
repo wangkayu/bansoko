@@ -1723,6 +1723,192 @@ PY
     "$s8_candidate_fingerprint" "$s8_placement_version" "$s8_version_after_replay" "$s8_companion_version" "$s8_companion_version_after_replay" \
     "$s8_evidence_after_confirm" "$s8_refusal_http" "$s8_refusal_code" "$s8_refusal_reason" "$s8_replay_flag" "$s8_candidates_after" >>"$scenario_json"
   cat "$scenario_json" | tee -a "$durable_evidence_dir/file022-scenarios.jsonl"
+
+  # -- step 6: the recovered placement loses a replacement and is cleaned ---
+  # Recovery rewrites the placement's target fingerprint to the typed metadata
+  # envelope. Cleanup of that placement verifies the quarantined object AFTER a
+  # rename, which updates the inode's ctime; on a mount without statx birth
+  # time (FUSE/mergerfs, Unraid shfs, some NFS clients) an identity check that
+  # leaned on ctime blocked here with the file already in quarantine. This
+  # step drives the real chain: a better file_operation placement for the same
+  # episode, the generation-completed replacement trigger, settle, then the
+  # cleanup quarantine + purge of the recovered file on the real library mount.
+  echo "== scenario 8b: recovered placement as replacement loser =="
+  s8b_target_dir="$(dirname "$s8_target")"
+  # Record whether the target mount reports a birth time. GNU stat prints %W
+  # as 0 (or '-') when statx has no btime; BSD stat reports %B.
+  s8b_btime="$(stat -c '%W' "$s8_target" 2>/dev/null || stat -f '%B' "$s8_target" 2>/dev/null || echo unknown)"
+  s8b_fstype="$(stat -f -c '%T' "$s8b_target_dir" 2>/dev/null || stat -f '%T' "$s8b_target_dir" 2>/dev/null || echo unknown)"
+  s8b_mount="$(df -P "$s8b_target_dir" 2>/dev/null | awk 'NR==2{print $1" on "$6}' || echo unknown)"
+  case "$s8b_btime" in 0|-|unknown|'') s8b_has_btime=false ;; *) s8b_has_btime=true ;; esac
+  echo "scenario 8b target mount: fstype=$s8b_fstype mount=[$s8b_mount] btime=$s8b_btime has_btime=$s8b_has_btime"
+  s8b_target_inode_before="$(ls -i "$s8_target" | awk '{print $1}')"
+  s8b_target_fp="$($PSQL -tAc "SELECT target_fingerprint::text FROM placements WHERE id='$s8_placement_id'" | tr -d '\r')"
+  [[ "$s8b_target_fp" == *'"algorithm": "metadata"'* || "$s8b_target_fp" == *'"algorithm":"metadata"'* ]] || { echo "scenario 8b: the recovered placement's target fingerprint is not the metadata envelope: $s8b_target_fp" >&2; exit 1; }
+  # The scenario seeded the placement out of the replacement pool so the
+  # earlier scans could not admit decisions holding its paths; return it to
+  # the production default (eligible) now that the recovery committed.
+  $PSQL -q -c "UPDATE placements SET replacement_eligible = true WHERE id='$s8_placement_id'" >/dev/null
+
+  s8b_download="$download_root/EP08-2160p.mkv"
+  head -c 65536 /dev/urandom >"$s8b_download"
+  s8b_hex="$(shasum -a 256 "$s8b_download" | awk '{print $1}')"
+  s8b_fp='{"algorithm":"sha256","value":"'$s8b_hex'","size_bytes":65536}'
+  s8b_path="$library_root/Scenario 8 Better/EP08.mkv"
+  mkdir -p "$(dirname "$s8b_path")"
+  cp "$s8b_download" "$s8b_path"
+  s8b_payload_digest="sha256:$(repeat_hex 5)"
+  s8b_manifest_digest="sha256:$(repeat_hex 6)"
+  s8b_file_ref="$(torrent_file_ref "$s8b_payload_digest" 'EP08.mkv')"
+  s8b_fixture_json="$(go run ./internal/testutil/frozenpolicy/cmd \
+    --payload-digest "$s8b_payload_digest" \
+    --manifest-digest "$s8b_manifest_digest" \
+    --route-root "$library_root" \
+    --file EP08.mkv \
+    --title '[示例字幕组] 进击的巨人 - 08 [2160p][chs]')"
+  printf '%s' "$s8b_fixture_json" >"$summary_dir/scenario-8b-acquisition-fixture.json"
+  s8b_acq_input_sql="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["acquisition_input"])' <<<"$s8b_fixture_json")"
+  s8b_acq_input_sql="${s8b_acq_input_sql//\'/\'\'}"
+  s8b_identity_sql="$(python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["identity"]))' <<<"$s8b_fixture_json")"
+  s8b_release_facts_sql="$(python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["release_facts"]))' <<<"$s8b_fixture_json")"
+  s8b_file_evidence_sql="$(python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["file_evidence"]))' <<<"$s8b_fixture_json")"
+  s8b_effective_facts_sql="$(python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["effective_facts"]))' <<<"$s8b_fixture_json")"
+  # The winner is a completed file_operation placement of a 2160p release for
+  # the same episode (tv:s1:e8): the anime's quality profile ranks it above the
+  # recovered 1080p file, so the single_copy pool must supersede the recovered
+  # placement. It is created last, so the generation trigger picks its release.
+  if ! $PSQL -q -e >"$summary_dir/scenario-8b-seed.log" 2>&1 <<E2EEIGHTB
+BEGIN;
+INSERT INTO releases(id,rss_source_id,stable_item_key,raw_facts,source_facts,parsed_facts,internal_facts,verdict,reason_code,download_task_id,version)
+SELECT 'rel-e2e-8b','src-e2e-8','guid:e2e-8b',jsonb_set(raw_facts,'{title}','"[示例字幕组] 进击的巨人 - 08 [2160p][chs]"'),source_facts,parsed_facts,internal_facts,'submitted','submitted','dl-e2e-8b',1 FROM releases WHERE id='rel-e2e';
+INSERT INTO acquisitions(
+  id, execution_branch, entry_kind, access_scope, request_namespace, request_key, request_hash,
+  canonical_request, admission_kind, admission_http_status, admission_receipt,
+  input_schema_version, admission_digest, origin_managed_anime_ref, source_release_ref,
+  display_title, accepted_at, retention_anchor_at, detail_retention_seconds,
+  receipt_after_accept_seconds, receipt_after_terminal_seconds, receipt_until, detail_until,
+  state, terminal_at, terminal_schema, terminal_receipt, record_state,
+  preparation_mode, vars_evidence_version,
+  input_canonical_utf8, payload_digest, manifest_digest, manifest_item_count, manifest_sealed_at)
+VALUES (
+  'acq-e2e-8b', 'download', 'automatic', 'deployment_owner_v1', 'auto_acquire_v1', 'auto:rel-e2e-8b',
+  'sha256:' || repeat('5', 64),
+  '{"schema_version":1,"kind":"automatic","release_ref":"rel-e2e-8b"}'::jsonb,
+  'download_queued', 202,
+  '{"schema_version":1,"acquisition_id":"acq-e2e-8b","state":"queued"}'::jsonb,
+  1,
+  'sha256:' || encode(sha256(convert_to('acquisition-input:v1', 'UTF8') || decode('00', 'hex')
+     || convert_to('$s8b_acq_input_sql', 'UTF8')), 'hex'),
+  'anime-e2e', 'rel-e2e-8b',
+  '{"state":"known","value":"进击的巨人 - 08","reason_code":null}'::jsonb,
+  now() - interval '1 hour', now() - interval '1 hour', 2592000, 2592000, 5184000,
+  now() + interval '60 days',
+  NULL,
+  'running', NULL, NULL, NULL,
+  'full', 'none', 1,
+  '$s8b_acq_input_sql',
+  '$s8b_payload_digest',
+  '$s8b_manifest_digest', 1, now() - interval '1 hour');
+INSERT INTO acquisition_files(acquisition_id, file_ref, ordinal, relative_path, exact_size, media_kind, identity_evidence, requirement, requirement_reason_code, selection_evidence)
+VALUES ('acq-e2e-8b', '$s8b_file_ref', 0, 'EP08.mkv', 65536, 'video', '{}'::jsonb, 'required', 'e2e_seed_required', '{"source":"filemaintenance-e2e scenario 8b"}'::jsonb);
+INSERT INTO download_tasks(id,release_id,acquisition_id,frozen_input,frozen_policy,state,idempotency_key)
+VALUES ('dl-e2e-8b','rel-e2e-8b','acq-e2e-8b','{}','$frozen_policy_sql'::jsonb,'queued','download:e2e:8b');
+UPDATE download_tasks SET state='completed' WHERE id='dl-e2e-8b';
+INSERT INTO artifacts(id,download_task_id,acquisition_id,inventory_snapshot,fingerprint_snapshot,state,verified_at)
+VALUES ('art-e2e-8b','dl-e2e-8b','acq-e2e-8b','{}','{}','verified',CURRENT_TIMESTAMP);
+INSERT INTO artifact_files(id,artifact_id,acquisition_id,file_ref,relative_path,source_path,media_kind,size_bytes,fingerprint,facts,subtitle_binding_state)
+VALUES ('af-e2e-8b','art-e2e-8b','acq-e2e-8b','$s8b_file_ref','EP08.mkv','$s8b_download','video',65536,'$s8b_fp'::jsonb,'{"resolution":"2160p","video_codec":"HEVC","container":"mkv"}','not_applicable');
+INSERT INTO postprocessing_plans(id,artifact_id,artifact_version,state,input_digest,acquisition_id)
+VALUES ('plan-e2e-8b','art-e2e-8b',1,'queued','sha256:' || repeat('5', 64),'acq-e2e-8b');
+INSERT INTO file_operations(id,artifact_id,acquisition_id,artifact_version,artifact_file_id,file_ref,operation,source_path,target_path,source_fingerprint,target_fingerprint,collision_policy,frozen_render_snapshot,frozen_config_snapshot,state,observed_at,idempotency_key,correlation_id,causation_type,causation_id,postprocessing_plan_id,file_ready_at,file_wall_until,file_max_attempts,file_attempt_timeout_seconds)
+SELECT 'op-e2e-8b','art-e2e-8b','acq-e2e-8b',1,'af-e2e-8b','$s8b_file_ref','move','$s8b_download','$s8b_path','$s8b_fp'::jsonb,'$s8b_fp'::jsonb,'block','{}',frozen_config_snapshot,'completed',CURRENT_TIMESTAMP,'op-e2e-8b','corr-e2e-8b','artifact','art-e2e-8b','plan-e2e-8b',file_ready_at,file_wall_until,file_max_attempts,file_attempt_timeout_seconds FROM file_operations WHERE id='op-e2e-8';
+INSERT INTO release_candidate_facts(release_id,release_version,parser_version,input_fingerprint,raw_evidence,facts,coverage_keys,resolution,revision,source,language,"group",size_bytes)
+VALUES ('rel-e2e-8b',1,'parser-v1','fp-e2e-8b','{"title":"[示例字幕组] 进击的巨人 - 08 [2160p][chs]"}','{"episode":8,"group_name":"示例字幕组","group":"示例字幕组","resolution":"2160p","quality":"web-dl","revision":"v1","source":"web-dl","language":"chs","size_bytes":65536}',
+        '["tv:s1:e8"]','2160p','v1','web-dl','chs','示例字幕组',65536);
+INSERT INTO media_fact_snapshots(id,release_id,schema_version,resolver_version,parser_kind,input_digest,release_identity,release_facts)
+VALUES ('snap-e2e-8b','rel-e2e-8b','media-facts-v1','episode-identity-v1','regex','digest-e2e-8b','$s8b_identity_sql'::jsonb,'$s8b_release_facts_sql'::jsonb);
+INSERT INTO media_fact_files(snapshot_id,file_ref,media_kind,size_bytes,source_fingerprint,file_evidence,effective_facts)
+VALUES ('snap-e2e-8b','$s8b_file_ref','video',65536,'$s8b_hex','$s8b_file_evidence_sql'::jsonb,'$s8b_effective_facts_sql'::jsonb);
+INSERT INTO placements(id,physical_path,managed_anime_id,source_evidence_type,source_owner_ref,source_fingerprint,target_fingerprint,quality_facts_ref,facts_version,correlation_id,causation_type,causation_id,replacement_eligible,verification_state,state,version)
+VALUES ('plc-e2e-8b','$s8b_path','anime-e2e','file_operation','op-e2e-8b','$s8b_fp'::jsonb,'$s8b_fp'::jsonb,'rel-e2e-8b','media-facts-v1','corr-e2e-8b','file_operation','op-e2e-8b',true,'verified','active',1);
+INSERT INTO placement_coverage(placement_id,observation_key,coverage_ordinal,facts_version,evidence_ref)
+VALUES ('plc-e2e-8b','tv:s1:e8',0,'media-facts-v1','op-e2e-8b');
+COMMIT;
+E2EEIGHTB
+  then
+    echo "scenario 8b seed failed; see $summary_dir/scenario-8b-seed.log" >&2
+    sed -n '1,40p' "$summary_dir/scenario-8b-seed.log" >&2 || true
+    exit 1
+  fi
+  rm -f -- "$s8b_download"
+
+  # The completed generation's replacement consumer evaluates the newest
+  # file_operation release (rel-e2e-8b); settle supersedes the recovered
+  # placement and admits its cleanup (quarantine, grace 0, then purge).
+  scan_and_calibrate scenario-8b-replacement
+  # Every cleanup row of the loser (the video and its bound companion) must
+  # reach purged; any blocked/failed row is the failure this step guards.
+  s8b_cleanup_state=''
+  s8b_cleanup_where="managed_anime_id='anime-e2e' AND placement_id='$s8_placement_id'"
+  s8b_deadline=$(( $(date +%s) + 300 ))
+  while (( $(date +%s) < s8b_deadline )); do
+    s8b_bad="$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE $s8b_cleanup_where AND state IN ('blocked','failed')" | tr -d '[:space:]')"
+    if [[ "$s8b_bad" != 0 ]]; then
+      {
+        echo "scenario 8b: cleanup of the recovered placement ended blocked/failed (target mount btime=$s8b_btime fstype=$s8b_fstype)"
+        $PSQL -c "SELECT id, companion_id, state, failure_code, reason, source_path, source_fingerprint, quarantine_path FROM cleanup_operations WHERE $s8b_cleanup_where"
+        $PSQL -c "SELECT id, kind, state, last_error_code, last_error_reason FROM e2e_aux.work_items_all WHERE owner_type='cleanup_operation' AND owner_id IN (SELECT id FROM cleanup_operations WHERE $s8b_cleanup_where) ORDER BY created_at"
+      } | tee -a "$durable_evidence_dir/scenario-8b-diagnostics.txt" >&2
+      exit 1
+    fi
+    s8b_cleanup_state="$($PSQL -tAc "SELECT state FROM cleanup_operations WHERE $s8b_cleanup_where AND companion_id IS NULL ORDER BY created_at DESC LIMIT 1" | tr -d '[:space:]')"
+    s8b_unpurged="$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE $s8b_cleanup_where AND state <> 'purged'" | tr -d '[:space:]')"
+    [[ "$s8b_cleanup_state" == purged && "$s8b_unpurged" == 0 ]] && break
+    sleep 2
+  done
+  if [[ "$s8b_cleanup_state" != purged || "$s8b_unpurged" != 0 ]]; then
+    {
+      echo "scenario 8b: the recovered placement's cleanup did not reach purged within 300s (video=[$s8b_cleanup_state], unpurged rows=$s8b_unpurged)"
+      $PSQL -c "SELECT id, companion_id, state, failure_code, reason, source_path FROM cleanup_operations WHERE $s8b_cleanup_where"
+      $PSQL -c "SELECT id, state, verdict FROM replacement_decisions WHERE managed_anime_id='anime-e2e' ORDER BY created_at DESC LIMIT 5"
+      $PSQL -c "SELECT id, state, replacement_eligible, physical_path FROM placements WHERE id IN ('$s8_placement_id','plc-e2e-8b')"
+      $PSQL -c "SELECT id, kind, state, last_error_code, last_error_reason FROM e2e_aux.work_items_all WHERE owner_id='anime-e2e' OR owner_type IN ('cleanup_operation','replacement_decision') ORDER BY created_at DESC LIMIT 20"
+    } | tee -a "$durable_evidence_dir/scenario-8b-diagnostics.txt" >&2
+    exit 1
+  fi
+  s8b_loser_state="$($PSQL -tAc "SELECT state FROM placements WHERE id='$s8_placement_id'" | tr -d '[:space:]')"
+  s8b_winner_state="$($PSQL -tAc "SELECT state FROM placements WHERE id='plc-e2e-8b'" | tr -d '[:space:]')"
+  s8b_quarantine="$($PSQL -tAc "SELECT COALESCE(quarantine_path,'') FROM cleanup_operations WHERE $s8b_cleanup_where AND companion_id IS NULL ORDER BY created_at DESC LIMIT 1" | tr -d '\r')"
+  s8b_cleanup_fp="$($PSQL -tAc "SELECT source_fingerprint::text FROM cleanup_operations WHERE $s8b_cleanup_where AND companion_id IS NULL ORDER BY created_at DESC LIMIT 1" | tr -d '\r')"
+  s8b_cleanup_rows="$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE $s8b_cleanup_where" | tr -d '[:space:]')"
+  [[ "$s8b_loser_state" == superseded ]] || { echo "scenario 8b: the recovered placement is [$s8b_loser_state], want superseded" >&2; exit 1; }
+  [[ "$s8b_winner_state" == active && "$(fingerprint "$s8b_path")" == "$s8b_hex" ]] || { echo "scenario 8b: the winner placement is [$s8b_winner_state] or its file changed" >&2; exit 1; }
+  [[ ! -e "$s8_target" ]] || { echo "scenario 8b: the recovered file is still at $s8_target after purge" >&2; exit 1; }
+  [[ -n "$s8b_quarantine" && ! -e "$s8b_quarantine" ]] || { echo "scenario 8b: quarantine object not purged: [$s8b_quarantine]" >&2; exit 1; }
+  observe_disk scenario-8b-winner "$s8b_path"
+  # The cleanup's frozen source fingerprint is recorded so the evidence shows
+  # the metadata-envelope path (not a SHA-256 read) was the one exercised.
+  python3 - "$s8_placement_id" "$s8b_loser_state" "$s8b_cleanup_state" "$s8b_cleanup_rows" "$s8b_quarantine" "$s8_target" \
+    "$s8b_target_inode_before" "$s8b_cleanup_fp" "$s8b_fstype" "$s8b_mount" "$s8b_btime" "$s8b_has_btime" >>"$scenario_json" <<'PY'
+import json,sys
+(loser, loser_state, cleanup_state, cleanup_rows, quarantine, target, inode,
+ cleanup_fp, fstype, mount, btime, has_btime) = sys.argv[1:13]
+print(json.dumps({
+    "scenario": "8b",
+    "db_state": "recovered_loser_purged",
+    "loser": loser,
+    "loser_state": loser_state,
+    "winner": "plc-e2e-8b",
+    "cleanup_state": cleanup_state,
+    "cleanup_rows_purged": int(cleanup_rows),
+    "cleanup_source_fingerprint": cleanup_fp,
+    "quarantine_path": quarantine,
+    "target": target,
+    "target_inode": inode,
+    "target_mount": {"fstype": fstype, "mount": mount, "statx_btime": btime, "has_btime": has_btime == "true"},
+}, ensure_ascii=False))
+PY
+  tail -n 1 "$scenario_json" | tee -a "$durable_evidence_dir/file022-scenarios.jsonl"
   cat "$summary_dir/disk-observations.txt" | tee -a "$durable_evidence_dir/disk-observations.txt"
   fi
 
