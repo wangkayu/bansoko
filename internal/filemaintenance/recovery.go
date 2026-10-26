@@ -701,11 +701,7 @@ type writeRecoveryOwnershipInput struct {
 // binding and retry at once. The replay identity therefore lives in its own
 // `recovery_generation` column.
 func (s *Service) writeRecoveryOwnershipTx(ctx context.Context, tx *sql.Tx, input writeRecoveryOwnershipInput) error {
-	targetFingerprint, err := json.Marshal(map[string]any{
-		"algorithm":  "metadata",
-		"value":      input.fingerprint,
-		"size_bytes": input.facts.SizeBytes,
-	})
+	targetFingerprint, err := recoveryTargetFingerprintEnvelope(input.fingerprint, input.facts.SizeBytes)
 	if err != nil {
 		return err
 	}
@@ -717,7 +713,7 @@ UPDATE placements SET
   version = version + 1,
   updated_at = $5
 WHERE id = $1 AND state = 'active' AND verification_state = 'verified' AND version = $6`,
-		input.candidate.PlacementID, filepath.Clean(input.candidate.TargetPath), string(targetFingerprint),
+		input.candidate.PlacementID, filepath.Clean(input.candidate.TargetPath), targetFingerprint,
 		input.candidate.Generation, input.recoveredAt, input.previousVersion)
 	if err != nil {
 		return fmt.Errorf("re-attach placement: %w", err)
@@ -772,6 +768,23 @@ WHERE id = $1 AND state = 'active' AND placement_id = $4 AND version = $5`,
 		return err
 	}
 	return nil
+}
+
+// recoveryTargetFingerprintEnvelope is the typed placement target fingerprint
+// a confirmed recovery writes: the observed metadata fingerprint wrapped in the
+// {"algorithm":"metadata"} envelope the column contract requires. Every reader
+// of a recovered placement's identity unwraps it through
+// metadataFingerprintValue.
+func recoveryTargetFingerprintEnvelope(fingerprint string, sizeBytes int64) (string, error) {
+	encoded, err := json.Marshal(map[string]any{
+		"algorithm":  "metadata",
+		"value":      fingerprint,
+		"size_bytes": sizeBytes,
+	})
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
 }
 
 // appendRecoveryActivityTx records the confirm in the durable business
