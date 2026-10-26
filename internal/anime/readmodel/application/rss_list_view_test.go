@@ -11,6 +11,7 @@ import (
 	acquisitiontarget "bansoko/internal/acquisition/target"
 	animedomain "bansoko/internal/anime/domain"
 	animecatalogdomain "bansoko/internal/catalog/domain"
+	"bansoko/internal/templatefacts"
 )
 
 // The composed RSS list view is the one shape the workspace renders. These
@@ -424,6 +425,37 @@ func TestComposeRSSListViewEvaluatesTheSnapshotAniBTTags(t *testing.T) {
 				if item.Seed.AniBTTags == nil || !reflect.DeepEqual(*item.Seed.AniBTTags, tc.tags.Tags) {
 					t.Fatalf("row AniBT tags = %v, want the snapshot's %v", item.Seed.AniBTTags, tc.tags.Tags)
 				}
+			}
+		})
+	}
+}
+
+// A draft's edited title is what acceptance freezes as title_override, so the
+// preview must rank it above the provider and metadata titles; ranking it as the
+// lowest fallback showed a target the accepted task would never write.
+func TestDraftVarsAnimeEvidenceRanksTheEditedTitleAsTheFixedTitle(t *testing.T) {
+	override := "  覆盖标题 "
+	for name, tc := range map[string]struct {
+		draft animedomain.AnimeDraft
+		want  string
+	}{
+		"edited title":            {draft: animedomain.AnimeDraft{Title: " 自定义标题 "}, want: "自定义标题"},
+		"override wins the title": {draft: animedomain.AnimeDraft{Title: "自定义标题", TitleOverride: &override}, want: "覆盖标题"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			evidence, err := (&Service{}).draftVarsAnimeEvidence(context.Background(), tc.draft)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if evidence.AnimeTitleOverride != tc.want {
+				t.Fatalf("title override = %q, want %q", evidence.AnimeTitleOverride, tc.want)
+			}
+			title, _ := templatefacts.EffectiveTitle(templatefacts.TitleCandidates{
+				Override: evidence.AnimeTitleOverride, Provider: "站点标题",
+				TmdbCN: "TMDB 标题", BgmCN: "BGM 标题", Base: evidence.AnimeTitle,
+			})
+			if title != tc.want {
+				t.Fatalf("effective title = %q, want %q", title, tc.want)
 			}
 		})
 	}

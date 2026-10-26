@@ -1892,13 +1892,16 @@ func seedTitleTags(title string) *[]string {
 }
 
 // draftVarsAnimeEvidence is the Vars anime evidence of a configuration draft:
-// the draft title, its override, the provider catalog title the subscription
-// will freeze, and the binding (what an acceptance of this draft freezes) and
-// the bound works' recorded titles. A draft names no managed anime yet.
+// the draft title, the fixed title an acceptance writes as the override, the
+// provider catalog title the subscription will freeze, and the binding (what
+// an acceptance of this draft freezes) and the bound works' recorded titles. A
+// draft names no managed anime yet.
 func (s *Service) draftVarsAnimeEvidence(ctx context.Context, draft animedomain.AnimeDraft) (namingvars.AnimeEvidence, error) {
 	evidence := namingvars.AnimeEvidence{AnimeTitle: draft.Title}
-	if draft.TitleOverride != nil {
-		evidence.AnimeTitleOverride = strings.TrimSpace(*draft.TitleOverride)
+	// Acceptance freezes the edited title as title_override, which outranks
+	// every provider and metadata title; the preview must rank it the same.
+	if fixed := animeapplication.FixedTitle(draft.Title, draft.TitleOverride); fixed != nil {
+		evidence.AnimeTitleOverride = *fixed
 	}
 	providerTitle, err := s.draftProviderTitle(ctx, draft)
 	if err != nil {
