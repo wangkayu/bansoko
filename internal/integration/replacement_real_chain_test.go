@@ -71,6 +71,49 @@ type revisionFixture struct {
 	torrents  map[string][]byte
 	client    *http.Client
 	closeFunc func()
+	// gates hold the web-seed responses of a revision until it is released,
+	// so its qB task stays downloading; closing ends every held response.
+	gates   map[string]chan struct{}
+	closing chan struct{}
+}
+
+// Hold keeps the revision's web-seed requests open without a byte, so its qB
+// task stays downloading until Release.
+func (f *revisionFixture) Hold(name string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, held := f.gates[name]; !held {
+		f.gates[name] = make(chan struct{})
+	}
+}
+
+// Release serves the held revision's web-seed requests again.
+func (f *revisionFixture) Release(name string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if gate, held := f.gates[name]; held {
+		close(gate)
+		delete(f.gates, name)
+	}
+}
+
+// wait blocks while the revision is held; it reports false when the request
+// or the fixture ended first.
+func (f *revisionFixture) wait(r *http.Request, name string) bool {
+	f.mu.Lock()
+	gate := f.gates[name]
+	f.mu.Unlock()
+	if gate == nil {
+		return true
+	}
+	select {
+	case <-gate:
+		return true
+	case <-r.Context().Done():
+		return false
+	case <-f.closing:
+		return false
+	}
 }
 
 func (f *revisionFixture) SetCurrent(name string) {
@@ -88,6 +131,13 @@ func (f *revisionFixture) TorrentBytes(name string) []byte {
 }
 
 func (f *revisionFixture) Close() {
+	if f.closing != nil {
+		select {
+		case <-f.closing:
+		default:
+			close(f.closing)
+		}
+	}
 	if f.closeFunc != nil {
 		f.closeFunc()
 	}
@@ -106,6 +156,8 @@ func startRevisionFixture(t *testing.T, items map[string]rssItem, files map[stri
 		files:    files,
 		port:     port,
 		torrents: map[string][]byte{},
+		gates:    map[string]chan struct{}{},
+		closing:  make(chan struct{}),
 	}
 	for key := range items {
 		rootURL := fmt.Sprintf("http://%s:%d", realChainFixtureHost(), port)
@@ -134,6 +186,9 @@ func startRevisionFixture(t *testing.T, items map[string]rssItem, files map[stri
 				for _, file := range fileSet {
 					if r.URL.Path == "/"+name+"/"+url.PathEscape(file.Name) || r.URL.Path == "/"+name+"/"+file.Name ||
 						r.URL.Path == "/"+url.PathEscape(file.Name) || r.URL.Path == "/"+file.Name {
+						if !fixture.wait(r, name) {
+							return
+						}
 						http.ServeContent(w, r, file.Name, time.Unix(0, 0), bytes.NewReader(file.Content))
 						return
 					}
@@ -313,6 +368,7 @@ func newRealChainServices(t *testing.T, client *http.Client) *realChainServices 
 	ownershipService.SetReplacementTrigger(replacementTrigger)
 	replacementDecisions := filemaintenance.NewReplacementDecisionService(db)
 	replacementDecisions.SetMediaFactsStore(facts.NewStoreWithRepository(mediapersistence.NewRepository(db)))
+	replacementDecisions.SetWorkItems(store)
 	// Mirror the production composition root: persist frozen targets, then wire
 	// pre-download probing and the frozen replacement intent before B is evaluated.
 	rssService.SetTargetStore(acquisitiontarget.NewStore(targetpersistence.NewRepository(db)))
@@ -387,6 +443,7 @@ func newRealChainServices(t *testing.T, client *http.Client) *realChainServices 
 		{workitems.KindFileExecute, fileService},
 		{workitems.KindPostProcessPlan, fileService.PostProcessingPlanHandler()},
 		{workitems.KindReplacementEvaluate, replacementDecisions.EvaluateHandler()},
+		{workitems.KindReplacementFallback, replacementDecisions.FallbackHandler()},
 		{workitems.KindCleanupDelete, cleanupService.DeleteHandler()},
 		{workitems.KindReconciliationScan, reconService.ScanHandler()},
 		{workitems.KindReconciliationCalibrate, calibrationService.CalibrateHandler()},
