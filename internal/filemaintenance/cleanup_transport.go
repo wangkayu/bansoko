@@ -6,23 +6,23 @@ import (
 	"bansoko/internal/transport/httpapi/generated"
 )
 
-func (s *CleanupService) ListCleanups(ctx context.Context, animeID string, limit, offset int) ([]generated.CleanupOperationView, error) {
-	views, err := s.ListCleanupsApplication(ctx, animeID, limit, offset)
+func (s *CleanupService) ListReplacementDeletions(ctx context.Context, animeID string, limit, offset int) ([]generated.ReplacementDeletionView, error) {
+	views, err := s.ListReplacementDeletionsApplication(ctx, animeID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
 	if views == nil {
 		return nil, nil
 	}
-	mapped := make([]generated.CleanupOperationView, len(views))
+	mapped := make([]generated.ReplacementDeletionView, len(views))
 	for index, value := range views {
-		mapped[index] = cleanupOperationViewToGenerated(value)
+		mapped[index] = replacementDeletionViewToGenerated(value)
 	}
 	return mapped, nil
 }
 
-func cleanupOperationViewToGenerated(value CleanupOperationView) generated.CleanupOperationView {
-	return generated.CleanupOperationView{
+func replacementDeletionViewToGenerated(value ReplacementDeletionView) generated.ReplacementDeletionView {
+	return generated.ReplacementDeletionView{
 		CreatedAt:         value.CreatedAt,
 		FailureCode:       cloneStringPointer(value.FailureCode),
 		Id:                value.ID,
@@ -30,10 +30,10 @@ func cleanupOperationViewToGenerated(value CleanupOperationView) generated.Clean
 		PlacementId:       value.PlacementID,
 		Reason:            cloneStringPointer(value.Reason),
 		ReplacementRef:    value.ReplacementRef,
-		RetentionMode:     generated.CleanupOperationViewRetentionMode(value.RetentionMode),
+		AdmissionMode:     generated.ReplacementDeletionViewAdmissionMode(value.AdmissionMode),
 		SourceFingerprint: value.SourceFingerprint,
 		SourcePath:        value.SourcePath,
-		State:             generated.CleanupOperationViewState(value.State),
+		State:             generated.ReplacementDeletionViewState(value.State),
 		UpdatedAt:         cloneTimePointer(value.UpdatedAt),
 		Version:           value.Version,
 	}

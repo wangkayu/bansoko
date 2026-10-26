@@ -18,18 +18,18 @@ const BusinessSnapshotSchemaVersion = "business-snapshot-v1"
 // It is not embedded in the current HTTP draft: that contract cannot carry it.
 // Identity, sources, manual group intent and runtime governance are excluded.
 type BusinessSnapshot struct {
-	SchemaVersion     string                     `json:"schema_version"`
-	Sections          map[string]json.RawMessage `json:"sections"`
-	SectionVersions   map[string]int64           `json:"section_versions"`
-	SectionSchemas    map[string]string          `json:"section_schemas"`
-	Parser            ParserPolicyEnvelope       `json:"parser"`
-	Retention         RetentionValue             `json:"retention"`
-	RetentionVersion  int64                      `json:"retention_version"`
-	UnclassifiedRoute string                     `json:"unclassified_route"`
-	FileEffectVersion int64                      `json:"file_effect_version"`
-	Programs          ProgramReferences          `json:"programs"`
+	SchemaVersion      string                     `json:"schema_version"`
+	Sections           map[string]json.RawMessage `json:"sections"`
+	SectionVersions    map[string]int64           `json:"section_versions"`
+	SectionSchemas     map[string]string          `json:"section_schemas"`
+	Parser             ParserPolicyEnvelope       `json:"parser"`
+	Replacement        ReplacementValue           `json:"replacement"`
+	ReplacementVersion int64                      `json:"replacement_version"`
+	UnclassifiedRoute  string                     `json:"unclassified_route"`
+	FileEffectVersion  int64                      `json:"file_effect_version"`
+	Programs           ProgramReferences          `json:"programs"`
 }
-type RetentionValue struct {
+type ReplacementValue struct {
 	AdmissionMode  string          `json:"admission_mode"`
 	QualityProfile json.RawMessage `json:"quality_profile"`
 }
@@ -53,13 +53,13 @@ func (s BusinessSnapshot) Freeze() (BusinessSnapshot, error) {
 	if err := s.Parser.Validate(); err != nil {
 		return BusinessSnapshot{}, err
 	}
-	if s.Retention.AdmissionMode != "all" && s.Retention.AdmissionMode != "per_group" && s.Retention.AdmissionMode != "single_copy" {
+	if s.Replacement.AdmissionMode != "all" && s.Replacement.AdmissionMode != "per_group" && s.Replacement.AdmissionMode != "single_copy" {
 		return BusinessSnapshot{}, errors.New("invalid retention admission mode")
 	}
-	if raw := s.Retention.QualityProfile; !json.Valid(raw) || string(raw) == "null" {
+	if raw := s.Replacement.QualityProfile; !json.Valid(raw) || string(raw) == "null" {
 		return BusinessSnapshot{}, errors.New("invalid retention document")
 	}
-	if err := validateBusinessRetention(s.Retention); err != nil {
+	if err := validateBusinessReplacement(s.Replacement); err != nil {
 		return BusinessSnapshot{}, err
 	}
 	if s.UnclassifiedRoute != "skip" && s.UnclassifiedRoute != "route" {
@@ -92,10 +92,10 @@ func (s BusinessSnapshot) Digest() (string, error) {
 	}
 	{
 		var v any
-		if err := json.Unmarshal(copy.Retention.QualityProfile, &v); err != nil {
+		if err := json.Unmarshal(copy.Replacement.QualityProfile, &v); err != nil {
 			return "", err
 		}
-		copy.Retention.QualityProfile = mustJSON(v)
+		copy.Replacement.QualityProfile = mustJSON(v)
 	}
 	b, err := json.Marshal(copy)
 	if err != nil {

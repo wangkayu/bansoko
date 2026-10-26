@@ -6,7 +6,7 @@ import { useDirtyConfirm } from "../../ui";
 import { Button, Dialog } from "../../ui/base";
 import { SettingsConnections } from "./SettingsConnections";
 import { SettingsPolicy } from "./SettingsPolicy";
-import { SettingsUnclassified } from "./SettingsRetention";
+import { SettingsUnclassified } from "./SettingsReplacement";
 import { SettingsProviderDetail } from "./SettingsProviderDetail";
 import { SavePartsProvider } from "../../lib/saveParts";
 import { useSettingsSaveParts } from "./settingsSave";
@@ -48,9 +48,9 @@ const categories = [
 //   template still renders. To restore, add back this entry (the Braces icon), its group key, the
 //   render branch and the SettingsVars import together; it is an L2 dialog with immediate saving
 //   and no dirty callback (the component, copy and component tests remain in the repo).
-  // "Retention and cleanup" is hidden for now: the naming variables it depends on are not stable
+  // "Replacement and cleanup" is hidden for now: the naming variables it depends on are not stable
 //   enough to test, and the default is already "keep everything", so behavior is unchanged. To
-//   restore, add back this entry, its group key, the render branch and SettingsRetention's dirty
+//   restore, add back this entry, its group key, the render branch and SettingsReplacement's dirty
 //   callback together (the component and copy remain in the repo).
 //   "Files with unrecognized episodes" depends only on the file-effect defaults and is untouched; it
 //   keeps its own entry.
@@ -72,7 +72,7 @@ type CategoryKey = (typeof categories)[number]["key"];
 //   account/automation/notifications/version/backup/tokens belong to "system".
 const categoryGroups: { groupKey: CopyKey; keys: CategoryKey[] }[] = [
   { groupKey: "settings.nav.groupService", keys: ["connections", "download"] },
-  // On restore, naming variables goes back after "rules"; retention and cleanup rejoins this group as well.
+  // On restore, naming variables goes back after "rules"; the replacement policy rejoins this group as well.
   { groupKey: "settings.nav.groupDefaults", keys: ["rules", "unclassified", "policy"] },
   { groupKey: "settings.nav.groupSite", keys: ["anibt", "mikan", "hidden"] },
   { groupKey: "settings.nav.groupSystem", keys: ["account", "automation", "notifications", "updates", "backup", "ai"] },

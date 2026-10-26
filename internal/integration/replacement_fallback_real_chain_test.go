@@ -37,7 +37,7 @@ func startFallbackScenario(t *testing.T, ctx context.Context, title, key string,
 	fixture.Hold("A")
 	svc := newRealChainServices(t, fixture.client)
 	t.Cleanup(func() { svc.db.Close() })
-	seedRetentionSingleCopy(t, svc.db)
+	seedReplacementSingleCopy(t, svc.db)
 	animeID, sourceID := subscribeRevisionScenario(t, ctx, svc, fixture.FeedURL(), title, flatNamingRules(svc.targetRoot), generated.CollisionPolicyOverwrite, key)
 	s := &fallbackScenario{svc: svc, fixture: fixture, animeID: animeID, sourceID: sourceID, files: files}
 	if state := s.releaseState(t, ctx, items["A"].GUID); state.verdict != "submitted" && state.verdict != "accepted_pending_download" {

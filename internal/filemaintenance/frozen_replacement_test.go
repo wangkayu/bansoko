@@ -40,18 +40,18 @@ VALUES ($1, $2, 'custom', 'Show', $3)`, subID, animeID, subState); err != nil {
 	}
 }
 
-// seedInstanceRetention inserts the complete per-instance retention policy;
+// seedInstanceReplacement inserts the complete per-instance retention policy;
 // an empty profile is the built-in default.
-func seedInstanceRetention(t *testing.T, db *sql.DB, animeID string, mode AdmissionMode, profile string, version int64) {
+func seedInstanceReplacement(t *testing.T, db *sql.DB, animeID string, mode AdmissionMode, profile string, version int64) {
 	t.Helper()
 	if profile == "" {
 		profile = string(qualityprofile.DefaultJSON())
 	}
 	if _, err := db.Exec(`
 INSERT INTO anime_business_configs
-(managed_anime_id, admission_mode, quality_profile, retention_source_default_version, retention_version, updated_at)
+(managed_anime_id, admission_mode, quality_profile, replacement_source_default_version, replacement_version, updated_at)
 VALUES ($1, $2, $3::jsonb, 1, $4, CURRENT_TIMESTAMP)
-ON CONFLICT (managed_anime_id) DO UPDATE SET admission_mode = EXCLUDED.admission_mode, quality_profile = EXCLUDED.quality_profile, retention_source_default_version = EXCLUDED.retention_source_default_version, retention_version = EXCLUDED.retention_version, updated_at = EXCLUDED.updated_at`,
+ON CONFLICT (managed_anime_id) DO UPDATE SET admission_mode = EXCLUDED.admission_mode, quality_profile = EXCLUDED.quality_profile, replacement_source_default_version = EXCLUDED.replacement_source_default_version, replacement_version = EXCLUDED.replacement_version, updated_at = EXCLUDED.updated_at`,
 		animeID, string(mode), profile, version); err != nil {
 		t.Fatal(err)
 	}
@@ -220,12 +220,12 @@ ON CONFLICT (idempotency_key) DO NOTHING`,
 }
 
 // decisionCounts snapshots the destructive-effect counters of one anime.
-func decisionCounts(t *testing.T, db *sql.DB, animeID string) (placements int, cleanups int, superseded int) {
+func decisionCounts(t *testing.T, db *sql.DB, animeID string) (placements int, deletions int, superseded int) {
 	t.Helper()
 	if err := db.QueryRow(`SELECT COUNT(*) FROM placements WHERE managed_anime_id = $1`, animeID).Scan(&placements); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM cleanup_operations WHERE managed_anime_id = $1`, animeID).Scan(&cleanups); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM replacement_deletions WHERE managed_anime_id = $1`, animeID).Scan(&deletions); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.QueryRow(`SELECT COUNT(*) FROM placements WHERE managed_anime_id = $1 AND state = 'superseded'`, animeID).Scan(&superseded); err != nil {
@@ -496,7 +496,7 @@ func openFrozenTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db := disposabledb.ResetDisposableSchema(t)
 	seedAnimeSubscription(t, db, "anime-1", "sub-1", "active")
-	seedInstanceRetention(t, db, "anime-1", ModePerGroup,
+	seedInstanceReplacement(t, db, "anime-1", ModePerGroup,
 		`{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["2160p"],["1080p"],["720p"],["480p"]]}]}`, 1)
 	return db
 }
@@ -557,7 +557,7 @@ func TestEvaluateServerReadsModeFromInstancePolicy(t *testing.T) {
 	// The instance policy is single_copy; the old client-driven shape would
 	// have submitted all/per_group. The server must use the policy mode.
 	if _, err := db.Exec(`
-UPDATE anime_business_configs SET admission_mode = 'single_copy', retention_version = retention_version + 1
+UPDATE anime_business_configs SET admission_mode = 'single_copy', replacement_version = replacement_version + 1
 WHERE managed_anime_id = 'anime-1'`); err != nil {
 		t.Fatal(err)
 	}
@@ -584,7 +584,7 @@ func TestEvaluateServerAllModeQueuesWithoutLosers(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 	if _, err := db.Exec(`
-UPDATE anime_business_configs SET admission_mode = 'all', retention_version = retention_version + 1
+UPDATE anime_business_configs SET admission_mode = 'all', replacement_version = replacement_version + 1
 WHERE managed_anime_id = 'anime-1'`); err != nil {
 		t.Fatal(err)
 	}
@@ -637,13 +637,13 @@ func TestEvaluateServerQualityTieKeepsIncumbentWithoutSubgroupItem(t *testing.T)
 	// Cross-group comparison needs single_copy (per_group never compares
 	// different groups).
 	if _, err := db.Exec(`
-UPDATE anime_business_configs SET admission_mode = 'single_copy', retention_version = retention_version + 1
+UPDATE anime_business_configs SET admission_mode = 'single_copy', replacement_version = replacement_version + 1
 WHERE managed_anime_id = 'anime-1'`); err != nil {
 		t.Fatal(err)
 	}
 	// Ranked subgroup policies: SampleGroup scores 90, ANi scores 60 (anime
 	// exact rules, the same shape the Subgroups tab persists).
-	// The merged config row already exists (seedInstanceRetention), so the
+	// The merged config row already exists (seedInstanceReplacement), so the
 	// subgroups override needs no separate owner row.
 	if _, err := db.Exec(`
 INSERT INTO anime_config_overrides(managed_anime_id, owner_type, section_name, schema_version, value)
@@ -685,7 +685,7 @@ func TestEvaluateServerComparesPlacedFileWithFrozenValues(t *testing.T) {
 	ctx := context.Background()
 	if _, err := db.Exec(`
 UPDATE anime_business_configs
-SET admission_mode = 'single_copy', quality_profile = $1::jsonb, retention_version = retention_version + 1
+SET admission_mode = 'single_copy', quality_profile = $1::jsonb, replacement_version = replacement_version + 1
 WHERE managed_anime_id = 'anime-1'`, `{"version":"profile-v1","items":[{"key":"anibt.resolution","ranks":[["1080p"],["720p"]]}]}`); err != nil {
 		t.Fatal(err)
 	}
@@ -720,7 +720,7 @@ func TestEvaluateServerSubgroupScoreFromProviderSelections(t *testing.T) {
 	ctx := context.Background()
 	if _, err := db.Exec(`
 UPDATE anime_business_configs
-SET admission_mode = 'single_copy', quality_profile = $1::jsonb, retention_version = retention_version + 1
+SET admission_mode = 'single_copy', quality_profile = $1::jsonb, replacement_version = replacement_version + 1
 WHERE managed_anime_id = 'anime-1'`, string(qualityprofile.DefaultJSON())); err != nil {
 		t.Fatal(err)
 	}
@@ -843,7 +843,7 @@ func TestSettleKeepsFrozenWinnerOlderThanLoser(t *testing.T) {
 		t.Fatalf("decision must be settled, got %s", decisionState)
 	}
 	var cleanupCount int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM cleanup_operations WHERE placement_id = 'plc-loser'`).Scan(&cleanupCount); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM replacement_deletions WHERE placement_id = 'plc-loser'`).Scan(&cleanupCount); err != nil {
 		t.Fatal(err)
 	}
 	if cleanupCount != 1 {
@@ -892,7 +892,7 @@ func TestSettleCleanupGetsFrozenAdmissionMode(t *testing.T) {
 		anime := fmt.Sprintf("anime-%s", mode)
 		sub := fmt.Sprintf("sub-%s", mode)
 		seedAnimeSubscription(t, db, anime, sub, "active")
-		seedInstanceRetention(t, db, anime, mode, ``, 1)
+		seedInstanceReplacement(t, db, anime, mode, ``, 1)
 		seedPlacement(t, db, "plc-"+string(mode)+"-w", anime, "/library/W/EP01.mkv", "fp-w", []string{"tv:s1:e1"}, "2026-07-01T00:00:00Z")
 		seedPlacement(t, db, "plc-"+string(mode)+"-l", anime, "/library/L/EP01.mkv", "fp-l", []string{"tv:s1:e1"}, "2026-08-01T00:00:00Z")
 		seedFrozenDecision(t, db, "dec-"+string(mode), anime, "plc-"+string(mode)+"-w", 1, 1, mode,
@@ -905,13 +905,13 @@ func TestSettleCleanupGetsFrozenAdmissionMode(t *testing.T) {
 		if err := service.SettleDecision(ctx, "dec-"+string(mode)); err != nil {
 			t.Fatalf("settle %s: %v", mode, err)
 		}
-		var retentionMode string
+		var admissionMode string
 		if err := db.QueryRow(`
-SELECT retention_mode FROM cleanup_operations WHERE managed_anime_id = $1`, anime).Scan(&retentionMode); err != nil {
+SELECT admission_mode FROM replacement_deletions WHERE managed_anime_id = $1`, anime).Scan(&admissionMode); err != nil {
 			t.Fatal(err)
 		}
-		if retentionMode != string(mode) {
-			t.Fatalf("cleanup must receive the frozen admission_mode %s, got %s", mode, retentionMode)
+		if admissionMode != string(mode) {
+			t.Fatalf("cleanup must receive the frozen admission_mode %s, got %s", mode, admissionMode)
 		}
 	}
 }
@@ -932,7 +932,7 @@ func settleStaleFixture(t *testing.T, db *sql.DB) *ReplacementDecisionService {
 }
 
 // assertStaleWithZeroEffects proves the decision went stale with the expected
-// typed reason and no Placement, CleanupOperation or physical change happened
+// typed reason and no Placement, ReplacementDeletion or physical change happened
 // (nothing superseded beyond the seeded mutation, no cleanup admitted, and
 // the placement versions stay exactly at the pre-settle baseline).
 func assertStaleWithZeroEffects(t *testing.T, db *sql.DB, wantReason string, wantWinnerState, wantLoserState string, wantWinnerVersion, wantLoserVersion int64) {
@@ -961,12 +961,12 @@ func assertStaleWithZeroEffects(t *testing.T, db *sql.DB, wantReason string, wan
 		t.Fatalf("settle must not bump placement versions: winner=%d (want %d) loser=%d (want %d)",
 			winnerVersion, wantWinnerVersion, loserVersion, wantLoserVersion)
 	}
-	var cleanups int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM cleanup_operations`).Scan(&cleanups); err != nil {
+	var deletions int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM replacement_deletions`).Scan(&deletions); err != nil {
 		t.Fatal(err)
 	}
-	if cleanups != 0 {
-		t.Fatalf("stale settle must create zero cleanup operations: %d", cleanups)
+	if deletions != 0 {
+		t.Fatalf("stale settle must create zero cleanup operations: %d", deletions)
 	}
 }
 
@@ -1002,7 +1002,7 @@ func TestSettleStaleOnPolicyVersionChanged(t *testing.T) {
 	defer db.Close()
 	service := settleStaleFixture(t, db)
 	if _, err := db.Exec(`
-UPDATE anime_business_configs SET admission_mode = 'all', retention_version = retention_version + 1, updated_at = CURRENT_TIMESTAMP
+UPDATE anime_business_configs SET admission_mode = 'all', replacement_version = replacement_version + 1, updated_at = CURRENT_TIMESTAMP
 WHERE managed_anime_id = 'anime-1'`); err != nil {
 		t.Fatal(err)
 	}
@@ -1097,10 +1097,10 @@ func TestSettleReplayRegistersOneDeletionPerFrozenLoser(t *testing.T) {
 		t.Fatalf("settle: %v", err)
 	}
 	var loserCleanups, unrelatedCleanups int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM cleanup_operations WHERE placement_id = 'plc-loser'`).Scan(&loserCleanups); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM replacement_deletions WHERE placement_id = 'plc-loser'`).Scan(&loserCleanups); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM cleanup_operations WHERE placement_id = 'plc-unrelated'`).Scan(&unrelatedCleanups); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM replacement_deletions WHERE placement_id = 'plc-unrelated'`).Scan(&unrelatedCleanups); err != nil {
 		t.Fatal(err)
 	}
 	if loserCleanups != 1 || unrelatedCleanups != 0 {
@@ -1110,7 +1110,7 @@ func TestSettleReplayRegistersOneDeletionPerFrozenLoser(t *testing.T) {
 	if err := service.SettleDecision(ctx, "dec-frozen"); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM cleanup_operations WHERE placement_id = 'plc-loser'`).Scan(&loserCleanups); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM replacement_deletions WHERE placement_id = 'plc-loser'`).Scan(&loserCleanups); err != nil {
 		t.Fatal(err)
 	}
 	if loserCleanups != 1 {
@@ -1168,9 +1168,9 @@ func TestSettleNoDecisionIsNoop(t *testing.T) {
 	if err := service.SettleForPlacement(context.Background(), "plc-new"); err != nil {
 		t.Fatalf("no-decision settle must be a no-op: %v", err)
 	}
-	placements, cleanups, _ := decisionCounts(t, db, "anime-1")
-	if placements != 1 || cleanups != 0 {
-		t.Fatalf("no-decision settle must change nothing: placements=%d cleanups=%d", placements, cleanups)
+	placements, deletions, _ := decisionCounts(t, db, "anime-1")
+	if placements != 1 || deletions != 0 {
+		t.Fatalf("no-decision settle must change nothing: placements=%d deletions=%d", placements, deletions)
 	}
 }
 
@@ -1248,12 +1248,12 @@ func TestEvaluateHandlerRunsRealOwner(t *testing.T) {
 	if state := placementState(t, db, "plc-file_operation-op-release-old"); state != "superseded" {
 		t.Fatalf("frozen loser must be superseded by the handler settle: %s", state)
 	}
-	var cleanups int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM cleanup_operations WHERE managed_anime_id = 'anime-1'`).Scan(&cleanups); err != nil {
+	var deletions int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM replacement_deletions WHERE managed_anime_id = 'anime-1'`).Scan(&deletions); err != nil {
 		t.Fatal(err)
 	}
-	if cleanups != 0 {
-		t.Fatalf("same-path loser must not be handed to cleanup: %d", cleanups)
+	if deletions != 0 {
+		t.Fatalf("same-path loser must not be handed to cleanup: %d", deletions)
 	}
 }
 
@@ -1389,13 +1389,13 @@ func TestSettleDeletesLoserAndReplayIsIdempotent(t *testing.T) {
 		t.Fatalf("settle: %v", err)
 	}
 	var cleanupID, state string
-	if err := db.QueryRow(`SELECT id, state FROM cleanup_operations WHERE placement_id = 'plc-loser'`).Scan(&cleanupID, &state); err != nil {
+	if err := db.QueryRow(`SELECT id, state FROM replacement_deletions WHERE placement_id = 'plc-loser'`).Scan(&cleanupID, &state); err != nil {
 		t.Fatal(err)
 	}
 	if state != string(CleanupAdmitted) {
 		t.Fatalf("a loser with a recorded identity must be admitted for deletion: %s", state)
 	}
-	claim, err := store.ClaimDue(ctx, "settle-delete", []string{workitems.KindCleanupDelete}, time.Minute)
+	claim, err := store.ClaimDue(ctx, "settle-delete", []string{workitems.KindReplacementDelete}, time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1418,14 +1418,14 @@ func TestSettleDeletesLoserAndReplayIsIdempotent(t *testing.T) {
 	if err := service.SettleDecision(ctx, "dec-frozen"); err != nil {
 		t.Fatalf("replay settle: %v", err)
 	}
-	var cleanups int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM cleanup_operations WHERE placement_id = 'plc-loser'`).Scan(&cleanups); err != nil {
+	var deletions int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM replacement_deletions WHERE placement_id = 'plc-loser'`).Scan(&deletions); err != nil {
 		t.Fatal(err)
 	}
-	if cleanups != 1 {
-		t.Fatalf("replay must not duplicate cleanup: %d", cleanups)
+	if deletions != 1 {
+		t.Fatalf("replay must not duplicate cleanup: %d", deletions)
 	}
-	if err := db.QueryRow(`SELECT state FROM cleanup_operations WHERE id = $1`, cleanupID).Scan(&state); err != nil {
+	if err := db.QueryRow(`SELECT state FROM replacement_deletions WHERE id = $1`, cleanupID).Scan(&state); err != nil {
 		t.Fatal(err)
 	}
 	if state != string(CleanupDeleted) {

@@ -39,7 +39,7 @@ export const configCopy = {
   alreadySubscribed: "该预设已订阅，请刷新目录后重试",
   opConflict: "操作冲突，请重试",
   subscribeFailed: "订阅失败，请重试",
-  retentionAria: "保留与清理（本订阅）",
+  replacementAria: "洗版（本订阅）",
   reloadLatest: "重新加载最新配置",
   overwrite: "使用最新版本覆盖保存",
   refreshReselect: "刷新并重新选择",
@@ -72,7 +72,7 @@ export const configCopy = {
     reload: "放弃尚未保存的修改并重新读取订阅设置？",
   },
   snapshot: {
-    legend: "保留与清理",
+    legend: "洗版",
   },
   discovery: {
     none: "未发现可用字幕组",

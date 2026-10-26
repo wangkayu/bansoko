@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Generate and verify the bounded discovery-history record-retention sqlc persistence slice.
+# Generate and verify the bounded discovery-history retention sqlc persistence slice.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"

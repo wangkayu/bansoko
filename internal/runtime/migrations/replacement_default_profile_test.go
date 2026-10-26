@@ -6,17 +6,17 @@ import (
 	"testing"
 )
 
-// TestRetentionDefaultQualityProfile proves the seeded global retention default
+// TestReplacementDefaultQualityProfile proves the seeded global retention default
 // is a profile-v1 document with explicit resolution and language ranks, so the
 // replacement chain can compare across those dimensions instead of blocking on
 // "no explicit rank and values differ".
-func TestRetentionDefaultQualityProfile(t *testing.T) {
+func TestReplacementDefaultQualityProfile(t *testing.T) {
 	db := installedDB(t)
 	ctx := context.Background()
 
 	var profileRaw []byte
 	if err := db.QueryRowContext(ctx, `
-SELECT value->'quality_profile' FROM global_config_sections WHERE section_name = 'retention'`).Scan(&profileRaw); err != nil {
+SELECT value->'quality_profile' FROM global_config_sections WHERE section_name = 'replacement'`).Scan(&profileRaw); err != nil {
 		t.Fatalf("read default quality profile: %v", err)
 	}
 	var profile struct {

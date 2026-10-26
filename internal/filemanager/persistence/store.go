@@ -127,7 +127,7 @@ func scanPlacement(scan func(...any) error, extra ...any) (filemanager.Placement
 
 // inProgressOwners is every non-terminal owner path:
 // unfinished file operations (source and target), pending or retrying
-// placement handoffs, admitted alignments, admitted cleanups (source and
+// placement handoffs, admitted alignments, admitted deletions (source and
 // quarantine), and admitted or queued replacement decisions (candidate and
 // frozen losers), unfinished offset migrations (old and new target), and
 // unfinished user file operations (source, requested target, resolved result
@@ -147,10 +147,10 @@ SELECT a.source_path, 'alignment', '' FROM alignment_operations a WHERE a.state 
 UNION ALL
 SELECT a.target_path, 'alignment', '' FROM alignment_operations a WHERE a.state IN ('planned', 'ready', 'running')
 UNION ALL
-SELECT c.source_path, 'cleanup', '' FROM cleanup_operations c
+SELECT c.source_path, 'cleanup', '' FROM replacement_deletions c
   WHERE c.state = 'admitted' OR (c.state = 'blocked' AND c.attempt IS NOT NULL)
 UNION ALL
-SELECT c.attempt->>'capture_path', 'cleanup', '' FROM cleanup_operations c
+SELECT c.attempt->>'capture_path', 'cleanup', '' FROM replacement_deletions c
   WHERE (c.state = 'admitted' OR c.state = 'blocked') AND c.attempt ? 'capture_path'
 UNION ALL
 SELECT p.physical_path, 'replacement', '' FROM replacement_decisions d JOIN placements p ON p.id = d.candidate_placement_id

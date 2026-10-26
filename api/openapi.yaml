@@ -2830,10 +2830,10 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '409':
           $ref: '#/components/responses/Conflict'
-  /file-maintenance/retention/compare-vocabulary:
+  /file-maintenance/replacement/compare-vocabulary:
     get:
       tags: [FileMaintenance]
-      operationId: getRetentionCompareVocabulary
+      operationId: getReplacementCompareVocabulary
       x-scope: read
       description: >-
         Candidate values for the ranked comparison items of the quality
@@ -2850,13 +2850,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RetentionCompareVocabulary'
+                $ref: '#/components/schemas/ReplacementCompareVocabulary'
         '401':
           $ref: '#/components/responses/Unauthorized'
-  /file-maintenance/retention/default:
+  /file-maintenance/replacement/default:
     get:
       tags: [FileMaintenance]
-      operationId: getRetentionPolicyDefault
+      operationId: getReplacementPolicyDefault
       x-scope: read
       description: >-
         The singleton creation default for future instances (absent ->
@@ -2868,12 +2868,12 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RetentionPolicyDefaultView'
+                $ref: '#/components/schemas/ReplacementPolicyDefaultView'
         '401':
           $ref: '#/components/responses/Unauthorized'
     put:
       tags: [FileMaintenance]
-      operationId: saveRetentionPolicyDefault
+      operationId: saveReplacementPolicyDefault
       x-scope: write
       description: >-
         Replaces the singleton creation default with expected-version CAS.
@@ -2884,14 +2884,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RetentionPolicyDefaultInput'
+              $ref: '#/components/schemas/ReplacementPolicyDefaultInput'
       responses:
         '200':
           description: Saved default with the new version.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RetentionPolicyDefaultView'
+                $ref: '#/components/schemas/ReplacementPolicyDefaultView'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '409':
@@ -3111,12 +3111,12 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/Unprocessable'
-  /file-maintenance/retention/anime/{managed_anime_id}:
+  /file-maintenance/replacement/anime/{managed_anime_id}:
     get:
       tags: [FileMaintenance]
-      operationId: getInstanceRetentionPolicy
+      operationId: getInstanceReplacementPolicy
       x-scope: read
-      x-surface-keep: "agent: read one instance's retention policy; no UI caller"
+      x-surface-keep: "agent: read one instance's replacement policy; no UI caller"
       description: >-
         The complete frozen per-instance retention policy. The client never
         merges a global default.
@@ -3132,16 +3132,16 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/InstanceRetentionPolicyView'
+                $ref: '#/components/schemas/InstanceReplacementPolicyView'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
     put:
       tags: [FileMaintenance]
-      operationId: saveInstanceRetentionPolicy
+      operationId: saveInstanceReplacementPolicy
       x-scope: write
-      x-surface-keep: "agent: replace one instance's retention policy with version CAS; no UI caller"
+      x-surface-keep: "agent: replace one instance's replacement policy with version CAS; no UI caller"
       description: >-
         Fully replaces one instance policy with expected-version CAS. The save
         transaction changes no Placement, creates no cleanup, and performs no
@@ -3157,14 +3157,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/InstanceRetentionPolicyInput'
+              $ref: '#/components/schemas/InstanceReplacementPolicyInput'
       responses:
         '200':
           description: Saved instance policy with the new version.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/InstanceRetentionPolicyView'
+                $ref: '#/components/schemas/InstanceReplacementPolicyView'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -3178,7 +3178,7 @@ paths:
       tags: [FileMaintenance]
       operationId: getFileMaintenanceOverview
       x-scope: read
-      x-surface-keep: "agent: full per-instance maintenance truth (consumer outcomes, decisions, cleanups, alignments) for diagnosis; the UI reads the per-anime files view instead"
+      x-surface-keep: "agent: full per-instance maintenance truth (consumer outcomes, decisions, deletions, alignments) for diagnosis; the UI reads the per-anime files view instead"
       description: >-
         The minimal per-instance FileMaintenance truth surface: the current
         reconciliation scan owner, the completed generation's consumer
@@ -5550,7 +5550,7 @@ paths:
         write: false
         description: >-
           Read one finite one-shot acquisition by its handle: marker state
-          (running/retention_pending/cleanup_blocked/reclaiming/cleaned), terminal
+          (running/reclaim_pending/cleanup_blocked/reclaiming/cleaned), terminal
           outcome/reason, and the current owner-chain views while the temporary owner
           exists. Poll this instead of get_workspace for one-shot acquisitions; stop
           polling at the retained terminal outcome or on not-found after marker purge.
@@ -12226,12 +12226,12 @@ components:
     BusinessOwnerVersions:
       type: object
       additionalProperties: false
-      required: [rules, subgroups, parser, retention, file_effect, business]
+      required: [rules, subgroups, parser, replacement, file_effect, business]
       properties:
         rules: {type: integer, format: int64, minimum: 1}
         subgroups: {type: integer, format: int64, minimum: 1}
         parser: {type: integer, format: int64, minimum: 1}
-        retention: {type: integer, format: int64, minimum: 1}
+        replacement: {type: integer, format: int64, minimum: 1}
         file_effect: {type: integer, format: int64, minimum: 1}
         business: {type: integer, format: int64, minimum: 0}
     CandidateApplyInput:
@@ -12727,12 +12727,12 @@ components:
       type: string
       description: >-
         Internal one-shot marker state. running admits gated effects;
-        retention_pending is terminal and drained awaiting bounded batch
+        reclaim_pending is terminal and drained awaiting bounded batch
         reclamation; cleanup_blocked retains owners with an actionable
         bounded reason; reclaiming is the fenced drain phase that admits no
         new effects; cleaned has no owner graph and keeps anchors plus
         replay evidence until marker purge.
-      enum: [running, retention_pending, cleanup_blocked, reclaiming, cleaned]
+      enum: [running, reclaim_pending, cleanup_blocked, reclaiming, cleaned]
     OneShotTerminalOutcome:
       type: string
       enum: [succeeded, failed]
@@ -16661,7 +16661,7 @@ components:
         updated_at:
           type: string
           format: date-time
-    CleanupOperationView:
+    ReplacementDeletionView:
       type: object
       additionalProperties: false
       description: >-
@@ -16669,7 +16669,7 @@ components:
         identity (recorded size, plus the inode when recorded) is verified
         before the file is deleted; a mismatch is skipped with a typed reason
         and leaves the file in place.
-      required: [id, placement_id, managed_anime_id, replacement_ref, retention_mode, source_path, source_fingerprint, state, version, created_at]
+      required: [id, placement_id, managed_anime_id, replacement_ref, admission_mode, source_path, source_fingerprint, state, version, created_at]
       properties:
         id:
           type: string
@@ -16679,7 +16679,7 @@ components:
           type: string
         replacement_ref:
           type: string
-        retention_mode:
+        admission_mode:
           type: string
           enum: [per_group, single_copy]
         source_path:
@@ -16731,11 +16731,11 @@ components:
           maxItems: 200
           items:
             $ref: '#/components/schemas/ReplacementDecisionView'
-        cleanups:
+        deletions:
           type: array
           maxItems: 200
           items:
-            $ref: '#/components/schemas/CleanupOperationView'
+            $ref: '#/components/schemas/ReplacementDeletionView'
         alignments:
           type: array
           maxItems: 200
@@ -16760,11 +16760,11 @@ components:
             $ref: '#/components/schemas/CompanionIssueView'
         instance_policy:
           allOf:
-            - $ref: '#/components/schemas/InstanceRetentionPolicyView'
+            - $ref: '#/components/schemas/InstanceReplacementPolicyView'
           nullable: true
         global_default:
           allOf:
-            - $ref: '#/components/schemas/RetentionPolicyDefaultView'
+            - $ref: '#/components/schemas/ReplacementPolicyDefaultView'
           nullable: true
     FileMaintenancePolicyView:
       type: object
@@ -16807,7 +16807,7 @@ components:
           type: integer
           minimum: 0
           description: CAS expected version (0 = create).
-    RetentionAdmissionMode:
+    ReplacementAdmissionMode:
       type: string
       enum: [all, per_group, single_copy]
       description: >-
@@ -16895,7 +16895,7 @@ components:
     BusinessSnapshot:
       type: object
       additionalProperties: false
-      required: [schema_version, sections, section_versions, section_schemas, parser, retention, retention_version, unclassified_route, file_effect_version, programs]
+      required: [schema_version, sections, section_versions, section_schemas, parser, replacement, replacement_version, unclassified_route, file_effect_version, programs]
       properties:
         schema_version:
           type: string
@@ -16908,9 +16908,9 @@ components:
           $ref: '#/components/schemas/BusinessSectionSchemas'
         parser:
           $ref: '#/components/schemas/BusinessParserEnvelope'
-        retention:
-          $ref: '#/components/schemas/BusinessRetention'
-        retention_version:
+        replacement:
+          $ref: '#/components/schemas/BusinessReplacement'
+        replacement_version:
           type: integer
           format: int64
           minimum: 0
@@ -16990,13 +16990,13 @@ components:
         profile_version: {type: integer, format: int64}
         rules_owner_version: {type: integer, format: int64}
         source_owner: {type: string}
-    BusinessRetention:
+    BusinessReplacement:
       type: object
       additionalProperties: false
       required: [admission_mode, quality_profile]
       properties:
         admission_mode:
-          $ref: '#/components/schemas/RetentionAdmissionMode'
+          $ref: '#/components/schemas/ReplacementAdmissionMode'
         quality_profile:
           $ref: '#/components/schemas/QualityProfile'
     QualityProfile:
@@ -17046,7 +17046,7 @@ components:
     QualityCompareKey:
       type: string
       enum: [subgroup.score, release.lang, release.resolution, release.revision, anibt.resolution, anibt.language, anibt.subtitle, anibt.format, rt.resolution, rt.sub_lang, rt.source, rt.codec]
-    RetentionCompareVocabulary:
+    ReplacementCompareVocabulary:
       type: object
       additionalProperties: false
       required: [items]
@@ -17072,13 +17072,13 @@ components:
           type: array
           items:
             type: string
-    RetentionPolicyDefaultView:
+    ReplacementPolicyDefaultView:
       type: object
       additionalProperties: false
       required: [admission_mode, quality_profile, version]
       properties:
         admission_mode:
-          $ref: '#/components/schemas/RetentionAdmissionMode'
+          $ref: '#/components/schemas/ReplacementAdmissionMode'
         quality_profile:
           $ref: '#/components/schemas/QualityProfile'
         version:
@@ -17088,13 +17088,13 @@ components:
           type: string
           format: date-time
           nullable: true
-    RetentionPolicyDefaultInput:
+    ReplacementPolicyDefaultInput:
       type: object
       additionalProperties: false
       required: [admission_mode, quality_profile, expected_version]
       properties:
         admission_mode:
-          $ref: '#/components/schemas/RetentionAdmissionMode'
+          $ref: '#/components/schemas/ReplacementAdmissionMode'
         quality_profile:
           $ref: '#/components/schemas/QualityProfile'
         expected_version:
@@ -17156,7 +17156,7 @@ components:
         parser_kind:
           type: string
           enum: [regex, reltitle]
-    InstanceRetentionPolicyView:
+    InstanceReplacementPolicyView:
       type: object
       additionalProperties: false
       required: [managed_anime_id, admission_mode, quality_profile, source_default_version, version]
@@ -17164,7 +17164,7 @@ components:
         managed_anime_id:
           $ref: '#/components/schemas/ID'
         admission_mode:
-          $ref: '#/components/schemas/RetentionAdmissionMode'
+          $ref: '#/components/schemas/ReplacementAdmissionMode'
         quality_profile:
           $ref: '#/components/schemas/QualityProfile'
         source_default_version:
@@ -17177,13 +17177,13 @@ components:
           type: string
           format: date-time
           nullable: true
-    InstanceRetentionPolicyInput:
+    InstanceReplacementPolicyInput:
       type: object
       additionalProperties: false
       required: [admission_mode, quality_profile, expected_version]
       properties:
         admission_mode:
-          $ref: '#/components/schemas/RetentionAdmissionMode'
+          $ref: '#/components/schemas/ReplacementAdmissionMode'
         quality_profile:
           $ref: '#/components/schemas/QualityProfile'
         expected_version:

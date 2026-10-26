@@ -70,7 +70,7 @@ func newTriggerTestDB(t *testing.T) (*sql.DB, *workitems.Store, *ReplacementTrig
 	t.Helper()
 	db := disposabledb.ResetDisposableSchema(t)
 	seedAnimeSubscription(t, db, "anime-1", "sub-1", "active")
-	seedInstanceRetention(t, db, "anime-1", ModePerGroup,
+	seedInstanceReplacement(t, db, "anime-1", ModePerGroup,
 		`{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["2160p"],["1080p"],["720p"],["480p"]]}]}`, 1)
 	store, err := workitems.NewStore(db, workitems.DefaultRetentionDays, port.NopRuntimeLogger{})
 	if err != nil {
@@ -180,9 +180,9 @@ func TestTriggerPlacementCommittedStoppedSkips(t *testing.T) {
 	if item := loadLiveEvaluateItem(t, db, "anime-1"); item != nil {
 		t.Fatalf("stopped subscription must not create an evaluate item: %+v", item)
 	}
-	placements, cleanups, superseded := decisionCounts(t, db, "anime-1")
-	if placements != 1 || cleanups != 0 || superseded != 0 {
-		t.Fatalf("stopped admission keeps the placement but zero replacement effects: placements=%d cleanups=%d superseded=%d", placements, cleanups, superseded)
+	placements, deletions, superseded := decisionCounts(t, db, "anime-1")
+	if placements != 1 || deletions != 0 || superseded != 0 {
+		t.Fatalf("stopped admission keeps the placement but zero replacement effects: placements=%d deletions=%d superseded=%d", placements, deletions, superseded)
 	}
 }
 
@@ -196,10 +196,10 @@ func TestTriggerPolicySavedOnlyTargetAnime(t *testing.T) {
 	ctx := context.Background()
 	// Two active instances with identical policy v1; only anime-1 is saved.
 	seedAnimeSubscription(t, db, "anime-1", "sub-1", "active")
-	seedInstanceRetention(t, db, "anime-1", ModePerGroup,
+	seedInstanceReplacement(t, db, "anime-1", ModePerGroup,
 		`{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["2160p"],["1080p"],["720p"],["480p"]]}]}`, 1)
 	seedAnimeSubscription(t, db, "anime-2", "sub-2", "active")
-	seedInstanceRetention(t, db, "anime-2", ModePerGroup,
+	seedInstanceReplacement(t, db, "anime-2", ModePerGroup,
 		`{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["2160p"],["1080p"],["720p"],["480p"]]}]}`, 1)
 	seedFilePlacement(t, db, "anime-1", "sub-1", "release-r1", []string{"tv:s1:e1"},
 		Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
@@ -211,11 +211,11 @@ func TestTriggerPolicySavedOnlyTargetAnime(t *testing.T) {
 		t.Fatal(err)
 	}
 	trigger := NewReplacementTriggerService(db, store)
-	service := NewService(NewPolicyService(db), NewRetentionPolicyService(db), nil, nil, nil)
+	service := NewService(NewPolicyService(db), NewReplacementPolicyService(db), nil, nil, nil)
 	service.SetReplacementTrigger(trigger)
 
-	saved, err := service.SaveInstanceRetentionPolicy(ctx, "anime-1", generated.InstanceRetentionPolicyInput{
-		AdmissionMode:   generated.RetentionAdmissionModeSingleCopy,
+	saved, err := service.SaveInstanceReplacementPolicy(ctx, "anime-1", generated.InstanceReplacementPolicyInput{
+		AdmissionMode:   generated.ReplacementAdmissionModeSingleCopy,
 		QualityProfile:  generated.QualityProfile{Version: "profile-v1", Items: []generated.QualityCompareItem{{Key: "release.resolution", Ranks: [][]string{{"2160p"}, {"1080p"}, {"720p"}, {"480p"}}}}},
 		ExpectedVersion: 1,
 	}, "test", "http")
@@ -234,8 +234,8 @@ func TestTriggerPolicySavedOnlyTargetAnime(t *testing.T) {
 	if _, err := disposabledb.Owner(t).Exec(`UPDATE acquisitions SET entry_kind = 'subscription_add', state = 'running' WHERE source_release_ref = 'release-r1'`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.SaveInstanceRetentionPolicy(ctx, "anime-1", generated.InstanceRetentionPolicyInput{
-		AdmissionMode:   generated.RetentionAdmissionModePerGroup,
+	if _, err := service.SaveInstanceReplacementPolicy(ctx, "anime-1", generated.InstanceReplacementPolicyInput{
+		AdmissionMode:   generated.ReplacementAdmissionModePerGroup,
 		QualityProfile:  generated.QualityProfile{Version: "profile-v1", Items: []generated.QualityCompareItem{{Key: "release.resolution", Ranks: [][]string{{"2160p"}, {"1080p"}, {"720p"}, {"480p"}}}}},
 		ExpectedVersion: 2,
 	}, "test", "http"); err != nil {
@@ -253,7 +253,7 @@ func TestTriggerPolicySavedOnlyTargetAnime(t *testing.T) {
 		t.Fatalf("non-target anime must not receive an item: %+v", item)
 	}
 	var policyVersion, decisions int
-	if err := db.QueryRow(`SELECT retention_version FROM anime_business_configs WHERE managed_anime_id = 'anime-2'`).Scan(&policyVersion); err != nil {
+	if err := db.QueryRow(`SELECT replacement_version FROM anime_business_configs WHERE managed_anime_id = 'anime-2'`).Scan(&policyVersion); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.QueryRow(`SELECT COUNT(*) FROM replacement_decisions WHERE managed_anime_id = 'anime-2'`).Scan(&decisions); err != nil {
@@ -274,10 +274,10 @@ func TestTriggerPolicySavedStoppedKeepsPolicyThenResumeNewEpoch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	service := NewService(NewPolicyService(db), NewRetentionPolicyService(db), nil, nil, nil)
+	service := NewService(NewPolicyService(db), NewReplacementPolicyService(db), nil, nil, nil)
 	service.SetReplacementTrigger(trigger)
-	if _, err := service.SaveInstanceRetentionPolicy(ctx, "anime-1", generated.InstanceRetentionPolicyInput{
-		AdmissionMode:   generated.RetentionAdmissionModeSingleCopy,
+	if _, err := service.SaveInstanceReplacementPolicy(ctx, "anime-1", generated.InstanceReplacementPolicyInput{
+		AdmissionMode:   generated.ReplacementAdmissionModeSingleCopy,
 		QualityProfile:  generated.QualityProfile{Version: "profile-v1", Items: []generated.QualityCompareItem{}},
 		ExpectedVersion: 1,
 	}, "test", "http"); err != nil {
@@ -287,7 +287,7 @@ func TestTriggerPolicySavedStoppedKeepsPolicyThenResumeNewEpoch(t *testing.T) {
 		t.Fatalf("stopped policy save must create no evaluate item: %+v", item)
 	}
 	var policyVersion int64
-	if err := db.QueryRow(`SELECT retention_version FROM anime_business_configs WHERE managed_anime_id = 'anime-1'`).Scan(&policyVersion); err != nil {
+	if err := db.QueryRow(`SELECT replacement_version FROM anime_business_configs WHERE managed_anime_id = 'anime-1'`).Scan(&policyVersion); err != nil {
 		t.Fatal(err)
 	}
 	if policyVersion != 2 {
@@ -437,9 +437,9 @@ func TestTriggerGenerationCompletedGatedByActive(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 	seedAnimeSubscription(t, db, "anime-stopped", "sub-s", "stopped")
-	seedInstanceRetention(t, db, "anime-stopped", ModePerGroup, ``, 1)
+	seedInstanceReplacement(t, db, "anime-stopped", ModePerGroup, ``, 1)
 	seedAnimeSubscription(t, db, "anime-active", "sub-a", "active")
-	seedInstanceRetention(t, db, "anime-active", ModePerGroup, ``, 1)
+	seedInstanceReplacement(t, db, "anime-active", ModePerGroup, ``, 1)
 	seedFilePlacement(t, db, "anime-stopped", "sub-s", "release-s", []string{"tv:s1:e1"},
 		Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
 	seedFilePlacement(t, db, "anime-active", "sub-a", "release-a", []string{"tv:s1:e1"},
@@ -507,7 +507,7 @@ func TestTriggerFailureRecordsObservableFailure(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 	seedAnimeSubscription(t, db, "anime-1", "sub-1", "active")
-	seedInstanceRetention(t, db, "anime-1", ModePerGroup, ``, 1)
+	seedInstanceReplacement(t, db, "anime-1", ModePerGroup, ``, 1)
 
 	rec := &recordingRecorder{}
 	trigger := NewReplacementTriggerService(db, nil) // store missing -> trigger cannot merge
@@ -594,12 +594,12 @@ func TestEvaluateThenStopBeforeSettleMarksStaleZeroEffects(t *testing.T) {
 	if state := placementState(t, db, candidate); state != "active" {
 		t.Fatalf("candidate placement must stay active: %s", state)
 	}
-	var cleanups int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM cleanup_operations`).Scan(&cleanups); err != nil {
+	var deletions int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM replacement_deletions`).Scan(&deletions); err != nil {
 		t.Fatal(err)
 	}
-	if cleanups != 0 {
-		t.Fatalf("stale settle must create zero cleanup operations: %d", cleanups)
+	if deletions != 0 {
+		t.Fatalf("stale settle must create zero cleanup operations: %d", deletions)
 	}
 	// The stale decision is never re-settled after a resume: a new epoch
 	// creates a NEW decision with the fresh subscription version instead.
@@ -657,15 +657,15 @@ func TestStopRaceEvaluateSettleNeverProducesEffect(t *testing.T) {
 		// Whatever won the race, settle must never produce a destructive effect:
 		// no decision (evaluate saw stopped) or a stale/blocked one.
 		_ = service.SettleForPlacement(ctx, candidate)
-		var superseded, cleanups int
+		var superseded, deletions int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM placements WHERE managed_anime_id = 'anime-1' AND state = 'superseded'`).Scan(&superseded); err != nil {
 			t.Fatal(err)
 		}
-		if err := db.QueryRow(`SELECT COUNT(*) FROM cleanup_operations WHERE managed_anime_id = 'anime-1'`).Scan(&cleanups); err != nil {
+		if err := db.QueryRow(`SELECT COUNT(*) FROM replacement_deletions WHERE managed_anime_id = 'anime-1'`).Scan(&deletions); err != nil {
 			t.Fatal(err)
 		}
-		if superseded != 0 || cleanups != 0 {
-			t.Fatalf("round %d: stop race must yield zero destructive effects: superseded=%d cleanups=%d evalErr=%v", round, superseded, cleanups, evalErr)
+		if superseded != 0 || deletions != 0 {
+			t.Fatalf("round %d: stop race must yield zero destructive effects: superseded=%d deletions=%d evalErr=%v", round, superseded, deletions, evalErr)
 		}
 		var bad int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM replacement_decisions WHERE managed_anime_id = 'anime-1' AND state IN ('settled')`).Scan(&bad); err != nil {

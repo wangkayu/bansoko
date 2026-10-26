@@ -22,10 +22,10 @@ func (h cleanupRecoveryHandler) Handle(ctx context.Context, c workitems.Claim) (
 	return h.handle.Handle(ctx, c)
 }
 
-// ObserveRecovery classifies an interrupted cleanup_delete claim from the
+// ObserveRecovery classifies an interrupted replacement_delete claim from the
 // owner and the exact invocation receipts only; it never runs an effect.
 func (h cleanupRecoveryHandler) ObserveRecovery(ctx context.Context, c workitems.Claim) (worker.Outcome, error) {
-	if h.service == nil || c.Kind != workitems.KindCleanupDelete || c.Owner.Type != workitems.OwnerCleanup {
+	if h.service == nil || c.Kind != workitems.KindReplacementDelete || c.Owner.Type != workitems.OwnerReplacementDeletion {
 		return worker.Outcome{}, workitems.ErrInvalidSpec
 	}
 	s := h.service
@@ -38,10 +38,10 @@ func (h cleanupRecoveryHandler) ObserveRecovery(ctx context.Context, c workitems
 	}
 	switch op.State {
 	case CleanupDeleted, CleanupSkipped:
-		return recoveryCommitted(string(op.State), lockedMaintenanceEvidence("cleanup_operations", c, string(op.State), op.Version)), nil
+		return recoveryCommitted(string(op.State), lockedMaintenanceEvidence("replacement_deletions", c, string(op.State), op.Version)), nil
 	case CleanupBlocked, CleanupFailed:
 		o := worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: string(op.State), ReasonCode: op.FailureCode, Reason: op.Reason},
-			lockedMaintenanceEvidence("cleanup_operations", c, string(op.State), op.Version))
+			lockedMaintenanceEvidence("replacement_deletions", c, string(op.State), op.Version))
 		o.Disposition = workitems.DispositionConfirmed
 		return o, nil
 	}
@@ -49,7 +49,7 @@ func (h cleanupRecoveryHandler) ObserveRecovery(ctx context.Context, c workitems
 		writer := func(ctx context.Context, scope txscope.Tx, _ workitems.OwnerResult) (int64, error) {
 			return s.repository.TransitionTx(ctx, scope, op.ID, op.Version, string(CleanupFailed), "WORKER_EXECUTION_STOPPED", "the deletion stopped before it started")
 		}
-		return recoveryNoEffect(maintenanceNoAttemptWriter("cleanup_operations", c, "admitted", writer)), nil
+		return recoveryNoEffect(maintenanceNoAttemptWriter("replacement_deletions", c, "admitted", writer)), nil
 	}
 	attempt, err := decodeCleanupAttempt(op.Attempt)
 	if err != nil {
@@ -62,19 +62,19 @@ func (h cleanupRecoveryHandler) ObserveRecovery(ctx context.Context, c workitems
 	switch resolveCleanupAttempt(ctx, s.executor, receipts, op, attempt) {
 	case cleanupResolutionPurged:
 		writer := s.settleWriter(op, op.Version, CleanupDeleted, "maintenance_receipt_recovered", "exact purge invocation returned")
-		return recoveryCommitted("deleted", maintenanceAttemptWriter("cleanup_operations", c, string(op.State), op.Attempt, writer)), nil
+		return recoveryCommitted("deleted", maintenanceAttemptWriter("replacement_deletions", c, string(op.State), op.Attempt, writer)), nil
 	case cleanupResolutionCaptureNotStarted:
 		writer := func(ctx context.Context, scope txscope.Tx, _ workitems.OwnerResult) (int64, error) {
 			return s.repository.TransitionTx(ctx, scope, op.ID, op.Version, string(CleanupFailed), "WORKER_EXECUTION_STOPPED", "the deletion stopped before its capture started")
 		}
-		return recoveryNoEffect(maintenanceAttemptWriter("cleanup_operations", c, string(op.State), op.Attempt, writer)), nil
+		return recoveryNoEffect(maintenanceAttemptWriter("replacement_deletions", c, string(op.State), op.Attempt, writer)), nil
 	case cleanupResolutionCaptured, cleanupResolutionPurgeNotStarted:
 		// The file sits captured in the private namespace. Recovery never
 		// purges; the owner blocks with its attempt and deployment recovery
 		// re-admits it so a fresh claim finishes the purge.
 		writer := s.settleWriter(op, op.Version, CleanupBlocked, "cleanup_capture_unpurged", "the replaced file was captured but not yet purged")
 		o := worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: string(CleanupBlocked), ReasonCode: "cleanup_capture_unpurged"},
-			maintenanceAttemptWriter("cleanup_operations", c, string(op.State), op.Attempt, writer))
+			maintenanceAttemptWriter("replacement_deletions", c, string(op.State), op.Attempt, writer))
 		o.Disposition = workitems.DispositionConfirmed
 		return o, nil
 	}
@@ -101,7 +101,7 @@ func (s *CleanupService) ReconcileUnknownEffect(ctx context.Context, _ deploymen
 	}
 	unknown := ""
 	for _, row := range rows {
-		op := cleanupOperationFromPersistence(row)
+		op := replacementDeletionFromPersistence(row)
 		if op.State == CleanupAdmitted {
 			if len(op.Attempt) > 0 {
 				// An interrupted claim: its work item's recovery lane owns it.
@@ -138,7 +138,7 @@ func (s *CleanupService) ReconcileUnknownEffect(ctx context.Context, _ deploymen
 
 // readmit (re)creates the work item of an obligation. A blocked obligation is
 // moved back to admitted with its attempt kept, so the next claim resumes it.
-func (s *CleanupService) readmit(ctx context.Context, op *CleanupOperation, fromBlocked bool) error {
+func (s *CleanupService) readmit(ctx context.Context, op *ReplacementDeletion, fromBlocked bool) error {
 	return s.repository.WithTx(ctx, func(scope txscope.Tx) error {
 		current, err := s.repository.LockTx(ctx, scope, op.ID)
 		if err != nil {
@@ -159,7 +159,7 @@ func (s *CleanupService) readmit(ctx context.Context, op *CleanupOperation, from
 
 // settleRecovered settles a blocked obligation whose purge receipt proves
 // the deletion.
-func (s *CleanupService) settleRecovered(ctx context.Context, op *CleanupOperation) error {
+func (s *CleanupService) settleRecovered(ctx context.Context, op *ReplacementDeletion) error {
 	return s.repository.WithTx(ctx, func(scope txscope.Tx) error {
 		current, err := s.repository.LockTx(ctx, scope, op.ID)
 		if errors.Is(err, sql.ErrNoRows) {

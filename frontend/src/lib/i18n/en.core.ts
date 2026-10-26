@@ -1,7 +1,7 @@
-// C2 copy: anime / catalog / file / retention / settings.
+// C2 copy: anime / catalog / file / replacement / settings.
 
 import type { CopyShape } from "./types";
-import type { animeCopy, catalogCopy, fileCopy, retentionCopy, settingsCopy } from "./zh-CN.core";
+import type { animeCopy, catalogCopy, fileCopy, replacementCopy, settingsCopy } from "./zh-CN.core";
 
 export const enAnimeCopy = {
   metadata: {
@@ -16,9 +16,9 @@ export const enAnimeCopy = {
     label: "Episode offset",
   },
   maintenance: {
-    policySaved: "Retention saved",
-    policySaveFailed: "Failed to save retention",
-    policyMissing: "No retention settings yet",
+    policySaved: "Replacement saved",
+    policySaveFailed: "Failed to save replacement",
+    policyMissing: "No replacement settings yet",
     noScan: "No scans yet. You can run a scan manually.",
     placements: "Imported files",
     noPlacements: "No verified imported files",
@@ -131,14 +131,14 @@ export const enFileCopy = {
   },
 } as const satisfies CopyShape<typeof fileCopy>;
 
-export const enRetentionCopy = {
+export const enReplacementCopy = {
   admissionTitle: "Versions to keep per episode",
   admission: {
     all: "Keep all",
     per_group: "Best per group",
     single_copy: "One per episode",
   },
-} as const satisfies CopyShape<typeof retentionCopy>;
+} as const satisfies CopyShape<typeof replacementCopy>;
 
 export const enSettingsCopy = {
   nav: {
@@ -155,7 +155,7 @@ export const enSettingsCopy = {
     rules: "Default Rules",
     vars: "Naming Variables",
     unclassified: "Unclassified Files",
-    retention: "Retention",
+    replacement: "Replacement",
     automation: "Scheduled Tasks",
     notifications: "Notifications",
     updates: "Updates",

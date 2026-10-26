@@ -66,7 +66,7 @@ func TestOneShotSettlementMarkerStates(t *testing.T) {
 	}{
 		{state: "running"},
 		{state: "cleanup_blocked"},
-		{state: "retention_pending", want: ErrOneShotReclaiming},
+		{state: "reclaim_pending", want: ErrOneShotReclaiming},
 		{state: "reclaiming", want: ErrOneShotReclaiming},
 		{state: "cleaned", want: ErrOneShotReclaiming},
 		{state: "invalid", want: ErrInvalidOneShotLedger},

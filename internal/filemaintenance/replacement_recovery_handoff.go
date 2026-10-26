@@ -88,7 +88,7 @@ FOR UPDATE`, loser.PlacementID, d.AnimeID).Scan(&path, &state, &coverageRaw)
 		}
 		id := "cln-" + loser.PlacementID
 		var admitted bool
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM cleanup_operations WHERE id = $1)`, id).Scan(&admitted); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM replacement_deletions WHERE id = $1)`, id).Scan(&admitted); err != nil {
 			return err
 		}
 		if admitted {
@@ -106,7 +106,7 @@ FOR UPDATE`, loser.PlacementID, d.AnimeID).Scan(&path, &state, &coverageRaw)
 			ManagedAnimeID:    d.AnimeID,
 			Coverage:          coverage,
 			ReplacementRef:    d.ID,
-			RetentionMode:     string(d.AdmissionMode),
+			AdmissionMode:     string(d.AdmissionMode),
 			SourcePath:        path,
 			SourceFingerprint: identity,
 			CorrelationID:     d.CorrelationID,

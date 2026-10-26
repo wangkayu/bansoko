@@ -41,10 +41,10 @@
       "internal/anime/draft/application/business_apply.go",
       "internal/anime/ownership/application/patch.go",
       "internal/parserpolicy/service.go",
-      "internal/filemaintenance/retention_policy.go",
+      "internal/filemaintenance/replacement_policy.go",
       "internal/filemaintenance/file_effect_policy.go",
       "internal/filemaintenance/local_owner_cleanup.go",
-      "internal/workitems/oneshot_retention.go",
+      "internal/workitems/oneshot_reclaim.go",
       "internal/workitems/adapter/persistence/query.sql",
       "internal/workitems/adapter/persistence/generated/query.sql.go",
       "internal/workitems/adapter/persistence/generated/querier.go"
@@ -251,7 +251,7 @@
     "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
   },
   {
-    "table": "cleanup_operations",
+    "table": "replacement_deletions",
     "privileges": [
       "DELETE",
       "INSERT",
@@ -306,7 +306,7 @@
     ],
     "reason": "product owner DML from the listed application code",
     "direct_access": [
-      "internal/workitems/oneshot_retention.go (one-shot reclaim D-a leaf deletion)",
+      "internal/workitems/oneshot_reclaim.go (one-shot reclaim D-a leaf deletion)",
       "internal/observability/application/writer.go",
       "internal/observability/adapter/persistence/query.sql",
       "internal/observability/adapter/persistence/generated/query.sql.go",
@@ -452,7 +452,7 @@
     "direct_access": [
       "internal/configuration/application/global_sections.go",
       "internal/filemaintenance/file_effect_policy.go",
-      "internal/filemaintenance/retention_policy.go",
+      "internal/filemaintenance/replacement_policy.go",
       "internal/parserpolicy/service.go"
     ],
     "closure_slice": "retained product owner",
@@ -649,7 +649,7 @@
     "reason": "product owner DML from the listed application code",
     "direct_access": [
       "internal/plugintarget/application/admission_retry.go",
-      "internal/workitems/oneshot_retention.go (one-shot reclaim D-a leaf deletion)",
+      "internal/workitems/oneshot_reclaim.go (one-shot reclaim D-a leaf deletion)",
       "internal/plugintarget/application/admission_resolver.go",
       "internal/plugintarget/application/admission_ledger.go",
       "internal/recordretention/adapter/persistence/query.sql (maintenance retention cleaners: terminal rows only)"
@@ -717,7 +717,7 @@
     ],
     "reason": "product owner DML from the listed application code",
     "direct_access": [
-      "internal/workitems/oneshot_retention.go",
+      "internal/workitems/oneshot_reclaim.go",
       "internal/anime/adapter/persistence/query.sql",
       "internal/anime/adapter/persistence/generated/query.sql.go",
       "internal/anime/adapter/persistence/generated/querier.go",
@@ -737,7 +737,7 @@
     ],
     "reason": "companion relation owned by file maintenance; the one-shot reclaim deletes the temporary graph's companions",
     "direct_access": [
-      "internal/workitems/oneshot_retention.go (one-shot reclaim D-a leaf deletion)",
+      "internal/workitems/oneshot_reclaim.go (one-shot reclaim D-a leaf deletion)",
       "internal/filemaintenance/companions.go",
       "internal/filemaintenance/companions_backfill.go"
     ],
@@ -768,7 +768,7 @@
     ],
     "reason": "acquisition graph rows written by the listed owners next to the owner-held SQL functions",
     "direct_access": [
-      "internal/workitems/oneshot_retention.go (one-shot reclaim D-a leaf deletion)",
+      "internal/workitems/oneshot_reclaim.go (one-shot reclaim D-a leaf deletion)",
       "internal/testutil/animetest/animetest.go",
       "internal/fileoperation/application/placement_retry.go"
     ],
@@ -784,7 +784,7 @@
     ],
     "reason": "product owner DML from the listed application code",
     "direct_access": [
-      "internal/workitems/oneshot_retention.go (one-shot reclaim D-a leaf deletion)",
+      "internal/workitems/oneshot_reclaim.go (one-shot reclaim D-a leaf deletion)",
       "internal/filemaintenance/local_owner_cleanup.go",
       "internal/filemaintenance/offset_migration_execute.go",
       "internal/filemaintenance/decisions.go",
@@ -1007,7 +1007,7 @@
     ],
     "reason": "product owner DML from the listed application code",
     "direct_access": [
-      "internal/workitems/oneshot_retention.go (one-shot reclaim D-a leaf deletion)",
+      "internal/workitems/oneshot_reclaim.go (one-shot reclaim D-a leaf deletion)",
       "internal/filemaintenance/local_owner_cleanup.go",
       "internal/filemaintenance/calibration.go",
       "internal/reconciliation/application/scanhandler.go",
@@ -1025,7 +1025,7 @@
     ],
     "reason": "product owner DML from the listed application code",
     "direct_access": [
-      "internal/workitems/oneshot_retention.go (one-shot reclaim D-a leaf deletion)",
+      "internal/workitems/oneshot_reclaim.go (one-shot reclaim D-a leaf deletion)",
       "internal/filemaintenance/local_owner_cleanup.go",
       "internal/reconciliation/application/owner.go",
       "internal/filemaintenance/calibration.go",
@@ -1104,7 +1104,7 @@
     ],
     "reason": "product owner DML from the listed application code",
     "direct_access": [
-      "internal/workitems/oneshot_retention.go (one-shot reclaim D-a leaf deletion)",
+      "internal/workitems/oneshot_reclaim.go (one-shot reclaim D-a leaf deletion)",
       "internal/filemaintenance/local_owner_cleanup.go",
       "internal/filemaintenance/decisions.go",
       "internal/filemaintenance/replacement_recovery_adoption.go"
@@ -1121,7 +1121,7 @@
     ],
     "reason": "product owner DML from the listed application code",
     "direct_access": [
-      "internal/workitems/oneshot_retention.go (one-shot reclaim D-a leaf deletion)",
+      "internal/workitems/oneshot_reclaim.go (one-shot reclaim D-a leaf deletion)",
       "internal/observability/application/writer.go"
     ],
     "closure_slice": "retained product owner",

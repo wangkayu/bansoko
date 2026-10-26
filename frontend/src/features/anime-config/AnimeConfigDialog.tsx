@@ -514,8 +514,8 @@ function SubscribedBody({
               ),
               // The subscription-settings revision (BusinessRevisionEditor) no longer hangs at
               // the rules tab's end: it is just the rules' second save path (the single-save
-              // model). It is handed back as rulesExtra on restore (keeping hideRetention,
-              // which hides those four controls per the subscription's current retention and
+              // model). It is handed back as rulesExtra on restore (keeping hideReplacement,
+              // which hides those four controls per the subscription's current replacement
               // cleanup version).
             }}
             initialTab={initialTab}
@@ -981,16 +981,16 @@ function DraftBody({
       setObservedGroups(groups);
       setObservation(next);
     },
-    // Hidden per the subscription's current retention and cleanup version: hideRetention only
+    // Hidden per the subscription's current replacement version: hideReplacement only
     // removes those four controls; unknown episodes keep showing (the parser lives in the rules
     // section "parsing", alongside the episode recognition rules), and the section name becomes
-    // "subscription settings". Restoring drops hideRetention and puts the aria-label back to
-    // t("config.retentionAria") (the subscribed counterpart is SubscribedBody's rulesExtra).
+    // "subscription settings". Restoring drops hideReplacement and puts the aria-label back to
+    // t("config.replacementAria") (the subscribed counterpart is SubscribedBody's rulesExtra).
     rulesExtra: (
       <>
         {draft.business && (
           <section aria-label={t("anime.revision.aria")}>
-            <BusinessSnapshotFields value={draft.business} hideRetention onChange={(business) => setDraft({ ...draft, business })} />
+            <BusinessSnapshotFields value={draft.business} hideReplacement onChange={(business) => setDraft({ ...draft, business })} />
           </section>
         )}
         <NewReleasesOnlyField

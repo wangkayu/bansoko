@@ -397,8 +397,8 @@ VALUES ('plc-old', 'tv:s1:e1', 0, 'parser-v1', 'obs-old');
 UPDATE anime_business_configs SET
   admission_mode = 'single_copy',
   quality_profile = '{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["2160p"],["1080p"],["720p"],["480p"]]}]}'::jsonb,
-  retention_source_default_version = 1,
-  retention_version = 1,
+  replacement_source_default_version = 1,
+  replacement_version = 1,
   -- The file-effect axis is the second policy the provisioning writes on the
   -- same row (ProvisionBusinessAxesTx): every reader of the unknown-file route
   -- fails closed on a NULL, and a fresh install records provenance 0 because
@@ -551,8 +551,8 @@ VALUES ('plc-old-m', 'movie:0', 0, 'parser-v1', 'obs-old-m');
 UPDATE anime_business_configs SET
   admission_mode = 'single_copy',
   quality_profile = '{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["2160p"],["1080p"],["720p"],["480p"]]}]}'::jsonb,
-  retention_source_default_version = 1,
-  retention_version = 1,
+  replacement_source_default_version = 1,
+  replacement_version = 1,
   unclassified_route = 'skip',
   file_effect_source_default_version = 0,
   file_effect_version = 1
@@ -613,37 +613,37 @@ wait_chain() {
     placed="$($PSQL -tAc "SELECT count(*) FROM placements WHERE managed_anime_id='anime-e2e' AND source_evidence_type='file_operation'")"
     settled="$($PSQL -tAc "SELECT count(*) FROM replacement_decisions WHERE managed_anime_id='anime-e2e' AND verdict='replace' AND state='settled'")"
     # Receipt-backed maintenance cleanup deletes the superseded file in one
-    # cleanup_delete claim; a blocked cleanup is a terminal failure here.
-    if [[ "$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE managed_anime_id='anime-e2e' AND state='blocked'")" -gt 0 ]]; then
-      echo "cleanup blocked: $($PSQL -tAc "SELECT failure_code || ': ' || coalesce(reason,'') FROM cleanup_operations WHERE managed_anime_id='anime-e2e' AND state='blocked'")" >&2
+    # replacement_delete claim; a blocked cleanup is a terminal failure here.
+    if [[ "$($PSQL -tAc "SELECT count(*) FROM replacement_deletions WHERE managed_anime_id='anime-e2e' AND state='blocked'")" -gt 0 ]]; then
+      echo "cleanup blocked: $($PSQL -tAc "SELECT failure_code || ': ' || coalesce(reason,'') FROM replacement_deletions WHERE managed_anime_id='anime-e2e' AND state='blocked'")" >&2
       return 1
     fi
     # A cleanup that exhausted its attempt budget lands in `failed`, not in
     # `blocked`; without this read the run would wait out the deadline and
     # report a timeout instead of the typed reason that actually applies.
-    if [[ "$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE managed_anime_id='anime-e2e' AND state='failed'")" -gt 0 ]]; then
-      echo "cleanup failed: $($PSQL -tAc "SELECT failure_code || ': ' || coalesce(reason,'') || ' (state=failed)' FROM cleanup_operations WHERE managed_anime_id='anime-e2e' AND state='failed'")" >&2
+    if [[ "$($PSQL -tAc "SELECT count(*) FROM replacement_deletions WHERE managed_anime_id='anime-e2e' AND state='failed'")" -gt 0 ]]; then
+      echo "cleanup failed: $($PSQL -tAc "SELECT failure_code || ': ' || coalesce(reason,'') || ' (state=failed)' FROM replacement_deletions WHERE managed_anime_id='anime-e2e' AND state='failed'")" >&2
       return 1
     fi
     # A skipped deletion is a typed zero-effect outcome (the loser was missing
     # or no longer the replaced file); this chain must delete, so it fails.
-    if [[ "$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE managed_anime_id='anime-e2e' AND state='skipped'")" -gt 0 ]]; then
-      echo "cleanup skipped: $($PSQL -tAc "SELECT failure_code || ': ' || coalesce(reason,'') || ' (state=skipped)' FROM cleanup_operations WHERE managed_anime_id='anime-e2e' AND state='skipped'")" >&2
+    if [[ "$($PSQL -tAc "SELECT count(*) FROM replacement_deletions WHERE managed_anime_id='anime-e2e' AND state='skipped'")" -gt 0 ]]; then
+      echo "cleanup skipped: $($PSQL -tAc "SELECT failure_code || ': ' || coalesce(reason,'') || ' (state=skipped)' FROM replacement_deletions WHERE managed_anime_id='anime-e2e' AND state='skipped'")" >&2
       return 1
     fi
-    cleanup_deleted="$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE managed_anime_id='anime-e2e' AND state='deleted'")"
+    cleanup_deleted="$($PSQL -tAc "SELECT count(*) FROM replacement_deletions WHERE managed_anime_id='anime-e2e' AND state='deleted'")"
     # Scoped to this chain: the movie chain is seeded beside it and writes its
     # own succeeded deletion, so an unscoped count is 2. Exactly one deletion
     # belongs to this chain, so a second one is a real duplicate-work regression.
-    delete_succeeded="$($PSQL -tAc "SELECT count(*) FROM e2e_aux.work_items_all WHERE owner_type='cleanup_operation' AND kind='cleanup_delete' AND state='succeeded' AND owner_id IN (SELECT id FROM cleanup_operations WHERE managed_anime_id='anime-e2e')")"
+    delete_succeeded="$($PSQL -tAc "SELECT count(*) FROM e2e_aux.work_items_all WHERE owner_type='replacement_deletion' AND kind='replacement_delete' AND state='succeeded' AND owner_id IN (SELECT id FROM replacement_deletions WHERE managed_anime_id='anime-e2e')")"
     if [[ "$placed" -ge 1 && "$settled" -ge 1 && "$cleanup_deleted" -eq 1 && "$delete_succeeded" -eq 1 ]]; then
       echo "chain complete: placed=$placed settled=$settled cleanup_deleted=$cleanup_deleted delete_succeeded=$delete_succeeded"
       return 0
     fi
     sleep 5
   done
-  $PSQL -c "SELECT state, count(*) FROM e2e_aux.work_items_all WHERE owner_type IN ('artifact','file_operation','cleanup_operation') GROUP BY state" | tee -a "$durable_evidence_dir/failure-diagnostics.txt" >&2
-  $PSQL -c "SELECT id, owner_type, owner_id, kind, state, last_error_code, last_error_reason FROM e2e_aux.work_items_all WHERE owner_id IN ('art-e2e','op-e2e','anime-e2e') OR owner_type IN ('artifact','file_operation','cleanup_operation') ORDER BY created_at" | tee -a "$durable_evidence_dir/failure-diagnostics.txt" >&2
+  $PSQL -c "SELECT state, count(*) FROM e2e_aux.work_items_all WHERE owner_type IN ('artifact','file_operation','replacement_deletion') GROUP BY state" | tee -a "$durable_evidence_dir/failure-diagnostics.txt" >&2
+  $PSQL -c "SELECT id, owner_type, owner_id, kind, state, last_error_code, last_error_reason FROM e2e_aux.work_items_all WHERE owner_id IN ('art-e2e','op-e2e','anime-e2e') OR owner_type IN ('artifact','file_operation','replacement_deletion') ORDER BY created_at" | tee -a "$durable_evidence_dir/failure-diagnostics.txt" >&2
   $PSQL -c "SELECT id, artifact_id, artifact_file_id, state, source_path, target_path, failure_code, failure_reason FROM file_operations WHERE artifact_id='art-e2e'" | tee -a "$durable_evidence_dir/failure-diagnostics.txt" >&2
   $PSQL -c "SELECT id, state, failure_code, failure_reason FROM artifacts WHERE id='art-e2e'" | tee -a "$durable_evidence_dir/failure-diagnostics.txt" >&2
   $PSQL -c "SELECT id, state, verification_state FROM placements" | tee -a "$durable_evidence_dir/failure-diagnostics.txt" >&2
@@ -665,7 +665,7 @@ wait_chain || exit 1
 echo "== assertions =="
 old_state="$($PSQL -tAc "SELECT state FROM placements WHERE id='plc-old'")"
 new_path="$($PSQL -tAc "SELECT physical_path FROM placements WHERE source_evidence_type='file_operation' LIMIT 1")"
-capture_path="$($PSQL -tAc "SELECT coalesce(attempt->>'capture_path','') FROM cleanup_operations WHERE managed_anime_id='anime-e2e'" | tr -d '\r')"
+capture_path="$($PSQL -tAc "SELECT coalesce(attempt->>'capture_path','') FROM replacement_deletions WHERE managed_anime_id='anime-e2e'" | tr -d '\r')"
 if [[ "$negative_mode" == new-placement-missing ]]; then
   # Destroy the file the settled chain left at its new placement path. The
   # `-f "$new_path"` assertion below must name it, not time out elsewhere.
@@ -1016,21 +1016,21 @@ E2ESECOND
         $PSQL -c "SELECT id, artifact_id, state, source_path, target_path, failure_code, failure_reason FROM file_operations WHERE acquisition_id='acq-e2e-m'" | tee -a "$durable_evidence_dir/failure-diagnostics.txt" >&2
         exit 1
       fi
-      movie_cleanup_blocked="$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE managed_anime_id='anime-e2e-m' AND state='blocked'" | tr -d '[:space:]')"
+      movie_cleanup_blocked="$($PSQL -tAc "SELECT count(*) FROM replacement_deletions WHERE managed_anime_id='anime-e2e-m' AND state='blocked'" | tr -d '[:space:]')"
       if [[ "$movie_cleanup_blocked" -gt 0 ]]; then
-        echo "scenario 7 movie cleanup blocked: $($PSQL -tAc "SELECT failure_code || ': ' || coalesce(reason,'') FROM cleanup_operations WHERE managed_anime_id='anime-e2e-m' AND state='blocked'")" >&2
+        echo "scenario 7 movie cleanup blocked: $($PSQL -tAc "SELECT failure_code || ': ' || coalesce(reason,'') FROM replacement_deletions WHERE managed_anime_id='anime-e2e-m' AND state='blocked'")" >&2
         exit 1
       fi
       movie_placed="$($PSQL -tAc "SELECT count(*) FROM placements WHERE managed_anime_id='anime-e2e-m' AND source_evidence_type='file_operation' AND state='active' AND verification_state='verified'" | tr -d '[:space:]')"
       movie_settled="$($PSQL -tAc "SELECT count(*) FROM replacement_decisions WHERE managed_anime_id='anime-e2e-m' AND verdict='replace' AND state='settled'" | tr -d '[:space:]')"
-      movie_deleted="$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE managed_anime_id='anime-e2e-m' AND state='deleted'" | tr -d '[:space:]')"
-      movie_delete_done="$($PSQL -tAc "SELECT count(*) FROM e2e_aux.work_items_all WHERE owner_type='cleanup_operation' AND kind='cleanup_delete' AND state='succeeded' AND owner_id IN (SELECT id FROM cleanup_operations WHERE managed_anime_id='anime-e2e-m')" | tr -d '[:space:]')"
+      movie_deleted="$($PSQL -tAc "SELECT count(*) FROM replacement_deletions WHERE managed_anime_id='anime-e2e-m' AND state='deleted'" | tr -d '[:space:]')"
+      movie_delete_done="$($PSQL -tAc "SELECT count(*) FROM e2e_aux.work_items_all WHERE owner_type='replacement_deletion' AND kind='replacement_delete' AND state='succeeded' AND owner_id IN (SELECT id FROM replacement_deletions WHERE managed_anime_id='anime-e2e-m')" | tr -d '[:space:]')"
       if [[ "$movie_placed" -ge 1 && "$movie_settled" -ge 1 && "$movie_deleted" -eq 1 && "$movie_delete_done" -eq 1 ]]; then
         echo "movie chain complete: placed=$movie_placed settled=$movie_settled cleanup_deleted=$movie_deleted delete_succeeded=$movie_delete_done"
         break
       fi
       if (( $(date +%s) >= movie_deadline )); then
-        $PSQL -c "SELECT state, count(*) FROM e2e_aux.work_items_all WHERE owner_type IN ('artifact','file_operation','cleanup_operation') AND (owner_id='art-e2e-m' OR owner_id IN (SELECT id FROM file_operations WHERE acquisition_id='acq-e2e-m') OR owner_id IN (SELECT id FROM cleanup_operations WHERE managed_anime_id='anime-e2e-m')) GROUP BY state" | tee -a "$durable_evidence_dir/failure-diagnostics.txt" >&2
+        $PSQL -c "SELECT state, count(*) FROM e2e_aux.work_items_all WHERE owner_type IN ('artifact','file_operation','replacement_deletion') AND (owner_id='art-e2e-m' OR owner_id IN (SELECT id FROM file_operations WHERE acquisition_id='acq-e2e-m') OR owner_id IN (SELECT id FROM replacement_deletions WHERE managed_anime_id='anime-e2e-m')) GROUP BY state" | tee -a "$durable_evidence_dir/failure-diagnostics.txt" >&2
         $PSQL -c "SELECT id, artifact_id, state, source_path, target_path, failure_code, failure_reason FROM file_operations WHERE acquisition_id='acq-e2e-m'" | tee -a "$durable_evidence_dir/failure-diagnostics.txt" >&2
         echo 'scenario 7 movie chain did not settle within 300s' >&2
         exit 1
@@ -1745,7 +1745,7 @@ PY
   # clients) an identity check that leaned on ctime would block here with the
   # file already captured. This step drives the real chain: a better
   # file_operation placement for the same episode, the generation-completed
-  # replacement trigger, settle, then the cleanup_delete of the recovered file
+  # replacement trigger, settle, then the replacement_delete of the recovered file
   # on the real library mount.
   echo "== scenario 8b: recovered placement as replacement loser =="
   s8b_target_dir="$(dirname "$s8_target")"
@@ -1872,35 +1872,35 @@ E2EEIGHTB
   s8b_cleanup_where="managed_anime_id='anime-e2e' AND placement_id='$s8_placement_id'"
   s8b_deadline=$(( $(date +%s) + 300 ))
   while (( $(date +%s) < s8b_deadline )); do
-    s8b_bad="$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE $s8b_cleanup_where AND state IN ('blocked','failed','skipped')" | tr -d '[:space:]')"
+    s8b_bad="$($PSQL -tAc "SELECT count(*) FROM replacement_deletions WHERE $s8b_cleanup_where AND state IN ('blocked','failed','skipped')" | tr -d '[:space:]')"
     if [[ "$s8b_bad" != 0 ]]; then
       {
         echo "scenario 8b: cleanup of the recovered placement ended blocked/failed/skipped (target mount btime=$s8b_btime fstype=$s8b_fstype)"
-        $PSQL -c "SELECT id, companion_id, state, failure_code, reason, source_path, source_fingerprint, attempt->>'capture_path' AS capture_path FROM cleanup_operations WHERE $s8b_cleanup_where"
-        $PSQL -c "SELECT id, kind, state, last_error_code, last_error_reason FROM e2e_aux.work_items_all WHERE owner_type='cleanup_operation' AND owner_id IN (SELECT id FROM cleanup_operations WHERE $s8b_cleanup_where) ORDER BY created_at"
+        $PSQL -c "SELECT id, companion_id, state, failure_code, reason, source_path, source_fingerprint, attempt->>'capture_path' AS capture_path FROM replacement_deletions WHERE $s8b_cleanup_where"
+        $PSQL -c "SELECT id, kind, state, last_error_code, last_error_reason FROM e2e_aux.work_items_all WHERE owner_type='replacement_deletion' AND owner_id IN (SELECT id FROM replacement_deletions WHERE $s8b_cleanup_where) ORDER BY created_at"
       } | tee -a "$durable_evidence_dir/scenario-8b-diagnostics.txt" >&2
       exit 1
     fi
-    s8b_cleanup_state="$($PSQL -tAc "SELECT state FROM cleanup_operations WHERE $s8b_cleanup_where AND companion_id IS NULL ORDER BY created_at DESC LIMIT 1" | tr -d '[:space:]')"
-    s8b_undeleted="$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE $s8b_cleanup_where AND state <> 'deleted'" | tr -d '[:space:]')"
+    s8b_cleanup_state="$($PSQL -tAc "SELECT state FROM replacement_deletions WHERE $s8b_cleanup_where AND companion_id IS NULL ORDER BY created_at DESC LIMIT 1" | tr -d '[:space:]')"
+    s8b_undeleted="$($PSQL -tAc "SELECT count(*) FROM replacement_deletions WHERE $s8b_cleanup_where AND state <> 'deleted'" | tr -d '[:space:]')"
     [[ "$s8b_cleanup_state" == deleted && "$s8b_undeleted" == 0 ]] && break
     sleep 2
   done
   if [[ "$s8b_cleanup_state" != deleted || "$s8b_undeleted" != 0 ]]; then
     {
       echo "scenario 8b: the recovered placement's cleanup did not reach deleted within 300s (video=[$s8b_cleanup_state], undeleted rows=$s8b_undeleted)"
-      $PSQL -c "SELECT id, companion_id, state, failure_code, reason, source_path FROM cleanup_operations WHERE $s8b_cleanup_where"
+      $PSQL -c "SELECT id, companion_id, state, failure_code, reason, source_path FROM replacement_deletions WHERE $s8b_cleanup_where"
       $PSQL -c "SELECT id, state, verdict FROM replacement_decisions WHERE managed_anime_id='anime-e2e' ORDER BY created_at DESC LIMIT 5"
       $PSQL -c "SELECT id, state, replacement_eligible, physical_path FROM placements WHERE id IN ('$s8_placement_id','plc-e2e-8b')"
-      $PSQL -c "SELECT id, kind, state, last_error_code, last_error_reason FROM e2e_aux.work_items_all WHERE owner_id='anime-e2e' OR owner_type IN ('cleanup_operation','replacement_decision') ORDER BY created_at DESC LIMIT 20"
+      $PSQL -c "SELECT id, kind, state, last_error_code, last_error_reason FROM e2e_aux.work_items_all WHERE owner_id='anime-e2e' OR owner_type IN ('replacement_deletion','replacement_decision') ORDER BY created_at DESC LIMIT 20"
     } | tee -a "$durable_evidence_dir/scenario-8b-diagnostics.txt" >&2
     exit 1
   fi
   s8b_loser_state="$($PSQL -tAc "SELECT state FROM placements WHERE id='$s8_placement_id'" | tr -d '[:space:]')"
   s8b_winner_state="$($PSQL -tAc "SELECT state FROM placements WHERE id='plc-e2e-8b'" | tr -d '[:space:]')"
-  s8b_capture="$($PSQL -tAc "SELECT COALESCE(attempt->>'capture_path','') FROM cleanup_operations WHERE $s8b_cleanup_where AND companion_id IS NULL ORDER BY created_at DESC LIMIT 1" | tr -d '\r')"
-  s8b_cleanup_fp="$($PSQL -tAc "SELECT source_fingerprint::text FROM cleanup_operations WHERE $s8b_cleanup_where AND companion_id IS NULL ORDER BY created_at DESC LIMIT 1" | tr -d '\r')"
-  s8b_cleanup_rows="$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE $s8b_cleanup_where" | tr -d '[:space:]')"
+  s8b_capture="$($PSQL -tAc "SELECT COALESCE(attempt->>'capture_path','') FROM replacement_deletions WHERE $s8b_cleanup_where AND companion_id IS NULL ORDER BY created_at DESC LIMIT 1" | tr -d '\r')"
+  s8b_cleanup_fp="$($PSQL -tAc "SELECT source_fingerprint::text FROM replacement_deletions WHERE $s8b_cleanup_where AND companion_id IS NULL ORDER BY created_at DESC LIMIT 1" | tr -d '\r')"
+  s8b_cleanup_rows="$($PSQL -tAc "SELECT count(*) FROM replacement_deletions WHERE $s8b_cleanup_where" | tr -d '[:space:]')"
   [[ "$s8b_loser_state" == superseded ]] || { echo "scenario 8b: the recovered placement is [$s8b_loser_state], want superseded" >&2; exit 1; }
   [[ "$s8b_winner_state" == active && "$(fingerprint "$s8b_path")" == "$s8b_hex" ]] || { echo "scenario 8b: the winner placement is [$s8b_winner_state] or its file changed" >&2; exit 1; }
   [[ ! -e "$s8_target" ]] || { echo "scenario 8b: the recovered file is still at $s8_target after deletion" >&2; exit 1; }

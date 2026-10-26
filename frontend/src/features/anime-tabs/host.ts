@@ -51,7 +51,7 @@ export type DraftTabHost = {
   observation?: RSSListObservationRef;
   observedGroups: ProviderGroupDiscoveryGroup[];
   onDiscovered: (groups: ProviderGroupDiscoveryGroup[], observation: RSSListObservationRef) => void;
-  /** The business configuration at the rules tab's end (retention and cleanup etc.): it belongs to the rules and must not float outside the tabs. */
+  /** The business configuration at the rules tab's end (the replacement policy etc.): it belongs to the rules and must not float outside the tabs. */
   rulesExtra?: ReactNode;
   /** The whole-page action at the rules tab's top right ("use defaults everywhere"). */
   rulesHeaderAction?: ReactNode;

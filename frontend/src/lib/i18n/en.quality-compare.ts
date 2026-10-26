@@ -1,5 +1,5 @@
 // Replacement comparison ("What counts as better"): the comparison item editor
-// shared by Global retention and the anime configuration.
+// shared by the Global replacement policy and the anime configuration.
 
 import type { CopyShape } from "./types";
 import type { qualityCompareCopy } from "./zh-CN.quality-compare";

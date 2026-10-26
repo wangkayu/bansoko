@@ -35,7 +35,7 @@ func TestLocalCleanupPreservesRealExternalEffects(t *testing.T) {
 	svc := newRealChainServices(t, fixture.client)
 	defer svc.db.Close()
 	ctx := context.Background()
-	seedRetentionSingleCopy(t, svc.db)
+	seedReplacementSingleCopy(t, svc.db)
 
 	draft := singleEpisodeDraft(fixture.FeedURL())
 	draft.Title = "Cleanup Real Show"

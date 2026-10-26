@@ -49,7 +49,7 @@ func SyncInstanceBusinessSnapshotTx(ctx context.Context, q ExecQuerier, managedA
 	)
 	err := q.QueryRowContext(ctx, `
 SELECT parser_kind, parser_source_default_version, admission_mode, quality_profile,
-       retention_source_default_version, unclassified_route, file_effect_source_default_version, business_snapshot
+       replacement_source_default_version, unclassified_route, file_effect_source_default_version, business_snapshot
 FROM anime_business_configs WHERE managed_anime_id = $1 FOR UPDATE`, managedAnimeID).
 		Scan(&parserKind, &parserVersion, &admissionMode, &qualityProfile,
 			&retentionVersion, &unclassifiedRoute, &fileEffectVersion, &snapshotRaw)
@@ -105,14 +105,14 @@ FROM anime_business_configs WHERE managed_anime_id = $1 FOR UPDATE`, managedAnim
 		SectionVersions: versions,
 		SectionSchemas:  schemas,
 		Parser:          envelope,
-		Retention: animedomain.RetentionValue{
+		Replacement: animedomain.ReplacementValue{
 			AdmissionMode:  admissionMode.String,
 			QualityProfile: append(json.RawMessage(nil), qualityProfile...),
 		},
-		RetentionVersion:  retentionVersion.Int64,
-		UnclassifiedRoute: unclassifiedRoute.String,
-		FileEffectVersion: fileEffectVersion.Int64,
-		Programs:          previous.Programs,
+		ReplacementVersion: retentionVersion.Int64,
+		UnclassifiedRoute:  unclassifiedRoute.String,
+		FileEffectVersion:  fileEffectVersion.Int64,
+		Programs:           previous.Programs,
 	}
 	digest, err := next.Digest()
 	if err != nil {

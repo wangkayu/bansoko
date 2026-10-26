@@ -12,7 +12,7 @@ import (
 	"bansoko/internal/testutil/disposabledb"
 )
 
-func openRetentionTestDB(t *testing.T) *sql.DB {
+func openReplacementTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db := disposabledb.ResetDisposableSchema(t)
 	ctx := context.Background()
@@ -21,20 +21,20 @@ func openRetentionTestDB(t *testing.T) *sql.DB {
 	// absent-default code-default path stay exercised), and only the ManagedAnime
 	// identities the tests use, so every other id still reports absent.
 	if _, err := db.ExecContext(ctx,
-		`DELETE FROM global_config_sections WHERE section_name = 'retention'`); err != nil {
+		`DELETE FROM global_config_sections WHERE section_name = 'replacement'`); err != nil {
 		t.Fatal(err)
 	}
 	for _, animeID := range []string{"anime-1", "anime-a", "anime-b", "anime-c"} {
-		if _, err := db.ExecContext(ctx, `INSERT INTO managed_anime(id, title) VALUES ($1, 'Retention')`, animeID); err != nil {
+		if _, err := db.ExecContext(ctx, `INSERT INTO managed_anime(id, title) VALUES ($1, 'Replacement')`, animeID); err != nil {
 			t.Fatal(err)
 		}
 	}
 	return db
 }
 
-func retentionPolicy(t *testing.T, mode AdmissionMode, profile string) RetentionPolicy {
+func replacementPolicy(t *testing.T, mode AdmissionMode, profile string) ReplacementPolicy {
 	t.Helper()
-	return RetentionPolicy{
+	return ReplacementPolicy{
 		AdmissionMode:  mode,
 		QualityProfile: json.RawMessage(profile),
 	}
@@ -48,9 +48,9 @@ func expectPolicyInvalid(t *testing.T, err error) {
 	}
 }
 
-func TestDefaultRetentionPolicyAndDigest(t *testing.T) {
-	defaults := DefaultRetentionPolicy()
-	if err := ValidateRetentionPolicy(defaults); err != nil {
+func TestDefaultReplacementPolicyAndDigest(t *testing.T) {
+	defaults := DefaultReplacementPolicy()
+	if err := ValidateReplacementPolicy(defaults); err != nil {
 		t.Fatalf("code defaults must validate: %v", err)
 	}
 	if defaults.AdmissionMode != ModeAll {
@@ -67,12 +67,12 @@ func TestDefaultRetentionPolicyAndDigest(t *testing.T) {
 }
 
 func TestSaveDefaultCASAndValidation(t *testing.T) {
-	db := openRetentionTestDB(t)
+	db := openReplacementTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	svc := NewRetentionPolicyService(db)
+	svc := NewReplacementPolicyService(db)
 
-	policy := retentionPolicy(t, ModePerGroup,
+	policy := replacementPolicy(t, ModePerGroup,
 		`{"version":"profile-v1","items":[{"key":"release.revision","ranks":[]},{"key":"release.resolution","ranks":[["1080p"],["720p"]]}]}`)
 	saved, err := svc.SaveDefault(ctx, 0, policy, "owner", "web")
 	if err != nil {
@@ -90,23 +90,23 @@ func TestSaveDefaultCASAndValidation(t *testing.T) {
 	}
 
 	// Invalid admission mode is rejected without a version change.
-	_, err = svc.SaveDefault(ctx, 1, retentionPolicy(t, "everyone", `{"version":"profile-v1","items":[]}`), "owner", "web")
+	_, err = svc.SaveDefault(ctx, 1, replacementPolicy(t, "everyone", `{"version":"profile-v1","items":[]}`), "owner", "web")
 	expectPolicyInvalid(t, err)
 
 	// Incomplete/wrongly typed profile JSON is rejected.
-	_, err = svc.SaveDefault(ctx, 1, retentionPolicy(t, ModeAll, `{"dimensions":"not-an-array"}`), "owner", "web")
+	_, err = svc.SaveDefault(ctx, 1, replacementPolicy(t, ModeAll, `{"dimensions":"not-an-array"}`), "owner", "web")
 	expectPolicyInvalid(t, err)
-	_, err = svc.SaveDefault(ctx, 1, retentionPolicy(t, ModeAll, `{"version":"profile-v1","items":[],"cutoff":{"x":1}}`), "owner", "web")
+	_, err = svc.SaveDefault(ctx, 1, replacementPolicy(t, ModeAll, `{"version":"profile-v1","items":[],"cutoff":{"x":1}}`), "owner", "web")
 	expectPolicyInvalid(t, err)
 
 	// A profile-v1 document and a duplicate value set are rejected.
-	_, err = svc.SaveDefault(ctx, 1, retentionPolicy(t, ModeAll, `{"version":"profile-v0","dimensions":["resolution"],"ranks":{},"codec_enabled":false}`), "owner", "web")
+	_, err = svc.SaveDefault(ctx, 1, replacementPolicy(t, ModeAll, `{"version":"profile-v0","dimensions":["resolution"],"ranks":{},"codec_enabled":false}`), "owner", "web")
 	expectPolicyInvalid(t, err)
-	_, err = svc.SaveDefault(ctx, 1, retentionPolicy(t, ModeAll, `{"version":"profile-v1","items":[{"key":"anibt.language","ranks":[["CHS","CHT"],["cht","chs"]]}]}`), "owner", "web")
+	_, err = svc.SaveDefault(ctx, 1, replacementPolicy(t, ModeAll, `{"version":"profile-v1","items":[{"key":"anibt.language","ranks":[["CHS","CHT"],["cht","chs"]]}]}`), "owner", "web")
 	expectPolicyInvalid(t, err)
 
 	// Correct CAS succeeds and bumps the version exactly once.
-	next := retentionPolicy(t, ModeSingleCopy, `{"version":"profile-v1","items":[{"key":"rt.source","ranks":[["WEB-DL"]]}]}`)
+	next := replacementPolicy(t, ModeSingleCopy, `{"version":"profile-v1","items":[{"key":"rt.source","ranks":[["WEB-DL"]]}]}`)
 	updated, err := svc.SaveDefault(ctx, 1, next, "owner", "cli")
 	if err != nil {
 		t.Fatal(err)
@@ -127,9 +127,9 @@ func TestSaveDefaultCASAndValidation(t *testing.T) {
 // contract: a missing instance row must not leak the raw sql.ErrNoRows to the
 // transport boundary (where it degraded into an unknown 500).
 func TestGetInstanceAbsentReportsNil(t *testing.T) {
-	db := openRetentionTestDB(t)
+	db := openReplacementTestDB(t)
 	defer db.Close()
-	svc := NewRetentionPolicyService(db)
+	svc := NewReplacementPolicyService(db)
 	row, err := svc.GetInstance(context.Background(), "absent-anime")
 	if err != nil {
 		t.Fatalf("absent instance must report nil, got err=%v", err)
@@ -140,12 +140,12 @@ func TestGetInstanceAbsentReportsNil(t *testing.T) {
 }
 
 func TestCopyDefaultToInstanceTx(t *testing.T) {
-	db := openRetentionTestDB(t)
+	db := openReplacementTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	svc := NewRetentionPolicyService(db)
+	svc := NewReplacementPolicyService(db)
 
-	policy := retentionPolicy(t, ModePerGroup,
+	policy := replacementPolicy(t, ModePerGroup,
 		`{"version":"profile-v1","items":[{"key":"release.revision","ranks":[]},{"key":"release.resolution","ranks":[]}]}`)
 	if _, err := svc.SaveDefault(ctx, 0, policy, "owner", "web"); err != nil {
 		t.Fatal(err)
@@ -185,10 +185,10 @@ FROM anime_business_configs WHERE managed_anime_id = 'anime-1'`).Scan(&nulls); e
 }
 
 func TestCopyDefaultToInstanceTxWithoutDefaultUsesCodeDefaults(t *testing.T) {
-	db := openRetentionTestDB(t)
+	db := openReplacementTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	svc := NewRetentionPolicyService(db)
+	svc := NewReplacementPolicyService(db)
 
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -205,7 +205,7 @@ func TestCopyDefaultToInstanceTxWithoutDefaultUsesCodeDefaults(t *testing.T) {
 	if err != nil || row == nil {
 		t.Fatalf("read instance policy: row=%v err=%v", row, err)
 	}
-	defaults := DefaultRetentionPolicy()
+	defaults := DefaultReplacementPolicy()
 	if row.Policy.Digest() != defaults.Digest() || row.Version != 1 || row.SourceDefaultVersion != 1 {
 		t.Fatalf("absent default must fall back to versioned code defaults: %+v", row)
 	}
@@ -217,10 +217,10 @@ func TestCopyDefaultToInstanceTxWithoutDefaultUsesCodeDefaults(t *testing.T) {
 }
 
 func TestSaveInstanceCAS(t *testing.T) {
-	db := openRetentionTestDB(t)
+	db := openReplacementTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	svc := NewRetentionPolicyService(db)
+	svc := NewReplacementPolicyService(db)
 
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -234,7 +234,7 @@ func TestSaveInstanceCAS(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	replacement := retentionPolicy(t, ModeAll, `{"version":"profile-v1","items":[{"key":"rt.source","ranks":[["WEB-DL"]]}]}`)
+	replacement := replacementPolicy(t, ModeAll, `{"version":"profile-v1","items":[{"key":"rt.source","ranks":[["WEB-DL"]]}]}`)
 	saved, err := svc.SaveInstance(ctx, "anime-1", 1, replacement, "owner", "web")
 	if err != nil {
 		t.Fatal(err)
@@ -244,7 +244,7 @@ func TestSaveInstanceCAS(t *testing.T) {
 	}
 
 	// Stale CAS conflicts and must not partially write any field.
-	_, err = svc.SaveInstance(ctx, "anime-1", 1, retentionPolicy(t, ModePerGroup, `{"version":"profile-v1","items":[]}`), "owner", "web")
+	_, err = svc.SaveInstance(ctx, "anime-1", 1, replacementPolicy(t, ModePerGroup, `{"version":"profile-v1","items":[]}`), "owner", "web")
 	var conflict *apperrors.VersionConflict
 	if !errors.As(err, &conflict) || conflict.CurrentVersion != 2 {
 		t.Fatalf("expected version conflict with current 2, got %v", err)
@@ -266,10 +266,10 @@ func TestSaveInstanceCAS(t *testing.T) {
 }
 
 func TestSaveInstanceProducesNoEffects(t *testing.T) {
-	db := openRetentionTestDB(t)
+	db := openReplacementTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	svc := NewRetentionPolicyService(db)
+	svc := NewReplacementPolicyService(db)
 
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -283,7 +283,7 @@ func TestSaveInstanceProducesNoEffects(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	type effectTotals struct{ placements, decisions, cleanups, workItems int }
+	type effectTotals struct{ placements, decisions, deletions, workItems int }
 	counts := func() effectTotals {
 		t.Helper()
 		var totals effectTotals
@@ -293,7 +293,7 @@ func TestSaveInstanceProducesNoEffects(t *testing.T) {
 		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM replacement_decisions`).Scan(&totals.decisions); err != nil {
 			t.Fatal(err)
 		}
-		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM cleanup_operations`).Scan(&totals.cleanups); err != nil {
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM replacement_deletions`).Scan(&totals.deletions); err != nil {
 			t.Fatal(err)
 		}
 		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM work_item_history`).Scan(&totals.workItems); err != nil {
@@ -306,7 +306,7 @@ func TestSaveInstanceProducesNoEffects(t *testing.T) {
 		t.Fatalf("fixture must start empty, got %+v", before)
 	}
 	for version := int64(1); version <= 3; version++ {
-		if _, err := svc.SaveInstance(ctx, "anime-1", version, retentionPolicy(t, ModePerGroup, `{"version":"profile-v1","items":[{"key":"release.revision","ranks":[]}]}`), "owner", "web"); err != nil {
+		if _, err := svc.SaveInstance(ctx, "anime-1", version, replacementPolicy(t, ModePerGroup, `{"version":"profile-v1","items":[{"key":"release.revision","ranks":[]}]}`), "owner", "web"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -316,12 +316,12 @@ func TestSaveInstanceProducesNoEffects(t *testing.T) {
 }
 
 func TestGlobalDefaultChangeLeavesInstancesUntouched(t *testing.T) {
-	db := openRetentionTestDB(t)
+	db := openReplacementTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	svc := NewRetentionPolicyService(db)
+	svc := NewReplacementPolicyService(db)
 
-	first := retentionPolicy(t, ModeAll, `{"version":"profile-v1","items":[{"key":"release.revision","ranks":[]},{"key":"release.resolution","ranks":[]}]}`)
+	first := replacementPolicy(t, ModeAll, `{"version":"profile-v1","items":[{"key":"release.revision","ranks":[]},{"key":"release.resolution","ranks":[]}]}`)
 	if _, err := svc.SaveDefault(ctx, 0, first, "owner", "web"); err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +344,7 @@ func TestGlobalDefaultChangeLeavesInstancesUntouched(t *testing.T) {
 	}
 
 	// Change the global default: future instances only.
-	second := retentionPolicy(t, ModeSingleCopy, `{"version":"profile-v1","items":[{"key":"rt.source","ranks":[]},{"key":"subgroup.score","ranks":[]}]}`)
+	second := replacementPolicy(t, ModeSingleCopy, `{"version":"profile-v1","items":[{"key":"rt.source","ranks":[]},{"key":"subgroup.score","ranks":[]}]}`)
 	if _, err := svc.SaveDefault(ctx, 1, second, "owner", "web"); err != nil {
 		t.Fatal(err)
 	}
@@ -399,11 +399,11 @@ func TestGlobalDefaultChangeLeavesInstancesUntouched(t *testing.T) {
 	}
 }
 
-func TestRetentionWritesLeaveOtherRulesPolicyUntouched(t *testing.T) {
-	db := openRetentionTestDB(t)
+func TestReplacementWritesLeaveOtherRulesPolicyUntouched(t *testing.T) {
+	db := openReplacementTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	svc := NewRetentionPolicyService(db)
+	svc := NewReplacementPolicyService(db)
 	policies := NewPolicyService(db)
 
 	// The other Rules keep their global + anime sparse override rows.
@@ -419,8 +419,8 @@ func TestRetentionWritesLeaveOtherRulesPolicyUntouched(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Retention default and instance writes must not add or rewrite those rows.
-	if _, err := svc.SaveDefault(ctx, 0, DefaultRetentionPolicy(), "owner", "web"); err != nil {
+	// Replacement default and instance writes must not add or rewrite those rows.
+	if _, err := svc.SaveDefault(ctx, 0, DefaultReplacementPolicy(), "owner", "web"); err != nil {
 		t.Fatal(err)
 	}
 	tx, err := db.BeginTx(ctx, nil)
@@ -434,7 +434,7 @@ func TestRetentionWritesLeaveOtherRulesPolicyUntouched(t *testing.T) {
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.SaveInstance(ctx, "anime-1", 1, DefaultRetentionPolicy(), "owner", "web"); err != nil {
+	if _, err := svc.SaveInstance(ctx, "anime-1", 1, DefaultReplacementPolicy(), "owner", "web"); err != nil {
 		t.Fatal(err)
 	}
 	var rowsAfter int

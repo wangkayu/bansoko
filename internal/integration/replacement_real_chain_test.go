@@ -444,7 +444,7 @@ func newRealChainServices(t *testing.T, client *http.Client) *realChainServices 
 		{workitems.KindPostProcessPlan, fileService.PostProcessingPlanHandler()},
 		{workitems.KindReplacementEvaluate, replacementDecisions.EvaluateHandler()},
 		{workitems.KindReplacementFallback, replacementDecisions.FallbackHandler()},
-		{workitems.KindCleanupDelete, cleanupService.DeleteHandler()},
+		{workitems.KindReplacementDelete, cleanupService.DeleteHandler()},
 		{workitems.KindReconciliationScan, reconService.ScanHandler()},
 		{workitems.KindReconciliationCalibrate, calibrationService.CalibrateHandler()},
 		{workitems.KindReconciliationConsumeAlignment, calibrationService.ConsumeAlignmentHandler()},
@@ -580,7 +580,7 @@ func waitForCleanupState(t *testing.T, ctx context.Context, db *sql.DB, animeID,
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
 		var count int
-		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM cleanup_operations WHERE managed_anime_id = $1 AND state = $2`, animeID, state).Scan(&count); err != nil {
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM replacement_deletions WHERE managed_anime_id = $1 AND state = $2`, animeID, state).Scan(&count); err != nil {
 			t.Fatal(err)
 		}
 		if count > 0 {
@@ -629,7 +629,7 @@ func TestReplacementRealChainActiveAndStopped(t *testing.T) {
 	svc := newRealChainServices(t, fixture.client)
 	defer svc.db.Close()
 	ctx := context.Background()
-	seedRetentionSingleCopy(t, svc.db)
+	seedReplacementSingleCopy(t, svc.db)
 
 	draft := singleEpisodeDraft(fixture.FeedURL())
 	draft.Title = "Repl Real Show"
@@ -753,7 +753,7 @@ ORDER BY fo.created_at DESC, fo.id DESC LIMIT 1`).Scan(&replacementIntent); err 
 	// Same-target settlement supersedes A but deliberately does not hand its
 	// physical path to cleanup: the path now contains the active B bytes.
 	var cleanupCount int
-	if err := svc.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM cleanup_operations WHERE managed_anime_id = $1`, animeID).Scan(&cleanupCount); err != nil {
+	if err := svc.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM replacement_deletions WHERE managed_anime_id = $1`, animeID).Scan(&cleanupCount); err != nil {
 		t.Fatal(err)
 	}
 	if cleanupCount != 0 {
@@ -841,12 +841,12 @@ func triggerRefresh(t *testing.T, ctx context.Context, svc *realChainServices, s
 	}
 }
 
-func seedRetentionSingleCopy(t *testing.T, db *sql.DB) {
+func seedReplacementSingleCopy(t *testing.T, db *sql.DB) {
 	t.Helper()
 	if _, err := db.Exec(`
 INSERT INTO global_config_sections
 (section_name, schema_version, value, version, updated_at)
-VALUES ('retention', 'retention-policy-v1', jsonb_build_object('admission_mode', 'single_copy', 'quality_profile', $1::text::jsonb), 1, CURRENT_TIMESTAMP)
+VALUES ('replacement', 'replacement-policy-v1', jsonb_build_object('admission_mode', 'single_copy', 'quality_profile', $1::text::jsonb), 1, CURRENT_TIMESTAMP)
 ON CONFLICT (section_name) DO UPDATE
 SET value = EXCLUDED.value, version = global_config_sections.version + 1, updated_at = CURRENT_TIMESTAMP`, string(filemaintenance.DefaultQualityProfileJSON)); err != nil {
 		t.Fatal(err)
@@ -1005,7 +1005,7 @@ func TestReplacementLoserIdentityChangedRealChain(t *testing.T) {
 	t.Cleanup(fixture.Close)
 	svc := newRealChainServices(t, fixture.client)
 	t.Cleanup(func() { _ = svc.db.Close() })
-	seedRetentionSingleCopy(t, svc.db)
+	seedReplacementSingleCopy(t, svc.db)
 	animeID, sourceID := subscribeRevisionScenario(t, ctx, svc, fixture.FeedURL(), "Ident Show", resolutionNamingRules(svc.targetRoot), generated.CollisionPolicyFail, "repl-ident")
 
 	svc.driveToPlacement(t, ctx, animeID, "A", filesA, 1)
@@ -1030,7 +1030,7 @@ func TestReplacementLoserIdentityChangedRealChain(t *testing.T) {
 	}
 	waitForCleanupState(t, ctx, svc.db, animeID, string(filemaintenance.CleanupSkipped))
 	var state, code, source string
-	if err := svc.db.QueryRowContext(ctx, `SELECT state, COALESCE(failure_code, ''), source_path FROM cleanup_operations WHERE managed_anime_id = $1 AND placement_id = $2`, animeID, placementA).Scan(&state, &code, &source); err != nil {
+	if err := svc.db.QueryRowContext(ctx, `SELECT state, COALESCE(failure_code, ''), source_path FROM replacement_deletions WHERE managed_anime_id = $1 AND placement_id = $2`, animeID, placementA).Scan(&state, &code, &source); err != nil {
 		t.Fatal(err)
 	}
 	if state != string(filemaintenance.CleanupSkipped) || code != filemaintenance.CleanupSkipLoserIdentityChanged || source != videoA {
@@ -1067,7 +1067,7 @@ func TestReplacementSamePathUnderSkipPolicyRealChain(t *testing.T) {
 	t.Cleanup(fixture.Close)
 	svc := newRealChainServices(t, fixture.client)
 	t.Cleanup(func() { _ = svc.db.Close() })
-	seedRetentionSingleCopy(t, svc.db)
+	seedReplacementSingleCopy(t, svc.db)
 	animeID, sourceID := subscribeRevisionScenario(t, ctx, svc, fixture.FeedURL(), "Skip Show", flatNamingRules(svc.targetRoot), generated.CollisionPolicyFail, "repl-skip")
 
 	svc.driveToPlacement(t, ctx, animeID, "A", filesA, 1)
@@ -1092,12 +1092,12 @@ func TestReplacementSamePathUnderSkipPolicyRealChain(t *testing.T) {
 	if loserState != "superseded" {
 		t.Fatalf("revision A must be superseded, got %q", loserState)
 	}
-	var cleanups int
-	if err := svc.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM cleanup_operations WHERE managed_anime_id = $1`, animeID).Scan(&cleanups); err != nil {
+	var deletions int
+	if err := svc.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM replacement_deletions WHERE managed_anime_id = $1`, animeID).Scan(&deletions); err != nil {
 		t.Fatal(err)
 	}
-	if cleanups != 0 {
-		t.Fatalf("a same-path loser must not enter cleanup, got %d operations", cleanups)
+	if deletions != 0 {
+		t.Fatalf("a same-path loser must not enter cleanup, got %d operations", deletions)
 	}
 	if kept, err := os.ReadFile(videoB); err != nil || !bytes.Equal(kept, filesB[0].Content) {
 		t.Fatalf("the shared path must carry B's bytes: err=%v", err)

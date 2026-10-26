@@ -17,7 +17,7 @@ type oneShotAxes struct {
 	unclassifiedRoute string
 	fileEffectSource  int64
 	admissionMode     string
-	retentionSource   int64
+	replacementSource int64
 }
 
 func readOneShotAxes(t *testing.T, db *sql.DB, animeID string) oneShotAxes {
@@ -25,10 +25,10 @@ func readOneShotAxes(t *testing.T, db *sql.DB, animeID string) oneShotAxes {
 	var axes oneShotAxes
 	if err := db.QueryRowContext(context.Background(), `
 SELECT parser_kind, parser_source_default_version, unclassified_route, file_effect_source_default_version,
-       admission_mode, retention_source_default_version
+       admission_mode, replacement_source_default_version
 FROM anime_business_configs WHERE managed_anime_id = $1`, animeID).Scan(
 		&axes.parserKind, &axes.parserSource, &axes.unclassifiedRoute, &axes.fileEffectSource,
-		&axes.admissionMode, &axes.retentionSource); err != nil {
+		&axes.admissionMode, &axes.replacementSource); err != nil {
 		t.Fatalf("read one-shot instance axes: %v", err)
 	}
 	return axes
@@ -45,7 +45,7 @@ func TestAcquireSeedOnceCurrentInputAxesComeFromDraftNotLiveGlobal(t *testing.T)
 
 	parserService := parserpolicy.NewService(db)
 	routeService := filemaintenance.NewFileEffectPolicyService(db)
-	retentionService := filemaintenance.NewRetentionPolicyService(db)
+	retentionService := filemaintenance.NewReplacementPolicyService(db)
 
 	parserDefault, err := parserService.GetDefault(ctx)
 	if err != nil {
@@ -107,7 +107,7 @@ func TestAcquireSeedOnceCurrentInputAxesComeFromDraftNotLiveGlobal(t *testing.T)
 	want := oneShotAxes{
 		parserKind: string(wantKind), parserSource: wantParserVersion,
 		unclassifiedRoute: string(route.UnclassifiedRoute), fileEffectSource: route.Version,
-		admissionMode: string(retention.Policy.AdmissionMode), retentionSource: retention.Version,
+		admissionMode: string(retention.Policy.AdmissionMode), replacementSource: retention.Version,
 	}
 	if got != want {
 		t.Fatalf("one-shot instance axes = %+v, want the draft's %+v (Global is now %s/%s/%s)", got, want, nextKind, nextRoute, nextRetention.AdmissionMode)

@@ -19,7 +19,7 @@ func TestRetentionServicePurgeExpired(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
 
-	seedRetentionRows(t, ctx, db)
+	seedReplacementRows(t, ctx, db)
 
 	service, err := NewRetentionServiceWithRepository(db, retentionpersistence.NewRepository(db))
 	if err != nil {
@@ -68,7 +68,7 @@ func TestRetentionServicePurgeExpired(t *testing.T) {
 	assertCount(t, ctx, db, "subscriptions", "id IN ('subscription-retention', 'subscription-retention-stopped')", 2)
 }
 
-func seedRetentionRows(t *testing.T, ctx context.Context, db *sql.DB) {
+func seedReplacementRows(t *testing.T, ctx context.Context, db *sql.DB) {
 	t.Helper()
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -84,7 +84,7 @@ func seedRetentionRows(t *testing.T, ctx context.Context, db *sql.DB) {
 	}
 
 	exec(`INSERT INTO managed_anime(id, title) VALUES ($1, $2), ($3, $4)`,
-		"anime-retention", "Retention Test Anime", "anime-retention-stopped", "Stopped Retention Test Anime")
+		"anime-retention", "Replacement Test Anime", "anime-retention-stopped", "Stopped Replacement Test Anime")
 	exec(`INSERT INTO subscriptions(id, managed_anime_id, origin, instance_label, state)
 		VALUES ($1, $2, 'custom', $3, 'active'),
 		       ($4, $5, 'custom', $6, 'stopped')`,
@@ -146,7 +146,7 @@ func seedRetentionRows(t *testing.T, ctx context.Context, db *sql.DB) {
 	) VALUES ($1, $2, 'notification', 'webhook', FALSE, '[]', 1,
 		'{"adapter_kind":"webhook","auth_kind":"none"}'::jsonb,
 		'{"language_version":"bansoko-template-1","catalog_version":"notification-catalog-v1","events":{}}'::jsonb)`,
-		"plugin-target-retention", "Retention Test Target")
+		"plugin-target-retention", "Replacement Test Target")
 
 	exec(`INSERT INTO plugin_deliveries(
 		id, plugin_target_config_id, plugin_target_config_version, adapter_kind,
@@ -248,7 +248,7 @@ func TestRetentionServicePurgeExpiredIsBoundedAndIdempotent(t *testing.T) {
 	ctx := context.Background()
 
 	if _, err := db.ExecContext(ctx, `
-		INSERT INTO managed_anime(id, title) VALUES ('anime-retention-batch', 'Retention Batch Anime');
+		INSERT INTO managed_anime(id, title) VALUES ('anime-retention-batch', 'Replacement Batch Anime');
 		INSERT INTO subscriptions(id, managed_anime_id, origin, instance_label, state)
 		VALUES ('subscription-retention-batch', 'anime-retention-batch', 'custom', 'retention-batch', 'active')`); err != nil {
 		t.Fatalf("seed retention batch owner: %v", err)

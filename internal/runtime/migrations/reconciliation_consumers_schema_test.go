@@ -54,7 +54,7 @@ WHERE conname = 'work_items_owner_kind_check' AND conrelid = 'work_items'::regcl
 		"work_item_outcomes":    "",
 		"placements":            "",
 		"replacement_decisions": "",
-		"cleanup_operations":    "",
+		"replacement_deletions": "",
 		"alignment_operations":  "",
 	} {
 		query := "SELECT COUNT(*) FROM " + table

@@ -33,7 +33,7 @@ func TestQBCrossOwnerAdoptionAfterRetirementRealChain(t *testing.T) {
 	svc := newRealChainServices(t, fixture.client)
 	defer svc.db.Close()
 	ctx := context.Background()
-	seedRetentionSingleCopy(t, svc.db)
+	seedReplacementSingleCopy(t, svc.db)
 
 	subscribe := func(title, key string) generated.SubscribeResult {
 		draft := singleEpisodeDraft(fixture.FeedURL())
@@ -200,7 +200,7 @@ func TestQBCrossOwnerAdoptionAmbiguousHashesRealChain(t *testing.T) {
 	svc := newRealChainServices(t, fixture.client)
 	defer svc.db.Close()
 	ctx := context.Background()
-	seedRetentionSingleCopy(t, svc.db)
+	seedReplacementSingleCopy(t, svc.db)
 
 	draft := singleEpisodeDraft(fixture.FeedURL())
 	draft.Title = "Ambiguous Real Show"

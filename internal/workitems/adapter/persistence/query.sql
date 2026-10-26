@@ -117,10 +117,10 @@ SELECT EXISTS (
 ) OR EXISTS (
     SELECT 1
     FROM work_items wi
-    JOIN cleanup_operations co ON co.id = wi.owner_id
-    WHERE wi.owner_type = 'cleanup_operation'
+    JOIN replacement_deletions co ON co.id = wi.owner_id
+    WHERE wi.owner_type = 'replacement_deletion'
       AND wi.owner_id = co.id
-      AND wi.kind = 'cleanup_delete'
+      AND wi.kind = 'replacement_delete'
       AND co.managed_anime_id = sqlc.arg(managed_anime_id)
       AND wi.state IN ('available', 'leased')
 ) OR EXISTS (
@@ -172,15 +172,15 @@ LIMIT sqlc.arg(batch_size);
 -- name: ListDueOneShotMarkers :many
 SELECT id
 FROM one_shot_acquisitions
-WHERE state IN ('retention_pending', 'cleanup_blocked')
+WHERE state IN ('reclaim_pending', 'cleanup_blocked')
   AND retention_until <= CURRENT_TIMESTAMP
 ORDER BY retention_until NULLS LAST, id
 LIMIT sqlc.arg(batch_size);
 
--- name: ListDueRetentionPendingOneShotMarkers :many
+-- name: ListDueReclaimPendingOneShotMarkers :many
 SELECT id
 FROM one_shot_acquisitions
-WHERE state = 'retention_pending'
+WHERE state = 'reclaim_pending'
   AND retention_until <= CURRENT_TIMESTAMP
 ORDER BY retention_until NULLS LAST, id
 LIMIT sqlc.arg(batch_size);
@@ -226,12 +226,12 @@ SET state = 'cleaned',
     updated_at = CURRENT_TIMESTAMP
 WHERE id = sqlc.arg(marker_id);
 
--- name: ComputeOneShotRetentionDeadline :one
+-- name: ComputeOneShotReclaimDeadline :one
 SELECT (CURRENT_TIMESTAMP + (sqlc.arg(retention_days)::int * INTERVAL '1 day'))::timestamptz;
 
--- name: DrainOneShotMarkerToRetentionPending :execresult
+-- name: DrainOneShotMarkerToReclaimPending :execresult
 UPDATE one_shot_acquisitions
-SET state = 'retention_pending',
+SET state = 'reclaim_pending',
     terminal_outcome = sqlc.arg(terminal_outcome),
     terminal_reason_code = sqlc.arg(terminal_reason_code),
     terminal_reason = sqlc.arg(terminal_reason),
@@ -261,14 +261,14 @@ SET state = 'cleanup_blocked',
     updated_at = CURRENT_TIMESTAMP
 WHERE id = sqlc.arg(marker_id);
 
--- name: GetOneShotRetentionUntil :one
+-- name: GetOneShotReclaimUntil :one
 SELECT retention_until
 FROM one_shot_acquisitions
 WHERE id = sqlc.arg(marker_id);
 
 -- name: UnblockOneShotMarker :execresult
 UPDATE one_shot_acquisitions
-SET state = 'retention_pending',
+SET state = 'reclaim_pending',
     retention_until = GREATEST(retention_until, sqlc.arg(retention_until)),
     version = version + 1,
     updated_at = CURRENT_TIMESTAMP

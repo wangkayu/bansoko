@@ -39,7 +39,7 @@ func TestCalibrationComparesMetadataObservationWithRecordedSize(t *testing.T) {
 	defer fixture.db.Close()
 	const anime = "anime-cal-meta"
 	seedAnimeSubscription(t, fixture.db, anime, "sub-1", "stopped")
-	seedInstanceRetention(t, fixture.db, anime, ModeAll, ``, 1)
+	seedInstanceReplacement(t, fixture.db, anime, ModeAll, ``, 1)
 	seedCompletedGeneration(t, fixture.db, anime, 1, map[string]string{})
 	digest := strings.Repeat("ab", 32)
 	typedSource := `{"algorithm":"sha256","value":"` + digest + `"}`

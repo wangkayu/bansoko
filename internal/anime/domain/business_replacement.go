@@ -6,7 +6,7 @@ import (
 	"bansoko/internal/qualityprofile"
 )
 
-func validateBusinessRetention(value RetentionValue) error {
+func validateBusinessReplacement(value ReplacementValue) error {
 	if _, err := qualityprofile.Parse(value.QualityProfile); err != nil {
 		return fmt.Errorf("quality profile: %w", err)
 	}

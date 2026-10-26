@@ -91,9 +91,9 @@ VALUES ('os-1', 'anime-o', 'sub-o', 'src-o', 'rel-o', 'task-o', 'corr-o', 'req-k
  target_contract, dry_run_result, state, version, created_at, updated_at)
 VALUES ('alg-busy', 'align:busy', 'anime-a', 1, 'obs-busy', 'c', 1, 1, 1, 1,
  $1, 'fp', $2, '{}', '{}', 'planned', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, abs("Show/ep02.mkv"), abs("Show/Season 01/ep02.mkv"))
-	exec(`INSERT INTO cleanup_operations
+	exec(`INSERT INTO replacement_deletions
 (id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
- retention_mode, source_path, source_fingerprint, state, version, created_at, updated_at)
+ admission_mode, source_path, source_fingerprint, state, version, created_at, updated_at)
 VALUES ('cln-q', 'cln:q', 'p-old', 'anime-a', '["tv:s1:e1"]', 'dec-q',
  'single_copy', $1, 'fp', 'admitted', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, abs("Cleanup/q.mkv"))
 	// Retire anime-r last: its owner rows are fenced once it is retired.

@@ -537,7 +537,7 @@ type FileManagement struct {
 	Reconciliations   []ManagedReconciliation
 	Exclusions        []ManagedExclusion
 	Replacements      []ManagedReplacement
-	Cleanups          []ManagedCleanup
+	Deletions         []ManagedCleanup
 	Problems          []FileManagementProblem
 	AllowedActions    []string
 	AsOf              time.Time

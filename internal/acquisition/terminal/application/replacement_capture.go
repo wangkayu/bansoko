@@ -25,14 +25,14 @@ type ReplacementCapture struct {
 	replacement                             protocol.Value
 }
 
-const replacementCaptureQuery = `SELECT DISTINCT jsonb_build_object('decision',to_jsonb(d),'placement',to_jsonb(p),'policy',jsonb_build_object('managed_anime_id',policy.managed_anime_id,'admission_mode',policy.admission_mode,'quality_profile',policy.quality_profile,'source_default_version',policy.retention_source_default_version,'version',policy.retention_version,'updated_at',policy.updated_at),'subscription',to_jsonb(s),'comparison',comparison.value) AS snapshot
+const replacementCaptureQuery = `SELECT DISTINCT jsonb_build_object('decision',to_jsonb(d),'placement',to_jsonb(p),'policy',jsonb_build_object('managed_anime_id',policy.managed_anime_id,'admission_mode',policy.admission_mode,'quality_profile',policy.quality_profile,'source_default_version',policy.replacement_source_default_version,'version',policy.replacement_version,'updated_at',policy.updated_at),'subscription',to_jsonb(s),'comparison',comparison.value) AS snapshot
  FROM public.replacement_decisions d JOIN public.subscriptions s ON s.managed_anime_id=d.managed_anime_id
  JOIN public.anime_business_configs policy ON policy.managed_anime_id=d.managed_anime_id
  CROSS JOIN LATERAL jsonb_array_elements(d.pools) pool(value)
  CROSS JOIN LATERAL jsonb_array_elements(COALESCE(pool.value->'comparisons','[]'::jsonb)) comparison(value)
  JOIN public.placements p ON p.id=comparison.value->'placement'->>'placement_id' AND p.managed_anime_id=d.managed_anime_id
  WHERE d.candidate_release_id=$1 AND p.physical_path=$2 AND d.verdict='replace' AND d.state='admitted'
- AND s.state='active' AND s.version=d.subscription_version AND policy.retention_version=d.policy_version
+ AND s.state='active' AND s.version=d.subscription_version AND policy.replacement_version=d.policy_version
  AND p.version=(comparison.value->'placement'->>'version')::bigint
  AND p.target_fingerprint=comparison.value->'placement'->>'fingerprint'
  AND p.state='active' AND p.verification_state='verified' AND p.replacement_eligible

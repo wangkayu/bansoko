@@ -18,7 +18,7 @@ func TestPGReplacementRecoveryCommittedUnknownAndFence(t *testing.T) {
 		t.Fatal(err)
 	}
 	var policyVersion int64
-	if err := db.QueryRow(`SELECT retention_version FROM anime_business_configs WHERE managed_anime_id='anime-1'`).Scan(&policyVersion); err != nil {
+	if err := db.QueryRow(`SELECT replacement_version FROM anime_business_configs WHERE managed_anime_id='anime-1'`).Scan(&policyVersion); err != nil {
 		t.Fatal(err)
 	}
 	s := NewReplacementDecisionService(db)

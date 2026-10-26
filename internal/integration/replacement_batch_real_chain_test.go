@@ -92,7 +92,7 @@ func TestReplacementRealChainBatchReplacesPerFile(t *testing.T) {
 	svc := newRealChainServices(t, fixture.client)
 	defer svc.db.Close()
 	ctx := context.Background()
-	seedRetentionSingleCopy(t, svc.db)
+	seedReplacementSingleCopy(t, svc.db)
 	animeID, sourceID := subscribeRealChainShow(t, ctx, svc, fixture.FeedURL(), "Repl Batch Show", flatNamingRules(svc.targetRoot), true)
 
 	svc.driveToPlacement(t, ctx, animeID, "batch-a", filesA, 1)
@@ -182,7 +182,7 @@ ORDER BY d.created_at DESC, d.id DESC LIMIT 1`, animeID).Scan(&e1State); err != 
 	}
 	// The in-place loser shares the active path, so it never enters cleanup.
 	var cleanupCount int
-	if err := svc.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM cleanup_operations WHERE managed_anime_id = $1`, animeID).Scan(&cleanupCount); err != nil {
+	if err := svc.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM replacement_deletions WHERE managed_anime_id = $1`, animeID).Scan(&cleanupCount); err != nil {
 		t.Fatal(err)
 	}
 	if cleanupCount != 0 {
@@ -224,7 +224,7 @@ func TestMultiEpisodeFileRealChain(t *testing.T) {
 	svc := newRealChainServices(t, fixture.client)
 	defer svc.db.Close()
 	ctx := context.Background()
-	seedRetentionSingleCopy(t, svc.db)
+	seedReplacementSingleCopy(t, svc.db)
 	animeID, _ := subscribeRealChainShow(t, ctx, svc, fixture.FeedURL(), "Repl Double Show", multiEpisodeNamingRules(svc.targetRoot), false)
 
 	svc.driveToPlacement(t, ctx, animeID, "double-d", files, 1)

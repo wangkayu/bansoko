@@ -46,21 +46,21 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, '{}'::jsonb, $10,
 	}
 }
 
-func oneShotRetentionAt(value time.Time) *time.Time { return &value }
+func oneShotReclaimAt(value time.Time) *time.Time { return &value }
 
 // Regression: the batch query ends in LIMIT $2, so the bind args must carry
 // the batch size or every retention pass fails at PostgreSQL bind time.
 func TestOneShotDueIDsBindsLimitAndFilters(t *testing.T) {
 	db := openTestDB(t)
-	service, err := NewOneShotRetentionService(db, nil)
+	service, err := NewOneShotReclaimService(db, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
 
 	insertOneShotMarker(t, db, "m-run-a", OneShotStateRunning, nil)
-	insertOneShotMarker(t, db, "m-pend-due", OneShotStateRetentionPending, oneShotRetentionAt(time.Now().Add(-time.Hour)))
-	insertOneShotMarker(t, db, "m-pend-future", OneShotStateRetentionPending, oneShotRetentionAt(time.Now().Add(24*time.Hour)))
+	insertOneShotMarker(t, db, "m-pend-due", OneShotStateReclaimPending, oneShotReclaimAt(time.Now().Add(-time.Hour)))
+	insertOneShotMarker(t, db, "m-pend-future", OneShotStateReclaimPending, oneShotReclaimAt(time.Now().Add(24*time.Hour)))
 
 	drainIDs, err := service.oneShotDueIDs(ctx, []string{OneShotStateRunning}, false)
 	if err != nil {
@@ -70,7 +70,7 @@ func TestOneShotDueIDsBindsLimitAndFilters(t *testing.T) {
 		t.Fatalf("drain batch = %v, want [m-run-a]", drainIDs)
 	}
 
-	reclaimIDs, err := service.oneShotDueIDs(ctx, []string{OneShotStateRetentionPending}, true)
+	reclaimIDs, err := service.oneShotDueIDs(ctx, []string{OneShotStateReclaimPending}, true)
 	if err != nil {
 		t.Fatalf("reclaim batch: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestOneShotDueIDsBindsLimitAndFilters(t *testing.T) {
 
 func TestOneShotDueIDSBoundedByBatchSize(t *testing.T) {
 	db := openTestDB(t)
-	service, err := NewOneShotRetentionService(db, nil)
+	service, err := NewOneShotReclaimService(db, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ FROM one_shot_acquisitions WHERE id = $1`, markerID).Scan(&state, &outcome, &rea
 // ORDER BY id ordering across reversed insertion order.
 func TestLoadAnchorsTxEnumeratesAnchorsWithOrdering(t *testing.T) {
 	db := openTestDB(t)
-	service, err := NewOneShotRetentionService(db, nil)
+	service, err := NewOneShotReclaimService(db, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,11 +273,11 @@ func TestLoadAnchorsTxEnumeratesAnchorsWithOrdering(t *testing.T) {
 }
 
 // Regression: a complete terminal one-shot chain must drain through RunPass to
-// retention_pending with terminal outcome succeeded instead of blocking on the
+// reclaim_pending with terminal outcome succeeded instead of blocking on the
 // anchor scan conversion.
-func TestRunPassDrainsCompleteTerminalChainToRetentionPending(t *testing.T) {
+func TestRunPassDrainsCompleteTerminalChainToReclaimPending(t *testing.T) {
 	db := openTestDB(t)
-	service, err := NewOneShotRetentionService(db, nil)
+	service, err := NewOneShotReclaimService(db, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,8 +294,8 @@ func TestRunPassDrainsCompleteTerminalChainToRetentionPending(t *testing.T) {
 		t.Fatalf("RunPass result = %+v, want drained=1 blocked=0", result)
 	}
 	state, outcome, reasonCode := oneShotMarkerTerminalState(t, db, markerID)
-	if state != OneShotStateRetentionPending || outcome != "succeeded" || reasonCode != "one_shot_completed" {
-		t.Fatalf("marker = (%s, %s, %s), want (retention_pending, succeeded, one_shot_completed)", state, outcome, reasonCode)
+	if state != OneShotStateReclaimPending || outcome != "succeeded" || reasonCode != "one_shot_completed" {
+		t.Fatalf("marker = (%s, %s, %s), want (reclaim_pending, succeeded, one_shot_completed)", state, outcome, reasonCode)
 	}
 }
 
@@ -304,7 +304,7 @@ func TestRunPassDrainsCompleteTerminalChainToRetentionPending(t *testing.T) {
 // history cannot drift from the marker's compatibility projection.
 func TestRunPassTerminalizesCurrentAttemptWithMarkerProjection(t *testing.T) {
 	db := openTestDB(t)
-	service, err := NewOneShotRetentionService(db, nil)
+	service, err := NewOneShotReclaimService(db, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -332,8 +332,8 @@ UPDATE one_shot_acquisitions SET current_attempt_id = 'attempt-'||$1 WHERE id = 
 		t.Fatalf("RunPass result = %+v, want drained=1 blocked=0", result)
 	}
 	state, outcome, reasonCode := oneShotMarkerTerminalState(t, db, markerID)
-	if state != OneShotStateRetentionPending || outcome != "succeeded" || reasonCode != "one_shot_completed" {
-		t.Fatalf("marker = (%s, %s, %s), want (retention_pending, succeeded, one_shot_completed)", state, outcome, reasonCode)
+	if state != OneShotStateReclaimPending || outcome != "succeeded" || reasonCode != "one_shot_completed" {
+		t.Fatalf("marker = (%s, %s, %s), want (reclaim_pending, succeeded, one_shot_completed)", state, outcome, reasonCode)
 	}
 	var attemptState, outcomeCode string
 	var terminalAt *time.Time
@@ -353,7 +353,7 @@ WHERE m.id = $1 AND a.sequence = 1`, markerID).Scan(&attemptState, &outcomeCode,
 // before the jsonb rewrite this hit the same pgx array scan failure.
 func TestRunPassDrainsChainWithoutFileOperations(t *testing.T) {
 	db := openTestDB(t)
-	service, err := NewOneShotRetentionService(db, nil)
+	service, err := NewOneShotReclaimService(db, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -369,8 +369,8 @@ func TestRunPassDrainsChainWithoutFileOperations(t *testing.T) {
 		t.Fatalf("RunPass result = %+v, want drained=1 blocked=0", result)
 	}
 	state, outcome, reasonCode := oneShotMarkerTerminalState(t, db, markerID)
-	if state != OneShotStateRetentionPending || outcome != "succeeded" || reasonCode != "one_shot_completed" {
-		t.Fatalf("marker = (%s, %s, %s), want (retention_pending, succeeded, one_shot_completed)", state, outcome, reasonCode)
+	if state != OneShotStateReclaimPending || outcome != "succeeded" || reasonCode != "one_shot_completed" {
+		t.Fatalf("marker = (%s, %s, %s), want (reclaim_pending, succeeded, one_shot_completed)", state, outcome, reasonCode)
 	}
 }
 
@@ -379,7 +379,7 @@ func TestRunPassDrainsChainWithoutFileOperations(t *testing.T) {
 // after the jsonb rewrite (the enumeration disagreement check survives).
 func TestDrainOneBlocksWhenCorrelationAndArtifactAnchorsDisagree(t *testing.T) {
 	db := openTestDB(t)
-	service, err := NewOneShotRetentionService(db, nil)
+	service, err := NewOneShotReclaimService(db, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,7 +410,7 @@ func TestDrainOneBlocksWhenCorrelationAndArtifactAnchorsDisagree(t *testing.T) {
 // operation may replace the real one while both lists still contain one row.
 func TestDrainOneBlocksWhenEqualSizedFileOperationAnchorsDiffer(t *testing.T) {
 	db := openTestDB(t)
-	service, err := NewOneShotRetentionService(db, nil)
+	service, err := NewOneShotReclaimService(db, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -550,7 +550,7 @@ SELECT retention_until FROM one_shot_acquisitions WHERE id = $1`, markerID).Scan
 // deleting the temporary owner graph.
 func TestReclaimDeletesTemporaryGraphAndPreservesMediaAndDownloadData(t *testing.T) {
 	db := openTestDB(t)
-	service, err := NewOneShotRetentionService(db, nil)
+	service, err := NewOneShotReclaimService(db, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -596,7 +596,7 @@ func TestReclaimDeletesTemporaryGraphAndPreservesMediaAndDownloadData(t *testing
 		t.Fatalf("settled root state=%q err=%v", state, err)
 	}
 
-	insertOneShotMarker(t, db, markerID, OneShotStateRetentionPending, oneShotRetentionAt(time.Now().Add(-time.Hour)))
+	insertOneShotMarker(t, db, markerID, OneShotStateReclaimPending, oneShotReclaimAt(time.Now().Add(-time.Hour)))
 	if got := countOneShotOwnerGraphRows(t, db, markerID); got != 11 {
 		t.Fatalf("seed owner graph rows = %d, want 11", got)
 	}
@@ -775,10 +775,10 @@ func failOneShotFileOperation(t *testing.T, db *sql.DB, foID, artifactID string,
 // is still non-terminal must never pass a recheck — even with an empty ledger
 // and no live WorkItem — and the owner graph must survive. Only after every
 // owner is terminal again does the next recheck return the marker to
-// retention_pending.
+// reclaim_pending.
 func TestRecheckOneBlocksOnNonTerminalOwnersAndRecovers(t *testing.T) {
 	db := openTestDB(t)
-	service, err := NewOneShotRetentionService(db, nil)
+	service, err := NewOneShotReclaimService(db, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -786,7 +786,7 @@ func TestRecheckOneBlocksOnNonTerminalOwnersAndRecovers(t *testing.T) {
 	files := createOneShotChain(t, db, markerID, []string{"recheck.mkv"})
 	foID := "fo-" + markerID
 	insertOneShotFileOperation(t, db, foID, "art-"+markerID, files[0], "corr-"+markerID)
-	insertOneShotMarker(t, db, markerID, OneShotStateCleanupBlocked, oneShotRetentionAt(time.Now().Add(-time.Hour)))
+	insertOneShotMarker(t, db, markerID, OneShotStateCleanupBlocked, oneShotReclaimAt(time.Now().Add(-time.Hour)))
 
 	before := readOneShotDeadline(t, db, markerID)
 
@@ -836,17 +836,17 @@ func TestRecheckOneBlocksOnNonTerminalOwnersAndRecovers(t *testing.T) {
 		t.Fatal("recheck with all owners terminal must pass")
 	}
 	state, outcome, reasonCode := oneShotMarkerTerminalState(t, db, markerID)
-	if state != OneShotStateRetentionPending || outcome != "succeeded" || reasonCode != "one_shot_completed" {
-		t.Fatalf("marker = (%s, %s, %s), want (retention_pending, succeeded, one_shot_completed)", state, outcome, reasonCode)
+	if state != OneShotStateReclaimPending || outcome != "succeeded" || reasonCode != "one_shot_completed" {
+		t.Fatalf("marker = (%s, %s, %s), want (reclaim_pending, succeeded, one_shot_completed)", state, outcome, reasonCode)
 	}
 }
 
-// Contract: retention_pending reclamation with a non-terminal anchored owner
+// Contract: reclaim_pending reclamation with a non-terminal anchored owner
 // must fail closed — the marker lands in cleanup_blocked with chain_unsettled
 // and the whole temporary owner graph survives untouched.
 func TestReclaimOneBlocksOnNonTerminalOwners(t *testing.T) {
 	db := openTestDB(t)
-	service, err := NewOneShotRetentionService(db, nil)
+	service, err := NewOneShotReclaimService(db, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -854,7 +854,7 @@ func TestReclaimOneBlocksOnNonTerminalOwners(t *testing.T) {
 	files := createOneShotChain(t, db, markerID, []string{"reclaim.mkv"})
 	foID := "fo-" + markerID
 	insertOneShotFileOperation(t, db, foID, "art-"+markerID, files[0], "corr-"+markerID)
-	insertOneShotMarker(t, db, markerID, OneShotStateRetentionPending, oneShotRetentionAt(time.Now().Add(-time.Hour)))
+	insertOneShotMarker(t, db, markerID, OneShotStateReclaimPending, oneShotReclaimAt(time.Now().Add(-time.Hour)))
 
 	for _, tc := range []struct {
 		name   string
@@ -865,15 +865,15 @@ func TestReclaimOneBlocksOnNonTerminalOwners(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// The previous subtest may have blocked this shared marker; reset it
-			// to a due retention_pending row for each scenario.
+			// to a due reclaim_pending row for each scenario.
 			if _, err := db.Exec(`
 UPDATE one_shot_acquisitions
 SET state = $2, terminal_outcome = 'failed', terminal_reason_code = 'test_transition',
     terminal_reason = 'test transition', terminal_at = CURRENT_TIMESTAMP,
     retention_until = CURRENT_TIMESTAMP - INTERVAL '1 hour',
     active_effect_leases = '[]'::jsonb, active_effect_count = 0
-WHERE id = $1`, markerID, OneShotStateRetentionPending); err != nil {
-				t.Fatalf("reset marker to %s: %v", OneShotStateRetentionPending, err)
+WHERE id = $1`, markerID, OneShotStateReclaimPending); err != nil {
+				t.Fatalf("reset marker to %s: %v", OneShotStateReclaimPending, err)
 			}
 			tc.demote()
 			before := acquisitionfixture.Snapshot(t, disposabledb.Owner(t))
@@ -886,15 +886,15 @@ WHERE id = $1`, markerID, OneShotStateRetentionPending); err != nil {
 				t.Fatal("reclamation must not proceed while an anchored owner is non-terminal")
 			}
 			// The failed proof must land in cleanup_blocked. blockMarkerTx
-			// retains the already-known terminal reason of a retention_pending
+			// retains the already-known terminal reason of a reclaim_pending
 			// row (CASE WHEN ... IS NOT NULL), so only the state itself is the
 			// stable contract here.
 			state, _, _ := oneShotMarkerTerminalState(t, db, markerID)
 			if acquisitionfixture.Snapshot(t, disposabledb.Owner(t)) != before {
 				t.Fatal("running-root waiting changed graph")
 			}
-			if state != OneShotStateRetentionPending {
-				t.Fatalf("marker state = %s, want retention_pending for independent running root", state)
+			if state != OneShotStateReclaimPending {
+				t.Fatalf("marker state = %s, want reclaim_pending for independent running root", state)
 			}
 			if got := countOneShotOwnerGraphRows(t, db, markerID); got != 8 {
 				t.Fatalf("owner graph rows = %d, want 8 (owner graph must not be deleted)", got)
@@ -908,7 +908,7 @@ WHERE id = $1`, markerID, OneShotStateRetentionPending); err != nil {
 // download), and the drained attempt carries that stage as immutable evidence.
 func TestRunPassAggregatesFailedStageFromAnchoredChain(t *testing.T) {
 	db := openTestDB(t)
-	service, err := NewOneShotRetentionService(db, nil)
+	service, err := NewOneShotReclaimService(db, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -987,8 +987,8 @@ UPDATE one_shot_acquisitions SET current_attempt_id = 'attempt-'||$1 WHERE id = 
 	}
 	for _, testCase := range scenarios {
 		state, outcome, _ := oneShotMarkerTerminalState(t, db, testCase.markerID)
-		if state != OneShotStateRetentionPending || outcome != "failed" {
-			t.Fatalf("%s marker = (%s, %s), want (retention_pending, failed)", testCase.markerID, state, outcome)
+		if state != OneShotStateReclaimPending || outcome != "failed" {
+			t.Fatalf("%s marker = (%s, %s), want (reclaim_pending, failed)", testCase.markerID, state, outcome)
 		}
 		var failedStage sql.NullString
 		if err := db.QueryRowContext(ctx, `
@@ -1009,13 +1009,13 @@ WHERE m.id = $1 AND a.sequence = 1`, testCase.markerID).Scan(&failedStage); err 
 // would otherwise outlive its acquisition forever (no cascading FK).
 func TestPurgeCleanedOneShotMarkerRemovesItsAttempts(t *testing.T) {
 	db := openTestDB(t)
-	service, err := NewOneShotRetentionService(db, nil)
+	service, err := NewOneShotReclaimService(db, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
 	const markerID = "m-purge-attempts"
-	insertOneShotMarker(t, db, markerID, OneShotStateCleaned, oneShotRetentionAt(time.Now().Add(-time.Hour)))
+	insertOneShotMarker(t, db, markerID, OneShotStateCleaned, oneShotReclaimAt(time.Now().Add(-time.Hour)))
 	if _, err := db.ExecContext(ctx, `
 INSERT INTO one_shot_execution_attempts(id, acquisition_id, sequence, mode, input_snapshot, input_digest, state, outcome_code, outcome_reason, terminal_at)
 VALUES ('attempt-'||$1, $1, 1, 'initial', '{}'::jsonb, 'sha256:'||repeat('a',64), 'failed',

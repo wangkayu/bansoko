@@ -15,8 +15,8 @@
 #                                              # of a strict family
 #
 # Strict families: dir-v2, go-module, api-path, env-prefix, kebab-v2,
-# mikan-product, slim (renamed in phase 2), db-prefix (B14 baseline) and
-# ident-v2 (S1). mikan-product has no exceptions: any mention of the old
+# mikan-product, slim (renamed in phase 2), db-prefix (B14 baseline),
+# ident-v2 (S1) and retention-split (10-26 L5, see below). mikan-product has no exceptions: any mention of the old
 # product identities (the old product name in any spelling, the old processor
 # binary, the archived first-implementation module) fails the gate. The live
 # subscription provider `mikan` is never matched by its patterns. The only
@@ -142,6 +142,29 @@ FAMILIES = [
      "rewrite / Python-era / V1 wording -> neutral"),
     ("legacy-word", P(r"(?i)\blegacy"), keep_none,
      "'legacy' identifiers/prose: triage (dead-after-B14 reader vs rename)"),
+    # The three meanings of "retention" were split in the 10-26 lane L5:
+    # washing became replacement*, record retention keeps "retention", and the
+    # one-shot marker state became reclaim_pending. This family bans the
+    # retired washing and reclaim names. Record retention is never matched:
+    # `retention_until`, `retention_seconds`, `retention_days`/RetentionDays,
+    # `retention_anchor_at`, the janitor's internal/recordretention, its
+    # `retention_pass` routine and `retention_sweep_failed` diagnostic are all
+    # the surviving meaning.
+    ("retention-split", P(
+        r"\bcleanup_operations?\b", r"\bcleanup_delete\b",
+        r"\bCleanupOperation[A-Za-z]*\b", r"\bOwnerCleanup\b", r"\bKindCleanupDelete\b",
+        r"\bretention_version\b", r"\bRetentionVersion\b",
+        r"\bretention_source_default_version\b", r"\bretention_mode\b",
+        r"\bCleanupOperationViewRetentionMode[A-Za-z]*\b", r"\bRetentionAdmissionMode[A-Za-z]*\b",
+        r"\b[A-Za-z]*RetentionPolicy[A-Za-z]*\b", r"\bretentionPolicy[A-Za-z]*\b",
+        r"\bretention_(?:quality_profile|cleanup_policy)_valid\b",
+        r"\bretention_pending\b", r"\bRetentionPending\b",
+        r"\bOneShotRetention[A-Za-z]*\b", r"\bNewOneShotRetentionService\b",
+        r"\boneshot_retention\b", r"\boneShotRetentionAt\b",
+        r"\bretention_section_value\b",
+        r"/file-maintenance/retention(?:/[A-Za-z0-9_{}.-]+)*"),
+     keep_none,
+     "retention split by meaning: washing -> replacement*, one-shot -> reclaim*"),
 ]
 
 def path_family(f):
@@ -160,7 +183,7 @@ if paths_mode:
         if h: print(f"{','.join(h)}\t{f}")
     sys.exit(0)
 
-STRICT = {"dir-v2", "go-module", "api-path", "env-prefix", "kebab-v2", "mikan-product", "slim", "db-prefix", "ident-v2"}
+STRICT = {"dir-v2", "go-module", "api-path", "env-prefix", "kebab-v2", "mikan-product", "slim", "db-prefix", "ident-v2", "retention-split"}
 
 # (category, family, path regex, match regex, optional line regex). A strict-family
 # hit is allowed when every given regex matches (path: re.search on the path;
@@ -175,6 +198,13 @@ ALLOW = [
      r"(?:Test|register|to)?(?:AcquisitionInput|Delivery|FileFact|Identity|ParserEnvelope|ParserProvenance"
      r"|ParserSection|Quality|Route|SectionEntry|UnclassifiedRoute|VarsInput|HistoricalInput|Input|schemas|valueSchema)V2[A-Za-z]*",
      None),
+    # --- history: the migration chain created these names before 063 renamed
+    # them, so migrations 001..063 necessarily still write them (and 063 must
+    # name both sides of every RENAME). A *new* migration that reintroduces one
+    # of them is a regression the guard should catch, so the allowance stops at
+    # 063.
+    ("history", "retention-split",
+     r"^db/migrations/0(?:0[1-9]|[1-5][0-9]|6[0-3])_", r".*", None),
 ]
 ALLOW = [(c, fam, re.compile(pp), re.compile(mp), re.compile(lp) if lp else None) for c, fam, pp, mp, lp in ALLOW]
 

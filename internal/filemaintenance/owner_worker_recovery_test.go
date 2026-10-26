@@ -107,11 +107,11 @@ func TestPGOffsetRecoveryNoEffectCompletedUnknownAndFence(t *testing.T) {
 func TestPGCleanupRecoveryNoEffectCompletedUnknownAndFence(t *testing.T) {
 	db := disposabledb.ResetDisposableSchema(t)
 	ctx := context.Background()
-	id := seedCleanupOperation(t, db, "recovery-cleanup", "anime-cleanup", "/source/file", "meta:size=4")
+	id := seedReplacementDeletion(t, db, "recovery-cleanup", "anime-cleanup", "/source/file", "meta:size=4")
 	s := NewCleanupService(db)
 	store := cleanupWorkItemStore(t, db)
 	s.SetWorkItems(store)
-	c := cleanupClaim(t, store, id, workitems.KindCleanupDelete, 1)
+	c := cleanupClaim(t, store, id, workitems.KindReplacementDelete, 1)
 	observer := s.DeleteHandler().(worker.RecoveryObserver)
 	o, err := observer.ObserveRecovery(ctx, c)
 	if err != nil {
@@ -120,14 +120,14 @@ func TestPGCleanupRecoveryNoEffectCompletedUnknownAndFence(t *testing.T) {
 	if o.Disposition != workitems.DispositionNoExternalEffect {
 		t.Fatalf("initial=%+v", o)
 	}
-	if _, err := db.Exec(`UPDATE cleanup_operations SET attempt='{"stage":"purge"}' WHERE id=$1`, id); err != nil {
+	if _, err := db.Exec(`UPDATE replacement_deletions SET attempt='{"stage":"purge"}' WHERE id=$1`, id); err != nil {
 		t.Fatal(err)
 	}
 	o, err = observer.ObserveRecovery(ctx, c)
 	if err != nil || o.Disposition != workitems.DispositionAmbiguous {
 		t.Fatalf("unknown=%+v %v", o, err)
 	}
-	if _, err := db.Exec(`UPDATE cleanup_operations SET state='deleted' WHERE id=$1`, id); err != nil {
+	if _, err := db.Exec(`UPDATE replacement_deletions SET state='deleted' WHERE id=$1`, id); err != nil {
 		t.Fatal(err)
 	}
 	o, err = observer.ObserveRecovery(ctx, c)

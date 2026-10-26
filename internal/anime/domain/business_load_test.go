@@ -28,9 +28,9 @@ func businessPresetForLoadTest(t *testing.T) BusinessSnapshot {
 		business.Sections[name], business.SectionVersions[name], business.SectionSchemas[name] = raw, 42, SectionSchemaVersions[name]
 	}
 	business.Parser = ParserPolicyEnvelope{SchemaVersion: ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global_parser_policy_default", PolicyVersion: 2}
-	business.Retention = RetentionValue{AdmissionMode: "all",
+	business.Replacement = ReplacementValue{AdmissionMode: "all",
 		QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"subgroup.score","ranks":[]},{"key":"release.lang","ranks":[["chs"],["sc"],["cht"],["tc"],["jpn"],["eng"]]},{"key":"release.resolution","ranks":[["2160p"],["1440p"],["1080p"],["720p"],["480p"]]},{"key":"release.revision","ranks":[]}]}`)}
-	business.RetentionVersion, business.UnclassifiedRoute, business.FileEffectVersion = 4, "skip", 5
+	business.ReplacementVersion, business.UnclassifiedRoute, business.FileEffectVersion = 4, "skip", 5
 	business.Programs = ProgramReferences{
 		Vars:      namingvars.ProgramRef{Version: namingvars.ProfileVersion("sha256:vars"), Digest: "sha256:vars"},
 		AttrRules: namingvars.ProgramRef{Version: attrrules.ProfileVersion("sha256:attr"), Digest: "sha256:attr"},

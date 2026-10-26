@@ -39,7 +39,7 @@ func seedRetiredDelivery(t *testing.T, db *sql.DB) {
 	if _, err := db.ExecContext(ctx, `
 INSERT INTO plugin_target_configs(
     id, name, plugin_kind, adapter_kind, enabled, trigger_kinds, config_schema_version, config, template_set
-) VALUES ('target-retention', 'Retention Target', 'notification', 'webhook', FALSE, '[]', 1,
+) VALUES ('target-retention', 'Replacement Target', 'notification', 'webhook', FALSE, '[]', 1,
     '{"adapter_kind":"webhook","auth_kind":"none"}'::jsonb,
     '{"language_version":"bansoko-template-1","catalog_version":"notification-catalog-v1","events":{}}'::jsonb)`); err != nil {
 		t.Fatalf("seed plugin target: %v", err)

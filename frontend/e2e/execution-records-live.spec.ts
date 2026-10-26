@@ -29,7 +29,7 @@ import {
 //    没有集数的视频标注不入库及原因；名称与番剧标题相同时只显示一次。
 // 2. 一次性下载入库失败（目标目录无效）：「一次性」分段（服务端筛选）、列表实时变为失败、
 //    失败阶段与原因、文件行原因；失败的一次性下载只提示从「浏览种子」重新下载，
-//    没有重试 / 重新规划（已移除），标记随结算排空为 retention_pending。
+//    没有重试 / 重新规划（已移除），标记随结算排空为 reclaim_pending。
 // 每个状态截 1280 与 400 两种宽度，并与 API 返回值比对。
 
 const prerequisite = opsPrerequisite();
@@ -203,11 +203,11 @@ test.describe("执行记录（真实链路）", () => {
     await waitForCondition(
       async () => {
         marker = (await apiJSON<Marker>(page, "GET", `/one-shot-acquisitions/${failed.one_shot_id}`)).body;
-        return marker.state === "retention_pending";
+        return marker.state === "reclaim_pending";
       },
       60000,
       "the drained one-shot marker",
     );
-    expect(marker).toMatchObject({ state: "retention_pending", terminal_outcome: "failed", failed_stage: "file_execution" });
+    expect(marker).toMatchObject({ state: "reclaim_pending", terminal_outcome: "failed", failed_stage: "file_execution" });
   });
 });

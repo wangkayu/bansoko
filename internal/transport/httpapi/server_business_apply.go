@@ -17,11 +17,11 @@ func (s *Server) ApplyAnimeConfigCandidate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	versions := input.ExpectedOwnerVersions
-	result, err := service.ApplyAnimeConfigCandidate(r.Context(), candidateID, string(params.IdempotencyKey), draftapplication.CandidateApplyInput{Revision: input.Revision, TargetManagedAnimeID: input.TargetManagedAnimeId, ExpectedCandidateVersion: input.ExpectedCandidateVersion, ExpectedOwnerVersions: draftapplication.BusinessOwnerVersions{Rules: versions.Rules, Subgroups: versions.Subgroups, Parser: versions.Parser, Retention: versions.Retention, FileEffect: versions.FileEffect, Business: versions.Business}})
+	result, err := service.ApplyAnimeConfigCandidate(r.Context(), candidateID, string(params.IdempotencyKey), draftapplication.CandidateApplyInput{Revision: input.Revision, TargetManagedAnimeID: input.TargetManagedAnimeId, ExpectedCandidateVersion: input.ExpectedCandidateVersion, ExpectedOwnerVersions: draftapplication.BusinessOwnerVersions{Rules: versions.Rules, Subgroups: versions.Subgroups, Parser: versions.Parser, Replacement: versions.Replacement, FileEffect: versions.FileEffect, Business: versions.Business}})
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
 	v := result.OwnerVersions
-	writeJSON(w, r.Context(), http.StatusOK, generated.CandidateApplyResult{TargetManagedAnimeId: result.TargetManagedAnimeID, CandidateId: result.CandidateID, Revision: result.Revision, BusinessDigest: result.BusinessDigest, OwnerVersions: generated.BusinessOwnerVersions{Rules: v.Rules, Subgroups: v.Subgroups, Parser: v.Parser, Retention: v.Retention, FileEffect: v.FileEffect, Business: v.Business}})
+	writeJSON(w, r.Context(), http.StatusOK, generated.CandidateApplyResult{TargetManagedAnimeId: result.TargetManagedAnimeID, CandidateId: result.CandidateID, Revision: result.Revision, BusinessDigest: result.BusinessDigest, OwnerVersions: generated.BusinessOwnerVersions{Rules: v.Rules, Subgroups: v.Subgroups, Parser: v.Parser, Replacement: v.Replacement, FileEffect: v.FileEffect, Business: v.Business}})
 }

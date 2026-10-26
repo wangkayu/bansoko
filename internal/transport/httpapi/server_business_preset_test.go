@@ -11,7 +11,7 @@ import (
 )
 
 func TestBusinessPresetPublicShapePreservesFrozenEvidence(t *testing.T) {
-	value := animeconfig.BusinessSnapshot{SchemaVersion: "business-snapshot-v1", Sections: map[string]json.RawMessage{}, SectionVersions: map[string]int64{}, SectionSchemas: map[string]string{}, Parser: animedomain.ParserPolicyEnvelope{SchemaVersion: animedomain.ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global", PolicyVersion: 12}, Retention: animeconfig.RetentionValue{AdmissionMode: "all", QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["1080p"],["720p"]]}]}`)}, RetentionVersion: 17, FileEffectVersion: 19, UnclassifiedRoute: "route"}
+	value := animeconfig.BusinessSnapshot{SchemaVersion: "business-snapshot-v1", Sections: map[string]json.RawMessage{}, SectionVersions: map[string]int64{}, SectionSchemas: map[string]string{}, Parser: animedomain.ParserPolicyEnvelope{SchemaVersion: animedomain.ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global", PolicyVersion: 12}, Replacement: animeconfig.ReplacementValue{AdmissionMode: "all", QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["1080p"],["720p"]]}]}`)}, ReplacementVersion: 17, FileEffectVersion: 19, UnclassifiedRoute: "route"}
 	digest := "sha256:" + strings.Repeat("a", 64)
 	value.Programs = animeconfig.ProgramReferences{Vars: namingvars.ProgramRef{Digest: digest, Version: namingvars.ProfileVersion(digest)}, AttrRules: namingvars.ProgramRef{Digest: digest, Version: attrrules.ProfileVersion(digest)}}
 	for _, name := range animedomain.EffectiveSectionOrder {
@@ -37,13 +37,13 @@ func TestBusinessPresetPublicShapePreservesFrozenEvidence(t *testing.T) {
 	if _, err := businessPresetView(value, json.RawMessage(`{"anibt":{"require":[],"exclude":[]},"title":{"require":[],"exclude":[]},"hidden":true}`)); err == nil {
 		t.Fatal("hidden tag_filters field crossed public boundary")
 	}
-	if view.Snapshot.RetentionVersion != 17 || view.Snapshot.FileEffectVersion != 19 || view.Snapshot.Parser.PolicyVersion != 12 || view.Snapshot.Programs.Vars.Digest != digest || len(view.Snapshot.Retention.QualityProfile.Items) != 1 || view.Snapshot.Retention.QualityProfile.Items[0].Ranks[0][0] != "1080p" {
+	if view.Snapshot.ReplacementVersion != 17 || view.Snapshot.FileEffectVersion != 19 || view.Snapshot.Parser.PolicyVersion != 12 || view.Snapshot.Programs.Vars.Digest != digest || len(view.Snapshot.Replacement.QualityProfile.Items) != 1 || view.Snapshot.Replacement.QualityProfile.Items[0].Ranks[0][0] != "1080p" {
 		t.Fatalf("lost frozen evidence: %+v", view)
 	}
 	if view.Digest == "" {
 		t.Fatal("missing digest")
 	}
-	value.Retention.QualityProfile = json.RawMessage(`{"version":"profile-v1","items":[],"hidden":true}`)
+	value.Replacement.QualityProfile = json.RawMessage(`{"version":"profile-v1","items":[],"hidden":true}`)
 	if _, err := businessPresetView(value, tagFilters); err == nil {
 		t.Fatal("hidden retention field crossed public boundary")
 	}

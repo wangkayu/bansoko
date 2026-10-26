@@ -22,8 +22,8 @@ type instanceAxes struct {
 	unclassifiedRoute    string
 	fileEffectSource     int64
 	admissionMode        string
-	retentionSource      int64
-	retentionVersion     int64
+	replacementSource    int64
+	replacementVersion   int64
 	fileEffectVersion    int64
 	parserInstanceExists bool
 }
@@ -35,10 +35,10 @@ func readInstanceAxes(t *testing.T, db *sql.DB, animeID string) instanceAxes {
 	var parserSource sql.NullInt64
 	if err := db.QueryRowContext(context.Background(), `
 SELECT parser_kind, parser_source_default_version, unclassified_route, file_effect_source_default_version,
-       admission_mode, retention_source_default_version, retention_version, file_effect_version
+       admission_mode, replacement_source_default_version, replacement_version, file_effect_version
 FROM anime_business_configs WHERE managed_anime_id = $1`, animeID).Scan(
 		&parserKind, &parserSource, &axes.unclassifiedRoute, &axes.fileEffectSource,
-		&axes.admissionMode, &axes.retentionSource, &axes.retentionVersion, &axes.fileEffectVersion); err != nil {
+		&axes.admissionMode, &axes.replacementSource, &axes.replacementVersion, &axes.fileEffectVersion); err != nil {
 		t.Fatalf("read instance axes: %v", err)
 	}
 	axes.parserKind, axes.parserSource, axes.parserInstanceExists = parserKind.String, parserSource.Int64, parserKind.Valid
@@ -46,15 +46,15 @@ FROM anime_business_configs WHERE managed_anime_id = $1`, animeID).Scan(
 }
 
 // globalAxes reads the current Global parser kind, unclassified route and
-// retention admission mode with their versions.
+// replacement admission mode with their versions.
 type globalAxes struct {
-	parserKind    parser.ParserKind
-	parserVersion int64 // the version a draft freezes (1 for an absent row)
-	parserSaveCAS int64 // the expected version for SaveDefault (0 for an absent row)
-	route         filemaintenance.UnclassifiedRoutePolicyValue
-	routeVersion  int64
-	retention     filemaintenance.RetentionPolicy
-	retentionVer  int64
+	parserKind     parser.ParserKind
+	parserVersion  int64 // the version a draft freezes (1 for an absent row)
+	parserSaveCAS  int64 // the expected version for SaveDefault (0 for an absent row)
+	route          filemaintenance.UnclassifiedRoutePolicyValue
+	routeVersion   int64
+	retention      filemaintenance.ReplacementPolicy
+	replacementVer int64
 }
 
 func readGlobalAxes(t *testing.T, db *sql.DB) globalAxes {
@@ -83,17 +83,17 @@ func readGlobalAxes(t *testing.T, db *sql.DB) globalAxes {
 		t.Fatalf("Global file effect policy must exist: %v err=%v", route, err)
 	}
 	out.route, out.routeVersion = route.UnclassifiedRoute, route.Version
-	retention, err := filemaintenance.NewRetentionPolicyService(db).GetDefault(ctx)
+	retention, err := filemaintenance.NewReplacementPolicyService(db).GetDefault(ctx)
 	if err != nil || retention == nil {
 		t.Fatalf("Global retention policy must exist: %v err=%v", retention, err)
 	}
-	out.retention, out.retentionVer = retention.Policy, retention.Version
+	out.retention, out.replacementVer = retention.Policy, retention.Version
 	return out
 }
 
 // TestSubscribeAxesComeFromDraftBusinessNotLiveGlobal is the one-time-input
 // rule for the per-instance axes: a draft freezes Global's parser kind,
-// unclassified route and retention when it is created, and a later Global
+// unclassified route and replacement policy when it is created, and a later Global
 // change never reaches the instance that draft subscribes. Only a draft created
 // after the change carries the new values.
 func TestSubscribeAxesComeFromDraftBusinessNotLiveGlobal(t *testing.T) {
@@ -120,12 +120,12 @@ func TestSubscribeAxesComeFromDraftBusinessNotLiveGlobal(t *testing.T) {
 	if _, err := filemaintenance.NewFileEffectPolicyService(db).SaveDefault(ctx, before.routeVersion, nextRoute); err != nil {
 		t.Fatalf("change Global unclassified route: %v", err)
 	}
-	nextRetention := before.retention
-	nextRetention.AdmissionMode = filemaintenance.ModeSingleCopy
+	nextReplacement := before.retention
+	nextReplacement.AdmissionMode = filemaintenance.ModeSingleCopy
 	if before.retention.AdmissionMode == filemaintenance.ModeSingleCopy {
-		nextRetention.AdmissionMode = filemaintenance.ModeAll
+		nextReplacement.AdmissionMode = filemaintenance.ModeAll
 	}
-	if _, err := filemaintenance.NewRetentionPolicyService(db).SaveDefault(ctx, before.retentionVer, nextRetention, "owner", "web"); err != nil {
+	if _, err := filemaintenance.NewReplacementPolicyService(db).SaveDefault(ctx, before.replacementVer, nextReplacement, "owner", "web"); err != nil {
 		t.Fatalf("change Global retention: %v", err)
 	}
 	after := readGlobalAxes(t, db)
@@ -141,8 +141,8 @@ func TestSubscribeAxesComeFromDraftBusinessNotLiveGlobal(t *testing.T) {
 	if got.unclassifiedRoute != string(before.route) || got.fileEffectSource != before.routeVersion || got.fileEffectVersion != 1 {
 		t.Fatalf("instance unclassified route = %q@%d v%d, want the draft's %q@%d v1 (Global is now %q)", got.unclassifiedRoute, got.fileEffectSource, got.fileEffectVersion, before.route, before.routeVersion, nextRoute)
 	}
-	if got.admissionMode != string(before.retention.AdmissionMode) || got.retentionSource != before.retentionVer || got.retentionVersion != 1 {
-		t.Fatalf("instance retention = %q@%d v%d, want the draft's %q@%d v1 (Global is now %q)", got.admissionMode, got.retentionSource, got.retentionVersion, before.retention.AdmissionMode, before.retentionVer, nextRetention.AdmissionMode)
+	if got.admissionMode != string(before.retention.AdmissionMode) || got.replacementSource != before.replacementVer || got.replacementVersion != 1 {
+		t.Fatalf("instance retention = %q@%d v%d, want the draft's %q@%d v1 (Global is now %q)", got.admissionMode, got.replacementSource, got.replacementVersion, before.retention.AdmissionMode, before.replacementVer, nextReplacement.AdmissionMode)
 	}
 
 	// A draft created after the change copies the new Global values.
@@ -154,7 +154,7 @@ func TestSubscribeAxesComeFromDraftBusinessNotLiveGlobal(t *testing.T) {
 	next := readInstanceAxes(t, db, second.ManagedAnime.Id)
 	if next.parserKind != string(nextKind) || next.parserSource != after.parserVersion ||
 		next.unclassifiedRoute != string(nextRoute) || next.fileEffectSource != after.routeVersion ||
-		next.admissionMode != string(nextRetention.AdmissionMode) || next.retentionSource != after.retentionVer {
+		next.admissionMode != string(nextReplacement.AdmissionMode) || next.replacementSource != after.replacementVer {
 		t.Fatalf("a draft created after the Global change must carry the new values: %+v, Global %+v", next, after)
 	}
 	// The first instance is untouched by the second subscribe.
@@ -184,14 +184,14 @@ func TestSubscribeWithoutBusinessSnapshotFailsClosed(t *testing.T) {
 	}
 }
 
-// TestCandidateActivationWritesInstanceRetentionPolicy proves candidate
-// activation provisions retention from the revision's frozen business.
-func TestCandidateActivationWritesInstanceRetentionPolicy(t *testing.T) {
+// TestCandidateActivationWritesInstanceReplacementPolicy proves candidate
+// activation provisions the replacement policy from the revision's frozen business.
+func TestCandidateActivationWritesInstanceReplacementPolicy(t *testing.T) {
 	db := animetest.OpenTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
 	service := draftNewTestService(t, db)
-	retention := filemaintenance.NewRetentionPolicyService(db)
+	retention := filemaintenance.NewReplacementPolicyService(db)
 
 	candidate := saveCandidate(t, service, draftTestDraft(t))
 	result, err := service.SubscribeAnimeConfigCandidate(ctx, candidate.Id, candidate.Version, "retention-candidate-activate-1", generated.CandidateSubscribeInput{Start: new(true)})

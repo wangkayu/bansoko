@@ -28,12 +28,12 @@ func mapFileMaintenanceOverviewView(value filemaintenance.OverviewView) (generat
 		decisions := mapReplacementDecisionViews(*value.Decisions)
 		mapped.Decisions = &decisions
 	}
-	if value.Cleanups != nil {
-		cleanups := make([]generated.CleanupOperationView, len(*value.Cleanups))
-		for index, cleanup := range *value.Cleanups {
-			cleanups[index] = mapOverviewCleanupView(cleanup)
+	if value.Deletions != nil {
+		deletions := make([]generated.ReplacementDeletionView, len(*value.Deletions))
+		for index, cleanup := range *value.Deletions {
+			deletions[index] = mapOverviewCleanupView(cleanup)
 		}
-		mapped.Cleanups = &cleanups
+		mapped.Deletions = &deletions
 	}
 	if value.Alignments != nil {
 		alignments := make([]generated.AlignmentOperationView, len(*value.Alignments))
@@ -51,14 +51,14 @@ func mapFileMaintenanceOverviewView(value filemaintenance.OverviewView) (generat
 		mapped.CompanionIssues = &issues
 	}
 	if value.InstancePolicy != nil {
-		instance, err := filemainttransport.InstanceRetentionPolicyView(*value.InstancePolicy)
+		instance, err := filemainttransport.InstanceReplacementPolicyView(*value.InstancePolicy)
 		if err != nil {
 			return generated.FileMaintenanceOverviewView{}, err
 		}
 		mapped.InstancePolicy = &instance
 	}
 	if value.GlobalDefault != nil {
-		global, err := filemainttransport.RetentionPolicyDefaultView(*value.GlobalDefault)
+		global, err := filemainttransport.ReplacementPolicyDefaultView(*value.GlobalDefault)
 		if err != nil {
 			return generated.FileMaintenanceOverviewView{}, err
 		}
@@ -96,8 +96,8 @@ func mapOverviewConsumerView(value filemaintenance.ReconciliationConsumerStateVi
 	}
 }
 
-func mapOverviewCleanupView(value filemaintenance.CleanupOperationView) generated.CleanupOperationView {
-	return generated.CleanupOperationView{
+func mapOverviewCleanupView(value filemaintenance.ReplacementDeletionView) generated.ReplacementDeletionView {
+	return generated.ReplacementDeletionView{
 		CreatedAt:         value.CreatedAt,
 		FailureCode:       cloneStringPtr(value.FailureCode),
 		Id:                value.ID,
@@ -105,10 +105,10 @@ func mapOverviewCleanupView(value filemaintenance.CleanupOperationView) generate
 		PlacementId:       value.PlacementID,
 		Reason:            cloneStringPtr(value.Reason),
 		ReplacementRef:    value.ReplacementRef,
-		RetentionMode:     generated.CleanupOperationViewRetentionMode(value.RetentionMode),
+		AdmissionMode:     generated.ReplacementDeletionViewAdmissionMode(value.AdmissionMode),
 		SourceFingerprint: value.SourceFingerprint,
 		SourcePath:        value.SourcePath,
-		State:             generated.CleanupOperationViewState(value.State),
+		State:             generated.ReplacementDeletionViewState(value.State),
 		UpdatedAt:         cloneTimePointer(value.UpdatedAt),
 		Version:           value.Version,
 	}

@@ -351,8 +351,8 @@ func TestImportRetryNotApplicableWithoutImportFailure(t *testing.T) {
 // TestImportRetryReopensOneShotMarker mirrors the VM one-shot case: a failed
 // one_shot root (one failed execute file, its operation failed with
 // TARGET_PROOF_UNAVAILABLE, its WorkItems pruned) whose marker already drained
-// to retention_pending with a failed terminal outcome and a future retention
-// deadline. A second retention_pending marker that succeeded shares the
+// to reclaim_pending with a failed terminal outcome and a future retention
+// deadline. A second reclaim_pending marker that succeeded shares the
 // correlation id: the root resolves its marker only by request key
 // (one_shot_acquisitions.request_idempotency_key = acquisitions.request_key),
 // never by correlation. The retry re-opens exactly that marker to running
@@ -384,7 +384,7 @@ INSERT INTO one_shot_acquisitions(id, managed_anime_id, subscription_id, rss_sou
     correlation_id, request_idempotency_key, request_hash, result_snapshot, state,
     terminal_outcome, terminal_reason_code, terminal_reason, terminal_at, retention_until)
 VALUES ($1, $2, 'subscription-trace', 'source-import-oneshot', 'rel-ep-1', $3,
-    'corr-import', $4, 'sha256:'||repeat('0',64), '{}'::jsonb, 'retention_pending',
+    'corr-import', $4, 'sha256:'||repeat('0',64), '{}'::jsonb, 'reclaim_pending',
     $5, $6, $7, clock_timestamp(), clock_timestamp() + interval '7 days')`,
 			marker.id, marker.anime, taskID, marker.key, marker.outcome, marker.code, marker.reason); err != nil {
 			t.Fatalf("seed marker %s: %v", marker.id, err)
@@ -411,7 +411,7 @@ VALUES ($1, $2, 1, 'initial', '{}'::jsonb, 'sha256:'||repeat('1',64), $3, $4, $5
 	}
 	var refusal sql.NullString
 	if err := db.QueryRow(`SELECT acquisition_import_retry_refusal($1)`, importRetryRoot).Scan(&refusal); err != nil || refusal.Valid {
-		t.Fatalf("a failed one-shot import with a retention_pending marker must be retryable: %v %v", refusal, err)
+		t.Fatalf("a failed one-shot import with a reclaim_pending marker must be retryable: %v %v", refusal, err)
 	}
 	_, version := rootVersion(t, db)
 
@@ -451,7 +451,7 @@ VALUES ($1, $2, 1, 'initial', '{}'::jsonb, 'sha256:'||repeat('1',64), $3, $4, $5
 	if err := db.QueryRow(`SELECT state, current_attempt_id FROM one_shot_acquisitions WHERE id='marker-other'`).Scan(&otherState, &otherAttempt); err != nil {
 		t.Fatal(err)
 	}
-	if otherState != "retention_pending" || otherAttempt != "attempt-marker-other" {
+	if otherState != "reclaim_pending" || otherAttempt != "attempt-marker-other" {
 		t.Fatalf("the other marker changed: %s/%s", otherState, otherAttempt)
 	}
 	count, snapshot := liveFileWork(t, db)

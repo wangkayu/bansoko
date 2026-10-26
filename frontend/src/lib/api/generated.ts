@@ -1238,7 +1238,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/file-maintenance/retention/compare-vocabulary": {
+    "/file-maintenance/replacement/compare-vocabulary": {
         parameters: {
             query?: never;
             header?: never;
@@ -1246,7 +1246,7 @@ export interface paths {
             cookie?: never;
         };
         /** @description Candidate values for the ranked comparison items of the quality profile editor. Read-only. */
-        get: operations["getRetentionCompareVocabulary"];
+        get: operations["getReplacementCompareVocabulary"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1255,7 +1255,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/file-maintenance/retention/default": {
+    "/file-maintenance/replacement/default": {
         parameters: {
             query?: never;
             header?: never;
@@ -1263,9 +1263,9 @@ export interface paths {
             cookie?: never;
         };
         /** @description The singleton creation default for future instances (absent -> versioned code defaults with version 0). Existing instances never re-inherit it at runtime. */
-        get: operations["getRetentionPolicyDefault"];
+        get: operations["getReplacementPolicyDefault"];
         /** @description Replaces the singleton creation default with expected-version CAS. Affects future instances only; existing instance values, versions, digests, ReplacementDecisions, and WorkItems are untouched. */
-        put: operations["saveRetentionPolicyDefault"];
+        put: operations["saveReplacementPolicyDefault"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1345,7 +1345,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/file-maintenance/retention/anime/{managed_anime_id}": {
+    "/file-maintenance/replacement/anime/{managed_anime_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1353,9 +1353,9 @@ export interface paths {
             cookie?: never;
         };
         /** @description The complete frozen per-instance retention policy. The client never merges a global default. */
-        get: operations["getInstanceRetentionPolicy"];
+        get: operations["getInstanceReplacementPolicy"];
         /** @description Fully replaces one instance policy with expected-version CAS. The save transaction changes no Placement, creates no cleanup, and performs no filesystem effect. */
-        put: operations["saveInstanceRetentionPolicy"];
+        put: operations["saveInstanceReplacementPolicy"];
         post?: never;
         delete?: never;
         options?: never;
@@ -5146,7 +5146,7 @@ export interface components {
             /** Format: int64 */
             parser: number;
             /** Format: int64 */
-            retention: number;
+            replacement: number;
             /** Format: int64 */
             file_effect: number;
             /** Format: int64 */
@@ -5330,10 +5330,10 @@ export interface components {
             state: components["schemas"]["OneShotAcquisitionState"];
         };
         /**
-         * @description Internal one-shot marker state. running admits gated effects; retention_pending is terminal and drained awaiting bounded batch reclamation; cleanup_blocked retains owners with an actionable bounded reason; reclaiming is the fenced drain phase that admits no new effects; cleaned has no owner graph and keeps anchors plus replay evidence until marker purge.
+         * @description Internal one-shot marker state. running admits gated effects; reclaim_pending is terminal and drained awaiting bounded batch reclamation; cleanup_blocked retains owners with an actionable bounded reason; reclaiming is the fenced drain phase that admits no new effects; cleaned has no owner graph and keeps anchors plus replay evidence until marker purge.
          * @enum {string}
          */
-        OneShotAcquisitionState: "running" | "retention_pending" | "cleanup_blocked" | "reclaiming" | "cleaned";
+        OneShotAcquisitionState: "running" | "reclaim_pending" | "cleanup_blocked" | "reclaiming" | "cleaned";
         /** @enum {string} */
         OneShotTerminalOutcome: "succeeded" | "failed";
         /** @description Complete admission input retained by the one-shot marker for durable UI readback. A saved-revision admission freezes the exact saved candidate revision, selected seed, complete effective sections, provenance, parser evidence and target facts. A current_input admission freezes the captured unsaved draft (draft + draft_digest) with input_source=current_input and null candidate_id/revision; the resolved effective sections and the global parser-policy default read at admission time are the execution identity. Legacy marker rows may return null. */
@@ -7123,13 +7123,13 @@ export interface components {
             updated_at?: string;
         };
         /** @description One deletion obligation of a replacement loser. The loser's path-level identity (recorded size, plus the inode when recorded) is verified before the file is deleted; a mismatch is skipped with a typed reason and leaves the file in place. */
-        CleanupOperationView: {
+        ReplacementDeletionView: {
             id: string;
             placement_id: string;
             managed_anime_id: string;
             replacement_ref: string;
             /** @enum {string} */
-            retention_mode: "per_group" | "single_copy";
+            admission_mode: "per_group" | "single_copy";
             source_path: string;
             source_fingerprint: string;
             /** @enum {string} */
@@ -7149,14 +7149,14 @@ export interface components {
             consumers?: components["schemas"]["ReconciliationConsumerStateView"][];
             placements?: components["schemas"]["PlacementView"][];
             decisions?: components["schemas"]["ReplacementDecisionView"][];
-            cleanups?: components["schemas"]["CleanupOperationView"][];
+            deletions?: components["schemas"]["ReplacementDeletionView"][];
             alignments?: components["schemas"]["AlignmentOperationView"][];
             /** @description Managed videos whose latest scan found the file missing or holding different content. Each keeps its state until the file comes back or the user takes one of its two exits: redownload (POST /placements/{placement_id}/redownload) or release from management (POST /placements/{placement_id}/release). */
             placement_issues?: components["schemas"]["PlacementIssueView"][];
             /** @description Companion sidecars of the latest scan that are missing, differ in size, or are not at their expected path. */
             companion_issues?: components["schemas"]["CompanionIssueView"][];
-            instance_policy?: components["schemas"]["InstanceRetentionPolicyView"] | null;
-            global_default?: components["schemas"]["RetentionPolicyDefaultView"] | null;
+            instance_policy?: components["schemas"]["InstanceReplacementPolicyView"] | null;
+            global_default?: components["schemas"]["ReplacementPolicyDefaultView"] | null;
         };
         FileMaintenancePolicyView: {
             scope_key: string;
@@ -7178,7 +7178,7 @@ export interface components {
          * @description How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself.
          * @enum {string}
          */
-        RetentionAdmissionMode: "all" | "per_group" | "single_copy";
+        ReplacementAdmissionMode: "all" | "per_group" | "single_copy";
         /** @enum {string} */
         UnclassifiedRoutePolicyValue: "route" | "skip";
         FileEffectPolicyDefaultView: {
@@ -7217,9 +7217,9 @@ export interface components {
             section_versions: components["schemas"]["BusinessSectionVersions"];
             section_schemas: components["schemas"]["BusinessSectionSchemas"];
             parser: components["schemas"]["BusinessParserEnvelope"];
-            retention: components["schemas"]["BusinessRetention"];
+            replacement: components["schemas"]["BusinessReplacement"];
             /** Format: int64 */
-            retention_version: number;
+            replacement_version: number;
             unclassified_route: components["schemas"]["UnclassifiedRoutePolicyValue"];
             /** Format: int64 */
             file_effect_version: number;
@@ -7275,8 +7275,8 @@ export interface components {
             rules_owner_version: number;
             source_owner: string;
         };
-        BusinessRetention: {
-            admission_mode: components["schemas"]["RetentionAdmissionMode"];
+        BusinessReplacement: {
+            admission_mode: components["schemas"]["ReplacementAdmissionMode"];
             quality_profile: components["schemas"]["QualityProfile"];
         };
         /** @description The replacement comparison profile (profile-v1): ordered comparison items. Items compare in order and the first item that ranks two releases differently decides; all items equal, the larger size wins; still equal, the existing file stays. */
@@ -7293,22 +7293,22 @@ export interface components {
         /** @enum {string} */
         QualityCompareKey: "subgroup.score" | "release.lang" | "release.resolution" | "release.revision" | "anibt.resolution" | "anibt.language" | "anibt.subtitle" | "anibt.format" | "rt.resolution" | "rt.sub_lang" | "rt.source" | "rt.codec";
         /** @description Candidate values per ranked comparison item: release.* from the active attribute rules, anibt.* from values seen on releases (of the anime when one is named), rt.* from the pinned reltitle dictionary (empty when it is unavailable). Values are suggestions; any value can be ranked. */
-        RetentionCompareVocabulary: {
+        ReplacementCompareVocabulary: {
             items: components["schemas"]["RetentionCompareVocabularyItem"][];
         };
         RetentionCompareVocabularyItem: {
             key: components["schemas"]["QualityCompareKey"];
             values: string[];
         };
-        RetentionPolicyDefaultView: {
-            admission_mode: components["schemas"]["RetentionAdmissionMode"];
+        ReplacementPolicyDefaultView: {
+            admission_mode: components["schemas"]["ReplacementAdmissionMode"];
             quality_profile: components["schemas"]["QualityProfile"];
             version: number;
             /** Format: date-time */
             updated_at?: string | null;
         };
-        RetentionPolicyDefaultInput: {
-            admission_mode: components["schemas"]["RetentionAdmissionMode"];
+        ReplacementPolicyDefaultInput: {
+            admission_mode: components["schemas"]["ReplacementAdmissionMode"];
             quality_profile: components["schemas"]["QualityProfile"];
             /** @description CAS expected version (0 = create). */
             expected_version: number;
@@ -7339,17 +7339,17 @@ export interface components {
             /** @enum {string} */
             parser_kind: "regex" | "reltitle";
         };
-        InstanceRetentionPolicyView: {
+        InstanceReplacementPolicyView: {
             managed_anime_id: components["schemas"]["ID"];
-            admission_mode: components["schemas"]["RetentionAdmissionMode"];
+            admission_mode: components["schemas"]["ReplacementAdmissionMode"];
             quality_profile: components["schemas"]["QualityProfile"];
             source_default_version: number;
             version: number;
             /** Format: date-time */
             updated_at?: string | null;
         };
-        InstanceRetentionPolicyInput: {
-            admission_mode: components["schemas"]["RetentionAdmissionMode"];
+        InstanceReplacementPolicyInput: {
+            admission_mode: components["schemas"]["ReplacementAdmissionMode"];
             quality_profile: components["schemas"]["QualityProfile"];
             /** @description CAS expected version (0 = create). */
             expected_version: number;
@@ -10104,7 +10104,7 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
-    getRetentionCompareVocabulary: {
+    getReplacementCompareVocabulary: {
         parameters: {
             query?: {
                 managed_anime_id?: components["schemas"]["ID"];
@@ -10121,13 +10121,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RetentionCompareVocabulary"];
+                    "application/json": components["schemas"]["ReplacementCompareVocabulary"];
                 };
             };
             401: components["responses"]["Unauthorized"];
         };
     };
-    getRetentionPolicyDefault: {
+    getReplacementPolicyDefault: {
         parameters: {
             query?: never;
             header?: never;
@@ -10142,13 +10142,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RetentionPolicyDefaultView"];
+                    "application/json": components["schemas"]["ReplacementPolicyDefaultView"];
                 };
             };
             401: components["responses"]["Unauthorized"];
         };
     };
-    saveRetentionPolicyDefault: {
+    saveReplacementPolicyDefault: {
         parameters: {
             query?: never;
             header?: never;
@@ -10157,7 +10157,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["RetentionPolicyDefaultInput"];
+                "application/json": components["schemas"]["ReplacementPolicyDefaultInput"];
             };
         };
         responses: {
@@ -10167,7 +10167,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RetentionPolicyDefaultView"];
+                    "application/json": components["schemas"]["ReplacementPolicyDefaultView"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -10379,7 +10379,7 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
         };
     };
-    getInstanceRetentionPolicy: {
+    getInstanceReplacementPolicy: {
         parameters: {
             query?: never;
             header?: never;
@@ -10396,14 +10396,14 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["InstanceRetentionPolicyView"];
+                    "application/json": components["schemas"]["InstanceReplacementPolicyView"];
                 };
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };
     };
-    saveInstanceRetentionPolicy: {
+    saveInstanceReplacementPolicy: {
         parameters: {
             query?: never;
             header?: never;
@@ -10414,7 +10414,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["InstanceRetentionPolicyInput"];
+                "application/json": components["schemas"]["InstanceReplacementPolicyInput"];
             };
         };
         responses: {
@@ -10424,7 +10424,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["InstanceRetentionPolicyView"];
+                    "application/json": components["schemas"]["InstanceReplacementPolicyView"];
                 };
             };
             401: components["responses"]["Unauthorized"];

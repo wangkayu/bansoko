@@ -8,7 +8,7 @@ func TestKindHasExternalEffect(t *testing.T) {
 		KindFileExecute:            true,
 		KindPluginDeliver:          true,
 		KindAlignmentExecute:       true,
-		KindCleanupDelete:          true,
+		KindReplacementDelete:      true,
 		KindOffsetMigrationExecute: true,
 		KindFileManagerExecute:     true,
 	}

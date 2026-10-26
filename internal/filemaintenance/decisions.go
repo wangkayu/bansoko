@@ -48,7 +48,7 @@ type EvaluateRequest struct {
 
 // Typed business codes for evaluate failure conditions. A candidate Release
 // may be evaluated before its first Placement exists; Placement remains an
-// optional retention index and is not acquisition truth.
+// optional replacement index and is not acquisition truth.
 const (
 	codeSubscriptionStopped   = "SUBSCRIPTION_STOPPED"
 	codeCandidateFactsMissing = "CANDIDATE_FACTS_MISSING"
@@ -135,7 +135,7 @@ var errCandidateEvidenceMissing = errors.New("replacement admission requires the
 // before TargetSet probing so a winning candidate cannot be short-circuited by
 // a same-size incumbent. A key without an admitted replace decision
 // deliberately means ordinary ensure_present; filesystem state is never used
-// to invent the retention result. In all mode nothing is frozen and every key
+// to invent the replacement decision result. In all mode nothing is frozen and every key
 // is ensure_present.
 //
 // The Release evaluation builds the batch plan before target planning; its
@@ -155,7 +155,7 @@ func (s *ReplacementDecisionService) CandidateIntents(ctx context.Context, manag
 	policyErr := s.db.QueryRowContext(ctx, `
 SELECT admission_mode
 FROM anime_business_configs
-WHERE managed_anime_id = $1 AND retention_version IS NOT NULL`, managedAnimeID).Scan(&admissionMode)
+WHERE managed_anime_id = $1 AND replacement_version IS NOT NULL`, managedAnimeID).Scan(&admissionMode)
 	if policyErr == nil && AdmissionMode(admissionMode) == ModeAll {
 		return intents, nil
 	}
@@ -198,7 +198,7 @@ WHERE managed_anime_id = $1 AND retention_version IS NOT NULL`, managedAnimeID).
 	if missing {
 		// Materialize the candidate-facts projection from the same frozen
 		// selected evidence the target plan consumes, then freeze the
-		// retention decisions before target probing/qB admission. Persisting
+		// replacement decisions before target probing/qB admission. Persisting
 		// it here (a single adapter-owned transaction) means a first accepted
 		// evaluation never races the Release owner writer's later projection;
 		// the write is idempotent, so a candidate-facts row arriving later
@@ -372,11 +372,11 @@ SELECT state, version FROM subscriptions WHERE managed_anime_id = $1 FOR UPDATE`
 		profileRaw []byte
 	)
 	err = tx.QueryRowContext(ctx, `
-SELECT admission_mode, quality_profile, retention_version
-FROM anime_business_configs WHERE managed_anime_id = $1 AND retention_version IS NOT NULL FOR UPDATE`, input.AnimeID).
+SELECT admission_mode, quality_profile, replacement_version
+FROM anime_business_configs WHERE managed_anime_id = $1 AND replacement_version IS NOT NULL FOR UPDATE`, input.AnimeID).
 		Scan(&modeRaw, &profileRaw, &ev.policyVersion)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, &apperrors.NotFound{Resource: "instance_retention_policy", ID: input.AnimeID}
+		return nil, &apperrors.NotFound{Resource: "instance_replacement_policy", ID: input.AnimeID}
 	}
 	if err != nil {
 		return nil, err
@@ -388,7 +388,7 @@ FROM anime_business_configs WHERE managed_anime_id = $1 AND retention_version IS
 
 	// The release's own verified active placements, when any file is already
 	// placed. Pre-acquisition evaluation intentionally permits none: the
-	// candidate Release/facts are enough to freeze retention intent, while the
+	// candidate Release/facts are enough to freeze replacement intent, while the
 	// eventual FileOperation may admit the Placement after publication.
 	candidates, err := loadReleasePlacementsTx(ctx, tx, input.AnimeID, input.CandidateRelease)
 	if err != nil {
@@ -1352,7 +1352,7 @@ SELECT state, version FROM subscriptions WHERE managed_anime_id = $1 FOR UPDATE`
 	}
 	var policyVersion int64
 	err = q.QueryRowContext(ctx, `
-SELECT retention_version FROM anime_business_configs WHERE managed_anime_id = $1 AND retention_version IS NOT NULL FOR UPDATE`, decision.AnimeID).
+SELECT replacement_version FROM anime_business_configs WHERE managed_anime_id = $1 AND replacement_version IS NOT NULL FOR UPDATE`, decision.AnimeID).
 		Scan(&policyVersion)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):

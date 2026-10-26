@@ -56,12 +56,12 @@ func completeCleanupObservation(observation domain.FileObservation) bool {
 
 // cleanupInvocation is the exact receipt identity of one stage, derived only
 // from the owner and its persisted attempt.
-func cleanupInvocation(op *CleanupOperation, attempt cleanupAttemptEvidence, kind string) executorpkg.MaintenanceInvocation {
+func cleanupInvocation(op *ReplacementDeletion, attempt cleanupAttemptEvidence, kind string) executorpkg.MaintenanceInvocation {
 	var parsed any
 	_ = json.Unmarshal(op.Attempt, &parsed)
 	normalized, _ := json.Marshal(parsed)
 	invocation := executorpkg.MaintenanceInvocation{
-		OwnerType:    "cleanup_operation",
+		OwnerType:    "replacement_deletion",
 		OwnerID:      op.ID,
 		Kind:         kind,
 		WorkItemID:   attempt.WorkItemID,
@@ -96,7 +96,7 @@ const (
 // resolveCleanupAttempt reads the exact receipt of the attempt's stage once.
 // Absence of a file is never a receipt: a purge without its receipt stays
 // unknown.
-func resolveCleanupAttempt(ctx context.Context, observer executorpkg.CleanupFileExecutor, receipts executorpkg.MaintenanceCleanupExecutor, op *CleanupOperation, attempt cleanupAttemptEvidence) cleanupResolution {
+func resolveCleanupAttempt(ctx context.Context, observer executorpkg.CleanupFileExecutor, receipts executorpkg.MaintenanceCleanupExecutor, op *ReplacementDeletion, attempt cleanupAttemptEvidence) cleanupResolution {
 	if attempt.Stage == cleanupStagePurge {
 		invocation := cleanupInvocation(op, attempt, cleanupPurgeInvocation)
 		receipt, err := receipts.ReadMaintenanceReceipt(ctx, invocation)

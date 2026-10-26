@@ -23,10 +23,10 @@ func TestPGCleanupDeleteFinalReceiptCrashBeforeOwnerCommitRecovery(t *testing.T)
 	ctx := context.Background()
 	op := f.admit(t, f.input())
 	owner := disposabledb.Owner(t)
-	if _, err := owner.Exec(`CREATE FUNCTION test_maintenance_crash_owner() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.state<>OLD.state AND NEW.state = 'deleted' THEN RAISE EXCEPTION 'test crash after actual receipt'; END IF; RETURN NEW; END $$; CREATE TRIGGER test_maintenance_crash BEFORE UPDATE ON cleanup_operations FOR EACH ROW EXECUTE FUNCTION test_maintenance_crash_owner()`); err != nil {
+	if _, err := owner.Exec(`CREATE FUNCTION test_maintenance_crash_owner() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.state<>OLD.state AND NEW.state = 'deleted' THEN RAISE EXCEPTION 'test crash after actual receipt'; END IF; RETURN NEW; END $$; CREATE TRIGGER test_maintenance_crash BEFORE UPDATE ON replacement_deletions FOR EACH ROW EXECUTE FUNCTION test_maintenance_crash_owner()`); err != nil {
 		t.Fatal(err)
 	}
-	claim, err := f.store.ClaimDue(ctx, "actual-delete", []string{workitems.KindCleanupDelete}, time.Minute)
+	claim, err := f.store.ClaimDue(ctx, "actual-delete", []string{workitems.KindReplacementDelete}, time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestPGCleanupDeleteFinalReceiptCrashBeforeOwnerCommitRecovery(t *testing.T)
 	if err := f.store.FinishWithResult(ctx, claim, outcome.TerminalState, outcome.OwnerResult, outcome.WriteOwner); err == nil {
 		t.Fatal("fault did not stop owner commit")
 	}
-	if _, err := owner.Exec(`DROP TRIGGER test_maintenance_crash ON cleanup_operations; DROP FUNCTION test_maintenance_crash_owner()`); err != nil {
+	if _, err := owner.Exec(`DROP TRIGGER test_maintenance_crash ON replacement_deletions; DROP FUNCTION test_maintenance_crash_owner()`); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.db.QueryRow(`SELECT expected_owner_version FROM work_item_history WHERE id=$1`, claim.ID).Scan(&claim.ExpectedOwnerVersion); err != nil {
@@ -114,7 +114,7 @@ func TestPGCleanupDeleteReclaimedPreStartAttempt(t *testing.T) {
 			op := f.admit(t, f.input())
 			target := filepath.Join(filepath.Dir(f.source), ".bansoko-cleanup-"+op.ID, "object")
 			f.service.SetFileExecutor(panicBeforeMoveCleanupExecutor{f.executor.OSCleanupExecutor})
-			claim, err := f.store.ClaimDue(ctx, "crash-worker", []string{workitems.KindCleanupDelete}, time.Minute)
+			claim, err := f.store.ClaimDue(ctx, "crash-worker", []string{workitems.KindReplacementDelete}, time.Minute)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -127,7 +127,7 @@ func TestPGCleanupDeleteReclaimedPreStartAttempt(t *testing.T) {
 				_, _ = f.service.DeleteHandler().Handle(ctx, claim)
 			}()
 			var attempt []byte
-			if err := f.db.QueryRow(`SELECT attempt FROM cleanup_operations WHERE id=$1`, op.ID).Scan(&attempt); err != nil {
+			if err := f.db.QueryRow(`SELECT attempt FROM replacement_deletions WHERE id=$1`, op.ID).Scan(&attempt); err != nil {
 				t.Fatal(err)
 			}
 			if state, _ := f.state(t, op.ID); state != CleanupAdmitted || len(attempt) == 0 {
@@ -141,7 +141,7 @@ func TestPGCleanupDeleteReclaimedPreStartAttempt(t *testing.T) {
 			if _, err := workItemFixtureDB(t).Exec(`UPDATE work_items SET lease_until=CURRENT_TIMESTAMP-INTERVAL '1 second' WHERE id=$1`, claim.ID); err != nil {
 				t.Fatal(err)
 			}
-			reclaimed, err := f.store.ClaimDue(ctx, "reclaim-worker", []string{workitems.KindCleanupDelete}, time.Minute)
+			reclaimed, err := f.store.ClaimDue(ctx, "reclaim-worker", []string{workitems.KindReplacementDelete}, time.Minute)
 			if err != nil {
 				t.Fatal(err)
 			}

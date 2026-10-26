@@ -1226,7 +1226,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
 		outcome := string(OneShotTerminalOutcomeSucceeded)
 		reasonCode := oneShotCompletedReasonCode
 		reason := oneShotAdoptedReason
-		marker.State = string(OneShotAcquisitionStateRetentionPending)
+		marker.State = string(OneShotAcquisitionStateReclaimPending)
 		marker.TerminalOutcome = &outcome
 		marker.TerminalReasonCode = &reasonCode
 		marker.TerminalReason = &reason

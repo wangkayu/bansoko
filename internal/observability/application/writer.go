@@ -64,7 +64,7 @@ INSERT INTO subscription_log_entries(
 VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, ''), NULLIF($9, ''), NULLIF($10, ''), $11, $12, $13,
         $14, $15, $16, NULLIF($17, ''), NULLIF($18, ''), NULLIF($19, ''),
         COALESCE($20::timestamptz, CURRENT_TIMESTAMP),
-        -- Retention counts from the fact time (the table caps it there), so a
+        -- Replacement counts from the fact time (the table caps it there), so a
         -- late-derived entry is kept no longer than one written in-stage.
         COALESCE($20::timestamptz, CURRENT_TIMESTAMP) + INTERVAL '30 days')
 ON CONFLICT (subscription_id, dedupe_key) DO NOTHING`,

@@ -337,7 +337,7 @@ func validateSettlementMarkerState(row oneShotMarkerRow, claimedEpoch int64) err
 			return ErrOneShotReclaiming
 		}
 		return nil
-	case "retention_pending", "reclaiming", "cleaned":
+	case "reclaim_pending", "reclaiming", "cleaned":
 		return ErrOneShotReclaiming
 	default:
 		return fmt.Errorf("%w: unsupported one-shot marker state %q", ErrInvalidOneShotLedger, row.State)
@@ -372,7 +372,7 @@ func validatePersistedOneShotLease(claim Claim, lease AdmissionLease, entry oneS
 // lockOneShotSettlementTx locks and validates the marker before a one-shot
 // finish/retry may lock its WorkItem. Settlement is valid for running and for
 // terminal cleanup_blocked (which may retain outstanding leases); reclaiming,
-// cleaned, retention_pending, stale epochs, and invalid marker data fail closed.
+// cleaned, reclaim_pending, stale epochs, and invalid marker data fail closed.
 // A missing marker or an already-consumed admission is an idempotent no-op.
 func lockOneShotSettlementTx(ctx context.Context, tx *sql.Tx, claim Claim, lease AdmissionLease) (oneShotMarkerRow, bool, error) {
 	if err := validateClaimLeaseIdentity(claim, lease); err != nil {

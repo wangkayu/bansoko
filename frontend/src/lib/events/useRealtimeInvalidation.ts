@@ -19,7 +19,7 @@ import { createRealtimeEventStream, type RealtimeEvent, type RealtimeStreamHandl
 //                The 30s polling window stays as the disconnected fallback.
 //   records    → ["observability"]      (events + diagnostics)
 //   rss and records also re-read ["file-manager"]: file states derive from
-//   the owner rows those events report (imports, alignments, cleanups, version replacements).
+//   the owner rows those events report (imports, alignments, deletions, version replacements).
 //   rss and records also re-read ["acquisition-records"] (execution records) and
 //   ["observability", "records"] (events): the download, artifact and file
 //   operation work items that move an acquisition forward publish rss; the

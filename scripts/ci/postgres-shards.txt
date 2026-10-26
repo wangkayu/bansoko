@@ -37,7 +37,7 @@
 2	./internal/namingvars/editor
 2	./internal/observability/application
 2	./internal/release/facts
-2	./internal/retention/adapter/persistence
+2	./internal/recordretention/adapter/persistence
 2	./internal/runtime/identity
 2	./internal/runtime/migrations
 
@@ -59,7 +59,7 @@
 3	./internal/parserpolicy
 3	./internal/plugintarget/application
 3	./internal/reconciliation/application
-3	./internal/retention/application
+3	./internal/recordretention/application
 3	./internal/rss/application
 3	./internal/runtime/database
 3	./internal/runtime/worker

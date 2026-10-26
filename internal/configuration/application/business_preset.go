@@ -63,7 +63,7 @@ func readBusinessPresetTx(ctx context.Context, tx *sql.Tx) (animeconfig.Business
 	// live-only tag_filters and download_completion Global rows are not part of it.
 	// download_timeouts is Global-only and frozen into the acquisition limits;
 	// metadata_refresh only drives the background sweep.
-	rows, err := tx.QueryContext(ctx, `SELECT section_name, schema_version, value, version FROM global_config_sections WHERE section_name NOT IN ('tag_filters', 'download_completion', 'retention', 'parser_policy', 'file_effect_policy', 'download_timeouts', 'metadata_refresh')`)
+	rows, err := tx.QueryContext(ctx, `SELECT section_name, schema_version, value, version FROM global_config_sections WHERE section_name NOT IN ('tag_filters', 'download_completion', 'replacement', 'parser_policy', 'file_effect_policy', 'download_timeouts', 'metadata_refresh')`)
 	if err != nil {
 		return result, err
 	}
@@ -105,9 +105,9 @@ func readBusinessPresetTx(ctx context.Context, tx *sql.Tx) (animeconfig.Business
 	if err != nil {
 		return result, err
 	}
-	err = tx.QueryRowContext(ctx, `SELECT value->>'admission_mode', value->'quality_profile', version FROM global_config_sections WHERE section_name='retention'`).Scan(&result.Retention.AdmissionMode, &result.Retention.QualityProfile, &result.RetentionVersion)
+	err = tx.QueryRowContext(ctx, `SELECT value->>'admission_mode', value->'quality_profile', version FROM global_config_sections WHERE section_name='replacement'`).Scan(&result.Replacement.AdmissionMode, &result.Replacement.QualityProfile, &result.ReplacementVersion)
 	if err != nil {
-		return result, fmt.Errorf("read complete retention preset: %w", err)
+		return result, fmt.Errorf("read complete replacement preset: %w", err)
 	}
 	err = tx.QueryRowContext(ctx, `SELECT value->>'unclassified_route', version FROM global_config_sections WHERE section_name='file_effect_policy'`).Scan(&result.UnclassifiedRoute, &result.FileEffectVersion)
 	if errors.Is(err, sql.ErrNoRows) {

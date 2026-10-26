@@ -21,7 +21,7 @@ func TestOneOffAlignmentRunsWithAutomaticAlignmentOff(t *testing.T) {
 	const animeID = "anime-oneoff-1"
 	seedAnimeSubscription(t, fixture.db, animeID, "sub-oneoff-1", "stopped")
 	seedAnimeForRenderer(t, fixture.db, animeID, "Show", "tv")
-	seedInstanceRetention(t, fixture.db, animeID, ModeAll, ``, 1)
+	seedInstanceReplacement(t, fixture.db, animeID, ModeAll, ``, 1)
 	seedCompletedGenerationWithRenderChains(t, fixture.db, animeID, 1, map[string]string{
 		"/library/EP 01.mkv": "fp-1",
 	}, rendererRules())
@@ -162,7 +162,7 @@ func TestFilesReadAfterAlignmentNeedsRescan(t *testing.T) {
 	)
 	seedAnimeSubscription(t, fixture.db, animeID, "sub-moved-read", "stopped")
 	seedAnimeForRenderer(t, fixture.db, animeID, "Show", "tv")
-	seedInstanceRetention(t, fixture.db, animeID, ModeAll, ``, 1)
+	seedInstanceReplacement(t, fixture.db, animeID, ModeAll, ``, 1)
 	seedCompletedGenerationWithRenderChains(t, fixture.db, animeID, 1, map[string]string{
 		observed: "fp-1",
 	}, rendererRules())

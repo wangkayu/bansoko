@@ -17,7 +17,7 @@ import (
 
 // TestGetFileMaintenanceOverviewAssemblesOwnerTruth proves the overview
 // endpoint aggregates the scan owner, consumer outcomes, placements,
-// decisions, cleanups, alignments and the complete retention policy from the
+// decisions, deletions, alignments and the complete replacement policy from the
 // typed owner services — never scanning or mutating anything.
 func TestGetFileMaintenanceOverviewAssemblesOwnerTruth(t *testing.T) {
 	db := disposabledb.ResetDisposableSchema(t)
@@ -32,9 +32,9 @@ VALUES ('sub-ov', 'anime-ov', 'custom', 'Show', 'stopped')`); err != nil {
 	}
 	if _, err := db.Exec(`
 INSERT INTO anime_business_configs
-(managed_anime_id, admission_mode, quality_profile, retention_source_default_version, retention_version, updated_at)
+(managed_anime_id, admission_mode, quality_profile, replacement_source_default_version, replacement_version, updated_at)
 VALUES ('anime-ov', 'all', '{"version":"profile-v1","items":[]}', 1, 1, CURRENT_TIMESTAMP)
-ON CONFLICT (managed_anime_id) DO UPDATE SET admission_mode=EXCLUDED.admission_mode, quality_profile=EXCLUDED.quality_profile, retention_source_default_version=EXCLUDED.retention_source_default_version, retention_version=EXCLUDED.retention_version, updated_at=EXCLUDED.updated_at`); err != nil {
+ON CONFLICT (managed_anime_id) DO UPDATE SET admission_mode=EXCLUDED.admission_mode, quality_profile=EXCLUDED.quality_profile, replacement_source_default_version=EXCLUDED.replacement_source_default_version, replacement_version=EXCLUDED.replacement_version, updated_at=EXCLUDED.updated_at`); err != nil {
 		t.Fatal(err)
 	}
 	// A completed scan generation + its consumer outcomes + one placement +
@@ -67,9 +67,9 @@ VALUES ('dec-ov', 'repl:ov:x', 'anime-ov', 'rel-x', 1, 'profile-v1', 'rel-x:1', 
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`
-INSERT INTO cleanup_operations
+INSERT INTO replacement_deletions
 (id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
- retention_mode, source_path, source_fingerprint, state, version, created_at, updated_at)
+ admission_mode, source_path, source_fingerprint, state, version, created_at, updated_at)
 VALUES ('cln-ov', 'cln:plc-ov:dec-ov', 'plc-ov', 'anime-ov', '["tv:s1:e1"]', 'dec-ov',
  'single_copy', '/library/Show/EP01.mkv', 'fp', 'admitted', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
 		t.Fatal(err)
@@ -85,7 +85,7 @@ VALUES ('alg-ov', 'align:ov:x', 'anime-ov', 2, 'anime-ov:2:/library/Show/EP01.mk
 	}
 
 	// Build the file maintenance service with the typed scan reader port.
-	retention := filemaintenance.NewRetentionPolicyService(db)
+	retention := filemaintenance.NewReplacementPolicyService(db)
 	placements := filemaintenance.NewPlacementService(db, nil, nil)
 	decisions := filemaintenance.NewReplacementDecisionService(db)
 	cleanup := filemaintenance.NewCleanupService(db)
@@ -130,8 +130,8 @@ VALUES ('alg-ov', 'align:ov:x', 'anime-ov', 2, 'anime-ov:2:/library/Show/EP01.mk
 	if view.Decisions != nil && ((*view.Decisions)[0].StaleReason == nil || *(*view.Decisions)[0].StaleReason != "subscription_stopped") {
 		t.Fatalf("decision stale truth: %+v", view.Decisions)
 	}
-	if view.Cleanups == nil || len(*view.Cleanups) != 1 {
-		t.Fatalf("cleanups: %+v", view.Cleanups)
+	if view.Deletions == nil || len(*view.Deletions) != 1 {
+		t.Fatalf("deletions: %+v", view.Deletions)
 	}
 	if view.Alignments == nil || len(*view.Alignments) != 1 {
 		t.Fatalf("alignments: %+v", view.Alignments)
@@ -151,7 +151,7 @@ func TestGetFileMaintenanceOverviewRejectsUnknownAnime(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO managed_anime(id, title) VALUES ('anime-real', 'Show')`); err != nil {
 		t.Fatal(err)
 	}
-	retention := filemaintenance.NewRetentionPolicyService(db)
+	retention := filemaintenance.NewReplacementPolicyService(db)
 	service := filemaintenance.NewService(filemaintenance.NewPolicyService(db), retention, nil, nil, nil)
 	service.SetAnimeExistence(filemaintenance.NewSQLAnimeExistenceReader(db))
 	access := accessapplication.NewServiceWithSessionSecret(db, []byte("test-session-secret-0123456789abcdef"))
@@ -192,7 +192,7 @@ func TestGetFileMaintenanceOverviewWithoutInstancePolicySucceeds(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO managed_anime(id, title) VALUES ('anime-nop', 'Show')`); err != nil {
 		t.Fatal(err)
 	}
-	retention := filemaintenance.NewRetentionPolicyService(db)
+	retention := filemaintenance.NewReplacementPolicyService(db)
 	placements := filemaintenance.NewPlacementService(db, nil, nil)
 	calibration := filemaintenance.NewCalibrationService(db, placements, filemaintenance.NewPolicyService(db), nil, nil)
 	service := filemaintenance.NewService(filemaintenance.NewPolicyService(db), retention, nil, placements, nil)

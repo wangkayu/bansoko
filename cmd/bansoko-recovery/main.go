@@ -290,16 +290,16 @@ func wireRegistry(db *sql.DB) (*deployment.Registry, error) {
 		Handler: alignmentOperations,
 		Enabled: func() bool { return true },
 	}
-	cleanupOperations := filemaintenance.NewCleanupService(db)
+	replacementDeletions := filemaintenance.NewCleanupService(db)
 	// User file operations have no root layer: the cleanup anchor is the
 	// deployment's own boundary, injected here as the constant it is.
-	cleanupOperations.SetFileExecutor(filesystem.NewOSCleanupExecutor(filemaintenance.CleanupAnchor))
-	cleanupOperations.SetWorkItems(workStore)
+	replacementDeletions.SetFileExecutor(filesystem.NewOSCleanupExecutor(filemaintenance.CleanupAnchor))
+	replacementDeletions.SetWorkItems(workStore)
 	cleanupRegistration := deployment.Registration{
-		Key:     "cleanup_operation",
-		Effect:  deployment.EffectIdentity{Owner: "cleanup_operation", Effect: "filesystem_unknown_effect"},
+		Key:     "replacement_deletion",
+		Effect:  deployment.EffectIdentity{Owner: "replacement_deletion", Effect: "filesystem_unknown_effect"},
 		Version: 1,
-		Handler: cleanupOperations,
+		Handler: replacementDeletions,
 		Enabled: func() bool { return true },
 	}
 	// Offset migration operations own a typed reconcile for the uncertain

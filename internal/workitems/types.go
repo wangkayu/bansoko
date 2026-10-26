@@ -75,16 +75,16 @@ const (
 // Owner types and kinds are code-owned allowlists matching the baseline
 // check constraints; arbitrary request strings cannot create work.
 const (
-	OwnerRSSSourceRuntime = "rss_source_runtime"
-	OwnerRelease          = "release"
-	OwnerDownloadTask     = "download_task"
-	OwnerArtifact         = "artifact"
-	OwnerFileOperation    = "file_operation"
-	OwnerPluginDelivery   = "plugin_delivery"
-	OwnerFileMaintenance  = "file_maintenance"
-	OwnerAlignment        = "alignment_operation"
-	OwnerCleanup          = "cleanup_operation"
-	OwnerOffsetMigration  = "offset_migration_operation"
+	OwnerRSSSourceRuntime    = "rss_source_runtime"
+	OwnerRelease             = "release"
+	OwnerDownloadTask        = "download_task"
+	OwnerArtifact            = "artifact"
+	OwnerFileOperation       = "file_operation"
+	OwnerPluginDelivery      = "plugin_delivery"
+	OwnerFileMaintenance     = "file_maintenance"
+	OwnerAlignment           = "alignment_operation"
+	OwnerReplacementDeletion = "replacement_deletion"
+	OwnerOffsetMigration     = "offset_migration_operation"
 	// OwnerPostProcessingPlan is the dedicated post-processing planning stage
 	// where one frozen plan per verified artifact executes naming/target
 	// planning in its own transaction so the artifact success never rolls back
@@ -120,10 +120,10 @@ const (
 	// instance acquisition settles, the best release each freed pool skipped as
 	// covered_in_flight is evaluated again. It reads and enqueues only.
 	KindReplacementFallback = "replacement_fallback"
-	// KindCleanupDelete deletes one managed replacement loser: path-level
+	// KindReplacementDelete deletes one managed replacement loser: path-level
 	// identity check, capture into a private namespace and purge, all inside
 	// one claim. There is no quarantine or grace period.
-	KindCleanupDelete = "cleanup_delete"
+	KindReplacementDelete = "replacement_delete"
 	// KindReconciliationCalibrate is the completed-generation calibration
 	// owner: it persists typed calibration facts, reconciles verified active
 	// Placements, and fans the generation out to the two typed consumers.
@@ -159,7 +159,7 @@ const (
 func KindHasExternalEffect(kind string) bool {
 	switch kind {
 	case KindQBSubmit, KindFileExecute, KindPluginDeliver, KindAlignmentExecute,
-		KindCleanupDelete, KindOffsetMigrationExecute, KindFileManagerExecute:
+		KindReplacementDelete, KindOffsetMigrationExecute, KindFileManagerExecute:
 		return true
 	default:
 		return false
@@ -183,15 +183,15 @@ const (
 var ownerKinds = map[string]struct {
 	kinds []string
 }{
-	OwnerRSSSourceRuntime: {kinds: []string{KindRSSRefresh}},
-	OwnerRelease:          {kinds: []string{KindReleaseEvaluate}},
-	OwnerDownloadTask:     {kinds: []string{KindQBSubmit, KindQBSync}},
-	OwnerArtifact:         {kinds: []string{KindArtifactInspect}},
-	OwnerFileOperation:    {kinds: []string{KindFileExecute}},
-	OwnerPluginDelivery:   {kinds: []string{KindPluginDeliver}},
-	OwnerFileMaintenance:  {kinds: []string{KindReconciliationScan, KindReplacementEvaluate, KindReplacementFallback, KindReconciliationCalibrate, KindReconciliationConsumeAlignment, KindReconciliationConsumeReplacement}},
-	OwnerAlignment:        {kinds: []string{KindAlignmentExecute}},
-	OwnerCleanup:          {kinds: []string{KindCleanupDelete}},
+	OwnerRSSSourceRuntime:    {kinds: []string{KindRSSRefresh}},
+	OwnerRelease:             {kinds: []string{KindReleaseEvaluate}},
+	OwnerDownloadTask:        {kinds: []string{KindQBSubmit, KindQBSync}},
+	OwnerArtifact:            {kinds: []string{KindArtifactInspect}},
+	OwnerFileOperation:       {kinds: []string{KindFileExecute}},
+	OwnerPluginDelivery:      {kinds: []string{KindPluginDeliver}},
+	OwnerFileMaintenance:     {kinds: []string{KindReconciliationScan, KindReplacementEvaluate, KindReplacementFallback, KindReconciliationCalibrate, KindReconciliationConsumeAlignment, KindReconciliationConsumeReplacement}},
+	OwnerAlignment:           {kinds: []string{KindAlignmentExecute}},
+	OwnerReplacementDeletion: {kinds: []string{KindReplacementDelete}},
 	// Offset migration operations are durable typed owners. The execute handler
 	// and recovery lane are intentionally registered by a later slice.
 	OwnerOffsetMigration: {kinds: []string{KindOffsetMigrationExecute}},

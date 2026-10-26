@@ -1,7 +1,7 @@
 import type { QualityCompareKey, QualityProfile } from "../../lib/api/client";
 
 // Pure model of the replacement comparison profile (profile-v1), shared by the
-// global retention default and the per-anime business snapshot. Mirrors the
+// global replacement default and the per-anime business snapshot. Mirrors the
 // backend owner (internal/qualityprofile): an ordered list of namespaced
 // items; ranked items list value sets best first. Edits that the backend would
 // reject are refused here with a problem code, never silently rewritten.

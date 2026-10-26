@@ -28,7 +28,7 @@ func TestPGReplacementRecoveryLoserHandoffRollsBackAndCommitsAtomically(t *testi
 	}
 	winner, loser := ref(winnerID), ref(loserID)
 	var pv int64
-	if err := db.QueryRow(`SELECT retention_version FROM anime_business_configs WHERE managed_anime_id='anime-1'`).Scan(&pv); err != nil {
+	if err := db.QueryRow(`SELECT replacement_version FROM anime_business_configs WHERE managed_anime_id='anime-1'`).Scan(&pv); err != nil {
 		t.Fatal(err)
 	}
 	seedFrozenDecision(t, db, "loser-adopt", "anime-1", winnerID, 1, pv, ModeSingleCopy, &winner, []PlacementRef{loser}, "admitted")
@@ -53,7 +53,7 @@ func TestPGReplacementRecoveryLoserHandoffRollsBackAndCommitsAtomically(t *testi
 		t.Fatal(err)
 	}
 	var count int
-	if err := db.QueryRow(`SELECT count(*) FROM cleanup_operations WHERE replacement_ref='loser-adopt'`).Scan(&count); err != nil {
+	if err := db.QueryRow(`SELECT count(*) FROM replacement_deletions WHERE replacement_ref='loser-adopt'`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	if count != 0 {
@@ -70,7 +70,7 @@ func TestPGReplacementRecoveryLoserHandoffRollsBackAndCommitsAtomically(t *testi
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.QueryRow(`SELECT count(*) FROM cleanup_operations c JOIN work_item_history w ON w.owner_id=c.id AND w.kind='cleanup_delete' WHERE c.replacement_ref='loser-adopt'`).Scan(&count); err != nil {
+	if err := db.QueryRow(`SELECT count(*) FROM replacement_deletions c JOIN work_item_history w ON w.owner_id=c.id AND w.kind='replacement_delete' WHERE c.replacement_ref='loser-adopt'`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	if count != 1 {

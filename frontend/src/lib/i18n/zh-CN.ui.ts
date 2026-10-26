@@ -70,7 +70,7 @@ export const statusCopy = {
     rss_refresh: "RSS 刷新",
     metadata_match: "元数据自动匹配",
     automation_dispatch: "自动派发",
-    retention_pass: "清理保留数据",
+    retention_pass: "记录保留清理",
     file_manager_operation: "文件管理",
   },
   logKind: {

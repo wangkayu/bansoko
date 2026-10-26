@@ -151,7 +151,7 @@ export const enLogCopy = {
     plugin_delivery: "Notification delivery",
     provider: "Site",
     replacement: "Replacement",
-    retention: "Data cleanup",
+    retention: "Record retention",
     rss: "RSS",
   },
   operation: {

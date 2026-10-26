@@ -11,9 +11,9 @@ import { t } from "../../lib/i18n";
 
 /**
  * Existing-instance command path: save and apply are deliberately separate.
- * hideRetention 原样传给 BusinessSnapshotFields（当前版本隐藏按订阅的保留与清理，见那里的说明）。
+ * hideReplacement 原样传给 BusinessSnapshotFields（当前版本隐藏按订阅的保留与清理，见那里的说明）。
  */
-export function BusinessRevisionEditor({ animeID, onApplied, onDirtyChange, hideRetention = false }: { animeID: string; onApplied: () => void; onDirtyChange?: (dirty: boolean) => void; hideRetention?: boolean }) {
+export function BusinessRevisionEditor({ animeID, onApplied, onDirtyChange, hideReplacement = false }: { animeID: string; onApplied: () => void; onDirtyChange?: (dirty: boolean) => void; hideReplacement?: boolean }) {
   const [baseline, setBaseline] = useState<BusinessEditView>();
   const [edit, setEdit] = useState<BusinessEditView>();
   const [candidate, setCandidate] = useState<AnimeConfigCandidate>();
@@ -40,7 +40,7 @@ export function BusinessRevisionEditor({ animeID, onApplied, onDirtyChange, hide
         setEdit((current) => current ? { ...current, draft: loadBusinessPreset(current.draft, preset) } : current);
       })}>{t("config.useDefaults")}</Button>
       {(dirty || candidate) && <p>{dirty ? t("config.revision.dirty") : t("config.revision.saved")}</p>}
-      {edit.draft.business && <BusinessSnapshotFields value={edit.draft.business} managedAnimeID={animeID} hideRetention={hideRetention} onChange={(business) => setEdit({ ...edit, draft: { ...edit.draft, business } })} />}
+      {edit.draft.business && <BusinessSnapshotFields value={edit.draft.business} managedAnimeID={animeID} hideReplacement={hideReplacement} onChange={(business) => setEdit({ ...edit, draft: { ...edit.draft, business } })} />}
       <RulesSectionsFields sections={edit.draft.rules.sections} onChange={(sections) => setEdit({ ...edit, draft: { ...edit.draft, rules: { sections } } })} />
       <Button disabled={busy || !dirty} onClick={() => void run(async () => {
         const draft = await freezeBusinessDraft(edit.draft);

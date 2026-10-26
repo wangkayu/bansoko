@@ -143,9 +143,9 @@ required_paths = {
   "/file-maintenance/parser-policy/anime/{managed_anime_id}" => ["get", "put"],
   "/file-maintenance/policy" => ["get", "put"],
   "/file-maintenance/policy/anime/{managed_anime_id}" => ["get", "put"],
-  "/file-maintenance/retention/default" => ["get", "put"],
-  "/file-maintenance/retention/compare-vocabulary" => ["get"],
-  "/file-maintenance/retention/anime/{managed_anime_id}" => ["get", "put"],
+  "/file-maintenance/replacement/default" => ["get", "put"],
+  "/file-maintenance/replacement/compare-vocabulary" => ["get"],
+  "/file-maintenance/replacement/anime/{managed_anime_id}" => ["get", "put"],
   "/file-maintenance/overview/{managed_anime_id}" => ["get"],
   "/file-maintenance/replan" => ["post"],
   "/releases/{release_id}/candidate-facts" => ["get"],
@@ -346,11 +346,11 @@ required_schemas = %w[
   FileMaintenanceReplanResult FileMaintenancePlanCandidate
   PlacementView PlacementCoverageView
   ReplacementDecisionView ReplacementEvaluateInput
-  ReconciliationConsumerStateView AlignmentOperationView CleanupOperationView
+  ReconciliationConsumerStateView AlignmentOperationView ReplacementDeletionView
   FileMaintenanceOverviewView
-  RetentionAdmissionMode
-  RetentionPolicyDefaultView RetentionPolicyDefaultInput
-  InstanceRetentionPolicyView InstanceRetentionPolicyInput
+  ReplacementAdmissionMode
+  ReplacementPolicyDefaultView ReplacementPolicyDefaultInput
+  InstanceReplacementPolicyView InstanceReplacementPolicyInput
   AcquireSeedOnceInput SelectedSeed SelectedSeedInput OneShotInputSnapshot OneShotAdmissionResult OneShotAcquisitionView
   SnapshotSeedProvider LibraryOverlap
 ]
@@ -380,12 +380,12 @@ end
   "PluginAdapterKind" => %w[telegram feishu webhook],
   "PluginDeliveryKind" => %w[business test],
   "PluginDeliveryState" => %w[pending delivering waiting_retry delivered failed unknown],
-  "OneShotAcquisitionState" => %w[running retention_pending cleanup_blocked reclaiming cleaned],
+  "OneShotAcquisitionState" => %w[running reclaim_pending cleanup_blocked reclaiming cleaned],
   "OneShotTerminalOutcome" => %w[succeeded failed],
   "BroadcastDay" => %w[mon tue wed thu fri sat sun tbd none]
 }.each { |name, expected| assert_enum.call(name, expected) }
 assert_enum.call("DiscoverSubgroupsOutcome", %w[discovered no_groups provider_error config_error])
-assert_enum.call("RetentionAdmissionMode", %w[all per_group single_copy])
+assert_enum.call("ReplacementAdmissionMode", %w[all per_group single_copy])
 # File manager: the ownership vocabulary is three states (MF1b removed
 # `unclassified`: an unknown file is released at import). A released placement
 # no longer owns its path, so the file reads as detached; `released` is a
@@ -407,16 +407,16 @@ assert_enum.call("FileManagerOperationFailure", %w[target_occupied source_change
   params = Array(operation["parameters"]).map { |param| param["$ref"] ? param["$ref"].split("/").last : param["name"] }
   abort "#{operation_id} must require an idempotency key" unless params.any? { |name| name.to_s.downcase.include?("idempotency") }
 end
-abort "RetentionAdmissionMode enum drifted" unless enum_values.call(schemas.fetch("RetentionAdmissionMode")) == %w[all per_group single_copy]
-%w[RetentionPolicyDefaultView InstanceRetentionPolicyView].each do |name|
+abort "ReplacementAdmissionMode enum drifted" unless enum_values.call(schemas.fetch("ReplacementAdmissionMode")) == %w[all per_group single_copy]
+%w[ReplacementPolicyDefaultView InstanceReplacementPolicyView].each do |name|
   schema = schemas.fetch(name)
   abort "#{name} must reject additional properties" unless schema["additionalProperties"] == false
   abort "#{name} must expose the two complete business fields" unless %w[admission_mode quality_profile].all? { |field| required_fields.call(schema).include?(field) }
   abort "#{name} must not carry the retired cutoff" if schema.fetch("properties").key?("cutoff")
   abort "#{name} must not carry the retired cleanup policy" if schema.fetch("properties").key?("cleanup_policy")
 end
-abort "instance retention view must not ask the client to merge a default" if (schemas.fetch("InstanceRetentionPolicyView").fetch("properties").keys & %w[default inherit global override]).any?
-%w[RetentionPolicyDefaultInput InstanceRetentionPolicyInput].each do |name|
+abort "instance replacement view must not ask the client to merge a default" if (schemas.fetch("InstanceReplacementPolicyView").fetch("properties").keys & %w[default inherit global override]).any?
+%w[ReplacementPolicyDefaultInput InstanceReplacementPolicyInput].each do |name|
   abort "#{name} must use expected-version CAS" unless required_fields.call(schemas.fetch(name)).include?("expected_version")
   abort "#{name} must require the two complete business fields" unless %w[admission_mode quality_profile].all? { |field| required_fields.call(schemas.fetch(name)).include?(field) }
   abort "#{name} must not carry the retired cutoff" if schemas.fetch(name).fetch("properties").key?("cutoff")

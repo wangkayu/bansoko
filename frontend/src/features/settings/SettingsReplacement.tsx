@@ -6,9 +6,9 @@ import { toast } from "../../ui/toast";
 import {
   ApiError,
   getFileEffectPolicyDefault,
-  getRetentionPolicyDefault,
+  getReplacementPolicyDefault,
   saveFileEffectPolicyDefault,
-  saveRetentionPolicyDefault,
+  saveReplacementPolicyDefault,
   toUserMessage,
   type FileEffectPolicyDefaultView,
 } from "../../lib/api/client";
@@ -20,12 +20,12 @@ import {
   draftFromView,
   draftsEqual,
   inputFromDraft,
-  type RetentionDraft,
-} from "./retentionDraft";
+  type ReplacementDraft,
+} from "./replacementDraft";
 import { t } from "../../lib/i18n";
-import { QualityCompareEditor } from "../retention/QualityCompareEditor";
+import { QualityCompareEditor } from "../replacement/QualityCompareEditor";
 
-// Retention and cleanup: the global default a new subscription copies at creation. Existing
+// Replacement and cleanup: the global default a new subscription copies at creation. Existing
 //   subscriptions hold their own frozen copy, so changes here affect only subscriptions created
 //   later (the backend contract: existing instances never re-inherit).
 
@@ -33,28 +33,28 @@ function conflictVersion(cause: unknown): number | undefined {
   return cause instanceof ApiError && cause.status === 409 ? (cause.currentVersion ?? 0) : undefined;
 }
 
-export function SettingsRetention({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) {
-  const flags = useRef({ retention: false, unclassified: false });
+export function SettingsReplacement({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) {
+  const flags = useRef({ replacement: false, unclassified: false });
   const report = useCallback(
-    (key: "retention" | "unclassified", dirty: boolean) => {
+    (key: "replacement" | "unclassified", dirty: boolean) => {
       flags.current[key] = dirty;
-      onDirtyChange?.(flags.current.retention || flags.current.unclassified);
+      onDirtyChange?.(flags.current.replacement || flags.current.unclassified);
     },
     [onDirtyChange],
   );
-  const reportRetention = useCallback((dirty: boolean) => report("retention", dirty), [report]);
+  const reportReplacement = useCallback((dirty: boolean) => report("replacement", dirty), [report]);
   const reportUnclassified = useCallback((dirty: boolean) => report("unclassified", dirty), [report]);
   return (
     <div className="settings-policy">
-      <RetentionSection onDirtyChange={reportRetention} />
+      <RetentionSection onDirtyChange={reportReplacement} />
       <UnclassifiedSection onDirtyChange={reportUnclassified} />
     </div>
   );
 }
 
-// "Files with unrecognized episodes" is its own section: while retention/cleanup is hidden this
+// "Files with unrecognized episodes" is its own section: while the replacement policy is hidden this
 //   is the only card. It relates to the naming templates' "unknown content" section without
-//   depending on the retention/cleanup policy.
+//   depending on the replacement policy.
 const noop = () => {};
 export function SettingsUnclassified({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) {
   return <UnclassifiedSection onDirtyChange={onDirtyChange ?? noop} />;
@@ -62,9 +62,9 @@ export function SettingsUnclassified({ onDirtyChange }: { onDirtyChange?: (dirty
 
 function RetentionSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
   const queryClient = useQueryClient();
-  const query = useQuery({ queryKey: fileMaintenanceKeys.retentionDefault, queryFn: getRetentionPolicyDefault });
+  const query = useQuery({ queryKey: fileMaintenanceKeys.replacementDefault, queryFn: getReplacementPolicyDefault });
   const data = query.data;
-  const [draft, setDraft] = useState<RetentionDraft>();
+  const [draft, setDraft] = useState<ReplacementDraft>();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
   const [conflict, setConflict] = useState<number>();
@@ -85,14 +85,14 @@ function RetentionSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =
     setError(undefined);
     setConflict(undefined);
     try {
-      const saved = await saveRetentionPolicyDefault(inputFromDraft(data, draft));
-      queryClient.setQueryData(fileMaintenanceKeys.retentionDefault, saved);
+      const saved = await saveReplacementPolicyDefault(inputFromDraft(data, draft));
+      queryClient.setQueryData(fileMaintenanceKeys.replacementDefault, saved);
       setDraft(draftFromView(saved));
-      toast.success(t("settings.retention.saved"));
+      toast.success(t("settings.replacement.saved"));
     } catch (cause) {
       const version = conflictVersion(cause);
       if (version !== undefined) setConflict(version);
-      setError(toUserMessage(cause, t("settings.retention.saveFailed")));
+      setError(toUserMessage(cause, t("settings.replacement.saveFailed")));
     } finally {
       setSaving(false);
     }
@@ -105,19 +105,19 @@ function RetentionSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =
     if (fresh.data) setDraft(draftFromView(fresh.data));
   }
 
-  const update = (change: (current: RetentionDraft) => RetentionDraft) =>
+  const update = (change: (current: ReplacementDraft) => ReplacementDraft) =>
     setDraft((current) => (current ? change(current) : current));
 
   return (
-    <section className="settings-policy-section" aria-label={t("settings.retention.title")}>
+    <section className="settings-policy-section" aria-label={t("settings.replacement.title")}>
       <div className="settings-policy-header">
         <div>
-          <h2 className="settings-policy-title text-title">{t("settings.retention.title")}</h2>
-          <p className="settings-policy-description text-caption">{t("settings.retention.description")}</p>
+          <h2 className="settings-policy-title text-title">{t("settings.replacement.title")}</h2>
+          <p className="settings-policy-description text-caption">{t("settings.replacement.description")}</p>
         </div>
-        <Button variant="primary" size="sm" aria-label={saving ? t("settings.retention.saving") : t("settings.retention.saveAria")} disabled={!dirty || saving} onClick={() => void save()}>
+        <Button variant="primary" size="sm" aria-label={saving ? t("settings.replacement.saving") : t("settings.replacement.saveAria")} disabled={!dirty || saving} onClick={() => void save()}>
           <Save size={14} />
-          {saving ? t("settings.retention.saving") : t("settings.retention.save")}
+          {saving ? t("settings.replacement.saving") : t("settings.replacement.save")}
         </Button>
       </div>
       {conflict !== undefined ? (
@@ -126,21 +126,21 @@ function RetentionSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =
         error && <Alert tone="error" title={error} />
       )}
       {query.isLoading && (
-        <StateBlock kind="busy" title={t("settings.retention.loading")} />
+        <StateBlock kind="busy" title={t("settings.replacement.loading")} />
       )}
-      {query.error && <Alert tone="error" title={toUserMessage(query.error, t("settings.retention.loadFailed"))} />}
+      {query.error && <Alert tone="error" title={toUserMessage(query.error, t("settings.replacement.loadFailed"))} />}
       {draft && (
         <>
           <div className="settings-policy-card">
-            <h3 className="settings-policy-card-title text-body">{t("settings.retention.admissionCard")}</h3>
-            <div className="settings-retention-field">
-              <Select label={t("retention.admissionTitle")} value={draft.admission_mode} options={admissionOptions().map((option) => ({ value: option.value, label: option.label }))} onChange={(value) => update((current) => ({ ...current, admission_mode: value }))} />
+            <h3 className="settings-policy-card-title text-body">{t("settings.replacement.admissionCard")}</h3>
+            <div className="settings-replacement-field">
+              <Select label={t("replacement.admissionTitle")} value={draft.admission_mode} options={admissionOptions().map((option) => ({ value: option.value, label: option.label }))} onChange={(value) => update((current) => ({ ...current, admission_mode: value }))} />
             </div>
             <p className="settings-policy-card-description text-caption">
               {admissionOptions().find((option) => option.value === draft.admission_mode)?.hint}
             </p>
             {draft.admission_mode !== "all" && (
-              <p className="settings-policy-card-description text-caption">{t("settings.retention.replacedNote")}</p>
+              <p className="settings-policy-card-description text-caption">{t("settings.replacement.replacedNote")}</p>
             )}
           </div>
 
@@ -160,8 +160,8 @@ function RetentionSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =
 }
 
 const routeLabels = (): Record<FileEffectPolicyDefaultView["unclassified_route"], { label: string; hint: string }> => ({
-  skip: { label: t("file.unclassified.skip"), hint: t("settings.retention.unclassified.skipHint") },
-  route: { label: t("file.unclassified.route"), hint: t("settings.retention.unclassified.routeHint") },
+  skip: { label: t("file.unclassified.skip"), hint: t("settings.replacement.unclassified.skipHint") },
+  route: { label: t("file.unclassified.route"), hint: t("settings.replacement.unclassified.routeHint") },
 });
 
 function UnclassifiedSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
@@ -191,11 +191,11 @@ function UnclassifiedSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean
       const saved = await saveFileEffectPolicyDefault({ expected_version: data.version, unclassified_route: route });
       queryClient.setQueryData(fileMaintenanceKeys.fileEffectDefault, saved);
       setRoute(saved.unclassified_route);
-      return { ok: true as const, message: t("settings.retention.unclassified.saved") };
+      return { ok: true as const, message: t("settings.replacement.unclassified.saved") };
     } catch (cause) {
       const version = conflictVersion(cause);
       if (version !== undefined) setConflict(version);
-      setError(toUserMessage(cause, t("settings.retention.unclassified.saveFailed")));
+      setError(toUserMessage(cause, t("settings.replacement.unclassified.saveFailed")));
       return { ok: false as const };
     } finally {
       setSaving(false);
@@ -215,7 +215,7 @@ function UnclassifiedSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean
       <div className="settings-policy-header">
         <div>
           <h2 className="settings-policy-title text-title">{t("file.unclassifiedTitle")}</h2>
-          <p className="settings-policy-description text-caption">{t("settings.retention.unclassified.description")}</p>
+          <p className="settings-policy-description text-caption">{t("settings.replacement.unclassified.description")}</p>
         </div>
       </div>
       {conflict !== undefined ? (
@@ -224,13 +224,13 @@ function UnclassifiedSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean
         error && <Alert tone="error" title={error} />
       )}
       {query.isLoading && (
-        <StateBlock kind="busy" title={t("settings.retention.unclassified.loading")} />
+        <StateBlock kind="busy" title={t("settings.replacement.unclassified.loading")} />
       )}
-      {query.error && <Alert tone="error" title={toUserMessage(query.error, t("settings.retention.unclassified.loadFailed"))} />}
+      {query.error && <Alert tone="error" title={toUserMessage(query.error, t("settings.replacement.unclassified.loadFailed"))} />}
       {route && (
         <div className="settings-policy-card">
-          <div className="settings-retention-field">
-            <Select label={t("settings.retention.unclassified.selectLabel")} value={route} options={(Object.keys(routeLabels()) as (keyof ReturnType<typeof routeLabels>)[]).map((value) => ({ value, label: routeLabels()[value].label }))} disabled={saving} onChange={(value) => setRoute(value)} />
+          <div className="settings-replacement-field">
+            <Select label={t("settings.replacement.unclassified.selectLabel")} value={route} options={(Object.keys(routeLabels()) as (keyof ReturnType<typeof routeLabels>)[]).map((value) => ({ value, label: routeLabels()[value].label }))} disabled={saving} onChange={(value) => setRoute(value)} />
           </div>
           <p className="settings-policy-card-description text-caption">{routeLabels()[route].hint}</p>
         </div>

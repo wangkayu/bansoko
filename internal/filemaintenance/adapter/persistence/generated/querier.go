@@ -16,19 +16,19 @@ type Querier interface {
 	//  SELECT EXISTS (SELECT 1 FROM placements p WHERE p.physical_path = $1::text AND p.state = 'active')
 	//      OR EXISTS (SELECT 1 FROM placement_companions c WHERE c.current_path = $1::text AND c.state = 'active')
 	CleanupPathOwned(ctx context.Context, path string) (sql.NullBool, error)
-	//GetCleanupOperation
+	//GetReplacementDeletion
 	//
 	//  SELECT id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
-	//         retention_mode, source_path, source_fingerprint, state, attempt, failure_code, reason,
+	//         admission_mode, source_path, source_fingerprint, state, attempt, failure_code, reason,
 	//         correlation_id, version, created_at, updated_at
-	//  FROM cleanup_operations
+	//  FROM replacement_deletions
 	//  WHERE id = $1
-	GetCleanupOperation(ctx context.Context, cleanupID string) (GetCleanupOperationRow, error)
-	//InsertCleanupOperation
+	GetReplacementDeletion(ctx context.Context, cleanupID string) (GetReplacementDeletionRow, error)
+	//InsertReplacementDeletion
 	//
-	//  INSERT INTO cleanup_operations
+	//  INSERT INTO replacement_deletions
 	//  (id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
-	//   retention_mode, source_path, source_fingerprint, state, failure_code, reason,
+	//   admission_mode, source_path, source_fingerprint, state, failure_code, reason,
 	//   correlation_id, causation_type, causation_id, version, created_at, updated_at)
 	//  VALUES ($1, $2, $3, $4,
 	//          $5, $6, $7,
@@ -36,68 +36,68 @@ type Querier interface {
 	//          $11, $12, $13, $14,
 	//          $15, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 	//  ON CONFLICT (idempotency_key) DO NOTHING
-	InsertCleanupOperation(ctx context.Context, arg InsertCleanupOperationParams) error
-	//ListCleanupOperations
+	InsertReplacementDeletion(ctx context.Context, arg InsertReplacementDeletionParams) error
+	//ListPendingReplacementDeletions
 	//
-	//  SELECT id, placement_id, managed_anime_id, replacement_ref, retention_mode,
+	//  SELECT id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
+	//         admission_mode, source_path, source_fingerprint, state, attempt, failure_code, reason,
+	//         correlation_id, version, created_at, updated_at
+	//  FROM replacement_deletions
+	//  WHERE state = 'admitted' OR (state = 'blocked' AND attempt IS NOT NULL)
+	//  ORDER BY id
+	ListPendingReplacementDeletions(ctx context.Context) ([]ListPendingReplacementDeletionsRow, error)
+	//ListReplacementDeletions
+	//
+	//  SELECT id, placement_id, managed_anime_id, replacement_ref, admission_mode,
 	//         source_path, source_fingerprint,
 	//         state, COALESCE(failure_code, ''), COALESCE(reason, ''), version, created_at, updated_at
-	//  FROM cleanup_operations
+	//  FROM replacement_deletions
 	//  WHERE managed_anime_id = $1
 	//  ORDER BY created_at DESC
 	//  LIMIT $3 OFFSET $2
-	ListCleanupOperations(ctx context.Context, arg ListCleanupOperationsParams) ([]ListCleanupOperationsRow, error)
-	//ListPendingCleanupOperations
-	//
-	//  SELECT id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
-	//         retention_mode, source_path, source_fingerprint, state, attempt, failure_code, reason,
-	//         correlation_id, version, created_at, updated_at
-	//  FROM cleanup_operations
-	//  WHERE state = 'admitted' OR (state = 'blocked' AND attempt IS NOT NULL)
-	//  ORDER BY id
-	ListPendingCleanupOperations(ctx context.Context) ([]ListPendingCleanupOperationsRow, error)
-	//LockCleanupOperation
-	//
-	//  SELECT id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
-	//         retention_mode, source_path, source_fingerprint, state, attempt, failure_code, reason,
-	//         correlation_id, version, created_at, updated_at
-	//  FROM cleanup_operations
-	//  WHERE id = $1
-	//  FOR UPDATE
-	LockCleanupOperation(ctx context.Context, cleanupID string) (LockCleanupOperationRow, error)
-	//LockCleanupOwnerVersion
-	//
-	//  SELECT version
-	//  FROM cleanup_operations
-	//  WHERE id = $1
-	//  FOR UPDATE
-	LockCleanupOwnerVersion(ctx context.Context, cleanupID string) (int64, error)
+	ListReplacementDeletions(ctx context.Context, arg ListReplacementDeletionsParams) ([]ListReplacementDeletionsRow, error)
 	// Cleanup-owner persistence is owned by this adapter; the migration chain is authoritative.
 	//
 	//
 	//  SELECT id::text AS id,owner_type::text AS owner_type,owner_id::text AS owner_id,kind::text AS kind,state::text AS state,expected_owner_version::bigint AS expected_owner_version FROM public.work_item_lock_maintenance_cleanup($1::text,$2::text)
 	LockCleanupWorkItem(ctx context.Context, arg LockCleanupWorkItemParams) (LockCleanupWorkItemRow, error)
-	//PersistCleanupAttempt
+	//LockReplacementDeletion
 	//
-	//  UPDATE cleanup_operations
+	//  SELECT id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
+	//         admission_mode, source_path, source_fingerprint, state, attempt, failure_code, reason,
+	//         correlation_id, version, created_at, updated_at
+	//  FROM replacement_deletions
+	//  WHERE id = $1
+	//  FOR UPDATE
+	LockReplacementDeletion(ctx context.Context, cleanupID string) (LockReplacementDeletionRow, error)
+	//LockReplacementDeletionOwnerVersion
+	//
+	//  SELECT version
+	//  FROM replacement_deletions
+	//  WHERE id = $1
+	//  FOR UPDATE
+	LockReplacementDeletionOwnerVersion(ctx context.Context, cleanupID string) (int64, error)
+	//PersistReplacementDeletionAttempt
+	//
+	//  UPDATE replacement_deletions
 	//  SET attempt = $1, version = version + 1, updated_at = CURRENT_TIMESTAMP
 	//  WHERE id = $2 AND version = $3
 	//  RETURNING version
-	PersistCleanupAttempt(ctx context.Context, arg PersistCleanupAttemptParams) (int64, error)
+	PersistReplacementDeletionAttempt(ctx context.Context, arg PersistReplacementDeletionAttemptParams) (int64, error)
 	//SubscriptionIDForAnime
 	//
 	//  SELECT id
 	//  FROM subscriptions
 	//  WHERE managed_anime_id = $1
 	SubscriptionIDForAnime(ctx context.Context, animeID string) (string, error)
-	//TransitionCleanup
+	//TransitionReplacementDeletion
 	//
-	//  UPDATE cleanup_operations
+	//  UPDATE replacement_deletions
 	//  SET state = $1, failure_code = NULLIF($2, ''),
 	//      reason = NULLIF($3, ''), version = version + 1, updated_at = CURRENT_TIMESTAMP
 	//  WHERE id = $4 AND version = $5
 	//  RETURNING version
-	TransitionCleanup(ctx context.Context, arg TransitionCleanupParams) (int64, error)
+	TransitionReplacementDeletion(ctx context.Context, arg TransitionReplacementDeletionParams) (int64, error)
 }
 
 var _ Querier = (*Queries)(nil)

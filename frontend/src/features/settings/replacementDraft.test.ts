@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { RetentionPolicyDefaultView } from "../../lib/api/client";
-import { draftFromView, draftsEqual, inputFromDraft } from "./retentionDraft";
+import type { ReplacementPolicyDefaultView } from "../../lib/api/client";
+import { draftFromView, draftsEqual, inputFromDraft } from "./replacementDraft";
 
-const view: RetentionPolicyDefaultView = {
+const view: ReplacementPolicyDefaultView = {
   admission_mode: "per_group",
   quality_profile: {
     version: "profile-v1",
@@ -15,7 +15,7 @@ const view: RetentionPolicyDefaultView = {
   version: 5,
 };
 
-describe("retention default draft", () => {
+describe("replacement default draft", () => {
   it("round-trips an untouched draft without changing what the server stored", () => {
     const draft = draftFromView(view);
     expect(draftsEqual(draft, draftFromView(view))).toBe(true);

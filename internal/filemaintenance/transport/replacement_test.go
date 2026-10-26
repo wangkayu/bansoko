@@ -10,13 +10,13 @@ import (
 	"bansoko/internal/transport/httpapi/generated"
 )
 
-func TestRetentionPolicyInputsMapTheTypedProfile(t *testing.T) {
+func TestReplacementPolicyInputsMapTheTypedProfile(t *testing.T) {
 	profile := generated.QualityProfile{Version: "profile-v1", Items: []generated.QualityCompareItem{
 		{Key: "anibt.language", Ranks: [][]string{{"CHS", "CHT"}, {"CHS"}}},
 		{Key: "subgroup.score", Ranks: [][]string{}},
 	}}
-	input, err := RetentionPolicyDefaultInput(generated.RetentionPolicyDefaultInput{
-		AdmissionMode:   generated.RetentionAdmissionModePerGroup,
+	input, err := ReplacementPolicyDefaultInput(generated.ReplacementPolicyDefaultInput{
+		AdmissionMode:   generated.ReplacementAdmissionModePerGroup,
 		QualityProfile:  profile,
 		ExpectedVersion: 7,
 	})
@@ -31,13 +31,13 @@ func TestRetentionPolicyInputsMapTheTypedProfile(t *testing.T) {
 	}
 }
 
-func TestRetentionPolicyViewsMapNullableAndTypedFields(t *testing.T) {
+func TestReplacementPolicyViewsMapNullableAndTypedFields(t *testing.T) {
 	updatedAt := time.Unix(123, 0).UTC()
-	policy := filemaintenance.RetentionPolicy{
+	policy := filemaintenance.ReplacementPolicy{
 		AdmissionMode:  filemaintenance.ModeSingleCopy,
 		QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["1080p"],["720p"]]}]}`),
 	}
-	view, err := RetentionPolicyDefaultView(filemaintenance.RetentionPolicyDefaultView{
+	view, err := ReplacementPolicyDefaultView(filemaintenance.ReplacementPolicyDefaultView{
 		Policy:    policy,
 		UpdatedAt: &updatedAt,
 		Version:   11,
@@ -45,7 +45,7 @@ func TestRetentionPolicyViewsMapNullableAndTypedFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view.AdmissionMode != generated.RetentionAdmissionModeSingleCopy || view.Version != 11 || view.UpdatedAt == nil || !view.UpdatedAt.Equal(updatedAt) {
+	if view.AdmissionMode != generated.ReplacementAdmissionModeSingleCopy || view.Version != 11 || view.UpdatedAt == nil || !view.UpdatedAt.Equal(updatedAt) {
 		t.Fatalf("mapped default view = %+v", view)
 	}
 	want := []generated.QualityCompareItem{{Key: "release.resolution", Ranks: [][]string{{"1080p"}, {"720p"}}}}
@@ -53,7 +53,7 @@ func TestRetentionPolicyViewsMapNullableAndTypedFields(t *testing.T) {
 		t.Fatalf("quality profile = %+v", view.QualityProfile)
 	}
 
-	instance, err := InstanceRetentionPolicyView(filemaintenance.InstanceRetentionPolicyView{
+	instance, err := InstanceReplacementPolicyView(filemaintenance.InstanceReplacementPolicyView{
 		ManagedAnimeID:       "anime-1",
 		Policy:               policy,
 		SourceDefaultVersion: 9,

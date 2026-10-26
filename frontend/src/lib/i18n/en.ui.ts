@@ -73,7 +73,7 @@ export const enStatusCopy = {
     rss_refresh: "RSS refresh",
     metadata_match: "Metadata auto-match",
     automation_dispatch: "Task dispatch",
-    retention_pass: "Data cleanup",
+    retention_pass: "Record retention sweep",
     file_manager_operation: "File manager",
   },
   logKind: {

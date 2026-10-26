@@ -55,7 +55,7 @@ func TestWorkItemRuntimeOperationsACL(t *testing.T) {
 		`SELECT * FROM public.work_item_lock_file_operation_inputs('file_operation','missing')`,
 		`SELECT * FROM public.work_item_lock_prepared_plan('missing','missing',1)`,
 		`SELECT * FROM public.work_item_lock_release_evaluation('release','missing','release_evaluate')`,
-		`SELECT * FROM public.work_item_lock_cleanup('cleanup_operation','missing','cleanup_execute')`,
+		`SELECT * FROM public.work_item_lock_cleanup('replacement_deletion','missing','cleanup_execute')`,
 		`SELECT * FROM public.work_item_lock_oneshot_identity('missing')`,
 		`SELECT * FROM public.work_item_lock_claim('missing',1)`,
 		`SELECT * FROM public.work_item_lock_owner_version('missing')`,

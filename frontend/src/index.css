@@ -831,11 +831,11 @@ h1, h2, h3, h4, h5, h6 {
 .settings-policy-card-description { margin: 0.25rem 0 0; color: hsl(var(--muted-foreground)); }
 .settings-policy-field { display: grid; gap: 0.25rem; color: hsl(var(--muted-foreground)); }
 .settings-policy-error { color: hsl(var(--status-offline)); }
-.settings-retention-field { max-width: 24rem; }
+.settings-replacement-field { max-width: 24rem; }
 .business-fields { display: grid; gap: 0.75rem; margin: 0.75rem 0; padding: 0.75rem; border: 1px solid hsl(var(--border)); border-radius: var(--radius); background: hsl(var(--card)); }
 .business-legend { padding: 0 0.25rem; font-weight: 500; color: hsl(var(--foreground)); }
 .business-hint { margin: 0; color: hsl(var(--muted-foreground)); }
-.settings-retention-dimension { display: grid; gap: 0.25rem; padding-top: 0.5rem; }
+.settings-replacement-dimension { display: grid; gap: 0.25rem; padding-top: 0.5rem; }
 
 .settings-automation { display: grid; gap: 2rem; }
 .settings-automation-section { display: grid; gap: 0.75rem; }

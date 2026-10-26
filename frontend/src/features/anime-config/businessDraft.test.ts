@@ -6,7 +6,7 @@ import { useState } from "react";
 import { createElement } from "react";
 import { fireEvent, screen } from "@testing-library/react";
 import { renderWithQuery } from "../../testing/renderWithQuery";
-import { compareItemName } from "../retention/compareCopy";
+import { compareItemName } from "../replacement/compareCopy";
 import userEvent from "@testing-library/user-event";
 import { BusinessSnapshotFields } from "./BusinessSnapshotFields";
 import { webcrypto } from "node:crypto";
@@ -28,8 +28,8 @@ const preset: BusinessPresetView = {
   section_versions: { subgroups: 1, parser: 2, release_rules: 3, file_rules: 4, naming_rules: 5, file_effect: 6 },
   section_schemas: { subgroups: "1", parser: "2", release_rules: "3", file_rules: "4", naming_rules: "5", file_effect: "6" },
   parser: { schema_version: "parser-policy-envelope-v1", kind: "regex", policy_version: 8, provenance: "global", profile_version: 2, rules_owner_version: 2, source_owner: "global" },
-  retention: { admission_mode: "single_copy", quality_profile: { version: "profile-v1", items: [{ key: "release.resolution", ranks: [] }] } },
-  retention_version: 9, unclassified_route: "route", file_effect_version: 10,
+  replacement: { admission_mode: "single_copy", quality_profile: { version: "profile-v1", items: [{ key: "release.resolution", ranks: [] }] } },
+  replacement_version: 9, unclassified_route: "route", file_effect_version: 10,
   programs: { vars: { version: `naming-vars-v1@sha256:${"b".repeat(64)}`, digest: `sha256:${"b".repeat(64)}` }, attrrules: { version: `release-facts-v1@sha256:${"c".repeat(64)}`, digest: `sha256:${"c".repeat(64)}` } },
  },
 };
@@ -47,14 +47,14 @@ describe("atomic business load", () => {
   expect(loaded.rules.sections.file_filter).toEqual({ mode: "replace", value: { must_contain: "main/", not_in: "extra" } });
   expect(loaded.rules.sections.tag_filters).toEqual({ mode: "replace", value: preset.tag_filters });
   expect(loaded.business?.sections.file_rules).toEqual({ must_contain: "main/", not_in: "extra" });
-  expect(loaded.business?.retention.admission_mode).toBe("single_copy");
-  expect(loaded.business?.retention_version).toBe(9);
+  expect(loaded.business?.replacement.admission_mode).toBe("single_copy");
+  expect(loaded.business?.replacement_version).toBe(9);
   expect(loaded.business_digest).toBe(preset.digest);
   expect(draft.rules.sections.file_filter).toBeUndefined();
   loaded.rules.sections.tag_filters!.value.anibt.require.push("changed");
   expect(preset.tag_filters.anibt.require).toEqual(["resolution:1080p"]);
-  loaded.business!.retention_version = 999;
-  expect(preset.snapshot.retention_version).toBe(9);
+  loaded.business!.replacement_version = 999;
+  expect(preset.snapshot.replacement_version).toBe(9);
  });
  it("typed controls edit all business values then real freeze preserves protected inputs", async () => {
   Object.defineProperty(globalThis,"crypto",{value:webcrypto,configurable:true});
@@ -63,7 +63,7 @@ describe("atomic business load", () => {
   renderWithQuery(createElement(Editor));
   const user=userEvent.setup();
   const pick=async(name:string,option:string)=>{await user.click(screen.getByRole("combobox",{name}));await user.click(await screen.findByRole("option",{name:option}));};
-  await pick(t("retention.admissionTitle"),t("retention.admission.all"));
+  await pick(t("replacement.admissionTitle"),t("replacement.admission.all"));
   const resolution=compareItemName("release.resolution");
   fireEvent.change(screen.getByLabelText(t("qualityCompare.valueAria",{item:resolution})),{target:{value:"720p"}});fireEvent.click(screen.getByRole("button",{name:t("qualityCompare.addValueAria",{item:resolution})}));
   fireEvent.change(screen.getByLabelText(t("qualityCompare.valueAria",{item:resolution})),{target:{value:"1080p"}});fireEvent.click(screen.getByRole("button",{name:t("qualityCompare.addValueAria",{item:resolution})}));
@@ -74,7 +74,7 @@ describe("atomic business load", () => {
   expect(screen.queryByLabelText("vars digest")).toBeNull();expect(screen.queryByLabelText("attrrules digest")).toBeNull();
   expect(screen.queryByText(/sha256/)).toBeNull();
   const frozen=await freezeBusinessDraft(edited);
-  expect(frozen.business?.retention).toEqual({admission_mode:"all",quality_profile:{version:"profile-v1",items:[{key:"release.resolution",ranks:[["1080p"],["720p"]]}]}});
+  expect(frozen.business?.replacement).toEqual({admission_mode:"all",quality_profile:{version:"profile-v1",items:[{key:"release.resolution",ranks:[["1080p"],["720p"]]}]}});
   expect(frozen.business?.unclassified_route).toBe("skip");
   expect(frozen.business?.programs).toEqual(preset.snapshot.programs);
   expect(frozen.business_digest).toMatch(/^sha256:[a-f0-9]{64}$/);expect(frozen.business_digest).not.toBe(preset.digest);

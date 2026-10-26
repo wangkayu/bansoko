@@ -40,7 +40,7 @@ SELECT c.id, c.current_path, c.size_bytes,
                    WHERE w.id = $2 AND w.source_evidence_type = 'file_operation' AND s.target_path = c.current_path)) AS owned
 FROM placement_companions c
 WHERE c.placement_id = $1 AND c.state = 'active'
-  AND NOT EXISTS (SELECT 1 FROM cleanup_operations co WHERE co.companion_id = c.id)
+  AND NOT EXISTS (SELECT 1 FROM replacement_deletions co WHERE co.companion_id = c.id)
 ORDER BY c.id`, loserPlacementID, winnerPlacementID)
 	if err != nil {
 		return nil, fmt.Errorf("load loser companions: %w", err)
@@ -75,7 +75,7 @@ ORDER BY c.id`, loserPlacementID, winnerPlacementID)
 // endCompanionForCleanup closes the companion relation once its cleanup
 // record owns the file.
 func endCompanionForCleanup(ctx context.Context, db companionCleanupDB, cleanupID, companionID string) error {
-	if _, err := db.ExecContext(ctx, `UPDATE cleanup_operations SET companion_id = $2 WHERE id = $1 AND companion_id IS NULL`, cleanupID, companionID); err != nil {
+	if _, err := db.ExecContext(ctx, `UPDATE replacement_deletions SET companion_id = $2 WHERE id = $1 AND companion_id IS NULL`, cleanupID, companionID); err != nil {
 		return err
 	}
 	_, err := db.ExecContext(ctx, `UPDATE placement_companions SET state = 'ended', ended_reason = 'cleanup_admitted', version = version + 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND state = 'active'`, companionID)
@@ -104,7 +104,7 @@ func (s *ReplacementDecisionService) admitCompanionDeletionsTx(ctx context.Conte
 			ManagedAnimeID:    d.AnimeID,
 			Coverage:          coverage,
 			ReplacementRef:    d.ID,
-			RetentionMode:     string(d.AdmissionMode),
+			AdmissionMode:     string(d.AdmissionMode),
 			SourcePath:        companion.Path,
 			SourceFingerprint: domain.MetadataFingerprint(companion.SizeBytes, domain.FileIdentity{}),
 			CorrelationID:     d.CorrelationID,

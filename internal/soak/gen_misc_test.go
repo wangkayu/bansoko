@@ -308,7 +308,7 @@ INSERT INTO one_shot_acquisitions(id, managed_anime_id, subscription_id, rss_sou
                                   request_idempotency_key, request_hash, result_snapshot, state, terminal_outcome, terminal_reason_code,
                                   terminal_reason, terminal_at, retention_until, version, created_at, updated_at)
 SELECT 'os-' || o.n, o.aid, o.sid, s.id, r.id, 'dt-' || r.id, 'corr-os-' || o.n, 'os-key-' || o.n, soak_ext.dg('soak-os', o.n::text), '{}'::jsonb,
-       CASE WHEN a.cls = 'succeeded' THEN 'retention_pending' ELSE 'running' END,
+       CASE WHEN a.cls = 'succeeded' THEN 'reclaim_pending' ELSE 'running' END,
        CASE WHEN a.cls = 'succeeded' THEN 'succeeded' END, CASE WHEN a.cls = 'succeeded' THEN 'completed' END,
        CASE WHEN a.cls = 'succeeded' THEN 'one-shot completed' END, a.terminal_at, CASE WHEN a.cls = 'succeeded' THEN a.terminal_at + interval '3 days' END,
        1, a.accepted_at, a.accepted_at

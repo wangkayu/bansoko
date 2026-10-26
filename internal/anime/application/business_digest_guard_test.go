@@ -31,13 +31,13 @@ func businessSnapshotFixture(t *testing.T) (animedomain.BusinessSnapshot, string
 			SourceOwner:   "global",
 			PolicyVersion: 7,
 		},
-		Retention: animedomain.RetentionValue{
+		Replacement: animedomain.ReplacementValue{
 			AdmissionMode:  "single_copy",
 			QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[]}]}`),
 		},
-		RetentionVersion:  13,
-		FileEffectVersion: 17,
-		UnclassifiedRoute: "route",
+		ReplacementVersion: 13,
+		FileEffectVersion:  17,
+		UnclassifiedRoute:  "route",
 		Programs: animedomain.ProgramReferences{
 			Vars:      namingvars.ProgramRef{Digest: digest, Version: namingvars.ProfileVersion(digest)},
 			AttrRules: namingvars.ProgramRef{Digest: digest, Version: attrrules.ProfileVersion(digest)},
@@ -78,7 +78,7 @@ func TestVerifySubmittedBusinessDigestRejectsEditedSnapshot(t *testing.T) {
 	business, hash := businessSnapshotFixture(t)
 	// The content moves after the freeze, the digest does not: this is exactly
 	// what a caller assembling its own draft would send.
-	business.RetentionVersion = 99
+	business.ReplacementVersion = 99
 	draft := animedomain.AnimeDraft{Business: &business, BusinessDigest: &hash}
 	err := VerifySubmittedBusinessDigest(draft)
 	if err == nil {

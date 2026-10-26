@@ -17,7 +17,7 @@ func seedScoredSelections(t *testing.T, db *sql.DB) (high, low *qualityprofile.S
 	t.Helper()
 	if _, err := db.Exec(`
 UPDATE anime_business_configs
-SET admission_mode = 'single_copy', quality_profile = $1::jsonb, retention_version = retention_version + 1
+SET admission_mode = 'single_copy', quality_profile = $1::jsonb, replacement_version = replacement_version + 1
 WHERE managed_anime_id = 'anime-1'`, string(qualityprofile.DefaultJSON())); err != nil {
 		t.Fatal(err)
 	}
@@ -85,8 +85,8 @@ func TestSettleStalesWhenSubgroupScoreChanged(t *testing.T) {
 	if state := placementState(t, db, old); state != "active" {
 		t.Fatalf("the existing file must stay active, got %s", state)
 	}
-	if _, cleanups, superseded := decisionCounts(t, db, "anime-1"); cleanups != 0 || superseded != 0 {
-		t.Fatalf("a stale decision must have no effect: cleanups=%d superseded=%d", cleanups, superseded)
+	if _, deletions, superseded := decisionCounts(t, db, "anime-1"); deletions != 0 || superseded != 0 {
+		t.Fatalf("a stale decision must have no effect: deletions=%d superseded=%d", deletions, superseded)
 	}
 
 	// Decided again with the current scores: the existing file is kept.
@@ -136,7 +136,7 @@ func TestUnboundDecisionNotReusedAfterSubgroupScoreChanged(t *testing.T) {
 	ctx := context.Background()
 	if _, err := db.Exec(`
 UPDATE anime_business_configs
-SET admission_mode = 'single_copy', quality_profile = $1::jsonb, retention_version = retention_version + 1
+SET admission_mode = 'single_copy', quality_profile = $1::jsonb, replacement_version = replacement_version + 1
 WHERE managed_anime_id = 'anime-1'`, string(qualityprofile.DefaultJSON())); err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +238,7 @@ func TestSingleCopyRequiredGroupNeverLosesOnScore(t *testing.T) {
 			defer db.Close()
 			if _, err := db.Exec(`
 UPDATE anime_business_configs
-SET admission_mode = 'single_copy', quality_profile = $1::jsonb, retention_version = retention_version + 1
+SET admission_mode = 'single_copy', quality_profile = $1::jsonb, replacement_version = replacement_version + 1
 WHERE managed_anime_id = 'anime-1'`, string(qualityprofile.DefaultJSON())); err != nil {
 				t.Fatal(err)
 			}

@@ -118,7 +118,7 @@ export function hasCustomSettings(draft: AnimeDraft, preset?: BusinessPresetView
   if (!business) return false;
   return business.parser.kind !== preset.snapshot.parser.kind
     || business.unclassified_route !== preset.snapshot.unclassified_route
-    || !valuesEqual(business.retention, preset.snapshot.retention);
+    || !valuesEqual(business.replacement, preset.snapshot.replacement);
 }
 
 /**

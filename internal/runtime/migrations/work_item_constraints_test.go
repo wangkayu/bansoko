@@ -47,7 +47,7 @@ func TestWorkItemOwnerShapeCoversEveryOwnerType(t *testing.T) {
 		"owner_type = 'file_maintenance'",
 		"'replacement_evaluate'::text",
 	}
-	for _, ownerType := range []string{"rss_source_runtime", "release", "download_task", "artifact", "file_operation", "plugin_delivery", "file_maintenance", "alignment_operation", "cleanup_operation"} {
+	for _, ownerType := range []string{"rss_source_runtime", "release", "download_task", "artifact", "file_operation", "plugin_delivery", "file_maintenance", "alignment_operation", "replacement_deletion"} {
 		fragments = append(fragments, "owner_type = '"+ownerType+"'")
 	}
 	requireFragments(t, definitions, "work item owner shape", fragments...)

@@ -1,4 +1,4 @@
-// C2 统一术语后的文案：anime / catalog / file / retention / settings。
+// C2 统一术语后的文案：anime / catalog / file / replacement / settings。
 
 export const animeCopy = {
   metadata: {
@@ -128,8 +128,8 @@ export const fileCopy = {
   },
 } as const;
 
-export const retentionCopy = {
-  admissionTitle: "同集多版本保留方式",
+export const replacementCopy = {
+  admissionTitle: "同集多版本洗版方式",
   admission: {
     all: "全部保留",
     per_group: "按字幕组择优",
@@ -152,7 +152,7 @@ export const settingsCopy = {
     rules: "默认规则",
     vars: "命名变量",
     unclassified: "未识别集数",
-    retention: "保留与清理",
+    replacement: "洗版",
     automation: "自动任务",
     notifications: "通知",
     updates: "版本与升级",

@@ -141,7 +141,7 @@ export const logCopy = {
     plugin_delivery: "通知发送",
     provider: "站点",
     replacement: "替换版本",
-    retention: "清理保留数据",
+    retention: "记录保留",
     rss: "RSS",
   },
   operation: {

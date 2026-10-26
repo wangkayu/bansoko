@@ -41,7 +41,7 @@ func startCompanionChain(t *testing.T, ctx context.Context, collision ...generat
 
 	svc := newRealChainServices(t, fixture.client)
 	t.Cleanup(func() { _ = svc.db.Close() })
-	seedRetentionSingleCopy(t, svc.db)
+	seedReplacementSingleCopy(t, svc.db)
 
 	draft := singleEpisodeDraft(fixture.FeedURL())
 	draft.Title = "Comp Real Show"
@@ -622,7 +622,7 @@ func TestCompanionReplacementCleanupRealChain(t *testing.T) {
 	t.Cleanup(fixture.Close)
 	svc := newRealChainServices(t, fixture.client)
 	t.Cleanup(func() { _ = svc.db.Close() })
-	seedRetentionSingleCopy(t, svc.db)
+	seedReplacementSingleCopy(t, svc.db)
 
 	draft := singleEpisodeDraft(fixture.FeedURL())
 	draft.Title = "Comp Repl Show"
@@ -739,7 +739,7 @@ VALUES ('cmp-guard', $1, $2, 'guard-source', 'intake', 'other', '', 'mkv', $3, $
 			t.Fatal(err)
 		}
 		var open int
-		if err := svc.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM cleanup_operations WHERE managed_anime_id = $1 AND state = 'admitted'`, animeID).Scan(&open); err != nil {
+		if err := svc.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM replacement_deletions WHERE managed_anime_id = $1 AND state = 'admitted'`, animeID).Scan(&open); err != nil {
 			t.Fatal(err)
 		}
 		if open == 0 {
@@ -750,24 +750,24 @@ VALUES ('cmp-guard', $1, $2, 'guard-source', 'intake', 'other', '', 'mkv', $3, $
 		}
 		time.Sleep(time.Second)
 	}
-	rows, err := svc.db.QueryContext(ctx, `SELECT COALESCE(companion_id, ''), source_path, state, COALESCE(failure_code, '') FROM cleanup_operations WHERE managed_anime_id = $1 ORDER BY source_path`, animeID)
+	rows, err := svc.db.QueryContext(ctx, `SELECT COALESCE(companion_id, ''), source_path, state, COALESCE(failure_code, '') FROM replacement_deletions WHERE managed_anime_id = $1 ORDER BY source_path`, animeID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	type cleanupRow struct{ companion, path, state, code string }
-	var cleanups []cleanupRow
+	var deletions []cleanupRow
 	for rows.Next() {
 		var row cleanupRow
 		if err := rows.Scan(&row.companion, &row.path, &row.state, &row.code); err != nil {
 			t.Fatal(err)
 		}
-		cleanups = append(cleanups, row)
+		deletions = append(deletions, row)
 	}
 	rows.Close()
-	if len(cleanups) != 2 {
-		t.Fatalf("expected the old video and its subtitle in cleanup, got %+v", cleanups)
+	if len(deletions) != 2 {
+		t.Fatalf("expected the old video and its subtitle in cleanup, got %+v", deletions)
 	}
-	for _, row := range cleanups {
+	for _, row := range deletions {
 		switch row.path {
 		case subtitleA.CurrentPath:
 			if row.companion != subtitleA.ID {

@@ -179,7 +179,7 @@ func TestMapOneShotAcquisitionViewPreservesNullableAndCleanedShape(t *testing.T)
 // would make every recovery a deterministic 409.
 func TestMapOneShotAcquisitionViewProjectsMarkerVersion(t *testing.T) {
 	got, err := mapOneShotAcquisitionView(oneshotapplication.OneShotAcquisitionView{
-		OneShotID: "one-shot-1", State: oneshotapplication.OneShotAcquisitionStateRetentionPending, Version: 7,
+		OneShotID: "one-shot-1", State: oneshotapplication.OneShotAcquisitionStateReclaimPending, Version: 7,
 	})
 	if err != nil {
 		t.Fatalf("map view: %v", err)
@@ -211,7 +211,7 @@ func TestMapOneShotAdmissionResultKeepsAdoptedDownloadTaskNull(t *testing.T) {
 	adopted := mapOneShotAdmissionResult(oneshotapplication.OneShotAdmissionResult{
 		OneShotID: "one-shot-adopted", ManagedAnimeID: "anime-1", SubscriptionID: "sub-1",
 		RSSSourceID: "src-1", ReleaseID: "rel-1",
-		State: string(oneshotapplication.OneShotAcquisitionStateRetentionPending),
+		State: string(oneshotapplication.OneShotAcquisitionStateReclaimPending),
 	})
 	body, err := json.Marshal(adopted)
 	if err != nil {

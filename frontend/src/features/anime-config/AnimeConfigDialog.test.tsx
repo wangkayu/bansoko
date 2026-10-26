@@ -427,7 +427,7 @@ describe("AnimeConfigDialog subscribed workspace polling", () => {
   });
 });
 
-// Hidden per the subscription's current retention and cleanup version (the restore checklist lives with the dialog's hideRetention).
+// Hidden per the subscription's current replacement version (the restore checklist lives with the dialog's hideReplacement).
 describe("AnimeConfigDialog 已订阅的订阅设置", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -487,7 +487,7 @@ describe("AnimeConfigDialog 已订阅的订阅设置", () => {
     await flushQuery();
     expect(screen.getByRole("combobox", { name: t("file.unclassifiedTitle") })).toBeInTheDocument();
     expect(screen.queryByText(t("config.snapshot.legend"))).not.toBeInTheDocument();
-    expect(screen.queryByRole("combobox", { name: t("retention.admissionTitle") })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: t("replacement.admissionTitle") })).not.toBeInTheDocument();
     expect(screen.queryByRole("group", { name: t("qualityCompare.title") })).not.toBeInTheDocument();
 
     // The footer has one save: disabled while the rules tab has no changes.
@@ -908,7 +908,7 @@ describe("AnimeConfigDialog draft rules copied from the preset", () => {
     expect(getBusinessPreset).toHaveBeenCalledTimes(1);
   });
 
-  // Hidden per the subscription's current retention and cleanup version (the restore checklist lives with the dialog's hideRetention).
+  // Hidden per the subscription's current replacement version (the restore checklist lives with the dialog's hideReplacement).
   it("规则 tab 的订阅设置不显示保留与清理，未识别集数照常显示", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(
       String(input).includes("/config/global-sections") ? "[]" : "{}",
@@ -933,14 +933,14 @@ describe("AnimeConfigDialog draft rules copied from the preset", () => {
     await flushQuery();
 
     const section = screen.getByRole("region", { name: t("anime.revision.aria") });
-    expect(screen.queryByRole("region", { name: t("config.retentionAria") })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: t("config.replacementAria") })).not.toBeInTheDocument();
     // "Use defaults everywhere" is no longer a stray button inside the subscription-settings area: it sits at the top of the rules tab.
     expect(within(section).queryByRole("button", { name: t("config.useDefaults") })).not.toBeInTheDocument();
     // A new draft with use-defaults-everywhere: the top button is present but disabled when nothing is customizable left to reset.
     expect(screen.getByRole("button", { name: t("config.useDefaults") })).toBeDisabled();
     expect(within(section).getByRole("combobox", { name: t("file.unclassifiedTitle") })).toBeInTheDocument();
     expect(within(section).queryByText(t("config.snapshot.legend"))).not.toBeInTheDocument();
-    expect(screen.queryByRole("combobox", { name: t("retention.admissionTitle") })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: t("replacement.admissionTitle") })).not.toBeInTheDocument();
     expect(screen.queryByRole("group", { name: t("qualityCompare.title") })).not.toBeInTheDocument();
   });
 

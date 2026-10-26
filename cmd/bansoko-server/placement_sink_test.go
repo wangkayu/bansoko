@@ -557,7 +557,7 @@ VALUES ('sub-1', 'anime-1', 'custom', 'Show', 'stopped')`); err != nil {
 	if err := sink.AdmitFromFileOperation(context.Background(), "op-rel-1"); err != nil {
 		t.Fatalf("stopped admission must still succeed: %v", err)
 	}
-	var placements, items, decisions, cleanups int
+	var placements, items, decisions, deletions int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM placements WHERE managed_anime_id = 'anime-1'`).Scan(&placements); err != nil {
 		t.Fatal(err)
 	}
@@ -567,11 +567,11 @@ VALUES ('sub-1', 'anime-1', 'custom', 'Show', 'stopped')`); err != nil {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM replacement_decisions WHERE managed_anime_id = 'anime-1'`).Scan(&decisions); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM cleanup_operations WHERE managed_anime_id = 'anime-1'`).Scan(&cleanups); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM replacement_deletions WHERE managed_anime_id = 'anime-1'`).Scan(&deletions); err != nil {
 		t.Fatal(err)
 	}
-	if placements != 1 || items != 0 || decisions != 0 || cleanups != 0 {
-		t.Fatalf("stopped: admit=1 but replacement increments zero: placements=%d items=%d decisions=%d cleanups=%d", placements, items, decisions, cleanups)
+	if placements != 1 || items != 0 || decisions != 0 || deletions != 0 {
+		t.Fatalf("stopped: admit=1 but replacement increments zero: placements=%d items=%d decisions=%d deletions=%d", placements, items, decisions, deletions)
 	}
 }
 

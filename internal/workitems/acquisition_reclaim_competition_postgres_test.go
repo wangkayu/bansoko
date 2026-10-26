@@ -15,9 +15,9 @@ func TestAcquisitionReclaimMarkerLockOrders(t *testing.T) {
 	db := openTestDB(t)
 	const marker = "reclaim-lock-orders"
 	createOneShotChain(t, db, marker, []string{"retained.mkv"})
-	insertOneShotMarker(t, db, marker, OneShotStateRetentionPending, oneShotRetentionAt(time.Now().Add(-time.Hour)))
+	insertOneShotMarker(t, db, marker, OneShotStateReclaimPending, oneShotReclaimAt(time.Now().Add(-time.Hour)))
 	owner := disposabledb.Owner(t)
-	service, err := NewOneShotRetentionService(db, nil)
+	service, err := NewOneShotReclaimService(db, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

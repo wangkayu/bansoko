@@ -18,7 +18,7 @@ func revalidateSettledRecoveryTx(ctx context.Context, scope txscope.Tx, d *decis
 	if subState != "active" || subVersion != d.SubscriptionVersion {
 		return workitems.ErrStaleClaim
 	}
-	if err := tx.QueryRowContext(ctx, `SELECT retention_version FROM anime_business_configs WHERE managed_anime_id=$1 AND retention_version IS NOT NULL FOR UPDATE NOWAIT`, d.AnimeID).Scan(&policyVersion); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT replacement_version FROM anime_business_configs WHERE managed_anime_id=$1 AND replacement_version IS NOT NULL FOR UPDATE NOWAIT`, d.AnimeID).Scan(&policyVersion); err != nil {
 		return err
 	}
 	if policyVersion != d.PolicyVersion {

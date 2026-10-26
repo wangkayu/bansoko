@@ -18,7 +18,7 @@ import (
 // Service adapts the policy/planner owners to the HTTP contract.
 type Service struct {
 	policies         *policy.PolicyService
-	retention        *RetentionPolicyService
+	replacement      *ReplacementPolicyService
 	planner          *planner.Planner
 	placements       *PlacementService
 	decisions        *ReplacementDecisionService
@@ -107,8 +107,8 @@ func (r *SQLAnimeExistenceReader) ManagedAnimeExists(ctx context.Context, animeI
 }
 
 // NewService wires the read/write adapter.
-func NewService(policies *policy.PolicyService, retention *RetentionPolicyService, planner *planner.Planner, placements *PlacementService, decisions *ReplacementDecisionService) *Service {
-	return &Service{policies: policies, retention: retention, planner: planner, placements: placements, decisions: decisions}
+func NewService(policies *policy.PolicyService, replacement *ReplacementPolicyService, planner *planner.Planner, placements *PlacementService, decisions *ReplacementDecisionService) *Service {
+	return &Service{policies: policies, replacement: replacement, planner: planner, placements: placements, decisions: decisions}
 }
 
 // SetReplacementTrigger wires the after-commit reevaluation trigger used by
@@ -410,104 +410,104 @@ func cloneBoolPointer(value *bool) *bool {
 	return &cloned
 }
 
-// GetRetentionPolicyDefaultApplication returns the singleton creation default.
-func (s *Service) GetRetentionPolicyDefaultApplication(ctx context.Context) (RetentionPolicyDefaultView, error) {
-	row, err := s.retention.GetDefault(ctx)
+// GetReplacementPolicyDefaultApplication returns the singleton creation default.
+func (s *Service) GetReplacementPolicyDefaultApplication(ctx context.Context) (ReplacementPolicyDefaultView, error) {
+	row, err := s.replacement.GetDefault(ctx)
 	if err != nil {
-		return RetentionPolicyDefaultView{}, err
+		return ReplacementPolicyDefaultView{}, err
 	}
 	if row == nil {
-		return RetentionPolicyDefaultView{Policy: DefaultRetentionPolicy()}, nil
+		return ReplacementPolicyDefaultView{Policy: DefaultReplacementPolicy()}, nil
 	}
 	updatedAt := row.UpdatedAt
-	return RetentionPolicyDefaultView{Policy: row.Policy, UpdatedAt: &updatedAt, Version: row.Version}, nil
+	return ReplacementPolicyDefaultView{Policy: row.Policy, UpdatedAt: &updatedAt, Version: row.Version}, nil
 }
 
-// SaveRetentionPolicyDefaultApplication saves the singleton creation default.
-func (s *Service) SaveRetentionPolicyDefaultApplication(ctx context.Context, input RetentionPolicyWriteInput, actor, channel string) (RetentionPolicyDefaultView, error) {
-	saved, err := s.retention.SaveDefault(ctx, input.ExpectedVersion, input.Policy, actor, channel)
+// SaveReplacementPolicyDefaultApplication saves the singleton creation default.
+func (s *Service) SaveReplacementPolicyDefaultApplication(ctx context.Context, input ReplacementPolicyWriteInput, actor, channel string) (ReplacementPolicyDefaultView, error) {
+	saved, err := s.replacement.SaveDefault(ctx, input.ExpectedVersion, input.Policy, actor, channel)
 	if err != nil {
-		return RetentionPolicyDefaultView{}, err
+		return ReplacementPolicyDefaultView{}, err
 	}
 	updatedAt := saved.UpdatedAt
-	return RetentionPolicyDefaultView{Policy: saved.Policy, UpdatedAt: &updatedAt, Version: saved.Version}, nil
+	return ReplacementPolicyDefaultView{Policy: saved.Policy, UpdatedAt: &updatedAt, Version: saved.Version}, nil
 }
 
-// GetInstanceRetentionPolicyApplication returns the complete frozen instance policy.
-func (s *Service) GetInstanceRetentionPolicyApplication(ctx context.Context, animeID string) (InstanceRetentionPolicyView, error) {
-	row, err := s.retention.GetInstance(ctx, animeID)
+// GetInstanceReplacementPolicyApplication returns the complete frozen instance policy.
+func (s *Service) GetInstanceReplacementPolicyApplication(ctx context.Context, animeID string) (InstanceReplacementPolicyView, error) {
+	row, err := s.replacement.GetInstance(ctx, animeID)
 	if err != nil {
-		return InstanceRetentionPolicyView{}, err
+		return InstanceReplacementPolicyView{}, err
 	}
 	if row == nil {
-		return InstanceRetentionPolicyView{}, &apperrors.NotFound{Resource: "instance_retention_policy", ID: animeID}
+		return InstanceReplacementPolicyView{}, &apperrors.NotFound{Resource: "instance_replacement_policy", ID: animeID}
 	}
 	updatedAt := row.UpdatedAt
-	return InstanceRetentionPolicyView{
+	return InstanceReplacementPolicyView{
 		ManagedAnimeID: row.ManagedAnimeID, Policy: row.Policy, SourceDefaultVersion: row.SourceDefaultVersion,
 		UpdatedAt: &updatedAt, Version: row.Version,
 	}, nil
 }
 
-// SaveInstanceRetentionPolicyApplication fully replaces one frozen instance policy.
-func (s *Service) SaveInstanceRetentionPolicyApplication(ctx context.Context, animeID string, input RetentionPolicyWriteInput, actor, channel string) (InstanceRetentionPolicyView, error) {
-	saved, err := s.retention.SaveInstance(ctx, animeID, input.ExpectedVersion, input.Policy, actor, channel)
+// SaveInstanceReplacementPolicyApplication fully replaces one frozen instance policy.
+func (s *Service) SaveInstanceReplacementPolicyApplication(ctx context.Context, animeID string, input ReplacementPolicyWriteInput, actor, channel string) (InstanceReplacementPolicyView, error) {
+	saved, err := s.replacement.SaveInstance(ctx, animeID, input.ExpectedVersion, input.Policy, actor, channel)
 	if err != nil {
-		return InstanceRetentionPolicyView{}, err
+		return InstanceReplacementPolicyView{}, err
 	}
 	updatedAt := saved.UpdatedAt
 	if s.trigger != nil {
 		if err := s.trigger.TriggerPolicySaved(ctx, animeID); err != nil {
 		}
 	}
-	return InstanceRetentionPolicyView{
+	return InstanceReplacementPolicyView{
 		ManagedAnimeID: saved.ManagedAnimeID, Policy: saved.Policy, SourceDefaultVersion: saved.SourceDefaultVersion,
 		UpdatedAt: &updatedAt, Version: saved.Version,
 	}, nil
 }
 
-// GetRetentionPolicyDefault returns the singleton creation default in the generated compatibility shape.
-func (s *Service) GetRetentionPolicyDefault(ctx context.Context) (generated.RetentionPolicyDefaultView, error) {
-	view, err := s.GetRetentionPolicyDefaultApplication(ctx)
+// GetReplacementPolicyDefault returns the singleton creation default in the generated compatibility shape.
+func (s *Service) GetReplacementPolicyDefault(ctx context.Context) (generated.ReplacementPolicyDefaultView, error) {
+	view, err := s.GetReplacementPolicyDefaultApplication(ctx)
 	if err != nil {
-		return generated.RetentionPolicyDefaultView{}, err
+		return generated.ReplacementPolicyDefaultView{}, err
 	}
-	return retentionDefaultViewOfApplication(view), nil
+	return replacementDefaultViewOfApplication(view), nil
 }
 
-// SaveRetentionPolicyDefault saves the singleton creation default with CAS.
-func (s *Service) SaveRetentionPolicyDefault(ctx context.Context, input generated.RetentionPolicyDefaultInput, actor, channel string) (generated.RetentionPolicyDefaultView, error) {
-	policy, err := retentionPolicyFromInput(input.AdmissionMode, input.QualityProfile)
+// SaveReplacementPolicyDefault saves the singleton creation default with CAS.
+func (s *Service) SaveReplacementPolicyDefault(ctx context.Context, input generated.ReplacementPolicyDefaultInput, actor, channel string) (generated.ReplacementPolicyDefaultView, error) {
+	policy, err := replacementPolicyFromInput(input.AdmissionMode, input.QualityProfile)
 	if err != nil {
-		return generated.RetentionPolicyDefaultView{}, err
+		return generated.ReplacementPolicyDefaultView{}, err
 	}
-	view, err := s.SaveRetentionPolicyDefaultApplication(ctx, RetentionPolicyWriteInput{ExpectedVersion: int64(input.ExpectedVersion), Policy: policy}, actor, channel)
+	view, err := s.SaveReplacementPolicyDefaultApplication(ctx, ReplacementPolicyWriteInput{ExpectedVersion: int64(input.ExpectedVersion), Policy: policy}, actor, channel)
 	if err != nil {
-		return generated.RetentionPolicyDefaultView{}, err
+		return generated.ReplacementPolicyDefaultView{}, err
 	}
-	return retentionDefaultViewOfApplication(view), nil
+	return replacementDefaultViewOfApplication(view), nil
 }
 
-// GetInstanceRetentionPolicy returns the complete frozen instance policy in the generated compatibility shape.
-func (s *Service) GetInstanceRetentionPolicy(ctx context.Context, animeID string) (generated.InstanceRetentionPolicyView, error) {
-	view, err := s.GetInstanceRetentionPolicyApplication(ctx, animeID)
+// GetInstanceReplacementPolicy returns the complete frozen instance policy in the generated compatibility shape.
+func (s *Service) GetInstanceReplacementPolicy(ctx context.Context, animeID string) (generated.InstanceReplacementPolicyView, error) {
+	view, err := s.GetInstanceReplacementPolicyApplication(ctx, animeID)
 	if err != nil {
-		return generated.InstanceRetentionPolicyView{}, err
+		return generated.InstanceReplacementPolicyView{}, err
 	}
-	return instanceRetentionPolicyViewOfApplication(view), nil
+	return instanceReplacementPolicyViewOfApplication(view), nil
 }
 
-// SaveInstanceRetentionPolicy fully replaces one instance policy with CAS.
-func (s *Service) SaveInstanceRetentionPolicy(ctx context.Context, animeID string, input generated.InstanceRetentionPolicyInput, actor, channel string) (generated.InstanceRetentionPolicyView, error) {
-	policy, err := retentionPolicyFromInput(input.AdmissionMode, input.QualityProfile)
+// SaveInstanceReplacementPolicy fully replaces one instance policy with CAS.
+func (s *Service) SaveInstanceReplacementPolicy(ctx context.Context, animeID string, input generated.InstanceReplacementPolicyInput, actor, channel string) (generated.InstanceReplacementPolicyView, error) {
+	policy, err := replacementPolicyFromInput(input.AdmissionMode, input.QualityProfile)
 	if err != nil {
-		return generated.InstanceRetentionPolicyView{}, err
+		return generated.InstanceReplacementPolicyView{}, err
 	}
-	view, err := s.SaveInstanceRetentionPolicyApplication(ctx, animeID, RetentionPolicyWriteInput{ExpectedVersion: int64(input.ExpectedVersion), Policy: policy}, actor, channel)
+	view, err := s.SaveInstanceReplacementPolicyApplication(ctx, animeID, ReplacementPolicyWriteInput{ExpectedVersion: int64(input.ExpectedVersion), Policy: policy}, actor, channel)
 	if err != nil {
-		return generated.InstanceRetentionPolicyView{}, err
+		return generated.InstanceReplacementPolicyView{}, err
 	}
-	return instanceRetentionPolicyViewOfApplication(view), nil
+	return instanceReplacementPolicyViewOfApplication(view), nil
 }
 
 // wireJSON converts a stored JSON document into the generated wire shape
@@ -519,9 +519,9 @@ func wireJSON[T any](raw json.RawMessage) T {
 	return view
 }
 
-func retentionDefaultViewOfApplication(view RetentionPolicyDefaultView) generated.RetentionPolicyDefaultView {
-	return generated.RetentionPolicyDefaultView{
-		AdmissionMode:  generated.RetentionAdmissionMode(view.Policy.AdmissionMode),
+func replacementDefaultViewOfApplication(view ReplacementPolicyDefaultView) generated.ReplacementPolicyDefaultView {
+	return generated.ReplacementPolicyDefaultView{
+		AdmissionMode:  generated.ReplacementAdmissionMode(view.Policy.AdmissionMode),
 		QualityProfile: wireJSON[generated.QualityProfile](view.Policy.QualityProfile),
 
 		UpdatedAt: cloneTimePointer(view.UpdatedAt),
@@ -529,10 +529,10 @@ func retentionDefaultViewOfApplication(view RetentionPolicyDefaultView) generate
 	}
 }
 
-func instanceRetentionPolicyViewOfApplication(view InstanceRetentionPolicyView) generated.InstanceRetentionPolicyView {
-	return generated.InstanceRetentionPolicyView{
+func instanceReplacementPolicyViewOfApplication(view InstanceReplacementPolicyView) generated.InstanceReplacementPolicyView {
+	return generated.InstanceReplacementPolicyView{
 		ManagedAnimeId: generated.ID(view.ManagedAnimeID),
-		AdmissionMode:  generated.RetentionAdmissionMode(view.Policy.AdmissionMode),
+		AdmissionMode:  generated.ReplacementAdmissionMode(view.Policy.AdmissionMode),
 		QualityProfile: wireJSON[generated.QualityProfile](view.Policy.QualityProfile),
 
 		SourceDefaultVersion: int(view.SourceDefaultVersion),
@@ -544,12 +544,12 @@ func instanceRetentionPolicyViewOfApplication(view InstanceRetentionPolicyView) 
 // owner value. The profile wire shape is a typed object; a JSON round-trip
 // normalizes it into a plain map. An omitted value normalizes to the empty
 // object (a complete, constructable value), never to JSON null.
-func retentionPolicyFromInput(mode generated.RetentionAdmissionMode, profile any) (RetentionPolicy, error) {
+func replacementPolicyFromInput(mode generated.ReplacementAdmissionMode, profile any) (ReplacementPolicy, error) {
 	profileRaw, err := anyToRaw(profile)
 	if err != nil {
-		return RetentionPolicy{}, err
+		return ReplacementPolicy{}, err
 	}
-	return RetentionPolicy{
+	return ReplacementPolicy{
 		AdmissionMode:  AdmissionMode(mode),
 		QualityProfile: profileRaw,
 	}, nil
@@ -765,11 +765,11 @@ func (s *Service) GetOverviewApplication(ctx context.Context, animeID string) (O
 		view.Decisions = &decisions
 	}
 	if s.cleanup != nil {
-		cleanups, err := s.cleanup.ListCleanupsApplication(ctx, animeID, 200, 0)
+		deletions, err := s.cleanup.ListReplacementDeletionsApplication(ctx, animeID, 200, 0)
 		if err != nil {
 			return OverviewView{}, err
 		}
-		view.Cleanups = &cleanups
+		view.Deletions = &deletions
 	}
 	if s.alignment != nil {
 		alignments, err := s.alignment.ListAlignmentsApplication(ctx, animeID, 200, 0)
@@ -785,8 +785,8 @@ func (s *Service) GetOverviewApplication(ctx context.Context, animeID string) (O
 		}
 		view.CompanionIssues = &issues
 	}
-	if s.retention != nil {
-		instance, err := s.GetInstanceRetentionPolicyApplication(ctx, animeID)
+	if s.replacement != nil {
+		instance, err := s.GetInstanceReplacementPolicyApplication(ctx, animeID)
 		if err != nil {
 			if _, ok := err.(*apperrors.NotFound); !ok {
 				return OverviewView{}, err
@@ -794,13 +794,13 @@ func (s *Service) GetOverviewApplication(ctx context.Context, animeID string) (O
 		} else {
 			view.InstancePolicy = &instance
 		}
-		global, err := s.retention.GetDefault(ctx)
+		global, err := s.replacement.GetDefault(ctx)
 		if err != nil {
 			return OverviewView{}, err
 		}
 		if global != nil {
 			updatedAt := global.UpdatedAt
-			view.GlobalDefault = &RetentionPolicyDefaultView{Policy: global.Policy, UpdatedAt: &updatedAt, Version: global.Version}
+			view.GlobalDefault = &ReplacementPolicyDefaultView{Policy: global.Policy, UpdatedAt: &updatedAt, Version: global.Version}
 		}
 	}
 	return view, nil
@@ -843,12 +843,12 @@ func (s *Service) GetOverview(ctx context.Context, animeID string) (generated.Fi
 		decisions := replacementDecisionViewsToGenerated(*view.Decisions)
 		result.Decisions = &decisions
 	}
-	if view.Cleanups != nil {
-		cleanups := make([]generated.CleanupOperationView, len(*view.Cleanups))
-		for index, cleanup := range *view.Cleanups {
-			cleanups[index] = cleanupOperationViewToGenerated(cleanup)
+	if view.Deletions != nil {
+		deletions := make([]generated.ReplacementDeletionView, len(*view.Deletions))
+		for index, cleanup := range *view.Deletions {
+			deletions[index] = replacementDeletionViewToGenerated(cleanup)
 		}
-		result.Cleanups = &cleanups
+		result.Deletions = &deletions
 	}
 	if view.Alignments != nil {
 		alignments := make([]generated.AlignmentOperationView, len(*view.Alignments))
@@ -858,11 +858,11 @@ func (s *Service) GetOverview(ctx context.Context, animeID string) (generated.Fi
 		result.Alignments = &alignments
 	}
 	if view.InstancePolicy != nil {
-		instance := instanceRetentionPolicyViewOfApplication(*view.InstancePolicy)
+		instance := instanceReplacementPolicyViewOfApplication(*view.InstancePolicy)
 		result.InstancePolicy = &instance
 	}
 	if view.GlobalDefault != nil {
-		global := retentionDefaultViewOfApplication(*view.GlobalDefault)
+		global := replacementDefaultViewOfApplication(*view.GlobalDefault)
 		result.GlobalDefault = &global
 	}
 	return result, nil

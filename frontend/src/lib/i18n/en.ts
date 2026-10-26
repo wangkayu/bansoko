@@ -2,7 +2,7 @@ import type { CopyShape } from "./types";
 import type { zhCN } from "./zh-CN";
 import { enErrorCopy } from "./en.error";
 import { enNamingFactCopy, enReasonCopy } from "./en.reason";
-import { enAnimeCopy, enCatalogCopy, enFileCopy, enRetentionCopy, enSettingsCopy } from "./en.core";
+import { enAnimeCopy, enCatalogCopy, enFileCopy, enReplacementCopy, enSettingsCopy } from "./en.core";
 import { enSettingsConnectionsCopy } from "./en.settings-connections";
 import { enSettingsProviderCopy } from "./en.settings-provider";
 import { enSettingsNotificationsCopy } from "./en.settings-notifications";
@@ -152,7 +152,7 @@ export const en = {
   anime: enAnimeCopy,
   catalog: enCatalogCopy,
   file: enFileCopy,
-  retention: enRetentionCopy,
+  replacement: enReplacementCopy,
   qualityCompare: enQualityCompareCopy,
   varsEditor: enVarsEditorCopy,
   settings: { ...enSettingsCopy, ...enSettingsConnectionsCopy, ...enSettingsProviderCopy, ...enSettingsNotificationsCopy, ...enSettingsTokenCopy, ...enSettingsBackupCopy },

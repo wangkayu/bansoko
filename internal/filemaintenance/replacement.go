@@ -116,7 +116,7 @@ func Compare(candidate, current Facts, profile Profile) Comparison {
 	return comparison
 }
 
-// AdmissionMode is the retention admission mode.
+// AdmissionMode is the replacement admission mode.
 type AdmissionMode string
 
 const (

@@ -791,7 +791,7 @@ func TestCanonicalSelectedSeedNormalizesTheDigestWireForm(t *testing.T) {
 func TestOneShotReplayDecisionAcceptsAdoptedHandle(t *testing.T) {
 	result := OneShotAdmissionResult{
 		OneShotID:      "osh-adopted",
-		State:          string(OneShotAcquisitionStateRetentionPending),
+		State:          string(OneShotAcquisitionStateReclaimPending),
 		ManagedAnimeID: "anime-1",
 		SubscriptionID: "sub-1",
 		RSSSourceID:    "src-1",
@@ -817,8 +817,8 @@ func TestOneShotReplayDecisionAcceptsAdoptedHandle(t *testing.T) {
 	if replayed.DownloadTaskID != nil {
 		t.Fatalf("adopted replay fabricated a download task: %v", *replayed.DownloadTaskID)
 	}
-	if replayed.State != string(OneShotAcquisitionStateRetentionPending) {
-		t.Fatalf("adopted replay state = %q, want retention_pending", replayed.State)
+	if replayed.State != string(OneShotAcquisitionStateReclaimPending) {
+		t.Fatalf("adopted replay state = %q, want reclaim_pending", replayed.State)
 	}
 	taskID := "task-inconsistent"
 	record.DownloadTaskID = &taskID

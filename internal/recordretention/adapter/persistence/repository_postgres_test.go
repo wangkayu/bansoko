@@ -161,7 +161,7 @@ INSERT INTO one_shot_acquisitions(id, managed_anime_id, subscription_id, rss_sou
     terminal_reason, terminal_at, retention_until)
 VALUES ('marker-live', 'anime-marker', 'sub-marker', 'source-marker', 'release-marker', 'corr-marker',
     'request-marker', 'sha256:0000000000000000000000000000000000000000000000000000000000000000', '{}',
-    'retention_pending', 'succeeded', 'one_shot_completed', 'completed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '30 days')`); err != nil {
+    'reclaim_pending', 'succeeded', 'one_shot_completed', 'completed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '30 days')`); err != nil {
 		t.Fatalf("seed one-shot marker: %v", err)
 	}
 

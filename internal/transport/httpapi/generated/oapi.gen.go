@@ -510,21 +510,6 @@ const (
 	CatalogSnapshotStatusZeroResult CatalogSnapshotStatus = "zero_result"
 )
 
-// Defines values for CleanupOperationViewRetentionMode.
-const (
-	CleanupOperationViewRetentionModePerGroup   CleanupOperationViewRetentionMode = "per_group"
-	CleanupOperationViewRetentionModeSingleCopy CleanupOperationViewRetentionMode = "single_copy"
-)
-
-// Defines values for CleanupOperationViewState.
-const (
-	CleanupOperationViewStateAdmitted CleanupOperationViewState = "admitted"
-	CleanupOperationViewStateBlocked  CleanupOperationViewState = "blocked"
-	CleanupOperationViewStateDeleted  CleanupOperationViewState = "deleted"
-	CleanupOperationViewStateFailed   CleanupOperationViewState = "failed"
-	CleanupOperationViewStateSkipped  CleanupOperationViewState = "skipped"
-)
-
 // Defines values for CollisionPolicy.
 const (
 	CollisionPolicyFail      CollisionPolicy = "fail"
@@ -1274,11 +1259,11 @@ const (
 
 // Defines values for OneShotAcquisitionState.
 const (
-	OneShotAcquisitionStateCleaned          OneShotAcquisitionState = "cleaned"
-	OneShotAcquisitionStateCleanupBlocked   OneShotAcquisitionState = "cleanup_blocked"
-	OneShotAcquisitionStateReclaiming       OneShotAcquisitionState = "reclaiming"
-	OneShotAcquisitionStateRetentionPending OneShotAcquisitionState = "retention_pending"
-	OneShotAcquisitionStateRunning          OneShotAcquisitionState = "running"
+	OneShotAcquisitionStateCleaned        OneShotAcquisitionState = "cleaned"
+	OneShotAcquisitionStateCleanupBlocked OneShotAcquisitionState = "cleanup_blocked"
+	OneShotAcquisitionStateReclaimPending OneShotAcquisitionState = "reclaim_pending"
+	OneShotAcquisitionStateReclaiming     OneShotAcquisitionState = "reclaiming"
+	OneShotAcquisitionStateRunning        OneShotAcquisitionState = "running"
 )
 
 // Defines values for OneShotAcquisitionViewFailedStage.
@@ -1909,6 +1894,13 @@ const (
 	ReleaseVerdictWaitingMetadata         ReleaseVerdict = "waiting_metadata"
 )
 
+// Defines values for ReplacementAdmissionMode.
+const (
+	ReplacementAdmissionModeAll        ReplacementAdmissionMode = "all"
+	ReplacementAdmissionModePerGroup   ReplacementAdmissionMode = "per_group"
+	ReplacementAdmissionModeSingleCopy ReplacementAdmissionMode = "single_copy"
+)
+
 // Defines values for ReplacementCompareStepResult.
 const (
 	ReplacementCompareStepResultBetter  ReplacementCompareStepResult = "better"
@@ -1943,6 +1935,21 @@ const (
 	ReplacementDecisionViewVerdictRetain  ReplacementDecisionViewVerdict = "retain"
 )
 
+// Defines values for ReplacementDeletionViewAdmissionMode.
+const (
+	ReplacementDeletionViewAdmissionModePerGroup   ReplacementDeletionViewAdmissionMode = "per_group"
+	ReplacementDeletionViewAdmissionModeSingleCopy ReplacementDeletionViewAdmissionMode = "single_copy"
+)
+
+// Defines values for ReplacementDeletionViewState.
+const (
+	ReplacementDeletionViewStateAdmitted ReplacementDeletionViewState = "admitted"
+	ReplacementDeletionViewStateBlocked  ReplacementDeletionViewState = "blocked"
+	ReplacementDeletionViewStateDeleted  ReplacementDeletionViewState = "deleted"
+	ReplacementDeletionViewStateFailed   ReplacementDeletionViewState = "failed"
+	ReplacementDeletionViewStateSkipped  ReplacementDeletionViewState = "skipped"
+)
+
 // Defines values for ReplacementPoolEvidenceVerdict.
 const (
 	ReplacementPoolEvidenceVerdictBlocked ReplacementPoolEvidenceVerdict = "blocked"
@@ -1950,13 +1957,6 @@ const (
 	ReplacementPoolEvidenceVerdictQueue   ReplacementPoolEvidenceVerdict = "queue"
 	ReplacementPoolEvidenceVerdictReplace ReplacementPoolEvidenceVerdict = "replace"
 	ReplacementPoolEvidenceVerdictRetain  ReplacementPoolEvidenceVerdict = "retain"
-)
-
-// Defines values for RetentionAdmissionMode.
-const (
-	RetentionAdmissionModeAll        RetentionAdmissionMode = "all"
-	RetentionAdmissionModePerGroup   RetentionAdmissionMode = "per_group"
-	RetentionAdmissionModeSingleCopy RetentionAdmissionMode = "single_copy"
 )
 
 // Defines values for RoutineActivityKind.
@@ -3634,12 +3634,12 @@ type BusinessEditView struct {
 
 // BusinessOwnerVersions defines model for BusinessOwnerVersions.
 type BusinessOwnerVersions struct {
-	Business   int64 `json:"business"`
-	FileEffect int64 `json:"file_effect"`
-	Parser     int64 `json:"parser"`
-	Retention  int64 `json:"retention"`
-	Rules      int64 `json:"rules"`
-	Subgroups  int64 `json:"subgroups"`
+	Business    int64 `json:"business"`
+	FileEffect  int64 `json:"file_effect"`
+	Parser      int64 `json:"parser"`
+	Replacement int64 `json:"replacement"`
+	Rules       int64 `json:"rules"`
+	Subgroups   int64 `json:"subgroups"`
 }
 
 // BusinessParserEnvelope defines model for BusinessParserEnvelope.
@@ -3680,10 +3680,10 @@ type BusinessRecord struct {
 // BusinessRecordRecordType defines model for BusinessRecord.RecordType.
 type BusinessRecordRecordType string
 
-// BusinessRetention defines model for BusinessRetention.
-type BusinessRetention struct {
+// BusinessReplacement defines model for BusinessReplacement.
+type BusinessReplacement struct {
 	// AdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself.
-	AdmissionMode RetentionAdmissionMode `json:"admission_mode"`
+	AdmissionMode ReplacementAdmissionMode `json:"admission_mode"`
 
 	// QualityProfile The replacement comparison profile (profile-v1): ordered comparison items. Items compare in order and the first item that ranks two releases differently decides; all items equal, the larger size wins; still equal, the existing file stays.
 	QualityProfile QualityProfile `json:"quality_profile"`
@@ -3731,13 +3731,13 @@ type BusinessSnapshot struct {
 		Attrrules BusinessProgramRef `json:"attrrules"`
 		Vars      BusinessProgramRef `json:"vars"`
 	} `json:"programs"`
-	Retention         BusinessRetention             `json:"retention"`
-	RetentionVersion  int64                         `json:"retention_version"`
-	SchemaVersion     BusinessSnapshotSchemaVersion `json:"schema_version"`
-	SectionSchemas    BusinessSectionSchemas        `json:"section_schemas"`
-	SectionVersions   BusinessSectionVersions       `json:"section_versions"`
-	Sections          BusinessSections              `json:"sections"`
-	UnclassifiedRoute UnclassifiedRoutePolicyValue  `json:"unclassified_route"`
+	Replacement        BusinessReplacement           `json:"replacement"`
+	ReplacementVersion int64                         `json:"replacement_version"`
+	SchemaVersion      BusinessSnapshotSchemaVersion `json:"schema_version"`
+	SectionSchemas     BusinessSectionSchemas        `json:"section_schemas"`
+	SectionVersions    BusinessSectionVersions       `json:"section_versions"`
+	Sections           BusinessSections              `json:"sections"`
+	UnclassifiedRoute  UnclassifiedRoutePolicyValue  `json:"unclassified_route"`
 }
 
 // BusinessSnapshotSchemaVersion defines model for BusinessSnapshot.SchemaVersion.
@@ -3928,31 +3928,6 @@ type CatalogWorkspace struct {
 	Season   string          `json:"season"`
 	Snapshot CatalogSnapshot `json:"snapshot"`
 }
-
-// CleanupOperationView One deletion obligation of a replacement loser. The loser's path-level identity (recorded size, plus the inode when recorded) is verified before the file is deleted; a mismatch is skipped with a typed reason and leaves the file in place.
-type CleanupOperationView struct {
-	CreatedAt time.Time `json:"created_at"`
-
-	// FailureCode Typed reason of a skipped, blocked or failed deletion; a skip is one of loser_missing, loser_not_regular, loser_identity_changed, loser_identity_unknown, loser_path_owned.
-	FailureCode       *string                           `json:"failure_code,omitempty"`
-	Id                string                            `json:"id"`
-	ManagedAnimeId    string                            `json:"managed_anime_id"`
-	PlacementId       string                            `json:"placement_id"`
-	Reason            *string                           `json:"reason,omitempty"`
-	ReplacementRef    string                            `json:"replacement_ref"`
-	RetentionMode     CleanupOperationViewRetentionMode `json:"retention_mode"`
-	SourceFingerprint string                            `json:"source_fingerprint"`
-	SourcePath        string                            `json:"source_path"`
-	State             CleanupOperationViewState         `json:"state"`
-	UpdatedAt         *time.Time                        `json:"updated_at,omitempty"`
-	Version           int                               `json:"version"`
-}
-
-// CleanupOperationViewRetentionMode defines model for CleanupOperationView.RetentionMode.
-type CleanupOperationViewRetentionMode string
-
-// CleanupOperationViewState defines model for CleanupOperationView.State.
-type CleanupOperationViewState string
 
 // CollisionPolicy What an import or an alignment does when its target path already holds a file: `fail` skips that file, `versioned` adds a version number, `overwrite` replaces the existing file and permanently deletes it. A video and its subtitles are handled as one unit. This includes a file the library already manages: its placement becomes `displaced` (the episode leaves that instance's coverage, its subtitles become unmanaged files) unless an approved version replacement names it, which supersedes it instead. File manager operations never overwrite.
 type CollisionPolicy string
@@ -4402,14 +4377,14 @@ type FileFilterRulesReplaceMode string
 // FileMaintenanceOverviewView defines model for FileMaintenanceOverviewView.
 type FileMaintenanceOverviewView struct {
 	Alignments *[]AlignmentOperationView `json:"alignments,omitempty"`
-	Cleanups   *[]CleanupOperationView   `json:"cleanups,omitempty"`
 
 	// CompanionIssues Companion sidecars of the latest scan that are missing, differ in size, or are not at their expected path.
 	CompanionIssues *[]CompanionIssueView              `json:"companion_issues,omitempty"`
 	Consumers       *[]ReconciliationConsumerStateView `json:"consumers,omitempty"`
 	Decisions       *[]ReplacementDecisionView         `json:"decisions,omitempty"`
-	GlobalDefault   *RetentionPolicyDefaultView        `json:"global_default"`
-	InstancePolicy  *InstanceRetentionPolicyView       `json:"instance_policy"`
+	Deletions       *[]ReplacementDeletionView         `json:"deletions,omitempty"`
+	GlobalDefault   *ReplacementPolicyDefaultView      `json:"global_default"`
+	InstancePolicy  *InstanceReplacementPolicyView     `json:"instance_policy"`
 	ManagedAnimeId  ID                                 `json:"managed_anime_id"`
 
 	// PlacementIssues Managed videos whose latest scan found the file missing or holding different content. Each keeps its state until the file comes back or the user takes one of its two exits: redownload (POST /placements/{placement_id}/redownload) or release from management (POST /placements/{placement_id}/release).
@@ -5029,10 +5004,10 @@ type InstanceFileEffectPolicyView struct {
 	Version              int                          `json:"version"`
 }
 
-// InstanceRetentionPolicyInput defines model for InstanceRetentionPolicyInput.
-type InstanceRetentionPolicyInput struct {
+// InstanceReplacementPolicyInput defines model for InstanceReplacementPolicyInput.
+type InstanceReplacementPolicyInput struct {
 	// AdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself.
-	AdmissionMode RetentionAdmissionMode `json:"admission_mode"`
+	AdmissionMode ReplacementAdmissionMode `json:"admission_mode"`
 
 	// ExpectedVersion CAS expected version (0 = create).
 	ExpectedVersion int `json:"expected_version"`
@@ -5041,11 +5016,11 @@ type InstanceRetentionPolicyInput struct {
 	QualityProfile QualityProfile `json:"quality_profile"`
 }
 
-// InstanceRetentionPolicyView defines model for InstanceRetentionPolicyView.
-type InstanceRetentionPolicyView struct {
+// InstanceReplacementPolicyView defines model for InstanceReplacementPolicyView.
+type InstanceReplacementPolicyView struct {
 	// AdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself.
-	AdmissionMode  RetentionAdmissionMode `json:"admission_mode"`
-	ManagedAnimeId ID                     `json:"managed_anime_id"`
+	AdmissionMode  ReplacementAdmissionMode `json:"admission_mode"`
+	ManagedAnimeId ID                       `json:"managed_anime_id"`
 
 	// QualityProfile The replacement comparison profile (profile-v1): ordered comparison items. Items compare in order and the first item that ranks two releases differently decides; all items equal, the larger size wins; still equal, the existing file stays.
 	QualityProfile       QualityProfile `json:"quality_profile"`
@@ -5940,7 +5915,7 @@ type OffsetMigrationPlanView struct {
 // OffsetMigrationPlanViewState defines model for OffsetMigrationPlanView.State.
 type OffsetMigrationPlanViewState string
 
-// OneShotAcquisitionState Internal one-shot marker state. running admits gated effects; retention_pending is terminal and drained awaiting bounded batch reclamation; cleanup_blocked retains owners with an actionable bounded reason; reclaiming is the fenced drain phase that admits no new effects; cleaned has no owner graph and keeps anchors plus replay evidence until marker purge.
+// OneShotAcquisitionState Internal one-shot marker state. running admits gated effects; reclaim_pending is terminal and drained awaiting bounded batch reclamation; cleanup_blocked retains owners with an actionable bounded reason; reclaiming is the fenced drain phase that admits no new effects; cleaned has no owner graph and keeps anchors plus replay evidence until marker purge.
 type OneShotAcquisitionState string
 
 // OneShotAcquisitionView defines model for OneShotAcquisitionView.
@@ -5971,7 +5946,7 @@ type OneShotAcquisitionView struct {
 	ReleaseId      ID                    `json:"release_id"`
 	RssSourceId    ID                    `json:"rss_source_id"`
 
-	// State Internal one-shot marker state. running admits gated effects; retention_pending is terminal and drained awaiting bounded batch reclamation; cleanup_blocked retains owners with an actionable bounded reason; reclaiming is the fenced drain phase that admits no new effects; cleaned has no owner graph and keeps anchors plus replay evidence until marker purge.
+	// State Internal one-shot marker state. running admits gated effects; reclaim_pending is terminal and drained awaiting bounded batch reclamation; cleanup_blocked retains owners with an actionable bounded reason; reclaiming is the fenced drain phase that admits no new effects; cleaned has no owner graph and keeps anchors plus replay evidence until marker purge.
 	State              OneShotAcquisitionState `json:"state"`
 	SubscriptionId     ID                      `json:"subscription_id"`
 	TerminalOutcome    *OneShotTerminalOutcome `json:"terminal_outcome"`
@@ -5993,7 +5968,7 @@ type OneShotAdmissionResult struct {
 	ReleaseId      ID  `json:"release_id"`
 	RssSourceId    ID  `json:"rss_source_id"`
 
-	// State Internal one-shot marker state. running admits gated effects; retention_pending is terminal and drained awaiting bounded batch reclamation; cleanup_blocked retains owners with an actionable bounded reason; reclaiming is the fenced drain phase that admits no new effects; cleaned has no owner graph and keeps anchors plus replay evidence until marker purge.
+	// State Internal one-shot marker state. running admits gated effects; reclaim_pending is terminal and drained awaiting bounded batch reclamation; cleanup_blocked retains owners with an actionable bounded reason; reclaiming is the fenced drain phase that admits no new effects; cleaned has no owner graph and keeps anchors plus replay evidence until marker purge.
 	State          OneShotAcquisitionState `json:"state"`
 	SubscriptionId ID                      `json:"subscription_id"`
 }
@@ -7664,6 +7639,9 @@ type ReleaseTorrentStructureViewTorrentVersion string
 // ReleaseVerdict resume_baseline: present in the feed when a stopped subscription resumed; never evaluated or retried. start_baseline: the subscription has new_releases_only and the Release was published before the instance was created (or has no publish time); automatic paths never evaluate it and a rule change does not re-evaluate it, but an explicit retryRelease evaluates it through every rule. Both are quiet terminal verdicts: no failure or discovery notice.
 type ReleaseVerdict string
 
+// ReplacementAdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself.
+type ReplacementAdmissionMode string
+
 // ReplacementCompareStep defines model for ReplacementCompareStep.
 type ReplacementCompareStep struct {
 	Candidate       *string                      `json:"candidate,omitempty"`
@@ -7676,6 +7654,11 @@ type ReplacementCompareStep struct {
 
 // ReplacementCompareStepResult defines model for ReplacementCompareStep.Result.
 type ReplacementCompareStepResult string
+
+// ReplacementCompareVocabulary Candidate values per ranked comparison item: release.* from the active attribute rules, anibt.* from values seen on releases (of the anime when one is named), rt.* from the pinned reltitle dictionary (empty when it is unavailable). Values are suggestions; any value can be ranked.
+type ReplacementCompareVocabulary struct {
+	Items []RetentionCompareVocabularyItem `json:"items"`
+}
 
 // ReplacementDecisionView defines model for ReplacementDecisionView.
 type ReplacementDecisionView struct {
@@ -7709,6 +7692,31 @@ type ReplacementDecisionViewState string
 // ReplacementDecisionViewVerdict defines model for ReplacementDecisionView.Verdict.
 type ReplacementDecisionViewVerdict string
 
+// ReplacementDeletionView One deletion obligation of a replacement loser. The loser's path-level identity (recorded size, plus the inode when recorded) is verified before the file is deleted; a mismatch is skipped with a typed reason and leaves the file in place.
+type ReplacementDeletionView struct {
+	AdmissionMode ReplacementDeletionViewAdmissionMode `json:"admission_mode"`
+	CreatedAt     time.Time                            `json:"created_at"`
+
+	// FailureCode Typed reason of a skipped, blocked or failed deletion; a skip is one of loser_missing, loser_not_regular, loser_identity_changed, loser_identity_unknown, loser_path_owned.
+	FailureCode       *string                      `json:"failure_code,omitempty"`
+	Id                string                       `json:"id"`
+	ManagedAnimeId    string                       `json:"managed_anime_id"`
+	PlacementId       string                       `json:"placement_id"`
+	Reason            *string                      `json:"reason,omitempty"`
+	ReplacementRef    string                       `json:"replacement_ref"`
+	SourceFingerprint string                       `json:"source_fingerprint"`
+	SourcePath        string                       `json:"source_path"`
+	State             ReplacementDeletionViewState `json:"state"`
+	UpdatedAt         *time.Time                   `json:"updated_at,omitempty"`
+	Version           int                          `json:"version"`
+}
+
+// ReplacementDeletionViewAdmissionMode defines model for ReplacementDeletionView.AdmissionMode.
+type ReplacementDeletionViewAdmissionMode string
+
+// ReplacementDeletionViewState defines model for ReplacementDeletionView.State.
+type ReplacementDeletionViewState string
+
 // ReplacementEvaluateInput defines model for ReplacementEvaluateInput.
 type ReplacementEvaluateInput struct {
 	CandidateReleaseId ID `json:"candidate_release_id"`
@@ -7720,6 +7728,29 @@ type ReplacementPlacementRef struct {
 	Fingerprint string `json:"fingerprint"`
 	PlacementId string `json:"placement_id"`
 	Version     int    `json:"version"`
+}
+
+// ReplacementPolicyDefaultInput defines model for ReplacementPolicyDefaultInput.
+type ReplacementPolicyDefaultInput struct {
+	// AdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself.
+	AdmissionMode ReplacementAdmissionMode `json:"admission_mode"`
+
+	// ExpectedVersion CAS expected version (0 = create).
+	ExpectedVersion int `json:"expected_version"`
+
+	// QualityProfile The replacement comparison profile (profile-v1): ordered comparison items. Items compare in order and the first item that ranks two releases differently decides; all items equal, the larger size wins; still equal, the existing file stays.
+	QualityProfile QualityProfile `json:"quality_profile"`
+}
+
+// ReplacementPolicyDefaultView defines model for ReplacementPolicyDefaultView.
+type ReplacementPolicyDefaultView struct {
+	// AdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself.
+	AdmissionMode ReplacementAdmissionMode `json:"admission_mode"`
+
+	// QualityProfile The replacement comparison profile (profile-v1): ordered comparison items. Items compare in order and the first item that ranks two releases differently decides; all items equal, the larger size wins; still equal, the existing file stays.
+	QualityProfile QualityProfile `json:"quality_profile"`
+	UpdatedAt      *time.Time     `json:"updated_at"`
+	Version        int            `json:"version"`
 }
 
 // ReplacementPoolEvidence defines model for ReplacementPoolEvidence.
@@ -7739,41 +7770,10 @@ type ReplacementPoolEvidence struct {
 // ReplacementPoolEvidenceVerdict defines model for ReplacementPoolEvidence.Verdict.
 type ReplacementPoolEvidenceVerdict string
 
-// RetentionAdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself.
-type RetentionAdmissionMode string
-
-// RetentionCompareVocabulary Candidate values per ranked comparison item: release.* from the active attribute rules, anibt.* from values seen on releases (of the anime when one is named), rt.* from the pinned reltitle dictionary (empty when it is unavailable). Values are suggestions; any value can be ranked.
-type RetentionCompareVocabulary struct {
-	Items []RetentionCompareVocabularyItem `json:"items"`
-}
-
 // RetentionCompareVocabularyItem defines model for RetentionCompareVocabularyItem.
 type RetentionCompareVocabularyItem struct {
 	Key    QualityCompareKey `json:"key"`
 	Values []string          `json:"values"`
-}
-
-// RetentionPolicyDefaultInput defines model for RetentionPolicyDefaultInput.
-type RetentionPolicyDefaultInput struct {
-	// AdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself.
-	AdmissionMode RetentionAdmissionMode `json:"admission_mode"`
-
-	// ExpectedVersion CAS expected version (0 = create).
-	ExpectedVersion int `json:"expected_version"`
-
-	// QualityProfile The replacement comparison profile (profile-v1): ordered comparison items. Items compare in order and the first item that ranks two releases differently decides; all items equal, the larger size wins; still equal, the existing file stays.
-	QualityProfile QualityProfile `json:"quality_profile"`
-}
-
-// RetentionPolicyDefaultView defines model for RetentionPolicyDefaultView.
-type RetentionPolicyDefaultView struct {
-	// AdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself.
-	AdmissionMode RetentionAdmissionMode `json:"admission_mode"`
-
-	// QualityProfile The replacement comparison profile (profile-v1): ordered comparison items. Items compare in order and the first item that ranks two releases differently decides; all items equal, the larger size wins; still equal, the existing file stays.
-	QualityProfile QualityProfile `json:"quality_profile"`
-	UpdatedAt      *time.Time     `json:"updated_at"`
-	Version        int            `json:"version"`
 }
 
 // RoutineActivity defines model for RoutineActivity.
@@ -9146,8 +9146,8 @@ type ListPlacementsParams struct {
 	Offset         *int `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
-// GetRetentionCompareVocabularyParams defines parameters for GetRetentionCompareVocabulary.
-type GetRetentionCompareVocabularyParams struct {
+// GetReplacementCompareVocabularyParams defines parameters for GetReplacementCompareVocabulary.
+type GetReplacementCompareVocabularyParams struct {
 	ManagedAnimeId *ID `form:"managed_anime_id,omitempty" json:"managed_anime_id,omitempty"`
 }
 
@@ -9504,14 +9504,14 @@ type SaveFileMaintenancePolicyJSONRequestBody = FileMaintenancePolicyInput
 // SaveFileMaintenanceAnimePolicyJSONRequestBody defines body for SaveFileMaintenanceAnimePolicy for application/json ContentType.
 type SaveFileMaintenanceAnimePolicyJSONRequestBody = FileMaintenancePolicyInput
 
+// SaveInstanceReplacementPolicyJSONRequestBody defines body for SaveInstanceReplacementPolicy for application/json ContentType.
+type SaveInstanceReplacementPolicyJSONRequestBody = InstanceReplacementPolicyInput
+
+// SaveReplacementPolicyDefaultJSONRequestBody defines body for SaveReplacementPolicyDefault for application/json ContentType.
+type SaveReplacementPolicyDefaultJSONRequestBody = ReplacementPolicyDefaultInput
+
 // ReplanFileMaintenanceJSONRequestBody defines body for ReplanFileMaintenance for application/json ContentType.
 type ReplanFileMaintenanceJSONRequestBody = FileMaintenanceReplanInput
-
-// SaveInstanceRetentionPolicyJSONRequestBody defines body for SaveInstanceRetentionPolicy for application/json ContentType.
-type SaveInstanceRetentionPolicyJSONRequestBody = InstanceRetentionPolicyInput
-
-// SaveRetentionPolicyDefaultJSONRequestBody defines body for SaveRetentionPolicyDefault for application/json ContentType.
-type SaveRetentionPolicyDefaultJSONRequestBody = RetentionPolicyDefaultInput
 
 // AlignFileManagerEntryJSONRequestBody defines body for AlignFileManagerEntry for application/json ContentType.
 type AlignFileManagerEntryJSONRequestBody = FileManagerAlignRequest
@@ -11671,23 +11671,23 @@ type ServerInterface interface {
 	// (PUT /file-maintenance/policy/anime/{managed_anime_id})
 	SaveFileMaintenanceAnimePolicy(w http.ResponseWriter, r *http.Request, managedAnimeId ID)
 
+	// (GET /file-maintenance/replacement/anime/{managed_anime_id})
+	GetInstanceReplacementPolicy(w http.ResponseWriter, r *http.Request, managedAnimeId ID)
+
+	// (PUT /file-maintenance/replacement/anime/{managed_anime_id})
+	SaveInstanceReplacementPolicy(w http.ResponseWriter, r *http.Request, managedAnimeId ID)
+
+	// (GET /file-maintenance/replacement/compare-vocabulary)
+	GetReplacementCompareVocabulary(w http.ResponseWriter, r *http.Request, params GetReplacementCompareVocabularyParams)
+
+	// (GET /file-maintenance/replacement/default)
+	GetReplacementPolicyDefault(w http.ResponseWriter, r *http.Request)
+
+	// (PUT /file-maintenance/replacement/default)
+	SaveReplacementPolicyDefault(w http.ResponseWriter, r *http.Request)
+
 	// (POST /file-maintenance/replan)
 	ReplanFileMaintenance(w http.ResponseWriter, r *http.Request)
-
-	// (GET /file-maintenance/retention/anime/{managed_anime_id})
-	GetInstanceRetentionPolicy(w http.ResponseWriter, r *http.Request, managedAnimeId ID)
-
-	// (PUT /file-maintenance/retention/anime/{managed_anime_id})
-	SaveInstanceRetentionPolicy(w http.ResponseWriter, r *http.Request, managedAnimeId ID)
-
-	// (GET /file-maintenance/retention/compare-vocabulary)
-	GetRetentionCompareVocabulary(w http.ResponseWriter, r *http.Request, params GetRetentionCompareVocabularyParams)
-
-	// (GET /file-maintenance/retention/default)
-	GetRetentionPolicyDefault(w http.ResponseWriter, r *http.Request)
-
-	// (PUT /file-maintenance/retention/default)
-	SaveRetentionPolicyDefault(w http.ResponseWriter, r *http.Request)
 
 	// (GET /file-manager/anime/{managed_anime_id}/location)
 	LocateFileManagerAnime(w http.ResponseWriter, r *http.Request, managedAnimeId ManagedAnimeID)
@@ -15984,6 +15984,141 @@ func (siw *ServerInterfaceWrapper) SaveFileMaintenanceAnimePolicy(w http.Respons
 	handler.ServeHTTP(w, r)
 }
 
+// GetInstanceReplacementPolicy operation middleware
+func (siw *ServerInterfaceWrapper) GetInstanceReplacementPolicy(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "managed_anime_id" -------------
+	var managedAnimeId ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "managed_anime_id", r.PathValue("managed_anime_id"), &managedAnimeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "managed_anime_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetInstanceReplacementPolicy(w, r, managedAnimeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SaveInstanceReplacementPolicy operation middleware
+func (siw *ServerInterfaceWrapper) SaveInstanceReplacementPolicy(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "managed_anime_id" -------------
+	var managedAnimeId ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "managed_anime_id", r.PathValue("managed_anime_id"), &managedAnimeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "managed_anime_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SaveInstanceReplacementPolicy(w, r, managedAnimeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetReplacementCompareVocabulary operation middleware
+func (siw *ServerInterfaceWrapper) GetReplacementCompareVocabulary(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetReplacementCompareVocabularyParams
+
+	// ------------- Optional query parameter "managed_anime_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "managed_anime_id", r.URL.Query(), &params.ManagedAnimeId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "managed_anime_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetReplacementCompareVocabulary(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetReplacementPolicyDefault operation middleware
+func (siw *ServerInterfaceWrapper) GetReplacementPolicyDefault(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetReplacementPolicyDefault(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SaveReplacementPolicyDefault operation middleware
+func (siw *ServerInterfaceWrapper) SaveReplacementPolicyDefault(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SaveReplacementPolicyDefault(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ReplanFileMaintenance operation middleware
 func (siw *ServerInterfaceWrapper) ReplanFileMaintenance(w http.ResponseWriter, r *http.Request) {
 
@@ -15995,141 +16130,6 @@ func (siw *ServerInterfaceWrapper) ReplanFileMaintenance(w http.ResponseWriter, 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ReplanFileMaintenance(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetInstanceRetentionPolicy operation middleware
-func (siw *ServerInterfaceWrapper) GetInstanceRetentionPolicy(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-
-	// ------------- Path parameter "managed_anime_id" -------------
-	var managedAnimeId ID
-
-	err = runtime.BindStyledParameterWithOptions("simple", "managed_anime_id", r.PathValue("managed_anime_id"), &managedAnimeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "managed_anime_id", Err: err})
-		return
-	}
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetInstanceRetentionPolicy(w, r, managedAnimeId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// SaveInstanceRetentionPolicy operation middleware
-func (siw *ServerInterfaceWrapper) SaveInstanceRetentionPolicy(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-
-	// ------------- Path parameter "managed_anime_id" -------------
-	var managedAnimeId ID
-
-	err = runtime.BindStyledParameterWithOptions("simple", "managed_anime_id", r.PathValue("managed_anime_id"), &managedAnimeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "managed_anime_id", Err: err})
-		return
-	}
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.SaveInstanceRetentionPolicy(w, r, managedAnimeId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetRetentionCompareVocabulary operation middleware
-func (siw *ServerInterfaceWrapper) GetRetentionCompareVocabulary(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params GetRetentionCompareVocabularyParams
-
-	// ------------- Optional query parameter "managed_anime_id" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "managed_anime_id", r.URL.Query(), &params.ManagedAnimeId)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "managed_anime_id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetRetentionCompareVocabulary(w, r, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetRetentionPolicyDefault operation middleware
-func (siw *ServerInterfaceWrapper) GetRetentionPolicyDefault(w http.ResponseWriter, r *http.Request) {
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetRetentionPolicyDefault(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// SaveRetentionPolicyDefault operation middleware
-func (siw *ServerInterfaceWrapper) SaveRetentionPolicyDefault(w http.ResponseWriter, r *http.Request) {
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.SaveRetentionPolicyDefault(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -18825,12 +18825,12 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("PUT "+options.BaseURL+"/file-maintenance/policy", wrapper.SaveFileMaintenancePolicy)
 	m.HandleFunc("GET "+options.BaseURL+"/file-maintenance/policy/anime/{managed_anime_id}", wrapper.GetFileMaintenanceAnimePolicy)
 	m.HandleFunc("PUT "+options.BaseURL+"/file-maintenance/policy/anime/{managed_anime_id}", wrapper.SaveFileMaintenanceAnimePolicy)
+	m.HandleFunc("GET "+options.BaseURL+"/file-maintenance/replacement/anime/{managed_anime_id}", wrapper.GetInstanceReplacementPolicy)
+	m.HandleFunc("PUT "+options.BaseURL+"/file-maintenance/replacement/anime/{managed_anime_id}", wrapper.SaveInstanceReplacementPolicy)
+	m.HandleFunc("GET "+options.BaseURL+"/file-maintenance/replacement/compare-vocabulary", wrapper.GetReplacementCompareVocabulary)
+	m.HandleFunc("GET "+options.BaseURL+"/file-maintenance/replacement/default", wrapper.GetReplacementPolicyDefault)
+	m.HandleFunc("PUT "+options.BaseURL+"/file-maintenance/replacement/default", wrapper.SaveReplacementPolicyDefault)
 	m.HandleFunc("POST "+options.BaseURL+"/file-maintenance/replan", wrapper.ReplanFileMaintenance)
-	m.HandleFunc("GET "+options.BaseURL+"/file-maintenance/retention/anime/{managed_anime_id}", wrapper.GetInstanceRetentionPolicy)
-	m.HandleFunc("PUT "+options.BaseURL+"/file-maintenance/retention/anime/{managed_anime_id}", wrapper.SaveInstanceRetentionPolicy)
-	m.HandleFunc("GET "+options.BaseURL+"/file-maintenance/retention/compare-vocabulary", wrapper.GetRetentionCompareVocabulary)
-	m.HandleFunc("GET "+options.BaseURL+"/file-maintenance/retention/default", wrapper.GetRetentionPolicyDefault)
-	m.HandleFunc("PUT "+options.BaseURL+"/file-maintenance/retention/default", wrapper.SaveRetentionPolicyDefault)
 	m.HandleFunc("GET "+options.BaseURL+"/file-manager/anime/{managed_anime_id}/location", wrapper.LocateFileManagerAnime)
 	m.HandleFunc("GET "+options.BaseURL+"/file-manager/entries", wrapper.ListFileManagerEntries)
 	m.HandleFunc("GET "+options.BaseURL+"/file-manager/entry", wrapper.GetFileManagerEntry)

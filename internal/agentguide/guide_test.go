@@ -373,7 +373,7 @@ func guideBusinessPreset(t *testing.T) animedomain.BusinessSnapshot {
 		preset.Sections[name], preset.SectionVersions[name], preset.SectionSchemas[name] = raw, 1, animedomain.SectionSchemaVersions[name]
 	}
 	preset.Parser = animedomain.ParserPolicyEnvelope{SchemaVersion: animedomain.ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global_parser_policy_default", PolicyVersion: 1}
-	preset.Retention = animedomain.RetentionValue{AdmissionMode: "all",
+	preset.Replacement = animedomain.ReplacementValue{AdmissionMode: "all",
 		QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"subgroup.score","ranks":[]},{"key":"release.lang","ranks":[["chs"],["sc"],["cht"],["tc"],["jpn"],["eng"]]},{"key":"release.resolution","ranks":[["2160p"],["1440p"],["1080p"],["720p"],["480p"]]},{"key":"release.revision","ranks":[]}]}`)}
 	preset.UnclassifiedRoute = "skip"
 	preset.Programs = animedomain.ProgramReferences{

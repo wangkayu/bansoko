@@ -1792,13 +1792,13 @@ export function importNamingVars(document: NamingVarsDocument, expectedRevision:
 }
 
 
-// --- FileMaintenance: neutral scan, owner truth, retention policies ----------
+// --- FileMaintenance: neutral scan, owner truth, replacement policies -------
 
 export type FileMaintenancePolicyView = Schema<"FileMaintenancePolicyView">;
 export type FileMaintenancePolicyInput = Schema<"FileMaintenancePolicyInput">;
-export type RetentionPolicyDefaultView = Schema<"RetentionPolicyDefaultView">;
-export type RetentionPolicyDefaultInput = Schema<"RetentionPolicyDefaultInput">;
-export type InstanceRetentionPolicyView = Schema<"InstanceRetentionPolicyView">;
+export type ReplacementPolicyDefaultView = Schema<"ReplacementPolicyDefaultView">;
+export type ReplacementPolicyDefaultInput = Schema<"ReplacementPolicyDefaultInput">;
+export type InstanceReplacementPolicyView = Schema<"InstanceReplacementPolicyView">;
 export type ParserPolicyView = Schema<"ParserPolicyView">;
 export type ParserPolicyInput = Schema<"ParserPolicyInput">;
 export type ParserPolicyDefaultView = Schema<"ParserPolicyDefaultView">;
@@ -1810,7 +1810,7 @@ export type InstanceFileEffectPolicyInput = Schema<"InstanceFileEffectPolicyInpu
 export type UnclassifiedRoutePolicyValue = Schema<"UnclassifiedRoutePolicyValue">;
 export type OffsetMigrationPlanView = Schema<"OffsetMigrationPlanView">;
 export type OffsetMigrationGenerationView = Schema<"OffsetMigrationGenerationView">;
-export type InstanceRetentionPolicyInput = Schema<"InstanceRetentionPolicyInput">;
+export type InstanceReplacementPolicyInput = Schema<"InstanceReplacementPolicyInput">;
 export type ReconciliationScanView = Schema<"ReconciliationScanView">;
 export type ReconciliationPathDiffView = Schema<"ReconciliationPathDiffView">;
 export type PlacementReleaseResult = Schema<"PlacementReleaseResult">;
@@ -1900,28 +1900,28 @@ export function saveFileMaintenanceAnimePolicy(
   return request(`/file-maintenance/policy/anime/${encodePathSegment(managedAnimeID)}`, { method: "PUT", body: input });
 }
 
-/** Global new-instance retention default (future instances only). */
-export function getRetentionPolicyDefault(): Promise<RetentionPolicyDefaultView> {
-  return request("/file-maintenance/retention/default", { method: "GET" });
+/** Global new-instance replacement default (future instances only). */
+export function getReplacementPolicyDefault(): Promise<ReplacementPolicyDefaultView> {
+  return request("/file-maintenance/replacement/default", { method: "GET" });
 }
 
-export function saveRetentionPolicyDefault(
-  input: RetentionPolicyDefaultInput,
-): Promise<RetentionPolicyDefaultView> {
-  return request("/file-maintenance/retention/default", { method: "PUT", body: input });
+export function saveReplacementPolicyDefault(
+  input: ReplacementPolicyDefaultInput,
+): Promise<ReplacementPolicyDefaultView> {
+  return request("/file-maintenance/replacement/default", { method: "PUT", body: input });
 }
 
 export type QualityProfile = Schema<"QualityProfile">;
 export type QualityCompareKey = Schema<"QualityCompareKey">;
-export type RetentionCompareVocabulary = Schema<"RetentionCompareVocabulary">;
+export type ReplacementCompareVocabulary = Schema<"ReplacementCompareVocabulary">;
 
 /** Suggested values per ranked comparison item (of one anime when named). */
-export function getRetentionCompareVocabulary(managedAnimeID?: string): Promise<RetentionCompareVocabulary> {
+export function getReplacementCompareVocabulary(managedAnimeID?: string): Promise<ReplacementCompareVocabulary> {
   const query = managedAnimeID ? `?${new URLSearchParams({ managed_anime_id: managedAnimeID }).toString()}` : "";
-  return request(`/file-maintenance/retention/compare-vocabulary${query}`, { method: "GET" });
+  return request(`/file-maintenance/replacement/compare-vocabulary${query}`, { method: "GET" });
 }
 
-/** Complete frozen per-instance retention policy. */
+/** Complete frozen per-instance replacement policy. */
 /** Frozen per-instance parser policy (parser kind + default offset). */
 /** Frozen offset-correction migration plans of one anime. */
 /** Durable offset migration generations of one anime (owner truth). */

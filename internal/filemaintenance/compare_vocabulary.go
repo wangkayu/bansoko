@@ -36,10 +36,10 @@ func (s *Service) CompareVocabularyApplication(ctx context.Context, animeID stri
 		out[qualityprofile.KeyReleaseLang] = append([]string{}, rules.Language...)
 		out[qualityprofile.KeyReleaseResolution] = append([]string{}, rules.Resolution...)
 	}
-	if s == nil || s.retention == nil || s.retention.db == nil {
+	if s == nil || s.replacement == nil || s.replacement.db == nil {
 		return out, nil
 	}
-	seen, err := seenAniBTValues(ctx, s.retention.db, strings.TrimSpace(animeID))
+	seen, err := seenAniBTValues(ctx, s.replacement.db, strings.TrimSpace(animeID))
 	if err != nil {
 		return nil, err
 	}

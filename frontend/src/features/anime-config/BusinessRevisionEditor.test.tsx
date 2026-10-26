@@ -10,7 +10,7 @@ import { canonicalJSON } from "../../lib/draft";
 import { preset } from "../../testing/businessPreset";
 import { t } from "../../lib/i18n";
 const mocks = vi.hoisted(() => ({ read: vi.fn(), preset: vi.fn(), apply: vi.fn(), save: vi.fn(), patch: vi.fn(), confirm: vi.fn() }));
-vi.mock("../../lib/api/client", () => ({ getAnimeBusinessEdit: mocks.read, getBusinessPreset: mocks.preset, applyAnimeConfigCandidate: mocks.apply, newUUID: () => "exact-key", toUserMessage: () => "请求失败", getRetentionCompareVocabulary: async () => ({ items: [] }) }));
+vi.mock("../../lib/api/client", () => ({ getAnimeBusinessEdit: mocks.read, getBusinessPreset: mocks.preset, applyAnimeConfigCandidate: mocks.apply, newUUID: () => "exact-key", toUserMessage: () => "请求失败", getReplacementCompareVocabulary: async () => ({ items: [] }) }));
 vi.mock("../../lib/candidate/serverCandidateStore", () => ({ getCandidateStore: () => ({ save: mocks.save, patch: mocks.patch }) }));
 vi.mock("./confirmBusinessReplace", () => ({ confirmBusinessReplace: mocks.confirm }));
 vi.mock("../anime-forms/RulesSectionsFields", () => ({ RulesSectionsFields: () => null }));
@@ -20,7 +20,7 @@ async function pick(selectName: string, optionLabel: string) {
  await userEvent.setup().click(screen.getByRole("combobox",{name:selectName}));
  await userEvent.setup().click(await screen.findByRole("option",{name:optionLabel}));
 }
-const versions = { rules: 2, subgroups: 3, parser: 4, retention: 5, file_effect: 6, business: 7 };
+const versions = { rules: 2, subgroups: 3, parser: 4, replacement: 5, file_effect: 6, business: 7 };
 beforeEach(() => { Object.defineProperty(globalThis,"crypto",{value:webcrypto,configurable:true}); vi.clearAllMocks(); mocks.read.mockResolvedValue({ target_managed_anime_id: "target", draft, expected_owner_versions: versions }); mocks.preset.mockResolvedValue(preset); mocks.confirm.mockResolvedValue(true); mocks.apply.mockResolvedValue({}); mocks.save.mockImplementation(async (value: AnimeDraft) => ({ id: "working", version: 9, current_revision: 11, draft: value })); });
 it("load does not save; save does not apply; explicit apply carries exact target and versions", async () => {
  render(<BusinessRevisionEditor animeID="target" onApplied={vi.fn()} />);
@@ -64,9 +64,9 @@ it("apply CAS conflict preserves exact saved revision and does not replace editi
 it("real complete business controls freeze SHA then save and explicitly apply exact revision",async()=>{
  render(<BusinessRevisionEditor animeID="target" onApplied={vi.fn()} />);
  fireEvent.click(screen.getByText(t("config.revision.edit")));fireEvent.click(await screen.findByText(t("config.useDefaults")));await screen.findByText(t("config.revision.dirty"));
- await pick(t("retention.admissionTitle"),t("retention.admission.all"));await pick(t("file.unclassifiedTitle"),t("file.unclassified.skip"));
+ await pick(t("replacement.admissionTitle"),t("replacement.admission.all"));await pick(t("file.unclassifiedTitle"),t("file.unclassified.skip"));
  fireEvent.click(screen.getByText(t("config.revision.save")));await screen.findByText(t("config.revision.saved"));
- const submitted=mocks.save.mock.calls[0][0] as AnimeDraft;const expected=structuredClone(preset.snapshot);expected.retention.admission_mode="all";expected.unclassified_route="skip";
+ const submitted=mocks.save.mock.calls[0][0] as AnimeDraft;const expected=structuredClone(preset.snapshot);expected.replacement.admission_mode="all";expected.unclassified_route="skip";
  expect(submitted.business).toEqual(expected);expect(submitted.business_digest).toBe(`sha256:${createHash("sha256").update(canonicalJSON(expected)).digest("hex")}`);
  expect(submitted.title).toBe("instance");expect(submitted.instance_label).toBe("label");expect(submitted.metadata).toEqual(draft.metadata);expect(submitted.rss_sources).toEqual(draft.rss_sources);expect(mocks.apply).not.toHaveBeenCalled();
  fireEvent.click(screen.getByText(t("config.revision.apply")));await waitFor(()=>expect(mocks.apply).toHaveBeenCalledWith("working",{target_managed_anime_id:"target",revision:11,expected_candidate_version:9,expected_owner_versions:versions},"exact-key"));
@@ -74,18 +74,18 @@ it("real complete business controls freeze SHA then save and explicitly apply ex
 it("program digests are read-only; a failed save preserves the edited draft",async()=>{
  render(<BusinessRevisionEditor animeID="target" onApplied={vi.fn()} />);fireEvent.click(screen.getByText(t("config.revision.edit")));fireEvent.click(await screen.findByText(t("config.useDefaults")));await screen.findByText(t("config.revision.dirty"));
  expect(screen.queryByLabelText("vars digest")).toBeNull();expect(screen.queryByLabelText("attrrules digest")).toBeNull();
- await pick(t("retention.admissionTitle"),t("retention.admission.all"));mocks.save.mockRejectedValueOnce(new Error("exact Vars program is not persisted"));fireEvent.click(screen.getByText(t("config.revision.save")));
+ await pick(t("replacement.admissionTitle"),t("replacement.admission.all"));mocks.save.mockRejectedValueOnce(new Error("exact Vars program is not persisted"));fireEvent.click(screen.getByText(t("config.revision.save")));
  await waitFor(()=>expect(mocks.save).toHaveBeenCalledTimes(1));await screen.findByRole("alert");
- expect(screen.getByRole("combobox",{name:t("retention.admissionTitle")})).toHaveTextContent(t("retention.admission.all"));expect(screen.getByText(t("config.revision.dirty"))).toBeTruthy();expect(mocks.apply).not.toHaveBeenCalled();
+ expect(screen.getByRole("combobox",{name:t("replacement.admissionTitle")})).toHaveTextContent(t("replacement.admission.all"));expect(screen.getByText(t("config.revision.dirty"))).toBeTruthy();expect(mocks.apply).not.toHaveBeenCalled();
 });
-// Hidden per the subscription's current retention and cleanup version: the anime config dialog
-// passes hideRetention (the restore checklist lives with the dialog). The cases above omit it
+// Hidden per the subscription's current replacement version: the anime config dialog
+// passes hideReplacement (the restore checklist lives with the dialog). The cases above omit it
 // and keep covering the full control set.
-it("hideRetention：不显示保留与清理的两项控件，隐藏的取值原样随修订保存",async()=>{
- render(<BusinessRevisionEditor animeID="target" onApplied={vi.fn()} hideRetention />);
+it("hideReplacement：不显示保留与清理的两项控件，隐藏的取值原样随修订保存",async()=>{
+ render(<BusinessRevisionEditor animeID="target" onApplied={vi.fn()} hideReplacement />);
  fireEvent.click(screen.getByText(t("config.revision.edit")));fireEvent.click(await screen.findByText(t("config.useDefaults")));await screen.findByText(t("config.revision.dirty"));
  expect(screen.queryByText(t("config.snapshot.legend"))).toBeNull();
- expect(screen.queryByRole("combobox",{name:t("retention.admissionTitle")})).toBeNull();
+ expect(screen.queryByRole("combobox",{name:t("replacement.admissionTitle")})).toBeNull();
  expect(screen.queryByRole("group",{name:t("qualityCompare.title")})).toBeNull();
 
  // The parser is not chosen here: it lives in the rules tab's "parsing" section together with the episode recognition rules.
@@ -93,6 +93,6 @@ it("hideRetention：不显示保留与清理的两项控件，隐藏的取值原
  await pick(t("file.unclassifiedTitle"),t("file.unclassified.skip"));
  fireEvent.click(screen.getByText(t("config.revision.save")));await screen.findByText(t("config.revision.saved"));
  const submitted=mocks.save.mock.calls[0][0] as AnimeDraft;
- expect(submitted.business?.retention).toEqual(preset.snapshot.retention);expect(submitted.business?.retention_version).toBe(preset.snapshot.retention_version);
+ expect(submitted.business?.replacement).toEqual(preset.snapshot.replacement);expect(submitted.business?.replacement_version).toBe(preset.snapshot.replacement_version);
  expect(submitted.business?.unclassified_route).toBe("skip");
 });

@@ -258,7 +258,7 @@ func (f *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		attemptID := "attempt-1"
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"one_shot_id": "shot-1", "managed_anime_id": "anime-1", "subscription_id": "sub-1", "release_id": "release-1", "rss_source_id": "rss-1",
-			"state": "retention_pending", "version": 3, "current_attempt_id": attemptID,
+			"state": "reclaim_pending", "version": 3, "current_attempt_id": attemptID,
 		})
 	case r.Method == "GET" && r.URL.Path == "/api/v1/one-shot-acquisitions/shot-1/attempts":
 		_ = json.NewEncoder(w).Encode(map[string]any{

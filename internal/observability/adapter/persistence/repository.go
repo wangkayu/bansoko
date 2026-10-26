@@ -41,7 +41,7 @@ func (r *Repository) transaction(scope txscope.Tx, batchSize int) (*sql.Tx, erro
 	return tx, nil
 }
 
-func retentionRows(result sql.Result, operation string) (int64, error) {
+func replacementRows(result sql.Result, operation string) (int64, error) {
 	count, err := result.RowsAffected()
 	if err != nil {
 		return 0, fmt.Errorf("read %s deleted row count: %w", operation, err)
@@ -61,7 +61,7 @@ func (r *Repository) PurgePluginDeliveryAttempts(ctx context.Context, scope txsc
 	if err != nil {
 		return 0, err
 	}
-	return retentionRows(result, "plugin delivery attempts")
+	return replacementRows(result, "plugin delivery attempts")
 }
 
 // PurgePluginDeliveries deletes completed, expired deliveries after their
@@ -75,7 +75,7 @@ func (r *Repository) PurgePluginDeliveries(ctx context.Context, scope txscope.Tx
 	if err != nil {
 		return 0, err
 	}
-	return retentionRows(result, "plugin deliveries")
+	return replacementRows(result, "plugin deliveries")
 }
 
 // PurgeSubscriptionLogEntries deletes expired subscription evidence in the
@@ -89,7 +89,7 @@ func (r *Repository) PurgeSubscriptionLogEntries(ctx context.Context, scope txsc
 	if err != nil {
 		return 0, err
 	}
-	return retentionRows(result, "subscription log entries")
+	return replacementRows(result, "subscription log entries")
 }
 
 // PurgeAutomationDispatchRuns deletes expired terminal dispatch summaries in
@@ -103,7 +103,7 @@ func (r *Repository) PurgeAutomationDispatchRuns(ctx context.Context, scope txsc
 	if err != nil {
 		return 0, err
 	}
-	return retentionRows(result, "automation dispatch runs")
+	return replacementRows(result, "automation dispatch runs")
 }
 
 // PurgeDiagnosticEpisodes deletes expired resolved diagnostic episodes while
@@ -117,5 +117,5 @@ func (r *Repository) PurgeDiagnosticEpisodes(ctx context.Context, scope txscope.
 	if err != nil {
 		return 0, err
 	}
-	return retentionRows(result, "diagnostic episodes")
+	return replacementRows(result, "diagnostic episodes")
 }

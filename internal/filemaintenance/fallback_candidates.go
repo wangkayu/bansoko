@@ -99,12 +99,12 @@ func (s *ReplacementDecisionService) FallbackCandidates(ctx context.Context, ani
 	)
 	err = tx.QueryRowContext(ctx, `
 SELECT admission_mode, quality_profile
-FROM anime_business_configs WHERE managed_anime_id = $1 AND retention_version IS NOT NULL`, animeID).Scan(&modeRaw, &profileRaw)
+FROM anime_business_configs WHERE managed_anime_id = $1 AND replacement_version IS NOT NULL`, animeID).Scan(&modeRaw, &profileRaw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, "policy_missing", nil
 	}
 	if err != nil {
-		return nil, "", fmt.Errorf("read retention policy: %w", err)
+		return nil, "", fmt.Errorf("read replacement policy: %w", err)
 	}
 	mode := AdmissionMode(modeRaw)
 	if mode == ModeAll {

@@ -111,7 +111,7 @@ func (s *Store) LockCleanupWorkItemTx(ctx context.Context, scope txscope.Tx, cle
 		return "", "", "", "", "", 0, errors.New("lock cleanup work item requires cleanup ID and kind")
 	}
 	row, err := persistence.New(tx).LockCleanupWorkItem(ctx, persistence.LockCleanupWorkItemParams{
-		OwnerType: OwnerCleanup,
+		OwnerType: OwnerReplacementDeletion,
 		OwnerID:   cleanupID,
 		Kind:      kind,
 	})
@@ -139,7 +139,7 @@ func (s *Store) CompleteCleanupWorkItemTx(ctx context.Context, scope txscope.Tx,
 	result, err := persistence.New(tx).CompleteCleanupWorkItem(ctx, persistence.CompleteCleanupWorkItemParams{
 		NewOwnerVersion:    newVersion,
 		WorkItemID:         workItemID,
-		OwnerType:          OwnerCleanup,
+		OwnerType:          OwnerReplacementDeletion,
 		OwnerID:            cleanupID,
 		Kind:               kind,
 		MaxExpectedVersion: maxExpectedVersion,
@@ -637,7 +637,7 @@ const maxRetentionBatchSize = 500
 
 // PurgeExpiredTx deletes only expired terminal ordinary WorkItems in the
 // caller-owned transaction. One-shot-marked snapshots remain under the
-// independent OneShotRetentionService, and live rows/product owners are never
+// independent OneShotReclaimService, and live rows/product owners are never
 // touched.
 func (s *Store) PurgeExpiredTx(ctx context.Context, scope txscope.Tx, batchSize int) (int64, error) {
 	if s == nil {

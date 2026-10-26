@@ -27,7 +27,7 @@ func TestMapFileMaintenanceOverviewViewMapsNestedValuesAndCopiesMaps(t *testing.
 	}}
 	placements := []filemaintenance.PlacementView{{ID: "placement-1", ManagedAnimeID: "anime-1", PhysicalPath: "/library/a.mkv"}}
 	decisions := []filemaintenance.ReplacementDecisionView{{ID: "decision-1", ManagedAnimeID: "anime-1", State: "admitted", Pools: &[]filemaintenance.ReplacementPoolEvidence{}}}
-	cleanups := []filemaintenance.CleanupOperationView{{
+	deletions := []filemaintenance.ReplacementDeletionView{{
 		CreatedAt:      now,
 		FailureCode:    &reason,
 		ID:             "cleanup-1",
@@ -68,7 +68,7 @@ func TestMapFileMaintenanceOverviewViewMapsNestedValuesAndCopiesMaps(t *testing.
 		Consumers:  &consumers,
 		Placements: &placements,
 		Decisions:  &decisions,
-		Cleanups:   &cleanups,
+		Deletions:  &deletions,
 		Alignments: &alignments,
 	}
 
@@ -82,7 +82,7 @@ func TestMapFileMaintenanceOverviewViewMapsNestedValuesAndCopiesMaps(t *testing.
 	if mapped.Consumers == nil || len(*mapped.Consumers) != 1 || (*mapped.Consumers)[0].Reason == nil || *(*mapped.Consumers)[0].Reason != reason {
 		t.Fatalf("mapped consumers = %+v", mapped.Consumers)
 	}
-	if mapped.Placements == nil || len(*mapped.Placements) != 1 || mapped.Cleanups == nil || mapped.Alignments == nil || mapped.Decisions == nil {
+	if mapped.Placements == nil || len(*mapped.Placements) != 1 || mapped.Deletions == nil || mapped.Alignments == nil || mapped.Decisions == nil {
 		t.Fatalf("mapped collections = %+v", mapped)
 	}
 	if mapped.Scan.Progress["nested"].(map[string]interface{})["remaining"] != 1 {
@@ -92,22 +92,22 @@ func TestMapFileMaintenanceOverviewViewMapsNestedValuesAndCopiesMaps(t *testing.
 	if progress["nested"].(map[string]any)["remaining"] != 1 {
 		t.Fatal("scan progress aliases application map")
 	}
-	if *(*mapped.Cleanups)[0].Reason == "" || (*mapped.Cleanups)[0].UpdatedAt == &now || (*mapped.Alignments)[0].PolicyVersion == &policyVersion {
+	if *(*mapped.Deletions)[0].Reason == "" || (*mapped.Deletions)[0].UpdatedAt == &now || (*mapped.Alignments)[0].PolicyVersion == &policyVersion {
 		t.Fatal("nested pointer values were not copied")
 	}
 }
 
-func TestMapFileMaintenanceOverviewViewMapsRetentionAndPreservesShapes(t *testing.T) {
+func TestMapFileMaintenanceOverviewViewMapsReplacementAndPreservesShapes(t *testing.T) {
 	now := time.Unix(456, 0).UTC()
-	global := filemaintenance.RetentionPolicyDefaultView{
-		Policy: filemaintenance.RetentionPolicy{
+	global := filemaintenance.ReplacementPolicyDefaultView{
+		Policy: filemaintenance.ReplacementPolicy{
 			AdmissionMode:  filemaintenance.ModeAll,
 			QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"anibt.format","ranks":[["MKV"]]}]}`),
 		},
 		UpdatedAt: &now,
 		Version:   3,
 	}
-	instance := filemaintenance.InstanceRetentionPolicyView{
+	instance := filemaintenance.InstanceReplacementPolicyView{
 		ManagedAnimeID:       "anime-1",
 		Policy:               global.Policy,
 		SourceDefaultVersion: 2,
@@ -121,23 +121,23 @@ func TestMapFileMaintenanceOverviewViewMapsRetentionAndPreservesShapes(t *testin
 		Consumers:      &[]filemaintenance.ReconciliationConsumerStateView{},
 		Placements:     &[]filemaintenance.PlacementView{},
 		Decisions:      &[]filemaintenance.ReplacementDecisionView{},
-		Cleanups:       &[]filemaintenance.CleanupOperationView{},
+		Deletions:      &[]filemaintenance.ReplacementDeletionView{},
 		Alignments:     &[]filemaintenance.AlignmentOperationView{},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if mapped.GlobalDefault == nil || mapped.InstancePolicy == nil || mapped.InstancePolicy.SourceDefaultVersion != 2 || mapped.InstancePolicy.Version != 4 {
-		t.Fatalf("mapped retention = global=%+v instance=%+v", mapped.GlobalDefault, mapped.InstancePolicy)
+		t.Fatalf("mapped replacement = global=%+v instance=%+v", mapped.GlobalDefault, mapped.InstancePolicy)
 	}
-	if mapped.Consumers == nil || mapped.Placements == nil || mapped.Decisions == nil || mapped.Cleanups == nil || mapped.Alignments == nil {
+	if mapped.Consumers == nil || mapped.Placements == nil || mapped.Decisions == nil || mapped.Deletions == nil || mapped.Alignments == nil {
 		t.Fatal("empty collection pointers were lost")
 	}
 	mapped, err = mapFileMaintenanceOverviewView(filemaintenance.OverviewView{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mapped.Consumers != nil || mapped.Placements != nil || mapped.Decisions != nil || mapped.Cleanups != nil || mapped.Alignments != nil || mapped.Scan != nil {
+	if mapped.Consumers != nil || mapped.Placements != nil || mapped.Decisions != nil || mapped.Deletions != nil || mapped.Alignments != nil || mapped.Scan != nil {
 		t.Fatalf("nil collection shape changed = %+v", mapped)
 	}
 }

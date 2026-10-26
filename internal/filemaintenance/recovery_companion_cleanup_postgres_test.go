@@ -77,7 +77,7 @@ func TestRecoveredCompanionCleanupMatchesRegistrationIdentity(t *testing.T) {
 		ManagedAnimeID:    scene.animeID,
 		Coverage:          []string{"tv:s1:e1"},
 		ReplacementRef:    "dec-recovered",
-		RetentionMode:     "single_copy",
+		AdmissionMode:     "single_copy",
 		SourcePath:        losers[0].Path,
 		SourceFingerprint: domain.MetadataFingerprint(losers[0].SizeBytes, domain.FileIdentity{}),
 	})
@@ -92,7 +92,7 @@ func TestRecoveredCompanionCleanupMatchesRegistrationIdentity(t *testing.T) {
 	}
 	runCleanupDelete(t, service, store)
 	var state, failureCode, reason string
-	if err := db.QueryRow(`SELECT state, COALESCE(failure_code, ''), COALESCE(reason, '') FROM cleanup_operations WHERE id = $1`, op.ID).Scan(&state, &failureCode, &reason); err != nil {
+	if err := db.QueryRow(`SELECT state, COALESCE(failure_code, ''), COALESCE(reason, '') FROM replacement_deletions WHERE id = $1`, op.ID).Scan(&state, &failureCode, &reason); err != nil {
 		t.Fatal(err)
 	}
 	if state != string(CleanupDeleted) {

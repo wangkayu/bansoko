@@ -326,7 +326,7 @@ func main() {
 	observabilityService = applicationGraph.observabilityService
 	catalogService := applicationGraph.catalogService
 	retentionJanitor := applicationGraph.retentionJanitor
-	oneShotRetention := applicationGraph.oneShotRetention
+	oneShotReclaim := applicationGraph.oneShotReclaim
 	acquisitionSettle := applicationGraph.acquisitionSettle
 	// N1: the run log of typed acquisitions is derived after commit by the
 	// independent consumer; no acquisition stage writes Activity.
@@ -523,7 +523,7 @@ func main() {
 		func(ctx context.Context) { runRecordRetentionMaintenance(ctx, retentionJanitor, runtimeLogger) },
 		func(ctx context.Context) { runMetadataRefreshSweep(ctx, metadataRefreshSweep, runtimeLogger) },
 		func(ctx context.Context) {
-			runOneShotRetentionMaintenance(ctx, oneShotRetention, oneShotDrainDue, eventHub, runtimeLogger)
+			runOneShotReclaimMaintenance(ctx, oneShotReclaim, oneShotDrainDue, eventHub, runtimeLogger)
 		},
 		func(ctx context.Context) {
 			runAcquisitionSettlement(ctx, acquisitionSettle, eventHub, oneShotDrainDue, runtimeLogger)
@@ -841,7 +841,7 @@ func runRecordRetentionMaintenance(ctx context.Context, janitor *retentionapplic
 		result, err := janitor.RunPass(ctx)
 		if err != nil && ctx.Err() == nil && len(result.Results) == 0 {
 			logger.Error(ctx, observabilityport.RuntimeEvent{
-				Message:    "retention pass failed",
+				Message:    "record retention pass failed",
 				Component:  "retention",
 				Operation:  "sweep",
 				Outcome:    "failure",
@@ -1022,12 +1022,12 @@ func runAcquisitionSettlement(ctx context.Context, service *acquisitionsettlemen
 	}
 }
 
-// runOneShotRetentionMaintenance drives the finite one-shot marker lifecycle
-// on the same cadence as evidence retention, and right after the settlement
+// runOneShotReclaimMaintenance drives the finite one-shot marker lifecycle
+// on the same cadence as record retention, and right after the settlement
 // pass settled a root (drainDue). Failures are logged and retried on the next
-// tick; they never block the evidence-retention purge. A pass that moved a
+// tick; they never block the record-retention purge. A pass that moved a
 // marker refreshes open records, whose recovery actions read the marker.
-func runOneShotRetentionMaintenance(ctx context.Context, service *workitems.OneShotRetentionService, drainDue <-chan struct{}, hub *events.Hub, logger observabilityport.RuntimeLogger) {
+func runOneShotReclaimMaintenance(ctx context.Context, service *workitems.OneShotReclaimService, drainDue <-chan struct{}, hub *events.Hub, logger observabilityport.RuntimeLogger) {
 	run := func() {
 		result, err := service.RunPass(ctx)
 		if result.Drained > 0 || result.Blocked > 0 || result.Reclaimed > 0 || result.Rechecked > 0 {
@@ -1036,11 +1036,11 @@ func runOneShotRetentionMaintenance(ctx context.Context, service *workitems.OneS
 		if err != nil {
 			if ctx.Err() == nil {
 				logger.Error(ctx, observabilityport.RuntimeEvent{
-					Message:    "one-shot retention pass failed",
+					Message:    "one-shot reclaim pass failed",
 					Component:  "retention",
-					Operation:  "oneshot_retention",
+					Operation:  "oneshot_reclaim",
 					Outcome:    "failure",
-					ReasonCode: "oneshot_retention_failed",
+					ReasonCode: "oneshot_reclaim_failed",
 					ErrorClass: "retention",
 				})
 			}
@@ -1048,12 +1048,12 @@ func runOneShotRetentionMaintenance(ctx context.Context, service *workitems.OneS
 		}
 		if result.Drained > 0 || result.Reclaimed > 0 || result.Rechecked > 0 || result.Purged > 0 {
 			logger.Info(ctx, observabilityport.RuntimeEvent{
-				Message: fmt.Sprintf("one-shot retention pass completed (drained=%d reclaimed=%d rechecked=%d blocked=%d purged=%d)",
+				Message: fmt.Sprintf("one-shot reclaim pass completed (drained=%d reclaimed=%d rechecked=%d blocked=%d purged=%d)",
 					result.Drained, result.Reclaimed, result.Rechecked, result.Blocked, result.Purged),
 				Component:  "retention",
-				Operation:  "oneshot_retention",
+				Operation:  "oneshot_reclaim",
 				Outcome:    "success",
-				ReasonCode: "oneshot_retention_completed",
+				ReasonCode: "oneshot_reclaim_completed",
 			})
 		}
 	}
@@ -1206,7 +1206,7 @@ func serverWorkItemKinds() []string {
 		workitems.KindOffsetMigrationExecute,
 		workitems.KindReplacementEvaluate,
 		workitems.KindReplacementFallback,
-		workitems.KindCleanupDelete,
+		workitems.KindReplacementDelete,
 		workitems.KindFileManagerExecute,
 		workitems.KindCompletionExecute,
 	}

@@ -67,14 +67,14 @@ func (s *Server) SaveFileMaintenanceAnimePolicy(w http.ResponseWriter, r *http.R
 	writeJSON(w, r.Context(), http.StatusOK, filemainttransport.PolicyView(view))
 }
 
-// GetRetentionPolicyDefault returns the singleton creation default.
-func (s *Server) GetRetentionPolicyDefault(w http.ResponseWriter, r *http.Request) {
-	view, err := s.deps.FileMaintenance.GetRetentionPolicyDefaultApplication(r.Context())
+// GetReplacementPolicyDefault returns the singleton creation default.
+func (s *Server) GetReplacementPolicyDefault(w http.ResponseWriter, r *http.Request) {
+	view, err := s.deps.FileMaintenance.GetReplacementPolicyDefaultApplication(r.Context())
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
-	wireView, err := filemainttransport.RetentionPolicyDefaultView(view)
+	wireView, err := filemainttransport.ReplacementPolicyDefaultView(view)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -82,25 +82,25 @@ func (s *Server) GetRetentionPolicyDefault(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, r.Context(), http.StatusOK, wireView)
 }
 
-// SaveRetentionPolicyDefault saves the creation default with CAS (future
+// SaveReplacementPolicyDefault saves the creation default with CAS (future
 // instances only).
-func (s *Server) SaveRetentionPolicyDefault(w http.ResponseWriter, r *http.Request) {
-	var input generated.RetentionPolicyDefaultInput
+func (s *Server) SaveReplacementPolicyDefault(w http.ResponseWriter, r *http.Request) {
+	var input generated.ReplacementPolicyDefaultInput
 	if err := decodeJSON(w, r, &input); err != nil {
 		writeError(w, r, err)
 		return
 	}
-	inputView, err := filemainttransport.RetentionPolicyDefaultInput(input)
+	inputView, err := filemainttransport.ReplacementPolicyDefaultInput(input)
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
-	view, err := s.deps.FileMaintenance.SaveRetentionPolicyDefaultApplication(r.Context(), inputView, "web", "web")
+	view, err := s.deps.FileMaintenance.SaveReplacementPolicyDefaultApplication(r.Context(), inputView, "web", "web")
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
-	wireView, err := filemainttransport.RetentionPolicyDefaultView(view)
+	wireView, err := filemainttransport.ReplacementPolicyDefaultView(view)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -108,14 +108,14 @@ func (s *Server) SaveRetentionPolicyDefault(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, r.Context(), http.StatusOK, wireView)
 }
 
-// GetInstanceRetentionPolicy returns the complete frozen instance policy.
-func (s *Server) GetInstanceRetentionPolicy(w http.ResponseWriter, r *http.Request, animeID generated.ManagedAnimeID) {
-	view, err := s.deps.FileMaintenance.GetInstanceRetentionPolicyApplication(r.Context(), string(animeID))
+// GetInstanceReplacementPolicy returns the complete frozen instance policy.
+func (s *Server) GetInstanceReplacementPolicy(w http.ResponseWriter, r *http.Request, animeID generated.ManagedAnimeID) {
+	view, err := s.deps.FileMaintenance.GetInstanceReplacementPolicyApplication(r.Context(), string(animeID))
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
-	wireView, err := filemainttransport.InstanceRetentionPolicyView(view)
+	wireView, err := filemainttransport.InstanceReplacementPolicyView(view)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -123,24 +123,24 @@ func (s *Server) GetInstanceRetentionPolicy(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, r.Context(), http.StatusOK, wireView)
 }
 
-// SaveInstanceRetentionPolicy fully replaces one instance policy with CAS.
-func (s *Server) SaveInstanceRetentionPolicy(w http.ResponseWriter, r *http.Request, animeID generated.ManagedAnimeID) {
-	var input generated.InstanceRetentionPolicyInput
+// SaveInstanceReplacementPolicy fully replaces one instance policy with CAS.
+func (s *Server) SaveInstanceReplacementPolicy(w http.ResponseWriter, r *http.Request, animeID generated.ManagedAnimeID) {
+	var input generated.InstanceReplacementPolicyInput
 	if err := decodeJSON(w, r, &input); err != nil {
 		writeError(w, r, err)
 		return
 	}
-	inputView, err := filemainttransport.InstanceRetentionPolicyInput(input)
+	inputView, err := filemainttransport.InstanceReplacementPolicyInput(input)
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
-	view, err := s.deps.FileMaintenance.SaveInstanceRetentionPolicyApplication(r.Context(), string(animeID), inputView, "web", "web")
+	view, err := s.deps.FileMaintenance.SaveInstanceReplacementPolicyApplication(r.Context(), string(animeID), inputView, "web", "web")
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
-	wireView, err := filemainttransport.InstanceRetentionPolicyView(view)
+	wireView, err := filemainttransport.InstanceReplacementPolicyView(view)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -164,8 +164,8 @@ func (s *Server) ReplanFileMaintenance(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetFileMaintenanceOverview returns the per-instance FileMaintenance truth
-// surface (scan owner, consumer outcomes, placements, decisions, cleanups,
-// alignments, retention policy and the global new-instance default).
+// surface (scan owner, consumer outcomes, placements, decisions, deletions,
+// alignments, replacement policy and the global new-instance default).
 func (s *Server) GetFileMaintenanceOverview(w http.ResponseWriter, r *http.Request, animeID generated.ManagedAnimeID) {
 	result, err := s.deps.FileMaintenance.GetOverviewApplication(r.Context(), string(animeID))
 	if err != nil {

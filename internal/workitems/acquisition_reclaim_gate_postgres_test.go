@@ -25,9 +25,9 @@ func TestReclaimRetainsRunningAcquisitionWithoutSealedPlan(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			insertOneShotMarker(t, db, marker, OneShotStateRetentionPending, oneShotRetentionAt(time.Now().Add(-time.Hour)))
+			insertOneShotMarker(t, db, marker, OneShotStateReclaimPending, oneShotReclaimAt(time.Now().Add(-time.Hour)))
 			before := acquisitionfixture.Snapshot(t, owner)
-			service, err := NewOneShotRetentionService(db, nil)
+			service, err := NewOneShotReclaimService(db, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -9,7 +9,7 @@ import (
 func verifyReplacementApprovalParentDrift(t *testing.T, owner, runtimeDB *sql.DB, path string) {
 	t.Helper()
 	cases := []struct{ name, change, restore string }{
-		{"policy", `UPDATE anime_business_configs SET retention_version=retention_version+1 WHERE managed_anime_id='anime-1'`, `UPDATE anime_business_configs SET retention_version=1 WHERE managed_anime_id='anime-1'`},
+		{"policy", `UPDATE anime_business_configs SET replacement_version=replacement_version+1 WHERE managed_anime_id='anime-1'`, `UPDATE anime_business_configs SET replacement_version=1 WHERE managed_anime_id='anime-1'`},
 		{"subscription", `UPDATE subscriptions SET version=version+1 WHERE id='sub-1'`, `UPDATE subscriptions SET version=1 WHERE id='sub-1'`},
 		{"decision", `UPDATE replacement_decisions SET state='settled' WHERE id='decision'`, `UPDATE replacement_decisions SET state='admitted' WHERE id='decision'`},
 	}

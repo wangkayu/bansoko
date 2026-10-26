@@ -232,7 +232,7 @@ func TestCalibrationProducesTypedFactsAndPlacements(t *testing.T) {
 	fixture := newCalibrationFixture(t)
 	defer fixture.db.Close()
 	seedAnimeSubscription(t, fixture.db, "anime-cal-1", "sub-1", "stopped")
-	seedInstanceRetention(t, fixture.db, "anime-cal-1", ModeAll, ``, 1)
+	seedInstanceReplacement(t, fixture.db, "anime-cal-1", ModeAll, ``, 1)
 	seedCompletedGeneration(t, fixture.db, "anime-cal-1", 1, map[string]string{
 		"/library/Show/Season 01/EP 01.mkv":   "fp-1",
 		"/library/Show/Season 01/EP 02.mkv":   "fp-2",
@@ -276,15 +276,15 @@ SELECT COUNT(*) FROM placements WHERE source_owner_ref LIKE '%unknown.bin'`).Sca
 	}
 	// The scan itself is zero-file-effect: no alignment/cleanup operation and
 	// no file move was recorded by calibration.
-	var alignmentOps, cleanups int
+	var alignmentOps, deletions int
 	if err := fixture.db.QueryRow(`SELECT COUNT(*) FROM alignment_operations`).Scan(&alignmentOps); err != nil {
 		t.Fatal(err)
 	}
-	if err := fixture.db.QueryRow(`SELECT COUNT(*) FROM cleanup_operations`).Scan(&cleanups); err != nil {
+	if err := fixture.db.QueryRow(`SELECT COUNT(*) FROM replacement_deletions`).Scan(&deletions); err != nil {
 		t.Fatal(err)
 	}
-	if alignmentOps != 0 || cleanups != 0 {
-		t.Fatalf("calibration must be zero-file-effect: alignments=%d cleanups=%d", alignmentOps, cleanups)
+	if alignmentOps != 0 || deletions != 0 {
+		t.Fatalf("calibration must be zero-file-effect: alignments=%d deletions=%d", alignmentOps, deletions)
 	}
 	// Both consumer claims were enqueued.
 	for _, kind := range []string{workitems.KindReconciliationConsumeAlignment, workitems.KindReconciliationConsumeReplacement} {
@@ -302,7 +302,7 @@ func TestCalibrationDetectsMissingFilesWithoutDeletingPlacements(t *testing.T) {
 	fixture := newCalibrationFixture(t)
 	defer fixture.db.Close()
 	seedAnimeSubscription(t, fixture.db, "anime-cal-2", "sub-1", "active")
-	seedInstanceRetention(t, fixture.db, "anime-cal-2", ModeAll, ``, 1)
+	seedInstanceReplacement(t, fixture.db, "anime-cal-2", ModeAll, ``, 1)
 	seedCompletedGeneration(t, fixture.db, "anime-cal-2", 1, map[string]string{
 		"/library/Show/Season 01/EP 01.mkv": "fp-1",
 		"/library/Show/Season 01/EP 02.mkv": "fp-2",
@@ -343,7 +343,7 @@ func TestCalibrationDoesNotReadmitPlacedFiles(t *testing.T) {
 	fixture := newCalibrationFixture(t)
 	defer fixture.db.Close()
 	seedAnimeSubscription(t, fixture.db, "anime-cal-readmit", "sub-1", "active")
-	seedInstanceRetention(t, fixture.db, "anime-cal-readmit", ModeAll, ``, 1)
+	seedInstanceReplacement(t, fixture.db, "anime-cal-readmit", ModeAll, ``, 1)
 	seedCompletedGeneration(t, fixture.db, "anime-cal-readmit", 1, map[string]string{
 		"/library/Show/Season 01/EP 01.mkv": "fp-1",
 	})
@@ -374,7 +374,7 @@ func TestCalibrationPlacementCoverageSurvivesMetadataRebinding(t *testing.T) {
 	fixture := newCalibrationFixture(t)
 	defer fixture.db.Close()
 	seedAnimeSubscription(t, fixture.db, "anime-cal-rebind", "sub-1", "stopped")
-	seedInstanceRetention(t, fixture.db, "anime-cal-rebind", ModeAll, ``, 1)
+	seedInstanceReplacement(t, fixture.db, "anime-cal-rebind", ModeAll, ``, 1)
 	seedCompletedGeneration(t, fixture.db, "anime-cal-rebind", 1, map[string]string{})
 	// One Placement-owned observation (frozen coverage) and one legacy
 	// observation with no frozen coverage at all.
@@ -423,7 +423,7 @@ func TestCalibrationReplayIsIdempotent(t *testing.T) {
 	fixture := newCalibrationFixture(t)
 	defer fixture.db.Close()
 	seedAnimeSubscription(t, fixture.db, "anime-cal-3", "sub-1", "active")
-	seedInstanceRetention(t, fixture.db, "anime-cal-3", ModeAll, ``, 1)
+	seedInstanceReplacement(t, fixture.db, "anime-cal-3", ModeAll, ``, 1)
 	seedCompletedGeneration(t, fixture.db, "anime-cal-3", 1, map[string]string{
 		"/library/Show/Season 01/EP 01.mkv": "fp-1",
 	})
@@ -480,7 +480,7 @@ func TestStoppedGenerationAlignmentRunsReplacementZero(t *testing.T) {
 	fixture := newCalibrationFixture(t)
 	defer fixture.db.Close()
 	seedAnimeSubscription(t, fixture.db, "anime-fan-1", "sub-1", "stopped")
-	seedInstanceRetention(t, fixture.db, "anime-fan-1", ModePerGroup,
+	seedInstanceReplacement(t, fixture.db, "anime-fan-1", ModePerGroup,
 		`{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["1080p"],["720p"],["480p"]]}]}`, 1)
 	enableAlignment(t, fixture.db, "anime-fan-1")
 	seedCompletedGeneration(t, fixture.db, "anime-fan-1", 1, map[string]string{
@@ -503,18 +503,18 @@ func TestStoppedGenerationAlignmentRunsReplacementZero(t *testing.T) {
 	if len(replOutcomes) != 1 || replOutcomes[0].OwnerResult.State != "blocked" || replOutcomes[0].OwnerResult.ReasonCode != "subscription_stopped" {
 		t.Fatalf("replacement consumer must be blocked on stopped: %+v", replOutcomes)
 	}
-	var evaluateItems, decisions, cleanups int
+	var evaluateItems, decisions, deletions int
 	if err := fixture.db.QueryRow(`SELECT COUNT(*) FROM work_item_history WHERE kind = 'replacement_evaluate' AND owner_id = 'anime-fan-1'`).Scan(&evaluateItems); err != nil {
 		t.Fatal(err)
 	}
 	if err := fixture.db.QueryRow(`SELECT COUNT(*) FROM replacement_decisions WHERE managed_anime_id = 'anime-fan-1'`).Scan(&decisions); err != nil {
 		t.Fatal(err)
 	}
-	if err := fixture.db.QueryRow(`SELECT COUNT(*) FROM cleanup_operations WHERE managed_anime_id = 'anime-fan-1'`).Scan(&cleanups); err != nil {
+	if err := fixture.db.QueryRow(`SELECT COUNT(*) FROM replacement_deletions WHERE managed_anime_id = 'anime-fan-1'`).Scan(&deletions); err != nil {
 		t.Fatal(err)
 	}
-	if evaluateItems != 0 || decisions != 0 || cleanups != 0 {
-		t.Fatalf("stopped generation replacement increments must be zero: items=%d decisions=%d cleanups=%d", evaluateItems, decisions, cleanups)
+	if evaluateItems != 0 || decisions != 0 || deletions != 0 {
+		t.Fatalf("stopped generation replacement increments must be zero: items=%d decisions=%d deletions=%d", evaluateItems, decisions, deletions)
 	}
 	// Checkpoints exist and are independent owner truth.
 	var alignmentState, replacementState string
@@ -547,7 +547,7 @@ func TestConsumersAreIndependentWhenOneFails(t *testing.T) {
 	fixture := newCalibrationFixture(t)
 	defer fixture.db.Close()
 	seedAnimeSubscription(t, fixture.db, "anime-fan-2", "sub-1", "active")
-	seedInstanceRetention(t, fixture.db, "anime-fan-2", ModeAll, ``, 1)
+	seedInstanceReplacement(t, fixture.db, "anime-fan-2", ModeAll, ``, 1)
 	seedCompletedGeneration(t, fixture.db, "anime-fan-2", 1, map[string]string{
 		"/library/Show/Season 01/EP 01.mkv": "fp-1",
 	})
@@ -592,7 +592,7 @@ func TestLocalOwnerCleanupConflictRetainsOwners(t *testing.T) {
 	fixture := newCalibrationFixture(t)
 	defer fixture.db.Close()
 	seedAnimeSubscription(t, fixture.db, "anime-unsub-1", "sub-1", "active")
-	seedInstanceRetention(t, fixture.db, "anime-unsub-1", ModeAll, ``, 1)
+	seedInstanceReplacement(t, fixture.db, "anime-unsub-1", ModeAll, ``, 1)
 	// A pending destructive effect: an admitted cleanup operation.
 	if _, err := fixture.db.Exec(`
 INSERT INTO placements(id, physical_path, managed_anime_id, source_evidence_type, source_owner_ref,
@@ -601,9 +601,9 @@ VALUES ('plc-1', '/library/Old/EP01.mkv', 'anime-unsub-1', 'reconciliation', 'ob
 		t.Fatal(err)
 	}
 	if _, err := fixture.db.Exec(`
-INSERT INTO cleanup_operations
+INSERT INTO replacement_deletions
 (id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
- retention_mode, source_path, source_fingerprint, state, version, created_at, updated_at)
+ admission_mode, source_path, source_fingerprint, state, version, created_at, updated_at)
 VALUES ('cln-1', 'cln:plc-1:dec-1', 'plc-1', 'anime-unsub-1', '["tv:s1:e1"]', 'dec-1',
  'single_copy', '/library/Old/EP01.mkv', 'fp', 'admitted', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
 		t.Fatal(err)
@@ -621,15 +621,15 @@ VALUES ('cln-1', 'cln:plc-1:dec-1', 'plc-1', 'anime-unsub-1', '["tv:s1:e1"]', 'd
 		t.Fatalf("checkpointed effect must produce the typed conflict, got %v", err)
 	}
 	// Owners retained for recovery.
-	var placements, cleanups int
+	var placements, deletions int
 	if err := fixture.db.QueryRow(`SELECT COUNT(*) FROM placements WHERE managed_anime_id = 'anime-unsub-1'`).Scan(&placements); err != nil {
 		t.Fatal(err)
 	}
-	if err := fixture.db.QueryRow(`SELECT COUNT(*) FROM cleanup_operations WHERE managed_anime_id = 'anime-unsub-1'`).Scan(&cleanups); err != nil {
+	if err := fixture.db.QueryRow(`SELECT COUNT(*) FROM replacement_deletions WHERE managed_anime_id = 'anime-unsub-1'`).Scan(&deletions); err != nil {
 		t.Fatal(err)
 	}
-	if placements != 1 || cleanups != 1 {
-		t.Fatalf("conflict must retain owners: placements=%d cleanups=%d", placements, cleanups)
+	if placements != 1 || deletions != 1 {
+		t.Fatalf("conflict must retain owners: placements=%d deletions=%d", placements, deletions)
 	}
 }
 
@@ -640,7 +640,7 @@ func TestLocalOwnerCleanupRemovesEveryFileMaintenanceOwnerRow(t *testing.T) {
 	fixture := newCalibrationFixture(t)
 	defer fixture.db.Close()
 	seedAnimeSubscription(t, fixture.db, "anime-unsub-2", "sub-1", "stopped")
-	seedInstanceRetention(t, fixture.db, "anime-unsub-2", ModeAll, ``, 1)
+	seedInstanceReplacement(t, fixture.db, "anime-unsub-2", ModeAll, ``, 1)
 	// An instance FileMaintenance policy override must die with the instance
 	// (otherwise the scheduler keeps submitting scans for a deleted ID).
 	if _, err := fixture.db.Exec(`
@@ -674,9 +674,9 @@ VALUES ('dec-settled', 'repl:anime-unsub-2:x', 'anime-unsub-2', 'rel-1', 'plc-ne
 		t.Fatal(err)
 	}
 	if _, err := fixture.db.Exec(`
-INSERT INTO cleanup_operations
+INSERT INTO replacement_deletions
 (id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
- retention_mode, source_path, source_fingerprint, state, version, created_at, updated_at)
+ admission_mode, source_path, source_fingerprint, state, version, created_at, updated_at)
 VALUES ('cln-done', 'cln:plc-old:dec-settled', 'plc-old', 'anime-unsub-2', '["tv:s1:e1"]', 'dec-settled',
  'single_copy', '/library/Old/EP01.mkv', 'fp', 'deleted', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
 		t.Fatal(err)
@@ -743,7 +743,7 @@ VALUES ('alg-done', 'align:x', 'anime-unsub-2', 1, 'anime-unsub-2:1:/library/Sho
 		t.Fatal(err)
 	}
 	for table, columns := range map[string]string{
-		"work_item_history":            "id IN ('wi-unsub', 'wi-offgen-unsub') OR owner_id = 'anime-unsub-2' OR (owner_type = 'alignment_operation' AND owner_id IN (SELECT id FROM alignment_operations WHERE managed_anime_id = 'anime-unsub-2')) OR (owner_type = 'cleanup_operation' AND owner_id IN (SELECT id FROM cleanup_operations WHERE managed_anime_id = 'anime-unsub-2')) OR (owner_type = 'offset_migration_operation' AND owner_id IN (SELECT id FROM offset_migration_plans WHERE managed_anime_id = 'anime-unsub-2'))",
+		"work_item_history":            "id IN ('wi-unsub', 'wi-offgen-unsub') OR owner_id = 'anime-unsub-2' OR (owner_type = 'alignment_operation' AND owner_id IN (SELECT id FROM alignment_operations WHERE managed_anime_id = 'anime-unsub-2')) OR (owner_type = 'replacement_deletion' AND owner_id IN (SELECT id FROM replacement_deletions WHERE managed_anime_id = 'anime-unsub-2')) OR (owner_type = 'offset_migration_operation' AND owner_id IN (SELECT id FROM offset_migration_plans WHERE managed_anime_id = 'anime-unsub-2'))",
 		"offset_migration_plans":       "managed_anime_id = 'anime-unsub-2'",
 		"offset_migration_generations": "managed_anime_id = 'anime-unsub-2'",
 		"replacement_decisions":        "managed_anime_id = 'anime-unsub-2'",
@@ -794,7 +794,7 @@ func TestResumeCreatesFreshEpochFromLatestFacts(t *testing.T) {
 	fixture := newCalibrationFixture(t)
 	defer fixture.db.Close()
 	seedAnimeSubscription(t, fixture.db, "anime-resume-1", "sub-1", "active")
-	seedInstanceRetention(t, fixture.db, "anime-resume-1", ModePerGroup,
+	seedInstanceReplacement(t, fixture.db, "anime-resume-1", ModePerGroup,
 		`{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["1080p"],["720p"],["480p"]]}]}`, 1)
 	// Release-backed verified placement: the evaluate candidate chain.
 	seedFilePlacement(t, fixture.db, "anime-resume-1", "sub-1", "release-r1",
@@ -939,7 +939,7 @@ func TestAlignmentDuplicatePlannerTargetsPersistBlockedWithoutWorkItems(t *testi
 	defer fixture.db.Close()
 	seedAnimeSubscription(t, fixture.db, "anime-dupes", "sub-dupes", "stopped")
 	seedAnimeForRenderer(t, fixture.db, "anime-dupes", "Show", "tv")
-	seedInstanceRetention(t, fixture.db, "anime-dupes", ModeAll, ``, 1)
+	seedInstanceReplacement(t, fixture.db, "anime-dupes", ModeAll, ``, 1)
 	enableAlignment(t, fixture.db, "anime-dupes")
 	service := NewAlignmentService(fixture.db)
 	fixture.calibration.SetAlignmentConsumer(service)
@@ -973,7 +973,7 @@ func TestStoppedGenerationAlignmentPlansExecutableOperations(t *testing.T) {
 	defer fixture.db.Close()
 	seedAnimeSubscription(t, fixture.db, "anime-align-1", "sub-1", "stopped")
 	seedAnimeForRenderer(t, fixture.db, "anime-align-1", "Show", "tv")
-	seedInstanceRetention(t, fixture.db, "anime-align-1", ModeAll, ``, 1)
+	seedInstanceReplacement(t, fixture.db, "anime-align-1", ModeAll, ``, 1)
 	enableAlignment(t, fixture.db, "anime-align-1")
 	// The file sits at a non-aligned path: the naming target differs.
 	seedCompletedGenerationWithRenderChains(t, fixture.db, "anime-align-1", 1, map[string]string{
@@ -1043,7 +1043,7 @@ SELECT target_path FROM alignment_operations WHERE managed_anime_id = 'anime-ali
 
 	// Replacement increments stay zero: no evaluate item, no decision, no
 	// supersede, no cleanup admission.
-	var evaluateItems, decisions, superseded, cleanups int
+	var evaluateItems, decisions, superseded, deletions int
 	if err := fixture.db.QueryRow(`SELECT COUNT(*) FROM work_item_history WHERE kind = 'replacement_evaluate' AND owner_id = 'anime-align-1'`).Scan(&evaluateItems); err != nil {
 		t.Fatal(err)
 	}
@@ -1053,12 +1053,12 @@ SELECT target_path FROM alignment_operations WHERE managed_anime_id = 'anime-ali
 	if err := fixture.db.QueryRow(`SELECT COUNT(*) FROM placements WHERE managed_anime_id = 'anime-align-1' AND state = 'superseded'`).Scan(&superseded); err != nil {
 		t.Fatal(err)
 	}
-	if err := fixture.db.QueryRow(`SELECT COUNT(*) FROM cleanup_operations WHERE managed_anime_id = 'anime-align-1'`).Scan(&cleanups); err != nil {
+	if err := fixture.db.QueryRow(`SELECT COUNT(*) FROM replacement_deletions WHERE managed_anime_id = 'anime-align-1'`).Scan(&deletions); err != nil {
 		t.Fatal(err)
 	}
-	if evaluateItems != 0 || decisions != 0 || superseded != 0 || cleanups != 0 {
-		t.Fatalf("stopped replacement increments must be zero: items=%d decisions=%d superseded=%d cleanups=%d",
-			evaluateItems, decisions, superseded, cleanups)
+	if evaluateItems != 0 || decisions != 0 || superseded != 0 || deletions != 0 {
+		t.Fatalf("stopped replacement increments must be zero: items=%d decisions=%d superseded=%d deletions=%d",
+			evaluateItems, decisions, superseded, deletions)
 	}
 }
 
@@ -1070,7 +1070,7 @@ func TestAlignmentConsumerReplayWithLiveExecuteItem(t *testing.T) {
 	defer fixture.db.Close()
 	seedAnimeSubscription(t, fixture.db, "anime-align-replay", "sub-replay", "stopped")
 	seedAnimeForRenderer(t, fixture.db, "anime-align-replay", "Show", "tv")
-	seedInstanceRetention(t, fixture.db, "anime-align-replay", ModeAll, ``, 1)
+	seedInstanceReplacement(t, fixture.db, "anime-align-replay", ModeAll, ``, 1)
 	enableAlignment(t, fixture.db, "anime-align-replay")
 	seedCompletedGenerationWithRenderChains(t, fixture.db, "anime-align-replay", 1, map[string]string{
 		"/library/EP 01.mkv": "fp-1",
@@ -1134,7 +1134,7 @@ func TestAlignmentSummaryAggregatesPlannerExclusions(t *testing.T) {
 	defer fixture.db.Close()
 	seedAnimeSubscription(t, fixture.db, "anime-align-summary", "sub-summary", "stopped")
 	seedAnimeForRenderer(t, fixture.db, "anime-align-summary", "Show", "tv")
-	seedInstanceRetention(t, fixture.db, "anime-align-summary", ModeAll, ``, 1)
+	seedInstanceReplacement(t, fixture.db, "anime-align-summary", ModeAll, ``, 1)
 	enableAlignment(t, fixture.db, "anime-align-summary")
 	// The placed file freezes rules that no longer compile, so its render fails
 	// with a non-missing-facts error; the other observation has no coverage.
@@ -1205,7 +1205,7 @@ func TestAlignmentAdmissionFailsClosedOnRelativeRender(t *testing.T) {
 	defer fixture.db.Close()
 	seedAnimeSubscription(t, fixture.db, "anime-align-2", "sub-2", "active")
 	seedAnimeForRenderer(t, fixture.db, "anime-align-2", "Show", "tv")
-	seedInstanceRetention(t, fixture.db, "anime-align-2", ModeAll, ``, 1)
+	seedInstanceReplacement(t, fixture.db, "anime-align-2", ModeAll, ``, 1)
 	enableAlignment(t, fixture.db, "anime-align-2")
 	relativeRules := frozenRulesForTest()
 	// The directory template renders a relative path: the engine's
@@ -1263,7 +1263,7 @@ func TestConsumerCheckpointIsAnchoredToItsGeneration(t *testing.T) {
 	defer fixture.db.Close()
 	ctx := context.Background()
 	seedAnimeSubscription(t, fixture.db, "anime-fan-3", "sub-1", "stopped")
-	seedInstanceRetention(t, fixture.db, "anime-fan-3", ModeAll, ``, 1)
+	seedInstanceReplacement(t, fixture.db, "anime-fan-3", ModeAll, ``, 1)
 	seedCompletedGeneration(t, fixture.db, "anime-fan-3", 1, map[string]string{
 		"/library/Show/Season 01/EP 01.mkv": "fp-1",
 	})

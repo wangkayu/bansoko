@@ -17,11 +17,11 @@ var rtCompareDimensions = map[string]string{
 	qualityprofile.KeyRtCodec:      "video_codec",
 }
 
-// GetRetentionCompareVocabulary returns the candidate values of every ranked
+// GetReplacementCompareVocabulary returns the candidate values of every ranked
 // comparison item, in registry order: release.* and anibt.* from the
 // FileMaintenance owner, rt.* from the pinned reltitle dictionary (empty when
 // it is unavailable).
-func (s *Server) GetRetentionCompareVocabulary(w http.ResponseWriter, r *http.Request, params generated.GetRetentionCompareVocabularyParams) {
+func (s *Server) GetReplacementCompareVocabulary(w http.ResponseWriter, r *http.Request, params generated.GetReplacementCompareVocabularyParams) {
 	animeID := ""
 	if params.ManagedAnimeId != nil {
 		animeID = string(*params.ManagedAnimeId)
@@ -40,7 +40,7 @@ func (s *Server) GetRetentionCompareVocabulary(w http.ResponseWriter, r *http.Re
 			values[key] = append([]string{}, byDimension[dimension]...)
 		}
 	}
-	view := generated.RetentionCompareVocabulary{Items: []generated.RetentionCompareVocabularyItem{}}
+	view := generated.ReplacementCompareVocabulary{Items: []generated.RetentionCompareVocabularyItem{}}
 	for _, item := range qualityprofile.Items {
 		if !item.Ranked() {
 			continue

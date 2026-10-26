@@ -34,7 +34,7 @@ SELECT concat_ws(' | ',
   (SELECT concat_ws(',', bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season, media_kind_override, total_episodes, year, season)
      FROM anime_metadata WHERE managed_anime_id = $1),
   (SELECT concat_ws(',', parser_kind, parser_source_default_version, admission_mode, quality_profile::text,
-                    retention_source_default_version, unclassified_route, file_effect_source_default_version,
+                    replacement_source_default_version, unclassified_route, file_effect_source_default_version,
                     candidate_id, revision, business_snapshot::text, business_digest)
      FROM anime_business_configs WHERE managed_anime_id = $1),
   (SELECT string_agg(concat_ws(',', owner_type, section_name, schema_version, value::text), ';' ORDER BY section_name)
@@ -156,7 +156,7 @@ SELECT
 	// stays its own, and every managed-state table is empty for the copy.
 	for _, table := range []string{
 		"placements", "placement_companions", "reconciliation_scans", "reconciliation_files", "alignment_operations",
-		"offset_migration_generations", "offset_migration_plans", "cleanup_operations", "replacement_decisions",
+		"offset_migration_generations", "offset_migration_plans", "replacement_deletions", "replacement_decisions",
 	} {
 		var n int
 		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM `+table+` WHERE managed_anime_id = $1`, copyID).Scan(&n); err != nil {

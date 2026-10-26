@@ -120,9 +120,9 @@ func TestPerKeyDecisionsReplaceOneEpisodeAndFillAnother(t *testing.T) {
 	// overwrote the old one in place, so (as for a single episode) the loser's
 	// path holds the winner and is never handed to cleanup. A loser at its own
 	// path is handed off in TestPerKeyDecisionsShareOneMultiEpisodeLoser.
-	_, cleanups, _ := decisionCounts(t, db, "anime-1")
-	if cleanups != 0 {
-		t.Fatalf("cleanups = %d, want 0 for an in-place loser", cleanups)
+	_, deletions, _ := decisionCounts(t, db, "anime-1")
+	if deletions != 0 {
+		t.Fatalf("deletions = %d, want 0 for an in-place loser", deletions)
 	}
 }
 
@@ -162,9 +162,9 @@ func TestPerKeyDecisionsShareOneMultiEpisodeLoser(t *testing.T) {
 	if err := db.QueryRow(`SELECT version FROM placements WHERE id = 'plc-old-e1e2' AND state = 'superseded'`).Scan(&version); err != nil || version != 2 {
 		t.Fatalf("loser superseded once: version=%d err=%v", version, err)
 	}
-	var cleanups int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM cleanup_operations WHERE placement_id = 'plc-old-e1e2' AND companion_id IS NULL`).Scan(&cleanups); err != nil || cleanups != 1 {
-		t.Fatalf("loser cleanups = %d err=%v", cleanups, err)
+	var deletions int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM replacement_deletions WHERE placement_id = 'plc-old-e1e2' AND companion_id IS NULL`).Scan(&deletions); err != nil || deletions != 1 {
+		t.Fatalf("loser deletions = %d err=%v", deletions, err)
 	}
 }
 

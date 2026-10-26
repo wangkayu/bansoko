@@ -18,10 +18,10 @@ func TestProviderSnapshotRetentionColumns(t *testing.T) {
 			t.Fatalf("inspect %s retention_until: %v", table, err)
 		}
 		if nullable != "NO" {
-			t.Fatalf("%s.retention_until must be NOT NULL, got %s", table, nullable)
+			t.Fatalf("%s.replacement_until must be NOT NULL, got %s", table, nullable)
 		}
 		if defaultExpression == nil || !strings.Contains(strings.ToLower(*defaultExpression), "current_timestamp") || !strings.Contains(*defaultExpression, "30 days") {
-			t.Fatalf("%s.retention_until default must use the 30-day database clock, got %v", table, defaultExpression)
+			t.Fatalf("%s.replacement_until default must use the 30-day database clock, got %v", table, defaultExpression)
 		}
 		var indexed bool
 		if err := db.QueryRow(`SELECT to_regclass('public.' || $1) IS NOT NULL`, table+"_retention_idx").Scan(&indexed); err != nil {

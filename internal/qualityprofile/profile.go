@@ -1,7 +1,7 @@
 // Package qualityprofile owns the replacement comparison profile (profile-v1):
 // the registry of namespaced comparison items, the profile value and its
 // validation, the frozen per-release comparison values, and the pure
-// item-by-item lexicographic comparison. Retention (filemaintenance), the
+// item-by-item lexicographic comparison. Replacement (filemaintenance), the
 // business snapshot (anime/domain) and candidate facts (release/facts) all
 // read this one definition.
 //

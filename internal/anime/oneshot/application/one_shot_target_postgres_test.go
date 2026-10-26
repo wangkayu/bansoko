@@ -216,7 +216,7 @@ func assertNoOneShotOwnerRows(t *testing.T, service *oneShotTestServices) {
 // An already satisfied exact-size target is a successful terminal adoption:
 // the temporary owner graph, the frozen TargetSet/observations and the marker
 // are created atomically, the Release records adopted_existing, and no
-// DownloadTask / qB work / Artifact / FileOperation is fabricated. Retention
+// DownloadTask / qB work / Artifact / FileOperation is fabricated. Replacement
 // later reclaims the temporary database graph and never the target file.
 func TestAcquireSeedOnceAdoptsExactTargetAsTerminalSuccess(t *testing.T) {
 	service, targetPath, expectedSize, input := oneShotAdmissionFixture(t)
@@ -234,8 +234,8 @@ func TestAcquireSeedOnceAdoptsExactTargetAsTerminalSuccess(t *testing.T) {
 	if result.DownloadTaskID != nil {
 		t.Fatalf("adopted admission fabricated download_task_id %q", *result.DownloadTaskID)
 	}
-	if result.State != string(OneShotAcquisitionStateRetentionPending) {
-		t.Fatalf("adopted admission state = %q, want retention_pending", result.State)
+	if result.State != string(OneShotAcquisitionStateReclaimPending) {
+		t.Fatalf("adopted admission state = %q, want reclaim_pending", result.State)
 	}
 	if result.OneShotID == "" || result.ManagedAnimeID == "" || result.SubscriptionID == "" || result.RSSSourceID == "" || result.ReleaseID == "" {
 		t.Fatalf("adopted admission returned an incomplete handle: %+v", result)
@@ -280,8 +280,8 @@ func TestAcquireSeedOnceAdoptsExactTargetAsTerminalSuccess(t *testing.T) {
 		Scan(&markerState, &markerOutcome, &markerReasonCode, &markerDownloadTask); err != nil {
 		t.Fatal(err)
 	}
-	if markerState != "retention_pending" || markerOutcome != "succeeded" {
-		t.Fatalf("adopted marker = (%s, %s), want (retention_pending, succeeded)", markerState, markerOutcome)
+	if markerState != "reclaim_pending" || markerOutcome != "succeeded" {
+		t.Fatalf("adopted marker = (%s, %s), want (reclaim_pending, succeeded)", markerState, markerOutcome)
 	}
 	if markerReasonCode == "" {
 		t.Fatal("adopted marker carries no terminal reason code")
@@ -329,8 +329,8 @@ func TestAcquireSeedOnceAdoptsExactTargetAsTerminalSuccess(t *testing.T) {
 	if view.DownloadTask != nil || view.Artifact != nil || view.FileOperation != nil {
 		t.Fatalf("adopted view exposed owner rows for a chain that does not exist: %+v", view)
 	}
-	if view.State != OneShotAcquisitionStateRetentionPending || view.TerminalOutcome == nil || *view.TerminalOutcome != OneShotTerminalOutcomeSucceeded {
-		t.Fatalf("adopted view state = (%s, %v), want (retention_pending, succeeded)", view.State, view.TerminalOutcome)
+	if view.State != OneShotAcquisitionStateReclaimPending || view.TerminalOutcome == nil || *view.TerminalOutcome != OneShotTerminalOutcomeSucceeded {
+		t.Fatalf("adopted view state = (%s, %v), want (reclaim_pending, succeeded)", view.State, view.TerminalOutcome)
 	}
 	if view.InputSnapshot == nil || len(view.InputSnapshot.TargetFacts) == 0 {
 		t.Fatalf("adopted view lost the frozen target facts: %+v", view.InputSnapshot)
@@ -355,13 +355,13 @@ func TestAcquireSeedOnceAdoptsExactTargetAsTerminalSuccess(t *testing.T) {
 		t.Fatalf("different payload under the same key = %v, want 409 IDEMPOTENCY_KEY_REUSED", err)
 	}
 
-	// Retention reclaims the temporary database graph only: the target bytes
+	// Replacement reclaims the temporary database graph only: the target bytes
 	// and their hash must survive.
 	if _, err := service.db.ExecContext(context.Background(),
 		`UPDATE one_shot_acquisitions SET retention_until = NOW() - INTERVAL '1 day' WHERE id = $1`, result.OneShotID); err != nil {
 		t.Fatal(err)
 	}
-	retention, err := workitems.NewOneShotRetentionService(service.db, nil)
+	retention, err := workitems.NewOneShotReclaimService(service.db, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

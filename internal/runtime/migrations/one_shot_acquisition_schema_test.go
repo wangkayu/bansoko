@@ -7,7 +7,7 @@ import "testing"
 func TestOneShotAcquisitionSchema(t *testing.T) {
 	requireFragments(t, baselineText(t), "one-shot acquisition schema",
 		"CREATE TABLE one_shot_acquisitions",
-		"state IN ('running', 'retention_pending', 'cleanup_blocked', 'reclaiming', 'cleaned')",
+		"state IN ('running', 'reclaim_pending', 'cleanup_blocked', 'reclaiming', 'cleaned')",
 		"terminal_outcome IN ('succeeded', 'failed')",
 		"one_shot_acquisitions_terminal_field_matrix_check",
 		"active_effect_count = jsonb_array_length(active_effect_leases)",

@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 
-// Lets content inside one anime's tabs open a sibling tab (the retention
+// Lets content inside one anime's tabs open a sibling tab (the replacement
 // editor's subgroup score item links to the subgroups tab). Outside the anime
 // tabs (Global settings) there is no navigator.
 

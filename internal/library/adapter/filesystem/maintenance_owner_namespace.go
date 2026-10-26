@@ -11,10 +11,10 @@ import (
 // Owners that capture a file into their private namespace before removing it:
 // the replacement-loser deletion (cleanup owner), and a user delete of the
 // file manager. Each pairs one capture kind with one purge kind of the receipt
-// namespace; the cleanup kinds name the two stages of one cleanup_delete
+// namespace; the cleanup kinds name the two stages of one replacement_delete
 // work item.
 const (
-	cleanupOwnerType          = "cleanup_operation"
+	cleanupOwnerType          = "replacement_deletion"
 	cleanupCaptureKind        = "cleanup_capture"
 	cleanupPurgeKind          = "cleanup_purge"
 	fileManagerOwnerType      = "file_manager_operation"

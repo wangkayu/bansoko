@@ -410,7 +410,7 @@ export const reasonCopy = {
   provider_parser_empty: "站点返回的内容为空",
   provider_parser_schema_mismatch: "站点返回的内容格式已变化",
   replacement_trigger_failed: "替换版本检查失败",
-  retention_sweep_failed: "清理保留数据失败",
+  retention_sweep_failed: "记录保留清理失败",
   naming_vars_unavailable: "命名所需的信息尚未就绪，订阅后显示",
   naming_target_not_absolute: "输出目录不是绝对路径",
   // naming_fact_missing_<事实>：模板使用的信息此次为空，且空值让路径无效（见 namingFactCopy）。

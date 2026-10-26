@@ -18,9 +18,11 @@ func TestBusinessDefaultProfileMatchesFreshMigrationAndTypedContract(t *testing.
 		t.Fatal(err)
 	}
 	// The baseline seed is pretty-printed; compare the compacted JSON.
+	// The baseline is history: it still seeds the section under its old name, and
+	// migration 063 renames it. Only the seeded quality profile is read here.
 	seed := regexp.MustCompile(`(?s)VALUES \('retention', 'retention-policy-v1',\s*'(\{.*?\})'::jsonb`).FindSubmatch(raw)
 	if seed == nil {
-		t.Fatal("retention policy seed not found in the baseline")
+		t.Fatal("replacement policy seed not found in the baseline")
 	}
 	var seeded struct {
 		QualityProfile json.RawMessage `json:"quality_profile"`
@@ -37,16 +39,16 @@ func TestBusinessDefaultProfileMatchesFreshMigrationAndTypedContract(t *testing.
 	if persisted.String() != code.String() {
 		t.Fatal("fresh persisted and code quality defaults differ")
 	}
-	policy := filemaintenance.DefaultRetentionPolicy()
-	if err := filemaintenance.ValidateRetentionPolicy(policy); err != nil {
+	policy := filemaintenance.DefaultReplacementPolicy()
+	if err := filemaintenance.ValidateReplacementPolicy(policy); err != nil {
 		t.Fatal(err)
 	}
 	frozen := frozenBusinessFixture(t)
-	frozen.Business.Retention = domain.RetentionValue{AdmissionMode: string(policy.AdmissionMode), QualityProfile: policy.QualityProfile}
+	frozen.Business.Replacement = domain.ReplacementValue{AdmissionMode: string(policy.AdmissionMode), QualityProfile: policy.QualityProfile}
 	if _, err := frozen.Business.Freeze(); err != nil {
 		t.Fatal(err)
 	}
-	profile, err := qualityprofile.Parse(frozen.Business.Retention.QualityProfile)
+	profile, err := qualityprofile.Parse(frozen.Business.Replacement.QualityProfile)
 	if err != nil {
 		t.Fatal(err)
 	}

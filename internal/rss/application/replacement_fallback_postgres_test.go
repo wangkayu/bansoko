@@ -34,7 +34,7 @@ func newFallbackFixture(t *testing.T, titles map[string]string) (*sql.DB, *worki
 	if _, err := db.Exec(`
 UPDATE anime_business_configs
 SET admission_mode = 'single_copy', quality_profile = $2::jsonb,
-    retention_source_default_version = 1, retention_version = 1
+    replacement_source_default_version = 1, replacement_version = 1
 WHERE managed_anime_id = $1`, "anime-rss-test", fallbackResolutionProfile); err != nil {
 		t.Fatal(err)
 	}

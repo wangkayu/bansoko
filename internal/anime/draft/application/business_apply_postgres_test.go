@@ -136,11 +136,11 @@ func (r *recordingPolicyTrigger) TriggerPolicySaved(_ context.Context, animeID s
 	return nil
 }
 
-// A candidate apply bumps retention_version only when the replacement policy
+// A candidate apply bumps replacement_version only when the replacement policy
 // (admission mode or quality profile) changes, and only then tells the
 // replacement trigger; an apply that changes other sections keeps every frozen
 // replacement decision's policy version valid.
-func TestBusinessApplyBumpsRetentionVersionOnlyOnPolicyChange(t *testing.T) {
+func TestBusinessApplyBumpsReplacementVersionOnlyOnPolicyChange(t *testing.T) {
 	db := animetest.OpenTestDB(t)
 	ctx := context.Background()
 	service := draftNewTestService(t, db)
@@ -166,7 +166,7 @@ func TestBusinessApplyBumpsRetentionVersionOnlyOnPolicyChange(t *testing.T) {
 	retentionVersion := func() int64 {
 		t.Helper()
 		var version int64
-		if err := db.QueryRowContext(ctx, `SELECT retention_version FROM anime_business_configs WHERE managed_anime_id=$1`, animeID).Scan(&version); err != nil {
+		if err := db.QueryRowContext(ctx, `SELECT replacement_version FROM anime_business_configs WHERE managed_anime_id=$1`, animeID).Scan(&version); err != nil {
 			t.Fatal(err)
 		}
 		return version
@@ -197,20 +197,20 @@ func TestBusinessApplyBumpsRetentionVersionOnlyOnPolicyChange(t *testing.T) {
 	before := retentionVersion()
 	// Another section changes, the replacement policy does not.
 	result := apply("retention-apply-route-0001", func() { draft.Business.UnclassifiedRoute = "skip" })
-	if got := retentionVersion(); got != before || result.OwnerVersions.Retention != before {
-		t.Fatalf("an unchanged replacement policy must keep retention_version %d: row=%d result=%d", before, got, result.OwnerVersions.Retention)
+	if got := retentionVersion(); got != before || result.OwnerVersions.Replacement != before {
+		t.Fatalf("an unchanged replacement policy must keep replacement_version %d: row=%d result=%d", before, got, result.OwnerVersions.Replacement)
 	}
 	if len(trigger.animeIDs) != 0 {
 		t.Fatalf("an unchanged replacement policy must not trigger replacement: %v", trigger.animeIDs)
 	}
 	// The admission mode changes: one bump, one trigger.
 	mode := "single_copy"
-	if draft.Business.Retention.AdmissionMode == mode {
+	if draft.Business.Replacement.AdmissionMode == mode {
 		mode = "all"
 	}
-	result = apply("retention-apply-mode-0001", func() { draft.Business.Retention.AdmissionMode = mode })
-	if got := retentionVersion(); got != before+1 || result.OwnerVersions.Retention != before+1 {
-		t.Fatalf("a changed admission mode must bump retention_version once: row=%d result=%d want %d", got, result.OwnerVersions.Retention, before+1)
+	result = apply("retention-apply-mode-0001", func() { draft.Business.Replacement.AdmissionMode = mode })
+	if got := retentionVersion(); got != before+1 || result.OwnerVersions.Replacement != before+1 {
+		t.Fatalf("a changed admission mode must bump replacement_version once: row=%d result=%d want %d", got, result.OwnerVersions.Replacement, before+1)
 	}
 	if len(trigger.animeIDs) != 1 || trigger.animeIDs[0] != animeID {
 		t.Fatalf("a changed replacement policy must trigger once after commit: %v", trigger.animeIDs)

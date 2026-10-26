@@ -62,8 +62,8 @@ SELECT EXISTS (
 ) OR EXISTS (
     -- Live cleanup execution claim.
     SELECT 1 FROM work_items wi
-    JOIN cleanup_operations c ON c.id = wi.owner_id
-    WHERE wi.owner_type = 'cleanup_operation' AND c.managed_anime_id = $1 AND wi.state IN ('available', 'leased')
+    JOIN replacement_deletions c ON c.id = wi.owner_id
+    WHERE wi.owner_type = 'replacement_deletion' AND c.managed_anime_id = $1 AND wi.state IN ('available', 'leased')
 ) OR EXISTS (
     -- An offset execution claim is live while it is available or leased. The
     -- plan is the typed owner and is scoped by its managed anime id.
@@ -93,7 +93,7 @@ SELECT EXISTS (
 ) OR EXISTS (
     -- Pending deletions: an admitted row has a pending effect; a blocked row
     -- with an attempt may hold a captured file awaiting its purge.
-    SELECT 1 FROM cleanup_operations
+    SELECT 1 FROM replacement_deletions
     WHERE managed_anime_id = $1 AND (state = 'admitted' OR (state = 'blocked' AND attempt IS NOT NULL))
 ) OR EXISTS (
     -- A frozen admitted replace decision is a checkpointed destructive
@@ -118,7 +118,7 @@ SELECT EXISTS (
 // order mirrors the FK-free rows (no cascade) and the PRD leaf-first order.
 func (s *LocalOwnerCleanup) deleteLeafFirst(ctx context.Context, tx *sql.Tx, animeID string) error {
 	// Work items of every FileMaintenance kind: file_maintenance owners plus
-	// alignment_operation / cleanup_operation / offset_migration_operation owners
+	// alignment_operation / replacement_deletion / offset_migration_operation owners
 	// of this anime.
 	if err := workitems.DeleteLocalMaintenanceTreeTx(ctx, tx, animeID); err != nil {
 		return fmt.Errorf("delete FileMaintenance work items: %w", err)
@@ -132,7 +132,7 @@ func (s *LocalOwnerCleanup) deleteLeafFirst(ctx context.Context, tx *sql.Tx, ani
 	if _, err := tx.ExecContext(ctx, `DELETE FROM offset_migration_generations WHERE managed_anime_id = $1`, animeID); err != nil {
 		return fmt.Errorf("delete offset migration generations: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM cleanup_operations WHERE managed_anime_id = $1`, animeID); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM replacement_deletions WHERE managed_anime_id = $1`, animeID); err != nil {
 		return fmt.Errorf("delete cleanup operations: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM alignment_operations WHERE managed_anime_id = $1`, animeID); err != nil {

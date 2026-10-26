@@ -118,9 +118,9 @@ func TestReplacementTriggersAreInertOnStoppedSubscription(t *testing.T) {
 			if err := db.QueryRow(`SELECT COUNT(*) FROM replacement_decisions WHERE managed_anime_id = 'anime-1'`).Scan(&decisions); err != nil {
 				t.Fatal(err)
 			}
-			_, cleanups, superseded := decisionCounts(t, db, "anime-1")
-			if decisions != 0 || cleanups != 0 || superseded != 0 {
-				t.Fatalf("stopped subscription: decisions=%d cleanups=%d superseded=%d", decisions, cleanups, superseded)
+			_, deletions, superseded := decisionCounts(t, db, "anime-1")
+			if decisions != 0 || deletions != 0 || superseded != 0 {
+				t.Fatalf("stopped subscription: decisions=%d deletions=%d superseded=%d", decisions, deletions, superseded)
 			}
 			if _, err := os.Stat(scanPath); err != nil {
 				t.Fatalf("the scan duplicate must stay: %v", err)
@@ -146,13 +146,13 @@ func TestReplacementEvaluateQueuedBeforeStopDecidesNothing(t *testing.T) {
 	if !runLiveEvaluate(t, db, store, service) {
 		t.Fatal("the item enqueued while active must exist")
 	}
-	_, cleanups, superseded := decisionCounts(t, db, "anime-1")
+	_, deletions, superseded := decisionCounts(t, db, "anime-1")
 	var decisions int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM replacement_decisions WHERE managed_anime_id = 'anime-1'`).Scan(&decisions); err != nil {
 		t.Fatal(err)
 	}
-	if decisions != 0 || cleanups != 0 || superseded != 0 {
-		t.Fatalf("stopped before run: decisions=%d cleanups=%d superseded=%d", decisions, cleanups, superseded)
+	if decisions != 0 || deletions != 0 || superseded != 0 {
+		t.Fatalf("stopped before run: decisions=%d deletions=%d superseded=%d", decisions, deletions, superseded)
 	}
 	if _, err := os.Stat(scanPath); err != nil {
 		t.Fatalf("the scan duplicate must stay: %v", err)
@@ -186,7 +186,7 @@ func TestReplacementTriggerDeletesUnclaimedScanDuplicateWhenActive(t *testing.T)
 			if state := placementState(t, db, "plc-scan-dup"); state != "superseded" {
 				t.Fatalf("the unclaimed scan duplicate must lose: %s", state)
 			}
-			claim, err := store.ClaimDue(ctx, "trigger-delete", []string{workitems.KindCleanupDelete}, time.Minute)
+			claim, err := store.ClaimDue(ctx, "trigger-delete", []string{workitems.KindReplacementDelete}, time.Minute)
 			if err != nil || claim.ID == "" {
 				t.Fatalf("claim delete: %+v %v", claim, err)
 			}

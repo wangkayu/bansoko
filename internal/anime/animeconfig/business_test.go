@@ -27,8 +27,8 @@ func presetFixture(t *testing.T) BusinessSnapshot {
 		schemas[name] = animedomain.SectionSchemaVersions[name]
 	}
 	return BusinessSnapshot{SchemaVersion: "business-snapshot-v1", Sections: sections, SectionVersions: versions, SectionSchemas: schemas,
-		Parser:    animedomain.ParserPolicyEnvelope{SchemaVersion: animedomain.ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global_parser_policy_default", PolicyVersion: 2},
-		Retention: RetentionValue{AdmissionMode: "all", QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"subgroup.score","ranks":[]},{"key":"release.lang","ranks":[["chs"],["sc"],["cht"],["tc"],["jpn"],["eng"]]},{"key":"release.resolution","ranks":[["2160p"],["1440p"],["1080p"],["720p"],["480p"]]},{"key":"release.revision","ranks":[]}]}`)}, RetentionVersion: 4, UnclassifiedRoute: "skip", FileEffectVersion: 5,
+		Parser:      animedomain.ParserPolicyEnvelope{SchemaVersion: animedomain.ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global_parser_policy_default", PolicyVersion: 2},
+		Replacement: ReplacementValue{AdmissionMode: "all", QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"subgroup.score","ranks":[]},{"key":"release.lang","ranks":[["chs"],["sc"],["cht"],["tc"],["jpn"],["eng"]]},{"key":"release.resolution","ranks":[["2160p"],["1440p"],["1080p"],["720p"],["480p"]]},{"key":"release.revision","ranks":[]}]}`)}, ReplacementVersion: 4, UnclassifiedRoute: "skip", FileEffectVersion: 5,
 		Programs: ProgramReferences{Vars: namingvars.ProgramRef{Version: namingvars.ProfileVersion("sha256:vars"), Digest: "sha256:vars"}, AttrRules: namingvars.ProgramRef{Version: attrrules.ProfileVersion("sha256:attr"), Digest: "sha256:attr"}}}
 }
 func TestBusinessFreezeDoesNotFollowGlobalMutation(t *testing.T) {
@@ -43,13 +43,13 @@ func TestBusinessFreezeDoesNotFollowGlobalMutation(t *testing.T) {
 	}
 	original.SectionVersions[animedomain.SectionParser] = 90
 	original.Sections[animedomain.SectionParser][0] = 'x'
-	original.Retention.QualityProfile[0] = 'x'
+	original.Replacement.QualityProfile[0] = 'x'
 	original.Programs.Vars.Digest = "new-global"
 	after, err := frozen.Digest()
 	if err != nil || before != after {
 		t.Fatalf("frozen preset drift: %s %s %v", before, after, err)
 	}
-	if frozen.RetentionVersion != 4 || frozen.FileEffectVersion != 5 || frozen.Programs.Vars.Digest != "sha256:vars" {
+	if frozen.ReplacementVersion != 4 || frozen.FileEffectVersion != 5 || frozen.Programs.Vars.Digest != "sha256:vars" {
 		t.Fatal("business provenance lost")
 	}
 }
@@ -65,7 +65,7 @@ func TestBusinessRejectsIncompleteOrMismatchedProgramReferences(t *testing.T) {
 		t.Fatal("mutable current reference accepted")
 	}
 	p = presetFixture(t)
-	p.Retention.QualityProfile = nil
+	p.Replacement.QualityProfile = nil
 	if _, err := p.Freeze(); err == nil {
 		t.Fatal("missing quality profile accepted")
 	}

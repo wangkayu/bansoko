@@ -23,7 +23,7 @@ func TestMaintenanceActualQuarantinePurgeFinalReceipts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	i := maintenance.MaintenanceInvocation{OwnerType: "cleanup_operation", OwnerID: "owner", Kind: "cleanup_capture", WorkItemID: "work-q", OwnerVersion: 2, Attempt: []byte(`{"stage":"capture"}`), Source: source, Target: target, Fingerprint: expected.Fingerprint}
+	i := maintenance.MaintenanceInvocation{OwnerType: "replacement_deletion", OwnerID: "owner", Kind: "cleanup_capture", WorkItemID: "work-q", OwnerVersion: 2, Attempt: []byte(`{"stage":"capture"}`), Source: source, Target: target, Fingerprint: expected.Fingerprint}
 	if _, err := e.MoveMaintenance(context.Background(), source, target, expected, i); err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestMaintenanceCaptureParentRenameRejectsWithoutReceipt(t *testing.T) {
 }
 
 func TestMaintenanceNamespaceRejectsForeignOwner(t *testing.T) {
-	i := maintenance.MaintenanceInvocation{OwnerType: "cleanup_operation", OwnerID: "owner-a", Target: "/root/.bansoko-cleanup-owner-b/object"}
+	i := maintenance.MaintenanceInvocation{OwnerType: "replacement_deletion", OwnerID: "owner-a", Target: "/root/.bansoko-cleanup-owner-b/object"}
 	if err := validateMaintenanceNamespace(i); err == nil {
 		t.Fatal("foreign owner directory accepted")
 	}

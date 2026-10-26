@@ -85,7 +85,7 @@ VALUES ('sub-rm-0', $1, 'custom', 'Read model', 'active', 1)
 ON CONFLICT (managed_anime_id) DO NOTHING`, animeID); err != nil {
 		t.Fatalf("seed subscription: %v", err)
 	}
-	seedInstanceRetention(t, db, animeID, ModeAll, ``, 1)
+	seedInstanceReplacement(t, db, animeID, ModeAll, ``, 1)
 
 	renderer := NewNamingTargetRenderer(db, fakeNamingRulesSource{rules: rules})
 	targets, err := renderer.RenderPlacementTargets(context.Background(), animeID, []string{chain.PlacementID})

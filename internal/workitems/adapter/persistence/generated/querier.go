@@ -60,10 +60,10 @@ type Querier interface {
 	//  FROM one_shot_acquisitions
 	//  WHERE id = $3
 	ComputeOneShotCleanupDeadline(ctx context.Context, arg ComputeOneShotCleanupDeadlineParams) (time.Time, error)
-	//ComputeOneShotRetentionDeadline
+	//ComputeOneShotReclaimDeadline
 	//
 	//  SELECT (CURRENT_TIMESTAMP + ($1::int * INTERVAL '1 day'))::timestamptz
-	ComputeOneShotRetentionDeadline(ctx context.Context, retentionDays int32) (time.Time, error)
+	ComputeOneShotReclaimDeadline(ctx context.Context, retentionDays int32) (time.Time, error)
 	//CreateWorkItem
 	//
 	//  SELECT public.work_item_create($1::text, $2::text, $3::text, $4::text, $5::text, $6::integer, $7::jsonb, $8::bigint, $9::double precision, $10::smallint) AS id
@@ -161,10 +161,10 @@ type Querier interface {
 	//
 	//  SELECT public.work_item_delete_one_shot($1::text, $2::text, $3::text[], $4::text[])
 	DeleteOneShotWorkItems(ctx context.Context, arg DeleteOneShotWorkItemsParams) error
-	//DrainOneShotMarkerToRetentionPending
+	//DrainOneShotMarkerToReclaimPending
 	//
 	//  UPDATE one_shot_acquisitions
-	//  SET state = 'retention_pending',
+	//  SET state = 'reclaim_pending',
 	//      terminal_outcome = $1,
 	//      terminal_reason_code = $2,
 	//      terminal_reason = $3,
@@ -173,7 +173,7 @@ type Querier interface {
 	//      version = version + 1,
 	//      updated_at = CURRENT_TIMESTAMP
 	//  WHERE id = $5
-	DrainOneShotMarkerToRetentionPending(ctx context.Context, arg DrainOneShotMarkerToRetentionPendingParams) (sql.Result, error)
+	DrainOneShotMarkerToReclaimPending(ctx context.Context, arg DrainOneShotMarkerToReclaimPendingParams) (sql.Result, error)
 	//EnterOneShotReclaiming
 	//
 	//  UPDATE one_shot_acquisitions
@@ -234,12 +234,12 @@ type Querier interface {
 	//    AND idempotency_key = $3
 	//  FOR UPDATE
 	GetManualRetryIdempotency(ctx context.Context, arg GetManualRetryIdempotencyParams) (GetManualRetryIdempotencyRow, error)
-	//GetOneShotRetentionUntil
+	//GetOneShotReclaimUntil
 	//
 	//  SELECT retention_until
 	//  FROM one_shot_acquisitions
 	//  WHERE id = $1
-	GetOneShotRetentionUntil(ctx context.Context, markerID string) (sql.NullTime, error)
+	GetOneShotReclaimUntil(ctx context.Context, markerID string) (sql.NullTime, error)
 	//HasLiveFileMaintenanceWorkItems
 	//
 	//  SELECT EXISTS (
@@ -260,10 +260,10 @@ type Querier interface {
 	//  ) OR EXISTS (
 	//      SELECT 1
 	//      FROM work_items wi
-	//      JOIN cleanup_operations co ON co.id = wi.owner_id
-	//      WHERE wi.owner_type = 'cleanup_operation'
+	//      JOIN replacement_deletions co ON co.id = wi.owner_id
+	//      WHERE wi.owner_type = 'replacement_deletion'
 	//        AND wi.owner_id = co.id
-	//        AND wi.kind = 'cleanup_delete'
+	//        AND wi.kind = 'replacement_delete'
 	//        AND co.managed_anime_id = $1
 	//        AND wi.state IN ('available', 'leased')
 	//  ) OR EXISTS (
@@ -356,20 +356,20 @@ type Querier interface {
 	//
 	//  SELECT id
 	//  FROM one_shot_acquisitions
-	//  WHERE state IN ('retention_pending', 'cleanup_blocked')
+	//  WHERE state IN ('reclaim_pending', 'cleanup_blocked')
 	//    AND retention_until <= CURRENT_TIMESTAMP
 	//  ORDER BY retention_until NULLS LAST, id
 	//  LIMIT $1
 	ListDueOneShotMarkers(ctx context.Context, batchSize int32) ([]string, error)
-	//ListDueRetentionPendingOneShotMarkers
+	//ListDueReclaimPendingOneShotMarkers
 	//
 	//  SELECT id
 	//  FROM one_shot_acquisitions
-	//  WHERE state = 'retention_pending'
+	//  WHERE state = 'reclaim_pending'
 	//    AND retention_until <= CURRENT_TIMESTAMP
 	//  ORDER BY retention_until NULLS LAST, id
 	//  LIMIT $1
-	ListDueRetentionPendingOneShotMarkers(ctx context.Context, batchSize int32) ([]string, error)
+	ListDueReclaimPendingOneShotMarkers(ctx context.Context, batchSize int32) ([]string, error)
 	//ListRunningOneShotMarkers
 	//
 	//  SELECT id
@@ -518,7 +518,7 @@ type Querier interface {
 	//UnblockOneShotMarker
 	//
 	//  UPDATE one_shot_acquisitions
-	//  SET state = 'retention_pending',
+	//  SET state = 'reclaim_pending',
 	//      retention_until = GREATEST(retention_until, $1),
 	//      version = version + 1,
 	//      updated_at = CURRENT_TIMESTAMP

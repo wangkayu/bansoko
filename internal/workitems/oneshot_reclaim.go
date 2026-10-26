@@ -1,6 +1,6 @@
 package workitems
 
-// Finite one-shot retention and fail-closed reclamation.
+// Finite one-shot reclamation and fail-closed cleanup.
 //
 // The marker (one_shot_acquisitions) is the only reclamation authority:
 // origin=oneshot and state=stopped are provenance/automation-intent facts and
@@ -27,11 +27,11 @@ import (
 
 // One-shot marker states (mirrors migration 065).
 const (
-	OneShotStateRunning          = "running"
-	OneShotStateRetentionPending = "retention_pending"
-	OneShotStateCleanupBlocked   = "cleanup_blocked"
-	OneShotStateReclaiming       = "reclaiming"
-	OneShotStateCleaned          = "cleaned"
+	OneShotStateRunning        = "running"
+	OneShotStateReclaimPending = "reclaim_pending"
+	OneShotStateCleanupBlocked = "cleanup_blocked"
+	OneShotStateReclaiming     = "reclaiming"
+	OneShotStateCleaned        = "cleaned"
 )
 
 const (
@@ -46,19 +46,19 @@ const (
 // created. It is the only verdict allowed with a NULL marker download task.
 const oneShotAdoptedReleaseVerdict = "adopted_existing"
 
-// OneShotRetentionResult summarizes one bounded RunPass pass.
-type OneShotRetentionResult struct {
-	Drained   int // running -> retention_pending
+// OneShotReclaimResult summarizes one bounded RunPass pass.
+type OneShotReclaimResult struct {
+	Drained   int // running -> reclaim_pending
 	Blocked   int // proof failures -> cleanup_blocked (or deadline extended)
-	Reclaimed int // retention_pending -> reclaiming -> cleaned
+	Reclaimed int // reclaim_pending -> reclaiming -> cleaned
 	Rechecked int // cleanup_blocked rechecks evaluated
 	Purged    int // cleaned markers physically deleted after retention
 }
 
-// OneShotRetentionService processes finite one-shot markers in bounded
+// OneShotReclaimService processes finite one-shot markers in bounded
 // database-time batches. It shares only scheduling shape with evidence
-// retention; its predicate and owner scope are one-shot-specific.
-type OneShotRetentionService struct {
+// record retention; its predicate and owner scope are one-shot-specific.
+type OneShotReclaimService struct {
 	DB            *sql.DB
 	Logger        observabilityport.RuntimeLogger
 	BatchSize     int
@@ -69,7 +69,7 @@ type OneShotRetentionService struct {
 	Now func() time.Time
 }
 
-func (s *OneShotRetentionService) evaluationNow() sql.NullTime {
+func (s *OneShotReclaimService) evaluationNow() sql.NullTime {
 	if s.Now == nil {
 		return sql.NullTime{}
 	}
@@ -132,9 +132,9 @@ var oneShotKnownBlockingTables = []string{
 	"alignment_operations",
 	// Cleanup admission is downstream of a replacement decision, which requires
 	// an active Subscription. A one-shot mount is created stopped, but no path
-	// fences a state patch on it, so cleanup_operations is not provably absent;
+	// fences a state patch on it, so replacement_deletions is not provably absent;
 	// its cleanup_execute WorkItem is outside the quiescence proof.
-	"cleanup_operations",
+	"replacement_deletions",
 	// Offset migration admission is reachable through PatchRSSSourceOffset: the
 	// one-shot view exposes the temporary ManagedAnime id and the route only
 	// requires an active lifecycle, which the temporary owner has. Plans hang
@@ -160,11 +160,11 @@ var oneShotKnownBlockingTables = []string{
 // reclaim only compacts and never deletes; it carries no managed_anime_id.
 var oneShotIndependentTables = []string{"file_manager_operations", "download_completions"}
 
-// NewOneShotRetentionService constructs the service. A non-positive batch size
+// NewOneShotReclaimService constructs the service. A non-positive batch size
 // uses the default; retention outside [1,30] days falls back to the default.
-func NewOneShotRetentionService(db *sql.DB, logger observabilityport.RuntimeLogger) (*OneShotRetentionService, error) {
+func NewOneShotReclaimService(db *sql.DB, logger observabilityport.RuntimeLogger) (*OneShotReclaimService, error) {
 	if db == nil {
-		return nil, errors.New("one-shot retention service database is nil")
+		return nil, errors.New("one-shot reclaim service database is nil")
 	}
 	if logger == nil {
 		logger = observabilityport.NopRuntimeLogger{}
@@ -173,14 +173,14 @@ func NewOneShotRetentionService(db *sql.DB, logger observabilityport.RuntimeLogg
 	if batch <= 0 {
 		batch = defaultOneShotBatchSize
 	}
-	return &OneShotRetentionService{DB: db, Logger: logger, BatchSize: batch, RetentionDays: DefaultRetentionDays}, nil
+	return &OneShotReclaimService{DB: db, Logger: logger, BatchSize: batch, RetentionDays: DefaultRetentionDays}, nil
 }
 
 // RunPass executes one bounded pass: drain terminal chains out of running,
-// reclaim due retention_pending markers, recheck due cleanup_blocked markers,
+// reclaim due reclaim_pending markers, recheck due cleanup_blocked markers,
 // and purge expired cleaned markers.
-func (s *OneShotRetentionService) RunPass(ctx context.Context) (OneShotRetentionResult, error) {
-	var result OneShotRetentionResult
+func (s *OneShotReclaimService) RunPass(ctx context.Context) (OneShotReclaimResult, error) {
+	var result OneShotReclaimResult
 	drained, blocked, err := s.drainCandidates(ctx)
 	if err != nil {
 		return result, err
@@ -210,7 +210,7 @@ func (s *OneShotRetentionService) RunPass(ctx context.Context) (OneShotRetention
 	return result, nil
 }
 
-func (s *OneShotRetentionService) logEvent(ctx context.Context, operation, reasonCode, message string) {
+func (s *OneShotReclaimService) logEvent(ctx context.Context, operation, reasonCode, message string) {
 	if s == nil || s.Logger == nil {
 		return
 	}
@@ -223,7 +223,7 @@ func (s *OneShotRetentionService) logEvent(ctx context.Context, operation, reaso
 	})
 }
 
-func (s *OneShotRetentionService) logError(ctx context.Context, operation, reasonCode, message string) {
+func (s *OneShotReclaimService) logError(ctx context.Context, operation, reasonCode, message string) {
 	if s == nil || s.Logger == nil {
 		return
 	}
@@ -233,7 +233,7 @@ func (s *OneShotRetentionService) logError(ctx context.Context, operation, reaso
 		Operation:  operation,
 		Outcome:    "failure",
 		ReasonCode: reasonCode,
-		ErrorClass: "oneshot_retention",
+		ErrorClass: "oneshot_reclaim",
 	})
 }
 
@@ -241,14 +241,14 @@ func (s *OneShotRetentionService) logError(ctx context.Context, operation, reaso
 // using database time. The batch read is advisory only: each marker is
 // re-locked FOR UPDATE inside its own processing transaction, which is where
 // concurrent server instances actually serialize.
-func (s *OneShotRetentionService) oneShotDueIDs(ctx context.Context, states []string, due bool) ([]string, error) {
+func (s *OneShotReclaimService) oneShotDueIDs(ctx context.Context, states []string, due bool) ([]string, error) {
 	queries := persistence.New(s.DB)
 	batchSize := int32(s.BatchSize)
 	switch {
 	case !due && len(states) == 1 && states[0] == OneShotStateRunning:
 		return queries.ListRunningOneShotMarkers(ctx, batchSize)
-	case due && len(states) == 1 && states[0] == OneShotStateRetentionPending:
-		return queries.ListDueRetentionPendingOneShotMarkers(ctx, batchSize)
+	case due && len(states) == 1 && states[0] == OneShotStateReclaimPending:
+		return queries.ListDueReclaimPendingOneShotMarkers(ctx, batchSize)
 	case due && len(states) == 1 && states[0] == OneShotStateCleanupBlocked:
 		return queries.ListDueCleanupBlockedOneShotMarkers(ctx, batchSize)
 	default:
@@ -257,10 +257,10 @@ func (s *OneShotRetentionService) oneShotDueIDs(ctx context.Context, states []st
 }
 
 // drainCandidates moves terminal, fully-drained running markers to
-// retention_pending with their computed terminal outcome. Chains that are not
+// reclaim_pending with their computed terminal outcome. Chains that are not
 // terminal yet are skipped; terminal chains whose reclamation proof fails
 // become cleanup_blocked.
-func (s *OneShotRetentionService) drainCandidates(ctx context.Context) (drained, blocked int, err error) {
+func (s *OneShotReclaimService) drainCandidates(ctx context.Context) (drained, blocked int, err error) {
 	ids, err := s.oneShotDueIDs(ctx, []string{OneShotStateRunning}, false)
 	if err != nil {
 		return 0, 0, err
@@ -280,7 +280,7 @@ func (s *OneShotRetentionService) drainCandidates(ctx context.Context) (drained,
 	return drained, blocked, nil
 }
 
-func (s *OneShotRetentionService) drainOne(ctx context.Context, markerID string) (string, error) {
+func (s *OneShotReclaimService) drainOne(ctx context.Context, markerID string) (string, error) {
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return "", fmt.Errorf("begin one-shot drain: %w", err)
@@ -329,7 +329,7 @@ func (s *OneShotRetentionService) drainOne(ctx context.Context, markerID string)
 		return "blocked", nil
 	}
 	if len(row.Leases) > 0 {
-		if _, updateErr := s.blockMarkerWithOutcomeTx(ctx, tx, markerID, "admission_ledger_not_drained", "the admission ledger must be empty before retention", outcome.outcome); updateErr != nil {
+		if _, updateErr := s.blockMarkerWithOutcomeTx(ctx, tx, markerID, "admission_ledger_not_drained", "the admission ledger must be empty before reclamation", outcome.outcome); updateErr != nil {
 			return "", updateErr
 		}
 		if commitErr := tx.Commit(); commitErr != nil {
@@ -349,16 +349,16 @@ func (s *OneShotRetentionService) drainOne(ctx context.Context, markerID string)
 	if err := tx.Commit(); err != nil {
 		return "", fmt.Errorf("commit one-shot drain: %w", err)
 	}
-	s.logEvent(ctx, "oneshot_drain", "retention_pending", "one-shot chain drained to retention_pending (outcome="+outcome.outcome+")")
+	s.logEvent(ctx, "oneshot_drain", "reclaim_pending", "one-shot chain drained to reclaim_pending (outcome="+outcome.outcome+")")
 	return "drained", nil
 }
 
-// reclaimDue processes retention_pending markers whose retention deadline has
+// reclaimDue processes reclaim_pending markers whose reclaim deadline has
 // passed: revalidate, then raise the epoch into reclaiming, delete ONLY the
 // anchored temporary database owner graph leaf-first, and mark cleaned — all
-// in one transaction. A crash rolls back to retention_pending.
-func (s *OneShotRetentionService) reclaimDue(ctx context.Context) (reclaimed, blocked int, err error) {
-	ids, err := s.oneShotDueIDs(ctx, []string{OneShotStateRetentionPending}, true)
+// in one transaction. A crash rolls back to reclaim_pending.
+func (s *OneShotReclaimService) reclaimDue(ctx context.Context) (reclaimed, blocked int, err error) {
+	ids, err := s.oneShotDueIDs(ctx, []string{OneShotStateReclaimPending}, true)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -376,7 +376,7 @@ func (s *OneShotRetentionService) reclaimDue(ctx context.Context) (reclaimed, bl
 	return reclaimed, blocked, nil
 }
 
-func (s *OneShotRetentionService) reclaimOne(ctx context.Context, markerID string) (bool, error) {
+func (s *OneShotReclaimService) reclaimOne(ctx context.Context, markerID string) (bool, error) {
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return false, fmt.Errorf("begin one-shot reclamation: %w", err)
@@ -389,7 +389,7 @@ func (s *OneShotRetentionService) reclaimOne(ctx context.Context, markerID strin
 	if err != nil {
 		return false, err
 	}
-	if row.State != OneShotStateRetentionPending {
+	if row.State != OneShotStateReclaimPending {
 		return false, nil
 	}
 	// Marker expiration never grants deletion of independent acquisition details:
@@ -504,9 +504,9 @@ func (s *OneShotRetentionService) reclaimOne(ctx context.Context, markerID strin
 }
 
 // recheckBlocked re-evaluates due cleanup_blocked markers. A passing proof
-// returns the marker to retention_pending with a fresh deadline; a failing
+// returns the marker to reclaim_pending with a fresh deadline; a failing
 // proof extends the deadline within the hard maximum from terminal_at.
-func (s *OneShotRetentionService) recheckBlocked(ctx context.Context) (rechecked, extended int, err error) {
+func (s *OneShotReclaimService) recheckBlocked(ctx context.Context) (rechecked, extended int, err error) {
 	ids, err := s.oneShotDueIDs(ctx, []string{OneShotStateCleanupBlocked}, true)
 	if err != nil {
 		return 0, 0, err
@@ -526,7 +526,7 @@ func (s *OneShotRetentionService) recheckBlocked(ctx context.Context) (rechecked
 	return rechecked, extended, nil
 }
 
-func (s *OneShotRetentionService) recheckOne(ctx context.Context, markerID string) (bool, error) {
+func (s *OneShotReclaimService) recheckOne(ctx context.Context, markerID string) (bool, error) {
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return false, fmt.Errorf("begin one-shot recheck: %w", err)
@@ -547,10 +547,10 @@ func (s *OneShotRetentionService) recheckOne(ctx context.Context, markerID strin
 		// A marker may have become cleanup_blocked because an owner was still
 		// settling. Rechecking the ledger and live WorkItems alone is not enough:
 		// prove the complete terminal chain again before returning to
-		// retention_pending.
+		// reclaim_pending.
 		_, evaluateErr := s.evaluateChainTx(ctx, tx, graph)
 		if evaluateErr == nil && len(row.Leases) == 0 && s.proveQuiescentTx(ctx, tx, graph) == nil {
-			deadline, err := s.retentionDeadlineTx(ctx, tx)
+			deadline, err := s.reclaimDeadlineTx(ctx, tx)
 			if err != nil {
 				return false, err
 			}
@@ -569,7 +569,7 @@ func (s *OneShotRetentionService) recheckOne(ctx context.Context, markerID strin
 			if err := tx.Commit(); err != nil {
 				return false, fmt.Errorf("commit one-shot recheck: %w", err)
 			}
-			s.logEvent(ctx, "oneshot_recheck", "retention_pending", "cleanup_blocked recheck passed; marker returned to retention_pending")
+			s.logEvent(ctx, "oneshot_recheck", "reclaim_pending", "cleanup_blocked recheck passed; marker returned to reclaim_pending")
 			return true, nil
 		}
 	}
@@ -594,10 +594,10 @@ func (s *OneShotRetentionService) recheckOne(ctx context.Context, markerID strin
 	return false, nil
 }
 
-// purgeCleaned physically deletes cleaned markers whose retention has passed.
+// purgeCleaned physically deletes cleaned markers whose reclaim window has passed.
 // After purge the replay record is gone: the request key may be reused for a
 // new admission by design.
-func (s *OneShotRetentionService) purgeCleaned(ctx context.Context) (int, error) {
+func (s *OneShotReclaimService) purgeCleaned(ctx context.Context) (int, error) {
 	result, err := persistence.New(s.DB).PurgeExpiredCleanedOneShotMarkers(ctx, int32(s.BatchSize))
 	if err != nil {
 		return 0, fmt.Errorf("purge cleaned one-shot markers: %w", err)
@@ -634,7 +634,7 @@ type oneShotGraph struct {
 // then enumerates Artifact/FileOperation owners by exact download_task_id /
 // correlation identity. Any missing, extra, dangling, or relationship-
 // mismatched anchor is corruption.
-func (s *OneShotRetentionService) loadAnchorsTx(ctx context.Context, tx *sql.Tx, markerID string) (oneShotGraph, error) {
+func (s *OneShotReclaimService) loadAnchorsTx(ctx context.Context, tx *sql.Tx, markerID string) (oneShotGraph, error) {
 	graph := oneShotGraph{markerID: markerID}
 	row, err := persistence.New(tx).ResolveOneShotAnchors(ctx, markerID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -725,7 +725,7 @@ type oneShotOutcome struct {
 // created Artifact verified-or-known-failure, every created FileOperation
 // completed-or-known-failure. qB disposition knowledge is guaranteed by the
 // drained admission ledger (every effect settled confirmed/no_external_effect).
-func (s *OneShotRetentionService) evaluateChainTx(ctx context.Context, tx *sql.Tx, graph oneShotGraph) (oneShotOutcome, error) {
+func (s *OneShotReclaimService) evaluateChainTx(ctx context.Context, tx *sql.Tx, graph oneShotGraph) (oneShotOutcome, error) {
 	if graph.downloadTaskID == "" {
 		// No download chain: the only legitimate shape is an adopted exact
 		// target set, which is already satisfied and needed no qB work. Any
@@ -794,7 +794,7 @@ type anchoredStageFailure struct {
 	reason string
 }
 
-func (s *OneShotRetentionService) firstAnchoredStageFailureTx(ctx context.Context, tx *sql.Tx, graph oneShotGraph) (*anchoredStageFailure, error) {
+func (s *OneShotReclaimService) firstAnchoredStageFailureTx(ctx context.Context, tx *sql.Tx, graph oneShotGraph) (*anchoredStageFailure, error) {
 	if len(graph.fileOpIDs) > 0 {
 		fileOperationRows, err := persistence.New(tx).ListAnchoredFileOperationStates(ctx, graph.fileOpIDs)
 		if err != nil {
@@ -830,7 +830,7 @@ func (s *OneShotRetentionService) firstAnchoredStageFailureTx(ctx context.Contex
 // assertOwnersSettledTx verifies every anchored Artifact and FileOperation is
 // terminal; a non-terminal owner without live work is an anomaly that blocks
 // reclamation instead of guessing.
-func (s *OneShotRetentionService) assertOwnersSettledTx(ctx context.Context, tx *sql.Tx, graph oneShotGraph) error {
+func (s *OneShotReclaimService) assertOwnersSettledTx(ctx context.Context, tx *sql.Tx, graph oneShotGraph) error {
 	artifactRows, err := persistence.New(tx).ListAnchoredArtifactStates(ctx, graph.artifactIDs)
 	if err != nil {
 		return fmt.Errorf("read anchored artifacts: %w", err)
@@ -858,7 +858,7 @@ func (s *OneShotRetentionService) assertOwnersSettledTx(ctx context.Context, tx 
 // proveQuiescentTx is the reclamation-time eligibility proof: no live
 // WorkItem for any anchored owner and no continuation obligation (there is no
 // autonomous one-shot dispatcher, so live items are the only obligations).
-func (s *OneShotRetentionService) proveQuiescentTx(ctx context.Context, tx *sql.Tx, graph oneShotGraph) error {
+func (s *OneShotReclaimService) proveQuiescentTx(ctx context.Context, tx *sql.Tx, graph oneShotGraph) error {
 	live, err := s.hasLiveWorkItemsTx(ctx, tx, graph)
 	if err != nil {
 		return err
@@ -869,7 +869,7 @@ func (s *OneShotRetentionService) proveQuiescentTx(ctx context.Context, tx *sql.
 	return nil
 }
 
-func (s *OneShotRetentionService) hasLiveWorkItemsTx(ctx context.Context, tx *sql.Tx, graph oneShotGraph) (bool, error) {
+func (s *OneShotReclaimService) hasLiveWorkItemsTx(ctx context.Context, tx *sql.Tx, graph oneShotGraph) (bool, error) {
 	live, err := persistence.New(tx).HasLiveOneShotWorkItems(ctx, persistence.HasLiveOneShotWorkItemsParams{
 		DownloadTaskID:   graph.downloadTaskID,
 		ReleaseID:        graph.releaseID,
@@ -883,14 +883,14 @@ func (s *OneShotRetentionService) hasLiveWorkItemsTx(ctx context.Context, tx *sq
 }
 
 // setTerminalPendingTx writes the computed terminal evidence plus the
-// retention deadline while moving running -> retention_pending. The ledger
+// reclaim deadline while moving running -> reclaim_pending. The ledger
 // must already be empty (DB CHECK enforces the field matrix).
-func (s *OneShotRetentionService) setTerminalPendingTx(ctx context.Context, tx *sql.Tx, markerID string, outcome oneShotOutcome) error {
-	deadline, err := s.retentionDeadlineTx(ctx, tx)
+func (s *OneShotReclaimService) setTerminalPendingTx(ctx context.Context, tx *sql.Tx, markerID string, outcome oneShotOutcome) error {
+	deadline, err := s.reclaimDeadlineTx(ctx, tx)
 	if err != nil {
 		return err
 	}
-	result, err := persistence.New(tx).DrainOneShotMarkerToRetentionPending(ctx, persistence.DrainOneShotMarkerToRetentionPendingParams{
+	result, err := persistence.New(tx).DrainOneShotMarkerToReclaimPending(ctx, persistence.DrainOneShotMarkerToReclaimPendingParams{
 		TerminalOutcome:    sql.NullString{String: outcome.outcome, Valid: true},
 		TerminalReasonCode: sql.NullString{String: boundedText(outcome.reasonCode, maxOneShotReasonCode), Valid: true},
 		TerminalReason:     sql.NullString{String: boundedText(outcome.reason, maxOneShotReason), Valid: true},
@@ -898,7 +898,7 @@ func (s *OneShotRetentionService) setTerminalPendingTx(ctx context.Context, tx *
 		MarkerID:           markerID,
 	})
 	if err != nil {
-		return fmt.Errorf("drain one-shot marker to retention_pending: %w", err)
+		return fmt.Errorf("drain one-shot marker to reclaim_pending: %w", err)
 	}
 	if affected, err := result.RowsAffected(); err != nil {
 		return fmt.Errorf("read drained one-shot marker result: %w", err)
@@ -933,7 +933,7 @@ WHERE id = (SELECT current_attempt_id FROM one_shot_acquisitions WHERE id = $1)
 
 // blockMarkerTx moves a failing marker into cleanup_blocked with a bounded
 // actionable reason and a fresh recheck deadline.
-func (s *OneShotRetentionService) blockMarkerTx(ctx context.Context, tx *sql.Tx, markerID, reasonCode, reason string) (int64, error) {
+func (s *OneShotReclaimService) blockMarkerTx(ctx context.Context, tx *sql.Tx, markerID, reasonCode, reason string) (int64, error) {
 	return s.blockMarkerWithOutcomeTx(ctx, tx, markerID, reasonCode, reason, "")
 }
 
@@ -942,9 +942,9 @@ func (s *OneShotRetentionService) blockMarkerTx(ctx context.Context, tx *sql.Tx,
 // just completed the terminal-chain proof may provide that outcome so a
 // drained-but-unsettled marker is not mislabeled as failed. The new deadline
 // is capped at terminal_at + MaxRetentionDays, matching the hard-max recheck
-// policy even when a stale retention_pending marker is blocked during
+// policy even when a stale reclaim_pending marker is blocked during
 // reclamation.
-func (s *OneShotRetentionService) blockMarkerWithOutcomeTx(ctx context.Context, tx *sql.Tx, markerID, reasonCode, reason, terminalOutcome string) (int64, error) {
+func (s *OneShotReclaimService) blockMarkerWithOutcomeTx(ctx context.Context, tx *sql.Tx, markerID, reasonCode, reason, terminalOutcome string) (int64, error) {
 	if terminalOutcome == "" {
 		terminalOutcome = StateFailed
 	}
@@ -982,12 +982,12 @@ func (s *OneShotRetentionService) blockMarkerWithOutcomeTx(ctx context.Context, 
 	return affected, nil
 }
 
-// retentionDeadlineTx computes the retention deadline from PostgreSQL database
+// reclaimDeadlineTx computes the reclamation deadline from PostgreSQL database
 // time so batches stay consistent across server instances.
-func (s *OneShotRetentionService) retentionDeadlineTx(ctx context.Context, tx *sql.Tx) (time.Time, error) {
-	deadline, err := persistence.New(tx).ComputeOneShotRetentionDeadline(ctx, int32(s.RetentionDays))
+func (s *OneShotReclaimService) reclaimDeadlineTx(ctx context.Context, tx *sql.Tx) (time.Time, error) {
+	deadline, err := persistence.New(tx).ComputeOneShotReclaimDeadline(ctx, int32(s.RetentionDays))
 	if err != nil {
-		return time.Time{}, fmt.Errorf("compute one-shot retention deadline: %w", err)
+		return time.Time{}, fmt.Errorf("compute one-shot reclaim deadline: %w", err)
 	}
 	return deadline, nil
 }
@@ -1033,7 +1033,7 @@ ORDER BY c.table_name`, pq.Array(oneShotClassifiedOwnerTables))
 // reclaiming in this transaction: compact accepts the temporary Release that
 // still names the root's task only because deleteTemporaryOwnerGraphTx deletes
 // that Release before commit (otherwise compact reports release_bound).
-func (s *OneShotRetentionService) compactOneShotRootsTx(ctx context.Context, tx *sql.Tx, markerID string, graph oneShotGraph) (bool, error) {
+func (s *OneShotReclaimService) compactOneShotRootsTx(ctx context.Context, tx *sql.Tx, markerID string, graph oneShotGraph) (bool, error) {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM placement_obligations WHERE file_operation_id IN (SELECT o.id FROM file_operations o WHERE o.acquisition_id IN (`+oneShotRootsQuery+`))`, markerID); err != nil {
 		return false, fmt.Errorf("delete one-shot placement_obligations: %w", err)
 	}

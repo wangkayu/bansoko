@@ -261,7 +261,7 @@ async function mockSnapshotDownload(page: Page) {
       rss_source_id: "src-adopted-1",
       release_id: "rel-adopted-1",
       download_task_id: null,
-      state: "retention_pending",
+      state: "reclaim_pending",
     } satisfies OneShotAdmissionResult));
   });
   return {

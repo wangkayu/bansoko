@@ -84,13 +84,13 @@ func (f *cleanupFixture) input() CleanupInput {
 		ManagedAnimeID:    "anime-1",
 		Coverage:          []string{"tv:s1:e1"},
 		ReplacementRef:    "dec-new-1",
-		RetentionMode:     "single_copy",
+		AdmissionMode:     "single_copy",
 		SourcePath:        f.source,
 		SourceFingerprint: domain.MetadataFingerprint(f.observation.SizeBytes, f.observation.Identity),
 	}
 }
 
-func (f *cleanupFixture) admit(t *testing.T, input CleanupInput) *CleanupOperation {
+func (f *cleanupFixture) admit(t *testing.T, input CleanupInput) *ReplacementDeletion {
 	t.Helper()
 	op, err := f.service.Admit(context.Background(), input)
 	if err != nil {
@@ -99,7 +99,7 @@ func (f *cleanupFixture) admit(t *testing.T, input CleanupInput) *CleanupOperati
 	return op
 }
 
-// runDelete claims the live cleanup_delete item, runs the handler and
+// runDelete claims the live replacement_delete item, runs the handler and
 // finishes the claim the way the worker does.
 func (f *cleanupFixture) runDelete(t *testing.T) worker.Outcome {
 	t.Helper()
@@ -109,19 +109,19 @@ func (f *cleanupFixture) runDelete(t *testing.T) worker.Outcome {
 func runCleanupDelete(t *testing.T, service *CleanupService, store *workitems.Store) worker.Outcome {
 	t.Helper()
 	ctx := context.Background()
-	claim, err := store.ClaimDue(ctx, "cleanup-test-worker", []string{workitems.KindCleanupDelete}, time.Minute)
+	claim, err := store.ClaimDue(ctx, "cleanup-test-worker", []string{workitems.KindReplacementDelete}, time.Minute)
 	if err != nil {
-		t.Fatalf("claim cleanup_delete: %v", err)
+		t.Fatalf("claim replacement_delete: %v", err)
 	}
 	outcome, err := service.DeleteHandler().Handle(ctx, claim)
 	if err != nil {
-		t.Fatalf("handle cleanup_delete: %v", err)
+		t.Fatalf("handle replacement_delete: %v", err)
 	}
 	if outcome.Kind != worker.OutcomeFinish {
-		t.Fatalf("cleanup_delete outcome = %+v", outcome)
+		t.Fatalf("replacement_delete outcome = %+v", outcome)
 	}
 	if err := store.FinishWithResult(ctx, claim, outcome.TerminalState, outcome.OwnerResult, outcome.WriteOwner); err != nil {
-		t.Fatalf("finish cleanup_delete: %v", err)
+		t.Fatalf("finish replacement_delete: %v", err)
 	}
 	return outcome
 }
@@ -130,7 +130,7 @@ func (f *cleanupFixture) state(t *testing.T, id string) (CleanupState, string) {
 	t.Helper()
 	var state string
 	var code sql.NullString
-	if err := f.db.QueryRow(`SELECT state, failure_code FROM cleanup_operations WHERE id = $1`, id).Scan(&state, &code); err != nil {
+	if err := f.db.QueryRow(`SELECT state, failure_code FROM replacement_deletions WHERE id = $1`, id).Scan(&state, &code); err != nil {
 		t.Fatal(err)
 	}
 	return CleanupState(state), code.String
@@ -140,7 +140,7 @@ func liveCleanupWorkItems(t *testing.T, db *sql.DB, id string) int {
 	t.Helper()
 	var count int
 	if err := db.QueryRow(`SELECT count(*) FROM work_items WHERE owner_type = $1 AND owner_id = $2 AND kind = $3`,
-		workitems.OwnerCleanup, id, workitems.KindCleanupDelete).Scan(&count); err != nil {
+		workitems.OwnerReplacementDeletion, id, workitems.KindReplacementDelete).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	return count
@@ -171,7 +171,7 @@ func TestCleanupAdmitIdempotentWithOneDeleteWorkItem(t *testing.T) {
 		t.Fatalf("coverage must freeze: %+v", first.Coverage)
 	}
 	if got := liveCleanupWorkItems(t, f.db, first.ID); got != 1 {
-		t.Fatalf("admission must enqueue exactly one cleanup_delete item, got %d", got)
+		t.Fatalf("admission must enqueue exactly one replacement_delete item, got %d", got)
 	}
 }
 
@@ -252,7 +252,7 @@ func TestCleanupDeleteSkipsWithZeroEffect(t *testing.T) {
 				}
 			}
 			var attempt []byte
-			if err := f.db.QueryRow(`SELECT attempt FROM cleanup_operations WHERE id = $1`, op.ID).Scan(&attempt); err != nil {
+			if err := f.db.QueryRow(`SELECT attempt FROM replacement_deletions WHERE id = $1`, op.ID).Scan(&attempt); err != nil {
 				t.Fatal(err)
 			}
 			if len(attempt) != 0 {
@@ -280,11 +280,11 @@ func TestCleanupDeleteRejectsStaleClaimBeforeEffect(t *testing.T) {
 	f := newCleanupFixture(t)
 	op := f.admit(t, f.input())
 	ctx := context.Background()
-	claim, err := f.store.ClaimDue(ctx, "stale-worker", []string{workitems.KindCleanupDelete}, time.Minute)
+	claim, err := f.store.ClaimDue(ctx, "stale-worker", []string{workitems.KindReplacementDelete}, time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.db.Exec(`UPDATE cleanup_operations SET version = version + 1 WHERE id = $1`, op.ID); err != nil {
+	if _, err := f.db.Exec(`UPDATE replacement_deletions SET version = version + 1 WHERE id = $1`, op.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.service.DeleteHandler().Handle(ctx, claim); err == nil {
@@ -351,7 +351,7 @@ func TestCleanupBlockedWithoutReceiptStaysBlocked(t *testing.T) {
 func TestCleanupReconcileEnqueuesAdmittedWithoutWorkItem(t *testing.T) {
 	f := newCleanupFixture(t)
 	op := f.admit(t, f.input())
-	if _, err := workItemFixtureDB(t).Exec(`DELETE FROM work_items WHERE owner_type = $1 AND owner_id = $2`, workitems.OwnerCleanup, op.ID); err != nil {
+	if _, err := workItemFixtureDB(t).Exec(`DELETE FROM work_items WHERE owner_type = $1 AND owner_id = $2`, workitems.OwnerReplacementDeletion, op.ID); err != nil {
 		t.Fatal(err)
 	}
 	result, err := f.service.ReconcileUnknownEffect(context.Background(), deployment.ReconcileRequest{OperationID: "cleanup-reconcile"})
@@ -363,13 +363,13 @@ func TestCleanupReconcileEnqueuesAdmittedWithoutWorkItem(t *testing.T) {
 	}
 }
 
-func seedCleanupOperation(t *testing.T, db *sql.DB, id, animeID, sourcePath, fingerprint string) string {
+func seedReplacementDeletion(t *testing.T, db *sql.DB, id, animeID, sourcePath, fingerprint string) string {
 	t.Helper()
 	key := "cln:" + id
 	if _, err := db.Exec(`
-INSERT INTO cleanup_operations
+INSERT INTO replacement_deletions
 (id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
- retention_mode, source_path, source_fingerprint, state, version, created_at, updated_at)
+ admission_mode, source_path, source_fingerprint, state, version, created_at, updated_at)
 VALUES ($1, $2, 'plc-1', $3, '["tv:s1:e1"]', 'dec-1', 'single_copy', $4, $5, 'admitted', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT (idempotency_key) DO NOTHING`,
 		id, key, animeID, sourcePath, fingerprint); err != nil {
@@ -395,7 +395,7 @@ func cleanupClaim(t *testing.T, store *workitems.Store, id, kind string, expecte
 		t.Fatal(err)
 	}
 	if _, err := store.Create(ctx, tx, workitems.WorkItemSpec{
-		Owner:                workitems.OwnerRef{Type: workitems.OwnerCleanup, ID: id},
+		Owner:                workitems.OwnerRef{Type: workitems.OwnerReplacementDeletion, ID: id},
 		Kind:                 kind,
 		IdempotencyKey:       "test:" + id + ":" + kind,
 		MaxAttempts:          3,

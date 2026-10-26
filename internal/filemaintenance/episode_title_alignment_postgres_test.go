@@ -97,7 +97,7 @@ func seedVariantAnime(t *testing.T, fixture *calibrationFixture, animeID, subKey
 	t.Helper()
 	seedAnimeSubscription(t, fixture.db, animeID, "sub-"+subKey, "stopped")
 	seedAnimeForRenderer(t, fixture.db, animeID, "Show", "tv")
-	seedInstanceRetention(t, fixture.db, animeID, ModeAll, ``, 1)
+	seedInstanceReplacement(t, fixture.db, animeID, ModeAll, ``, 1)
 	seedCompletedGenerationWithRenderChains(t, fixture.db, animeID, 1, map[string]string{
 		"/library/EP 01.mkv": "fp-" + subKey,
 	}, rules, &frozenRenderBindingFacts{MediaKind: "tv", Season: 1, SeasonBound: true, TMDBWorkID: "work-" + animeID})

@@ -13,7 +13,7 @@ import (
 
 func frozenBusinessFixture(t *testing.T) animedomain.AnimeDraft {
 	t.Helper()
-	b := animedomain.BusinessSnapshot{SchemaVersion: "business-snapshot-v1", Sections: map[string]json.RawMessage{}, SectionVersions: map[string]int64{}, SectionSchemas: map[string]string{}, Parser: animedomain.ParserPolicyEnvelope{SchemaVersion: animedomain.ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global", PolicyVersion: 7}, Retention: animedomain.RetentionValue{AdmissionMode: "single_copy", QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[]}]}`)}, RetentionVersion: 13, FileEffectVersion: 17, UnclassifiedRoute: "route"}
+	b := animedomain.BusinessSnapshot{SchemaVersion: "business-snapshot-v1", Sections: map[string]json.RawMessage{}, SectionVersions: map[string]int64{}, SectionSchemas: map[string]string{}, Parser: animedomain.ParserPolicyEnvelope{SchemaVersion: animedomain.ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global", PolicyVersion: 7}, Replacement: animedomain.ReplacementValue{AdmissionMode: "single_copy", QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[]}]}`)}, ReplacementVersion: 13, FileEffectVersion: 17, UnclassifiedRoute: "route"}
 	digest := "sha256:" + strings.Repeat("a", 64)
 	b.Programs = animedomain.ProgramReferences{Vars: namingvars.ProgramRef{Digest: digest, Version: namingvars.ProfileVersion(digest)}, AttrRules: namingvars.ProgramRef{Digest: digest, Version: attrrules.ProfileVersion(digest)}}
 	for _, name := range animedomain.EffectiveSectionOrder {
@@ -52,8 +52,8 @@ func TestSubmittedBusinessResolvesWithoutGlobalDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	draft.Business.RetentionVersion = 99
-	if frozen.RetentionVersion != 13 {
+	draft.Business.ReplacementVersion = 99
+	if frozen.ReplacementVersion != 13 {
 		t.Fatal("snapshot alias follows mutable draft")
 	}
 	if _, err := submittedBusiness(draft); err == nil {

@@ -128,7 +128,7 @@ describe("query key contracts", () => {
     const animeID = "anime-42";
 
     expect(fileMaintenanceKeys.policy).toEqual(["file-maintenance", "policy"]);
-    expect(fileMaintenanceKeys.retentionDefault).toEqual(["file-maintenance", "retention", "default"]);
+    expect(fileMaintenanceKeys.replacementDefault).toEqual(["file-maintenance", "replacement", "default"]);
     expect(fileMaintenanceKeys.fileEffectDefault).toEqual(["file-maintenance", "file-effect", "default"]);
     expect(fileMaintenanceKeys.files(animeID)).toEqual(["file-maintenance", "files", animeID]);
     expect(fileMaintenanceKeys.fileEffect(animeID)).toEqual(["file-maintenance", "file-effect", animeID]);

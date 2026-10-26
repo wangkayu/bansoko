@@ -44,7 +44,7 @@ FROM one_shot_acquisitions WHERE id = $1`, oneShotID).Scan(
 }
 
 // failAndDrainOneShot forces the current one-shot chain into the terminal
-// failed / retention_pending shape the real drain produces: the live download
+// failed / reclaim_pending shape the real drain produces: the live download
 // work fails, the download task fails, and one retention pass settles the
 // marker and its current attempt.
 func failAndDrainOneShot(t *testing.T, db *sql.DB, oneShotID string) {
@@ -74,7 +74,7 @@ SET state = 'failed', failure_code = 'qB_SUBMIT_FAILED', failure_reason = 'force
 WHERE id = $1`, downloadTaskID); err != nil {
 		t.Fatalf("fail one-shot download task: %v", err)
 	}
-	retention, err := workitems.NewOneShotRetentionService(db, nil)
+	retention, err := workitems.NewOneShotReclaimService(db, nil)
 	if err != nil {
 		t.Fatalf("construct retention service: %v", err)
 	}

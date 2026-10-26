@@ -33,12 +33,12 @@ type ReplanInput struct {
 
 type OverviewView struct {
 	Alignments      *[]AlignmentOperationView
-	Cleanups        *[]CleanupOperationView
+	Deletions       *[]ReplacementDeletionView
 	CompanionIssues *[]CompanionIssueView
 	Consumers       *[]ReconciliationConsumerStateView
 	Decisions       *[]ReplacementDecisionView
-	GlobalDefault   *RetentionPolicyDefaultView
-	InstancePolicy  *InstanceRetentionPolicyView
+	GlobalDefault   *ReplacementPolicyDefaultView
+	InstancePolicy  *InstanceReplacementPolicyView
 	ManagedAnimeID  string
 	Placements      *[]PlacementView
 	PlacementIssues *[]PlacementIssueView
@@ -197,20 +197,20 @@ type OffsetMigrationGenerationView struct {
 	Version         int
 }
 
-type RetentionPolicyWriteInput struct {
+type ReplacementPolicyWriteInput struct {
 	ExpectedVersion int64
-	Policy          RetentionPolicy
+	Policy          ReplacementPolicy
 }
 
-type RetentionPolicyDefaultView struct {
-	Policy    RetentionPolicy
+type ReplacementPolicyDefaultView struct {
+	Policy    ReplacementPolicy
 	UpdatedAt *time.Time
 	Version   int64
 }
 
-type InstanceRetentionPolicyView struct {
+type InstanceReplacementPolicyView struct {
 	ManagedAnimeID       string
-	Policy               RetentionPolicy
+	Policy               ReplacementPolicy
 	SourceDefaultVersion int64
 	UpdatedAt            *time.Time
 	Version              int64
@@ -245,7 +245,7 @@ type ReconciliationConsumerStateView struct {
 	Version        int
 }
 
-type CleanupOperationView struct {
+type ReplacementDeletionView struct {
 	CreatedAt         time.Time
 	FailureCode       *string
 	ID                string
@@ -253,7 +253,7 @@ type CleanupOperationView struct {
 	PlacementID       string
 	Reason            *string
 	ReplacementRef    string
-	RetentionMode     string
+	AdmissionMode     string
 	SourceFingerprint string
 	SourcePath        string
 	State             string

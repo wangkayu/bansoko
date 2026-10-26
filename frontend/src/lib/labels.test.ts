@@ -100,7 +100,7 @@ describe("FR-10 产品语言表", () => {
     expect(routineKindLabel("rss_refresh")).toBe("RSS 刷新");
     expect(routineKindLabel("metadata_match")).toBe("元数据自动匹配");
     expect(routineKindLabel("automation_dispatch")).toBe("自动派发");
-		 expect(routineKindLabel("retention_pass")).toBe("清理保留数据");
+    expect(routineKindLabel("retention_pass")).toBe("记录保留清理");
   });
 
   // Run-record plugin row titles go through the trigger's localized mapping, never leaking snake_case.

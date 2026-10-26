@@ -47,7 +47,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, '{}'::jsonb, $10,
 // Any non-cleaned marker state owns a live temporary owner graph and must
 // block the unsubscribe with the typed conflict while deleting nothing.
 func TestDeleteAnimeSubscriptionConflictOnActiveOneShotMarker(t *testing.T) {
-	for _, state := range []string{"running", "retention_pending", "cleanup_blocked", "reclaiming"} {
+	for _, state := range []string{"running", "reclaim_pending", "cleanup_blocked", "reclaiming"} {
 		t.Run(state, func(t *testing.T) {
 			db := animetest.OpenTestDB(t)
 			service := ownershipNewTestService(t, db, &ownershipFakeFetcher{})

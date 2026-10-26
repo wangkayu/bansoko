@@ -63,7 +63,7 @@ VALUES ($1, $2, $3, 'facts-v1', $1)`, id, key, ordinal); err != nil {
 func setAdmissionMode(t *testing.T, db *sql.DB, mode AdmissionMode) {
 	t.Helper()
 	if _, err := db.Exec(`
-UPDATE anime_business_configs SET admission_mode = $1, retention_version = retention_version + 1
+UPDATE anime_business_configs SET admission_mode = $1, replacement_version = replacement_version + 1
 WHERE managed_anime_id = 'anime-1'`, string(mode)); err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestPGUnclaimedScanManagedFileIsReplacedAndDeleted(t *testing.T) {
 			if state := placementState(t, db, "plc-scan"); state != "superseded" {
 				t.Fatalf("scan-managed loser state = %s", state)
 			}
-			claim, err := store.ClaimDue(ctx, "scan-delete", []string{workitems.KindCleanupDelete}, time.Minute)
+			claim, err := store.ClaimDue(ctx, "scan-delete", []string{workitems.KindReplacementDelete}, time.Minute)
 			if err != nil || claim.ID == "" {
 				t.Fatalf("claim delete: %+v %v", claim, err)
 			}
@@ -207,7 +207,7 @@ func TestPGUnclaimedScanManagedFileIsReplacedAndDeleted(t *testing.T) {
 				t.Fatalf("the scan-managed loser must be deleted: %v", err)
 			}
 			var state string
-			if err := db.QueryRow(`SELECT state FROM cleanup_operations WHERE placement_id = 'plc-scan'`).Scan(&state); err != nil {
+			if err := db.QueryRow(`SELECT state FROM replacement_deletions WHERE placement_id = 'plc-scan'`).Scan(&state); err != nil {
 				t.Fatal(err)
 			}
 			if state != string(CleanupDeleted) {
@@ -315,13 +315,13 @@ func TestPGPolicySwitchWithoutNewCandidateDeletesNothing(t *testing.T) {
 	store := cleanupWorkItemStore(t, db)
 	trigger := NewReplacementTriggerService(db, store)
 	var version int
-	if err := db.QueryRow(`SELECT retention_version FROM anime_business_configs WHERE managed_anime_id = 'anime-1'`).Scan(&version); err != nil {
+	if err := db.QueryRow(`SELECT replacement_version FROM anime_business_configs WHERE managed_anime_id = 'anime-1'`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	policy := NewService(NewPolicyService(db), NewRetentionPolicyService(db), nil, nil, nil)
+	policy := NewService(NewPolicyService(db), NewReplacementPolicyService(db), nil, nil, nil)
 	policy.SetReplacementTrigger(trigger)
-	if _, err := policy.SaveInstanceRetentionPolicy(ctx, "anime-1", generated.InstanceRetentionPolicyInput{
-		AdmissionMode:   generated.RetentionAdmissionModeSingleCopy,
+	if _, err := policy.SaveInstanceReplacementPolicy(ctx, "anime-1", generated.InstanceReplacementPolicyInput{
+		AdmissionMode:   generated.ReplacementAdmissionModeSingleCopy,
 		QualityProfile:  generated.QualityProfile{Version: "profile-v1", Items: []generated.QualityCompareItem{{Key: "release.resolution", Ranks: [][]string{{"1080p"}, {"720p"}}}}},
 		ExpectedVersion: version,
 	}, "test", "http"); err != nil {
@@ -353,13 +353,13 @@ func TestPGPolicySwitchWithoutNewCandidateDeletesNothing(t *testing.T) {
 	if err != nil || outcome.TerminalState != workitems.StateSucceeded {
 		t.Fatalf("policy evaluate outcome=%+v err=%v", outcome, err)
 	}
-	_, cleanups, superseded := decisionCounts(t, db, "anime-1")
+	_, deletions, superseded := decisionCounts(t, db, "anime-1")
 	var decisions int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM replacement_decisions WHERE managed_anime_id = 'anime-1'`).Scan(&decisions); err != nil {
 		t.Fatal(err)
 	}
-	if decisions != 0 || cleanups != 0 || superseded != 0 {
-		t.Fatalf("a policy change must have no effect: decisions=%d cleanups=%d superseded=%d", decisions, cleanups, superseded)
+	if decisions != 0 || deletions != 0 || superseded != 0 {
+		t.Fatalf("a policy change must have no effect: decisions=%d deletions=%d superseded=%d", decisions, deletions, superseded)
 	}
 }
 
@@ -372,7 +372,7 @@ func TestPGPoolHoldsOnlyTheAnimesManagedPlacements(t *testing.T) {
 	ctx := context.Background()
 	setAdmissionMode(t, db, ModeSingleCopy)
 	seedAnimeSubscription(t, db, "anime-2", "sub-2", "active")
-	seedInstanceRetention(t, db, "anime-2", ModeSingleCopy, "", 1)
+	seedInstanceReplacement(t, db, "anime-2", ModeSingleCopy, "", 1)
 	foreign := seedFilePlacement(t, db, "anime-2", "sub-2", "foreign-old", []string{"tv:s1:e1"},
 		Facts{Resolution: "480p", Group: "G"}, "2026-07-01T00:00:00Z")
 	released := seedFilePlacement(t, db, "anime-1", "sub-1", "released-old", []string{"tv:s1:e1"},

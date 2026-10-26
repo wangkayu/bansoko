@@ -742,7 +742,7 @@ func TestPlacementContinuationRefusedWhenMarkerReclaiming(t *testing.T) {
 		state string
 		epoch int64
 	}{
-		{"retention_pending", "retention_pending", 1},
+		{"reclaim_pending", "reclaim_pending", 1},
 		{"cleanup_blocked", "cleanup_blocked", 1},
 		{"reclaiming", "reclaiming", 1},
 		{"stale_epoch", "running", 2},

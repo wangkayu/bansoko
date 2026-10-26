@@ -17,7 +17,7 @@ import (
 	"bansoko/internal/persistence/txscope"
 )
 
-// Repository owns PostgreSQL access for cleanup_operations. Methods that
+// Repository owns PostgreSQL access for replacement_deletions. Methods that
 // receive a transaction scope never begin, commit, or roll back it; the caller
 // retains ownership of the surrounding transaction.
 type Repository struct {
@@ -94,7 +94,7 @@ type OperationInput struct {
 	ManagedAnimeID    string
 	Coverage          json.RawMessage
 	ReplacementRef    string
-	RetentionMode     string
+	AdmissionMode     string
 	SourcePath        string
 	SourceFingerprint string
 	// State is the admission state: admitted, or skipped when the loser's
@@ -117,7 +117,7 @@ type Operation struct {
 	ManagedAnimeID    string
 	Coverage          []string
 	ReplacementRef    string
-	RetentionMode     string
+	AdmissionMode     string
 	SourcePath        string
 	SourceFingerprint string
 	State             string
@@ -150,14 +150,14 @@ func (r *Repository) InsertTx(ctx context.Context, scope txscope.Tx, input Opera
 }
 
 func (r *Repository) insert(ctx context.Context, execer generated.DBTX, input OperationInput) error {
-	if err := generated.New(execer).InsertCleanupOperation(ctx, generated.InsertCleanupOperationParams{
+	if err := generated.New(execer).InsertReplacementDeletion(ctx, generated.InsertReplacementDeletionParams{
 		ID:                input.ID,
 		IdempotencyKey:    input.IdempotencyKey,
 		PlacementID:       input.PlacementID,
 		ManagedAnimeID:    input.ManagedAnimeID,
 		Coverage:          input.Coverage,
 		ReplacementRef:    input.ReplacementRef,
-		RetentionMode:     input.RetentionMode,
+		AdmissionMode:     input.AdmissionMode,
 		SourcePath:        input.SourcePath,
 		SourceFingerprint: input.SourceFingerprint,
 		State:             admissionState(input.State),
@@ -178,7 +178,7 @@ func (r *Repository) LockVersionTx(ctx context.Context, scope txscope.Tx, cleanu
 	if err != nil {
 		return 0, err
 	}
-	version, err := generated.New(tx).LockCleanupOwnerVersion(ctx, cleanupID)
+	version, err := generated.New(tx).LockReplacementDeletionOwnerVersion(ctx, cleanupID)
 	if err != nil {
 		return 0, err
 	}
@@ -191,12 +191,12 @@ func (r *Repository) LockTx(ctx context.Context, scope txscope.Tx, cleanupID str
 	if err != nil {
 		return nil, err
 	}
-	row, err := generated.New(tx).LockCleanupOperation(ctx, cleanupID)
+	row, err := generated.New(tx).LockReplacementDeletion(ctx, cleanupID)
 	if err != nil {
 		return nil, err
 	}
 	return operationFromFullRow(row.ID, row.IdempotencyKey, row.PlacementID, row.ManagedAnimeID,
-		row.CoverageKeys, row.ReplacementRef, row.RetentionMode, row.SourcePath,
+		row.CoverageKeys, row.ReplacementRef, row.AdmissionMode, row.SourcePath,
 		row.SourceFingerprint, row.State,
 		row.Attempt.RawMessage, row.Attempt.Valid, row.FailureCode, row.Reason, row.CorrelationID,
 		row.Version, row.CreatedAt, row.UpdatedAt)
@@ -208,7 +208,7 @@ func (r *Repository) PersistAttemptTx(ctx context.Context, scope txscope.Tx, cle
 	if err != nil {
 		return 0, err
 	}
-	version, err := generated.New(tx).PersistCleanupAttempt(ctx, generated.PersistCleanupAttemptParams{
+	version, err := generated.New(tx).PersistReplacementDeletionAttempt(ctx, generated.PersistReplacementDeletionAttemptParams{
 		Attempt:         nullableRawMessage(attempt),
 		CleanupID:       cleanupID,
 		ExpectedVersion: expectedVersion,
@@ -228,7 +228,7 @@ func (r *Repository) TransitionTx(ctx context.Context, scope txscope.Tx, cleanup
 	if err != nil {
 		return 0, err
 	}
-	version, err := generated.New(tx).TransitionCleanup(ctx, generated.TransitionCleanupParams{
+	version, err := generated.New(tx).TransitionReplacementDeletion(ctx, generated.TransitionReplacementDeletionParams{
 		State:           state,
 		FailureCode:     code,
 		Reason:          reason,
@@ -263,7 +263,7 @@ func (r *Repository) Get(ctx context.Context, cleanupID string) (*Operation, err
 	if r == nil || r.db == nil {
 		return nil, errors.New("cleanup database is nil")
 	}
-	row, err := generated.New(r.db).GetCleanupOperation(ctx, cleanupID)
+	row, err := generated.New(r.db).GetReplacementDeletion(ctx, cleanupID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -271,7 +271,7 @@ func (r *Repository) Get(ctx context.Context, cleanupID string) (*Operation, err
 		return nil, err
 	}
 	return operationFromFullRow(row.ID, row.IdempotencyKey, row.PlacementID, row.ManagedAnimeID,
-		row.CoverageKeys, row.ReplacementRef, row.RetentionMode, row.SourcePath,
+		row.CoverageKeys, row.ReplacementRef, row.AdmissionMode, row.SourcePath,
 		row.SourceFingerprint, row.State,
 		row.Attempt.RawMessage, row.Attempt.Valid, row.FailureCode, row.Reason, row.CorrelationID,
 		row.Version, row.CreatedAt, row.UpdatedAt)
@@ -283,14 +283,14 @@ func (r *Repository) ListPending(ctx context.Context) ([]Operation, error) {
 	if r == nil || r.db == nil {
 		return nil, errors.New("cleanup database is nil")
 	}
-	rows, err := generated.New(r.db).ListPendingCleanupOperations(ctx)
+	rows, err := generated.New(r.db).ListPendingReplacementDeletions(ctx)
 	if err != nil {
 		return nil, err
 	}
 	result := make([]Operation, 0, len(rows))
 	for _, row := range rows {
 		operation, err := operationFromFullRow(row.ID, row.IdempotencyKey, row.PlacementID, row.ManagedAnimeID,
-			row.CoverageKeys, row.ReplacementRef, row.RetentionMode, row.SourcePath,
+			row.CoverageKeys, row.ReplacementRef, row.AdmissionMode, row.SourcePath,
 			row.SourceFingerprint, row.State,
 			row.Attempt.RawMessage, row.Attempt.Valid, row.FailureCode, row.Reason, row.CorrelationID,
 			row.Version, row.CreatedAt, row.UpdatedAt)
@@ -308,7 +308,7 @@ type ListRow struct {
 	PlacementID       string
 	ManagedAnimeID    string
 	ReplacementRef    string
-	RetentionMode     string
+	AdmissionMode     string
 	SourcePath        string
 	SourceFingerprint string
 	State             string
@@ -324,7 +324,7 @@ func (r *Repository) List(ctx context.Context, animeID string, limit, offset int
 	if r == nil || r.db == nil {
 		return nil, errors.New("cleanup database is nil")
 	}
-	rows, err := generated.New(r.db).ListCleanupOperations(ctx, generated.ListCleanupOperationsParams{
+	rows, err := generated.New(r.db).ListReplacementDeletions(ctx, generated.ListReplacementDeletionsParams{
 		AnimeID: animeID, LimitCount: int32(limit), OffsetCount: int32(offset),
 	})
 	if err != nil {
@@ -337,7 +337,7 @@ func (r *Repository) List(ctx context.Context, animeID string, limit, offset int
 			PlacementID:       generatedRow.PlacementID,
 			ManagedAnimeID:    generatedRow.ManagedAnimeID,
 			ReplacementRef:    generatedRow.ReplacementRef,
-			RetentionMode:     generatedRow.RetentionMode,
+			AdmissionMode:     generatedRow.AdmissionMode,
 			SourcePath:        generatedRow.SourcePath,
 			SourceFingerprint: generatedRow.SourceFingerprint,
 			State:             generatedRow.State,
@@ -399,7 +399,7 @@ func nullableRawMessage(value json.RawMessage) pqtype.NullRawMessage {
 
 func operationFromFullRow(
 	id, idempotencyKey, placementID, managedAnimeID string,
-	coverageRaw json.RawMessage, replacementRef string, retentionMode, sourcePath, sourceFingerprint string,
+	coverageRaw json.RawMessage, replacementRef string, admissionMode, sourcePath, sourceFingerprint string,
 	state string,
 	attemptRaw json.RawMessage, attemptValid bool, failureCode, reason, correlation sql.NullString,
 	version int64, createdAt, updatedAt time.Time,
@@ -410,7 +410,7 @@ func operationFromFullRow(
 		PlacementID:       placementID,
 		ManagedAnimeID:    managedAnimeID,
 		ReplacementRef:    replacementRef,
-		RetentionMode:     retentionMode,
+		AdmissionMode:     admissionMode,
 		SourcePath:        sourcePath,
 		SourceFingerprint: sourceFingerprint,
 		State:             state,

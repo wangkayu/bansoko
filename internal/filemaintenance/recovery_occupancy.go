@@ -86,7 +86,7 @@ func recoveryPathsOccupied(ctx context.Context, q queryer, paths []string, excep
 
 // recoveryUnfinishedOwners is the non-terminal owner surface the file manager
 // holds checks refuse on: unfinished file operations (source and target),
-// pending/retrying placement handoffs, live alignments, admitted cleanups
+// pending/retrying placement handoffs, live alignments, admitted deletions
 // (source and quarantine), admitted/queued replacement decisions, unfinished
 // offset migrations and unfinished user file operations. The reconciliation
 // package cannot import the filemanager store (layering), so the read lives
@@ -98,9 +98,9 @@ UNION ALL SELECT fo.target_path FROM placement_obligations po JOIN file_operatio
   WHERE po.state IN ('pending', 'waiting_retry')
 UNION ALL SELECT a.source_path FROM alignment_operations a WHERE a.state IN ('planned', 'ready', 'running')
 UNION ALL SELECT a.target_path FROM alignment_operations a WHERE a.state IN ('planned', 'ready', 'running')
-UNION ALL SELECT c.source_path FROM cleanup_operations c
+UNION ALL SELECT c.source_path FROM replacement_deletions c
   WHERE c.state = 'admitted' OR (c.state = 'blocked' AND c.attempt IS NOT NULL)
-UNION ALL SELECT c.attempt->>'capture_path' FROM cleanup_operations c
+UNION ALL SELECT c.attempt->>'capture_path' FROM replacement_deletions c
   WHERE (c.state = 'admitted' OR c.state = 'blocked') AND c.attempt ? 'capture_path'
 UNION ALL SELECT p.physical_path FROM replacement_decisions d JOIN placements p ON p.id = d.candidate_placement_id
   WHERE d.state IN ('admitted', 'queued')

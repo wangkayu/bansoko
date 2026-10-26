@@ -31,22 +31,22 @@ func (q *Queries) CleanupPathOwned(ctx context.Context, path string) (sql.NullBo
 	return column_1, err
 }
 
-const getCleanupOperation = `-- name: GetCleanupOperation :one
+const getReplacementDeletion = `-- name: GetReplacementDeletion :one
 SELECT id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
-       retention_mode, source_path, source_fingerprint, state, attempt, failure_code, reason,
+       admission_mode, source_path, source_fingerprint, state, attempt, failure_code, reason,
        correlation_id, version, created_at, updated_at
-FROM cleanup_operations
+FROM replacement_deletions
 WHERE id = $1
 `
 
-type GetCleanupOperationRow struct {
+type GetReplacementDeletionRow struct {
 	ID                string
 	IdempotencyKey    string
 	PlacementID       string
 	ManagedAnimeID    string
 	CoverageKeys      json.RawMessage
 	ReplacementRef    string
-	RetentionMode     string
+	AdmissionMode     string
 	SourcePath        string
 	SourceFingerprint string
 	State             string
@@ -59,16 +59,16 @@ type GetCleanupOperationRow struct {
 	UpdatedAt         time.Time
 }
 
-// GetCleanupOperation
+// GetReplacementDeletion
 //
 //	SELECT id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
-//	       retention_mode, source_path, source_fingerprint, state, attempt, failure_code, reason,
+//	       admission_mode, source_path, source_fingerprint, state, attempt, failure_code, reason,
 //	       correlation_id, version, created_at, updated_at
-//	FROM cleanup_operations
+//	FROM replacement_deletions
 //	WHERE id = $1
-func (q *Queries) GetCleanupOperation(ctx context.Context, cleanupID string) (GetCleanupOperationRow, error) {
-	row := q.db.QueryRowContext(ctx, getCleanupOperation, cleanupID)
-	var i GetCleanupOperationRow
+func (q *Queries) GetReplacementDeletion(ctx context.Context, cleanupID string) (GetReplacementDeletionRow, error) {
+	row := q.db.QueryRowContext(ctx, getReplacementDeletion, cleanupID)
+	var i GetReplacementDeletionRow
 	err := row.Scan(
 		&i.ID,
 		&i.IdempotencyKey,
@@ -76,7 +76,7 @@ func (q *Queries) GetCleanupOperation(ctx context.Context, cleanupID string) (Ge
 		&i.ManagedAnimeID,
 		&i.CoverageKeys,
 		&i.ReplacementRef,
-		&i.RetentionMode,
+		&i.AdmissionMode,
 		&i.SourcePath,
 		&i.SourceFingerprint,
 		&i.State,
@@ -91,10 +91,10 @@ func (q *Queries) GetCleanupOperation(ctx context.Context, cleanupID string) (Ge
 	return i, err
 }
 
-const insertCleanupOperation = `-- name: InsertCleanupOperation :exec
-INSERT INTO cleanup_operations
+const insertReplacementDeletion = `-- name: InsertReplacementDeletion :exec
+INSERT INTO replacement_deletions
 (id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
- retention_mode, source_path, source_fingerprint, state, failure_code, reason,
+ admission_mode, source_path, source_fingerprint, state, failure_code, reason,
  correlation_id, causation_type, causation_id, version, created_at, updated_at)
 VALUES ($1, $2, $3, $4,
         $5, $6, $7,
@@ -104,14 +104,14 @@ VALUES ($1, $2, $3, $4,
 ON CONFLICT (idempotency_key) DO NOTHING
 `
 
-type InsertCleanupOperationParams struct {
+type InsertReplacementDeletionParams struct {
 	ID                string
 	IdempotencyKey    string
 	PlacementID       string
 	ManagedAnimeID    string
 	Coverage          json.RawMessage
 	ReplacementRef    string
-	RetentionMode     string
+	AdmissionMode     string
 	SourcePath        string
 	SourceFingerprint string
 	State             string
@@ -122,11 +122,11 @@ type InsertCleanupOperationParams struct {
 	CausationID       sql.NullString
 }
 
-// InsertCleanupOperation
+// InsertReplacementDeletion
 //
-//	INSERT INTO cleanup_operations
+//	INSERT INTO replacement_deletions
 //	(id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
-//	 retention_mode, source_path, source_fingerprint, state, failure_code, reason,
+//	 admission_mode, source_path, source_fingerprint, state, failure_code, reason,
 //	 correlation_id, causation_type, causation_id, version, created_at, updated_at)
 //	VALUES ($1, $2, $3, $4,
 //	        $5, $6, $7,
@@ -134,15 +134,15 @@ type InsertCleanupOperationParams struct {
 //	        $11, $12, $13, $14,
 //	        $15, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 //	ON CONFLICT (idempotency_key) DO NOTHING
-func (q *Queries) InsertCleanupOperation(ctx context.Context, arg InsertCleanupOperationParams) error {
-	_, err := q.db.ExecContext(ctx, insertCleanupOperation,
+func (q *Queries) InsertReplacementDeletion(ctx context.Context, arg InsertReplacementDeletionParams) error {
+	_, err := q.db.ExecContext(ctx, insertReplacementDeletion,
 		arg.ID,
 		arg.IdempotencyKey,
 		arg.PlacementID,
 		arg.ManagedAnimeID,
 		arg.Coverage,
 		arg.ReplacementRef,
-		arg.RetentionMode,
+		arg.AdmissionMode,
 		arg.SourcePath,
 		arg.SourceFingerprint,
 		arg.State,
@@ -155,101 +155,23 @@ func (q *Queries) InsertCleanupOperation(ctx context.Context, arg InsertCleanupO
 	return err
 }
 
-const listCleanupOperations = `-- name: ListCleanupOperations :many
-SELECT id, placement_id, managed_anime_id, replacement_ref, retention_mode,
-       source_path, source_fingerprint,
-       state, COALESCE(failure_code, ''), COALESCE(reason, ''), version, created_at, updated_at
-FROM cleanup_operations
-WHERE managed_anime_id = $1
-ORDER BY created_at DESC
-LIMIT $3 OFFSET $2
-`
-
-type ListCleanupOperationsParams struct {
-	AnimeID     string
-	OffsetCount int32
-	LimitCount  int32
-}
-
-type ListCleanupOperationsRow struct {
-	ID                string
-	PlacementID       string
-	ManagedAnimeID    string
-	ReplacementRef    string
-	RetentionMode     string
-	SourcePath        string
-	SourceFingerprint string
-	State             string
-	FailureCode       string
-	Reason            string
-	Version           int64
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
-}
-
-// ListCleanupOperations
-//
-//	SELECT id, placement_id, managed_anime_id, replacement_ref, retention_mode,
-//	       source_path, source_fingerprint,
-//	       state, COALESCE(failure_code, ''), COALESCE(reason, ''), version, created_at, updated_at
-//	FROM cleanup_operations
-//	WHERE managed_anime_id = $1
-//	ORDER BY created_at DESC
-//	LIMIT $3 OFFSET $2
-func (q *Queries) ListCleanupOperations(ctx context.Context, arg ListCleanupOperationsParams) ([]ListCleanupOperationsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listCleanupOperations, arg.AnimeID, arg.OffsetCount, arg.LimitCount)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListCleanupOperationsRow{}
-	for rows.Next() {
-		var i ListCleanupOperationsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.PlacementID,
-			&i.ManagedAnimeID,
-			&i.ReplacementRef,
-			&i.RetentionMode,
-			&i.SourcePath,
-			&i.SourceFingerprint,
-			&i.State,
-			&i.FailureCode,
-			&i.Reason,
-			&i.Version,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listPendingCleanupOperations = `-- name: ListPendingCleanupOperations :many
+const listPendingReplacementDeletions = `-- name: ListPendingReplacementDeletions :many
 SELECT id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
-       retention_mode, source_path, source_fingerprint, state, attempt, failure_code, reason,
+       admission_mode, source_path, source_fingerprint, state, attempt, failure_code, reason,
        correlation_id, version, created_at, updated_at
-FROM cleanup_operations
+FROM replacement_deletions
 WHERE state = 'admitted' OR (state = 'blocked' AND attempt IS NOT NULL)
 ORDER BY id
 `
 
-type ListPendingCleanupOperationsRow struct {
+type ListPendingReplacementDeletionsRow struct {
 	ID                string
 	IdempotencyKey    string
 	PlacementID       string
 	ManagedAnimeID    string
 	CoverageKeys      json.RawMessage
 	ReplacementRef    string
-	RetentionMode     string
+	AdmissionMode     string
 	SourcePath        string
 	SourceFingerprint string
 	State             string
@@ -262,23 +184,23 @@ type ListPendingCleanupOperationsRow struct {
 	UpdatedAt         time.Time
 }
 
-// ListPendingCleanupOperations
+// ListPendingReplacementDeletions
 //
 //	SELECT id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
-//	       retention_mode, source_path, source_fingerprint, state, attempt, failure_code, reason,
+//	       admission_mode, source_path, source_fingerprint, state, attempt, failure_code, reason,
 //	       correlation_id, version, created_at, updated_at
-//	FROM cleanup_operations
+//	FROM replacement_deletions
 //	WHERE state = 'admitted' OR (state = 'blocked' AND attempt IS NOT NULL)
 //	ORDER BY id
-func (q *Queries) ListPendingCleanupOperations(ctx context.Context) ([]ListPendingCleanupOperationsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listPendingCleanupOperations)
+func (q *Queries) ListPendingReplacementDeletions(ctx context.Context) ([]ListPendingReplacementDeletionsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPendingReplacementDeletions)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListPendingCleanupOperationsRow{}
+	items := []ListPendingReplacementDeletionsRow{}
 	for rows.Next() {
-		var i ListPendingCleanupOperationsRow
+		var i ListPendingReplacementDeletionsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.IdempotencyKey,
@@ -286,7 +208,7 @@ func (q *Queries) ListPendingCleanupOperations(ctx context.Context) ([]ListPendi
 			&i.ManagedAnimeID,
 			&i.CoverageKeys,
 			&i.ReplacementRef,
-			&i.RetentionMode,
+			&i.AdmissionMode,
 			&i.SourcePath,
 			&i.SourceFingerprint,
 			&i.State,
@@ -311,86 +233,82 @@ func (q *Queries) ListPendingCleanupOperations(ctx context.Context) ([]ListPendi
 	return items, nil
 }
 
-const lockCleanupOperation = `-- name: LockCleanupOperation :one
-SELECT id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
-       retention_mode, source_path, source_fingerprint, state, attempt, failure_code, reason,
-       correlation_id, version, created_at, updated_at
-FROM cleanup_operations
-WHERE id = $1
-FOR UPDATE
+const listReplacementDeletions = `-- name: ListReplacementDeletions :many
+SELECT id, placement_id, managed_anime_id, replacement_ref, admission_mode,
+       source_path, source_fingerprint,
+       state, COALESCE(failure_code, ''), COALESCE(reason, ''), version, created_at, updated_at
+FROM replacement_deletions
+WHERE managed_anime_id = $1
+ORDER BY created_at DESC
+LIMIT $3 OFFSET $2
 `
 
-type LockCleanupOperationRow struct {
+type ListReplacementDeletionsParams struct {
+	AnimeID     string
+	OffsetCount int32
+	LimitCount  int32
+}
+
+type ListReplacementDeletionsRow struct {
 	ID                string
-	IdempotencyKey    string
 	PlacementID       string
 	ManagedAnimeID    string
-	CoverageKeys      json.RawMessage
 	ReplacementRef    string
-	RetentionMode     string
+	AdmissionMode     string
 	SourcePath        string
 	SourceFingerprint string
 	State             string
-	Attempt           pqtype.NullRawMessage
-	FailureCode       sql.NullString
-	Reason            sql.NullString
-	CorrelationID     sql.NullString
+	FailureCode       string
+	Reason            string
 	Version           int64
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 }
 
-// LockCleanupOperation
+// ListReplacementDeletions
 //
-//	SELECT id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
-//	       retention_mode, source_path, source_fingerprint, state, attempt, failure_code, reason,
-//	       correlation_id, version, created_at, updated_at
-//	FROM cleanup_operations
-//	WHERE id = $1
-//	FOR UPDATE
-func (q *Queries) LockCleanupOperation(ctx context.Context, cleanupID string) (LockCleanupOperationRow, error) {
-	row := q.db.QueryRowContext(ctx, lockCleanupOperation, cleanupID)
-	var i LockCleanupOperationRow
-	err := row.Scan(
-		&i.ID,
-		&i.IdempotencyKey,
-		&i.PlacementID,
-		&i.ManagedAnimeID,
-		&i.CoverageKeys,
-		&i.ReplacementRef,
-		&i.RetentionMode,
-		&i.SourcePath,
-		&i.SourceFingerprint,
-		&i.State,
-		&i.Attempt,
-		&i.FailureCode,
-		&i.Reason,
-		&i.CorrelationID,
-		&i.Version,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const lockCleanupOwnerVersion = `-- name: LockCleanupOwnerVersion :one
-SELECT version
-FROM cleanup_operations
-WHERE id = $1
-FOR UPDATE
-`
-
-// LockCleanupOwnerVersion
-//
-//	SELECT version
-//	FROM cleanup_operations
-//	WHERE id = $1
-//	FOR UPDATE
-func (q *Queries) LockCleanupOwnerVersion(ctx context.Context, cleanupID string) (int64, error) {
-	row := q.db.QueryRowContext(ctx, lockCleanupOwnerVersion, cleanupID)
-	var version int64
-	err := row.Scan(&version)
-	return version, err
+//	SELECT id, placement_id, managed_anime_id, replacement_ref, admission_mode,
+//	       source_path, source_fingerprint,
+//	       state, COALESCE(failure_code, ''), COALESCE(reason, ''), version, created_at, updated_at
+//	FROM replacement_deletions
+//	WHERE managed_anime_id = $1
+//	ORDER BY created_at DESC
+//	LIMIT $3 OFFSET $2
+func (q *Queries) ListReplacementDeletions(ctx context.Context, arg ListReplacementDeletionsParams) ([]ListReplacementDeletionsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listReplacementDeletions, arg.AnimeID, arg.OffsetCount, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListReplacementDeletionsRow{}
+	for rows.Next() {
+		var i ListReplacementDeletionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.PlacementID,
+			&i.ManagedAnimeID,
+			&i.ReplacementRef,
+			&i.AdmissionMode,
+			&i.SourcePath,
+			&i.SourceFingerprint,
+			&i.State,
+			&i.FailureCode,
+			&i.Reason,
+			&i.Version,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const lockCleanupWorkItem = `-- name: LockCleanupWorkItem :one
@@ -429,27 +347,109 @@ func (q *Queries) LockCleanupWorkItem(ctx context.Context, arg LockCleanupWorkIt
 	return i, err
 }
 
-const persistCleanupAttempt = `-- name: PersistCleanupAttempt :one
-UPDATE cleanup_operations
+const lockReplacementDeletion = `-- name: LockReplacementDeletion :one
+SELECT id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
+       admission_mode, source_path, source_fingerprint, state, attempt, failure_code, reason,
+       correlation_id, version, created_at, updated_at
+FROM replacement_deletions
+WHERE id = $1
+FOR UPDATE
+`
+
+type LockReplacementDeletionRow struct {
+	ID                string
+	IdempotencyKey    string
+	PlacementID       string
+	ManagedAnimeID    string
+	CoverageKeys      json.RawMessage
+	ReplacementRef    string
+	AdmissionMode     string
+	SourcePath        string
+	SourceFingerprint string
+	State             string
+	Attempt           pqtype.NullRawMessage
+	FailureCode       sql.NullString
+	Reason            sql.NullString
+	CorrelationID     sql.NullString
+	Version           int64
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+// LockReplacementDeletion
+//
+//	SELECT id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
+//	       admission_mode, source_path, source_fingerprint, state, attempt, failure_code, reason,
+//	       correlation_id, version, created_at, updated_at
+//	FROM replacement_deletions
+//	WHERE id = $1
+//	FOR UPDATE
+func (q *Queries) LockReplacementDeletion(ctx context.Context, cleanupID string) (LockReplacementDeletionRow, error) {
+	row := q.db.QueryRowContext(ctx, lockReplacementDeletion, cleanupID)
+	var i LockReplacementDeletionRow
+	err := row.Scan(
+		&i.ID,
+		&i.IdempotencyKey,
+		&i.PlacementID,
+		&i.ManagedAnimeID,
+		&i.CoverageKeys,
+		&i.ReplacementRef,
+		&i.AdmissionMode,
+		&i.SourcePath,
+		&i.SourceFingerprint,
+		&i.State,
+		&i.Attempt,
+		&i.FailureCode,
+		&i.Reason,
+		&i.CorrelationID,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const lockReplacementDeletionOwnerVersion = `-- name: LockReplacementDeletionOwnerVersion :one
+SELECT version
+FROM replacement_deletions
+WHERE id = $1
+FOR UPDATE
+`
+
+// LockReplacementDeletionOwnerVersion
+//
+//	SELECT version
+//	FROM replacement_deletions
+//	WHERE id = $1
+//	FOR UPDATE
+func (q *Queries) LockReplacementDeletionOwnerVersion(ctx context.Context, cleanupID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, lockReplacementDeletionOwnerVersion, cleanupID)
+	var version int64
+	err := row.Scan(&version)
+	return version, err
+}
+
+const persistReplacementDeletionAttempt = `-- name: PersistReplacementDeletionAttempt :one
+UPDATE replacement_deletions
 SET attempt = $1, version = version + 1, updated_at = CURRENT_TIMESTAMP
 WHERE id = $2 AND version = $3
 RETURNING version
 `
 
-type PersistCleanupAttemptParams struct {
+type PersistReplacementDeletionAttemptParams struct {
 	Attempt         pqtype.NullRawMessage
 	CleanupID       string
 	ExpectedVersion int64
 }
 
-// PersistCleanupAttempt
+// PersistReplacementDeletionAttempt
 //
-//	UPDATE cleanup_operations
+//	UPDATE replacement_deletions
 //	SET attempt = $1, version = version + 1, updated_at = CURRENT_TIMESTAMP
 //	WHERE id = $2 AND version = $3
 //	RETURNING version
-func (q *Queries) PersistCleanupAttempt(ctx context.Context, arg PersistCleanupAttemptParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, persistCleanupAttempt, arg.Attempt, arg.CleanupID, arg.ExpectedVersion)
+func (q *Queries) PersistReplacementDeletionAttempt(ctx context.Context, arg PersistReplacementDeletionAttemptParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, persistReplacementDeletionAttempt, arg.Attempt, arg.CleanupID, arg.ExpectedVersion)
 	var version int64
 	err := row.Scan(&version)
 	return version, err
@@ -473,15 +473,15 @@ func (q *Queries) SubscriptionIDForAnime(ctx context.Context, animeID string) (s
 	return id, err
 }
 
-const transitionCleanup = `-- name: TransitionCleanup :one
-UPDATE cleanup_operations
+const transitionReplacementDeletion = `-- name: TransitionReplacementDeletion :one
+UPDATE replacement_deletions
 SET state = $1, failure_code = NULLIF($2, ''),
     reason = NULLIF($3, ''), version = version + 1, updated_at = CURRENT_TIMESTAMP
 WHERE id = $4 AND version = $5
 RETURNING version
 `
 
-type TransitionCleanupParams struct {
+type TransitionReplacementDeletionParams struct {
 	State           string
 	FailureCode     interface{}
 	Reason          interface{}
@@ -489,15 +489,15 @@ type TransitionCleanupParams struct {
 	ExpectedVersion int64
 }
 
-// TransitionCleanup
+// TransitionReplacementDeletion
 //
-//	UPDATE cleanup_operations
+//	UPDATE replacement_deletions
 //	SET state = $1, failure_code = NULLIF($2, ''),
 //	    reason = NULLIF($3, ''), version = version + 1, updated_at = CURRENT_TIMESTAMP
 //	WHERE id = $4 AND version = $5
 //	RETURNING version
-func (q *Queries) TransitionCleanup(ctx context.Context, arg TransitionCleanupParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, transitionCleanup,
+func (q *Queries) TransitionReplacementDeletion(ctx context.Context, arg TransitionReplacementDeletionParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, transitionReplacementDeletion,
 		arg.State,
 		arg.FailureCode,
 		arg.Reason,

@@ -1166,16 +1166,16 @@ VALUES ('manual-claim-run', 'rss_refresh', 'manual', 'queued', 'manual-claim-ide
 	}
 
 	var state string
-	var retentionExact bool
+	var replacementExact bool
 	if err := db.QueryRowContext(ctx, `
 SELECT state,
        started_at IS NOT NULL AND finished_at IS NOT NULL
        AND retention_until = finished_at + INTERVAL '30 days'
 FROM automation_dispatch_runs
-WHERE id = 'manual-claim-run'`).Scan(&state, &retentionExact); err != nil {
+WHERE id = 'manual-claim-run'`).Scan(&state, &replacementExact); err != nil {
 		t.Fatal(err)
 	}
-	if state != "completed" || !retentionExact {
-		t.Fatalf("manual run state=%s retention_anchored_to_finish=%v", state, retentionExact)
+	if state != "completed" || !replacementExact {
+		t.Fatalf("manual run state=%s retention_anchored_to_finish=%v", state, replacementExact)
 	}
 }

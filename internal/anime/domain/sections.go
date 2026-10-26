@@ -29,14 +29,14 @@ const (
 // sections: they never appear in EffectiveSectionOrder, the generic
 // /config/global-sections API or the business snapshot's `sections` map.
 const (
-	SectionRetentionPolicy  = "retention"
-	SectionParserPolicy     = "parser_policy"
-	SectionFileEffectPolicy = "file_effect_policy"
+	SectionReplacementPolicy = "retention"
+	SectionParserPolicy      = "parser_policy"
+	SectionFileEffectPolicy  = "file_effect_policy"
 )
 
 // PolicyDefaultSectionNames is the closed set of the three policy-default
 // section names. Generic Global readers must exclude them.
-var PolicyDefaultSectionNames = []string{SectionRetentionPolicy, SectionParserPolicy, SectionFileEffectPolicy}
+var PolicyDefaultSectionNames = []string{SectionReplacementPolicy, SectionParserPolicy, SectionFileEffectPolicy}
 
 // SectionSchemaVersions pin the typed shape of each stored section value.
 var SectionSchemaVersions = map[string]string{

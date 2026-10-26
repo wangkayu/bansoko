@@ -32,10 +32,10 @@ func TestBusinessRevisionActivationNeverCopiesChangedGlobal(t *testing.T) {
 	if err := revision.VerifyIntegrity(); err != nil {
 		t.Fatal(err)
 	}
-	if revision.Business == nil || revision.Business.RetentionVersion != 13 || revision.Business.UnclassifiedRoute != "route" {
+	if revision.Business == nil || revision.Business.ReplacementVersion != 13 || revision.Business.UnclassifiedRoute != "route" {
 		t.Fatalf("revision lost business: %+v", revision)
 	}
-	if _, err := db.ExecContext(ctx, `UPDATE global_config_sections SET version=version+1 WHERE section_name='retention'`); err != nil {
+	if _, err := db.ExecContext(ctx, `UPDATE global_config_sections SET version=version+1 WHERE section_name='replacement'`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(ctx, `INSERT INTO global_config_sections(section_name,schema_version,value,version,updated_at) VALUES('file_effect_policy','file-effect-policy-v1','{"unclassified_route":"skip"}'::jsonb,17,CURRENT_TIMESTAMP) ON CONFLICT (section_name) DO UPDATE SET value=EXCLUDED.value, version=global_config_sections.version+1, updated_at=CURRENT_TIMESTAMP`); err != nil {
@@ -47,7 +47,7 @@ func TestBusinessRevisionActivationNeverCopiesChangedGlobal(t *testing.T) {
 	}
 	var mode, route string
 	var retentionVersion, fileVersion int64
-	if err := db.QueryRowContext(ctx, `SELECT admission_mode,retention_source_default_version FROM anime_business_configs WHERE managed_anime_id=$1`, result.ManagedAnime.ID).Scan(&mode, &retentionVersion); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT admission_mode,replacement_source_default_version FROM anime_business_configs WHERE managed_anime_id=$1`, result.ManagedAnime.ID).Scan(&mode, &retentionVersion); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.QueryRowContext(ctx, `SELECT unclassified_route,file_effect_source_default_version FROM anime_business_configs WHERE managed_anime_id=$1`, result.ManagedAnime.ID).Scan(&route, &fileVersion); err != nil {

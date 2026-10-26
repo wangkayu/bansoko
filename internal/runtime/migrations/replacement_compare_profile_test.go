@@ -14,10 +14,10 @@ import (
 )
 
 // The seeded instance-wide retention profile is byte for byte the Go default.
-func TestSeededRetentionProfileIsTheDefault(t *testing.T) {
+func TestSeededReplacementProfileIsTheDefault(t *testing.T) {
 	db := installedDB(t)
 	var profile []byte
-	if err := db.QueryRow(`SELECT value->'quality_profile' FROM global_config_sections WHERE section_name='retention'`).Scan(&profile); err != nil {
+	if err := db.QueryRow(`SELECT value->'quality_profile' FROM global_config_sections WHERE section_name='replacement'`).Scan(&profile); err != nil {
 		t.Fatal(err)
 	}
 	parsed, err := qualityprofile.Parse(profile)
@@ -49,7 +49,7 @@ func TestMigrationsParenthesizeKeyRemovalAfterArrow(t *testing.T) {
 
 // The retention profile validator accepts only the current profile shape, and
 // retention policies carry no cutoff column.
-func TestRetentionProfileValidatorAndNoCutoff(t *testing.T) {
+func TestReplacementProfileValidatorAndNoCutoff(t *testing.T) {
 	db := installedDB(t)
 	for raw, want := range map[string]bool{
 		string(qualityprofile.DefaultJSON()):                                                             true,
@@ -64,7 +64,7 @@ func TestRetentionProfileValidatorAndNoCutoff(t *testing.T) {
 		`{"version":"profile-v2","items":[]}`:                                                            false,
 	} {
 		var ok bool
-		if err := db.QueryRow(`SELECT retention_quality_profile_valid($1::jsonb)`, raw).Scan(&ok); err != nil {
+		if err := db.QueryRow(`SELECT replacement_quality_profile_valid($1::jsonb)`, raw).Scan(&ok); err != nil {
 			t.Fatal(err)
 		}
 		if ok != want {

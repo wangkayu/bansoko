@@ -539,7 +539,7 @@ func backgroundLoops(t *testing.T, rt *sql.DB, svc *ownerServices) []bgLoop {
 	add("qb_sync_dispatch/60s", time.Minute, func(ctx context.Context) { _, _ = dl.DispatchQBSync(ctx) })
 
 	janitor := newJanitor(t, rt, svc)
-	oneShot, err := workitems.NewOneShotRetentionService(rt, nil)
+	oneShot, err := workitems.NewOneShotReclaimService(rt, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

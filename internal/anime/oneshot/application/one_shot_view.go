@@ -77,11 +77,11 @@ func decodeOneShotInputSnapshot(raw json.RawMessage) *OneShotInputSnapshot {
 type OneShotAcquisitionState string
 
 const (
-	OneShotAcquisitionStateRunning          OneShotAcquisitionState = "running"
-	OneShotAcquisitionStateRetentionPending OneShotAcquisitionState = "retention_pending"
-	OneShotAcquisitionStateCleanupBlocked   OneShotAcquisitionState = "cleanup_blocked"
-	OneShotAcquisitionStateReclaiming       OneShotAcquisitionState = "reclaiming"
-	OneShotAcquisitionStateCleaned          OneShotAcquisitionState = "cleaned"
+	OneShotAcquisitionStateRunning        OneShotAcquisitionState = "running"
+	OneShotAcquisitionStateReclaimPending OneShotAcquisitionState = "reclaim_pending"
+	OneShotAcquisitionStateCleanupBlocked OneShotAcquisitionState = "cleanup_blocked"
+	OneShotAcquisitionStateReclaiming     OneShotAcquisitionState = "reclaiming"
+	OneShotAcquisitionStateCleaned        OneShotAcquisitionState = "cleaned"
 )
 
 // OneShotTerminalOutcome is the terminal result retained by a marker.

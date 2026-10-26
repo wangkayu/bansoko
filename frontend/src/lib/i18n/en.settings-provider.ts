@@ -1,4 +1,4 @@
-// C3: Settings · Group limit & alignment / Site settings / Default rules / Retention & cleanup.
+// C3: Settings · Group limit & alignment / Site settings / Default rules / Replacement.
 
 import type { CopyShape } from "./types";
 import type { settingsProviderCopy } from "./zh-CN.settings-provider";
@@ -221,16 +221,16 @@ export const enSettingsProviderCopy = {
       loadFailed: "Couldn't load the default episode parser",
     },
   },
-  retention: {
-    title: "Retention & Cleanup",
+  replacement: {
+    title: "Replacement",
     description: "Applies only to new subscriptions. Existing subscriptions are not affected.",
     save: "Save",
-    saveAria: "Save retention and cleanup",
+    saveAria: "Save replacement settings",
     saving: "Saving…",
-    saved: "Retention and cleanup defaults saved",
-    saveFailed: "Failed to save retention and cleanup defaults",
-    loading: "Loading retention and cleanup defaults…",
-    loadFailed: "Couldn't load retention and cleanup defaults",
+    saved: "Replacement defaults saved",
+    saveFailed: "Failed to save replacement defaults",
+    loading: "Loading replacement defaults…",
+    loadFailed: "Couldn't load replacement defaults",
     admissionCard: "When an Episode Has Multiple Versions",
     admissionHint: {
       all: "Keep every version and don't clean up old files",

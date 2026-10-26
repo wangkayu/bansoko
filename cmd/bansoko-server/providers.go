@@ -325,7 +325,7 @@ func provideFileManager(db *sql.DB, workStore *workitems.Store, denialZone filem
 }
 
 type fileMaintenanceGraph struct {
-	retentionPolicies        *filemaintenance.RetentionPolicyService
+	replacementPolicies      *filemaintenance.ReplacementPolicyService
 	parserPolicies           *parserpolicy.Service
 	fileEffectPolicies       *filemaintenance.FileEffectPolicyService
 	policyService            *filemaintenancepolicy.PolicyService
@@ -357,7 +357,7 @@ func provideFileMaintenanceGraph(
 	denialZone filemanager.DenialZone,
 	logger observabilityport.RuntimeLogger,
 ) (*fileMaintenanceGraph, error) {
-	retentionPolicies := filemaintenance.NewRetentionPolicyService(db)
+	replacementPolicies := filemaintenance.NewReplacementPolicyService(db)
 	markerRepo := animepersistence.NewRepository(db)
 	// The retirement command that protects an active one-shot marker from
 	// deletion lives in the ownership service; the draft/one-shot provisioning
@@ -424,7 +424,7 @@ func provideFileMaintenanceGraph(
 	fileManager.SetAlignmentPolicy(fileManagerAlignmentPolicy{policies: policyService})
 
 	return &fileMaintenanceGraph{
-		retentionPolicies: retentionPolicies, parserPolicies: parserPolicies,
+		replacementPolicies: replacementPolicies, parserPolicies: parserPolicies,
 		fileEffectPolicies: fileEffectPolicies, policyService: policyService, planner: planner,
 		mediaFactsStore:    mediaFactsStore,
 		replacementTrigger: replacementTrigger, cleanupService: cleanupService,
@@ -448,7 +448,7 @@ type applicationGraph struct {
 	seedSearch           catalogapplication.SeedSearchApplication
 	seedPreviewSource    animeapplication.SeedPreviewSource
 	retentionJanitor     *retentionapplication.Service
-	oneShotRetention     *workitems.OneShotRetentionService
+	oneShotReclaim       *workitems.OneShotReclaimService
 	acquisitionSettle    *acquisitionsettlement.SettlementService
 	oneShotService       *oneshotapplication.Service
 }
@@ -604,7 +604,7 @@ func provideApplicationGraph(
 	if err != nil {
 		return nil, err
 	}
-	oneShotRetention, err := workitems.NewOneShotRetentionService(db, logger)
+	oneShotReclaim, err := workitems.NewOneShotReclaimService(db, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -619,7 +619,7 @@ func provideApplicationGraph(
 		retryService: retryService, catalogDBSource: catalogDBSource,
 		metadataSearcher: metadataSearcher, observabilityService: observabilityService,
 		catalogService: catalogService, seedSearch: seedSearch, seedPreviewSource: seedPreviews, retentionJanitor: retentionJanitor,
-		oneShotRetention: oneShotRetention, oneShotService: oneShotService,
+		oneShotReclaim: oneShotReclaim, oneShotService: oneShotService,
 		acquisitionSettle: acquisitionSettle,
 	}, nil
 }
@@ -921,7 +921,7 @@ func provideWorkerGraph(
 		{kind: workitems.KindOffsetMigrationExecute, handler: offsetMigrationExecute.ExecuteHandler()},
 		{kind: workitems.KindReplacementEvaluate, handler: replacementDecisions.EvaluateHandler()},
 		{kind: workitems.KindReplacementFallback, handler: replacementDecisions.FallbackHandler()},
-		{kind: workitems.KindCleanupDelete, handler: cleanupService.DeleteHandler()},
+		{kind: workitems.KindReplacementDelete, handler: cleanupService.DeleteHandler()},
 		{kind: workitems.KindFileManagerExecute, handler: userOperations.ExecuteHandler()},
 		{kind: workitems.KindCompletionExecute, handler: downloadCompletion.Handler()},
 	}
@@ -957,7 +957,7 @@ func provideFileMaintenanceService(
 ) httpapi.FileMaintenanceService {
 	service := filemaintenance.NewService(
 		fileMaintenanceGraph.policyService,
-		fileMaintenanceGraph.retentionPolicies,
+		fileMaintenanceGraph.replacementPolicies,
 		fileMaintenanceGraph.planner,
 		fileMaintenanceGraph.placementService,
 		fileMaintenanceGraph.replacementDecisions,

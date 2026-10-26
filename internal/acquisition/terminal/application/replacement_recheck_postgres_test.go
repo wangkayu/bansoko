@@ -27,7 +27,7 @@ func TestReplacementCaptureTransactionRecheck(t *testing.T) {
 	// document of its FileOperation, whose size_bytes is the approved
 	// incumbent size (a bare digest records none and fails closed).
 	digest := fmt.Sprintf(`{"algorithm":"sha256","value":"%x","size_bytes":%d}`, sha256.Sum256(data), len(data))
-	for _, stmt := range []string{`INSERT INTO managed_anime(id,title) VALUES('anime-1','Show')`, `INSERT INTO subscriptions(id,managed_anime_id,origin,instance_label,state) VALUES('sub-1','anime-1','custom','Show','active')`, `INSERT INTO anime_business_configs(managed_anime_id,admission_mode,quality_profile,retention_source_default_version,retention_version) VALUES('anime-1','single_copy','{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[]}]}',1,1)`} {
+	for _, stmt := range []string{`INSERT INTO managed_anime(id,title) VALUES('anime-1','Show')`, `INSERT INTO subscriptions(id,managed_anime_id,origin,instance_label,state) VALUES('sub-1','anime-1','custom','Show','active')`, `INSERT INTO anime_business_configs(managed_anime_id,admission_mode,quality_profile,replacement_source_default_version,replacement_version) VALUES('anime-1','single_copy','{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[]}]}',1,1)`} {
 		if _, err := db.Exec(stmt); err != nil {
 			t.Fatal(err)
 		}

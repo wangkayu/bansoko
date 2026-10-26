@@ -41,7 +41,7 @@ const (
 	CleanupSkipLoserPathOwned       = "loser_path_owned"
 )
 
-// Attempt stages of one cleanup_delete work item. The capture stage moves the
+// Attempt stages of one replacement_delete work item. The capture stage moves the
 // file into the owner's private namespace next to it; the purge stage removes
 // that exact captured object. Both run inside one claim; the namespace is not
 // a quarantine area (no grace period, nothing can be restored).
@@ -67,7 +67,7 @@ type CleanupInput struct {
 	ManagedAnimeID    string
 	Coverage          []string
 	ReplacementRef    string
-	RetentionMode     string
+	AdmissionMode     string
 	SourcePath        string
 	SourceFingerprint string
 	CorrelationID     string
@@ -109,7 +109,7 @@ func (s *CleanupService) SetFileExecutor(executor executorpkg.CleanupFileExecuto
 	}
 }
 
-// SetWorkItems wires the WorkItem store used to schedule cleanup_delete
+// SetWorkItems wires the WorkItem store used to schedule replacement_delete
 // items. Without it no deletion obligation can be admitted.
 func (s *CleanupService) SetWorkItems(store *workitems.Store) {
 	if s != nil {
@@ -117,10 +117,10 @@ func (s *CleanupService) SetWorkItems(store *workitems.Store) {
 	}
 }
 
-// Admit persists one deletion obligation and its cleanup_delete work item in
+// Admit persists one deletion obligation and its replacement_delete work item in
 // one transaction. Replacement settlement uses admitTx inside its own
 // transaction; Admit is the standalone form.
-func (s *CleanupService) Admit(ctx context.Context, input CleanupInput) (*CleanupOperation, error) {
+func (s *CleanupService) Admit(ctx context.Context, input CleanupInput) (*ReplacementDeletion, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -138,7 +138,7 @@ func (s *CleanupService) Admit(ctx context.Context, input CleanupInput) (*Cleanu
 // admitTx records one deletion obligation in the caller's transaction. A
 // loser without a recorded size is admitted directly as
 // skipped/loser_identity_unknown: deletion fails closed. An admitted
-// obligation gets its single cleanup_delete work item in the same
+// obligation gets its single replacement_delete work item in the same
 // transaction. Admission is idempotent per idempotency key.
 func (s *CleanupService) admitTx(ctx context.Context, scope txscope.Tx, input CleanupInput) error {
 	tx := scope.SQLTx()
@@ -156,7 +156,7 @@ func (s *CleanupService) admitTx(ctx context.Context, scope txscope.Tx, input Cl
 		ManagedAnimeID:    input.ManagedAnimeID,
 		Coverage:          coverage,
 		ReplacementRef:    input.ReplacementRef,
-		RetentionMode:     input.RetentionMode,
+		AdmissionMode:     input.AdmissionMode,
 		SourcePath:        input.SourcePath,
 		SourceFingerprint: input.SourceFingerprint,
 		State:             string(CleanupAdmitted),
@@ -182,13 +182,13 @@ func (s *CleanupService) admitTx(ctx context.Context, scope txscope.Tx, input Cl
 		return s.enqueueTx(ctx, tx, op.ID, op.Version)
 	case CleanupSkipped:
 		if op.Version == 1 && row.State == string(CleanupSkipped) {
-			return s.appendCleanupActivityTx(ctx, scope, cleanupOperationFromPersistence(*op), "skipped", CleanupSkipLoserIdentityUnknown)
+			return s.appendCleanupActivityTx(ctx, scope, replacementDeletionFromPersistence(*op), "skipped", CleanupSkipLoserIdentityUnknown)
 		}
 	}
 	return nil
 }
 
-// enqueueTx creates (or merges into) the single cleanup_delete work item of
+// enqueueTx creates (or merges into) the single replacement_delete work item of
 // an admitted obligation at its current owner version.
 func (s *CleanupService) enqueueTx(ctx context.Context, tx *sql.Tx, cleanupID string, version int64) error {
 	if s.workItems == nil {
@@ -199,9 +199,9 @@ func (s *CleanupService) enqueueTx(ctx context.Context, tx *sql.Tx, cleanupID st
 		return err
 	}
 	_, _, err = s.workItems.CreateOrMerge(ctx, tx, workitems.WorkItemSpec{
-		Owner:                workitems.OwnerRef{Type: workitems.OwnerCleanup, ID: cleanupID},
-		Kind:                 workitems.KindCleanupDelete,
-		IdempotencyKey:       "cln:" + cleanupID + ":" + workitems.KindCleanupDelete,
+		Owner:                workitems.OwnerRef{Type: workitems.OwnerReplacementDeletion, ID: cleanupID},
+		Kind:                 workitems.KindReplacementDelete,
+		IdempotencyKey:       "cln:" + cleanupID + ":" + workitems.KindReplacementDelete,
 		InputSnapshot:        snapshot,
 		MaxAttempts:          3,
 		ExpectedOwnerVersion: version,
@@ -268,7 +268,7 @@ func (s *CleanupService) retryOwner(claim workitems.Claim) workitems.OwnerWriter
 // settleWriter moves the owner to one terminal state at the expected version
 // in the WorkItem's own terminal transaction and records the Activity of a
 // deleted or skipped obligation there too.
-func (s *CleanupService) settleWriter(op *CleanupOperation, expected int64, to CleanupState, code, reason string) workitems.OwnerWriter {
+func (s *CleanupService) settleWriter(op *ReplacementDeletion, expected int64, to CleanupState, code, reason string) workitems.OwnerWriter {
 	return func(ctx context.Context, scope txscope.Tx, _ workitems.OwnerResult) (int64, error) {
 		version, err := s.repository.TransitionTx(ctx, scope, op.ID, expected, string(to), code, reason)
 		if err != nil {
@@ -292,7 +292,7 @@ func (s *CleanupService) settleWriter(op *CleanupOperation, expected int64, to C
 	}
 }
 
-func (s *CleanupService) load(ctx context.Context, cleanupID string) (*CleanupOperation, error) {
+func (s *CleanupService) load(ctx context.Context, cleanupID string) (*ReplacementDeletion, error) {
 	operation, err := s.repository.Get(ctx, cleanupID)
 	if errors.Is(err, sql.ErrNoRows) || operation == nil {
 		return nil, nil
@@ -300,18 +300,18 @@ func (s *CleanupService) load(ctx context.Context, cleanupID string) (*CleanupOp
 	if err != nil {
 		return nil, err
 	}
-	return cleanupOperationFromPersistence(*operation), nil
+	return replacementDeletionFromPersistence(*operation), nil
 }
 
-func cleanupOperationFromPersistence(value persistence.Operation) *CleanupOperation {
-	return &CleanupOperation{
+func replacementDeletionFromPersistence(value persistence.Operation) *ReplacementDeletion {
+	return &ReplacementDeletion{
 		ID:                value.ID,
 		IdempotencyKey:    value.IdempotencyKey,
 		PlacementID:       value.PlacementID,
 		ManagedAnimeID:    value.ManagedAnimeID,
 		Coverage:          value.Coverage,
 		ReplacementRef:    value.ReplacementRef,
-		RetentionMode:     value.RetentionMode,
+		AdmissionMode:     value.AdmissionMode,
 		SourcePath:        value.SourcePath,
 		SourceFingerprint: value.SourceFingerprint,
 		State:             CleanupState(value.State),
@@ -324,15 +324,15 @@ func cleanupOperationFromPersistence(value persistence.Operation) *CleanupOperat
 	}
 }
 
-// CleanupOperation is the row model.
-type CleanupOperation struct {
+// ReplacementDeletion is the row model.
+type ReplacementDeletion struct {
 	ID                string
 	IdempotencyKey    string
 	PlacementID       string
 	ManagedAnimeID    string
 	Coverage          []string
 	ReplacementRef    string
-	RetentionMode     string
+	AdmissionMode     string
 	SourcePath        string
 	SourceFingerprint string
 	State             CleanupState
@@ -346,18 +346,18 @@ type CleanupOperation struct {
 
 // cleanupCapturePath is the private namespace object a deletion captures the
 // loser into: next to it, bound to the owner id.
-func cleanupCapturePath(op *CleanupOperation) string {
+func cleanupCapturePath(op *ReplacementDeletion) string {
 	return filepath.Join(filepath.Dir(op.SourcePath), ".bansoko-cleanup-"+op.ID, "object")
 }
 
-// DeleteHandler is the cleanup_delete work item handler: it verifies the
+// DeleteHandler is the replacement_delete work item handler: it verifies the
 // loser's path-level identity, then captures and purges it inside one claim.
 func (s *CleanupService) DeleteHandler() worker.Handler {
 	return cleanupRecoveryHandler{service: s, handle: worker.HandlerFunc(s.handleDelete)}
 }
 
 func (s *CleanupService) handleDelete(ctx context.Context, claim workitems.Claim) (worker.Outcome, error) {
-	if claim.Kind != workitems.KindCleanupDelete {
+	if claim.Kind != workitems.KindReplacementDelete {
 		return worker.Outcome{}, fmt.Errorf("cleanup handler received kind %q", claim.Kind)
 	}
 	if s.workItems == nil {
@@ -396,7 +396,7 @@ func (s *CleanupService) handleDelete(ctx context.Context, claim workitems.Claim
 // cleanupRun carries one claim's deletion of one obligation.
 type cleanupRun struct {
 	service *CleanupService
-	op      *CleanupOperation
+	op      *ReplacementDeletion
 	claim   workitems.Claim
 }
 
@@ -613,9 +613,9 @@ func nullableText(value string) any {
 	return value
 }
 
-// ListCleanupsApplication returns the cleanup operations of one anime
+// ListReplacementDeletionsApplication returns the cleanup operations of one anime
 // (side-effect free, newest first) for the per-instance owner truth surface.
-func (s *CleanupService) ListCleanupsApplication(ctx context.Context, animeID string, limit, offset int) ([]CleanupOperationView, error) {
+func (s *CleanupService) ListReplacementDeletionsApplication(ctx context.Context, animeID string, limit, offset int) ([]ReplacementDeletionView, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 100
 	}
@@ -626,14 +626,14 @@ func (s *CleanupService) ListCleanupsApplication(ctx context.Context, animeID st
 	if err != nil {
 		return nil, err
 	}
-	views := make([]CleanupOperationView, 0, len(rows))
+	views := make([]ReplacementDeletionView, 0, len(rows))
 	for _, row := range rows {
-		views = append(views, CleanupOperationView{
+		views = append(views, ReplacementDeletionView{
 			ID:                row.ID,
 			PlacementID:       row.PlacementID,
 			ManagedAnimeID:    row.ManagedAnimeID,
 			ReplacementRef:    row.ReplacementRef,
-			RetentionMode:     row.RetentionMode,
+			AdmissionMode:     row.AdmissionMode,
 			SourcePath:        row.SourcePath,
 			SourceFingerprint: row.SourceFingerprint,
 			State:             row.State,
@@ -649,7 +649,7 @@ func (s *CleanupService) ListCleanupsApplication(ctx context.Context, animeID st
 
 // appendCleanupActivityTx records one cleanup_completed result (deleted or
 // skipped) in the caller's transaction.
-func (s *CleanupService) appendCleanupActivityTx(ctx context.Context, scope txscope.Tx, op *CleanupOperation, outcome, reasonCode string) error {
+func (s *CleanupService) appendCleanupActivityTx(ctx context.Context, scope txscope.Tx, op *ReplacementDeletion, outcome, reasonCode string) error {
 	if s.activity == nil || op == nil {
 		return nil
 	}
@@ -669,7 +669,7 @@ func (s *CleanupService) appendCleanupActivityTx(ctx context.Context, scope txsc
 		Kind:            "cleanup_completed",
 		Outcome:         activityOutcome,
 		ReasonCode:      reasonCode,
-		SubjectType:     "cleanup_operation",
+		SubjectType:     "replacement_deletion",
 		SubjectID:       op.ID,
 		SubjectVersion:  op.Version,
 		StableResultKey: reasonCode,

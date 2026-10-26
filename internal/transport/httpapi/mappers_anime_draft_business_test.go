@@ -18,8 +18,8 @@ func TestMapAnimeDraftKeepsBusinessSnapshot(t *testing.T) {
 		"rules": {"sections": {}},
 		"business": {"schema_version": "business-snapshot-v1", "sections": {}, "section_versions": {}, "section_schemas": {},
 			"parser": {"schema_version": "parser-policy-envelope-v1", "kind": "regex", "policy_version": 1, "profile_version": 1, "rules_owner_version": 1, "source_owner": "global", "provenance": "global"},
-			"retention": {"admission_mode": "all", "quality_profile": {"version": "profile-v1", "items": []}},
-			"retention_version": 1, "unclassified_route": "skip", "file_effect_version": 1,
+			"replacement": {"admission_mode": "all", "quality_profile": {"version": "profile-v1", "items": []}},
+			"replacement_version": 1, "unclassified_route": "skip", "file_effect_version": 1,
 			"programs": {"vars": {"digest": "sha256:v", "version": "naming-vars-v1@sha256:v"}, "attrrules": {"digest": "sha256:a", "version": "release-facts-v1@sha256:a"}}},
 		"business_digest": "sha256:d"
 	}`), &draft); err != nil {

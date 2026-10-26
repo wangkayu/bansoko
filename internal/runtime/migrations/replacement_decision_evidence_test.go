@@ -58,7 +58,7 @@ VALUES ('wi-evaluate', 'file_maintenance', 'anime-evidence', 'replacement_evalua
 	if _, err := db.ExecContext(ctx, `
 INSERT INTO work_items(id, owner_type, owner_id, kind, idempotency_key,
     max_attempts, input_snapshot, expected_owner_version)
-VALUES ('wi-evaluate-bad', 'file_maintenance', 'anime-evidence', 'cleanup_delete',
+VALUES ('wi-evaluate-bad', 'file_maintenance', 'anime-evidence', 'replacement_delete',
     'repl:wi:bad', 3, '{}', 1)`); err == nil {
 		t.Fatal("file_maintenance owner must reject cleanup kinds")
 	}

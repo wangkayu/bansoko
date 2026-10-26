@@ -141,7 +141,7 @@ func TestMaintenanceLiveInvocationBlocksReceiptReaderAndDuplicate(t *testing.T) 
 func TestMaintenancePurgeAbsenceCannotCreateReceipt(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "missing")
-	i := maintenance.MaintenanceInvocation{OwnerType: "cleanup_operation", OwnerID: "purge-owner", Kind: "cleanup_purge", WorkItemID: "work", OwnerVersion: 2, Attempt: []byte(`{"stage":"purge"}`), Source: path, Target: path, Fingerprint: "fingerprint"}
+	i := maintenance.MaintenanceInvocation{OwnerType: "replacement_deletion", OwnerID: "purge-owner", Kind: "cleanup_purge", WorkItemID: "work", OwnerVersion: 2, Attempt: []byte(`{"stage":"purge"}`), Source: path, Target: path, Fingerprint: "fingerprint"}
 	e := OSCleanupExecutor{}
 	if err := e.PurgeMaintenance(context.Background(), path, domain.FileObservation{Fingerprint: "fingerprint"}, i); err == nil {
 		t.Fatal("missing quarantine treated as successful purge")

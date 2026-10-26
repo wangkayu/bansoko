@@ -32,8 +32,8 @@
 ./internal/plugintarget/application
 ./internal/reconciliation/application
 ./internal/release/facts
-./internal/retention/adapter/persistence
-./internal/retention/application
+./internal/recordretention/adapter/persistence
+./internal/recordretention/application
 ./internal/rss/application
 ./internal/runtime/database
 ./internal/runtime/identity

@@ -54,12 +54,12 @@ func (s *ReplacementDecisionService) CoverageVerdicts(ctx context.Context, manag
 	)
 	err := s.db.QueryRowContext(ctx, `
 SELECT admission_mode, quality_profile
-FROM anime_business_configs WHERE managed_anime_id = $1 AND retention_version IS NOT NULL`, managedAnimeID).Scan(&modeRaw, &profileRaw)
+FROM anime_business_configs WHERE managed_anime_id = $1 AND replacement_version IS NOT NULL`, managedAnimeID).Scan(&modeRaw, &profileRaw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return map[string]batchplan.Verdict{}, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("read retention policy: %w", err)
+		return nil, fmt.Errorf("read replacement policy: %w", err)
 	}
 	mode := AdmissionMode(modeRaw)
 	if mode == ModeAll {

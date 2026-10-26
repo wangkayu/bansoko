@@ -1,7 +1,7 @@
 import { useId, useState, type DragEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, GripVertical, Plus, X } from "lucide-react";
-import { getRetentionCompareVocabulary, type QualityCompareKey, type QualityProfile } from "../../lib/api/client";
+import { getReplacementCompareVocabulary, type QualityCompareKey, type QualityProfile } from "../../lib/api/client";
 import { fileMaintenanceKeys } from "../../lib/queryKeys";
 import { t } from "../../lib/i18n";
 import { Button, Checkbox, DropdownMenu, Input, type MenuEntry } from "../../ui/base";
@@ -24,8 +24,8 @@ import {
 } from "./qualityProfile";
 import { ITEM_COPY, NAMESPACE_COPY, PROBLEM_COPY, compareItemName } from "./compareCopy";
 
-// "What counts as better": the re-fetch comparison-terms editor. Both global "retention and
-//   cleanup" and the anime config use this one component (the "try it" affordance is not here).
+// "What counts as better": the re-fetch comparison-terms editor. Both the global
+//   replacement policy and the anime config use this one component (the "try it" affordance is not here).
 //   Terms are compared from top to bottom, item by item; sort values run from best to worst.
 
 const iconButton = "tw:size-7 tw:px-0";
@@ -46,7 +46,7 @@ export function QualityCompareEditor({
 }) {
   const vocabularyQuery = useQuery({
     queryKey: fileMaintenanceKeys.compareVocabulary(managedAnimeID ?? ""),
-    queryFn: () => getRetentionCompareVocabulary(managedAnimeID),
+    queryFn: () => getReplacementCompareVocabulary(managedAnimeID),
     staleTime: 5 * 60_000,
     retry: false,
   });
