@@ -10,6 +10,9 @@ import type { ReleaseFormat } from "../api/client";
 
 export type ProviderKey = "anibt" | "mikan" | "custom";
 
+/** Sources of a keyword torrent search. Nyaa has no work catalog, so it is a search source only and never a ProviderKey. */
+export type SearchProviderKey = "anibt" | "mikan" | "nyaa";
+
 export type SnapshotStatus = "fresh" | "stale" | "error" | "empty";
 
 export interface CatalogSnapshotView {

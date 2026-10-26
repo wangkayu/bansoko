@@ -483,6 +483,7 @@ const CONNECTION_LABEL = (): Record<Connection["kind"], string> => ({
   tmdb: t("nav.connection.tmdb"),
   anibt: t("nav.connection.anibt"),
   mikan: t("nav.connection.mikan"),
+  nyaa: t("nav.connection.nyaa"),
   bgm: t("nav.connection.bgm"),
 });
 

@@ -1612,8 +1612,8 @@ export interface paths {
         get?: never;
         put?: never;
         /** @description Run one keyword torrent search against one provider and persist its results as an immutable search snapshot. This is a write because it contacts the upstream and appends a snapshot row, even though it creates no subscription, ownership, group, WorkItem or torrent byte.
-         *     Only the free-text query is caller input: the upstream endpoint, the query normalization and the snapshot scope are derived server-side, so a request can never name a URL, a catalog entry, a group, a seed key or torrent bytes. The two sites are queried the same way (a space-composed query of work, subtitle group, episode and resolution); the first release offers no source-specific or in-result filter.
-         *     The snapshot identity covers the complete result set, and the response renders that complete seed window (both sites answer at most 100 keyword results). A search snapshot is a `search` kind: it is never a group, a subscription source or a saved-revision custom feed, it is not refreshed by provider refresh, and it expires after 24 hours. Expanding and downloading a seed from it uses the same exact-identity endpoints as a feed seed and the same strong-identity verification; there is no second download path. This endpoint is human only and has no MCP tool: it persists a batch of seeds, and the first release does not expose keyword search to agents. */
+         *     Only the free-text query is caller input: the upstream endpoint, the query normalization and the snapshot scope are derived server-side, so a request can never name a URL, a catalog entry, a group, a seed key or torrent bytes. The three sites are queried the same way (a space-composed query of work, subtitle group, episode and resolution); the first release offers no source-specific or in-result filter.
+         *     The snapshot identity covers the complete result set, and the response renders that complete seed window (AniBT and Mikan answer at most 100 keyword results and Nyaa at most 75). A search snapshot is a `search` kind: it is never a group, a subscription source or a saved-revision custom feed, it is not refreshed by provider refresh, and it expires after 24 hours. Expanding and downloading a seed from it uses the same exact-identity endpoints as a feed seed and the same strong-identity verification; there is no second download path. This endpoint is human only and has no MCP tool: it persists a batch of seeds, and the first release does not expose keyword search to agents. */
         post: operations["fetchSeedSearchSnapshot"];
         delete?: never;
         options?: never;
@@ -2880,7 +2880,7 @@ export interface components {
             limit_per_group: number;
             /** @description Preview-only episode offset. Shifts the file-level parse and render of a group with no offset of its own, so a non-zero offset previews exactly what a one-shot request with that offset would render. A group's own offset wins: a persisted owner link keeps its stored offset and a draft group with a matching draft source keeps that source's episode_offset, so the preview never rewrites a stored offset or invents a second rule. Omitted or null means 0; a pure read that never changes the episode_offset a later one-shot request carries. With one_shot it is the offset of every group. */
             episode_offset?: number | null;
-            /** @description Omitted or false: the ordinary read. current_input only (400 INPUT_SOURCE_INVALID with any other mode). Reads the draft as a one-shot browse: a one-shot names its seed directly and is not bound by group selection, so every configured and observed group is listed with its supplied snapshot and seeds regardless of the draft's selection, and its one_shot download action never answers group_not_selected. Every group previews with episode_offset (the one-shot request's own offset), never a draft source's or a link's. A custom draft binds the exact persisted custom snapshot its single feed identity names instead of a saved-revision scope, so an unsaved one-shot configuration previews the seed it will download. An origin=one_shot draft binds the exact persisted search snapshot its single feed identity names (the refs carry the snapshot's scope/query pair); a missing, stale or expired identity fails 409 FEED_SNAPSHOT_REFRESH_REQUIRED, never re-searched. A pure read. */
+            /** @description Omitted or false: the ordinary read. current_input only (400 INPUT_SOURCE_INVALID with any other mode). Reads the draft as a one-shot browse: a one-shot names its seed directly and is not bound by group selection, so every configured and observed group is listed with its supplied snapshot and seeds regardless of the draft's selection, and its one_shot download action never answers group_not_selected. Every group previews with episode_offset (the one-shot request's own offset), never a draft source's or a link's. A custom draft binds the exact persisted custom snapshot its single feed identity names instead of a saved-revision scope, so an unsaved one-shot configuration previews the seed it will download. An origin=one_shot draft binds the exact persisted search snapshot its single feed identity names; a missing, stale or expired identity fails 409 FEED_SNAPSHOT_REFRESH_REQUIRED, never re-searched. A pure read. */
             one_shot?: boolean;
         };
         /** @description The exact version set the whole view was produced by. A consumer can tell which derivation produced any file decision from this one block. */
@@ -2891,9 +2891,14 @@ export interface components {
             safety: string;
             torrent_parser: string;
         };
+        /**
+         * @description The subscription origins plus nyaa, which only names a keyword search snapshot group. Never a subscribable source.
+         * @enum {string}
+         */
+        RSSListGroupScopeProvider: "anibt" | "mikan" | "nyaa" | "custom" | "oneshot";
         /** @description The full identity of one subgroup. Display name, score and array position are never identity: two groups may share a name, and the same group appears in many responses. */
         RSSListGroupScope: {
-            provider: components["schemas"]["SubscriptionOrigin"];
+            provider: components["schemas"]["RSSListGroupScopeProvider"];
             /** @description Empty for materialized custom/oneshot RSS sources; provider entry reference for anibt/mikan groups. */
             provider_entry_ref: string;
             provider_group_ref: string;
@@ -3225,7 +3230,7 @@ export interface components {
             /** Format: date-time */
             last_used_at?: string | null;
         };
-        ConnectionInput: components["schemas"]["QBittorrentConnectionInput"] | components["schemas"]["RSSHTTPConnectionInput"] | components["schemas"]["TMDBConnectionInput"] | components["schemas"]["AniBTConnectionInput"] | components["schemas"]["MikanConnectionInput"] | components["schemas"]["BGMConnectionInput"];
+        ConnectionInput: components["schemas"]["QBittorrentConnectionInput"] | components["schemas"]["RSSHTTPConnectionInput"] | components["schemas"]["TMDBConnectionInput"] | components["schemas"]["AniBTConnectionInput"] | components["schemas"]["MikanConnectionInput"] | components["schemas"]["NyaaConnectionInput"] | components["schemas"]["BGMConnectionInput"];
         ConnectionSecretKeep: {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -3316,6 +3321,18 @@ export interface components {
             base_url: string;
             route_id?: components["schemas"]["ID"];
         };
+        NyaaConnectionInput: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "nyaa";
+            name: string;
+            enabled: boolean;
+            /** Format: uri */
+            base_url: string;
+            route_id?: components["schemas"]["ID"];
+        };
         BGMConnectionInput: {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -3328,7 +3345,7 @@ export interface components {
             base_url: string;
             route_id?: components["schemas"]["ID"];
         };
-        Connection: components["schemas"]["QBittorrentConnection"] | components["schemas"]["RSSHTTPConnection"] | components["schemas"]["TMDBConnection"] | components["schemas"]["AniBTConnection"] | components["schemas"]["MikanConnection"] | components["schemas"]["BGMConnection"];
+        Connection: components["schemas"]["QBittorrentConnection"] | components["schemas"]["RSSHTTPConnection"] | components["schemas"]["TMDBConnection"] | components["schemas"]["AniBTConnection"] | components["schemas"]["MikanConnection"] | components["schemas"]["NyaaConnection"] | components["schemas"]["BGMConnection"];
         QBittorrentConnection: {
             id: components["schemas"]["ID"];
             /**
@@ -3406,6 +3423,20 @@ export interface components {
             route_id?: components["schemas"]["ID"];
             version: components["schemas"]["Version"];
         };
+        NyaaConnection: {
+            id: components["schemas"]["ID"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "nyaa";
+            name: string;
+            enabled: boolean;
+            /** Format: uri */
+            base_url: string;
+            route_id?: components["schemas"]["ID"];
+            version: components["schemas"]["Version"];
+        };
         BGMConnection: {
             id: components["schemas"]["ID"];
             /**
@@ -3423,7 +3454,7 @@ export interface components {
         ConnectionTestResult: {
             connection_id: components["schemas"]["ID"];
             /** @enum {string} */
-            kind: "qbittorrent" | "rss_http" | "tmdb" | "anibt" | "mikan" | "bgm";
+            kind: "qbittorrent" | "rss_http" | "tmdb" | "anibt" | "mikan" | "nyaa" | "bgm";
             /** @enum {string} */
             health: "ready" | "degraded" | "failed";
             reason_code?: string;
@@ -3561,10 +3592,10 @@ export interface components {
         /** @enum {string} */
         ProviderKind: "anibt" | "mikan";
         /**
-         * @description Provenance provider of one selected one-shot seed. It repeats the two discovery provider kinds and adds custom for a seed read from a frozen custom/oneshot draft source's own feed snapshot. It is a seed-provenance vocabulary only: ProviderKind stays a two-value discovery enum, and a custom seed never becomes a discoverable provider, a subgroup, or a subscribable origin.
+         * @description Provenance provider of one selected one-shot seed. It repeats the two discovery provider kinds, adds nyaa for a seed read from a Nyaa keyword search snapshot (search-only: Nyaa is never a discovery provider), and adds custom for a seed read from a frozen custom/oneshot draft source's own feed snapshot. It is a seed-provenance vocabulary only: ProviderKind stays a two-value discovery enum, and a custom seed never becomes a discoverable provider, a subgroup, or a subscribable origin.
          * @enum {string}
          */
-        SnapshotSeedProvider: "anibt" | "mikan" | "custom";
+        SnapshotSeedProvider: "anibt" | "mikan" | "nyaa" | "custom";
         /**
          * @description The unique four-value source-of-subscription enum: anibt | mikan are discovery providers, custom is a user-supplied manual source, agent is reserved for one-shot acquisition: an agent draft is a candidate snapshot for acquire-seed-once and the temporary one-shot mount carries it, but it can never be subscribed or activated (422 ORIGIN_NOT_SUBSCRIBABLE). This is the only four-value enum; ProviderKind stays a two-value discovery enum, SnapshotSeedProvider is the separate seed-provenance vocabulary (anibt | mikan | custom), and RSS SourceKind stays provider_group | custom_rss.
          * @enum {string}
@@ -4704,7 +4735,7 @@ export interface components {
         /** @description One independently identified provider feed snapshot. The identity is snapshot_id + snapshot_version + content_hash; a locator URL is never the identity. */
         PreviewFeedSnapshotRef: {
             /** @enum {string} */
-            provider: "anibt" | "mikan" | "custom";
+            provider: "anibt" | "mikan" | "nyaa" | "custom";
             provider_entry_ref: string;
             provider_group_ref: string;
             snapshot_id: components["schemas"]["ID"];
@@ -4935,9 +4966,9 @@ export interface components {
             snapshot_version: components["schemas"]["Version"];
             groups: components["schemas"]["ProviderGroupDiscoveryGroup"][];
         };
-        /** @description One keyword torrent search. Only the free-text query is accepted: the endpoint, the normalization and the snapshot scope are derived server-side, so no URL, entry, group, seed key or torrent byte can be supplied. The response renders the snapshot's complete seed window: both sites answer at most 100 keyword results, so that window is also the complete result set. */
+        /** @description One keyword torrent search. Only the free-text query is accepted: the endpoint, the normalization and the snapshot scope are derived server-side, so no URL, entry, group, seed key or torrent byte can be supplied. The response renders the snapshot's complete seed window: AniBT and Mikan answer at most 100 keyword results and Nyaa at most 75, so that window is also the complete result set. */
         SeedSearchSnapshotInput: {
-            /** @description A space-composed keyword query. Combine the work title with a subtitle group, an episode number or a resolution to narrow the upstream result (for example "示例作品 示例字幕组 03"); both sites match the text themselves and the first release adds no filter. */
+            /** @description A space-composed keyword query. Combine the work title with a subtitle group, an episode number or a resolution to narrow the upstream result (for example "示例作品 示例字幕组 03"); every site matches the text itself and the first release adds no filter. */
             query: string;
         };
         SeedSearchSnapshotSeed: {
@@ -4965,7 +4996,7 @@ export interface components {
         /** @description One immutable keyword search snapshot and its complete seed window. `total_seeds` counts the complete result set the snapshot identity covers, and `seeds` renders all of it. A search snapshot is short-lived (24 hours), is never a group or a subscription source, and is refreshed only by fetching the same query again. */
         SeedSearchSnapshotView: {
             /** @enum {string} */
-            provider: "anibt" | "mikan";
+            provider: "anibt" | "mikan" | "nyaa";
             scope_ref: string;
             query_ref: string;
             /** @description The normalized query, echoed by the fetch that ran it. The query text itself is not persisted, only its digest. */
@@ -5028,7 +5059,7 @@ export interface components {
         };
         ProviderRSSPreviewResult: {
             /** @enum {string} */
-            provider: "anibt" | "mikan" | "custom";
+            provider: "anibt" | "mikan" | "nyaa" | "custom";
             provider_entry_ref: string;
             group_ref: string;
             snapshot_id?: components["schemas"]["ID"];
@@ -7844,6 +7875,8 @@ export interface components {
         IdempotencyKey: string;
         /** @description Provider namespace for the catalog. */
         CatalogProvider: "anibt" | "mikan";
+        /** @description Source of a keyword torrent search. Nyaa has no work catalog, so it is a torrent-search source only: every catalog, discovery and subscription endpoint keeps the two-value CatalogProvider. */
+        SeedSearchProvider: "anibt" | "mikan" | "nyaa";
         /** @description External provider-scoped catalog-entry reference. Unique only within its provider and never a formal ManagedAnime owner identity, so it is always paired with the provider path segment. */
         CatalogProviderEntryRef: string;
         /** @description Season identifier in canonical YYYY-term form (e.g. 2026-summer). Terms: winter, spring, summer, fall. */
@@ -10754,8 +10787,8 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Provider namespace for the catalog. */
-                provider: components["parameters"]["CatalogProvider"];
+                /** @description Source of a keyword torrent search. Nyaa has no work catalog, so it is a torrent-search source only: every catalog, discovery and subscription endpoint keeps the two-value CatalogProvider. */
+                provider: components["parameters"]["SeedSearchProvider"];
             };
             cookie?: never;
         };

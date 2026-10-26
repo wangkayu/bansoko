@@ -27,7 +27,7 @@ import { Chip, StatePill, ConflictBlock, SecretField, type SecretMode } from "..
 import { DialogFeedback, SettingsEditDialog } from "./SettingsEditDialog";
 import { t } from "../../lib/i18n";
 
-// Service connections: AniBT / Mikan / BGM / RSS HTTP / TMDB plus network routes.
+// Service connections: AniBT / Mikan / Nyaa / BGM / RSS HTTP / TMDB plus network routes.
 //   The qBittorrent downloader has moved to the acquisition settings section (SettingsDownload) and
 //   is neither shown nor edited here. The list is read-only cards with editing in a fixed-size
 //   dialog. The connection secret (the tmdb API Key) and route credentials (the http_proxy / socks5
@@ -35,7 +35,7 @@ import { t } from "../../lib/i18n";
 //   ConnectionSecret contract; on a route replace the username is required and the server composes
 //   it into one user:pass secret.
 //
-//   Built-in connections (mikan/anibt/bgm/tmdb) are seeded by instance initialization, exactly one
+//   Built-in connections (mikan/anibt/nyaa/bgm/tmdb) are seeded by instance initialization, exactly one
 //   per kind: they cannot be deleted (the contract has no delete) or created (the create button
 //   only adds RSS access), while baseurl/routes are editable with a
 //   "restore defaults" (official address + direct connection). RSS HTTP is a transport-policy
@@ -59,12 +59,13 @@ class RouteDraftError extends Error {}
 const PROVIDER_DEFAULT_URL: Partial<Record<ConnectionDraft["kind"], string>> = {
   mikan: "https://mikanani.me",
   anibt: "https://anibt.net",
+  nyaa: "https://nyaa.si",
   bgm: "https://api.bgm.tv",
   tmdb: "https://api.themoviedb.org/3",
 };
 
 // Built-in provider/metadata connections: seeded at fresh-instance initialization, one per kind.
-const BUILTIN_CONNECTION_KINDS = ["mikan", "anibt", "bgm", "tmdb"] as const;
+const BUILTIN_CONNECTION_KINDS = ["mikan", "anibt", "nyaa", "bgm", "tmdb"] as const;
 type BuiltinConnectionKind = (typeof BUILTIN_CONNECTION_KINDS)[number];
 
 function isBuiltinConnection(item: Connection): boolean {
@@ -104,7 +105,7 @@ function routeEndpointError(kind: "http_proxy" | "socks5", value: string): strin
 type ConnectionDraft = {
   id?: string;
   version: number;
-  kind: "rss_http" | "tmdb" | "anibt" | "mikan" | "bgm";
+  kind: "rss_http" | "tmdb" | "anibt" | "mikan" | "nyaa" | "bgm";
   name: string;
   enabled: boolean;
   base_url: string;
@@ -138,7 +139,7 @@ function connectionDraftFrom(item?: Connection): ConnectionDraft {
     secret_mode: "keep",
     route_id: item.route_id ?? "",
   };
-  if (item.kind === "tmdb" || item.kind === "anibt" || item.kind === "mikan" || item.kind === "bgm") {
+  if (item.kind === "tmdb" || item.kind === "anibt" || item.kind === "mikan" || item.kind === "nyaa" || item.kind === "bgm") {
     base.base_url = item.base_url;
     if (item.kind === "tmdb") {
       base.secret_mode = item.credential_configured ? "keep" : "replace";
@@ -403,7 +404,7 @@ function ConnectionsCard() {
           secret: connectionSecretFor(current, current.api_key),
           route_id: routeID,
         };
-      } else if (current.kind === "anibt" || current.kind === "mikan" || current.kind === "bgm") {
+      } else if (current.kind === "anibt" || current.kind === "mikan" || current.kind === "nyaa" || current.kind === "bgm") {
         input = {
           kind: current.kind,
           name: current.name.trim(),
@@ -492,7 +493,7 @@ function ConnectionsCard() {
 
       <ul className="settings-connections-list">
         {visibleConnections(connections.data ?? []).map((item) => {
-          const kindLabel = item.kind === "tmdb" ? "TMDB" : item.kind === "anibt" ? "AniBT" : item.kind === "mikan" ? "Mikan" : item.kind === "bgm" ? "Bangumi" : t("settings.connections.rssKind");
+          const kindLabel = item.kind === "tmdb" ? "TMDB" : item.kind === "anibt" ? "AniBT" : item.kind === "mikan" ? "Mikan" : item.kind === "nyaa" ? "Nyaa" : item.kind === "bgm" ? "Bangumi" : t("settings.connections.rssKind");
           return (
           <li key={item.id} className="settings-connections-item">
             <div className="settings-connections-item-row">
@@ -553,6 +554,7 @@ function ConnectionsCard() {
                 <Select label={t("settings.connections.typeLabel")} value={draft.kind} disabled options={[
                   { value: "mikan", label: "Mikan" },
                   { value: "anibt", label: "AniBT" },
+                  { value: "nyaa", label: "Nyaa" },
                   { value: "bgm", label: "BGM" },
                   { value: "rss_http", label: t("settings.connections.rssKind") },
                   { value: "tmdb", label: "TMDB" },
@@ -591,7 +593,7 @@ function ConnectionsCard() {
             </div>
           )}
 
-          {(draft.kind === "anibt" || draft.kind === "mikan" || draft.kind === "bgm") && (
+          {(draft.kind === "anibt" || draft.kind === "mikan" || draft.kind === "nyaa" || draft.kind === "bgm") && (
             <div className="settings-connections-field-gap settings-connections-form">
               <Field label={draft.kind === "bgm" ? t("settings.connections.bgmAddress") : t("settings.connections.siteAddress")}>
                 <Input aria-label={draft.kind === "bgm" ? t("settings.connections.bgmAddress") : t("settings.connections.siteAddress")} value={draft.base_url} placeholder={PROVIDER_DEFAULT_URL[draft.kind]} onChange={(e) => setDraft({ ...draft, base_url: e.target.value })} />

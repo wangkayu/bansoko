@@ -49,6 +49,7 @@ export const navCopy = {
     tmdb: "TMDB",
     anibt: "AniBT",
     mikan: "Mikan",
+    nyaa: "Nyaa",
     bgm: "Bangumi",
   },
 } as const;

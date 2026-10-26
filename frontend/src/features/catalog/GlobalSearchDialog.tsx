@@ -3,11 +3,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { fetchSeedSearchSnapshot, searchProviderCatalog, toUserMessage, type CatalogItem } from "../../lib/api/client";
 import { blacklistKey, useBlacklist } from "../../lib/blacklist";
-import { getCatalogProvider, providerLabel } from "../../lib/providers/registry";
+import { getCatalogProvider, providerLabel, searchProviderLabel } from "../../lib/providers/registry";
 import { BrowseCard } from "./card";
 import { mapCatalogItem } from "../../lib/providers/catalogProvider";
 import type { CatalogProvider } from "../../lib/providers/port";
-import type { CatalogEntryView, ProviderKey } from "../../lib/providers/viewmodels";
+import type { CatalogEntryView, ProviderKey, SearchProviderKey } from "../../lib/providers/viewmodels";
 import { catalogKeys } from "./queries";
 import { StateBlock } from "../../ui/StateBlock";
 import { Dialog, Input, Segmented } from "../../ui/base";
@@ -21,7 +21,7 @@ const AnimeConfigDialogEntry = lazy(loadAnimeConfigDialog);
 const OneShotDialogEntry = lazy(loadOneShotDialog);
 
 // GlobalSearchDialog — the app's single search entry (the top-bar review: the catalog toolbar
-//   no longer has search). One dialog, two modes, both sites (AniBT / Mikan):
+//   no longer has search). One dialog, two modes, program search covers AniBT / Mikan, torrent search also Nyaa:
 //   - 番剧 mode reuses the provider keyword-search contract (searchProviderCatalog, a pure read).
 //     Results are catalog entry candidates; a card click walks AnimeGrid's result->config path
 //     (mapCatalogItem + the same AnimeConfigDialogEntry, where subscribing completes), and the
@@ -39,9 +39,11 @@ const OneShotDialogEntry = lazy(loadOneShotDialog);
 //   subscription the catalog query invalidates so the catalog page reflects the latest state.
 
 type SearchMode = "program" | "seed";
-type SearchSite = "anibt" | "mikan";
+// Program search reads catalogs, which only AniBT and Mikan have; torrent search adds Nyaa.
+type SearchSite = SearchProviderKey;
 
-const SEARCH_PROVIDERS: readonly SearchSite[] = ["anibt", "mikan"];
+const PROGRAM_SEARCH_PROVIDERS: readonly SearchSite[] = ["anibt", "mikan"];
+const SEED_SEARCH_PROVIDERS: readonly SearchSite[] = ["anibt", "mikan", "nyaa"];
 
 type CandidateTarget = {
   providerKey: ProviderKey;
@@ -131,7 +133,7 @@ export function GlobalSearchDialog({
       setSearching(true);
       setError(undefined);
       try {
-        const result = await searchProviderCatalog(site, q);
+        const result = await searchProviderCatalog(site === "nyaa" ? "anibt" : site, q);
         if (seq !== requestSeq.current) return;
         setItems(result);
         setSearched(true);
@@ -224,6 +226,8 @@ export function GlobalSearchDialog({
             onValueChange={(next) => {
               if (next === mode) return;
               setMode(next);
+              // Nyaa only exists for torrent search: leaving it for program search falls back to AniBT.
+              if (next === "program" && site === "nyaa") setSite("anibt");
               resetResults();
             }}
             options={[
@@ -240,7 +244,7 @@ export function GlobalSearchDialog({
               setSite(next);
               resetResults();
             }}
-            options={SEARCH_PROVIDERS.map((key) => ({ value: key, label: providerLabel(key) }))}
+            options={(mode === "seed" ? SEED_SEARCH_PROVIDERS : PROGRAM_SEARCH_PROVIDERS).map((key) => ({ value: key, label: searchProviderLabel(key) }))}
           />
         </div>
         <form

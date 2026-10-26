@@ -11,7 +11,7 @@ import {
   type RulesSections,
   type SnapshotSeedDownloadInput,
 } from "../../lib/api/client";
-import { providerLabel } from "../../lib/providers/registry";
+import { searchProviderLabel } from "../../lib/providers/registry";
 import type { CatalogEntryView } from "../../lib/providers/viewmodels";
 import { formatBytes } from "../../lib/labels";
 import { namingFactLabel, namingFailureDetail, namingPendingLabel, reasonLabel } from "../../lib/i18n/reasons";
@@ -491,7 +491,7 @@ export function OneShotDialog({
 
   function requestFor(row: OneShotSeedRow, prepared: AnimeDraft): SnapshotSeedDownloadInput {
     return {
-      provider: row.scope.provider === "custom" ? "custom" : row.scope.provider === "mikan" ? "mikan" : "anibt",
+      provider: row.scope.provider === "custom" ? "custom" : row.scope.provider === "mikan" ? "mikan" : row.scope.provider === "nyaa" ? "nyaa" : "anibt",
       provider_entry_ref: row.scope.provider_entry_ref,
       provider_group_ref: row.scope.provider_group_ref,
       snapshot_version: row.feed.snapshot_version ?? 0,
@@ -673,7 +673,7 @@ export function OneShotDialog({
           <span className="tw:min-w-0 tw:truncate" title={sourceLabel}>
             {sourceLabel}
           </span>
-          <span>· {providerLabel(site)}</span>
+          <span>· {searchProviderLabel(site)}</span>
         </span>
       }
       footer={

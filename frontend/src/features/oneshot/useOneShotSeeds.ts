@@ -21,7 +21,7 @@ import {
 } from "../../lib/api/client";
 import { createEmptyDraft } from "../../lib/draft";
 import { configKeys } from "../../lib/queryKeys";
-import type { CatalogEntryView } from "../../lib/providers/viewmodels";
+import type { CatalogEntryView, SearchProviderKey } from "../../lib/providers/viewmodels";
 import type { CustomSnapshotRequest } from "../catalog/CustomSnapshotFetchButton";
 import { draftFromEntry } from "../catalog/entryDraft";
 import { withGlobalBusiness } from "../anime-config/businessDraft";
@@ -130,7 +130,7 @@ function isSearchRefreshRequired(cause: unknown): boolean {
   return cause instanceof ApiError && cause.code === "FEED_SNAPSHOT_REFRESH_REQUIRED";
 }
 
-async function expandSeed(row: OneShotSeedRow, provider: "anibt" | "mikan" | "custom", refreshRequiredCopy?: string) {
+async function expandSeed(row: OneShotSeedRow, provider: "anibt" | "mikan" | "nyaa" | "custom", refreshRequiredCopy?: string) {
   try {
     const result = await expandSnapshotSeed(row.snapshotID, row.stableSeedKey, {
       provider,
@@ -586,7 +586,7 @@ function useCustomSeedSource({ entry, enabled }: { entry: CatalogEntryView | und
  * 标题用这里的 query。
  */
 export type SearchSeedBrowse = {
-  provider: "anibt" | "mikan";
+  provider: SearchProviderKey;
   /** The keyword the user ran; rendered as the source label (the server stores only its digest). */
   query: string;
   /** The fetch response of this search: the identity every later read and submission names verbatim. */

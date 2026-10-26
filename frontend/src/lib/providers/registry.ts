@@ -1,6 +1,6 @@
 import type { CatalogProvider } from "./port";
 import { createCatalogProvider } from "./catalogProvider";
-import type { ProviderKey } from "./viewmodels";
+import type { ProviderKey, SearchProviderKey } from "./viewmodels";
 import { t } from "../i18n";
 
 // The single entry point resolving a catalog provider by key. Pages depend only on the
@@ -38,4 +38,9 @@ export function getLibraryProvider(): CatalogProvider {
 
 export function providerLabel(source: ProviderKey): string {
   return providerLabelOf(source);
+}
+
+/** Display name of a keyword torrent search source (the discovery providers plus Nyaa). */
+export function searchProviderLabel(source: ProviderKey | SearchProviderKey): string {
+  return source === "nyaa" ? "Nyaa" : providerLabelOf(source);
 }

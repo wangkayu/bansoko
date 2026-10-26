@@ -60,6 +60,7 @@ export const enNavCopy = {
     tmdb: "TMDB",
     anibt: "AniBT",
     mikan: "Mikan",
+    nyaa: "Nyaa",
     bgm: "Bangumi",
   },
 } as const satisfies CopyShape<typeof navCopy>;

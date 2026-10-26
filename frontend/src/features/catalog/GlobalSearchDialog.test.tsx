@@ -493,6 +493,28 @@ describe("GlobalSearchDialog 种子检索模式", () => {
     expect(seedFetchCalls[0]!.url).toContain("/api/v1/catalog/providers/mikan/seed-search-snapshots:fetch");
   });
 
+  it("种子模式支持 Nyaa 站点；番剧检索没有 Nyaa 选项", async () => {
+    renderDialog();
+    expect(screen.queryByRole("radio", { name: "Nyaa" })).toBeNull();
+    switchToSeedMode();
+    fireEvent.click(screen.getByRole("radio", { name: "Nyaa" }));
+    await submitSeedSearch("示例作品");
+
+    expect(seedFetchCalls[0]!.url).toContain("/api/v1/catalog/providers/nyaa/seed-search-snapshots:fetch");
+  });
+
+  it("从种子检索的 Nyaa 切回番剧检索：站点回落为 AniBT，Nyaa 选项消失", async () => {
+    renderDialog();
+    switchToSeedMode();
+    fireEvent.click(screen.getByRole("radio", { name: "Nyaa" }));
+    fireEvent.click(screen.getByRole("radio", { name: t("globalSearch.modeProgram") }));
+
+    expect(screen.queryByRole("radio", { name: "Nyaa" })).toBeNull();
+    await submitSearch("BanG Dream");
+    const url = new URL(searchCalls[0]!, "http://localhost");
+    expect(url.pathname).toBe("/api/v1/catalog/providers/anibt/search");
+  });
+
   it("种子搜索失败显示错误与重试；重试成功直接进入下载弹窗", async () => {
     seedFetchResult = { status: 502, body: { code: "SEARCH_UPSTREAM_FAILED", message: "上游不可达" } };
     renderDialog();
