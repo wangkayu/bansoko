@@ -169,7 +169,6 @@ export const addPresetCopy = {
 export const feedSiteCopy = {
   supported: "已适配站点：{name}",
   unsupported: "未适配站点，不保证解析",
-  unsupportedDetected: "未适配站点，{names} 订阅源按内容自动识别，其他不保证解析",
 } as const;
 
 export const globalSearchCopy = {

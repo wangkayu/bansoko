@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FeedSite } from "./api/client";
-import { contentDetectedSites, feedSiteForHost, feedUrlHost } from "./feedSites";
+import { feedSiteForHost, feedUrlHost } from "./feedSites";
 
 const sites: FeedSite[] = [
   { id: "nyaa", name: "nyaa", hosts: ["nyaa.si"], identity: "feed", match: "host" },
@@ -17,7 +17,6 @@ describe("feed site matching", () => {
 
   it("never matches a content-detected architecture by host", () => {
     expect(feedSiteForHost(sites, "tracker.example.test")).toBeUndefined();
-    expect(contentDetectedSites(sites).map((site) => site.id)).toEqual(["unit3d"]);
   });
 
   it("does not match a lookalike host", () => {

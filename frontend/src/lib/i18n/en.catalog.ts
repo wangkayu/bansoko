@@ -169,7 +169,6 @@ export const enAddPresetCopy = {
 export const enFeedSiteCopy = {
   supported: "Supported site: {name}",
   unsupported: "Site not supported; parsing is not guaranteed",
-  unsupportedDetected: "Site not listed; {names} feeds are detected from their content, others aren't guaranteed",
 } as const satisfies CopyShape<typeof feedSiteCopy>;
 
 export const enGlobalSearchCopy = {

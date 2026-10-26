@@ -24,10 +24,3 @@ export function feedSiteForHost(sites: readonly FeedSite[], host: string): FeedS
   );
 }
 
-/**
- * The architectures detected from the feed's own content (UNIT3D) on a host
- * outside the list, in declaration order. Mirrors the server's selection.
- */
-export function contentDetectedSites(sites: readonly FeedSite[]): FeedSite[] {
-  return sites.filter((site) => site.match === "content");
-}
