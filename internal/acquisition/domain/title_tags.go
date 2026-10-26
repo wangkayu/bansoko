@@ -9,7 +9,8 @@ package domain
 type TitleTagSet struct {
 	// Schema identifies the tag projection contract.
 	Schema string
-	// Implementation is the pinned parser implementation ("reltitle@<commit>").
+	// Implementation is the pinned parser implementation ("reltitle@<module
+	// version>", tracked by reltitletags.ImplementationVersion).
 	Implementation string
 	// ConfigDigest is "lexicon:sha256:<hex>" over the complete embedded bundle.
 	ConfigDigest string
