@@ -117,7 +117,7 @@ func TestMikanProgramSearchReadsOnlyTheRecommendationBlock(t *testing.T) {
 	if result.Entries[0].ProviderEntryRef != "1001" || result.Entries[0].Title != "示例作品 第一季" {
 		t.Fatalf("first entry = %+v", result.Entries[0])
 	}
-	if cover := result.Entries[0].SourceHint["cover"]; cover != "/images/Bangumi/1001.jpg" {
+	if cover := result.Entries[0].SourceHint["cover"]; cover != mock.URL+"/images/Bangumi/1001.jpg" {
 		t.Fatalf("cover = %v", cover)
 	}
 	// The torrent rows on the same page are never read as programs.

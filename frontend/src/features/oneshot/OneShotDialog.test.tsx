@@ -1236,6 +1236,33 @@ describe("OneShotDialog 搜索快照来源", () => {
     });
   });
 
+  it("点开的种子自动展开：打开即取它的种子文件并显示文件列表", async () => {
+    let expanded = false;
+    stubFetch({
+      get view() {
+        return searchGroupView([
+          expanded
+            ? seedItem("seed-a", SEED_A, { snapshot_id: SEARCH_SNAPSHOT_ID })
+            : { ...pendingItem("seed-a", SEED_A), snapshot_id: SEARCH_SNAPSHOT_ID },
+          seedItem("seed-b", SEED_B, { snapshot_id: SEARCH_SNAPSHOT_ID }),
+        ]);
+      },
+      expand: () => {
+        expanded = true;
+        return { state: "available" };
+      },
+    });
+    renderSearchDialog();
+
+    // No manual row click: the click that opened the dialog is the expansion request, and only
+    // the clicked seed is fetched.
+    expect(await screen.findByText(`[组A] ${SEED_A}.mkv`, { exact: false })).toBeInTheDocument();
+    const expansions = calls.filter((call) => call.url.includes("/expand"));
+    expect(expansions).toHaveLength(1);
+    expect(expansions[0]!.url).toContain(`/provider-feed-snapshots/${SEARCH_SNAPSHOT_ID}/seeds/seed-a/expand`);
+    expect(reads().at(-1)!.body).toMatchObject({ one_shot: true });
+  });
+
   it("第二步：标题编辑同步 instance_label，提交按快照身份与编辑后的草稿", async () => {
     stubFetch({ view: searchGroupView() });
     renderSearchDialog();

@@ -88,6 +88,15 @@ func (s HTTPMikanSearcher) SearchMikanPrograms(ctx context.Context, query string
 	if query == "" {
 		return catalogdomain.ReadResult{}, fmt.Errorf("%w: query is required", ErrSearchQueryInvalid)
 	}
+	base, err := url.Parse(strings.TrimRight(strings.TrimSpace(s.Endpoint), "/"))
+	if err != nil || (base.Scheme != "http" && base.Scheme != "https") || base.Hostname() == "" || base.User != nil || base.Fragment != "" {
+		return catalogdomain.ReadResult{}, fmt.Errorf("%w: Mikan endpoint must be an absolute HTTP URL without credentials", ErrProviderUpstream)
+	}
+	// The recommendation block hands out site-relative image URLs, so the same
+	// endpoint-derived asset base as the season reader resolves them and the
+	// cover proxy receives an absolute URL it can register.
+	assetBase := *base
+	assetBase.Path = strings.TrimRight(assetBase.Path, "/") + "/"
 	request, err := s.mikanSearchRequest(ctx, "/Home/Search", query)
 	if err != nil {
 		return catalogdomain.ReadResult{}, err
@@ -112,7 +121,7 @@ func (s HTTPMikanSearcher) SearchMikanPrograms(ctx context.Context, query string
 	if err != nil {
 		return catalogdomain.ReadResult{}, fmt.Errorf("%w: parse Mikan program search HTML: %v", ErrProviderUpstream, err)
 	}
-	entries, err := mikanProgramEntries(document)
+	entries, err := mikanProgramEntries(document, assetBase)
 	if err != nil {
 		return catalogdomain.ReadResult{}, &catalogdomain.ReadError{Code: catalogdomain.ReadFailureSchemaMismatch, Err: err}
 	}
@@ -241,7 +250,7 @@ const mikanRecommendLabel = "相关推荐"
 // block the site labels as related programs is read: the page's torrent rows
 // are never consulted here, and a page whose block lost its shape is a schema
 // mismatch instead of an empty program list.
-func mikanProgramEntries(document *goquery.Document) ([]catalogdomain.Entry, error) {
+func mikanProgramEntries(document *goquery.Document, assetBase url.URL) ([]catalogdomain.Entry, error) {
 	block := document.Find("div.central-container").FilterFunction(func(_ int, container *goquery.Selection) bool {
 		return strings.Contains(container.Find("span.header2-text").First().Text(), mikanRecommendLabel)
 	}).First()
@@ -279,13 +288,15 @@ func mikanProgramEntries(document *goquery.Document) ([]catalogdomain.Entry, err
 		}
 		seen[ref] = struct{}{}
 		// The cover is lazy-loaded: a b-lazy element carrying data-src, or a
-		// plain img when the site hands one over.
+		// plain img when the site hands one over. Either may be site-relative,
+		// so it resolves against the endpoint base exactly like a season cover.
 		cover := ""
 		if image := link.Find("span.b-lazy, img").First(); image.Length() > 0 {
-			cover = strings.TrimSpace(selectionAttr(image, "data-src"))
-			if cover == "" {
-				cover = strings.TrimSpace(selectionAttr(image, "src"))
+			raw := strings.TrimSpace(selectionAttr(image, "data-src"))
+			if raw == "" {
+				raw = strings.TrimSpace(selectionAttr(image, "src"))
 			}
+			cover = resolveMikanAssetURL(assetBase, raw)
 		}
 		entries = append(entries, catalogdomain.Entry{
 			ProviderEntryRef: ref, Title: title, State: catalogdomain.EntryPresent,

@@ -276,6 +276,8 @@ export function OneShotDialog({
 
   // A search-opened dialog starts with the clicked seed selected (once its row exists; the row
   // content may change on re-reads but its identity never does, so this fires exactly once).
+  // The click that opened the dialog asked for this seed's contents, so the row also opens
+  // expanded: an unexpanded seed's bytes are fetched and the file list renders beneath it.
   const preselectDone = useRef(false);
   useEffect(() => {
     if (preselectDone.current || !search?.preselectSeedKey) return;
@@ -283,6 +285,8 @@ export function OneShotDialog({
     if (!row) return;
     preselectDone.current = true;
     if (selectableRow(row)) setSelected((current) => new Set(current).add(row.key));
+    setExpanded((current) => new Set(current).add(row.key));
+    if (needsExpand(row)) void expandRow(row);
   }, [allRows, search]);
 
   // Step one's navigation: the subgroup list first, then a group's seeds. A custom preset and a

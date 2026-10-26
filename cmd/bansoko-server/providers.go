@@ -187,13 +187,16 @@ func provideDraftService(db *sql.DB, workStore *workitems.Store) (*draftapplicat
 // the same facts.Store built from mediapersistence.NewRepository(db) that the
 // composition root also hands to the file-maintenance owners. Sharing that one
 // store keeps the frozen media-facts badges identical between the readmodel and
-// the file-maintenance projections.
-func provideReadmodelService(db *sql.DB, ownership *ownershipapplication.Service, anime *animeapplication.Service, draft *draftapplication.Service, catalog *catalogapplication.Service, mediaFacts *facts.Store, placementTargets *filemaintenance.NamingTargetRenderer) (*readmodelapplication.Service, error) {
+// the file-maintenance projections. seedPreviews is the same dual-kind source
+// the application graph hands the one-shot service, so an origin=one_shot list
+// read over a keyword-search snapshot reads the exact snapshot identity the
+// later expansion and submission prove.
+func provideReadmodelService(db *sql.DB, ownership *ownershipapplication.Service, anime *animeapplication.Service, draft *draftapplication.Service, catalog *catalogapplication.Service, seedPreviews animeapplication.SeedPreviewSource, mediaFacts *facts.Store, placementTargets *filemaintenance.NamingTargetRenderer) (*readmodelapplication.Service, error) {
 	return readmodelapplication.NewService(db, readmodelapplication.Dependencies{
 		Config:       anime,
 		Owners:       ownership,
 		Revisions:    draft,
-		SeedPreviews: animeapplication.SeedPreviewSourceFromProviderFeedSnapshot(catalog.ReadProviderEntryRSSByIdentity, catalog.ReadProviderEntrySeedPayload),
+		SeedPreviews: seedPreviews,
 		// The manifest source is the read-only half of lazy expansion: the list
 		// renders the manifests the snapshot or the expansion cache already
 		// proves, and fetches nothing itself. The search read joins it so a
@@ -441,6 +444,7 @@ type applicationGraph struct {
 	observabilityService *observabilityapplication.Service
 	catalogService       *catalogapplication.Service
 	seedSearch           catalogapplication.SeedSearchApplication
+	seedPreviewSource    animeapplication.SeedPreviewSource
 	retentionJanitor     *retentionapplication.Service
 	oneShotRetention     *workitems.OneShotRetentionService
 	acquisitionSettle    *acquisitionsettlement.SettlementService
@@ -603,7 +607,7 @@ func provideApplicationGraph(
 	return &applicationGraph{
 		retryService: retryService, catalogDBSource: catalogDBSource,
 		metadataSearcher: metadataSearcher, observabilityService: observabilityService,
-		catalogService: catalogService, seedSearch: seedSearch, retentionJanitor: retentionJanitor,
+		catalogService: catalogService, seedSearch: seedSearch, seedPreviewSource: seedPreviews, retentionJanitor: retentionJanitor,
 		oneShotRetention: oneShotRetention, oneShotService: oneShotService,
 		acquisitionSettle: acquisitionSettle,
 	}, nil
