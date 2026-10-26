@@ -615,6 +615,12 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 				// task remains pending until qB confirms submission
 			}
 		}
+		// A release the replacement fallback promoted that does not start a
+		// download (filtered, covered by a present file, covered by another
+		// running acquisition) leaves the fallback input set with this
+		// evaluation's plan; the query runs again so the next candidate of its
+		// pools gets its turn.
+		retriggerFallback := admits && taskID == "" && releaseEvaluationTrigger(claim.InputSnapshot) == releaseTriggerReplacementFallback
 		var updatedVersion int64
 		if err := tx.QueryRowContext(ctx, `
 UPDATE releases
@@ -718,6 +724,13 @@ RETURNING version`, snapshot.releaseID, nullableJSON(parsedFacts), nullableJSON(
 			}
 			if err := persistReleaseMediaSnapshot(ctx, tx, s.mediaFacts, snapshot, item.Title, evidence, plan); err != nil {
 				return 0, err
+			}
+			// The fallback input set reads this plan, so the query runs again
+			// only once the promoted release's new plan is frozen.
+			if retriggerFallback {
+				if err := enqueueReplacementFallbackTx(ctx, tx, s.workItems, snapshot.managedAnimeID); err != nil {
+					return 0, err
+				}
 			}
 		}
 		if err := s.settleReleaseDiscoveryTx(ctx, tx, snapshot, item, verdict, frozenEvidence, frozenPlan); err != nil {
