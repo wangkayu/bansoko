@@ -98,13 +98,11 @@ func providerPoliciesFromSection(section persistedSubgroupsSection, version int6
 			return nil, err
 		}
 		policy := domain.ProviderGroupPolicy{
-			Target:       domain.PolicyTarget{Kind: domain.TargetProviderGroup, ProviderRef: &ref},
-			Version:      version,
-			CountInLimit: entry.CountInLimit,
+			Target:  domain.PolicyTarget{Kind: domain.TargetProviderGroup, ProviderRef: &ref},
+			Version: version,
 		}
 		if entry.SelectionMode == persistedSubgroupSelectionAuto {
 			policy.Mode = domain.Ranked
-			policy.CountInLimit = true
 			score := entry.Score
 			policy.Score = &score
 		} else if entry.ManualSelected != nil && *entry.ManualSelected {
@@ -113,7 +111,6 @@ func providerPoliciesFromSection(section persistedSubgroupsSection, version int6
 		} else {
 			policy.Mode = domain.Never
 			policy.Score = nil
-			policy.CountInLimit = false
 		}
 		if err := domain.ValidateProviderGroupPolicy(policy); err != nil {
 			return nil, err
@@ -143,7 +140,6 @@ func providerDefaultRules(section persistedSubgroupsSection, version int64) ([]d
 			rule := domain.ProviderGroupPolicy{Target: domain.PolicyTarget{Kind: domain.TargetProviderGroup, ProviderRef: &ref}, Version: version}
 			if configured.Mode == persistedProviderDefaultWhitelist {
 				rule.Mode = domain.Ranked
-				rule.CountInLimit = true
 				score := configured.Score
 				rule.Score = &score
 			} else {

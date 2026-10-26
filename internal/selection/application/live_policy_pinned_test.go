@@ -57,7 +57,7 @@ func TestLivePolicyPinnedGroupStillGatedBySiteList(t *testing.T) {
 
 func TestLivePolicyManualEntryWinsOverPinnedScore(t *testing.T) {
 	instance := `{"max_rss":5,"entries":[` +
-		`{"provider":"mikan","group_ref":"1","display_name":"One","selection_mode":"manual","manual_selected":false,"effective_selected":false,"score":1,"count_in_limit":false}]}`
+		`{"provider":"mikan","group_ref":"1","display_name":"One","selection_mode":"manual","manual_selected":false,"effective_selected":false,"score":1}]}`
 	site := `{"entries":[],"max_rss":5,"provider_defaults":{"mikan":{"mode":"blacklist","score":50,"groups":[],` +
 		`"pinned_scores":[{"group_ref":"1","score":100}]}}}`
 	got := liveDecisions(t, instance, site, map[string]string{"1": "One", "2": "Two"})

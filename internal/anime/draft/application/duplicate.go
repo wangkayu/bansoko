@@ -194,9 +194,9 @@ FROM anime_config_overrides WHERE managed_anime_id = $2`, animeID, sourceAnimeID
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO provider_group_selections(
     id, subscription_id, provider, group_ref, display_name, selection_mode, manual_selected,
-    effective_selected, effective_score, count_in_limit, available, availability_generation)
+    effective_selected, effective_score, available, availability_generation)
 SELECT gen_random_uuid()::text, $1, provider, group_ref, display_name, selection_mode, manual_selected,
-       effective_selected, effective_score, count_in_limit, available, availability_generation
+       effective_selected, effective_score, available, availability_generation
 FROM provider_group_selections WHERE subscription_id = $2`, subscriptionID, sourceSubscriptionID); err != nil {
 		return SubscribeResult{}, fmt.Errorf("copy group selections: %w", err)
 	}

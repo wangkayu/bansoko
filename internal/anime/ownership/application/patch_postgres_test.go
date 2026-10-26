@@ -657,7 +657,6 @@ func TestPatchSubgroupsWholeSectionCAS(t *testing.T) {
 				DisplayName:   "Test Group",
 				SelectionMode: generated.SelectionModeAuto,
 				Score:         50,
-				CountInLimit:  true,
 			}},
 		},
 		GroupActions: []generated.GroupAction{{
@@ -686,19 +685,18 @@ func TestPatchSubgroupsSyncsExistingSelectionsWithoutCreatingMissingRows(t *test
 	if _, err := db.ExecContext(ctx, `
 INSERT INTO provider_group_selections(
     id, subscription_id, provider, group_ref, display_name, selection_mode,
-    manual_selected, effective_selected, effective_score, count_in_limit
-) VALUES
-    ('selection-alpha', $1, 'mikan', 'alpha', 'Old Alpha', 'auto', NULL, FALSE, 1, TRUE),
-    ('selection-beta', $1, 'mikan', 'beta', 'Old Beta', 'auto', NULL, TRUE, 1, TRUE)`, subscribe.Subscription.Id); err != nil {
+    manual_selected, effective_selected, effective_score) VALUES
+    ('selection-alpha', $1, 'mikan', 'alpha', 'Old Alpha', 'auto', NULL, FALSE, 1),
+    ('selection-beta', $1, 'mikan', 'beta', 'Old Beta', 'auto', NULL, TRUE, 1)`, subscribe.Subscription.Id); err != nil {
 		t.Fatal(err)
 	}
 	selected := true
 	patched, err := service.PatchAnimeSubgroups(ctx, subscribe.ManagedAnime.Id, generated.SubgroupsPatch{
 		ExpectedVersion: 1,
 		Subgroups: generated.SubgroupsSection{MaxRss: 1, Entries: []generated.SubgroupScoreEntry{
-			{Provider: generated.ProviderKindMikan, GroupRef: "alpha", DisplayName: "Alpha", SelectionMode: generated.SelectionModeAuto, Score: 90, CountInLimit: true},
-			{Provider: generated.ProviderKindMikan, GroupRef: "beta", DisplayName: "Beta", SelectionMode: generated.SelectionModeAuto, Score: 80, CountInLimit: true},
-			{Provider: generated.ProviderKindMikan, GroupRef: "manual", DisplayName: "Manual", SelectionMode: generated.SelectionModeManual, ManualSelected: &selected, EffectiveSelected: true, Score: 70, CountInLimit: false},
+			{Provider: generated.ProviderKindMikan, GroupRef: "alpha", DisplayName: "Alpha", SelectionMode: generated.SelectionModeAuto, Score: 90},
+			{Provider: generated.ProviderKindMikan, GroupRef: "beta", DisplayName: "Beta", SelectionMode: generated.SelectionModeAuto, Score: 80},
+			{Provider: generated.ProviderKindMikan, GroupRef: "manual", DisplayName: "Manual", SelectionMode: generated.SelectionModeManual, ManualSelected: &selected, EffectiveSelected: true, Score: 70},
 		}},
 	})
 	if err != nil {
@@ -715,7 +713,7 @@ INSERT INTO provider_group_selections(
 		t.Fatalf("subgroups patch must not create missing selection rows, got %d", selectionCount)
 	}
 	rows, err := db.QueryContext(ctx, `
-SELECT group_ref, display_name, selection_mode, manual_selected, effective_selected, effective_score, count_in_limit, version
+SELECT group_ref, display_name, selection_mode, manual_selected, effective_selected, effective_score, version
 FROM provider_group_selections WHERE subscription_id = $1 ORDER BY group_ref`, subscribe.Subscription.Id)
 	if err != nil {
 		t.Fatal(err)
@@ -724,14 +722,14 @@ FROM provider_group_selections WHERE subscription_id = $1 ORDER BY group_ref`, s
 	for rows.Next() {
 		var groupRef, displayName, mode string
 		var manual sql.NullBool
-		var effective, countInLimit bool
+		var effective bool
 		var score int
 		var version int64
-		if err := rows.Scan(&groupRef, &displayName, &mode, &manual, &effective, &score, &countInLimit, &version); err != nil {
+		if err := rows.Scan(&groupRef, &displayName, &mode, &manual, &effective, &score, &version); err != nil {
 			t.Fatal(err)
 		}
-		if manual.Valid || mode != "auto" || version != 2 || !countInLimit {
-			t.Fatalf("unexpected synced selection %s: mode=%s manual=%v count=%t version=%d", groupRef, mode, manual, countInLimit, version)
+		if manual.Valid || mode != "auto" || version != 2 {
+			t.Fatalf("unexpected synced selection %s: mode=%s manual=%v version=%d", groupRef, mode, manual, version)
 		}
 		switch groupRef {
 		case "alpha":
@@ -805,7 +803,7 @@ WHERE subscription_id = $1 AND provider = 'mikan' AND group_ref = 'alpha'`, subs
 	if _, err := service.PatchAnimeSubgroups(ctx, subscribe.ManagedAnime.Id, generated.SubgroupsPatch{
 		ExpectedVersion: 1,
 		Subgroups: generated.SubgroupsSection{MaxRss: 2, Entries: []generated.SubgroupScoreEntry{
-			{Provider: generated.ProviderKindMikan, GroupRef: "alpha", DisplayName: "Stale Alpha", SelectionMode: generated.SelectionModeManual, ManualSelected: &selected, EffectiveSelected: true, Score: 1, CountInLimit: false},
+			{Provider: generated.ProviderKindMikan, GroupRef: "alpha", DisplayName: "Stale Alpha", SelectionMode: generated.SelectionModeManual, ManualSelected: &selected, EffectiveSelected: true, Score: 1},
 		}},
 	}); err == nil {
 		t.Fatal("stale subgroups CAS must fail")
@@ -918,8 +916,7 @@ func TestRefreshRSSSourceTransactionAdmission(t *testing.T) {
 				if _, err := db.ExecContext(ctx, `
 				INSERT INTO provider_group_selections(
 				    id, subscription_id, provider, group_ref, display_name, selection_mode,
-				    manual_selected, effective_selected, effective_score, count_in_limit
-				) VALUES ($1, $2, 'anibt', 'alpha', 'Alpha', 'auto', NULL, $3, 50, TRUE)`,
+				    manual_selected, effective_selected, effective_score) VALUES ($1, $2, 'anibt', 'alpha', 'Alpha', 'auto', NULL, $3, 50)`,
 					"selection-"+sourceID, result.Subscription.Id, *test.selected); err != nil {
 					t.Fatal(err)
 				}

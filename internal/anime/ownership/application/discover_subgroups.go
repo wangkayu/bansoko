@@ -29,7 +29,6 @@ const (
 type ProviderGroupSelection struct {
 	Available              bool
 	AvailabilityGeneration int64
-	CountInLimit           bool
 	DisplayName            string
 	EffectiveScore         int
 	EffectiveSelected      bool
@@ -51,7 +50,6 @@ type ProviderGroupSelection struct {
 }
 
 type SubgroupScoreEntry struct {
-	CountInLimit      bool
 	DisplayName       string
 	EffectiveSelected bool
 	GroupRef          string

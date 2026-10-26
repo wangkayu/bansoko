@@ -37,7 +37,6 @@ func TestResolveDraftEffectiveUsesPopulatedProviderEntriesAsOverride(t *testing.
 				DisplayName:    "Anime Group",
 				SelectionMode:  generated.SelectionModeManual,
 				ManualSelected: boolPtrForTest(true),
-				CountInLimit:   false,
 			},
 		},
 	}

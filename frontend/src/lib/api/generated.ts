@@ -2832,7 +2832,6 @@ export interface components {
             /** @description False when the provider no longer lists the group. */
             available: boolean;
             effective_selected: boolean;
-            count_in_limit: boolean;
             /** @description The decision's own reason for the group's state: policy_always, ranked_within_max_rss, policy_never (a per-anime manual exclusion), site_blacklisted, site_not_whitelisted, policy_score_negative, max_rss_exhausted or provider_group_not_observed. Null when the decision does not reproduce the listed state. */
             reason_code?: string | null;
             /** @description How the decision scored the group. Null when the server has no decision for the listed state. */
@@ -2914,7 +2913,6 @@ export interface components {
             source: "configured" | "observed_default";
             effective_selected: boolean;
             selection_mode: components["schemas"]["SelectionMode"];
-            count_in_limit: boolean;
             /** @description Why this group is in its selection state, produced by the same group-selection decision as effective_selected. Selected groups carry policy_always or ranked_within_max_rss; unselected groups carry policy_never, policy_score_negative or max_rss_exhausted; provider_group_not_observed means the provider no longer lists the group. Null when the decision engine did not cover the group (a custom source has no provider competition) or when replaying the decision does not reproduce the group's own state. */
             reason_code?: string | null;
         };
@@ -3761,7 +3759,6 @@ export interface components {
             manual_selected?: boolean | null;
             effective_selected: boolean;
             effective_score: number;
-            count_in_limit: boolean;
             /** @description Why this group is in its selection state, produced by the same group-selection decision as effective_selected, so a client explains the outcome instead of inferring it. Selected groups carry policy_always or ranked_within_max_rss; unselected groups carry policy_never (a per-anime manual exclusion), site_blacklisted, site_not_whitelisted, policy_score_negative or max_rss_exhausted; provider_group_not_observed means the provider no longer lists the group. On the owner read this is the live verdict even when the stored effective_selected has drifted from it (a site policy change the next recompute has not applied yet); a row the live decision does not cover carries the stored section's replayed reason. Null only when no decision covers the row. */
             reason_code?: string | null;
             /** @description How the live decision scored the group. Null when the reason is a stored-section replay or there is no decision. */
@@ -4492,7 +4489,6 @@ export interface components {
             manual_selected?: boolean | null;
             effective_selected: boolean;
             score: number;
-            count_in_limit: boolean;
         };
         SubgroupsSection: {
             max_rss: number;

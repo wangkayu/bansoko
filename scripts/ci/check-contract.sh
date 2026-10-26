@@ -522,7 +522,7 @@ subscribe_sources = subscribe.fetch("properties").fetch("rss_sources")
 abort "SubscribeResult rss_sources must allow an empty dynamic-provider array" unless subscribe_sources["type"] == "array" && !subscribe_sources.key?("minItems")
 
 subgroups_section = assert_object.call("SubgroupsSection", %w[max_rss entries], %w[max_rss entries])
-subgroup_entry = assert_object.call("SubgroupScoreEntry", %w[provider group_ref display_name selection_mode effective_selected score count_in_limit], %w[provider group_ref display_name selection_mode manual_selected effective_selected score count_in_limit])
+subgroup_entry = assert_object.call("SubgroupScoreEntry", %w[provider group_ref display_name selection_mode effective_selected score], %w[provider group_ref display_name selection_mode manual_selected effective_selected score])
 assert_optional_nullable.call("SubgroupScoreEntry", "manual_selected")
 name_keyword = assert_object.call("NameKeywordRule", %w[keyword score], %w[keyword score])
 abort "NameKeywordRule score must allow negative adjustments" unless name_keyword.fetch("properties").fetch("score").fetch("minimum") == -100
@@ -580,7 +580,7 @@ abort "PluginDeliveryAttempt must expose bounded transport evidence" unless %w[r
   abort "#{name} must expose versioned template contract" unless %w[language_version catalog_version].all? { |field| schemas.fetch(name).fetch("properties").key?(field) }
 end
 provider_selection = schemas.fetch("ProviderGroupSelection")
-abort "ProviderGroupSelection required fields drifted" unless required_fields.call(provider_selection).sort == %w[id subscription_id provider group_ref display_name selection_mode effective_selected effective_score count_in_limit version available availability_generation].sort
+abort "ProviderGroupSelection required fields drifted" unless required_fields.call(provider_selection).sort == %w[id subscription_id provider group_ref display_name selection_mode effective_selected effective_score version available availability_generation].sort
 assert_optional_nullable.call("ProviderGroupSelection", "manual_selected")
 catalog_suppression = schemas.fetch("CatalogSuppression")
 abort "CatalogSuppression required fields drifted" unless required_fields.call(catalog_suppression).sort == %w[id provider provider_entry_ref title_snapshot suppressed_at version].sort

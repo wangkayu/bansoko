@@ -203,7 +203,6 @@ func manualPoliciesFromSection(section persistedSubgroupsSection, version int64)
 		}
 		if entry.ManualSelected != nil && *entry.ManualSelected {
 			policy.Mode = domain.Always
-			policy.CountInLimit = entry.CountInLimit
 		} else {
 			policy.Mode = domain.Never
 		}

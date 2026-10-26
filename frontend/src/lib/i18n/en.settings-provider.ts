@@ -63,7 +63,7 @@ export const enSettingsProviderCopy = {
       pinnedTitle: "Fixed Scores",
       pinnedEmpty: "No fixed scores yet",
       pinnedHelpLabel: "About fixed scores",
-      pinnedHelp: "A group's fixed score is its final score; the default score and name scoring no longer apply. The list still applies, and a manual choice on an anime wins. A fixed score of 100 means always selected, taking no subscription slot.",
+      pinnedHelp: "A group's fixed score is its final score; the default score and name scoring no longer apply. The list still applies, and a manual choice on an anime wins. Scores are capped at 100.",
       pinSet: "Set score",
       pinSetAria: "Set a fixed score for {name}",
       pinChip: "Fixed {score}",

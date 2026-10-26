@@ -128,12 +128,12 @@ func TestMapAnimeWorkspaceProjectsRepresentativeOwners(t *testing.T) {
 	nameKeywords := &ownershipapplication.ProviderNameKeywordRules{Mikan: &keywords}
 	providerDefaults := &ownershipapplication.ProviderGroupDefaults{Mikan: &ownershipapplication.ProviderGroupDefault{Groups: defaultsGroups, Mode: "ranked", Score: 50}}
 	selection := ownershipapplication.ProviderGroupSelection{
-		CountInLimit: true, DisplayName: groupLabel, EffectiveScore: 88, EffectiveSelected: true,
+		DisplayName: groupLabel, EffectiveScore: 88, EffectiveSelected: true,
 		GroupRef: "group-42", ID: "selection-42", ManualSelected: &manualSelected,
 		Provider: provider, SelectionMode: "manual", SubscriptionID: "subscription-42", Version: 5,
 	}
 	effectiveSubgroup := ownershipapplication.SubgroupScoreEntry{
-		CountInLimit: true, DisplayName: groupLabel, EffectiveSelected: true, GroupRef: "group-42",
+		DisplayName: groupLabel, EffectiveSelected: true, GroupRef: "group-42",
 		ManualSelected: &manualSelected, Provider: provider, Score: 88, SelectionMode: "manual",
 	}
 

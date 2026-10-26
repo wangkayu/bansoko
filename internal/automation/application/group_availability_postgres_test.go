@@ -15,7 +15,7 @@ func TestAuthoritativeAvailabilityIsAtomicAndManualIndependent(t *testing.T) {
 	ref, _ := providerdomain.NewGroupRef(providerdomain.ProviderAniBT, "123")
 	active := true
 	result := providerdomain.GroupReadResult{Provider: providerdomain.ProviderAniBT, CatalogEntryRef: "123", Complete: true, CompletenessEvidence: "test-complete", Groups: []providerdomain.GroupSnapshotEntry{{Ref: ref, DisplayName: "Name", Active: &active}}}
-	decisions := []selectiondomain.GroupSelectionDecision{{Group: selectiondomain.EffectiveProviderGroup{Ref: ref, Mode: selectiondomain.Ranked, Score: 80, CountInLimit: true}, Outcome: selectiondomain.GroupSelected}}
+	decisions := []selectiondomain.GroupSelectionDecision{{Group: selectiondomain.EffectiveProviderGroup{Ref: ref, Mode: selectiondomain.Ranked, Score: 80}, Outcome: selectiondomain.GroupSelected}}
 	if err := d.applyDiscoveryScope(ctx, "sub-1", "anibt", result, decisions, true); err != nil {
 		t.Fatal(err)
 	}

@@ -164,7 +164,6 @@ type ProviderGroupDefaults struct {
 }
 
 type SubgroupScoreEntry struct {
-	CountInLimit      bool          `json:"count_in_limit"`
 	DisplayName       string        `json:"display_name"`
 	EffectiveSelected bool          `json:"effective_selected"`
 	GroupRef          string        `json:"group_ref"`
@@ -339,7 +338,7 @@ type PreviewFileResult struct {
 	// language (sub.lang, sub.lang_tag, sub.lang_source); empty for a video
 	// or a subtitle with none.
 	SubLang       string `json:"sub_lang,omitempty"`
-	SubLangTag  string `json:"sub_lang_tag,omitempty"`
+	SubLangTag    string `json:"sub_lang_tag,omitempty"`
 	SubLangSource string `json:"sub_lang_source,omitempty"`
 }
 

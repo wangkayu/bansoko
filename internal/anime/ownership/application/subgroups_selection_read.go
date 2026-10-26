@@ -8,7 +8,7 @@ import (
 // Persisted selections are observation/ranking truth, not reconstructed policy
 // entries. Availability and generation must come from the actual owner rows.
 func (s *Service) readPersistedSelections(ctx context.Context, subscriptionID string) ([]ProviderGroupSelection, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,provider,group_ref,display_name,selection_mode,manual_selected,effective_selected,effective_score,count_in_limit,version,available,availability_generation FROM provider_group_selections WHERE subscription_id=$1 ORDER BY (effective_selected AND available) DESC, effective_score DESC, display_name COLLATE "C", provider COLLATE "C", group_ref COLLATE "C"`, subscriptionID)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,provider,group_ref,display_name,selection_mode,manual_selected,effective_selected,effective_score,version,available,availability_generation FROM provider_group_selections WHERE subscription_id=$1 ORDER BY (effective_selected AND available) DESC, effective_score DESC, display_name COLLATE "C", provider COLLATE "C", group_ref COLLATE "C"`, subscriptionID)
 	if err != nil {
 		return nil, err
 	}
@@ -18,7 +18,7 @@ func (s *Service) readPersistedSelections(ctx context.Context, subscriptionID st
 		var value ProviderGroupSelection
 		var manual sql.NullBool
 		value.SubscriptionID = subscriptionID
-		if err := rows.Scan(&value.ID, &value.Provider, &value.GroupRef, &value.DisplayName, &value.SelectionMode, &manual, &value.EffectiveSelected, &value.EffectiveScore, &value.CountInLimit, &value.Version, &value.Available, &value.AvailabilityGeneration); err != nil {
+		if err := rows.Scan(&value.ID, &value.Provider, &value.GroupRef, &value.DisplayName, &value.SelectionMode, &manual, &value.EffectiveSelected, &value.EffectiveScore, &value.Version, &value.Available, &value.AvailabilityGeneration); err != nil {
 			return nil, err
 		}
 		if manual.Valid {

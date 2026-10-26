@@ -1171,7 +1171,7 @@ func providerDraftPayload(entryRef, groupRef string) map[string]any {
 				"max_rss": 3,
 				"entries": []any{map[string]any{
 					"provider": "mikan", "group_ref": groupRef, "display_name": "Group " + groupRef,
-					"selection_mode": "auto", "score": 50, "count_in_limit": true,
+					"selection_mode": "auto", "score": 50,
 					"effective_selected": true,
 				}},
 			},

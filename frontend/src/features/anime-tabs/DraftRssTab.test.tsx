@@ -74,7 +74,6 @@ function providerDraft(): AnimeDraft {
           manual_selected: null,
           effective_selected: true,
           score: 80,
-          count_in_limit: true,
         },
       ],
     },
@@ -162,7 +161,7 @@ function viewFixture(): RSSListView {
         scope: { provider: "anibt", provider_entry_ref: "entry-1", provider_group_ref: "g-1" },
         display_name: "一号组",
         score: 80,
-        selection: { source: "configured" as const, effective_selected: true, selection_mode: "auto", count_in_limit: true },
+        selection: { source: "configured" as const, effective_selected: true, selection_mode: "auto" },
         offset: { value: 1, editable: false },
         feed: { state: "fresh", snapshot_id: "snap-1", snapshot_version: 1, content_hash: "sha256:" + "b".repeat(64) },
         items: [
@@ -438,7 +437,7 @@ describe("订阅前 RSS 工作区：发现的观察", () => {
 
   it("发现的组标明按默认策略，观察不再保留时给出重新刷新的提示", async () => {
     const view = viewFixture();
-    view.groups[0].selection = { source: "observed_default", effective_selected: true, selection_mode: "auto", count_in_limit: true };
+    view.groups[0].selection = { source: "observed_default", effective_selected: true, selection_mode: "auto" };
     (view as { observation?: unknown }).observation = {
       state: "not_retained", provider: "anibt", provider_entry_ref: "entry-1", snapshot_version: 7, observed_at: null, group_count: 0,
     };

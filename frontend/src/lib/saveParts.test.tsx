@@ -80,7 +80,6 @@ describe("change counts", () => {
       selection_mode: "auto" as const,
       effective_selected: true,
       score,
-      count_in_limit: true,
     });
     expect(
       subgroupsChangeCount(

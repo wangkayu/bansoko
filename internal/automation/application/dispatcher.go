@@ -117,9 +117,9 @@ func upsertProviderGroupSelection(ctx context.Context, q selectionQueryRower, su
 	if err := q.QueryRowContext(ctx, `
 INSERT INTO provider_group_selections(
     id, subscription_id, provider, group_ref, display_name,
-    selection_mode, manual_selected, effective_selected, effective_score, count_in_limit
+    selection_mode, manual_selected, effective_selected, effective_score
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 ON CONFLICT (subscription_id, provider, group_ref) DO UPDATE SET
     display_name = EXCLUDED.display_name,
     selection_mode = CASE
@@ -135,15 +135,11 @@ ON CONFLICT (subscription_id, provider, group_ref) DO UPDATE SET
         ELSE EXCLUDED.effective_selected
     END,
     effective_score = EXCLUDED.effective_score,
-    count_in_limit = CASE
-        WHEN provider_group_selections.selection_mode = 'manual' THEN provider_group_selections.count_in_limit
-        ELSE EXCLUDED.count_in_limit
-    END,
     version = provider_group_selections.version + 1,
     updated_at = NOW()
 RETURNING effective_selected`,
 		selectionID, subscriptionID, providerName, groupRef, displayName,
-		selectionMode, manualSelected, effectiveSelected, decision.Group.Score, decision.Group.CountInLimit).Scan(&effectiveSelected); err != nil {
+		selectionMode, manualSelected, effectiveSelected, decision.Group.Score).Scan(&effectiveSelected); err != nil {
 		return false, err
 	}
 	return effectiveSelected, nil

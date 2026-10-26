@@ -54,8 +54,8 @@ func TestGroupDiscoveryCreatesRSSSources(t *testing.T) {
 	insertSubgroupsGlobal(t, db, generated.SubgroupsSection{
 		MaxRss: 2,
 		Entries: []generated.SubgroupScoreEntry{
-			{Provider: generated.ProviderKindAnibt, GroupRef: "group-alpha", DisplayName: "Alpha Sub", SelectionMode: generated.SelectionModeAuto, Score: 50, CountInLimit: true},
-			{Provider: generated.ProviderKindAnibt, GroupRef: "group-beta", DisplayName: "Beta Sub", SelectionMode: generated.SelectionModeAuto, Score: 50, CountInLimit: true},
+			{Provider: generated.ProviderKindAnibt, GroupRef: "group-alpha", DisplayName: "Alpha Sub", SelectionMode: generated.SelectionModeAuto, Score: 50},
+			{Provider: generated.ProviderKindAnibt, GroupRef: "group-beta", DisplayName: "Beta Sub", SelectionMode: generated.SelectionModeAuto, Score: 50},
 		},
 	})
 
@@ -150,8 +150,8 @@ func TestCandidateActivationMaterializesProviderSourcesThroughDispatcher(t *test
 			insertSubgroupsGlobal(t, db, generated.SubgroupsSection{
 				MaxRss: 2,
 				Entries: []generated.SubgroupScoreEntry{
-					{Provider: generated.ProviderKindAnibt, GroupRef: "group-alpha", DisplayName: "Alpha Sub", SelectionMode: generated.SelectionModeAuto, Score: 50, CountInLimit: true},
-					{Provider: generated.ProviderKindAnibt, GroupRef: "group-beta", DisplayName: "Beta Sub", SelectionMode: generated.SelectionModeAuto, Score: 50, CountInLimit: true},
+					{Provider: generated.ProviderKindAnibt, GroupRef: "group-alpha", DisplayName: "Alpha Sub", SelectionMode: generated.SelectionModeAuto, Score: 50},
+					{Provider: generated.ProviderKindAnibt, GroupRef: "group-beta", DisplayName: "Beta Sub", SelectionMode: generated.SelectionModeAuto, Score: 50},
 				},
 			})
 

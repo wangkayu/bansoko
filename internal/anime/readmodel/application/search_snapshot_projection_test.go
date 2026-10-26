@@ -88,8 +88,8 @@ func TestOneShotSearchBrowseRendersSnapshotThroughSharedMachinery(t *testing.T) 
 	if group.Offset.Value != 3 || group.Offset.Source != RSSListOffsetSourcePreviewInput {
 		t.Fatalf("search group offset = %+v, want the request's 3", group.Offset)
 	}
-	if !group.Selection.EffectiveSelected || group.Selection.SelectionMode != string(animedomain.SelectionModeAuto) || group.Selection.CountInLimit {
-		t.Fatalf("search group selection = %+v, want auto-selected and outside the limit", group.Selection)
+	if !group.Selection.EffectiveSelected || group.Selection.SelectionMode != string(animedomain.SelectionModeAuto) {
+		t.Fatalf("search group selection = %+v, want auto-selected", group.Selection)
 	}
 	if len(group.Items) != 1 {
 		t.Fatalf("search group items = %+v, want the snapshot's one expanded seed", group.Items)

@@ -47,7 +47,7 @@ func TestReadDiscoveryPolicyComposesInstanceAndLiveSitePolicy(t *testing.T) {
 		},
 		Entries: []persistedSubgroupScoreEntry{{
 			Provider: persistedSubgroupProviderAniBT, GroupRef: "explicit", DisplayName: "Explicit",
-			SelectionMode: persistedSubgroupSelectionAuto, Score: 91, CountInLimit: true,
+			SelectionMode: persistedSubgroupSelectionAuto, Score: 91,
 		}, {
 			Provider: persistedSubgroupProviderAniBT, GroupRef: "manual-off", DisplayName: "Manual Off",
 			SelectionMode: persistedSubgroupSelectionManual, ManualSelected: &excluded,

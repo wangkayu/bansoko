@@ -21,7 +21,6 @@ type SubgroupSelectionPreviewFact struct {
 	GroupRef          string
 	Available         bool
 	EffectiveSelected bool
-	CountInLimit      bool
 	ReasonCode        *string
 	ScoreBreakdown    *SubgroupScoreBreakdown
 }
@@ -73,7 +72,6 @@ WHERE o.managed_anime_id = $1`, managedAnimeID).Scan(&ownerVersion, &subscriptio
 			GroupRef:          decision.Group.Ref.ExternalID,
 			Available:         decision.Group.Observed,
 			EffectiveSelected: decision.Outcome == selectiondomain.GroupSelected,
-			CountInLimit:      decision.Group.CountInLimit,
 			ReasonCode:        &reason,
 			ScoreBreakdown:    SubgroupScoreBreakdownFromDomain(decision.Group.Breakdown),
 		})
@@ -87,7 +85,7 @@ WHERE o.managed_anime_id = $1`, managedAnimeID).Scan(&ownerVersion, &subscriptio
 func subgroupsSelectionOverlay(section SubgroupsSection) map[string]automationapp.ProviderGroupOverlay {
 	overlay := make(map[string]automationapp.ProviderGroupOverlay, len(section.Entries))
 	for _, entry := range section.Entries {
-		value := automationapp.ProviderGroupOverlay{CountInLimit: entry.CountInLimit}
+		value := automationapp.ProviderGroupOverlay{}
 		if entry.SelectionMode == string(animedomain.SelectionModeManual) && entry.ManualSelected != nil {
 			manual := *entry.ManualSelected
 			value.Manual = &manual

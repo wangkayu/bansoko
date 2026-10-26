@@ -40,7 +40,7 @@ func TestForcedDiscoveryRejectsStaleCompleteResponse(t *testing.T) {
 				if _, err := db.Exec(query); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := db.Exec(`INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,effective_selected,effective_score,count_in_limit,available,availability_generation) VALUES('new','sub-1','anibt','new','New','auto',TRUE,50,TRUE,TRUE,2)`); err != nil {
+				if _, err := db.Exec(`INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,effective_selected,effective_score,available,availability_generation) VALUES('new','sub-1','anibt','new','New','auto',TRUE,50,TRUE,2)`); err != nil {
 					t.Fatal(err)
 				}
 			}}

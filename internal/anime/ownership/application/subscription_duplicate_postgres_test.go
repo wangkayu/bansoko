@@ -44,7 +44,7 @@ SELECT concat_ws(' | ',
                      ORDER BY src.locator)
      FROM rss_sources src JOIN subscriptions s ON s.id = src.subscription_id WHERE s.managed_anime_id = $1),
   (SELECT string_agg(concat_ws(',', g.provider, g.group_ref, g.display_name, g.selection_mode, g.manual_selected,
-                               g.effective_selected, g.effective_score, g.count_in_limit, g.available), ';' ORDER BY g.group_ref)
+                               g.effective_selected, g.effective_score, g.available), ';' ORDER BY g.group_ref)
      FROM provider_group_selections g JOIN subscriptions s ON s.id = g.subscription_id WHERE s.managed_anime_id = $1)
 )`, animeID).Scan(&value)
 	if err != nil {
@@ -77,8 +77,8 @@ func TestDuplicateSubscriptionCopiesConfigIntoNewPendingInstance(t *testing.T) {
 		`INSERT INTO reconciliation_scans(managed_anime_id, state, generation, scan_scope, progress, capacity_stats, input_fingerprint)
 		 VALUES ($1, 'completed', 3, '{}', '{}', '{}', 'fingerprint-1')`,
 		`INSERT INTO provider_group_selections(id, subscription_id, provider, group_ref, display_name, selection_mode, manual_selected,
-		                                       effective_selected, effective_score, count_in_limit)
-		 SELECT 'dup-selection-1', id, 'mikan', 'g-1', 'Group One', 'manual', true, true, 80, true FROM subscriptions WHERE managed_anime_id = $1`,
+		                                       effective_selected, effective_score)
+		 SELECT 'dup-selection-1', id, 'mikan', 'g-1', 'Group One', 'manual', true, true, 100 FROM subscriptions WHERE managed_anime_id = $1`,
 	} {
 		if _, err := db.ExecContext(ctx, statement, sourceID); err != nil {
 			t.Fatalf("prepare source: %v\n%s", err, statement)

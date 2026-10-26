@@ -70,7 +70,7 @@ func (s *Service) resolveSearchSnapshotProjection(
 	entry := rssListGroupEntry{
 		provider: ref.Provider, providerEntryRef: ref.ProviderEntryRef, groupRef: ref.ProviderGroupRef,
 		displayName: ref.ProviderGroupRef, selected: true,
-		selectionMode: string(animedomain.SelectionModeAuto), countInLimit: false,
+		selectionMode: string(animedomain.SelectionModeAuto),
 		offset: oneShotOffset(previewOffset),
 	}
 	return []providerGroupPreview{{Ref: ref, GroupName: entry.displayName, Snapshot: snapshot, Items: items, Manifests: manifests}}, []rssListGroupEntry{entry}, nil

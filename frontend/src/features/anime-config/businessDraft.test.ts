@@ -15,7 +15,7 @@ import { t } from "../../lib/i18n";
 const draft: AnimeDraft = {
  origin: "custom", title: "Local", instance_label: "instance",
  metadata: { bgm: { work_id: "local" }, tmdb: null },
- subgroups: { max_rss: 1, entries: [{ provider: "mikan", group_ref: "42", display_name: "Manual", selection_mode: "manual", manual_selected: false, effective_selected: false, count_in_limit: false, score: 9 }] },
+ subgroups: { max_rss: 1, entries: [{ provider: "mikan", group_ref: "42", display_name: "Manual", selection_mode: "manual", manual_selected: false, effective_selected: false, score: 9 }] },
  rules: { sections: {} },
  rss_sources: [{ source_kind: "custom_rss", locator: "https://local/rss", title: "Local", group_name: "Local", episode_offset: 5 }],
 };

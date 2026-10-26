@@ -25,7 +25,7 @@ func (s *Service) resolveCustomSnapshotProjectionFor(ctx context.Context, config
 	entryID, groupID := catalogapplication.CustomSnapshotScope(configIdentity, source.Locator, source.GroupName)
 	headers := s.customOriginGroups(draft)
 	header := headers[0]
-	entry := rssListGroupEntry{provider: animedomain.ProviderKindCustom, providerEntryRef: entryID, groupRef: groupID, displayName: source.GroupName, selected: true, selectionMode: string(animedomain.SelectionModeAuto), countInLimit: false, offset: header.Offset}
+	entry := rssListGroupEntry{provider: animedomain.ProviderKindCustom, providerEntryRef: entryID, groupRef: groupID, displayName: source.GroupName, selected: true, selectionMode: string(animedomain.SelectionModeAuto), offset: header.Offset}
 	if oneShot {
 		entry.offset = oneShotOffset(previewOffset)
 		if len(refs) == 1 {

@@ -18,8 +18,7 @@ type ObservedGroup struct {
 	Available bool
 	// Manual, when set, is an explicit per-group override that wins over every
 	// policy layer: true selects the group (always), false blocks it (never).
-	Manual       *bool
-	CountInLimit bool
+	Manual *bool
 }
 
 // RankObservedGroups ranks the whole observed union under one policy and is the
@@ -51,14 +50,13 @@ func RankObservedGroups(kind providerdomain.Kind, groups []ObservedGroup, policy
 			return nil, fmt.Errorf("resolve %s: %w", ref.Key(), err)
 		}
 		if group.Manual != nil {
-			resolved.CountInLimit = group.CountInLimit
 			override := EntryOverrideNever
 			if *group.Manual {
 				resolved.Mode = Always
+				resolved.Score = AlwaysGroupScore
 				override = EntryOverrideAlways
 			} else {
 				resolved.Mode = Never
-				resolved.CountInLimit = false
 			}
 			if resolved.Breakdown != nil {
 				resolved.Breakdown = resolved.Breakdown.withOverride(override)

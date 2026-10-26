@@ -214,7 +214,6 @@ func pendingBenchSelection(workspace AnimeWorkspace) []animedomain.SubgroupScore
 	entries := make([]animedomain.SubgroupScoreEntry, 0, len(workspace.Subgroups.EffectiveSelection))
 	for _, row := range workspace.Subgroups.EffectiveSelection {
 		entries = append(entries, animedomain.SubgroupScoreEntry{
-			CountInLimit:      row.CountInLimit,
 			DisplayName:       row.DisplayName,
 			EffectiveSelected: row.EffectiveSelected && row.Available,
 			GroupRef:          row.GroupRef,

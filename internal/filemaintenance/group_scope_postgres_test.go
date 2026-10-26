@@ -19,7 +19,7 @@ func TestRetentionProviderScopeGateFailsClosed(t *testing.T) {
 				t.Fatal(err)
 			}
 			if state != "missing-selection" {
-				if _, err := db.Exec(`INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,effective_selected,effective_score,count_in_limit,available) VALUES('scope','sub-1','anibt','alpha','Alpha','auto',$1,50,TRUE,$2)`, state != "excluded", state != "unavailable"); err != nil {
+				if _, err := db.Exec(`INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,effective_selected,effective_score,available) VALUES('scope','sub-1','anibt','alpha','Alpha','auto',$1,50,$2)`, state != "excluded", state != "unavailable"); err != nil {
 					t.Fatal(err)
 				}
 			}

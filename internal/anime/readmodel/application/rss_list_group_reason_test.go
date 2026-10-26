@@ -9,7 +9,7 @@ import (
 // A group header says more than selected/unselected: the browser shows why the
 // group is in that state, and the answer is the decision core's own reason.
 // The read model must carry it per group rather than let a client re-derive the
-// rules from count_in_limit and the score it sees.
+// rules from the score it sees.
 func TestRSSListGroupEntriesCarryTheSelectionReason(t *testing.T) {
 	// One slot, three equally scored groups: the lowest key wins it and the
 	// other two lost on max_rss — the reason a person needs to see.
@@ -45,8 +45,8 @@ func TestRSSListGroupEntriesCarryTheSelectionReason(t *testing.T) {
 	// must never contradict the badge it sits next to. Group 12 claims to have
 	// won its slot; the decision gives that slot to the higher-scored group 13.
 	draft.Subgroups = animedomain.SubgroupsSection{MaxRss: 1, Entries: []animedomain.SubgroupScoreEntry{
-		{Provider: animedomain.ProviderKindAnibt, GroupRef: "12", DisplayName: "Group 12", SelectionMode: animedomain.SelectionModeAuto, Score: 50, CountInLimit: true, EffectiveSelected: true},
-		{Provider: animedomain.ProviderKindAnibt, GroupRef: "13", DisplayName: "Group 13", SelectionMode: animedomain.SelectionModeAuto, Score: 60, CountInLimit: true, EffectiveSelected: true},
+		{Provider: animedomain.ProviderKindAnibt, GroupRef: "12", DisplayName: "Group 12", SelectionMode: animedomain.SelectionModeAuto, Score: 50, EffectiveSelected: true},
+		{Provider: animedomain.ProviderKindAnibt, GroupRef: "13", DisplayName: "Group 13", SelectionMode: animedomain.SelectionModeAuto, Score: 60, EffectiveSelected: true},
 	}}
 	effective = animedomain.EffectiveConfig{Selection: draft.Subgroups}
 	entries, err = rssListGroupEntries(draft, effective, 0)

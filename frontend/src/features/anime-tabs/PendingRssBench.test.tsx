@@ -76,7 +76,7 @@ function benchView(): RSSListView {
         scope: { provider: "mikan", provider_entry_ref: "entry-1", provider_group_ref: "g-1" },
         display_name: "一号组",
         score: 80,
-        selection: { effective_selected: true, selection_mode: "auto", count_in_limit: true },
+        selection: { effective_selected: true, selection_mode: "auto" },
         offset: { value: 0, editable: false },
         feed: { state: "fresh", snapshot_id: "snap-1", snapshot_version: 1, content_hash: "sha256:" + "b".repeat(64) },
         items: [

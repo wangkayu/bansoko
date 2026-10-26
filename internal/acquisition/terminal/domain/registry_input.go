@@ -154,7 +154,7 @@ func registerConfig() {
 	).Optional("pinned_scores")
 	providerDefaults := Obj(F("anibt", Nullable(groupDefault)), F("mikan", Nullable(groupDefault)))
 	groupEntry := Obj(
-		F("count_in_limit", Bool), F("display_name", Text(1, 256)), F("effective_selected", Bool), F("group_ref", Text(1, 256)),
+		F("display_name", Text(1, 256)), F("effective_selected", Bool), F("group_ref", Text(1, 256)),
 		F("manual_selected", Nullable(Bool)), F("provider", Enum("anibt", "mikan")), F("score", I64),
 		F("selection_mode", Enum("auto", "manual")),
 	).Check(func(r reader, m map[string]Value) error {

@@ -302,7 +302,6 @@ function unifiedView(): RSSListView {
           source: "configured",
           effective_selected: true,
           selection_mode: "manual",
-          count_in_limit: true,
         },
         offset: {
           value: 0,

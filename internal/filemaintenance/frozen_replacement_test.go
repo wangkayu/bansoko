@@ -648,7 +648,7 @@ WHERE managed_anime_id = 'anime-1'`); err != nil {
 	if _, err := db.Exec(`
 INSERT INTO anime_config_overrides(managed_anime_id, owner_type, section_name, schema_version, value)
 VALUES ('anime-1', 'subgroups', 'subgroups', 'subgroups-v1',
- '{"max_rss":3,"entries":[{"provider":"anibt","group_ref":"SampleGroup","selection_mode":"auto","score":90,"count_in_limit":true,"display_name":"SampleGroup","effective_selected":true},{"provider":"anibt","group_ref":"ANi","selection_mode":"auto","score":60,"count_in_limit":true,"display_name":"ANi","effective_selected":true}]}'::jsonb)`); err != nil {
+ '{"max_rss":3,"entries":[{"provider":"anibt","group_ref":"SampleGroup","selection_mode":"auto","score":90,"display_name":"SampleGroup","effective_selected":true},{"provider":"anibt","group_ref":"ANi","selection_mode":"auto","score":60,"display_name":"ANi","effective_selected":true}]}'::jsonb)`); err != nil {
 		t.Fatal(err)
 	}
 	storedsections.Seed(t, db, "anime-1")
@@ -729,8 +729,8 @@ WHERE managed_anime_id = 'anime-1'`, string(qualityprofile.DefaultJSON())); err 
 		score   int
 	}{{"sel-high", "group-high", 90}, {"sel-low", "group-low", 10}} {
 		if _, err := db.Exec(`
-INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,effective_selected,effective_score,count_in_limit,available,availability_generation)
-VALUES ($1,'sub-1','anibt',$2,$2,'auto',TRUE,$3,TRUE,TRUE,1)`, row.id, row.ref, row.score); err != nil {
+INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,effective_selected,effective_score,available,availability_generation)
+VALUES ($1,'sub-1','anibt',$2,$2,'auto',TRUE,$3,TRUE,1)`, row.id, row.ref, row.score); err != nil {
 			t.Fatal(err)
 		}
 	}

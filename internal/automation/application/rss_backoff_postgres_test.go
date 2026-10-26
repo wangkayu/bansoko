@@ -28,8 +28,8 @@ VALUES ('source-custom', 'sub-backoff', 'custom_rss', 'https://example.test/cust
 	exec(`INSERT INTO rss_sources(id, subscription_id, source_kind, locator, locator_display, group_name, title, provider, provider_entry_ref, provider_group_ref, discovery_snapshot_version)
 VALUES ('source-provider', 'sub-backoff', 'provider_group', 'https://example.test/provider', 'https://example.test/provider', 'Group', 'Backoff', 'anibt', '123', 'alpha', 'v1')`)
 	exec(`INSERT INTO rss_source_runtime(rss_source_id) VALUES ('source-custom'), ('source-provider')`)
-	exec(`INSERT INTO provider_group_selections(id, subscription_id, provider, group_ref, display_name, selection_mode, manual_selected, effective_selected, effective_score, count_in_limit)
-VALUES ('selection-backoff', 'sub-backoff', 'anibt', 'alpha', 'Group', 'auto', NULL, TRUE, 50, TRUE)`)
+	exec(`INSERT INTO provider_group_selections(id, subscription_id, provider, group_ref, display_name, selection_mode, manual_selected, effective_selected, effective_score)
+VALUES ('selection-backoff', 'sub-backoff', 'anibt', 'alpha', 'Group', 'auto', NULL, TRUE, 50)`)
 	store, err := workitems.NewStore(db, 0, nil)
 	if err != nil {
 		t.Fatal(err)

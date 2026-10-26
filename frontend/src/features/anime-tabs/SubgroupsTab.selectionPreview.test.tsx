@@ -34,7 +34,6 @@ function entry(group_ref: string, score: number): SubgroupScoreEntry {
     manual_selected: null,
     effective_selected: false,
     score,
-    count_in_limit: true,
   };
 }
 
@@ -46,7 +45,6 @@ function preview(mode: SubgroupsSelectionPreview["mode"], selected: string[], al
       group_ref,
       available: true,
       effective_selected: selected.includes(group_ref),
-      count_in_limit: true,
       reason_code: selected.includes(group_ref) ? "ranked_within_max_rss" : "policy_never",
     })),
   };
@@ -104,8 +102,8 @@ function ownerWorkspace(): AnimeWorkspace {
     selection_mode: "auto" as const,
     manual_selected: null,
     effective_selected: selected,
+    reason_code: selected ? "ranked_within_max_rss" : "policy_never",
     effective_score: 50,
-    count_in_limit: true,
     version: 1,
   });
   return {

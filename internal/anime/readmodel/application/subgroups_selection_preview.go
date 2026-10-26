@@ -96,7 +96,6 @@ func (s *Service) previewDraftSubgroupsSelection(ctx context.Context, draft anim
 			GroupRef:          entry.groupRef,
 			Available:         true,
 			EffectiveSelected: entry.selected,
-			CountInLimit:      entry.countInLimit,
 			ReasonCode:        cloneStringPointer(entry.reasonCode),
 		}
 		// The live decision that set the entry's selection explains it: its

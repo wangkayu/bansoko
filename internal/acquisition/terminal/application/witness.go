@@ -59,7 +59,6 @@ type groupDecision struct {
 	CanonicalKey witnessText                     `json:"canonical_key"`
 	Mode         selection.SelectionMode         `json:"mode"`
 	Score        int64                           `json:"score"`
-	CountInLimit bool                            `json:"count_in_limit"`
 	PolicyOrigin groupPolicyOrigin               `json:"policy_origin"`
 	Rank         *int                            `json:"rank"`
 	Outcome      selection.GroupSelectionOutcome `json:"outcome"`
@@ -206,10 +205,7 @@ func constructWitness(c admissionCapture, inputDigest string, limits witnessLimi
 		default:
 			return preparationWitness{}, errWitnessMismatch // canonical requires translation.
 		}
-		if result.Group.Mode == selection.Never && result.Group.CountInLimit {
-			return preparationWitness{}, errWitnessMismatch
-		}
-		decisions = append(decisions, groupDecision{GroupRef: result.Group.Ref.ExternalID, DisplayName: names[result.Group.Ref.ExternalID], Available: available[result.Group.Ref.ExternalID], CanonicalKey: witnessText{State: "absent"}, Mode: result.Group.Mode, Score: int64(result.Group.Score), CountInLimit: result.Group.CountInLimit, PolicyOrigin: groupPolicyOrigin{Layer: layer, ConfigVersion: result.Group.PolicyVersion}, Rank: result.Rank, Outcome: result.Outcome, ReasonCode: result.Reason})
+		decisions = append(decisions, groupDecision{GroupRef: result.Group.Ref.ExternalID, DisplayName: names[result.Group.Ref.ExternalID], Available: available[result.Group.Ref.ExternalID], CanonicalKey: witnessText{State: "absent"}, Mode: result.Group.Mode, Score: int64(result.Group.Score), PolicyOrigin: groupPolicyOrigin{Layer: layer, ConfigVersion: result.Group.PolicyVersion}, Rank: result.Rank, Outcome: result.Outcome, ReasonCode: result.Reason})
 		if result.Outcome == selection.GroupSelected {
 			selected = append(selected, result.Group.Ref.ExternalID)
 		}

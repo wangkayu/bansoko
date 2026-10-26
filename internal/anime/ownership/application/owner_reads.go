@@ -121,7 +121,7 @@ func applicationSubgroupsSectionFromDomain(value animedomain.SubgroupsSection) S
 	result := SubgroupsSection{MaxRss: value.MaxRss, Entries: make([]SubgroupScoreEntry, len(value.Entries))}
 	for i, entry := range value.Entries {
 		result.Entries[i] = SubgroupScoreEntry{
-			CountInLimit: entry.CountInLimit, DisplayName: entry.DisplayName,
+			DisplayName:       entry.DisplayName,
 			EffectiveSelected: entry.EffectiveSelected, GroupRef: entry.GroupRef,
 			ManualSelected: animeapplication.CloneBool(entry.ManualSelected), Provider: string(entry.Provider),
 			Score: entry.Score, SelectionMode: string(entry.SelectionMode),
@@ -170,7 +170,7 @@ func applicationProviderGroupDefault(value *animedomain.ProviderGroupDefault) *P
 func (s *Service) mergePersistedProviderSelectionsApplication(ctx context.Context, subscriptionID string, section SubgroupsSection) (SubgroupsSection, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT provider, group_ref, display_name, selection_mode, manual_selected,
-       effective_selected, effective_score, count_in_limit
+       effective_selected, effective_score
 FROM provider_group_selections
 WHERE subscription_id = $1
 ORDER BY provider, group_ref`, subscriptionID)
@@ -190,8 +190,7 @@ ORDER BY provider, group_ref`, subscriptionID)
 		var manualSelected sql.NullBool
 		var effectiveSelected bool
 		var score int
-		var countInLimit bool
-		if err := rows.Scan(&provider, &groupRef, &displayName, &mode, &manualSelected, &effectiveSelected, &score, &countInLimit); err != nil {
+		if err := rows.Scan(&provider, &groupRef, &displayName, &mode, &manualSelected, &effectiveSelected, &score); err != nil {
 			return SubgroupsSection{}, fmt.Errorf("scan persisted provider selection: %w", err)
 		}
 		if mode == string(animedomain.SelectionModeAuto) {
@@ -202,7 +201,7 @@ ORDER BY provider, group_ref`, subscriptionID)
 			// and its breakdown are on the effective selection.
 			score = min(max(score, 1), 100)
 		}
-		entry := SubgroupScoreEntry{Provider: provider, GroupRef: groupRef, DisplayName: displayName, SelectionMode: mode, EffectiveSelected: effectiveSelected, Score: score, CountInLimit: countInLimit}
+		entry := SubgroupScoreEntry{Provider: provider, GroupRef: groupRef, DisplayName: displayName, SelectionMode: mode, EffectiveSelected: effectiveSelected, Score: score}
 		if manualSelected.Valid {
 			value := manualSelected.Bool
 			entry.ManualSelected = &value

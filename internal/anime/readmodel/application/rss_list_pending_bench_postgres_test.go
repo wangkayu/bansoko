@@ -114,7 +114,7 @@ func TestRSSListPendingOwnerReadIsTheDraftBench(t *testing.T) {
 	}
 	animeID := activated.ManagedAnime.ID
 	// Group discovery's runtime selection (the dispatcher writes it after commit).
-	if _, err := db.ExecContext(ctx, `INSERT INTO provider_group_selections(id, subscription_id, provider, group_ref, display_name, selection_mode, effective_selected, effective_score, count_in_limit) VALUES ('sel-bench', $1, 'mikan', $2, 'Group 679', 'auto', true, 50, true)`, activated.Subscription.ID, groupRef); err != nil {
+	if _, err := db.ExecContext(ctx, `INSERT INTO provider_group_selections(id, subscription_id, provider, group_ref, display_name, selection_mode, effective_selected, effective_score) VALUES ('sel-bench', $1, 'mikan', $2, 'Group 679', 'auto', true, 50)`, activated.Subscription.ID, groupRef); err != nil {
 		t.Fatal(err)
 	}
 

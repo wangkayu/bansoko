@@ -39,7 +39,6 @@ function ownerSelectionFacts(workspace: AnimeWorkspace): ServerSelectionFact[] {
     group_ref: selection.group_ref,
     available: selection.available,
     effective_selected: selection.effective_selected,
-    count_in_limit: selection.count_in_limit,
     reason_code: selection.reason_code,
     score_breakdown: selection.score_breakdown,
   }));

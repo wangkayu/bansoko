@@ -57,17 +57,17 @@ func TestApplyObservedGroupsListsDiscoveredGroupsOfAnUnconfiguredDraft(t *testin
 
 // A configured group keeps its identity and mode. An automatic entry has no
 // score of its own: it is ranked, and shown, at the site score, so the manual
-// include of an observed group is what wins the only slot here.
+// include of an observed group is selected without taking the only slot here.
 func TestApplyObservedGroupsKeepsConfiguredGroupsAndTheirPolicy(t *testing.T) {
 	draft := previewTestDraft(animedomain.ProviderKindAnibt, "12")
 	effective := unconfiguredDraftEffective(1)
 	on := true
 	effective.Selection.Entries = []animedomain.SubgroupScoreEntry{{
 		GroupRef: "12", DisplayName: "Configured 12", Provider: animedomain.ProviderKindAnibt,
-		SelectionMode: animedomain.SelectionModeAuto, Score: 90, CountInLimit: true, EffectiveSelected: true,
+		SelectionMode: animedomain.SelectionModeAuto, Score: 90, EffectiveSelected: true,
 	}, {
 		GroupRef: "34", DisplayName: "Configured 34", Provider: animedomain.ProviderKindAnibt,
-		SelectionMode: animedomain.SelectionModeManual, ManualSelected: &on, CountInLimit: true,
+		SelectionMode: animedomain.SelectionModeManual, ManualSelected: &on, 
 	}}
 	got, sources, err := applyObservedGroups(draft, effective, observedFacts("12", "34", "56"))
 	if err != nil {
@@ -83,8 +83,8 @@ func TestApplyObservedGroupsKeepsConfiguredGroupsAndTheirPolicy(t *testing.T) {
 	if byRef["12"].DisplayName != "Configured 12" || byRef["12"].SelectionMode != animedomain.SelectionModeAuto || byRef["12"].Score != 50 {
 		t.Fatalf("an automatic entry keeps its identity and shows the site score: %+v", byRef["12"])
 	}
-	if !byRef["34"].EffectiveSelected || byRef["12"].EffectiveSelected || byRef["56"].EffectiveSelected {
-		t.Fatalf("the manual include takes the only slot: %+v", byRef)
+	if !byRef["34"].EffectiveSelected || !byRef["12"].EffectiveSelected || byRef["56"].EffectiveSelected || byRef["34"].Score != 100 {
+		t.Fatalf("the manual include is outside max_rss and scored 100; the one ranked slot goes to the lower key: %+v", byRef)
 	}
 	if sources["12"] != RSSListSelectionSourceConfigured || sources["34"] != RSSListSelectionSourceConfigured || sources["56"] != RSSListSelectionSourceObservedDefault {
 		t.Fatalf("sources = %+v", sources)
@@ -258,7 +258,7 @@ func TestReadAnimeRSSListViewWithoutObservationIsUnchanged(t *testing.T) {
 	draft := readableDraft(t, animedomain.ProviderKindAnibt)
 	draft.Subgroups.Entries = []animedomain.SubgroupScoreEntry{{
 		GroupRef: "12", DisplayName: "Group 12", Provider: animedomain.ProviderKindAnibt,
-		SelectionMode: animedomain.SelectionModeAuto, Score: 80, CountInLimit: true,
+		SelectionMode: animedomain.SelectionModeAuto, Score: 80, 
 	}}
 	view, err := observationService(&fakeObservationReader{}).ReadAnimeRSSListView(context.Background(), ReadRSSListViewInput{
 		InputSource: "current_input", Draft: &draft,

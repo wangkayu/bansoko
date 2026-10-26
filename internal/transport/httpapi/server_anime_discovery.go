@@ -36,7 +36,6 @@ func mapDiscoverSubgroupsOwner(value ownershipapplication.DiscoverSubgroupsOwner
 	}
 	for _, selection := range value.EffectiveSelection {
 		result.EffectiveSelection = append(result.EffectiveSelection, generated.ProviderGroupSelection{
-			CountInLimit:      selection.CountInLimit,
 			DisplayName:       selection.DisplayName,
 			EffectiveScore:    selection.EffectiveScore,
 			EffectiveSelected: selection.EffectiveSelected,
@@ -64,7 +63,6 @@ func mapDiscoverSubgroupsSection(value ownershipapplication.SubgroupsSection) ge
 	}
 	for _, entry := range value.Entries {
 		result.Entries = append(result.Entries, generated.SubgroupScoreEntry{
-			CountInLimit:      entry.CountInLimit,
 			DisplayName:       entry.DisplayName,
 			EffectiveSelected: entry.EffectiveSelected,
 			GroupRef:          entry.GroupRef,

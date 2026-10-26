@@ -12,8 +12,8 @@ import (
 // recompute uses decides.
 func TestOverlayDiscoveryRowsRanksTheUnsavedModes(t *testing.T) {
 	persisted := map[string]discoveryObservation{
-		"alpha": {name: "Alpha", available: true, count: true},
-		"beta":  {name: "Beta", available: true, count: true},
+		"alpha": {name: "Alpha", available: true},
+		"beta":  {name: "Beta", available: true},
 	}
 	never := false
 	overlay := map[string]ProviderGroupOverlay{

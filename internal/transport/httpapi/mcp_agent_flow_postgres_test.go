@@ -290,7 +290,7 @@ func mcpFlowDraft(entryRef string) map[string]any {
 			"max_rss": 3,
 			"entries": []any{map[string]any{
 				"provider": "mikan", "group_ref": mcpFlowGroupRef, "display_name": "Group " + mcpFlowGroupRef,
-				"selection_mode": "manual", "manual_selected": true, "score": 50, "count_in_limit": true,
+				"selection_mode": "manual", "manual_selected": true, "score": 50,
 				"effective_selected": true,
 			}},
 		},

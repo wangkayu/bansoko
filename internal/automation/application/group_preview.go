@@ -14,8 +14,7 @@ import (
 // onto an existing provider-group row before the recompute ranks: Manual is the
 // explicit always (true) / never (false) intent, nil for an automatic group.
 type ProviderGroupOverlay struct {
-	Manual       *bool
-	CountInLimit bool
+	Manual *bool
 }
 
 // SubscriptionSelectionPreview is what RecomputeSubscriptionSelections would
@@ -70,7 +69,6 @@ func overlayDiscoveryRows(provider string, rows map[string]discoveryObservation,
 	result := make(map[string]discoveryObservation, len(rows))
 	for ref, row := range rows {
 		if value, ok := overlay[provider+":"+ref]; ok {
-			row.count = value.CountInLimit
 			row.manual = nil
 			if value.Manual != nil {
 				manual := *value.Manual

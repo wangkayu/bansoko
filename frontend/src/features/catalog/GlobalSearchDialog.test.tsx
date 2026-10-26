@@ -120,7 +120,7 @@ function searchRssView(): RSSListView {
       {
         scope: { provider: "anibt", provider_entry_ref: SCOPE_REF, provider_group_ref: QUERY_REF },
         display_name: QUERY_REF,
-        selection: { source: "configured", effective_selected: true, selection_mode: "auto", count_in_limit: false },
+        selection: { source: "configured", effective_selected: true, selection_mode: "auto" },
         offset: { value: 0, editable: true, source: "link" },
         feed: { state: "fresh", snapshot_id: SEARCH_SNAPSHOT_ID, snapshot_version: 1, content_hash: CONTENT_HASH },
         items: [

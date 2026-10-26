@@ -115,13 +115,13 @@ func (s *Service) GetAnimeBusinessEdit(ctx context.Context, animeID string) (Bus
 	if err := json.Unmarshal(business.Sections[animedomain.SectionSubgroups], &draft.Subgroups); err != nil {
 		return result, err
 	}
-	manualRows, err := tx.QueryContext(ctx, `SELECT sel.provider,sel.group_ref,sel.display_name,sel.manual_selected,sel.effective_selected,sel.effective_score,sel.count_in_limit FROM provider_group_selections sel JOIN subscriptions sub ON sub.id=sel.subscription_id WHERE sub.managed_anime_id=$1 AND sel.selection_mode='manual' ORDER BY sel.provider,sel.group_ref`, animeID)
+	manualRows, err := tx.QueryContext(ctx, `SELECT sel.provider,sel.group_ref,sel.display_name,sel.manual_selected,sel.effective_selected,sel.effective_score FROM provider_group_selections sel JOIN subscriptions sub ON sub.id=sel.subscription_id WHERE sub.managed_anime_id=$1 AND sel.selection_mode='manual' ORDER BY sel.provider,sel.group_ref`, animeID)
 	if err != nil {
 		return result, err
 	}
 	for manualRows.Next() {
 		var intent animedomain.SubgroupScoreEntry
-		if err := manualRows.Scan(&intent.Provider, &intent.GroupRef, &intent.DisplayName, &intent.ManualSelected, &intent.EffectiveSelected, &intent.Score, &intent.CountInLimit); err != nil {
+		if err := manualRows.Scan(&intent.Provider, &intent.GroupRef, &intent.DisplayName, &intent.ManualSelected, &intent.EffectiveSelected, &intent.Score); err != nil {
 			manualRows.Close()
 			return result, err
 		}

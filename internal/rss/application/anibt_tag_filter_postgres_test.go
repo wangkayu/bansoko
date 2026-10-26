@@ -99,7 +99,7 @@ SET source_kind = 'provider_group', provenance = '{"provider":"anibt","provider_
 WHERE id = $1`, sourceID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.ExecContext(ctx, `INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,effective_selected,effective_score,count_in_limit,available,availability_generation) VALUES('anibt-tag-selection',$1,'anibt','group-1','Test Group','auto',TRUE,50,TRUE,TRUE,1)`, subscriptionID); err != nil {
+	if _, err := db.ExecContext(ctx, `INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,effective_selected,effective_score,available,availability_generation) VALUES('anibt-tag-selection',$1,'anibt','group-1','Test Group','auto',TRUE,50,TRUE,1)`, subscriptionID); err != nil {
 		t.Fatal(err)
 	}
 	store, err := workitems.NewStore(db, 0, nil)

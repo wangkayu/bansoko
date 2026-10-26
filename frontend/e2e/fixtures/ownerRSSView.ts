@@ -13,7 +13,7 @@ export function ownerRSSView(workspace: AnimeWorkspace): RSSListView {
       // RSSListGroupSelection.source 是契约必填：configured 表示来自持久化选择，
       // observed_default 表示服务端默认补选（UI 据此渲染「默认组」徽标）。fixture
       // 语义是显式选中，故 configured。
-      selection: { source: "configured", effective_selected: true, selection_mode: "auto", count_in_limit: true },
+      selection: { source: "configured", effective_selected: true, selection_mode: "auto" },
       offset: { value: source.episode_offset, editable: true, source: "link" },
       feed: { state: "fresh" },
       items: workspace.releases.filter((release) => release.rss_source_id === source.id).map((release) => ({

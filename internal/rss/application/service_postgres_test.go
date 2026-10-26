@@ -449,8 +449,7 @@ func TestQueuedRefreshRechecksSourceEligibilityBeforeFetch(t *testing.T) {
 				if _, err := db.ExecContext(ctx, `
 				INSERT INTO provider_group_selections(
 				    id, subscription_id, provider, group_ref, display_name, selection_mode,
-				    manual_selected, effective_selected, effective_score, count_in_limit
-				) VALUES ('selection-rss-test', $1, 'anibt', 'alpha', 'Alpha', 'auto', NULL, $2, 50, TRUE)`, subscriptionID, *test.selected); err != nil {
+				    manual_selected, effective_selected, effective_score) VALUES ('selection-rss-test', $1, 'anibt', 'alpha', 'Alpha', 'auto', NULL, $2, 50)`, subscriptionID, *test.selected); err != nil {
 					t.Fatal(err)
 				}
 			}

@@ -20,7 +20,7 @@ func subgroupsSectionToGenerated(value SubgroupsSection) generated.SubgroupsSect
 	}
 	for i, entry := range value.Entries {
 		result.Entries[i] = generated.SubgroupScoreEntry{
-			CountInLimit: entry.CountInLimit, DisplayName: entry.DisplayName,
+			DisplayName: entry.DisplayName,
 			EffectiveSelected: entry.EffectiveSelected, GroupRef: entry.GroupRef,
 			ManualSelected: cloneBoolValue(entry.ManualSelected), Provider: generated.ProviderKind(entry.Provider),
 			Score: entry.Score, SelectionMode: generated.SelectionMode(entry.SelectionMode),
@@ -95,7 +95,7 @@ func subgroupsOwnerFromGenerated(value generated.SubgroupsOwnerResult) Subgroups
 	}
 	for i, selection := range value.EffectiveSelection {
 		result.EffectiveSelection[i] = ProviderGroupSelection{
-			CountInLimit: selection.CountInLimit, DisplayName: selection.DisplayName,
+			DisplayName: selection.DisplayName,
 			EffectiveScore: selection.EffectiveScore, EffectiveSelected: selection.EffectiveSelected,
 			GroupRef: selection.GroupRef, ID: string(selection.Id), ManualSelected: cloneBoolValue(selection.ManualSelected),
 			Provider: string(selection.Provider), ReasonCode: cloneStringValue(selection.ReasonCode),
@@ -126,7 +126,7 @@ func subgroupsOwnerToGenerated(value SubgroupsOwnerResult) generated.SubgroupsOw
 	}
 	for i, selection := range value.EffectiveSelection {
 		result.EffectiveSelection[i] = generated.ProviderGroupSelection{
-			CountInLimit: selection.CountInLimit, DisplayName: selection.DisplayName,
+			DisplayName: selection.DisplayName,
 			EffectiveScore: selection.EffectiveScore, EffectiveSelected: selection.EffectiveSelected,
 			GroupRef: selection.GroupRef, Id: generated.ID(selection.ID), ManualSelected: cloneBoolValue(selection.ManualSelected),
 			Provider: generated.ProviderKind(selection.Provider), ReasonCode: cloneStringValue(selection.ReasonCode),
@@ -169,7 +169,7 @@ func subgroupsSectionFromGenerated(value generated.SubgroupsSection) SubgroupsSe
 	}
 	for i, entry := range value.Entries {
 		result.Entries[i] = SubgroupScoreEntry{
-			CountInLimit: entry.CountInLimit, DisplayName: entry.DisplayName,
+			DisplayName: entry.DisplayName,
 			EffectiveSelected: entry.EffectiveSelected, GroupRef: entry.GroupRef,
 			ManualSelected: cloneBoolValue(entry.ManualSelected), Provider: string(entry.Provider),
 			Score: entry.Score, SelectionMode: string(entry.SelectionMode),

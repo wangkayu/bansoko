@@ -29,7 +29,7 @@ WHERE id = $1`, sourceID); err != nil {
 		t.Fatal(err)
 	}
 	// Provider admission requires a real selected observation keyed by stable ID.
-	if _, err := db.ExecContext(ctx, `INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,effective_selected,effective_score,count_in_limit,available,availability_generation) VALUES('anibt-aux-selection',$1,'anibt','group-1','Test Group','auto',TRUE,50,TRUE,TRUE,1)`, subscriptionID); err != nil {
+	if _, err := db.ExecContext(ctx, `INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,effective_selected,effective_score,available,availability_generation) VALUES('anibt-aux-selection',$1,'anibt','group-1','Test Group','auto',TRUE,50,TRUE,1)`, subscriptionID); err != nil {
 		t.Fatal(err)
 	}
 	// The feed title carries no episode; the torrent filename does. The

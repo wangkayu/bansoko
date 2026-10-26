@@ -24,7 +24,7 @@ func TestSubgroupsSelectionPreviewMatchesTheSaveAndWritesNothing(t *testing.T) {
 		`INSERT INTO managed_anime(id,title) VALUES('preview-anime','Preview')`,
 		`INSERT INTO subscriptions(id,managed_anime_id,origin,origin_entry_ref,state) VALUES('preview-sub','preview-anime','anibt','555','active')`,
 		`INSERT INTO anime_business_configs(managed_anime_id) VALUES('preview-anime') ON CONFLICT (managed_anime_id) DO NOTHING`,
-		`INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,effective_selected,effective_score,count_in_limit) VALUES('preview-a','preview-sub','anibt','alpha','Alpha','auto',true,50,true),('preview-b','preview-sub','anibt','beta','Beta','auto',true,50,true)`,
+		`INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,effective_selected,effective_score) VALUES('preview-a','preview-sub','anibt','alpha','Alpha','auto',true,50),('preview-b','preview-sub','anibt','beta','Beta','auto',true,50)`,
 	} {
 		if _, err := db.ExecContext(ctx, stmt); err != nil {
 			t.Fatal(err)
@@ -61,7 +61,7 @@ func TestSubgroupsSelectionPreviewMatchesTheSaveAndWritesNothing(t *testing.T) {
 	never := false
 	section := ownership.SubgroupsSection{MaxRss: 1, Entries: []ownership.SubgroupScoreEntry{
 		{Provider: "anibt", GroupRef: "alpha", DisplayName: "Alpha", SelectionMode: "manual", ManualSelected: &never},
-		{Provider: "anibt", GroupRef: "beta", DisplayName: "Beta", SelectionMode: "manual", ManualSelected: &always, CountInLimit: false},
+		{Provider: "anibt", GroupRef: "beta", DisplayName: "Beta", SelectionMode: "manual", ManualSelected: &always},
 	}}
 
 	rowsBefore := selectionRowsFingerprint(t, ctx, db)
@@ -82,7 +82,7 @@ func TestSubgroupsSelectionPreviewMatchesTheSaveAndWritesNothing(t *testing.T) {
 	if previewed["alpha"].EffectiveSelected || previewed["alpha"].ReasonCode == nil || *previewed["alpha"].ReasonCode != "policy_never" {
 		t.Fatalf("alpha is never: %+v", previewed["alpha"])
 	}
-	if !previewed["beta"].EffectiveSelected || previewed["beta"].CountInLimit {
+	if !previewed["beta"].EffectiveSelected {
 		t.Fatalf("beta is always and does not count: %+v", previewed["beta"])
 	}
 	if !previewed["gamma"].EffectiveSelected {
@@ -98,7 +98,7 @@ func TestSubgroupsSelectionPreviewMatchesTheSaveAndWritesNothing(t *testing.T) {
 		if !ok {
 			t.Fatalf("saved group %s was not previewed", row.GroupRef)
 		}
-		if fact.EffectiveSelected != row.EffectiveSelected || fact.CountInLimit != row.CountInLimit || fact.Available != row.Available {
+		if fact.EffectiveSelected != row.EffectiveSelected || fact.Available != row.Available {
 			t.Fatalf("saved %s = %+v, previewed %+v", row.GroupRef, row, fact)
 		}
 	}
@@ -108,7 +108,7 @@ func selectionRowsFingerprint(t *testing.T, ctx context.Context, db *sql.DB) str
 	t.Helper()
 	var fingerprint string
 	if err := db.QueryRowContext(ctx, `
-SELECT COALESCE(string_agg(group_ref||':'||selection_mode||':'||COALESCE(manual_selected::text,'-')||':'||effective_selected||':'||count_in_limit||':'||version, ',' ORDER BY group_ref),'')
+SELECT COALESCE(string_agg(group_ref||':'||selection_mode||':'||COALESCE(manual_selected::text,'-')||':'||effective_selected||':'||version, ',' ORDER BY group_ref),'')
   || '|' || (SELECT subgroups_version FROM anime_business_configs WHERE managed_anime_id='preview-anime')
   || '|' || (SELECT count(*) FROM anime_config_overrides WHERE managed_anime_id='preview-anime')
 FROM provider_group_selections WHERE subscription_id='preview-sub'`).Scan(&fingerprint); err != nil {

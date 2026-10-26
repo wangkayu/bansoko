@@ -52,7 +52,6 @@ function ownerWorkspace(retried: boolean): AnimeWorkspace {
           manual_selected: null,
           effective_selected: true,
           score: 90,
-          count_in_limit: true,
         }],
       },
       effective_selection: [{
@@ -65,7 +64,6 @@ function ownerWorkspace(retried: boolean): AnimeWorkspace {
         manual_selected: null,
         effective_selected: true,
         effective_score: 90,
-        count_in_limit: true,
         available: true,
         availability_generation: 1,
         version: 1,

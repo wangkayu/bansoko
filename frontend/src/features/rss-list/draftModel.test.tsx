@@ -20,7 +20,7 @@ const PENDING_ITEM: RSSListItem = {
 const GROUP: RSSListGroup = {
   scope: { provider: "anibt", provider_entry_ref: "entry", provider_group_ref: "group", rss_source_id: "source-1" },
   display_name: "Group",
-  selection: { source: "configured" as const, effective_selected: true, selection_mode: "manual", count_in_limit: true },
+  selection: { source: "configured" as const, effective_selected: true, selection_mode: "manual" },
   offset: { value: 0, editable: true, source: "link" },
   feed: { state: "fresh", snapshot_version: 7, content_hash: "hash" },
   items: [PENDING_ITEM],
@@ -190,7 +190,7 @@ describe("group feed state on the bench", () => {
     const view = viewWith();
     view.groups = [{
       ...GROUP,
-      selection: { source: "configured" as const, effective_selected: false, selection_mode: "manual", count_in_limit: false, reason_code: "policy_never" },
+      selection: { source: "configured" as const, effective_selected: false, selection_mode: "manual", reason_code: "policy_never" },
       feed: { state: "missing" },
       items: [],
     }];

@@ -31,7 +31,6 @@ func mapSubgroupsSection(value generated.SubgroupsSection) ownershipapplication.
 	}
 	for i, entry := range value.Entries {
 		result.Entries[i] = ownershipapplication.SubgroupScoreEntry{
-			CountInLimit:      entry.CountInLimit,
 			DisplayName:       entry.DisplayName,
 			EffectiveSelected: entry.EffectiveSelected,
 			GroupRef:          entry.GroupRef,
@@ -95,7 +94,6 @@ func mapSubgroupsOwnerResult(value ownershipapplication.SubgroupsOwnerResult) ge
 		result.EffectiveSelection[i] = generated.ProviderGroupSelection{
 			Available:              &selection.Available,
 			AvailabilityGeneration: &selection.AvailabilityGeneration,
-			CountInLimit:           selection.CountInLimit,
 			DisplayName:            selection.DisplayName,
 			EffectiveScore:         selection.EffectiveScore,
 			EffectiveSelected:      selection.EffectiveSelected,
@@ -123,7 +121,7 @@ func mapApplicationSubgroupsSection(value ownershipapplication.SubgroupsSection)
 	}
 	for i, entry := range value.Entries {
 		result.Entries[i] = generated.SubgroupScoreEntry{
-			CountInLimit: entry.CountInLimit, DisplayName: entry.DisplayName,
+			DisplayName: entry.DisplayName,
 			EffectiveSelected: entry.EffectiveSelected, GroupRef: entry.GroupRef,
 			ManualSelected: cloneBoolPtr(entry.ManualSelected), Provider: generated.ProviderKind(entry.Provider),
 			Score: entry.Score, SelectionMode: generated.SelectionMode(entry.SelectionMode),

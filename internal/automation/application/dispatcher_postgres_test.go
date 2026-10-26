@@ -137,9 +137,9 @@ func TestDispatchGroupDiscoveryAppliesPoliciesAndRemainsIdempotent(t *testing.T)
 	insertSubgroupsAnimeOverride(t, db, generated.SubgroupsSection{
 		MaxRss: 1,
 		Entries: []generated.SubgroupScoreEntry{
-			{Provider: generated.ProviderKindAnibt, GroupRef: "alpha", DisplayName: "Alpha", SelectionMode: generated.SelectionModeAuto, Score: 90, CountInLimit: true},
-			{Provider: generated.ProviderKindAnibt, GroupRef: "beta", DisplayName: "Beta", SelectionMode: generated.SelectionModeAuto, Score: 80, CountInLimit: true},
-			{Provider: generated.ProviderKindAnibt, GroupRef: "gamma", DisplayName: "Gamma", SelectionMode: generated.SelectionModeManual, ManualSelected: boolPointer(true), CountInLimit: false},
+			{Provider: generated.ProviderKindAnibt, GroupRef: "alpha", DisplayName: "Alpha", SelectionMode: generated.SelectionModeAuto, Score: 90},
+			{Provider: generated.ProviderKindAnibt, GroupRef: "beta", DisplayName: "Beta", SelectionMode: generated.SelectionModeAuto, Score: 80},
+			{Provider: generated.ProviderKindAnibt, GroupRef: "gamma", DisplayName: "Gamma", SelectionMode: generated.SelectionModeManual, ManualSelected: boolPointer(true)},
 		},
 	})
 
@@ -161,9 +161,9 @@ func TestDispatchGroupDiscoveryAppliesPoliciesAndRemainsIdempotent(t *testing.T)
 	insertSubgroupsAnimeOverride(t, db, generated.SubgroupsSection{
 		MaxRss: 1,
 		Entries: []generated.SubgroupScoreEntry{
-			{Provider: generated.ProviderKindAnibt, GroupRef: "alpha", DisplayName: "Alpha", SelectionMode: generated.SelectionModeManual, ManualSelected: boolPointer(false), CountInLimit: false},
-			{Provider: generated.ProviderKindAnibt, GroupRef: "beta", DisplayName: "Beta", SelectionMode: generated.SelectionModeManual, ManualSelected: boolPointer(true), CountInLimit: false},
-			{Provider: generated.ProviderKindAnibt, GroupRef: "gamma", DisplayName: "Gamma", SelectionMode: generated.SelectionModeManual, ManualSelected: boolPointer(false), CountInLimit: false},
+			{Provider: generated.ProviderKindAnibt, GroupRef: "alpha", DisplayName: "Alpha", SelectionMode: generated.SelectionModeManual, ManualSelected: boolPointer(false)},
+			{Provider: generated.ProviderKindAnibt, GroupRef: "beta", DisplayName: "Beta", SelectionMode: generated.SelectionModeManual, ManualSelected: boolPointer(true)},
+			{Provider: generated.ProviderKindAnibt, GroupRef: "gamma", DisplayName: "Gamma", SelectionMode: generated.SelectionModeManual, ManualSelected: boolPointer(false)},
 		},
 	})
 	if _, err := dispatcher.dispatchGroupDiscovery(ctx); err != nil {
@@ -235,13 +235,12 @@ func TestDispatchGroupDiscoveryPreservesManualSelectionUntilRestoreAuto(t *testi
 	}
 	insertProviderSubscription(t, db)
 	insertSubgroupsAnimeOverride(t, db, generated.SubgroupsSection{MaxRss: 1, Entries: []generated.SubgroupScoreEntry{
-		{Provider: generated.ProviderKindAnibt, GroupRef: "alpha", DisplayName: "Policy Alpha", SelectionMode: generated.SelectionModeAuto, Score: 90, CountInLimit: true},
+		{Provider: generated.ProviderKindAnibt, GroupRef: "alpha", DisplayName: "Policy Alpha", SelectionMode: generated.SelectionModeAuto, Score: 90},
 	}})
 	if _, err := db.ExecContext(ctx, `
 INSERT INTO provider_group_selections(
     id, subscription_id, provider, group_ref, display_name, selection_mode,
-    manual_selected, effective_selected, effective_score, count_in_limit
-) VALUES ('manual-alpha', 'sub-1', 'anibt', 'alpha', 'Old Alpha', 'manual', FALSE, FALSE, 1, FALSE)`); err != nil {
+    manual_selected, effective_selected, effective_score) VALUES ('manual-alpha', 'sub-1', 'anibt', 'alpha', 'Old Alpha', 'manual', FALSE, FALSE, 1)`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -250,16 +249,16 @@ INSERT INTO provider_group_selections(
 	}
 	var mode, storedDisplay string
 	var manual sql.NullBool
-	var effective, countInLimit bool
+	var effective bool
 	var score int
 	if err := db.QueryRowContext(ctx, `
-SELECT selection_mode, manual_selected, effective_selected, effective_score, count_in_limit, display_name
+SELECT selection_mode, manual_selected, effective_selected, effective_score, display_name
 FROM provider_group_selections WHERE id = 'manual-alpha'`).Scan(
-		&mode, &manual, &effective, &score, &countInLimit, &storedDisplay); err != nil {
+		&mode, &manual, &effective, &score, &storedDisplay); err != nil {
 		t.Fatal(err)
 	}
-	if mode != "manual" || !manual.Valid || manual.Bool || effective || countInLimit {
-		t.Fatalf("manual-owned fields were overwritten: mode=%s manual=%v effective=%t count=%t", mode, manual, effective, countInLimit)
+	if mode != "manual" || !manual.Valid || manual.Bool || effective {
+		t.Fatalf("manual-owned fields were overwritten: mode=%s manual=%v effective=%t", mode, manual, effective)
 	}
 	// An automatic score is the live site default (code default 50); the
 	// stored entry score 90 is a projection, not an input.
@@ -269,7 +268,7 @@ FROM provider_group_selections WHERE id = 'manual-alpha'`).Scan(
 
 	if _, err := db.ExecContext(ctx, `
 UPDATE provider_group_selections
-SET selection_mode = 'auto', manual_selected = NULL, effective_selected = FALSE, count_in_limit = TRUE
+SET selection_mode = 'auto', manual_selected = NULL, effective_selected = FALSE
 WHERE id = 'manual-alpha'`); err != nil {
 		t.Fatal(err)
 	}
@@ -277,13 +276,13 @@ WHERE id = 'manual-alpha'`); err != nil {
 		t.Fatalf("restore-auto discovery: %v", err)
 	}
 	if err := db.QueryRowContext(ctx, `
-SELECT selection_mode, manual_selected, effective_selected, effective_score, count_in_limit
+SELECT selection_mode, manual_selected, effective_selected, effective_score
 FROM provider_group_selections WHERE id = 'manual-alpha'`).Scan(
-		&mode, &manual, &effective, &score, &countInLimit); err != nil {
+		&mode, &manual, &effective, &score); err != nil {
 		t.Fatal(err)
 	}
-	if mode != "auto" || manual.Valid || !effective || score != 50 || !countInLimit {
-		t.Fatalf("restored auto selection did not resume reconciliation: mode=%s manual=%v effective=%t score=%d count=%t", mode, manual, effective, score, countInLimit)
+	if mode != "auto" || manual.Valid || !effective || score != 50 {
+		t.Fatalf("restored auto selection did not resume reconciliation: mode=%s manual=%v effective=%t score=%d", mode, manual, effective, score)
 	}
 }
 
@@ -431,8 +430,7 @@ func TestDispatchRSSRefreshRequiresCurrentEffectiveSelection(t *testing.T) {
 				if _, err := db.ExecContext(ctx, `
 				INSERT INTO provider_group_selections(
 				    id, subscription_id, provider, group_ref, display_name, selection_mode,
-				    manual_selected, effective_selected, effective_score, count_in_limit
-				) VALUES ('selection-refresh', 'sub-refresh', 'anibt', $1, 'Group', 'auto', NULL, $2, 50, TRUE)`, selectionGroup, *test.selected); err != nil {
+				    manual_selected, effective_selected, effective_score) VALUES ('selection-refresh', 'sub-refresh', 'anibt', $1, 'Group', 'auto', NULL, $2, 50)`, selectionGroup, *test.selected); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -533,8 +531,7 @@ func TestCreateProviderGroupSourceRechecksSelection(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `
 	INSERT INTO provider_group_selections(
 	    id, subscription_id, provider, group_ref, display_name, selection_mode,
-	    manual_selected, effective_selected, effective_score, count_in_limit
-	) VALUES ('selection-disabled', 'sub-1', 'anibt', 'alpha', 'Alpha', 'auto', NULL, FALSE, 50, TRUE)`); err != nil {
+	    manual_selected, effective_selected, effective_score) VALUES ('selection-disabled', 'sub-1', 'anibt', 'alpha', 'Alpha', 'auto', NULL, FALSE, 50)`); err != nil {
 		t.Fatal(err)
 	}
 	store, err := workitems.NewStore(db, 0, nil)
@@ -560,8 +557,7 @@ func TestCreateProviderGroupSourcePublishesRSSInvalidationAfterCommit(t *testing
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO provider_group_selections(
 		    id, subscription_id, provider, group_ref, display_name, selection_mode,
-		    manual_selected, effective_selected, effective_score, count_in_limit
-		) VALUES ('selection-rss-event', 'sub-1', 'anibt', 'alpha', 'Alpha', 'auto', NULL, TRUE, 50, TRUE)`); err != nil {
+		    manual_selected, effective_selected, effective_score) VALUES ('selection-rss-event', 'sub-1', 'anibt', 'alpha', 'Alpha', 'auto', NULL, TRUE, 50)`); err != nil {
 		t.Fatal(err)
 	}
 	store, err := workitems.NewStore(db, 0, nil)
@@ -603,8 +599,7 @@ func TestCreateProviderGroupSourceUsesStableProviderIdentity(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO provider_group_selections(
 		    id, subscription_id, provider, group_ref, display_name, selection_mode,
-		    manual_selected, effective_selected, effective_score, count_in_limit
-		) VALUES ('selection-alpha', 'sub-1', 'anibt', 'alpha', 'Alpha', 'auto', NULL, TRUE, 50, TRUE)`); err != nil {
+		    manual_selected, effective_selected, effective_score) VALUES ('selection-alpha', 'sub-1', 'anibt', 'alpha', 'Alpha', 'auto', NULL, TRUE, 50)`); err != nil {
 		t.Fatal(err)
 	}
 	store, err := workitems.NewStore(db, 0, nil)

@@ -45,7 +45,7 @@ func TestDiscoveryPolicyFromSubgroupsSectionEmptyEntriesUsesProductDefault(t *te
 
 // An explicit manual entry overrides the default, exactly as in the stored form.
 func TestDiscoveryPolicyFromSubgroupsSectionManualEntryOverridesDefault(t *testing.T) {
-	raw := `{"entries":[{"provider":"mikan","group_ref":"1","display_name":"G1","selection_mode":"manual","manual_selected":false,"score":0,"count_in_limit":false,"effective_selected":false}],"max_rss":5}`
+	raw := `{"entries":[{"provider":"mikan","group_ref":"1","display_name":"G1","selection_mode":"manual","manual_selected":false,"score":0,"effective_selected":false}],"max_rss":5}`
 	got := rankedKeys(t, providerdomain.ProviderMikan, raw, "1", "2")
 	if got["1"] != domain.GroupNotSelected {
 		t.Fatalf("manual-off group must not be selected: %+v", got)

@@ -61,7 +61,7 @@ export const settingsProviderCopy = {
       pinnedTitle: "固定分",
       pinnedEmpty: "还没有固定分",
       pinnedHelpLabel: "说明：固定分",
-      pinnedHelp: "设了固定分的字幕组，最终分就是固定分，不再计算默认评分和名称评分；名单照常生效，番剧里手动指定的优先。固定分为 100 表示总是选中，且不占订阅名额。",
+      pinnedHelp: "设了固定分的字幕组，最终分就是固定分，不再计算默认评分和名称评分；名单照常生效，番剧里手动指定的优先。固定分不超过 100。",
       pinSet: "设固定分",
       pinSetAria: "为 {name} 设固定分",
       pinChip: "固定分 {score}",

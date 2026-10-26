@@ -28,8 +28,8 @@ WHERE id = $1`, sourceID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(ctx, `
-INSERT INTO provider_group_selections(id, subscription_id, provider, group_ref, display_name, selection_mode, manual_selected, effective_selected, effective_score, count_in_limit)
-VALUES ('selection-backoff', $1, 'anibt', 'alpha', 'Group', 'auto', NULL, TRUE, 50, TRUE)`, subscriptionID); err != nil {
+INSERT INTO provider_group_selections(id, subscription_id, provider, group_ref, display_name, selection_mode, manual_selected, effective_selected, effective_score)
+VALUES ('selection-backoff', $1, 'anibt', 'alpha', 'Group', 'auto', NULL, TRUE, 50)`, subscriptionID); err != nil {
 		t.Fatal(err)
 	}
 	store, err := workitems.NewStore(db, 0, nil)

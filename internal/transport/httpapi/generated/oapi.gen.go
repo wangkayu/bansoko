@@ -6709,7 +6709,6 @@ type ProviderGroupDiscoveryResult struct {
 type ProviderGroupSelection struct {
 	AvailabilityGeneration *int64       `json:"availability_generation,omitempty"`
 	Available              *bool        `json:"available,omitempty"`
-	CountInLimit           bool         `json:"count_in_limit"`
 	DisplayName            string       `json:"display_name"`
 	EffectiveScore         int          `json:"effective_score"`
 	EffectiveSelected      bool         `json:"effective_selected"`
@@ -7076,7 +7075,6 @@ type RSSListGroupScopeProvider string
 
 // RSSListGroupSelection Server-derived selection state. The browser never infers authorization from rank styling: an unselected group's items are readable but can never be downloaded.
 type RSSListGroupSelection struct {
-	CountInLimit      bool `json:"count_in_limit"`
 	EffectiveSelected bool `json:"effective_selected"`
 
 	// ReasonCode Why this group is in its selection state, produced by the same group-selection decision as effective_selected. Selected groups carry policy_always or ranked_within_max_rss; unselected groups carry policy_never, policy_score_negative or max_rss_exhausted; provider_group_not_observed means the provider no longer lists the group. Null when the decision engine did not cover the group (a custom source has no provider competition) or when replaying the decision does not reproduce the group's own state.
@@ -8175,7 +8173,6 @@ type SubgroupScoreBreakdownSiteMode string
 
 // SubgroupScoreEntry defines model for SubgroupScoreEntry.
 type SubgroupScoreEntry struct {
-	CountInLimit      bool          `json:"count_in_limit"`
 	DisplayName       string        `json:"display_name"`
 	EffectiveSelected bool          `json:"effective_selected"`
 	GroupRef          string        `json:"group_ref"`
@@ -8189,7 +8186,6 @@ type SubgroupScoreEntry struct {
 type SubgroupSelectionFact struct {
 	// Available False when the provider no longer lists the group.
 	Available         bool         `json:"available"`
-	CountInLimit      bool         `json:"count_in_limit"`
 	EffectiveSelected bool         `json:"effective_selected"`
 	GroupRef          string       `json:"group_ref"`
 	Provider          ProviderKind `json:"provider"`

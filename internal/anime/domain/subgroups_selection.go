@@ -13,7 +13,7 @@ import (
 //
 // effective_selected is a projection, not an input: the client renders a
 // predicted selection, while the runtime derives the real selection from
-// selection_mode/manual_selected/score/count_in_limit and max_rss. Persisting
+// selection_mode/manual_selected/score and max_rss. Persisting
 // the projection through the same decision core is what keeps a saved revision
 // and the owner provider-group rows from disagreeing with what the runtime
 // selects (and therefore with what a saved-revision preview requires a feed
@@ -143,17 +143,12 @@ func subgroupsSectionDecisions(section SubgroupsSection, unavailable map[string]
 		}
 		switch entry.SelectionMode {
 		case SelectionModeAuto:
-			// validateSectionValue already bounds an auto score to 1..100, and
-			// a ranked policy always counts in max_rss, so the persisted
-			// count_in_limit is deliberately not consulted here — exactly like
-			// the runtime policy mapping.
+			// validateSectionValue already bounds an auto score to 1..100.
 			input.Mode = selectiondomain.Ranked
 			input.Score = entry.Score
-			input.CountInLimit = true
 		case SelectionModeManual:
 			if entry.ManualSelected != nil && *entry.ManualSelected {
 				input.Mode = selectiondomain.Always
-				input.CountInLimit = entry.CountInLimit
 			} else {
 				input.Mode = selectiondomain.Never
 			}

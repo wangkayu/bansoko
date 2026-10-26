@@ -69,7 +69,7 @@ func (d *Dispatcher) applyDiscoveryScopeTx(ctx context.Context, tx *sql.Tx, subs
 		if _, err := upsertProviderGroupSelection(ctx, tx, subscriptionID, provider, ref, display, decision); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE provider_group_selections SET effective_selected=$4, count_in_limit=$5 WHERE subscription_id=$1 AND provider=$2 AND group_ref=$3`, subscriptionID, provider, ref, decision.Outcome == selectiondomain.GroupSelected, decision.Group.CountInLimit); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE provider_group_selections SET effective_selected=$4 WHERE subscription_id=$1 AND provider=$2 AND group_ref=$3`, subscriptionID, provider, ref, decision.Outcome == selectiondomain.GroupSelected); err != nil {
 			return err
 		}
 		if authoritative {

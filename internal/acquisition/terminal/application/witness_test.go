@@ -20,9 +20,9 @@ func witnessFixture(t *testing.T) qualificationMaterial {
 	t.Helper()
 	m := qualificationFixture(t, "automatic_source")
 	yes, no := true, false
-	p := anime.SubgroupsSection{MaxRss: 2, Entries: []anime.SubgroupScoreEntry{
-		{Provider: "mikan", GroupRef: "1", DisplayName: "always", SelectionMode: "manual", ManualSelected: &yes, CountInLimit: true, Score: 70},
-		{Provider: "mikan", GroupRef: "2", DisplayName: "always free", SelectionMode: "manual", ManualSelected: &yes, CountInLimit: false},
+	p := anime.SubgroupsSection{MaxRss: 1, Entries: []anime.SubgroupScoreEntry{
+		{Provider: "mikan", GroupRef: "1", DisplayName: "always", SelectionMode: "manual", ManualSelected: &yes, Score: 70},
+		{Provider: "mikan", GroupRef: "2", DisplayName: "always free", SelectionMode: "manual", ManualSelected: &yes},
 		{Provider: "mikan", GroupRef: "9", DisplayName: "never", SelectionMode: "manual", ManualSelected: &no},
 		{Provider: "mikan", GroupRef: "99", DisplayName: "missing intent", SelectionMode: "manual", ManualSelected: &yes},
 	}}
@@ -92,11 +92,11 @@ func TestPreparationWitnessWholeRanking(t *testing.T) {
 			t.Fatal("synthetic translation")
 		}
 	}
+	if value.Decisions[0].Score != 100 || value.Decisions[1].Score != 100 {
+		t.Fatal("required groups are written at the fixed maximum score")
+	}
 	if value.Decisions[4].Score != 0 || value.Decisions[5].Score != -1 {
 		t.Fatal("resolved zero/negative score changed")
-	}
-	if !value.Decisions[0].CountInLimit || value.Decisions[1].CountInLimit || value.Decisions[6].CountInLimit {
-		t.Fatal("count semantics")
 	}
 	if string(mustCanonical(value.SelectedRefs)) != `["1","10","2"]` {
 		t.Fatalf("selected: %v", value.SelectedRefs)
@@ -181,8 +181,8 @@ func TestPreparationWitnessPermutationAndNegativeRemaining(t *testing.T) {
 		}
 		v := decodeWitness(t, baseline)
 		for _, d := range v.Decisions {
-			if d.GroupRef == "10" && maxRSS <= 1 && d.ReasonCode != "max_rss_exhausted" {
-				t.Fatal("always did not exhaust remaining")
+			if d.GroupRef == "10" && maxRSS == 0 && d.ReasonCode != "max_rss_exhausted" {
+				t.Fatal("zero max_rss still selected a ranked group")
 			}
 		}
 		// Shuffle explicit rules while retaining the policy's own original order in

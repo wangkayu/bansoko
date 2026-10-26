@@ -193,7 +193,7 @@ func checkQualifiedQueuedPostgres(t *testing.T, ctx context.Context, db *sql.DB,
 				case "provider_score_string":
 					defaults["subgroups"] = json.RawMessage(`{"max_rss":3,"entries":[],"name_keywords":null,"provider_defaults":{"anibt":{"mode":"whitelist","score":"50","groups":[]}}}`)
 				case "entry_bool_string":
-					defaults["subgroups"] = json.RawMessage(`{"max_rss":3,"entries":[{"provider":"anibt","group_ref":"a","display_name":"A","selection_mode":"auto","score":50,"count_in_limit":"true"}],"name_keywords":null,"provider_defaults":null}`)
+					defaults["subgroups"] = json.RawMessage(`{"max_rss":3,"entries":[{"provider":"anibt","group_ref":"a","display_name":"A","selection_mode":"auto","score":50}],"name_keywords":null,"provider_defaults":null}`)
 				case "parser_retired_offset_key":
 					defaults["parser"] = json.RawMessage(`{"episode_patterns":[],"default_offset":0}`)
 				case "naming_nonobject":

@@ -86,7 +86,7 @@ func TestRankObservedGroupsHonoursManualOverrideAndAvailability(t *testing.T) {
 	}
 	decisions, err := RankObservedGroups(providerdomain.ProviderAniBT, []ObservedGroup{
 		{ExternalID: "blocked", Name: "Blocked", Available: true, Manual: boolPtr(false)},
-		{ExternalID: "pinned", Name: "Pinned", Available: true, Manual: boolPtr(true), CountInLimit: true},
+		{ExternalID: "pinned", Name: "Pinned", Available: true, Manual: boolPtr(true)},
 		{ExternalID: "gone", Name: "Gone", Available: false},
 	}, policy)
 	if err != nil {

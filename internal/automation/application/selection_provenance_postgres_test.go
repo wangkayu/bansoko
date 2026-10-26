@@ -18,7 +18,6 @@ func TestDerivedNeverCanBeWithdrawnWithoutRestoreAuto(t *testing.T) {
 	}
 	decision.Group.Mode = selectiondomain.Ranked
 	decision.Group.Score = 80
-	decision.Group.CountInLimit = true
 	decision.Outcome = selectiondomain.GroupSelected
 	if _, err := upsertProviderGroupSelection(ctx, db, "sub-1", "anibt", "12345", "Renamed Display", decision); err != nil {
 		t.Fatal(err)

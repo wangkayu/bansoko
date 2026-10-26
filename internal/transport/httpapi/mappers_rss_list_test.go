@@ -36,7 +36,7 @@ func rssListViewFixture() readmodelapplication.RSSListView {
 		Groups: []readmodelapplication.RSSListGroup{{
 			Scope:       readmodelapplication.RSSListGroupScope{Provider: "anibt", ProviderEntryRef: "1001", ProviderGroupRef: "12"},
 			DisplayName: "Group 12", Score: 80,
-			Selection: readmodelapplication.RSSListGroupSelection{EffectiveSelected: true, SelectionMode: "auto", CountInLimit: true},
+			Selection: readmodelapplication.RSSListGroupSelection{EffectiveSelected: true, SelectionMode: "auto"},
 			Offset:    readmodelapplication.RSSListOffset{Value: 1, Editable: true, Source: readmodelapplication.RSSListOffsetSourceLink},
 			Feed: readmodelapplication.RSSListFeedStatus{
 				State: readmodelapplication.RSSListFeedFresh, SnapshotID: "snap-12", SnapshotVersion: 2,

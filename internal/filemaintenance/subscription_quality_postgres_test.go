@@ -30,7 +30,7 @@ func TestSubscriptionScoresCannotChangeProductionReplacementQuality(t *testing.T
 				if _, err := db.Exec(`UPDATE rss_sources SET source_kind='provider_group',provider='anibt',provider_entry_ref='123',provider_group_ref=$2,discovery_snapshot_version='v1' WHERE id=$1`, "src-"+entry.id, entry.group); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := db.Exec(`INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,effective_selected,effective_score,count_in_limit,available) VALUES($1,'sub-1','anibt',$2,$2,'auto',TRUE,$3,TRUE,TRUE)`, entry.id, entry.group, entry.score); err != nil {
+				if _, err := db.Exec(`INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,effective_selected,effective_score,available) VALUES($1,'sub-1','anibt',$2,$2,'auto',TRUE,$3,TRUE)`, entry.id, entry.group, entry.score); err != nil {
 					t.Fatal(err)
 				}
 			}

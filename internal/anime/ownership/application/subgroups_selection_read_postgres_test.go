@@ -17,7 +17,7 @@ func TestSubgroupsOwnerProjectsPersistedAvailabilityAndGeneration(t *testing.T) 
 	}
 	// Auto observations have no manual intent; retired manual includes retain
 	// the user's explicit intent even though availability blocks admission.
-	if _, err := db.Exec(`INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,manual_selected,effective_selected,effective_score,count_in_limit,available,availability_generation,version) VALUES('availability-active',$1,'anibt','active','Active','auto',NULL,TRUE,80,TRUE,TRUE,17,9),('availability-retired',$1,'anibt','retired','Retired','manual',TRUE,TRUE,95,FALSE,FALSE,23,11)`, subscriptionID); err != nil {
+	if _, err := db.Exec(`INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,manual_selected,effective_selected,effective_score,available,availability_generation,version) VALUES('availability-active',$1,'anibt','active','Active','auto',NULL,TRUE,80,TRUE,17,9),('availability-retired',$1,'anibt','retired','Retired','manual',TRUE,TRUE,95,FALSE,23,11)`, subscriptionID); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.readSubgroupsOwnerApplication(context.Background(), animeID, subscriptionID)

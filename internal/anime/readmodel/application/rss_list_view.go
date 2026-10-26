@@ -127,7 +127,6 @@ type RSSListGroupScope struct {
 type RSSListGroupSelection struct {
 	EffectiveSelected bool
 	SelectionMode     string
-	CountInLimit      bool
 	// Source says whether the group is configured or only observed (RSSListSelectionSource*).
 	Source string
 	// ReasonCode is the group-selection decision's own reason for this state
@@ -738,7 +737,7 @@ func (s *Service) composeOwnerRSSListView(ctx context.Context, mode string, work
 			provider, entryRef, groupRef = string(p.Provider), p.ProviderEntryRef, p.ProviderGroupRef
 		}
 		sourcesByID[src.ID] = src
-		group := RSSListGroup{Scope: RSSListGroupScope{Provider: provider, ProviderEntryRef: entryRef, ProviderGroupRef: groupRef, RSSSourceID: src.ID}, DisplayName: src.GroupName, Selection: RSSListGroupSelection{EffectiveSelected: true, SelectionMode: string(animedomain.SelectionModeAuto), CountInLimit: true}, Offset: RSSListOffset{Value: src.EpisodeOffset, Editable: offsetEditable, Source: RSSListOffsetSourceLink}, Feed: RSSListFeedStatus{State: RSSListFeedFresh}, Items: []RSSListItem{}}
+		group := RSSListGroup{Scope: RSSListGroupScope{Provider: provider, ProviderEntryRef: entryRef, ProviderGroupRef: groupRef, RSSSourceID: src.ID}, DisplayName: src.GroupName, Selection: RSSListGroupSelection{EffectiveSelected: true, SelectionMode: string(animedomain.SelectionModeAuto)}, Offset: RSSListOffset{Value: src.EpisodeOffset, Editable: offsetEditable, Source: RSSListOffsetSourceLink}, Feed: RSSListFeedStatus{State: RSSListFeedFresh}, Items: []RSSListItem{}}
 		if runtime, ok := runtimesBySource[src.ID]; ok {
 			group.Feed.State = rssListRuntimeFeedState(runtime.Health)
 			if runtime.ReasonCode != nil {
@@ -1146,7 +1145,6 @@ func (s *Service) composeRSSListViewFor(
 			Selection: RSSListGroupSelection{
 				EffectiveSelected: entry.selected,
 				SelectionMode:     entry.selectionMode,
-				CountInLimit:      entry.countInLimit,
 				Source:            selectionSource(sources, entry.groupRef),
 				ReasonCode:        entry.reasonCode,
 			},
@@ -1387,7 +1385,6 @@ type rssListGroupEntry struct {
 	score            int
 	selected         bool
 	selectionMode    string
-	countInLimit     bool
 	reasonCode       *string
 	offset           RSSListOffset
 }
@@ -1510,7 +1507,6 @@ func rssListGroupEntriesFor(draft animedomain.AnimeDraft, effective animedomain.
 			score:            entry.Score,
 			selected:         entry.EffectiveSelected,
 			selectionMode:    string(entry.SelectionMode),
-			countInLimit:     entry.CountInLimit,
 			reasonCode:       reasonCode,
 			offset:           offset,
 		})
@@ -1562,7 +1558,7 @@ func (s *Service) customOriginGroups(draft animedomain.AnimeDraft) []RSSListGrou
 				ProviderGroupRef: strings.TrimSpace(source.GroupName),
 			},
 			DisplayName: strings.TrimSpace(source.GroupName),
-			Selection:   RSSListGroupSelection{EffectiveSelected: true, SelectionMode: string(animedomain.SelectionModeAuto), CountInLimit: true},
+			Selection:   RSSListGroupSelection{EffectiveSelected: true, SelectionMode: string(animedomain.SelectionModeAuto)},
 			Offset:      offset,
 			Feed:        RSSListFeedStatus{State: RSSListFeedRefreshRequired, ErrorCode: RSSListReasonUnsupportedOrigin, ErrorReason: "该来源没有持久化的 provider feed 快照，无法渲染精确的 torrent 结构。"},
 			Items:       []RSSListItem{},

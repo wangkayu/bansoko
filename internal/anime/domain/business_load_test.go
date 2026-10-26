@@ -72,7 +72,7 @@ func providerDraftForLoadTest(t *testing.T) AnimeDraft {
 		Origin: SubscriptionOriginMikan, OriginEntryRef: &entry, Title: "Show",
 		Subgroups: SubgroupsSection{MaxRss: 3, Entries: []SubgroupScoreEntry{{
 			Provider: ProviderKindMikan, GroupRef: "678", DisplayName: "Group 678", SelectionMode: SelectionModeManual,
-			ManualSelected: &selected, EffectiveSelected: true, Score: 50, CountInLimit: true,
+			ManualSelected: &selected, EffectiveSelected: true, Score: 50, 
 		}}},
 		// Only release_filter is present; the other sections are absent and
 		// take a copy of the preset value.

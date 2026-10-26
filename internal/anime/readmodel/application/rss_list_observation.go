@@ -185,9 +185,10 @@ func applyObservedGroupsWithSite(draft animedomain.AnimeDraft, effective animedo
 		selected := decision.Outcome == selectiondomain.GroupSelected
 		if entry, ok := explicit[ref]; ok {
 			entry.EffectiveSelected = selected
-			if entry.SelectionMode == animedomain.SelectionModeAuto {
+			if entry.SelectionMode == animedomain.SelectionModeAuto || decision.Group.Mode == selectiondomain.Always {
 				// An automatic entry has no score of its own: it shows the
-				// score the live site policy gave it.
+				// score the live site policy gave it. A manual include is
+				// always selected and scores AlwaysGroupScore.
 				entry.Score = decision.Group.Score
 			}
 			entries = append(entries, entry)
@@ -201,12 +202,11 @@ func applyObservedGroupsWithSite(draft animedomain.AnimeDraft, effective animedo
 		case selectiondomain.Ranked:
 			entry.SelectionMode = animedomain.SelectionModeAuto
 			entry.Score = decision.Group.Score
-			entry.CountInLimit = true
 		case selectiondomain.Always:
 			on := true
 			entry.SelectionMode = animedomain.SelectionModeManual
 			entry.ManualSelected = &on
-			entry.CountInLimit = decision.Group.CountInLimit
+			entry.Score = decision.Group.Score
 		default:
 			off := false
 			entry.SelectionMode = animedomain.SelectionModeManual

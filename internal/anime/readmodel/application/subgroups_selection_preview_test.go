@@ -7,6 +7,7 @@ import (
 
 	animedomain "bansoko/internal/anime/domain"
 	ownershipapplication "bansoko/internal/anime/ownership/application"
+	selectiondomain "bansoko/internal/selection/domain"
 )
 
 // The subgroup tab shows the selection an unsaved value would make. These
@@ -51,7 +52,7 @@ func TestPreviewSubgroupsSelectionDraftAgreesWithTheRSSListRead(t *testing.T) {
 		if !ok {
 			t.Fatalf("group %s missing from preview", group.Scope.ProviderGroupRef)
 		}
-		if fact.EffectiveSelected != group.Selection.EffectiveSelected || fact.CountInLimit != group.Selection.CountInLimit || !fact.Available {
+		if fact.EffectiveSelected != group.Selection.EffectiveSelected || !fact.Available {
 			t.Fatalf("preview %+v disagrees with read %+v", fact, group.Selection)
 		}
 		if (fact.ReasonCode == nil) != (group.Selection.ReasonCode == nil) || (fact.ReasonCode != nil && *fact.ReasonCode != *group.Selection.ReasonCode) {
@@ -70,7 +71,7 @@ func TestPreviewSubgroupsSelectionDraftFollowsUnsavedEdits(t *testing.T) {
 		}
 		selected := 0
 		for _, fact := range preview.Groups {
-			if fact.EffectiveSelected && fact.CountInLimit {
+			if fact.EffectiveSelected && fact.ReasonCode != nil && *fact.ReasonCode == selectiondomain.ReasonRankedWithinMaxRSS {
 				selected++
 			}
 		}
@@ -114,7 +115,7 @@ func (r *previewOwnerReader) PreviewSubgroupsSelectionApplication(_ context.Cont
 
 func TestPreviewSubgroupsSelectionOwnerDraftDelegatesToTheOwnerDecision(t *testing.T) {
 	reason := "max_rss_exhausted"
-	owners := &previewOwnerReader{facts: []ownershipapplication.SubgroupSelectionPreviewFact{{Provider: "mikan", GroupRef: "7", Available: true, CountInLimit: true, ReasonCode: &reason}}}
+	owners := &previewOwnerReader{facts: []ownershipapplication.SubgroupSelectionPreviewFact{{Provider: "mikan", GroupRef: "7", Available: true, ReasonCode: &reason}}}
 	service := &Service{owners: owners}
 	section := ownershipapplication.SubgroupsSection{MaxRss: 0, Entries: []ownershipapplication.SubgroupScoreEntry{}}
 	preview, err := service.PreviewSubgroupsSelection(context.Background(), SubgroupsSelectionPreviewInput{InputSource: "owner_draft", ManagedAnimeID: "anime-1", Subgroups: &section})

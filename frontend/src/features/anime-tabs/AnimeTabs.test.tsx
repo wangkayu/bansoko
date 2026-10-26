@@ -39,7 +39,7 @@ function ownerGroup(rssSourceID: string, groupName = rssSourceID, selected = tru
     scope: { provider: "anibt" as const, provider_entry_ref: "anime-1", provider_group_ref: rssSourceID, rss_source_id: rssSourceID },
     display_name: groupName,
     score,
-    selection: { source: "configured" as const, effective_selected: selected, selection_mode: "auto" as const, count_in_limit: true },
+    selection: { source: "configured" as const, effective_selected: selected, selection_mode: "auto" as const },
     offset: { value: 0, editable: true, source: "link" as const },
     feed: { state: "fresh" as const, snapshot_id: "snapshot-1", snapshot_version: 1, content_hash: "hash-1" },
     items: [],
@@ -201,7 +201,6 @@ function workspaceFixture(): AnimeWorkspace {
           manual_selected: null,
           effective_selected: true,
           effective_score: 90,
-          count_in_limit: true,
           version: 1,
         },
         {
@@ -215,7 +214,6 @@ function workspaceFixture(): AnimeWorkspace {
           manual_selected: false,
           effective_selected: false,
           effective_score: 50,
-          count_in_limit: true,
           version: 1,
         },
       ],
@@ -518,7 +516,6 @@ describe("AnimeTabs Subgroups group_actions", () => {
           manual_selected: null,
           effective_selected: true,
           score: 80,
-          count_in_limit: true,
         },
       ],
     };
@@ -913,7 +910,7 @@ describe("AnimeTabs owner RSS read model preview", () => {
     const calls = stubPreviewFetch();
     const workspace = workspaceFixture();
     workspace.subgroups.subgroups.entries = [
-      { provider: "anibt", group_ref: "selected", display_name: "selected", selection_mode: "auto", manual_selected: null, effective_selected: true, score: 90, count_in_limit: true },
+      { provider: "anibt", group_ref: "selected", display_name: "selected", selection_mode: "auto", manual_selected: null, effective_selected: true, score: 90 },
     ];
     workspace.releases = [{
       id: "release-1", rss_source_id: "selected", stable_item_key: "stable-1",
@@ -1061,7 +1058,7 @@ describe("AnimeTabs owner RSS read model preview", () => {
     stubAuxiliaryFetch(subscribedView);
     const workspace = workspaceFixture();
     workspace.subgroups.subgroups.entries = [
-      { provider: "anibt", group_ref: "selected", display_name: "selected", selection_mode: "auto", manual_selected: null, effective_selected: true, score: 90, count_in_limit: true },
+      { provider: "anibt", group_ref: "selected", display_name: "selected", selection_mode: "auto", manual_selected: null, effective_selected: true, score: 90 },
     ];
     renderTabs({ animeID: "anime-1", workspace, onChanged: () => {}, initialTab: "rss" });
     await screen.findByRole("button", { name: /展开 selected/ });
@@ -1078,7 +1075,7 @@ describe("AnimeTabs owner RSS read model preview", () => {
     stubAuxiliaryFetch(ownerRssListView({ groups: [ownerGroup("selected", "selected", true)] }));
     const workspace = workspaceFixture();
     workspace.subgroups.subgroups.entries = [
-      { provider: "anibt", group_ref: "selected", display_name: "selected", selection_mode: "auto", manual_selected: null, effective_selected: false, score: 90, count_in_limit: true },
+      { provider: "anibt", group_ref: "selected", display_name: "selected", selection_mode: "auto", manual_selected: null, effective_selected: false, score: 90 },
     ];
     workspace.subgroups.effective_selection = [
       {
@@ -1092,7 +1089,6 @@ describe("AnimeTabs owner RSS read model preview", () => {
         manual_selected: null,
         effective_selected: false,
         effective_score: 90,
-        count_in_limit: true,
         version: 1,
       },
     ];
@@ -1757,7 +1753,6 @@ describe("AnimeTabs Subgroups discover 刷新", () => {
                     manual_selected: null,
                     effective_selected: true,
                     score: 90,
-                    count_in_limit: true,
                   },
                 ],
               },
@@ -1851,7 +1846,6 @@ describe("AnimeTabs Subgroups discover 刷新", () => {
           manual_selected: false,
           effective_selected: true,
           score: 90,
-          count_in_limit: true,
         },
       ],
     };

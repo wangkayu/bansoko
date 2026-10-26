@@ -227,7 +227,7 @@ func readmodelProviderDraftWithGroups(t *testing.T, origin generated.Subscriptio
 		}
 		entries = append(entries, generated.SubgroupScoreEntry{
 			Provider: provider, GroupRef: group, DisplayName: "Group " + group,
-			SelectionMode: generated.SelectionModeAuto, Score: 50, CountInLimit: true,
+			SelectionMode: generated.SelectionModeAuto, Score: 50, 
 			EffectiveSelected: false,
 		})
 	}

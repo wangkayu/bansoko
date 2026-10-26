@@ -601,7 +601,6 @@ func mapWorkspaceSelections(value []ownershipapplication.ProviderGroupSelection)
 	result := make([]generated.ProviderGroupSelection, len(value))
 	for i, item := range value {
 		result[i] = generated.ProviderGroupSelection{
-			CountInLimit:      item.CountInLimit,
 			DisplayName:       item.DisplayName,
 			EffectiveScore:    item.EffectiveScore,
 			EffectiveSelected: item.EffectiveSelected,
@@ -628,7 +627,6 @@ func mapWorkspaceSubgroupSection(value ownershipapplication.SubgroupsSection) ge
 	}
 	for _, item := range value.Entries {
 		result.Entries = append(result.Entries, generated.SubgroupScoreEntry{
-			CountInLimit:      item.CountInLimit,
 			DisplayName:       item.DisplayName,
 			EffectiveSelected: item.EffectiveSelected,
 			GroupRef:          item.GroupRef,

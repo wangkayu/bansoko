@@ -18,10 +18,10 @@ func TestSubgroupsSectionWithEffectiveSelectionsMatchesGroupEngine(t *testing.T)
 	section := SubgroupsSection{
 		MaxRss: 2,
 		Entries: []SubgroupScoreEntry{
-			{Provider: ProviderKindAnibt, GroupRef: "always-locked", DisplayName: "Locked", SelectionMode: SelectionModeManual, ManualSelected: selectionBoolPointer(true), Score: 10, CountInLimit: false},
-			{Provider: ProviderKindAnibt, GroupRef: "ranked-high", DisplayName: "High", SelectionMode: SelectionModeAuto, Score: 90, CountInLimit: true},
-			{Provider: ProviderKindAnibt, GroupRef: "ranked-low", DisplayName: "Low", SelectionMode: SelectionModeAuto, Score: 50, CountInLimit: true},
-			{Provider: ProviderKindAnibt, GroupRef: "excluded", DisplayName: "Excluded", SelectionMode: SelectionModeManual, ManualSelected: selectionBoolPointer(false), Score: 99, CountInLimit: true},
+			{Provider: ProviderKindAnibt, GroupRef: "always-locked", DisplayName: "Locked", SelectionMode: SelectionModeManual, ManualSelected: selectionBoolPointer(true), Score: 10},
+			{Provider: ProviderKindAnibt, GroupRef: "ranked-high", DisplayName: "High", SelectionMode: SelectionModeAuto, Score: 90},
+			{Provider: ProviderKindAnibt, GroupRef: "ranked-low", DisplayName: "Low", SelectionMode: SelectionModeAuto, Score: 50},
+			{Provider: ProviderKindAnibt, GroupRef: "excluded", DisplayName: "Excluded", SelectionMode: SelectionModeManual, ManualSelected: selectionBoolPointer(false), Score: 99},
 		},
 	}
 	got, err := SubgroupsSectionWithEffectiveSelections(section)
@@ -42,10 +42,10 @@ func TestSubgroupsSectionWithEffectiveSelectionsMatchesGroupEngine(t *testing.T)
 
 	// Cross-check against the ref-based engine on the same data.
 	groups := []selectiondomain.EffectiveProviderGroup{
-		effectiveTestGroup(t, providerdomain.ProviderAniBT, "always-locked", selectiondomain.Always, 0, false),
-		effectiveTestGroup(t, providerdomain.ProviderAniBT, "ranked-high", selectiondomain.Ranked, 90, true),
-		effectiveTestGroup(t, providerdomain.ProviderAniBT, "ranked-low", selectiondomain.Ranked, 50, true),
-		effectiveTestGroup(t, providerdomain.ProviderAniBT, "excluded", selectiondomain.Never, 0, false),
+		effectiveTestGroup(t, providerdomain.ProviderAniBT, "always-locked", selectiondomain.Always, 0),
+		effectiveTestGroup(t, providerdomain.ProviderAniBT, "ranked-high", selectiondomain.Ranked, 90),
+		effectiveTestGroup(t, providerdomain.ProviderAniBT, "ranked-low", selectiondomain.Ranked, 50),
+		effectiveTestGroup(t, providerdomain.ProviderAniBT, "excluded", selectiondomain.Never, 0),
 	}
 	engine, err := selectiondomain.SelectProviderGroups(groups, section.MaxRss)
 	if err != nil {
@@ -90,9 +90,9 @@ func TestSubgroupsSectionWithEffectiveSelectionsKeepsUnselectedAndCustom(t *test
 	section := SubgroupsSection{
 		MaxRss: 1,
 		Entries: []SubgroupScoreEntry{
-			{Provider: ProviderKindMikan, GroupRef: "1", DisplayName: "First", SelectionMode: SelectionModeAuto, Score: 80, CountInLimit: true},
-			{Provider: ProviderKindMikan, GroupRef: "2", DisplayName: "Second", SelectionMode: SelectionModeAuto, Score: 70, CountInLimit: true},
-			{Provider: ProviderKindMikan, GroupRef: "3", DisplayName: "Manual unset", SelectionMode: SelectionModeManual, Score: 5, CountInLimit: true},
+			{Provider: ProviderKindMikan, GroupRef: "1", DisplayName: "First", SelectionMode: SelectionModeAuto, Score: 80},
+			{Provider: ProviderKindMikan, GroupRef: "2", DisplayName: "Second", SelectionMode: SelectionModeAuto, Score: 70},
+			{Provider: ProviderKindMikan, GroupRef: "3", DisplayName: "Manual unset", SelectionMode: SelectionModeManual, Score: 5},
 		},
 	}
 	got, err = SubgroupsSectionWithEffectiveSelections(section)
@@ -117,7 +117,7 @@ func TestResolveDraftEffectiveSectionsStoresComputedEffectiveSelections(t *testi
 	draft.Subgroups = SubgroupsSection{
 		MaxRss: 3,
 		Entries: []SubgroupScoreEntry{
-			{Provider: ProviderKindAnibt, GroupRef: "locked-group", DisplayName: "Locked", SelectionMode: SelectionModeManual, ManualSelected: selectionBoolPointer(true), Score: 40, CountInLimit: false, EffectiveSelected: false},
+			{Provider: ProviderKindAnibt, GroupRef: "locked-group", DisplayName: "Locked", SelectionMode: SelectionModeManual, ManualSelected: selectionBoolPointer(true), Score: 40, EffectiveSelected: false},
 		},
 	}
 	resolved, err := ResolveDraftEffectiveSections(draft)
@@ -133,7 +133,7 @@ func TestResolveDraftEffectiveSectionsStoresComputedEffectiveSelections(t *testi
 	}
 }
 
-func effectiveTestGroup(t *testing.T, provider providerdomain.Kind, ref string, mode selectiondomain.SelectionMode, score int, countInLimit bool) selectiondomain.EffectiveProviderGroup {
+func effectiveTestGroup(t *testing.T, provider providerdomain.Kind, ref string, mode selectiondomain.SelectionMode, score int) selectiondomain.EffectiveProviderGroup {
 	t.Helper()
 	groupRef, err := providerdomain.NewGroupRef(provider, ref)
 	if err != nil {
@@ -141,7 +141,7 @@ func effectiveTestGroup(t *testing.T, provider providerdomain.Kind, ref string, 
 	}
 	return selectiondomain.EffectiveProviderGroup{
 		Ref: groupRef, Observed: true, Mode: mode, Score: score,
-		CountInLimit: countInLimit, PolicySource: selectiondomain.SourceAnimeExact, PolicyVersion: 1,
+		PolicySource: selectiondomain.SourceAnimeExact, PolicyVersion: 1,
 	}
 }
 
@@ -153,11 +153,11 @@ func TestSubgroupsSectionSelectionReasonsMatchTheDecision(t *testing.T) {
 	section := SubgroupsSection{
 		MaxRss: 1,
 		Entries: []SubgroupScoreEntry{
-			{Provider: ProviderKindAnibt, GroupRef: "locked", DisplayName: "Locked", SelectionMode: SelectionModeManual, ManualSelected: selectionBoolPointer(true), Score: 10, CountInLimit: false},
-			{Provider: ProviderKindAnibt, GroupRef: "winner", DisplayName: "Winner", SelectionMode: SelectionModeAuto, Score: 90, CountInLimit: true},
-			{Provider: ProviderKindAnibt, GroupRef: "runner-up", DisplayName: "Runner", SelectionMode: SelectionModeAuto, Score: 70, CountInLimit: true},
-			{Provider: ProviderKindAnibt, GroupRef: "excluded", DisplayName: "Excluded", SelectionMode: SelectionModeManual, ManualSelected: selectionBoolPointer(false), Score: 99, CountInLimit: false},
-			{Provider: ProviderKindAnibt, GroupRef: "retired", DisplayName: "Retired", SelectionMode: SelectionModeAuto, Score: 95, CountInLimit: true},
+			{Provider: ProviderKindAnibt, GroupRef: "locked", DisplayName: "Locked", SelectionMode: SelectionModeManual, ManualSelected: selectionBoolPointer(true), Score: 10},
+			{Provider: ProviderKindAnibt, GroupRef: "winner", DisplayName: "Winner", SelectionMode: SelectionModeAuto, Score: 90},
+			{Provider: ProviderKindAnibt, GroupRef: "runner-up", DisplayName: "Runner", SelectionMode: SelectionModeAuto, Score: 70},
+			{Provider: ProviderKindAnibt, GroupRef: "excluded", DisplayName: "Excluded", SelectionMode: SelectionModeManual, ManualSelected: selectionBoolPointer(false), Score: 99},
+			{Provider: ProviderKindAnibt, GroupRef: "retired", DisplayName: "Retired", SelectionMode: SelectionModeAuto, Score: 95},
 		},
 	}
 	reasons, err := SubgroupsSectionSelectionReasons(section, map[string]struct{}{"anibt:retired": {}})
@@ -202,8 +202,8 @@ func TestSubgroupsSectionSelectionReasonsKeepEachProviderInItsOwnCompetition(t *
 	section := SubgroupsSection{
 		MaxRss: 1,
 		Entries: []SubgroupScoreEntry{
-			{Provider: ProviderKindAnibt, GroupRef: "anibt-a", DisplayName: "AniBT A", SelectionMode: SelectionModeAuto, Score: 80, CountInLimit: true},
-			{Provider: ProviderKindMikan, GroupRef: "58", DisplayName: "Mikan", SelectionMode: SelectionModeAuto, Score: 80, CountInLimit: true},
+			{Provider: ProviderKindAnibt, GroupRef: "anibt-a", DisplayName: "AniBT A", SelectionMode: SelectionModeAuto, Score: 80},
+			{Provider: ProviderKindMikan, GroupRef: "58", DisplayName: "Mikan", SelectionMode: SelectionModeAuto, Score: 80},
 		},
 	}
 	reasons, err := SubgroupsSectionSelectionReasonsForKeys(section, []string{"anibt:anibt-a", "mikan:58"}, nil)

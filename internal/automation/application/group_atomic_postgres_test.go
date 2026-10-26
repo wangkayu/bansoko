@@ -13,7 +13,7 @@ func TestForcedRefreshProvisionFailureKeepsPriorScopeAndSnapshot(t *testing.T) {
 	db := openDispatcherTestDB(t)
 	insertProviderSubscription(t, db)
 	ctx := context.Background()
-	if _, err := db.Exec(`INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,manual_selected,effective_selected,effective_score,count_in_limit,available,availability_generation) VALUES('old','sub-1','anibt','old','Old','manual',TRUE,TRUE,0,FALSE,TRUE,7)`); err != nil {
+	if _, err := db.Exec(`INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,manual_selected,effective_selected,effective_score,available,availability_generation) VALUES('old','sub-1','anibt','old','Old','manual',TRUE,TRUE,0,TRUE,7)`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ownerTestDB(t).Exec(`CREATE FUNCTION test_group_atomic_fail() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected group source failure'; END $$; CREATE TRIGGER test_group_atomic_fail BEFORE INSERT ON rss_sources FOR EACH ROW EXECUTE FUNCTION test_group_atomic_fail()`); err != nil {

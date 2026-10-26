@@ -273,7 +273,6 @@ describe("api client", () => {
           manual_selected: null,
           effective_selected: true,
           score: 80,
-          count_in_limit: true,
         },
         {
           provider: "anibt" as const,
@@ -283,7 +282,6 @@ describe("api client", () => {
           manual_selected: true,
           effective_selected: true,
           score: 0,
-          count_in_limit: false,
         },
         {
           provider: "anibt" as const,
@@ -293,7 +291,6 @@ describe("api client", () => {
           manual_selected: false,
           effective_selected: false,
           score: 20,
-          count_in_limit: true,
         },
       ],
     };

@@ -18,7 +18,6 @@ const entries: SubgroupScoreEntry[] = [
     manual_selected: null,
     effective_selected: true,
     score: 88,
-    count_in_limit: true,
   },
   {
     provider: "anibt",
@@ -28,7 +27,6 @@ const entries: SubgroupScoreEntry[] = [
     manual_selected: true,
     effective_selected: true,
     score: 70,
-    count_in_limit: false,
   },
   {
     provider: "anibt",
@@ -38,7 +36,6 @@ const entries: SubgroupScoreEntry[] = [
     manual_selected: false,
     effective_selected: false,
     score: 60,
-    count_in_limit: true,
   },
 ];
 
@@ -78,7 +75,6 @@ function selectionFacts(
     provider?: "anibt" | "mikan";
     group_ref: string;
     effective_selected: boolean;
-    count_in_limit: boolean;
     reason_code?: string | null;
     score_breakdown?: ServerSelectionFact["score_breakdown"];
   }>,
@@ -123,11 +119,11 @@ describe("SelectionOverrideFields（直接行列表）", () => {
       <ControlledFields
         initial={{ max_rss: 3, entries: rows }}
         serverSelection={[
-          { provider: "anibt", group_ref: "never-high", effective_selected: false, count_in_limit: true },
-          { provider: "anibt", group_ref: "auto-b", effective_selected: false, count_in_limit: true },
-          { provider: "anibt", group_ref: "auto-a", effective_selected: false, count_in_limit: true },
-          { provider: "anibt", group_ref: "auto-top", effective_selected: false, count_in_limit: true },
-          { provider: "anibt", group_ref: "picked-low", effective_selected: true, count_in_limit: true },
+          { provider: "anibt", group_ref: "never-high", effective_selected: false },
+          { provider: "anibt", group_ref: "auto-b", effective_selected: false },
+          { provider: "anibt", group_ref: "auto-a", effective_selected: false },
+          { provider: "anibt", group_ref: "auto-top", effective_selected: false },
+          { provider: "anibt", group_ref: "picked-low", effective_selected: true },
         ]}
       />,
     );
@@ -160,9 +156,9 @@ describe("SelectionOverrideFields（直接行列表）", () => {
     render(
       <ControlledFields
         serverSelection={selectionFacts([
-          { group_ref: "ranked-ref", effective_selected: true, count_in_limit: true },
-          { group_ref: "always-ref", effective_selected: false, count_in_limit: true },
-          { group_ref: "never-ref", effective_selected: true, count_in_limit: false },
+          { group_ref: "ranked-ref", effective_selected: true, reason_code: "ranked_within_max_rss" },
+          { group_ref: "always-ref", effective_selected: false },
+          { group_ref: "never-ref", effective_selected: true, reason_code: "policy_always" },
         ])}
       />,
     );
@@ -183,8 +179,8 @@ describe("SelectionOverrideFields（直接行列表）", () => {
     const { unmount } = render(
       <ControlledFields
         serverSelection={selectionFacts([
-          { group_ref: "ranked-ref", effective_selected: true, count_in_limit: true },
-          { group_ref: "always-ref", effective_selected: false, count_in_limit: true, reason_code: reason },
+          { group_ref: "ranked-ref", effective_selected: true },
+          { group_ref: "always-ref", effective_selected: false, reason_code: reason },
         ])}
       />,
     );
@@ -198,8 +194,8 @@ describe("SelectionOverrideFields（直接行列表）", () => {
     render(
       <ControlledFields
         serverSelection={selectionFacts([
-          { group_ref: "ranked-ref", effective_selected: true, count_in_limit: true },
-          { group_ref: "always-ref", effective_selected: false, count_in_limit: true, reason_code: "brand_new_code" },
+          { group_ref: "ranked-ref", effective_selected: true },
+          { group_ref: "always-ref", effective_selected: false, reason_code: "brand_new_code" },
         ])}
       />,
     );
@@ -207,16 +203,16 @@ describe("SelectionOverrideFields（直接行列表）", () => {
     expect(within(unknownRows[1]).getByText(t("anime.sources.unselected"))).toHaveAttribute("title", "brand_new_code");
   });
 
-  it("槽位计数只认服务端 selection.count_in_limit，且与草稿策略/分数无关", () => {
+  it("名额计数只认服务端原因码，必选等其他原因的选中不占名额", () => {
     // In the draft, ranked-ref is auto+counted; the server's fact is that it is selected but not
     // counted. Another provider's same-named group's facts must not pollute this provider's rows
     // (otherwise always-ref would be translated into subscribed).
     render(
       <ControlledFields
         serverSelection={selectionFacts([
-          { group_ref: "ranked-ref", effective_selected: true, count_in_limit: false },
-          { group_ref: "always-ref", effective_selected: false, count_in_limit: true },
-          { provider: "mikan", group_ref: "always-ref", effective_selected: true, count_in_limit: true },
+          { group_ref: "ranked-ref", effective_selected: true, reason_code: "policy_always" },
+          { group_ref: "always-ref", effective_selected: false },
+          { provider: "mikan", group_ref: "always-ref", effective_selected: true },
         ])}
       />,
     );
@@ -232,7 +228,7 @@ describe("SelectionOverrideFields（直接行列表）", () => {
     render(
       <ControlledFields
         serverSelection={selectionFacts([
-          { group_ref: "ranked-ref", effective_selected: true, count_in_limit: true },
+          { group_ref: "ranked-ref", effective_selected: true },
         ])}
       />,
     );
@@ -299,17 +295,6 @@ describe("SelectionOverrideFields（直接行列表）", () => {
     expect(within(group).getByRole("radio", { name: t("forms.sources.policyAuto") })).toHaveClass("tw:data-checked:bg-card");
     expect(within(group).getByRole("radio", { name: t("forms.sources.policyAlways") })).toHaveClass("tw:data-checked:bg-primary/15");
     expect(within(group).getByRole("radio", { name: t("forms.sources.policyNever") })).toHaveClass("tw:data-checked:text-destructive");
-  });
-
-  it("修改计数开关", () => {
-    const onChange = vi.fn();
-    render(<ControlledFields onChange={onChange} />);
-
-    fireEvent.click(screen.getByLabelText(t("forms.sources.countAria", { name: "Always 组" })));
-    expect(onChange).toHaveBeenLastCalledWith({
-      max_rss: 3,
-      entries: [entries[0], { ...entries[1], count_in_limit: true }, entries[2]],
-    });
   });
 
   it("没有手工添加入口：组列表只来自发现，用户只控制通行", () => {
@@ -408,7 +393,7 @@ describe("SelectionOverrideFields · 草稿发现观察行", () => {
     render(<ControlledObserved onChange={onChange} />);
     const row = screen.getByText("观察组").closest("li")!;
     expect(within(row).getByText(t("anime.sources.defaultScore"))).toBeInTheDocument();
-    expect(within(row).getByRole("checkbox", { name: t("forms.sources.countAria", { name: "观察组" }) })).toHaveAttribute("aria-disabled", "true");
+    expect(within(row).queryByRole("checkbox")).not.toBeInTheDocument();
     expect(within(row).getByRole("radiogroup", { name: t("forms.sources.policyAria", { name: "观察组" }) })).toBeInTheDocument();
     expect(screen.queryByText(new RegExp(t("forms.sources.noGroups")))).not.toBeInTheDocument();
     expect(onChange).not.toHaveBeenCalled();
@@ -437,15 +422,15 @@ describe("SelectionOverrideFields · 草稿发现观察行", () => {
       <ControlledFields
         serverSelection={selectionFacts([
           {
-            group_ref: "ranked-ref", effective_selected: true, count_in_limit: true, reason_code: "ranked_within_max_rss",
+            group_ref: "ranked-ref", effective_selected: true, reason_code: "ranked_within_max_rss",
             score_breakdown: { site_mode: "blacklist", site_default_score: 50, list_effect: "none", keywords: [{ keyword: "简繁", score: 20 }], entry_override: "none", final_score: 70 },
           },
           {
-            group_ref: "always-ref", effective_selected: false, count_in_limit: true, reason_code: "site_blacklisted",
+            group_ref: "always-ref", effective_selected: false, reason_code: "site_blacklisted",
             score_breakdown: { site_mode: "blacklist", site_default_score: 50, list_effect: "blacklisted", keywords: [], entry_override: "none", final_score: null },
           },
           {
-            group_ref: "never-ref", effective_selected: false, count_in_limit: true, reason_code: "max_rss_exhausted",
+            group_ref: "never-ref", effective_selected: false, reason_code: "max_rss_exhausted",
             score_breakdown: { site_mode: "blacklist", site_default_score: 50, list_effect: "none", keywords: [], entry_override: "none", final_score: 50 },
           },
         ])}

@@ -19,7 +19,6 @@ type discoveryObservation struct {
 	name      string
 	available bool
 	manual    *bool
-	count     bool
 }
 
 // rankDiscoveryScopeTx ranks the entire available observation union, including
@@ -36,7 +35,7 @@ func rankDiscoveryScopeTx(ctx context.Context, tx *sql.Tx, subscriptionID, provi
 // for one provider. lock takes them FOR UPDATE, as a recompute that writes the
 // decisions back must; a preview reads them without a lock.
 func readDiscoveryScopeRows(ctx context.Context, q rowQuerier, subscriptionID, provider string, lock bool) (map[string]discoveryObservation, error) {
-	query := `SELECT group_ref,display_name,available,selection_mode,manual_selected,count_in_limit FROM provider_group_selections WHERE subscription_id=$1 AND provider=$2 ORDER BY group_ref`
+	query := `SELECT group_ref,display_name,available,selection_mode,manual_selected FROM provider_group_selections WHERE subscription_id=$1 AND provider=$2 ORDER BY group_ref`
 	if lock {
 		query += ` FOR UPDATE`
 	}
@@ -48,12 +47,12 @@ func readDiscoveryScopeRows(ctx context.Context, q rowQuerier, subscriptionID, p
 	groups := map[string]discoveryObservation{}
 	for rows.Next() {
 		var ref, name, mode string
-		var available, count bool
+		var available bool
 		var manual sql.NullBool
-		if err := rows.Scan(&ref, &name, &available, &mode, &manual, &count); err != nil {
+		if err := rows.Scan(&ref, &name, &available, &mode, &manual); err != nil {
 			return nil, err
 		}
-		o := discoveryObservation{name: name, available: available, count: count}
+		o := discoveryObservation{name: name, available: available}
 		if mode == "manual" && manual.Valid {
 			v := manual.Bool
 			o.manual = &v
@@ -86,7 +85,7 @@ func rankDiscoveryScope(provider string, persisted map[string]discoveryObservati
 	observed := make([]selectiondomain.ObservedGroup, 0, len(groups))
 	for id, o := range groups {
 		observed = append(observed, selectiondomain.ObservedGroup{
-			ExternalID: id, Name: o.name, Available: o.available, Manual: o.manual, CountInLimit: o.count,
+			ExternalID: id, Name: o.name, Available: o.available, Manual: o.manual,
 		})
 	}
 	return selectiondomain.RankObservedGroups(providerdomain.Kind(provider), observed, policy)

@@ -437,8 +437,8 @@ VALUES ('release_retry', 'del-retry-key', 'sha256:000000000000000000000000000000
 	// A provider group selection for the subscription.
 	if _, err := db.ExecContext(ctx, `
 INSERT INTO provider_group_selections(id, subscription_id, provider, group_ref, display_name,
-    selection_mode, effective_selected, effective_score, count_in_limit)
-VALUES ('del-pgs', $1, 'mikan', 'del-group', 'Del Group', 'auto', true, 100, true)`, subscriptionID); err != nil {
+    selection_mode, effective_selected, effective_score)
+VALUES ('del-pgs', $1, 'mikan', 'del-group', 'Del Group', 'auto', true, 100)`, subscriptionID); err != nil {
 		t.Fatal(err)
 	}
 	// A subscription log entry (created by Subscribe already; add a second).

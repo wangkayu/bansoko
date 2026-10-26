@@ -6550,7 +6550,7 @@ components:
     SubgroupSelectionFact:
       type: object
       additionalProperties: false
-      required: [provider, group_ref, available, effective_selected, count_in_limit]
+      required: [provider, group_ref, available, effective_selected]
       description: >-
         One group's selection under the previewed value, produced by the
         group-selection decision. The browser renders it and never infers
@@ -6566,8 +6566,6 @@ components:
           type: boolean
           description: False when the provider no longer lists the group.
         effective_selected:
-          type: boolean
-        count_in_limit:
           type: boolean
         reason_code:
           type: string
@@ -6807,7 +6805,7 @@ components:
     RSSListGroupSelection:
       type: object
       additionalProperties: false
-      required: [effective_selected, selection_mode, count_in_limit, source]
+      required: [effective_selected, selection_mode, source]
       description: >-
         Server-derived selection state. The browser never infers authorization
         from rank styling: an unselected group's items are readable but can
@@ -6824,8 +6822,6 @@ components:
           type: boolean
         selection_mode:
           $ref: '#/components/schemas/SelectionMode'
-        count_in_limit:
-          type: boolean
         reason_code:
           type: string
           nullable: true
@@ -8820,7 +8816,7 @@ components:
     ProviderGroupSelection:
       type: object
       additionalProperties: false
-      required: [id, subscription_id, provider, group_ref, display_name, selection_mode, effective_selected, effective_score, count_in_limit, version, available, availability_generation]
+      required: [id, subscription_id, provider, group_ref, display_name, selection_mode, effective_selected, effective_score, version, available, availability_generation]
       properties:
         available:
           type: boolean
@@ -8853,8 +8849,6 @@ components:
           type: boolean
         effective_score:
           type: integer
-        count_in_limit:
-          type: boolean
         reason_code:
           type: string
           nullable: true
@@ -10584,7 +10578,7 @@ components:
     SubgroupScoreEntry:
       type: object
       additionalProperties: false
-      required: [provider, group_ref, display_name, selection_mode, effective_selected, score, count_in_limit]
+      required: [provider, group_ref, display_name, selection_mode, effective_selected, score]
       properties:
         provider:
           $ref: '#/components/schemas/ProviderKind'
@@ -10607,8 +10601,6 @@ components:
           type: integer
           minimum: 1
           maximum: 100
-        count_in_limit:
-          type: boolean
     SubgroupsSection:
       type: object
       additionalProperties: false

@@ -70,7 +70,6 @@ func mapSubgroupsSelectionPreview(value readmodelapplication.SubgroupsSelectionP
 			GroupRef:          group.GroupRef,
 			Available:         group.Available,
 			EffectiveSelected: group.EffectiveSelected,
-			CountInLimit:      group.CountInLimit,
 			ReasonCode:        cloneStringPtr(group.ReasonCode),
 			ScoreBreakdown:    ownershipapplication.SubgroupScoreBreakdownToGenerated(group.ScoreBreakdown),
 		}

@@ -38,7 +38,6 @@ export type ServerSelectionFact = {
   provider: string;
   group_ref: string;
   effective_selected: boolean;
-  count_in_limit: boolean;
   /**
    * 后端选择决策给出的原因码（名额已满 / 名单外 / 黑名单内 …）。前端只展示，
    * 不根据这三个布尔值自己推断原因。
@@ -160,7 +159,6 @@ export function SelectionOverrideFields({
       manual_selected: null,
       effective_selected: false,
       score: 0,
-      count_in_limit: true,
     }));
   const isObservation = (entry: SubgroupScoreEntry) => !explicitRefs.has(entry.group_ref);
   const entries = [...explicitEntries, ...observationRows];
@@ -196,8 +194,8 @@ export function SelectionOverrideFields({
   const factsForProvider = serverSelection?.filter((fact) => fact.provider === activeProvider);
   const factByGroupRef = new Map(factsForProvider?.map((fact) => [fact.group_ref, fact] as const) ?? []);
   const selectedFacts = factsForProvider?.filter((fact) => fact.available !== false && fact.effective_selected);
-  const countedSelected = selectedFacts?.filter((fact) => fact.count_in_limit).length;
-  const notCounted = selectedFacts?.filter((fact) => !fact.count_in_limit).length;
+  const countedSelected = selectedFacts?.filter((fact) => fact.reason_code === "ranked_within_max_rss").length;
+  const notCounted = selectedFacts?.filter((fact) => fact.reason_code !== "ranked_within_max_rss").length;
 
 
   function openMaxRssDialog() {
@@ -366,16 +364,6 @@ export function SelectionOverrideFields({
                     {detail !== "" && <span className="sources-breakdown text-caption">{detail}</span>}
                   </div>
                   <div className="sources-actions">
-                    <Checkbox
-                      size="sm"
-                      aria-label={t("forms.sources.countAria", { name: nameOf(entry) })}
-                      title={isObservation(entry) ? t("forms.sources.countTip") : undefined}
-                      disabled={isObservation(entry)}
-                      checked={entry.count_in_limit}
-                      onCheckedChange={(checked) => updateEntry(entry, { count_in_limit: checked })}
-                    >
-                      {t("forms.sources.count")}
-                    </Checkbox>
                     <SegmentedControl
                       compact
                       ariaLabel={t("forms.sources.policyAria", { name: nameOf(entry) })}

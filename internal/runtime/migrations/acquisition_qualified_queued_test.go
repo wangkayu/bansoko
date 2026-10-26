@@ -151,7 +151,7 @@ func qualifiedCatalog(t *testing.T, db *sql.DB, id, key, tag string) queuedParam
 			reason, outcome = "ranked_within_max_rss", "selected"
 			selected = append(selected, g["group_ref"].(string))
 		}
-		decisions = append(decisions, map[string]any{"group_ref": g["group_ref"], "display_name": map[string]any{"state": "known", "value": g["display_name"], "reason_code": nil}, "available": available, "canonical_key": absent, "mode": "ranked", "score": 50, "count_in_limit": true, "policy_origin": map[string]any{"layer": "provider_default", "config_version": 1}, "rank": r, "outcome": outcome, "reason_code": reason})
+		decisions = append(decisions, map[string]any{"group_ref": g["group_ref"], "display_name": map[string]any{"state": "known", "value": g["display_name"], "reason_code": nil}, "available": available, "canonical_key": absent, "mode": "ranked", "score": 50, "policy_origin": map[string]any{"layer": "provider_default", "config_version": 1}, "rank": r, "outcome": outcome, "reason_code": reason})
 	}
 	witness := map[string]any{"schema_version": 1, "kind": "provider_selection_v1", "evaluator_version": "evaluator-v1", "request_hash": p.RequestHash, "input_digest": p.AdmissionDigest, "config_digest": f.businessDigest, "observation": o, "observation_digest": f.groupDigest, "policy": policy, "policy_digest": protocol.Digest("acquisition-group-policy:v1", []byte(canonicalJSON(t, policy))), "translation": nil, "decisions": decisions, "selected_refs": selected}
 	p.PreparationMode = "provider_selection_v1"

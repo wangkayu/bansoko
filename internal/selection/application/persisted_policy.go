@@ -43,7 +43,6 @@ type persistedProviderGroupDefaults struct {
 }
 
 type persistedSubgroupScoreEntry struct {
-	CountInLimit      bool                           `json:"count_in_limit"`
 	DisplayName       string                         `json:"display_name"`
 	EffectiveSelected bool                           `json:"effective_selected"`
 	GroupRef          string                         `json:"group_ref"`

@@ -35,7 +35,6 @@ func TestMapDiscoverSubgroupsInputAndResultPreserveContractShape(t *testing.T) {
 			ManagedAnimeID: "anime-1",
 			Subgroups: ownershipapplication.SubgroupsSection{
 				Entries: []ownershipapplication.SubgroupScoreEntry{{
-					CountInLimit:      true,
 					DisplayName:       "Group A",
 					EffectiveSelected: true,
 					GroupRef:          "group-a",
@@ -53,7 +52,6 @@ func TestMapDiscoverSubgroupsInputAndResultPreserveContractShape(t *testing.T) {
 				},
 			},
 			EffectiveSelection: []ownershipapplication.ProviderGroupSelection{{
-				CountInLimit:      true,
 				DisplayName:       "Group A",
 				EffectiveScore:    88,
 				EffectiveSelected: true,
@@ -119,7 +117,7 @@ func TestMapDiscoverSubgroupsInputAndResultPreserveContractShape(t *testing.T) {
 		t.Fatalf("decode mapped JSON: %v", err)
 	}
 	var expected any
-	if err := json.Unmarshal([]byte(`{"managed_anime_id":"anime-1","outcome":"discovered","reason":"Discovered 1 group(s).","subgroups":{"effective_selection":[{"count_in_limit":true,"display_name":"Group A","effective_score":88,"effective_selected":true,"group_ref":"group-a","id":"selection-1","manual_selected":true,"provider":"anibt","reason_code":"policy_always","score_breakdown":null,"selection_mode":"manual","subscription_id":"subscription-1","version":4}],"managed_anime_id":"anime-1","rss_sources":[{"anibt_aux_mode":"fill_missing","group_name":"Group A","http_feed_connection_ref":"conn-1","id":"source-1","locator_display":"https://example.test/feed.xml","network_route_ref":"route-1","episode_offset":2,"provider_provenance":{"discovery_snapshot_version":"snapshot-3","provider":"anibt","provider_entry_ref":"entry-1","provider_group_ref":"group-a"},"source_kind":"provider_group","subscription_id":"subscription-1","title":"Group A RSS","version":5}],"subgroups":{"entries":[{"count_in_limit":true,"display_name":"Group A","effective_selected":true,"group_ref":"group-a","manual_selected":true,"provider":"anibt","score":88,"selection_mode":"manual"}],"max_rss":3,"name_keywords":{"anibt":[{"keyword":"WEB","score":12}]},"provider_defaults":{"mikan":{"groups":["58"],"mode":"whitelist","score":40}}},"version":6}}`), &expected); err != nil {
+	if err := json.Unmarshal([]byte(`{"managed_anime_id":"anime-1","outcome":"discovered","reason":"Discovered 1 group(s).","subgroups":{"effective_selection":[{"display_name":"Group A","effective_score":88,"effective_selected":true,"group_ref":"group-a","id":"selection-1","manual_selected":true,"provider":"anibt","reason_code":"policy_always","score_breakdown":null,"selection_mode":"manual","subscription_id":"subscription-1","version":4}],"managed_anime_id":"anime-1","rss_sources":[{"anibt_aux_mode":"fill_missing","group_name":"Group A","http_feed_connection_ref":"conn-1","id":"source-1","locator_display":"https://example.test/feed.xml","network_route_ref":"route-1","episode_offset":2,"provider_provenance":{"discovery_snapshot_version":"snapshot-3","provider":"anibt","provider_entry_ref":"entry-1","provider_group_ref":"group-a"},"source_kind":"provider_group","subscription_id":"subscription-1","title":"Group A RSS","version":5}],"subgroups":{"entries":[{"display_name":"Group A","effective_selected":true,"group_ref":"group-a","manual_selected":true,"provider":"anibt","score":88,"selection_mode":"manual"}],"max_rss":3,"name_keywords":{"anibt":[{"keyword":"WEB","score":12}]},"provider_defaults":{"mikan":{"groups":["58"],"mode":"whitelist","score":40}}},"version":6}}`), &expected); err != nil {
 		t.Fatalf("decode expected JSON: %v", err)
 	}
 	if !reflect.DeepEqual(actual, expected) {

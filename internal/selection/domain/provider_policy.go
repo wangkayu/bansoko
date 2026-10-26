@@ -47,12 +47,18 @@ func (t PolicyTarget) Validate() error {
 	return nil
 }
 
+// MaxGroupScore caps a group's final score; AlwaysGroupScore is the score a
+// required group is written and compared at.
+const (
+	MaxGroupScore    = 100
+	AlwaysGroupScore = 100
+)
+
 type ProviderGroupPolicy struct {
-	Target       PolicyTarget
-	Mode         SelectionMode
-	Score        *int
-	CountInLimit bool
-	Version      int64
+	Target  PolicyTarget
+	Mode    SelectionMode
+	Score   *int
+	Version int64
 }
 
 func ValidateProviderGroupPolicy(policy ProviderGroupPolicy) error {
@@ -71,12 +77,9 @@ func ValidateProviderGroupPolicy(policy ProviderGroupPolicy) error {
 		if *policy.Score < 1 || *policy.Score > 100 {
 			return errors.New("ranked group policy score must be between 1 and 100")
 		}
-		if !policy.CountInLimit {
-			return errors.New("ranked group policy must count in max_rss")
-		}
 	case Never:
-		if policy.Score != nil || policy.CountInLimit {
-			return errors.New("never group policy cannot define score or consume max_rss")
+		if policy.Score != nil {
+			return errors.New("never group policy cannot define a score")
 		}
 	default:
 		return fmt.Errorf("unsupported group policy mode %q", policy.Mode)
@@ -98,7 +101,6 @@ type EffectiveProviderGroup struct {
 	Observed      bool
 	Mode          SelectionMode
 	Score         int
-	CountInLimit  bool
 	PolicySource  EffectivePolicySource
 	PolicyVersion int64
 	// Breakdown explains Score and Mode: the site default, the site list
@@ -230,7 +232,7 @@ func ResolveProviderGroupPolicyWithNameKeywords(ref providerdomain.GroupRef, can
 			return EffectiveProviderGroup{}, err
 		}
 		if found {
-			group := effectiveProviderGroup(ref, canonicalKey, observed, policy.Mode, policy.Score, policy.CountInLimit, layer.source, policy.Version)
+			group := effectiveProviderGroup(ref, canonicalKey, observed, policy.Mode, policy.Score, layer.source, policy.Version)
 			if siteErr == nil {
 				switch policy.Mode {
 				case Always:
@@ -247,9 +249,9 @@ func ResolveProviderGroupPolicyWithNameKeywords(ref providerdomain.GroupRef, can
 	}
 	var group EffectiveProviderGroup
 	if siteMode == Ranked {
-		group = effectiveProviderGroup(ref, canonicalKey, observed, Ranked, &siteScore, true, SourceProviderDefault, providerDefault.Version)
+		group = effectiveProviderGroup(ref, canonicalKey, observed, Ranked, &siteScore, SourceProviderDefault, providerDefault.Version)
 	} else {
-		group = effectiveProviderGroup(ref, canonicalKey, observed, Never, nil, false, SourceProviderDefault, providerDefault.Version)
+		group = effectiveProviderGroup(ref, canonicalKey, observed, Never, nil, SourceProviderDefault, providerDefault.Version)
 	}
 	group.Breakdown = &site
 	return group, nil
@@ -309,6 +311,9 @@ func resolveSiteGroup(ref providerdomain.GroupRef, canonicalKey, groupName strin
 	score := providerDefault.Score
 	for _, keyword := range breakdown.Keywords {
 		score += keyword.Score
+	}
+	if score > MaxGroupScore {
+		score = MaxGroupScore
 	}
 	breakdown.FinalScore = &score
 	return breakdown, Ranked, score, nil
@@ -404,14 +409,19 @@ func matchingPolicy(rules []ProviderGroupPolicy, kind PolicyTargetKind, ref prov
 	return matched, found, nil
 }
 
-func effectiveProviderGroup(ref providerdomain.GroupRef, canonicalKey string, observed bool, mode SelectionMode, score *int, countInLimit bool, source EffectivePolicySource, version int64) EffectiveProviderGroup {
+func effectiveProviderGroup(ref providerdomain.GroupRef, canonicalKey string, observed bool, mode SelectionMode, score *int, source EffectivePolicySource, version int64) EffectiveProviderGroup {
 	value := 0
 	if score != nil {
 		value = *score
 	}
+	if mode == Always {
+		// A required group is always selected and never consumes max_rss; its
+		// written and compared score is the fixed maximum, not a ranking input.
+		value = AlwaysGroupScore
+	}
 	return EffectiveProviderGroup{
 		Ref: ref, CanonicalKey: canonicalKey, Observed: observed, Mode: mode,
-		Score: value, CountInLimit: countInLimit, PolicySource: source, PolicyVersion: version,
+		Score: value, PolicySource: source, PolicyVersion: version,
 	}
 }
 
@@ -458,11 +468,10 @@ type GroupSelectionDecision struct {
 // selection decision without reimplementing the rules, and without the input
 // having to pass GroupRef validation it may not need.
 type ProviderGroupSelectionInput struct {
-	Key          string
-	Observed     bool
-	Mode         SelectionMode
-	Score        int
-	CountInLimit bool
+	Key      string
+	Observed bool
+	Mode     SelectionMode
+	Score    int
 }
 
 // GroupSelectionResult is one decision, aligned to its input by Index.
@@ -491,11 +500,7 @@ func SelectProviderGroupsByKey(inputs []ProviderGroupSelectionInput, maxRSS int)
 	}
 	for _, input := range ordered {
 		switch input.Mode {
-		case Ranked:
-			if !input.CountInLimit {
-				return nil, errors.New("ranked group must count in max_rss")
-			}
-		case Always, Never:
+		case Ranked, Always, Never:
 		default:
 			return nil, fmt.Errorf("unsupported effective group mode %q", input.Mode)
 		}
@@ -530,9 +535,6 @@ func SelectProviderGroupsByKey(inputs []ProviderGroupSelectionInput, maxRSS int)
 			result.Outcome, result.Reason = GroupNotSelected, ReasonPolicyScoreNegative
 		case input.Mode == Always:
 			result.Outcome, result.Reason = GroupSelected, ReasonPolicyAlways
-			if input.CountInLimit {
-				remaining--
-			}
 		case input.Mode == Ranked && remaining > 0:
 			rank++
 			result.Outcome, result.Reason, result.Rank = GroupSelected, ReasonRankedWithinMaxRSS, intPointer(rank)
@@ -556,7 +558,7 @@ func SelectProviderGroups(groups []EffectiveProviderGroup, maxRSS int) ([]GroupS
 		}
 		inputs[i] = ProviderGroupSelectionInput{
 			Key: group.Ref.Key(), Observed: group.Observed, Mode: group.Mode,
-			Score: group.Score, CountInLimit: group.CountInLimit,
+			Score: group.Score,
 		}
 	}
 	results, err := SelectProviderGroupsByKey(inputs, maxRSS)

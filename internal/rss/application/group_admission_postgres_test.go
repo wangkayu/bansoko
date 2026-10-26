@@ -16,7 +16,7 @@ func TestRSSHandlerRetirementBetweenHandleAndFinishPreservesSubmittedHistory(t *
 	if _, err := db.Exec(`UPDATE rss_sources SET source_kind='provider_group',provider='anibt',provider_entry_ref='123',provider_group_ref='alpha',discovery_snapshot_version='v1' WHERE id=$1`, sourceID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,effective_selected,effective_score,count_in_limit,available,availability_generation) VALUES('scope',$1,'anibt','alpha','Alpha','auto',TRUE,50,TRUE,TRUE,1)`, subscriptionID); err != nil {
+	if _, err := db.Exec(`INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,effective_selected,effective_score,available,availability_generation) VALUES('scope',$1,'anibt','alpha','Alpha','auto',TRUE,50,TRUE,1)`, subscriptionID); err != nil {
 		t.Fatal(err)
 	}
 	store, err := workitems.NewStore(db, 0, nil)
@@ -112,7 +112,7 @@ func TestRSSReleaseHandlerRetirementBeforeAdmissionCreatesNoDownload(t *testing.
 	if _, err := db.Exec(`UPDATE rss_sources SET source_kind='provider_group',provider='anibt',provider_entry_ref='123',provider_group_ref='alpha',discovery_snapshot_version='v1' WHERE id=$1`, sourceID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,effective_selected,effective_score,count_in_limit) VALUES('scope',$1,'anibt','alpha','Alpha','auto',TRUE,50,TRUE)`, subscriptionID); err != nil {
+	if _, err := db.Exec(`INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,effective_selected,effective_score) VALUES('scope',$1,'anibt','alpha','Alpha','auto',TRUE,50)`, subscriptionID); err != nil {
 		t.Fatal(err)
 	}
 	insertReleaseForEvaluation(t, db, sourceID, "scope-release", "[Group] Test Show - 01 1080p", "https://downloads.example.test/01.torrent")

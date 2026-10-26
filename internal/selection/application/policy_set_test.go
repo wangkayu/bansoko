@@ -12,9 +12,9 @@ func TestProviderPolicyDecoderUsesTypedEntriesAndManualActions(t *testing.T) {
 	excluded := false
 	policies, err := providerPoliciesFromSection(persistedSubgroupsSection{
 		Entries: []persistedSubgroupScoreEntry{
-			{Provider: persistedSubgroupProviderAniBT, GroupRef: "blocked", DisplayName: "Blocked", SelectionMode: persistedSubgroupSelectionManual, ManualSelected: &manual, CountInLimit: false},
-			{Provider: persistedSubgroupProviderMikan, GroupRef: "42", DisplayName: "Ranked", SelectionMode: persistedSubgroupSelectionAuto, Score: 70, CountInLimit: true},
-			{Provider: persistedSubgroupProviderMikan, GroupRef: "43", DisplayName: "Excluded", SelectionMode: persistedSubgroupSelectionManual, ManualSelected: &excluded, CountInLimit: false},
+			{Provider: persistedSubgroupProviderAniBT, GroupRef: "blocked", DisplayName: "Blocked", SelectionMode: persistedSubgroupSelectionManual, ManualSelected: &manual},
+			{Provider: persistedSubgroupProviderMikan, GroupRef: "42", DisplayName: "Ranked", SelectionMode: persistedSubgroupSelectionAuto, Score: 70},
+			{Provider: persistedSubgroupProviderMikan, GroupRef: "43", DisplayName: "Excluded", SelectionMode: persistedSubgroupSelectionManual, ManualSelected: &excluded},
 		},
 	}, 4)
 	if err != nil {
@@ -26,7 +26,7 @@ func TestProviderPolicyDecoderUsesTypedEntriesAndManualActions(t *testing.T) {
 	if policies[0].Score != nil || policies[1].Score == nil || *policies[1].Score != 70 {
 		t.Fatalf("unexpected decoded scores: %+v", policies)
 	}
-	if policies[2].Score != nil || policies[2].CountInLimit {
+	if policies[2].Score != nil {
 		t.Fatalf("manual exclusion must be Never with no score and no slot: %+v", policies[2])
 	}
 	if policies[0].Version != 4 || policies[1].Version != 4 || policies[2].Version != 4 {

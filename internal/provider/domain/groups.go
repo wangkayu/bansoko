@@ -248,7 +248,6 @@ type LocalGroupCatalogItem struct {
 	LatestSelectionState string
 	PolicyMode           string
 	PolicyScore          *int
-	PolicyCountInLimit   bool
 	PolicySource         string
 	PolicyVersion        int64
 }

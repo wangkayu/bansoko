@@ -198,7 +198,7 @@ function ownerRssListView(seedTitle = "[测试字幕组] 测试番 - 01"): unkno
       {
         scope: { provider: "custom", provider_entry_ref: "", provider_group_ref: "测试字幕组", rss_source_id: "source-1" },
         display_name: "测试字幕组",
-        selection: { source: "configured" as const, effective_selected: true, selection_mode: "auto", count_in_limit: true },
+        selection: { source: "configured" as const, effective_selected: true, selection_mode: "auto" },
         offset: { value: 0, editable: false },
         feed: { state: "fresh" },
         items: [
@@ -1188,7 +1188,7 @@ describe("AnimeConfigDialog DraftBody 打磨", () => {
             scope: { provider: "custom", provider_entry_ref: "custom-source:abc", provider_group_ref: "custom-group:abc" },
             display_name: "测试字幕组",
             score: 0,
-            selection: { source: "configured", effective_selected: true, selection_mode: "auto", count_in_limit: false },
+            selection: { source: "configured", effective_selected: true, selection_mode: "auto" },
             offset: { value: 0, editable: false },
             feed: { state: "snapshot_required" },
             items: [],

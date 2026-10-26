@@ -26,10 +26,10 @@ func seedSiteInstance(t *testing.T, ctx context.Context, db *sql.DB, anime, sub,
 		`INSERT INTO subscriptions(id,managed_anime_id,origin,origin_entry_ref,state) VALUES('` + sub + `','` + anime + `','anibt','777','` + state + `')`,
 		`INSERT INTO anime_business_configs(managed_anime_id) VALUES('` + anime + `') ON CONFLICT (managed_anime_id) DO NOTHING`,
 		`INSERT INTO anime_config_overrides(managed_anime_id, owner_type, section_name, schema_version, value) VALUES('` + anime + `','subgroups','subgroups','subgroups-v1','{"entries":[],"max_rss":1}')`,
-		`INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,effective_selected,effective_score,count_in_limit) VALUES
-		('` + sub + `-a','` + sub + `','anibt','alpha','Alpha','auto',true,50,true),
-		('` + sub + `-b','` + sub + `','anibt','beta','Beta','auto',false,50,true),
-		('` + sub + `-g','` + sub + `','anibt','gamma','Gamma','auto',false,50,true)`,
+		`INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,effective_selected,effective_score) VALUES
+		('` + sub + `-a','` + sub + `','anibt','alpha','Alpha','auto',true,50),
+		('` + sub + `-b','` + sub + `','anibt','beta','Beta','auto',false,50),
+		('` + sub + `-g','` + sub + `','anibt','gamma','Gamma','auto',false,50)`,
 	} {
 		if _, err := db.ExecContext(ctx, stmt); err != nil {
 			t.Fatal(err)
@@ -120,7 +120,7 @@ WHERE id = 'site-retired'`); err != nil {
 	// 1. New-draft defaults only: no instance is touched.
 	first, err := svc.PutGlobalSection(ctx, animedomain.SectionSubgroups, 0, configurationdomain.GlobalSectionInput{SchemaVersion: schema, Value: map[string]any{
 		"max_rss": 5,
-		"entries": []any{map[string]any{"provider": "anibt", "group_ref": "beta", "display_name": "Beta", "selection_mode": "manual", "manual_selected": true, "effective_selected": true, "score": 1, "count_in_limit": false}},
+		"entries": []any{map[string]any{"provider": "anibt", "group_ref": "beta", "display_name": "Beta", "selection_mode": "manual", "manual_selected": true, "effective_selected": true, "score": 1}},
 	}})
 	if err != nil {
 		t.Fatalf("save new-draft defaults: %v", err)

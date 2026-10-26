@@ -18,6 +18,7 @@ import (
 	"bansoko/internal/persistence/txscope"
 	plugintargetport "bansoko/internal/plugintarget/port"
 	selectionapp "bansoko/internal/selection/application"
+	selectiondomain "bansoko/internal/selection/domain"
 	subscriptiondomain "bansoko/internal/subscription/domain"
 	"bansoko/internal/workitems"
 )
@@ -577,12 +578,12 @@ func syncExistingProviderSelections(ctx context.Context, tx *sql.Tx, subscriptio
 		if _, err := tx.ExecContext(ctx, `
 UPDATE provider_group_selections
 SET display_name = $4, selection_mode = $5, manual_selected = $6,
-    effective_selected = $7, effective_score = $8, count_in_limit = $9,
+    effective_selected = $7, effective_score = $8,
     version = version + 1, updated_at = NOW()
 WHERE subscription_id = $1 AND provider = $2 AND group_ref = $3`,
 			subscriptionID, string(selection.Provider), selection.GroupRef, selection.DisplayName,
 			string(selection.SelectionMode), selection.ManualSelected, selection.EffectiveSelected,
-			selection.EffectiveScore, selection.CountInLimit); err != nil {
+			selection.EffectiveScore); err != nil {
 			return fmt.Errorf("sync provider group selection %s: %w", applicationSubgroupEntryKey(selection.Provider, selection.GroupRef), err)
 		}
 	}
@@ -687,7 +688,7 @@ func domainSubgroupsSection(value SubgroupsSection) animedomain.SubgroupsSection
 	}
 	for i, entry := range value.Entries {
 		result.Entries[i] = animedomain.SubgroupScoreEntry{
-			CountInLimit: entry.CountInLimit, DisplayName: entry.DisplayName,
+			DisplayName:       entry.DisplayName,
 			EffectiveSelected: entry.EffectiveSelected, GroupRef: entry.GroupRef,
 			ManualSelected: cloneBoolValue(entry.ManualSelected),
 			Provider:       animedomain.ProviderKind(entry.Provider), Score: entry.Score,
@@ -759,12 +760,16 @@ func normalizeSubgroupsEffectiveSelection(section SubgroupsSection, subscription
 func providerSelectionsFromDomainSection(normalized animedomain.SubgroupsSection, subscriptionID string, version int64) []ProviderGroupSelection {
 	result := make([]ProviderGroupSelection, 0, len(normalized.Entries))
 	for _, entry := range normalized.Entries {
+		score := entry.Score
+		if entry.SelectionMode == animedomain.SelectionModeManual && entry.ManualSelected != nil && *entry.ManualSelected {
+			// A required group is written and compared at the fixed maximum.
+			score = selectiondomain.AlwaysGroupScore
+		}
 		result = append(result, ProviderGroupSelection{
 			ID: subscriptionID + ":" + entry.GroupRef, SubscriptionID: subscriptionID,
 			Provider: string(entry.Provider), GroupRef: entry.GroupRef, DisplayName: entry.DisplayName,
 			SelectionMode: string(entry.SelectionMode), ManualSelected: cloneBoolValue(entry.ManualSelected),
-			EffectiveSelected: entry.EffectiveSelected, EffectiveScore: entry.Score,
-			CountInLimit: entry.CountInLimit, Version: version,
+			EffectiveSelected: entry.EffectiveSelected, EffectiveScore: score, Version: version,
 		})
 	}
 	return result

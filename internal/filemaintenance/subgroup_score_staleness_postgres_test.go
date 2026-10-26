@@ -26,8 +26,8 @@ WHERE managed_anime_id = 'anime-1'`, string(qualityprofile.DefaultJSON())); err 
 		score   int
 	}{{"sel-high", "group-high", 90}, {"sel-low", "group-low", 10}} {
 		if _, err := db.Exec(`
-INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,effective_selected,effective_score,count_in_limit,available,availability_generation)
-VALUES ($1,'sub-1','anibt',$2,$2,'auto',TRUE,$3,TRUE,TRUE,1)`, row.id, row.ref, row.score); err != nil {
+INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,effective_selected,effective_score,available,availability_generation)
+VALUES ($1,'sub-1','anibt',$2,$2,'auto',TRUE,$3,TRUE,1)`, row.id, row.ref, row.score); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -177,8 +177,8 @@ ORDER BY created_at DESC, id DESC LIMIT 1`).Scan(&id, &verdict); err != nil {
 
 	// The incumbent's group gains a score: the decision is not reused.
 	if _, err := db.Exec(`
-INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,effective_selected,effective_score,count_in_limit,available,availability_generation)
-VALUES ('sel-low','sub-1','anibt','group-low','group-low','auto',TRUE,10,TRUE,TRUE,1)`); err != nil {
+INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,effective_selected,effective_score,available,availability_generation)
+VALUES ('sel-low','sub-1','anibt','group-low','group-low','auto',TRUE,10,TRUE,1)`); err != nil {
 		t.Fatal(err)
 	}
 	intent, err = releaseIntent(service.CandidateIntents(ctx, "anime-1", "release-new", evidence))

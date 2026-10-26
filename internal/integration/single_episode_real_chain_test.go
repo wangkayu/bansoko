@@ -875,7 +875,7 @@ func singleEpisodeDraft(feedURL string) generated.AnimeDraft {
 		Rules: generated.RulesDraft{},
 		Subgroups: generated.SubgroupsSection{
 			Entries: []generated.SubgroupScoreEntry{{
-				CountInLimit: true, DisplayName: "Fixture", EffectiveSelected: true,
+				DisplayName: "Fixture", EffectiveSelected: true,
 				GroupRef: "fixture", Provider: generated.ProviderKindMikan, Score: 50,
 				SelectionMode: generated.SelectionModeAuto,
 			}},

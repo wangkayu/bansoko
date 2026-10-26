@@ -56,8 +56,8 @@ func TestNormalizeSubgroupsEffectiveSelection(t *testing.T) {
 	section := SubgroupsSection{
 		MaxRss: 1,
 		Entries: []SubgroupScoreEntry{
-			{GroupRef: "lower", Provider: string(animedomain.ProviderKindAnibt), SelectionMode: string(animedomain.SelectionModeAuto), Score: 50, CountInLimit: true},
-			{GroupRef: "higher", Provider: string(animedomain.ProviderKindAnibt), SelectionMode: string(animedomain.SelectionModeAuto), Score: 80, CountInLimit: true},
+			{GroupRef: "lower", Provider: string(animedomain.ProviderKindAnibt), SelectionMode: string(animedomain.SelectionModeAuto), Score: 50},
+			{GroupRef: "higher", Provider: string(animedomain.ProviderKindAnibt), SelectionMode: string(animedomain.SelectionModeAuto), Score: 80},
 			{GroupRef: "manual", Provider: string(animedomain.ProviderKindMikan), SelectionMode: string(animedomain.SelectionModeManual), Score: 1, ManualSelected: boolPointer(true)},
 		},
 	}
@@ -85,3 +85,18 @@ func TestNormalizeSubgroupsEffectiveSelection(t *testing.T) {
 }
 
 func boolPointer(value bool) *bool { return &value }
+
+func TestProviderSelectionsWriteAlwaysScoreAtMaximum(t *testing.T) {
+	on, off := true, false
+	rows := providerSelectionsFromDomainSection(animedomain.SubgroupsSection{Entries: []animedomain.SubgroupScoreEntry{
+		{Provider: animedomain.ProviderKindAnibt, GroupRef: "required", DisplayName: "Required", SelectionMode: animedomain.SelectionModeManual, ManualSelected: &on, EffectiveSelected: true},
+		{Provider: animedomain.ProviderKindAnibt, GroupRef: "excluded", DisplayName: "Excluded", SelectionMode: animedomain.SelectionModeManual, ManualSelected: &off},
+		{Provider: animedomain.ProviderKindAnibt, GroupRef: "ranked", DisplayName: "Ranked", SelectionMode: animedomain.SelectionModeAuto, Score: 42, EffectiveSelected: true},
+	}}, "sub-1", 1)
+	want := map[string]int{"required": 100, "excluded": 0, "ranked": 42}
+	for _, row := range rows {
+		if row.EffectiveScore != want[row.GroupRef] {
+			t.Fatalf("%s effective_score got %d, want %d", row.GroupRef, row.EffectiveScore, want[row.GroupRef])
+		}
+	}
+}

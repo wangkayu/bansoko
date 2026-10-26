@@ -114,8 +114,8 @@ func TestLivePolicyNameKeywordsChangeRankingAndSumToTheScore(t *testing.T) {
 // stored score is not an input.
 func TestLivePolicyManualEntryWinsAndAutoEntryScoreIsIgnored(t *testing.T) {
 	instance := `{"max_rss":1,"entries":[` +
-		`{"provider":"mikan","group_ref":"180","display_name":"Blocked","selection_mode":"manual","manual_selected":true,"effective_selected":true,"score":1,"count_in_limit":false},` +
-		`{"provider":"mikan","group_ref":"2","display_name":"Two","selection_mode":"auto","manual_selected":null,"effective_selected":true,"score":99,"count_in_limit":true}]}`
+		`{"provider":"mikan","group_ref":"180","display_name":"Blocked","selection_mode":"manual","manual_selected":true,"effective_selected":true,"score":1},` +
+		`{"provider":"mikan","group_ref":"2","display_name":"Two","selection_mode":"auto","manual_selected":null,"effective_selected":true,"score":99}]}`
 	site := `{"entries":[],"max_rss":1,"provider_defaults":{"mikan":{"mode":"blacklist","score":40,"groups":["180"]}}}`
 	got := liveDecisions(t, instance, site, map[string]string{"180": "Blocked", "1": "One", "2": "Two"})
 	if got["180"].Outcome != domain.GroupSelected || got["180"].Reason != domain.ReasonPolicyAlways {
@@ -137,7 +137,7 @@ func TestSitePolicyChangedIgnoresNewDraftDefaults(t *testing.T) {
 		want bool
 	}{
 		{"max_rss only", `{"entries":[],"max_rss":9,"provider_defaults":{"mikan":{"mode":"blacklist","score":50,"groups":[]}}}`, false},
-		{"entries only", `{"entries":[{"provider":"mikan","group_ref":"1","display_name":"G","selection_mode":"manual","manual_selected":true,"effective_selected":true,"score":1,"count_in_limit":false}],"max_rss":3,"provider_defaults":{"mikan":{"mode":"blacklist","score":50,"groups":[]}}}`, false},
+		{"entries only", `{"entries":[{"provider":"mikan","group_ref":"1","display_name":"G","selection_mode":"manual","manual_selected":true,"effective_selected":true,"score":1}],"max_rss":3,"provider_defaults":{"mikan":{"mode":"blacklist","score":50,"groups":[]}}}`, false},
 		{"list", `{"entries":[],"max_rss":3,"provider_defaults":{"mikan":{"mode":"blacklist","score":50,"groups":["180"]}}}`, true},
 		{"mode", `{"entries":[],"max_rss":3,"provider_defaults":{"mikan":{"mode":"whitelist","score":50,"groups":[]}}}`, true},
 		{"score", `{"entries":[],"max_rss":3,"provider_defaults":{"mikan":{"mode":"blacklist","score":60,"groups":[]}}}`, true},

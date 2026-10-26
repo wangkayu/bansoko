@@ -6,16 +6,16 @@ import (
 	providerdomain "bansoko/internal/provider/domain"
 )
 
-func TestSelectProviderGroupsUsesMaxRSSAsGroupBudget(t *testing.T) {
-	alwaysFree := effectiveGroup(t, providerdomain.ProviderMikan, "1", Always, 0, false, true)
-	alwaysCounted := effectiveGroup(t, providerdomain.ProviderMikan, "2", Always, 0, true, true)
-	rankedHigh := effectiveGroup(t, providerdomain.ProviderAniBT, "group-b", Ranked, 80, true, true)
-	rankedTieA := effectiveGroup(t, providerdomain.ProviderAniBT, "group-a", Ranked, 50, true, true)
-	rankedTieC := effectiveGroup(t, providerdomain.ProviderAniBT, "group-c", Ranked, 50, true, true)
-	never := effectiveGroup(t, providerdomain.ProviderMikan, "3", Never, 0, false, true)
-	unavailable := effectiveGroup(t, providerdomain.ProviderMikan, "4", Ranked, 100, true, false)
+func TestSelectProviderGroupsUsesMaxRSSAsRankedGroupBudget(t *testing.T) {
+	alwaysFree := effectiveGroup(t, providerdomain.ProviderMikan, "1", Always, AlwaysGroupScore, true)
+	alwaysCounted := effectiveGroup(t, providerdomain.ProviderMikan, "2", Always, AlwaysGroupScore, true)
+	rankedHigh := effectiveGroup(t, providerdomain.ProviderAniBT, "group-b", Ranked, 80, true)
+	rankedTieA := effectiveGroup(t, providerdomain.ProviderAniBT, "group-a", Ranked, 50, true)
+	rankedTieC := effectiveGroup(t, providerdomain.ProviderAniBT, "group-c", Ranked, 50, true)
+	never := effectiveGroup(t, providerdomain.ProviderMikan, "3", Never, 0, true)
+	unavailable := effectiveGroup(t, providerdomain.ProviderMikan, "4", Ranked, 100, false)
 
-	decisions, err := SelectProviderGroups([]EffectiveProviderGroup{rankedTieC, unavailable, never, rankedHigh, alwaysCounted, rankedTieA, alwaysFree}, 3)
+	decisions, err := SelectProviderGroups([]EffectiveProviderGroup{rankedTieC, unavailable, never, rankedHigh, alwaysCounted, rankedTieA, alwaysFree}, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,11 +53,11 @@ func TestAutomaticAdmissionKeepsUserStateSeparateFromSelection(t *testing.T) {
 func TestProviderPolicyRequiresExplicitModeFields(t *testing.T) {
 	ref, _ := providerdomain.NewGroupRef(providerdomain.ProviderAniBT, "group")
 	target := PolicyTarget{Kind: TargetProviderGroup, ProviderRef: &ref}
-	if err := ValidateProviderGroupPolicy(ProviderGroupPolicy{Target: target, Mode: Ranked, CountInLimit: true}); err == nil {
+	if err := ValidateProviderGroupPolicy(ProviderGroupPolicy{Target: target, Mode: Ranked}); err == nil {
 		t.Fatal("ranked policy without score accepted")
 	}
 	score := 50
-	if err := ValidateProviderGroupPolicy(ProviderGroupPolicy{Target: target, Mode: Ranked, Score: &score, CountInLimit: true}); err != nil {
+	if err := ValidateProviderGroupPolicy(ProviderGroupPolicy{Target: target, Mode: Ranked, Score: &score}); err != nil {
 		t.Fatalf("valid ranked policy rejected: %v", err)
 	}
 }
@@ -69,8 +69,8 @@ func TestResolveProviderGroupPolicyUsesExactCanonicalAndDefaultPrecedence(t *tes
 	animeExactScore := 90
 	rules := func(exactRef providerdomain.GroupRef, exactScore, canonicalScore int) []ProviderGroupPolicy {
 		return []ProviderGroupPolicy{
-			{Target: PolicyTarget{Kind: TargetCanonicalGroup, CanonicalKey: "group-key"}, Mode: Ranked, Score: &canonicalScore, CountInLimit: true, Version: 2},
-			{Target: PolicyTarget{Kind: TargetProviderGroup, ProviderRef: &exactRef}, Mode: Ranked, Score: &exactScore, CountInLimit: true, Version: 3},
+			{Target: PolicyTarget{Kind: TargetCanonicalGroup, CanonicalKey: "group-key"}, Mode: Ranked, Score: &canonicalScore, Version: 2},
+			{Target: PolicyTarget{Kind: TargetProviderGroup, ProviderRef: &exactRef}, Mode: Ranked, Score: &exactScore, Version: 3},
 		}
 	}
 	resolved, err := ResolveProviderGroupPolicy(ref, "group-key", true,
@@ -123,7 +123,7 @@ func TestResolveProviderGroupPolicyDoesNotApplyNameKeywordsToExplicitPolicy(t *t
 	exactScore := 80
 	resolved, err := ResolveProviderGroupPolicyWithNameKeywords(
 		ref, "", "Preferred Group", true,
-		[]ProviderGroupPolicy{{Target: PolicyTarget{Kind: TargetProviderGroup, ProviderRef: &ref}, Mode: Ranked, Score: &exactScore, CountInLimit: true}},
+		[]ProviderGroupPolicy{{Target: PolicyTarget{Kind: TargetProviderGroup, ProviderRef: &ref}, Mode: Ranked, Score: &exactScore}},
 		ProviderDefaultPolicy{Mode: Ranked, Score: 50, Version: 1},
 		[]NameKeywordRule{{Keyword: "preferred", Score: 20}},
 	)
@@ -176,11 +176,79 @@ func TestApplyNameKeywordAdjustmentsAddsEachMatchingRuleOnce(t *testing.T) {
 	}
 }
 
-func effectiveGroup(t *testing.T, provider providerdomain.Kind, externalID string, mode SelectionMode, score int, count, observed bool) EffectiveProviderGroup {
+func effectiveGroup(t *testing.T, provider providerdomain.Kind, externalID string, mode SelectionMode, score int, observed bool) EffectiveProviderGroup {
 	t.Helper()
 	ref, err := providerdomain.NewGroupRef(provider, externalID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return EffectiveProviderGroup{Ref: ref, Observed: observed, Mode: mode, Score: score, CountInLimit: count, PolicySource: SourceProviderDefault}
+	return EffectiveProviderGroup{Ref: ref, Observed: observed, Mode: mode, Score: score, PolicySource: SourceProviderDefault}
+}
+
+func TestResolveProviderGroupPolicyCapsKeywordScoreAtMaximum(t *testing.T) {
+	ref, err := providerdomain.NewGroupRef(providerdomain.ProviderAniBT, "trusted-group")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules := []NameKeywordRule{
+		{Keyword: "trusted", Score: 40},
+		{Keyword: "group", Score: 30},
+	}
+	resolved, err := ResolveProviderGroupPolicyWithNameKeywords(
+		ref, "", "Trusted Group", true, nil,
+		ProviderDefaultPolicy{Mode: Ranked, Score: 50, Version: 1}, rules,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Score != MaxGroupScore {
+		t.Fatalf("score above the cap got %d, want %d", resolved.Score, MaxGroupScore)
+	}
+	if resolved.Breakdown == nil || resolved.Breakdown.FinalScore == nil || *resolved.Breakdown.FinalScore != MaxGroupScore {
+		t.Fatalf("final score got %+v, want %d", resolved.Breakdown, MaxGroupScore)
+	}
+}
+
+func TestAlwaysGroupsScoreFixedAtMaximumAndIgnoreMaxRSS(t *testing.T) {
+	var groups []EffectiveProviderGroup
+	for _, ref := range []string{"1", "2", "3"} {
+		groupRef, err := providerdomain.NewGroupRef(providerdomain.ProviderMikan, ref)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pin := ProviderGroupPolicy{
+			Target:  PolicyTarget{Kind: TargetProviderGroup, ProviderRef: &groupRef},
+			Mode:    Always,
+			Version: 1,
+		}
+		group, err := ResolveProviderGroupPolicy(groupRef, "", true, []ProviderGroupPolicy{pin}, ProviderDefaultPolicy{Mode: Ranked, Score: 50, Version: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if group.Score != AlwaysGroupScore {
+			t.Fatalf("always group %s score got %d, want %d", ref, group.Score, AlwaysGroupScore)
+		}
+		groups = append(groups, group)
+	}
+	groups = append(groups,
+		effectiveGroup(t, providerdomain.ProviderAniBT, "a", Ranked, 90, true),
+		effectiveGroup(t, providerdomain.ProviderAniBT, "b", Ranked, 80, true),
+		effectiveGroup(t, providerdomain.ProviderAniBT, "c", Ranked, 70, true),
+	)
+	decisions, err := SelectProviderGroups(groups, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected := map[string]bool{}
+	for _, decision := range decisions {
+		selected[decision.Group.Ref.Key()] = decision.Outcome == GroupSelected
+	}
+	for _, key := range []string{"mikan:1", "mikan:2", "mikan:3", "anibt:a", "anibt:b"} {
+		if !selected[key] {
+			t.Fatalf("%s should be selected: %v", key, selected)
+		}
+	}
+	if selected["anibt:c"] {
+		t.Fatalf("third ranked group must stay outside max_rss=2: %v", selected)
+	}
 }
