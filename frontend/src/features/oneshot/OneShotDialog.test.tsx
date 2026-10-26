@@ -1188,7 +1188,6 @@ describe("OneShotDialog 搜索快照来源", () => {
       content_hash: SEARCH_CONTENT_HASH,
       freshness: "fresh",
       total_seeds: 2,
-      window: 20,
       retention_seconds: 86400,
       seeds: [],
     },

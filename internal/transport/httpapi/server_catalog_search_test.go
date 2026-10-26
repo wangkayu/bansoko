@@ -4,12 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -234,7 +231,7 @@ func TestFetchSeedSearchSnapshotContract(t *testing.T) {
 
 	server := newSeedSearchServer(t, upstream.URL)
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/catalog/providers/anibt/seed-search-snapshots:fetch",
-		strings.NewReader(`{"query":"  示例字幕组   示例作品 03 ","limit":10}`))
+		strings.NewReader(`{"query":"  示例字幕组   示例作品 03 "}`))
 	request.Header.Set("Content-Type", "application/json")
 	recorder := httptest.NewRecorder()
 	server.Handler().ServeHTTP(recorder, request)
@@ -269,14 +266,15 @@ func TestFetchSeedSearchSnapshotContract(t *testing.T) {
 	}
 }
 
-// A body carrying anything besides the query and the window is refused: the
-// scope, the entry/group and the stable keys are server-derived.
+// A body carrying anything besides the query is refused: the scope, the
+// entry/group, the stable keys and the render window are not caller input.
 func TestFetchSeedSearchSnapshotRejectsExtraFields(t *testing.T) {
 	server := newSeedSearchServer(t, "https://anibt.invalid")
 	for name, body := range map[string]string{
 		"provider_entry_ref": `{"query":"x","provider_entry_ref":"1001"}`,
 		"scope_ref":          `{"query":"x","scope_ref":"search-scope:` + strings.Repeat("a", 64) + `"}`,
 		"stable_seed_key":    `{"query":"x","stable_seed_key":"seed-1"}`,
+		"limit":              `{"query":"x","limit":10}`,
 		"empty query":        `{"query":"   "}`,
 	} {
 		request := httptest.NewRequest(http.MethodPost, "/api/v1/catalog/providers/anibt/seed-search-snapshots:fetch", strings.NewReader(body))
@@ -338,285 +336,3 @@ func (s seedSearchTestStore) PersistProviderFeedSnapshot(_ context.Context, inpu
 	}, nil
 }
 
-// Paging a search snapshot is served by the read endpoint, and the cursor is a
-// position inside one exact snapshot, never a second authorization: the same
-// exact-identity, kind and freshness checks run before a cursor is even decoded.
-// These tests drive the real route so the window boundary, the last page and the
-// cursor refusal are proven at the HTTP boundary.
-
-// searchReadSeeds builds n stable, distinct seeds for a search snapshot.
-func searchReadSeeds(n int) []catalogdomain.ProviderFeedSnapshotSeed {
-	seeds := make([]catalogdomain.ProviderFeedSnapshotSeed, 0, n)
-	for index := 0; index < n; index++ {
-		published := time.Date(2026, 10, 25, 2, index, 0, 0, time.UTC)
-		size := int64(1024 + index)
-		key := "seed-" + strconv.Itoa(index)
-		seeds = append(seeds, catalogdomain.ProviderFeedSnapshotSeed{
-			StableSeedKey:  key,
-			Locator:        "https://anibt.example.test/api/torrent/" + key + ".torrent",
-			LocatorDisplay: "https://anibt.example.test/api/torrent/" + key + ".torrent",
-			Title:          "[示例字幕组] 示例作品 - 0" + strconv.Itoa(index) + " [1080p]",
-			PublishedAt:    &published,
-			SizeBytes:      &size,
-			TorrentState:   catalogdomain.TorrentAcquisitionNotApplicable,
-		})
-	}
-	return seeds
-}
-
-// searchReadFixture is one persisted search snapshot a read can resolve, plus the
-// exact identity refs a caller derived from its own query.
-type searchReadFixture struct {
-	store *searchReadTestStore
-	// row is the exact snapshot the store resolves, so a test that changes a
-	// stored property changes the row the read actually sees. The request side is
-	// kept separately (below) so a case can make the request and the row disagree.
-	row *catalogdomain.ProviderFeedSnapshot
-	// requestID/requestVersion are the identity the caller derived when it held
-	// the original window; readURL always sends these.
-	requestID      string
-	requestVersion int64
-	scopeRef       string
-	queryRef       string
-	contentHash    string
-}
-
-func newSearchReadFixture(t *testing.T, kind catalogdomain.FeedSnapshotKind, total int, freshUntil time.Time) *searchReadFixture {
-	t.Helper()
-	seeds := searchReadSeeds(total)
-	contentHash, err := catalogdomain.CanonicalFeedSnapshotContentHash(seeds)
-	if err != nil {
-		t.Fatalf("hash search seeds: %v", err)
-	}
-	scopeRef, queryRef := catalogapplication.SearchScopeRef("anibt", "https://anibt.example.test", "示例作品"), catalogapplication.SearchQueryRef("示例作品")
-	now := time.Now().UTC()
-	snapshot := catalogdomain.ProviderFeedSnapshot{
-		ID: "search-snapshot-1", Provider: "anibt", ProviderEntryRef: scopeRef, ProviderGroupRef: queryRef,
-		SnapshotKind: kind, SearchParserVersion: "anibt-torznab-search-v1", Version: 3,
-		FetchedAt: now.Add(-time.Minute), FreshUntil: freshUntil, RetentionUntil: now.Add(23 * time.Hour),
-		ContentHash: contentHash, HashSchema: catalogdomain.ProviderFeedSnapshotContentHashSchema,
-		FreshnessState: catalogdomain.FeedSnapshotFresh, Seeds: seeds,
-	}
-	return &searchReadFixture{
-		store: &searchReadTestStore{snapshot: &snapshot}, row: &snapshot,
-		requestID: snapshot.ID, requestVersion: snapshot.Version,
-		scopeRef: scopeRef, queryRef: queryRef, contentHash: contentHash,
-	}
-}
-
-// readURL is the read path for this fixture, with an optional cursor.
-func (f *searchReadFixture) readURL(cursor string) string {
-	query := url.Values{}
-	query.Set("scope_ref", f.scopeRef)
-	query.Set("query_ref", f.queryRef)
-	query.Set("snapshot_version", strconv.FormatInt(f.requestVersion, 10))
-	query.Set("content_hash", f.contentHash)
-	query.Set("limit", "2")
-	if cursor != "" {
-		query.Set("cursor", cursor)
-	}
-	return "/api/v1/catalog/providers/anibt/seed-search-snapshots/" + f.requestID + "?" + query.Encode()
-}
-
-func serveSeedSearchRead(t *testing.T, server *Server, target string) *httptest.ResponseRecorder {
-	t.Helper()
-	recorder := httptest.NewRecorder()
-	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, target, nil))
-	return recorder
-}
-
-func newSeedSearchReadServer(fixture *searchReadFixture) *Server {
-	service := catalogapplication.NewProviderService(nil, nil)
-	service.SetFeedSnapshotStore(fixture.store)
-	return &Server{deps: Dependencies{
-		SeedSearch:    catalogapplication.SeedSearchApplication{Service: service},
-		SkipAuth:      true,
-		RuntimeLogger: observabilityport.NopRuntimeLogger{},
-	}}
-}
-
-// The first page of a search snapshot reports the next cursor; the second page
-// continues from it; the last page reports none.
-func TestReadSeedSearchSnapshotPaginatesOneStableSnapshot(t *testing.T) {
-	fixture := newSearchReadFixture(t, catalogdomain.FeedSnapshotKindSearch, 5, time.Now().UTC().Add(time.Hour))
-	server := newSeedSearchReadServer(fixture)
-
-	first := serveSeedSearchRead(t, server, fixture.readURL(""))
-	if first.Code != http.StatusOK {
-		t.Fatalf("first page status = %d body = %s", first.Code, first.Body.String())
-	}
-	var firstView generated.SeedSearchSnapshotView
-	if err := json.Unmarshal(first.Body.Bytes(), &firstView); err != nil {
-		t.Fatalf("first page is not a SeedSearchSnapshotView: %v body=%s", err, first.Body.String())
-	}
-	if len(firstView.Seeds) != 2 || firstView.Window != 2 || firstView.TotalSeeds != 5 {
-		t.Fatalf("first page seeds=%d window=%d total=%d", len(firstView.Seeds), firstView.Window, firstView.TotalSeeds)
-	}
-	if firstView.Seeds[0].StableSeedKey != "seed-0" || firstView.Seeds[1].StableSeedKey != "seed-1" {
-		t.Fatalf("first page order = %q, %q", firstView.Seeds[0].StableSeedKey, firstView.Seeds[1].StableSeedKey)
-	}
-	if firstView.NextCursor == nil || *firstView.NextCursor != "2" {
-		t.Fatalf("first page next_cursor = %v, want 2", firstView.NextCursor)
-	}
-	// The identity the cursor pages within is the same identity the first window
-	// named: paging never re-issues a different snapshot.
-	if firstView.SnapshotId != generated.ID(fixture.requestID) || string(firstView.ScopeRef) != fixture.scopeRef ||
-		firstView.ContentHash != fixture.contentHash || int64(firstView.SnapshotVersion) != fixture.requestVersion {
-		t.Fatalf("first page identity = %s v%d %s %s", firstView.SnapshotId, firstView.SnapshotVersion, firstView.ScopeRef, firstView.ContentHash)
-	}
-
-	second := serveSeedSearchRead(t, server, fixture.readURL(*firstView.NextCursor))
-	if second.Code != http.StatusOK {
-		t.Fatalf("second page status = %d body = %s", second.Code, second.Body.String())
-	}
-	var secondView generated.SeedSearchSnapshotView
-	if err := json.Unmarshal(second.Body.Bytes(), &secondView); err != nil {
-		t.Fatalf("second page is not a SeedSearchSnapshotView: %v body=%s", err, second.Body.String())
-	}
-	if len(secondView.Seeds) != 2 || secondView.Seeds[0].StableSeedKey != "seed-2" || secondView.Seeds[1].StableSeedKey != "seed-3" {
-		t.Fatalf("second page seeds = %+v", secondView.Seeds)
-	}
-	if secondView.NextCursor == nil || *secondView.NextCursor != "4" {
-		t.Fatalf("second page next_cursor = %v, want 4", secondView.NextCursor)
-	}
-	// The pages are windows of one snapshot, not three different snapshots.
-	if secondView.SnapshotId != firstView.SnapshotId || secondView.ContentHash != firstView.ContentHash || secondView.TotalSeeds != 5 {
-		t.Fatalf("second page identity drifted: %s %s total=%d", secondView.SnapshotId, secondView.ContentHash, secondView.TotalSeeds)
-	}
-
-	last := serveSeedSearchRead(t, server, fixture.readURL(*secondView.NextCursor))
-	if last.Code != http.StatusOK {
-		t.Fatalf("last page status = %d body = %s", last.Code, last.Body.String())
-	}
-	var lastView generated.SeedSearchSnapshotView
-	if err := json.Unmarshal(last.Body.Bytes(), &lastView); err != nil {
-		t.Fatalf("last page is not a SeedSearchSnapshotView: %v body=%s", err, last.Body.String())
-	}
-	if len(lastView.Seeds) != 1 || lastView.Seeds[0].StableSeedKey != "seed-4" {
-		t.Fatalf("last page seeds = %+v", lastView.Seeds)
-	}
-	if lastView.NextCursor != nil {
-		t.Fatalf("last page reported next_cursor = %q; the end of the window must be absent", *lastView.NextCursor)
-	}
-	// Every page reports the same complete-set count, so a client never mistakes
-	// the window for the result set.
-	if lastView.TotalSeeds != 5 {
-		t.Fatalf("last page total = %d", lastView.TotalSeeds)
-	}
-}
-
-// A cursor that is not a position in this result set is a typed 422, not a 500
-// and not a silent fallback to the first page.
-func TestReadSeedSearchSnapshotRejectsInvalidCursor(t *testing.T) {
-	fixture := newSearchReadFixture(t, catalogdomain.FeedSnapshotKindSearch, 5, time.Now().UTC().Add(time.Hour))
-	server := newSeedSearchReadServer(fixture)
-	for name, cursor := range map[string]string{
-		"not a number":   "next",
-		"negative":       "-1",
-		"leading zero":   "02",
-		"past the end":   "6",
-		"far past end":   "999999",
-		"leading spaces": " 2",
-	} {
-		t.Run(name, func(t *testing.T) {
-			recorder := serveSeedSearchRead(t, server, fixture.readURL(cursor))
-			if recorder.Code != http.StatusUnprocessableEntity {
-				t.Fatalf("cursor %q status = %d body = %s", cursor, recorder.Code, recorder.Body.String())
-			}
-			assertErrorResponseCode(t, recorder.Body.Bytes(), "SEARCH_SNAPSHOT_CURSOR_INVALID")
-		})
-	}
-	// An empty cursor is the first page, not a refusal.
-	first := serveSeedSearchRead(t, server, fixture.readURL(""))
-	if first.Code != http.StatusOK {
-		t.Fatalf("empty cursor status = %d body = %s", first.Code, first.Body.String())
-	}
-}
-
-// A cursor never widens the exact-snapshot checks: a mismatched scope, query,
-// version or content hash, a differently-kinded row, an expired window and a
-// stored-stale row are all refused before any window is rendered, and every
-// refusal is the typed 409 the contract declares rather than a 500 INTERNAL.
-func TestReadSeedSearchSnapshotPagingKeepsTheExactIdentityAndFreshness(t *testing.T) {
-	fresh := time.Now().UTC().Add(time.Hour)
-	validCursor := "2"
-	assertRefreshRequired := func(t *testing.T, fixture *searchReadFixture) {
-		t.Helper()
-		recorder := serveSeedSearchRead(t, newSeedSearchReadServer(fixture), fixture.readURL(validCursor))
-		if recorder.Code != http.StatusConflict {
-			t.Fatalf("status = %d body = %s", recorder.Code, recorder.Body.String())
-		}
-		assertErrorResponseCode(t, recorder.Body.Bytes(), "FEED_SNAPSHOT_REFRESH_REQUIRED")
-	}
-
-	t.Run("mismatched scope ref", func(t *testing.T) {
-		fixture := newSearchReadFixture(t, catalogdomain.FeedSnapshotKindSearch, 5, fresh)
-		fixture.scopeRef = catalogapplication.SearchScopeRef("anibt", "https://anibt.example.test", "别的作品")
-		assertRefreshRequired(t, fixture)
-	})
-
-	t.Run("mismatched query ref", func(t *testing.T) {
-		fixture := newSearchReadFixture(t, catalogdomain.FeedSnapshotKindSearch, 5, fresh)
-		fixture.queryRef = catalogapplication.SearchQueryRef("别的作品")
-		assertRefreshRequired(t, fixture)
-	})
-
-	t.Run("wrong content hash", func(t *testing.T) {
-		fixture := newSearchReadFixture(t, catalogdomain.FeedSnapshotKindSearch, 5, fresh)
-		fixture.contentHash = "sha256:" + strings.Repeat("d", 64)
-		assertRefreshRequired(t, fixture)
-	})
-
-	t.Run("wrong version", func(t *testing.T) {
-		fixture := newSearchReadFixture(t, catalogdomain.FeedSnapshotKindSearch, 5, fresh)
-		fixture.row.Version = 4
-		assertRefreshRequired(t, fixture)
-	})
-
-	t.Run("feed kind row", func(t *testing.T) {
-		fixture := newSearchReadFixture(t, catalogdomain.FeedSnapshotKindProviderFeed, 5, fresh)
-		assertRefreshRequired(t, fixture)
-	})
-
-	t.Run("expired fresh window", func(t *testing.T) {
-		fixture := newSearchReadFixture(t, catalogdomain.FeedSnapshotKindSearch, 5, time.Now().UTC().Add(-time.Minute))
-		assertRefreshRequired(t, fixture)
-	})
-
-	t.Run("stored stale state", func(t *testing.T) {
-		// The window is still open, so only the row's own stored freshness can
-		// refuse this read: a store that states stale must win over the clock.
-		fixture := newSearchReadFixture(t, catalogdomain.FeedSnapshotKindSearch, 5, fresh)
-		fixture.row.FreshnessState = catalogdomain.FeedSnapshotStale
-		assertRefreshRequired(t, fixture)
-	})
-
-	t.Run("not retained", func(t *testing.T) {
-		fixture := newSearchReadFixture(t, catalogdomain.FeedSnapshotKindSearch, 5, fresh)
-		fixture.row.ID = "another-snapshot"
-		assertRefreshRequired(t, fixture)
-	})
-}
-
-// searchReadTestStore resolves exactly one persisted snapshot by id. It holds the
-// snapshot by pointer so a test that changes the fixture changes the row the read
-// actually resolves; a stored-property case then proves the read's own check
-// rather than an incidental timestamp.
-type searchReadTestStore struct {
-	snapshot *catalogdomain.ProviderFeedSnapshot
-}
-
-func (s *searchReadTestStore) ReadLatestProviderFeedSnapshot(context.Context, string, string, string) (catalogdomain.ProviderFeedSnapshot, error) {
-	return catalogdomain.ProviderFeedSnapshot{}, sql.ErrNoRows
-}
-
-func (s *searchReadTestStore) ReadProviderFeedSnapshotByID(_ context.Context, id string) (catalogdomain.ProviderFeedSnapshot, error) {
-	if s.snapshot == nil || s.snapshot.ID == "" || s.snapshot.ID != id {
-		return catalogdomain.ProviderFeedSnapshot{}, sql.ErrNoRows
-	}
-	return *s.snapshot, nil
-}
-
-func (s *searchReadTestStore) PersistProviderFeedSnapshot(context.Context, catalogdomain.ProviderFeedSnapshotWrite) (catalogdomain.ProviderFeedSnapshot, error) {
-	return catalogdomain.ProviderFeedSnapshot{}, errors.New("not used")
-}

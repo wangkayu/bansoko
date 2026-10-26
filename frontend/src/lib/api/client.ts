@@ -1068,7 +1068,7 @@ export type SeedSearchSnapshotSeed = Schema<"SeedSearchSnapshotSeed">;
  * snapshot. It is a write (x-scope write): the upstream is contacted and a snapshot row
  * is appended, even though no subscription or owner is created. The returned identity
  * (snapshot_id + snapshot_version + content_hash plus the derived scope_ref/query_ref)
- * covers the complete result set; `limit` only bounds the window this response renders.
+ * covers the complete result set, and the response renders that whole seed window.
  */
 export function fetchSeedSearchSnapshot(
   provider: "anibt" | "mikan",
@@ -1078,37 +1078,6 @@ export function fetchSeedSearchSnapshot(
     method: "POST",
     body: input,
   });
-}
-
-/**
- * Reads one window of one exact search snapshot identity. It never contacts the provider
- * and never falls back to a latest snapshot: a stale or differently-kinded identity is a
- * typed 409 refresh-required failure, which the caller surfaces as "search again".
- */
-export function readSeedSearchSnapshot(
-  provider: "anibt" | "mikan",
-  snapshotID: string,
-  params: {
-    scope_ref: string;
-    query_ref: string;
-    snapshot_version: number;
-    content_hash: string;
-    cursor?: string;
-    limit?: number;
-  },
-): Promise<SeedSearchSnapshotView> {
-  const query = new URLSearchParams({
-    scope_ref: params.scope_ref,
-    query_ref: params.query_ref,
-    snapshot_version: String(params.snapshot_version),
-    content_hash: params.content_hash,
-  });
-  if (params.cursor !== undefined) query.set("cursor", params.cursor);
-  if (params.limit !== undefined) query.set("limit", String(params.limit));
-  return request(
-    `/catalog/providers/${encodePathSegment(provider)}/seed-search-snapshots/${encodePathSegment(snapshotID)}?${query.toString()}`,
-    { method: "GET" },
-  );
 }
 
 export function refreshCatalogProvider(

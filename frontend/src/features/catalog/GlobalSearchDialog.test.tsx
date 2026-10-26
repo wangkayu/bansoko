@@ -81,8 +81,6 @@ function seedSnapshotView(overrides: Partial<SeedSearchSnapshotView> = {}): Seed
     fresh_until: "2026-10-25T12:00:00Z",
     freshness: "fresh",
     total_seeds: 3,
-    window: 2,
-    next_cursor: "cursor-2",
     retention_seconds: 86400,
     seeds: [seedOne, seedTwo],
     ...overrides,
@@ -441,7 +439,7 @@ describe("GlobalSearchDialog 种子检索模式", () => {
 
     expect(seedFetchCalls).toHaveLength(1);
     expect(seedFetchCalls[0]!.url).toContain("/api/v1/catalog/providers/anibt/seed-search-snapshots:fetch");
-    expect(seedFetchCalls[0]!.body).toEqual({ query: "示例作品 字幕组甲", limit: 20 });
+    expect(seedFetchCalls[0]!.body).toEqual({ query: "示例作品 字幕组甲" });
     expect(onOpenChange).toHaveBeenCalledWith(false);
 
     // 标准两步弹窗的第一步：种子列表来自读模型对这次搜索快照的投影，勾选/展开都在里面。
@@ -504,13 +502,13 @@ describe("GlobalSearchDialog 种子检索模式", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(t("error.SEARCH_UPSTREAM_FAILED"));
     expect(screen.queryByRole("dialog", { name: t("oneshot.title") })).not.toBeInTheDocument();
 
-    seedFetchResult = { status: 200, body: seedSnapshotView({ next_cursor: null }) };
+    seedFetchResult = { status: 200, body: seedSnapshotView({}) };
     fireEvent.click(screen.getByRole("button", { name: t("grid.retry") }));
     expect(await screen.findByRole("dialog", { name: t("oneshot.title") })).toBeInTheDocument();
   });
 
   it("种子搜索空结果显示空态，不打开下载弹窗", async () => {
-    seedFetchResult = { status: 200, body: seedSnapshotView({ seeds: [], total_seeds: 0, next_cursor: null }) };
+    seedFetchResult = { status: 200, body: seedSnapshotView({ seeds: [], total_seeds: 0 }) };
     renderDialog();
     switchToSeedMode();
     await submitSeedSearch("不存在的作品");

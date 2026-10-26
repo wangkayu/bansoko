@@ -3554,8 +3554,9 @@ paths:
         query of work, subtitle group, episode and resolution); the first
         release offers no source-specific or in-result filter.
 
-        The snapshot identity covers the complete result set; `limit` only bounds
-        how many seeds this response renders. A search snapshot is a `search`
+        The snapshot identity covers the complete result set, and the response
+        renders that complete seed window (both sites answer at most 100 keyword
+        results). A search snapshot is a `search`
         kind: it is never a group, a subscription source or a saved-revision
         custom feed, it is not refreshed by provider refresh, and it expires
         after 24 hours. Expanding and downloading a seed from it uses the same
@@ -3584,69 +3585,6 @@ paths:
           $ref: '#/components/responses/Unprocessable'
         '429':
           $ref: '#/components/responses/TooManyRequests'
-        '503':
-          $ref: '#/components/responses/Unavailable'
-  /catalog/providers/{provider}/seed-search-snapshots/{snapshot_id}:
-    get:
-      tags: [Catalog]
-      operationId: readSeedSearchSnapshot
-      x-scope: read
-      description: >-
-        Read a bounded window of one exact search snapshot identity. It never
-        contacts the provider and never falls back to the latest snapshot: a
-        missing, superseded, stale or differently-kinded snapshot is a typed
-        refresh-required failure. `scope_ref` and `query_ref` are the two derived
-        refs the fetch returned, and they are matched against the persisted row
-        before any seed is rendered.
-      parameters:
-        - $ref: '#/components/parameters/CatalogProvider'
-        - name: snapshot_id
-          in: path
-          required: true
-          schema:
-            $ref: '#/components/schemas/ID'
-        - $ref: '#/components/parameters/SeedSearchScopeRef'
-        - $ref: '#/components/parameters/SeedSearchQueryRef'
-        - name: snapshot_version
-          in: query
-          required: true
-          schema:
-            $ref: '#/components/schemas/Version'
-        - name: content_hash
-          in: query
-          required: true
-          schema:
-            type: string
-            pattern: '^sha256:[0-9a-f]{64}$'
-        - name: cursor
-          in: query
-          required: false
-          schema:
-            type: string
-            maxLength: 16
-            pattern: '^(0|[1-9][0-9]*)$'
-          description: >-
-            The next_cursor returned by the previous window of this exact snapshot.
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 100
-      responses:
-        '200':
-          description: The seed window of that exact search snapshot.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SeedSearchSnapshotView'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '422':
-          $ref: '#/components/responses/Unprocessable'
         '503':
           $ref: '#/components/responses/Unavailable'
   /catalog/providers/{provider}/seasons/{season}/refresh:
@@ -6219,28 +6157,6 @@ components:
       schema:
         type: string
         enum: [anibt, mikan]
-    SeedSearchScopeRef:
-      name: scope_ref
-      in: query
-      required: true
-      description: >-
-        The derived search scope the fetch returned. It binds provider, resolved
-        upstream base and normalized query, and it is matched against the
-        persisted snapshot before any seed is rendered.
-      schema:
-        type: string
-        pattern: '^search-scope:[0-9a-f]{64}$'
-    SeedSearchQueryRef:
-      name: query_ref
-      in: query
-      required: true
-      description: >-
-        The derived query identity the fetch returned. The query text itself is
-        never persisted, so this digest is how a caller proves it is reading the
-        snapshot of the same query.
-      schema:
-        type: string
-        pattern: '^search-query:[0-9a-f]{64}$'
     CatalogProviderEntryRef:
       name: provider_entry_ref
       in: path
@@ -11713,8 +11629,9 @@ components:
         One keyword torrent search. Only the free-text query is accepted: the
         endpoint, the normalization and the snapshot scope are derived
         server-side, so no URL, entry, group, seed key or torrent byte can be
-        supplied. `limit` bounds the seed window of the response, not the
-        snapshot identity, which still covers the complete result set.
+        supplied. The response renders the snapshot's complete seed window: both
+        sites answer at most 100 keyword results, so that window is also the
+        complete result set.
       properties:
         query:
           type: string
@@ -11725,14 +11642,6 @@ components:
             subtitle group, an episode number or a resolution to narrow the
             upstream result (for example "示例作品 示例字幕组 03"); both sites
             match the text themselves and the first release adds no filter.
-        limit:
-          type: integer
-          minimum: 1
-          maximum: 100
-          description: >-
-            How many seeds this response renders. Both sites answer at most 100
-            keyword results, so a larger value is clamped rather than promising
-            a wider window.
     SeedSearchSnapshotSeed:
       type: object
       additionalProperties: false
@@ -11812,11 +11721,11 @@ components:
       additionalProperties: false
       required:
         [provider, scope_ref, query_ref, snapshot_id, snapshot_version,
-         content_hash, freshness, total_seeds, window, retention_seconds, seeds]
+         content_hash, freshness, total_seeds, retention_seconds, seeds]
       description: >-
-        One immutable keyword search snapshot and a bounded window of its seeds.
+        One immutable keyword search snapshot and its complete seed window.
         `total_seeds` counts the complete result set the snapshot identity
-        covers; `seeds` is the window this response renders. A search snapshot is
+        covers, and `seeds` renders all of it. A search snapshot is
         short-lived (24 hours), is never a group or a subscription source, and is
         refreshed only by fetching the same query again.
       properties:
@@ -11834,8 +11743,8 @@ components:
           maxLength: 256
           nullable: true
           description: >-
-            The normalized query, echoed by the fetch that ran it. A later read
-            does not echo it: the query text is not persisted, only its digest.
+            The normalized query, echoed by the fetch that ran it. The query
+            text itself is not persisted, only its digest.
         snapshot_id:
           $ref: '#/components/schemas/ID'
         snapshot_version:
@@ -11858,15 +11767,6 @@ components:
         total_seeds:
           type: integer
           minimum: 0
-        window:
-          type: integer
-          minimum: 0
-          description: How many seeds this response renders at most.
-        next_cursor:
-          type: string
-          pattern: '^(0|[1-9][0-9]*)$'
-          nullable: true
-          description: Pass this opaque value to read the next window; absent at the end.
         retention_seconds:
           type: integer
           minimum: 1

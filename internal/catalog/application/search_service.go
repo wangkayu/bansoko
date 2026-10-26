@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -33,13 +32,6 @@ import (
 //     seed keys as a provider feed, with its own short retention.
 //   - A search writes no subscription, no ownership, no group and no torrent
 //     byte: only expanding a seed fetches a torrent, exactly like a feed.
-const (
-	// defaultSearchSeedPreviewLimit bounds the seed preview a fetch returns. The
-	// snapshot identity still covers the complete result set; the window is only
-	// how many rows this response carries.
-	defaultSearchSeedPreviewLimit = 25
-	maxSearchSeedPreviewLimit     = 100
-)
 
 // SearchSeedPreviewSeed is one seed row of a search snapshot as the read model
 // renders it. It is the same fact set a feed preview seed carries, minus the raw
@@ -62,7 +54,8 @@ type SearchSeedPreviewSeed struct {
 	Resolution string
 }
 
-// SearchSeedPreview is the fetch/read result of one search snapshot.
+// SearchSeedPreview is the fetch result of one search snapshot: the snapshot
+// identity plus its complete stored seed window.
 type SearchSeedPreview struct {
 	Provider     string
 	Query        string
@@ -75,8 +68,6 @@ type SearchSeedPreview struct {
 	FreshUntil   time.Time
 	Freshness    catalogdomain.FeedSnapshotFreshness
 	TotalSeeds   int
-	Window       int
-	NextCursor   string
 	Parser       string
 	Seeds        []SearchSeedPreviewSeed
 	RetainedTill time.Time
@@ -120,9 +111,6 @@ type SeedSearchApplication struct {
 type FetchSearchSnapshotInput struct {
 	Provider string
 	Query    string
-	// Limit is the seed-preview window of this response, not of the snapshot
-	// identity. It is clamped to the documented keyword window.
-	Limit int
 }
 
 // ErrSeedSearchNotConfigured is the typed 503 of a server whose search endpoint
@@ -195,50 +183,14 @@ func (a SeedSearchApplication) Fetch(ctx context.Context, input FetchSearchSnaps
 	if err != nil {
 		return SearchSeedPreview{}, fmt.Errorf("persist search snapshot: %w", err)
 	}
-	preview := mapSearchSnapshot(snapshot, query, a.limit(input.Limit), 0)
+	preview := mapSearchSnapshot(snapshot, query)
 	preview.TotalSeeds = len(seeds)
 	a.Service.publishCatalogInvalidation()
 	return preview, nil
 }
 
-// ReadWindow returns a bounded window of one exact search snapshot identity. The
-// identity must be the fresh, exact search snapshot the caller named; a stale,
-// missing, superseded or differently-kinded snapshot fails closed, exactly like
-// an exact feed read.
-func (a SeedSearchApplication) ReadWindow(ctx context.Context, provider, scopeRef, queryRef, snapshotID, contentHash string, version int64, limit int, cursor string) (SearchSeedPreview, error) {
-	if a.Service == nil || a.Service.feedSnapshots == nil {
-		return SearchSeedPreview{}, &apperrors.Business{Status: http.StatusServiceUnavailable, Code: "PROVIDER_FEED_SNAPSHOT_STORE_NOT_CONFIGURED", Message: "Provider feed snapshots are not configured on this server."}
-	}
-	provider = strings.ToLower(strings.TrimSpace(provider))
-	if err := validateCatalogProvider(provider); err != nil {
-		return SearchSeedPreview{}, &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "PROVIDER_KIND_INVALID", Message: "Provider must be anibt or mikan."}
-	}
-	if err := catalogdomain.ValidateSearchSnapshotRef(scopeRef, catalogdomain.SearchSnapshotScopePrefix); err != nil {
-		return SearchSeedPreview{}, &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "SEARCH_SNAPSHOT_SCOPE_INVALID", Message: safeProviderReason(err.Error())}
-	}
-	if err := catalogdomain.ValidateSearchSnapshotRef(queryRef, catalogdomain.SearchSnapshotQueryPrefix); err != nil {
-		return SearchSeedPreview{}, &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "SEARCH_SNAPSHOT_SCOPE_INVALID", Message: safeProviderReason(err.Error())}
-	}
-	identity := catalogdomain.ProviderRSSPreviewIdentity{SnapshotID: snapshotID, SnapshotVersion: version, ContentHash: contentHash}
-	if err := identity.ValidateIdentityShape(); err != nil {
-		return SearchSeedPreview{}, &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "FEED_SNAPSHOT_IDENTITY_INVALID", Message: safeProviderReason(err.Error())}
-	}
-	snapshot, err := a.Service.readSearchSnapshotIdentity(ctx, provider, scopeRef, queryRef, identity)
-	if err != nil {
-		return SearchSeedPreview{}, err
-	}
-	// The query text is not persisted in clear text: the snapshot stores its
-	// digest, and the read reports that digest so a caller can prove it is the
-	// same query without the server keeping a query log.
-	offset, err := searchCursorOffset(cursor, len(snapshot.Seeds))
-	if err != nil {
-		return SearchSeedPreview{}, &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "SEARCH_SNAPSHOT_CURSOR_INVALID", Message: "The search snapshot cursor is invalid for this result window."}
-	}
-	return mapSearchSnapshot(snapshot, "", a.limit(limit), offset), nil
-}
-
 // FetchSearchSnapshotByID is the exact search-snapshot read exposed to one-shot
-// admission. It is the same read as ReadWindow: the identity must be the fresh
+// admission. The identity must be the fresh
 // exact `search` row, and the caller names the two derived refs it derived from
 // its own query. A read never falls back to a feed snapshot.
 func (a SeedSearchApplication) FetchSearchSnapshotByID(ctx context.Context, provider, scopeRef, queryRef string, identity catalogdomain.ProviderRSSPreviewIdentity) (catalogdomain.ProviderRSSPreviewResult, error) {
@@ -410,35 +362,21 @@ func (a SeedSearchApplication) now() time.Time {
 	return time.Now().UTC()
 }
 
-func (a SeedSearchApplication) limit(requested int) int {
-	if requested <= 0 {
-		return defaultSearchSeedPreviewLimit
-	}
-	if requested > maxSearchSeedPreviewLimit {
-		return maxSearchSeedPreviewLimit
-	}
-	return requested
-}
-
-// mapSearchSnapshot projects one persisted search snapshot into the bounded read
-// window. Seeds keep their stored order (published time, then stable key), so the
-// window is stable for a given snapshot: paging a snapshot never reorders it.
-func mapSearchSnapshot(snapshot catalogdomain.ProviderFeedSnapshot, query string, limit, offset int) SearchSeedPreview {
+// mapSearchSnapshot projects one persisted search snapshot into its fetch read:
+// the complete stored seed window. Seeds keep their stored order (published
+// time, then stable key), so the response is stable for a given snapshot.
+func mapSearchSnapshot(snapshot catalogdomain.ProviderFeedSnapshot, query string) SearchSeedPreview {
 	preview := SearchSeedPreview{
 		Provider: snapshot.Provider, Query: query,
 		ScopeRef: snapshot.ProviderEntryRef, QueryRef: snapshot.ProviderGroupRef,
 		SnapshotID: snapshot.ID, Version: snapshot.Version, ContentHash: snapshot.ContentHash,
 		FetchedAt: snapshot.FetchedAt, FreshUntil: snapshot.FreshUntil,
 		Freshness:  snapshot.FreshnessAt(time.Now().UTC()),
-		TotalSeeds: len(snapshot.Seeds), Window: limit, Parser: snapshot.SearchParserVersion,
+		TotalSeeds: len(snapshot.Seeds), Parser: snapshot.SearchParserVersion,
 		RetainedTill: snapshot.RetentionUntil,
 		Seeds:        make([]SearchSeedPreviewSeed, 0, len(snapshot.Seeds)),
 	}
-	for index := offset; index < len(snapshot.Seeds); index++ {
-		if limit > 0 && len(preview.Seeds) >= limit {
-			break
-		}
-		seed := snapshot.Seeds[index]
+	for _, seed := range snapshot.Seeds {
 		row := SearchSeedPreviewSeed{
 			StableSeedKey: seed.StableSeedKey, Title: seed.Title,
 			LocatorDisplay: storedSeedLocatorDisplay(seed.LocatorDisplay),
@@ -465,25 +403,7 @@ func mapSearchSnapshot(snapshot catalogdomain.ProviderFeedSnapshot, query string
 		}
 		preview.Seeds = append(preview.Seeds, row)
 	}
-	if next := offset + len(preview.Seeds); next < len(snapshot.Seeds) {
-		preview.NextCursor = strconv.Itoa(next)
-	}
 	return preview
-}
-
-// searchCursorOffset decodes the opaque cursor emitted by the previous window.
-// The current encoding is an offset into the immutable, stably ordered snapshot;
-// callers must not construct it, and an offset outside this result set is
-// rejected instead of silently skipping or repeating rows.
-func searchCursorOffset(cursor string, total int) (int, error) {
-	if cursor == "" {
-		return 0, nil
-	}
-	offset, err := strconv.Atoi(cursor)
-	if err != nil || offset < 0 || offset > total || strconv.Itoa(offset) != cursor {
-		return 0, errors.New("invalid search snapshot cursor")
-	}
-	return offset, nil
 }
 
 // mapSeedSearchError keeps the upstream failure classes distinguishable at the

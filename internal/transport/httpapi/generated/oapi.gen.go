@@ -2427,12 +2427,6 @@ const (
 	RefreshCatalogProviderParamsProviderMikan RefreshCatalogProviderParamsProvider = "mikan"
 )
 
-// Defines values for ReadSeedSearchSnapshotParamsProvider.
-const (
-	ReadSeedSearchSnapshotParamsProviderAnibt ReadSeedSearchSnapshotParamsProvider = "anibt"
-	ReadSeedSearchSnapshotParamsProviderMikan ReadSeedSearchSnapshotParamsProvider = "mikan"
-)
-
 // Defines values for FetchSeedSearchSnapshotParamsProvider.
 const (
 	FetchSeedSearchSnapshotParamsProviderAnibt FetchSeedSearchSnapshotParamsProvider = "anibt"
@@ -7866,11 +7860,8 @@ type SaveAnimeConfigCandidateInput struct {
 	Draft AnimeDraft `json:"draft"`
 }
 
-// SeedSearchSnapshotInput One keyword torrent search. Only the free-text query is accepted: the endpoint, the normalization and the snapshot scope are derived server-side, so no URL, entry, group, seed key or torrent byte can be supplied. `limit` bounds the seed window of the response, not the snapshot identity, which still covers the complete result set.
+// SeedSearchSnapshotInput One keyword torrent search. Only the free-text query is accepted: the endpoint, the normalization and the snapshot scope are derived server-side, so no URL, entry, group, seed key or torrent byte can be supplied. The response renders the snapshot's complete seed window: both sites answer at most 100 keyword results, so that window is also the complete result set.
 type SeedSearchSnapshotInput struct {
-	// Limit How many seeds this response renders. Both sites answer at most 100 keyword results, so a larger value is clamped rather than promising a wider window.
-	Limit *int `json:"limit,omitempty"`
-
 	// Query A space-composed keyword query. Combine the work title with a subtitle group, an episode number or a resolution to narrow the upstream result (for example "示例作品 示例字幕组 03"); both sites match the text themselves and the first release adds no filter.
 	Query string `json:"query"`
 }
@@ -7904,7 +7895,7 @@ type SeedSearchSnapshotSeed struct {
 // SeedSearchSnapshotSeedTorrentState defines model for SeedSearchSnapshotSeed.TorrentState.
 type SeedSearchSnapshotSeedTorrentState string
 
-// SeedSearchSnapshotView One immutable keyword search snapshot and a bounded window of its seeds. `total_seeds` counts the complete result set the snapshot identity covers; `seeds` is the window this response renders. A search snapshot is short-lived (24 hours), is never a group or a subscription source, and is refreshed only by fetching the same query again.
+// SeedSearchSnapshotView One immutable keyword search snapshot and its complete seed window. `total_seeds` counts the complete result set the snapshot identity covers, and `seeds` renders all of it. A search snapshot is short-lived (24 hours), is never a group or a subscription source, and is refreshed only by fetching the same query again.
 type SeedSearchSnapshotView struct {
 	ContentHash string     `json:"content_hash"`
 	FetchedAt   *time.Time `json:"fetched_at,omitempty"`
@@ -7913,14 +7904,11 @@ type SeedSearchSnapshotView struct {
 	FreshUntil *time.Time                      `json:"fresh_until,omitempty"`
 	Freshness  SeedSearchSnapshotViewFreshness `json:"freshness"`
 
-	// NextCursor Pass this opaque value to read the next window; absent at the end.
-	NextCursor *string `json:"next_cursor"`
-
 	// Parser The versioned reader that produced this snapshot's seed facts, for diagnosis when an upstream layout changes.
 	Parser   *string                        `json:"parser"`
 	Provider SeedSearchSnapshotViewProvider `json:"provider"`
 
-	// Query The normalized query, echoed by the fetch that ran it. A later read does not echo it: the query text is not persisted, only its digest.
+	// Query The normalized query, echoed by the fetch that ran it. The query text itself is not persisted, only its digest.
 	Query    *string `json:"query"`
 	QueryRef string  `json:"query_ref"`
 
@@ -7931,9 +7919,6 @@ type SeedSearchSnapshotView struct {
 	SnapshotId       ID                       `json:"snapshot_id"`
 	SnapshotVersion  Version                  `json:"snapshot_version"`
 	TotalSeeds       int                      `json:"total_seeds"`
-
-	// Window How many seeds this response renders at most.
-	Window int `json:"window"`
 }
 
 // SeedSearchSnapshotViewFreshness defines model for SeedSearchSnapshotView.Freshness.
@@ -8857,12 +8842,6 @@ type ReleaseID = ID
 // RouteID defines model for RouteID.
 type RouteID = ID
 
-// SeedSearchQueryRef defines model for SeedSearchQueryRef.
-type SeedSearchQueryRef = string
-
-// SeedSearchScopeRef defines model for SeedSearchScopeRef.
-type SeedSearchScopeRef = string
-
 // ToTime defines model for ToTime.
 type ToTime = time.Time
 
@@ -9039,24 +9018,6 @@ type SetCatalogPreferenceParamsProvider string
 
 // RefreshCatalogProviderParamsProvider defines parameters for RefreshCatalogProvider.
 type RefreshCatalogProviderParamsProvider string
-
-// ReadSeedSearchSnapshotParams defines parameters for ReadSeedSearchSnapshot.
-type ReadSeedSearchSnapshotParams struct {
-	// ScopeRef The derived search scope the fetch returned. It binds provider, resolved upstream base and normalized query, and it is matched against the persisted snapshot before any seed is rendered.
-	ScopeRef SeedSearchScopeRef `form:"scope_ref" json:"scope_ref"`
-
-	// QueryRef The derived query identity the fetch returned. The query text itself is never persisted, so this digest is how a caller proves it is reading the snapshot of the same query.
-	QueryRef        SeedSearchQueryRef `form:"query_ref" json:"query_ref"`
-	SnapshotVersion Version            `form:"snapshot_version" json:"snapshot_version"`
-	ContentHash     string             `form:"content_hash" json:"content_hash"`
-
-	// Cursor The next_cursor returned by the previous window of this exact snapshot.
-	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
-}
-
-// ReadSeedSearchSnapshotParamsProvider defines parameters for ReadSeedSearchSnapshot.
-type ReadSeedSearchSnapshotParamsProvider string
 
 // FetchSeedSearchSnapshotParamsProvider defines parameters for FetchSeedSearchSnapshot.
 type FetchSeedSearchSnapshotParamsProvider string
@@ -11859,9 +11820,6 @@ type ServerInterface interface {
 	// (POST /catalog/providers/{provider}/seasons/{season}/refresh)
 	RefreshCatalogProvider(w http.ResponseWriter, r *http.Request, provider RefreshCatalogProviderParamsProvider, season CatalogSeason)
 
-	// (GET /catalog/providers/{provider}/seed-search-snapshots/{snapshot_id})
-	ReadSeedSearchSnapshot(w http.ResponseWriter, r *http.Request, provider ReadSeedSearchSnapshotParamsProvider, snapshotId ID, params ReadSeedSearchSnapshotParams)
-
 	// (POST /catalog/providers/{provider}/seed-search-snapshots:fetch)
 	FetchSeedSearchSnapshot(w http.ResponseWriter, r *http.Request, provider FetchSeedSearchSnapshotParamsProvider)
 
@@ -14655,125 +14613,6 @@ func (siw *ServerInterfaceWrapper) RefreshCatalogProvider(w http.ResponseWriter,
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RefreshCatalogProvider(w, r, provider, season)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ReadSeedSearchSnapshot operation middleware
-func (siw *ServerInterfaceWrapper) ReadSeedSearchSnapshot(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-
-	// ------------- Path parameter "provider" -------------
-	var provider ReadSeedSearchSnapshotParamsProvider
-
-	err = runtime.BindStyledParameterWithOptions("simple", "provider", r.PathValue("provider"), &provider, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "provider", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "snapshot_id" -------------
-	var snapshotId ID
-
-	err = runtime.BindStyledParameterWithOptions("simple", "snapshot_id", r.PathValue("snapshot_id"), &snapshotId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "snapshot_id", Err: err})
-		return
-	}
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ReadSeedSearchSnapshotParams
-
-	// ------------- Required query parameter "scope_ref" -------------
-
-	if paramValue := r.URL.Query().Get("scope_ref"); paramValue != "" {
-
-	} else {
-		siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "scope_ref"})
-		return
-	}
-
-	err = runtime.BindQueryParameter("form", true, true, "scope_ref", r.URL.Query(), &params.ScopeRef)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "scope_ref", Err: err})
-		return
-	}
-
-	// ------------- Required query parameter "query_ref" -------------
-
-	if paramValue := r.URL.Query().Get("query_ref"); paramValue != "" {
-
-	} else {
-		siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "query_ref"})
-		return
-	}
-
-	err = runtime.BindQueryParameter("form", true, true, "query_ref", r.URL.Query(), &params.QueryRef)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "query_ref", Err: err})
-		return
-	}
-
-	// ------------- Required query parameter "snapshot_version" -------------
-
-	if paramValue := r.URL.Query().Get("snapshot_version"); paramValue != "" {
-
-	} else {
-		siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "snapshot_version"})
-		return
-	}
-
-	err = runtime.BindQueryParameter("form", true, true, "snapshot_version", r.URL.Query(), &params.SnapshotVersion)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "snapshot_version", Err: err})
-		return
-	}
-
-	// ------------- Required query parameter "content_hash" -------------
-
-	if paramValue := r.URL.Query().Get("content_hash"); paramValue != "" {
-
-	} else {
-		siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "content_hash"})
-		return
-	}
-
-	err = runtime.BindQueryParameter("form", true, true, "content_hash", r.URL.Query(), &params.ContentHash)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "content_hash", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "cursor" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "cursor", r.URL.Query(), &params.Cursor)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "limit" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "limit", r.URL.Query(), &params.Limit)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ReadSeedSearchSnapshot(w, r, provider, snapshotId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -19199,7 +19038,6 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("GET "+options.BaseURL+"/catalog/providers/{provider}/seasons/{season}/preference", wrapper.ReadCatalogPreference)
 	m.HandleFunc("PUT "+options.BaseURL+"/catalog/providers/{provider}/seasons/{season}/preference", wrapper.SetCatalogPreference)
 	m.HandleFunc("POST "+options.BaseURL+"/catalog/providers/{provider}/seasons/{season}/refresh", wrapper.RefreshCatalogProvider)
-	m.HandleFunc("GET "+options.BaseURL+"/catalog/providers/{provider}/seed-search-snapshots/{snapshot_id}", wrapper.ReadSeedSearchSnapshot)
 	m.HandleFunc("POST "+options.BaseURL+"/catalog/providers/{provider}/seed-search-snapshots:fetch", wrapper.FetchSeedSearchSnapshot)
 	m.HandleFunc("GET "+options.BaseURL+"/catalog/suppressions", wrapper.ListCatalogSuppressions)
 	m.HandleFunc("DELETE "+options.BaseURL+"/catalog/suppressions/{provider}/{provider_entry_ref}", wrapper.UnsuppressCatalogEntry)

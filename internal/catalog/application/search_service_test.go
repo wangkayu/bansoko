@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -16,8 +15,7 @@ import (
 
 // Keyword search persists a `search` snapshot and never a feed one. These tests
 // pin the snapshot's identity, its derived scope, the short retention facts it
-// reports, and the exact-read rules: a search identity is only served by a
-// search row, and a feed identity is only served by a feed row.
+// reports, and that a feed identity is never answered by a search row.
 
 // searchTestStore is a snapshot store that persists the write it receives, so a
 // test can assert exactly what the application published.
@@ -249,106 +247,9 @@ func TestSearchQueryLengthCountsCharacters(t *testing.T) {
 	}
 }
 
-// An exact read serves only the search row it names, and only while it is fresh.
-func TestReadWindowIsExactAndFreshOnly(t *testing.T) {
-	now := time.Now().UTC()
-	seed := catalogdomain.ProviderFeedSnapshotSeed{
-		StableSeedKey: "seed-1", Locator: "https://anibt.example.test/a.torrent",
-		LocatorDisplay: "https://anibt.example.test/a.torrent", Title: "[示例字幕组] 示例作品 - 03 [1080p]",
-		TorrentState: catalogdomain.TorrentAcquisitionNotApplicable,
-	}
-	published := now.Add(-time.Minute)
-	seed.PublishedAt = &published
-	seeds := []catalogdomain.ProviderFeedSnapshotSeed{seed}
-	hash, err := catalogdomain.CanonicalFeedSnapshotContentHash(seeds)
-	if err != nil {
-		t.Fatal(err)
-	}
-	scopeRef, queryRef := SearchScopeRef("anibt", "https://anibt.example.test", "示例作品"), SearchQueryRef("示例作品")
-	// The stored freshness line is read from the row, never from the caller: the
-	// fixture derives it the way the SQL read does.
-	makeSnapshot := func(kind catalogdomain.FeedSnapshotKind, freshUntil time.Time) catalogdomain.ProviderFeedSnapshot {
-		freshness := catalogdomain.FeedSnapshotStale
-		if now.Before(freshUntil) {
-			freshness = catalogdomain.FeedSnapshotFresh
-		}
-		return catalogdomain.ProviderFeedSnapshot{
-			ID: "snap-1", Provider: "anibt", ProviderEntryRef: scopeRef, ProviderGroupRef: queryRef,
-			SnapshotKind: kind, SearchParserVersion: torznabContractVersion, Version: 2, FetchedAt: now.Add(-time.Minute), FreshUntil: freshUntil,
-			RetentionUntil: now.Add(24 * time.Hour), ContentHash: hash, FreshnessState: freshness, Seeds: seeds,
-		}
-	}
-	newApplication := func(snapshot catalogdomain.ProviderFeedSnapshot) SeedSearchApplication {
-		store := &searchTestStore{persisted: snapshot}
-		service := NewProviderService(nil, nil)
-		service.SetFeedSnapshotStore(store)
-		return SeedSearchApplication{Service: service, Now: func() time.Time { return now }}
-	}
-
-	preview, err := newApplication(makeSnapshot(catalogdomain.FeedSnapshotKindSearch, now.Add(time.Hour))).
-		ReadWindow(context.Background(), "anibt", scopeRef, queryRef, "snap-1", hash, 2, 10, "")
-	if err != nil {
-		t.Fatalf("exact fresh search read: %v", err)
-	}
-	if len(preview.Seeds) != 1 || preview.Seeds[0].GroupName != "示例字幕组" {
-		t.Fatalf("preview = %+v", preview)
-	}
-
-	if preview.Parser != torznabContractVersion {
-		t.Fatalf("exact read lost parser evidence: %q", preview.Parser)
-	}
-
-	// A feed row never answers a search identity.
-	if _, err := newApplication(makeSnapshot(catalogdomain.FeedSnapshotKindProviderFeed, now.Add(time.Hour))).
-		ReadWindow(context.Background(), "anibt", scopeRef, queryRef, "snap-1", hash, 2, 10, ""); !errors.Is(err, catalogdomain.ErrProviderFeedSnapshotIdentityMismatch) {
-		t.Fatalf("feed row served a search read: %v", err)
-	}
-	// A stale search row fails closed instead of being re-issued.
-	if _, err := newApplication(makeSnapshot(catalogdomain.FeedSnapshotKindSearch, now.Add(-time.Minute))).
-		ReadWindow(context.Background(), "anibt", scopeRef, queryRef, "snap-1", hash, 2, 10, ""); err == nil {
-		t.Fatal("a stale search snapshot was served")
-	}
-	// Another query's scope is a different snapshot, not the latest of this one.
-	if _, err := newApplication(makeSnapshot(catalogdomain.FeedSnapshotKindSearch, now.Add(time.Hour))).
-		ReadWindow(context.Background(), "anibt", SearchScopeRef("anibt", "https://anibt.example.test", "别的作品"), queryRef, "snap-1", hash, 2, 10, ""); err == nil {
-		t.Fatal("a mismatching scope ref was accepted")
-	}
-}
-
-func TestSearchSnapshotWindowsHaveStableCursors(t *testing.T) {
-	now := time.Now().UTC()
-	seeds := make([]catalogdomain.ProviderFeedSnapshotSeed, 3)
-	for index := range seeds {
-		seeds[index] = catalogdomain.ProviderFeedSnapshotSeed{
-			StableSeedKey: "seed-" + strconv.Itoa(index), Title: "示例发布",
-			TorrentState: catalogdomain.TorrentAcquisitionNotApplicable,
-		}
-	}
-	snapshot := catalogdomain.ProviderFeedSnapshot{
-		Provider: "mikan", Seeds: seeds, FetchedAt: now, FreshUntil: now.Add(time.Hour),
-		RetentionUntil: now.Add(24 * time.Hour), SearchParserVersion: mikanSearchContractVersion,
-	}
-	first := mapSearchSnapshot(snapshot, "", 2, 0)
-	if first.NextCursor != "2" || len(first.Seeds) != 2 || first.Seeds[0].StableSeedKey != "seed-0" {
-		t.Fatalf("first window = %+v", first)
-	}
-	offset, err := searchCursorOffset(first.NextCursor, len(seeds))
-	if err != nil {
-		t.Fatal(err)
-	}
-	last := mapSearchSnapshot(snapshot, "", 2, offset)
-	if last.NextCursor != "" || len(last.Seeds) != 1 || last.Seeds[0].StableSeedKey != "seed-2" {
-		t.Fatalf("last window = %+v", last)
-	}
-	for _, cursor := range []string{"-1", "01", "4", "not-a-cursor"} {
-		if _, err := searchCursorOffset(cursor, len(seeds)); err == nil {
-			t.Fatalf("cursor %q was accepted", cursor)
-		}
-	}
-}
-
 // A feed read refuses a search scope outright: search snapshots are addressed by
-// the exact search read, not by a provider entry/group.
+// their own identity through the one-shot read model and seed expansion, never
+// by a provider entry/group.
 func TestFeedReadRefusesASearchScope(t *testing.T) {
 	service := NewProviderService(nil, nil)
 	service.SetFeedSnapshotStore(&searchTestStore{})

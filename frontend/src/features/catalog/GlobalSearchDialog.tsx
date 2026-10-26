@@ -42,8 +42,6 @@ type SearchMode = "program" | "seed";
 type SearchSite = "anibt" | "mikan";
 
 const SEARCH_PROVIDERS: readonly SearchSite[] = ["anibt", "mikan"];
-// One keyword window; both sites cap a keyword result at 100 rows.
-const SEED_PAGE_SIZE = 20;
 
 type CandidateTarget = {
   providerKey: ProviderKey;
@@ -153,7 +151,7 @@ export function GlobalSearchDialog({
     setSeedError(undefined);
     setSeedNoMatch(false);
     try {
-      const view = await fetchSeedSearchSnapshot(site, { query: q, limit: SEED_PAGE_SIZE });
+      const view = await fetchSeedSearchSnapshot(site, { query: q });
       if (seq !== requestSeq.current) return;
       if (view.seeds.length === 0) {
         setSeedNoMatch(true);

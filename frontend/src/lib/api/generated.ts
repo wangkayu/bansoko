@@ -1595,25 +1595,8 @@ export interface paths {
         put?: never;
         /** @description Run one keyword torrent search against one provider and persist its results as an immutable search snapshot. This is a write because it contacts the upstream and appends a snapshot row, even though it creates no subscription, ownership, group, WorkItem or torrent byte.
          *     Only the free-text query is caller input: the upstream endpoint, the query normalization and the snapshot scope are derived server-side, so a request can never name a URL, a catalog entry, a group, a seed key or torrent bytes. The two sites are queried the same way (a space-composed query of work, subtitle group, episode and resolution); the first release offers no source-specific or in-result filter.
-         *     The snapshot identity covers the complete result set; `limit` only bounds how many seeds this response renders. A search snapshot is a `search` kind: it is never a group, a subscription source or a saved-revision custom feed, it is not refreshed by provider refresh, and it expires after 24 hours. Expanding and downloading a seed from it uses the same exact-identity endpoints as a feed seed and the same strong-identity verification; there is no second download path. This endpoint is human only and has no MCP tool: it persists a batch of seeds, and the first release does not expose keyword search to agents. */
+         *     The snapshot identity covers the complete result set, and the response renders that complete seed window (both sites answer at most 100 keyword results). A search snapshot is a `search` kind: it is never a group, a subscription source or a saved-revision custom feed, it is not refreshed by provider refresh, and it expires after 24 hours. Expanding and downloading a seed from it uses the same exact-identity endpoints as a feed seed and the same strong-identity verification; there is no second download path. This endpoint is human only and has no MCP tool: it persists a batch of seeds, and the first release does not expose keyword search to agents. */
         post: operations["fetchSeedSearchSnapshot"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/catalog/providers/{provider}/seed-search-snapshots/{snapshot_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Read a bounded window of one exact search snapshot identity. It never contacts the provider and never falls back to the latest snapshot: a missing, superseded, stale or differently-kinded snapshot is a typed refresh-required failure. `scope_ref` and `query_ref` are the two derived refs the fetch returned, and they are matched against the persisted row before any seed is rendered. */
-        get: operations["readSeedSearchSnapshot"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4919,12 +4902,10 @@ export interface components {
             snapshot_version: components["schemas"]["Version"];
             groups: components["schemas"]["ProviderGroupDiscoveryGroup"][];
         };
-        /** @description One keyword torrent search. Only the free-text query is accepted: the endpoint, the normalization and the snapshot scope are derived server-side, so no URL, entry, group, seed key or torrent byte can be supplied. `limit` bounds the seed window of the response, not the snapshot identity, which still covers the complete result set. */
+        /** @description One keyword torrent search. Only the free-text query is accepted: the endpoint, the normalization and the snapshot scope are derived server-side, so no URL, entry, group, seed key or torrent byte can be supplied. The response renders the snapshot's complete seed window: both sites answer at most 100 keyword results, so that window is also the complete result set. */
         SeedSearchSnapshotInput: {
             /** @description A space-composed keyword query. Combine the work title with a subtitle group, an episode number or a resolution to narrow the upstream result (for example "示例作品 示例字幕组 03"); both sites match the text themselves and the first release adds no filter. */
             query: string;
-            /** @description How many seeds this response renders. Both sites answer at most 100 keyword results, so a larger value is clamped rather than promising a wider window. */
-            limit?: number;
         };
         SeedSearchSnapshotSeed: {
             /** @description Stable identity within this search snapshot. */
@@ -4948,13 +4929,13 @@ export interface components {
             /** @description Work-title candidate parsed from the release title for display only. It is never a work identity and never a subscription or download input; a caller may use it as the editable title default. */
             title_hint?: string | null;
         };
-        /** @description One immutable keyword search snapshot and a bounded window of its seeds. `total_seeds` counts the complete result set the snapshot identity covers; `seeds` is the window this response renders. A search snapshot is short-lived (24 hours), is never a group or a subscription source, and is refreshed only by fetching the same query again. */
+        /** @description One immutable keyword search snapshot and its complete seed window. `total_seeds` counts the complete result set the snapshot identity covers, and `seeds` renders all of it. A search snapshot is short-lived (24 hours), is never a group or a subscription source, and is refreshed only by fetching the same query again. */
         SeedSearchSnapshotView: {
             /** @enum {string} */
             provider: "anibt" | "mikan";
             scope_ref: string;
             query_ref: string;
-            /** @description The normalized query, echoed by the fetch that ran it. A later read does not echo it: the query text is not persisted, only its digest. */
+            /** @description The normalized query, echoed by the fetch that ran it. The query text itself is not persisted, only its digest. */
             query?: string | null;
             snapshot_id: components["schemas"]["ID"];
             snapshot_version: components["schemas"]["Version"];
@@ -4969,10 +4950,6 @@ export interface components {
             /** @enum {string} */
             freshness: "fresh" | "stale" | "missing";
             total_seeds: number;
-            /** @description How many seeds this response renders at most. */
-            window: number;
-            /** @description Pass this opaque value to read the next window; absent at the end. */
-            next_cursor?: string | null;
             /** @description The derived retention of a search snapshot (86400 seconds). After it, the snapshot may be purged, including its latest version. */
             retention_seconds: number;
             /** @description The versioned reader that produced this snapshot's seed facts, for diagnosis when an upstream layout changes. */
@@ -7819,10 +7796,6 @@ export interface components {
         IdempotencyKey: string;
         /** @description Provider namespace for the catalog. */
         CatalogProvider: "anibt" | "mikan";
-        /** @description The derived search scope the fetch returned. It binds provider, resolved upstream base and normalized query, and it is matched against the persisted snapshot before any seed is rendered. */
-        SeedSearchScopeRef: string;
-        /** @description The derived query identity the fetch returned. The query text itself is never persisted, so this digest is how a caller proves it is reading the snapshot of the same query. */
-        SeedSearchQueryRef: string;
         /** @description External provider-scoped catalog-entry reference. Unique only within its provider and never a formal ManagedAnime owner identity, so it is always paired with the provider path segment. */
         CatalogProviderEntryRef: string;
         /** @description Season identifier in canonical YYYY-term form (e.g. 2026-summer). Terms: winter, spring, summer, fall. */
@@ -10726,44 +10699,6 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
-            503: components["responses"]["Unavailable"];
-        };
-    };
-    readSeedSearchSnapshot: {
-        parameters: {
-            query: {
-                /** @description The derived search scope the fetch returned. It binds provider, resolved upstream base and normalized query, and it is matched against the persisted snapshot before any seed is rendered. */
-                scope_ref: components["parameters"]["SeedSearchScopeRef"];
-                /** @description The derived query identity the fetch returned. The query text itself is never persisted, so this digest is how a caller proves it is reading the snapshot of the same query. */
-                query_ref: components["parameters"]["SeedSearchQueryRef"];
-                snapshot_version: components["schemas"]["Version"];
-                content_hash: string;
-                /** @description The next_cursor returned by the previous window of this exact snapshot. */
-                cursor?: string;
-                limit?: number;
-            };
-            header?: never;
-            path: {
-                /** @description Provider namespace for the catalog. */
-                provider: components["parameters"]["CatalogProvider"];
-                snapshot_id: components["schemas"]["ID"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The seed window of that exact search snapshot. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SeedSearchSnapshotView"];
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            409: components["responses"]["Conflict"];
-            422: components["responses"]["Unprocessable"];
             503: components["responses"]["Unavailable"];
         };
     };

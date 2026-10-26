@@ -131,7 +131,6 @@ func TestSecretRevealingOperationsArePinned(t *testing.T) {
 		"previewProviderEntryRSS",
 		"readAnimeRSSListView",
 		"readProviderEntryRSS",
-		"readSeedSearchSnapshot",
 		"saveAnimeConfigCandidate",
 	}
 	if !reflect.DeepEqual(got, want) {

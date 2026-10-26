@@ -17,7 +17,6 @@ import (
 // the snapshot a fetch persists is the snapshot an expand/download resolves.
 type SeedSearchService interface {
 	Fetch(ctx context.Context, input catalogapplication.FetchSearchSnapshotInput) (catalogapplication.SearchSeedPreview, error)
-	ReadWindow(ctx context.Context, provider, scopeRef, queryRef, snapshotID, contentHash string, version int64, limit int, cursor string) (catalogapplication.SearchSeedPreview, error)
 }
 
 // CatalogService is the provider-scoped catalog application boundary consumed
