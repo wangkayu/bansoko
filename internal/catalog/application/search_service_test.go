@@ -158,6 +158,47 @@ func TestFetchSearchSnapshotPersistsASearchKindSnapshot(t *testing.T) {
 	}
 }
 
+// Mikan publishes the release title as its item guid, and a long CJK title
+// passes the stable-key bound. Such a row is still a usable seed: the search
+// persists its snapshot and names that row by its content digest instead of
+// turning the whole answer into a 422.
+func TestFetchMikanSearchKeepsARowWhosePublishedIdentityExceedsTheKeyBound(t *testing.T) {
+	longTitle := "[示例字幕组] 示例作品 / Example Work - 01 [" + strings.Repeat("长", 100) + "]"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/RSS/Search" || r.URL.Query().Get("searchstr") != "示例作品" {
+			t.Errorf("unexpected upstream request %s?%s", r.URL.Path, r.URL.RawQuery)
+		}
+		w.Write([]byte(`<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0"><channel><title>Mikan</title>
+<item><title>` + longTitle + `</title><guid isPermaLink="false">` + longTitle + `</guid>
+<link>https://mikan.example.test/Download/2026/example.torrent</link>
+<pubDate>Thu, 22 Oct 2026 02:00:47 +0800</pubDate>
+<enclosure url="https://mikan.example.test/Download/2026/example.torrent" length="2048" type="application/x-bittorrent" />
+</item></channel></rss>`))
+	}))
+	defer upstream.Close()
+
+	store := &searchTestStore{}
+	application := newSearchTestApplication(t, store, upstream)
+	preview, err := application.Fetch(context.Background(), FetchSearchSnapshotInput{Provider: "mikan", Query: "示例作品"})
+	if err != nil {
+		t.Fatalf("a row above the key bound failed the search: %v", err)
+	}
+	if len(store.written) != 1 || len(store.written[0].Seeds) != 1 {
+		t.Fatalf("published %d snapshots with %d seeds, want one with one seed", len(store.written), len(store.written[0].Seeds))
+	}
+	seed := store.written[0].Seeds[0]
+	if seed.StableSeedKey == longTitle || len(seed.StableSeedKey) > catalogdomain.MaxProviderFeedStableKeyLength {
+		t.Fatalf("stable seed key = %q, want a bounded content digest", seed.StableSeedKey)
+	}
+	if seed.Title != longTitle {
+		t.Fatalf("the row lost its title: %q", seed.Title)
+	}
+	if len(preview.Seeds) != 1 || preview.Seeds[0].StableSeedKey != seed.StableSeedKey {
+		t.Fatalf("preview seeds = %+v", preview.Seeds)
+	}
+}
+
 // A search snapshot is never persisted when the upstream answer is an error, an
 // empty unusable page or a refused protocol answer: the store sees no write.
 func TestFetchSearchSnapshotNeverPersistsOnUpstreamFailure(t *testing.T) {

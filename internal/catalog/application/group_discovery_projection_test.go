@@ -283,3 +283,53 @@ func TestSnapshotBuilderFreezesTheAniBTTagSet(t *testing.T) {
 		t.Fatalf("a tag-less provider produced a tag block: %+v", seeds[0].AniBTTags)
 	}
 }
+
+// The published identity is the seed's name, but only while it can be stored as
+// one. Mikan publishes the release title as its guid, and a long CJK title
+// passes the key bound, so a page carrying one such row must still map to a
+// snapshot: the row keeps a content-derived key instead of failing the page.
+func TestSnapshotBuilderKeepsAPublishedIdentityThatExceedsTheBound(t *testing.T) {
+	item := feedItemWithFiles(t)
+	item.Provider = "mikan"
+	item.GUID = strings.Repeat("长", catalogdomain.MaxProviderFeedStableKeyLength)
+	seeds, err := mapFeedItemsToSnapshotSeeds([]acquisitiondomain.FeedItem{item})
+	if err != nil {
+		t.Fatalf("a published identity above the bound failed the whole page: %v", err)
+	}
+	if len(seeds) != 1 {
+		t.Fatalf("seed count = %d, want 1", len(seeds))
+	}
+	seed := seeds[0]
+	if seed.StableSeedKey != feedItemDigestKey(item, item.DownloadURL()) {
+		t.Fatalf("stable seed key = %q, want the item's content digest", seed.StableSeedKey)
+	}
+	if len(seed.StableSeedKey) > catalogdomain.MaxProviderFeedStableKeyLength {
+		t.Fatalf("stable seed key is %d bytes, above the bound", len(seed.StableSeedKey))
+	}
+	if seed.Title != item.Title || seed.Locator != item.DownloadURL() {
+		t.Fatalf("the row lost its own facts: title=%q locator=%q", seed.Title, seed.Locator)
+	}
+}
+
+// A published identity inside the bound is used verbatim, and repeats are
+// disambiguated by position without leaving the bound.
+func TestSnapshotBuilderBoundsARepeatedPublishedIdentity(t *testing.T) {
+	item := feedItemWithFiles(t)
+	item.Provider = "mikan"
+	item.GUID = strings.Repeat("a", catalogdomain.MaxProviderFeedStableKeyLength)
+	seeds, err := mapFeedItemsToSnapshotSeeds([]acquisitiondomain.FeedItem{item, item})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seeds[0].StableSeedKey != item.GUID {
+		t.Fatalf("stable seed key = %q, want the published identity", seeds[0].StableSeedKey)
+	}
+	if seeds[1].StableSeedKey == seeds[0].StableSeedKey {
+		t.Fatal("the repeated identity was not disambiguated")
+	}
+	for _, seed := range seeds {
+		if len(seed.StableSeedKey) > catalogdomain.MaxProviderFeedStableKeyLength {
+			t.Fatalf("stable seed key is %d bytes, above the bound", len(seed.StableSeedKey))
+		}
+	}
+}
