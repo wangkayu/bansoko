@@ -8,6 +8,7 @@ import (
 	"bansoko/internal/apperrors"
 	"bansoko/internal/filemaintenance/planner"
 	"bansoko/internal/filemaintenance/policy"
+	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/parser"
 	"bansoko/internal/parserpolicy"
 	reconciliationapplication "bansoko/internal/reconciliation/application"
@@ -31,6 +32,12 @@ type Service struct {
 	scanReader       ScanOwnerReader
 	pathDiff         *PathDiffService
 	animeExists      AnimeExistenceReader
+	// recoveryObserver re-stats the candidate's frozen target at confirm
+	// time (no-follow, no content read); nil fails closed.
+	recoveryObserver RecoveryFileObserver
+	// recoveryActivity is the durable business journal of the confirm; nil
+	// keeps the confirm silent like every other unwired activity owner.
+	recoveryActivity observabilityport.ActivityWriter
 	// metadataRefresher is the positive-cache bypass (the 对齐（刷新元数据）
 	// variant); nil means the variant fails closed.
 	metadataRefresher MetadataWorkRefresher

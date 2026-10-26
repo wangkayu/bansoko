@@ -53,6 +53,29 @@ func (executor OSCleanupExecutor) Observe(ctx context.Context, path string) (dom
 	return observeFile(canonical)
 }
 
+// ObserveMetadataFile is the no-content-read counterpart to Observe for a
+// cleanup whose frozen placement identity is metadata. It keeps the same
+// anchored, no-follow parent and final-entry checks as the hashing observer.
+func (executor OSCleanupExecutor) ObserveMetadataFile(ctx context.Context, path string) (domain.FileObservation, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.FileObservation{}, err
+	}
+	root, canonical, err := executor.rootAndPath(path)
+	if err != nil {
+		return domain.FileObservation{}, err
+	}
+	parent, err := verifiedParentIdentityWithinRoot(root, canonical, false)
+	if err != nil {
+		return domain.FileObservation{}, fmt.Errorf("verify cleanup parent: %w", err)
+	}
+	entry, err := openMutationEntry(root, canonical, parent)
+	if err != nil {
+		return domain.FileObservation{}, fmt.Errorf("verify cleanup entry: %w", err)
+	}
+	defer entry.parent.Close()
+	return (OSFileObserver{}).ObserveMetadataFile(ctx, canonical)
+}
+
 // MoveToQuarantine validates all frozen evidence and the no-follow rooted
 // paths, then returns a typed blocked error. There is no safe generic POSIX
 // primitive to rename an entry by already-verified inode identity; falling back

@@ -2691,6 +2691,9 @@ func sameMutationFileObservation(left, right domain.FileObservation) bool {
 	if !sameFileObservation(left, right) {
 		return false
 	}
+	if domain.IsMetadataFingerprint(left.Fingerprint) || domain.IsMetadataFingerprint(right.Fingerprint) {
+		return sameMetadataMutationIdentity(left, right)
+	}
 	if handleEvidenceComplete(left.HandleEvidence) && handleEvidenceComplete(right.HandleEvidence) {
 		return fileidentity.MatchesHandleEvidence(left.HandleEvidence, right.HandleEvidence)
 	}
@@ -2699,6 +2702,47 @@ func sameMutationFileObservation(left, right domain.FileObservation) bool {
 			return fileidentity.Matches(left.Identity, right.Identity)
 		}
 		return left.ChangeNanos != 0 && right.ChangeNanos != 0 && left.ChangeNanos == right.ChangeNanos && fileidentity.Matches(left.Identity, right.Identity)
+	}
+	return left.ChangeNanos != 0 && right.ChangeNanos != 0 && left.ChangeNanos == right.ChangeNanos
+}
+
+// sameMetadataMutationIdentity is the object identity of a path-level
+// (metadata-fingerprint) mutation check; size already matched in
+// sameFileObservation. Mutations verify the moved object AFTER a rename, and
+// rename updates the inode's ctime, so ctime never decides for an object on
+// the same device: it would turn every completed quarantine on a filesystem
+// without birth time (FUSE/mergerfs, Unraid shfs, some NFS clients) into an
+// identity mismatch with the file already moved.
+//
+// Evidence, strongest first:
+//  1. complete handle evidence on both sides: equal handles name the same
+//     object; a different handle type/opaque is a different object (a remount
+//     may only renumber the mount id);
+//  2. the inode must match;
+//  3. birth-time generation on both sides decides;
+//  4. same device + same inode (+ size) is the same object;
+//  5. only a device change without generation (a network remount) falls back
+//     to the change marker, failing closed when it is unavailable.
+func sameMetadataMutationIdentity(left, right domain.FileObservation) bool {
+	if !fileidentity.IsPresent(left.Identity) || !fileidentity.IsPresent(right.Identity) {
+		return false
+	}
+	if left.Identity.Inode != right.Identity.Inode {
+		return false
+	}
+	if handleEvidenceComplete(left.HandleEvidence) && handleEvidenceComplete(right.HandleEvidence) {
+		if fileidentity.MatchesHandleEvidence(left.HandleEvidence, right.HandleEvidence) {
+			return true
+		}
+		if left.HandleEvidence.Type != right.HandleEvidence.Type || left.HandleEvidence.Opaque != right.HandleEvidence.Opaque {
+			return false
+		}
+	}
+	if left.Identity.GenerationNanos != 0 && right.Identity.GenerationNanos != 0 {
+		return left.Identity.GenerationNanos == right.Identity.GenerationNanos
+	}
+	if left.Identity.Device == right.Identity.Device {
+		return true
 	}
 	return left.ChangeNanos != 0 && right.ChangeNanos != 0 && left.ChangeNanos == right.ChangeNanos
 }
@@ -2725,6 +2769,19 @@ func (OSFileObserver) ObserveFile(ctx context.Context, path string) (domain.File
 		return domain.FileObservation{}, err
 	}
 	return observeFile(path)
+}
+
+// ObserveMetadataFile returns the complete path-level observation of path
+// without reading its content: the size-aware twin of ObserveMetadata, for
+// callers that need the frozen size as well as the fingerprint (the scan
+// alignment recovery probe freezes both). Its Fingerprint is a
+// domain.MetadataFingerprint, so a candidate frozen here is comparable with
+// the same observation mode at confirm time.
+func (OSFileObserver) ObserveMetadataFile(ctx context.Context, path string) (domain.FileObservation, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.FileObservation{}, err
+	}
+	return observeFileMetadata(path)
 }
 
 // ObserveMetadata returns the path-level metadata fingerprint of path

@@ -23,8 +23,18 @@ import (
 // ready operation with a wired work-item store.
 func seedOffsetMigrationReadyOperation(t *testing.T, db *sql.DB, workStore *workitems.Store) string {
 	t.Helper()
+	return seedOffsetMigrationReadyOperationWithFingerprint(t, db, workStore, "")
+}
+
+func seedOffsetMigrationReadyOperationWithFingerprint(t *testing.T, db *sql.DB, workStore *workitems.Store, fingerprint string) string {
+	t.Helper()
 	ctx := context.Background()
 	seedOffsetMigrationChain(t, db, "1")
+	if fingerprint != "" {
+		if _, err := db.Exec(`UPDATE placements SET target_fingerprint = $1 WHERE id = 'plc-offmig'`, fingerprint); err != nil {
+			t.Fatalf("set placement fingerprint: %v", err)
+		}
+	}
 	admission := NewOffsetMigrationAdmissionService()
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {

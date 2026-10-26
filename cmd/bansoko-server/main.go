@@ -260,13 +260,20 @@ func main() {
 	artifactService := coreGraph.artifactService
 	fileOperationService := coreGraph.fileOperationService
 	reconciliationService := coreGraph.reconciliationService
+	// The confirm journal is the same observability service the rest of the
+	// business history writes through; it is built early so the recovery
+	// confirm provider can receive it alongside the other owners.
+	observabilityService, err := observabilityapplication.NewService(db)
+	if err != nil {
+		fatalStartup(runtimeLogger, "observability service failed", "observability_service_failed")
+	}
 	// The 刷新元数据 re-pull (the single positive-cache bypass) is shared by the
 	// metadata binding surface and the 对齐（刷新元数据）alignment variant; the
 	// alignment lane reaches it through the ownership application. The port is
 	// planted on the graph before the file-maintenance service is built so the
 	// provider can hand it to the concrete service.
 	fileMaintenanceGraph.metadataRefresher = metadataRefresherOwnershipAdapter{ownership: ownershipService}
-	fileMaintenanceService := initializeFileMaintenanceService(db, fileMaintenanceGraph, reconciliationService, runtimeLogger)
+	fileMaintenanceService := initializeFileMaintenanceService(db, fileMaintenanceGraph, reconciliationService, observabilityService, runtimeLogger)
 
 	// The provider episode titles (bgm.ep_title / tmdb.ep_title) are the one
 	// shared Querier of the two whitelisted naming lanes: the library rename
@@ -316,7 +323,7 @@ func main() {
 	retryService := applicationGraph.retryService
 	catalogDBSource := applicationGraph.catalogDBSource
 	metadataSearcher := applicationGraph.metadataSearcher
-	observabilityService := applicationGraph.observabilityService
+	observabilityService = applicationGraph.observabilityService
 	catalogService := applicationGraph.catalogService
 	retentionJanitor := applicationGraph.retentionJanitor
 	oneShotRetention := applicationGraph.oneShotRetention
@@ -601,7 +608,7 @@ func main() {
 		updateSvc, svcErr := updateapplication.NewService(updateapplication.Deps{
 			DB: db, PublicKey: publicKey, UpdatesRoot: updatesRoot,
 			ManifestURL: os.Getenv(updateapplication.EnvManifestURL), ChannelURL: os.Getenv(updateapplication.EnvChannelURL), PackageRoot: os.Getenv(updateapplication.EnvPackageRoot),
-			Production: cfg.Environment == "production",
+			Production:     cfg.Environment == "production",
 			BuildReleaseID: buildinfo.Current().BuildID, BuildVersion: buildinfo.Current().Version,
 			BuildCompatibilityVersion: buildinfo.Current().BaseCompatibilityVersion, BuildBootstrapVersion: os.Getenv(deploymentidentity.EnvBootstrapVersion),
 			UpdateMode: cfg.UpdateMode,

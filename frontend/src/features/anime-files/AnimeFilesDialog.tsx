@@ -7,6 +7,7 @@ import {
   alignAnimeFiles,
   listAnimeFiles,
   newUUID,
+  recoverAnimeFile,
   refreshAnimeMetadata,
   releasePlacement,
   retryRelease,
@@ -15,6 +16,8 @@ import {
   type AnimeFile,
   type AnimeFileAction,
   type AnimeFileCompanion,
+  type AnimeFileRecoverInput,
+  type AnimeFileRecoverResult,
   type AnimeFilesView,
 } from "../../lib/api/client";
 import { SegmentedControl, StatePill, type StatePillTone } from "../../ui";
@@ -220,10 +223,14 @@ function FileRow(props: {
   onChanged: () => void;
   align: (placementIDs?: string[]) => Promise<void>;
   aligning: boolean;
+  scan: () => Promise<void>;
+  recover: (placementID: string, token: AnimeFileRecoverInput) => Promise<AnimeFileRecoverResult>;
 }) {
-  const { file, readOnly, onChanged, align, aligning } = props;
-  const [busy, setBusy] = useState<"align" | "rerun" | "release">();
+  const { file, readOnly, onChanged, align, aligning, scan, recover } = props;
+  const [busy, setBusy] = useState<"align" | "rerun" | "release" | "recover">();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [recoverOpen, setRecoverOpen] = useState(false);
+  const [recoverError, setRecoverError] = useState<string>();
 
   async function runAlign() {
     if (busy) return;
@@ -263,6 +270,33 @@ function FileRow(props: {
     }
   }
 
+  async function runRecover() {
+    if (busy || !file.recovery) return;
+    setBusy("recover");
+    setRecoverError(undefined);
+    try {
+      await recover(file.placement_id, {
+        placement_id: file.placement_id,
+        generation: file.recovery.generation,
+        target_path: file.recovery.target_path,
+        fingerprint: file.recovery.fingerprint,
+        placement_version: file.recovery.placement_version,
+      });
+      toast.success(t("policy.fileEffect.recovered"));
+      setRecoverOpen(false);
+      await scan();
+    } catch (cause) {
+      // A refusal keeps the dialog open with the typed reason inline; only an
+      // API success closes it and triggers the fresh scan.
+      const reason = deniedReason(cause, "ANIME_FILES_RECOVER_REFUSED");
+      setRecoverError(reason ? reasonText(reason) : toUserMessage(cause, t("policy.fileEffect.recoverFailed")));
+    } finally {
+      // Both paths release the row: a success must not leave it stuck busy
+      // after the follow-up scan replaces the row.
+      setBusy(undefined);
+    }
+  }
+
   const locked = busy !== undefined || aligning;
   const problem = hasProblem(file);
   const pending = !problem && isPending(file);
@@ -293,9 +327,27 @@ function FileRow(props: {
               variant="ghost"
               onClick={() => setConfirmOpen(true)}
             />
+            <ActionButton
+              action={file.actions.recover}
+              label={t("policy.fileEffect.recover")}
+              busy={busy === "recover"}
+              disabled={locked}
+              onClick={() => {
+                // A refusal from a previous attempt belongs to THAT attempt:
+                // reopening the dialog starts a new decision, so the stale
+                // reason must not greet the user as if it were already true.
+                setRecoverError(undefined);
+                setRecoverOpen(true);
+              }}
+            />
           </span>
         )}
       </div>
+      {file.recovery ? (
+        <p className="tw:m-0 tw:text-xs tw:text-muted-foreground tw:wrap-anywhere">
+          {t("policy.fileEffect.recoverFound", { path: file.recovery.target_relative_path })}
+        </p>
+      ) : null}
       {file.companions.length > 0 ? (
         <ul className="tw:m-0 tw:grid tw:list-none tw:gap-1 tw:pl-4">
           {file.companions.map((companion) => (
@@ -329,6 +381,38 @@ function FileRow(props: {
         <p className="tw:m-0 tw:text-sm">{t("policy.fileEffect.releaseConfirmBody")}</p>
         <p className="tw:m-0 tw:text-sm tw:wrap-anywhere">{file.path}</p>
       </Dialog>
+      {file.recovery ? (
+        <Dialog
+          open={recoverOpen}
+          tier="S"
+          title={t("policy.fileEffect.recoverConfirmTitle")}
+          onRequestClose={() => {
+            if (busy !== "recover") setRecoverOpen(false);
+          }}
+          footer={
+            <>
+              <Button onClick={() => setRecoverOpen(false)}>{t("act.cancel")}</Button>
+              <Button variant="primary" loading={busy === "recover"} onClick={() => void runRecover()}>
+                {t("policy.fileEffect.recover")}
+              </Button>
+            </>
+          }
+        >
+          <p className="tw:m-0 tw:text-sm">{t("policy.fileEffect.recoverConfirmBody")}</p>
+          {/* The contract projects the target relative to the view root so the
+              client never composes an absolute path; target_path is only a
+              fallback for a response that predates the field. */}
+          <p className="tw:m-0 tw:text-sm tw:wrap-anywhere">
+            {t("policy.fileEffect.recoverTarget", { path: file.recovery.target_relative_path ?? file.recovery.target_path })}
+          </p>
+          {file.recovery.companions > 0 ? (
+            <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">
+              {t("policy.fileEffect.recoverCompanions", { n: file.recovery.companions })}
+            </p>
+          ) : null}
+          {recoverError ? <p className="tw:m-0 tw:text-sm tw:text-destructive">{recoverError}</p> : null}
+        </Dialog>
+      ) : null}
     </li>
   );
 }
@@ -474,6 +558,22 @@ function AnimeFilesPanel({
     [data, animeID, refresh],
   );
 
+  // The explicit recovery confirm: the server re-verifies every frozen fact
+  // (including the full caller token) and re-attaches the placement with its
+  // complete companion unit. A refusal is a typed 409 that REJECTS here, so
+  // the caller keeps its dialog open; only an API success resolves and
+  // triggers the fresh read.
+  const recover = useCallback(
+    async (placementID: string, token: AnimeFileRecoverInput): Promise<AnimeFileRecoverResult> =>
+      recoverAnimeFile(animeID, {
+        placement_id: placementID,
+        generation: token.generation,
+        target_path: token.target_path,
+        fingerprint: token.fingerprint,
+        placement_version: token.placement_version,
+      }),
+    [animeID],
+  );
   // The 对齐（刷新元数据）variant: re-pull the bound works bypassing the positive
   // caches first, so the stale episode titles the alignment preview renders are
   // gone before the owner aligns; then re-compute the rows in place from the
@@ -605,6 +705,8 @@ function AnimeFilesPanel({
                         onChanged={rowChanged}
                         align={align}
                         aligning={alignBusy}
+                        scan={scan}
+                        recover={recover}
                       />
                     ))}
                   </ul>

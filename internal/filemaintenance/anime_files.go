@@ -42,16 +42,21 @@ const AnimeFileSizeMismatch = "size_mismatch"
 // Action reasons. They travel as reason codes and are shown only through the
 // copy catalog.
 const (
-	AnimeFilesReasonOwnerRetired       = "owner_retired"
-	AnimeFilesReasonNotStarted         = "not_started"
-	AnimeFilesReasonScanRunning        = "scan_running"
-	AnimeFilesReasonScanChanged        = "scan_changed"
-	AnimeFilesReasonAlignmentRunning   = "alignment_in_progress"
-	AnimeFilesReasonRescanRequired     = "rescan_required"
-	AnimeFilesReasonNothingToAlign     = "nothing_to_align"
-	AnimeFilesReasonFileNotMissing     = "file_not_missing"
-	AnimeFilesReasonSourceUnavailable  = "source_release_unavailable"
-	AnimeFilesReasonScanRequired       = "scan_required"
+	AnimeFilesReasonOwnerRetired      = "owner_retired"
+	AnimeFilesReasonNotStarted        = "not_started"
+	AnimeFilesReasonScanRunning       = "scan_running"
+	AnimeFilesReasonScanChanged       = "scan_changed"
+	AnimeFilesReasonAlignmentRunning  = "alignment_in_progress"
+	AnimeFilesReasonRescanRequired    = "rescan_required"
+	AnimeFilesReasonNothingToAlign    = "nothing_to_align"
+	AnimeFilesReasonFileNotMissing    = "file_not_missing"
+	AnimeFilesReasonSourceUnavailable = "source_release_unavailable"
+	AnimeFilesReasonScanRequired      = "scan_required"
+	// AnimeFilesReasonRecoveryGate is why a recovery confirm is unavailable
+	// for a row whose candidate exists but the read is stale or busy: a
+	// newer generation decided, or an alignment is in flight. The confirm's
+	// own transaction re-checks the same gate.
+	AnimeFilesReasonRecoveryGate       = "recovery_unavailable"
 	animeFilesMaxPlacements            = 500
 	animeFilesPathDiffPage             = 500
 	animeFilesAlignmentStateInProgress = "in_progress"
@@ -73,6 +78,27 @@ type AnimeFileAlignmentView struct {
 	ReasonCode string
 }
 
+// AnimeFileRecoveryView is the frozen recovery candidate of one file row:
+// the target the alignment renderer produced for the placement, the file the
+// scan stat'ed there, and the companions frozen with it. The confirm
+// endpoint re-verifies every fact before ownership re-attaches.
+type AnimeFileRecoveryView struct {
+	Generation int64
+	TargetPath string
+	// TargetRelativePath is TargetPath relative to the view root, so the client
+	// displays the library-relative target without composing a path itself.
+	TargetRelativePath string
+	SizeBytes          int64
+	// The frozen identity tokens the confirm echoes back: a stale dialog
+	// (row re-pointed or re-rendered since) can never act.
+	PlacementVersion int64
+	Fingerprint      string
+	// Companions is the frozen companion count. Recovery is atomic over the
+	// whole unit: the confirm refuses unless EVERY companion still sits at
+	// its frozen path, so there is no partial-present report.
+	Companions int
+}
+
 // AnimeFileCompanionView is one bound companion of a video row.
 type AnimeFileCompanionView struct {
 	ID                 string
@@ -91,6 +117,9 @@ type AnimeFileActions struct {
 	Align   AnimeFileAction
 	Rerun   AnimeFileAction
 	Release AnimeFileAction
+	// Recover is the explicit recovery confirm of a frozen scan candidate;
+	// unavailable (nothing_to_recover) on rows without one.
+	Recover AnimeFileAction
 }
 
 // AnimeFileView is one managed video file.
@@ -117,6 +146,10 @@ type AnimeFileView struct {
 	Alignment          *AnimeFileAlignmentView
 	Actions            AnimeFileActions
 	Companions         []AnimeFileCompanionView
+	// Recovery is the frozen scan candidate when the latest scan found the
+	// file's target missing and stat'ed the file there: the file the user may
+	// re-adopt by explicit confirm. Nil = nothing to recover.
+	Recovery *AnimeFileRecoveryView
 }
 
 // AnimeFilesScanView is the scan state of the tab: running while a scan or
@@ -177,6 +210,9 @@ type animeFilesPlacement struct {
 	Coverage            []string
 	Companions          []animeFilesCompanion
 	RedownloadRequested bool
+	// Recovery is the placement's frozen recovery candidate from the latest
+	// calibrated generation, if the scan froze one.
+	Recovery *animeFilesRecoveryCandidate
 }
 
 type animeFilesCompanion struct {
@@ -191,6 +227,43 @@ type animeFilesAlignmentOp struct {
 	CompanionID    string
 	State          string
 	FailureCode    string
+}
+
+// animeFilesRecoveryCandidate is the frozen scan fact of one placement's
+// all-locator-missing target: the COMPLETE rendered unit the user may
+// re-adopt by explicit confirm. It mirrors the candidate the scan wrote;
+// the confirm re-verifies every field (including the placement version and
+// target fingerprint tokens) before the placement re-attaches.
+type animeFilesRecoveryCandidate struct {
+	PlacementID      string
+	TargetPath       string
+	Generation       int64
+	SizeBytes        int64
+	PlacementVersion int64
+	Fingerprint      string
+	// Companions is the frozen companion count; the confirm requires ALL of
+	// them at their frozen paths, so there is no partial-present state.
+	Companions int
+	// CompanionTargets is each frozen companion's identity and rendered
+	// target, in the order the scan froze them. The read model compares these
+	// path for path against the CURRENT render: a count alone would offer a
+	// confirm button for a unit whose companions now render elsewhere (and
+	// whose confirm transaction must therefore refuse it).
+	CompanionTargets []animeFilesRecoveryCompanionTarget
+	// currentTargets is what the anime's CURRENT naming rules render for this
+	// placement and each of its active companions, keyed by placement id and
+	// companion id. It is produced at load time by the SAME renderer instance
+	// the confirm re-renders with (pathDiff.renderer), so the offered action
+	// and the accepted action can never come from two different rule sets.
+	// A nil map means the render failed: the liveness gate then fails closed.
+	currentTargets map[string]string
+}
+
+// animeFilesRecoveryCompanionTarget is one frozen companion of a recovery
+// candidate: which companion, and where the scan froze its target.
+type animeFilesRecoveryCompanionTarget struct {
+	ID         string
+	TargetPath string
 }
 
 type animeFilesScanOwner struct {
@@ -211,6 +284,11 @@ type animeFilesFacts struct {
 	Diffs            []PathDiffView
 	Alignments       []animeFilesAlignmentOp
 	AlignmentLive    bool
+	// RecoveryReady marks the scan-generation invariant that admits a
+	// recovery confirm: the files view is not stale behind a newer
+	// generation and nothing is in flight. Per-row availability still
+	// requires the placement's own frozen candidate.
+	RecoveryReady bool
 	// AlignmentMoved is set when an alignment of this generation completed a
 	// move and nothing is in flight any more: the rows below still describe the
 	// paths observed before that move.
@@ -275,7 +353,7 @@ func loadAnimeFilesFacts(ctx context.Context, db *sql.DB, pathDiff *PathDiffServ
 	if facts.Generation, facts.GenerationAt, err = latestCalibratedGeneration(ctx, db, animeID); err != nil {
 		return facts, err
 	}
-	if facts.Placements, err = loadAnimeFilesPlacements(ctx, db, animeID); err != nil {
+	if facts.Placements, err = loadAnimeFilesPlacements(ctx, db, animeID, pathDiff); err != nil {
 		return facts, err
 	}
 	if facts.Generation > 0 {
@@ -314,9 +392,37 @@ SELECT EXISTS(SELECT 1 FROM alignment_operations
 			return facts, fmt.Errorf("read settled alignments: %w", err)
 		}
 	}
+	if facts.Generation > 0 && !facts.AlignmentLive {
+		// The recovery gate of this read: the generation the rows describe is
+		// still the newest decided generation (no newer calibration has
+		// landed) and nothing is in flight. A stale view must not offer a
+		// confirm whose own transaction would refuse it as scan_changed.
+		if err := db.QueryRowContext(ctx, `
+SELECT NOT EXISTS(SELECT 1 FROM reconciliation_files
+              WHERE managed_anime_id = $1 AND generation > $2 AND disposition IS NOT NULL)`,
+			animeID, facts.Generation).Scan(&facts.RecoveryReady); err != nil {
+			return facts, fmt.Errorf("read recovery readiness: %w", err)
+		}
+	}
 	return facts, nil
 }
 
+// recoveryScanLive reports whether a scan or its calibration is still in
+// flight for the anime: the generation the user reads (and would confirm)
+// could re-decide the rows under them. Read-model and confirm share the gate
+// so the offered action and the accepted action agree.
+func recoveryScanLive(ctx context.Context, q queryer, animeID string) (bool, error) {
+	var live bool
+	err := q.QueryRowContext(ctx, `
+SELECT EXISTS(SELECT 1 FROM work_items
+              WHERE owner_type = 'file_maintenance' AND owner_id = $1
+                AND kind IN ('reconciliation_scan', 'reconciliation_calibrate')
+                AND state IN ('available', 'leased'))`, animeID).Scan(&live)
+	if err != nil {
+		return false, fmt.Errorf("read recovery scan liveness: %w", err)
+	}
+	return live, nil
+}
 func loadAnimeFilesOwner(ctx context.Context, q queryer, animeID string) (animeFilesOwner, bool, error) {
 	var owner animeFilesOwner
 	err := q.QueryRowContext(ctx, `
@@ -386,7 +492,12 @@ FROM (SELECT COALESCE(MAX(generation), 0) AS generation FROM reconciliation_file
 	return generation, &at, nil
 }
 
-func loadAnimeFilesPlacements(ctx context.Context, db *sql.DB, animeID string) ([]animeFilesPlacement, error) {
+// loadAnimeFilesPlacements reads the placements, their frozen coverage and
+// their active companions, then attaches each placement's frozen recovery
+// candidate (loadAnimeFilesRecovery). The path-diff owner is threaded through
+// because the recovery candidate must be gated against the SAME renderer the
+// confirm re-renders with.
+func loadAnimeFilesPlacements(ctx context.Context, db *sql.DB, animeID string, pathDiff *PathDiffService) ([]animeFilesPlacement, error) {
 	rows, err := db.QueryContext(ctx, `
 SELECT p.id, p.physical_path,
        CASE WHEN EXISTS(SELECT 1 FROM releases r JOIN rss_sources src ON src.id = r.rss_source_id
@@ -476,7 +587,142 @@ WHERE placement_id = ANY($1) AND state = 'active' ORDER BY placement_id, current
 	if err := companions.Close(); err != nil {
 		return nil, err
 	}
-	return placements, companions.Err()
+	if err := companions.Err(); err != nil {
+		return nil, err
+	}
+	if err := loadAnimeFilesRecovery(ctx, db, animeID, placements, pathDiff); err != nil {
+		return nil, err
+	}
+	return placements, nil
+}
+
+// loadAnimeFilesRecovery attaches each placement's frozen recovery candidate
+// from the anime's LATEST calibrated generation (side-effect free: it reads
+// only the facts the scan wrote). Gate (review fix #2): the read model
+// answers only while that generation is still the newest decided one and no
+// scan or calibration is live — a dialog captured on an older generation
+// can never act (the confirm re-checks the same gate), so it is not even
+// offered.
+func loadAnimeFilesRecovery(ctx context.Context, db *sql.DB, animeID string, placements []animeFilesPlacement, pathDiff *PathDiffService) error {
+	if len(placements) == 0 {
+		return nil
+	}
+	latest, _, err := latestCalibratedGeneration(ctx, db, animeID)
+	if err != nil {
+		return err
+	}
+	if live, err := recoveryScanLive(ctx, db, animeID); err != nil {
+		return err
+	} else if live || latest == 0 {
+		return nil
+	}
+	// The candidate is written by the scan as a JSON ARRAY under the
+	// recovery_candidates key of the observation row's facts OBJECT, so the
+	// read selects the whole object — the same value readRecoveryCandidateTx
+	// decodes in the confirm. Selecting the array instead
+	// (rf.facts->'recovery_candidates') and decoding it into the object shape
+	// fails on the first candidate any real show carries.
+	rows, err := db.QueryContext(ctx, `
+SELECT rf.facts, rf.facts->>'placement_id'
+FROM reconciliation_files rf
+WHERE rf.managed_anime_id = $1 AND rf.generation = $2
+  AND rf.disposition = 'missing'
+  AND rf.facts->'recovery_candidates' IS NOT NULL`, animeID, latest)
+	if err != nil {
+		return fmt.Errorf("read recovery candidates: %w", err)
+	}
+	defer rows.Close()
+	type frozenCandidate struct {
+		placementID string
+		candidate   recoveryCandidateFact
+	}
+	frozen := []frozenCandidate{}
+	seen := map[string]bool{}
+	for rows.Next() {
+		var raw []byte
+		var placementID string
+		if err := rows.Scan(&raw, &placementID); err != nil {
+			return err
+		}
+		if seen[placementID] {
+			continue
+		}
+		document, err := decodeRecoveryCandidatesDocument(raw)
+		if err != nil {
+			return err
+		}
+		for i := len(document.RecoveryCandidates) - 1; i >= 0; i-- {
+			candidate := document.RecoveryCandidates[i]
+			if candidate.PlacementID != placementID {
+				continue
+			}
+			if _, ok := indexForPlacement(placements, placementID); !ok {
+				break
+			}
+			seen[placementID] = true
+			frozen = append(frozen, frozenCandidate{placementID: placementID, candidate: candidate})
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(frozen) == 0 {
+		return nil
+	}
+	// Render the CURRENT unit once, through the renderer the confirm
+	// re-renders with, so the offered action and the accepted action can never
+	// be produced by two different rule sets. A render failure is not an
+	// answer about the unit: the candidate keeps its frozen target and the
+	// liveness gate compares against an absent render (fail closed).
+	renderer := (*NamingTargetRenderer)(nil)
+	if pathDiff != nil {
+		renderer = pathDiff.renderer
+	}
+	var current map[string]string
+	if renderer != nil {
+		ids := make([]string, len(frozen))
+		for i := range frozen {
+			ids[i] = frozen[i].placementID
+		}
+		rendered, renderErr := renderer.RenderPlacementTargets(ctx, animeID, ids)
+		if renderErr != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
+			current = nil
+		} else {
+			current = rendered
+		}
+	}
+	for _, entry := range frozen {
+		at, ok := indexForPlacement(placements, entry.placementID)
+		if !ok {
+			continue
+		}
+		candidate := entry.candidate
+		placements[at].Recovery = &animeFilesRecoveryCandidate{
+			PlacementID:      candidate.PlacementID,
+			TargetPath:       candidate.TargetPath,
+			Generation:       candidate.Generation,
+			SizeBytes:        candidate.SizeBytes,
+			Companions:       len(candidate.Companions),
+			CompanionTargets: recoveryCompanionTargets(candidate.Companions),
+			PlacementVersion: candidate.PlacementVersion,
+			Fingerprint:      candidate.TargetFingerprint,
+			currentTargets:   current,
+		}
+	}
+	return nil
+}
+
+func indexForPlacement(placements []animeFilesPlacement, id string) (int, bool) {
+	for i := range placements {
+		if placements[i].ID == id {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 func loadAnimeFilesAlignments(ctx context.Context, db *sql.DB, animeID string, generation int64) ([]animeFilesAlignmentOp, error) {
@@ -684,6 +930,48 @@ func deriveAnimeFiles(f animeFilesFacts) AnimeFilesView {
 			releaseReason = AnimeFilesReasonOwnerRetired
 		}
 		row.Actions.Release = availability(releaseReason)
+
+		// Recover: the scan froze a candidate for this row (its target was
+		// missing and the COMPLETE rendered unit was free of other owners).
+		// Available only while the read is current and nothing is in flight;
+		// the confirm's own transaction re-verifies every frozen fact again
+		// (unit is atomic: video + companions or nothing).
+		if placement.Recovery != nil {
+			candidate := placement.Recovery
+			row.Recovery = &AnimeFileRecoveryView{
+				Generation:       candidate.Generation,
+				TargetPath:       candidate.TargetPath,
+				SizeBytes:        candidate.SizeBytes,
+				PlacementVersion: candidate.PlacementVersion,
+				Fingerprint:      candidate.Fingerprint,
+				Companions:       candidate.Companions,
+			}
+			recoverReason := ""
+			// Live gate: the candidate is only offered while the CURRENT
+			// render of this placement and of every frozen companion still
+			// equals the frozen target. A naming-rule change, an
+			// unrenderable placement, or a companion membership change
+			// since the scan means the frozen unit is not what the confirm
+			// would produce: the user must rescan instead.
+			liveReason := recoveryLiveReason(candidate, placement)
+			switch {
+			case row.Status != AnimeFileMissing:
+				recoverReason = AnimeFilesReasonRecoveryGate
+			case manualReason != "":
+				recoverReason = manualReason
+			case scanRunning:
+				recoverReason = AnimeFilesReasonScanRunning
+			case f.AlignmentLive:
+				recoverReason = AnimeFilesReasonAlignmentRunning
+			case liveReason != "":
+				recoverReason = liveReason
+			case !f.RecoveryReady:
+				recoverReason = AnimeFilesReasonScanChanged
+			}
+			row.Actions.Recover = availability(recoverReason)
+		} else {
+			row.Actions.Recover = AnimeFileAction{Available: false, ReasonCode: "nothing_to_recover"}
+		}
 		view.Files = append(view.Files, row)
 	}
 
@@ -706,6 +994,11 @@ func deriveAnimeFiles(f animeFilesFacts) AnimeFilesView {
 		row := &view.Files[i]
 		row.RelativePath = relativeTo(view.Root, row.Path)
 		row.TargetRelativePath = relativePointer(view.Root, row.TargetPath)
+		if row.Recovery != nil {
+			// The scan found the file at this target: show it library-relative
+			// rather than composing an absolute path in the client.
+			row.Recovery.TargetRelativePath = relativeTo(view.Root, row.Recovery.TargetPath)
+		}
 		for j := range row.Companions {
 			companion := &row.Companions[j]
 			companion.RelativePath = relativeTo(view.Root, companion.Path)
@@ -713,6 +1006,72 @@ func deriveAnimeFiles(f animeFilesFacts) AnimeFilesView {
 		}
 	}
 	return view
+}
+
+// recoveryLiveReason decides whether the frozen candidate is still what the
+// CURRENT naming rules would render for this placement's whole unit. It
+// returns an empty string when the frozen candidate is live and the reason
+// code to show otherwise.
+//
+// The read model gates here because the confirm re-renders and refuses a
+// changed unit: offering a button whose own transaction must refuse it would
+// be a lie.
+//
+// The evidence source is the placement's OWN frozen coverage rendered through
+// the renderer instance the confirm uses (RenderPlacementTargets), NEVER the
+// calibration row's ExpectedPath / TargetUnavailable. A real missing row has
+// an empty calibration coverage, so episodeFromCoverage yields "" and
+// path_diff reports coverage_unresolved with a nil ExpectedPath: gating on
+// those refuses every real candidate forever (the defect this replaces). The
+// two evidence sources are structurally different — the confirm already reads
+// placement-frozen coverage — so the read model follows the confirm.
+//
+// Only a render that cannot be produced fails closed: an absent entry means
+// the unit is not the frozen one and requires a rescan. A companion
+// membership change is the same answer.
+func recoveryLiveReason(candidate *animeFilesRecoveryCandidate, placement animeFilesPlacement) string {
+	current := candidate.currentTargets
+	video, ok := current[candidate.PlacementID]
+	if !ok || !sameCleanPath(video, candidate.TargetPath) {
+		return AnimeFilesReasonRescanRequired
+	}
+	// Companion membership: the frozen count must still match the placement's
+	// active unit.
+	if len(placement.Companions) != candidate.Companions {
+		return AnimeFilesReasonRescanRequired
+	}
+	// A candidate that reports companions but carries no frozen targets cannot
+	// be verified: fail closed rather than offer an unverifiable unit.
+	if len(candidate.CompanionTargets) != candidate.Companions {
+		return AnimeFilesReasonRescanRequired
+	}
+	// EVERY frozen companion must still render to the exact path the scan
+	// froze. Comparing only the count let the read model offer a confirm for a
+	// unit whose companion now renders elsewhere — a button whose own
+	// transaction must refuse with companion_missing.
+	for _, frozen := range candidate.CompanionTargets {
+		path, ok := current[frozen.ID]
+		if !ok || !sameCleanPath(path, frozen.TargetPath) {
+			return AnimeFilesReasonRescanRequired
+		}
+	}
+	return ""
+}
+
+// recoveryCompanionTargets projects the frozen companion facts onto the read
+// model's comparable shape.
+func recoveryCompanionTargets(companions []recoveryCompanionFact) []animeFilesRecoveryCompanionTarget {
+	if len(companions) == 0 {
+		return nil
+	}
+	targets := make([]animeFilesRecoveryCompanionTarget, 0, len(companions))
+	for _, companion := range companions {
+		targets = append(targets, animeFilesRecoveryCompanionTarget{
+			ID:         companion.ID,
+			TargetPath: companion.TargetPath,
+		})
+	}
+	return targets
 }
 
 // videoStatus maps the latest calibration row of a placement to its status.

@@ -234,7 +234,12 @@ func (e OSCleanupExecutor) MoveMaintenance(ctx context.Context, source, target s
 	if err != nil {
 		return result, err
 	}
-	observed, err := e.Observe(context.WithoutCancel(ctx), result)
+	var observed domain.FileObservation
+	if domain.IsMetadataFingerprint(expected.Fingerprint) {
+		observed, err = e.ObserveMetadataFile(context.WithoutCancel(ctx), result)
+	} else {
+		observed, err = e.Observe(context.WithoutCancel(ctx), result)
+	}
 	if err != nil || !sameMutationFileObservation(observed, expected) {
 		return result, errors.New("maintenance quarantine final identity mismatch")
 	}

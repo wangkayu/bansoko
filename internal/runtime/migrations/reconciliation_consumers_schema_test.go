@@ -2,6 +2,7 @@ package migrations
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -77,4 +78,36 @@ func containsFragment(haystack, needle string) bool {
 		}
 	}
 	return false
+}
+
+// TestPlacementRecoveryGenerationSchemaShape proves the recovery confirm has
+// its own replay marker column instead of overloading source_evidence_type:
+// a recovered placement keeps `source_evidence_type = 'file_operation'` so
+// every lineage reader still recognizes it, while `recovery_generation`
+// records which calibrated generation the confirm accepted.
+func TestPlacementRecoveryGenerationSchemaShape(t *testing.T) {
+	db := installedDB(t)
+	ctx := context.Background()
+	if err := (Runner{DB: db, Dir: migrationsDir(t)}).Verify(ctx); err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	columns, err := tableColumns(ctx, db, "placements")
+	if err != nil {
+		t.Fatalf("inspect placements: %v", err)
+	}
+	if _, ok := columns["recovery_generation"]; !ok {
+		t.Fatal("placements.recovery_generation is missing")
+	}
+	// The column is nullable (a never-recovered placement carries NULL) and
+	// refuses a non-positive generation.
+	var definition string
+	if err := db.QueryRowContext(ctx, `
+SELECT pg_get_constraintdef(oid) FROM pg_constraint
+WHERE conname = 'placements_recovery_generation_check'
+  AND conrelid = 'placements'::regclass`).Scan(&definition); err != nil {
+		t.Fatalf("read recovery generation check: %v", err)
+	}
+	if !strings.Contains(definition, "recovery_generation IS NULL") || !strings.Contains(definition, ">= 1") {
+		t.Fatalf("recovery generation check = %q", definition)
+	}
 }

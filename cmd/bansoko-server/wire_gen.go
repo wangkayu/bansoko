@@ -88,8 +88,8 @@ func initializeWorkerGraph(workStore *workitems.Store, installID string, logger 
 	return mainWorkerGraph, nil
 }
 
-func initializeFileMaintenanceService(db *sql.DB, fileMaintenanceGraph2 *fileMaintenanceGraph, reconciliationService *application11.Service, logger port.RuntimeLogger) httpapi.FileMaintenanceService {
-	fileMaintenanceService := provideFileMaintenanceService(db, fileMaintenanceGraph2, reconciliationService, logger)
+func initializeFileMaintenanceService(db *sql.DB, fileMaintenanceGraph2 *fileMaintenanceGraph, reconciliationService *application11.Service, observabilityService *application5.Service, logger port.RuntimeLogger) httpapi.FileMaintenanceService {
+	fileMaintenanceService := provideFileMaintenanceService(db, fileMaintenanceGraph2, reconciliationService, observabilityService, logger)
 	return fileMaintenanceService
 }
 

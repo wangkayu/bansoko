@@ -390,12 +390,12 @@ func (s *CleanupService) ReconcileUnknownEffect(ctx context.Context, req deploym
 			if pathErr != nil {
 				return deployment.ReconcileResult{State: deployment.StateBlocked, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: safeCleanupReason(pathErr)}, nil
 			}
-			if _, observeErr := s.executor.Observe(ctx, sourcePath); observeErr == nil {
+			if _, observeErr := observeCleanupFile(ctx, s.executor, sourcePath, sourceFP); observeErr == nil {
 				return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectNone, EvidenceRef: cleanupID, Reason: "cleanup reconcile: source remains; effect not completed"}, nil
 			} else if !isMissingCleanupError(observeErr) {
 				return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: safeCleanupReason(observeErr)}, nil
 			}
-			observed, observeErr := s.executor.Observe(ctx, qpath)
+			observed, observeErr := observeCleanupFile(ctx, s.executor, qpath, sourceFP)
 			if observeErr != nil {
 				if isMissingCleanupError(observeErr) {
 					return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: "cleanup reconcile: quarantine absence is not sufficient evidence for completion"}, nil
@@ -420,7 +420,7 @@ func (s *CleanupService) ReconcileUnknownEffect(ctx context.Context, req deploym
 		if evidence.Stage != "quarantine" && evidence.Stage != "purge" {
 			return deployment.ReconcileResult{State: deployment.StateBlocked, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: "cleanup reconcile: quarantined owner requires quarantine or purge attempt stage"}, nil
 		}
-		if _, observeErr := s.executor.Observe(ctx, sourcePath); observeErr == nil {
+		if _, observeErr := observeCleanupFile(ctx, s.executor, sourcePath, sourceFP); observeErr == nil {
 			return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectNone, EvidenceRef: cleanupID, Reason: "cleanup reconcile: source remains; effect is not proven"}, nil
 		} else if !isMissingCleanupError(observeErr) {
 			return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: safeCleanupReason(observeErr)}, nil
@@ -428,7 +428,7 @@ func (s *CleanupService) ReconcileUnknownEffect(ctx context.Context, req deploym
 		if !quarantinePath.Valid || quarantinePath.String == "" {
 			return deployment.ReconcileResult{State: deployment.StateBlocked, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: "cleanup reconcile: quarantine path evidence is missing"}, nil
 		}
-		observed, observeErr := s.executor.Observe(ctx, quarantinePath.String)
+		observed, observeErr := observeCleanupFile(ctx, s.executor, quarantinePath.String, sourceFP)
 		if evidence.Stage == "purge" {
 			if !evidence.Removed || !evidence.PostObservationMissing {
 				return deployment.ReconcileResult{State: deployment.StateBlocked, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: "cleanup reconcile: purge attempt lacks complete post-effect proof"}, nil
@@ -778,11 +778,11 @@ func (s *CleanupService) quarantineBusinessHandler() worker.Handler {
 			}
 			attempt, quarantine = op.Attempt, evidence.QuarantinePath
 		} else {
-			expected, err = s.executor.Observe(ctx, op.SourcePath)
+			expected, err = observeCleanupFile(ctx, s.executor, op.SourcePath, op.SourceFingerprint)
 			if err != nil {
 				return worker.Retry("cleanup_source_observation_failed", safeCleanupReason(err), 30*time.Second, s.retryOwner(claim)), nil
 			}
-			if expected.Fingerprint != op.SourceFingerprint || expected.SizeBytes < 0 || !fileidentity.IsPresent(expected.Identity) {
+			if !cleanupObservationMatchesFingerprint(expected, op.SourceFingerprint) || expected.SizeBytes < 0 || !fileidentity.IsPresent(expected.Identity) {
 				return block("cleanup_source_changed", "cleanup source observation does not match frozen evidence")
 			}
 			attempt, err = json.Marshal(map[string]any{
@@ -816,12 +816,12 @@ func (s *CleanupService) quarantineBusinessHandler() worker.Handler {
 		if err != nil {
 			return block("cleanup_quarantine_failed", safeCleanupReason(err))
 		}
-		if _, err := s.executor.Observe(ctx, op.SourcePath); err == nil {
+		if _, err := observeCleanupFile(ctx, s.executor, op.SourcePath, op.SourceFingerprint); err == nil {
 			return worker.Retry("cleanup_quarantine_source_still_present", "quarantine returned but source remains", 30*time.Second, s.retryOwner(claim)), nil
 		} else if !isMissingCleanupError(err) {
 			return block("cleanup_quarantine_post_observation_invalid", "quarantine returned without proven source absence")
 		}
-		quarantineObserved, err := s.executor.Observe(ctx, moved)
+		quarantineObserved, err := observeCleanupFile(ctx, s.executor, moved, op.SourceFingerprint)
 		if err != nil {
 			return worker.Retry("cleanup_quarantine_post_observation_failed", safeCleanupReason(err), 30*time.Second, s.retryOwner(claim)), nil
 		}
@@ -932,7 +932,7 @@ func (s *CleanupService) purgeBusinessHandler() worker.Handler {
 		if op.QuarantinePath == "" {
 			return block("cleanup_purge_evidence_invalid", "cleanup quarantine path evidence is missing")
 		}
-		observed, err := s.executor.Observe(ctx, op.QuarantinePath)
+		observed, err := observeCleanupFile(ctx, s.executor, op.QuarantinePath, op.SourceFingerprint)
 		if err != nil {
 			return worker.Retry("cleanup_quarantine_observation_failed", safeCleanupReason(err), 30*time.Second, s.retryOwner(claim)), nil
 		}
@@ -968,7 +968,7 @@ func (s *CleanupService) purgeBusinessHandler() worker.Handler {
 		if err != nil {
 			return block("cleanup_purge_failed", safeCleanupReason(err))
 		}
-		if _, postErr := s.executor.Observe(ctx, op.QuarantinePath); postErr == nil {
+		if _, postErr := observeCleanupFile(ctx, s.executor, op.QuarantinePath, op.SourceFingerprint); postErr == nil {
 			return worker.Retry("cleanup_purge_post_observation_present", "purge returned but quarantine object remains", 30*time.Second, s.retryOwner(claim)), nil
 		} else if !isMissingCleanupError(postErr) {
 			return block("cleanup_purge_post_observation_invalid", "purge returned without proven quarantine absence")

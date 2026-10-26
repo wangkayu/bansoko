@@ -19,6 +19,42 @@ func (s *Server) ListAnimeFiles(w http.ResponseWriter, r *http.Request, animeID 
 	writeJSON(w, r.Context(), http.StatusOK, mapAnimeFilesView(view))
 }
 
+// RecoverAnimeFile is the explicit recovery confirm of a frozen scan
+// candidate: re-verifies every frozen fact (including the caller's
+// target/fingerprint/version token) and re-attaches the placement and its
+// complete companion unit to the files the user adopted. A refusal is a
+// typed 409; nothing moved on any path.
+func (s *Server) RecoverAnimeFile(w http.ResponseWriter, r *http.Request, animeID generated.ManagedAnimeID) {
+	var input generated.AnimeFileRecoverInput
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if input.Generation < 1 {
+		writeError(w, r, badRequest("VALIDATION_FAILED", "generation must be at least 1"))
+		return
+	}
+	command := filemaintenance.AnimeFileRecoverCommand{
+		PlacementID:      string(input.PlacementId),
+		Generation:       input.Generation,
+		TargetPath:       input.TargetPath,
+		Fingerprint:      input.Fingerprint,
+		PlacementVersion: input.PlacementVersion,
+	}
+	result, err := s.deps.FileMaintenance.RecoverAnimeFileApplication(r.Context(), string(animeID), command)
+	if err != nil {
+		writeError(w, r, mapAnimeFilesRecoverError(err))
+		return
+	}
+	writeJSON(w, r.Context(), http.StatusOK, generated.AnimeFileRecoverResult{
+		PlacementId: generated.ID(result.PlacementID),
+		Generation:  result.Generation,
+		TargetPath:  result.TargetPath,
+		Replay:      result.Replay,
+		Companions:  result.Companions,
+	})
+}
+
 // AlignAnimeFiles admits a one-off alignment of the anime's misaligned files.
 func (s *Server) AlignAnimeFiles(w http.ResponseWriter, r *http.Request, animeID generated.ManagedAnimeID) {
 	var input generated.AnimeFilesAlignInput
@@ -80,6 +116,39 @@ func mapAnimeFilesAlignError(err error) error {
 	return apiErr
 }
 
+// animeFilesRecoverRefusals explains each ANIME_FILES_RECOVER_REFUSED reason;
+// the reason itself travels as the detail code.
+var animeFilesRecoverRefusals = map[string]string{
+	filemaintenance.AnimeFilesReasonOwnerRetired:    "The anime no longer admits changes.",
+	filemaintenance.AnimeFilesReasonNotStarted:      "The subscription has not been started.",
+	filemaintenance.RecoveryReasonCandidateGone:     "The recovery candidate is gone; scan the files again.",
+	filemaintenance.RecoveryReasonScanChanged:       "A newer scan exists; read the files again.",
+	filemaintenance.RecoveryReasonScanRunning:       "A scan is running; read the files again after it settles.",
+	filemaintenance.RecoveryReasonPlacementChanged:  "The file row changed since the scan.",
+	filemaintenance.RecoveryReasonTargetMissing:     "The file is no longer at the recorded path.",
+	filemaintenance.RecoveryReasonTargetChanged:     "The file at the recorded path has changed.",
+	filemaintenance.RecoveryReasonTargetOccupied:    "Another file already owns that path.",
+	filemaintenance.RecoveryReasonCompanionMissing:  "A companion file of the unit is no longer at its recorded path.",
+	filemaintenance.RecoveryReasonCompanionOccupied: "A companion path has changed or is taken.",
+	filemaintenance.RecoveryReasonPlacementHandoff:  "The file is still finishing import; try again after it settles.",
+}
+
+// mapAnimeFilesRecoverError turns the typed confirm refusal into the 409
+// contract error and passes everything else through.
+func mapAnimeFilesRecoverError(err error) error {
+	var refusal *filemaintenance.AnimeFilesRecoverRefusal
+	if !errors.As(err, &refusal) {
+		return err
+	}
+	message, ok := animeFilesRecoverRefusals[refusal.Code]
+	if !ok {
+		message = "The file cannot be recovered now."
+	}
+	apiErr := conflict("ANIME_FILES_RECOVER_REFUSED", "The file cannot be recovered now.", nil)
+	apiErr.Details = []generated.ErrorDetail{{Code: refusal.Code, Message: message}}
+	return apiErr
+}
+
 func mapAnimeFileAction(action filemaintenance.AnimeFileAction) generated.AnimeFileAction {
 	mapped := generated.AnimeFileAction{Available: action.Available}
 	if action.ReasonCode != "" {
@@ -99,6 +168,23 @@ func mapAnimeFileAlignment(view *filemaintenance.AnimeFileAlignmentView) *genera
 		mapped.ReasonCode = &reason
 	}
 	return mapped
+}
+
+// mapAnimeFileRecovery maps the frozen candidate to the contract view; nil
+// stays absent (no candidate, no confirm action).
+func mapAnimeFileRecovery(view *filemaintenance.AnimeFileRecoveryView) *generated.AnimeFileRecovery {
+	if view == nil {
+		return nil
+	}
+	return &generated.AnimeFileRecovery{
+		Generation:         view.Generation,
+		TargetPath:         view.TargetPath,
+		TargetRelativePath: view.TargetRelativePath,
+		SizeBytes:          view.SizeBytes,
+		PlacementVersion:   view.PlacementVersion,
+		Fingerprint:        view.Fingerprint,
+		Companions:         view.Companions,
+	}
 }
 
 func optionalString(value string) *string {
@@ -140,10 +226,12 @@ func mapAnimeFilesView(view filemaintenance.AnimeFilesView) generated.AnimeFiles
 			TargetPath:         file.TargetPath,
 			TargetRelativePath: file.TargetRelativePath,
 			Alignment:          mapAnimeFileAlignment(file.Alignment),
+			Recovery:           mapAnimeFileRecovery(file.Recovery),
 			Actions: generated.AnimeFileActions{
 				Align:   mapAnimeFileAction(file.Actions.Align),
 				Rerun:   mapAnimeFileAction(file.Actions.Rerun),
 				Release: mapAnimeFileAction(file.Actions.Release),
+				Recover: mapAnimeFileAction(file.Actions.Recover),
 			},
 			Companions: make([]generated.AnimeFileCompanion, 0, len(file.Companions)),
 		}

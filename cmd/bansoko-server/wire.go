@@ -149,6 +149,7 @@ func initializeFileMaintenanceService(
 	db *sql.DB,
 	fileMaintenanceGraph *fileMaintenanceGraph,
 	reconciliationService *reconciliationapplication.Service,
+	observabilityService *observabilityapplication.Service,
 	logger observabilityport.RuntimeLogger,
 ) httpapi.FileMaintenanceService {
 	wire.Build(provideFileMaintenanceService)

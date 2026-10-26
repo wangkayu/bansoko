@@ -68,12 +68,22 @@ WHERE p.id = $1`, placementID).Scan(&record.sourceFingerprint, &record.targetFin
 
 // metadataFacts returns the path-level facts recorded for the placement, in
 // this order: a metadata fingerprint it was admitted with (target, then
-// source), the size_bytes of its typed target fingerprint (the published
-// size of a file-operation placement), then the file operation's observed or
-// expected target size. known is false when none of them records a size.
+// source; raw or wrapped in the typed {"algorithm":"metadata"} envelope a
+// scan-alignment recovery writes), the size_bytes of its typed target
+// fingerprint (the published size of a file-operation placement), then the
+// file operation's observed or expected target size. known is false when none
+// of them records a size.
+//
+// The envelope must be unwrapped here: reading only its size_bytes would drop
+// the inode a recovery froze, and a same-size replacement of a recovered file
+// would calibrate as unchanged instead of fingerprint_conflict.
 func (r placementIdentityRecord) metadataFacts() (domain.MetadataFacts, bool) {
 	for _, value := range []string{r.targetFingerprint, r.sourceFingerprint} {
-		if facts, ok := domain.ParseMetadataFingerprint(value); ok {
+		raw, ok := metadataFingerprintValue(value)
+		if !ok {
+			continue
+		}
+		if facts, ok := domain.ParseMetadataFingerprint(raw); ok {
 			return facts, true
 		}
 	}

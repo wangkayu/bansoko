@@ -7,6 +7,21 @@
 # auth enabled); BANSOKO_SKIP_AUTH is forbidden by the harness.
 set -euo pipefail
 umask 077
+# Negative path (see scripts/verify/filemaintenance-e2e-negative.sh):
+# destroying one owned placement file must make this lane fail loudly instead of
+# passing. The switch is explicit and unset in every normal run; the seven
+# scenarios and their assertions keep their default behaviour.
+# Parsed before the platform/tool guards so the refusal is checkable anywhere.
+negative_mode="${BANSOKO_FM_E2E_NEGATIVE:-}"
+case "$negative_mode" in
+  ''|old-source-missing|new-placement-missing) ;;
+  *) echo "filemaintenance-e2e: unknown BANSOKO_FM_E2E_NEGATIVE: $negative_mode (expected old-source-missing or new-placement-missing)" >&2; exit 2 ;;
+esac
+if [[ -n "$negative_mode" && -n "${BANSOKO_FM_E2E_SCENARIOS:-}" ]]; then
+  echo 'filemaintenance-e2e: BANSOKO_FM_E2E_NEGATIVE owns the run; BANSOKO_FM_E2E_SCENARIOS must be unset' >&2
+  exit 2
+fi
+
 for tool in bash go python3 curl docker; do
   if ! command -v "$tool" >/dev/null 2>&1; then echo "filemaintenance-e2e: required command missing before harness setup: $tool" >&2; exit 2; fi
 done
@@ -18,8 +33,12 @@ fi
 scenario_selector="${BANSOKO_FM_E2E_SCENARIOS:-}"
 if [[ -z "$scenario_selector" && "${BANSOKO_FM_E2E_OFFSET_ALIGNMENT:-0}" == "1" ]]; then scenario_selector=all; fi
 if [[ -n "$scenario_selector" ]]; then
+  # Scenario 8 (scan-alignment recovery) has its own selector entry and is
+  # deliberately NOT part of the default set: the default `all` alias stays the
+  # seven scenarios the negative-proof wrapper pins and reports on. Run the
+  # recovery scenario explicitly with BANSOKO_FM_E2E_SCENARIOS=8.
   [[ "$scenario_selector" != all ]] || scenario_selector="1,2,3,4,5,6,7"
-  case ",$scenario_selector," in *,,*|*,*[!1-7,]*) echo "invalid BANSOKO_FM_E2E_SCENARIOS: $scenario_selector" >&2; exit 2 ;; esac
+  case ",$scenario_selector," in *,,*|*,*[!1-8,]*) echo "invalid BANSOKO_FM_E2E_SCENARIOS: $scenario_selector" >&2; exit 2 ;; esac
   requested_selector="$scenario_selector"
   if [[ ",$requested_selector," == *,5,* ]]; then requested_selector="$requested_selector,1,2,3,4"; fi
   if [[ ",$requested_selector," == *,3,* ]]; then requested_selector="$requested_selector,1,2"; fi
@@ -547,6 +566,32 @@ E2EMOVIE
   echo "movie chain seeded"
 fi
 
+# Negative runs destroy one owned placement file, then let the unchanged
+# assertions decide. The destroy step is guarded by the explicit switch parsed at
+# the top of this script, records the file it removed, and refuses to continue if
+# the file survived: a negative run whose fixture is intact would prove nothing.
+negative_inject() {
+  local label="$1" path="$2"
+  if [[ ! -e "$path" ]]; then
+    echo "negative mode ${negative_mode}: $label is already absent before injection: $path" >&2
+    exit 1
+  fi
+  printf '{"negative_mode":"%s","label":"%s","path":"%s","sha256":"%s"}\n' \
+    "$negative_mode" "$label" "$path" "$(shasum -a 256 "$path" | awk '{print $1}')" \
+    >>"$summary_dir/negative-injection.jsonl"
+  rm -f -- "$path"
+  if [[ -e "$path" ]]; then
+    echo "negative mode ${negative_mode}: failed to destroy $label at $path" >&2
+    exit 1
+  fi
+  echo "negative mode ${negative_mode}: destroyed $label at $path"
+}
+
+if [[ "$negative_mode" == old-source-missing ]]; then
+  # Destroy the superseded source the quarantine stage must move. The chain
+  # then cannot converge and the unchanged assertions below must reject it.
+  negative_inject superseded-source "$old_file"
+fi
 echo "== waiting for the automatic chain =="
 wait_chain() {
   local deadline=$(( $(date +%s) + 1100 ))
@@ -568,7 +613,14 @@ wait_chain() {
     # Receipt-backed maintenance cleanup quarantines the superseded file and,
     # with grace 0, purges it; a blocked cleanup is a terminal failure here.
     if [[ "$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE managed_anime_id='anime-e2e' AND state='blocked'")" -gt 0 ]]; then
-      echo "cleanup blocked: $($PSQL -tAc "SELECT failure_code || ': ' || coalesce(failure_reason,'') FROM cleanup_operations WHERE managed_anime_id='anime-e2e' AND state='blocked'")" >&2
+      echo "cleanup blocked: $($PSQL -tAc "SELECT failure_code || ': ' || coalesce(reason,'') FROM cleanup_operations WHERE managed_anime_id='anime-e2e' AND state='blocked'")" >&2
+      return 1
+    fi
+    # A cleanup that exhausted its attempt budget lands in `failed`, not in
+    # `blocked`; without this read the run would wait out the deadline and
+    # report a timeout instead of the typed reason that actually applies.
+    if [[ "$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE managed_anime_id='anime-e2e' AND state='failed'")" -gt 0 ]]; then
+      echo "cleanup failed: $($PSQL -tAc "SELECT failure_code || ': ' || coalesce(reason,'') || ' (state=failed)' FROM cleanup_operations WHERE managed_anime_id='anime-e2e' AND state='failed'")" >&2
       return 1
     fi
     cleanup_purged="$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE managed_anime_id='anime-e2e' AND state='purged'")"
@@ -606,6 +658,11 @@ echo "== assertions =="
 old_state="$($PSQL -tAc "SELECT state FROM placements WHERE id='plc-old'")"
 new_path="$($PSQL -tAc "SELECT physical_path FROM placements WHERE source_evidence_type='file_operation' LIMIT 1")"
 quarantine_path="$($PSQL -tAc "SELECT quarantine_path FROM cleanup_operations WHERE managed_anime_id='anime-e2e'" | tr -d '\r')"
+if [[ "$negative_mode" == new-placement-missing ]]; then
+  # Destroy the file the settled chain left at its new placement path. The
+  # `-f "$new_path"` assertion below must name it, not time out elsewhere.
+  negative_inject new-placement "$new_path"
+fi
 [[ "$old_state" == "superseded" ]] || { echo "old placement not superseded: $old_state" >&2; exit 1; }
 [[ -f "$new_path" ]] || { echo "new placement file missing: $new_path" >&2; exit 1; }
 [[ ! -e "$old_file" ]] || { echo "superseded source still present after purge: $old_file" >&2; exit 1; }
@@ -695,14 +752,20 @@ if [[ "${BANSOKO_FM_E2E_OFFSET_ALIGNMENT:-0}" == "1" ]]; then
   calibration_generation() {
     $PSQL -tAc "SELECT COALESCE(MAX(generation),0) FROM reconciliation_files WHERE managed_anime_id='anime-e2e' AND disposition IS NOT NULL" | tr -d '[:space:]'
   }
-  wait_calibration_after() {
-    local before="$1" deadline=$(( $(date +%s) + 180 )) current
+  # Wait for the calibration of ONE specific scan generation, never merely for
+  # "the newest calibrated generation moved". A previous scenario's scan can
+  # still be calibrating when this one is submitted: waiting for any advance
+  # returns as soon as THAT older generation lands, and the preview then reads
+  # the previous generation's rows (observed: scenario 6's drift preview showed
+  # the pre-move paths of scenario 5's scan).
+  wait_calibration_generation() {
+    local want="$1" deadline=$(( $(date +%s) + 180 )) current
     while (( $(date +%s) < deadline )); do
       current="$(calibration_generation)"
-      if [[ -n "$current" && "$current" -gt "$before" ]]; then return 0; fi
+      if [[ -n "$current" && "$current" -ge "$want" ]]; then return 0; fi
       sleep 2
     done
-    echo "calibration generation did not advance past $before within 180s" >&2
+    echo "calibration generation $want was not reached within 180s (last=$(calibration_generation))" >&2
     return 1
   }
   # Expected target of the single drifting row for one file path, read from the
@@ -732,12 +795,41 @@ print(matches[0].get("expected_path") or "")' "$2"
   # One manual scan plus the calibration generation it produces, so the preview
   # reflects the drift the scenario just created on disk.
   scan_and_calibrate() {
-    local label="$1" before request
-    before="$(calibration_generation)"
-    request="file022-$label-$(date +%s)-$RANDOM"
-    api_post /reconciliation/scans "{\"managed_anime_id\":\"anime-e2e\",\"tree_top\":\"$library_root\",\"trigger\":\"manual\",\"request_id\":\"$request\"}" >"$summary_dir/$label-scan-submit.json"
-    wait_sql "SELECT state FROM reconciliation_scans WHERE managed_anime_id='anime-e2e' ORDER BY generation DESC LIMIT 1" completed
-    wait_calibration_after "$before"
+    local label="$1" submitted request
+    # A scan owner admits one generation at a time. Scenario 5's browser step
+    # leaves its own rescan behind when it settles, so submitting here without
+    # waiting first races that scan. A refused submit surfaces as an untyped 500
+    # rather than a typed conflict, so it names nothing about the fixture: wait
+    # for the owner to leave `running` and retry instead of failing the lane on a
+    # scheduling race.
+    local attempt existing
+    for attempt in 1 2 3 4 5 6; do
+      # Only wait when an earlier generation actually exists: a run whose first
+      # scan is this one has no row to wait for, and waiting 300s on an empty
+      # read would report a timeout that says nothing about the fixture.
+      existing="$($PSQL -tAc "SELECT count(*) FROM reconciliation_scans WHERE managed_anime_id='anime-e2e'" | tr -d '[:space:]')"
+      if [[ "$existing" != 0 ]]; then
+        wait_sql "SELECT state FROM reconciliation_scans WHERE managed_anime_id='anime-e2e' ORDER BY generation DESC LIMIT 1" completed 300 || true
+      fi
+      request="file022-$label-$(date +%s)-$RANDOM"
+      if api_post /reconciliation/scans "{\"managed_anime_id\":\"anime-e2e\",\"tree_top\":\"$library_root\",\"trigger\":\"manual\",\"request_id\":\"$request\"}" >"$summary_dir/$label-scan-submit.json" 2>"$summary_dir/$label-scan-submit.err"; then
+        break
+      fi
+      if (( attempt == 6 )); then
+        echo "scan submit for $label was refused 6 times while no other scan was running" >&2
+        cat "$summary_dir/$label-scan-submit.err" >&2 || true
+        exit 1
+      fi
+      echo "scan submit for $label was refused; waiting for the running scan to settle before retrying" >&2
+      sleep 5
+    done
+    # Bind both waits to the generation THIS submit returned. Waiting on the
+    # newest scan/calibration row lets an earlier scenario's in-flight work
+    # satisfy the wait, and the preview then describes the wrong generation.
+    submitted="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["generation"])' <"$summary_dir/$label-scan-submit.json")"
+    [[ "$submitted" =~ ^[0-9]+$ ]] || { echo "scan submit for $label returned no usable generation: $(cat "$summary_dir/$label-scan-submit.json")" >&2; exit 1; }
+    wait_sql "SELECT state FROM reconciliation_scans WHERE managed_anime_id='anime-e2e' AND generation=$submitted" completed
+    wait_calibration_generation "$submitted"
   }
   observe_disk() {
     local label="$1" path="$2"
@@ -810,7 +902,6 @@ print(matches[0].get("expected_path") or "")' "$2"
   cp "$second_download" "$second_path"
   second_hash="$(fingerprint "$second_path")"
   second_fp='{"algorithm":"sha256","value":"'$second_hash'","size_bytes":65536}'
-  second_fp_source='{"algorithm":"sha256","value":"'$second_hash'"}'
   second_payload_digest="sha256:$(repeat_hex d)"
   second_manifest_digest="sha256:$(repeat_hex 9)"
   second_file_ref="$(torrent_file_ref "$second_payload_digest" 'EP05.mkv')"
@@ -919,7 +1010,7 @@ E2ESECOND
       fi
       movie_cleanup_blocked="$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE managed_anime_id='anime-e2e-m' AND state='blocked'" | tr -d '[:space:]')"
       if [[ "$movie_cleanup_blocked" -gt 0 ]]; then
-        echo "scenario 7 movie cleanup blocked: $($PSQL -tAc "SELECT failure_code || ': ' || coalesce(failure_reason,'') FROM cleanup_operations WHERE managed_anime_id='anime-e2e-m' AND state='blocked'")" >&2
+        echo "scenario 7 movie cleanup blocked: $($PSQL -tAc "SELECT failure_code || ': ' || coalesce(reason,'') FROM cleanup_operations WHERE managed_anime_id='anime-e2e-m' AND state='blocked'")" >&2
         exit 1
       fi
       movie_placed="$($PSQL -tAc "SELECT count(*) FROM placements WHERE managed_anime_id='anime-e2e-m' AND source_evidence_type='file_operation' AND state='active' AND verification_state='verified'" | tr -d '[:space:]')"
@@ -1056,7 +1147,6 @@ E2ESECOND
   rules_workspace="$(api_get /anime/anime-e2e/workspace)"
   printf '%s' "$rules_workspace" | python3 -c 'import json,sys;json.dump(json.load(sys.stdin)["rules"],open(sys.argv[1],"w"))' "$summary_dir/scenario-4-rules-before.json"
   rules="$(cat "$summary_dir/scenario-4-rules-before.json")"
-	rules_version="$(printf '%s' "$rules" | python3 -c 'import json,sys;print(json.load(sys.stdin)["version"])')"
   # The edited template must render an absolute directory: save-time validation
   # renders against the fixed sample and refuses a relative result with
   # NAMING_TARGET_NOT_ABSOLUTE. A "Rule Drift" literal would therefore be a
@@ -1177,6 +1267,660 @@ PY
     printf '{"scenario":6,"db_state":"blocked","failure_code":"target_occupied","source":"%s","source_sha256":"%s","target":"%s","target_sha256":"%s","preview_expected_path":"%s"}\n' "$collision_source" "$source_hash" "$target_expected" "$collision_hash" "$collision_preview" >>"$scenario_json"
     cat "$scenario_json" | tee -a "$durable_evidence_dir/file022-scenarios.jsonl"
     cat "$summary_dir/disk-observations.txt" | tee -a "$durable_evidence_dir/disk-observations.txt"
+  fi
+
+  if scenario_requested 8; then
+  # ---------------------------------------------------------------------
+  # 8. Scan-alignment recovery (design: .trellis/tasks/10-25-scan-alignment-recovery).
+  #    A recovery candidate is an OBSERVATION, not ownership: when an owned
+  #    placement is missing at its current path AND at its frozen provenance
+  #    locator, but the COMPLETE unit (video + every companion) already sits
+  #    at the path the CURRENT naming rules render, the scan freezes a
+  #    candidate and keeps the disposition `missing`. Only the explicit
+  #    confirm (POST /anime/{id}/files/recover) re-attaches the rows.
+  #    This scenario owns a dedicated placement: scenarios 4/5/6 rewrite the
+  #    path of $placement_id, so reusing it here would make the assertions
+  #    unreadable.
+  echo "== scenario 8: scan-alignment recovery =="
+  s8_placement_id='plc-e2e-8'
+  s8_companion_id='cmp-e2e-8'
+  s8_companion_size=1024
+  # Alignment stays off for the whole scenario: the only writer that may move
+  # ownership here is the recovery confirm. The global switch alone is not
+  # enough — an anime override (scenario 5 writes one) outranks it — so the
+  # anime scope is cleared back to inherit first.
+  s8_global_policy="$(api_get /file-maintenance/policy)"
+  s8_global_version="$(printf '%s' "$s8_global_policy" | python3 -c 'import json,sys;print(json.load(sys.stdin)["version"])')"
+  api_put /file-maintenance/policy "{\"enabled\":true,\"alignment_enabled\":false,\"expected_version\":$s8_global_version}" >"$summary_dir/scenario-8-policy.json"
+  s8_anime_policy="$(api_get /file-maintenance/policy/anime/anime-e2e)"
+  s8_anime_version="$(printf '%s' "$s8_anime_policy" | python3 -c 'import json,sys;print(json.load(sys.stdin)["version"])')"
+  api_put /file-maintenance/policy/anime/anime-e2e "{\"enabled\":true,\"alignment_enabled\":null,\"expected_version\":$s8_anime_version}" >"$summary_dir/scenario-8-anime-policy.json"
+  [[ "$(api_get /file-maintenance/policy/anime/anime-e2e | python3 -c 'import json,sys;print(json.load(sys.stdin)["alignment_enabled"])')" == "None" ]] || { echo 'scenario 8 failed to clear the anime alignment override' >&2; exit 1; }
+
+  # -- seed one independent file_operation placement under anime-e2e -------
+  # The recovery probe renders through RenderPlacementTargets, which requires
+  # file-operation lineage (frozen release/source/snapshot facts), so this
+  # chain carries its own acquisition -> artifact -> plan -> operation rows
+  # exactly like the EP05 source seeded above.
+  s8_download="$download_root/EP08.mkv"
+  head -c 65536 /dev/urandom >"$s8_download"
+  s8_hex="$(shasum -a 256 "$s8_download" | awk '{print $1}')"
+  s8_fp='{"algorithm":"sha256","value":"'$s8_hex'","size_bytes":65536}'
+  s8_source_path="$library_root/Scenario 8 Source/EP08.mkv"
+  s8_companion_source="$library_root/Scenario 8 Source/EP08.zh.ass"
+  mkdir -p "$(dirname "$s8_source_path")"
+  cp "$s8_download" "$s8_source_path"
+  head -c "$s8_companion_size" /dev/urandom >"$s8_companion_source"
+  # The companion's registered identity is the sha256 of its bytes, exactly as
+  # registration stores it from the sidecar operation / artifact file.
+  s8_companion_digest="$(shasum -a 256 "$s8_companion_source" | awk '{print $1}')"
+  s8_payload_digest="sha256:$(repeat_hex 3)"
+  s8_manifest_digest="sha256:$(repeat_hex 4)"
+  s8_file_ref="$(torrent_file_ref "$s8_payload_digest" 'EP08.mkv')"
+  s8_fixture_json="$(go run ./internal/testutil/frozenpolicy/cmd \
+    --payload-digest "$s8_payload_digest" \
+    --manifest-digest "$s8_manifest_digest" \
+    --route-root "$library_root" \
+    --file EP08.mkv \
+    --title '[示例字幕组] 进击的巨人 - 08 [1080p][chs]')"
+  printf '%s' "$s8_fixture_json" >"$summary_dir/scenario-8-acquisition-fixture.json"
+  python3 - "$summary_dir/scenario-8-acquisition-fixture.json" <<'PY'
+import json,sys
+fixture=json.load(open(sys.argv[1], encoding="utf-8"))
+plan=fixture["release_facts"]["batch_plan"]
+if plan["coverage_keys"] != ["tv:s1:e8"]:
+    raise SystemExit("scenario 8 fixture batch plan does not cover tv:s1:e8: %r" % (plan["coverage_keys"],))
+if fixture["file_evidence"]["name"] != "EP08.mkv":
+    raise SystemExit("scenario 8 fixture file evidence is not EP08.mkv")
+PY
+  s8_acq_input_sql="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["acquisition_input"])' <<<"$s8_fixture_json")"
+  s8_acq_input_sql="${s8_acq_input_sql//\'/\'\'}"
+  s8_identity_sql="$(python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["identity"]))' <<<"$s8_fixture_json")"
+  s8_release_facts_sql="$(python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["release_facts"]))' <<<"$s8_fixture_json")"
+  s8_file_evidence_sql="$(python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["file_evidence"]))' <<<"$s8_fixture_json")"
+  s8_effective_facts_sql="$(python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["effective_facts"]))' <<<"$s8_fixture_json")"
+  if ! $PSQL -q -e >"$summary_dir/scenario-8-seed.log" 2>&1 <<E2ETHIRD
+BEGIN;
+INSERT INTO rss_sources(id,subscription_id,source_kind,locator,locator_display,group_name,title,episode_offset)
+VALUES ('src-e2e-8','sub-e2e','custom_rss','https://feed.example.test/e2e-8','https://feed.example.test/e2e-8','示例字幕组','进击的巨人',0);
+INSERT INTO releases(id,rss_source_id,stable_item_key,raw_facts,source_facts,parsed_facts,internal_facts,verdict,reason_code,download_task_id,version)
+SELECT 'rel-e2e-8','src-e2e-8','guid:e2e-8',jsonb_set(raw_facts,'{title}','"[示例字幕组] 进击的巨人 - 08 [1080p][chs]"'),source_facts,parsed_facts,internal_facts,'submitted','submitted','dl-e2e-8',1 FROM releases WHERE id='rel-e2e';
+INSERT INTO acquisitions(
+  id, execution_branch, entry_kind, access_scope, request_namespace, request_key, request_hash,
+  canonical_request, admission_kind, admission_http_status, admission_receipt,
+  input_schema_version, admission_digest, origin_managed_anime_ref, source_release_ref,
+  display_title, accepted_at, retention_anchor_at, detail_retention_seconds,
+  receipt_after_accept_seconds, receipt_after_terminal_seconds, receipt_until, detail_until,
+  state, terminal_at, terminal_schema, terminal_receipt, record_state,
+  preparation_mode, vars_evidence_version,
+  input_canonical_utf8, payload_digest, manifest_digest, manifest_item_count, manifest_sealed_at)
+VALUES (
+  'acq-e2e-8', 'download', 'automatic', 'deployment_owner_v1', 'auto_acquire_v1', 'auto:rel-e2e-8',
+  'sha256:' || repeat('c', 64),
+  '{"schema_version":1,"kind":"automatic","release_ref":"rel-e2e-8"}'::jsonb,
+  'download_queued', 202,
+  '{"schema_version":1,"acquisition_id":"acq-e2e-8","state":"queued"}'::jsonb,
+  1,
+  'sha256:' || encode(sha256(convert_to('acquisition-input:v1', 'UTF8') || decode('00', 'hex')
+     || convert_to('$s8_acq_input_sql', 'UTF8')), 'hex'),
+  'anime-e2e', 'rel-e2e-8',
+  '{"state":"known","value":"进击的巨人 - 08","reason_code":null}'::jsonb,
+  now() - interval '2 hours', now() - interval '2 hours', 2592000, 2592000, 5184000,
+  now() + interval '60 days',
+  NULL,
+  'running', NULL, NULL, NULL,
+  'full', 'none', 1,
+  '$s8_acq_input_sql',
+  '$s8_payload_digest',
+  '$s8_manifest_digest', 1, now() - interval '2 hours');
+INSERT INTO acquisition_files(acquisition_id, file_ref, ordinal, relative_path, exact_size, media_kind, identity_evidence, requirement, requirement_reason_code, selection_evidence)
+VALUES ('acq-e2e-8', '$s8_file_ref', 0, 'EP08.mkv', 65536, 'video', '{}'::jsonb, 'required', 'e2e_seed_required', '{"source":"filemaintenance-e2e scenario 8"}'::jsonb);
+INSERT INTO download_tasks(id,release_id,acquisition_id,frozen_input,frozen_policy,state,idempotency_key)
+VALUES ('dl-e2e-8','rel-e2e-8','acq-e2e-8','{}','$frozen_policy_sql'::jsonb,'queued','download:e2e:8');
+UPDATE download_tasks SET state='completed' WHERE id='dl-e2e-8';
+INSERT INTO artifacts(id,download_task_id,acquisition_id,inventory_snapshot,fingerprint_snapshot,state,verified_at)
+VALUES ('art-e2e-8','dl-e2e-8','acq-e2e-8','{}','{}','verified',CURRENT_TIMESTAMP);
+INSERT INTO artifact_files(id,artifact_id,acquisition_id,file_ref,relative_path,source_path,media_kind,size_bytes,fingerprint,facts,subtitle_binding_state)
+VALUES ('af-e2e-8','art-e2e-8','acq-e2e-8','$s8_file_ref','EP08.mkv','$s8_download','video',65536,'$s8_fp'::jsonb,'{"resolution":"1080p","video_codec":"HEVC","container":"mkv"}','not_applicable');
+INSERT INTO postprocessing_plans(id,artifact_id,artifact_version,state,input_digest,acquisition_id)
+VALUES ('plan-e2e-8','art-e2e-8',1,'queued','sha256:' || repeat('3', 64),'acq-e2e-8');
+INSERT INTO file_operations(id,artifact_id,acquisition_id,artifact_version,artifact_file_id,file_ref,operation,source_path,target_path,source_fingerprint,target_fingerprint,collision_policy,frozen_render_snapshot,frozen_config_snapshot,state,observed_at,idempotency_key,correlation_id,causation_type,causation_id,postprocessing_plan_id,file_ready_at,file_wall_until,file_max_attempts,file_attempt_timeout_seconds)
+SELECT 'op-e2e-8','art-e2e-8','acq-e2e-8',1,'af-e2e-8','$s8_file_ref','move','$s8_download','$s8_source_path','$s8_fp'::jsonb,'$s8_fp'::jsonb,'block','{}',frozen_config_snapshot,'completed',CURRENT_TIMESTAMP,'op-e2e-8','corr-e2e-8','artifact','art-e2e-8','plan-e2e-8',file_ready_at,file_wall_until,file_max_attempts,file_attempt_timeout_seconds FROM file_operations WHERE id=(SELECT source_owner_ref FROM placements WHERE id='$placement_id');
+INSERT INTO release_candidate_facts(release_id,release_version,parser_version,input_fingerprint,raw_evidence,facts,coverage_keys,resolution,revision,source,language,"group",size_bytes)
+VALUES ('rel-e2e-8',1,'parser-v1','fp-e2e-8','{"title":"[示例字幕组] 进击的巨人 - 08 [1080p][chs]"}','{"episode":8,"group_name":"示例字幕组","group":"示例字幕组","resolution":"1080p","quality":"web-dl","revision":"v1","source":"web-dl","language":"chs","size_bytes":65536}',
+        '["tv:s1:e8"]','1080p','v1','web-dl','chs','示例字幕组',65536);
+INSERT INTO media_fact_snapshots(id,release_id,schema_version,resolver_version,parser_kind,input_digest,release_identity,release_facts)
+VALUES ('snap-e2e-8','rel-e2e-8','media-facts-v1','episode-identity-v1','regex','digest-e2e-8','$s8_identity_sql'::jsonb,'$s8_release_facts_sql'::jsonb);
+INSERT INTO media_fact_files(snapshot_id,file_ref,media_kind,size_bytes,source_fingerprint,file_evidence,effective_facts)
+VALUES ('snap-e2e-8','$s8_file_ref','video',65536,'$s8_hex','$s8_file_evidence_sql'::jsonb,'$s8_effective_facts_sql'::jsonb);
+-- replacement_eligible stays false: this placement exists to be observed, and
+-- keeping it out of the single_copy pool makes the two seeded episodes
+-- independent of every replacement decision the lane already settled.
+INSERT INTO placements(id,physical_path,managed_anime_id,source_evidence_type,source_owner_ref,source_fingerprint,target_fingerprint,quality_facts_ref,facts_version,correlation_id,causation_type,causation_id,replacement_eligible,verification_state,state,version)
+VALUES ('$s8_placement_id','$s8_source_path','anime-e2e','file_operation','op-e2e-8','$s8_fp'::jsonb,'$s8_fp'::jsonb,'rel-e2e-8','media-facts-v1','corr-e2e-8','file_operation','op-e2e-8',false,'verified','active',1);
+INSERT INTO placement_coverage(placement_id,observation_key,coverage_ordinal,facts_version,evidence_ref)
+VALUES ('$s8_placement_id','tv:s1:e8',0,'media-facts-v1','op-e2e-8');
+-- One active subtitle companion. `fingerprint` is the registration-time
+-- content digest of the file (hex, as the column CHECK demands); recovery
+-- keeps it, and the loser cleanup handoff freezes and checks it before moving
+-- the file. The recovery candidate freezes the METADATA fingerprint it
+-- observes, never this digest.
+INSERT INTO placement_companions(id,placement_id,managed_anime_id,source_ref,registration,media_kind,suffix,original_extension,current_path,size_bytes,fingerprint,state,version)
+VALUES ('$s8_companion_id','$s8_placement_id','anime-e2e','e2e-scenario-8-companion','adopted','subtitle','zh','ass',
+        '$s8_companion_source','$s8_companion_size',
+        '$s8_companion_digest','active',1);
+COMMIT;
+E2ETHIRD
+  then
+    echo "scenario 8 seed failed; see $summary_dir/scenario-8-seed.log" >&2
+    sed -n '1,40p' "$summary_dir/scenario-8-seed.log" >&2 || true
+    exit 1
+  fi
+  observe_disk scenario-8-source "$s8_source_path"
+
+  # -- step 1a: learn the CURRENT rendered target from the preview --------
+  # The rule set is the anime's live one (scenarios 4/5 may have edited it),
+  # so the target is read from the same preview the UI renders instead of
+  # being composed here.
+  scan_and_calibrate scenario-8-preview
+  s8_diffs_file="$summary_dir/scenario-8-path-diffs.json"
+  api_get '/reconciliation/scans/anime-e2e/path-diffs?generation=0' >"$s8_diffs_file"
+  s8_target="$(path_diff_expected "$(cat "$s8_diffs_file")" "$s8_source_path")"
+  [[ -n "$s8_target" && "$s8_target" != "$s8_source_path" ]] || { echo "scenario 8 preview does not render a different target for $s8_source_path (got [$s8_target])" >&2; exit 1; }
+  # Companion diffs carry no id in the path-diff contract (they are keyed by
+  # file_path), so the unit's target is derived from the video target through
+  # the frozen companion suffix/extension the re-render uses, and then checked
+  # against the shipped preview. A disagreement stops the run before any move.
+  s8_companion_suffix="$($PSQL -tAc "SELECT suffix FROM placement_companions WHERE id='$s8_companion_id'" | tr -d '\r')"
+  s8_companion_extension="$($PSQL -tAc "SELECT original_extension FROM placement_companions WHERE id='$s8_companion_id'" | tr -d '\r')"
+  s8_companion_target="$(python3 - "$s8_target" "$s8_companion_suffix" "$s8_companion_extension" <<'PY'
+import os,sys
+video,suffix,extension=sys.argv[1],sys.argv[2],sys.argv[3]
+stem=os.path.splitext(os.path.basename(video))[0]
+name=stem + ("." + suffix if suffix else "")
+print(os.path.join(os.path.dirname(video), name + "." + extension))
+PY
+)"
+  s8_declared_companion_target="$(python3 - "$s8_diffs_file" "$s8_source_path" "$s8_companion_source" <<'PY'
+import json,sys
+view=json.load(open(sys.argv[1], encoding="utf-8"))
+path,companion_path=sys.argv[2],sys.argv[3]
+rows=[r for r in view if r.get("file_path")==path]
+if len(rows)!=1:
+    raise SystemExit("scenario 8: expected one path-diff row for %s, got %d" % (path,len(rows)))
+companions=[c for c in (rows[0].get("companions") or []) if c.get("file_path")==companion_path]
+if len(companions)!=1:
+    raise SystemExit("scenario 8: expected one companion diff for %s, got %r" % (companion_path,rows[0].get("companions")))
+expected=companions[0].get("expected_path")
+if not expected:
+    raise SystemExit("scenario 8: companion %s renders no target: %r" % (companion_path,companions[0]))
+print(expected)
+PY
+)"
+  [[ -n "$s8_companion_target" && "$s8_declared_companion_target" == "$s8_companion_target" ]] || { echo "scenario 8: derived companion target [$s8_companion_target] disagrees with the preview [$s8_declared_companion_target]" >&2; exit 1; }
+  echo "scenario 8 rendered target: $s8_target (companion $s8_companion_target)"
+
+  # -- step 1b: move the owned file to that target, drop both locators ------
+  # physical_path and the frozen provenance source_path must BOTH be gone:
+  # that is the only state in which the scan probes the rendered target.
+  s8_source_hash="$(fingerprint "$s8_source_path")"
+  # SQL integers, read as text and normalised so arithmetic below is safe.
+  s8_count() { printf '%s' "$1" | tr -d '[:space:]'; }
+  s8_placement_version="$(s8_count "$($PSQL -tAc "SELECT version FROM placements WHERE id='$s8_placement_id'")")"
+  s8_companion_version="$(s8_count "$($PSQL -tAc "SELECT version FROM placement_companions WHERE id='$s8_companion_id'")")"
+  [[ "$s8_source_hash" != MISSING ]] || { echo "scenario 8 fixture file missing before the move: $s8_source_path" >&2; exit 1; }
+  mkdir -p "$(dirname "$s8_target")" "$(dirname "$s8_companion_target")"
+  [[ ! -e "$s8_target" && ! -e "$s8_companion_target" ]] || { echo "scenario 8 rendered target already exists before the move: $s8_target / $s8_companion_target" >&2; exit 1; }
+  # The user moved the WHOLE unit by hand: video and subtitle together, out of
+  # the old directory. Both old locators and the download provenance are gone.
+  s8_companion_hash="$(fingerprint "$s8_companion_source")"
+  mv "$s8_source_path" "$s8_target"
+  mv "$s8_companion_source" "$s8_companion_target"
+  rm -f -- "$s8_download"
+  [[ "$(fingerprint "$s8_companion_target")" == "$s8_companion_hash" ]] || { echo "scenario 8 companion move changed the bytes: $s8_companion_source($s8_companion_hash) -> $s8_companion_target($(fingerprint "$s8_companion_target"))" >&2; exit 1; }
+  s8_target_hash="$(fingerprint "$s8_target")"
+  [[ "$s8_target_hash" == "$s8_source_hash" ]] || { echo "scenario 8 move changed the bytes: $s8_source_path($s8_source_hash) -> $s8_target($s8_target_hash)" >&2; exit 1; }
+  [[ ! -e "$s8_source_path" && ! -e "$s8_download" ]] || { echo "scenario 8 locators still present: source=$s8_source_path provenance=$s8_download" >&2; exit 1; }
+  observe_disk scenario-8-target "$s8_target"
+
+  # -- step 1c: the scan only OFFERS; nothing is recovered ---------------
+  scan_and_calibrate scenario-8-candidate
+  # The recovery read model and the confirm both refuse while a scan or its
+  # calibration is still in flight (`scan_running`), and calibration commits
+  # before its work item retires. Drain that window so the assertions below
+  # read the settled generation instead of racing it.
+  wait_sql "SELECT count(*) FROM work_items WHERE owner_type='file_maintenance' AND owner_id='anime-e2e' AND kind IN ('reconciliation_scan','reconciliation_calibrate') AND state IN ('available','leased')" 0
+  s8_generation="$(calibration_generation)"
+  s8_disposition="$($PSQL -tAc "SELECT COALESCE(disposition,'') FROM reconciliation_files WHERE managed_anime_id='anime-e2e' AND generation=$s8_generation AND file_path='$s8_source_path'" | tr -d '[:space:]')"
+  [[ "$s8_disposition" == missing ]] || { echo "scenario 8: the observation row for $s8_source_path is [$s8_disposition], want missing" >&2; exit 1; }
+  s8_candidates="$($PSQL -tAc "SELECT COALESCE(facts->'recovery_candidates','[]')::text FROM reconciliation_files WHERE managed_anime_id='anime-e2e' AND generation=$s8_generation AND file_path='$s8_source_path'")"
+  s8_candidate_field() {
+    printf '%s' "$1" | python3 -c '
+import json,sys
+documents=json.load(sys.stdin)
+placement_id,path=sys.argv[1],sys.argv[2]
+if not isinstance(documents,list):
+    print("no_candidate"); raise SystemExit(0)
+matches=[c for c in documents if isinstance(c,dict) and c.get("placement_id")==placement_id]
+if not matches:
+    print("no_candidate"); raise SystemExit(0)
+value=matches[-1]
+for key in path.split("."):
+    if not isinstance(value,dict) or key not in value:
+        print("null"); raise SystemExit(0)
+    value=value[key]
+print("null" if value is None else (json.dumps(value, ensure_ascii=False, sort_keys=True) if isinstance(value,(dict,list)) else value))
+' "$s8_placement_id" "$2"
+  }
+  s8_candidate_target="$(s8_candidate_field "$s8_candidates" target_path)"
+  if [[ "$s8_candidate_target" != "$s8_target" ]]; then
+    # Everything an operator needs to see WHY: where the unit actually is, what
+    # the scan observed, and whether the recovery endpoints exist at all.
+    s8_files_probe="$(api_get /anime/anime-e2e/files 2>/dev/null || echo '<unreadable>')"
+    {
+      echo '== scenario 8: no recovery candidate =='
+      echo "generation: $s8_generation"
+      echo "placement: $s8_placement_id (physical_path=$s8_source_path)"
+      echo "companion: $s8_companion_id (current_path=$s8_companion_source)"
+      echo "rendered target: $s8_target"
+      echo "companion target: $s8_companion_target"
+      echo "facts->recovery_candidates: $s8_candidates"
+      echo '-- API files row for the placement --'
+      printf '%s' "$s8_files_probe" | python3 -c 'import json,sys
+try:
+    view=json.load(sys.stdin)
+except Exception as exc:
+    print("unreadable files view: %r" % (exc,)); raise SystemExit(0)
+for row in view.get("files") or []:
+    if row.get("placement_id")==sys.argv[1]:
+        print(json.dumps(row, ensure_ascii=False, indent=2))' "$s8_placement_id"
+      echo '-- recover endpoint probe --'
+      curl -sS -o /dev/null -w 'POST /anime/anime-e2e/files/recover -> HTTP %{http_code}\n' \
+        -X POST "${auth[@]}" -d '{"placement_id":"","generation":0,"target_path":"","fingerprint":"","placement_version":0}' \
+        "$api/anime/anime-e2e/files/recover" || true
+    } | tee -a "$durable_evidence_dir/scenario-8-diagnostics.txt" >&2
+    echo "scenario 8: generation $s8_generation froze no recovery candidate for placement $s8_placement_id at $s8_target (facts->recovery_candidates=$s8_candidates)." >&2
+    echo "scenario 8: the probe must freeze a candidate here (both locators missing, rendered unit on disk at the frozen size, no other owner). No candidate is a real backend failure: read the diagnostics above for the probe, renderer, occupancy and size evidence." >&2
+    exit 1
+  fi
+  s8_candidate_version="$(s8_candidate_field "$s8_candidates" placement_version)"
+  s8_candidate_fingerprint="$(s8_candidate_field "$s8_candidates" target_fingerprint)"
+  s8_candidate_size="$(s8_candidate_field "$s8_candidates" size_bytes)"
+  [[ "$s8_candidate_version" == "$s8_placement_version" ]] || { echo "scenario 8: candidate froze placement_version $s8_candidate_version, want $s8_placement_version" >&2; exit 1; }
+  [[ "$s8_candidate_size" == 65536 ]] || { echo "scenario 8: candidate froze size_bytes $s8_candidate_size, want 65536" >&2; exit 1; }
+  [[ "$s8_candidate_fingerprint" == meta:size=65536* ]] || { echo "scenario 8: candidate fingerprint [$s8_candidate_fingerprint] is not a metadata fingerprint of the target" >&2; exit 1; }
+  s8_companion_frozen="$(s8_candidate_field "$s8_candidates" companions)"
+  [[ "$s8_companion_frozen" != no_candidate && "$s8_companion_frozen" != "[]" && "$s8_companion_frozen" != null ]] || { echo "scenario 8: the candidate froze no companion unit for $s8_companion_id ($s8_companion_frozen)" >&2; exit 1; }
+
+  # The API row must expose that frozen token and offer the confirm.
+  api_get /anime/anime-e2e/files >"$summary_dir/scenario-8-files.json"
+  s8_row="$(python3 - "$summary_dir/scenario-8-files.json" "$s8_placement_id" <<'PY'
+import json,sys
+view=json.load(open(sys.argv[1], encoding="utf-8"))
+placement_id=sys.argv[2]
+rows=[r for r in view.get("files") or [] if r.get("placement_id")==placement_id]
+if len(rows)!=1:
+    raise SystemExit("scenario 8: expected one files row for placement %s, got %d (rows: %r)" % (placement_id,len(rows),[r.get("placement_id") for r in view.get("files") or []]))
+print(json.dumps(rows[0], ensure_ascii=False))
+PY
+)"
+  s8_field() {
+    printf '%s' "$1" | python3 -c '
+import json,sys
+value=json.load(sys.stdin)
+for key in sys.argv[1].split("."):
+    if not isinstance(value,dict) or key not in value:
+        print("null"); raise SystemExit(0)
+    value=value[key]
+if value is None:
+    print("null")
+elif isinstance(value,bool):
+    print("true" if value else "false")
+else:
+    print(value)
+' "$2"
+  }
+  s8_row_status="$(s8_field "$s8_row" status)"
+  s8_token_target="$(s8_field "$s8_row" recovery.target_path)"
+  s8_token_generation="$(s8_field "$s8_row" recovery.generation)"
+  s8_token_fingerprint="$(s8_field "$s8_row" recovery.fingerprint)"
+  s8_token_version="$(s8_field "$s8_row" recovery.placement_version)"
+  s8_recover_available="$(s8_field "$s8_row" actions.recover.available)"
+  [[ "$s8_row_status" == missing ]] || { echo "scenario 8: the files row of $s8_placement_id has status [$s8_row_status], want missing (the candidate is an observation, the disposition must not change)" >&2; exit 1; }
+  if [[ "$s8_token_target" != "$s8_target" || "$s8_token_generation" != "$s8_generation" || "$s8_token_version" != "$s8_placement_version" || "$s8_recover_available" != true ]]; then
+    echo "scenario 8: the files row does not expose the frozen confirm token: recovery.target_path=[$s8_token_target] (want $s8_target), recovery.generation=[$s8_token_generation] (want $s8_generation), recovery.placement_version=[$s8_token_version] (want $s8_placement_version), recovery.fingerprint=[$s8_token_fingerprint], actions.recover.available=[$s8_recover_available] (want true), actions.recover.reason_code=[$(s8_field "$s8_row" actions.recover.reason_code)]" >&2
+    exit 1
+  fi
+  # The scan is an observer: no ownership row, version or byte moved.
+  s8_path_after_scan="$($PSQL -tAc "SELECT physical_path FROM placements WHERE id='$s8_placement_id'" | tr -d '\r')"
+  s8_version_after_scan="$(s8_count "$($PSQL -tAc "SELECT version FROM placements WHERE id='$s8_placement_id'")")"
+  s8_companion_path_after_scan="$($PSQL -tAc "SELECT current_path FROM placement_companions WHERE id='$s8_companion_id'" | tr -d '\r')"
+  s8_companion_version_after_scan="$(s8_count "$($PSQL -tAc "SELECT version FROM placement_companions WHERE id='$s8_companion_id'")")"
+  [[ "$s8_path_after_scan" == "$s8_source_path" ]] || { echo "scenario 8: the scan moved the placement physical_path to [$s8_path_after_scan], want the unchanged $s8_source_path" >&2; exit 1; }
+  [[ "$s8_version_after_scan" == "$s8_placement_version" ]] || { echo "scenario 8: the scan bumped the placement version $s8_placement_version -> $s8_version_after_scan" >&2; exit 1; }
+  [[ "$s8_companion_path_after_scan" == "$s8_companion_source" ]] || { echo "scenario 8: the scan moved the companion current_path to [$s8_companion_path_after_scan], want the unchanged $s8_companion_source" >&2; exit 1; }
+  [[ "$s8_companion_version_after_scan" == "$s8_companion_version" ]] || { echo "scenario 8: the scan bumped the companion version $s8_companion_version -> $s8_companion_version_after_scan" >&2; exit 1; }
+  [[ "$(fingerprint "$s8_target")" == "$s8_target_hash" ]] || { echo "scenario 8: the scan rewrote the bytes at $s8_target ($s8_target_hash -> $(fingerprint "$s8_target"))" >&2; exit 1; }
+  s8_journal_count() { s8_count "$($PSQL -tAc "SELECT count(*) FROM subscription_log_entries WHERE subject_id='$s8_placement_id' AND reason_code='file_recovered'")"; }
+  s8_journal_before="$(s8_journal_count)"
+
+  # -- step 5 (before any confirm): a changed target refuses loudly --------
+  # The confirm is refused with a typed 409, so the body must be captured: a
+  # bare `curl -f` would print only the HTTP status. The status is echoed (not
+  # assigned) because the caller runs this in a command substitution.
+  s8_post_recover() {
+    curl -sS -o "$2" -w '%{http_code}' -X POST "${auth[@]}" -d "$1" "$api/anime/anime-e2e/files/recover" || true
+  }
+  s8_recover_body() {
+    printf '{"placement_id":"%s","generation":%s,"target_path":"%s","fingerprint":"%s","placement_version":%s}' \
+      "$s8_placement_id" "$1" "$2" "$3" "$4"
+  }
+  printf 'x' >>"$s8_target"
+  s8_tampered_size="$(wc -c <"$s8_target" | tr -d '[:space:]')"
+  [[ "$s8_tampered_size" == 65537 ]] || { echo "scenario 8: appending one byte left the target at $s8_tampered_size bytes, want 65537" >&2; exit 1; }
+  s8_http_code="$(s8_post_recover "$(s8_recover_body "$s8_token_generation" "$s8_token_target" "$s8_token_fingerprint" "$s8_token_version")" "$summary_dir/scenario-8-refusal.json")"
+  s8_refusal_body="$(cat "$summary_dir/scenario-8-refusal.json")"
+  s8_refusal_http="$s8_http_code"
+  [[ "$s8_http_code" == 409 ]] || { echo "scenario 8: the confirm of a size-changed target answered HTTP $s8_http_code, want 409 (body: $s8_refusal_body)" >&2; exit 1; }
+  s8_refusal_code="$(printf '%s' "$s8_refusal_body" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("code",""))')"
+  s8_refusal_reason="$(printf '%s' "$s8_refusal_body" | python3 -c 'import json,sys;d=json.load(sys.stdin);print((d.get("details") or [{}])[0].get("code",""))')"
+  [[ "$s8_refusal_code" == ANIME_FILES_RECOVER_REFUSED ]] || { echo "scenario 8: refusal code [$s8_refusal_code], want ANIME_FILES_RECOVER_REFUSED (body: $s8_refusal_body)" >&2; exit 1; }
+  [[ "$s8_refusal_reason" == target_changed ]] || { echo "scenario 8: refusal reason [$s8_refusal_reason], want target_changed (body: $s8_refusal_body)" >&2; exit 1; }
+  s8_version_after_refusal="$(s8_count "$($PSQL -tAc "SELECT version FROM placements WHERE id='$s8_placement_id'")")"
+  s8_companion_version_after_refusal="$(s8_count "$($PSQL -tAc "SELECT version FROM placement_companions WHERE id='$s8_companion_id'")")"
+  s8_path_after_refusal="$($PSQL -tAc "SELECT physical_path FROM placements WHERE id='$s8_placement_id'" | tr -d '\r')"
+  s8_journal_after_refusal="$(s8_journal_count)"
+  [[ "$s8_version_after_refusal" == "$s8_placement_version" && "$s8_path_after_refusal" == "$s8_source_path" && "$s8_companion_version_after_refusal" == "$s8_companion_version" && "$s8_journal_after_refusal" == "$s8_journal_before" ]] || {
+    echo "scenario 8: the refusal wrote ownership: placement $s8_path_after_refusal v$s8_version_after_refusal (want $s8_source_path v$s8_placement_version), companion v$s8_companion_version_after_refusal (want v$s8_companion_version), file_recovered journal $s8_journal_after_refusal (want $s8_journal_before)" >&2
+    exit 1
+  }
+  # Restore the frozen identity: truncating back keeps the inode, so the
+  # metadata fingerprint matches the frozen candidate again and the bytes are
+  # exactly the ones the scan observed.
+  truncate -s 65536 "$s8_target"
+  [[ "$(fingerprint "$s8_target")" == "$s8_target_hash" ]] || { echo "scenario 8: restoring the target after the refusal did not reproduce $s8_target_hash (now $(fingerprint "$s8_target"))" >&2; exit 1; }
+  echo "scenario 8 refusal: HTTP 409 $s8_refusal_code/$s8_refusal_reason with ownership untouched"
+
+  # -- step 2: the explicit confirm is what recovers -----------------------
+  s8_confirm_body="$(s8_recover_body "$s8_token_generation" "$s8_token_target" "$s8_token_fingerprint" "$s8_token_version")"
+  s8_http_code="$(s8_post_recover "$s8_confirm_body" "$summary_dir/scenario-8-confirm.json")"
+  s8_confirm_response="$(cat "$summary_dir/scenario-8-confirm.json")"
+  [[ "$s8_http_code" == 200 ]] || { echo "scenario 8: the confirm answered HTTP $s8_http_code, want 200 (body: $s8_confirm_response)" >&2; exit 1; }
+  s8_confirm_replay="$(printf '%s' "$s8_confirm_response" | python3 -c 'import json,sys;d=json.load(sys.stdin);print("true" if d.get("replay") else "false")')"
+  s8_confirm_target="$(printf '%s' "$s8_confirm_response" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("target_path",""))')"
+  s8_confirm_companions="$(printf '%s' "$s8_confirm_response" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("companions",-1))')"
+  [[ "$s8_confirm_replay" == false ]] || { echo "scenario 8: the first confirm reported replay=$s8_confirm_replay" >&2; exit 1; }
+  [[ "$s8_confirm_target" == "$s8_target" ]] || { echo "scenario 8: the confirm reports target [$s8_confirm_target], want $s8_target" >&2; exit 1; }
+  [[ "$s8_confirm_companions" == 1 ]] || { echo "scenario 8: the confirm reports $s8_confirm_companions companions, want 1" >&2; exit 1; }
+  s8_path_after_confirm="$($PSQL -tAc "SELECT physical_path FROM placements WHERE id='$s8_placement_id'" | tr -d '\r')"
+  s8_version_after_confirm="$(s8_count "$($PSQL -tAc "SELECT version FROM placements WHERE id='$s8_placement_id'")")"
+  s8_evidence_after_confirm="$($PSQL -tAc "SELECT source_evidence_type FROM placements WHERE id='$s8_placement_id'" | tr -d '[:space:]')"
+  s8_companion_path_after_confirm="$($PSQL -tAc "SELECT current_path FROM placement_companions WHERE id='$s8_companion_id'" | tr -d '\r')"
+  s8_companion_version_after_confirm="$(s8_count "$($PSQL -tAc "SELECT version FROM placement_companions WHERE id='$s8_companion_id'")")"
+  s8_journal_after_confirm="$(s8_journal_count)"
+  [[ "$s8_path_after_confirm" == "$s8_target" ]] || { echo "scenario 8: after the confirm the placement owns [$s8_path_after_confirm], want $s8_target" >&2; exit 1; }
+  [[ "$s8_version_after_confirm" == "$((s8_placement_version + 1))" ]] || { echo "scenario 8: after the confirm the placement version is $s8_version_after_confirm, want $((s8_placement_version + 1))" >&2; exit 1; }
+  # Recovery re-points bytes; it never rewrites where the placement came
+  # from. An evidence type of 'recovery' would strand the row: every lineage
+  # reader joins on source_evidence_type='file_operation'.
+  [[ "$s8_evidence_after_confirm" == file_operation ]] || { echo "scenario 8: the confirm rewrote source_evidence_type to [$s8_evidence_after_confirm], want file_operation" >&2; exit 1; }
+  [[ "$s8_companion_path_after_confirm" == "$s8_companion_target" ]] || { echo "scenario 8: after the confirm the companion owns [$s8_companion_path_after_confirm], want $s8_companion_target" >&2; exit 1; }
+  [[ "$s8_companion_version_after_confirm" == "$((s8_companion_version + 1))" ]] || { echo "scenario 8: after the confirm the companion version is $s8_companion_version_after_confirm, want $((s8_companion_version + 1))" >&2; exit 1; }
+  [[ "$s8_journal_after_confirm" == "$((s8_journal_before + 1))" ]] || { echo "scenario 8: the confirm wrote $s8_journal_after_confirm file_recovered journal rows, want $((s8_journal_before + 1))" >&2; exit 1; }
+  [[ "$(fingerprint "$s8_target")" == "$s8_target_hash" && "$(fingerprint "$s8_companion_target")" != MISSING ]] || { echo "scenario 8: the confirm moved or rewrote bytes (target $(fingerprint "$s8_target") vs $s8_target_hash)" >&2; exit 1; }
+  observe_disk scenario-8-after-confirm "$s8_target"
+
+  # -- step 4: the same token replays idempotently ------------------------
+  s8_http_code="$(s8_post_recover "$s8_confirm_body" "$summary_dir/scenario-8-replay.json")"
+  s8_replay_response="$(cat "$summary_dir/scenario-8-replay.json")"
+  [[ "$s8_http_code" == 200 ]] || { echo "scenario 8: replaying the confirm answered HTTP $s8_http_code, want 200 (body: $s8_replay_response)" >&2; exit 1; }
+  s8_replay_flag="$(printf '%s' "$s8_replay_response" | python3 -c 'import json,sys;d=json.load(sys.stdin);print("true" if d.get("replay") else "false")')"
+  s8_version_after_replay="$(s8_count "$($PSQL -tAc "SELECT version FROM placements WHERE id='$s8_placement_id'")")"
+  s8_companion_version_after_replay="$(s8_count "$($PSQL -tAc "SELECT version FROM placement_companions WHERE id='$s8_companion_id'")")"
+  s8_journal_after_replay="$(s8_journal_count)"
+  [[ "$s8_replay_flag" == true ]] || { echo "scenario 8: replaying the committed confirm reported replay=$s8_replay_flag, want true (body: $s8_replay_response)" >&2; exit 1; }
+  [[ "$s8_version_after_replay" == "$s8_version_after_confirm" ]] || { echo "scenario 8: the replay bumped the placement version $s8_version_after_confirm -> $s8_version_after_replay" >&2; exit 1; }
+  [[ "$s8_companion_version_after_replay" == "$s8_companion_version_after_confirm" ]] || { echo "scenario 8: the replay bumped the companion version $s8_companion_version_after_confirm -> $s8_companion_version_after_replay" >&2; exit 1; }
+  [[ "$s8_journal_after_replay" == "$s8_journal_after_confirm" ]] || { echo "scenario 8: the replay wrote a second journal row ($s8_journal_after_confirm -> $s8_journal_after_replay)" >&2; exit 1; }
+
+  # -- step 3: the next scan is aligned and offers nothing ----------------
+  scan_and_calibrate scenario-8-aligned
+  wait_sql "SELECT count(*) FROM work_items WHERE owner_type='file_maintenance' AND owner_id='anime-e2e' AND kind IN ('reconciliation_scan','reconciliation_calibrate') AND state IN ('available','leased')" 0
+  s8_generation_after="$(calibration_generation)"
+  s8_disposition_after="$($PSQL -tAc "SELECT COALESCE(disposition,'') FROM reconciliation_files WHERE managed_anime_id='anime-e2e' AND generation=$s8_generation_after AND file_path='$s8_target'" | tr -d '[:space:]')"
+  [[ "$s8_disposition_after" == present ]] || { echo "scenario 8: after the recovery the scan of $s8_target is [$s8_disposition_after], want present (generation $s8_generation_after)" >&2; exit 1; }
+  # Scoped to THIS placement: a candidate for any other placement (a
+  # different, legitimately missing row) is not this scenario's business.
+  s8_candidates_after="$($PSQL -tAc "SELECT count(*) FROM reconciliation_files WHERE managed_anime_id='anime-e2e' AND generation=$s8_generation_after AND facts->'recovery_candidates' @> jsonb_build_array(jsonb_build_object('placement_id','$s8_placement_id'))" | tr -d '[:space:]')"
+  [[ "$s8_candidates_after" == 0 ]] || { echo "scenario 8: generation $s8_generation_after still carries $s8_candidates_after recovery candidate row(s) after the recovery" >&2; exit 1; }
+  s8_diffs_after="$(api_get '/reconciliation/scans/anime-e2e/path-diffs?generation=0')"
+  printf '%s' "$s8_diffs_after" >"$summary_dir/scenario-8-path-diffs-after.json"
+  s8_differs_after="$(printf '%s' "$s8_diffs_after" | python3 -c '
+import json,sys
+path=sys.argv[1]
+rows=[r for r in json.load(sys.stdin) if r.get("file_path")==path]
+if len(rows)!=1:
+    print("no_row(%d)" % len(rows)); raise SystemExit(0)
+print("true" if rows[0].get("differs") else "false")
+' "$s8_target")"
+  [[ "$s8_differs_after" == false ]] || { echo "scenario 8: the path-diff of the recovered file $s8_target is [$s8_differs_after], want differs=false" >&2; exit 1; }
+  api_get /anime/anime-e2e/files >"$summary_dir/scenario-8-files-after.json"
+  s8_row_after="$(python3 - "$summary_dir/scenario-8-files-after.json" "$s8_placement_id" <<'PY'
+import json,sys
+view=json.load(open(sys.argv[1], encoding="utf-8"))
+placement_id=sys.argv[2]
+rows=[r for r in view.get("files") or [] if r.get("placement_id")==placement_id]
+if len(rows)!=1:
+    raise SystemExit("scenario 8: expected one files row for placement %s after the recovery, got %d" % (placement_id,len(rows)))
+print(json.dumps(rows[0], ensure_ascii=False))
+PY
+)"
+  s8_row_after_status="$(s8_field "$s8_row_after" status)"
+  s8_row_after_recovery="$(s8_field "$s8_row_after" recovery)"
+  s8_row_after_recover_available="$(s8_field "$s8_row_after" actions.recover.available)"
+  [[ "$s8_row_after_status" == aligned ]] || { echo "scenario 8: after the recovery the files row of $s8_placement_id is [$s8_row_after_status], want aligned" >&2; exit 1; }
+  [[ "$s8_row_after_recovery" == null ]] || { echo "scenario 8: after the recovery the files row still exposes a recovery candidate: $s8_row_after_recovery" >&2; exit 1; }
+  [[ "$s8_row_after_recover_available" == false ]] || { echo "scenario 8: after the recovery the recover action is still available" >&2; exit 1; }
+
+  observe_disk scenario-8-final "$s8_target"
+  printf '{"scenario":8,"db_state":"recovered_after_explicit_confirm","placement_id":"%s","companion_id":"%s","scan_generation":%s,"recovery_generation":%s,"source":"%s","target":"%s","companion_target":"%s","sha256":"%s","candidate_fingerprint":"%s","placement_version_before":%s,"placement_version_after":%s,"companion_version_before":%s,"companion_version_after":%s,"source_evidence_type":"%s","refusal":{"http":%s,"code":"%s","reason":"%s"},"replay":%s,"rescan_aligned":true,"candidates_after_recovery":%s}\n' \
+    "$s8_placement_id" "$s8_companion_id" "$s8_generation" "$s8_generation_after" "$s8_source_path" "$s8_target" "$s8_companion_target" "$s8_target_hash" \
+    "$s8_candidate_fingerprint" "$s8_placement_version" "$s8_version_after_replay" "$s8_companion_version" "$s8_companion_version_after_replay" \
+    "$s8_evidence_after_confirm" "$s8_refusal_http" "$s8_refusal_code" "$s8_refusal_reason" "$s8_replay_flag" "$s8_candidates_after" >>"$scenario_json"
+  cat "$scenario_json" | tee -a "$durable_evidence_dir/file022-scenarios.jsonl"
+
+  # -- step 6: the recovered placement loses a replacement and is cleaned ---
+  # Recovery rewrites the placement's target fingerprint to the typed metadata
+  # envelope. Cleanup of that placement verifies the quarantined object AFTER a
+  # rename, which updates the inode's ctime; on a mount without statx birth
+  # time (FUSE/mergerfs, Unraid shfs, some NFS clients) an identity check that
+  # leaned on ctime blocked here with the file already in quarantine. This
+  # step drives the real chain: a better file_operation placement for the same
+  # episode, the generation-completed replacement trigger, settle, then the
+  # cleanup quarantine + purge of the recovered file on the real library mount.
+  echo "== scenario 8b: recovered placement as replacement loser =="
+  s8b_target_dir="$(dirname "$s8_target")"
+  # Record whether the target mount reports a birth time. GNU stat prints %W
+  # as 0 (or '-') when statx has no btime; BSD stat reports %B.
+  s8b_btime="$(stat -c '%W' "$s8_target" 2>/dev/null || stat -f '%B' "$s8_target" 2>/dev/null || echo unknown)"
+  s8b_fstype="$(stat -f -c '%T' "$s8b_target_dir" 2>/dev/null || stat -f '%T' "$s8b_target_dir" 2>/dev/null || echo unknown)"
+  s8b_mount="$(df -P "$s8b_target_dir" 2>/dev/null | awk 'NR==2{print $1" on "$6}' || echo unknown)"
+  case "$s8b_btime" in 0|-|unknown|'') s8b_has_btime=false ;; *) s8b_has_btime=true ;; esac
+  echo "scenario 8b target mount: fstype=$s8b_fstype mount=[$s8b_mount] btime=$s8b_btime has_btime=$s8b_has_btime"
+  s8b_target_inode_before="$(ls -i "$s8_target" | awk '{print $1}')"
+  # The companion cleanup checks the companion's registered digest against
+  # the file before moving it; a seed whose digest is not the file's would
+  # block that cleanup for a reason unrelated to recovery.
+  s8b_companion_digest="$($PSQL -tAc "SELECT fingerprint FROM placement_companions WHERE id='$s8_companion_id'" | tr -d '[:space:]')"
+  [[ "$s8b_companion_digest" == "$(fingerprint "$s8_companion_target")" ]] || { echo "scenario 8b: companion $s8_companion_id registered digest [$s8b_companion_digest] is not the sha256 of $s8_companion_target" >&2; exit 1; }
+  s8b_target_fp="$($PSQL -tAc "SELECT target_fingerprint::text FROM placements WHERE id='$s8_placement_id'" | tr -d '\r')"
+  [[ "$s8b_target_fp" == *'"algorithm": "metadata"'* || "$s8b_target_fp" == *'"algorithm":"metadata"'* ]] || { echo "scenario 8b: the recovered placement's target fingerprint is not the metadata envelope: $s8b_target_fp" >&2; exit 1; }
+  # The scenario seeded the placement out of the replacement pool so the
+  # earlier scans could not admit decisions holding its paths; return it to
+  # the production default (eligible) now that the recovery committed.
+  $PSQL -q -c "UPDATE placements SET replacement_eligible = true WHERE id='$s8_placement_id'" >/dev/null
+
+  s8b_download="$download_root/EP08-2160p.mkv"
+  head -c 65536 /dev/urandom >"$s8b_download"
+  s8b_hex="$(shasum -a 256 "$s8b_download" | awk '{print $1}')"
+  s8b_fp='{"algorithm":"sha256","value":"'$s8b_hex'","size_bytes":65536}'
+  s8b_path="$library_root/Scenario 8 Better/EP08.mkv"
+  mkdir -p "$(dirname "$s8b_path")"
+  cp "$s8b_download" "$s8b_path"
+  s8b_payload_digest="sha256:$(repeat_hex 5)"
+  s8b_manifest_digest="sha256:$(repeat_hex 6)"
+  s8b_file_ref="$(torrent_file_ref "$s8b_payload_digest" 'EP08.mkv')"
+  s8b_fixture_json="$(go run ./internal/testutil/frozenpolicy/cmd \
+    --payload-digest "$s8b_payload_digest" \
+    --manifest-digest "$s8b_manifest_digest" \
+    --route-root "$library_root" \
+    --file EP08.mkv \
+    --title '[示例字幕组] 进击的巨人 - 08 [2160p][chs]')"
+  printf '%s' "$s8b_fixture_json" >"$summary_dir/scenario-8b-acquisition-fixture.json"
+  s8b_acq_input_sql="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["acquisition_input"])' <<<"$s8b_fixture_json")"
+  s8b_acq_input_sql="${s8b_acq_input_sql//\'/\'\'}"
+  s8b_identity_sql="$(python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["identity"]))' <<<"$s8b_fixture_json")"
+  s8b_release_facts_sql="$(python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["release_facts"]))' <<<"$s8b_fixture_json")"
+  s8b_file_evidence_sql="$(python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["file_evidence"]))' <<<"$s8b_fixture_json")"
+  s8b_effective_facts_sql="$(python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["effective_facts"]))' <<<"$s8b_fixture_json")"
+  # The winner is a completed file_operation placement of a 2160p release for
+  # the same episode (tv:s1:e8): the anime's quality profile ranks it above the
+  # recovered 1080p file, so the single_copy pool must supersede the recovered
+  # placement. It is created last, so the generation trigger picks its release.
+  if ! $PSQL -q -e >"$summary_dir/scenario-8b-seed.log" 2>&1 <<E2EEIGHTB
+BEGIN;
+INSERT INTO releases(id,rss_source_id,stable_item_key,raw_facts,source_facts,parsed_facts,internal_facts,verdict,reason_code,download_task_id,version)
+SELECT 'rel-e2e-8b','src-e2e-8','guid:e2e-8b',jsonb_set(raw_facts,'{title}','"[示例字幕组] 进击的巨人 - 08 [2160p][chs]"'),source_facts,parsed_facts,internal_facts,'submitted','submitted','dl-e2e-8b',1 FROM releases WHERE id='rel-e2e';
+INSERT INTO acquisitions(
+  id, execution_branch, entry_kind, access_scope, request_namespace, request_key, request_hash,
+  canonical_request, admission_kind, admission_http_status, admission_receipt,
+  input_schema_version, admission_digest, origin_managed_anime_ref, source_release_ref,
+  display_title, accepted_at, retention_anchor_at, detail_retention_seconds,
+  receipt_after_accept_seconds, receipt_after_terminal_seconds, receipt_until, detail_until,
+  state, terminal_at, terminal_schema, terminal_receipt, record_state,
+  preparation_mode, vars_evidence_version,
+  input_canonical_utf8, payload_digest, manifest_digest, manifest_item_count, manifest_sealed_at)
+VALUES (
+  'acq-e2e-8b', 'download', 'automatic', 'deployment_owner_v1', 'auto_acquire_v1', 'auto:rel-e2e-8b',
+  'sha256:' || repeat('5', 64),
+  '{"schema_version":1,"kind":"automatic","release_ref":"rel-e2e-8b"}'::jsonb,
+  'download_queued', 202,
+  '{"schema_version":1,"acquisition_id":"acq-e2e-8b","state":"queued"}'::jsonb,
+  1,
+  'sha256:' || encode(sha256(convert_to('acquisition-input:v1', 'UTF8') || decode('00', 'hex')
+     || convert_to('$s8b_acq_input_sql', 'UTF8')), 'hex'),
+  'anime-e2e', 'rel-e2e-8b',
+  '{"state":"known","value":"进击的巨人 - 08","reason_code":null}'::jsonb,
+  now() - interval '1 hour', now() - interval '1 hour', 2592000, 2592000, 5184000,
+  now() + interval '60 days',
+  NULL,
+  'running', NULL, NULL, NULL,
+  'full', 'none', 1,
+  '$s8b_acq_input_sql',
+  '$s8b_payload_digest',
+  '$s8b_manifest_digest', 1, now() - interval '1 hour');
+INSERT INTO acquisition_files(acquisition_id, file_ref, ordinal, relative_path, exact_size, media_kind, identity_evidence, requirement, requirement_reason_code, selection_evidence)
+VALUES ('acq-e2e-8b', '$s8b_file_ref', 0, 'EP08.mkv', 65536, 'video', '{}'::jsonb, 'required', 'e2e_seed_required', '{"source":"filemaintenance-e2e scenario 8b"}'::jsonb);
+INSERT INTO download_tasks(id,release_id,acquisition_id,frozen_input,frozen_policy,state,idempotency_key)
+VALUES ('dl-e2e-8b','rel-e2e-8b','acq-e2e-8b','{}','$frozen_policy_sql'::jsonb,'queued','download:e2e:8b');
+UPDATE download_tasks SET state='completed' WHERE id='dl-e2e-8b';
+INSERT INTO artifacts(id,download_task_id,acquisition_id,inventory_snapshot,fingerprint_snapshot,state,verified_at)
+VALUES ('art-e2e-8b','dl-e2e-8b','acq-e2e-8b','{}','{}','verified',CURRENT_TIMESTAMP);
+INSERT INTO artifact_files(id,artifact_id,acquisition_id,file_ref,relative_path,source_path,media_kind,size_bytes,fingerprint,facts,subtitle_binding_state)
+VALUES ('af-e2e-8b','art-e2e-8b','acq-e2e-8b','$s8b_file_ref','EP08.mkv','$s8b_download','video',65536,'$s8b_fp'::jsonb,'{"resolution":"2160p","video_codec":"HEVC","container":"mkv"}','not_applicable');
+INSERT INTO postprocessing_plans(id,artifact_id,artifact_version,state,input_digest,acquisition_id)
+VALUES ('plan-e2e-8b','art-e2e-8b',1,'queued','sha256:' || repeat('5', 64),'acq-e2e-8b');
+INSERT INTO file_operations(id,artifact_id,acquisition_id,artifact_version,artifact_file_id,file_ref,operation,source_path,target_path,source_fingerprint,target_fingerprint,collision_policy,frozen_render_snapshot,frozen_config_snapshot,state,observed_at,idempotency_key,correlation_id,causation_type,causation_id,postprocessing_plan_id,file_ready_at,file_wall_until,file_max_attempts,file_attempt_timeout_seconds)
+SELECT 'op-e2e-8b','art-e2e-8b','acq-e2e-8b',1,'af-e2e-8b','$s8b_file_ref','move','$s8b_download','$s8b_path','$s8b_fp'::jsonb,'$s8b_fp'::jsonb,'block','{}',frozen_config_snapshot,'completed',CURRENT_TIMESTAMP,'op-e2e-8b','corr-e2e-8b','artifact','art-e2e-8b','plan-e2e-8b',file_ready_at,file_wall_until,file_max_attempts,file_attempt_timeout_seconds FROM file_operations WHERE id='op-e2e-8';
+INSERT INTO release_candidate_facts(release_id,release_version,parser_version,input_fingerprint,raw_evidence,facts,coverage_keys,resolution,revision,source,language,"group",size_bytes)
+VALUES ('rel-e2e-8b',1,'parser-v1','fp-e2e-8b','{"title":"[示例字幕组] 进击的巨人 - 08 [2160p][chs]"}','{"episode":8,"group_name":"示例字幕组","group":"示例字幕组","resolution":"2160p","quality":"web-dl","revision":"v1","source":"web-dl","language":"chs","size_bytes":65536}',
+        '["tv:s1:e8"]','2160p','v1','web-dl','chs','示例字幕组',65536);
+INSERT INTO media_fact_snapshots(id,release_id,schema_version,resolver_version,parser_kind,input_digest,release_identity,release_facts)
+VALUES ('snap-e2e-8b','rel-e2e-8b','media-facts-v1','episode-identity-v1','regex','digest-e2e-8b','$s8b_identity_sql'::jsonb,'$s8b_release_facts_sql'::jsonb);
+INSERT INTO media_fact_files(snapshot_id,file_ref,media_kind,size_bytes,source_fingerprint,file_evidence,effective_facts)
+VALUES ('snap-e2e-8b','$s8b_file_ref','video',65536,'$s8b_hex','$s8b_file_evidence_sql'::jsonb,'$s8b_effective_facts_sql'::jsonb);
+INSERT INTO placements(id,physical_path,managed_anime_id,source_evidence_type,source_owner_ref,source_fingerprint,target_fingerprint,quality_facts_ref,facts_version,correlation_id,causation_type,causation_id,replacement_eligible,verification_state,state,version)
+VALUES ('plc-e2e-8b','$s8b_path','anime-e2e','file_operation','op-e2e-8b','$s8b_fp'::jsonb,'$s8b_fp'::jsonb,'rel-e2e-8b','media-facts-v1','corr-e2e-8b','file_operation','op-e2e-8b',true,'verified','active',1);
+INSERT INTO placement_coverage(placement_id,observation_key,coverage_ordinal,facts_version,evidence_ref)
+VALUES ('plc-e2e-8b','tv:s1:e8',0,'media-facts-v1','op-e2e-8b');
+COMMIT;
+E2EEIGHTB
+  then
+    echo "scenario 8b seed failed; see $summary_dir/scenario-8b-seed.log" >&2
+    sed -n '1,40p' "$summary_dir/scenario-8b-seed.log" >&2 || true
+    exit 1
+  fi
+  rm -f -- "$s8b_download"
+
+  # The completed generation's replacement consumer evaluates the newest
+  # file_operation release (rel-e2e-8b); settle supersedes the recovered
+  # placement and admits its cleanup (quarantine, grace 0, then purge).
+  scan_and_calibrate scenario-8b-replacement
+  # Every cleanup row of the loser (the video and its bound companion) must
+  # reach purged; any blocked/failed row is the failure this step guards.
+  s8b_cleanup_state=''
+  s8b_cleanup_where="managed_anime_id='anime-e2e' AND placement_id='$s8_placement_id'"
+  s8b_deadline=$(( $(date +%s) + 300 ))
+  while (( $(date +%s) < s8b_deadline )); do
+    s8b_bad="$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE $s8b_cleanup_where AND state IN ('blocked','failed')" | tr -d '[:space:]')"
+    if [[ "$s8b_bad" != 0 ]]; then
+      {
+        echo "scenario 8b: cleanup of the recovered placement ended blocked/failed (target mount btime=$s8b_btime fstype=$s8b_fstype)"
+        $PSQL -c "SELECT id, companion_id, state, failure_code, reason, source_path, source_fingerprint, quarantine_path FROM cleanup_operations WHERE $s8b_cleanup_where"
+        $PSQL -c "SELECT id, kind, state, last_error_code, last_error_reason FROM e2e_aux.work_items_all WHERE owner_type='cleanup_operation' AND owner_id IN (SELECT id FROM cleanup_operations WHERE $s8b_cleanup_where) ORDER BY created_at"
+      } | tee -a "$durable_evidence_dir/scenario-8b-diagnostics.txt" >&2
+      exit 1
+    fi
+    s8b_cleanup_state="$($PSQL -tAc "SELECT state FROM cleanup_operations WHERE $s8b_cleanup_where AND companion_id IS NULL ORDER BY created_at DESC LIMIT 1" | tr -d '[:space:]')"
+    s8b_unpurged="$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE $s8b_cleanup_where AND state <> 'purged'" | tr -d '[:space:]')"
+    [[ "$s8b_cleanup_state" == purged && "$s8b_unpurged" == 0 ]] && break
+    sleep 2
+  done
+  if [[ "$s8b_cleanup_state" != purged || "$s8b_unpurged" != 0 ]]; then
+    {
+      echo "scenario 8b: the recovered placement's cleanup did not reach purged within 300s (video=[$s8b_cleanup_state], unpurged rows=$s8b_unpurged)"
+      $PSQL -c "SELECT id, companion_id, state, failure_code, reason, source_path FROM cleanup_operations WHERE $s8b_cleanup_where"
+      $PSQL -c "SELECT id, state, verdict FROM replacement_decisions WHERE managed_anime_id='anime-e2e' ORDER BY created_at DESC LIMIT 5"
+      $PSQL -c "SELECT id, state, replacement_eligible, physical_path FROM placements WHERE id IN ('$s8_placement_id','plc-e2e-8b')"
+      $PSQL -c "SELECT id, kind, state, last_error_code, last_error_reason FROM e2e_aux.work_items_all WHERE owner_id='anime-e2e' OR owner_type IN ('cleanup_operation','replacement_decision') ORDER BY created_at DESC LIMIT 20"
+    } | tee -a "$durable_evidence_dir/scenario-8b-diagnostics.txt" >&2
+    exit 1
+  fi
+  s8b_loser_state="$($PSQL -tAc "SELECT state FROM placements WHERE id='$s8_placement_id'" | tr -d '[:space:]')"
+  s8b_winner_state="$($PSQL -tAc "SELECT state FROM placements WHERE id='plc-e2e-8b'" | tr -d '[:space:]')"
+  s8b_quarantine="$($PSQL -tAc "SELECT COALESCE(quarantine_path,'') FROM cleanup_operations WHERE $s8b_cleanup_where AND companion_id IS NULL ORDER BY created_at DESC LIMIT 1" | tr -d '\r')"
+  s8b_cleanup_fp="$($PSQL -tAc "SELECT source_fingerprint::text FROM cleanup_operations WHERE $s8b_cleanup_where AND companion_id IS NULL ORDER BY created_at DESC LIMIT 1" | tr -d '\r')"
+  s8b_cleanup_rows="$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE $s8b_cleanup_where" | tr -d '[:space:]')"
+  [[ "$s8b_loser_state" == superseded ]] || { echo "scenario 8b: the recovered placement is [$s8b_loser_state], want superseded" >&2; exit 1; }
+  [[ "$s8b_winner_state" == active && "$(fingerprint "$s8b_path")" == "$s8b_hex" ]] || { echo "scenario 8b: the winner placement is [$s8b_winner_state] or its file changed" >&2; exit 1; }
+  [[ ! -e "$s8_target" ]] || { echo "scenario 8b: the recovered file is still at $s8_target after purge" >&2; exit 1; }
+  [[ ! -e "$s8_companion_target" ]] || { echo "scenario 8b: the recovered companion is still at $s8_companion_target after purge" >&2; exit 1; }
+  [[ -n "$s8b_quarantine" && ! -e "$s8b_quarantine" ]] || { echo "scenario 8b: quarantine object not purged: [$s8b_quarantine]" >&2; exit 1; }
+  observe_disk scenario-8b-winner "$s8b_path"
+  # The cleanup's frozen source fingerprint is recorded so the evidence shows
+  # the metadata-envelope path (not a SHA-256 read) was the one exercised.
+  python3 - "$s8_placement_id" "$s8b_loser_state" "$s8b_cleanup_state" "$s8b_cleanup_rows" "$s8b_quarantine" "$s8_target" \
+    "$s8b_target_inode_before" "$s8b_cleanup_fp" "$s8b_fstype" "$s8b_mount" "$s8b_btime" "$s8b_has_btime" >>"$scenario_json" <<'PY'
+import json,sys
+(loser, loser_state, cleanup_state, cleanup_rows, quarantine, target, inode,
+ cleanup_fp, fstype, mount, btime, has_btime) = sys.argv[1:13]
+print(json.dumps({
+    "scenario": "8b",
+    "db_state": "recovered_loser_purged",
+    "loser": loser,
+    "loser_state": loser_state,
+    "winner": "plc-e2e-8b",
+    "cleanup_state": cleanup_state,
+    "cleanup_rows_purged": int(cleanup_rows),
+    "cleanup_source_fingerprint": cleanup_fp,
+    "quarantine_path": quarantine,
+    "target": target,
+    "target_inode": inode,
+    "target_mount": {"fstype": fstype, "mount": mount, "statx_btime": btime, "has_btime": has_btime == "true"},
+}, ensure_ascii=False))
+PY
+  tail -n 1 "$scenario_json" | tee -a "$durable_evidence_dir/file022-scenarios.jsonl"
+  cat "$summary_dir/disk-observations.txt" | tee -a "$durable_evidence_dir/disk-observations.txt"
   fi
 
 fi

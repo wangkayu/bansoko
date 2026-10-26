@@ -43,7 +43,7 @@ func (h alignmentRecoveryHandler) resolveAttempt(ctx context.Context, c workitem
 	if !ok {
 		return worker.AwaitRecovery(""), false, nil
 	}
-	fp, err := offsetSourceFingerprintHex(op.SourceFingerprint)
+	fp, err := offsetSourceFingerprintValue(op.SourceFingerprint)
 	if err != nil {
 		return worker.Outcome{}, false, err
 	}
@@ -97,7 +97,7 @@ func (h offsetRecoveryHandler) resolveAttempt(ctx context.Context, c workitems.C
 	if !ok {
 		return worker.AwaitRecovery(""), false, nil
 	}
-	fp, err := offsetSourceFingerprintHex(op.SourceFingerprint)
+	fp, err := offsetSourceFingerprintValue(op.SourceFingerprint)
 	if err != nil {
 		return worker.Outcome{}, false, err
 	}
@@ -131,11 +131,11 @@ func (h cleanupRecoveryHandler) cleanupQuarantineNotStarted(ctx context.Context,
 	if h.kind != workitems.KindCleanupQuarantine || !errors.Is(readErr, executorpkg.ErrMaintenanceNotStarted) {
 		return false
 	}
-	observed, err := h.service.executor.Observe(ctx, source)
+	observed, err := observeCleanupFile(ctx, h.service.executor, source, expected.Fingerprint)
 	if err != nil || !sameFrozenCleanupObservation(observed, expected) {
 		return false
 	}
-	_, err = h.service.executor.Observe(ctx, target)
+	_, err = observeCleanupFile(ctx, h.service.executor, target, expected.Fingerprint)
 	return isMissingCleanupError(err)
 }
 

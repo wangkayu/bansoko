@@ -109,6 +109,7 @@ required_paths = {
   "/anime/{managed_anime_id}/duplicate" => ["post"],
   "/anime/{managed_anime_id}/files" => ["get"],
   "/anime/{managed_anime_id}/files/align" => ["post"],
+  "/anime/{managed_anime_id}/files/recover" => ["post"],
   "/anime-config-candidates" => ["get", "post"],
   "/anime-config-candidates/{candidate_id}" => ["get", "patch", "delete"],
   "/anime-config-candidates/{candidate_id}/subscribe" => ["post"],
