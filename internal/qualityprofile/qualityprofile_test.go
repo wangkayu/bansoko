@@ -17,7 +17,7 @@ func TestDefaultProfileIsValidAndBuiltInOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{KeySubgroupScore, KeyReleaseLang, KeyReleaseResolution, KeyReleaseRevision}
+	want := []string{KeySubgroupScore, KeyAniBTLanguage, KeyRtSubLang, KeyReleaseResolution, KeyReleaseRevision}
 	if strings.Join(profile.Keys(), ",") != strings.Join(want, ",") {
 		t.Fatalf("default items = %v", profile.Keys())
 	}
@@ -214,5 +214,56 @@ func TestFrozenValuesRoundTrip(t *testing.T) {
 	}
 	if empty := ParseValues([]byte(`{}`)); len(empty.Values) != 0 || empty.Subgroup != nil {
 		t.Fatalf("an unversioned document has no values: %+v", empty)
+	}
+}
+
+// A language item matches the release's language set against the ranking: a
+// release with several languages takes its best-ranked one, and a composite
+// reltitle code counts as each language it names.
+func TestLanguageItemsMatchTheReleaseLanguageSet(t *testing.T) {
+	profile := Profile{Version: Version, Items: []Item{{Key: KeyRtSubLang, Ranks: [][]string{{"SC"}, {"TC"}, {"JPN"}}}}}
+	cases := []struct {
+		name               string
+		candidate, current []string
+		better, decided    bool
+	}{
+		{"JPSC hits SC and beats TC", []string{"JPSC"}, []string{"TC"}, true, true},
+		{"JPSC ties with SC", []string{"JPSC"}, []string{"SC"}, false, false},
+		{"JPTC hits TC and beats JPN", []string{"JPTC"}, []string{"JPN"}, true, true},
+		{"SC+TC takes its best", []string{"SC", "TC"}, []string{"TC"}, true, true},
+		{"unlisted loses to listed", []string{"ENG"}, []string{"JPN"}, false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := Compare(subject(map[string][]string{KeyRtSubLang: tc.candidate}, nil, nil), subject(map[string][]string{KeyRtSubLang: tc.current}, nil, nil), profile)
+			if result.Better != tc.better || (result.Decided != "") != tc.decided {
+				t.Fatalf("result = %+v", result)
+			}
+		})
+	}
+	bilingual := Profile{Version: Version, Items: []Item{{Key: KeyRtSubLang, Ranks: [][]string{{"JPN", "SC"}, {"SC"}}}}}
+	if result := Compare(subject(map[string][]string{KeyRtSubLang: {"JPSC"}}, nil, nil), subject(map[string][]string{KeyRtSubLang: {"SC"}}, nil, nil), bilingual); !result.Better {
+		t.Fatalf("a JPN+SC entry must rank JPSC above SC: %+v", result)
+	}
+	if result := Compare(subject(map[string][]string{KeyRtSubLang: {"JPSC"}}, nil, nil), subject(map[string][]string{KeyRtSubLang: {"SC"}}, nil, nil), Profile{Version: Version, Items: []Item{{Key: KeyRtSubLang, Ranks: [][]string{{"JPSC"}, {"SC"}}}}}); !result.Better {
+		t.Fatalf("an entry written as JPSC must still hit: %+v", result)
+	}
+}
+
+// A ranked layer one side has no data for ties and the next item decides; a
+// present but unlisted value still ranks lowest.
+func TestLayerWithoutDataTies(t *testing.T) {
+	profile := Profile{Version: Version, Items: []Item{
+		{Key: KeyAniBTLanguage, Ranks: [][]string{{"CHS"}}},
+		{Key: KeyRtSubLang, Ranks: [][]string{{"SC"}, {"TC"}}},
+	}}
+	anibt := subject(map[string][]string{KeyAniBTLanguage: {"CHS"}, KeyRtSubLang: {"TC"}}, nil, nil)
+	mikan := subject(map[string][]string{KeyRtSubLang: {"SC"}}, nil, nil)
+	if result := Compare(mikan, anibt, profile); !result.Better || result.Decided != KeyRtSubLang {
+		t.Fatalf("the AniBT layer must tie for a release without tags: %+v", result)
+	}
+	unlisted := subject(map[string][]string{KeyAniBTLanguage: {"ENG"}, KeyRtSubLang: {"SC"}}, nil, nil)
+	if result := Compare(unlisted, anibt, profile); result.Better || result.Decided != KeyAniBTLanguage {
+		t.Fatalf("a present unlisted value must still rank lowest: %+v", result)
 	}
 }

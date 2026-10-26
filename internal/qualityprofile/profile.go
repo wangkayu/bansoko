@@ -117,13 +117,20 @@ type Profile struct {
 	Items   []Item `json:"items"`
 }
 
-// Default is the built-in default: subgroup score, then the built-in rules'
-// language, resolution and revision. Language and resolution values are the
-// built-in attribute rules' vocabulary, best first.
+// Default is the built-in default: subgroup score, then the subtitle
+// languages AniBT declares and reltitle reads from the title, then the
+// built-in rules' resolution and revision. The two language items are
+// separate layers with no fallback between them, each in its own source's
+// spelling. Each entry is a language combination; a release hits the first
+// entry its languages contain, so a release with Simplified, Traditional and
+// Japanese hits the first entry, not the Simplified-only one. A layer the
+// release has no data for ties and the next item decides (Compare), so AniBT
+// can come first without favouring AniBT releases over Mikan ones.
 func Default() Profile {
 	return Profile{Version: Version, Items: []Item{
 		{Key: KeySubgroupScore, Ranks: [][]string{}},
-		{Key: KeyReleaseLang, Ranks: [][]string{{"chs"}, {"sc"}, {"cht"}, {"tc"}, {"jpn"}, {"eng"}}},
+		{Key: KeyAniBTLanguage, Ranks: [][]string{{"CHS", "CHT", "JPN"}, {"CHS", "JPN"}, {"CHS", "CHT"}, {"CHS"}, {"CHT", "JPN"}, {"CHT"}, {"JPN"}, {"ENG"}}},
+		{Key: KeyRtSubLang, Ranks: [][]string{{"SC", "TC", "JPN"}, {"SC", "JPN"}, {"SC", "TC"}, {"SC"}, {"TC", "JPN"}, {"TC"}, {"JPN"}, {"ENG"}}},
 		{Key: KeyReleaseResolution, Ranks: [][]string{{"2160p"}, {"1440p"}, {"1080p"}, {"720p"}, {"480p"}}},
 		{Key: KeyReleaseRevision, Ranks: [][]string{}},
 	}}
