@@ -109,6 +109,12 @@ type ReleaseManifest struct {
 	// unchanged. ValidateForEmbeddedUpdate enforces it strictly for bundles
 	// that declare an embedded payload.
 	EmbeddedUpdate *EmbeddedUpdateSegment `json:"embedded_update,omitempty"`
+
+	// ReleaseNotes is optional: test builds and manifests signed before the
+	// formal release lane carry none, and omitempty keeps their canonical
+	// bytes unchanged. A formal release carries its own bilingual notes first,
+	// then those of earlier versions (see ValidateReleaseNotes).
+	ReleaseNotes []ReleaseNotesEntry `json:"release_notes,omitempty"`
 }
 
 func (m ReleaseManifest) Verify() error {
@@ -157,6 +163,9 @@ func (m ReleaseManifest) ValidateForRelease() error {
 	}
 	if !isSHA256(m.ArtifactDigest) {
 		return errors.New("release manifest artifact digest must be a sha256 digest")
+	}
+	if err := ValidateReleaseNotes(m.Version, m.ReleaseNotes); err != nil {
+		return err
 	}
 	return nil
 }

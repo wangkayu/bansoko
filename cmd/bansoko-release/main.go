@@ -28,7 +28,7 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: bansoko-release <keygen|sign|verify|validate-schema|verify-embedded|artifact-sign|artifact-verify|pack-payload|channel-sign|channel-verify|channel-gate> [flags]")
+		return errors.New("usage: bansoko-release <keygen|sign|verify|validate-schema|verify-embedded|artifact-sign|artifact-verify|pack-payload|channel-sign|channel-verify|channel-gate|version-gate|release-notes> [flags]")
 	}
 	switch args[0] {
 	case "keygen":
@@ -53,6 +53,10 @@ func run(args []string) error {
 		return channelVerify(args[1:])
 	case "channel-gate":
 		return channelGate(args[1:])
+	case "version-gate":
+		return versionGate(args[1:])
+	case "release-notes":
+		return releaseNotes(args[1:])
 	default:
 		return fmt.Errorf("unsupported bansoko-release command %q", args[0])
 	}
@@ -541,11 +545,14 @@ func channelGate(args []string) error {
 	if err := published.VerifySignature(ed25519.PublicKey(publicKey)); err != nil {
 		return fmt.Errorf("published channel rejected: %w", err)
 	}
-	if published.Channel != candidate.Channel {
+	if published.Channel != candidate.Channel && !channelRenameAllowed(published.Channel, candidate.Channel) {
 		return fmt.Errorf("candidate channel %q does not match the published channel %q", candidate.Channel, published.Channel)
 	}
 	switch {
 	case candidate.ReleaseSequence > published.ReleaseSequence:
+		if err := requireNewerVersion(published.Version, candidate.Version); err != nil {
+			return fmt.Errorf("refusing to move channel %q: %w", published.Channel, err)
+		}
 		fmt.Printf("channel advances %s (sequence %d) -> %s (sequence %d)\n",
 			published.ReleaseID, published.ReleaseSequence, candidate.ReleaseID, candidate.ReleaseSequence)
 		return nil
@@ -557,4 +564,121 @@ func channelGate(args []string) error {
 		return fmt.Errorf("refusing to move channel %q from %s (sequence %d) to %s (sequence %d): a channel may only advance or repeat the published release",
 			candidate.Channel, published.ReleaseID, published.ReleaseSequence, candidate.ReleaseID, candidate.ReleaseSequence)
 	}
+}
+
+// channelRenameAllowed names the only discovery-channel rename the gate
+// accepts: the one-way move from the retired automatic test channel to the
+// formal stable channel, made by the first tagged release. Every other rename
+// would let one channel's publication overwrite another's.
+func channelRenameAllowed(published, candidate string) bool {
+	return published == "test" && candidate == "stable"
+}
+
+// requireNewerVersion refuses a version that does not strictly advance by
+// semantic-version precedence. An unparseable version cannot be ordered and
+// fails closed.
+func requireNewerVersion(published, candidate string) error {
+	current, err := hardeningdomain.ParseSemVer(published)
+	if err != nil {
+		return fmt.Errorf("published version %q cannot be ordered: %w", published, err)
+	}
+	next, err := hardeningdomain.ParseSemVer(candidate)
+	if err != nil {
+		return fmt.Errorf("candidate version %q cannot be ordered: %w", candidate, err)
+	}
+	if hardeningdomain.CompareSemVer(next, current) <= 0 {
+		return fmt.Errorf("version %s does not advance the published version %s", candidate, published)
+	}
+	return nil
+}
+
+// versionGate is the pre-publication check of a formal release: before any
+// image, package or channel effect, the version being released must be newer
+// than the one the signed channel names. An absent channel (first
+// publication) passes; a channel that does not verify fails closed.
+func versionGate(args []string) error {
+	flags := flag.NewFlagSet("version-gate", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	publishedPath := flags.String("published", "", "published channel document; empty when the channel does not exist yet")
+	version := flags.String("version", "", "version about to be released (X.Y.Z)")
+	publicPath := flags.String("public-key", "", "hex/base64 encoded Ed25519 public key")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if !releasecontract.IsReleaseVersion(*version) {
+		return fmt.Errorf("--version must be X.Y.Z (got %q)", *version)
+	}
+	if strings.TrimSpace(*publicPath) == "" {
+		return errors.New("--public-key is required")
+	}
+	publicKey, err := readKey(*publicPath, ed25519.PublicKeySize)
+	if err != nil {
+		return fmt.Errorf("read public key: %w", err)
+	}
+	if strings.TrimSpace(*publishedPath) == "" {
+		fmt.Printf("no published channel document; %s is the first publication\n", *version)
+		return nil
+	}
+	data, err := os.ReadFile(*publishedPath)
+	if err != nil {
+		return fmt.Errorf("read published channel: %w", err)
+	}
+	published, err := updatechannel.Decode(data)
+	if err != nil {
+		return err
+	}
+	if err := published.VerifySignature(ed25519.PublicKey(publicKey)); err != nil {
+		return fmt.Errorf("published channel rejected: %w", err)
+	}
+	if err := requireNewerVersion(published.Version, *version); err != nil {
+		return err
+	}
+	fmt.Printf("version %s advances the published %s (sequence %d)\n", *version, published.Version, published.ReleaseSequence)
+	return nil
+}
+
+// releaseNotes validates the repository's release notes and extracts one
+// version's notes for the signed manifest or the GitHub Release text.
+func releaseNotes(args []string) error {
+	if len(args) == 0 {
+		return errors.New("usage: bansoko-release release-notes <check|manifest|github> --dir <release-notes> [--version X.Y.Z --output <file>]")
+	}
+	mode := args[0]
+	flags := flag.NewFlagSet("release-notes "+mode, flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	dir := flags.String("dir", "release-notes", "release notes directory")
+	version := flags.String("version", "", "released version (X.Y.Z)")
+	output := flags.String("output", "", "output file")
+	if err := flags.Parse(args[1:]); err != nil {
+		return err
+	}
+	switch mode {
+	case "check":
+		if err := releasecontract.CheckReleaseNotes(*dir); err != nil {
+			return err
+		}
+		fmt.Println("release notes valid")
+		return nil
+	case "manifest", "github":
+	default:
+		return fmt.Errorf("unsupported release-notes mode %q", mode)
+	}
+	if strings.TrimSpace(*output) == "" {
+		return errors.New("--output is required")
+	}
+	entries, err := releasecontract.BuildReleaseNotes(*dir, *version)
+	if err != nil {
+		return err
+	}
+	var data []byte
+	if mode == "manifest" {
+		data, err = json.Marshal(entries)
+		if err != nil {
+			return err
+		}
+		data = append(data, '\n')
+	} else {
+		data = []byte(releasecontract.GitHubReleaseBody(entries[0]))
+	}
+	return os.WriteFile(*output, data, 0o644)
 }

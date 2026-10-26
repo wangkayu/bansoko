@@ -211,6 +211,29 @@ else
   echo "bootstrap version binding not applicable (bundle carries no image)"
 fi
 
+# 5b. Release notes. A formal X.Y.Z release must carry bilingual notes whose
+#     first entry is its own version; a test or rehearsal identity carries none.
+#     Structure, bounds and order are re-proved by the signature verification
+#     above (ValidateReleaseNotes runs on every verify).
+ruby -rjson -e '
+  m = JSON.parse(File.read(ARGV.fetch(0)))
+  version = m.fetch("version")
+  notes = m["release_notes"]
+  if version =~ /\A(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\z/
+    abort "formal release #{version} carries no release_notes" unless notes.is_a?(Array) && !notes.empty?
+    first = notes.first
+    abort "release_notes must start with #{version}" unless first["version"] == version
+    %w[zh-CN en].each do |language|
+      text = first.dig("notes", language)
+      abort "release_notes of #{version} lack #{language}" unless text.is_a?(String) && !text.strip.empty?
+    end
+    puts "release notes ok (#{notes.length} version(s))"
+  else
+    abort "test identity #{version} must not carry release_notes" unless notes.nil?
+    puts "release notes not applicable (#{version} is not a formal release)"
+  end
+' "$manifest" || fail "release notes do not match the release identity"
+
 payload="${BANSOKO_RELEASE_EMBEDDED_PAYLOAD:-$(dirname "$manifest")/embedded-update-v1.tar.gz}"
 if [[ -f "$payload" ]]; then
   tmp_check="$(mktemp -d "${TMPDIR:-/tmp}/bansoko-payload-check.XXXXXX")"

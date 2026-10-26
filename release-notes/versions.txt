@@ -1,0 +1,3 @@
+# Released versions, oldest first: "<X.Y.Z> <YYYY-MM-DD>".
+# A tag vX.Y.Z publishes only when its line and both
+# <X.Y.Z>.zh-CN.md / <X.Y.Z>.en.md files exist here.

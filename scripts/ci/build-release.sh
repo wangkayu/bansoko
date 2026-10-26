@@ -124,6 +124,21 @@ tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/bansoko-release.XXXXXX")"
 trap 'rm -rf "$tmp_dir"' EXIT
 mkdir -p "$output_dir"
 
+# --- Release notes -----------------------------------------------------------
+# A formal X.Y.Z release carries its bilingual notes (and those of earlier
+# versions) inside the signed manifest. They come from release-notes/ in the
+# frozen source; a missing, unlisted or invalid entry fails the build. Test and
+# rehearsal identities (anything with a prerelease part) carry none.
+notes_dir="${BANSOKO_RELEASE_NOTES_DIR:-$root/release-notes}"
+release_notes_json=""
+if [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+  release_notes_json="$tmp_dir/release-notes.json"
+  if ! go -C "$root" run ./cmd/bansoko-release release-notes manifest --dir "$notes_dir" --version "$version" --output "$release_notes_json"; then
+    echo "ERROR: release $version has no valid release notes in $notes_dir" >&2
+    exit 1
+  fi
+fi
+
 artifact_path="$tmp_dir/$artifact_name"
 CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -C "$root" -trimpath -buildvcs=false \
   -ldflags "-s -w -buildid= -X bansoko/internal/runtime/buildinfo.Version=$version -X bansoko/internal/runtime/buildinfo.Commit=$source_commit -X bansoko/internal/runtime/buildinfo.BuildID=$release_id -X bansoko/internal/runtime/buildinfo.BuildTime=$published_at -X bansoko/internal/runtime/buildinfo.APIVersion=$api_version -X bansoko/internal/runtime/buildinfo.SchemaVersion=$schema_version -X bansoko/internal/runtime/buildinfo.BaseCompatibilityVersion=$base_image_min_version -X bansoko/internal/runtime/buildinfo.BuildDirty=false" \
@@ -318,6 +333,7 @@ BANSOKO_RELEASE_SEQUENCE="$release_sequence" \
 BANSOKO_RELEASE_EMBEDDED_FORMAT="embedded-update-v1" \
 BANSOKO_RELEASE_PAYLOAD_DIGEST="$payload_digest" BANSOKO_RELEASE_PAYLOAD_SIZE="$payload_size" BANSOKO_RELEASE_PAYLOAD_SIGNATURE="$payload_signature" \
 BANSOKO_RELEASE_BOOTSTRAP_MIN_VERSION="$bootstrap_min_version" BANSOKO_BASE_IMAGE_MIN_VERSION="$base_image_min_version" \
+BANSOKO_RELEASE_NOTES_JSON="$release_notes_json" \
 ruby -rjson -rdigest -e '
   root = ARGV.fetch(0)
   migrations = Dir[File.join(root, "db", "migrations", "*.sql")].sort.map do |path|
@@ -360,6 +376,8 @@ ruby -rjson -rdigest -e '
       "release_sequence" => Integer(ENV.fetch("BANSOKO_RELEASE_SEQUENCE"))
     }
   }
+  notes = ENV.fetch("BANSOKO_RELEASE_NOTES_JSON", "")
+  manifest["release_notes"] = JSON.parse(File.read(notes)) unless notes.empty?
   File.write(ARGV.fetch(1), JSON.generate(manifest) + "\n")
 ' "$root" "$tmp_dir/manifest.json"
 
