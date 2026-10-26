@@ -10129,6 +10129,24 @@ components:
         version: {type: string}
         release_id: {type: string}
         image_compatibility: {type: string}
+        release_notes:
+          $ref: '#/components/schemas/ReleaseNotesEntry'
+          description: Release notes of the running version itself. May be absent; absence means there are no notes for this version and is not an error.
+    ReleaseNotesEntry:
+      type: object
+      additionalProperties: false
+      description: Bilingual release notes of one version. The bodies are restricted Markdown (headings, paragraphs and lists only); clients must not render HTML, links or images.
+      required: [version, published_at, notes]
+      properties:
+        version: {type: string}
+        published_at: {type: string, format: date-time}
+        notes:
+          type: object
+          additionalProperties: false
+          required: [zh-CN, en]
+          properties:
+            zh-CN: {type: string}
+            en: {type: string}
     UpdateCandidate:
       type: object
       additionalProperties: false
@@ -10144,6 +10162,11 @@ components:
         rollback_class: {type: string}
         manifest_digest: {type: string}
         payload_size: {type: integer, format: int64}
+        release_notes:
+          type: array
+          description: Notes of the versions newer than the running version, newest first. May be absent; absence means there are no notes and is not an error.
+          items:
+            $ref: '#/components/schemas/ReleaseNotesEntry'
     UpdateCompatibility:
       type: object
       additionalProperties: false

@@ -4300,6 +4300,18 @@ export interface components {
             version: string;
             release_id: string;
             image_compatibility: string;
+            /** @description Release notes of the running version itself. May be absent; absence means there are no notes for this version and is not an error. */
+            release_notes?: components["schemas"]["ReleaseNotesEntry"];
+        };
+        /** @description Bilingual release notes of one version. The bodies are restricted Markdown (headings, paragraphs and lists only); clients must not render HTML, links or images. */
+        ReleaseNotesEntry: {
+            version: string;
+            /** Format: date-time */
+            published_at: string;
+            notes: {
+                "zh-CN": string;
+                en: string;
+            };
         };
         UpdateCandidate: {
             release_id: string;
@@ -4315,6 +4327,8 @@ export interface components {
             manifest_digest: string;
             /** Format: int64 */
             payload_size: number;
+            /** @description Notes of the versions newer than the running version, newest first. May be absent; absence means there are no notes and is not an error. */
+            release_notes?: components["schemas"]["ReleaseNotesEntry"][];
         };
         UpdateCompatibility: {
             /** @enum {string} */

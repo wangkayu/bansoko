@@ -7569,6 +7569,16 @@ type ReleaseFilterRulesReplaceMode string
 // ReleaseFormat Release format as a provider states it: tv, movie (剧场版), ova or ona (web release). On catalog items and anime list rows it is a read-only provider catalog fact (Mikan homepage section data-dayofweek 0–6 = tv, 7 = movie, 8 = ova; AniBT format TV / MOVIE / OVA / ONA); on a Bangumi metadata search result it is the subject platform. It is never edited, never stored with anime metadata, never guessed from a title or the TMDB media kind, and naming does not read it.
 type ReleaseFormat string
 
+// ReleaseNotesEntry Bilingual release notes of one version. The bodies are restricted Markdown (headings, paragraphs and lists only); clients must not render HTML, links or images.
+type ReleaseNotesEntry struct {
+	Notes struct {
+		En   string `json:"en"`
+		ZhCN string `json:"zh-CN"`
+	} `json:"notes"`
+	PublishedAt time.Time `json:"published_at"`
+	Version     string    `json:"version"`
+}
+
 // ReleaseReevaluationResult defines model for ReleaseReevaluationResult.
 type ReleaseReevaluationResult struct {
 	Accepted       ReleaseReevaluationResultAccepted `json:"accepted"`
@@ -8691,16 +8701,19 @@ type UpdateAdmitInput struct {
 
 // UpdateCandidate defines model for UpdateCandidate.
 type UpdateCandidate struct {
-	BackupRequired         bool      `json:"backup_required"`
-	ManifestDigest         string    `json:"manifest_digest"`
-	PayloadSize            int64     `json:"payload_size"`
-	PublishedAt            time.Time `json:"published_at"`
-	ReleaseId              string    `json:"release_id"`
-	ReleaseSequence        int64     `json:"release_sequence"`
-	RequiredDowntime       bool      `json:"required_downtime"`
-	RollbackClass          string    `json:"rollback_class"`
-	TargetMigrationVersion string    `json:"target_migration_version"`
-	Version                string    `json:"version"`
+	BackupRequired bool      `json:"backup_required"`
+	ManifestDigest string    `json:"manifest_digest"`
+	PayloadSize    int64     `json:"payload_size"`
+	PublishedAt    time.Time `json:"published_at"`
+	ReleaseId      string    `json:"release_id"`
+
+	// ReleaseNotes Notes of the versions newer than the running version, newest first. May be absent; absence means there are no notes and is not an error.
+	ReleaseNotes           *[]ReleaseNotesEntry `json:"release_notes,omitempty"`
+	ReleaseSequence        int64                `json:"release_sequence"`
+	RequiredDowntime       bool                 `json:"required_downtime"`
+	RollbackClass          string               `json:"rollback_class"`
+	TargetMigrationVersion string               `json:"target_migration_version"`
+	Version                string               `json:"version"`
 }
 
 // UpdateCheck A successful check result. Fetch or validation failures are returned as the standard error response, not as a partial 200 result.
@@ -8730,7 +8743,10 @@ type UpdateCompatibilityKind string
 type UpdateCurrent struct {
 	ImageCompatibility string `json:"image_compatibility"`
 	ReleaseId          string `json:"release_id"`
-	Version            string `json:"version"`
+
+	// ReleaseNotes Bilingual release notes of one version. The bodies are restricted Markdown (headings, paragraphs and lists only); clients must not render HTML, links or images.
+	ReleaseNotes *ReleaseNotesEntry `json:"release_notes,omitempty"`
+	Version      string             `json:"version"`
 }
 
 // Version defines model for Version.
