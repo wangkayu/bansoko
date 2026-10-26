@@ -2118,7 +2118,7 @@ describe("AnimeTabs 标签过滤卡片", () => {
 
     fireEvent.click(useDefaults);
     await waitFor(() => expect(parser.getByRole("radio", { name: t("policy.parser.kindRegex") })).toHaveAttribute("aria-checked", "true"));
-    expect(screen.queryByText(t("config.modified"))).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText(t("config.modified"))).not.toBeInTheDocument());
     expect(screen.getByRole("button", { name: t("config.useDefaults") })).toBeDisabled();
     // Only an unsaved choice: no writes of any kind yet.
     expect(order).toEqual([]);
