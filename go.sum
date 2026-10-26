@@ -72,6 +72,8 @@ github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 github.com/wangkayu/reltitle v0.0.1 h1:yUwJSg3X5p6ySQZ+esEsHgTSyS8TroaYu9UI8oR+zuU=
 github.com/wangkayu/reltitle v0.0.1/go.mod h1:f8OAy9//o3KMrUrgSLEg74P84cbV69bLcpMaayNpI+k=
+github.com/wangkayu/reltitle v0.0.2 h1:mpgGhNfTRvvXo2QhTAIFG4yg6c5eGcpj1SpfnI9rR30=
+github.com/wangkayu/reltitle v0.0.2/go.mod h1:f8OAy9//o3KMrUrgSLEg74P84cbV69bLcpMaayNpI+k=
 github.com/yosida95/uritemplate/v3 v3.0.2 h1:Ed3Oyj9yrmi9087+NczuL5BwkIc4wvTb5zIM+UJPGz4=
 github.com/yosida95/uritemplate/v3 v3.0.2/go.mod h1:ILOh0sOhIJR3+L/8afwt/kE++YT040gmv5BQTMR2HP4=
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=

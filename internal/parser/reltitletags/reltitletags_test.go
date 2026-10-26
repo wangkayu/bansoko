@@ -136,3 +136,11 @@ func TestExtractFreezesTitleGroupAndVersionAsValueTags(t *testing.T) {
 		t.Fatalf("blank title name tags = %v", blank.ValueTags)
 	}
 }
+
+func TestSubtitleLanguagesReadsCompositeCodes(t *testing.T) {
+	for tag, want := range map[string]string{"JPSC": "JPSC", "JPTC": "JPTC", "jpsc": "JPSC", "chs": "SC"} {
+		if got := SubtitleLanguages(tag); len(got) != 1 || got[0] != want {
+			t.Fatalf("SubtitleLanguages(%q) = %v, want [%s]", tag, got, want)
+		}
+	}
+}

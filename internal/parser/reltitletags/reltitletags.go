@@ -29,7 +29,7 @@ const (
 	// ImplementationVersion names the reltitle module version this adapter ran;
 	// TestImplementationVersionMatchesModuleRequirement keeps it equal to the
 	// version root go.mod requires.
-	ImplementationVersion = "reltitle@v0.0.1"
+	ImplementationVersion = "reltitle@v0.0.2"
 	// Schema identifies the projection contract.
 	Schema = acquisitiondomain.TitleTagSchema
 	// MaxTitleBytes bounds the parser input; reltitle has no internal deadline.
