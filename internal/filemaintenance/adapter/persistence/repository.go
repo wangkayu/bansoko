@@ -94,16 +94,17 @@ type OperationInput struct {
 	ManagedAnimeID    string
 	Coverage          json.RawMessage
 	ReplacementRef    string
-	PolicyVersion     int64
 	RetentionMode     string
 	SourcePath        string
 	SourceFingerprint string
-	QuarantinePath    string
-	Effect            string
-	GraceDeadline     *time.Time
-	CorrelationID     string
-	CausationType     string
-	CausationID       string
+	// State is the admission state: admitted, or skipped when the loser's
+	// identity is already known to be unverifiable (zero effect).
+	State         string
+	FailureCode   string
+	Reason        string
+	CorrelationID string
+	CausationType string
+	CausationID   string
 }
 
 // Operation is the typed cleanup owner row returned by this adapter. State is
@@ -116,13 +117,9 @@ type Operation struct {
 	ManagedAnimeID    string
 	Coverage          []string
 	ReplacementRef    string
-	PolicyVersion     int64
 	RetentionMode     string
 	SourcePath        string
 	SourceFingerprint string
-	QuarantinePath    string
-	Effect            string
-	GraceDeadline     *time.Time
 	State             string
 	Attempt           json.RawMessage
 	FailureCode       string
@@ -160,13 +157,12 @@ func (r *Repository) insert(ctx context.Context, execer generated.DBTX, input Op
 		ManagedAnimeID:    input.ManagedAnimeID,
 		Coverage:          input.Coverage,
 		ReplacementRef:    input.ReplacementRef,
-		PolicyVersion:     input.PolicyVersion,
 		RetentionMode:     input.RetentionMode,
 		SourcePath:        input.SourcePath,
 		SourceFingerprint: input.SourceFingerprint,
-		QuarantinePath:    nullableText(input.QuarantinePath),
-		Effect:            input.Effect,
-		GraceDeadline:     nullableTime(input.GraceDeadline),
+		State:             admissionState(input.State),
+		FailureCode:       nullableText(input.FailureCode),
+		Reason:            nullableText(input.Reason),
 		CorrelationID:     nullableText(input.CorrelationID),
 		CausationType:     nullableText(input.CausationType),
 		CausationID:       nullableText(input.CausationID),
@@ -200,8 +196,8 @@ func (r *Repository) LockTx(ctx context.Context, scope txscope.Tx, cleanupID str
 		return nil, err
 	}
 	return operationFromFullRow(row.ID, row.IdempotencyKey, row.PlacementID, row.ManagedAnimeID,
-		row.CoverageKeys, row.ReplacementRef, row.PolicyVersion, row.RetentionMode, row.SourcePath,
-		row.SourceFingerprint, row.QuarantinePath, row.Effect, row.GraceDeadline, row.State,
+		row.CoverageKeys, row.ReplacementRef, row.RetentionMode, row.SourcePath,
+		row.SourceFingerprint, row.State,
 		row.Attempt.RawMessage, row.Attempt.Valid, row.FailureCode, row.Reason, row.CorrelationID,
 		row.Version, row.CreatedAt, row.UpdatedAt)
 }
@@ -248,45 +244,18 @@ func (r *Repository) TransitionTx(ctx context.Context, scope txscope.Tx, cleanup
 	return version, nil
 }
 
-// QuarantineTx records the verified quarantine effect with owner CAS.
-func (r *Repository) QuarantineTx(ctx context.Context, scope txscope.Tx, cleanupID string, expectedVersion int64, quarantinePath, code, reason string) (int64, error) {
-	tx, err := transaction(scope, "quarantine cleanup owner")
+// PathOwnedTx reports whether an active placement or an active companion
+// now holds path. A deletion never removes such a path.
+func (r *Repository) PathOwnedTx(ctx context.Context, scope txscope.Tx, path string) (bool, error) {
+	tx, err := transaction(scope, "read cleanup path owner")
 	if err != nil {
-		return 0, err
+		return false, err
 	}
-	version, err := generated.New(tx).QuarantineCleanup(ctx, generated.QuarantineCleanupParams{
-		QuarantinePath:  nullableText(quarantinePath),
-		FailureCode:     code,
-		Reason:          reason,
-		CleanupID:       cleanupID,
-		ExpectedVersion: expectedVersion,
-	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return 0, fmt.Errorf("cleanup %s changed concurrently on quarantine (version %d)", cleanupID, expectedVersion)
-	}
+	owned, err := generated.New(tx).CleanupPathOwned(ctx, path)
 	if err != nil {
-		return 0, err
+		return false, err
 	}
-	return version, nil
-}
-
-// RecordPurgePostObservationTx records the verified absence after purge.
-func (r *Repository) RecordPurgePostObservationTx(ctx context.Context, scope txscope.Tx, cleanupID string, expectedVersion int64) (int64, error) {
-	tx, err := transaction(scope, "record cleanup purge observation")
-	if err != nil {
-		return 0, err
-	}
-	version, err := generated.New(tx).RecordCleanupPurgeObservation(ctx, generated.RecordCleanupPurgeObservationParams{
-		CleanupID:       cleanupID,
-		ExpectedVersion: expectedVersion,
-	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return 0, fmt.Errorf("cleanup %s changed concurrently after purge (version %d)", cleanupID, expectedVersion)
-	}
-	if err != nil {
-		return 0, err
-	}
-	return version, nil
+	return owned.Valid && owned.Bool, nil
 }
 
 // Get returns one cleanup owner row (nil when absent).
@@ -302,8 +271,8 @@ func (r *Repository) Get(ctx context.Context, cleanupID string) (*Operation, err
 		return nil, err
 	}
 	return operationFromFullRow(row.ID, row.IdempotencyKey, row.PlacementID, row.ManagedAnimeID,
-		row.CoverageKeys, row.ReplacementRef, row.PolicyVersion, row.RetentionMode, row.SourcePath,
-		row.SourceFingerprint, row.QuarantinePath, row.Effect, row.GraceDeadline, row.State,
+		row.CoverageKeys, row.ReplacementRef, row.RetentionMode, row.SourcePath,
+		row.SourceFingerprint, row.State,
 		row.Attempt.RawMessage, row.Attempt.Valid, row.FailureCode, row.Reason, row.CorrelationID,
 		row.Version, row.CreatedAt, row.UpdatedAt)
 }
@@ -321,8 +290,8 @@ func (r *Repository) ListPending(ctx context.Context) ([]Operation, error) {
 	result := make([]Operation, 0, len(rows))
 	for _, row := range rows {
 		operation, err := operationFromFullRow(row.ID, row.IdempotencyKey, row.PlacementID, row.ManagedAnimeID,
-			row.CoverageKeys, row.ReplacementRef, row.PolicyVersion, row.RetentionMode, row.SourcePath,
-			row.SourceFingerprint, row.QuarantinePath, row.Effect, row.GraceDeadline, row.State,
+			row.CoverageKeys, row.ReplacementRef, row.RetentionMode, row.SourcePath,
+			row.SourceFingerprint, row.State,
 			row.Attempt.RawMessage, row.Attempt.Valid, row.FailureCode, row.Reason, row.CorrelationID,
 			row.Version, row.CreatedAt, row.UpdatedAt)
 		if err != nil {
@@ -339,13 +308,9 @@ type ListRow struct {
 	PlacementID       string
 	ManagedAnimeID    string
 	ReplacementRef    string
-	PolicyVersion     int64
 	RetentionMode     string
 	SourcePath        string
 	SourceFingerprint string
-	QuarantinePath    *string
-	Effect            string
-	GraceDeadline     *time.Time
 	State             string
 	FailureCode       *string
 	Reason            *string
@@ -372,23 +337,13 @@ func (r *Repository) List(ctx context.Context, animeID string, limit, offset int
 			PlacementID:       generatedRow.PlacementID,
 			ManagedAnimeID:    generatedRow.ManagedAnimeID,
 			ReplacementRef:    generatedRow.ReplacementRef,
-			PolicyVersion:     generatedRow.PolicyVersion,
 			RetentionMode:     generatedRow.RetentionMode,
 			SourcePath:        generatedRow.SourcePath,
 			SourceFingerprint: generatedRow.SourceFingerprint,
-			Effect:            generatedRow.Effect,
 			State:             generatedRow.State,
 			Version:           generatedRow.Version,
 			CreatedAt:         generatedRow.CreatedAt,
 			UpdatedAt:         generatedRow.UpdatedAt,
-		}
-		if generatedRow.QuarantinePath.Valid {
-			value := generatedRow.QuarantinePath.String
-			row.QuarantinePath = &value
-		}
-		if generatedRow.GraceDeadline.Valid {
-			value := generatedRow.GraceDeadline.Time
-			row.GraceDeadline = &value
 		}
 		if generatedRow.FailureCode != "" {
 			value := generatedRow.FailureCode
@@ -430,11 +385,12 @@ func nullableText(value string) sql.NullString {
 	return sql.NullString{String: value, Valid: value != ""}
 }
 
-func nullableTime(value *time.Time) sql.NullTime {
-	if value == nil {
-		return sql.NullTime{}
+// admissionState defaults an unset admission state to admitted.
+func admissionState(state string) string {
+	if state == "" {
+		return "admitted"
 	}
-	return sql.NullTime{Time: *value, Valid: true}
+	return state
 }
 
 func nullableRawMessage(value json.RawMessage) pqtype.NullRawMessage {
@@ -443,8 +399,8 @@ func nullableRawMessage(value json.RawMessage) pqtype.NullRawMessage {
 
 func operationFromFullRow(
 	id, idempotencyKey, placementID, managedAnimeID string,
-	coverageRaw json.RawMessage, replacementRef string, policyVersion int64, retentionMode, sourcePath, sourceFingerprint string,
-	quarantine sql.NullString, effect string, grace sql.NullTime, state string,
+	coverageRaw json.RawMessage, replacementRef string, retentionMode, sourcePath, sourceFingerprint string,
+	state string,
 	attemptRaw json.RawMessage, attemptValid bool, failureCode, reason, correlation sql.NullString,
 	version int64, createdAt, updatedAt time.Time,
 ) (*Operation, error) {
@@ -454,11 +410,9 @@ func operationFromFullRow(
 		PlacementID:       placementID,
 		ManagedAnimeID:    managedAnimeID,
 		ReplacementRef:    replacementRef,
-		PolicyVersion:     policyVersion,
 		RetentionMode:     retentionMode,
 		SourcePath:        sourcePath,
 		SourceFingerprint: sourceFingerprint,
-		Effect:            effect,
 		State:             state,
 		Version:           version,
 		CreatedAt:         createdAt,
@@ -469,13 +423,6 @@ func operationFromFullRow(
 	}
 	if attemptValid {
 		operation.Attempt = append(json.RawMessage(nil), attemptRaw...)
-	}
-	if quarantine.Valid {
-		operation.QuarantinePath = quarantine.String
-	}
-	if grace.Valid {
-		value := grace.Time
-		operation.GraceDeadline = &value
 	}
 	if failureCode.Valid {
 		operation.FailureCode = failureCode.String

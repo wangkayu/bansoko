@@ -6,15 +6,21 @@ package persistence
 
 import (
 	"context"
+	"database/sql"
 )
 
 type Querier interface {
+	// A deletion never removes a path something else now owns: an active
+	// placement or an active companion recorded at that exact path.
+	//
+	//  SELECT EXISTS (SELECT 1 FROM placements p WHERE p.physical_path = $1::text AND p.state = 'active')
+	//      OR EXISTS (SELECT 1 FROM placement_companions c WHERE c.current_path = $1::text AND c.state = 'active')
+	CleanupPathOwned(ctx context.Context, path string) (sql.NullBool, error)
 	//GetCleanupOperation
 	//
 	//  SELECT id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
-	//         policy_version, retention_mode, source_path, source_fingerprint, quarantine_path,
-	//         effect, grace_deadline, state, attempt, failure_code, reason, correlation_id,
-	//         version, created_at, updated_at
+	//         retention_mode, source_path, source_fingerprint, state, attempt, failure_code, reason,
+	//         correlation_id, version, created_at, updated_at
 	//  FROM cleanup_operations
 	//  WHERE id = $1
 	GetCleanupOperation(ctx context.Context, cleanupID string) (GetCleanupOperationRow, error)
@@ -22,19 +28,19 @@ type Querier interface {
 	//
 	//  INSERT INTO cleanup_operations
 	//  (id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
-	//   policy_version, retention_mode, source_path, source_fingerprint, quarantine_path,
-	//   effect, grace_deadline, state, correlation_id, causation_type, causation_id, version, created_at, updated_at)
+	//   retention_mode, source_path, source_fingerprint, state, failure_code, reason,
+	//   correlation_id, causation_type, causation_id, version, created_at, updated_at)
 	//  VALUES ($1, $2, $3, $4,
-	//          $5, $6, $7, $8,
-	//          $9, $10, $11, $12,
-	//          $13, 'admitted', $14, $15,
-	//          $16, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+	//          $5, $6, $7,
+	//          $8, $9, $10,
+	//          $11, $12, $13, $14,
+	//          $15, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 	//  ON CONFLICT (idempotency_key) DO NOTHING
 	InsertCleanupOperation(ctx context.Context, arg InsertCleanupOperationParams) error
 	//ListCleanupOperations
 	//
-	//  SELECT id, placement_id, managed_anime_id, replacement_ref, policy_version, retention_mode,
-	//         source_path, source_fingerprint, quarantine_path, effect, grace_deadline,
+	//  SELECT id, placement_id, managed_anime_id, replacement_ref, retention_mode,
+	//         source_path, source_fingerprint,
 	//         state, COALESCE(failure_code, ''), COALESCE(reason, ''), version, created_at, updated_at
 	//  FROM cleanup_operations
 	//  WHERE managed_anime_id = $1
@@ -44,18 +50,17 @@ type Querier interface {
 	//ListPendingCleanupOperations
 	//
 	//  SELECT id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
-	//         policy_version, retention_mode, source_path, source_fingerprint, quarantine_path,
-	//         effect, grace_deadline, state, attempt, failure_code, reason, correlation_id,
-	//         version, created_at, updated_at
+	//         retention_mode, source_path, source_fingerprint, state, attempt, failure_code, reason,
+	//         correlation_id, version, created_at, updated_at
 	//  FROM cleanup_operations
-	//  WHERE state IN ('admitted', 'quarantined', 'grace_waiting')
+	//  WHERE state = 'admitted' OR (state = 'blocked' AND attempt IS NOT NULL)
+	//  ORDER BY id
 	ListPendingCleanupOperations(ctx context.Context) ([]ListPendingCleanupOperationsRow, error)
 	//LockCleanupOperation
 	//
 	//  SELECT id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
-	//         policy_version, retention_mode, source_path, source_fingerprint, quarantine_path,
-	//         effect, grace_deadline, state, attempt, failure_code, reason, correlation_id,
-	//         version, created_at, updated_at
+	//         retention_mode, source_path, source_fingerprint, state, attempt, failure_code, reason,
+	//         correlation_id, version, created_at, updated_at
 	//  FROM cleanup_operations
 	//  WHERE id = $1
 	//  FOR UPDATE
@@ -79,28 +84,6 @@ type Querier interface {
 	//  WHERE id = $2 AND version = $3
 	//  RETURNING version
 	PersistCleanupAttempt(ctx context.Context, arg PersistCleanupAttemptParams) (int64, error)
-	//QuarantineCleanup
-	//
-	//  UPDATE cleanup_operations
-	//  SET quarantine_path = $1, state = CASE
-	//          WHEN grace_deadline IS NOT NULL AND grace_deadline > CURRENT_TIMESTAMP THEN 'grace_waiting'
-	//          ELSE 'quarantined'
-	//      END,
-	//      failure_code = NULLIF($2, ''), reason = NULLIF($3, ''),
-	//      version = version + 1, updated_at = CURRENT_TIMESTAMP
-	//  WHERE id = $4 AND version = $5
-	//  RETURNING version
-	QuarantineCleanup(ctx context.Context, arg QuarantineCleanupParams) (int64, error)
-	//RecordCleanupPurgeObservation
-	//
-	//  UPDATE cleanup_operations
-	//  SET state = 'purged', failure_code = 'cleanup_purged', reason = 'purged',
-	//      attempt = jsonb_set(jsonb_set(COALESCE(attempt, '{}'::jsonb), '{removed}', 'true'::jsonb),
-	//                          '{post_observation_missing}', 'true'::jsonb),
-	//      version = version + 1, updated_at = CURRENT_TIMESTAMP
-	//  WHERE id = $1 AND version = $2 AND effect = 'quarantine'
-	//  RETURNING version
-	RecordCleanupPurgeObservation(ctx context.Context, arg RecordCleanupPurgeObservationParams) (int64, error)
 	//SubscriptionIDForAnime
 	//
 	//  SELECT id

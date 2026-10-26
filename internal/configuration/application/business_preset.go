@@ -105,7 +105,7 @@ func readBusinessPresetTx(ctx context.Context, tx *sql.Tx) (animeconfig.Business
 	if err != nil {
 		return result, err
 	}
-	err = tx.QueryRowContext(ctx, `SELECT value->>'admission_mode', value->'quality_profile', value->'cleanup_policy', version FROM global_config_sections WHERE section_name='retention'`).Scan(&result.Retention.AdmissionMode, &result.Retention.QualityProfile, &result.Retention.CleanupPolicy, &result.RetentionVersion)
+	err = tx.QueryRowContext(ctx, `SELECT value->>'admission_mode', value->'quality_profile', version FROM global_config_sections WHERE section_name='retention'`).Scan(&result.Retention.AdmissionMode, &result.Retention.QualityProfile, &result.RetentionVersion)
 	if err != nil {
 		return result, fmt.Errorf("read complete retention preset: %w", err)
 	}

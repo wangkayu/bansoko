@@ -98,9 +98,10 @@ UNION ALL SELECT fo.target_path FROM placement_obligations po JOIN file_operatio
   WHERE po.state IN ('pending', 'waiting_retry')
 UNION ALL SELECT a.source_path FROM alignment_operations a WHERE a.state IN ('planned', 'ready', 'running')
 UNION ALL SELECT a.target_path FROM alignment_operations a WHERE a.state IN ('planned', 'ready', 'running')
-UNION ALL SELECT c.source_path FROM cleanup_operations c WHERE c.state IN ('admitted', 'quarantined', 'grace_waiting')
-UNION ALL SELECT c.quarantine_path FROM cleanup_operations c
-  WHERE c.state IN ('admitted', 'quarantined', 'grace_waiting') AND c.quarantine_path IS NOT NULL
+UNION ALL SELECT c.source_path FROM cleanup_operations c
+  WHERE c.state = 'admitted' OR (c.state = 'blocked' AND c.attempt IS NOT NULL)
+UNION ALL SELECT c.attempt->>'capture_path' FROM cleanup_operations c
+  WHERE (c.state = 'admitted' OR c.state = 'blocked') AND c.attempt ? 'capture_path'
 UNION ALL SELECT p.physical_path FROM replacement_decisions d JOIN placements p ON p.id = d.candidate_placement_id
   WHERE d.state IN ('admitted', 'queued')
 UNION ALL SELECT p.physical_path FROM replacement_decisions d

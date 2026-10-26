@@ -8,7 +8,7 @@ import (
 
 // DefaultRequiredKeys are the core owner reconcilers every recovery run must
 // register. Production-enabled FileMaintenance effect owners (Alignment
-// Operation, Cleanup quarantine/purge) add their own registrations in their
+// Operation, Cleanup deletion) add their own registrations in their
 // P3 children; the gate enumerates them through Enabled() at run time.
 var DefaultRequiredKeys = []string{
 	"qb_download_task",

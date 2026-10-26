@@ -147,10 +147,11 @@ SELECT a.source_path, 'alignment', '' FROM alignment_operations a WHERE a.state 
 UNION ALL
 SELECT a.target_path, 'alignment', '' FROM alignment_operations a WHERE a.state IN ('planned', 'ready', 'running')
 UNION ALL
-SELECT c.source_path, 'cleanup', '' FROM cleanup_operations c WHERE c.state IN ('admitted', 'quarantined', 'grace_waiting')
+SELECT c.source_path, 'cleanup', '' FROM cleanup_operations c
+  WHERE c.state = 'admitted' OR (c.state = 'blocked' AND c.attempt IS NOT NULL)
 UNION ALL
-SELECT c.quarantine_path, 'cleanup', '' FROM cleanup_operations c
-  WHERE c.state IN ('admitted', 'quarantined', 'grace_waiting') AND c.quarantine_path IS NOT NULL
+SELECT c.attempt->>'capture_path', 'cleanup', '' FROM cleanup_operations c
+  WHERE (c.state = 'admitted' OR c.state = 'blocked') AND c.attempt ? 'capture_path'
 UNION ALL
 SELECT p.physical_path, 'replacement', '' FROM replacement_decisions d JOIN placements p ON p.id = d.candidate_placement_id
   WHERE d.state IN ('admitted', 'queued')

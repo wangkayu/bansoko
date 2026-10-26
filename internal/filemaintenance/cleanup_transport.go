@@ -24,14 +24,10 @@ func (s *CleanupService) ListCleanups(ctx context.Context, animeID string, limit
 func cleanupOperationViewToGenerated(value CleanupOperationView) generated.CleanupOperationView {
 	return generated.CleanupOperationView{
 		CreatedAt:         value.CreatedAt,
-		Effect:            generated.CleanupOperationViewEffect(value.Effect),
 		FailureCode:       cloneStringPointer(value.FailureCode),
-		GraceDeadline:     cloneTimePointer(value.GraceDeadline),
 		Id:                value.ID,
 		ManagedAnimeId:    value.ManagedAnimeID,
 		PlacementId:       value.PlacementID,
-		PolicyVersion:     value.PolicyVersion,
-		QuarantinePath:    cloneStringPointer(value.QuarantinePath),
 		Reason:            cloneStringPointer(value.Reason),
 		ReplacementRef:    value.ReplacementRef,
 		RetentionMode:     generated.CleanupOperationViewRetentionMode(value.RetentionMode),

@@ -215,7 +215,6 @@ export const enErrorCopy = {
   OVERWRITE_RECOVERY_UNSAFE: "Overwrite did not finish and cannot be safely recovered. Check the file at the target location.",
   CLEANUP_EFFECT_UNSUPPORTED: "The current import method does not support cleaning up old files",
   CLEANUP_IDENTITY_MUTATION_UNSUPPORTED: "Cannot clean up files that have been modified",
-  CLEANUP_POLICY_VERSION_CHANGED: "Cleanup settings have changed. Refresh and try again.",
   LOCAL_CLEANUP_ACQUISITION_RETAINED: "Some download records are still retained. Local records cannot be deleted yet.",
   LOCAL_CLEANUP_CONFIRMATION_REQUIRED: "Confirm before deleting local records",
   LOCAL_CLEANUP_EPOCH_REQUIRED: REFRESH_RETRY,

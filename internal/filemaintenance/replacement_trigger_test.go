@@ -66,11 +66,6 @@ func intPtr(value int) *int {
 	return &value
 }
 
-func cleanupEffectPtr(value string) *generated.InstanceRetentionPolicyInputCleanupPolicyEffect {
-	effect := generated.InstanceRetentionPolicyInputCleanupPolicyEffect(value)
-	return &effect
-}
-
 func newTriggerTestDB(t *testing.T) (*sql.DB, *workitems.Store, *ReplacementTriggerService) {
 	t.Helper()
 	db := disposabledb.ResetDisposableSchema(t)
@@ -222,7 +217,6 @@ func TestTriggerPolicySavedOnlyTargetAnime(t *testing.T) {
 	saved, err := service.SaveInstanceRetentionPolicy(ctx, "anime-1", generated.InstanceRetentionPolicyInput{
 		AdmissionMode:   generated.RetentionAdmissionModeSingleCopy,
 		QualityProfile:  generated.QualityProfile{Version: "profile-v1", Items: []generated.QualityCompareItem{{Key: "release.resolution", Ranks: [][]string{{"2160p"}, {"1080p"}, {"720p"}, {"480p"}}}}},
-		CleanupPolicy:   generated.InstanceRetentionPolicyInput_CleanupPolicy{Version: strPtr("cleanup-v1"), Effect: cleanupEffectPtr("quarantine"), GraceSeconds: intPtr(3600)},
 		ExpectedVersion: 1,
 	}, "test", "http")
 	if err != nil {
@@ -270,7 +264,6 @@ func TestTriggerPolicySavedStoppedKeepsPolicyThenResumeNewEpoch(t *testing.T) {
 	if _, err := service.SaveInstanceRetentionPolicy(ctx, "anime-1", generated.InstanceRetentionPolicyInput{
 		AdmissionMode:   generated.RetentionAdmissionModeSingleCopy,
 		QualityProfile:  generated.QualityProfile{Version: "profile-v1", Items: []generated.QualityCompareItem{}},
-		CleanupPolicy:   generated.InstanceRetentionPolicyInput_CleanupPolicy{Version: strPtr("cleanup-v1"), Effect: cleanupEffectPtr("quarantine"), GraceSeconds: intPtr(3600)},
 		ExpectedVersion: 1,
 	}, "test", "http"); err != nil {
 		t.Fatalf("stopped policy save: %v", err)

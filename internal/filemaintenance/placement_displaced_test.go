@@ -111,7 +111,7 @@ WHERE p.managed_anime_id = 'anime-a' AND p.state = 'active' AND c.observation_ke
 }
 
 // TestDisplacedIsTerminal: a displaced row never changes again, and it is
-// treated as released by cleanup admission.
+// never admitted for deletion.
 func TestDisplacedIsTerminal(t *testing.T) {
 	db := openPlacementTestDB(t)
 	defer db.Close()
@@ -127,14 +127,14 @@ func TestDisplacedIsTerminal(t *testing.T) {
 			t.Fatalf("displaced row accepted %q", stmt)
 		}
 	}
-	queries, _ := placementCleanupEvidenceQueries([]string{old})
-	var id, path, fingerprint string
-	var excluded bool
-	if err := db.QueryRow(queries[0].Text, queries[0].Args...).Scan(&id, &path, &fingerprint, &excluded); err != nil {
+	// Deletion admission accepts only superseded losers, so a displaced row
+	// is never deleted.
+	var state string
+	if err := db.QueryRow(`SELECT state FROM placements WHERE id = $1`, old).Scan(&state); err != nil {
 		t.Fatal(err)
 	}
-	if !excluded {
-		t.Fatal("cleanup evidence must exclude a displaced placement")
+	if state != "displaced" {
+		t.Fatalf("placement state = %s, want displaced", state)
 	}
 }
 

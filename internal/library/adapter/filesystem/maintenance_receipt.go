@@ -91,7 +91,7 @@ func (e OSCleanupExecutor) ReadMaintenanceReceipt(ctx context.Context, i mainten
 	if err := validateMaintenanceNamespace(i); err != nil {
 		return maintenance.MaintenanceReceipt{}, err
 	}
-	if i.Kind == "cleanup_quarantine" || i.Kind == fileManagerQuarantineKind {
+	if i.Kind == cleanupCaptureKind || i.Kind == fileManagerQuarantineKind {
 		if !isQuarantineInvocation(i) {
 			return maintenance.MaintenanceReceipt{}, errors.New("quarantine receipt requires its capturing owner")
 		}
@@ -230,7 +230,7 @@ func (e OSCleanupExecutor) MoveMaintenance(ctx context.Context, source, target s
 	if err := writeMaintenanceStarted(i); err != nil {
 		return "", err
 	}
-	result, err := e.MoveToQuarantine(ctx, source, target, expected)
+	result, err := e.CaptureForDelete(ctx, source, target, expected)
 	if err != nil {
 		return result, err
 	}
@@ -260,12 +260,12 @@ func (e OSCleanupExecutor) PurgeMaintenance(ctx context.Context, path string, ex
 	if _, err := i.Token(); err != nil {
 		return err
 	}
-	// The receipt records this exact-object RemoveQuarantined invocation's nil
+	// The receipt records this exact-object PurgeCaptured invocation's nil
 	// return, NOT a later absence observation. Crash before receipt stays unknown.
 	if err := writeMaintenanceStarted(i); err != nil {
 		return err
 	}
-	if err := e.RemoveQuarantined(ctx, path, expected); err != nil {
+	if err := e.PurgeCaptured(ctx, path, expected); err != nil {
 		return err
 	}
 	return writeMaintenanceFinal(i, expected)

@@ -107,8 +107,7 @@ func DefaultPolicies() []KindPolicy {
 		{Kind: workitems.KindReconciliationScan, Lane: LaneHeavy, Lease: 120 * time.Second, Heartbeat: 30 * time.Second, Deadline: 30 * time.Minute, MaxAttempts: 3, Backoff: defaultBackoff},
 		{Kind: workitems.KindAlignmentExecute, Lane: LaneHeavy, Lease: 120 * time.Second, Heartbeat: 30 * time.Second, Deadline: 30 * time.Minute, MaxAttempts: 3, Backoff: defaultBackoff},
 		{Kind: workitems.KindReplacementEvaluate, Lane: LaneHeavy, Lease: 120 * time.Second, Heartbeat: 30 * time.Second, Deadline: 30 * time.Minute, MaxAttempts: 3, Backoff: defaultBackoff},
-		{Kind: workitems.KindCleanupQuarantine, Lane: LaneHeavy, Lease: 120 * time.Second, Heartbeat: 30 * time.Second, Deadline: 30 * time.Minute, MaxAttempts: 3, Backoff: defaultBackoff},
-		{Kind: workitems.KindCleanupPurge, Lane: LaneHeavy, Lease: 120 * time.Second, Heartbeat: 30 * time.Second, Deadline: 30 * time.Minute, MaxAttempts: 3, Backoff: defaultBackoff},
+		{Kind: workitems.KindCleanupDelete, Lane: LaneHeavy, Lease: 120 * time.Second, Heartbeat: 30 * time.Second, Deadline: 30 * time.Minute, MaxAttempts: 3, Backoff: defaultBackoff},
 		// Calibration and the two generation consumers are DB-bound owner work
 		// (no external effect): light lane, long-enough deadline for a large
 		// library, retried independently from each other.

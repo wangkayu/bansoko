@@ -2475,7 +2475,7 @@ func observeFileMode(path string, beforeOpen func(string) error, hashContent boo
 		return domain.FileObservation{}, fmt.Errorf("stat file: %w", err)
 	}
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return domain.FileObservation{}, errors.New("file must be a regular non-symlink file")
+		return domain.FileObservation{}, domain.ErrNotRegularFile
 	}
 	pathIdentity, err := fileidentity.FromPath(path)
 	if err != nil {

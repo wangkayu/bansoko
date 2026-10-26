@@ -85,12 +85,12 @@ SELECT schema_version, value, version FROM global_config_sections WHERE section_
 	// A draft loads the persisted Global retention when one exists, exactly
 	// as the business preset does; the snapshot then freezes it.
 	var retention animedomain.RetentionValue
-	var quality, cleanup []byte
+	var quality []byte
 	switch err := db.QueryRowContext(context.Background(), `
-SELECT value->>'admission_mode', value->'quality_profile', value->'cleanup_policy'
-FROM global_config_sections WHERE section_name = 'retention'`).Scan(&retention.AdmissionMode, &quality, &cleanup); {
+SELECT value->>'admission_mode', value->'quality_profile'
+FROM global_config_sections WHERE section_name = 'retention'`).Scan(&retention.AdmissionMode, &quality); {
 	case err == nil:
-		retention.QualityProfile, retention.CleanupPolicy = quality, cleanup
+		retention.QualityProfile = quality
 		b.Retention = retention
 	case errors.Is(err, sql.ErrNoRows):
 	default:

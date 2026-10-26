@@ -3,13 +3,10 @@ package filemaintenance
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
-	"time"
 
-	persistence "bansoko/internal/filemaintenance/adapter/persistence"
+	"bansoko/internal/library/domain"
 	"bansoko/internal/persistence/txscope"
-	"bansoko/internal/workitems"
 )
 
 // companionCleanupDB is the read/write surface the companion handoff needs;
@@ -21,11 +18,11 @@ type companionCleanupDB interface {
 }
 
 // loserCompanion is one active companion of a superseded loser placement that
-// the cleanup handoff may quarantine.
+// the deletion handoff may take.
 type loserCompanion struct {
-	ID          string
-	Path        string
-	Fingerprint string
+	ID        string
+	Path      string
+	SizeBytes int64
 }
 
 // loserCompanionsForCleanup returns the loser placement's active companions
@@ -36,7 +33,7 @@ type loserCompanion struct {
 // instead (path_owned_by_winner), and the file stays.
 func loserCompanionsForCleanup(ctx context.Context, db companionCleanupDB, loserPlacementID, winnerPlacementID string) ([]loserCompanion, error) {
 	rows, err := db.QueryContext(ctx, `
-SELECT c.id, c.current_path, c.fingerprint,
+SELECT c.id, c.current_path, c.size_bytes,
        (EXISTS (SELECT 1 FROM placements p WHERE p.physical_path = c.current_path AND p.state = 'active')
         OR EXISTS (SELECT 1 FROM placement_companions o WHERE o.current_path = c.current_path AND o.state = 'active' AND o.id <> c.id)
         OR EXISTS (SELECT 1 FROM placements w JOIN file_operations s ON s.bound_video_operation_id = w.source_owner_ref
@@ -54,7 +51,7 @@ ORDER BY c.id`, loserPlacementID, winnerPlacementID)
 	for rows.Next() {
 		var companion loserCompanion
 		var isOwned bool
-		if err := rows.Scan(&companion.ID, &companion.Path, &companion.Fingerprint, &isOwned); err != nil {
+		if err := rows.Scan(&companion.ID, &companion.Path, &companion.SizeBytes, &isOwned); err != nil {
 			return nil, err
 		}
 		if isOwned {
@@ -87,83 +84,36 @@ func endCompanionForCleanup(ctx context.Context, db companionCleanupDB, cleanupI
 
 func companionCleanupID(companionID string) string { return "cln-" + companionID }
 
-// handoffCompanionsToCleanup admits one cleanup record per cleanable
-// companion of a loser placement under the decision's cleanup authorization.
-// It runs for every loser, including a same-path loser whose video is not
-// cleaned: that loser's companions are cleaned unless the winner now owns
-// their path.
-func (s *ReplacementDecisionService) handoffCompanionsToCleanup(ctx context.Context, decision *decisionRow, loser PlacementRef, coverage []string) error {
-	winnerID := ""
-	if decision.Winner != nil {
-		winnerID = decision.Winner.PlacementID
-	}
-	companions, err := loserCompanionsForCleanup(ctx, s.db, loser.PlacementID, winnerID)
-	if err != nil || len(companions) == 0 {
-		return err
-	}
-	var effect string
-	var graceDeadline time.Time
-	if err := s.db.QueryRowContext(ctx, `
-		SELECT COALESCE(NULLIF(cleanup_policy->>'effect', ''), 'quarantine'),
-		       CURRENT_TIMESTAMP + make_interval(secs => COALESCE(NULLIF(cleanup_policy->>'grace_seconds', '')::bigint, 0))
-		FROM anime_business_configs WHERE managed_anime_id = $1 AND retention_version = $2 AND cleanup_policy IS NOT NULL`, decision.AnimeID, decision.PolicyVersion).
-		Scan(&effect, &graceDeadline); err != nil {
-		return fmt.Errorf("read companion cleanup policy: %w", err)
-	}
-	for _, companion := range companions {
-		id := companionCleanupID(companion.ID)
-		if _, err := s.cleanup.Admit(ctx, CleanupInput{
-			ID:                id,
-			IdempotencyKey:    "cln:" + companion.ID + ":" + decision.ID,
-			PlacementID:       loser.PlacementID,
-			ManagedAnimeID:    decision.AnimeID,
-			Coverage:          coverage,
-			ReplacementRef:    decision.ID,
-			PolicyVersion:     decision.PolicyVersion,
-			RetentionMode:     string(decision.AdmissionMode),
-			SourcePath:        companion.Path,
-			SourceFingerprint: companion.Fingerprint,
-			Effect:            effect,
-			GraceDeadline:     &graceDeadline,
-			CorrelationID:     decision.CorrelationID,
-			CausationType:     "replacement_decision",
-			CausationID:       decision.ID,
-		}); err != nil {
-			return fmt.Errorf("admit companion cleanup: %w", err)
-		}
-		if err := endCompanionForCleanup(ctx, s.db, id, companion.ID); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// handoffRecoveryCompanionsTx is the recovered-decision variant: it persists
-// the companion cleanup obligations in the caller's transaction.
-func (s *ReplacementDecisionService) handoffRecoveryCompanionsTx(ctx context.Context, scope txscope.Tx, d *decisionRow, loserPlacementID string, coverage []byte, effect string, deadline time.Time) error {
+// admitCompanionDeletionsTx records, in the caller's transaction, one
+// deletion obligation per cleanable companion of a superseded loser. It runs
+// for every superseded loser, including a same-path loser whose video is not
+// deleted: that loser's companions are deleted unless the winner now owns
+// their path. A companion's identity is its recorded size at its path.
+func (s *ReplacementDecisionService) admitCompanionDeletionsTx(ctx context.Context, scope txscope.Tx, d *decisionRow, loserPlacementID, winnerPlacementID string, coverage []string) error {
 	tx := scope.SQLTx()
-	winnerID := ""
-	if d.Winner != nil {
-		winnerID = d.Winner.PlacementID
-	}
-	companions, err := loserCompanionsForCleanup(ctx, tx, loserPlacementID, winnerID)
+	companions, err := loserCompanionsForCleanup(ctx, tx, loserPlacementID, winnerPlacementID)
 	if err != nil {
 		return err
 	}
 	for _, companion := range companions {
 		id := companionCleanupID(companion.ID)
-		if err := s.cleanup.repository.InsertTx(ctx, scope, persistence.OperationInput{ID: id, IdempotencyKey: "cln:" + companion.ID + ":" + d.ID, PlacementID: loserPlacementID, ManagedAnimeID: d.AnimeID, Coverage: coverage, ReplacementRef: d.ID, PolicyVersion: d.PolicyVersion, RetentionMode: string(d.AdmissionMode), SourcePath: companion.Path, SourceFingerprint: companion.Fingerprint, Effect: effect, GraceDeadline: &deadline, CorrelationID: d.CorrelationID, CausationType: "replacement_decision", CausationID: d.ID}); err != nil {
-			return err
+		if err := s.cleanup.admitTx(ctx, scope, CleanupInput{
+			ID:                id,
+			IdempotencyKey:    "cln:" + companion.ID + ":" + d.ID,
+			PlacementID:       loserPlacementID,
+			ManagedAnimeID:    d.AnimeID,
+			Coverage:          coverage,
+			ReplacementRef:    d.ID,
+			RetentionMode:     string(d.AdmissionMode),
+			SourcePath:        companion.Path,
+			SourceFingerprint: domain.MetadataFingerprint(companion.SizeBytes, domain.FileIdentity{}),
+			CorrelationID:     d.CorrelationID,
+			CausationType:     "replacement_decision",
+			CausationID:       d.ID,
+		}); err != nil {
+			return fmt.Errorf("admit companion deletion: %w", err)
 		}
 		if err := endCompanionForCleanup(ctx, tx, id, companion.ID); err != nil {
-			return err
-		}
-		var version int64
-		if err := tx.QueryRowContext(ctx, `SELECT version FROM cleanup_operations WHERE id=$1 AND replacement_ref=$2 FOR UPDATE`, id, d.ID).Scan(&version); err != nil {
-			return err
-		}
-		snapshot, _ := json.Marshal(map[string]any{"cleanup_id": id, "stage": workitems.KindCleanupQuarantine})
-		if _, _, err := s.cleanup.workItems.CreateOrMerge(ctx, tx, workitems.WorkItemSpec{Owner: workitems.OwnerRef{Type: workitems.OwnerCleanup, ID: id}, Kind: workitems.KindCleanupQuarantine, IdempotencyKey: "cln:" + id + ":" + workitems.KindCleanupQuarantine, InputSnapshot: snapshot, MaxAttempts: 3, ExpectedOwnerVersion: version}); err != nil {
 			return err
 		}
 	}

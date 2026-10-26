@@ -50,7 +50,6 @@ func TestInstanceRetentionSaveKeepsFrozenBusinessConsistent(t *testing.T) {
 	next := filemaintenance.RetentionPolicy{
 		AdmissionMode:  filemaintenance.ModeSingleCopy,
 		QualityProfile: before.Snapshot.Retention.QualityProfile,
-		CleanupPolicy:  before.Snapshot.Retention.CleanupPolicy,
 	}
 	saved, err := retention.SaveInstance(ctx, animeID, instance.Version, next, "owner", "web")
 	if err != nil {

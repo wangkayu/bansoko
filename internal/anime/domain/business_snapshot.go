@@ -32,7 +32,6 @@ type BusinessSnapshot struct {
 type RetentionValue struct {
 	AdmissionMode  string          `json:"admission_mode"`
 	QualityProfile json.RawMessage `json:"quality_profile"`
-	CleanupPolicy  json.RawMessage `json:"cleanup_policy"`
 }
 type ProgramReferences struct {
 	AttrRules namingvars.ProgramRef `json:"attrrules"`
@@ -57,10 +56,8 @@ func (s BusinessSnapshot) Freeze() (BusinessSnapshot, error) {
 	if s.Retention.AdmissionMode != "all" && s.Retention.AdmissionMode != "per_group" && s.Retention.AdmissionMode != "single_copy" {
 		return BusinessSnapshot{}, errors.New("invalid retention admission mode")
 	}
-	for _, raw := range []json.RawMessage{s.Retention.QualityProfile, s.Retention.CleanupPolicy} {
-		if !json.Valid(raw) || string(raw) == "null" {
-			return BusinessSnapshot{}, errors.New("invalid retention document")
-		}
+	if raw := s.Retention.QualityProfile; !json.Valid(raw) || string(raw) == "null" {
+		return BusinessSnapshot{}, errors.New("invalid retention document")
 	}
 	if err := validateBusinessRetention(s.Retention); err != nil {
 		return BusinessSnapshot{}, err
@@ -93,12 +90,12 @@ func (s BusinessSnapshot) Digest() (string, error) {
 		}
 		copy.Sections[k] = mustJSON(v)
 	}
-	for _, raw := range []*json.RawMessage{&copy.Retention.QualityProfile, &copy.Retention.CleanupPolicy} {
+	{
 		var v any
-		if err := json.Unmarshal(*raw, &v); err != nil {
+		if err := json.Unmarshal(copy.Retention.QualityProfile, &v); err != nil {
 			return "", err
 		}
-		*raw = mustJSON(v)
+		copy.Retention.QualityProfile = mustJSON(v)
 	}
 	b, err := json.Marshal(copy)
 	if err != nil {

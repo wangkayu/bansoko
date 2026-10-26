@@ -2,10 +2,7 @@ package filemaintenance
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -13,14 +10,73 @@ import (
 	"time"
 
 	"bansoko/internal/deployment"
+	maintenance "bansoko/internal/filemaintenance/executor"
 	"bansoko/internal/library/adapter/filesystem"
-	"bansoko/internal/persistence/txscope"
+	"bansoko/internal/library/domain"
 	"bansoko/internal/runtime/worker"
 	"bansoko/internal/testutil/disposabledb"
 	"bansoko/internal/workitems"
 )
 
-func cleanupInput() CleanupInput {
+// trackingCleanupExecutor is the real OS executor that counts content reads
+// and can fail a purge before it reaches the filesystem.
+type trackingCleanupExecutor struct {
+	filesystem.OSCleanupExecutor
+	contentCalls int
+	purgeErr     error
+}
+
+func (e *trackingCleanupExecutor) Observe(ctx context.Context, path string) (domain.FileObservation, error) {
+	e.contentCalls++
+	return e.OSCleanupExecutor.Observe(ctx, path)
+}
+
+func (e *trackingCleanupExecutor) PurgeMaintenance(ctx context.Context, path string, expected domain.FileObservation, invocation maintenance.MaintenanceInvocation) error {
+	if e.purgeErr != nil {
+		return e.purgeErr
+	}
+	return e.OSCleanupExecutor.PurgeMaintenance(ctx, path, expected, invocation)
+}
+
+// cleanupFixture is one real replaced file under a temporary library root.
+type cleanupFixture struct {
+	db          *sql.DB
+	service     *CleanupService
+	store       *workitems.Store
+	executor    *trackingCleanupExecutor
+	root        string
+	source      string
+	observation domain.FileObservation
+}
+
+func newCleanupFixture(t *testing.T) *cleanupFixture {
+	t.Helper()
+	db := disposabledb.ResetDisposableSchema(t)
+	t.Cleanup(func() { _ = db.Close() })
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(root, "Old", "EP01.mkv")
+	if err := os.MkdirAll(filepath.Dir(source), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(source, []byte("replaced episode"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	executor := &trackingCleanupExecutor{OSCleanupExecutor: filesystem.NewOSCleanupExecutor(root)}
+	observation, err := executor.ObserveMetadataFile(context.Background(), source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewCleanupService(db)
+	store := cleanupWorkItemStore(t, db)
+	service.SetWorkItems(store)
+	service.SetFileExecutor(executor)
+	return &cleanupFixture{db: db, service: service, store: store, executor: executor, root: root, source: source, observation: observation}
+}
+
+func (f *cleanupFixture) input() CleanupInput {
 	return CleanupInput{
 		ID:                "cleanup-1",
 		IdempotencyKey:    "cln:cleanup-1",
@@ -28,310 +84,295 @@ func cleanupInput() CleanupInput {
 		ManagedAnimeID:    "anime-1",
 		Coverage:          []string{"tv:s1:e1"},
 		ReplacementRef:    "dec-new-1",
-		PolicyVersion:     1,
 		RetentionMode:     "single_copy",
-		SourcePath:        "/library/Old/EP01.mkv",
-		SourceFingerprint: "fp-old",
-		QuarantinePath:    "/library/.quarantine/cleanup-1",
-		Effect:            "quarantine",
+		SourcePath:        f.source,
+		SourceFingerprint: domain.MetadataFingerprint(f.observation.SizeBytes, f.observation.Identity),
 	}
 }
 
-func TestCleanupAdmitIdempotent(t *testing.T) {
-	db := disposabledb.ResetDisposableSchema(t)
-	defer db.Close()
-	service := NewCleanupService(db)
+func (f *cleanupFixture) admit(t *testing.T, input CleanupInput) *CleanupOperation {
+	t.Helper()
+	op, err := f.service.Admit(context.Background(), input)
+	if err != nil {
+		t.Fatalf("admit cleanup: %v", err)
+	}
+	return op
+}
+
+// runDelete claims the live cleanup_delete item, runs the handler and
+// finishes the claim the way the worker does.
+func (f *cleanupFixture) runDelete(t *testing.T) worker.Outcome {
+	t.Helper()
+	return runCleanupDelete(t, f.service, f.store)
+}
+
+func runCleanupDelete(t *testing.T, service *CleanupService, store *workitems.Store) worker.Outcome {
+	t.Helper()
 	ctx := context.Background()
-	first, err := service.Admit(ctx, cleanupInput())
+	claim, err := store.ClaimDue(ctx, "cleanup-test-worker", []string{workitems.KindCleanupDelete}, time.Minute)
 	if err != nil {
+		t.Fatalf("claim cleanup_delete: %v", err)
+	}
+	outcome, err := service.DeleteHandler().Handle(ctx, claim)
+	if err != nil {
+		t.Fatalf("handle cleanup_delete: %v", err)
+	}
+	if outcome.Kind != worker.OutcomeFinish {
+		t.Fatalf("cleanup_delete outcome = %+v", outcome)
+	}
+	if err := store.FinishWithResult(ctx, claim, outcome.TerminalState, outcome.OwnerResult, outcome.WriteOwner); err != nil {
+		t.Fatalf("finish cleanup_delete: %v", err)
+	}
+	return outcome
+}
+
+func (f *cleanupFixture) state(t *testing.T, id string) (CleanupState, string) {
+	t.Helper()
+	var state string
+	var code sql.NullString
+	if err := f.db.QueryRow(`SELECT state, failure_code FROM cleanup_operations WHERE id = $1`, id).Scan(&state, &code); err != nil {
 		t.Fatal(err)
 	}
-	second, err := service.Admit(ctx, cleanupInput())
-	if err != nil {
+	return CleanupState(state), code.String
+}
+
+func liveCleanupWorkItems(t *testing.T, db *sql.DB, id string) int {
+	t.Helper()
+	var count int
+	if err := db.QueryRow(`SELECT count(*) FROM work_items WHERE owner_type = $1 AND owner_id = $2 AND kind = $3`,
+		workitems.OwnerCleanup, id, workitems.KindCleanupDelete).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
+	return count
+}
+
+func assertFilePresent(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Lstat(path); err != nil {
+		t.Fatalf("%s must remain: %v", path, err)
+	}
+}
+
+func assertFileAbsent(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("%s must be gone: %v", path, err)
+	}
+}
+
+func TestCleanupAdmitIdempotentWithOneDeleteWorkItem(t *testing.T) {
+	f := newCleanupFixture(t)
+	first := f.admit(t, f.input())
+	second := f.admit(t, f.input())
 	if first.ID != second.ID || first.State != CleanupAdmitted {
 		t.Fatalf("idempotent admit failed: %+v %+v", first, second)
 	}
 	if len(first.Coverage) != 1 || first.Coverage[0] != "tv:s1:e1" {
 		t.Fatalf("coverage must freeze: %+v", first.Coverage)
 	}
-}
-
-func TestCleanupCheckpointThenTransition(t *testing.T) {
-	db := disposabledb.ResetDisposableSchema(t)
-	defer db.Close()
-	service := NewCleanupService(db)
-	ctx := context.Background()
-	op, err := service.Admit(ctx, cleanupInput())
-	if err != nil {
-		t.Fatal(err)
-	}
-	attempt, _ := json.Marshal(map[string]any{"fencing_token": 1, "source": op.SourcePath, "fingerprint": op.SourceFingerprint})
-	version, err := service.PersistAttempt(ctx, op.ID, op.Version, attempt)
-	if err != nil || version != 2 {
-		t.Fatalf("attempt checkpoint failed: %v", err)
-	}
-	version, err = service.Transition(ctx, op.ID, version, CleanupQuarantined, "", "")
-	if err != nil || version != 3 {
-		t.Fatalf("quarantine transition failed: %v", err)
-	}
-	// Stale CAS rejected.
-	if _, err := service.Transition(ctx, op.ID, 1, CleanupCompleted, "", ""); err == nil {
-		t.Fatal("stale CAS must conflict")
+	if got := liveCleanupWorkItems(t, f.db, first.ID); got != 1 {
+		t.Fatalf("admission must enqueue exactly one cleanup_delete item, got %d", got)
 	}
 }
 
-func TestCleanupReconcileReviewsFrozenAttempts(t *testing.T) {
-	db := disposabledb.ResetDisposableSchema(t)
-	defer db.Close()
-	service := NewCleanupService(db)
-	ctx := context.Background()
-	op, err := service.Admit(ctx, cleanupInput())
-	if err != nil {
-		t.Fatal(err)
+func TestCleanupAdmitWithoutRecordedSizeIsSkipped(t *testing.T) {
+	f := newCleanupFixture(t)
+	input := f.input()
+	input.SourceFingerprint = ""
+	op := f.admit(t, input)
+	if op.State != CleanupSkipped || op.FailureCode != CleanupSkipLoserIdentityUnknown {
+		t.Fatalf("unknown identity must be skipped at admission: %+v", op)
 	}
-	attempt, _ := json.Marshal(map[string]any{"fencing_token": 1})
-	if _, err := service.PersistAttempt(ctx, op.ID, op.Version, attempt); err != nil {
-		t.Fatal(err)
+	if got := liveCleanupWorkItems(t, f.db, op.ID); got != 0 {
+		t.Fatalf("a skipped obligation must not enqueue work, got %d items", got)
 	}
-	result, err := service.ReconcileUnknownEffect(ctx, deployment.ReconcileRequest{OperationID: "recovery-1"})
-	if err != nil {
-		t.Fatal(err)
+	assertFilePresent(t, f.source)
+}
+
+func TestCleanupDeleteRemovesVerifiedLoserWithoutContentReads(t *testing.T) {
+	f := newCleanupFixture(t)
+	op := f.admit(t, f.input())
+	outcome := f.runDelete(t)
+	if outcome.TerminalState != workitems.StateSucceeded {
+		t.Fatalf("delete outcome = %+v", outcome)
 	}
-	if result.State != deployment.StateBlocked {
-		t.Fatalf("incomplete frozen evidence must block recovery: %+v", result)
+	if state, _ := f.state(t, op.ID); state != CleanupDeleted {
+		t.Fatalf("state = %s, want deleted", state)
+	}
+	assertFileAbsent(t, f.source)
+	assertFileAbsent(t, filepath.Join(filepath.Dir(f.source), ".bansoko-cleanup-"+op.ID, "object"))
+	if f.executor.contentCalls != 0 {
+		t.Fatalf("deletion read file content %d times", f.executor.contentCalls)
 	}
 }
 
-func TestCleanupReconcileConvergesQuarantineEffectIdempotently(t *testing.T) {
-	db := disposabledb.ResetDisposableSchema(t)
-	defer db.Close()
-	ctx := context.Background()
-	dir := t.TempDir()
-	source := filepath.Join(dir, "source.mkv")
-	quarantine := filepath.Join(dir, ".quarantine", "cleanup-reconcile")
-	content := []byte("crash-window-quarantine")
-	if err := os.MkdirAll(filepath.Dir(quarantine), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(source, content, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	// A hard link preserves the frozen inode identity while the source name is
-	// removed, which models a quarantine effect whose owner commit was lost.
-	if err := os.Link(source, quarantine); err != nil {
-		t.Fatal(err)
-	}
-	digest := sha256.Sum256(content)
-	fingerprint := hex.EncodeToString(digest[:])
-	executor := filesystem.NewOSCleanupExecutor(dir)
-	frozen, err := executor.Observe(ctx, source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(source); err != nil {
-		t.Fatal(err)
-	}
-
-	store := cleanupWorkItemStore(t, db)
-	service := NewCleanupService(db)
-	service.SetWorkItems(store)
-	service.SetFileExecutor(executor)
-	input := cleanupInput()
-	input.ID = "cleanup-reconcile"
-	input.IdempotencyKey = "cln:cleanup-reconcile"
-	input.SourcePath = source
-	input.SourceFingerprint = fingerprint
-	input.QuarantinePath = quarantine
-	op, err := service.Admit(ctx, input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	attempt, err := json.Marshal(map[string]any{
-		"cleanup_id":         op.ID,
-		"effect":             "quarantine",
-		"stage":              "quarantine",
-		"source_path":        source,
-		"source_fingerprint": fingerprint,
-		"quarantine_path":    quarantine,
-		"source_observation": frozen,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := service.PersistAttempt(ctx, op.ID, op.Version, attempt); err != nil {
-		t.Fatal(err)
-	}
-
-	claim, err := store.ClaimDue(ctx, "cleanup-recovery-lock-test", []string{workitems.KindCleanupQuarantine}, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ownerLocked := make(chan struct{})
-	release := make(chan struct{})
-	handlerDone := make(chan error, 1)
-	go func() {
-		_, handlerErr := service.mutateClaim(ctx, claim, func(ctx context.Context, scope txscope.Tx, _ workitems.OwnerResult) (int64, error) {
-			tx := scope.SQLTx()
-			if tx == nil {
-				return 0, errors.New("test owner transaction is nil")
+func TestCleanupDeleteSkipsWithZeroEffect(t *testing.T) {
+	cases := []struct {
+		name    string
+		perturb func(t *testing.T, source string)
+		code    string
+	}{
+		{name: "identity_changed", code: CleanupSkipLoserIdentityChanged, perturb: func(t *testing.T, source string) {
+			if err := os.WriteFile(source, []byte("a different file of another size"), 0o600); err != nil {
+				t.Fatal(err)
 			}
-			var heldOwnerVersion int64
-			if err := tx.QueryRowContext(ctx, `SELECT version FROM cleanup_operations WHERE id = $1 FOR UPDATE`, op.ID).Scan(&heldOwnerVersion); err != nil {
-				return 0, err
+		}},
+		{name: "missing", code: CleanupSkipLoserMissing, perturb: func(t *testing.T, source string) {
+			if err := os.Remove(source); err != nil {
+				t.Fatal(err)
 			}
-			close(ownerLocked)
-			<-release
-			return heldOwnerVersion, nil
+		}},
+		{name: "not_regular", code: CleanupSkipLoserNotRegular, perturb: func(t *testing.T, source string) {
+			if err := os.Remove(source); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(source, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newCleanupFixture(t)
+			op := f.admit(t, f.input())
+			tc.perturb(t, f.source)
+			before, _ := os.Lstat(f.source)
+			outcome := f.runDelete(t)
+			if outcome.TerminalState != workitems.StateSucceeded {
+				t.Fatalf("skip outcome = %+v", outcome)
+			}
+			state, code := f.state(t, op.ID)
+			if state != CleanupSkipped || code != tc.code {
+				t.Fatalf("state=%s code=%s, want skipped/%s", state, code, tc.code)
+			}
+			if before != nil {
+				after, err := os.Lstat(f.source)
+				if err != nil || after.Size() != before.Size() || after.IsDir() != before.IsDir() {
+					t.Fatalf("a skip touched the path: %v", err)
+				}
+			}
+			var attempt []byte
+			if err := f.db.QueryRow(`SELECT attempt FROM cleanup_operations WHERE id = $1`, op.ID).Scan(&attempt); err != nil {
+				t.Fatal(err)
+			}
+			if len(attempt) != 0 {
+				t.Fatalf("a skip must not checkpoint an attempt: %s", attempt)
+			}
 		})
-		handlerDone <- handlerErr
-	}()
-	<-ownerLocked
-
-	recoveryDone := make(chan struct {
-		result deployment.ReconcileResult
-		err    error
-	}, 1)
-	go func() {
-		reconcileCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		defer cancel()
-		reconcileResult, reconcileErr := service.ReconcileUnknownEffect(reconcileCtx, deployment.ReconcileRequest{OperationID: "recovery-reconcile-concurrent"})
-		recoveryDone <- struct {
-			result deployment.ReconcileResult
-			err    error
-		}{result: reconcileResult, err: reconcileErr}
-	}()
-	// Give recovery a chance to reach the WorkItem lock while the handler holds
-	// both rows. The release below then exercises the same WorkItem -> owner
-	// order without leaving either transaction waiting on the other.
-	time.Sleep(100 * time.Millisecond)
-	close(release)
-	if handlerErr := <-handlerDone; handlerErr != nil {
-		t.Fatal(handlerErr)
-	}
-	recoveryCall := <-recoveryDone
-	if recoveryCall.err != nil {
-		t.Fatalf("concurrent handler/recovery must not deadlock or fail: %v", recoveryCall.err)
-	}
-	if recoveryCall.result.State != deployment.StateCompleted || recoveryCall.result.Effect != deployment.EffectPresent || recoveryCall.result.EvidenceRef != op.ID {
-		t.Fatalf("quarantine effect must converge after handler lock release: %+v", recoveryCall.result)
-	}
-	var state, ownerQuarantine string
-	var ownerVersion int64
-	if err := db.QueryRow(`SELECT state, quarantine_path, version FROM cleanup_operations WHERE id = $1`, op.ID).
-		Scan(&state, &ownerQuarantine, &ownerVersion); err != nil {
-		t.Fatal(err)
-	}
-	if state != string(CleanupQuarantined) || ownerQuarantine != quarantine || ownerVersion != 3 {
-		t.Fatalf("cleanup owner did not converge: state=%s quarantine=%s version=%d", state, ownerQuarantine, ownerVersion)
-	}
-	var quarantineState, quarantineOwnerType, quarantineOwnerID, quarantineKind string
-	var purgeCount int
-	var expectedOwnerVersion int64
-	if err := db.QueryRow(`SELECT state, owner_type, owner_id, kind, expected_owner_version FROM work_item_history WHERE owner_id = $1 AND kind = $2`, op.ID, workitems.KindCleanupQuarantine).
-		Scan(&quarantineState, &quarantineOwnerType, &quarantineOwnerID, &quarantineKind, &expectedOwnerVersion); err != nil {
-		t.Fatal(err)
-	}
-	if quarantineOwnerType != workitems.OwnerCleanup || quarantineOwnerID != op.ID || quarantineKind != workitems.KindCleanupQuarantine {
-		t.Fatalf("quarantine WorkItem identity changed: owner_type=%s owner_id=%s kind=%s", quarantineOwnerType, quarantineOwnerID, quarantineKind)
-	}
-	if quarantineState != workitems.StateSucceeded || expectedOwnerVersion != ownerVersion {
-		t.Fatalf("quarantine WorkItem did not converge: state=%s expected_owner_version=%d owner_version=%d", quarantineState, expectedOwnerVersion, ownerVersion)
-	}
-	if err := db.QueryRow(`SELECT count(*) FROM work_items WHERE owner_id = $1 AND kind = $2 AND state IN ('available', 'leased')`, op.ID, workitems.KindCleanupPurge).
-		Scan(&purgeCount); err != nil {
-		t.Fatal(err)
-	}
-	if purgeCount != 1 {
-		t.Fatalf("expected one live purge WorkItem, got %d", purgeCount)
-	}
-	// Model a purge enqueue transaction lost after quarantine convergence. The
-	// next recovery pass must repair the missing live stage before completing.
-	if _, err := workItemFixtureDB(t).Exec(`DELETE FROM work_items WHERE owner_id = $1 AND kind = $2 AND state IN ('available', 'leased')`, op.ID, workitems.KindCleanupPurge); err != nil {
-		t.Fatal(err)
-	}
-	service.workItems = nil
-	result, err := service.ReconcileUnknownEffect(ctx, deployment.ReconcileRequest{OperationID: "recovery-reconcile-enqueue-failed"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.State != deployment.StateRetryable || result.Effect != deployment.EffectPresent {
-		t.Fatalf("failed purge enqueue must remain retryable: %+v", result)
-	}
-	service.SetWorkItems(store)
-
-	result, err = service.ReconcileUnknownEffect(ctx, deployment.ReconcileRequest{OperationID: "recovery-reconcile-replay"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.State != deployment.StateCompleted || result.Effect != deployment.EffectPresent {
-		t.Fatalf("missing purge WorkItem must be repaired idempotently: %+v", result)
-	}
-	var replayVersion int64
-	if err := db.QueryRow(`SELECT version FROM cleanup_operations WHERE id = $1`, op.ID).Scan(&replayVersion); err != nil {
-		t.Fatal(err)
-	}
-	if replayVersion != ownerVersion {
-		t.Fatalf("replay advanced owner version: first=%d replay=%d", ownerVersion, replayVersion)
-	}
-	if err := db.QueryRow(`SELECT count(*) FROM work_items WHERE owner_id = $1 AND kind = $2 AND state IN ('available', 'leased')`, op.ID, workitems.KindCleanupPurge).Scan(&purgeCount); err != nil {
-		t.Fatal(err)
-	}
-	if purgeCount != 1 {
-		t.Fatalf("recovery must recreate one live purge WorkItem, got %d", purgeCount)
-	}
-	// A terminal failed purge is not a live success. Recovery may recreate a
-	// fresh live item under the existing manual-retry/owner policy.
-	if _, err := workItemFixtureDB(t).Exec(`
-	SELECT public.work_item_close(id,'failed') FROM work_items
-WHERE owner_id = $1 AND kind = $2 AND state IN ('available', 'leased')`, op.ID, workitems.KindCleanupPurge); err != nil {
-		t.Fatal(err)
-	}
-	result, err = service.ReconcileUnknownEffect(ctx, deployment.ReconcileRequest{OperationID: "recovery-reconcile-terminal-failed"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.State != deployment.StateCompleted || result.Effect != deployment.EffectPresent {
-		t.Fatalf("terminal failed purge must be replayable: %+v", result)
-	}
-	if err := db.QueryRow(`SELECT count(*) FROM work_items WHERE owner_id = $1 AND kind = $2 AND state IN ('available', 'leased')`, op.ID, workitems.KindCleanupPurge).Scan(&purgeCount); err != nil {
-		t.Fatal(err)
-	}
-	if purgeCount != 1 {
-		t.Fatalf("terminal failed purge must be replaced by one live WorkItem, got %d", purgeCount)
 	}
 }
 
-func TestCleanupGraceDeadlineFreezes(t *testing.T) {
-	db := disposabledb.ResetDisposableSchema(t)
-	defer db.Close()
-	service := NewCleanupService(db)
-	input := cleanupInput()
-	// PostgreSQL timestamp has microsecond precision: truncate so the
-	// round-trip through the DB compares equal.
-	deadline := time.Now().Truncate(time.Microsecond).Add(7 * 24 * time.Hour)
-	input.GraceDeadline = &deadline
-	op, err := service.Admit(context.Background(), input)
+func TestCleanupDeleteBlocksWithoutExecutor(t *testing.T) {
+	f := newCleanupFixture(t)
+	op := f.admit(t, f.input())
+	f.service.SetFileExecutor(nil)
+	outcome := f.runDelete(t)
+	if outcome.TerminalState != workitems.StateFailed {
+		t.Fatalf("outcome = %+v", outcome)
+	}
+	if state, code := f.state(t, op.ID); state != CleanupBlocked || code != "cleanup_executor_unavailable" {
+		t.Fatalf("state=%s code=%s", state, code)
+	}
+	assertFilePresent(t, f.source)
+}
+
+func TestCleanupDeleteRejectsStaleClaimBeforeEffect(t *testing.T) {
+	f := newCleanupFixture(t)
+	op := f.admit(t, f.input())
+	ctx := context.Background()
+	claim, err := f.store.ClaimDue(ctx, "stale-worker", []string{workitems.KindCleanupDelete}, time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if op.GraceDeadline == nil || !op.GraceDeadline.Equal(deadline) {
-		t.Fatalf("grace deadline must freeze: %+v", op.GraceDeadline)
+	if _, err := f.db.Exec(`UPDATE cleanup_operations SET version = version + 1 WHERE id = $1`, op.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.DeleteHandler().Handle(ctx, claim); err == nil {
+		t.Fatal("a stale owner version must stop the claim")
+	}
+	assertFilePresent(t, f.source)
+}
+
+func TestCleanupBlockedPurgeReconcilesAndResumes(t *testing.T) {
+	f := newCleanupFixture(t)
+	op := f.admit(t, f.input())
+	f.executor.purgeErr = errors.New("injected purge failure before the effect")
+	outcome := f.runDelete(t)
+	if outcome.TerminalState != workitems.StateFailed {
+		t.Fatalf("outcome = %+v", outcome)
+	}
+	if state, code := f.state(t, op.ID); state != CleanupBlocked || code != "cleanup_purge_failed" {
+		t.Fatalf("state=%s code=%s", state, code)
+	}
+	captured := filepath.Join(filepath.Dir(f.source), ".bansoko-cleanup-"+op.ID, "object")
+	assertFileAbsent(t, f.source)
+	assertFilePresent(t, captured)
+
+	f.executor.purgeErr = nil
+	result, err := f.service.ReconcileUnknownEffect(context.Background(), deployment.ReconcileRequest{OperationID: "cleanup-reconcile"})
+	if err != nil || result.State != deployment.StateCompleted {
+		t.Fatalf("reconcile = %+v %v", result, err)
+	}
+	if state, _ := f.state(t, op.ID); state != CleanupAdmitted {
+		t.Fatalf("a provably unstarted purge must be re-admitted, state=%s", state)
+	}
+	if got := liveCleanupWorkItems(t, f.db, op.ID); got != 1 {
+		t.Fatalf("re-admission must enqueue one item, got %d", got)
+	}
+	if outcome := f.runDelete(t); outcome.TerminalState != workitems.StateSucceeded {
+		t.Fatalf("resumed outcome = %+v", outcome)
+	}
+	if state, _ := f.state(t, op.ID); state != CleanupDeleted {
+		t.Fatalf("state = %s, want deleted", state)
+	}
+	assertFileAbsent(t, captured)
+}
+
+func TestCleanupBlockedWithoutReceiptStaysBlocked(t *testing.T) {
+	f := newCleanupFixture(t)
+	op := f.admit(t, f.input())
+	f.executor.purgeErr = errors.New("injected purge failure before the effect")
+	f.runDelete(t)
+	captured := filepath.Join(filepath.Dir(f.source), ".bansoko-cleanup-"+op.ID, "object")
+	// The captured object vanished without a purge receipt: absence is never
+	// a receipt, so the deletion stays an unknown effect.
+	if err := os.Remove(captured); err != nil {
+		t.Fatal(err)
+	}
+	result, err := f.service.ReconcileUnknownEffect(context.Background(), deployment.ReconcileRequest{OperationID: "cleanup-reconcile"})
+	if err != nil || result.State != deployment.StateBlocked || result.EvidenceRef != op.ID {
+		t.Fatalf("reconcile = %+v %v", result, err)
+	}
+	if state, _ := f.state(t, op.ID); state != CleanupBlocked {
+		t.Fatalf("state = %s, want blocked", state)
 	}
 }
 
-func seedCleanupOperation(t *testing.T, db *sql.DB, id, animeID, sourcePath, fingerprint string, effect string, quarantinePath string) string {
+func TestCleanupReconcileEnqueuesAdmittedWithoutWorkItem(t *testing.T) {
+	f := newCleanupFixture(t)
+	op := f.admit(t, f.input())
+	if _, err := workItemFixtureDB(t).Exec(`DELETE FROM work_items WHERE owner_type = $1 AND owner_id = $2`, workitems.OwnerCleanup, op.ID); err != nil {
+		t.Fatal(err)
+	}
+	result, err := f.service.ReconcileUnknownEffect(context.Background(), deployment.ReconcileRequest{OperationID: "cleanup-reconcile"})
+	if err != nil || result.State != deployment.StateCompleted {
+		t.Fatalf("reconcile = %+v %v", result, err)
+	}
+	if got := liveCleanupWorkItems(t, f.db, op.ID); got != 1 {
+		t.Fatalf("reconcile must re-enqueue the admitted obligation, got %d", got)
+	}
+}
+
+func seedCleanupOperation(t *testing.T, db *sql.DB, id, animeID, sourcePath, fingerprint string) string {
 	t.Helper()
 	key := "cln:" + id
 	if _, err := db.Exec(`
 INSERT INTO cleanup_operations
 (id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
- policy_version, retention_mode, source_path, source_fingerprint, quarantine_path,
- effect, grace_deadline, state, version, created_at, updated_at)
-VALUES ($1, $2, 'plc-1', $3, '["tv:s1:e1"]', 'dec-1', 1, 'single_copy', $4, $5, $6, $7, NULL, 'admitted', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ retention_mode, source_path, source_fingerprint, state, version, created_at, updated_at)
+VALUES ($1, $2, 'plc-1', $3, '["tv:s1:e1"]', 'dec-1', 'single_copy', $4, $5, 'admitted', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT (idempotency_key) DO NOTHING`,
-		id, key, animeID, sourcePath, fingerprint, nullableText(quarantinePath), effect); err != nil {
+		id, key, animeID, sourcePath, fingerprint); err != nil {
 		t.Fatal(err)
 	}
 	return id
@@ -371,561 +412,4 @@ func cleanupClaim(t *testing.T, store *workitems.Store, id, kind string, expecte
 		t.Fatal(err)
 	}
 	return claim
-}
-
-func cleanupOwnerAndWorkItemVersions(t *testing.T, db *sql.DB, id, workItemID string) (int64, int64) {
-	t.Helper()
-	var ownerVersion, workItemVersion int64
-	if err := db.QueryRow(`SELECT version FROM cleanup_operations WHERE id = $1`, id).Scan(&ownerVersion); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.QueryRow(`SELECT expected_owner_version FROM work_item_history WHERE id = $1`, workItemID).Scan(&workItemVersion); err != nil {
-		t.Fatal(err)
-	}
-	return ownerVersion, workItemVersion
-}
-
-func TestQuarantineHandlerBlocksUnsupportedMutation(t *testing.T) {
-	db := disposabledb.ResetDisposableSchema(t)
-	defer db.Close()
-	dir := t.TempDir()
-	source := filepath.Join(dir, "EP01.mkv")
-	content := []byte("quarantine-me")
-	if err := os.WriteFile(source, content, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	digest := sha256.Sum256(content)
-	service := NewCleanupService(db)
-	store := cleanupWorkItemStore(t, db)
-	service.SetWorkItems(store)
-	quarantine := filepath.Join(dir, ".quarantine", "cln-1")
-	if err := os.MkdirAll(filepath.Dir(quarantine), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	seedCleanupOperation(t, db, "cln-1", "anime-1", source, hex.EncodeToString(digest[:]), "quarantine", quarantine)
-	service.SetFileExecutor(filesystem.NewOSCleanupExecutor(dir))
-	outcome, err := service.QuarantineHandler().Handle(context.Background(), cleanupClaim(t, store, "cln-1", workitems.KindCleanupQuarantine, 1))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if outcome.Kind != worker.OutcomeFinish || outcome.TerminalState != workitems.StateFailed {
-		t.Fatalf("unsupported cleanup mutation must fail closed, got %+v", outcome)
-	}
-	if _, err := os.Stat(source); err != nil {
-		t.Fatalf("source must remain untouched: %v", err)
-	}
-	if _, err := os.Stat(quarantine); !os.IsNotExist(err) {
-		t.Fatal("quarantine target must not be created")
-	}
-	var state string
-	if err := db.QueryRow(`SELECT state FROM cleanup_operations WHERE id = 'cln-1'`).Scan(&state); err != nil {
-		t.Fatal(err)
-	}
-	if state != "blocked" {
-		t.Fatalf("state must be blocked, got %s", state)
-	}
-}
-
-func TestPurgeHandlerBlocksUnsupportedMutation(t *testing.T) {
-	db := disposabledb.ResetDisposableSchema(t)
-	defer db.Close()
-	dir := t.TempDir()
-	quarantine := filepath.Join(dir, ".quarantine", "cln-2")
-	content := []byte("purge-me")
-	if err := os.MkdirAll(filepath.Dir(quarantine), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(quarantine, content, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	digest := sha256.Sum256(content)
-	now := time.Now()
-	service := NewCleanupService(db)
-	store := cleanupWorkItemStore(t, db)
-	service.SetWorkItems(store)
-	service.now = func() time.Time { return now }
-	attempt, _ := json.Marshal(map[string]any{
-		"source_observation": map[string]any{"Fingerprint": hex.EncodeToString(digest[:]), "SizeBytes": int64(len(content)), "Identity": map[string]any{"Device": 1, "Inode": 1}},
-	})
-	if _, err := db.Exec(`
-INSERT INTO cleanup_operations
-(id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
- policy_version, retention_mode, source_path, source_fingerprint, quarantine_path,
- effect, grace_deadline, state, version, attempt, created_at, updated_at)
-VALUES ('cln-2', 'cln:cln-2', 'plc-2', 'anime-1', '["tv:s1:e1"]', 'dec-2', 1, 'single_copy',
- 'src', $1, $2, 'quarantine', $3, 'quarantined', 2, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-		hex.EncodeToString(digest[:]), quarantine, now.Add(-time.Hour), attempt); err != nil {
-		t.Fatal(err)
-	}
-	service.SetFileExecutor(filesystem.NewOSCleanupExecutor(dir))
-	claim := cleanupClaim(t, store, "cln-2", workitems.KindCleanupPurge, 2)
-	outcome, err := service.PurgeHandler().Handle(context.Background(), claim)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if outcome.Kind != worker.OutcomeFinish || outcome.TerminalState != workitems.StateFailed {
-		t.Fatalf("unsupported purge mutation must fail closed, got %+v", outcome)
-	}
-	if _, err := os.Stat(quarantine); err != nil {
-		t.Fatalf("quarantine file must remain untouched: %v", err)
-	}
-	var state string
-	if err := db.QueryRow(`SELECT state FROM cleanup_operations WHERE id = 'cln-2'`).Scan(&state); err != nil {
-		t.Fatal(err)
-	}
-	if state != "blocked" {
-		t.Fatalf("state must be blocked, got %s", state)
-	}
-	ownerVersion, expectedVersion := cleanupOwnerAndWorkItemVersions(t, db, "cln-2", claim.ID)
-	if ownerVersion != expectedVersion || ownerVersion != 3 {
-		t.Fatalf("purge checkpoint/block versions diverged: owner=%d work_item=%d", ownerVersion, expectedVersion)
-	}
-}
-
-func TestQuarantineHandlerFailsClosedWithoutExecutor(t *testing.T) {
-	db := disposabledb.ResetDisposableSchema(t)
-	defer db.Close()
-	service := NewCleanupService(db)
-	store := cleanupWorkItemStore(t, db)
-	service.SetWorkItems(store)
-	seedCleanupOperation(t, db, "cln-3", "anime-1", "/tmp/nonexistent.mkv", "fp", "quarantine", "/tmp/.quarantine/cln-3")
-	outcome, err := service.QuarantineHandler().Handle(context.Background(), cleanupClaim(t, store, "cln-3", workitems.KindCleanupQuarantine, 1))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if outcome.Kind != worker.OutcomeFinish || outcome.TerminalState != workitems.StateFailed {
-		t.Fatalf("without executor the handler must fail closed, got %+v", outcome)
-	}
-	var state string
-	if err := db.QueryRow(`SELECT state FROM cleanup_operations WHERE id = 'cln-3'`).Scan(&state); err != nil {
-		t.Fatal(err)
-	}
-	if state != "blocked" {
-		t.Fatalf("state must be blocked, got %s", state)
-	}
-}
-
-func TestQuarantineHandlerRejectsStaleClaimBeforeEffect(t *testing.T) {
-	db := disposabledb.ResetDisposableSchema(t)
-	defer db.Close()
-	dir := t.TempDir()
-	source := filepath.Join(dir, "stale.mkv")
-	content := []byte("stale-claim")
-	if err := os.WriteFile(source, content, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	digest := sha256.Sum256(content)
-	service := NewCleanupService(db)
-	store := cleanupWorkItemStore(t, db)
-	service.SetWorkItems(store)
-	service.SetFileExecutor(filesystem.NewOSCleanupExecutor(dir))
-	quarantine := filepath.Join(dir, ".quarantine", "cln-stale")
-	if err := os.MkdirAll(filepath.Dir(quarantine), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	seedCleanupOperation(t, db, "cln-stale", "anime-1", source, hex.EncodeToString(digest[:]), "quarantine", quarantine)
-	claim := cleanupClaim(t, store, "cln-stale", workitems.KindCleanupQuarantine, 1)
-	if _, err := workItemFixtureDB(t).Exec(`UPDATE work_items SET lease_until = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE id = $1`, claim.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := service.QuarantineHandler().Handle(context.Background(), claim); err == nil {
-		t.Fatal("stale claim must be rejected before filesystem effect")
-	}
-	if _, err := os.Stat(source); err != nil {
-		t.Fatalf("source changed after stale claim: %v", err)
-	}
-	if _, err := os.Stat(quarantine); !os.IsNotExist(err) {
-		t.Fatal("stale claim must not create quarantine target")
-	}
-	var version int64
-	if err := db.QueryRow(`SELECT version FROM cleanup_operations WHERE id = 'cln-stale'`).Scan(&version); err != nil {
-		t.Fatal(err)
-	}
-	if version != 1 {
-		t.Fatalf("stale claim changed owner version to %d", version)
-	}
-}
-
-func TestQuarantineCheckpointSynchronizesOwnerAndWorkItemVersion(t *testing.T) {
-	db := disposabledb.ResetDisposableSchema(t)
-	defer db.Close()
-	dir := t.TempDir()
-	source := filepath.Join(dir, "checkpoint.mkv")
-	content := []byte("checkpoint")
-	if err := os.WriteFile(source, content, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	digest := sha256.Sum256(content)
-	service := NewCleanupService(db)
-	store := cleanupWorkItemStore(t, db)
-	service.SetWorkItems(store)
-	service.SetFileExecutor(filesystem.NewOSCleanupExecutor(dir))
-	quarantine := filepath.Join(dir, ".quarantine", "cln-checkpoint")
-	if err := os.MkdirAll(filepath.Dir(quarantine), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	seedCleanupOperation(t, db, "cln-checkpoint", "anime-1", source, hex.EncodeToString(digest[:]), "quarantine", quarantine)
-	claim := cleanupClaim(t, store, "cln-checkpoint", workitems.KindCleanupQuarantine, 1)
-	outcome, err := service.QuarantineHandler().Handle(context.Background(), claim)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if outcome.Kind != worker.OutcomeFinish || outcome.TerminalState != workitems.StateFailed {
-		t.Fatalf("unsupported cleanup effect must finish blocked, got %+v", outcome)
-	}
-	var ownerVersion, expectedVersion int64
-	if err := db.QueryRow(`SELECT version FROM cleanup_operations WHERE id = 'cln-checkpoint'`).Scan(&ownerVersion); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.QueryRow(`SELECT expected_owner_version FROM work_item_history WHERE id = $1`, claim.ID).Scan(&expectedVersion); err != nil {
-		t.Fatal(err)
-	}
-	if ownerVersion != expectedVersion {
-		t.Fatalf("owner/work item versions diverged: owner=%d work_item=%d", ownerVersion, expectedVersion)
-	}
-	if ownerVersion != 3 {
-		t.Fatalf("checkpoint + blocked transition should advance owner twice, got %d", ownerVersion)
-	}
-}
-func TestCleanupAdmitEnqueuesQuarantineWorkItem(t *testing.T) {
-	db := disposabledb.ResetDisposableSchema(t)
-	defer db.Close()
-	store := cleanupWorkItemStore(t, db)
-	service := NewCleanupService(db)
-	service.SetWorkItems(store)
-	input := cleanupInput()
-	if _, err := service.Admit(context.Background(), input); err != nil {
-		t.Fatalf("admit: %v", err)
-	}
-	var count int
-	if err := db.QueryRow(`SELECT count(*) FROM work_item_history WHERE kind = 'cleanup_quarantine' AND owner_id = 'cleanup-1'`).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	if count != 1 {
-		t.Fatalf("expected one quarantine work item, got %d", count)
-	}
-	// Idempotent: admit again does not duplicate.
-	if _, err := service.Admit(context.Background(), input); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.QueryRow(`SELECT count(*) FROM work_item_history WHERE kind = 'cleanup_quarantine' AND owner_id = 'cleanup-1'`).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	if count != 1 {
-		t.Fatalf("quarantine work item must be idempotent, got %d", count)
-	}
-}
-
-func TestQuarantineBlocksWithoutEnqueuingPurge(t *testing.T) {
-	db := disposabledb.ResetDisposableSchema(t)
-	defer db.Close()
-	store := cleanupWorkItemStore(t, db)
-	dir := t.TempDir()
-	source := filepath.Join(dir, "EP02.mkv")
-	content := []byte("quarantine-again")
-	if err := os.WriteFile(source, content, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	digest := sha256.Sum256(content)
-	service := NewCleanupService(db)
-	service.SetWorkItems(store)
-	service.SetFileExecutor(filesystem.NewOSCleanupExecutor(dir))
-	quarantine := filepath.Join(dir, ".quarantine", "cln-q")
-	if err := os.MkdirAll(filepath.Dir(quarantine), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	seedCleanupOperation(t, db, "cln-q", "anime-1", source, hex.EncodeToString(digest[:]), "quarantine", quarantine)
-	outcome, err := service.QuarantineHandler().Handle(context.Background(), cleanupClaim(t, store, "cln-q", workitems.KindCleanupQuarantine, 1))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if outcome.Kind != worker.OutcomeFinish || outcome.TerminalState != workitems.StateFailed {
-		t.Fatalf("unsupported quarantine mutation must be blocked, got %+v", outcome)
-	}
-	var purgeCount int
-	if err := db.QueryRow(`SELECT count(*) FROM work_item_history WHERE kind = 'cleanup_purge' AND owner_id = 'cln-q'`).Scan(&purgeCount); err != nil {
-		t.Fatal(err)
-	}
-	if purgeCount != 0 {
-		t.Fatalf("blocked quarantine must not enqueue purge, got %d", purgeCount)
-	}
-	if _, err := os.Stat(source); err != nil {
-		t.Fatalf("source must remain untouched: %v", err)
-	}
-}
-
-func TestPurgeHandlerIdempotentReplayWhenAlreadyPurged(t *testing.T) {
-	db := disposabledb.ResetDisposableSchema(t)
-	defer db.Close()
-	service := NewCleanupService(db)
-	store := cleanupWorkItemStore(t, db)
-	service.SetWorkItems(store)
-	service.SetFileExecutor(nil)
-	if _, err := db.Exec(`
-INSERT INTO cleanup_operations
-(id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
- policy_version, retention_mode, source_path, source_fingerprint, quarantine_path,
- effect, grace_deadline, state, version, created_at, updated_at)
-VALUES ('cln-purged', 'cln:cln-purged', 'plc-3', 'anime-1', '["tv:s1:e1"]', 'dec-3', 1, 'single_copy',
- 'src', 'fp', '/tmp/.quarantine/cln-purged', 'quarantine', NULL, 'purged', 3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
-		t.Fatal(err)
-	}
-	// A crashed purge terminal transition replays with the already-committed
-	// owner state; it must converge to success, never to failed.
-	outcome, err := service.PurgeHandler().Handle(context.Background(), cleanupClaim(t, store, "cln-purged", workitems.KindCleanupPurge, 3))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if outcome.Kind != worker.OutcomeFinish || outcome.TerminalState != workitems.StateSucceeded {
-		t.Fatalf("purged replay must succeed idempotently, got %+v", outcome)
-	}
-	if outcome.OwnerResult.ReasonCode != "cleanup_purged" {
-		t.Fatalf("purged replay reason code = %s", outcome.OwnerResult.ReasonCode)
-	}
-	var state string
-	if err := db.QueryRow(`SELECT state FROM cleanup_operations WHERE id = 'cln-purged'`).Scan(&state); err != nil {
-		t.Fatal(err)
-	}
-	if state != "purged" {
-		t.Fatalf("state must stay purged, got %s", state)
-	}
-}
-
-func TestQuarantineHandlerIdempotentReplayWhenAlreadyQuarantined(t *testing.T) {
-	db := disposabledb.ResetDisposableSchema(t)
-	defer db.Close()
-	store := cleanupWorkItemStore(t, db)
-	service := NewCleanupService(db)
-	service.SetWorkItems(store)
-	// Source is already moved: quarantine_path is committed and the source no
-	// longer exists. The handler must not re-run the move.
-	dir := t.TempDir()
-	quarantine := filepath.Join(dir, ".quarantine", "cln-q-replay")
-	if _, err := db.Exec(`
-INSERT INTO cleanup_operations
-(id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
- policy_version, retention_mode, source_path, source_fingerprint, quarantine_path,
- effect, grace_deadline, state, version, created_at, updated_at)
-VALUES ('cln-q-replay', 'cln:cln-q-replay', 'plc-4', 'anime-1', '["tv:s1:e1"]', 'dec-4', 1, 'single_copy',
- $1, 'fp', $2, 'quarantine', NULL, 'quarantined', 2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-		filepath.Join(dir, "missing-source.mkv"), quarantine); err != nil {
-		t.Fatal(err)
-	}
-	outcome, err := service.QuarantineHandler().Handle(context.Background(), cleanupClaim(t, store, "cln-q-replay", workitems.KindCleanupQuarantine, 2))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if outcome.Kind != worker.OutcomeFinish || outcome.TerminalState != workitems.StateSucceeded {
-		t.Fatalf("quarantined replay must succeed idempotently, got %+v", outcome)
-	}
-	var purgeCount int
-	if err := db.QueryRow(`SELECT count(*) FROM work_item_history WHERE kind = 'cleanup_purge' AND owner_id = 'cln-q-replay'`).Scan(&purgeCount); err != nil {
-		t.Fatal(err)
-	}
-	if purgeCount != 1 {
-		t.Fatalf("quarantined replay must schedule the purge stage, got %d", purgeCount)
-	}
-}
-
-func TestCleanupRestoreBlocksUnsupportedMutation(t *testing.T) {
-	db := disposabledb.ResetDisposableSchema(t)
-	defer db.Close()
-	dir := t.TempDir()
-	source := filepath.Join(dir, "EP01.mkv")
-	quarantine := filepath.Join(dir, ".quarantine", "cln-restore")
-	content := []byte("restore-me")
-	if err := os.MkdirAll(filepath.Dir(quarantine), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(quarantine, content, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	digest := sha256.Sum256(content)
-	service := NewCleanupService(db)
-	service.SetFileExecutor(filesystem.NewOSCleanupExecutor(dir))
-	if _, err := db.Exec(`
-INSERT INTO cleanup_operations
-(id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
- policy_version, retention_mode, source_path, source_fingerprint, quarantine_path,
- effect, grace_deadline, state, version, created_at, updated_at)
-VALUES ('cln-restore', 'cln:cln-restore', 'plc-r', 'anime-1', '["tv:s1:e1"]', 'dec-r', 1, 'single_copy',
- $1, $2, $3, 'quarantine', NULL, 'quarantined', 2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-		source, hex.EncodeToString(digest[:]), quarantine); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := service.Restore(context.Background(), "cln-restore", 2); err == nil {
-		t.Fatal("restore without complete frozen evidence must fail closed")
-	}
-	if _, err := os.Stat(source); !os.IsNotExist(err) {
-		t.Fatal("source must remain absent")
-	}
-	if _, err := os.Stat(quarantine); err != nil {
-		t.Fatalf("quarantine file must stay untouched: %v", err)
-	}
-	var state string
-	if err := db.QueryRow(`SELECT state FROM cleanup_operations WHERE id = 'cln-restore'`).Scan(&state); err != nil {
-		t.Fatal(err)
-	}
-	if state != "blocked" {
-		t.Fatalf("restore state = %s, want blocked", state)
-	}
-}
-
-func TestCleanupRestoreFailsClosedOnFingerprintMismatch(t *testing.T) {
-	db := disposabledb.ResetDisposableSchema(t)
-	defer db.Close()
-	dir := t.TempDir()
-	source := filepath.Join(dir, "EP01.mkv")
-	quarantine := filepath.Join(dir, ".quarantine", "cln-restore-fp")
-	if err := os.MkdirAll(filepath.Dir(quarantine), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	// The quarantined file does not match the frozen fingerprint: restore must
-	// abort and keep the file untouched.
-	if err := os.WriteFile(quarantine, []byte("tampered"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	service := NewCleanupService(db)
-	service.SetFileExecutor(filesystem.NewOSCleanupExecutor(dir))
-	if _, err := db.Exec(`
-INSERT INTO cleanup_operations
-(id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
- policy_version, retention_mode, source_path, source_fingerprint, quarantine_path,
- effect, grace_deadline, state, version, created_at, updated_at)
-VALUES ('cln-restore-fp', 'cln:cln-restore-fp', 'plc-f', 'anime-1', '["tv:s1:e1"]', 'dec-f', 1, 'single_copy',
- $1, 'expected-fingerprint', $2, 'quarantine', NULL, 'quarantined', 2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-		source, quarantine); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := service.Restore(context.Background(), "cln-restore-fp", 2); err == nil {
-		t.Fatal("fingerprint mismatch must fail closed")
-	}
-	if _, err := os.Stat(quarantine); err != nil {
-		t.Fatalf("quarantined file must stay untouched: %v", err)
-	}
-	var state string
-	if err := db.QueryRow(`SELECT state FROM cleanup_operations WHERE id = 'cln-restore-fp'`).Scan(&state); err != nil {
-		t.Fatal(err)
-	}
-	if state != "blocked" {
-		t.Fatalf("mismatch restore state = %s, want blocked", state)
-	}
-}
-
-func TestPurgeHandlerBlocksWithoutExecutor(t *testing.T) {
-	db := disposabledb.ResetDisposableSchema(t)
-	defer db.Close()
-	store := cleanupWorkItemStore(t, db)
-	service := NewCleanupService(db)
-	service.SetWorkItems(store)
-	if _, err := db.Exec(`
-INSERT INTO cleanup_operations
-(id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
- policy_version, retention_mode, source_path, source_fingerprint, quarantine_path,
- effect, grace_deadline, state, version, created_at, updated_at)
-VALUES ('cln-purge-no-executor', 'cln:cln-purge-no-executor', 'plc-no-executor', 'anime-1', '[]', 'dec-no-executor', 1, 'single_copy',
- 'src', 'fp', '/missing/.quarantine/cln-purge-no-executor', 'quarantine', NULL, 'quarantined', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
-		t.Fatal(err)
-	}
-
-	outcome, err := service.PurgeHandler().Handle(context.Background(), cleanupClaim(t, store, "cln-purge-no-executor", workitems.KindCleanupPurge, 1))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if outcome.Kind != worker.OutcomeFinish || outcome.TerminalState != workitems.StateFailed || outcome.OwnerResult.State != "blocked" {
-		t.Fatalf("unwired purge executor must block, got %+v", outcome)
-	}
-	var state string
-	if err := db.QueryRow(`SELECT state FROM cleanup_operations WHERE id = 'cln-purge-no-executor'`).Scan(&state); err != nil {
-		t.Fatal(err)
-	}
-	if state != string(CleanupBlocked) {
-		t.Fatalf("unwired purge executor state = %s, want blocked", state)
-	}
-}
-
-func TestPurgeHandlerRetriesWhenQuarantineParentMissing(t *testing.T) {
-	db := disposabledb.ResetDisposableSchema(t)
-	defer db.Close()
-	dir := t.TempDir()
-	quarantine := filepath.Join(dir, ".quarantine", "missing-parent", "cln-purge-missing-parent")
-	contentDigest := sha256.Sum256([]byte("frozen"))
-	fingerprint := hex.EncodeToString(contentDigest[:])
-	attempt, err := json.Marshal(map[string]any{
-		"source_observation": map[string]any{
-			"Fingerprint": fingerprint,
-			"SizeBytes":   int64(len("frozen")),
-			"Identity":    map[string]any{"Device": uint64(1), "Inode": uint64(1)},
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`
-INSERT INTO cleanup_operations
-(id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
- policy_version, retention_mode, source_path, source_fingerprint, quarantine_path,
- effect, grace_deadline, state, version, attempt, created_at, updated_at)
-VALUES ('cln-purge-missing-parent', 'cln:cln-purge-missing-parent', 'plc-missing-parent', 'anime-1', '[]', 'dec-missing-parent', 1, 'single_copy',
- 'src', $1, $2, 'quarantine', NULL, 'quarantined', 2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, fingerprint, quarantine, attempt); err != nil {
-		t.Fatal(err)
-	}
-
-	service := NewCleanupService(db)
-	store := cleanupWorkItemStore(t, db)
-	service.SetWorkItems(store)
-	service.now = func() time.Time { return time.Now().Add(time.Hour) }
-	service.SetFileExecutor(filesystem.NewOSCleanupExecutor(dir))
-	outcome, err := service.PurgeHandler().Handle(context.Background(), cleanupClaim(t, store, "cln-purge-missing-parent", workitems.KindCleanupPurge, 2))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if outcome.Kind != worker.OutcomeRetry {
-		t.Fatalf("missing quarantine parent must remain retryable, got %+v", outcome)
-	}
-	var state string
-	if err := db.QueryRow(`SELECT state FROM cleanup_operations WHERE id = 'cln-purge-missing-parent'`).Scan(&state); err != nil {
-		t.Fatal(err)
-	}
-	if state == string(CleanupPurged) {
-		t.Fatal("missing quarantine parent must never be marked purged")
-	}
-	if state != string(CleanupQuarantined) {
-		t.Fatalf("missing quarantine parent changed state to %s, want quarantined", state)
-	}
-}
-
-func TestPurgeHandlerBlocksInvalidEvidence(t *testing.T) {
-	db := disposabledb.ResetDisposableSchema(t)
-	defer db.Close()
-	store := cleanupWorkItemStore(t, db)
-	service := NewCleanupService(db)
-	service.SetWorkItems(store)
-	service.SetFileExecutor(filesystem.NewOSCleanupExecutor(t.TempDir()))
-	if _, err := db.Exec(`
-INSERT INTO cleanup_operations
-(id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
- policy_version, retention_mode, source_path, source_fingerprint, quarantine_path,
- effect, grace_deadline, state, version, attempt, created_at, updated_at)
-VALUES ('cln-purge-invalid-evidence', 'cln:cln-purge-invalid-evidence', 'plc-invalid-evidence', 'anime-1', '[]', 'dec-invalid-evidence', 1, 'single_copy',
- 'src', 'fp', '/missing/.quarantine/cln-purge-invalid-evidence', 'quarantine', NULL, 'quarantined', 1, '{"source_observation":{}}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
-		t.Fatal(err)
-	}
-
-	outcome, err := service.PurgeHandler().Handle(context.Background(), cleanupClaim(t, store, "cln-purge-invalid-evidence", workitems.KindCleanupPurge, 1))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if outcome.Kind != worker.OutcomeFinish || outcome.TerminalState != workitems.StateFailed || outcome.OwnerResult.State != "blocked" {
-		t.Fatalf("invalid purge evidence must block, got %+v", outcome)
-	}
-	var state string
-	if err := db.QueryRow(`SELECT state FROM cleanup_operations WHERE id = 'cln-purge-invalid-evidence'`).Scan(&state); err != nil {
-		t.Fatal(err)
-	}
-	if state != string(CleanupBlocked) {
-		t.Fatalf("invalid purge evidence state = %s, want blocked", state)
-	}
 }

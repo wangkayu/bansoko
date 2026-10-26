@@ -9,7 +9,7 @@ import (
 )
 
 func RetentionPolicyDefaultInput(value generated.RetentionPolicyDefaultInput) (filemaintenance.RetentionPolicyWriteInput, error) {
-	policy, err := retentionPolicy(value.AdmissionMode, value.QualityProfile, value.CleanupPolicy)
+	policy, err := retentionPolicy(value.AdmissionMode, value.QualityProfile)
 	if err != nil {
 		return filemaintenance.RetentionPolicyWriteInput{}, err
 	}
@@ -17,26 +17,21 @@ func RetentionPolicyDefaultInput(value generated.RetentionPolicyDefaultInput) (f
 }
 
 func InstanceRetentionPolicyInput(value generated.InstanceRetentionPolicyInput) (filemaintenance.RetentionPolicyWriteInput, error) {
-	policy, err := retentionPolicy(value.AdmissionMode, value.QualityProfile, value.CleanupPolicy)
+	policy, err := retentionPolicy(value.AdmissionMode, value.QualityProfile)
 	if err != nil {
 		return filemaintenance.RetentionPolicyWriteInput{}, err
 	}
 	return filemaintenance.RetentionPolicyWriteInput{ExpectedVersion: int64(value.ExpectedVersion), Policy: policy}, nil
 }
 
-func retentionPolicy(mode generated.RetentionAdmissionMode, profile any, cleanup any) (filemaintenance.RetentionPolicy, error) {
+func retentionPolicy(mode generated.RetentionAdmissionMode, profile any) (filemaintenance.RetentionPolicy, error) {
 	profileRaw, err := json.Marshal(profile)
-	if err != nil {
-		return filemaintenance.RetentionPolicy{}, err
-	}
-	cleanupRaw, err := json.Marshal(cleanup)
 	if err != nil {
 		return filemaintenance.RetentionPolicy{}, err
 	}
 	return filemaintenance.RetentionPolicy{
 		AdmissionMode:  filemaintenance.AdmissionMode(mode),
 		QualityProfile: profileRaw,
-		CleanupPolicy:  cleanupRaw,
 	}, nil
 }
 
@@ -61,7 +56,6 @@ func InstanceRetentionPolicyView(value filemaintenance.InstanceRetentionPolicyVi
 type retentionPolicyWire struct {
 	AdmissionMode  string          `json:"admission_mode"`
 	QualityProfile json.RawMessage `json:"quality_profile"`
-	CleanupPolicy  json.RawMessage `json:"cleanup_policy"`
 	UpdatedAt      *time.Time      `json:"updated_at"`
 	Version        int             `json:"version"`
 }
@@ -70,7 +64,6 @@ func unmarshalRetentionPolicyView(policy filemaintenance.RetentionPolicy, update
 	raw, err := json.Marshal(retentionPolicyWire{
 		AdmissionMode:  string(policy.AdmissionMode),
 		QualityProfile: policy.QualityProfile,
-		CleanupPolicy:  policy.CleanupPolicy,
 		UpdatedAt:      cloneTime(updatedAt),
 		Version:        int(version),
 	})

@@ -48,12 +48,12 @@ func (p Provisioner) ProvisionBusinessAxesTx(ctx context.Context, tx *sql.Tx, an
 	}
 	if _, err := tx.ExecContext(ctx, `
 UPDATE anime_business_configs
-SET admission_mode = $2, quality_profile = $3, cleanup_policy = $4,
-    retention_source_default_version = $5, retention_version = 1,
-    unclassified_route = $6, file_effect_source_default_version = $7, file_effect_version = 1,
+SET admission_mode = $2, quality_profile = $3,
+    retention_source_default_version = $4, retention_version = 1,
+    unclassified_route = $5, file_effect_source_default_version = $6, file_effect_version = 1,
     updated_at = NOW()
 WHERE managed_anime_id = $1`,
-		animeID, frozen.Retention.AdmissionMode, []byte(frozen.Retention.QualityProfile), []byte(frozen.Retention.CleanupPolicy), frozen.RetentionVersion,
+		animeID, frozen.Retention.AdmissionMode, []byte(frozen.Retention.QualityProfile), frozen.RetentionVersion,
 		frozen.UnclassifiedRoute, frozen.FileEffectVersion); err != nil {
 		return animedomain.BusinessSnapshot{}, fmt.Errorf("create instance retention and file effect axes: %w", err)
 	}

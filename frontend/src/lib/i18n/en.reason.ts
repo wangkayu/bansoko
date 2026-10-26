@@ -10,7 +10,7 @@ const TITLE_RULE_BAD = "Title filter rules have errors";
 const FILE_RULE_BAD = "File rules have errors";
 const TARGET_UNCHECKED = "Cannot confirm the state of the target location";
 const FILE_RETRY = "File processing failed temporarily. It will retry automatically.";
-const CLEANUP_FAILED = "Failed to clean up old files";
+const CLEANUP_FAILED = "Failed to delete old files";
 const ALIGN_FAILED = "Failed to organize files";
 const QB_UNAVAILABLE = "Cannot connect to the download client";
 const TORRENT_BAD = "Torrent file unavailable";
@@ -306,25 +306,24 @@ export const enReasonCopy = {
   artifact_inspect_cancelled: "File verification cancelled",
 
   // --- Clean up old files ---
-  cleanup_executor_unavailable: "Cannot clean up old files right now. It will retry automatically.",
-  cleanup_grace_not_elapsed: "Waiting for the cleanup grace period",
-  cleanup_grace_waiting: "Waiting for the cleanup grace period",
+  cleanup_executor_unavailable: "Cannot delete old files right now",
+  cleanup_work_items_unavailable: "Cannot delete old files right now",
+  cleanup_deleted: "Old file deleted",
+  cleanup_capture_failed: CLEANUP_FAILED,
+  cleanup_capture_source_present: "Old file still exists. The deletion result is unconfirmed.",
+  cleanup_capture_changed: "Old file has changed. The deletion result is unconfirmed.",
+  cleanup_capture_unpurged: "Old file deletion was interrupted and will be completed",
   cleanup_purge_failed: CLEANUP_FAILED,
-  cleanup_purge_effect_invalid: CLEANUP_FAILED,
-  cleanup_purge_evidence_invalid: CLEANUP_FAILED,
-  cleanup_purge_post_observation_invalid: CLEANUP_FAILED,
-  cleanup_purge_post_observation_present: "Old file still exists. It will retry automatically.",
-  cleanup_quarantine_changed: "Old file has changed. Cleanup cancelled.",
-  cleanup_quarantine_failed: CLEANUP_FAILED,
-  cleanup_quarantine_observation_failed: CLEANUP_FAILED,
-  cleanup_quarantine_post_observation_failed: CLEANUP_FAILED,
-  cleanup_quarantine_post_observation_invalid: CLEANUP_FAILED,
-  cleanup_quarantine_source_still_present: "Old file still exists. It will retry automatically.",
-  cleanup_source_changed: "Old file has changed. Cleanup cancelled.",
-  cleanup_source_observation_failed: CLEANUP_FAILED,
-  cleanup_owner_invalid: CLEANUP_FAILED,
-  cleanup_purge_invalid: CLEANUP_FAILED,
-  cleanup_work_items_unavailable: "Cannot clean up old files right now. It will retry automatically.",
+  cleanup_purge_object_present: "Old file still exists. The deletion result is unconfirmed.",
+  cleanup_attempt_invalid: CLEANUP_FAILED,
+  cleanup_effect_uncertain: "The old file deletion result cannot be confirmed",
+  cleanup_readmitted: "Old file deletion will be completed",
+  cleanup_source_observation_failed: "Cannot read the old file right now. It will retry automatically.",
+  loser_missing: "Old file is no longer at its path, so it was not deleted",
+  loser_not_regular: "The path no longer holds a regular file, so it was not deleted",
+  loser_identity_changed: "The file at the old path has changed, so it was not deleted",
+  loser_identity_unknown: "The old file has no recorded size, so it was not deleted",
+  loser_path_owned: "The old path now belongs to another file, so it was not deleted",
   source_cleanup_failed: CLEANUP_FAILED,
 
   // --- Alignment, offset, replacement, file scan ---

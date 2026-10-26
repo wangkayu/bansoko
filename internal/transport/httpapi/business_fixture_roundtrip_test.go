@@ -24,7 +24,7 @@ func TestProviderFixtureBusinessDigestSurvivesExactTypedRequestRoundTrip(t *test
 		b.SectionVersions[name] = 1
 		b.SectionSchemas[name] = domain.SectionSchemaVersions[name]
 	}
-	b.Retention = domain.RetentionValue{AdmissionMode: "all", QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"subgroup.score","ranks":[]},{"key":"release.lang","ranks":[["chs"],["sc"],["cht"],["tc"],["jpn"],["eng"]]},{"key":"release.resolution","ranks":[["2160p"],["1440p"],["1080p"],["720p"],["480p"]]},{"key":"release.revision","ranks":[]}]}`), CleanupPolicy: json.RawMessage(`{"version":"cleanup-v1","effect":"quarantine","grace_seconds":60}`)}
+	b.Retention = domain.RetentionValue{AdmissionMode: "all", QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"subgroup.score","ranks":[]},{"key":"release.lang","ranks":[["chs"],["sc"],["cht"],["tc"],["jpn"],["eng"]]},{"key":"release.resolution","ranks":[["2160p"],["1440p"],["1080p"],["720p"],["480p"]]},{"key":"release.revision","ranks":[]}]}`)}
 	digest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	b.Programs.Vars = namingvars.ProgramRef{Digest: digest, Version: namingvars.ProfileVersion(digest)}
 	b.Programs.AttrRules = namingvars.ProgramRef{Digest: digest, Version: attrrules.ProfileVersion(digest)}

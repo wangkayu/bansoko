@@ -860,7 +860,7 @@ SELECT EXISTS (
     JOIN cleanup_operations co ON co.id = wi.owner_id
     WHERE wi.owner_type = 'cleanup_operation'
       AND wi.owner_id = co.id
-      AND wi.kind IN ('cleanup_quarantine', 'cleanup_purge')
+      AND wi.kind = 'cleanup_delete'
       AND co.managed_anime_id = $1
       AND wi.state IN ('available', 'leased')
 ) OR EXISTS (
@@ -898,7 +898,7 @@ SELECT EXISTS (
 //	    JOIN cleanup_operations co ON co.id = wi.owner_id
 //	    WHERE wi.owner_type = 'cleanup_operation'
 //	      AND wi.owner_id = co.id
-//	      AND wi.kind IN ('cleanup_quarantine', 'cleanup_purge')
+//	      AND wi.kind = 'cleanup_delete'
 //	      AND co.managed_anime_id = $1
 //	      AND wi.state IN ('available', 'leased')
 //	) OR EXISTS (

@@ -8,7 +8,7 @@ const TITLE_RULE_BAD = "标题过滤规则有误";
 const FILE_RULE_BAD = "文件筛选规则有误";
 const TARGET_UNCHECKED = "无法确认目标位置的状态";
 const FILE_RETRY = "文件处理暂时失败，将自动重试";
-const CLEANUP_FAILED = "清理旧文件失败";
+const CLEANUP_FAILED = "删除旧文件失败";
 const ALIGN_FAILED = "整理文件失败";
 const QB_UNAVAILABLE = "无法连接下载器";
 const TORRENT_BAD = "种子文件不可用";
@@ -304,25 +304,24 @@ export const reasonCopy = {
   artifact_inspect_cancelled: "文件校验已取消",
 
   // --- 清理旧文件 ---
-  cleanup_executor_unavailable: "暂时无法清理旧文件，将自动重试",
-  cleanup_grace_not_elapsed: "还在等待清理宽限期",
-  cleanup_grace_waiting: "还在等待清理宽限期",
+  cleanup_executor_unavailable: "暂时无法删除旧文件",
+  cleanup_work_items_unavailable: "暂时无法删除旧文件",
+  cleanup_deleted: "旧文件已删除",
+  cleanup_capture_failed: CLEANUP_FAILED,
+  cleanup_capture_source_present: "旧文件仍然存在，删除结果待确认",
+  cleanup_capture_changed: "旧文件已变化，删除结果待确认",
+  cleanup_capture_unpurged: "旧文件删除中断，将继续完成",
   cleanup_purge_failed: CLEANUP_FAILED,
-  cleanup_purge_effect_invalid: CLEANUP_FAILED,
-  cleanup_purge_evidence_invalid: CLEANUP_FAILED,
-  cleanup_purge_post_observation_invalid: CLEANUP_FAILED,
-  cleanup_purge_post_observation_present: "旧文件仍然存在，将自动重试",
-  cleanup_quarantine_changed: "旧文件已变化，清理已取消",
-  cleanup_quarantine_failed: CLEANUP_FAILED,
-  cleanup_quarantine_observation_failed: CLEANUP_FAILED,
-  cleanup_quarantine_post_observation_failed: CLEANUP_FAILED,
-  cleanup_quarantine_post_observation_invalid: CLEANUP_FAILED,
-  cleanup_quarantine_source_still_present: "旧文件仍然存在，将自动重试",
-  cleanup_source_changed: "旧文件已变化，清理已取消",
-  cleanup_source_observation_failed: CLEANUP_FAILED,
-  cleanup_owner_invalid: CLEANUP_FAILED,
-  cleanup_purge_invalid: CLEANUP_FAILED,
-  cleanup_work_items_unavailable: "暂时无法清理旧文件，将自动重试",
+  cleanup_purge_object_present: "旧文件仍然存在，删除结果待确认",
+  cleanup_attempt_invalid: CLEANUP_FAILED,
+  cleanup_effect_uncertain: "旧文件删除结果无法确认",
+  cleanup_readmitted: "旧文件删除将继续完成",
+  cleanup_source_observation_failed: "暂时无法读取旧文件，将自动重试",
+  loser_missing: "旧文件已不在原位置，未删除",
+  loser_not_regular: "原位置不再是普通文件，未删除",
+  loser_identity_changed: "原位置的文件已变化，未删除",
+  loser_identity_unknown: "没有记录旧文件大小，未删除",
+  loser_path_owned: "原位置已归其他文件，未删除",
   source_cleanup_failed: CLEANUP_FAILED,
 
   // --- 对齐、偏移、替换版本、文件扫描 ---

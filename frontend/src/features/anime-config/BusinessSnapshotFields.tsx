@@ -1,6 +1,6 @@
 import type { BusinessSnapshot } from "../../lib/api/client";
-import { Field, Input, Select } from "../../ui/base";
-import { admissionOptions, cleanupOptions } from "../settings/retentionDraft";
+import { Field, Select } from "../../ui/base";
+import { admissionOptions } from "../settings/retentionDraft";
 import { QualityCompareEditor } from "../retention/QualityCompareEditor";
 import { t } from "../../lib/i18n";
 
@@ -22,8 +22,8 @@ export function BusinessSnapshotFields({
   /** Existing subscription: scopes comparison value suggestions to it. */
   managedAnimeID?: string;
   /**
-   * 当前版本隐藏按订阅的保留与清理（同集多版本保留方式、替换版本比较、清理旧文件）：
-   * 不渲染图例和这四项控件，只留未识别集数。被隐藏的取值原样留在快照里，
+   * 当前版本隐藏按订阅的保留与清理（同集多版本保留方式、替换版本比较）：
+   * 不渲染图例和这两项控件，只留未识别集数。被隐藏的取值原样留在快照里，
    * 保存时照常提交。只有番剧配置弹窗传入它；恢复时删掉那两处传参即可
    * （清单见任务 10-19-hide-anime-replacement 的 PRD）。
    */
@@ -57,26 +57,6 @@ export function BusinessSnapshotFields({
             managedAnimeID={managedAnimeID}
             onChange={(profile) => update((v) => { v.retention.quality_profile = profile; })}
           />
-
-          <Field label={t("config.snapshot.cleanupField")} className="tw:max-w-sm">
-            <Select
-              label={t("config.snapshot.cleanupMethod")}
-              value={retention.cleanup_policy.effect}
-              options={cleanupOptions().map((option) => ({ value: option.value, label: option.label }))}
-              onChange={(next) => update((v) => { v.retention.cleanup_policy.effect = next; })}
-            />
-          </Field>
-          <Field label={t("config.snapshot.graceField")} className="tw:max-w-sm">
-            <Input
-              controlSize="sm"
-              aria-label={t("config.snapshot.graceAria")}
-              type="number"
-              min={0}
-              step={1}
-              value={retention.cleanup_policy.grace_seconds}
-              onChange={(event) => update((v) => { v.retention.cleanup_policy.grace_seconds = Math.max(0, Math.trunc(Number(event.target.value))); })}
-            />
-          </Field>
         </>
       )}
 

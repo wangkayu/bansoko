@@ -247,14 +247,10 @@ type ReconciliationConsumerStateView struct {
 
 type CleanupOperationView struct {
 	CreatedAt         time.Time
-	Effect            string
 	FailureCode       *string
-	GraceDeadline     *time.Time
 	ID                string
 	ManagedAnimeID    string
 	PlacementID       string
-	PolicyVersion     int
-	QuarantinePath    *string
 	Reason            *string
 	ReplacementRef    string
 	RetentionMode     string

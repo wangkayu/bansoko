@@ -117,13 +117,13 @@ func (s *Service) ApplyAnimeConfigCandidate(ctx context.Context, candidateID, ke
 UPDATE anime_business_configs
 SET rules_version = rules_version + 1, subgroups_version = subgroups_version + 1,
     parser_kind = $2, parser_source_default_version = $3, parser_version = parser_version + 1,
-    admission_mode = $4, quality_profile = $5, cleanup_policy = $6, retention_source_default_version = $7, retention_version = retention_version + 1,
-    unclassified_route = $8, file_effect_source_default_version = $9, file_effect_version = file_effect_version + 1,
-    candidate_id = $10, revision = $11, business_snapshot = $12, business_digest = $13,
+    admission_mode = $4, quality_profile = $5, retention_source_default_version = $6, retention_version = retention_version + 1,
+    unclassified_route = $7, file_effect_source_default_version = $8, file_effect_version = file_effect_version + 1,
+    candidate_id = $9, revision = $10, business_snapshot = $11, business_digest = $12,
     business_version = business_version + 1, updated_at = NOW()
 WHERE managed_anime_id = $1`,
 		animeID, b.Parser.Kind, b.Parser.PolicyVersion,
-		b.Retention.AdmissionMode, []byte(b.Retention.QualityProfile), []byte(b.Retention.CleanupPolicy), b.RetentionVersion,
+		b.Retention.AdmissionMode, []byte(b.Retention.QualityProfile), b.RetentionVersion,
 		b.UnclassifiedRoute, b.FileEffectVersion,
 		candidateID, input.Revision, raw, *revision.BusinessDigest); err != nil {
 		return result, err

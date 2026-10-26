@@ -70,60 +70,6 @@ func (h offsetRecoveryHandler) ObserveRecovery(ctx context.Context, c workitems.
 	return h.recoverReceipt(ctx, c, op)
 }
 
-type cleanupRecoveryHandler struct {
-	service *CleanupService
-	kind    string
-	handle  worker.Handler
-}
-
-func (h cleanupRecoveryHandler) Handle(ctx context.Context, c workitems.Claim) (worker.Outcome, error) {
-	return h.handle.Handle(ctx, c)
-}
-func (h cleanupRecoveryHandler) ObserveRecovery(ctx context.Context, c workitems.Claim) (worker.Outcome, error) {
-	if h.service == nil || c.Kind != h.kind || c.Owner.Type != workitems.OwnerCleanup {
-		return worker.Outcome{}, workitems.ErrInvalidSpec
-	}
-	op, err := h.service.load(ctx, c.Owner.ID)
-	if err != nil {
-		return worker.Outcome{}, err
-	}
-	if op == nil || op.Version != c.ExpectedOwnerVersion {
-		return worker.Outcome{}, workitems.ErrStaleClaim
-	}
-	if h.kind == workitems.KindCleanupPurge && op.State == CleanupPurged {
-		return recoveryCommitted("purged", lockedMaintenanceEvidence("cleanup_operations", c, "purged", op.Version)), nil
-	}
-	if h.kind == workitems.KindCleanupQuarantine && (op.State == CleanupQuarantined || op.State == CleanupGraceWaiting || op.State == CleanupPurged) {
-		writer := func(ctx context.Context, scope txscope.Tx, result workitems.OwnerResult) (int64, error) {
-			v, err := lockedMaintenanceEvidence("cleanup_operations", c, string(op.State), op.Version)(ctx, scope, result)
-			if err != nil {
-				return 0, err
-			}
-			if op.State != CleanupPurged {
-				if h.service.workItems == nil {
-					return 0, workitems.ErrInvalidSpec
-				}
-				snapshot, _ := json.Marshal(map[string]any{"cleanup_id": op.ID, "stage": workitems.KindCleanupPurge})
-				_, _, err = h.service.workItems.CreateOrMerge(ctx, scope.SQLTx(), workitems.WorkItemSpec{Owner: workitems.OwnerRef{Type: workitems.OwnerCleanup, ID: op.ID}, Kind: workitems.KindCleanupPurge, IdempotencyKey: "cln:" + op.ID + ":" + workitems.KindCleanupPurge, InputSnapshot: snapshot, MaxAttempts: 3, ExpectedOwnerVersion: v})
-				if err != nil {
-					return 0, err
-				}
-			}
-			return v, nil
-		}
-		return recoveryCommitted(string(op.State), writer), nil
-	}
-	if h.kind == workitems.KindCleanupQuarantine && op.State == CleanupAdmitted && len(op.Attempt) == 0 {
-		writer := func(ctx context.Context, scope txscope.Tx, _ workitems.OwnerResult) (int64, error) {
-			return h.service.transitionTx(ctx, scope.SQLTx(), op.ID, op.Version, CleanupFailed, "WORKER_EXECUTION_STOPPED", "no quarantine attempt admitted")
-		}
-		return recoveryNoEffect(maintenanceNoAttemptWriter("cleanup_operations", c, "admitted", writer)), nil
-	}
-	// Purge is irreversible: absence is never a removal receipt nor proof of
-	// executor exit. Pending purge/quarantine attempts remain durable unknown.
-	return h.recoverReceipt(ctx, c, op)
-}
-
 type replacementRecoveryHandler struct {
 	service *ReplacementDecisionService
 	handle  worker.Handler

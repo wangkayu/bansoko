@@ -44,14 +44,14 @@ type ExecQuerier interface {
 func SyncInstanceBusinessSnapshotTx(ctx context.Context, q ExecQuerier, managedAnimeID string) (string, error) {
 	var (
 		parserKind, admissionMode, unclassifiedRoute       sql.NullString
-		qualityProfile, cleanupPolicy, snapshotRaw         []byte
+		qualityProfile, snapshotRaw                        []byte
 		parserVersion, retentionVersion, fileEffectVersion sql.NullInt64
 	)
 	err := q.QueryRowContext(ctx, `
-SELECT parser_kind, parser_source_default_version, admission_mode, quality_profile, cleanup_policy,
+SELECT parser_kind, parser_source_default_version, admission_mode, quality_profile,
        retention_source_default_version, unclassified_route, file_effect_source_default_version, business_snapshot
 FROM anime_business_configs WHERE managed_anime_id = $1 FOR UPDATE`, managedAnimeID).
-		Scan(&parserKind, &parserVersion, &admissionMode, &qualityProfile, &cleanupPolicy,
+		Scan(&parserKind, &parserVersion, &admissionMode, &qualityProfile,
 			&retentionVersion, &unclassifiedRoute, &fileEffectVersion, &snapshotRaw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
@@ -63,7 +63,7 @@ FROM anime_business_configs WHERE managed_anime_id = $1 FOR UPDATE`, managedAnim
 		return "", nil
 	}
 	if !parserKind.Valid || !parserVersion.Valid || !admissionMode.Valid || !retentionVersion.Valid ||
-		!unclassifiedRoute.Valid || !fileEffectVersion.Valid || qualityProfile == nil || cleanupPolicy == nil {
+		!unclassifiedRoute.Valid || !fileEffectVersion.Valid || qualityProfile == nil {
 		return "", errors.New("instance business snapshot requires every frozen policy axis")
 	}
 	var previous animedomain.BusinessSnapshot
@@ -108,7 +108,6 @@ FROM anime_business_configs WHERE managed_anime_id = $1 FOR UPDATE`, managedAnim
 		Retention: animedomain.RetentionValue{
 			AdmissionMode:  admissionMode.String,
 			QualityProfile: append(json.RawMessage(nil), qualityProfile...),
-			CleanupPolicy:  append(json.RawMessage(nil), cleanupPolicy...),
 		},
 		RetentionVersion:  retentionVersion.Int64,
 		UnclassifiedRoute: unclassifiedRoute.String,

@@ -42,7 +42,7 @@ func TestBusinessDefaultProfileMatchesFreshMigrationAndTypedContract(t *testing.
 		t.Fatal(err)
 	}
 	frozen := frozenBusinessFixture(t)
-	frozen.Business.Retention = domain.RetentionValue{AdmissionMode: string(policy.AdmissionMode), QualityProfile: policy.QualityProfile, CleanupPolicy: policy.CleanupPolicy}
+	frozen.Business.Retention = domain.RetentionValue{AdmissionMode: string(policy.AdmissionMode), QualityProfile: policy.QualityProfile}
 	if _, err := frozen.Business.Freeze(); err != nil {
 		t.Fatal(err)
 	}

@@ -284,6 +284,12 @@ type OrdinaryRequest struct {
 	// source (Mikan's numeric group id / AniBT's group slug), from the same
 	// frozen evidence as GroupName. It is zero when the source records none.
 	Group providerdomain.GroupRef
+	// ApprovedLoserAt reports whether the file now at path is the managed
+	// loser of an admitted replace decision for this release (same path, same
+	// recorded size). Such an occupant is not a collision: that one target is
+	// published as an approved atomic replacement whatever the global
+	// collision policy. Nil approves nothing.
+	ApprovedLoserAt func(path string) bool
 }
 
 // OneShotRequest is the finite one-shot acquisition input. It is the same
@@ -350,6 +356,8 @@ type PlanInput struct {
 	// source (Mikan's numeric group id / AniBT's group slug), read from the same
 	// frozen evidence as GroupName. The zero value means the source records none.
 	Group providerdomain.GroupRef
+	// ApprovedLoserAt is OrdinaryRequest.ApprovedLoserAt.
+	ApprovedLoserAt func(path string) bool
 }
 
 // PlanResult is the transaction-free admission outcome. Set/Observations are
@@ -393,6 +401,7 @@ func PreflightOrdinary(ctx context.Context, request OrdinaryRequest, probe Probe
 		Preview:             request.Preview,
 		BatchPlan:           request.BatchPlan,
 		UnclassifiedRoute:   request.UnclassifiedRoute,
+		ApprovedLoserAt:     request.ApprovedLoserAt,
 	}, probe)
 }
 
@@ -683,6 +692,13 @@ func preflight(ctx context.Context, input PlanInput, probe Probe) PlanResult {
 	for _, spec := range set.Targets {
 		observations = append(observations, probe.Observe(spec))
 	}
+	if input.ApprovedLoserAt != nil && approveLoserTargets(entries, set, observations, input.ApprovedLoserAt) {
+		// Target ids derive from the release and the entry, so the
+		// observations still name the re-planned targets.
+		if set, err = Plan(input.ReleaseID, entries); err != nil {
+			return fail(targetPlanReason(err), "target set is invalid: "+strings.TrimSpace(err.Error()))
+		}
+	}
 	blocked := DecideTargets(set, observations)
 	if len(blocked) > 0 {
 		refs := make([]string, 0, len(blocked))
@@ -790,6 +806,42 @@ func targetMediaKind(value string) string {
 	default:
 		return "video"
 	}
+}
+
+// approveLoserTargets turns each replace target whose present occupant is the
+// managed loser of an admitted replace decision into an approved atomic
+// replacement (overwrite for that one target). Any other occupant keeps the
+// global collision policy.
+func approveLoserTargets(entries []Entry, set Set, observations []Observation, approved func(string) bool) bool {
+	present := map[string]bool{}
+	for _, observation := range observations {
+		if observation.State == ObservationPresentMatched || observation.State == ObservationPresentMismatched {
+			present[observation.TargetID] = true
+		}
+	}
+	refs := map[string]bool{}
+	for _, spec := range set.Targets {
+		if spec.Intent != IntentReplace || spec.CollisionPolicy == domain.CollisionOverwrite || !present[spec.ID] {
+			continue
+		}
+		if approved(spec.TargetPath) {
+			refs[spec.TargetRef] = true
+		}
+	}
+	for index := range entries {
+		if !refs[entries[index].TargetRef] {
+			continue
+		}
+		entries[index].CollisionPolicy = domain.CollisionOverwrite
+		var config map[string]any
+		if json.Unmarshal(entries[index].ConfigSnapshot, &config) == nil && config != nil {
+			config["collision_policy"] = domain.CollisionOverwrite
+			if raw, err := json.Marshal(config); err == nil {
+				entries[index].ConfigSnapshot = raw
+			}
+		}
+	}
+	return len(refs) > 0
 }
 
 func collisionPolicyForTarget(policy string) domain.CollisionPolicy {

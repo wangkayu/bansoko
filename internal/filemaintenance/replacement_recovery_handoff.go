@@ -1,20 +1,23 @@
 package filemaintenance
 
 import (
-	persistence "bansoko/internal/filemaintenance/adapter/persistence"
-	"bansoko/internal/persistence/txscope"
-	"bansoko/internal/workitems"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"time"
+	"fmt"
+	"strings"
+
+	"bansoko/internal/library/domain"
+	"bansoko/internal/persistence/txscope"
+	"bansoko/internal/workitems"
 )
 
-// Persist the entire frozen loser obligation with the recovered decision. No
-// filesystem calls, fresh evaluate, or transaction-after-commit handoff occurs.
-// seen carries the losers the other recovered decisions of the same release
-// already handed off: one loser has one cleanup owner.
+// handoffRecoveryLosersTx records the deletion obligations of a recovered
+// decision in the caller's transaction. No filesystem call, fresh evaluate or
+// after-commit handoff occurs. seen carries the losers the other recovered
+// decisions of the same release already handed off: one loser has one
+// deletion obligation.
 func (s *ReplacementDecisionService) handoffRecoveryLosersTx(ctx context.Context, scope txscope.Tx, d *decisionRow, seen map[string]bool) error {
 	if len(d.Losers) == 0 {
 		return nil
@@ -22,67 +25,127 @@ func (s *ReplacementDecisionService) handoffRecoveryLosersTx(ctx context.Context
 	if s.cleanup == nil || s.cleanup.workItems == nil {
 		return workitems.ErrInvalidSpec
 	}
+	return s.admitLoserDeletionsTx(ctx, scope, d, seen)
+}
+
+// admitLoserDeletionsTx records, in the settle transaction that superseded
+// them, one deletion obligation per superseded loser of the decision and one
+// per cleanable companion of it. Rules:
+//   - a released or displaced loser (or one this settle did not take over) is
+//     never deleted, and its companions stay with it;
+//   - a loser at the winner's path is only superseded: the path now holds the
+//     winner;
+//   - the identity frozen for the deletion is the loser's recorded path-level
+//     identity (size, plus device/inode when recorded); without a recorded
+//     size the obligation is admitted as skipped.
+func (s *ReplacementDecisionService) admitLoserDeletionsTx(ctx context.Context, scope txscope.Tx, d *decisionRow, handed map[string]bool) error {
+	if s.cleanup == nil {
+		return errors.New("cleanup handoff is not wired")
+	}
 	tx := scope.SQLTx()
-	var effect string
-	var deadline time.Time
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(NULLIF(cleanup_policy->>'effect',''),'quarantine'),CURRENT_TIMESTAMP+make_interval(secs=>COALESCE(NULLIF(cleanup_policy->>'grace_seconds','')::bigint,0)) FROM anime_business_configs WHERE managed_anime_id=$1 AND retention_version=$2 AND cleanup_policy IS NOT NULL FOR SHARE`, d.AnimeID, d.PolicyVersion).Scan(&effect, &deadline); err != nil {
-		return err
+	if tx == nil {
+		return errors.New("loser deletion transaction is nil")
 	}
-	if effect != "quarantine" {
-		return workitems.ErrInvalidSpec
-	}
-	var winnerPath string
-	if err := tx.QueryRowContext(ctx, `SELECT physical_path FROM placements WHERE id=$1 AND managed_anime_id=$2 FOR SHARE`, d.Winner.PlacementID, d.AnimeID).Scan(&winnerPath); err != nil {
-		return err
-	}
-	for _, loser := range d.Losers {
-		if seen[loser.PlacementID] {
-			continue
-		}
-		seen[loser.PlacementID] = true
-		var path, fp, state string
-		var coverage []byte
-		if err := tx.QueryRowContext(ctx, `SELECT physical_path,source_fingerprint,COALESCE((SELECT jsonb_agg(observation_key ORDER BY observation_key) FROM placement_coverage WHERE placement_id=p.id),'[]'::jsonb),state FROM placements p WHERE id=$1 AND managed_anime_id=$2 FOR UPDATE NOWAIT`, loser.PlacementID, d.AnimeID).Scan(&path, &fp, &coverage, &state); err != nil {
-			return err
-		}
-		if state == "displaced" {
-			// Its path belongs to the successor: never cleaned up, and its
-			// companion relations ended with it.
-			continue
-		}
-		if normalized := fingerprintHex(fp); validFingerprintHex(normalized) {
-			fp = normalized
-		}
-		// The loser's companions follow it into cleanup unless the winner
-		// now owns their path, also for a same-path loser.
-		if err := s.handoffRecoveryCompanionsTx(ctx, scope, d, loser.PlacementID, coverage, effect, deadline); err != nil {
-			return err
-		}
-		if path == winnerPath {
-			continue
-		}
-		id := "cln-" + loser.PlacementID
-		var owner string
-		err := tx.QueryRowContext(ctx, `SELECT replacement_ref FROM cleanup_operations WHERE id=$1`, id).Scan(&owner)
+	winnerID, winnerPath := "", ""
+	if d.Winner != nil && d.Winner.PlacementID != "" {
+		winnerID = d.Winner.PlacementID
+		err := tx.QueryRowContext(ctx, `SELECT physical_path FROM placements WHERE id = $1`, winnerID).Scan(&winnerPath)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		if err == nil && owner != d.ID {
-			// Another key decision of the same multi-episode loser owns its
-			// cleanup already.
+	}
+	for _, loser := range d.Losers {
+		if handed[loser.PlacementID] {
 			continue
 		}
-		if err := s.cleanup.repository.InsertTx(ctx, scope, persistence.OperationInput{ID: id, IdempotencyKey: "cln:" + loser.PlacementID + ":" + d.ID, PlacementID: loser.PlacementID, ManagedAnimeID: d.AnimeID, Coverage: coverage, ReplacementRef: d.ID, PolicyVersion: d.PolicyVersion, RetentionMode: string(d.AdmissionMode), SourcePath: path, SourceFingerprint: fp, Effect: effect, GraceDeadline: &deadline, CorrelationID: d.CorrelationID, CausationType: "replacement_decision", CausationID: d.ID}); err != nil {
+		handed[loser.PlacementID] = true
+		var path, state string
+		var coverageRaw []byte
+		err := tx.QueryRowContext(ctx, `
+SELECT p.physical_path, p.state,
+       COALESCE((SELECT jsonb_agg(pc.observation_key ORDER BY pc.coverage_ordinal) FROM placement_coverage pc WHERE pc.placement_id = p.id), '[]'::jsonb)
+FROM placements p
+WHERE p.id = $1 AND p.managed_anime_id = $2
+FOR UPDATE`, loser.PlacementID, d.AnimeID).Scan(&path, &state, &coverageRaw)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("load loser placement %s: %w", loser.PlacementID, err)
+		}
+		if err != nil {
 			return err
 		}
-		var version int64
-		if err := tx.QueryRowContext(ctx, `SELECT version FROM cleanup_operations WHERE id=$1 AND replacement_ref=$2 FOR UPDATE`, id, d.ID).Scan(&version); err != nil {
+		if state != "superseded" {
+			continue
+		}
+		var coverage []string
+		if err := json.Unmarshal(coverageRaw, &coverage); err != nil {
+			return fmt.Errorf("decode loser coverage: %w", err)
+		}
+		if err := s.admitCompanionDeletionsTx(ctx, scope, d, loser.PlacementID, winnerID, coverage); err != nil {
 			return err
 		}
-		snapshot, _ := json.Marshal(map[string]any{"cleanup_id": id, "stage": workitems.KindCleanupQuarantine})
-		if _, _, err := s.cleanup.workItems.CreateOrMerge(ctx, tx, workitems.WorkItemSpec{Owner: workitems.OwnerRef{Type: workitems.OwnerCleanup, ID: id}, Kind: workitems.KindCleanupQuarantine, IdempotencyKey: "cln:" + id + ":" + workitems.KindCleanupQuarantine, InputSnapshot: snapshot, MaxAttempts: 3, ExpectedOwnerVersion: version}); err != nil {
+		if strings.TrimSpace(winnerPath) != "" && path == winnerPath {
+			continue
+		}
+		id := "cln-" + loser.PlacementID
+		var admitted bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM cleanup_operations WHERE id = $1)`, id).Scan(&admitted); err != nil {
 			return err
+		}
+		if admitted {
+			// Another key decision of the same multi-episode loser owns it.
+			continue
+		}
+		identity, err := loserDeletionIdentityTx(ctx, tx, loser.PlacementID)
+		if err != nil {
+			return err
+		}
+		if err := s.cleanup.admitTx(ctx, scope, CleanupInput{
+			ID:                id,
+			IdempotencyKey:    "cln:" + loser.PlacementID + ":" + d.ID,
+			PlacementID:       loser.PlacementID,
+			ManagedAnimeID:    d.AnimeID,
+			Coverage:          coverage,
+			ReplacementRef:    d.ID,
+			RetentionMode:     string(d.AdmissionMode),
+			SourcePath:        path,
+			SourceFingerprint: identity,
+			CorrelationID:     d.CorrelationID,
+			CausationType:     "replacement_decision",
+			CausationID:       d.ID,
+		}); err != nil {
+			return fmt.Errorf("admit loser deletion: %w", err)
 		}
 	}
 	return nil
+}
+
+// loserDeletionIdentityTx freezes the loser's recorded path-level identity as
+// a metadata fingerprint; "" when no size was recorded.
+func loserDeletionIdentityTx(ctx context.Context, tx *sql.Tx, placementID string) (string, error) {
+	record, err := readPlacementIdentityTx(ctx, tx, placementID)
+	if err != nil {
+		return "", fmt.Errorf("read loser identity: %w", err)
+	}
+	facts, known := record.metadataFacts()
+	if !known {
+		return "", nil
+	}
+	return domain.MetadataFingerprint(facts.SizeBytes, domain.FileIdentity{Device: facts.Device, Inode: facts.Inode}), nil
+}
+
+// dedupePlacementIDs returns the unique non-empty ids in first-seen order.
+func dedupePlacementIDs(ids []string) []string {
+	seen := make(map[string]struct{}, len(ids))
+	unique := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+	return unique
 }

@@ -64,9 +64,9 @@ it("apply CAS conflict preserves exact saved revision and does not replace editi
 it("real complete business controls freeze SHA then save and explicitly apply exact revision",async()=>{
  render(<BusinessRevisionEditor animeID="target" onApplied={vi.fn()} />);
  fireEvent.click(screen.getByText(t("config.revision.edit")));fireEvent.click(await screen.findByText(t("config.useDefaults")));await screen.findByText(t("config.revision.dirty"));
- await pick(t("retention.admissionTitle"),t("retention.admission.all"));await pick(t("config.snapshot.cleanupMethod"),t("settings.retention.cleanup.unlink"));fireEvent.change(screen.getByLabelText(t("config.snapshot.graceAria")),{target:{value:"120"}});await pick(t("file.unclassifiedTitle"),t("file.unclassified.skip"));
+ await pick(t("retention.admissionTitle"),t("retention.admission.all"));await pick(t("file.unclassifiedTitle"),t("file.unclassified.skip"));
  fireEvent.click(screen.getByText(t("config.revision.save")));await screen.findByText(t("config.revision.saved"));
- const submitted=mocks.save.mock.calls[0][0] as AnimeDraft;const expected=structuredClone(preset.snapshot);expected.retention.admission_mode="all";expected.retention.cleanup_policy={version:"cleanup-v1",effect:"unlink",grace_seconds:120};expected.unclassified_route="skip";
+ const submitted=mocks.save.mock.calls[0][0] as AnimeDraft;const expected=structuredClone(preset.snapshot);expected.retention.admission_mode="all";expected.unclassified_route="skip";
  expect(submitted.business).toEqual(expected);expect(submitted.business_digest).toBe(`sha256:${createHash("sha256").update(canonicalJSON(expected)).digest("hex")}`);
  expect(submitted.title).toBe("instance");expect(submitted.instance_label).toBe("label");expect(submitted.metadata).toEqual(draft.metadata);expect(submitted.rss_sources).toEqual(draft.rss_sources);expect(mocks.apply).not.toHaveBeenCalled();
  fireEvent.click(screen.getByText(t("config.revision.apply")));await waitFor(()=>expect(mocks.apply).toHaveBeenCalledWith("working",{target_managed_anime_id:"target",revision:11,expected_candidate_version:9,expected_owner_versions:versions},"exact-key"));
@@ -81,14 +81,13 @@ it("program digests are read-only; a failed save preserves the edited draft",asy
 // Hidden per the subscription's current retention and cleanup version: the anime config dialog
 // passes hideRetention (the restore checklist lives with the dialog). The cases above omit it
 // and keep covering the full control set.
-it("hideRetention：不显示保留与清理的四项控件，隐藏的取值原样随修订保存",async()=>{
+it("hideRetention：不显示保留与清理的两项控件，隐藏的取值原样随修订保存",async()=>{
  render(<BusinessRevisionEditor animeID="target" onApplied={vi.fn()} hideRetention />);
  fireEvent.click(screen.getByText(t("config.revision.edit")));fireEvent.click(await screen.findByText(t("config.useDefaults")));await screen.findByText(t("config.revision.dirty"));
  expect(screen.queryByText(t("config.snapshot.legend"))).toBeNull();
  expect(screen.queryByRole("combobox",{name:t("retention.admissionTitle")})).toBeNull();
  expect(screen.queryByRole("group",{name:t("qualityCompare.title")})).toBeNull();
- expect(screen.queryByRole("combobox",{name:t("config.snapshot.cleanupMethod")})).toBeNull();
- expect(screen.queryByLabelText(t("config.snapshot.graceAria"))).toBeNull();
+
  // The parser is not chosen here: it lives in the rules tab's "parsing" section together with the episode recognition rules.
  expect(screen.queryByRole("combobox",{name:t("policy.parser.kindLabel")})).toBeNull();
  await pick(t("file.unclassifiedTitle"),t("file.unclassified.skip"));

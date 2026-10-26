@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"strings"
 	"time"
 
 	"bansoko/internal/anime/animeconfig"
@@ -17,18 +16,18 @@ import (
 	"bansoko/internal/qualityprofile"
 )
 
-// RetentionPolicy is the complete business retention policy value: three
+// RetentionPolicy is the complete business retention policy value: two
 // disjoint owned fields with no NULL=inherit merge. It is what a new instance
 // copies at creation/activation and what an instance save fully replaces with
-// expected-version CAS.
+// expected-version CAS. A replaced managed file is deleted directly; there is
+// no cleanup policy.
 type RetentionPolicy struct {
 	AdmissionMode  AdmissionMode
 	QualityProfile json.RawMessage
-	CleanupPolicy  json.RawMessage
 }
 
-// Digest is the canonical policy digest over the three normalized fields. Each
-// JSON field is canonicalized (unmarshal + re-marshal) so the digest is stable
+// Digest is the canonical policy digest over the normalized fields. The JSON
+// field is canonicalized (unmarshal + re-marshal) so the digest is stable
 // across JSONB key ordering and whitespace. It is used for migration
 // verification and tests, never as a second business truth.
 func (p RetentionPolicy) Digest() string {
@@ -36,15 +35,10 @@ func (p RetentionPolicy) Digest() string {
 	if err != nil {
 		return ""
 	}
-	cleanup, err := canonicalJSON(p.CleanupPolicy)
-	if err != nil {
-		return ""
-	}
 	canonical, err := json.Marshal(struct {
 		AdmissionMode  string          `json:"admission_mode"`
 		QualityProfile json.RawMessage `json:"quality_profile"`
-		CleanupPolicy  json.RawMessage `json:"cleanup_policy"`
-	}{AdmissionMode: string(p.AdmissionMode), QualityProfile: profile, CleanupPolicy: cleanup})
+	}{AdmissionMode: string(p.AdmissionMode), QualityProfile: profile})
 	if err != nil {
 		return ""
 	}
@@ -62,23 +56,15 @@ func canonicalJSON(raw json.RawMessage) (json.RawMessage, error) {
 	return json.Marshal(value)
 }
 
-// Versioned code defaults for the three owned fields, used when no default
-// row exists yet.
-var (
-	// DefaultQualityProfileJSON is the built-in comparison profile
-	// (qualityprofile.Default); migration 320 resets stored profiles to it.
-	DefaultQualityProfileJSON = qualityprofile.DefaultJSON()
-	// DefaultCleanupPolicyJSON is the versioned cleanup default: quarantine
-	// with a one-week grace before purge (the cleanup owner's default path).
-	DefaultCleanupPolicyJSON = json.RawMessage(`{"version":"cleanup-v1","effect":"quarantine","grace_seconds":604800}`)
-)
+// DefaultQualityProfileJSON is the built-in comparison profile
+// (qualityprofile.Default), used when no default row exists yet.
+var DefaultQualityProfileJSON = qualityprofile.DefaultJSON()
 
 // DefaultRetentionPolicy is the versioned code default for new instances.
 func DefaultRetentionPolicy() RetentionPolicy {
 	return RetentionPolicy{
 		AdmissionMode:  ModeAll,
 		QualityProfile: append(json.RawMessage(nil), DefaultQualityProfileJSON...),
-		CleanupPolicy:  append(json.RawMessage(nil), DefaultCleanupPolicyJSON...),
 	}
 }
 
@@ -89,8 +75,7 @@ func retentionSectionValue(policy RetentionPolicy) string {
 	raw, err := json.Marshal(struct {
 		AdmissionMode  string          `json:"admission_mode"`
 		QualityProfile json.RawMessage `json:"quality_profile"`
-		CleanupPolicy  json.RawMessage `json:"cleanup_policy"`
-	}{string(policy.AdmissionMode), policy.QualityProfile, policy.CleanupPolicy})
+	}{string(policy.AdmissionMode), policy.QualityProfile})
 	if err != nil {
 		return ""
 	}
@@ -106,21 +91,14 @@ func policyInvalid(detail string) error {
 // ValidateRetentionPolicy rejects incomplete or wrongly typed values before
 // any write: admission_mode must be the enum, quality_profile a valid
 // profile-v1 (qualityprofile.Parse: known unique items, well-formed rankings,
-// no duplicate value sets) and cleanup_policy a complete typed versioned JSON
-// object.
+// no duplicate value sets).
 func ValidateRetentionPolicy(policy RetentionPolicy) error {
 	switch policy.AdmissionMode {
 	case ModeAll, ModePerGroup, ModeSingleCopy:
 	default:
 		return policyInvalid("admission_mode must be one of all, per_group, single_copy")
 	}
-	if err := validateQualityProfile(policy.QualityProfile); err != nil {
-		return err
-	}
-	if err := validateCleanupPolicy(policy.CleanupPolicy); err != nil {
-		return err
-	}
-	return nil
+	return validateQualityProfile(policy.QualityProfile)
 }
 
 func validateQualityProfile(raw json.RawMessage) error {
@@ -130,38 +108,12 @@ func validateQualityProfile(raw json.RawMessage) error {
 	return nil
 }
 
-func validateCleanupPolicy(raw json.RawMessage) error {
-	var fields map[string]json.RawMessage
-	if len(raw) == 0 || string(raw) == "null" || json.Unmarshal(raw, &fields) != nil {
-		return policyInvalid("cleanup_policy must be a JSON object")
-	}
-	versionRaw, hasVersion := fields["version"]
-	var version string
-	if !hasVersion || string(versionRaw) == "null" || json.Unmarshal(versionRaw, &version) != nil || strings.TrimSpace(version) == "" {
-		return policyInvalid("cleanup_policy must carry a non-empty version string")
-	}
-	if raw, has := fields["effect"]; has {
-		var effect string
-		if string(raw) == "null" || json.Unmarshal(raw, &effect) != nil ||
-			(effect != "quarantine" && effect != "unlink" && effect != "purge") {
-			return policyInvalid("cleanup_policy.effect must be one of quarantine, unlink, purge")
-		}
-	}
-	if raw, has := fields["grace_seconds"]; has {
-		var seconds float64
-		if string(raw) == "null" || json.Unmarshal(raw, &seconds) != nil || seconds < 0 || seconds != float64(int64(seconds)) {
-			return policyInvalid("cleanup_policy.grace_seconds must be a non-negative integer")
-		}
-	}
-	return nil
-}
-
-// RetentionPolicyDefault is the retention_policy_defaults row: the
-// creation template for future instances only.
+// RetentionPolicyDefault is the global_config_sections('retention') value:
+// the creation template for future instances only.
 type RetentionPolicyDefault = policyowner.Default[RetentionPolicy]
 
-// InstanceRetentionPolicy is the instance_retention_policies row: one
-// complete frozen policy per ManagedAnime.
+// InstanceRetentionPolicy is the retention part of one
+// anime_business_configs row: one complete frozen policy per ManagedAnime.
 type InstanceRetentionPolicy = policyowner.Instance[RetentionPolicy]
 
 // RetentionPolicyService owns the frozen per-instance business retention
@@ -197,16 +149,15 @@ func (s *RetentionPolicyService) PolicyCapability() policyowner.Capability[Reten
 // GetDefault returns the singleton creation default (nil when absent).
 func (s *RetentionPolicyService) GetDefault(ctx context.Context) (*RetentionPolicyDefault, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT value->>'admission_mode', value->'quality_profile', value->'cleanup_policy', version, updated_at
+SELECT value->>'admission_mode', value->'quality_profile', version, updated_at
 FROM global_config_sections WHERE section_name = 'retention'`)
 	var (
 		mode      string
 		profile   []byte
-		cleanup   []byte
 		version   int64
 		updatedAt time.Time
 	)
-	if err := row.Scan(&mode, &profile, &cleanup, &version, &updatedAt); errors.Is(err, sql.ErrNoRows) {
+	if err := row.Scan(&mode, &profile, &version, &updatedAt); errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	} else if err != nil {
 		return nil, err
@@ -215,7 +166,6 @@ FROM global_config_sections WHERE section_name = 'retention'`)
 		Policy: RetentionPolicy{
 			AdmissionMode:  AdmissionMode(mode),
 			QualityProfile: json.RawMessage(profile),
-			CleanupPolicy:  json.RawMessage(cleanup),
 		},
 		Version:   version,
 		UpdatedAt: updatedAt,
@@ -270,16 +220,16 @@ func (s *RetentionPolicyService) SaveDefault(ctx context.Context, expectedVersio
 // GetInstance returns the complete per-instance snapshot (nil when absent).
 func (s *RetentionPolicyService) GetInstance(ctx context.Context, animeID string) (*InstanceRetentionPolicy, error) {
 	row := s.db.QueryRowContext(ctx, `
-SELECT admission_mode, quality_profile, cleanup_policy,
+SELECT admission_mode, quality_profile,
        retention_source_default_version, retention_version, updated_at
 FROM anime_business_configs WHERE managed_anime_id = $1 AND retention_version IS NOT NULL`, animeID)
 	var (
 		mode                   string
-		profile, cleanup       []byte
+		profile                []byte
 		sourceDefault, version int64
 		updatedAt              time.Time
 	)
-	if err := row.Scan(&mode, &profile, &cleanup, &sourceDefault, &version, &updatedAt); errors.Is(err, sql.ErrNoRows) {
+	if err := row.Scan(&mode, &profile, &sourceDefault, &version, &updatedAt); errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	} else if err != nil {
 		return nil, err
@@ -289,7 +239,6 @@ FROM anime_business_configs WHERE managed_anime_id = $1 AND retention_version IS
 		Policy: RetentionPolicy{
 			AdmissionMode:  AdmissionMode(mode),
 			QualityProfile: json.RawMessage(profile),
-			CleanupPolicy:  json.RawMessage(cleanup),
 		},
 		SourceDefaultVersion: sourceDefault,
 		Version:              version,
@@ -325,10 +274,10 @@ SELECT retention_source_default_version, retention_version FROM anime_business_c
 	var newVersion int64
 	err = tx.QueryRowContext(ctx, `
 UPDATE anime_business_configs
-SET admission_mode = $2, quality_profile = $3, cleanup_policy = $4,
-    retention_version = retention_version + 1, updated_at = $5
-WHERE managed_anime_id = $1 AND retention_version = $6
-RETURNING retention_version`, animeID, input.AdmissionMode, input.QualityProfile, input.CleanupPolicy, now, expectedVersion).Scan(&newVersion)
+SET admission_mode = $2, quality_profile = $3,
+    retention_version = retention_version + 1, updated_at = $4
+WHERE managed_anime_id = $1 AND retention_version = $5
+RETURNING retention_version`, animeID, input.AdmissionMode, input.QualityProfile, now, expectedVersion).Scan(&newVersion)
 	if err != nil {
 		return InstanceRetentionPolicy{}, err
 	}
@@ -356,13 +305,12 @@ func (s *RetentionPolicyService) CopyDefaultToInstanceTx(ctx context.Context, sc
 	var (
 		mode    string
 		profile []byte
-		cleanup []byte
 		version int64
 	)
 	err := tx.QueryRowContext(ctx, `
-SELECT value->>'admission_mode', value->'quality_profile', value->'cleanup_policy', version
+SELECT value->>'admission_mode', value->'quality_profile', version
 FROM global_config_sections WHERE section_name = 'retention' FOR UPDATE`).
-		Scan(&mode, &profile, &cleanup, &version)
+		Scan(&mode, &profile, &version)
 	if errors.Is(err, sql.ErrNoRows) {
 		// No default template yet: initialize the singleton from the versioned
 		// code defaults so the instance provenance stays truthful.
@@ -377,19 +325,18 @@ FROM global_config_sections WHERE section_name = 'retention' FOR UPDATE`).
 		}
 		mode = string(defaults.AdmissionMode)
 		profile = defaults.QualityProfile
-		cleanup = defaults.CleanupPolicy
 	} else if err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO anime_business_configs
-(managed_anime_id, admission_mode, quality_profile, cleanup_policy, retention_source_default_version, retention_version, updated_at)
-VALUES ($1, $2, $3, $4, $5, 1, CURRENT_TIMESTAMP)
+(managed_anime_id, admission_mode, quality_profile, retention_source_default_version, retention_version, updated_at)
+VALUES ($1, $2, $3, $4, 1, CURRENT_TIMESTAMP)
 ON CONFLICT (managed_anime_id) DO UPDATE SET
-    admission_mode = EXCLUDED.admission_mode, quality_profile = EXCLUDED.quality_profile, cleanup_policy = EXCLUDED.cleanup_policy,
+    admission_mode = EXCLUDED.admission_mode, quality_profile = EXCLUDED.quality_profile,
     retention_source_default_version = EXCLUDED.retention_source_default_version, retention_version = 1, updated_at = CURRENT_TIMESTAMP
 WHERE anime_business_configs.retention_version IS NULL`,
-		animeID, mode, profile, cleanup, version); err != nil {
+		animeID, mode, profile, version); err != nil {
 		return err
 	}
 	return nil

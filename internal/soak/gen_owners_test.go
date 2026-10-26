@@ -64,12 +64,12 @@ FROM soak_ext.owner WHERE NOT oneshot`)
 	g.execf("anime_business_configs", `
 INSERT INTO anime_business_configs(managed_anime_id, rules_version, subgroups_version,
     parser_kind, parser_source_default_version, parser_version,
-    admission_mode, quality_profile, cleanup_policy, retention_source_default_version, retention_version,
+    admission_mode, quality_profile, retention_source_default_version, retention_version,
     unclassified_route, file_effect_source_default_version, file_effect_version,
     candidate_id, revision, business_snapshot, business_digest, business_version, updated_at)
 SELECT o.aid, t.rules_version, t.subgroups_version,
        t.parser_kind, t.parser_source_default_version, t.parser_version,
-       t.admission_mode, t.quality_profile, t.cleanup_policy, t.retention_source_default_version, t.retention_version,
+       t.admission_mode, t.quality_profile, t.t.retention_source_default_version, t.retention_version,
        t.unclassified_route, t.file_effect_source_default_version, t.file_effect_version,
        t.candidate_id, t.revision, t.business_snapshot, t.business_digest, t.business_version, o.created_at
 FROM soak_ext.owner o CROSS JOIN anime_business_configs t WHERE t.managed_anime_id = '%s'`, g.template.AnimeID)

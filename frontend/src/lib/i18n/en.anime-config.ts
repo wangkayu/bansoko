@@ -76,10 +76,6 @@ export const enConfigCopy = {
   },
   snapshot: {
     legend: "Retention and cleanup",
-    cleanupField: "Cleanup for replaced old files",
-    cleanupMethod: "Cleanup method",
-    graceField: "Cleanup grace period (seconds)",
-    graceAria: "Cleanup grace period (seconds)",
   },
   discovery: {
     none: "No groups found",

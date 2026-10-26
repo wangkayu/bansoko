@@ -24,7 +24,7 @@ func TestMaintenanceQuarantineReceiptBeforeCaptureDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	i := maintenance.MaintenanceInvocation{OwnerType: "cleanup_operation", OwnerID: "owner", Kind: "cleanup_quarantine", WorkItemID: "work", OwnerVersion: 2, Attempt: []byte(`{"stage":"quarantine"}`), Source: source, Target: filepath.Join(root, ".bansoko-cleanup-owner", "object"), Fingerprint: observed.Fingerprint}
+	i := maintenance.MaintenanceInvocation{OwnerType: "cleanup_operation", OwnerID: "owner", Kind: "cleanup_capture", WorkItemID: "work", OwnerVersion: 2, Attempt: []byte(`{"stage":"capture"}`), Source: source, Target: filepath.Join(root, ".bansoko-cleanup-owner", "object"), Fingerprint: observed.Fingerprint}
 	if _, err := e.ReadMaintenanceReceipt(context.Background(), i); !errors.Is(err, maintenance.ErrMaintenanceNotStarted) {
 		t.Fatalf("missing capture namespace: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestMaintenanceQuarantineReceiptRejectsUnsafeCaptureDirectory(t *testing.T)
 				t.Fatal(err)
 			}
 			capture := filepath.Join(root, ".bansoko-cleanup-owner")
-			i := maintenance.MaintenanceInvocation{OwnerType: "cleanup_operation", OwnerID: "owner", Kind: "cleanup_quarantine", WorkItemID: "work", OwnerVersion: 2, Attempt: []byte(`{"stage":"quarantine"}`), Source: filepath.Join(root, "source"), Target: filepath.Join(capture, "object"), Fingerprint: "fp"}
+			i := maintenance.MaintenanceInvocation{OwnerType: "cleanup_operation", OwnerID: "owner", Kind: "cleanup_capture", WorkItemID: "work", OwnerVersion: 2, Attempt: []byte(`{"stage":"capture"}`), Source: filepath.Join(root, "source"), Target: filepath.Join(capture, "object"), Fingerprint: "fp"}
 			switch mode {
 			case "public":
 				if err := os.Mkdir(capture, 0755); err != nil {

@@ -99,14 +99,10 @@ func mapOverviewConsumerView(value filemaintenance.ReconciliationConsumerStateVi
 func mapOverviewCleanupView(value filemaintenance.CleanupOperationView) generated.CleanupOperationView {
 	return generated.CleanupOperationView{
 		CreatedAt:         value.CreatedAt,
-		Effect:            generated.CleanupOperationViewEffect(value.Effect),
 		FailureCode:       cloneStringPtr(value.FailureCode),
-		GraceDeadline:     cloneTimePointer(value.GraceDeadline),
 		Id:                value.ID,
 		ManagedAnimeId:    value.ManagedAnimeID,
 		PlacementId:       value.PlacementID,
-		PolicyVersion:     value.PolicyVersion,
-		QuarantinePath:    cloneStringPtr(value.QuarantinePath),
 		Reason:            cloneStringPtr(value.Reason),
 		ReplacementRef:    value.ReplacementRef,
 		RetentionMode:     generated.CleanupOperationViewRetentionMode(value.RetentionMode),

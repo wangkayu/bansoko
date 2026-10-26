@@ -70,7 +70,7 @@ func TestPGReplacementRecoveryLoserHandoffRollsBackAndCommitsAtomically(t *testi
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.QueryRow(`SELECT count(*) FROM cleanup_operations c JOIN work_item_history w ON w.owner_id=c.id AND w.kind='cleanup_quarantine' WHERE c.replacement_ref='loser-adopt'`).Scan(&count); err != nil {
+	if err := db.QueryRow(`SELECT count(*) FROM cleanup_operations c JOIN work_item_history w ON w.owner_id=c.id AND w.kind='cleanup_delete' WHERE c.replacement_ref='loser-adopt'`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	if count != 1 {

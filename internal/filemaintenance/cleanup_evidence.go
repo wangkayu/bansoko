@@ -2,7 +2,6 @@ package filemaintenance
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"os"
@@ -12,17 +11,20 @@ import (
 	"bansoko/internal/library/domain"
 )
 
+// cleanupAttemptEvidence is the durable checkpoint of one deletion stage. The
+// work item id and owner version bind the stage's exact invocation receipt,
+// so recovery reads it without the claim that ran it.
 type cleanupAttemptEvidence struct {
-	CleanupID              string                 `json:"cleanup_id"`
-	Effect                 string                 `json:"effect"`
-	Stage                  string                 `json:"stage"`
-	SourcePath             string                 `json:"source_path"`
-	SourceFingerprint      string                 `json:"source_fingerprint"`
-	QuarantinePath         string                 `json:"quarantine_path"`
-	SourceObservation      domain.FileObservation `json:"source_observation"`
-	QuarantineObservation  domain.FileObservation `json:"quarantine_observation"`
-	Removed                bool                   `json:"removed"`
-	PostObservationMissing bool                   `json:"post_observation_missing"`
+	CleanupID          string                 `json:"cleanup_id"`
+	Stage              string                 `json:"stage"`
+	WorkItemID         string                 `json:"work_item_id"`
+	OwnerVersion       int64                  `json:"owner_version"`
+	SourcePath         string                 `json:"source_path"`
+	SourceFingerprint  string                 `json:"source_fingerprint"`
+	CapturePath        string                 `json:"capture_path"`
+	SourceObservation  domain.FileObservation `json:"source_observation"`
+	CaptureObservation domain.FileObservation `json:"capture_observation"`
+	FencingToken       int64                  `json:"fencing_token"`
 }
 
 func decodeCleanupAttempt(raw []byte) (cleanupAttemptEvidence, error) {
@@ -33,18 +35,100 @@ func decodeCleanupAttempt(raw []byte) (cleanupAttemptEvidence, error) {
 	if err := json.Unmarshal(raw, &evidence); err != nil {
 		return cleanupAttemptEvidence{}, err
 	}
+	if evidence.Stage != cleanupStageCapture && evidence.Stage != cleanupStagePurge {
+		return cleanupAttemptEvidence{}, errors.New("cleanup attempt stage is invalid")
+	}
+	if evidence.WorkItemID == "" || evidence.OwnerVersion < 1 || evidence.SourcePath == "" || evidence.CapturePath == "" {
+		return cleanupAttemptEvidence{}, errors.New("cleanup attempt lacks its invocation identity")
+	}
+	if !completeCleanupObservation(evidence.SourceObservation) {
+		return cleanupAttemptEvidence{}, errors.New("cleanup attempt lacks complete frozen source evidence")
+	}
+	if evidence.Stage == cleanupStagePurge && !completeCleanupObservation(evidence.CaptureObservation) {
+		return cleanupAttemptEvidence{}, errors.New("cleanup purge attempt lacks complete captured evidence")
+	}
 	return evidence, nil
 }
 
-func completeCleanupObservation(observation domain.FileObservation, fingerprint string) bool {
-	return cleanupObservationMatchesFingerprint(observation, fingerprint) &&
-		observation.SizeBytes >= 0 && fileidentity.IsPresent(observation.Identity)
+func completeCleanupObservation(observation domain.FileObservation) bool {
+	return observation.Fingerprint != "" && observation.SizeBytes >= 0 && fileidentity.IsPresent(observation.Identity)
 }
 
-// observeCleanupFile uses the observation mode of the frozen identity. The
-// legacy SHA-256 path is unchanged. A recovered placement instead freezes a
-// metadata envelope, so its cleanup must use no-follow path metadata and must
-// never turn into a full-file content read merely to make the comparison work.
+// cleanupInvocation is the exact receipt identity of one stage, derived only
+// from the owner and its persisted attempt.
+func cleanupInvocation(op *CleanupOperation, attempt cleanupAttemptEvidence, kind string) executorpkg.MaintenanceInvocation {
+	var parsed any
+	_ = json.Unmarshal(op.Attempt, &parsed)
+	normalized, _ := json.Marshal(parsed)
+	invocation := executorpkg.MaintenanceInvocation{
+		OwnerType:    "cleanup_operation",
+		OwnerID:      op.ID,
+		Kind:         kind,
+		WorkItemID:   attempt.WorkItemID,
+		OwnerVersion: attempt.OwnerVersion,
+		Attempt:      normalized,
+	}
+	if kind == cleanupCaptureInvocation {
+		invocation.Source, invocation.Target, invocation.Fingerprint = attempt.SourcePath, attempt.CapturePath, attempt.SourceObservation.Fingerprint
+	} else {
+		invocation.Source, invocation.Target, invocation.Fingerprint = attempt.CapturePath, attempt.CapturePath, attempt.CaptureObservation.Fingerprint
+	}
+	return invocation
+}
+
+// cleanupResolution is what the receipts prove about a persisted attempt.
+type cleanupResolution int
+
+const (
+	cleanupResolutionUnknown cleanupResolution = iota
+	// cleanupResolutionCaptured: the capture finished; the purge is next.
+	cleanupResolutionCaptured
+	// cleanupResolutionPurged: the purge of the captured object returned.
+	cleanupResolutionPurged
+	// cleanupResolutionCaptureNotStarted: no capture marker, the source
+	// still matches, nothing at the capture path.
+	cleanupResolutionCaptureNotStarted
+	// cleanupResolutionPurgeNotStarted: no purge marker and the captured
+	// object is still present and identical.
+	cleanupResolutionPurgeNotStarted
+)
+
+// resolveCleanupAttempt reads the exact receipt of the attempt's stage once.
+// Absence of a file is never a receipt: a purge without its receipt stays
+// unknown.
+func resolveCleanupAttempt(ctx context.Context, observer executorpkg.CleanupFileExecutor, receipts executorpkg.MaintenanceCleanupExecutor, op *CleanupOperation, attempt cleanupAttemptEvidence) cleanupResolution {
+	if attempt.Stage == cleanupStagePurge {
+		invocation := cleanupInvocation(op, attempt, cleanupPurgeInvocation)
+		receipt, err := receipts.ReadMaintenanceReceipt(ctx, invocation)
+		if err == nil && receipt.Validate(invocation) == nil {
+			return cleanupResolutionPurged
+		}
+		if errors.Is(err, executorpkg.ErrMaintenanceNotStarted) {
+			observed, observeErr := observeCleanupFile(ctx, observer, attempt.CapturePath, op.SourceFingerprint)
+			if observeErr == nil && sameFrozenCleanupObservation(observed, attempt.CaptureObservation) {
+				return cleanupResolutionPurgeNotStarted
+			}
+		}
+		return cleanupResolutionUnknown
+	}
+	invocation := cleanupInvocation(op, attempt, cleanupCaptureInvocation)
+	receipt, err := receipts.ReadMaintenanceReceipt(ctx, invocation)
+	if err == nil && receipt.Validate(invocation) == nil && sameFrozenCleanupObservation(receipt.Observation, attempt.SourceObservation) {
+		return cleanupResolutionCaptured
+	}
+	if errors.Is(err, executorpkg.ErrMaintenanceNotStarted) {
+		observed, observeErr := observeCleanupFile(ctx, observer, attempt.SourcePath, op.SourceFingerprint)
+		_, targetErr := observeCleanupFile(ctx, observer, attempt.CapturePath, op.SourceFingerprint)
+		if observeErr == nil && sameFrozenCleanupObservation(observed, attempt.SourceObservation) && isMissingCleanupError(targetErr) {
+			return cleanupResolutionCaptureNotStarted
+		}
+	}
+	return cleanupResolutionUnknown
+}
+
+// observeCleanupFile observes a path in the mode of the frozen identity. A
+// deletion freezes a metadata identity, so it uses no-follow path metadata
+// and never reads the content.
 func observeCleanupFile(ctx context.Context, executor executorpkg.CleanupFileExecutor, path, fingerprint string) (domain.FileObservation, error) {
 	if _, metadata := metadataFingerprintValue(fingerprint); metadata {
 		observer, ok := executor.(executorpkg.CleanupMetadataFileObserver)
@@ -56,93 +140,21 @@ func observeCleanupFile(ctx context.Context, executor executorpkg.CleanupFileExe
 	return executor.Observe(ctx, path)
 }
 
-func cleanupObservationMatchesFingerprint(observation domain.FileObservation, frozen string) bool {
-	if expectedValue, metadata := metadataFingerprintValue(frozen); metadata {
-		expected, ok := domain.ParseMetadataFingerprint(expectedValue)
-		if !ok {
-			return false
-		}
-		actual, ok := domain.ParseMetadataFingerprint(observation.Fingerprint)
-		return ok && observation.SizeBytes == expected.SizeBytes && domain.MetadataFactsMatch(actual, expected)
-	}
-	return observation.Fingerprint != "" && observation.Fingerprint == frozen
-}
-
-func frozenSourceObservation(raw []byte, fingerprint string) (domain.FileObservation, error) {
-	evidence, err := decodeCleanupAttempt(raw)
-	if err != nil {
-		return domain.FileObservation{}, err
-	}
-	if !completeCleanupObservation(evidence.SourceObservation, fingerprint) {
-		return domain.FileObservation{}, errors.New("cleanup attempt lacks complete frozen source evidence")
-	}
-	return evidence.SourceObservation, nil
-}
-
-func frozenObservation(raw []byte, fingerprint string) (domain.FileObservation, error) {
-	evidence, err := decodeCleanupAttempt(raw)
-	if err != nil {
-		return domain.FileObservation{}, err
-	}
-	observation := evidence.SourceObservation
-	if !completeCleanupObservation(observation, fingerprint) {
-		observation = evidence.QuarantineObservation
-	}
-	if !completeCleanupObservation(observation, fingerprint) {
-		return domain.FileObservation{}, errors.New("cleanup attempt lacks complete frozen file evidence")
-	}
-	return observation, nil
-}
-
+// sameFrozenCleanupObservation compares two observations of one object:
+// metadata observations by size and inode (never the device, which a network
+// mount may change), content observations by digest, size and identity.
 func sameFrozenCleanupObservation(actual, expected domain.FileObservation) bool {
 	metadata := domain.IsMetadataFingerprint(actual.Fingerprint) || domain.IsMetadataFingerprint(expected.Fingerprint)
 	if metadata {
-		if !cleanupObservationMatchesFingerprint(actual, expected.Fingerprint) || actual.SizeBytes != expected.SizeBytes {
+		if !domain.MetadataFingerprintsMatch(actual.Fingerprint, expected.Fingerprint) || actual.SizeBytes != expected.SizeBytes {
 			return false
 		}
-		// Network mounts may change their client-side device number. Path-level
-		// cleanup identity is size + inode; device never participates.
 		if !fileidentity.IsPresent(actual.Identity) || !fileidentity.IsPresent(expected.Identity) || actual.Identity.Inode != expected.Identity.Inode {
 			return false
 		}
 		return actual.Identity.GenerationNanos == 0 || expected.Identity.GenerationNanos == 0 || actual.Identity.GenerationNanos == expected.Identity.GenerationNanos
 	}
 	return actual.Fingerprint == expected.Fingerprint && actual.SizeBytes == expected.SizeBytes && fileidentity.Matches(actual.Identity, expected.Identity)
-}
-
-func validateCleanupAttempt(evidence cleanupAttemptEvidence, cleanupID, effect, sourcePath, sourceFingerprint string, quarantinePath sql.NullString) error {
-	if evidence.CleanupID != "" && evidence.CleanupID != cleanupID {
-		return errors.New("cleanup attempt identity conflicts with owner")
-	}
-	if evidence.Effect != "" && evidence.Effect != effect {
-		return errors.New("cleanup attempt effect conflicts with owner")
-	}
-	if evidence.Stage != "" && evidence.Stage != "quarantine" && evidence.Stage != "purge" {
-		return errors.New("cleanup attempt stage is invalid")
-	}
-	if effect == "quarantine" && evidence.Stage == "purge" && evidence.Removed && !evidence.PostObservationMissing {
-		return errors.New("cleanup purge attempt lacks post-effect absence proof")
-	}
-	if evidence.SourcePath != "" && evidence.SourcePath != sourcePath {
-		return errors.New("cleanup attempt source path conflicts with owner")
-	}
-	if evidence.SourceFingerprint != "" && evidence.SourceFingerprint != sourceFingerprint {
-		return errors.New("cleanup attempt source fingerprint conflicts with owner")
-	}
-	if evidence.QuarantinePath != "" && quarantinePath.Valid && evidence.QuarantinePath != quarantinePath.String {
-		return errors.New("cleanup attempt quarantine path conflicts with owner")
-	}
-	return nil
-}
-
-func cleanupQuarantinePath(evidence cleanupAttemptEvidence, ownerPath sql.NullString) (string, error) {
-	if evidence.QuarantinePath != "" {
-		return evidence.QuarantinePath, nil
-	}
-	if ownerPath.Valid && ownerPath.String != "" {
-		return ownerPath.String, nil
-	}
-	return "", errors.New("cleanup quarantine path evidence is missing")
 }
 
 func isMissingCleanupError(err error) bool {

@@ -29,8 +29,7 @@ func businessPresetForLoadTest(t *testing.T) BusinessSnapshot {
 	}
 	business.Parser = ParserPolicyEnvelope{SchemaVersion: ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global_parser_policy_default", PolicyVersion: 2}
 	business.Retention = RetentionValue{AdmissionMode: "all",
-		QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"subgroup.score","ranks":[]},{"key":"release.lang","ranks":[["chs"],["sc"],["cht"],["tc"],["jpn"],["eng"]]},{"key":"release.resolution","ranks":[["2160p"],["1440p"],["1080p"],["720p"],["480p"]]},{"key":"release.revision","ranks":[]}]}`),
-		CleanupPolicy:  json.RawMessage(`{"version":"cleanup-v1","effect":"quarantine","grace_seconds":604800}`)}
+		QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"subgroup.score","ranks":[]},{"key":"release.lang","ranks":[["chs"],["sc"],["cht"],["tc"],["jpn"],["eng"]]},{"key":"release.resolution","ranks":[["2160p"],["1440p"],["1080p"],["720p"],["480p"]]},{"key":"release.revision","ranks":[]}]}`)}
 	business.RetentionVersion, business.UnclassifiedRoute, business.FileEffectVersion = 4, "skip", 5
 	business.Programs = ProgramReferences{
 		Vars:      namingvars.ProgramRef{Version: namingvars.ProfileVersion("sha256:vars"), Digest: "sha256:vars"},

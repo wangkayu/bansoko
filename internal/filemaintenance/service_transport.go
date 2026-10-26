@@ -477,7 +477,7 @@ func (s *Service) GetRetentionPolicyDefault(ctx context.Context) (generated.Rete
 
 // SaveRetentionPolicyDefault saves the singleton creation default with CAS.
 func (s *Service) SaveRetentionPolicyDefault(ctx context.Context, input generated.RetentionPolicyDefaultInput, actor, channel string) (generated.RetentionPolicyDefaultView, error) {
-	policy, err := retentionPolicyFromInput(input.AdmissionMode, input.QualityProfile, input.CleanupPolicy)
+	policy, err := retentionPolicyFromInput(input.AdmissionMode, input.QualityProfile)
 	if err != nil {
 		return generated.RetentionPolicyDefaultView{}, err
 	}
@@ -499,7 +499,7 @@ func (s *Service) GetInstanceRetentionPolicy(ctx context.Context, animeID string
 
 // SaveInstanceRetentionPolicy fully replaces one instance policy with CAS.
 func (s *Service) SaveInstanceRetentionPolicy(ctx context.Context, animeID string, input generated.InstanceRetentionPolicyInput, actor, channel string) (generated.InstanceRetentionPolicyView, error) {
-	policy, err := retentionPolicyFromInput(input.AdmissionMode, input.QualityProfile, input.CleanupPolicy)
+	policy, err := retentionPolicyFromInput(input.AdmissionMode, input.QualityProfile)
 	if err != nil {
 		return generated.InstanceRetentionPolicyView{}, err
 	}
@@ -523,41 +523,35 @@ func retentionDefaultViewOfApplication(view RetentionPolicyDefaultView) generate
 	return generated.RetentionPolicyDefaultView{
 		AdmissionMode:  generated.RetentionAdmissionMode(view.Policy.AdmissionMode),
 		QualityProfile: wireJSON[generated.QualityProfile](view.Policy.QualityProfile),
-		CleanupPolicy:  wireJSON[generated.RetentionPolicyDefaultView_CleanupPolicy](view.Policy.CleanupPolicy),
-		UpdatedAt:      cloneTimePointer(view.UpdatedAt),
-		Version:        int(view.Version),
+
+		UpdatedAt: cloneTimePointer(view.UpdatedAt),
+		Version:   int(view.Version),
 	}
 }
 
 func instanceRetentionPolicyViewOfApplication(view InstanceRetentionPolicyView) generated.InstanceRetentionPolicyView {
 	return generated.InstanceRetentionPolicyView{
-		ManagedAnimeId:       generated.ID(view.ManagedAnimeID),
-		AdmissionMode:        generated.RetentionAdmissionMode(view.Policy.AdmissionMode),
-		QualityProfile:       wireJSON[generated.QualityProfile](view.Policy.QualityProfile),
-		CleanupPolicy:        wireJSON[generated.InstanceRetentionPolicyView_CleanupPolicy](view.Policy.CleanupPolicy),
+		ManagedAnimeId: generated.ID(view.ManagedAnimeID),
+		AdmissionMode:  generated.RetentionAdmissionMode(view.Policy.AdmissionMode),
+		QualityProfile: wireJSON[generated.QualityProfile](view.Policy.QualityProfile),
+
 		SourceDefaultVersion: int(view.SourceDefaultVersion),
 		UpdatedAt:            cloneTimePointer(view.UpdatedAt),
 		Version:              int(view.Version),
 	}
 }
 
-// owner value. The profile/cleanup wire shapes are typed objects with
-// additional properties; a JSON round-trip normalizes them into plain maps.
-// Omitted values normalize to the empty object (a complete, constructable
-// value), never to JSON null.
-func retentionPolicyFromInput(mode generated.RetentionAdmissionMode, profile any, cleanup any) (RetentionPolicy, error) {
+// owner value. The profile wire shape is a typed object; a JSON round-trip
+// normalizes it into a plain map. An omitted value normalizes to the empty
+// object (a complete, constructable value), never to JSON null.
+func retentionPolicyFromInput(mode generated.RetentionAdmissionMode, profile any) (RetentionPolicy, error) {
 	profileRaw, err := anyToRaw(profile)
-	if err != nil {
-		return RetentionPolicy{}, err
-	}
-	cleanupRaw, err := anyToRaw(cleanup)
 	if err != nil {
 		return RetentionPolicy{}, err
 	}
 	return RetentionPolicy{
 		AdmissionMode:  AdmissionMode(mode),
 		QualityProfile: profileRaw,
-		CleanupPolicy:  cleanupRaw,
 	}, nil
 }
 

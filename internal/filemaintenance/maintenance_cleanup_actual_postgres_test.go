@@ -10,118 +10,76 @@ import (
 	"bansoko/internal/workitems"
 	"bytes"
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 )
 
-func TestPGCleanupActualHandlersFinalReceiptCrashBeforeOwnerCommitRecovery(t *testing.T) {
-	for _, kind := range []string{workitems.KindCleanupQuarantine, workitems.KindCleanupPurge} {
-		t.Run(kind, func(t *testing.T) {
-			db := disposabledb.ResetDisposableSchema(t)
-			ctx := context.Background()
-			root, err := filepath.EvalSymlinks(t.TempDir())
-			if err != nil {
-				t.Fatal(err)
-			}
-			source := filepath.Join(root, "source")
-			target := filepath.Join(root, ".bansoko-cleanup-actual-cleanup", "object")
-			if err := os.WriteFile(source, []byte("actual cleanup"), 0600); err != nil {
-				t.Fatal(err)
-			}
-			e := filesystem.NewOSCleanupExecutor(root)
-			observation, err := e.Observe(ctx, source)
-			if err != nil {
-				t.Fatal(err)
-			}
-			id := seedCleanupOperation(t, db, "actual-cleanup", "anime-cleanup", source, observation.Fingerprint, "quarantine", "")
-			s := NewCleanupService(db)
-			store := cleanupWorkItemStore(t, db)
-			s.SetWorkItems(store)
-			s.SetFileExecutor(e)
-			c := cleanupClaim(t, store, id, workitems.KindCleanupQuarantine, 1)
-			if kind == workitems.KindCleanupPurge {
-				o, err := s.QuarantineHandler().Handle(ctx, c)
-				if err != nil || o.TerminalState != workitems.StateSucceeded {
-					t.Fatalf("setup quarantine %+v %v", o, err)
-				}
-				c, err = store.ClaimDue(ctx, "actual-purge", []string{kind}, time.Minute)
-				if err != nil {
-					t.Fatal(err)
-				}
-			}
-			// Inject a DB failure after real effect+final marker but before owner commit.
-			owner := disposabledb.Owner(t)
-			if _, err := owner.Exec(`CREATE FUNCTION test_maintenance_crash_owner() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.state<>OLD.state AND NEW.state IN ('quarantined','grace_waiting','purged') THEN RAISE EXCEPTION 'test crash after actual receipt'; END IF; RETURN NEW; END $$; CREATE TRIGGER test_maintenance_crash BEFORE UPDATE ON cleanup_operations FOR EACH ROW EXECUTE FUNCTION test_maintenance_crash_owner()`); err != nil {
-				t.Fatal(err)
-			}
-			var handler worker.Handler = s.QuarantineHandler()
-			if kind == workitems.KindCleanupPurge {
-				handler = s.PurgeHandler()
-			}
-			if _, err := handler.Handle(ctx, c); err == nil {
-				t.Fatal("fault did not stop owner commit")
-			}
-			if _, err := owner.Exec(`DROP TRIGGER test_maintenance_crash ON cleanup_operations; DROP FUNCTION test_maintenance_crash_owner()`); err != nil {
-				t.Fatal(err)
-			}
-			if err := db.QueryRow(`SELECT expected_owner_version FROM work_item_history WHERE id=$1`, c.ID).Scan(&c.ExpectedOwnerVersion); err != nil {
-				t.Fatal(err)
-			}
-			recovered, err := handler.(worker.RecoveryObserver).ObserveRecovery(ctx, c)
-			if err != nil || recovered.Disposition != workitems.DispositionConfirmed {
-				t.Fatalf("receipt recovery %+v %v", recovered, err)
-			}
-			tx, err := db.BeginTx(ctx, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := recovered.WriteOwner(ctx, txscope.Wrap(tx), recovered.OwnerResult); err != nil {
-				_ = tx.Rollback()
-				t.Fatal(err)
-			}
-			if err := tx.Commit(); err != nil {
-				t.Fatal(err)
-			}
-			var state string
-			if err := db.QueryRow(`SELECT state FROM cleanup_operations WHERE id=$1`, id).Scan(&state); err != nil {
-				t.Fatal(err)
-			}
-			if kind == workitems.KindCleanupPurge {
-				if state != "purged" {
-					t.Fatal(state)
-				}
-				if _, err := os.Stat(target); !os.IsNotExist(err) {
-					t.Fatalf("purge object remains %v", err)
-				}
-			} else {
-				if state != "quarantined" {
-					t.Fatal(state)
-				}
-				if _, err := os.Stat(target); err != nil {
-					t.Fatal(err)
-				}
-			}
-		})
+// A crash after the purge receipt but before the owner commit converges from
+// the exact receipt alone.
+func TestPGCleanupDeleteFinalReceiptCrashBeforeOwnerCommitRecovery(t *testing.T) {
+	f := newCleanupFixture(t)
+	ctx := context.Background()
+	op := f.admit(t, f.input())
+	owner := disposabledb.Owner(t)
+	if _, err := owner.Exec(`CREATE FUNCTION test_maintenance_crash_owner() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.state<>OLD.state AND NEW.state = 'deleted' THEN RAISE EXCEPTION 'test crash after actual receipt'; END IF; RETURN NEW; END $$; CREATE TRIGGER test_maintenance_crash BEFORE UPDATE ON cleanup_operations FOR EACH ROW EXECUTE FUNCTION test_maintenance_crash_owner()`); err != nil {
+		t.Fatal(err)
 	}
+	claim, err := f.store.ClaimDue(ctx, "actual-delete", []string{workitems.KindCleanupDelete}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := f.service.DeleteHandler()
+	outcome, err := handler.Handle(ctx, claim)
+	if err != nil || outcome.TerminalState != workitems.StateSucceeded {
+		t.Fatalf("delete effect %+v %v", outcome, err)
+	}
+	if err := f.store.FinishWithResult(ctx, claim, outcome.TerminalState, outcome.OwnerResult, outcome.WriteOwner); err == nil {
+		t.Fatal("fault did not stop owner commit")
+	}
+	if _, err := owner.Exec(`DROP TRIGGER test_maintenance_crash ON cleanup_operations; DROP FUNCTION test_maintenance_crash_owner()`); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.db.QueryRow(`SELECT expected_owner_version FROM work_item_history WHERE id=$1`, claim.ID).Scan(&claim.ExpectedOwnerVersion); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := handler.(worker.RecoveryObserver).ObserveRecovery(ctx, claim)
+	if err != nil || recovered.Disposition != workitems.DispositionConfirmed {
+		t.Fatalf("receipt recovery %+v %v", recovered, err)
+	}
+	tx, err := f.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := recovered.WriteOwner(ctx, txscope.Wrap(tx), recovered.OwnerResult); err != nil {
+		_ = tx.Rollback()
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if state, _ := f.state(t, op.ID); state != CleanupDeleted {
+		t.Fatalf("state = %s, want deleted", state)
+	}
+	assertFileAbsent(t, f.source)
+	assertFileAbsent(t, filepath.Join(filepath.Dir(f.source), ".bansoko-cleanup-"+op.ID, "object"))
 }
 
-// panicBeforeMoveCleanupExecutor crashes after the quarantine attempt is
+// panicBeforeMoveCleanupExecutor crashes after the capture attempt is
 // checkpointed but before the executor writes its start marker.
 type panicBeforeMoveCleanupExecutor struct {
 	filesystem.OSCleanupExecutor
 }
 
 func (panicBeforeMoveCleanupExecutor) MoveMaintenance(context.Context, string, string, domain.FileObservation, maintenance.MaintenanceInvocation) (string, error) {
-	panic("injected crash before quarantine start marker")
+	panic("injected crash before capture start marker")
 }
 
-func TestPGCleanupQuarantineReclaimedPreStartAttempt(t *testing.T) {
+func TestPGCleanupDeleteReclaimedPreStartAttempt(t *testing.T) {
 	// No start marker, source intact at its frozen observation and nothing at
-	// the quarantine target: the attempt provably never ran and must converge.
-	// Any other disk state stays unresolved and untouched.
+	// the capture path: the attempt provably never ran and the deletion runs
+	// again. Any other disk state blocks and stays untouched.
 	cases := []struct {
 		name      string
 		perturb   func(t *testing.T, source, target string)
@@ -151,89 +109,64 @@ func TestPGCleanupQuarantineReclaimedPreStartAttempt(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			db := disposabledb.ResetDisposableSchema(t)
+			f := newCleanupFixture(t)
 			ctx := context.Background()
-			root, err := filepath.EvalSymlinks(t.TempDir())
+			op := f.admit(t, f.input())
+			target := filepath.Join(filepath.Dir(f.source), ".bansoko-cleanup-"+op.ID, "object")
+			f.service.SetFileExecutor(panicBeforeMoveCleanupExecutor{f.executor.OSCleanupExecutor})
+			claim, err := f.store.ClaimDue(ctx, "crash-worker", []string{workitems.KindCleanupDelete}, time.Minute)
 			if err != nil {
 				t.Fatal(err)
 			}
-			source := filepath.Join(root, "source")
-			if err := os.WriteFile(source, []byte("pre-start cleanup"), 0600); err != nil {
-				t.Fatal(err)
-			}
-			e := filesystem.NewOSCleanupExecutor(root)
-			observation, err := e.Observe(ctx, source)
-			if err != nil {
-				t.Fatal(err)
-			}
-			id := seedCleanupOperation(t, db, "prestart-cleanup", "anime-cleanup", source, observation.Fingerprint, "quarantine", "")
-			target := filepath.Join(root, ".bansoko-cleanup-"+id, "object")
-			s := NewCleanupService(db)
-			store := cleanupWorkItemStore(t, db)
-			s.SetWorkItems(store)
-			s.SetFileExecutor(panicBeforeMoveCleanupExecutor{e})
-			c := cleanupClaim(t, store, id, workitems.KindCleanupQuarantine, 1)
 			func() {
 				defer func() {
 					if recover() == nil {
-						t.Fatal("expected injected crash before quarantine")
+						t.Fatal("expected injected crash before capture")
 					}
 				}()
-				_, _ = s.QuarantineHandler().Handle(ctx, c)
+				_, _ = f.service.DeleteHandler().Handle(ctx, claim)
 			}()
-			var state string
 			var attempt []byte
-			if err := db.QueryRow(`SELECT state, attempt FROM cleanup_operations WHERE id=$1`, id).Scan(&state, &attempt); err != nil {
+			if err := f.db.QueryRow(`SELECT attempt FROM cleanup_operations WHERE id=$1`, op.ID).Scan(&attempt); err != nil {
 				t.Fatal(err)
 			}
-			if state != "admitted" || len(attempt) == 0 {
+			if state, _ := f.state(t, op.ID); state != CleanupAdmitted || len(attempt) == 0 {
 				t.Fatalf("crash checkpoint state=%s attempt=%s", state, attempt)
 			}
 			if tc.perturb != nil {
-				tc.perturb(t, source, target)
+				tc.perturb(t, f.source, target)
 			}
-			sourceBefore, targetBefore := readFileOrNil(t, source), readFileOrNil(t, target)
-			s.SetFileExecutor(e)
-			if _, err := workItemFixtureDB(t).Exec(`UPDATE work_items SET lease_until=CURRENT_TIMESTAMP-INTERVAL '1 second' WHERE id=$1`, c.ID); err != nil {
+			sourceBefore, targetBefore := readFileOrNil(t, f.source), readFileOrNil(t, target)
+			f.service.SetFileExecutor(f.executor)
+			if _, err := workItemFixtureDB(t).Exec(`UPDATE work_items SET lease_until=CURRENT_TIMESTAMP-INTERVAL '1 second' WHERE id=$1`, claim.ID); err != nil {
 				t.Fatal(err)
 			}
-			reclaimed, err := store.ClaimDue(ctx, "reclaim-worker", []string{workitems.KindCleanupQuarantine}, time.Minute)
+			reclaimed, err := f.store.ClaimDue(ctx, "reclaim-worker", []string{workitems.KindCleanupDelete}, time.Minute)
 			if err != nil {
 				t.Fatal(err)
 			}
-			outcome, err := s.QuarantineHandler().Handle(ctx, reclaimed)
+			outcome, err := f.service.DeleteHandler().Handle(ctx, reclaimed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := f.store.FinishWithResult(ctx, reclaimed, outcome.TerminalState, outcome.OwnerResult, outcome.WriteOwner); err != nil {
+				t.Fatal(err)
+			}
+			state, _ := f.state(t, op.ID)
 			if !tc.converges {
-				if !errors.Is(err, workitems.ErrPublicationUnresolved) {
-					t.Fatalf("unproven attempt must remain unresolved: %+v %v", outcome, err)
+				if state != CleanupBlocked {
+					t.Fatalf("unproven attempt must block, state=%s", state)
 				}
-				if !bytes.Equal(readFileOrNil(t, source), sourceBefore) || !bytes.Equal(readFileOrNil(t, target), targetBefore) {
+				if !bytes.Equal(readFileOrNil(t, f.source), sourceBefore) || !bytes.Equal(readFileOrNil(t, target), targetBefore) {
 					t.Fatal("unresolved attempt mutated the disk")
-				}
-				var after []byte
-				if err := db.QueryRow(`SELECT state, attempt FROM cleanup_operations WHERE id=$1`, id).Scan(&state, &after); err != nil {
-					t.Fatal(err)
-				}
-				if state != "admitted" || !bytes.Equal(after, attempt) {
-					t.Fatalf("unresolved attempt changed owner state=%s", state)
 				}
 				return
 			}
-			if err != nil || outcome.TerminalState != workitems.StateSucceeded {
-				t.Fatalf("resumed quarantine %+v %v", outcome, err)
+			if state != CleanupDeleted {
+				t.Fatalf("resumed deletion state=%s", state)
 			}
-			var quarantinePath string
-			if err := db.QueryRow(`SELECT state, quarantine_path FROM cleanup_operations WHERE id=$1`, id).Scan(&state, &quarantinePath); err != nil {
-				t.Fatal(err)
-			}
-			if state != "quarantined" || quarantinePath != target {
-				t.Fatalf("resumed quarantine state=%s path=%s", state, quarantinePath)
-			}
-			if _, err := os.Stat(source); !os.IsNotExist(err) {
-				t.Fatalf("source remains after resumed quarantine: %v", err)
-			}
-			if !bytes.Equal(readFileOrNil(t, target), sourceBefore) {
-				t.Fatal("quarantine object does not carry the frozen source bytes")
-			}
+			assertFileAbsent(t, f.source)
+			assertFileAbsent(t, target)
 		})
 	}
 }

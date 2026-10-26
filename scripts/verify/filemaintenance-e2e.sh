@@ -195,11 +195,13 @@ download_root="$(dirname "$source_file")"
 head -c 65536 /dev/urandom >"$source_file"
 source_hex="$(shasum -a 256 "$source_file" | awk '{print $1}')"
 source_fp='{"algorithm":"sha256","value":"'$source_hex'","size_bytes":65536}'
-# The superseded old placement must exist on disk for the quarantine move.
+# The superseded old placement must exist on disk for its deletion.
 old_file="$BANSOKO_HARNESS_LIBRARY_ROOT/Old/EP01.mkv"
 mkdir -p "$(dirname "$old_file")"
 head -c 32768 /dev/urandom >"$old_file"
 old_hex="$(shasum -a 256 "$old_file" | awk '{print $1}')"
+# The typed fingerprint records the size: the deletion verifies path + size.
+old_fp='{"algorithm":"sha256","value":"'$old_hex'","size_bytes":32768}'
 PGID="$(python3 -c "import json; print(json.load(open('$state_dir/state.json'))['pg_id'])" 2>/dev/null || true)"
 if [[ -z "$PGID" ]]; then
   echo "harness postgres container not found" >&2
@@ -384,7 +386,7 @@ VALUES ('wi-inspect', 'artifact', 'art-e2e', 'artifact_inspect', 'inspect:e2e', 
 -- placement references rel-e2e (1080p) and must win the single_copy pool.
 INSERT INTO placements(id, physical_path, managed_anime_id, source_evidence_type, source_owner_ref,
  source_fingerprint, target_fingerprint, quality_facts_ref, facts_version, verification_state, state, version, created_at, updated_at)
-VALUES ('plc-old', '$BANSOKO_HARNESS_LIBRARY_ROOT/Old/EP01.mkv', 'anime-e2e', 'reconciliation', 'obs-old', '$old_hex', '$old_hex', 'rel-old', 'parser-v1', 'verified', 'active', 1, now() - interval '7 days', now() - interval '7 days');
+VALUES ('plc-old', '$BANSOKO_HARNESS_LIBRARY_ROOT/Old/EP01.mkv', 'anime-e2e', 'reconciliation', 'obs-old', '$old_fp', '$old_fp', 'rel-old', 'parser-v1', 'verified', 'active', 1, now() - interval '7 days', now() - interval '7 days');
 INSERT INTO placement_coverage(placement_id, observation_key, coverage_ordinal, facts_version, evidence_ref)
 VALUES ('plc-old', 'tv:s1:e1', 0, 'parser-v1', 'obs-old');
 -- Complete retention axis (single_copy, version 1) on the same business row:
@@ -395,7 +397,6 @@ VALUES ('plc-old', 'tv:s1:e1', 0, 'parser-v1', 'obs-old');
 UPDATE anime_business_configs SET
   admission_mode = 'single_copy',
   quality_profile = '{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["2160p"],["1080p"],["720p"],["480p"]]}]}'::jsonb,
-  cleanup_policy = '{"version":"cleanup-v1","effect":"quarantine","grace_seconds":0}'::jsonb,
   retention_source_default_version = 1,
   retention_version = 1,
   -- The file-effect axis is the second policy the provisioning writes on the
@@ -434,6 +435,7 @@ if scenario_requested 7; then
   mkdir -p "$(dirname "$movie_old_file")"
   head -c 32768 /dev/urandom >"$movie_old_file"
   movie_old_hex="$(shasum -a 256 "$movie_old_file" | awk '{print $1}')"
+  movie_old_fp='{"algorithm":"sha256","value":"'$movie_old_hex'","size_bytes":32768}'
   movie_payload_digest="sha256:$(repeat_hex e)"
   movie_manifest_digest="sha256:$(repeat_hex 7)"
   movie_file_ref="$(torrent_file_ref "$movie_payload_digest" '进击的巨人 剧场版.mkv')"
@@ -543,13 +545,12 @@ INSERT INTO work_items(id, owner_type, owner_id, kind, idempotency_key, max_atte
 VALUES ('wi-inspect-m', 'artifact', 'art-e2e-m', 'artifact_inspect', 'inspect:e2e-m', 5, jsonb_build_object('local_root', '$download_root'), 1, CURRENT_TIMESTAMP);
 INSERT INTO placements(id, physical_path, managed_anime_id, source_evidence_type, source_owner_ref,
  source_fingerprint, target_fingerprint, quality_facts_ref, facts_version, verification_state, state, version, created_at, updated_at)
-VALUES ('plc-old-m', '$BANSOKO_HARNESS_LIBRARY_ROOT/Old/进击的巨人 剧场版.mkv', 'anime-e2e-m', 'reconciliation', 'obs-old-m', '$movie_old_hex', '$movie_old_hex', 'rel-old-m', 'parser-v1', 'verified', 'active', 1, now() - interval '7 days', now() - interval '7 days');
+VALUES ('plc-old-m', '$BANSOKO_HARNESS_LIBRARY_ROOT/Old/进击的巨人 剧场版.mkv', 'anime-e2e-m', 'reconciliation', 'obs-old-m', '$movie_old_fp', '$movie_old_fp', 'rel-old-m', 'parser-v1', 'verified', 'active', 1, now() - interval '7 days', now() - interval '7 days');
 INSERT INTO placement_coverage(placement_id, observation_key, coverage_ordinal, facts_version, evidence_ref)
 VALUES ('plc-old-m', 'movie:0', 0, 'parser-v1', 'obs-old-m');
 UPDATE anime_business_configs SET
   admission_mode = 'single_copy',
   quality_profile = '{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["2160p"],["1080p"],["720p"],["480p"]]}]}'::jsonb,
-  cleanup_policy = '{"version":"cleanup-v1","effect":"quarantine","grace_seconds":0}'::jsonb,
   retention_source_default_version = 1,
   retention_version = 1,
   unclassified_route = 'skip',
@@ -588,15 +589,16 @@ negative_inject() {
 }
 
 if [[ "$negative_mode" == old-source-missing ]]; then
-  # Destroy the superseded source the quarantine stage must move. The chain
-  # then cannot converge and the unchanged assertions below must reject it.
+  # Destroy the superseded source the deletion must verify. The deletion is
+  # then skipped (loser_missing), the chain cannot converge and the unchanged
+  # assertions below must reject it.
   negative_inject superseded-source "$old_file"
 fi
 echo "== waiting for the automatic chain =="
 wait_chain() {
   local deadline=$(( $(date +%s) + 1100 ))
   while (( $(date +%s) < deadline )); do
-    local placed settled cleanup_purged purge_succeeded
+    local placed settled cleanup_deleted delete_succeeded
     local failed_items available_placement attempt_line
     failed_items="$($PSQL -tAc "SELECT count(*) FROM e2e_aux.work_items_all WHERE owner_type='file_operation' AND kind='file_execute' AND state='failed' AND owner_id IN (SELECT id FROM file_operations WHERE acquisition_id='acq-e2e')")"
     if [[ "$failed_items" -gt 0 ]]; then
@@ -610,8 +612,8 @@ wait_chain() {
     fi
     placed="$($PSQL -tAc "SELECT count(*) FROM placements WHERE managed_anime_id='anime-e2e' AND source_evidence_type='file_operation'")"
     settled="$($PSQL -tAc "SELECT count(*) FROM replacement_decisions WHERE managed_anime_id='anime-e2e' AND verdict='replace' AND state='settled'")"
-    # Receipt-backed maintenance cleanup quarantines the superseded file and,
-    # with grace 0, purges it; a blocked cleanup is a terminal failure here.
+    # Receipt-backed maintenance cleanup deletes the superseded file in one
+    # cleanup_delete claim; a blocked cleanup is a terminal failure here.
     if [[ "$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE managed_anime_id='anime-e2e' AND state='blocked'")" -gt 0 ]]; then
       echo "cleanup blocked: $($PSQL -tAc "SELECT failure_code || ': ' || coalesce(reason,'') FROM cleanup_operations WHERE managed_anime_id='anime-e2e' AND state='blocked'")" >&2
       return 1
@@ -623,13 +625,19 @@ wait_chain() {
       echo "cleanup failed: $($PSQL -tAc "SELECT failure_code || ': ' || coalesce(reason,'') || ' (state=failed)' FROM cleanup_operations WHERE managed_anime_id='anime-e2e' AND state='failed'")" >&2
       return 1
     fi
-    cleanup_purged="$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE managed_anime_id='anime-e2e' AND state='purged'")"
+    # A skipped deletion is a typed zero-effect outcome (the loser was missing
+    # or no longer the replaced file); this chain must delete, so it fails.
+    if [[ "$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE managed_anime_id='anime-e2e' AND state='skipped'")" -gt 0 ]]; then
+      echo "cleanup skipped: $($PSQL -tAc "SELECT failure_code || ': ' || coalesce(reason,'') || ' (state=skipped)' FROM cleanup_operations WHERE managed_anime_id='anime-e2e' AND state='skipped'")" >&2
+      return 1
+    fi
+    cleanup_deleted="$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE managed_anime_id='anime-e2e' AND state='deleted'")"
     # Scoped to this chain: the movie chain is seeded beside it and writes its
-    # own succeeded purge, so an unscoped count is 2. Exactly one purge belongs
-    # to this chain, so a second one is a real duplicate-work regression.
-    purge_succeeded="$($PSQL -tAc "SELECT count(*) FROM e2e_aux.work_items_all WHERE owner_type='cleanup_operation' AND kind='cleanup_purge' AND state='succeeded' AND owner_id IN (SELECT id FROM cleanup_operations WHERE managed_anime_id='anime-e2e')")"
-    if [[ "$placed" -ge 1 && "$settled" -ge 1 && "$cleanup_purged" -eq 1 && "$purge_succeeded" -eq 1 ]]; then
-      echo "chain complete: placed=$placed settled=$settled cleanup_purged=$cleanup_purged purge_succeeded=$purge_succeeded"
+    # own succeeded deletion, so an unscoped count is 2. Exactly one deletion
+    # belongs to this chain, so a second one is a real duplicate-work regression.
+    delete_succeeded="$($PSQL -tAc "SELECT count(*) FROM e2e_aux.work_items_all WHERE owner_type='cleanup_operation' AND kind='cleanup_delete' AND state='succeeded' AND owner_id IN (SELECT id FROM cleanup_operations WHERE managed_anime_id='anime-e2e')")"
+    if [[ "$placed" -ge 1 && "$settled" -ge 1 && "$cleanup_deleted" -eq 1 && "$delete_succeeded" -eq 1 ]]; then
+      echo "chain complete: placed=$placed settled=$settled cleanup_deleted=$cleanup_deleted delete_succeeded=$delete_succeeded"
       return 0
     fi
     sleep 5
@@ -657,7 +665,7 @@ wait_chain || exit 1
 echo "== assertions =="
 old_state="$($PSQL -tAc "SELECT state FROM placements WHERE id='plc-old'")"
 new_path="$($PSQL -tAc "SELECT physical_path FROM placements WHERE source_evidence_type='file_operation' LIMIT 1")"
-quarantine_path="$($PSQL -tAc "SELECT quarantine_path FROM cleanup_operations WHERE managed_anime_id='anime-e2e'" | tr -d '\r')"
+capture_path="$($PSQL -tAc "SELECT coalesce(attempt->>'capture_path','') FROM cleanup_operations WHERE managed_anime_id='anime-e2e'" | tr -d '\r')"
 if [[ "$negative_mode" == new-placement-missing ]]; then
   # Destroy the file the settled chain left at its new placement path. The
   # `-f "$new_path"` assertion below must name it, not time out elsewhere.
@@ -665,9 +673,9 @@ if [[ "$negative_mode" == new-placement-missing ]]; then
 fi
 [[ "$old_state" == "superseded" ]] || { echo "old placement not superseded: $old_state" >&2; exit 1; }
 [[ -f "$new_path" ]] || { echo "new placement file missing: $new_path" >&2; exit 1; }
-[[ ! -e "$old_file" ]] || { echo "superseded source still present after purge: $old_file" >&2; exit 1; }
-[[ -n "$quarantine_path" && ! -e "$quarantine_path" ]] || { echo "quarantine object not purged: $quarantine_path" >&2; exit 1; }
-echo "replacement settled; old placement superseded, quarantined and purged; new placement retained at $new_path"
+[[ ! -e "$old_file" ]] || { echo "superseded source still present after deletion: $old_file" >&2; exit 1; }
+[[ -n "$capture_path" && ! -e "$capture_path" ]] || { echo "captured object not purged: $capture_path" >&2; exit 1; }
+echo "replacement settled; old placement superseded and deleted; new placement retained at $new_path"
 if [[ "${BANSOKO_FM_E2E_OFFSET_ALIGNMENT:-0}" == "1" ]]; then
   # The production subscription bootstrap materializes this CAS-owned policy;
   # the direct SQL fixture fills the equivalent parser axis on the business row.
@@ -1015,10 +1023,10 @@ E2ESECOND
       fi
       movie_placed="$($PSQL -tAc "SELECT count(*) FROM placements WHERE managed_anime_id='anime-e2e-m' AND source_evidence_type='file_operation' AND state='active' AND verification_state='verified'" | tr -d '[:space:]')"
       movie_settled="$($PSQL -tAc "SELECT count(*) FROM replacement_decisions WHERE managed_anime_id='anime-e2e-m' AND verdict='replace' AND state='settled'" | tr -d '[:space:]')"
-      movie_purged="$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE managed_anime_id='anime-e2e-m' AND state='purged'" | tr -d '[:space:]')"
-      movie_purge_done="$($PSQL -tAc "SELECT count(*) FROM e2e_aux.work_items_all WHERE owner_type='cleanup_operation' AND kind='cleanup_purge' AND state='succeeded' AND owner_id IN (SELECT id FROM cleanup_operations WHERE managed_anime_id='anime-e2e-m')" | tr -d '[:space:]')"
-      if [[ "$movie_placed" -ge 1 && "$movie_settled" -ge 1 && "$movie_purged" -eq 1 && "$movie_purge_done" -eq 1 ]]; then
-        echo "movie chain complete: placed=$movie_placed settled=$movie_settled cleanup_purged=$movie_purged purge_succeeded=$movie_purge_done"
+      movie_deleted="$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE managed_anime_id='anime-e2e-m' AND state='deleted'" | tr -d '[:space:]')"
+      movie_delete_done="$($PSQL -tAc "SELECT count(*) FROM e2e_aux.work_items_all WHERE owner_type='cleanup_operation' AND kind='cleanup_delete' AND state='succeeded' AND owner_id IN (SELECT id FROM cleanup_operations WHERE managed_anime_id='anime-e2e-m')" | tr -d '[:space:]')"
+      if [[ "$movie_placed" -ge 1 && "$movie_settled" -ge 1 && "$movie_deleted" -eq 1 && "$movie_delete_done" -eq 1 ]]; then
+        echo "movie chain complete: placed=$movie_placed settled=$movie_settled cleanup_deleted=$movie_deleted delete_succeeded=$movie_delete_done"
         break
       fi
       if (( $(date +%s) >= movie_deadline )); then
@@ -1038,7 +1046,7 @@ E2ESECOND
     [[ "$(fingerprint "$movie_path")" == "$movie_hex" ]] || { echo 'scenario 7 movie placement fingerprint mismatch' >&2; exit 1; }
     [[ "$($PSQL -tAc "SELECT count(*) FROM placement_coverage WHERE placement_id='$movie_placement_id' AND observation_key='movie:0'" | tr -d '[:space:]')" == 1 ]] || { echo 'scenario 7 movie placement coverage is not movie:0' >&2; exit 1; }
     [[ "$($PSQL -tAc "SELECT state FROM placements WHERE id='plc-old-m'" | tr -d '[:space:]')" == superseded ]] || { echo 'scenario 7 old movie placement not superseded' >&2; exit 1; }
-    [[ ! -e "$movie_old_file" ]] || { echo 'scenario 7 superseded movie source still present after purge' >&2; exit 1; }
+    [[ ! -e "$movie_old_file" ]] || { echo 'scenario 7 superseded movie source still present after deletion' >&2; exit 1; }
     observe_disk scenario-7-movie-placement "$movie_path"
     # M4: the offset edit admits and plans, then blocks the movie placement as
     # a typed no-op; the file never moves.
@@ -1731,13 +1739,14 @@ PY
 
   # -- step 6: the recovered placement loses a replacement and is cleaned ---
   # Recovery rewrites the placement's target fingerprint to the typed metadata
-  # envelope. Cleanup of that placement verifies the quarantined object AFTER a
-  # rename, which updates the inode's ctime; on a mount without statx birth
-  # time (FUSE/mergerfs, Unraid shfs, some NFS clients) an identity check that
-  # leaned on ctime blocked here with the file already in quarantine. This
-  # step drives the real chain: a better file_operation placement for the same
-  # episode, the generation-completed replacement trigger, settle, then the
-  # cleanup quarantine + purge of the recovered file on the real library mount.
+  # envelope. Deletion of that placement verifies its path-level identity and
+  # then the captured object AFTER a rename, which updates the inode's ctime;
+  # on a mount without statx birth time (FUSE/mergerfs, Unraid shfs, some NFS
+  # clients) an identity check that leaned on ctime would block here with the
+  # file already captured. This step drives the real chain: a better
+  # file_operation placement for the same episode, the generation-completed
+  # replacement trigger, settle, then the cleanup_delete of the recovered file
+  # on the real library mount.
   echo "== scenario 8b: recovered placement as replacement loser =="
   s8b_target_dir="$(dirname "$s8_target")"
   # Record whether the target mount reports a birth time. GNU stat prints %W
@@ -1854,31 +1863,32 @@ E2EEIGHTB
 
   # The completed generation's replacement consumer evaluates the newest
   # file_operation release (rel-e2e-8b); settle supersedes the recovered
-  # placement and admits its cleanup (quarantine, grace 0, then purge).
+  # placement and registers its deletion in the same transaction.
   scan_and_calibrate scenario-8b-replacement
   # Every cleanup row of the loser (the video and its bound companion) must
-  # reach purged; any blocked/failed row is the failure this step guards.
+  # reach deleted; any blocked/failed/skipped row is the failure this step
+  # guards.
   s8b_cleanup_state=''
   s8b_cleanup_where="managed_anime_id='anime-e2e' AND placement_id='$s8_placement_id'"
   s8b_deadline=$(( $(date +%s) + 300 ))
   while (( $(date +%s) < s8b_deadline )); do
-    s8b_bad="$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE $s8b_cleanup_where AND state IN ('blocked','failed')" | tr -d '[:space:]')"
+    s8b_bad="$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE $s8b_cleanup_where AND state IN ('blocked','failed','skipped')" | tr -d '[:space:]')"
     if [[ "$s8b_bad" != 0 ]]; then
       {
-        echo "scenario 8b: cleanup of the recovered placement ended blocked/failed (target mount btime=$s8b_btime fstype=$s8b_fstype)"
-        $PSQL -c "SELECT id, companion_id, state, failure_code, reason, source_path, source_fingerprint, quarantine_path FROM cleanup_operations WHERE $s8b_cleanup_where"
+        echo "scenario 8b: cleanup of the recovered placement ended blocked/failed/skipped (target mount btime=$s8b_btime fstype=$s8b_fstype)"
+        $PSQL -c "SELECT id, companion_id, state, failure_code, reason, source_path, source_fingerprint, attempt->>'capture_path' AS capture_path FROM cleanup_operations WHERE $s8b_cleanup_where"
         $PSQL -c "SELECT id, kind, state, last_error_code, last_error_reason FROM e2e_aux.work_items_all WHERE owner_type='cleanup_operation' AND owner_id IN (SELECT id FROM cleanup_operations WHERE $s8b_cleanup_where) ORDER BY created_at"
       } | tee -a "$durable_evidence_dir/scenario-8b-diagnostics.txt" >&2
       exit 1
     fi
     s8b_cleanup_state="$($PSQL -tAc "SELECT state FROM cleanup_operations WHERE $s8b_cleanup_where AND companion_id IS NULL ORDER BY created_at DESC LIMIT 1" | tr -d '[:space:]')"
-    s8b_unpurged="$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE $s8b_cleanup_where AND state <> 'purged'" | tr -d '[:space:]')"
-    [[ "$s8b_cleanup_state" == purged && "$s8b_unpurged" == 0 ]] && break
+    s8b_undeleted="$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE $s8b_cleanup_where AND state <> 'deleted'" | tr -d '[:space:]')"
+    [[ "$s8b_cleanup_state" == deleted && "$s8b_undeleted" == 0 ]] && break
     sleep 2
   done
-  if [[ "$s8b_cleanup_state" != purged || "$s8b_unpurged" != 0 ]]; then
+  if [[ "$s8b_cleanup_state" != deleted || "$s8b_undeleted" != 0 ]]; then
     {
-      echo "scenario 8b: the recovered placement's cleanup did not reach purged within 300s (video=[$s8b_cleanup_state], unpurged rows=$s8b_unpurged)"
+      echo "scenario 8b: the recovered placement's cleanup did not reach deleted within 300s (video=[$s8b_cleanup_state], undeleted rows=$s8b_undeleted)"
       $PSQL -c "SELECT id, companion_id, state, failure_code, reason, source_path FROM cleanup_operations WHERE $s8b_cleanup_where"
       $PSQL -c "SELECT id, state, verdict FROM replacement_decisions WHERE managed_anime_id='anime-e2e' ORDER BY created_at DESC LIMIT 5"
       $PSQL -c "SELECT id, state, replacement_eligible, physical_path FROM placements WHERE id IN ('$s8_placement_id','plc-e2e-8b')"
@@ -1888,32 +1898,32 @@ E2EEIGHTB
   fi
   s8b_loser_state="$($PSQL -tAc "SELECT state FROM placements WHERE id='$s8_placement_id'" | tr -d '[:space:]')"
   s8b_winner_state="$($PSQL -tAc "SELECT state FROM placements WHERE id='plc-e2e-8b'" | tr -d '[:space:]')"
-  s8b_quarantine="$($PSQL -tAc "SELECT COALESCE(quarantine_path,'') FROM cleanup_operations WHERE $s8b_cleanup_where AND companion_id IS NULL ORDER BY created_at DESC LIMIT 1" | tr -d '\r')"
+  s8b_capture="$($PSQL -tAc "SELECT COALESCE(attempt->>'capture_path','') FROM cleanup_operations WHERE $s8b_cleanup_where AND companion_id IS NULL ORDER BY created_at DESC LIMIT 1" | tr -d '\r')"
   s8b_cleanup_fp="$($PSQL -tAc "SELECT source_fingerprint::text FROM cleanup_operations WHERE $s8b_cleanup_where AND companion_id IS NULL ORDER BY created_at DESC LIMIT 1" | tr -d '\r')"
   s8b_cleanup_rows="$($PSQL -tAc "SELECT count(*) FROM cleanup_operations WHERE $s8b_cleanup_where" | tr -d '[:space:]')"
   [[ "$s8b_loser_state" == superseded ]] || { echo "scenario 8b: the recovered placement is [$s8b_loser_state], want superseded" >&2; exit 1; }
   [[ "$s8b_winner_state" == active && "$(fingerprint "$s8b_path")" == "$s8b_hex" ]] || { echo "scenario 8b: the winner placement is [$s8b_winner_state] or its file changed" >&2; exit 1; }
-  [[ ! -e "$s8_target" ]] || { echo "scenario 8b: the recovered file is still at $s8_target after purge" >&2; exit 1; }
-  [[ ! -e "$s8_companion_target" ]] || { echo "scenario 8b: the recovered companion is still at $s8_companion_target after purge" >&2; exit 1; }
-  [[ -n "$s8b_quarantine" && ! -e "$s8b_quarantine" ]] || { echo "scenario 8b: quarantine object not purged: [$s8b_quarantine]" >&2; exit 1; }
+  [[ ! -e "$s8_target" ]] || { echo "scenario 8b: the recovered file is still at $s8_target after deletion" >&2; exit 1; }
+  [[ ! -e "$s8_companion_target" ]] || { echo "scenario 8b: the recovered companion is still at $s8_companion_target after deletion" >&2; exit 1; }
+  [[ -n "$s8b_capture" && ! -e "$s8b_capture" ]] || { echo "scenario 8b: captured object not purged: [$s8b_capture]" >&2; exit 1; }
   observe_disk scenario-8b-winner "$s8b_path"
   # The cleanup's frozen source fingerprint is recorded so the evidence shows
   # the metadata-envelope path (not a SHA-256 read) was the one exercised.
-  python3 - "$s8_placement_id" "$s8b_loser_state" "$s8b_cleanup_state" "$s8b_cleanup_rows" "$s8b_quarantine" "$s8_target" \
+  python3 - "$s8_placement_id" "$s8b_loser_state" "$s8b_cleanup_state" "$s8b_cleanup_rows" "$s8b_capture" "$s8_target" \
     "$s8b_target_inode_before" "$s8b_cleanup_fp" "$s8b_fstype" "$s8b_mount" "$s8b_btime" "$s8b_has_btime" >>"$scenario_json" <<'PY'
 import json,sys
-(loser, loser_state, cleanup_state, cleanup_rows, quarantine, target, inode,
+(loser, loser_state, cleanup_state, cleanup_rows, capture, target, inode,
  cleanup_fp, fstype, mount, btime, has_btime) = sys.argv[1:13]
 print(json.dumps({
     "scenario": "8b",
-    "db_state": "recovered_loser_purged",
+    "db_state": "recovered_loser_deleted",
     "loser": loser,
     "loser_state": loser_state,
     "winner": "plc-e2e-8b",
     "cleanup_state": cleanup_state,
-    "cleanup_rows_purged": int(cleanup_rows),
+    "cleanup_rows_deleted": int(cleanup_rows),
     "cleanup_source_fingerprint": cleanup_fp,
-    "quarantine_path": quarantine,
+    "capture_path": capture,
     "target": target,
     "target_inode": inode,
     "target_mount": {"fstype": fstype, "mount": mount, "statx_btime": btime, "has_btime": has_btime == "true"},

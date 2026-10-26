@@ -9,27 +9,32 @@ import (
 )
 
 // Owners that capture a file into their private namespace before removing it:
-// the cleanup owner, and a user delete of the file manager. Each
-// pairs one capture kind with one purge kind of the receipt namespace.
+// the replacement-loser deletion (cleanup owner), and a user delete of the
+// file manager. Each pairs one capture kind with one purge kind of the receipt
+// namespace; the cleanup kinds name the two stages of one cleanup_delete
+// work item.
 const (
+	cleanupOwnerType          = "cleanup_operation"
+	cleanupCaptureKind        = "cleanup_capture"
+	cleanupPurgeKind          = "cleanup_purge"
 	fileManagerOwnerType      = "file_manager_operation"
 	fileManagerQuarantineKind = "file_manager_quarantine"
 	fileManagerPurgeKind      = "file_manager_purge"
 )
 
 func capturesIntoNamespace(ownerType string) bool {
-	return ownerType == "cleanup_operation" || ownerType == fileManagerOwnerType
+	return ownerType == cleanupOwnerType || ownerType == fileManagerOwnerType
 }
 
 // isQuarantineInvocation reports a capture move into the owner namespace.
 func isQuarantineInvocation(i maintenance.MaintenanceInvocation) bool {
-	return (i.Kind == "cleanup_quarantine" && i.OwnerType == "cleanup_operation") ||
+	return (i.Kind == cleanupCaptureKind && i.OwnerType == cleanupOwnerType) ||
 		(i.Kind == fileManagerQuarantineKind && i.OwnerType == fileManagerOwnerType)
 }
 
 // isPurgeInvocation reports the irreversible removal of a captured object.
 func isPurgeInvocation(i maintenance.MaintenanceInvocation) bool {
-	return i.Kind == "cleanup_purge" || i.Kind == fileManagerPurgeKind
+	return i.Kind == cleanupPurgeKind || i.Kind == fileManagerPurgeKind
 }
 
 func validateMaintenanceNamespace(i maintenance.MaintenanceInvocation) error {

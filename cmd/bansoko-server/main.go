@@ -1205,8 +1205,7 @@ func serverWorkItemKinds() []string {
 		workitems.KindAlignmentExecute,
 		workitems.KindOffsetMigrationExecute,
 		workitems.KindReplacementEvaluate,
-		workitems.KindCleanupQuarantine,
-		workitems.KindCleanupPurge,
+		workitems.KindCleanupDelete,
 		workitems.KindFileManagerExecute,
 		workitems.KindCompletionExecute,
 	}

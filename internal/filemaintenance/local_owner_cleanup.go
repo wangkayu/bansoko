@@ -39,7 +39,7 @@ func (s *LocalOwnerCleanup) CleanupLocalOwnersTx(ctx context.Context, scope txsc
 // checkLiveDestructiveEffects fails closed with a typed conflict when any
 // checkpointed destructive effect has not converged: live alignment/cleanup
 // claims, checkpointed alignment (ready/running) or cleanup
-// (admitted/quarantined/grace_waiting) operations, an offset migration
+// (admitted, or blocked with a checkpointed attempt) operations, an offset migration
 // generation/operation/work item that is still live, or an admitted frozen
 // replace decision. All row locks serialize against the effect handlers that
 // revalidate the same owners (settle locks the Subscription/placements; the
@@ -91,10 +91,10 @@ SELECT EXISTS (
     SELECT 1 FROM alignment_operations
     WHERE managed_anime_id = $1 AND state IN ('ready', 'running')
 ) OR EXISTS (
-    -- Checkpointed cleanup lifecycle: quarantined files are already moved;
-    -- admitted/grace_waiting rows have frozen evidence of pending effects.
+    -- Pending deletions: an admitted row has a pending effect; a blocked row
+    -- with an attempt may hold a captured file awaiting its purge.
     SELECT 1 FROM cleanup_operations
-    WHERE managed_anime_id = $1 AND state IN ('admitted', 'quarantined', 'grace_waiting')
+    WHERE managed_anime_id = $1 AND (state = 'admitted' OR (state = 'blocked' AND attempt IS NOT NULL))
 ) OR EXISTS (
     -- A frozen admitted replace decision is a checkpointed destructive
     -- intent: settle would supersede losers and admit cleanup.

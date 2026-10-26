@@ -171,7 +171,7 @@ UPDATE anime_business_configs AS dst
 SET parser_kind = src.parser_kind,
     parser_source_default_version = src.parser_source_default_version,
     parser_version = CASE WHEN src.parser_version IS NULL THEN NULL ELSE 1 END,
-    admission_mode = src.admission_mode, quality_profile = src.quality_profile, cleanup_policy = src.cleanup_policy,
+    admission_mode = src.admission_mode, quality_profile = src.quality_profile,
     retention_source_default_version = src.retention_source_default_version,
     retention_version = CASE WHEN src.retention_version IS NULL THEN NULL ELSE 1 END,
     unclassified_route = src.unclassified_route,

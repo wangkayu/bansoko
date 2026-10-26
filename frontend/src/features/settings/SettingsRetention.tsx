@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, Button, Input, Select, StateBlock } from "../../ui/base";
+import { Alert, Button, Select, StateBlock } from "../../ui/base";
 import { Save } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "../../ui/toast";
@@ -17,13 +17,9 @@ import { useSavePart } from "../../lib/saveParts";
 import { ConflictBlock } from "../../ui";
 import {
   admissionOptions,
-  cleanupOptions,
   draftFromView,
   draftsEqual,
-  graceDaysLabel,
-  graceSecondsValue,
   inputFromDraft,
-  validateDraft,
   type RetentionDraft,
 } from "./retentionDraft";
 import { t } from "../../lib/i18n";
@@ -83,10 +79,8 @@ function RetentionSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =
   useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
   useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
 
-  const problem = draft ? validateDraft(draft) : undefined;
-
   async function save() {
-    if (!data || !draft || problem || saving) return;
+    if (!data || !draft || saving) return;
     setSaving(true);
     setError(undefined);
     setConflict(undefined);
@@ -121,7 +115,7 @@ function RetentionSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =
           <h2 className="settings-policy-title text-title">{t("settings.retention.title")}</h2>
           <p className="settings-policy-description text-caption">{t("settings.retention.description")}</p>
         </div>
-        <Button variant="primary" size="sm" aria-label={saving ? t("settings.retention.saving") : t("settings.retention.saveAria")} disabled={!dirty || !!problem || saving} onClick={() => void save()}>
+        <Button variant="primary" size="sm" aria-label={saving ? t("settings.retention.saving") : t("settings.retention.saveAria")} disabled={!dirty || saving} onClick={() => void save()}>
           <Save size={14} />
           {saving ? t("settings.retention.saving") : t("settings.retention.save")}
         </Button>
@@ -145,6 +139,9 @@ function RetentionSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =
             <p className="settings-policy-card-description text-caption">
               {admissionOptions().find((option) => option.value === draft.admission_mode)?.hint}
             </p>
+            {draft.admission_mode !== "all" && (
+              <p className="settings-policy-card-description text-caption">{t("settings.retention.replacedNote")}</p>
+            )}
           </div>
 
           <div className="settings-policy-card">
@@ -155,29 +152,7 @@ function RetentionSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =
             />
           </div>
 
-          <div className="settings-policy-card">
-            <h3 className="settings-policy-card-title text-body">{t("settings.retention.cleanupCard")}</h3>
-            <div className="settings-retention-field">
-              <Select label={t("settings.retention.cleanupMethod")} value={draft.cleanup_effect} options={cleanupOptions().map((option) => ({ value: option.value, label: option.label }))} onChange={(value) => update((current) => ({ ...current, cleanup_effect: value }))} />
-            </div>
-            <p className="settings-policy-card-description text-caption">
-              {cleanupOptions().find((option) => option.value === draft.cleanup_effect)?.hint}
-            </p>
-            <label className="settings-policy-field text-caption">
-              <span>{t("settings.retention.grace")}</span>
-              <div className="settings-retention-field">
-                <Input
-                  aria-label={t("settings.retention.graceAria")}
-                  inputMode="numeric"
-                  value={draft.grace_seconds}
-                  aria-invalid={graceSecondsValue(draft) === undefined}
-                  onChange={(event) => update((current) => ({ ...current, grace_seconds: event.target.value }))}
-                />
-              </div>
-              <span>{graceDaysLabel(graceSecondsValue(draft))}</span>
-            </label>
-          </div>
-          {problem && <span role="alert" className="settings-policy-error text-caption">{problem}</span>}
+
         </>
       )}
     </section>

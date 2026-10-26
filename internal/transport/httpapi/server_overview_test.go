@@ -32,13 +32,13 @@ VALUES ('sub-ov', 'anime-ov', 'custom', 'Show', 'stopped')`); err != nil {
 	}
 	if _, err := db.Exec(`
 INSERT INTO anime_business_configs
-(managed_anime_id, admission_mode, quality_profile, cleanup_policy, retention_source_default_version, retention_version, updated_at)
-VALUES ('anime-ov', 'all', '{"version":"profile-v1","items":[]}', '{"version":"cleanup-v1","effect":"quarantine","grace_seconds":3600}', 1, 1, CURRENT_TIMESTAMP)
-ON CONFLICT (managed_anime_id) DO UPDATE SET admission_mode=EXCLUDED.admission_mode, quality_profile=EXCLUDED.quality_profile, cleanup_policy=EXCLUDED.cleanup_policy, retention_source_default_version=EXCLUDED.retention_source_default_version, retention_version=EXCLUDED.retention_version, updated_at=EXCLUDED.updated_at`); err != nil {
+(managed_anime_id, admission_mode, quality_profile, retention_source_default_version, retention_version, updated_at)
+VALUES ('anime-ov', 'all', '{"version":"profile-v1","items":[]}', 1, 1, CURRENT_TIMESTAMP)
+ON CONFLICT (managed_anime_id) DO UPDATE SET admission_mode=EXCLUDED.admission_mode, quality_profile=EXCLUDED.quality_profile, retention_source_default_version=EXCLUDED.retention_source_default_version, retention_version=EXCLUDED.retention_version, updated_at=EXCLUDED.updated_at`); err != nil {
 		t.Fatal(err)
 	}
 	// A completed scan generation + its consumer outcomes + one placement +
-	// one stale decision + one quarantined cleanup + one completed alignment.
+	// one stale decision + one admitted cleanup + one completed alignment.
 	scope, _ := json.Marshal(map[string]any{"tree_top": "/library"})
 	progress, _ := json.Marshal(map[string]any{"last_committed_batch": "done"})
 	if _, err := db.Exec(`
@@ -68,10 +68,10 @@ VALUES ('dec-ov', 'repl:ov:x', 'anime-ov', 'rel-x', 1, 'profile-v1', 'rel-x:1', 
 	}
 	if _, err := db.Exec(`
 INSERT INTO cleanup_operations
-(id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref, policy_version,
- retention_mode, source_path, source_fingerprint, effect, state, version, created_at, updated_at)
-VALUES ('cln-ov', 'cln:plc-ov:dec-ov', 'plc-ov', 'anime-ov', '["tv:s1:e1"]', 'dec-ov', 1,
- 'single_copy', '/library/Show/EP01.mkv', 'fp', 'quarantine', 'quarantined', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
+(id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
+ retention_mode, source_path, source_fingerprint, state, version, created_at, updated_at)
+VALUES ('cln-ov', 'cln:plc-ov:dec-ov', 'plc-ov', 'anime-ov', '["tv:s1:e1"]', 'dec-ov',
+ 'single_copy', '/library/Show/EP01.mkv', 'fp', 'admitted', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`

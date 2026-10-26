@@ -54,10 +54,10 @@ type CleanupMetadataFileObserver interface {
 	ObserveMetadataFile(context.Context, string) (domain.FileObservation, error)
 }
 
-// CleanupFileExecutor performs verified quarantine, purge, and restore effects.
+// CleanupFileExecutor performs the verified two stages of one deletion:
+// capture into the owner's private namespace, then purge of that exact object.
 type CleanupFileExecutor interface {
 	Observe(context.Context, string) (domain.FileObservation, error)
-	MoveToQuarantine(context.Context, string, string, domain.FileObservation) (string, error)
-	RemoveQuarantined(context.Context, string, domain.FileObservation) error
-	RestoreFromQuarantine(context.Context, string, string, domain.FileObservation) error
+	CaptureForDelete(context.Context, string, string, domain.FileObservation) (string, error)
+	PurgeCaptured(context.Context, string, domain.FileObservation) error
 }

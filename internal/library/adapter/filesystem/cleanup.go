@@ -12,12 +12,10 @@ import (
 	"bansoko/internal/library/domain"
 )
 
-// OSCleanupExecutor is the anchored filesystem adapter for the optional cleanup
-// owner. Observation is available, but destructive cleanup is deliberately
-// fail-closed until the platform exposes an identity-bound basename mutation.
-// Holding a verified parent descriptor does not make renameat/unlinkat safe
-// against an attacker replacing the entry name between identity verification
-// and the mutation syscall.
+// OSCleanupExecutor is the anchored filesystem adapter for the deletion owners
+// (a replacement loser's deletion and a file-manager delete). A file is never
+// unlinked by its public name: it is first captured into the owner's private
+// namespace, verified there, and only that exact object is purged.
 type OSCleanupExecutor struct {
 	anchor string
 }
@@ -76,11 +74,10 @@ func (executor OSCleanupExecutor) ObserveMetadataFile(ctx context.Context, path 
 	return (OSFileObserver{}).ObserveMetadataFile(ctx, canonical)
 }
 
-// MoveToQuarantine validates all frozen evidence and the no-follow rooted
-// paths, then returns a typed blocked error. There is no safe generic POSIX
-// primitive to rename an entry by already-verified inode identity; falling back
-// to path-based os.Rename would reintroduce the basename replacement race.
-func (executor OSCleanupExecutor) MoveToQuarantine(ctx context.Context, source, quarantine string, expected domain.FileObservation) (string, error) {
+// CaptureForDelete validates the frozen evidence and the no-follow rooted
+// paths, then captures the source into the owner's private namespace and
+// verifies the captured object against the frozen observation.
+func (executor OSCleanupExecutor) CaptureForDelete(ctx context.Context, source, quarantine string, expected domain.FileObservation) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -96,15 +93,15 @@ func (executor OSCleanupExecutor) MoveToQuarantine(ctx context.Context, source, 
 		return "", err
 	}
 	if filepath.Clean(sourcePath) == filepath.Clean(quarantinePath) {
-		return "", errors.New("cleanup source and quarantine paths must differ")
+		return "", errors.New("cleanup source and capture paths must differ")
 	}
 	return captureCleanupObject(root, sourcePath, quarantinePath, expected, nil)
 }
 
-// RemoveQuarantined verifies the exact frozen object but never unlinks by
-// basename. A missing parent or entry is recovery-unsafe, never a successful
-// destructive effect.
-func (executor OSCleanupExecutor) RemoveQuarantined(ctx context.Context, quarantine string, expected domain.FileObservation) error {
+// PurgeCaptured verifies the exact captured object but never unlinks by its
+// public basename. A missing parent or entry is recovery-unsafe, never a
+// successful destructive effect.
+func (executor OSCleanupExecutor) PurgeCaptured(ctx context.Context, quarantine string, expected domain.FileObservation) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -143,55 +140,6 @@ func (executor OSCleanupExecutor) RemoveQuarantined(ctx context.Context, quarant
 	return purgeCleanupObject(root, quarantinePath, expected)
 }
 
-// RestoreFromQuarantine performs the same rooted, no-follow, no-overwrite
-// validation as quarantine, then fails closed before any mutation.
-func (executor OSCleanupExecutor) RestoreFromQuarantine(ctx context.Context, quarantine, source string, expected domain.FileObservation) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if err := requireCleanupObservation(expected); err != nil {
-		return err
-	}
-	root, quarantinePath, err := executor.rootAndPath(quarantine)
-	if err != nil {
-		return err
-	}
-	_, sourcePath, err := executor.rootAndPath(source)
-	if err != nil {
-		return err
-	}
-	quarantineParent, err := verifiedParentIdentityWithinRoot(root, quarantinePath, false)
-	if err != nil {
-		return fmt.Errorf("verify cleanup quarantine parent: %w", err)
-	}
-	if _, err := verifiedParentIdentityWithinRoot(root, sourcePath, false); err != nil {
-		return fmt.Errorf("verify cleanup restore parent: %w", err)
-	}
-	observed, err := observeFileAs(quarantinePath, expected.Fingerprint)
-	if err != nil {
-		return fmt.Errorf("observe cleanup quarantine: %w", err)
-	}
-	if !sameMutationFileObservation(observed, expected) {
-		return &OperationError{Code: CodeRecoveryUnsafe, Err: errors.New("cleanup quarantine identity or fingerprint changed")}
-	}
-	entry, err := openMutationEntry(root, sourcePath, mustParentIdentity(root, sourcePath))
-	if err == nil {
-		defer entry.parent.Close()
-		if _, statErr := entry.parent.file.Stat(); statErr != nil {
-			return fmt.Errorf("verify cleanup restore target parent: %w", statErr)
-		}
-		if _, targetErr := observeFile(sourcePath); targetErr == nil {
-			return &OperationError{Code: CodeTargetCollisionRace, Err: errors.New("cleanup restore target already exists")}
-		} else if !isMissingCleanupPath(targetErr) {
-			return fmt.Errorf("inspect cleanup restore target: %w", targetErr)
-		}
-	} else {
-		return fmt.Errorf("verify cleanup restore target parent: %w", err)
-	}
-	_ = quarantineParent
-	return &OperationError{Code: CodeCleanupIdentityMutationUnsupported, Err: errors.New("identity-bound cleanup restore is unsupported on this platform; cleanup remains blocked")}
-}
-
 func (executor OSCleanupExecutor) rootAndPath(path string) (string, string, error) {
 	anchor := strings.TrimSpace(executor.anchor)
 	root, err := canonicalRoot(anchor)
@@ -224,13 +172,4 @@ func requireCleanupObservation(observation domain.FileObservation) error {
 		return &OperationError{Code: CodeRecoveryUnsafe, Err: errors.New("cleanup requires frozen fingerprint, size, and file identity")}
 	}
 	return nil
-}
-
-func isMissingCleanupPath(err error) bool {
-	return err != nil && errors.Is(err, os.ErrNotExist)
-}
-
-func mustParentIdentity(root, path string) domain.FileIdentity {
-	identity, _ := verifiedParentIdentityWithinRoot(root, path, false)
-	return identity
 }

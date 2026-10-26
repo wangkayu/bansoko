@@ -32,12 +32,11 @@ func openRetentionTestDB(t *testing.T) *sql.DB {
 	return db
 }
 
-func retentionPolicy(t *testing.T, mode AdmissionMode, profile, cleanup string) RetentionPolicy {
+func retentionPolicy(t *testing.T, mode AdmissionMode, profile string) RetentionPolicy {
 	t.Helper()
 	return RetentionPolicy{
 		AdmissionMode:  mode,
 		QualityProfile: json.RawMessage(profile),
-		CleanupPolicy:  json.RawMessage(cleanup),
 	}
 }
 
@@ -74,7 +73,7 @@ func TestSaveDefaultCASAndValidation(t *testing.T) {
 	svc := NewRetentionPolicyService(db)
 
 	policy := retentionPolicy(t, ModePerGroup,
-		`{"version":"profile-v1","items":[{"key":"release.revision","ranks":[]},{"key":"release.resolution","ranks":[["1080p"],["720p"]]}]}`, `{"version":"cleanup-v1","effect":"quarantine","grace_seconds":3600}`)
+		`{"version":"profile-v1","items":[{"key":"release.revision","ranks":[]},{"key":"release.resolution","ranks":[["1080p"],["720p"]]}]}`)
 	saved, err := svc.SaveDefault(ctx, 0, policy, "owner", "web")
 	if err != nil {
 		t.Fatal(err)
@@ -91,27 +90,23 @@ func TestSaveDefaultCASAndValidation(t *testing.T) {
 	}
 
 	// Invalid admission mode is rejected without a version change.
-	_, err = svc.SaveDefault(ctx, 1, retentionPolicy(t, "everyone", `{"version":"profile-v1","items":[]}`, `{"version":"cleanup-v1"}`), "owner", "web")
+	_, err = svc.SaveDefault(ctx, 1, retentionPolicy(t, "everyone", `{"version":"profile-v1","items":[]}`), "owner", "web")
 	expectPolicyInvalid(t, err)
 
 	// Incomplete/wrongly typed profile JSON is rejected.
-	_, err = svc.SaveDefault(ctx, 1, retentionPolicy(t, ModeAll, `{"dimensions":"not-an-array"}`, `{"version":"cleanup-v1"}`), "owner", "web")
+	_, err = svc.SaveDefault(ctx, 1, retentionPolicy(t, ModeAll, `{"dimensions":"not-an-array"}`), "owner", "web")
 	expectPolicyInvalid(t, err)
-	_, err = svc.SaveDefault(ctx, 1, retentionPolicy(t, ModeAll, `{"version":"profile-v1","items":[],"cutoff":{"x":1}}`, `{"version":"cleanup-v1"}`), "owner", "web")
+	_, err = svc.SaveDefault(ctx, 1, retentionPolicy(t, ModeAll, `{"version":"profile-v1","items":[],"cutoff":{"x":1}}`), "owner", "web")
 	expectPolicyInvalid(t, err)
 
 	// A profile-v1 document and a duplicate value set are rejected.
-	_, err = svc.SaveDefault(ctx, 1, retentionPolicy(t, ModeAll, `{"version":"profile-v0","dimensions":["resolution"],"ranks":{},"codec_enabled":false}`, `{"version":"cleanup-v1"}`), "owner", "web")
+	_, err = svc.SaveDefault(ctx, 1, retentionPolicy(t, ModeAll, `{"version":"profile-v0","dimensions":["resolution"],"ranks":{},"codec_enabled":false}`), "owner", "web")
 	expectPolicyInvalid(t, err)
-	_, err = svc.SaveDefault(ctx, 1, retentionPolicy(t, ModeAll, `{"version":"profile-v1","items":[{"key":"anibt.language","ranks":[["CHS","CHT"],["cht","chs"]]}]}`, `{"version":"cleanup-v1"}`), "owner", "web")
-	expectPolicyInvalid(t, err)
-
-	// Unversioned cleanup policy is rejected.
-	_, err = svc.SaveDefault(ctx, 1, retentionPolicy(t, ModeAll, `{"version":"profile-v1","items":[]}`, `{"effect":"purge"}`), "owner", "web")
+	_, err = svc.SaveDefault(ctx, 1, retentionPolicy(t, ModeAll, `{"version":"profile-v1","items":[{"key":"anibt.language","ranks":[["CHS","CHT"],["cht","chs"]]}]}`), "owner", "web")
 	expectPolicyInvalid(t, err)
 
 	// Correct CAS succeeds and bumps the version exactly once.
-	next := retentionPolicy(t, ModeSingleCopy, `{"version":"profile-v1","items":[{"key":"rt.source","ranks":[["WEB-DL"]]}]}`, `{"version":"cleanup-v1","effect":"purge","grace_seconds":7200}`)
+	next := retentionPolicy(t, ModeSingleCopy, `{"version":"profile-v1","items":[{"key":"rt.source","ranks":[["WEB-DL"]]}]}`)
 	updated, err := svc.SaveDefault(ctx, 1, next, "owner", "cli")
 	if err != nil {
 		t.Fatal(err)
@@ -151,7 +146,7 @@ func TestCopyDefaultToInstanceTx(t *testing.T) {
 	svc := NewRetentionPolicyService(db)
 
 	policy := retentionPolicy(t, ModePerGroup,
-		`{"version":"profile-v1","items":[{"key":"release.revision","ranks":[]},{"key":"release.resolution","ranks":[]}]}`, `{"version":"cleanup-v1","effect":"quarantine","grace_seconds":3600}`)
+		`{"version":"profile-v1","items":[{"key":"release.revision","ranks":[]},{"key":"release.resolution","ranks":[]}]}`)
 	if _, err := svc.SaveDefault(ctx, 0, policy, "owner", "web"); err != nil {
 		t.Fatal(err)
 	}
@@ -177,10 +172,10 @@ func TestCopyDefaultToInstanceTx(t *testing.T) {
 	if row.Policy.AdmissionMode != ModePerGroup || row.Policy.Digest() != policy.Digest() {
 		t.Fatalf("instance must copy the complete default: %+v", row.Policy)
 	}
-	// The three fields must be stored complete (no NULL=inherit).
+	// The fields must be stored complete (no NULL=inherit).
 	var nulls int
 	if err := db.QueryRowContext(ctx, `
-SELECT (admission_mode IS NULL)::int + (quality_profile IS NULL)::int + (cleanup_policy IS NULL)::int
+SELECT (admission_mode IS NULL)::int + (quality_profile IS NULL)::int
 FROM anime_business_configs WHERE managed_anime_id = 'anime-1'`).Scan(&nulls); err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +234,7 @@ func TestSaveInstanceCAS(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	replacement := retentionPolicy(t, ModeAll, `{"version":"profile-v1","items":[{"key":"rt.source","ranks":[["WEB-DL"]]}]}`, `{"version":"cleanup-v1","effect":"purge","grace_seconds":3600}`)
+	replacement := retentionPolicy(t, ModeAll, `{"version":"profile-v1","items":[{"key":"rt.source","ranks":[["WEB-DL"]]}]}`)
 	saved, err := svc.SaveInstance(ctx, "anime-1", 1, replacement, "owner", "web")
 	if err != nil {
 		t.Fatal(err)
@@ -249,7 +244,7 @@ func TestSaveInstanceCAS(t *testing.T) {
 	}
 
 	// Stale CAS conflicts and must not partially write any field.
-	_, err = svc.SaveInstance(ctx, "anime-1", 1, retentionPolicy(t, ModePerGroup, `{"version":"profile-v1","items":[]}`, `{"version":"cleanup-v1"}`), "owner", "web")
+	_, err = svc.SaveInstance(ctx, "anime-1", 1, retentionPolicy(t, ModePerGroup, `{"version":"profile-v1","items":[]}`), "owner", "web")
 	var conflict *apperrors.VersionConflict
 	if !errors.As(err, &conflict) || conflict.CurrentVersion != 2 {
 		t.Fatalf("expected version conflict with current 2, got %v", err)
@@ -311,7 +306,7 @@ func TestSaveInstanceProducesNoEffects(t *testing.T) {
 		t.Fatalf("fixture must start empty, got %+v", before)
 	}
 	for version := int64(1); version <= 3; version++ {
-		if _, err := svc.SaveInstance(ctx, "anime-1", version, retentionPolicy(t, ModePerGroup, `{"version":"profile-v1","items":[{"key":"release.revision","ranks":[]}]}`, `{"version":"cleanup-v1"}`), "owner", "web"); err != nil {
+		if _, err := svc.SaveInstance(ctx, "anime-1", version, retentionPolicy(t, ModePerGroup, `{"version":"profile-v1","items":[{"key":"release.revision","ranks":[]}]}`), "owner", "web"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -326,7 +321,7 @@ func TestGlobalDefaultChangeLeavesInstancesUntouched(t *testing.T) {
 	ctx := context.Background()
 	svc := NewRetentionPolicyService(db)
 
-	first := retentionPolicy(t, ModeAll, `{"version":"profile-v1","items":[{"key":"release.revision","ranks":[]},{"key":"release.resolution","ranks":[]}]}`, `{"version":"cleanup-v1","effect":"quarantine","grace_seconds":3600}`)
+	first := retentionPolicy(t, ModeAll, `{"version":"profile-v1","items":[{"key":"release.revision","ranks":[]},{"key":"release.resolution","ranks":[]}]}`)
 	if _, err := svc.SaveDefault(ctx, 0, first, "owner", "web"); err != nil {
 		t.Fatal(err)
 	}
@@ -349,7 +344,7 @@ func TestGlobalDefaultChangeLeavesInstancesUntouched(t *testing.T) {
 	}
 
 	// Change the global default: future instances only.
-	second := retentionPolicy(t, ModeSingleCopy, `{"version":"profile-v1","items":[{"key":"rt.source","ranks":[]},{"key":"subgroup.score","ranks":[]}]}`, `{"version":"cleanup-v1","effect":"purge","grace_seconds":7200}`)
+	second := retentionPolicy(t, ModeSingleCopy, `{"version":"profile-v1","items":[{"key":"rt.source","ranks":[]},{"key":"subgroup.score","ranks":[]}]}`)
 	if _, err := svc.SaveDefault(ctx, 1, second, "owner", "web"); err != nil {
 		t.Fatal(err)
 	}

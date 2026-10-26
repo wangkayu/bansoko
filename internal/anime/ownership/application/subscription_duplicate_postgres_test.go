@@ -33,7 +33,7 @@ SELECT concat_ws(' | ',
      FROM managed_anime ma JOIN subscriptions s ON s.managed_anime_id = ma.id WHERE ma.id = $1),
   (SELECT concat_ws(',', bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season, media_kind_override, total_episodes, year, season)
      FROM anime_metadata WHERE managed_anime_id = $1),
-  (SELECT concat_ws(',', parser_kind, parser_source_default_version, admission_mode, quality_profile::text, cleanup_policy::text,
+  (SELECT concat_ws(',', parser_kind, parser_source_default_version, admission_mode, quality_profile::text,
                     retention_source_default_version, unclassified_route, file_effect_source_default_version,
                     candidate_id, revision, business_snapshot::text, business_digest)
      FROM anime_business_configs WHERE managed_anime_id = $1),

@@ -205,7 +205,7 @@ func provideReadmodelService(db *sql.DB, ownership *ownershipapplication.Service
 			catalog.ReadSeedTorrentManifests,
 			catalogapplication.SeedSearchApplication{Service: catalog}.ReadSearchSeedTorrentManifests,
 		),
-		MediaFacts:           mediaFacts,
+		MediaFacts: mediaFacts,
 		// The RSS row of an imported file shows the new path with the same
 		// renderer the per-anime files dialog uses.
 		PlacementTargets: placementTargets,
@@ -909,8 +909,7 @@ func provideWorkerGraph(
 		{kind: workitems.KindAlignmentExecute, handler: alignmentOperations.ExecuteHandler()},
 		{kind: workitems.KindOffsetMigrationExecute, handler: offsetMigrationExecute.ExecuteHandler()},
 		{kind: workitems.KindReplacementEvaluate, handler: replacementDecisions.EvaluateHandler()},
-		{kind: workitems.KindCleanupQuarantine, handler: cleanupService.QuarantineHandler()},
-		{kind: workitems.KindCleanupPurge, handler: cleanupService.PurgeHandler()},
+		{kind: workitems.KindCleanupDelete, handler: cleanupService.DeleteHandler()},
 		{kind: workitems.KindFileManagerExecute, handler: userOperations.ExecuteHandler()},
 		{kind: workitems.KindCompletionExecute, handler: downloadCompletion.Handler()},
 	}

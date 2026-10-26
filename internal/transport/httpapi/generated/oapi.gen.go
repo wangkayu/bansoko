@@ -451,13 +451,6 @@ const (
 	BusinessRecordRecordTypeBusiness BusinessRecordRecordType = "business"
 )
 
-// Defines values for BusinessRetentionCleanupPolicyEffect.
-const (
-	BusinessRetentionCleanupPolicyEffectPurge      BusinessRetentionCleanupPolicyEffect = "purge"
-	BusinessRetentionCleanupPolicyEffectQuarantine BusinessRetentionCleanupPolicyEffect = "quarantine"
-	BusinessRetentionCleanupPolicyEffectUnlink     BusinessRetentionCleanupPolicyEffect = "unlink"
-)
-
 // Defines values for BusinessSnapshotSchemaVersion.
 const (
 	BusinessSnapshotSchemaVersionBusinessSnapshotV1 BusinessSnapshotSchemaVersion = "business-snapshot-v1"
@@ -517,13 +510,6 @@ const (
 	CatalogSnapshotStatusZeroResult CatalogSnapshotStatus = "zero_result"
 )
 
-// Defines values for CleanupOperationViewEffect.
-const (
-	CleanupOperationViewEffectPurge      CleanupOperationViewEffect = "purge"
-	CleanupOperationViewEffectQuarantine CleanupOperationViewEffect = "quarantine"
-	CleanupOperationViewEffectUnlink     CleanupOperationViewEffect = "unlink"
-)
-
 // Defines values for CleanupOperationViewRetentionMode.
 const (
 	CleanupOperationViewRetentionModePerGroup   CleanupOperationViewRetentionMode = "per_group"
@@ -532,13 +518,11 @@ const (
 
 // Defines values for CleanupOperationViewState.
 const (
-	CleanupOperationViewStateAdmitted     CleanupOperationViewState = "admitted"
-	CleanupOperationViewStateBlocked      CleanupOperationViewState = "blocked"
-	CleanupOperationViewStateCompleted    CleanupOperationViewState = "completed"
-	CleanupOperationViewStateFailed       CleanupOperationViewState = "failed"
-	CleanupOperationViewStateGraceWaiting CleanupOperationViewState = "grace_waiting"
-	CleanupOperationViewStatePurged       CleanupOperationViewState = "purged"
-	CleanupOperationViewStateQuarantined  CleanupOperationViewState = "quarantined"
+	CleanupOperationViewStateAdmitted CleanupOperationViewState = "admitted"
+	CleanupOperationViewStateBlocked  CleanupOperationViewState = "blocked"
+	CleanupOperationViewStateDeleted  CleanupOperationViewState = "deleted"
+	CleanupOperationViewStateFailed   CleanupOperationViewState = "failed"
+	CleanupOperationViewStateSkipped  CleanupOperationViewState = "skipped"
 )
 
 // Defines values for CollisionPolicy.
@@ -951,20 +935,6 @@ const (
 // Defines values for HTTPProxyRouteInputKind.
 const (
 	HTTPProxyRouteInputKindHttpProxy HTTPProxyRouteInputKind = "http_proxy"
-)
-
-// Defines values for InstanceRetentionPolicyInputCleanupPolicyEffect.
-const (
-	InstanceRetentionPolicyInputCleanupPolicyEffectPurge      InstanceRetentionPolicyInputCleanupPolicyEffect = "purge"
-	InstanceRetentionPolicyInputCleanupPolicyEffectQuarantine InstanceRetentionPolicyInputCleanupPolicyEffect = "quarantine"
-	InstanceRetentionPolicyInputCleanupPolicyEffectUnlink     InstanceRetentionPolicyInputCleanupPolicyEffect = "unlink"
-)
-
-// Defines values for InstanceRetentionPolicyViewCleanupPolicyEffect.
-const (
-	InstanceRetentionPolicyViewCleanupPolicyEffectPurge      InstanceRetentionPolicyViewCleanupPolicyEffect = "purge"
-	InstanceRetentionPolicyViewCleanupPolicyEffectQuarantine InstanceRetentionPolicyViewCleanupPolicyEffect = "quarantine"
-	InstanceRetentionPolicyViewCleanupPolicyEffectUnlink     InstanceRetentionPolicyViewCleanupPolicyEffect = "unlink"
 )
 
 // Defines values for LibraryOverlapVerdict.
@@ -1965,20 +1935,6 @@ const (
 	RetentionAdmissionModeAll        RetentionAdmissionMode = "all"
 	RetentionAdmissionModePerGroup   RetentionAdmissionMode = "per_group"
 	RetentionAdmissionModeSingleCopy RetentionAdmissionMode = "single_copy"
-)
-
-// Defines values for RetentionPolicyDefaultInputCleanupPolicyEffect.
-const (
-	RetentionPolicyDefaultInputCleanupPolicyEffectPurge      RetentionPolicyDefaultInputCleanupPolicyEffect = "purge"
-	RetentionPolicyDefaultInputCleanupPolicyEffectQuarantine RetentionPolicyDefaultInputCleanupPolicyEffect = "quarantine"
-	RetentionPolicyDefaultInputCleanupPolicyEffectUnlink     RetentionPolicyDefaultInputCleanupPolicyEffect = "unlink"
-)
-
-// Defines values for RetentionPolicyDefaultViewCleanupPolicyEffect.
-const (
-	RetentionPolicyDefaultViewCleanupPolicyEffectPurge      RetentionPolicyDefaultViewCleanupPolicyEffect = "purge"
-	RetentionPolicyDefaultViewCleanupPolicyEffectQuarantine RetentionPolicyDefaultViewCleanupPolicyEffect = "quarantine"
-	RetentionPolicyDefaultViewCleanupPolicyEffectUnlink     RetentionPolicyDefaultViewCleanupPolicyEffect = "unlink"
 )
 
 // Defines values for RoutineActivityKind.
@@ -3695,18 +3651,10 @@ type BusinessRecordRecordType string
 // BusinessRetention defines model for BusinessRetention.
 type BusinessRetention struct {
 	AdmissionMode RetentionAdmissionMode `json:"admission_mode"`
-	CleanupPolicy struct {
-		Effect       BusinessRetentionCleanupPolicyEffect `json:"effect"`
-		GraceSeconds int64                                `json:"grace_seconds"`
-		Version      string                               `json:"version"`
-	} `json:"cleanup_policy"`
 
 	// QualityProfile The replacement comparison profile (profile-v1): ordered comparison items. Items compare in order and the first item that ranks two releases differently decides; all items equal, the larger size wins; still equal, the existing file stays.
 	QualityProfile QualityProfile `json:"quality_profile"`
 }
-
-// BusinessRetentionCleanupPolicyEffect defines model for BusinessRetention.CleanupPolicy.Effect.
-type BusinessRetentionCleanupPolicyEffect string
 
 // BusinessSectionSchemas defines model for BusinessSectionSchemas.
 type BusinessSectionSchemas struct {
@@ -3948,17 +3896,15 @@ type CatalogWorkspace struct {
 	Snapshot CatalogSnapshot `json:"snapshot"`
 }
 
-// CleanupOperationView defines model for CleanupOperationView.
+// CleanupOperationView One deletion obligation of a replacement loser. The loser's path-level identity (recorded size, plus the inode when recorded) is verified before the file is deleted; a mismatch is skipped with a typed reason and leaves the file in place.
 type CleanupOperationView struct {
-	CreatedAt         time.Time                         `json:"created_at"`
-	Effect            CleanupOperationViewEffect        `json:"effect"`
+	CreatedAt time.Time `json:"created_at"`
+
+	// FailureCode Typed reason of a skipped, blocked or failed deletion; a skip is one of loser_missing, loser_not_regular, loser_identity_changed, loser_identity_unknown, loser_path_owned.
 	FailureCode       *string                           `json:"failure_code,omitempty"`
-	GraceDeadline     *time.Time                        `json:"grace_deadline"`
 	Id                string                            `json:"id"`
 	ManagedAnimeId    string                            `json:"managed_anime_id"`
 	PlacementId       string                            `json:"placement_id"`
-	PolicyVersion     int                               `json:"policy_version"`
-	QuarantinePath    *string                           `json:"quarantine_path,omitempty"`
 	Reason            *string                           `json:"reason,omitempty"`
 	ReplacementRef    string                            `json:"replacement_ref"`
 	RetentionMode     CleanupOperationViewRetentionMode `json:"retention_mode"`
@@ -3968,9 +3914,6 @@ type CleanupOperationView struct {
 	UpdatedAt         *time.Time                        `json:"updated_at,omitempty"`
 	Version           int                               `json:"version"`
 }
-
-// CleanupOperationViewEffect defines model for CleanupOperationView.Effect.
-type CleanupOperationViewEffect string
 
 // CleanupOperationViewRetentionMode defines model for CleanupOperationView.RetentionMode.
 type CleanupOperationViewRetentionMode string
@@ -5055,8 +4998,7 @@ type InstanceFileEffectPolicyView struct {
 
 // InstanceRetentionPolicyInput defines model for InstanceRetentionPolicyInput.
 type InstanceRetentionPolicyInput struct {
-	AdmissionMode RetentionAdmissionMode                     `json:"admission_mode"`
-	CleanupPolicy InstanceRetentionPolicyInput_CleanupPolicy `json:"cleanup_policy"`
+	AdmissionMode RetentionAdmissionMode `json:"admission_mode"`
 
 	// ExpectedVersion CAS expected version (0 = create).
 	ExpectedVersion int `json:"expected_version"`
@@ -5065,41 +5007,16 @@ type InstanceRetentionPolicyInput struct {
 	QualityProfile QualityProfile `json:"quality_profile"`
 }
 
-// InstanceRetentionPolicyInputCleanupPolicyEffect defines model for InstanceRetentionPolicyInput.CleanupPolicy.Effect.
-type InstanceRetentionPolicyInputCleanupPolicyEffect string
-
-// InstanceRetentionPolicyInput_CleanupPolicy defines model for InstanceRetentionPolicyInput.CleanupPolicy.
-type InstanceRetentionPolicyInput_CleanupPolicy struct {
-	Effect               *InstanceRetentionPolicyInputCleanupPolicyEffect `json:"effect,omitempty"`
-	GraceSeconds         *int                                             `json:"grace_seconds,omitempty"`
-	Version              *string                                          `json:"version,omitempty"`
-	AdditionalProperties map[string]interface{}                           `json:"-"`
-}
-
 // InstanceRetentionPolicyView defines model for InstanceRetentionPolicyView.
 type InstanceRetentionPolicyView struct {
-	AdmissionMode RetentionAdmissionMode `json:"admission_mode"`
-
-	// CleanupPolicy Complete versioned cleanup policy.
-	CleanupPolicy  InstanceRetentionPolicyView_CleanupPolicy `json:"cleanup_policy"`
-	ManagedAnimeId ID                                        `json:"managed_anime_id"`
+	AdmissionMode  RetentionAdmissionMode `json:"admission_mode"`
+	ManagedAnimeId ID                     `json:"managed_anime_id"`
 
 	// QualityProfile The replacement comparison profile (profile-v1): ordered comparison items. Items compare in order and the first item that ranks two releases differently decides; all items equal, the larger size wins; still equal, the existing file stays.
 	QualityProfile       QualityProfile `json:"quality_profile"`
 	SourceDefaultVersion int            `json:"source_default_version"`
 	UpdatedAt            *time.Time     `json:"updated_at"`
 	Version              int            `json:"version"`
-}
-
-// InstanceRetentionPolicyViewCleanupPolicyEffect defines model for InstanceRetentionPolicyView.CleanupPolicy.Effect.
-type InstanceRetentionPolicyViewCleanupPolicyEffect string
-
-// InstanceRetentionPolicyView_CleanupPolicy Complete versioned cleanup policy.
-type InstanceRetentionPolicyView_CleanupPolicy struct {
-	Effect               *InstanceRetentionPolicyViewCleanupPolicyEffect `json:"effect,omitempty"`
-	GraceSeconds         *int                                            `json:"grace_seconds,omitempty"`
-	Version              *string                                         `json:"version,omitempty"`
-	AdditionalProperties map[string]interface{}                          `json:"-"`
 }
 
 // LibraryOverlap Read-only per-seed library overlap fact, computed by the server from the placements the library already holds. It only reads: it creates no placement, reserves no path and produces no WorkItem, and it is a fact rather than a plan, so pending_files counts files this seed would still have to write without promising that write. undetermined is a first-class answer and is never folded into absent: it means the overlap cannot be decided (no write set to compare, or a server with no library facts to read at all), and both counts and every per-file in_library value are then null.
@@ -7772,8 +7689,7 @@ type RetentionCompareVocabularyItem struct {
 
 // RetentionPolicyDefaultInput defines model for RetentionPolicyDefaultInput.
 type RetentionPolicyDefaultInput struct {
-	AdmissionMode RetentionAdmissionMode                    `json:"admission_mode"`
-	CleanupPolicy RetentionPolicyDefaultInput_CleanupPolicy `json:"cleanup_policy"`
+	AdmissionMode RetentionAdmissionMode `json:"admission_mode"`
 
 	// ExpectedVersion CAS expected version (0 = create).
 	ExpectedVersion int `json:"expected_version"`
@@ -7782,39 +7698,14 @@ type RetentionPolicyDefaultInput struct {
 	QualityProfile QualityProfile `json:"quality_profile"`
 }
 
-// RetentionPolicyDefaultInputCleanupPolicyEffect defines model for RetentionPolicyDefaultInput.CleanupPolicy.Effect.
-type RetentionPolicyDefaultInputCleanupPolicyEffect string
-
-// RetentionPolicyDefaultInput_CleanupPolicy defines model for RetentionPolicyDefaultInput.CleanupPolicy.
-type RetentionPolicyDefaultInput_CleanupPolicy struct {
-	Effect               *RetentionPolicyDefaultInputCleanupPolicyEffect `json:"effect,omitempty"`
-	GraceSeconds         *int                                            `json:"grace_seconds,omitempty"`
-	Version              *string                                         `json:"version,omitempty"`
-	AdditionalProperties map[string]interface{}                          `json:"-"`
-}
-
 // RetentionPolicyDefaultView defines model for RetentionPolicyDefaultView.
 type RetentionPolicyDefaultView struct {
 	AdmissionMode RetentionAdmissionMode `json:"admission_mode"`
-
-	// CleanupPolicy Complete versioned cleanup policy.
-	CleanupPolicy RetentionPolicyDefaultView_CleanupPolicy `json:"cleanup_policy"`
 
 	// QualityProfile The replacement comparison profile (profile-v1): ordered comparison items. Items compare in order and the first item that ranks two releases differently decides; all items equal, the larger size wins; still equal, the existing file stays.
 	QualityProfile QualityProfile `json:"quality_profile"`
 	UpdatedAt      *time.Time     `json:"updated_at"`
 	Version        int            `json:"version"`
-}
-
-// RetentionPolicyDefaultViewCleanupPolicyEffect defines model for RetentionPolicyDefaultView.CleanupPolicy.Effect.
-type RetentionPolicyDefaultViewCleanupPolicyEffect string
-
-// RetentionPolicyDefaultView_CleanupPolicy Complete versioned cleanup policy.
-type RetentionPolicyDefaultView_CleanupPolicy struct {
-	Effect               *RetentionPolicyDefaultViewCleanupPolicyEffect `json:"effect,omitempty"`
-	GraceSeconds         *int                                           `json:"grace_seconds,omitempty"`
-	Version              *string                                        `json:"version,omitempty"`
-	AdditionalProperties map[string]interface{}                         `json:"-"`
 }
 
 // RoutineActivity defines model for RoutineActivity.
@@ -9621,398 +9512,6 @@ type PreviewNotificationTemplateJSONRequestBody = NotificationTemplatePreviewInp
 
 // AdmitUpdateJSONRequestBody defines body for AdmitUpdate for application/json ContentType.
 type AdmitUpdateJSONRequestBody = UpdateAdmitInput
-
-// Getter for additional properties for InstanceRetentionPolicyInput_CleanupPolicy. Returns the specified
-// element and whether it was found
-func (a InstanceRetentionPolicyInput_CleanupPolicy) Get(fieldName string) (value interface{}, found bool) {
-	if a.AdditionalProperties != nil {
-		value, found = a.AdditionalProperties[fieldName]
-	}
-	return
-}
-
-// Setter for additional properties for InstanceRetentionPolicyInput_CleanupPolicy
-func (a *InstanceRetentionPolicyInput_CleanupPolicy) Set(fieldName string, value interface{}) {
-	if a.AdditionalProperties == nil {
-		a.AdditionalProperties = make(map[string]interface{})
-	}
-	a.AdditionalProperties[fieldName] = value
-}
-
-// Override default JSON handling for InstanceRetentionPolicyInput_CleanupPolicy to handle AdditionalProperties
-func (a *InstanceRetentionPolicyInput_CleanupPolicy) UnmarshalJSON(b []byte) error {
-	object := make(map[string]json.RawMessage)
-	err := json.Unmarshal(b, &object)
-	if err != nil {
-		return err
-	}
-
-	if raw, found := object["effect"]; found {
-		err = json.Unmarshal(raw, &a.Effect)
-		if err != nil {
-			return fmt.Errorf("error reading 'effect': %w", err)
-		}
-		delete(object, "effect")
-	}
-
-	if raw, found := object["grace_seconds"]; found {
-		err = json.Unmarshal(raw, &a.GraceSeconds)
-		if err != nil {
-			return fmt.Errorf("error reading 'grace_seconds': %w", err)
-		}
-		delete(object, "grace_seconds")
-	}
-
-	if raw, found := object["version"]; found {
-		err = json.Unmarshal(raw, &a.Version)
-		if err != nil {
-			return fmt.Errorf("error reading 'version': %w", err)
-		}
-		delete(object, "version")
-	}
-
-	if len(object) != 0 {
-		a.AdditionalProperties = make(map[string]interface{})
-		for fieldName, fieldBuf := range object {
-			var fieldVal interface{}
-			err := json.Unmarshal(fieldBuf, &fieldVal)
-			if err != nil {
-				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
-			}
-			a.AdditionalProperties[fieldName] = fieldVal
-		}
-	}
-	return nil
-}
-
-// Override default JSON handling for InstanceRetentionPolicyInput_CleanupPolicy to handle AdditionalProperties
-func (a InstanceRetentionPolicyInput_CleanupPolicy) MarshalJSON() ([]byte, error) {
-	var err error
-	object := make(map[string]json.RawMessage)
-
-	if a.Effect != nil {
-		object["effect"], err = json.Marshal(a.Effect)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'effect': %w", err)
-		}
-	}
-
-	if a.GraceSeconds != nil {
-		object["grace_seconds"], err = json.Marshal(a.GraceSeconds)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'grace_seconds': %w", err)
-		}
-	}
-
-	if a.Version != nil {
-		object["version"], err = json.Marshal(a.Version)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'version': %w", err)
-		}
-	}
-
-	for fieldName, field := range a.AdditionalProperties {
-		object[fieldName], err = json.Marshal(field)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
-		}
-	}
-	return json.Marshal(object)
-}
-
-// Getter for additional properties for InstanceRetentionPolicyView_CleanupPolicy. Returns the specified
-// element and whether it was found
-func (a InstanceRetentionPolicyView_CleanupPolicy) Get(fieldName string) (value interface{}, found bool) {
-	if a.AdditionalProperties != nil {
-		value, found = a.AdditionalProperties[fieldName]
-	}
-	return
-}
-
-// Setter for additional properties for InstanceRetentionPolicyView_CleanupPolicy
-func (a *InstanceRetentionPolicyView_CleanupPolicy) Set(fieldName string, value interface{}) {
-	if a.AdditionalProperties == nil {
-		a.AdditionalProperties = make(map[string]interface{})
-	}
-	a.AdditionalProperties[fieldName] = value
-}
-
-// Override default JSON handling for InstanceRetentionPolicyView_CleanupPolicy to handle AdditionalProperties
-func (a *InstanceRetentionPolicyView_CleanupPolicy) UnmarshalJSON(b []byte) error {
-	object := make(map[string]json.RawMessage)
-	err := json.Unmarshal(b, &object)
-	if err != nil {
-		return err
-	}
-
-	if raw, found := object["effect"]; found {
-		err = json.Unmarshal(raw, &a.Effect)
-		if err != nil {
-			return fmt.Errorf("error reading 'effect': %w", err)
-		}
-		delete(object, "effect")
-	}
-
-	if raw, found := object["grace_seconds"]; found {
-		err = json.Unmarshal(raw, &a.GraceSeconds)
-		if err != nil {
-			return fmt.Errorf("error reading 'grace_seconds': %w", err)
-		}
-		delete(object, "grace_seconds")
-	}
-
-	if raw, found := object["version"]; found {
-		err = json.Unmarshal(raw, &a.Version)
-		if err != nil {
-			return fmt.Errorf("error reading 'version': %w", err)
-		}
-		delete(object, "version")
-	}
-
-	if len(object) != 0 {
-		a.AdditionalProperties = make(map[string]interface{})
-		for fieldName, fieldBuf := range object {
-			var fieldVal interface{}
-			err := json.Unmarshal(fieldBuf, &fieldVal)
-			if err != nil {
-				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
-			}
-			a.AdditionalProperties[fieldName] = fieldVal
-		}
-	}
-	return nil
-}
-
-// Override default JSON handling for InstanceRetentionPolicyView_CleanupPolicy to handle AdditionalProperties
-func (a InstanceRetentionPolicyView_CleanupPolicy) MarshalJSON() ([]byte, error) {
-	var err error
-	object := make(map[string]json.RawMessage)
-
-	if a.Effect != nil {
-		object["effect"], err = json.Marshal(a.Effect)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'effect': %w", err)
-		}
-	}
-
-	if a.GraceSeconds != nil {
-		object["grace_seconds"], err = json.Marshal(a.GraceSeconds)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'grace_seconds': %w", err)
-		}
-	}
-
-	if a.Version != nil {
-		object["version"], err = json.Marshal(a.Version)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'version': %w", err)
-		}
-	}
-
-	for fieldName, field := range a.AdditionalProperties {
-		object[fieldName], err = json.Marshal(field)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
-		}
-	}
-	return json.Marshal(object)
-}
-
-// Getter for additional properties for RetentionPolicyDefaultInput_CleanupPolicy. Returns the specified
-// element and whether it was found
-func (a RetentionPolicyDefaultInput_CleanupPolicy) Get(fieldName string) (value interface{}, found bool) {
-	if a.AdditionalProperties != nil {
-		value, found = a.AdditionalProperties[fieldName]
-	}
-	return
-}
-
-// Setter for additional properties for RetentionPolicyDefaultInput_CleanupPolicy
-func (a *RetentionPolicyDefaultInput_CleanupPolicy) Set(fieldName string, value interface{}) {
-	if a.AdditionalProperties == nil {
-		a.AdditionalProperties = make(map[string]interface{})
-	}
-	a.AdditionalProperties[fieldName] = value
-}
-
-// Override default JSON handling for RetentionPolicyDefaultInput_CleanupPolicy to handle AdditionalProperties
-func (a *RetentionPolicyDefaultInput_CleanupPolicy) UnmarshalJSON(b []byte) error {
-	object := make(map[string]json.RawMessage)
-	err := json.Unmarshal(b, &object)
-	if err != nil {
-		return err
-	}
-
-	if raw, found := object["effect"]; found {
-		err = json.Unmarshal(raw, &a.Effect)
-		if err != nil {
-			return fmt.Errorf("error reading 'effect': %w", err)
-		}
-		delete(object, "effect")
-	}
-
-	if raw, found := object["grace_seconds"]; found {
-		err = json.Unmarshal(raw, &a.GraceSeconds)
-		if err != nil {
-			return fmt.Errorf("error reading 'grace_seconds': %w", err)
-		}
-		delete(object, "grace_seconds")
-	}
-
-	if raw, found := object["version"]; found {
-		err = json.Unmarshal(raw, &a.Version)
-		if err != nil {
-			return fmt.Errorf("error reading 'version': %w", err)
-		}
-		delete(object, "version")
-	}
-
-	if len(object) != 0 {
-		a.AdditionalProperties = make(map[string]interface{})
-		for fieldName, fieldBuf := range object {
-			var fieldVal interface{}
-			err := json.Unmarshal(fieldBuf, &fieldVal)
-			if err != nil {
-				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
-			}
-			a.AdditionalProperties[fieldName] = fieldVal
-		}
-	}
-	return nil
-}
-
-// Override default JSON handling for RetentionPolicyDefaultInput_CleanupPolicy to handle AdditionalProperties
-func (a RetentionPolicyDefaultInput_CleanupPolicy) MarshalJSON() ([]byte, error) {
-	var err error
-	object := make(map[string]json.RawMessage)
-
-	if a.Effect != nil {
-		object["effect"], err = json.Marshal(a.Effect)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'effect': %w", err)
-		}
-	}
-
-	if a.GraceSeconds != nil {
-		object["grace_seconds"], err = json.Marshal(a.GraceSeconds)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'grace_seconds': %w", err)
-		}
-	}
-
-	if a.Version != nil {
-		object["version"], err = json.Marshal(a.Version)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'version': %w", err)
-		}
-	}
-
-	for fieldName, field := range a.AdditionalProperties {
-		object[fieldName], err = json.Marshal(field)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
-		}
-	}
-	return json.Marshal(object)
-}
-
-// Getter for additional properties for RetentionPolicyDefaultView_CleanupPolicy. Returns the specified
-// element and whether it was found
-func (a RetentionPolicyDefaultView_CleanupPolicy) Get(fieldName string) (value interface{}, found bool) {
-	if a.AdditionalProperties != nil {
-		value, found = a.AdditionalProperties[fieldName]
-	}
-	return
-}
-
-// Setter for additional properties for RetentionPolicyDefaultView_CleanupPolicy
-func (a *RetentionPolicyDefaultView_CleanupPolicy) Set(fieldName string, value interface{}) {
-	if a.AdditionalProperties == nil {
-		a.AdditionalProperties = make(map[string]interface{})
-	}
-	a.AdditionalProperties[fieldName] = value
-}
-
-// Override default JSON handling for RetentionPolicyDefaultView_CleanupPolicy to handle AdditionalProperties
-func (a *RetentionPolicyDefaultView_CleanupPolicy) UnmarshalJSON(b []byte) error {
-	object := make(map[string]json.RawMessage)
-	err := json.Unmarshal(b, &object)
-	if err != nil {
-		return err
-	}
-
-	if raw, found := object["effect"]; found {
-		err = json.Unmarshal(raw, &a.Effect)
-		if err != nil {
-			return fmt.Errorf("error reading 'effect': %w", err)
-		}
-		delete(object, "effect")
-	}
-
-	if raw, found := object["grace_seconds"]; found {
-		err = json.Unmarshal(raw, &a.GraceSeconds)
-		if err != nil {
-			return fmt.Errorf("error reading 'grace_seconds': %w", err)
-		}
-		delete(object, "grace_seconds")
-	}
-
-	if raw, found := object["version"]; found {
-		err = json.Unmarshal(raw, &a.Version)
-		if err != nil {
-			return fmt.Errorf("error reading 'version': %w", err)
-		}
-		delete(object, "version")
-	}
-
-	if len(object) != 0 {
-		a.AdditionalProperties = make(map[string]interface{})
-		for fieldName, fieldBuf := range object {
-			var fieldVal interface{}
-			err := json.Unmarshal(fieldBuf, &fieldVal)
-			if err != nil {
-				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
-			}
-			a.AdditionalProperties[fieldName] = fieldVal
-		}
-	}
-	return nil
-}
-
-// Override default JSON handling for RetentionPolicyDefaultView_CleanupPolicy to handle AdditionalProperties
-func (a RetentionPolicyDefaultView_CleanupPolicy) MarshalJSON() ([]byte, error) {
-	var err error
-	object := make(map[string]json.RawMessage)
-
-	if a.Effect != nil {
-		object["effect"], err = json.Marshal(a.Effect)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'effect': %w", err)
-		}
-	}
-
-	if a.GraceSeconds != nil {
-		object["grace_seconds"], err = json.Marshal(a.GraceSeconds)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'grace_seconds': %w", err)
-		}
-	}
-
-	if a.Version != nil {
-		object["version"], err = json.Marshal(a.Version)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling 'version': %w", err)
-		}
-	}
-
-	for fieldName, field := range a.AdditionalProperties {
-		object[fieldName], err = json.Marshal(field)
-		if err != nil {
-			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
-		}
-	}
-	return json.Marshal(object)
-}
 
 // AsQBittorrentConnection returns the union data inside the Connection as a QBittorrentConnection
 func (t Connection) AsQBittorrentConnection() (QBittorrentConnection, error) {

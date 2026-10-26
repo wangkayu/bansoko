@@ -11,16 +11,16 @@ import (
 	"testing"
 
 	"bansoko/internal/library/adapter/filesystem"
+	"bansoko/internal/library/domain"
 )
 
-// A recovered companion keeps its registration-time content digest, and that
-// digest is the identity the loser cleanup handoff freezes and checks before
-// moving the file. The chain runs on real files: confirm the recovery, read
-// the loser companions exactly as the replacement handoff does, admit the
-// cleanup with what it froze, and quarantine. A recovery that rewrote the
-// companion identity, or a handoff that froze a different field, ends in
-// cleanup_source_changed here instead of quarantined.
-func TestRecoveredCompanionCleanupMatchesRegistrationDigest(t *testing.T) {
+// A recovered companion keeps its registration-time size, and that size at
+// its recovered path is the identity the loser deletion handoff records and
+// checks before deleting the file. The chain runs on real files: confirm the
+// recovery, read the loser companions exactly as the replacement handoff
+// does, admit the deletion with what it recorded, and delete. A recovery that
+// rewrote the companion identity ends in a skip here instead of deleted.
+func TestRecoveredCompanionCleanupMatchesRegistrationIdentity(t *testing.T) {
 	ctx := context.Background()
 	fixture := newCalibrationFixture(t)
 	root := t.TempDir()
@@ -52,7 +52,6 @@ func TestRecoveredCompanionCleanupMatchesRegistrationDigest(t *testing.T) {
 	if _, err := scene.service(&staticObserver{files: scene.files}).RecoverAnimeFileApplication(ctx, scene.animeID, scene.command()); err != nil {
 		t.Fatalf("confirm: %v", err)
 	}
-
 	losers, err := loserCompanionsForCleanup(ctx, db, scene.candidate.PlacementID, "")
 	if err != nil {
 		t.Fatalf("load loser companions: %v", err)
@@ -60,9 +59,9 @@ func TestRecoveredCompanionCleanupMatchesRegistrationDigest(t *testing.T) {
 	if len(losers) != 1 || losers[0].ID != companion.ID {
 		t.Fatalf("loser companions = %+v, want only %s", losers, companion.ID)
 	}
-	if losers[0].Path != companion.TargetPath || losers[0].Fingerprint != digest {
-		t.Fatalf("handoff froze path=%q fingerprint=%q, want the recovered path %q and registration digest %q",
-			losers[0].Path, losers[0].Fingerprint, companion.TargetPath, digest)
+	if losers[0].Path != companion.TargetPath || losers[0].SizeBytes != companion.SizeBytes {
+		t.Fatalf("handoff read path=%q size=%d, want the recovered path %q and registration size %d",
+			losers[0].Path, losers[0].SizeBytes, companion.TargetPath, companion.SizeBytes)
 	}
 
 	service := NewCleanupService(db)
@@ -70,20 +69,29 @@ func TestRecoveredCompanionCleanupMatchesRegistrationDigest(t *testing.T) {
 	service.SetWorkItems(store)
 	service.SetFileExecutor(filesystem.NewOSCleanupExecutor(root))
 	id := companionCleanupID(companion.ID)
-	input := cleanupInput()
-	input.ID = id
-	input.IdempotencyKey = "cln:" + companion.ID + ":dec-recovered"
-	input.PlacementID = scene.candidate.PlacementID
-	input.ManagedAnimeID = scene.animeID
-	input.SourcePath = losers[0].Path
-	input.SourceFingerprint = losers[0].Fingerprint
-	input.QuarantinePath = filepath.Join(filepath.Dir(losers[0].Path), ".bansoko-cleanup-"+id, "object")
-	op, err := service.Admit(ctx, input)
+	op, err := service.Admit(ctx, CleanupInput{
+		ID:                id,
+		IdempotencyKey:    "cln:" + companion.ID + ":dec-recovered",
+		PlacementID:       scene.candidate.PlacementID,
+		ManagedAnimeID:    scene.animeID,
+		Coverage:          []string{"tv:s1:e1"},
+		ReplacementRef:    "dec-recovered",
+		RetentionMode:     "single_copy",
+		SourcePath:        losers[0].Path,
+		SourceFingerprint: domain.MetadataFingerprint(losers[0].SizeBytes, domain.FileIdentity{}),
+	})
 	if err != nil {
 		t.Fatalf("admit companion cleanup: %v", err)
 	}
-	runMetadataQuarantine(t, service, store, op)
+	runCleanupDelete(t, service, store)
+	var state string
+	if err := db.QueryRow(`SELECT state FROM cleanup_operations WHERE id = $1`, op.ID).Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state != string(CleanupDeleted) {
+		t.Fatalf("companion cleanup state = %s, want deleted", state)
+	}
 	if _, err := os.Lstat(companion.TargetPath); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("recovered companion still at %s after quarantine: %v", companion.TargetPath, err)
+		t.Fatalf("recovered companion still at %s after deletion: %v", companion.TargetPath, err)
 	}
 }

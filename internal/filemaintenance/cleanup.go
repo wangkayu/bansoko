@@ -1,7 +1,6 @@
 package filemaintenance
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -10,8 +9,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"bansoko/internal/apperrors"
-	"bansoko/internal/deployment"
 	"bansoko/internal/fileidentity"
 	persistence "bansoko/internal/filemaintenance/adapter/persistence"
 	executorpkg "bansoko/internal/filemaintenance/executor"
@@ -22,20 +19,47 @@ import (
 	"bansoko/internal/workitems"
 )
 
-// CleanupState is the cleanup lifecycle state machine.
+// CleanupState is the deletion-obligation state machine of a replacement
+// loser: admitted, then exactly one terminal state.
 type CleanupState string
 
 const (
-	CleanupAdmitted     CleanupState = "admitted"
-	CleanupQuarantined  CleanupState = "quarantined"
-	CleanupGraceWaiting CleanupState = "grace_waiting"
-	CleanupPurged       CleanupState = "purged"
-	CleanupBlocked      CleanupState = "blocked"
-	CleanupFailed       CleanupState = "failed"
-	CleanupCompleted    CleanupState = "completed"
+	CleanupAdmitted CleanupState = "admitted"
+	CleanupDeleted  CleanupState = "deleted"
+	CleanupSkipped  CleanupState = "skipped"
+	CleanupBlocked  CleanupState = "blocked"
+	CleanupFailed   CleanupState = "failed"
 )
 
-// CleanupInput is the frozen admission input.
+// Typed reasons of a skipped deletion. Every skip has zero filesystem effect:
+// the file the obligation names is left where it is.
+const (
+	CleanupSkipLoserMissing         = "loser_missing"
+	CleanupSkipLoserNotRegular      = "loser_not_regular"
+	CleanupSkipLoserIdentityChanged = "loser_identity_changed"
+	CleanupSkipLoserIdentityUnknown = "loser_identity_unknown"
+	CleanupSkipLoserPathOwned       = "loser_path_owned"
+)
+
+// Attempt stages of one cleanup_delete work item. The capture stage moves the
+// file into the owner's private namespace next to it; the purge stage removes
+// that exact captured object. Both run inside one claim; the namespace is not
+// a quarantine area (no grace period, nothing can be restored).
+const (
+	cleanupStageCapture = "capture"
+	cleanupStagePurge   = "purge"
+	// Invocation kinds of the two stages in the maintenance receipt namespace.
+	cleanupCaptureInvocation = "cleanup_capture"
+	cleanupPurgeInvocation   = "cleanup_purge"
+	// unknownCleanupIdentity is the frozen identity of an obligation admitted
+	// as skipped because the loser has no recorded size.
+	unknownCleanupIdentity = "unknown"
+)
+
+// CleanupInput is the frozen admission input of one deletion obligation.
+// SourceFingerprint is the loser's recorded path-level identity
+// (domain.MetadataFingerprint: size, plus device/inode when recorded); empty
+// means no size was recorded and the obligation is admitted as skipped.
 type CleanupInput struct {
 	ID                string
 	IdempotencyKey    string
@@ -43,21 +67,18 @@ type CleanupInput struct {
 	ManagedAnimeID    string
 	Coverage          []string
 	ReplacementRef    string
-	PolicyVersion     int64
 	RetentionMode     string
 	SourcePath        string
 	SourceFingerprint string
-	QuarantinePath    string
-	Effect            string // quarantine is the only supported admission effect; purge is an internal second stage
-	GraceDeadline     *time.Time
 	CorrelationID     string
 	CausationType     string
 	CausationID       string
 }
 
-// CleanupService owns the cleanup lifecycle. Every filesystem effect is
-// preceded by a durable attempt checkpoint; crash recovery converges from
-// the frozen attempt and disk observation.
+// CleanupService owns the deletion obligations of replacement losers. Every
+// filesystem effect is preceded by a durable attempt checkpoint; an effect
+// whose outcome is uncertain is blocked and converged from the exact
+// invocation receipts.
 type CleanupService struct {
 	db         *sql.DB
 	repository *persistence.Repository
@@ -81,164 +102,111 @@ func (s *CleanupService) SetActivityWriter(writer observabilityport.ActivityWrit
 }
 
 // SetFileExecutor wires the deployment-owned filesystem executor. Without it
-// the quarantine/purge handlers fail closed (blocked), never silently
-// succeeding.
+// the delete handler blocks, never silently succeeding.
 func (s *CleanupService) SetFileExecutor(executor executorpkg.CleanupFileExecutor) {
 	if s != nil {
 		s.executor = executor
 	}
 }
 
-// SetWorkItems wires the WorkItem store used to schedule quarantine/purge
-// items. Without it no cleanup WorkItem is created (handlers stay dormant).
+// SetWorkItems wires the WorkItem store used to schedule cleanup_delete
+// items. Without it no deletion obligation can be admitted.
 func (s *CleanupService) SetWorkItems(store *workitems.Store) {
 	if s != nil {
 		s.workItems = store
 	}
 }
 
-// enqueue schedules one cleanup work item (quarantine or purge) for the
-// operation, idempotently. It validates the current owner version in the same
-// transaction so a stale caller can never refresh a WorkItem with old evidence.
-func (s *CleanupService) enqueue(ctx context.Context, opID string, version int64, kind string) error {
-	if s.workItems == nil {
-		return errors.New("cleanup work items store is not wired")
-	}
+// Admit persists one deletion obligation and its cleanup_delete work item in
+// one transaction. Replacement settlement uses admitTx inside its own
+// transaction; Admit is the standalone form.
+func (s *CleanupService) Admit(ctx context.Context, input CleanupInput) (*CleanupOperation, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer func() { _ = tx.Rollback() }()
-	var currentVersion int64
-	if currentVersion, err = s.repository.LockVersionTx(ctx, txscope.Wrap(tx), opID); err != nil {
-		return fmt.Errorf("lock cleanup owner for enqueue: %w", err)
+	defer tx.Rollback()
+	if err := s.admitTx(ctx, txscope.Wrap(tx), input); err != nil {
+		return nil, err
 	}
-	if currentVersion != version {
-		return &apperrors.VersionConflict{Owner: "cleanup " + opID, CurrentVersion: currentVersion}
+	if err := tx.Commit(); err != nil {
+		return nil, err
 	}
-	snapshot, err := json.Marshal(struct {
-		CleanupID string `json:"cleanup_id"`
-		Stage     string `json:"stage"`
-	}{CleanupID: opID, Stage: kind})
-	if err != nil {
-		return fmt.Errorf("marshal cleanup work item snapshot: %w", err)
-	}
-	if _, _, err := s.workItems.CreateOrMerge(ctx, tx, workitems.WorkItemSpec{
-		Owner: workitems.OwnerRef{Type: workitems.OwnerCleanup, ID: opID},
-		Kind:  kind,
-		// One stable effect key exists per operation and stage.
-		IdempotencyKey:       "cln:" + opID + ":" + kind,
-		InputSnapshot:        snapshot,
-		AvailableAfter:       0,
-		MaxAttempts:          3,
-		ExpectedOwnerVersion: version,
-	}); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return s.load(ctx, input.ID)
 }
 
-// Admit persists a cleanup operation idempotently (fail-closed admission is
-// the caller's placement/replacement evidence check; this service freezes).
-func (s *CleanupService) Admit(ctx context.Context, input CleanupInput) (*CleanupOperation, error) {
-	if input.Effect != "quarantine" {
-		return nil, &apperrors.Business{Status: 422, Code: "CLEANUP_EFFECT_UNSUPPORTED", Message: "cleanup admission only accepts quarantine effect"}
+// admitTx records one deletion obligation in the caller's transaction. A
+// loser without a recorded size is admitted directly as
+// skipped/loser_identity_unknown: deletion fails closed. An admitted
+// obligation gets its single cleanup_delete work item in the same
+// transaction. Admission is idempotent per idempotency key.
+func (s *CleanupService) admitTx(ctx context.Context, scope txscope.Tx, input CleanupInput) error {
+	tx := scope.SQLTx()
+	if tx == nil {
+		return errors.New("cleanup admission transaction is nil")
 	}
-	coverage, _ := json.Marshal(SortCoverage(input.Coverage))
-	err := s.repository.Insert(ctx, persistence.OperationInput{
+	coverage, err := json.Marshal(SortCoverage(input.Coverage))
+	if err != nil {
+		return err
+	}
+	row := persistence.OperationInput{
 		ID:                input.ID,
 		IdempotencyKey:    input.IdempotencyKey,
 		PlacementID:       input.PlacementID,
 		ManagedAnimeID:    input.ManagedAnimeID,
 		Coverage:          coverage,
 		ReplacementRef:    input.ReplacementRef,
-		PolicyVersion:     input.PolicyVersion,
 		RetentionMode:     input.RetentionMode,
 		SourcePath:        input.SourcePath,
 		SourceFingerprint: input.SourceFingerprint,
-		QuarantinePath:    input.QuarantinePath,
-		Effect:            input.Effect,
-		GraceDeadline:     input.GraceDeadline,
+		State:             string(CleanupAdmitted),
 		CorrelationID:     input.CorrelationID,
 		CausationType:     input.CausationType,
 		CausationID:       input.CausationID,
+	}
+	if _, ok := domain.ParseMetadataFingerprint(input.SourceFingerprint); !ok {
+		row.SourceFingerprint = unknownCleanupIdentity
+		row.State = string(CleanupSkipped)
+		row.FailureCode = CleanupSkipLoserIdentityUnknown
+		row.Reason = "the replaced file has no recorded size"
+	}
+	if err := s.repository.InsertTx(ctx, scope, row); err != nil {
+		return err
+	}
+	op, err := s.repository.LockTx(ctx, scope, input.ID)
+	if err != nil {
+		return fmt.Errorf("lock admitted cleanup: %w", err)
+	}
+	switch CleanupState(op.State) {
+	case CleanupAdmitted:
+		return s.enqueueTx(ctx, tx, op.ID, op.Version)
+	case CleanupSkipped:
+		if op.Version == 1 && row.State == string(CleanupSkipped) {
+			return s.appendCleanupActivityTx(ctx, scope, cleanupOperationFromPersistence(*op), "skipped", CleanupSkipLoserIdentityUnknown)
+		}
+	}
+	return nil
+}
+
+// enqueueTx creates (or merges into) the single cleanup_delete work item of
+// an admitted obligation at its current owner version.
+func (s *CleanupService) enqueueTx(ctx context.Context, tx *sql.Tx, cleanupID string, version int64) error {
+	if s.workItems == nil {
+		return errors.New("cleanup work items store is not wired")
+	}
+	snapshot, err := json.Marshal(map[string]string{"cleanup_id": cleanupID})
+	if err != nil {
+		return err
+	}
+	_, _, err = s.workItems.CreateOrMerge(ctx, tx, workitems.WorkItemSpec{
+		Owner:                workitems.OwnerRef{Type: workitems.OwnerCleanup, ID: cleanupID},
+		Kind:                 workitems.KindCleanupDelete,
+		IdempotencyKey:       "cln:" + cleanupID + ":" + workitems.KindCleanupDelete,
+		InputSnapshot:        snapshot,
+		MaxAttempts:          3,
+		ExpectedOwnerVersion: version,
 	})
-	if err != nil {
-		return nil, err
-	}
-	if s.workItems != nil {
-		op, err := s.load(ctx, input.ID)
-		if err != nil {
-			return nil, err
-		}
-		if op == nil {
-			return nil, errors.New("cleanup operation not found after admission")
-		}
-		if err := s.enqueue(ctx, input.ID, op.Version, workitems.KindCleanupQuarantine); err != nil {
-			return nil, fmt.Errorf("enqueue cleanup quarantine: %w", err)
-		}
-	}
-	return s.load(ctx, input.ID)
-}
-
-// persistAttemptTx writes the durable pre-effect checkpoint in the caller's
-// transaction. Handler callers must invoke it through MutateClaim.
-func (s *CleanupService) persistAttemptTx(ctx context.Context, tx *sql.Tx, cleanupID string, expectedVersion int64, attempt json.RawMessage) (int64, error) {
-	return s.repository.PersistAttemptTx(ctx, txscope.Wrap(tx), cleanupID, expectedVersion, attempt)
-}
-
-// transitionTx moves the cleanup state machine in the caller's transaction.
-// Handler callers must invoke it through MutateClaim.
-func (s *CleanupService) transitionTx(ctx context.Context, tx *sql.Tx, cleanupID string, expectedVersion int64, to CleanupState, code, reason string) (int64, error) {
-	return s.repository.TransitionTx(ctx, txscope.Wrap(tx), cleanupID, expectedVersion, string(to), code, reason)
-}
-
-func (s *CleanupService) quarantineTx(ctx context.Context, tx *sql.Tx, cleanupID string, expectedVersion int64, quarantinePath, code, reason string) (int64, error) {
-	return s.repository.QuarantineTx(ctx, txscope.Wrap(tx), cleanupID, expectedVersion, quarantinePath, code, reason)
-}
-
-func (s *CleanupService) recordPurgePostObservationTx(ctx context.Context, tx *sql.Tx, cleanupID string, expectedVersion int64) (int64, error) {
-	return s.repository.RecordPurgePostObservationTx(ctx, txscope.Wrap(tx), cleanupID, expectedVersion)
-}
-
-func (s *CleanupService) PersistAttempt(ctx context.Context, cleanupID string, expectedVersion int64, attempt json.RawMessage) (int64, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback()
-	version, err := s.persistAttemptTx(ctx, tx, cleanupID, expectedVersion, attempt)
-	if err != nil {
-		return 0, err
-	}
-	if err := tx.Commit(); err != nil {
-		return 0, err
-	}
-	return version, nil
-}
-
-// Transition is retained for non-WorkItem callers and tests. Effect handlers
-// must use transitionTx through MutateClaim.
-func (s *CleanupService) Transition(ctx context.Context, cleanupID string, expectedVersion int64, to CleanupState, code, reason string) (int64, error) {
-	return s.transition(ctx, cleanupID, expectedVersion, to, code, reason)
-}
-
-// transition is used by the non-WorkItem Restore API. WorkItem handlers must
-// use transitionTx through MutateClaim so the owner and claim are fenced.
-func (s *CleanupService) transition(ctx context.Context, cleanupID string, expectedVersion int64, to CleanupState, code, reason string) (int64, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback()
-	version, err := s.transitionTx(ctx, tx, cleanupID, expectedVersion, to, code, reason)
-	if err != nil {
-		return 0, err
-	}
-	if err := tx.Commit(); err != nil {
-		return 0, err
-	}
-	return version, nil
+	return err
 }
 
 func (s *CleanupService) mutateClaim(ctx context.Context, claim workitems.Claim, owner workitems.OwnerWriter) (workitems.Claim, error) {
@@ -264,10 +232,8 @@ func (s *CleanupService) verifyClaimOwner(claim workitems.Claim) workitems.Owner
 	}
 }
 
-// syncOwnerVersion is used by the generic WorkItem terminal/retry transition
-// after the handler has already committed a fenced cleanup mutation. It does
-// not mutate the owner; it only returns the committed owner version so Store
-// can synchronize expected_owner_version in the same fenced transaction.
+// syncOwnerVersion returns the committed owner version so the Store can
+// synchronize expected_owner_version; it never mutates the owner.
 func (s *CleanupService) syncOwnerVersion(claim workitems.Claim) workitems.OwnerWriter {
 	return func(ctx context.Context, scope txscope.Tx, _ workitems.OwnerResult) (int64, error) {
 		version, err := s.repository.LockVersionTx(ctx, scope, claim.Owner.ID)
@@ -299,332 +265,31 @@ func (s *CleanupService) retryOwner(claim workitems.Claim) workitems.OwnerWriter
 	}
 }
 
-// Restore moves a quarantined file back to its original source path with CAS.
-// The cleanup operation must be quarantined and the executor verifies the
-// frozen observation before any mutation. On success the operation is marked
-// completed; a failure leaves the quarantined file untouched.
-func (s *CleanupService) Restore(ctx context.Context, cleanupID string, expectedVersion int64) error {
-	op, err := s.load(ctx, cleanupID)
-	if err != nil {
-		return err
-	}
-	if op == nil {
-		return errors.New("cleanup operation not found")
-	}
-	if op.State != CleanupQuarantined {
-		return fmt.Errorf("cleanup %s is %s, only quarantined operations can be restored", cleanupID, op.State)
-	}
-	if op.Version != expectedVersion {
-		return fmt.Errorf("cleanup %s changed concurrently (version %d != %d)", cleanupID, expectedVersion, op.Version)
-	}
-	if op.QuarantinePath == "" {
-		return errors.New("cleanup operation has no quarantine path")
-	}
-	if s.executor == nil {
-		return errors.New("cleanup filesystem executor is not wired")
-	}
-	expected, err := frozenObservation(op.Attempt, op.SourceFingerprint)
-	if err != nil {
-		if _, transitionErr := s.Transition(ctx, op.ID, op.Version, CleanupBlocked, "cleanup_restore_evidence_invalid", safeCleanupReason(err)); transitionErr != nil {
-			return transitionErr
-		}
-		return err
-	}
-	if err := s.executor.RestoreFromQuarantine(ctx, op.QuarantinePath, op.SourcePath, expected); err != nil {
-		if _, terr := s.Transition(ctx, op.ID, op.Version, CleanupBlocked, "cleanup_restore_failed", safeCleanupReason(err)); terr != nil {
-			return terr
-		}
-		return err
-	}
-	if _, err := s.Transition(ctx, op.ID, op.Version, CleanupCompleted, "cleanup_restored", "restored to "+op.SourcePath); err != nil {
-		return err
-	}
-	return nil
-}
-
-// ReconcileUnknownEffect is evidence-only recovery. A pending attempt is never
-// considered settled merely because its row was read.
-func (s *CleanupService) ReconcileUnknownEffect(ctx context.Context, req deployment.ReconcileRequest) (deployment.ReconcileResult, error) {
-	if s.executor == nil {
-		return deployment.ReconcileResult{State: deployment.StateBlocked, Effect: deployment.EffectUnknown, Reason: "cleanup reconcile: executor not wired"}, nil
-	}
-	pendingRows, err := s.repository.ListPending(ctx)
-	if err != nil {
-		return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectUnknown, Reason: safeCleanupReason(err)}, nil
-	}
-	pending := len(pendingRows)
-	for _, row := range pendingRows {
-		cleanupID, version := row.ID, row.Version
-		effect, state := row.Effect, row.State
-		sourcePath, sourceFP := row.SourcePath, row.SourceFingerprint
-		quarantinePath := persistence.NullString(row.QuarantinePath)
-		attemptRaw := row.Attempt
-
-		if effect != "quarantine" {
-			return deployment.ReconcileResult{State: deployment.StateBlocked, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: "cleanup reconcile: unsupported owner effect"}, nil
-		}
-		if attemptRaw == nil {
-			if state == string(CleanupAdmitted) && s.workItems != nil {
-				if enqueueErr := s.enqueue(ctx, cleanupID, version, workitems.KindCleanupQuarantine); enqueueErr != nil {
-					return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: "cleanup reconcile: quarantine enqueue failed: " + safeCleanupReason(enqueueErr)}, nil
-				}
-			}
-			return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: "cleanup reconcile: cleanup stage has no attempt"}, nil
-		}
-		evidence, err := decodeCleanupAttempt(attemptRaw)
+// settleWriter moves the owner to one terminal state at the expected version
+// in the WorkItem's own terminal transaction and records the Activity of a
+// deleted or skipped obligation there too.
+func (s *CleanupService) settleWriter(op *CleanupOperation, expected int64, to CleanupState, code, reason string) workitems.OwnerWriter {
+	return func(ctx context.Context, scope txscope.Tx, _ workitems.OwnerResult) (int64, error) {
+		version, err := s.repository.TransitionTx(ctx, scope, op.ID, expected, string(to), code, reason)
 		if err != nil {
-			return deployment.ReconcileResult{State: deployment.StateBlocked, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: safeCleanupReason(err)}, nil
+			return 0, fmt.Errorf("settle cleanup owner: %w", err)
 		}
-		if err := validateCleanupAttempt(evidence, cleanupID, effect, sourcePath, sourceFP, quarantinePath); err != nil {
-			return deployment.ReconcileResult{State: deployment.StateBlocked, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: safeCleanupReason(err)}, nil
-		}
-		expected, err := frozenObservation(attemptRaw, sourceFP)
-		if err != nil {
-			return deployment.ReconcileResult{State: deployment.StateBlocked, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: safeCleanupReason(err)}, nil
-		}
-		if state == string(CleanupAdmitted) {
-			if evidence.Stage != "quarantine" {
-				return deployment.ReconcileResult{State: deployment.StateBlocked, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: "cleanup reconcile: admitted owner requires quarantine attempt stage"}, nil
+		switch to {
+		case CleanupDeleted:
+			settled := *op
+			settled.Version = version
+			if err := s.appendCleanupActivityTx(ctx, scope, &settled, "deleted", "cleanup_deleted"); err != nil {
+				return 0, err
 			}
-			qpath, pathErr := cleanupQuarantinePath(evidence, quarantinePath)
-			if pathErr != nil {
-				return deployment.ReconcileResult{State: deployment.StateBlocked, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: safeCleanupReason(pathErr)}, nil
+		case CleanupSkipped:
+			settled := *op
+			settled.Version = version
+			if err := s.appendCleanupActivityTx(ctx, scope, &settled, "skipped", code); err != nil {
+				return 0, err
 			}
-			if _, observeErr := observeCleanupFile(ctx, s.executor, sourcePath, sourceFP); observeErr == nil {
-				return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectNone, EvidenceRef: cleanupID, Reason: "cleanup reconcile: source remains; effect not completed"}, nil
-			} else if !isMissingCleanupError(observeErr) {
-				return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: safeCleanupReason(observeErr)}, nil
-			}
-			observed, observeErr := observeCleanupFile(ctx, s.executor, qpath, sourceFP)
-			if observeErr != nil {
-				if isMissingCleanupError(observeErr) {
-					return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: "cleanup reconcile: quarantine absence is not sufficient evidence for completion"}, nil
-				}
-				return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: safeCleanupReason(observeErr)}, nil
-			}
-			if !sameFrozenCleanupObservation(observed, expected) {
-				return deployment.ReconcileResult{State: deployment.StateBlocked, Effect: deployment.EffectPresent, EvidenceRef: cleanupID, Reason: "cleanup reconcile: quarantine evidence conflicts with frozen source"}, nil
-			}
-			newVersion, convergeErr := s.convergeQuarantine(ctx, cleanupID, version, effect, state, sourcePath, sourceFP, qpath, attemptRaw, expected)
-			if convergeErr != nil {
-				return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectPresent, EvidenceRef: cleanupID, Reason: safeCleanupReason(convergeErr)}, nil
-			}
-			if enqueueErr := s.enqueue(ctx, cleanupID, newVersion, workitems.KindCleanupPurge); enqueueErr != nil {
-				return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectPresent, EvidenceRef: cleanupID, Reason: "cleanup reconcile: quarantine converged but purge enqueue failed: " + safeCleanupReason(enqueueErr)}, nil
-			}
-			return deployment.ReconcileResult{State: deployment.StateCompleted, Effect: deployment.EffectPresent, EvidenceRef: cleanupID, Reason: "cleanup reconcile: quarantine owner converged"}, nil
 		}
-		if state != string(CleanupQuarantined) && state != string(CleanupGraceWaiting) {
-			return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: "cleanup reconcile: owner state is not recoverable"}, nil
-		}
-		if evidence.Stage != "quarantine" && evidence.Stage != "purge" {
-			return deployment.ReconcileResult{State: deployment.StateBlocked, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: "cleanup reconcile: quarantined owner requires quarantine or purge attempt stage"}, nil
-		}
-		if _, observeErr := observeCleanupFile(ctx, s.executor, sourcePath, sourceFP); observeErr == nil {
-			return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectNone, EvidenceRef: cleanupID, Reason: "cleanup reconcile: source remains; effect is not proven"}, nil
-		} else if !isMissingCleanupError(observeErr) {
-			return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: safeCleanupReason(observeErr)}, nil
-		}
-		if !quarantinePath.Valid || quarantinePath.String == "" {
-			return deployment.ReconcileResult{State: deployment.StateBlocked, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: "cleanup reconcile: quarantine path evidence is missing"}, nil
-		}
-		observed, observeErr := observeCleanupFile(ctx, s.executor, quarantinePath.String, sourceFP)
-		if evidence.Stage == "purge" {
-			if !evidence.Removed || !evidence.PostObservationMissing {
-				return deployment.ReconcileResult{State: deployment.StateBlocked, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: "cleanup reconcile: purge attempt lacks complete post-effect proof"}, nil
-			}
-			if observeErr == nil {
-				if !sameFrozenCleanupObservation(observed, expected) {
-					return deployment.ReconcileResult{State: deployment.StateBlocked, Effect: deployment.EffectPresent, EvidenceRef: cleanupID, Reason: "cleanup reconcile: quarantine evidence conflicts with frozen source"}, nil
-				}
-				return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectPresent, EvidenceRef: cleanupID, Reason: "cleanup reconcile: purge attempt exists but quarantine is still present"}, nil
-			}
-			if !isMissingCleanupError(observeErr) {
-				return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: safeCleanupReason(observeErr)}, nil
-			}
-			if !evidence.Removed || !evidence.PostObservationMissing {
-				return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: "cleanup reconcile: purge absence lacks complete post-effect proof"}, nil
-			}
-			newVersion, convergeErr := s.convergePurge(ctx, cleanupID, version, attemptRaw)
-			if convergeErr != nil {
-				return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: safeCleanupReason(convergeErr)}, nil
-			}
-			return deployment.ReconcileResult{State: deployment.StateCompleted, Effect: deployment.EffectNone, EvidenceRef: cleanupID, Reason: fmt.Sprintf("cleanup reconcile: purge owner converged at version %d", newVersion)}, nil
-		}
-		if observeErr == nil {
-			if !sameFrozenCleanupObservation(observed, expected) {
-				return deployment.ReconcileResult{State: deployment.StateBlocked, Effect: deployment.EffectPresent, EvidenceRef: cleanupID, Reason: "cleanup reconcile: quarantine evidence conflicts with frozen source"}, nil
-			}
-			if enqueueErr := s.enqueue(ctx, cleanupID, version, workitems.KindCleanupPurge); enqueueErr != nil {
-				return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectPresent, EvidenceRef: cleanupID, Reason: "cleanup reconcile: quarantine is committed but purge enqueue failed: " + safeCleanupReason(enqueueErr)}, nil
-			}
-			return deployment.ReconcileResult{State: deployment.StateCompleted, Effect: deployment.EffectPresent, EvidenceRef: cleanupID, Reason: "cleanup reconcile: quarantine already committed"}, nil
-		}
-		if !isMissingCleanupError(observeErr) {
-			return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: safeCleanupReason(observeErr)}, nil
-		}
-		return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectUnknown, EvidenceRef: cleanupID, Reason: "cleanup reconcile: quarantine absence is not sufficient evidence for completion"}, nil
+		return version, nil
 	}
-	if pending > 0 {
-		return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectUnknown, Reason: "cleanup reconcile: pending attempts lack completion evidence"}, nil
-	}
-	return deployment.ReconcileResult{State: deployment.StateCompleted, Effect: deployment.EffectNone, Reason: "cleanup reconcile: no pending attempts"}, nil
-}
-
-func (s *CleanupService) convergeQuarantine(ctx context.Context, cleanupID string, expectedVersion int64, effect, state, sourcePath, sourceFP, quarantinePath string, attemptRaw []byte, expected domain.FileObservation) (int64, error) {
-	if effect != "quarantine" || state != string(CleanupAdmitted) {
-		return 0, errors.New("cleanup quarantine convergence requires admitted quarantine owner")
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, fmt.Errorf("begin cleanup quarantine convergence: %w", err)
-	}
-	defer tx.Rollback()
-
-	// WorkItem handlers always acquire WorkItem -> owner. Recovery must use the
-	// same order so a handler and recovery cannot wait on each other's locks.
-	workItemID, workItemOwnerType, workItemOwnerID, workItemKind, workItemState, workItemExpectedVersion, err := s.workItems.LockCleanupWorkItemTx(ctx, txscope.Wrap(tx), cleanupID, workitems.KindCleanupQuarantine)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, errors.New("cleanup quarantine live work item is missing")
-		}
-		return 0, fmt.Errorf("lock cleanup quarantine work item: %w", err)
-	}
-	if workItemOwnerType != workitems.OwnerCleanup || workItemOwnerID != cleanupID || workItemKind != workitems.KindCleanupQuarantine {
-		return 0, errors.New("cleanup quarantine work item owner or kind changed")
-	}
-	if workItemState != workitems.StateAvailable && workItemState != workitems.StateLeased {
-		return 0, errors.New("cleanup quarantine work item is not live")
-	}
-	if workItemExpectedVersion < 1 || workItemExpectedVersion > expectedVersion {
-		return 0, fmt.Errorf("cleanup quarantine work item owner version %d is outside expected owner version %d", workItemExpectedVersion, expectedVersion)
-	}
-
-	var currentEffect, currentState, currentSourcePath, currentSourceFP string
-	var currentOwnerID string
-	var currentQuarantine sql.NullString
-	var currentAttempt []byte
-	var currentVersion int64
-	if err := tx.QueryRowContext(ctx, `
-	SELECT id, effect, state, source_path, source_fingerprint, quarantine_path, attempt, version
-	FROM cleanup_operations
-	WHERE id = $1
-	FOR UPDATE`, cleanupID).
-		Scan(&currentOwnerID, &currentEffect, &currentState, &currentSourcePath, &currentSourceFP, &currentQuarantine, &currentAttempt, &currentVersion); err != nil {
-		return 0, fmt.Errorf("lock cleanup quarantine owner: %w", err)
-	}
-	if currentOwnerID != cleanupID || currentVersion != expectedVersion || currentEffect != effect || currentState != state || currentSourcePath != sourcePath || currentSourceFP != sourceFP {
-		return 0, errors.New("cleanup quarantine owner changed during evidence reconciliation")
-	}
-	if !bytes.Equal(currentAttempt, attemptRaw) {
-		return 0, errors.New("cleanup quarantine attempt changed during evidence reconciliation")
-	}
-	currentEvidence, err := decodeCleanupAttempt(currentAttempt)
-	if err != nil {
-		return 0, fmt.Errorf("recheck cleanup quarantine attempt: %w", err)
-	}
-	if err := validateCleanupAttempt(currentEvidence, cleanupID, currentEffect, currentSourcePath, currentSourceFP, currentQuarantine); err != nil {
-		return 0, fmt.Errorf("recheck cleanup quarantine evidence: %w", err)
-	}
-	currentFrozen, err := frozenSourceObservation(currentAttempt, currentSourceFP)
-	if err != nil {
-		return 0, fmt.Errorf("recheck cleanup quarantine frozen source: %w", err)
-	}
-	if !sameFrozenCleanupObservation(currentFrozen, expected) {
-		return 0, errors.New("cleanup quarantine frozen source evidence changed")
-	}
-	qpath, err := cleanupQuarantinePath(currentEvidence, currentQuarantine)
-	if err != nil || qpath != quarantinePath {
-		if err == nil {
-			err = errors.New("cleanup quarantine path changed during evidence reconciliation")
-		}
-		return 0, err
-	}
-
-	var newVersion int64
-	if err := tx.QueryRowContext(ctx, `
-	UPDATE cleanup_operations
-	SET state = CASE
-			WHEN grace_deadline IS NOT NULL AND grace_deadline > CURRENT_TIMESTAMP THEN 'grace_waiting'
-			ELSE 'quarantined'
-		END, quarantine_path = $2,
-	    failure_code = 'cleanup_quarantined', reason = $3,
-	    version = version + 1, updated_at = CURRENT_TIMESTAMP
-	WHERE id = $1 AND version = $4 AND state = 'admitted' AND effect = 'quarantine'
-	RETURNING version`, cleanupID, quarantinePath, "quarantined at "+quarantinePath, currentVersion).Scan(&newVersion); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, errors.New("cleanup quarantine owner CAS failed")
-		}
-		return 0, fmt.Errorf("converge cleanup quarantine owner: %w", err)
-	}
-	affected, err := s.workItems.CompleteCleanupWorkItemTx(ctx, txscope.Wrap(tx), workItemID, cleanupID, workitems.KindCleanupQuarantine, newVersion, currentVersion)
-	if err != nil {
-		return 0, fmt.Errorf("complete cleanup quarantine work item: %w", err)
-	}
-	if affected != 1 {
-		return 0, errors.New("cleanup quarantine work item CAS failed")
-	}
-	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("commit cleanup quarantine convergence: %w", err)
-	}
-	return newVersion, nil
-}
-
-func (s *CleanupService) convergePurge(ctx context.Context, cleanupID string, expectedVersion int64, attemptRaw []byte) (int64, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, fmt.Errorf("begin cleanup purge convergence: %w", err)
-	}
-	defer tx.Rollback()
-	workItemID, ownerType, ownerID, kind, workState, workExpectedVersion, err := s.workItems.LockCleanupWorkItemTx(ctx, txscope.Wrap(tx), cleanupID, workitems.KindCleanupPurge)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, errors.New("cleanup purge live work item is missing")
-		}
-		return 0, fmt.Errorf("lock cleanup purge work item: %w", err)
-	}
-	if ownerType != workitems.OwnerCleanup || ownerID != cleanupID || kind != workitems.KindCleanupPurge || (workState != workitems.StateAvailable && workState != workitems.StateLeased) {
-		return 0, errors.New("cleanup purge work item identity or state changed")
-	}
-	if workExpectedVersion < 1 || workExpectedVersion > expectedVersion {
-		return 0, fmt.Errorf("cleanup purge work item owner version %d is outside expected owner version %d", workExpectedVersion, expectedVersion)
-	}
-	var (
-		currentEffect, currentState string
-		currentAttempt              []byte
-		currentVersion              int64
-	)
-	if err := tx.QueryRowContext(ctx, `
-	SELECT effect, state, attempt, version
-	FROM cleanup_operations WHERE id = $1 FOR UPDATE`, cleanupID).
-		Scan(&currentEffect, &currentState, &currentAttempt, &currentVersion); err != nil {
-		return 0, fmt.Errorf("lock cleanup purge owner: %w", err)
-	}
-	if currentEffect != "quarantine" || (currentState != string(CleanupQuarantined) && currentState != string(CleanupGraceWaiting)) || currentVersion != expectedVersion || !bytes.Equal(currentAttempt, attemptRaw) {
-		return 0, errors.New("cleanup purge owner or attempt changed during evidence reconciliation")
-	}
-	var newVersion int64
-	if err := tx.QueryRowContext(ctx, `
-	UPDATE cleanup_operations
-	SET state = 'purged', failure_code = 'cleanup_purged', reason = 'purged', version = version + 1, updated_at = CURRENT_TIMESTAMP
-	WHERE id = $1 AND version = $2 AND effect = 'quarantine'
-	RETURNING version`, cleanupID, expectedVersion).Scan(&newVersion); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, errors.New("cleanup purge owner CAS failed")
-		}
-		return 0, fmt.Errorf("converge cleanup purge owner: %w", err)
-	}
-	affected, err := s.workItems.CompleteCleanupWorkItemTx(ctx, txscope.Wrap(tx), workItemID, cleanupID, workitems.KindCleanupPurge, newVersion, expectedVersion)
-	if err != nil {
-		return 0, fmt.Errorf("complete cleanup purge work item: %w", err)
-	}
-	if affected != 1 {
-		return 0, errors.New("cleanup purge work item CAS failed")
-	}
-	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("commit cleanup purge convergence: %w", err)
-	}
-	return newVersion, nil
 }
 
 func (s *CleanupService) load(ctx context.Context, cleanupID string) (*CleanupOperation, error) {
@@ -646,15 +311,13 @@ func cleanupOperationFromPersistence(value persistence.Operation) *CleanupOperat
 		ManagedAnimeID:    value.ManagedAnimeID,
 		Coverage:          value.Coverage,
 		ReplacementRef:    value.ReplacementRef,
-		PolicyVersion:     value.PolicyVersion,
 		RetentionMode:     value.RetentionMode,
 		SourcePath:        value.SourcePath,
 		SourceFingerprint: value.SourceFingerprint,
-		QuarantinePath:    value.QuarantinePath,
-		Effect:            value.Effect,
-		GraceDeadline:     value.GraceDeadline,
 		State:             CleanupState(value.State),
 		Attempt:           value.Attempt,
+		FailureCode:       value.FailureCode,
+		Reason:            value.Reason,
 		CorrelationID:     value.CorrelationID,
 		Version:           value.Version,
 		CreatedAt:         value.CreatedAt,
@@ -669,329 +332,264 @@ type CleanupOperation struct {
 	ManagedAnimeID    string
 	Coverage          []string
 	ReplacementRef    string
-	PolicyVersion     int64
 	RetentionMode     string
 	SourcePath        string
 	SourceFingerprint string
-	QuarantinePath    string
-	Effect            string
-	GraceDeadline     *time.Time
 	State             CleanupState
 	Attempt           json.RawMessage
+	FailureCode       string
+	Reason            string
 	CorrelationID     string
 	Version           int64
 	CreatedAt         time.Time
 }
 
-// QuarantineHandler settles admitted cleanups by persisting the pre-effect
-// attempt and moving the state machine forward. Every owner mutation is fenced
-// by the leased WorkItem claim; a stale claim is rejected before observation or
-// filesystem mutation.
-func (s *CleanupService) QuarantineHandler() worker.Handler {
-	return cleanupRecoveryHandler{service: s, kind: workitems.KindCleanupQuarantine, handle: s.quarantineBusinessHandler()}
-}
-func (s *CleanupService) quarantineBusinessHandler() worker.Handler {
-	return worker.HandlerFunc(func(ctx context.Context, claim workitems.Claim) (worker.Outcome, error) {
-		if claim.Kind != workitems.KindCleanupQuarantine {
-			return worker.Outcome{}, fmt.Errorf("cleanup handler received kind %q", claim.Kind)
-		}
-		if s.workItems == nil {
-			return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "blocked", ReasonCode: "cleanup_work_items_unavailable", Reason: "cleanup work items store is not wired"}, nil), nil
-		}
-		op, err := s.load(ctx, claim.Owner.ID)
-		if err != nil {
-			return worker.Outcome{}, err
-		}
-		if op == nil {
-			return worker.Outcome{}, errors.New("cleanup operation not found")
-		}
-		resumed := false
-		if op.State == CleanupAdmitted && len(op.Attempt) > 0 {
-			o, resume, err := (cleanupRecoveryHandler{service: s, kind: claim.Kind}).resolveAttempt(ctx, claim, op)
-			if err != nil {
-				return worker.Outcome{}, err
-			}
-			if !resume {
-				if o.Disposition == workitems.DispositionAmbiguous {
-					return worker.Outcome{}, workitems.ErrPublicationUnresolved
-				}
-				return o, nil
-			}
-			// The checkpointed attempt never reached its move: run the same
-			// invocation (same attempt, same owner version) instead of parking.
-			resumed = true
-		}
-		claim, err = s.mutateClaim(ctx, claim, s.verifyClaimOwner(claim))
-		if err != nil {
-			return worker.Outcome{}, err
-		}
-		finish := func(result workitems.OwnerResult) (worker.Outcome, error) {
-			return worker.Finish(workitems.StateSucceeded, result, s.syncOwnerVersion(claim)), nil
-		}
-		block := func(code, reason string) (worker.Outcome, error) {
-			next, mutateErr := s.mutateClaim(ctx, claim, func(ctx context.Context, scope txscope.Tx, _ workitems.OwnerResult) (int64, error) {
-				tx := scope.SQLTx()
-				if tx == nil {
-					return 0, errors.New("transition cleanup owner transaction is nil")
-				}
-				return s.transitionTx(ctx, tx, op.ID, claim.ExpectedOwnerVersion, CleanupBlocked, code, reason)
-			})
-			if mutateErr != nil {
-				return worker.Outcome{}, mutateErr
-			}
-			claim = next
-			return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "blocked", ReasonCode: code, Reason: reason}, s.syncOwnerVersion(claim)), nil
-		}
-		if op.State == CleanupQuarantined && op.QuarantinePath != "" {
-			// Idempotent replay: the move transition already committed; only the
-			// terminal WorkItem transition crashed. Never re-run the move.
-			if err := s.enqueue(ctx, op.ID, claim.ExpectedOwnerVersion, workitems.KindCleanupPurge); err != nil {
-				return worker.Outcome{}, err
-			}
-			return finish(workitems.OwnerResult{State: "quarantined", ReasonCode: "cleanup_quarantined", Reason: "quarantined (idempotent replay)"})
-		}
-		if op.State == CleanupGraceWaiting && op.QuarantinePath != "" {
-			if err := s.enqueue(ctx, op.ID, claim.ExpectedOwnerVersion, workitems.KindCleanupPurge); err != nil {
-				return worker.Outcome{}, err
-			}
-			return finish(workitems.OwnerResult{State: "grace_waiting", ReasonCode: "cleanup_grace_waiting", Reason: "quarantine is waiting for grace deadline"})
-		}
-		if op.State != CleanupAdmitted {
-			return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "failed", ReasonCode: "cleanup_owner_invalid", Reason: "cleanup is not admitted"}, s.syncOwnerVersion(claim)), nil
-		}
-		if s.executor == nil {
-			return block("cleanup_executor_unavailable", "cleanup filesystem executor is not wired")
-		}
-		quarantine := op.QuarantinePath
-		if quarantine == "" {
-			quarantine = filepath.Join(filepath.Dir(op.SourcePath), ".bansoko-cleanup-"+op.ID, "object")
-		}
-		var attempt json.RawMessage
-		var expected domain.FileObservation
-		if resumed {
-			evidence, err := decodeCleanupAttempt(op.Attempt)
-			if err != nil {
-				return worker.Outcome{}, err
-			}
-			if expected, err = frozenObservation(op.Attempt, op.SourceFingerprint); err != nil {
-				return worker.Outcome{}, err
-			}
-			attempt, quarantine = op.Attempt, evidence.QuarantinePath
-		} else {
-			expected, err = observeCleanupFile(ctx, s.executor, op.SourcePath, op.SourceFingerprint)
-			if err != nil {
-				return worker.Retry("cleanup_source_observation_failed", safeCleanupReason(err), 30*time.Second, s.retryOwner(claim)), nil
-			}
-			if !cleanupObservationMatchesFingerprint(expected, op.SourceFingerprint) || expected.SizeBytes < 0 || !fileidentity.IsPresent(expected.Identity) {
-				return block("cleanup_source_changed", "cleanup source observation does not match frozen evidence")
-			}
-			attempt, err = json.Marshal(map[string]any{
-				"cleanup_id": op.ID, "effect": op.Effect, "stage": "quarantine", "source_path": op.SourcePath,
-				"source_fingerprint": op.SourceFingerprint, "quarantine_path": quarantine,
-				"source_observation": expected, "fencing_token": claim.FencingToken,
-			})
-			if err != nil {
-				return worker.Outcome{}, err
-			}
-			claim, err = s.mutateClaim(ctx, claim, func(ctx context.Context, scope txscope.Tx, _ workitems.OwnerResult) (int64, error) {
-				tx := scope.SQLTx()
-				if tx == nil {
-					return 0, errors.New("persist cleanup attempt transaction is nil")
-				}
-				return s.persistAttemptTx(ctx, tx, op.ID, claim.ExpectedOwnerVersion, attempt)
-			})
-			if err != nil {
-				return worker.Outcome{}, err
-			}
-			if _, err := s.mutateClaim(ctx, claim, s.verifyClaimOwner(claim)); err != nil {
-				return worker.Outcome{}, err
-			}
-		}
-		var moved string
-		if receiptExecutor, ok := s.executor.(executorpkg.MaintenanceCleanupExecutor); ok {
-			moved, err = receiptExecutor.MoveMaintenance(ctx, op.SourcePath, quarantine, expected, maintenanceInvocation(claim, attempt, op.SourcePath, quarantine, expected.Fingerprint))
-		} else {
-			moved, err = s.executor.MoveToQuarantine(ctx, op.SourcePath, quarantine, expected)
-		}
-		if err != nil {
-			return block("cleanup_quarantine_failed", safeCleanupReason(err))
-		}
-		if _, err := observeCleanupFile(ctx, s.executor, op.SourcePath, op.SourceFingerprint); err == nil {
-			return worker.Retry("cleanup_quarantine_source_still_present", "quarantine returned but source remains", 30*time.Second, s.retryOwner(claim)), nil
-		} else if !isMissingCleanupError(err) {
-			return block("cleanup_quarantine_post_observation_invalid", "quarantine returned without proven source absence")
-		}
-		quarantineObserved, err := observeCleanupFile(ctx, s.executor, moved, op.SourceFingerprint)
-		if err != nil {
-			return worker.Retry("cleanup_quarantine_post_observation_failed", safeCleanupReason(err), 30*time.Second, s.retryOwner(claim)), nil
-		}
-		if !sameFrozenCleanupObservation(quarantineObserved, expected) {
-			return block("cleanup_quarantine_changed", "quarantine observation does not match frozen source")
-		}
-		claim, err = s.mutateClaim(ctx, claim, func(ctx context.Context, scope txscope.Tx, _ workitems.OwnerResult) (int64, error) {
-			tx := scope.SQLTx()
-			if tx == nil {
-				return 0, errors.New("quarantine cleanup owner transaction is nil")
-			}
-			return s.quarantineTx(ctx, tx, op.ID, claim.ExpectedOwnerVersion, moved, "cleanup_quarantined", "quarantined at "+moved)
-		})
-		if err != nil {
-			return worker.Outcome{}, err
-		}
-		if err := s.enqueue(ctx, op.ID, claim.ExpectedOwnerVersion, workitems.KindCleanupPurge); err != nil {
-			return worker.Outcome{}, err
-		}
-		if s.activity != nil {
-			activityOp := *op
-			activityOp.Version = claim.ExpectedOwnerVersion
-			if err := s.appendCleanupActivity(ctx, &activityOp, "quarantined", "文件已隔离"); err != nil {
-				return worker.Outcome{}, err
-			}
-		}
-		state := CleanupQuarantined
-		code := "cleanup_quarantined"
-		reason := "moved to " + moved
-		if updated, loadErr := s.load(ctx, op.ID); loadErr != nil {
-			return worker.Outcome{}, loadErr
-		} else if updated != nil {
-			state = updated.State
-			if state == CleanupGraceWaiting {
-				code = "cleanup_grace_waiting"
-				reason = "quarantine is waiting for grace deadline"
-			}
-		}
-		return finish(workitems.OwnerResult{State: string(state), ReasonCode: code, Reason: reason})
-	})
+// cleanupCapturePath is the private namespace object a deletion captures the
+// loser into: next to it, bound to the owner id.
+func cleanupCapturePath(op *CleanupOperation) string {
+	return filepath.Join(filepath.Dir(op.SourcePath), ".bansoko-cleanup-"+op.ID, "object")
 }
 
-// PurgeHandler is the independent purge stage: grace deadline passed +
-// quarantined evidence + fingerprint verification, then delete. All owner
-// writes and retries are fenced by the active WorkItem claim.
-func (s *CleanupService) PurgeHandler() worker.Handler {
-	return cleanupRecoveryHandler{service: s, kind: workitems.KindCleanupPurge, handle: s.purgeBusinessHandler()}
+// DeleteHandler is the cleanup_delete work item handler: it verifies the
+// loser's path-level identity, then captures and purges it inside one claim.
+func (s *CleanupService) DeleteHandler() worker.Handler {
+	return cleanupRecoveryHandler{service: s, handle: worker.HandlerFunc(s.handleDelete)}
 }
-func (s *CleanupService) purgeBusinessHandler() worker.Handler {
-	return worker.HandlerFunc(func(ctx context.Context, claim workitems.Claim) (worker.Outcome, error) {
-		if claim.Kind != workitems.KindCleanupPurge {
-			return worker.Outcome{}, fmt.Errorf("cleanup purge handler received kind %q", claim.Kind)
+
+func (s *CleanupService) handleDelete(ctx context.Context, claim workitems.Claim) (worker.Outcome, error) {
+	if claim.Kind != workitems.KindCleanupDelete {
+		return worker.Outcome{}, fmt.Errorf("cleanup handler received kind %q", claim.Kind)
+	}
+	if s.workItems == nil {
+		return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "blocked", ReasonCode: "cleanup_work_items_unavailable", Reason: "cleanup work items store is not wired"}, nil), nil
+	}
+	op, err := s.load(ctx, claim.Owner.ID)
+	if err != nil {
+		return worker.Outcome{}, err
+	}
+	if op == nil {
+		return worker.Outcome{}, errors.New("cleanup operation not found")
+	}
+	if op.State != CleanupAdmitted {
+		// Idempotent replay: the owner already settled; only the WorkItem
+		// transition is left.
+		terminal := workitems.StateSucceeded
+		if op.State == CleanupBlocked || op.State == CleanupFailed {
+			terminal = workitems.StateFailed
 		}
-		if s.workItems == nil {
-			return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "blocked", ReasonCode: "cleanup_work_items_unavailable", Reason: "cleanup work items store is not wired"}, nil), nil
-		}
-		op, err := s.load(ctx, claim.Owner.ID)
+		return worker.Finish(terminal, workitems.OwnerResult{State: string(op.State), ReasonCode: op.FailureCode, Reason: op.Reason}, s.syncOwnerVersion(claim)), nil
+	}
+	claim, err = s.mutateClaim(ctx, claim, s.verifyClaimOwner(claim))
+	if err != nil {
+		return worker.Outcome{}, err
+	}
+	run := cleanupRun{service: s, op: op, claim: claim}
+	if s.executor == nil {
+		return run.block("cleanup_executor_unavailable", "cleanup filesystem executor is not wired"), nil
+	}
+	if len(op.Attempt) > 0 {
+		return run.resume(ctx)
+	}
+	return run.start(ctx)
+}
+
+// cleanupRun carries one claim's deletion of one obligation.
+type cleanupRun struct {
+	service *CleanupService
+	op      *CleanupOperation
+	claim   workitems.Claim
+}
+
+func (r *cleanupRun) settle(terminal string, to CleanupState, code, reason string) worker.Outcome {
+	return worker.Finish(terminal, workitems.OwnerResult{State: string(to), ReasonCode: code, Reason: reason},
+		r.service.settleWriter(r.op, r.claim.ExpectedOwnerVersion, to, code, reason))
+}
+
+func (r *cleanupRun) skip(code, reason string) worker.Outcome {
+	return r.settle(workitems.StateSucceeded, CleanupSkipped, code, reason)
+}
+
+// block settles an uncertain effect: the attempt stays on the owner and
+// deployment recovery converges it from the exact invocation receipts.
+func (r *cleanupRun) block(code, reason string) worker.Outcome {
+	return r.settle(workitems.StateFailed, CleanupBlocked, code, reason)
+}
+
+func (r *cleanupRun) deleted(reason string) worker.Outcome {
+	return r.settle(workitems.StateSucceeded, CleanupDeleted, "cleanup_deleted", reason)
+}
+
+// start verifies the loser's identity at metadata level (never reading the
+// content) and runs both stages. Every mismatch is a zero-effect skip.
+func (r *cleanupRun) start(ctx context.Context) (worker.Outcome, error) {
+	s, op := r.service, r.op
+	recorded, ok := domain.ParseMetadataFingerprint(op.SourceFingerprint)
+	if !ok {
+		return r.skip(CleanupSkipLoserIdentityUnknown, "the replaced file has no recorded size"), nil
+	}
+	observed, err := observeCleanupFile(ctx, s.executor, op.SourcePath, op.SourceFingerprint)
+	switch {
+	case isMissingCleanupError(err):
+		return r.skip(CleanupSkipLoserMissing, "the replaced file is no longer at its path"), nil
+	case errors.Is(err, domain.ErrNotRegularFile):
+		return r.skip(CleanupSkipLoserNotRegular, "the path no longer holds a regular file"), nil
+	case err != nil:
+		return worker.Retry("cleanup_source_observation_failed", safeCleanupReason(err), 30*time.Second, s.retryOwner(r.claim)), nil
+	}
+	actual, ok := domain.ParseMetadataFingerprint(observed.Fingerprint)
+	if !ok || observed.SizeBytes < 0 || !fileidentity.IsPresent(observed.Identity) || !domain.MetadataFactsMatch(actual, recorded) {
+		return r.skip(CleanupSkipLoserIdentityChanged, "the file at the path is not the replaced file"), nil
+	}
+	owned, err := s.pathOwned(ctx, op.SourcePath)
+	if err != nil {
+		return worker.Outcome{}, err
+	}
+	if owned {
+		return r.skip(CleanupSkipLoserPathOwned, "another managed file now owns the path"), nil
+	}
+	attempt := cleanupAttemptEvidence{
+		CleanupID:         op.ID,
+		Stage:             cleanupStageCapture,
+		WorkItemID:        r.claim.ID,
+		OwnerVersion:      r.claim.ExpectedOwnerVersion + 1,
+		SourcePath:        op.SourcePath,
+		SourceFingerprint: op.SourceFingerprint,
+		CapturePath:       cleanupCapturePath(op),
+		SourceObservation: observed,
+		FencingToken:      r.claim.FencingToken,
+	}
+	if err := r.checkpoint(ctx, attempt); err != nil {
+		return worker.Outcome{}, err
+	}
+	return r.capture(ctx, attempt)
+}
+
+// checkpoint persists the attempt before its effect; the owner version it
+// produces is the one the invocation receipt binds.
+func (r *cleanupRun) checkpoint(ctx context.Context, attempt cleanupAttemptEvidence) error {
+	raw, err := json.Marshal(attempt)
+	if err != nil {
+		return err
+	}
+	next, err := r.service.mutateClaim(ctx, r.claim, func(ctx context.Context, scope txscope.Tx, _ workitems.OwnerResult) (int64, error) {
+		version, err := r.service.repository.PersistAttemptTx(ctx, scope, r.op.ID, r.claim.ExpectedOwnerVersion, raw)
 		if err != nil {
-			return worker.Outcome{}, err
+			return 0, err
 		}
-		if op == nil {
-			return worker.Outcome{}, errors.New("cleanup operation not found")
+		if version != attempt.OwnerVersion {
+			return 0, fmt.Errorf("cleanup attempt version %d does not match checkpoint %d", version, attempt.OwnerVersion)
 		}
-		if evidence, decodeErr := decodeCleanupAttempt(op.Attempt); decodeErr == nil && evidence.Stage == "purge" && op.State != CleanupPurged {
-			o, err := (cleanupRecoveryHandler{service: s, kind: claim.Kind}).recoverReceipt(ctx, claim, op)
-			if err == nil && o.Disposition == workitems.DispositionAmbiguous {
-				return worker.Outcome{}, workitems.ErrPublicationUnresolved
-			}
-			return o, err
-		}
-		claim, err = s.mutateClaim(ctx, claim, s.verifyClaimOwner(claim))
-		if err != nil {
-			return worker.Outcome{}, err
-		}
-		block := func(code, reason string) (worker.Outcome, error) {
-			next, mutateErr := s.mutateClaim(ctx, claim, func(ctx context.Context, scope txscope.Tx, _ workitems.OwnerResult) (int64, error) {
-				tx := scope.SQLTx()
-				if tx == nil {
-					return 0, errors.New("transition cleanup owner transaction is nil")
-				}
-				return s.transitionTx(ctx, tx, op.ID, claim.ExpectedOwnerVersion, CleanupBlocked, code, reason)
-			})
-			if mutateErr != nil {
-				return worker.Outcome{}, mutateErr
-			}
-			claim = next
-			return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "blocked", ReasonCode: code, Reason: reason}, s.syncOwnerVersion(claim)), nil
-		}
-		if op.State == CleanupPurged {
-			return worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: "purged", ReasonCode: "cleanup_purged", Reason: "purged (idempotent replay)"}, s.syncOwnerVersion(claim)), nil
-		}
-		if op.Effect != "quarantine" {
-			return block("cleanup_purge_effect_invalid", "cleanup purge stage requires owner effect quarantine")
-		}
-		if op.State != CleanupQuarantined && op.State != CleanupGraceWaiting {
-			return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "failed", ReasonCode: "cleanup_purge_invalid", Reason: "cleanup is not quarantined or grace waiting"}, s.syncOwnerVersion(claim)), nil
-		}
-		if op.GraceDeadline != nil && s.now().Before(*op.GraceDeadline) {
-			return worker.Retry("cleanup_grace_not_elapsed", "grace deadline has not elapsed", 30*time.Second, s.retryOwner(claim)), nil
-		}
-		if s.executor == nil {
-			return block("cleanup_executor_unavailable", "cleanup filesystem executor is not wired")
-		}
-		expected, err := frozenObservation(op.Attempt, op.SourceFingerprint)
-		if err != nil {
-			return block("cleanup_purge_evidence_invalid", safeCleanupReason(err))
-		}
-		if op.QuarantinePath == "" {
-			return block("cleanup_purge_evidence_invalid", "cleanup quarantine path evidence is missing")
-		}
-		observed, err := observeCleanupFile(ctx, s.executor, op.QuarantinePath, op.SourceFingerprint)
-		if err != nil {
-			return worker.Retry("cleanup_quarantine_observation_failed", safeCleanupReason(err), 30*time.Second, s.retryOwner(claim)), nil
-		}
-		if !sameFrozenCleanupObservation(observed, expected) {
-			return block("cleanup_quarantine_changed", "cleanup quarantine observation does not match frozen evidence")
-		}
-		attempt, err := json.Marshal(map[string]any{
-			"cleanup_id": op.ID, "effect": op.Effect, "stage": "purge", "quarantine_path": op.QuarantinePath,
-			"source_fingerprint": op.SourceFingerprint, "quarantine_observation": observed,
-			"fencing_token": claim.FencingToken,
-		})
-		if err != nil {
-			return worker.Outcome{}, err
-		}
-		claim, err = s.mutateClaim(ctx, claim, func(ctx context.Context, scope txscope.Tx, _ workitems.OwnerResult) (int64, error) {
-			tx := scope.SQLTx()
-			if tx == nil {
-				return 0, errors.New("persist cleanup attempt transaction is nil")
-			}
-			return s.persistAttemptTx(ctx, tx, op.ID, claim.ExpectedOwnerVersion, attempt)
-		})
-		if err != nil {
-			return worker.Outcome{}, err
-		}
-		if _, err := s.mutateClaim(ctx, claim, s.verifyClaimOwner(claim)); err != nil {
-			return worker.Outcome{}, err
-		}
-		if receiptExecutor, ok := s.executor.(executorpkg.MaintenanceCleanupExecutor); ok {
-			err = receiptExecutor.PurgeMaintenance(ctx, op.QuarantinePath, observed, maintenanceInvocation(claim, attempt, op.QuarantinePath, op.QuarantinePath, observed.Fingerprint))
-		} else {
-			err = s.executor.RemoveQuarantined(ctx, op.QuarantinePath, observed)
-		}
-		if err != nil {
-			return block("cleanup_purge_failed", safeCleanupReason(err))
-		}
-		if _, postErr := observeCleanupFile(ctx, s.executor, op.QuarantinePath, op.SourceFingerprint); postErr == nil {
-			return worker.Retry("cleanup_purge_post_observation_present", "purge returned but quarantine object remains", 30*time.Second, s.retryOwner(claim)), nil
-		} else if !isMissingCleanupError(postErr) {
-			return block("cleanup_purge_post_observation_invalid", "purge returned without proven quarantine absence")
-		}
-		claim, err = s.mutateClaim(ctx, claim, func(ctx context.Context, scope txscope.Tx, _ workitems.OwnerResult) (int64, error) {
-			tx := scope.SQLTx()
-			if tx == nil {
-				return 0, errors.New("record cleanup purge observation transaction is nil")
-			}
-			return s.recordPurgePostObservationTx(ctx, tx, op.ID, claim.ExpectedOwnerVersion)
-		})
-		if err != nil {
-			return worker.Outcome{}, err
-		}
-		if s.activity != nil {
-			activityOp := *op
-			activityOp.Version = claim.ExpectedOwnerVersion
-			if err := s.appendCleanupActivity(ctx, &activityOp, "purged", "隔离文件已清除"); err != nil {
-				return worker.Outcome{}, err
-			}
-		}
-		return worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: "purged", ReasonCode: "cleanup_purged", Reason: "purged"}, s.syncOwnerVersion(claim)), nil
+		return version, nil
 	})
+	if err != nil {
+		return err
+	}
+	r.claim = next
+	r.op.Attempt, r.op.Version = raw, attempt.OwnerVersion
+	return nil
+}
+
+func (r *cleanupRun) receiptExecutor() (executorpkg.MaintenanceCleanupExecutor, bool) {
+	e, ok := r.service.executor.(executorpkg.MaintenanceCleanupExecutor)
+	return e, ok
+}
+
+// capture moves the loser into the private namespace, proves the source
+// absent and the captured object identical, then runs the purge stage.
+func (r *cleanupRun) capture(ctx context.Context, attempt cleanupAttemptEvidence) (worker.Outcome, error) {
+	s, op := r.service, r.op
+	e, ok := r.receiptExecutor()
+	if !ok {
+		return r.block("cleanup_executor_unavailable", "cleanup executor has no receipts"), nil
+	}
+	expected := attempt.SourceObservation
+	moved, err := e.MoveMaintenance(ctx, attempt.SourcePath, attempt.CapturePath, expected, cleanupInvocation(op, attempt, cleanupCaptureInvocation))
+	if err != nil {
+		return r.block("cleanup_capture_failed", safeCleanupReason(err)), nil
+	}
+	if _, err := observeCleanupFile(ctx, s.executor, attempt.SourcePath, op.SourceFingerprint); !isMissingCleanupError(err) {
+		return r.block("cleanup_capture_source_present", "the capture returned without proven source absence"), nil
+	}
+	captured, err := observeCleanupFile(ctx, s.executor, moved, op.SourceFingerprint)
+	if err != nil || !sameFrozenCleanupObservation(captured, expected) {
+		return r.block("cleanup_capture_changed", "the captured object does not match the replaced file"), nil
+	}
+	return r.advanceToPurge(ctx, attempt, moved, captured)
+}
+
+func (r *cleanupRun) advanceToPurge(ctx context.Context, attempt cleanupAttemptEvidence, captured string, observed domain.FileObservation) (worker.Outcome, error) {
+	attempt.Stage = cleanupStagePurge
+	attempt.CapturePath = captured
+	attempt.CaptureObservation = observed
+	attempt.WorkItemID = r.claim.ID
+	attempt.OwnerVersion = r.claim.ExpectedOwnerVersion + 1
+	attempt.FencingToken = r.claim.FencingToken
+	if err := r.checkpoint(ctx, attempt); err != nil {
+		return worker.Outcome{}, err
+	}
+	return r.purge(ctx, attempt)
+}
+
+// purge removes the exact captured object and proves its absence.
+func (r *cleanupRun) purge(ctx context.Context, attempt cleanupAttemptEvidence) (worker.Outcome, error) {
+	s, op := r.service, r.op
+	e, ok := r.receiptExecutor()
+	if !ok {
+		return r.block("cleanup_executor_unavailable", "cleanup executor has no receipts"), nil
+	}
+	if err := e.PurgeMaintenance(ctx, attempt.CapturePath, attempt.CaptureObservation, cleanupInvocation(op, attempt, cleanupPurgeInvocation)); err != nil {
+		return r.block("cleanup_purge_failed", safeCleanupReason(err)), nil
+	}
+	if _, err := observeCleanupFile(ctx, s.executor, attempt.CapturePath, op.SourceFingerprint); !isMissingCleanupError(err) {
+		return r.block("cleanup_purge_object_present", "the purge returned without proven absence"), nil
+	}
+	return r.deleted("replaced file deleted"), nil
+}
+
+// resume continues an obligation whose attempt a deployment recovery
+// re-admitted: a finished capture continues with its purge, a provably
+// unstarted stage runs again, anything else blocks.
+func (r *cleanupRun) resume(ctx context.Context) (worker.Outcome, error) {
+	attempt, err := decodeCleanupAttempt(r.op.Attempt)
+	if err != nil {
+		return r.block("cleanup_attempt_invalid", safeCleanupReason(err)), nil
+	}
+	e, ok := r.receiptExecutor()
+	if !ok {
+		return r.block("cleanup_executor_unavailable", "cleanup executor has no receipts"), nil
+	}
+	switch resolveCleanupAttempt(ctx, r.service.executor, e, r.op, attempt) {
+	case cleanupResolutionPurged:
+		return r.deleted("exact purge invocation returned"), nil
+	case cleanupResolutionCaptured:
+		captured, err := observeCleanupFile(ctx, r.service.executor, attempt.CapturePath, r.op.SourceFingerprint)
+		if err != nil || !sameFrozenCleanupObservation(captured, attempt.SourceObservation) {
+			return r.block("cleanup_capture_changed", "the captured object does not match the replaced file"), nil
+		}
+		return r.advanceToPurge(ctx, attempt, attempt.CapturePath, captured)
+	case cleanupResolutionCaptureNotStarted:
+		return r.start(ctx)
+	case cleanupResolutionPurgeNotStarted:
+		next := attempt
+		next.WorkItemID = r.claim.ID
+		next.OwnerVersion = r.claim.ExpectedOwnerVersion + 1
+		next.FencingToken = r.claim.FencingToken
+		if err := r.checkpoint(ctx, next); err != nil {
+			return worker.Outcome{}, err
+		}
+		return r.purge(ctx, next)
+	}
+	return r.block("cleanup_effect_uncertain", "the interrupted deletion has no receipt"), nil
+}
+
+func (s *CleanupService) pathOwned(ctx context.Context, path string) (bool, error) {
+	var owned bool
+	err := s.repository.WithTx(ctx, func(scope txscope.Tx) error {
+		var err error
+		owned, err = s.repository.PathOwnedTx(ctx, scope, path)
+		return err
+	})
+	return owned, err
 }
 
 // safeCleanupReason bounds the reason string for owner rows/logs.
@@ -1015,8 +613,8 @@ func nullableText(value string) any {
 	return value
 }
 
-// ListCleanups returns the cleanup operations of one anime (side-effect
-// free, newest first) for the per-instance owner truth surface.
+// ListCleanupsApplication returns the cleanup operations of one anime
+// (side-effect free, newest first) for the per-instance owner truth surface.
 func (s *CleanupService) ListCleanupsApplication(ctx context.Context, animeID string, limit, offset int) ([]CleanupOperationView, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 100
@@ -1030,52 +628,46 @@ func (s *CleanupService) ListCleanupsApplication(ctx context.Context, animeID st
 	}
 	views := make([]CleanupOperationView, 0, len(rows))
 	for _, row := range rows {
-		view := CleanupOperationView{
+		views = append(views, CleanupOperationView{
 			ID:                row.ID,
 			PlacementID:       row.PlacementID,
 			ManagedAnimeID:    row.ManagedAnimeID,
 			ReplacementRef:    row.ReplacementRef,
-			PolicyVersion:     int(row.PolicyVersion),
 			RetentionMode:     row.RetentionMode,
 			SourcePath:        row.SourcePath,
 			SourceFingerprint: row.SourceFingerprint,
-			Effect:            row.Effect,
 			State:             row.State,
 			Version:           int(row.Version),
 			CreatedAt:         row.CreatedAt,
 			UpdatedAt:         &row.UpdatedAt,
-			QuarantinePath:    row.QuarantinePath,
-			GraceDeadline:     row.GraceDeadline,
 			FailureCode:       row.FailureCode,
 			Reason:            row.Reason,
-		}
-		views = append(views, view)
+		})
 	}
 	return views, nil
 }
 
-// appendCleanupActivity records one cleanup_completed terminal result. The
-// effect transition already committed through its own update; the Activity
-// append runs in its own short transaction so a writer failure never rolls
-// back the completed cleanup effect.
-func (s *CleanupService) appendCleanupActivity(ctx context.Context, op *CleanupOperation, reasonCode, summary string) error {
+// appendCleanupActivityTx records one cleanup_completed result (deleted or
+// skipped) in the caller's transaction.
+func (s *CleanupService) appendCleanupActivityTx(ctx context.Context, scope txscope.Tx, op *CleanupOperation, outcome, reasonCode string) error {
 	if s.activity == nil || op == nil {
 		return nil
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
+	subscriptionID, err := s.repository.SubscriptionIDForAnimeTx(ctx, scope, op.ManagedAnimeID)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
-	subscriptionID, err := s.repository.SubscriptionIDForAnimeTx(ctx, txscope.Wrap(tx), op.ManagedAnimeID)
-	if err != nil {
-		return err
+	summary := "旧版本已删除"
+	activityOutcome := "success"
+	if outcome == "skipped" {
+		summary = "旧版本未删除：" + cleanupSkipSummary(reasonCode)
+		activityOutcome = "info"
 	}
-	if err := s.activity.AppendTx(ctx, txscope.Wrap(tx), observabilityport.ActivityRecord{
+	return s.activity.AppendTx(ctx, scope, observabilityport.ActivityRecord{
 		SubscriptionID:  subscriptionID,
 		ManagedAnimeID:  op.ManagedAnimeID,
 		Kind:            "cleanup_completed",
-		Outcome:         "success",
+		Outcome:         activityOutcome,
 		ReasonCode:      reasonCode,
 		SubjectType:     "cleanup_operation",
 		SubjectID:       op.ID,
@@ -1086,8 +678,21 @@ func (s *CleanupService) appendCleanupActivity(ctx context.Context, op *CleanupO
 		CorrelationID:   op.CorrelationID,
 		CausationType:   "replacement_decision",
 		CausationID:     op.ReplacementRef,
-	}); err != nil {
-		return err
+	})
+}
+
+func cleanupSkipSummary(code string) string {
+	switch code {
+	case CleanupSkipLoserMissing:
+		return "文件已不在原路径"
+	case CleanupSkipLoserNotRegular:
+		return "原路径不再是普通文件"
+	case CleanupSkipLoserIdentityChanged:
+		return "原路径上的文件已变化"
+	case CleanupSkipLoserIdentityUnknown:
+		return "没有记录文件大小"
+	case CleanupSkipLoserPathOwned:
+		return "路径已归其他受管文件"
 	}
-	return tx.Commit()
+	return "身份核对未通过"
 }

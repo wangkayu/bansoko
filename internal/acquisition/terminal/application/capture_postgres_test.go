@@ -60,7 +60,7 @@ func checkQualificationFixture(t *testing.T) {
 		`INSERT INTO managed_anime(id,title) VALUES('anime-1','Show')`,
 		`INSERT INTO subscriptions(id,managed_anime_id,origin,instance_label,state) VALUES('sub-1','anime-1','custom','Show','active')`,
 		`INSERT INTO anime_metadata(managed_anime_id) VALUES('anime-1')`,
-		`INSERT INTO anime_business_configs(managed_anime_id, parser_kind, parser_source_default_version, parser_version, admission_mode, quality_profile, cleanup_policy, retention_source_default_version, retention_version, unclassified_route, file_effect_source_default_version, file_effect_version) VALUES('anime-1','regex',1,1,'all','{"version":"profile-v1","items":[]}','{"version":"cleanup-v1","effect":"quarantine","grace_seconds":3600}',1,1,'skip',0,1)`,
+		`INSERT INTO anime_business_configs(managed_anime_id, parser_kind, parser_source_default_version, parser_version, admission_mode, quality_profile, retention_source_default_version, retention_version, unclassified_route, file_effect_source_default_version, file_effect_version) VALUES('anime-1','regex',1,1,'all','{"version":"profile-v1","items":[]}',1,1,'skip',0,1)`,
 		`INSERT INTO rss_sources(id,subscription_id,source_kind,locator,locator_display,group_name,title) VALUES('src-1','sub-1','custom_rss','https://feeds.example/a1','feeds.example/a1','G','Show')`,
 		`INSERT INTO rss_source_runtime(rss_source_id) VALUES('src-1')`,
 		`INSERT INTO releases(id,rss_source_id,stable_item_key,raw_facts,source_facts,verdict,reason_code) VALUES('rel-1','src-1','key','{}','{}','discovered','new')`,

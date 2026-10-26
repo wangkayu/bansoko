@@ -49,9 +49,9 @@ func seedInstanceRetention(t *testing.T, db *sql.DB, animeID string, mode Admiss
 	}
 	if _, err := db.Exec(`
 INSERT INTO anime_business_configs
-(managed_anime_id, admission_mode, quality_profile, cleanup_policy, retention_source_default_version, retention_version, updated_at)
-VALUES ($1, $2, $3::jsonb, '{"version":"cleanup-v1","effect":"quarantine","grace_seconds":3600}'::jsonb, 1, $4, CURRENT_TIMESTAMP)
-ON CONFLICT (managed_anime_id) DO UPDATE SET admission_mode = EXCLUDED.admission_mode, quality_profile = EXCLUDED.quality_profile, cleanup_policy = EXCLUDED.cleanup_policy, retention_source_default_version = EXCLUDED.retention_source_default_version, retention_version = EXCLUDED.retention_version, updated_at = EXCLUDED.updated_at`,
+(managed_anime_id, admission_mode, quality_profile, retention_source_default_version, retention_version, updated_at)
+VALUES ($1, $2, $3::jsonb, 1, $4, CURRENT_TIMESTAMP)
+ON CONFLICT (managed_anime_id) DO UPDATE SET admission_mode = EXCLUDED.admission_mode, quality_profile = EXCLUDED.quality_profile, retention_source_default_version = EXCLUDED.retention_source_default_version, retention_version = EXCLUDED.retention_version, updated_at = EXCLUDED.updated_at`,
 		animeID, string(mode), profile, version); err != nil {
 		t.Fatal(err)
 	}
@@ -1024,7 +1024,7 @@ func TestSettleStaleWhenWinnerAlreadySuperseded(t *testing.T) {
 // Settle crash replay: decision-bound convergence, no re-selection
 // ---------------------------------------------------------------------------
 
-func TestSettleCrashReplayConvergesSameDecisionCleanup(t *testing.T) {
+func TestSettleReplayRegistersOneDeletionPerFrozenLoser(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
@@ -1037,23 +1037,18 @@ func TestSettleCrashReplayConvergesSameDecisionCleanup(t *testing.T) {
 		&PlacementRef{PlacementID: "plc-winner", Version: 1, Fingerprint: "fp-w"},
 		[]PlacementRef{{PlacementID: "plc-loser", Version: 1, Fingerprint: "fp-l"}}, "admitted")
 
-	// Crash window: the decision is settled and the loser superseded, but the
-	// cleanup handoff loop never ran.
-	if _, err := db.Exec(`UPDATE placements SET state = 'superseded', version = version + 1 WHERE id = 'plc-loser'`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`UPDATE replacement_decisions SET state = 'settled', version = version + 1 WHERE id = 'dec-frozen'`); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := db.Exec(`UPDATE placements SET state = 'superseded', version = version + 1 WHERE id = 'plc-unrelated'`); err != nil {
 		t.Fatal(err)
 	}
 
+	// The deletion obligation is registered in the same transaction that
+	// supersedes the loser, so there is no window between the two.
 	cleanup := NewCleanupService(db)
+	cleanup.SetWorkItems(cleanupWorkItemStore(t, db))
 	service := NewReplacementDecisionService(db)
 	service.SetCleanupHandoff(cleanup)
 	if err := service.SettleDecision(ctx, "dec-frozen"); err != nil {
-		t.Fatalf("converge: %v", err)
+		t.Fatalf("settle: %v", err)
 	}
 	var loserCleanups, unrelatedCleanups int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM cleanup_operations WHERE placement_id = 'plc-loser'`).Scan(&loserCleanups); err != nil {
@@ -1296,19 +1291,21 @@ func TestEvaluateHandlerInvalidClaimFails(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Cleanup admission stays durable even when the platform blocks mutation.
+// Settlement registers the deletion; the cleanup owner deletes the loser.
 // ---------------------------------------------------------------------------
 
-func TestSettleCrashReplayRealEffectIdempotent(t *testing.T) {
+func TestSettleDeletesLoserAndReplayIsIdempotent(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	winnerPath := filepath.Join(dir, "Winner", "EP01.mkv")
 	loserPath := filepath.Join(dir, "Loser", "EP01.mkv")
 	winnerContent := []byte("winner-file")
-	loserContent := []byte("loser-file")
 	if err := os.MkdirAll(filepath.Dir(winnerPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1318,11 +1315,16 @@ func TestSettleCrashReplayRealEffectIdempotent(t *testing.T) {
 	if err := os.WriteFile(winnerPath, winnerContent, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(loserPath, loserContent, 0o644); err != nil {
+	if err := os.WriteFile(loserPath, []byte("loser-file"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	executor := filesystem.NewOSCleanupExecutor(dir)
+	loserObservation, err := executor.ObserveMetadataFile(ctx, loserPath)
+	if err != nil {
 		t.Fatal(err)
 	}
 	winnerFP := sha256Hex(winnerContent)
-	loserFP := sha256Hex(loserContent)
+	loserFP := loserObservation.Fingerprint
 
 	seedPlacement(t, db, "plc-winner", "anime-1", winnerPath, winnerFP, []string{"tv:s1:e1"}, "2026-07-01T00:00:00Z")
 	seedPlacement(t, db, "plc-loser", "anime-1", loserPath, loserFP, []string{"tv:s1:e1"}, "2026-08-01T00:00:00Z")
@@ -1330,36 +1332,43 @@ func TestSettleCrashReplayRealEffectIdempotent(t *testing.T) {
 		&PlacementRef{PlacementID: "plc-winner", Version: 1, Fingerprint: winnerFP},
 		[]PlacementRef{{PlacementID: "plc-loser", Version: 1, Fingerprint: loserFP}}, "admitted")
 
+	store := cleanupWorkItemStore(t, db)
 	cleanup := NewCleanupService(db)
-	cleanup.SetFileExecutor(filesystem.NewOSCleanupExecutor(dir))
+	cleanup.SetFileExecutor(executor)
+	cleanup.SetWorkItems(store)
 	service := NewReplacementDecisionService(db)
 	service.SetCleanupHandoff(cleanup)
 
-	// First settle: supersedes the loser and admits the cleanup operation.
 	if err := service.SettleDecision(ctx, "dec-frozen"); err != nil {
 		t.Fatalf("settle: %v", err)
 	}
-	// The cleanup owner executes the quarantine effect (real file move).
-	var cleanupID string
-	if err := db.QueryRow(`SELECT id FROM cleanup_operations WHERE placement_id = 'plc-loser'`).Scan(&cleanupID); err != nil {
+	var cleanupID, state string
+	if err := db.QueryRow(`SELECT id, state FROM cleanup_operations WHERE placement_id = 'plc-loser'`).Scan(&cleanupID, &state); err != nil {
 		t.Fatal(err)
 	}
-	outcome, err := cleanup.QuarantineHandler().Handle(ctx, workitems.Claim{
-		Kind: workitems.KindCleanupQuarantine, Owner: workitems.OwnerRef{Type: workitems.OwnerCleanup, ID: cleanupID},
-		ExpectedOwnerVersion: 1, FencingToken: 1,
-	})
-	if err != nil || outcome.Kind != worker.OutcomeFinish || outcome.TerminalState != workitems.StateFailed {
-		t.Fatalf("unsupported quarantine effect must be blocked: outcome=%+v err=%v", outcome, err)
+	if state != string(CleanupAdmitted) {
+		t.Fatalf("a loser with a recorded identity must be admitted for deletion: %s", state)
 	}
-	if _, err := os.Stat(loserPath); err != nil {
-		t.Fatalf("loser file must remain untouched: %v", err)
+	claim, err := store.ClaimDue(ctx, "settle-delete", []string{workitems.KindCleanupDelete}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := cleanup.DeleteHandler().Handle(ctx, claim)
+	if err != nil || outcome.Kind != worker.OutcomeFinish || outcome.TerminalState != workitems.StateSucceeded {
+		t.Fatalf("delete outcome=%+v err=%v", outcome, err)
+	}
+	if err := store.FinishWithResult(ctx, claim, outcome.TerminalState, outcome.OwnerResult, outcome.WriteOwner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(loserPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("loser file must be deleted: %v", err)
 	}
 	if _, err := os.Stat(winnerPath); err != nil {
 		t.Fatalf("winner file must stay in place: %v", err)
 	}
 
-	// Crash replay: settle runs again; the same decision converges idempotently
-	// and never re-moves the file or duplicates the cleanup operation.
+	// Replay: the settled decision is a no-op and never duplicates the
+	// obligation.
 	if err := service.SettleDecision(ctx, "dec-frozen"); err != nil {
 		t.Fatalf("replay settle: %v", err)
 	}
@@ -1370,8 +1379,11 @@ func TestSettleCrashReplayRealEffectIdempotent(t *testing.T) {
 	if cleanups != 1 {
 		t.Fatalf("replay must not duplicate cleanup: %d", cleanups)
 	}
-	if _, err := os.Stat(loserPath); err != nil {
-		t.Fatalf("replay must leave loser file untouched: %v", err)
+	if err := db.QueryRow(`SELECT state FROM cleanup_operations WHERE id = $1`, cleanupID).Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state != string(CleanupDeleted) {
+		t.Fatalf("cleanup state = %s, want deleted", state)
 	}
 	if state := placementState(t, db, "plc-loser"); state != "superseded" {
 		t.Fatalf("loser must stay superseded: %s", state)
@@ -1380,7 +1392,6 @@ func TestSettleCrashReplayRealEffectIdempotent(t *testing.T) {
 		t.Fatalf("frozen winner must stay active: %s", state)
 	}
 }
-
 func TestSettleStaleLeavesPhysicalFilesUntouched(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()

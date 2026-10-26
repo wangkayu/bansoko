@@ -24,7 +24,6 @@ beforeEach(() => {
   retention = {
     admission_mode: "all",
     quality_profile: { version: "profile-v1", items: [{ key: "subgroup.score", ranks: [] }, { key: "release.resolution", ranks: [["1080p"], ["720p"]] }] },
-    cleanup_policy: { version: "cleanup-v1", effect: "quarantine", grace_seconds: 604800 },
     version: 3,
   };
   route = { unclassified_route: "skip", version: 1 };
@@ -73,62 +72,56 @@ function renderPage(onDirtyChange?: (dirty: boolean) => void) {
   );
 }
 
+const moveResolutionUp = () => t("qualityCompare.moveUp", { item: compareItemName("release.resolution") });
+
 describe("SettingsRetention", () => {
   it("loads the global defaults and keeps save disabled until something changes", async () => {
     renderPage();
-    expect(await screen.findByLabelText(t("settings.retention.graceAria"))).toHaveValue("604800");
+    await screen.findByRole("button", { name: moveResolutionUp() });
     expect(screen.getByRole("button", { name: t("settings.retention.saveAria") })).toBeDisabled();
     const resolution = compareItemName("release.resolution");
     const ranks = screen.getByRole("list", { name: t("qualityCompare.ranksAria", { item: resolution }) });
     expect(within(ranks).getAllByRole("listitem").map((item) => item.textContent)).toEqual(["11080p", "2720p", t("qualityCompare.others")]);
+    // Keeping every version replaces nothing, so no deletion note is shown.
+    expect(screen.queryByText(t("settings.retention.replacedNote"))).not.toBeInTheDocument();
   });
 
-  it("saves a reordered comparison profile without a cutoff", async () => {
+  it("saves a reordered comparison profile without a cutoff or cleanup policy", async () => {
     renderPage();
-    await screen.findByLabelText(t("settings.retention.graceAria"));
-    fireEvent.click(screen.getByRole("button", { name: t("qualityCompare.moveUp", { item: compareItemName("release.resolution") }) }));
+    fireEvent.click(await screen.findByRole("button", { name: moveResolutionUp() }));
     fireEvent.click(screen.getByRole("button", { name: t("settings.retention.saveAria") }));
     await waitFor(() => expect(retentionPuts).toHaveLength(1));
     expect(retentionPuts[0]).toMatchObject({
       quality_profile: { version: "profile-v1", items: [{ key: "release.resolution", ranks: [["1080p"], ["720p"]] }, { key: "subgroup.score", ranks: [] }] },
     });
     expect(retentionPuts[0]).not.toHaveProperty("cutoff");
+    expect(retentionPuts[0]).not.toHaveProperty("cleanup_policy");
   });
 
   it("saves an edit with the loaded version as the CAS expectation and reports dirty state", async () => {
     const dirty = vi.fn();
     renderPage(dirty);
-    const grace = await screen.findByLabelText(t("settings.retention.graceAria"));
-    fireEvent.change(grace, { target: { value: "120" } });
+    fireEvent.click(await screen.findByRole("button", { name: moveResolutionUp() }));
     await waitFor(() => expect(dirty).toHaveBeenLastCalledWith(true));
     fireEvent.click(screen.getByRole("button", { name: t("settings.retention.saveAria") }));
     await waitFor(() => expect(retentionPuts).toHaveLength(1));
-    expect(retentionPuts[0]).toMatchObject({
-      expected_version: 3,
-      admission_mode: "all",
-      cleanup_policy: { version: "cleanup-v1", effect: "quarantine", grace_seconds: 120 },
-    });
+    expect(retentionPuts[0]).toMatchObject({ expected_version: 3, admission_mode: "all" });
     await waitFor(() => expect(dirty).toHaveBeenLastCalledWith(false));
     expect(screen.getByRole("button", { name: t("settings.retention.saveAria") })).toBeDisabled();
   });
 
-  it("blocks saving an invalid grace period without calling the server", async () => {
-    renderPage();
-    fireEvent.change(await screen.findByLabelText(t("settings.retention.graceAria")), { target: { value: "-5" } });
-    expect(await screen.findByRole("alert")).toHaveTextContent(t("settings.retention.graceInvalid"));
-    expect(screen.getByRole("button", { name: t("settings.retention.saveAria") })).toBeDisabled();
-    expect(retentionPuts).toHaveLength(0);
-  });
-
   it("shows a version conflict and reloads the server value on refresh, dropping the local edit", async () => {
     renderPage();
-    fireEvent.change(await screen.findByLabelText(t("settings.retention.graceAria")), { target: { value: "120" } });
+    fireEvent.click(await screen.findByRole("button", { name: moveResolutionUp() }));
     conflictNext = true;
     fireEvent.click(screen.getByRole("button", { name: t("settings.retention.saveAria") }));
     expect(await screen.findByText(t("common.versionConflict"))).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: t("common.refreshLatest") }));
-    await waitFor(() => expect(screen.getByLabelText(t("settings.retention.graceAria"))).toHaveValue("604800"));
+    // The reloaded server value keeps one version per group, so replaced old
+    // files are deleted and the page says so.
+    expect(await screen.findByText(t("settings.retention.replacedNote"))).toBeInTheDocument();
     expect(screen.queryByText(t("common.versionConflict"))).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: t("settings.retention.saveAria") })).toBeDisabled();
   });
 
   it("saves the unclassified-file default through the footer save, independently of the retention default", async () => {

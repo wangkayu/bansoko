@@ -593,7 +593,7 @@ func TestLocalOwnerCleanupConflictRetainsOwners(t *testing.T) {
 	defer fixture.db.Close()
 	seedAnimeSubscription(t, fixture.db, "anime-unsub-1", "sub-1", "active")
 	seedInstanceRetention(t, fixture.db, "anime-unsub-1", ModeAll, ``, 1)
-	// A checkpointed destructive effect: a quarantined cleanup operation.
+	// A pending destructive effect: an admitted cleanup operation.
 	if _, err := fixture.db.Exec(`
 INSERT INTO placements(id, physical_path, managed_anime_id, source_evidence_type, source_owner_ref,
  source_fingerprint, target_fingerprint, quality_facts_ref, facts_version, version, created_at, updated_at)
@@ -602,10 +602,10 @@ VALUES ('plc-1', '/library/Old/EP01.mkv', 'anime-unsub-1', 'reconciliation', 'ob
 	}
 	if _, err := fixture.db.Exec(`
 INSERT INTO cleanup_operations
-(id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref, policy_version,
- retention_mode, source_path, source_fingerprint, effect, state, version, created_at, updated_at)
-VALUES ('cln-1', 'cln:plc-1:dec-1', 'plc-1', 'anime-unsub-1', '["tv:s1:e1"]', 'dec-1', 1,
- 'single_copy', '/library/Old/EP01.mkv', 'fp', 'quarantine', 'quarantined', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
+(id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
+ retention_mode, source_path, source_fingerprint, state, version, created_at, updated_at)
+VALUES ('cln-1', 'cln:plc-1:dec-1', 'plc-1', 'anime-unsub-1', '["tv:s1:e1"]', 'dec-1',
+ 'single_copy', '/library/Old/EP01.mkv', 'fp', 'admitted', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
 		t.Fatal(err)
 	}
 	cleanup := NewLocalOwnerCleanup(fixture.db)
@@ -675,10 +675,10 @@ VALUES ('dec-settled', 'repl:anime-unsub-2:x', 'anime-unsub-2', 'rel-1', 'plc-ne
 	}
 	if _, err := fixture.db.Exec(`
 INSERT INTO cleanup_operations
-(id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref, policy_version,
- retention_mode, source_path, source_fingerprint, effect, state, version, created_at, updated_at)
-VALUES ('cln-done', 'cln:plc-old:dec-settled', 'plc-old', 'anime-unsub-2', '["tv:s1:e1"]', 'dec-settled', 1,
- 'single_copy', '/library/Old/EP01.mkv', 'fp', 'quarantine', 'completed', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
+(id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
+ retention_mode, source_path, source_fingerprint, state, version, created_at, updated_at)
+VALUES ('cln-done', 'cln:plc-old:dec-settled', 'plc-old', 'anime-unsub-2', '["tv:s1:e1"]', 'dec-settled',
+ 'single_copy', '/library/Old/EP01.mkv', 'fp', 'deleted', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := fixture.db.Exec(`

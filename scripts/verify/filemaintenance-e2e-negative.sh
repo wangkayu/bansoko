@@ -21,9 +21,10 @@
 #   filemaintenance-e2e-negative.sh --self-test     # static checks, no VM work
 #
 # Modes (BANSOKO_FM_E2E_NEGATIVE):
-#   old-source-missing   destroys the superseded placement file the cleanup
-#                        quarantine stage must move; the chain cannot converge
-#                        and must report its typed cleanup failure.
+#   old-source-missing   destroys the superseded placement file the deletion
+#                        must verify; the deletion is skipped (loser_missing),
+#                        the chain cannot converge and must report that typed
+#                        skip.
 #   new-placement-missing destroys the file the settled chain left at the new
 #                        placement path; the `-f` assertion must name it.
 #
@@ -92,10 +93,10 @@ static_checks() {
     failed=1
   fi
   # The old-source-missing mode is only attributable because the lane reads the
-  # cleanup owner's terminal `failed` state: without it the run would wait out
+  # cleanup owner's terminal `skipped` state: without it the run would wait out
   # the whole deadline and report a timeout instead of the typed reason.
-  if ! grep -qF "reason,'') || ' (state=failed)'" "$lane"; then
-    echo "self-test: $lane no longer reads the terminal failed cleanup state, so old-source-missing can only time out" >&2
+  if ! grep -qF "reason,'') || ' (state=skipped)'" "$lane"; then
+    echo "self-test: $lane no longer reads the terminal skipped cleanup state, so old-source-missing can only time out" >&2
     failed=1
   fi
   # Scenario 8 (scan-alignment recovery) must stay reachable AND stay out of
@@ -243,7 +244,7 @@ FAKE
 # Expected diagnostic per mode: the assertion line the run must actually print.
 expected_diagnostic() {
   case "$1" in
-    old-source-missing) printf '%s\n' 'cleanup failed: cleanup_source_observation_failed' ;;
+    old-source-missing) printf '%s\n' 'cleanup skipped: loser_missing' ;;
     new-placement-missing) printf '%s\n' 'new placement file missing:' ;;
     *) return 1 ;;
   esac

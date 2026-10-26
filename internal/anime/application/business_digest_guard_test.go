@@ -21,8 +21,8 @@ func businessSnapshotFixture(t *testing.T) (animedomain.BusinessSnapshot, string
 	t.Helper()
 	digest := "sha256:" + strings.Repeat("a", 64)
 	b := animedomain.BusinessSnapshot{
-		SchemaVersion: "business-snapshot-v1",
-		Sections:      map[string]json.RawMessage{},
+		SchemaVersion:   "business-snapshot-v1",
+		Sections:        map[string]json.RawMessage{},
 		SectionVersions: map[string]int64{},
 		SectionSchemas:  map[string]string{},
 		Parser: animedomain.ParserPolicyEnvelope{
@@ -34,7 +34,6 @@ func businessSnapshotFixture(t *testing.T) (animedomain.BusinessSnapshot, string
 		Retention: animedomain.RetentionValue{
 			AdmissionMode:  "single_copy",
 			QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[]}]}`),
-			CleanupPolicy:  json.RawMessage(`{"version":"cleanup-v1","effect":"quarantine","grace_seconds":3600}`),
 		},
 		RetentionVersion:  13,
 		FileEffectVersion: 17,

@@ -116,8 +116,10 @@ const (
 	KindReconciliationScan  = "reconciliation_scan"
 	KindAlignmentExecute    = "alignment_execute"
 	KindReplacementEvaluate = "replacement_evaluate"
-	KindCleanupQuarantine   = "cleanup_quarantine"
-	KindCleanupPurge        = "cleanup_purge"
+	// KindCleanupDelete deletes one managed replacement loser: path-level
+	// identity check, capture into a private namespace and purge, all inside
+	// one claim. There is no quarantine or grace period.
+	KindCleanupDelete = "cleanup_delete"
 	// KindReconciliationCalibrate is the completed-generation calibration
 	// owner: it persists typed calibration facts, reconciles verified active
 	// Placements, and fans the generation out to the two typed consumers.
@@ -153,7 +155,7 @@ const (
 func KindHasExternalEffect(kind string) bool {
 	switch kind {
 	case KindQBSubmit, KindFileExecute, KindPluginDeliver, KindAlignmentExecute,
-		KindCleanupQuarantine, KindCleanupPurge, KindOffsetMigrationExecute, KindFileManagerExecute:
+		KindCleanupDelete, KindOffsetMigrationExecute, KindFileManagerExecute:
 		return true
 	default:
 		return false
@@ -185,7 +187,7 @@ var ownerKinds = map[string]struct {
 	OwnerPluginDelivery:   {kinds: []string{KindPluginDeliver}},
 	OwnerFileMaintenance:  {kinds: []string{KindReconciliationScan, KindReplacementEvaluate, KindReconciliationCalibrate, KindReconciliationConsumeAlignment, KindReconciliationConsumeReplacement}},
 	OwnerAlignment:        {kinds: []string{KindAlignmentExecute}},
-	OwnerCleanup:          {kinds: []string{KindCleanupQuarantine, KindCleanupPurge}},
+	OwnerCleanup:          {kinds: []string{KindCleanupDelete}},
 	// Offset migration operations are durable typed owners. The execute handler
 	// and recovery lane are intentionally registered by a later slice.
 	OwnerOffsetMigration: {kinds: []string{KindOffsetMigrationExecute}},

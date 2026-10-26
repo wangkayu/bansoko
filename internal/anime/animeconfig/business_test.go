@@ -28,7 +28,7 @@ func presetFixture(t *testing.T) BusinessSnapshot {
 	}
 	return BusinessSnapshot{SchemaVersion: "business-snapshot-v1", Sections: sections, SectionVersions: versions, SectionSchemas: schemas,
 		Parser:    animedomain.ParserPolicyEnvelope{SchemaVersion: animedomain.ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global_parser_policy_default", PolicyVersion: 2},
-		Retention: RetentionValue{AdmissionMode: "all", QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"subgroup.score","ranks":[]},{"key":"release.lang","ranks":[["chs"],["sc"],["cht"],["tc"],["jpn"],["eng"]]},{"key":"release.resolution","ranks":[["2160p"],["1440p"],["1080p"],["720p"],["480p"]]},{"key":"release.revision","ranks":[]}]}`), CleanupPolicy: json.RawMessage(`{"version":"cleanup-v1","effect":"quarantine","grace_seconds":604800}`)}, RetentionVersion: 4, UnclassifiedRoute: "skip", FileEffectVersion: 5,
+		Retention: RetentionValue{AdmissionMode: "all", QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"subgroup.score","ranks":[]},{"key":"release.lang","ranks":[["chs"],["sc"],["cht"],["tc"],["jpn"],["eng"]]},{"key":"release.resolution","ranks":[["2160p"],["1440p"],["1080p"],["720p"],["480p"]]},{"key":"release.revision","ranks":[]}]}`)}, RetentionVersion: 4, UnclassifiedRoute: "skip", FileEffectVersion: 5,
 		Programs: ProgramReferences{Vars: namingvars.ProgramRef{Version: namingvars.ProfileVersion("sha256:vars"), Digest: "sha256:vars"}, AttrRules: namingvars.ProgramRef{Version: attrrules.ProfileVersion("sha256:attr"), Digest: "sha256:attr"}}}
 }
 func TestBusinessFreezeDoesNotFollowGlobalMutation(t *testing.T) {
@@ -65,8 +65,8 @@ func TestBusinessRejectsIncompleteOrMismatchedProgramReferences(t *testing.T) {
 		t.Fatal("mutable current reference accepted")
 	}
 	p = presetFixture(t)
-	p.Retention.CleanupPolicy = nil
+	p.Retention.QualityProfile = nil
 	if _, err := p.Freeze(); err == nil {
-		t.Fatal("missing cleanup policy accepted")
+		t.Fatal("missing quality profile accepted")
 	}
 }

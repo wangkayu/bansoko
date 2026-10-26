@@ -73,10 +73,6 @@ export const configCopy = {
   },
   snapshot: {
     legend: "保留与清理",
-    cleanupField: "被替换旧文件的清理方式",
-    cleanupMethod: "清理方式",
-    graceField: "清理宽限期（秒）",
-    graceAria: "清理宽限期（秒）",
   },
   discovery: {
     none: "未发现可用字幕组",

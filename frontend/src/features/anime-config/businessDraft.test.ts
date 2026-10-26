@@ -28,7 +28,7 @@ const preset: BusinessPresetView = {
   section_versions: { subgroups: 1, parser: 2, release_rules: 3, file_rules: 4, naming_rules: 5, file_effect: 6 },
   section_schemas: { subgroups: "1", parser: "2", release_rules: "3", file_rules: "4", naming_rules: "5", file_effect: "6" },
   parser: { schema_version: "parser-policy-envelope-v1", kind: "regex", policy_version: 8, provenance: "global", profile_version: 2, rules_owner_version: 2, source_owner: "global" },
-  retention: { admission_mode: "single_copy", quality_profile: { version: "profile-v1", items: [{ key: "release.resolution", ranks: [] }] }, cleanup_policy: { version: "cleanup-v1", effect: "quarantine", grace_seconds: 60 } },
+  retention: { admission_mode: "single_copy", quality_profile: { version: "profile-v1", items: [{ key: "release.resolution", ranks: [] }] } },
   retention_version: 9, unclassified_route: "route", file_effect_version: 10,
   programs: { vars: { version: `naming-vars-v1@sha256:${"b".repeat(64)}`, digest: `sha256:${"b".repeat(64)}` }, attrrules: { version: `release-facts-v1@sha256:${"c".repeat(64)}`, digest: `sha256:${"c".repeat(64)}` } },
  },
@@ -68,13 +68,13 @@ describe("atomic business load", () => {
   fireEvent.change(screen.getByLabelText(t("qualityCompare.valueAria",{item:resolution})),{target:{value:"720p"}});fireEvent.click(screen.getByRole("button",{name:t("qualityCompare.addValueAria",{item:resolution})}));
   fireEvent.change(screen.getByLabelText(t("qualityCompare.valueAria",{item:resolution})),{target:{value:"1080p"}});fireEvent.click(screen.getByRole("button",{name:t("qualityCompare.addValueAria",{item:resolution})}));
   fireEvent.click(screen.getByRole("button",{name:t("qualityCompare.entryEarlier",{value:"1080p"})}));
-  await pick(t("config.snapshot.cleanupMethod"),t("settings.retention.cleanup.unlink"));fireEvent.change(screen.getByLabelText(t("config.snapshot.graceAria")),{target:{value:"120"}});
+
   await pick(t("file.unclassifiedTitle"),t("file.unclassified.skip"));
   // Program digests are provenance and are not shown at all.
   expect(screen.queryByLabelText("vars digest")).toBeNull();expect(screen.queryByLabelText("attrrules digest")).toBeNull();
   expect(screen.queryByText(/sha256/)).toBeNull();
   const frozen=await freezeBusinessDraft(edited);
-  expect(frozen.business?.retention).toEqual({admission_mode:"all",quality_profile:{version:"profile-v1",items:[{key:"release.resolution",ranks:[["1080p"],["720p"]]}]},cleanup_policy:{version:"cleanup-v1",effect:"unlink",grace_seconds:120}});
+  expect(frozen.business?.retention).toEqual({admission_mode:"all",quality_profile:{version:"profile-v1",items:[{key:"release.resolution",ranks:[["1080p"],["720p"]]}]}});
   expect(frozen.business?.unclassified_route).toBe("skip");
   expect(frozen.business?.programs).toEqual(preset.snapshot.programs);
   expect(frozen.business_digest).toMatch(/^sha256:[a-f0-9]{64}$/);expect(frozen.business_digest).not.toBe(preset.digest);

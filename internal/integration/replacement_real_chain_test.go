@@ -387,8 +387,7 @@ func newRealChainServices(t *testing.T, client *http.Client) *realChainServices 
 		{workitems.KindFileExecute, fileService},
 		{workitems.KindPostProcessPlan, fileService.PostProcessingPlanHandler()},
 		{workitems.KindReplacementEvaluate, replacementDecisions.EvaluateHandler()},
-		{workitems.KindCleanupQuarantine, cleanupService.QuarantineHandler()},
-		{workitems.KindCleanupPurge, cleanupService.PurgeHandler()},
+		{workitems.KindCleanupDelete, cleanupService.DeleteHandler()},
 		{workitems.KindReconciliationScan, reconService.ScanHandler()},
 		{workitems.KindReconciliationCalibrate, calibrationService.CalibrateHandler()},
 		{workitems.KindReconciliationConsumeAlignment, calibrationService.ConsumeAlignmentHandler()},
@@ -790,7 +789,7 @@ func seedRetentionSingleCopy(t *testing.T, db *sql.DB) {
 	if _, err := db.Exec(`
 INSERT INTO global_config_sections
 (section_name, schema_version, value, version, updated_at)
-VALUES ('retention', 'retention-policy-v1', jsonb_build_object('admission_mode', 'single_copy', 'quality_profile', $1::text::jsonb, 'cleanup_policy', '{"version":"cleanup-v1","effect":"quarantine","grace_seconds":0}'::jsonb), 1, CURRENT_TIMESTAMP)
+VALUES ('retention', 'retention-policy-v1', jsonb_build_object('admission_mode', 'single_copy', 'quality_profile', $1::text::jsonb), 1, CURRENT_TIMESTAMP)
 ON CONFLICT (section_name) DO UPDATE
 SET value = EXCLUDED.value, version = global_config_sections.version + 1, updated_at = CURRENT_TIMESTAMP`, string(filemaintenance.DefaultQualityProfileJSON)); err != nil {
 		t.Fatal(err)
@@ -858,4 +857,199 @@ type defaultNamingRulesSource struct{}
 
 func (defaultNamingRulesSource) EffectiveNamingRules(context.Context, string) (naming.NamingRules, error) {
 	return naming.DefaultNamingRules(), nil
+}
+
+// subscribeRevisionScenario subscribes one single-episode instance with the
+// given naming rules and collision policy, binds its metadata and returns its
+// managed anime and RSS source ids.
+func subscribeRevisionScenario(t *testing.T, ctx context.Context, svc *realChainServices, feedURL, title string, rules generated.NamingRules, collision generated.CollisionPolicy, key string) (string, string) {
+	t.Helper()
+	draft := singleEpisodeDraft(feedURL)
+	draft.Title = title
+	draft.RssSources[0].Title = title
+	draft.Subgroups.Entries[0].GroupRef = "1"
+	draft.Subgroups.Entries[0].DisplayName = "RealGroup"
+	var namingOverride generated.NamingRulesOverride
+	if err := namingOverride.FromNamingRulesReplace(generated.NamingRulesReplace{
+		Mode:  generated.NamingRulesReplaceModeReplace,
+		Value: rules,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	draft.Rules.Sections.Naming = &namingOverride
+	var fileEffect generated.FileEffectRulesOverride
+	if err := fileEffect.FromFileEffectRulesReplace(generated.FileEffectRulesReplace{
+		Mode: generated.FileEffectRulesReplaceModeReplace,
+		Value: generated.FileEffectRules{
+			Operation:       generated.FileEffectRulesOperationMove,
+			CollisionPolicy: collision,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	draft.Rules.Sections.FileEffect = &fileEffect
+	draft = withDraftBusiness(t, svc.db, draft)
+	saveStatus, candidate := doJSON[generated.AnimeConfigCandidate](t, svc.httpHandler, http.MethodPost, "/api/v1/anime-config-candidates", generated.SaveAnimeConfigCandidateInput{Draft: draft}, nil)
+	if saveStatus != http.StatusCreated || candidate.Id == "" || candidate.CurrentRevision == nil {
+		t.Fatalf("candidate save failed: status=%d", saveStatus)
+	}
+	subscribeStatus, result := doJSON[generated.SubscribeResult](t, svc.httpHandler, http.MethodPost, "/api/v1/anime-config-candidates/"+candidate.Id+"/subscribe", generated.CandidateSubscribeInput{Revision: *candidate.CurrentRevision, Start: new(true)}, map[string]string{"Idempotency-Key": key + "-subscribe", "If-Match": "1"})
+	if subscribeStatus != http.StatusCreated || result.ManagedAnime.Id == "" || len(result.RssSources) != 1 {
+		t.Fatalf("subscribe failed: status=%d", subscribeStatus)
+	}
+	animeID, sourceID := result.ManagedAnime.Id, result.RssSources[0].Id
+	if err := runWorkerUntilIdle(ctx, svc.runtime, svc.db, 32); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ownership.PatchAnimeMetadata(ctx, animeID, generated.AnimeMetadataPatch{
+		ExpectedVersion: 1,
+		Bgm:             &generated.NullableBGMBinding{WorkId: key + "-bgm"},
+		Tmdb:            &generated.NullableTMDBBinding{WorkId: key + "-tmdb", MediaKind: generated.TMDBMediaKindTv, Season: 1},
+		Season:          new(1),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	observeBoundWorkYear(t, ctx, svc.db, animeID, realChainObservedYear)
+	if err := runWorkerUntilIdle(ctx, svc.runtime, svc.db, 32); err != nil {
+		t.Fatal(err)
+	}
+	return animeID, sourceID
+}
+
+func activeVideoPath(t *testing.T, ctx context.Context, db *sql.DB, animeID string) (string, string) {
+	t.Helper()
+	var id, path string
+	if err := db.QueryRowContext(ctx, `SELECT id, physical_path FROM placements WHERE managed_anime_id = $1 AND state = 'active'`, animeID).Scan(&id, &path); err != nil {
+		t.Fatal(err)
+	}
+	return id, path
+}
+
+// TestReplacementLoserIdentityChangedRealChain proves the deletion identity
+// check: the superseded revision's file was replaced on disk by a file of
+// another size after it was placed, so the deletion is skipped
+// (loser_identity_changed) and the file at that path stays untouched.
+func TestReplacementLoserIdentityChangedRealChain(t *testing.T) {
+	ctx := context.Background()
+	stamp := time.Now().UTC().Format(time.RFC3339Nano)
+	items := map[string]rssItem{
+		"A": {GUID: "repl-ident-a-guid", Title: "[RealGroup] Ident Show - 01 [720p]"},
+		"B": {GUID: "repl-ident-b-guid", Title: "[RealGroup] Ident Show - 01 [1080p]"},
+	}
+	filesA := []torrentFile{
+		{Name: "Ident Show - 01.mkv", Content: []byte("revision A 720p video " + stamp)},
+		{Name: "Ident Show - 01.nfo", Content: []byte("revision A nfo")},
+	}
+	filesB := []torrentFile{
+		{Name: "Ident Show - 01.mkv", Content: []byte("revision B 1080p video with a larger payload " + stamp)},
+		{Name: "Ident Show - 01.nfo", Content: []byte("revision B nfo")},
+	}
+	fixture := startRevisionFixture(t, items, map[string][]torrentFile{"A": filesA, "B": filesB})
+	t.Cleanup(fixture.Close)
+	svc := newRealChainServices(t, fixture.client)
+	t.Cleanup(func() { _ = svc.db.Close() })
+	seedRetentionSingleCopy(t, svc.db)
+	animeID, sourceID := subscribeRevisionScenario(t, ctx, svc, fixture.FeedURL(), "Ident Show", resolutionNamingRules(svc.targetRoot), generated.CollisionPolicyFail, "repl-ident")
+
+	svc.driveToPlacement(t, ctx, animeID, "A", filesA, 1)
+	waitForPlacementCount(t, ctx, svc.db, animeID, 1)
+	placementA, videoA := activeVideoPath(t, ctx, svc.db, animeID)
+	// The owner replaced the file at A's path with a different file.
+	foreign := []byte("a different file the owner put here, of another size " + stamp)
+	if err := os.WriteFile(videoA, foreign, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fixture.SetCurrent("B")
+	triggerRefresh(t, ctx, svc, sourceID, animeID)
+	svc.driveToPlacement(t, ctx, animeID, "B", filesB, 2)
+	if err := runWorkerUntilIdle(ctx, svc.runtime, svc.db, 32); err != nil {
+		t.Fatal(err)
+	}
+	waitForPlacementCount(t, ctx, svc.db, animeID, 1)
+	placementB, videoB := activeVideoPath(t, ctx, svc.db, animeID)
+	if placementB == placementA || videoB == videoA {
+		t.Fatalf("revision B must win at its own path: %q (A at %q)", videoB, videoA)
+	}
+	waitForCleanupState(t, ctx, svc.db, animeID, string(filemaintenance.CleanupSkipped))
+	var state, code, source string
+	if err := svc.db.QueryRowContext(ctx, `SELECT state, COALESCE(failure_code, ''), source_path FROM cleanup_operations WHERE managed_anime_id = $1 AND placement_id = $2`, animeID, placementA).Scan(&state, &code, &source); err != nil {
+		t.Fatal(err)
+	}
+	if state != string(filemaintenance.CleanupSkipped) || code != filemaintenance.CleanupSkipLoserIdentityChanged || source != videoA {
+		t.Fatalf("cleanup = %s/%s at %q, want skipped/%s at %q", state, code, source, filemaintenance.CleanupSkipLoserIdentityChanged, videoA)
+	}
+	if kept, err := os.ReadFile(videoA); err != nil || !bytes.Equal(kept, foreign) {
+		t.Fatalf("the changed file must stay untouched: err=%v", err)
+	}
+	if kept, err := os.ReadFile(videoB); err != nil || !bytes.Equal(kept, filesB[0].Content) {
+		t.Fatalf("the winner's video must be untouched: err=%v", err)
+	}
+}
+
+// TestReplacementSamePathUnderSkipPolicyRealChain proves that an approved
+// replacement at the incumbent's exact path is an atomic replacement even
+// under the skip (fail) collision policy: B takes A's path, A is superseded
+// without a deletion obligation, and the path carries B's bytes.
+func TestReplacementSamePathUnderSkipPolicyRealChain(t *testing.T) {
+	ctx := context.Background()
+	stamp := time.Now().UTC().Format(time.RFC3339Nano)
+	items := map[string]rssItem{
+		"A": {GUID: "repl-skip-a-guid", Title: "[RealGroup] Skip Show - 01 [720p]"},
+		"B": {GUID: "repl-skip-b-guid", Title: "[RealGroup] Skip Show - 01 [1080p]"},
+	}
+	filesA := []torrentFile{
+		{Name: "Skip Show - 01.mkv", Content: []byte("revision A 720p video " + stamp)},
+		{Name: "Skip Show - 01.nfo", Content: []byte("revision A nfo")},
+	}
+	filesB := []torrentFile{
+		{Name: "Skip Show - 01.mkv", Content: []byte("revision B 1080p video with a larger payload " + stamp)},
+		{Name: "Skip Show - 01.nfo", Content: []byte("revision B nfo")},
+	}
+	fixture := startRevisionFixture(t, items, map[string][]torrentFile{"A": filesA, "B": filesB})
+	t.Cleanup(fixture.Close)
+	svc := newRealChainServices(t, fixture.client)
+	t.Cleanup(func() { _ = svc.db.Close() })
+	seedRetentionSingleCopy(t, svc.db)
+	animeID, sourceID := subscribeRevisionScenario(t, ctx, svc, fixture.FeedURL(), "Skip Show", flatNamingRules(svc.targetRoot), generated.CollisionPolicyFail, "repl-skip")
+
+	svc.driveToPlacement(t, ctx, animeID, "A", filesA, 1)
+	waitForPlacementCount(t, ctx, svc.db, animeID, 1)
+	placementA, videoA := activeVideoPath(t, ctx, svc.db, animeID)
+
+	fixture.SetCurrent("B")
+	triggerRefresh(t, ctx, svc, sourceID, animeID)
+	svc.driveToPlacement(t, ctx, animeID, "B", filesB, 2)
+	if err := runWorkerUntilIdle(ctx, svc.runtime, svc.db, 32); err != nil {
+		t.Fatal(err)
+	}
+	waitForPlacementCount(t, ctx, svc.db, animeID, 1)
+	placementB, videoB := activeVideoPath(t, ctx, svc.db, animeID)
+	if placementB == placementA || videoB != videoA {
+		t.Fatalf("revision B must replace A at its path: %q (A at %q)", videoB, videoA)
+	}
+	var loserState string
+	if err := svc.db.QueryRowContext(ctx, `SELECT state FROM placements WHERE id = $1`, placementA).Scan(&loserState); err != nil {
+		t.Fatal(err)
+	}
+	if loserState != "superseded" {
+		t.Fatalf("revision A must be superseded, got %q", loserState)
+	}
+	var cleanups int
+	if err := svc.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM cleanup_operations WHERE managed_anime_id = $1`, animeID).Scan(&cleanups); err != nil {
+		t.Fatal(err)
+	}
+	if cleanups != 0 {
+		t.Fatalf("a same-path loser must not enter cleanup, got %d operations", cleanups)
+	}
+	if kept, err := os.ReadFile(videoB); err != nil || !bytes.Equal(kept, filesB[0].Content) {
+		t.Fatalf("the shared path must carry B's bytes: err=%v", err)
+	}
+	var failed int
+	if err := svc.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM file_operations WHERE state = 'failed'`).Scan(&failed); err != nil {
+		t.Fatal(err)
+	}
+	if failed != 0 {
+		t.Fatalf("the skip policy must not fail the approved replacement, got %d failed operations", failed)
+	}
 }

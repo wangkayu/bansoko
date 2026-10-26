@@ -16604,7 +16604,12 @@ components:
     CleanupOperationView:
       type: object
       additionalProperties: false
-      required: [id, placement_id, managed_anime_id, replacement_ref, policy_version, retention_mode, source_path, source_fingerprint, effect, state, version, created_at]
+      description: >-
+        One deletion obligation of a replacement loser. The loser's path-level
+        identity (recorded size, plus the inode when recorded) is verified
+        before the file is deleted; a mismatch is skipped with a typed reason
+        and leaves the file in place.
+      required: [id, placement_id, managed_anime_id, replacement_ref, retention_mode, source_path, source_fingerprint, state, version, created_at]
       properties:
         id:
           type: string
@@ -16614,8 +16619,6 @@ components:
           type: string
         replacement_ref:
           type: string
-        policy_version:
-          type: integer
         retention_mode:
           type: string
           enum: [per_group, single_copy]
@@ -16623,20 +16626,15 @@ components:
           type: string
         source_fingerprint:
           type: string
-        quarantine_path:
-          type: string
-        effect:
-          type: string
-          enum: [quarantine, unlink, purge]
-        grace_deadline:
-          type: string
-          format: date-time
-          nullable: true
         state:
           type: string
-          enum: [admitted, quarantined, grace_waiting, purged, blocked, failed, completed]
+          enum: [admitted, deleted, skipped, blocked, failed]
         failure_code:
           type: string
+          description: >-
+            Typed reason of a skipped, blocked or failed deletion; a skip is
+            one of loser_missing, loser_not_regular, loser_identity_changed,
+            loser_identity_unknown, loser_path_owned.
         reason:
           type: string
         version:
@@ -16926,20 +16924,12 @@ components:
     BusinessRetention:
       type: object
       additionalProperties: false
-      required: [admission_mode, quality_profile, cleanup_policy]
+      required: [admission_mode, quality_profile]
       properties:
         admission_mode:
           $ref: '#/components/schemas/RetentionAdmissionMode'
         quality_profile:
           $ref: '#/components/schemas/QualityProfile'
-        cleanup_policy:
-          type: object
-          additionalProperties: false
-          required: [version, effect, grace_seconds]
-          properties:
-            version: {type: string}
-            effect: {type: string, enum: [quarantine, unlink, purge]}
-            grace_seconds: {type: integer, format: int64, minimum: 0}
     QualityProfile:
       type: object
       additionalProperties: false
@@ -17016,25 +17006,12 @@ components:
     RetentionPolicyDefaultView:
       type: object
       additionalProperties: false
-      required: [admission_mode, quality_profile, cleanup_policy, version]
+      required: [admission_mode, quality_profile, version]
       properties:
         admission_mode:
           $ref: '#/components/schemas/RetentionAdmissionMode'
         quality_profile:
           $ref: '#/components/schemas/QualityProfile'
-        cleanup_policy:
-          type: object
-          additionalProperties: true
-          properties:
-            version:
-              type: string
-            effect:
-              type: string
-              enum: [quarantine, unlink, purge]
-            grace_seconds:
-              type: integer
-              minimum: 0
-          description: Complete versioned cleanup policy.
         version:
           type: integer
           minimum: 1
@@ -17045,24 +17022,12 @@ components:
     RetentionPolicyDefaultInput:
       type: object
       additionalProperties: false
-      required: [admission_mode, quality_profile, cleanup_policy, expected_version]
+      required: [admission_mode, quality_profile, expected_version]
       properties:
         admission_mode:
           $ref: '#/components/schemas/RetentionAdmissionMode'
         quality_profile:
           $ref: '#/components/schemas/QualityProfile'
-        cleanup_policy:
-          type: object
-          additionalProperties: true
-          properties:
-            version:
-              type: string
-            effect:
-              type: string
-              enum: [quarantine, unlink, purge]
-            grace_seconds:
-              type: integer
-              minimum: 0
         expected_version:
           type: integer
           minimum: 0
@@ -17125,7 +17090,7 @@ components:
     InstanceRetentionPolicyView:
       type: object
       additionalProperties: false
-      required: [managed_anime_id, admission_mode, quality_profile, cleanup_policy, source_default_version, version]
+      required: [managed_anime_id, admission_mode, quality_profile, source_default_version, version]
       properties:
         managed_anime_id:
           $ref: '#/components/schemas/ID'
@@ -17133,19 +17098,6 @@ components:
           $ref: '#/components/schemas/RetentionAdmissionMode'
         quality_profile:
           $ref: '#/components/schemas/QualityProfile'
-        cleanup_policy:
-          type: object
-          additionalProperties: true
-          properties:
-            version:
-              type: string
-            effect:
-              type: string
-              enum: [quarantine, unlink, purge]
-            grace_seconds:
-              type: integer
-              minimum: 0
-          description: Complete versioned cleanup policy.
         source_default_version:
           type: integer
           minimum: 1
@@ -17159,24 +17111,12 @@ components:
     InstanceRetentionPolicyInput:
       type: object
       additionalProperties: false
-      required: [admission_mode, quality_profile, cleanup_policy, expected_version]
+      required: [admission_mode, quality_profile, expected_version]
       properties:
         admission_mode:
           $ref: '#/components/schemas/RetentionAdmissionMode'
         quality_profile:
           $ref: '#/components/schemas/QualityProfile'
-        cleanup_policy:
-          type: object
-          additionalProperties: true
-          properties:
-            version:
-              type: string
-            effect:
-              type: string
-              enum: [quarantine, unlink, purge]
-            grace_seconds:
-              type: integer
-              minimum: 0
         expected_version:
           type: integer
           minimum: 0

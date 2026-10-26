@@ -31,7 +31,7 @@ func SeedBusiness(ctx context.Context, db ProgramWriter, source string) (domain.
 		b.SectionVersions[name] = 1
 		b.SectionSchemas[name] = domain.SectionSchemaVersions[name]
 	}
-	b.Retention = domain.RetentionValue{AdmissionMode: "all", QualityProfile: qualityprofile.DefaultJSON(), CleanupPolicy: json.RawMessage(`{"version":"cleanup-v1","effect":"quarantine","grace_seconds":60}`)}
+	b.Retention = domain.RetentionValue{AdmissionMode: "all", QualityProfile: qualityprofile.DefaultJSON()}
 	varsDigest, err := namingvars.SourceFingerprint(source)
 	if err != nil {
 		return b, err

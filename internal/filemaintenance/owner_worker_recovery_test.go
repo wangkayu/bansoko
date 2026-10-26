@@ -12,7 +12,7 @@ import (
 )
 
 func TestMandatoryMaintenanceRecoveryActualFactoriesAreTyped(t *testing.T) {
-	for _, h := range []worker.Handler{(&AlignmentService{}).ExecuteHandler(), (&OffsetMigrationExecuteService{}).ExecuteHandler(), (&ReplacementDecisionService{}).EvaluateHandler(), (&CleanupService{}).QuarantineHandler(), (&CleanupService{}).PurgeHandler()} {
+	for _, h := range []worker.Handler{(&AlignmentService{}).ExecuteHandler(), (&OffsetMigrationExecuteService{}).ExecuteHandler(), (&ReplacementDecisionService{}).EvaluateHandler(), (&CleanupService{}).DeleteHandler()} {
 		if _, ok := h.(worker.RecoveryObserver); !ok {
 			t.Fatalf("actual factory %T lacks observer", h)
 		}
@@ -105,49 +105,37 @@ func TestPGOffsetRecoveryNoEffectCompletedUnknownAndFence(t *testing.T) {
 	}
 }
 func TestPGCleanupRecoveryNoEffectCompletedUnknownAndFence(t *testing.T) {
-	for _, kind := range []string{workitems.KindCleanupQuarantine, workitems.KindCleanupPurge} {
-		t.Run(kind, func(t *testing.T) {
-			db := disposabledb.ResetDisposableSchema(t)
-			ctx := context.Background()
-			id := seedCleanupOperation(t, db, "recovery-cleanup", "anime-cleanup", "/source/file", "fp", "quarantine", "/quarantine/file")
-			s := NewCleanupService(db)
-			store := cleanupWorkItemStore(t, db)
-			s.SetWorkItems(store)
-			c := cleanupClaim(t, store, id, kind, 1)
-			var handler worker.Handler = s.QuarantineHandler()
-			if kind == workitems.KindCleanupPurge {
-				handler = s.PurgeHandler()
-			}
-			observer := handler.(worker.RecoveryObserver)
-			o, err := observer.ObserveRecovery(ctx, c)
-			if err != nil {
-				t.Fatal(err)
-			}
-			want := workitems.DispositionNoExternalEffect
-			if kind == workitems.KindCleanupPurge {
-				want = workitems.DispositionAmbiguous
-			}
-			if o.Disposition != want {
-				t.Fatalf("initial=%+v", o)
-			}
-			if _, err := db.Exec(`UPDATE cleanup_operations SET attempt='{"stage":"purge"}' WHERE id=$1`, id); err != nil {
-				t.Fatal(err)
-			}
-			o, err = observer.ObserveRecovery(ctx, c)
-			if err != nil || o.Disposition != workitems.DispositionAmbiguous {
-				t.Fatalf("unknown=%+v %v", o, err)
-			}
-			if _, err := db.Exec(`UPDATE cleanup_operations SET state='purged' WHERE id=$1`, id); err != nil {
-				t.Fatal(err)
-			}
-			o, err = observer.ObserveRecovery(ctx, c)
-			if err != nil || o.Disposition != workitems.DispositionConfirmed {
-				t.Fatalf("completed=%+v %v", o, err)
-			}
-			c.ExpectedOwnerVersion++
-			if _, err := observer.ObserveRecovery(ctx, c); !errors.Is(err, workitems.ErrStaleClaim) {
-				t.Fatalf("fence=%v", err)
-			}
-		})
+	db := disposabledb.ResetDisposableSchema(t)
+	ctx := context.Background()
+	id := seedCleanupOperation(t, db, "recovery-cleanup", "anime-cleanup", "/source/file", "meta:size=4")
+	s := NewCleanupService(db)
+	store := cleanupWorkItemStore(t, db)
+	s.SetWorkItems(store)
+	c := cleanupClaim(t, store, id, workitems.KindCleanupDelete, 1)
+	observer := s.DeleteHandler().(worker.RecoveryObserver)
+	o, err := observer.ObserveRecovery(ctx, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.Disposition != workitems.DispositionNoExternalEffect {
+		t.Fatalf("initial=%+v", o)
+	}
+	if _, err := db.Exec(`UPDATE cleanup_operations SET attempt='{"stage":"purge"}' WHERE id=$1`, id); err != nil {
+		t.Fatal(err)
+	}
+	o, err = observer.ObserveRecovery(ctx, c)
+	if err != nil || o.Disposition != workitems.DispositionAmbiguous {
+		t.Fatalf("unknown=%+v %v", o, err)
+	}
+	if _, err := db.Exec(`UPDATE cleanup_operations SET state='deleted' WHERE id=$1`, id); err != nil {
+		t.Fatal(err)
+	}
+	o, err = observer.ObserveRecovery(ctx, c)
+	if err != nil || o.Disposition != workitems.DispositionConfirmed {
+		t.Fatalf("completed=%+v %v", o, err)
+	}
+	c.ExpectedOwnerVersion++
+	if _, err := observer.ObserveRecovery(ctx, c); !errors.Is(err, workitems.ErrStaleClaim) {
+		t.Fatalf("fence=%v", err)
 	}
 }

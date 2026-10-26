@@ -161,6 +161,30 @@ func (s *Service) preflightTargetAcquisition(ctx context.Context, snapshot relea
 		return &targetAcquisition{varsInterrupted: varsErr}
 	}
 	release.FrozenVars = &frozenVars
+	// A managed loser of an admitted replace decision at a replace target's
+	// path is not a collision: its approval is captured here and the target
+	// is published as an atomic replacement whatever the global policy.
+	approvedLosers := map[string]*terminal.ReplacementCapture{}
+	var approvalErr error
+	approveLoser := func(targetPath string) bool {
+		managed, err := terminal.OverwriteTargetManaged(ctx, s.db, targetPath)
+		if err != nil {
+			approvalErr = err
+			return false
+		}
+		if !managed {
+			return false
+		}
+		capture, err := terminal.CaptureReplacement(ctx, s.db, snapshot.releaseID, targetPath)
+		if err != nil {
+			if !errors.Is(err, terminal.ErrReplacementApprovalUnavailable) {
+				approvalErr = err
+			}
+			return false
+		}
+		approvedLosers[targetPath] = capture
+		return true
+	}
 	admitted := acquisitiontarget.PreflightOrdinary(ctx, acquisitiontarget.OrdinaryRequest{
 		ReleaseID:           snapshot.releaseID,
 		AnimeTitle:          snapshot.animeTitle,
@@ -183,6 +207,7 @@ func (s *Service) preflightTargetAcquisition(ctx context.Context, snapshot relea
 		Preview:             release,
 		BatchPlan:           &plan,
 		UnclassifiedRoute:   route,
+		ApprovedLoserAt:     approveLoser,
 	}, s.targetProbe)
 	result := &targetAcquisition{
 		vars: &frozenVars,
@@ -193,8 +218,17 @@ func (s *Service) preflightTargetAcquisition(ctx context.Context, snapshot relea
 		final := admitted.BatchPlan
 		result.batchPlan = &final
 	}
+	if approvalErr != nil {
+		result.admission = acquisitiontarget.AdmissionResult{Admission: acquisitiontarget.AdmissionFailed, Reason: "replacement_approval_unavailable"}
+		result.planReason = approvalErr.Error()
+		return result
+	}
 	if admitted.Admission.Admission == acquisitiontarget.AdmissionDownload {
 		for _, spec := range admitted.Set.Targets {
+			if capture, ok := approvedLosers[spec.TargetPath]; ok && spec.CollisionPolicy == library.CollisionOverwrite {
+				result.replacements = append(result.replacements, capture)
+				continue
+			}
 			if spec.CollisionPolicy == library.CollisionOverwrite {
 				// Overwrite only authorizes replacing an existing file. An
 				// absent target needs no replacement approval: acceptance

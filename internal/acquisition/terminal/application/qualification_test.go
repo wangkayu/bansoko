@@ -41,7 +41,7 @@ func qualificationFixture(t *testing.T, mode string) qualificationMaterial {
 		}
 		b.SectionVersions[name], b.SectionSchemas[name] = 1, anime.SectionSchemaVersions[name]
 	}
-	b.Retention = anime.RetentionValue{AdmissionMode: "all", QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"subgroup.score","ranks":[]},{"key":"release.lang","ranks":[["chs"],["sc"],["cht"],["tc"],["jpn"],["eng"]]},{"key":"release.resolution","ranks":[["2160p"],["1440p"],["1080p"],["720p"],["480p"]]},{"key":"release.revision","ranks":[]}]}`), CleanupPolicy: json.RawMessage(`{"version":"cleanup-v1","effect":"quarantine","grace_seconds":60}`)}
+	b.Retention = anime.RetentionValue{AdmissionMode: "all", QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"subgroup.score","ranks":[]},{"key":"release.lang","ranks":[["chs"],["sc"],["cht"],["tc"],["jpn"],["eng"]]},{"key":"release.resolution","ranks":[["2160p"],["1440p"],["1080p"],["720p"],["480p"]]},{"key":"release.revision","ranks":[]}]}`)}
 	b.Programs = anime.ProgramReferences{AttrRules: namingvars.ProgramRef{Digest: attrDigest, Version: attrrules.ProfileVersion(attrDigest)}, Vars: namingvars.ProgramRef{Digest: varsDigest, Version: namingvars.ProfileVersion(varsDigest)}}
 	digest, err := b.Digest()
 	if err != nil {

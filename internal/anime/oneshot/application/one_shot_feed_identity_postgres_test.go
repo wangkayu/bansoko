@@ -408,7 +408,7 @@ func TestCandidateAndOneShotSharedProvisionerProducesIdenticalOwnerRows(t *testi
 	ownerRows := func(animeID string) map[string][]string {
 		t.Helper()
 		queries := map[string]string{
-			"retention":   `SELECT admission_mode, quality_profile::text, cleanup_policy::text, retention_source_default_version::text, retention_version::text FROM anime_business_configs WHERE managed_anime_id = $1`,
+			"retention":   `SELECT admission_mode, quality_profile::text, retention_source_default_version::text, retention_version::text FROM anime_business_configs WHERE managed_anime_id = $1`,
 			"parser":      `SELECT parser_kind, parser_source_default_version::text, parser_version::text FROM anime_business_configs WHERE managed_anime_id = $1`,
 			"file_effect": `SELECT unclassified_route, file_effect_source_default_version::text, file_effect_version::text FROM anime_business_configs WHERE managed_anime_id = $1`,
 			"overrides":   `SELECT owner_type || ':' || section_name, schema_version, value::text FROM anime_config_overrides WHERE managed_anime_id = $1 ORDER BY owner_type, section_name`,

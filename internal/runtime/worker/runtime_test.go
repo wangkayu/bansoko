@@ -65,11 +65,11 @@ func TestRegistryLaneGrouping(t *testing.T) {
 	// 4 original light kinds + calibration and the two generation consumers
 	// (DB-bound, no external effect) + the post-processing plan stage (EXEC-001,
 	// plans naming without any external effect) + the MF3 download-completion
-	// action (idempotent qBittorrent calls) = 9; heavy = 10 (external-effect
+	// action (idempotent qBittorrent calls) = 9; heavy = 9 (external-effect
 	// work, plus the durable offset migration execute lane and the file
 	// manager's user operations).
-	if len(light) != 9 || len(heavy) != 10 {
-		t.Fatalf("light=%d heavy=%d, want 9/10", len(light), len(heavy))
+	if len(light) != 9 || len(heavy) != 9 {
+		t.Fatalf("light=%d heavy=%d, want 9/9", len(light), len(heavy))
 	}
 }
 

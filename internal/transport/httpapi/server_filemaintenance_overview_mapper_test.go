@@ -30,13 +30,11 @@ func TestMapFileMaintenanceOverviewViewMapsNestedValuesAndCopiesMaps(t *testing.
 	cleanups := []filemaintenance.CleanupOperationView{{
 		CreatedAt:      now,
 		FailureCode:    &reason,
-		GraceDeadline:  &now,
 		ID:             "cleanup-1",
 		ManagedAnimeID: "anime-1",
 		PlacementID:    "placement-1",
-		PolicyVersion:  7,
 		Reason:         &reason,
-		State:          "pending",
+		State:          "admitted",
 		UpdatedAt:      &now,
 	}}
 	alignments := []filemaintenance.AlignmentOperationView{{
@@ -94,7 +92,7 @@ func TestMapFileMaintenanceOverviewViewMapsNestedValuesAndCopiesMaps(t *testing.
 	if progress["nested"].(map[string]any)["remaining"] != 1 {
 		t.Fatal("scan progress aliases application map")
 	}
-	if *(*mapped.Cleanups)[0].Reason == "" || (*mapped.Cleanups)[0].GraceDeadline == &now || (*mapped.Alignments)[0].PolicyVersion == &policyVersion {
+	if *(*mapped.Cleanups)[0].Reason == "" || (*mapped.Cleanups)[0].UpdatedAt == &now || (*mapped.Alignments)[0].PolicyVersion == &policyVersion {
 		t.Fatal("nested pointer values were not copied")
 	}
 }
@@ -105,7 +103,6 @@ func TestMapFileMaintenanceOverviewViewMapsRetentionAndPreservesShapes(t *testin
 		Policy: filemaintenance.RetentionPolicy{
 			AdmissionMode:  filemaintenance.ModeAll,
 			QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"anibt.format","ranks":[["MKV"]]}]}`),
-			CleanupPolicy:  json.RawMessage(`{"version":"cleanup-v1","effect":"quarantine","grace_seconds":60}`),
 		},
 		UpdatedAt: &now,
 		Version:   3,

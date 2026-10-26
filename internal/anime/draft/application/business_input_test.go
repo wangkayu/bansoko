@@ -13,7 +13,7 @@ import (
 
 func frozenBusinessFixture(t *testing.T) animedomain.AnimeDraft {
 	t.Helper()
-	b := animedomain.BusinessSnapshot{SchemaVersion: "business-snapshot-v1", Sections: map[string]json.RawMessage{}, SectionVersions: map[string]int64{}, SectionSchemas: map[string]string{}, Parser: animedomain.ParserPolicyEnvelope{SchemaVersion: animedomain.ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global", PolicyVersion: 7}, Retention: animedomain.RetentionValue{AdmissionMode: "single_copy", QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[]}]}`), CleanupPolicy: json.RawMessage(`{"version":"cleanup-v1","effect":"quarantine","grace_seconds":3600}`)}, RetentionVersion: 13, FileEffectVersion: 17, UnclassifiedRoute: "route"}
+	b := animedomain.BusinessSnapshot{SchemaVersion: "business-snapshot-v1", Sections: map[string]json.RawMessage{}, SectionVersions: map[string]int64{}, SectionSchemas: map[string]string{}, Parser: animedomain.ParserPolicyEnvelope{SchemaVersion: animedomain.ParserPolicyEnvelopeSchemaVersion, Kind: "regex", SourceOwner: "global", PolicyVersion: 7}, Retention: animedomain.RetentionValue{AdmissionMode: "single_copy", QualityProfile: json.RawMessage(`{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[]}]}`)}, RetentionVersion: 13, FileEffectVersion: 17, UnclassifiedRoute: "route"}
 	digest := "sha256:" + strings.Repeat("a", 64)
 	b.Programs = animedomain.ProgramReferences{Vars: namingvars.ProgramRef{Digest: digest, Version: namingvars.ProfileVersion(digest)}, AttrRules: namingvars.ProgramRef{Digest: digest, Version: attrrules.ProfileVersion(digest)}}
 	for _, name := range animedomain.EffectiveSectionOrder {

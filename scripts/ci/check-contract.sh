@@ -411,14 +411,16 @@ abort "RetentionAdmissionMode enum drifted" unless enum_values.call(schemas.fetc
 %w[RetentionPolicyDefaultView InstanceRetentionPolicyView].each do |name|
   schema = schemas.fetch(name)
   abort "#{name} must reject additional properties" unless schema["additionalProperties"] == false
-  abort "#{name} must expose the three complete business fields" unless %w[admission_mode quality_profile cleanup_policy].all? { |field| required_fields.call(schema).include?(field) }
+  abort "#{name} must expose the two complete business fields" unless %w[admission_mode quality_profile].all? { |field| required_fields.call(schema).include?(field) }
   abort "#{name} must not carry the retired cutoff" if schema.fetch("properties").key?("cutoff")
+  abort "#{name} must not carry the retired cleanup policy" if schema.fetch("properties").key?("cleanup_policy")
 end
 abort "instance retention view must not ask the client to merge a default" if (schemas.fetch("InstanceRetentionPolicyView").fetch("properties").keys & %w[default inherit global override]).any?
 %w[RetentionPolicyDefaultInput InstanceRetentionPolicyInput].each do |name|
   abort "#{name} must use expected-version CAS" unless required_fields.call(schemas.fetch(name)).include?("expected_version")
-  abort "#{name} must require the three complete business fields" unless %w[admission_mode quality_profile cleanup_policy].all? { |field| required_fields.call(schemas.fetch(name)).include?(field) }
+  abort "#{name} must require the two complete business fields" unless %w[admission_mode quality_profile].all? { |field| required_fields.call(schemas.fetch(name)).include?(field) }
   abort "#{name} must not carry the retired cutoff" if schemas.fetch(name).fetch("properties").key?("cutoff")
+  abort "#{name} must not carry the retired cleanup policy" if schemas.fetch(name).fetch("properties").key?("cleanup_policy")
 end
 assert_enum.call("SubscriptionLogKind", %w[
   subscription_created subscription_started subscription_stopped subscription_resumed metadata_applied

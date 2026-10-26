@@ -1163,10 +1163,9 @@ ORDER BY coverage_key, created_at DESC, id DESC`, placementID)
 // transaction it revalidates the frozen Subscription (active + version),
 // instance policy version, and winner/loser placement versions and
 // fingerprints; any change marks the decision stale with a typed reason and
-// performs zero new effects. On success only the frozen losers are superseded
-// and the decision is marked settled; cleanup handoff then runs with the
-// frozen admission_mode, and a crash between the settled write and the
-// handoff converges idempotently from the same decision's frozen losers.
+// performs zero new effects. On success only the frozen losers are superseded,
+// their deletion obligations are recorded and the decision is marked settled,
+// all in one transaction.
 func (s *ReplacementDecisionService) SettleDecision(ctx context.Context, decisionID string) error {
 	if s.cleanup == nil {
 		return errors.New("cleanup handoff is not wired")
@@ -1179,9 +1178,8 @@ func (s *ReplacementDecisionService) SettleDecision(ctx context.Context, decisio
 		return &apperrors.NotFound{Resource: "replacement_decision", ID: decisionID}
 	}
 	if decision.State == "settled" {
-		// Crash replay between the decision-settled write and the cleanup
-		// handoff loop: converge this decision's frozen losers only.
-		return s.convergeDecisionCleanup(ctx, decision)
+		// The deletion obligations committed with the settle itself.
+		return nil
 	}
 	return s.settleDecisions(ctx, []string{decisionID})
 }
@@ -1191,9 +1189,9 @@ func (s *ReplacementDecisionService) SettleDecision(ctx context.Context, decisio
 // stales itself), and each loser must be covered entirely by the candidate
 // placement: superseding a loser that also holds a key the candidate does not
 // cover would drop that key (loser_coverage_outside_candidate). The valid
-// decisions' losers are superseded together and the decisions settled; the
-// cleanup handoff after commit takes each loser once, even when two key
-// decisions froze the same multi-episode loser.
+// decisions' losers are superseded together, each superseded loser's deletion
+// obligation is recorded once (even when two key decisions froze the same
+// multi-episode loser) and the decisions settled, in the same transaction.
 func (s *ReplacementDecisionService) settleDecisions(ctx context.Context, ids []string) error {
 	if s.cleanup == nil {
 		return errors.New("cleanup handoff is not wired")
@@ -1269,23 +1267,13 @@ WHERE id = ANY($1) AND state = 'admitted'`, validIDs); err != nil {
 			return err
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	// Handoff after commit: a crash between the committed settle and the
-	// handoff loop is repaired by the next replay's convergence.
 	handed := map[string]bool{}
 	for _, decision := range valid {
-		if err := s.handoffLosers(ctx, decision, handed); err != nil {
+		if err := s.admitLoserDeletionsTx(ctx, txscope.Wrap(tx), decision, handed); err != nil {
 			return err
 		}
 	}
-	for _, decision := range valid {
-		if err := s.convergeDecisionCleanup(ctx, decision); err != nil {
-			return err
-		}
-	}
-	return nil
+	return tx.Commit()
 }
 
 // loserCoverageOutsideCandidateTx returns loser_coverage_outside_candidate
@@ -1397,350 +1385,6 @@ FROM placements WHERE id = $1 FOR UPDATE`, ref.PlacementID).
 		}
 	}
 	return "", nil
-}
-
-// handoffLosers admits one cleanup operation per frozen loser with the
-// decision's frozen admission_mode (all-mode produces no losers, so cleanup
-// only ever receives per_group or single_copy). Admission is idempotent per
-// (placement, decision); handed carries the losers already handed off by the
-// other decisions settled together (a multi-episode loser is one file).
-func (s *ReplacementDecisionService) handoffLosers(ctx context.Context, decision *decisionRow, handed map[string]bool) error {
-	if s.cleanup == nil {
-		return errors.New("cleanup handoff is not wired")
-	}
-	loserIDs := make([]string, 0, len(decision.Losers))
-	for _, loser := range decision.Losers {
-		loserIDs = append(loserIDs, loser.PlacementID)
-	}
-	if len(loserIDs) == 0 {
-		return nil
-	}
-	// One bounded batch read serves both the same-path suppression and the
-	// per-loser cleanup evidence below; no per-loser placement lookup remains.
-	evidenceIDs := loserIDs
-	if decision.Winner != nil && decision.Winner.PlacementID != "" {
-		evidenceIDs = append(append([]string{}, decision.Winner.PlacementID), loserIDs...)
-	}
-	evidence, err := loadPlacementCleanupEvidence(ctx, s.db, evidenceIDs)
-	if err != nil {
-		return err
-	}
-	paths := placementPathsFrom(evidence)
-	for _, loser := range decision.Losers {
-		if handed[loser.PlacementID] {
-			continue
-		}
-		handed[loser.PlacementID] = true
-		if !samePlacementPathFrom(paths, decision.Winner, loser) {
-			// A same-path winner already occupies the loser's path (typically
-			// an atomic replacement): supersede the loser index, but never
-			// enqueue cleanup against the path now owned by the winner.
-			if err := s.handoffToCleanup(ctx, decision, loser, evidence); err != nil {
-				return err
-			}
-		}
-		// The loser's companions follow it into cleanup unless the
-		// winner now owns their path.
-		if err := s.handoffCompanionsToCleanup(ctx, decision, loser, evidence[loser.PlacementID].Coverage); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// handoffToCleanup admits a quarantine operation for one frozen loser
-// (frozen path/fingerprint/coverage evidence, frozen policy version and the
-// decision's exact admission mode). The loser path/fingerprint/coverage
-// evidence comes from the batch-loaded collection the caller passes in; only
-// the per-anime cleanup policy is read here. A loser missing from the loaded
-// evidence fails closed with the same placement-not-found error the prior
-// per-loser lookup produced.
-func (s *ReplacementDecisionService) handoffToCleanup(ctx context.Context, decision *decisionRow, loser PlacementRef, evidence map[string]placementCleanupEvidence) error {
-	var (
-		effect        string
-		graceDeadline time.Time
-		policyVersion int64
-	)
-	if err := s.db.QueryRowContext(ctx, `
-		SELECT retention_version,
-		       COALESCE(NULLIF(cleanup_policy->>'effect', ''), 'quarantine'),
-		       CURRENT_TIMESTAMP + make_interval(secs => COALESCE(NULLIF(cleanup_policy->>'grace_seconds', '')::bigint, 0))
-		FROM anime_business_configs WHERE managed_anime_id = $1 AND retention_version IS NOT NULL`, decision.AnimeID).
-		Scan(&policyVersion, &effect, &graceDeadline); err != nil {
-		return err
-	}
-	if policyVersion != decision.PolicyVersion {
-		return &apperrors.Business{Status: 409, Code: "CLEANUP_POLICY_VERSION_CHANGED", Message: "cleanup policy changed after replacement settlement; cleanup handoff must be retried from the frozen decision"}
-	}
-	if effect != "quarantine" {
-		return &apperrors.Business{Status: 422, Code: "CLEANUP_EFFECT_UNSUPPORTED", Message: "cleanup policy effect must be quarantine"}
-	}
-	loserEvidence, ok := evidence[loser.PlacementID]
-	if !ok {
-		// Fail closed exactly like the former per-loser SELECT: a loser the
-		// batch read could not find is never admitted with guessed evidence.
-		return fmt.Errorf("load loser placement %s: %w", loser.PlacementID, sql.ErrNoRows)
-	}
-	if loserEvidence.Released {
-		// The user released this file from management: it stays where it is
-		// and no automatic cleanup is admitted for it. A displaced loser's
-		// path belongs to its successor and is never cleaned up either.
-		return nil
-	}
-	// One loser has one cleanup: a multi-episode loser frozen by two key
-	// decisions is handed off by whichever settles first.
-	var admitted bool
-	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM cleanup_operations WHERE id = $1)`, "cln-"+loser.PlacementID).Scan(&admitted); err != nil {
-		return err
-	}
-	if admitted {
-		return nil
-	}
-	_, err := s.cleanup.Admit(ctx, CleanupInput{
-		ID:                "cln-" + loser.PlacementID,
-		IdempotencyKey:    "cln:" + loser.PlacementID + ":" + decision.ID,
-		PlacementID:       loser.PlacementID,
-		ManagedAnimeID:    decision.AnimeID,
-		Coverage:          loserEvidence.Coverage,
-		ReplacementRef:    decision.ID,
-		PolicyVersion:     decision.PolicyVersion,
-		RetentionMode:     string(decision.AdmissionMode),
-		SourcePath:        loserEvidence.PhysicalPath,
-		SourceFingerprint: loserEvidence.Fingerprint,
-		QuarantinePath:    "",
-		Effect:            effect,
-		GraceDeadline:     &graceDeadline,
-		CorrelationID:     decision.CorrelationID,
-		CausationType:     "replacement_decision",
-		CausationID:       decision.ID,
-	})
-	return err
-}
-
-// convergeDecisionCleanup repairs a crash between the decision-settled write
-// and the handoff loop: it admits cleanup for every frozen loser of THIS
-// decision that is superseded but has no cleanup record. It never scans the
-// anime and never touches placements outside the frozen losers.
-func (s *ReplacementDecisionService) convergeDecisionCleanup(ctx context.Context, decision *decisionRow) error {
-	if s.cleanup == nil {
-		return errors.New("cleanup handoff is not wired")
-	}
-	if len(decision.Losers) == 0 {
-		return nil
-	}
-	rows, err := s.db.QueryContext(ctx, `
-SELECT p.id
-FROM placements p
-WHERE p.id = ANY($1) AND p.state = 'superseded'
-  AND NOT EXISTS (SELECT 1 FROM cleanup_operations c WHERE c.placement_id = p.id AND c.companion_id IS NULL)`, decision.loserIDs())
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	var pending []string
-	for rows.Next() {
-		var placementID string
-		if err := rows.Scan(&placementID); err != nil {
-			return err
-		}
-		pending = append(pending, placementID)
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	pendingIDs := make([]string, 0, len(pending))
-	for _, placementID := range pending {
-		pendingIDs = append(pendingIDs, placementID)
-	}
-	// One bounded batch read serves both the same-path suppression and the
-	// per-loser cleanup evidence below; no per-loser placement lookup remains.
-	evidenceIDs := pendingIDs
-	if decision.Winner != nil && decision.Winner.PlacementID != "" {
-		evidenceIDs = append(append([]string{}, decision.Winner.PlacementID), pendingIDs...)
-	}
-	evidence, err := loadPlacementCleanupEvidence(ctx, s.db, evidenceIDs)
-	if err != nil {
-		return err
-	}
-	paths := placementPathsFrom(evidence)
-	for _, placementID := range pending {
-		loser := PlacementRef{PlacementID: placementID}
-		if samePlacementPathFrom(paths, decision.Winner, loser) {
-			continue
-		}
-		if err := s.handoffToCleanup(ctx, decision, loser, evidence); err != nil {
-			return err
-		}
-	}
-	// Converge the companions of every superseded frozen loser; the
-	// handoff is idempotent and only takes companions still active.
-	loserEvidence, err := loadPlacementCleanupEvidence(ctx, s.db, decision.loserIDs())
-	if err != nil {
-		return err
-	}
-	for _, loser := range decision.Losers {
-		if err := s.handoffCompanionsToCleanup(ctx, decision, loser, loserEvidence[loser.PlacementID].Coverage); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// placementCleanupEvidence is the physical-path/fingerprint/coverage evidence
-// the post-commit cleanup handoff needs for one placement. It is an internal
-// decision-package type, never exposed through generated transport shapes.
-type placementCleanupEvidence struct {
-	PhysicalPath string
-	Fingerprint  string
-	// Released marks a placement a user released from management
-	// or one displaced by another file at its path: cleanup admission never
-	// takes it.
-	Released bool
-	// Coverage is the placement's observation keys in the stored
-	// coverage_ordinal order; admission re-sorts it with SortCoverage.
-	Coverage []string
-}
-
-// placementCleanupEvidenceQuery is one bounded parameterized statement: the
-// numeric placeholders are generated, never interpolated with ids.
-type placementCleanupEvidenceQuery struct {
-	Text string
-	Args []any
-}
-
-// placementCleanupEvidenceChunk bounds the placeholder count of every
-// generated statement so a large frozen loser set still runs as a fixed
-// number of bounded parameterized queries.
-const placementCleanupEvidenceChunk = 500
-
-// dedupePlacementIDs returns the unique non-empty ids in first-seen order.
-func dedupePlacementIDs(ids []string) []string {
-	seen := make(map[string]struct{}, len(ids))
-	unique := make([]string, 0, len(ids))
-	for _, id := range ids {
-		if id == "" {
-			continue
-		}
-		if _, exists := seen[id]; exists {
-			continue
-		}
-		seen[id] = struct{}{}
-		unique = append(unique, id)
-	}
-	return unique
-}
-
-// placementCleanupEvidenceQueries builds the bounded chunked parameterized
-// placement and coverage statements for the unique ids. No id is ever
-// interpolated into the SQL text; every value is a numeric placeholder arg.
-func placementCleanupEvidenceQueries(ids []string) (placements []placementCleanupEvidenceQuery, coverage []placementCleanupEvidenceQuery) {
-	unique := dedupePlacementIDs(ids)
-	for start := 0; start < len(unique); start += placementCleanupEvidenceChunk {
-		end := start + placementCleanupEvidenceChunk
-		if end > len(unique) {
-			end = len(unique)
-		}
-		chunk := unique[start:end]
-		placeholders := make([]string, len(chunk))
-		args := make([]any, len(chunk))
-		for index, id := range chunk {
-			placeholders[index] = fmt.Sprintf("$%d", index+1)
-			args[index] = id
-		}
-		placements = append(placements, placementCleanupEvidenceQuery{
-			Text: `SELECT id, physical_path, target_fingerprint, state IN ('released', 'displaced') FROM placements WHERE id IN (` + strings.Join(placeholders, ",") + `)`,
-			Args: args,
-		})
-		coverage = append(coverage, placementCleanupEvidenceQuery{
-			Text: `SELECT placement_id, observation_key FROM placement_coverage WHERE placement_id IN (` + strings.Join(placeholders, ",") + `) ORDER BY placement_id, coverage_ordinal`,
-			Args: args,
-		})
-	}
-	return placements, coverage
-}
-
-// loadPlacementCleanupEvidence batch-loads the physical path, target
-// fingerprint and ordered coverage of every requested placement in bounded
-// chunked parameterized queries. It always returns a non-nil map for no-op
-// inputs (nil db or no resolvable ids) and deduplicates duplicate ids. A
-// requested placement absent from the map is missing; the caller fails
-// closed with the prior placement-not-found error instead of guessing.
-func loadPlacementCleanupEvidence(ctx context.Context, db *sql.DB, ids []string) (map[string]placementCleanupEvidence, error) {
-	evidence := make(map[string]placementCleanupEvidence)
-	if db == nil {
-		return evidence, nil
-	}
-	placementQueries, coverageQueries := placementCleanupEvidenceQueries(ids)
-	if len(placementQueries) == 0 {
-		return evidence, nil
-	}
-	for _, query := range placementQueries {
-		rows, err := db.QueryContext(ctx, query.Text, query.Args...)
-		if err != nil {
-			return nil, err
-		}
-		for rows.Next() {
-			var id string
-			var item placementCleanupEvidence
-			if err := rows.Scan(&id, &item.PhysicalPath, &item.Fingerprint, &item.Released); err != nil {
-				rows.Close()
-				return nil, err
-			}
-			// The placement stores the typed fingerprint object; cleanup
-			// compares the filesystem observation's sha256 hex, so freeze the
-			// hex value (a quarantine never matched the JSON form).
-			if normalized := fingerprintHex(item.Fingerprint); validFingerprintHex(normalized) {
-				item.Fingerprint = normalized
-			}
-			evidence[id] = item
-		}
-		if err := rows.Err(); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		rows.Close()
-	}
-	for _, query := range coverageQueries {
-		rows, err := db.QueryContext(ctx, query.Text, query.Args...)
-		if err != nil {
-			return nil, err
-		}
-		for rows.Next() {
-			var placementID, key string
-			if err := rows.Scan(&placementID, &key); err != nil {
-				rows.Close()
-				return nil, err
-			}
-			item := evidence[placementID]
-			item.Coverage = append(item.Coverage, key)
-			evidence[placementID] = item
-		}
-		if err := rows.Err(); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		rows.Close()
-	}
-	return evidence, nil
-}
-
-// placementPathsFrom derives the id -> physical_path view the same-path
-// suppression compares (exact string equality, no normalization).
-func placementPathsFrom(evidence map[string]placementCleanupEvidence) map[string]string {
-	paths := make(map[string]string, len(evidence))
-	for id, item := range evidence {
-		paths[id] = item.PhysicalPath
-	}
-	return paths
-}
-
-func samePlacementPathFrom(paths map[string]string, winner *PlacementRef, loser PlacementRef) bool {
-	if winner == nil || winner.PlacementID == "" || loser.PlacementID == "" {
-		return false
-	}
-	winnerPath, winnerOK := paths[winner.PlacementID]
-	loserPath, loserOK := paths[loser.PlacementID]
-	return winnerOK && loserOK && strings.TrimSpace(winnerPath) != "" && winnerPath == loserPath
 }
 
 // EvaluateHandler is the replacement_evaluate work item handler. The claim

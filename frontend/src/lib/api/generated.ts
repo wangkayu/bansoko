@@ -7093,23 +7093,19 @@ export interface components {
             /** Format: date-time */
             updated_at?: string;
         };
+        /** @description One deletion obligation of a replacement loser. The loser's path-level identity (recorded size, plus the inode when recorded) is verified before the file is deleted; a mismatch is skipped with a typed reason and leaves the file in place. */
         CleanupOperationView: {
             id: string;
             placement_id: string;
             managed_anime_id: string;
             replacement_ref: string;
-            policy_version: number;
             /** @enum {string} */
             retention_mode: "per_group" | "single_copy";
             source_path: string;
             source_fingerprint: string;
-            quarantine_path?: string;
             /** @enum {string} */
-            effect: "quarantine" | "unlink" | "purge";
-            /** Format: date-time */
-            grace_deadline?: string | null;
-            /** @enum {string} */
-            state: "admitted" | "quarantined" | "grace_waiting" | "purged" | "blocked" | "failed" | "completed";
+            state: "admitted" | "deleted" | "skipped" | "blocked" | "failed";
+            /** @description Typed reason of a skipped, blocked or failed deletion; a skip is one of loser_missing, loser_not_regular, loser_identity_changed, loser_identity_unknown, loser_path_owned. */
             failure_code?: string;
             reason?: string;
             version: number;
@@ -7250,13 +7246,6 @@ export interface components {
         BusinessRetention: {
             admission_mode: components["schemas"]["RetentionAdmissionMode"];
             quality_profile: components["schemas"]["QualityProfile"];
-            cleanup_policy: {
-                version: string;
-                /** @enum {string} */
-                effect: "quarantine" | "unlink" | "purge";
-                /** Format: int64 */
-                grace_seconds: number;
-            };
         };
         /** @description The replacement comparison profile (profile-v1): ordered comparison items. Items compare in order and the first item that ranks two releases differently decides; all items equal, the larger size wins; still equal, the existing file stays. */
         QualityProfile: {
@@ -7282,15 +7271,6 @@ export interface components {
         RetentionPolicyDefaultView: {
             admission_mode: components["schemas"]["RetentionAdmissionMode"];
             quality_profile: components["schemas"]["QualityProfile"];
-            /** @description Complete versioned cleanup policy. */
-            cleanup_policy: {
-                version?: string;
-                /** @enum {string} */
-                effect?: "quarantine" | "unlink" | "purge";
-                grace_seconds?: number;
-            } & {
-                [key: string]: unknown;
-            };
             version: number;
             /** Format: date-time */
             updated_at?: string | null;
@@ -7298,14 +7278,6 @@ export interface components {
         RetentionPolicyDefaultInput: {
             admission_mode: components["schemas"]["RetentionAdmissionMode"];
             quality_profile: components["schemas"]["QualityProfile"];
-            cleanup_policy: {
-                version?: string;
-                /** @enum {string} */
-                effect?: "quarantine" | "unlink" | "purge";
-                grace_seconds?: number;
-            } & {
-                [key: string]: unknown;
-            };
             /** @description CAS expected version (0 = create). */
             expected_version: number;
         };
@@ -7339,15 +7311,6 @@ export interface components {
             managed_anime_id: components["schemas"]["ID"];
             admission_mode: components["schemas"]["RetentionAdmissionMode"];
             quality_profile: components["schemas"]["QualityProfile"];
-            /** @description Complete versioned cleanup policy. */
-            cleanup_policy: {
-                version?: string;
-                /** @enum {string} */
-                effect?: "quarantine" | "unlink" | "purge";
-                grace_seconds?: number;
-            } & {
-                [key: string]: unknown;
-            };
             source_default_version: number;
             version: number;
             /** Format: date-time */
@@ -7356,14 +7319,6 @@ export interface components {
         InstanceRetentionPolicyInput: {
             admission_mode: components["schemas"]["RetentionAdmissionMode"];
             quality_profile: components["schemas"]["QualityProfile"];
-            cleanup_policy: {
-                version?: string;
-                /** @enum {string} */
-                effect?: "quarantine" | "unlink" | "purge";
-                grace_seconds?: number;
-            } & {
-                [key: string]: unknown;
-            };
             /** @description CAS expected version (0 = create). */
             expected_version: number;
         };

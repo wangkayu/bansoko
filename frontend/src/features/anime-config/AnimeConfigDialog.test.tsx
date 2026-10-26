@@ -489,8 +489,6 @@ describe("AnimeConfigDialog 已订阅的订阅设置", () => {
     expect(screen.queryByText(t("config.snapshot.legend"))).not.toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: t("retention.admissionTitle") })).not.toBeInTheDocument();
     expect(screen.queryByRole("group", { name: t("qualityCompare.title") })).not.toBeInTheDocument();
-    expect(screen.queryByRole("combobox", { name: t("config.snapshot.cleanupMethod") })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(t("config.snapshot.graceAria"))).not.toBeInTheDocument();
 
     // The footer has one save: disabled while the rules tab has no changes.
     expect(screen.getByRole("button", { name: t("act.save") })).toBeDisabled();
@@ -944,8 +942,6 @@ describe("AnimeConfigDialog draft rules copied from the preset", () => {
     expect(within(section).queryByText(t("config.snapshot.legend"))).not.toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: t("retention.admissionTitle") })).not.toBeInTheDocument();
     expect(screen.queryByRole("group", { name: t("qualityCompare.title") })).not.toBeInTheDocument();
-    expect(screen.queryByRole("combobox", { name: t("config.snapshot.cleanupMethod") })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(t("config.snapshot.graceAria"))).not.toBeInTheDocument();
   });
 
   it("草稿规则段卡「已修改」：新草稿不标记，未保存的编辑标记该段，「全部使用默认」后消失", async () => {

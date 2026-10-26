@@ -599,8 +599,8 @@ func submitScanTolerating(t *testing.T, ctx context.Context, svc *realChainServi
 
 // TestCompanionReplacementCleanupRealChain proves companion replacement and cleanup:
 // when a better revision supersedes the old video, the old subtitle enters
-// cleanup with it (one cleanup record per companion) and is quarantined beside
-// the video, the winner's video and subtitle are untouched, and a loser
+// cleanup with it (one cleanup record per companion) and is deleted with the
+// video, the winner's video and subtitle are untouched, and a loser
 // companion whose path is owned by the winner is never taken (the "never
 // delete media" guard): its relation ends and the winner's file stays.
 func TestCompanionReplacementCleanupRealChain(t *testing.T) {
@@ -780,15 +780,15 @@ VALUES ('cmp-guard', $1, $2, 'guard-source', 'intake', 'other', '', 'mkv', $3, $
 		default:
 			t.Fatalf("cleanup took a path it does not own: %+v", row)
 		}
-		if row.state == string(filemaintenance.CleanupBlocked) || row.state == string(filemaintenance.CleanupFailed) {
-			t.Fatalf("cleanup did not quarantine: %+v", row)
+		if row.state != string(filemaintenance.CleanupDeleted) {
+			t.Fatalf("cleanup did not delete: %+v", row)
 		}
 	}
 	if _, err := os.Stat(subtitleA.CurrentPath); !os.IsNotExist(err) {
 		t.Fatalf("the old subtitle must leave the library with its video: %v", err)
 	}
 	if _, err := os.Stat(videoA); !os.IsNotExist(err) {
-		t.Fatalf("the old video must be quarantined: %v", err)
+		t.Fatalf("the old video must be deleted: %v", err)
 	}
 	if kept, err := os.ReadFile(videoB); err != nil || string(kept) != string(filesB[0].Content) {
 		t.Fatalf("the winner's video must be untouched: err=%v", err)
