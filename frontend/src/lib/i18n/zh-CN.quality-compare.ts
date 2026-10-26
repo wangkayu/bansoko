@@ -5,7 +5,7 @@ export const qualityCompareCopy = {
   title: "版本优先顺序",
   description: "从上到下逐项比较，上面一项分出高下就不再看下面。全部相同时，体积更大的更好；仍然相同就保留现有文件。",
   sourceHint: "每一项都标明数据来自哪里。同一属性可以按不同来源分别加入，某个来源没有值时不会改用其他来源。",
-  allModeNote: "当前是「全部保留」：不比较，下面的设置不生效。",
+  allModeNote: "当前是「全部保留」，不比较版本，无需设置优先顺序",
   listAria: "比较顺序",
   namespace: {
     subgroup: "字幕组",

@@ -22,7 +22,7 @@ function json(body: unknown, status = 200) {
 
 beforeEach(() => {
   replacementPolicy = {
-    admission_mode: "all",
+    admission_mode: "per_group",
     quality_profile: { version: "profile-v1", items: [{ key: "subgroup.score", ranks: [] }, { key: "release.resolution", ranks: [["1080p"], ["720p"]] }] },
     version: 3,
   };
@@ -82,6 +82,14 @@ describe("SettingsReplacement", () => {
     const resolution = compareItemName("release.resolution");
     const ranks = screen.getByRole("list", { name: t("qualityCompare.ranksAria", { item: resolution }) });
     expect(within(ranks).getAllByRole("listitem").map((item) => item.textContent)).toEqual(["11080p", "2720p", t("qualityCompare.others")]);
+    expect(screen.getByText(t("settings.replacement.replacedNote"))).toBeInTheDocument();
+  });
+
+  it("collapses the version priority to one line when keeping every version", async () => {
+    replacementPolicy = { ...replacementPolicy, admission_mode: "all" };
+    renderPage();
+    expect(await screen.findByText(t("qualityCompare.allModeNote"))).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: moveResolutionUp() })).not.toBeInTheDocument();
     // Keeping every version replaces nothing, so no deletion note is shown.
     expect(screen.queryByText(t("settings.replacement.replacedNote"))).not.toBeInTheDocument();
   });
@@ -105,7 +113,7 @@ describe("SettingsReplacement", () => {
     await waitFor(() => expect(dirty).toHaveBeenLastCalledWith(true));
     fireEvent.click(screen.getByRole("button", { name: t("settings.replacement.saveAria") }));
     await waitFor(() => expect(replacementPuts).toHaveLength(1));
-    expect(replacementPuts[0]).toMatchObject({ expected_version: 3, admission_mode: "all" });
+    expect(replacementPuts[0]).toMatchObject({ expected_version: 3, admission_mode: "per_group" });
     await waitFor(() => expect(dirty).toHaveBeenLastCalledWith(false));
     expect(screen.getByRole("button", { name: t("settings.replacement.saveAria") })).toBeDisabled();
   });
@@ -120,8 +128,8 @@ describe("SettingsReplacement", () => {
     // The reloaded server value keeps one version per group, so replaced old
     // files are deleted and the page says so.
     expect(await screen.findByText(t("settings.replacement.replacedNote"))).toBeInTheDocument();
-    // A policy change decides nothing at once; the page says when existing files are judged.
-    expect(screen.getByText(t("settings.replacement.timingNote"))).toBeInTheDocument();
+    // The timing note belongs to the subscription's own editor, not the global default.
+    expect(screen.queryByText(t("policy.versions.timingNote"))).not.toBeInTheDocument();
     expect(screen.queryByText(t("common.versionConflict"))).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: t("settings.replacement.saveAria") })).toBeDisabled();
   });

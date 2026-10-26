@@ -49,6 +49,7 @@ export function QualityCompareEditor({
     queryFn: () => getReplacementCompareVocabulary(managedAnimeID),
     staleTime: 5 * 60_000,
     retry: false,
+    enabled: admissionMode !== "all",
   });
   const vocabulary = new Map((vocabularyQuery.data?.items ?? []).map((item) => [item.key, item.values]));
   const [dragFrom, setDragFrom] = useState<number>();
@@ -70,6 +71,17 @@ export function QualityCompareEditor({
     setDragFrom(undefined);
   }
 
+  // "Keep all" compares nothing: the editor collapses to a one-line note. The profile itself is
+  //   untouched (the caller keeps it), so switching back restores the edited terms.
+  if (admissionMode === "all") {
+    return (
+      <div className="tw:grid tw:gap-1" role="group" aria-label={t("qualityCompare.title")}>
+        <h3 className="settings-policy-card-title text-body">{t("qualityCompare.title")}</h3>
+        <p className="settings-policy-card-description text-caption">{t("qualityCompare.allModeNote")}</p>
+      </div>
+    );
+  }
+
   return (
     <div className="tw:grid tw:gap-3" role="group" aria-label={t("qualityCompare.title")}>
       <div className="tw:grid tw:gap-1">
@@ -77,10 +89,7 @@ export function QualityCompareEditor({
         <p className="settings-policy-card-description text-caption">{t("qualityCompare.description")}</p>
         <p className="settings-policy-card-description text-caption">{t("qualityCompare.sourceHint")}</p>
       </div>
-      {admissionMode === "all" && (
-        <p className="tw:m-0 tw:rounded-control tw:bg-muted tw:px-2.5 tw:py-2 text-caption">{t("qualityCompare.allModeNote")}</p>
-      )}
-      <ol className={`tw:m-0 tw:grid tw:list-none tw:gap-2 tw:p-0${admissionMode === "all" ? " tw:opacity-60" : ""}`} aria-label={t("qualityCompare.listAria")}>
+      <ol className="tw:m-0 tw:grid tw:list-none tw:gap-2 tw:p-0" aria-label={t("qualityCompare.listAria")}>
         {value.items.map((item, index) => {
           const def = itemDef(item.key);
           const name = compareItemName(item.key);

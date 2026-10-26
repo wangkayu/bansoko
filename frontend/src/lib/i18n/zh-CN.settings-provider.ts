@@ -236,7 +236,6 @@ export const settingsProviderCopy = {
       single_copy: "同一集不论字幕组只留评分最高的一份",
     },
     replacedNote: "被替换的旧文件会直接删除，无法恢复",
-    timingNote: "修改后不会立即处理已有文件，下一次有新种子、完成文件扫描或订阅恢复时才按新设置处理",
     unclassified: {
       description: "仅对之后新建的订阅生效，已有订阅不受影响",
       saved: "未识别集数的文件默认已保存",

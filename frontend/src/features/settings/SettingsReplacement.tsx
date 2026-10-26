@@ -130,10 +130,7 @@ function ReplacementSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean)
               {admissionOptions().find((option) => option.value === draft.admission_mode)?.hint}
             </p>
             {draft.admission_mode !== "all" && (
-              <>
-                <p className="settings-policy-card-description text-caption">{t("settings.replacement.replacedNote")}</p>
-                <p className="settings-policy-card-description text-caption">{t("settings.replacement.timingNote")}</p>
-              </>
+              <p className="settings-policy-card-description text-caption">{t("settings.replacement.replacedNote")}</p>
             )}
           </div>
 

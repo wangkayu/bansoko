@@ -238,7 +238,6 @@ export const enSettingsProviderCopy = {
       single_copy: "Keeps only the highest-scoring copy of each episode, whatever the subtitle group",
     },
     replacedNote: "Replaced old files are deleted directly and cannot be restored",
-    timingNote: "Changes do not touch existing files right away. They apply at the next new seed, completed file scan or resumed subscription.",
     unclassified: {
       description: "Applies only to new subscriptions. Existing subscriptions are not affected.",
       saved: "Defaults for files without an episode number saved",

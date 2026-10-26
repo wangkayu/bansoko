@@ -8,7 +8,7 @@ export const enQualityCompareCopy = {
   title: "Version priority",
   description: "Items are compared top to bottom; the first item that tells two versions apart decides. If all items are equal, the larger file is better; if the size is equal too, the existing file stays.",
   sourceHint: "Each item shows where its data comes from. The same attribute can be added once per source; when one source has no value, no other source is used instead.",
-  allModeNote: "\"All\" is selected: nothing is compared and the settings below have no effect.",
+  allModeNote: "\"All\" is selected: versions are not compared, so no priority is needed",
   listAria: "Comparison order",
   namespace: {
     subgroup: "Group",

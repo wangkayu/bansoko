@@ -512,10 +512,9 @@ function SubscribedBody({
               rulesExtra: (
                 <OwnerNewReleasesOnly animeID={managedAnimeRef} workspace={workspace.data} capability={capability} onChanged={handleChanged} />
               ),
-              // The subscription-settings revision (BusinessRevisionEditor) no longer hangs at
-              // the rules tab's end: it is just the rules' second save path (the single-save
-              // model). A subscribed anime has no episode-versions editor here yet; only the
-              // draft edits its own copy (see BusinessSnapshotFields).
+              // The subscribed episode-versions editor (ReplacementPolicySection) lives in the
+              // rules tab itself as a save part of the single footer save; the draft edits its
+              // own copy through BusinessSnapshotFields.
             }}
             initialTab={initialTab}
             onTabChange={onTabChange}
