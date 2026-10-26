@@ -219,3 +219,46 @@ func TestCoverageVerdictsReadsSubgroupScoresReadOnly(t *testing.T) {
 		t.Fatalf("verdicts = %v", verdicts)
 	}
 }
+
+// A required (manual include) group is written at effective_score 100, so in
+// single_copy it never loses to an automatically picked group on
+// subgroup.score: its file stays against a high-scored automatic candidate,
+// and its candidate replaces an automatic group's file.
+func TestSingleCopyRequiredGroupNeverLosesOnScore(t *testing.T) {
+	for _, tc := range []struct {
+		name                       string
+		incumbentRef, candidateRef string
+		verdict                    string
+	}{
+		{"required_incumbent_stays", "group-required", "group-auto", "keep"},
+		{"required_candidate_replaces", "group-auto", "group-required", "replace"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openFrozenTestDB(t)
+			defer db.Close()
+			if _, err := db.Exec(`
+UPDATE anime_business_configs
+SET admission_mode = 'single_copy', quality_profile = $1::jsonb, retention_version = retention_version + 1
+WHERE managed_anime_id = 'anime-1'`, string(qualityprofile.DefaultJSON())); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.Exec(`
+INSERT INTO provider_group_selections(id,subscription_id,provider,group_ref,display_name,selection_mode,manual_selected,effective_selected,effective_score,available,availability_generation)
+VALUES ('sel-required','sub-1','anibt','group-required','Required','manual',TRUE,TRUE,100,TRUE,1),
+       ('sel-auto','sub-1','anibt','group-auto','Auto','auto',NULL,TRUE,99,TRUE,1)`); err != nil {
+				t.Fatal(err)
+			}
+			seedFilePlacement(t, db, "anime-1", "sub-1", "required-old", []string{"tv:s1:e1"},
+				Facts{Resolution: "1080p", Group: "Old", Subgroup: subgroup("anibt", tc.incumbentRef)}, "2026-07-01T00:00:00Z")
+			seedFilePlacement(t, db, "anime-1", "sub-1", "required-new", []string{"tv:s1:e1"},
+				Facts{Resolution: "1080p", Group: "New", Subgroup: subgroup("anibt", tc.candidateRef)}, "2026-08-01T00:00:00Z")
+			view, err := evaluateSingle(NewReplacementDecisionService(db).EvaluateServer(context.Background(), EvaluateRequest{AnimeID: "anime-1", CandidateRelease: "required-new"}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(view.Verdict) != tc.verdict {
+				t.Fatalf("verdict = %s, want %s: %+v", view.Verdict, tc.verdict, view.Pools)
+			}
+		})
+	}
+}
