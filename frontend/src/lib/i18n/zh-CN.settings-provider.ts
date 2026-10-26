@@ -229,7 +229,7 @@ export const settingsProviderCopy = {
     saveFailed: "保存同集多版本默认失败",
     loading: "正在读取同集多版本默认…",
     loadFailed: "无法读取同集多版本默认",
-    admissionCard: "同一集有多个版本时",
+    admissionCard: "保留方式",
     admissionHint: {
       all: "所有版本都保留，不删除旧文件",
       per_group: "同一字幕组的同一集只留评分最高的一份",

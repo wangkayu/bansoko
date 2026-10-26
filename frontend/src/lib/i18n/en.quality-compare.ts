@@ -7,7 +7,7 @@ import type { qualityCompareCopy } from "./zh-CN.quality-compare";
 export const enQualityCompareCopy = {
   title: "Version priority",
   description: "Items are compared top to bottom; the first item that tells two versions apart decides. If all items are equal, the larger file is better; if the size is equal too, the existing file stays.",
-  sourceHint: "Each item names where its value comes from. Different sources of the same attribute can be added and ordered separately; there is no automatic fallback between sources.",
+  sourceHint: "Each item shows where its data comes from. The same attribute can be added once per source; when one source has no value, no other source is used instead.",
   allModeNote: "\"All\" is selected: nothing is compared and the settings below have no effect.",
   listAria: "Comparison order",
   namespace: {
@@ -37,11 +37,11 @@ export const enQualityCompareCopy = {
   moveDown: "Move {item} down",
   removeItem: "Remove {item}",
   addItem: "Add item",
-  scoreHint: "Uses the score of the release's RSS source group on this anime's Groups tab; a higher score is better. Releases without a score or without an RSS source rank lowest. Mikan and AniBT groups are scored separately.",
+  scoreHint: "Compares the score of the torrent's subtitle group on this anime's Groups tab; a higher score is better, up to 100. Required groups count as 100. Torrents without a score rank lowest. Mikan and AniBT groups are scored separately.",
   scorePerGroup: "\"One per subtitle group\" is selected: versions are only compared within one group, so this item has no effect.",
   scoreLink: "Go to group scores",
   revisionHint: "Compared by revision number automatically: v3 beats v2, and v2 beats no revision. Nothing to set.",
-  rankHint: "Order from best to worst; drag or use ‹ › to adjust. Values not listed and releases without this item rank worst.",
+  rankHint: "Order from best to worst; drag or use ‹ › to adjust. Values not listed and torrents without this item rank worst.",
   multiHint: "This item can have several values. Add single values or combinations (such as CHS+CHT); order doesn't matter. A release matches an entry when it has every value of it, and takes its highest-ranked match. To prefer more languages, list wider combinations first.",
   anibtHint: "AniBT spellings are kept as-is; suggestions come from values already seen.",
   ranksAria: "{item} ranking",

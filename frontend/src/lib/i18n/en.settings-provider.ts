@@ -231,7 +231,7 @@ export const enSettingsProviderCopy = {
     saveFailed: "Failed to save episode versions defaults",
     loading: "Loading episode versions defaults…",
     loadFailed: "Couldn't load episode versions defaults",
-    admissionCard: "When an Episode Has Multiple Versions",
+    admissionCard: "Keep",
     admissionHint: {
       all: "Keep every version; old files are not deleted",
       per_group: "Keeps only the highest-scoring copy of each episode from the same subtitle group",
