@@ -10,7 +10,7 @@ import (
 	"fmt"
 
 	"bansoko/internal/persistence/txscope"
-	generated "bansoko/internal/retention/adapter/persistence/generated"
+	generated "bansoko/internal/recordretention/adapter/persistence/generated"
 )
 
 // Repository is the PostgreSQL discovery-retention adapter. The database

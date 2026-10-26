@@ -20,7 +20,7 @@ import (
 	animepersistence "bansoko/internal/anime/adapter/persistence"
 	automationapplication "bansoko/internal/automation/application"
 	catalogadapter "bansoko/internal/catalog/adapter"
-	catalogretentionpersistence "bansoko/internal/catalog/adapter/persistence"
+	catalogrecordretentionpersistence "bansoko/internal/catalog/adapter/persistence"
 	downloadapplication "bansoko/internal/download/application"
 	downloaddomain "bansoko/internal/download/domain"
 	"bansoko/internal/download/qbittorrent"
@@ -28,10 +28,10 @@ import (
 	posterpersistence "bansoko/internal/identitymetadata/adapter/persistence"
 	observabilitypersistence "bansoko/internal/observability/adapter/persistence"
 	plugintargetapplication "bansoko/internal/plugintarget/application"
+	retentionpersistence "bansoko/internal/recordretention/adapter/persistence"
+	retentionapplication "bansoko/internal/recordretention/application"
 	facts "bansoko/internal/release/facts"
 	mediapersistence "bansoko/internal/release/facts/adapter/persistence/media"
-	retentionpersistence "bansoko/internal/retention/adapter/persistence"
-	retentionapplication "bansoko/internal/retention/application"
 	rssapplication "bansoko/internal/rss/application"
 	runtimeworker "bansoko/internal/runtime/worker"
 	selectionapplication "bansoko/internal/selection/application"
@@ -670,7 +670,7 @@ func newJanitor(t *testing.T, rt *sql.DB, svc *ownerServices) *retentionapplicat
 	t.Helper()
 	registry, err := retentionapplication.NewRegistry(retentionapplication.Dependencies{
 		Observability:   observabilitypersistence.NewRepository(rt),
-		Catalog:         catalogretentionpersistence.NewRepository(rt),
+		Catalog:         catalogrecordretentionpersistence.NewRepository(rt),
 		AnimeCandidates: animepersistence.NewRepository(rt),
 		WorkItems:       svc.Store,
 		MediaPosters:    posterpersistence.NewRepository(rt),

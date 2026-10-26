@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Generate and verify the bounded discovery-history retention sqlc persistence slice.
+# Generate and verify the bounded discovery-history record-retention sqlc persistence slice.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 expected_version="v1.31.1"
-config="$root/internal/retention/adapter/persistence/sqlc.yaml"
-generated_dir="$root/internal/retention/adapter/persistence/generated"
+config="$root/internal/recordretention/adapter/persistence/sqlc.yaml"
+generated_dir="$root/internal/recordretention/adapter/persistence/generated"
 
 usage() {
   printf 'Usage: %s [--check]\n' "${0##*/}" >&2
@@ -82,4 +82,4 @@ for generated_file in "${generated_files[@]}"; do
   fi
 done
 
-echo "Retention persistence sqlc ${mode} passed with $actual_version"
+echo "Record retention persistence sqlc ${mode} passed with $actual_version"

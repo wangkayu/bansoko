@@ -44,7 +44,7 @@ import (
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/parser"
 	plugintargetapplication "bansoko/internal/plugintarget/application"
-	retentionapplication "bansoko/internal/retention/application"
+	retentionapplication "bansoko/internal/recordretention/application"
 	"bansoko/internal/runtime/buildinfo"
 	"bansoko/internal/runtime/config"
 	"bansoko/internal/runtime/database"
@@ -520,7 +520,7 @@ func main() {
 	producers := []func(context.Context){
 		func(ctx context.Context) { go admissionResolver.Run(ctx) },
 		func(ctx context.Context) { runQBSyncDispatcher(ctx, downloadService, runtimeLogger) },
-		func(ctx context.Context) { runRetentionMaintenance(ctx, retentionJanitor, runtimeLogger) },
+		func(ctx context.Context) { runRecordRetentionMaintenance(ctx, retentionJanitor, runtimeLogger) },
 		func(ctx context.Context) { runMetadataRefreshSweep(ctx, metadataRefreshSweep, runtimeLogger) },
 		func(ctx context.Context) {
 			runOneShotRetentionMaintenance(ctx, oneShotRetention, oneShotDrainDue, eventHub, runtimeLogger)
@@ -836,7 +836,7 @@ func runAutomationDispatcher(ctx context.Context, dispatcher *automationapplicat
 	}
 }
 
-func runRetentionMaintenance(ctx context.Context, janitor *retentionapplication.Service, logger observabilityport.RuntimeLogger) {
+func runRecordRetentionMaintenance(ctx context.Context, janitor *retentionapplication.Service, logger observabilityport.RuntimeLogger) {
 	run := func() {
 		result, err := janitor.RunPass(ctx)
 		if err != nil && ctx.Err() == nil && len(result.Results) == 0 {

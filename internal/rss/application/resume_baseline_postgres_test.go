@@ -7,7 +7,7 @@ import (
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
 	"bansoko/internal/persistence/txscope"
-	retentionpersistence "bansoko/internal/retention/adapter/persistence"
+	retentionpersistence "bansoko/internal/recordretention/adapter/persistence"
 	"bansoko/internal/workitems"
 )
 

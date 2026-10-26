@@ -11,12 +11,12 @@ import (
 	"time"
 
 	animepersistence "bansoko/internal/anime/adapter/persistence"
-	catalogretentionpersistence "bansoko/internal/catalog/adapter/persistence"
+	catalogrecordretentionpersistence "bansoko/internal/catalog/adapter/persistence"
 	posterpersistence "bansoko/internal/identitymetadata/adapter/persistence"
 	observabilitypersistence "bansoko/internal/observability/adapter/persistence"
 	"bansoko/internal/persistence/txscope"
-	retentionpersistence "bansoko/internal/retention/adapter/persistence"
-	retentionapplication "bansoko/internal/retention/application"
+	retentionpersistence "bansoko/internal/recordretention/adapter/persistence"
+	retentionapplication "bansoko/internal/recordretention/application"
 )
 
 // expiredCountQueries count, per janitor class, the rows that are past retention
@@ -91,7 +91,7 @@ func timedPass(ctx context.Context, rt *sql.DB, cleaners []cleanerFn, batch int,
 
 func cleanerList(rt *sql.DB, svc *ownerServices) []cleanerFn {
 	obs := observabilitypersistence.NewRepository(rt)
-	cat := catalogretentionpersistence.NewRepository(rt)
+	cat := catalogrecordretentionpersistence.NewRepository(rt)
 	return []cleanerFn{
 		{"observability_plugin_delivery_attempts", obs.PurgePluginDeliveryAttempts},
 		{"observability_plugin_deliveries", obs.PurgePluginDeliveries},

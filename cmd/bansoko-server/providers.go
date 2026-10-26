@@ -25,7 +25,7 @@ import (
 	artifactapplication "bansoko/internal/artifact/application"
 	automationapplication "bansoko/internal/automation/application"
 	catalogadapter "bansoko/internal/catalog/adapter"
-	catalogretentionpersistence "bansoko/internal/catalog/adapter/persistence"
+	catalogrecordretentionpersistence "bansoko/internal/catalog/adapter/persistence"
 	catalogapplication "bansoko/internal/catalog/application"
 	configurationapplication "bansoko/internal/configuration/application"
 	configurationdomain "bansoko/internal/configuration/domain"
@@ -56,11 +56,11 @@ import (
 	provideradapter "bansoko/internal/provider/adapter"
 	providerdomain "bansoko/internal/provider/domain"
 	reconciliationapplication "bansoko/internal/reconciliation/application"
+	retentionpersistence "bansoko/internal/recordretention/adapter/persistence"
+	retentionapplication "bansoko/internal/recordretention/application"
 	facts "bansoko/internal/release/facts"
 	mediapersistence "bansoko/internal/release/facts/adapter/persistence/media"
 	"bansoko/internal/release/torrentstructure"
-	retentionpersistence "bansoko/internal/retention/adapter/persistence"
-	retentionapplication "bansoko/internal/retention/application"
 	rssapplication "bansoko/internal/rss/application"
 	"bansoko/internal/runtime/readiness"
 	runtimeworker "bansoko/internal/runtime/worker"
@@ -531,8 +531,8 @@ func provideApplicationGraph(
 	catalogService.SetGroupResolver(configuredGroupResolver{
 		lookup: provideradapter.ConfiguredGroupLookup{Connections: catalogDBSource, ClientResolver: runtimeConfiguration},
 	})
-	catalogService.SetGroupDictionaryStore(catalogretentionpersistence.NewGroupDictionaryRepository(db))
-	catalogService.SetFeedSnapshotStore(catalogretentionpersistence.NewRepository(db))
+	catalogService.SetGroupDictionaryStore(catalogrecordretentionpersistence.NewGroupDictionaryRepository(db))
+	catalogService.SetFeedSnapshotStore(catalogrecordretentionpersistence.NewRepository(db))
 	// Lazy expansion is the only catalog path allowed to fetch a torrent: it gets
 	// the locator-keyed cache and the same SSRF-safe payload reader the one-shot
 	// acquisition uses, while the preview fetcher above deliberately has neither.
@@ -540,7 +540,7 @@ func provideApplicationGraph(
 	// saved provider connection and network route as the feed or search request
 	// that published it, so expanding a seed over a proxied source does not dial
 	// the upstream directly.
-	catalogService.SetSeedTorrentCache(catalogretentionpersistence.NewRepository(db))
+	catalogService.SetSeedTorrentCache(catalogrecordretentionpersistence.NewRepository(db))
 	catalogService.SetSeedTorrentFetcher(acquisitionapplication.ConfiguredSeedTorrentFetcher{
 		Connections:       catalogDBSource,
 		ClientResolver:    runtimeConfiguration,
@@ -560,7 +560,7 @@ func provideApplicationGraph(
 	}
 	// Custom-source previews follow the same lazy rule as provider previews: a
 	// snapshot stores the RSS facts, and expansion fetches the torrent on demand.
-	catalogService.SetCustomSnapshotApplication(catalogapplication.CustomSnapshotApplication{Revisions: draftService, Owners: draftService, Fetcher: customSnapshotNetworkFetcher{fetcher: acquisitionapplication.ConfiguredCustomRSSFetcher{Connections: catalogDBSource, ClientResolver: runtimeConfiguration, ParseTorrentMetadata: false, AllowPrivateHosts: fixtureAllowlist, Resolver: fixtureResolver}}, Snapshots: catalogretentionpersistence.NewRepository(db)})
+	catalogService.SetCustomSnapshotApplication(catalogapplication.CustomSnapshotApplication{Revisions: draftService, Owners: draftService, Fetcher: customSnapshotNetworkFetcher{fetcher: acquisitionapplication.ConfiguredCustomRSSFetcher{Connections: catalogDBSource, ClientResolver: runtimeConfiguration, ParseTorrentMetadata: false, AllowPrivateHosts: fixtureAllowlist, Resolver: fixtureResolver}}, Snapshots: catalogrecordretentionpersistence.NewRepository(db)})
 	provisioner := animeapplication.NewProvisioner(fileMaintenanceGraph.parserPolicies)
 	// One seed preview source serves both feed and keyword-search snapshots: the
 	// exact snapshot read and the seed's verified bytes, for both kinds. A search
@@ -590,7 +590,7 @@ func provideApplicationGraph(
 	posterRepository := posterpersistence.NewRepository(db)
 	retentionRegistry, err := retentionapplication.NewRegistry(retentionapplication.Dependencies{
 		Observability:   observabilitypersistence.NewRepository(db),
-		Catalog:         catalogretentionpersistence.NewRepository(db),
+		Catalog:         catalogrecordretentionpersistence.NewRepository(db),
 		AnimeCandidates: animepersistence.NewRepository(db),
 		WorkItems:       workStore,
 		MediaPosters:    posterRepository,

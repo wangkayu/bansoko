@@ -22,7 +22,7 @@
     "direct_access": [
       "internal/filemaintenance/local_owner_cleanup.go",
       "internal/filemaintenance/operations.go",
-      "internal/retention/adapter/persistence/query.sql (maintenance retention cleaners: terminal rows only)"
+      "internal/recordretention/adapter/persistence/query.sql (maintenance retention cleaners: terminal rows only)"
     ],
     "closure_slice": "retained product owner",
     "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
@@ -474,7 +474,7 @@
       "internal/workitems/adapter/persistence/query.sql",
       "internal/workitems/adapter/persistence/generated/query.sql.go",
       "internal/workitems/adapter/persistence/generated/querier.go",
-      "internal/retention/adapter/persistence/query.sql (maintenance retention cleaners: terminal rows only)"
+      "internal/recordretention/adapter/persistence/query.sql (maintenance retention cleaners: terminal rows only)"
     ],
     "closure_slice": "retained product owner",
     "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
@@ -652,7 +652,7 @@
       "internal/workitems/oneshot_retention.go (one-shot reclaim D-a leaf deletion)",
       "internal/plugintarget/application/admission_resolver.go",
       "internal/plugintarget/application/admission_ledger.go",
-      "internal/retention/adapter/persistence/query.sql (maintenance retention cleaners: terminal rows only)"
+      "internal/recordretention/adapter/persistence/query.sql (maintenance retention cleaners: terminal rows only)"
     ],
     "closure_slice": "retained product owner",
     "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
@@ -1011,7 +1011,7 @@
       "internal/filemaintenance/local_owner_cleanup.go",
       "internal/filemaintenance/calibration.go",
       "internal/reconciliation/application/scanhandler.go",
-      "internal/retention/adapter/persistence/query.sql (maintenance retention cleaners: terminal rows only)"
+      "internal/recordretention/adapter/persistence/query.sql (maintenance retention cleaners: terminal rows only)"
     ],
     "closure_slice": "retained product owner",
     "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"

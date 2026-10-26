@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"bansoko/internal/persistence/txscope"
-	retentionpersistence "bansoko/internal/retention/adapter/persistence"
+	retentionpersistence "bansoko/internal/recordretention/adapter/persistence"
 	"bansoko/internal/testutil/disposabledb"
 )
 
