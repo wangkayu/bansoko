@@ -77,7 +77,7 @@ const (
 	// wrapper's observable contract means incrementing this constant; the
 	// releases that need the new behaviour must declare the new floor and the
 	// operator must switch the base image digest.
-	embeddedBootstrapVersion = "embedded-bootstrap-v1"
+	embeddedBootstrapVersion = "embedded-bootstrap-v2"
 
 	journalFileName    = "journal.json"
 	pendingMarkerName  = "pending.json"
