@@ -2659,3 +2659,12 @@ h1, h2, h3, h4, h5, h6 {
     grid-template-columns: auto minmax(0, 1fr);
   }
 }
+
+.restricted-markdown { display: grid; gap: 0.375rem; overflow-wrap: anywhere; }
+.restricted-markdown > * { margin: 0; }
+.restricted-markdown-heading { font-weight: 500; color: hsl(var(--foreground)); }
+.restricted-markdown-list { padding-left: 1.25rem; }
+.restricted-markdown-list:is(ul) { list-style: disc; }
+.restricted-markdown-list:is(ol) { list-style: decimal; }
+.settings-updates-notes { display: grid; gap: 0.5rem; }
+.settings-updates-notes-version { display: grid; gap: 0.25rem; }

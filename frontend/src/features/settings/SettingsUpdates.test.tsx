@@ -1,12 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 import { SettingsUpdates } from "./SettingsUpdates";
 import { updateKeys } from "../../lib/queryKeys";
 import type { EmbeddedUpdateStatus } from "../../lib/api/client";
-import { t } from "../../lib/i18n";
+import { getLocale, setLocale, t } from "../../lib/i18n";
 
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
@@ -314,6 +314,74 @@ describe("SettingsUpdates", () => {
     expect(screen.getByRole("button", { name: t("settings.updates.update") })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "升级到此版本" })).not.toBeInTheDocument();
   });
+  describe("release notes", () => {
+    const notes = (version: string, zh: string, en: string) => ({
+      version,
+      published_at: "2026-08-29T01:00:00Z",
+      notes: { "zh-CN": zh, en },
+    });
+
+    async function checkWith(body: unknown) {
+      const user = userEvent.setup();
+      stubFetch((url) => {
+        if (url.endsWith("/update/status")) return jsonResponse({}, 404);
+        if (url.endsWith("/update/check")) return jsonResponse(body);
+        return jsonResponse({ code: "NOT_FOUND", message: "not found" }, 404);
+      });
+      renderUpdates();
+      await user.click(await screen.findByRole("button", { name: t("settings.updates.check") }));
+      await screen.findByText(t("settings.updates.currentTitle"));
+      return user;
+    }
+
+    it("lists candidate notes newest first in the UI language", async () => {
+      const original = getLocale();
+      try {
+        setLocale("zh-CN", { persist: false });
+        await checkWith({
+          ...updateCheck,
+          candidate: {
+            ...candidate,
+            release_notes: [notes("0.9.0", "## 新增\n- 中文甲", "## Added\n- English A"), notes("0.8.0", "中文乙", "English B")],
+          },
+        });
+        expect(screen.getByText("中文甲")).toBeInTheDocument();
+        expect(screen.getByText("中文乙")).toBeInTheDocument();
+        expect(screen.queryByText("English A")).not.toBeInTheDocument();
+        const first = screen.getByText("中文甲");
+        const second = screen.getByText("中文乙");
+        expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        act(() => setLocale("en", { persist: false }));
+        expect(await screen.findByText("English A")).toBeInTheDocument();
+        expect(screen.queryByText("中文甲")).not.toBeInTheDocument();
+      } finally {
+        setLocale(original, { persist: false });
+      }
+    });
+
+    it("shows the empty state when the candidate has no notes", async () => {
+      await checkWith(updateCheck);
+      expect(screen.getByText(t("settings.updates.notesEmpty"))).toBeInTheDocument();
+    });
+
+    it("opens the current version notes, or the empty state when absent", async () => {
+      const user = await checkWith({
+        ...updateCheck,
+        current: { ...updateCheck.current, release_notes: notes("0.9.0-rc.4", "当前说明正文", "Current body") },
+      });
+      expect(screen.queryByText("当前说明正文")).not.toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: t("settings.updates.notesShowCurrent") }));
+      expect(screen.getByText(getLocale() === "zh-CN" ? "当前说明正文" : "Current body")).toBeInTheDocument();
+    });
+
+    it("shows the empty state for a current version without notes", async () => {
+      const user = await checkWith(updateCheck);
+      expect(screen.getAllByText(t("settings.updates.notesEmpty"))).toHaveLength(1);
+      await user.click(screen.getByRole("button", { name: t("settings.updates.notesShowCurrent") }));
+      expect(screen.getAllByText(t("settings.updates.notesEmpty"))).toHaveLength(2);
+    });
+  });
+
   it("refetches after the accepted response and displays only authoritative progress", async () => {
     const user = userEvent.setup();
     let statusReads = 0;

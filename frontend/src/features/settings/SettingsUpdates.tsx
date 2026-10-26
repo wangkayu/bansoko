@@ -14,9 +14,10 @@ import {
   type UpdateCheck,
 } from "../../lib/api/client";
 import { formatDateTime } from "../../lib/labels";
-import { t, tryT } from "../../lib/i18n";
+import { getLocale, t, tryT, useLocale } from "../../lib/i18n";
 import { updateKeys } from "../../lib/queryKeys";
 import { Chip, DescriptionList, StateBlock, StatePill, ConfirmDialog } from "../../ui";
+import { RestrictedMarkdown } from "../../ui/RestrictedMarkdown";
 
 const PENDING_UPDATE_OPERATION_KEY = "pending_update_operation_id";
 const ACTIVE_STEPS: Record<string, true> = {
@@ -36,6 +37,8 @@ const HISTORICAL_TERMINAL_STEPS = new Set(["succeeded", "failed", "rolled_back"]
 const BLOCKING_STEP = "rollback_blocked";
 
 type UpdateCandidate = NonNullable<UpdateCheck["candidate"]>;
+
+type ReleaseNotesEntry = NonNullable<UpdateCandidate["release_notes"]>[number];
 
 type CheckPhase = "idle" | "checking" | "complete" | "failed";
 
@@ -475,7 +478,30 @@ function UpdateCheckResult({
   );
 }
 
+function ReleaseNotesList({ entries }: { entries: ReleaseNotesEntry[] | undefined }) {
+  useLocale();
+  if (!entries || entries.length === 0) {
+    return <p className="settings-updates-muted text-caption">{t("settings.updates.notesEmpty")}</p>;
+  }
+  const lang = getLocale() === "zh-CN" ? "zh-CN" : "en";
+  return (
+    <div className="settings-updates-notes">
+      {entries.map((entry) => (
+        <div key={entry.version} className="settings-updates-notes-version">
+          <div className="settings-updates-card-row">
+            <Chip>{entry.version}</Chip>
+            <span className="settings-updates-muted text-caption">{formatDateTime(entry.published_at)}</span>
+          </div>
+          <RestrictedMarkdown source={entry.notes[lang]} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function CurrentVersionCard({ check }: { check: UpdateCheck }) {
+  const [notesOpen, setNotesOpen] = useState(false);
+  const notes = check.current.release_notes;
   return (
     <div className="settings-updates-card">
       <div className="settings-updates-card-row">
@@ -487,6 +513,12 @@ function CurrentVersionCard({ check }: { check: UpdateCheck }) {
           { label: t("settings.updates.checkedAt"), value: formatDateTime(check.checked_at) },
         ]}
       />
+      <div>
+        <Button size="sm" aria-expanded={notesOpen} onClick={() => setNotesOpen((open) => !open)}>
+          {notesOpen ? t("settings.updates.notesHideCurrent") : t("settings.updates.notesShowCurrent")}
+        </Button>
+      </div>
+      {notesOpen && <ReleaseNotesList entries={notes ? [notes] : undefined} />}
     </div>
   );
 }
@@ -527,6 +559,11 @@ function CandidateCard({
           ...candidateFacts(candidate),
         ]}
       />
+
+      <div className="settings-updates-notes">
+        <span className="text-body">{t("settings.updates.notesTitle")}</span>
+        <ReleaseNotesList entries={candidate.release_notes} />
+      </div>
 
       {/* An upgrade this page cannot perform: a restricted state replaces the upgrade button instead of failing only after a click. */}
       {needsBaseImage && <StateBlock kind="restricted" title={t("settings.updates.imageOutdated")} />}
