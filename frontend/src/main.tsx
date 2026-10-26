@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
+import { installStaleChunkReload } from './lib/staleChunkReload'
 // Self-hosted web fonts (OFL-1.1; texts in public/fonts-licenses.txt).
 // Nothing is fetched from a font CDN: the CSP allows font-src 'self' only.
 // Soft direction: Plus Jakarta Sans for display and body,
@@ -10,4 +11,5 @@ import '@fontsource/ibm-plex-mono/400.css'
 import '@fontsource/ibm-plex-mono/500.css'
 import './index.css'
 
+installStaleChunkReload();
 createRoot(document.getElementById("root")!).render(<App />);
