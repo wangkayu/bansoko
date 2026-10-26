@@ -1311,6 +1311,9 @@ PY
   mkdir -p "$(dirname "$s8_source_path")"
   cp "$s8_download" "$s8_source_path"
   head -c "$s8_companion_size" /dev/urandom >"$s8_companion_source"
+  # The companion's registered identity is the sha256 of its bytes, exactly as
+  # registration stores it from the sidecar operation / artifact file.
+  s8_companion_digest="$(shasum -a 256 "$s8_companion_source" | awk '{print $1}')"
   s8_payload_digest="sha256:$(repeat_hex 3)"
   s8_manifest_digest="sha256:$(repeat_hex 4)"
   s8_file_ref="$(torrent_file_ref "$s8_payload_digest" 'EP08.mkv')"
@@ -1397,13 +1400,15 @@ INSERT INTO placements(id,physical_path,managed_anime_id,source_evidence_type,so
 VALUES ('$s8_placement_id','$s8_source_path','anime-e2e','file_operation','op-e2e-8','$s8_fp'::jsonb,'$s8_fp'::jsonb,'rel-e2e-8','media-facts-v1','corr-e2e-8','file_operation','op-e2e-8',false,'verified','active',1);
 INSERT INTO placement_coverage(placement_id,observation_key,coverage_ordinal,facts_version,evidence_ref)
 VALUES ('$s8_placement_id','tv:s1:e8',0,'media-facts-v1','op-e2e-8');
--- One active subtitle companion. `fingerprint` is the registration-time hex
--- digest the column CHECK demands; the recovery candidate freezes the
--- METADATA fingerprint it observes, never this digest.
+-- One active subtitle companion. `fingerprint` is the registration-time
+-- content digest of the file (hex, as the column CHECK demands); recovery
+-- keeps it, and the loser cleanup handoff freezes and checks it before moving
+-- the file. The recovery candidate freezes the METADATA fingerprint it
+-- observes, never this digest.
 INSERT INTO placement_companions(id,placement_id,managed_anime_id,source_ref,registration,media_kind,suffix,original_extension,current_path,size_bytes,fingerprint,state,version)
 VALUES ('$s8_companion_id','$s8_placement_id','anime-e2e','e2e-scenario-8-companion','adopted','subtitle','zh','ass',
         '$s8_companion_source','$s8_companion_size',
-        'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff','active',1);
+        '$s8_companion_digest','active',1);
 COMMIT;
 E2ETHIRD
   then
@@ -1743,6 +1748,11 @@ PY
   case "$s8b_btime" in 0|-|unknown|'') s8b_has_btime=false ;; *) s8b_has_btime=true ;; esac
   echo "scenario 8b target mount: fstype=$s8b_fstype mount=[$s8b_mount] btime=$s8b_btime has_btime=$s8b_has_btime"
   s8b_target_inode_before="$(ls -i "$s8_target" | awk '{print $1}')"
+  # The companion cleanup checks the companion's registered digest against
+  # the file before moving it; a seed whose digest is not the file's would
+  # block that cleanup for a reason unrelated to recovery.
+  s8b_companion_digest="$($PSQL -tAc "SELECT fingerprint FROM placement_companions WHERE id='$s8_companion_id'" | tr -d '[:space:]')"
+  [[ "$s8b_companion_digest" == "$(fingerprint "$s8_companion_target")" ]] || { echo "scenario 8b: companion $s8_companion_id registered digest [$s8b_companion_digest] is not the sha256 of $s8_companion_target" >&2; exit 1; }
   s8b_target_fp="$($PSQL -tAc "SELECT target_fingerprint::text FROM placements WHERE id='$s8_placement_id'" | tr -d '\r')"
   [[ "$s8b_target_fp" == *'"algorithm": "metadata"'* || "$s8b_target_fp" == *'"algorithm":"metadata"'* ]] || { echo "scenario 8b: the recovered placement's target fingerprint is not the metadata envelope: $s8b_target_fp" >&2; exit 1; }
   # The scenario seeded the placement out of the replacement pool so the
@@ -1884,6 +1894,7 @@ E2EEIGHTB
   [[ "$s8b_loser_state" == superseded ]] || { echo "scenario 8b: the recovered placement is [$s8b_loser_state], want superseded" >&2; exit 1; }
   [[ "$s8b_winner_state" == active && "$(fingerprint "$s8b_path")" == "$s8b_hex" ]] || { echo "scenario 8b: the winner placement is [$s8b_winner_state] or its file changed" >&2; exit 1; }
   [[ ! -e "$s8_target" ]] || { echo "scenario 8b: the recovered file is still at $s8_target after purge" >&2; exit 1; }
+  [[ ! -e "$s8_companion_target" ]] || { echo "scenario 8b: the recovered companion is still at $s8_companion_target after purge" >&2; exit 1; }
   [[ -n "$s8b_quarantine" && ! -e "$s8b_quarantine" ]] || { echo "scenario 8b: quarantine object not purged: [$s8b_quarantine]" >&2; exit 1; }
   observe_disk scenario-8b-winner "$s8b_path"
   # The cleanup's frozen source fingerprint is recorded so the evidence shows
