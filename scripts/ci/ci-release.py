@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Trusted isolated test publication. Secrets remain outside the build context."""
+"""Trusted formal release publication from a pushed vX.Y.Z tag.
+
+A main push no longer publishes anything to the update channel: it only builds
+the multi-arch test image (ci-dockerhub-publish.sh). A tag on a commit already
+on main, after every required gate of the same run succeeded, is the only path
+that signs a release, advances the channel and creates the GitHub Release.
+Secrets remain outside the build context.
+"""
 
 import base64
 import hashlib
@@ -180,12 +187,23 @@ def request(url, token, method="GET", data=None, hosts=None):
         fail("release HTTP network failure")
 
 
+RELEASE_TAG = re.compile(
+    r"refs/tags/v((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))"
+)
+# The discovery channel the formal lane writes. The signed channel gate accepts
+# exactly one rename, from the retired automatic "test" channel to this one.
+DISCOVERY_CHANNEL = "stable"
+MANIFEST_CHANNEL = "stable"
+NOTES_DIR = ROOT / "release-notes"
+GITHUB_NOTES = "github-release-notes.md"
+
+
 def identity():
-    if (
-        os.environ.get("GITHUB_EVENT_NAME") != "push"
-        or os.environ.get("GITHUB_REF") != "refs/heads/main"
-    ):
-        fail("only trusted main push can publish")
+    if os.environ.get("GITHUB_EVENT_NAME") != "push":
+        fail("only a pushed release tag can publish")
+    tag = RELEASE_TAG.fullmatch(os.environ.get("GITHUB_REF", ""))
+    if not tag:
+        fail("only a pushed vX.Y.Z tag can publish")
     if os.environ.get("BANSOKO_RELEASE_REF_PROTECTED") != "true":
         fail("protected ref proof required")
     sha = required("GITHUB_SHA")
@@ -217,13 +235,119 @@ def identity():
     }
     if set(gates) != expected or any(x != "success" for x in gates.values()):
         fail("required gate missing or not successful")
+    version = tag.group(1)
     return {
         "sha": sha,
         "run_id": run_id,
+        # The run number is the workflow-wide monotonic counter, so a tag run
+        # always carries a larger sequence than every earlier publication; the
+        # signed channel gate additionally requires the version to advance.
         "sequence": int(n),
-        "version": "0.0.0-test." + n,
-        "release_id": "test-ci-" + n,
+        "version": version,
+        "release_id": "v" + version,
     }
+
+
+def release_tool(*args):
+    return run("go", "run", "./cmd/bansoko-release", *args)
+
+
+def release_notes(ident, mode, output):
+    """Extract this version's notes; missing or invalid notes fail closed."""
+    release_tool(
+        "release-notes",
+        mode,
+        "--dir",
+        str(NOTES_DIR),
+        "--version",
+        ident["version"],
+        "--output",
+        str(output),
+    )
+
+
+def published_channel(token, temp):
+    """The currently published signed channel, read through the API.
+
+    The API answers the committed bytes immediately, unlike the raw host's
+    five-minute cache, so a just-advanced channel cannot be mistaken for the
+    older one. Only explicit absence (404) means "no channel yet"; any other
+    failure refuses.
+    """
+    status, body = request(github_content_url() + "?ref=" + BRANCH, token)
+    if status == 404:
+        return None
+    if status != 200:
+        fail("published channel read refused: HTTP " + str(status))
+    path = temp / "published-channel.json"
+    path.write_bytes(github_content_bytes(decode_json(body), token))
+    return path
+
+
+def preflight(ident):
+    """Refuse before any effect: notes must exist and the version must advance."""
+    with tempfile.TemporaryDirectory(prefix="bansoko-preflight-") as temp:
+        temp = Path(temp)
+        release_notes(ident, "manifest", temp / "release-notes.json")
+        token = required(GITHUB_TOKEN_ENV)
+        require_public_github(token)
+        published = published_channel(token, temp)
+        release_tool(
+            "version-gate",
+            "--published",
+            str(published) if published else "",
+            "--version",
+            ident["version"],
+            "--public-key",
+            str(ROOT / "deployment/public.key"),
+        )
+    print("release preflight passed", ident["release_id"])
+
+
+def github_release(ident):
+    """Create the GitHub Release for the tag with the same notes text.
+
+    Uses the runner's preinstalled GitHub CLI; --verify-tag refuses to create a
+    tag that does not already exist. A rerun finds the release and accepts it
+    only when its text is the one this run would write.
+    """
+    # gh reads GH_TOKEN itself; requiring it here names the missing secret
+    # instead of letting gh fall back to an interactive login prompt.
+    required("GH_TOKEN")
+    notes = OUTPUT / GITHUB_NOTES
+    OUTPUT.mkdir(parents=True, exist_ok=True)
+    release_notes(ident, "github", notes)
+    tag = ident["release_id"]
+    repository = github_repository()
+    existing = subprocess.run(
+        ["gh", "release", "view", tag, "--repo", repository, "--json", "body,tagName"],
+        cwd=ROOT,
+        capture_output=True,
+    )
+    if existing.returncode == 0:
+        found = decode_json(existing.stdout)
+        if found.get("tagName") != tag or found.get("body", "").strip() != notes.read_text().strip():
+            fail("an existing GitHub Release for " + tag + " carries different notes")
+        print("github release already present with identical notes", tag)
+        return
+    subprocess.run(
+        [
+            "gh",
+            "release",
+            "create",
+            tag,
+            "--repo",
+            repository,
+            "--verify-tag",
+            "--title",
+            tag,
+            "--notes-file",
+            str(notes),
+        ],
+        cwd=ROOT,
+        check=True,
+    )
+    print("github release created", tag)
 
 
 def decode_json(value):
@@ -457,7 +581,7 @@ def publish(ident):
             BANSOKO_RELEASE_VERSION=ident["version"],
             BANSOKO_RELEASE_ID=ident["release_id"],
             BANSOKO_RELEASE_SEQUENCE=str(ident["sequence"]),
-            BANSOKO_RELEASE_CHANNEL="nightly",
+            BANSOKO_RELEASE_CHANNEL=MANIFEST_CHANNEL,
             BANSOKO_RELEASE_BOOTSTRAP_MIN_VERSION=bootstrap,
             BANSOKO_BASE_IMAGE_MIN_VERSION="base-v1",
             BANSOKO_RELEASE_IMAGE_BOOTSTRAP_VERSION=bootstrap,
@@ -752,7 +876,7 @@ def channel(ident):
             "--manifest-url",
             manifest_url,
             "--channel",
-            "test",
+            DISCOVERY_CHANNEL,
             "--expect-release-sequence",
             str(ident["sequence"]),
             "--public-key",
@@ -800,7 +924,7 @@ def github_channel(candidate, ident, temp):
     options = {
         "branch": BRANCH,
         "content": base64.b64encode(candidate.read_bytes()).decode(),
-        "message": "Advance signed test to " + ident["release_id"],
+        "message": "Advance signed channel to " + ident["release_id"],
     }
     published = temp / "github-published.json"
     if status == 200:
@@ -864,7 +988,7 @@ def github_channel(candidate, ident, temp):
 if __name__ == "__main__":
     try:
         ident = identity()
-        {"image": image, "publish": publish, "channel": channel}[sys.argv[1]](ident)
+        {"preflight": preflight, "image": image, "publish": publish, "channel": channel, "github-release": github_release}[sys.argv[1]](ident)
     except (
         RuntimeError,
         ValueError,
@@ -874,7 +998,7 @@ if __name__ == "__main__":
     ) as error:
         # Never dump requests, credentials or arbitrary server response bodies.
         print(
-            "ERROR: test release refused:",
+            "ERROR: release refused:",
             type(error).__name__,
             str(error)
             if isinstance(error, RuntimeError)

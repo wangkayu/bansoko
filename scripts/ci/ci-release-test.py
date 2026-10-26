@@ -14,7 +14,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location(
-    "release", Path(__file__).with_name("ci-test-release.py")
+    "release", Path(__file__).with_name("ci-release.py")
 )
 assert spec and spec.loader
 release = importlib.util.module_from_spec(spec)
@@ -46,7 +46,7 @@ class PublicationTests(unittest.TestCase):
         self.addCleanup(destination.stop)
         self.env = {
             "GITHUB_EVENT_NAME": "push",
-            "GITHUB_REF": "refs/heads/main",
+            "GITHUB_REF": "refs/tags/v0.1.0",
             "GITHUB_SHA": self.sha,
             "GITHUB_RUN_ID": "71",
             "GITHUB_RUN_NUMBER": "53",
@@ -104,8 +104,8 @@ class PublicationTests(unittest.TestCase):
             patch.object(release, "run", side_effect=[self.sha, ""]),
         ):
             ident = release.identity()
-            self.assertEqual(ident["release_id"], "test-ci-53")
-            self.assertEqual(ident["version"], "0.0.0-test.53")
+            self.assertEqual(ident["release_id"], "v0.1.0")
+            self.assertEqual(ident["version"], "0.1.0")
         for name in self.gates:
             for state in ["failure", "skipped", "cancelled", "missing"]:
                 gates = dict(self.gates, **{name: {"result": state}})
@@ -120,17 +120,38 @@ class PublicationTests(unittest.TestCase):
                     self.assertRaises(RuntimeError),
                 ):
                     release.identity()
-        for key, value in [
-            ("GITHUB_EVENT_NAME", "pull_request"),
-            ("GITHUB_REF", "refs/tags/v1.0.0"),
+        # A main push builds only the test image; it never publishes. Neither
+        # does any tag that is not a plain vX.Y.Z.
+        refs = [
+            "refs/heads/main",
+            "refs/heads/v0.1.0",
+            "refs/tags/0.1.0",
+            "refs/tags/v0.1",
+            "refs/tags/v0.1.0-rc.1",
+            "refs/tags/v0.1.0+build",
+            "refs/tags/v01.0.0",
+            "refs/tags/v0.1.0/x",
+            "",
+        ]
+        for key, value in [("GITHUB_EVENT_NAME", "pull_request"), ("GITHUB_EVENT_NAME", "workflow_dispatch")] + [
+            ("GITHUB_REF", ref) for ref in refs
+        ] + [
             ("BANSOKO_RELEASE_REF_PROTECTED", "false"),
             ("GITHUB_SHA", "invalid"),
         ]:
             with (
+                self.subTest(key=key, value=value),
                 patch.dict(os.environ, dict(self.env, **{key: value}), clear=True),
+                patch.object(release, "run", side_effect=[self.sha, ""]),
                 self.assertRaises(RuntimeError),
             ):
                 release.identity()
+        with (
+            patch.dict(os.environ, dict(self.env, GITHUB_REF="refs/tags/v12.3.40"), clear=True),
+            patch.object(release, "run", side_effect=[self.sha, ""]),
+        ):
+            ident = release.identity()
+            self.assertEqual((ident["version"], ident["release_id"], ident["sequence"]), ("12.3.40", "v12.3.40", 53))
         with (
             patch.dict(os.environ, self.env, clear=True),
             patch.object(release, "run", return_value="b" * 40),
@@ -188,11 +209,11 @@ class PublicationTests(unittest.TestCase):
                 opener.return_value.open.side_effect = error
                 if code == 404:
                     self.assertIsNone(
-                        release.registry_digest("test-ci-53", "sentinel")
+                        release.registry_digest("v0.1.0", "sentinel")
                     )
                 else:
                     with self.assertRaises(RuntimeError):
-                        release.registry_digest("test-ci-53", "sentinel")
+                        release.registry_digest("v0.1.0", "sentinel")
         body = b"registry-manifest"
         digest = "sha256:" + hashlib.sha256(body).hexdigest()
         with patch.object(release.urllib.request, "build_opener") as opener:
@@ -201,13 +222,13 @@ class PublicationTests(unittest.TestCase):
             response.read.return_value = body
             response.headers = {"Docker-Content-Digest": digest}
             self.assertEqual(
-                release.registry_digest("test-ci-53", "sentinel"), digest
+                release.registry_digest("v0.1.0", "sentinel"), digest
             )
             req = opener.return_value.open.call_args.args[0]
             self.assertEqual(
                 req.full_url,
                 "https://" + release.HUB_REGISTRY_HOST
-                + "/v2/" + release.IMAGE_PATH + "/manifests/test-ci-53",
+                + "/v2/" + release.IMAGE_PATH + "/manifests/v0.1.0",
             )
             self.assertEqual(req.get_header("Authorization"), "Bearer sentinel")
             self.assertIn(
@@ -215,7 +236,7 @@ class PublicationTests(unittest.TestCase):
             )
             response.headers = {"Docker-Content-Digest": "sha256:" + "0" * 64}
             with self.assertRaises(RuntimeError):
-                release.registry_digest("test-ci-53", "sentinel")
+                release.registry_digest("v0.1.0", "sentinel")
 
     def test_cross_run_handoff_refuses_before_effects(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -241,8 +262,8 @@ class PublicationTests(unittest.TestCase):
             "sha": self.sha,
             "run_id": "71",
             "sequence": 53,
-            "version": "0.0.0-test.53",
-            "release_id": "test-ci-53",
+            "version": "0.1.0",
+            "release_id": "v0.1.0",
         }
         handoff = dict(
             ident,
@@ -299,11 +320,11 @@ class PublicationTests(unittest.TestCase):
             raw,
             "https://raw.githubusercontent.com/gh-owner/gh-repo/update-channel/channel-v1.json",
         )
-        asset = release.github_file_url("0.0.0-test.53", "release-manifest.json")
+        asset = release.github_file_url("0.1.0", "release-manifest.json")
         self.assertEqual(
             asset,
             "https://raw.githubusercontent.com/gh-owner/gh-repo/update-channel/"
-            "0.0.0-test.53/release-manifest.json",
+            "0.1.0/release-manifest.json",
         )
         for url in (raw, asset):
             parsed = release.urllib.parse.urlsplit(url)
@@ -466,7 +487,7 @@ class PublicationTests(unittest.TestCase):
         blob = release.git_blob_sha(payload)
         existing = (200, json.dumps({"sha": blob, "encoding": "none", "content": ""}).encode())
         with patch.object(release, "request", side_effect=[existing]) as request:
-            release.github_put_file("0.0.0-test.53", "embedded-update-v1.tar.gz", payload, "sentinel")
+            release.github_put_file("0.1.0", "embedded-update-v1.tar.gz", payload, "sentinel")
             # Identical bytes are a successful re-run: no write at all.
             self.assertEqual(request.call_count, 1)
         # The read the sha is compared against must be pinned to the branch.
@@ -480,7 +501,7 @@ class PublicationTests(unittest.TestCase):
             ),
             self.assertRaises(RuntimeError),
         ):
-            release.github_put_file("0.0.0-test.53", "embedded-update-v1.tar.gz", payload, "sentinel")
+            release.github_put_file("0.1.0", "embedded-update-v1.tar.gz", payload, "sentinel")
 
     def test_immutable_write_is_proved_by_the_readback_after_it(self):
         # A refused or ambiguous PUT must never be reported as published. The
@@ -492,12 +513,12 @@ class PublicationTests(unittest.TestCase):
         with patch.object(
             release, "request", side_effect=[(404, b""), (201, b""), proven]
         ) as request:
-            release.github_put_file("0.0.0-test.53", "release-manifest.json", payload, "sentinel")
+            release.github_put_file("0.1.0", "release-manifest.json", payload, "sentinel")
             self.assertEqual(request.call_count, 3)
         with patch.object(
             release, "request", side_effect=[(404, b""), (409, b""), proven]
         ):
-            release.github_put_file("0.0.0-test.53", "release-manifest.json", payload, "sentinel")
+            release.github_put_file("0.1.0", "release-manifest.json", payload, "sentinel")
         with (
             patch.object(
                 release,
@@ -506,12 +527,12 @@ class PublicationTests(unittest.TestCase):
             ),
             self.assertRaises(RuntimeError),
         ):
-            release.github_put_file("0.0.0-test.53", "release-manifest.json", payload, "sentinel")
+            release.github_put_file("0.1.0", "release-manifest.json", payload, "sentinel")
         with (
             patch.object(release, "request", side_effect=[(404, b""), (503, b"")]),
             self.assertRaises(RuntimeError),
         ):
-            release.github_put_file("0.0.0-test.53", "release-manifest.json", payload, "sentinel")
+            release.github_put_file("0.1.0", "release-manifest.json", payload, "sentinel")
 
     def test_git_blob_sha_matches_gits_object_id(self):
         # Anchor the identity against a value git itself computes, so the helper
@@ -551,7 +572,7 @@ class PublicationTests(unittest.TestCase):
         # The channel advance is a compare-and-swap: the write carries the sha
         # the read returned, so a concurrent advance between read and write is
         # refused by the API instead of silently landing on a stale base.
-        ident = {"release_id": "test-ci-53"}
+        ident = {"release_id": "v0.1.0"}
         with tempfile.TemporaryDirectory() as temp:
             temp = Path(temp)
             candidate = temp / "candidate.json"
@@ -583,7 +604,7 @@ class PublicationTests(unittest.TestCase):
         # compare-and-swap: it proves the raw host already serves these bytes
         # and stops without a write. The raw host lagging behind is still a
         # failure once the deadline passes — the fast path is proof, not intent.
-        ident = {"release_id": "test-ci-53"}
+        ident = {"release_id": "v0.1.0"}
         with tempfile.TemporaryDirectory() as temp:
             temp = Path(temp)
             candidate = temp / "candidate.json"
@@ -655,8 +676,8 @@ class PublicationTests(unittest.TestCase):
             "sha": self.sha,
             "run_id": "71",
             "sequence": 53,
-            "version": "0.0.0-test.53",
-            "release_id": "test-ci-53",
+            "version": "0.1.0",
+            "release_id": "v0.1.0",
         }
         manifest = json.dumps(
             {
@@ -696,6 +717,146 @@ class PublicationTests(unittest.TestCase):
                 release.channel(ident)
             guard.assert_called_once()
             write.assert_not_called()
+
+    def test_the_channel_is_signed_as_the_formal_stable_channel(self):
+        ident = {"sha": self.sha, "run_id": "71", "sequence": 53, "version": "0.1.0", "release_id": "v0.1.0"}
+        seen = []
+
+        def command(*args, **kwargs):
+            seen.append(args)
+            if "channel-sign" in args:
+                Path(args[args.index("--output") + 1]).write_bytes(b'{"signed":true}')
+            return ""
+
+        with (
+            patch.object(release, "channel_files"),
+            patch.object(release, "run", side_effect=command),
+            patch.object(release, "require_public_github"),
+            patch.object(release, "github_channel"),
+            patch.dict(os.environ, {"BANSOKO_RELEASE_SIGNING_KEY": "fake", "BANSOKO_RELEASE_GITHUB_TOKEN": "sentinel"}),
+        ):
+            release.channel(ident)
+        sign = next(args for args in seen if "channel-sign" in args)
+        self.assertEqual(sign[sign.index("--channel") + 1], "stable")
+        self.assertEqual(sign[sign.index("--expect-release-sequence") + 1], "53")
+
+
+class FormalReleaseTests(unittest.TestCase):
+    def setUp(self):
+        self.ident = {"sha": "a" * 40, "run_id": "71", "sequence": 53, "version": "0.2.0", "release_id": "v0.2.0"}
+        destination = patch.dict(
+            os.environ,
+            {"GITHUB_REPOSITORY": "gh-owner/gh-repo", "BANSOKO_RELEASE_GITHUB_TOKEN": "sentinel", "GH_TOKEN": "sentinel"},
+        )
+        destination.start()
+        self.addCleanup(destination.stop)
+
+    def test_preflight_refuses_missing_notes_before_any_request(self):
+        with (
+            patch.object(release, "run", side_effect=release.subprocess.CalledProcessError(1, "notes")),
+            patch.object(release, "request") as request,
+            self.assertRaises(release.subprocess.SubprocessError),
+        ):
+            release.preflight(self.ident)
+        request.assert_not_called()
+
+    def test_preflight_gates_the_version_against_the_published_channel(self):
+        commands = []
+
+        def command(*args, **kwargs):
+            commands.append(args)
+            if "version-gate" in args:
+                published = args[args.index("--published") + 1]
+                self.assertTrue(published.endswith("published-channel.json"))
+                self.assertEqual(Path(published).read_bytes(), b'{"channel":"stable"}')
+                self.assertEqual(args[args.index("--version") + 1], "0.2.0")
+            return ""
+
+        info = {"sha": "f" * 40, "encoding": "base64", "content": base64.b64encode(b'{"channel":"stable"}').decode()}
+        with (
+            patch.object(release, "run", side_effect=command),
+            patch.object(release, "require_public_github"),
+            patch.object(release, "request", return_value=(200, json.dumps(info).encode())) as request,
+        ):
+            release.preflight(self.ident)
+        self.assertIn("?ref=update-channel", request.call_args[0][0])
+        self.assertEqual([args[3] for args in commands], ["release-notes", "version-gate"])
+
+    def test_preflight_first_publication_and_read_failures(self):
+        commands = []
+
+        def command(*args, **kwargs):
+            commands.append(args)
+            return ""
+
+        with (
+            patch.object(release, "run", side_effect=command),
+            patch.object(release, "require_public_github"),
+            patch.object(release, "request", return_value=(404, b"")),
+        ):
+            release.preflight(self.ident)
+        gate = commands[-1]
+        self.assertEqual(gate[gate.index("--published") + 1], "")
+        for status in [401, 403, 500]:
+            with (
+                self.subTest(status=status),
+                patch.object(release, "run", side_effect=command),
+                patch.object(release, "require_public_github"),
+                patch.object(release, "request", return_value=(status, b"")),
+                self.assertRaises(RuntimeError),
+            ):
+                release.preflight(self.ident)
+
+    def test_preflight_propagates_a_refused_version(self):
+        def command(*args, **kwargs):
+            if "version-gate" in args:
+                raise release.subprocess.CalledProcessError(1, "version-gate")
+            return ""
+
+        with (
+            patch.object(release, "run", side_effect=command),
+            patch.object(release, "require_public_github"),
+            patch.object(release, "request", return_value=(404, b"")),
+            self.assertRaises(release.subprocess.SubprocessError),
+        ):
+            release.preflight(self.ident)
+
+    def _github_release(self, view):
+        calls = []
+
+        def notes(*args, **kwargs):
+            Path(args[args.index("--output") + 1]).write_text("# 简体中文\n\n## 修复\n- 一项\n")
+            return ""
+
+        def gh(args, **kwargs):
+            calls.append(args)
+            if args[:3] == ["gh", "release", "view"]:
+                return release.subprocess.CompletedProcess(args, view[0], stdout=view[1], stderr=b"")
+            return release.subprocess.CompletedProcess(args, 0)
+
+        with tempfile.TemporaryDirectory() as temp, patch.object(release, "OUTPUT", Path(temp)), patch.object(release, "run", side_effect=notes), patch.object(release.subprocess, "run", side_effect=gh):
+            release.github_release(self.ident)
+        return calls
+
+    def test_github_release_is_created_from_the_verified_tag_with_the_notes_file(self):
+        calls = self._github_release((1, b""))
+        create = calls[-1]
+        self.assertEqual(create[:4], ["gh", "release", "create", "v0.2.0"])
+        self.assertIn("--verify-tag", create)
+        self.assertTrue(create[create.index("--notes-file") + 1].endswith(release.GITHUB_NOTES))
+        self.assertEqual(create[create.index("--repo") + 1], "gh-owner/gh-repo")
+
+    def test_github_release_rerun_accepts_only_identical_notes(self):
+        same = json.dumps({"tagName": "v0.2.0", "body": "# 简体中文\n\n## 修复\n- 一项"}).encode()
+        calls = self._github_release((0, same))
+        self.assertFalse(any(args[:3] == ["gh", "release", "create"] for args in calls))
+        different = json.dumps({"tagName": "v0.2.0", "body": "edited"}).encode()
+        with self.assertRaises(RuntimeError):
+            self._github_release((0, different))
+
+    def test_github_release_requires_its_token(self):
+        with patch.dict(os.environ, {"GH_TOKEN": ""}), self.assertRaises(RuntimeError):
+            release.github_release(self.ident)
 
 
 if __name__ == "__main__":

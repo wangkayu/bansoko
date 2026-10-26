@@ -74,7 +74,7 @@ end.sort
 
 abort "check-ci-shards: the workflow runs shards #{workflow_shards.inspect}, the table uses #{numbers.inspect}" unless workflow_shards == numbers
 
-release = workflow.fetch('jobs').fetch('test-release')
+release = workflow.fetch('jobs').fetch('release')
 needs = Array(release['needs'])
 uncovered = shard_jobs.keys - needs
 abort "check-ci-shards: release does not depend on: #{uncovered.join(', ')}" unless uncovered.empty?

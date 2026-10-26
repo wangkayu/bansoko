@@ -10,7 +10,7 @@
 # which renders the isolated compose copy, creates the per-run updates volume,
 # and validates this hook's evidence file. The hook must be exported as
 # BANSOKO_EMBEDDED_E2E_NORMAL_CMD together with:
-#   EXPECTED_RELEASE_ID       channel release the proof must land on (test-ci-<N>)
+#   EXPECTED_RELEASE_ID       channel release the proof must land on (v<X.Y.Z>)
 #   EXPECTED_MANIFEST_DIGEST  optional; check must return exactly this candidate
 #   EXPECTED_SEQUENCE         optional; channel sequence the proof must land on
 #   BANSOKO_EMBEDDED_E2E_PROOF_HTTP_PROXY  optional proxy for the app's

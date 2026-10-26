@@ -47,7 +47,7 @@ refusal (`check-ci-shards-test.sh`, `check-production-compose-database-test.sh`,
 the real tree in `ci-contract-boundary.sh`.
 
 **Release tooling.** `build-release.sh`, `check-release.sh`, `ci-release-*`,
-`ci-test-release.py`. The DAG shape is pinned by `ci-release-dag-test.rb`, so
+`ci-release.py` (formal tag release). The DAG shape is pinned by `ci-release-dag-test.rb`, so
 adding or reordering a release step is a deliberate change to that file, not an
 incidental edit.
 

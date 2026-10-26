@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
 # Build the image for linux/amd64 + linux/arm64, prove the published artifact
-# boots, and only then point `:test` at it. Runs only after ci-release-trust.py
-# on protected main. Go cross-compiles in the build-platform stages; the target
-# stages of the foreign arch run under the host's QEMU binfmt registration.
+# boots, and only then point the moving tag at it. Runs only after
+# ci-release-trust.py. Go cross-compiles in the build-platform stages; the
+# target stages of the foreign arch run under the host's QEMU binfmt
+# registration.
 #
-# The immutable tag is pushed first and the moving `:test` tag is promoted from
-# it afterwards, so a tester never pulls an image that has not served a request.
+# Two modes:
+#   test     (main push)   immutable `<VERSION>-<sha9>`, moving `:test`
+#   release  (vX.Y.Z tag)  immutable `X.Y.Z`, moving `:latest`; runs only after
+#                          the signed release job of the same run succeeded,
+#                          so `:latest` never moves to a version the channel
+#                          refused
+#
+# The immutable tag is pushed first and the moving tag is promoted from it
+# afterwards, so a user never pulls an image that has not served a request.
 set -euo pipefail
 
 : "${DOCKERHUB_TOKEN:?DOCKERHUB_TOKEN must be set}"
@@ -17,8 +25,30 @@ cd "$root"
 image="wangkayu/bansoko"
 user="wangkayu"
 platforms="linux/amd64,linux/arm64"
-version="$(tr -d '[:space:]' < VERSION)"
 short="$(git rev-parse --short=9 HEAD)"
+mode="${1:-test}"
+case "$mode" in
+  test)
+    version="$(tr -d '[:space:]' < VERSION)"
+    immutable_tag="$version-$short"
+    moving_tag="test"
+    build_id="$short"
+    ;;
+  release)
+    if [[ ! "${GITHUB_REF:-}" =~ ^refs/tags/v((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$ ]]; then
+      echo "release mode publishes only from a vX.Y.Z tag (got ${GITHUB_REF:-<unset>})" >&2
+      exit 1
+    fi
+    version="${BASH_REMATCH[1]}"
+    immutable_tag="$version"
+    moving_tag="latest"
+    build_id="v$version"
+    ;;
+  *)
+    echo "unknown mode: $mode (test|release)" >&2
+    exit 1
+    ;;
+esac
 # Same PostgreSQL the quickstart bundles: the smoke proves the published image
 # against the database a tester actually gets.
 postgres_image="postgres@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73"
@@ -66,13 +96,31 @@ cleanup() {
   docker rm -f "$smoke_pg" >/dev/null 2>&1 || true
   docker network rm "$smoke_net" >/dev/null 2>&1 || true
   # The per-run tag is registry state; the local copy only costs disk.
-  docker image rm -f "$image:$version-$short" >/dev/null 2>&1 || true
+  docker image rm -f "$image:$immutable_tag" >/dev/null 2>&1 || true
   docker buildx rm "$builder" >/dev/null 2>&1 || true
   rm -rf "$DOCKER_CONFIG"
 }
 trap cleanup EXIT
 
 printf '%s' "$DOCKERHUB_TOKEN" | docker login --username "$user" --password-stdin >/dev/null
+
+# A release version tag is written once. A rerun of the same run finds its own
+# commit there and rebuilds the same source; a different commit under the same
+# version is refused (the signed channel gate refuses it as well).
+if [[ "$mode" == "release" ]]; then
+  existing="$(docker buildx imagetools inspect "$image:$immutable_tag" --format '{{json .Image}}' 2>/dev/null || true)"
+  if [[ -n "$existing" ]]; then
+    revisions="$(python3 -c 'import json,sys
+d=json.loads(sys.stdin.read())
+images=d.values() if all(isinstance(v,dict) and "config" in v for v in d.values()) else [d]
+print(" ".join(sorted({(i.get("config") or {}).get("Labels",{}).get("org.opencontainers.image.revision","") for i in images})))' <<<"$existing")"
+    if [[ "$revisions" != "$GITHUB_SHA" ]]; then
+      echo "refusing to overwrite $image:$immutable_tag: it was built from [$revisions], not $GITHUB_SHA" >&2
+      exit 1
+    fi
+    echo "$image:$immutable_tag already names $GITHUB_SHA; rebuilding the same source"
+  fi
+fi
 docker buildx create --name "$builder" --driver docker-container --bootstrap >/dev/null
 
 docker buildx build \
@@ -80,22 +128,22 @@ docker buildx build \
   --platform "$platforms" \
   --build-arg VERSION="$version" \
   --build-arg SOURCE_COMMIT="$GITHUB_SHA" \
-  --build-arg BUILD_ID="$short" \
+  --build-arg BUILD_ID="$build_id" \
   --build-arg BUILD_DIRTY=false \
   --build-arg BUILD_TIME="$(git show -s --format=%cI HEAD)" \
   --label org.opencontainers.image.source=https://github.com/wangkayu/bansoko \
   --label org.opencontainers.image.revision="$GITHUB_SHA" \
-  --label org.opencontainers.image.version="$version-$short" \
-  --tag "$image:$version-$short" \
+  --label org.opencontainers.image.version="$immutable_tag" \
+  --tag "$image:$immutable_tag" \
   --push \
   .
 
-docker buildx imagetools inspect "$image:$version-$short" --format '{{json .Manifest}}' \
+docker buildx imagetools inspect "$image:$immutable_tag" --format '{{json .Manifest}}' \
   | python3 -c 'import json,sys
 m=json.load(sys.stdin)
 got=sorted(p["platform"]["architecture"] for p in m["manifests"] if p.get("platform",{}).get("os")=="linux")
 assert got==["amd64","arm64"], got
-print(sys.argv[1], "for", ", ".join(got))' "pushed $image:$version-$short"
+print(sys.argv[1], "for", ", ".join(got))' "pushed $image:$immutable_tag"
 
 # A manifest check proves the image was built; it says nothing about whether it
 # starts. Boot each architecture exactly as a tester would — the image's own
@@ -110,7 +158,7 @@ boot_smoke() {
   docker run -d --name "$app" --platform "linux/$platform" \
     --network "$smoke_net" -p 127.0.0.1::8080 \
     -e "BANSOKO_DATABASE_URL=postgres://bansoko:bansoko@$smoke_pg:5432/bansoko?sslmode=disable" \
-    "$image:$version-$short" >/dev/null
+    "$image:$immutable_tag" >/dev/null
   port="$(docker port "$app" 8080/tcp 2>/dev/null | head -1 | sed 's/.*://')" || port=""
   if [[ -z "$port" ]]; then
     docker logs "$app" >&2 2>&1 || true
@@ -132,7 +180,7 @@ boot_smoke() {
     rm -f "$logs"
     exit 1
   fi
-  echo "boot smoke: $image:$version-$short ($platform) serves /api/v1/livez from its own defaults"
+  echo "boot smoke: $image:$immutable_tag ($platform) serves /api/v1/livez from its own defaults"
   # The GPL source offer has to name the commit this very image was built from;
   # a missing or empty file would mean SOURCE_COMMIT never reached the runtime
   # stage, which is exactly the failure a per-stage ARG makes silent.
@@ -161,7 +209,7 @@ boot_smoke() {
     echo "smoke: the $platform image carries no base image licence texts" >&2
     exit 1
   fi
-  echo "source offer: $image:$version-$short ($platform) names $GITHUB_SHA"
+  echo "source offer: $image:$immutable_tag ($platform) names $GITHUB_SHA"
   docker rm -f "$app" >/dev/null
   rm -f "$logs"
 }
@@ -188,10 +236,10 @@ boot_smoke amd64 120
 boot_smoke arm64 300
 
 # Only a proven build becomes the moving tag.
-docker buildx imagetools create --tag "$image:test" "$image:$version-$short" >/dev/null
-docker buildx imagetools inspect "$image:test" --format '{{json .Manifest}}' \
+docker buildx imagetools create --tag "$image:$moving_tag" "$image:$immutable_tag" >/dev/null
+docker buildx imagetools inspect "$image:$moving_tag" --format '{{json .Manifest}}' \
   | python3 -c 'import json,sys
 m=json.load(sys.stdin)
 got=sorted(p["platform"]["architecture"] for p in m["manifests"] if p.get("platform",{}).get("os")=="linux")
 assert got==["amd64","arm64"], got
-print(sys.argv[1], "from", sys.argv[2], "for", ", ".join(got))' "promoted $image:test" "$image:$version-$short"
+print(sys.argv[1], "from", sys.argv[2], "for", ", ".join(got))' "promoted $image:$moving_tag" "$image:$immutable_tag"

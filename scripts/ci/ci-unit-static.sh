@@ -14,8 +14,7 @@ export GOCACHE="${GOCACHE:-/tmp/bansoko-gocache}"
 run_gate="$root/scripts/ci/go-test-no-skips.sh"
 
 echo "== release identity contract =="
-"$root/scripts/ci/ci-release-identity-test.sh"
-python3 scripts/ci/ci-test-release-test.py
+python3 scripts/ci/ci-release-test.py
 python3 scripts/ci/ci-release-trust-test.py
 python3 scripts/ci/check-embedded-fixture-cleanup-test.py
 python3 scripts/ci/check-release-compose-test.py
