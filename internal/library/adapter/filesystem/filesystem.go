@@ -2692,16 +2692,7 @@ func sameMutationFileObservation(left, right domain.FileObservation) bool {
 		return false
 	}
 	if domain.IsMetadataFingerprint(left.Fingerprint) || domain.IsMetadataFingerprint(right.Fingerprint) {
-		// A network remount may change the client device number. Cleanup's
-		// path-level identity is size + inode; retain the stronger generation or
-		// change-marker evidence without reintroducing device equality.
-		if !fileidentity.IsPresent(left.Identity) || !fileidentity.IsPresent(right.Identity) || left.Identity.Inode != right.Identity.Inode {
-			return false
-		}
-		if left.Identity.GenerationNanos != 0 && right.Identity.GenerationNanos != 0 {
-			return left.Identity.GenerationNanos == right.Identity.GenerationNanos
-		}
-		return left.ChangeNanos != 0 && right.ChangeNanos != 0 && left.ChangeNanos == right.ChangeNanos
+		return sameMetadataMutationIdentity(left, right)
 	}
 	if handleEvidenceComplete(left.HandleEvidence) && handleEvidenceComplete(right.HandleEvidence) {
 		return fileidentity.MatchesHandleEvidence(left.HandleEvidence, right.HandleEvidence)
@@ -2711,6 +2702,47 @@ func sameMutationFileObservation(left, right domain.FileObservation) bool {
 			return fileidentity.Matches(left.Identity, right.Identity)
 		}
 		return left.ChangeNanos != 0 && right.ChangeNanos != 0 && left.ChangeNanos == right.ChangeNanos && fileidentity.Matches(left.Identity, right.Identity)
+	}
+	return left.ChangeNanos != 0 && right.ChangeNanos != 0 && left.ChangeNanos == right.ChangeNanos
+}
+
+// sameMetadataMutationIdentity is the object identity of a path-level
+// (metadata-fingerprint) mutation check; size already matched in
+// sameFileObservation. Mutations verify the moved object AFTER a rename, and
+// rename updates the inode's ctime, so ctime never decides for an object on
+// the same device: it would turn every completed quarantine on a filesystem
+// without birth time (FUSE/mergerfs, Unraid shfs, some NFS clients) into an
+// identity mismatch with the file already moved.
+//
+// Evidence, strongest first:
+//  1. complete handle evidence on both sides: equal handles name the same
+//     object; a different handle type/opaque is a different object (a remount
+//     may only renumber the mount id);
+//  2. the inode must match;
+//  3. birth-time generation on both sides decides;
+//  4. same device + same inode (+ size) is the same object;
+//  5. only a device change without generation (a network remount) falls back
+//     to the change marker, failing closed when it is unavailable.
+func sameMetadataMutationIdentity(left, right domain.FileObservation) bool {
+	if !fileidentity.IsPresent(left.Identity) || !fileidentity.IsPresent(right.Identity) {
+		return false
+	}
+	if left.Identity.Inode != right.Identity.Inode {
+		return false
+	}
+	if handleEvidenceComplete(left.HandleEvidence) && handleEvidenceComplete(right.HandleEvidence) {
+		if fileidentity.MatchesHandleEvidence(left.HandleEvidence, right.HandleEvidence) {
+			return true
+		}
+		if left.HandleEvidence.Type != right.HandleEvidence.Type || left.HandleEvidence.Opaque != right.HandleEvidence.Opaque {
+			return false
+		}
+	}
+	if left.Identity.GenerationNanos != 0 && right.Identity.GenerationNanos != 0 {
+		return left.Identity.GenerationNanos == right.Identity.GenerationNanos
+	}
+	if left.Identity.Device == right.Identity.Device {
+		return true
 	}
 	return left.ChangeNanos != 0 && right.ChangeNanos != 0 && left.ChangeNanos == right.ChangeNanos
 }
