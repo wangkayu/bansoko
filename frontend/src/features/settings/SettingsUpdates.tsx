@@ -485,9 +485,9 @@ function ReleaseNotesList({ entries }: { entries: ReleaseNotesEntry[] | undefine
   }
   const lang = getLocale() === "zh-CN" ? "zh-CN" : "en";
   return (
-    <div className="settings-updates-notes">
+    <div className="tw:grid tw:gap-2">
       {entries.map((entry) => (
-        <div key={entry.version} className="settings-updates-notes-version">
+        <div key={entry.version} className="tw:grid tw:gap-1">
           <div className="settings-updates-card-row">
             <Chip>{entry.version}</Chip>
             <span className="settings-updates-muted text-caption">{formatDateTime(entry.published_at)}</span>
@@ -560,7 +560,7 @@ function CandidateCard({
         ]}
       />
 
-      <div className="settings-updates-notes">
+      <div className="tw:grid tw:gap-2">
         <span className="text-body">{t("settings.updates.notesTitle")}</span>
         <ReleaseNotesList entries={candidate.release_notes} />
       </div>

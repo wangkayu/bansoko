@@ -65,23 +65,23 @@ export function RestrictedMarkdown({ source }: { source: string }): ReactNode {
   const blocks = parseRestrictedMarkdown(source);
   if (blocks.length === 0) return null;
   return (
-    <div className="restricted-markdown">
+    <div className="tw:grid tw:gap-1.5 tw:[overflow-wrap:anywhere]">
       {blocks.map((block, index) => {
         switch (block.kind) {
           case "heading":
             return block.level === 1 ? (
-              <h3 key={index} className="text-body restricted-markdown-heading">{block.text}</h3>
+              <h3 key={index} className="text-body tw:m-0 tw:font-medium tw:text-foreground">{block.text}</h3>
             ) : block.level === 2 ? (
-              <h4 key={index} className="text-body restricted-markdown-heading">{block.text}</h4>
+              <h4 key={index} className="text-body tw:m-0 tw:font-medium tw:text-foreground">{block.text}</h4>
             ) : (
-              <h5 key={index} className="text-caption restricted-markdown-heading">{block.text}</h5>
+              <h5 key={index} className="text-caption tw:m-0 tw:font-medium tw:text-foreground">{block.text}</h5>
             );
           case "paragraph":
-            return <p key={index} className="text-caption">{block.text}</p>;
+            return <p key={index} className="text-caption tw:m-0">{block.text}</p>;
           case "list": {
             const Tag = block.ordered ? "ol" : "ul";
             return (
-              <Tag key={index} className="text-caption restricted-markdown-list">
+              <Tag key={index} className={["text-caption tw:m-0 tw:pl-5", block.ordered ? "tw:list-decimal" : "tw:list-disc"].join(" ")}>
                 {block.items.map((item, itemIndex) => (
                   <li key={itemIndex}>{item}</li>
                 ))}
