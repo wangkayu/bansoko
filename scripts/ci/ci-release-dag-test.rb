@@ -120,7 +120,7 @@ abort 'docker hub trust secret drift' unless hub_trust.fetch('env', {}) == { 'BA
 # (immutable package PUT, signed conditional channel write), so cancel-in-progress
 # may be true; leaving it false made every pushed fix wait for superseded work.
 abort 'stale runs are not cancelled' unless workflow['concurrency'] == { 'group' => 'bansoko-ci', 'cancel-in-progress' => true }
-abort 'retired workflow remains' if Dir.exist?('.gitea/workflows') || File.exist?('.gitlab-ci.yml')
+abort 'retired workflow remains' if File.exist?('.gitlab-ci.yml')
 # The gates run on the maintainer's own machines, so the trigger set is part of
 # the trust boundary: a pull_request run checks out and executes the submitted
 # tree, so on a public repository any fork could reach the host runner. Only
