@@ -111,13 +111,27 @@ func (s *Service) ApplyAnimeConfigCandidate(ctx context.Context, candidateID, ke
 	if err != nil {
 		return result, err
 	}
+	// The replacement policy version moves only when the replacement policy
+	// itself changes (admission mode or quality profile): an unchanged policy
+	// keeps every frozen replacement decision valid.
+	var retentionChanged bool
+	if err := tx.QueryRowContext(ctx, `
+SELECT admission_mode IS DISTINCT FROM $2 OR quality_profile IS DISTINCT FROM $3::jsonb
+FROM anime_business_configs WHERE managed_anime_id = $1`,
+		animeID, b.Retention.AdmissionMode, []byte(b.Retention.QualityProfile)).Scan(&retentionChanged); err != nil {
+		return result, err
+	}
+	retentionBump := int64(0)
+	if retentionChanged {
+		retentionBump = 1
+	}
 	// One row carries every owner version, the three policy axes and the frozen
 	// business, so the version vector and the snapshots can never drift apart.
 	if _, err := tx.ExecContext(ctx, `
 UPDATE anime_business_configs
 SET rules_version = rules_version + 1, subgroups_version = subgroups_version + 1,
     parser_kind = $2, parser_source_default_version = $3, parser_version = parser_version + 1,
-    admission_mode = $4, quality_profile = $5, retention_source_default_version = $6, retention_version = retention_version + 1,
+    admission_mode = $4, quality_profile = $5, retention_source_default_version = $6, retention_version = retention_version + $13,
     unclassified_route = $7, file_effect_source_default_version = $8, file_effect_version = file_effect_version + 1,
     candidate_id = $9, revision = $10, business_snapshot = $11, business_digest = $12,
     business_version = business_version + 1, updated_at = NOW()
@@ -125,10 +139,10 @@ WHERE managed_anime_id = $1`,
 		animeID, b.Parser.Kind, b.Parser.PolicyVersion,
 		b.Retention.AdmissionMode, []byte(b.Retention.QualityProfile), b.RetentionVersion,
 		b.UnclassifiedRoute, b.FileEffectVersion,
-		candidateID, input.Revision, raw, *revision.BusinessDigest); err != nil {
+		candidateID, input.Revision, raw, *revision.BusinessDigest, retentionBump); err != nil {
 		return result, err
 	}
-	result = CandidateApplyResult{animeID, candidateID, input.Revision, *revision.BusinessDigest, BusinessOwnerVersions{actual.Rules + 1, actual.Subgroups + 1, actual.Parser + 1, actual.Retention + 1, actual.FileEffect + 1, actual.Business + 1}}
+	result = CandidateApplyResult{animeID, candidateID, input.Revision, *revision.BusinessDigest, BusinessOwnerVersions{actual.Rules + 1, actual.Subgroups + 1, actual.Parser + 1, actual.Retention + retentionBump, actual.FileEffect + 1, actual.Business + 1}}
 	encoded, err := json.Marshal(result)
 	if err != nil {
 		return result, err
@@ -136,7 +150,17 @@ WHERE managed_anime_id = $1`,
 	if _, err := tx.ExecContext(ctx, `INSERT INTO idempotency_records(kind,idempotency_key,request_hash,managed_anime_id,result_snapshot) VALUES('business_apply',$1,$2,$3,$4)`, key, digest, animeID, encoded); err != nil {
 		return result, err
 	}
-	return result, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return result, err
+	}
+	// A changed replacement policy is told after commit, like an instance
+	// policy save: it re-freezes only candidates that have not placed yet and
+	// never compares or deletes placed files. A trigger failure is recorded
+	// by the trigger and never fails the committed apply.
+	if retentionChanged && s.replacementPolicy != nil {
+		_ = s.replacementPolicy.TriggerPolicySaved(ctx, animeID)
+	}
+	return result, nil
 }
 func lockBusinessOwners(ctx context.Context, tx *sql.Tx, animeID string) (BusinessOwnerVersions, error) {
 	var (
