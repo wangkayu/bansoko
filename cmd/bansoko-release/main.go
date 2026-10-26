@@ -602,6 +602,8 @@ func versionGate(args []string) error {
 	publishedPath := flags.String("published", "", "published channel document; empty when the channel does not exist yet")
 	version := flags.String("version", "", "version about to be released (X.Y.Z)")
 	publicPath := flags.String("public-key", "", "hex/base64 encoded Ed25519 public key")
+	sequence := flags.Int64("sequence", 0, "release sequence of this run (enables the idempotent rerun case)")
+	sourceCommit := flags.String("source-commit", "", "source commit of this run (enables the idempotent rerun case)")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -629,6 +631,14 @@ func versionGate(args []string) error {
 	}
 	if err := published.VerifySignature(ed25519.PublicKey(publicKey)); err != nil {
 		return fmt.Errorf("published channel rejected: %w", err)
+	}
+	// A rerun of the very run that already published this version (same
+	// version, sequence and source commit) may continue: every later step is
+	// idempotent, and the channel gate accepts only identical signed bytes.
+	if *sequence > 0 && *sourceCommit != "" && published.Version == *version &&
+		published.ReleaseSequence == *sequence && published.SourceCommit == *sourceCommit {
+		fmt.Printf("channel already names %s from this run (sequence %d); continuing an idempotent rerun\n", *version, *sequence)
+		return nil
 	}
 	if err := requireNewerVersion(published.Version, *version); err != nil {
 		return err

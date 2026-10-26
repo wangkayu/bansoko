@@ -298,6 +298,10 @@ def preflight(ident):
             str(published) if published else "",
             "--version",
             ident["version"],
+            "--sequence",
+            str(ident["sequence"]),
+            "--source-commit",
+            ident["sha"],
             "--public-key",
             str(ROOT / "deployment/public.key"),
         )

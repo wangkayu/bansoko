@@ -106,4 +106,18 @@ func TestVersionGateRefusesANonAdvancingRelease(t *testing.T) {
 	if err := versionGate([]string{"--published", "", "--version", "0.1.0", "--public-key", public}); err != nil {
 		t.Fatalf("first publication refused: %v", err)
 	}
+	// A rerun of the run that already published 0.2.0 continues; any other
+	// sequence or commit under the same version is refused.
+	commit := string(makeHex('b', 40))
+	rerun := func(sequence, sourceCommit string) error {
+		return versionGate([]string{"--published", published, "--version", "0.2.0", "--public-key", public, "--sequence", sequence, "--source-commit", sourceCommit})
+	}
+	if err := rerun("200", commit); err != nil {
+		t.Fatalf("idempotent rerun refused: %v", err)
+	}
+	for name, args := range map[string][2]string{"other sequence": {"201", commit}, "other commit": {"200", string(makeHex('c', 40))}, "no commit": {"200", ""}} {
+		if err := rerun(args[0], args[1]); err == nil {
+			t.Fatalf("%s accepted as a rerun", name)
+		}
+	}
 }
