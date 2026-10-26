@@ -18,7 +18,8 @@ import (
 // its recovered path is the identity the loser deletion handoff records and
 // checks before deleting the file. The chain runs on real files: confirm the
 // recovery, read the loser companions exactly as the replacement handoff
-// does, admit the deletion with what it recorded, and delete. A recovery that
+// does, admit the deletion with what it recorded and end the companion
+// relation as the handoff does, and delete. A recovery that
 // rewrote the companion identity ends in a skip here instead of deleted.
 func TestRecoveredCompanionCleanupMatchesRegistrationIdentity(t *testing.T) {
 	ctx := context.Background()
@@ -83,13 +84,19 @@ func TestRecoveredCompanionCleanupMatchesRegistrationIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("admit companion cleanup: %v", err)
 	}
+	// The handoff closes the companion relation in the admitting transaction
+	// (admitCompanionDeletionsTx); an active companion still owns its path and
+	// the deletion would skip as loser_path_owned.
+	if err := endCompanionForCleanup(ctx, db, op.ID, companion.ID); err != nil {
+		t.Fatalf("end companion for cleanup: %v", err)
+	}
 	runCleanupDelete(t, service, store)
-	var state string
-	if err := db.QueryRow(`SELECT state FROM cleanup_operations WHERE id = $1`, op.ID).Scan(&state); err != nil {
+	var state, failureCode, reason string
+	if err := db.QueryRow(`SELECT state, COALESCE(failure_code, ''), COALESCE(reason, '') FROM cleanup_operations WHERE id = $1`, op.ID).Scan(&state, &failureCode, &reason); err != nil {
 		t.Fatal(err)
 	}
 	if state != string(CleanupDeleted) {
-		t.Fatalf("companion cleanup state = %s, want deleted", state)
+		t.Fatalf("companion cleanup state = %s (failure_code=%q reason=%q), want deleted", state, failureCode, reason)
 	}
 	if _, err := os.Lstat(companion.TargetPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("recovered companion still at %s after deletion: %v", companion.TargetPath, err)
