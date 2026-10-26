@@ -866,9 +866,10 @@ func decisionIdentity(animeID, releaseID, key, digest string) (string, string) {
 // longer holds its episodes: the user asked for a new file, and the new
 // placement displaces it. A placement the latest calibrated scan reports
 // missing or changed (fingerprint_conflict) holds no coverage while the scan
-// says so: it is neither pooled nor compared. A scan-adopted placement
-// (reconciliation, replacement_eligible=false) never enters replacement until
-// a release claims it.
+// says so: it is neither pooled nor compared. A scan-managed placement
+// (reconciliation) is a managed member like any other; until a release claims
+// it, it has no facts and loses to any candidate. Released (unmanaged) files
+// and other anime's placements are never read.
 func (s *ReplacementDecisionService) loadPlacementFacts(ctx context.Context, tx *sql.Tx, animeID string) ([]PlacementFacts, error) {
 	rows, err := tx.QueryContext(ctx, `
 SELECT p.id, p.version, p.target_fingerprint, p.created_at,
