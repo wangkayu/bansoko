@@ -6,6 +6,7 @@ import (
 	"bansoko/internal/testutil/animetest"
 	"bansoko/internal/testutil/disposabledb"
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
 )
@@ -128,24 +129,26 @@ func TestBusinessApplyExactTargetCASReplayAndNoOwnerCreation(t *testing.T) {
 	}
 }
 
-// recordingPolicyTrigger records the after-commit replacement policy triggers.
-type recordingPolicyTrigger struct{ animeIDs []string }
-
-func (r *recordingPolicyTrigger) TriggerPolicySaved(_ context.Context, animeID string) error {
-	r.animeIDs = append(r.animeIDs, animeID)
-	return nil
+// replacementEvaluations counts the anime's replacement_evaluate WorkItems: a
+// policy change never enqueues one, whatever its kind or state.
+func replacementEvaluations(t *testing.T, db *sql.DB, animeID string) int {
+	t.Helper()
+	var count int
+	if err := db.QueryRowContext(context.Background(), `
+SELECT COUNT(*) FROM work_items WHERE owner_type = 'file_maintenance' AND owner_id = $1 AND kind = 'replacement_evaluate'`, animeID).Scan(&count); err != nil {
+		t.Fatalf("count replacement evaluate items: %v", err)
+	}
+	return count
 }
 
 // A candidate apply bumps replacement_version only when the replacement policy
-// (admission mode or quality profile) changes, and only then tells the
-// replacement trigger; an apply that changes other sections keeps every frozen
-// replacement decision's policy version valid.
+// (admission mode or quality profile) changes; the bump is the whole effect and
+// enqueues no reevaluation, so an apply that changes other sections keeps every
+// frozen replacement decision's policy version valid.
 func TestBusinessApplyBumpsReplacementVersionOnlyOnPolicyChange(t *testing.T) {
 	db := animetest.OpenTestDB(t)
 	ctx := context.Background()
 	service := draftNewTestService(t, db)
-	trigger := &recordingPolicyTrigger{}
-	service.SetReplacementPolicyTrigger(trigger)
 	draft, err := domainDraft(draftTestDraft(t))
 	if err != nil {
 		t.Fatal(err)
@@ -200,10 +203,10 @@ func TestBusinessApplyBumpsReplacementVersionOnlyOnPolicyChange(t *testing.T) {
 	if got := retentionVersion(); got != before || result.OwnerVersions.Replacement != before {
 		t.Fatalf("an unchanged replacement policy must keep replacement_version %d: row=%d result=%d", before, got, result.OwnerVersions.Replacement)
 	}
-	if len(trigger.animeIDs) != 0 {
-		t.Fatalf("an unchanged replacement policy must not trigger replacement: %v", trigger.animeIDs)
+	if got := replacementEvaluations(t, db, animeID); got != 0 {
+		t.Fatalf("an unchanged replacement policy must enqueue no reevaluation: %d items", got)
 	}
-	// The admission mode changes: one bump, one trigger.
+	// The admission mode changes: one bump, no reevaluation.
 	mode := "single_copy"
 	if draft.Business.Replacement.AdmissionMode == mode {
 		mode = "all"
@@ -212,7 +215,7 @@ func TestBusinessApplyBumpsReplacementVersionOnlyOnPolicyChange(t *testing.T) {
 	if got := retentionVersion(); got != before+1 || result.OwnerVersions.Replacement != before+1 {
 		t.Fatalf("a changed admission mode must bump replacement_version once: row=%d result=%d want %d", got, result.OwnerVersions.Replacement, before+1)
 	}
-	if len(trigger.animeIDs) != 1 || trigger.animeIDs[0] != animeID {
-		t.Fatalf("a changed replacement policy must trigger once after commit: %v", trigger.animeIDs)
+	if got := replacementEvaluations(t, db, animeID); got != 0 {
+		t.Fatalf("a changed replacement policy must enqueue no reevaluation until the next comparison moment: %d items", got)
 	}
 }

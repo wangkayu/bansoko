@@ -1354,7 +1354,7 @@ export interface paths {
         };
         /** @description The complete frozen per-instance retention policy. The client never merges a global default. */
         get: operations["getInstanceReplacementPolicy"];
-        /** @description Fully replaces one instance policy with expected-version CAS. The save transaction changes no Placement, creates no cleanup, and performs no filesystem effect. */
+        /** @description Fully replaces one instance policy with expected-version CAS. The save changes no Placement, creates no cleanup, performs no filesystem effect and enqueues no reevaluation: files already placed and candidates still in flight are decided at the next comparison moment (a new candidate of an episode, a completed scan, or a subscription resume), never by the save itself. */
         put: operations["saveInstanceReplacementPolicy"];
         post?: never;
         delete?: never;
@@ -7175,7 +7175,7 @@ export interface components {
             expected_version: number;
         };
         /**
-         * @description How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself.
+         * @description How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself, and saving the policy never enqueues an evaluation.
          * @enum {string}
          */
         ReplacementAdmissionMode: "all" | "per_group" | "single_copy";

@@ -22,7 +22,6 @@ type Service struct {
 	planner          *planner.Planner
 	placements       *PlacementService
 	decisions        *ReplacementDecisionService
-	trigger          *ReplacementTriggerService
 	calibration      *CalibrationService
 	cleanup          *CleanupService
 	alignment        *AlignmentService
@@ -109,15 +108,6 @@ func (r *SQLAnimeExistenceReader) ManagedAnimeExists(ctx context.Context, animeI
 // NewService wires the read/write adapter.
 func NewService(policies *policy.PolicyService, replacement *ReplacementPolicyService, planner *planner.Planner, placements *PlacementService, decisions *ReplacementDecisionService) *Service {
 	return &Service{policies: policies, replacement: replacement, planner: planner, placements: placements, decisions: decisions}
-}
-
-// SetReplacementTrigger wires the after-commit reevaluation trigger used by
-// the instance policy save (active instances only; stopped instances keep the
-// saved policy and wait for resume).
-func (s *Service) SetReplacementTrigger(trigger *ReplacementTriggerService) {
-	if s != nil {
-		s.trigger = trigger
-	}
 }
 
 // SetOwnerTruthWires wires the calibration/cleanup/alignment owners and the
@@ -456,10 +446,6 @@ func (s *Service) SaveInstanceReplacementPolicyApplication(ctx context.Context, 
 		return InstanceReplacementPolicyView{}, err
 	}
 	updatedAt := saved.UpdatedAt
-	if s.trigger != nil {
-		if err := s.trigger.TriggerPolicySaved(ctx, animeID); err != nil {
-		}
-	}
 	return InstanceReplacementPolicyView{
 		ManagedAnimeID: saved.ManagedAnimeID, Policy: saved.Policy, SourceDefaultVersion: saved.SourceDefaultVersion,
 		UpdatedAt: &updatedAt, Version: saved.Version,

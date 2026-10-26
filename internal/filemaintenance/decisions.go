@@ -40,10 +40,6 @@ type EvaluateRequest struct {
 	// plannedUnits maps each planned key to the keys of the planned file that
 	// holds it (one file replaces only what it covers).
 	plannedUnits map[string][]string
-	// unplacedOnly re-freezes only the keys the release has not placed yet
-	// (a policy change re-decides candidates, never files already placed):
-	// placed keys are neither compared nor settled.
-	unplacedOnly bool
 }
 
 // Typed business codes for evaluate failure conditions. A candidate Release
@@ -516,7 +512,7 @@ WHERE release_id = $1 ORDER BY release_version DESC LIMIT 1`, input.CandidateRel
 	}
 	for index, candidate := range candidates {
 		keys := byPlacement[index]
-		if len(keys) == 0 || input.unplacedOnly {
+		if len(keys) == 0 {
 			continue
 		}
 		// A placed file's unit is what the file covers.
@@ -1427,10 +1423,7 @@ func (s *ReplacementDecisionService) replacementBusinessHandler() worker.Handler
 		if err := json.Unmarshal(claim.InputSnapshot, &input); err != nil || strings.TrimSpace(input.CandidateReleaseID) == "" {
 			return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "failed", ReasonCode: "replacement_claim_invalid", Reason: "claim input must carry candidate_release_id"}, nil), nil
 		}
-		// A policy change re-decides only a candidate that has not placed
-		// yet: placed files are never compared again, so a policy save never
-		// supersedes or deletes anything by itself.
-		views, err := s.EvaluateApplication(ctx, EvaluateRequest{AnimeID: claim.Owner.ID, CandidateRelease: input.CandidateReleaseID, unplacedOnly: input.Trigger == TriggerPolicySaved})
+		views, err := s.EvaluateApplication(ctx, EvaluateRequest{AnimeID: claim.Owner.ID, CandidateRelease: input.CandidateReleaseID})
 		if err != nil {
 			var business *apperrors.Business
 			if errors.As(err, &business) {

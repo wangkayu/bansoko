@@ -153,13 +153,10 @@ WHERE managed_anime_id = $1`,
 	if err := tx.Commit(); err != nil {
 		return result, err
 	}
-	// A changed replacement policy is told after commit, like an instance
-	// policy save: it re-freezes only candidates that have not placed yet and
-	// never compares or deletes placed files. A trigger failure is recorded
-	// by the trigger and never fails the committed apply.
-	if replacementChanged && s.replacementPolicy != nil {
-		_ = s.replacementPolicy.TriggerPolicySaved(ctx, animeID)
-	}
+	// A changed replacement policy needs no follow-up work here: the version
+	// bump is the whole effect. Files already placed and candidates still in
+	// flight are decided at the next comparison moment (a new candidate, a scan
+	// completion, or a resume), never by this apply.
 	return result, nil
 }
 func lockBusinessOwners(ctx context.Context, tx *sql.Tx, animeID string) (BusinessOwnerVersions, error) {

@@ -3142,8 +3142,11 @@ paths:
       x-scope: write
       description: >-
         Fully replaces one instance policy with expected-version CAS. The save
-        transaction changes no Placement, creates no cleanup, and performs no
-        filesystem effect.
+        changes no Placement, creates no cleanup, performs no filesystem effect
+        and enqueues no reevaluation: files already placed and candidates still
+        in flight are decided at the next comparison moment (a new candidate of
+        an episode, a completed scan, or a subscription resume), never by the
+        save itself.
       parameters:
         - name: managed_anime_id
           in: path
@@ -16816,7 +16819,8 @@ components:
         file no release has claimed has no group, sits in every group's pool
         and loses to any candidate. A change takes effect when a new candidate
         of an episode is compared; files already placed are never re-compared
-        by the change itself.
+        by the change itself, and saving the policy never enqueues an
+        evaluation.
     UnclassifiedRoutePolicyValue:
       type: string
       enum: [route, skip]

@@ -82,9 +82,6 @@ func TestReplacementTriggersAreInertOnStoppedSubscription(t *testing.T) {
 		TriggerPlacementCommitted: func(ctx context.Context, _ *sql.DB, trigger *ReplacementTriggerService) error {
 			return trigger.TriggerPlacementCommitted(ctx, "anime-1", "trigger-placed")
 		},
-		TriggerPolicySaved: func(ctx context.Context, _ *sql.DB, trigger *ReplacementTriggerService) error {
-			return trigger.TriggerPolicySaved(ctx, "anime-1")
-		},
 		"placement_recovery": func(ctx context.Context, db *sql.DB, trigger *ReplacementTriggerService) error {
 			tx, err := db.BeginTx(ctx, nil)
 			if err != nil {
