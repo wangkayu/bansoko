@@ -140,12 +140,12 @@ export const en = {
   },
 
   secret: {
-    title: "Credentials",
+    title: "Sign-in credentials",
     keep: "Keep current credentials",
     replace: "Replace with new values",
     remove: "Remove credentials",
     keepHint: ": saved credentials are not changed",
-    replaceHint: ": the credential fields below are saved with new values",
+    replaceHint: ": enter the new values below",
     removeHint: ": credentials are deleted on save",
   },
 

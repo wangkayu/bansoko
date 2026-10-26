@@ -214,6 +214,7 @@ export function Dialog({
   focusTitle = false,
   dismissOnOverlay,
   fixedHeight = false,
+  closeDisabled = false,
 }: {
   open: boolean;
   onRequestClose: () => void;
@@ -257,6 +258,8 @@ export function Dialog({
    * for dialogs whose content changes while open (log filters, search results).
    */
   fixedHeight?: boolean;
+  /** Disable the title-bar close button (a save is in flight). */
+  closeDisabled?: boolean;
 }) {
   const parentLayer = useLayerZIndex();
   const popupRef = useRef<HTMLDivElement>(null);
@@ -351,8 +354,9 @@ export function Dialog({
               <button
                 type="button"
                 aria-label={closeLabel}
+                disabled={closeDisabled}
                 onClick={onRequestClose}
-                className="tw:-mr-1 tw:grid tw:size-8 tw:flex-none tw:place-items-center tw:rounded-md tw:text-muted-foreground tw:hover:bg-muted tw:hover:text-foreground tw:focus-visible:outline-2 tw:focus-visible:outline-ring"
+                className="tw:-mr-1 tw:grid tw:disabled:pointer-events-none tw:disabled:opacity-50 tw:size-8 tw:flex-none tw:place-items-center tw:rounded-md tw:text-muted-foreground tw:hover:bg-muted tw:hover:text-foreground tw:focus-visible:outline-2 tw:focus-visible:outline-ring"
               >
                 <X className="tw:size-[18px]" />
               </button>

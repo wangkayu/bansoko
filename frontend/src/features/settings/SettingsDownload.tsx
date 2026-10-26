@@ -22,7 +22,7 @@ import { configKeys } from "../../lib/queryKeys";
 import { useSettingsSection } from "../../lib/settings";
 import { Chip, DescriptionList, StatePill, ConflictBlock, SecretField, TagInput, type SecretMode } from "../../ui";
 import { sectionSourceLabel } from "./sectionBadge";
-import { SettingsEditDialog } from "./SettingsEditDialog";
+import { DialogFeedback, SettingsEditDialog } from "./SettingsEditDialog";
 import { DownloadCompletionSettings } from "./DownloadCompletionSettings";
 import { t } from "../../lib/i18n";
 
@@ -225,6 +225,8 @@ type QBDraft = {
   username: string;
   password: string;
   secret_mode: SecretMode;
+  // Whether the stored downloader already holds a password; without one the dialog works as on create.
+  credential_configured: boolean;
   download_root: string;
   downloader_root: string;
   route_id: string;
@@ -242,6 +244,7 @@ function qbDraftFrom(item?: Connection): QBDraft {
       username: "",
       password: "",
       secret_mode: "replace",
+      credential_configured: false,
       download_root: "",
       downloader_root: "",
       route_id: "",
@@ -259,12 +262,59 @@ function qbDraftFrom(item?: Connection): QBDraft {
     password: "",
     // Configured credentials are kept by default; an unconfigured one goes straight into the replace state, avoiding keep on empty credentials.
     secret_mode: item.credential_configured ? "keep" : "replace",
+    credential_configured: item.credential_configured,
     download_root: item.download_root ?? "",
     downloader_root: item.downloader_root ?? "",
     route_id: item.route_id ?? "",
     category: item.category ?? "",
     user_tags: item.user_tags ?? [],
   };
+}
+
+// Field limits shared with the OpenAPI contract and the backend normalization.
+const QB_NAME_MAX = 128;
+const QB_USERNAME_MAX = 256;
+const QB_SECRET_MAX = 1024;
+const QB_CATEGORY_MAX = 256;
+const QB_PATH_MAX = 1024;
+const QB_TAG_MAX = 256;
+
+function hasParentSegment(value: string): boolean {
+  return value.replace(/\\/g, "/").split("/").includes("..");
+}
+
+// The address must be an http(s) URL; the server also refuses credentials, query and fragment in it.
+function qbAddressValid(value: string): boolean {
+  const trimmed = value.trim();
+  if (trimmed === "") return false;
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  return url.hostname !== "" && url.username === "" && url.password === "" && url.search === "" && url.hash === "";
+}
+
+type QBErrors = { address?: string; username?: string; downloadDir?: string; localDir?: string; blocked: boolean };
+
+// A downloader cannot run without a username and a password, so those two are required whenever the
+//   password is being entered (create, or replacing the stored one); keep needs no input.
+function qbErrors(draft: QBDraft): QBErrors {
+  const passwordEntered = !draft.credential_configured || draft.secret_mode === "replace";
+  const address = draft.base_url.trim() !== "" && !qbAddressValid(draft.base_url) ? t("settings.download.addressInvalid") : undefined;
+  const username = draft.username.trim() === "" && (draft.base_url.trim() !== "" || draft.password !== "") ? t("settings.download.usernameRequired") : undefined;
+  const downloadDir = hasParentSegment(draft.download_root) ? t("settings.download.pathInvalid") : undefined;
+  const localDir = hasParentSegment(draft.downloader_root) ? t("settings.download.pathInvalid") : undefined;
+  const blocked =
+    draft.name.trim() === "" ||
+    !qbAddressValid(draft.base_url) ||
+    draft.username.trim() === "" ||
+    (passwordEntered && draft.password === "") ||
+    downloadDir !== undefined ||
+    localDir !== undefined;
+  return { address, username, downloadDir, localDir, blocked };
 }
 
 function QBittorrentCard() {
@@ -281,18 +331,11 @@ function QBittorrentCard() {
 
   const downloaders = (connections.data ?? []).filter((item) => item.kind === "qbittorrent");
 
-  // The connection secret's three states (the ConnectionSecret contract): create and replace write replace; editing may keep/remove.
+  // The connection secret's states (the ConnectionSecret contract): a downloader cannot run without
+  //   its password, so create and replace write replace and editing a stored one may only keep or replace.
   function buildSecret(value: string): ConnectionSecretInput {
-    if (!draft || !draft.id || draft.secret_mode === "replace") return { mode: "replace", value };
-    if (draft.secret_mode === "remove") return { mode: "remove" };
+    if (!draft || !draft.credential_configured || draft.secret_mode === "replace") return { mode: "replace", value };
     return { mode: "keep" };
-  }
-
-  // Credentials are required in the create and replace states; the edit keep/remove states require no input.
-  function secretMissing(): boolean {
-    if (!draft) return false;
-    if (draft.id && draft.secret_mode !== "replace") return false;
-    return draft.password.trim() === "";
   }
 
   async function save() {
@@ -355,6 +398,8 @@ function QBittorrentCard() {
     }
   }
 
+  const errors = draft ? qbErrors(draft) : { blocked: true };
+
   return (
     <section className="settings-shared-grid">
       <div className="settings-shared-header">
@@ -407,50 +452,90 @@ function QBittorrentCard() {
         <SettingsEditDialog
           open
           onOpenChange={(o) => { if (!o) { setDraft(undefined); setSavedDraft(undefined); } }}
+          busy={busy}
           title={draft.id ? t("settings.download.editDownloader") : t("settings.download.newDownloaderTitle")}
           dirty={() => !!draft && !valuesEqual(draft, savedDraft)}
           footer={(requestClose) => (
             <>
-              <Button variant="ghost" onClick={requestClose}>{t("settings.download.cancel")}</Button>
-              <Button variant="primary" aria-label={busy ? t("settings.download.saving") : t("settings.download.save")} disabled={busy || draft.name.trim() === "" || secretMissing()} onClick={() => void save()}>
+              <Button variant="ghost" disabled={busy} onClick={requestClose}>{t("settings.download.cancel")}</Button>
+              <Button variant="primary" type="submit" form="downloader-form" aria-label={busy ? t("settings.download.saving") : t("settings.download.save")} disabled={busy || errors.blocked}>
                 {busy ? t("settings.download.saving") : t("settings.download.save")}
               </Button>
             </>
           )}
         >
           {conflict !== undefined ? (
-            <ConflictBlock currentVersion={conflict} message={error} onRefresh={refreshAfterConflict} />
+            <DialogFeedback>
+              <ConflictBlock currentVersion={conflict} message={error} onRefresh={refreshAfterConflict} />
+            </DialogFeedback>
           ) : (
-            error && <Alert tone="error" title={error} />
+            error && <DialogFeedback><Alert tone="error" title={error} /></DialogFeedback>
           )}
-          <div className="settings-shared-responsive-grid">
-            <Field label={t("settings.download.name")}>
-              <Input aria-label={t("settings.download.name")} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+          <form
+            id="downloader-form"
+            className="tw:grid tw:grid-cols-2 tw:items-start tw:gap-3 tw:phone:grid-cols-1"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!busy && !errors.blocked) void save();
+            }}
+          >
+            <Field label={t("settings.download.name")} className="tw:col-span-2 tw:phone:col-span-1">
+              <Input aria-label={t("settings.download.name")} maxLength={QB_NAME_MAX} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
             </Field>
-            <Field label={t("settings.download.address")}>
+            <Field
+              className="tw:col-span-2 tw:phone:col-span-1"
+              label={t("settings.download.address")}
+              hint={errors.address && <span className="settings-connections-error">{errors.address}</span>}
+            >
               <Input aria-label={t("settings.download.address")} value={draft.base_url} placeholder="http://qbittorrent.local:8080" onChange={(e) => setDraft({ ...draft, base_url: e.target.value })} />
             </Field>
-            <Field label={t("settings.download.username")}>
-              <Input aria-label={t("settings.download.username")} value={draft.username} onChange={(e) => setDraft({ ...draft, username: e.target.value })} />
+            {draft.credential_configured && (
+              <SecretField
+                className="tw:col-span-2 tw:phone:col-span-1"
+                editing
+                allowRemove={false}
+                mode={draft.secret_mode}
+                onModeChange={(mode) => setDraft({ ...draft, secret_mode: mode })}
+                subject={t("settings.download.password")}
+                replaceHint={t("settings.download.replaceHint")}
+              />
+            )}
+            <Field label={t("settings.download.username")} hint={errors.username && <span className="settings-connections-error">{errors.username}</span>}>
+              <Input aria-label={t("settings.download.username")} maxLength={QB_USERNAME_MAX} value={draft.username} onChange={(e) => setDraft({ ...draft, username: e.target.value })} />
             </Field>
-            <Field label={t("settings.download.downloadDir")} hint={t("settings.download.downloadDirHint")}>
-              <Input aria-label={t("settings.download.downloadDir")} value={draft.download_root} onChange={(e) => setDraft({ ...draft, download_root: e.target.value })} />
+            {(!draft.credential_configured || draft.secret_mode === "replace") && (
+              <Field label={t("settings.download.password")}>
+                <Input type="password" aria-label={t("settings.download.password")} maxLength={QB_SECRET_MAX} value={draft.password} onChange={(e) => setDraft({ ...draft, password: e.target.value })} />
+              </Field>
+            )}
+            <Field className="tw:col-span-2 tw:phone:col-span-1" label={t("settings.download.proxyLabel")}>
+              <Select label={t("settings.download.proxyLabel")} value={draft.route_id} options={[
+                  { value: "", label: t("settings.download.proxyDirect") },
+                  ...(routes.data ?? []).map((route) => ({ value: route.id, label: route.name })),
+                ]} onChange={(routeID) => setDraft({ ...draft, route_id: routeID })} />
+            </Field>
+            <Field label={t("settings.download.downloadDir")} hint={errors.downloadDir ? <span className="settings-connections-error">{errors.downloadDir}</span> : t("settings.download.downloadDirHint")}>
+              <Input aria-label={t("settings.download.downloadDir")} maxLength={QB_PATH_MAX} value={draft.download_root} onChange={(e) => setDraft({ ...draft, download_root: e.target.value })} />
             </Field>
             <Field
               label={t("settings.download.localDir")}
               hint={
-                <>
-                  {t("settings.download.localDirHint")}
-                  <HelpTip label={t("settings.download.localDirHelpLabel")}>{t("settings.download.localDirHelp")}</HelpTip>
-                </>
+                errors.localDir ? (
+                  <span className="settings-connections-error">{errors.localDir}</span>
+                ) : (
+                  <>
+                    {t("settings.download.localDirHint")}
+                    <HelpTip label={t("settings.download.localDirHelpLabel")}>{t("settings.download.localDirHelp")}</HelpTip>
+                  </>
+                )
               }
             >
-              <Input aria-label={t("settings.download.localDir")} value={draft.downloader_root} placeholder="/user/downloads" onChange={(e) => setDraft({ ...draft, downloader_root: e.target.value })} />
+              <Input aria-label={t("settings.download.localDir")} maxLength={QB_PATH_MAX} value={draft.downloader_root} placeholder="/user/downloads" onChange={(e) => setDraft({ ...draft, downloader_root: e.target.value })} />
             </Field>
-            <Field label={t("settings.download.category")} hint={t("settings.download.categoryHint")}>
-              <Input aria-label={t("settings.download.category")} value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })} />
+            <Field className="tw:col-span-2 tw:phone:col-span-1" label={t("settings.download.category")} hint={t("settings.download.categoryHint")}>
+              <Input aria-label={t("settings.download.category")} maxLength={QB_CATEGORY_MAX} value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })} />
             </Field>
-            <Field className="settings-shared-field-wide" label={t("settings.download.tags")} hint={t("settings.download.tagsHint")}>
+            <Field className="tw:col-span-2 tw:phone:col-span-1" label={t("settings.download.tags")} hint={t("settings.download.tagsHint")}>
               <TagInput
                 value={draft.user_tags}
                 onChange={(next) => setDraft({ ...draft, user_tags: next })}
@@ -459,33 +544,15 @@ function QBittorrentCard() {
                 validateItem={(tag) => {
                   if (tag.toLowerCase().startsWith("bansoko-")) return t("settings.download.tagReserved");
                   if (/[,\r\n]/.test(tag)) return t("settings.download.tagInvalid");
+                  if (tag.length > QB_TAG_MAX) return t("settings.download.tooLong", { max: QB_TAG_MAX });
                   return null;
                 }}
               />
             </Field>
-            <SecretField
-              className="settings-shared-field-wide"
-              editing={!!draft.id}
-              mode={draft.secret_mode}
-              onModeChange={(mode) => setDraft({ ...draft, secret_mode: mode })}
-              subject={t("settings.download.password")}
-              inputLabel={t("settings.download.password")}
-              value={draft.password}
-              onChange={(next) => setDraft({ ...draft, password: next })}
-            />
-          </div>
-
-          <div className="settings-shared-field-gap settings-shared-responsive-grid">
-            <Field label={t("settings.download.proxyLabel")}>
-              <Select label={t("settings.download.proxyLabel")} value={draft.route_id} options={[
-                  { value: "", label: t("settings.download.proxyDirect") },
-                  ...(routes.data ?? []).map((route) => ({ value: route.id, label: route.name })),
-                ]} onChange={(routeID) => setDraft({ ...draft, route_id: routeID })} />
-            </Field>
-            <Checkbox className="tw:mt-5" checked={draft.enabled} onCheckedChange={(checked) => setDraft({ ...draft, enabled: checked })}>
+            <Checkbox className="tw:col-span-2 tw:phone:col-span-1" checked={draft.enabled} onCheckedChange={(checked) => setDraft({ ...draft, enabled: checked })}>
               {t("settings.download.enable")}
             </Checkbox>
-          </div>
+          </form>
         </SettingsEditDialog>
       )}
     </section>

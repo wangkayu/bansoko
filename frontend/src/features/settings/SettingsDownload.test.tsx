@@ -128,7 +128,7 @@ describe("SettingsDownload qBittorrent 下载器", () => {
     });
   });
 
-  it("编辑下载器：默认 keep，替换/移除三态分别组装 replace/remove", async () => {
+  it("编辑下载器：默认 keep，替换组装 replace，且没有移除凭据", async () => {
     stubFetch({ connections: [qbConnection] });
     renderSettings();
 
@@ -163,16 +163,11 @@ describe("SettingsDownload qBittorrent 下载器", () => {
       secret: { mode: "replace", value: "new-pass" },
     });
 
-    // Choosing remove credentials means remove.
+    // A downloader cannot run without a password, so there is no remove state.
     fireEvent.click(await screen.findByRole("button", { name: t("settings.download.edit") }));
     const thirdDialog = await screen.findByRole("dialog");
-    fireEvent.click(within(thirdDialog).getByLabelText(t("secret.remove")));
-    fireEvent.click(within(thirdDialog).getByRole("button", { name: t("settings.download.save") }));
-    await waitFor(() => expect(connectionPutCalls()).toHaveLength(3));
-    expect(putBody(connectionPutCalls()[2]!)).toMatchObject({
-      kind: "qbittorrent",
-      secret: { mode: "remove" },
-    });
+    expect(within(thirdDialog).getByLabelText(t("secret.keep"))).toBeInTheDocument();
+    expect(within(thirdDialog).queryByLabelText(t("secret.remove"))).not.toBeInTheDocument();
   });
 
   it("保存 409 显示 ConflictBlock，刷新载入最新重拉列表并清编辑态", async () => {
@@ -276,3 +271,175 @@ describe("SettingsDownload 文件效果", () => {
   });
 });
 
+
+async function openNewDownloader() {
+  fireEvent.click(await screen.findByRole("button", { name: t("settings.download.newDownloader") }));
+  return screen.findByRole("dialog");
+}
+
+function fillDownloader(dialog: HTMLElement, overrides: Partial<Record<"name" | "address" | "username" | "password" | "downloadDir" | "localDir", string>> = {}) {
+  const values = { name: "主 qB", address: "http://qb.local:8080", username: "admin", password: "pw", downloadDir: "", localDir: "", ...overrides };
+  fireEvent.change(within(dialog).getByLabelText(t("settings.download.name")), { target: { value: values.name } });
+  fireEvent.change(within(dialog).getByLabelText(t("settings.download.address")), { target: { value: values.address } });
+  fireEvent.change(within(dialog).getByLabelText(t("settings.download.username")), { target: { value: values.username } });
+  fireEvent.change(within(dialog).getByLabelText(t("settings.download.password")), { target: { value: values.password } });
+  fireEvent.change(within(dialog).getByLabelText(t("settings.download.downloadDir")), { target: { value: values.downloadDir } });
+  fireEvent.change(within(dialog).getByLabelText(t("settings.download.localDir")), { target: { value: values.localDir } });
+}
+
+describe("SettingsDownload 下载器对话框校验与提交", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  it("用户名为空：禁用保存并提示", async () => {
+    stubFetch();
+    renderSettings();
+    const dialog = await openNewDownloader();
+    fillDownloader(dialog, { username: "" });
+
+    expect(within(dialog).getByText(t("settings.download.usernameRequired"))).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: t("settings.download.save") })).toBeDisabled();
+  });
+
+  it("地址不是 http/https URL：禁用保存并提示", async () => {
+    stubFetch();
+    renderSettings();
+    const dialog = await openNewDownloader();
+
+    for (const address of ["qb.local:8080", "ftp://qb.local", "http://user:pw@qb.local:8080"]) {
+      fillDownloader(dialog, { address });
+      expect(within(dialog).getByText(t("settings.download.addressInvalid"))).toBeInTheDocument();
+      expect(within(dialog).getByRole("button", { name: t("settings.download.save") })).toBeDisabled();
+    }
+    fillDownloader(dialog, { address: "https://qb.local:8080" });
+    expect(within(dialog).getByRole("button", { name: t("settings.download.save") })).toBeEnabled();
+  });
+
+  it("下载目录或访问路径含 ..：禁用保存并提示", async () => {
+    stubFetch();
+    renderSettings();
+    const dialog = await openNewDownloader();
+
+    fillDownloader(dialog, { downloadDir: "/data/../etc" });
+    expect(within(dialog).getByText(t("settings.download.pathInvalid"))).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: t("settings.download.save") })).toBeDisabled();
+
+    fillDownloader(dialog, { downloadDir: "/data/a..b", localDir: "..\\x" });
+    expect(within(dialog).getByText(t("settings.download.pathInvalid"))).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: t("settings.download.save") })).toBeDisabled();
+
+    fillDownloader(dialog, { downloadDir: "/data/a..b", localDir: "/user/downloads" });
+    expect(within(dialog).getByRole("button", { name: t("settings.download.save") })).toBeEnabled();
+  });
+
+  it("已有下载器的凭据选择只有保留与替换，没有移除", async () => {
+    stubFetch({ connections: [qbConnection] });
+    renderSettings();
+
+    fireEvent.click(await screen.findByRole("button", { name: t("settings.download.edit") }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByLabelText(t("secret.keep"))).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(t("secret.replace"))).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText(t("secret.remove"))).not.toBeInTheDocument();
+  });
+
+  it("对话框是表单：提交（Enter 触发）在信息不完整时不发请求，完整后才保存", async () => {
+    stubFetch();
+    renderSettings();
+    const dialog = await openNewDownloader();
+    const form = document.getElementById("downloader-form") as HTMLFormElement;
+    expect(form.tagName).toBe("FORM");
+    const save = within(dialog).getByRole("button", { name: t("settings.download.save") });
+    expect(save).toHaveAttribute("type", "submit");
+    expect(save).toHaveAttribute("form", "downloader-form");
+
+    fillDownloader(dialog, { username: "" });
+    fireEvent.submit(form);
+    expect(connectionPutCalls()).toHaveLength(0);
+
+    fillDownloader(dialog);
+    fireEvent.submit(form);
+    await waitFor(() => expect(connectionPutCalls()).toHaveLength(1));
+  });
+
+  it("保存进行中：取消与关闭按钮禁用", async () => {
+    let release: () => void = () => {};
+    stubFetch();
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input, init) => {
+      if (init?.method === "PUT") await new Promise<void>((resolve) => { release = resolve; });
+      return base(input, init);
+    });
+    renderSettings();
+    const dialog = await openNewDownloader();
+    fillDownloader(dialog);
+
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings.download.save") }));
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: t("settings.download.cancel") })).toBeDisabled());
+    expect(within(dialog).getByRole("button", { name: t("ui.close") })).toBeDisabled();
+    release();
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("保存失败：错误显示在对话框内并滚动到可见处", async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    stubFetch();
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input, init) => {
+      if (init?.method === "PUT") {
+        return new Response(JSON.stringify({ code: "BAD", message: "连不上", request_id: "r" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+      return base(input, init);
+    });
+    renderSettings();
+    const dialog = await openNewDownloader();
+    fillDownloader(dialog);
+
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings.download.save") }));
+    expect(await within(dialog).findByRole("alert")).toBeInTheDocument();
+    expect(scrollIntoView).toHaveBeenCalled();
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+  });
+
+  it("字段顺序：名称、地址、用户名、密码、网络代理、下载目录、访问路径、分类、标签、启用", async () => {
+    stubFetch();
+    renderSettings();
+    const dialog = await openNewDownloader();
+
+    const order = [
+      within(dialog).getByLabelText(t("settings.download.name")),
+      within(dialog).getByLabelText(t("settings.download.address")),
+      within(dialog).getByLabelText(t("settings.download.username")),
+      within(dialog).getByLabelText(t("settings.download.password")),
+      within(dialog).getByRole("combobox", { name: t("settings.download.proxyLabel") }),
+      within(dialog).getByLabelText(t("settings.download.downloadDir")),
+      within(dialog).getByLabelText(t("settings.download.localDir")),
+      within(dialog).getByLabelText(t("settings.download.category")),
+      within(dialog).getByLabelText(t("settings.download.tagsAria")),
+      within(dialog).getByRole("checkbox"),
+    ];
+    for (let i = 1; i < order.length; i++) {
+      expect(order[i - 1]!.compareDocumentPosition(order[i]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+  });
+
+  it("名称、密码、分类、路径输入带长度上限", async () => {
+    stubFetch();
+    renderSettings();
+    const dialog = await openNewDownloader();
+
+    const limits: Array<[string, string]> = [
+      [t("settings.download.name"), "128"],
+      [t("settings.download.password"), "1024"],
+      [t("settings.download.category"), "256"],
+      [t("settings.download.downloadDir"), "1024"],
+      [t("settings.download.localDir"), "1024"],
+    ];
+    for (const [label, max] of limits) {
+      expect(within(dialog).getByLabelText(label)).toHaveAttribute("maxlength", max);
+    }
+  });
+});

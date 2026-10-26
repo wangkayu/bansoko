@@ -31,6 +31,9 @@ export function SecretField({
   value,
   onChange,
   placeholder,
+  inputError,
+  inputMaxLength,
+  allowRemove = true,
   className,
 }: {
   /** Section title. */
@@ -50,6 +53,11 @@ export function SecretField({
   value?: string;
   onChange?: (next: string) => void;
   placeholder?: string;
+  /** Validation message shown under the built-in password input. */
+  inputError?: string;
+  inputMaxLength?: number;
+  /** Offer the remove state; off for credentials the target cannot run without. */
+  allowRemove?: boolean;
   className?: string;
 }) {
   // Conditional input: always shown (required) when creating; in edit mode only
@@ -63,7 +71,7 @@ export function SecretField({
           aria-label={label}
           value={mode}
           onValueChange={(next) => onModeChange?.(next)}
-          options={SECRET_MODE_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) }))}
+          options={SECRET_MODE_OPTIONS.filter((o) => allowRemove || o.value !== "remove").map((o) => ({ value: o.value, label: t(o.labelKey) }))}
         />
       )}
       {editing && (
@@ -73,9 +81,11 @@ export function SecretField({
         </p>
       )}
       {showInput && (
-        <Field label={inputLabel}>
+        <Field label={inputLabel} hint={inputError ? <span className="tw:text-destructive">{inputError}</span> : undefined}>
           <Input
             type="password"
+            aria-label={inputLabel}
+            maxLength={inputMaxLength}
             value={value ?? ""}
             placeholder={placeholder}
             onChange={(e) => onChange?.(e.target.value)}

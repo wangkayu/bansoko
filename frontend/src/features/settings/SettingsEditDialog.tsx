@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { useDirtyConfirm } from "../../ui";
 import { Button, Dialog } from "../../ui/base";
 import { t } from "../../lib/i18n";
@@ -15,6 +16,7 @@ export function SettingsEditDialog({
   footer,
   dirty = false,
   onDiscard,
+  busy = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -24,6 +26,8 @@ export function SettingsEditDialog({
   footer?: React.ReactNode | ((requestClose: () => void) => React.ReactNode);
   dirty?: boolean | (() => boolean);
   onDiscard?: () => void;
+  /** A save is in flight: Esc, backdrop and the close button are ignored so the outcome stays visible. */
+  busy?: boolean;
 }) {
   const { requestClose, confirmDialog } = useDirtyConfirm({
     dirty,
@@ -41,7 +45,8 @@ export function SettingsEditDialog({
       <Dialog
         open={open}
         tier="M"
-        onRequestClose={requestClose}
+        closeDisabled={busy}
+        onRequestClose={() => { if (!busy) requestClose(); }}
         title={title}
         description={description}
         footer={
@@ -57,4 +62,13 @@ export function SettingsEditDialog({
       {confirmDialog}
     </>
   );
+}
+
+/** Wraps a dialog's save-failure feedback and scrolls it into view when it appears. */
+export function DialogFeedback({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    ref.current?.scrollIntoView?.({ block: "nearest" });
+  }, []);
+  return <div ref={ref}>{children}</div>;
 }

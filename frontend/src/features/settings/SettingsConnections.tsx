@@ -24,7 +24,7 @@ import { testHealthLabel, testHealthTone } from "../../lib/labels";
 import { valuesEqual } from "../../lib/draft";
 import { configKeys } from "../../lib/queryKeys";
 import { Chip, StatePill, ConflictBlock, SecretField, type SecretMode } from "../../ui";
-import { SettingsEditDialog } from "./SettingsEditDialog";
+import { DialogFeedback, SettingsEditDialog } from "./SettingsEditDialog";
 import { t } from "../../lib/i18n";
 
 // Service connections: AniBT / Mikan / BGM / RSS HTTP / TMDB plus network routes.
@@ -159,6 +159,8 @@ type RouteDraft = {
   username: string;
   password: string;
   secret_mode: SecretMode;
+  // Whether the stored route already holds credentials; without them the dialog works as on create.
+  credential_configured: boolean;
 };
 
 function routeDraftFrom(item?: NetworkRoute): RouteDraft {
@@ -172,6 +174,7 @@ function routeDraftFrom(item?: NetworkRoute): RouteDraft {
       username: "",
       password: "",
       secret_mode: "replace",
+      credential_configured: false,
     };
   }
   const base: RouteDraft = {
@@ -184,13 +187,16 @@ function routeDraftFrom(item?: NetworkRoute): RouteDraft {
     username: "",
     password: "",
     secret_mode: "replace",
+    credential_configured: false,
   };
   if (item.kind === "http_proxy") {
     base.endpoint = item.proxy_url;
-    // Configured credentials are kept by default; an unconfigured one goes straight into the replace state, avoiding keep on empty credentials.
+    // Configured credentials are kept by default; an unconfigured route is edited like a new one (no keep/remove choice).
+    base.credential_configured = item.credential_configured;
     base.secret_mode = item.credential_configured ? "keep" : "replace";
   } else if (item.kind === "socks5") {
     base.endpoint = `socks5://${item.host}:${item.port}`;
+    base.credential_configured = item.credential_configured;
     base.secret_mode = item.credential_configured ? "keep" : "replace";
   }
   return base;
@@ -203,13 +209,46 @@ function connectionSecretFor(draft: ConnectionDraft, value: string): ConnectionS
   return { mode: "keep" };
 }
 
-// The route credentials' three states (the ConnectionSecret contract): leaving the password empty
-//   on create means no credentials (the secret omitted); editing states keep/remove/replace
-//   explicitly; on replace the server composes username + password into user:pass.
+// Field limits shared with the OpenAPI contract (name 128, secret value 1024, username 256).
+const NAME_MAX = 128;
+const SECRET_MAX = 1024;
+const USERNAME_MAX = 256;
+
+// The username and password inputs take part in a save when a route has no stored credentials
+//   (create-like) or the stored ones are being replaced.
+function routeCredentialInputsActive(draft: RouteDraft): boolean {
+  return draft.kind !== "direct" && (!draft.credential_configured || draft.secret_mode === "replace");
+}
+
+// Username and password go together: the server composes them into one user:pass secret and splits
+//   it at the first colon, so the username cannot contain one. `incomplete` marks replacing stored
+//   credentials with nothing entered yet (blocks save without a message).
+function routeCredentialCheck(draft: RouteDraft): { usernameError?: string; passwordError?: string; incomplete: boolean } {
+  if (!routeCredentialInputsActive(draft)) return { incomplete: false };
+  const username = draft.username.trim();
+  const hasPassword = draft.password !== "";
+  if (username.includes(":")) return { usernameError: t("settings.proxy.usernameColon"), incomplete: false };
+  if (hasPassword && username === "") return { usernameError: t("settings.proxy.usernameRequired"), incomplete: false };
+  if (!hasPassword && username !== "") return { passwordError: t("settings.proxy.passwordRequired"), incomplete: false };
+  return { incomplete: draft.credential_configured && !hasPassword && username === "" };
+}
+
+function routeDraftInvalid(draft: RouteDraft): boolean {
+  if (draft.name.trim() === "") return true;
+  if (draft.kind !== "direct" && routeEndpointError(draft.kind, draft.endpoint) !== undefined) return true;
+  const check = routeCredentialCheck(draft);
+  return check.usernameError !== undefined || check.passwordError !== undefined || check.incomplete;
+}
+
+// The route credentials' three states (the ConnectionSecret contract): without stored credentials
+//   an empty password sends no secret at all; with stored ones keep/remove/replace are explicit,
+//   and on replace the server composes username + password into user:pass.
 function routeSecretFor(draft: RouteDraft): ConnectionSecretInput | undefined {
   if (draft.kind === "direct") return undefined;
-  if (!draft.id && draft.secret_mode === "replace" && draft.password === "") return undefined;
-  if (!draft.id || draft.secret_mode === "replace") return { mode: "replace", value: draft.password };
+  if (!draft.credential_configured) {
+    return draft.password === "" ? undefined : { mode: "replace", value: draft.password };
+  }
+  if (draft.secret_mode === "replace") return { mode: "replace", value: draft.password };
   if (draft.secret_mode === "remove") return { mode: "remove" };
   return { mode: "keep" };
 }
@@ -615,7 +654,7 @@ function RoutesCard() {
   } = useEntityDraftEditor<RouteDraft, NetworkRouteInput>({
     submit: (current) => {
       const secret = routeSecretFor(current);
-      const username = current.secret_mode === "replace" && current.username.trim() !== "" ? current.username.trim() : undefined;
+      const username = secret?.mode === "replace" ? current.username.trim() : undefined;
       let input: NetworkRouteInput;
       if (current.kind === "direct") {
         input = { kind: "direct", name: current.name.trim(), enabled: current.enabled };
@@ -683,6 +722,8 @@ function RoutesCard() {
     }
   }
 
+  const credentialCheck = draft ? routeCredentialCheck(draft) : { incomplete: false };
+
   return (
     <section className="settings-connections-section">
       <div className="settings-connections-header">
@@ -738,23 +779,33 @@ function RoutesCard() {
         <SettingsEditDialog
           open
           onOpenChange={(o) => { if (!o) closeEditor(); }}
+          busy={busy}
           title={draft.id ? t("settings.proxy.editTitle") : t("settings.proxy.newTitle")}
           dirty={() => !!draft && !valuesEqual(draft, savedDraft)}
           footer={(requestClose) => (
             <>
-              <Button variant="ghost" onClick={requestClose}>{t("settings.connections.cancel")}</Button>
-              <Button variant="primary" aria-label={t("settings.connections.save")} disabled={busy || draft.name.trim() === "" || (draft.kind !== "direct" && routeEndpointError(draft.kind, draft.endpoint) !== undefined)} onClick={() => void saveRoute()}>
+              <Button variant="ghost" disabled={busy} onClick={requestClose}>{t("settings.connections.cancel")}</Button>
+              <Button variant="primary" type="submit" form="route-form" aria-label={t("settings.connections.save")} disabled={busy || routeDraftInvalid(draft)}>
                 {busy ? t("settings.connections.saving") : t("settings.connections.save")}
               </Button>
             </>
           )}
         >
           {conflict !== undefined ? (
-            <ConflictBlock currentVersion={conflict} message={error} onRefresh={refreshAfterConflict} />
+            <DialogFeedback>
+              <ConflictBlock currentVersion={conflict} message={error} onRefresh={refreshAfterConflict} />
+            </DialogFeedback>
           ) : (
-            error && <Alert tone="error" title={error} />
+            error && <DialogFeedback><Alert tone="error" title={error} /></DialogFeedback>
           )}
-          <div className="settings-connections-form settings-connections-form-responsive">
+          <form
+            id="route-form"
+            className="tw:grid tw:grid-cols-2 tw:items-start tw:gap-3 tw:phone:grid-cols-1"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!busy && !routeDraftInvalid(draft)) void saveRoute();
+            }}
+          >
             <Field label={t("settings.connections.typeLabel")}>
               <Select label={t("settings.connections.typeLabel")} value={draft.kind} disabled={!!draft.id} options={[
                   { value: "direct", label: t("settings.proxy.direct") },
@@ -763,50 +814,56 @@ function RoutesCard() {
                 ]} onChange={(kind) => setDraft({ ...draft, kind: kind as RouteDraft["kind"] })} />
             </Field>
             <Field label={t("settings.connections.nameLabel")}>
-              <Input aria-label={t("settings.connections.nameLabel")} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+              <Input aria-label={t("settings.connections.nameLabel")} maxLength={NAME_MAX} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
             </Field>
-          </div>
 
-          {(draft.kind === "http_proxy" || draft.kind === "socks5") && (
-            <div className="settings-connections-field-gap settings-connections-form">
-              <Field
-                label={t("settings.proxy.addressLabel")}
-                className="settings-connections-field-wide"
-                hint={
-                  draft.endpoint.trim() !== "" && routeEndpointError(draft.kind, draft.endpoint) ? (
-                    <span className="settings-connections-error">{routeEndpointError(draft.kind, draft.endpoint)}</span>
-                  ) : draft.kind === "http_proxy" ? (
-                    t("settings.proxy.httpHint")
-                  ) : (
-                    t("settings.proxy.socksHint")
-                  )
-                }
-              >
-                <Input
-                  aria-label={t("settings.proxy.addressLabel")}
-                  value={draft.endpoint}
-                  placeholder={draft.kind === "http_proxy" ? "http://proxy.local:7890" : "socks5://proxy.local:1080"}
-                  onChange={(e) => setDraft({ ...draft, endpoint: e.target.value })}
-                />
-              </Field>
-              <Field label={t("settings.proxy.usernameLabel")}>
-                <Input aria-label={t("settings.proxy.usernameLabel")} value={draft.username} disabled={!!draft.id && draft.secret_mode !== "replace"} onChange={(e) => setDraft({ ...draft, username: e.target.value })} />
-              </Field>
-              <SecretField
-                editing={!!draft.id}
-                mode={draft.secret_mode}
-                onModeChange={(mode) => setDraft({ ...draft, secret_mode: mode })}
-                subject={t("settings.proxy.credentialSubject")}
-                inputLabel={t("settings.proxy.passwordLabel")}
-                value={draft.password}
-                onChange={(next) => setDraft({ ...draft, password: next })}
-              />
-            </div>
-          )}
+            {(draft.kind === "http_proxy" || draft.kind === "socks5") && (
+              <>
+                <Field
+                  label={t("settings.proxy.addressLabel")}
+                  className="tw:col-span-2 tw:phone:col-span-1"
+                  hint={
+                    draft.endpoint.trim() !== "" && routeEndpointError(draft.kind, draft.endpoint) ? (
+                      <span className="settings-connections-error">{routeEndpointError(draft.kind, draft.endpoint)}</span>
+                    ) : draft.kind === "http_proxy" ? (
+                      t("settings.proxy.httpHint")
+                    ) : (
+                      t("settings.proxy.socksHint")
+                    )
+                  }
+                >
+                  <Input
+                    aria-label={t("settings.proxy.addressLabel")}
+                    value={draft.endpoint}
+                    placeholder={draft.kind === "http_proxy" ? "http://proxy.local:7890" : "socks5://proxy.local:1080"}
+                    onChange={(e) => setDraft({ ...draft, endpoint: e.target.value })}
+                  />
+                </Field>
+                {draft.credential_configured && (
+                  <SecretField
+                    className="tw:col-span-2 tw:phone:col-span-1"
+                    editing
+                    mode={draft.secret_mode}
+                    onModeChange={(mode) => setDraft({ ...draft, secret_mode: mode })}
+                    subject={t("settings.proxy.credentialSubject")}
+                    replaceHint={t("settings.proxy.replaceHint")}
+                  />
+                )}
+                <Field label={t("settings.proxy.usernameLabel")} hint={credentialCheck.usernameError && <span className="settings-connections-error">{credentialCheck.usernameError}</span>}>
+                  <Input aria-label={t("settings.proxy.usernameLabel")} maxLength={USERNAME_MAX} value={draft.username} disabled={!routeCredentialInputsActive(draft)} onChange={(e) => setDraft({ ...draft, username: e.target.value })} />
+                </Field>
+                {routeCredentialInputsActive(draft) && (
+                  <Field label={t("settings.proxy.passwordLabel")} hint={credentialCheck.passwordError && <span className="settings-connections-error">{credentialCheck.passwordError}</span>}>
+                    <Input type="password" aria-label={t("settings.proxy.passwordLabel")} maxLength={SECRET_MAX} value={draft.password} onChange={(e) => setDraft({ ...draft, password: e.target.value })} />
+                  </Field>
+                )}
+              </>
+            )}
 
-          <Checkbox className="tw:mt-3" checked={draft.enabled} onCheckedChange={(checked) => setDraft({ ...draft, enabled: checked })}>
-            {t("settings.connections.enable")}
-          </Checkbox>
+            <Checkbox className="tw:col-span-2 tw:phone:col-span-1" checked={draft.enabled} onCheckedChange={(checked) => setDraft({ ...draft, enabled: checked })}>
+              {t("settings.connections.enable")}
+            </Checkbox>
+          </form>
         </SettingsEditDialog>
       )}
     </section>

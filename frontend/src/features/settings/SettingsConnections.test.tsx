@@ -525,3 +525,136 @@ describe("SettingsConnections 深链 ?connection=", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
+
+const unconfiguredProxy: NetworkRoute = {
+  id: "route-u",
+  kind: "http_proxy",
+  name: "裸代理",
+  enabled: true,
+  proxy_url: "http://proxy.local:7890",
+  credential_configured: false,
+  version: 4,
+};
+
+async function openNewProxy(kind = "SOCKS5") {
+  fireEvent.click(await screen.findByRole("button", { name: t("settings.proxy.new") }));
+  await selectOption(t("settings.connections.typeLabel"), kind);
+  fireEvent.change(screen.getByLabelText(t("settings.connections.nameLabel")), { target: { value: "出口" } });
+  fireEvent.change(screen.getByLabelText(new RegExp(`^${t("settings.proxy.addressLabel")}`)), { target: { value: "socks5://192.168.1.10:1080" } });
+}
+
+describe("SettingsConnections 代理对话框校验与提交", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  it("编辑未配置凭据的代理：无保留/替换/移除选择，只改名称保存不带 secret", async () => {
+    stubFetch({ routes: [unconfiguredProxy] });
+    renderSettings();
+
+    fireEvent.click(await screen.findByRole("button", { name: t("settings.connections.edit") }));
+    expect(screen.queryByLabelText(t("secret.keep"))).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(t("secret.replace"))).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(t("secret.remove"))).not.toBeInTheDocument();
+    expect(screen.getByLabelText(t("settings.proxy.usernameLabel"))).toBeEnabled();
+    expect(screen.getByLabelText(t("settings.proxy.passwordLabel"))).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(t("settings.connections.nameLabel")), { target: { value: "改名后" } });
+    fireEvent.click(screen.getByRole("button", { name: t("settings.connections.save") }));
+    await waitFor(() => expect(routePutCalls()).toHaveLength(1));
+    const body = putBody(routePutCalls()[0]!);
+    expect(body).toMatchObject({ kind: "http_proxy", name: "改名后" });
+    expect(body).not.toHaveProperty("secret");
+    expect(body).not.toHaveProperty("username");
+  });
+
+  it("只填密码不填用户名：禁用保存并提示", async () => {
+    stubFetch();
+    renderSettings();
+    await openNewProxy();
+
+    fireEvent.change(screen.getByLabelText(t("settings.proxy.passwordLabel")), { target: { value: "pw" } });
+    expect(screen.getByText(t("settings.proxy.usernameRequired"))).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: t("settings.connections.save") })).toBeDisabled();
+  });
+
+  it("只填用户名不填密码：禁用保存并提示，不会静默丢弃用户名", async () => {
+    stubFetch();
+    renderSettings();
+    await openNewProxy();
+
+    fireEvent.change(screen.getByLabelText(t("settings.proxy.usernameLabel")), { target: { value: "alice" } });
+    expect(screen.getByText(t("settings.proxy.passwordRequired"))).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: t("settings.connections.save") })).toBeDisabled();
+  });
+
+  it("用户名含冒号：禁用保存并提示", async () => {
+    stubFetch();
+    renderSettings();
+    await openNewProxy();
+
+    fireEvent.change(screen.getByLabelText(t("settings.proxy.usernameLabel")), { target: { value: "a:b" } });
+    fireEvent.change(screen.getByLabelText(t("settings.proxy.passwordLabel")), { target: { value: "pw" } });
+    expect(screen.getByText(t("settings.proxy.usernameColon"))).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: t("settings.connections.save") })).toBeDisabled();
+  });
+
+  it("已配置凭据切到替换：用户名和密码都填才能保存", async () => {
+    stubFetch({ routes: [{ ...unconfiguredProxy, id: "route-c", credential_configured: true }] });
+    renderSettings();
+
+    fireEvent.click(await screen.findByRole("button", { name: t("settings.connections.edit") }));
+    fireEvent.click(screen.getByLabelText(t("secret.replace")));
+    expect(screen.getByRole("button", { name: t("settings.connections.save") })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText(t("settings.proxy.usernameLabel")), { target: { value: "u" } });
+    fireEvent.change(screen.getByLabelText(t("settings.proxy.passwordLabel")), { target: { value: "p" } });
+    expect(screen.getByRole("button", { name: t("settings.connections.save") })).toBeEnabled();
+  });
+
+  it("对话框是表单：提交（Enter 触发）在信息不完整时不发请求，完整后才保存", async () => {
+    stubFetch();
+    renderSettings();
+    await openNewProxy();
+
+    const form = document.getElementById("route-form") as HTMLFormElement;
+    expect(form.tagName).toBe("FORM");
+    expect(screen.getByRole("button", { name: t("settings.connections.save") })).toHaveAttribute("type", "submit");
+    expect(screen.getByRole("button", { name: t("settings.connections.save") })).toHaveAttribute("form", "route-form");
+
+    fireEvent.change(screen.getByLabelText(t("settings.proxy.passwordLabel")), { target: { value: "pw" } });
+    fireEvent.submit(form);
+    expect(routePutCalls()).toHaveLength(0);
+
+    fireEvent.change(screen.getByLabelText(t("settings.proxy.usernameLabel")), { target: { value: "alice" } });
+    fireEvent.submit(form);
+    await waitFor(() => expect(routePutCalls()).toHaveLength(1));
+  });
+
+  it("保存进行中：取消与关闭按钮禁用", async () => {
+    let release: () => void = () => {};
+    stubFetch();
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input, init) => {
+      if (init?.method === "PUT") await new Promise<void>((resolve) => { release = resolve; });
+      return base(input, init);
+    });
+    renderSettings();
+    await openNewProxy();
+
+    fireEvent.click(screen.getByRole("button", { name: t("settings.connections.save") }));
+    await waitFor(() => expect(screen.getByRole("button", { name: t("settings.connections.cancel") })).toBeDisabled());
+    expect(screen.getByRole("button", { name: t("ui.close") })).toBeDisabled();
+    release();
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("名称与密码输入带长度上限", async () => {
+    stubFetch();
+    renderSettings();
+    await openNewProxy();
+
+    expect(screen.getByLabelText(t("settings.connections.nameLabel"))).toHaveAttribute("maxlength", "128");
+    expect(screen.getByLabelText(t("settings.proxy.passwordLabel"))).toHaveAttribute("maxlength", "1024");
+  });
+});

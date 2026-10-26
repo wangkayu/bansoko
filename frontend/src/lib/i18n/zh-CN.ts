@@ -142,12 +142,12 @@ export const zhCN = {
 
 
   secret: {
-    title: "凭据处理",
+    title: "登录凭据",
     keep: "保留现有凭据",
     replace: "替换为新值",
     remove: "移除凭据",
     keepHint: "：不修改已保存的凭据",
-    replaceHint: "：以下凭据字段将写入新值",
+    replaceHint: "：在下方填写新的内容",
     removeHint: "：保存后凭据将被删除",
   },
 
