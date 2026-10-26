@@ -1,16 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, X } from "lucide-react";
-import {
-  ApiError,
-  fetchSeedSearchSnapshot,
-  readSeedSearchSnapshot,
-  searchProviderCatalog,
-  toUserMessage,
-  type CatalogItem,
-  type SeedSearchSnapshotSeed,
-  type SeedSearchSnapshotView,
-} from "../../lib/api/client";
+import { X } from "lucide-react";
+import { fetchSeedSearchSnapshot, searchProviderCatalog, toUserMessage, type CatalogItem } from "../../lib/api/client";
 import { blacklistKey, useBlacklist } from "../../lib/blacklist";
 import { getCatalogProvider, providerLabel } from "../../lib/providers/registry";
 import { BrowseCard } from "./card";
@@ -24,7 +15,6 @@ import { Button } from "../../ui/base/controls";
 import { loadAnimeConfigDialog } from "../anime-config/loadAnimeConfigDialog";
 import { loadOneShotDialog } from "../oneshot/loadOneShotDialog";
 import type { SearchSeedBrowse } from "../oneshot/useOneShotSeeds";
-import { formatBytes, formatDateTime } from "../../lib/labels";
 import { t } from "../../lib/i18n";
 
 const AnimeConfigDialogEntry = lazy(loadAnimeConfigDialog);
@@ -37,13 +27,16 @@ const OneShotDialogEntry = lazy(loadOneShotDialog);
 //     (mapCatalogItem + the same AnimeConfigDialogEntry, where subscribing completes), and the
 //     strip's browse icon opens the one-shot download entry. Hidden anime never appear in results.
 //   - 种子 mode runs the provider torrent search: one POST persists the keyword result as a
-//     short-lived search snapshot, and windows are read back by snapshot identity + cursor (at
-//     most 100 rows; the note under the list says so instead of faking full pagination). A row
-//     click opens the standard one-shot download flow (OneShotDialog with the search snapshot as
-//     its seed source) — torrents found by search are never a subscription source. A stale
-//     identity (409) collapses the list into "search again".
-//   Closing the dialog discards the transient search context; after a successful subscription the
-//   catalog query invalidates so the catalog page reflects the latest state.
+//     short-lived search snapshot. A successful search opens the standard one-shot download flow
+//     directly (OneShotDialog with the search snapshot as its seed source; step one lists the
+//     snapshot's whole window with select/expand) — no intermediate result list is rendered,
+//     because every row of it opened the same dialog. An empty result stays here as the no-match
+//     empty state. Torrents found by search are never a subscription source.
+//   Both one-shot entries (a candidate's browse icon and a direct search) get a back affordance:
+//   back reopens this dialog — the candidate path with its program results intact, the keyword
+//   path back at the seed input window (the search runs again from there).
+//   Closing the search dialog discards the transient search context; after a successful
+//   subscription the catalog query invalidates so the catalog page reflects the latest state.
 
 type SearchMode = "program" | "seed";
 type SearchSite = "anibt" | "mikan";
@@ -57,16 +50,6 @@ type CandidateTarget = {
   provider: CatalogProvider;
   entry: CatalogEntryView;
 };
-
-/** A search snapshot identity is only refreshable by searching again. */
-function isStaleSearchFailure(cause: unknown): boolean {
-  return (
-    cause instanceof ApiError &&
-    (cause.status === 409 ||
-      cause.code === "SEARCH_SNAPSHOT_SCOPE_INVALID" ||
-      cause.code === "SEARCH_SNAPSHOT_CURSOR_INVALID")
-  );
-}
 
 export function GlobalSearchDialog({
   open,
@@ -94,19 +77,11 @@ export function GlobalSearchDialog({
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [searched, setSearched] = useState(false);
 
-  // 种子 mode: one persisted search snapshot per query; rows accumulate window by window.
-  const [seedSnapshot, setSeedSnapshot] = useState<SeedSearchSnapshotView | null>(null);
-  const [seedRows, setSeedRows] = useState<SeedSearchSnapshotSeed[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  // 种子 mode: one POST per query; a successful search hands the whole snapshot to the standard
+  //   one-shot flow, so only the busy/error/no-match states live here.
   const [seedSearching, setSeedSearching] = useState(false);
-  const [seedLoadingMore, setSeedLoadingMore] = useState(false);
   const [seedError, setSeedError] = useState<string>();
-  const [seedPageError, setSeedPageError] = useState<string>();
-  const [seedStale, setSeedStale] = useState(false);
-  const [seedSearched, setSeedSearched] = useState(false);
-  // The keyword of the search the snapshot belongs to; the header of the one-shot flow renders it
-  //   (the server stores only its digest), so it is kept verbatim rather than re-read from the input.
-  const [seedQuery, setSeedQuery] = useState("");
+  const [seedNoMatch, setSeedNoMatch] = useState(false);
 
   // The request sequence: a slow response must never overwrite a newer search's results.
   const requestSeq = useRef(0);
@@ -119,26 +94,21 @@ export function GlobalSearchDialog({
     return items.filter((item) => !hiddenKeys.has(blacklistKey(item.provider, item.provider_entry_ref)));
   }, [hidden, items]);
 
-  // Closing discards the transient context (query/results/error); in-flight requests are dropped with it.
+  // Closing discards the transient context (query/results/error); in-flight requests are dropped
+  // with it. A second-level dialog opened from here suppresses the discard: its back button
+  // reopens this window with its context intact, and the discard runs once that dialog is gone.
   useEffect(() => {
-    if (open) return;
+    if (open || configTarget || seedTarget || searchSeedTarget) return;
     requestSeq.current += 1;
     setKeyword("");
     setItems([]);
     setError(undefined);
     setSearching(false);
     setSearched(false);
-    setSeedSnapshot(null);
-    setSeedRows([]);
-    setNextCursor(null);
     setSeedSearching(false);
-    setSeedLoadingMore(false);
     setSeedError(undefined);
-    setSeedPageError(undefined);
-    setSeedStale(false);
-    setSeedSearched(false);
-    setSeedQuery("");
-  }, [open]);
+    setSeedNoMatch(false);
+  }, [open, configTarget, seedTarget, searchSeedTarget]);
 
   function resetResults() {
     requestSeq.current += 1;
@@ -146,16 +116,9 @@ export function GlobalSearchDialog({
     setError(undefined);
     setSearching(false);
     setSearched(false);
-    setSeedSnapshot(null);
-    setSeedRows([]);
-    setNextCursor(null);
     setSeedSearching(false);
-    setSeedLoadingMore(false);
     setSeedError(undefined);
-    setSeedPageError(undefined);
-    setSeedStale(false);
-    setSeedSearched(false);
-    setSeedQuery("");
+    setSeedNoMatch(false);
   }
 
   async function runSearch() {
@@ -184,60 +147,28 @@ export function GlobalSearchDialog({
       }
       return;
     }
+    // The fetch response's own seed window only decides emptiness: the one-shot flow reads the
+    // persisted snapshot (the site's whole search window, at most 100 rows) through the read model.
     setSeedSearching(true);
     setSeedError(undefined);
-    setSeedPageError(undefined);
-    setSeedStale(false);
+    setSeedNoMatch(false);
     try {
       const view = await fetchSeedSearchSnapshot(site, { query: q, limit: SEED_PAGE_SIZE });
       if (seq !== requestSeq.current) return;
-      setSeedSnapshot(view);
-      setSeedRows(view.seeds);
-      setNextCursor(view.next_cursor ?? null);
-      setSeedQuery(q);
-      setSeedSearched(true);
+      if (view.seeds.length === 0) {
+        setSeedNoMatch(true);
+        return;
+      }
+      // No intermediate result list: every row of it opened the same dialog, so a successful
+      // search hands the whole snapshot to the standard one-shot flow and closes this window
+      // (back from there returns to the seed input window).
+      setSearchSeedTarget({ provider: site, query: q, snapshot: view });
+      onOpenChange(false);
     } catch (cause) {
       if (seq !== requestSeq.current) return;
-      setSeedSnapshot(null);
-      setSeedRows([]);
-      setNextCursor(null);
-      setSeedSearched(true);
       setSeedError(toUserMessage(cause, t("grid.searchFailed")));
     } finally {
       if (seq === requestSeq.current) setSeedSearching(false);
-    }
-  }
-
-  async function loadMoreSeeds() {
-    const snapshot = seedSnapshot;
-    const cursor = nextCursor;
-    if (!snapshot || !cursor || seedLoadingMore) return;
-    const seq = requestSeq.current;
-    setSeedLoadingMore(true);
-    setSeedPageError(undefined);
-    try {
-      const view = await readSeedSearchSnapshot(site, snapshot.snapshot_id, {
-        scope_ref: snapshot.scope_ref,
-        query_ref: snapshot.query_ref,
-        snapshot_version: snapshot.snapshot_version,
-        content_hash: snapshot.content_hash,
-        cursor,
-        limit: SEED_PAGE_SIZE,
-      });
-      if (seq !== requestSeq.current) return;
-      setSeedRows((current) => [...current, ...view.seeds]);
-      setNextCursor(view.next_cursor ?? null);
-    } catch (cause) {
-      if (seq !== requestSeq.current) return;
-      if (isStaleSearchFailure(cause)) {
-        // The snapshot identity is no longer provable: only a new search helps.
-        setSeedStale(true);
-        setNextCursor(null);
-      } else {
-        setSeedPageError(toUserMessage(cause, t("grid.searchFailed")));
-      }
-    } finally {
-      if (seq === requestSeq.current) setSeedLoadingMore(false);
     }
   }
 
@@ -252,7 +183,8 @@ export function GlobalSearchDialog({
   }
 
   // The same mapping path as a candidate click, but aimed at browse seeds; the search dialog closes
-  //   too, so dialogs never stack.
+  //   too, so dialogs never stack. Back from the one-shot flow reopens this dialog with the
+  //   program results intact (the results live on, unlike the keyword path, which has no list).
   function openSeeds(item: CatalogItem) {
     const providerKey = item.provider;
     setSeedTarget({
@@ -263,18 +195,18 @@ export function GlobalSearchDialog({
     onOpenChange(false);
   }
 
-  // A seed row opens the standard one-shot flow with this search snapshot as the seed source and
-  //   the clicked seed preselected. The search dialog closes too, so dialogs never stack.
-  function openSearchSeed(seed: SeedSearchSnapshotSeed) {
-    if (!seedSnapshot) return;
-    setSearchSeedTarget({
-      provider: site,
-      query: seedQuery,
-      snapshot: seedSnapshot,
-      preselectSeedKey: seed.stable_seed_key,
-      titleHint: seed.title_hint ?? null,
-    });
-    onOpenChange(false);
+  function backFromSeeds() {
+    setSeedTarget(null);
+    onOpenChange(true);
+  }
+
+  // The keyword path has no result list to return to: back lands on the seed input window (mode
+  // and site stay as they were; the keyword is cleared for a fresh search).
+  function backFromSearchSeeds() {
+    setSearchSeedTarget(null);
+    setKeyword("");
+    setSeedNoMatch(false);
+    onOpenChange(true);
   }
 
   function handleSubscribed() {
@@ -383,17 +315,7 @@ export function GlobalSearchDialog({
           </div>
         ) : (
           <div className="global-search-results" aria-live="polite">
-            {seedStale ? (
-              <StateBlock
-                kind="error"
-                title={t("globalSearch.stale")}
-                action={
-                  <Button size="sm" disabled={seedSearching} onClick={() => void runSearch()}>
-                    {t("globalSearch.searchAgain")}
-                  </Button>
-                }
-              />
-            ) : seedError ? (
+            {seedError ? (
               <StateBlock
                 kind="error"
                 title={seedError}
@@ -405,44 +327,10 @@ export function GlobalSearchDialog({
               />
             ) : seedSearching ? (
               <StateBlock kind="busy" title={t("grid.searchingNow")} />
-            ) : !seedSearched ? (
-              <StateBlock kind="empty" title={t("globalSearch.start")} description={t("globalSearch.seedHint")} />
-            ) : seedRows.length === 0 ? (
+            ) : seedNoMatch ? (
               <StateBlock kind="empty" title={t("globalSearch.noMatchSeed")} description={t("grid.searchRetryHint")} />
             ) : (
-              <div className="tw:grid tw:gap-2">
-                <p className="tw:m-0 tw:text-xs tw:text-muted-foreground">
-                  {t("globalSearch.resultSummary", { n: seedSnapshot?.total_seeds ?? seedRows.length })}
-                </p>
-                <ul className="tw:m-0 tw:grid tw:list-none tw:gap-2 tw:p-0">
-                  {seedRows.map((seed) => (
-                    <li key={seed.stable_seed_key}>
-                      <button
-                        type="button"
-                        onClick={() => openSearchSeed(seed)}
-                        className="tw:flex tw:w-full tw:cursor-pointer tw:items-center tw:gap-3 tw:rounded-control tw:border tw:border-border tw:bg-transparent tw:px-3 tw:py-2 tw:text-left tw:text-foreground tw:transition-[background-color,border-color] tw:duration-150 tw:hover:border-ring/40 tw:hover:bg-muted/40 tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-ring"
-                      >
-                        <span className="tw:grid tw:min-w-0 tw:flex-1 tw:gap-0.5">
-                          <span className="break-anywhere tw:text-sm">{seed.title}</span>
-                          <SeedMeta seed={seed} />
-                        </span>
-                        <ChevronRight aria-hidden="true" className="icon-sm tw:flex-none tw:text-muted-foreground" />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                {seedPageError ? <p className="tw:m-0 tw:text-sm tw:text-destructive">{seedPageError}</p> : null}
-                {nextCursor ? (
-                  <div className="tw:flex tw:justify-center">
-                    <Button size="sm" disabled={seedLoadingMore} onClick={() => void loadMoreSeeds()}>
-                      {seedLoadingMore ? t("grid.searching") : t("globalSearch.loadMore")}
-                    </Button>
-                  </div>
-                ) : null}
-                {(seedSnapshot?.total_seeds ?? 0) >= 100 ? (
-                  <p className="tw:m-0 tw:text-xs tw:text-muted-foreground">{t("globalSearch.seedWindowNote")}</p>
-                ) : null}
-              </div>
+              <StateBlock kind="empty" title={t("globalSearch.start")} description={t("globalSearch.seedHint")} />
             )}
           </div>
         )}
@@ -472,34 +360,25 @@ export function GlobalSearchDialog({
             open
             entry={seedTarget.entry}
             onClose={() => setSeedTarget(null)}
+            onBack={backFromSeeds}
             onOpenRecords={onOpenRecords}
           />
         </Suspense>
       )}
-      {/* A seed row's one-shot download: the same two-step dialog, seeded from the search snapshot. */}
+      {/* A successful keyword search's one-shot download: the same two-step dialog, seeded from
+       *  the search snapshot; back returns to the seed input window. */}
       {searchSeedTarget && (
         <Suspense fallback={null}>
           <OneShotDialogEntry
-            key={`${searchSeedTarget.provider}:${searchSeedTarget.snapshot.snapshot_id}:${searchSeedTarget.preselectSeedKey ?? ""}`}
+            key={`${searchSeedTarget.provider}:${searchSeedTarget.snapshot.snapshot_id}`}
             open
             search={searchSeedTarget}
             onClose={() => setSearchSeedTarget(null)}
+            onBack={backFromSearchSeeds}
             onOpenRecords={onOpenRecords}
           />
         </Suspense>
       )}
     </>
   );
-}
-
-function SeedMeta({ seed }: { seed: SeedSearchSnapshotSeed }) {
-  // Missing facts are omitted (no "unknown time" placeholders).
-  const parts = [
-    seed.published_at ? formatDateTime(seed.published_at) : undefined,
-    seed.size_bytes !== null && seed.size_bytes !== undefined ? formatBytes(seed.size_bytes) : undefined,
-    seed.group_name ?? undefined,
-    seed.resolution ?? undefined,
-  ].filter((part): part is string => Boolean(part));
-  if (parts.length === 0) return null;
-  return <span className="tw:text-xs tw:text-muted-foreground">{parts.join(" · ")}</span>;
 }

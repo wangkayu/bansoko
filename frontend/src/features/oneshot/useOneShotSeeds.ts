@@ -40,7 +40,7 @@ import { t } from "../../lib/i18n";
 //     write back to it).
 //   - keyword search: the snapshot of one search read as a single seed list with no subgroup
 //     layer. The draft is the origin=oneshot form the admission path defines (no entry, no RSS
-//     source, title prefilled from the clicked seed). A search identity is refreshed only by
+//     source, title prefilled from the query text). A search identity is refreshed only by
 //     searching again: a typed 409 surfaces as "search again", never a silent re-fetch.
 //
 // No business rule is judged here: downloadability, filter outcomes and target paths all come from the server's read model.
@@ -580,9 +580,10 @@ function useCustomSeedSource({ entry, enabled }: { entry: CatalogEntryView | und
 // --- search: one keyword search snapshot as a single seed list --------------------------
 
 /**
- * 一次关键词搜索的浏览上下文：搜索结果点击进同一个 OneShotDialog。快照身份（scope_ref/
- * query_ref 充当 entry/group 引用，加 snapshot_id/version/content_hash）原样回传给读模型与
- * 提交；查询文本服务端不回传（只存摘要，分组名只是占位），header 与列表标题用这里的 query。
+ * 一次关键词搜索的浏览上下文：搜索成功即直接进同一个 OneShotDialog（没有中间结果列表）。
+ * 快照身份（scope_ref/query_ref 充当 entry/group 引用，加 snapshot_id/version/content_hash）
+ * 原样回传给读模型与提交；查询文本服务端不回传（只存摘要，分组名只是占位），header 与列表
+ * 标题用这里的 query。
  */
 export type SearchSeedBrowse = {
   provider: "anibt" | "mikan";
@@ -590,10 +591,6 @@ export type SearchSeedBrowse = {
   query: string;
   /** The fetch response of this search: the identity every later read and submission names verbatim. */
   snapshot: SeedSearchSnapshotView;
-  /** The clicked seed's stable key: its row starts selected once the list renders. */
-  preselectSeedKey?: string;
-  /** The clicked seed's parsed work-title candidate: the editable title default (the query is the fallback). */
-  titleHint?: string | null;
 };
 
 function useSearchSeedSource({ search, enabled }: { search: SearchSeedBrowse | undefined; enabled: boolean }): OneShotSeedSource {
@@ -604,9 +601,9 @@ function useSearchSeedSource({ search, enabled }: { search: SearchSeedBrowse | u
   const [attempt, setAttempt] = useState(0);
 
   // The task draft is the origin=oneshot form the admission path defines: no entry, no RSS source,
-  // title prefilled from the clicked seed (the query as fallback), instance_label following the title —
-  // the server validates both as non-empty from the very first read, so both are set at creation.
-  const initialTitle = search?.titleHint?.trim() || search?.query.trim() || "";
+  // title prefilled from the query text, instance_label following the title — the server validates
+  // both as non-empty from the very first read, so both are set at creation.
+  const initialTitle = search?.query.trim() ?? "";
   useEffect(() => {
     if (!enabled || !search) return;
     let active = true;

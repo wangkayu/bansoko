@@ -5,17 +5,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CatalogItem, RSSListItem, RSSListView, SeedSearchSnapshotSeed, SeedSearchSnapshotView } from "../../lib/api/client";
 import { GlobalSearchDialog } from "./GlobalSearchDialog";
 import { t } from "../../lib/i18n";
-import { formatBytes } from "../../lib/labels";
 import { preset as businessPreset } from "../../testing/businessPreset";
 
 // GlobalSearchDialog (the header's global search): two modes over both sites.
 //   番剧 mode — the query bar, the result state machine (idle/loading/empty/errors/populated
 //   candidate list), a candidate click -> close the dialog and reuse AnimeConfigDialogEntry (the
 //   same result->config path as AnimeGrid), and the browse-seeds icon -> the one-shot entry.
-//   种子 mode — one POST persists the keyword search snapshot, windows page by snapshot identity +
-//   cursor, a stale identity collapses into "search again", and a row click opens the standard
-//   two-step OneShotDialog seeded from the search snapshot (never a subscription path, never a
-//   simplified form).
+//   种子 mode — one POST persists the keyword search snapshot, then opens the standard two-step
+//   OneShotDialog directly (never a subscription path, never a simplified form; no intermediate
+//   result list — every row of it opened the same dialog). The dialog's back button returns to
+//   the search window: the keyword path back at the seed input, the candidate path with its
+//   program results intact.
 //   The fetch stubs match AnimeGrid.test.tsx's style; the lazily loaded dialogs are warmed at
 //   module top level, moving the dialog's dependency-chain import cost out of the assertion wait
 //   window (the same approach as TopNav.test.tsx).
@@ -33,8 +33,6 @@ let searchPendingResolve: (() => void) | null = null;
 let suppressions: unknown[] = [];
 let seedFetchResult: { status?: number; body?: unknown };
 let seedFetchCalls: { url: string; body: unknown }[] = [];
-let seedReadResult: { status?: number; body?: unknown };
-let seedReadCalls: string[] = [];
 let rssViewResult: { status?: number; body?: unknown };
 let rssViewCalls: { url: string; body: unknown }[] = [];
 
@@ -52,7 +50,6 @@ const anibtHit: CatalogItem = {
 };
 
 // Search-snapshot fixtures use placeholder names only (never real releases, groups or refs).
-const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const SCOPE_REF = "search-scope:0123456789abcdef";
 const QUERY_REF = "search-query:fedcba9876543210";
 const CONTENT_HASH = "sha256:00112233445566778899aabb";
@@ -70,7 +67,6 @@ const seedOne: SeedSearchSnapshotSeed = {
   title_hint: "示例作品",
 };
 const seedTwo: SeedSearchSnapshotSeed = { ...seedOne, stable_seed_key: "seed-key-2", title: "[Example Group] 示例作品 02 [1080p]" };
-const seedThree: SeedSearchSnapshotSeed = { ...seedOne, stable_seed_key: "seed-key-3", title: "[Example Group] 示例作品 03 [1080p]" };
 
 function seedSnapshotView(overrides: Partial<SeedSearchSnapshotView> = {}): SeedSearchSnapshotView {
   return {
@@ -148,13 +144,6 @@ function stubFetch() {
       seedFetchCalls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
       return new Response(JSON.stringify(seedFetchResult.body ?? {}), {
         status: seedFetchResult.status ?? 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    if (url.match(/\/catalog\/providers\/([^/]+)\/seed-search-snapshots\/([^/?]+)/)) {
-      seedReadCalls.push(url);
-      return new Response(JSON.stringify(seedReadResult.body ?? {}), {
-        status: seedReadResult.status ?? 200,
         headers: { "Content-Type": "application/json" },
       });
     }
@@ -248,8 +237,6 @@ function resetFixtures() {
   suppressions = [];
   seedFetchResult = { status: 200, body: seedSnapshotView() };
   seedFetchCalls = [];
-  seedReadResult = { status: 200, body: seedSnapshotView({ seeds: [seedThree], next_cursor: null }) };
-  seedReadCalls = [];
   rssViewResult = { status: 200 };
   rssViewCalls = [];
   stubFetch();
@@ -446,124 +433,30 @@ describe("GlobalSearchDialog 种子检索模式", () => {
     vi.unstubAllGlobals();
   });
 
-  it("种子模式：POST 创建搜索快照，渲染标题、元信息、汇总；行内没有订阅入口", async () => {
-    renderDialog();
-    switchToSeedMode();
-    await submitSeedSearch("示例作品");
-
-    expect(seedFetchCalls).toHaveLength(1);
-    expect(seedFetchCalls[0]!.url).toContain("/api/v1/catalog/providers/anibt/seed-search-snapshots:fetch");
-    expect(seedFetchCalls[0]!.body).toEqual({ query: "示例作品", limit: 20 });
-
-    expect(await screen.findByText(seedOne.title)).toBeInTheDocument();
-    expect(screen.getByText(seedTwo.title)).toBeInTheDocument();
-    expect(screen.getByText(t("globalSearch.resultSummary", { n: 3 }))).toBeInTheDocument();
-    // 元信息：大小与字幕组、分辨率并列展示。
-    const row = screen.getByRole("button", { name: new RegExp(escapeRegExp(seedOne.title)) });
-    expect(within(row).getByText(new RegExp(`${formatBytes(500 * 1024 * 1024)} · Example Group · 1080p`))).toBeInTheDocument();
-    // 搜索行没有订阅按钮。
-    expect(screen.queryByRole("button", { name: t("anime.subscribe") })).not.toBeInTheDocument();
-  });
-
-  it("种子模式支持 Mikan 站点", async () => {
-    renderDialog();
-    switchToSeedMode();
-    fireEvent.click(screen.getByRole("radio", { name: "Mikan" }));
-    await submitSeedSearch("示例作品");
-
-    expect(seedFetchCalls[0]!.url).toContain("/api/v1/catalog/providers/mikan/seed-search-snapshots:fetch");
-  });
-
-  it("加载更多：按快照身份与游标读取下一窗并追加；没有下一窗后按钮消失", async () => {
-    renderDialog();
-    switchToSeedMode();
-    await submitSeedSearch("示例作品");
-    await screen.findByText(seedOne.title);
-
-    fireEvent.click(screen.getByRole("button", { name: t("globalSearch.loadMore") }));
-    await waitFor(() => expect(seedReadCalls).toHaveLength(1));
-
-    const url = new URL(seedReadCalls[0]!, "http://localhost");
-    expect(url.pathname).toBe(`/api/v1/catalog/providers/anibt/seed-search-snapshots/${SEARCH_SNAPSHOT_ID}`);
-    expect(url.searchParams.get("scope_ref")).toBe(SCOPE_REF);
-    expect(url.searchParams.get("query_ref")).toBe(QUERY_REF);
-    expect(url.searchParams.get("snapshot_version")).toBe("1");
-    expect(url.searchParams.get("content_hash")).toBe(CONTENT_HASH);
-    expect(url.searchParams.get("cursor")).toBe("cursor-2");
-
-    expect(await screen.findByText(seedThree.title)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: t("globalSearch.loadMore") })).not.toBeInTheDocument();
-  });
-
-  it("结果达到站点上限时说明窗口边界，不伪装全量分页", async () => {
-    seedFetchResult = { status: 200, body: seedSnapshotView({ total_seeds: 100, next_cursor: null }) };
-    renderDialog();
-    switchToSeedMode();
-    await submitSeedSearch("示例作品");
-
-    expect(await screen.findByText(t("globalSearch.seedWindowNote"))).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: t("globalSearch.loadMore") })).not.toBeInTheDocument();
-  });
-
-  it("种子搜索失败显示错误与重试", async () => {
-    seedFetchResult = { status: 502, body: { code: "SEARCH_UPSTREAM_FAILED", message: "上游不可达" } };
-    renderDialog();
-    switchToSeedMode();
-    await submitSeedSearch("示例作品");
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(t("error.SEARCH_UPSTREAM_FAILED"));
-
-    seedFetchResult = { status: 200, body: seedSnapshotView({ next_cursor: null }) };
-    fireEvent.click(screen.getByRole("button", { name: t("grid.retry") }));
-    expect(await screen.findByText(seedOne.title)).toBeInTheDocument();
-  });
-
-  it("种子搜索空结果显示空态", async () => {
-    seedFetchResult = { status: 200, body: seedSnapshotView({ seeds: [], total_seeds: 0, next_cursor: null }) };
-    renderDialog();
-    switchToSeedMode();
-    await submitSeedSearch("不存在的作品");
-
-    expect(await screen.findByText(t("globalSearch.noMatchSeed"))).toBeInTheDocument();
-  });
-
-  it("加载更多返回 409：结果列表替换为「重新搜索」提示", async () => {
-    seedReadResult = { status: 409, body: { code: "SEARCH_SNAPSHOT_SCOPE_INVALID", message: "过期" } };
-    renderDialog();
-    switchToSeedMode();
-    await submitSeedSearch("示例作品");
-    await screen.findByText(seedOne.title);
-
-    fireEvent.click(screen.getByRole("button", { name: t("globalSearch.loadMore") }));
-
-    expect(await screen.findByText(t("globalSearch.stale"))).toBeInTheDocument();
-    expect(screen.queryByText(seedOne.title)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: t("globalSearch.searchAgain") })).toBeInTheDocument();
-  });
-
-  it("种子行点击：关闭搜索弹窗，进同一个标准两步弹窗（搜索快照为种子源，点击的种子已预选）", async () => {
+  it("种子模式：POST 创建搜索快照后直接进入标准两步弹窗，不再渲染中间结果列表", async () => {
     const onOpenChange = vi.fn();
     renderDialog(true, onOpenChange);
     switchToSeedMode();
-    await submitSeedSearch("示例作品 字幕组甲 03");
-    fireEvent.click(await screen.findByRole("button", { name: new RegExp(escapeRegExp(seedOne.title)) }));
+    await submitSeedSearch("示例作品 字幕组甲");
 
+    expect(seedFetchCalls).toHaveLength(1);
+    expect(seedFetchCalls[0]!.url).toContain("/api/v1/catalog/providers/anibt/seed-search-snapshots:fetch");
+    expect(seedFetchCalls[0]!.body).toEqual({ query: "示例作品 字幕组甲", limit: 20 });
     expect(onOpenChange).toHaveBeenCalledWith(false);
 
-    // 标准两步弹窗的第一步：种子列表来自读模型对这次搜索快照的投影。
+    // 标准两步弹窗的第一步：种子列表来自读模型对这次搜索快照的投影，勾选/展开都在里面。
     const dialog = await screen.findByRole("dialog", { name: t("oneshot.title") });
-    expect(await within(dialog).findByText(t("oneshot.stepSeeds"), { exact: false })).toBeInTheDocument();
+    expect(await within(dialog).findByRole("checkbox", { name: "示例作品 - 01" })).not.toBeChecked();
+    expect(within(dialog).getByRole("checkbox", { name: "示例作品 - 02" })).toBeInTheDocument();
+    // 搜索弹窗不再渲染中间结果行（快照自带的发布标题不出现在搜索弹窗区域）。
+    expect(screen.queryByText(seedOne.title)).not.toBeInTheDocument();
     // header 呈现前端自己持有的查询文本与站点，不透传服务端的 query_ref 占位名。
-    expect(within(dialog).getAllByText("示例作品 字幕组甲 03").length).toBeGreaterThan(0);
+    expect(within(dialog).getAllByText("示例作品 字幕组甲").length).toBeGreaterThan(0);
     expect(within(dialog).getByText(/AniBT/)).toBeInTheDocument();
     expect(within(dialog).queryByText(new RegExp(QUERY_REF))).not.toBeInTheDocument();
-    // 读模型行渲染出来，点击进来的那颗种子已被勾选。
-    const rowTitle = "示例作品 - 01";
-    expect(await within(dialog).findByRole("checkbox", { name: rowTitle })).toBeChecked();
-    expect(within(dialog).getByRole("checkbox", { name: "示例作品 - 02" })).not.toBeChecked();
 
     // 读模型请求：搜索身份原样回传（scope/query 引用充当 entry/group 引用），草稿是
-    // origin=oneshot 形态（无 RSS 源，标题预填解析出的作品名，instance_label 跟随标题）。
+    // origin=oneshot 形态（无 RSS 源，标题以查询文本预填，instance_label 跟随标题）。
     await waitFor(() => expect(rssViewCalls).toHaveLength(1));
     const body = rssViewCalls[0]!.body as {
       input_source: string;
@@ -584,25 +477,81 @@ describe("GlobalSearchDialog 种子检索模式", () => {
       },
     ]);
     expect(body.draft.origin).toBe("oneshot");
-    expect(body.draft.title).toBe(seedOne.title_hint);
-    expect(body.draft.instance_label).toBe(seedOne.title_hint);
+    expect(body.draft.title).toBe("示例作品 字幕组甲");
+    expect(body.draft.instance_label).toBe("示例作品 字幕组甲");
     expect(body.draft.rss_sources).toEqual([]);
 
-    // 订阅配置的页签从不出现（两条路径不交叉）。
+    // 没有订阅入口；订阅配置的页签从不出现（两条路径不交叉）。
+    expect(screen.queryByRole("button", { name: t("anime.subscribe") })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole("tab")).not.toBeInTheDocument();
   });
 
-  it("解析不出作品名的种子：标题以查询文本预填，第一次读仍然带非空标题与标签", async () => {
-    seedFetchResult = { status: 200, body: seedSnapshotView({ seeds: [{ ...seedOne, title_hint: null }], next_cursor: null }) };
+  it("种子模式支持 Mikan 站点", async () => {
     renderDialog();
     switchToSeedMode();
-    await submitSeedSearch("示例作品 字幕组甲");
-    fireEvent.click(await screen.findByRole("button", { name: new RegExp(escapeRegExp(seedOne.title)) }));
+    fireEvent.click(screen.getByRole("radio", { name: "Mikan" }));
+    await submitSeedSearch("示例作品");
 
-    await screen.findByRole("dialog", { name: t("oneshot.title") });
-    await waitFor(() => expect(rssViewCalls).toHaveLength(1));
-    const body = rssViewCalls[0]!.body as { draft: { title: string; instance_label: string | null } };
-    expect(body.draft.title).toBe("示例作品 字幕组甲");
-    expect(body.draft.instance_label).toBe("示例作品 字幕组甲");
+    expect(seedFetchCalls[0]!.url).toContain("/api/v1/catalog/providers/mikan/seed-search-snapshots:fetch");
+  });
+
+  it("种子搜索失败显示错误与重试；重试成功直接进入下载弹窗", async () => {
+    seedFetchResult = { status: 502, body: { code: "SEARCH_UPSTREAM_FAILED", message: "上游不可达" } };
+    renderDialog();
+    switchToSeedMode();
+    await submitSeedSearch("示例作品");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(t("error.SEARCH_UPSTREAM_FAILED"));
+    expect(screen.queryByRole("dialog", { name: t("oneshot.title") })).not.toBeInTheDocument();
+
+    seedFetchResult = { status: 200, body: seedSnapshotView({ next_cursor: null }) };
+    fireEvent.click(screen.getByRole("button", { name: t("grid.retry") }));
+    expect(await screen.findByRole("dialog", { name: t("oneshot.title") })).toBeInTheDocument();
+  });
+
+  it("种子搜索空结果显示空态，不打开下载弹窗", async () => {
+    seedFetchResult = { status: 200, body: seedSnapshotView({ seeds: [], total_seeds: 0, next_cursor: null }) };
+    renderDialog();
+    switchToSeedMode();
+    await submitSeedSearch("不存在的作品");
+
+    expect(await screen.findByText(t("globalSearch.noMatchSeed"))).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: t("oneshot.title") })).not.toBeInTheDocument();
+  });
+
+  it("两步弹窗的返回：回到种子检索的输入窗口（关键词清空、模式与站点保留）", async () => {
+    const onOpenChange = vi.fn();
+    renderDialog(true, onOpenChange);
+    switchToSeedMode();
+    fireEvent.click(screen.getByRole("radio", { name: "Mikan" }));
+    await submitSeedSearch("示例作品");
+
+    const dialog = await screen.findByRole("dialog", { name: t("oneshot.title") });
+    await within(dialog).findByRole("checkbox", { name: "示例作品 - 01" });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("act.back") }));
+
+    expect(onOpenChange).toHaveBeenCalledWith(true);
+    // 下载弹窗关闭；搜索窗口回到种子输入空态。
+    expect(screen.queryByRole("dialog", { name: t("oneshot.title") })).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText(t("globalSearch.seedPlaceholder"))).toHaveValue("");
+    expect(screen.getByText(t("globalSearch.start"))).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: t("globalSearch.modeSeed") })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "Mikan" })).toBeChecked();
+  });
+
+  it("候选浏览种子的返回：重开搜索弹窗并保留番剧结果窗口", async () => {
+    const onOpenChange = vi.fn();
+    renderDialog(true, onOpenChange);
+    await submitSearch("BanG Dream");
+
+    fireEvent.click(await screen.findByRole("button", { name: t("oneshot.actionFor", { title: "全局搜索番剧" }) }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    const dialog = await screen.findByRole("dialog", { name: t("oneshot.title") });
+    expect(await within(dialog).findByText(t("oneshot.stepSeeds"), { exact: false })).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: t("act.back") }));
+    expect(onOpenChange).toHaveBeenCalledWith(true);
+    expect(screen.queryByRole("dialog", { name: t("oneshot.title") })).not.toBeInTheDocument();
+    expect(await screen.findByText("全局搜索番剧")).toBeInTheDocument();
   });
 });

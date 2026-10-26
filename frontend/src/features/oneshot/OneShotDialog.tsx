@@ -228,6 +228,7 @@ export function OneShotDialog({
   entry,
   search,
   onClose,
+  onBack,
   onOpenRecords,
 }: {
   open: boolean;
@@ -236,6 +237,12 @@ export function OneShotDialog({
   /** A keyword-search snapshot: a clicked search result browses its seeds in this same dialog. */
   search?: SearchSeedBrowse;
   onClose: () => void;
+  /**
+   * Returns to the surface that opened this dialog (e.g. the search results window) instead of
+   * dismissing everything. Step one's footer offers it in place of cancel; closing (the header
+   * close, Esc) still dismisses.
+   */
+  onBack?: () => void;
   /** Jumps to the execution record (the one-shot filter); no entry renders when the host has not wired it. */
   onOpenRecords?: () => void;
 }) {
@@ -273,21 +280,6 @@ export function OneShotDialog({
   const allRows = useMemo(() => source.groups.flatMap((group) => group.rows), [source.groups]);
   // Selection survives filters, groups and re-reads: a filter is only a view, and a re-read changes row content, never identity.
   const selectedRows = useMemo(() => allRows.filter((row) => selected.has(row.key)), [allRows, selected]);
-
-  // A search-opened dialog starts with the clicked seed selected (once its row exists; the row
-  // content may change on re-reads but its identity never does, so this fires exactly once).
-  // The click that opened the dialog asked for this seed's contents, so the row also opens
-  // expanded: an unexpanded seed's bytes are fetched and the file list renders beneath it.
-  const preselectDone = useRef(false);
-  useEffect(() => {
-    if (preselectDone.current || !search?.preselectSeedKey) return;
-    const row = allRows.find((candidate) => candidate.stableSeedKey === search.preselectSeedKey);
-    if (!row) return;
-    preselectDone.current = true;
-    if (selectableRow(row)) setSelected((current) => new Set(current).add(row.key));
-    setExpanded((current) => new Set(current).add(row.key));
-    if (needsExpand(row)) void expandRow(row);
-  }, [allRows, search]);
 
   // Step one's navigation: the subgroup list first, then a group's seeds. A custom preset and a
   // keyword search both have a single seed list and no subgroup layer.
@@ -650,7 +642,11 @@ export function OneShotDialog({
       footer={
         step === 1 ? (
           <>
-            <Button onClick={onClose}>{t("act.cancel")}</Button>
+            {onBack ? (
+              <Button onClick={onBack}>{t("act.back")}</Button>
+            ) : (
+              <Button onClick={onClose}>{t("act.cancel")}</Button>
+            )}
             <Button
               variant="primary"
               onClick={() => setStep(2)}

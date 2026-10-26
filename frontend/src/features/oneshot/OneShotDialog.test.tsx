@@ -1192,25 +1192,23 @@ describe("OneShotDialog 搜索快照来源", () => {
       retention_seconds: 86400,
       seeds: [],
     },
-    preselectSeedKey: "seed-a",
-    titleHint: "示例作品",
   };
 
-  function renderSearchDialog(search: SearchSeedBrowse = searchBrowse, onOpenRecords?: () => void) {
+  function renderSearchDialog(search: SearchSeedBrowse = searchBrowse, onOpenRecords?: () => void, onBack?: () => void) {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     return render(
       <QueryClientProvider client={client}>
-        <OneShotDialog open search={search} onClose={() => {}} onOpenRecords={onOpenRecords} />
+        <OneShotDialog open search={search} onClose={() => {}} onOpenRecords={onOpenRecords} onBack={onBack} />
       </QueryClientProvider>,
     );
   }
 
-  it("打开即读：单一列表没有字幕组层，读请求携带搜索身份与 origin=oneshot 草稿，点击的种子已预选", async () => {
+  it("打开即读：单一列表没有字幕组层，读请求携带搜索身份与 origin=oneshot 草稿，标题以查询文本预填", async () => {
     stubFetch({ view: searchGroupView() });
     renderSearchDialog();
 
-    expect(await findSeed(SEED_A)).toBeChecked();
-    expect(await findSeed(SEED_B)).not.toBeChecked();
+    expect(await findSeed(SEED_A)).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: SEED_B })).not.toBeChecked();
     // A search source has a single seed list: no subgroup layer.
     expect(screen.queryByRole("button", { name: t("oneshot.backToGroups") })).not.toBeInTheDocument();
     // The header renders the keyword the user searched plus the site, never the placeholder query_ref.
@@ -1232,47 +1230,17 @@ describe("OneShotDialog 搜索快照来源", () => {
           content_hash: SEARCH_CONTENT_HASH,
         },
       ],
-      draft: { origin: "oneshot", title: "示例作品", instance_label: "示例作品", rss_sources: [] },
+      draft: { origin: "oneshot", title: "搜索关键词甲", instance_label: "搜索关键词甲", rss_sources: [] },
     });
-  });
-
-  it("点开的种子自动展开：打开即取它的种子文件并显示文件列表", async () => {
-    let expanded = false;
-    stubFetch({
-      get view() {
-        return searchGroupView([
-          expanded
-            ? seedItem("seed-a", SEED_A, { snapshot_id: SEARCH_SNAPSHOT_ID })
-            : { ...pendingItem("seed-a", SEED_A), snapshot_id: SEARCH_SNAPSHOT_ID },
-          seedItem("seed-b", SEED_B, { snapshot_id: SEARCH_SNAPSHOT_ID }),
-        ]);
-      },
-      expand: () => {
-        expanded = true;
-        return { state: "available" };
-      },
-    });
-    renderSearchDialog();
-
-    // No manual row click: the click that opened the dialog is the expansion request, and only
-    // the clicked seed is fetched.
-    expect(await screen.findByText(`[组A] ${SEED_A}.mkv`, { exact: false })).toBeInTheDocument();
-    const expansions = calls.filter((call) => call.url.includes("/expand"));
-    expect(expansions).toHaveLength(1);
-    expect(expansions[0]!.url).toContain(`/provider-feed-snapshots/${SEARCH_SNAPSHOT_ID}/seeds/seed-a/expand`);
-    expect(reads().at(-1)!.body).toMatchObject({ one_shot: true });
   });
 
   it("第二步：标题编辑同步 instance_label，提交按快照身份与编辑后的草稿", async () => {
     stubFetch({ view: searchGroupView() });
     renderSearchDialog();
-    await findSeed(SEED_A);
-    // The clicked seed was preselected: straight to step two.
-    fireEvent.click(button(t("oneshot.nextWithCount", { n: 1 })));
-    await screen.findByRole("heading", { name: t("oneshot.configTitle") });
+    await advanceToSettings([SEED_A]);
 
     const title = screen.getByRole("textbox", { name: t("field.title") });
-    expect(title).toHaveValue("示例作品");
+    expect(title).toHaveValue("搜索关键词甲");
     const readsBefore = reads().length;
     fireEvent.change(title, { target: { value: "改名作品" } });
     await waitFor(() => expect(reads().length).toBeGreaterThan(readsBefore));
@@ -1302,15 +1270,32 @@ describe("OneShotDialog 搜索快照来源", () => {
     expect(reads()).toHaveLength(1);
   });
 
+  it("带返回入口打开：第一步页脚以「返回」代替「取消」，点击只回调返回不关闭", async () => {
+    stubFetch({ view: searchGroupView() });
+    const onBack = vi.fn();
+    const onClose = vi.fn();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <OneShotDialog open search={searchBrowse} onClose={onClose} onBack={onBack} />
+      </QueryClientProvider>,
+    );
+    await findSeed(SEED_A);
+
+    // The left footer slot is the back affordance, not cancel (the host reopens its search window).
+    expect(screen.queryByRole("button", { name: t("act.cancel") })).not.toBeInTheDocument();
+    fireEvent.click(button(t("act.back")));
+    expect(onBack).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it("提交时快照已过期：行内提示重新搜索，不静默重发", async () => {
     stubFetch({
       view: searchGroupView(),
       download: () => ({ status: 409, body: { code: "FEED_SNAPSHOT_REFRESH_REQUIRED", message: "expired" } }),
     });
     renderSearchDialog();
-    await findSeed(SEED_A);
-    fireEvent.click(button(t("oneshot.nextWithCount", { n: 1 })));
-    await screen.findByRole("heading", { name: t("oneshot.configTitle") });
+    await advanceToSettings([SEED_A]);
 
     fireEvent.click(button(t("oneshot.create", { n: 1 })));
     await waitFor(() => expect(downloads()).toHaveLength(1));

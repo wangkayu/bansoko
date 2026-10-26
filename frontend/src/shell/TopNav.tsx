@@ -153,6 +153,13 @@ export function TopNav({
   const closeRouteDialog = (open: boolean) => {
     if (!open) routeDialogs.close();
   };
+  // The search dialog reopens itself: its back affordance (a one-shot download opened from the
+  // results returns to the search window) drives onOpenChange(true) back up, so both directions
+  // follow the URL route.
+  const setSearchDialog = (open: boolean) => {
+    if (open) routeDialogs.open({ tool: "search" });
+    else routeDialogs.close();
+  };
 
   // The badge = new failures since the log was last seen (events + unrecovered diagnostic errors), kept only in this browser.
   const failedCount = useLogFailureBadge();
@@ -356,7 +363,7 @@ export function TopNav({
         <Suspense fallback={null}>
           <GlobalSearchDialog
             open={globalSearchOpen}
-            onOpenChange={closeRouteDialog}
+            onOpenChange={setSearchDialog}
             onOpenRecords={() => routeDialogs.open({ record: ROUTE_RECORD_LIST, record_segment: "one_shot" })}
           />
         </Suspense>
