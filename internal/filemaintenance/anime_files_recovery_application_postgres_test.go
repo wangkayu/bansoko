@@ -444,10 +444,10 @@ func TestRecoverAnimeFileApplicationReplayIsIdempotent(t *testing.T) {
 
 // rulesRacingNamingRulesSource registers the companion from inside the
 // renderer's rules fetch. That call sits exactly in the window the test
-// needs: the membership pre-check has already read the active id set (so the
-// newcomer is invisible to it), and the confirm has not yet taken FOR UPDATE
-// on the placement row (so the INSERT cannot deadlock on the placement_id
-// foreign key). Registering from the file observer instead would deadlock: by
+// needs: the render runs in the confirm's lock-free preflight over the frozen
+// unit (so the newcomer is not rendered), and the confirm has not yet taken
+// FOR UPDATE on the placement row (so the INSERT cannot deadlock on the
+// placement_id foreign key). Registering from the file observer instead would deadlock: by
 // the first observation the confirm already holds FOR UPDATE on the placement
 // row and the INSERT would need FOR KEY SHARE on the same row for the
 // placement_id foreign key.
@@ -473,8 +473,9 @@ func (r *rulesRacingNamingRulesSource) EffectiveNamingRules(ctx context.Context,
 // back — nothing persists.
 //
 // The registration is injected through the renderer's rules fetch (see
-// rulesRacingNamingRulesSource): after the membership pre-check read the unit,
-// before the confirm takes its FOR UPDATE lock. Registering at observation
+// rulesRacingNamingRulesSource): during the preflight render, before the
+// confirm takes its FOR UPDATE lock; the transaction's membership re-read
+// must see it. Registering at observation
 // time would deadlock instead of testing (FOR UPDATE vs the foreign key's
 // FOR KEY SHARE on the same placement row).
 func TestRecoverAnimeFileApplicationRefusesConcurrentlyRegisteredCompanion(t *testing.T) {

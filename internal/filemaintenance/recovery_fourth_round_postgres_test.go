@@ -265,8 +265,11 @@ func TestRecoverAnimeFileApplicationConcurrentSameTargetHasOneOwner(t *testing.T
 	close(start)
 	wg.Wait()
 	close(done)
-	if arrived.Load() != 2 {
-		t.Fatalf("race barrier observed %d target observations, want 2", arrived.Load())
+	// Each confirm stats the target twice: once in the lock-free preflight
+	// (the barrier both pass before either opens its transaction) and once
+	// under its unit advisory lock.
+	if arrived.Load() != 4 {
+		t.Fatalf("race barrier observed %d target observations, want 4", arrived.Load())
 	}
 	succeeded, refused := 0, 0
 	for call := range done {
