@@ -67,7 +67,7 @@ func TestApplyObservedGroupsKeepsConfiguredGroupsAndTheirPolicy(t *testing.T) {
 		SelectionMode: animedomain.SelectionModeAuto, Score: 90, EffectiveSelected: true,
 	}, {
 		GroupRef: "34", DisplayName: "Configured 34", Provider: animedomain.ProviderKindAnibt,
-		SelectionMode: animedomain.SelectionModeManual, ManualSelected: &on, 
+		SelectionMode: animedomain.SelectionModeManual, ManualSelected: &on,
 	}}
 	got, sources, err := applyObservedGroups(draft, effective, observedFacts("12", "34", "56"))
 	if err != nil {
@@ -258,7 +258,7 @@ func TestReadAnimeRSSListViewWithoutObservationIsUnchanged(t *testing.T) {
 	draft := readableDraft(t, animedomain.ProviderKindAnibt)
 	draft.Subgroups.Entries = []animedomain.SubgroupScoreEntry{{
 		GroupRef: "12", DisplayName: "Group 12", Provider: animedomain.ProviderKindAnibt,
-		SelectionMode: animedomain.SelectionModeAuto, Score: 80, 
+		SelectionMode: animedomain.SelectionModeAuto, Score: 80,
 	}}
 	view, err := observationService(&fakeObservationReader{}).ReadAnimeRSSListView(context.Background(), ReadRSSListViewInput{
 		InputSource: "current_input", Draft: &draft,

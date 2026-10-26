@@ -121,7 +121,7 @@ func mapApplicationSubgroupsSection(value ownershipapplication.SubgroupsSection)
 	}
 	for i, entry := range value.Entries {
 		result.Entries[i] = generated.SubgroupScoreEntry{
-			DisplayName: entry.DisplayName,
+			DisplayName:       entry.DisplayName,
 			EffectiveSelected: entry.EffectiveSelected, GroupRef: entry.GroupRef,
 			ManualSelected: cloneBoolPtr(entry.ManualSelected), Provider: generated.ProviderKind(entry.Provider),
 			Score: entry.Score, SelectionMode: generated.SelectionMode(entry.SelectionMode),

@@ -100,7 +100,7 @@ func TestFrozenFileFactsSelectionFailsClosed(t *testing.T) {
 	cases := map[string]frozenParserEvidence{
 		"no frozen kind":          {Config: json.RawMessage(`{"episode_patterns":["(\\d+)"]}`), Fingerprint: fingerprint},
 		"unregistered kind":       {Kind: "custom-v9", Fingerprint: fingerprint},
-		"legacy non-regex":  {Kind: "anibt-structured"},
+		"legacy non-regex":        {Kind: "anibt-structured"},
 		"invalid frozen config":   {Kind: string(parser.ParserRegex), Config: json.RawMessage(`{"episode_patterns":["("]}`), Fingerprint: fingerprint},
 		"malformed frozen config": {Kind: string(parser.ParserRegex), Config: json.RawMessage(`{"episode_patterns":`), Fingerprint: fingerprint},
 	}

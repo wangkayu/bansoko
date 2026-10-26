@@ -175,7 +175,7 @@ func previewFilesForItem(
 			BoundVideo:     file.BoundVideo,
 			EmptyFacts:     file.EmptyFacts,
 			SubLang:        file.Subtitle.Lang,
-			SubLangTag:   file.Subtitle.LangTag,
+			SubLangTag:     file.Subtitle.LangTag,
 			SubLangSource:  file.Subtitle.LangSource,
 		})
 	}

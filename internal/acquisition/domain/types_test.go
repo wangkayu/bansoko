@@ -442,7 +442,7 @@ func TestEvaluateAppliesTypedQualityAndLanguageFilters(t *testing.T) {
 func TestParseReleaseRevision(t *testing.T) {
 	cases := map[string]string{
 		"[SampleGroup] 进击的巨人 - 01v2 [WebRip 1080p HEVC-10bit AAC][简繁内封字幕]": "v2",
-		"[示例字幕组&示例协作组] 进击的巨人 / 进击的巨人 [03V3][WebRip 1080p]":            "v3",
+		"[示例字幕组&示例协作组] 进击的巨人 / 进击的巨人 [03V3][WebRip 1080p]":                 "v3",
 		"[Group] Title [v2][1080p]":           "v2",
 		"[Group] 标题 第01话v2 [1080p]":           "v2",
 		"[Group] Title - 01 [1080p]":          "",

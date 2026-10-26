@@ -16,11 +16,11 @@ import (
 // Authorization or any well-known token header is cleared on every request.
 func TestUpdateHTTPSourceStripsCallerAuthHeaders(t *testing.T) {
 	type observation struct {
-		authorization    string
+		authorization      string
 		proxyAuthorization string
-		deployToken      string
-		privateToken     string
-		jobToken         string
+		deployToken        string
+		privateToken       string
+		jobToken           string
 	}
 	var mu sync.Mutex
 	var seen []observation

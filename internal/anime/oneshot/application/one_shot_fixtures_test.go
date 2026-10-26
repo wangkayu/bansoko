@@ -298,7 +298,7 @@ func oneShotProviderDraftWithGroups(t *testing.T, origin generated.SubscriptionO
 		}
 		entries = append(entries, generated.SubgroupScoreEntry{
 			Provider: provider, GroupRef: group, DisplayName: "Group " + group,
-			SelectionMode: generated.SelectionModeAuto, Score: 50, 
+			SelectionMode: generated.SelectionModeAuto, Score: 50,
 			EffectiveSelected: false,
 		})
 	}

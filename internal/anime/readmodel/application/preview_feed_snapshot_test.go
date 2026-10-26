@@ -28,7 +28,7 @@ func previewTestDraft(origin animedomain.ProviderKind, groups ...string) animedo
 	for _, group := range groups {
 		entries = append(entries, animedomain.SubgroupScoreEntry{
 			GroupRef: group, DisplayName: "Group " + group, Provider: origin,
-			SelectionMode: animedomain.SelectionModeAuto, Score: 50, 
+			SelectionMode: animedomain.SelectionModeAuto, Score: 50,
 		})
 	}
 	return animedomain.AnimeDraft{
@@ -60,7 +60,7 @@ func previewTestEffective(origin animedomain.ProviderKind, groups ...string) ani
 	for _, group := range groups {
 		entries = append(entries, animedomain.SubgroupScoreEntry{
 			GroupRef: group, DisplayName: "Group " + group, Provider: origin,
-			SelectionMode: animedomain.SelectionModeAuto, Score: 50, 
+			SelectionMode: animedomain.SelectionModeAuto, Score: 50,
 			EffectiveSelected: true,
 		})
 	}

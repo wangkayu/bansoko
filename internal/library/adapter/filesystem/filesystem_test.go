@@ -1715,7 +1715,7 @@ func TestOSFileExecutorPreparedMismatchedStagingWithMissingSourceIsRecoveryUnsaf
 	}
 	recovery := domain.OverwriteRecovery{
 		Stage:                domain.OverwriteStagePrepared,
-		CanonicalRoot: chainAnchor,
+		CanonicalRoot:        chainAnchor,
 		CanonicalSource:      source,
 		CanonicalTarget:      target,
 		StagingPath:          staging,

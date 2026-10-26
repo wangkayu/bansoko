@@ -30,11 +30,11 @@ func TestRotateSessionSecretRequiresEnvironment(t *testing.T) {
 func TestRotateSessionSecretRefusesUnchangedSecret(t *testing.T) {
 	secret := strings.Repeat("s", 32)
 	env := map[string]string{
-		"BANSOKO_DATABASE_URL":         "postgres://x",
-		"BANSOKO_SESSION_SECRET":       secret,
-		"BANSOKO_NEW_SESSION_SECRET":   secret,
+		"BANSOKO_DATABASE_URL":          "postgres://x",
+		"BANSOKO_SESSION_SECRET":        secret,
+		"BANSOKO_NEW_SESSION_SECRET":    secret,
 		"BANSOKO_SECRET_ENCRYPTION_KEY": strings.Repeat("e", 32),
-		"BANSOKO_CONFIG_DIR":           t.TempDir(),
+		"BANSOKO_CONFIG_DIR":            t.TempDir(),
 	}
 	var stdout, stderr bytes.Buffer
 	code := runRotateSessionSecret(context.Background(), func(key string) string { return env[key] }, &stdout, &stderr)

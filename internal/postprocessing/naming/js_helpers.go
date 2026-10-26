@@ -16,7 +16,7 @@ const helperOutputLimit = MaxOutputBytes
 // chainValuable reports whether a chain part carries any of its value beyond
 // the separator prefix it was written with: a part that trims to empty, or
 // that holds no letters or digits at all, is its prefix left alone by an
-// empty value (' " ", "." from '.' + (x ?? '')) and the chain drops it with
+// empty value (' " ", "." from '.' + (x ?? ”)) and the chain drops it with
 // the prefix. A real value — latin, CJK, a number — keeps the part verbatim.
 func chainValuable(part string) bool {
 	values := false

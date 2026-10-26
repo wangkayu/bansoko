@@ -360,8 +360,8 @@ type ScanRequest struct {
 	// TreeTop is the root the scan is scoped to: the directory the work's own
 	// files live in. A placement-owned scan (ScanScopePlacementOwned) observes
 	// Paths instead and uses this only as the scope identity.
-	TreeTop     string
-	Scope       ScanScope
+	TreeTop string
+	Scope   ScanScope
 	// Paths is used only by ScanScopePlacementOwned: explicit absolute locator
 	// paths (owned Placement current paths and bounded provenance fallbacks).
 	// Absent files are skipped, never errors.

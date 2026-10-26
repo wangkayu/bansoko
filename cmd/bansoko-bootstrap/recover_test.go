@@ -75,7 +75,10 @@ func TestDispatchPreservesServerMigrateAndRecoverRouting(t *testing.T) {
 		code := dispatchWithRunners(tc.args, nil, io.Discard, io.Discard,
 			func(kind string) int { called = kind; return 17 },
 			func(context.Context, []string, io.Writer, io.Writer) int { t.Fatal("recover runner called"); return 0 },
-			func(context.Context, []string, io.Reader, io.Writer, io.Writer) int { t.Fatal("reset runner called"); return 0 })
+			func(context.Context, []string, io.Reader, io.Writer, io.Writer) int {
+				t.Fatal("reset runner called")
+				return 0
+			})
 		if code != 17 || called != tc.wantKind {
 			t.Fatalf("dispatch %v exit=%d kind=%q", tc.args, code, called)
 		}
@@ -85,7 +88,10 @@ func TestDispatchPreservesServerMigrateAndRecoverRouting(t *testing.T) {
 	code := dispatchWithRunners([]string{"recover", "status"}, nil, io.Discard, io.Discard,
 		func(string) int { t.Fatal("server runner called"); return 0 },
 		func(_ context.Context, args []string, _, _ io.Writer) int { gotRecoverArgs = args; return 23 },
-		func(context.Context, []string, io.Reader, io.Writer, io.Writer) int { t.Fatal("reset runner called"); return 0 })
+		func(context.Context, []string, io.Reader, io.Writer, io.Writer) int {
+			t.Fatal("reset runner called")
+			return 0
+		})
 	if code != 23 || len(gotRecoverArgs) != 1 || gotRecoverArgs[0] != "status" {
 		t.Fatalf("recover dispatch exit=%d args=%v", code, gotRecoverArgs)
 	}
@@ -97,7 +103,10 @@ func TestDispatchRejectsLegacySubcommandArgumentsAndUnknownCommands(t *testing.T
 		if code := dispatchWithRunners(args, nil, &stdout, &stderr,
 			func(string) int { t.Fatal("legacy runner called"); return 0 },
 			func(context.Context, []string, io.Writer, io.Writer) int { t.Fatal("recover runner called"); return 0 },
-			func(context.Context, []string, io.Reader, io.Writer, io.Writer) int { t.Fatal("reset runner called"); return 0 }); code != recoverExitUsage {
+			func(context.Context, []string, io.Reader, io.Writer, io.Writer) int {
+				t.Fatal("reset runner called")
+				return 0
+			}); code != recoverExitUsage {
 			t.Fatalf("dispatch %v exit=%d", args, code)
 		}
 		if stdout.Len() != 0 || stderr.Len() == 0 {

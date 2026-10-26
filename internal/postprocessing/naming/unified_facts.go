@@ -58,7 +58,7 @@ func UnifiedFacts(ctx NamingContext) templatefacts.FactSet {
 		Anime: templatefacts.AnimeFacts{
 			ID: ctx.Anime.ID, Title: title, TitleSource: titleSource, TitleOverride: ctx.Anime.TitleOverride, ProviderTitle: ctx.Anime.ProviderTitle, TitleBase: ctx.Anime.Title,
 			Group: strings.TrimSpace(ctx.Source.GroupName),
-			Kind: ctx.Derived.EffectiveMediaKind, Season: season, SeasonFolder: SeasonFolderFact(ctx.Derived.EffectiveMediaKind, season),
+			Kind:  ctx.Derived.EffectiveMediaKind, Season: season, SeasonFolder: SeasonFolderFact(ctx.Derived.EffectiveMediaKind, season),
 			Year: yearValue,
 		},
 		Bgm: templatefacts.BgmFacts{ID: ctx.Anime.BGM.WorkID, Title: ctx.Anime.BGM.Title, TitleCN: ctx.Anime.BGM.TitleCN, Year: ctx.Anime.BGM.Year, EpTitle: ctx.EpisodeTitles.BGM},

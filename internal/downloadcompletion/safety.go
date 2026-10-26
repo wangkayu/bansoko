@@ -26,13 +26,13 @@ import (
 
 // Typed refusal codes.
 const (
-	CodeQBTaskMismatch          = "qb_task_mismatch"
-	CodeFileListInvalid         = "file_list_invalid"
-	CodeContentUnresolved       = "content_unresolved"
-	CodeContentOutsideRoot      = "content_outside_root"
-	CodePathUnresolvable        = "path_unresolvable"
-	CodePlacementInsideContent  = "placement_inside_content"
-	CodePlacementPathInvalid    = "placement_path_invalid"
+	CodeQBTaskMismatch         = "qb_task_mismatch"
+	CodeFileListInvalid        = "file_list_invalid"
+	CodeContentUnresolved      = "content_unresolved"
+	CodeContentOutsideRoot     = "content_outside_root"
+	CodePathUnresolvable       = "path_unresolvable"
+	CodePlacementInsideContent = "placement_inside_content"
+	CodePlacementPathInvalid   = "placement_path_invalid"
 	// CodeContentSharedWithOther means another qBittorrent task's files or
 	// content folder overlap this task's (cross-seeding, a shared save path):
 	// deleting this task's files would delete files that task still uses.

@@ -25,7 +25,7 @@ func chainSubtitleCtx(season *int) NamingContext {
 
 // chainFull is the PRD's tech-chain probe, in the guarded form the language
 // actually offers: a fact that carries no value for a render reads null, so
-// every fact read inside a part needs a ?? '' guard (the shorthands do not
+// every fact read inside a part needs a ?? ” guard (the shorthands do not
 // expand inside an argument — the whole-interpolation form ${s00e00} is the
 // fact compose route, ep.s00e00 is the expression one).
 const chainFull = "Show${chain(' ' + (ep.s00e00 ?? ''), '.' + (media.resolution ?? ''), '.' + (sub.lang_code ?? ''), '.' + (media.video_codec ?? '') + (media.audio_codec ?? ''), '.' + file.ext)}"

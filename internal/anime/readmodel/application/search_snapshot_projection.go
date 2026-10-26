@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 
-	animedomain "bansoko/internal/anime/domain"
 	animeapplication "bansoko/internal/anime/application"
+	animedomain "bansoko/internal/anime/domain"
 	"bansoko/internal/apperrors"
-	animecatalogdomain "bansoko/internal/catalog/domain"
 	catalogapplication "bansoko/internal/catalog/application"
+	animecatalogdomain "bansoko/internal/catalog/domain"
 )
 
 // The keyword-search projection of the one-shot browse. A search snapshot has
@@ -71,7 +71,7 @@ func (s *Service) resolveSearchSnapshotProjection(
 		provider: ref.Provider, providerEntryRef: ref.ProviderEntryRef, groupRef: ref.ProviderGroupRef,
 		displayName: ref.ProviderGroupRef, selected: true,
 		selectionMode: string(animedomain.SelectionModeAuto),
-		offset: oneShotOffset(previewOffset),
+		offset:        oneShotOffset(previewOffset),
 	}
 	return []providerGroupPreview{{Ref: ref, GroupName: entry.displayName, Snapshot: snapshot, Items: items, Manifests: manifests}}, []rssListGroupEntry{entry}, nil
 }

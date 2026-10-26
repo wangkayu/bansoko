@@ -296,7 +296,7 @@ type RSSListFile struct {
 	// language (sub.lang code, its one BCP 47 tag, and file | release); empty
 	// for a video and for a subtitle with none. Read-only evidence.
 	SubLang       string
-	SubLangTag  string
+	SubLangTag    string
 	SubLangSource string
 	// InLibrary reports whether the library already holds this file's rendered
 	// target under an active verified placement. It is nil when this file has no
@@ -1723,7 +1723,7 @@ func rssListFile(file animedomain.PreviewFileResult, manifest *animecatalogdomai
 		Safety:               string(file.Safety),
 		BoundVideoSourcePath: file.BoundVideo,
 		SubLang:              file.SubLang,
-		SubLangTag:         file.SubLangTag,
+		SubLangTag:           file.SubLangTag,
 		SubLangSource:        file.SubLangSource,
 	}
 	if file.ReasonCode != nil {

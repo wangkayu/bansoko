@@ -35,12 +35,12 @@ func TestSubtitleLangCodePriority(t *testing.T) {
 func TestSubtitleLangNameDisplayWords(t *testing.T) {
 	// no flags: no resolved type, no dual/multi parse, AniBT quiet.
 	cases := []struct {
-		name   string
-		codes  []string
-		flag   string
+		name    string
+		codes   []string
+		flag    string
 		subLang string
-		anibt  string
-		want   string
+		anibt   string
+		want    string
 	}{
 		// The pinned composite family; a third language absorbs into the word.
 		// A composite with no resolved type carries the 双语 fallback tail.

@@ -113,7 +113,7 @@ type ReleaseFacts struct {
 	SubtitleMode string
 	Lang         string
 	Langs        []string
-	LangTag    []string
+	LangTag      []string
 }
 
 type EpFacts struct {
@@ -139,7 +139,7 @@ type SubFacts struct {
 	// BCP 47 tag (SubtitleLanguageTag) and LangSource file | release.
 	Lang       string
 	Langs      []string
-	LangTag  string
+	LangTag    string
 	LangSource string
 	// LangCode is the presentation-shaped short code of the list (sub.lang_code,
 	// lowercase, with the jpsc/jptc composites) and LangName the display word

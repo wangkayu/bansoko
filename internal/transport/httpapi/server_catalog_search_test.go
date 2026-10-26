@@ -335,4 +335,3 @@ func (s seedSearchTestStore) PersistProviderFeedSnapshot(_ context.Context, inpu
 		ContentHash: input.ContentHash, HashSchema: input.HashSchema, FreshnessState: catalogdomain.FeedSnapshotFresh, Seeds: input.Seeds,
 	}, nil
 }
-
