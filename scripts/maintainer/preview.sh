@@ -49,6 +49,10 @@ services:
   app:
     build:
       context: $src
+    environment:
+      # A preview serves exactly the reviewed commit; the embedded updater
+      # would replace it with the latest published release.
+      BANSOKO_UPDATE_MODE: manual
     volumes:
       - $root/config:/config
       - $repo/bansoko-downloads:/downloads
