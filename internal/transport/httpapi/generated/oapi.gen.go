@@ -6752,9 +6752,11 @@ type QBittorrentConnectionKind string
 
 // QBittorrentConnectionInput defines model for QBittorrentConnectionInput.
 type QBittorrentConnectionInput struct {
-	BaseUrl      string  `json:"base_url"`
-	Category     *string `json:"category,omitempty"`
-	DownloadRoot *string `json:"download_root,omitempty"`
+	BaseUrl  string  `json:"base_url"`
+	Category *string `json:"category,omitempty"`
+
+	// DownloadRoot Required absolute path as the download client sees it; blank values are rejected.
+	DownloadRoot string `json:"download_root"`
 
 	// DownloaderRoot Optional host-readable root that maps download_root (the savepath handed to the download client, which may live in a container) onto the app filesystem. Empty means the same-path convention: download_root is already host-readable.
 	DownloaderRoot *string                        `json:"downloader_root,omitempty"`

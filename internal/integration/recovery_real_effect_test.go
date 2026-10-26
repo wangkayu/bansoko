@@ -88,7 +88,7 @@ func TestRecoveryRealEffectQBIsReadOnlyForCommittedSubmit(t *testing.T) {
 	}
 	if err := connectionInput.FromQBittorrentConnectionInput(generated.QBittorrentConnectionInput{
 		BaseUrl:        endpoint,
-		DownloadRoot:   &downloadRoot,
+		DownloadRoot:   downloadRoot,
 		DownloaderRoot: &hostDownloadRoot,
 		Enabled:        true,
 		Kind:           generated.QBittorrentConnectionInputKindQbittorrent,

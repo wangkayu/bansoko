@@ -105,7 +105,7 @@ func TestMultiFileRealPostgresChain(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := connectionInput.FromQBittorrentConnectionInput(generated.QBittorrentConnectionInput{
-		BaseUrl: endpoint, DownloadRoot: &downloadRoot, DownloaderRoot: &hostDownloadRoot,
+		BaseUrl: endpoint, DownloadRoot: downloadRoot, DownloaderRoot: &hostDownloadRoot,
 		Enabled: true, Kind: generated.QBittorrentConnectionInputKindQbittorrent,
 		Name: connectionID, Secret: connectionSecret, Username: username,
 	}); err != nil {

@@ -179,6 +179,7 @@ export const enErrorCopy = {
   RELEASE_CHANGED: "The torrent changed. Try again.",
   RELEASE_RETRY_UNAVAILABLE: RETRY_LATER,
   QB_CONNECTION_NOT_CONFIGURED: "No download client configured. Add one in Settings first.",
+  DOWNLOADER_ALREADY_CONFIGURED: "A download client is already set up. Edit it instead.",
   QB_UNREACHABLE: "Cannot connect to the download client. Check the address and network.",
   QB_AUTH_FAILED: "Download client sign-in failed. Check the username and password.",
   QB_REQUEST_FAILED: "The download client is not responding. Try again later.",

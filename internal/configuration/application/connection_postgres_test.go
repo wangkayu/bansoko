@@ -160,7 +160,7 @@ func TestConnectionSecretClearPostgres(t *testing.T) {
 		t.Helper()
 		var input generated.ConnectionInput
 		if err := input.FromQBittorrentConnectionInput(generated.QBittorrentConnectionInput{
-			Kind: "qbittorrent", Name: "QB", Enabled: true, BaseUrl: "http://qb.local:8080", Username: "u", Secret: secret,
+			Kind: "qbittorrent", DownloadRoot: "/downloads", Name: "QB", Enabled: true, BaseUrl: "http://qb.local:8080", Username: "u", Secret: secret,
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -683,7 +683,7 @@ func TestHTTPServiceQBittorrentRuntimeConfigPropagatesConnectionIDPostgres(t *te
 	service := NewService(db, newConnectionTestSecretStore(t, db))
 	var input generated.ConnectionInput
 	if err := input.FromQBittorrentConnectionInput(generated.QBittorrentConnectionInput{
-		Kind: "qbittorrent", Name: "QB", Enabled: true, BaseUrl: "http://127.0.0.1:1", Username: "admin",
+		Kind: "qbittorrent", DownloadRoot: "/downloads", Name: "QB", Enabled: true, BaseUrl: "http://127.0.0.1:1", Username: "admin",
 		Secret: replaceConnectionSecret(t, "probe-password"),
 	}); err != nil {
 		t.Fatal(err)

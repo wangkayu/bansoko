@@ -178,6 +178,7 @@ export const errorCopy = {
   RELEASE_CHANGED: "种子状态已变化，请再试一次",
   RELEASE_RETRY_UNAVAILABLE: RETRY_LATER,
   QB_CONNECTION_NOT_CONFIGURED: "尚未配置下载器，请先到设置中添加",
+  DOWNLOADER_ALREADY_CONFIGURED: "已经设置了下载器，请直接编辑它",
   QB_UNREACHABLE: "无法连接下载器，请检查地址和网络",
   QB_AUTH_FAILED: "下载器登录失败，请检查用户名和密码",
   QB_REQUEST_FAILED: "下载器没有响应，请稍后重试",

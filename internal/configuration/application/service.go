@@ -537,6 +537,21 @@ FROM connections WHERE id = $1 FOR UPDATE`, id).Scan(&existingKind, &existingSec
 	if existingErr == nil && existingVersion != input.ExpectedVersion {
 		return domain.Connection{}, &apperrors.VersionConflict{Owner: "connection", CurrentVersion: existingVersion}
 	}
+	if input.Kind == domain.ConnectionQBittorrent {
+		// The runtime drives exactly one qBittorrent, so a second row is refused. The advisory lock
+		// serializes concurrent creates; an update of the existing row (same id) is always allowed.
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('connections:qbittorrent'))`); err != nil {
+			return domain.Connection{}, fmt.Errorf("lock qBittorrent connection: %w", err)
+		}
+		var otherID string
+		otherErr := tx.QueryRowContext(ctx, `SELECT id FROM connections WHERE kind = 'qbittorrent' AND id <> $1 LIMIT 1`, id).Scan(&otherID)
+		if otherErr == nil {
+			return domain.Connection{}, &apperrors.Business{Status: http.StatusConflict, Code: "DOWNLOADER_ALREADY_CONFIGURED", Message: "A download client is already configured; edit the existing one."}
+		}
+		if !errors.Is(otherErr, sql.ErrNoRows) {
+			return domain.Connection{}, fmt.Errorf("read existing qBittorrent connection: %w", otherErr)
+		}
+	}
 	secretRef, err := s.mutateSecretTx(ctx, tx, secretMutation, string(input.Kind)+":"+input.Name, existingSecretRef)
 	if err != nil {
 		return domain.Connection{}, fmt.Errorf("store connection secret: %w", err)
@@ -1257,8 +1272,14 @@ func validateConnectionInput(input domain.ConnectionInput) error {
 			if input.ID == "" {
 				return errors.New("qBittorrent connection config is required")
 			}
-		} else if _, err := input.QBittorrentConfig.Normalize(); err != nil {
-			return err
+		} else {
+			normalized, err := input.QBittorrentConfig.Normalize()
+			if err != nil {
+				return err
+			}
+			if normalized.SaveRoot == "" {
+				return &apperrors.BadRequest{Code: "VALIDATION_FAILED", Message: "download_root is required for a qBittorrent connection"}
+			}
 		}
 	} else if input.QBittorrentConfig != nil {
 		return errors.New("qBittorrent config is only valid for qBittorrent connections")

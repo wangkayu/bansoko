@@ -36,8 +36,8 @@ import { t } from "../../lib/i18n";
 //   it into one user:pass secret.
 //
 //   Built-in connections (mikan/anibt/bgm/tmdb) are seeded by instance initialization, exactly one
-//   per kind: they cannot be deleted (the contract has no delete) or newly created twice (the
-//   create dialog forbids an existing kind), while baseurl/routes are editable with a
+//   per kind: they cannot be deleted (the contract has no delete) or created (the create button
+//   only adds RSS access), while baseurl/routes are editable with a
 //   "restore defaults" (official address + direct connection). RSS HTTP is a transport-policy
 //   connection and may be created freely.
 //
@@ -115,13 +115,13 @@ type ConnectionDraft = {
 
 function connectionDraftFrom(item?: Connection): ConnectionDraft {
   if (!item) {
-    // A first-time user most often creates a provider: default to Mikan and prefill its real address.
+    // Built-in connections are seeded and cannot be created; the only creatable kind is RSS access.
     return {
       version: 0,
-      kind: "mikan",
+      kind: "rss_http",
       name: "",
       enabled: true,
-      base_url: PROVIDER_DEFAULT_URL.mikan!,
+      base_url: "",
       api_key: "",
       secret_mode: "replace",
       route_id: "",
@@ -446,12 +446,6 @@ function ConnectionsCard() {
     }, { replace: true });
   }, [deepLink, connections.data, openEditor, setSearchParams]);
 
-  // Builtin kinds that already have a row cannot be created again; the user
-  // edits the seeded row instead.
-  const usedBuiltinKinds = new Set(
-    (connections.data ?? []).filter(isBuiltinConnection).map((item) => item.kind as BuiltinConnectionKind),
-  );
-
   // Restore defaults: a built-in connection returns to the official address plus a direct connection (route binding cleared), saved on the user's confirmation.
   function restoreDefaults() {
     if (!draft || !(BUILTIN_CONNECTION_KINDS as readonly string[]).includes(draft.kind)) return;
@@ -554,25 +548,17 @@ function ConnectionsCard() {
             error && <Alert tone="error" title={error} />
           )}
           <div className="settings-connections-form settings-connections-form-responsive">
-            <Field
-              label={t("settings.connections.typeLabel")}
-              hint={!draft.id && usedBuiltinKinds.size > 0 ? t("settings.connections.typeHint") : undefined}
-            >
-              <Select label={t("settings.connections.typeLabel")} value={draft.kind} disabled={!!draft.id} options={[
-                  { value: "mikan", label: `Mikan${usedBuiltinKinds.has("mikan") ? t("settings.connections.builtinExisting") : ""}`, disabled: usedBuiltinKinds.has("mikan") },
-                  { value: "anibt", label: `AniBT${usedBuiltinKinds.has("anibt") ? t("settings.connections.builtinExisting") : ""}`, disabled: usedBuiltinKinds.has("anibt") },
-                  { value: "bgm", label: `BGM${usedBuiltinKinds.has("bgm") ? t("settings.connections.builtinExisting") : ""}`, disabled: usedBuiltinKinds.has("bgm") },
+            {draft.id && (
+              <Field label={t("settings.connections.typeLabel")}>
+                <Select label={t("settings.connections.typeLabel")} value={draft.kind} disabled options={[
+                  { value: "mikan", label: "Mikan" },
+                  { value: "anibt", label: "AniBT" },
+                  { value: "bgm", label: "BGM" },
                   { value: "rss_http", label: t("settings.connections.rssKind") },
-                  { value: "tmdb", label: `TMDB${usedBuiltinKinds.has("tmdb") ? t("settings.connections.builtinExisting") : ""}`, disabled: usedBuiltinKinds.has("tmdb") },
-                ]} onChange={(kind) => {
-                  // On a type switch: an empty address or one of the official defaults becomes the new type's
-//                   default address; a user-entered custom address (proxies included) is kept, never
-//                   overwritten.
-                  const knownDefaults = Object.values(PROVIDER_DEFAULT_URL);
-                  const refill = draft.base_url.trim() === "" || knownDefaults.includes(draft.base_url.trim());
-                  setDraft({ ...draft, kind: kind as ConnectionDraft["kind"], base_url: refill ? (PROVIDER_DEFAULT_URL[kind as ConnectionDraft["kind"]] ?? "") : draft.base_url });
-                }} />
-            </Field>
+                  { value: "tmdb", label: "TMDB" },
+                ]} onChange={() => undefined} />
+              </Field>
+            )}
             <Field label={t("settings.connections.nameLabel")}>
               <Input aria-label={t("settings.connections.nameLabel")} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
             </Field>

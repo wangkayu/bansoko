@@ -188,7 +188,7 @@ describe("api client", () => {
     fetchMock.mockResolvedValue(jsonResponse(200, {}));
     await putConnection(
       "qb-main",
-      { kind: "qbittorrent", name: "qb", enabled: true, base_url: "http://qb.local:8080", username: "u", secret: { mode: "replace", value: "p" } },
+      { kind: "qbittorrent", name: "qb", enabled: true, base_url: "http://qb.local:8080", username: "u", download_root: "/downloads", secret: { mode: "replace", value: "p" } },
       3,
     );
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];

@@ -257,8 +257,6 @@ describe("SettingsConnections 批次 3 契约", () => {
     renderSettings();
 
     fireEvent.click(await screen.findByRole("button", { name: t("settings.connections.new") }));
-    // The default type is mikan; this case switches to rss_http explicitly.
-    await selectOption(t("settings.connections.typeLabel"), t("settings.connections.rssKind"));
     expect(screen.queryByLabelText("User-Agent")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("超时（秒）")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("最大响应字节")).not.toBeInTheDocument();
@@ -277,16 +275,16 @@ describe("SettingsConnections 批次 3 契约", () => {
     expect(body).not.toHaveProperty("max_response_bytes");
   });
 
-  it("新建连接的类型选项不再包含 qBittorrent（已拆到下载与入库）", async () => {
+  it("新建连接直接是 RSS 访问：没有类型选择，也没有内置站点的地址字段", async () => {
     stubFetch();
     renderSettings();
 
     fireEvent.click(await screen.findByRole("button", { name: t("settings.connections.new") }));
 
-    const kindSelect = screen.getByRole("combobox", { name: t("settings.connections.typeLabel") });
-    await userEvent.click(kindSelect);
-    expect(await screen.findByRole("listbox")).toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: /qBittorrent/i })).not.toBeInTheDocument();
+    expect(await screen.findByLabelText(t("settings.connections.nameLabel"))).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: t("settings.connections.typeLabel") })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(t("settings.connections.siteAddress"))).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(t("settings.connections.tmdbAddress"))).not.toBeInTheDocument();
   });
 });
 
@@ -325,41 +323,6 @@ describe("SettingsConnections 批次 4 交互", () => {
   });
 });
 
-// New connections default to a provider (Mikan) rather than RSS HTTP, with each provider's real
-//   official address prefilled; a type switch follows the default address, while a user-entered ago
-//   proxy address is kept, never overwritten.
-describe("SettingsConnections 新建连接默认值（UX-7/8）", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.clearAllMocks();
-  });
-
-  it("新建默认 Mikan 预填真实地址；切换类型跟随默认，自定义地址保留", async () => {
-    stubFetch();
-    renderSettings();
-
-    fireEvent.click(await screen.findByRole("button", { name: t("settings.connections.new") }));
-    await userEvent.click(screen.getByRole("combobox", { name: t("settings.connections.typeLabel") }));
-    expect(await screen.findByRole("option", { name: "Mikan" })).toHaveAttribute("aria-selected", "true");
-    await userEvent.click(await screen.findByRole("option", { name: "Mikan" }));
-    expect(screen.getByLabelText(t("settings.connections.siteAddress"))).toHaveValue("https://mikanani.me");
-
-    // Switching to AniBT with the address still at the official default: it follows the switch.
-    await selectOption(t("settings.connections.typeLabel"), "AniBT");
-    expect(screen.getByLabelText(t("settings.connections.siteAddress"))).toHaveValue("https://anibt.net");
-
-    // After typing a fronting-proxy address, a type switch keeps the custom address.
-    fireEvent.change(screen.getByLabelText(t("settings.connections.siteAddress")), { target: { value: "https://proxy.internal/anibt" } });
-    await selectOption(t("settings.connections.typeLabel"), "BGM");
-    expect(screen.getByLabelText(t("settings.connections.bgmAddress"))).toHaveValue("https://proxy.internal/anibt");
-
-    // Clearing then switching types prefills the new type's default address again.
-    fireEvent.change(screen.getByLabelText(t("settings.connections.bgmAddress")), { target: { value: "" } });
-    await selectOption(t("settings.connections.typeLabel"), "Mikan");
-    expect(screen.getByLabelText(t("settings.connections.siteAddress"))).toHaveValue("https://mikanani.me");
-  });
-});
-
 // The connection model: the built-in provider/metadata connections (mikan/anibt/bgm/tmdb) have one
 //   per kind, the list marks them built-in, the create dialog forbids an existing kind, and the
 //   edit dialog offers restore defaults (official address + direct connection).
@@ -369,7 +332,7 @@ describe("SettingsConnections 内置连接", () => {
     vi.clearAllMocks();
   });
 
-  it("内置连接行显示「内置」标记；新建弹窗禁选已有内置 kind", async () => {
+  it("内置连接行显示「内置」标记；编辑时类型只读", async () => {
     stubFetch({
       connections: [
         { id: "mikan-1", kind: "mikan", name: "Mikan", enabled: true, base_url: "https://mikanani.me", version: 1 },
@@ -379,12 +342,8 @@ describe("SettingsConnections 内置连接", () => {
 
     expect(await screen.findByText(t("settings.connections.builtin"))).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: t("settings.connections.new") }));
-    await userEvent.click(screen.getByRole("combobox", { name: t("settings.connections.typeLabel") }));
-    const mikanOption = await screen.findByRole("option", { name: new RegExp(`Mikan${t("settings.connections.builtinExisting")}`) });
-    expect(mikanOption).toHaveAttribute("aria-disabled", "true");
-    // rss_http is a transport-policy connection, outside the built-in uniqueness constraint.
-    expect(await screen.findByRole("option", { name: t("settings.connections.rssKind") })).not.toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(screen.getByRole("button", { name: t("settings.connections.edit") }));
+    expect(await screen.findByRole("combobox", { name: t("settings.connections.typeLabel") })).toBeDisabled();
   });
 
   it("编辑内置连接：还原默认把 baseurl 恢复官方地址并清除路由绑定", async () => {

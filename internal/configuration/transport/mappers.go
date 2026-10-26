@@ -127,9 +127,7 @@ func ConnectionInput(input generated.ConnectionInput, id string) (configurationd
 		}
 		result.Name, result.Endpoint, result.QBittorrentConfig = v.Name, v.BaseUrl, &configurationdomain.QBittorrentConnectionConfig{Username: v.Username}
 		result.Enabled = v.Enabled
-		if v.DownloadRoot != nil {
-			result.QBittorrentConfig.SaveRoot = *v.DownloadRoot
-		}
+		result.QBittorrentConfig.SaveRoot = v.DownloadRoot
 		if v.DownloaderRoot != nil {
 			result.QBittorrentConfig.ApplicationRoot = *v.DownloaderRoot
 		}

@@ -7741,7 +7741,7 @@ components:
     QBittorrentConnectionInput:
       type: object
       additionalProperties: false
-      required: [kind, name, enabled, base_url, username, secret]
+      required: [kind, name, enabled, base_url, username, secret, download_root]
       properties:
         kind:
           type: string
@@ -7766,6 +7766,8 @@ components:
           type: string
           minLength: 1
           maxLength: 1024
+          pattern: '\S'
+          description: Required absolute path as the download client sees it; blank values are rejected.
         downloader_root:
           type: string
           minLength: 1

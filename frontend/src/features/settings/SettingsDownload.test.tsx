@@ -26,6 +26,7 @@ const qbConnection: Connection = {
   base_url: "http://qb.local:8080",
   username: "u",
   credential_configured: true,
+  download_root: "/downloads",
   category: "anime",
   user_tags: ["bangumi", "v2"],
   version: 5,
@@ -278,7 +279,7 @@ async function openNewDownloader() {
 }
 
 function fillDownloader(dialog: HTMLElement, overrides: Partial<Record<"name" | "address" | "username" | "password" | "downloadDir" | "localDir", string>> = {}) {
-  const values = { name: "主 qB", address: "http://qb.local:8080", username: "admin", password: "pw", downloadDir: "", localDir: "", ...overrides };
+  const values = { name: "主 qB", address: "http://qb.local:8080", username: "admin", password: "pw", downloadDir: "/downloads", localDir: "", ...overrides };
   fireEvent.change(within(dialog).getByLabelText(t("settings.download.name")), { target: { value: values.name } });
   fireEvent.change(within(dialog).getByLabelText(t("settings.download.address")), { target: { value: values.address } });
   fireEvent.change(within(dialog).getByLabelText(t("settings.download.username")), { target: { value: values.username } });
@@ -441,5 +442,32 @@ describe("SettingsDownload 下载器对话框校验与提交", () => {
     for (const [label, max] of limits) {
       expect(within(dialog).getByLabelText(label)).toHaveAttribute("maxlength", max);
     }
+  });
+
+  it("下载目录必填：为空时禁用保存并提示，填写后可保存", async () => {
+    stubFetch();
+    renderSettings();
+    const dialog = await openNewDownloader();
+
+    fillDownloader(dialog, { downloadDir: "" });
+    expect(within(dialog).getByText(t("settings.download.downloadDirRequired"))).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: t("settings.download.save") })).toBeDisabled();
+    fillDownloader(dialog, { downloadDir: "   " });
+    expect(within(dialog).getByRole("button", { name: t("settings.download.save") })).toBeDisabled();
+    fillDownloader(dialog, { downloadDir: "/downloads" });
+    expect(within(dialog).queryByText(t("settings.download.downloadDirRequired"))).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: t("settings.download.save") })).toBeEnabled();
+  });
+
+  it("只支持一个下载器：没有时有添加入口，已有一个时没有新建入口、仍可编辑", async () => {
+    stubFetch();
+    const first = renderSettings();
+    expect(await screen.findByRole("button", { name: t("settings.download.newDownloader") })).toBeInTheDocument();
+    first.unmount();
+
+    stubFetch({ connections: [qbConnection] });
+    renderSettings();
+    expect(await screen.findByRole("button", { name: t("settings.download.edit") })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: t("settings.download.newDownloader") })).not.toBeInTheDocument();
   });
 });

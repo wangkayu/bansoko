@@ -76,7 +76,7 @@ func TestQBManagementListTorrentsHappyPathPostgres(t *testing.T) {
 	httpService := newGeneratedHTTPService(NewHTTPService(service))
 	var input generated.ConnectionInput
 	if err := input.FromQBittorrentConnectionInput(generated.QBittorrentConnectionInput{
-		Kind: "qbittorrent", Name: "QB", Enabled: true, BaseUrl: qbServer.URL, Username: "admin",
+		Kind: "qbittorrent", DownloadRoot: "/downloads", Name: "QB", Enabled: true, BaseUrl: qbServer.URL, Username: "admin",
 		Secret: replaceConnectionSecret(t, "secret-password"),
 	}); err != nil {
 		t.Fatal(err)
@@ -107,7 +107,7 @@ func TestQBManagementListTorrentsUnreachableQBKeepsUpstreamSemanticsPostgres(t *
 	// instance that exists as a configured row but cannot be reached.
 	var input generated.ConnectionInput
 	if err := input.FromQBittorrentConnectionInput(generated.QBittorrentConnectionInput{
-		Kind: "qbittorrent", Name: "QB Down", Enabled: true, BaseUrl: "http://127.0.0.1:1", Username: "admin",
+		Kind: "qbittorrent", DownloadRoot: "/downloads", Name: "QB Down", Enabled: true, BaseUrl: "http://127.0.0.1:1", Username: "admin",
 		Secret: replaceConnectionSecret(t, "secret-password"),
 	}); err != nil {
 		t.Fatal(err)
@@ -170,7 +170,7 @@ func newQBManagementTorrentConnection(t *testing.T, ctx context.Context, db *sql
 	httpService := newGeneratedHTTPService(NewHTTPService(service))
 	var input generated.ConnectionInput
 	if err := input.FromQBittorrentConnectionInput(generated.QBittorrentConnectionInput{
-		Kind: "qbittorrent", Name: "QB", Enabled: true, BaseUrl: baseURL, Username: "admin",
+		Kind: "qbittorrent", DownloadRoot: "/downloads", Name: "QB", Enabled: true, BaseUrl: baseURL, Username: "admin",
 		Secret: replaceConnectionSecret(t, "secret-password"),
 	}); err != nil {
 		t.Fatal(err)

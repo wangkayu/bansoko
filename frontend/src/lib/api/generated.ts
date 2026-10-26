@@ -3262,7 +3262,8 @@ export interface components {
             username: string;
             secret: components["schemas"]["ConnectionSecret"];
             route_id?: components["schemas"]["ID"];
-            download_root?: string;
+            /** @description Required absolute path as the download client sees it; blank values are rejected. */
+            download_root: string;
             /** @description Optional host-readable root that maps download_root (the savepath handed to the download client, which may live in a container) onto the app filesystem. Empty means the same-path convention: download_root is already host-readable. */
             downloader_root?: string;
             category?: string;

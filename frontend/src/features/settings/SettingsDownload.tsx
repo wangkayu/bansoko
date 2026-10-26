@@ -305,13 +305,16 @@ function qbErrors(draft: QBDraft): QBErrors {
   const passwordEntered = !draft.credential_configured || draft.secret_mode === "replace";
   const address = draft.base_url.trim() !== "" && !qbAddressValid(draft.base_url) ? t("settings.download.addressInvalid") : undefined;
   const username = draft.username.trim() === "" && (draft.base_url.trim() !== "" || draft.password !== "") ? t("settings.download.usernameRequired") : undefined;
-  const downloadDir = hasParentSegment(draft.download_root) ? t("settings.download.pathInvalid") : undefined;
+  const downloadDir = draft.download_root.trim() === ""
+    ? (draft.base_url.trim() !== "" || draft.username.trim() !== "" || draft.password !== "" ? t("settings.download.downloadDirRequired") : undefined)
+    : hasParentSegment(draft.download_root) ? t("settings.download.pathInvalid") : undefined;
   const localDir = hasParentSegment(draft.downloader_root) ? t("settings.download.pathInvalid") : undefined;
   const blocked =
     draft.name.trim() === "" ||
     !qbAddressValid(draft.base_url) ||
     draft.username.trim() === "" ||
     (passwordEntered && draft.password === "") ||
+    draft.download_root.trim() === "" ||
     downloadDir !== undefined ||
     localDir !== undefined;
   return { address, username, downloadDir, localDir, blocked };
@@ -352,7 +355,7 @@ function QBittorrentCard() {
         username: draft.username.trim(),
         secret: buildSecret(draft.password),
         route_id: draft.route_id === "" ? undefined : draft.route_id,
-        download_root: draft.download_root.trim() === "" ? undefined : draft.download_root.trim(),
+        download_root: draft.download_root.trim(),
         downloader_root: draft.downloader_root.trim() === "" ? undefined : draft.downloader_root.trim(),
         category: draft.category.trim() === "" ? undefined : draft.category.trim(),
         user_tags: draft.user_tags.length === 0 ? undefined : draft.user_tags,
@@ -404,10 +407,12 @@ function QBittorrentCard() {
     <section className="settings-shared-grid">
       <div className="settings-shared-header">
         <h2 className="settings-shared-title text-title">{t("settings.download.downloaders")}</h2>
-        <Button variant="primary" size="sm" onClick={() => { const next = qbDraftFrom(); setError(undefined); setConflict(undefined); setDraft(next); setSavedDraft(next); }}>
-          <Plus size={14} />
-          {t("settings.download.newDownloader")}
-        </Button>
+        {connections.data && downloaders.length === 0 && (
+          <Button variant="primary" size="sm" onClick={() => { const next = qbDraftFrom(); setError(undefined); setConflict(undefined); setDraft(next); setSavedDraft(next); }}>
+            <Plus size={14} />
+            {t("settings.download.newDownloader")}
+          </Button>
+        )}
       </div>
 
       {connections.isLoading && (
