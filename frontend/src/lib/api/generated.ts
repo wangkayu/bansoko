@@ -2378,7 +2378,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Starts (or idempotently replays) an asynchronous snapshot scan for one anime. The scan owner persists batches with fencing; a completed generation is immutable. No filesystem effect is ever produced. */
+        /** @description Starts (or idempotently replays) an asynchronous snapshot scan for one anime. The scan owner persists batches with fencing; a completed generation is immutable. No filesystem effect is ever produced. A submit that lands while this anime's generation is still running answers 409 SCAN_IN_PROGRESS. */
         post: operations["submitReconciliationScan"];
         delete?: never;
         options?: never;

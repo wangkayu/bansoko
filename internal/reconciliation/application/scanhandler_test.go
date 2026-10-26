@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -199,6 +200,31 @@ func TestSubmitScanPeriodicGateForStoppedInstance(t *testing.T) {
 	}
 	if view.State != "running" {
 		t.Fatalf("manual scan must start: %+v", view)
+	}
+}
+
+// A submit that lands while the instance's generation is still running answers
+// the typed 409 SCAN_IN_PROGRESS instead of an opaque failure.
+func TestSubmitScanWhileRunningAnswersTypedConflict(t *testing.T) {
+	db, store := openReconTestDB(t)
+	defer db.Close()
+	files := testFiles(2)
+	seedReconInstance(t, db, "anime-rec-busy", "sub-rec-busy", "active", files)
+	service, err := NewService(db, store, &fakeScanner{files: files})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := ScanSubmitInput{ManagedAnimeID: "anime-rec-busy", TreeTop: stringPtr("/library")}
+	if _, err := service.SubmitScan(context.Background(), input); err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.SubmitScan(context.Background(), input)
+	var business *apperrors.Business
+	if !errors.As(err, &business) {
+		t.Fatalf("second submit = %v, want a typed conflict", err)
+	}
+	if business.Status != 409 || business.Code != "SCAN_IN_PROGRESS" {
+		t.Fatalf("second submit = %d %s, want 409 SCAN_IN_PROGRESS", business.Status, business.Code)
 	}
 }
 
