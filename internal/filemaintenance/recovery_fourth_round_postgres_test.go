@@ -124,7 +124,7 @@ func TestRecoverAnimeFileApplicationUsesSettlementLockOrder(t *testing.T) {
 }
 
 func TestRecoverAnimeFileApplicationRefusesUnfinishedPlacementHandoff(t *testing.T) {
-	for _, state := range []string{"pending", "waiting_retry"} {
+	for _, state := range []string{"pending", "waiting_retry", "failed"} {
 		t.Run(state, func(t *testing.T) {
 			scene := newRecoveryApplicationScene(t)
 			service := scene.service(&staticObserver{files: scene.files})
@@ -134,14 +134,16 @@ SELECT source_owner_ref, 'pending' FROM placements WHERE id = $1`,
 				scene.candidate.PlacementID); err != nil {
 				t.Fatalf("seed pending handoff: %v", err)
 			}
-			if state == "waiting_retry" {
+			if state != "pending" {
+				// The same shape the obligation worker leaves: a retrying or
+				// exhausted row carries attempts and a reason.
 				if _, err := scene.db.Exec(`
 UPDATE placement_obligations
-SET state = 'waiting_retry', attempts = 1,
+SET state = $2, attempts = 1,
     reason_code = 'retry_test', reason = 'retry test'
 WHERE file_operation_id = (SELECT source_owner_ref FROM placements WHERE id = $1)`,
-					scene.candidate.PlacementID); err != nil {
-					t.Fatalf("transition handoff to waiting_retry: %v", err)
+					scene.candidate.PlacementID, state); err != nil {
+					t.Fatalf("transition handoff to %s: %v", state, err)
 				}
 			}
 

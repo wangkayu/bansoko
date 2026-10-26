@@ -48,7 +48,10 @@ func (o *RecoveryOccupancy) RecoveryTargetsOccupied(ctx context.Context, paths [
 // recovery probe and the confirm's own re-verification: a path is taken when
 // another ACTIVE placement or companion relation owns it, or when any
 // non-terminal owner still holds it (the same surface the file manager
-// refuses new operations on). Sharing the text keeps the two decisions from
+// refuses new operations on), or when the candidate placement's OWN handoff
+// obligation is pending, waiting_retry or failed (a failed handoff can be
+// manually re-opened and would admit companions against the operation's
+// original target path). Sharing the text keeps the two decisions from
 // drifting apart.
 const recoveryPathOccupancyQuery = `
 SELECT EXISTS(
@@ -63,7 +66,7 @@ SELECT EXISTS(
   SELECT 1 FROM placements p
   JOIN placement_obligations po ON po.file_operation_id = p.source_owner_ref
    WHERE p.id = $2 AND p.source_evidence_type = 'file_operation'
-     AND po.state IN ('pending', 'waiting_retry')
+     AND po.state IN ('pending', 'waiting_retry', 'failed')
 ) OR EXISTS(SELECT 1 FROM (` + recoveryUnfinishedOwners + `) h
             WHERE h.path COLLATE "C" = ANY($1::text[]))`
 

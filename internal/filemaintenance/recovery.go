@@ -512,9 +512,10 @@ FOR UPDATE`, placementID, animeID).
 }
 
 // lockRecoveryPlacementObligationsTx locks the placement's durable handoff
-// obligations and reports whether any still owes work. Terminal rows are locked
-// too: otherwise a failed -> waiting_retry retry could race this check and
-// recreate the orphan the refusal is meant to prevent.
+// obligations and reports whether any still owes work or can be re-opened:
+// pending, waiting_retry and failed (a manual retry re-opens a failed row and
+// would admit against the operation's original target path). Admitted rows
+// are locked too, so no state change races this check before commit.
 func lockRecoveryPlacementObligationsTx(ctx context.Context, tx *sql.Tx, placementID string) (bool, error) {
 	rows, err := tx.QueryContext(ctx, `
 SELECT po.state FROM placement_obligations po
@@ -532,7 +533,10 @@ FOR UPDATE OF po`, placementID)
 		if err := rows.Scan(&state); err != nil {
 			return false, err
 		}
-		if state == "pending" || state == "waiting_retry" {
+		// failed is refused too: a failed handoff can be manually re-opened,
+		// and the re-opened admission registers companions against the
+		// operation's immutable target path, splitting a recovered unit.
+		if state == "pending" || state == "waiting_retry" || state == "failed" {
 			pending = true
 		}
 	}
