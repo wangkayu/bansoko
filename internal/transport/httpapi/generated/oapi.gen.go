@@ -1600,6 +1600,7 @@ const (
 	QualityCompareKeyRtCodec           QualityCompareKey = "rt.codec"
 	QualityCompareKeyRtResolution      QualityCompareKey = "rt.resolution"
 	QualityCompareKeyRtSource          QualityCompareKey = "rt.source"
+	QualityCompareKeyRtSubFlag         QualityCompareKey = "rt.sub_flag"
 	QualityCompareKeyRtSubLang         QualityCompareKey = "rt.sub_lang"
 	QualityCompareKeySubgroupScore     QualityCompareKey = "subgroup.score"
 )
@@ -6857,7 +6858,7 @@ type QBittorrentTorrentFile struct {
 	Size     int64   `json:"size"`
 }
 
-// QualityCompareItem One comparison item. ranks lists value sets best first; a release hits an entry when its values contain every value of the entry (order- and case-insensitive) and takes its best-ranked hit; a release that hits nothing, or has no value, ranks last. Only multi-valued items (anibt.language, rt.sub_lang) take entries of several values; a duplicate value set is rejected. subgroup.score and release.revision take no ranks (subscription subgroup score; numeric vN, absent = v1).
+// QualityCompareItem One comparison item. ranks lists value sets best first; a release hits an entry when its values contain every value of the entry (order- and case-insensitive) and takes its best-ranked hit; a release that hits nothing, or has no value, ranks last. Only multi-valued items (anibt.language, rt.sub_lang, rt.sub_flag) take entries of several values; a duplicate value set is rejected. subgroup.score and release.revision take no ranks (subscription subgroup score; numeric vN, absent = v1).
 type QualityCompareItem struct {
 	Key   QualityCompareKey `json:"key"`
 	Ranks [][]string        `json:"ranks"`

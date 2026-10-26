@@ -13,6 +13,7 @@ import (
 var rtCompareDimensions = map[string]string{
 	qualityprofile.KeyRtResolution: "resolution",
 	qualityprofile.KeyRtSubLang:    "sub_lang",
+	qualityprofile.KeyRtSubFlag:    "sub_flag",
 	qualityprofile.KeyRtSource:     "source_type",
 	qualityprofile.KeyRtCodec:      "video_codec",
 }

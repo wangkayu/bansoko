@@ -22,6 +22,7 @@ export const COMPARE_ITEMS: readonly CompareItemDef[] = [
   { key: "anibt.format", namespace: "anibt", kind: "single" },
   { key: "rt.resolution", namespace: "rt", kind: "single" },
   { key: "rt.sub_lang", namespace: "rt", kind: "multi" },
+  { key: "rt.sub_flag", namespace: "rt", kind: "multi" },
   { key: "rt.source", namespace: "rt", kind: "single" },
   { key: "rt.codec", namespace: "rt", kind: "single" },
 ];

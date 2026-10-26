@@ -90,6 +90,16 @@ describe("QualityCompareEditor", () => {
     expect(screen.getByText(t("qualityCompare.empty"))).toBeInTheDocument();
   });
 
+  it("explains the subtitle type item when it is added", async () => {
+    renderWithQuery(<Harness />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: t("qualityCompare.addItem") }));
+    const menu = await screen.findByRole("menu");
+    await user.click(within(menu).getByRole("menuitem", { name: compareItemName("rt.sub_flag") }));
+    expect(latest.items.at(-1)).toEqual({ key: "rt.sub_flag", ranks: [] });
+    expect(screen.getByText(new RegExp(t("qualityCompare.subFlagHint")))).toBeInTheDocument();
+  });
+
   it("adds a combination ahead of narrower entries and rejects the same set again", async () => {
     renderWithQuery(<Harness animeID="anime-1" />);
     await waitFor(() => expect(screen.getByRole("checkbox", { name: t("qualityCompare.comboValueAria", { value: "CHT" }) })).toBeInTheDocument());

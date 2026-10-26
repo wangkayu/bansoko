@@ -47,6 +47,7 @@ const (
 	KeyAniBTFormat       = "anibt.format"
 	KeyRtResolution      = "rt.resolution"
 	KeyRtSubLang         = "rt.sub_lang"
+	KeyRtSubFlag         = "rt.sub_flag"
 	KeyRtSource          = "rt.source"
 	KeyRtCodec           = "rt.codec"
 )
@@ -81,6 +82,7 @@ var Items = []ItemDef{
 	{KeyAniBTFormat, NamespaceAniBT, KindSingle},
 	{KeyRtResolution, NamespaceRt, KindSingle},
 	{KeyRtSubLang, NamespaceRt, KindMulti},
+	{KeyRtSubFlag, NamespaceRt, KindMulti},
 	{KeyRtSource, NamespaceRt, KindSingle},
 	{KeyRtCodec, NamespaceRt, KindSingle},
 }

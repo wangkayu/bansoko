@@ -208,6 +208,7 @@ function RankedBody({
   const hints = [t("qualityCompare.rankHint")];
   if (def.kind === "multi") hints.push(t("qualityCompare.multiHint"));
   if (def.namespace === "anibt") hints.push(t("qualityCompare.anibtHint"));
+  if (itemKey === "rt.sub_flag") hints.push(t("qualityCompare.subFlagHint"));
 
   return (
     <>

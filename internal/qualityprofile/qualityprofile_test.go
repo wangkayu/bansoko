@@ -267,3 +267,46 @@ func TestLayerWithoutDataTies(t *testing.T) {
 		t.Fatalf("a present unlisted value must still rank lowest: %+v", result)
 	}
 }
+
+// rt.sub_flag is a registered multi-valued item outside the default order: a
+// set entry hits when the release's flags contain it, the best-ranked hit
+// wins, and a release without flags ties.
+func TestSubFlagItemIsMultiValuedAndTiesWithoutData(t *testing.T) {
+	def, ok := Lookup(KeyRtSubFlag)
+	if !ok || def.Namespace != NamespaceRt || def.Kind != KindMulti {
+		t.Fatalf("rt.sub_flag registration = %+v, %v", def, ok)
+	}
+	if profile, err := Parse(DefaultJSON()); err != nil || strings.Contains(strings.Join(profile.Keys(), ","), KeyRtSubFlag) {
+		t.Fatalf("rt.sub_flag must not be in the default order: %v %v", profile.Keys(), err)
+	}
+	profile := Profile{Version: Version, Items: []Item{
+		{Key: KeyRtSubFlag, Ranks: [][]string{{"soft", "ex"}, {"soft"}, {"hard"}}},
+		{Key: KeyRtResolution, Ranks: [][]string{{"1080p"}, {"720p"}}},
+	}}
+	if _, err := Parse(mustJSON(t, profile)); err != nil {
+		t.Fatalf("profile with rt.sub_flag rejected: %v", err)
+	}
+	both := subject(map[string][]string{KeyRtSubFlag: {"soft", "ex"}}, nil, nil)
+	soft := subject(map[string][]string{KeyRtSubFlag: {"soft"}}, nil, nil)
+	hard := subject(map[string][]string{KeyRtSubFlag: {"hard"}}, nil, nil)
+	if result := Compare(both, soft, profile); !result.Better || result.Decided != KeyRtSubFlag {
+		t.Fatalf("soft+ex must beat soft: %+v", result)
+	}
+	if result := Compare(soft, hard, profile); !result.Better || result.Decided != KeyRtSubFlag {
+		t.Fatalf("soft must beat hard: %+v", result)
+	}
+	none := subject(map[string][]string{KeyRtResolution: {"720p"}}, nil, nil)
+	better := subject(map[string][]string{KeyRtResolution: {"1080p"}}, nil, nil)
+	if result := Compare(better, none, profile); !result.Better || result.Decided != KeyRtResolution {
+		t.Fatalf("a release without flags must tie and the next item decide: %+v", result)
+	}
+}
+
+func mustJSON(t *testing.T, profile Profile) []byte {
+	t.Helper()
+	raw, err := json.Marshal(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
