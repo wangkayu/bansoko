@@ -1,14 +1,14 @@
-// Replacement comparison ("What counts as better"): the comparison item editor
-// shared by the Global replacement policy and the anime configuration.
+// Version priority (the comparison item editor): shared by the global
+// "Episode versions" settings and the anime configuration.
 
 import type { CopyShape } from "./types";
 import type { qualityCompareCopy } from "./zh-CN.quality-compare";
 
 export const enQualityCompareCopy = {
-  title: "What Counts as Better",
+  title: "Version priority",
   description: "Items are compared top to bottom; the first item that tells two versions apart decides. If all items are equal, the larger file is better; if the size is equal too, the existing file stays.",
   sourceHint: "Each item names where its value comes from. Different sources of the same attribute can be added and ordered separately; there is no automatic fallback between sources.",
-  allModeNote: "\"Keep all\" is selected: nothing is compared and the settings below have no effect.",
+  allModeNote: "\"All\" is selected: nothing is compared and the settings below have no effect.",
   listAria: "Comparison order",
   namespace: {
     subgroup: "Group",
@@ -38,7 +38,7 @@ export const enQualityCompareCopy = {
   removeItem: "Remove {item}",
   addItem: "Add item",
   scoreHint: "Uses the score of the release's RSS source group on this anime's Groups tab; a higher score is better. Releases without a score or without an RSS source rank lowest. Mikan and AniBT groups are scored separately.",
-  scorePerGroup: "\"Best per group\" is selected: versions are only compared within one group, so this item has no effect.",
+  scorePerGroup: "\"One per subtitle group\" is selected: versions are only compared within one group, so this item has no effect.",
   scoreLink: "Go to group scores",
   revisionHint: "Compared by revision number automatically: v3 beats v2, and v2 beats no revision. Nothing to set.",
   rankHint: "Order from best to worst; drag or use ‹ › to adjust. Values not listed and releases without this item rank worst.",

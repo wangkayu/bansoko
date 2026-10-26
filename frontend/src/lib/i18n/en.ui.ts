@@ -90,7 +90,7 @@ export const enStatusCopy = {
     download_changed: "Download status",
     artifact_verified: "File verification",
     placement_changed: "Import location",
-    replacement_decided: "Replacement",
+    replacement_decided: "Replaced by a better version",
     cleanup_completed: "Cleanup done",
     file_alignment_completed: "Imported",
     file_alignment_failed: "Import failed",

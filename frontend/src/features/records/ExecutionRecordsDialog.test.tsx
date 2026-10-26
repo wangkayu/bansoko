@@ -448,7 +448,7 @@ describe("ExecutionRecordsDialog 详情", () => {
     expect(within(stages).queryByRole("button")).not.toBeInTheDocument();
   });
 
-  it("已入库文件的结局：洗版替换、被其他番剧覆盖、重新下载", async () => {
+  it("已入库文件的结局：替换版本、被其他番剧覆盖、重新下载", async () => {
     const done = { state: "completed" as const, operation: "copy" };
     filesBody = {
       ...files,

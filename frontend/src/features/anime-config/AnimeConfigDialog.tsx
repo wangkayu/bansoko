@@ -514,9 +514,8 @@ function SubscribedBody({
               ),
               // The subscription-settings revision (BusinessRevisionEditor) no longer hangs at
               // the rules tab's end: it is just the rules' second save path (the single-save
-              // model). It is handed back as rulesExtra on restore (keeping hideReplacement,
-              // which hides those four controls per the subscription's current replacement
-              // cleanup version).
+              // model). A subscribed anime has no episode-versions editor here yet; only the
+              // draft edits its own copy (see BusinessSnapshotFields).
             }}
             initialTab={initialTab}
             onTabChange={onTabChange}
@@ -981,16 +980,13 @@ function DraftBody({
       setObservedGroups(groups);
       setObservation(next);
     },
-    // Hidden per the subscription's current replacement version: hideReplacement only
-    // removes those four controls; unknown episodes keep showing (the parser lives in the rules
-    // section "parsing", alongside the episode recognition rules), and the section name becomes
-    // "subscription settings". Restoring drops hideReplacement and puts the aria-label back to
-    // t("config.replacementAria") (the subscribed counterpart is SubscribedBody's rulesExtra).
+    // The draft's own copy of the episode-versions policy plus unknown-episode handling (the
+    // parser lives in the rules section "parsing", alongside the episode recognition rules).
     rulesExtra: (
       <>
         {draft.business && (
-          <section aria-label={t("anime.revision.aria")}>
-            <BusinessSnapshotFields value={draft.business} hideReplacement onChange={(business) => setDraft({ ...draft, business })} />
+          <section aria-label={t("config.replacementAria")}>
+            <BusinessSnapshotFields value={draft.business} onChange={(business) => setDraft({ ...draft, business })} />
           </section>
         )}
         <NewReleasesOnlyField

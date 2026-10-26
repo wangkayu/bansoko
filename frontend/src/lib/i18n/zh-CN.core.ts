@@ -129,11 +129,11 @@ export const fileCopy = {
 } as const;
 
 export const replacementCopy = {
-  admissionTitle: "同集多版本洗版方式",
+  admissionTitle: "保留方式",
   admission: {
     all: "全部保留",
-    per_group: "按字幕组择优",
-    single_copy: "每集仅留一份",
+    per_group: "每个字幕组留一份",
+    single_copy: "只留一份",
   },
 } as const;
 
@@ -152,7 +152,7 @@ export const settingsCopy = {
     rules: "默认规则",
     vars: "命名变量",
     unclassified: "未识别集数",
-    replacement: "洗版",
+    replacement: "同集多版本",
     automation: "自动任务",
     notifications: "通知",
     updates: "版本与升级",

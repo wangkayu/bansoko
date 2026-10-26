@@ -1,4 +1,4 @@
-// C3：设置里的订阅数量与对齐 / 站点配置 / 默认规则 / 保留与清理。
+// C3：设置里的订阅数量与对齐 / 站点配置 / 默认规则 / 同集多版本。
 // 覆盖 c2 里同名的 `settings.policy` 与 `settings.site`；语气见 copy-guide。
 
 export const settingsProviderCopy = {
@@ -220,22 +220,23 @@ export const settingsProviderCopy = {
     },
   },
   replacement: {
-    title: "洗版",
-    description: "洗版设置仅对之后新建的订阅生效，已有订阅不受影响",
+    title: "同集多版本",
+    description: "仅对之后新建的订阅生效，已有订阅不受影响",
     save: "保存",
-    saveAria: "保存洗版设置",
+    saveAria: "保存同集多版本设置",
     saving: "保存中…",
-    saved: "洗版默认已保存",
-    saveFailed: "保存洗版默认失败",
-    loading: "正在读取洗版默认…",
-    loadFailed: "无法读取洗版默认",
+    saved: "同集多版本默认已保存",
+    saveFailed: "保存同集多版本默认失败",
+    loading: "正在读取同集多版本默认…",
+    loadFailed: "无法读取同集多版本默认",
     admissionCard: "同一集有多个版本时",
     admissionHint: {
-      all: "所有版本都保留，不清理旧文件",
-      per_group: "同一字幕组的同一集，只保留质量更高的一份",
-      single_copy: "同一集无论哪个字幕组，只保留质量最高的一份",
+      all: "所有版本都保留，不删除旧文件",
+      per_group: "同一字幕组的同一集只留评分最高的一份",
+      single_copy: "同一集不论字幕组只留评分最高的一份",
     },
     replacedNote: "被替换的旧文件会直接删除，无法恢复",
+    timingNote: "修改后不会立即处理已有文件，下一次有新种子、完成文件扫描或订阅恢复时才按新设置处理",
     unclassified: {
       description: "仅对之后新建的订阅生效，已有订阅不受影响",
       saved: "未识别集数的文件默认已保存",

@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReplacementPolicyDefaultView } from "../../lib/api/client";
-import { SettingsReplacement } from "./SettingsReplacement";
+import { SettingsReplacement, SettingsUnclassified } from "./SettingsReplacement";
 import { SaveHarness } from "./saveHarness.test-utils";
 import { t } from "../../lib/i18n";
 import { compareItemName } from "../replacement/compareCopy";
@@ -61,12 +61,12 @@ beforeEach(() => {
 
 afterEach(() => vi.unstubAllGlobals());
 
-function renderPage(onDirtyChange?: (dirty: boolean) => void) {
+function renderPage(onDirtyChange?: (dirty: boolean) => void, Page: typeof SettingsReplacement = SettingsReplacement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
       <SaveHarness>
-        <SettingsReplacement onDirtyChange={onDirtyChange} />
+        <Page onDirtyChange={onDirtyChange} />
       </SaveHarness>
     </QueryClientProvider>,
   );
@@ -120,12 +120,14 @@ describe("SettingsReplacement", () => {
     // The reloaded server value keeps one version per group, so replaced old
     // files are deleted and the page says so.
     expect(await screen.findByText(t("settings.replacement.replacedNote"))).toBeInTheDocument();
+    // A policy change decides nothing at once; the page says when existing files are judged.
+    expect(screen.getByText(t("settings.replacement.timingNote"))).toBeInTheDocument();
     expect(screen.queryByText(t("common.versionConflict"))).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: t("settings.replacement.saveAria") })).toBeDisabled();
   });
 
   it("saves the unclassified-file default through the footer save, independently of the replacement default", async () => {
-    renderPage();
+    renderPage(undefined, SettingsUnclassified);
     // The buttons render before the data does; wait for the loaded control itself.
     const select = await screen.findByLabelText(t("settings.replacement.unclassified.selectLabel"));
     const footerSave = () => screen.getByRole("button", { name: t("act.save") });

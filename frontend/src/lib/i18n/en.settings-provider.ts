@@ -1,4 +1,4 @@
-// C3: Settings · Group limit & alignment / Site settings / Default rules / Replacement.
+// C3: Settings · Group limit & alignment / Site settings / Default rules / Episode versions.
 
 import type { CopyShape } from "./types";
 import type { settingsProviderCopy } from "./zh-CN.settings-provider";
@@ -222,22 +222,23 @@ export const enSettingsProviderCopy = {
     },
   },
   replacement: {
-    title: "Replacement",
+    title: "Episode versions",
     description: "Applies only to new subscriptions. Existing subscriptions are not affected.",
     save: "Save",
-    saveAria: "Save replacement settings",
+    saveAria: "Save episode versions settings",
     saving: "Saving…",
-    saved: "Replacement defaults saved",
-    saveFailed: "Failed to save replacement defaults",
-    loading: "Loading replacement defaults…",
-    loadFailed: "Couldn't load replacement defaults",
+    saved: "Episode versions defaults saved",
+    saveFailed: "Failed to save episode versions defaults",
+    loading: "Loading episode versions defaults…",
+    loadFailed: "Couldn't load episode versions defaults",
     admissionCard: "When an Episode Has Multiple Versions",
     admissionHint: {
-      all: "Keep every version and don't clean up old files",
-      per_group: "For each episode from the same group, keep only the better version",
-      single_copy: "For each episode, keep only the best version regardless of group",
+      all: "Keep every version; old files are not deleted",
+      per_group: "Keeps only the highest-scoring copy of each episode from the same subtitle group",
+      single_copy: "Keeps only the highest-scoring copy of each episode, whatever the subtitle group",
     },
     replacedNote: "Replaced old files are deleted directly and cannot be restored",
+    timingNote: "Changes do not touch existing files right away. They apply at the next new seed, completed file scan or resumed subscription.",
     unclassified: {
       description: "Applies only to new subscriptions. Existing subscriptions are not affected.",
       saved: "Defaults for files without an episode number saved",
