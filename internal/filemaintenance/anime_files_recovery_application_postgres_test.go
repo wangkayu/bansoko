@@ -66,8 +66,14 @@ func newRecoveryApplicationScene(t *testing.T) *recoveryApplicationScene {
 
 func seedRecoveryApplicationScene(t *testing.T, fixture *calibrationFixture, animeID string) *recoveryApplicationScene {
 	t.Helper()
+	return seedRecoveryApplicationSceneWithRules(t, fixture, animeID, recoveryRules())
+}
+
+// seedRecoveryApplicationSceneWithRules seeds the same scene under a caller
+// rule set, so a test can render the unit under a real directory.
+func seedRecoveryApplicationSceneWithRules(t *testing.T, fixture *calibrationFixture, animeID string, rules naming.NamingRules) *recoveryApplicationScene {
+	t.Helper()
 	db := fixture.db
-	rules := recoveryRules()
 
 	observedPath := "/library/" + animeID + "/raw ep1.mkv"
 	seedCompletedGenerationWithRenderChains(t, db, animeID, 1, map[string]string{observedPath: "meta:size=4096"}, rules)
