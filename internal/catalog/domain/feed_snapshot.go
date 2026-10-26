@@ -267,7 +267,7 @@ func validCustomSnapshotRef(value, prefix string) bool {
 }
 
 func (s ProviderFeedSnapshotWrite) Validate() error {
-	if s.Provider != "anibt" && s.Provider != "mikan" && s.Provider != "custom" {
+	if s.Provider != "anibt" && s.Provider != "mikan" && s.Provider != "nyaa" && s.Provider != "custom" {
 		return fmt.Errorf("unsupported feed snapshot provider %q", s.Provider)
 	}
 	if strings.TrimSpace(s.ProviderEntryRef) == "" || len(s.ProviderEntryRef) > 256 {
@@ -308,8 +308,8 @@ func (s ProviderFeedSnapshotWrite) Validate() error {
 			return err
 		}
 	case FeedSnapshotKindProviderFeed:
-		if s.Provider == "custom" {
-			return errors.New("a provider feed snapshot requires a discovery provider")
+		if s.Provider == "custom" || s.Provider == "nyaa" {
+			return errors.New("a provider feed snapshot requires a discovery provider (anibt or mikan)")
 		}
 		// A published feed names a real catalog entry and group. A ref in the
 		// search namespace is a derived search scope wearing the feed kind, and

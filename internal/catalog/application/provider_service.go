@@ -20,7 +20,21 @@ import (
 const (
 	ProviderAniBT = "anibt"
 	ProviderMikan = "mikan"
+	// ProviderNyaa is a torrent-search-only source with no work catalog: keyword
+	// seed search accepts it and nothing else does. Catalog reads, group
+	// discovery and suppression keep validating against validateCatalogProvider.
+	ProviderNyaa = "nyaa"
 )
+
+// validateSearchProvider is the provider set keyword seed search accepts.
+func validateSearchProvider(provider string) error {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case ProviderAniBT, ProviderMikan, ProviderNyaa:
+		return nil
+	default:
+		return fmt.Errorf("unsupported search provider %q", provider)
+	}
+}
 
 func validateCatalogProvider(provider string) error {
 	switch strings.ToLower(strings.TrimSpace(provider)) {

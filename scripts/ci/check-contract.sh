@@ -709,7 +709,7 @@ end
 # vocabulary carries custom so the same admission command can submit a seed read
 # from the draft's own frozen custom feed, while ProviderKind (the discovery and
 # subscription vocabulary) stays two-valued.
-assert_enum.call("SnapshotSeedProvider", %w[anibt mikan custom])
+assert_enum.call("SnapshotSeedProvider", %w[anibt mikan nyaa custom])
 abort "ProviderKind must stay the discovery vocabulary" unless enum_values.call(schemas.fetch("ProviderKind")) == %w[anibt mikan]
 %w[SelectedSeed SelectedSeedInput SnapshotSeedDownloadInput].each do |name|
   provider = schemas.fetch(name).fetch("properties").fetch("provider")

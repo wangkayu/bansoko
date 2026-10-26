@@ -98,6 +98,7 @@ type SeedSearchApplication struct {
 	// factory so a test can inject one without a network.
 	AniBT HTTPAniBTTorznabSearcher
 	Mikan HTTPMikanSearcher
+	Nyaa  HTTPNyaaSearcher
 	// Now is the clock; nil is the wall clock in UTC.
 	Now func() time.Time
 	// Resolver and AllowPrivateHosts are the shared SSRF policy knobs the
@@ -144,8 +145,8 @@ func (a SeedSearchApplication) Fetch(ctx context.Context, input FetchSearchSnaps
 		return SearchSeedPreview{}, &apperrors.Business{Status: http.StatusServiceUnavailable, Code: "PROVIDER_FEED_SNAPSHOT_STORE_NOT_CONFIGURED", Message: "Provider feed snapshots are not configured on this server."}
 	}
 	provider := strings.ToLower(strings.TrimSpace(input.Provider))
-	if err := validateCatalogProvider(provider); err != nil {
-		return SearchSeedPreview{}, &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "PROVIDER_KIND_INVALID", Message: "Provider must be anibt or mikan."}
+	if err := validateSearchProvider(provider); err != nil {
+		return SearchSeedPreview{}, &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "PROVIDER_KIND_INVALID", Message: "Provider must be anibt, mikan or nyaa."}
 	}
 	query := NormalizeSearchQuery(input.Query)
 	if query == "" || utf8.RuneCountInString(query) > 256 {
@@ -198,8 +199,8 @@ func (a SeedSearchApplication) FetchSearchSnapshotByID(ctx context.Context, prov
 		return catalogdomain.ProviderRSSPreviewResult{}, &apperrors.Business{Status: http.StatusServiceUnavailable, Code: "PROVIDER_FEED_SNAPSHOT_STORE_NOT_CONFIGURED", Message: "Provider feed snapshots are not configured on this server."}
 	}
 	provider = strings.ToLower(strings.TrimSpace(provider))
-	if err := validateCatalogProvider(provider); err != nil {
-		return catalogdomain.ProviderRSSPreviewResult{}, &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "PROVIDER_KIND_INVALID", Message: "Provider must be anibt or mikan."}
+	if err := validateSearchProvider(provider); err != nil {
+		return catalogdomain.ProviderRSSPreviewResult{}, &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "PROVIDER_KIND_INVALID", Message: "Provider must be anibt, mikan or nyaa."}
 	}
 	if err := catalogdomain.ValidateSearchSnapshotRef(scopeRef, catalogdomain.SearchSnapshotScopePrefix); err != nil {
 		return catalogdomain.ProviderRSSPreviewResult{}, fmt.Errorf("%w: %v", catalogdomain.ErrProviderFeedSnapshotIdentityMismatch, err)
@@ -338,6 +339,14 @@ func (a SeedSearchApplication) search(ctx context.Context, provider, endpoint st
 			return SeedSearchResult{}, err
 		}
 		return reader.SearchMikanSeeds(ctx, query)
+	case ProviderNyaa:
+		reader := a.Nyaa
+		reader.Endpoint = endpoint
+		reader.Client = client
+		if err := a.attachSSRFTransport(&reader.Client); err != nil {
+			return SeedSearchResult{}, err
+		}
+		return reader.SearchNyaaSeeds(ctx, query)
 	default:
 		return SeedSearchResult{}, fmt.Errorf("%w: %s", ErrSearchNotSupported, provider)
 	}

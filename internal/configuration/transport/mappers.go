@@ -180,6 +180,16 @@ func ConnectionInput(input generated.ConnectionInput, id string) (configurationd
 		if v.RouteId != nil {
 			result.NetworkRouteID = string(*v.RouteId)
 		}
+	case "nyaa":
+		v, err := input.AsNyaaConnectionInput()
+		if err != nil {
+			return result, err
+		}
+		result.Name, result.Endpoint = v.Name, v.BaseUrl
+		result.Enabled = v.Enabled
+		if v.RouteId != nil {
+			result.NetworkRouteID = string(*v.RouteId)
+		}
 	case "bgm":
 		v, err := input.AsBGMConnectionInput()
 		if err != nil {
@@ -272,6 +282,12 @@ func ConnectionView(item configurationdomain.Connection) (generated.Connection, 
 			v.RouteId = &item.NetworkRouteID
 		}
 		return result, result.FromMikanConnection(v)
+	case configurationdomain.ConnectionNyaa:
+		v := generated.NyaaConnection{Id: item.ID, Kind: "nyaa", Name: item.Name, BaseUrl: item.Endpoint, Enabled: item.State != configurationdomain.ConnectionDisabled, Version: item.Version}
+		if item.NetworkRouteID != "" {
+			v.RouteId = &item.NetworkRouteID
+		}
+		return result, result.FromNyaaConnection(v)
 	case configurationdomain.ConnectionBGM:
 		v := generated.BGMConnection{Id: item.ID, Kind: "bgm", Name: item.Name, BaseUrl: item.Endpoint, Enabled: item.State != configurationdomain.ConnectionDisabled, Version: item.Version}
 		if item.NetworkRouteID != "" {

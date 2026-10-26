@@ -29,6 +29,7 @@ func TestDefaultConnectionForKindReturnsOfficialEndpointWithDirectRoute(t *testi
 	}{
 		{ConnectionMikan, "https://mikanani.me", ""},
 		{ConnectionAniBT, "https://anibt.net", ""},
+		{ConnectionNyaa, "https://nyaa.si", ""},
 		{ConnectionBGM, "https://api.bgm.tv", ""},
 		{ConnectionTMDB, "https://api.themoviedb.org/3", ""},
 	}
@@ -70,7 +71,7 @@ func TestDefaultConnectionSeedsListsEveryProviderMetadataKind(t *testing.T) {
 		}
 		seen[seed.Kind] = true
 	}
-	for _, kind := range []ConnectionKind{ConnectionMikan, ConnectionAniBT, ConnectionBGM, ConnectionTMDB} {
+	for _, kind := range []ConnectionKind{ConnectionMikan, ConnectionAniBT, ConnectionNyaa, ConnectionBGM, ConnectionTMDB} {
 		if !seen[kind] {
 			t.Fatalf("default connection seed list is missing kind %s", kind)
 		}

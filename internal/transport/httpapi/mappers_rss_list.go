@@ -180,7 +180,7 @@ func mapRSSListView(view readmodelapplication.RSSListView) (generated.RSSListVie
 			items = append(items, mapRSSListItem(item))
 		}
 		groups = append(groups, generated.RSSListGroup{
-			Scope:       generated.RSSListGroupScope{Provider: generated.SubscriptionOrigin(group.Scope.Provider), ProviderEntryRef: group.Scope.ProviderEntryRef, ProviderGroupRef: group.Scope.ProviderGroupRef, RssSourceId: optionalRSSListID(group.Scope.RSSSourceID)},
+			Scope:       generated.RSSListGroupScope{Provider: generated.RSSListGroupScopeProvider(group.Scope.Provider), ProviderEntryRef: group.Scope.ProviderEntryRef, ProviderGroupRef: group.Scope.ProviderGroupRef, RssSourceId: optionalRSSListID(group.Scope.RSSSourceID)},
 			DisplayName: group.DisplayName, Score: cloneIntPtr(&group.Score),
 			Selection: generated.RSSListGroupSelection{Source: mapRSSListSelectionSource(group.Selection.Source), EffectiveSelected: group.Selection.EffectiveSelected, SelectionMode: generated.SelectionMode(group.Selection.SelectionMode), CountInLimit: group.Selection.CountInLimit, ReasonCode: cloneStringPtr(group.Selection.ReasonCode)},
 			Offset:    mapRSSListOffset(group.Offset), Feed: mapRSSListFeedStatus(group.Feed), Items: items,

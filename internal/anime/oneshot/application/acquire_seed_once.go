@@ -1617,9 +1617,9 @@ func optionalInt64Equal(left, right *int64) bool {
 // SEED_IDENTITY_REQUIRED code stays precise.
 func validateSelectedSeed(seed SelectedSeed) error {
 	switch seed.Provider {
-	case animedomain.ProviderKindAnibt, animedomain.ProviderKindMikan, animedomain.ProviderKindCustom:
+	case animedomain.ProviderKindAnibt, animedomain.ProviderKindMikan, animedomain.ProviderKindNyaa, animedomain.ProviderKindCustom:
 	default:
-		return &apperrors.Business{Status: 422, Code: "SEED_INVALID", Message: "seed provider must be anibt, mikan or custom."}
+		return &apperrors.Business{Status: 422, Code: "SEED_INVALID", Message: "seed provider must be anibt, mikan, nyaa or custom."}
 	}
 	if strings.TrimSpace(seed.ProviderEntryRef) == "" || len(seed.ProviderEntryRef) > 256 {
 		return &apperrors.Business{Status: 422, Code: "SEED_INVALID", Message: "seed provider_entry_ref is required and must be at most 256 characters."}
@@ -2127,8 +2127,8 @@ func validateHumanSearchSeedBinding(draft animedomain.AnimeDraft, seed SelectedS
 	if !input.isCurrentInput() {
 		return &apperrors.Business{Status: 422, Code: "ONE_SHOT_CALLER_INVALID", Message: "A keyword search one-shot is a current_input admission; it cannot bind to a saved candidate revision."}
 	}
-	if seed.Provider != animedomain.ProviderKindAnibt && seed.Provider != animedomain.ProviderKindMikan {
-		return &apperrors.Business{Status: 422, Code: "ONE_SHOT_CALLER_INVALID", Message: "A keyword search seed names a discovery provider."}
+	if seed.Provider != animedomain.ProviderKindAnibt && seed.Provider != animedomain.ProviderKindMikan && seed.Provider != animedomain.ProviderKindNyaa {
+		return &apperrors.Business{Status: 422, Code: "ONE_SHOT_CALLER_INVALID", Message: "A keyword search seed names a search provider."}
 	}
 	if !strings.HasPrefix(seed.ProviderEntryRef, animecatalogdomain.SearchSnapshotScopePrefix) ||
 		!strings.HasPrefix(seed.ProviderGroupRef, animecatalogdomain.SearchSnapshotQueryPrefix) {

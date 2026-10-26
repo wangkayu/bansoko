@@ -1263,7 +1263,7 @@ func validateConnectionInput(input domain.ConnectionInput) error {
 		return err
 	}
 	switch input.Kind {
-	case domain.ConnectionAniBT, domain.ConnectionMikan, domain.ConnectionBGM, domain.ConnectionQBittorrent, domain.ConnectionTMDB, domain.ConnectionHTTPFeed:
+	case domain.ConnectionAniBT, domain.ConnectionMikan, domain.ConnectionNyaa, domain.ConnectionBGM, domain.ConnectionQBittorrent, domain.ConnectionTMDB, domain.ConnectionHTTPFeed:
 	default:
 		return fmt.Errorf("unsupported connection kind %q", input.Kind)
 	}

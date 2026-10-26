@@ -30,6 +30,10 @@ type ProviderKind string
 const (
 	ProviderKindAnibt ProviderKind = "anibt"
 	ProviderKindMikan ProviderKind = "mikan"
+	// ProviderKindNyaa is a seed-provenance member for a seed read from a Nyaa
+	// keyword search snapshot. Nyaa has no work catalog, so like custom it never
+	// becomes a discoverable provider, a subgroup or a subscribable origin.
+	ProviderKindNyaa ProviderKind = "nyaa"
 	// ProviderKindCustom is a seed-provenance vocabulary member only: it names
 	// the frozen feed of a custom/oneshot draft source, so a custom seed keeps a
 	// provider-shaped identity without ever becoming a discoverable provider, a

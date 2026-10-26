@@ -296,8 +296,8 @@ func validateExpansionScope(input EnsureSeedTorrentInput) error {
 		if err := catalogdomain.ValidateSearchSnapshotRef(input.ProviderGroupRef, catalogdomain.SearchSnapshotQueryPrefix); err != nil {
 			return &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "SEARCH_SNAPSHOT_SCOPE_INVALID", Message: safeProviderReason(err.Error())}
 		}
-		if err := validateCatalogProvider(input.Provider); err != nil {
-			return &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "PROVIDER_KIND_INVALID", Message: "Provider must be anibt or mikan."}
+		if err := validateSearchProvider(input.Provider); err != nil {
+			return &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "PROVIDER_KIND_INVALID", Message: "Provider must be anibt, mikan or nyaa."}
 		}
 		return nil
 	default:

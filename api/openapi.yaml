@@ -3611,13 +3611,13 @@ paths:
         Only the free-text query is caller input: the upstream endpoint, the
         query normalization and the snapshot scope are derived server-side, so a
         request can never name a URL, a catalog entry, a group, a seed key or
-        torrent bytes. The two sites are queried the same way (a space-composed
+        torrent bytes. The three sites are queried the same way (a space-composed
         query of work, subtitle group, episode and resolution); the first
         release offers no source-specific or in-result filter.
 
         The snapshot identity covers the complete result set, and the response
-        renders that complete seed window (both sites answer at most 100 keyword
-        results). A search snapshot is a `search`
+        renders that complete seed window (AniBT and Mikan answer at most 100
+        keyword results and Nyaa at most 75). A search snapshot is a `search`
         kind: it is never a group, a subscription source or a saved-revision
         custom feed, it is not refreshed by provider refresh, and it expires
         after 24 hours. Expanding and downloading a seed from it uses the same
@@ -3626,7 +3626,7 @@ paths:
         only and has no MCP tool: it persists a batch of seeds, and the first
         release does not expose keyword search to agents.
       parameters:
-        - $ref: '#/components/parameters/CatalogProvider'
+        - $ref: '#/components/parameters/SeedSearchProvider'
       requestBody:
         required: true
         content:
@@ -6220,6 +6220,17 @@ components:
       schema:
         type: string
         enum: [anibt, mikan]
+    SeedSearchProvider:
+      name: provider
+      in: path
+      required: true
+      description: >-
+        Source of a keyword torrent search. Nyaa has no work catalog, so it is
+        a torrent-search source only: every catalog, discovery and
+        subscription endpoint keeps the two-value CatalogProvider.
+      schema:
+        type: string
+        enum: [anibt, mikan, nyaa]
     CatalogProviderEntryRef:
       name: provider_entry_ref
       in: path
@@ -6738,8 +6749,7 @@ components:
             saved-revision scope, so an unsaved one-shot configuration
             previews the seed it will download. An origin=one_shot draft
             binds the exact persisted search snapshot its single feed
-            identity names (the refs carry the snapshot's scope/query pair);
-            a missing, stale or expired identity fails 409
+            identity names; a missing, stale or expired identity fails 409
             FEED_SNAPSHOT_REFRESH_REQUIRED, never re-searched. A pure read.
     RSSListViewVersions:
       type: object
@@ -6764,6 +6774,12 @@ components:
         torrent_parser:
           type: string
           minLength: 1
+    RSSListGroupScopeProvider:
+      type: string
+      description: >-
+        The subscription origins plus nyaa, which only names a keyword search
+        snapshot group. Never a subscribable source.
+      enum: [anibt, mikan, nyaa, custom, oneshot]
     RSSListGroupScope:
       type: object
       additionalProperties: false
@@ -6774,7 +6790,7 @@ components:
         group appears in many responses.
       properties:
         provider:
-          $ref: '#/components/schemas/SubscriptionOrigin'
+          $ref: '#/components/schemas/RSSListGroupScopeProvider'
         provider_entry_ref:
           type: string
           maxLength: 256
@@ -7689,6 +7705,7 @@ components:
         - $ref: '#/components/schemas/TMDBConnectionInput'
         - $ref: '#/components/schemas/AniBTConnectionInput'
         - $ref: '#/components/schemas/MikanConnectionInput'
+        - $ref: '#/components/schemas/NyaaConnectionInput'
         - $ref: '#/components/schemas/BGMConnectionInput'
       discriminator:
         propertyName: kind
@@ -7698,6 +7715,7 @@ components:
           tmdb: '#/components/schemas/TMDBConnectionInput'
           anibt: '#/components/schemas/AniBTConnectionInput'
           mikan: '#/components/schemas/MikanConnectionInput'
+          nyaa: '#/components/schemas/NyaaConnectionInput'
           bgm: '#/components/schemas/BGMConnectionInput'
     ConnectionSecretKeep:
       type: object
@@ -7861,6 +7879,25 @@ components:
           format: uri
         route_id:
           $ref: '#/components/schemas/ID'
+    NyaaConnectionInput:
+      type: object
+      additionalProperties: false
+      required: [kind, name, enabled, base_url]
+      properties:
+        kind:
+          type: string
+          enum: [nyaa]
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        enabled:
+          type: boolean
+        base_url:
+          type: string
+          format: uri
+        route_id:
+          $ref: '#/components/schemas/ID'
     BGMConnectionInput:
       type: object
       additionalProperties: false
@@ -7887,6 +7924,7 @@ components:
         - $ref: '#/components/schemas/TMDBConnection'
         - $ref: '#/components/schemas/AniBTConnection'
         - $ref: '#/components/schemas/MikanConnection'
+        - $ref: '#/components/schemas/NyaaConnection'
         - $ref: '#/components/schemas/BGMConnection'
       discriminator:
         propertyName: kind
@@ -7896,6 +7934,7 @@ components:
           tmdb: '#/components/schemas/TMDBConnection'
           anibt: '#/components/schemas/AniBTConnection'
           mikan: '#/components/schemas/MikanConnection'
+          nyaa: '#/components/schemas/NyaaConnection'
           bgm: '#/components/schemas/BGMConnection'
     QBittorrentConnection:
       type: object
@@ -8017,6 +8056,27 @@ components:
           $ref: '#/components/schemas/ID'
         version:
           $ref: '#/components/schemas/Version'
+    NyaaConnection:
+      type: object
+      additionalProperties: false
+      required: [id, kind, name, enabled, base_url, version]
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        kind:
+          type: string
+          enum: [nyaa]
+        name:
+          type: string
+        enabled:
+          type: boolean
+        base_url:
+          type: string
+          format: uri
+        route_id:
+          $ref: '#/components/schemas/ID'
+        version:
+          $ref: '#/components/schemas/Version'
     BGMConnection:
       type: object
       additionalProperties: false
@@ -8047,7 +8107,7 @@ components:
           $ref: '#/components/schemas/ID'
         kind:
           type: string
-          enum: [qbittorrent, rss_http, tmdb, anibt, mikan, bgm]
+          enum: [qbittorrent, rss_http, tmdb, anibt, mikan, nyaa, bgm]
         health:
           type: string
           enum: [ready, degraded, failed]
@@ -8317,12 +8377,14 @@ components:
       type: string
       description: >-
         Provenance provider of one selected one-shot seed. It repeats the
-        two discovery provider kinds and adds custom for a seed read from a
+        two discovery provider kinds, adds nyaa for a seed read from a Nyaa
+        keyword search snapshot (search-only: Nyaa is never a discovery
+        provider), and adds custom for a seed read from a
         frozen custom/oneshot draft source's own feed snapshot. It is a
         seed-provenance vocabulary only: ProviderKind stays a two-value
         discovery enum, and a custom seed never becomes a discoverable
         provider, a subgroup, or a subscribable origin.
-      enum: [anibt, mikan, custom]
+      enum: [anibt, mikan, nyaa, custom]
     SubscriptionOrigin:
       type: string
       description: >-
@@ -11180,7 +11242,7 @@ components:
       properties:
         provider:
           type: string
-          enum: [anibt, mikan, custom]
+          enum: [anibt, mikan, nyaa, custom]
         provider_entry_ref:
           type: string
           minLength: 1
@@ -11717,9 +11779,9 @@ components:
         One keyword torrent search. Only the free-text query is accepted: the
         endpoint, the normalization and the snapshot scope are derived
         server-side, so no URL, entry, group, seed key or torrent byte can be
-        supplied. The response renders the snapshot's complete seed window: both
-        sites answer at most 100 keyword results, so that window is also the
-        complete result set.
+        supplied. The response renders the snapshot's complete seed window: AniBT
+        and Mikan answer at most 100 keyword results and Nyaa at most 75, so
+        that window is also the complete result set.
       properties:
         query:
           type: string
@@ -11728,8 +11790,8 @@ components:
           description: >-
             A space-composed keyword query. Combine the work title with a
             subtitle group, an episode number or a resolution to narrow the
-            upstream result (for example "示例作品 示例字幕组 03"); both sites
-            match the text themselves and the first release adds no filter.
+            upstream result (for example "示例作品 示例字幕组 03"); every site
+            matches the text itself and the first release adds no filter.
     SeedSearchSnapshotSeed:
       type: object
       additionalProperties: false
@@ -11819,7 +11881,7 @@ components:
       properties:
         provider:
           type: string
-          enum: [anibt, mikan]
+          enum: [anibt, mikan, nyaa]
         scope_ref:
           type: string
           pattern: '^search-scope:[0-9a-f]{64}$'
@@ -11977,7 +12039,7 @@ components:
       properties:
         provider:
           type: string
-          enum: [anibt, mikan, custom]
+          enum: [anibt, mikan, nyaa, custom]
         provider_entry_ref:
           type: string
           minLength: 1

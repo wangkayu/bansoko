@@ -1004,6 +1004,8 @@ func (r catalogSearchEndpoints) ResolveSearchEndpoint(ctx context.Context, provi
 		kind = configurationdomain.ConnectionAniBT
 	case catalogapplication.ProviderMikan:
 		kind = configurationdomain.ConnectionMikan
+	case catalogapplication.ProviderNyaa:
+		kind = configurationdomain.ConnectionNyaa
 	default:
 		return "", nil, fmt.Errorf("unsupported catalog provider %q", provider)
 	}

@@ -16,6 +16,7 @@ type ConnectionKind string
 const (
 	ConnectionAniBT       ConnectionKind = "anibt"
 	ConnectionMikan       ConnectionKind = "mikan"
+	ConnectionNyaa        ConnectionKind = "nyaa"
 	ConnectionBGM         ConnectionKind = "bgm"
 	ConnectionQBittorrent ConnectionKind = "qbittorrent"
 	ConnectionTMDB        ConnectionKind = "tmdb"
@@ -265,6 +266,8 @@ func DefaultEndpointForKind(kind ConnectionKind) string {
 		return "https://mikanani.me"
 	case ConnectionAniBT:
 		return "https://anibt.net"
+	case ConnectionNyaa:
+		return "https://nyaa.si"
 	case ConnectionBGM:
 		return "https://api.bgm.tv"
 	case ConnectionTMDB:
@@ -310,6 +313,7 @@ func DefaultConnectionSeeds() []DefaultConnectionSeed {
 	return []DefaultConnectionSeed{
 		{ID: "builtin-mikan", Kind: ConnectionMikan, Name: "Mikan", Endpoint: "https://mikanani.me"},
 		{ID: "builtin-anibt", Kind: ConnectionAniBT, Name: "AniBT", Endpoint: "https://anibt.net"},
+		{ID: "builtin-nyaa", Kind: ConnectionNyaa, Name: "Nyaa", Endpoint: "https://nyaa.si"},
 		{ID: "builtin-bgm", Kind: ConnectionBGM, Name: "Bangumi", Endpoint: "https://api.bgm.tv"},
 		{ID: "builtin-tmdb", Kind: ConnectionTMDB, Name: "TMDB", Endpoint: "https://api.themoviedb.org/3"},
 	}

@@ -579,6 +579,7 @@ const (
 	ConnectionTestResultKindAnibt       ConnectionTestResultKind = "anibt"
 	ConnectionTestResultKindBgm         ConnectionTestResultKind = "bgm"
 	ConnectionTestResultKindMikan       ConnectionTestResultKind = "mikan"
+	ConnectionTestResultKindNyaa        ConnectionTestResultKind = "nyaa"
 	ConnectionTestResultKindQbittorrent ConnectionTestResultKind = "qbittorrent"
 	ConnectionTestResultKindRssHttp     ConnectionTestResultKind = "rss_http"
 	ConnectionTestResultKindTmdb        ConnectionTestResultKind = "tmdb"
@@ -1231,6 +1232,16 @@ const (
 	NotificationTriggerKindUnknownFilesImported   NotificationTriggerKind = "unknown_files_imported"
 )
 
+// Defines values for NyaaConnectionKind.
+const (
+	NyaaConnectionKindNyaa NyaaConnectionKind = "nyaa"
+)
+
+// Defines values for NyaaConnectionInputKind.
+const (
+	NyaaConnectionInputKindNyaa NyaaConnectionInputKind = "nyaa"
+)
+
 // Defines values for OffsetMigrationGenerationViewScopeKind.
 const (
 	OffsetMigrationGenerationViewScopeKindRssSource OffsetMigrationGenerationViewScopeKind = "rss_source"
@@ -1538,6 +1549,7 @@ const (
 	PreviewFeedSnapshotRefProviderAnibt  PreviewFeedSnapshotRefProvider = "anibt"
 	PreviewFeedSnapshotRefProviderCustom PreviewFeedSnapshotRefProvider = "custom"
 	PreviewFeedSnapshotRefProviderMikan  PreviewFeedSnapshotRefProvider = "mikan"
+	PreviewFeedSnapshotRefProviderNyaa   PreviewFeedSnapshotRefProvider = "nyaa"
 )
 
 // Defines values for ProviderGroupDefaultMode.
@@ -1564,6 +1576,7 @@ const (
 	ProviderRSSPreviewResultProviderAnibt  ProviderRSSPreviewResultProvider = "anibt"
 	ProviderRSSPreviewResultProviderCustom ProviderRSSPreviewResultProvider = "custom"
 	ProviderRSSPreviewResultProviderMikan  ProviderRSSPreviewResultProvider = "mikan"
+	ProviderRSSPreviewResultProviderNyaa   ProviderRSSPreviewResultProvider = "nyaa"
 )
 
 // Defines values for QBittorrentConnectionKind.
@@ -1674,6 +1687,15 @@ const (
 const (
 	RSSListFileSubLangSourceFile    RSSListFileSubLangSource = "file"
 	RSSListFileSubLangSourceRelease RSSListFileSubLangSource = "release"
+)
+
+// Defines values for RSSListGroupScopeProvider.
+const (
+	RSSListGroupScopeProviderAnibt   RSSListGroupScopeProvider = "anibt"
+	RSSListGroupScopeProviderCustom  RSSListGroupScopeProvider = "custom"
+	RSSListGroupScopeProviderMikan   RSSListGroupScopeProvider = "mikan"
+	RSSListGroupScopeProviderNyaa    RSSListGroupScopeProvider = "nyaa"
+	RSSListGroupScopeProviderOneshot RSSListGroupScopeProvider = "oneshot"
 )
 
 // Defines values for RSSListGroupSelectionSource.
@@ -1998,6 +2020,7 @@ const (
 const (
 	SeedSearchSnapshotViewProviderAnibt SeedSearchSnapshotViewProvider = "anibt"
 	SeedSearchSnapshotViewProviderMikan SeedSearchSnapshotViewProvider = "mikan"
+	SeedSearchSnapshotViewProviderNyaa  SeedSearchSnapshotViewProvider = "nyaa"
 )
 
 // Defines values for SelectionMode.
@@ -2023,6 +2046,7 @@ const (
 	SnapshotSeedProviderAnibt  SnapshotSeedProvider = "anibt"
 	SnapshotSeedProviderCustom SnapshotSeedProvider = "custom"
 	SnapshotSeedProviderMikan  SnapshotSeedProvider = "mikan"
+	SnapshotSeedProviderNyaa   SnapshotSeedProvider = "nyaa"
 )
 
 // Defines values for SourceFactsIdentityKind.
@@ -2325,8 +2349,15 @@ const (
 
 // Defines values for CatalogProvider.
 const (
-	Anibt CatalogProvider = "anibt"
-	Mikan CatalogProvider = "mikan"
+	CatalogProviderAnibt CatalogProvider = "anibt"
+	CatalogProviderMikan CatalogProvider = "mikan"
+)
+
+// Defines values for SeedSearchProvider.
+const (
+	SeedSearchProviderAnibt SeedSearchProvider = "anibt"
+	SeedSearchProviderMikan SeedSearchProvider = "mikan"
+	SeedSearchProviderNyaa  SeedSearchProvider = "nyaa"
 )
 
 // Defines values for GetAgentGuideParamsFormat.
@@ -2387,6 +2418,7 @@ const (
 const (
 	FetchSeedSearchSnapshotParamsProviderAnibt FetchSeedSearchSnapshotParamsProvider = "anibt"
 	FetchSeedSearchSnapshotParamsProviderMikan FetchSeedSearchSnapshotParamsProvider = "mikan"
+	FetchSeedSearchSnapshotParamsProviderNyaa  FetchSeedSearchSnapshotParamsProvider = "nyaa"
 )
 
 // Defines values for UnsuppressCatalogEntryParamsProvider.
@@ -5820,6 +5852,32 @@ type NullableBGMBinding = BGMBinding
 // NullableTMDBBinding defines model for NullableTMDBBinding.
 type NullableTMDBBinding = TMDBBinding
 
+// NyaaConnection defines model for NyaaConnection.
+type NyaaConnection struct {
+	BaseUrl string             `json:"base_url"`
+	Enabled bool               `json:"enabled"`
+	Id      ID                 `json:"id"`
+	Kind    NyaaConnectionKind `json:"kind"`
+	Name    string             `json:"name"`
+	RouteId *ID                `json:"route_id,omitempty"`
+	Version Version            `json:"version"`
+}
+
+// NyaaConnectionKind defines model for NyaaConnection.Kind.
+type NyaaConnectionKind string
+
+// NyaaConnectionInput defines model for NyaaConnectionInput.
+type NyaaConnectionInput struct {
+	BaseUrl string                  `json:"base_url"`
+	Enabled bool                    `json:"enabled"`
+	Kind    NyaaConnectionInputKind `json:"kind"`
+	Name    string                  `json:"name"`
+	RouteId *ID                     `json:"route_id,omitempty"`
+}
+
+// NyaaConnectionInputKind defines model for NyaaConnectionInput.Kind.
+type NyaaConnectionInputKind string
+
 // ObservabilityRecord Explicit per-contract projection of the four observability record sources. Each member is an allowlisted field set: storage-only columns such as plugin secret references are never selected, and the transport re-projects the stored payload through the typed member so a column added later cannot reach a client on its own.
 type ObservabilityRecord struct {
 	union json.RawMessage
@@ -6999,8 +7057,8 @@ type RSSListGroup struct {
 
 // RSSListGroupScope The full identity of one subgroup. Display name, score and array position are never identity: two groups may share a name, and the same group appears in many responses.
 type RSSListGroupScope struct {
-	// Provider The unique four-value source-of-subscription enum: anibt | mikan are discovery providers, custom is a user-supplied manual source, agent is reserved for one-shot acquisition: an agent draft is a candidate snapshot for acquire-seed-once and the temporary one-shot mount carries it, but it can never be subscribed or activated (422 ORIGIN_NOT_SUBSCRIBABLE). This is the only four-value enum; ProviderKind stays a two-value discovery enum, SnapshotSeedProvider is the separate seed-provenance vocabulary (anibt | mikan | custom), and RSS SourceKind stays provider_group | custom_rss.
-	Provider SubscriptionOrigin `json:"provider"`
+	// Provider The subscription origins plus nyaa, which only names a keyword search snapshot group. Never a subscribable source.
+	Provider RSSListGroupScopeProvider `json:"provider"`
 
 	// ProviderEntryRef Empty for materialized custom/oneshot RSS sources; provider entry reference for anibt/mikan groups.
 	ProviderEntryRef string `json:"provider_entry_ref"`
@@ -7009,6 +7067,9 @@ type RSSListGroupScope struct {
 	// RssSourceId Present only for a materialized owner source.
 	RssSourceId *ID `json:"rss_source_id"`
 }
+
+// RSSListGroupScopeProvider The subscription origins plus nyaa, which only names a keyword search snapshot group. Never a subscribable source.
+type RSSListGroupScopeProvider string
 
 // RSSListGroupSelection Server-derived selection state. The browser never infers authorization from rank styling: an unselected group's items are readable but can never be downloaded.
 type RSSListGroupSelection struct {
@@ -7176,7 +7237,7 @@ type RSSListViewInput struct {
 	// Observation current_input only. The persisted provider group observation (the snapshot_version group discovery returned) whose groups are listed next to the draft's configured ones; observed groups nobody configured take the provider default policy, ranked with the configured ones under max_rss. A pure read: the observation must belong to the draft's provider and entry, and one no longer retained is reported on the view instead of failing the request.
 	Observation *RSSListObservationRef `json:"observation"`
 
-	// OneShot Omitted or false: the ordinary read. current_input only (400 INPUT_SOURCE_INVALID with any other mode). Reads the draft as a one-shot browse: a one-shot names its seed directly and is not bound by group selection, so every configured and observed group is listed with its supplied snapshot and seeds regardless of the draft's selection, and its one_shot download action never answers group_not_selected. Every group previews with episode_offset (the one-shot request's own offset), never a draft source's or a link's. A custom draft binds the exact persisted custom snapshot its single feed identity names instead of a saved-revision scope, so an unsaved one-shot configuration previews the seed it will download. An origin=one_shot draft binds the exact persisted search snapshot its single feed identity names (the refs carry the snapshot's scope/query pair); a missing, stale or expired identity fails 409 FEED_SNAPSHOT_REFRESH_REQUIRED, never re-searched. A pure read.
+	// OneShot Omitted or false: the ordinary read. current_input only (400 INPUT_SOURCE_INVALID with any other mode). Reads the draft as a one-shot browse: a one-shot names its seed directly and is not bound by group selection, so every configured and observed group is listed with its supplied snapshot and seeds regardless of the draft's selection, and its one_shot download action never answers group_not_selected. Every group previews with episode_offset (the one-shot request's own offset), never a draft source's or a link's. A custom draft binds the exact persisted custom snapshot its single feed identity names instead of a saved-revision scope, so an unsaved one-shot configuration previews the seed it will download. An origin=one_shot draft binds the exact persisted search snapshot its single feed identity names; a missing, stale or expired identity fails 409 FEED_SNAPSHOT_REFRESH_REQUIRED, never re-searched. A pure read.
 	OneShot *bool `json:"one_shot,omitempty"`
 
 	// Revision Required for candidate_revision; with candidate_id, the saved preset revision that scopes a custom current_input draft's source snapshot. Forbidden in the owner modes.
@@ -7820,9 +7881,9 @@ type SaveAnimeConfigCandidateInput struct {
 	Draft AnimeDraft `json:"draft"`
 }
 
-// SeedSearchSnapshotInput One keyword torrent search. Only the free-text query is accepted: the endpoint, the normalization and the snapshot scope are derived server-side, so no URL, entry, group, seed key or torrent byte can be supplied. The response renders the snapshot's complete seed window: both sites answer at most 100 keyword results, so that window is also the complete result set.
+// SeedSearchSnapshotInput One keyword torrent search. Only the free-text query is accepted: the endpoint, the normalization and the snapshot scope are derived server-side, so no URL, entry, group, seed key or torrent byte can be supplied. The response renders the snapshot's complete seed window: AniBT and Mikan answer at most 100 keyword results and Nyaa at most 75, so that window is also the complete result set.
 type SeedSearchSnapshotInput struct {
-	// Query A space-composed keyword query. Combine the work title with a subtitle group, an episode number or a resolution to narrow the upstream result (for example "示例作品 示例字幕组 03"); both sites match the text themselves and the first release adds no filter.
+	// Query A space-composed keyword query. Combine the work title with a subtitle group, an episode number or a resolution to narrow the upstream result (for example "示例作品 示例字幕组 03"); every site matches the text itself and the first release adds no filter.
 	Query string `json:"query"`
 }
 
@@ -7910,7 +7971,7 @@ type SelectedSeed struct {
 	// Locator Absolute HTTP(S) torrent URL aligned with ProviderRSSPreviewSeed.download_url. Withheld from MCP tool results (x-mcp-omit): it can embed a passkey.
 	Locator string `json:"locator"`
 
-	// Provider Provenance provider of one selected one-shot seed. It repeats the two discovery provider kinds and adds custom for a seed read from a frozen custom/oneshot draft source's own feed snapshot. It is a seed-provenance vocabulary only: ProviderKind stays a two-value discovery enum, and a custom seed never becomes a discoverable provider, a subgroup, or a subscribable origin.
+	// Provider Provenance provider of one selected one-shot seed. It repeats the two discovery provider kinds, adds nyaa for a seed read from a Nyaa keyword search snapshot (search-only: Nyaa is never a discovery provider), and adds custom for a seed read from a frozen custom/oneshot draft source's own feed snapshot. It is a seed-provenance vocabulary only: ProviderKind stays a two-value discovery enum, and a custom seed never becomes a discoverable provider, a subgroup, or a subscribable origin.
 	Provider         SnapshotSeedProvider `json:"provider"`
 	ProviderEntryRef string               `json:"provider_entry_ref"`
 	ProviderGroupRef string               `json:"provider_group_ref"`
@@ -7940,7 +8001,7 @@ type SelectedSeedInput struct {
 	// Locator Locator form only: absolute HTTP(S) torrent URL aligned with ProviderRSSPreviewSeed.download_url. Omit it to send a snapshot reference.
 	Locator *string `json:"locator,omitempty"`
 
-	// Provider Provenance provider of one selected one-shot seed. It repeats the two discovery provider kinds and adds custom for a seed read from a frozen custom/oneshot draft source's own feed snapshot. It is a seed-provenance vocabulary only: ProviderKind stays a two-value discovery enum, and a custom seed never becomes a discoverable provider, a subgroup, or a subscribable origin.
+	// Provider Provenance provider of one selected one-shot seed. It repeats the two discovery provider kinds, adds nyaa for a seed read from a Nyaa keyword search snapshot (search-only: Nyaa is never a discovery provider), and adds custom for a seed read from a frozen custom/oneshot draft source's own feed snapshot. It is a seed-provenance vocabulary only: ProviderKind stays a two-value discovery enum, and a custom seed never becomes a discoverable provider, a subgroup, or a subscribable origin.
 	Provider         SnapshotSeedProvider `json:"provider"`
 	ProviderEntryRef string               `json:"provider_entry_ref"`
 	ProviderGroupRef string               `json:"provider_group_ref"`
@@ -7976,7 +8037,7 @@ type SnapshotSeedDownloadInput struct {
 	EpisodeOffset *int                                 `json:"episode_offset,omitempty"`
 	InputSource   SnapshotSeedDownloadInputInputSource `json:"input_source"`
 
-	// Provider Provenance provider of one selected one-shot seed. It repeats the two discovery provider kinds and adds custom for a seed read from a frozen custom/oneshot draft source's own feed snapshot. It is a seed-provenance vocabulary only: ProviderKind stays a two-value discovery enum, and a custom seed never becomes a discoverable provider, a subgroup, or a subscribable origin.
+	// Provider Provenance provider of one selected one-shot seed. It repeats the two discovery provider kinds, adds nyaa for a seed read from a Nyaa keyword search snapshot (search-only: Nyaa is never a discovery provider), and adds custom for a seed read from a frozen custom/oneshot draft source's own feed snapshot. It is a seed-provenance vocabulary only: ProviderKind stays a two-value discovery enum, and a custom seed never becomes a discoverable provider, a subgroup, or a subscribable origin.
 	Provider         SnapshotSeedProvider `json:"provider"`
 	ProviderEntryRef string               `json:"provider_entry_ref"`
 	ProviderGroupRef string               `json:"provider_group_ref"`
@@ -7991,7 +8052,7 @@ type SnapshotSeedDownloadInputInputSource string
 type SnapshotSeedExpandInput struct {
 	ContentHash string `json:"content_hash"`
 
-	// Provider Provenance provider of one selected one-shot seed. It repeats the two discovery provider kinds and adds custom for a seed read from a frozen custom/oneshot draft source's own feed snapshot. It is a seed-provenance vocabulary only: ProviderKind stays a two-value discovery enum, and a custom seed never becomes a discoverable provider, a subgroup, or a subscribable origin.
+	// Provider Provenance provider of one selected one-shot seed. It repeats the two discovery provider kinds, adds nyaa for a seed read from a Nyaa keyword search snapshot (search-only: Nyaa is never a discovery provider), and adds custom for a seed read from a frozen custom/oneshot draft source's own feed snapshot. It is a seed-provenance vocabulary only: ProviderKind stays a two-value discovery enum, and a custom seed never becomes a discoverable provider, a subgroup, or a subscribable origin.
 	Provider         SnapshotSeedProvider `json:"provider"`
 	ProviderEntryRef string               `json:"provider_entry_ref"`
 	ProviderGroupRef string               `json:"provider_group_ref"`
@@ -8015,7 +8076,7 @@ type SnapshotSeedExpandResult struct {
 // SnapshotSeedExpandResultState defines model for SnapshotSeedExpandResult.State.
 type SnapshotSeedExpandResultState string
 
-// SnapshotSeedProvider Provenance provider of one selected one-shot seed. It repeats the two discovery provider kinds and adds custom for a seed read from a frozen custom/oneshot draft source's own feed snapshot. It is a seed-provenance vocabulary only: ProviderKind stays a two-value discovery enum, and a custom seed never becomes a discoverable provider, a subgroup, or a subscribable origin.
+// SnapshotSeedProvider Provenance provider of one selected one-shot seed. It repeats the two discovery provider kinds, adds nyaa for a seed read from a Nyaa keyword search snapshot (search-only: Nyaa is never a discovery provider), and adds custom for a seed read from a frozen custom/oneshot draft source's own feed snapshot. It is a seed-provenance vocabulary only: ProviderKind stays a two-value discovery enum, and a custom seed never becomes a discoverable provider, a subgroup, or a subscribable origin.
 type SnapshotSeedProvider string
 
 // SourceFacts defines model for SourceFacts.
@@ -8807,6 +8868,9 @@ type ReleaseID = ID
 
 // RouteID defines model for RouteID.
 type RouteID = ID
+
+// SeedSearchProvider defines model for SeedSearchProvider.
+type SeedSearchProvider string
 
 // ToTime defines model for ToTime.
 type ToTime = time.Time
@@ -9655,6 +9719,34 @@ func (t *Connection) MergeMikanConnection(v MikanConnection) error {
 	return err
 }
 
+// AsNyaaConnection returns the union data inside the Connection as a NyaaConnection
+func (t Connection) AsNyaaConnection() (NyaaConnection, error) {
+	var body NyaaConnection
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromNyaaConnection overwrites any union data inside the Connection as the provided NyaaConnection
+func (t *Connection) FromNyaaConnection(v NyaaConnection) error {
+	v.Kind = "nyaa"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeNyaaConnection performs a merge with any union data inside the Connection, using the provided NyaaConnection
+func (t *Connection) MergeNyaaConnection(v NyaaConnection) error {
+	v.Kind = "nyaa"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 // AsBGMConnection returns the union data inside the Connection as a BGMConnection
 func (t Connection) AsBGMConnection() (BGMConnection, error) {
 	var body BGMConnection
@@ -9703,6 +9795,8 @@ func (t Connection) ValueByDiscriminator() (interface{}, error) {
 		return t.AsBGMConnection()
 	case "mikan":
 		return t.AsMikanConnection()
+	case "nyaa":
+		return t.AsNyaaConnection()
 	case "qbittorrent":
 		return t.AsQBittorrentConnection()
 	case "rss_http":
@@ -9864,6 +9958,34 @@ func (t *ConnectionInput) MergeMikanConnectionInput(v MikanConnectionInput) erro
 	return err
 }
 
+// AsNyaaConnectionInput returns the union data inside the ConnectionInput as a NyaaConnectionInput
+func (t ConnectionInput) AsNyaaConnectionInput() (NyaaConnectionInput, error) {
+	var body NyaaConnectionInput
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromNyaaConnectionInput overwrites any union data inside the ConnectionInput as the provided NyaaConnectionInput
+func (t *ConnectionInput) FromNyaaConnectionInput(v NyaaConnectionInput) error {
+	v.Kind = "nyaa"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeNyaaConnectionInput performs a merge with any union data inside the ConnectionInput, using the provided NyaaConnectionInput
+func (t *ConnectionInput) MergeNyaaConnectionInput(v NyaaConnectionInput) error {
+	v.Kind = "nyaa"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 // AsBGMConnectionInput returns the union data inside the ConnectionInput as a BGMConnectionInput
 func (t ConnectionInput) AsBGMConnectionInput() (BGMConnectionInput, error) {
 	var body BGMConnectionInput
@@ -9912,6 +10034,8 @@ func (t ConnectionInput) ValueByDiscriminator() (interface{}, error) {
 		return t.AsBGMConnectionInput()
 	case "mikan":
 		return t.AsMikanConnectionInput()
+	case "nyaa":
+		return t.AsNyaaConnectionInput()
 	case "qbittorrent":
 		return t.AsQBittorrentConnectionInput()
 	case "rss_http":
