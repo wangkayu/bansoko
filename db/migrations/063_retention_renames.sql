@@ -89,9 +89,58 @@ ALTER TABLE anime_business_configs RENAME COLUMN retention_source_default_versio
 ALTER TABLE anime_business_configs RENAME COLUMN retention_version TO replacement_version;
 ALTER TABLE anime_business_configs DROP CONSTRAINT anime_business_configs_retention_check;
 
--- The quality-profile validator keeps its body; only its name said "retention"
--- and nothing else referenced it, so it is renamed instead of rewritten.
-ALTER FUNCTION retention_quality_profile_valid(jsonb) RENAME TO replacement_quality_profile_valid;
+-- The quality-profile validator keeps its body (copied verbatim from the
+-- baseline); only its name said "retention". It is created under the new name
+-- rather than renamed in place, because sqlc's catalog cannot follow a function
+-- rename. The old one is dropped at the end, once every constraint and
+-- function that called it has been rebuilt on the new name.
+CREATE FUNCTION replacement_quality_profile_valid(profile jsonb) RETURNS boolean
+    LANGUAGE plpgsql IMMUTABLE
+    AS $$
+DECLARE
+ item jsonb;
+ entry jsonb;
+ val jsonb;
+ keys text[] := ARRAY[]::text[];
+BEGIN
+ IF profile IS NULL OR jsonb_typeof(profile) IS DISTINCT FROM 'object'
+    OR (SELECT count(*) FROM jsonb_object_keys(profile)) <> 2
+    OR NOT (profile ?& ARRAY['version','items'])
+    OR profile->>'version' IS DISTINCT FROM 'profile-v1'
+    OR jsonb_typeof(profile->'items') IS DISTINCT FROM 'array'
+    OR jsonb_array_length(profile->'items') > 12 THEN
+  RETURN FALSE;
+ END IF;
+ FOR item IN SELECT value FROM jsonb_array_elements(profile->'items') LOOP
+  IF jsonb_typeof(item) IS DISTINCT FROM 'object'
+     OR (SELECT count(*) FROM jsonb_object_keys(item)) <> 2
+     OR NOT (item ?& ARRAY['key','ranks'])
+     OR jsonb_typeof(item->'key') IS DISTINCT FROM 'string'
+     OR item->>'key' NOT IN ('subgroup.score','release.lang','release.resolution','release.revision',
+                             'anibt.resolution','anibt.language','anibt.subtitle','anibt.format',
+                             'rt.resolution','rt.sub_lang','rt.source','rt.codec')
+     OR item->>'key' = ANY(keys)
+     OR jsonb_typeof(item->'ranks') IS DISTINCT FROM 'array'
+     OR jsonb_array_length(item->'ranks') > 64 THEN
+   RETURN FALSE;
+  END IF;
+  keys := array_append(keys, item->>'key');
+  FOR entry IN SELECT value FROM jsonb_array_elements(item->'ranks') LOOP
+   IF jsonb_typeof(entry) IS DISTINCT FROM 'array' OR jsonb_array_length(entry) NOT BETWEEN 1 AND 8 THEN
+    RETURN FALSE;
+   END IF;
+   FOR val IN SELECT value FROM jsonb_array_elements(entry) LOOP
+    IF jsonb_typeof(val) IS DISTINCT FROM 'string' OR btrim(val #>> '{}') = '' OR octet_length(val #>> '{}') > 128 THEN
+     RETURN FALSE;
+    END IF;
+   END LOOP;
+  END LOOP;
+ END LOOP;
+ RETURN TRUE;
+EXCEPTION WHEN OTHERS THEN
+ RETURN FALSE;
+END;
+$$;
 
 ALTER TABLE anime_business_configs ADD CONSTRAINT anime_business_configs_replacement_check CHECK (
     (admission_mode IS NULL AND quality_profile IS NULL AND replacement_source_default_version IS NULL AND replacement_version IS NULL)
@@ -1076,3 +1125,5 @@ ALTER TABLE one_shot_acquisitions DROP CONSTRAINT one_shot_acquisitions_state_ch
 UPDATE one_shot_acquisitions SET state = 'reclaim_pending' WHERE state = 'retention_pending';
 ALTER TABLE one_shot_acquisitions ADD CONSTRAINT one_shot_acquisitions_state_check
     CHECK (state IN ('running', 'reclaim_pending', 'cleanup_blocked', 'reclaiming', 'cleaned'));
+
+DROP FUNCTION retention_quality_profile_valid(jsonb);
