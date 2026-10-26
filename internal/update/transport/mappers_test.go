@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	hardeningdomain "bansoko/internal/hardening/domain"
 	updateapplication "bansoko/internal/update/application"
 )
 
@@ -76,5 +77,32 @@ func TestCheckPreservesHTTPShape(t *testing.T) {
 		if _, ok := document[key]; !ok {
 			t.Fatalf("HTTP field %q missing from %s", key, body)
 		}
+	}
+	if _, ok := document["candidate"].(map[string]any)["release_notes"]; ok {
+		t.Fatalf("absent notes must be omitted, not empty: %s", body)
+	}
+	if _, ok := document["current"].(map[string]any)["release_notes"]; ok {
+		t.Fatalf("absent current notes must be omitted: %s", body)
+	}
+}
+
+func TestCheckProjectsReleaseNotes(t *testing.T) {
+	published := time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC)
+	entry := hardeningdomain.ReleaseNotesEntry{Version: "0.2.0", PublishedAt: published, Notes: hardeningdomain.ReleaseNotesText{ZhCN: "## 修复\n- 一项\n", En: "## Fixed\n- One\n"}}
+	older := entry
+	older.Version = "0.1.1"
+	got := Check(updateapplication.Check{
+		Candidate: &updateapplication.Candidate{ReleaseID: "v0.2.0", Version: "0.2.0", ReleaseNotes: []hardeningdomain.ReleaseNotesEntry{entry, older}},
+		Current:   updateapplication.Current{ReleaseID: "v0.1.0", Version: "0.1.0", ReleaseNotes: &older},
+	})
+	if got.Candidate.ReleaseNotes == nil || len(*got.Candidate.ReleaseNotes) != 2 {
+		t.Fatalf("candidate notes: %+v", got.Candidate.ReleaseNotes)
+	}
+	first := (*got.Candidate.ReleaseNotes)[0]
+	if first.Version != "0.2.0" || first.Notes.ZhCN != entry.Notes.ZhCN || first.Notes.En != entry.Notes.En || !first.PublishedAt.Equal(published) {
+		t.Fatalf("candidate first entry: %+v", first)
+	}
+	if got.Current.ReleaseNotes == nil || got.Current.ReleaseNotes.Version != "0.1.1" {
+		t.Fatalf("current notes: %+v", got.Current.ReleaseNotes)
 	}
 }

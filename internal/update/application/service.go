@@ -321,7 +321,7 @@ func (s *Service) AdmitUpdate(ctx context.Context, input AdmitInput, idempotency
 }
 func (s *Service) CheckUpdate(ctx context.Context) (Check, error) {
 	checked := s.clock().UTC()
-	result := Check{CheckedAt: checked, Current: Current{ReleaseID: s.buildID, Version: s.buildVersion, ImageCompatibility: s.buildCompatibilityVersion}, Compatibility: Compatibility{Kind: "incompatible", Reason: "No compatible candidate has been checked."}}
+	result := Check{CheckedAt: checked, Current: Current{ReleaseID: s.buildID, Version: s.buildVersion, ImageCompatibility: s.buildCompatibilityVersion, ReleaseNotes: s.currentReleaseNotes()}, Compatibility: Compatibility{Kind: "incompatible", Reason: "No compatible candidate has been checked."}}
 	if marker, ok, err := s.readPendingStatus(); err != nil || ok {
 		result.ActiveOperation = nil
 		if ok {
@@ -342,6 +342,7 @@ func (s *Service) CheckUpdate(ctx context.Context) (Check, error) {
 	if manifest.EmbeddedUpdate != nil {
 		candidate.PayloadSize = manifest.EmbeddedUpdate.PayloadSize
 	}
+	candidate.ReleaseNotes = hardeningdomain.ReleaseNotesNewerThan(s.buildVersion, manifest.ReleaseNotes)
 	result.Candidate = candidate
 	required, e := manifest.EffectiveMinImageVersion()
 	if e != nil {

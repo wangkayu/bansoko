@@ -1,6 +1,7 @@
 package transport
 
 import (
+	hardeningdomain "bansoko/internal/hardening/domain"
 	"bansoko/internal/transport/httpapi/generated"
 	updateapplication "bansoko/internal/update/application"
 )
@@ -44,6 +45,10 @@ func Check(value updateapplication.Check) generated.UpdateCheck {
 			Reason:          value.Compatibility.Reason,
 		},
 	}
+	if notes := value.Current.ReleaseNotes; notes != nil {
+		entry := releaseNotesEntry(*notes)
+		result.Current.ReleaseNotes = &entry
+	}
 	if value.ActiveOperation != nil {
 		active := Status(*value.ActiveOperation)
 		result.ActiveOperation = &active
@@ -61,6 +66,20 @@ func Check(value updateapplication.Check) generated.UpdateCheck {
 			ManifestDigest:         value.Candidate.ManifestDigest,
 			PayloadSize:            value.Candidate.PayloadSize,
 		}
+		if len(value.Candidate.ReleaseNotes) > 0 {
+			entries := make([]generated.ReleaseNotesEntry, 0, len(value.Candidate.ReleaseNotes))
+			for _, notes := range value.Candidate.ReleaseNotes {
+				entries = append(entries, releaseNotesEntry(notes))
+			}
+			result.Candidate.ReleaseNotes = &entries
+		}
 	}
 	return result
+}
+
+func releaseNotesEntry(value hardeningdomain.ReleaseNotesEntry) generated.ReleaseNotesEntry {
+	entry := generated.ReleaseNotesEntry{Version: value.Version, PublishedAt: value.PublishedAt}
+	entry.Notes.ZhCN = value.Notes.ZhCN
+	entry.Notes.En = value.Notes.En
+	return entry
 }
