@@ -26,8 +26,8 @@ type Policy struct {
 	Kind parser.ParserKind
 }
 
-// DefaultPolicy returns the versioned code default: the vendored reltitle
-// parser. regex stays registered and selectable.
+// DefaultPolicy returns the versioned code default: the reltitle parser.
+// regex stays registered and selectable.
 func DefaultPolicy() Policy {
 	return Policy{Kind: parser.ParserReltitle}
 }

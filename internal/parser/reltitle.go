@@ -13,7 +13,7 @@ import (
 	"bansoko/internal/parser/reltitletags"
 )
 
-// ReltitleAdapter is the vendored reltitle parser as an episode source. It
+// ReltitleAdapter is the reltitle module parser as an episode source. It
 // normalizes reltitle's episode conclusion into the same typed evidence the
 // regex adapter returns: a plain episode is a value; ranges, lists, seasons
 // and specials are typed unsupported evidence and fail closed downstream.

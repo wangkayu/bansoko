@@ -7,7 +7,7 @@ package parser
 const (
 	// ParserRegex is the ordered episode-pattern parser.
 	ParserRegex = "regex"
-	// ParserReltitle is the vendored reltitle episode parser.
+	// ParserReltitle is the reltitle episode parser.
 	ParserReltitle = "reltitle"
 )
 
