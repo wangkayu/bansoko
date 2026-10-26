@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RSSListItem, RSSListGroup, RSSListView } from "../../lib/api/client";
+import type { RSSListItem, RSSListGroup, RSSListView, SeedSearchSnapshotSeed } from "../../lib/api/client";
 import { createEmptyDraft, createEmptySourceDraft } from "../../lib/draft";
 import { t } from "../../lib/i18n";
 import { namingFactLabel, reasonLabel } from "../../lib/i18n/reasons";
@@ -1154,6 +1154,16 @@ describe("OneShotDialog 自定义预设", () => {
   });
 });
 
+function searchSeed(key: string, hint: string): SeedSearchSnapshotSeed {
+  return {
+    stable_seed_key: key,
+    title: `release ${key}`,
+    download_url: `https://example.invalid/${key}.torrent`,
+    torrent_state: "available",
+    title_hint: hint,
+  };
+}
+
 describe("OneShotDialog 搜索快照来源", () => {
   // Search fixtures use placeholder names only (never real releases, groups or refs).
   const SEARCH_SCOPE_REF = "search-scope:deadbeefcafe0011";
@@ -1189,9 +1199,34 @@ describe("OneShotDialog 搜索快照来源", () => {
       freshness: "fresh",
       total_seeds: 2,
       retention_seconds: 86400,
-      seeds: [],
+      seeds: [
+        searchSeed("seed-a", "作品甲"),
+        searchSeed("seed-b", "作品乙"),
+        searchSeed("seed-c", "作品乙"),
+        searchSeed("seed-d", " "),
+      ],
     },
   };
+  const SEED_C = "[组A] 测试番剧 - 03 [1080p]";
+  const threeSeedView = () =>
+    searchGroupView([
+      seedItem("seed-a", SEED_A, { snapshot_id: SEARCH_SNAPSHOT_ID }),
+      seedItem("seed-b", SEED_B, { snapshot_id: SEARCH_SNAPSHOT_ID }),
+      seedItem("seed-c", SEED_C, { snapshot_id: SEARCH_SNAPSHOT_ID }),
+    ]);
+  const tmdbCandidate = {
+    provider: "tmdb",
+    provider_work_id: "777",
+    title: "匹配作品名",
+    original_title: "Matched Original",
+    media_kind: "tv",
+    details_status: "available",
+    seasons: [{ season_number: 1, name: "第一季", episode_count: 12, air_date: "2024-04-01", is_special: false }],
+    suggested_season: 1,
+    year: 2024,
+    score: 1,
+  };
+  const searchLabel = t("oneshot.searchSourceLabel", { query: "搜索关键词甲" });
 
   function renderSearchDialog(search: SearchSeedBrowse = searchBrowse, onOpenRecords?: () => void, onBack?: () => void) {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -1202,7 +1237,7 @@ describe("OneShotDialog 搜索快照来源", () => {
     );
   }
 
-  it("打开即读：单一列表没有字幕组层，读请求携带搜索身份与 origin=oneshot 草稿，标题以查询文本预填", async () => {
+  it("打开即读：单一列表没有字幕组层，读请求携带搜索身份与 origin=oneshot 草稿，检索词仅作请求内占位", async () => {
     stubFetch({ view: searchGroupView() });
     renderSearchDialog();
 
@@ -1210,8 +1245,9 @@ describe("OneShotDialog 搜索快照来源", () => {
     expect(screen.getByRole("checkbox", { name: SEED_B })).not.toBeChecked();
     // A search source has a single seed list: no subgroup layer.
     expect(screen.queryByRole("button", { name: t("oneshot.backToGroups") })).not.toBeInTheDocument();
-    // The header renders the keyword the user searched plus the site, never the placeholder query_ref.
-    expect(screen.getAllByText("搜索关键词甲").length).toBeGreaterThan(0);
+    // The header renders a source label (the keyword the user searched, not a work title) plus the site, never the placeholder query_ref.
+    expect(screen.getAllByText(searchLabel).length).toBeGreaterThan(0);
+    expect(screen.queryByText("搜索关键词甲")).not.toBeInTheDocument();
     expect(screen.getByText(/AniBT/)).toBeInTheDocument();
     expect(screen.queryByText(new RegExp(SEARCH_QUERY_REF))).not.toBeInTheDocument();
 
@@ -1233,17 +1269,23 @@ describe("OneShotDialog 搜索快照来源", () => {
     });
   });
 
-  it("第二步：标题编辑同步 instance_label，提交按快照身份与编辑后的草稿", async () => {
+  it("第二步：标题初始为空且不发预览请求；填写标题后才带真实标题请求，并同步 instance_label，提交按快照身份与编辑后的草稿", async () => {
     stubFetch({ view: searchGroupView() });
     renderSearchDialog();
     await advanceToSettings([SEED_A]);
 
     const title = screen.getByRole("textbox", { name: t("field.title") });
-    expect(title).toHaveValue("搜索关键词甲");
+    expect(title).toHaveValue("");
+    // The empty title shows the hint instead of a preview, and no read is issued past the browse read.
+    expect(screen.getByText(t("oneshot.titleEmptyPreview"))).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(reads()).toHaveLength(1);
+    expect(button(t("oneshot.create", { n: 1 }))).toBeDisabled();
     const readsBefore = reads().length;
     fireEvent.change(title, { target: { value: "改名作品" } });
     await waitFor(() => expect(reads().length).toBeGreaterThan(readsBefore));
     expect(reads().at(-1)!.body).toMatchObject({ one_shot: true, draft: { title: "改名作品", instance_label: "改名作品" } });
+    expect(screen.queryByText(t("oneshot.titleEmptyPreview"))).not.toBeInTheDocument();
 
     fireEvent.click(button(t("oneshot.create", { n: 1 })));
     await waitFor(() => expect(screen.getByText(t("oneshot.resultOk"))).toBeInTheDocument());
@@ -1258,6 +1300,55 @@ describe("OneShotDialog 搜索快照来源", () => {
       input_source: "current_input",
       draft: { origin: "oneshot", title: "改名作品", instance_label: "改名作品", rss_sources: [] },
     });
+  });
+
+  it("匹配检索词候选：取勾选种子的 title_hint，去重、按次数降序，检索词兜底；点击标签替换搜索词并搜索", async () => {
+    stubFetch({ view: threeSeedView(), metadataCandidates: [tmdbCandidate] });
+    renderSearchDialog();
+    await advanceToSettings([SEED_A, SEED_B, SEED_C]);
+
+    fireEvent.click(button(t("forms.matchProvider", { provider: t("forms.providerTmdb") })));
+    const match = await screen.findByRole("dialog", { name: t("forms.matchTitle", { provider: "TMDB" }) });
+    // The title is empty: the most frequent hint seeds the search box.
+    const input = within(match).getByRole("textbox", { name: t("forms.titleQuery") });
+    expect(input).toHaveValue("作品乙");
+    const chips = within(within(match).getByRole("group", { name: t("forms.queryCandidatesAria") })).getAllByRole("button");
+    expect(chips.map((chip) => chip.textContent)).toEqual(["作品甲", "搜索关键词甲"]);
+
+    fireEvent.click(chips[0]!);
+    await waitFor(() => expect(calls.some((call) => call.url.includes("/metadata/search") && call.url.includes(encodeURIComponent("作品甲")))).toBe(true));
+    expect(input).toHaveValue("作品甲");
+    const after = within(within(match).getByRole("group", { name: t("forms.queryCandidatesAria") })).getAllByRole("button");
+    expect(after.map((chip) => chip.textContent)).toEqual(["作品乙", "搜索关键词甲"]);
+  });
+
+  it("确认匹配：标题为空时回填作品名（同时带上元数据）；标题已有时不覆盖", async () => {
+    stubFetch({ view: threeSeedView(), metadataCandidates: [tmdbCandidate] });
+    renderSearchDialog();
+    await advanceToSettings([SEED_A]);
+
+    async function matchOnce() {
+      fireEvent.click(button(t("forms.matchProvider", { provider: t("forms.providerTmdb") })));
+      const match = await screen.findByRole("dialog", { name: t("forms.matchTitle", { provider: "TMDB" }) });
+      fireEvent.click(within(match).getByRole("button", { name: t("forms.search") }));
+      fireEvent.click(await within(match).findByRole("option", { name: /匹配作品名/ }));
+      fireEvent.click(within(match).getByRole("button", { name: t("forms.confirmMatch") }));
+    }
+
+    await matchOnce();
+    const title = screen.getByRole("textbox", { name: t("field.title") });
+    await waitFor(() => expect(title).toHaveValue("匹配作品名"));
+    await waitFor(() =>
+      expect(reads().at(-1)!.body).toMatchObject({
+        draft: { title: "匹配作品名", instance_label: "匹配作品名", metadata: { tmdb: { work_id: "777" }, year: 2024 } },
+      }),
+    );
+
+    fireEvent.change(title, { target: { value: "我的标题" } });
+    fireEvent.click(within(screen.getByRole("region", { name: t("forms.tmdb") })).getByRole("button", { name: t("forms.clearAria", { label: t("forms.tmdb") }) }));
+    await matchOnce();
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: t("forms.matchTitle", { provider: "TMDB" }) })).not.toBeInTheDocument());
+    expect(title).toHaveValue("我的标题");
   });
 
   it("读取返回 409：提示重新搜索，不提供重试，也不静默重发", async () => {
@@ -1295,6 +1386,7 @@ describe("OneShotDialog 搜索快照来源", () => {
     });
     renderSearchDialog();
     await advanceToSettings([SEED_A]);
+    fireEvent.change(screen.getByRole("textbox", { name: t("field.title") }), { target: { value: "改名作品" } });
 
     fireEvent.click(button(t("oneshot.create", { n: 1 })));
     await waitFor(() => expect(downloads()).toHaveLength(1));

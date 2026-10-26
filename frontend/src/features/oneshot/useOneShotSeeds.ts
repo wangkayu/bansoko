@@ -40,7 +40,7 @@ import { t } from "../../lib/i18n";
 //     write back to it).
 //   - keyword search: the snapshot of one search read as a single seed list with no subgroup
 //     layer. The draft is the origin=oneshot form the admission path defines (no entry, no RSS
-//     source, title prefilled from the query text). A search identity is refreshed only by
+//     source, empty title; reads carry the query as a request-only placeholder). A search identity is refreshed only by
 //     searching again: a typed 409 surfaces as "search again", never a silent re-fetch.
 //
 // No business rule is judged here: downloadability, filter outcomes and target paths all come from the server's read model.
@@ -601,9 +601,10 @@ function useSearchSeedSource({ search, enabled }: { search: SearchSeedBrowse | u
   const [attempt, setAttempt] = useState(0);
 
   // The task draft is the origin=oneshot form the admission path defines: no entry, no RSS source,
-  // title prefilled from the query text, instance_label following the title — the server validates
-  // both as non-empty from the very first read, so both are set at creation.
-  const initialTitle = search?.query.trim() ?? "";
+  // an empty title (the user matches a work or types one), instance_label following the title. The
+  // server validates both as non-empty on every read, so a read with an empty title carries the
+  // query text as a request-only placeholder (see readView); it never enters the draft state.
+  const placeholderTitle = search?.query.trim() ?? "";
   useEffect(() => {
     if (!enabled || !search) return;
     let active = true;
@@ -613,8 +614,8 @@ function useSearchSeedSource({ search, enabled }: { search: SearchSeedBrowse | u
       ...createEmptyDraft(),
       origin: "oneshot",
       rss_sources: [],
-      title: initialTitle,
-      instance_label: initialTitle,
+      title: "",
+      instance_label: "",
     };
     void withGlobalBusiness(seeded, queryClient.fetchQuery({ queryKey: configKeys.businessPreset, queryFn: getBusinessPreset }))
       .then((loaded) => {
@@ -626,7 +627,7 @@ function useSearchSeedSource({ search, enabled }: { search: SearchSeedBrowse | u
     return () => {
       active = false;
     };
-  }, [attempt, enabled, queryClient, search, initialTitle]);
+  }, [attempt, enabled, queryClient, search]);
 
   const feedRef = useMemo<PreviewFeedSnapshotRef | undefined>(
     () =>
@@ -659,9 +660,13 @@ function useSearchSeedSource({ search, enabled }: { search: SearchSeedBrowse | u
       setPending(true);
       setViewError(undefined);
       try {
+        const requestDraft = structuredClone(current);
+        // Request-only placeholder: the server requires a non-empty title and instance_label on every read.
+        if (!requestDraft.title.trim()) requestDraft.title = placeholderTitle;
+        if (!requestDraft.instance_label?.trim()) requestDraft.instance_label = requestDraft.title;
         const result = await readAnimeRSSListView({
           input_source: "current_input",
-          draft: structuredClone(current),
+          draft: requestDraft,
           feed: [feedRef],
           one_shot: true,
           limit_per_group: ITEMS_PER_GROUP,
@@ -684,7 +689,7 @@ function useSearchSeedSource({ search, enabled }: { search: SearchSeedBrowse | u
         if (seq === readSeq.current) setPending(false);
       }
     },
-    [feedRef],
+    [feedRef, placeholderTitle],
   );
 
   // The first read runs once the draft (with its business snapshot) is in hand; a reload restarts it.

@@ -83,4 +83,6 @@ export const oneshotCopy = {
 
   // 搜索快照来源：身份过期只能重新搜索，没有可重试的刷新
   searchStale: "搜索结果已过期，请重新搜索",
+  searchSourceLabel: "种子检索 · {query}",
+  titleEmptyPreview: "匹配作品或填写标题后显示目标路径",
 } as const;

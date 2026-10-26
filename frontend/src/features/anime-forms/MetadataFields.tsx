@@ -37,6 +37,8 @@ export function MetadataFields({
   mediaKindOverride,
   showYear = false,
   directEdit = false,
+  matchQueryCandidates,
+  onMatchTitle,
 }: {
   value: AnimeMetadataDraft;
   onChange: (next: AnimeMetadataDraft) => void;
@@ -79,9 +81,21 @@ export function MetadataFields({
    * 并内联提示，不写回。缺省为旧的逐行保存交互（一次性下载等调用方不受影响）。
    */
   directEdit?: boolean;
+  /**
+   * 匹配弹窗的检索词候选（按优先级排序）。当前标题为空时第一个作为初始搜索词，
+   * 其余以可点击标签显示在搜索框下方。缺省时弹窗行为不变。
+   */
+  matchQueryCandidates?: readonly string[];
+  /** 确认匹配时传出所选作品名（本地化名优先，退回原名）；手动输入 TMDB ID 没有作品名，不触发。 */
+  onMatchTitle?: (title: string) => void;
 }) {
   const season = value.season ?? null;
   const effectiveKind = mediaKindOverride ?? value.tmdb?.media_kind;
+  function reportMatchTitle(candidate: MetadataCandidate) {
+    if (!onMatchTitle || (candidate.provider === "tmdb" && candidate.detailsStatus === "not_applicable")) return;
+    const name = candidate.title.trim() || candidate.originalTitle?.trim();
+    if (name) onMatchTitle(name);
+  }
   return (
     <div className="metadata-stack">
       <MetadataBindingRow
@@ -175,11 +189,13 @@ export function MetadataFields({
         <MetadataMatchDialog
           provider={matchProvider}
           title={title}
+          queryCandidates={matchQueryCandidates}
           searcher={searcher}
           preferredSeason={season ?? undefined}
           onClose={() => onMatchProviderChange(undefined)}
           onSelectBGM={(candidate) => {
             onChange({ ...value, bgm: { work_id: candidate.workId } });
+            reportMatchTitle(candidate);
             onMatchProviderChange(undefined);
           }}
           onSelectTMDB={(candidate, mediaKind, tmdbSeason) => {
@@ -209,6 +225,7 @@ export function MetadataFields({
               next.year = candidate.year;
             }
             onChange(next);
+            reportMatchTitle(candidate);
             onMatchProviderChange(undefined);
           }}
         />
@@ -912,6 +929,7 @@ function CandidatePoster({ url }: { url?: string }) {
 function MetadataMatchDialog({
   provider,
   title,
+  queryCandidates,
   searcher,
   preferredSeason,
   onClose,
@@ -920,6 +938,8 @@ function MetadataMatchDialog({
 }: {
   provider: MetadataProvider;
   title: string;
+  /** Suggested search terms, best first; the first seeds the search box only while the title is empty. */
+  queryCandidates?: readonly string[];
   searcher: MetadataSearcher;
   /** The season row's unbound staging preference: when present it wins over the candidate inference as the season editor's initial value. */
   preferredSeason?: number;
@@ -927,7 +947,7 @@ function MetadataMatchDialog({
   onSelectBGM: (candidate: MetadataCandidate) => void;
   onSelectTMDB: (candidate: MetadataCandidate, mediaKind: "tv" | "movie", season: number) => void;
 }) {
-  const [query, setQuery] = useState(title);
+  const [query, setQuery] = useState(title.trim() ? title : (queryCandidates?.[0] ?? ""));
   const [candidates, setCandidates] = useState<MetadataCandidate[]>([]);
   const [selected, setSelected] = useState<MetadataCandidate>();
   const [searching, setSearching] = useState(false);
@@ -958,6 +978,8 @@ function MetadataMatchDialog({
       setSearching(false);
     }
   }
+
+  const suggestedQueries = (queryCandidates ?? []).filter((candidate) => candidate !== query.trim());
 
   function applyManualId() {
     const id = manualId.trim();
@@ -1070,6 +1092,16 @@ function MetadataMatchDialog({
             {t("forms.autoSearch")}
           </Button>
         </div>
+
+        {suggestedQueries.length > 0 && (
+          <div className="tw:flex tw:flex-wrap tw:gap-1.5" role="group" aria-label={t("forms.queryCandidatesAria")}>
+            {suggestedQueries.map((candidate) => (
+              <Button key={candidate} size="sm" variant="secondary" disabled={searching} onClick={() => void search(candidate)}>
+                {candidate}
+              </Button>
+            ))}
+          </div>
+        )}
 
         {provider === "tmdb" && (
           <div className="metadata-match-search">

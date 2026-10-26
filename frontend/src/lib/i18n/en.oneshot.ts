@@ -81,4 +81,6 @@ export const enOneshotCopy = {
   resultFailed: "Not submitted",
 
   searchStale: "The search results expired. Search again.",
+  searchSourceLabel: "Torrent search · {query}",
+  titleEmptyPreview: "Match a title or enter one to see target paths",
 } as const satisfies CopyShape<typeof oneshotCopy>;

@@ -193,6 +193,7 @@ export const formsCopy = {
   autoSearch: "自动查询",
   noCandidates: "没有找到匹配的条目。可以稍后再次查询，或保持未匹配。",
   candidatesAria: "匹配结果",
+  queryCandidatesAria: "检索词候选",
   yearUnknown: "年份未知",
   suggestedSeason: "推荐第 {n} 季",
   selectedPrefix: "已选",

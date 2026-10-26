@@ -449,12 +449,12 @@ describe("GlobalSearchDialog 种子检索模式", () => {
     // 搜索弹窗不再渲染中间结果行（快照自带的发布标题不出现在搜索弹窗区域）。
     expect(screen.queryByText(seedOne.title)).not.toBeInTheDocument();
     // header 呈现前端自己持有的查询文本与站点，不透传服务端的 query_ref 占位名。
-    expect(within(dialog).getAllByText("示例作品 字幕组甲").length).toBeGreaterThan(0);
+    expect(within(dialog).getAllByText(t("oneshot.searchSourceLabel", { query: "示例作品 字幕组甲" })).length).toBeGreaterThan(0);
     expect(within(dialog).getByText(/AniBT/)).toBeInTheDocument();
     expect(within(dialog).queryByText(new RegExp(QUERY_REF))).not.toBeInTheDocument();
 
     // 读模型请求：搜索身份原样回传（scope/query 引用充当 entry/group 引用），草稿是
-    // origin=oneshot 形态（无 RSS 源，标题以查询文本预填，instance_label 跟随标题）。
+    // origin=oneshot 形态（无 RSS 源，读取请求内以查询文本作标题占位，instance_label 跟随标题）。
     await waitFor(() => expect(rssViewCalls).toHaveLength(1));
     const body = rssViewCalls[0]!.body as {
       input_source: string;

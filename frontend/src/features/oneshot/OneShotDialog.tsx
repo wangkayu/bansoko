@@ -249,7 +249,8 @@ export function OneShotDialog({
   const source = useOneShotSeedSource({ entry, search, enabled: open });
   // The header's source label: the entry title, or the keyword the user searched (the server
   // never echoes the query text, so a search source renders the text the frontend itself holds).
-  const sourceLabel = entry?.title ?? search?.query ?? "";
+  // A search renders as a source ("Torrent search · query"), never as a work title.
+  const sourceLabel = entry?.title ?? (search ? t("oneshot.searchSourceLabel", { query: search.query.trim() }) : "");
   const site = entry?.source ?? search?.provider ?? "anibt";
   const sourceRef = useRef(source);
   sourceRef.current = source;
@@ -296,12 +297,35 @@ export function OneShotDialog({
     [activeGroup, needle],
   );
 
+  // Match-dialog query candidates (search source only): the parsed title hints of the checked
+  // seeds, deduped, most frequent first; the query text itself is always the last candidate.
+  const matchQueryCandidates = useMemo(() => {
+    if (!search) return undefined;
+    const hints = new Map(search.snapshot.seeds.map((seed) => [seed.stable_seed_key, seed.title_hint]));
+    const counts = new Map<string, number>();
+    for (const row of selectedRows) {
+      const hint = hints.get(row.stableSeedKey)?.trim();
+      if (hint) counts.set(hint, (counts.get(hint) ?? 0) + 1);
+    }
+    const ranked = [...counts].sort((a, b) => b[1] - a[1]).map(([hint]) => hint);
+    const query = search.query.trim();
+    if (query && !counts.has(query)) ranked.push(query);
+    return ranked;
+  }, [search, selectedRows]);
+
   const trimmedOffset = offsetText.trim();
   const offsetValue = trimmedOffset === "" ? Number.NaN : Number(trimmedOffset);
   const offsetValid = Number.isInteger(offsetValue) && offsetValue >= OFFSET_MIN && offsetValue <= OFFSET_MAX;
   const effectiveOffset = offsetValid ? offsetValue : 0;
 
   const draft = source.draft;
+  // A match confirmation writes metadata and then the title in one event: the second write must build on the first, not on the render's stale draft.
+  const latestDraft = useRef(draft);
+  latestDraft.current = draft;
+  function commitDraft(next: AnimeDraft) {
+    latestDraft.current = next;
+    source.setDraft(next);
+  }
   // "The configuration loaded at task start": restore-defaults resets locally only, with no request.
   const baseline = useRef<RulesSections>();
   const baselineParser = useRef<NonNullable<AnimeDraft["business"]>["parser"]>();
@@ -359,6 +383,8 @@ export function OneShotDialog({
   const previewSeq = useRef(0);
   useEffect(() => {
     if (!open || step !== 2 || !offsetValid) return;
+    // A search draft starts without a title: no preview is requested until the user supplies one.
+    if (source.kind === "search" && !previewInput.current.draft?.title.trim()) return;
     const seq = ++previewSeq.current;
     const timer = window.setTimeout(() => {
       void (async () => {
@@ -375,7 +401,7 @@ export function OneShotDialog({
       })();
     }, PREVIEW_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [open, step, offsetValid, draft, offsetText, selected]);
+  }, [open, step, offsetValid, draft, offsetText, selected, source.kind]);
 
   function openGroup(key: string) {
     setDirection("forward");
@@ -442,6 +468,13 @@ export function OneShotDialog({
   const okKeys = new Set([...outcomes.values()].filter((outcome) => outcome.ok).map((outcome) => outcome.key));
   // Selected seeds not yet successfully submitted: everything on the first submit, only the failures after that.
   const pendingSubmit = selectedRows.filter((row) => !okKeys.has(row.key));
+
+  /** A search draft's instance_label follows the title: the server requires both non-empty, so they are edited as one. */
+  function setTitle(title: string) {
+    const base = latestDraft.current;
+    if (!base) return;
+    commitDraft(source.kind === "search" ? { ...base, title, instance_label: title } : { ...base, title });
+  }
 
   // Why submission is blocked (rendering only).
   const createBlock: string | undefined = !draft
@@ -820,6 +853,8 @@ export function OneShotDialog({
               <StateBlock kind="error" title={source.error} />
             ) : selectedRows.length === 0 ? (
               <StateBlock kind="empty" title={t("oneshot.selectToPreview")} />
+            ) : source.kind === "search" && draft && !draft.title.trim() ? (
+              <StateBlock kind="empty" title={t("oneshot.titleEmptyPreview")} />
             ) : (
               <ul className="tw:m-0 tw:grid tw:list-none tw:gap-2 tw:p-0">
                 {selectedRows.map((row) => (
@@ -861,11 +896,7 @@ export function OneShotDialog({
                     onChange={(event) =>
                       // A search draft's instance_label follows the title: the server requires both
                       // non-empty from the first read on, so they are edited as one.
-                      source.setDraft(
-                        source.kind === "search"
-                          ? { ...draft, title: event.target.value, instance_label: event.target.value }
-                          : { ...draft, title: event.target.value },
-                      )
+                      setTitle(event.target.value)
                     }
                   />
                 </Field>
@@ -874,8 +905,13 @@ export function OneShotDialog({
                   showYear
                   showSeason
                   title={draft.title}
+                  matchQueryCandidates={matchQueryCandidates}
+                  onMatchTitle={(matched) => {
+                    // Only fills an empty title; a title the user already has is never overwritten.
+                    if (!(latestDraft.current ?? draft).title.trim()) setTitle(matched);
+                  }}
                   value={draft.metadata}
-                  onChange={(metadata) => source.setDraft({ ...draft, metadata })}
+                  onChange={(metadata) => commitDraft({ ...(latestDraft.current ?? draft), metadata })}
                   matchProvider={matchProvider}
                   onMatchProviderChange={setMatchProvider}
                   onSaveTotalEpisodes={async (total) => {
