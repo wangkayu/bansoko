@@ -167,13 +167,13 @@ export async function ensureOpsQbConnection(page: Page): Promise<QbConnectionRow
   if (existing) return existing;
   await page.goto("/#/settings/download");
   const dialog = page.getByRole("dialog").first();
-  await dialog.getByRole("button", { name: "新建下载器", exact: true }).click();
+  await dialog.getByRole("button", { name: "添加下载器", exact: true }).click();
   const editor = page.getByRole("dialog").last();
   await editor.getByLabel("名称").fill("Ops qB");
   await editor.getByLabel("qBittorrent 地址").fill(env("BANSOKO_QB_ENDPOINT")!);
   await editor.getByLabel("用户名").fill(env("BANSOKO_QB_USERNAME")!);
-  await editor.getByLabel(/下载目录（可选）/).fill(env("BANSOKO_QB_DOWNLOAD_ROOT") ?? "/downloads");
-  await editor.getByLabel(/对应本机路径（可选）/).fill(env("BANSOKO_QB_DOWNLOADER_ROOT") ?? env("BANSOKO_HARNESS_DOWNLOAD_ROOT")!);
+  await editor.getByLabel("下载目录", { exact: true }).fill(env("BANSOKO_QB_DOWNLOAD_ROOT") ?? "/downloads");
+  await editor.getByLabel(/本程序访问路径/).fill(env("BANSOKO_QB_DOWNLOADER_ROOT") ?? env("BANSOKO_HARNESS_DOWNLOAD_ROOT")!);
   await editor.getByLabel("密码").fill(env("BANSOKO_QB_PASSWORD")!);
   await editor.getByRole("button", { name: "保存", exact: true }).click();
   await expect(page.getByText("下载器已保存", { exact: true })).toBeVisible({ timeout: 15000 });

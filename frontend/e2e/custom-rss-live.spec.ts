@@ -131,13 +131,14 @@ async function saveQbConnection(page: Page, name: string) {
   await page.goto("/#/settings/download");
   const dialog = settingsDialog(page);
   await expect(dialog).toBeVisible({ timeout: 15000 });
-  await expect(dialog.getByRole("button", { name: "新建下载器", exact: true })).toBeVisible({ timeout: 15000 });
-
-  const existing = dialog.locator("li").filter({ hasText: name }).first();
+  const addDownloader = dialog.getByRole("button", { name: "添加下载器", exact: true });
+  const existing = dialog.locator("li").filter({ has: dialog.getByRole("button", { name: "编辑", exact: true }) }).first();
+  await expect(addDownloader.or(existing)).toBeVisible({ timeout: 15000 });
+  // Only one downloader is supported: edit it when present, otherwise add it.
   if (await existing.count()) {
     await existing.getByRole("button", { name: "编辑", exact: true }).click();
   } else {
-    await dialog.getByRole("button", { name: "新建下载器", exact: true }).click();
+    await addDownloader.click();
   }
 
   const editor = latestDialog(page);
@@ -145,8 +146,8 @@ async function saveQbConnection(page: Page, name: string) {
   await editor.getByLabel("名称").fill(name);
   await editor.getByLabel("qBittorrent 地址").fill(qbEndpoint!);
   await editor.getByLabel("用户名").fill(qbUsername!);
-  await editor.getByLabel(/下载目录（可选）/).fill(downloadRoot);
-  await editor.getByLabel(/对应本机路径（可选）/).fill(downloaderRoot!);
+  await editor.getByLabel("下载目录", { exact: true }).fill(downloadRoot);
+  await editor.getByLabel(/本程序访问路径/).fill(downloaderRoot!);
 
   const replaceCredential = editor.getByLabel("替换为新值");
   if (await replaceCredential.count()) {

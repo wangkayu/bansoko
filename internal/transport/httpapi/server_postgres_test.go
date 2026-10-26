@@ -1111,7 +1111,7 @@ func TestPutAndListConnectionsOverHTTP(t *testing.T) {
 	rig := newTestRig(t, "development", true)
 	payload := map[string]any{
 		"kind": "qbittorrent", "name": "qb", "enabled": true,
-		"base_url": "http://qb.local:8080", "username": "admin",
+		"base_url": "http://qb.local:8080", "username": "admin", "download_root": "/downloads",
 		"secret": map[string]any{"mode": "replace", "value": "secret-password"},
 	}
 	recorder, body := rig.do(t, http.MethodPut, "/api/v1/config/connections/qb-1", payload, map[string]string{"If-Match": "0"})
