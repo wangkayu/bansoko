@@ -1,4 +1,4 @@
--- Forward-only migration 062: subgroup score rules (owner ruling 15).
+-- Forward-only migration 061: subgroup score rules (owner ruling 15).
 --
 -- A required (always / manual-selected) group is decoupled from max_rss: it is
 -- always selected and never consumes a slot, so provider_group_selections

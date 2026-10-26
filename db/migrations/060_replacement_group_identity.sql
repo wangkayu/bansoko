@@ -1,4 +1,4 @@
--- Forward-only migration 061: replacement group identity and scan-managed
+-- Forward-only migration 060: replacement group identity and scan-managed
 -- files.
 --
 -- 1. A custom RSS source is its own group identity. per_group pools by
