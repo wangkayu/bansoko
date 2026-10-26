@@ -61,13 +61,15 @@ func freezeReplacementComparisons(pools []PoolEvidence, candidate Facts, placeme
 		}
 		for _, loser := range pool.Losers {
 			existing, ok := byID[loser.PlacementID]
-			if !ok || !existing.FactsOK {
+			if !ok {
 				continue
 			}
-			if existing.Version != loser.Version || existing.Fingerprint != loser.Fingerprint || !Compare(candidate, existing.Facts, profile).Better {
+			// A loser without release facts (a scan-managed file no release
+			// claimed) is frozen with no values: any candidate beats it.
+			if existing.Version != loser.Version || existing.Fingerprint != loser.Fingerprint || !compareWithMember(candidate, existing, profile).Better {
 				continue
 			}
-			pool.Comparisons = append(pool.Comparisons, FrozenReplacementComparison{Placement: loser, Candidate: candidate, Existing: existing.Facts, Dimensions: dimensions, Verdict: "replace"})
+			pool.Comparisons = append(pool.Comparisons, FrozenReplacementComparison{Placement: loser, Candidate: candidate, Existing: comparableFacts(existing), Dimensions: dimensions, Verdict: "replace"})
 		}
 	}
 }

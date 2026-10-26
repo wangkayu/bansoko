@@ -25,6 +25,7 @@ type currentProfileRecomputer func(CandidateFacts, attrrules.Rules, *[]string, C
 // through. Field order and types mirror the owner's facts.CompareSource.
 type CompareSource struct {
 	SourceFacts      []byte
+	RSSSourceID      string
 	SourceKind       string
 	Provider         string
 	ProviderGroupRef string
@@ -212,10 +213,10 @@ func loadCompareSource(ctx context.Context, tx *sql.Tx, releaseID string) (Compa
 		provider, groupRef sql.NullString
 	)
 	err := tx.QueryRowContext(ctx, `
-SELECT r.source_facts, src.source_kind, src.provider, src.provider_group_ref
+SELECT r.source_facts, src.id, src.source_kind, src.provider, src.provider_group_ref
 FROM releases r
 JOIN rss_sources src ON src.id = r.rss_source_id
-WHERE r.id = $1`, releaseID).Scan(&source.SourceFacts, &source.SourceKind, &provider, &groupRef)
+WHERE r.id = $1`, releaseID).Scan(&source.SourceFacts, &source.RSSSourceID, &source.SourceKind, &provider, &groupRef)
 	if err != nil {
 		return CompareSource{}, err
 	}

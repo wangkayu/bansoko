@@ -17,6 +17,8 @@ import (
 // inFlightClaim is one non-terminal instance acquisition and the coverage its
 // release was accepted with.
 type inFlightClaim struct {
+	// Group is the stable group identity (provider:group_ref) the running
+	// release froze in its compare_values; "" when it froze none.
 	Group string
 	Keys  []string
 }
@@ -34,7 +36,7 @@ type inFlightClaim struct {
 //   - empty pool, queue, blocked: the key stays open.
 //   - a running instance acquisition of another release that was accepted with
 //     the key claims it (covered_in_flight); per_group only within the same
-//     group.
+//     stable group identity.
 //
 // The candidate is the not-yet-admitted release: its title (quality dimensions
 // only), its byte size, and the coverage keys and file units of its planned
@@ -104,7 +106,8 @@ FROM anime_business_configs WHERE managed_anime_id = $1 AND retention_version IS
 	}
 	candidateRef := PlacementRef{PlacementID: "release:" + releaseID, Version: 1}
 	pools := EvaluatePools(mode, candidate.Coverage, candidateFacts, candidateRef, placements, profile, candidate.Units)
-	return coverageVerdicts(mode, candidate.Coverage, candidateFacts.Group, pools, claims), nil
+	group, _ := candidateFacts.poolGroup()
+	return coverageVerdicts(mode, candidate.Coverage, group, pools, claims), nil
 }
 
 // loadReleaseCompareSourceTx reads a release's frozen source facts and the
@@ -115,10 +118,10 @@ func loadReleaseCompareSourceTx(ctx context.Context, tx *sql.Tx, releaseID strin
 		provider, groupRef sql.NullString
 	)
 	err := tx.QueryRowContext(ctx, `
-SELECT r.source_facts, src.source_kind, src.provider, src.provider_group_ref
+SELECT r.source_facts, src.id, src.source_kind, src.provider, src.provider_group_ref
 FROM releases r
 JOIN rss_sources src ON src.id = r.rss_source_id
-WHERE r.id = $1`, releaseID).Scan(&source.SourceFacts, &source.SourceKind, &provider, &groupRef)
+WHERE r.id = $1`, releaseID).Scan(&source.SourceFacts, &source.RSSSourceID, &source.SourceKind, &provider, &groupRef)
 	if errors.Is(err, sql.ErrNoRows) {
 		return facts.CompareSource{}, nil
 	}
@@ -175,7 +178,9 @@ func coverageVerdicts(mode AdmissionMode, keys []string, group string, pools []P
 // accepted with, and the claim disappears the moment the acquisition settles
 // (succeeded, failed, cancelled, stalled). A key the release already placed is
 // no longer in flight even while the root is still settling: the placement is
-// in the pool and the pool decides it (keep or replace). One-shot acquisitions
+// in the pool and the pool decides it (keep or replace). A placement the
+// latest calibrated scan reports missing or changed holds no coverage, so its
+// key stays claimed. One-shot acquisitions
 // are a temporary owner that never enters the library, so they claim nothing.
 func loadInFlightClaimsTx(ctx context.Context, tx *sql.Tx, managedAnimeID, releaseID string) ([]inFlightClaim, error) {
 	rows, err := tx.QueryContext(ctx, `
@@ -190,12 +195,13 @@ SELECT COALESCE((
                AND p.quality_facts_ref = a.source_release_ref
                AND p.state = 'active'
                AND p.verification_state = 'verified'
+               AND `+latestObservationIssue+` = ''
                AND pc.observation_key = k.key)
        ), '[]'::jsonb),
-       COALESCE(f."group", '')
+       COALESCE((f.compare_values->'subgroup'->>'provider') || ':' || (f.compare_values->'subgroup'->>'group_ref'), '')
 FROM acquisitions a
 JOIN LATERAL (
-    SELECT coverage_keys, "group"
+    SELECT coverage_keys, compare_values
     FROM release_candidate_facts
     WHERE release_id = a.source_release_ref
     ORDER BY release_version DESC

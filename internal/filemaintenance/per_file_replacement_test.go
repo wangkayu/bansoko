@@ -82,11 +82,12 @@ func TestEvaluatePoolsUnitRulePerGroup(t *testing.T) {
 	mine := func(id, resolution, key string) PlacementFacts {
 		p := present(id, resolution, key)
 		p.Facts.Group = "G"
+		p.Facts.Subgroup = subgroup("mikan", "7")
 		return p
 	}
-	pools := EvaluatePools(ModePerGroup, []string{"tv:s1:e1", "tv:s1:e2"}, released(Facts{Resolution: "1080p", Group: "G"}), poolRef("release:r", 1, "fp"),
+	pools := EvaluatePools(ModePerGroup, []string{"tv:s1:e1", "tv:s1:e2"}, released(Facts{Resolution: "1080p", Group: "G", Subgroup: subgroup("mikan", "7")}), poolRef("release:r", 1, "fp"),
 		[]PlacementFacts{mine("old-e1", "720p", "tv:s1:e1"), mine("old-e2", "2160p", "tv:s1:e2")}, perFileProfile(), units)
-	if got := verdictsOf(pools); got["tv:s1:e1|G"] != "keep/"+ReasonReplacementUnitKept {
+	if got := verdictsOf(pools); got["tv:s1:e1|mikan:7"] != "keep/"+ReasonReplacementUnitKept {
 		t.Fatalf("verdicts = %v", got)
 	}
 }

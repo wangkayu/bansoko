@@ -17,7 +17,8 @@ func TestReplacementCaptureRequiresNewApprovedComparison(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	placement := seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"}, Facts{Resolution: "720p", Group: "G"}, "2026-07-01T00:00:00Z")
+	// The incumbent shares the candidate's source, so per_group pools them.
+	placement := seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"}, Facts{Resolution: "720p", Group: "G", Subgroup: customGroup("release-new")}, "2026-07-01T00:00:00Z")
 	seedCandidateRelease(t, db, "sub-1", "release-new", "[G] Show - 01 [1080p]")
 	path := filepath.Join(t.TempDir(), "incumbent")
 	data := []byte("approved incumbent")

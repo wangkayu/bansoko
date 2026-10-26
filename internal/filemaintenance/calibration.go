@@ -239,6 +239,10 @@ WHERE id = $2 AND verification_state = 'verified' AND state = 'active'`,
 			Coverage:           file.Coverage,
 			ManagedAnimeID:     animeID,
 			SnapshotGeneration: generation,
+			// A scan-managed file is a managed file: it takes part in
+			// replacement (no group, no values until a release claims it)
+			// and, as a loser, is deleted like any managed loser.
+			ReplacementEligible: true,
 		}); err != nil {
 			return fmt.Errorf("admit calibration placement %s: %w", file.FilePath, err)
 		}

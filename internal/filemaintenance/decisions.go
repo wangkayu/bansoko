@@ -40,6 +40,10 @@ type EvaluateRequest struct {
 	// plannedUnits maps each planned key to the keys of the planned file that
 	// holds it (one file replaces only what it covers).
 	plannedUnits map[string][]string
+	// unplacedOnly re-freezes only the keys the release has not placed yet
+	// (a policy change re-decides candidates, never files already placed):
+	// placed keys are neither compared nor settled.
+	unplacedOnly bool
 }
 
 // Typed business codes for evaluate failure conditions. A candidate Release
@@ -446,10 +450,10 @@ WHERE release_id = $1 ORDER BY release_version DESC LIMIT 1`, input.CandidateRel
 	}
 	coverage = SortCoverage(dedupePlacementIDs(coverage))
 
-	// Current verified active placements with their server-read quality facts
-	// (facts_ok = a release chain exists; reconciliation placements without a
-	// chain score 0 in every pool they belong to and are replaced by any
-	// scoring candidate instead of blocking the pool).
+	// Current verified active replacement-eligible placements with their
+	// server-read quality facts (facts_ok = a release chain exists; an
+	// eligible placement without one competes without values in single_copy
+	// and belongs to no per_group pool).
 	if ev.placements, err = s.loadPlacementFacts(ctx, tx, input.AnimeID); err != nil {
 		return nil, err
 	}
@@ -511,7 +515,7 @@ WHERE release_id = $1 ORDER BY release_version DESC LIMIT 1`, input.CandidateRel
 	}
 	for index, candidate := range candidates {
 		keys := byPlacement[index]
-		if len(keys) == 0 {
+		if len(keys) == 0 || input.unplacedOnly {
 			continue
 		}
 		// A placed file's unit is what the file covers.
@@ -856,10 +860,15 @@ func decisionIdentity(animeID, releaseID, key, digest string) (string, string) {
 	return idempotencyKey, "dec-" + hex.EncodeToString(idSum[:])[:40]
 }
 
-// loadPlacementFacts reads the verified active placements of one anime with
-// their coverage and quality facts (server-owned rows only). A placement with
-// a pending redownload request no longer holds its episodes: the user asked
-// for a new file, and the new placement displaces it.
+// loadPlacementFacts reads the verified active replacement-eligible
+// placements of one anime with their coverage and quality facts
+// (server-owned rows only). A placement with a pending redownload request no
+// longer holds its episodes: the user asked for a new file, and the new
+// placement displaces it. A placement the latest calibrated scan reports
+// missing or changed (fingerprint_conflict) holds no coverage while the scan
+// says so: it is neither pooled nor compared. A scan-adopted placement
+// (reconciliation, replacement_eligible=false) never enters replacement until
+// a release claims it.
 func (s *ReplacementDecisionService) loadPlacementFacts(ctx context.Context, tx *sql.Tx, animeID string) ([]PlacementFacts, error) {
 	rows, err := tx.QueryContext(ctx, `
 SELECT p.id, p.version, p.target_fingerprint, p.created_at,
@@ -876,6 +885,7 @@ LEFT JOIN LATERAL (
 ) f ON true
 WHERE p.managed_anime_id = $1 AND p.verification_state = 'verified' AND p.state = 'active'
   AND p.replacement_eligible AND p.redownload_requested_at IS NULL
+  AND `+latestObservationIssue+` = ''
 ORDER BY p.created_at, p.id`, animeID)
 	if err != nil {
 		return nil, err
@@ -1410,11 +1420,15 @@ func (s *ReplacementDecisionService) replacementBusinessHandler() worker.Handler
 		}
 		var input struct {
 			CandidateReleaseID string `json:"candidate_release_id"`
+			Trigger            string `json:"trigger"`
 		}
 		if err := json.Unmarshal(claim.InputSnapshot, &input); err != nil || strings.TrimSpace(input.CandidateReleaseID) == "" {
 			return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "failed", ReasonCode: "replacement_claim_invalid", Reason: "claim input must carry candidate_release_id"}, nil), nil
 		}
-		views, err := s.EvaluateApplication(ctx, EvaluateRequest{AnimeID: claim.Owner.ID, CandidateRelease: input.CandidateReleaseID})
+		// A policy change re-decides only a candidate that has not placed
+		// yet: placed files are never compared again, so a policy save never
+		// supersedes or deletes anything by itself.
+		views, err := s.EvaluateApplication(ctx, EvaluateRequest{AnimeID: claim.Owner.ID, CandidateRelease: input.CandidateReleaseID, unplacedOnly: input.Trigger == TriggerPolicySaved})
 		if err != nil {
 			var business *apperrors.Business
 			if errors.As(err, &business) {

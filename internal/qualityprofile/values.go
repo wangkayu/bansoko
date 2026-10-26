@@ -11,11 +11,22 @@ import (
 const ValuesVersion = "compare-values-v1"
 
 // SubgroupSource is the frozen RSS source group identity of a release: the
-// provider and its group ref. The subscription's score for it is looked up at
-// comparison time; a release without one ranks lowest.
+// provider and its group ref, or CustomSubgroupProvider and the RSS source id
+// of a custom RSS source. The subscription's score for it is looked up at
+// comparison time; a release without one (or a custom source, which has no
+// score) ranks lowest.
 type SubgroupSource struct {
 	Provider string `json:"provider"`
 	GroupRef string `json:"group_ref"`
+}
+
+// CustomSubgroupProvider is the subgroup provider of a custom RSS source; its
+// group ref is the RSS source id.
+const CustomSubgroupProvider = "custom"
+
+// Key is the stable group identity string "provider:group_ref".
+func (s SubgroupSource) Key() string {
+	return s.Provider + ":" + s.GroupRef
 }
 
 // FrozenValues are the comparison values one release contributes, frozen

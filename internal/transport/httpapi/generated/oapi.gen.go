@@ -3682,6 +3682,7 @@ type BusinessRecordRecordType string
 
 // BusinessRetention defines model for BusinessRetention.
 type BusinessRetention struct {
+	// AdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself.
 	AdmissionMode RetentionAdmissionMode `json:"admission_mode"`
 
 	// QualityProfile The replacement comparison profile (profile-v1): ordered comparison items. Items compare in order and the first item that ranks two releases differently decides; all items equal, the larger size wins; still equal, the existing file stays.
@@ -5030,6 +5031,7 @@ type InstanceFileEffectPolicyView struct {
 
 // InstanceRetentionPolicyInput defines model for InstanceRetentionPolicyInput.
 type InstanceRetentionPolicyInput struct {
+	// AdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself.
 	AdmissionMode RetentionAdmissionMode `json:"admission_mode"`
 
 	// ExpectedVersion CAS expected version (0 = create).
@@ -5041,6 +5043,7 @@ type InstanceRetentionPolicyInput struct {
 
 // InstanceRetentionPolicyView defines model for InstanceRetentionPolicyView.
 type InstanceRetentionPolicyView struct {
+	// AdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself.
 	AdmissionMode  RetentionAdmissionMode `json:"admission_mode"`
 	ManagedAnimeId ID                     `json:"managed_anime_id"`
 
@@ -7723,9 +7726,11 @@ type ReplacementPlacementRef struct {
 
 // ReplacementPoolEvidence defines model for ReplacementPoolEvidence.
 type ReplacementPoolEvidence struct {
-	Losers  *[]ReplacementPlacementRef `json:"losers,omitempty"`
-	PoolKey string                     `json:"pool_key"`
-	Reason  *string                    `json:"reason,omitempty"`
+	Losers *[]ReplacementPlacementRef `json:"losers,omitempty"`
+
+	// PoolKey The coverage key; per_group appends the stable group identity "<provider>:<group_ref>" (a custom RSS source is "custom:<source id>"), never the bracketed title group.
+	PoolKey string  `json:"pool_key"`
+	Reason  *string `json:"reason,omitempty"`
 
 	// Steps The comparison steps that decided the pool, in item order; the last step decides (key "size" is the size tiebreak).
 	Steps   *[]ReplacementCompareStep      `json:"steps,omitempty"`
@@ -7736,7 +7741,7 @@ type ReplacementPoolEvidence struct {
 // ReplacementPoolEvidenceVerdict defines model for ReplacementPoolEvidence.Verdict.
 type ReplacementPoolEvidenceVerdict string
 
-// RetentionAdmissionMode defines model for RetentionAdmissionMode.
+// RetentionAdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself.
 type RetentionAdmissionMode string
 
 // RetentionCompareVocabulary Candidate values per ranked comparison item: release.* from the active attribute rules, anibt.* from values seen on releases (of the anime when one is named), rt.* from the pinned reltitle dictionary (empty when it is unavailable). Values are suggestions; any value can be ranked.
@@ -7752,6 +7757,7 @@ type RetentionCompareVocabularyItem struct {
 
 // RetentionPolicyDefaultInput defines model for RetentionPolicyDefaultInput.
 type RetentionPolicyDefaultInput struct {
+	// AdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself.
 	AdmissionMode RetentionAdmissionMode `json:"admission_mode"`
 
 	// ExpectedVersion CAS expected version (0 = create).
@@ -7763,6 +7769,7 @@ type RetentionPolicyDefaultInput struct {
 
 // RetentionPolicyDefaultView defines model for RetentionPolicyDefaultView.
 type RetentionPolicyDefaultView struct {
+	// AdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself.
 	AdmissionMode RetentionAdmissionMode `json:"admission_mode"`
 
 	// QualityProfile The replacement comparison profile (profile-v1): ordered comparison items. Items compare in order and the first item that ranks two releases differently decides; all items equal, the larger size wins; still equal, the existing file stays.

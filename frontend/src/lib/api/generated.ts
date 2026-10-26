@@ -6995,6 +6995,7 @@ export interface components {
             created_at: string;
         };
         ReplacementPoolEvidence: {
+            /** @description The coverage key; per_group appends the stable group identity "<provider>:<group_ref>" (a custom RSS source is "custom:<source id>"), never the bracketed title group. */
             pool_key: string;
             /** @enum {string} */
             verdict: "replace" | "retain" | "keep" | "blocked" | "queue";
@@ -7177,7 +7178,10 @@ export interface components {
             /** @description CAS expected version (0 = create). */
             expected_version: number;
         };
-        /** @enum {string} */
+        /**
+         * @description How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself.
+         * @enum {string}
+         */
         RetentionAdmissionMode: "all" | "per_group" | "single_copy";
         /** @enum {string} */
         UnclassifiedRoutePolicyValue: "route" | "skip";

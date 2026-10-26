@@ -81,6 +81,11 @@ func compareValuesJSON(f Facts) string {
 	return string(values.JSON())
 }
 
+// subgroup is a frozen subgroup source (the stable group identity).
+func subgroup(provider, groupRef string) *qualityprofile.SubgroupSource {
+	return &qualityprofile.SubgroupSource{Provider: provider, GroupRef: groupRef}
+}
+
 // rankProfile is a one-item profile ranking key's values, best first.
 func rankProfile(key string, best ...string) Profile {
 	ranks := make([][]string, 0, len(best))
@@ -105,6 +110,12 @@ func seedFilePlacement(t *testing.T, db *sql.DB, animeID, subID, releaseID strin
 	group := facts.Group
 	if group == "" {
 		group = "G"
+	}
+	// Acceptance freezes a stable group identity for every source; fixtures
+	// that name a title group share one identity per title group so they pool
+	// together, and a fixture without a title group froze none (legacy facts).
+	if facts.Subgroup == nil && facts.Group != "" {
+		facts.Subgroup = subgroup(qualityprofile.CustomSubgroupProvider, "group-"+facts.Group)
 	}
 	opID := "op-" + releaseID
 	placementID := "plc-file_operation-" + opID
@@ -252,22 +263,25 @@ func TestEvaluatePoolsAllModeNeverProducesLosers(t *testing.T) {
 
 func TestEvaluatePoolsPerGroupPoolsByCoveragePlusGroup(t *testing.T) {
 	profile := resolutionProfile("2160p", "1080p", "720p", "480p")
-	candidate := released(Facts{Resolution: "1080p", Group: "GroupA"})
+	candidate := released(Facts{Resolution: "1080p", Group: "GroupA", Subgroup: subgroup("mikan", "583")})
 	candidateRef := poolRef("plc-candidate", 1, "fp-c")
 	current := []PlacementFacts{
-		{PlacementID: "plc-a", Version: 1, Fingerprint: "fp-a", Coverage: []string{"tv:s1:e1"}, Facts: released(Facts{Resolution: "720p", Group: "GroupA"}), FactsOK: true},
-		// Same coverage, different group: another pool, never compared here.
-		{PlacementID: "plc-b", Version: 1, Fingerprint: "fp-b", Coverage: []string{"tv:s1:e1"}, Facts: released(Facts{Resolution: "2160p", Group: "GroupB"}), FactsOK: true},
+		// Same source group, a different bracketed title group: same pool.
+		{PlacementID: "plc-a", Version: 1, Fingerprint: "fp-a", Coverage: []string{"tv:s1:e1"}, Facts: released(Facts{Resolution: "720p", Group: "GroupA-Renamed", Subgroup: subgroup("mikan", "583")}), FactsOK: true},
+		// Same coverage, the same bracketed title but another source group:
+		// another pool, never compared here.
+		{PlacementID: "plc-b", Version: 1, Fingerprint: "fp-b", Coverage: []string{"tv:s1:e1"}, Facts: released(Facts{Resolution: "480p", Group: "GroupA", Subgroup: subgroup("mikan", "612")}), FactsOK: true},
+		{PlacementID: "plc-c", Version: 1, Fingerprint: "fp-c2", Coverage: []string{"tv:s1:e1"}, Facts: released(Facts{Resolution: "2160p", Group: "GroupB", Subgroup: subgroup("anibt", "583")}), FactsOK: true},
 	}
 	pools := EvaluatePools(ModePerGroup, []string{"tv:s1:e1"}, candidate, candidateRef, current, profile, nil)
 	if len(pools) != 1 || pools[0].Verdict != "replace" {
 		t.Fatalf("per_group must replace inside the group pool: %+v", pools)
 	}
-	if pools[0].PoolKey != "tv:s1:e1|GroupA" {
-		t.Fatalf("per_group pool key must be coverage+group: %s", pools[0].PoolKey)
+	if pools[0].PoolKey != "tv:s1:e1|mikan:583" {
+		t.Fatalf("per_group pool key must be coverage+provider:group_ref: %s", pools[0].PoolKey)
 	}
 	if len(pools[0].Losers) != 1 || pools[0].Losers[0].PlacementID != "plc-a" {
-		t.Fatalf("only the same-group placement may be a loser: %+v", pools[0].Losers)
+		t.Fatalf("only the same-source-group placement may be a loser: %+v", pools[0].Losers)
 	}
 	if pools[0].Winner == nil || pools[0].Winner.PlacementID != "plc-candidate" {
 		t.Fatalf("winner must be the candidate: %+v", pools[0].Winner)
@@ -318,7 +332,10 @@ func TestEvaluatePoolsCoverageUnresolvedBlocks(t *testing.T) {
 	}
 }
 
-func TestEvaluatePoolsFactsMissingIsZeroScoreOpponent(t *testing.T) {
+// A scan-managed file no release has claimed (FactsOK false) has no group and
+// no values: any candidate beats it, in single_copy and in every per_group
+// pool of its keys.
+func TestEvaluatePoolsUnclaimedScanFileLosesToAnyCandidate(t *testing.T) {
 	profile := resolutionProfile("1080p", "720p")
 	candidate := released(Facts{Resolution: "1080p"})
 	candidateRef := poolRef("plc-candidate", 1, "fp-c")
@@ -333,15 +350,44 @@ func TestEvaluatePoolsFactsMissingIsZeroScoreOpponent(t *testing.T) {
 	if len(pools[0].Losers) != 1 || pools[0].Losers[0].PlacementID != "plc-unknown" {
 		t.Fatalf("the facts-missing placement must be the frozen loser: %+v", pools[0].Losers)
 	}
-	// A zero-score candidate cannot beat the zero-score facts-missing
-	// placement: retain the incumbent.
+	// Even a candidate that ranks lowest on every item beats it.
 	zero := released(Facts{Resolution: "unknown-res"})
 	pools = EvaluatePools(ModeSingleCopy, []string{"tv:s1:e1"}, zero, candidateRef, current, profile, nil)
-	if pools[0].Verdict != "retain" {
-		t.Fatalf("zero-score candidate must retain against a facts-missing placement: %+v", pools)
+	if pools[0].Verdict != "replace" || len(pools[0].Losers) != 1 || pools[0].Reason != ReasonExistingWithoutFacts {
+		t.Fatalf("any candidate must replace an unclaimed scan-managed file: %+v", pools)
 	}
-	if pools[0].Winner == nil || pools[0].Winner.PlacementID != "plc-unknown" {
-		t.Fatalf("retain must freeze the facts-missing incumbent as winner: %+v", pools[0].Winner)
+	// per_group: the group-less file is in every group's pool of its key, so
+	// candidates of two different groups each replace it; nothing blocks.
+	for _, group := range []*qualityprofile.SubgroupSource{subgroup("mikan", "1"), subgroup("custom", "src-9")} {
+		grouped := released(Facts{Resolution: "720p", Subgroup: group})
+		pools = EvaluatePools(ModePerGroup, []string{"tv:s1:e1"}, grouped, candidateRef, current, profile, nil)
+		if len(pools) != 1 || pools[0].Verdict != "replace" || pools[0].PoolKey != "tv:s1:e1|"+group.Key() ||
+			len(pools[0].Losers) != 1 || pools[0].Losers[0].PlacementID != "plc-unknown" {
+			t.Fatalf("per_group %s must replace the group-less file: %+v", group.Key(), pools)
+		}
+	}
+	// all mode never compares.
+	pools = EvaluatePools(ModeAll, []string{"tv:s1:e1"}, zero, candidateRef, current, profile, nil)
+	if pools[0].Verdict != "queue" || len(pools[0].Losers) != 0 {
+		t.Fatalf("all mode must leave the scan-managed file alone: %+v", pools)
+	}
+}
+
+// A custom RSS source is its own group: two custom sources never share a
+// per_group pool, and a provider group with the same bracketed title is
+// another pool too.
+func TestEvaluatePoolsPerGroupCustomSourceIsItsOwnGroup(t *testing.T) {
+	profile := resolutionProfile("2160p", "1080p", "720p")
+	candidate := released(Facts{Resolution: "2160p", Group: "Same", Subgroup: subgroup(qualityprofile.CustomSubgroupProvider, "src-1")})
+	current := []PlacementFacts{
+		{PlacementID: "plc-same-source", Version: 1, Fingerprint: "fp-1", Coverage: []string{"tv:s1:e1"}, Facts: released(Facts{Resolution: "720p", Group: "Same", Subgroup: subgroup(qualityprofile.CustomSubgroupProvider, "src-1")}), FactsOK: true},
+		{PlacementID: "plc-other-source", Version: 1, Fingerprint: "fp-2", Coverage: []string{"tv:s1:e1"}, Facts: released(Facts{Resolution: "720p", Group: "Same", Subgroup: subgroup(qualityprofile.CustomSubgroupProvider, "src-2")}), FactsOK: true},
+		{PlacementID: "plc-provider", Version: 1, Fingerprint: "fp-3", Coverage: []string{"tv:s1:e1"}, Facts: released(Facts{Resolution: "720p", Group: "Same", Subgroup: subgroup("mikan", "src-1")}), FactsOK: true},
+	}
+	pools := EvaluatePools(ModePerGroup, []string{"tv:s1:e1"}, candidate, poolRef("plc-candidate", 1, "fp-c"), current, profile, nil)
+	if len(pools) != 1 || pools[0].PoolKey != "tv:s1:e1|custom:src-1" || pools[0].Verdict != "replace" ||
+		len(pools[0].Losers) != 1 || pools[0].Losers[0].PlacementID != "plc-same-source" {
+		t.Fatalf("custom source pool = %+v", pools)
 	}
 }
 
@@ -408,9 +454,9 @@ func TestEvaluatePoolsSubgroupScoreDecidesFirst(t *testing.T) {
 // there.
 func TestEvaluatePoolsPerGroupIgnoresSubgroupScore(t *testing.T) {
 	profile := qualityprofile.Default()
-	candidate := released(Facts{Resolution: "1080p", Group: "GroupA", Score: int64Ptr(1)})
+	candidate := released(Facts{Resolution: "1080p", Group: "GroupA", Subgroup: subgroup("anibt", "a"), Score: int64Ptr(1)})
 	current := []PlacementFacts{{PlacementID: "plc-a", Version: 1, Fingerprint: "fp-a", Coverage: []string{"tv:s1:e1"},
-		Facts: released(Facts{Resolution: "720p", Group: "GroupA", Score: int64Ptr(100)}), FactsOK: true}}
+		Facts: released(Facts{Resolution: "720p", Group: "GroupA", Subgroup: subgroup("anibt", "a"), Score: int64Ptr(100)}), FactsOK: true}}
 	pools := EvaluatePools(ModePerGroup, []string{"tv:s1:e1"}, candidate, poolRef("plc-candidate", 1, "fp-c"), current, profile, nil)
 	if pools[0].Verdict != "replace" {
 		t.Fatalf("per_group must ignore the subgroup score: %+v", pools)

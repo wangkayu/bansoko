@@ -290,6 +290,12 @@ type OrdinaryRequest struct {
 	// published as an approved atomic replacement whatever the global
 	// collision policy. Nil approves nothing.
 	ApprovedLoserAt func(path string) bool
+	// ClaimableAt reports whether the file now at path is a scan-managed
+	// file of the anime that no release has claimed yet. A replace target
+	// whose present occupant is such a file with the exact entry size is
+	// that file, not a loser: the target turns ensure_present so the release
+	// adopts (claims) it instead of downloading it again. Nil claims nothing.
+	ClaimableAt func(path string) bool
 }
 
 // OneShotRequest is the finite one-shot acquisition input. It is the same
@@ -358,6 +364,8 @@ type PlanInput struct {
 	Group providerdomain.GroupRef
 	// ApprovedLoserAt is OrdinaryRequest.ApprovedLoserAt.
 	ApprovedLoserAt func(path string) bool
+	// ClaimableAt is OrdinaryRequest.ClaimableAt.
+	ClaimableAt func(path string) bool
 }
 
 // PlanResult is the transaction-free admission outcome. Set/Observations are
@@ -402,6 +410,7 @@ func PreflightOrdinary(ctx context.Context, request OrdinaryRequest, probe Probe
 		BatchPlan:           request.BatchPlan,
 		UnclassifiedRoute:   request.UnclassifiedRoute,
 		ApprovedLoserAt:     request.ApprovedLoserAt,
+		ClaimableAt:         request.ClaimableAt,
 	}, probe)
 }
 
@@ -692,6 +701,11 @@ func preflight(ctx context.Context, input PlanInput, probe Probe) PlanResult {
 	for _, spec := range set.Targets {
 		observations = append(observations, probe.Observe(spec))
 	}
+	if input.ClaimableAt != nil && claimScanManagedTargets(entries, set, observations, input.ClaimableAt) {
+		if set, err = Plan(input.ReleaseID, entries); err != nil {
+			return fail(targetPlanReason(err), "target set is invalid: "+strings.TrimSpace(err.Error()))
+		}
+	}
 	if input.ApprovedLoserAt != nil && approveLoserTargets(entries, set, observations, input.ApprovedLoserAt) {
 		// Target ids derive from the release and the entry, so the
 		// observations still name the re-planned targets.
@@ -806,6 +820,31 @@ func targetMediaKind(value string) string {
 	default:
 		return "video"
 	}
+}
+
+// claimScanManagedTargets turns each replace target whose present occupant
+// has the exact entry size and is a scan-managed file no release has claimed
+// into an ensure_present target: the release claims that file (adoption)
+// instead of replacing it with a download of the same file.
+func claimScanManagedTargets(entries []Entry, set Set, observations []Observation, claimable func(string) bool) bool {
+	matched := map[string]bool{}
+	for _, observation := range observations {
+		if observation.State == ObservationPresentMatched {
+			matched[observation.TargetID] = true
+		}
+	}
+	refs := map[string]bool{}
+	for _, spec := range set.Targets {
+		if spec.Intent == IntentReplace && matched[spec.ID] && claimable(spec.TargetPath) {
+			refs[spec.TargetRef] = true
+		}
+	}
+	for index := range entries {
+		if refs[entries[index].TargetRef] {
+			entries[index].Intent = IntentEnsurePresent
+		}
+	}
+	return len(refs) > 0
 }
 
 // approveLoserTargets turns each replace target whose present occupant is the

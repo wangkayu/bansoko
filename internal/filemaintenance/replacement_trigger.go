@@ -67,9 +67,15 @@ func (s *ReplacementTriggerService) TriggerPlacementCommitted(ctx context.Contex
 	return s.trigger(ctx, TriggerPlacementCommitted, animeID, releaseID)
 }
 
-// TriggerPolicySaved fires after an instance retention policy CAS save
-// committed. The candidate is the latest verified active release-backed
-// placement, so the saved policy re-freezes the current facts.
+// TriggerPolicySaved fires after the instance replacement policy changed
+// (an instance policy CAS save, or a candidate apply that changed the admission
+// mode or quality profile). A policy change has no immediate filesystem
+// effect: the candidate is the latest release still downloading (a running
+// non-one-shot acquisition), whose not-yet-placed keys are re-frozen under the
+// new policy; files already placed are never compared again, so nothing is
+// superseded or deleted until a new candidate of an episode is compared. No
+// running candidate skips the trigger. A live evaluate item already pending
+// is kept as is: it reads the new policy when it runs.
 func (s *ReplacementTriggerService) TriggerPolicySaved(ctx context.Context, animeID string) error {
 	return s.trigger(ctx, TriggerPolicySaved, animeID, "")
 }
@@ -148,6 +154,45 @@ SELECT state, version FROM subscriptions WHERE managed_anime_id = $1 FOR UPDATE`
 		})
 		return nil
 	}
+	if reason == TriggerPolicySaved {
+		var pending bool
+		if err := tx.QueryRowContext(ctx, `
+SELECT EXISTS (SELECT 1 FROM work_items
+               WHERE owner_type = $1 AND owner_id = $2 AND kind = $3 AND state IN ('available', 'leased'))`,
+			string(workitems.OwnerFileMaintenance), animeID, workitems.KindReplacementEvaluate).Scan(&pending); err != nil {
+			s.recordFailure(ctx, animeID, err)
+			return err
+		}
+		if pending {
+			s.logEvent(ctx, port.RuntimeEvent{
+				Message:    "replacement trigger " + reason + " skipped",
+				Component:  "replacement",
+				Operation:  "evaluate_trigger",
+				Outcome:    "skipped",
+				ReasonCode: "evaluate_pending",
+				OwnerType:  "managed_anime",
+				OwnerID:    animeID,
+			})
+			return nil
+		}
+		releaseID, err = latestInFlightRelease(ctx, tx, animeID)
+		if err != nil {
+			s.recordFailure(ctx, animeID, err)
+			return err
+		}
+		if releaseID == "" {
+			s.logEvent(ctx, port.RuntimeEvent{
+				Message:    "replacement trigger " + reason + " skipped",
+				Component:  "replacement",
+				Operation:  "evaluate_trigger",
+				Outcome:    "skipped",
+				ReasonCode: "no_unplaced_candidate",
+				OwnerType:  "managed_anime",
+				OwnerID:    animeID,
+			})
+			return nil
+		}
+	}
 	if releaseID == "" {
 		releaseID, err = s.latestPlacementRelease(ctx, tx, animeID)
 		if err != nil {
@@ -214,6 +259,26 @@ SELECT state, version FROM subscriptions WHERE managed_anime_id = $1 FOR UPDATE`
 		}
 	}
 	return nil
+}
+
+// latestInFlightRelease resolves the release of the anime's most recent running
+// non-one-shot acquisition: a candidate that has not settled yet.
+func latestInFlightRelease(ctx context.Context, tx *sql.Tx, animeID string) (string, error) {
+	var releaseID sql.NullString
+	err := tx.QueryRowContext(ctx, `
+SELECT a.source_release_ref
+FROM acquisitions a
+WHERE a.origin_managed_anime_ref = $1 AND a.state = 'running'
+  AND a.entry_kind <> 'one_shot' AND a.source_release_ref IS NOT NULL
+ORDER BY a.accepted_at DESC, a.id DESC
+LIMIT 1`, animeID).Scan(&releaseID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return releaseID.String, nil
 }
 
 // latestPlacementRelease resolves the release backing the most recent verified

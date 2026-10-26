@@ -567,6 +567,11 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 				verdict = "adopted_existing"
 				reasonCode = acquisition.admission.Reason
 				reasonDetail = "all rendered targets already exist with the exact entry sizes"
+				// Claiming promotes: a scan-managed file at an adopted target
+				// takes this release's group and frozen comparison values.
+				if _, err := claimScanManagedTargetsTx(ctx, tx, snapshot.managedAnimeID, snapshot.releaseID, acquisition.set); err != nil {
+					return 0, err
+				}
 			case target.AdmissionFailed:
 				verdict = "acquisition_failed"
 				reasonCode = acquisition.admission.Reason
@@ -687,7 +692,7 @@ RETURNING version`, snapshot.releaseID, nullableJSON(parsedFacts), nullableJSON(
 				// The replacement comparison values freeze here, with the
 				// accepted candidate facts.
 				CompareValues: facts.CompareValues(candidate, facts.CompareSource{
-					SourceFacts: snapshot.sourceFacts, SourceKind: snapshot.sourceKind,
+					SourceFacts: snapshot.sourceFacts, RSSSourceID: snapshot.sourceID, SourceKind: snapshot.sourceKind,
 					Provider: snapshot.sourceProvider.String, ProviderGroupRef: snapshot.sourceGroupRef.String,
 				}),
 				// The release-level size comes from the fetched torrent payload

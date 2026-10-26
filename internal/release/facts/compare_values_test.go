@@ -44,7 +44,7 @@ func TestCompareValuesWithoutSourceFacts(t *testing.T) {
 	candidate := CandidateFromCoverage("[Grp] Show - 03 [720p]", testRules(), []string{"tv:s1:e3"})
 	values := qualityprofile.ParseValues(CompareValues(candidate, CompareSource{SourceKind: "custom_rss"}))
 	if values.Subgroup != nil {
-		t.Fatalf("custom RSS has no subgroup source: %#v", values.Subgroup)
+		t.Fatalf("custom RSS without a source id has no subgroup source: %#v", values.Subgroup)
 	}
 	if !reflect.DeepEqual(values.Values, map[string][]string{qualityprofile.KeyReleaseResolution: {"720p"}}) {
 		t.Fatalf("values = %#v", values.Values)
@@ -52,5 +52,18 @@ func TestCompareValuesWithoutSourceFacts(t *testing.T) {
 	broken := qualityprofile.ParseValues(CompareValues(candidate, CompareSource{SourceFacts: []byte(`{"anibt":"broken"}`), SourceKind: "provider_group"}))
 	if broken.Subgroup != nil || len(broken.Values) != 1 {
 		t.Fatalf("unreadable facts / incomplete identity = %#v", broken)
+	}
+}
+
+// A custom RSS source is its own group identity: (custom, rss source id).
+func TestCompareValuesCustomSourceIsItsOwnGroup(t *testing.T) {
+	candidate := CandidateFromCoverage("[Grp] Show - 03 [720p]", testRules(), []string{"tv:s1:e3"})
+	values := qualityprofile.ParseValues(CompareValues(candidate, CompareSource{RSSSourceID: "src-1", SourceKind: "custom_rss"}))
+	if values.Subgroup == nil || *values.Subgroup != (qualityprofile.SubgroupSource{Provider: qualityprofile.CustomSubgroupProvider, GroupRef: "src-1"}) {
+		t.Fatalf("custom subgroup = %#v", values.Subgroup)
+	}
+	provider := qualityprofile.ParseValues(CompareValues(candidate, CompareSource{RSSSourceID: "src-2", SourceKind: "provider_group", Provider: "mikan", ProviderGroupRef: "583"}))
+	if provider.Subgroup == nil || provider.Subgroup.Key() != "mikan:583" {
+		t.Fatalf("provider subgroup keeps (provider, group ref): %#v", provider.Subgroup)
 	}
 }

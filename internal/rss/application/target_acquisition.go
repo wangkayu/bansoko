@@ -185,6 +185,17 @@ func (s *Service) preflightTargetAcquisition(ctx context.Context, snapshot relea
 		approvedLosers[targetPath] = capture
 		return true
 	}
+	// A replace target whose present occupant is an unclaimed scan-managed
+	// file with the exact entry size is claimed (adopted) instead of being
+	// downloaded again: the owner writer attaches the release to it.
+	claimable := func(targetPath string) bool {
+		ok, err := scanManagedUnclaimedAt(ctx, s.db, snapshot.managedAnimeID, targetPath)
+		if err != nil {
+			approvalErr = err
+			return false
+		}
+		return ok
+	}
 	admitted := acquisitiontarget.PreflightOrdinary(ctx, acquisitiontarget.OrdinaryRequest{
 		ReleaseID:           snapshot.releaseID,
 		AnimeTitle:          snapshot.animeTitle,
@@ -208,6 +219,7 @@ func (s *Service) preflightTargetAcquisition(ctx context.Context, snapshot relea
 		BatchPlan:           &plan,
 		UnclassifiedRoute:   route,
 		ApprovedLoserAt:     approveLoser,
+		ClaimableAt:         claimable,
 	}, s.targetProbe)
 	result := &targetAcquisition{
 		vars: &frozenVars,

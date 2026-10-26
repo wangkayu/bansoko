@@ -11,10 +11,11 @@ import (
 )
 
 // Facts are the comparable facts of one candidate/placement: the release
-// title parse (Group pools per_group; the legacy fields also feed the typed
-// approval evidence), the frozen comparison values and subgroup source, the
-// subscription's score for that source (resolved per evaluation), and the
-// release-level size.
+// title parse (evidence only; the legacy fields also feed the typed approval
+// evidence — the title Group never pools), the frozen comparison values and
+// subgroup source (the stable group identity per_group pools by and
+// subgroup.score looks up), the subscription's score for that source
+// (resolved per evaluation), and the release-level size.
 type Facts struct {
 	Revision   string                         `json:"revision,omitempty"`
 	Resolution string                         `json:"resolution,omitempty"`
@@ -37,6 +38,16 @@ func (f Facts) withFrozenValues(raw []byte) Facts {
 	f.Values = values.Values
 	f.Subgroup = values.Subgroup
 	return f
+}
+
+// poolGroup is the stable group identity per_group pools by: the frozen
+// subgroup source (provider, group ref), or (custom, rss source id) for a
+// custom RSS source — the same value subgroup.score reads, never the title.
+func (f Facts) poolGroup() (string, bool) {
+	if f.Subgroup == nil {
+		return "", false
+	}
+	return f.Subgroup.Key(), true
 }
 
 // SubgroupScores are a subscription's effective scores by provider group.
@@ -130,8 +141,10 @@ type PlacementRef struct {
 }
 
 // PlacementFacts couples one verified active placement with its server-read
-// quality facts. FactsOK false means the facts are unresolvable (no release
-// chain); such a placement fails closed in every pool it belongs to.
+// quality facts. FactsOK false means the placement has no release chain: a
+// scan-managed file no release has claimed yet. It has no group identity and
+// no comparison values, so any candidate is better than it, and per_group
+// pools it under every group of its coverage keys.
 type PlacementFacts struct {
 	PlacementID string
 	Version     int64
@@ -166,14 +179,16 @@ type PoolEvidence struct {
 // candidate placement is already admitted (active) and may appear in
 // placements; it is excluded from its own pool's members.
 //   - all: no pools, no losers, verdict queue.
-//   - per_group: pool key = coverage + stable group; the candidate competes
-//     only inside its own group pool (facts-missing members cannot be
-//     group-attributed and compete there as opponents without values); the
-//     subgroup score item is inert.
+//   - per_group: pool key = coverage + "|" + stable group identity
+//     (provider:group_ref, or custom:<rss source id>); the candidate competes
+//     with placements of the same group identity and with placements that
+//     have none (a scan-managed file no release claimed belongs to every
+//     group's pool of its keys); the subgroup score item is inert.
 //   - single_copy: pool key = coverage across groups.
 //   - unresolvable coverage or a per_group candidate without a stable group
-//     block the affected pool with a typed reason (pool-building layer);
-//     comparisons never block. The decision never degrades modes or guesses.
+//     block the affected pool with a typed reason (pool-building layer); a
+//     member without a group never blocks, and comparisons never block. The
+//     decision never degrades modes or guesses.
 //
 // units maps a coverage key to the keys of the candidate file that holds it
 // (a key absent from units is its own unit). One file replaces only what it
@@ -193,8 +208,8 @@ func EvaluatePools(mode AdmissionMode, coverage []string, candidate Facts, candi
 		return []PoolEvidence{{PoolKey: "all", Verdict: "queue", Reason: "all-mode keeps every Rules-passing placement"}}
 	}
 	profile = profileForMode(mode, profile)
-	group := candidate.Group
-	if mode == ModePerGroup && strings.TrimSpace(group) == "" {
+	group, hasGroup := candidate.poolGroup()
+	if mode == ModePerGroup && !hasGroup {
 		// No stable group identity: every per_group pool is blocked, never
 		// compared across groups.
 		pools := make([]PoolEvidence, 0, len(coverage))
@@ -357,9 +372,10 @@ func keepPresent(pool PoolEvidence, members []PlacementFacts, profile Profile, r
 
 // poolMembers returns the pool members of one coverage key under the mode
 // (the candidate excluded). per_group pools by coverage plus the stable group
-// identity: only placements of the candidate's group compete; a placement
-// without resolvable facts cannot be group-attributed, so it competes in the
-// candidate's pool as an opponent without values (never a blocker).
+// identity: placements of the candidate's group identity compete, and so does
+// a placement without one (no release chain, or no frozen subgroup source):
+// it belongs to every group's pool of its keys, so any group's candidate may
+// replace it.
 func poolMembers(byKey map[string][]PlacementFacts, mode AdmissionMode, group string) func(key string) []PlacementFacts {
 	return func(key string) []PlacementFacts {
 		list := byKey[key]
@@ -368,7 +384,8 @@ func poolMembers(byKey map[string][]PlacementFacts, mode AdmissionMode, group st
 		}
 		filtered := make([]PlacementFacts, 0, len(list))
 		for _, member := range list {
-			if !member.FactsOK || member.Facts.Group == group {
+			memberGroup, ok := comparableFacts(member).poolGroup()
+			if !ok || memberGroup == group {
 				filtered = append(filtered, member)
 			}
 		}
@@ -412,8 +429,8 @@ func applyUnitKept(pools []PoolEvidence, mode AdmissionMode, units map[string][]
 }
 
 // evaluatePool decides one pool: the candidate must be strictly better than
-// every member (Compare.Better) to replace; a member without resolvable facts
-// (FactsOK false) is an opponent without values, never a blocker. A
+// every member (compareWithMember) to replace; a member without release facts
+// (FactsOK false) loses to any candidate and never blocks. A
 // non-replace pool freezes its dominant current winner (ties resolve to the
 // incumbent by created_at, then id) and never guesses a winner.
 func evaluatePool(poolKey string, candidate Facts, candidateRef PlacementRef, members []PlacementFacts, profile Profile) PoolEvidence {
@@ -424,7 +441,7 @@ func evaluatePool(poolKey string, candidate Facts, candidateRef PlacementRef, me
 		}
 	}
 	for _, member := range members {
-		comparison := Compare(candidate, comparableFacts(member), profile)
+		comparison := compareWithMember(candidate, member, profile)
 		if comparison.Better {
 			continue
 		}
@@ -444,7 +461,7 @@ func evaluatePool(poolKey string, candidate Facts, candidateRef PlacementRef, me
 	losers := make([]PlacementRef, 0, len(members))
 	for _, member := range members {
 		if member.PlacementID == strongest.PlacementID {
-			decisive = Compare(candidate, comparableFacts(member), profile)
+			decisive = compareWithMember(candidate, member, profile)
 		}
 		losers = append(losers, PlacementRef{PlacementID: member.PlacementID, Version: member.Version, Fingerprint: member.Fingerprint})
 	}
@@ -453,6 +470,20 @@ func evaluatePool(poolKey string, candidate Facts, candidateRef PlacementRef, me
 		PoolKey: poolKey, Verdict: "replace", Reason: decisive.Reason,
 		Winner: &candidateRefCopy, Losers: losers, Steps: decisive.Steps,
 	}
+}
+
+// ReasonExistingWithoutFacts is the comparison reason against a pool member
+// without release facts (a scan-managed file no release has claimed).
+const ReasonExistingWithoutFacts = "existing file has no release facts"
+
+// compareWithMember compares the candidate with one pool member. A member
+// without release facts has no group and no values: any candidate is better
+// than it, whatever the profile.
+func compareWithMember(candidate Facts, member PlacementFacts, profile Profile) Comparison {
+	if !member.FactsOK {
+		return Comparison{Better: true, Reason: ReasonExistingWithoutFacts, Decided: "facts"}
+	}
+	return Compare(candidate, member.Facts, profile)
 }
 
 // comparableFacts is a member's facts; a member without resolvable facts

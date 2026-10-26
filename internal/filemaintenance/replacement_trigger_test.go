@@ -225,13 +225,28 @@ func TestTriggerPolicySavedOnlyTargetAnime(t *testing.T) {
 	if saved.Version != 2 {
 		t.Fatalf("policy version must advance to 2, got %d", saved.Version)
 	}
-	// Target anime: one merged evaluate item with the policy trigger.
+	// Everything of the target anime is placed: a policy change has no
+	// unplaced candidate to re-decide and creates no item.
+	if item := loadLiveEvaluateItem(t, db, "anime-1"); item != nil {
+		t.Fatalf("a policy change without an unplaced candidate must not evaluate: %+v", item)
+	}
+	// A release still downloading is re-decided under the new policy.
+	if _, err := disposabledb.Owner(t).Exec(`UPDATE acquisitions SET entry_kind = 'subscription_add', state = 'running' WHERE source_release_ref = 'release-r1'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SaveInstanceRetentionPolicy(ctx, "anime-1", generated.InstanceRetentionPolicyInput{
+		AdmissionMode:   generated.RetentionAdmissionModePerGroup,
+		QualityProfile:  generated.QualityProfile{Version: "profile-v1", Items: []generated.QualityCompareItem{{Key: "release.resolution", Ranks: [][]string{{"2160p"}, {"1080p"}, {"720p"}, {"480p"}}}}},
+		ExpectedVersion: 2,
+	}, "test", "http"); err != nil {
+		t.Fatalf("policy save: %v", err)
+	}
 	item := loadLiveEvaluateItem(t, db, "anime-1")
 	if item == nil || item.Trigger != TriggerPolicySaved {
 		t.Fatalf("target anime must carry a policy_saved item: %+v", item)
 	}
 	if item.InputSnapshot["candidate_release_id"] != "release-r1" {
-		t.Fatalf("policy trigger must resolve the latest placement: %+v", item.InputSnapshot)
+		t.Fatalf("policy trigger must resolve the in-flight release: %+v", item.InputSnapshot)
 	}
 	// Non-target anime: policy, decision and WorkItem counts unchanged.
 	if item := loadLiveEvaluateItem(t, db, "anime-2"); item != nil {
@@ -349,9 +364,9 @@ func TestTriggerMergesLatestInputAcrossTriggers(t *testing.T) {
 	if err := trigger.TriggerPlacementCommitted(ctx, "anime-1", "release-r1"); err != nil {
 		t.Fatal(err)
 	}
-	// The policy trigger resolves the latest placement (release-r2) and merges
-	// into the same live item instead of creating a second one.
-	if err := trigger.TriggerPolicySaved(ctx, "anime-1"); err != nil {
+	// A later placement trigger merges into the same live item and carries
+	// the latest unexecuted input.
+	if err := trigger.TriggerPlacementCommitted(ctx, "anime-1", "release-r2"); err != nil {
 		t.Fatal(err)
 	}
 	if count := countLiveEvaluateItems(t, db, "anime-1"); count != 1 {
@@ -361,8 +376,20 @@ func TestTriggerMergesLatestInputAcrossTriggers(t *testing.T) {
 	if item.InputSnapshot["candidate_release_id"] != "release-r2" {
 		t.Fatalf("merged item must carry the latest unexecuted input: %+v", item.InputSnapshot)
 	}
-	if item.Trigger != TriggerPolicySaved {
-		t.Fatalf("merged item must keep the latest explainable trigger reason: %s", item.Trigger)
+	// A policy trigger never overwrites a pending item: it reads the new
+	// policy when it runs, and its placed candidate keeps being evaluated.
+	if _, err := disposabledb.Owner(t).Exec(`UPDATE acquisitions SET entry_kind = 'subscription_add', state = 'running' WHERE source_release_ref = 'release-r1'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := trigger.TriggerPolicySaved(ctx, "anime-1"); err != nil {
+		t.Fatal(err)
+	}
+	if count := countLiveEvaluateItems(t, db, "anime-1"); count != 1 {
+		t.Fatalf("a policy trigger must not add a live item: %d", count)
+	}
+	item = loadLiveEvaluateItem(t, db, "anime-1")
+	if item.InputSnapshot["candidate_release_id"] != "release-r2" || item.Trigger != TriggerPlacementCommitted {
+		t.Fatalf("a pending item must keep its input: %+v", item.InputSnapshot)
 	}
 }
 
