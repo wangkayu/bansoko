@@ -494,7 +494,7 @@ const CONNECTION_LABEL = (): Record<Connection["kind"], string> => ({
 // "test again" stays. A row click goes to the matching settings section. RSS
 // access is only the custom RSS network setting, not a service, and does not
 // enter the status.
-const STATUS_KINDS: Connection["kind"][] = ["qbittorrent", "tmdb", "anibt", "mikan", "bgm"];
+const STATUS_KINDS: Connection["kind"][] = ["qbittorrent", "tmdb", "anibt", "mikan", "nyaa", "bgm"];
 
 /** The downloader (the qBittorrent connection) is configured in the download section. */
 const DOWNLOADER_SETTINGS = "/settings/download";

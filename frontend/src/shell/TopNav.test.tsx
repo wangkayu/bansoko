@@ -379,7 +379,7 @@ describe("顶栏状态条用语", () => {
     expect(trigger.querySelector(".system-status-dot-warning")).not.toBeNull();
     fireEvent.click(trigger);
 
-    // Five services listed flat: not configured (qB/AniBT/Mikan), disabled
+    // Six services listed flat: not configured (qB/AniBT/Mikan/Nyaa), disabled
     // (Bangumi), enabled (TMDB) — the three configuration states; enabled
     // connections get a real connection test when the popover opens. RSS access
     // is not a service and does not enter the status.
@@ -389,7 +389,8 @@ describe("顶栏状态条用语", () => {
     expect(screen.getByText(t("nav.connection.tmdb"))).toBeInTheDocument();
     expect(screen.getByText(t("common.enabled"))).toBeInTheDocument();
     expect(screen.getByText(t("common.disabled"))).toBeInTheDocument();
-    expect(screen.getAllByText(t("nav.statusNotConfigured")).length).toBe(3);
+    expect(screen.getByText(t("nav.connection.nyaa"))).toBeInTheDocument();
+    expect(screen.getAllByText(t("nav.statusNotConfigured")).length).toBe(4);
     // The downloader row carries a go-to-settings action; clicking it lands on the download section (the row itself is the button).
     const qbRow = screen
       .getAllByRole("button", { name: new RegExp(`^${t("nav.connection.qbittorrent")}`) })

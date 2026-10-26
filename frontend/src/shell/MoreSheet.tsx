@@ -58,7 +58,7 @@ type MoreSheetProps = {
 
 // The downloader leads the system section.
 // RSS access is only the custom RSS network setting and does not enter the status.
-const STATUS_ORDER: Connection["kind"][] = ["qbittorrent", "anibt", "mikan", "bgm", "tmdb"];
+const STATUS_ORDER: Connection["kind"][] = ["qbittorrent", "anibt", "mikan", "nyaa", "bgm", "tmdb"];
 
 export function MoreSheet({
   open,

@@ -65,4 +65,14 @@ describe("MoreSheet", () => {
     const items = document.querySelectorAll(".more-sheet-status-item");
     expect(items[0]).toHaveTextContent(t("nav.connection.qbittorrent"));
   });
+
+  it("系统区状态列表包含 Nyaa，排在 AniBT 与 Mikan 之后", () => {
+    const nyaa = { id: "c-nyaa", kind: "nyaa", name: "Nyaa", enabled: true, version: 1 } as unknown as Connection;
+    const anibt = { id: "c-anibt", kind: "anibt", name: "AniBT", enabled: true, version: 1 } as unknown as Connection;
+    renderSheet([nyaa, mikanConnection, anibt, qbConnection]);
+    const items = Array.from(document.querySelectorAll(".more-sheet-status-item")).map((el) => el.textContent ?? "");
+    const at = (label: string) => items.findIndex((text) => text.includes(label));
+    expect(at("Nyaa")).toBeGreaterThan(at("Mikan"));
+    expect(at("Mikan")).toBeGreaterThan(at("AniBT"));
+  });
 });
