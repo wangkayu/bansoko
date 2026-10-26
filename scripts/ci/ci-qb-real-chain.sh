@@ -213,6 +213,8 @@ required_tests=(
   TestOneShotQBConcurrentSameKeyAdmitsOnce
   TestReplacementRealChainActiveAndStopped
   TestReplacementRealChainBatchReplacesPerFile
+  TestReplacementFallbackOnDownloaderRemovalRealQB
+  TestReplacementFallbackAfterSuccessWashesRealQB
   TestMultiEpisodeFileRealChain
   TestRealEffectPermissionDeniedSettlesTerminalWithOwnerReason
   TestRealEffectWritableTargetCompletes

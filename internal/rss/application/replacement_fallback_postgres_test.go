@@ -186,7 +186,7 @@ func TestReplacementFallbackPromotesNextCandidatePostgres(t *testing.T) {
 		t.Fatalf("resume must enqueue the fallback: %d items", count)
 	}
 	// The replacement_evaluate item the resume also merged is not under test.
-	if _, err := db.Exec(`DELETE FROM work_items WHERE kind = 'replacement_evaluate'`); err != nil {
+	if _, err := ownerTestDB(t).Exec(`DELETE FROM work_items WHERE kind = 'replacement_evaluate'`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -214,7 +214,16 @@ func TestReplacementFallbackPromotesNextCandidatePostgres(t *testing.T) {
 	if result.Outcome != RetryOutcomeFiltered {
 		t.Fatalf("retry while B downloads = %+v, want filtered", result)
 	}
-	assertReleaseState(t, db, "fb-a", "filtered", batchplan.ReasonNoPlaceableFiles, false)
+	// The retry detached the failed task (it stays as history); no new task.
+	var verdict, retryReason string
+	var taskID sql.NullString
+	var tasks int
+	if err := db.QueryRow(`SELECT verdict, reason_code, download_task_id, (SELECT COUNT(*) FROM download_tasks WHERE release_id = 'fb-a') FROM releases WHERE id = 'fb-a'`).Scan(&verdict, &retryReason, &taskID, &tasks); err != nil {
+		t.Fatal(err)
+	}
+	if verdict != "filtered" || retryReason != batchplan.ReasonNoPlaceableFiles || taskID.Valid || tasks != 1 {
+		t.Fatalf("retried A = %s/%s task=%v tasks=%d", verdict, retryReason, taskID.Valid, tasks)
+	}
 	requireOutcome(t, db, "fb-a", batchplan.OutcomeCoveredInFlight)
 	if promotions, reason, err := decisions.FallbackCandidates(ctx, "anime-rss-test"); err != nil || len(promotions) != 0 || reason != "pools_claimed" {
 		t.Fatalf("B's running claim must hold the pool: %v %q %v", promotedIDs(promotions), reason, err)
