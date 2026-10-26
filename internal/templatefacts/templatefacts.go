@@ -63,6 +63,7 @@ var ReltitleFields = []Field{
 	{Key: "Codec", Name: "codec", Dimension: "video_codec", Description: "Video codec reltitle read from the release title.", SampleValue: "HEVC", Label: Text{"编码", "Codec"}, Text: Text{"reltitle 从发布标题读出的视频编码。", "Video codec reltitle read from the release title."}},
 	{Key: "SubLang", Name: "sub_lang", Dimension: "sub_lang", Description: "Subtitle language reltitle read from the release title; several join with +.", SampleValue: "SC", Label: Text{"字幕语言", "Subtitle language"}, Text: Text{"reltitle 从发布标题读出的字幕语言，多个用 + 连接。", "Subtitle language reltitle read from the release title; several join with +."}},
 	{Key: "SubFlag", Name: "sub_flag", Dimension: "sub_flag", Description: "Subtitle mode flag reltitle read from the release title; several join with +.", SampleValue: "soft", Label: Text{"字幕方式标志", "Subtitle flag"}, Text: Text{"reltitle 从发布标题读出的字幕方式标志（soft、hard、ex），多个用 + 连接；标题没有明确的字幕方式时为空。", "Subtitle mode flag reltitle read from the release title (soft, hard, ex); several join with +. Empty when the release title names none explicitly."}},
+	{Key: "ContentRating", Name: "content_rating", Dimension: acquisitiondomain.TitleValueDimensionContentRating, Description: "Content rating reltitle read from the release title.", SampleValue: "UNCENSORED", Label: Text{"审查", "Censorship"}, Text: Text{"reltitle 从标题读出的审查标记，如 UNCENSORED（无修正）；标题没有写时为空。", "Censorship marker reltitle read from the title, such as UNCENSORED; empty when the title has none."}},
 }
 
 // AniBTTagFields are the exposed AniBT tag fields, one per AniBT tag
@@ -193,7 +194,7 @@ func FromTagSets(title *acquisitiondomain.TitleTagSet, anibt *acquisitiondomain.
 	return Facts{Reltitle: ReltitleValues(title), AniBTTags: AniBTTagValues(anibt)}
 }
 
-// ReltitleValues projects a frozen title tag set. Title, Subgroup and Version
+// ReltitleValues projects a frozen title tag set. Title, Subgroup, Version and ContentRating
 // come only from the ValueTags of a set of the current schema; the other fields
 // from its tags.
 func ReltitleValues(set *acquisitiondomain.TitleTagSet) Values {

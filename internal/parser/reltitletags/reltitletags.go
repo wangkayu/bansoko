@@ -283,10 +283,11 @@ var valueDimensions = []struct {
 	{reltitlemodel.AttrTitle, acquisitiondomain.TitleValueDimensionTitle},
 	{reltitlemodel.AttrGroup, acquisitiondomain.TitleValueDimensionGroup},
 	{reltitlemodel.AttrVersion, acquisitiondomain.TitleValueDimensionVersion},
+	{reltitlemodel.AttrContentRating, acquisitiondomain.TitleValueDimensionContentRating},
 }
 
-// projectValues freezes the template-only values "title:<v>", "group:<v>"
-// and "version:<v>": title before group before version, each dimension's values
+// projectValues freezes the template-only values "title:<v>", "group:<v>",
+// "version:<v>" and "content_rating:<v>", in that order, each dimension's values
 // de-duplicated (case-insensitively) and sorted. An empty, oversized or
 // multi-line value is dropped, so it reads as missing rather than truncated.
 func projectValues(attributes []reltitlemodel.Attribute) []string {
@@ -370,4 +371,19 @@ func Parse(title string) (*reltitlemodel.ParseResult, error) {
 		return nil, fmt.Errorf("reltitle returned no result")
 	}
 	return result, nil
+}
+
+// contentRatingVocabulary lists the content_rating spellings the pinned
+// reltitle lexicon emits (configs/lexicon.yaml, type content_rating); the
+// canonical dictionary does not list them, so a test keeps this list in step
+// with the lexicon.
+var contentRatingVocabulary = []string{"UNCENSORED", "UNCUT", "CENSORED", "RESTRICTED", "R_RATED", "R18", "R18_PLUS", "MATURE", "ADULT"}
+
+// ValueVocabulary returns the known spellings of a value-tag attribute
+// (currently only content_rating); nil for any other name.
+func ValueVocabulary(attribute string) []string {
+	if attribute == "content_rating" {
+		return append([]string(nil), contentRatingVocabulary...)
+	}
+	return nil
 }

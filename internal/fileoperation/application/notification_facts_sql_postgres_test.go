@@ -50,7 +50,7 @@ func TestNotificationFactsSQLParity(t *testing.T) {
 	values := []struct{ vars, sourceFacts string }{
 		{`null`, `null`},
 		{`{}`, `{}`},
-		{`{"info":{"tag":"WEB","source_url":"x","link":"https://x/y","long":"` + strings.Repeat("长", 200) + `"},"empty":{},"odd":"x"}`, `{"title_tags":{"schema":"reltitle-attrs-v1","implementation":"r","tags":["resolution:1080p","sub_lang:CHT","sub_lang:chs","sub_lang:CHS"," sub_lang: x ",":nodim","nov:","codec"],"value_tags":["title:进击的巨人","group:SampleGroup","version:v2"]},"anibt":{"schema":"anibt-tags-v1","tags":["language:CHT","language:CHS","format:MKV","tag:10bit","tag:AAC","tag:aac"]}}`},
+		{`{"info":{"tag":"WEB","source_url":"x","link":"https://x/y","long":"` + strings.Repeat("长", 200) + `"},"empty":{},"odd":"x"}`, `{"title_tags":{"schema":"reltitle-attrs-v1","implementation":"r","tags":["resolution:1080p","sub_lang:CHT","sub_lang:chs","sub_lang:CHS"," sub_lang: x ",":nodim","nov:","codec"],"value_tags":["title:进击的巨人","group:SampleGroup","version:v2","content_rating:UNCENSORED","content_rating:R18"]},"anibt":{"schema":"anibt-tags-v1","tags":["language:CHT","language:CHS","format:MKV","tag:10bit","tag:AAC","tag:aac"]}}`},
 		{`{"a":{"b":"c"}}`, `{"title_tags":{"schema":"reltitle-attrs-v0","implementation":"r","tags":["resolution:720p"],"value_tags":["title:ignored in unknown schema"]}}`},
 		{`{"a":{"b":"c"}}`, `{"title_tags":{"tags":["resolution:720p",null]},"anibt":null}`},
 		{`{"a":{"b":"c"}}`, `{"title_tags":{"tags":["resolution:720p",7]}}`},

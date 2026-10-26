@@ -50,6 +50,7 @@ const (
 	KeyRtSubFlag         = "rt.sub_flag"
 	KeyRtSource          = "rt.source"
 	KeyRtCodec           = "rt.codec"
+	KeyRtContentRating   = "rt.content_rating"
 )
 
 // Namespaces.
@@ -85,6 +86,7 @@ var Items = []ItemDef{
 	{KeyRtSubFlag, NamespaceRt, KindMulti},
 	{KeyRtSource, NamespaceRt, KindSingle},
 	{KeyRtCodec, NamespaceRt, KindSingle},
+	{KeyRtContentRating, NamespaceRt, KindMulti},
 }
 
 // Lookup returns the registered item.

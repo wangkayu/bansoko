@@ -1,11 +1,15 @@
 package reltitletags
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
+
+	reltitleconfigs "github.com/wangkayu/reltitle/configs"
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
 )
@@ -142,5 +146,40 @@ func TestSubtitleLanguagesReadsCompositeCodes(t *testing.T) {
 		if got := SubtitleLanguages(tag); len(got) != 1 || got[0] != want {
 			t.Fatalf("SubtitleLanguages(%q) = %v, want [%s]", tag, got, want)
 		}
+	}
+}
+
+func TestExtractFreezesContentRatingAsValueTag(t *testing.T) {
+	got := Extract("[Group] Show - 03 [1080p][无修正]")
+	found := false
+	for _, tag := range got.ValueTags {
+		found = found || tag == "content_rating:UNCENSORED"
+	}
+	if !found {
+		t.Fatalf("content_rating missing from value tags: %v", got.ValueTags)
+	}
+	for _, tag := range got.Tags {
+		if strings.HasPrefix(tag, "content_rating:") {
+			t.Fatalf("content_rating leaked into filter tags: %v", got.Tags)
+		}
+	}
+}
+
+// ValueVocabulary(content_rating) must stay within what the pinned lexicon
+// can emit: every listed spelling appears as a content_rating normalized
+// value there.
+func TestContentRatingVocabularyMatchesLexicon(t *testing.T) {
+	raw, err := fs.ReadFile(reltitleconfigs.FS, "lexicon.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range ValueVocabulary("content_rating") {
+		pattern := regexp.MustCompile(`type: content_rating\s+normalized: "` + regexp.QuoteMeta(value) + `"`)
+		if !pattern.Match(raw) {
+			t.Fatalf("%s is not a content_rating value of the pinned lexicon", value)
+		}
+	}
+	if ValueVocabulary("title") != nil {
+		t.Fatal("only content_rating has a value vocabulary")
 	}
 }

@@ -25,6 +25,7 @@ export const COMPARE_ITEMS: readonly CompareItemDef[] = [
   { key: "rt.sub_flag", namespace: "rt", kind: "multi" },
   { key: "rt.source", namespace: "rt", kind: "single" },
   { key: "rt.codec", namespace: "rt", kind: "single" },
+  { key: "rt.content_rating", namespace: "rt", kind: "multi" },
 ];
 
 export const COMPARE_NAMESPACES: readonly CompareNamespace[] = ["subgroup", "release", "anibt", "rt"];

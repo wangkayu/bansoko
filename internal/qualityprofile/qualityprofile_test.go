@@ -310,3 +310,32 @@ func mustJSON(t *testing.T, profile Profile) []byte {
 	}
 	return raw
 }
+
+// rt.content_rating is a registered multi-valued item outside the default
+// order; a release without the marker ties.
+func TestContentRatingItemIsMultiValuedAndTiesWithoutData(t *testing.T) {
+	def, ok := Lookup(KeyRtContentRating)
+	if !ok || def.Namespace != NamespaceRt || def.Kind != KindMulti {
+		t.Fatalf("rt.content_rating registration = %+v, %v", def, ok)
+	}
+	if profile, err := Parse(DefaultJSON()); err != nil || strings.Contains(strings.Join(profile.Keys(), ","), KeyRtContentRating) {
+		t.Fatalf("rt.content_rating must not be in the default order: %v %v", profile.Keys(), err)
+	}
+	profile := Profile{Version: Version, Items: []Item{
+		{Key: KeyRtContentRating, Ranks: [][]string{{"UNCENSORED"}, {"CENSORED"}}},
+		{Key: KeyRtResolution, Ranks: [][]string{{"1080p"}, {"720p"}}},
+	}}
+	if _, err := Parse(mustJSON(t, profile)); err != nil {
+		t.Fatalf("profile with rt.content_rating rejected: %v", err)
+	}
+	open := subject(map[string][]string{KeyRtContentRating: {"UNCENSORED"}}, nil, nil)
+	cut := subject(map[string][]string{KeyRtContentRating: {"CENSORED"}}, nil, nil)
+	if result := Compare(open, cut, profile); !result.Better || result.Decided != KeyRtContentRating {
+		t.Fatalf("UNCENSORED must beat CENSORED: %+v", result)
+	}
+	none := subject(map[string][]string{KeyRtResolution: {"720p"}}, nil, nil)
+	better := subject(map[string][]string{KeyRtResolution: {"1080p"}}, nil, nil)
+	if result := Compare(better, none, profile); !result.Better || result.Decided != KeyRtResolution {
+		t.Fatalf("a release without the marker must tie and the next item decide: %+v", result)
+	}
+}

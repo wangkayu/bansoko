@@ -333,6 +333,10 @@ export const factsCopy = {
       label: "reltitle 编码",
       description: "解析值：reltitle 从发布标题读出的视频编码。",
     },
+    content_rating: {
+      label: "reltitle 审查",
+      description: "解析值：reltitle 从标题读出的审查标记，如 UNCENSORED（无修正）；标题没有写时为空。",
+    },
     resolution: {
       label: "reltitle 分辨率",
       description: "解析值：reltitle 从发布标题读出的分辨率。",
@@ -775,6 +779,10 @@ export const enFactsCopy = {
     codec: {
       label: "reltitle Codec",
       description: "Parsed: Video codec reltitle read from the release title.",
+    },
+    content_rating: {
+      label: "reltitle Censorship",
+      description: "Parsed: Censorship marker reltitle read from the title, such as UNCENSORED; empty when the title has none.",
     },
     resolution: {
       label: "reltitle Resolution",

@@ -11,10 +11,10 @@ func TestReltitleValuesProjectTitleTagSet(t *testing.T) {
 	set := &acquisitiondomain.TitleTagSet{
 		Schema:    acquisitiondomain.TitleTagSchema,
 		Tags:      []string{"resolution:1080p", "resolution:720p", "source_type:WEBRip", "video_codec:HEVC", "audio_codec:AAC", "container:MKV", "sub_lang:TC", "sub_lang:SC", "sub_flag:hard"},
-		ValueTags: []string{"title:进击的巨人", "group:示例字幕组", "version:v2"},
+		ValueTags: []string{"title:进击的巨人", "group:示例字幕组", "version:v2", "content_rating:UNCENSORED"},
 	}
 	got := ReltitleValues(set)
-	want := Values{"Title": "进击的巨人", "Subgroup": "示例字幕组", "Version": "v2", "Resolution": "1080p+720p", "Source": "WEBRip", "Codec": "HEVC", "SubLang": "SC+TC", "SubFlag": "hard"}
+	want := Values{"Title": "进击的巨人", "Subgroup": "示例字幕组", "Version": "v2", "Resolution": "1080p+720p", "Source": "WEBRip", "Codec": "HEVC", "SubLang": "SC+TC", "SubFlag": "hard", "ContentRating": "UNCENSORED"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ReltitleValues = %#v, want %#v", got, want)
 	}
@@ -128,7 +128,7 @@ func TestFieldKeysAreTemplateIdentifiers(t *testing.T) {
 			seen[field.Key] = true
 		}
 	}
-	if len(ReltitleFields) != 8 || len(AniBTTagFields) != 5 {
+	if len(ReltitleFields) != 9 || len(AniBTTagFields) != 5 {
 		t.Fatalf("field counts = %d/%d", len(ReltitleFields), len(AniBTTagFields))
 	}
 }

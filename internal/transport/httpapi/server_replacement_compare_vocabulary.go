@@ -18,6 +18,13 @@ var rtCompareDimensions = map[string]string{
 	qualityprofile.KeyRtCodec:      "video_codec",
 }
 
+// rtValueCompareDimensions maps a ranked rt.* item that reltitle reads as a
+// value (outside the filter-tag dictionary) to its attribute name; its
+// candidates are the pinned lexicon spellings.
+var rtValueCompareDimensions = map[string]string{
+	qualityprofile.KeyRtContentRating: "content_rating",
+}
+
 // GetReplacementCompareVocabulary returns the candidate values of every ranked
 // comparison item, in registry order: release.* and anibt.* from the
 // FileMaintenance owner, rt.* from the pinned reltitle dictionary (empty when
@@ -39,6 +46,9 @@ func (s *Server) GetReplacementCompareVocabulary(w http.ResponseWriter, r *http.
 		}
 		for key, dimension := range rtCompareDimensions {
 			values[key] = append([]string{}, byDimension[dimension]...)
+		}
+		for key, dimension := range rtValueCompareDimensions {
+			values[key] = append([]string{}, reltitletags.ValueVocabulary(dimension)...)
 		}
 	}
 	view := generated.ReplacementCompareVocabulary{Items: []generated.RetentionCompareVocabularyItem{}}

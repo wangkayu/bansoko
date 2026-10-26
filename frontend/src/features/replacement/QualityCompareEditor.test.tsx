@@ -100,6 +100,16 @@ describe("QualityCompareEditor", () => {
     expect(screen.getByText(new RegExp(t("qualityCompare.subFlagHint")))).toBeInTheDocument();
   });
 
+  it("explains the censorship item when it is added", async () => {
+    renderWithQuery(<Harness />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: t("qualityCompare.addItem") }));
+    const menu = await screen.findByRole("menu");
+    await user.click(within(menu).getByRole("menuitem", { name: compareItemName("rt.content_rating") }));
+    expect(latest.items.at(-1)).toEqual({ key: "rt.content_rating", ranks: [] });
+    expect(screen.getByText(new RegExp(t("qualityCompare.contentRatingHint")))).toBeInTheDocument();
+  });
+
   it("adds a combination ahead of narrower entries and rejects the same set again", async () => {
     renderWithQuery(<Harness animeID="anime-1" />);
     await waitFor(() => expect(screen.getByRole("checkbox", { name: t("qualityCompare.comboValueAria", { value: "CHT" }) })).toBeInTheDocument());

@@ -29,9 +29,9 @@ describe("quality profile model", () => {
     expect(COMPARE_ITEMS.map((item) => item.key)).toEqual([
       "subgroup.score", "release.lang", "release.resolution", "release.revision",
       "anibt.resolution", "anibt.language", "anibt.subtitle", "anibt.format",
-      "rt.resolution", "rt.sub_lang", "rt.sub_flag", "rt.source", "rt.codec",
+      "rt.resolution", "rt.sub_lang", "rt.sub_flag", "rt.source", "rt.codec", "rt.content_rating",
     ]);
-    expect(COMPARE_ITEMS.filter((item) => item.kind === "multi").map((item) => item.key)).toEqual(["anibt.language", "rt.sub_lang", "rt.sub_flag"]);
+    expect(COMPARE_ITEMS.filter((item) => item.kind === "multi").map((item) => item.key)).toEqual(["anibt.language", "rt.sub_lang", "rt.sub_flag", "rt.content_rating"]);
   });
 
   it("orders items and keeps each item once", () => {

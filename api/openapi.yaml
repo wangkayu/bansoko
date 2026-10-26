@@ -17026,7 +17026,7 @@ components:
         an entry when its values contain every value of the entry
         (order- and case-insensitive) and takes its best-ranked hit; a release
         that hits nothing, or has no value, ranks last. Only multi-valued items
-        (anibt.language, rt.sub_lang, rt.sub_flag) take entries of several values; a
+        (anibt.language, rt.sub_lang, rt.sub_flag, rt.content_rating) take entries of several values; a
         duplicate value set is rejected. subgroup.score and release.revision
         take no ranks (subscription subgroup score; numeric vN, absent = v1).
       properties:
@@ -17045,7 +17045,7 @@ components:
               maxLength: 128
     QualityCompareKey:
       type: string
-      enum: [subgroup.score, release.lang, release.resolution, release.revision, anibt.resolution, anibt.language, anibt.subtitle, anibt.format, rt.resolution, rt.sub_lang, rt.sub_flag, rt.source, rt.codec]
+      enum: [subgroup.score, release.lang, release.resolution, release.revision, anibt.resolution, anibt.language, anibt.subtitle, anibt.format, rt.resolution, rt.sub_lang, rt.sub_flag, rt.source, rt.codec, rt.content_rating]
     ReplacementCompareVocabulary:
       type: object
       additionalProperties: false
