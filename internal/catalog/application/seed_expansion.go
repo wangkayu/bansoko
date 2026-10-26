@@ -41,13 +41,21 @@ type SeedTorrentCacheStore interface {
 	UpsertSeedTorrentCache(ctx context.Context, entry catalogdomain.SeedTorrentCache) error
 }
 
-// SeedTorrentFetcher fetches one locator's exact bytes and parsed facts. The
-// concrete implementation is
-// acquisition/application.HTTPTorrentMetadataReader, which owns the SSRF-safe
-// transport, the redirect limit and the size limit, so a locator can never
-// reach an internal host through this port.
+// SeedTorrentFetcher fetches one seed's exact bytes and parsed facts through the
+// connection its source is configured to use. The provider is the only routing
+// input the port needs: the adapter resolves that source's saved connection (and
+// its network route) exactly like the feed and search adapters do, so an
+// expansion reaches the upstream through the same egress as the request that
+// produced the snapshot instead of bypassing it with a direct dial.
+//
+// The concrete implementation is
+// acquisition/application.ConfiguredSeedTorrentFetcher, which owns connection
+// selection and delegates the request itself to
+// acquisition/application.HTTPTorrentMetadataReader (the SSRF-safe transport, the
+// redirect limit and the size limit), so a locator can never reach an internal
+// host through this port.
 type SeedTorrentFetcher interface {
-	FetchPayload(ctx context.Context, locator string) (acquisitionapplication.TorrentPayload, error)
+	FetchPayload(ctx context.Context, provider, locator string) (acquisitionapplication.TorrentPayload, error)
 }
 
 // EnsureSeedTorrentInput names one seed inside one exact persisted snapshot.
@@ -158,9 +166,12 @@ func (s *Service) EnsureSeedTorrent(ctx context.Context, input EnsureSeedTorrent
 	// One fetch per locator even under concurrent expansion. The shared call
 	// runs under the first caller's context, so a cancelled first request also
 	// cancels the shared fetch; that keeps the failure honest for every waiter
-	// instead of leaving a fetch nobody observes.
+	// instead of leaving a fetch nobody observes. The locator is also the cache
+	// key, so a locator two sources publish is fetched once, through whichever
+	// source asked first: the bytes are that locator's either way, and only the
+	// egress differs.
 	value, err, _ := s.seedFlights.Do(locator, func() (any, error) {
-		return s.fetchAndCacheSeedTorrent(ctx, seed)
+		return s.fetchAndCacheSeedTorrent(ctx, input, seed)
 	})
 	if err != nil {
 		return SeedTorrentFact{}, err
@@ -233,14 +244,16 @@ func (s *Service) ReadSeedTorrentManifests(ctx context.Context, provider, catalo
 // fetches exactly once, verifies the bytes against every published candidate
 // identity, and only then caches them. A mismatching payload is reported but
 // never written: the cache must not claim bytes that are not the seed's.
-func (s *Service) fetchAndCacheSeedTorrent(ctx context.Context, seed catalogdomain.ProviderRSSPreviewSeed) (SeedTorrentFact, error) {
+func (s *Service) fetchAndCacheSeedTorrent(ctx context.Context, input EnsureSeedTorrentInput, seed catalogdomain.ProviderRSSPreviewSeed) (SeedTorrentFact, error) {
 	locator := strings.TrimSpace(seed.DownloadURL)
 	if cached, hit, err := s.seedTorrentCache.ReadSeedTorrentCache(ctx, locator); err != nil {
 		return SeedTorrentFact{}, err
 	} else if hit {
 		return cachedSeedTorrentFact(seed, cached), nil
 	}
-	payload, err := s.seedTorrentFetcher.FetchPayload(ctx, locator)
+	// The fetcher receives the snapshot's own provider, so it resolves that
+	// source's saved connection and egress instead of dialing directly.
+	payload, err := s.seedTorrentFetcher.FetchPayload(ctx, input.Provider, locator)
 	if err != nil {
 		return unavailableSeedTorrentFact(err), nil
 	}

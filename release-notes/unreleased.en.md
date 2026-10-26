@@ -12,6 +12,7 @@
 ## Fixed
 
 - Subtitles tagged JPSC or JPTC in their file names now get a language, so Simplified/Japanese and Traditional/Japanese subtitles no longer collide on one name.
+- Opening a seed's file list now fetches its torrent through the source's configured proxy instead of a direct connection.
 
 ## Important
 

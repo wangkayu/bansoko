@@ -29,7 +29,7 @@ type countingSeedTorrentFetcher struct {
 	calls   int
 }
 
-func (f *countingSeedTorrentFetcher) FetchPayload(context.Context, string) (acquisitionapplication.TorrentPayload, error) {
+func (f *countingSeedTorrentFetcher) FetchPayload(context.Context, string, string) (acquisitionapplication.TorrentPayload, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls++

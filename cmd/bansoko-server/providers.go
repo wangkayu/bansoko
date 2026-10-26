@@ -535,8 +535,17 @@ func provideApplicationGraph(
 	// Lazy expansion is the only catalog path allowed to fetch a torrent: it gets
 	// the locator-keyed cache and the same SSRF-safe payload reader the one-shot
 	// acquisition uses, while the preview fetcher above deliberately has neither.
+	// The fetcher is the configured one: a seed's torrent leaves through the same
+	// saved provider connection and network route as the feed or search request
+	// that published it, so expanding a seed over a proxied source does not dial
+	// the upstream directly.
 	catalogService.SetSeedTorrentCache(catalogretentionpersistence.NewRepository(db))
-	catalogService.SetSeedTorrentFetcher(acquisitionapplication.HTTPTorrentMetadataReader{AllowPrivateHosts: fixtureAllowlist, Resolver: fixtureResolver})
+	catalogService.SetSeedTorrentFetcher(acquisitionapplication.ConfiguredSeedTorrentFetcher{
+		Connections:       catalogDBSource,
+		ClientResolver:    runtimeConfiguration,
+		AllowPrivateHosts: fixtureAllowlist,
+		Resolver:          fixtureResolver,
+	})
 	// Keyword search resolves its upstream endpoint from the same typed provider
 	// connection the catalog readers use, and runs under the same SSRF-safe
 	// transport; a request never names an endpoint. Both sites are reached over

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	acquisitionapplication "bansoko/internal/acquisition/application"
 	acquisitiondomain "bansoko/internal/acquisition/domain"
@@ -140,11 +141,21 @@ type fakeSeedTorrentFetcher struct {
 	started  chan struct{}
 	release  chan struct{}
 	perAskFn func(locator string) (acquisitionapplication.TorrentPayload, error)
+	// asked records every (provider, locator) pair the expansion passed, so a
+	// test can prove the fetch was routed by the snapshot's own provider.
+	asked []seedTorrentAsk
 }
 
-func (f *fakeSeedTorrentFetcher) FetchPayload(_ context.Context, locator string) (acquisitionapplication.TorrentPayload, error) {
+// seedTorrentAsk is one recorded fetch request.
+type seedTorrentAsk struct {
+	provider string
+	locator  string
+}
+
+func (f *fakeSeedTorrentFetcher) FetchPayload(_ context.Context, provider, locator string) (acquisitionapplication.TorrentPayload, error) {
 	f.mu.Lock()
 	f.calls++
+	f.asked = append(f.asked, seedTorrentAsk{provider: provider, locator: locator})
 	f.mu.Unlock()
 	if f.started != nil {
 		select {
@@ -165,6 +176,12 @@ func (f *fakeSeedTorrentFetcher) callCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.calls
+}
+
+func (f *fakeSeedTorrentFetcher) asks() []seedTorrentAsk {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]seedTorrentAsk(nil), f.asked...)
 }
 
 type fakeFeedSnapshotStore struct {
@@ -528,4 +545,75 @@ func TestEnsureSeedTorrentRejectsIdentityAndSeedDrift(t *testing.T) {
 		_, err := service.ReadSeedTorrentManifests(context.Background(), "mikan", "123", "456", identity)
 		expectRefreshRequired(t, err)
 	})
+}
+
+// seedSearchExpansionSnapshot is the search counterpart of
+// seedExpansionSnapshot: one exact `search` row whose refs are the two derived
+// hashed scopes a keyword search publishes.
+func seedSearchExpansionSnapshot(seed catalogdomain.ProviderFeedSnapshotSeed) catalogdomain.ProviderFeedSnapshot {
+	scopeRef := catalogdomain.SearchSnapshotScopePrefix + strings.Repeat("a", 64)
+	queryRef := catalogdomain.SearchSnapshotQueryPrefix + strings.Repeat("b", 64)
+	return catalogdomain.ProviderFeedSnapshot{
+		ID: "snap-search", Provider: "nyaa", ProviderEntryRef: scopeRef, ProviderGroupRef: queryRef,
+		SnapshotKind:        catalogdomain.FeedSnapshotKindSearch,
+		SearchParserVersion: "nyaa-search-v1",
+		Version:             2, ContentHash: catalogdomain.DigestBytes([]byte("search-snapshot-content")),
+		HashSchema:     catalogdomain.ProviderFeedSnapshotContentHashSchema,
+		FreshUntil:     time.Now().UTC().Add(time.Hour),
+		FreshnessState: catalogdomain.FeedSnapshotFresh,
+		Seeds:          []catalogdomain.ProviderFeedSnapshotSeed{seed},
+	}
+}
+
+// TestEnsureSeedTorrentFetchCarriesTheSnapshotProvider pins the one input lazy
+// expansion owes the fetcher: the provider whose saved connection (and network
+// route) the torrent must leave through. A fetch that loses it silently dials
+// the upstream directly, which is exactly the bypass this port exists to close,
+// so both snapshot shapes that reach expansion are covered here — an ordinary
+// provider feed and a keyword search.
+func TestEnsureSeedTorrentFetchCarriesTheSnapshotProvider(t *testing.T) {
+	payload := seedExpansionPayload(t)
+
+	t.Run("provider feed", func(t *testing.T) {
+		seed := seedExpansionSeed(t, payload.Metadata.InfoHashV1, "")
+		snapshot := seedExpansionSnapshot(seed)
+		fetcher := &fakeSeedTorrentFetcher{payload: payload}
+		service, _ := seedExpansionService(t, snapshot, fetcher)
+
+		if _, err := service.EnsureSeedTorrent(context.Background(), seedExpansionInput(snapshot)); err != nil {
+			t.Fatalf("expansion: %v", err)
+		}
+		assertSeedTorrentAsk(t, fetcher.asks(), "mikan", strings.TrimSpace(seed.Locator))
+	})
+
+	t.Run("keyword search", func(t *testing.T) {
+		seed := seedExpansionSeed(t, payload.Metadata.InfoHashV1, "")
+		seed.Locator = "https://nyaa.si/download/1.torrent"
+		snapshot := seedSearchExpansionSnapshot(seed)
+		fetcher := &fakeSeedTorrentFetcher{payload: payload}
+		service, _ := seedExpansionService(t, snapshot, fetcher)
+
+		input := EnsureSeedTorrentInput{
+			Provider: "nyaa", ProviderEntryRef: snapshot.ProviderEntryRef, ProviderGroupRef: snapshot.ProviderGroupRef,
+			SnapshotKind: catalogdomain.FeedSnapshotKindSearch,
+			SnapshotID:   snapshot.ID, SnapshotVersion: snapshot.Version, ContentHash: snapshot.ContentHash,
+			StableSeedKey: seed.StableSeedKey,
+		}
+		if _, err := service.EnsureSeedTorrent(context.Background(), input); err != nil {
+			t.Fatalf("expansion: %v", err)
+		}
+		assertSeedTorrentAsk(t, fetcher.asks(), "nyaa", seed.Locator)
+	})
+}
+
+// assertSeedTorrentAsk requires exactly one fetch, made for the named provider
+// and locator.
+func assertSeedTorrentAsk(t *testing.T, asks []seedTorrentAsk, provider, locator string) {
+	t.Helper()
+	if len(asks) != 1 {
+		t.Fatalf("expansion fetches = %d, want exactly 1", len(asks))
+	}
+	if asks[0].provider != provider || asks[0].locator != locator {
+		t.Fatalf("expansion fetched %q via %q, want %q via %q", asks[0].locator, asks[0].provider, locator, provider)
+	}
 }
