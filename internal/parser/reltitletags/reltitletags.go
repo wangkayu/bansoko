@@ -1,5 +1,5 @@
 // Package reltitletags derives the title-parse tag set of a release title with
-// the vendored reltitle parser (third_party/reltitle). It only projects
+// the reltitle Go module (github.com/wangkayu/reltitle). It only projects
 // non-episode canonical attributes ("type:value"); episode, season and every
 // other identity-bearing output stay out, so the title row of tag_filters can
 // never influence episode identity. Title, group and release version are
@@ -26,9 +26,10 @@ import (
 )
 
 const (
-	// ImplementationVersion pins the vendored parser commit
-	// (third_party/reltitle/SOURCE.md).
-	ImplementationVersion = "reltitle@1f59ad4"
+	// ImplementationVersion names the reltitle module version this adapter ran;
+	// TestImplementationVersionMatchesModuleRequirement keeps it equal to the
+	// version root go.mod requires.
+	ImplementationVersion = "reltitle@v0.0.1"
 	// Schema identifies the projection contract.
 	Schema = acquisitiondomain.TitleTagSchema
 	// MaxTitleBytes bounds the parser input; reltitle has no internal deadline.

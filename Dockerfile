@@ -19,8 +19,6 @@ ARG TARGETARCH
 WORKDIR /src
 RUN apk add --no-cache ca-certificates git python3 bash
 COPY go.mod go.sum ./
-# Vendored reltitle is a replace target; its go.mod must exist before download.
-COPY third_party/reltitle/go.mod third_party/reltitle/go.sum ./third_party/reltitle/
 RUN go mod download
 COPY . .
 COPY --from=frontend-builder /src/frontend/dist ./frontend/dist

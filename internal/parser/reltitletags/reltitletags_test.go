@@ -85,15 +85,33 @@ func TestVocabularyComesFromCanonicalDictionary(t *testing.T) {
 	}
 }
 
-func TestImplementationVersionMatchesVendoredSource(t *testing.T) {
-	source, err := os.ReadFile(filepath.Join("..", "..", "..", "third_party", "reltitle", "SOURCE.md"))
+// TestImplementationVersionMatchesModuleRequirement reads the version the root
+// module requires and asserts the adapter reports it: an upgrade that forgets
+// this constant fails here instead of shipping a stale implementation identity.
+func TestImplementationVersionMatchesModuleRequirement(t *testing.T) {
+	module, err := os.ReadFile(filepath.Join("..", "..", "..", "go.mod"))
 	if err != nil {
-		t.Fatalf("read SOURCE.md: %v", err)
+		t.Fatalf("read root go.mod: %v", err)
 	}
-	commit := strings.TrimPrefix(ImplementationVersion, "reltitle@")
-	if !strings.Contains(string(source), "(`"+commit+"`)") {
-		t.Fatalf("SOURCE.md does not record the pinned commit %s", commit)
+	version := requiredModuleVersion(string(module), "github.com/wangkayu/reltitle")
+	if version == "" {
+		t.Fatal("root go.mod does not require github.com/wangkayu/reltitle")
 	}
+	if want := "reltitle@" + version; ImplementationVersion != want {
+		t.Fatalf("ImplementationVersion = %q, want %q", ImplementationVersion, want)
+	}
+}
+
+// requiredModuleVersion returns the version a go.mod requires for module,
+// from either a require block line or a single-line require directive.
+func requiredModuleVersion(modFile, module string) string {
+	for _, line := range strings.Split(modFile, "\n") {
+		line = strings.TrimPrefix(strings.TrimSpace(line), "require ")
+		if fields := strings.Fields(line); len(fields) >= 2 && fields[0] == module {
+			return fields[1]
+		}
+	}
+	return ""
 }
 
 func TestExtractFreezesTitleGroupAndVersionAsValueTags(t *testing.T) {

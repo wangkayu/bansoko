@@ -30,7 +30,7 @@
 # path-by-path allowlist far larger than the guard itself.
 # rewrite-wording and legacy-word are report-only triage lists.
 #
-# Scope: tracked files (git ls-files) minus third_party/, lockfiles and binary
+# Scope: tracked files (git ls-files) minus lockfiles and binary
 # assets. Generated files are included (they change through regeneration) and
 # are tagged [gen] in --list output.
 set -euo pipefail
@@ -47,7 +47,6 @@ paths_mode = "--paths" in args
 list_family = args[args.index("--list") + 1] if "--list" in args else None
 
 EXCLUDE = [
-    "third_party/**",
     "**/pnpm-lock.yaml", "go.sum", "skills-lock.json",
     "*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.ico", "*.woff", "*.woff2",
     "*.torrent", "*.key",

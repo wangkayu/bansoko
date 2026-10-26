@@ -45,8 +45,6 @@ rows = []
 for line in open(go_file):
     path, ver, d = line.rstrip("\n").split(" ", 2)
     lic, cr = "UNKNOWN", ""
-    if path == "github.com/wangkayu/reltitle":
-        ver = "vendored (third_party/reltitle)"
     for n in sorted(os.listdir(d)):
         if re.match(r"(?i)(licen[sc]e|copying)", n):
             txt = open(os.path.join(d, n), errors="replace").read()
@@ -76,7 +74,6 @@ with open(out, "w") as f:
     f.write("## Go modules\n\n| Module | Version | License | Copyright |\n|---|---|---|---|\n")
     for r in rows:
         f.write("| " + " | ".join(esc(x) for x in r) + " |\n")
-    f.write("\n`github.com/wangkayu/reltitle` is vendored in `third_party/reltitle` under the MIT License, which it keeps (`third_party/reltitle/LICENSE`).\n")
     f.write("\n## Frontend production dependencies\n\n| Package | Version | License | Author |\n|---|---|---|---|\n")
     for r in frows:
         f.write("| " + " | ".join(esc(x) for x in r) + " |\n")
