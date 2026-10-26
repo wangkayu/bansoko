@@ -1,4 +1,4 @@
--- Forward-only migration 055: the placement recovery generation marker.
+-- Forward-only migration 057: the placement recovery generation marker.
 --
 -- A scan-alignment recovery confirm re-attaches a placement and its companion
 -- unit to the paths the current naming rules render, WITHOUT moving a byte.
