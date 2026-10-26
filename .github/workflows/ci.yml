@@ -142,6 +142,12 @@ jobs:
           ref: ${{ github.sha }}
       - name: verify event SHA
         run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      # Formatting is separate from build/vet (neither looks at layout) and needs
+      # no module cache, so it fails fast before the retried download and the
+      # unit tests. Generated sqlc/oapi/wire output is excluded inside the script:
+      # regeneration owns those bytes and its own --check gates prove freshness.
+      - name: gofmt drift gate
+        run: bash scripts/ci/check-gofmt.sh
       # The runner gives each job a fresh container, so GOMODCACHE starts empty and
       # every job downloads the full module graph. Run 21's PostgreSQL job failed at
       # `setup failed` because one `testify@v1.11.1` fetch to proxy.golang.org hit an
