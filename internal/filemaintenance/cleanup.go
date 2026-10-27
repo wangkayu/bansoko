@@ -305,10 +305,10 @@ func (s *CleanupService) settleWriter(op *ReplacementDeletion, expected int64, t
 				return 0, err
 			}
 		case CleanupFailed:
-			if code == CleanupFileBusy {
+			if cleanupGaveUp(code) {
 				settled := *op
 				settled.Version = version
-				if err := s.appendCleanupFailureTx(ctx, scope, &settled); err != nil {
+				if err := s.appendCleanupFailureTx(ctx, scope, &settled, code); err != nil {
 					return 0, err
 				}
 			}
@@ -458,6 +458,8 @@ func (r *cleanupRun) start(ctx context.Context) (worker.Outcome, error) {
 		return r.skip(CleanupSkipLoserMissing, "the replaced file is no longer at its path"), nil
 	case errors.Is(err, domain.ErrNotRegularFile):
 		return r.skip(CleanupSkipLoserNotRegular, "the path no longer holds a regular file"), nil
+	case domain.FileBusy(err):
+		return r.observationBusy(err), nil
 	case err != nil:
 		return worker.Retry("cleanup_source_observation_failed", safeCleanupReason(err), 30*time.Second, s.retryOwner(r.claim)), nil
 	}
@@ -530,10 +532,7 @@ func (r *cleanupRun) capture(ctx context.Context, attempt cleanupAttemptEvidence
 	expected := attempt.SourceObservation
 	moved, err := e.MoveMaintenance(ctx, attempt.SourcePath, attempt.CapturePath, expected, cleanupInvocation(op, attempt, cleanupCaptureInvocation))
 	if err != nil {
-		if domain.FileBusy(err) {
-			return r.busy(ctx, attempt, "cleanup_capture_failed", err), nil
-		}
-		return r.block("cleanup_capture_failed", safeCleanupReason(err)), nil
+		return r.refused(ctx, attempt, "cleanup_capture_failed", err), nil
 	}
 	if _, err := observeCleanupFile(ctx, s.executor, attempt.SourcePath, op.SourceFingerprint); !isMissingCleanupError(err) {
 		return r.block("cleanup_capture_source_present", "the capture returned without proven source absence"), nil
@@ -566,10 +565,7 @@ func (r *cleanupRun) purge(ctx context.Context, attempt cleanupAttemptEvidence) 
 		return r.block("cleanup_executor_unavailable", "cleanup executor has no receipts"), nil
 	}
 	if err := e.PurgeMaintenance(ctx, attempt.CapturePath, attempt.CaptureObservation, cleanupInvocation(op, attempt, cleanupPurgeInvocation)); err != nil {
-		if domain.FileBusy(err) {
-			return r.busy(ctx, attempt, "cleanup_purge_failed", err), nil
-		}
-		return r.block("cleanup_purge_failed", safeCleanupReason(err)), nil
+		return r.refused(ctx, attempt, "cleanup_purge_failed", err), nil
 	}
 	if _, err := observeCleanupFile(ctx, s.executor, attempt.CapturePath, op.SourceFingerprint); !isMissingCleanupError(err) {
 		return r.block("cleanup_purge_object_present", "the purge returned without proven absence"), nil
@@ -685,6 +681,11 @@ func (s *CleanupService) appendCleanupActivityTx(ctx context.Context, scope txsc
 		return nil
 	}
 	subscriptionID, err := s.repository.SubscriptionIDForAnimeTx(ctx, scope, op.ManagedAnimeID)
+	if errors.Is(err, sql.ErrNoRows) {
+		// The subscription was removed meanwhile: the result is still
+		// settled, it just has no subscription log to append to.
+		return nil
+	}
 	if err != nil {
 		return err
 	}

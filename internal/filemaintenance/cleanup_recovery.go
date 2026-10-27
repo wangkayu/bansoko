@@ -151,11 +151,26 @@ func (s *CleanupService) releaseBlocked(ctx context.Context, receipts executorpk
 	return false, nil
 }
 
+// scanReleasableCodes are the blocked reasons a scan completion may release:
+// an effect left uncertain at the time (an interrupted or refused stage
+// whose files did not prove its state yet), which a later receipt read can
+// prove. A blocked deletion whose file changed, whose executor was missing,
+// or that could not move its captured file back is left to deployment
+// recovery: re-running it on every scan would repeat the same refusal with
+// no notice.
+var scanReleasableCodes = map[string]bool{
+	"cleanup_capture_failed":   true,
+	"cleanup_purge_failed":     true,
+	"cleanup_capture_unpurged": true,
+	"cleanup_effect_uncertain": true,
+}
+
 // ReleaseBlockedDeletions is the scan-completion release of one anime's
-// blocked deletions: each one whose receipts prove its state is settled or
-// re-admitted exactly as deployment recovery would; the others stay blocked.
-// It reports how many it released. An error stops the pass; the next scan
-// completion or deployment recovery retries it.
+// blocked deletions with a releasable reason: each one whose receipts prove
+// its state is settled or re-admitted exactly as deployment recovery would;
+// the others stay blocked. It reports how many it released. A failure on one
+// deletion does not stop the others; the joined errors are returned and the
+// next scan completion or deployment recovery retries them.
 func (s *CleanupService) ReleaseBlockedDeletions(ctx context.Context, managedAnimeID string) (int, error) {
 	if s == nil || s.executor == nil {
 		return 0, nil
@@ -169,17 +184,22 @@ func (s *CleanupService) ReleaseBlockedDeletions(ctx context.Context, managedAni
 		return 0, err
 	}
 	released := 0
+	var failures []error
 	for _, row := range rows {
 		op := replacementDeletionFromPersistence(row)
+		if !scanReleasableCodes[op.FailureCode] {
+			continue
+		}
 		ok, err := s.releaseBlocked(ctx, receipts, op)
 		if err != nil {
-			return released, fmt.Errorf("release blocked deletion %s: %w", op.ID, err)
+			failures = append(failures, fmt.Errorf("release blocked deletion %s: %w", op.ID, err))
+			continue
 		}
 		if ok {
 			released++
 		}
 	}
-	return released, nil
+	return released, errors.Join(failures...)
 }
 
 // readmit (re)creates the work item of an obligation. A blocked obligation is

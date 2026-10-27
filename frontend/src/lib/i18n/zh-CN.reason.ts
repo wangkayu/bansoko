@@ -321,6 +321,8 @@ export const reasonCopy = {
   cleanup_effect_uncertain: "旧文件删除结果无法确认",
   cleanup_readmitted: "旧文件删除已重新排队",
   cleanup_file_busy: "旧文件可能被占用或没有权限，暂未删除",
+  cleanup_file_refused: "旧文件所在位置只读，未删除",
+  cleanup_restore_failed: "旧文件未能放回原位置，等待重新处理",
   cleanup_source_observation_failed: "暂时无法读取旧文件，将自动重试",
   loser_missing: "旧文件已不在原位置，未删除",
   loser_not_regular: "原位置不再是普通文件，未删除",

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"bansoko/internal/library/domain"
+	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
 	"bansoko/internal/runtime/worker"
 	"bansoko/internal/workitems"
@@ -252,10 +253,23 @@ func (s *Service) handleScan(ctx context.Context, claim workitems.Claim) (worker
 	outcome := worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: "completed", ReasonCode: "scan_completed", Reason: fmt.Sprintf("scanned %d files", scanned)}, nil)
 	if s.deletions != nil {
 		// Best effort, after the scan's own commit: a failed release leaves the
-		// deletions blocked for the next scan or deployment recovery.
-		animeID := claim.Owner.ID
+		// deletions blocked for the next scan or deployment recovery, and is
+		// logged.
+		animeID, workID := claim.Owner.ID, claim.ID
 		outcome = worker.WithAfterCommit(outcome, func(ctx context.Context) {
-			_, _ = s.deletions.ReleaseBlockedDeletions(ctx, animeID)
+			if _, err := s.deletions.ReleaseBlockedDeletions(ctx, animeID); err != nil && s.deletionLog != nil {
+				s.deletionLog.Warn(ctx, observabilityport.RuntimeEvent{
+					Message:    "a blocked replacement deletion was not released after the scan",
+					Component:  "reconciliation",
+					Operation:  "release_blocked_deletions",
+					Outcome:    "failure",
+					ReasonCode: "cleanup_release_failed",
+					OwnerType:  workitems.OwnerFileMaintenance,
+					OwnerID:    animeID,
+					WorkItemID: workID,
+					ErrorClass: "cleanup_release",
+				})
+			}
 		})
 	}
 	return outcome, nil

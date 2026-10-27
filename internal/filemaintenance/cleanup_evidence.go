@@ -25,6 +25,10 @@ type cleanupAttemptEvidence struct {
 	SourceObservation  domain.FileObservation `json:"source_observation"`
 	CaptureObservation domain.FileObservation `json:"capture_observation"`
 	FencingToken       int64                  `json:"fencing_token"`
+	// BusyRefused marks a stage the claim that ran it saw refused (busy)
+	// and proved unapplied; its invocation was retired and its markers
+	// removed, so the next claim decides from the files alone.
+	BusyRefused bool `json:"busy_refused,omitempty"`
 }
 
 func decodeCleanupAttempt(raw []byte) (cleanupAttemptEvidence, error) {
@@ -99,6 +103,23 @@ const (
 // the captured object is still the frozen object) resolves like an unstarted
 // one, so a refused rename or unlink can run again.
 func resolveCleanupAttempt(ctx context.Context, observer executorpkg.CleanupFileExecutor, receipts executorpkg.MaintenanceCleanupExecutor, op *ReplacementDeletion, attempt cleanupAttemptEvidence) cleanupResolution {
+	if attempt.BusyRefused {
+		// A refused, proven-unapplied stage has no receipt left to read.
+		// A capture: nothing at the capture path means it never happened
+		// (only this deletion renames into it); the fresh start re-observes
+		// the source. A purge: the captured object is still intact.
+		if attempt.Stage == cleanupStagePurge {
+			observed, err := observeCleanupFile(ctx, observer, attempt.CapturePath, op.SourceFingerprint)
+			if err == nil && sameFrozenCleanupObservation(observed, attempt.CaptureObservation) {
+				return cleanupResolutionPurgeNotStarted
+			}
+			return cleanupResolutionUnknown
+		}
+		if _, err := observeCleanupFile(ctx, observer, attempt.CapturePath, op.SourceFingerprint); isMissingCleanupError(err) {
+			return cleanupResolutionCaptureNotStarted
+		}
+		return cleanupResolutionUnknown
+	}
 	if attempt.Stage == cleanupStagePurge {
 		invocation := cleanupInvocation(op, attempt, cleanupPurgeInvocation)
 		receipt, err := receipts.ReadMaintenanceReceipt(ctx, invocation)

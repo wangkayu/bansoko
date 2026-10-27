@@ -725,7 +725,7 @@ func provideCoreApplicationGraph(
 	reconciliationService.SetTargetObserver(acquisitiontarget.NewScanner(targetStore, acquisitiontarget.FilesystemProbe{}))
 	// A completed scan re-releases the anime's blocked replacement deletions
 	// whose receipts prove their state (deployment recovery's resolution).
-	reconciliationService.SetBlockedDeletionReleaser(fileMaintenanceGraph.cleanupService)
+	reconciliationService.SetBlockedDeletionReleaser(fileMaintenanceGraph.cleanupService, logger)
 	// Scan-alignment recovery probe: the composition root injects the
 	// filemaintenance renderer (dependency direction filemaintenance ->
 	// reconciliation), the library's no-follow file observer and the SQL

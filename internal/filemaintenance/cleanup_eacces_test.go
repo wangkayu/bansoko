@@ -85,3 +85,52 @@ func TestCleanupRealPermissionRefusalRetriesThenDeletes(t *testing.T) {
 	}
 	assertFileAbsent(t, f.source)
 }
+
+// A directory that stays unwritable keeps every hop waiting: no hop finds a
+// receipt to doubt (reading it never creates the refused namespace), and once
+// 24 hours have passed since the first refusal the deletion fails with the
+// file in place and no namespace left behind.
+func TestCleanupRealPermissionRefusalAcrossHopsFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	f := newCleanupFixture(t)
+	start := time.Now().UTC()
+	f.service.now = func() time.Time { return start }
+	op := f.admit(t, f.input())
+	dir := filepath.Dir(f.source)
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	due := func() {
+		t.Helper()
+		if _, err := workItemFixtureDB(t).Exec(`UPDATE work_items SET available_at = now() WHERE owner_type = $1 AND owner_id = $2`, workitems.OwnerReplacementDeletion, op.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for hop, elapsed := range []time.Duration{0, 5 * time.Minute, 12 * time.Hour} {
+		f.service.now = func() time.Time { return start.Add(elapsed) }
+		finishDelete(t, f)
+		if state, code := f.state(t, op.ID); state != CleanupAdmitted || code != CleanupFileBusy || liveCleanupWorkItems(t, f.db, op.ID) != 1 {
+			t.Fatalf("hop %d: state=%s code=%s, want admitted/%s with one live item", hop+1, state, code, CleanupFileBusy)
+		}
+		result, err := f.service.ReconcileUnknownEffect(context.Background(), deployment.ReconcileRequest{})
+		if err != nil || result.State != deployment.StateCompleted {
+			t.Fatalf("hop %d: deployment reconcile = %+v %v, want completed", hop+1, result, err)
+		}
+		due()
+	}
+	f.service.now = func() time.Time { return start.Add(24 * time.Hour) }
+	if outcome := finishDelete(t, f); outcome.TerminalState != workitems.StateFailed {
+		t.Fatalf("exhausted outcome = %+v", outcome)
+	}
+	if state, code := f.state(t, op.ID); state != CleanupFailed || code != CleanupFileBusy {
+		t.Fatalf("state=%s code=%s, want failed/%s", state, code, CleanupFileBusy)
+	}
+	if got := liveCleanupWorkItems(t, f.db, op.ID); got != 0 {
+		t.Fatalf("a failed deletion keeps %d live items", got)
+	}
+	assertFilePresent(t, f.source)
+	assertFileAbsent(t, filepath.Join(dir, ".bansoko-cleanup-"+op.ID))
+}

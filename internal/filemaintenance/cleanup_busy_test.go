@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	maintenance "bansoko/internal/filemaintenance/executor"
 	"bansoko/internal/library/adapter/filesystem"
 	"bansoko/internal/library/domain"
 	observabilityapplication "bansoko/internal/observability/application"
@@ -22,36 +21,47 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// busyCleanupExecutor is the real OS cleanup executor whose capture or purge
-// can answer busy before the syscall runs (the way a held-open SMB file
-// refuses the rename or unlink); refused, if set, runs first to perturb the
-// files.
+// busyCleanupExecutor is the real OS cleanup executor whose capture rename or
+// purge unlink answers moveErr or purgeErr in place of the syscall, through
+// the adapter's own fault hook: the invocation lock, start marker and
+// classification are the production ones (the way a held-open SMB file
+// refuses the rename or unlink). refused, if set, runs first to perturb the
+// files. observeBusy makes observing the replaced file answer EBUSY (an
+// exclusive SMB holder).
 type busyCleanupExecutor struct {
 	filesystem.OSCleanupExecutor
 	moveErr, purgeErr error
 	refused           func()
+	observeBusy       bool
+	source            string
 }
 
-func (e *busyCleanupExecutor) MoveMaintenance(ctx context.Context, source, target string, expected domain.FileObservation, i maintenance.MaintenanceInvocation) (string, error) {
-	if e.moveErr != nil {
-		if e.refused != nil {
-			e.refused()
+func newBusyCleanupExecutor(base filesystem.OSCleanupExecutor, source string) *busyCleanupExecutor {
+	e := &busyCleanupExecutor{OSCleanupExecutor: base, source: source}
+	e.OSCleanupExecutor.Hooks.Effect = func(stage string) error {
+		switch {
+		case stage == "capture" && e.moveErr != nil:
+			if e.refused != nil {
+				e.refused()
+			}
+			return e.moveErr
+		case stage == "purge" && e.purgeErr != nil:
+			return e.purgeErr
 		}
-		return "", e.moveErr
+		return nil
 	}
-	return e.OSCleanupExecutor.MoveMaintenance(ctx, source, target, expected, i)
+	return e
 }
 
-func (e *busyCleanupExecutor) PurgeMaintenance(ctx context.Context, path string, expected domain.FileObservation, i maintenance.MaintenanceInvocation) error {
-	if e.purgeErr != nil {
-		return e.purgeErr
+func (e *busyCleanupExecutor) ObserveMetadataFile(ctx context.Context, path string) (domain.FileObservation, error) {
+	if e.observeBusy && path == e.source {
+		return domain.FileObservation{}, fmt.Errorf("verify cleanup entry: %w: %w", domain.ErrFileBusy, &os.PathError{Op: "open", Path: path, Err: unix.EBUSY})
 	}
-	return e.OSCleanupExecutor.PurgeMaintenance(ctx, path, expected, i)
+	return e.OSCleanupExecutor.ObserveMetadataFile(ctx, path)
 }
 
-func errBusy(errno unix.Errno) error {
-	return fmt.Errorf("%w: %w", domain.ErrFileBusy, errno)
-}
+// errBusy is the raw answer of the refused syscall; the adapter classifies it.
+func errBusy(errno unix.Errno) error { return errno }
 
 type busyFixture struct {
 	*cleanupFixture
@@ -61,7 +71,7 @@ type busyFixture struct {
 func newBusyFixture(t *testing.T) busyFixture {
 	t.Helper()
 	f := newCleanupFixture(t)
-	busy := &busyCleanupExecutor{OSCleanupExecutor: f.executor.OSCleanupExecutor}
+	busy := newBusyCleanupExecutor(f.executor.OSCleanupExecutor, f.source)
 	f.service.SetFileExecutor(busy)
 	ctx := context.Background()
 	if _, err := f.db.ExecContext(ctx, `INSERT INTO managed_anime(id, title) VALUES ('anime-1', 'Show')`); err != nil {

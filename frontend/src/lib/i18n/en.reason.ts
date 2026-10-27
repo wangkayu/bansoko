@@ -323,6 +323,8 @@ export const enReasonCopy = {
   cleanup_effect_uncertain: "The old file deletion result cannot be confirmed",
   cleanup_readmitted: "Old file deletion was queued again",
   cleanup_file_busy: "The old file may be in use or not permitted to change, so it was not deleted",
+  cleanup_file_refused: "The old file is on a read-only location, so it was not deleted",
+  cleanup_restore_failed: "The old file could not be moved back to its path and is waiting to be processed again",
   cleanup_source_observation_failed: "Cannot read the old file right now. It will retry automatically.",
   loser_missing: "Old file is no longer at its path, so it was not deleted",
   loser_not_regular: "The path no longer holds a regular file, so it was not deleted",
