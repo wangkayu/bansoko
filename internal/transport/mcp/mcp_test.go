@@ -137,6 +137,31 @@ var pinnedTools = []string{
 	"list_placement_issues", "redownload_placement", "release_placement",
 	"list_anime_files", "align_anime_files", "recover_anime_file",
 	"list_feed_sites",
+	// Owner-delegated coverage (2026-10-27): diagnostics, downloads, configuration, catalog.
+	"get_system_health", "get_release_candidate_facts", "get_release_torrent_structure", "list_replacement_decisions",
+	"list_placements", "get_placement_coverage", "get_file_maintenance_overview", "list_offset_migrations",
+	"list_offset_migration_generations", "get_reconciliation_scan", "list_reconciliation_observations", "list_reconciliation_path_diffs",
+	"submit_reconciliation_scan", "get_one_shot_attempt", "list_observability_records", "list_observability_diagnostics", "get_automation_run", "list_automation_schedules",
+	"get_title_tag_vocabulary", "get_replacement_compare_vocabulary", "list_parser_catalog", "list_notification_trigger_kinds",
+	"get_notification_template_catalog", "get_naming_template_catalog", "get_update_status", "check_update",
+	"get_anime_business_edit", "read_catalog_workspace", "get_catalog_preference", "list_catalog_suppressions",
+	"list_subgroup_groups", "list_qbittorrent_torrents", "get_qbittorrent_torrent_files", "get_qbittorrent_status",
+	"pause_qbittorrent_torrent", "resume_qbittorrent_torrent", "delete_qbittorrent_torrent", "retry_download_task",
+	"retry_artifact", "retry_rss_source_runtime", "list_global_sections", "put_global_section",
+	"get_naming_template_library", "put_naming_template_library", "preview_naming_template", "preview_notification_template",
+	"preview_media_recognition", "get_replacement_policy_default", "save_replacement_policy_default", "get_file_effect_policy_default",
+	"save_file_effect_policy_default", "get_instance_file_effect_policy", "save_instance_file_effect_policy", "get_parser_policy_default",
+	"save_parser_policy_default", "get_instance_parser_policy", "save_instance_parser_policy", "get_instance_replacement_policy",
+	"save_instance_replacement_policy", "get_file_maintenance_policy", "save_file_maintenance_policy", "get_file_maintenance_anime_policy",
+	"save_file_maintenance_anime_policy", "evaluate_replacement", "replan_file_maintenance", "list_connections",
+	"put_connection", "test_connection", "list_network_routes", "put_network_route",
+	"test_network_route", "patch_automation_schedule", "list_plugin_targets", "create_plugin_target",
+	"update_plugin_target", "delete_plugin_target", "test_plugin_target", "list_plugin_deliveries",
+	"get_plugin_delivery", "subscribe_anime", "apply_candidate", "preview_subgroups_selection",
+	"patch_anime_subgroups", "cleanup_anime_local_data", "fetch_owner_custom_snapshot", "fetch_custom_snapshot",
+	"fetch_seed_search_snapshot", "refresh_catalog_provider", "set_catalog_preference", "suppress_catalog_entry",
+	"unsuppress_catalog_entry", "patch_rss_source_offset", "patch_rss_source_anibt_mode", "retrieve_subgroup_group",
+	"delete_subgroup_group_entry",
 }
 
 func TestToolListPinsTheAllowlist(t *testing.T) {
@@ -282,23 +307,40 @@ func TestToolAnnotationsAreCorrect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	readOnly := map[string]bool{
-		"get_subscriptions": true, "search_anime": true, "search_metadata": true, "parse_title": true, "parse_torrent": true,
-		"rss_list_view": true, "get_workspace": true, "poll_workspace": true, "list_candidates": true,
-		"get_candidate": true, "get_one_shot_acquisition": true, "list_one_shot_attempts": true,
-		"list_execution_records": true, "get_execution_record": true, "list_execution_record_files": true,
-		"list_tmdb_seasons": true, "list_tmdb_season_episodes": true, "preview_file_match": true,
-		"get_feed_snapshot":     true,
-		"get_business_preset":   true,
-		"load_business_preset":  true,
-		"list_placement_issues": true,
-		"list_anime_files":      true,
-		"list_feed_sites":       true,
+	// The side-effect profile is derived from x-mcp: write false -> read only,
+	// DELETE -> destructive, idempotent unless the entry says otherwise.
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
 	}
-	destructive := map[string]bool{"delete_candidate": true, "delete_subscription": true}
-	// create and patch candidate are not idempotent: each call inserts a row or
-	// advances the version.
-	nonIdempotent := map[string]bool{"create_candidate": true, "patch_candidate": true}
+	readOnly := map[string]bool{}
+	destructive := map[string]bool{}
+	nonIdempotent := map[string]bool{}
+	for _, op := range catalog.Operations {
+		readOnly[op.Tool] = !op.Write
+		destructive[op.Tool] = op.Destructive
+		nonIdempotent[op.Tool] = !op.Idempotent
+	}
+	for _, comp := range catalog.Composites {
+		readOnly[comp.Tool] = true
+	}
+	// Pinned expectations the derivation must agree with.
+	for _, name := range []string{"get_subscriptions", "search_anime", "get_workspace", "poll_workspace", "load_business_preset", "preview_file_match", "list_qbittorrent_torrents", "test_connection", "preview_naming_template"} {
+		if !readOnly[name] {
+			t.Errorf("%s must be a read-only tool", name)
+		}
+	}
+	for _, name := range []string{"delete_candidate", "delete_subscription", "delete_qbittorrent_torrent", "delete_plugin_target", "cleanup_anime_local_data", "unsuppress_catalog_entry", "delete_subgroup_group_entry"} {
+		if !destructive[name] {
+			t.Errorf("%s must be a destructive tool", name)
+		}
+	}
+	// Each of these inserts a row, advances a version or sends something per call.
+	for _, name := range []string{"create_candidate", "patch_candidate", "create_plugin_target", "test_plugin_target", "subscribe_anime", "fetch_seed_search_snapshot"} {
+		if !nonIdempotent[name] {
+			t.Errorf("%s must not be idempotent", name)
+		}
+	}
 	for _, tool := range result.Tools {
 		a := tool.Annotations
 		if a.ReadOnlyHint == nil || *a.ReadOnlyHint != readOnly[tool.Name] {
@@ -1085,5 +1127,74 @@ func TestEveryToolResultPassesTheBackstop(t *testing.T) {
 		if strings.Contains(string(encoded), "SECRETKEY") || strings.Contains(string(encoded), `"link"`) {
 			t.Errorf("tool result carries a credential URL: %s", encoded)
 		}
+	}
+}
+
+// An operation that carries the version in both If-Match and the body takes one
+// expected_version argument for both, so the two can never disagree.
+func TestVersionInHeaderAndBodyIsOneArgument(t *testing.T) {
+	api := &fakeAPI{respond: func(*http.Request) (int, string) { return 200, `{"id":"p1","version":5}` }}
+	cli := newTestClient(t, api)
+	callTool(t, cli, "update_plugin_target", map[string]any{
+		"plugin_target_id": "p1", "expected_version": 4, "name": "n", "plugin_kind": "notification", "adapter_kind": "webhook",
+		"enabled": true, "trigger_kinds": []any{}, "config_schema_version": 1, "config": map[string]any{"adapter_kind": "webhook"},
+		"template_set": map[string]any{}, "secret": map[string]any{"mode": "keep"},
+	})
+	got := api.last(t)
+	if got.Method != "PATCH" || got.Path != "/api/v1/plugin-targets/p1" || got.Header.Get("If-Match") != "4" || !strings.Contains(got.Body, `"expected_version":4`) {
+		t.Fatalf("update_plugin_target request = %+v", got)
+	}
+}
+
+// A path parameter and a body field of the same name cannot share an argument;
+// rename keeps the path one apart.
+func TestSeasonPathParameterIsRenamedApartFromTheBodyField(t *testing.T) {
+	api := &fakeAPI{respond: func(*http.Request) (int, string) {
+		return 200, `{"season":"2026-04","refresh_enabled":true,"version":2,"updated_at":"2026-04-01T00:00:00Z"}`
+	}}
+	cli := newTestClient(t, api)
+	callTool(t, cli, "set_catalog_preference", map[string]any{
+		"provider": "mikan", "target_season": "2026-04", "expected_version": 1, "season": "2026-04", "refresh_enabled": true,
+	})
+	got := api.last(t)
+	if got.Method != "PUT" || got.Path != "/api/v1/catalog/providers/mikan/seasons/2026-04/preference" || got.Header.Get("If-Match") != "1" || !strings.Contains(got.Body, `"season":"2026-04"`) {
+		t.Fatalf("set_catalog_preference request = %+v", got)
+	}
+}
+
+// Connection, network route and notification target secrets are write-only: no
+// response schema reachable from any tool declares a field that could carry one
+// (reads expose credential_configured / has_secret instead), and a proxy
+// endpoint that smuggles credentials is withheld by the value backstop.
+func TestNoToolResponseDeclaresAWriteOnlySecretField(t *testing.T) {
+	secretNames := map[string]bool{
+		"secret": true, "password": true, "bot_token": true, "webhook_url": true, "endpoint_url": true,
+		"auth_value": true, "signing_secret": true, "api_key": true, "token": true,
+	}
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := mustParseSpec(t)
+	for _, op := range catalog.Operations {
+		responses, _ := findOperation(doc, op.ID)["responses"].(map[string]any)
+		for status, response := range responses {
+			if !strings.HasPrefix(status, "2") {
+				continue
+			}
+			for name := range reachableProperties(doc, response, true) {
+				if secretNames[name] {
+					t.Errorf("%s (%s): response %s can carry the secret-like field %q", op.Tool, op.ID, status, name)
+				}
+			}
+		}
+	}
+	api := &fakeAPI{respond: func(*http.Request) (int, string) {
+		return 200, `[{"id":"r1","kind":"http_proxy","name":"p","enabled":true,"proxy_url":"http://user:pw@proxy.example:8080","credential_configured":true,"version":1}]`
+	}}
+	result := callTool(t, newTestClient(t, api), "list_network_routes", map[string]any{})
+	encoded, _ := json.Marshal(result)
+	if strings.Contains(string(encoded), "user:pw") || !strings.Contains(string(encoded), withheldPlaceholder) {
+		t.Fatalf("list_network_routes must withhold a credential-bearing proxy URL: %s", encoded)
 	}
 }

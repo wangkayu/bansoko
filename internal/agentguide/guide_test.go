@@ -89,7 +89,7 @@ var extraWords = []string{
 	"current_input", "saved_revision", "owner_draft", "owner_chain", "agent_guide",
 	"seed_not_expanded", "torrent_fetch_failed", "torrent_parse_failed", "torrent_missing",
 	"target_duplicate", "placement_not_active", "file_not_missing", "source_release_unavailable",
-	"download_in_progress", "scan_changed",
+	"download_in_progress", "scan_changed", "target_season",
 }
 
 func repoRoot(t *testing.T) string {

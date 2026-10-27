@@ -62,7 +62,6 @@ side_effect_free="
 /api/v1/file-manager/entry/match/preview
 /config/connections/{connection_id}/test
 /config/network-routes/{route_id}/test
-/plugin-targets/{plugin_target_id}/test
 "
 for path in $side_effect_free; do
   rel="${path#/api/v1}"

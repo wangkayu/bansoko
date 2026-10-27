@@ -92,7 +92,6 @@ var readOnlyWritePathPatterns = []struct {
 	{`^/api/v1/config/business-preset/load$`, "pure draft transformation, nothing stored"},
 	{`^/api/v1/config/connections/[^/]+/test$`, "connectivity probe"},
 	{`^/api/v1/config/network-routes/[^/]+/test$`, "connectivity probe"},
-	{`^/api/v1/plugin-targets/[^/]+/test$`, "delivery probe"},
 	{`^/api/v1/parse/release-title$`, "pure parse"},
 	{`^/api/v1/parse/torrent-files$`, "pure parse"},
 	{`^/api/v1/media-recognition/previews$`, "pure media recognition"},
