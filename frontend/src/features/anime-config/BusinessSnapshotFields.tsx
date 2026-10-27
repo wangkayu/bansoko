@@ -1,5 +1,6 @@
 import type { BusinessSnapshot } from "../../lib/api/client";
 import { Field, Select } from "../../ui/base";
+import { UnclassifiedRouteField } from "./UnclassifiedRouteField";
 import { admissionOptions } from "../settings/replacementDraft";
 import { QualityCompareEditor } from "../replacement/QualityCompareEditor";
 import { t } from "../../lib/i18n";
@@ -48,17 +49,7 @@ export function BusinessSnapshotFields({
         onChange={(profile) => update((v) => { v.replacement.quality_profile = profile; })}
       />
 
-      <Field label={t("file.unclassifiedTitle")} className="tw:max-w-sm">
-        <Select
-          label={t("file.unclassifiedTitle")}
-          value={value.unclassified_route}
-          options={[
-            { value: "skip", label: t("file.unclassified.skip") },
-            { value: "route", label: t("file.unclassified.route") },
-          ]}
-          onChange={(next) => update((v) => { v.unclassified_route = next; })}
-        />
-      </Field>
+      <UnclassifiedRouteField value={value.unclassified_route} onChange={(next) => update((v) => { v.unclassified_route = next; })} />
     </fieldset>
   );
 }
