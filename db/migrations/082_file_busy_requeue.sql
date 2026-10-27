@@ -1,4 +1,4 @@
--- 075: overwrite publication busy retry.
+-- 082: overwrite publication busy retry.
 --
 -- An overwrite import whose target is busy (held open over SMB/CIFS: the
 -- replacing rename is refused, or an exclusive holder refuses even the

@@ -1,4 +1,4 @@
--- Forward-only migration 077: the cleanup_failed Activity kind.
+-- Forward-only migration 084: the cleanup_failed Activity kind.
 --
 -- A replacement that decided to delete an old managed file but could not
 -- (the file stayed busy or the change was not permitted, and the automatic

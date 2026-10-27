@@ -1,4 +1,4 @@
--- Forward-only migration 076: the replacement_deletion_failed notification
+-- Forward-only migration 083: the replacement_deletion_failed notification
 -- trigger (owner ruling 2026-10-27).
 --
 -- An old managed file a replacement decided to delete that stayed busy or not
