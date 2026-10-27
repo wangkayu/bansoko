@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -14,6 +15,8 @@ import (
 	"bansoko/internal/runtime/worker"
 	"bansoko/internal/subscription/competition"
 	"bansoko/internal/workitems"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // CompetitionDecider decides one competition round of a subscription
@@ -39,16 +42,23 @@ const (
 	competitionInactive            = "subscription_inactive"
 )
 
-// errCompetitionMoved: the round decided outside the lock differs from the
-// one the subscription lock sees; the claim retries with a fresh round.
-var errCompetitionMoved = errors.New("subscription competition round changed before commit")
+// errCompetitionActivated: a release evaluated for the direct path (a stopped
+// subscription's explicit retry) found its subscription active under the
+// owner lock; the release must wait for the competition instead.
+var errCompetitionActivated = errors.New("the subscription became active: the release waits for the competition")
 
 // awaitsCompetition reports whether a downloadable release stops at the plan:
 // the competition is wired, the subscription is active and this is not the
 // competition's own decided stage. A stopped subscription's explicit retry
-// keeps the direct path.
+// keeps the direct path. The owner writer repeats the decision on the locked
+// subscription state (competitionOwnsAdmission).
 func (s *Service) awaitsCompetition(snapshot releaseSnapshot) bool {
-	return s != nil && s.competition != nil && snapshot.competitionDecision == nil && snapshot.subscriptionState == "active"
+	return s.competitionOwnsAdmission(snapshot, snapshot.subscriptionState)
+}
+
+// competitionOwnsAdmission is awaitsCompetition for a given subscription state.
+func (s *Service) competitionOwnsAdmission(snapshot releaseSnapshot, subscriptionState string) bool {
+	return s != nil && s.competition != nil && snapshot.competitionDecision == nil && subscriptionState == "active"
 }
 
 // markAwaitingCompetition records a downloadable release as waiting for its
@@ -91,8 +101,14 @@ func (s *Service) withCompetitionFollowUp(outcome worker.Outcome, managedAnimeID
 			return inner(ctx, scope, result)
 		}
 	}
-	previous := outcome.PostTransition
-	outcome.PostTransition = func(ctx context.Context, scope txscope.Tx) error {
+	outcome.PostTransition = withCompetitionEnqueue(outcome.PostTransition, managedAnimeID, competition.TriggerReleaseEvaluated)
+	return outcome
+}
+
+// withCompetitionEnqueue chains a post-transition hook that enqueues the
+// instance's competition while one of its releases waits.
+func withCompetitionEnqueue(previous func(context.Context, txscope.Tx) error, managedAnimeID, trigger string) func(context.Context, txscope.Tx) error {
+	return func(ctx context.Context, scope txscope.Tx) error {
 		if previous != nil {
 			if err := previous(ctx, scope); err != nil {
 				return err
@@ -102,22 +118,33 @@ func (s *Service) withCompetitionFollowUp(outcome worker.Outcome, managedAnimeID
 		if tx == nil {
 			return errors.New("competition enqueue transaction is nil")
 		}
-		_, err := competition.EnqueueTx(ctx, tx, s.workItems, managedAnimeID, competition.TriggerReleaseEvaluated, competition.WhenAwaiting)
+		_, err := competition.EnqueueTx(ctx, tx, managedAnimeID, trigger, competition.WhenAwaiting)
 		return err
 	}
-	return outcome
 }
 
-// withRefreshCompetition makes a refresh write that records the source's
-// refresh (success, not modified, failure) enqueue the instance's competition
-// when a release waits for it: a first refresh may end the first-round wait.
-// The writer locks the subscription first. When the write left the site's
-// circuit open, the other instances waiting on a never-refreshed source of
-// that site are enqueued after the commit (best effort; the circuit's end
-// refreshes those sources anyway).
-func (s *Service) withRefreshCompetition(outcome worker.Outcome, sourceID string) worker.Outcome {
+// withRefreshCompetition makes the end of a refresh enqueue the instance's
+// competition when a release waits for it: a first refresh (or a refresh that
+// ended without writing the runtime) may end the first-round wait. A refresh
+// that writes its runtime (success, not modified, failure, whether the item
+// finishes or retries) locks the subscription first and enqueues in the same
+// write: the runtime now has last_refresh_at, so the still-live item holds
+// nothing. A finished refresh with no runtime write (an ineligible source, a
+// parser policy fault) enqueues after its item left the live set. When the
+// write left the site's circuit open, the other instances waiting on a
+// never-refreshed source of that site are enqueued after the commit (best
+// effort; the circuit's end refreshes those sources anyway).
+func (s *Service) withRefreshCompetition(ctx context.Context, outcome worker.Outcome, sourceID string) worker.Outcome {
+	if s == nil || s.competition == nil || strings.TrimSpace(sourceID) == "" {
+		return outcome
+	}
 	inner := outcome.WriteOwner
-	if s == nil || s.competition == nil || inner == nil || strings.TrimSpace(sourceID) == "" {
+	if inner == nil {
+		if outcome.Kind == worker.OutcomeFinish {
+			if animeID := s.sourceManagedAnimeID(ctx, sourceID); animeID != "" {
+				outcome.PostTransition = withCompetitionEnqueue(outcome.PostTransition, animeID, competition.TriggerSourceRefreshed)
+			}
+		}
 		return outcome
 	}
 	var (
@@ -145,7 +172,7 @@ FOR UPDATE OF sub`, sourceID).Scan(&animeID, &provider)
 		if err != nil {
 			return 0, err
 		}
-		if _, err := competition.EnqueueTx(ctx, tx, s.workItems, animeID, competition.TriggerSourceRefreshed, competition.WhenAwaiting); err != nil {
+		if _, err := competition.EnqueueTx(ctx, tx, animeID, competition.TriggerSourceRefreshed, competition.WhenAwaiting); err != nil {
 			return 0, err
 		}
 		if provider != "" {
@@ -167,6 +194,17 @@ FOR UPDATE OF sub`, sourceID).Scan(&animeID, &provider)
 	return outcome
 }
 
+// sourceManagedAnimeID is the instance of a source ("" when it is gone).
+func (s *Service) sourceManagedAnimeID(ctx context.Context, sourceID string) string {
+	var id string
+	if err := s.db.QueryRowContext(ctx, `
+SELECT sub.managed_anime_id FROM rss_sources src JOIN subscriptions sub ON sub.id = src.subscription_id
+WHERE src.id = $1`, sourceID).Scan(&id); err != nil {
+		return ""
+	}
+	return id
+}
+
 // enqueueCircuitWaiters enqueues the competition of every other active
 // instance that waits for a release and has a never-refreshed source of the
 // paused site: the open circuit counts as that source's first refresh.
@@ -177,6 +215,7 @@ FROM rss_sources src
 JOIN subscriptions sub ON sub.id = src.subscription_id
 LEFT JOIN rss_source_runtime runtime ON runtime.rss_source_id = src.id
 WHERE src.provider = $1 AND sub.state = 'active' AND sub.managed_anime_id <> $2
+  AND sub.competition_first_round_at IS NULL
   AND runtime.last_refresh_at IS NULL`, provider, except)
 	if err != nil {
 		return
@@ -194,7 +233,7 @@ WHERE src.provider = $1 AND sub.state = 'active' AND sub.managed_anime_id <> $2
 		if err != nil {
 			return
 		}
-		if _, err := competition.EnqueueTx(ctx, tx, s.workItems, id, competition.TriggerSourceRefreshed, competition.WhenAwaiting); err != nil {
+		if _, err := competition.EnqueueTx(ctx, tx, id, competition.TriggerSourceRefreshed, competition.WhenAwaiting); err != nil {
 			_ = tx.Rollback()
 			continue
 		}
@@ -220,12 +259,19 @@ WHERE r.id = $1`, claim.Owner.ID).Scan(&id); err != nil {
 	return id
 }
 
-// competitionGate reads, without locks, whether the instance's round may run.
-// The first round waits until every source in scope has refreshed once (a
-// failed refresh writes last_refresh_at too, and a source whose site circuit
-// is open counts as refreshed); every round waits until no release evaluation
-// of the instance is live. A torrent fetch failure ends its evaluation as a
-// failed verdict, so it never holds the round.
+// competitionGate reads whether the instance's round may run (without locks
+// in the handler, again under the subscription lock at the commit):
+//
+//   - every round waits until no release evaluation of the instance is live;
+//   - only the instance's first round (no competition_first_round_at yet)
+//     also waits for the first refresh of every in-scope source that still
+//     has a live refresh item. A failed refresh writes last_refresh_at too,
+//     a source whose site circuit is open counts as refreshed, and a source
+//     with no runtime row or no live refresh item (a refresh that ended
+//     without writing) holds nothing, so the wait always ends.
+//
+// A torrent fetch failure ends its evaluation as a failed verdict, so it never
+// holds the round.
 func competitionGate(ctx context.Context, q queryer, managedAnimeID string) (string, error) {
 	var (
 		state, lifecycle      string
@@ -238,15 +284,17 @@ SELECT sub.state, m.lifecycle_state,
            JOIN releases r ON r.id = wi.owner_id
            JOIN rss_sources src ON src.id = r.rss_source_id
            WHERE wi.owner_type = 'release' AND wi.kind = 'release_evaluate' AND src.subscription_id = sub.id),
-       EXISTS (
+       sub.competition_first_round_at IS NULL AND EXISTS (
            SELECT 1 FROM rss_sources src
-           LEFT JOIN provider_group_selections selection
-             ON selection.subscription_id = src.subscription_id AND selection.provider = src.provider
-            AND selection.group_ref = src.provider_group_ref
+           JOIN work_items refresh ON refresh.owner_type = 'rss_source_runtime' AND refresh.owner_id = src.id AND refresh.kind = 'rss_refresh'
            LEFT JOIN rss_source_runtime runtime ON runtime.rss_source_id = src.id
            LEFT JOIN rss_provider_circuits circuit ON circuit.provider = src.provider
            WHERE src.subscription_id = sub.id
-             AND (src.source_kind <> 'provider_group' OR COALESCE(selection.available AND selection.effective_selected, FALSE))
+             -- competition.SourceInScopeSQL, spelled out: the query reads work_items
+             AND (src.source_kind <> 'provider_group' OR EXISTS (
+                 SELECT 1 FROM provider_group_selections selection
+                 WHERE selection.subscription_id = src.subscription_id AND selection.provider = src.provider
+                   AND selection.group_ref = src.provider_group_ref AND selection.available AND selection.effective_selected))
              AND runtime.last_refresh_at IS NULL
              AND NOT COALESCE(circuit.paused_until > CURRENT_TIMESTAMP, FALSE))
 FROM subscriptions sub
@@ -282,18 +330,37 @@ type decidedEvaluation struct {
 	outcome  worker.Outcome
 }
 
+// competitionRun is what the unlocked part of a round hands its commit.
+type competitionRun struct {
+	gate        string
+	round       competition.Round
+	evaluations []decidedEvaluation
+	// moved: a decided release changed before its decided stage.
+	moved bool
+	// retryExcluded: a decided release could not finish its decided stage
+	// now (a retry outcome or a failed owner write); it stays waiting and the
+	// round runs again later.
+	retryExcluded bool
+	// excluded names every decided release left unwritten.
+	excluded []string
+}
+
 // Handle runs one round of the instance's competition:
 //
 //  1. the gate (competitionGate) decides whether the round runs at all;
 //  2. the round is decided in a read-only transaction;
 //  3. every decided release runs the decided stage of the one release
-//     evaluation outside any transaction (target probe, naming vars, qB);
-//  4. the finish transaction locks the subscription, checks the gate again,
-//     decides the round again and refuses one that moved, then writes every
-//     release's evaluation in the same transaction.
+//     evaluation outside any transaction (target probe, naming vars, qB). A
+//     release whose decided stage fails is left out of the round: it is not
+//     written, its episodes stay closed this round, and the others commit;
+//  4. the commit (commitCompetition) locks the managed anime, the
+//     subscription and then the claim (the producers' order), checks the gate
+//     again, decides the round again and starts a fresh round when it moved,
+//     else writes every release in the same transaction.
 //
-// A release the round admitted that did not start a download lets the next
-// candidate of its episodes run in a follow-up round.
+// Contention never spends the attempt budget: a round whose inputs moved, or
+// whose commit lost a lock race, ends and leaves a fresh item that runs at
+// once.
 func (h competitionHandler) Handle(ctx context.Context, claim workitems.Claim) (worker.Outcome, error) {
 	s := h.service
 	if s == nil || s.db == nil || s.workItems == nil || s.competition == nil {
@@ -303,29 +370,31 @@ func (h competitionHandler) Handle(ctx context.Context, claim workitems.Claim) (
 		return worker.Outcome{}, fmt.Errorf("subscription competition handler received %s/%s", claim.Owner.Type, claim.Kind)
 	}
 	animeID := claim.Owner.ID
-	reason, err := competitionGate(ctx, s.db, animeID)
-	if err != nil {
+	run := competitionRun{}
+	var err error
+	if run.gate, err = competitionGate(ctx, s.db, animeID); err != nil {
 		return worker.Outcome{}, err
 	}
-	if reason != "" {
-		return worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: "waiting", ReasonCode: reason}, nil), nil
-	}
-	round, err := s.decideCompetition(ctx, animeID)
-	if err != nil {
-		return worker.Outcome{}, err
-	}
-	if len(round.Decisions) == 0 {
-		return worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: "idle", ReasonCode: round.Reason}, nil), nil
-	}
-	evaluations := make([]decidedEvaluation, 0, len(round.Decisions))
-	ids := make([]string, 0, len(round.Decisions))
-	for _, decision := range round.Decisions {
-		snapshot, err := s.loadReleaseSnapshot(ctx, decision.ReleaseID)
-		if err != nil {
+	if run.gate == "" {
+		if run.round, err = s.decideCompetition(ctx, animeID); err != nil {
 			return worker.Outcome{}, err
 		}
+		s.runDecidedStages(ctx, animeID, &run)
+	}
+	return s.commitCompetition(ctx, claim, run)
+}
+
+// runDecidedStages runs the decided stage of every release of the round.
+func (s *Service) runDecidedStages(ctx context.Context, animeID string, run *competitionRun) {
+	for _, decision := range run.round.Decisions {
+		snapshot, err := s.loadReleaseSnapshot(ctx, decision.ReleaseID)
+		if err != nil {
+			run.excluded = append(run.excluded, decision.ReleaseID)
+			continue
+		}
 		if snapshot.releaseVersion != decision.Version {
-			return worker.Retry("competition_round_changed", "a decided release changed before its evaluation", s.retryAfter, nil), nil
+			run.moved = true
+			return
 		}
 		decided := decision
 		snapshot.competitionDecision = &decided
@@ -334,30 +403,22 @@ func (h competitionHandler) Handle(ctx context.Context, claim workitems.Claim) (
 			ExpectedOwnerVersion: decision.Version, ManagedAnimeID: animeID,
 		}
 		outcome, err := s.evaluateRelease(ctx, releaseClaim, snapshot)
-		if err != nil {
-			return worker.Outcome{}, err
-		}
-		if outcome.Kind == worker.OutcomeRetry {
+		switch {
+		case err != nil:
+			run.excluded = append(run.excluded, decision.ReleaseID)
+		case outcome.Kind == worker.OutcomeRetry:
 			// The decided stage could not finish (naming vars interrupted, a
-			// qB lookup failed): nothing of the round is written.
-			return worker.Retry(outcome.ReasonCode, outcome.Reason, s.retryAfter, nil), nil
-		}
-		evaluations = append(evaluations, decidedEvaluation{decision: decision, outcome: outcome})
-		ids = append(ids, decision.ReleaseID)
-	}
-	outcome := worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: "decided", ReasonCode: "competition_decided", Reason: "releases: " + strings.Join(ids, ",")}, s.competitionCommitWriter(animeID, round, evaluations))
-	outcome.PostTransition = s.competitionFollowUp(animeID, round)
-	outcome.AfterCommit = func(ctx context.Context) {
-		for _, evaluation := range evaluations {
-			if evaluation.outcome.AfterCommit != nil {
-				evaluation.outcome.AfterCommit(ctx)
-			}
-		}
-		if s.eventHub != nil {
-			s.eventHub.Publish(events.Event{Target: events.TargetRSS, ManagedAnimeID: animeID})
+			// qB lookup failed): the release waits for a later round.
+			run.excluded = append(run.excluded, decision.ReleaseID)
+			run.retryExcluded = true
+		case outcome.Kind != worker.OutcomeFinish || outcome.WriteOwner == nil:
+			// Nothing to write (a parser policy fault): the release keeps
+			// waiting; it holds no episode of this round.
+			run.excluded = append(run.excluded, decision.ReleaseID)
+		default:
+			run.evaluations = append(run.evaluations, decidedEvaluation{decision: decision, outcome: outcome})
 		}
 	}
-	return outcome, nil
 }
 
 // ObserveRecovery: an interrupted round wrote nothing (its writes commit with
@@ -381,83 +442,270 @@ func (s *Service) decideCompetition(ctx context.Context, animeID string) (compet
 	return s.competition.CompetitionDecisions(ctx, tx, animeID)
 }
 
-// competitionCommitWriter writes a round inside the competition's finish
-// transaction. Lock order: subscription, then each release (the release owner
-// writers lock their own release row after the subscription they share).
-func (s *Service) competitionCommitWriter(animeID string, round competition.Round, evaluations []decidedEvaluation) workitems.OwnerWriter {
-	return func(ctx context.Context, scope txscope.Tx, _ workitems.OwnerResult) (int64, error) {
-		tx := scope.SQLTx()
-		if tx == nil {
-			return 0, errors.New("subscription competition transaction is nil")
-		}
-		var version int64
-		err := tx.QueryRowContext(ctx, `SELECT version FROM subscriptions WHERE managed_anime_id = $1 FOR UPDATE`, animeID).Scan(&version)
-		if errors.Is(err, sql.ErrNoRows) {
-			return 1, nil
-		}
-		if err != nil {
-			return 0, fmt.Errorf("lock subscription for competition: %w", err)
-		}
-		// A stopped subscription or a release evaluation that started since
-		// the round was decided ends the round unwritten; the evaluation's end
-		// enqueues the next one.
-		reason, err := competitionGate(ctx, tx, animeID)
-		if err != nil {
-			return 0, err
-		}
-		if reason != "" {
-			return version, nil
-		}
-		locked, err := s.competition.CompetitionDecisions(ctx, tx, animeID)
-		if err != nil {
-			return 0, err
-		}
-		if !locked.Equal(round) {
-			return 0, errCompetitionMoved
-		}
-		for _, evaluation := range evaluations {
-			if evaluation.outcome.WriteOwner == nil {
-				continue
-			}
-			if _, err := evaluation.outcome.WriteOwner(ctx, scope, evaluation.outcome.OwnerResult); err != nil {
-				return 0, fmt.Errorf("write competition decision for release %s: %w", evaluation.decision.ReleaseID, err)
-			}
-		}
-		return version, nil
-	}
+// competitionNext is the item a commit leaves behind.
+type competitionNext struct {
+	trigger string
+	retry   int
+	delayed bool
 }
 
-// competitionFollowUp enqueues the next round when this round's writes let a
-// release in that this round did not admit: an admitted release that did not
-// start a download frees its episodes for the next candidate. A release the
-// next round would admit again is not a reason (the set of candidates only
-// shrinks, so the follow-up chain is bounded).
-func (s *Service) competitionFollowUp(animeID string, round competition.Round) func(context.Context, txscope.Tx) error {
+// commitCompetition commits a round in the handler's own transaction and
+// reports it as a committed outcome. Lock order: managed anime (key share),
+// subscription, the claimed item, then each release (the release owner
+// writers lock their own release row after the subscription). Every producer
+// locks the subscription before it merges into the item, so none can deadlock
+// the commit. A commit that still loses a lock race (or meets a serialization
+// failure) ends the claim in a fresh transaction and leaves a fresh item.
+func (s *Service) commitCompetition(ctx context.Context, claim workitems.Claim, run competitionRun) (worker.Outcome, error) {
+	animeID := claim.Owner.ID
+	result, written, err := s.commitCompetitionTx(ctx, claim, run)
+	if err != nil {
+		if !competitionContention(err) {
+			return worker.Outcome{}, err
+		}
+		if err := s.restartCompetition(ctx, claim); err != nil {
+			return worker.Outcome{}, err
+		}
+		result, written = workitems.OwnerResult{State: "moved", ReasonCode: competition.TriggerRoundMoved, Reason: safeReason(err.Error())}, nil
+	}
+	outcome := worker.Committed(claim, result)
+	outcome.AfterCommit = func(ctx context.Context) {
+		for _, evaluation := range written {
+			if evaluation.outcome.AfterCommit != nil {
+				evaluation.outcome.AfterCommit(ctx)
+			}
+		}
+		if len(written) > 0 && s.eventHub != nil {
+			s.eventHub.Publish(events.Event{Target: events.TargetRSS, ManagedAnimeID: animeID})
+		}
+	}
+	return outcome, nil
+}
+
+func (s *Service) commitCompetitionTx(ctx context.Context, claim workitems.Claim, run competitionRun) (workitems.OwnerResult, []decidedEvaluation, error) {
+	animeID := claim.Owner.ID
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return workitems.OwnerResult{}, nil, fmt.Errorf("begin competition commit: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	version, found, err := lockCompetitionOwnerTx(ctx, tx, s.workItems, claim)
+	if err != nil {
+		return workitems.OwnerResult{}, nil, err
+	}
+	finish := func(result workitems.OwnerResult, written []decidedEvaluation, next *competitionNext) (workitems.OwnerResult, []decidedEvaluation, error) {
+		if err := s.workItems.FinishLockedTx(ctx, tx, claim, workitems.StateSucceeded, version); err != nil {
+			return workitems.OwnerResult{}, nil, err
+		}
+		if next != nil && found {
+			delay := s.retryAfter
+			if !next.delayed {
+				delay = 0
+			}
+			input := map[string]any{"trigger": next.trigger}
+			if next.retry > 0 {
+				input["retry"] = next.retry
+			}
+			if err := competition.MergeTx(ctx, tx, animeID, version, input, delay); err != nil {
+				return workitems.OwnerResult{}, nil, err
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return workitems.OwnerResult{}, nil, fmt.Errorf("commit competition: %w", err)
+		}
+		return result, written, nil
+	}
+	if !found {
+		return finish(workitems.OwnerResult{State: "idle", ReasonCode: competitionInactive}, nil, nil)
+	}
+	gate, err := competitionGate(ctx, tx, animeID)
+	if err != nil {
+		return workitems.OwnerResult{}, nil, err
+	}
+	switch {
+	case gate != "":
+		// Whatever keeps the gate closed (a live evaluation, a first refresh)
+		// enqueues the competition when it ends; a stopped subscription's
+		// resume does.
+		return finish(workitems.OwnerResult{State: "waiting", ReasonCode: gate}, nil, nil)
+	case run.gate != "" || run.moved:
+		// The gate opened after the unlocked read, or a decided release moved:
+		// decide again in a fresh round.
+		return finish(workitems.OwnerResult{State: "moved", ReasonCode: competition.TriggerRoundMoved}, nil, &competitionNext{trigger: competition.TriggerRoundMoved})
+	}
+	locked, err := s.competition.CompetitionDecisions(ctx, tx, animeID)
+	if err != nil {
+		return workitems.OwnerResult{}, nil, err
+	}
+	if !locked.Equal(run.round) {
+		return finish(workitems.OwnerResult{State: "moved", ReasonCode: competition.TriggerRoundMoved}, nil, &competitionNext{trigger: competition.TriggerRoundMoved})
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE subscriptions SET competition_first_round_at = CURRENT_TIMESTAMP WHERE managed_anime_id = $1 AND competition_first_round_at IS NULL`, animeID); err != nil {
+		return workitems.OwnerResult{}, nil, fmt.Errorf("record the first competition round: %w", err)
+	}
+	written := make([]decidedEvaluation, 0, len(run.evaluations))
+	excluded := append([]string(nil), run.excluded...)
+	retryExcluded := run.retryExcluded
+	for _, evaluation := range run.evaluations {
+		ok, err := writeCompetitionDecisionTx(ctx, tx, evaluation)
+		if err != nil {
+			if competitionContention(err) {
+				return workitems.OwnerResult{}, nil, err
+			}
+			excluded = append(excluded, evaluation.decision.ReleaseID)
+			retryExcluded = true
+			continue
+		}
+		if ok {
+			written = append(written, evaluation)
+		}
+	}
+	next, err := s.competitionFollowUp(ctx, tx, claim, run.round, retryExcluded)
+	if err != nil {
+		return workitems.OwnerResult{}, nil, err
+	}
+	ids := make([]string, 0, len(written))
+	for _, evaluation := range written {
+		ids = append(ids, evaluation.decision.ReleaseID)
+	}
+	reason := "releases: " + strings.Join(ids, ",")
+	if len(excluded) > 0 {
+		reason += "; left waiting: " + strings.Join(excluded, ",")
+	}
+	result := workitems.OwnerResult{State: "decided", ReasonCode: "competition_decided", Reason: safeReason(reason)}
+	if len(run.round.Decisions) == 0 {
+		result = workitems.OwnerResult{State: "idle", ReasonCode: run.round.Reason}
+	}
+	return finish(result, written, next)
+}
+
+// lockCompetitionOwnerTx takes the commit's locks in the producers' order:
+// the managed anime (key share), the subscription row, then the claim. found
+// is false when the instance has no subscription any more.
+func lockCompetitionOwnerTx(ctx context.Context, tx *sql.Tx, store *workitems.Store, claim workitems.Claim) (int64, bool, error) {
+	animeID := claim.Owner.ID
+	if _, err := tx.ExecContext(ctx, `SELECT 1 FROM managed_anime WHERE id = $1 FOR KEY SHARE`, animeID); err != nil {
+		return 0, false, fmt.Errorf("lock managed anime for competition: %w", err)
+	}
+	var version int64
+	found := true
+	err := tx.QueryRowContext(ctx, `SELECT version FROM subscriptions WHERE managed_anime_id = $1 FOR UPDATE`, animeID).Scan(&version)
+	if errors.Is(err, sql.ErrNoRows) {
+		found, version = false, claim.ExpectedOwnerVersion
+	} else if err != nil {
+		return 0, false, fmt.Errorf("lock subscription for competition: %w", err)
+	}
+	if err := store.LockClaimTx(ctx, tx, claim); err != nil {
+		return 0, false, err
+	}
+	return version, found, nil
+}
+
+// writeCompetitionDecisionTx writes one decided release behind a savepoint:
+// a release whose owner write fails (its inputs changed under the lock, an
+// acceptance refusal) is rolled back alone and keeps waiting. ok is false
+// when the release was left unwritten.
+func writeCompetitionDecisionTx(ctx context.Context, tx *sql.Tx, evaluation decidedEvaluation) (bool, error) {
+	if _, err := tx.ExecContext(ctx, `SAVEPOINT competition_release`); err != nil {
+		return false, fmt.Errorf("open competition release savepoint: %w", err)
+	}
+	if _, err := evaluation.outcome.WriteOwner(ctx, txscope.Wrap(tx), evaluation.outcome.OwnerResult); err != nil {
+		if _, rollbackErr := tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT competition_release`); rollbackErr != nil {
+			return false, fmt.Errorf("roll back competition release %s: %w", evaluation.decision.ReleaseID, rollbackErr)
+		}
+		return false, fmt.Errorf("write competition decision for release %s: %w", evaluation.decision.ReleaseID, err)
+	}
+	if _, err := tx.ExecContext(ctx, `RELEASE SAVEPOINT competition_release`); err != nil {
+		return false, fmt.Errorf("release competition release savepoint: %w", err)
+	}
+	return true, nil
+}
+
+// competitionFollowUp names the item the commit leaves behind. The next round
+// runs at once when this round's writes let in a release this round did not
+// admit (an admitted release that did not start a download frees its
+// episodes for the next candidate; a release admitted again is not a reason,
+// so the chain is bounded). A round that left a release waiting after a
+// failed decided stage runs again after the retry delay, at most MaxAttempts
+// times in a row.
+func (s *Service) competitionFollowUp(ctx context.Context, tx *sql.Tx, claim workitems.Claim, round competition.Round, retryExcluded bool) (*competitionNext, error) {
+	animeID := claim.Owner.ID
 	admitted := map[string]bool{}
 	for _, decision := range round.Decisions {
 		if decision.Admitted {
 			admitted[decision.ReleaseID] = true
 		}
 	}
-	return func(ctx context.Context, scope txscope.Tx) error {
-		tx := scope.SQLTx()
-		if tx == nil {
-			return errors.New("subscription competition transaction is nil")
-		}
-		reason, err := competitionGate(ctx, tx, animeID)
-		if err != nil || reason != "" {
-			return err
-		}
-		next, err := s.competition.CompetitionDecisions(ctx, tx, animeID)
-		if err != nil {
-			return err
-		}
-		for _, decision := range next.Decisions {
-			if decision.Admitted && !admitted[decision.ReleaseID] {
-				_, err := competition.EnqueueTx(ctx, tx, s.workItems, animeID, competition.TriggerFollowUp, competition.Always)
-				return err
-			}
-		}
-		return nil
+	gate, err := competitionGate(ctx, tx, animeID)
+	if err != nil || gate != "" {
+		return nil, err
 	}
+	next, err := s.competition.CompetitionDecisions(ctx, tx, animeID)
+	if err != nil {
+		return nil, err
+	}
+	for _, decision := range next.Decisions {
+		if decision.Admitted && !admitted[decision.ReleaseID] {
+			return &competitionNext{trigger: competition.TriggerFollowUp}, nil
+		}
+	}
+	if retryExcluded {
+		if retry := competitionRetryCount(claim.InputSnapshot) + 1; retry <= competition.MaxAttempts {
+			return &competitionNext{trigger: competition.TriggerRoundRetry, retry: retry, delayed: true}, nil
+		}
+	}
+	return nil, nil
+}
+
+// competitionRetryCount reads how many delayed retries in a row led to this
+// round.
+func competitionRetryCount(input json.RawMessage) int {
+	var snapshot struct {
+		Trigger string `json:"trigger"`
+		Retry   int    `json:"retry"`
+	}
+	if json.Unmarshal(input, &snapshot) != nil || snapshot.Trigger != competition.TriggerRoundRetry {
+		return 0
+	}
+	return snapshot.Retry
+}
+
+// restartCompetition ends a claim whose commit lost a lock race and leaves a
+// fresh item that runs at once, so contention spends no attempt.
+func (s *Service) restartCompetition(ctx context.Context, claim workitems.Claim) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin competition restart: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	version, found, err := lockCompetitionOwnerTx(ctx, tx, s.workItems, claim)
+	if err != nil {
+		return err
+	}
+	if err := s.workItems.FinishLockedTx(ctx, tx, claim, workitems.StateSucceeded, version); err != nil {
+		return err
+	}
+	if found {
+		if err := competition.MergeTx(ctx, tx, claim.Owner.ID, version, map[string]any{"trigger": competition.TriggerRoundMoved}, 0); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit competition restart: %w", err)
+	}
+	return nil
+}
+
+// competitionContention reports a lock race or serialization failure of the
+// commit: deadlock_detected, serialization_failure, lock_not_available.
+func competitionContention(err error) bool {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+	switch pgErr.Code {
+	case "40P01", "40001", "55P03":
+		return true
+	}
+	return false
 }

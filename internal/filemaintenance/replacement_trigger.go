@@ -110,7 +110,7 @@ func (s *ReplacementTriggerService) triggerFallback(ctx context.Context, reason,
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := competition.EnqueueTx(ctx, tx, s.workItems, animeID, reason, competition.Always); err != nil {
+	if _, err := competition.EnqueueTx(ctx, tx, animeID, reason, competition.Always); err != nil {
 		s.recordFailure(ctx, animeID, err)
 		return err
 	}

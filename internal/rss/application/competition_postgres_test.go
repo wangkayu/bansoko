@@ -26,7 +26,10 @@ const competitionProfile = `{"version":"profile-v1","items":[{"key":"subgroup.sc
 // competitionFixture is one AniBT subscription instance with two subgroup
 // sources (alpha: source-rss-test, beta: source-beta), both selected with
 // score 50, the given admission mode, and the production wiring: the target
-// admission, the replacement decision owner and the subscription competition.
+// admission, the replacement decision owner, the subscription competition and
+// a recorder of release_discovered notices. No source has refreshed yet: each
+// scenario states which refreshes happened (markRefreshed) or are still
+// queued (queueRefresh).
 type competitionFixture struct {
 	t         *testing.T
 	db        *sql.DB
@@ -34,6 +37,7 @@ type competitionFixture struct {
 	service   *Service
 	fetcher   *rssFakeSourceFetcher
 	decisions *filemaintenance.ReplacementDecisionService
+	notices   *discoveryNotices
 	sizes     int64
 }
 
@@ -67,10 +71,6 @@ VALUES ('sel-alpha', $1, 'anibt', 'alpha', 'Alpha', 'auto', TRUE, 50, TRUE, 1),
        ('sel-beta', $1, 'anibt', 'beta', 'Beta', 'auto', TRUE, 50, TRUE, 1)`, subscriptionID); err != nil {
 		t.Fatal(err)
 	}
-	// Both sources have refreshed once (the state every first round waits for).
-	if _, err := db.Exec(`UPDATE rss_source_runtime SET last_refresh_at = CURRENT_TIMESTAMP, health = 'ready'`); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := db.Exec(`
 UPDATE anime_business_configs
 SET admission_mode = $2, quality_profile = $3::jsonb,
@@ -96,7 +96,80 @@ WHERE managed_anime_id = $1`, "anime-rss-test", mode, competitionProfile); err !
 	decisions.SetMediaFactsStore(mediaFacts)
 	service.SetReplacementAdmission(decisions)
 	service.SetSubscriptionCompetition(decisions)
-	return &competitionFixture{t: t, db: db, store: store, service: service, fetcher: fetcher, decisions: decisions, sizes: 1024}
+	notices := &discoveryNotices{}
+	service.SetBusinessDeliveryEnqueuer(notices)
+	return &competitionFixture{t: t, db: db, store: store, service: service, fetcher: fetcher, decisions: decisions, notices: notices, sizes: 1024}
+}
+
+// markRefreshed records a completed refresh of each source.
+func (f *competitionFixture) markRefreshed(sourceIDs ...string) {
+	f.t.Helper()
+	for _, id := range sourceIDs {
+		if _, err := f.db.Exec(`UPDATE rss_source_runtime SET last_refresh_at = CURRENT_TIMESTAMP, last_success_at = CURRENT_TIMESTAMP, health = 'ready' WHERE rss_source_id = $1`, id); err != nil {
+			f.t.Fatal(err)
+		}
+	}
+}
+
+// queueRefresh enqueues a source's refresh the way a subscription start does
+// (the production idempotency key), without running it.
+func (f *competitionFixture) queueRefresh(sourceID string) {
+	f.t.Helper()
+	ctx := context.Background()
+	var version int64
+	if err := f.db.QueryRow(`SELECT version FROM rss_source_runtime WHERE rss_source_id = $1`, sourceID).Scan(&version); err != nil {
+		f.t.Fatal(err)
+	}
+	tx, err := f.db.BeginTx(ctx, nil)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	if _, err := f.store.Create(ctx, tx, workitems.WorkItemSpec{
+		Owner: workitems.OwnerRef{Type: workitems.OwnerRSSSourceRuntime, ID: sourceID}, Kind: workitems.KindRSSRefresh,
+		IdempotencyKey: "rss_refresh:" + sourceID, InputSnapshot: json.RawMessage(`{"trigger":"subscription_started"}`),
+		MaxAttempts: 3, ExpectedOwnerVersion: version,
+	}); err != nil {
+		_ = tx.Rollback()
+		f.t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+// runQueuedRefresh claims a queued refresh and applies its outcome the way
+// the runtime does.
+func (f *competitionFixture) runQueuedRefresh(sourceID string) {
+	f.t.Helper()
+	ctx := context.Background()
+	claim, err := f.store.ClaimDue(ctx, "competition-test-refresher", []string{workitems.KindRSSRefresh}, time.Minute)
+	if err != nil || claim.Owner.ID != sourceID {
+		f.t.Fatalf("claim the refresh of %s: %+v %v", sourceID, claim, err)
+	}
+	outcome, err := f.service.Handle(ctx, claim)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	switch outcome.Kind {
+	case worker.OutcomeRetry:
+		if _, err := f.store.Retry(ctx, claim, outcome.ReasonCode, outcome.Reason, outcome.RetryAfter, outcome.WriteOwner); err != nil {
+			f.t.Fatal(err)
+		}
+	case worker.OutcomeFinish:
+		f.finish(claim, outcome)
+	default:
+		f.t.Fatalf("refresh outcome = %+v", outcome)
+	}
+}
+
+// firstRoundDone reports whether the instance committed its first round.
+func (f *competitionFixture) firstRoundDone() bool {
+	f.t.Helper()
+	var done bool
+	if err := f.db.QueryRow(`SELECT competition_first_round_at IS NOT NULL FROM subscriptions WHERE id = 'sub-rss-test'`).Scan(&done); err != nil {
+		f.t.Fatal(err)
+	}
+	return done
 }
 
 // addRelease stores one feed item of a source with its own torrent (one
@@ -170,14 +243,13 @@ func (f *competitionFixture) evaluate(ids ...string) {
 	}
 }
 
-// runCompetition claims the instance's live competition item and runs it the
-// way the runtime does. ran is false when no item is due.
-func (f *competitionFixture) runCompetition() (workitems.OwnerResult, bool) {
+// claimCompetition claims the instance's due competition item (ok is false
+// when none is due).
+func (f *competitionFixture) claimCompetition() (workitems.Claim, bool) {
 	f.t.Helper()
-	ctx := context.Background()
-	claim, err := f.store.ClaimDue(ctx, "competition-test-worker", []string{workitems.KindSubscriptionCompetition}, time.Minute)
+	claim, err := f.store.ClaimDue(context.Background(), "competition-test-worker", []string{workitems.KindSubscriptionCompetition}, time.Minute)
 	if errors.Is(err, workitems.ErrNoDueWork) {
-		return workitems.OwnerResult{}, false
+		return workitems.Claim{}, false
 	}
 	if err != nil {
 		f.t.Fatal(err)
@@ -185,16 +257,37 @@ func (f *competitionFixture) runCompetition() (workitems.OwnerResult, bool) {
 	if claim.Owner.Type != workitems.OwnerFileMaintenance || claim.Owner.ID != "anime-rss-test" {
 		f.t.Fatalf("competition owner = %+v", claim.Owner)
 	}
+	return claim, true
+}
+
+// handleCompetition runs the competition handler of a claim; the handler
+// commits its round itself and returns a committed receipt.
+func (f *competitionFixture) handleCompetition(claim workitems.Claim) (worker.Outcome, error) {
+	ctx := context.Background()
 	outcome, err := f.service.CompetitionHandler().Handle(ctx, claim)
 	if err != nil {
-		f.t.Fatalf("competition: %v", err)
+		return outcome, err
 	}
-	if outcome.Kind != worker.OutcomeFinish {
-		f.t.Fatalf("competition outcome = %+v", outcome)
+	if outcome.Kind != worker.OutcomeCommitted || outcome.CommittedClaim == nil || outcome.CommittedClaim.WorkItemID != claim.ID {
+		return outcome, fmt.Errorf("competition outcome = %+v", outcome)
 	}
-	f.finish(claim, outcome)
 	if outcome.AfterCommit != nil {
 		outcome.AfterCommit(ctx)
+	}
+	return outcome, nil
+}
+
+// runCompetition claims the instance's live competition item and runs it the
+// way the runtime does. ran is false when no item is due.
+func (f *competitionFixture) runCompetition() (workitems.OwnerResult, bool) {
+	f.t.Helper()
+	claim, ok := f.claimCompetition()
+	if !ok {
+		return workitems.OwnerResult{}, false
+	}
+	outcome, err := f.handleCompetition(claim)
+	if err != nil {
+		f.t.Fatalf("competition: %v", err)
 	}
 	return outcome.OwnerResult, true
 }
@@ -300,6 +393,7 @@ func TestCompetitionAdmitsOneReleasePerEpisodePostgres(t *testing.T) {
 	} {
 		t.Run(tc.mode, func(t *testing.T) {
 			f := newCompetitionFixture(t, tc.mode)
+			f.markRefreshed("source-rss-test", "source-beta")
 			f.addRelease("a-1080", "source-rss-test", "[Alpha] Test Show - 01 [1080p]", 1)
 			f.addRelease("a-720", "source-rss-test", "[Alpha] Test Show - 01 [720p]", 1)
 			f.addRelease("b-480", "source-beta", "[Beta] Test Show - 01 [480p]", 1)
@@ -345,6 +439,7 @@ func TestCompetitionAdmitsOneReleasePerEpisodePostgres(t *testing.T) {
 // same work item as the Go enqueue.
 func TestCompetitionFallbackAfterFailedDownloadPostgres(t *testing.T) {
 	f := newCompetitionFixture(t, "single_copy")
+	f.markRefreshed("source-rss-test", "source-beta")
 	f.addRelease("a-1080", "source-rss-test", "[Alpha] Test Show - 01 [1080p]", 1)
 	f.addRelease("a-720", "source-rss-test", "[Alpha] Test Show - 01 [720p]", 1)
 	f.addRelease("b-480", "source-beta", "[Beta] Test Show - 01 [480p]", 1)
@@ -359,7 +454,8 @@ func TestCompetitionFallbackAfterFailedDownloadPostgres(t *testing.T) {
 		t.Fatalf("the settle must enqueue the competition: %+v", settled)
 	}
 	// Go twin: the same owner, kind, key, budget and owner-version
-	// expectation as the settle trigger's work_item_merge.
+	// expectation as the settle trigger (both merge through
+	// subscription_competition_merge).
 	if _, err := ownerTestDB(t).Exec(`DELETE FROM work_items WHERE kind = 'subscription_competition'`); err != nil {
 		t.Fatal(err)
 	}
@@ -367,7 +463,7 @@ func TestCompetitionFallbackAfterFailedDownloadPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := competition.EnqueueTx(context.Background(), tx, f.store, "anime-rss-test", competition.TriggerAcquisitionSettled, competition.Always); err != nil {
+	if _, err := competition.EnqueueTx(context.Background(), tx, "anime-rss-test", competition.TriggerAcquisitionSettled, competition.Always); err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -413,9 +509,9 @@ FROM work_items WHERE kind = 'subscription_competition'`).Scan(&shape.ownerType,
 // itself enqueues the competition.
 func TestCompetitionFirstRoundWaitsForEveryFirstRefreshPostgres(t *testing.T) {
 	f := newCompetitionFixture(t, "single_copy")
-	if _, err := f.db.Exec(`UPDATE rss_source_runtime SET last_refresh_at = NULL, health = 'unknown' WHERE rss_source_id = 'source-beta'`); err != nil {
-		t.Fatal(err)
-	}
+	// The start queued both first refreshes; alpha's has run.
+	f.markRefreshed("source-rss-test")
+	f.queueRefresh("source-beta")
 	f.addRelease("a-720", "source-rss-test", "[Alpha] Test Show - 01 [720p]", 1)
 	f.evaluate("a-720")
 	f.requireAwaiting("a-720")
@@ -425,23 +521,12 @@ func TestCompetitionFirstRoundWaitsForEveryFirstRefreshPostgres(t *testing.T) {
 		t.Fatalf("a waiting round enqueues nothing itself: %d", f.liveCompetitions())
 	}
 
+	if f.firstRoundDone() {
+		t.Fatal("a waiting round is not the first round")
+	}
 	// beta's first refresh fails: it is done, and the round runs.
 	f.fetcher.err = errors.New("feed unreachable")
-	claim := createRSSClaim(t, f.db, f.store, workitems.OwnerRef{Type: workitems.OwnerRSSSourceRuntime, ID: "source-beta"}, workitems.KindRSSRefresh, 1)
-	outcome, err := f.service.Handle(context.Background(), claim)
-	if err != nil {
-		t.Fatal(err)
-	}
-	switch outcome.Kind {
-	case worker.OutcomeRetry:
-		if _, err := f.store.Retry(context.Background(), claim, outcome.ReasonCode, outcome.Reason, outcome.RetryAfter, outcome.WriteOwner); err != nil {
-			t.Fatal(err)
-		}
-	case worker.OutcomeFinish:
-		f.finish(claim, outcome)
-	default:
-		t.Fatalf("refresh outcome = %+v", outcome)
-	}
+	f.runQueuedRefresh("source-beta")
 	var refreshed sql.NullTime
 	if err := f.db.QueryRow(`SELECT last_refresh_at FROM rss_source_runtime WHERE rss_source_id = 'source-beta'`).Scan(&refreshed); err != nil || !refreshed.Valid {
 		t.Fatalf("a failed refresh records the refresh: %v %v", refreshed, err)
@@ -451,6 +536,9 @@ func TestCompetitionFirstRoundWaitsForEveryFirstRefreshPostgres(t *testing.T) {
 	}
 	f.mustRunCompetition("competition_decided")
 	f.requireAdmitted("a-720")
+	if !f.firstRoundDone() {
+		t.Fatal("the decided round is the instance's first round")
+	}
 }
 
 // After the first round, a release that arrives on one source is decided as
@@ -460,6 +548,7 @@ func TestCompetitionFirstRoundWaitsForEveryFirstRefreshPostgres(t *testing.T) {
 // holds no round.
 func TestCompetitionIncrementalRoundWaitsOnlyForEvaluationsPostgres(t *testing.T) {
 	f := newCompetitionFixture(t, "single_copy")
+	f.markRefreshed("source-rss-test", "source-beta")
 	f.addRelease("a-720", "source-rss-test", "[Alpha] Test Show - 01 [720p]", 1)
 	f.evaluate("a-720")
 	f.mustRunCompetition("competition_decided")
@@ -507,6 +596,7 @@ func TestCompetitionReplacementAdmissionPostgres(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newCompetitionFixture(t, "single_copy")
+			f.markRefreshed("source-rss-test", "source-beta")
 			f.addRelease("a-720", "source-rss-test", "[Alpha] Test Show - 01 [720p]", 1)
 			f.evaluate("a-720")
 			f.mustRunCompetition("competition_decided")
@@ -541,24 +631,18 @@ func TestCompetitionReplacementAdmissionPostgres(t *testing.T) {
 // episode is left alone.
 func TestCompetitionSitePolicyReRanksOnlyWaitingReleasesPostgres(t *testing.T) {
 	f := newCompetitionFixture(t, "single_copy")
+	f.markRefreshed("source-rss-test", "source-beta")
 	f.addRelease("a-02", "source-rss-test", "[Alpha] Test Show - 02 [1080p]", 2)
 	f.evaluate("a-02")
 	f.mustRunCompetition("competition_decided")
 	f.requireAdmitted("a-02")
 
-	// Episode 1 arrives from both groups while beta's source has not
-	// refreshed yet: the two releases wait.
-	if _, err := f.db.Exec(`UPDATE rss_source_runtime SET last_refresh_at = NULL WHERE rss_source_id = 'source-beta'`); err != nil {
-		t.Fatal(err)
-	}
+	// Episode 1 arrives from both groups; the two releases wait for the
+	// round their evaluations enqueued.
 	f.addRelease("a-01", "source-rss-test", "[Alpha] Test Show - 01 [1080p]", 1)
 	f.addRelease("b-01", "source-beta", "[Beta] Test Show - 01 [720p]", 1)
 	f.evaluate("a-01", "b-01")
-	f.mustRunCompetition(competitionWaitingFirstRefresh)
 	f.requireAwaiting("a-01", "b-01")
-	if _, err := f.db.Exec(`UPDATE rss_source_runtime SET last_refresh_at = CURRENT_TIMESTAMP WHERE rss_source_id = 'source-beta'`); err != nil {
-		t.Fatal(err)
-	}
 
 	// The site policy now scores beta above alpha (the recompute writes the
 	// effective scores and enqueues the waiting instance's competition).
@@ -569,7 +653,7 @@ func TestCompetitionSitePolicyReRanksOnlyWaitingReleasesPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if enqueued, err := competition.EnqueueTx(context.Background(), tx, f.store, "anime-rss-test", competition.TriggerSitePolicy, competition.WhenAwaiting); err != nil || !enqueued {
+	if enqueued, err := competition.EnqueueTx(context.Background(), tx, "anime-rss-test", competition.TriggerSitePolicy, competition.WhenAwaiting); err != nil || !enqueued {
 		t.Fatalf("a site policy change must enqueue the waiting instance: %v %v", enqueued, err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -589,7 +673,7 @@ func TestCompetitionSitePolicyReRanksOnlyWaitingReleasesPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer tx.Rollback()
-	if enqueued, err := competition.EnqueueTx(context.Background(), tx, f.store, "anime-rss-test", competition.TriggerSitePolicy, competition.WhenAwaiting); err != nil || enqueued {
+	if enqueued, err := competition.EnqueueTx(context.Background(), tx, "anime-rss-test", competition.TriggerSitePolicy, competition.WhenAwaiting); err != nil || enqueued {
 		t.Fatalf("no waiting release, no competition: %v %v", enqueued, err)
 	}
 }
@@ -598,6 +682,7 @@ func TestCompetitionSitePolicyReRanksOnlyWaitingReleasesPostgres(t *testing.T) {
 // competition; in a stopped subscription it keeps the direct admission.
 func TestCompetitionRetryAwaitsInActiveSubscriptionPostgres(t *testing.T) {
 	f := newCompetitionFixture(t, "single_copy")
+	f.markRefreshed("source-rss-test", "source-beta")
 	f.addRelease("a-720", "source-rss-test", "[Alpha] Test Show - 01 [720p]", 1)
 	f.evaluate("a-720")
 	f.mustRunCompetition("competition_decided")

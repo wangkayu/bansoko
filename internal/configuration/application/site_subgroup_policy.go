@@ -11,7 +11,6 @@ import (
 	"bansoko/internal/persistence/txscope"
 	selectionapp "bansoko/internal/selection/application"
 	"bansoko/internal/subscription/competition"
-	"bansoko/internal/workitems"
 )
 
 // siteSubgroupTarget is one active provider instance whose group selection
@@ -36,7 +35,6 @@ func recomputeSiteSubgroupPolicyTx(ctx context.Context, db *sql.DB, tx *sql.Tx) 
 	}
 	sort.Slice(targets, func(i, j int) bool { return targets[i].managedAnimeID < targets[j].managedAnimeID })
 	recomputer := automationapp.Dispatcher{DB: db, PolicyReader: selectionapp.NewService(db)}
-	store := &workitems.Store{DB: db, RetentionDays: workitems.DefaultRetentionDays}
 	for _, target := range targets {
 		var lifecycle, state string
 		err := tx.QueryRowContext(ctx, `
@@ -61,7 +59,7 @@ FOR UPDATE OF ma`, target.managedAnimeID, target.subscriptionID).Scan(&lifecycle
 		// waiting for the competition; admitted downloads and placed files
 		// are left to the replacement.
 		if state == "active" {
-			if _, err := competition.EnqueueTx(ctx, tx, store, target.managedAnimeID, competition.TriggerSitePolicy, competition.WhenAwaiting); err != nil {
+			if _, err := competition.EnqueueTx(ctx, tx, target.managedAnimeID, competition.TriggerSitePolicy, competition.WhenAwaiting); err != nil {
 				return fmt.Errorf("enqueue competition of instance %s: %w", target.managedAnimeID, err)
 			}
 		}

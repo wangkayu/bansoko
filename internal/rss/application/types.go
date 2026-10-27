@@ -251,7 +251,7 @@ func (s *Service) Handle(ctx context.Context, claim workitems.Claim) (worker.Out
 	case workitems.KindRSSRefresh:
 		outcome, err = s.handleRefresh(ctx, claim)
 		if err == nil {
-			outcome = s.withRefreshCompetition(outcome, claim.Owner.ID)
+			outcome = s.withRefreshCompetition(ctx, outcome, claim.Owner.ID)
 		}
 	case workitems.KindReleaseEvaluate:
 		outcome, err = s.handleReleaseEvaluate(ctx, claim)
@@ -444,8 +444,15 @@ type releaseSnapshot struct {
 	acquisitionState string
 	taskCount        int
 	// manualRetry marks an evaluation run for the explicit retry command
-	// instead of the release_evaluate worker.
+	// instead of the release_evaluate worker. A release an explicit retry left
+	// waiting for its active subscription's competition keeps the retry
+	// (retryKey from releases.competition_retry_key): every later evaluation
+	// of it, the competition's decided stage included, runs as that retry.
 	manualRetry bool
+	// retryKey is the explicit retry's idempotency key: the key of the
+	// placement redownload requests it recorded, stored with a waiting
+	// release.
+	retryKey string
 	// newReleasesOnly/startBaselineAt are the instance's frozen new-releases-only
 	// option and its baseline (the instance creation time).
 	newReleasesOnly bool

@@ -21,6 +21,7 @@ import (
 	"bansoko/internal/persistence/txscope"
 	providerdomain "bansoko/internal/provider/domain"
 	"bansoko/internal/runtime/worker"
+	"bansoko/internal/subscription/competition"
 	subscriptiondomain "bansoko/internal/subscription/domain"
 	"bansoko/internal/workitems"
 	"github.com/google/uuid"
@@ -236,7 +237,8 @@ func (s *Service) loadReleaseSnapshot(ctx context.Context, releaseID string) (re
        pp.parser_kind, pp.parser_version,
        COALESCE(lifecycle.lifecycle_state, ''), COALESCE(task.state, ''), COALESCE(acq.state, ''),
        (SELECT count(*) FROM download_tasks owned WHERE owned.release_id = r.id),
-       sub.new_releases_only, sub.start_baseline_at, `+ReleasePlacementIssueSQL("sub.managed_anime_id")+`
+       sub.new_releases_only, sub.start_baseline_at, `+ReleasePlacementIssueSQL("sub.managed_anime_id")+`,
+       CASE WHEN r.verdict = 'awaiting_competition' THEN COALESCE(r.competition_retry_key, '') ELSE '' END
 	FROM releases r
 	JOIN rss_sources src ON src.id = r.rss_source_id
 	JOIN subscriptions sub ON sub.id = src.subscription_id
@@ -259,7 +261,7 @@ WHERE r.id = $1`, releaseID).Scan(
 		&snapshot.metadataVersion, &snapshot.rulesVersion,
 		&policyKind, &policyVersion,
 		&snapshot.lifecycleState, &snapshot.taskState, &snapshot.acquisitionState, &snapshot.taskCount,
-		&snapshot.newReleasesOnly, &snapshot.startBaselineAt, &snapshot.placementMissing); err != nil {
+		&snapshot.newReleasesOnly, &snapshot.startBaselineAt, &snapshot.placementMissing, &snapshot.retryKey); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return releaseSnapshot{}, fmt.Errorf("release %q not found: %w", releaseID, err)
 		}
@@ -281,6 +283,10 @@ WHERE r.id = $1`, releaseID).Scan(
 	snapshot.evaluationVersion = evaluationVersion
 	snapshot.downloadTaskID = downloadTaskID
 	snapshot.subscriptionState = subscriptionState
+	// An explicit retry that left the release waiting for the competition
+	// stays that retry while the subscription is active (a stopped
+	// subscription's waiting release does nothing until its resume).
+	snapshot.manualRetry = snapshot.retryKey != "" && subscriptionState == "active"
 	snapshot.anibtMode = anibtMode.String
 	bgm, tmdb, err := metadataBindingsFromColumns(bgmWorkID, tmdbWorkID, tmdbMediaKind, tmdbSeason, snapshot.managedAnimeID)
 	if err != nil {
@@ -393,13 +399,21 @@ FOR UPDATE`, snapshot.subscriptionID).Scan(&currentSubscriptionState); err != ni
 
 		var currentVersion int64
 		var currentTask sql.NullString
-		var currentVerdict string
+		var currentVerdict, storedRetryKey string
 		if err := tx.QueryRowContext(ctx, `
-SELECT version, download_task_id, verdict
+SELECT version, download_task_id, verdict, COALESCE(competition_retry_key, '')
 FROM releases
 WHERE id = $1
-FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVerdict); err != nil {
+FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVerdict, &storedRetryKey); err != nil {
 			return 0, fmt.Errorf("lock release for evaluation: %w", err)
+		}
+		// The competition owns the admission of an active subscription,
+		// decided on the locked state: a release evaluated for the direct
+		// path (a stopped subscription's explicit retry) whose subscription
+		// is active now waits for the competition instead.
+		awaitNow := s.competitionOwnsAdmission(snapshot, currentSubscriptionState)
+		if awaitNow && acquisition != nil {
+			return 0, errCompetitionActivated
 		}
 		if snapshot.manualRetry {
 			if !selected {
@@ -519,7 +533,7 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 				}, currentInputs.effective, currentInputs.metadataHold, currentRules, resolved.Identity)
 			}
 			markTorrentUnavailable(&result, item)
-			if s.awaitsCompetition(snapshot) && currentSubscriptionState == "active" && result.Verdict == animedomain.ReleaseVerdict("accepted_pending_download") {
+			if awaitNow && result.Verdict == animedomain.ReleaseVerdict("accepted_pending_download") {
 				markAwaitingCompetition(&result)
 			}
 		}
@@ -637,17 +651,41 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 				// task remains pending until qB confirms submission
 			}
 		}
+		// An explicit retry that leaves the release waiting keeps its key with
+		// the release (the decided stage runs it as that retry); the key of an
+		// earlier retry still waiting moves its placement redownload requests
+		// to the newer key. A release that leaves the wait drops the key, and
+		// when it downloads nothing its retry's placement redownload requests
+		// are withdrawn: the placements hold their episodes again.
+		retryKey := ""
+		if verdict == competition.VerdictAwaiting && snapshot.manualRetry {
+			retryKey = strings.TrimSpace(snapshot.retryKey)
+		}
+		if storedRetryKey != "" && storedRetryKey != retryKey {
+			if retryKey != "" {
+				if _, err := tx.ExecContext(ctx, `
+UPDATE placements SET redownload_request_key = $3, version = version + 1, updated_at = CURRENT_TIMESTAMP
+WHERE managed_anime_id = $1 AND quality_facts_ref = $2 AND state = 'active' AND redownload_request_key = $4`,
+					snapshot.managedAnimeID, snapshot.releaseID, retryKey, storedRetryKey); err != nil {
+					return 0, fmt.Errorf("move release placement redownload requests: %w", err)
+				}
+			} else if taskID == "" {
+				if err := withdrawPlacementRedownloadsTx(ctx, tx, snapshot.managedAnimeID, snapshot.releaseID, storedRetryKey); err != nil {
+					return 0, err
+				}
+			}
+		}
 		var updatedVersion int64
 		if err := tx.QueryRowContext(ctx, `
 UPDATE releases
 SET parsed_facts = $2, internal_facts = $3, verdict = $4, reason_code = $5,
     reason_detail = NULLIF($6, ''), evaluation_version = $7,
     evaluated_rules_version = $8,
-    download_task_id = NULLIF($9, ''), version = version + 1,
+    download_task_id = NULLIF($9, ''), competition_retry_key = NULLIF($11, ''), version = version + 1,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = $1 AND version = $10 AND download_task_id IS NOT DISTINCT FROM NULLIF($9,'')
 RETURNING version`, snapshot.releaseID, nullableJSON(parsedFacts), nullableJSON(internalFacts), verdict, reasonCode,
-			safeReason(reasonDetail), evaluationVersionString(), snapshot.rulesVersion, taskID, claim.ExpectedOwnerVersion).Scan(&updatedVersion); err != nil {
+			safeReason(reasonDetail), evaluationVersionString(), snapshot.rulesVersion, taskID, claim.ExpectedOwnerVersion, retryKey).Scan(&updatedVersion); err != nil {
 			return 0, fmt.Errorf("update evaluated release: %w", err)
 		}
 		// The batch plan this evaluation froze: the admission's own plan when

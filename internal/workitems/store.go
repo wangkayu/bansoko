@@ -436,6 +436,36 @@ func (s *Store) finishWithResult(ctx context.Context, claim Claim, terminalState
 	return nil
 }
 
+// LockClaimTx locks and validates the leased claim inside a transaction the
+// caller owns, for a handler that must take its own owner locks before the
+// work item (the subscription competition locks the subscription row first,
+// the order of every producer that merges into it). The caller ends the claim
+// with FinishLockedTx in the same transaction and reports the commit as a
+// worker.Committed outcome.
+func (s *Store) LockClaimTx(ctx context.Context, tx *sql.Tx, claim Claim) error {
+	if tx == nil {
+		return errors.New("work item claim lock requires a transaction")
+	}
+	return lockClaim(ctx, tx, claim)
+}
+
+// FinishLockedTx records the terminal transition of a claim the caller locked
+// with LockClaimTx in the same transaction.
+func (s *Store) FinishLockedTx(ctx context.Context, tx *sql.Tx, claim Claim, terminalState string, ownerVersion int64) error {
+	if terminalState != StateSucceeded && terminalState != StateFailed {
+		return fmt.Errorf("%w: terminal state must be succeeded or failed", ErrInvalidSpec)
+	}
+	if err := persistence.New(tx).FinishWorkItem(ctx, persistence.FinishWorkItemParams{
+		ID:                   claim.ID,
+		State:                terminalState,
+		ExpectedOwnerVersion: ownerVersion,
+	}); err != nil {
+		return fmt.Errorf("finish work item: %w", err)
+	}
+	s.logEvent(claim.Owner, claim.ID, "finish", "work_item_finished", fmt.Sprintf("state_after=%s attempt=%d fencing_token=%d idempotency_key_hash=%s", terminalState, claim.Attempt, claim.FencingToken, keyHash(claim.IdempotencyKey)), claim.Attempt)
+	return nil
+}
+
 // MutateClaim runs one narrow owner mutation in its own fenced transaction.
 // It locks the ManagedAnime lifecycle before the leased WorkItem, invokes the typed
 // owner writer, synchronizes expected_owner_version (including when the version is

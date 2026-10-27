@@ -14,7 +14,9 @@
 // before the work item is created or merged (the producer/destructive-delete
 // ordering of the work item runtime), so a producer racing an unsubscribe is
 // either visible to its cleanup or a no-op. The settle trigger of migration 071
-// (enqueue_subscription_competition) is the SQL twin of EnqueueTx.
+// (enqueue_subscription_competition) is the SQL twin of EnqueueTx; both merge
+// through subscription_competition_merge, which never expires the lease of a
+// running round (the round re-decides under the subscription lock instead).
 package competition
 
 import (
@@ -24,6 +26,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"bansoko/internal/batchplan"
 	"bansoko/internal/workitems"
@@ -59,6 +62,12 @@ const (
 	// TriggerFollowUp: a decided release did not start a download, so the
 	// next candidate of its episodes gets its turn.
 	TriggerFollowUp = "competition_follow_up"
+	// TriggerRoundMoved: the round's inputs moved before its commit (or its
+	// commit lost a lock race); a fresh round runs at once.
+	TriggerRoundMoved = "competition_round_moved"
+	// TriggerRoundRetry: a decided release could not finish its decided stage
+	// (a downloader lookup, a naming time limit); the round runs again later.
+	TriggerRoundRetry = "competition_round_retry"
 )
 
 // IdempotencyKey is the stable key of an instance's competition item.
@@ -133,19 +142,29 @@ const (
 	WhenAwaiting
 )
 
-// AwaitingSQL is the predicate "the instance (managed anime $1) has a release
-// waiting for its competition".
+// SourceInScopeSQL is the predicate "the source aliased src is in the
+// subscription's scope": a custom source always is, a provider group source
+// only while its group is available and selected. The competition's
+// candidates, its gate and AwaitingSQL read the same scope.
+const SourceInScopeSQL = `(src.source_kind <> 'provider_group' OR EXISTS (
+    SELECT 1 FROM provider_group_selections selection
+    WHERE selection.subscription_id = src.subscription_id AND selection.provider = src.provider
+      AND selection.group_ref = src.provider_group_ref AND selection.available AND selection.effective_selected))`
+
+// AwaitingSQL is the predicate "the instance (managed anime $1) has an
+// in-scope release waiting for its competition".
 const AwaitingSQL = `EXISTS (
     SELECT 1 FROM releases r
     JOIN rss_sources src ON src.id = r.rss_source_id
     JOIN subscriptions sub ON sub.id = src.subscription_id
-    WHERE sub.managed_anime_id = $1 AND r.verdict = 'awaiting_competition' AND r.download_task_id IS NULL)`
+    WHERE sub.managed_anime_id = $1 AND r.verdict = 'awaiting_competition' AND r.download_task_id IS NULL
+      AND ` + SourceInScopeSQL + `)`
 
 // EnqueueTx creates or merges the instance's competition item inside the
 // caller's transaction. It locks the subscription row first; a missing or
 // non-active subscription (or a retired instance) enqueues nothing.
-func EnqueueTx(ctx context.Context, tx *sql.Tx, store *workitems.Store, managedAnimeID, trigger string, option EnqueueOption) (bool, error) {
-	if store == nil || tx == nil || strings.TrimSpace(managedAnimeID) == "" {
+func EnqueueTx(ctx context.Context, tx *sql.Tx, managedAnimeID, trigger string, option EnqueueOption) (bool, error) {
+	if tx == nil || strings.TrimSpace(managedAnimeID) == "" {
 		return false, errors.New("subscription competition enqueue is not wired")
 	}
 	var (
@@ -176,22 +195,27 @@ FOR UPDATE OF s`, managedAnimeID).Scan(&state, &version)
 			return false, nil
 		}
 	}
-	snapshot, err := json.Marshal(map[string]string{"trigger": trigger})
-	if err != nil {
+	if err := MergeTx(ctx, tx, managedAnimeID, version, map[string]any{"trigger": trigger}, 0); err != nil {
 		return false, err
 	}
-	if version < 1 {
-		version = 1
-	}
-	if _, _, err := store.CreateOrMerge(ctx, tx, workitems.WorkItemSpec{
-		Owner:                workitems.OwnerRef{Type: workitems.OwnerFileMaintenance, ID: managedAnimeID},
-		Kind:                 workitems.KindSubscriptionCompetition,
-		IdempotencyKey:       IdempotencyKey(managedAnimeID),
-		InputSnapshot:        snapshot,
-		MaxAttempts:          MaxAttempts,
-		ExpectedOwnerVersion: version,
-	}); err != nil {
-		return false, fmt.Errorf("enqueue subscription competition: %w", err)
-	}
 	return true, nil
+}
+
+// MergeTx creates or merges the instance's competition item through
+// subscription_competition_merge. The caller holds the subscription row lock.
+// A merge into an available item moves it earlier (never later); a merge into
+// a running round leaves its lease alone.
+func MergeTx(ctx context.Context, tx *sql.Tx, managedAnimeID string, subscriptionVersion int64, input map[string]any, delay time.Duration) error {
+	snapshot, err := json.Marshal(input)
+	if err != nil {
+		return err
+	}
+	if delay < 0 {
+		delay = 0
+	}
+	var id string
+	if err := tx.QueryRowContext(ctx, `SELECT subscription_competition_merge($1, $2::jsonb, $3, $4)`, managedAnimeID, string(snapshot), subscriptionVersion, delay.Seconds()).Scan(&id); err != nil {
+		return fmt.Errorf("enqueue subscription competition: %w", err)
+	}
+	return nil
 }
