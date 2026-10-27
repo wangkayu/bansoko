@@ -126,7 +126,7 @@ func (f busyFixture) nextHop(t *testing.T, id string) (*time.Time, time.Duration
 	if err := json.Unmarshal(raw, &input); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.db.Exec(`UPDATE work_items SET available_at = now() WHERE owner_type = $1 AND owner_id = $2`, workitems.OwnerReplacementDeletion, id); err != nil {
+	if _, err := workItemFixtureDB(t).Exec(`UPDATE work_items SET available_at = now() WHERE owner_type = $1 AND owner_id = $2`, workitems.OwnerReplacementDeletion, id); err != nil {
 		t.Fatal(err)
 	}
 	return input.BusySince, time.Duration(wait * float64(time.Second))

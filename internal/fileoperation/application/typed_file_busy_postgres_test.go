@@ -52,16 +52,17 @@ func (x typedRuntimeFixture) busyRow(t *testing.T) busyOperationRow {
 	t.Helper()
 	var r busyOperationRow
 	var code, outcome, busySince sql.NullString
+	var dueSeconds float64
 	if err := x.db.QueryRow(`SELECT o.state,o.failure_code,o.import_retry_count,o.publication_permit_id IS NOT NULL,
  (SELECT count(*) FROM work_items w WHERE w.owner_type='file_operation' AND w.owner_id=o.id),
  (SELECT w.input_snapshot->>'busy_since' FROM work_items w WHERE w.owner_type='file_operation' AND w.owner_id=o.id),
  COALESCE((SELECT EXTRACT(EPOCH FROM w.available_at-clock_timestamp()) FROM work_items w WHERE w.owner_type='file_operation' AND w.owner_id=o.id),0),
  (SELECT f.outcome FROM acquisition_files f WHERE f.acquisition_id=o.acquisition_id AND f.file_ref=o.file_ref)
- FROM file_operations o WHERE o.id=$1`, x.opID).Scan(&r.state, &code, &r.retries, &r.permit, &r.liveWork, &busySince, &r.dueIn, &outcome); err != nil {
+ FROM file_operations o WHERE o.id=$1`, x.opID).Scan(&r.state, &code, &r.retries, &r.permit, &r.liveWork, &busySince, &dueSeconds, &outcome); err != nil {
 		t.Fatal(err)
 	}
 	r.code, r.busySince, r.deliveryResult = code.String, busySince.String, outcome.String
-	r.dueIn = time.Duration(float64(r.dueIn) * float64(time.Second))
+	r.dueIn = time.Duration(dueSeconds * float64(time.Second))
 	return r
 }
 
