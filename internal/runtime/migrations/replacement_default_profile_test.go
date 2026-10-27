@@ -39,7 +39,7 @@ SELECT value->'quality_profile' FROM global_config_sections WHERE section_name =
 		keys = append(keys, item.Key)
 		ranks[item.Key] = item.Ranks
 	}
-	wantKeys := []string{"subgroup.score", "anibt.language", "rt.sub_lang", "release.resolution", "release.revision"}
+	wantKeys := []string{"subgroup.score", "anibt.language", "rt.sub_lang", "anibt.resolution", "rt.resolution", "release.revision"}
 	if len(keys) != len(wantKeys) {
 		t.Fatalf("dimension keys = %v, want %v", keys, wantKeys)
 	}
@@ -48,19 +48,23 @@ SELECT value->'quality_profile' FROM global_config_sections WHERE section_name =
 			t.Fatalf("dimension keys = %v, want %v", keys, wantKeys)
 		}
 	}
-	wantResolution := []string{"2160p", "1440p", "1080p", "720p", "480p"}
-	resolution := ranks["release.resolution"]
-	if len(resolution) != len(wantResolution) {
-		t.Fatalf("resolution ranks = %v, want %v", resolution, wantResolution)
-	}
-	for i, want := range wantResolution {
-		if len(resolution[i]) != 1 || resolution[i][0] != want {
-			t.Fatalf("resolution ranks = %v, want %v", resolution, wantResolution)
+	for key, want := range map[string][]string{
+		"anibt.resolution": {"2160p", "1440p", "1080p", "720p", "480p"},
+		"rt.resolution":    {"2160p", "1080p", "720p", "480p"},
+	} {
+		got := ranks[key]
+		if len(got) != len(want) {
+			t.Fatalf("%s ranks = %v, want %v", key, got, want)
+		}
+		for i, w := range want {
+			if len(got[i]) != 1 || got[i][0] != w {
+				t.Fatalf("%s ranks = %v, want %v", key, got, want)
+			}
 		}
 	}
-	// Migration 064: each language layer ranks combinations, Simplified +
+	// Migrations 064 and 067: each language layer ranks combinations, Simplified +
 	// Traditional + Japanese first.
-	for key, first := range map[string]string{"anibt.language": "CHS+CHT+JPN", "rt.sub_lang": "SC+TC+JPN"} {
+	for key, first := range map[string]string{"anibt.language": "CHS+CHT+JP", "rt.sub_lang": "SC+TC+JPN"} {
 		if len(ranks[key]) != 8 || strings.Join(ranks[key][0], "+") != first {
 			t.Fatalf("%s ranks = %v, want 8 combinations starting with %s", key, ranks[key], first)
 		}

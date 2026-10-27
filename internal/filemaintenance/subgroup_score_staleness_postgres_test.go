@@ -137,7 +137,7 @@ func TestUnboundDecisionNotReusedAfterSubgroupScoreChanged(t *testing.T) {
 	if _, err := db.Exec(`
 UPDATE anime_business_configs
 SET admission_mode = 'single_copy', quality_profile = $1::jsonb, replacement_version = replacement_version + 1
-WHERE managed_anime_id = 'anime-1'`, string(qualityprofile.DefaultJSON())); err != nil {
+WHERE managed_anime_id = 'anime-1'`, `{"version":"profile-v1","items":[{"key":"subgroup.score","ranks":[]},{"key":"release.resolution","ranks":[["2160p"],["1080p"],["720p"],["480p"]]}]}`); err != nil {
 		t.Fatal(err)
 	}
 	// The incumbent's group has no selection row yet (no score): the

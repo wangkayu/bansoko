@@ -36,8 +36,8 @@ beforeEach(() => {
 
 afterEach(() => vi.unstubAllGlobals());
 
-function Harness({ mode = "single_copy", animeID }: { mode?: "all" | "per_group" | "single_copy"; animeID?: string }) {
-  const [value, setValue] = useState(initial);
+function Harness({ mode = "single_copy", animeID, start = initial }: { mode?: "all" | "per_group" | "single_copy"; animeID?: string; start?: QualityProfile }) {
+  const [value, setValue] = useState(start);
   return (
     <QualityCompareEditor
       value={value}
@@ -134,6 +134,17 @@ describe("QualityCompareEditor", () => {
     expect(screen.queryByRole("alert")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: t("qualityCompare.addValueAria", { item: name }) }));
     expect(latest.items[1].ranks).toEqual([["CHS", "CHT"], ["CHS"], ["JPN"]]);
+  });
+
+  it("offers the AniBT presets as candidates when no value has been seen", async () => {
+    renderWithQuery(<Harness start={{ version: "profile-v1", items: [{ key: "anibt.resolution", ranks: [] }] }} />);
+    await waitFor(() => expect(vocabularyURLs.length).toBeGreaterThan(0));
+    const input = screen.getByLabelText(t("qualityCompare.valueAria", { item: compareItemName("anibt.resolution") }));
+    const options = Array.from(document.getElementById(input.getAttribute("list") ?? "")?.querySelectorAll("option") ?? []).map((option) => option.getAttribute("value"));
+    expect(options).toEqual(["1080p", "720p"]);
+    fireEvent.change(input, { target: { value: "1080p" } });
+    fireEvent.click(screen.getByRole("button", { name: t("qualityCompare.addValueAria", { item: compareItemName("anibt.resolution") }) }));
+    expect(latest.items[0].ranks).toEqual([["1080p"]]);
   });
 
   it("refuses combinations on single-valued items", async () => {

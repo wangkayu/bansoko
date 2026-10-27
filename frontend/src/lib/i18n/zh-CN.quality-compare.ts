@@ -42,7 +42,7 @@ export const qualityCompareCopy = {
   revisionHint: "按 Rev 自动比较：v3 好于 v2，v2 好于没有 Rev。不需要设置。",
   rankHint: "从好到差排列，可以拖动或用 ‹ › 调整。没有列出的值算最差；种子没有这一项时，这一项算平局。",
   multiHint: "这一项可能有多个值。可以加入单个值，也可以加入组合（如 CHS+CHT），不看顺序。种子包含某一条的全部值就算命中，取命中的排名最高的一条；想优先多语言，就把更宽的组合排在前面。",
-  anibtHint: "保留 AniBT 的原始写法，候选值来自已出现过的取值。",
+  anibtHint: "保留 AniBT 的原始写法，候选值包括常见的 AniBT 取值和种子里已出现过的取值。",
   subFlagHint: "reltitle 从标题读出的字幕附带方式：soft 内封、hard 内嵌、ex 外挂。",
   uncensoredHint: "reltitle 从标题读出是否为无修正版。两个种子的取值相同时算平局。",
   uncensoredFirst: "无修正优先",

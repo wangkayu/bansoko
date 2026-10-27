@@ -1,4 +1,5 @@
 import type { QualityCompareKey, QualityProfile } from "../../lib/api/client";
+import { ANIBT_TAG_PRESETS, isAniBTDimension } from "../../lib/anibtTags";
 
 // Pure model of the replacement comparison profile (profile-v1), shared by the
 // global replacement default and the per-anime business snapshot. Mirrors the
@@ -138,6 +139,25 @@ export function addEntry(profile: QualityProfile, key: QualityCompareKey, values
   return {
     profile: withRanks(profile, key, (ranks) => (at < 0 ? [...ranks, entry] : [...ranks.slice(0, at), entry, ...ranks.slice(at)])),
   };
+}
+
+/**
+ * Candidate values for a ranked item: for anibt.* the same presets the tag filter uses (one
+ * source), then the server's already-seen values; duplicates fold case-insensitively and the
+ * first spelling wins. Other namespaces offer the server vocabulary as-is.
+ */
+export function candidateValues(key: string, seen: readonly string[] | undefined): string[] | undefined {
+  const dimension = key.startsWith("anibt.") ? key.slice("anibt.".length) : "";
+  if (!isAniBTDimension(dimension)) return seen ? [...seen] : undefined;
+  const out: string[] = [];
+  const folded = new Set<string>();
+  for (const value of [...ANIBT_TAG_PRESETS[dimension], ...(seen ?? [])]) {
+    const fold = value.trim().toLowerCase();
+    if (!fold || folded.has(fold)) continue;
+    folded.add(fold);
+    out.push(value.trim());
+  }
+  return out;
 }
 
 /** Values offered for a ranked item: suggestions not already listed alone. */

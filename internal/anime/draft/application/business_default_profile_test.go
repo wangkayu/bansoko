@@ -51,8 +51,28 @@ func TestBusinessDefaultProfileMatchesFreshMigrationAndTypedContract(t *testing.
 	if guard.String() != baseline.String() {
 		t.Fatal("migration 064 does not guard on the profile the baseline seeds")
 	}
+	// Migration 067 replaces the profile 064 wrote; the fresh persisted default
+	// is the profile 067 writes, guarded by the one 064 wrote.
+	spelling, err := os.ReadFile("../../../../db/migrations/067_compare_defaults_anibt_spelling.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := regexp.MustCompile(`(?s)jsonb_set\(value, '\{quality_profile\}', '(\{.*?\})'::jsonb\).*?value->'quality_profile' = '(\{.*?\})'::jsonb`).FindSubmatch(spelling)
+	if next == nil {
+		t.Fatal("quality profile update not found in migration 067")
+	}
+	var guard067, written064 bytes.Buffer
+	if err := json.Compact(&guard067, next[2]); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Compact(&written064, update[1]); err != nil {
+		t.Fatal(err)
+	}
+	if guard067.String() != written064.String() {
+		t.Fatal("migration 067 does not guard on the profile 064 writes")
+	}
 	var persisted, code bytes.Buffer
-	if err := json.Compact(&persisted, update[1]); err != nil {
+	if err := json.Compact(&persisted, next[1]); err != nil {
 	}
 	if err := json.Compact(&code, filemaintenance.DefaultQualityProfileJSON); err != nil {
 		t.Fatal(err)
@@ -73,7 +93,7 @@ func TestBusinessDefaultProfileMatchesFreshMigrationAndTypedContract(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(profile.Keys(), ",") != "subgroup.score,anibt.language,rt.sub_lang,release.resolution,release.revision" {
+	if strings.Join(profile.Keys(), ",") != "subgroup.score,anibt.language,rt.sub_lang,anibt.resolution,rt.resolution,release.revision" {
 		t.Fatalf("replacement items=%v", profile.Keys())
 	}
 }

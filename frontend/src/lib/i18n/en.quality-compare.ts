@@ -45,7 +45,7 @@ export const enQualityCompareCopy = {
   revisionHint: "Compared by Rev automatically: v3 beats v2, and v2 beats no Rev. Nothing to set.",
   rankHint: "Order from best to worst; drag or use ‹ › to adjust. Values not listed rank worst; a torrent without this item ties on it.",
   multiHint: "This item can have several values. Add single values or combinations (such as CHS+CHT); order doesn't matter. A torrent matches an entry when it has every value of it, and takes its highest-ranked match. To prefer more languages, list wider combinations first.",
-  anibtHint: "AniBT spellings are kept as-is; suggestions come from values already seen.",
+  anibtHint: "AniBT spellings are kept as-is; suggestions are the common AniBT values plus any already seen in torrents.",
   subFlagHint: "How reltitle reads the subtitles are attached from the title: soft is muxed in, hard is burned in, ex is a separate file.",
   uncensoredHint: "Whether reltitle reads the torrent as uncensored from its title. Torrents with the same value tie.",
   uncensoredFirst: "Prefer uncensored",

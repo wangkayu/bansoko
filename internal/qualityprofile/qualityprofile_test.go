@@ -17,7 +17,7 @@ func TestDefaultProfileIsValidAndBuiltInOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{KeySubgroupScore, KeyAniBTLanguage, KeyRtSubLang, KeyReleaseResolution, KeyReleaseRevision}
+	want := []string{KeySubgroupScore, KeyAniBTLanguage, KeyRtSubLang, KeyAniBTResolution, KeyRtResolution, KeyReleaseRevision}
 	if strings.Join(profile.Keys(), ",") != strings.Join(want, ",") {
 		t.Fatalf("default items = %v", profile.Keys())
 	}

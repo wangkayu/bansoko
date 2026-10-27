@@ -13,6 +13,7 @@ import {
   setKey,
   setFlagDirection,
   suggestions,
+  candidateValues,
   unusedItems,
 } from "./qualityProfile";
 
@@ -80,5 +81,14 @@ describe("quality profile model", () => {
   it("offers suggestions not yet listed and combination values from both", () => {
     expect(suggestions([["CHS"], ["CHS", "CHT"]], ["chs", "CHT", "JPN"])).toEqual(["CHT", "JPN"]);
     expect(comboValues([["CHS", "ENG"]], ["chs", "CHT"])).toEqual(["chs", "CHT", "ENG"]);
+  });
+
+  it("puts the AniBT presets ahead of seen values and leaves other namespaces alone", () => {
+    expect(candidateValues("anibt.resolution", undefined)).toEqual(["1080p", "720p"]);
+    expect(candidateValues("anibt.resolution", ["720P", "2160p"])).toEqual(["1080p", "720p", "2160p"]);
+    expect(candidateValues("anibt.language", ["jp", "XX"])?.slice(0, 4)).toEqual(["CHS", "CHT", "JP", "EN"]);
+    expect(candidateValues("anibt.language", ["jp", "XX"])?.at(-1)).toBe("XX");
+    expect(candidateValues("rt.codec", ["AV1"])).toEqual(["AV1"]);
+    expect(candidateValues("rt.codec", undefined)).toBeUndefined();
   });
 });

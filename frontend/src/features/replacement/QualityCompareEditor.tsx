@@ -10,6 +10,7 @@ import {
   COMPARE_NAMESPACES,
   addEntry,
   addItem,
+  candidateValues,
   comboValues,
   entryLabel,
   flagFirst,
@@ -146,7 +147,7 @@ export function QualityCompareEditor({
                     profile={value}
                     itemKey={item.key}
                     ranks={item.ranks}
-                    vocabulary={vocabulary.get(item.key)}
+                    vocabulary={candidateValues(item.key, vocabulary.get(item.key))}
                     onChange={onChange}
                     disabled={disabled}
                   />

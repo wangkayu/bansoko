@@ -148,9 +148,10 @@ type Profile struct {
 func Default() Profile {
 	return Profile{Version: Version, Items: []Item{
 		{Key: KeySubgroupScore, Ranks: [][]string{}},
-		{Key: KeyAniBTLanguage, Ranks: [][]string{{"CHS", "CHT", "JPN"}, {"CHS", "JPN"}, {"CHS", "CHT"}, {"CHS"}, {"CHT", "JPN"}, {"CHT"}, {"JPN"}, {"ENG"}}},
+		{Key: KeyAniBTLanguage, Ranks: [][]string{{"CHS", "CHT", "JP"}, {"CHS", "JP"}, {"CHS", "CHT"}, {"CHS"}, {"CHT", "JP"}, {"CHT"}, {"JP"}, {"EN"}}},
 		{Key: KeyRtSubLang, Ranks: [][]string{{"SC", "TC", "JPN"}, {"SC", "JPN"}, {"SC", "TC"}, {"SC"}, {"TC", "JPN"}, {"TC"}, {"JPN"}, {"ENG"}}},
-		{Key: KeyReleaseResolution, Ranks: [][]string{{"2160p"}, {"1440p"}, {"1080p"}, {"720p"}, {"480p"}}},
+		{Key: KeyAniBTResolution, Ranks: [][]string{{"2160p"}, {"1440p"}, {"1080p"}, {"720p"}, {"480p"}}},
+		{Key: KeyRtResolution, Ranks: [][]string{{"2160p"}, {"1080p"}, {"720p"}, {"480p"}}},
 		{Key: KeyReleaseRevision, Ranks: [][]string{}},
 	}}
 }
