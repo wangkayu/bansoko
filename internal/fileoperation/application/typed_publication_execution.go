@@ -90,7 +90,7 @@ func (s *Service) runTypedPublication(ctx context.Context, claim workitems.Claim
 	overran := preparationOverran(ctx, prepCtx, prepErr)
 	cancelPrep()
 	if overran {
-		return worker.Retry("file_attempt_deadline", "file preparation exceeded its attempt deadline before any publication", defaultRetryAfter, nil), nil
+		return typedRetryUntilResolved("file_attempt_deadline", "file preparation exceeded its attempt deadline before any publication"), nil
 	}
 	if prepErr != nil {
 		return s.typedPublicationFaultOutcome(ctx, claim, operation, prepErr)
@@ -201,7 +201,7 @@ func (s *Service) typedPublicationFaultOutcome(ctx context.Context, claim workit
 		return s.finishTypedFailure(ctx, claim, code, cause)
 	}
 	if isRetryable(cause) {
-		return worker.Retry("typed_publication_transient", safeReason(cause), defaultRetryAfter, nil), nil
+		return typedRetryUntilResolved("typed_publication_transient", safeReason(cause)), nil
 	}
 	return s.finishTypedFailure(ctx, claim, "typed_publication_failed", cause)
 }

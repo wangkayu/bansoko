@@ -210,52 +210,31 @@ func (s *Service) prepareTypedFileResult(ctx context.Context, claim workitems.Cl
 	return s.prepareSuccessfulFileResult(ctx, claim, permit)
 }
 
-// publicationPermitForClaim resolves the operation's publication permit (the
-// evidence row id bound to this original work). A missing permit fails the
-// finish gates fail-closed; it never fabricates one.
-func (s *Service) publicationPermitForClaim(ctx context.Context, claim workitems.Claim) (string, error) {
-	var permit string
-	if err := s.db.QueryRowContext(ctx, `SELECT publication_permit_id FROM public.file_operations WHERE publication_work_item_id=$1 AND id=$2`, claim.ID, claim.Owner.ID).Scan(&permit); err != nil {
-		return "", err
-	}
-	return permit, nil
-}
-
-// typedResultIfFinished captures the read-only prepared result when the
-// operation's publication proof is already closed/confirmed — the claim goes
-// straight to the fixed finish (idempotent full-ledger confirm). An
-// absent or not-yet-closed proof returns an empty result: the typed chain
-// owns the execution phases instead. This is a state probe, never a skip of
-// the finish gates — the finish re-locks and re-validates everything.
-func (s *Service) typedResultIfFinished(ctx context.Context, claim workitems.Claim) (preparedFileResult, error) {
-	permit, permitErr := s.publicationPermitForClaim(ctx, claim)
-	if permitErr != nil {
-		return preparedFileResult{}, permitErr
-	}
-	var closed bool
-	if err := s.db.QueryRowContext(ctx, `SELECT publication_dispatch_state='closed' AND publication_effect_class='confirmed' AND publication_conflict_evidence IS NULL AND publication_resolution_canonical IS NOT NULL FROM public.file_operations WHERE publication_permit_id=$1`, permit).Scan(&closed); err != nil {
-		return preparedFileResult{}, err
-	}
-	if !closed {
-		return preparedFileResult{}, errPublicationNotClosed
-	}
-	return s.prepareTypedFileResult(ctx, claim, permit)
-}
-
-// errPublicationNotClosed marks a permit whose evidence has not reached the
-// closed/confirmed terminal proof shape.
-var errPublicationNotClosed = errors.New("publication proof not closed")
-
-// typedFinishBlockedOutcome maps a failed read-only result capture to the
-// bounded product outcomes: an unavailable proof is not a failure of the
-// effect — it keeps the risk visible instead of inventing a terminal state.
+// typedFinishBlockedOutcome maps a failed read-only result capture or a
+// rolled-back finish of a closed proof to the bounded product outcomes: an
+// unavailable proof is not a failure of the effect — it keeps the risk visible
+// instead of inventing a terminal state.
 func (s *Service) typedFinishBlockedOutcome(ctx context.Context, claim workitems.Claim, operation operationRecord, cause error) (worker.Outcome, error) {
 	// A finish that cleanly rolled back (ErrFinishNotCommitted) or a transient
 	// capture error is retried: a closed proof must complete, never fail.
-	if errors.Is(cause, errPublicationNotClosed) || errors.Is(cause, ErrFinishNotCommitted) || isRetryable(cause) {
-		return worker.Retry("file_proof_capture_transient", safeReason(cause), defaultRetryAfter, nil), nil
+	if errors.Is(cause, ErrFinishNotCommitted) || isRetryable(cause) {
+		return typedRetryUntilResolved("file_proof_capture_transient", safeReason(cause)), nil
 	}
 	return s.finishTypedFailure(ctx, claim, "FILE_SUCCESS_PROOF_UNAVAILABLE", cause)
+}
+
+// typedRetryUntilResolved is the only retry outcome of the typed file lane.
+// None of its retries carries an owner writer (the operation stays pending
+// while the evidence decides), so an ordinary budgeted retry would fail the
+// WorkItem at its attempt budget and leave the operation pending with no live
+// work forever. At the budget this retry quarantines the claim instead
+// (effect_unknown) and the recovery lane converges it from the publication
+// evidence through convergeTypedExecution without starting an effect: a closed
+// proof finishes, any other evidence ends visibly. Only a closed proof whose
+// finish keeps rolling back stays in the recovery lane, re-observed on its
+// deferral cadence with the deferral logged and kept on the WorkItem.
+func typedRetryUntilResolved(reasonCode, reason string) worker.Outcome {
+	return worker.RetryUntilResolved(reasonCode, reason, defaultRetryAfter, nil)
 }
 
 // observeTypedRecovery is the runtime recovery observation for typed

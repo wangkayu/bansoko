@@ -34,6 +34,7 @@ import (
 	"bansoko/internal/downloadcompletion"
 	"bansoko/internal/events"
 	"bansoko/internal/filemanager"
+	fileoperationapplication "bansoko/internal/fileoperation/application"
 	hardeningtransport "bansoko/internal/hardening/transport"
 	identitymetadataadapter "bansoko/internal/identitymetadata/adapter"
 	identitymetadatapersistence "bansoko/internal/identitymetadata/adapter/persistence"
@@ -539,6 +540,9 @@ func main() {
 			runOffsetMigrationPlannerScheduler(ctx, db, offsetMigrationPlanner, runtimeLogger)
 		},
 		func(ctx context.Context) { runAutomationDispatcher(ctx, dispatcher, runtimeLogger) },
+		func(ctx context.Context) {
+			runStrandedFileWorkRevival(ctx, fileOperationService.ReviveStrandedWork, runtimeLogger)
+		},
 	}
 	backgroundRuntime := NewBackgroundRuntime(maintenanceGate, buildWorker, producers, runtimeLogger)
 	if cfg.WorkerDisabled {
@@ -833,6 +837,24 @@ func runAutomationDispatcher(ctx context.Context, dispatcher *automationapplicat
 		case <-ticker.C:
 			dispatch()
 		}
+	}
+}
+
+// runStrandedFileWorkRevival re-opens, once per background start, the file
+// work an earlier release failed at its attempt budget with a writer-less
+// retry, leaving the operation pending and its acquisition running; the
+// recovery lane then converges it (a closed proof completes). The pass logs
+// each operation's revival or refusal itself.
+func runStrandedFileWorkRevival(ctx context.Context, revive func(context.Context) (fileoperationapplication.StrandedWorkRevival, error), logger observabilityport.RuntimeLogger) {
+	if _, err := revive(ctx); err != nil && ctx.Err() == nil {
+		logger.Error(ctx, observabilityport.RuntimeEvent{
+			Message:    "stranded file work revival pass failed",
+			Component:  "fileoperation",
+			Operation:  "file_work_revival",
+			Outcome:    "failure",
+			ReasonCode: "file_work_revival_pass_failed",
+			ErrorClass: "fileoperation",
+		})
 	}
 }
 
