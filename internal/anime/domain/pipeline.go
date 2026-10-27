@@ -364,6 +364,25 @@ func PreviewFilesForManifest(
 	rules attrrules.Rules,
 	unknownRoute string,
 ) []ManifestFileResult {
+	return PreviewFilesForManifestIn(item, release, files, effective, animeTitle, source, rules, unknownRoute, nil)
+}
+
+// PreviewFilesForManifestIn is PreviewFilesForManifest under an explicit
+// manual file selection (one-shot): the selection replaces the first-level
+// gate, so a selected file at any depth renders like a first-level one and
+// every unselected video or subtitle is ignored_unselected. A nil selection
+// is the product default.
+func PreviewFilesForManifestIn(
+	item acquisitiondomain.FeedItem,
+	release PreviewReleaseResult,
+	files []ManifestFileInput,
+	effective EffectiveConfig,
+	animeTitle string,
+	source SourceEvaluationInput,
+	rules attrrules.Rules,
+	unknownRoute string,
+	selection *filekinds.Selection,
+) []ManifestFileResult {
 	if len(files) == 0 {
 		return []ManifestFileResult{}
 	}
@@ -372,7 +391,7 @@ func PreviewFilesForManifest(
 	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].Ordinal < ordered[j].Ordinal })
 	movie := release.FrozenMediaKind == string(TMDBMediaKindMovie)
 	if movie {
-		markMovieUnknownVideos(ordered, effective.Rules.FileFilter)
+		markMovieUnknownVideos(ordered, effective.Rules.FileFilter, selection)
 	}
 	results := make([]ManifestFileResult, len(ordered))
 	bySource := map[string]int{}
@@ -405,7 +424,7 @@ func PreviewFilesForManifest(
 			// reason and never reaches the naming engine. A subtitle the hard
 			// gates dropped is not a candidate at all, so its verdict is kept
 			// and the companion rule below must not resurrect it.
-			exclusion := ManifestFileExclusion(filekinds.Version, effective.Rules.FileFilter, file.SourcePath)
+			exclusion := ManifestFileExclusionIn(filekinds.Version, effective.Rules.FileFilter, file.SourcePath, selection)
 			var outcome previewFileOutcome
 			if exclusion != "" {
 				outcome = previewFileOutcome{ReasonCode: &exclusion, Safety: PreviewFileResultSafety("valid")}
@@ -519,10 +538,10 @@ func sameFrozenEpisode(files []ManifestFileInput, members []int) bool {
 // first-level videos the file rules keep, the largest known size (ties and
 // unknown sizes by manifest order) is the main video; every other one is an
 // unknown file.
-func markMovieUnknownVideos(files []ManifestFileInput, filter FileFilterRules) {
+func markMovieUnknownVideos(files []ManifestFileInput, filter FileFilterRules, selection *filekinds.Selection) {
 	candidates := []organizingpolicy.Video{}
 	for index, file := range files {
-		if file.MediaKind != "video" || ManifestFileExclusion(filekinds.Version, filter, file.SourcePath) != "" {
+		if file.MediaKind != "video" || ManifestFileExclusionIn(filekinds.Version, filter, file.SourcePath, selection) != "" {
 			continue
 		}
 		size := uint64(max(file.SizeBytes, 0))
@@ -714,7 +733,16 @@ func renderPreviewFileForName(item acquisitiondomain.FeedItem, release PreviewRe
 // the file_* rule reason. File rules match the filename of a video only;
 // subtitles are not subject to them.
 func ManifestFileExclusion(fileKindsVersion string, rules FileFilterRules, sourcePath string) string {
-	kind, ignored := filekinds.Eligibility(fileKindsVersion, sourcePath)
+	return ManifestFileExclusionIn(fileKindsVersion, rules, sourcePath, nil)
+}
+
+// ManifestFileExclusionIn is ManifestFileExclusion under an explicit manual
+// file selection: the selection replaces the first-level gate (an unselected
+// video or subtitle is ignored_unselected, a selected one at any depth is a
+// candidate); the kind gate and the file rules apply unchanged. A nil
+// selection is the product default.
+func ManifestFileExclusionIn(fileKindsVersion string, rules FileFilterRules, sourcePath string, selection *filekinds.Selection) string {
+	kind, ignored := filekinds.EligibilityIn(fileKindsVersion, sourcePath, selection)
 	if ignored != "" {
 		return ignored
 	}

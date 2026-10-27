@@ -189,6 +189,14 @@ type OrganizationPathSelection struct {
 // follow a selected video by name prefix. DownloadAllowed needs at least one
 // selected video.
 func (f CompiledRegexFilter) SelectOrganizationFiles(fileKindsVersion string, paths []string) (OrganizationPathSelection, error) {
+	return f.SelectOrganizationFilesIn(fileKindsVersion, paths, nil)
+}
+
+// SelectOrganizationFilesIn is SelectOrganizationFiles under an explicit
+// manual file selection (one-shot): the selection replaces the first-level
+// gate, so exactly the selected videos and subtitles at any depth are
+// candidates. A nil selection is the product default.
+func (f CompiledRegexFilter) SelectOrganizationFilesIn(fileKindsVersion string, paths []string, selection *filekinds.Selection) (OrganizationPathSelection, error) {
 	if !f.valid {
 		return OrganizationPathSelection{}, fmt.Errorf("invalid compiled filter")
 	}
@@ -211,7 +219,7 @@ func (f CompiledRegexFilter) SelectOrganizationFiles(fileKindsVersion string, pa
 			return OrganizationPathSelection{}, fmt.Errorf("entry %d: duplicate normalized relative path", index)
 		}
 		seen[normalized] = struct{}{}
-		kind, ignored := filekinds.Eligibility(fileKindsVersion, normalized)
+		kind, ignored := filekinds.EligibilityIn(fileKindsVersion, normalized, selection)
 		var d RegexFilterDecision
 		switch {
 		case ignored != "":

@@ -90,14 +90,15 @@ func evaluateAdmission(ctx context.Context, c admissionCapture, intent acquisiti
 		return admissionEvaluation{}, acceptError(422, "ADMISSION_REJECTED", "release_rejected", nil)
 	}
 	required := []string{}
-	// A required file is a first-level video the file rules select: nested
-	// files, other kinds and rule-excluded videos are never required, and
-	// subtitles only follow a video.
+	// A required file is a first-level video the file rules select (under a
+	// one-shot manual selection: a selected video at any depth): nested or
+	// unselected files, other kinds and rule-excluded videos are never
+	// required, and subtitles only follow a video.
 	for _, file := range seed.Manifest.Files {
 		if filekinds.Classify(filekinds.Version, file.SourcePath) != filekinds.KindVideo {
 			continue
 		}
-		if anime.ManifestFileExclusion(filekinds.Version, effective.Rules.FileFilter, file.SourcePath) == "" {
+		if anime.ManifestFileExclusionIn(filekinds.Version, effective.Rules.FileFilter, file.SourcePath, intent.fileSelection) == "" {
 			required = append(required, file.FileRef)
 		}
 	}

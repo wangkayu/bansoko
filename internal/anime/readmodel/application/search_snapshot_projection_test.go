@@ -68,7 +68,7 @@ func TestOneShotSearchBrowseRendersSnapshotThroughSharedMachinery(t *testing.T) 
 	seedPreviewBusiness(t, service, &draft)
 
 	view, err := service.composeRSSListViewFor(context.Background(), "current_input", "draft:x", draft,
-		previewEffectiveWithDefaultNaming(t, animedomain.ProviderKindMikan), previewTestSelection(), []PreviewFeedSnapshotRef{ref}, nil, nil, 3, true)
+		previewEffectiveWithDefaultNaming(t, animedomain.ProviderKindMikan), previewTestSelection(), []PreviewFeedSnapshotRef{ref}, nil, nil, 3, true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestOneShotSearchBrowseRefusesFeedRefsAndWrongForms(t *testing.T) {
 	feedRef := previewTestRef(animedomain.ProviderKindMikan, "12")
 
 	if _, err := service.composeRSSListViewFor(context.Background(), "current_input", "draft:x", searchOneshotDraft(),
-		previewTestEffective(animedomain.ProviderKindMikan), previewTestSelection(), []PreviewFeedSnapshotRef{feedRef}, nil, nil, 0, true); err == nil {
+		previewTestEffective(animedomain.ProviderKindMikan), previewTestSelection(), []PreviewFeedSnapshotRef{feedRef}, nil, nil, 0, true, nil); err == nil {
 		t.Fatal("search browse accepted a feed snapshot identity")
 	} else if code := businessCode(t, err); code != "FEED_SNAPSHOT_IDENTITY_INVALID" {
 		t.Fatalf("feed-ref refusal code = %s", code)
@@ -137,7 +137,7 @@ func TestOneShotSearchBrowseStaleFailsClosedAsRefreshRequired(t *testing.T) {
 	draft := searchOneshotDraft()
 
 	_, err := service.composeRSSListViewFor(context.Background(), "current_input", "draft:x", draft,
-		previewTestEffective(animedomain.ProviderKindMikan), previewTestSelection(), []PreviewFeedSnapshotRef{searchPreviewRef()}, nil, nil, 0, true)
+		previewTestEffective(animedomain.ProviderKindMikan), previewTestSelection(), []PreviewFeedSnapshotRef{searchPreviewRef()}, nil, nil, 0, true, nil)
 	if err == nil {
 		t.Fatal("search browse served a stale identity")
 	}

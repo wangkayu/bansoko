@@ -303,13 +303,11 @@ type OrdinaryRequest struct {
 // intent (a finite seed command never replaces an incumbent). Offset is the
 // one-shot input's own offset, never an existing subscription's.
 //
-// FileSelection is the explicit confirmed torrent-entry set of a manual
-// acquisition (canonical torrent-relative source paths). When non-empty it
-// replaces the default business-filter result: exactly those entries are
-// planned, and the filter does not exclude them. OverrideBusinessFilter admits
-// entries the business file filter excluded; it never bypasses the safety or
-// validity rules, and an entry whose render/identity is invalid is never
-// admitted by it.
+// FileSelection is the explicit manual file selection of the one-shot (nil =
+// the product default, first-level videos and subtitles). It replaces only
+// the first-level gate: the selected videos and subtitles, at any depth, are
+// the candidates, and the kind gate, the file rules, the unknown-file route
+// and the collision policy apply to them unchanged.
 type OneShotRequest struct {
 	ReleaseID           string
 	AnimeTitle          string
@@ -330,6 +328,7 @@ type OneShotRequest struct {
 	// UnclassifiedRoute is the instance unknown-file route the plan freezes.
 	// A one-shot is an explicit command: its plan is never deduplicated.
 	UnclassifiedRoute string
+	FileSelection     *filekinds.Selection
 	// Group is the provider-namespaced external identity of the release's RSS
 	// source (Mikan's numeric group id / AniBT's group slug), from the same
 	// frozen evidence as GroupName. It is zero when the source records none.
@@ -358,6 +357,8 @@ type PlanInput struct {
 	Preview             animedomain.PreviewReleaseResult
 	BatchPlan           *batchplan.Plan
 	UnclassifiedRoute   string
+	// FileSelection is OneShotRequest.FileSelection (nil for every other path).
+	FileSelection *filekinds.Selection
 	// Group is the provider-namespaced external identity of the release's RSS
 	// source (Mikan's numeric group id / AniBT's group slug), read from the same
 	// frozen evidence as GroupName. The zero value means the source records none.
@@ -437,6 +438,7 @@ func PreflightOneShot(ctx context.Context, request OneShotRequest, probe Probe) 
 		Item:                request.Item,
 		Preview:             request.Preview,
 		UnclassifiedRoute:   request.UnclassifiedRoute,
+		FileSelection:       request.FileSelection,
 	}, probe)
 }
 
@@ -473,7 +475,7 @@ func preflight(ctx context.Context, input PlanInput, probe Probe) PlanResult {
 	}
 	// The organization selection validates the manifest paths (canonical,
 	// unique, within the inventory budget); the plan decides placement.
-	organization, err := fileFilter.SelectOrganizationFiles(filekinds.Version, paths)
+	organization, err := fileFilter.SelectOrganizationFilesIn(filekinds.Version, paths, input.FileSelection)
 	if err != nil {
 		return fail("file_filter_path_invalid", err.Error())
 	}
@@ -510,7 +512,7 @@ func preflight(ctx context.Context, input PlanInput, probe Probe) PlanResult {
 	if input.BatchPlan != nil {
 		plan = cloneBatchPlan(*input.BatchPlan)
 	} else {
-		plan, err = BuildBatchPlan(ctx, BatchPlanInput{Evidence: evidence, Files: files, FileFilter: input.Effective.Rules.FileFilter, UnclassifiedRoute: input.UnclassifiedRoute, DownloadCompletion: string(input.Effective.DownloadCompletion.Rules.Action), DownloadCompletionSeedLimits: input.Effective.DownloadCompletion.Rules.SeedLimits})
+		plan, err = BuildBatchPlan(ctx, BatchPlanInput{Evidence: evidence, Files: files, FileFilter: input.Effective.Rules.FileFilter, UnclassifiedRoute: input.UnclassifiedRoute, Selection: input.FileSelection, DownloadCompletion: string(input.Effective.DownloadCompletion.Rules.Action), DownloadCompletionSeedLimits: input.Effective.DownloadCompletion.Rules.SeedLimits})
 		if err != nil {
 			return fail("file_parser_unavailable", strings.TrimSpace(err.Error()))
 		}

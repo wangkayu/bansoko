@@ -168,7 +168,7 @@ func (s *Service) prepareForArtifactTxWithOverrides(ctx context.Context, tx *sql
 	// video by filename prefix and read its frozen target afterwards. Both
 	// lists follow manifest path order so selection and binding never depend
 	// on runtime arrival.
-	selection := newFileSelection(artifact.frozenInput, frozen.fileKindsVersion)
+	selection := newFileSelection(artifact.frozenInput, frozen.fileKindsVersion, frozen.plan.Selection())
 	videos := make([]artifactFileContext, 0, len(artifact.files))
 	subtitles := make([]artifactFileContext, 0)
 	for _, file := range artifact.files {

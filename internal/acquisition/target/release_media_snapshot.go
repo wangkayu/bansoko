@@ -39,6 +39,8 @@ type ReleaseMediaSnapshotInput struct {
 	Files             []acquisitiondomain.ReleaseFile
 	FileFilter        animedomain.FileFilterRules
 	UnclassifiedRoute string
+	// Selection is the manual file selection a nil Plan classifies under.
+	Selection *filekinds.Selection
 	// DownloadCompletion is the action a nil Plan freezes (empty = seed).
 	DownloadCompletion string
 	// DownloadCompletionSeedLimits are the seed limits a nil Plan freezes.
@@ -65,7 +67,7 @@ func FreezeReleaseMediaSnapshotTx(ctx context.Context, scope txscope.Tx, store f
 	if in.Plan != nil {
 		plan = *in.Plan
 	} else {
-		built, err := BuildBatchPlan(ctx, BatchPlanInput{Evidence: evidence, Files: in.Files, FileFilter: in.FileFilter, UnclassifiedRoute: in.UnclassifiedRoute, DownloadCompletion: in.DownloadCompletion, DownloadCompletionSeedLimits: in.DownloadCompletionSeedLimits})
+		built, err := BuildBatchPlan(ctx, BatchPlanInput{Evidence: evidence, Files: in.Files, FileFilter: in.FileFilter, UnclassifiedRoute: in.UnclassifiedRoute, Selection: in.Selection, DownloadCompletion: in.DownloadCompletion, DownloadCompletionSeedLimits: in.DownloadCompletionSeedLimits})
 		if err != nil {
 			return fmt.Errorf("classify release files: %w", err)
 		}

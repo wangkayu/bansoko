@@ -8,6 +8,7 @@ package filekinds
 
 import (
 	"path"
+	"sort"
 	"strings"
 )
 
@@ -25,6 +26,9 @@ const (
 	ReasonIgnoredNested = "ignored_nested"
 	// ReasonIgnoredKind marks a file that is neither video nor subtitle.
 	ReasonIgnoredKind = "ignored_kind"
+	// ReasonIgnoredUnselected marks a file outside an explicit manual file
+	// selection (one-shot only): it stays in the download location untouched.
+	ReasonIgnoredUnselected = "ignored_unselected"
 )
 
 // VersionV1 is the first (and current) extension list.
@@ -114,6 +118,103 @@ func Eligibility(version, manifestPath string) (kind, reason string) {
 	default:
 		return kind, ""
 	}
+}
+
+// Selection is an explicit manual file selection of one torrent: the exact
+// manifest paths the user chose for a one-shot. It replaces the first-level
+// gate only; the kind gate still applies. A nil *Selection is the product
+// default (first-level videos and subtitles).
+type Selection struct {
+	paths map[string]struct{}
+}
+
+// NewSelection builds a selection from manifest paths (normalized, deduplicated).
+// A nil slice is no selection (nil); an empty non-nil slice is an empty
+// selection that keeps nothing.
+func NewSelection(paths []string) *Selection {
+	if paths == nil {
+		return nil
+	}
+	selection := &Selection{paths: make(map[string]struct{}, len(paths))}
+	for _, value := range paths {
+		if normalized := NormalizePath(value); normalized != "" {
+			selection.paths[normalized] = struct{}{}
+		}
+	}
+	return selection
+}
+
+// Has reports whether the selection names manifestPath.
+func (s *Selection) Has(manifestPath string) bool {
+	if s == nil {
+		return false
+	}
+	_, ok := s.paths[NormalizePath(manifestPath)]
+	return ok
+}
+
+// Paths are the selected manifest paths in ascending order (nil for no
+// selection).
+func (s *Selection) Paths() []string {
+	if s == nil {
+		return nil
+	}
+	out := make([]string, 0, len(s.paths))
+	for value := range s.paths {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// NormalizePath is the canonical manifest path form selections are keyed by.
+func NormalizePath(value string) string {
+	return strings.Trim(strings.ReplaceAll(strings.TrimSpace(value), `\`, "/"), "/")
+}
+
+// EligibilityIn is Eligibility under an optional manual selection: with a
+// selection, a video or subtitle at any depth is eligible exactly when it is
+// selected, and every other video or subtitle is ignored_unselected. Without
+// one it is Eligibility.
+func EligibilityIn(version, manifestPath string, selection *Selection) (kind, reason string) {
+	if selection == nil {
+		return Eligibility(version, manifestPath)
+	}
+	kind = Classify(version, manifestPath)
+	switch {
+	case kind == KindOther:
+		return kind, ReasonIgnoredKind
+	case !selection.Has(manifestPath):
+		return kind, ReasonIgnoredUnselected
+	default:
+		return kind, ""
+	}
+}
+
+// Directory is the directory part of a manifest path ("" for a top-level
+// file). Subtitles bind only to videos of their own directory.
+func Directory(manifestPath string) string {
+	normalized := NormalizePath(manifestPath)
+	if index := strings.LastIndex(normalized, "/"); index >= 0 {
+		return normalized[:index]
+	}
+	return ""
+}
+
+// BindSubtitleInDirectory binds a subtitle by BindSubtitle over only the
+// videos in the subtitle's own directory. videoPaths are manifest paths in
+// path order and videoBasenames their filenames without extension. First-level
+// files share the torrent root, so for them it equals BindSubtitle over every
+// first-level video.
+func BindSubtitleInDirectory(subtitlePath string, videoPaths, videoBasenames []string) int {
+	directory := Directory(subtitlePath)
+	candidates := make([]string, len(videoBasenames))
+	for index := range videoBasenames {
+		if index < len(videoPaths) && Directory(videoPaths[index]) == directory {
+			candidates[index] = videoBasenames[index]
+		}
+	}
+	return BindSubtitle(path.Base(NormalizePath(subtitlePath)), candidates)
 }
 
 // BindSubtitle is the one subtitle-to-video rule: the subtitle filename starts

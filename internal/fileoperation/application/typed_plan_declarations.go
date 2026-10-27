@@ -82,7 +82,7 @@ func buildTypedPlanDeclarations(ctx context.Context, b *artifactPreparedBatch) (
 	// the file rules select videos by filename and subtitles are not subject to
 	// them. Everything else is excluded here exactly as prepare excludes it,
 	// so no ignored file is ever declared required (and then failed).
-	selection := newFileSelection(b.artifact.frozenInput, b.frozen.fileKindsVersion)
+	selection := newFileSelection(b.artifact.frozenInput, b.frozen.fileKindsVersion, b.frozen.plan.Selection())
 	for _, file := range sorted {
 		kind, ignored := selection.classify(file)
 		required := ignored == "" && (kind != filekinds.KindVideo || fileAllowedByFilter(file, b.prep.config.fileFilter))

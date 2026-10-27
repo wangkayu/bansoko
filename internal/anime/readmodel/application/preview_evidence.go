@@ -113,7 +113,8 @@ func (s *Service) evaluateFeedItemsWithSelection(
 			return parserSelectionUnavailableError(err.Error())
 		}
 		release := animedomain.EvaluateFeedItemWithIdentity(item, evalInput, effective, hold, rules, evidence.Identity)
-		if err := previewBatchPlan(ctx, &release, item, manifests[stableKey], evidence, effective, business[0].UnclassifiedRoute); err != nil {
+		fileSelection := result.Selections[stableKey]
+		if err := previewBatchPlan(ctx, &release, item, manifests[stableKey], evidence, effective, business[0].UnclassifiedRoute, fileSelection); err != nil {
 			return parserSelectionUnavailableError(err.Error())
 		}
 		// Feed items are not persisted releases: no release id, the item's
@@ -125,11 +126,23 @@ func (s *Service) evaluateFeedItemsWithSelection(
 		frozen := freezeVarsWithProgram(program, varsEvidence, manifests[stableKey])
 		release.FrozenVars = &frozen
 		result.Releases = append(result.Releases, release)
-		files, err := previewFilesForItem(ctx, item, stableKey, release, manifests[stableKey], evalInput, effective, animeTitle, rules, evidence, business[0].UnclassifiedRoute)
+		files, err := previewFilesForItem(ctx, item, stableKey, release, manifests[stableKey], evalInput, effective, animeTitle, rules, evidence, business[0].UnclassifiedRoute, fileSelection)
 		if err != nil {
 			return parserSelectionUnavailableError(err.Error())
 		}
 		result.Files = append(result.Files, files...)
+		if result.OneShot {
+			picker, err := oneShotManifestFiles(ctx, manifests[stableKey], evidence, effective, business[0].UnclassifiedRoute, fileSelection)
+			if err != nil {
+				return parserSelectionUnavailableError(err.Error())
+			}
+			if picker != nil {
+				if result.ManifestFiles == nil {
+					result.ManifestFiles = map[string][]RSSListManifestFile{}
+				}
+				result.ManifestFiles[stableKey] = picker
+			}
+		}
 		return nil
 	})
 }
@@ -152,15 +165,16 @@ func previewFilesForItem(
 	rules attrrules.Rules,
 	evidence acquisitiontarget.ParserEvidence,
 	unknownRoute string,
+	selection *filekinds.Selection,
 ) ([]animedomain.PreviewFileResult, error) {
 	if manifest == nil || len(manifest.Files) == 0 {
 		return nil, nil
 	}
-	manifestFiles, err := previewManifestFiles(ctx, manifest, evidence)
+	manifestFiles, err := previewManifestFilesIn(ctx, manifest, evidence, selection)
 	if err != nil {
 		return nil, err
 	}
-	projected := animedomain.PreviewFilesForManifest(item, release, manifestFiles, effective, animeTitle, evalInput, rules, unknownRoute)
+	projected := animedomain.PreviewFilesForManifestIn(item, release, manifestFiles, effective, animeTitle, evalInput, rules, unknownRoute, selection)
 	results := make([]animedomain.PreviewFileResult, 0, len(projected))
 	for _, file := range projected {
 		results = append(results, animedomain.PreviewFileResult{
@@ -189,6 +203,13 @@ func previewFilesForItem(
 // canonical identity. Subtitles of a TV and a movie bind by the same strict
 // filename prefix.
 func previewManifestFiles(ctx context.Context, manifest *animecatalogdomain.TorrentManifest, evidence acquisitiontarget.ParserEvidence) ([]animedomain.ManifestFileInput, error) {
+	return previewManifestFilesIn(ctx, manifest, evidence, nil)
+}
+
+// previewManifestFilesIn is previewManifestFiles under a one-shot manual file
+// selection: the selected videos at any depth are the binding candidates, and
+// a subtitle binds only to a candidate video of its own folder.
+func previewManifestFilesIn(ctx context.Context, manifest *animecatalogdomain.TorrentManifest, evidence acquisitiontarget.ParserEvidence, selection *filekinds.Selection) ([]animedomain.ManifestFileInput, error) {
 	files := make([]animedomain.ManifestFileInput, 0, len(manifest.Files))
 	type boundCandidate struct {
 		path     string
@@ -212,7 +233,7 @@ func previewManifestFiles(ctx context.Context, manifest *animecatalogdomain.Torr
 			}
 			input.FrozenEpisode, input.PerFileEpisode = episode, true
 		}
-		if kind, ignored := filekinds.Eligibility(filekinds.Version, file.SourcePath); ignored == "" && kind == filekinds.KindVideo {
+		if kind, ignored := filekinds.EligibilityIn(filekinds.Version, file.SourcePath, selection); ignored == "" && kind == filekinds.KindVideo {
 			name := file.Filename
 			if name == "" {
 				name = path.Base(file.SourcePath)
@@ -239,7 +260,16 @@ func previewManifestFiles(ctx context.Context, manifest *animecatalogdomain.Torr
 		// A TV subtitle renders its bound video's own episode; a movie
 		// subtitle keeps the release's movie identity like its video.
 		files[index].PerFileEpisode = evidence.MediaKind != "movie"
-		if bound := filekinds.BindSubtitle(name, basenames); bound >= 0 {
+		// Only a video of the subtitle's own folder is a candidate (every
+		// first-level file shares the torrent root).
+		folder := filekinds.Directory(files[index].SourcePath)
+		local := make([]string, len(basenames))
+		for candidateIndex, candidate := range candidates {
+			if filekinds.Directory(candidate.path) == folder {
+				local[candidateIndex] = basenames[candidateIndex]
+			}
+		}
+		if bound := filekinds.BindSubtitle(name, local); bound >= 0 {
 			files[index].BoundVideo = candidates[bound].path
 			files[index].FrozenEpisode = candidates[bound].episode
 		}
@@ -254,7 +284,7 @@ func previewManifestFiles(ctx context.Context, manifest *animecatalogdomain.Torr
 // pipeline's parse failure with the fetch's own code; a seed whose torrent was
 // never fetched keeps the title verdict, since the preview cannot plan it. The
 // preview never reads the library, so it applies no deduplication.
-func previewBatchPlan(ctx context.Context, release *animedomain.PreviewReleaseResult, item acquisitiondomain.FeedItem, manifest *animecatalogdomain.TorrentManifest, evidence acquisitiontarget.ParserEvidence, effective animedomain.EffectiveConfig, route string) error {
+func previewBatchPlan(ctx context.Context, release *animedomain.PreviewReleaseResult, item acquisitiondomain.FeedItem, manifest *animecatalogdomain.TorrentManifest, evidence acquisitiontarget.ParserEvidence, effective animedomain.EffectiveConfig, route string, selection *filekinds.Selection) error {
 	if release.Verdict != animedomain.ReleaseVerdict("accepted_pending_download") {
 		return nil
 	}
@@ -275,7 +305,7 @@ func previewBatchPlan(ctx context.Context, release *animedomain.PreviewReleaseRe
 		size := file.SizeBytes
 		files = append(files, acquisitiondomain.ReleaseFile{SourcePath: file.SourcePath, Filename: file.Filename, SizeBytes: &size, MediaKind: file.MediaKind})
 	}
-	plan, err := acquisitiontarget.BuildBatchPlan(ctx, acquisitiontarget.BatchPlanInput{Evidence: evidence, Files: files, FileFilter: effective.Rules.FileFilter, UnclassifiedRoute: route, DownloadCompletion: string(effective.DownloadCompletion.Rules.Action), DownloadCompletionSeedLimits: effective.DownloadCompletion.Rules.SeedLimits})
+	plan, err := acquisitiontarget.BuildBatchPlan(ctx, acquisitiontarget.BatchPlanInput{Evidence: evidence, Files: files, FileFilter: effective.Rules.FileFilter, UnclassifiedRoute: route, Selection: selection, DownloadCompletion: string(effective.DownloadCompletion.Rules.Action), DownloadCompletionSeedLimits: effective.DownloadCompletion.Rules.SeedLimits})
 	if err != nil {
 		return err
 	}

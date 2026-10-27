@@ -297,7 +297,7 @@ SELECT operation, collision_policy FROM file_operations WHERE artifact_id = $1`,
 func TestPostProcessingPlanExcludesVideoAndSubtitleWithZeroOperations(t *testing.T) {
 	db, fixture := openFileOperationDBWithPolicy(t, func(policy map[string]any) {
 		policy["effective_sections"].(map[string]any)[animedomain.SectionFileRules] = map[string]any{"must_contain": "", "not_in": ".*"}
-		policy["fixture_manifest"] = []map[string]any{{"file_ref": "primary", "ordinal": 0, "relative_path": "source.mkv", "exact_size": 14, "media_kind": "video", "identity_evidence": map[string]any{}}, {"file_ref": "excluded-subtitle", "ordinal": 1, "relative_path": "Show/01.ass", "exact_size": 1, "media_kind": "subtitle", "identity_evidence": map[string]any{}}}
+		policy["fixture_manifest"] = []map[string]any{{"file_ref": "primary", "ordinal": 0, "relative_path": "source.mkv", "exact_size": 14, "media_kind": "video", "identity_evidence": map[string]any{}}, {"file_ref": "excluded-subtitle", "ordinal": 1, "relative_path": "source.mkv.ass", "exact_size": 1, "media_kind": "subtitle", "identity_evidence": map[string]any{}}}
 	})
 	service := newFixtureService(t, db, fixture)
 	ctx := context.Background()
@@ -305,7 +305,7 @@ func TestPostProcessingPlanExcludesVideoAndSubtitleWithZeroOperations(t *testing
 	if err := os.WriteFile(source, []byte("s"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	addArtifactFile(t, db, fixture, "excluded-subtitle", "excluded-subtitle", "Show/01.ass", source, "subtitle", 1)
+	addArtifactFile(t, db, fixture, "excluded-subtitle", "excluded-subtitle", "source.mkv.ass", source, "subtitle", 1)
 	tx, err := ownerTestDB(t).BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)

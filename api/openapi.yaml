@@ -7142,6 +7142,31 @@ components:
             and the idempotency request identity; it is never read from an
             existing subscription, link or the submitted draft. Omitted means 0.
             Out of range is a 422 OFFSET_OUT_OF_RANGE with zero writes.
+        file_selection:
+          type: array
+          minItems: 1
+          maxItems: 10000
+          items:
+            type: string
+            minLength: 1
+            maxLength: 2048
+          description: >-
+            Optional manual file selection: the source paths (as listed in the
+            item's manifest_files) of the files to import, at any depth.
+            Omitted means the default files (first-level videos and subtitles
+            the file rules keep). The selection replaces only the first-level
+            gate: the chosen files are named, bound and placed exactly like
+            first-level ones, under the same file rules, episode recognition,
+            unknown-file route and collision policy, and a subtitle binds to a
+            selected video of its own folder. The download itself is
+            unchanged (the whole torrent; no file priorities): an unselected
+            file stays in the download location untouched. Every path must be
+            a file of this seed's torrent, of the video or subtitle kind; a
+            selected video must pass the file rules; at least one video is
+            selected; and every selected subtitle must follow a selected video
+            of its folder. Otherwise 422 FILE_SELECTION_INVALID with zero
+            writes. The selection is part of the request identity and freezes
+            with the acceptance.
     SnapshotSeedExpandInput:
       type: object
       additionalProperties: false
@@ -7431,32 +7456,114 @@ components:
           minimum: -1000
           maximum: 1000
           description: >-
-            Preview-only episode offset. Shifts the file-level parse and render
-            of a group with no offset of its own, so a non-zero offset
-            previews exactly what a one-shot request with that offset would
-            render. A group's own offset wins: a persisted owner link keeps its
-            stored offset and a draft group with a matching draft source keeps
-            that source's episode_offset, so the preview never rewrites a
-            stored offset or invents a second rule. Omitted or null means 0; a
-            pure read that never changes the episode_offset a later one-shot
-            request carries. With one_shot it is the offset of every group.
+            Preview-only episode offset (null/omitted = 0) for a group with no
+            offset of its own; a stored link or matching draft source offset
+            wins and is never rewritten. With one_shot it is every group's
+            offset.
         one_shot:
           type: boolean
           description: >-
-            Omitted or false: the ordinary read. current_input only (400 INPUT_SOURCE_INVALID with any other mode).
-            Reads the draft as a one-shot browse: a one-shot names its seed
-            directly and is not bound by group selection, so every configured
-            and observed group is listed with its supplied snapshot and seeds
-            regardless of the draft's selection, and its one_shot download
-            action never answers group_not_selected. Every group previews with
-            episode_offset (the one-shot request's own offset), never a draft
-            source's or a link's. A custom draft binds the exact persisted
-            custom snapshot its single feed identity names instead of a
-            saved-revision scope, so an unsaved one-shot configuration
-            previews the seed it will download. An origin=one_shot draft
-            binds the exact persisted search snapshot its single feed
-            identity names; a missing, stale or expired identity fails 409
-            FEED_SNAPSHOT_REFRESH_REQUIRED, never re-searched. A pure read.
+            current_input only (else 400 INPUT_SOURCE_INVALID). A one-shot
+            browse: every configured and observed group lists its supplied
+            snapshot and seeds regardless of group selection (download action
+            never group_not_selected), previews with episode_offset, and every
+            item lists manifest_files. A custom draft binds the custom
+            snapshot its single feed identity names; an origin=one_shot draft
+            binds the named search snapshot (missing/stale/expired: 409
+            FEED_SNAPSHOT_REFRESH_REQUIRED, never re-searched). A pure read.
+        file_selections:
+          type: array
+          maxItems: 500
+          items:
+            $ref: '#/components/schemas/RSSListFileSelection'
+          description: >-
+            one_shot only. Per-seed preview of a download's file_selection;
+            unlisted seeds preview their default files.
+    RSSListFileSelection:
+      type: object
+      additionalProperties: false
+      required: [snapshot_id, stable_seed_key, source_paths]
+      properties:
+        snapshot_id:
+          $ref: '#/components/schemas/ID'
+        stable_seed_key:
+          type: string
+          minLength: 1
+          maxLength: 256
+        source_paths:
+          type: array
+          maxItems: 10000
+          items:
+            type: string
+            minLength: 1
+            maxLength: 2048
+    RSSListManifestFile:
+      type: object
+      additionalProperties: false
+      required: [source_path, size_bytes, media_kind, selectable, default_selected]
+      description: >-
+        One file of a seed's exact torrent manifest, at any depth, for the
+        one-shot file picker. It is the server's decision under the read's
+        draft (file rules, parser, episode offset): which files may be
+        chosen, which the default list holds, each video's own filename
+        episode recognition, and the video each subtitle follows.
+      properties:
+        source_path:
+          type: string
+          minLength: 1
+          maxLength: 2048
+        size_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        media_kind:
+          type: string
+          enum: [video, subtitle, other]
+        selectable:
+          type: boolean
+          description: >-
+            True for a video the file rules keep and for every subtitle; a
+            file of another kind or a video the rules exclude cannot be
+            chosen.
+        reason_code:
+          type: string
+          description: >-
+            Why the file cannot be chosen: ignored_kind (neither video nor
+            subtitle) or the file_* rule reason of an excluded video. Absent
+            for a selectable file.
+        default_selected:
+          type: boolean
+          description: >-
+            Whether the default file list (no manual selection) holds the
+            file: a first-level video the rules keep, or a first-level
+            subtitle that follows such a video.
+        recognition:
+          type: string
+          enum: [episode, movie, unrecognized]
+          description: >-
+            A selectable video's own filename recognition under the read's
+            parser and episode offset, decided by the same batch plan an
+            acceptance freezes: episode (episodes holds the numbers), movie
+            (the main video of a movie binding), or unrecognized (an unknown
+            file, handled by the unclassified route). Absent for a subtitle
+            and an unselectable file. For a movie binding it is computed
+            within the read's selection for that seed (the default files
+            without one).
+        season:
+          type: integer
+          description: The season of an episode recognition.
+        episodes:
+          type: array
+          items:
+            type: integer
+          description: The episode numbers of an episode recognition, ascending.
+        bound_video_source_path:
+          type: string
+          description: >-
+            The selectable video of the same folder this subtitle follows by
+            the strict filename prefix rule (longest match, then path order),
+            considering every selectable video of that folder. Absent for a
+            video and for a subtitle that follows no video.
     RSSListViewVersions:
       type: object
       additionalProperties: false
@@ -7779,7 +7886,10 @@ components:
         file that failed one of the two hard gates (below the torrent's first
         level, or neither video nor subtitle) is not a candidate and takes no
         row at all: the plan and the download cleanup still classify it, but it
-        is never published as an RSS file row. Size and media kind are read from
+        is never published as an RSS file row. Under a one-shot read's manual
+        file selection the selection replaces the first-level gate: the
+        selected files take rows at any depth and every unselected video or
+        subtitle (ignored_unselected) takes none. Size and media kind are read from
         that exact manifest: a file the release never parsed keeps them absent,
         so an unknown file is never published as a 0-byte file of kind "other",
         and a seed whose structure was never acquired lists no file row at all.
@@ -8042,6 +8152,15 @@ components:
           $ref: '#/components/schemas/RSSListDownloadAction'
         library_overlap:
           $ref: '#/components/schemas/LibraryOverlap'
+        manifest_files:
+          type: array
+          items:
+            $ref: '#/components/schemas/RSSListManifestFile'
+          description: >-
+            one_shot reads only: every file of the seed's exact torrent
+            manifest (any depth, any kind) for the one-shot file picker, in
+            source path order. Absent for other reads and for a seed whose
+            torrent was not expanded.
     RSSListGroup:
       type: object
       additionalProperties: false
@@ -10337,6 +10456,7 @@ components:
         - planned
         - ignored_nested
         - ignored_kind
+        - ignored_unselected
         - excluded_by_rule
         - episode_unrecognized
         - covered_existing

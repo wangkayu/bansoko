@@ -108,7 +108,7 @@ func (s *Service) composePendingOwnerBench(ctx context.Context, mode string, wor
 	if scopeIdentity != "" {
 		composeIdentity = scopeIdentity
 	}
-	view, err := s.composeRSSListViewFor(ctx, mode, composeIdentity, draft, effective, selection, feed, nil, nil, 0, false)
+	view, err := s.composeRSSListViewFor(ctx, mode, composeIdentity, draft, effective, selection, feed, nil, nil, 0, false, nil)
 	if err != nil {
 		return RSSListView{}, err
 	}

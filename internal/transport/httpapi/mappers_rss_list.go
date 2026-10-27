@@ -52,6 +52,18 @@ func mapRSSListReadInput(value generated.RSSListViewInput) (readmodelapplication
 		}
 		result.OneShot = true
 	}
+	if value.FileSelections != nil {
+		if !result.OneShot {
+			return result, &apperrors.Business{Status: 400, Code: "INPUT_SOURCE_INVALID", Message: "file_selections apply to one_shot reads only."}
+		}
+		for _, selection := range *value.FileSelections {
+			result.FileSelections = append(result.FileSelections, readmodelapplication.RSSListFileSelectionInput{
+				SnapshotID:    string(selection.SnapshotId),
+				StableSeedKey: selection.StableSeedKey,
+				SourcePaths:   append([]string{}, selection.SourcePaths...),
+			})
+		}
+	}
 	if value.Observation != nil {
 		if string(value.InputSource) != "current_input" {
 			return result, &apperrors.Business{Status: 400, Code: "INPUT_SOURCE_INVALID", Message: "observation applies to current_input only."}
@@ -136,6 +148,12 @@ func mapSnapshotSeedDownloadInput(snapshotID, stableSeedKey string, value genera
 	}
 	if value.EpisodeOffset != nil {
 		input.EpisodeOffset = *value.EpisodeOffset
+	}
+	// An absent selection stays nil (the default files, and the unchanged
+	// request identity); a present one is kept as given, an empty array
+	// included, so the application refuses it with FILE_SELECTION_INVALID.
+	if value.FileSelection != nil {
+		input.FileSelection = append([]string{}, *value.FileSelection...)
 	}
 	switch string(value.InputSource) {
 	case "current_input":
@@ -285,6 +303,46 @@ func mapRSSListItem(item readmodelapplication.RSSListItem) generated.RSSListItem
 		mapped.DownloadAction.Reason = &reason
 	}
 	mapped.LibraryOverlap = mapRSSListLibraryOverlap(item.LibraryOverlap)
+	if item.ManifestFiles != nil {
+		manifest := make([]generated.RSSListManifestFile, 0, len(item.ManifestFiles))
+		for _, file := range item.ManifestFiles {
+			manifest = append(manifest, mapRSSListManifestFile(file))
+		}
+		mapped.ManifestFiles = &manifest
+	}
+	return mapped
+}
+
+// mapRSSListManifestFile maps one one-shot file picker row; absent facts stay
+// absent instead of becoming zero values.
+func mapRSSListManifestFile(file readmodelapplication.RSSListManifestFile) generated.RSSListManifestFile {
+	mapped := generated.RSSListManifestFile{
+		SourcePath:      file.SourcePath,
+		SizeBytes:       file.SizeBytes,
+		MediaKind:       generated.RSSListManifestFileMediaKind(file.MediaKind),
+		Selectable:      file.Selectable,
+		DefaultSelected: file.DefaultSelected,
+	}
+	if file.ReasonCode != "" {
+		code := file.ReasonCode
+		mapped.ReasonCode = &code
+	}
+	if file.Recognition != "" {
+		recognition := generated.RSSListManifestFileRecognition(file.Recognition)
+		mapped.Recognition = &recognition
+	}
+	if file.Season != nil {
+		season := *file.Season
+		mapped.Season = &season
+	}
+	if len(file.Episodes) > 0 {
+		episodes := append([]int{}, file.Episodes...)
+		mapped.Episodes = &episodes
+	}
+	if file.BoundVideoSourcePath != "" {
+		bound := file.BoundVideoSourcePath
+		mapped.BoundVideoSourcePath = &bound
+	}
 	return mapped
 }
 

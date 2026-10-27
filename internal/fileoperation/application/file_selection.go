@@ -19,10 +19,13 @@ import (
 type fileSelection struct {
 	version  string
 	manifest map[string]struct{} // normalized manifest paths; nil when none was frozen
+	// selected is the batch plan's frozen manual file selection (one-shot);
+	// nil is the product default (first-level files only).
+	selected *filekinds.Selection
 }
 
-func newFileSelection(frozenInput []byte, version string) fileSelection {
-	selection := fileSelection{version: version}
+func newFileSelection(frozenInput []byte, version string, selected *filekinds.Selection) fileSelection {
+	selection := fileSelection{version: version, selected: selected}
 	var input struct {
 		ReleaseFiles []struct {
 			SourcePath string `json:"source_path"`
@@ -44,8 +47,21 @@ func normalizeManifestPath(value string) string {
 
 // classify returns the file's kind under the frozen list and the typed reason
 // it is ignored (empty when it is an eligible first-level video or subtitle).
+// Under a frozen manual selection the selection replaces the first-level
+// gate: a selected video or subtitle at any depth is eligible, every other
+// one is ignored_unselected, and a file that maps to no single manifest entry
+// is unselected (fail closed).
 func (s fileSelection) classify(file artifactFileContext) (kind, reason string) {
 	kind = filekinds.Classify(s.version, file.relativePath)
+	if s.selected != nil {
+		if kind == filekinds.KindOther {
+			return kind, filekinds.ReasonIgnoredKind
+		}
+		if path, ok := s.manifestPath(file.relativePath); !ok || !s.selected.Has(path) {
+			return kind, filekinds.ReasonIgnoredUnselected
+		}
+		return kind, ""
+	}
 	switch {
 	case !s.firstLevel(file.relativePath):
 		return kind, filekinds.ReasonIgnoredNested

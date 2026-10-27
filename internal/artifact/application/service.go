@@ -1495,6 +1495,10 @@ type fileFactsContext struct {
 	// FileKindsVersion is the file kind list frozen on the snapshot.
 	FileKindsVersion string
 	Parser           frozenParserEvidence
+	// Selected is the batch plan's frozen manual file selection (one-shot):
+	// a selected video at any depth is parsed like a first-level one. nil is
+	// the product default.
+	Selected *filekinds.Selection
 }
 
 // fileFactsContextQuery is the artifact file-facts resolution query. The parser
@@ -1559,11 +1563,41 @@ func (s *Service) loadFileFactsContext(ctx context.Context, query interface {
 	context.EffectiveOffset = frozenReleaseOffset(releaseFactsRaw, releaseIdentityRaw)
 	var frozenKinds struct {
 		FileKindsVersion string `json:"file_kinds_version"`
+		BatchPlan        *struct {
+			SelectedPaths []string `json:"selected_paths"`
+		} `json:"batch_plan"`
 	}
 	if len(releaseFactsRaw) > 0 && json.Unmarshal(releaseFactsRaw, &frozenKinds) == nil {
 		context.FileKindsVersion = strings.TrimSpace(frozenKinds.FileKindsVersion)
+		if frozenKinds.BatchPlan != nil && frozenKinds.BatchPlan.SelectedPaths != nil {
+			context.Selected = filekinds.NewSelection(frozenKinds.BatchPlan.SelectedPaths)
+		}
 	}
 	return context, nil
+}
+
+// selectedArtifactFile reports whether an artifact file is in the frozen manual
+// selection. The selection holds manifest paths; the local relative path may
+// omit the torrent folder, so exactly one selected path ending with it also
+// matches. Without a selection nothing matches.
+func selectedArtifactFile(selection *filekinds.Selection, relativePath string) bool {
+	if selection == nil {
+		return false
+	}
+	relative := filekinds.NormalizePath(filepath.ToSlash(relativePath))
+	if relative == "" {
+		return false
+	}
+	if selection.Has(relative) {
+		return true
+	}
+	matches := 0
+	for _, path := range selection.Paths() {
+		if strings.HasSuffix(path, "/"+relative) {
+			matches++
+		}
+	}
+	return matches == 1
 }
 
 // frozenReleaseOffset reads the one effective offset directly from the frozen
@@ -1613,10 +1647,12 @@ func (s *Service) prepareFileFacts(ctx context.Context, artifactID string, files
 	registry := parser.DefaultRegistry()
 	for _, file := range files {
 		name := filepath.Base(file.relativePath)
-		// Only a first-level video of the frozen kind list is parsed. Every
+		// Only a first-level video of the frozen kind list (or, under a
+		// frozen one-shot manual selection, a selected video at any depth)
+		// is parsed. Every
 		// other file keeps an evidence row but an unresolved identity: a
 		// nested file, a subtitle or another kind never gets an episode.
-		eligible := file.firstLevel && filekinds.Classify(context.FileKindsVersion, name) == filekinds.KindVideo
+		eligible := (file.firstLevel || selectedArtifactFile(context.Selected, file.relativePath)) && filekinds.Classify(context.FileKindsVersion, name) == filekinds.KindVideo
 		input := episodeidentity.EpisodeIdentityInput{
 			MediaKind:   context.MediaKind,
 			FileRef:     file.fileRef,

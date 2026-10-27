@@ -10,6 +10,7 @@ import (
 	generated "bansoko/internal/acquisition/terminal/adapter/persistence/generated"
 	protocol "bansoko/internal/acquisition/terminal/domain"
 	draft "bansoko/internal/anime/draft/application"
+	"bansoko/internal/filekinds"
 	"bansoko/internal/persistence/txscope"
 	"github.com/google/uuid"
 	"github.com/sqlc-dev/pqtype"
@@ -58,6 +59,8 @@ type acquisitionIntent struct {
 	connection              string
 	production              bool
 	replacements            []*ReplacementCapture
+	// fileSelection is the one-shot manual file selection (nil elsewhere).
+	fileSelection *filekinds.Selection
 }
 type preparedNative struct {
 	args       generated.AcceptQualifiedQueuedParams
