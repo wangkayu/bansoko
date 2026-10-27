@@ -10,9 +10,55 @@ import (
 	"testing"
 	"time"
 
+	"bansoko/internal/runtime/worker"
 	"bansoko/internal/workitems"
 	"golang.org/x/sys/unix"
 )
+
+// A purge refused busy on one hop and run to its end on the next, with the
+// process stopped before that hop's settlement commits: the next hop's
+// checkpoint is a fresh invocation (not the refused one), so worker recovery
+// reads its final receipt and settles the deletion as deleted.
+func TestCleanupPurgeAfterBusyHopInterruptedBeforeSettleRecoversDeleted(t *testing.T) {
+	f := newBusyFixture(t)
+	op := f.admit(t, f.input())
+	f.busy.purgeErr = errBusy(unix.EBUSY)
+	f.runBusyDelete(t)
+	f.nextHop(t, op.ID)
+	f.busy.purgeErr = nil
+
+	ctx := context.Background()
+	claim, err := f.store.ClaimDue(ctx, "cleanup-busy-worker", []string{workitems.KindReplacementDelete}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := f.service.DeleteHandler()
+	outcome, err := handler.Handle(ctx, claim)
+	if err != nil || outcome.TerminalState != workitems.StateSucceeded {
+		t.Fatalf("purge hop outcome = %+v %v", outcome, err)
+	}
+	assertFileAbsent(t, filepath.Join(f.cleanupNamespace(op.ID), "object"))
+	// The settlement is never written: the process stopped here.
+	if state, _ := f.state(t, op.ID); state != CleanupAdmitted {
+		t.Fatalf("state=%s before settlement, want admitted", state)
+	}
+	if err := f.db.QueryRow(`SELECT expected_owner_version FROM work_items WHERE id = $1`, claim.ID).Scan(&claim.ExpectedOwnerVersion); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := handler.(worker.RecoveryObserver).ObserveRecovery(ctx, claim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.Kind != worker.OutcomeFinish || recovered.OwnerResult.State != string(CleanupDeleted) || recovered.Disposition != workitems.DispositionConfirmed {
+		t.Fatalf("recovery outcome = %+v, want confirmed deleted", recovered)
+	}
+	if err := f.store.SettleRecovery(ctx, claim, recovered.TerminalState, recovered.OwnerResult, recovered.Disposition, recovered.WriteOwner, recovered.PostTransition); err != nil {
+		t.Fatal(err)
+	}
+	if state, _ := f.state(t, op.ID); state != CleanupDeleted {
+		t.Fatalf("state=%s, want deleted", state)
+	}
+}
 
 // cleanupNamespace is the deletion's private namespace beside the file.
 func (f busyFixture) cleanupNamespace(id string) string {

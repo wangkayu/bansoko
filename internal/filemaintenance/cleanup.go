@@ -546,6 +546,7 @@ func (r *cleanupRun) capture(ctx context.Context, attempt cleanupAttemptEvidence
 
 func (r *cleanupRun) advanceToPurge(ctx context.Context, attempt cleanupAttemptEvidence, captured string, observed domain.FileObservation) (worker.Outcome, error) {
 	attempt.Stage = cleanupStagePurge
+	attempt.BusyRefused = false
 	attempt.CapturePath = captured
 	attempt.CaptureObservation = observed
 	attempt.WorkItemID = r.claim.ID
@@ -597,7 +598,10 @@ func (r *cleanupRun) resume(ctx context.Context) (worker.Outcome, error) {
 	case cleanupResolutionCaptureNotStarted:
 		return r.start(ctx)
 	case cleanupResolutionPurgeNotStarted:
+		// The new invocation writes its own receipts: a refusal recorded on
+		// the previous hop must not make them unreadable.
 		next := attempt
+		next.BusyRefused = false
 		next.WorkItemID = r.claim.ID
 		next.OwnerVersion = r.claim.ExpectedOwnerVersion + 1
 		next.FencingToken = r.claim.FencingToken
