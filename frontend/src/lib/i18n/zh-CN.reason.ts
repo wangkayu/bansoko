@@ -46,6 +46,7 @@ export const reasonCopy = {
   replacement_partial_coverage: "库里的文件还包含其他集，不替换",
   covered_in_flight: "这一集正由其他下载获取",
   target_duplicate: "与另一个文件的目标位置相同",
+  target_replaced_in_release: "被同一种子中同集的后一个文件覆盖",
   no_placeable_files: "没有可以入库的文件",
   torrent_manifest_missing: "无法读取种子的文件列表",
   batch_plan_drift: "下载的文件与接受时的计划不一致",

@@ -128,7 +128,7 @@ func TestMarkDuplicateTargets(t *testing.T) {
 		{SourcePath: "d.mkv", MediaKind: "video", Included: true, RenderedTarget: target("/l/Show.mkv")},
 		{SourcePath: "e.mkv", MediaKind: "video", Included: true, RenderedTarget: target("/l/Show S01E04.mkv")},
 	}
-	markDuplicateTargets(results, files, false)
+	markDuplicateTargets(results, files, false, "fail", false)
 	got := []string{}
 	for _, result := range results {
 		reason := ""
@@ -145,8 +145,51 @@ func TestMarkDuplicateTargets(t *testing.T) {
 		{SourcePath: "a.chs.ass", MediaKind: "subtitle", Included: true, RenderedTarget: target("/l/Show S01E01.ass")},
 		{SourcePath: "a.cht.ass", MediaKind: "subtitle", Included: true, RenderedTarget: target("/l/Show S01E01.ass")},
 	}
-	markDuplicateTargets(subtitles, []ManifestFileInput{{SourcePath: "a.chs.ass"}, {SourcePath: "a.cht.ass"}}, true)
+	markDuplicateTargets(subtitles, []ManifestFileInput{{SourcePath: "a.chs.ass"}, {SourcePath: "a.cht.ass"}}, true, "fail", false)
 	if subtitles[0].Included || subtitles[1].Included {
 		t.Fatalf("subtitles on one target must both be dropped: %+v", subtitles)
+	}
+}
+
+// Under a manual one-shot selection a same-episode group on one target follows
+// the global collision policy; different episodes on one target still drop.
+func TestMarkDuplicateTargetsManualSelection(t *testing.T) {
+	target := func(value string) *string { return &value }
+	episode := &naming.FrozenEpisodeNamingFacts{Number: "1", Display: "1", Raw: "1"}
+	other := &naming.FrozenEpisodeNamingFacts{Number: "2", Display: "2", Raw: "2"}
+	files := []ManifestFileInput{
+		{SourcePath: "Pack/S2/Show - 01.mkv", MediaKind: "video", PerFileEpisode: true, FrozenEpisode: episode},
+		{SourcePath: "Pack/Show - 01.mkv", MediaKind: "video", PerFileEpisode: true, FrozenEpisode: episode},
+		{SourcePath: "c.mkv", MediaKind: "video", PerFileEpisode: true, FrozenEpisode: episode},
+		{SourcePath: "d.mkv", MediaKind: "video", PerFileEpisode: true, FrozenEpisode: other},
+	}
+	run := func(policy string) string {
+		results := []ManifestFileResult{
+			{SourcePath: "Pack/S2/Show - 01.mkv", MediaKind: "video", Included: true, RenderedTarget: target("/l/Show S01E01.mkv")},
+			{SourcePath: "Pack/Show - 01.mkv", MediaKind: "video", Included: true, RenderedTarget: target("/l/Show S01E01.mkv")},
+			{SourcePath: "c.mkv", MediaKind: "video", Included: true, RenderedTarget: target("/l/Show.mkv")},
+			{SourcePath: "d.mkv", MediaKind: "video", Included: true, RenderedTarget: target("/l/Show.mkv")},
+		}
+		markDuplicateTargets(results, files, false, policy, true)
+		got := []string{}
+		for _, result := range results {
+			reason := ""
+			if result.ReasonCode != nil {
+				reason = *result.ReasonCode
+			}
+			got = append(got, fmt.Sprintf("%s:%t:%s:%s", result.SourcePath, result.Included, reason, *result.RenderedTarget))
+		}
+		return strings.Join(got, ",")
+	}
+	tail := ",c.mkv:false:target_duplicate:/l/Show.mkv,d.mkv:false:target_duplicate:/l/Show.mkv"
+	cases := map[string]string{
+		"fail":      "Pack/S2/Show - 01.mkv:true::/l/Show S01E01.mkv,Pack/Show - 01.mkv:false:target_duplicate:/l/Show S01E01.mkv" + tail,
+		"versioned": "Pack/S2/Show - 01.mkv:true::/l/Show S01E01.mkv,Pack/Show - 01.mkv:true::/l/Show S01E01 (2).mkv" + tail,
+		"overwrite": "Pack/S2/Show - 01.mkv:false:target_replaced_in_release:/l/Show S01E01.mkv,Pack/Show - 01.mkv:true::/l/Show S01E01.mkv" + tail,
+	}
+	for policy, want := range cases {
+		if got := run(policy); got != want {
+			t.Fatalf("%s:\n got  %s\n want %s", policy, got, want)
+		}
 	}
 }

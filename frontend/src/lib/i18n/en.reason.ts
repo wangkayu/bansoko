@@ -48,6 +48,7 @@ export const enReasonCopy = {
   replacement_partial_coverage: "The library file also holds other episodes, so it is not replaced",
   covered_in_flight: "Another download is getting this episode",
   target_duplicate: "Same target as another file",
+  target_replaced_in_release: "Replaced by a later file of the same episode in this torrent",
   no_placeable_files: "No file can be imported",
   torrent_manifest_missing: "Cannot read the torrent's file list",
   batch_plan_drift: "Downloaded files differ from the accepted plan",

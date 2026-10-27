@@ -12,6 +12,7 @@ import (
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
 	"bansoko/internal/attrrules"
+	"bansoko/internal/batchplan"
 	"bansoko/internal/episodeidentity"
 	"bansoko/internal/filekinds"
 	"bansoko/internal/organizingpolicy"
@@ -465,7 +466,7 @@ func PreviewFilesForManifestIn(
 			build(index, file, outcome)
 			bySource[file.SourcePath] = index
 		}
-		markDuplicateTargets(results, ordered, pass == 1)
+		markDuplicateTargets(results, ordered, pass == 1, string(effective.Rules.FileEffect.CollisionPolicy), selection != nil)
 	}
 	return results
 }
@@ -479,7 +480,12 @@ func PreviewFilesForManifestIn(
 // or subtitles of different videos — is dropped as a whole
 // (target_duplicate). Running after the video pass lets a dropped video's
 // subtitles follow it as subtitle_video_excluded.
-func markDuplicateTargets(results []ManifestFileResult, files []ManifestFileInput, subtitles bool) {
+//
+// Under a manual one-shot selection (manual) a same-episode video group is
+// decided by the global collision policy instead (batchplan.SameEpisodeTargets,
+// the rule the target plan applies): skip keeps the first, versioned keeps all
+// under versioned names, overwrite keeps the last.
+func markDuplicateTargets(results []ManifestFileResult, files []ManifestFileInput, subtitles bool, policy string, manual bool) {
 	groups := map[string][]int{}
 	for index, result := range results {
 		if (result.MediaKind == "subtitle") != subtitles || !result.Included || result.RenderedTarget == nil {
@@ -493,8 +499,24 @@ func markDuplicateTargets(results []ManifestFileResult, files []ManifestFileInpu
 			continue
 		}
 		sort.SliceStable(members, func(i, j int) bool { return results[members[i]].SourcePath < results[members[j]].SourcePath })
+		if !subtitles && sameFrozenEpisode(files, members) {
+			for position, decision := range batchplan.SameEpisodeTargets(policy, len(members), manual) {
+				index := members[position]
+				if !decision.Keep {
+					dropped := decision.Reason
+					results[index].Included = false
+					results[index].ReasonCode = &dropped
+					continue
+				}
+				if decision.Version > 1 {
+					versioned := batchplan.VersionedTargetPath(*results[index].RenderedTarget, decision.Version)
+					results[index].RenderedTarget = &versioned
+				}
+			}
+			continue
+		}
 		drop := members
-		if (!subtitles && sameFrozenEpisode(files, members)) || (subtitles && sameBoundVideo(results, members)) {
+		if subtitles && sameBoundVideo(results, members) {
 			drop = members[1:]
 		}
 		for _, index := range drop {

@@ -648,11 +648,14 @@ func preflight(ctx context.Context, input PlanInput, probe Probe) PlanResult {
 	}
 	// Two planned videos rendering one target path. When they are the same
 	// episode (identical coverage keys: a v2 or a second encode of one episode,
-	// the duplicate the batch plan leaves to this step) the first by source path
-	// keeps it and the others are dropped. Otherwise the name cannot tell
-	// different episodes apart (typically a value that rendered empty), so every
-	// member is dropped (target_duplicate): a sibling is never overwritten or
-	// versioned, whatever the collision policy.
+	// the duplicate the batch plan leaves to this step) batchplan.SameEpisodeTargets
+	// decides in source path order: by default the first keeps it and the others
+	// are dropped; under a manual one-shot selection the global collision policy
+	// decides (skip keeps the first, versioned keeps all under versioned names,
+	// overwrite keeps the last). Otherwise the name cannot tell different
+	// episodes apart (typically a value that rendered empty), so every member is
+	// dropped (target_duplicate): a sibling is never overwritten or versioned,
+	// whatever the collision policy.
 	sort.SliceStable(entries, func(i, j int) bool { return entries[i].SourcePath < entries[j].SourcePath })
 	groups := map[string][]string{}
 	for _, entry := range entries {
@@ -670,6 +673,15 @@ func preflight(ctx context.Context, input PlanInput, probe Probe) PlanResult {
 		}
 		return true
 	}
+	decisions := map[string]batchplan.SameEpisodeTarget{}
+	for _, members := range groups {
+		if len(members) < 2 || !sameEpisode(members) {
+			continue
+		}
+		for index, decision := range batchplan.SameEpisodeTargets(string(collision), len(members), input.FileSelection != nil) {
+			decisions[members[index]] = decision
+		}
+	}
 	unique := entries[:0]
 	claimed := map[string]bool{}
 	for _, entry := range entries {
@@ -678,6 +690,22 @@ func preflight(ctx context.Context, input PlanInput, probe Probe) PlanResult {
 			drop(entry.SourcePath, batchplan.ReasonTargetDuplicate)
 			continue
 		}
+		if decision, ok := decisions[entry.SourcePath]; ok {
+			if !decision.Keep {
+				drop(entry.SourcePath, decision.Reason)
+				continue
+			}
+			if decision.Version > 1 {
+				versioned := batchplan.VersionedTargetPath(entry.TargetPath, decision.Version)
+				entry.TargetPath = versioned
+				entry.RenderSnapshot = versionedRenderSnapshot(entry.RenderSnapshot, versioned)
+				if index, ok := fileIndex[entry.SourcePath]; ok {
+					files[index].TargetPath = &versioned
+				}
+			}
+		}
+		// A versioned name may still meet another file's own target: the
+		// later one by source path is a duplicate.
 		if claimed[entry.TargetPath] {
 			drop(entry.SourcePath, batchplan.ReasonTargetDuplicate)
 			continue
@@ -783,6 +811,21 @@ func reasonOrUnknown(reason *string) string {
 		return "unknown"
 	}
 	return strings.TrimSpace(*reason)
+}
+
+// versionedRenderSnapshot records a versioned target in the frozen render
+// snapshot, so the snapshot names the target the entry plans.
+func versionedRenderSnapshot(raw json.RawMessage, target string) json.RawMessage {
+	var snapshot map[string]any
+	if json.Unmarshal(raw, &snapshot) != nil || snapshot == nil {
+		return raw
+	}
+	snapshot["target"] = target
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		return raw
+	}
+	return encoded
 }
 
 func fileEffectCollisionPolicy(effective animedomain.EffectiveConfig) string {
