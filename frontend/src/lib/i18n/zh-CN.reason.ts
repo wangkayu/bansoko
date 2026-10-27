@@ -161,6 +161,7 @@ export const reasonCopy = {
   // --- 下载器与种子 ---
   qb_submit_failed: "提交到下载器失败",
   qb_submit_prepare_failed: "提交到下载器失败",
+  downloader_hash_occupied: "下载器中已有同一种子的任务",
   qb_sync_failed: "同步下载器状态失败",
   qb_sync_retryable: "同步下载器状态失败，将自动重试",
   qb_connection_unavailable: QB_UNAVAILABLE,

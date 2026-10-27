@@ -164,6 +164,7 @@ export const enReasonCopy = {
   // --- Download client and torrents ---
   qb_submit_failed: "Failed to send to the download client",
   qb_submit_prepare_failed: "Failed to send to the download client",
+  downloader_hash_occupied: "The download client already has a task for this torrent",
   qb_sync_failed: "Failed to sync download client status",
   qb_sync_retryable: "Failed to sync download client status. It will retry automatically.",
   qb_connection_unavailable: QB_UNAVAILABLE,

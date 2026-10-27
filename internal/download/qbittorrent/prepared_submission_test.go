@@ -36,7 +36,7 @@ func TestPreparedSubmissionDoesNotReplayMutation(t *testing.T) {
 				}
 			}))
 			defer server.Close()
-			prepared, _, found, err := (Client{Endpoint: server.URL}).PrepareSubmission(context.Background(), []byte("payload"), "show.torrent", domain.PathSnapshot{RemoteRoot: "/downloads"}, "prepared-key")
+			prepared, _, found, err := (Client{Endpoint: server.URL}).PrepareSubmission(context.Background(), []byte("payload"), "show.torrent", domain.PathSnapshot{RemoteRoot: "/downloads"}, "prepared-key", nil)
 			if err != nil || found || prepared == nil {
 				t.Fatalf("prepare found=%v err=%v", found, err)
 			}

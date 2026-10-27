@@ -43,6 +43,13 @@ describe("reason codes", () => {
     expect(reasonLabel("PLAN_BUDGET_EXHAUSTED")).toBe("入库计划重试次数已用完");
   });
 
+  it("names a torrent the download client already holds in both languages", () => {
+    expect(reasonView("downloader_hash_occupied")).toEqual({ text: "下载器中已有同一种子的任务" });
+    setLocale("en", { persist: false });
+    expect(reasonView("DOWNLOADER_HASH_OCCUPIED")).toEqual({ text: "The download client already has a task for this torrent" });
+    setLocale("zh-CN", { persist: false });
+  });
+
   it("诊断里的 http_<状态码> 显示为中文并保留原始代码作为 tooltip", () => {
     expect(reasonView("http_503")).toEqual({ text: "请求失败（HTTP 503）", title: "http_503" });
     expect(reasonView("http_5")).toEqual({ text: t("common.unknownReason"), title: "http_5" });
