@@ -120,6 +120,7 @@ ALLOWED_SKIPS = {
     # anime-grid: phone-only checks skip in the desktop project and vice versa.
     ("anime-grid.spec.ts", "does not overflow at mobile width", "desktop"),
     ("anime-grid.spec.ts", "drags a phone bottom sheet down to close it, springs back on a short drag", "desktop"),
+    ("anime-grid.spec.ts", "keeps the season picked from the dropdown on the browse toolbar", "desktop"),
     # settings: breakpoint-specific layout forms are asserted per project;
     # the other project skips them by design.
     ("settings.spec.ts", "桌面端展示 section sidebar，十四个分区齐全", "mobile"),
