@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"bansoko/internal/deployment"
 	"bansoko/internal/runtime/worker"
 	"bansoko/internal/workitems"
 	"golang.org/x/sys/unix"
@@ -188,38 +189,183 @@ func TestCleanupPurgeBusyWindowExhaustedRestoresFile(t *testing.T) {
 	}
 }
 
-// When the captured file cannot be moved back (something now occupies its
-// public path) the deletion blocks with cleanup_restore_failed and its
-// attempt kept, writes no failure Activity or notice, and a scan release
-// leaves it blocked.
-func TestCleanupPurgeRestoreFailureBlocks(t *testing.T) {
-	f := newBusyFixture(t)
+// failureCopy returns the summary of the deletion's failure Activity and the
+// category its notice carries for the template.
+func (f busyFixture) failureCopy(t *testing.T, id string) (summary, category string) {
+	t.Helper()
+	if err := f.db.QueryRow(`SELECT summary FROM subscription_log_entries WHERE kind = 'cleanup_failed' AND subject_id = $1`, id).Scan(&summary); err != nil {
+		t.Fatalf("read failure activity: %v", err)
+	}
+	if err := f.db.QueryRow(`SELECT payload->>'result.category' FROM notification_admissions WHERE trigger_kind = 'replacement_deletion_failed' AND source_owner_id = $1`, id).Scan(&category); err != nil {
+		t.Fatalf("read failure notice: %v", err)
+	}
+	return summary, category
+}
+
+// giveUpAfterCapture captures the file, refuses its purge busy and runs the
+// hop at the end of the window, where the deletion gives up and restores.
+func (f busyFixture) giveUpAfterCapture(t *testing.T, beforeGiveUp func()) *ReplacementDeletion {
+	t.Helper()
 	start := time.Now().UTC()
 	f.service.now = func() time.Time { return start }
 	op := f.admit(t, f.input())
 	f.busy.purgeErr = errBusy(unix.EBUSY)
 	f.runBusyDelete(t)
-	if err := os.WriteFile(f.source, []byte("a new file"), 0o600); err != nil {
-		t.Fatal(err)
+	if beforeGiveUp != nil {
+		beforeGiveUp()
 	}
 	f.nextHop(t, op.ID)
 	f.service.now = func() time.Time { return start.Add(cleanupBusyWindow) }
-	f.runBusyDelete(t)
-	if state, code := f.state(t, op.ID); state != CleanupBlocked || code != CleanupRestoreFailed {
-		t.Fatalf("state=%s code=%s, want blocked/%s", state, code, CleanupRestoreFailed)
+	return op
+}
+
+// When another file has taken the public path, the captured file cannot be
+// moved back: the deletion fails with cleanup_restore_occupied and the file
+// kept hidden, says so in its Activity and notice, and neither a scan release
+// nor deployment recovery re-admits it (that would only repeat the window).
+func TestCleanupPurgeRestoreOccupiedFails(t *testing.T) {
+	f := newBusyFixture(t)
+	op := f.giveUpAfterCapture(t, func() {
+		if err := os.WriteFile(f.source, []byte("a new file"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if outcome := f.runBusyDelete(t); outcome.TerminalState != workitems.StateFailed {
+		t.Fatalf("occupied outcome = %+v", outcome)
+	}
+	if state, code := f.state(t, op.ID); state != CleanupFailed || code != CleanupRestoreOccupied {
+		t.Fatalf("state=%s code=%s, want failed/%s", state, code, CleanupRestoreOccupied)
 	}
 	assertFilePresent(t, filepath.Join(f.cleanupNamespace(op.ID), "object"))
 	if got, err := os.ReadFile(f.source); err != nil || string(got) != "a new file" {
 		t.Fatalf("occupying file = %q %v", got, err)
 	}
-	if a, n := f.failureActivities(t, op.ID), f.failureNotices(t, op.ID); a != 0 || n != 0 {
-		t.Fatalf("activities=%d notices=%d, want none", a, n)
+	if a, n := f.failureActivities(t, op.ID), f.failureNotices(t, op.ID); a != 1 || n != 1 {
+		t.Fatalf("activities=%d notices=%d, want 1/1", a, n)
+	}
+	if summary, category := f.failureCopy(t, op.ID); summary != "旧版本未删除：旧文件已移到同一文件夹的隐藏目录，原位置已有同名文件" || category != "path_occupied" {
+		t.Fatalf("failure copy = %q / %q", summary, category)
+	}
+	if n, err := f.service.ReleaseBlockedDeletions(context.Background(), "anime-1"); err != nil || n != 0 {
+		t.Fatalf("release = %d %v, want 0", n, err)
+	}
+	if result, err := f.service.ReconcileUnknownEffect(context.Background(), deployment.ReconcileRequest{OperationID: "cleanup-reconcile"}); err != nil || result.State != deployment.StateCompleted {
+		t.Fatalf("reconcile = %+v %v", result, err)
+	}
+	if state, _ := f.state(t, op.ID); state != CleanupFailed {
+		t.Fatalf("state=%s after recovery, want failed", state)
+	}
+	if got := liveCleanupWorkItems(t, f.db, op.ID); got != 0 {
+		t.Fatalf("an occupied restore keeps %d live items", got)
+	}
+}
+
+// A restore that moved the file back but answered an error (a lost reply, a
+// failed sync) is judged by the files: the captured object is at its public
+// path, so the deletion fails busy like a clean restore.
+func TestCleanupPurgeRestoreLandedDespiteErrorFails(t *testing.T) {
+	f := newBusyFixture(t)
+	op := f.giveUpAfterCapture(t, nil)
+	f.busy.restore = func(real func() error) error {
+		if err := real(); err != nil {
+			return err
+		}
+		return errBusy(unix.EIO)
+	}
+	f.runBusyDelete(t)
+	if state, code := f.state(t, op.ID); state != CleanupFailed || code != CleanupFileBusy {
+		t.Fatalf("state=%s code=%s, want failed/%s", state, code, CleanupFileBusy)
+	}
+	if got, err := os.ReadFile(f.source); err != nil || string(got) != "replaced episode" {
+		t.Fatalf("restored file = %q %v", got, err)
+	}
+	if _, category := f.failureCopy(t, op.ID); category != "busy" {
+		t.Fatalf("category = %q, want busy", category)
+	}
+}
+
+// A restore that did not move the file and proves nothing else blocks with
+// cleanup_restore_failed and its attempt kept; the Activity and notice say
+// the file is hidden. A scan release leaves it, deployment recovery
+// re-admits it from the intact captured object, and the next claim deletes
+// the file.
+func TestCleanupPurgeRestoreFailureBlocksForRecovery(t *testing.T) {
+	f := newBusyFixture(t)
+	op := f.giveUpAfterCapture(t, nil)
+	f.busy.restore = func(func() error) error { return errBusy(unix.EIO) }
+	f.runBusyDelete(t)
+	if state, code := f.state(t, op.ID); state != CleanupBlocked || code != CleanupRestoreFailed {
+		t.Fatalf("state=%s code=%s, want blocked/%s", state, code, CleanupRestoreFailed)
+	}
+	assertFileAbsent(t, f.source)
+	assertFilePresent(t, filepath.Join(f.cleanupNamespace(op.ID), "object"))
+	if a, n := f.failureActivities(t, op.ID), f.failureNotices(t, op.ID); a != 1 || n != 1 {
+		t.Fatalf("activities=%d notices=%d, want 1/1", a, n)
+	}
+	if summary, category := f.failureCopy(t, op.ID); summary != "旧版本未删除：旧文件已移到同一文件夹的隐藏目录，未能放回原位置" || category != "not_restored" {
+		t.Fatalf("failure copy = %q / %q", summary, category)
 	}
 	if n, err := f.service.ReleaseBlockedDeletions(context.Background(), "anime-1"); err != nil || n != 0 {
 		t.Fatalf("release = %d %v, want 0", n, err)
 	}
 	if state, _ := f.state(t, op.ID); state != CleanupBlocked {
-		t.Fatalf("state=%s, want blocked", state)
+		t.Fatalf("state=%s after release, want blocked", state)
+	}
+	f.busy.restore, f.busy.purgeErr = nil, nil
+	if result, err := f.service.ReconcileUnknownEffect(context.Background(), deployment.ReconcileRequest{OperationID: "cleanup-reconcile"}); err != nil || result.State != deployment.StateCompleted {
+		t.Fatalf("reconcile = %+v %v", result, err)
+	}
+	if state, _ := f.state(t, op.ID); state != CleanupAdmitted {
+		t.Fatalf("state=%s after recovery, want admitted", state)
+	}
+	if outcome := f.runBusyDelete(t); outcome.TerminalState != workitems.StateSucceeded {
+		t.Fatalf("re-admitted outcome = %+v", outcome)
+	}
+	if state, _ := f.state(t, op.ID); state != CleanupDeleted {
+		t.Fatalf("state=%s, want deleted", state)
+	}
+	assertFileAbsent(t, filepath.Join(f.cleanupNamespace(op.ID), "object"))
+}
+
+// A give-up that moved the file back and stopped before its settlement
+// committed leaves the refused purge attempt with nothing captured and the
+// object at its public path: worker recovery reads that as not captured and
+// fails the deletion with the file in place instead of an unknown effect.
+func TestCleanupRestoreInterruptedBeforeSettleRecovers(t *testing.T) {
+	f := newBusyFixture(t)
+	op := f.giveUpAfterCapture(t, nil)
+	ctx := context.Background()
+	claim, err := f.store.ClaimDue(ctx, "cleanup-busy-worker", []string{workitems.KindReplacementDelete}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := f.service.DeleteHandler()
+	if outcome, err := handler.Handle(ctx, claim); err != nil || outcome.TerminalState != workitems.StateFailed {
+		t.Fatalf("give-up outcome = %+v %v", outcome, err)
+	}
+	// The settlement is never written: the process stopped here.
+	assertFilePresent(t, f.source)
+	if state, _ := f.state(t, op.ID); state != CleanupAdmitted {
+		t.Fatalf("state=%s before settlement, want admitted", state)
+	}
+	if err := f.db.QueryRow(`SELECT expected_owner_version FROM work_items WHERE id = $1`, claim.ID).Scan(&claim.ExpectedOwnerVersion); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := handler.(worker.RecoveryObserver).ObserveRecovery(ctx, claim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.Kind != worker.OutcomeFinish || recovered.OwnerResult.State != string(CleanupFailed) {
+		t.Fatalf("recovery outcome = %+v, want failed", recovered)
+	}
+	if err := f.store.SettleRecovery(ctx, claim, recovered.TerminalState, recovered.OwnerResult, recovered.Disposition, recovered.WriteOwner, recovered.PostTransition); err != nil {
+		t.Fatal(err)
+	}
+	if state, _ := f.state(t, op.ID); state != CleanupFailed {
+		t.Fatalf("state=%s, want failed", state)
+	}
+	if got, err := os.ReadFile(f.source); err != nil || string(got) != "replaced episode" {
+		t.Fatalf("restored file = %q %v", got, err)
 	}
 }
 
@@ -242,6 +388,9 @@ func TestCleanupReadOnlyFailsWithoutRetry(t *testing.T) {
 	}
 	if a, n := f.failureActivities(t, op.ID), f.failureNotices(t, op.ID); a != 1 || n != 1 {
 		t.Fatalf("activities=%d notices=%d, want 1/1", a, n)
+	}
+	if summary, category := f.failureCopy(t, op.ID); summary != "旧版本未删除：文件所在位置只读，未能删除" || category != "read_only" {
+		t.Fatalf("failure copy = %q / %q", summary, category)
 	}
 	if n, err := f.service.ReleaseBlockedDeletions(context.Background(), "anime-1"); err != nil || n != 0 {
 		t.Fatalf("release = %d %v, want 0", n, err)

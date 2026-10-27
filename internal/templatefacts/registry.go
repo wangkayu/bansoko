@@ -704,9 +704,10 @@ var systemFacts = []Fact{
 		Text{"原因", "Reason"}, Text{"结果原因，已去除敏感信息。", "Reason for the outcome, with sensitive details removed."},
 		"file_operation_completed", func(f *FactSet) any { return f.Result.Reason }).derived().
 		with(ScenarioFileFailed, "目标文件已存在").with(ScenarioDeletionFailed, "文件可能被占用或没有权限"),
-	fact("result.category", TypeString, PhaseExecution, ScenarioDownloadFailed, 0,
-		Text{"失败类别", "Failure category"}, Text{"stalled（停滞）、timeout（超时）、client（下载客户端报错）、unobservable（无法读取状态）、occupied（下载器中已有同一种子的任务）或 submit（提交失败）。", "stalled, timeout, client (the download client reported an error), unobservable (status could not be read), occupied (the download client already has a task for this torrent) or submit (submission failed)."},
-		"stalled", func(f *FactSet) any { return f.Result.Category }).derived(),
+	fact("result.category", TypeString, PhaseExecution, ScenarioDownloadFailed|ScenarioDeletionFailed, 0,
+		Text{"失败类别", "Failure category"}, Text{"下载失败：stalled（停滞）、timeout（超时）、client（下载客户端报错）、unobservable（无法读取状态）、occupied（下载器中已有同一种子的任务）或 submit（提交失败）。旧版本未删除：busy（可能被占用或没有权限）、read_only（所在位置只读）、not_restored（已移到隐藏目录，未能放回原位置）或 path_occupied（已移到隐藏目录，原位置已有同名文件）。", "Download failed: stalled, timeout, client (the download client reported an error), unobservable (status could not be read), occupied (the download client already has a task for this torrent) or submit (submission failed). Old version not deleted: busy (may be in use or not permitted to change), read_only (on a read-only location), not_restored (moved to a hidden folder and could not be moved back) or path_occupied (moved to a hidden folder; another file now has its name)."},
+		"stalled", func(f *FactSet) any { return f.Result.Category }).derived().
+		with(ScenarioDeletionFailed, "busy"),
 	fact("result.retryable", TypeBoolean, PhaseExecution, ScenarioDownloadFailed, 0,
 		Text{"可重试", "Retryable"}, Text{"能否在 RSS 页面重试这个发布。", "Whether the release can be retried from the RSS page."},
 		true, func(f *FactSet) any { return f.Result.Retryable }).derived(),

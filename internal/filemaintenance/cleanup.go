@@ -304,7 +304,7 @@ func (s *CleanupService) settleWriter(op *ReplacementDeletion, expected int64, t
 			if err := s.appendCleanupActivityTx(ctx, scope, &settled, "skipped", code); err != nil {
 				return 0, err
 			}
-		case CleanupFailed:
+		case CleanupFailed, CleanupBlocked:
 			if cleanupGaveUp(code) {
 				settled := *op
 				settled.Version = version

@@ -259,7 +259,7 @@ var defaultsZH = map[string][2]string{
 	TriggerUnknownFilesImported: {"有未识别的文件入库：{{anime.title}}",
 		"{{release.title}}\n{{out.count}} 个文件需要手动匹配：\n{{out.files}}"},
 	TriggerReplacementDeletionFailed: {"旧版本未删除：{{anime.title}}",
-		"{{file.name}}\n文件可能被占用或没有权限"},
+		"{{file.name}}\n{{if(eq(result.category, 'read_only'), '文件所在位置只读，未能删除', if(eq(result.category, 'not_restored'), '旧文件已移到同一文件夹的隐藏目录，未能放回原位置', if(eq(result.category, 'path_occupied'), '旧文件已移到同一文件夹的隐藏目录，原位置已有同名文件', '文件可能被占用或没有权限')))}}"},
 }
 
 var defaultsEN = map[string][2]string{
@@ -278,7 +278,7 @@ var defaultsEN = map[string][2]string{
 	TriggerUnknownFilesImported: {"Unrecognized files added: {{anime.title}}",
 		"{{release.title}}\n{{out.count}} file(s) need a manual match:\n{{out.files}}"},
 	TriggerReplacementDeletionFailed: {"Old version not deleted: {{anime.title}}",
-		"{{file.name}}\nThe file may be in use or not permitted to change"},
+		"{{file.name}}\n{{if(eq(result.category, 'read_only'), 'The file is on a read-only location and was not deleted', if(eq(result.category, 'not_restored'), 'The old file was moved to a hidden folder next to it and could not be moved back', if(eq(result.category, 'path_occupied'), 'The old file was moved to a hidden folder next to it; another file now has its name', 'The file may be in use or not permitted to change')))}}"},
 }
 
 // Sample returns the fixed redacted sample facts for a trigger, keyed by the

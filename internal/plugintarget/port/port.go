@@ -121,9 +121,10 @@ func SubscriptionChangedRequest(subscriptionID string, version int64, managedAni
 const ReplacementDeletionFailedResultKey = "busy_exhausted"
 
 // ReplacementDeletionFailedRequest builds the replacement_deletion_failed
-// admission of one deletion obligation whose retries ran out. fileName is the
-// base name only, never a path; reason is already user-facing text.
-func ReplacementDeletionFailedRequest(deletionID string, version int64, managedAnimeID, animeTitle, fileName, reason string) (BusinessDeliveryRequest, error) {
+// admission of one deletion obligation that gave up. fileName is the base name
+// only, never a path; reason is already user-facing text; category names why
+// (busy, read_only, not_restored or path_occupied) for templates to word.
+func ReplacementDeletionFailedRequest(deletionID string, version int64, managedAnimeID, animeTitle, fileName, reason, category string) (BusinessDeliveryRequest, error) {
 	title := any(nil)
 	if animeTitle != "" {
 		title = animeTitle
@@ -131,6 +132,7 @@ func ReplacementDeletionFailedRequest(deletionID string, version int64, managedA
 	payload, err := json.Marshal(map[string]any{
 		"anime.id": managedAnimeID, "anime.title": title,
 		"file.name": path.Base(fileName), "result.reason": reason,
+		"result.category": category,
 	})
 	if err != nil {
 		return BusinessDeliveryRequest{}, err

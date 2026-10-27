@@ -107,11 +107,19 @@ func resolveCleanupAttempt(ctx context.Context, observer executorpkg.CleanupFile
 		// A refused, proven-unapplied stage has no receipt left to read.
 		// A capture: nothing at the capture path means it never happened
 		// (only this deletion renames into it); the fresh start re-observes
-		// the source. A purge: the captured object is still intact.
+		// the source. A purge: the captured object is still intact, or a
+		// give-up moved it back to the public path before its settlement
+		// committed, which leaves nothing captured.
 		if attempt.Stage == cleanupStagePurge {
 			observed, err := observeCleanupFile(ctx, observer, attempt.CapturePath, op.SourceFingerprint)
 			if err == nil && sameFrozenCleanupObservation(observed, attempt.CaptureObservation) {
 				return cleanupResolutionPurgeNotStarted
+			}
+			if isMissingCleanupError(err) {
+				source, sourceErr := observeCleanupFile(ctx, observer, attempt.SourcePath, op.SourceFingerprint)
+				if sourceErr == nil && sameFrozenCleanupObservation(source, attempt.CaptureObservation) {
+					return cleanupResolutionCaptureNotStarted
+				}
 			}
 			return cleanupResolutionUnknown
 		}

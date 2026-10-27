@@ -18,7 +18,7 @@ import (
 // The deletion notice names the obligation as its source and carries the file
 // base name only, never its path.
 func TestReplacementDeletionFailedRequest(t *testing.T) {
-	request, err := ReplacementDeletionFailedRequest("cleanup-1", 4, "anime-1", "Show", "/library/Show/Season 1/Show - 01.mkv", "file may be in use")
+	request, err := ReplacementDeletionFailedRequest("cleanup-1", 4, "anime-1", "Show", "/library/Show/Season 1/Show - 01.mkv", "file may be in use", "busy")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,11 +31,11 @@ func TestReplacementDeletionFailedRequest(t *testing.T) {
 	if err := json.Unmarshal(request.Payload, &payload); err != nil {
 		t.Fatal(err)
 	}
-	if len(payload) != 4 || payload["file.name"] != "Show - 01.mkv" || payload["anime.title"] != "Show" ||
-		payload["anime.id"] != "anime-1" || payload["result.reason"] != "file may be in use" {
+	if len(payload) != 5 || payload["file.name"] != "Show - 01.mkv" || payload["anime.title"] != "Show" ||
+		payload["anime.id"] != "anime-1" || payload["result.reason"] != "file may be in use" || payload["result.category"] != "busy" {
 		t.Fatalf("payload = %v", payload)
 	}
-	untitled, err := ReplacementDeletionFailedRequest("cleanup-1", 4, "anime-1", "", "x.mkv", "r")
+	untitled, err := ReplacementDeletionFailedRequest("cleanup-1", 4, "anime-1", "", "x.mkv", "r", "busy")
 	if err != nil {
 		t.Fatal(err)
 	}

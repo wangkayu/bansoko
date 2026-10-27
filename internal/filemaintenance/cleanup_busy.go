@@ -31,15 +31,35 @@ const (
 	// refused: waiting does not help, so it fails on the first refusal.
 	CleanupFileRefused = "cleanup_file_refused"
 	// CleanupRestoreFailed blocks a deletion that gave up after capturing
-	// its file and could not move it back to its public path; deployment
-	// recovery re-admits it from the intact captured object.
-	CleanupRestoreFailed  = "cleanup_restore_failed"
-	cleanupBusyRetryAfter = 5 * time.Minute
-	cleanupBusyWindow     = 24 * time.Hour
+	// its file and could not move it back to its public path for a reason
+	// other than a file now holding that path; deployment recovery re-admits
+	// it from the intact captured object.
+	CleanupRestoreFailed = "cleanup_restore_failed"
+	// CleanupRestoreOccupied fails a deletion that gave up after capturing
+	// its file while another file took its public path: the captured object
+	// stays in the private namespace. Re-admitting it would only repeat the
+	// same 24-hour window and the same refusal, so nothing retries it.
+	CleanupRestoreOccupied = "cleanup_restore_occupied"
+	cleanupBusyRetryAfter  = 5 * time.Minute
+	cleanupBusyWindow      = 24 * time.Hour
 	// cleanupBusySummary is the user-facing reason of a deletion that gave
-	// up: an EACCES/EPERM answer may also be a real permission problem.
+	// up busy: an EACCES/EPERM answer may also be a real permission problem.
 	cleanupBusySummary = "文件可能被占用或没有权限"
 )
+
+// cleanupFailureCopy is the user-facing reason and the notice template
+// category of a deletion that gave up.
+func cleanupFailureCopy(code string) (reason, category string) {
+	switch code {
+	case CleanupFileRefused:
+		return "文件所在位置只读，未能删除", "read_only"
+	case CleanupRestoreFailed:
+		return "旧文件已移到同一文件夹的隐藏目录，未能放回原位置", "not_restored"
+	case CleanupRestoreOccupied:
+		return "旧文件已移到同一文件夹的隐藏目录，原位置已有同名文件", "path_occupied"
+	}
+	return cleanupBusySummary, "busy"
+}
 
 // cleanupWorkInput is the replacement_delete input snapshot. BusySince is the
 // first refusal of the busy chain the item continues; every hop copies it, so
@@ -149,10 +169,12 @@ func (r *cleanupRun) discardRefused(ctx context.Context, attempt cleanupAttemptE
 }
 
 // giveUp ends a deletion that will not happen with its file at the public
-// path: a captured object is first moved back where it was. When that move
-// fails the deletion blocks with its refused attempt kept, so deployment
-// recovery re-admits it from the intact captured object; it is never failed
-// with the file hidden.
+// path: a captured object is first moved back where it was. A restore that
+// reports an error is judged by the files: the captured object at the public
+// path is restored; the captured object intact while another file holds the
+// public path fails the deletion with the object kept hidden
+// (cleanup_restore_occupied); anything else blocks with the refused attempt
+// kept, so deployment recovery re-admits it from the intact captured object.
 func (r *cleanupRun) giveUp(ctx context.Context, attempt cleanupAttemptEvidence, code, reason string) worker.Outcome {
 	if attempt.Stage == cleanupStagePurge {
 		restorer, ok := r.service.executor.(interface {
@@ -165,24 +187,61 @@ func (r *cleanupRun) giveUp(ctx context.Context, attempt cleanupAttemptEvidence,
 			err = restorer.RestoreCaptured(ctx, attempt.CapturePath, attempt.SourcePath, attempt.CaptureObservation)
 		}
 		if err != nil {
-			return r.blockKeepingAttempt(attempt, CleanupRestoreFailed, safeCleanupReason(err))
+			switch r.restoreRefusal(ctx, attempt) {
+			case cleanupRestoreLanded:
+			case cleanupRestorePathOccupied:
+				return r.settleKeepingAttempt(attempt, CleanupFailed, CleanupRestoreOccupied, safeCleanupReason(err))
+			default:
+				return r.settleKeepingAttempt(attempt, CleanupBlocked, CleanupRestoreFailed, safeCleanupReason(err))
+			}
 		}
 	}
 	return r.settle(workitems.StateFailed, CleanupFailed, code, reason)
 }
 
-// blockKeepingAttempt blocks the obligation with attempt persisted first, in
-// the WorkItem's terminal transaction.
-func (r *cleanupRun) blockKeepingAttempt(attempt cleanupAttemptEvidence, code, reason string) worker.Outcome {
+type cleanupRestoreResult int
+
+const (
+	cleanupRestoreUnproven cleanupRestoreResult = iota
+	cleanupRestoreLanded
+	cleanupRestorePathOccupied
+)
+
+// restoreRefusal observes the files after a restore reported an error: the
+// public path holding the captured object means the move landed (a lost
+// reply, or a sync or verification that failed after it); the captured object
+// still intact with another file at the public path means that file took it.
+func (r *cleanupRun) restoreRefusal(ctx context.Context, attempt cleanupAttemptEvidence) cleanupRestoreResult {
+	if ctx.Err() != nil {
+		return cleanupRestoreUnproven
+	}
+	executor, fingerprint := r.service.executor, r.op.SourceFingerprint
+	source, sourceErr := observeCleanupFile(ctx, executor, attempt.SourcePath, fingerprint)
+	if sourceErr == nil && sameFrozenCleanupObservation(source, attempt.CaptureObservation) {
+		return cleanupRestoreLanded
+	}
+	if sourceErr != nil && !errors.Is(sourceErr, domain.ErrNotRegularFile) {
+		return cleanupRestoreUnproven
+	}
+	captured, err := observeCleanupFile(ctx, executor, attempt.CapturePath, fingerprint)
+	if err == nil && sameFrozenCleanupObservation(captured, attempt.CaptureObservation) {
+		return cleanupRestorePathOccupied
+	}
+	return cleanupRestoreUnproven
+}
+
+// settleKeepingAttempt settles the obligation with attempt persisted first,
+// in the WorkItem's terminal transaction.
+func (r *cleanupRun) settleKeepingAttempt(attempt cleanupAttemptEvidence, to CleanupState, code, reason string) worker.Outcome {
 	s, op, expected := r.service, r.op, r.claim.ExpectedOwnerVersion
 	writer := func(ctx context.Context, scope txscope.Tx, result workitems.OwnerResult) (int64, error) {
 		version, err := s.persistAttemptTx(ctx, scope, op.ID, expected, attempt)
 		if err != nil {
 			return 0, err
 		}
-		return s.settleWriter(op, version, CleanupBlocked, code, reason)(ctx, scope, result)
+		return s.settleWriter(op, version, to, code, reason)(ctx, scope, result)
 	}
-	return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: string(CleanupBlocked), ReasonCode: code, Reason: reason}, writer)
+	return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: string(to), ReasonCode: code, Reason: reason}, writer)
 }
 
 func (s *CleanupService) persistAttemptTx(ctx context.Context, scope txscope.Tx, cleanupID string, expected int64, attempt cleanupAttemptEvidence) (int64, error) {
@@ -227,11 +286,15 @@ func (r *cleanupRun) busyRetry(attempt *cleanupAttemptEvidence, since time.Time,
 	return outcome
 }
 
-// cleanupGaveUp reports the failure codes of a deletion that gave up with its
-// file at the public path: they carry the cleanup_failed Activity and the
-// replacement_deletion_failed notice.
+// cleanupGaveUp reports the codes of a deletion that gave up (failed, or
+// blocked with its file hidden after a restore that did not land): they carry
+// the cleanup_failed Activity and the replacement_deletion_failed notice.
 func cleanupGaveUp(code string) bool {
-	return code == CleanupFileBusy || code == CleanupFileRefused
+	switch code {
+	case CleanupFileBusy, CleanupFileRefused, CleanupRestoreFailed, CleanupRestoreOccupied:
+		return true
+	}
+	return false
 }
 
 // appendCleanupFailureTx records the end of a deletion that gave up in the
@@ -243,6 +306,7 @@ func (s *CleanupService) appendCleanupFailureTx(ctx context.Context, scope txsco
 	if op == nil {
 		return nil
 	}
+	reason, category := cleanupFailureCopy(code)
 	if s.activity != nil {
 		subscriptionID, err := s.repository.SubscriptionIDForAnimeTx(ctx, scope, op.ManagedAnimeID)
 		switch {
@@ -261,7 +325,7 @@ func (s *CleanupService) appendCleanupFailureTx(ctx context.Context, scope txsco
 				SubjectVersion:  op.Version,
 				StableResultKey: code,
 				Title:           "清理失败",
-				Summary:         "旧版本未删除：" + cleanupBusySummary,
+				Summary:         "旧版本未删除：" + reason,
 				CorrelationID:   op.CorrelationID,
 				CausationType:   "replacement_decision",
 				CausationID:     op.ReplacementRef,
@@ -278,7 +342,7 @@ func (s *CleanupService) appendCleanupFailureTx(ctx context.Context, scope txsco
 		if err != nil {
 			return fmt.Errorf("read deletion notice anime: %w", err)
 		}
-		request, err := plugintargetport.ReplacementDeletionFailedRequest(op.ID, op.Version, op.ManagedAnimeID, title, filepath.Base(op.SourcePath), cleanupBusySummary)
+		request, err := plugintargetport.ReplacementDeletionFailedRequest(op.ID, op.Version, op.ManagedAnimeID, title, filepath.Base(op.SourcePath), reason, category)
 		if err != nil {
 			return fmt.Errorf("encode deletion notice: %w", err)
 		}

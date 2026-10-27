@@ -32,6 +32,7 @@ type busyCleanupExecutor struct {
 	filesystem.OSCleanupExecutor
 	moveErr, purgeErr error
 	refused           func()
+	restore           func(real func() error) error
 	observeBusy       bool
 	source            string
 }
@@ -51,6 +52,17 @@ func newBusyCleanupExecutor(base filesystem.OSCleanupExecutor, source string) *b
 		return nil
 	}
 	return e
+}
+
+// RestoreCaptured runs the real restore through restore when set: it may run
+// it and still answer an error (a reply lost after the server applied the
+// move), or answer one without running it.
+func (e *busyCleanupExecutor) RestoreCaptured(ctx context.Context, capture, source string, expected domain.FileObservation) error {
+	real := func() error { return e.OSCleanupExecutor.RestoreCaptured(ctx, capture, source, expected) }
+	if e.restore != nil {
+		return e.restore(real)
+	}
+	return real()
 }
 
 func (e *busyCleanupExecutor) ObserveMetadataFile(ctx context.Context, path string) (domain.FileObservation, error) {
@@ -249,7 +261,7 @@ func TestCleanupBusyWindowExhaustedFailsWithActivityAndNotice(t *testing.T) {
 	if err := json.Unmarshal(payload, &fields); err != nil {
 		t.Fatal(err)
 	}
-	if fields["file.name"] != filepath.Base(f.source) || fields["anime.title"] != "Show" || fields["result.reason"] != cleanupBusySummary {
+	if fields["file.name"] != filepath.Base(f.source) || fields["anime.title"] != "Show" || fields["result.reason"] != cleanupBusySummary || fields["result.category"] != "busy" {
 		t.Fatalf("notice payload = %s", payload)
 	}
 }
