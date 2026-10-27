@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"bansoko/internal/observability/port"
+	"bansoko/internal/subscription/competition"
 	"bansoko/internal/workitems"
 )
 
@@ -71,9 +72,9 @@ func (s *ReplacementTriggerService) TriggerPlacementCommitted(ctx context.Contex
 // bumped on stop/resume), reads the latest Placement facts from the paused
 // period, and never replays a pre-stop decision id (the frozen decision
 // digest carries the new Subscription version).
-// It also enqueues the fallback query: an acquisition that settled while the
-// subscription was stopped triggered nothing, so the pools it freed are
-// queried now.
+// It also enqueues the subscription competition: an acquisition that settled
+// while the subscription was stopped triggered nothing, so the episodes it
+// freed are compared now, with every release still waiting.
 func (s *ReplacementTriggerService) TriggerSubscriptionResumed(ctx context.Context, animeID string) error {
 	if err := s.trigger(ctx, TriggerSubscriptionResumed, animeID, ""); err != nil {
 		return err
@@ -85,8 +86,8 @@ func (s *ReplacementTriggerService) TriggerSubscriptionResumed(ctx context.Conte
 // reconciliation generation (the closure child dispatches it). It is gated by
 // the same phase-1 active check as every other trigger; the neutral scan and
 // alignment consumers are independent and never pass through this port.
-// A completed scan also runs the fallback query (owner ruling 16: a scan is
-// one of the comparison moments).
+// A completed scan also runs the subscription competition (owner ruling 16:
+// a scan is one of the comparison moments).
 func (s *ReplacementTriggerService) TriggerGenerationCompleted(ctx context.Context, animeID string) error {
 	if err := s.trigger(ctx, TriggerGenerationCompleted, animeID, ""); err != nil {
 		return err
@@ -94,8 +95,9 @@ func (s *ReplacementTriggerService) TriggerGenerationCompleted(ctx context.Conte
 	return s.triggerFallback(ctx, TriggerGenerationCompleted, animeID)
 }
 
-// triggerFallback enqueues the anime's replacement_fallback item in its own
-// transaction; a stopped or missing subscription enqueues nothing.
+// triggerFallback enqueues the instance's subscription competition in its
+// own transaction (the competition owns the replacement fallback); a stopped
+// or missing subscription enqueues nothing.
 func (s *ReplacementTriggerService) triggerFallback(ctx context.Context, reason, animeID string) error {
 	if s == nil || s.db == nil || s.workItems == nil {
 		err := errors.New("replacement trigger is not fully wired")
@@ -108,7 +110,7 @@ func (s *ReplacementTriggerService) triggerFallback(ctx context.Context, reason,
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := EnqueueFallbackTx(ctx, tx, s.workItems, animeID, reason); err != nil {
+	if _, err := competition.EnqueueTx(ctx, tx, s.workItems, animeID, reason, competition.Always); err != nil {
 		s.recordFailure(ctx, animeID, err)
 		return err
 	}

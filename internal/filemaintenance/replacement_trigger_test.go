@@ -202,7 +202,7 @@ func TestTriggerPlacementCommittedStoppedSkips(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // A replacement policy save changes only the frozen policy: it enqueues no
-// replacement_evaluate and no replacement_fallback WorkItem, whatever the
+// replacement_evaluate and no subscription_competition WorkItem, whatever the
 // instance holds (everything placed, a candidate still in flight, or a live
 // evaluate item already pending). The next comparison moment decides the old
 // files and the in-flight candidates under the new policy.
@@ -246,8 +246,8 @@ func TestInstancePolicySaveEnqueuesNoReplacementWork(t *testing.T) {
 	if item.Trigger != TriggerPlacementCommitted {
 		t.Fatalf("a policy save must not re-input the pending item: trigger=%s", item.Trigger)
 	}
-	if got := countWorkItemsOfKind(t, db, "anime-1", workitems.KindReplacementFallback); got != 0 {
-		t.Fatalf("a policy save must enqueue no fallback query: %d items", got)
+	if got := countWorkItemsOfKind(t, db, "anime-1", workitems.KindSubscriptionCompetition); got != 0 {
+		t.Fatalf("a policy save must enqueue no subscription competition: %d items", got)
 	}
 	var version int64
 	if err := db.QueryRow(`SELECT replacement_version FROM anime_business_configs WHERE managed_anime_id = 'anime-1'`).Scan(&version); err != nil {

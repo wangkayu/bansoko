@@ -228,8 +228,8 @@ func TestReplacementFallbackOnDownloaderRemovalRealQB(t *testing.T) {
 		time.Sleep(time.Second)
 	}
 	var fallbackRuns int
-	if err := s.svc.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM work_item_history WHERE owner_type = 'file_maintenance' AND owner_id = $1 AND kind = 'replacement_fallback' AND state = 'succeeded'`, s.animeID).Scan(&fallbackRuns); err != nil || fallbackRuns < 1 {
-		t.Fatalf("the fallback query must have run: %d %v", fallbackRuns, err)
+	if err := s.svc.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM work_item_history WHERE owner_type = 'file_maintenance' AND owner_id = $1 AND kind = 'subscription_competition' AND state = 'succeeded'`, s.animeID).Scan(&fallbackRuns); err != nil || fallbackRuns < 1 {
+		t.Fatalf("the subscription competition must have run: %d %v", fallbackRuns, err)
 	}
 	s.svc.driveToPlacement(t, ctx, s.animeID, "B", files["B"], 1)
 	waitForPlacementCount(t, ctx, s.svc.db, s.animeID, 1)

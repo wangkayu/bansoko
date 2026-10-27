@@ -474,7 +474,7 @@ runtime = assert_object.call("RSSSourceRuntime", %w[rss_source_id health version
 abort "RSSSourceRuntime health enum drifted" unless enum_values.call(runtime.fetch("properties").fetch("health")) == %w[unknown ready degraded failed]
 
 release = schemas.fetch("Release")
-canonical_verdicts = %w[discovered waiting_metadata subscription_stopped source_unavailable parse_failed accepted_pending_download filtered adopted_existing acquisition_failed submitted resume_baseline start_baseline]
+canonical_verdicts = %w[discovered waiting_metadata subscription_stopped source_unavailable parse_failed accepted_pending_download filtered adopted_existing acquisition_failed submitted resume_baseline start_baseline awaiting_competition]
 abort "Release verdict is not canonical" unless enum_values.call(release.fetch("properties").fetch("verdict")) == canonical_verdicts
 abort "Release must expose reason_code" unless required_fields.call(release).include?("reason_code")
 %w[DownloadTask Artifact FileOperation].each do |name|

@@ -84,7 +84,8 @@ func discoveryVerdictSettles(verdict string) (notify, drop bool) {
 	switch verdict {
 	case "filtered", "subscription_stopped":
 		return false, true
-	case "parse_failed", "source_unavailable":
+	case "parse_failed", "source_unavailable", "awaiting_competition":
+		// awaiting_competition: the competition's decided verdict settles it.
 		return false, false
 	default:
 		return true, false

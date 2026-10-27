@@ -1440,7 +1440,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Runs the Release through normal acceptance again, synchronously. It is allowed while the Release has no download in progress and either never had a download or its last download failed; it never bypasses rules, the metadata hold or fill-missing deduplication, and works while the subscription is stopped. Accepted creates a new DownloadTask and keeps the failed one as a record. Filtered, held, present and failed are results, not errors. Replaying the same Idempotency-Key returns the first result. A Release that may not be retried now answers 409 RELEASE_NOT_RETRYABLE with the reason in details[0].code. */
+        /** @description Runs the Release through normal acceptance again, synchronously. It is allowed while the Release has no download in progress and either never had a download or its last download failed; it never bypasses rules, the metadata hold or fill-missing deduplication, and works while the subscription is stopped. In an active subscription a downloadable Release waits for the subscription's competition again (awaiting, verdict awaiting_competition); in a stopped one accepted creates a new DownloadTask and keeps the failed one as a record. Awaiting, filtered, held, present and failed are results, not errors. Replaying the same Idempotency-Key returns the first result. A Release that may not be retried now answers 409 RELEASE_NOT_RETRYABLE with the reason in details[0].code. */
         post: operations["retryRelease"];
         delete?: never;
         options?: never;
@@ -3852,10 +3852,10 @@ export interface components {
             feed_title?: string;
         };
         /**
-         * @description resume_baseline: present in the feed when a stopped subscription resumed; never evaluated or retried. start_baseline: the subscription has new_releases_only and the Release was published before the instance was created (or has no publish time); automatic paths never evaluate it and a rule change does not re-evaluate it, but an explicit retryRelease evaluates it through every rule. Both are quiet terminal verdicts: no failure or discovery notice.
+         * @description awaiting_competition: the Release passed the seed filter, the torrent, the file rules and the batch plan of an active subscription and waits for the subscription's competition, which compares every waiting Release of the subscription with its managed files and running downloads and decides which one downloads each episode; never carries a DownloadTask. resume_baseline: present in the feed when a stopped subscription resumed; never evaluated or retried. start_baseline: the subscription has new_releases_only and the Release was published before the instance was created (or has no publish time); automatic paths never evaluate it and a rule change does not re-evaluate it, but an explicit retryRelease evaluates it through every rule. Both are quiet terminal verdicts: no failure or discovery notice.
          * @enum {string}
          */
-        ReleaseVerdict: "discovered" | "waiting_metadata" | "subscription_stopped" | "source_unavailable" | "parse_failed" | "accepted_pending_download" | "filtered" | "adopted_existing" | "acquisition_failed" | "submitted" | "resume_baseline" | "start_baseline";
+        ReleaseVerdict: "discovered" | "waiting_metadata" | "subscription_stopped" | "source_unavailable" | "parse_failed" | "accepted_pending_download" | "filtered" | "adopted_existing" | "acquisition_failed" | "submitted" | "resume_baseline" | "start_baseline" | "awaiting_competition";
         RawReleaseFacts: {
             title: string;
             /** Format: date-time */
@@ -5124,12 +5124,12 @@ export interface components {
             accepted: true;
             scheduled_count: number;
         };
-        /** @description Result of one Release retry. accepted carries the new DownloadTask; filtered, held, present and failed carry the acceptance reason_code the Release now records. */
+        /** @description Result of one Release retry. accepted carries the new DownloadTask; awaiting means the Release of an active subscription waits for the subscription's competition again (verdict awaiting_competition); filtered, held, present and failed carry the acceptance reason_code the Release now records. */
         ReleaseRetryResult: {
             release_id: components["schemas"]["ID"];
             verdict: string;
             /** @enum {string} */
-            outcome: "accepted" | "filtered" | "held" | "present" | "failed";
+            outcome: "accepted" | "awaiting" | "filtered" | "held" | "present" | "failed";
             reason_code?: string;
             download_task_id?: components["schemas"]["ID"];
         };

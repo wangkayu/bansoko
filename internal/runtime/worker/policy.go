@@ -107,9 +107,11 @@ func DefaultPolicies() []KindPolicy {
 		{Kind: workitems.KindReconciliationScan, Lane: LaneHeavy, Lease: 120 * time.Second, Heartbeat: 30 * time.Second, Deadline: 30 * time.Minute, MaxAttempts: 3, Backoff: defaultBackoff},
 		{Kind: workitems.KindAlignmentExecute, Lane: LaneHeavy, Lease: 120 * time.Second, Heartbeat: 30 * time.Second, Deadline: 30 * time.Minute, MaxAttempts: 3, Backoff: defaultBackoff},
 		{Kind: workitems.KindReplacementEvaluate, Lane: LaneHeavy, Lease: 120 * time.Second, Heartbeat: 30 * time.Second, Deadline: 30 * time.Minute, MaxAttempts: 3, Backoff: defaultBackoff},
-		// The fallback query reads the anime's pools and enqueues release
-		// evaluations: DB-bound, no file effect.
-		{Kind: workitems.KindReplacementFallback, Lane: LaneLight, Lease: 60 * time.Second, Heartbeat: 15 * time.Second, Deadline: 120 * time.Second, MaxAttempts: 3, Backoff: defaultBackoff},
+		// The subscription competition decides and admits one instance's
+		// waiting releases: target probes, naming and qB lookups for each
+		// decided release run inside one claim, so the deadline covers a whole
+		// backlog round; it has no file effect of its own.
+		{Kind: workitems.KindSubscriptionCompetition, Lane: LaneLight, Lease: 120 * time.Second, Heartbeat: 30 * time.Second, Deadline: 15 * time.Minute, MaxAttempts: 3, Backoff: defaultBackoff},
 		{Kind: workitems.KindReplacementDelete, Lane: LaneHeavy, Lease: 120 * time.Second, Heartbeat: 30 * time.Second, Deadline: 30 * time.Minute, MaxAttempts: 3, Backoff: defaultBackoff},
 		// Calibration and the two generation consumers are DB-bound owner work
 		// (no external effect): light lane, long-enough deadline for a large

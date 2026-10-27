@@ -22,6 +22,7 @@ import (
 	"bansoko/internal/parser"
 	plugintargetport "bansoko/internal/plugintarget/port"
 	"bansoko/internal/runtime/worker"
+	"bansoko/internal/subscription/competition"
 	"bansoko/internal/workitems"
 )
 
@@ -112,6 +113,10 @@ type Service struct {
 	downloaderAdmission         downloadadmission.Matcher
 	// notifications admits release_discovered notices; nil admits none.
 	notifications plugintargetport.BusinessDeliveryEnqueuer
+	// competition decides the admissions of a subscription instance. Unset
+	// keeps the fixture-only direct path where release evaluation admits
+	// itself; production always wires it.
+	competition CompetitionDecider
 }
 
 // ReplacementAdmission supplies a previously frozen retention decision to
@@ -245,8 +250,14 @@ func (s *Service) Handle(ctx context.Context, claim workitems.Claim) (worker.Out
 	switch claim.Kind {
 	case workitems.KindRSSRefresh:
 		outcome, err = s.handleRefresh(ctx, claim)
+		if err == nil {
+			outcome = s.withRefreshCompetition(outcome, claim.Owner.ID)
+		}
 	case workitems.KindReleaseEvaluate:
 		outcome, err = s.handleReleaseEvaluate(ctx, claim)
+		if err == nil {
+			outcome = s.withCompetitionFollowUp(outcome, s.releaseManagedAnimeID(ctx, claim))
+		}
 	default:
 		return worker.Outcome{}, fmt.Errorf("unsupported RSS work item kind %q", claim.Kind)
 	}
@@ -445,6 +456,10 @@ type releaseSnapshot struct {
 	// placementMissing is the PlacementMissing retry fact
 	// (ReleasePlacementIssueSQL).
 	placementMissing bool
+	// competitionDecision is set only when the subscription competition runs
+	// the decided stage of this evaluation: its per-key verdicts replace the
+	// read-only coverage verdicts of the batch plan deduplication.
+	competitionDecision *competition.Decision
 }
 
 // downloadAttempt is the ordinal of the download the next acceptance creates.

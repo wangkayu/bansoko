@@ -10,6 +10,9 @@ export function showReleaseRetryResult(result: ReleaseRetryResult) {
     case "accepted":
       toast.success(t("rss.releaseRetry.accepted"));
       return;
+    case "awaiting":
+      toast.info(t("rss.releaseRetry.awaiting"));
+      return;
     case "present":
       toast.info(t("rss.releaseRetry.present"));
       return;

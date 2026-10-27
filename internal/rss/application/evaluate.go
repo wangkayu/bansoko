@@ -169,6 +169,13 @@ func (s *Service) evaluateRelease(ctx context.Context, claim workitems.Claim, sn
 	if len(item.ReleaseFiles) == 0 {
 		markTorrentUnavailable(&result, item)
 	}
+	// Plan stage: with the competition wired, an active subscription's
+	// downloadable release stops here. Its plain batch plan is frozen and it
+	// waits for the instance's competition, which decides every admission.
+	if s.awaitsCompetition(snapshot) && result.Verdict == animedomain.ReleaseVerdict("accepted_pending_download") {
+		markAwaitingCompetition(&result)
+		return worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: string(result.Verdict), ReasonCode: result.ReasonCode}, s.releaseOwnerWriter(claim, snapshot, item, result, nil, &evidence)), nil
+	}
 	acquisition := s.preflightTargetAcquisition(ctx, snapshot, item, result, &evidence)
 	if acquisition != nil && acquisition.varsInterrupted != nil {
 		// A time-limit interrupt says nothing about the program: freeze
@@ -512,6 +519,9 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 				}, currentInputs.effective, currentInputs.metadataHold, currentRules, resolved.Identity)
 			}
 			markTorrentUnavailable(&result, item)
+			if s.awaitsCompetition(snapshot) && currentSubscriptionState == "active" && result.Verdict == animedomain.ReleaseVerdict("accepted_pending_download") {
+				markAwaitingCompetition(&result)
+			}
 		}
 		if admits && acquisition != nil {
 			// Target planning and probing happened against the frozen release
@@ -607,6 +617,11 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 				}
 			}
 		} else if result.Verdict == animedomain.ReleaseVerdict("accepted_pending_download") && !snapshot.metadataHold.Held {
+			if snapshot.competitionDecision != nil {
+				// The competition decided this release without a target
+				// admission: never admit it outside the decision.
+				return 0, errReleaseInputsChanged
+			}
 			evidence, evidenceErr := loadFrozenEvidence()
 			if evidenceErr != nil {
 				return 0, evidenceErr
@@ -622,12 +637,6 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 				// task remains pending until qB confirms submission
 			}
 		}
-		// A release the replacement fallback promoted that does not start a
-		// download (filtered, covered by a present file, covered by another
-		// running acquisition) leaves the fallback input set with this
-		// evaluation's plan; the query runs again so the next candidate of its
-		// pools gets its turn.
-		retriggerFallback := admits && taskID == "" && releaseEvaluationTrigger(claim.InputSnapshot) == releaseTriggerReplacementFallback
 		var updatedVersion int64
 		if err := tx.QueryRowContext(ctx, `
 UPDATE releases
@@ -731,13 +740,6 @@ RETURNING version`, snapshot.releaseID, nullableJSON(parsedFacts), nullableJSON(
 			}
 			if err := persistReleaseMediaSnapshot(ctx, tx, s.mediaFacts, snapshot, item.Title, evidence, plan); err != nil {
 				return 0, err
-			}
-			// The fallback input set reads this plan, so the query runs again
-			// only once the promoted release's new plan is frozen.
-			if retriggerFallback {
-				if err := enqueueReplacementFallbackTx(ctx, tx, s.workItems, snapshot.managedAnimeID); err != nil {
-					return 0, err
-				}
 			}
 		}
 		if err := s.settleReleaseDiscoveryTx(ctx, tx, snapshot, item, verdict, frozenEvidence, frozenPlan); err != nil {
@@ -1037,6 +1039,7 @@ var releaseVerdictSummaries = map[string]string{
 	"adopted_existing":          "已有文件",
 	"acquisition_failed":        "获取失败",
 	"submitted":                 "已提交下载",
+	"awaiting_competition":      "等待比较",
 	"resume_baseline":           "恢复时已存在",
 	"start_baseline":            "订阅前发布",
 }

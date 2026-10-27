@@ -42,7 +42,7 @@ This guide is available as the MCP resource `bansoko://agent-guide`, the MCP pro
   - `current_revision` is the exact saved content. Previews, activation and saved-revision one-shots name it as `revision`.
   - `version` is the candidate's compare-and-swap token. Mutations send it as `expected_version`.
 - **Activation**: turns one exact candidate revision into a managed anime with its subscription, sources and metadata in one transaction.
-- **Release**: one RSS item seen by an RSS source. It gets a verdict (accepted, filtered, held, ...). Accepted releases become download tasks.
+- **Release**: one RSS item seen by an RSS source. It gets a verdict (accepted, filtered, held, ...). In an active subscription a release that passes the rules first waits as `awaiting_competition`: the subscription compares all its waiting releases with its managed files and running downloads (by the replacement mode and scores) and lets one release download each episode; the others end `filtered` and may be picked later if that download fails. Accepted releases become download tasks.
 - **Pipeline** (the *owner chain*): RSS source, release, download task, artifact (verified downloaded files), file operation (placement into the library). Each stage has a `state`; failed stages carry a reason.
 - **Metadata hold**: while an anime's required BGM/TMDB bindings are missing, its releases are held instead of downloaded. `get_workspace` shows `metadata_hold`, whose `missing` names the bindings (`bgm`, `tmdb`) to add. A held release's log record carries the same set as `details.metadata_missing`.
 - **Execution record**: the history of one accepted acquisition (automatic, subscription add, or one-shot) with fixed stages and outcomes.

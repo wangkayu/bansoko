@@ -233,3 +233,43 @@ WHERE id = 'site-retired'`); err != nil {
 		t.Fatalf("a pinned blacklisted alpha stays site-blacklisted: %+v", alpha)
 	}
 }
+
+// A site policy save enqueues the subscription competition of an active
+// instance that has a release waiting for it, and of no other instance: the
+// new scores re-rank only the waiting releases.
+func TestGlobalSitePolicySaveEnqueuesWaitingCompetitionsOnly(t *testing.T) {
+	db := openConnectionTestDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	seedSiteInstance(t, ctx, db, "site-waiting", "site-waiting-sub", "active")
+	seedSiteInstance(t, ctx, db, "site-idle", "site-idle-sub", "active")
+	for _, stmt := range []string{
+		`INSERT INTO rss_sources(id, subscription_id, source_kind, locator, locator_display, group_name, title,
+		                        provider, provider_entry_ref, provider_group_ref, discovery_snapshot_version, provenance)
+		 VALUES ('site-waiting-alpha', 'site-waiting-sub', 'provider_group', 'https://feeds.example.test/alpha.xml', 'https://feeds.example.test/alpha.xml', 'Alpha', 'Site',
+		         'anibt', '777', 'alpha', 'v1', '{"provider":"anibt","provider_entry_ref":"777","provider_group_ref":"alpha","discovery_snapshot_version":"v1"}'::jsonb)`,
+		`INSERT INTO releases(id, rss_source_id, stable_item_key, raw_facts, source_facts, internal_facts, verdict, reason_code)
+		 VALUES ('site-waiting-release', 'site-waiting-alpha', 'guid:site-waiting-release', '{"title":"[Alpha] Site - 01"}', '{}', '{"title":"[Alpha] Site - 01"}', 'awaiting_competition', 'awaiting_competition')`,
+	} {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := NewService(db, newConnectionTestSecretStore(t, db))
+	schema := animedomain.SectionSchemaVersions[animedomain.SectionSubgroups]
+	blacklist := map[string]any{"anibt": map[string]any{"mode": "blacklist", "score": 50, "groups": []any{"gamma"}}}
+	if _, err := svc.PutGlobalSection(ctx, animedomain.SectionSubgroups, 0, configurationdomain.GlobalSectionInput{SchemaVersion: schema, Value: map[string]any{
+		"max_rss": 5, "entries": []any{}, "provider_defaults": blacklist,
+	}}); err != nil {
+		t.Fatalf("save site policy: %v", err)
+	}
+	for anime, want := range map[string]int{"site-waiting": 1, "site-idle": 0} {
+		var count int
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM work_items WHERE owner_type = 'file_maintenance' AND owner_id = $1 AND kind = 'subscription_competition'`, anime).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != want {
+			t.Fatalf("%s competition items = %d, want %d", anime, count, want)
+		}
+	}
+}

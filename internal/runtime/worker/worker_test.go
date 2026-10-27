@@ -158,7 +158,7 @@ func TestRegisterUsesExplicitAllowlist(t *testing.T) {
 		workitems.KindReconciliationScan,
 		workitems.KindAlignmentExecute,
 		workitems.KindReplacementEvaluate,
-		workitems.KindReplacementFallback,
+		workitems.KindSubscriptionCompetition,
 		workitems.KindReplacementDelete,
 		workitems.KindReconciliationCalibrate,
 		workitems.KindReconciliationConsumeAlignment,

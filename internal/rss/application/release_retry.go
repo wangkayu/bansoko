@@ -16,14 +16,18 @@ import (
 	"bansoko/internal/events"
 	"bansoko/internal/persistence/txscope"
 	"bansoko/internal/runtime/worker"
+	"bansoko/internal/subscription/competition"
 	"bansoko/internal/workitems"
 )
 
 // Release retry outcomes. A retry is normal acceptance run once on request:
-// accepted creates a new download task; the others report why nothing was
-// downloaded and are results, not errors.
+// accepted creates a new download task; awaiting puts the release back into
+// its active subscription's competition, which decides it with the other
+// waiting releases; the others report why nothing was downloaded and are
+// results, not errors.
 const (
 	RetryOutcomeAccepted = "accepted"
+	RetryOutcomeAwaiting = "awaiting"
 	RetryOutcomeFiltered = "filtered"
 	RetryOutcomeHeld     = "held"
 	RetryOutcomePresent  = "present"
@@ -199,7 +203,9 @@ func (s *Service) retryRelease(ctx context.Context, releaseID, idempotencyKey, r
 		}
 		if marked {
 			result, err := s.evaluateReleaseRetry(ctx, releaseID, idempotencyKey, requestHash, snapshot)
-			if err != nil || result.Outcome != RetryOutcomeAccepted {
+			// A release waiting for the competition keeps the request: the
+			// competition compares it without the missing placements.
+			if err != nil || (result.Outcome != RetryOutcomeAccepted && result.Outcome != RetryOutcomeAwaiting) {
 				if clearErr := s.withdrawReleasePlacementRedownloads(ctx, snapshot, idempotencyKey); clearErr != nil && err == nil {
 					err = fmt.Errorf("withdraw release placement redownload: %w", clearErr)
 				}
@@ -291,6 +297,11 @@ func (s *Service) evaluateReleaseRetry(ctx context.Context, releaseID, idempoten
 		if err != nil {
 			return ReleaseRetryResult{}, err
 		}
+		if s.competition != nil {
+			if _, err := competition.EnqueueTx(ctx, tx, s.workItems, snapshot.managedAnimeID, competition.TriggerReleaseEvaluated, competition.WhenAwaiting); err != nil {
+				return ReleaseRetryResult{}, err
+			}
+		}
 	}
 	if err := writeReleaseRetryRecordTx(ctx, tx, releaseID, idempotencyKey, requestHash, result); err != nil {
 		return ReleaseRetryResult{}, err
@@ -348,6 +359,8 @@ func releaseRetryResult(releaseID, verdict, reasonCode, taskID string) ReleaseRe
 	switch {
 	case taskID != "":
 		result.Outcome, result.DownloadTaskID, result.ReasonCode = RetryOutcomeAccepted, taskID, ""
+	case verdict == competition.VerdictAwaiting:
+		result.Outcome = RetryOutcomeAwaiting
 	case verdict == "filtered":
 		result.Outcome = RetryOutcomeFiltered
 	case verdict == "waiting_metadata":

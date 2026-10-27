@@ -1205,7 +1205,7 @@ func serverWorkItemKinds() []string {
 		workitems.KindAlignmentExecute,
 		workitems.KindOffsetMigrationExecute,
 		workitems.KindReplacementEvaluate,
-		workitems.KindReplacementFallback,
+		workitems.KindSubscriptionCompetition,
 		workitems.KindReplacementDelete,
 		workitems.KindFileManagerExecute,
 		workitems.KindCompletionExecute,

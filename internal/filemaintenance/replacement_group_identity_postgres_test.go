@@ -327,7 +327,7 @@ func TestPGPolicySwitchWithoutNewCandidateDeletesNothing(t *testing.T) {
 	if count := countLiveEvaluateItems(t, db, "anime-1"); count != 0 {
 		t.Fatalf("a policy change must enqueue no evaluation: %d items", count)
 	}
-	for _, kind := range []string{workitems.KindReplacementEvaluate, workitems.KindReplacementFallback} {
+	for _, kind := range []string{workitems.KindReplacementEvaluate, workitems.KindSubscriptionCompetition} {
 		if got := countWorkItemsOfKind(t, db, "anime-1", kind); got != 0 {
 			t.Fatalf("a policy change must enqueue no %s: %d items", kind, got)
 		}

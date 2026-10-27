@@ -136,6 +136,7 @@ export const enRssCopy = {
   },
   releaseRetry: {
     accepted: "Download started again",
+    awaiting: "Queued for comparison; the download is decided shortly",
     present: "The files are already in the library",
     held: "Download on hold",
     heldBecause: "Download on hold: {reason}",

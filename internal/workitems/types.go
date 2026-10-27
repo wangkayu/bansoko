@@ -116,10 +116,14 @@ const (
 	KindReconciliationScan  = "reconciliation_scan"
 	KindAlignmentExecute    = "alignment_execute"
 	KindReplacementEvaluate = "replacement_evaluate"
-	// KindReplacementFallback is the fallback query of one anime: after an
-	// instance acquisition settles, the best release each freed pool skipped as
-	// covered_in_flight is evaluated again. It reads and enqueues only.
-	KindReplacementFallback = "replacement_fallback"
+	// KindSubscriptionCompetition is the one admission owner of a subscription
+	// instance: it waits until no release evaluation of the instance is
+	// unfinished (and, before the first round, until every source refreshed
+	// once), then decides under the subscription row lock which waiting release
+	// takes which episode, against the instance's managed files and running
+	// downloads, and admits the decided releases. The replacement fallback (the
+	// best release a settled acquisition kept out) is the same owner.
+	KindSubscriptionCompetition = "subscription_competition"
 	// KindReplacementDelete deletes one managed replacement loser: path-level
 	// identity check, capture into a private namespace and purge, all inside
 	// one claim. There is no quarantine or grace period.
@@ -189,7 +193,7 @@ var ownerKinds = map[string]struct {
 	OwnerArtifact:            {kinds: []string{KindArtifactInspect}},
 	OwnerFileOperation:       {kinds: []string{KindFileExecute}},
 	OwnerPluginDelivery:      {kinds: []string{KindPluginDeliver}},
-	OwnerFileMaintenance:     {kinds: []string{KindReconciliationScan, KindReplacementEvaluate, KindReplacementFallback, KindReconciliationCalibrate, KindReconciliationConsumeAlignment, KindReconciliationConsumeReplacement}},
+	OwnerFileMaintenance:     {kinds: []string{KindReconciliationScan, KindReplacementEvaluate, KindSubscriptionCompetition, KindReconciliationCalibrate, KindReconciliationConsumeAlignment, KindReconciliationConsumeReplacement}},
 	OwnerAlignment:           {kinds: []string{KindAlignmentExecute}},
 	OwnerReplacementDeletion: {kinds: []string{KindReplacementDelete}},
 	// Offset migration operations are durable typed owners. The execute handler
