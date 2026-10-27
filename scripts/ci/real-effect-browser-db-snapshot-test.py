@@ -126,7 +126,9 @@ print(Path(os.environ['RESULT_FILE']).read_text())
     for column in ("id TEXT NOT NULL", "managed_anime_id TEXT", "state TEXT", "version BIGINT", "updated_at TIMESTAMPTZ"):
         assert column in plugin, column
     assert "CONSTRAINT plugin_deliveries_pkey PRIMARY KEY (id)" in plugin, "plugin_deliveries primary key"
-    assert_tables_match_baseline(baseline)
+    # The schema the snapshot reads is the baseline plus every forward migration.
+    schema = "\n".join(path.read_text() for path in sorted((ROOT / "db/migrations").glob("*.sql")))
+    assert_tables_match_baseline(schema)
     print("snapshot offline real-entry guards, transaction/output whitelist, baseline table/column "
           "consistency and mutation control passed; PG SQL execution still required")
 
@@ -151,6 +153,15 @@ def baseline_columns(baseline: str) -> dict[str, dict[str, bool]]:
                 columns[column.group(1)] = "NOT NULL" in line
     for match in re.finditer(r"ALTER TABLE (?:IF EXISTS )?([a-z_][a-z0-9_]*)\s+ADD COLUMN (?:IF NOT EXISTS )?([a-z_][a-z0-9_]*)", baseline):
         tables.setdefault(match.group(1), {}).setdefault(match.group(2), False)
+    # Forward migrations rename columns and tables in order; apply them so the
+    # check sees the installed schema, not the frozen baseline names.
+    for match in re.finditer(r"ALTER TABLE (?:IF EXISTS )?([a-z_][a-z0-9_]*)\s+RENAME (?:COLUMN ([a-z_][a-z0-9_]*) TO ([a-z_][a-z0-9_]*)|TO ([a-z_][a-z0-9_]*))\s*;", baseline):
+        table, old, new, new_table = match.groups()
+        if new_table:
+            if table in tables:
+                tables[new_table] = tables.pop(table)
+        elif table in tables and old in tables[table]:
+            tables[table][new] = tables[table].pop(old)
     return tables
 
 
