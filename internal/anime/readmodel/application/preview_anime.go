@@ -53,6 +53,10 @@ type providerGroupPreview struct {
 	Snapshot  SeedPreviewSnapshot
 	Items     []acquisitiondomain.FeedItem
 	Manifests map[string]*animecatalogdomain.TorrentManifest
+	// ItemProvider is the provider every feed item of this snapshot is rebuilt
+	// with (feedItemFromPreviewSeed): it decides whether the AniBT tag row
+	// applies.
+	ItemProvider string
 }
 
 // resolveRSSListProviderGroupPreviews resolves the advisory feed identities the
@@ -113,7 +117,7 @@ func (s *Service) resolveRSSListProviderGroupPreviews(ctx context.Context, draft
 			return nil, nil, err
 		}
 		items := expandedFeedItems(snapshot, manifests, string(ref.Provider))
-		out = append(out, providerGroupPreview{Ref: ref, GroupName: name, Snapshot: snapshot, Items: items, Manifests: manifests})
+		out = append(out, providerGroupPreview{Ref: ref, GroupName: name, Snapshot: snapshot, Items: items, Manifests: manifests, ItemProvider: string(ref.Provider)})
 	}
 	return out, unused, nil
 }

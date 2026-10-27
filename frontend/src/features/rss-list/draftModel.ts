@@ -71,11 +71,13 @@ function draftExpandModel(source: { onStart: () => void; state?: DraftExpandStat
 function draftItem(item: RSSListItem, options: DraftItemOptions = {}): RssItemModel {
   const { expand, open, hold } = options;
   const manifest = item.torrent.manifest;
-  // A seed the server judged unexpanded carries only RSS facts: no parsing verdict and no file
-//   list. It is neither a failure nor a filter; the row falls into no failure semantics and waits
-//   for the user to expand.
+  // A seed the server judged unexpanded carries only RSS facts and no file list. It is not a
+//   failure and waits for the user to expand — unless the server already filtered it by those RSS
+//   facts (tag rows, keyword filter): then the row shows that verdict and follows the
+//   show-filtered switch, while its torrent stays pending and can still be expanded.
   const pending = item.torrent.state === "pending";
   const evaluated = item.evaluation.state === "evaluated" ? item.evaluation.verdict : undefined;
+  const awaitingExpansion = pending && evaluated !== "filtered";
   const reasonCode = evaluationReasonCode(item.evaluation.reason_code, item.evaluation.reason_detail);
   const filteredWithReason = evaluated === "filtered" && !!reasonCode;
   // A not-yet-started subscription's bench: with "fetch new seeds only" on, the server marks rows
@@ -97,7 +99,7 @@ function draftItem(item: RSSListItem, options: DraftItemOptions = {}): RssItemMo
     sizeBytes: item.seed.size_bytes,
     episodeLabel: releaseEpisodeLabel(item.evaluation.parsed_facts),
     status:
-      pending
+      awaitingExpansion
         ? { label: t("rss.notExpanded"), tone: "muted" as StatePillTone }
         : evaluated
           ? { label: releaseVerdictLabelWithHold(evaluated, hold, filteredWithReason ? tagFilterReasonLabel(item.evaluation.reason_code, item.evaluation.reason_detail) ?? reasonLabel(reasonCode) : undefined), tone: releaseVerdictTone(evaluated) }

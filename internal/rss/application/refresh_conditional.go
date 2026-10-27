@@ -3,11 +3,13 @@ package application
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 
 	acquisitionapplication "bansoko/internal/acquisition/application"
 	acquisitiondomain "bansoko/internal/acquisition/domain"
+	animedomain "bansoko/internal/anime/domain"
 	"bansoko/internal/persistence/txscope"
 	"bansoko/internal/workitems"
 )
@@ -79,6 +81,14 @@ RETURNING version`, snapshot.sourceID, claim.ExpectedOwnerVersion).Scan(&version
 //     Release takes start_baseline from the publish time alone, and an
 //     explicit retry fetches the torrent then (retryTorrentInput).
 //
+//   - an item the feed-layer filter rejects (animedomain.FeedFilterReason:
+//     the AniBT tag row, the title tag row and the keyword filter) is not
+//     fetched when the source holds no torrent input for it: that filter
+//     reads the feed's own facts only, so its Release is filtered with the
+//     same reason whether or not the torrent was read. Should a later rules
+//     change let it pass, its evaluation fetches the torrent then
+//     (ensureEvaluationTorrentInput), and an explicit retry does too.
+//
 // The URL match ignores the credentials in the URL (torrentSourceMatches), so
 // a rotated passkey or rsskey does not refetch every release. Any read error
 // or mismatch falls back to fetching.
@@ -91,9 +101,19 @@ func (s *Service) torrentMetadataReuser(ctx context.Context, snapshot sourceSnap
 		var releaseID, verdict string
 		var downloadTask sql.NullString
 		var internalFacts []byte
+		// feedFiltered skips the fetch of an item the feed-layer filter
+		// rejects; it is consulted only where the source holds no torrent
+		// input to keep, so a stored file list is never replaced by none.
+		feedFiltered := func() bool {
+			code, _ := animedomain.FeedFilterReason(item, snapshot.effective)
+			return code != ""
+		}
 		err := s.db.QueryRowContext(ctx, `
 SELECT id, verdict, download_task_id, internal_facts
 FROM releases WHERE rss_source_id = $1 AND stable_item_key = $2`, snapshot.sourceID, stableKey).Scan(&releaseID, &verdict, &downloadTask, &internalFacts)
+		if errors.Is(err, sql.ErrNoRows) {
+			return item, feedFiltered()
+		}
 		if err != nil {
 			return item, false
 		}
@@ -105,6 +125,9 @@ FROM releases WHERE rss_source_id = $1 AND stable_item_key = $2`, snapshot.sourc
 SELECT id, payload_digest, source_url_digest, filename, parser_version, torrent_version,
        COALESCE(info_hash_v1, ''), COALESCE(info_hash_v2, '')
 FROM release_torrent_inputs WHERE release_id = $1`, releaseID).Scan(&input.ID, &input.PayloadDigest, &input.SourceURLDigest, &input.Filename, &input.ParserVersion, &input.TorrentVersion, &input.InfoHashV1, &input.InfoHashV2); err != nil {
+			if errors.Is(err, sql.ErrNoRows) && !releaseFactsHoldFiles(internalFacts) {
+				return item, feedFiltered()
+			}
 			return item, false
 		}
 		if !torrentSourceMatches(item.TorrentMetadataURL(), input.SourceURLDigest) {
@@ -124,4 +147,18 @@ FROM release_torrent_inputs WHERE release_id = $1`, releaseID).Scan(&input.ID, &
 		}
 		return reused, true
 	}
+}
+
+// releaseFactsHoldFiles reports whether a stored Release's internal facts
+// carry a torrent file list. Undecodable facts count as holding one, so the
+// pre-fetch hook falls back to fetching rather than replacing them.
+func releaseFactsHoldFiles(internalFacts []byte) bool {
+	if len(internalFacts) == 0 || string(internalFacts) == "null" {
+		return false
+	}
+	var stored storedFeedFacts
+	if err := json.Unmarshal(internalFacts, &stored); err != nil {
+		return true
+	}
+	return len(stored.ReleaseFiles) > 0
 }

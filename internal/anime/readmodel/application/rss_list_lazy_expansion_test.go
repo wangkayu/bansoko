@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	acquisitiondomain "bansoko/internal/acquisition/domain"
 	animedomain "bansoko/internal/anime/domain"
 	animecatalogdomain "bansoko/internal/catalog/domain"
 )
@@ -70,7 +71,7 @@ func TestRSSListPendingItemKeepsRSSFactsAndBlocksDelivery(t *testing.T) {
 	seed := snapshot.Seeds[0]
 	feed := RSSListFeedStatus{State: RSSListFeedFresh, SnapshotID: snapshot.SnapshotID}
 
-	item := rssListPendingItem(rssListSeedItem(snapshot.SnapshotID, seed, nil), true, feed)
+	item := rssListPendingItem(rssListSeedItem(snapshot.SnapshotID, seed, nil), "", "", true, feed)
 
 	if item.Torrent.State != RSSListTorrentPending || item.Torrent.Manifest != nil {
 		t.Fatalf("unexpanded torrent state = %+v, want pending without a manifest", item.Torrent)
@@ -181,9 +182,11 @@ func TestRSSListDownloadActionIdentityMatrix(t *testing.T) {
 	}
 }
 
-// Only the seeds with a manifest become feed items. Evaluation, filtering and
-// rendering all run per item, so an unexpanded seed is never parsed: there is no
-// structure to judge, and a verdict the server did not compute would be a guess.
+// Only the seeds with a manifest become feed items. The full evaluation, the
+// plan and the rendering all run per item, so an unexpanded seed never gets
+// them: there is no structure to judge. It is judged only by the feed-layer
+// filter, which needs no structure (see
+// TestComposeRSSListViewFiltersUnexpandedSeedsByFeedFacts).
 func TestExpandedFeedItemsOmitsUnexpandedSeeds(t *testing.T) {
 	snapshot := lazySeedSnapshot()
 	snapshot.Seeds = append(snapshot.Seeds, SeedPreviewFact{
@@ -261,6 +264,107 @@ func TestExpandedSeedManifestsFailsClosedOnStaleIdentity(t *testing.T) {
 		t.Fatalf("error code = %q, want FEED_SNAPSHOT_REFRESH_REQUIRED", code)
 	}
 
+}
+
+// A feed-layer filter (the AniBT tag row, the title tag row and the keyword
+// filter) reads only the RSS facts an unexpanded row already shows, so the list
+// decides it before any expansion: a rejected seed is evaluated as filtered with
+// its reason while its torrent stays pending (it can still be expanded), and a
+// seed the filter lets through stays pending. Either way the read fetches no
+// torrent and reads no seed payload.
+func TestComposeRSSListViewFiltersUnexpandedSeedsByFeedFacts(t *testing.T) {
+	cr := acquisitiondomain.StoredAniBTTags{Schema: acquisitiondomain.AniBTTagSchemaV1, Tags: []string{"platform:CR", "resolution:1080p"}}
+	for _, tc := range []struct {
+		name   string
+		tags   *acquisitiondomain.StoredAniBTTags
+		apply  func(*animedomain.EffectiveConfig)
+		reason string // empty = still pending
+		detail string
+	}{
+		{
+			name: "AniBT exclude tag hit", tags: &cr,
+			apply: func(e *animedomain.EffectiveConfig) {
+				e.TagFilters.Rules.Anibt = animedomain.TagFilterRow{Require: []string{}, Exclude: []string{"platform:CR"}}
+			},
+			reason: animedomain.ReasonAniBTTagBlacklisted, detail: "blacklisted: platform:CR",
+		},
+		{
+			name: "AniBT require tag unmet", tags: &cr,
+			apply: func(e *animedomain.EffectiveConfig) {
+				e.TagFilters.Rules.Anibt = animedomain.TagFilterRow{Require: []string{"resolution:2160p"}, Exclude: []string{}}
+			},
+			reason: animedomain.ReasonAniBTTagWhitelistUnmet,
+		},
+		{
+			name: "keyword filter rejects the title", tags: &cr,
+			apply: func(e *animedomain.EffectiveConfig) {
+				e.Rules.ReleaseFilter = animedomain.ReleaseFilterRules{NotIn: "1080p"}
+			},
+			reason: animedomain.ReasonFilteredByRules,
+		},
+		{
+			name: "rules pass", tags: &cr,
+			apply: func(e *animedomain.EffectiveConfig) {
+				e.TagFilters.Rules.Anibt = animedomain.TagFilterRow{Require: []string{"resolution:1080p"}, Exclude: []string{"platform:Baha"}}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			draft := previewBoundDraft()
+			setDraftOwnerYear(&draft)
+			effective := previewEffectiveWithDefaultNaming(t, animedomain.ProviderKindAnibt, "12")
+			effective.TagFilters = animedomain.DefaultResolvedTagFilters()
+			tc.apply(&effective)
+			snapshot := lazySeedSnapshot()
+			snapshot.Seeds[0].AniBTTags = tc.tags
+			source := &readmodelPreviewSource{snapshot: snapshot}
+			cache := &lazyExpansionManifestSource{manifests: map[string]*animecatalogdomain.TorrentManifest{}}
+			service := &Service{seedPreviews: source, seedTorrentManifests: cache}
+			seedPreviewBusiness(t, service, &draft)
+
+			view, err := service.composeRSSListView(context.Background(), "candidate_revision", "candidate#1", draft, effective, previewTestSelection(), []PreviewFeedSnapshotRef{previewTestRef(animedomain.ProviderKindAnibt, "12")}, 0)
+			if err != nil {
+				t.Fatalf("compose: %v", err)
+			}
+			if source.payloadCalls != 0 {
+				t.Fatalf("the list read fetched %d seed payloads, want none", source.payloadCalls)
+			}
+			item := view.Groups[0].Items[0]
+			if item.Torrent.State != RSSListTorrentPending || item.Torrent.Manifest != nil || len(item.Files) != 0 {
+				t.Fatalf("an unexpanded seed must stay unexpanded: torrent %+v, %d files", item.Torrent, len(item.Files))
+			}
+			if item.DownloadAction.Allowed || item.DownloadAction.ReasonCode != RSSListReasonSeedNotExpanded {
+				t.Fatalf("download action = %+v, want seed_not_expanded", item.DownloadAction)
+			}
+			if tc.reason == "" {
+				if item.Evaluation.State != RSSListEvaluationPending || item.Evaluation.Verdict != "" {
+					t.Fatalf("evaluation = %+v, want pending", item.Evaluation)
+				}
+				return
+			}
+			if item.Evaluation.State != RSSListEvaluationEvaluated || item.Evaluation.Verdict != string(animedomain.ReleaseVerdictFiltered) || item.Evaluation.ReasonCode != tc.reason || item.Evaluation.ReasonDetail == "" {
+				t.Fatalf("evaluation = %+v, want filtered by %s", item.Evaluation, tc.reason)
+			}
+			if tc.detail != "" && item.Evaluation.ReasonDetail != tc.detail {
+				t.Fatalf("reason detail = %q, want %q", item.Evaluation.ReasonDetail, tc.detail)
+			}
+
+			// Expanding the seed changes nothing about the verdict: the expanded
+			// evaluation reaches the same filter with the same reason.
+			cache.manifests = map[string]*animecatalogdomain.TorrentManifest{"seed-01": singleFileManifest(t, "Preview Show - 01.mkv")}
+			expanded, err := service.composeRSSListView(context.Background(), "candidate_revision", "candidate#1", draft, effective, previewTestSelection(), []PreviewFeedSnapshotRef{previewTestRef(animedomain.ProviderKindAnibt, "12")}, 0)
+			if err != nil {
+				t.Fatalf("compose expanded: %v", err)
+			}
+			got := expanded.Groups[0].Items[0]
+			if got.Torrent.State != animecatalogdomain.TorrentAcquisitionAvailable {
+				t.Fatalf("expanded torrent = %+v", got.Torrent)
+			}
+			if got.Evaluation.Verdict != item.Evaluation.Verdict || got.Evaluation.ReasonCode != item.Evaluation.ReasonCode || got.Evaluation.ReasonDetail != item.Evaluation.ReasonDetail {
+				t.Fatalf("expanded evaluation = %+v, unexpanded %+v: the feed-layer verdict must not move", got.Evaluation, item.Evaluation)
+			}
+		})
+	}
 }
 
 func timePtr(value time.Time) *time.Time { return &value }

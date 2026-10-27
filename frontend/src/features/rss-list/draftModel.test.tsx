@@ -115,6 +115,40 @@ describe("pending seed row", () => {
   });
 });
 
+describe("pending seed row filtered by RSS facts", () => {
+  // The server filters an unexpanded seed by its RSS facts alone (here the AniBT exclude row): the
+  //   torrent stays pending, the evaluation already carries the filter verdict.
+  const FILTERED_PENDING: RSSListItem = {
+    ...PENDING_ITEM,
+    seed: { ...PENDING_ITEM.seed, anibt_tags: ["platform:CR"] },
+    evaluation: { state: "evaluated", verdict: "filtered", reason_code: "anibt_tag_blacklisted", reason_detail: "blacklisted: platform:CR" },
+  };
+
+  it("显示过滤原因并计入已过滤，仍保留展开入口", () => {
+    const item = draftWorkspaceModel(viewWith(FILTERED_PENDING), { onExpand: () => {} }).groups[0]?.items[0];
+    const unfiltered = draftWorkspaceModel(viewWith(), { onExpand: () => {} }).groups[0]?.items[0];
+    expect(item?.filtered).toBe(true);
+    expect(item?.status).not.toEqual(unfiltered?.status);
+    expect(item?.status?.tone).toBe("muted");
+    expect(item?.statusDetail).toBeUndefined();
+    expect(item?.files).toEqual([]);
+    expect(item?.manifestSummary).toBeUndefined();
+    expect(item?.expand).toMatchObject({ state: "idle", label: t("rss.expandSeed") });
+  });
+
+  it("关闭「显示已过滤」时隐藏该行", () => {
+    render(<RssListViewPanel model={draftWorkspaceModel(viewWith(FILTERED_PENDING), { onExpand: () => {} })} showFiltered={false} />);
+    fireEvent.click(screen.getByRole("button", { name: t("rss.expandGroup", { name: "Group" }) }));
+    expect(screen.queryByText("Show - 03")).toBeNull();
+  });
+
+  it("打开「显示已过滤」时显示该行", () => {
+    render(<RssListViewPanel model={draftWorkspaceModel(viewWith(FILTERED_PENDING), { onExpand: () => {} })} showFiltered />);
+    fireEvent.click(screen.getByRole("button", { name: t("rss.expandGroup", { name: "Group" }) }));
+    expect(screen.getByText("Show - 03")).toBeVisible();
+  });
+});
+
 describe("pending seed row rendering", () => {
   it("展开入口只在行展开后出现，点击调用适配器", () => {
     const onExpand = vi.fn();
