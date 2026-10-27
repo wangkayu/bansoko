@@ -111,6 +111,11 @@ func (e OSCleanupExecutor) ReadMaintenanceReceipt(ctx context.Context, i mainten
 		}
 		private, err := cleanupCaptureDirectory(root, i.Target, true)
 		if err != nil {
+			// The namespace holds every start marker; one that does not exist
+			// and cannot be created holds none, so the stage never started.
+			if namespaceAbsentAfterRefusal(i.Target, err) {
+				return maintenance.MaintenanceReceipt{}, fmt.Errorf("%w: the capture namespace does not exist and cannot be created: %w", maintenance.ErrMaintenanceNotStarted, err)
+			}
 			return maintenance.MaintenanceReceipt{}, err
 		}
 		if err := private.Close(); err != nil {
@@ -245,6 +250,24 @@ func (e OSCleanupExecutor) MoveMaintenance(ctx context.Context, source, target s
 	}
 	return result, writeMaintenanceFinal(i, observed)
 }
+
+// DiscardRefusedMaintenance removes the start marker and lock of a deletion
+// stage whose rename or unlink its caller saw refused and proved unapplied;
+// the caller retries under a new invocation. A final receipt is never
+// removed.
+func (e OSCleanupExecutor) DiscardRefusedMaintenance(ctx context.Context, i maintenance.MaintenanceInvocation) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := validateMaintenanceNamespace(i); err != nil {
+		return err
+	}
+	if i.Kind != cleanupCaptureKind && i.Kind != cleanupPurgeKind {
+		return errors.New("only a deletion stage is discarded")
+	}
+	return discardRefusedMaintenance(i)
+}
+
 func (e OSCleanupExecutor) PurgeMaintenance(ctx context.Context, path string, expected domain.FileObservation, i maintenance.MaintenanceInvocation) error {
 	if err := validateMaintenanceNamespace(i); err != nil {
 		return err

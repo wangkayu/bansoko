@@ -10,3 +10,7 @@ import (
 func lockMaintenanceInvocation(maintenance.MaintenanceInvocation) (func(), error) {
 	return nil, errors.New("maintenance invocation locking unsupported")
 }
+
+func discardRefusedMaintenance(maintenance.MaintenanceInvocation) error {
+	return errors.New("maintenance invocation discard unsupported")
+}

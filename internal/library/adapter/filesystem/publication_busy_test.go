@@ -104,3 +104,82 @@ func TestPublicationVersionRenameBusyIsNotRetried(t *testing.T) {
 		t.Fatalf("err=%v, want the version mapping unchanged", err)
 	}
 }
+
+// An overwrite target held open exclusively elsewhere refuses even its
+// observation (an SMB sharing violation is EBUSY on open). In the
+// preparation nothing exists yet: TARGET_BUSY carrying domain.ErrFileBusy.
+func TestPublicationPrepareTargetObservationBusy(t *testing.T) {
+	f := overwriteFixture(t)
+	executor := OSFileExecutor{Hooks: ExecutorHooks{PublicationObserveTarget: func(string) error { return unix.EBUSY }}}
+	_, prep, err := runPublication(t, executor, f, "")
+	if domain.PublicationFailureCode(err) != domain.CodeTargetBusy || !domain.FileBusy(err) || !errors.Is(err, unix.EBUSY) {
+		t.Fatalf("err=%v, want busy TARGET_BUSY", err)
+	}
+	if readString(t, f.target) != "old version" || (prep.TempPath != "" && !absent(t, prep.TempPath)) {
+		t.Fatal("a refused preparation touched the target or staged a temp")
+	}
+}
+
+// The same refusal right before the replacing rename settles like a refused
+// rename: the staged temp is removed and the failure is busy.
+func TestPublicationReplaceTargetObservationBusyRemovesTemp(t *testing.T) {
+	f := overwriteFixture(t)
+	calls := 0
+	executor := OSFileExecutor{Hooks: ExecutorHooks{PublicationObserveTarget: func(string) error {
+		calls++
+		if calls > 1 {
+			return unix.EBUSY
+		}
+		return nil
+	}}}
+	_, prep, err := runPublication(t, executor, f, "")
+	if domain.PublicationFailureCode(err) != domain.CodeTargetBusy || !domain.FileBusy(err) {
+		t.Fatalf("err=%v (observations=%d), want busy TARGET_BUSY", err, calls)
+	}
+	if readString(t, f.target) != "old version" || !absent(t, prep.TempPath) {
+		t.Fatal("refused overwrite changed the target or left its temp")
+	}
+}
+
+// A permission answer to the observation is not busy: TARGET_UNREADABLE.
+func TestPublicationTargetObservationPermissionIsNotBusy(t *testing.T) {
+	f := overwriteFixture(t)
+	executor := OSFileExecutor{Hooks: ExecutorHooks{PublicationObserveTarget: func(string) error { return unix.EACCES }}}
+	_, _, err := runPublication(t, executor, f, "")
+	if domain.PublicationFailureCode(err) != domain.CodeTargetUnreadable || domain.FileBusy(err) {
+		t.Fatalf("err=%v, want TARGET_UNREADABLE", err)
+	}
+}
+
+// A replacing rename that applied but answered EIO (an SMB reply lost after
+// the server renamed) is recognised from the target: the publication lands.
+func TestPublicationOverwriteEIOAfterRenameLands(t *testing.T) {
+	f := overwriteFixture(t)
+	real := defaultPublicationSyscalls()
+	fake := &fakeSys{rename: func(from, to verifiedEntry) error {
+		if err := real.rename(from, to); err != nil {
+			return err
+		}
+		return unix.EIO
+	}}
+	_, prep, err := runPublication(t, fake.executor(), f, "")
+	if err != nil {
+		t.Fatalf("landed overwrite reported %v", err)
+	}
+	if readString(t, f.target) != string(f.data) || !absent(t, prep.TempPath) {
+		t.Fatal("landed overwrite not recognised")
+	}
+}
+
+// An EIO whose rename did not land stays a refusal (busy, temp removed).
+func TestPublicationOverwriteEIOWithoutLandingIsBusy(t *testing.T) {
+	f := overwriteFixture(t)
+	fake := &fakeSys{rename: func(verifiedEntry, verifiedEntry) error { return unix.EIO }}
+	_, prep, err := runPublication(t, fake.executor(), f, "")
+	if domain.PublicationFailureCode(err) != domain.CodeTargetBusy || !domain.FileBusy(err) {
+		t.Fatalf("err=%v, want busy TARGET_BUSY", err)
+	}
+	if readString(t, f.target) != "old version" || !absent(t, prep.TempPath) {
+		t.Fatal("unlanded EIO changed the target or left its temp")
+	}
+}

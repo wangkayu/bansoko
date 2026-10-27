@@ -242,3 +242,152 @@ func TestCleanupPurgeStartedWithoutObjectStaysUnresolved(t *testing.T) {
 		t.Fatalf("receipt of a lost unlink answer = %v, want unresolved", err)
 	}
 }
+
+func unwritableDir(t *testing.T, dir string) {
+	t.Helper()
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+}
+
+// Reading the receipt of a capture whose namespace was refused never creates
+// it: the namespace does not exist and cannot be created, so no start marker
+// can exist and the stage did not start, on every read.
+func TestCleanupReceiptOfRefusedNamespaceIsNotStarted(t *testing.T) {
+	f := newBusyCleanupFixture(t)
+	unwritableDir(t, filepath.Dir(f.source))
+	first := f.capture("work-1")
+	if _, err := f.executor.MoveMaintenance(context.Background(), f.source, f.target, f.expected, first); !domain.FileBusy(err) {
+		t.Fatalf("capture in an unwritable directory = %v, want busy", err)
+	}
+	for read := 1; read <= 2; read++ {
+		if _, err := f.executor.ReadMaintenanceReceipt(context.Background(), first); !errors.Is(err, maintenance.ErrMaintenanceNotStarted) {
+			t.Fatalf("receipt read %d = %v, want not started", read, err)
+		}
+	}
+	if _, err := os.Lstat(filepath.Dir(f.target)); !os.IsNotExist(err) {
+		t.Fatalf("a receipt read created the namespace: %v", err)
+	}
+}
+
+func namespaceEntries(t *testing.T, f busyCleanupFixture) []string {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Dir(f.target))
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	return names
+}
+
+// The fault hook answers in place of the capture rename with the real
+// receipts written around it, and a refused, unapplied invocation's markers
+// are removed by DiscardRefusedMaintenance: the namespace keeps none of them.
+func TestCleanupDiscardRefusedRemovesItsMarkers(t *testing.T) {
+	f := newBusyCleanupFixture(t)
+	f.executor.Hooks.Effect = func(stage string) error {
+		if stage == "capture" {
+			return unix.EBUSY
+		}
+		return nil
+	}
+	first := f.capture("work-1")
+	if _, err := f.executor.MoveMaintenance(context.Background(), f.source, f.target, f.expected, first); !domain.FileBusy(err) {
+		t.Fatalf("hooked capture = %v, want busy", err)
+	}
+	if got := namespaceEntries(t, f); len(got) != 2 {
+		t.Fatalf("refused capture left %v, want its lock and start marker", got)
+	}
+	if _, err := f.executor.ReadMaintenanceReceipt(context.Background(), first); !errors.Is(err, maintenance.ErrMaintenanceNotApplied) {
+		t.Fatalf("receipt = %v, want not applied", err)
+	}
+	if err := f.executor.DiscardRefusedMaintenance(context.Background(), first); err != nil {
+		t.Fatal(err)
+	}
+	if got := namespaceEntries(t, f); len(got) != 0 {
+		t.Fatalf("discard left %v", got)
+	}
+	f.executor.Hooks.Effect = nil
+	second := f.capture("work-2")
+	if _, err := f.executor.MoveMaintenance(context.Background(), f.source, f.target, f.expected, second); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.executor.DiscardRefusedMaintenance(context.Background(), second); err == nil {
+		t.Fatal("a final receipt was discarded")
+	}
+	if r, err := f.executor.ReadMaintenanceReceipt(context.Background(), second); err != nil || !r.Applied {
+		t.Fatalf("final receipt after a refused discard %+v %v", r, err)
+	}
+}
+
+// A refusal of a read-only filesystem is not busy but read-only.
+func TestCleanupCaptureReadOnlyIsReadOnly(t *testing.T) {
+	f := newBusyCleanupFixture(t)
+	withCleanupEffects(t, func(verifiedEntry, verifiedEntry) error { return unix.EROFS }, nil)
+	_, err := f.executor.MoveMaintenance(context.Background(), f.source, f.target, f.expected, f.capture("work-1"))
+	if !domain.FileReadOnly(err) || domain.FileBusy(err) {
+		t.Fatalf("read-only capture = %v, want read-only", err)
+	}
+}
+
+// RestoreCaptured moves the captured object back to its public path, and
+// refuses (moving nothing) a changed object or an occupied public path.
+func TestCleanupRestoreCaptured(t *testing.T) {
+	f := newBusyCleanupFixture(t)
+	captured := captureForPurge(t, f)
+	writeOccupant := func() {
+		if err := os.WriteFile(f.source, []byte("new file"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeOccupant()
+	if err := f.executor.RestoreCaptured(context.Background(), f.target, f.source, captured); err == nil {
+		t.Fatal("restore replaced an occupied public path")
+	}
+	if raw, _ := os.ReadFile(f.source); string(raw) != "new file" {
+		t.Fatalf("occupant changed: %q", raw)
+	}
+	if err := os.Remove(f.source); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.executor.RestoreCaptured(context.Background(), f.target, f.source, captured); err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	if raw, err := os.ReadFile(f.source); err != nil || string(raw) != "old version" {
+		t.Fatalf("restored source %q %v", raw, err)
+	}
+	if _, err := os.Lstat(f.target); !os.IsNotExist(err) {
+		t.Fatalf("captured object still present: %v", err)
+	}
+	if _, err := f.executor.MoveMaintenance(context.Background(), f.source, f.target, f.expected, f.capture("work-c2")); err != nil {
+		t.Fatal(err)
+	}
+	other, err := f.executor.Observe(context.Background(), f.target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f.target, []byte("changed!!!!"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.executor.RestoreCaptured(context.Background(), f.target, f.source, other); err == nil {
+		t.Fatal("restore moved a changed object")
+	}
+}
+
+// An exclusive holder's sharing violation on an observation is busy; a
+// permission answer is not.
+func TestBusyObservationError(t *testing.T) {
+	if err := busyObservationError(&os.PathError{Op: "open", Path: "/x", Err: unix.EBUSY}); !domain.FileBusy(err) || !errors.Is(err, unix.EBUSY) {
+		t.Fatalf("EBUSY observation = %v", err)
+	}
+	if err := busyObservationError(&os.PathError{Op: "open", Path: "/x", Err: unix.EACCES}); domain.FileBusy(err) {
+		t.Fatalf("EACCES observation = %v", err)
+	}
+}

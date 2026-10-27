@@ -50,11 +50,17 @@ func (executor OSFileExecutor) PreparePublication(ctx context.Context, op domain
 	}
 	result = domain.PublicationPreparation{Source: source, SourceParent: sourceParent.identity, TargetParent: targetParent.identity, TempPath: temp}
 	if op.CollisionPolicy == domain.CollisionOverwrite {
-		target, err := observeVerifiedEntry(verifiedEntry{parent: targetParent, name: filepath.Base(op.TargetPath), canonical: op.TargetPath})
+		sys := publicationSyscalls{}.withObserveHook(executor.Hooks.PublicationObserveTarget)
+		target, err := sys.observeReplaced(verifiedEntry{parent: targetParent, name: filepath.Base(op.TargetPath), canonical: op.TargetPath})
 		if errors.Is(err, os.ErrNotExist) {
 			return result, publicationErr(domain.FileErrorCodeTargetOccupied, errors.New("overwrite target is no longer present"))
 		}
 		if err != nil {
+			// Held open exclusively elsewhere (an SMB sharing violation is
+			// EBUSY): nothing was touched, so the import retries later.
+			if busy := busyObservationError(err); domain.FileBusy(busy) {
+				return result, publicationErr(domain.CodeTargetBusy, busy)
+			}
 			return result, publicationErr(domain.CodeTargetUnreadable, err)
 		}
 		result.ExpectedTarget = &target

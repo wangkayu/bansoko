@@ -18,6 +18,35 @@ import (
 // namespace, verified there, and only that exact object is purged.
 type OSCleanupExecutor struct {
 	anchor string
+	// Hooks are the instance-bound test and fault hooks; zero in production.
+	Hooks CleanupHooks
+}
+
+// CleanupHooks lets a test answer the effect syscalls of a deletion the way a
+// busy or read-only file would, with the real receipts written around them.
+type CleanupHooks struct {
+	// Effect, when set, runs just before the capture rename (stage
+	// "capture") and the purge unlink (stage "purge"); a non-nil result is
+	// that syscall's answer and the syscall does not run.
+	Effect func(stage string) error
+}
+
+// effectProbe turns Hooks.Effect into the probe of the capture or purge
+// point; nil when unset.
+func (executor OSCleanupExecutor) effectProbe() []cleanupMutationProbe {
+	effect := executor.Hooks.Effect
+	if effect == nil {
+		return nil
+	}
+	return []cleanupMutationProbe{func(point string) error {
+		switch point {
+		case "before_object_capture":
+			return effect("capture")
+		case "before_object_purge":
+			return effect("purge")
+		}
+		return nil
+	}}
 }
 
 // NewOSCleanupExecutor binds cleanup to the anchor its composition root
@@ -45,10 +74,11 @@ func (executor OSCleanupExecutor) Observe(ctx context.Context, path string) (dom
 	}
 	entry, err := openMutationEntry(root, canonical, parent)
 	if err != nil {
-		return domain.FileObservation{}, fmt.Errorf("verify cleanup entry: %w", err)
+		return domain.FileObservation{}, busyObservationError(fmt.Errorf("verify cleanup entry: %w", err))
 	}
 	defer entry.parent.Close()
-	return observeFile(canonical)
+	observed, err := observeFile(canonical)
+	return observed, busyObservationError(err)
 }
 
 // ObserveMetadataFile is the no-content-read counterpart to Observe for a
@@ -68,10 +98,11 @@ func (executor OSCleanupExecutor) ObserveMetadataFile(ctx context.Context, path 
 	}
 	entry, err := openMutationEntry(root, canonical, parent)
 	if err != nil {
-		return domain.FileObservation{}, fmt.Errorf("verify cleanup entry: %w", err)
+		return domain.FileObservation{}, busyObservationError(fmt.Errorf("verify cleanup entry: %w", err))
 	}
 	defer entry.parent.Close()
-	return (OSFileObserver{}).ObserveMetadataFile(ctx, canonical)
+	observed, err := (OSFileObserver{}).ObserveMetadataFile(ctx, canonical)
+	return observed, busyObservationError(err)
 }
 
 // CaptureForDelete validates the frozen evidence and the no-follow rooted
@@ -95,7 +126,7 @@ func (executor OSCleanupExecutor) CaptureForDelete(ctx context.Context, source, 
 	if filepath.Clean(sourcePath) == filepath.Clean(quarantinePath) {
 		return "", errors.New("cleanup source and capture paths must differ")
 	}
-	return captureCleanupObject(root, sourcePath, quarantinePath, expected, nil)
+	return captureCleanupObject(root, sourcePath, quarantinePath, expected, nil, executor.effectProbe()...)
 }
 
 // PurgeCaptured verifies the exact captured object but never unlinks by its
@@ -137,7 +168,32 @@ func (executor OSCleanupExecutor) PurgeCaptured(ctx context.Context, quarantine 
 	if !sameMutationFileObservation(observed, expected) {
 		return &OperationError{Code: CodeRecoveryUnsafe, Err: errors.New("cleanup quarantine identity or fingerprint changed")}
 	}
-	return purgeCleanupObject(root, quarantinePath, expected)
+	return purgeCleanupObject(root, quarantinePath, expected, executor.effectProbe()...)
+}
+
+// RestoreCaptured moves the exact captured object of a deletion back to the
+// public path it was captured from, never replacing anything there. A
+// deletion that gives up after capturing uses it so the file is left where
+// it was rather than hidden in the private namespace.
+func (executor OSCleanupExecutor) RestoreCaptured(ctx context.Context, capture, source string, expected domain.FileObservation) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := requireCleanupObservation(expected); err != nil {
+		return err
+	}
+	root, capturePath, err := executor.rootAndPath(capture)
+	if err != nil {
+		return err
+	}
+	_, sourcePath, err := executor.rootAndPath(source)
+	if err != nil {
+		return err
+	}
+	if filepath.Clean(sourcePath) == filepath.Clean(capturePath) {
+		return errors.New("cleanup source and capture paths must differ")
+	}
+	return restoreCleanupObject(root, capturePath, sourcePath, expected)
 }
 
 func (executor OSCleanupExecutor) rootAndPath(path string) (string, string, error) {

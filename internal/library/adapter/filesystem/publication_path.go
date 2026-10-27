@@ -155,6 +155,28 @@ type publicationSyscalls struct {
 	link            func(from, to verifiedEntry) error
 	unlink          func(entry verifiedEntry) error
 	create          func(entry verifiedEntry) (*os.File, error)
+	// observeTarget, when set, runs before the overwrite target is
+	// observed just ahead of its replacing rename; its error is that
+	// observation's answer (fault hook).
+	observeTarget func(path string) error
+}
+
+// withObserveHook runs the executor's PublicationObserveTarget hook before
+// the overwrite target observation of the publish step.
+func (s publicationSyscalls) withObserveHook(hook func(path string) error) publicationSyscalls {
+	s.observeTarget = hook
+	return s
+}
+
+// observeReplaced observes the overwrite target right before its replacing
+// rename, through the fault hook when one is set.
+func (s publicationSyscalls) observeReplaced(final verifiedEntry) (domain.PathObservation, error) {
+	if s.observeTarget != nil {
+		if err := s.observeTarget(final.canonical); err != nil {
+			return domain.PathObservation{}, &os.PathError{Op: "open", Path: final.canonical, Err: err}
+		}
+	}
+	return observeVerifiedEntry(final)
 }
 
 func defaultPublicationSyscalls() publicationSyscalls {
@@ -301,10 +323,16 @@ func (s publicationSyscalls) publishReplace(temp, final verifiedEntry, staged, e
 	if err := stagedIntact(temp, staged); err != nil {
 		return domain.PathObservation{}, err
 	}
-	current, err := observeVerifiedEntry(final)
+	current, err := s.observeReplaced(final)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return domain.PathObservation{}, publicationErr(domain.FileErrorCodeTargetOccupied, errors.New("replaced target is no longer present"))
+		}
+		// An overwrite target held open exclusively elsewhere refuses even
+		// this observation; nothing was replaced, so it settles like a
+		// refused rename (temp removed, busy).
+		if !sameInvocation && domain.FileBusy(busyObservationError(err)) {
+			return domain.PathObservation{}, s.overwriteRefused(temp, staged, err)
 		}
 		return domain.PathObservation{}, publicationErr(domain.CodeTargetUnreadable, err)
 	}
@@ -312,7 +340,10 @@ func (s publicationSyscalls) publishReplace(temp, final verifiedEntry, staged, e
 		return domain.PathObservation{}, publicationErr(domain.FileErrorCodeTargetOccupied, errors.New("replaced target changed since it was frozen"))
 	}
 	if err := s.rename(temp, final); err != nil {
-		if errnoIs(err, unix.ENOENT, unix.EEXIST) && publishLanded(temp, final, staged) {
+		// A replacing rename may report an error although it landed: an
+		// NFSv3 retransmit (ENOENT/EEXIST) or an SMB reply lost after the
+		// server applied it (EIO). The staged object at the target decides.
+		if errnoIs(err, unix.ENOENT, unix.EEXIST, unix.EIO) && publishLanded(temp, final, staged) {
 			return current, nil
 		}
 		if !sameInvocation {

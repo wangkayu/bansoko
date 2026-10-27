@@ -96,8 +96,10 @@ func captureCleanupObject(root, source, target string, expected domain.FileObser
 	if err := directoryPathMatches(sourceParent); err != nil {
 		return "", err
 	}
+	// A probe here answers in place of the rename (a fault hook), so its
+	// errno is classified like the syscall's.
 	if err := cleanupProbe(probes, "before_object_capture"); err != nil {
-		return "", err
+		return "", busyEffectError(err)
 	}
 	if err := cleanupEffects.rename(from, to); err != nil {
 		return "", busyEffectError(err)
@@ -129,6 +131,60 @@ func captureCleanupObject(root, source, target string, expected domain.FileObser
 	}
 	return target, nil
 }
+
+// restoreCleanupObject moves the exact captured object back to the public
+// path it was captured from. It never replaces anything at that path (the
+// rename is no-replace) and proves the restored object is the captured one.
+func restoreCleanupObject(root, capture, source string, expected domain.FileObservation) error {
+	private, err := cleanupCaptureDirectory(root, capture, false)
+	if err != nil {
+		return err
+	}
+	defer private.Close()
+	observed, err := observeFileAs(capture, expected.Fingerprint)
+	if err != nil || !sameMutationFileObservation(observed, expected) {
+		return &OperationError{Code: CodeRecoveryUnsafe, Err: errors.New("the captured object changed; it was not restored")}
+	}
+	sourceParent, err := openVerifiedDirectory(root, filepath.Dir(source), false)
+	if err != nil {
+		return err
+	}
+	defer sourceParent.Close()
+	from := verifiedEntry{parent: private, name: "object", canonical: capture}
+	to := verifiedEntry{parent: sourceParent, name: filepath.Base(source), canonical: source}
+	if err := directoryPathMatches(private); err != nil {
+		return err
+	}
+	if err := directoryPathMatches(sourceParent); err != nil {
+		return err
+	}
+	if err := cleanupEffects.rename(from, to); err != nil {
+		return busyEffectError(err)
+	}
+	if err := sourceParent.Sync(); err != nil {
+		return err
+	}
+	if err := private.Sync(); err != nil {
+		return err
+	}
+	restored, err := observeFileAs(source, expected.Fingerprint)
+	if err != nil || !sameMutationFileObservation(restored, expected) {
+		return &OperationError{Code: CodeRecoveryUnsafe, Err: errors.New("the restored object does not match the captured one")}
+	}
+	return nil
+}
+
+// namespaceAbsentAfterRefusal reports a private namespace whose creation was
+// refused busy and that does not exist: no invocation can have written a
+// start marker into it, so its stage did not start.
+func namespaceAbsentAfterRefusal(target string, err error) bool {
+	if !domain.FileBusy(err) && !domain.FileReadOnly(err) {
+		return false
+	}
+	_, statErr := os.Lstat(filepath.Dir(target))
+	return errors.Is(statErr, os.ErrNotExist)
+}
+
 func purgeCleanupObject(root, path string, expected domain.FileObservation, probes ...cleanupMutationProbe) error {
 	private, err := cleanupCaptureDirectory(root, path, false)
 	if err != nil {
@@ -147,7 +203,7 @@ func purgeCleanupObject(root, path string, expected domain.FileObservation, prob
 		return err
 	}
 	if err := cleanupProbe(probes, "before_object_purge"); err != nil {
-		return err
+		return busyEffectError(err)
 	}
 	if err := cleanupEffects.unlink(entry); err != nil {
 		return busyEffectError(err)
