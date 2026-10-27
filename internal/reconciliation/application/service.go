@@ -32,6 +32,7 @@ type Service struct {
 	db        *sql.DB
 	scanner   FileScanner
 	targets   TargetObserver
+	deletions BlockedDeletionReleaser
 	workItems *workitems.Store
 	eventHub  *events.Hub
 	now       func() time.Time
@@ -71,6 +72,21 @@ func NewService(db *sql.DB, workItems *workitems.Store, scanner FileScanner, clo
 		now = clocks[0]
 	}
 	return &Service{db: db, scanner: scanner, workItems: workItems, now: now}, nil
+}
+
+// BlockedDeletionReleaser re-releases the blocked replacement deletions of one
+// anime whose receipts prove their state; the others stay blocked. The scan
+// calls it after its completion committed, best effort.
+type BlockedDeletionReleaser interface {
+	ReleaseBlockedDeletions(ctx context.Context, managedAnimeID string) (int, error)
+}
+
+// SetBlockedDeletionReleaser wires the scan-completion release of blocked
+// replacement deletions.
+func (s *Service) SetBlockedDeletionReleaser(releaser BlockedDeletionReleaser) {
+	if s != nil {
+		s.deletions = releaser
+	}
 }
 
 // SetTargetObserver wires the target pass of every scan run.

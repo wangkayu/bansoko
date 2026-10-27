@@ -368,6 +368,40 @@ func (r *Repository) SubscriptionIDForAnimeTx(ctx context.Context, scope txscope
 	return generated.New(tx).SubscriptionIDForAnime(ctx, animeID)
 }
 
+// ManagedAnimeTitleTx reads the anime title a deletion notice names.
+func (r *Repository) ManagedAnimeTitleTx(ctx context.Context, scope txscope.Tx, animeID string) (string, error) {
+	tx, err := transaction(scope, "read cleanup notice anime title")
+	if err != nil {
+		return "", err
+	}
+	return generated.New(tx).ManagedAnimeTitle(ctx, animeID)
+}
+
+// ListBlockedForAnime returns one anime's blocked deletions that kept their
+// attempt, the ones a receipt read may release.
+func (r *Repository) ListBlockedForAnime(ctx context.Context, animeID string) ([]Operation, error) {
+	if r == nil || r.db == nil {
+		return nil, errors.New("cleanup database is nil")
+	}
+	rows, err := generated.New(r.db).ListBlockedReplacementDeletionsForAnime(ctx, animeID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]Operation, 0, len(rows))
+	for _, row := range rows {
+		operation, err := operationFromFullRow(row.ID, row.IdempotencyKey, row.PlacementID, row.ManagedAnimeID,
+			row.CoverageKeys, row.ReplacementRef, row.AdmissionMode, row.SourcePath,
+			row.SourceFingerprint, row.State,
+			row.Attempt.RawMessage, row.Attempt.Valid, row.FailureCode, row.Reason, row.CorrelationID,
+			row.Version, row.CreatedAt, row.UpdatedAt)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, *operation)
+	}
+	return result, nil
+}
+
 // NullString returns a valid SQL string for a non-empty adapter row field.
 func NullString(value string) sql.NullString {
 	return sql.NullString{String: value, Valid: value != ""}

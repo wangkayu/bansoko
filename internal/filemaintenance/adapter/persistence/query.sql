@@ -77,3 +77,16 @@ SELECT EXISTS (SELECT 1 FROM placements p WHERE p.physical_path = sqlc.arg(path)
 SELECT id
 FROM subscriptions
 WHERE managed_anime_id = sqlc.arg(anime_id);
+
+-- name: ListBlockedReplacementDeletionsForAnime :many
+SELECT id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
+       admission_mode, source_path, source_fingerprint, state, attempt, failure_code, reason,
+       correlation_id, version, created_at, updated_at
+FROM replacement_deletions
+WHERE managed_anime_id = sqlc.arg(anime_id) AND state = 'blocked' AND attempt IS NOT NULL
+ORDER BY id;
+
+-- name: ManagedAnimeTitle :one
+SELECT title
+FROM managed_anime
+WHERE id = sqlc.arg(anime_id);

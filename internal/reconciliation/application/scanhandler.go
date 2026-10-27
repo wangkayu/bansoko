@@ -249,7 +249,16 @@ func (s *Service) handleScan(ctx context.Context, claim workitems.Claim) (worker
 	if err := tx.Commit(); err != nil {
 		return worker.Outcome{}, err
 	}
-	return worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: "completed", ReasonCode: "scan_completed", Reason: fmt.Sprintf("scanned %d files", scanned)}, nil), nil
+	outcome := worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: "completed", ReasonCode: "scan_completed", Reason: fmt.Sprintf("scanned %d files", scanned)}, nil)
+	if s.deletions != nil {
+		// Best effort, after the scan's own commit: a failed release leaves the
+		// deletions blocked for the next scan or deployment recovery.
+		animeID := claim.Owner.ID
+		outcome = worker.WithAfterCommit(outcome, func(ctx context.Context) {
+			_, _ = s.deletions.ReleaseBlockedDeletions(ctx, animeID)
+		})
+	}
+	return outcome, nil
 }
 
 // ensureCalibrateItem repairs a completed generation whose calibrate item is

@@ -371,6 +371,7 @@ func main() {
 	admissionResolver := pluginRuntime.admissionRunner
 	draftService.SetBusinessDeliveryEnqueuer(pluginRuntime.targetService)
 	ownershipService.SetBusinessDeliveryEnqueuer(pluginRuntime.targetService)
+	cleanupService.SetBusinessDeliveryEnqueuer(pluginRuntime.targetService)
 
 	// The maintenance gate is the single runtime write gate for Web/CLI/MCP.
 	// It is created BEFORE any background producer or worker exists: a boot in

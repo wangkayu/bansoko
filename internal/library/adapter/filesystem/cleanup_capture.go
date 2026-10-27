@@ -99,8 +99,8 @@ func captureCleanupObject(root, source, target string, expected domain.FileObser
 	if err := cleanupProbe(probes, "before_object_capture"); err != nil {
 		return "", err
 	}
-	if err := atomicRenameNoReplaceVerified(from, to); err != nil {
-		return "", err
+	if err := cleanupEffects.rename(from, to); err != nil {
+		return "", busyEffectError(err)
 	}
 	if err := cleanupProbe(probes, "object_captured"); err != nil {
 		return "", err
@@ -149,8 +149,8 @@ func purgeCleanupObject(root, path string, expected domain.FileObservation, prob
 	if err := cleanupProbe(probes, "before_object_purge"); err != nil {
 		return err
 	}
-	if err := atomicUnlinkVerified(entry); err != nil {
-		return err
+	if err := cleanupEffects.unlink(entry); err != nil {
+		return busyEffectError(err)
 	}
 	if err := cleanupProbe(probes, "object_purged"); err != nil {
 		return err

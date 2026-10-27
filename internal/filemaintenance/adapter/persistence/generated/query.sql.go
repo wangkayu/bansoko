@@ -155,6 +155,84 @@ func (q *Queries) InsertReplacementDeletion(ctx context.Context, arg InsertRepla
 	return err
 }
 
+const listBlockedReplacementDeletionsForAnime = `-- name: ListBlockedReplacementDeletionsForAnime :many
+SELECT id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
+       admission_mode, source_path, source_fingerprint, state, attempt, failure_code, reason,
+       correlation_id, version, created_at, updated_at
+FROM replacement_deletions
+WHERE managed_anime_id = $1 AND state = 'blocked' AND attempt IS NOT NULL
+ORDER BY id
+`
+
+type ListBlockedReplacementDeletionsForAnimeRow struct {
+	ID                string
+	IdempotencyKey    string
+	PlacementID       string
+	ManagedAnimeID    string
+	CoverageKeys      json.RawMessage
+	ReplacementRef    string
+	AdmissionMode     string
+	SourcePath        string
+	SourceFingerprint string
+	State             string
+	Attempt           pqtype.NullRawMessage
+	FailureCode       sql.NullString
+	Reason            sql.NullString
+	CorrelationID     sql.NullString
+	Version           int64
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+// ListBlockedReplacementDeletionsForAnime
+//
+//	SELECT id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
+//	       admission_mode, source_path, source_fingerprint, state, attempt, failure_code, reason,
+//	       correlation_id, version, created_at, updated_at
+//	FROM replacement_deletions
+//	WHERE managed_anime_id = $1 AND state = 'blocked' AND attempt IS NOT NULL
+//	ORDER BY id
+func (q *Queries) ListBlockedReplacementDeletionsForAnime(ctx context.Context, animeID string) ([]ListBlockedReplacementDeletionsForAnimeRow, error) {
+	rows, err := q.db.QueryContext(ctx, listBlockedReplacementDeletionsForAnime, animeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListBlockedReplacementDeletionsForAnimeRow{}
+	for rows.Next() {
+		var i ListBlockedReplacementDeletionsForAnimeRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.IdempotencyKey,
+			&i.PlacementID,
+			&i.ManagedAnimeID,
+			&i.CoverageKeys,
+			&i.ReplacementRef,
+			&i.AdmissionMode,
+			&i.SourcePath,
+			&i.SourceFingerprint,
+			&i.State,
+			&i.Attempt,
+			&i.FailureCode,
+			&i.Reason,
+			&i.CorrelationID,
+			&i.Version,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPendingReplacementDeletions = `-- name: ListPendingReplacementDeletions :many
 SELECT id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
        admission_mode, source_path, source_fingerprint, state, attempt, failure_code, reason,
@@ -427,6 +505,24 @@ func (q *Queries) LockReplacementDeletionOwnerVersion(ctx context.Context, clean
 	var version int64
 	err := row.Scan(&version)
 	return version, err
+}
+
+const managedAnimeTitle = `-- name: ManagedAnimeTitle :one
+SELECT title
+FROM managed_anime
+WHERE id = $1
+`
+
+// ManagedAnimeTitle
+//
+//	SELECT title
+//	FROM managed_anime
+//	WHERE id = $1
+func (q *Queries) ManagedAnimeTitle(ctx context.Context, animeID string) (string, error) {
+	row := q.db.QueryRowContext(ctx, managedAnimeTitle, animeID)
+	var title string
+	err := row.Scan(&title)
+	return title, err
 }
 
 const persistReplacementDeletionAttempt = `-- name: PersistReplacementDeletionAttempt :one

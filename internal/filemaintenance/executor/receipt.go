@@ -44,6 +44,16 @@ func (i MaintenanceInvocation) Token() (string, error) {
 // its effect; it proves nothing about the paths themselves.
 var ErrMaintenanceNotStarted = errors.New("maintenance invocation has no start marker")
 
+// ErrMaintenanceNotApplied is returned by ReadMaintenanceReceipt for a
+// deletion-owner capture or purge whose start marker exists without a final
+// receipt, when the executor, under the invocation lock, observes that the
+// effect did not happen: a capture's source still sits at its public path as
+// the started object with nothing at the capture path, or a purge's captured
+// object is still present and identical. The syscall refused (a busy file),
+// so the stage may run again. Absence is never this proof: a missing object
+// stays an unknown effect.
+var ErrMaintenanceNotApplied = errors.New("maintenance invocation started but its effect provably did not apply")
+
 type MaintenanceReceipt struct {
 	Invocation    MaintenanceInvocation  `json:"invocation"`
 	ExecutorFinal bool                   `json:"executor_final"`

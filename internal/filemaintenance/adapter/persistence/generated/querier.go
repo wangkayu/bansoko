@@ -37,6 +37,15 @@ type Querier interface {
 	//          $15, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 	//  ON CONFLICT (idempotency_key) DO NOTHING
 	InsertReplacementDeletion(ctx context.Context, arg InsertReplacementDeletionParams) error
+	//ListBlockedReplacementDeletionsForAnime
+	//
+	//  SELECT id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
+	//         admission_mode, source_path, source_fingerprint, state, attempt, failure_code, reason,
+	//         correlation_id, version, created_at, updated_at
+	//  FROM replacement_deletions
+	//  WHERE managed_anime_id = $1 AND state = 'blocked' AND attempt IS NOT NULL
+	//  ORDER BY id
+	ListBlockedReplacementDeletionsForAnime(ctx context.Context, animeID string) ([]ListBlockedReplacementDeletionsForAnimeRow, error)
 	//ListPendingReplacementDeletions
 	//
 	//  SELECT id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
@@ -77,6 +86,12 @@ type Querier interface {
 	//  WHERE id = $1
 	//  FOR UPDATE
 	LockReplacementDeletionOwnerVersion(ctx context.Context, cleanupID string) (int64, error)
+	//ManagedAnimeTitle
+	//
+	//  SELECT title
+	//  FROM managed_anime
+	//  WHERE id = $1
+	ManagedAnimeTitle(ctx context.Context, animeID string) (string, error)
 	//PersistReplacementDeletionAttempt
 	//
 	//  UPDATE replacement_deletions

@@ -95,7 +95,9 @@ const (
 
 // resolveCleanupAttempt reads the exact receipt of the attempt's stage once.
 // Absence of a file is never a receipt: a purge without its receipt stays
-// unknown.
+// unknown. A started stage whose effect provably did not apply (the source or
+// the captured object is still the frozen object) resolves like an unstarted
+// one, so a refused rename or unlink can run again.
 func resolveCleanupAttempt(ctx context.Context, observer executorpkg.CleanupFileExecutor, receipts executorpkg.MaintenanceCleanupExecutor, op *ReplacementDeletion, attempt cleanupAttemptEvidence) cleanupResolution {
 	if attempt.Stage == cleanupStagePurge {
 		invocation := cleanupInvocation(op, attempt, cleanupPurgeInvocation)
@@ -103,7 +105,7 @@ func resolveCleanupAttempt(ctx context.Context, observer executorpkg.CleanupFile
 		if err == nil && receipt.Validate(invocation) == nil {
 			return cleanupResolutionPurged
 		}
-		if errors.Is(err, executorpkg.ErrMaintenanceNotStarted) {
+		if stageProvablyNotRun(err) {
 			observed, observeErr := observeCleanupFile(ctx, observer, attempt.CapturePath, op.SourceFingerprint)
 			if observeErr == nil && sameFrozenCleanupObservation(observed, attempt.CaptureObservation) {
 				return cleanupResolutionPurgeNotStarted
@@ -116,7 +118,7 @@ func resolveCleanupAttempt(ctx context.Context, observer executorpkg.CleanupFile
 	if err == nil && receipt.Validate(invocation) == nil && sameFrozenCleanupObservation(receipt.Observation, attempt.SourceObservation) {
 		return cleanupResolutionCaptured
 	}
-	if errors.Is(err, executorpkg.ErrMaintenanceNotStarted) {
+	if stageProvablyNotRun(err) {
 		observed, observeErr := observeCleanupFile(ctx, observer, attempt.SourcePath, op.SourceFingerprint)
 		_, targetErr := observeCleanupFile(ctx, observer, attempt.CapturePath, op.SourceFingerprint)
 		if observeErr == nil && sameFrozenCleanupObservation(observed, attempt.SourceObservation) && isMissingCleanupError(targetErr) {
@@ -124,6 +126,15 @@ func resolveCleanupAttempt(ctx context.Context, observer executorpkg.CleanupFile
 		}
 	}
 	return cleanupResolutionUnknown
+}
+
+// stageProvablyNotRun reports a receipt read that proves the stage's effect
+// did not happen: the invocation never wrote its start marker, or it started
+// and the executor observed, under the invocation lock, that the syscall did
+// not apply (a refused rename or unlink of a busy file). Either way the
+// resolver still compares the paths with the frozen evidence itself.
+func stageProvablyNotRun(err error) bool {
+	return errors.Is(err, executorpkg.ErrMaintenanceNotStarted) || errors.Is(err, executorpkg.ErrMaintenanceNotApplied)
 }
 
 // observeCleanupFile observes a path in the mode of the frozen identity. A
