@@ -15,6 +15,7 @@ import {
   type AnimeDraft,
   type PreviewFeedSnapshotRef,
   type ProviderRSSPreviewResult,
+  type RSSListFileSelection,
   type RSSListObservationRef,
   type RSSListView,
   type SeedSearchSnapshotView,
@@ -89,8 +90,8 @@ export type OneShotSeedSource = {
    * 由调用方随后带着它编辑中的草稿重读。失败返回有界原因文案，成功返回空对象。
    */
   expand: (row: OneShotSeedRow) => Promise<{ error?: string }>;
-  /** Re-reads the read model with this task's draft and episode offset. */
-  preview: (draft: AnimeDraft | undefined, offset: number) => Promise<void>;
+  /** Re-reads the read model with this task's draft, episode offset and per-seed manual file selections (step two only). */
+  preview: (draft: AnimeDraft | undefined, offset: number, fileSelections?: RSSListFileSelection[]) => Promise<void>;
   /** custom: no usable seed-list snapshot yet; the user must fetch explicitly. */
   fetchRequired: boolean;
   fetchBusy: boolean;
@@ -263,7 +264,7 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
 
   /** Reads once over the entered groups; of consecutive re-reads only the last one counts. */
   const read = useCallback(
-    async (current: AnimeDraft | undefined, offset: number) => {
+    async (current: AnimeDraft | undefined, offset: number, fileSelections?: RSSListFileSelection[]) => {
       if (!current || !observation || refsRef.current.size === 0) return;
       const seq = ++readSeq.current;
       setPending(true);
@@ -277,6 +278,7 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
           one_shot: true,
           limit_per_group: ITEMS_PER_GROUP,
           ...(offset !== 0 ? { episode_offset: offset } : {}),
+          ...(fileSelections?.length ? { file_selections: fileSelections } : {}),
         });
       try {
         let result: RSSListView;
@@ -516,7 +518,7 @@ function useCustomSeedSource({ entry, enabled }: { entry: CatalogEntryView | und
 
   // One-shot browse: reads this task's draft, with the server binding seeds to the named snapshots; the read itself touches no network.
   const readView = useCallback(
-    async (current: AnimeDraft | undefined, offset: number) => {
+    async (current: AnimeDraft | undefined, offset: number, fileSelections?: RSSListFileSelection[]) => {
       if (!current || !feedRef) return;
       const seq = ++readSeq.current;
       setPending(true);
@@ -529,6 +531,7 @@ function useCustomSeedSource({ entry, enabled }: { entry: CatalogEntryView | und
           one_shot: true,
           limit_per_group: ITEMS_PER_GROUP,
           ...(offset !== 0 ? { episode_offset: offset } : {}),
+          ...(fileSelections?.length ? { file_selections: fileSelections } : {}),
         });
         if (seq === readSeq.current) setView(result);
       } catch (cause) {
@@ -654,7 +657,7 @@ function useSearchSeedSource({ search, enabled }: { search: SearchSeedBrowse | u
   // snapshot's complete result set as one group. A typed 409 means the identity expired; it is
   // surfaced as "search again" (stale) and never silently re-issued.
   const readView = useCallback(
-    async (current: AnimeDraft | undefined, offset: number) => {
+    async (current: AnimeDraft | undefined, offset: number, fileSelections?: RSSListFileSelection[]) => {
       if (!current || !feedRef) return;
       const seq = ++readSeq.current;
       setPending(true);
@@ -671,6 +674,7 @@ function useSearchSeedSource({ search, enabled }: { search: SearchSeedBrowse | u
           one_shot: true,
           limit_per_group: ITEMS_PER_GROUP,
           ...(offset !== 0 ? { episode_offset: offset } : {}),
+          ...(fileSelections?.length ? { file_selections: fileSelections } : {}),
         });
         if (result === null || typeof result !== "object" || !Array.isArray(result.groups)) throw new Error(t("rss.listBadFormat"));
         if (seq === readSeq.current) {

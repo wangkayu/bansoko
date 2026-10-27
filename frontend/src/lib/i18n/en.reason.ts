@@ -34,6 +34,7 @@ export const enReasonCopy = {
   file_must_contain_not_matched: "File name is missing a required word",
   ignored_nested: "In a subfolder, ignored",
   ignored_kind: "File type is not processed",
+  ignored_unselected: "Not selected",
   unknown: "No episode number in the file name",
   file_filter_invalid: FILE_RULE_BAD,
   file_filter_policy_invalid: FILE_RULE_BAD,

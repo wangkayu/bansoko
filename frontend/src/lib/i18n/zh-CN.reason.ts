@@ -32,6 +32,7 @@ export const reasonCopy = {
   file_must_contain_not_matched: "文件名缺少必需词",
   ignored_nested: "在子文件夹里，已忽略",
   ignored_kind: "不处理的文件类型",
+  ignored_unselected: "未选择",
   unknown: "文件名里没有集数",
   file_filter_invalid: FILE_RULE_BAD,
   file_filter_policy_invalid: FILE_RULE_BAD,

@@ -43,7 +43,7 @@ export const oneshotCopy = {
   configTitle: "配置",
   configLocalNote: "只作用于这次下载；不写入订阅，也不改变全局配置",
   restoreDefaults: "恢复默认",
-  restoreDefaultsHint: "把命名、文件过滤、解析器、未识别集数处理与集数偏移复位为本次任务开始时的配置",
+  restoreDefaultsHint: "把命名、文件过滤、解析器、未识别集数处理、集数偏移与文件选择复位为本次任务开始时的配置",
   restoreDefaultsHelpLabel: "说明：恢复默认",
   unclassifiedHint: "按「未知内容」整理的文件以原文件名放入未知内容目录，之后不受管理；选「跳过」则留在下载位置。",
   advanced: "高级",
@@ -70,6 +70,18 @@ export const oneshotCopy = {
   summaryMore: "等 {n} 个文件",
   summaryNoFiles: "没有要入库的文件",
   missingFacts: "缺{facts}",
+
+  // 第二步：手动选择文件
+  filePickerTitle: "选择文件",
+  filePickerToggle: "选择文件（已选 {n}/{total}）",
+  filePickerHint: "默认只入库第一层的视频和字幕；子文件夹里勾选的文件同样入库。未勾选的文件留在下载位置。",
+  filePickerCustom: "已手动选择",
+  filePickerReset: "使用默认文件",
+  fileMovie: "电影正片",
+  fileUnrecognizedSkip: "未识别集数 · 跳过，留在下载位置",
+  fileUnrecognizedRoute: "未识别集数 · 按「未知内容」整理",
+  fileSubtitleNeedsVideo: "先勾选对应的视频",
+  filesNoVideo: "每个种子至少勾选一个视频",
 
   // 提交（在第二步）
   create: "开始下载（{n}）",
