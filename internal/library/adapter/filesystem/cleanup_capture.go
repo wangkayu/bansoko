@@ -43,7 +43,7 @@ func cleanupCaptureDirectory(root, path string, create bool, probes ...cleanupMu
 			return nil, err
 		}
 		if err := unix.Mkdirat(int(parent.file.Fd()), filepath.Base(dir), 0700); err != nil && !errors.Is(err, unix.EEXIST) {
-			return nil, err
+			return nil, busyEffectError(err)
 		}
 		if err := cleanupProbe(probes, "namespace_created"); err != nil {
 			return nil, err

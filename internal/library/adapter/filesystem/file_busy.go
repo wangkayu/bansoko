@@ -16,8 +16,10 @@ import (
 // open file. EROFS is a read-only mount and stays a permission failure.
 var busyEffectErrnos = []unix.Errno{unix.EBUSY, unix.ETXTBSY, unix.EACCES, unix.EPERM, unix.EIO}
 
-// busyEffectError classifies the error of one effect syscall (the rename or
-// unlink itself, never a directory check, mkdir or sync around it). A busy
+// busyEffectError classifies the error of one effect syscall: the rename or
+// unlink itself, or the creation of the owner private namespace in the
+// replaced file's directory (refused there, nothing was captured); never a
+// directory check or sync around them. A busy
 // answer is wrapped in domain.ErrFileBusy with its errno kept in the chain;
 // any other error is returned unchanged.
 func busyEffectError(err error) error {

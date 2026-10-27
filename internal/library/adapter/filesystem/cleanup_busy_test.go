@@ -102,6 +102,38 @@ func TestCleanupCaptureBusyIsNotAppliedAndRetrySucceeds(t *testing.T) {
 	}
 }
 
+// A directory the service may not write (a real EACCES, no substitution)
+// refuses the private namespace before anything is captured: the capture is
+// busy, the source stays, and once the directory is writable again a fresh
+// invocation captures.
+func TestCleanupCaptureInUnwritableDirectoryIsBusy(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	f := newBusyCleanupFixture(t)
+	dir := filepath.Dir(f.source)
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	_, err := f.executor.MoveMaintenance(context.Background(), f.source, f.target, f.expected, f.capture("work-1"))
+	if !domain.FileBusy(err) || !errors.Is(err, unix.EACCES) {
+		t.Fatalf("capture in an unwritable directory = %v, want busy EACCES", err)
+	}
+	if raw, err := os.ReadFile(f.source); err != nil || string(raw) != "old version" {
+		t.Fatalf("source after refused capture: %q %v", raw, err)
+	}
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.executor.MoveMaintenance(context.Background(), f.source, f.target, f.expected, f.capture("work-2")); err != nil {
+		t.Fatalf("capture after the directory is writable: %v", err)
+	}
+	if _, err := os.Stat(f.source); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("source still public after capture: %v", err)
+	}
+}
+
 // EROFS is a read-only mount, not a busy file: it stays a plain failure.
 func TestCleanupCaptureReadOnlyIsNotBusy(t *testing.T) {
 	f := newBusyCleanupFixture(t)
