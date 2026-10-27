@@ -134,6 +134,7 @@ export const rssCopy = {
   },
   releaseRetry: {
     accepted: "已开始重新下载",
+    awaiting: "已加入比较，稍后决定是否下载",
     present: "文件已在库中",
     held: "暂缓下载",
     heldBecause: "暂缓下载：{reason}",

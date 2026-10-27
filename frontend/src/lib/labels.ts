@@ -107,6 +107,7 @@ export function releaseVerdictTone(verdict: ReleaseVerdict): StatePillTone {
     case "start_baseline":
       return "muted";
     case "discovered":
+    case "awaiting_competition":
       return "info";
   }
 }
@@ -340,6 +341,7 @@ export function isReasonImpliedByVerdict(verdict: string | null | undefined, cod
   if (verdict === "waiting_metadata") return reason === "metadata_incomplete" || reason === "metadata_hold";
   if (verdict === "subscription_stopped") return reason === "subscription_stopped";
   if (verdict === "start_baseline") return reason === "start_baseline";
+  if (verdict === "awaiting_competition") return reason === "awaiting_competition";
   if (verdict === "source_unavailable") return reason === "source_unavailable" || reason === "source_disabled" || reason === "source_degraded";
   return false;
 }

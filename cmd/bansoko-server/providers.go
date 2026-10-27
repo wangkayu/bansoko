@@ -375,7 +375,6 @@ func provideFileMaintenanceGraph(
 
 	replacementDecisions := filemaintenance.NewReplacementDecisionService(db)
 	replacementDecisions.SetMediaFactsStore(mediaFactsStore)
-	replacementDecisions.SetWorkItems(workStore)
 	cleanupService := filemaintenance.NewCleanupService(db)
 	// A cleanup capture is bounded by the anchor its composition root injects;
 	// the file manager has no root layer, so that anchor is the deployment's
@@ -744,6 +743,7 @@ func provideCoreApplicationGraph(
 	rssService.SetCandidateFactsRepository(fileMaintenanceGraph.candidateFactsRepo)
 	rssService.SetMediaFactsStore(fileMaintenanceGraph.mediaFactsStore)
 	rssService.SetReplacementAdmission(fileMaintenanceGraph.replacementDecisions)
+	rssService.SetSubscriptionCompetition(fileMaintenanceGraph.replacementDecisions)
 	// A parser kind change invalidates the parse evidence of every unsubmitted
 	// Release, so the parser policy owner schedules their reevaluation inside
 	// its own CAS transaction instead of waiting for the next feed refresh.
@@ -919,7 +919,7 @@ func provideWorkerGraph(
 		{kind: workitems.KindAlignmentExecute, handler: alignmentOperations.ExecuteHandler()},
 		{kind: workitems.KindOffsetMigrationExecute, handler: offsetMigrationExecute.ExecuteHandler()},
 		{kind: workitems.KindReplacementEvaluate, handler: replacementDecisions.EvaluateHandler()},
-		{kind: workitems.KindReplacementFallback, handler: replacementDecisions.FallbackHandler()},
+		{kind: workitems.KindSubscriptionCompetition, handler: rssService.CompetitionHandler()},
 		{kind: workitems.KindReplacementDelete, handler: cleanupService.DeleteHandler()},
 		{kind: workitems.KindFileManagerExecute, handler: userOperations.ExecuteHandler()},
 		{kind: workitems.KindCompletionExecute, handler: downloadCompletion.Handler()},

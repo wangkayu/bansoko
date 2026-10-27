@@ -368,7 +368,6 @@ func newRealChainServices(t *testing.T, client *http.Client) *realChainServices 
 	ownershipService.SetReplacementTrigger(replacementTrigger)
 	replacementDecisions := filemaintenance.NewReplacementDecisionService(db)
 	replacementDecisions.SetMediaFactsStore(facts.NewStoreWithRepository(mediapersistence.NewRepository(db)))
-	replacementDecisions.SetWorkItems(store)
 	// Mirror the production composition root: persist frozen targets, then wire
 	// pre-download probing and the frozen replacement intent before B is evaluated.
 	rssService.SetTargetStore(acquisitiontarget.NewStore(targetpersistence.NewRepository(db)))
@@ -376,6 +375,7 @@ func newRealChainServices(t *testing.T, client *http.Client) *realChainServices 
 	configureRealChainNaming(t, ctx, db, targetRoot)
 	rssService.SetDownloaderAdmission(downloadService)
 	rssService.SetReplacementAdmission(replacementDecisions)
+	rssService.SetSubscriptionCompetition(replacementDecisions)
 	// One-shot uses its own service and the same frozen target boundary as RSS.
 	provisioner := animeapplication.NewProvisioner(parserPolicies)
 	oneShotService, err := oneshotapplication.NewService(db, oneshotapplication.Dependencies{
@@ -443,7 +443,7 @@ func newRealChainServices(t *testing.T, client *http.Client) *realChainServices 
 		{workitems.KindFileExecute, fileService},
 		{workitems.KindPostProcessPlan, fileService.PostProcessingPlanHandler()},
 		{workitems.KindReplacementEvaluate, replacementDecisions.EvaluateHandler()},
-		{workitems.KindReplacementFallback, replacementDecisions.FallbackHandler()},
+		{workitems.KindSubscriptionCompetition, rssService.CompetitionHandler()},
 		{workitems.KindReplacementDelete, cleanupService.DeleteHandler()},
 		{workitems.KindReconciliationScan, reconService.ScanHandler()},
 		{workitems.KindReconciliationCalibrate, calibrationService.CalibrateHandler()},

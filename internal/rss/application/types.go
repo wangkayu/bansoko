@@ -22,6 +22,7 @@ import (
 	"bansoko/internal/parser"
 	plugintargetport "bansoko/internal/plugintarget/port"
 	"bansoko/internal/runtime/worker"
+	"bansoko/internal/subscription/competition"
 	"bansoko/internal/workitems"
 )
 
@@ -112,6 +113,10 @@ type Service struct {
 	downloaderAdmission         downloadadmission.Matcher
 	// notifications admits release_discovered notices; nil admits none.
 	notifications plugintargetport.BusinessDeliveryEnqueuer
+	// competition decides the admissions of a subscription instance. Unset
+	// keeps the fixture-only direct path where release evaluation admits
+	// itself; production always wires it.
+	competition CompetitionDecider
 }
 
 // ReplacementAdmission supplies a previously frozen retention decision to
@@ -245,8 +250,14 @@ func (s *Service) Handle(ctx context.Context, claim workitems.Claim) (worker.Out
 	switch claim.Kind {
 	case workitems.KindRSSRefresh:
 		outcome, err = s.handleRefresh(ctx, claim)
+		if err == nil {
+			outcome = s.withRefreshCompetition(ctx, outcome, claim.Owner.ID)
+		}
 	case workitems.KindReleaseEvaluate:
 		outcome, err = s.handleReleaseEvaluate(ctx, claim)
+		if err == nil {
+			outcome = s.withCompetitionFollowUp(outcome, s.releaseManagedAnimeID(ctx, claim))
+		}
 	default:
 		return worker.Outcome{}, fmt.Errorf("unsupported RSS work item kind %q", claim.Kind)
 	}
@@ -433,8 +444,15 @@ type releaseSnapshot struct {
 	acquisitionState string
 	taskCount        int
 	// manualRetry marks an evaluation run for the explicit retry command
-	// instead of the release_evaluate worker.
+	// instead of the release_evaluate worker. A release an explicit retry left
+	// waiting for its active subscription's competition keeps the retry
+	// (retryKey from releases.competition_retry_key): every later evaluation
+	// of it, the competition's decided stage included, runs as that retry.
 	manualRetry bool
+	// retryKey is the explicit retry's idempotency key: the key of the
+	// placement redownload requests it recorded, stored with a waiting
+	// release.
+	retryKey string
 	// newReleasesOnly/startBaselineAt are the instance's frozen new-releases-only
 	// option and its baseline (the instance creation time).
 	newReleasesOnly bool
@@ -445,6 +463,10 @@ type releaseSnapshot struct {
 	// placementMissing is the PlacementMissing retry fact
 	// (ReleasePlacementIssueSQL).
 	placementMissing bool
+	// competitionDecision is set only when the subscription competition runs
+	// the decided stage of this evaluation: its per-key verdicts replace the
+	// read-only coverage verdicts of the batch plan deduplication.
+	competitionDecision *competition.Decision
 }
 
 // downloadAttempt is the ordinal of the download the next acceptance creates.

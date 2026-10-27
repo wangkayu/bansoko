@@ -86,6 +86,7 @@ export const zhCN = {
     acquisition_failed: "获取失败",
     resume_baseline: "恢复时已存在",
     start_baseline: "订阅前发布",
+    awaiting_competition: "等待比较",
     submitted: "已提交下载",
     reevaluating: "重新评估中",
     notSelected: "未选择",

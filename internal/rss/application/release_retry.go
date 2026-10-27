@@ -16,14 +16,18 @@ import (
 	"bansoko/internal/events"
 	"bansoko/internal/persistence/txscope"
 	"bansoko/internal/runtime/worker"
+	"bansoko/internal/subscription/competition"
 	"bansoko/internal/workitems"
 )
 
 // Release retry outcomes. A retry is normal acceptance run once on request:
-// accepted creates a new download task; the others report why nothing was
-// downloaded and are results, not errors.
+// accepted creates a new download task; awaiting puts the release back into
+// its active subscription's competition, which decides it with the other
+// waiting releases; the others report why nothing was downloaded and are
+// results, not errors.
 const (
 	RetryOutcomeAccepted = "accepted"
+	RetryOutcomeAwaiting = "awaiting"
 	RetryOutcomeFiltered = "filtered"
 	RetryOutcomeHeld     = "held"
 	RetryOutcomePresent  = "present"
@@ -187,6 +191,7 @@ func (s *Service) retryRelease(ctx context.Context, releaseID, idempotencyKey, r
 		}
 	}
 	snapshot.manualRetry = true
+	snapshot.retryKey = strings.TrimSpace(idempotencyKey)
 	// A run again of a Release whose placed file the latest scan found missing
 	// or changed requests a redownload of those placements first (the
 	// placement redownload mechanism), so deduplication no longer counts them
@@ -199,7 +204,11 @@ func (s *Service) retryRelease(ctx context.Context, releaseID, idempotencyKey, r
 		}
 		if marked {
 			result, err := s.evaluateReleaseRetry(ctx, releaseID, idempotencyKey, requestHash, snapshot)
-			if err != nil || result.Outcome != RetryOutcomeAccepted {
+			// A release waiting for the competition keeps the request with
+			// the release (competition_retry_key): the competition compares
+			// it without the missing placements, and a decision that
+			// downloads nothing withdraws it.
+			if err != nil || (result.Outcome != RetryOutcomeAccepted && result.Outcome != RetryOutcomeAwaiting) {
 				if clearErr := s.withdrawReleasePlacementRedownloads(ctx, snapshot, idempotencyKey); clearErr != nil && err == nil {
 					err = fmt.Errorf("withdraw release placement redownload: %w", clearErr)
 				}
@@ -232,17 +241,49 @@ WHERE p.managed_anime_id = $1 AND p.quality_facts_ref = $2 AND p.redownload_requ
 // withdrawReleasePlacementRedownloads clears the requests this run recorded:
 // nothing was downloaded, so the placements hold their episodes again.
 func (s *Service) withdrawReleasePlacementRedownloads(ctx context.Context, snapshot releaseSnapshot, idempotencyKey string) error {
-	_, err := s.db.ExecContext(context.WithoutCancel(ctx), `
-UPDATE placements SET redownload_requested_at = NULL, redownload_request_key = NULL,
-       version = version + 1, updated_at = CURRENT_TIMESTAMP
-WHERE managed_anime_id = $1 AND quality_facts_ref = $2 AND state = 'active' AND redownload_request_key = $3`,
+	_, err := s.db.ExecContext(context.WithoutCancel(ctx), withdrawPlacementRedownloadsSQL,
 		snapshot.managedAnimeID, snapshot.releaseID, strings.TrimSpace(idempotencyKey))
 	return err
 }
 
+// withdrawPlacementRedownloadsSQL clears the redownload requests one retry
+// (request key $3) recorded on the placements of release $2.
+const withdrawPlacementRedownloadsSQL = `
+UPDATE placements SET redownload_requested_at = NULL, redownload_request_key = NULL,
+       version = version + 1, updated_at = CURRENT_TIMESTAMP
+WHERE managed_anime_id = $1 AND quality_facts_ref = $2 AND state = 'active' AND redownload_request_key = $3`
+
+// withdrawPlacementRedownloadsTx is withdrawReleasePlacementRedownloads in the
+// caller's transaction (a waiting retry the competition did not download).
+func withdrawPlacementRedownloadsTx(ctx context.Context, tx *sql.Tx, managedAnimeID, releaseID, requestKey string) error {
+	if _, err := tx.ExecContext(ctx, withdrawPlacementRedownloadsSQL, managedAnimeID, releaseID, strings.TrimSpace(requestKey)); err != nil {
+		return fmt.Errorf("withdraw release placement redownload: %w", err)
+	}
+	return nil
+}
+
 // evaluateReleaseRetry runs the evaluation of an admitted retry and writes
-// its result.
+// its result. A stopped subscription's retry whose subscription was resumed
+// meanwhile is evaluated once more from a fresh snapshot: it waits for the
+// competition like any release of an active subscription.
 func (s *Service) evaluateReleaseRetry(ctx context.Context, releaseID, idempotencyKey, requestHash string, snapshot releaseSnapshot) (ReleaseRetryResult, error) {
+	result, err := s.evaluateReleaseRetryOnce(ctx, releaseID, idempotencyKey, requestHash, snapshot)
+	if !errors.Is(err, errCompetitionActivated) {
+		return result, err
+	}
+	fresh, err := s.loadReleaseSnapshot(ctx, releaseID)
+	if err != nil {
+		return ReleaseRetryResult{}, err
+	}
+	fresh.manualRetry, fresh.retryKey, fresh.redownload = true, snapshot.retryKey, snapshot.redownload
+	result, err = s.evaluateReleaseRetryOnce(ctx, releaseID, idempotencyKey, requestHash, fresh)
+	if errors.Is(err, errCompetitionActivated) {
+		return ReleaseRetryResult{}, ErrReleaseChanged
+	}
+	return result, err
+}
+
+func (s *Service) evaluateReleaseRetryOnce(ctx context.Context, releaseID, idempotencyKey, requestHash string, snapshot releaseSnapshot) (ReleaseRetryResult, error) {
 	claim := workitems.Claim{
 		Owner: workitems.OwnerRef{Type: workitems.OwnerRelease, ID: releaseID}, Kind: workitems.KindReleaseEvaluate,
 		ExpectedOwnerVersion: snapshot.releaseVersion, ManagedAnimeID: snapshot.managedAnimeID,
@@ -275,6 +316,13 @@ func (s *Service) evaluateReleaseRetry(ctx context.Context, releaseID, idempoten
 		// evaluation is discarded.
 		return replay, err
 	}
+	if s.competition != nil {
+		// The subscription row before the release (the competition commit's
+		// order): the owner writer and the enqueue below lock it again.
+		if _, err := tx.ExecContext(ctx, `SELECT 1 FROM subscriptions WHERE managed_anime_id = $1 FOR UPDATE`, snapshot.managedAnimeID); err != nil {
+			return ReleaseRetryResult{}, fmt.Errorf("lock subscription for release retry: %w", err)
+		}
+	}
 	var result ReleaseRetryResult
 	if outcome.WriteOwner == nil {
 		// Nothing was evaluated (the provider group is not selected, or the
@@ -285,11 +333,19 @@ func (s *Service) evaluateReleaseRetry(ctx context.Context, releaseID, idempoten
 		}
 	} else {
 		if _, err := outcome.WriteOwner(ctx, txscope.Wrap(tx), outcome.OwnerResult); err != nil {
+			if errors.Is(err, errCompetitionActivated) {
+				return ReleaseRetryResult{}, err
+			}
 			return ReleaseRetryResult{}, mapReleaseRetryWriteError(err)
 		}
 		result, err = readReleaseRetryResultTx(ctx, tx, releaseID)
 		if err != nil {
 			return ReleaseRetryResult{}, err
+		}
+		if s.competition != nil {
+			if _, err := competition.EnqueueTx(ctx, tx, snapshot.managedAnimeID, competition.TriggerReleaseEvaluated, competition.WhenAwaiting); err != nil {
+				return ReleaseRetryResult{}, err
+			}
 		}
 	}
 	if err := writeReleaseRetryRecordTx(ctx, tx, releaseID, idempotencyKey, requestHash, result); err != nil {
@@ -348,6 +404,8 @@ func releaseRetryResult(releaseID, verdict, reasonCode, taskID string) ReleaseRe
 	switch {
 	case taskID != "":
 		result.Outcome, result.DownloadTaskID, result.ReasonCode = RetryOutcomeAccepted, taskID, ""
+	case verdict == competition.VerdictAwaiting:
+		result.Outcome = RetryOutcomeAwaiting
 	case verdict == "filtered":
 		result.Outcome = RetryOutcomeFiltered
 	case verdict == "waiting_metadata":

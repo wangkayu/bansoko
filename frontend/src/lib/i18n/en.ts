@@ -86,6 +86,7 @@ export const en = {
     acquisition_failed: "Failed",
     resume_baseline: "Present at resume",
     start_baseline: "Published before subscribing",
+    awaiting_competition: "Awaiting comparison",
     submitted: "Sent to download client",
     reevaluating: "Re-evaluating",
     notSelected: "Not selected",

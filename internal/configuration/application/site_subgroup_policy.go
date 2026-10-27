@@ -10,6 +10,7 @@ import (
 	automationapp "bansoko/internal/automation/application"
 	"bansoko/internal/persistence/txscope"
 	selectionapp "bansoko/internal/selection/application"
+	"bansoko/internal/subscription/competition"
 )
 
 // siteSubgroupTarget is one active provider instance whose group selection
@@ -53,6 +54,14 @@ FOR UPDATE OF ma`, target.managedAnimeID, target.subscriptionID).Scan(&lifecycle
 		}
 		if err := recomputer.RecomputeSubscriptionSelections(ctx, txscope.Wrap(tx), target.subscriptionID, target.managedAnimeID); err != nil {
 			return fmt.Errorf("recompute instance %s: %w", target.managedAnimeID, err)
+		}
+		// The new scores and selection re-rank only the releases still
+		// waiting for the competition; admitted downloads and placed files
+		// are left to the replacement.
+		if state == "active" {
+			if _, err := competition.EnqueueTx(ctx, tx, target.managedAnimeID, competition.TriggerSitePolicy, competition.WhenAwaiting); err != nil {
+				return fmt.Errorf("enqueue competition of instance %s: %w", target.managedAnimeID, err)
+			}
 		}
 	}
 	return nil

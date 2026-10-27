@@ -25,10 +25,12 @@ var errStartBaselineMissing = errors.New("new releases only is on but the subscr
 // startBaselineApplies reports whether the Release takes start_baseline. The
 // baseline is the instance's frozen creation time; a Release published at or
 // after it is new. A Release without a publish time cannot be shown to be new
-// and takes the baseline verdict. An explicit retry never applies the gate.
+// and takes the baseline verdict. An explicit retry never applies the gate,
+// nor does a re-evaluation of a release that keeps a waiting retry
+// (retryKey; a stopped subscription keeps it until the resume).
 // The option without its baseline fails closed.
 func startBaselineApplies(snapshot releaseSnapshot, published time.Time) (bool, error) {
-	if snapshot.manualRetry || !snapshot.newReleasesOnly {
+	if snapshot.manualRetry || snapshot.retryKey != "" || !snapshot.newReleasesOnly {
 		return false, nil
 	}
 	if !snapshot.startBaselineAt.Valid {

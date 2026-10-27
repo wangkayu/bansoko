@@ -129,8 +129,10 @@ WHERE id = $1 AND state = 'active' AND redownload_requested_at IS NULL`, placeme
 		return ReleaseRetryResult{}, err
 	}
 	result, err := s.retryRelease(ctx, releaseID, idempotencyKey, requestHash, true)
-	if ownMarker > 0 && (err != nil || result.Outcome != RetryOutcomeAccepted) {
-		// Nothing was downloaded: the placement holds its episodes again.
+	if ownMarker > 0 && (err != nil || (result.Outcome != RetryOutcomeAccepted && result.Outcome != RetryOutcomeAwaiting)) {
+		// Nothing was downloaded: the placement holds its episodes again. A
+		// release waiting for the competition keeps the request with the
+		// release; a decision that downloads nothing withdraws it.
 		if _, clearErr := s.db.ExecContext(context.WithoutCancel(ctx), `
 UPDATE placements SET redownload_requested_at = NULL, redownload_request_key = NULL,
        version = version + 1, updated_at = CURRENT_TIMESTAMP

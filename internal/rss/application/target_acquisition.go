@@ -100,7 +100,12 @@ func (s *Service) preflightTargetAcquisition(ctx context.Context, snapshot relea
 		return failed("file_parser_unavailable", err.Error())
 	}
 	intent := acquisitiontarget.IntentEnsurePresent
-	if s.replacementAdmission != nil {
+	if decision := snapshot.competitionDecision; decision != nil {
+		// Decided stage: the competition's per-key verdicts deduplicate the
+		// plan. A key it did not decide is claimed by another candidate as
+		// far as this release knows (fail closed).
+		plan.ApplyDedup(decidedVerdicts(*decision, plan.CandidateKeys()))
+	} else if s.replacementAdmission != nil {
 		// A batch only fills what is missing: keys a present placement already
 		// holds, or another running acquisition already claims, are dropped
 		// before the decision is frozen over the remaining keys.

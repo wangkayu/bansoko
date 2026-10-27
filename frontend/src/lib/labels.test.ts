@@ -11,7 +11,9 @@ import {
   notificationTriggerKindLabel,
   evaluationReasonCode,
   formatTimeAgo,
+  isReasonImpliedByVerdict,
   releaseVerdictLabel,
+  releaseVerdictTone,
   routineKindLabel,
   sourceHealthLabel,
   subscriptionStateLabel,
@@ -26,9 +28,11 @@ describe("FR-10 产品语言表", () => {
   });
 
   it("Release verdict 来自文案表", () => {
-    for (const verdict of ["discovered", "waiting_metadata", "subscription_stopped", "source_unavailable", "parse_failed", "accepted_pending_download", "filtered", "adopted_existing", "acquisition_failed", "submitted"] as const) {
+    for (const verdict of ["discovered", "waiting_metadata", "subscription_stopped", "source_unavailable", "parse_failed", "accepted_pending_download", "filtered", "adopted_existing", "acquisition_failed", "submitted", "awaiting_competition"] as const) {
       expect(releaseVerdictLabel(verdict)).toBe(t(`verdict.${verdict}`));
     }
+    expect(releaseVerdictTone("awaiting_competition")).toBe("info");
+    expect(isReasonImpliedByVerdict("awaiting_competition", "awaiting_competition")).toBe(true);
     expect(releaseVerdictLabel("filtered", "原因")).toBe(t("verdict.filteredWithReason", { reason: "原因" }));
     expect(releaseVerdictLabel("submitted", "原因")).toBe(t("verdict.submitted"));
   });

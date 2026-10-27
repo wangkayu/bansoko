@@ -3732,18 +3732,22 @@ paths:
           Run one release through normal acceptance again. Allowed while the release has
           no download in progress and its last download failed or it never had one.
           Rules, the metadata hold and fill-missing deduplication apply exactly as for
-          automatic acceptance; it also works while the subscription is stopped. Returns
-          the outcome: accepted (with the new download_task_id), filtered, held, present
-          or failed with its reason_code. A release that may not be retried now fails
-          with RELEASE_NOT_RETRYABLE and the reason.
+          automatic acceptance; it also works while the subscription is stopped. In an
+          active subscription a downloadable release goes back into the subscription's
+          competition (outcome awaiting), which decides it with the other waiting
+          releases. Returns the outcome: accepted (with the new download_task_id),
+          awaiting, filtered, held, present or failed with its reason_code. A release
+          that may not be retried now fails with RELEASE_NOT_RETRYABLE and the reason.
       description: >-
         Runs the Release through normal acceptance again, synchronously. It is
         allowed while the Release has no download in progress and either never
         had a download or its last download failed; it never bypasses rules,
         the metadata hold or fill-missing deduplication, and works while the
-        subscription is stopped. Accepted creates a new DownloadTask and keeps
-        the failed one as a record. Filtered, held, present and failed are
-        results, not errors. Replaying the same Idempotency-Key returns the
+        subscription is stopped. In an active subscription a downloadable
+        Release waits for the subscription's competition again (awaiting,
+        verdict awaiting_competition); in a stopped one accepted creates a new
+        DownloadTask and keeps the failed one as a record. Awaiting, filtered,
+        held, present and failed are results, not errors. Replaying the same Idempotency-Key returns the
         first result. A Release that may not be retried now answers 409
         RELEASE_NOT_RETRYABLE with the reason in details[0].code.
       parameters:
@@ -9830,8 +9834,16 @@ components:
         - submitted
         - resume_baseline
         - start_baseline
+        - awaiting_competition
       description: >-
-        resume_baseline: present in the feed when a stopped subscription
+        awaiting_competition: the Release passed the seed filter, the torrent,
+        the file rules and the batch plan of an active subscription and waits
+        for the subscription's competition, which compares every waiting
+        Release of the subscription with its managed files and running
+        downloads and decides which one downloads each episode; never carries
+        a DownloadTask. A waiting Release whose admission the competition could
+        not finish after its delayed retries keeps waiting with reason_code
+        competition_stalled. resume_baseline: present in the feed when a stopped subscription
         resumed; never evaluated or retried. start_baseline: the subscription
         has new_releases_only and the Release was published before the
         instance was created (or has no publish time); automatic paths never
@@ -12908,6 +12920,8 @@ components:
       required: [release_id, verdict, outcome]
       description: >-
         Result of one Release retry. accepted carries the new DownloadTask;
+        awaiting means the Release of an active subscription waits for the
+        subscription's competition again (verdict awaiting_competition);
         filtered, held, present and failed carry the acceptance reason_code
         the Release now records.
       properties:
@@ -12918,7 +12932,7 @@ components:
           minLength: 1
         outcome:
           type: string
-          enum: [accepted, filtered, held, present, failed]
+          enum: [accepted, awaiting, filtered, held, present, failed]
         reason_code:
           type: string
           minLength: 1

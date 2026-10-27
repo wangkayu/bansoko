@@ -448,6 +448,13 @@ describe("AnimeTabs 种子重试", () => {
     expect(new Headers(calls[0][1]?.headers).get("Idempotency-Key")).toBeTruthy();
   });
 
+  it("订阅中的重试重新进入比较", async () => {
+    stubRetryFetch(json(200, { release_id: "release-1", verdict: "awaiting_competition", outcome: "awaiting", reason_code: "awaiting_competition" }));
+    await clickRetry();
+    const { toast } = await import("sonner");
+    await waitFor(() => expect(toast.info).toHaveBeenCalledWith(t("rss.releaseRetry.awaiting")));
+  });
+
   it("被过滤的结果用一句话说明原因，不显示原始码", async () => {
     stubRetryFetch(json(200, { release_id: "release-1", verdict: "filtered", outcome: "filtered", reason_code: "filtered_by_rules" }));
     await clickRetry();
