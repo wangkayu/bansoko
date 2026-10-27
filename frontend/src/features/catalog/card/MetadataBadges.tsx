@@ -8,7 +8,8 @@ import { metadataMissingLabel } from "../../../lib/labels";
  *  unsubscribed entry follows the bindings themselves. Used in the config dialog's title area. */
 export function MetadataBadges({ entry }: { entry: CatalogEntryView }) {
   const subscribed = entry.subscriptionState !== undefined;
-  const { bgmId, tmdbWorkId, tmdbSeason } = entry.metadataMatch;
+  const { bgmId, tmdbWorkId, tmdbMediaKind, tmdbSeason } = entry.metadataMatch;
+  const tmdbMovie = tmdbMediaKind === "movie";
   const holdMissing = entry.metadataHold?.held ? entry.metadataHold.missing : [];
   const bgmMissing = holdMissing.includes("bgm") || (!subscribed && !bgmId);
   const tmdbMissing = holdMissing.includes("tmdb") || (!subscribed && !tmdbWorkId);
@@ -30,9 +31,9 @@ export function MetadataBadges({ entry }: { entry: CatalogEntryView }) {
       {tmdbWorkId ? (
         <span className="catalog-metadata-group">
           <span className="text-badge catalog-metadata-label">TMDB</span>
-          <ExternalValue href={`https://www.themoviedb.org/tv/${tmdbWorkId}`}>
+          <ExternalValue href={`https://www.themoviedb.org/${tmdbMovie ? "movie" : "tv"}/${tmdbWorkId}`}>
             {tmdbWorkId}
-            {tmdbSeason !== undefined ? ` · S${tmdbSeason}` : ""}
+            {tmdbMovie ? " · Movie" : tmdbSeason !== undefined ? ` · S${tmdbSeason}` : ""}
           </ExternalValue>
         </span>
       ) : !tmdbMissing ? (
