@@ -202,6 +202,18 @@ type File struct {
 	BoundVideo string  `json:"bound_video,omitempty"`
 	Outcome    Outcome `json:"outcome"`
 	ReasonCode string  `json:"reason_code,omitempty"`
+	// TargetVersion is the version number admission gave a planned video
+	// (SameEpisodeTargets under a manual selection and the versioned policy):
+	// its target is VersionedTargetPath(rendered, TargetVersion). Absent (0)
+	// means the rendered target itself.
+	TargetVersion int `json:"target_version,omitempty"`
+}
+
+// MarkTargetVersion records the version number of a planned video's target.
+func (p *Plan) MarkTargetVersion(sourcePath string, version int) {
+	if index := p.indexOf(sourcePath); index >= 0 && version > 1 {
+		p.Files[index].TargetVersion = version
+	}
 }
 
 // Keys are every coverage key the file occupies: all members of a

@@ -125,6 +125,13 @@ func TestBatchPreflightManualSelectionSameEpisodeFollowsCollisionPolicy(t *testi
 				if want := batchplan.VersionedTargetPath(paths[first], 2); paths[second] != want {
 					t.Fatalf("versioned target = %q, want %q", paths[second], want)
 				}
+				// The frozen plan carries the number for the file operation re-render.
+				if entry, _ := result.BatchPlan.File(second); entry.TargetVersion != 2 {
+					t.Fatalf("plan target_version = %d, want 2", entry.TargetVersion)
+				}
+				if entry, _ := result.BatchPlan.File(first); entry.TargetVersion != 0 {
+					t.Fatalf("first copy target_version = %d, want none", entry.TargetVersion)
+				}
 			}
 			for source, want := range c.dropped {
 				if got := planOutcome(result, source); got != want {

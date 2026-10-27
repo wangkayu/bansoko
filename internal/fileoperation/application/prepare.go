@@ -285,6 +285,7 @@ func (s *Service) prepareForArtifactTxWithOverrides(ctx context.Context, tx *sql
 			s.markExcluded(file.fileRef, reason)
 			continue
 		}
+		recordTargetVersion(&prep, selection, file)
 		target, err := s.prepareFileTx(ctx, tx, artifact, file, prep, frozenEpisodes[file.fileRef], unknownVideos[file.fileRef])
 		if err != nil {
 			return err
@@ -618,6 +619,9 @@ func (s *Service) prepareFileTx(ctx context.Context, tx *sql.Tx, artifact artifa
 	plan.targetPath, err = renderedTarget(directory, renderedFilename)
 	if err != nil {
 		return nil, s.insertInvalidPlanTx(ctx, tx, plan, artifact, file, prep, err)
+	}
+	if versioned := versionedRenderedTarget(prep, file, plan.targetPath); versioned != plan.targetPath {
+		plan.targetPath, renderedFilename = versioned, filepath.Base(versioned)
 	}
 	if err := validateTargetPath(plan.targetPath); err != nil {
 		return nil, s.insertInvalidPlanTx(ctx, tx, plan, artifact, file, prep, err)

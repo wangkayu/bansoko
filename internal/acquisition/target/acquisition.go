@@ -699,6 +699,10 @@ func preflight(ctx context.Context, input PlanInput, probe Probe) PlanResult {
 				versioned := batchplan.VersionedTargetPath(entry.TargetPath, decision.Version)
 				entry.TargetPath = versioned
 				entry.RenderSnapshot = versionedRenderSnapshot(entry.RenderSnapshot, versioned)
+				// The plan carries the number, so a later re-render of the
+				// naming template (file operation planning) lands on the same
+				// versioned target.
+				plan.MarkTargetVersion(entry.SourcePath, decision.Version)
 				if index, ok := fileIndex[entry.SourcePath]; ok {
 					files[index].TargetPath = &versioned
 				}
