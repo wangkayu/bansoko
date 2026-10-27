@@ -57,6 +57,46 @@ export function toggleFileSelection(
   return normalizeFileSelection(files, next);
 }
 
+/** The videos a folder row toggles: every selectable video at any depth below it. */
+function directoryVideos(files: readonly RSSListManifestFile[], directory: string): RSSListManifestFile[] {
+  const prefix = `${directory}/`;
+  return files.filter((file) => file.media_kind === "video" && file.selectable && file.source_path.startsWith(prefix));
+}
+
+/** A folder row's checkbox: all, some or none of its selectable videos are checked; none to check disables it. */
+export type DirectoryState = "checked" | "mixed" | "unchecked" | "empty";
+
+export function directoryState(files: readonly RSSListManifestFile[], selection: ReadonlySet<string>, directory: string): DirectoryState {
+  const videos = directoryVideos(files, directory);
+  if (videos.length === 0) return "empty";
+  const checked = videos.filter((file) => selection.has(file.source_path)).length;
+  return checked === videos.length ? "checked" : checked === 0 ? "unchecked" : "mixed";
+}
+
+/**
+ * Toggles a folder: when every selectable video below it is checked they are all unchecked,
+ * otherwise they are all checked. Each video carries its subtitles, as a single toggle does.
+ */
+export function toggleDirectorySelection(
+  files: readonly RSSListManifestFile[],
+  chosen: readonly string[] | undefined,
+  directory: string,
+): string[] | undefined {
+  const current = effectiveFileSelection(files, chosen);
+  const videos = directoryVideos(files, directory);
+  if (videos.length === 0) return chosen ? [...chosen] : undefined;
+  const checking = directoryState(files, current, directory) !== "checked";
+  const paths = new Set(videos.map((file) => file.source_path));
+  const next = new Set(current);
+  for (const file of files) {
+    const target = file.media_kind === "video" ? paths.has(file.source_path) : file.media_kind === "subtitle" && file.selectable && file.bound_video_source_path !== undefined && paths.has(file.bound_video_source_path);
+    if (!target) continue;
+    if (checking) next.add(file.source_path);
+    else next.delete(file.source_path);
+  }
+  return normalizeFileSelection(files, next);
+}
+
 /** The manual set in request form (sorted paths), or undefined when it equals the defaults. */
 export function normalizeFileSelection(files: readonly RSSListManifestFile[], selection: ReadonlySet<string>): string[] | undefined {
   const defaults = defaultFileSelection(files);

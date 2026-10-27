@@ -3,9 +3,11 @@ import type { RSSListManifestFile } from "../../lib/api/client";
 import {
   buildFileTree,
   defaultFileSelection,
+  directoryState,
   fileCheckable,
   sanitizeFileSelection,
   selectedVideoCount,
+  toggleDirectorySelection,
   toggleFileSelection,
 } from "./fileSelection";
 
@@ -42,6 +44,19 @@ describe("one-shot file selection model", () => {
     expect(sanitizeFileSelection(reread, chosen)).toEqual([]);
     expect(sanitizeFileSelection(files, chosen)).toEqual(chosen.slice().sort());
     expect(sanitizeFileSelection(files, ["Pack/A - 01.mkv", "Pack/A - 01.ass"])).toBeUndefined();
+  });
+
+  it("toggles a folder's selectable videos together, subtitles following, and reads all/some/none", () => {
+    expect(directoryState(files, defaultFileSelection(files), "Pack")).toBe("mixed");
+    expect(directoryState(files, defaultFileSelection(files), "Pack/S2")).toBe("unchecked");
+    const all = toggleDirectorySelection(files, undefined, "Pack");
+    expect(all).toEqual(["Pack/A - 01.ass", "Pack/A - 01.mkv", "Pack/S2/A - 01.ass", "Pack/S2/A - 01.mkv"]);
+    expect(directoryState(files, new Set(all), "Pack")).toBe("checked");
+    expect(toggleDirectorySelection(files, all, "Pack")).toEqual([]);
+    expect(toggleDirectorySelection(files, undefined, "Pack/S2")).toEqual(all);
+    const onlyRules: RSSListManifestFile[] = [files[4]!, files[5]!].map((file) => ({ ...file, source_path: `Empty/${file.source_path}` }));
+    expect(directoryState(onlyRules, new Set(), "Empty")).toBe("empty");
+    expect(toggleDirectorySelection(onlyRules, undefined, "Empty")).toBeUndefined();
   });
 
   it("builds the folder tree with folders first", () => {

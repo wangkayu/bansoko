@@ -44,7 +44,7 @@ import { OneShotParserSelect } from "./OneShotParserSelect";
 import { useOneShotParserOptions } from "./parserOptions";
 import { useOneShotSeedSource, type SearchSeedBrowse } from "./useOneShotSeeds";
 import { FilePicker } from "./FilePicker";
-import { effectiveFileSelection, sanitizeFileSelection, selectedVideoCount, toggleFileSelection } from "./fileSelection";
+import { effectiveFileSelection, sanitizeFileSelection, selectedVideoCount, toggleDirectorySelection, toggleFileSelection } from "./fileSelection";
 
 // The one-shot download: a centered dialog opened by a card's "browse seeds". Two steps:
 //   1. Catalog: subgroups listed first, and entering a group fetches its seed list and renders all
@@ -217,7 +217,9 @@ function SeedFiles({
       <Reveal open={open}>
         <div id={pickerId} className="tw:grid tw:gap-1.5 tw:pt-1">
           <p className="text-caption tw:m-0 tw:text-muted-foreground">{t("oneshot.filePickerHint")}</p>
-          <FilePicker files={files} selection={selection} route={route} onToggle={(path) => onChange(toggleFileSelection(files, choice, path))} />
+          <FilePicker files={files} selection={selection} route={route} onToggle={(path) => onChange(toggleFileSelection(files, choice, path))}
+            onToggleDirectory={(path) => onChange(toggleDirectorySelection(files, choice, path))}
+          />
         </div>
       </Reveal>
     </div>

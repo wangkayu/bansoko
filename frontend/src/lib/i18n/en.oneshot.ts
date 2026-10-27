@@ -72,6 +72,7 @@ export const enOneshotCopy = {
   missingFacts: "Missing {facts}",
 
   filePickerTitle: "Choose files",
+  filePickerFolder: "Videos in folder {name}",
   filePickerToggle: "Choose files ({n}/{total} selected)",
   filePickerHint: "By default only first-level videos and subtitles are imported. Checked files in subfolders are imported too. Unchecked files stay in the download location.",
   filePickerCustom: "Chosen manually",

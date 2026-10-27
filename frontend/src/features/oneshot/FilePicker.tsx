@@ -7,7 +7,7 @@ import { ReasonText } from "../../ui/ReasonText";
 import { Checkbox } from "../../ui/base";
 import { cn } from "../../lib/utils";
 import { episodesRangeLabel } from "../rss-list/model";
-import { buildFileTree, fileCheckable, type FileTreeNode } from "./fileSelection";
+import { buildFileTree, directoryState, fileCheckable, type FileTreeNode } from "./fileSelection";
 
 // The one-shot file picker: every file of one seed's torrent as a folder tree. Each row is the
 //   server's decision (selectable, reason, a video's recognition, the video a subtitle follows);
@@ -59,13 +59,15 @@ function FileLine({
   const recognition = file.selectable && file.media_kind === "video" ? recognitionText(file, route) : undefined;
   return (
     <li className="tw:flex tw:items-start tw:gap-2 tw:py-0.5">
-      <Checkbox
-        size="sm"
-        checked={checked}
-        disabled={!checkable}
-        aria-label={file.source_path}
-        onCheckedChange={() => onToggle(file.source_path)}
-      />
+      <TapTarget onTap={checkable ? () => onToggle(file.source_path) : undefined}>
+        <Checkbox
+          size="sm"
+          checked={checked}
+          disabled={!checkable}
+          aria-label={file.source_path}
+          onCheckedChange={() => onToggle(file.source_path)}
+        />
+      </TapTarget>
       <span className="tw:grid tw:min-w-0 tw:flex-1">
         <span className={cn("text-caption break-anywhere", !checkable && "tw:text-muted-foreground")} title={file.source_path}>
           {name}
@@ -79,53 +81,72 @@ function FileLine({
   );
 }
 
-function TreeLevel({
-  nodes,
-  selection,
-  route,
-  onToggle,
-}: {
-  nodes: FileTreeNode[];
+/** A tap margin around a row checkbox (larger on phones); a tap in the margin counts as tapping it. */
+function TapTarget({ onTap, children }: { onTap?: () => void; children: ReactNode }) {
+  return (
+    <span
+      className="tw:-m-1 tw:flex tw:flex-none tw:p-1 tw:phone:-m-2.5 tw:phone:p-2.5"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onTap?.();
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+type TreeProps = {
+  files: readonly RSSListManifestFile[];
   selection: ReadonlySet<string>;
   route: UnclassifiedRoute | undefined;
   onToggle: (path: string) => void;
-}) {
+  onToggleDirectory: (path: string) => void;
+};
+
+function DirectoryLine({ name, path, ...props }: { name: string; path: string } & TreeProps) {
+  const state = directoryState(props.files, props.selection, path);
+  const toggle = state === "empty" ? undefined : () => props.onToggleDirectory(path);
+  return (
+    <span className="text-caption break-anywhere tw:flex tw:items-center tw:gap-2 tw:text-muted-foreground" title={path}>
+      <TapTarget onTap={toggle}>
+        <Checkbox
+          size="sm"
+          checked={state === "checked"}
+          indeterminate={state === "mixed"}
+          disabled={state === "empty"}
+          aria-label={t("oneshot.filePickerFolder", { name: path })}
+          onCheckedChange={() => toggle?.()}
+        />
+      </TapTarget>
+      <Folder aria-hidden="true" className="icon-sm tw:flex-none" />
+      {name}
+    </span>
+  );
+}
+
+function TreeLevel({ nodes, ...props }: { nodes: FileTreeNode[] } & TreeProps) {
   return (
     <ul className="tw:m-0 tw:grid tw:list-none tw:gap-0.5 tw:p-0">
       {nodes.map((node) =>
         node.kind === "dir" ? (
           <li key={`dir:${node.path}`} className="tw:grid tw:gap-0.5">
-            <span className="text-caption break-anywhere tw:flex tw:items-center tw:gap-1 tw:text-muted-foreground" title={node.path}>
-              <Folder aria-hidden="true" className="icon-sm tw:flex-none" />
-              {node.name}
-            </span>
-            <div className="tw:border-l tw:border-border tw:pl-3 tw:ml-1.5">
-              <TreeLevel nodes={node.children} selection={selection} route={route} onToggle={onToggle} />
+            <DirectoryLine name={node.name} path={node.path} {...props} />
+            <div className="tw:ml-1.5 tw:border-l tw:border-border tw:pl-3">
+              <TreeLevel nodes={node.children} {...props} />
             </div>
           </li>
         ) : (
-          <FileLine key={node.file.source_path} name={node.name} file={node.file} selection={selection} route={route} onToggle={onToggle} />
+          <FileLine key={node.file.source_path} name={node.name} file={node.file} selection={props.selection} route={props.route} onToggle={props.onToggle} />
         ),
       )}
     </ul>
   );
 }
 
-export function FilePicker({
-  files,
-  selection,
-  route,
-  onToggle,
-}: {
-  files: readonly RSSListManifestFile[];
-  selection: ReadonlySet<string>;
-  /** The draft's unknown-file route: where an unrecognized checked video ends up. */
-  route: UnclassifiedRoute | undefined;
-  onToggle: (path: string) => void;
-}) {
+export function FilePicker(props: TreeProps) {
   return (
     <div role="group" aria-label={t("oneshot.filePickerTitle")} className="tw:rounded-md tw:bg-muted/15 tw:px-2.5 tw:py-2">
-      <TreeLevel nodes={buildFileTree(files)} selection={selection} route={route} onToggle={onToggle} />
+      <TreeLevel nodes={buildFileTree(props.files)} {...props} />
     </div>
   );
 }

@@ -73,6 +73,7 @@ export const oneshotCopy = {
 
   // 第二步：手动选择文件
   filePickerTitle: "选择文件",
+  filePickerFolder: "文件夹 {name} 中的视频",
   filePickerToggle: "选择文件（已选 {n}/{total}）",
   filePickerHint: "默认只入库第一层的视频和字幕；子文件夹里勾选的文件同样入库。未勾选的文件留在下载位置。",
   filePickerCustom: "已手动选择",

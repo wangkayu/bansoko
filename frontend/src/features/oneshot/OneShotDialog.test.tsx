@@ -1493,6 +1493,27 @@ describe("OneShotDialog 手动选择文件", () => {
     expect(downloads()[0]!.body).toMatchObject({ file_selection: selection });
   });
 
+  it("文件夹勾选框：按子树可勾视频显示全选/部分/无，点击整体勾选或取消，字幕随视频", async () => {
+    stubFetch({ view: pickerView() });
+    await renderAndEnter();
+    await advanceToSettings([SEED_A]);
+    const picker = await openPicker();
+    const pack = within(picker).getByRole("checkbox", { name: t("oneshot.filePickerFolder", { name: "Pack" }) });
+    const sps = within(picker).getByRole("checkbox", { name: t("oneshot.filePickerFolder", { name: "Pack/SPs" }) });
+    expect(pack).toHaveAttribute("aria-checked", "mixed");
+    expect(sps).toHaveAttribute("aria-checked", "false");
+
+    fireEvent.click(sps);
+    expect(within(picker).getByRole("checkbox", { name: DEEP })).toBeChecked();
+    expect(within(picker).getByRole("checkbox", { name: DEEP_SUB })).toBeChecked();
+    expect(pack).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.click(pack);
+    for (const path of [VIDEO, SUB, DEEP, DEEP_SUB]) expect(within(picker).getByRole("checkbox", { name: path })).not.toBeChecked();
+    expect(pack).toHaveAttribute("aria-checked", "false");
+    expect(button(t("oneshot.create", { n: 1 }))).toBeDisabled();
+  });
+
   it("取消全部视频不能提交；「恢复默认」清除手动选择，读取与提交都回到默认文件", async () => {
     stubFetch({ view: pickerView() });
     await renderAndEnter();
