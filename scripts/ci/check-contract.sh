@@ -821,7 +821,7 @@ ruby - "$source" <<'RUBY'
 require "yaml"
 
 doc = YAML.load_file(ARGV.fetch(0))
-groups = %w[subscription one_shot files records configuration]
+groups = %w[subscription one_shot files records downloads configuration]
 ids = {}
 tools = {}
 doc.fetch("paths").each do |path, item|

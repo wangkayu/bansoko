@@ -48,7 +48,8 @@ This guide is available as the MCP resource `bansoko://agent-guide`, the MCP pro
 - **Execution record**: the history of one accepted acquisition (automatic, subscription add, or one-shot) with fixed stages and outcomes.
 - **One-shot**: a finite download of one chosen torrent that is not a subscription. The server uses a temporary owner graph and reclaims it when done. You track it by `one_shot_id`.
 - **File manager**: lists library files and can release a managed video and match a detached video (one without an owner) to a season and episode.
-- **Notifications** (plugin targets and deliveries) are configured by the owner in the web UI and HTTP API. No MCP tool or CLI command covers them.
+- **Notifications** (plugin targets and deliveries) are configured with the `configuration` tools (section 5.5).
+- **Downloads**: the qBittorrent torrents behind the pipeline. The `downloads` tools read and control them (section 5.6).
 
 There is no "needs attention" inbox. Problems are visible as failed states on the pipeline and in execution records. Repair means asking the system to run the failed step again (section 6), never editing data.
 
@@ -61,7 +62,10 @@ There is no "needs attention" inbox. Problems are visible as failed states on th
 5. **No manual data edits.** Do not touch the database or the library directly to repair a problem. Use the retry tools.
 6. **Respect maintenance.** While the instance is in maintenance every write fails with `WRITES_REJECTED` (HTTP 503) and reads still work. Wait and retry later; do not loop.
 7. **Overwrite deletes files.** A `file_effect` with `collision_policy=overwrite` replaces an existing file at the target path and permanently deletes it, including a file the library manages: that file's placement becomes `displaced` and its episode is no longer counted for its anime (another instance's or another episode alike). Alignment (moving files to their expected names) follows the same setting and treats a video and its subtitles as one unit. Do not set `overwrite` in a draft unless the human asked for it.
-8. **Do not poll hot.** `poll_workspace` already waits (default 30 seconds, at most 120). `bansoko wait` polls every 2 seconds by default. Do not call read tools in a tight loop.
+8. **Saving is not executing.** `save_*_policy`, `put_global_section` and `put_naming_template_library` only store a setting. Nothing is re-evaluated, moved or downloaded until the matching work runs: for files use `replan_file_maintenance` or `align_anime_files`, for releases `reevaluate_releases`. A Global change never reaches existing subscriptions.
+9. **Irreversible tools need confirmation.** `delete_qbittorrent_torrent`, `cleanup_anime_local_data`, `delete_plugin_target` and `delete_subgroup_group_entry` cannot be undone; `test_connection` and `test_network_route` contact the real service. Ask the human first.
+10. **Secrets are write-only.** Connection, network route and notification target credentials can be set but never read back: reads show only `credential_configured`, `has_secret` or `has_signing_secret`. Do not echo a credential the human gave you.
+11. **Do not poll hot.** `poll_workspace` already waits (default 30 seconds, at most 120). `bansoko wait` polls every 2 seconds by default. Do not call read tools in a tight loop.
 
 ## 4. Versions, idempotency and retries
 
@@ -135,6 +139,34 @@ Notes:
 - Start, stop or restart automatic work: `patch_subscription` (`patchAnimeSubscription`) with `state` of `active` or `stopped`. `active` on a `pending` subscription is its first start (the first refresh discovers and evaluates the feed); `active` on a `stopped` one resumes it (the first refresh only records a baseline). A `pending` subscription cannot be stopped (`SUBSCRIPTION_NOT_STARTED`).
 - New releases only: set `new_releases_only: true` in the draft, or call `set_new_releases_only` while the subscription is `pending`. The baseline is the moment the subscription was created (`start_baseline_at`), not its start; releases published while pending count as new. A release published before it, or without a publish time, gets the verdict `start_baseline` and is not downloaded or re-evaluated when rules change. To download one anyway, call `retry_release` on it: that applies every rule as usual. The option is frozen once the subscription has started (`NEW_RELEASES_ONLY_LOCKED`); to change it, delete the subscription and subscribe again.
 
+Subscribe straight from the catalog, or adjust a running anime (each needs the owner `expected_version` where it changes an anime):
+
+| Step | MCP tool | operationId | CLI |
+|---|---|---|---|
+| Subscribe straight from a provider catalog entry with the Global configuration, without a candidate (your own `idempotency_key`) | `subscribe_anime` | `subscribeAnime` | - |
+| Copy a saved candidate revision onto an existing anime (`expected_version`; replaces its configuration, does not create an anime) | `apply_candidate` | `applyAnimeConfigCandidate` | - |
+| Read an anime's editable business configuration (rules, subgroup policy, RSS sources) | `get_anime_business_edit` | `getAnimeBusinessEdit` | - |
+| Preview the subgroup selection a score or list change would produce (writes nothing) | `preview_subgroups_selection` | `previewAnimeSubgroupsSelection` | - |
+| Apply a subgroup selection to a running anime | `patch_anime_subgroups` | `patchAnimeSubgroups` | - |
+| Change one RSS source's `episode_offset` | `patch_rss_source_offset` | `patchRSSSourceOffset` | - |
+| Set or clear an AniBT source's auxiliary merge mode | `patch_rss_source_anibt_mode` | `patchRSSSourceAniBTMode` | - |
+| Fetch a running anime's custom feed now and store the snapshot | `fetch_owner_custom_snapshot` | `fetchOwnerCustomSnapshot` | - |
+| Fetch a custom feed from a draft source and store the snapshot | `fetch_custom_snapshot` | `fetchCustomSnapshot` | - |
+| Fetch a keyword search over a provider as a snapshot of seeds (your own `idempotency_key`) | `fetch_seed_search_snapshot` | `fetchSeedSearchSnapshot` | - |
+| Delete the local data of a retired anime (irreversible; external data and library files are kept) | `cleanup_anime_local_data` | `cleanupAnimeLocalData` | - |
+
+Browse and curate the catalog:
+
+| Step | MCP tool | operationId | CLI |
+|---|---|---|---|
+| Read a provider's catalog workspace (the season wall, hidden entries applied, with each entry's subscribed flag) | `read_catalog_workspace` | `readCatalogWorkspace` | - |
+| Read a season's catalog refresh preference | `get_catalog_preference` | `readCatalogPreference` | - |
+| Set whether a season refreshes automatically (`expected_version`; the season being changed is `target_season`, the body `season` must equal it) | `set_catalog_preference` | `setCatalogPreference` | - |
+| Refresh a provider's catalog now | `refresh_catalog_provider` | `refreshCatalogProvider` | - |
+| List the catalog entries the owner hid | `list_catalog_suppressions` | `listCatalogSuppressions` | - |
+| Hide a catalog entry from browsing (suppression only; it does not touch any subscription) | `suppress_catalog_entry` | `suppressCatalogEntry` | - |
+| Show a hidden entry again | `unsuppress_catalog_entry` | `unsuppressCatalogEntry` | - |
+
 Maintain a running anime (each needs the owner `expected_version` from `get_workspace`):
 
 | Step | MCP tool | operationId | CLI |
@@ -161,6 +193,7 @@ A one-shot downloads one chosen torrent without creating a subscription.
 | 5. Admit one seed straight from a persisted snapshot with the reviewed draft | `download_snapshot_seed` | `downloadSnapshotSeed` | - |
 | 6. Follow it (stop at the terminal outcome, or `NOT_FOUND` after purge) | `get_one_shot_acquisition` | `getOneShotAcquisition` | `bansoko one-shot get` |
 | 7. See the attempt history | `list_one_shot_attempts` | `listOneShotExecutionAttempts` | `bansoko one-shot attempts` |
+| 8. Read one attempt in detail | `get_one_shot_attempt` | `getOneShotExecutionAttempt` | - |
 
 Notes:
 - `rss_list_view` renders a seed's files only after it was expanded. A seed the server has not expanded is `pending`: it carries the RSS facts and a `download_action` blocked with `seed_not_expanded`, and no file list. `expand_seed` fetches that seed's torrent once, verifies it against the identity the snapshot published, caches it and returns the manifest (or `state=unavailable` with `torrent_fetch_failed`, `torrent_parse_failed` or `torrent_missing`). Expansion downloads nothing; a failed expansion is cached nowhere, so the row is pending again and retrying is simply calling `expand_seed` again. `rss_list_view` alone never fetches a torrent.
@@ -204,6 +237,23 @@ Match a detached video in the media library to a season and episode of an anime.
 
 Both need an `Idempotency-Key` and answer `PLACEMENT_EXIT_UNAVAILABLE` (409) with the reason in `details[0].code` (`placement_not_active`, `file_not_missing`, `source_release_unavailable`, or a release retry reason such as `download_in_progress`) when the file does not admit the exit now. A pending request (`redownload_requested`) does not block either exit: under the skip collision setting a new file whose target is taken is not placed, and the old placement stays active until the human acts again.
 
+**Scans, placements and replacement.** Read-only diagnostics plus the scan and replan commands:
+
+| Step | MCP tool | operationId | CLI |
+|---|---|---|---|
+| Overview of an anime's file maintenance: scan state, placement issues, pending alignment | `get_file_maintenance_overview` | `getFileMaintenanceOverview` | - |
+| Start a file scan of an anime's library files | `submit_reconciliation_scan` | `submitReconciliationScan` | - |
+| Read the latest scan and its state | `get_reconciliation_scan` | `getReconciliationScan` | - |
+| List what the scan observed per file | `list_reconciliation_observations` | `listReconciliationObservations` | - |
+| List the path differences a scan found (current path versus expected target) | `list_reconciliation_path_diffs` | `listReconciliationPathDiffs` | - |
+| List an anime's placements (managed files) with their state | `list_placements` | `listPlacements` | - |
+| Read which episodes are covered by active placements | `get_placement_coverage` | `getPlacementCoverage` | - |
+| List replacement (washing) decisions made for an anime | `list_replacement_decisions` | `listReplacementDecisions` | - |
+| Evaluate what the replacement policy would decide now (a dry evaluation; nothing is replaced) | `evaluate_replacement` | `evaluateReplacement` | - |
+| Recompute the file-maintenance plan after a policy or setting change | `replan_file_maintenance` | `replanFileMaintenance` | - |
+| List episode-offset migrations | `list_offset_migrations` | `listOffsetMigrations` | - |
+| List the generations of one offset migration | `list_offset_migration_generations` | `listOffsetMigrationGenerations` | - |
+
 Browsing is HTTP only and goes by absolute path: `listFileManagerMounts` returns the quick entries (the filesystem root, each downloader's application-side root, each anime's directory), and `listFileManagerEntries` lists one directory by `path`, paged with `cursor`. A mount is a navigation shortcut only and never bounds a read or a write, so every path you send must be absolute; a relative path, a path through a symbolic link, and a path inside an application-data or system directory are all refused. `getFileManagerEntry` reads one entry, and the other file operations and alignment are HTTP only too (`submitFileManagerOperation`, `getFileManagerOperation`, `alignFileManagerEntry`). A changed file or target is refused with `FILE_MANAGER_ENTRY_CHANGED` or `FILE_MANAGER_MATCH_TARGET_CHANGED` and nothing is written: preview again. Writing to a directory that holds files the product manages is refused with `FILE_MANAGER_ENTRY_LOCKED`, whose `details` names the locked paths.
 
 ### 5.4 Execution records (group `records`)
@@ -214,6 +264,15 @@ Browsing is HTTP only and goes by absolute path: `listFileManagerMounts` returns
 | Read one record: stages, outcomes, reasons | `get_execution_record` | `getAcquisitionRecord` | - |
 | List the files of a full record | `list_execution_record_files` | `listAcquisitionRecordFiles` | - |
 | Retry the failed import stage (send the record `version` as `expected_version`) | `retry_import` | `retryAcquisitionImport` | `bansoko retry-import` |
+
+Release and log diagnostics:
+
+| Step | MCP tool | operationId | CLI |
+|---|---|---|---|
+| Read the facts one release was judged on (parsed title, tags, group, verdict inputs) | `get_release_candidate_facts` | `getReleaseCandidateFacts` | - |
+| Read the torrent file structure of a release | `get_release_torrent_structure` | `getReleaseTorrentStructure` | - |
+| Unified feed of routine, business, automation and plugin records (filters: `kind`, `outcome`, `from`, `to`, `managed_anime_id`; page with `cursor`) | `list_observability_records` | `listObservabilityRecords` | - |
+| Persisted diagnostic episodes (warnings and errors; filters: `severity`, `component`, `from`, `to`) | `list_observability_diagnostics` | `listObservabilityDiagnostics` | - |
 
 `list_execution_record_files` fails with `ACQUISITION_FILES_NOT_READY` before the file set is sealed and `ACQUISITION_DETAIL_UNAVAILABLE` once the record is compact.
 Each record names its source `release` and, when the frozen plan numbers them, the `episodes` it places; a running download also carries `transfer` (bytes done, total, speed) from the last sync poll, about a minute old at most. A delivered file carries `placed_path`, where it landed relative to the library, and `collision_outcome` (`none`, `skipped`, `versioned`, `overwritten`) when the recorded facts say how the collision setting played out.
@@ -228,11 +287,99 @@ A record with `entry_kind=one_shot` also carries `one_shot_id`, the marker handl
 | Trigger one manual dispatch run of an automation kind (`group_discovery`, `rss_refresh`, `metadata_match`, `catalog_refresh`) | `automation_run` | `runAutomation` | - |
 | Read the Global business preset (sections, parser policy, retention, program references and `digest`) | `get_business_preset` | `getBusinessPreset` | - |
 
-Connections, naming templates, global rule sections, schedules and API tokens are changed in the web UI or over HTTP (`bansoko api-token create --name N [--scopes read,write]`, `list`, `revoke` cover tokens). No MCP tool changes them. Update and bootstrap operations are not agent operations. Database backups are files: a token holding the secrets scope may download one (`GET /backup/export`). Restoring (`POST /backup/restore`, which replaces all data and restarts the service) is only for the owner signed in to the web UI: every API token gets 403 `WEB_SESSION_REQUIRED` whatever its scopes, and no MCP tool performs either. Rotating the secret encryption key or the session secret are server-side commands run by the owner at the deployment (`deployment/scripts/rotate-secret-key.sh`, `deployment/scripts/rotate-session-secret.sh`).
+System and schedules:
+
+| Step | MCP tool | operationId | CLI |
+|---|---|---|---|
+| Read instance health: database, downloader and automation status | `get_system_health` | `getSystemHealth` | - |
+| List the automation schedules | `list_automation_schedules` | `listAutomationSchedules` | - |
+| Change one schedule (`enabled`, `interval_value`, `interval_unit`) | `patch_automation_schedule` | `patchAutomationSchedule` | - |
+| Read one automation run by id (the result of `automation_run`) | `get_automation_run` | `getAutomationRun` | - |
+| Read the update status | `get_update_status` | `getUpdateStatus` | - |
+| Ask the update channel whether a newer version exists (changes nothing; applying updates is not an agent operation) | `check_update` | `checkUpdate` | - |
+
+Global sections, naming and vocabularies:
+
+| Step | MCP tool | operationId | CLI |
+|---|---|---|---|
+| List the Global rule sections (release filter, file filter, naming, ...) | `list_global_sections` | `listGlobalSections` | - |
+| Replace one Global section (`expected_version`). Applies to subscriptions created afterwards only | `put_global_section` | `putGlobalSection` | - |
+| Read the naming template library | `get_naming_template_library` | `getNamingTemplateLibrary` | - |
+| Replace the naming template library (`expected_version`) | `put_naming_template_library` | `putNamingTemplateLibrary` | - |
+| List the variables and filters naming templates may use | `get_naming_template_catalog` | `getNamingTemplateCatalog` | - |
+| Render a naming template against sample facts (writes nothing) | `preview_naming_template` | `previewNamingTemplate` | - |
+| List the variables notification templates may use | `get_notification_template_catalog` | `getNotificationTemplateCatalog` | - |
+| Render a notification template (sends nothing) | `preview_notification_template` | `previewNotificationTemplate` | - |
+| Preview how media file names are recognized | `preview_media_recognition` | `previewMediaRecognition` | - |
+| List the parser rule catalog | `list_parser_catalog` | `listParserCatalog` | - |
+| List the release title tag vocabulary filters can use | `get_title_tag_vocabulary` | `getTitleTagVocabulary` | - |
+| List the vocabulary replacement comparisons can use | `get_replacement_compare_vocabulary` | `getReplacementCompareVocabulary` | - |
+| List the subgroup dictionary (groups and their keys) | `list_subgroup_groups` | `listSubgroupGroupCandidates` | - |
+| Resolve a subgroup name over the network and add it to the dictionary | `retrieve_subgroup_group` | `retrieveSubgroupGroupCandidate` | - |
+| Remove one dictionary entry | `delete_subgroup_group_entry` | `deleteSubgroupGroupDictionaryEntry` | - |
+
+Policies. Each policy has a Global default and a per-anime copy; saving stores it and runs nothing (safety rule 8):
+
+| Step | MCP tool | operationId | CLI |
+|---|---|---|---|
+| Read the default replacement policy | `get_replacement_policy_default` | `getReplacementPolicyDefault` | - |
+| Save the default replacement policy | `save_replacement_policy_default` | `saveReplacementPolicyDefault` | - |
+| Read one anime's replacement policy | `get_instance_replacement_policy` | `getInstanceReplacementPolicy` | - |
+| Save one anime's replacement policy | `save_instance_replacement_policy` | `saveInstanceReplacementPolicy` | - |
+| Read the default file-effect policy (collision handling, subtitles) | `get_file_effect_policy_default` | `getFileEffectPolicyDefault` | - |
+| Save the default file-effect policy | `save_file_effect_policy_default` | `saveFileEffectPolicyDefault` | - |
+| Read one anime's file-effect policy | `get_instance_file_effect_policy` | `getInstanceFileEffectPolicy` | - |
+| Save one anime's file-effect policy | `save_instance_file_effect_policy` | `saveInstanceFileEffectPolicy` | - |
+| Read the default parser policy | `get_parser_policy_default` | `getParserPolicyDefault` | - |
+| Save the default parser policy | `save_parser_policy_default` | `saveParserPolicyDefault` | - |
+| Read one anime's parser policy | `get_instance_parser_policy` | `getInstanceParserPolicy` | - |
+| Save one anime's parser policy | `save_instance_parser_policy` | `saveInstanceParserPolicy` | - |
+| Read the default file-maintenance policy | `get_file_maintenance_policy` | `getFileMaintenancePolicy` | - |
+| Save the default file-maintenance policy | `save_file_maintenance_policy` | `saveFileMaintenancePolicy` | - |
+| Read one anime's file-maintenance policy | `get_file_maintenance_anime_policy` | `getFileMaintenanceAnimePolicy` | - |
+| Save one anime's file-maintenance policy | `save_file_maintenance_anime_policy` | `saveFileMaintenanceAnimePolicy` | - |
+
+Connections, routes and notifications. Secrets are write-only:
+
+| Step | MCP tool | operationId | CLI |
+|---|---|---|---|
+| List the connections (qBittorrent, Bangumi, TMDB, ...) with `credential_configured` | `list_connections` | `listConnections` | - |
+| Create or replace a connection; credentials are write-only (`keep`, `replace` or `remove`) | `put_connection` | `putConnection` | - |
+| Test a connection with its stored settings (contacts the service, changes nothing) | `test_connection` | `testConnection` | - |
+| List the network routes (direct or proxy) | `list_network_routes` | `listNetworkRoutes` | - |
+| Create or replace a network route; a proxy credential is write-only | `put_network_route` | `putNetworkRoute` | - |
+| Test a route (makes a real request, changes nothing) | `test_network_route` | `testNetworkRoute` | - |
+| List the notification targets with trigger kinds and templates; secrets read only as `has_secret` | `list_plugin_targets` | `listPluginTargets` | - |
+| Add a notification target (Telegram, Feishu or webhook); secrets are write-only | `create_plugin_target` | `createPluginTarget` | - |
+| Change a target (`expected_version`; one value feeds both the header and the body) | `update_plugin_target` | `updatePluginTarget` | - |
+| Remove a target (irreversible) | `delete_plugin_target` | `deletePluginTarget` | - |
+| List the events a target can subscribe to | `list_notification_trigger_kinds` | `listNotificationTriggerKinds` | - |
+| List notification deliveries and their outcome | `list_plugin_deliveries` | `listPluginDeliveries` | - |
+| Read one delivery | `get_plugin_delivery` | `getPluginDelivery` | - |
+
+URLs: a connection `base_url` or proxy endpoint that carries credentials or a query string is refused when saved, and any such value in a result is replaced with `[withheld]`. Put credentials in the credential fields, never in the URL.
+
+API tokens are managed in the web UI or with `bansoko api-token create --name N [--scopes read,write]`, `list`, `revoke`; no MCP tool covers them. Update admission and bootstrap are not agent operations (reading the update status and checking for one are). Database backups are files: a token holding the secrets scope may download one (`GET /backup/export`). Restoring (`POST /backup/restore`, which replaces all data and restarts the service) is only for the owner signed in to the web UI: every API token gets 403 `WEB_SESSION_REQUIRED` whatever its scopes, and no MCP tool performs either. Rotating the secret encryption key or the session secret are server-side commands run by the owner at the deployment (`deployment/scripts/rotate-secret-key.sh`, `deployment/scripts/rotate-session-secret.sh`).
+
+### 5.6 Downloads (group `downloads`)
+
+The downloader is run by the human; these tools read it and control the torrents Bansoko added. The stage retries re-run a failed pipeline stage, using the owner id and its `failed_work_item_id` from `get_workspace`.
+
+| Step | MCP tool | operationId | CLI |
+|---|---|---|---|
+| Read the downloader connection and server status | `get_qbittorrent_status` | `getQBittorrentServerStatus` | - |
+| List the torrents in qBittorrent (state, progress, speed) | `list_qbittorrent_torrents` | `listQBittorrentTorrents` | - |
+| List the files of one torrent | `get_qbittorrent_torrent_files` | `getQBittorrentTorrentFiles` | - |
+| Pause a torrent | `pause_qbittorrent_torrent` | `pauseQBittorrentTorrent` | - |
+| Resume a torrent | `resume_qbittorrent_torrent` | `resumeQBittorrentTorrent` | - |
+| Delete a torrent from qBittorrent (irreversible; pass `delete_files` to also remove its data) | `delete_qbittorrent_torrent` | `deleteQBittorrentTorrent` | - |
+| Run a failed download task again | `retry_download_task` | `retryDownloadTask` | `bansoko retry --owner download` |
+| Run a failed artifact verification again | `retry_artifact` | `retryArtifact` | `bansoko retry --owner artifact` |
+| Run a failed RSS source runtime again | `retry_rss_source_runtime` | `retryRSSSourceRuntime` | `bansoko retry --owner rss` |
 
 ### Not in MCP
 
-Stage retries other than release and import (`retryRSSSourceRuntime`, `retryDownloadTask`, `retryArtifact`; `bansoko retry --owner rss|download|artifact`), connection settings, notification channels, and the file manager beyond releasing and matching. Use HTTP or the CLI for these.
+Sending a test notification through a target (`testPluginTarget`; it reaches the human's chat), the file manager beyond releasing and matching (browsing, other file operations, alignment of an arbitrary path), naming variables, API tokens, update admission, backup and restore, sessions and login, bootstrap, image streams and the event stream. Use HTTP or the CLI for the ones that exist there.
 
 ## 6. Repair is re-enqueue
 
@@ -246,7 +393,7 @@ When something failed, find the failed stage in `get_workspace` (or `get_executi
 | Anime held waiting for metadata | `patch_anime_metadata` or `match_metadata` |
 | A managed file is missing or changed on disk | ask the human: `redownload_placement` or `release_placement` (section 5.3) |
 | Files failed to import, or a placement handoff failed | `retry_import` on the execution record (only when `import_retry_available` is true) |
-| RSS runtime, download task or artifact failed | `bansoko retry --owner ...` with the owner id and its `failed_work_item_id` from `bansoko status --json` |
+| RSS runtime, download task or artifact failed | `retry_rss_source_runtime`, `retry_download_task` or `retry_artifact` with the owner id and its `failed_work_item_id` from `get_workspace` (CLI: `bansoko retry --owner ...`) |
 | One-shot failed before import | admit the seed again as a new one-shot (`acquire_seed_once` or `download_snapshot_seed`) with a new `idempotency_key` |
 
 If the same repair keeps failing, report the failed state, `code` and `reason` to the human instead of looping. A refusal such as `placement_inside_content` repeats until the library layout is fixed by a person.

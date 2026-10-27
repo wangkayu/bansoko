@@ -95,7 +95,14 @@ paths:
       tags: [System]
       operationId: getSystemHealth
       x-scope: none
-      x-surface-keep: "ops: build and process identity probe for agents and operators; no application caller"
+      x-mcp:
+        tool: get_system_health
+        group: configuration
+        write: false
+        description: >-
+          Read the process and database health check. A quick liveness-style probe:
+          it proves the app and its database answer, not that the downloader or
+          providers are reachable.
       security: []
       description: >
         Compatibility alias for the readiness contract. Behavior is equivalent
@@ -369,6 +376,14 @@ paths:
       tags: [Configuration]
       operationId: listConnections
       x-scope: read
+      x-mcp:
+        tool: list_connections
+        group: configuration
+        write: false
+        description: >-
+          List the configured connections (the download client and others) with
+          endpoint, enabled flag, network route and version. The stored password is
+          never returned: credential_configured says whether one is set.
       responses:
         '200':
           description: Redacted typed connections used by the M1 owner chain.
@@ -385,6 +400,16 @@ paths:
       tags: [Configuration]
       operationId: putConnection
       x-scope: write
+      x-mcp:
+        tool: put_connection
+        group: configuration
+        write: true
+        description: >-
+          Create or replace one connection (connection_id), guarded by
+          expected_version (0 to create). The secret field is write-only: mode keep
+          leaves the stored credential, replace sets a new one, remove clears it.
+          The credential is never returned. Saving does not contact the endpoint;
+          run test_connection afterwards.
       parameters:
         - $ref: '#/components/parameters/ConnectionID'
         - $ref: '#/components/parameters/IfMatchVersion'
@@ -412,6 +437,14 @@ paths:
       tags: [Configuration]
       operationId: testConnection
       x-scope: read
+      x-mcp:
+        tool: test_connection
+        group: configuration
+        write: false
+        description: >-
+          Test a saved connection by contacting its endpoint with the stored
+          credential. Changes no configuration and returns the health verdict with a
+          reason.
       parameters:
         - $ref: '#/components/parameters/ConnectionID'
       responses:
@@ -432,6 +465,15 @@ paths:
       tags: [Configuration]
       operationId: listQBittorrentTorrents
       x-scope: read
+      x-mcp:
+        tool: list_qbittorrent_torrents
+        group: downloads
+        write: false
+        description: >-
+          List the torrents in the qBittorrent behind one connection, with state,
+          progress, speeds, save path and origin (subscription, one_shot, external).
+          acquisition_owner is present while a running acquisition owns the torrent.
+          Reads only.
       description: >-
         Operational passthrough that lists torrents from the qBittorrent WebUI.
         Does not modify DownloadTask owner truth.
@@ -459,6 +501,14 @@ paths:
       tags: [Configuration]
       operationId: pauseQBittorrentTorrent
       x-scope: write
+      x-mcp:
+        tool: pause_qbittorrent_torrent
+        group: downloads
+        write: true
+        description: >-
+          Pause one torrent in qBittorrent. Operates on the downloader only; the
+          subscription pipeline notices the state on its next poll. Undo with
+          resume_qbittorrent_torrent.
       description: Operational passthrough that pauses a qBittorrent torrent.
       parameters:
         - $ref: '#/components/parameters/ConnectionID'
@@ -479,6 +529,12 @@ paths:
       tags: [Configuration]
       operationId: resumeQBittorrentTorrent
       x-scope: write
+      x-mcp:
+        tool: resume_qbittorrent_torrent
+        group: downloads
+        write: true
+        description: >-
+          Resume one paused torrent in qBittorrent.
       description: Operational passthrough that resumes a qBittorrent torrent.
       parameters:
         - $ref: '#/components/parameters/ConnectionID'
@@ -499,6 +555,16 @@ paths:
       tags: [Configuration]
       operationId: deleteQBittorrentTorrent
       x-scope: write
+      x-mcp:
+        tool: delete_qbittorrent_torrent
+        group: downloads
+        write: true
+        description: >-
+          Delete one torrent from qBittorrent; with delete_files=true its downloaded
+          files are deleted from disk too. Irreversible: confirm with the human
+          first. Refused with 409 QB_TORRENT_IN_USE while a running subscription or
+          one-shot acquisition owns the torrent. A pipeline download deleted mid-way
+          is recorded as cancelled.
       description: >-
         Operational passthrough that deletes a qBittorrent torrent. Refused
         with 409 QB_TORRENT_IN_USE (nothing sent to qBittorrent), with or
@@ -532,6 +598,13 @@ paths:
       tags: [Configuration]
       operationId: getQBittorrentTorrentFiles
       x-scope: read
+      x-mcp:
+        tool: get_qbittorrent_torrent_files
+        group: downloads
+        write: false
+        description: >-
+          List the files of one torrent in qBittorrent. Pass connection_id and the
+          torrent hash.
       description: Operational passthrough that lists files of a qBittorrent torrent.
       parameters:
         - $ref: '#/components/parameters/ConnectionID'
@@ -558,6 +631,13 @@ paths:
       tags: [Configuration]
       operationId: getQBittorrentServerStatus
       x-scope: read
+      x-mcp:
+        tool: get_qbittorrent_status
+        group: downloads
+        write: false
+        description: >-
+          Read the qBittorrent server status for one connection: version, connection
+          state, transfer speeds and free disk space.
       description: >-
         Operational passthrough that returns qBittorrent server status
         (version, connection state, transfer speeds, disk space).
@@ -583,6 +663,14 @@ paths:
       tags: [Configuration]
       operationId: listNetworkRoutes
       x-scope: read
+      x-mcp:
+        tool: list_network_routes
+        group: configuration
+        write: false
+        description: >-
+          List the network routes (direct, HTTP proxy, SOCKS5) connections and
+          providers can use. Proxy credentials are never returned:
+          credential_configured says whether one is set.
       responses:
         '200':
           description: Redacted typed outbound routes.
@@ -599,6 +687,15 @@ paths:
       tags: [Configuration]
       operationId: putNetworkRoute
       x-scope: write
+      x-mcp:
+        tool: put_network_route
+        group: configuration
+        write: true
+        description: >-
+          Create or replace one network route (route_id), guarded by
+          expected_version (0 to create). The secret field is write-only: mode keep,
+          replace or remove. The credential is never returned. Saving does not
+          contact the proxy; run test_network_route afterwards.
       parameters:
         - $ref: '#/components/parameters/RouteID'
         - $ref: '#/components/parameters/IfMatchVersion'
@@ -626,6 +723,13 @@ paths:
       tags: [Configuration]
       operationId: testNetworkRoute
       x-scope: read
+      x-mcp:
+        tool: test_network_route
+        group: configuration
+        write: false
+        description: >-
+          Test a saved network route. Changes no configuration and returns the
+          health verdict with a reason.
       parameters:
         - $ref: '#/components/parameters/RouteID'
       responses:
@@ -646,6 +750,14 @@ paths:
       tags: [Anime]
       operationId: getAnimeBusinessEdit
       x-scope: read
+      x-mcp:
+        tool: get_anime_business_edit
+        group: subscription
+        write: false
+        description: >-
+          Read one anime's editable configuration (as a draft) together with the
+          full expected-version vector, in one consistent read. Use it before
+          patching rules, subgroups or policies.
       description: Atomic instance draft and complete expected-version vector for an explicit working revision; no writes.
       parameters:
         - $ref: '#/components/parameters/ManagedAnimeID'
@@ -738,6 +850,14 @@ paths:
       tags: [Configuration]
       operationId: getTitleTagVocabulary
       x-scope: read
+      x-mcp:
+        tool: get_title_tag_vocabulary
+        group: configuration
+        write: false
+        description: >-
+          Read the title-parse vocabulary: every dimension and canonical value the
+          release title dictionary can produce, in dictionary order. Use it to pick
+          valid values for title tag filters.
       responses:
         '200':
           description: The title-parse tag vocabulary of the pinned reltitle parser.
@@ -754,6 +874,12 @@ paths:
       tags: [Configuration]
       operationId: listNotificationTriggerKinds
       x-scope: read
+      x-mcp:
+        tool: list_notification_trigger_kinds
+        group: configuration
+        write: false
+        description: >-
+          List the notification trigger kinds a plugin target can subscribe to.
       responses:
         '200':
           description: >-
@@ -771,6 +897,15 @@ paths:
       tags: [Configuration]
       operationId: listSubgroupGroupCandidates
       x-scope: read
+      x-mcp:
+        tool: list_subgroup_groups
+        group: configuration
+        write: false
+        description: >-
+          List one page of the local subgroup dictionary of a provider: the shipped
+          snapshot plus groups the owner added. Purely local; reads no provider.
+          Filter by provider, q (name search), source and hide_retired; page with
+          limit and offset.
       description: >-
         List one page of the subgroup dictionary of one provider: the collected
         snapshot that ships with the release, union the entries a user
@@ -855,6 +990,10 @@ paths:
       tags: [Configuration]
       operationId: retrieveSubgroupGroupCandidate
       x-scope: write
+      x-mcp:
+        tool: retrieve_subgroup_group
+        group: configuration
+        write: true
       description: >-
         Discover one subgroup by key and add it to the dictionary — the only
         dictionary operation that may read a provider. The query must name a
@@ -896,6 +1035,10 @@ paths:
       tags: [Configuration]
       operationId: deleteSubgroupGroupDictionaryEntry
       x-scope: write
+      x-mcp:
+        tool: delete_subgroup_group_entry
+        group: configuration
+        write: true
       description: >-
         Remove one entry from the user layer of the subgroup dictionary. The
         collected layer — the snapshot published with the release — is reference
@@ -936,6 +1079,18 @@ paths:
       tags: [Configuration]
       operationId: listGlobalSections
       x-scope: read
+      x-mcp:
+        tool: list_global_sections
+        group: configuration
+        write: false
+        description: >-
+          List every Global rule section (subgroups, parser, release_rules,
+          file_rules, naming_rules, file_effect, tag_filters, download_completion,
+          download_timeouts, metadata_refresh) with its value, schema version and
+          version. saved=false means the value is the built-in default. A new
+          subscription copies these once; later changes never reach existing
+          subscriptions, except that download_completion, download_timeouts and
+          metadata_refresh are Global-only.
       responses:
         '200':
           description: Every global config section with its current effective value and version.
@@ -952,6 +1107,16 @@ paths:
       tags: [Configuration]
       operationId: putGlobalSection
       x-scope: write
+      x-mcp:
+        tool: put_global_section
+        group: configuration
+        write: true
+        description: >-
+          Replace one Global rule section (section_name) with a complete new value,
+          guarded by expected_version from list_global_sections. Subscriptions
+          created afterwards copy it; existing drafts and subscriptions keep their
+          own copy (download_completion, download_timeouts and metadata_refresh are
+          Global-only and apply directly). Saving does not run anything.
       parameters:
         - name: section_name
           in: path
@@ -983,6 +1148,14 @@ paths:
       tags: [Configuration]
       operationId: getNamingTemplateLibrary
       x-scope: read
+      x-mcp:
+        tool: get_naming_template_library
+        group: configuration
+        write: false
+        description: >-
+          Read the naming template library: the owner's templates and the key of the
+          default one (the Global naming). Picking a template for an anime copies
+          its body; nothing stays linked.
       description: >-
         The naming template library: the user-managed list of naming templates
         and the key of the default one. The default template is the global
@@ -1002,6 +1175,16 @@ paths:
       tags: [Configuration]
       operationId: putNamingTemplateLibrary
       x-scope: write
+      x-mcp:
+        tool: put_naming_template_library
+        group: configuration
+        write: true
+        description: >-
+          Replace the whole naming template library, guarded by expected_version. At
+          least one template is kept and default_key must name one. Changing the
+          default body also saves the naming Global section for future
+          subscriptions; existing subscriptions keep their own naming. Nothing is
+          renamed on disk.
       description: >-
         Replace the whole library with If-Match version CAS. At least one
         template is kept and default_key must name one of them, so the default
@@ -1254,6 +1437,10 @@ paths:
       tags: [Anime]
       operationId: previewAnimeSubgroupsSelection
       x-scope: read
+      x-mcp:
+        tool: preview_subgroups_selection
+        group: subscription
+        write: false
       description: >-
         Side-effect-free preview of the group selection an unsaved subgroups
         value would produce. current_input answers for a complete unsaved draft
@@ -1290,6 +1477,16 @@ paths:
       tags: [Anime]
       operationId: subscribeAnime
       x-scope: write
+      x-mcp:
+        tool: subscribe_anime
+        group: subscription
+        write: true
+        idempotent: false
+        description: >-
+          Subscribe from a complete draft in one call (the one-click form of
+          create_candidate plus activate_candidate). The subscription starts pending
+          unless start is true. The draft must carry its business snapshot
+          (load_business_preset first). A draft with origin oneshot is refused.
       description: >-
         Create the complete owner set from one draft. The subscription is
         created pending (not started) unless start is true. A draft with the
@@ -1346,6 +1543,10 @@ paths:
       tags: [Anime]
       operationId: fetchOwnerCustomSnapshot
       x-scope: write
+      x-mcp:
+        tool: fetch_owner_custom_snapshot
+        group: subscription
+        write: true
       description: >-
         Test-bench fetch for a custom subscription that has not been started.
         Fetches the subscription's single saved custom RSS source once and
@@ -1614,6 +1815,15 @@ paths:
       tags: [Anime]
       operationId: patchAnimeSubgroups
       x-scope: write
+      x-mcp:
+        tool: patch_anime_subgroups
+        group: subscription
+        write: true
+        description: >-
+          Replace a running anime's subgroup selection and RSS sources, guarded by
+          the owner expected_version from get_workspace. Read the current value with
+          get_anime_business_edit. Saving does not fetch anything; run refresh_rss
+          afterwards.
       parameters:
         - $ref: '#/components/parameters/ManagedAnimeID'
       requestBody:
@@ -1900,6 +2110,16 @@ paths:
       tags: [Anime]
       operationId: cleanupAnimeLocalData
       x-scope: write
+      x-mcp:
+        tool: cleanup_anime_local_data
+        group: subscription
+        write: true
+        description: >-
+          Permanently delete all local records of a RETIRED anime (its releases,
+          downloads, artifacts, scans, placements, file operations and history).
+          Irreversible and never touches library files; confirm with the human
+          first. Needs the expected_lifecycle_epoch of the retired subscription and
+          confirmation=delete-local-data.
       description: >-
         Explicitly authorized physical local cleanup of one RETIRED
         ManagedAnime's local business/config/runtime records: the complete
@@ -2199,6 +2419,15 @@ paths:
       tags: [Anime]
       operationId: applyAnimeConfigCandidate
       x-scope: write
+      x-mcp:
+        tool: apply_candidate
+        group: subscription
+        write: true
+        description: >-
+          Apply an exact saved candidate revision's business configuration to an
+          existing anime, guarded by the candidate and owner versions. It never
+          creates an instance or changes identity, metadata, RSS sources, manual
+          subgroup choices or work in flight.
       description: Apply an exact saved business revision to an existing target under owner-version CAS. Never creates an instance or changes identity, metadata, sources, manual group intent or in-flight tasks.
       parameters:
         - $ref: '#/components/parameters/CandidateID'
@@ -2379,7 +2608,14 @@ paths:
       tags: [FileMaintenance]
       operationId: listReplacementDecisions
       x-scope: read
-      x-surface-keep: "agent: read persisted replacement decisions when diagnosing why a file was kept or replaced; no UI"
+      x-mcp:
+        tool: list_replacement_decisions
+        group: files
+        write: false
+        description: >-
+          List the persisted replacement decisions (which candidate release won or
+          lost against the files already placed, and why). Filter by
+          managed_anime_id; page with limit and offset.
       description: Persisted replacement decisions (side-effect free).
       parameters:
         - name: managed_anime_id
@@ -2417,7 +2653,10 @@ paths:
       tags: [FileMaintenance]
       operationId: evaluateReplacement
       x-scope: write
-      x-surface-keep: "agent: dry-evaluate a candidate release against verified placements and persist the frozen decision; no UI trigger, operator/agent diagnostics for replacement behaviour"
+      x-mcp:
+        tool: evaluate_replacement
+        group: files
+        write: true
       description: >-
         Evaluates one candidate release against the current verified active
         placements and persists one frozen decision per coverage key
@@ -2454,7 +2693,14 @@ paths:
       tags: [FileMaintenance]
       operationId: listPlacements
       x-scope: read
-      x-surface-keep: "agent: list verified physical placements when diagnosing replacement and cleanup; no UI"
+      x-mcp:
+        tool: list_placements
+        group: files
+        write: false
+        description: >-
+          List verified physical placements (the files the library holds for the
+          pipeline) with their state. Filter by managed_anime_id; page with limit
+          and offset. Reads only.
       description: >-
         Verified physical placements (side-effect free). Never enumerates,
         hashes or re-parses; admission policy belongs to the replacement
@@ -2496,7 +2742,14 @@ paths:
       tags: [FileMaintenance]
       operationId: listOffsetMigrations
       x-scope: read
-      x-surface-keep: "agent: read an anime's offset-migration plans; no UI caller"
+      x-mcp:
+        tool: list_offset_migrations
+        group: files
+        write: false
+        description: >-
+          List the frozen offset-correction plans of one anime. A plan exists when
+          an RSS source's episode offset edit changed the resolved episode of an
+          already placed file. Pass managed_anime_id.
       description: >-
         Frozen offset-correction migration plans of one anime (side-effect
         free). A plan is created when an RSS link offset edit changes the
@@ -2544,7 +2797,14 @@ paths:
       tags: [FileMaintenance]
       operationId: listOffsetMigrationGenerations
       x-scope: read
-      x-surface-keep: "agent: read an anime's offset-migration generations; no UI caller"
+      x-mcp:
+        tool: list_offset_migration_generations
+        group: files
+        write: false
+        description: >-
+          List the offset migration generations of one anime with their state
+          (pending, planning, ready, completed, superseded, failed) and counts. Pass
+          managed_anime_id.
       description: >-
         Durable offset migration generations of one anime (side-effect free).
         A generation is admitted atomically when an RSS link offset edit
@@ -2728,7 +2988,13 @@ paths:
       tags: [FileMaintenance]
       operationId: getPlacementCoverage
       x-scope: read
-      x-surface-keep: "agent: read the canonical episode coverage of one verified placement when diagnosing replacement and alignment; no UI"
+      x-mcp:
+        tool: get_placement_coverage
+        group: files
+        write: false
+        description: >-
+          Read which episodes one placement covers (its canonical coverage keys).
+          Use it when diagnosing replacement or alignment for a single file.
       parameters:
         - name: placement_id
           in: path
@@ -2753,6 +3019,14 @@ paths:
       tags: [FileMaintenance]
       operationId: getFileMaintenancePolicy
       x-scope: read
+      x-mcp:
+        tool: get_file_maintenance_policy
+        group: configuration
+        write: false
+        description: >-
+          Read the global file-maintenance policy: whether scheduled file scans are
+          on, the scan interval, whether automatic alignment is on, and the safety
+          limits.
       responses:
         '200':
           description: Global FileMaintenance policy (absent -> defaults).
@@ -2766,6 +3040,14 @@ paths:
       tags: [FileMaintenance]
       operationId: saveFileMaintenancePolicy
       x-scope: write
+      x-mcp:
+        tool: save_file_maintenance_policy
+        group: configuration
+        write: true
+        description: >-
+          Replace the global file-maintenance policy (scan on/off and interval,
+          automatic alignment, safety limits), guarded by expected_version. Saving
+          moves or deletes no file by itself; later scans and alignment follow it.
       requestBody:
         required: true
         content:
@@ -2788,6 +3070,13 @@ paths:
       tags: [FileMaintenance]
       operationId: getFileMaintenanceAnimePolicy
       x-scope: read
+      x-mcp:
+        tool: get_file_maintenance_anime_policy
+        group: configuration
+        write: false
+        description: >-
+          Read one anime's file-maintenance policy (scheduled scans, interval,
+          automatic alignment, safety limits).
       parameters:
         - name: managed_anime_id
           in: path
@@ -2807,6 +3096,14 @@ paths:
       tags: [FileMaintenance]
       operationId: saveFileMaintenanceAnimePolicy
       x-scope: write
+      x-mcp:
+        tool: save_file_maintenance_anime_policy
+        group: configuration
+        write: true
+        description: >-
+          Replace one anime's file-maintenance policy, guarded by expected_version.
+          Saving moves or deletes no file by itself; later scans and alignment
+          follow it.
       parameters:
         - name: managed_anime_id
           in: path
@@ -2835,6 +3132,14 @@ paths:
       tags: [FileMaintenance]
       operationId: getReplacementCompareVocabulary
       x-scope: read
+      x-mcp:
+        tool: get_replacement_compare_vocabulary
+        group: configuration
+        write: false
+        description: >-
+          Read the candidate values for the ranked comparison items of a replacement
+          quality profile (resolution, language, subtitle and source values,
+          including those AniBT offers). Optional managed_anime_id.
       description: >-
         Candidate values for the ranked comparison items of the quality
         profile editor. Read-only.
@@ -2858,6 +3163,14 @@ paths:
       tags: [FileMaintenance]
       operationId: getReplacementPolicyDefault
       x-scope: read
+      x-mcp:
+        tool: get_replacement_policy_default
+        group: configuration
+        write: false
+        description: >-
+          Read the default replacement (washing) policy new subscriptions copy at
+          creation: admission mode and the ranked quality profile. Existing
+          instances never re-inherit it.
       description: >-
         The singleton creation default for future instances (absent ->
         versioned code defaults with version 0). Existing instances never
@@ -2875,6 +3188,14 @@ paths:
       tags: [FileMaintenance]
       operationId: saveReplacementPolicyDefault
       x-scope: write
+      x-mcp:
+        tool: save_replacement_policy_default
+        group: configuration
+        write: true
+        description: >-
+          Replace the default replacement policy for future subscriptions, guarded
+          by expected_version. Existing instances, placements and decisions are
+          untouched. Saving does not run anything.
       description: >-
         Replaces the singleton creation default with expected-version CAS.
         Affects future instances only; existing instance values, versions,
@@ -2903,6 +3224,13 @@ paths:
       tags: [FileMaintenance]
       operationId: getFileEffectPolicyDefault
       x-scope: read
+      x-mcp:
+        tool: get_file_effect_policy_default
+        group: configuration
+        write: false
+        description: >-
+          Read the default file-effect policy new subscriptions copy at creation
+          (what happens to an unknown file: route or skip).
       description: >-
         The singleton creation default for future instances (absent -> code
         default skip with version 0). Existing instances never re-inherit it
@@ -2920,6 +3248,13 @@ paths:
       tags: [FileMaintenance]
       operationId: saveFileEffectPolicyDefault
       x-scope: write
+      x-mcp:
+        tool: save_file_effect_policy_default
+        group: configuration
+        write: true
+        description: >-
+          Replace the default file-effect policy for future subscriptions, guarded
+          by expected_version. Existing instances are untouched.
       description: >-
         Replaces the singleton creation default with expected-version CAS.
         Affects future instances only; existing instance policies are frozen
@@ -2948,6 +3283,14 @@ paths:
       tags: [FileMaintenance]
       operationId: getInstanceFileEffectPolicy
       x-scope: read
+      x-mcp:
+        tool: get_instance_file_effect_policy
+        group: configuration
+        write: false
+        description: >-
+          Read one anime's frozen file-effect policy: whether an unknown file (a
+          selected video without its own episode identity) is imported with the
+          unknown template (route) or left in the download directory (skip).
       description: >-
         The frozen per-instance file-effect policy (unclassified_route). It
         decides what happens to an unknown file, a selected video without its
@@ -2976,6 +3319,13 @@ paths:
       tags: [FileMaintenance]
       operationId: saveInstanceFileEffectPolicy
       x-scope: write
+      x-mcp:
+        tool: save_instance_file_effect_policy
+        group: configuration
+        write: true
+        description: >-
+          Replace one anime's file-effect policy, guarded by expected_version. Takes
+          effect for later imports; no file is touched now.
       description: >-
         Replaces the frozen instance file-effect policy with expected-version
         CAS.
@@ -3011,6 +3361,13 @@ paths:
       tags: [FileMaintenance]
       operationId: getParserPolicyDefault
       x-scope: read
+      x-mcp:
+        tool: get_parser_policy_default
+        group: configuration
+        write: false
+        description: >-
+          Read the default parser policy (parser kind) new subscriptions copy at
+          creation.
       description: >-
         The singleton creation default for future instances (absent -> the
         versioned code default reltitle with version 0). Existing instances
@@ -3029,6 +3386,14 @@ paths:
       tags: [FileMaintenance]
       operationId: saveParserPolicyDefault
       x-scope: write
+      x-mcp:
+        tool: save_parser_policy_default
+        group: configuration
+        write: true
+        description: >-
+          Replace the default parser policy for future subscriptions, guarded by
+          expected_version. Existing instances stay frozen and no release is
+          re-evaluated.
       description: >-
         Replaces the singleton creation default with expected-version CAS.
         Affects future instances only; existing instance parser policies stay
@@ -3057,6 +3422,12 @@ paths:
       tags: [FileMaintenance]
       operationId: getInstanceParserPolicy
       x-scope: read
+      x-mcp:
+        tool: get_instance_parser_policy
+        group: configuration
+        write: false
+        description: >-
+          Read one anime's frozen parser policy (the parser kind it uses).
       description: >-
         The frozen per-instance parser policy: the selected parser kind. It
         carries no episode offset; offsets live only on RSS links. The client
@@ -3082,6 +3453,14 @@ paths:
       tags: [FileMaintenance]
       operationId: saveInstanceParserPolicy
       x-scope: write
+      x-mcp:
+        tool: save_instance_parser_policy
+        group: configuration
+        write: true
+        description: >-
+          Replace one anime's parser policy, guarded by expected_version. Saving
+          re-evaluates nothing; call reevaluate_releases to apply it to existing
+          releases.
       description: >-
         Fully replaces one instance parser policy with expected-version CAS.
       parameters:
@@ -3116,6 +3495,13 @@ paths:
       tags: [FileMaintenance]
       operationId: getInstanceReplacementPolicy
       x-scope: read
+      x-mcp:
+        tool: get_instance_replacement_policy
+        group: configuration
+        write: false
+        description: >-
+          Read one anime's complete replacement (washing) policy: admission mode and
+          the ranked quality profile.
       description: >-
         The complete frozen per-instance retention policy. The client never
         merges a global default.
@@ -3140,6 +3526,14 @@ paths:
       tags: [FileMaintenance]
       operationId: saveInstanceReplacementPolicy
       x-scope: write
+      x-mcp:
+        tool: save_instance_replacement_policy
+        group: configuration
+        write: true
+        description: >-
+          Replace one anime's replacement policy, guarded by expected_version.
+          Saving changes no placement and runs no comparison; files already placed
+          and candidates in flight are decided at the next comparison moment.
       description: >-
         Fully replaces one instance policy with expected-version CAS. The save
         changes no Placement, creates no cleanup, performs no filesystem effect
@@ -3179,7 +3573,15 @@ paths:
       tags: [FileMaintenance]
       operationId: getFileMaintenanceOverview
       x-scope: read
-      x-surface-keep: "agent: full per-instance maintenance truth (consumer outcomes, decisions, deletions, alignments) for diagnosis; the UI reads the per-anime files view instead"
+      x-mcp:
+        tool: get_file_maintenance_overview
+        group: files
+        write: false
+        description: >-
+          Read one anime's complete file-maintenance picture: the current scan, the
+          latest placements, replacement decisions with stale reasons, cleanup and
+          alignment operations, its replacement policy and the global default. Reads
+          only; never scans or changes anything.
       description: >-
         The minimal per-instance FileMaintenance truth surface: the current
         reconciliation scan owner, the completed generation's consumer
@@ -3210,7 +3612,10 @@ paths:
       tags: [FileMaintenance]
       operationId: replanFileMaintenance
       x-scope: write
-      x-surface-keep: "agent: deterministic snapshot-only dry run of file maintenance for one generation; no UI"
+      x-mcp:
+        tool: replan_file_maintenance
+        group: files
+        write: true
       description: >-
         Deterministic snapshot-only dry-run: consumes one completed
         immutable generation and returns the full candidate fact set with
@@ -3237,7 +3642,15 @@ paths:
       tags: [Releases]
       operationId: getReleaseCandidateFacts
       x-scope: read
-      x-surface-keep: "agent: read a release's frozen quality and coverage facts when diagnosing replacement decisions; no UI"
+      x-mcp:
+        tool: get_release_candidate_facts
+        group: records
+        write: false
+        description: >-
+          Read the frozen quality and coverage facts of one release (resolution,
+          language, subgroup score inputs, parser version, the episodes it covers).
+          Use it to see why a replacement decision ranked a release the way it did.
+          Pass release_id; the optional version selects a fact version.
       description: >-
         Versioned candidate facts for one release: quality dimensions,
         parser version, input fingerprint and canonical episode coverage
@@ -3272,6 +3685,15 @@ paths:
       tags: [Releases]
       operationId: getReleaseTorrentStructure
       x-scope: read
+      x-mcp:
+        tool: get_release_torrent_structure
+        group: records
+        write: false
+        description: >-
+          Read the top level of a release's retained torrent payload: the folders
+          and files directly under the torrent root, with each folder's total size.
+          404 when the payload was never retained or is past its retention window.
+          Reads only; fetches nothing.
       description: >-
         The one-level structure of the release's retained torrent payload: the
         folders and files directly under the torrent root, with each folder's
@@ -3351,6 +3773,14 @@ paths:
       tags: [Recovery]
       operationId: retryRSSSourceRuntime
       x-scope: write
+      x-mcp:
+        tool: retry_rss_source_runtime
+        group: downloads
+        write: true
+        description: >-
+          Re-run a failed RSS source runtime (the stage that fetches and evaluates
+          the feed). Pass rss_source_id. Re-enqueues the stage; refresh_rss is the
+          usual way to fetch a feed now.
       parameters:
         - $ref: '#/components/parameters/RSSSourceID'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -3372,6 +3802,14 @@ paths:
       tags: [Recovery]
       operationId: retryDownloadTask
       x-scope: write
+      x-mcp:
+        tool: retry_download_task
+        group: downloads
+        write: true
+        description: >-
+          Re-run a failed download task (the failed_work_item_id owner stage from
+          get_workspace). Re-enqueues the stage; it does not change data. Prefer
+          retry_release for a whole release.
       parameters:
         - $ref: '#/components/parameters/DownloadTaskID'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -3393,6 +3831,14 @@ paths:
       tags: [Recovery]
       operationId: retryArtifact
       x-scope: write
+      x-mcp:
+        tool: retry_artifact
+        group: downloads
+        write: true
+        description: >-
+          Re-run a failed artifact stage (verification of the downloaded files).
+          Re-enqueues the stage; it does not change data. Prefer retry_release for a
+          whole release.
       parameters:
         - $ref: '#/components/parameters/ArtifactID'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -3511,6 +3957,10 @@ paths:
       tags: [Catalog]
       operationId: fetchCustomSnapshot
       x-scope: write
+      x-mcp:
+        tool: fetch_custom_snapshot
+        group: subscription
+        write: true
       description: >-
         Explicitly fetch the exact saved custom candidate revision and
         atomically persist its feed snapshot under candidate CAS. A feed whose
@@ -3542,6 +3992,15 @@ paths:
       tags: [Catalog]
       operationId: readCatalogWorkspace
       x-scope: read
+      x-mcp:
+        tool: read_catalog_workspace
+        group: subscription
+        write: false
+        description: >-
+          Read one provider season's stored catalog (the browse wall): the snapshot
+          and its items with release format and subscribed flag. Pass provider and
+          season. Reads what is stored; use refresh_catalog_provider to pull it from
+          the provider again.
       parameters:
         - $ref: '#/components/parameters/CatalogProvider'
         - $ref: '#/components/parameters/CatalogSeason'
@@ -3603,6 +4062,11 @@ paths:
       tags: [Catalog]
       operationId: fetchSeedSearchSnapshot
       x-scope: write
+      x-mcp:
+        tool: fetch_seed_search_snapshot
+        group: subscription
+        write: true
+        idempotent: false
       description: >-
         Run one keyword torrent search against one provider and persist its
         results as an immutable search snapshot. This is a write because it
@@ -3654,6 +4118,14 @@ paths:
       tags: [Catalog]
       operationId: refreshCatalogProvider
       x-scope: write
+      x-mcp:
+        tool: refresh_catalog_provider
+        group: subscription
+        write: true
+        description: >-
+          Pull one provider season's catalog from the provider now and store it.
+          Contacts the provider (subject to its rate limits); read the result with
+          read_catalog_workspace.
       parameters:
         - $ref: '#/components/parameters/CatalogProvider'
         - $ref: '#/components/parameters/CatalogSeason'
@@ -3675,6 +4147,13 @@ paths:
       tags: [Catalog]
       operationId: readCatalogPreference
       x-scope: read
+      x-mcp:
+        tool: get_catalog_preference
+        group: subscription
+        write: false
+        description: >-
+          Read the refresh preference of one provider season: whether it refreshes
+          automatically and on what schedule.
       parameters:
         - $ref: '#/components/parameters/CatalogProvider'
         - $ref: '#/components/parameters/CatalogSeason'
@@ -3691,6 +4170,16 @@ paths:
       tags: [Catalog]
       operationId: setCatalogPreference
       x-scope: write
+      x-mcp:
+        tool: set_catalog_preference
+        group: subscription
+        write: true
+        rename: {season: target_season}
+        description: >-
+          Replace the refresh preference of one provider season (refresh_enabled,
+          schedule), guarded by expected_version from get_catalog_preference.
+          The season is named twice: target_season (which season to change)
+          and season in the body; both must be the same value.
       parameters:
         - $ref: '#/components/parameters/CatalogProvider'
         - $ref: '#/components/parameters/CatalogSeason'
@@ -3719,6 +4208,12 @@ paths:
       tags: [Catalog]
       operationId: listCatalogSuppressions
       x-scope: read
+      x-mcp:
+        tool: list_catalog_suppressions
+        group: subscription
+        write: false
+        description: >-
+          List the provider catalog entries the owner hid from browse.
       responses:
         '200':
           description: >-
@@ -3738,6 +4233,10 @@ paths:
       tags: [Catalog]
       operationId: suppressCatalogEntry
       x-scope: write
+      x-mcp:
+        tool: suppress_catalog_entry
+        group: subscription
+        write: true
       description: >-
         Suppress a provider catalog entry. Idempotent: suppressing an already
         suppressed entry refreshes its title snapshot and succeeds.
@@ -3765,6 +4264,10 @@ paths:
       tags: [Catalog]
       operationId: unsuppressCatalogEntry
       x-scope: write
+      x-mcp:
+        tool: unsuppress_catalog_entry
+        group: subscription
+        write: true
       description: >-
         Remove a suppression. Idempotent: removing an absent suppression
         succeeds.
@@ -3906,6 +4409,14 @@ paths:
       tags: [Anime]
       operationId: patchRSSSourceOffset
       x-scope: write
+      x-mcp:
+        tool: patch_rss_source_offset
+        group: subscription
+        write: true
+        description: >-
+          Set the episode offset of one RSS source of a managed anime (shifts how
+          its release episode numbers map to the season). It can plan file-migration
+          work for already placed files; see list_offset_migrations.
       parameters:
         - $ref: '#/components/parameters/ManagedAnimeID'
         - $ref: '#/components/parameters/RSSSourceID'
@@ -3935,7 +4446,10 @@ paths:
       tags: [Anime]
       operationId: patchRSSSourceAniBTMode
       x-scope: write
-      x-surface-keep: "agent: an agent or workflow toggling one AniBT source's auxiliary merge mode on a live subscription is a valid use (owner ruling 2026-10-13); no UI control, the draft carries the mode at creation"
+      x-mcp:
+        tool: patch_rss_source_anibt_mode
+        group: subscription
+        write: true
       description: >-
         Replaces the per-source AniBT auxiliary merge mode with
         expected-version CAS. Only valid for AniBT provider sources;
@@ -3999,6 +4513,14 @@ paths:
       tags: [Automation]
       operationId: listAutomationSchedules
       x-scope: read
+      x-mcp:
+        tool: list_automation_schedules
+        group: configuration
+        write: false
+        description: >-
+          List the automation kinds (group_discovery, rss_refresh, metadata_match,
+          catalog_refresh) with their enabled flag, interval, next run and the
+          outcome of the last run.
       responses:
         '200':
           description: All automation schedules.
@@ -4015,6 +4537,16 @@ paths:
       tags: [Automation]
       operationId: patchAutomationSchedule
       x-scope: write
+      x-mcp:
+        tool: patch_automation_schedule
+        group: configuration
+        write: true
+        description: >-
+          Change one automation kind's schedule (enabled, interval_value,
+          interval_unit), guarded by expected_version from
+          list_automation_schedules. Kind: group_discovery, rss_refresh,
+          metadata_match or catalog_refresh. Disabling stops scheduled runs;
+          automation_run still triggers one manually.
       parameters:
         - $ref: '#/components/parameters/AutomationKindPath'
       requestBody:
@@ -4074,6 +4606,14 @@ paths:
       tags: [Automation]
       operationId: getAutomationRun
       x-scope: read
+      x-mcp:
+        tool: get_automation_run
+        group: configuration
+        write: false
+        description: >-
+          Read one dispatch run started by automation_run or the scheduler: its
+          state, trigger and counts (targets, enqueued, merged, skipped, dispatch
+          errors). Pass the run_id automation_run returned.
       parameters:
         - $ref: '#/components/parameters/AutomationRunID'
       responses:
@@ -4092,6 +4632,14 @@ paths:
       tags: [Observability]
       operationId: listObservabilityRecords
       x-scope: read
+      x-mcp:
+        tool: list_observability_records
+        group: records
+        write: false
+        description: >-
+          Page through the unified execution record feed (routine, business,
+          automation and plugin records), newest first. Filter by kind, outcome,
+          time range or managed_anime_id; follow next_cursor for more.
       parameters:
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
@@ -4134,6 +4682,14 @@ paths:
       tags: [Observability]
       operationId: listObservabilityDiagnostics
       x-scope: read
+      x-mcp:
+        tool: list_observability_diagnostics
+        group: records
+        write: false
+        description: >-
+          Page through persisted diagnostic episodes (warnings and errors raised by
+          system components), newest first. Filter by severity, component or time
+          range.
       parameters:
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
@@ -4167,6 +4723,15 @@ paths:
       tags: [Plugins]
       operationId: listPluginTargets
       x-scope: read
+      x-mcp:
+        tool: list_plugin_targets
+        group: configuration
+        write: false
+        description: >-
+          List the notification targets (Telegram, Feishu, webhook) with their
+          trigger kinds, templates and version. Secrets (bot token, webhook URL,
+          signing secret) are never returned: has_secret and has_signing_secret say
+          whether they are set.
       responses:
         '200':
           description: Typed non-secret notification targets.
@@ -4180,6 +4745,16 @@ paths:
       tags: [Plugins]
       operationId: createPluginTarget
       x-scope: write
+      x-mcp:
+        tool: create_plugin_target
+        group: configuration
+        write: true
+        idempotent: false
+        description: >-
+          Create a notification target. The secret (bot token, webhook URL, auth
+          value, signing secret) is write-only and is never returned afterwards.
+          Creating does not send anything; use test_plugin_target to send a real
+          test message.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -4206,6 +4781,13 @@ paths:
       tags: [Plugins]
       operationId: updatePluginTarget
       x-scope: write
+      x-mcp:
+        tool: update_plugin_target
+        group: configuration
+        write: true
+        description: >-
+          Replace a notification target, guarded by expected_version. The secret
+          field keeps, replaces or clears the stored secret; it is never returned.
       parameters:
         - $ref: '#/components/parameters/PluginTargetID'
         - $ref: '#/components/parameters/IfMatchVersion'
@@ -4234,6 +4816,13 @@ paths:
       tags: [Plugins]
       operationId: deletePluginTarget
       x-scope: write
+      x-mcp:
+        tool: delete_plugin_target
+        group: configuration
+        write: true
+        description: >-
+          Delete a notification target and its stored secret. Irreversible: confirm
+          with the human first.
       parameters:
         - $ref: '#/components/parameters/PluginTargetID'
       responses:
@@ -4277,6 +4866,13 @@ paths:
       tags: [Plugins]
       operationId: listPluginDeliveries
       x-scope: read
+      x-mcp:
+        tool: list_plugin_deliveries
+        group: configuration
+        write: false
+        description: >-
+          List notification deliveries, newest first. Filter by trigger_kind,
+          source_owner_type, source_owner_id and state; page with limit and offset.
       description: >-
         Bounded read-only delivery list for the notification observable
         surface. Filters are optional; ordering is updated_at descending.
@@ -4331,6 +4927,12 @@ paths:
       tags: [Plugins]
       operationId: getPluginDelivery
       x-scope: read
+      x-mcp:
+        tool: get_plugin_delivery
+        group: configuration
+        write: false
+        description: >-
+          Read one notification delivery with its attempts and outcome.
       parameters:
         - $ref: '#/components/parameters/PluginDeliveryID'
       responses:
@@ -4389,6 +4991,14 @@ paths:
       tags: [Update]
       operationId: getUpdateStatus
       x-scope: read
+      x-mcp:
+        tool: get_update_status
+        group: configuration
+        write: false
+        description: >-
+          Read the state of the embedded self-update: the accepted request or the
+          journal outcome. It is not a version check; use check_update for that.
+          Starting an update is not available through MCP.
       description: >-
         Read-only projection of the current embedded update. Before bootstrap
         records the durable handoff, status reports the accepted admission or
@@ -4413,6 +5023,13 @@ paths:
       tags: [Update]
       operationId: checkUpdate
       x-scope: read
+      x-mcp:
+        tool: check_update
+        group: configuration
+        write: false
+        description: >-
+          Check whether the single deployment-published update candidate is newer
+          than the running version. Reads only and installs nothing.
       description: Side-effect-free check of the single deployment-published candidate.
       responses:
         '200':
@@ -4597,6 +5214,13 @@ paths:
       tags: [Plugins]
       operationId: getNotificationTemplateCatalog
       x-scope: read
+      x-mcp:
+        tool: get_notification_template_catalog
+        group: configuration
+        write: false
+        description: >-
+          Read the variables and fields available to the notification template of
+          one trigger kind. Pass trigger_kind.
       parameters:
         - $ref: '#/components/parameters/TriggerKindPath'
         - name: catalog_version
@@ -4620,6 +5244,13 @@ paths:
       tags: [Plugins]
       operationId: previewNotificationTemplate
       x-scope: read
+      x-mcp:
+        tool: preview_notification_template
+        group: configuration
+        write: false
+        description: >-
+          Render a notification template for one trigger kind with sample data
+          without sending or saving anything.
       requestBody:
         required: true
         content:
@@ -4642,6 +5273,13 @@ paths:
       tags: [Plugins]
       operationId: getNamingTemplateCatalog
       x-scope: read
+      x-mcp:
+        tool: get_naming_template_catalog
+        group: configuration
+        write: false
+        description: >-
+          Read the variables, functions and examples a naming template can use. The
+          optional language selects the label language.
       parameters:
         - name: language
           in: query
@@ -4664,6 +5302,14 @@ paths:
       tags: [Plugins]
       operationId: previewNamingTemplate
       x-scope: read
+      x-mcp:
+        tool: preview_naming_template
+        group: configuration
+        write: false
+        description: >-
+          Render a naming template against sample facts without saving anything. Use
+          it to check a template before put_naming_template_library or
+          patch_anime_rules.
       requestBody:
         required: true
         content:
@@ -4951,7 +5597,14 @@ paths:
       tags: [Releases]
       operationId: previewMediaRecognition
       x-scope: read
-      x-surface-keep: "agent: side-effect-free batch recognition of filenames for rule and parser authoring; no UI"
+      x-mcp:
+        tool: preview_media_recognition
+        group: configuration
+        write: false
+        description: >-
+          Recognise episode, season and other facts from file names or paths you
+          supply, with the selected parser. Pure computation: it opens no file,
+          contacts no provider and writes nothing.
       description: >-
         Side-effect-free batch media recognition. The caller supplies logical
         filename/path text and explicit context; the server never opens an
@@ -5009,6 +5662,12 @@ paths:
       tags: [Releases]
       operationId: listParserCatalog
       x-scope: read
+      x-mcp:
+        tool: list_parser_catalog
+        group: configuration
+        write: false
+        description: >-
+          List the registered media parsers a parser policy can select.
       description: Read-only catalog of code-owned registered media parsers.
       responses:
         '200':
@@ -5092,6 +5751,15 @@ paths:
       tags: [Reconciliation]
       operationId: submitReconciliationScan
       x-scope: write
+      x-mcp:
+        tool: submit_reconciliation_scan
+        group: files
+        write: true
+        description: >-
+          Start a scan of one anime's library files, or replay the running one. The
+          scan only observes: it never moves, deletes or renames a file. Read the
+          result with get_reconciliation_scan and list_anime_files. 409
+          SCAN_IN_PROGRESS while a scan is still running.
       description: >-
         Starts (or idempotently replays) an asynchronous snapshot scan for one
         anime. The scan owner persists batches with fencing; a completed
@@ -5122,7 +5790,14 @@ paths:
       tags: [Reconciliation]
       operationId: getReconciliationScan
       x-scope: read
-      x-surface-keep: "agent: poll one anime's reconciliation scan state after submitting a scan; the UI only submits"
+      x-mcp:
+        tool: get_reconciliation_scan
+        group: files
+        write: false
+        description: >-
+          Read the state of an anime's latest file scan (running, completed, ...)
+          and its generation. Poll it after submit_reconciliation_scan;
+          list_anime_files shows the per-file results.
       parameters:
         - name: managed_anime_id
           in: path
@@ -5145,7 +5820,14 @@ paths:
       tags: [Reconciliation]
       operationId: listReconciliationObservations
       x-scope: read
-      x-surface-keep: "agent: page the immutable observations of a reconciliation scan generation alongside path-diffs; no UI"
+      x-mcp:
+        tool: list_reconciliation_observations
+        group: files
+        write: false
+        description: >-
+          List the observations of one scan generation: what the scan saw on disk
+          for each managed file (present, missing, changed). generation defaults to
+          the latest; page with limit and offset.
       parameters:
         - name: managed_anime_id
           in: path
@@ -5189,6 +5871,14 @@ paths:
       tags: [Reconciliation]
       operationId: listReconciliationPathDiffs
       x-scope: read
+      x-mcp:
+        tool: list_reconciliation_path_diffs
+        group: files
+        write: false
+        description: >-
+          List, for one scan generation (0 = latest), every file's actual path next
+          to the path the naming template would give it, with a differs flag. A
+          preview only; align_anime_files performs the move.
       description: >-
         Side-effect free path-difference preview of one calibration
         generation (0 = latest): every file row with its actual path, the
@@ -5624,6 +6314,14 @@ paths:
       tags: [Releases]
       operationId: getOneShotExecutionAttempt
       x-scope: read
+      x-mcp:
+        tool: get_one_shot_attempt
+        group: one_shot
+        write: false
+        description: >-
+          Read the full redacted evidence of one execution attempt of a one-shot
+          acquisition. Pass one_shot_id and attempt_id (from
+          list_one_shot_attempts).
       description: >-
         Full redacted evidence of one execution attempt. The attempt must
         belong to the named acquisition; a foreign attempt id is a typed 404.

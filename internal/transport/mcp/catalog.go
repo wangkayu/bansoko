@@ -36,12 +36,13 @@ const (
 	GroupOneShot       = "one_shot"
 	GroupFiles         = "files"
 	GroupRecords       = "records"
+	GroupDownloads     = "downloads"
 	GroupConfiguration = "configuration"
 )
 
 var knownGroups = map[string]bool{
 	GroupSubscription: true, GroupOneShot: true, GroupFiles: true,
-	GroupRecords: true, GroupConfiguration: true,
+	GroupRecords: true, GroupDownloads: true, GroupConfiguration: true,
 }
 
 // Operation is one allowlisted OpenAPI operation exposed as an MCP tool.
@@ -355,6 +356,12 @@ func buildOperation(doc map[string]any, path, method string, node, ext map[strin
 			}
 			sort.Strings(names)
 			for _, name := range names {
+				if name == "expected_version" && op.HasIfMatch {
+					// The operation names the version in both If-Match and the
+					// body: one argument feeds both, so they cannot disagree.
+					op.bodyProps[name] = true
+					continue
+				}
 				if err := taken(name); err != nil {
 					return nil, err
 				}
@@ -362,6 +369,9 @@ func buildOperation(doc map[string]any, path, method string, node, ext map[strin
 				op.bodyProps[name] = true
 			}
 			for _, name := range asStringList(target["required"]) {
+				if name == "expected_version" && op.HasIfMatch {
+					continue
+				}
 				required = append(required, name)
 			}
 		} else {
