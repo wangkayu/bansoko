@@ -130,6 +130,22 @@ func (s *Service) buildArtifactBatch(ctx context.Context, b *artifactPreparedBat
 }
 func (s *Service) persistOperationPlan(ctx context.Context, tx *sql.Tx, plan operationPlan, artifact artifactContext, file artifactFileContext) error {
 	if s.preparedBatch != nil {
+		if plan.collisionPolicy != "overwrite" && plan.state != ownerStateFailed {
+			// The accepted plan renders each operation under the global skip
+			// or version policy; an approved replacement takes effect above
+			// it, so the approved path alone becomes an overwrite operation
+			// with its execution checkpoint.
+			approved, err := approvedReplacementPaths(s.preparedBatch.input)
+			if err != nil {
+				return err
+			}
+			if approved[plan.targetPath] {
+				plan.collisionPolicy = "overwrite"
+				if plan.overwriteSnapshot, err = buildOverwriteExecutionSnapshot(plan, s.parentAuthorizer); err != nil {
+					return err
+				}
+			}
+		}
 		if plan.collisionPolicy == "overwrite" {
 			approved, err := approvedReplacementPaths(s.preparedBatch.input)
 			if err != nil {
