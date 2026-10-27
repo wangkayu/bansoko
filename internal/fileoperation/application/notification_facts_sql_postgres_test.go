@@ -51,6 +51,26 @@ func TestNotificationFactsSQLParity(t *testing.T) {
 		{`null`, `null`},
 		{`{}`, `{}`},
 		{`{"info":{"tag":"WEB","source_url":"x","link":"https://x/y","long":"` + strings.Repeat("长", 200) + `"},"empty":{},"odd":"x"}`, `{"title_tags":{"schema":"reltitle-attrs-v1","implementation":"r","tags":["resolution:1080p","sub_lang:CHT","sub_lang:chs","sub_lang:CHS"," sub_lang: x ",":nodim","nov:","codec","content_rating:UNCENSORED"],"value_tags":["title:进击的巨人","group:SampleGroup","version:v2"]},"anibt":{"schema":"anibt-tags-v1","tags":["language:CHT","language:CHS","format:MKV","tag:10bit","tag:AAC","tag:aac"]}}`},
+		// anibt.tag folds the customTag sub-dimensions back into the tag field the
+		// way templatefacts.AniBTTagValues does: a codec/bitdepth/audio/source/
+		// platform/subformat entry reads as its tag:<value> (a stored legacy
+		// `tag:<value>` already is one), and the field joins the trimmed values
+		// case-insensitively de-duplicated in case-folded order. The frozen block
+		// uses the schema the AniBT reader writes (acquisition/domain
+		// AniBTTagSchemaV1).
+		{`{}`, `{"anibt":{"schema":"anibt-rss-1.0","tags":["codec:HEVC","bitdepth:10bit","audio:AAC","source:WEBRip"]}}`},
+		// Legacy and classified spellings of the same customTag collapse.
+		{`{}`, `{"anibt":{"schema":"anibt-rss-1.0","tags":["tag:xxx","codec:HEVC","tag:10bit","bitdepth:10bit","audio:AAC","audio:aac","source:WEBRip"]}}`},
+		// Case-duplicate customTags keep the first frozen spelling.
+		{`{}`, `{"anibt":{"schema":"anibt-rss-1.0","tags":["codec:HEVC","audio:AAC","audio:aac","tag:Hevc"]}}`},
+		// platform and subformat are customTag sub-dimensions too.
+		{`{}`, `{"anibt":{"schema":"anibt-rss-1.0","tags":["platform:CR","subformat:PGS","tag:WEBRip"]}}`},
+		// A dimension outside the customTag table is never merged into tag.
+		{`{}`, `{"anibt":{"schema":"anibt-rss-1.0","tags":["mystery:drop","codec:HEVC"]}}`},
+		// Empty values reach neither tag nor the other fields.
+		{`{}`, `{"anibt":{"schema":"anibt-rss-1.0","tags":["codec:","audio:","tag:","format:MKV"]}}`},
+		// The fold composes with the title namespace and the other anibt fields.
+		{`{}`, `{"title_tags":{"schema":"reltitle-attrs-v1","implementation":"r","tags":["resolution:1080p","video_codec:HEVC","content_rating:UNCENSORED"]},"anibt":{"schema":"anibt-rss-1.0","tags":["resolution:1080p","language:CHS","format:MKV","codec:HEVC","bitdepth:10bit","audio:AAC","source:WEBRip"]}}`},
 		// rt.uncensored: false on a successful parse without the marker, null on
 		// a diagnostic, an unknown schema or a missing block; the tag must match
 		// exactly (case, whole value).
