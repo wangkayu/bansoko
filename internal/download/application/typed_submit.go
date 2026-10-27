@@ -199,6 +199,9 @@ func (s *Service) typedSubmit(ctx context.Context, c workitems.Claim) (worker.Ou
 	if err != nil {
 		observation["error"] = redactProviderError(err)
 	}
+	// The transaction below reuses err; keep the provider's refusal for the
+	// occupied failure detail.
+	submitErr := err
 	raw, _ := json.Marshal(observation)
 	err = s.workItems.WithTypedStageTransaction(ctx, c, func(scope txscope.Tx) (workitems.EffectDisposition, error) {
 		var reply []byte
@@ -217,7 +220,11 @@ func (s *Service) typedSubmit(ctx context.Context, c workitems.Claim) (worker.Ou
 	if effect == "no_external_effect" {
 		// The receipt made the slot retry-safe, so the attempt closes like an
 		// unstarted one: failed with the explicit reason, never re-sent.
-		return s.finishUnstartedSubmission(ctx, c, task, session, ReasonDownloaderHashOccupied, safeReason(err.Error()), false)
+		detail := ""
+		if submitErr != nil {
+			detail = safeReason(submitErr.Error())
+		}
+		return s.finishUnstartedSubmission(ctx, c, task, session, ReasonDownloaderHashOccupied, detail, false)
 	}
 	if effect != "confirmed" {
 		return worker.AwaitRecovery("qb_submit_effect_unknown"), nil
