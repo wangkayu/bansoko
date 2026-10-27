@@ -33,6 +33,10 @@ const (
 	KindSingle Kind = "single"
 	// KindMulti ranks by an ordered list of value sets (combinations).
 	KindMulti Kind = "multi"
+	// KindFlag compares a yes/no fact in one direction: its ranking is the one
+	// preferred value, [["true"]] or [["false"]]. Both sides carrying the same
+	// value tie; a release without the fact ties too.
+	KindFlag Kind = "flag"
 )
 
 // Item keys.
@@ -47,8 +51,10 @@ const (
 	KeyAniBTFormat       = "anibt.format"
 	KeyRtResolution      = "rt.resolution"
 	KeyRtSubLang         = "rt.sub_lang"
+	KeyRtSubFlag         = "rt.sub_flag"
 	KeyRtSource          = "rt.source"
 	KeyRtCodec           = "rt.codec"
+	KeyRtUncensored      = "rt.uncensored"
 )
 
 // Namespaces.
@@ -69,6 +75,16 @@ type ItemDef struct {
 // Ranked reports whether the item carries a value ranking.
 func (d ItemDef) Ranked() bool { return d.Kind == KindSingle || d.Kind == KindMulti }
 
+// Valued reports whether the item compares the release's frozen values
+// (everything but the score and the revision).
+func (d ItemDef) Valued() bool { return d.Ranked() || d.Kind == KindFlag }
+
+// Flag preferences: the single entry of a KindFlag item's ranking.
+const (
+	FlagTrue  = "true"
+	FlagFalse = "false"
+)
+
 // Items is the registry in catalog order (namespace, then attribute).
 var Items = []ItemDef{
 	{KeySubgroupScore, NamespaceSubgroup, KindScore},
@@ -81,8 +97,10 @@ var Items = []ItemDef{
 	{KeyAniBTFormat, NamespaceAniBT, KindSingle},
 	{KeyRtResolution, NamespaceRt, KindSingle},
 	{KeyRtSubLang, NamespaceRt, KindMulti},
+	{KeyRtSubFlag, NamespaceRt, KindMulti},
 	{KeyRtSource, NamespaceRt, KindSingle},
 	{KeyRtCodec, NamespaceRt, KindSingle},
+	{KeyRtUncensored, NamespaceRt, KindFlag},
 }
 
 // Lookup returns the registered item.
@@ -104,7 +122,8 @@ const (
 
 // Item is one configured comparison step: the item key and its ranking, best
 // first. Each entry is an order-insensitive value set; a single-value item
-// has one value per entry. Score and revision items have no ranking.
+// has one value per entry. Score and revision items have no ranking; a flag item's ranking is its
+// one preferred value.
 type Item struct {
 	Key   string     `json:"key"`
 	Ranks [][]string `json:"ranks"`
@@ -117,13 +136,20 @@ type Profile struct {
 	Items   []Item `json:"items"`
 }
 
-// Default is the built-in default: subgroup score, then the built-in rules'
-// language, resolution and revision. Language and resolution values are the
-// built-in attribute rules' vocabulary, best first.
+// Default is the built-in default: subgroup score, then the subtitle
+// languages AniBT declares and reltitle reads from the title, then the
+// built-in rules' resolution and revision. The two language items are
+// separate layers with no fallback between them, each in its own source's
+// spelling. Each entry is a language combination; a release hits the first
+// entry its languages contain, so a release with Simplified, Traditional and
+// Japanese hits the first entry, not the Simplified-only one. A layer the
+// release has no data for ties and the next item decides (Compare), so AniBT
+// can come first without favouring AniBT releases over Mikan ones.
 func Default() Profile {
 	return Profile{Version: Version, Items: []Item{
 		{Key: KeySubgroupScore, Ranks: [][]string{}},
-		{Key: KeyReleaseLang, Ranks: [][]string{{"chs"}, {"sc"}, {"cht"}, {"tc"}, {"jpn"}, {"eng"}}},
+		{Key: KeyAniBTLanguage, Ranks: [][]string{{"CHS", "CHT", "JPN"}, {"CHS", "JPN"}, {"CHS", "CHT"}, {"CHS"}, {"CHT", "JPN"}, {"CHT"}, {"JPN"}, {"ENG"}}},
+		{Key: KeyRtSubLang, Ranks: [][]string{{"SC", "TC", "JPN"}, {"SC", "JPN"}, {"SC", "TC"}, {"SC"}, {"TC", "JPN"}, {"TC"}, {"JPN"}, {"ENG"}}},
 		{Key: KeyReleaseResolution, Ranks: [][]string{{"2160p"}, {"1440p"}, {"1080p"}, {"720p"}, {"480p"}}},
 		{Key: KeyReleaseRevision, Ranks: [][]string{}},
 	}}
@@ -173,6 +199,12 @@ func (p Profile) Validate() error {
 		seen[item.Key] = true
 		if item.Ranks == nil {
 			return fmt.Errorf("comparison item %q must carry a ranking (empty when unused)", item.Key)
+		}
+		if def.Kind == KindFlag {
+			if len(item.Ranks) != 1 || len(item.Ranks[0]) != 1 || (item.Ranks[0][0] != FlagTrue && item.Ranks[0][0] != FlagFalse) {
+				return fmt.Errorf("comparison item %q must state its preferred value: [[\"true\"]] or [[\"false\"]]", item.Key)
+			}
+			continue
 		}
 		if !def.Ranked() {
 			if len(item.Ranks) > 0 {

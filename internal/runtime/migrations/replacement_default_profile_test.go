@@ -3,10 +3,11 @@ package migrations
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
-// TestReplacementDefaultQualityProfile proves the seeded global retention default
+// TestReplacementDefaultQualityProfile proves the installed global replacement default
 // is a profile-v1 document with explicit resolution and language ranks, so the
 // replacement chain can compare across those dimensions instead of blocking on
 // "no explicit rank and values differ".
@@ -38,7 +39,7 @@ SELECT value->'quality_profile' FROM global_config_sections WHERE section_name =
 		keys = append(keys, item.Key)
 		ranks[item.Key] = item.Ranks
 	}
-	wantKeys := []string{"subgroup.score", "release.lang", "release.resolution", "release.revision"}
+	wantKeys := []string{"subgroup.score", "anibt.language", "rt.sub_lang", "release.resolution", "release.revision"}
 	if len(keys) != len(wantKeys) {
 		t.Fatalf("dimension keys = %v, want %v", keys, wantKeys)
 	}
@@ -57,7 +58,11 @@ SELECT value->'quality_profile' FROM global_config_sections WHERE section_name =
 			t.Fatalf("resolution ranks = %v, want %v", resolution, wantResolution)
 		}
 	}
-	if len(ranks["release.lang"]) == 0 {
-		t.Fatal("language ranks missing or empty")
+	// Migration 064: each language layer ranks combinations, Simplified +
+	// Traditional + Japanese first.
+	for key, first := range map[string]string{"anibt.language": "CHS+CHT+JPN", "rt.sub_lang": "SC+TC+JPN"} {
+		if len(ranks[key]) != 8 || strings.Join(ranks[key][0], "+") != first {
+			t.Fatalf("%s ranks = %v, want 8 combinations starting with %s", key, ranks[key], first)
+		}
 	}
 }

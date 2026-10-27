@@ -4,7 +4,7 @@ import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, GripVertical, Plus, X } 
 import { getReplacementCompareVocabulary, type QualityCompareKey, type QualityProfile } from "../../lib/api/client";
 import { fileMaintenanceKeys } from "../../lib/queryKeys";
 import { t } from "../../lib/i18n";
-import { Button, Checkbox, DropdownMenu, Input, type MenuEntry } from "../../ui/base";
+import { Button, Checkbox, DropdownMenu, Input, RadioGroup, type MenuEntry } from "../../ui/base";
 import { useAnimeTabNavigation } from "../anime-tabs/tabNavigation";
 import {
   COMPARE_NAMESPACES,
@@ -12,12 +12,14 @@ import {
   addItem,
   comboValues,
   entryLabel,
+  flagFirst,
   itemDef,
   moveEntry,
   moveItem,
   parseEntry,
   removeEntry,
   removeItem,
+  setFlagDirection,
   suggestions,
   unusedItems,
   type EntryProblem,
@@ -130,6 +132,15 @@ export function QualityCompareEditor({
               <div className="tw:grid tw:gap-2 tw:px-3 tw:pb-3 tw:sm:pl-11">
                 {def.kind === "score" && <ScoreBody admissionMode={admissionMode} />}
                 {def.kind === "revision" && <p className="business-hint text-caption">{t("qualityCompare.revisionHint")}</p>}
+                {def.kind === "flag" && (
+                  <FlagBody
+                    ranks={item.ranks}
+                    name={name}
+                    hint={t("qualityCompare.uncensoredHint")}
+                    onChange={(first) => onChange(setFlagDirection(value, item.key, first))}
+                    disabled={disabled}
+                  />
+                )}
                 {(def.kind === "single" || def.kind === "multi") && (
                   <RankedBody
                     profile={value}
@@ -169,6 +180,36 @@ function ScoreBody({ admissionMode }: { admissionMode: string }) {
           <Button size="sm" variant="link" onClick={() => navigate("subgroups")}>{t("qualityCompare.scoreLink")}</Button>
         </div>
       )}
+    </>
+  );
+}
+
+function FlagBody({
+  ranks,
+  name,
+  hint,
+  onChange,
+  disabled,
+}: {
+  ranks: string[][];
+  name: string;
+  hint: string;
+  onChange: (first: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <>
+      <p className="business-hint text-caption">{hint}</p>
+      <RadioGroup
+        aria-label={t("qualityCompare.directionAria", { item: name })}
+        value={flagFirst(ranks) ? "first" : "last"}
+        onValueChange={(next) => onChange(next === "first")}
+        options={[
+          { value: "first", label: t("qualityCompare.uncensoredFirst") },
+          { value: "last", label: t("qualityCompare.censoredFirst") },
+        ]}
+        disabled={disabled}
+      />
     </>
   );
 }
@@ -217,6 +258,7 @@ function RankedBody({
   const hints = [t("qualityCompare.rankHint")];
   if (def.kind === "multi") hints.push(t("qualityCompare.multiHint"));
   if (def.namespace === "anibt") hints.push(t("qualityCompare.anibtHint"));
+  if (itemKey === "rt.sub_flag") hints.push(t("qualityCompare.subFlagHint"));
 
   return (
     <>

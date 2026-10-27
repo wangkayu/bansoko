@@ -487,7 +487,8 @@ func compareWithMember(candidate Facts, member PlacementFacts, profile Profile) 
 }
 
 // comparableFacts is a member's facts; a member without resolvable facts
-// compares with no values (it ranks lowest on every item).
+// compares with no values. It never wins against a member with facts:
+// compareWithMember and dominantMember rank it lowest explicitly.
 func comparableFacts(placement PlacementFacts) Facts {
 	if !placement.FactsOK {
 		return Facts{}
@@ -511,6 +512,16 @@ func dominantMember(members []PlacementFacts, profile Profile) (PlacementRef, bo
 		dominates := true
 		for _, other := range sorted {
 			if candidate.PlacementID == other.PlacementID {
+				continue
+			}
+			if !candidate.FactsOK && other.FactsOK {
+				// A member without release facts ranks below every member that
+				// has them; a layer with no data ties (Compare), so this cannot
+				// be left to the item comparison.
+				dominates = false
+				break
+			}
+			if candidate.FactsOK && !other.FactsOK {
 				continue
 			}
 			comparison := Compare(comparableFacts(candidate), comparableFacts(other), profile)

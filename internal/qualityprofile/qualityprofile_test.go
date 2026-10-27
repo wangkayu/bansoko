@@ -17,7 +17,7 @@ func TestDefaultProfileIsValidAndBuiltInOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{KeySubgroupScore, KeyReleaseLang, KeyReleaseResolution, KeyReleaseRevision}
+	want := []string{KeySubgroupScore, KeyAniBTLanguage, KeyRtSubLang, KeyReleaseResolution, KeyReleaseRevision}
 	if strings.Join(profile.Keys(), ",") != strings.Join(want, ",") {
 		t.Fatalf("default items = %v", profile.Keys())
 	}
@@ -214,5 +214,142 @@ func TestFrozenValuesRoundTrip(t *testing.T) {
 	}
 	if empty := ParseValues([]byte(`{}`)); len(empty.Values) != 0 || empty.Subgroup != nil {
 		t.Fatalf("an unversioned document has no values: %+v", empty)
+	}
+}
+
+// A language item matches the release's language set against the ranking: a
+// release with several languages takes its best-ranked one, and a composite
+// reltitle code counts as each language it names.
+func TestLanguageItemsMatchTheReleaseLanguageSet(t *testing.T) {
+	profile := Profile{Version: Version, Items: []Item{{Key: KeyRtSubLang, Ranks: [][]string{{"SC"}, {"TC"}, {"JPN"}}}}}
+	cases := []struct {
+		name               string
+		candidate, current []string
+		better, decided    bool
+	}{
+		{"JPSC hits SC and beats TC", []string{"JPSC"}, []string{"TC"}, true, true},
+		{"JPSC ties with SC", []string{"JPSC"}, []string{"SC"}, false, false},
+		{"JPTC hits TC and beats JPN", []string{"JPTC"}, []string{"JPN"}, true, true},
+		{"SC+TC takes its best", []string{"SC", "TC"}, []string{"TC"}, true, true},
+		{"unlisted loses to listed", []string{"ENG"}, []string{"JPN"}, false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := Compare(subject(map[string][]string{KeyRtSubLang: tc.candidate}, nil, nil), subject(map[string][]string{KeyRtSubLang: tc.current}, nil, nil), profile)
+			if result.Better != tc.better || (result.Decided != "") != tc.decided {
+				t.Fatalf("result = %+v", result)
+			}
+		})
+	}
+	bilingual := Profile{Version: Version, Items: []Item{{Key: KeyRtSubLang, Ranks: [][]string{{"JPN", "SC"}, {"SC"}}}}}
+	if result := Compare(subject(map[string][]string{KeyRtSubLang: {"JPSC"}}, nil, nil), subject(map[string][]string{KeyRtSubLang: {"SC"}}, nil, nil), bilingual); !result.Better {
+		t.Fatalf("a JPN+SC entry must rank JPSC above SC: %+v", result)
+	}
+	if result := Compare(subject(map[string][]string{KeyRtSubLang: {"JPSC"}}, nil, nil), subject(map[string][]string{KeyRtSubLang: {"SC"}}, nil, nil), Profile{Version: Version, Items: []Item{{Key: KeyRtSubLang, Ranks: [][]string{{"JPSC"}, {"SC"}}}}}); !result.Better {
+		t.Fatalf("an entry written as JPSC must still hit: %+v", result)
+	}
+}
+
+// A ranked layer one side has no data for ties and the next item decides; a
+// present but unlisted value still ranks lowest.
+func TestLayerWithoutDataTies(t *testing.T) {
+	profile := Profile{Version: Version, Items: []Item{
+		{Key: KeyAniBTLanguage, Ranks: [][]string{{"CHS"}}},
+		{Key: KeyRtSubLang, Ranks: [][]string{{"SC"}, {"TC"}}},
+	}}
+	anibt := subject(map[string][]string{KeyAniBTLanguage: {"CHS"}, KeyRtSubLang: {"TC"}}, nil, nil)
+	mikan := subject(map[string][]string{KeyRtSubLang: {"SC"}}, nil, nil)
+	if result := Compare(mikan, anibt, profile); !result.Better || result.Decided != KeyRtSubLang {
+		t.Fatalf("the AniBT layer must tie for a release without tags: %+v", result)
+	}
+	unlisted := subject(map[string][]string{KeyAniBTLanguage: {"ENG"}, KeyRtSubLang: {"SC"}}, nil, nil)
+	if result := Compare(unlisted, anibt, profile); result.Better || result.Decided != KeyAniBTLanguage {
+		t.Fatalf("a present unlisted value must still rank lowest: %+v", result)
+	}
+}
+
+// rt.sub_flag is a registered multi-valued item outside the default order: a
+// set entry hits when the release's flags contain it, the best-ranked hit
+// wins, and a release without flags ties.
+func TestSubFlagItemIsMultiValuedAndTiesWithoutData(t *testing.T) {
+	def, ok := Lookup(KeyRtSubFlag)
+	if !ok || def.Namespace != NamespaceRt || def.Kind != KindMulti {
+		t.Fatalf("rt.sub_flag registration = %+v, %v", def, ok)
+	}
+	if profile, err := Parse(DefaultJSON()); err != nil || strings.Contains(strings.Join(profile.Keys(), ","), KeyRtSubFlag) {
+		t.Fatalf("rt.sub_flag must not be in the default order: %v %v", profile.Keys(), err)
+	}
+	profile := Profile{Version: Version, Items: []Item{
+		{Key: KeyRtSubFlag, Ranks: [][]string{{"soft", "ex"}, {"soft"}, {"hard"}}},
+		{Key: KeyRtResolution, Ranks: [][]string{{"1080p"}, {"720p"}}},
+	}}
+	if _, err := Parse(mustJSON(t, profile)); err != nil {
+		t.Fatalf("profile with rt.sub_flag rejected: %v", err)
+	}
+	both := subject(map[string][]string{KeyRtSubFlag: {"soft", "ex"}}, nil, nil)
+	soft := subject(map[string][]string{KeyRtSubFlag: {"soft"}}, nil, nil)
+	hard := subject(map[string][]string{KeyRtSubFlag: {"hard"}}, nil, nil)
+	if result := Compare(both, soft, profile); !result.Better || result.Decided != KeyRtSubFlag {
+		t.Fatalf("soft+ex must beat soft: %+v", result)
+	}
+	if result := Compare(soft, hard, profile); !result.Better || result.Decided != KeyRtSubFlag {
+		t.Fatalf("soft must beat hard: %+v", result)
+	}
+	none := subject(map[string][]string{KeyRtResolution: {"720p"}}, nil, nil)
+	better := subject(map[string][]string{KeyRtResolution: {"1080p"}}, nil, nil)
+	if result := Compare(better, none, profile); !result.Better || result.Decided != KeyRtResolution {
+		t.Fatalf("a release without flags must tie and the next item decide: %+v", result)
+	}
+}
+
+func mustJSON(t *testing.T, profile Profile) []byte {
+	t.Helper()
+	raw, err := json.Marshal(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+// rt.uncensored is a registered two-way flag item outside the default order;
+// its ranking states the preferred value, and a side without data ties.
+func TestUncensoredFlagItemPrefersOneDirection(t *testing.T) {
+	def, ok := Lookup(KeyRtUncensored)
+	if !ok || def.Namespace != NamespaceRt || def.Kind != KindFlag {
+		t.Fatalf("rt.uncensored registration = %+v, %v", def, ok)
+	}
+	if profile, err := Parse(DefaultJSON()); err != nil || strings.Contains(strings.Join(profile.Keys(), ","), KeyRtUncensored) {
+		t.Fatalf("rt.uncensored must not be in the default order: %v %v", profile.Keys(), err)
+	}
+	for _, ranks := range [][][]string{{}, {{"yes"}}, {{"true"}, {"false"}}, {{"true", "false"}}} {
+		bad := Profile{Version: Version, Items: []Item{{Key: KeyRtUncensored, Ranks: ranks}}}
+		if _, err := Parse(mustJSON(t, bad)); err == nil {
+			t.Fatalf("ranks %v must be rejected", ranks)
+		}
+	}
+	open := subject(map[string][]string{KeyRtUncensored: {"true"}}, nil, nil)
+	cut := subject(map[string][]string{KeyRtUncensored: {"false"}}, nil, nil)
+	for prefer, wantOpenBetter := range map[string]bool{FlagTrue: true, FlagFalse: false} {
+		profile := Profile{Version: Version, Items: []Item{{Key: KeyRtUncensored, Ranks: [][]string{{prefer}}}}}
+		if _, err := Parse(mustJSON(t, profile)); err != nil {
+			t.Fatalf("prefer %s rejected: %v", prefer, err)
+		}
+		forward, backward := Compare(open, cut, profile), Compare(cut, open, profile)
+		if forward.Decided != KeyRtUncensored || forward.Better != wantOpenBetter || backward.Decided != KeyRtUncensored || backward.Better == wantOpenBetter {
+			t.Fatalf("prefer %s: open vs cut %+v, cut vs open %+v", prefer, forward, backward)
+		}
+	}
+	// Equal values tie, and so does a side with no frozen value; the next item decides.
+	profile := Profile{Version: Version, Items: []Item{
+		{Key: KeyRtUncensored, Ranks: [][]string{{FlagTrue}}},
+		{Key: KeyRtResolution, Ranks: [][]string{{"1080p"}, {"720p"}}},
+	}}
+	better := subject(map[string][]string{KeyRtUncensored: {"false"}, KeyRtResolution: {"1080p"}}, nil, nil)
+	same := subject(map[string][]string{KeyRtUncensored: {"false"}, KeyRtResolution: {"720p"}}, nil, nil)
+	none := subject(map[string][]string{KeyRtResolution: {"720p"}}, nil, nil)
+	for name, other := range map[string]Subject{"both false": same, "no data": none} {
+		if result := Compare(better, other, profile); !result.Better || result.Decided != KeyRtResolution {
+			t.Fatalf("%s must tie and the next item decide: %+v", name, result)
+		}
 	}
 }

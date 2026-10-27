@@ -20,6 +20,8 @@ func registerVarsFacts() {
 		switch fact.Type {
 		case templatefacts.TypeInteger:
 			typ = Nullable(I64)
+		case templatefacts.TypeBoolean:
+			typ = Nullable(Bool)
 		case templatefacts.TypeString:
 			typ = Nullable(Text(1, 8192))
 		default:

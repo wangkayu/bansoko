@@ -722,7 +722,7 @@ var systemFacts = []Fact{
 
 // namespaceFacts registers the rt and anibt value namespaces, and the source
 // group identity namespaces, from the templatefacts field lists. Every field is
-// a nullable string: rt and anibt are nullable in every scenario that concerns
+// a nullable string (boolean rt fields: a nullable boolean): rt and anibt are nullable in every scenario that concerns
 // a release, and the source group identity fields are nullable in naming (the
 // scenario that reads them today). A reltitle field's value is the parser's
 // output; the tag dimensions and the group identity are stored values.
@@ -747,9 +747,24 @@ func namespaceFacts() []Fact {
 	} {
 		for _, field := range namespace.fields {
 			field, values, scenarios := field, namespace.values, namespace.scenarios
-			r := fact(namespace.root+"."+field.Name, TypeString, PhaseRelease, scenarios, scenarios,
+			kind, sample := TypeString, any(field.SampleValue)
+			get := func(f *FactSet) any { return values(f)[field.Key] }
+			if field.Type == TypeBoolean {
+				// A yes/no field is stored as "true"/"false"; absent is null.
+				kind, sample = TypeBoolean, field.SampleValue == "true"
+				get = func(f *FactSet) any {
+					switch values(f)[field.Key] {
+					case "true":
+						return true
+					case "false":
+						return false
+					}
+					return nil
+				}
+			}
+			r := fact(namespace.root+"."+field.Name, kind, PhaseRelease, scenarios, scenarios,
 				Text{namespace.label.ZH + " " + field.Label.ZH, namespace.label.EN + " " + field.Label.EN}, field.Text,
-				field.SampleValue, func(f *FactSet) any { return values(f)[field.Key] })
+				sample, get)
 			if namespace.parsed {
 				r = r.parsed()
 			}

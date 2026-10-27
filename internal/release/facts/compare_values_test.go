@@ -7,7 +7,7 @@ import (
 	"bansoko/internal/qualityprofile"
 )
 
-const compareSourceFacts = `{"identity_kind":"guid","identity_value":"g","anibt":{"schema":"anibt-rss-1.0","tags":["language:CHS","language:CHT","resolution:1080p","format:MKV","subtitle:INTERNAL"]},"title_tags":{"schema":"reltitle-attrs-v1","implementation":"reltitle@x","tags":["resolution:1080p","sub_lang:SC","sub_lang:TC","source_type:WEBRip","video_codec:HEVC"],"value_tags":["title:Show","group:Grp"]}}`
+const compareSourceFacts = `{"identity_kind":"guid","identity_value":"g","anibt":{"schema":"anibt-rss-1.0","tags":["language:CHS","language:CHT","resolution:1080p","format:MKV","subtitle:INTERNAL"]},"title_tags":{"schema":"reltitle-attrs-v1","implementation":"reltitle@x","tags":["resolution:1080p","sub_lang:SC","sub_lang:TC","sub_flag:soft","sub_flag:ex","source_type:WEBRip","video_codec:HEVC","content_rating:UNCENSORED"]}}`
 
 // Each namespace freezes only its own values (multi-valued fields split on
 // "+"), release.* from the title parse, and the subgroup source only for a
@@ -29,8 +29,10 @@ func TestCompareValuesFreezesEachNamespace(t *testing.T) {
 		qualityprofile.KeyAniBTSubtitle:     {"INTERNAL"},
 		qualityprofile.KeyRtResolution:      {"1080p"},
 		qualityprofile.KeyRtSubLang:         {"SC", "TC"},
+		qualityprofile.KeyRtSubFlag:         {"ex", "soft"},
 		qualityprofile.KeyRtSource:          {"WEBRip"},
 		qualityprofile.KeyRtCodec:           {"HEVC"},
+		qualityprofile.KeyRtUncensored:      {"true"},
 	}
 	if !reflect.DeepEqual(values.Values, want) {
 		t.Fatalf("values = %#v\nwant %#v", values.Values, want)
