@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	occupiedV1 = "0123456789abcdef0123456789abcdef01234567"
-	occupiedV2 = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+	occupiedV1     = "0123456789abcdef0123456789abcdef01234567"
+	occupiedSHA256 = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
 )
 
 // occupiedServer is a qB stub: tagged answers the operation-tag lookup,
@@ -69,12 +69,12 @@ func (s *occupiedServer) start(t *testing.T) *httptest.Server {
 func prepareOccupied(t *testing.T, server *httptest.Server) (*PreparedSubmission, domain.ProviderTask, bool, error) {
 	t.Helper()
 	return (Client{Endpoint: server.URL}).PrepareSubmission(context.Background(), []byte("payload"), "show.torrent",
-		domain.PathSnapshot{RemoteRoot: "/downloads"}, "occupied-key", []string{occupiedV1, occupiedV2})
+		domain.PathSnapshot{RemoteRoot: "/downloads"}, "occupied-key", []string{occupiedV1, occupiedSHA256})
 }
 
-func TestHashCandidatesCoverV1AndTruncatedV2(t *testing.T) {
-	got := HashCandidates(" "+strings.ToUpper(occupiedV1)+" ", occupiedV1, occupiedV2, "")
-	want := []string{occupiedV1, occupiedV2, occupiedV2[:40]}
+func TestHashCandidatesCoverBothHashFormsAndTheTruncatedForm(t *testing.T) {
+	got := HashCandidates(" "+strings.ToUpper(occupiedV1)+" ", occupiedV1, occupiedSHA256, "")
+	want := []string{occupiedV1, occupiedSHA256, occupiedSHA256[:40]}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("candidates=%v want %v", got, want)
 	}
@@ -90,7 +90,7 @@ func TestPrepareSubmissionRefusesHashHeldByAnotherTask(t *testing.T) {
 	if stub.adds != 0 {
 		t.Fatalf("an occupied hash still sent %d add requests", stub.adds)
 	}
-	if len(stub.hashQueries) != 1 || stub.hashQueries[0] != occupiedV1+"|"+occupiedV2+"|"+occupiedV2[:40] {
+	if len(stub.hashQueries) != 1 || stub.hashQueries[0] != occupiedV1+"|"+occupiedSHA256+"|"+occupiedSHA256[:40] {
 		t.Fatalf("hash queries=%v", stub.hashQueries)
 	}
 	if got := classifyProviderError(err); got != domain.ProviderErrorTerminal {
