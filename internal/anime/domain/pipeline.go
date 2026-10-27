@@ -140,25 +140,10 @@ func EvaluateFeedItemWithIdentity(item acquisitiondomain.FeedItem, source Source
 	}
 	result.ParsedFacts = &parsed
 
-	// The tag rows run before the regex release filter: the AniBT row (AniBT
-	// releases only), then the title-parse row (every release). All must pass
-	// and the first failing one is the recorded reason.
-	if code, detail := AniBTTagFilterReason(item, effective.TagFilters.Rules.Anibt); code != "" {
-		result.Verdict = ReleaseVerdict("filtered")
+	if code, detail := FeedFilterReason(item, effective); code != "" {
+		result.Verdict = ReleaseVerdictFiltered
 		result.ReasonCode = code
 		result.ReasonDetail = &detail
-		return result
-	}
-	if code, detail := TitleTagFilterReason(item, effective.TagFilters.Rules.Title); code != "" {
-		result.Verdict = ReleaseVerdict("filtered")
-		result.ReasonCode = code
-		result.ReasonDetail = &detail
-		return result
-	}
-	if reason := filterReason(item.Title, facts, effective.Rules.ReleaseFilter); reason != "" {
-		result.Verdict = ReleaseVerdict("filtered")
-		result.ReasonCode = "filtered_by_rules"
-		result.ReasonDetail = &reason
 		return result
 	}
 	if hold.Held {
@@ -201,8 +186,35 @@ func frozenEpisodeNamingFacts(identity episodeidentity.EpisodeIdentity) *naming.
 	return facts
 }
 
+// ReasonFilteredByRules is the reason of a release the keyword release
+// filter rejected; its detail names the failing rule.
+const ReasonFilteredByRules = "filtered_by_rules"
+
+// FeedFilterReason is the feed-layer filter of one release: the AniBT tag row
+// (AniBT releases only), then the title-parse tag row (every release), then
+// the keyword release filter. All must pass and the first failing one is the
+// returned reason; an empty code means the release passes this layer.
+//
+// It reads only facts the feed item itself carries (its title, its AniBT tag
+// set and its title tags), never a torrent fact, so its answer is final before
+// any .torrent is fetched: a refresh may skip the fetch of a release it
+// rejects, and an unexpanded RSS list row may show the rejection. A
+// filtered verdict from EvaluateFeedItemWithIdentity is exactly this decision.
+func FeedFilterReason(item acquisitiondomain.FeedItem, effective EffectiveConfig) (code, detail string) {
+	if code, detail := AniBTTagFilterReason(item, effective.TagFilters.Rules.Anibt); code != "" {
+		return code, detail
+	}
+	if code, detail := TitleTagFilterReason(item, effective.TagFilters.Rules.Title); code != "" {
+		return code, detail
+	}
+	if reason := filterReason(item.Title, effective.Rules.ReleaseFilter); reason != "" {
+		return ReasonFilteredByRules, reason
+	}
+	return "", ""
+}
+
 // filterReason uses the exact release title, independently of parsed facts.
-func filterReason(title string, _ acquisitiondomain.ParsedReleaseFacts, rules ReleaseFilterRules) string {
+func filterReason(title string, rules ReleaseFilterRules) string {
 	compiled, err := CompileRegexFilter(rules)
 	if err != nil {
 		return "release_filter_invalid"

@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	acquisitionapplication "bansoko/internal/acquisition/application"
+	"bansoko/internal/persistence/txscope"
 	"bansoko/internal/workitems"
 )
 
@@ -151,6 +153,93 @@ func TestStartBaselineItemsSkipTorrentFetchUntilRetry(t *testing.T) {
 	runDiscoveryRefresh(t, db, store, service, sourceID, "cache-second")
 	if fixture.count("1") != 1 || fixture.count("2") != 1 || fixture.count("3") != 0 {
 		t.Fatalf("second refresh torrent requests old=%d new=%d undated=%d", fixture.count("1"), fixture.count("2"), fixture.count("3"))
+	}
+}
+
+// A refresh never fetches the .torrent of an item the feed-layer filter
+// rejects: the filter reads the feed's own facts, so the Release is filtered
+// with the same reason without it, and a later refresh does not fetch it
+// either. Once a rules change lets the item through, its evaluation fetches the
+// torrent once and judges it with its file list, exactly as a fetched item.
+func TestFeedFilteredItemsSkipTorrentFetchUntilTheyPass(t *testing.T) {
+	db := openRSSDatabase(t)
+	ctx := context.Background()
+	sourceID, _ := seedRSSOwner(t, db, false, true)
+	store, err := workitems.NewStore(db, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setReleaseNotIn := func(notIn string) {
+		t.Helper()
+		filter, err := json.Marshal(map[string]any{"must_contain": "", "not_in": notIn})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, `
+UPDATE anime_config_overrides SET schema_version = 'release-rules-v1', value = $1
+WHERE managed_anime_id = 'anime-rss-test' AND section_name = 'release_rules'`, filter); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setReleaseNotIn("Show - 01")
+	fixture := newTorrentFixtureServer(t)
+	published := time.Now().UTC().Add(-time.Hour)
+	fixture.setItems(
+		fixture.item("guid-prefilter-1", 1, "1", "synthetic-key-a", published),
+		fixture.item("guid-prefilter-2", 2, "2", "synthetic-key-a", published),
+	)
+	service, err := newRSSService(t, db, store, fixture.fetcher())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runDiscoveryRefresh(t, db, store, service, sourceID, "prefilter-first")
+	if filtered, passed := fixture.count("1"), fixture.count("2"); filtered != 0 || passed != 1 {
+		t.Fatalf("torrent requests filtered=%d passed=%d, want 0/1", filtered, passed)
+	}
+	evaluateDueReleases(t, store, service)
+	filteredID, verdict, reason, task := releaseByKey(t, db, sourceID, "guid-prefilter-1")
+	if verdict != "filtered" || reason != "filtered_by_rules" || task {
+		t.Fatalf("feed-filtered release verdict=%s reason=%s task=%v, want filtered_by_rules", verdict, reason, task)
+	}
+	if _, verdict, _, task := releaseByKey(t, db, sourceID, "guid-prefilter-2"); verdict == "filtered" || !task {
+		t.Fatalf("passing release verdict=%s task=%v, want accepted", verdict, task)
+	}
+
+	runDiscoveryRefresh(t, db, store, service, sourceID, "prefilter-second")
+	if fixture.count("1") != 0 {
+		t.Fatalf("a later refresh fetched the filtered torrent %d times", fixture.count("1"))
+	}
+
+	// The rules change: the automatic evaluation fetches the torrent now.
+	setReleaseNotIn("")
+	var version int64
+	if err := db.QueryRowContext(ctx, `SELECT version FROM releases WHERE id = $1`, filteredID).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := CreateOrMergeReleaseEvaluation(ctx, txscope.Wrap(tx), store, filteredID, version, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	evaluateDueReleases(t, store, service)
+	if fixture.count("1") != 1 {
+		t.Fatalf("evaluation torrent requests = %d, want 1", fixture.count("1"))
+	}
+	if _, verdict, reason, task := releaseByKey(t, db, sourceID, "guid-prefilter-1"); verdict == "filtered" || !task || strings.HasPrefix(reason, "torrent_") {
+		t.Fatalf("re-evaluated release verdict=%s reason=%s task=%v, want accepted with its file list", verdict, reason, task)
+	}
+	var inputs int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM release_torrent_inputs WHERE release_id = $1`, filteredID).Scan(&inputs); err != nil {
+		t.Fatal(err)
+	}
+	if inputs != 1 {
+		t.Fatalf("evaluation stored %d torrent inputs, want 1", inputs)
 	}
 }
 

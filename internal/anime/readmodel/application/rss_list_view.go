@@ -334,7 +334,8 @@ const (
 	RSSListEvaluationNotSelected = "not_selected"
 	RSSListEvaluationUnavailable = "unavailable"
 	// RSSListEvaluationPending is the evaluation of a seed that was never
-	// expanded: the list runs neither the title parse nor the file filter for it.
+	// expanded and that the feed-layer filter did not reject: the list plans
+	// and renders nothing for it until it is expanded.
 	RSSListEvaluationPending = "pending"
 )
 const (
@@ -1189,24 +1190,18 @@ func (s *Service) composeRSSListViewFor(
 		for _, seed := range preview.Snapshot.Seeds {
 			manifest := preview.Manifests[seed.StableSeedKey]
 			item := rssListSeedItem(preview.Ref.SnapshotID, seed, manifest)
+			release, evaluated := releasesByKey[seed.StableSeedKey]
 			if manifest == nil {
-				// An unexpanded seed has no structure to evaluate, filter or render,
-				// so it takes the pending row instead of a verdict the server never
-				// computed.
-				group.Items = append(group.Items, rssListPendingItem(item, entry.selected, group.Feed))
+				// An unexpanded seed has no structure to plan or render, so it
+				// takes the pending row; only a feed-layer rejection, which reads
+				// the RSS facts alone and no torrent fact can change, is already
+				// its verdict.
+				code, detail := animedomain.FeedFilterReason(feedItemFromPreviewSeed(seed, preview.ItemProvider), effective)
+				group.Items = append(group.Items, rssListPendingItem(item, code, detail, entry.selected, group.Feed))
 				continue
 			}
-			if release, ok := releasesByKey[seed.StableSeedKey]; ok {
-				evaluation := RSSListEvaluation{
-					State:       RSSListEvaluationEvaluated,
-					Verdict:     string(release.Verdict),
-					ReasonCode:  release.ReasonCode,
-					ParsedFacts: release.ParsedFacts,
-				}
-				if release.ReasonDetail != nil {
-					evaluation.ReasonDetail = *release.ReasonDetail
-				}
-				item.Evaluation = evaluation
+			if evaluated {
+				item.Evaluation = rssListReleaseEvaluation(release)
 			} else {
 				item.Evaluation = RSSListEvaluation{State: RSSListEvaluationUnavailable}
 			}
@@ -1627,14 +1622,38 @@ func seedAniBTTags(stored *acquisitiondomain.StoredAniBTTags) *[]string {
 	return &tags
 }
 
+// rssListReleaseEvaluation is the evaluated verdict of one seed's release.
+func rssListReleaseEvaluation(release animedomain.PreviewReleaseResult) RSSListEvaluation {
+	evaluation := RSSListEvaluation{
+		State:       RSSListEvaluationEvaluated,
+		Verdict:     string(release.Verdict),
+		ReasonCode:  release.ReasonCode,
+		ParsedFacts: release.ParsedFacts,
+	}
+	if release.ReasonDetail != nil {
+		evaluation.ReasonDetail = *release.ReasonDetail
+	}
+	return evaluation
+}
+
 // rssListPendingItem completes the row of a seed the server has not expanded.
-// Nothing is evaluated, filtered or rendered — there is no structure to judge it
-// against — so the row keeps only the RSS-native facts above. Pending is the
-// absence of an answer rather than a failure, and the download action names the
-// expansion as the step that must happen first while still delivering nothing
-// itself (kind none).
-func rssListPendingItem(item RSSListItem, selected bool, feed RSSListFeedStatus) RSSListItem {
+// Nothing is planned or rendered — there is no structure to judge it against —
+// so the row keeps only the RSS-native facts above and lists no file. Pending
+// is the absence of an answer rather than a failure, and the download action
+// names the expansion as the step that must happen first while still
+// delivering nothing itself (kind none).
+//
+// The one exception is a seed the feed-layer filter (AniBT tag row, title tag
+// row, keyword filter) rejected: that decision reads only the RSS facts the
+// row already carries, it is the same decision (animedomain.FeedFilterReason)
+// the evaluation of an expanded seed and the subscription pipeline make, and
+// no torrent fact can turn it around. The row is evaluated as filtered with
+// its reason while its torrent stays pending, so it can still be expanded.
+func rssListPendingItem(item RSSListItem, filterCode, filterDetail string, selected bool, feed RSSListFeedStatus) RSSListItem {
 	item.Evaluation = RSSListEvaluation{State: RSSListEvaluationPending}
+	if filterCode != "" {
+		item.Evaluation = RSSListEvaluation{State: RSSListEvaluationEvaluated, Verdict: string(animedomain.ReleaseVerdictFiltered), ReasonCode: filterCode, ReasonDetail: filterDetail}
+	}
 	item.DownloadAction = rssListDownloadAction(selected, feed, item)
 	return item
 }

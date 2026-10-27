@@ -66,6 +66,13 @@ func (s *Service) handleReleaseEvaluate(ctx context.Context, claim workitems.Cla
 	if snapshot.subscriptionState == string(subscriptiondomain.SubscriptionPending) {
 		return worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: "ready", ReasonCode: string(subscriptiondomain.SourceRefreshSubscriptionPending)}, nil), nil
 	}
+	// A refresh does not fetch the torrent of an item the feed-layer filter
+	// rejects; once the item passes (a rules change), it is fetched here so
+	// the evaluation judges it with its file list.
+	claim, snapshot, err = s.ensureEvaluationTorrentInput(ctx, claim, snapshot)
+	if err != nil {
+		return worker.Outcome{}, err
+	}
 	return s.evaluateRelease(ctx, claim, snapshot)
 }
 

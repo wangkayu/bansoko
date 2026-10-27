@@ -73,7 +73,7 @@ func (s *Service) resolveSearchSnapshotProjection(
 		selectionMode: string(animedomain.SelectionModeAuto),
 		offset:        oneShotOffset(previewOffset),
 	}
-	return []providerGroupPreview{{Ref: ref, GroupName: entry.displayName, Snapshot: snapshot, Items: items, Manifests: manifests}}, []rssListGroupEntry{entry}, nil
+	return []providerGroupPreview{{Ref: ref, GroupName: entry.displayName, Snapshot: snapshot, Items: items, Manifests: manifests, ItemProvider: string(ref.Provider)}}, []rssListGroupEntry{entry}, nil
 }
 
 // searchSeedManifests mirrors expandedSeedManifests over a search snapshot: the

@@ -57,3 +57,43 @@ func TestHTTPAniBTRSSFetcherLegacyFeedYieldsEmptyTags(t *testing.T) {
 		t.Fatalf("legacy item = %#v", items)
 	}
 }
+
+// The provider and the structured tags are feed facts: the refresh's pre-fetch
+// hook already sees them, so it can judge an item by the AniBT tag row before
+// its .torrent is fetched. The source facts, which carry the torrent's
+// identity, are still built after the fetch.
+func TestHTTPAniBTRSSFetcherTagsItemsBeforeTheTorrentFetch(t *testing.T) {
+	payload, err := os.ReadFile("../domain/testdata/anibt-rss-1.0.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/rss+xml")
+		_, _ = w.Write(payload)
+	}))
+	defer server.Close()
+	var seen []domain.FeedItem
+	exchange := &FeedExchange{ReuseTorrentMetadata: func(item domain.FeedItem) (domain.FeedItem, bool) {
+		seen = append(seen, item)
+		return item, true
+	}}
+	fetcher := HTTPAniBTRSSFetcher{Endpoint: server.URL, AllowPrivateHosts: []string{"127.0.0.1"}, TorrentReader: HTTPTorrentMetadataReader{AllowPrivateHosts: []string{"127.0.0.1"}}}
+	items, err := fetcher.FetchAnime(WithFeedExchange(context.Background(), exchange), "517057", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) == 0 || len(seen) != len(items) {
+		t.Fatalf("pre-fetch hook saw %d items, fetch returned %d", len(seen), len(items))
+	}
+	for index, item := range seen {
+		if item.Provider != "anibt" || item.AniBTTags == nil {
+			t.Fatalf("pre-fetch item %q provider=%q tags=%v, want the AniBT feed facts", item.Title, item.Provider, item.AniBTTags)
+		}
+		if !reflect.DeepEqual(item.AniBTTags, items[index].AniBTTags) {
+			t.Fatalf("pre-fetch tags %v differ from the fetched item's %v", item.AniBTTags, items[index].AniBTTags)
+		}
+		if len(items[index].SourceFacts) == 0 {
+			t.Fatalf("fetched item %q lost its source facts", items[index].Title)
+		}
+	}
+}

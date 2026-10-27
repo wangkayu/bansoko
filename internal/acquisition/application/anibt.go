@@ -112,18 +112,24 @@ func (f HTTPAniBTRSSFetcher) FetchAnimeDetailed(ctx context.Context, bgmID, grou
 	if err != nil {
 		return RSSFetchResult{}, fmt.Errorf("parse AniBT RSS source: %w", err)
 	}
-	items, err := enrichFeedItemsWithTorrentMetadata(ctx, parsed.Items, f.TorrentReader)
-	if err != nil {
-		return RSSFetchResult{}, err
-	}
-	for index := range items {
-		item := &items[index]
+	// The provider and the structured tags are feed facts, set before any
+	// .torrent is fetched so the refresh's pre-fetch hook can judge the item
+	// by the feed-layer filter exactly as its evaluation will.
+	for index := range parsed.Items {
+		item := &parsed.Items[index]
 		item.Provider = "anibt"
 		// The structured tags are source facts of this release. A legacy or
 		// tag-less item yields an empty set plus a diagnostic, never an error.
 		tags := domain.ExtractAniBTTags(item.Extensions)
 		item.AniBTTags = &tags
-		item.SourceFacts = anibtSourceFacts(*item, groupSlug)
+	}
+	items, err := enrichFeedItemsWithTorrentMetadata(ctx, parsed.Items, f.TorrentReader)
+	if err != nil {
+		return RSSFetchResult{}, err
+	}
+	for index := range items {
+		// The source facts carry the torrent's identity and size.
+		items[index].SourceFacts = anibtSourceFacts(items[index], groupSlug)
 	}
 	parsed.Items = items
 	return RSSFetchResult{Items: items, Parse: parsed}, nil

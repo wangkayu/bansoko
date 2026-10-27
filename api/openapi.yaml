@@ -7736,8 +7736,12 @@ components:
         The parsed and filtered verdict of one seed, with the exact parser
         evidence that produced it. It is computed once from the frozen config
         and snapshot identity; a later read never re-interprets it. pending is
-        the evaluation of a seed that was never expanded: neither the title
-        parse nor the file filter ran for it.
+        the evaluation of a seed that was never expanded: nothing is planned or
+        rendered for it. The exception is a seed the RSS-layer filter (the
+        AniBT tag row, the title tag row and the keyword release filter)
+        rejects: that filter reads only the seed's own RSS facts, so an
+        unexpanded seed it rejects is already evaluated with verdict filtered
+        and its reason while its torrent state stays pending.
       properties:
         state:
           type: string

@@ -55,5 +55,5 @@ func (s *Service) resolveCustomSnapshotProjectionFor(ctx context.Context, config
 		return nil, nil, err
 	}
 	items := expandedFeedItems(snapshot, manifests, "custom")
-	return []providerGroupPreview{{Ref: ref, GroupName: strings.TrimSpace(source.GroupName), Snapshot: snapshot, Items: items, Manifests: manifests}}, []rssListGroupEntry{entry}, nil
+	return []providerGroupPreview{{Ref: ref, GroupName: strings.TrimSpace(source.GroupName), Snapshot: snapshot, Items: items, Manifests: manifests, ItemProvider: "custom"}}, []rssListGroupEntry{entry}, nil
 }

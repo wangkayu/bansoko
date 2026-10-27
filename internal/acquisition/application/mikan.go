@@ -106,13 +106,17 @@ func (f HTTPMikanRSSFetcher) FetchAnimeDetailed(ctx context.Context, bangumiID, 
 	if err != nil {
 		return RSSFetchResult{}, fmt.Errorf("parse Mikan RSS source: %w", err)
 	}
+	// The provider is a feed fact, set before any .torrent is fetched so the
+	// refresh's pre-fetch hook sees the item its evaluation will.
+	for index := range parsed.Items {
+		parsed.Items[index].Provider = "mikan"
+	}
 	items, err := enrichFeedItemsWithTorrentMetadata(ctx, parsed.Items, f.TorrentReader)
 	if err != nil {
 		return RSSFetchResult{}, err
 	}
 	for index := range items {
 		item := &items[index]
-		item.Provider = "mikan"
 		observedAt := item.Published
 		if observedAt.IsZero() {
 			observedAt = time.Now().UTC()
