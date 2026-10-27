@@ -81,9 +81,20 @@ func (s *Service) typedSubmit(ctx context.Context, c workitems.Claim) (worker.Ou
 	if !ok {
 		return fail("qb_submission_preparer_required", errors.New("qB provider lacks prepared submission support"), false)
 	}
-	prepared, existing, found, err := preparer.PrepareSubmission(ctx, payload.Payload, payload.Filename, *frozen, c.IdempotencyKey)
+	adoption := input.AdoptionProvenance != nil && input.AdoptionProvenance.Kind == "unique_infohash_path" && strings.TrimSpace(input.AdoptionProvenance.ProviderInfoHash) != ""
+	// Owner ruling 2026-10-27: a torrent qB already holds under another task
+	// (another owner, an earlier one-shot still seeding, a task the user added)
+	// is not submitted again; the submission fails with an explicit reason.
+	// Cross-owner adoption is the one path that deliberately targets such a
+	// task, so it skips the check.
+	var occupancyHashes []string
+	if !adoption {
+		occupancyHashes = frozenInfoHashCandidates(input)
+	}
+	prepared, existing, found, err := preparer.PrepareSubmission(ctx, payload.Payload, payload.Filename, *frozen, c.IdempotencyKey, occupancyHashes)
 	if err != nil {
-		return fail("qb_submit_prepare_failed", err, s.provider.ClassifyProviderError(err) != domain.ProviderErrorTerminal)
+		code, retry := prepareFailure(err, s.provider.ClassifyProviderError(err))
+		return fail(code, err, retry)
 	}
 	// Cross-owner adoption: acceptance matched exactly one retained provider
 	// task by info hash under the frozen save roots (unique_infohash_path) and
@@ -91,7 +102,7 @@ func (s *Service) typedSubmit(ctx context.Context, c workitems.Claim) (worker.Ou
 	// find that task (it carries the earlier owner's tag), so the submit adopts
 	// it by the frozen hash instead of adding the same torrent again, which qB
 	// refuses and which would leave the effect unknown.
-	if !found && input.AdoptionProvenance != nil && input.AdoptionProvenance.Kind == "unique_infohash_path" && strings.TrimSpace(input.AdoptionProvenance.ProviderInfoHash) != "" {
+	if !found && adoption {
 		lookup, ok := s.provider.(interface {
 			LookupByInfoHashesWithSnapshot(context.Context, []string, domain.PathSnapshot) (domain.ProviderTask, bool, error)
 		})
@@ -162,6 +173,13 @@ func (s *Service) typedSubmit(ctx context.Context, c workitems.Claim) (worker.Ou
 		if err != nil || !result.Accepted {
 			effect = "unknown"
 		}
+		// A refused add whose torrent another task holds is a closed channel
+		// with no external effect: qB keeps one task per hash and created none.
+		if submitRefusedAsOccupied(result, err) {
+			effect = "no_external_effect"
+			closed = `{"kind":"channel_closed"}`
+			resolution = `{"kind":"provider_refused_hash_occupied"}`
+		}
 	}
 	observation := map[string]any{}
 	if effect == "confirmed" {
@@ -181,6 +199,9 @@ func (s *Service) typedSubmit(ctx context.Context, c workitems.Claim) (worker.Ou
 	if err != nil {
 		observation["error"] = redactProviderError(err)
 	}
+	// The transaction below reuses err; keep the provider's refusal for the
+	// occupied failure detail.
+	submitErr := err
 	raw, _ := json.Marshal(observation)
 	err = s.workItems.WithTypedStageTransaction(ctx, c, func(scope txscope.Tx) (workitems.EffectDisposition, error) {
 		var reply []byte
@@ -196,10 +217,39 @@ func (s *Service) typedSubmit(ctx context.Context, c workitems.Claim) (worker.Ou
 	if err != nil {
 		return worker.Outcome{}, fmt.Errorf("record submission receipt: %w", err)
 	}
+	if effect == "no_external_effect" {
+		// The receipt made the slot retry-safe, so the attempt closes like an
+		// unstarted one: failed with the explicit reason, never re-sent.
+		detail := ""
+		if submitErr != nil {
+			detail = safeReason(submitErr.Error())
+		}
+		return s.finishUnstartedSubmission(ctx, c, task, session, ReasonDownloaderHashOccupied, detail, false)
+	}
 	if effect != "confirmed" {
 		return worker.AwaitRecovery("qb_submit_effect_unknown"), nil
 	}
 	return s.finishTypedSubmission(ctx, c, task, session, permit, observed, config.ConnectionID)
+}
+
+// ReasonDownloaderHashOccupied is the failure code of a submission refused
+// because qB already holds a task for the same torrent under another tag.
+const ReasonDownloaderHashOccupied = "downloader_hash_occupied"
+
+// prepareFailure maps a prepare-stage provider error to the task failure code
+// and whether the attempt may be retried within its budget.
+func prepareFailure(err error, class domain.ProviderErrorClass) (string, bool) {
+	if errors.Is(err, qbittorrent.ErrHashOccupied) {
+		return ReasonDownloaderHashOccupied, false
+	}
+	return "qb_submit_prepare_failed", class != domain.ProviderErrorTerminal
+}
+
+// submitRefusedAsOccupied reports a dispatched add that qB answered (so the
+// channel is closed) with a refusal the client attributed to another task
+// holding the same torrent.
+func submitRefusedAsOccupied(result qbittorrent.SubmissionResult, err error) bool {
+	return err != nil && result.ResponseReceived && !result.Accepted && errors.Is(err, qbittorrent.ErrHashOccupied)
 }
 
 func (s *Service) finishUnstartedSubmission(ctx context.Context, c workitems.Claim, task taskSnapshot, session, code, reason string, retry bool) (worker.Outcome, error) {

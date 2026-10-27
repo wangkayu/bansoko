@@ -701,7 +701,7 @@ var systemFacts = []Fact{
 		"file_operation_completed", func(f *FactSet) any { return f.Result.Reason }).derived().
 		with(ScenarioFileFailed, "目标文件已存在"),
 	fact("result.category", TypeString, PhaseExecution, ScenarioDownloadFailed, 0,
-		Text{"失败类别", "Failure category"}, Text{"stalled（停滞）、timeout（超时）、client（下载客户端报错）、unobservable（无法读取状态）或 submit（提交失败）。", "stalled, timeout, client (the download client reported an error), unobservable (status could not be read) or submit (submission failed)."},
+		Text{"失败类别", "Failure category"}, Text{"stalled（停滞）、timeout（超时）、client（下载客户端报错）、unobservable（无法读取状态）、occupied（下载器中已有同一种子的任务）或 submit（提交失败）。", "stalled, timeout, client (the download client reported an error), unobservable (status could not be read), occupied (the download client already has a task for this torrent) or submit (submission failed)."},
 		"stalled", func(f *FactSet) any { return f.Result.Category }).derived(),
 	fact("result.retryable", TypeBoolean, PhaseExecution, ScenarioDownloadFailed, 0,
 		Text{"可重试", "Retryable"}, Text{"能否在 RSS 页面重试这个发布。", "Whether the release can be retried from the RSS page."},

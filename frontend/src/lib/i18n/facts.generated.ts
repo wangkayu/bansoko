@@ -313,7 +313,7 @@ export const factsCopy = {
   result: {
     category: {
       label: "失败类别",
-      description: "派生值：stalled（停滞）、timeout（超时）、client（下载客户端报错）、unobservable（无法读取状态）或 submit（提交失败）。",
+      description: "派生值：stalled（停滞）、timeout（超时）、client（下载客户端报错）、unobservable（无法读取状态）、occupied（下载器中已有同一种子的任务）或 submit（提交失败）。",
     },
     outcome: {
       label: "结果",
@@ -760,7 +760,7 @@ export const enFactsCopy = {
   result: {
     category: {
       label: "Failure category",
-      description: "Derived: stalled, timeout, client (the download client reported an error), unobservable (status could not be read) or submit (submission failed).",
+      description: "Derived: stalled, timeout, client (the download client reported an error), unobservable (status could not be read), occupied (the download client already has a task for this torrent) or submit (submission failed).",
     },
     outcome: {
       label: "Outcome",

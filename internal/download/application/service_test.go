@@ -41,6 +41,11 @@ type fakeProvider struct {
 	lookupCalls        int
 	fileSubmitCalls    int
 	syncCalls          int
+	// hashInfo answers successive qB hash lookups (the last one repeats);
+	// addStatus/addBody, when set, replace the accepted add response.
+	hashInfo  []string
+	addStatus int
+	addBody   string
 }
 
 type fakeSubmissionTransport struct {
@@ -56,7 +61,14 @@ func (r fakeSubmissionTransport) RoundTrip(req *http.Request) (*http.Response, e
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("Ok.")), Header: make(http.Header)}, nil
 	}
 	if strings.HasSuffix(req.URL.Path, "/torrents/info") {
-		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("[]")), Header: make(http.Header)}, nil
+		answer := "[]"
+		if req.URL.Query().Get("hashes") != "" && len(r.provider.hashInfo) > 0 {
+			answer = r.provider.hashInfo[0]
+			if len(r.provider.hashInfo) > 1 {
+				r.provider.hashInfo = r.provider.hashInfo[1:]
+			}
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(answer)), Header: make(http.Header)}, nil
 	}
 	if !strings.HasSuffix(req.URL.Path, "/torrents/add") {
 		return nil, errors.New("unexpected prepared submission request")
@@ -65,16 +77,19 @@ func (r fakeSubmissionTransport) RoundTrip(req *http.Request) (*http.Response, e
 	if err != nil {
 		return nil, err
 	}
+	if r.provider.addStatus != 0 {
+		return &http.Response{StatusCode: r.provider.addStatus, Body: io.NopCloser(strings.NewReader(r.provider.addBody)), Header: make(http.Header)}, nil
+	}
 	return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("Ok.")), Header: make(http.Header)}, nil
 }
 
-func (p *fakeProvider) PrepareSubmission(ctx context.Context, payload []byte, filename string, snapshot domain.PathSnapshot, key string) (*qbittorrent.PreparedSubmission, domain.ProviderTask, bool, error) {
+func (p *fakeProvider) PrepareSubmission(ctx context.Context, payload []byte, filename string, snapshot domain.PathSnapshot, key string, hashes []string) (*qbittorrent.PreparedSubmission, domain.ProviderTask, bool, error) {
 	observed, found, err := p.LookupByOperationKey(ctx, key)
 	if err != nil || found {
 		return nil, observed, found, err
 	}
 	client := qbittorrent.Client{Endpoint: "http://qb.example:8080", HTTP: &http.Client{Transport: fakeSubmissionTransport{p, append([]byte(nil), payload...), filename, snapshot, key}}}
-	return client.PrepareSubmission(ctx, payload, filename, snapshot, key)
+	return client.PrepareSubmission(ctx, payload, filename, snapshot, key, hashes)
 }
 
 func (p *fakeProvider) LookupByOperationKey(context.Context, string) (domain.ProviderTask, bool, error) {

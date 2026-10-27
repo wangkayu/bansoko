@@ -40,6 +40,13 @@ var ErrPathSnapshotChanged = errors.New("qBittorrent path snapshot changed")
 
 var ErrLookupAmbiguous = errors.New("multiple qBittorrent tasks match frozen admission facts")
 
+// ErrHashOccupied means qBittorrent already holds a task with the same info
+// hash that does not carry this submission's operation tag. qBittorrent keeps
+// one task per info hash, so adding the torrent again cannot succeed; the
+// submission is refused instead of being sent (or, when the add was already
+// sent and refused, the refusal is attributed to that task).
+var ErrHashOccupied = errors.New("the download client already has a task for this torrent")
+
 // NormalizeEvidencePath canonicalizes one provider-reported content path with
 // the same rules as the frozen snapshot roots: no parent-traversal segments,
 // no control characters, absolute only. An empty input stays representable as
@@ -401,6 +408,9 @@ func classifyProviderError(err error) domain.ProviderErrorClass {
 	}
 	if errors.Is(err, ErrPathSnapshotChanged) {
 		return domain.ProviderErrorRetryable
+	}
+	if errors.Is(err, ErrHashOccupied) {
+		return domain.ProviderErrorTerminal
 	}
 	message := strings.ToLower(err.Error())
 	for _, terminal := range []string{"invalid", "required", "unsupported", "authentication", "credentials", "multiple qbittorrent tasks", "http 400", "http 401", "http 403"} {
@@ -1214,6 +1224,77 @@ func (c Client) findTorrents(ctx context.Context, client *http.Client, query str
 		return torrents[i].Hash > torrents[j].Hash
 	})
 	return torrents[0], true, nil
+}
+
+// HashCandidates normalizes frozen info hashes into the qB task identities to
+// query: lower-case, de-duplicated, and for a v2 hash also its first 40 hex
+// digits. qBittorrent names a task by its v1 info hash when the torrent has one
+// (v1 and hybrid torrents) and by the SHA-256 v2 info hash truncated to 40 hex
+// digits otherwise (pure v2), so the v1 hash and the truncated v2 hash together
+// cover every torrent version.
+func HashCandidates(hashes ...string) []string {
+	result := make([]string, 0, len(hashes)+1)
+	seen := make(map[string]struct{}, len(hashes)+1)
+	add := func(value string) {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value == "" {
+			return
+		}
+		if _, exists := seen[value]; exists {
+			return
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	for _, value := range hashes {
+		add(value)
+		if trimmed := strings.TrimSpace(value); len(trimmed) == 64 {
+			add(trimmed[:40])
+		}
+	}
+	return result
+}
+
+// hashOccupied reports whether qB already holds a task for one of the hashes
+// that does not carry the operation tag. A task carrying the tag is this
+// submission's own task and never counts as occupation.
+func (c Client) hashOccupied(ctx context.Context, client *http.Client, hashes []string, tag string) (bool, error) {
+	if len(hashes) == 0 {
+		return false, nil
+	}
+	endpoint := strings.TrimRight(c.Endpoint, "/") + "/api/v2/torrents/info?hashes=" + url.QueryEscape(strings.Join(hashes, "|"))
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return false, fmt.Errorf("create qB hash lookup request: %w", err)
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return false, fmt.Errorf("request qB hash lookup: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return false, fmt.Errorf("qB hash lookup failed with HTTP %d", response.StatusCode)
+	}
+	var torrents []TorrentInfo
+	if err := json.NewDecoder(response.Body).Decode(&torrents); err != nil {
+		return false, fmt.Errorf("decode qB hash lookup: %w", err)
+	}
+	for _, item := range torrents {
+		if !hasTag(item.Tags, tag) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// hasTag reads qB's comma-separated tag list ("a, b").
+func hasTag(tags, tag string) bool {
+	for _, value := range strings.Split(tags, ",") {
+		if strings.TrimSpace(value) == tag {
+			return true
+		}
+	}
+	return false
 }
 
 func (c Client) artifactFiles(ctx context.Context, client *http.Client, item TorrentInfo) ([]domain.ProviderFile, error) {

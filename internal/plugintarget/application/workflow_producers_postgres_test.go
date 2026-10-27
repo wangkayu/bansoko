@@ -141,6 +141,8 @@ func TestDownloadFailureCategoryMapsTypedCodes(t *testing.T) {
 		"qb_provider_failed":               "client",
 		"SYNC_ERROR_BUDGET_EXHAUSTED":      "unobservable",
 		"DOWNLOAD_OBSERVATION_UNAVAILABLE": "unobservable",
+		"downloader_hash_occupied":         "occupied",
+		"qb_submit_prepare_failed":         "submit",
 		"QB_SUBMIT_REJECTED":               "submit",
 	} {
 		var got string

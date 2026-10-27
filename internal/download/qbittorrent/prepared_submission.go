@@ -26,6 +26,11 @@ type PreparedSubmission struct {
 	contentType string
 	snapshot    domain.PathSnapshot
 	tag         string
+	// lookup re-reads the frozen hashes after a refused add so the refusal of a
+	// torrent another task already holds is attributed to that task.
+	lookup *http.Client
+	qb     Client
+	hashes []string
 }
 
 type SubmissionResult struct {
@@ -35,19 +40,24 @@ type SubmissionResult struct {
 	StatusCode       int
 }
 
+// SubmissionPreparer prepares one frozen add. hashes are the frozen info hashes
+// of the payload (HashCandidates form); when non-empty, a task already holding
+// one of them without the operation tag refuses the submission with
+// ErrHashOccupied before any add is sent. An empty list skips that check (the
+// cross-owner adoption path, which submits nothing).
 type SubmissionPreparer interface {
-	PrepareSubmission(context.Context, []byte, string, domain.PathSnapshot, string) (*PreparedSubmission, domain.ProviderTask, bool, error)
+	PrepareSubmission(context.Context, []byte, string, domain.PathSnapshot, string, []string) (*PreparedSubmission, domain.ProviderTask, bool, error)
 }
 
-func (c ConfiguredClient) PrepareSubmission(ctx context.Context, payload []byte, filename string, snapshot domain.PathSnapshot, key string) (*PreparedSubmission, domain.ProviderTask, bool, error) {
+func (c ConfiguredClient) PrepareSubmission(ctx context.Context, payload []byte, filename string, snapshot domain.PathSnapshot, key string, hashes []string) (*PreparedSubmission, domain.ProviderTask, bool, error) {
 	client, err := c.clientForSnapshot(ctx, snapshot)
 	if err != nil {
 		return nil, domain.ProviderTask{}, false, err
 	}
-	return client.PrepareSubmission(ctx, payload, filename, snapshot, key)
+	return client.PrepareSubmission(ctx, payload, filename, snapshot, key, hashes)
 }
 
-func (c Client) PrepareSubmission(ctx context.Context, payload []byte, filename string, snapshot domain.PathSnapshot, key string) (*PreparedSubmission, domain.ProviderTask, bool, error) {
+func (c Client) PrepareSubmission(ctx context.Context, payload []byte, filename string, snapshot domain.PathSnapshot, key string, hashes []string) (*PreparedSubmission, domain.ProviderTask, bool, error) {
 	normalized, err := NormalizePathSnapshot(snapshot)
 	if err != nil {
 		return nil, domain.ProviderTask{}, false, err
@@ -70,6 +80,14 @@ func (c Client) PrepareSubmission(ctx context.Context, payload []byte, filename 
 	}
 	if found {
 		return nil, c.providerTaskWithSnapshot(ctx, client, "tag:"+tag, item, &normalized), true, nil
+	}
+	hashes = HashCandidates(hashes...)
+	occupied, err := c.hashOccupied(ctx, client, hashes, tag)
+	if err != nil {
+		return nil, domain.ProviderTask{}, false, err
+	}
+	if occupied {
+		return nil, domain.ProviderTask{}, false, ErrHashOccupied
 	}
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -94,7 +112,7 @@ func (c Client) PrepareSubmission(ctx context.Context, payload []byte, filename 
 	}
 	mutationClient := *client
 	mutationClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return &PreparedSubmission{client: &mutationClient, endpoint: strings.TrimRight(c.Endpoint, "/") + "/api/v2/torrents/add", body: body.Bytes(), contentType: writer.FormDataContentType(), snapshot: normalized, tag: tag}, domain.ProviderTask{}, false, nil
+	return &PreparedSubmission{client: &mutationClient, endpoint: strings.TrimRight(c.Endpoint, "/") + "/api/v2/torrents/add", body: body.Bytes(), contentType: writer.FormDataContentType(), snapshot: normalized, tag: tag, lookup: client, qb: c, hashes: hashes}, domain.ProviderTask{}, false, nil
 }
 
 func (p *PreparedSubmission) Execute(ctx context.Context) (SubmissionResult, error) {
@@ -124,6 +142,16 @@ func (p *PreparedSubmission) Execute(ctx context.Context) (SubmissionResult, err
 		return result, err
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 || strings.TrimSpace(string(body)) != "Ok." {
+		// qB refuses a torrent it already holds (4.x: 200 "Fails.", 5.x: 409).
+		// Only those two refusals are attributed to occupation, and only when a
+		// re-read finds a task for the frozen hashes without this submission's
+		// tag; any other answer, or a failed re-read, stays an ordinary failure.
+		refused := (response.StatusCode == http.StatusOK && strings.TrimSpace(string(body)) == "Fails.") || response.StatusCode == http.StatusConflict
+		if refused && p.lookup != nil && len(p.hashes) > 0 {
+			if occupied, lookupErr := p.qb.hashOccupied(ctx, p.lookup, p.hashes, p.tag); lookupErr == nil && occupied {
+				return result, fmt.Errorf("%w (add refused with HTTP %d)", ErrHashOccupied, response.StatusCode)
+			}
+		}
 		return result, fmt.Errorf("qB task submission failed with HTTP %d", response.StatusCode)
 	}
 	result.Accepted = true
