@@ -43,22 +43,46 @@ func TestCleanupPurgeAfterBusyHopInterruptedBeforeSettleRecoversDeleted(t *testi
 	if state, _ := f.state(t, op.ID); state != CleanupAdmitted {
 		t.Fatalf("state=%s before settlement, want admitted", state)
 	}
-	if err := f.db.QueryRow(`SELECT expected_owner_version FROM work_items WHERE id = $1`, claim.ID).Scan(&claim.ExpectedOwnerVersion); err != nil {
-		t.Fatal(err)
-	}
-	recovered, err := handler.(worker.RecoveryObserver).ObserveRecovery(ctx, claim)
-	if err != nil {
-		t.Fatal(err)
-	}
+	recovered := f.recoverInterrupted(t, claim)
 	if recovered.Kind != worker.OutcomeFinish || recovered.OwnerResult.State != string(CleanupDeleted) || recovered.Disposition != workitems.DispositionConfirmed {
 		t.Fatalf("recovery outcome = %+v, want confirmed deleted", recovered)
-	}
-	if err := f.store.SettleRecovery(ctx, claim, recovered.TerminalState, recovered.OwnerResult, recovered.Disposition, recovered.WriteOwner, recovered.PostTransition); err != nil {
-		t.Fatal(err)
 	}
 	if state, _ := f.state(t, op.ID); state != CleanupDeleted {
 		t.Fatalf("state=%s, want deleted", state)
 	}
+}
+
+// recoverInterrupted takes a claim whose process stopped before its
+// settlement committed through worker recovery: the generation is fenced as
+// effect_unknown, its lease runs out, the recovery claim observes the owner
+// and the receipts, and the observed outcome is settled.
+func (f busyFixture) recoverInterrupted(t *testing.T, interrupted workitems.Claim) worker.Outcome {
+	t.Helper()
+	ctx := context.Background()
+	if err := f.store.BlockRecovery(ctx, interrupted, "effect_unknown"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workItemFixtureDB(t).Exec(`UPDATE work_items SET lease_until = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE id = $1`, interrupted.ID); err != nil {
+		t.Fatal(err)
+	}
+	claim, err := f.store.ClaimRecovery(ctx, []string{workitems.KindReplacementDelete}, time.Minute)
+	if err != nil {
+		t.Fatalf("claim recovery: %v", err)
+	}
+	if claim.ID != interrupted.ID {
+		t.Fatalf("recovery claimed %s, want %s", claim.ID, interrupted.ID)
+	}
+	recovered, err := f.service.DeleteHandler().(worker.RecoveryObserver).ObserveRecovery(ctx, claim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.Kind != worker.OutcomeFinish {
+		return recovered
+	}
+	if err := f.store.SettleRecovery(ctx, claim, recovered.TerminalState, recovered.OwnerResult, recovered.Disposition, recovered.WriteOwner, recovered.PostTransition); err != nil {
+		t.Fatalf("settle recovery: %v", err)
+	}
+	return recovered
 }
 
 // cleanupNamespace is the deletion's private namespace beside the file.
@@ -348,18 +372,9 @@ func TestCleanupRestoreInterruptedBeforeSettleRecovers(t *testing.T) {
 	if state, _ := f.state(t, op.ID); state != CleanupAdmitted {
 		t.Fatalf("state=%s before settlement, want admitted", state)
 	}
-	if err := f.db.QueryRow(`SELECT expected_owner_version FROM work_items WHERE id = $1`, claim.ID).Scan(&claim.ExpectedOwnerVersion); err != nil {
-		t.Fatal(err)
-	}
-	recovered, err := handler.(worker.RecoveryObserver).ObserveRecovery(ctx, claim)
-	if err != nil {
-		t.Fatal(err)
-	}
+	recovered := f.recoverInterrupted(t, claim)
 	if recovered.Kind != worker.OutcomeFinish || recovered.OwnerResult.State != string(CleanupFailed) {
 		t.Fatalf("recovery outcome = %+v, want failed", recovered)
-	}
-	if err := f.store.SettleRecovery(ctx, claim, recovered.TerminalState, recovered.OwnerResult, recovered.Disposition, recovered.WriteOwner, recovered.PostTransition); err != nil {
-		t.Fatal(err)
 	}
 	if state, _ := f.state(t, op.ID); state != CleanupFailed {
 		t.Fatalf("state=%s, want failed", state)
