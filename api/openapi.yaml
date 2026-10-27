@@ -4837,6 +4837,15 @@ paths:
       tags: [Plugins]
       operationId: testPluginTarget
       x-scope: write
+      x-mcp:
+        tool: test_plugin_target
+        group: configuration
+        write: true
+        idempotent: false
+        description: >-
+          Send a real test notification through one target so the human can see it
+          arrive in their chat or endpoint. Each call sends a new message. The
+          result reports the accepted delivery; read it with get_plugin_delivery.
       parameters:
         - $ref: '#/components/parameters/PluginTargetID'
         - $ref: '#/components/parameters/IdempotencyKey'

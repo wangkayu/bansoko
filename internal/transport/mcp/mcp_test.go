@@ -156,7 +156,7 @@ var pinnedTools = []string{
 	"save_file_maintenance_anime_policy", "evaluate_replacement", "replan_file_maintenance", "list_connections",
 	"put_connection", "test_connection", "list_network_routes", "put_network_route",
 	"test_network_route", "patch_automation_schedule", "list_plugin_targets", "create_plugin_target",
-	"update_plugin_target", "delete_plugin_target", "list_plugin_deliveries",
+	"update_plugin_target", "delete_plugin_target", "test_plugin_target", "list_plugin_deliveries",
 	"get_plugin_delivery", "subscribe_anime", "apply_candidate", "preview_subgroups_selection",
 	"patch_anime_subgroups", "cleanup_anime_local_data", "fetch_owner_custom_snapshot", "fetch_custom_snapshot",
 	"fetch_seed_search_snapshot", "refresh_catalog_provider", "set_catalog_preference", "suppress_catalog_entry",
@@ -336,7 +336,7 @@ func TestToolAnnotationsAreCorrect(t *testing.T) {
 		}
 	}
 	// Each of these inserts a row, advances a version or sends something per call.
-	for _, name := range []string{"create_candidate", "patch_candidate", "create_plugin_target", "subscribe_anime", "fetch_seed_search_snapshot"} {
+	for _, name := range []string{"create_candidate", "patch_candidate", "create_plugin_target", "test_plugin_target", "subscribe_anime", "fetch_seed_search_snapshot"} {
 		if !nonIdempotent[name] {
 			t.Errorf("%s must not be idempotent", name)
 		}

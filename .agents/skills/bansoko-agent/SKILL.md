@@ -358,6 +358,7 @@ Connections, routes and notifications. Secrets are write-only:
 | Add a notification target (Telegram, Feishu or webhook); secrets are write-only | `create_plugin_target` | `createPluginTarget` | - |
 | Change a target (`expected_version`; one value feeds both the header and the body) | `update_plugin_target` | `updatePluginTarget` | - |
 | Remove a target (irreversible) | `delete_plugin_target` | `deletePluginTarget` | - |
+| Send a test notification through a target (it reaches the human's chat; needs a write token) | `test_plugin_target` | `testPluginTarget` | - |
 | List the events a target can subscribe to | `list_notification_trigger_kinds` | `listNotificationTriggerKinds` | - |
 | List notification deliveries and their outcome | `list_plugin_deliveries` | `listPluginDeliveries` | - |
 | Read one delivery | `get_plugin_delivery` | `getPluginDelivery` | - |
@@ -384,7 +385,7 @@ The downloader is run by the human; these tools read it and control the torrents
 
 ### Not in MCP
 
-Sending a test notification through a target (`testPluginTarget`; it reaches the human's chat), the file manager beyond releasing and matching (browsing, other file operations, alignment of an arbitrary path), naming variables, API tokens, update admission, backup and restore, sessions and login, bootstrap, image streams and the event stream. Use HTTP or the CLI for the ones that exist there.
+The file manager beyond releasing and matching (browsing, other file operations, alignment of an arbitrary path), naming variables, API tokens, update admission, backup and restore, sessions and login, bootstrap, image streams and the event stream. Use HTTP or the CLI for the ones that exist there.
 
 ## 6. Repair is re-enqueue
 
