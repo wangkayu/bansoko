@@ -381,6 +381,42 @@ func TestCleanupRestoreCaptured(t *testing.T) {
 	}
 }
 
+// A restore rename the server applied but answered with an error (a lost
+// SMB/NFS reply) is recognised as landed; one that did not apply still fails
+// with the captured object kept.
+func TestCleanupRestoreLandedDespiteError(t *testing.T) {
+	t.Run("landed", func(t *testing.T) {
+		f := newBusyCleanupFixture(t)
+		captured := captureForPurge(t, f)
+		withCleanupEffects(t, func(from, to verifiedEntry) error {
+			if err := atomicRenameNoReplaceVerified(from, to); err != nil {
+				return err
+			}
+			return unix.EIO
+		}, nil)
+		if err := f.executor.RestoreCaptured(context.Background(), f.target, f.source, captured); err != nil {
+			t.Fatalf("landed restore: %v", err)
+		}
+		if raw, err := os.ReadFile(f.source); err != nil || string(raw) != "old version" {
+			t.Fatalf("restored source %q %v", raw, err)
+		}
+	})
+	t.Run("not applied", func(t *testing.T) {
+		g := newBusyCleanupFixture(t)
+		captured := captureForPurge(t, g)
+		withCleanupEffects(t, func(verifiedEntry, verifiedEntry) error { return unix.EIO }, nil)
+		if err := g.executor.RestoreCaptured(context.Background(), g.target, g.source, captured); err == nil {
+			t.Fatal("an unapplied restore reported success")
+		}
+		if _, err := os.Lstat(g.target); err != nil {
+			t.Fatalf("captured object lost: %v", err)
+		}
+		if _, err := os.Lstat(g.source); !os.IsNotExist(err) {
+			t.Fatalf("source present after an unapplied restore: %v", err)
+		}
+	})
+}
+
 // An exclusive holder's sharing violation on an observation is busy; a
 // permission answer is not.
 func TestBusyObservationError(t *testing.T) {

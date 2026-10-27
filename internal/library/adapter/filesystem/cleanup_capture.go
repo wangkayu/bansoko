@@ -158,7 +158,7 @@ func restoreCleanupObject(root, capture, source string, expected domain.FileObse
 	if err := directoryPathMatches(sourceParent); err != nil {
 		return err
 	}
-	if err := cleanupEffects.rename(from, to); err != nil {
+	if err := cleanupEffects.rename(from, to); err != nil && !restoreLanded(from, source, expected) {
 		return busyEffectError(err)
 	}
 	if err := sourceParent.Sync(); err != nil {
@@ -172,6 +172,18 @@ func restoreCleanupObject(root, capture, source string, expected domain.FileObse
 		return &OperationError{Code: CodeRecoveryUnsafe, Err: errors.New("the restored object does not match the captured one")}
 	}
 	return nil
+}
+
+// restoreLanded recognises a restore rename that took effect although the
+// call reported an error (an SMB/NFS reply lost after the server applied it):
+// the captured entry is gone and the public path holds the captured object.
+func restoreLanded(captured verifiedEntry, source string, expected domain.FileObservation) bool {
+	absent, err := entryAbsent(captured)
+	if err != nil || !absent {
+		return false
+	}
+	restored, err := observeFileAs(source, expected.Fingerprint)
+	return err == nil && sameMutationFileObservation(restored, expected)
 }
 
 // namespaceAbsentAfterRefusal reports a private namespace whose creation was
