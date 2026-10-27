@@ -214,7 +214,8 @@ func TestInstancePolicySaveEnqueuesNoReplacementWork(t *testing.T) {
 		Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
 	// The candidate is still downloading: a policy change has nothing to do
 	// with it until the next comparison moment.
-	if _, err := db.Exec(`UPDATE acquisitions SET entry_kind = 'subscription_add', state = 'running' WHERE source_release_ref = 'release-r1'`); err != nil {
+	// acquisitions is not writable by the runtime role; the fixture goes through the schema owner.
+	if _, err := disposabledb.Owner(t).Exec(`UPDATE acquisitions SET entry_kind = 'subscription_add', state = 'running' WHERE source_release_ref = 'release-r1'`); err != nil {
 		t.Fatal(err)
 	}
 	service := NewService(NewPolicyService(db), NewReplacementPolicyService(db), nil, nil, nil)
