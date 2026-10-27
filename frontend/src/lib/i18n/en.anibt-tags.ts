@@ -50,6 +50,7 @@ export const enAnibtTagsCopy = {
   // Only values whose display name differs from the AniBT value are listed.
   value: {
     subtitle: {
+      EXTERNAL: "External subs",
       INTERNAL: "Soft subs",
       EMBEDDED: "Hard subs",
       NONE: "No subtitles",
@@ -68,6 +69,14 @@ export const enAnibtTagsCopy = {
       DE: "German",
       ES: "Spanish",
       PT: "Portuguese",
+      KO: "Korean",
+      IT: "Italian",
+      RU: "Russian",
+      AR: "Arabic",
+      HI: "Hindi",
+      TL: "Tagalog",
+      TR: "Turkish",
+      UK: "Ukrainian",
     },
     platform: {
       CR: "Crunchyroll source",

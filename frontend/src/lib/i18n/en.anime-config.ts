@@ -42,7 +42,7 @@ export const enConfigCopy = {
   alreadySubscribed: "This preset is already subscribed. Refresh the catalog and try again.",
   opConflict: "Conflicting action. Try again.",
   subscribeFailed: "Subscription failed. Try again.",
-  replacementAria: "Replacement (this subscription)",
+  replacementAria: "Episode versions (this subscription)",
   reloadLatest: "Reload Latest Settings",
   overwrite: "Save Over Latest Version",
   refreshReselect: "Refresh and Reselect",
@@ -75,7 +75,7 @@ export const enConfigCopy = {
     reload: "Discard unsaved changes and reload subscription settings?",
   },
   snapshot: {
-    legend: "Replacement",
+    legend: "Episode versions",
   },
   discovery: {
     none: "No groups found",

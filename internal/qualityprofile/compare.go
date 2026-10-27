@@ -67,13 +67,19 @@ func Compare(candidate, current Subject, profile Profile) Result {
 		if !ok {
 			continue
 		}
-		if def.Ranked() && len(item.Ranks) == 0 {
+		if def.Valued() && len(item.Ranks) == 0 {
 			result.Steps = append(result.Steps, Step{Key: item.Key, Result: StepSkipped})
 			continue
 		}
 		a, b := levelOf(def, item, candidate), levelOf(def, item, current)
 		step := Step{Key: item.Key, Candidate: a.label, Current: b.label, CandidateListed: a.listed, CurrentListed: b.listed, Result: StepEqual}
+		// A ranked layer only compares when both sides have data for it (owner
+		// ruling 2026-10-27): a release without AniBT tags, say, ties on the
+		// AniBT layer and the next item decides. A value that is present but
+		// not listed still ranks lowest.
+		noData := def.Valued() && (len(candidate.Values[item.Key]) == 0 || len(current.Values[item.Key]) == 0)
 		switch {
+		case noData:
 		case a.value > b.value:
 			step.Result = StepBetter
 		case a.value < b.value:
@@ -118,12 +124,36 @@ func levelOf(def ItemDef, item Item, subject Subject) level {
 		return level{value: RevisionNumber(label), label: label, listed: label != ""}
 	default:
 		have := subject.Values[item.Key]
-		index, ok := RankIndex(item.Ranks, have)
+		index, ok := RankIndex(item.Ranks, matchValues(item.Key, have))
 		if !ok {
 			return level{value: 0, label: strings.Join(have, "+")}
 		}
 		return level{value: int64(len(item.Ranks) - index), label: strings.Join(item.Ranks[index], "+"), listed: true}
 	}
+}
+
+// rtCompositeLanguages are the reltitle sub_lang codes that name two
+// languages at once. A language comparison reads a release's languages as a
+// set (owner ruling 2026-10-27: the release's languages intersected with the
+// ranking), so a composite code also counts as each language it names: JPSC
+// hits an SC entry and a JPN entry, and an entry written as JPSC still hits.
+var rtCompositeLanguages = map[string][]string{
+	"jpsc": {"JPN", "SC"},
+	"jptc": {"JPN", "TC"},
+}
+
+// matchValues is the value set one item matches its ranking against: the
+// frozen values, plus the languages a composite rt.sub_lang code names. The
+// frozen values themselves stay native; only the match widens.
+func matchValues(key string, have []string) []string {
+	if key != KeyRtSubLang {
+		return have
+	}
+	out := append([]string(nil), have...)
+	for _, value := range have {
+		out = append(out, rtCompositeLanguages[strings.ToLower(strings.TrimSpace(value))]...)
+	}
+	return out
 }
 
 // RankIndex returns the best-ranked entry the release's values contain: an

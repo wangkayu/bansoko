@@ -100,6 +100,11 @@ export const enMaintCopy = {
 
 export const enPolicyCopy = {
   versionConflictRefreshed: "Content was changed elsewhere and has been refreshed. Confirm again.",
+  versions: {
+    loadFailed: "Failed to load episode versions settings",
+    saveFailed: "Failed to save episode versions settings",
+    timingNote: "Changes do not touch existing files right away. They apply at the next new seed, completed file scan or resumed subscription.",
+  },
   fileEffect: {
     alignmentSaveFailed: "Failed to save auto-align setting",
     alignmentLoadFailed: "Failed to load auto-align setting",

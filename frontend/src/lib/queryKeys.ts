@@ -97,6 +97,7 @@ export const fileManagerKeys = {
 
 export const fileMaintenanceKeys = {
   policy: ["file-maintenance", "policy"] as const,
+  replacement: (animeID: string) => ["file-maintenance", "replacement", "anime", animeID] as const,
   replacementDefault: ["file-maintenance", "replacement", "default"] as const,
   compareVocabulary: (animeID: string) => ["file-maintenance", "replacement", "compare-vocabulary", animeID] as const,
   fileEffectDefault: ["file-maintenance", "file-effect", "default"] as const,

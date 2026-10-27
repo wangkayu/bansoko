@@ -1921,7 +1921,18 @@ export function getReplacementCompareVocabulary(managedAnimeID?: string): Promis
   return request(`/file-maintenance/replacement/compare-vocabulary${query}`, { method: "GET" });
 }
 
-/** Complete frozen per-instance replacement policy. */
+/** Complete frozen per-instance replacement policy (edited by the subscription itself, never re-inherited). */
+export function getInstanceReplacementPolicy(managedAnimeID: string): Promise<InstanceReplacementPolicyView> {
+  return request(`/file-maintenance/replacement/anime/${encodePathSegment(managedAnimeID)}`, { method: "GET" });
+}
+
+export function saveInstanceReplacementPolicy(
+  managedAnimeID: string,
+  input: InstanceReplacementPolicyInput,
+): Promise<InstanceReplacementPolicyView> {
+  return request(`/file-maintenance/replacement/anime/${encodePathSegment(managedAnimeID)}`, { method: "PUT", body: input });
+}
+
 /** Frozen per-instance parser policy (parser kind + default offset). */
 /** Frozen offset-correction migration plans of one anime. */
 /** Durable offset migration generations of one anime (owner truth). */

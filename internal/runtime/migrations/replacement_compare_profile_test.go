@@ -62,6 +62,14 @@ func TestReplacementProfileValidatorAndNoCutoff(t *testing.T) {
 		`{"version":"profile-v1","items":[{"key":"anibt.language","ranks":[["CHS","CHT"],["CHS"]]}]}`:    true,
 		`{"version":"profile-v1","items":[{"key":"anibt.language","ranks":[["CHS",1]]}]}`:                false,
 		`{"version":"profile-v2","items":[]}`:                                                            false,
+		`{"version":"profile-v1","items":[{"key":"rt.sub_flag","ranks":[["soft","ex"],["hard"]]}]}`:      true,
+		`{"version":"profile-v1","items":[{"key":"rt.uncensored","ranks":[["true"]]}]}`:                  true,
+		`{"version":"profile-v1","items":[{"key":"rt.uncensored","ranks":[["false"]]}]}`:                 true,
+		`{"version":"profile-v1","items":[{"key":"rt.uncensored","ranks":[]}]}`:                          false,
+		`{"version":"profile-v1","items":[{"key":"rt.uncensored","ranks":[["UNCENSORED"]]}]}`:            false,
+		`{"version":"profile-v1","items":[{"key":"rt.uncensored","ranks":[["true"],["false"]]}]}`:        false,
+		`{"version":"profile-v1","items":[{"key":"rt.uncensored","ranks":[["true","false"]]}]}`:          false,
+		`{"version":"profile-v1","items":[{"key":"rt.content_rating","ranks":[["UNCENSORED"]]}]}`:        false,
 	} {
 		var ok bool
 		if err := db.QueryRow(`SELECT replacement_quality_profile_valid($1::jsonb)`, raw).Scan(&ok); err != nil {

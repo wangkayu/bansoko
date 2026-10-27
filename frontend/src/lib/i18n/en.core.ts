@@ -16,9 +16,9 @@ export const enAnimeCopy = {
     label: "Episode offset",
   },
   maintenance: {
-    policySaved: "Replacement saved",
-    policySaveFailed: "Failed to save replacement",
-    policyMissing: "No replacement settings yet",
+    policySaved: "Keep setting saved",
+    policySaveFailed: "Failed to save the Keep setting",
+    policyMissing: "No Keep setting yet",
     noScan: "No scans yet. You can run a scan manually.",
     placements: "Imported files",
     noPlacements: "No verified imported files",
@@ -132,11 +132,11 @@ export const enFileCopy = {
 } as const satisfies CopyShape<typeof fileCopy>;
 
 export const enReplacementCopy = {
-  admissionTitle: "Versions to keep per episode",
+  admissionTitle: "Keep",
   admission: {
-    all: "Keep all",
-    per_group: "Best per group",
-    single_copy: "One per episode",
+    all: "All",
+    per_group: "One per subtitle group",
+    single_copy: "One copy",
   },
 } as const satisfies CopyShape<typeof replacementCopy>;
 
@@ -155,7 +155,7 @@ export const enSettingsCopy = {
     rules: "Default Rules",
     vars: "Naming Variables",
     unclassified: "Unclassified Files",
-    replacement: "Replacement",
+    replacement: "Episode versions",
     automation: "Scheduled Tasks",
     notifications: "Notifications",
     updates: "Updates",

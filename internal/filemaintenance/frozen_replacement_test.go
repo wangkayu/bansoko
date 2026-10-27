@@ -62,6 +62,7 @@ ON CONFLICT (managed_anime_id) DO UPDATE SET admission_mode = EXCLUDED.admission
 func released(f Facts) Facts {
 	values := qualityprofile.NewValues()
 	values.Set(qualityprofile.KeyReleaseResolution, f.Resolution)
+	values.Set(qualityprofile.KeyRtResolution, f.Resolution)
 	values.Set(qualityprofile.KeyReleaseLang, f.Language)
 	values.Set(qualityprofile.KeyReleaseRevision, f.Revision)
 	for key, list := range f.Values {

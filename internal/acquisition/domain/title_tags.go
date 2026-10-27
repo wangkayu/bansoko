@@ -36,6 +36,14 @@ const (
 	TitleValueDimensionVersion = "version"
 )
 
+// The uncensored marker: the only value of the content_rating filter-tag
+// dimension (reltitle's lexicon normalizes it as UNCENSORED). The other
+// content_rating values are never projected.
+const (
+	TitleDimensionContentRating = "content_rating"
+	TitleTagUncensored          = TitleDimensionContentRating + ":UNCENSORED"
+)
+
 // Title tag diagnostics. None of them fails the release; an empty set fails a
 // non-empty whitelist like any tag-less release.
 const (

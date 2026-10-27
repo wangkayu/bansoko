@@ -97,6 +97,11 @@ export const maintCopy = {
 
 export const policyCopy = {
   versionConflictRefreshed: "内容已被修改，已刷新，请重新确认",
+  versions: {
+    loadFailed: "无法读取同集多版本设置",
+    saveFailed: "保存同集多版本设置失败",
+    timingNote: "修改后不会立即处理已有文件，下一次有新种子、完成文件扫描或订阅恢复时才按新设置处理",
+  },
   fileEffect: {
     alignmentSaveFailed: "保存自动对齐设置失败",
     alignmentLoadFailed: "读取自动对齐设置失败",

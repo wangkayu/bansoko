@@ -63,11 +63,12 @@ describe("atomic business load", () => {
   renderWithQuery(createElement(Editor));
   const user=userEvent.setup();
   const pick=async(name:string,option:string)=>{await user.click(screen.getByRole("combobox",{name}));await user.click(await screen.findByRole("option",{name:option}));};
-  await pick(t("replacement.admissionTitle"),t("replacement.admission.all"));
   const resolution=compareItemName("release.resolution");
   fireEvent.change(screen.getByLabelText(t("qualityCompare.valueAria",{item:resolution})),{target:{value:"720p"}});fireEvent.click(screen.getByRole("button",{name:t("qualityCompare.addValueAria",{item:resolution})}));
   fireEvent.change(screen.getByLabelText(t("qualityCompare.valueAria",{item:resolution})),{target:{value:"1080p"}});fireEvent.click(screen.getByRole("button",{name:t("qualityCompare.addValueAria",{item:resolution})}));
   fireEvent.click(screen.getByRole("button",{name:t("qualityCompare.entryEarlier",{value:"1080p"})}));
+  // Keeping every version collapses the priority editor but keeps the edited terms.
+  await pick(t("replacement.admissionTitle"),t("replacement.admission.all"));
 
   await pick(t("file.unclassifiedTitle"),t("file.unclassified.skip"));
   // Program digests are provenance and are not shown at all.

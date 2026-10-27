@@ -75,7 +75,7 @@ describe("AniBT 标签词表", () => {
   });
 
   it("从种子标签收集预设之外的值，忽略未知维度", () => {
-    expect(observedExtraTags([["codec:HEVC", "tag:DV"], undefined, ["tag:dv", "foo:bar", "language:KO"]])).toEqual(["tag:DV", "language:KO"]);
+    expect(observedExtraTags([["codec:HEVC", "tag:DV"], undefined, ["tag:dv", "foo:bar", "language:SV"]])).toEqual(["tag:DV", "language:SV"]);
   });
 
   it("摘要：空行为不按标签过滤，必须与排除同时列出", () => {

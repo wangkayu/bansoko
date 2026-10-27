@@ -16,8 +16,10 @@ export const ITEM_COPY: Record<QualityCompareKey, CopyKey> = {
   "anibt.format": "qualityCompare.item.anibt_format",
   "rt.resolution": "qualityCompare.item.rt_resolution",
   "rt.sub_lang": "qualityCompare.item.rt_sub_lang",
+  "rt.sub_flag": "qualityCompare.item.rt_sub_flag",
   "rt.source": "qualityCompare.item.rt_source",
   "rt.codec": "qualityCompare.item.rt_codec",
+  "rt.uncensored": "qualityCompare.item.rt_uncensored",
 };
 
 export const NAMESPACE_COPY: Record<CompareNamespace, CopyKey> = {

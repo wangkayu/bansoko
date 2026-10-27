@@ -299,10 +299,10 @@ VALUES ('anime-1', 1, 0, '/library/Show/ep.mkv', 'fp', 1, jsonb_build_object('pl
 	}
 }
 
-// A policy change has no immediate filesystem effect: switching all ->
-// single_copy with two files of one episode and no new candidate creates no
-// evaluation, decision, supersede or deletion; a policy-triggered evaluation
-// of a placed release never compares or settles its placed keys.
+// A policy change has no immediate effect at all: switching all ->
+// single_copy with two files of one episode and no new candidate enqueues no
+// WorkItem and creates no evaluation, decision, supersede or deletion; both
+// old files wait for the next comparison moment.
 func TestPGPolicySwitchWithoutNewCandidateDeletesNothing(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
@@ -312,14 +312,11 @@ func TestPGPolicySwitchWithoutNewCandidateDeletesNothing(t *testing.T) {
 		Facts{Resolution: "720p", Group: "G"}, "2026-07-01T00:00:00Z")
 	seedFilePlacement(t, db, "anime-1", "sub-1", "switch-new", []string{"tv:s1:e1"},
 		Facts{Resolution: "1080p", Group: "G"}, "2026-08-01T00:00:00Z")
-	store := cleanupWorkItemStore(t, db)
-	trigger := NewReplacementTriggerService(db, store)
 	var version int
 	if err := db.QueryRow(`SELECT replacement_version FROM anime_business_configs WHERE managed_anime_id = 'anime-1'`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
 	policy := NewService(NewPolicyService(db), NewReplacementPolicyService(db), nil, nil, nil)
-	policy.SetReplacementTrigger(trigger)
 	if _, err := policy.SaveInstanceReplacementPolicy(ctx, "anime-1", generated.InstanceReplacementPolicyInput{
 		AdmissionMode:   generated.ReplacementAdmissionModeSingleCopy,
 		QualityProfile:  generated.QualityProfile{Version: "profile-v1", Items: []generated.QualityCompareItem{{Key: "release.resolution", Ranks: [][]string{{"1080p"}, {"720p"}}}}},
@@ -327,31 +324,13 @@ func TestPGPolicySwitchWithoutNewCandidateDeletesNothing(t *testing.T) {
 	}, "test", "http"); err != nil {
 		t.Fatal(err)
 	}
-	if err := trigger.TriggerPolicySaved(ctx, "anime-1"); err != nil {
-		t.Fatal(err)
-	}
 	if count := countLiveEvaluateItems(t, db, "anime-1"); count != 0 {
-		t.Fatalf("a policy change without an unplaced candidate must not evaluate: %d items", count)
+		t.Fatalf("a policy change must enqueue no evaluation: %d items", count)
 	}
-	// A policy-triggered evaluation that names a placed release re-decides
-	// nothing it placed.
-	service := NewReplacementDecisionService(db)
-	cleanup := NewCleanupService(db)
-	cleanup.SetWorkItems(store)
-	service.SetCleanupHandoff(cleanup)
-	views, err := service.EvaluateApplication(ctx, EvaluateRequest{AnimeID: "anime-1", CandidateRelease: "switch-new", unplacedOnly: true})
-	if err != nil || len(views) != 0 {
-		t.Fatalf("unplaced-only evaluation of a placed release = %+v, %v", views, err)
-	}
-	input := json.RawMessage(`{"candidate_release_id":"switch-new","trigger":"policy_saved"}`)
-	outcome, err := service.EvaluateHandler().Handle(ctx, workitems.Claim{
-		ID: "policy-item", Kind: workitems.KindReplacementEvaluate,
-		Owner:                workitems.OwnerRef{Type: workitems.OwnerFileMaintenance, ID: "anime-1"},
-		ExpectedOwnerVersion: 1, FencingToken: 1, Attempt: 1, MaxAttempts: 3,
-		IdempotencyKey: "replacement_evaluate:anime-1", InputSnapshot: input,
-	})
-	if err != nil || outcome.TerminalState != workitems.StateSucceeded {
-		t.Fatalf("policy evaluate outcome=%+v err=%v", outcome, err)
+	for _, kind := range []string{workitems.KindReplacementEvaluate, workitems.KindReplacementFallback} {
+		if got := countWorkItemsOfKind(t, db, "anime-1", kind); got != 0 {
+			t.Fatalf("a policy change must enqueue no %s: %d items", kind, got)
+		}
 	}
 	_, deletions, superseded := decisionCounts(t, db, "anime-1")
 	var decisions int
@@ -360,6 +339,14 @@ func TestPGPolicySwitchWithoutNewCandidateDeletesNothing(t *testing.T) {
 	}
 	if decisions != 0 || deletions != 0 || superseded != 0 {
 		t.Fatalf("a policy change must have no effect: decisions=%d deletions=%d superseded=%d", decisions, deletions, superseded)
+	}
+	for _, placement := range []string{
+		"plc-file_operation-op-switch-old",
+		"plc-file_operation-op-switch-new",
+	} {
+		if state := placementState(t, db, placement); state != "active" {
+			t.Fatalf("%s must stay active after a policy change: %s", placement, state)
+		}
 	}
 }
 

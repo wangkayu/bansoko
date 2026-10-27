@@ -572,6 +572,23 @@ describe("MetadataMatchDialog 检索词候选与作品名回传", () => {
 });
 
 describe("MetadataMatchDialog 按 ID 填写", () => {
+  it("TMDB ID 直接确认时默认 TV 第 1 季", async () => {
+    const onChange = vi.fn();
+    render(<Controlled searcher={searcherReturning([])} onChange={onChange} />);
+
+    clickMatch("tmdb");
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText(t("forms.tmdbIdAria")), { target: { value: "259972" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("forms.useTmdbId") }));
+    fireEvent.click(within(dialog).getByRole("button", { name: t("forms.confirmMatch") }));
+
+    expect(onChange).toHaveBeenLastCalledWith({
+      bgm: null,
+      tmdb: { work_id: "259972", media_kind: "tv", season: 1 },
+      season: 1,
+    });
+  });
+
   it("TMDB ID 不联网核对也能保存完整绑定", async () => {
     const searcher = searcherReturning([]);
     const onChange = vi.fn();

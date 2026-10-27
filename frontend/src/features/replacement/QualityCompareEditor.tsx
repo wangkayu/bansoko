@@ -4,20 +4,23 @@ import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, GripVertical, Plus, X } 
 import { getReplacementCompareVocabulary, type QualityCompareKey, type QualityProfile } from "../../lib/api/client";
 import { fileMaintenanceKeys } from "../../lib/queryKeys";
 import { t } from "../../lib/i18n";
-import { Button, Checkbox, DropdownMenu, Input, type MenuEntry } from "../../ui/base";
+import { Button, Checkbox, DropdownMenu, Input, RadioGroup, type MenuEntry } from "../../ui/base";
 import { useAnimeTabNavigation } from "../anime-tabs/tabNavigation";
 import {
   COMPARE_NAMESPACES,
   addEntry,
   addItem,
+  candidateValues,
   comboValues,
   entryLabel,
+  flagFirst,
   itemDef,
   moveEntry,
   moveItem,
   parseEntry,
   removeEntry,
   removeItem,
+  setFlagDirection,
   suggestions,
   unusedItems,
   type EntryProblem,
@@ -49,6 +52,7 @@ export function QualityCompareEditor({
     queryFn: () => getReplacementCompareVocabulary(managedAnimeID),
     staleTime: 5 * 60_000,
     retry: false,
+    enabled: admissionMode !== "all",
   });
   const vocabulary = new Map((vocabularyQuery.data?.items ?? []).map((item) => [item.key, item.values]));
   const [dragFrom, setDragFrom] = useState<number>();
@@ -70,6 +74,17 @@ export function QualityCompareEditor({
     setDragFrom(undefined);
   }
 
+  // "Keep all" compares nothing: the editor collapses to a one-line note. The profile itself is
+  //   untouched (the caller keeps it), so switching back restores the edited terms.
+  if (admissionMode === "all") {
+    return (
+      <div className="tw:grid tw:gap-1" role="group" aria-label={t("qualityCompare.title")}>
+        <h3 className="settings-policy-card-title text-body">{t("qualityCompare.title")}</h3>
+        <p className="settings-policy-card-description text-caption">{t("qualityCompare.allModeNote")}</p>
+      </div>
+    );
+  }
+
   return (
     <div className="tw:grid tw:gap-3" role="group" aria-label={t("qualityCompare.title")}>
       <div className="tw:grid tw:gap-1">
@@ -77,10 +92,7 @@ export function QualityCompareEditor({
         <p className="settings-policy-card-description text-caption">{t("qualityCompare.description")}</p>
         <p className="settings-policy-card-description text-caption">{t("qualityCompare.sourceHint")}</p>
       </div>
-      {admissionMode === "all" && (
-        <p className="tw:m-0 tw:rounded-control tw:bg-muted tw:px-2.5 tw:py-2 text-caption">{t("qualityCompare.allModeNote")}</p>
-      )}
-      <ol className={`tw:m-0 tw:grid tw:list-none tw:gap-2 tw:p-0${admissionMode === "all" ? " tw:opacity-60" : ""}`} aria-label={t("qualityCompare.listAria")}>
+      <ol className="tw:m-0 tw:grid tw:list-none tw:gap-2 tw:p-0" aria-label={t("qualityCompare.listAria")}>
         {value.items.map((item, index) => {
           const def = itemDef(item.key);
           const name = compareItemName(item.key);
@@ -121,12 +133,21 @@ export function QualityCompareEditor({
               <div className="tw:grid tw:gap-2 tw:px-3 tw:pb-3 tw:sm:pl-11">
                 {def.kind === "score" && <ScoreBody admissionMode={admissionMode} />}
                 {def.kind === "revision" && <p className="business-hint text-caption">{t("qualityCompare.revisionHint")}</p>}
+                {def.kind === "flag" && (
+                  <FlagBody
+                    ranks={item.ranks}
+                    name={name}
+                    hint={t("qualityCompare.uncensoredHint")}
+                    onChange={(first) => onChange(setFlagDirection(value, item.key, first))}
+                    disabled={disabled}
+                  />
+                )}
                 {(def.kind === "single" || def.kind === "multi") && (
                   <RankedBody
                     profile={value}
                     itemKey={item.key}
                     ranks={item.ranks}
-                    vocabulary={vocabulary.get(item.key)}
+                    vocabulary={candidateValues(item.key, vocabulary.get(item.key))}
                     onChange={onChange}
                     disabled={disabled}
                   />
@@ -160,6 +181,36 @@ function ScoreBody({ admissionMode }: { admissionMode: string }) {
           <Button size="sm" variant="link" onClick={() => navigate("subgroups")}>{t("qualityCompare.scoreLink")}</Button>
         </div>
       )}
+    </>
+  );
+}
+
+function FlagBody({
+  ranks,
+  name,
+  hint,
+  onChange,
+  disabled,
+}: {
+  ranks: string[][];
+  name: string;
+  hint: string;
+  onChange: (first: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <>
+      <p className="business-hint text-caption">{hint}</p>
+      <RadioGroup
+        aria-label={t("qualityCompare.directionAria", { item: name })}
+        value={flagFirst(ranks) ? "first" : "last"}
+        onValueChange={(next) => onChange(next === "first")}
+        options={[
+          { value: "first", label: t("qualityCompare.uncensoredFirst") },
+          { value: "last", label: t("qualityCompare.censoredFirst") },
+        ]}
+        disabled={disabled}
+      />
     </>
   );
 }
@@ -208,6 +259,7 @@ function RankedBody({
   const hints = [t("qualityCompare.rankHint")];
   if (def.kind === "multi") hints.push(t("qualityCompare.multiHint"));
   if (def.namespace === "anibt") hints.push(t("qualityCompare.anibtHint"));
+  if (itemKey === "rt.sub_flag") hints.push(t("qualityCompare.subFlagHint"));
 
   return (
     <>

@@ -11,7 +11,9 @@ import {
   removeEntry,
   removeItem,
   setKey,
+  setFlagDirection,
   suggestions,
+  candidateValues,
   unusedItems,
 } from "./qualityProfile";
 
@@ -29,9 +31,9 @@ describe("quality profile model", () => {
     expect(COMPARE_ITEMS.map((item) => item.key)).toEqual([
       "subgroup.score", "release.lang", "release.resolution", "release.revision",
       "anibt.resolution", "anibt.language", "anibt.subtitle", "anibt.format",
-      "rt.resolution", "rt.sub_lang", "rt.source", "rt.codec",
+      "rt.resolution", "rt.sub_lang", "rt.sub_flag", "rt.source", "rt.codec", "rt.uncensored",
     ]);
-    expect(COMPARE_ITEMS.filter((item) => item.kind === "multi").map((item) => item.key)).toEqual(["anibt.language", "rt.sub_lang"]);
+    expect(COMPARE_ITEMS.filter((item) => item.kind === "multi").map((item) => item.key)).toEqual(["anibt.language", "rt.sub_lang", "rt.sub_flag"]);
   });
 
   it("orders items and keeps each item once", () => {
@@ -40,6 +42,8 @@ describe("quality profile model", () => {
     expect(removeItem(profile, 0).items.map((item) => item.key)).toEqual(["anibt.language", "release.resolution"]);
     expect(addItem(profile, "rt.codec").items.at(-1)).toEqual({ key: "rt.codec", ranks: [] });
     expect(addItem(profile, "subgroup.score")).toBe(profile);
+    expect(addItem(profile, "rt.uncensored").items.at(-1)).toEqual({ key: "rt.uncensored", ranks: [["true"]] });
+    expect(setFlagDirection(addItem(profile, "rt.uncensored"), "rt.uncensored", false).items.at(-1)?.ranks).toEqual([["false"]]);
     expect(unusedItems(profile).map((item) => item.key)).not.toContain("anibt.language");
   });
 
@@ -77,5 +81,14 @@ describe("quality profile model", () => {
   it("offers suggestions not yet listed and combination values from both", () => {
     expect(suggestions([["CHS"], ["CHS", "CHT"]], ["chs", "CHT", "JPN"])).toEqual(["CHT", "JPN"]);
     expect(comboValues([["CHS", "ENG"]], ["chs", "CHT"])).toEqual(["chs", "CHT", "ENG"]);
+  });
+
+  it("puts the AniBT presets ahead of seen values and leaves other namespaces alone", () => {
+    expect(candidateValues("anibt.resolution", undefined)).toEqual(["4K", "2160p", "1080p", "720p", "480p", "360p"]);
+    expect(candidateValues("anibt.resolution", ["720P", "1440p"])).toEqual(["4K", "2160p", "1080p", "720p", "480p", "360p", "1440p"]);
+    expect(candidateValues("anibt.language", ["jp", "XX"])?.slice(0, 4)).toEqual(["CHS", "CHT", "JP", "EN"]);
+    expect(candidateValues("anibt.language", ["jp", "XX"])?.at(-1)).toBe("XX");
+    expect(candidateValues("rt.codec", ["AV1"])).toEqual(["AV1"]);
+    expect(candidateValues("rt.codec", undefined)).toBeUndefined();
   });
 });

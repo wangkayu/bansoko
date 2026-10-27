@@ -427,7 +427,7 @@ describe("AnimeConfigDialog subscribed workspace polling", () => {
   });
 });
 
-// Hidden per the subscription's current replacement version (the restore checklist lives with the dialog's hideReplacement).
+// A subscribed anime's rules tab has no episode-versions editor (the single-save model keeps only unknown-episode handling).
 describe("AnimeConfigDialog 已订阅的订阅设置", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -441,7 +441,7 @@ describe("AnimeConfigDialog 已订阅的订阅设置", () => {
   // The single-save model: the rules tab no longer mounts "edit subscription settings" (the
   // second save path); unknown episodes come straight from FileEffectPolicySection and saving
   // goes through the footer's single save.
-  it("规则 tab 不渲染编辑订阅设置，未识别集数照常显示且无保留与清理", async () => {
+  it("规则 tab 不渲染编辑订阅设置，未识别集数与同集多版本照常显示", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/template-catalogs/naming") || url.includes("/template-previews/naming")) {
@@ -455,6 +455,15 @@ describe("AnimeConfigDialog 已订阅的订阅设置", () => {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
+      }
+      if (url.includes("/file-maintenance/replacement/anime/")) {
+        return new Response(JSON.stringify({
+          managed_anime_id: "anime-1",
+          admission_mode: "per_group",
+          quality_profile: { version: "profile-v1", items: [{ key: "subgroup.score", ranks: [] }] },
+          source_default_version: 1,
+          version: 2,
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
       if (url.includes("/anime/anime-1/workspace")) {
         return new Response(JSON.stringify(workspaceFixture()), {
@@ -486,9 +495,11 @@ describe("AnimeConfigDialog 已订阅的订阅设置", () => {
     // The unknown-episodes policy is read separately, after the workspace.
     await flushQuery();
     expect(screen.getByRole("combobox", { name: t("file.unclassifiedTitle") })).toBeInTheDocument();
-    expect(screen.queryByText(t("config.snapshot.legend"))).not.toBeInTheDocument();
-    expect(screen.queryByRole("combobox", { name: t("replacement.admissionTitle") })).not.toBeInTheDocument();
-    expect(screen.queryByRole("group", { name: t("qualityCompare.title") })).not.toBeInTheDocument();
+    // The subscription's own episode-versions copy is editable after subscribing.
+    await flushQuery();
+    expect(screen.getByRole("heading", { name: t("config.snapshot.legend") })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: t("replacement.admissionTitle") })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: t("qualityCompare.title") })).toBeInTheDocument();
 
     // The footer has one save: disabled while the rules tab has no changes.
     expect(screen.getByRole("button", { name: t("act.save") })).toBeDisabled();
@@ -908,8 +919,7 @@ describe("AnimeConfigDialog draft rules copied from the preset", () => {
     expect(getBusinessPreset).toHaveBeenCalledTimes(1);
   });
 
-  // Hidden per the subscription's current replacement version (the restore checklist lives with the dialog's hideReplacement).
-  it("规则 tab 的订阅设置不显示保留与清理，未识别集数照常显示", async () => {
+  it("规则 tab 的订阅设置显示同集多版本与未识别集数", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(
       String(input).includes("/config/global-sections") ? "[]" : "{}",
       { status: 200, headers: { "Content-Type": "application/json" } },
@@ -932,16 +942,15 @@ describe("AnimeConfigDialog draft rules copied from the preset", () => {
     );
     await flushQuery();
 
-    const section = screen.getByRole("region", { name: t("anime.revision.aria") });
-    expect(screen.queryByRole("region", { name: t("config.replacementAria") })).not.toBeInTheDocument();
+    const section = screen.getByRole("region", { name: t("config.replacementAria") });
     // "Use defaults everywhere" is no longer a stray button inside the subscription-settings area: it sits at the top of the rules tab.
     expect(within(section).queryByRole("button", { name: t("config.useDefaults") })).not.toBeInTheDocument();
     // A new draft with use-defaults-everywhere: the top button is present but disabled when nothing is customizable left to reset.
     expect(screen.getByRole("button", { name: t("config.useDefaults") })).toBeDisabled();
     expect(within(section).getByRole("combobox", { name: t("file.unclassifiedTitle") })).toBeInTheDocument();
-    expect(within(section).queryByText(t("config.snapshot.legend"))).not.toBeInTheDocument();
-    expect(screen.queryByRole("combobox", { name: t("replacement.admissionTitle") })).not.toBeInTheDocument();
-    expect(screen.queryByRole("group", { name: t("qualityCompare.title") })).not.toBeInTheDocument();
+    expect(within(section).getByText(t("config.snapshot.legend"))).toBeInTheDocument();
+    expect(within(section).getByRole("combobox", { name: t("replacement.admissionTitle") })).toBeInTheDocument();
+    expect(within(section).getByRole("group", { name: t("qualityCompare.title") })).toBeInTheDocument();
   });
 
   it("草稿规则段卡「已修改」：新草稿不标记，未保存的编辑标记该段，「全部使用默认」后消失", async () => {

@@ -251,7 +251,7 @@ describe("SettingsDialog footer 唯一保存", () => {
 });
 
 // The group structure: services [connections, download] / new-subscription defaults
-//   [rules, unclassified, policy] / sites [anibt, mikan, hidden] / system
+//   [rules, replacement, unclassified, policy] / sites [anibt, mikan, hidden] / system
 //   [automation, notifications, updates, backup, ai]. anibt and mikan render the same
 //   parameterized SettingsProviderDetail component.
 describe("SettingsDialog 新分组结构与 provider 导航页", () => {
@@ -275,6 +275,7 @@ describe("SettingsDialog 新分组结构与 provider 导航页", () => {
     expect(groupLinks("settings.nav.groupService")).toEqual([t("settings.nav.connections"), t("settings.nav.download")]);
     expect(groupLinks("settings.nav.groupDefaults")).toEqual([
       t("settings.nav.rules"),
+      t("settings.nav.replacement"),
       t("settings.nav.unclassified"),
       t("settings.nav.policy"),
     ]);

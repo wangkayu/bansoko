@@ -143,7 +143,7 @@ var unsafePayloadKey = regexp.MustCompile(`(secret|token|password|credential|url
 // vars.<group>.<name> from the frozen Vars output, rt.<field> and
 // anibt.<field> from the release's frozen source_facts. text bounds and
 // sanitizes each value (nil drops it to null). Every rt/anibt key is present
-// (null when absent); a Vars key is present only when the output has it.
+// (null when absent; rt.uncensored is a boolean); a Vars key is present only when the output has it.
 // Undecodable source facts yield no rt/anibt values. The SQL twin is
 // notification_value_facts (migration 283); a parity test keeps them equal.
 func ValueFacts(vars map[string]any, sourceFacts []byte, text func(string) any) map[string]any {
@@ -168,6 +168,10 @@ func ValueFacts(vars map[string]any, sourceFacts []byte, text func(string) any) 
 	}
 	for _, field := range templatefacts.ReltitleFields {
 		if value, ok := namespaces.Reltitle[field.Key]; ok {
+			if field.Type == templatefacts.TypeBoolean {
+				facts[templatefacts.RootRt+"."+field.Name] = value == "true"
+				continue
+			}
 			facts[templatefacts.RootRt+"."+field.Name] = text(value)
 		}
 	}

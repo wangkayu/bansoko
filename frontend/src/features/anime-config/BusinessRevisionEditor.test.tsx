@@ -78,15 +78,12 @@ it("program digests are read-only; a failed save preserves the edited draft",asy
  await waitFor(()=>expect(mocks.save).toHaveBeenCalledTimes(1));await screen.findByRole("alert");
  expect(screen.getByRole("combobox",{name:t("replacement.admissionTitle")})).toHaveTextContent(t("replacement.admission.all"));expect(screen.getByText(t("config.revision.dirty"))).toBeTruthy();expect(mocks.apply).not.toHaveBeenCalled();
 });
-// Hidden per the subscription's current replacement version: the anime config dialog
-// passes hideReplacement (the restore checklist lives with the dialog). The cases above omit it
-// and keep covering the full control set.
-it("hideReplacement：不显示保留与清理的两项控件，隐藏的取值原样随修订保存",async()=>{
- render(<BusinessRevisionEditor animeID="target" onApplied={vi.fn()} hideReplacement />);
+it("显示同集多版本的两项控件，与未识别集数一起随修订保存",async()=>{
+ render(<BusinessRevisionEditor animeID="target" onApplied={vi.fn()} />);
  fireEvent.click(screen.getByText(t("config.revision.edit")));fireEvent.click(await screen.findByText(t("config.useDefaults")));await screen.findByText(t("config.revision.dirty"));
- expect(screen.queryByText(t("config.snapshot.legend"))).toBeNull();
- expect(screen.queryByRole("combobox",{name:t("replacement.admissionTitle")})).toBeNull();
- expect(screen.queryByRole("group",{name:t("qualityCompare.title")})).toBeNull();
+ expect(screen.getByText(t("config.snapshot.legend"))).toBeTruthy();
+ expect(screen.getByRole("combobox",{name:t("replacement.admissionTitle")})).toBeTruthy();
+ expect(screen.getByRole("group",{name:t("qualityCompare.title")})).toBeTruthy();
 
  // The parser is not chosen here: it lives in the rules tab's "parsing" section together with the episode recognition rules.
  expect(screen.queryByRole("combobox",{name:t("policy.parser.kindLabel")})).toBeNull();

@@ -36,8 +36,8 @@ beforeEach(() => {
 
 afterEach(() => vi.unstubAllGlobals());
 
-function Harness({ mode = "single_copy", animeID }: { mode?: "all" | "per_group" | "single_copy"; animeID?: string }) {
-  const [value, setValue] = useState(initial);
+function Harness({ mode = "single_copy", animeID, start = initial }: { mode?: "all" | "per_group" | "single_copy"; animeID?: string; start?: QualityProfile }) {
+  const [value, setValue] = useState(start);
   return (
     <QualityCompareEditor
       value={value}
@@ -90,6 +90,28 @@ describe("QualityCompareEditor", () => {
     expect(screen.getByText(t("qualityCompare.empty"))).toBeInTheDocument();
   });
 
+  it("explains the subtitle type item when it is added", async () => {
+    renderWithQuery(<Harness />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: t("qualityCompare.addItem") }));
+    const menu = await screen.findByRole("menu");
+    await user.click(within(menu).getByRole("menuitem", { name: compareItemName("rt.sub_flag") }));
+    expect(latest.items.at(-1)).toEqual({ key: "rt.sub_flag", ranks: [] });
+    expect(screen.getByText(new RegExp(t("qualityCompare.subFlagHint")))).toBeInTheDocument();
+  });
+
+  it("adds the uncensored preference and flips its direction", async () => {
+    renderWithQuery(<Harness />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: t("qualityCompare.addItem") }));
+    const menu = await screen.findByRole("menu");
+    await user.click(within(menu).getByRole("menuitem", { name: compareItemName("rt.uncensored") }));
+    expect(latest.items.at(-1)).toEqual({ key: "rt.uncensored", ranks: [["true"]] });
+    expect(screen.getByText(t("qualityCompare.uncensoredHint"))).toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: t("qualityCompare.censoredFirst") }));
+    expect(latest.items.at(-1)).toEqual({ key: "rt.uncensored", ranks: [["false"]] });
+  });
+
   it("adds a combination ahead of narrower entries and rejects the same set again", async () => {
     renderWithQuery(<Harness animeID="anime-1" />);
     await waitFor(() => expect(screen.getByRole("checkbox", { name: t("qualityCompare.comboValueAria", { value: "CHT" }) })).toBeInTheDocument());
@@ -112,6 +134,17 @@ describe("QualityCompareEditor", () => {
     expect(screen.queryByRole("alert")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: t("qualityCompare.addValueAria", { item: name }) }));
     expect(latest.items[1].ranks).toEqual([["CHS", "CHT"], ["CHS"], ["JPN"]]);
+  });
+
+  it("offers the AniBT presets as candidates when no value has been seen", async () => {
+    renderWithQuery(<Harness start={{ version: "profile-v1", items: [{ key: "anibt.resolution", ranks: [] }] }} />);
+    await waitFor(() => expect(vocabularyURLs.length).toBeGreaterThan(0));
+    const input = screen.getByLabelText(t("qualityCompare.valueAria", { item: compareItemName("anibt.resolution") }));
+    const options = Array.from(document.getElementById(input.getAttribute("list") ?? "")?.querySelectorAll("option") ?? []).map((option) => option.getAttribute("value"));
+    expect(options).toEqual(["4K", "2160p", "1080p", "720p", "480p", "360p"]);
+    fireEvent.change(input, { target: { value: "1080p" } });
+    fireEvent.click(screen.getByRole("button", { name: t("qualityCompare.addValueAria", { item: compareItemName("anibt.resolution") }) }));
+    expect(latest.items[0].ranks).toEqual([["1080p"]]);
   });
 
   it("refuses combinations on single-valued items", async () => {

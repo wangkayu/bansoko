@@ -24,16 +24,17 @@ export const ANIBT_TAG_DIMENSIONS = [
 export type AniBTTagDimension = (typeof ANIBT_TAG_DIMENSIONS)[number];
 
 /**
- * The candidate values shipped with the version (every value observed across the 2026
- * spring/summer/autumn seasons). The server's classification table splits customTag into
- * codec through subformat and this matches that table; customTag values outside the table go
- * to tag (other) and have no presets.
+ * The candidate values shipped with the version. resolution, subtitle, language and format
+ * follow the values AniBT's own magnet filter offers; the rest are every value observed across
+ * the 2026 spring/summer/autumn seasons. The server's classification table splits customTag
+ * into codec through subformat and this matches that table; customTag values outside the table
+ * go to tag (other) and have no presets.
  */
 export const ANIBT_TAG_PRESETS: Record<AniBTTagDimension, readonly string[]> = {
-  resolution: ["1080p", "720p"],
-  subtitle: ["INTERNAL", "EMBEDDED", "NONE"],
-  language: ["CHS", "CHT", "JP", "EN", "ID", "TH", "MS", "VI", "FR", "PL", "DE", "ES", "PT"],
-  format: ["MKV", "MP4"],
+  resolution: ["4K", "2160p", "1080p", "720p", "480p", "360p"],
+  subtitle: ["EXTERNAL", "INTERNAL", "EMBEDDED", "NONE"],
+  language: ["CHS", "CHT", "JP", "EN", "KO", "ES", "PT", "FR", "DE", "IT", "RU", "AR", "HI", "ID", "MS", "TH", "VI", "TL", "TR", "PL", "UK"],
+  format: ["MKV", "MP4", "AVI", "WEBM"],
   codec: ["HEVC", "AVC", "AV1"],
   bitdepth: ["10bit", "8bit"],
   audio: ["AAC", "FLAC", "OPUS"],

@@ -1,4 +1,5 @@
 import type { QualityCompareKey, QualityProfile } from "../../lib/api/client";
+import { ANIBT_TAG_PRESETS, isAniBTDimension } from "../../lib/anibtTags";
 
 // Pure model of the replacement comparison profile (profile-v1), shared by the
 // global replacement default and the per-anime business snapshot. Mirrors the
@@ -7,7 +8,7 @@ import type { QualityCompareKey, QualityProfile } from "../../lib/api/client";
 // reject are refused here with a problem code, never silently rewritten.
 
 export type CompareNamespace = "subgroup" | "release" | "anibt" | "rt";
-export type CompareKind = "score" | "revision" | "single" | "multi";
+export type CompareKind = "score" | "revision" | "single" | "multi" | "flag";
 export type CompareItemDef = { key: QualityCompareKey; namespace: CompareNamespace; kind: CompareKind };
 
 /** Registry in catalog order (namespace, then attribute). */
@@ -22,11 +23,25 @@ export const COMPARE_ITEMS: readonly CompareItemDef[] = [
   { key: "anibt.format", namespace: "anibt", kind: "single" },
   { key: "rt.resolution", namespace: "rt", kind: "single" },
   { key: "rt.sub_lang", namespace: "rt", kind: "multi" },
+  { key: "rt.sub_flag", namespace: "rt", kind: "multi" },
   { key: "rt.source", namespace: "rt", kind: "single" },
   { key: "rt.codec", namespace: "rt", kind: "single" },
+  { key: "rt.uncensored", namespace: "rt", kind: "flag" },
 ];
 
 export const COMPARE_NAMESPACES: readonly CompareNamespace[] = ["subgroup", "release", "anibt", "rt"];
+
+export const FLAG_TRUE = "true";
+export const FLAG_FALSE = "false";
+
+/** Direction of a flag item: true = the flagged side ranks first. */
+export function flagFirst(ranks: readonly string[][]): boolean {
+  return ranks[0]?.[0] !== FLAG_FALSE;
+}
+
+export function setFlagDirection(profile: QualityProfile, key: QualityCompareKey, first: boolean): QualityProfile {
+  return withRanks(profile, key, () => [[first ? FLAG_TRUE : FLAG_FALSE]]);
+}
 
 export const MAX_RANKS = 64;
 export const MAX_SET_VALUES = 8;
@@ -54,7 +69,9 @@ export function unusedItems(profile: QualityProfile): CompareItemDef[] {
 
 export function addItem(profile: QualityProfile, key: QualityCompareKey): QualityProfile {
   if (profile.items.some((item) => item.key === key)) return profile;
-  return { ...profile, items: [...profile.items, { key, ranks: [] }] };
+  // A flag item always carries its direction: uncensored first by default.
+  const ranks: string[][] = itemDef(key).kind === "flag" ? [[FLAG_TRUE]] : [];
+  return { ...profile, items: [...profile.items, { key, ranks }] };
 }
 
 export function removeItem(profile: QualityProfile, index: number): QualityProfile {
@@ -122,6 +139,25 @@ export function addEntry(profile: QualityProfile, key: QualityCompareKey, values
   return {
     profile: withRanks(profile, key, (ranks) => (at < 0 ? [...ranks, entry] : [...ranks.slice(0, at), entry, ...ranks.slice(at)])),
   };
+}
+
+/**
+ * Candidate values for a ranked item: for anibt.* the same presets the tag filter uses (one
+ * source), then the server's already-seen values; duplicates fold case-insensitively and the
+ * first spelling wins. Other namespaces offer the server vocabulary as-is.
+ */
+export function candidateValues(key: string, seen: readonly string[] | undefined): string[] | undefined {
+  const dimension = key.startsWith("anibt.") ? key.slice("anibt.".length) : "";
+  if (!isAniBTDimension(dimension)) return seen ? [...seen] : undefined;
+  const out: string[] = [];
+  const folded = new Set<string>();
+  for (const value of [...ANIBT_TAG_PRESETS[dimension], ...(seen ?? [])]) {
+    const fold = value.trim().toLowerCase();
+    if (!fold || folded.has(fold)) continue;
+    folded.add(fold);
+    out.push(value.trim());
+  }
+  return out;
 }
 
 /** Values offered for a ranked item: suggestions not already listed alone. */

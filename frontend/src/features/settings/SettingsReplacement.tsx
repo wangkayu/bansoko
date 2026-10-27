@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Select, StateBlock } from "../../ui/base";
 import { Save } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "../../ui/toast";
 import {
   ApiError,
@@ -25,42 +25,32 @@ import {
 import { t } from "../../lib/i18n";
 import { QualityCompareEditor } from "../replacement/QualityCompareEditor";
 
-// Replacement and cleanup: the global default a new subscription copies at creation. Existing
-//   subscriptions hold their own frozen copy, so changes here affect only subscriptions created
-//   later (the backend contract: existing instances never re-inherit).
+// Episode versions (replacement policy): the global default a new subscription copies at creation.
+//   Existing subscriptions hold their own frozen copy, so changes here affect only subscriptions
+//   created later (the backend contract: existing instances never re-inherit). Modes are all /
+//   per_group / single_copy; a policy change decides nothing at once, existing files are judged
+//   at the next cycle (new candidate, completed scan, resumed subscription).
 
 function conflictVersion(cause: unknown): number | undefined {
   return cause instanceof ApiError && cause.status === 409 ? (cause.currentVersion ?? 0) : undefined;
 }
 
 export function SettingsReplacement({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) {
-  const flags = useRef({ replacement: false, unclassified: false });
-  const report = useCallback(
-    (key: "replacement" | "unclassified", dirty: boolean) => {
-      flags.current[key] = dirty;
-      onDirtyChange?.(flags.current.replacement || flags.current.unclassified);
-    },
-    [onDirtyChange],
-  );
-  const reportReplacement = useCallback((dirty: boolean) => report("replacement", dirty), [report]);
-  const reportUnclassified = useCallback((dirty: boolean) => report("unclassified", dirty), [report]);
   return (
     <div className="settings-policy">
-      <RetentionSection onDirtyChange={reportReplacement} />
-      <UnclassifiedSection onDirtyChange={reportUnclassified} />
+      <ReplacementSection onDirtyChange={onDirtyChange ?? noop} />
     </div>
   );
 }
 
-// "Files with unrecognized episodes" is its own section: while the replacement policy is hidden this
-//   is the only card. It relates to the naming templates' "unknown content" section without
-//   depending on the replacement policy.
+// "Files with unrecognized episodes" is its own section with its own nav entry; it relates to the
+//   naming templates' "unknown content" section without depending on the replacement policy.
 const noop = () => {};
 export function SettingsUnclassified({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) {
   return <UnclassifiedSection onDirtyChange={onDirtyChange ?? noop} />;
 }
 
-function RetentionSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
+function ReplacementSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
   const queryClient = useQueryClient();
   const query = useQuery({ queryKey: fileMaintenanceKeys.replacementDefault, queryFn: getReplacementPolicyDefault });
   const data = query.data;

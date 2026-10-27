@@ -7,6 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	reltitleconfigs "github.com/wangkayu/reltitle/configs"
+	reltitleconfig "github.com/wangkayu/reltitle/pkg/config"
+
 	acquisitiondomain "bansoko/internal/acquisition/domain"
 )
 
@@ -142,5 +145,60 @@ func TestSubtitleLanguagesReadsCompositeCodes(t *testing.T) {
 		if got := SubtitleLanguages(tag); len(got) != 1 || got[0] != want {
 			t.Fatalf("SubtitleLanguages(%q) = %v, want [%s]", tag, got, want)
 		}
+	}
+}
+
+func TestExtractFreezesOnlyUncensoredAsContentRatingTag(t *testing.T) {
+	has := func(set acquisitiondomain.TitleTagSet, tag string) bool {
+		for _, item := range set.Tags {
+			if item == tag {
+				return true
+			}
+		}
+		return false
+	}
+	if got := Extract("[Group] Show - 03 [1080p][无修正]"); !has(got, acquisitiondomain.TitleTagUncensored) {
+		t.Fatalf("uncensored missing from tags: %v", got.Tags)
+	}
+	for _, other := range []string{"[Group] Show - 03 [1080p][R18]", "[Group] Show - 03 [1080p]"} {
+		for _, tag := range Extract(other).Tags {
+			if strings.HasPrefix(tag, "content_rating:") {
+				t.Fatalf("%q: only UNCENSORED may be projected, got %v", other, tag)
+			}
+		}
+	}
+	for _, tag := range Extract("[Group] Show - 03 [1080p][无修正]").ValueTags {
+		if strings.HasPrefix(tag, "content_rating:") {
+			t.Fatalf("content_rating leaked into value tags: %v", tag)
+		}
+	}
+}
+
+// The content_rating dimension takes its only value from the embedded
+// lexicon: it is listed in the vocabulary, resolves canonically, and a lexicon
+// without it fails the load.
+func TestContentRatingDimensionReadsLexicon(t *testing.T) {
+	if value, ok := CanonicalValue("content_rating", "uncensored"); !ok || value != "UNCENSORED" {
+		t.Fatalf("CanonicalValue = %q, %v", value, ok)
+	}
+	if _, ok := CanonicalValue("content_rating", "R18"); ok {
+		t.Fatal("only UNCENSORED belongs to the content_rating dimension")
+	}
+	found := false
+	for _, entry := range Vocabulary() {
+		if entry.Dimension == "content_rating" {
+			found = reflect.DeepEqual(entry.Values, []string{"UNCENSORED"})
+		}
+	}
+	if !found {
+		t.Fatalf("vocabulary lacks content_rating: %v", Vocabulary())
+	}
+	cfg, err := reltitleconfig.LoadAllFS(reltitleconfigs.FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Lexicon.Entries = nil
+	if _, _, err := canonicalVocabulary(cfg.DictCanonicalValues.Canonical, cfg.Lexicon); err == nil {
+		t.Fatal("a lexicon without UNCENSORED must fail the vocabulary")
 	}
 }

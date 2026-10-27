@@ -1354,7 +1354,7 @@ export interface paths {
         };
         /** @description The complete frozen per-instance retention policy. The client never merges a global default. */
         get: operations["getInstanceReplacementPolicy"];
-        /** @description Fully replaces one instance policy with expected-version CAS. The save transaction changes no Placement, creates no cleanup, and performs no filesystem effect. */
+        /** @description Fully replaces one instance policy with expected-version CAS. The save changes no Placement, creates no cleanup, performs no filesystem effect and enqueues no reevaluation: files already placed and candidates still in flight are decided at the next comparison moment (a new candidate of an episode, a completed scan, or a subscription resume), never by the save itself. */
         put: operations["saveInstanceReplacementPolicy"];
         post?: never;
         delete?: never;
@@ -7175,7 +7175,7 @@ export interface components {
             expected_version: number;
         };
         /**
-         * @description How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself.
+         * @description How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself, and saving the policy never enqueues an evaluation.
          * @enum {string}
          */
         ReplacementAdmissionMode: "all" | "per_group" | "single_copy";
@@ -7285,13 +7285,13 @@ export interface components {
             version: "profile-v1";
             items: components["schemas"]["QualityCompareItem"][];
         };
-        /** @description One comparison item. ranks lists value sets best first; a release hits an entry when its values contain every value of the entry (order- and case-insensitive) and takes its best-ranked hit; a release that hits nothing, or has no value, ranks last. Only multi-valued items (anibt.language, rt.sub_lang) take entries of several values; a duplicate value set is rejected. subgroup.score and release.revision take no ranks (subscription subgroup score; numeric vN, absent = v1). */
+        /** @description One comparison item. ranks lists value sets best first; a release hits an entry when its values contain every value of the entry (order- and case-insensitive) and takes its best-ranked hit; a release that hits nothing, or has no value, ranks last. Only multi-valued items (anibt.language, rt.sub_lang, rt.sub_flag) take entries of several values; a duplicate value set is rejected. subgroup.score and release.revision take no ranks (subscription subgroup score; numeric Rev vN, absent = v1). rt.uncensored is a two-way boolean preference: ranks is exactly [["true"]] (uncensored first) or [["false"]] (censored first); equal values tie. */
         QualityCompareItem: {
             key: components["schemas"]["QualityCompareKey"];
             ranks: string[][];
         };
         /** @enum {string} */
-        QualityCompareKey: "subgroup.score" | "release.lang" | "release.resolution" | "release.revision" | "anibt.resolution" | "anibt.language" | "anibt.subtitle" | "anibt.format" | "rt.resolution" | "rt.sub_lang" | "rt.source" | "rt.codec";
+        QualityCompareKey: "subgroup.score" | "release.lang" | "release.resolution" | "release.revision" | "anibt.resolution" | "anibt.language" | "anibt.subtitle" | "anibt.format" | "rt.resolution" | "rt.sub_lang" | "rt.sub_flag" | "rt.source" | "rt.codec" | "rt.uncensored";
         /** @description Candidate values per ranked comparison item: release.* from the active attribute rules, anibt.* from values seen on releases (of the anime when one is named), rt.* from the pinned reltitle dictionary (empty when it is unavailable). Values are suggestions; any value can be ranked. */
         ReplacementCompareVocabulary: {
             items: components["schemas"]["RetentionCompareVocabularyItem"][];

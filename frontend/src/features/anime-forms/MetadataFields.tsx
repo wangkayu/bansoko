@@ -988,7 +988,9 @@ function MetadataMatchDialog({
       return;
     }
     setManualError(undefined);
-    pick({ provider: "tmdb", workId: id, title: t("forms.manualTmdbTitle", { id }), detailsStatus: "not_applicable" });
+    // An ID entry has no season list to infer from: it defaults to TV season 1 (right for most
+    // works), unless the anime already has its own season; both stay editable before confirming.
+    pick({ provider: "tmdb", workId: id, title: t("forms.manualTmdbTitle", { id }), detailsStatus: "not_applicable", mediaKind: "tv", suggestedSeason: 1 });
   }
 
   function pick(candidate: MetadataCandidate) {

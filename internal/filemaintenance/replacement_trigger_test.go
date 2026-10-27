@@ -7,14 +7,12 @@ import (
 	"errors"
 	"sync"
 	"testing"
-	"time"
 
 	"bansoko/internal/apperrors"
 	"bansoko/internal/library/domain"
 	"bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
 	reconciliationapplication "bansoko/internal/reconciliation/application"
-	"bansoko/internal/runtime/worker"
 	"bansoko/internal/testutil/disposabledb"
 	"bansoko/internal/transport/httpapi/generated"
 	"bansoko/internal/workitems"
@@ -120,6 +118,19 @@ ORDER BY created_at DESC LIMIT 1`, animeID).
 	return &item
 }
 
+// countWorkItemsOfKind counts every WorkItem of one kind the anime ever had,
+// whatever its state: a trigger that enqueues nothing leaves zero.
+func countWorkItemsOfKind(t *testing.T, db *sql.DB, animeID, kind string) int {
+	t.Helper()
+	var count int
+	if err := db.QueryRow(`
+SELECT COUNT(*) FROM work_items
+WHERE owner_type = 'file_maintenance' AND owner_id = $1 AND kind = $2`, animeID, kind).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	return count
+}
+
 func countLiveEvaluateItems(t *testing.T, db *sql.DB, animeID string) int {
 	t.Helper()
 	var count int
@@ -187,164 +198,63 @@ func TestTriggerPlacementCommittedStoppedSkips(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Instance policy save trigger (through the HTTP adapter service)
+// Instance policy save enqueues nothing (through the HTTP adapter service)
 // ---------------------------------------------------------------------------
 
-func TestTriggerPolicySavedOnlyTargetAnime(t *testing.T) {
-	db := disposabledb.ResetDisposableSchema(t)
+// A replacement policy save changes only the frozen policy: it enqueues no
+// replacement_evaluate and no replacement_fallback WorkItem, whatever the
+// instance holds (everything placed, a candidate still in flight, or a live
+// evaluate item already pending). The next comparison moment decides the old
+// files and the in-flight candidates under the new policy.
+func TestInstancePolicySaveEnqueuesNoReplacementWork(t *testing.T) {
+	db, _, trigger := newTriggerTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	// Two active instances with identical policy v1; only anime-1 is saved.
-	seedAnimeSubscription(t, db, "anime-1", "sub-1", "active")
-	seedInstanceReplacement(t, db, "anime-1", ModePerGroup,
-		`{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["2160p"],["1080p"],["720p"],["480p"]]}]}`, 1)
-	seedAnimeSubscription(t, db, "anime-2", "sub-2", "active")
-	seedInstanceReplacement(t, db, "anime-2", ModePerGroup,
-		`{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["2160p"],["1080p"],["720p"],["480p"]]}]}`, 1)
 	seedFilePlacement(t, db, "anime-1", "sub-1", "release-r1", []string{"tv:s1:e1"},
 		Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
-	seedFilePlacement(t, db, "anime-2", "sub-2", "release-r2", []string{"tv:s1:e1"},
-		Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
-
-	store, err := workitems.NewStore(db, workitems.DefaultRetentionDays, port.NopRuntimeLogger{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	trigger := NewReplacementTriggerService(db, store)
-	service := NewService(NewPolicyService(db), NewReplacementPolicyService(db), nil, nil, nil)
-	service.SetReplacementTrigger(trigger)
-
-	saved, err := service.SaveInstanceReplacementPolicy(ctx, "anime-1", generated.InstanceReplacementPolicyInput{
-		AdmissionMode:   generated.ReplacementAdmissionModeSingleCopy,
-		QualityProfile:  generated.QualityProfile{Version: "profile-v1", Items: []generated.QualityCompareItem{{Key: "release.resolution", Ranks: [][]string{{"2160p"}, {"1080p"}, {"720p"}, {"480p"}}}}},
-		ExpectedVersion: 1,
-	}, "test", "http")
-	if err != nil {
-		t.Fatalf("policy save: %v", err)
-	}
-	if saved.Version != 2 {
-		t.Fatalf("policy version must advance to 2, got %d", saved.Version)
-	}
-	// Everything of the target anime is placed: a policy change has no
-	// unplaced candidate to re-decide and creates no item.
-	if item := loadLiveEvaluateItem(t, db, "anime-1"); item != nil {
-		t.Fatalf("a policy change without an unplaced candidate must not evaluate: %+v", item)
-	}
-	// A release still downloading is re-decided under the new policy.
+	// The candidate is still downloading: a policy change has nothing to do
+	// with it until the next comparison moment.
+	// acquisitions is not writable by the runtime role; the fixture goes through the schema owner.
 	if _, err := disposabledb.Owner(t).Exec(`UPDATE acquisitions SET entry_kind = 'subscription_add', state = 'running' WHERE source_release_ref = 'release-r1'`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.SaveInstanceReplacementPolicy(ctx, "anime-1", generated.InstanceReplacementPolicyInput{
-		AdmissionMode:   generated.ReplacementAdmissionModePerGroup,
-		QualityProfile:  generated.QualityProfile{Version: "profile-v1", Items: []generated.QualityCompareItem{{Key: "release.resolution", Ranks: [][]string{{"2160p"}, {"1080p"}, {"720p"}, {"480p"}}}}},
-		ExpectedVersion: 2,
-	}, "test", "http"); err != nil {
-		t.Fatalf("policy save: %v", err)
-	}
-	item := loadLiveEvaluateItem(t, db, "anime-1")
-	if item == nil || item.Trigger != TriggerPolicySaved {
-		t.Fatalf("target anime must carry a policy_saved item: %+v", item)
-	}
-	if item.InputSnapshot["candidate_release_id"] != "release-r1" {
-		t.Fatalf("policy trigger must resolve the in-flight release: %+v", item.InputSnapshot)
-	}
-	// Non-target anime: policy, decision and WorkItem counts unchanged.
-	if item := loadLiveEvaluateItem(t, db, "anime-2"); item != nil {
-		t.Fatalf("non-target anime must not receive an item: %+v", item)
-	}
-	var policyVersion, decisions int
-	if err := db.QueryRow(`SELECT replacement_version FROM anime_business_configs WHERE managed_anime_id = 'anime-2'`).Scan(&policyVersion); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM replacement_decisions WHERE managed_anime_id = 'anime-2'`).Scan(&decisions); err != nil {
-		t.Fatal(err)
-	}
-	if policyVersion != 1 || decisions != 0 {
-		t.Fatalf("non-target anime must be untouched: policy=%d decisions=%d", policyVersion, decisions)
-	}
-}
-
-func TestTriggerPolicySavedStoppedKeepsPolicyThenResumeNewEpoch(t *testing.T) {
-	db, store, trigger := newTriggerTestDB(t)
-	defer db.Close()
-	ctx := context.Background()
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-r1", []string{"tv:s1:e1"},
-		Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
-	if _, err := db.Exec(`UPDATE subscriptions SET state = 'stopped', version = version + 1 WHERE managed_anime_id = 'anime-1'`); err != nil {
-		t.Fatal(err)
-	}
-
 	service := NewService(NewPolicyService(db), NewReplacementPolicyService(db), nil, nil, nil)
-	service.SetReplacementTrigger(trigger)
-	if _, err := service.SaveInstanceReplacementPolicy(ctx, "anime-1", generated.InstanceReplacementPolicyInput{
-		AdmissionMode:   generated.ReplacementAdmissionModeSingleCopy,
-		QualityProfile:  generated.QualityProfile{Version: "profile-v1", Items: []generated.QualityCompareItem{}},
-		ExpectedVersion: 1,
-	}, "test", "http"); err != nil {
-		t.Fatalf("stopped policy save: %v", err)
+	save := func(expectedVersion int, mode generated.ReplacementAdmissionMode) {
+		t.Helper()
+		if _, err := service.SaveInstanceReplacementPolicy(ctx, "anime-1", generated.InstanceReplacementPolicyInput{
+			AdmissionMode: mode,
+			QualityProfile: generated.QualityProfile{Version: "profile-v1", Items: []generated.QualityCompareItem{
+				{Key: "release.resolution", Ranks: [][]string{{"2160p"}, {"1080p"}, {"720p"}, {"480p"}}},
+			}},
+			ExpectedVersion: expectedVersion,
+		}, "test", "http"); err != nil {
+			t.Fatalf("policy save: %v", err)
+		}
 	}
-	if item := loadLiveEvaluateItem(t, db, "anime-1"); item != nil {
-		t.Fatalf("stopped policy save must create no evaluate item: %+v", item)
-	}
-	var policyVersion int64
-	if err := db.QueryRow(`SELECT replacement_version FROM anime_business_configs WHERE managed_anime_id = 'anime-1'`).Scan(&policyVersion); err != nil {
+	save(1, generated.ReplacementAdmissionModeSingleCopy)
+	save(2, generated.ReplacementAdmissionModeAll)
+	// A live evaluate item is not a precondition: a pending item is kept as
+	// is and reads the new policy when it runs.
+	if err := trigger.TriggerPlacementCommitted(ctx, "anime-1", "release-r1"); err != nil {
 		t.Fatal(err)
 	}
-	if policyVersion != 2 {
-		t.Fatalf("stopped policy save must still persist the owner truth: version=%d", policyVersion)
-	}
-
-	// Resume creates a fresh epoch (subscription version bumped by the stop).
-	if _, err := db.Exec(`UPDATE subscriptions SET state = 'active', version = version + 1 WHERE managed_anime_id = 'anime-1'`); err != nil {
-		t.Fatal(err)
-	}
-	if err := trigger.TriggerSubscriptionResumed(ctx, "anime-1"); err != nil {
-		t.Fatalf("resume trigger: %v", err)
+	save(3, generated.ReplacementAdmissionModePerGroup)
+	if count := countLiveEvaluateItems(t, db, "anime-1"); count != 1 {
+		t.Fatalf("the pending evaluate item must stay the single live one: %d", count)
 	}
 	item := loadLiveEvaluateItem(t, db, "anime-1")
-	if item == nil {
-		t.Fatal("resume must create the new epoch item")
+	if item.Trigger != TriggerPlacementCommitted {
+		t.Fatalf("a policy save must not re-input the pending item: trigger=%s", item.Trigger)
 	}
-	if item.Trigger != TriggerSubscriptionResumed || item.Epoch != 3 || item.SubscriptionVersion != 3 {
-		t.Fatalf("resume epoch must be the new subscription version: trigger=%s epoch=%d sub=%d", item.Trigger, item.Epoch, item.SubscriptionVersion)
+	if got := countWorkItemsOfKind(t, db, "anime-1", workitems.KindReplacementFallback); got != 0 {
+		t.Fatalf("a policy save must enqueue no fallback query: %d items", got)
 	}
-	if item.InputSnapshot["candidate_release_id"] != "release-r1" {
-		t.Fatalf("resume must read the paused-period placement facts: %+v", item.InputSnapshot)
+	var version int64
+	if err := db.QueryRow(`SELECT replacement_version FROM anime_business_configs WHERE managed_anime_id = 'anime-1'`).Scan(&version); err != nil {
+		t.Fatal(err)
 	}
-
-	// Repeated resume notifications merge into the one live item.
-	if err := trigger.TriggerSubscriptionResumed(ctx, "anime-1"); err != nil {
-		t.Fatalf("replay resume trigger: %v", err)
-	}
-	if count := countLiveEvaluateItems(t, db, "anime-1"); count != 1 {
-		t.Fatalf("repeated resume must keep exactly one live item: %d", count)
-	}
-
-	// Consume the item through the real worker path, then a later notification
-	// creates a fresh single item again (never two live at once).
-	service2 := NewReplacementDecisionService(db)
-	cleanup := NewCleanupService(db)
-	cleanup.SetWorkItems(store)
-	service2.SetCleanupHandoff(cleanup)
-	claim, err := store.ClaimDue(ctx, "trigger-test-worker", []string{workitems.KindReplacementEvaluate}, time.Minute)
-	if err != nil {
-		t.Fatalf("claim: %v", err)
-	}
-	outcome, err := service2.EvaluateHandler().Handle(ctx, claim)
-	if err != nil {
-		t.Fatalf("handler: %v", err)
-	}
-	if outcome.Kind != worker.OutcomeFinish || outcome.TerminalState != workitems.StateSucceeded {
-		t.Fatalf("resume evaluate must succeed: %+v", outcome)
-	}
-	if err := store.FinishWithResult(ctx, claim, outcome.TerminalState, outcome.OwnerResult, nil); err != nil {
-		t.Fatalf("finish: %v", err)
-	}
-	if err := trigger.TriggerSubscriptionResumed(ctx, "anime-1"); err != nil {
-		t.Fatalf("post-consumption trigger: %v", err)
-	}
-	if count := countLiveEvaluateItems(t, db, "anime-1"); count != 1 {
-		t.Fatalf("post-consumption notification must create one new live item: %d", count)
+	if version != 4 {
+		t.Fatalf("every save must still persist the owner truth: replacement_version=%d", version)
 	}
 }
 
@@ -376,20 +286,17 @@ func TestTriggerMergesLatestInputAcrossTriggers(t *testing.T) {
 	if item.InputSnapshot["candidate_release_id"] != "release-r2" {
 		t.Fatalf("merged item must carry the latest unexecuted input: %+v", item.InputSnapshot)
 	}
-	// A policy trigger never overwrites a pending item: it reads the new
-	// policy when it runs, and its placed candidate keeps being evaluated.
-	if _, err := disposabledb.Owner(t).Exec(`UPDATE acquisitions SET entry_kind = 'subscription_add', state = 'running' WHERE source_release_ref = 'release-r1'`); err != nil {
-		t.Fatal(err)
-	}
-	if err := trigger.TriggerPolicySaved(ctx, "anime-1"); err != nil {
+	// A completed-generation trigger merges into the same live item and
+	// replaces its input with the latest unexecuted one.
+	if err := trigger.TriggerGenerationCompleted(ctx, "anime-1"); err != nil {
 		t.Fatal(err)
 	}
 	if count := countLiveEvaluateItems(t, db, "anime-1"); count != 1 {
-		t.Fatalf("a policy trigger must not add a live item: %d", count)
+		t.Fatalf("a generation trigger must not add a live item: %d", count)
 	}
 	item = loadLiveEvaluateItem(t, db, "anime-1")
-	if item.InputSnapshot["candidate_release_id"] != "release-r2" || item.Trigger != TriggerPlacementCommitted {
-		t.Fatalf("a pending item must keep its input: %+v", item.InputSnapshot)
+	if item.InputSnapshot["candidate_release_id"] != "release-r2" || item.Trigger != TriggerGenerationCompleted {
+		t.Fatalf("a merged item must carry the latest input and trigger: %+v trigger=%s", item.InputSnapshot, item.Trigger)
 	}
 }
 
@@ -413,7 +320,7 @@ func TestTriggerConcurrentNotificationsKeepSingleLiveItem(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := trigger.TriggerPolicySaved(ctx, "anime-1"); err != nil {
+			if err := trigger.TriggerGenerationCompleted(ctx, "anime-1"); err != nil {
 				errs <- err
 			}
 		}()

@@ -16,13 +16,13 @@ import { mockSignedIn } from "./session";
 
 const fixtureOnly = process.env.BANSOKO_E2E_FIXTURES === "1";
 
-// 产品实际 14 个分区（SettingsDialog categories 的用户可见中文入口，
-// 按 sidebar 分组顺序排列：服务 2 + 订阅策略 3 + 站点 3 + 系统 6）。
-// 「保留与清理」暂时隐藏；「未识别集数」是独立分区，继续保留。
+// 产品实际 15 个分区（SettingsDialog categories 的用户可见中文入口，
+// 按 sidebar 分组顺序排列：服务 2 + 订阅策略 4 + 站点 3 + 系统 6）。
+// 「同集多版本」与「未识别集数」是各自独立的分区。
 // 「命名变量」当前版本隐藏（恢复时加回「默认规则」之后，见 SettingsDialog.tsx）。
 const CATEGORY_GROUPS: { group: string; labels: string[] }[] = [
   { group: "服务", labels: ["服务连接", "下载与入库"] },
-  { group: "订阅策略", labels: ["默认规则", "未识别集数", "订阅数量与对齐"] },
+  { group: "订阅策略", labels: ["默认规则", "同集多版本", "未识别集数", "订阅数量与对齐"] },
   { group: "站点", labels: ["AniBT 配置", "Mikan 配置", "隐藏的番剧"] },
   { group: "系统", labels: ["账户", "自动任务", "通知", "版本与升级", "数据备份", "API 令牌"] },
 ];

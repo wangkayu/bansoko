@@ -89,7 +89,7 @@ func TestParseProfileFailsClosed(t *testing.T) {
 		t.Fatal("a profile-v0 document must not evaluate")
 	}
 	profile, err := ParseProfile(qualityprofile.DefaultJSON())
-	if err != nil || len(profile.Items) != 4 {
+	if err != nil || len(profile.Items) != 6 {
 		t.Fatalf("default profile = %+v, %v", profile, err)
 	}
 }

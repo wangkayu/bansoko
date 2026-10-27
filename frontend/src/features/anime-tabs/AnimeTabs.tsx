@@ -31,11 +31,11 @@ import { AnimeTabNavigationContext } from "./tabNavigation";
 /** How long unsaved metadata must stay unchanged before the RSS preview re-reads (no per-keystroke re-reads while typing a title). */
 const METADATA_PREVIEW_DEBOUNCE_MS = 300;
 
-const SAVE_ORDER = ["metadata", "subgroups", "rules", "parser", "fileEffect", "alignment"] as const;
+const SAVE_ORDER = ["metadata", "subgroups", "rules", "parser", "fileEffect", "replacement", "alignment"] as const;
 const TAB_PARTS: Record<string, readonly string[]> = {
   metadata: ["metadata"],
   subgroups: ["subgroups"],
-  rules: ["rules", "parser", "fileEffect", "alignment"],
+  rules: ["rules", "parser", "fileEffect", "replacement", "alignment"],
 };
 
 export function AnimeTabs({

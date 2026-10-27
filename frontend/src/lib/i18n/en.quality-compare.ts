@@ -1,14 +1,14 @@
-// Replacement comparison ("What counts as better"): the comparison item editor
-// shared by the Global replacement policy and the anime configuration.
+// Version priority (the comparison item editor): shared by the global
+// "Episode versions" settings and the anime configuration.
 
 import type { CopyShape } from "./types";
 import type { qualityCompareCopy } from "./zh-CN.quality-compare";
 
 export const enQualityCompareCopy = {
-  title: "What Counts as Better",
+  title: "Version priority",
   description: "Items are compared top to bottom; the first item that tells two versions apart decides. If all items are equal, the larger file is better; if the size is equal too, the existing file stays.",
-  sourceHint: "Each item names where its value comes from. Different sources of the same attribute can be added and ordered separately; there is no automatic fallback between sources.",
-  allModeNote: "\"Keep all\" is selected: nothing is compared and the settings below have no effect.",
+  sourceHint: "Each item shows where its data comes from. The same attribute can be added once per source; when one source has no value, no other source is used instead.",
+  allModeNote: "\"All\" is selected: versions are not compared, so no priority is needed",
   listAria: "Comparison order",
   namespace: {
     subgroup: "Group",
@@ -20,15 +20,17 @@ export const enQualityCompareCopy = {
     subgroup_score: "Group score",
     release_lang: "Language",
     release_resolution: "Resolution",
-    release_revision: "Revision",
+    release_revision: "Rev",
     anibt_resolution: "Resolution",
     anibt_language: "Language",
     anibt_subtitle: "Subtitles",
     anibt_format: "Format",
     rt_resolution: "Resolution",
     rt_sub_lang: "Subtitle language",
+    rt_sub_flag: "Subtitle type",
     rt_source: "Source",
     rt_codec: "Codec",
+    rt_uncensored: "Uncensored",
   },
   itemName: "{source} · {name}",
   rtSource: "Values from reltitle",
@@ -37,13 +39,18 @@ export const enQualityCompareCopy = {
   moveDown: "Move {item} down",
   removeItem: "Remove {item}",
   addItem: "Add item",
-  scoreHint: "Uses the score of the release's RSS source group on this anime's Groups tab; a higher score is better. Releases without a score or without an RSS source rank lowest. Mikan and AniBT groups are scored separately.",
-  scorePerGroup: "\"Best per group\" is selected: versions are only compared within one group, so this item has no effect.",
+  scoreHint: "Compares the score of the torrent's subtitle group on this anime's Groups tab; a higher score is better, up to 100. Required groups count as 100. Torrents without a score rank lowest. Mikan and AniBT groups are scored separately.",
+  scorePerGroup: "\"One per subtitle group\" is selected: versions are only compared within one group, so this item has no effect.",
   scoreLink: "Go to group scores",
-  revisionHint: "Compared by revision number automatically: v3 beats v2, and v2 beats no revision. Nothing to set.",
-  rankHint: "Order from best to worst; drag or use ‹ › to adjust. Values not listed and releases without this item rank worst.",
-  multiHint: "This item can have several values. Add single values or combinations (such as CHS+CHT); order doesn't matter. A release matches an entry when it has every value of it, and takes its highest-ranked match. To prefer more languages, list wider combinations first.",
-  anibtHint: "AniBT spellings are kept as-is; suggestions come from values already seen.",
+  revisionHint: "Compared by Rev automatically: v3 beats v2, and v2 beats no Rev. Nothing to set.",
+  rankHint: "Order from best to worst; drag or use ‹ › to adjust. Values not listed rank worst; a torrent without this item ties on it.",
+  multiHint: "This item can have several values. Add single values or combinations (such as CHS+CHT); order doesn't matter. A torrent matches an entry when it has every value of it, and takes its highest-ranked match. To prefer more languages, list wider combinations first.",
+  anibtHint: "AniBT spellings are kept as-is; suggestions are the common AniBT values plus any already seen in torrents.",
+  subFlagHint: "How reltitle reads the subtitles are attached from the title: soft is muxed in, hard is burned in, ex is a separate file.",
+  uncensoredHint: "Whether reltitle reads the torrent as uncensored from its title. Torrents with the same value tie.",
+  uncensoredFirst: "Prefer uncensored",
+  censoredFirst: "Prefer censored",
+  directionAria: "{item} preference",
   ranksAria: "{item} ranking",
   empty: "No values listed yet; this item is not compared.",
   others: "Others / none",

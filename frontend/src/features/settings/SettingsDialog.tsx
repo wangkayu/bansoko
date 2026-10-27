@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NavLink, useBlocker, useLocation, useNavigate, useParams, type BlockerFunction } from "react-router-dom";
-import { Bell, Bot, ChevronLeft, Clock, DatabaseBackup, EyeOff, FileQuestion, HardDrive, Plug, Rocket, SlidersHorizontal, UserRound, Users, Wand2 } from "lucide-react";
+import { Bell, Bot, ChevronLeft, Clock, DatabaseBackup, EyeOff, FileQuestion, HardDrive, Layers, Plug, Rocket, SlidersHorizontal, UserRound, Users, Wand2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDirtyConfirm } from "../../ui";
 import { Button, Dialog } from "../../ui/base";
 import { SettingsConnections } from "./SettingsConnections";
 import { SettingsPolicy } from "./SettingsPolicy";
-import { SettingsUnclassified } from "./SettingsReplacement";
+import { SettingsReplacement, SettingsUnclassified } from "./SettingsReplacement";
 import { SettingsProviderDetail } from "./SettingsProviderDetail";
 import { SavePartsProvider } from "../../lib/saveParts";
 import { useSettingsSaveParts } from "./settingsSave";
@@ -48,12 +48,9 @@ const categories = [
 //   template still renders. To restore, add back this entry (the Braces icon), its group key, the
 //   render branch and the SettingsVars import together; it is an L2 dialog with immediate saving
 //   and no dirty callback (the component, copy and component tests remain in the repo).
-  // "Replacement and cleanup" is hidden for now: the naming variables it depends on are not stable
-//   enough to test, and the default is already "keep everything", so behavior is unchanged. To
-//   restore, add back this entry, its group key, the render branch and SettingsReplacement's dirty
-//   callback together (the component and copy remain in the repo).
-//   "Files with unrecognized episodes" depends only on the file-effect defaults and is untouched; it
-//   keeps its own entry.
+  // "Episode versions" (replacement policy) and "Files with unrecognized episodes" are separate
+//   sections: the latter depends only on the file-effect defaults.
+  { key: "replacement", labelKey: "settings.nav.replacement", icon: Layers },
   { key: "unclassified", labelKey: "settings.nav.unclassified", icon: FileQuestion },
   { key: "account", labelKey: "settings.nav.account", icon: UserRound },
   { key: "automation", labelKey: "settings.nav.automation", icon: Clock },
@@ -72,8 +69,8 @@ type CategoryKey = (typeof categories)[number]["key"];
 //   account/automation/notifications/version/backup/tokens belong to "system".
 const categoryGroups: { groupKey: CopyKey; keys: CategoryKey[] }[] = [
   { groupKey: "settings.nav.groupService", keys: ["connections", "download"] },
-  // On restore, naming variables goes back after "rules"; the replacement policy rejoins this group as well.
-  { groupKey: "settings.nav.groupDefaults", keys: ["rules", "unclassified", "policy"] },
+  // On restore, naming variables goes back after "rules".
+  { groupKey: "settings.nav.groupDefaults", keys: ["rules", "replacement", "unclassified", "policy"] },
   { groupKey: "settings.nav.groupSite", keys: ["anibt", "mikan", "hidden"] },
   { groupKey: "settings.nav.groupSystem", keys: ["account", "automation", "notifications", "updates", "backup", "ai"] },
 ];
@@ -307,6 +304,8 @@ function renderActive(active: CategoryKey) {
     case "rules":
       return <SettingsRules />;
     // While naming variables is hidden there is no "vars" branch: the /settings/vars deep link falls back to service connections.
+    case "replacement":
+      return <SettingsReplacement />;
     case "unclassified":
       return <SettingsUnclassified />;
     case "automation":
