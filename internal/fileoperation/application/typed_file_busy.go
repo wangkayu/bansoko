@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"bansoko/internal/library/domain"
@@ -48,7 +49,11 @@ func (s *Service) requeueBusyPublication(ctx context.Context, c workitems.Claim,
 	})
 	if err != nil {
 		var pg *pgconn.PgError
-		if errors.As(err, &pg) && pg.Code == "23514" && (pg.Message == "FILE_BUSY_WINDOW_EXHAUSTED" || pg.Message == "FILE_BUSY_REQUEUE_EVIDENCE") {
+		// Any integrity refusal (the window passed, the evidence is not a
+		// busy shape, or any guard or constraint refused the reset) ends the
+		// operation like an exhausted window: nothing was replaced and no
+		// temp is left, so it fails visibly instead of as an unknown error.
+		if errors.As(err, &pg) && strings.HasPrefix(pg.Code, "23") {
 			return s.finishTypedFailure(ctx, c, domain.CodeTargetBusy, cause)
 		}
 		return worker.Outcome{}, fmt.Errorf("typed busy publication requeue not committed: %w", err)

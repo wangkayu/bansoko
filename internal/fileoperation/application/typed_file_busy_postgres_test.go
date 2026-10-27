@@ -41,6 +41,8 @@ func renameAnswer(errno *unix.Errno) filesystem.OSFileExecutor {
 type busyOperationRow struct {
 	state, code    string
 	retries        int
+	busyRequeues   int
+	wallIn         time.Duration
 	permit         bool
 	liveWork       int
 	busySince      string
@@ -52,17 +54,19 @@ func (x typedRuntimeFixture) busyRow(t *testing.T) busyOperationRow {
 	t.Helper()
 	var r busyOperationRow
 	var code, outcome, busySince sql.NullString
-	var dueSeconds float64
-	if err := x.db.QueryRow(`SELECT o.state,o.failure_code,o.import_retry_count,o.publication_permit_id IS NOT NULL,
+	var dueSeconds, wallSeconds float64
+	if err := x.db.QueryRow(`SELECT o.state,o.failure_code,o.import_retry_count,o.busy_requeue_count,
+ COALESCE(EXTRACT(EPOCH FROM o.file_wall_until-clock_timestamp()),0),o.publication_permit_id IS NOT NULL,
  (SELECT count(*) FROM work_items w WHERE w.owner_type='file_operation' AND w.owner_id=o.id),
  (SELECT w.input_snapshot->>'busy_since' FROM work_items w WHERE w.owner_type='file_operation' AND w.owner_id=o.id),
  COALESCE((SELECT EXTRACT(EPOCH FROM w.available_at-clock_timestamp()) FROM work_items w WHERE w.owner_type='file_operation' AND w.owner_id=o.id),0),
  (SELECT f.outcome FROM acquisition_files f WHERE f.acquisition_id=o.acquisition_id AND f.file_ref=o.file_ref)
- FROM file_operations o WHERE o.id=$1`, x.opID).Scan(&r.state, &code, &r.retries, &r.permit, &r.liveWork, &busySince, &dueSeconds, &outcome); err != nil {
+ FROM file_operations o WHERE o.id=$1`, x.opID).Scan(&r.state, &code, &r.retries, &r.busyRequeues, &wallSeconds, &r.permit, &r.liveWork, &busySince, &dueSeconds, &outcome); err != nil {
 		t.Fatal(err)
 	}
 	r.code, r.busySince, r.deliveryResult = code.String, busySince.String, outcome.String
 	r.dueIn = time.Duration(dueSeconds * float64(time.Second))
+	r.wallIn = time.Duration(wallSeconds * float64(time.Second))
 	return r
 }
 
@@ -94,8 +98,10 @@ func assertNoPermitTemp(t *testing.T, target string) {
 
 // An overwrite whose rename onto the existing file is refused busy (an SMB
 // sharing violation is EBUSY) leaves the old file in place, removes its temp
-// and is requeued: its evidence and attempt budget are reset and the next
-// item is due in five minutes, carrying the window start. Once the file is
+// and is requeued: its evidence and attempt budget are reset, the busy
+// requeue counter (never the manual import retry counter) advances, and the
+// next item is due in five minutes, carrying the window start. The wall
+// deadline moves with each hop without compounding. Once the file is
 // released the next run replaces it.
 func TestTypedOverwriteBusyRequeuesThenPublishes(t *testing.T) {
 	x := newOverwriteRuntimeFixture(t)
@@ -105,7 +111,7 @@ func TestTypedOverwriteBusyRequeuesThenPublishes(t *testing.T) {
 		t.Fatalf("busy run: handled=%v err=%v", handled, err)
 	}
 	row := x.busyRow(t)
-	if row.state != ownerStatePending || row.code != "" || row.retries != 1 || row.permit || row.liveWork != 1 || row.deliveryResult != "" {
+	if row.state != ownerStatePending || row.code != "" || row.retries != 0 || row.busyRequeues != 1 || row.permit || row.liveWork != 1 || row.deliveryResult != "" {
 		t.Fatalf("busy overwrite not requeued: %+v", row)
 	}
 	if row.busySince == "" || row.dueIn < 4*time.Minute || row.dueIn > 6*time.Minute {
@@ -125,8 +131,12 @@ func TestTypedOverwriteBusyRequeuesThenPublishes(t *testing.T) {
 	if handled, err := x.runFileWorker(t); !handled || err != nil {
 		t.Fatalf("second busy run: handled=%v err=%v", handled, err)
 	}
-	if again := x.busyRow(t); again.retries != 2 || again.busySince != row.busySince {
+	again := x.busyRow(t)
+	if again.retries != 0 || again.busyRequeues != 2 || again.busySince != row.busySince {
 		t.Fatalf("second hop %+v, want the same busy_since %q", again, row.busySince)
+	}
+	if drift := again.wallIn - row.wallIn; drift > time.Minute || drift < -time.Minute {
+		t.Fatalf("wall deadline compounds across hops: %s then %s", row.wallIn, again.wallIn)
 	}
 
 	errno = 0
@@ -183,16 +193,16 @@ func TestTypedOverwriteReadOnlyFailsWithoutRequeue(t *testing.T) {
 		t.Fatalf("read-only run: handled=%v err=%v", handled, err)
 	}
 	row := x.busyRow(t)
-	if row.state != ownerStateFailed || row.code != domain.CodeTargetPermissionDenied || row.retries != 0 || row.liveWork != 0 {
+	if row.state != ownerStateFailed || row.code != domain.CodeTargetPermissionDenied || row.retries != 0 || row.busyRequeues != 0 || row.liveWork != 0 {
 		t.Fatalf("read-only overwrite: %+v", row)
 	}
 	assertNoPermitTemp(t, x.target)
 }
 
-// The requeue command accepts only the busy shape: a claim whose evidence
-// is not a refused-busy overwrite is refused with zero writes.
+// The requeue command accepts only the busy overwrite shapes: a claim of an
+// operation that does not overwrite is refused with zero writes.
 func TestFileBusyRequeueRefusesOtherEvidence(t *testing.T) {
-	x := newOverwriteRuntimeFixture(t)
+	x := newTypedRuntimeFixture(t, nil, false)
 	c, err := x.store.ClaimDue(t.Context(), "busy-shape", []string{workitems.KindFileExecute}, time.Minute)
 	if err != nil {
 		t.Fatal(err)
