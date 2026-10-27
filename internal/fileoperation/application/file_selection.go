@@ -73,48 +73,19 @@ func (s fileSelection) classify(file artifactFileContext) (kind, reason string) 
 }
 
 // firstLevel maps the artifact file to its manifest path and reads the level
-// there. Without a frozen manifest the relative path is the torrent-relative
-// path itself. A file that maps to no single manifest entry fails closed.
+// there. A file that maps to no single manifest entry fails closed.
 func (s fileSelection) firstLevel(relativePath string) bool {
-	relative := normalizeManifestPath(relativePath)
-	if s.manifest == nil {
-		return filekinds.FirstLevel(relative)
-	}
-	if _, ok := s.manifest[relative]; ok {
-		return filekinds.FirstLevel(relative)
-	}
-	// The local relative path may omit the torrent folder; accept exactly one
-	// manifest entry that ends with it.
-	var mapped string
-	matches := 0
-	for path := range s.manifest {
-		if strings.HasSuffix(path, "/"+relative) {
-			mapped = path
-			matches++
-		}
-	}
-	return matches == 1 && filekinds.FirstLevel(mapped)
+	path, ok := s.manifestPath(relativePath)
+	return ok && filekinds.FirstLevel(path)
 }
 
 // manifestPath maps an artifact file to its torrent manifest path, the key of
-// the frozen batch plan: the exact manifest entry, else the one entry that
-// ends with the local relative path (the client may omit the torrent folder).
-// Without a frozen manifest the relative path is the manifest path.
+// the frozen batch plan (filekinds.MapManifestPath: exact entry, then the
+// torrent root joined with the local path, then a unique suffix). Without a
+// frozen manifest the relative path is the manifest path.
 func (s fileSelection) manifestPath(relativePath string) (string, bool) {
-	relative := normalizeManifestPath(relativePath)
 	if s.manifest == nil {
-		return relative, true
+		return normalizeManifestPath(relativePath), true
 	}
-	if _, ok := s.manifest[relative]; ok {
-		return relative, true
-	}
-	var mapped string
-	matches := 0
-	for path := range s.manifest {
-		if strings.HasSuffix(path, "/"+relative) {
-			mapped = path
-			matches++
-		}
-	}
-	return mapped, matches == 1
+	return filekinds.MapManifestPath(s.manifest, relativePath)
 }

@@ -172,6 +172,51 @@ func NormalizePath(value string) string {
 	return strings.Trim(strings.ReplaceAll(strings.TrimSpace(value), `\`, "/"), "/")
 }
 
+// ManifestRoot is the torrent root folder of a manifest: the first segment
+// every manifest path shares, or "" when a path sits at the top or the first
+// segments differ.
+func ManifestRoot(manifest map[string]struct{}) string {
+	root := ""
+	for path := range manifest {
+		first, _, nested := strings.Cut(path, "/")
+		if !nested || (root != "" && first != root) {
+			return ""
+		}
+		root = first
+	}
+	return root
+}
+
+// MapManifestPath maps a downloaded file's local relative path to its torrent
+// manifest path (manifest keys are normalized). The exact entry wins; else the
+// torrent root joined with the local path, for a download client that did not
+// create the torrent folder; else, as a last resort, the one entry that ends
+// with the local path. Two suffix matches (Pack/Show - 01.mkv and
+// Pack/S2/Show - 01.mkv for a rootless local Show - 01.mkv) fail closed.
+func MapManifestPath(manifest map[string]struct{}, localRelative string) (string, bool) {
+	relative := NormalizePath(localRelative)
+	if relative == "" {
+		return "", false
+	}
+	if _, ok := manifest[relative]; ok {
+		return relative, true
+	}
+	if root := ManifestRoot(manifest); root != "" {
+		if _, ok := manifest[root+"/"+relative]; ok {
+			return root + "/" + relative, true
+		}
+	}
+	var mapped string
+	matches := 0
+	for path := range manifest {
+		if strings.HasSuffix(path, "/"+relative) {
+			mapped = path
+			matches++
+		}
+	}
+	return mapped, matches == 1
+}
+
 // EligibilityIn is Eligibility under an optional manual selection: with a
 // selection, a video or subtitle at any depth is eligible exactly when it is
 // selected, and every other video or subtitle is ignored_unselected. Without
