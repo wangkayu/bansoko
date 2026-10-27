@@ -574,7 +574,7 @@ type competitionNext struct {
 // subscription, the claimed item, then each release (the release owner
 // writers lock their own release row after the subscription). The Go
 // producers lock the subscription before they merge into the item. The
-// settle trigger of migration 071 does not: it merges while its transaction
+// settle trigger of migration 081 does not: it merges while its transaction
 // holds the settled acquisition row, and the commit only inserts
 // acquisitions, so the two meet only at the item row. A commit that still
 // loses a lock race (or meets a serialization failure) ends the claim in a

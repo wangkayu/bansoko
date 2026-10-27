@@ -1,4 +1,4 @@
--- Forward-only migration 071: one competition per subscription instance
+-- Forward-only migration 081: one competition per subscription instance
 -- (owner rulings 2026-10-27).
 --
 -- Release evaluation no longer admits a download itself. An evaluated release

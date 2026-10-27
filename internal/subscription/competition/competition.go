@@ -13,7 +13,7 @@
 // Every Go producer enqueues through EnqueueTx: the subscription row is locked
 // before the work item is created or merged (the producer/destructive-delete
 // ordering of the work item runtime), so a producer racing an unsubscribe is
-// either visible to its cleanup or a no-op. The settle trigger of migration 071
+// either visible to its cleanup or a no-op. The settle trigger of migration 081
 // (enqueue_subscription_competition) is the SQL twin of EnqueueTx without the
 // lock: it reads the subscription row unlocked (active state and version)
 // while its transaction holds the settled acquisition row. Both merge through
@@ -52,7 +52,7 @@ const (
 	// its runtime (a first refresh may end the first-round wait).
 	TriggerSourceRefreshed = "source_refreshed"
 	// TriggerAcquisitionSettled: an instance acquisition left running (the
-	// SQL twin in migration 071 writes it).
+	// SQL twin in migration 081 writes it).
 	TriggerAcquisitionSettled = "acquisition_settled"
 	// TriggerSubscriptionResumed and TriggerScanCompleted: the resume and the
 	// completed-scan comparison moments.
