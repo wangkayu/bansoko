@@ -19,6 +19,7 @@ import { StateBlock, Button, ConflictBlock } from "../../ui";
 import type { AnimeTabHost, DraftTabHost, OwnerTabHost } from "./host";
 import { useOwnerEdit } from "./useOwnerEdit";
 import { FileEffectPolicySection } from "./FileEffectPolicySection";
+import { ReplacementPolicySection } from "./ReplacementPolicySection";
 import { ParserPolicySection } from "./ParserPolicySection";
 import { DraftParserChoice } from "./DraftParserChoice";
 import { draftParserKind, modifiedRuleSections, presetRuleSections, rulesDifferFromPreset } from "../anime-config/businessDraft";
@@ -69,6 +70,7 @@ export function RulesTab({
         onPreview={onPreview}
       />
       <FileEffectPolicySection animeID={host.animeID} onChanged={host.onChanged} active={active} />
+      <ReplacementPolicySection animeID={host.animeID} onChanged={host.onChanged} active={active} />
       {host.rulesExtra}
     </div>
   );
@@ -144,6 +146,7 @@ function ReadOnlyRulesPanel({ host, active }: { host: OwnerTabHost; active: bool
         ))}
       </div>
       <FileEffectPolicySection animeID={host.animeID} onChanged={host.onChanged} readOnly active={active} />
+      <ReplacementPolicySection animeID={host.animeID} readOnly active={active} />
     </div>
   );
 }

@@ -3682,7 +3682,7 @@ type BusinessRecordRecordType string
 
 // BusinessReplacement defines model for BusinessReplacement.
 type BusinessReplacement struct {
-	// AdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself.
+	// AdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself, and saving the policy never enqueues an evaluation.
 	AdmissionMode ReplacementAdmissionMode `json:"admission_mode"`
 
 	// QualityProfile The replacement comparison profile (profile-v1): ordered comparison items. Items compare in order and the first item that ranks two releases differently decides; all items equal, the larger size wins; still equal, the existing file stays.
@@ -5006,7 +5006,7 @@ type InstanceFileEffectPolicyView struct {
 
 // InstanceReplacementPolicyInput defines model for InstanceReplacementPolicyInput.
 type InstanceReplacementPolicyInput struct {
-	// AdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself.
+	// AdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself, and saving the policy never enqueues an evaluation.
 	AdmissionMode ReplacementAdmissionMode `json:"admission_mode"`
 
 	// ExpectedVersion CAS expected version (0 = create).
@@ -5018,7 +5018,7 @@ type InstanceReplacementPolicyInput struct {
 
 // InstanceReplacementPolicyView defines model for InstanceReplacementPolicyView.
 type InstanceReplacementPolicyView struct {
-	// AdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself.
+	// AdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself, and saving the policy never enqueues an evaluation.
 	AdmissionMode  ReplacementAdmissionMode `json:"admission_mode"`
 	ManagedAnimeId ID                       `json:"managed_anime_id"`
 
@@ -7639,7 +7639,7 @@ type ReleaseTorrentStructureViewTorrentVersion string
 // ReleaseVerdict resume_baseline: present in the feed when a stopped subscription resumed; never evaluated or retried. start_baseline: the subscription has new_releases_only and the Release was published before the instance was created (or has no publish time); automatic paths never evaluate it and a rule change does not re-evaluate it, but an explicit retryRelease evaluates it through every rule. Both are quiet terminal verdicts: no failure or discovery notice.
 type ReleaseVerdict string
 
-// ReplacementAdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself.
+// ReplacementAdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself, and saving the policy never enqueues an evaluation.
 type ReplacementAdmissionMode string
 
 // ReplacementCompareStep defines model for ReplacementCompareStep.
@@ -7732,7 +7732,7 @@ type ReplacementPlacementRef struct {
 
 // ReplacementPolicyDefaultInput defines model for ReplacementPolicyDefaultInput.
 type ReplacementPolicyDefaultInput struct {
-	// AdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself.
+	// AdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself, and saving the policy never enqueues an evaluation.
 	AdmissionMode ReplacementAdmissionMode `json:"admission_mode"`
 
 	// ExpectedVersion CAS expected version (0 = create).
@@ -7744,7 +7744,7 @@ type ReplacementPolicyDefaultInput struct {
 
 // ReplacementPolicyDefaultView defines model for ReplacementPolicyDefaultView.
 type ReplacementPolicyDefaultView struct {
-	// AdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself.
+	// AdmissionMode How managed files of one episode compete: all keeps every file; per_group keeps one per coverage key and stable group identity; single_copy keeps one per coverage key. Only this instance's managed files compete (downloaded, recovered and scan-managed); a scan-managed file no release has claimed has no group, sits in every group's pool and loses to any candidate. A change takes effect when a new candidate of an episode is compared; files already placed are never re-compared by the change itself, and saving the policy never enqueues an evaluation.
 	AdmissionMode ReplacementAdmissionMode `json:"admission_mode"`
 
 	// QualityProfile The replacement comparison profile (profile-v1): ordered comparison items. Items compare in order and the first item that ranks two releases differently decides; all items equal, the larger size wins; still equal, the existing file stays.

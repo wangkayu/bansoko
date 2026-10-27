@@ -64,7 +64,7 @@ export function loadBusinessPreset(draft: AnimeDraft, preset: BusinessPresetView
 
 /**
  * 「全部使用默认」：规则各段与标签过滤重新复制当前默认设置，业务快照（解析器、未识别
- * 集数、保留与清理、程序引用）换成当前全局预设。字幕组、RSS 源、元数据与身份不动——
+ * 集数、同集多版本、程序引用）换成当前全局预设。字幕组、RSS 源、元数据与身份不动——
  * 它们不在规则页。
  */
 export function resetToGlobal(draft: AnimeDraft, preset: BusinessPresetView): AnimeDraft {
@@ -107,7 +107,7 @@ export function modifiedRuleSections(
 
 /**
  * 草稿与当前默认设置是否不同：任一规则段或标签过滤的值不同、解析器是这份草稿自己换的，
- * 或未识别集数 / 保留与清理 / 解析器与默认不同。还没读到默认设置时只看解析器。
+ * 或未识别集数 / 同集多版本 / 解析器与默认不同。还没读到默认设置时只看解析器。
  * 「全部使用默认」在没有任何不同时不可用。
  */
 export function hasCustomSettings(draft: AnimeDraft, preset?: BusinessPresetView): boolean {

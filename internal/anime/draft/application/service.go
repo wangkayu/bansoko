@@ -80,24 +80,6 @@ type Service struct {
 	candidateLockHook  func(operation string)
 	// notifications admits subscription_changed notices; nil admits none.
 	notifications plugintargetport.BusinessDeliveryEnqueuer
-	// replacementPolicy is told after a candidate apply changed the
-	// instance's replacement policy; nil tells nothing.
-	replacementPolicy ReplacementPolicyTrigger
-}
-
-// ReplacementPolicyTrigger is the after-commit port a candidate apply calls
-// when the applied revision changed the instance's replacement policy
-// (admission mode or quality profile).
-type ReplacementPolicyTrigger interface {
-	TriggerPolicySaved(ctx context.Context, animeID string) error
-}
-
-// SetReplacementPolicyTrigger wires the after-commit replacement policy
-// trigger of candidate apply.
-func (s *Service) SetReplacementPolicyTrigger(trigger ReplacementPolicyTrigger) {
-	if s != nil {
-		s.replacementPolicy = trigger
-	}
 }
 
 // SetBusinessDeliveryEnqueuer wires the subscription_changed admission of a

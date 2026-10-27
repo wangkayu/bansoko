@@ -372,7 +372,6 @@ func provideFileMaintenanceGraph(
 
 	replacementTrigger := filemaintenance.NewReplacementTriggerService(db, workStore)
 	ownershipService.SetReplacementTrigger(replacementTrigger)
-	draftService.SetReplacementPolicyTrigger(replacementTrigger)
 
 	replacementDecisions := filemaintenance.NewReplacementDecisionService(db)
 	replacementDecisions.SetMediaFactsStore(mediaFactsStore)
@@ -962,7 +961,6 @@ func provideFileMaintenanceService(
 		fileMaintenanceGraph.placementService,
 		fileMaintenanceGraph.replacementDecisions,
 	)
-	service.SetReplacementTrigger(fileMaintenanceGraph.replacementTrigger)
 	service.SetOwnerTruthWires(
 		fileMaintenanceGraph.calibrationService,
 		fileMaintenanceGraph.cleanupService,
