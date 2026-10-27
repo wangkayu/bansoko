@@ -171,7 +171,7 @@ export const enReasonCopy = {
   qb_provider_failed: QB_UNAVAILABLE,
   qb_admission_lookup_failed: "Cannot look up the task in the download client. It will retry automatically.",
   qb_adoption_ambiguous: "The download client has multiple identical tasks",
-  qb_adoption_conflict: "The task in the download client does not match the record",
+  qb_adoption_conflict: "The download client already has a task for this torrent",
   qb_path_snapshot_changed: "The download client's save path has changed",
   download_url_missing: "Torrent has no download URL",
   download_not_completed: "Download not finished yet",

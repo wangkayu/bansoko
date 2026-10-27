@@ -168,7 +168,7 @@ export const reasonCopy = {
   qb_provider_failed: QB_UNAVAILABLE,
   qb_admission_lookup_failed: "无法查询下载器中的任务，将自动重试",
   qb_adoption_ambiguous: "下载器中有多个相同的任务",
-  qb_adoption_conflict: "下载器中的任务与记录不一致",
+  qb_adoption_conflict: "下载器中已有同一种子的任务",
   qb_path_snapshot_changed: "下载器的保存路径已变化",
   download_url_missing: "种子缺少下载地址",
   download_not_completed: "下载尚未完成",
