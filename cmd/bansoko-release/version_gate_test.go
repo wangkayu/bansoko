@@ -45,7 +45,7 @@ func TestChannelGateRequiresTheVersionToAdvance(t *testing.T) {
 	writePublicKey(t, public, pub)
 	published, candidate := filepath.Join(root, "published.json"), filepath.Join(root, "candidate.json")
 	gate := func() error {
-		return channelGate([]string{"--published", published, "--candidate", candidate, "--public-key", public})
+		return channelGate([]string{"--published", published, "--candidate", candidate, "--public-key", public, "--lane", "stable"})
 	}
 	// The retired test channel moves to the formal stable channel once.
 	signedChannel(t, key, published, "test", "0.0.0-test.120", 120)
@@ -90,7 +90,7 @@ func TestVersionGateRefusesANonAdvancingRelease(t *testing.T) {
 	published := filepath.Join(root, "published.json")
 	signedChannel(t, key, published, "stable", "0.2.0", 200)
 	gate := func(version, key string) error {
-		return versionGate([]string{"--published", published, "--version", version, "--public-key", key})
+		return versionGate([]string{"--published", published, "--version", version, "--public-key", key, "--lane", "stable"})
 	}
 	if err := gate("0.2.1", public); err != nil {
 		t.Fatalf("advancing version refused: %v", err)
@@ -103,14 +103,14 @@ func TestVersionGateRefusesANonAdvancingRelease(t *testing.T) {
 	if err := gate("0.3.0", wrong); err == nil {
 		t.Fatal("a channel signed by another key was trusted")
 	}
-	if err := versionGate([]string{"--published", "", "--version", "0.1.0", "--public-key", public}); err != nil {
+	if err := versionGate([]string{"--published", "", "--version", "0.1.0", "--public-key", public, "--lane", "stable"}); err != nil {
 		t.Fatalf("first publication refused: %v", err)
 	}
 	// A rerun of the run that already published 0.2.0 continues; any other
 	// sequence or commit under the same version is refused.
 	commit := string(makeHex('b', 40))
 	rerun := func(sequence, sourceCommit string) error {
-		return versionGate([]string{"--published", published, "--version", "0.2.0", "--public-key", public, "--sequence", sequence, "--source-commit", sourceCommit})
+		return versionGate([]string{"--published", published, "--version", "0.2.0", "--public-key", public, "--sequence", sequence, "--source-commit", sourceCommit, "--lane", "stable"})
 	}
 	if err := rerun("200", commit); err != nil {
 		t.Fatalf("idempotent rerun refused: %v", err)

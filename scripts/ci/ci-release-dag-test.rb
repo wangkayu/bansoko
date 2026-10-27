@@ -48,14 +48,9 @@ end
 
 MAIN_ONLY = "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}"
 TAG_ONLY = "${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}"
-publishers = %w[docker-hub release docker-hub-release]
+publishers = %w[docker-hub test-release release docker-hub-release]
 abort 'publisher set drifted' unless (jobs.keys - required - %w[persistence-freshness vulnerability-scan-go vulnerability-scan-frontend]).sort == publishers.sort
-abort 'retired main publication remains' if jobs.key?('test-release')
 
-release = jobs.fetch('release')
-abort 'release condition unsafe' unless release['if'] == TAG_ONLY
-abort 'release dependencies incomplete' unless Array(release['needs']).sort == required.sort
-abort 'release tolerates failure' if release['continue-on-error']
 abort 'global secret' if workflow.fetch('env', {}).to_s.include?('secrets.')
 jobs.each do |id, job|
   abort 'job-level secret' if job.fetch('env', {}).to_s.include?('secrets.')
@@ -70,47 +65,63 @@ jobs.each do |id, job|
     abort 'secret in required gate' if !publishers.include?(id) && s.to_s.include?('secrets.')
   end
 end
-# Each formal-release step holds only the credentials it uses: the registry
-# push token, the signing key, the workflow token for the channel branch, and
-# the workflow token again (as GH_TOKEN) for the GitHub Release. A widened step
-# is drift, not convenience.
-expected = {
-  'release notes and version preflight' => ['preflight', %w[BANSOKO_RELEASE_GITHUB_TOKEN]],
-  'build image' => ['image', %w[DOCKERHUB_TOKEN]],
-  'publish immutable package' => ['publish', %w[BANSOKO_RELEASE_SIGNING_KEY BANSOKO_RELEASE_GITHUB_TOKEN DOCKERHUB_TOKEN]],
-  'advance signed channel' => ['channel', %w[BANSOKO_RELEASE_SIGNING_KEY BANSOKO_RELEASE_GITHUB_TOKEN]],
-  'create GitHub Release' => ['github-release', %w[GH_TOKEN]]
+# Two signed lanes share one publisher. Each step holds only the credentials it
+# uses: the registry push token, the signing key, the workflow token for the
+# channel branch, and the workflow token again (as GH_TOKEN) for the GitHub
+# Release, which only the formal lane has. A widened step is drift, not
+# convenience; a lane running the other lane's mode would publish to the other
+# lane's channel branch, so the mode names are pinned per job.
+lanes = {
+  'release' => [TAG_ONLY, {
+    'release notes and version preflight' => ['preflight', %w[BANSOKO_RELEASE_GITHUB_TOKEN]],
+    'build image' => ['image', %w[DOCKERHUB_TOKEN]],
+    'publish immutable package' => ['publish', %w[BANSOKO_RELEASE_SIGNING_KEY BANSOKO_RELEASE_GITHUB_TOKEN DOCKERHUB_TOKEN]],
+    'advance signed channel' => ['channel', %w[BANSOKO_RELEASE_SIGNING_KEY BANSOKO_RELEASE_GITHUB_TOKEN]],
+    'create GitHub Release' => ['github-release', %w[GH_TOKEN]]
+  }],
+  'test-release' => [MAIN_ONLY, {
+    'test version preflight' => ['test-preflight', %w[BANSOKO_RELEASE_GITHUB_TOKEN]],
+    'build test image' => ['test-image', %w[DOCKERHUB_TOKEN]],
+    'publish immutable test package' => ['test-publish', %w[BANSOKO_RELEASE_SIGNING_KEY BANSOKO_RELEASE_GITHUB_TOKEN DOCKERHUB_TOKEN]],
+    'advance signed test channel' => ['test-channel', %w[BANSOKO_RELEASE_SIGNING_KEY BANSOKO_RELEASE_GITHUB_TOKEN]]
+  }]
 }
-steps = release['steps']
-trust = steps.index { |s| s['run'] == 'python3 scripts/ci/ci-release-trust.py' }
-abort 'missing platform trust check' unless trust
-indices = []
-expected.each do |name, (mode, secret_keys)|
-  index = steps.index { |s| s['name'] == name }
-  abort 'effect step absent' unless index
-  s = steps[index]
-  abort 'effect invocation drift' unless s['run'] == "python3 scripts/ci/ci-release.py #{mode}"
-  abort 'effect override' if s['if'] || s['continue-on-error']
-  env = s.fetch('env')
-  abort 'needs result binding missing' unless env['BANSOKO_REQUIRED_RESULTS'] == '${{ toJSON(needs) }}'
-  actual = env.select { |_k, v| v.to_s.include?('secrets.') }.keys
-  abort 'secret scope mismatch' unless actual.sort == secret_keys.sort
-  indices << index
+lanes.each do |id, (condition, expected)|
+  lane = jobs.fetch(id)
+  abort "#{id}: condition unsafe" unless lane['if'] == condition
+  abort "#{id}: dependencies incomplete" unless Array(lane['needs']).sort == required.sort
+  abort "#{id}: tolerates failure" if lane['continue-on-error']
+  steps = lane['steps']
+  trust = steps.index { |s| s['run'] == 'python3 scripts/ci/ci-release-trust.py' }
+  abort "#{id}: missing platform trust check" unless trust
+  abort "#{id}: trust secret drift" unless steps[trust].fetch('env', {}) == { 'BANSOKO_RELEASE_READ_TOKEN' => '${{ secrets.GITHUB_TOKEN }}' }
+  indices = []
+  expected.each do |name, (mode, secret_keys)|
+    index = steps.index { |s| s['name'] == name }
+    abort "#{id}: effect step absent" unless index
+    s = steps[index]
+    abort "#{id}: effect invocation drift" unless s['run'] == "python3 scripts/ci/ci-release.py #{mode}"
+    abort "#{id}: effect override" if s['if'] || s['continue-on-error']
+    env = s.fetch('env')
+    abort "#{id}: needs result binding missing" unless env['BANSOKO_REQUIRED_RESULTS'] == '${{ toJSON(needs) }}'
+    abort "#{id}: protected ref binding missing" unless env['BANSOKO_RELEASE_REF_PROTECTED'] == 'true'
+    actual = env.select { |_k, v| v.to_s.include?('secrets.') }.keys
+    abort "#{id}: secret scope mismatch" unless actual.sort == secret_keys.sort
+    indices << index
+  end
+  # Order is the safety argument: trust, then the preflight before any effect,
+  # the channel only after the package, the GitHub Release last.
+  abort "#{id}: effects not ordered after trust" unless indices == indices.sort && indices.first > trust
+  abort "#{id}: lacks contents write" unless lane.fetch('permissions', {}) == { 'contents' => 'write', 'actions' => 'read' }
+  abort "#{id}: unexpected release command" unless steps.map { |s| s['run'] }.compact.sort == ([
+    'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"', 'python3 scripts/ci/ci-release-trust.py'
+  ] + expected.values.map { |mode, _| "python3 scripts/ci/ci-release.py #{mode}" }).sort
 end
-# Order is the safety argument: trust, then the version/notes preflight before
-# any effect, the channel only after the package, the GitHub Release last.
-abort 'effects not ordered after trust' unless indices == indices.sort && indices.first > trust
-abort 'release job lacks contents write' unless release.fetch('permissions', {}) == { 'contents' => 'write', 'actions' => 'read' }
 abort 'workflow-level permissions widened' unless workflow.fetch('permissions', {}) == { 'contents' => 'read', 'actions' => 'read' }
 jobs.each do |id, job|
-  next if id == 'release'
+  next if lanes.key?(id)
   abort "#{id}: unexpected job permissions" if job.key?('permissions')
 end
-abort 'unexpected release command' unless steps.map { |s| s['run'] }.compact.sort == [
-  'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"', 'python3 scripts/ci/ci-release-trust.py',
-  'python3 scripts/ci/ci-release.py preflight', 'python3 scripts/ci/ci-release.py image', 'python3 scripts/ci/ci-release.py publish',
-  'python3 scripts/ci/ci-release.py channel', 'python3 scripts/ci/ci-release.py github-release'
-].sort
 
 # Docker Hub: main publishes only the test image; a tag publishes `X.Y.Z` and
 # `:latest` only after the signed release of the same run succeeded.

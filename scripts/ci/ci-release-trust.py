@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Verify main's write boundary, run identity and completed required jobs.
 
-Two publishing events exist. A main push (test image only) binds the run to
-main. A vX.Y.Z tag push (formal release) binds the run to that tag and
+Two publishing events exist. A main push (test image and the signed test
+update lane) binds the run to main. A vX.Y.Z tag push (formal release) binds the run to that tag and
 additionally proves the tagged commit is already on main: a release is always
 a commit that went through main's write boundary, never a side branch.
 """

@@ -248,7 +248,7 @@ RUN set -eux; \
 RUN mkdir -p /var/lib/bansoko/updates /config && chmod 0444 /app/public.key
 
 # Image defaults users never set. Updates are on by default: the image carries
-# the test channel URL and the baked /app/public.key verifies its signatures,
+# the formal channel URL and the baked /app/public.key verifies its signatures,
 # so an unconfigured deployment updates itself in place (the image ENV counts
 # as the explicit mode the production config requires). Set
 # BANSOKO_UPDATE_MODE=manual to pin a deployment to image pulls. The only
@@ -264,7 +264,8 @@ RUN mkdir -p /var/lib/bansoko/updates /config && chmod 0444 /app/public.key
 # signed query string; the update client refuses a cross-host redirect and a
 # URL carrying a query, so only the direct form can ever be used. The release
 # lane publishes the channel document and each version's files as ordinary
-# files on that branch, so the package root is the branch directory.
+# files on that branch, so the package root is the branch directory. A test
+# instance overrides both with the update-channel-test branch's two addresses.
 ENV BANSOKO_ENVIRONMENT=production \
     BANSOKO_LISTEN_ADDRESS=0.0.0.0:8080 \
     BANSOKO_UPDATE_MODE=embedded \

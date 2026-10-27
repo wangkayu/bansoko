@@ -6,11 +6,29 @@ base = YAML.load_file('.github/workflows/ci.yml')
 positive, status = Open3.capture2e('ruby', 'scripts/ci/ci-release-dag-test.rb')
 abort "positive control failed: #{positive}" unless status.success?
 # Release job steps: 0 checkout, 1 SHA, 2 trust, 3 preflight, 4 image,
-# 5 publish, 6 channel, 7 GitHub Release.
+# 5 publish, 6 channel, 7 GitHub Release. The test-release job has the same
+# steps 0-6 in its own test-* modes and no GitHub Release.
 mutants = {
   'always release' => ->(w) { w['jobs']['release']['if'] = '${{ always() }}' },
   'release on main' => ->(w) { w['jobs']['release']['if'] = "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}" },
-  'main publishes the channel again' => ->(w) { w['jobs']['test-release'] = Marshal.load(Marshal.dump(w['jobs']['release'])) },
+  'main runs the formal lane' => ->(w) { w['jobs']['test-release'] = Marshal.load(Marshal.dump(w['jobs']['release'])); w['jobs']['test-release']['if'] = "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}" },
+  'test lane on tags' => ->(w) { w['jobs']['test-release']['if'] = "${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}" },
+  'test lane always' => ->(w) { w['jobs']['test-release']['if'] = '${{ always() }}' },
+  'test lane missing gate' => ->(w) { w['jobs']['test-release']['needs'].delete('fixture-browser') },
+  'test lane dropped' => ->(w) { w['jobs'].delete('test-release') },
+  'test lane tolerates failure' => ->(w) { w['jobs']['test-release']['continue-on-error'] = true },
+  'test lane skips trust' => ->(w) { w['jobs']['test-release']['steps'].delete_at(2) },
+  'test lane writes the formal channel' => ->(w) { w['jobs']['test-release']['steps'][6]['run'] = 'python3 scripts/ci/ci-release.py channel' },
+  'test lane publishes a GitHub Release' => ->(w) { w['jobs']['test-release']['steps'] << {'name' => 'create GitHub Release', 'env' => {'BANSOKO_RELEASE_REF_PROTECTED' => 'true', 'BANSOKO_REQUIRED_RESULTS' => '${{ toJSON(needs) }}', 'GH_TOKEN' => '${{ secrets.GITHUB_TOKEN }}'}, 'run' => 'python3 scripts/ci/ci-release.py github-release'} },
+  'test channel before its package' => ->(w) { s=w['jobs']['test-release']['steps']; s[5],s[6]=s[6],s[5] },
+  'test preflight after the image' => ->(w) { s=w['jobs']['test-release']['steps']; s[3],s[4]=s[4],s[3] },
+  'test preflight dropped' => ->(w) { w['jobs']['test-release']['steps'].delete_at(3) },
+  'signing key reaches the test preflight' => ->(w) { w['jobs']['test-release']['steps'][3]['env']['BANSOKO_RELEASE_SIGNING_KEY'] = '${{ secrets.RELEASE_SIGNING_KEY }}' },
+  'signing key reaches the test image' => ->(w) { w['jobs']['test-release']['steps'][4]['env']['BANSOKO_RELEASE_SIGNING_KEY'] = '${{ secrets.RELEASE_SIGNING_KEY }}' },
+  'test lane loses the protected ref proof' => ->(w) { w['jobs']['test-release']['steps'][5]['env'].delete('BANSOKO_RELEASE_REF_PROTECTED') },
+  'test lane loses its results binding' => ->(w) { w['jobs']['test-release']['steps'][6]['env'].delete('BANSOKO_REQUIRED_RESULTS') },
+  'test lane write scope removed' => ->(w) { w['jobs']['test-release'].delete('permissions') },
+  'test lane trust holds the hub token' => ->(w) { w['jobs']['test-release']['steps'][2]['env']['DOCKERHUB_TOKEN'] = '${{ secrets.DOCKERHUB_TOKEN }}' },
   'missing gate' => ->(w) { w['jobs']['release']['needs'].pop },
   'skipped required' => ->(w) { w['jobs']['qb-real-chain']['if'] = '${{ false }}' },
   'host gate skipped on tags' => ->(w) { w['jobs']['fixture-browser']['if'] = "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}" },
