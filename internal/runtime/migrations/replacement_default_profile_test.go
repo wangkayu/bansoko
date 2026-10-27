@@ -49,7 +49,7 @@ SELECT value->'quality_profile' FROM global_config_sections WHERE section_name =
 		}
 	}
 	for key, want := range map[string][]string{
-		"anibt.resolution": {"2160p", "1440p", "1080p", "720p", "480p"},
+		"anibt.resolution": {"4K", "2160p", "1080p", "720p", "480p", "360p"},
 		"rt.resolution":    {"2160p", "1080p", "720p", "480p"},
 	} {
 		got := ranks[key]

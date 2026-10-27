@@ -84,8 +84,8 @@ describe("quality profile model", () => {
   });
 
   it("puts the AniBT presets ahead of seen values and leaves other namespaces alone", () => {
-    expect(candidateValues("anibt.resolution", undefined)).toEqual(["1080p", "720p"]);
-    expect(candidateValues("anibt.resolution", ["720P", "2160p"])).toEqual(["1080p", "720p", "2160p"]);
+    expect(candidateValues("anibt.resolution", undefined)).toEqual(["4K", "2160p", "1080p", "720p", "480p", "360p"]);
+    expect(candidateValues("anibt.resolution", ["720P", "1440p"])).toEqual(["4K", "2160p", "1080p", "720p", "480p", "360p", "1440p"]);
     expect(candidateValues("anibt.language", ["jp", "XX"])?.slice(0, 4)).toEqual(["CHS", "CHT", "JP", "EN"]);
     expect(candidateValues("anibt.language", ["jp", "XX"])?.at(-1)).toBe("XX");
     expect(candidateValues("rt.codec", ["AV1"])).toEqual(["AV1"]);

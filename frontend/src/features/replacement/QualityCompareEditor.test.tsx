@@ -141,7 +141,7 @@ describe("QualityCompareEditor", () => {
     await waitFor(() => expect(vocabularyURLs.length).toBeGreaterThan(0));
     const input = screen.getByLabelText(t("qualityCompare.valueAria", { item: compareItemName("anibt.resolution") }));
     const options = Array.from(document.getElementById(input.getAttribute("list") ?? "")?.querySelectorAll("option") ?? []).map((option) => option.getAttribute("value"));
-    expect(options).toEqual(["1080p", "720p"]);
+    expect(options).toEqual(["4K", "2160p", "1080p", "720p", "480p", "360p"]);
     fireEvent.change(input, { target: { value: "1080p" } });
     fireEvent.click(screen.getByRole("button", { name: t("qualityCompare.addValueAria", { item: compareItemName("anibt.resolution") }) }));
     expect(latest.items[0].ranks).toEqual([["1080p"]]);

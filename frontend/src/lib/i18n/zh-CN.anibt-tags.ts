@@ -48,6 +48,7 @@ export const anibtTagsCopy = {
   // 只登记与原值不同的显示名；其余值按 AniBT 原值显示。
   value: {
     subtitle: {
+      EXTERNAL: "外挂",
       INTERNAL: "内封",
       EMBEDDED: "内嵌",
       NONE: "无字幕",
@@ -66,6 +67,14 @@ export const anibtTagsCopy = {
       DE: "德语",
       ES: "西班牙语",
       PT: "葡萄牙语",
+      KO: "韩语",
+      IT: "意大利语",
+      RU: "俄语",
+      AR: "阿拉伯语",
+      HI: "印地语",
+      TL: "他加禄语",
+      TR: "土耳其语",
+      UK: "乌克兰语",
     },
     platform: {
       CR: "Crunchyroll 源",
