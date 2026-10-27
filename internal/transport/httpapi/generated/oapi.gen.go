@@ -7124,7 +7124,7 @@ type RSSListManifestFile struct {
 	// ReasonCode Why the file cannot be chosen: ignored_kind (neither video nor subtitle) or the file_* rule reason of an excluded video. Absent for a selectable file.
 	ReasonCode *string `json:"reason_code,omitempty"`
 
-	// Recognition A selectable video's own filename recognition under the read's parser and episode offset, decided by the same batch plan an acceptance freezes: episode (episodes holds the numbers), movie (the main video of a movie binding), or unrecognized (an unknown file, handled by the unclassified route). Absent for a subtitle and an unselectable file. For a movie binding it is computed within the read's selection for that seed (the default files without one).
+	// Recognition A selectable video's own filename recognition under the read's parser and episode offset, decided by the same batch plan an acceptance freezes: episode (episodes holds the numbers), movie (the main video of a movie binding), or unrecognized (an unknown file, handled by the unclassified route). Absent for a subtitle and an unselectable file. For a movie binding it is computed within the read's selection for that seed (the default files without one) and is absent for a video outside it, so only one video is the main video.
 	Recognition *RSSListManifestFileRecognition `json:"recognition,omitempty"`
 
 	// Season The season of an episode recognition.
@@ -7139,7 +7139,7 @@ type RSSListManifestFile struct {
 // RSSListManifestFileMediaKind defines model for RSSListManifestFile.MediaKind.
 type RSSListManifestFileMediaKind string
 
-// RSSListManifestFileRecognition A selectable video's own filename recognition under the read's parser and episode offset, decided by the same batch plan an acceptance freezes: episode (episodes holds the numbers), movie (the main video of a movie binding), or unrecognized (an unknown file, handled by the unclassified route). Absent for a subtitle and an unselectable file. For a movie binding it is computed within the read's selection for that seed (the default files without one).
+// RSSListManifestFileRecognition A selectable video's own filename recognition under the read's parser and episode offset, decided by the same batch plan an acceptance freezes: episode (episodes holds the numbers), movie (the main video of a movie binding), or unrecognized (an unknown file, handled by the unclassified route). Absent for a subtitle and an unselectable file. For a movie binding it is computed within the read's selection for that seed (the default files without one) and is absent for a video outside it, so only one video is the main video.
 type RSSListManifestFileRecognition string
 
 // RSSListObservation The observation an RSS list view was composed with.

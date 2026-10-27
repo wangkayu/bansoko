@@ -2905,7 +2905,7 @@ export interface components {
             /** @description Whether the default file list (no manual selection) holds the file: a first-level video the rules keep, or a first-level subtitle that follows such a video. */
             default_selected: boolean;
             /**
-             * @description A selectable video's own filename recognition under the read's parser and episode offset, decided by the same batch plan an acceptance freezes: episode (episodes holds the numbers), movie (the main video of a movie binding), or unrecognized (an unknown file, handled by the unclassified route). Absent for a subtitle and an unselectable file. For a movie binding it is computed within the read's selection for that seed (the default files without one).
+             * @description A selectable video's own filename recognition under the read's parser and episode offset, decided by the same batch plan an acceptance freezes: episode (episodes holds the numbers), movie (the main video of a movie binding), or unrecognized (an unknown file, handled by the unclassified route). Absent for a subtitle and an unselectable file. For a movie binding it is computed within the read's selection for that seed (the default files without one) and is absent for a video outside it, so only one video is the main video.
              * @enum {string}
              */
             recognition?: "episode" | "movie" | "unrecognized";

@@ -115,9 +115,9 @@ func (s rssListFileSelections) identity() string {
 // selectable is the file rules (and the kind gate) without the first-level
 // gate; default_selected is the default plan's candidate set; a video's
 // recognition and a subtitle's bound video come from the plan over every
-// selectable file (and, for a movie binding, the main video from the plan of
-// the read's own selection, since the main video depends on which videos are
-// chosen).
+// selectable file. For a movie binding only a video of the read's own plan
+// (its selection, else the default files) carries a recognition, since the
+// main video depends on which videos are chosen; an unchosen video has none.
 func oneShotManifestFiles(ctx context.Context, manifest *animecatalogdomain.TorrentManifest, evidence acquisitiontarget.ParserEvidence, effective animedomain.EffectiveConfig, route string, selection *filekinds.Selection) ([]RSSListManifestFile, error) {
 	if manifest == nil || len(manifest.Files) == 0 {
 		return nil, nil
@@ -192,13 +192,17 @@ func oneShotManifestFiles(ctx context.Context, manifest *animecatalogdomain.Torr
 		if row.Selectable {
 			switch kind {
 			case filekinds.KindVideo:
-				entry, _ := full.File(sourcePath)
 				if defaults.MediaKind == batchplan.MediaKindFilm {
+					// The movie main video depends on which videos are chosen:
+					// only a video of the read's own plan carries a recognition,
+					// so exactly one row reads as the main video.
 					if picked, ok := chosen.File(sourcePath); ok && (picked.Outcome == batchplan.OutcomePlanned || picked.Outcome == batchplan.OutcomeEpisodeUnrecognized) {
-						entry = picked
+						recognizeManifestVideo(&row, picked, true)
 					}
+					break
 				}
-				recognizeManifestVideo(&row, entry, defaults.MediaKind == batchplan.MediaKindFilm)
+				entry, _ := full.File(sourcePath)
+				recognizeManifestVideo(&row, entry, false)
 			case filekinds.KindSubtitle:
 				if entry, ok := full.File(sourcePath); ok {
 					row.BoundVideoSourcePath = entry.BoundVideo

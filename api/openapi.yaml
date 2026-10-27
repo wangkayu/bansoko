@@ -7548,7 +7548,8 @@ components:
             file, handled by the unclassified route). Absent for a subtitle
             and an unselectable file. For a movie binding it is computed
             within the read's selection for that seed (the default files
-            without one).
+            without one) and is absent for a video outside it, so only one
+            video is the main video.
         season:
           type: integer
           description: The season of an episode recognition.
