@@ -38,6 +38,7 @@ import {
   type OneShotSeedRow,
 } from "./seedRows";
 import { REVEAL_MS, Reveal, SeedBrowser } from "./SeedBrowser";
+import { UnclassifiedRouteField } from "../anime-config/UnclassifiedRouteField";
 import { OneShotParserSelect } from "./OneShotParserSelect";
 import { useOneShotParserOptions } from "./parserOptions";
 import { useOneShotSeedSource, type SearchSeedBrowse } from "./useOneShotSeeds";
@@ -329,9 +330,11 @@ export function OneShotDialog({
   // "The configuration loaded at task start": restore-defaults resets locally only, with no request.
   const baseline = useRef<RulesSections>();
   const baselineParser = useRef<NonNullable<AnimeDraft["business"]>["parser"]>();
+  const baselineRoute = useRef<NonNullable<AnimeDraft["business"]>["unclassified_route"]>();
   useEffect(() => {
     if (!baseline.current && draft) baseline.current = structuredClone(draft.rules.sections);
     if (!baselineParser.current && draft?.business) baselineParser.current = structuredClone(draft.business.parser);
+    if (!baselineRoute.current && draft?.business) baselineRoute.current = draft.business.unclassified_route;
   }, [draft]);
 
   // Parser: the same option set as the instance's episode parser, shown only with multiple options
@@ -344,6 +347,11 @@ export function OneShotDialog({
     () => (multipleParsers ? ["parser", "file_filter"] : ["file_filter"]),
     [multipleParsers],
   );
+  function changeUnclassifiedRoute(route: NonNullable<AnimeDraft["business"]>["unclassified_route"]) {
+    const current = latestDraft.current;
+    if (!current?.business || route === current.business.unclassified_route) return;
+    source.setDraft({ ...current, business: { ...current.business, unclassified_route: route } });
+  }
   function changeParser(kind: string) {
     if (!draft || !baselineParser.current || kind === parserKind) return;
     source.setDraft(withDraftParserKind(draft, kind, baselineParser.current));
@@ -459,7 +467,11 @@ export function OneShotDialog({
       file_filter: structuredClone(base.file_filter),
       parser: structuredClone(base.parser),
     };
-    const restored = { ...draft, rules: { sections } };
+    const restored = {
+      ...draft,
+      rules: { sections },
+      ...(draft.business && baselineRoute.current ? { business: { ...draft.business, unclassified_route: baselineRoute.current } } : {}),
+    };
     const parser = baselineParser.current;
     source.setDraft(parser ? withDraftParserKind(restored, parser.kind, parser) : restored);
   }
@@ -616,12 +628,14 @@ export function OneShotDialog({
     if (!draft || !base) return false;
     const pick = (sections: RulesSections) => JSON.stringify([sections.naming, sections.file_filter, sections.parser]);
     const parserMoved = baselineParser.current !== undefined && parserKind !== undefined && parserKind !== baselineParser.current.kind;
-    return parserMoved || pick(draft.rules.sections) !== pick(base);
+    const routeMoved = baselineRoute.current !== undefined && draft.business !== undefined && draft.business.unclassified_route !== baselineRoute.current;
+    return parserMoved || routeMoved || pick(draft.rules.sections) !== pick(base);
   })();
   const advancedSummary = joinList([
     ...(multipleParsers ? [t("forms.rules.parserTitle")] : []),
     t("settings.rules.fileRules"),
     t("forms.rules.namingTitle"),
+    t("file.unclassifiedTitle"),
   ]);
 
   const awaitingTitle = source.kind === "search" && !!draft && !draft.title.trim();
@@ -982,6 +996,13 @@ export function OneShotDialog({
                         ) : undefined
                       }
                     />
+                    {draft.business && (
+                      <UnclassifiedRouteField
+                        value={draft.business.unclassified_route}
+                        onChange={changeUnclassifiedRoute}
+                        hint={t("oneshot.unclassifiedHint")}
+                      />
+                    )}
                     {/* Naming is its own block: the empty-facts "jump to naming" lands here. */}
                     <div ref={namingRef} className="tw:rounded-control">
                       <RulesSectionsFields

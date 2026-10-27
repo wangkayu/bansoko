@@ -1018,6 +1018,32 @@ describe("OneShotDialog 解析器与元数据", () => {
     await waitFor(() => expect(reads().at(-1)!.body).toMatchObject({ draft: { business: { parser: { kind: "regex", provenance: "global", source_owner: "global" } } } }));
   });
 
+  it("第二步的未识别集数处理默认取草稿值，改动随这次任务提交，「恢复默认」复位", async () => {
+    stubFetch({});
+    await renderAndEnter();
+    await advanceToSettings([SEED_A]);
+    openAdvanced();
+    const user = userEvent.setup();
+    const select = screen.getByRole("combobox", { name: t("file.unclassifiedTitle") });
+    expect(select).toHaveTextContent(t("file.unclassified.route"));
+
+    await user.click(select);
+    await user.click(await screen.findByRole("option", { name: t("file.unclassified.skip") }));
+    expect(screen.getByRole("combobox", { name: t("file.unclassifiedTitle") })).toHaveTextContent(t("file.unclassified.skip"));
+    expect(screen.getByText(t("oneshot.advancedChanged"))).toBeInTheDocument();
+
+    fireEvent.click(button(t("oneshot.restoreDefaults")));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: t("file.unclassifiedTitle") })).toHaveTextContent(t("file.unclassified.route")));
+
+    await user.click(screen.getByRole("combobox", { name: t("file.unclassifiedTitle") }));
+    await user.click(await screen.findByRole("option", { name: t("file.unclassified.skip") }));
+    fireEvent.click(button(t("oneshot.create", { n: 1 })));
+    await waitFor(() => expect(screen.getByText(t("oneshot.resultOk"))).toBeInTheDocument());
+    const body = downloads()[0]!.body as { draft: { business: { unclassified_route: string }; business_digest: string } };
+    expect(body.draft.business.unclassified_route).toBe("skip");
+    expect(body.draft.business_digest).toMatch(/^sha256:[a-f0-9]{64}$/);
+  });
+
   it("只有一个解析器时不显示选择", async () => {
     stubFetch({});
     await renderAndEnter();
