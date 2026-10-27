@@ -9841,7 +9841,9 @@ components:
         for the subscription's competition, which compares every waiting
         Release of the subscription with its managed files and running
         downloads and decides which one downloads each episode; never carries
-        a DownloadTask. resume_baseline: present in the feed when a stopped subscription
+        a DownloadTask. A waiting Release whose admission the competition could
+        not finish after its delayed retries keeps waiting with reason_code
+        competition_stalled. resume_baseline: present in the feed when a stopped subscription
         resumed; never evaluated or retried. start_baseline: the subscription
         has new_releases_only and the Release was published before the
         instance was created (or has no publish time); automatic paths never

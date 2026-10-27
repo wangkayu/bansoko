@@ -517,8 +517,8 @@ func TestCompetitionFirstRoundWaitsForEveryFirstRefreshPostgres(t *testing.T) {
 	f.requireAwaiting("a-720")
 	f.mustRunCompetition(competitionWaitingFirstRefresh)
 	f.requireAwaiting("a-720")
-	if f.liveCompetitions() != 0 {
-		t.Fatalf("a waiting round enqueues nothing itself: %d", f.liveCompetitions())
+	if item := f.competitionItem(); item.trigger != competition.TriggerGateWait || item.due {
+		t.Fatalf("a waiting round only looks again later: %+v", item)
 	}
 
 	if f.firstRoundDone() {

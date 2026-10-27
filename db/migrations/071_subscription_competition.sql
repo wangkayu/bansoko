@@ -34,10 +34,15 @@
 -- 6. subscriptions.competition_first_round_at records the instance's first
 --    committed round: only the first round waits for the sources' first
 --    refreshes.
--- 7. A provider group leaving the selection (deselected, unavailable or
---    removed) ends its sources' waiting releases as filtered
---    (provider_group_not_selected) and drops their discovery notice; the
---    subscription row is locked first (the competition's order).
+-- 7. A provider group that has left the selection (deselected, unavailable
+--    or removed) when the transaction commits ends its sources' waiting
+--    releases as filtered (provider_group_not_selected) and drops their
+--    discovery notice; the subscription row is locked first (the
+--    competition's order). The triggers are deferred and re-read the
+--    selection's current row: an authoritative discovery or a selection
+--    recompute passes through intermediate states (every group unavailable,
+--    then restored) inside one transaction, and only the committed state
+--    counts.
 
 ALTER TABLE releases DROP CONSTRAINT releases_verdict_check;
 ALTER TABLE releases ADD CONSTRAINT releases_verdict_check CHECK (verdict IN ('discovered', 'waiting_metadata', 'subscription_stopped', 'source_unavailable', 'parse_failed', 'accepted_pending_download', 'filtered', 'adopted_existing', 'acquisition_failed', 'submitted', 'resume_baseline', 'start_baseline', 'awaiting_competition') AND ((download_task_id IS NULL AND verdict <> 'submitted') OR (download_task_id IS NOT NULL AND verdict IN ('accepted_pending_download', 'submitted', 'filtered', 'waiting_metadata', 'parse_failed'))));
@@ -121,10 +126,15 @@ CREATE FUNCTION drop_unselected_awaiting_releases() RETURNS trigger
     SET search_path TO 'pg_catalog', 'public'
     AS $$
 BEGIN
-    IF TG_OP = 'UPDATE' AND NEW.available AND NEW.effective_selected THEN
+    -- Deferred to commit: only the selection's committed state counts (a
+    -- group made unavailable and restored in the same transaction stays).
+    PERFORM 1 FROM public.subscriptions WHERE id = OLD.subscription_id FOR UPDATE;
+    PERFORM 1 FROM public.provider_group_selections g
+    WHERE g.subscription_id = OLD.subscription_id AND g.provider = OLD.provider
+      AND g.group_ref = OLD.group_ref AND g.available AND g.effective_selected;
+    IF FOUND THEN
         RETURN NULL;
     END IF;
-    PERFORM 1 FROM public.subscriptions WHERE id = OLD.subscription_id FOR UPDATE;
     WITH target AS (
         SELECT r.id, r.competition_retry_key AS retry_key, sub.managed_anime_id
         FROM public.releases r
@@ -153,12 +163,14 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER provider_group_selections_drop_awaiting_update
+CREATE CONSTRAINT TRIGGER provider_group_selections_drop_awaiting_update
     AFTER UPDATE OF available, effective_selected ON provider_group_selections
+    DEFERRABLE INITIALLY DEFERRED
     FOR EACH ROW WHEN (old.available AND old.effective_selected AND NOT (new.available AND new.effective_selected))
     EXECUTE FUNCTION drop_unselected_awaiting_releases();
 
-CREATE TRIGGER provider_group_selections_drop_awaiting_delete
+CREATE CONSTRAINT TRIGGER provider_group_selections_drop_awaiting_delete
     AFTER DELETE ON provider_group_selections
+    DEFERRABLE INITIALLY DEFERRED
     FOR EACH ROW WHEN (old.available AND old.effective_selected)
     EXECUTE FUNCTION drop_unselected_awaiting_releases();

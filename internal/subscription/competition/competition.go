@@ -10,13 +10,15 @@
 // release it decided. The replacement fallback (the best release a settled
 // acquisition kept out) is the same owner.
 //
-// Every producer enqueues through EnqueueTx: the subscription row is locked
+// Every Go producer enqueues through EnqueueTx: the subscription row is locked
 // before the work item is created or merged (the producer/destructive-delete
 // ordering of the work item runtime), so a producer racing an unsubscribe is
 // either visible to its cleanup or a no-op. The settle trigger of migration 071
-// (enqueue_subscription_competition) is the SQL twin of EnqueueTx; both merge
-// through subscription_competition_merge, which never expires the lease of a
-// running round (the round re-decides under the subscription lock instead).
+// (enqueue_subscription_competition) is the SQL twin of EnqueueTx without the
+// lock: it reads the subscription row unlocked (active state and version)
+// while its transaction holds the settled acquisition row. Both merge through
+// subscription_competition_merge, which never expires the lease of a running
+// round (the round re-decides under the subscription lock instead).
 package competition
 
 import (
@@ -68,6 +70,12 @@ const (
 	// TriggerRoundRetry: a decided release could not finish its decided stage
 	// (a downloader lookup, a naming time limit); the round runs again later.
 	TriggerRoundRetry = "competition_round_retry"
+	// TriggerGateWait: a round found its gate closed (a live evaluation, a
+	// first refresh); it looks again after a delay.
+	TriggerGateWait = "competition_gate_wait"
+	// TriggerRoundCarried: an interrupted round, or one that failed on its
+	// last attempt, carries over to a fresh item.
+	TriggerRoundCarried = "competition_round_carried"
 )
 
 // IdempotencyKey is the stable key of an instance's competition item.

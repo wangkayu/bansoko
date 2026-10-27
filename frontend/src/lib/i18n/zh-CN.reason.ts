@@ -126,6 +126,7 @@ export const reasonCopy = {
   not_started: "订阅未开始",
   start_baseline: "订阅前发布，不会自动下载",
   awaiting_competition: "等待与本订阅的其他版本比较",
+  competition_stalled: "暂时无法完成下载受理，等待下次比较",
   torrent_payload_missing: "缺少种子文件，请先获取",
   qb_connection_not_configured: "尚未配置下载器",
   managed_anime_retired: "订阅已结束，不能再下载",

@@ -112,6 +112,35 @@ func (f *competitionFixture) holdSubscription() (release func()) {
 	return func() { _ = tx.Commit() }
 }
 
+// waitForLockWaiters reports whether n other sessions wait on a lock at once
+// within a few seconds: the racing commits are proven to meet at the held
+// row instead of running one after the other.
+func (f *competitionFixture) waitForLockWaiters(n int) bool {
+	f.t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		var waiting int
+		if err := f.db.QueryRow(`
+SELECT COUNT(*) FROM pg_stat_activity
+WHERE datname = current_database() AND wait_event_type = 'Lock' AND pid <> pg_backend_pid()`).Scan(&waiting); err != nil {
+			return false
+		}
+		if waiting >= n {
+			return true
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return false
+}
+
+// makeCompetitionDue makes the instance's delayed competition item due now.
+func (f *competitionFixture) makeCompetitionDue() {
+	f.t.Helper()
+	if _, err := ownerTestDB(f.t).Exec(`UPDATE work_items SET available_at = CURRENT_TIMESTAMP WHERE kind = 'subscription_competition'`); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
 // B1: an explicit retry that leaves a release waiting stays that retry through
 // the competition. A release kept out by new-releases-only (start_baseline) is
 // retried: it waits (awaiting); an automatic re-evaluation while it waits does
@@ -210,12 +239,26 @@ func TestCompetitionResumeDuringADirectEvaluationAwaitsPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 		err := f.store.FinishWithResultPostTransition(ctx, claim, outcome.TerminalState, outcome.OwnerResult, outcome.WriteOwner, outcome.PostTransition)
-		if f.taskCount() != 0 {
-			t.Fatalf("an evaluation that raced a resume must not download directly (%v)", err)
-		}
-		if err != nil && !errors.Is(err, errCompetitionActivated) {
+		if !errors.Is(err, errCompetitionActivated) {
 			t.Fatalf("finish error = %v, want the activation refusal", err)
 		}
+		if f.taskCount() != 0 {
+			t.Fatal("an evaluation that raced a resume must not download directly")
+		}
+		assertReleaseState(t, f.db, "a-720", "discovered", "discovered", false)
+		// The runtime reclaims the item when its lease ends; the evaluation
+		// then runs on the active subscription and waits for the competition.
+		if _, err := ownerTestDB(t).Exec(`UPDATE work_items SET lease_until = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE id = $1`, claim.ID); err != nil {
+			t.Fatal(err)
+		}
+		again, err := f.store.ClaimDue(ctx, "competition-test-evaluator", []string{workitems.KindReleaseEvaluate}, time.Minute)
+		if err != nil || again.ID != claim.ID {
+			t.Fatalf("reclaim = %+v %v", again, err)
+		}
+		f.finish(again, f.handle(again))
+		f.requireAwaiting("a-720")
+		f.mustRunCompetition("competition_decided")
+		f.requireAdmitted("a-720")
 	})
 }
 
@@ -403,7 +446,7 @@ func TestCompetitionMovedRoundSpendsNoBudgetPostgres(t *testing.T) {
 
 	run := competitionRun{}
 	var err error
-	if run.round, err = f.service.decideCompetition(ctx, "anime-rss-test"); err != nil {
+	if run.round, err = f.service.decideCompetition(ctx, "anime-rss-test", nil); err != nil {
 		t.Fatal(err)
 	}
 	f.service.runDecidedStages(ctx, "anime-rss-test", &run)
@@ -517,9 +560,12 @@ func TestCompetitionCommitAndRefreshFinishConcurrentlyPostgres(t *testing.T) {
 				errs[1] = f.store.FinishWithResult(ctx, refreshClaim, refreshOutcome.TerminalState, refreshOutcome.OwnerResult, refreshOutcome.WriteOwner)
 			}
 		}()
-		time.Sleep(200 * time.Millisecond)
+		met := f.waitForLockWaiters(2)
 		release()
 		wg.Wait()
+		if !met {
+			t.Fatalf("episode %d: the competition commit and the refresh commit never waited at the subscription together", episode)
+		}
 		if errs[0] != nil || errs[1] != nil {
 			t.Fatalf("episode %d: competition %v, refresh %v", episode, errs[0], errs[1])
 		}
@@ -561,9 +607,12 @@ func TestCompetitionCommitAndEvaluationFinishConcurrentlyPostgres(t *testing.T) 
 		defer wg.Done()
 		errs[1] = f.store.FinishWithResultPostTransition(ctx, evaluation, evaluated.TerminalState, evaluated.OwnerResult, evaluated.WriteOwner, evaluated.PostTransition)
 	}()
-	time.Sleep(200 * time.Millisecond)
+	met := f.waitForLockWaiters(2)
 	release()
 	wg.Wait()
+	if !met {
+		t.Fatal("the competition commit and the evaluation commit never waited at the subscription together")
+	}
 	if errs[0] != nil || errs[1] != nil {
 		t.Fatalf("competition %v, evaluation %v", errs[0], errs[1])
 	}
@@ -573,6 +622,279 @@ func TestCompetitionCommitAndEvaluationFinishConcurrentlyPostgres(t *testing.T) 
 	if f.taskCount() != 1 {
 		t.Fatalf("download tasks = %d, want one", f.taskCount())
 	}
+	if spent := f.spentCompetitionBudget(); spent != 0 {
+		t.Fatalf("contention must not spend the budget: %d", spent)
+	}
+}
+
+// B1: a waiting retry re-evaluated while its subscription is stopped keeps its
+// retry key (and so its redownload requests); after the resume the evaluation
+// is that retry again and the decided stage admits it through the manual
+// retry entry.
+func TestCompetitionStoppedReEvaluationKeepsTheRetryPostgres(t *testing.T) {
+	f := newCompetitionFixture(t, "single_copy")
+	enableNewReleasesOnly(t, 24*time.Hour)
+	f.markRefreshed("source-rss-test", "source-beta")
+	f.addRelease("a-old", "source-rss-test", "[Alpha] Test Show - 01 [720p]", 1)
+	f.evaluate("a-old")
+	assertReleaseState(t, f.db, "a-old", ReleaseVerdictStartBaseline, ReleaseVerdictStartBaseline, false)
+	result, err := f.service.RetryRelease(context.Background(), "a-old", "retry-key-stopped-1")
+	if err != nil || result.Outcome != RetryOutcomeAwaiting {
+		t.Fatalf("retry = %+v %v, want awaiting", result, err)
+	}
+
+	if _, err := f.db.Exec(`UPDATE subscriptions SET state = 'stopped', version = version + 1 WHERE id = 'sub-rss-test'`); err != nil {
+		t.Fatal(err)
+	}
+	f.evaluate("a-old")
+	assertReleaseState(t, f.db, "a-old", "subscription_stopped", "subscription_stopped", false)
+	if key := releaseRetryKey(t, f.db, "a-old"); key != "retry-key-stopped-1" {
+		t.Fatalf("a stopped re-evaluation must keep the retry: %q", key)
+	}
+
+	if _, err := f.db.Exec(`UPDATE subscriptions SET state = 'active', version = version + 1 WHERE id = 'sub-rss-test'`); err != nil {
+		t.Fatal(err)
+	}
+	f.evaluate("a-old")
+	f.requireAwaiting("a-old")
+	if key := releaseRetryKey(t, f.db, "a-old"); key != "retry-key-stopped-1" {
+		t.Fatalf("the resumed evaluation is the retry again: %q", key)
+	}
+	f.mustRunCompetition("competition_decided")
+	f.requireAdmitted("a-old")
+	var namespace string
+	if err := f.db.QueryRow(`
+SELECT acq.request_namespace FROM releases r
+JOIN download_tasks task ON task.id = r.download_task_id
+JOIN acquisitions acq ON acq.id = task.acquisition_id
+WHERE r.id = 'a-old'`).Scan(&namespace); err != nil {
+		t.Fatal(err)
+	}
+	if namespace != "manual_acquire_v1" {
+		t.Fatalf("the decided retry must use the manual retry entry: %q", namespace)
+	}
+}
+
+// M1: a round that finds its gate closed (a live evaluation) leaves a delayed
+// item. A settle that arrives while an evaluation runs is not lost when that
+// evaluation ends without a waiting release: the fallback is decided later.
+func TestCompetitionClosedGateKeepsTheSettledRoundPostgres(t *testing.T) {
+	f := newCompetitionFixture(t, "single_copy")
+	f.markRefreshed("source-rss-test", "source-beta")
+	f.addRelease("a-1080", "source-rss-test", "[Alpha] Test Show - 01 [1080p]", 1)
+	f.addRelease("a-720", "source-rss-test", "[Alpha] Test Show - 01 [720p]", 1)
+	f.evaluate("a-1080", "a-720")
+	f.mustRunCompetition("competition_decided")
+	f.requireAdmitted("a-1080")
+	f.requireCoveredInFlight("a-720")
+
+	// An evaluation that will not wait (its group is not selected) is live.
+	if _, err := f.db.Exec(`UPDATE provider_group_selections SET effective_selected = FALSE, version = version + 1 WHERE id = 'sel-beta'`); err != nil {
+		t.Fatal(err)
+	}
+	f.addRelease("b-02", "source-beta", "[Beta] Test Show - 02 [1080p]", 2)
+	evaluation := f.claimEvaluation("b-02")
+
+	failCurrentDownload(t, "a-1080")
+	f.mustRunCompetition(competitionWaitingEvaluations)
+	if item := f.competitionItem(); item.state != "available" || item.trigger != competition.TriggerGateWait || item.due || item.attempt != 0 {
+		t.Fatalf("a closed gate leaves a delayed item: %+v", item)
+	}
+	f.finish(evaluation, f.handle(evaluation))
+	if f.requireNoAwaiting(); f.liveCompetitions() != 1 {
+		t.Fatal("the delayed round must survive the evaluation's end")
+	}
+	f.makeCompetitionDue()
+	f.mustRunCompetition("competition_decided")
+	f.requireAdmitted("a-720")
+}
+
+// requireNoAwaiting requires that no release of the instance waits.
+func (f *competitionFixture) requireNoAwaiting() {
+	f.t.Helper()
+	var count int
+	if err := f.db.QueryRow(`SELECT COUNT(*) FROM releases WHERE verdict = 'awaiting_competition'`).Scan(&count); err != nil || count != 0 {
+		f.t.Fatalf("waiting releases = %d %v, want none", count, err)
+	}
+}
+
+// M1: an interrupted round (recovery observation) and a round that failed on
+// its last attempt carry over to a fresh delayed item on a fresh budget; an
+// earlier attempt keeps the ordinary retry.
+func TestCompetitionInterruptedOrExhaustedRoundCarriesOverPostgres(t *testing.T) {
+	ctx := context.Background()
+	requireCarried := func(f *competitionFixture) {
+		f.t.Helper()
+		if item := f.competitionItem(); item.state != "available" || item.trigger != competition.TriggerRoundCarried || item.due || item.attempt != 0 {
+			f.t.Fatalf("the round must carry over to a fresh delayed item: %+v", item)
+		}
+		f.makeCompetitionDue()
+		f.mustRunCompetition("competition_decided")
+		f.requireAdmitted("a-720")
+	}
+	t.Run("recovery", func(t *testing.T) {
+		f := newCompetitionFixture(t, "single_copy")
+		f.markRefreshed("source-rss-test", "source-beta")
+		f.addRelease("a-720", "source-rss-test", "[Alpha] Test Show - 01 [720p]", 1)
+		f.evaluate("a-720")
+		claim, ok := f.claimCompetition()
+		if !ok {
+			t.Fatal("no round")
+		}
+		if err := f.store.BlockRecovery(ctx, claim, "attempt_exhausted"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ownerTestDB(t).Exec(`UPDATE work_items SET lease_until = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE id = $1`, claim.ID); err != nil {
+			t.Fatal(err)
+		}
+		recovery, err := f.store.ClaimRecovery(ctx, []string{workitems.KindSubscriptionCompetition}, time.Minute)
+		if err != nil {
+			t.Fatal(err)
+		}
+		observer, _ := f.service.CompetitionHandler().(worker.RecoveryObserver)
+		o, err := observer.ObserveRecovery(ctx, recovery)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := f.store.SettleRecovery(ctx, recovery, o.TerminalState, o.OwnerResult, o.Disposition, o.WriteOwner, o.PostTransition); err != nil {
+			t.Fatal(err)
+		}
+		requireCarried(f)
+	})
+	t.Run("last attempt", func(t *testing.T) {
+		f := newCompetitionFixture(t, "single_copy")
+		f.markRefreshed("source-rss-test", "source-beta")
+		f.addRelease("a-720", "source-rss-test", "[Alpha] Test Show - 01 [720p]", 1)
+		f.evaluate("a-720")
+		claim, ok := f.claimCompetition()
+		if !ok {
+			t.Fatal("no round")
+		}
+		fallback, _ := f.service.CompetitionHandler().(worker.RecoveryFallbackHandler)
+		if _, handled := fallback.RecoveryFallback(ctx, claim, errors.New("decide failed")); handled {
+			t.Fatal("an attempt with budget left keeps the ordinary retry")
+		}
+		last := claim
+		last.Attempt = last.MaxAttempts
+		o, handled := fallback.RecoveryFallback(ctx, last, errors.New("decide failed"))
+		if !handled {
+			t.Fatal("the last attempt must carry the round over")
+		}
+		f.finish(claim, o)
+		requireCarried(f)
+	})
+}
+
+// L1: a round winner whose decided stage fails is left out and the round is
+// decided again without it, so the next candidate takes the episode instead
+// of being written as covered by the failed winner. A release still left out
+// once the delayed retries ran out keeps waiting with the visible reason
+// competition_stalled.
+func TestCompetitionLeftOutWinnerFreesItsEpisodePostgres(t *testing.T) {
+	t.Run("next candidate takes the episode", func(t *testing.T) {
+		f := newCompetitionFixture(t, "single_copy")
+		f.markRefreshed("source-rss-test", "source-beta")
+		f.service.SetDownloaderAdmission(&selectiveAdmission{fail: "a-1080"})
+		f.addRelease("a-1080", "source-rss-test", "[Alpha] Test Show - 01 [1080p]", 1)
+		f.addRelease("b-720", "source-beta", "[Beta] Test Show - 01 [720p]", 1)
+		f.evaluate("a-1080", "b-720")
+		f.mustRunCompetition("competition_decided")
+		f.requireAdmitted("b-720")
+		f.requireAwaiting("a-1080")
+		if item := f.competitionItem(); item.trigger != competition.TriggerRoundRetry || item.retry != 1 {
+			t.Fatalf("the left-out winner is retried later: %+v", item)
+		}
+	})
+	t.Run("stalled after the retries", func(t *testing.T) {
+		f := newCompetitionFixture(t, "single_copy")
+		f.markRefreshed("source-rss-test", "source-beta")
+		f.service.SetDownloaderAdmission(&selectiveAdmission{fail: "a-1080"})
+		f.addRelease("a-1080", "source-rss-test", "[Alpha] Test Show - 01 [1080p]", 1)
+		f.evaluate("a-1080")
+		f.mustRunCompetition("competition_decided")
+		for retry := 1; retry <= competition.MaxAttempts; retry++ {
+			if item := f.competitionItem(); item.trigger != competition.TriggerRoundRetry || item.retry != retry {
+				t.Fatalf("retry %d: %+v", retry, item)
+			}
+			f.requireAwaiting("a-1080")
+			f.makeCompetitionDue()
+			f.mustRunCompetition("competition_decided")
+		}
+		if f.liveCompetitions() != 0 {
+			t.Fatal("the retries are bounded")
+		}
+		assertReleaseState(t, f.db, "a-1080", competition.VerdictAwaiting, competitionStalled, false)
+	})
+}
+
+// The settle trigger merges into the competition item without the
+// subscription lock. A settle that commits while a round waits at the
+// subscription row to commit leaves that round moved; the fresh round lets
+// the fallback in. Nothing deadlocks and no attempt is spent.
+func TestCompetitionCommitAndSettleTriggerConcurrentlyPostgres(t *testing.T) {
+	f := newCompetitionFixture(t, "single_copy")
+	f.markRefreshed("source-rss-test", "source-beta")
+	f.addRelease("a-1080", "source-rss-test", "[Alpha] Test Show - 01 [1080p]", 1)
+	f.addRelease("a-720", "source-rss-test", "[Alpha] Test Show - 01 [720p]", 1)
+	f.evaluate("a-1080", "a-720")
+	f.mustRunCompetition("competition_decided")
+	f.requireAdmitted("a-1080")
+	f.requireCoveredInFlight("a-720")
+	f.addRelease("a-02", "source-rss-test", "[Alpha] Test Show - 02 [720p]", 2)
+	f.evaluate("a-02")
+	claim, ok := f.claimCompetition()
+	if !ok {
+		t.Fatal("the evaluation must enqueue the round")
+	}
+	var taskID, acquisitionID string
+	if err := f.db.QueryRow(`SELECT task.id, task.acquisition_id FROM releases r JOIN download_tasks task ON task.id = r.download_task_id WHERE r.id = 'a-1080'`).Scan(&taskID, &acquisitionID); err != nil {
+		t.Fatal(err)
+	}
+
+	release := f.holdSubscription()
+	var (
+		outcome    worker.Outcome
+		roundErr   error
+		roundDone  = make(chan struct{})
+		settled    = make(chan error, 1)
+		ownerDB    = ownerTestDB(t)
+		settleDone bool
+	)
+	go func() {
+		defer close(roundDone)
+		outcome, roundErr = f.handleCompetition(claim)
+	}()
+	met := f.waitForLockWaiters(1)
+	if met {
+		go func() {
+			if _, err := ownerDB.Exec(`UPDATE download_tasks SET state='failed',failure_code='download_stalled',failure_reason='fixture',version=version+1 WHERE id=$1`, taskID); err != nil {
+				settled <- err
+				return
+			}
+			_, err := ownerDB.Exec(`UPDATE acquisitions SET state='failed',terminal_at=statement_timestamp(),terminal_schema='acquisition-terminal:v1',terminal_receipt='{}',detail_until=statement_timestamp()+detail_retention_seconds*INTERVAL '1 second',receipt_until=greatest(receipt_until,statement_timestamp()+receipt_after_terminal_seconds*INTERVAL '1 second') WHERE id=$1`, acquisitionID)
+			settled <- err
+		}()
+		select {
+		case err := <-settled:
+			settleDone = true
+			if err != nil {
+				release()
+				<-roundDone
+				t.Fatalf("settle: %v", err)
+			}
+		case <-time.After(10 * time.Second):
+		}
+	}
+	release()
+	<-roundDone
+	if !met || !settleDone {
+		t.Fatalf("the settle must commit while the round waits to commit (met=%v settled=%v)", met, settleDone)
+	}
+	if roundErr != nil || outcome.OwnerResult.ReasonCode != competition.TriggerRoundMoved {
+		t.Fatalf("the round that met the settle = %+v %v, want moved", outcome.OwnerResult, roundErr)
+	}
+	f.drainCompetition()
+	f.requireAdmitted("a-02", "a-720")
 	if spent := f.spentCompetitionBudget(); spent != 0 {
 		t.Fatalf("contention must not spend the budget: %d", spent)
 	}

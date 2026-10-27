@@ -238,7 +238,7 @@ func (s *Service) loadReleaseSnapshot(ctx context.Context, releaseID string) (re
        COALESCE(lifecycle.lifecycle_state, ''), COALESCE(task.state, ''), COALESCE(acq.state, ''),
        (SELECT count(*) FROM download_tasks owned WHERE owned.release_id = r.id),
        sub.new_releases_only, sub.start_baseline_at, `+ReleasePlacementIssueSQL("sub.managed_anime_id")+`,
-       CASE WHEN r.verdict = 'awaiting_competition' THEN COALESCE(r.competition_retry_key, '') ELSE '' END
+       CASE WHEN r.verdict IN ('awaiting_competition', 'subscription_stopped') THEN COALESCE(r.competition_retry_key, '') ELSE '' END
 	FROM releases r
 	JOIN rss_sources src ON src.id = r.rss_source_id
 	JOIN subscriptions sub ON sub.id = src.subscription_id
@@ -284,8 +284,10 @@ WHERE r.id = $1`, releaseID).Scan(
 	snapshot.downloadTaskID = downloadTaskID
 	snapshot.subscriptionState = subscriptionState
 	// An explicit retry that left the release waiting for the competition
-	// stays that retry while the subscription is active (a stopped
-	// subscription's waiting release does nothing until its resume).
+	// stays that retry while the subscription is active. A stopped
+	// subscription's re-evaluation keeps the key with the release
+	// (subscription_stopped), so the evaluation after the resume is that
+	// retry again.
 	snapshot.manualRetry = snapshot.retryKey != "" && subscriptionState == "active"
 	snapshot.anibtMode = anibtMode.String
 	bgm, tmdb, err := metadataBindingsFromColumns(bgmWorkID, tmdbWorkID, tmdbMediaKind, tmdbSeason, snapshot.managedAnimeID)
@@ -408,11 +410,13 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 			return 0, fmt.Errorf("lock release for evaluation: %w", err)
 		}
 		// The competition owns the admission of an active subscription,
-		// decided on the locked state: a release evaluated for the direct
-		// path (a stopped subscription's explicit retry) whose subscription
-		// is active now waits for the competition instead.
+		// decided on the locked state: a release evaluated while the
+		// subscription was stopped (an explicit retry for the direct path, or
+		// an automatic evaluation that would end subscription_stopped) whose
+		// subscription is active now is evaluated again; it then waits for
+		// the competition.
 		awaitNow := s.competitionOwnsAdmission(snapshot, currentSubscriptionState)
-		if awaitNow && acquisition != nil {
+		if awaitNow && (acquisition != nil || snapshot.subscriptionState != "active") {
 			return 0, errCompetitionActivated
 		}
 		if snapshot.manualRetry {
@@ -660,6 +664,12 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 		retryKey := ""
 		if verdict == competition.VerdictAwaiting && snapshot.manualRetry {
 			retryKey = strings.TrimSpace(snapshot.retryKey)
+		}
+		if retryKey == "" && storedRetryKey != "" && verdict == "subscription_stopped" && currentSubscriptionState != "active" && taskID == "" {
+			// A waiting retry re-evaluated while its subscription is stopped
+			// keeps its key and its placement redownload requests until the
+			// resume evaluates it as that retry again.
+			retryKey = storedRetryKey
 		}
 		if storedRetryKey != "" && storedRetryKey != retryKey {
 			if retryKey != "" {

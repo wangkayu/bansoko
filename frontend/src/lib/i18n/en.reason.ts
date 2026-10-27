@@ -128,6 +128,7 @@ export const enReasonCopy = {
   not_started: "Subscription not started",
   start_baseline: "Published before subscribing; not downloaded automatically",
   awaiting_competition: "Waiting to be compared with this subscription's other releases",
+  competition_stalled: "Couldn't finish admitting this release; it waits for the next comparison",
   torrent_payload_missing: "Torrent file missing. Fetch it first.",
   qb_connection_not_configured: "No download client configured",
   managed_anime_retired: "Subscription ended. No more downloads.",

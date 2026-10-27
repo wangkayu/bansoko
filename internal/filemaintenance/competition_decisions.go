@@ -65,7 +65,11 @@ type roundClaim struct {
 //
 // Every waiting release gets a decision (admitted or not); a fallback
 // candidate only when it is admitted. Decisions are ordered by release id.
-func (s *ReplacementDecisionService) CompetitionDecisions(ctx context.Context, tx *sql.Tx, managedAnimeID string) (competition.Round, error) {
+//
+// excluded names releases the caller leaves out of this round (their decided
+// stage could not finish): they are no candidate, so they take no key and
+// keep no other candidate out.
+func (s *ReplacementDecisionService) CompetitionDecisions(ctx context.Context, tx *sql.Tx, managedAnimeID string, excluded map[string]bool) (competition.Round, error) {
 	if s == nil || tx == nil {
 		return competition.Round{}, errors.New("subscription competition is not wired")
 	}
@@ -98,6 +102,15 @@ FROM anime_business_configs WHERE managed_anime_id = $1 AND replacement_version 
 	candidates, err := loadCompetitionCandidatesTx(ctx, tx, managedAnimeID)
 	if err != nil {
 		return competition.Round{}, err
+	}
+	if len(excluded) > 0 {
+		kept := candidates[:0]
+		for _, candidate := range candidates {
+			if !excluded[candidate.releaseID] {
+				kept = append(kept, candidate)
+			}
+		}
+		candidates = kept
 	}
 	if mode == ModeAll {
 		round := competition.Round{}
