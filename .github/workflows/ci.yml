@@ -1,9 +1,11 @@
 # Single trusted GitHub workflow on self-hosted runners. Every required gate
 # precedes publication, and the two publishing events do different things:
 #
-#   push main      every gate, then the multi-arch test image only
-#                  (`<VERSION>-<sha9>` and `:test` on Docker Hub). The signed
-#                  update channel is never touched.
+#   push main      every gate, then the multi-arch test image
+#                  (`<VERSION>-<sha9>` and `:test` on Docker Hub) and the test
+#                  update lane: a signed `<X.Y.Z>-test.<run>` package without
+#                  release notes on the update-channel-test branch. The formal
+#                  update-channel branch is never touched.
 #   push vX.Y.Z    every gate again on the tagged commit, which must already be
 #                  on main; then the formal release: signed manifest with the
 #                  version's release notes, update-channel branch advance,
@@ -31,6 +33,10 @@ concurrency:
   # tag runs in its own group and is never cancelled, neither by a main push
   # nor by another tag: releases are serialized, and the signed channel gate
   # (sequence and version must both advance) stays the authoritative defence.
+  # The main run's test lane may be cancelled at any step: each write is one
+  # contents-API commit into a per-run version directory, the locator is
+  # swapped last, so a cancelled run leaves only unreferenced files; and it
+  # writes another branch than the tag run, so the two groups never contend.
   # See scripts/ci/ci-release-dag-test.rb.
   group: ${{ startsWith(github.ref, 'refs/tags/') && 'bansoko-release' || 'bansoko-ci' }}
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -425,7 +431,8 @@ jobs:
           BANSOKO_CI_BROWSERS_PREINSTALLED: '1'
         run: bash scripts/ci/ci-fixture-browser.sh
 
-  # push main: the multi-arch test image. Nothing else is published.
+  # push main: the multi-arch test image (the test update package is the
+  # test-release job below).
   docker-hub:
     name: Docker Hub test image
     needs: [contract-boundary, go-unit-static, frontend-quality, postgres-integration-shard-1, postgres-integration-shard-2, postgres-integration-shard-3, qb-real-chain, fixture-browser]
@@ -446,6 +453,60 @@ jobs:
         env:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: bash scripts/ci/ci-dockerhub-publish.sh test
+
+  # push main: the test update lane. The same trust, readback, verification
+  # and compare-and-swap rules as the formal release, on its own channel
+  # branch, with a prerelease identity numbered by the run and no notes and no
+  # GitHub Release. Test instances reach it only by pointing their channel and
+  # package root at update-channel-test.
+  test-release:
+    name: test update package
+    needs: [contract-boundary, go-unit-static, frontend-quality, postgres-integration-shard-1, postgres-integration-shard-2, postgres-integration-shard-3, qb-real-chain, fixture-browser]
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: [self-hosted, bansoko-release-vm]
+    timeout-minutes: 60
+    # The test channel branch and this build's files are written with the
+    # workflow's own token, so the job needs contents write.
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: verify event SHA
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: verify protected main and required results
+        env:
+          BANSOKO_RELEASE_READ_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/ci/ci-release-trust.py
+      - name: test version preflight
+        env:
+          BANSOKO_RELEASE_REF_PROTECTED: 'true'
+          BANSOKO_REQUIRED_RESULTS: ${{ toJSON(needs) }}
+          BANSOKO_RELEASE_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/ci/ci-release.py test-preflight
+      - name: build test image
+        env:
+          BANSOKO_RELEASE_REF_PROTECTED: 'true'
+          BANSOKO_REQUIRED_RESULTS: ${{ toJSON(needs) }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: python3 scripts/ci/ci-release.py test-image
+      - name: publish immutable test package
+        env:
+          BANSOKO_RELEASE_REF_PROTECTED: 'true'
+          BANSOKO_REQUIRED_RESULTS: ${{ toJSON(needs) }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          BANSOKO_RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+          BANSOKO_RELEASE_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/ci/ci-release.py test-publish
+      - name: advance signed test channel
+        env:
+          BANSOKO_RELEASE_REF_PROTECTED: 'true'
+          BANSOKO_REQUIRED_RESULTS: ${{ toJSON(needs) }}
+          BANSOKO_RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+          BANSOKO_RELEASE_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/ci/ci-release.py test-channel
 
   # push vX.Y.Z: the formal release. The trust step proves the tag names a
   # commit on main and that every gate of this run succeeded; preflight then

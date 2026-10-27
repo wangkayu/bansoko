@@ -120,8 +120,8 @@ class PublicationTests(unittest.TestCase):
                     self.assertRaises(RuntimeError),
                 ):
                     release.identity()
-        # A main push builds only the test image; it never publishes. Neither
-        # does any tag that is not a plain vX.Y.Z.
+        # The formal lane publishes only from a plain vX.Y.Z tag; a main push
+        # belongs to the test lane.
         refs = [
             "refs/heads/main",
             "refs/heads/v0.1.0",
@@ -739,6 +739,264 @@ class PublicationTests(unittest.TestCase):
         sign = next(args for args in seen if "channel-sign" in args)
         self.assertEqual(sign[sign.index("--channel") + 1], "stable")
         self.assertEqual(sign[sign.index("--expect-release-sequence") + 1], "53")
+
+
+class TestLaneTests(unittest.TestCase):
+    """A main push publishes a signed prerelease to its own channel branch."""
+
+    def setUp(self):
+        self.sha = "a" * 40
+        self.gates = {
+            x: {"result": "success"}
+            for x in [
+                "contract-boundary",
+                "go-unit-static",
+                "frontend-quality",
+                "postgres-integration-shard-1",
+                "postgres-integration-shard-2",
+                "postgres-integration-shard-3",
+                "qb-real-chain",
+                "fixture-browser",
+            ]
+        }
+        self.env = {
+            "GITHUB_EVENT_NAME": "push",
+            "GITHUB_REF": "refs/heads/main",
+            "GITHUB_SHA": self.sha,
+            "GITHUB_RUN_ID": "71",
+            "GITHUB_RUN_NUMBER": "130",
+            "BANSOKO_RELEASE_REF_PROTECTED": "true",
+            "BANSOKO_REQUIRED_RESULTS": json.dumps(self.gates),
+            "GITHUB_REPOSITORY": "gh-owner/gh-repo",
+            "BANSOKO_RELEASE_GITHUB_TOKEN": "sentinel",
+        }
+        self.ident = {
+            "sha": self.sha,
+            "run_id": "71",
+            "sequence": 130,
+            "version": "0.1.0-test.130",
+            "release_id": "v0.1.0-test.130",
+            "lane": "test",
+        }
+
+    def test_lanes_are_pinned_and_apart(self):
+        self.assertEqual(release.TEST_BRANCH, "update-channel-test")
+        self.assertNotEqual(release.TEST_BRANCH, release.BRANCH)
+        self.assertEqual(
+            release.LANES["stable"],
+            {"branch": "update-channel", "discovery": "stable", "manifest": "stable"},
+        )
+        self.assertEqual(
+            release.LANES["test"],
+            {"branch": "update-channel-test", "discovery": "test", "manifest": "nightly"},
+        )
+        # An identity built before lanes existed is the formal one.
+        self.assertEqual(release.branch_of({}), "update-channel")
+        with self.assertRaises(RuntimeError):
+            release.lane_of({"lane": "beta"})
+
+    def test_modes_bind_their_lane_before_any_identity(self):
+        for mode in ["preflight", "image", "publish", "channel", "github-release"]:
+            self.assertEqual(release.dispatch(mode)[0], "stable")
+        for mode in ["test-preflight", "test-image", "test-publish", "test-channel"]:
+            self.assertEqual(release.dispatch(mode)[0], "test")
+        # A test build is not a release: no GitHub Release mode on the lane.
+        for mode in ["test-github-release", "", "release"]:
+            with self.subTest(mode=mode), self.assertRaises(RuntimeError):
+                release.dispatch(mode)
+
+    def test_identity_derives_the_test_version_from_the_run(self):
+        seen = []
+
+        def command(*args, **kwargs):
+            seen.append(args)
+            if args[:2] == ("git", "rev-parse"):
+                return self.sha
+            if "test-version" in args:
+                return "0.1.0-test.130"
+            return ""
+
+        with patch.dict(os.environ, self.env, clear=True), patch.object(release, "run", side_effect=command):
+            ident = release.identity("test")
+        self.assertEqual(ident, self.ident)
+        derive = next(args for args in seen if "test-version" in args)
+        self.assertEqual(derive[derive.index("--run") + 1], "130")
+        self.assertTrue(derive[derive.index("--version-file") + 1].endswith("VERSION"))
+        self.assertTrue(derive[derive.index("--notes-dir") + 1].endswith("release-notes"))
+
+    def test_identity_refusals(self):
+        def command(version):
+            def run(*args, **kwargs):
+                if args[:2] == ("git", "rev-parse"):
+                    return self.sha
+                if "test-version" in args:
+                    return version
+                return ""
+
+            return run
+
+        # A derived version that does not name this run is refused.
+        for version in ["0.1.0-test.129", "0.1.0", "0.1.0-test.1300", ""]:
+            with (
+                self.subTest(version=version),
+                patch.dict(os.environ, self.env, clear=True),
+                patch.object(release, "run", side_effect=command(version)),
+                self.assertRaises(RuntimeError),
+            ):
+                release.identity("test")
+        # Only a protected main push is the test lane; a tag is the formal one.
+        for key, value in [
+            ("GITHUB_REF", "refs/tags/v0.1.0"),
+            ("GITHUB_REF", "refs/heads/feature"),
+            ("GITHUB_REF", "refs/heads/main/x"),
+            ("GITHUB_EVENT_NAME", "pull_request"),
+            ("BANSOKO_RELEASE_REF_PROTECTED", "false"),
+        ]:
+            with (
+                self.subTest(key=key, value=value),
+                patch.dict(os.environ, dict(self.env, **{key: value}), clear=True),
+                patch.object(release, "run", side_effect=command("0.1.0-test.130")),
+                self.assertRaises(RuntimeError),
+            ):
+                release.identity("test")
+        # A main push never reaches the formal lane.
+        with (
+            patch.dict(os.environ, self.env, clear=True),
+            patch.object(release, "run", side_effect=command("0.1.0-test.130")),
+            self.assertRaises(RuntimeError),
+        ):
+            release.identity("stable")
+        failed = dict(self.gates, **{"fixture-browser": {"result": "failure"}})
+        with (
+            patch.dict(os.environ, dict(self.env, BANSOKO_REQUIRED_RESULTS=json.dumps(failed)), clear=True),
+            patch.object(release, "run", side_effect=command("0.1.0-test.130")),
+            self.assertRaises(RuntimeError),
+        ):
+            release.identity("test")
+
+    def test_addresses_name_the_test_branch(self):
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "gh-owner/gh-repo"}):
+            self.assertEqual(
+                release.github_file_url("0.1.0-test.130", "release-manifest.json", release.branch_of(self.ident)),
+                "https://raw.githubusercontent.com/gh-owner/gh-repo/update-channel-test/0.1.0-test.130/release-manifest.json",
+            )
+            self.assertEqual(
+                release.github_raw_url("channel-v1.json", release.TEST_BRANCH),
+                "https://raw.githubusercontent.com/gh-owner/gh-repo/update-channel-test/channel-v1.json",
+            )
+            # The default stays on the formal branch.
+            self.assertIn("/update-channel/", release.github_raw_url("channel-v1.json"))
+
+    def test_preflight_reads_only_the_test_channel_and_has_no_notes(self):
+        commands = []
+
+        def command(*args, **kwargs):
+            commands.append(args)
+            return ""
+
+        with (
+            patch.dict(os.environ, self.env, clear=True),
+            patch.object(release, "run", side_effect=command),
+            patch.object(release, "require_public_github"),
+            patch.object(release, "request", return_value=(404, b"")) as request,
+        ):
+            release.preflight(self.ident)
+        self.assertTrue(request.call_args[0][0].endswith("?ref=update-channel-test"))
+        self.assertEqual([args[3] for args in commands], ["version-gate"])
+        gate = commands[-1]
+        self.assertEqual(gate[gate.index("--lane") + 1], "test")
+        self.assertEqual(gate[gate.index("--version") + 1], "0.1.0-test.130")
+        self.assertEqual(gate[gate.index("--sequence") + 1], "130")
+
+    def test_branch_creation_and_writes_target_the_test_branch(self):
+        calls = []
+
+        def answer(url, token, method="GET", data=None, hosts=None):
+            calls.append((method, url, data))
+            if url.endswith("/branches/update-channel-test"):
+                return 404, b""
+            if url.endswith("/git/ref/heads/main"):
+                return 200, json.dumps({"object": {"sha": "c" * 40}}).encode()
+            return 201, b"{}"
+
+        with patch.dict(os.environ, self.env, clear=True), patch.object(release, "request", side_effect=answer):
+            release.github_ensure_branch("sentinel", release.TEST_BRANCH)
+        create = [c for c in calls if c[0] == "POST"]
+        self.assertEqual(len(create), 1)
+        self.assertEqual(create[0][2]["ref"], "refs/heads/update-channel-test")
+
+        content = b"payload"
+        written = []
+
+        def put(url, token, method="GET", data=None, hosts=None):
+            written.append((method, url, data))
+            if method == "PUT":
+                return 201, b"{}"
+            if len(written) == 1:
+                return 404, b""
+            return 200, json.dumps({"sha": release.git_blob_sha(content)}).encode()
+
+        with patch.dict(os.environ, self.env, clear=True), patch.object(release, "request", side_effect=put):
+            release.github_put_file("0.1.0-test.130", "payload.tar.zst", content, "sentinel", release.TEST_BRANCH)
+        for method, url, data in written:
+            if method == "PUT":
+                self.assertEqual(data["branch"], "update-channel-test")
+            else:
+                self.assertTrue(url.endswith("?ref=update-channel-test"), url)
+
+    def test_the_channel_is_signed_as_the_test_channel_and_gated_on_its_lane(self):
+        seen = []
+
+        def command(*args, **kwargs):
+            seen.append(args)
+            if "channel-sign" in args:
+                Path(args[args.index("--output") + 1]).write_bytes(b'{"signed":true}')
+            return ""
+
+        with (
+            patch.object(release, "channel_files"),
+            patch.object(release, "run", side_effect=command),
+            patch.object(release, "require_public_github"),
+            patch.object(release, "github_channel") as write,
+            patch.dict(os.environ, dict(self.env, BANSOKO_RELEASE_SIGNING_KEY="fake"), clear=True),
+        ):
+            release.channel(self.ident)
+        sign = next(args for args in seen if "channel-sign" in args)
+        self.assertEqual(sign[sign.index("--channel") + 1], "test")
+        self.assertEqual(sign[sign.index("--expect-release-sequence") + 1], "130")
+        self.assertIn(
+            "/update-channel-test/0.1.0-test.130/", sign[sign.index("--manifest-url") + 1]
+        )
+        write.assert_called_once()
+
+    def test_the_channel_swap_and_its_gate_stay_on_the_test_branch(self):
+        with tempfile.TemporaryDirectory() as temp:
+            temp = Path(temp)
+            candidate = temp / "candidate.json"
+            candidate.write_bytes(b'{"sequence":130}')
+            info = {
+                "sha": "c" * 40,
+                "encoding": "base64",
+                "content": base64.b64encode(b'{"sequence":129}').decode(),
+            }
+            with (
+                patch.object(
+                    release,
+                    "request",
+                    side_effect=[(200, json.dumps(info).encode()), (200, b"{}")],
+                ) as request,
+                patch.object(release, "public_fetch", side_effect=[(200, candidate.read_bytes())]) as fetch,
+                patch.object(release, "run") as tool,
+                patch.dict(os.environ, self.env, clear=True),
+            ):
+                release.github_channel(candidate, self.ident, temp)
+            self.assertTrue(request.call_args_list[0].args[0].endswith("?ref=update-channel-test"))
+            put = [call for call in request.call_args_list if call.args[2:3] == ("PUT",)]
+            self.assertEqual(len(put), 1)
+            self.assertEqual(put[0].args[3]["branch"], "update-channel-test")
+            self.assertIn("/update-channel-test/channel-v1.json", fetch.call_args[0][0])
+            gate = next(call.args for call in tool.call_args_list if "channel-gate" in call.args)
+            self.assertEqual(gate[gate.index("--lane") + 1], "test")
 
 
 class FormalReleaseTests(unittest.TestCase):

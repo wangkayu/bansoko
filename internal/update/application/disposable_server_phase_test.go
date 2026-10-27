@@ -47,6 +47,14 @@ func disposableClock() time.Time { return disposableClockInstant }
 // the image floor the deployment trusts.
 func disposableSignedManifest(t *testing.T, releaseID string, releaseSequence int64, bootstrapMinVersion, minImageVersion string) (hardeningdomain.ReleaseManifest, ed25519.PublicKey) {
 	t.Helper()
+	return disposableSignedManifestWith(t, releaseID, releaseSequence, bootstrapMinVersion, minImageVersion, nil)
+}
+
+// disposableSignedManifestWith is disposableSignedManifest with a mutation
+// applied before signing, for a test that needs another version, channel or
+// release notes on an otherwise identical signed manifest.
+func disposableSignedManifestWith(t *testing.T, releaseID string, releaseSequence int64, bootstrapMinVersion, minImageVersion string, mutate func(*hardeningdomain.ReleaseManifest)) (hardeningdomain.ReleaseManifest, ed25519.PublicKey) {
+	t.Helper()
 	publicKey, privateKey, err := hardeningdomain.GenerateSigningKey()
 	if err != nil {
 		t.Fatal(err)
@@ -91,6 +99,9 @@ func disposableSignedManifest(t *testing.T, releaseID string, releaseSequence in
 			TargetSchemaVersion: "001",
 			ReleaseSequence:     releaseSequence,
 		},
+	}
+	if mutate != nil {
+		mutate(&manifest)
 	}
 	if err := manifest.Sign(privateKey); err != nil {
 		t.Fatal(err)

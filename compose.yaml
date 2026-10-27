@@ -47,6 +47,11 @@ services:
       # Keep update state under the existing config mount: no second
       # application-state volume is needed just for channel updates.
       BANSOKO_UPDATES_ROOT: /config/updates
+      # Test builds: uncomment both lines to take every main build through
+      # Settings → Updates instead of only formal releases. Comment them out
+      # again to return to formal releases (from the next release on).
+      # BANSOKO_UPDATE_CHANNEL_URL: https://raw.githubusercontent.com/wangkayu/bansoko/update-channel-test/channel-v1.json
+      # BANSOKO_UPDATE_PACKAGE_ROOT: https://raw.githubusercontent.com/wangkayu/bansoko/update-channel-test/
       # Optional outbound proxy for RSS, metadata and notifications; the
       # downloader connection never uses it. Keep postgres in NO_PROXY.
       # HTTP_PROXY: http://192.168.1.2:7890

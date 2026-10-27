@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
-"""Trusted formal release publication from a pushed vX.Y.Z tag.
+"""Trusted signed publication to the two update channels.
 
-A main push no longer publishes anything to the update channel: it only builds
-the multi-arch test image (ci-dockerhub-publish.sh). A tag on a commit already
-on main, after every required gate of the same run succeeded, is the only path
-that signs a release, advances the channel and creates the GitHub Release.
-Secrets remain outside the build context.
+Two lanes share one publisher, one signing key and the workflow run counter,
+and never share a channel:
+
+  stable  a pushed vX.Y.Z tag on a commit already on main: signed release with
+          its release notes on the `update-channel` branch, then the GitHub
+          Release (modes preflight, image, publish, channel, github-release)
+  test    a main push: a signed prerelease `<X.Y.Z>-test.<run>` without notes
+          on the `update-channel-test` branch (modes test-preflight,
+          test-image, test-publish, test-channel)
+
+Each lane runs only after every required gate of the same run succeeded, and
+each mode refuses an event that is not its lane's. Secrets remain outside the
+build context.
 """
 
 import base64
@@ -25,6 +33,11 @@ from typing import NoReturn
 
 ROOT = Path(__file__).resolve().parents[2]
 BRANCH = "update-channel"
+# The test lane's channel branch. A separate branch, not a directory of the
+# formal one: its locator, blob compare-and-swap, commit stream and size are
+# independent of the formal channel, and the owner can delete it to start the
+# test domain over without touching a formal release.
+TEST_BRANCH = "update-channel-test"
 # The channel branch is created from this one on first publication. GitHub has
 # no "empty branch" concept, so the branch has to start somewhere, and main is
 # the only ref this run has already proved it is building.
@@ -86,8 +99,8 @@ def github_repository():
     return value
 
 
-def github_raw_url(name=""):
-    path = "/" + github_repository() + "/" + BRANCH
+def github_raw_url(name="", branch=BRANCH):
+    path = "/" + github_repository() + "/" + branch
     return github_raw_base() + (path + "/" + name if name else path)
 
 
@@ -100,7 +113,7 @@ def github_content_url():
     )
 
 
-def github_file_url(version, name):
+def github_file_url(version, name, branch=BRANCH):
     """One immutable release file, addressed on the channel branch.
 
     GitHub release assets are not usable for this: their download URL is a 302
@@ -112,7 +125,7 @@ def github_file_url(version, name):
     release_sequence, a signature over the manifest, and a client that only
     accepts a larger sequence.
     """
-    return github_raw_url(version + "/" + name)
+    return github_raw_url(version + "/" + name, branch)
 
 
 def hub_token():
@@ -191,19 +204,46 @@ RELEASE_TAG = re.compile(
     r"refs/tags/v((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))"
 )
 # The discovery channel the formal lane writes. The signed channel gate accepts
-# exactly one rename, from the retired automatic "test" channel to this one.
+# exactly one rename, from the retired automatic "test" channel the formal
+# branch carried before the first tag, to this one.
 DISCOVERY_CHANNEL = "stable"
 MANIFEST_CHANNEL = "stable"
 NOTES_DIR = ROOT / "release-notes"
+VERSION_FILE = ROOT / "VERSION"
 GITHUB_NOTES = "github-release-notes.md"
 
+# One entry per lane: where it publishes, the discovery channel its locator
+# names and the manifest channel its signed manifest names. The Go gates know
+# the same lanes by name (`--lane`) and refuse the other lane's identity.
+LANES = {
+    "stable": {"branch": BRANCH, "discovery": DISCOVERY_CHANNEL, "manifest": MANIFEST_CHANNEL},
+    "test": {"branch": TEST_BRANCH, "discovery": "test", "manifest": "nightly"},
+}
 
-def identity():
+
+def lane_of(ident):
+    """The lane an identity belongs to; identities built before lanes are stable."""
+    name = ident.get("lane", "stable")
+    if name not in LANES:
+        fail("unknown release lane")
+    return LANES[name]
+
+
+def branch_of(ident):
+    return lane_of(ident)["branch"]
+
+
+def identity(lane="stable"):
+    if lane not in LANES:
+        fail("unknown release lane")
     if os.environ.get("GITHUB_EVENT_NAME") != "push":
-        fail("only a pushed release tag can publish")
-    tag = RELEASE_TAG.fullmatch(os.environ.get("GITHUB_REF", ""))
-    if not tag:
-        fail("only a pushed vX.Y.Z tag can publish")
+        fail("only a pushed main commit or release tag can publish")
+    ref = os.environ.get("GITHUB_REF", "")
+    tag = RELEASE_TAG.fullmatch(ref)
+    if lane == "stable" and not tag:
+        fail("only a pushed vX.Y.Z tag can publish a formal release")
+    if lane == "test" and ref != "refs/heads/main":
+        fail("only a main push can publish a test build")
     if os.environ.get("BANSOKO_RELEASE_REF_PROTECTED") != "true":
         fail("protected ref proof required")
     sha = required("GITHUB_SHA")
@@ -235,16 +275,36 @@ def identity():
     }
     if set(gates) != expected or any(x != "success" for x in gates.values()):
         fail("required gate missing or not successful")
-    version = tag.group(1)
+    if lane == "stable":
+        version = tag.group(1)
+    else:
+        # `<X.Y.Z>-test.<run>`: a prerelease of the next formal version,
+        # derived in Go from VERSION and release-notes/versions.txt so the
+        # gates and this publisher read one rule.
+        version = release_tool(
+            "test-version",
+            "--version-file",
+            str(VERSION_FILE),
+            "--notes-dir",
+            str(NOTES_DIR),
+            "--run",
+            n,
+        )
+        if not re.fullmatch(
+            r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-test\." + n, version
+        ):
+            fail("derived test version does not name this run")
     return {
         "sha": sha,
         "run_id": run_id,
-        # The run number is the workflow-wide monotonic counter, so a tag run
-        # always carries a larger sequence than every earlier publication; the
-        # signed channel gate additionally requires the version to advance.
+        # The run number is the workflow-wide monotonic counter shared by both
+        # lanes, so every publication carries a larger sequence than every
+        # earlier one of either lane; the signed channel gate additionally
+        # requires the version to advance within the lane.
         "sequence": int(n),
         "version": version,
         "release_id": "v" + version,
+        "lane": lane,
     }
 
 
@@ -266,7 +326,7 @@ def release_notes(ident, mode, output):
     )
 
 
-def published_channel(token, temp):
+def published_channel(token, temp, branch=BRANCH):
     """The currently published signed channel, read through the API.
 
     The API answers the committed bytes immediately, unlike the raw host's
@@ -274,7 +334,7 @@ def published_channel(token, temp):
     older one. Only explicit absence (404) means "no channel yet"; any other
     failure refuses.
     """
-    status, body = request(github_content_url() + "?ref=" + BRANCH, token)
+    status, body = request(github_content_url() + "?ref=" + branch, token)
     if status == 404:
         return None
     if status != 200:
@@ -285,13 +345,18 @@ def published_channel(token, temp):
 
 
 def preflight(ident):
-    """Refuse before any effect: notes must exist and the version must advance."""
+    """Refuse before any effect: notes must exist and the version must advance.
+
+    A test build carries no notes (the manifest rule: only a formal X.Y.Z
+    carries them), so only the version gate against its own channel runs.
+    """
     with tempfile.TemporaryDirectory(prefix="bansoko-preflight-") as temp:
         temp = Path(temp)
-        release_notes(ident, "manifest", temp / "release-notes.json")
+        if ident.get("lane", "stable") == "stable":
+            release_notes(ident, "manifest", temp / "release-notes.json")
         token = required(GITHUB_TOKEN_ENV)
         require_public_github(token)
-        published = published_channel(token, temp)
+        published = published_channel(token, temp, branch_of(ident))
         release_tool(
             "version-gate",
             "--published",
@@ -304,6 +369,8 @@ def preflight(ident):
             ident["sha"],
             "--public-key",
             str(ROOT / "deployment/public.key"),
+            "--lane",
+            ident.get("lane", "stable"),
         )
     print("release preflight passed", ident["release_id"])
 
@@ -585,7 +652,7 @@ def publish(ident):
             BANSOKO_RELEASE_VERSION=ident["version"],
             BANSOKO_RELEASE_ID=ident["release_id"],
             BANSOKO_RELEASE_SEQUENCE=str(ident["sequence"]),
-            BANSOKO_RELEASE_CHANNEL=MANIFEST_CHANNEL,
+            BANSOKO_RELEASE_CHANNEL=lane_of(ident)["manifest"],
             BANSOKO_RELEASE_BOOTSTRAP_MIN_VERSION=bootstrap,
             BANSOKO_BASE_IMAGE_MIN_VERSION="base-v1",
             BANSOKO_RELEASE_IMAGE_BOOTSTRAP_VERSION=bootstrap,
@@ -640,7 +707,8 @@ def publish(ident):
         readback.mkdir()
         for name in ["release-manifest.json", "embedded-update-v1.tar.gz"]:
             status, content = public_readback(
-                github_file_url(ident["version"], name), (OUTPUT / name).read_bytes()
+                github_file_url(ident["version"], name, branch_of(ident)),
+                (OUTPUT / name).read_bytes(),
             )
             if status != 200:
                 fail("github public readback failed")
@@ -723,7 +791,7 @@ def git_blob_sha(content):
     return hashlib.sha1(b"blob %d\0" % len(content) + content).hexdigest()
 
 
-def github_put_file(version, name, content, token):
+def github_put_file(version, name, content, token, branch=BRANCH):
     """Write one immutable release file to the channel branch, refusing a rewrite.
 
     The contents API takes the current blob `sha` as the precondition, so a
@@ -736,9 +804,9 @@ def github_put_file(version, name, content, token):
     # <branch>/<path>` would create an ordinary directory named after the
     # branch, which no raw URL addresses.
     url = github_api_base() + "/repos/" + github_repository() + "/contents/" + version + "/" + name
-    status, body = request(url + "?ref=" + BRANCH, token, hosts=hosts)
+    status, body = request(url + "?ref=" + branch, token, hosts=hosts)
     options = {
-        "branch": BRANCH,
+        "branch": branch,
         "content": base64.b64encode(content).decode(),
         "message": "Publish " + version + "/" + name,
     }
@@ -751,7 +819,7 @@ def github_put_file(version, name, content, token):
     status, _ = request(url, token, "PUT", options, hosts=hosts)
     if status not in (200, 201, 409):
         fail("immutable release file upload refused: HTTP " + str(status))
-    status, body = request(url + "?ref=" + BRANCH, token, hosts=hosts)
+    status, body = request(url + "?ref=" + branch, token, hosts=hosts)
     if status != 200 or decode_json(body).get("sha") != git_blob_sha(content):
         fail("immutable release file readback mismatch: " + version + "/" + name)
 
@@ -782,7 +850,7 @@ def require_public_github(token):
         )
 
 
-def github_ensure_branch(token):
+def github_ensure_branch(token, branch=BRANCH):
     """Create the channel branch from main's tip when it does not exist yet.
 
     The contents API cannot write to a branch that is not there, and the first
@@ -792,7 +860,7 @@ def github_ensure_branch(token):
     """
     hosts = (urllib.parse.urlsplit(github_api_base()).netloc,)
     repository_url = github_api_base() + "/repos/" + github_repository()
-    status, _ = request(repository_url + "/branches/" + BRANCH, token, hosts=hosts)
+    status, _ = request(repository_url + "/branches/" + branch, token, hosts=hosts)
     if status == 200:
         return
     if status != 404:
@@ -809,7 +877,7 @@ def github_ensure_branch(token):
         repository_url + "/git/refs",
         token,
         "POST",
-        {"ref": "refs/heads/" + BRANCH, "sha": sha},
+        {"ref": "refs/heads/" + branch, "sha": sha},
         hosts=hosts,
     )
     if status not in (201, 422):
@@ -821,15 +889,16 @@ def github_ensure_branch(token):
 def github_publish(ident, files):
     """Upload this version's immutable files and prove they are publicly readable."""
     token = required(GITHUB_TOKEN_ENV)
-    github_ensure_branch(token)
+    branch = branch_of(ident)
+    github_ensure_branch(token, branch)
     for name in files:
-        github_put_file(ident["version"], name, (OUTPUT / name).read_bytes(), token)
+        github_put_file(ident["version"], name, (OUTPUT / name).read_bytes(), token, branch)
     # Read every file back from the raw host, unauthenticated: that is the
     # address an instance actually fetches, so a readback through the API would
     # prove less than this does.
     for name in files:
         expected = (OUTPUT / name).read_bytes()
-        code, body = public_readback(github_file_url(ident["version"], name), expected)
+        code, body = public_readback(github_file_url(ident["version"], name, branch), expected)
         if code != 200 or body != expected:
             fail("public readback failed: " + name)
     print("github release files published and publicly read back", ident["release_id"])
@@ -842,7 +911,7 @@ def channel_files(ident, temp):
     actually fetches — not reused from the local build.
     """
     for name in ["release-manifest.json", "embedded-update-v1.tar.gz"]:
-        status, body = public_fetch(github_file_url(ident["version"], name))
+        status, body = public_fetch(github_file_url(ident["version"], name, branch_of(ident)))
         if status != 200:
             fail("channel github readback refused")
         (temp / name).write_bytes(body)
@@ -866,7 +935,9 @@ def channel(ident):
         key = temp / "private.key"
         key.write_text(required("BANSOKO_RELEASE_SIGNING_KEY"))
         key.chmod(0o600)
-        manifest_url = github_file_url(ident["version"], "release-manifest.json")
+        manifest_url = github_file_url(
+            ident["version"], "release-manifest.json", branch_of(ident)
+        )
         candidate = temp / "candidate.json"
         run(
             "go",
@@ -880,7 +951,7 @@ def channel(ident):
             "--manifest-url",
             manifest_url,
             "--channel",
-            DISCOVERY_CHANNEL,
+            lane_of(ident)["discovery"],
             "--expect-release-sequence",
             str(ident["sequence"]),
             "--public-key",
@@ -923,10 +994,11 @@ def github_channel(candidate, ident, temp):
     """
     token = required(GITHUB_TOKEN_ENV)
     hosts = (urllib.parse.urlsplit(github_api_base()).netloc,)
+    branch = branch_of(ident)
     url = github_content_url()
-    status, body = request(url + "?ref=" + BRANCH, token, hosts=hosts)
+    status, body = request(url + "?ref=" + branch, token, hosts=hosts)
     options = {
-        "branch": BRANCH,
+        "branch": branch,
         "content": base64.b64encode(candidate.read_bytes()).decode(),
         "message": "Advance signed channel to " + ident["release_id"],
     }
@@ -937,14 +1009,14 @@ def github_channel(candidate, ident, temp):
         options["sha"] = info["sha"]
         if published.read_bytes() == candidate.read_bytes():
             expected = candidate.read_bytes()
-            code, raw = public_readback(github_raw_url("channel-v1.json"), expected)
+            code, raw = public_readback(github_raw_url("channel-v1.json", branch), expected)
             if code != 200 or raw != expected:
                 fail("identical github channel raw readback mismatch")
             print("github channel already identical and raw readback verified")
             return
     elif status == 404:
         branch_status, _ = request(
-            github_api_base() + "/repos/" + github_repository() + "/branches/" + BRANCH,
+            github_api_base() + "/repos/" + github_repository() + "/branches/" + branch,
             token,
             hosts=hosts,
         )
@@ -963,6 +1035,8 @@ def github_channel(candidate, ident, temp):
         str(candidate),
         "--public-key",
         str(ROOT / "deployment/public.key"),
+        "--lane",
+        ident.get("lane", "stable"),
     )
     # PUT creates the file when it is absent and updates it when `sha` names the
     # blob that was just read; the contents API has no POST form (a POST there
@@ -972,7 +1046,7 @@ def github_channel(candidate, ident, temp):
     if status not in (200, 201):
         fail("github channel conditional write rejected: HTTP " + str(status))
     expected = candidate.read_bytes()
-    code, raw = public_readback(github_raw_url("channel-v1.json"), expected)
+    code, raw = public_readback(github_raw_url("channel-v1.json", branch), expected)
     if code != 200 or raw != expected:
         fail("github channel raw readback mismatch")
     (temp / "github-raw.json").write_bytes(raw)
@@ -989,10 +1063,36 @@ def github_channel(candidate, ident, temp):
     print("github signed channel conditional write/readback verified", ident["release_id"])
 
 
+STABLE_MODES = {
+    "preflight": preflight,
+    "image": image,
+    "publish": publish,
+    "channel": channel,
+    "github-release": github_release,
+}
+# The test lane has no GitHub Release: a test build is not a release.
+TEST_MODES = {
+    "test-preflight": preflight,
+    "test-image": image,
+    "test-publish": publish,
+    "test-channel": channel,
+}
+
+
+def dispatch(mode):
+    """Bind a mode to its lane before any identity is read."""
+    if mode in STABLE_MODES:
+        return "stable", STABLE_MODES[mode]
+    if mode in TEST_MODES:
+        return "test", TEST_MODES[mode]
+    fail("unknown release mode")
+
+
 if __name__ == "__main__":
     try:
-        ident = identity()
-        {"preflight": preflight, "image": image, "publish": publish, "channel": channel, "github-release": github_release}[sys.argv[1]](ident)
+        lane, step = dispatch(sys.argv[1] if len(sys.argv) > 1 else "")
+        ident = identity(lane)
+        step(ident)
     except (
         RuntimeError,
         ValueError,

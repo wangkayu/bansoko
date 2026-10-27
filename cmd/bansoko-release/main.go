@@ -28,7 +28,7 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: bansoko-release <keygen|sign|verify|validate-schema|verify-embedded|artifact-sign|artifact-verify|pack-payload|channel-sign|channel-verify|channel-gate|version-gate|release-notes> [flags]")
+		return errors.New("usage: bansoko-release <keygen|sign|verify|validate-schema|verify-embedded|artifact-sign|artifact-verify|pack-payload|channel-sign|channel-verify|channel-gate|version-gate|test-version|release-notes> [flags]")
 	}
 	switch args[0] {
 	case "keygen":
@@ -55,6 +55,8 @@ func run(args []string) error {
 		return channelGate(args[1:])
 	case "version-gate":
 		return versionGate(args[1:])
+	case "test-version":
+		return testVersion(args[1:])
 	case "release-notes":
 		return releaseNotes(args[1:])
 	default:
@@ -497,18 +499,76 @@ func channelIdentity(document updatechannel.Document) map[string]any {
 	}
 }
 
+// releaseLane is one of the two publication lanes. Each lane owns its own
+// channel branch, discovery-channel name and version shape, and the gates
+// refuse any document that names the other lane's identity: the lanes share
+// the signing key and the run counter, so the gate is where they stay apart.
+type releaseLane struct {
+	name    string
+	channel string
+}
+
+var (
+	laneStable = releaseLane{name: "stable", channel: "stable"}
+	laneTest   = releaseLane{name: "test", channel: "test"}
+)
+
+func parseReleaseLane(value string) (releaseLane, error) {
+	switch strings.TrimSpace(value) {
+	case laneStable.name:
+		return laneStable, nil
+	case laneTest.name:
+		return laneTest, nil
+	default:
+		return releaseLane{}, fmt.Errorf("--lane must be %q or %q (got %q)", laneStable.name, laneTest.name, value)
+	}
+}
+
+// versionFits reports whether a version has this lane's shape. A test
+// version's run number is its release sequence, so the two cannot drift.
+func (l releaseLane) versionFits(version string, sequence int64) error {
+	if l == laneTest {
+		_, run, ok := releasecontract.ParseTestVersion(version)
+		if !ok {
+			return fmt.Errorf("test lane version must be X.Y.Z-test.<run> (got %q)", version)
+		}
+		if sequence > 0 && run != sequence {
+			return fmt.Errorf("test lane version %s names run %d, not release sequence %d", version, run, sequence)
+		}
+		return nil
+	}
+	if !releasecontract.IsReleaseVersion(version) {
+		return fmt.Errorf("stable lane version must be X.Y.Z (got %q)", version)
+	}
+	return nil
+}
+
+// acceptsPublished reports whether a published channel document belongs to
+// this lane. The stable lane still accepts the retired automatic "test"
+// document its branch carried before the first formal release (the one-way
+// rename below); the test lane accepts only its own channel.
+func (l releaseLane) acceptsPublished(published string) bool {
+	return published == l.channel || (l == laneStable && channelRenameAllowed(published, l.channel))
+}
+
 // channelGate refuses a candidate discovery document that would move the
 // channel backwards or sideways. Publication is the only mutable step in the
 // release path, so the rule is explicit and lives here instead of in shell
-// arithmetic: the candidate must either repeat the published release exactly
-// (an idempotent retry) or advance the release sequence.
+// arithmetic: the candidate must name its lane's channel and version shape,
+// and either repeat the published release exactly (an idempotent retry) or
+// advance both the release sequence and the version.
 func channelGate(args []string) error {
 	flags := flag.NewFlagSet("channel-gate", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	publishedPath := flags.String("published", "", "published channel document, if one exists")
 	candidatePath := flags.String("candidate", "", "candidate channel document")
 	publicPath := flags.String("public-key", "", "hex/base64 encoded Ed25519 public key")
+	laneName := flags.String("lane", "", "publication lane: stable (vX.Y.Z tags) or test (main builds)")
 	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	lane, err := parseReleaseLane(*laneName)
+	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(*candidatePath) == "" || strings.TrimSpace(*publicPath) == "" {
@@ -529,6 +589,12 @@ func channelGate(args []string) error {
 	if err := candidate.VerifySignature(ed25519.PublicKey(publicKey)); err != nil {
 		return fmt.Errorf("candidate channel rejected: %w", err)
 	}
+	if candidate.Channel != lane.channel {
+		return fmt.Errorf("candidate channel %q is not the %s lane's channel %q", candidate.Channel, lane.name, lane.channel)
+	}
+	if err := lane.versionFits(candidate.Version, candidate.ReleaseSequence); err != nil {
+		return fmt.Errorf("candidate channel rejected: %w", err)
+	}
 	publishedPathValue := strings.TrimSpace(*publishedPath)
 	if publishedPathValue == "" {
 		fmt.Printf("no published channel document; publishing release %s (sequence %d)\n", candidate.ReleaseID, candidate.ReleaseSequence)
@@ -545,7 +611,7 @@ func channelGate(args []string) error {
 	if err := published.VerifySignature(ed25519.PublicKey(publicKey)); err != nil {
 		return fmt.Errorf("published channel rejected: %w", err)
 	}
-	if published.Channel != candidate.Channel && !channelRenameAllowed(published.Channel, candidate.Channel) {
+	if !lane.acceptsPublished(published.Channel) {
 		return fmt.Errorf("candidate channel %q does not match the published channel %q", candidate.Channel, published.Channel)
 	}
 	switch {
@@ -567,9 +633,11 @@ func channelGate(args []string) error {
 }
 
 // channelRenameAllowed names the only discovery-channel rename the gate
-// accepts: the one-way move from the retired automatic test channel to the
-// formal stable channel, made by the first tagged release. Every other rename
-// would let one channel's publication overwrite another's.
+// accepts: the one-way move from the retired automatic test channel that the
+// update-channel branch carried to the formal stable channel, made by the
+// first tagged release. Every other rename would let one channel's
+// publication overwrite another's. The current test lane publishes to its own
+// branch and never renames.
 func channelRenameAllowed(published, candidate string) bool {
 	return published == "test" && candidate == "stable"
 }
@@ -592,23 +660,31 @@ func requireNewerVersion(published, candidate string) error {
 	return nil
 }
 
-// versionGate is the pre-publication check of a formal release: before any
-// image, package or channel effect, the version being released must be newer
-// than the one the signed channel names. An absent channel (first
+// versionGate is the pre-publication check of a release: before any image,
+// package or channel effect, the version being released must be newer than
+// the one its lane's signed channel names. An absent channel (first
 // publication) passes; a channel that does not verify fails closed.
 func versionGate(args []string) error {
 	flags := flag.NewFlagSet("version-gate", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	publishedPath := flags.String("published", "", "published channel document; empty when the channel does not exist yet")
-	version := flags.String("version", "", "version about to be released (X.Y.Z)")
+	version := flags.String("version", "", "version about to be released (X.Y.Z, or X.Y.Z-test.<run> on the test lane)")
 	publicPath := flags.String("public-key", "", "hex/base64 encoded Ed25519 public key")
-	sequence := flags.Int64("sequence", 0, "release sequence of this run (enables the idempotent rerun case)")
+	sequence := flags.Int64("sequence", 0, "release sequence of this run (enables the idempotent rerun case; required on the test lane)")
 	sourceCommit := flags.String("source-commit", "", "source commit of this run (enables the idempotent rerun case)")
+	laneName := flags.String("lane", "", "publication lane: stable (vX.Y.Z tags) or test (main builds)")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	if !releasecontract.IsReleaseVersion(*version) {
-		return fmt.Errorf("--version must be X.Y.Z (got %q)", *version)
+	lane, err := parseReleaseLane(*laneName)
+	if err != nil {
+		return err
+	}
+	if lane == laneTest && *sequence < 1 {
+		return errors.New("--sequence is required on the test lane: the test version names its run")
+	}
+	if err := lane.versionFits(*version, *sequence); err != nil {
+		return fmt.Errorf("--version: %w", err)
 	}
 	if strings.TrimSpace(*publicPath) == "" {
 		return errors.New("--public-key is required")
@@ -632,6 +708,9 @@ func versionGate(args []string) error {
 	if err := published.VerifySignature(ed25519.PublicKey(publicKey)); err != nil {
 		return fmt.Errorf("published channel rejected: %w", err)
 	}
+	if !lane.acceptsPublished(published.Channel) {
+		return fmt.Errorf("the published channel %q is not the %s lane's channel %q", published.Channel, lane.name, lane.channel)
+	}
 	// A rerun of the very run that already published this version (same
 	// version, sequence and source commit) may continue: every later step is
 	// idempotent, and the channel gate accepts only identical signed bytes.
@@ -644,6 +723,26 @@ func versionGate(args []string) error {
 		return err
 	}
 	fmt.Printf("version %s advances the published %s (sequence %d)\n", *version, published.Version, published.ReleaseSequence)
+	return nil
+}
+
+// testVersion prints the test-lane version of one main build: a SemVer
+// prerelease of the next formal version, numbered by the run (see
+// releasecontract.TestVersion).
+func testVersion(args []string) error {
+	flags := flag.NewFlagSet("test-version", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	versionFile := flags.String("version-file", "VERSION", "VERSION file of the source tree")
+	notesDir := flags.String("notes-dir", "release-notes", "release notes directory (versions.txt lists the released versions)")
+	run := flags.Int64("run", 0, "workflow run number, which is also the release sequence")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	version, err := releasecontract.TestVersion(*versionFile, *notesDir, *run)
+	if err != nil {
+		return err
+	}
+	fmt.Println(version)
 	return nil
 }
 
