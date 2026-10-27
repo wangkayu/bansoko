@@ -52,12 +52,12 @@ func CompareValues(candidate Candidate, source CompareSource) json.RawMessage {
 				}
 			}
 			for key, field := range map[string]string{
-				qualityprofile.KeyRtResolution:    "Resolution",
-				qualityprofile.KeyRtSubLang:       "SubLang",
-				qualityprofile.KeyRtSubFlag:       "SubFlag",
-				qualityprofile.KeyRtSource:        "Source",
-				qualityprofile.KeyRtCodec:         "Codec",
-				qualityprofile.KeyRtContentRating: "ContentRating",
+				qualityprofile.KeyRtResolution: "Resolution",
+				qualityprofile.KeyRtSubLang:    "SubLang",
+				qualityprofile.KeyRtSubFlag:    "SubFlag",
+				qualityprofile.KeyRtSource:     "Source",
+				qualityprofile.KeyRtCodec:      "Codec",
+				qualityprofile.KeyRtUncensored: "Uncensored",
 			} {
 				if value, ok := projected.Reltitle.Get(field); ok {
 					values.SetJoined(key, value)

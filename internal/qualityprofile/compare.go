@@ -67,7 +67,7 @@ func Compare(candidate, current Subject, profile Profile) Result {
 		if !ok {
 			continue
 		}
-		if def.Ranked() && len(item.Ranks) == 0 {
+		if def.Valued() && len(item.Ranks) == 0 {
 			result.Steps = append(result.Steps, Step{Key: item.Key, Result: StepSkipped})
 			continue
 		}
@@ -77,7 +77,7 @@ func Compare(candidate, current Subject, profile Profile) Result {
 		// ruling 2026-10-27): a release without AniBT tags, say, ties on the
 		// AniBT layer and the next item decides. A value that is present but
 		// not listed still ranks lowest.
-		noData := def.Ranked() && (len(candidate.Values[item.Key]) == 0 || len(current.Values[item.Key]) == 0)
+		noData := def.Valued() && (len(candidate.Values[item.Key]) == 0 || len(current.Values[item.Key]) == 0)
 		switch {
 		case noData:
 		case a.value > b.value:

@@ -1598,11 +1598,11 @@ const (
 	QualityCompareKeyReleaseResolution QualityCompareKey = "release.resolution"
 	QualityCompareKeyReleaseRevision   QualityCompareKey = "release.revision"
 	QualityCompareKeyRtCodec           QualityCompareKey = "rt.codec"
-	QualityCompareKeyRtContentRating   QualityCompareKey = "rt.content_rating"
 	QualityCompareKeyRtResolution      QualityCompareKey = "rt.resolution"
 	QualityCompareKeyRtSource          QualityCompareKey = "rt.source"
 	QualityCompareKeyRtSubFlag         QualityCompareKey = "rt.sub_flag"
 	QualityCompareKeyRtSubLang         QualityCompareKey = "rt.sub_lang"
+	QualityCompareKeyRtUncensored      QualityCompareKey = "rt.uncensored"
 	QualityCompareKeySubgroupScore     QualityCompareKey = "subgroup.score"
 )
 
@@ -6859,7 +6859,7 @@ type QBittorrentTorrentFile struct {
 	Size     int64   `json:"size"`
 }
 
-// QualityCompareItem One comparison item. ranks lists value sets best first; a release hits an entry when its values contain every value of the entry (order- and case-insensitive) and takes its best-ranked hit; a release that hits nothing, or has no value, ranks last. Only multi-valued items (anibt.language, rt.sub_lang, rt.sub_flag, rt.content_rating) take entries of several values; a duplicate value set is rejected. subgroup.score and release.revision take no ranks (subscription subgroup score; numeric vN, absent = v1).
+// QualityCompareItem One comparison item. ranks lists value sets best first; a release hits an entry when its values contain every value of the entry (order- and case-insensitive) and takes its best-ranked hit; a release that hits nothing, or has no value, ranks last. Only multi-valued items (anibt.language, rt.sub_lang, rt.sub_flag) take entries of several values; a duplicate value set is rejected. subgroup.score and release.revision take no ranks (subscription subgroup score; numeric Rev vN, absent = v1). rt.uncensored is a two-way boolean preference: ranks is exactly [["true"]] (uncensored first) or [["false"]] (censored first); equal values tie.
 type QualityCompareItem struct {
 	Key   QualityCompareKey `json:"key"`
 	Ranks [][]string        `json:"ranks"`

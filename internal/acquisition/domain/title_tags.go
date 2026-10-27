@@ -17,7 +17,7 @@ type TitleTagSet struct {
 	// Tags are "type:value", de-duplicated, sorted.
 	Tags []string
 	// ValueTags are reltitle values frozen for the template value namespace
-	// only ("title:<v>", "group:<v>", "version:<v>", "content_rating:<v>"). They are never filter
+	// only ("title:<v>", "group:<v>", "version:<v>"). They are never filter
 	// tags and never episode identity.
 	ValueTags []string
 	// Diagnostic explains an empty set (parser unavailable or failed); empty
@@ -34,9 +34,14 @@ const (
 	TitleValueDimensionTitle   = "title"
 	TitleValueDimensionGroup   = "group"
 	TitleValueDimensionVersion = "version"
-	// TitleValueDimensionContentRating is reltitle's content_rating attribute
-	// (UNCENSORED, CENSORED, ...), kept as written by the lexicon.
-	TitleValueDimensionContentRating = "content_rating"
+)
+
+// The uncensored marker: the only value of the content_rating filter-tag
+// dimension (reltitle's lexicon normalizes it as UNCENSORED). The other
+// content_rating values are never projected.
+const (
+	TitleDimensionContentRating = "content_rating"
+	TitleTagUncensored          = TitleDimensionContentRating + ":UNCENSORED"
 )
 
 // Title tag diagnostics. None of them fails the release; an empty set fails a

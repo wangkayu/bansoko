@@ -333,10 +333,6 @@ export const factsCopy = {
       label: "reltitle 编码",
       description: "解析值：reltitle 从发布标题读出的视频编码。",
     },
-    content_rating: {
-      label: "reltitle 审查",
-      description: "解析值：reltitle 从标题读出的审查标记，如 UNCENSORED（无修正）；标题没有写时为空。",
-    },
     resolution: {
       label: "reltitle 分辨率",
       description: "解析值：reltitle 从发布标题读出的分辨率。",
@@ -361,9 +357,13 @@ export const factsCopy = {
       label: "reltitle 标题",
       description: "解析值：reltitle 从发布标题读出的作品标题。",
     },
+    uncensored: {
+      label: "reltitle 无修正",
+      description: "解析值：标题标有无修正（UNCENSORED）时为是。",
+    },
     version: {
-      label: "reltitle 发布版本",
-      description: "解析值：reltitle 从发布标题读出的发布版本，例如 v2；标题没有版本标记时为空。",
+      label: "reltitle Rev",
+      description: "解析值：reltitle 从标题读出的 Rev，例如 v2；标题没有时为空。",
     },
   },
   sub: {
@@ -780,10 +780,6 @@ export const enFactsCopy = {
       label: "reltitle Codec",
       description: "Parsed: Video codec reltitle read from the release title.",
     },
-    content_rating: {
-      label: "reltitle Censorship",
-      description: "Parsed: Censorship marker reltitle read from the title, such as UNCENSORED; empty when the title has none.",
-    },
     resolution: {
       label: "reltitle Resolution",
       description: "Parsed: Resolution reltitle read from the release title.",
@@ -808,9 +804,13 @@ export const enFactsCopy = {
       label: "reltitle Title",
       description: "Parsed: Title reltitle read from the release title.",
     },
+    uncensored: {
+      label: "reltitle Uncensored",
+      description: "Parsed: Yes when the title is marked uncensored (UNCENSORED).",
+    },
     version: {
-      label: "reltitle Release version",
-      description: "Parsed: Release version reltitle read from the release title, such as v2. Empty when the title has no version marker.",
+      label: "reltitle Rev",
+      description: "Parsed: The Rev reltitle read from the title, such as v2. Empty when the title has none.",
     },
   },
   sub: {

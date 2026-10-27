@@ -311,31 +311,45 @@ func mustJSON(t *testing.T, profile Profile) []byte {
 	return raw
 }
 
-// rt.content_rating is a registered multi-valued item outside the default
-// order; a release without the marker ties.
-func TestContentRatingItemIsMultiValuedAndTiesWithoutData(t *testing.T) {
-	def, ok := Lookup(KeyRtContentRating)
-	if !ok || def.Namespace != NamespaceRt || def.Kind != KindMulti {
-		t.Fatalf("rt.content_rating registration = %+v, %v", def, ok)
+// rt.uncensored is a registered two-way flag item outside the default order;
+// its ranking states the preferred value, and a side without data ties.
+func TestUncensoredFlagItemPrefersOneDirection(t *testing.T) {
+	def, ok := Lookup(KeyRtUncensored)
+	if !ok || def.Namespace != NamespaceRt || def.Kind != KindFlag {
+		t.Fatalf("rt.uncensored registration = %+v, %v", def, ok)
 	}
-	if profile, err := Parse(DefaultJSON()); err != nil || strings.Contains(strings.Join(profile.Keys(), ","), KeyRtContentRating) {
-		t.Fatalf("rt.content_rating must not be in the default order: %v %v", profile.Keys(), err)
+	if profile, err := Parse(DefaultJSON()); err != nil || strings.Contains(strings.Join(profile.Keys(), ","), KeyRtUncensored) {
+		t.Fatalf("rt.uncensored must not be in the default order: %v %v", profile.Keys(), err)
 	}
+	for _, ranks := range [][][]string{{}, {{"yes"}}, {{"true"}, {"false"}}, {{"true", "false"}}} {
+		bad := Profile{Version: Version, Items: []Item{{Key: KeyRtUncensored, Ranks: ranks}}}
+		if _, err := Parse(mustJSON(t, bad)); err == nil {
+			t.Fatalf("ranks %v must be rejected", ranks)
+		}
+	}
+	open := subject(map[string][]string{KeyRtUncensored: {"true"}}, nil, nil)
+	cut := subject(map[string][]string{KeyRtUncensored: {"false"}}, nil, nil)
+	for prefer, wantOpenBetter := range map[string]bool{FlagTrue: true, FlagFalse: false} {
+		profile := Profile{Version: Version, Items: []Item{{Key: KeyRtUncensored, Ranks: [][]string{{prefer}}}}}
+		if _, err := Parse(mustJSON(t, profile)); err != nil {
+			t.Fatalf("prefer %s rejected: %v", prefer, err)
+		}
+		forward, backward := Compare(open, cut, profile), Compare(cut, open, profile)
+		if forward.Decided != KeyRtUncensored || forward.Better != wantOpenBetter || backward.Decided != KeyRtUncensored || backward.Better == wantOpenBetter {
+			t.Fatalf("prefer %s: open vs cut %+v, cut vs open %+v", prefer, forward, backward)
+		}
+	}
+	// Equal values tie, and so does a side with no frozen value; the next item decides.
 	profile := Profile{Version: Version, Items: []Item{
-		{Key: KeyRtContentRating, Ranks: [][]string{{"UNCENSORED"}, {"CENSORED"}}},
+		{Key: KeyRtUncensored, Ranks: [][]string{{FlagTrue}}},
 		{Key: KeyRtResolution, Ranks: [][]string{{"1080p"}, {"720p"}}},
 	}}
-	if _, err := Parse(mustJSON(t, profile)); err != nil {
-		t.Fatalf("profile with rt.content_rating rejected: %v", err)
-	}
-	open := subject(map[string][]string{KeyRtContentRating: {"UNCENSORED"}}, nil, nil)
-	cut := subject(map[string][]string{KeyRtContentRating: {"CENSORED"}}, nil, nil)
-	if result := Compare(open, cut, profile); !result.Better || result.Decided != KeyRtContentRating {
-		t.Fatalf("UNCENSORED must beat CENSORED: %+v", result)
-	}
+	better := subject(map[string][]string{KeyRtUncensored: {"false"}, KeyRtResolution: {"1080p"}}, nil, nil)
+	same := subject(map[string][]string{KeyRtUncensored: {"false"}, KeyRtResolution: {"720p"}}, nil, nil)
 	none := subject(map[string][]string{KeyRtResolution: {"720p"}}, nil, nil)
-	better := subject(map[string][]string{KeyRtResolution: {"1080p"}}, nil, nil)
-	if result := Compare(better, none, profile); !result.Better || result.Decided != KeyRtResolution {
-		t.Fatalf("a release without the marker must tie and the next item decide: %+v", result)
+	for name, other := range map[string]Subject{"both false": same, "no data": none} {
+		if result := Compare(better, other, profile); !result.Better || result.Decided != KeyRtResolution {
+			t.Fatalf("%s must tie and the next item decide: %+v", name, result)
+		}
 	}
 }

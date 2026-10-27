@@ -33,6 +33,10 @@ const (
 	KindSingle Kind = "single"
 	// KindMulti ranks by an ordered list of value sets (combinations).
 	KindMulti Kind = "multi"
+	// KindFlag compares a yes/no fact in one direction: its ranking is the one
+	// preferred value, [["true"]] or [["false"]]. Both sides carrying the same
+	// value tie; a release without the fact ties too.
+	KindFlag Kind = "flag"
 )
 
 // Item keys.
@@ -50,7 +54,7 @@ const (
 	KeyRtSubFlag         = "rt.sub_flag"
 	KeyRtSource          = "rt.source"
 	KeyRtCodec           = "rt.codec"
-	KeyRtContentRating   = "rt.content_rating"
+	KeyRtUncensored      = "rt.uncensored"
 )
 
 // Namespaces.
@@ -71,6 +75,16 @@ type ItemDef struct {
 // Ranked reports whether the item carries a value ranking.
 func (d ItemDef) Ranked() bool { return d.Kind == KindSingle || d.Kind == KindMulti }
 
+// Valued reports whether the item compares the release's frozen values
+// (everything but the score and the revision).
+func (d ItemDef) Valued() bool { return d.Ranked() || d.Kind == KindFlag }
+
+// Flag preferences: the single entry of a KindFlag item's ranking.
+const (
+	FlagTrue  = "true"
+	FlagFalse = "false"
+)
+
 // Items is the registry in catalog order (namespace, then attribute).
 var Items = []ItemDef{
 	{KeySubgroupScore, NamespaceSubgroup, KindScore},
@@ -86,7 +100,7 @@ var Items = []ItemDef{
 	{KeyRtSubFlag, NamespaceRt, KindMulti},
 	{KeyRtSource, NamespaceRt, KindSingle},
 	{KeyRtCodec, NamespaceRt, KindSingle},
-	{KeyRtContentRating, NamespaceRt, KindMulti},
+	{KeyRtUncensored, NamespaceRt, KindFlag},
 }
 
 // Lookup returns the registered item.
@@ -108,7 +122,8 @@ const (
 
 // Item is one configured comparison step: the item key and its ranking, best
 // first. Each entry is an order-insensitive value set; a single-value item
-// has one value per entry. Score and revision items have no ranking.
+// has one value per entry. Score and revision items have no ranking; a flag item's ranking is its
+// one preferred value.
 type Item struct {
 	Key   string     `json:"key"`
 	Ranks [][]string `json:"ranks"`
@@ -184,6 +199,12 @@ func (p Profile) Validate() error {
 		seen[item.Key] = true
 		if item.Ranks == nil {
 			return fmt.Errorf("comparison item %q must carry a ranking (empty when unused)", item.Key)
+		}
+		if def.Kind == KindFlag {
+			if len(item.Ranks) != 1 || len(item.Ranks[0]) != 1 || (item.Ranks[0][0] != FlagTrue && item.Ranks[0][0] != FlagFalse) {
+				return fmt.Errorf("comparison item %q must state its preferred value: [[\"true\"]] or [[\"false\"]]", item.Key)
+			}
+			continue
 		}
 		if !def.Ranked() {
 			if len(item.Ranks) > 0 {

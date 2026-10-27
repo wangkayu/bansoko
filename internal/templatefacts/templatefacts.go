@@ -11,6 +11,7 @@ package templatefacts
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
@@ -43,6 +44,9 @@ type Field struct {
 	// Description and SampleValue document the field in template catalogs;
 	// Label and Text are the unified catalog copy.
 	Description string
+	// Type is TypeBoolean for a yes/no field (stored as "true"/"false" in
+	// Values); the zero value is a string field.
+	Type        Type
 	SampleValue string
 	Label       Text
 	Text        Text
@@ -57,13 +61,13 @@ type Field struct {
 var ReltitleFields = []Field{
 	{Key: "Title", Name: "title", Dimension: acquisitiondomain.TitleValueDimensionTitle, Description: "Title reltitle read from the release title.", SampleValue: "进击的巨人", Label: Text{"标题", "Title"}, Text: Text{"reltitle 从发布标题读出的作品标题。", "Title reltitle read from the release title."}},
 	{Key: "Subgroup", Name: "subgroup", Dimension: acquisitiondomain.TitleValueDimensionGroup, Description: "Release group reltitle read from the release title.", SampleValue: "SampleGroup", Label: Text{"字幕组", "Group"}, Text: Text{"reltitle 从发布标题读出的字幕组。", "Group reltitle read from the release title."}},
-	{Key: "Version", Name: "version", Dimension: acquisitiondomain.TitleValueDimensionVersion, Description: "Release version reltitle read from the release title.", SampleValue: "v2", Label: Text{"发布版本", "Release version"}, Text: Text{"reltitle 从发布标题读出的发布版本，例如 v2；标题没有版本标记时为空。", "Release version reltitle read from the release title, such as v2. Empty when the title has no version marker."}},
+	{Key: "Version", Name: "version", Dimension: acquisitiondomain.TitleValueDimensionVersion, Description: "Rev reltitle read from the release title.", SampleValue: "v2", Label: Text{"Rev", "Rev"}, Text: Text{"reltitle 从标题读出的 Rev，例如 v2；标题没有时为空。", "The Rev reltitle read from the title, such as v2. Empty when the title has none."}},
 	{Key: "Resolution", Name: "resolution", Dimension: "resolution", Description: "Resolution reltitle read from the release title.", SampleValue: "1080p", Label: Text{"分辨率", "Resolution"}, Text: Text{"reltitle 从发布标题读出的分辨率。", "Resolution reltitle read from the release title."}},
 	{Key: "Source", Name: "source", Dimension: "source_type", Description: "Source type reltitle read from the release title.", SampleValue: "WEBRip", Label: Text{"片源", "Source"}, Text: Text{"reltitle 从发布标题读出的片源类型。", "Source type reltitle read from the release title."}},
 	{Key: "Codec", Name: "codec", Dimension: "video_codec", Description: "Video codec reltitle read from the release title.", SampleValue: "HEVC", Label: Text{"编码", "Codec"}, Text: Text{"reltitle 从发布标题读出的视频编码。", "Video codec reltitle read from the release title."}},
 	{Key: "SubLang", Name: "sub_lang", Dimension: "sub_lang", Description: "Subtitle language reltitle read from the release title; several join with +.", SampleValue: "SC", Label: Text{"字幕语言", "Subtitle language"}, Text: Text{"reltitle 从发布标题读出的字幕语言，多个用 + 连接。", "Subtitle language reltitle read from the release title; several join with +."}},
 	{Key: "SubFlag", Name: "sub_flag", Dimension: "sub_flag", Description: "Subtitle mode flag reltitle read from the release title; several join with +.", SampleValue: "soft", Label: Text{"字幕方式标志", "Subtitle flag"}, Text: Text{"reltitle 从发布标题读出的字幕方式标志（soft、hard、ex），多个用 + 连接；标题没有明确的字幕方式时为空。", "Subtitle mode flag reltitle read from the release title (soft, hard, ex); several join with +. Empty when the release title names none explicitly."}},
-	{Key: "ContentRating", Name: "content_rating", Dimension: acquisitiondomain.TitleValueDimensionContentRating, Description: "Content rating reltitle read from the release title.", SampleValue: "UNCENSORED", Label: Text{"审查", "Censorship"}, Text: Text{"reltitle 从标题读出的审查标记，如 UNCENSORED（无修正）；标题没有写时为空。", "Censorship marker reltitle read from the title, such as UNCENSORED; empty when the title has none."}},
+	{Key: "Uncensored", Name: "uncensored", Dimension: acquisitiondomain.TitleDimensionContentRating, Type: TypeBoolean, Description: "Whether the release title is marked uncensored (UNCENSORED), as reltitle read it.", SampleValue: "true", Label: Text{"无修正", "Uncensored"}, Text: Text{"标题标有无修正（UNCENSORED）时为是。", "Yes when the title is marked uncensored (UNCENSORED)."}},
 }
 
 // AniBTTagFields are the exposed AniBT tag fields, one per AniBT tag
@@ -194,9 +198,11 @@ func FromTagSets(title *acquisitiondomain.TitleTagSet, anibt *acquisitiondomain.
 	return Facts{Reltitle: ReltitleValues(title), AniBTTags: AniBTTagValues(anibt)}
 }
 
-// ReltitleValues projects a frozen title tag set. Title, Subgroup, Version and ContentRating
+// ReltitleValues projects a frozen title tag set. Title, Subgroup and Version
 // come only from the ValueTags of a set of the current schema; the other fields
-// from its tags.
+// from its tags. Uncensored is a yes/no field: present ("true"/"false") only
+// when the set is of the current schema and its parse succeeded, true exactly
+// when the tags carry content_rating:UNCENSORED.
 func ReltitleValues(set *acquisitiondomain.TitleTagSet) Values {
 	values := Values{}
 	if set == nil {
@@ -207,6 +213,13 @@ func ReltitleValues(set *acquisitiondomain.TitleTagSet) Values {
 		tags = append(tags, set.ValueTags...)
 	}
 	project(values, ReltitleFields, tags)
+	if set.Schema == acquisitiondomain.TitleTagSchema && set.Diagnostic == "" {
+		uncensored := false
+		for _, tag := range set.Tags {
+			uncensored = uncensored || tag == acquisitiondomain.TitleTagUncensored
+		}
+		values["Uncensored"] = strconv.FormatBool(uncensored)
+	}
 	return values
 }
 
@@ -242,6 +255,9 @@ func project(values Values, fields []Field, tags []string) {
 		byDimension[dimension] = append(byDimension[dimension], value)
 	}
 	for _, field := range fields {
+		if field.Type == TypeBoolean {
+			continue
+		}
 		if joined := JoinValues(byDimension[field.Dimension]); joined != "" {
 			values[field.Key] = joined
 		}

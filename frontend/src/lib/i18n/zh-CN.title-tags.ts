@@ -34,6 +34,7 @@ export const titleTagsCopy = {
     sub_flag: "字幕方式",
     audio_lang: "音频语言",
     audio_flag: "音轨",
+    content_rating: "无修正",
   },
   // 只登记与原值不同的显示名；其余值按标题解析的规范值显示。
   value: {
@@ -66,6 +67,9 @@ export const titleTagsCopy = {
       hard: "内嵌",
       soft: "内封",
       ex: "外挂",
+    },
+    content_rating: {
+      UNCENSORED: "无修正",
     },
     audio_lang: {
       CMN: "普通话",

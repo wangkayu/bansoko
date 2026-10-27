@@ -10,11 +10,11 @@ import (
 func TestReltitleValuesProjectTitleTagSet(t *testing.T) {
 	set := &acquisitiondomain.TitleTagSet{
 		Schema:    acquisitiondomain.TitleTagSchema,
-		Tags:      []string{"resolution:1080p", "resolution:720p", "source_type:WEBRip", "video_codec:HEVC", "audio_codec:AAC", "container:MKV", "sub_lang:TC", "sub_lang:SC", "sub_flag:hard"},
-		ValueTags: []string{"title:进击的巨人", "group:示例字幕组", "version:v2", "content_rating:UNCENSORED"},
+		Tags:      []string{"resolution:1080p", "resolution:720p", "source_type:WEBRip", "video_codec:HEVC", "audio_codec:AAC", "container:MKV", "sub_lang:TC", "sub_lang:SC", "sub_flag:hard", "content_rating:UNCENSORED"},
+		ValueTags: []string{"title:进击的巨人", "group:示例字幕组", "version:v2"},
 	}
 	got := ReltitleValues(set)
-	want := Values{"Title": "进击的巨人", "Subgroup": "示例字幕组", "Version": "v2", "Resolution": "1080p+720p", "Source": "WEBRip", "Codec": "HEVC", "SubLang": "SC+TC", "SubFlag": "hard", "ContentRating": "UNCENSORED"}
+	want := Values{"Title": "进击的巨人", "Subgroup": "示例字幕组", "Version": "v2", "Resolution": "1080p+720p", "Source": "WEBRip", "Codec": "HEVC", "SubLang": "SC+TC", "SubFlag": "hard", "Uncensored": "true"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ReltitleValues = %#v, want %#v", got, want)
 	}
@@ -23,6 +23,42 @@ func TestReltitleValuesProjectTitleTagSet(t *testing.T) {
 		if _, ok := got.Get(key); ok {
 			t.Fatalf("unexposed reltitle output %s projected", key)
 		}
+	}
+}
+
+// Uncensored is a yes/no value: false when the parse succeeded without the
+// marker, absent when there is no usable parse (unknown schema, diagnostic or
+// no tag block).
+func TestReltitleUncensoredIsBooleanAndNeedsASuccessfulParse(t *testing.T) {
+	ok := func(tags ...string) *acquisitiondomain.TitleTagSet {
+		return &acquisitiondomain.TitleTagSet{Schema: acquisitiondomain.TitleTagSchema, Tags: tags}
+	}
+	if got, _ := ReltitleValues(ok("resolution:1080p")).Get("Uncensored"); got != "false" {
+		t.Fatalf("parse without the marker = %q, want false", got)
+	}
+	if got, _ := ReltitleValues(ok("content_rating:UNCENSORED")).Get("Uncensored"); got != "true" {
+		t.Fatalf("marked title = %q, want true", got)
+	}
+	failed := ok()
+	failed.Diagnostic = acquisitiondomain.TitleTagDiagnosticParseFailed
+	unknown := &acquisitiondomain.TitleTagSet{Schema: "reltitle-attrs-v0", Tags: []string{"content_rating:UNCENSORED"}}
+	for name, set := range map[string]*acquisitiondomain.TitleTagSet{"failed": failed, "unknown schema": unknown, "none": nil} {
+		if got, present := ReltitleValues(set).Get("Uncensored"); present {
+			t.Fatalf("%s must leave Uncensored absent, got %q", name, got)
+		}
+	}
+	fact, found := Lookup("rt.uncensored")
+	if !found || fact.Type != TypeBoolean || !fact.NullableIn(ScenarioNaming) {
+		t.Fatalf("rt.uncensored registration = %+v, %v", fact, found)
+	}
+	if _, found := Lookup("rt.content_rating"); found {
+		t.Fatal("rt.content_rating must be gone")
+	}
+	if got := fact.Value(&FactSet{Rt: Values{"Uncensored": "false"}}); got != false {
+		t.Fatalf("false renders as %#v", got)
+	}
+	if got := fact.Value(&FactSet{}); got != nil {
+		t.Fatalf("absent renders as %#v, want nil", got)
 	}
 }
 
@@ -72,7 +108,7 @@ func TestNamespacesNeverCrossFill(t *testing.T) {
 		&acquisitiondomain.TitleTagSet{Schema: acquisitiondomain.TitleTagSchema, Tags: []string{}, ValueTags: []string{}},
 		&acquisitiondomain.AniBTTagSet{Tags: []string{"resolution:1080p", "language:CHS"}},
 	)
-	if len(facts.Reltitle) != 0 {
+	if !reflect.DeepEqual(facts.Reltitle, Values{"Uncensored": "false"}) {
 		t.Fatalf("AniBT values leaked into Rt: %#v", facts.Reltitle)
 	}
 	facts = FromTagSets(&acquisitiondomain.TitleTagSet{Schema: acquisitiondomain.TitleTagSchema, Tags: []string{"resolution:720p", "sub_lang:SC"}}, &acquisitiondomain.AniBTTagSet{Tags: []string{}})
@@ -86,7 +122,7 @@ func TestFromSourceFactsDecodesFrozenBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(facts.Reltitle, Values{"Title": "Show", "Subgroup": "Grp", "Resolution": "1080p"}) || !reflect.DeepEqual(facts.AniBTTags, Values{"Language": "CHS", "Tag": "HEVC"}) {
+	if !reflect.DeepEqual(facts.Reltitle, Values{"Title": "Show", "Subgroup": "Grp", "Resolution": "1080p", "Uncensored": "false"}) || !reflect.DeepEqual(facts.AniBTTags, Values{"Language": "CHS", "Tag": "HEVC"}) {
 		t.Fatalf("facts = %#v", facts)
 	}
 	for _, raw := range []string{"", "null", "{}"} {

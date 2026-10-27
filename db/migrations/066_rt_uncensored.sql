@@ -1,18 +1,22 @@
--- Forward-only migration 066: the rt.content_rating payload key and
--- comparison item (owner ruling 2026-10-27).
+-- Forward-only migration 066: the rt.uncensored payload key and comparison
+-- item (owner ruling 2026-10-27).
 --
--- templatefacts.ReltitleFields adds ContentRating (reltitle's content_rating
--- attribute, frozen in value_tags), so the Go notification builders emit
--- rt.content_rating with every new envelope. Re-create the shared SQL projector
--- with the same key in its seed object and return projection; the rest of the
--- body is the one from migration 055. Envelopes frozen before this migration
--- keep their original payload; source_facts blocks without content_rating:...
--- project null and are never re-parsed or backfilled.
+-- templatefacts.ReltitleFields adds the boolean Uncensored, so the Go
+-- notification builders emit rt.uncensored (true/false, null without a usable
+-- parse) with every new envelope. Re-create the shared SQL projector with the
+-- same key in its seed object and return projection; the rest of the body is
+-- the one from migration 055. The value is true when the frozen title_tags
+-- block is of schema reltitle-attrs-v1, carries no diagnostic and lists
+-- content_rating:UNCENSORED among its tags, false when such a block does not,
+-- and null otherwise. Envelopes frozen before this migration keep their
+-- original payload; source_facts are never re-parsed or backfilled.
 --
--- The item is also a registered multi-valued comparison item outside the
--- default order. The validator body is the one from migration 065 with two
--- changes: the key allow-list gains rt.content_rating and the item-count bound
--- rises from 13 to 14, the number of registered items.
+-- The item is also a registered two-way comparison item outside the default
+-- order: its ranking states the preferred value, exactly [["true"]] or
+-- [["false"]]. The validator body is the one from migration 065 with three
+-- changes: the key allow-list gains rt.uncensored, that item's ranking must be
+-- one of the two preference documents, and the item-count bound rises from 13
+-- to 14, the number of registered items.
 
 CREATE OR REPLACE FUNCTION notification_value_facts(p_vars jsonb, p_source_facts jsonb) RETURNS jsonb
     LANGUAGE plpgsql IMMUTABLE
@@ -21,7 +25,7 @@ CREATE OR REPLACE FUNCTION notification_value_facts(p_vars jsonb, p_source_facts
 DECLARE facts jsonb; title_tags jsonb:='[]'::jsonb; anibt_tags jsonb:='[]'::jsonb; g record; k record; key text;
 BEGIN
  facts:=jsonb_build_object('rt.title',NULL,'rt.subgroup',NULL,'rt.version',NULL,'rt.resolution',NULL,'rt.source',NULL,'rt.codec',NULL,'rt.sub_lang',NULL,
-  'rt.sub_flag',NULL,'rt.content_rating',NULL,'anibt.resolution',NULL,'anibt.subtitle',NULL,'anibt.language',NULL,'anibt.format',NULL,'anibt.tag',NULL);
+  'rt.sub_flag',NULL,'rt.uncensored',NULL,'anibt.resolution',NULL,'anibt.subtitle',NULL,'anibt.language',NULL,'anibt.format',NULL,'anibt.tag',NULL);
  IF jsonb_typeof(p_vars)='object' THEN
   FOR g IN SELECT * FROM jsonb_each(p_vars) LOOP
    IF jsonb_typeof(g.value)='object' THEN
@@ -54,7 +58,10 @@ BEGIN
   'rt.codec',public.file_notification_text(public.notification_tag_values(title_tags,'video_codec')),
   'rt.sub_lang',public.file_notification_text(public.notification_tag_values(title_tags,'sub_lang')),
   'rt.sub_flag',public.file_notification_text(public.notification_tag_values(title_tags,'sub_flag')),
-  'rt.content_rating',public.file_notification_text(public.notification_tag_values(title_tags,'content_rating')),
+  'rt.uncensored',CASE WHEN p_source_facts->'title_tags'->>'schema'='reltitle-attrs-v1'
+    AND COALESCE(p_source_facts->'title_tags'->>'diagnostic','')=''
+   THEN to_jsonb(COALESCE(jsonb_typeof(p_source_facts->'title_tags'->'tags')='array'
+    AND p_source_facts->'title_tags'->'tags' @> jsonb_build_array('content_rating:UNCENSORED'),false)) END,
   'anibt.resolution',public.file_notification_text(public.notification_tag_values(anibt_tags,'resolution')),
   'anibt.subtitle',public.file_notification_text(public.notification_tag_values(anibt_tags,'subtitle')),
   'anibt.language',public.file_notification_text(public.notification_tag_values(anibt_tags,'language')),
@@ -66,8 +73,8 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_proc WHERE proname = 'notification_value_facts'
-          AND prosrc LIKE '%''rt.content_rating'',NULL%' AND prosrc LIKE '%''rt.content_rating'',public.file_notification_text%') THEN
-        RAISE EXCEPTION 'migration 066 self-check failed: notification_value_facts does not emit rt.content_rating';
+          AND prosrc LIKE '%''rt.uncensored'',NULL%' AND prosrc LIKE '%''rt.uncensored'',CASE WHEN%') THEN
+        RAISE EXCEPTION 'migration 066 self-check failed: notification_value_facts does not emit rt.uncensored';
     END IF;
     IF EXISTS (
         SELECT 1 FROM pg_proc WHERE proname IN ('file_success_notification','file_failure_notification','download_failed_notification')
@@ -100,10 +107,13 @@ BEGIN
      OR jsonb_typeof(item->'key') IS DISTINCT FROM 'string'
      OR item->>'key' NOT IN ('subgroup.score','release.lang','release.resolution','release.revision',
                              'anibt.resolution','anibt.language','anibt.subtitle','anibt.format',
-                             'rt.resolution','rt.sub_lang','rt.sub_flag','rt.source','rt.codec','rt.content_rating')
+                             'rt.resolution','rt.sub_lang','rt.sub_flag','rt.source','rt.codec','rt.uncensored')
      OR item->>'key' = ANY(keys)
      OR jsonb_typeof(item->'ranks') IS DISTINCT FROM 'array'
      OR jsonb_array_length(item->'ranks') > 64 THEN
+   RETURN FALSE;
+  END IF;
+  IF item->>'key' = 'rt.uncensored' AND item->'ranks' NOT IN ('[["true"]]'::jsonb, '[["false"]]'::jsonb) THEN
    RETURN FALSE;
   END IF;
   keys := array_append(keys, item->>'key');

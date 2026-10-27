@@ -7285,13 +7285,13 @@ export interface components {
             version: "profile-v1";
             items: components["schemas"]["QualityCompareItem"][];
         };
-        /** @description One comparison item. ranks lists value sets best first; a release hits an entry when its values contain every value of the entry (order- and case-insensitive) and takes its best-ranked hit; a release that hits nothing, or has no value, ranks last. Only multi-valued items (anibt.language, rt.sub_lang, rt.sub_flag, rt.content_rating) take entries of several values; a duplicate value set is rejected. subgroup.score and release.revision take no ranks (subscription subgroup score; numeric vN, absent = v1). */
+        /** @description One comparison item. ranks lists value sets best first; a release hits an entry when its values contain every value of the entry (order- and case-insensitive) and takes its best-ranked hit; a release that hits nothing, or has no value, ranks last. Only multi-valued items (anibt.language, rt.sub_lang, rt.sub_flag) take entries of several values; a duplicate value set is rejected. subgroup.score and release.revision take no ranks (subscription subgroup score; numeric Rev vN, absent = v1). rt.uncensored is a two-way boolean preference: ranks is exactly [["true"]] (uncensored first) or [["false"]] (censored first); equal values tie. */
         QualityCompareItem: {
             key: components["schemas"]["QualityCompareKey"];
             ranks: string[][];
         };
         /** @enum {string} */
-        QualityCompareKey: "subgroup.score" | "release.lang" | "release.resolution" | "release.revision" | "anibt.resolution" | "anibt.language" | "anibt.subtitle" | "anibt.format" | "rt.resolution" | "rt.sub_lang" | "rt.sub_flag" | "rt.source" | "rt.codec" | "rt.content_rating";
+        QualityCompareKey: "subgroup.score" | "release.lang" | "release.resolution" | "release.revision" | "anibt.resolution" | "anibt.language" | "anibt.subtitle" | "anibt.format" | "rt.resolution" | "rt.sub_lang" | "rt.sub_flag" | "rt.source" | "rt.codec" | "rt.uncensored";
         /** @description Candidate values per ranked comparison item: release.* from the active attribute rules, anibt.* from values seen on releases (of the anime when one is named), rt.* from the pinned reltitle dictionary (empty when it is unavailable). Values are suggestions; any value can be ranked. */
         ReplacementCompareVocabulary: {
             items: components["schemas"]["RetentionCompareVocabularyItem"][];

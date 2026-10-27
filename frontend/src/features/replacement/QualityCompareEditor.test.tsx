@@ -100,14 +100,16 @@ describe("QualityCompareEditor", () => {
     expect(screen.getByText(new RegExp(t("qualityCompare.subFlagHint")))).toBeInTheDocument();
   });
 
-  it("explains the censorship item when it is added", async () => {
+  it("adds the uncensored preference and flips its direction", async () => {
     renderWithQuery(<Harness />);
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: t("qualityCompare.addItem") }));
     const menu = await screen.findByRole("menu");
-    await user.click(within(menu).getByRole("menuitem", { name: compareItemName("rt.content_rating") }));
-    expect(latest.items.at(-1)).toEqual({ key: "rt.content_rating", ranks: [] });
-    expect(screen.getByText(new RegExp(t("qualityCompare.contentRatingHint")))).toBeInTheDocument();
+    await user.click(within(menu).getByRole("menuitem", { name: compareItemName("rt.uncensored") }));
+    expect(latest.items.at(-1)).toEqual({ key: "rt.uncensored", ranks: [["true"]] });
+    expect(screen.getByText(t("qualityCompare.uncensoredHint"))).toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: t("qualityCompare.censoredFirst") }));
+    expect(latest.items.at(-1)).toEqual({ key: "rt.uncensored", ranks: [["false"]] });
   });
 
   it("adds a combination ahead of narrower entries and rejects the same set again", async () => {

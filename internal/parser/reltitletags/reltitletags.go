@@ -41,7 +41,8 @@ const (
 )
 
 // Dimensions is the closed title-tag dimension list in display order: every
-// attribute type reltitle's canonical dictionary defines. None of them is an
+// attribute type reltitle's canonical dictionary defines, plus content_rating
+// (lexicon-only, restricted to lexiconDimensions values). None of them is an
 // episode, season, title or group attribute.
 var Dimensions = []string{
 	"resolution",
@@ -54,6 +55,14 @@ var Dimensions = []string{
 	"sub_flag",
 	"audio_lang",
 	"audio_flag",
+	acquisitiondomain.TitleDimensionContentRating,
+}
+
+// lexiconDimensions are the dimensions whose values come from the lexicon
+// rather than the canonical dictionary, with the only values bansoko uses.
+// The values are looked up in the loaded lexicon and must exist there.
+var lexiconDimensions = map[string][]string{
+	acquisitiondomain.TitleDimensionContentRating: {"UNCENSORED"},
 }
 
 // DimensionVocabulary is one dimension's canonical values from the pinned
@@ -88,7 +97,7 @@ func load() state {
 			loaded.err = err
 			return
 		}
-		vocabulary, known, err := canonicalVocabulary(cfg.DictCanonicalValues.Canonical)
+		vocabulary, known, err := canonicalVocabulary(cfg.DictCanonicalValues.Canonical, cfg.Lexicon)
 		if err != nil {
 			loaded.err = err
 			return
@@ -126,10 +135,45 @@ func bundleDigest(fsys fs.FS) (string, error) {
 	return "lexicon:sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-func canonicalVocabulary(canonical map[string]any) ([]DimensionVocabulary, map[string]map[string]string, error) {
+// lexiconValues are the normalized values the lexicon emits for one attribute
+// type.
+func lexiconValues(lexicon reltitleconfig.LexiconConfig, attribute string) map[string]bool {
+	values := map[string]bool{}
+	for _, entry := range lexicon.Entries {
+		for _, emit := range entry.Emit {
+			if emit.Type == attribute {
+				values[emit.Normalized] = true
+			}
+		}
+		for _, clause := range entry.AnyOf {
+			for _, emit := range clause.Emit {
+				if emit.Type == attribute {
+					values[emit.Normalized] = true
+				}
+			}
+		}
+	}
+	return values
+}
+
+func canonicalVocabulary(canonical map[string]any, lexicon reltitleconfig.LexiconConfig) ([]DimensionVocabulary, map[string]map[string]string, error) {
 	vocabulary := make([]DimensionVocabulary, 0, len(Dimensions))
 	known := make(map[string]map[string]string, len(Dimensions))
 	for _, dimension := range Dimensions {
+		if wanted, ok := lexiconDimensions[dimension]; ok {
+			emitted := lexiconValues(lexicon, dimension)
+			entry := DimensionVocabulary{Dimension: dimension, Values: make([]string, 0, len(wanted))}
+			known[dimension] = make(map[string]string, len(wanted))
+			for _, value := range wanted {
+				if !emitted[value] {
+					return nil, nil, fmt.Errorf("reltitle lexicon has no %s value %s", dimension, value)
+				}
+				known[dimension][strings.ToLower(value)] = value
+				entry.Values = append(entry.Values, value)
+			}
+			vocabulary = append(vocabulary, entry)
+			continue
+		}
 		rawValues, ok := canonical[dimension].([]any)
 		if !ok || len(rawValues) == 0 {
 			return nil, nil, fmt.Errorf("reltitle canonical dictionary has no %s values", dimension)
@@ -220,7 +264,7 @@ func Extract(title string) acquisitiondomain.TitleTagSet {
 		set.Diagnostic = acquisitiondomain.TitleTagDiagnosticParseFailed
 		return set
 	}
-	set.Tags = project(result.Attributes)
+	set.Tags = project(result.Attributes, current.known)
 	set.ValueTags = projectValues(result.Attributes)
 	return set
 }
@@ -234,7 +278,7 @@ func parseSafely(parser *reltitleparser.Parser, title string) (result *reltitlem
 	return parser.Parse(title)
 }
 
-func project(attributes []reltitlemodel.Attribute) []string {
+func project(attributes []reltitlemodel.Attribute, known map[string]map[string]string) []string {
 	order := make(map[string]int, len(Dimensions))
 	for index, dimension := range Dimensions {
 		order[dimension] = index
@@ -253,6 +297,13 @@ func project(attributes []reltitlemodel.Attribute) []string {
 		value := strings.TrimSpace(attribute.Normalized)
 		if value == "" || len(value) > MaxValueBytes || strings.ContainsAny(value, "\r\n\t") {
 			continue
+		}
+		if _, restricted := lexiconDimensions[dimension]; restricted {
+			canonical, ok := known[dimension][strings.ToLower(value)]
+			if !ok {
+				continue
+			}
+			value = canonical
 		}
 		key := acquisitiondomain.NormalizeTagKey(dimension + ":" + value)
 		if _, exists := seen[key]; exists {
@@ -283,11 +334,10 @@ var valueDimensions = []struct {
 	{reltitlemodel.AttrTitle, acquisitiondomain.TitleValueDimensionTitle},
 	{reltitlemodel.AttrGroup, acquisitiondomain.TitleValueDimensionGroup},
 	{reltitlemodel.AttrVersion, acquisitiondomain.TitleValueDimensionVersion},
-	{reltitlemodel.AttrContentRating, acquisitiondomain.TitleValueDimensionContentRating},
 }
 
-// projectValues freezes the template-only values "title:<v>", "group:<v>",
-// "version:<v>" and "content_rating:<v>", in that order, each dimension's values
+// projectValues freezes the template-only values "title:<v>", "group:<v>"
+// and "version:<v>", in that order, each dimension's values
 // de-duplicated (case-insensitively) and sorted. An empty, oversized or
 // multi-line value is dropped, so it reads as missing rather than truncated.
 func projectValues(attributes []reltitlemodel.Attribute) []string {
@@ -371,19 +421,4 @@ func Parse(title string) (*reltitlemodel.ParseResult, error) {
 		return nil, fmt.Errorf("reltitle returned no result")
 	}
 	return result, nil
-}
-
-// contentRatingVocabulary lists the content_rating spellings the pinned
-// reltitle lexicon emits (configs/lexicon.yaml, type content_rating); the
-// canonical dictionary does not list them, so a test keeps this list in step
-// with the lexicon.
-var contentRatingVocabulary = []string{"UNCENSORED", "UNCUT", "CENSORED", "RESTRICTED", "R_RATED", "R18", "R18_PLUS", "MATURE", "ADULT"}
-
-// ValueVocabulary returns the known spellings of a value-tag attribute
-// (currently only content_rating); nil for any other name.
-func ValueVocabulary(attribute string) []string {
-	if attribute == "content_rating" {
-		return append([]string(nil), contentRatingVocabulary...)
-	}
-	return nil
 }

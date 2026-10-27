@@ -19,7 +19,7 @@ export const ITEM_COPY: Record<QualityCompareKey, CopyKey> = {
   "rt.sub_flag": "qualityCompare.item.rt_sub_flag",
   "rt.source": "qualityCompare.item.rt_source",
   "rt.codec": "qualityCompare.item.rt_codec",
-  "rt.content_rating": "qualityCompare.item.rt_content_rating",
+  "rt.uncensored": "qualityCompare.item.rt_uncensored",
 };
 
 export const NAMESPACE_COPY: Record<CompareNamespace, CopyKey> = {

@@ -98,7 +98,11 @@ func TestNamespaceCatalogFields(t *testing.T) {
 	for root, list := range map[string][]templatefacts.Field{templatefacts.RootRt: templatefacts.ReltitleFields, templatefacts.RootAnibt: templatefacts.AniBTTagFields} {
 		for _, definition := range list {
 			field, ok := fields[root+"."+definition.Name]
-			if !ok || !field.Nullable || field.Type != "string" || field.SampleValue == "" || field.Description == "" {
+			wantType := "string"
+			if definition.Type == templatefacts.TypeBoolean {
+				wantType = "bool"
+			}
+			if !ok || !field.Nullable || field.Type != wantType || field.SampleValue == "" || field.Description == "" {
 				t.Fatalf("catalog field %s.%s = %+v, %v", root, definition.Key, field, ok)
 			}
 		}
