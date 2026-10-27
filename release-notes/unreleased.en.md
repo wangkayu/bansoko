@@ -15,7 +15,7 @@
 
 - Subtitles tagged JPSC or JPTC in their file names now get a language, so Simplified/Japanese and Traditional/Japanese subtitles no longer collide on one name.
 - Opening a seed's file list now fetches its torrent through the source's configured proxy instead of a direct connection.
-- Releases carrying AniBT codec, bit-depth and similar tags no longer fail at the end of import; failed records can be retried after upgrading.
+- Releases carrying AniBT codec, bit-depth and similar tags no longer get stuck at the end of import; records whose files were copied but still show import in progress complete on their own after upgrading.
 - On phones, picking a season from the dropdown no longer jumps back to the current season, and switching sections from settings keeps the chosen season.
 
 ## Important
