@@ -9272,6 +9272,7 @@ components:
         - placement_changed
         - replacement_decided
         - cleanup_completed
+        - cleanup_failed
         - file_alignment_completed
         - file_alignment_failed
         - acquisition_settled
@@ -15400,7 +15401,7 @@ components:
       enum: [notification]
     NotificationTriggerKind:
       type: string
-      enum: [download_submitted, file_operation_completed, file_operation_failed, release_discovered, download_failed, subscription_changed, unknown_files_imported]
+      enum: [download_submitted, file_operation_completed, file_operation_failed, release_discovered, download_failed, subscription_changed, unknown_files_imported, replacement_deletion_failed]
       description: |
         Closed notification trigger registry.
     NotificationTriggerKindVocabulary:
@@ -15704,6 +15705,8 @@ components:
             subscription_changed:
               $ref: '#/components/schemas/NotificationEventTemplate'
             unknown_files_imported:
+              $ref: '#/components/schemas/NotificationEventTemplate'
+            replacement_deletion_failed:
               $ref: '#/components/schemas/NotificationEventTemplate'
     PluginTargetConfig:
       type: object

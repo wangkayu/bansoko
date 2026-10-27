@@ -89,6 +89,7 @@ export const statusCopy = {
     placement_changed: "入库位置变化",
     replacement_decided: "替换版本",
     cleanup_completed: "清理完成",
+    cleanup_failed: "清理失败",
     file_alignment_completed: "入库完成",
     file_alignment_failed: "入库失败",
     acquisition_settled: "获取结果",

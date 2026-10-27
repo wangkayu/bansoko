@@ -21,13 +21,14 @@ const (
 	// CatalogVersion is the notification template catalog version.
 	CatalogVersion = "notification-catalog-v1"
 
-	TriggerDownloadSubmitted      = "download_submitted"
-	TriggerFileOperationCompleted = "file_operation_completed"
-	TriggerFileOperationFailed    = "file_operation_failed"
-	TriggerReleaseDiscovered      = "release_discovered"
-	TriggerDownloadFailed         = "download_failed"
-	TriggerSubscriptionChanged    = "subscription_changed"
-	TriggerUnknownFilesImported   = "unknown_files_imported"
+	TriggerDownloadSubmitted         = "download_submitted"
+	TriggerFileOperationCompleted    = "file_operation_completed"
+	TriggerFileOperationFailed       = "file_operation_failed"
+	TriggerReleaseDiscovered         = "release_discovered"
+	TriggerDownloadFailed            = "download_failed"
+	TriggerSubscriptionChanged       = "subscription_changed"
+	TriggerUnknownFilesImported      = "unknown_files_imported"
+	TriggerReplacementDeletionFailed = "replacement_deletion_failed"
 
 	// LocaleZH and LocaleEN select the language of the system default
 	// templates.
@@ -39,6 +40,7 @@ const (
 var Triggers = []string{
 	TriggerDownloadSubmitted, TriggerFileOperationCompleted, TriggerFileOperationFailed,
 	TriggerReleaseDiscovered, TriggerDownloadFailed, TriggerSubscriptionChanged, TriggerUnknownFilesImported,
+	TriggerReplacementDeletionFailed,
 }
 
 // VariableType is the catalog value type of one variable.
@@ -256,6 +258,8 @@ var defaultsZH = map[string][2]string{
 		"{{anime.title}}"},
 	TriggerUnknownFilesImported: {"有未识别的文件入库：{{anime.title}}",
 		"{{release.title}}\n{{out.count}} 个文件需要手动匹配：\n{{out.files}}"},
+	TriggerReplacementDeletionFailed: {"旧版本未删除：{{anime.title}}",
+		"{{file.name}}\n文件可能被占用或没有权限"},
 }
 
 var defaultsEN = map[string][2]string{
@@ -273,6 +277,8 @@ var defaultsEN = map[string][2]string{
 		"{{anime.title}}"},
 	TriggerUnknownFilesImported: {"Unrecognized files added: {{anime.title}}",
 		"{{release.title}}\n{{out.count}} file(s) need a manual match:\n{{out.files}}"},
+	TriggerReplacementDeletionFailed: {"Old version not deleted: {{anime.title}}",
+		"{{file.name}}\nThe file may be in use or not permitted to change"},
 }
 
 // Sample returns the fixed redacted sample facts for a trigger, keyed by the
@@ -308,6 +314,8 @@ func ScenarioOf(trigger string) (templatefacts.Scenario, bool) {
 		return templatefacts.ScenarioSubscriptionChanged, true
 	case TriggerUnknownFilesImported:
 		return templatefacts.ScenarioUnknownImported, true
+	case TriggerReplacementDeletionFailed:
+		return templatefacts.ScenarioDeletionFailed, true
 	default:
 		return 0, false
 	}

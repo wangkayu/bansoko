@@ -447,6 +447,8 @@ export function notificationTriggerKindLabel(kind: NotificationTriggerKind): str
       return t("settings.notifications.trigger.subscription_changed");
     case "unknown_files_imported":
       return t("settings.notifications.trigger.unknown_files_imported");
+    case "replacement_deletion_failed":
+      return t("settings.notifications.trigger.replacement_deletion_failed");
   }
 }
 

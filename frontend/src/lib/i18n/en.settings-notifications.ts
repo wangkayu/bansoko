@@ -46,6 +46,7 @@ export const enSettingsNotificationsCopy = {
       download_failed: "Download failed",
       subscription_changed: "Subscription changed",
       unknown_files_imported: "Unrecognized files imported",
+      replacement_deletion_failed: "Old version not deleted",
     },
     adapter: {
       telegram: "Telegram",

@@ -82,8 +82,8 @@ func TestRenderReadsValueNamespacesOnEveryTrigger(t *testing.T) {
 		t.Error("a vars key the payload safety check rejects must be left out")
 	}
 	for _, trigger := range Triggers {
-		if trigger == TriggerSubscriptionChanged {
-			// A subscription transition concerns no release.
+		if trigger == TriggerSubscriptionChanged || trigger == TriggerReplacementDeletionFailed {
+			// A subscription transition or a failed deletion concerns no release.
 			continue
 		}
 		message, ok := RenderMessage(trigger, "{{vars.info.tag}} {{rt.sub_lang}}", "{{defaultIfEmpty(anibt.tag, '-')}} {{vars.info.missing}}", facts)

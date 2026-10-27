@@ -45,6 +45,7 @@ export const settingsNotificationsCopy = {
       download_failed: "下载失败",
       subscription_changed: "订阅状态变化",
       unknown_files_imported: "导入未识别文件",
+      replacement_deletion_failed: "旧版本未删除",
     },
     adapter: {
       telegram: "Telegram",

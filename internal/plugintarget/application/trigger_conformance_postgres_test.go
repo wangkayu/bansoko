@@ -70,6 +70,7 @@ func TestTriggerMirrorsAgreeWithTheRegistry(t *testing.T) {
 	for _, trigger := range []TriggerKind{
 		TriggerDownloadSubmitted, TriggerFileOperationCompleted, TriggerFileOperationFailed,
 		TriggerReleaseDiscovered, TriggerDownloadFailed, TriggerSubscriptionChanged, TriggerUnknownFilesImported,
+		TriggerReplacementDeletionFailed,
 	} {
 		application[string(trigger)] = true
 	}

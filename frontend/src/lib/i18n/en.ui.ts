@@ -92,6 +92,7 @@ export const enStatusCopy = {
     placement_changed: "Import location",
     replacement_decided: "Replaced by a better version",
     cleanup_completed: "Cleanup done",
+    cleanup_failed: "Cleanup failed",
     file_alignment_completed: "Imported",
     file_alignment_failed: "Import failed",
     acquisition_settled: "Result",
