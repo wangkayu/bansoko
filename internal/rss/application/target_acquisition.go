@@ -241,9 +241,11 @@ func (s *Service) preflightTargetAcquisition(ctx context.Context, snapshot relea
 		return result
 	}
 	if admitted.Admission.Admission == acquisitiontarget.AdmissionDownload {
+		covered := map[string]bool{}
 		for _, spec := range admitted.Set.Targets {
 			if capture, ok := approvedLosers[spec.TargetPath]; ok && spec.CollisionPolicy == library.CollisionOverwrite {
 				result.replacements = append(result.replacements, capture)
+				covered[spec.TargetPath] = true
 				continue
 			}
 			if spec.CollisionPolicy == library.CollisionOverwrite {
@@ -279,7 +281,17 @@ func (s *Service) preflightTargetAcquisition(ctx context.Context, snapshot relea
 					return result
 				}
 				result.replacements = append(result.replacements, capture)
+				covered[spec.TargetPath] = true
 			}
+		}
+		// A replacement lifted above the skip or version policy is accepted
+		// only with its approval frozen into the delivery; otherwise the
+		// release fails here, before anything is downloaded.
+		if uncovered := acquisitiontarget.UncoveredApprovedTarget(admitted.Set, admitted.Observations, snapshot.effective, covered); uncovered != "" {
+			result.admission = acquisitiontarget.AdmissionResult{Admission: acquisitiontarget.AdmissionFailed, Reason: "replacement_approval_unavailable"}
+			result.planReason = "an approved replacement target has no frozen approval"
+			result.replacements = nil
+			return result
 		}
 	}
 	if admitted.Admission.Admission != acquisitiontarget.AdmissionDownload || s.downloaderAdmission == nil {

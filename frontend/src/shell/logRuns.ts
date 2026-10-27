@@ -262,11 +262,15 @@ export function stepText(entry: BusinessEntry): string {
   }
 }
 
-/** A replacement writes the actual outcome: which file was replaced / which existing version was kept / how many versions the episode now has. */
+/**
+ * A replacement writes the actual outcome: which file will be / was replaced, which existing version was kept, or how many
+ * versions the episode now has. A replace decision at acceptance is only planned ("replace"); the server writes the
+ * "replaced" record when the replacement takes effect, so a failed import never reads as replaced.
+ */
 function replacementText(entry: BusinessEntry): string {
   const details = entry.details;
   if (details?.replaced_files && details.replaced_files.length > 0)
-    return t("log.step.replaced", { names: joinList(details.replaced_files) });
+    return t(entry.reason_code === "replaced" ? "log.step.replaced" : "log.step.willReplace", { names: joinList(details.replaced_files) });
   if (details?.kept_file) return t("log.step.kept", { name: details.kept_file });
   if (typeof details?.version_count === "number" && details.version_count > 0)
     return t("log.step.versions", { n: details.version_count });

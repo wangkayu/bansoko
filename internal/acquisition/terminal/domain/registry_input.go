@@ -537,11 +537,12 @@ func registerDelivery() {
 	})
 	// A batch release replaces per file, so one acquisition may overwrite several
 	// approved incumbents. `replacements` is 0..64 approvals ordered by, and unique
-	// in, the canonical path of the object each one conditions on. Approvals exist
-	// only for an overwrite and always mean intent replace. An overwrite delivery
-	// without approvals (intent ensure_present) replaces only unmanaged files: the
-	// file plan and the database prepare proof refuse a managed target that no
-	// approval names.
+	// in, the canonical path of the object each one conditions on. Approvals always
+	// mean intent replace. An approved replacement is atomic whatever the global
+	// collision policy: the approved target is overwritten, while `collision`
+	// stays the global policy for every other target (block and version
+	// included). An overwrite delivery without approvals (intent ensure_present)
+	// replaces only what the file plan finds no approval for.
 	register("DeliveryV1", Obj(
 		F("operation", Enum("move", "copy", "hardlink", "noop")), F("intent", Enum("ensure_present", "replace", "explicit")),
 		F("collision", Enum("block", "version", "overwrite")), F("route", Ref("RouteV1")), F("naming", Ref("NamingV1")),
@@ -554,11 +555,7 @@ func registerDelivery() {
 		if m["operation"].String != "move" && cleanup != "none" {
 			return constraint(r, "source_cleanup")
 		}
-		// An approval exists only for an overwrite.
 		approved := len(m["replacements"].Array) > 0
-		if approved && m["collision"].String != "overwrite" {
-			return constraint(r, "replacements")
-		}
 		if (m["intent"].String == "replace") != approved {
 			return constraint(r, "intent")
 		}

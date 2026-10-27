@@ -102,6 +102,33 @@ func TestReplacementCaptureTransactionRecheck(t *testing.T) {
 		tx.Rollback()
 		t.Fatalf("mixed batch delivery = collision %q replacements %d", mixed.delivery.Object["collision"].String, len(mixed.delivery.Object["replacements"].Array))
 	}
+	// An approved replacement takes effect above the global policy: under
+	// skip (fail → block) and version the delivery keeps that collision for
+	// every other target and freezes intent replace with the approval, so the
+	// file plan overwrites the approved path alone.
+	for policy, want := range map[string]string{"fail": "block", "versioned": "version"} {
+		material.config.business.Sections["file_effect"] = json.RawMessage(`{"operation":"copy","collision_policy":"` + policy + `"}`)
+		c := admissionCapture{material: material}
+		approved, err := productionIntent(ctx, tx, c, "automatic_source", "", false, capture)
+		if err != nil {
+			tx.Rollback()
+			t.Fatalf("%s: %v", policy, err)
+		}
+		if approved.delivery.Object["intent"].String != "replace" || approved.delivery.Object["collision"].String != want || len(approved.delivery.Object["replacements"].Array) != 1 {
+			tx.Rollback()
+			t.Fatalf("%s approved delivery = intent %q collision %q replacements %d", policy, approved.delivery.Object["intent"].String, approved.delivery.Object["collision"].String, len(approved.delivery.Object["replacements"].Array))
+		}
+		plain, err := productionIntent(ctx, tx, c, "automatic_source", "", false)
+		if err != nil {
+			tx.Rollback()
+			t.Fatalf("%s: %v", policy, err)
+		}
+		if plain.delivery.Object["intent"].String != "ensure_present" || plain.delivery.Object["collision"].String != want || len(plain.delivery.Object["replacements"].Array) != 0 {
+			tx.Rollback()
+			t.Fatalf("%s delivery without approval = intent %q collision %q", policy, plain.delivery.Object["intent"].String, plain.delivery.Object["collision"].String)
+		}
+	}
+	material.config.business.Sections["file_effect"] = json.RawMessage(`{"operation":"copy","collision_policy":"overwrite"}`)
 	// One target captured twice is not two approvals.
 	if _, err := productionIntent(ctx, tx, c, "automatic_source", "", false, capture, capture); err == nil {
 		tx.Rollback()

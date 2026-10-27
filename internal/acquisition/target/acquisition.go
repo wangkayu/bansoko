@@ -883,6 +883,36 @@ func approveLoserTargets(entries []Entry, set Set, observations []Observation, a
 	return len(refs) > 0
 }
 
+// UncoveredApprovedTarget proves at acceptance that every replacement the
+// approval pass lifted above the global policy can be carried out: each
+// overwrite target of a set whose global policy is not overwrite was observed
+// absent, or its path holds an approval the acceptance freezes into the
+// delivery (covered). It returns the first target path without either (empty
+// when every one is covered); the caller refuses the acceptance instead of
+// downloading a file the file plan would then refuse.
+func UncoveredApprovedTarget(set Set, observations []Observation, effective animedomain.EffectiveConfig, covered map[string]bool) string {
+	if collisionPolicyForTarget(fileEffectCollisionPolicy(effective)) == domain.CollisionOverwrite {
+		return ""
+	}
+	missing := map[string]bool{}
+	for _, observation := range observations {
+		if observation.State == ObservationMissing {
+			missing[observation.TargetID] = true
+		}
+	}
+	paths := []string{}
+	for _, spec := range set.Targets {
+		if spec.CollisionPolicy == domain.CollisionOverwrite && !missing[spec.ID] && !covered[spec.TargetPath] {
+			paths = append(paths, spec.TargetPath)
+		}
+	}
+	sort.Strings(paths)
+	if len(paths) == 0 {
+		return ""
+	}
+	return paths[0]
+}
+
 func collisionPolicyForTarget(policy string) domain.CollisionPolicy {
 	switch strings.ToLower(strings.TrimSpace(policy)) {
 	case "version", "versioned":

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 )
 
 type preparedBinding struct {
@@ -134,9 +135,19 @@ func (s *Service) persistOperationPlan(ctx context.Context, tx *sql.Tx, plan ope
 			if err != nil {
 				return err
 			}
+			global, err := deliveryCollision(s.preparedBatch.input)
+			if err != nil {
+				return err
+			}
 			switch {
 			case approved[plan.targetPath]:
+				// An approved replacement is atomic whatever the global
+				// policy: this one target is overwritten.
 				plan.intent = "replace"
+			case global != "overwrite":
+				// Only an approval lifts a target above the global skip or
+				// version policy; a target no approval names keeps it.
+				plan = applyGlobalCollision(plan, global)
 			case len(plan.overwriteSnapshot) == 0:
 				// Overwrite only authorizes replacing an existing file. The
 				// planner observed this target absent (no overwrite execution
@@ -215,6 +226,33 @@ func downgradeAbsentOverwrite(plan operationPlan) operationPlan {
 	plan.intent = "ensure_present"
 	plan.overwriteSnapshot = nil
 	return plan
+}
+
+// applyGlobalCollision returns an overwrite operation no approval names to
+// the delivery's global collision policy (block or version): an ordinary
+// ensure_present operation.
+func applyGlobalCollision(plan operationPlan, global string) operationPlan {
+	plan.collisionPolicy = global
+	plan.intent = "ensure_present"
+	plan.overwriteSnapshot = nil
+	return plan
+}
+
+// deliveryCollision reads the accepted delivery's global collision policy.
+func deliveryCollision(input json.RawMessage) (string, error) {
+	var frozen struct {
+		Delivery struct {
+			Collision string `json:"collision"`
+		} `json:"delivery"`
+	}
+	if err := json.Unmarshal(input, &frozen); err != nil {
+		return "", err
+	}
+	switch frozen.Delivery.Collision {
+	case "block", "version", "overwrite":
+		return frozen.Delivery.Collision, nil
+	}
+	return "", fmt.Errorf("accepted delivery collision %q is invalid", frozen.Delivery.Collision)
 }
 
 // Typed reasons a planned-away file is declared excluded.
