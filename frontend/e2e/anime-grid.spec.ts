@@ -1080,6 +1080,26 @@ test.describe("AnimeGrid", () => {
     }
   });
 
+  test("keeps the season picked from the dropdown on the browse toolbar", async ({ page }) => {
+    // Regression: touch-picking a season made the Select report a stray null, writing season=null
+    // to the address and dropping the page back to the current season.
+    test.skip(!isPhoneLayout(page), "触屏选择只在手机布局下出现");
+    await enterApp(page);
+    await openProvider(page, "AniBT");
+    const seasonOf = () => new URLSearchParams(new URL(page.url()).hash.split("?")[1] ?? "").get("season");
+    const trigger = page.getByRole("combobox", { name: "选择季度" });
+    for (let i = 0; i < 8; i++) {
+      await trigger.tap();
+      const option = page.getByRole("option").nth(i);
+      const label = (await option.innerText()).trim();
+      await option.tap();
+      await expect(trigger).toHaveText(label);
+      await page.waitForTimeout(500);
+      expect(seasonOf()).toMatch(/^\d{4}-(winter|spring|summer|fall)$/);
+      await expect(trigger).toHaveText(label);
+    }
+  });
+
   test("keeps provider fixtures isolated", async ({ page }) => {
     await enterApp(page);
     const anibtCard = await openProvider(page, "AniBT");

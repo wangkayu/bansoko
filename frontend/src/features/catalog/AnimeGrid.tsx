@@ -22,7 +22,7 @@ import { Button } from "../../ui/base/controls";
 import { Segmented } from "../../ui/base";
 import { PHONE_MEDIA_QUERY, useMediaQuery } from "../../lib/useMediaQuery";
 import { isOneOf, ROUTE_ANIME_TABS, ROUTE_RECORD_LIST, useRouteDialogs, type RouteAnimeTab } from "../../shell/routeDialogs";
-import { useCatalogTab, type CatalogTabKey } from "../../shell/catalogTabs";
+import { rememberBaseSeason, useCatalogTab, type CatalogTabKey } from "../../shell/catalogTabs";
 import { StateBlock } from "../../ui/StateBlock";
 import { loadAnimeConfigDialog } from "../anime-config/loadAnimeConfigDialog";
 import { loadOneShotDialog } from "../oneshot/loadOneShotDialog";
@@ -118,6 +118,9 @@ export function AnimeGrid() {
   const resolvedSeason = seasonParam && parseSeason(seasonParam) ? seasonParam : currentSeason();
   if (onBase) lastBaseSeasonRef.current = resolvedSeason;
   const season = onBase ? resolvedSeason : (lastBaseSeasonRef.current ?? resolvedSeason);
+  useEffect(() => {
+    if (onBase) rememberBaseSeason(resolvedSeason);
+  }, [onBase, resolvedSeason]);
   const setSeason = useCallback(
     (next: string) => {
       setSearchParams(

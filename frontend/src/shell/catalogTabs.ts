@@ -26,6 +26,14 @@ export const CATALOG_TABS: { key: CatalogTabKey; label?: string; labelKey?: Copy
 /** Tabs reachable from the phone tab bar's Discover entry. */
 export const CATALOG_BROWSE_TABS: CatalogTabKey[] = ["anibt", "mikan", "custom"];
 
+// The season the base catalog last showed. An overlay's address carries no `?season=`, so switching
+//   the section from under it navigates to a fresh base address and has to hand the season back.
+let lastBaseSeason: string | null = null;
+
+export function rememberBaseSeason(season: string): void {
+  lastBaseSeason = season;
+}
+
 export function isCatalogTab(value: string | null | undefined): value is CatalogTabKey {
   return value != null && CATALOG_TABS.some((tab) => tab.key === value);
 }
@@ -87,7 +95,9 @@ export function useCatalogTab() {
         // leaving the overlay for the base; push history so browser Back
         // returns to the overlay (dirty forms are still guarded by their own
         // useBlocker).
-        navigate({ pathname: "/", search: `?${CATALOG_SOURCE_QUERY_KEY}=${next}` });
+        const search = new URLSearchParams({ [CATALOG_SOURCE_QUERY_KEY]: next });
+        if (lastBaseSeason) search.set("season", lastBaseSeason);
+        navigate({ pathname: "/", search: `?${search.toString()}` });
       }
     },
     [navigate, onBase, setSearchParams],
