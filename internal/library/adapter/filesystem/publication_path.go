@@ -187,6 +187,22 @@ func (s publicationSyscalls) withDefaults() publicationSyscalls {
 	return s
 }
 
+// withRenameHook runs the executor's PublicationRename hook before the
+// replacing rename; its error is the rename's answer.
+func (s publicationSyscalls) withRenameHook(hook func(temp, final string) error) publicationSyscalls {
+	if hook == nil {
+		return s
+	}
+	rename := s.rename
+	s.rename = func(from, to verifiedEntry) error {
+		if err := hook(from.canonical, to.canonical); err != nil {
+			return err
+		}
+		return rename(from, to)
+	}
+	return s
+}
+
 func publicationErr(code string, err error) error {
 	return &domain.PublicationError{Code: code, Err: err}
 }
@@ -299,9 +315,38 @@ func (s publicationSyscalls) publishReplace(temp, final verifiedEntry, staged, e
 		if errnoIs(err, unix.ENOENT, unix.EEXIST) && publishLanded(temp, final, staged) {
 			return current, nil
 		}
+		if !sameInvocation {
+			return domain.PathObservation{}, s.overwriteRefused(temp, staged, err)
+		}
 		return domain.PathObservation{}, targetMutationError(err)
 	}
 	return current, nil
+}
+
+// overwriteRefused settles an overwrite rename that did not land: the target
+// was not replaced. When temp is still the object this invocation staged, it
+// is removed here, so the refused publication leaves nothing behind. A rename
+// refused because the target is busy (held open over SMB/CIFS) or the change
+// is not permitted is TARGET_BUSY; with the temp removed its error carries
+// domain.ErrFileBusy, so the caller may retry the whole publication later. A
+// temp that is no longer provably ours, or whose removal fails, stays in place
+// and the error is terminal.
+func (s publicationSyscalls) overwriteRefused(temp verifiedEntry, staged domain.PathObservation, cause error) error {
+	busy := errnoIs(cause, busyEffectErrnos...)
+	refused := targetMutationError(cause)
+	if busy {
+		refused = publicationErr(domain.CodeTargetBusy, cause)
+	}
+	if stagedIntact(temp, staged) != nil {
+		return refused
+	}
+	if err := s.unlink(temp); err != nil {
+		return errors.Join(refused, fmt.Errorf("remove staged publication object: %w", err))
+	}
+	if busy {
+		return publicationErr(domain.CodeTargetBusy, busyEffectError(cause))
+	}
+	return refused
 }
 
 // stagedIntact refuses to publish a temp entry that is no longer the object

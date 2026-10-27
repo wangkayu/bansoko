@@ -13,6 +13,18 @@ import (
 	"bansoko/internal/workitems"
 )
 
+// unknownStepReason is the reason code of a step that returned an error. A
+// publish_target refused busy whose staged temp the executor removed is
+// TARGET_BUSY: the target was not replaced and nothing of this invocation is
+// left, the one shape file_busy_requeue accepts. Every other failure is
+// FILE_EXECUTION_UNCERTAIN.
+func unknownStepReason(r domain.PublicationStepReceipt) string {
+	if r.Step == "publish_target" && domain.PublicationFailureCode(r.Err) == domain.CodeTargetBusy && domain.FileBusy(r.Err) {
+		return domain.CodeTargetBusy
+	}
+	return "FILE_EXECUTION_UNCERTAIN"
+}
+
 // publicationReceiptBase reads the original identity independently of today's
 // claim. Persisted steps are copied only to retain unchanged authorization facts.
 func (s *Service) publicationReceiptBase(ctx context.Context, permit string) (map[string]any, protocol.Value, string, error) {
@@ -107,7 +119,7 @@ func (s *Service) typedPublicationCallbacks(c workitems.Claim, permit string, op
 				return errors.New("receipt session differs from original invocation")
 			}
 			at := observationTime(r.ObservedAt)
-			slot := map[string]any{"state": "unknown", "proof": nil, "observed_at": at, "reason_code": "FILE_EXECUTION_UNCERTAIN"}
+			slot := map[string]any{"state": "unknown", "proof": nil, "observed_at": at, "reason_code": unknownStepReason(r)}
 			if r.Err == nil {
 				proof, err := publicationStepProof(base, objects, dependency, op, r)
 				if err != nil {

@@ -102,6 +102,10 @@ type ExecutorHooks struct {
 	AtomicExchange          func(string, string) error
 	AtomicRenameNoReplace   func(string, string) error
 	PublicationCleanupPoint func(string) error
+	// PublicationRename runs right before a typed publication's replacing
+	// rename (temp, final); a returned error is that rename's answer and the
+	// rename does not run.
+	PublicationRename func(string, string) error
 }
 
 // OSFileExecutor is the filesystem adapter for the library application port.
