@@ -155,6 +155,13 @@ VALUES ('anime-progress')`); err != nil {
 	animetest.SeedPlacementCoverage(t, db, "anime-progress", "placement-e5", "verified", "tv:e5")
 	// An excluded placement of episode 6 is not counted.
 	animetest.SeedPlacementCoverage(t, db, "anime-progress", "placement-e6", "excluded", "tv:e6")
+	// Another season's file the seasonless key rewrite kept out of the
+	// instance's identity (v1 key, not replacement-eligible) counts nothing:
+	// the gap at 4 stays.
+	animetest.SeedPlacementCoverage(t, db, "anime-progress", "placement-s1-e4", "verified", "tv:s1:e4")
+	if _, err := db.ExecContext(ctx, `UPDATE placements SET replacement_eligible = false WHERE id = 'placement-s1-e4'`); err != nil {
+		t.Fatal(err)
+	}
 
 	// anime-empty has a subscription and source but no placement.
 	if _, err := db.ExecContext(ctx, `INSERT INTO managed_anime(id, title) VALUES ('anime-empty', 'Empty Show')`); err != nil {
