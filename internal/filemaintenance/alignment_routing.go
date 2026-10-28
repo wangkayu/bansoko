@@ -21,7 +21,7 @@ import (
 //     that meets the moving file in one retention pool (single_copy; per_group
 //     within one group), or a same-instance acquisition still publishing
 //     there, or a retention loser whose deletion is in flight: the move waits
-//     for retention (retention_pending). The comparison is a retention
+//     for retention (replacement_pending). The comparison is a retention
 //     recheck: the loser is deleted by the existing retention path and the
 //     keeper moves afterwards; the moving file itself losing ends the move.
 //  2. Retention keeps both (all, per_group with different groups, a tie):
@@ -36,9 +36,9 @@ import (
 
 // Alignment reason codes the routing adds.
 const (
-	// ReasonRetentionPending: the move waits for the retention comparison of
+	// ReasonReplacementPending: the move waits for the retention comparison of
 	// a same-key file (or for its loser's deletion).
-	ReasonRetentionPending = "retention_pending"
+	ReasonReplacementPending = "replacement_pending"
 	// reasonTargetOccupantMoving: the occupant's own alignment moves it away
 	// first (an in-progress wait, not surfaced).
 	reasonTargetOccupantMoving = "target_occupant_moving"
@@ -120,14 +120,14 @@ func routeAlignment(mode AdmissionMode, policy domain.CollisionPolicy, occupancy
 	if occupancy.SameInstance {
 		switch {
 		case occupancy.LoserPendingDeletion:
-			return alignmentRoute{Action: routeHold, Reason: ReasonRetentionPending}
+			return alignmentRoute{Action: routeHold, Reason: ReasonReplacementPending}
 		case occupancy.InFlight:
 			if mode == ModeAll {
 				// Nothing to compare and nothing there yet: the publication
 				// applies its own collision policy when it lands.
 				return alignmentRoute{Action: routeProceed}
 			}
-			return alignmentRoute{Action: routeHold, Reason: ReasonRetentionPending}
+			return alignmentRoute{Action: routeHold, Reason: ReasonReplacementPending}
 		case occupancy.MovingAway:
 			return alignmentRoute{Action: routeWait, Reason: reasonTargetOccupantMoving}
 		case occupancy.SharesKey && retentionComparable(mode, occupancy.SameGroup):
@@ -135,12 +135,12 @@ func routeAlignment(mode AdmissionMode, policy domain.CollisionPolicy, occupancy
 			case retentionMoverLost:
 				return alignmentRoute{Action: routeDrop, Reason: "placement_not_active"}
 			case retentionOccupantLost:
-				return alignmentRoute{Action: routeHold, Reason: ReasonRetentionPending}
+				return alignmentRoute{Action: routeHold, Reason: ReasonReplacementPending}
 			case retentionUnsettled, "":
 				// Retention cannot decide now (the subscription is not
 				// active): the move ends waiting, and a later scan routes
 				// it again.
-				return alignmentRoute{Action: routeHold, Reason: ReasonRetentionPending, Settle: true}
+				return alignmentRoute{Action: routeHold, Reason: ReasonReplacementPending, Settle: true}
 			}
 		}
 	}
@@ -369,10 +369,10 @@ func (s *AlignmentService) routedPrecheck(ctx context.Context, op *AlignmentOper
 	case routeHold:
 		reason := "waiting for retention to compare the file at the target: " + filepath.Base(op.TargetPath)
 		if route.Settle {
-			outcome := s.companionSettle(op, AlignmentBlocked, ReasonRetentionPending, reason)
+			outcome := s.companionSettle(op, AlignmentBlocked, ReasonReplacementPending, reason)
 			return &outcome, nil
 		}
-		outcome := worker.RetryUntilResolved(ReasonRetentionPending, reason, 15*time.Second, alignmentPendingWriter(op, ReasonRetentionPending, reason))
+		outcome := worker.RetryUntilResolved(ReasonReplacementPending, reason, 15*time.Second, alignmentPendingWriter(op, ReasonReplacementPending, reason))
 		return &outcome, nil
 	case routeWait:
 		outcome := worker.RetryUntilResolved(reasonTargetOccupantMoving, "waiting for the file at the target to move away", 15*time.Second, nil)

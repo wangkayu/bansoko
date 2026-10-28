@@ -226,7 +226,7 @@ export const reasonCopy = {
   target_collision_race: "目标位置刚被其他文件占用",
   target_conflict: "目标位置存在冲突",
   target_occupied: "目标位置已被占用",
-  retention_pending: "需先与目标位置的同集文件比较版本",
+  replacement_pending: "需先与目标位置的同集文件比较版本",
   target_busy: "目标文件可能被占用或没有权限",
   target_missing: "目标文件不存在",
   target_non_regular: "目标不是普通文件",

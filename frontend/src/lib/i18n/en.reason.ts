@@ -229,7 +229,7 @@ export const enReasonCopy = {
   target_collision_race: "Target location was just taken by another file",
   target_conflict: "Conflict at the target location",
   target_occupied: "Target location is occupied",
-  retention_pending: "Versions must be compared with the same-episode file at the target first",
+  replacement_pending: "Versions must be compared with the same-episode file at the target first",
   target_busy: "The target file may be in use or not permitted to change",
   target_missing: "Target file does not exist",
   target_non_regular: "Target is not a regular file",

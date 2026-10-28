@@ -17263,7 +17263,7 @@ components:
       description: >-
         The latest scan's alignment of this file when it has not completed.
         waiting means the move waits for retention to compare it with the file
-        already at its target (reason_code retention_pending).
+        already at its target (reason_code replacement_pending).
       properties:
         state:
           type: string

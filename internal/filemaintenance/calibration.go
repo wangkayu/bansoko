@@ -917,7 +917,7 @@ func (s *CalibrationService) admitAlignmentOperationsFor(ctx context.Context, an
 			// the file stays where it is, with the reason.
 			code, reason := "target_occupied", safeReason(fmt.Errorf("occupied: %s", filepath.Base(target)))
 			if route.Action == routeHold {
-				code, reason = ReasonRetentionPending, "waiting for retention to compare the file at the target: "+filepath.Base(target)
+				code, reason = ReasonReplacementPending, "waiting for retention to compare the file at the target: "+filepath.Base(target)
 			}
 			created, err := s.alignment.CreateOperation(ctx, op)
 			if err != nil {

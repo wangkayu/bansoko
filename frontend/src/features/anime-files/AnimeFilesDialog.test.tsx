@@ -182,12 +182,12 @@ describe("AnimeFilesDialog", () => {
     const waiting = fileRow({
       status: "misaligned",
       target_relative_path: "Show/Season 01/Show - E01.mkv",
-      alignment: { state: "waiting", reason_code: "retention_pending" },
+      alignment: { state: "waiting", reason_code: "replacement_pending" },
     });
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(filesView([waiting]))));
     renderFiles();
     const pill = await screen.findByText(t("tabs.files.alignWaiting"));
-    expect(pill.closest("[title]")).toHaveAttribute("title", reasonLabel("retention_pending"));
+    expect(pill.closest("[title]")).toHaveAttribute("title", reasonLabel("replacement_pending"));
     expect(screen.queryByText(new RegExp(t("tabs.files.alignFailed")))).toBeNull();
     fireEvent.click(screen.getByRole("radio", { name: new RegExp(t("tabs.files.filter.problem")) }));
     expect(screen.queryByText("EP 01.mkv")).toBeNull();

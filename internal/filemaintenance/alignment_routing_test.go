@@ -37,11 +37,11 @@ func TestRouteAlignmentSameKeyByModeAndPolicy(t *testing.T) {
 				if mode.comparable {
 					switch retention {
 					case retentionOccupantLost:
-						want = alignmentRoute{Action: routeHold, Reason: ReasonRetentionPending}
+						want = alignmentRoute{Action: routeHold, Reason: ReasonReplacementPending}
 					case retentionMoverLost:
 						want = alignmentRoute{Action: routeDrop, Reason: "placement_not_active"}
 					case retentionUnsettled:
-						want = alignmentRoute{Action: routeHold, Reason: ReasonRetentionPending, Settle: true}
+						want = alignmentRoute{Action: routeHold, Reason: ReasonReplacementPending, Settle: true}
 					}
 				}
 				if got != want {

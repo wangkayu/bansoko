@@ -60,7 +60,7 @@ const (
 	animeFilesAlignmentStateInProgress = "in_progress"
 	animeFilesAlignmentStateFailed     = "failed"
 	// animeFilesAlignmentStateWaiting: the move waits for retention to
-	// compare a same-key file (retention_pending); not a problem.
+	// compare a same-key file (replacement_pending); not a problem.
 	animeFilesAlignmentStateWaiting = "waiting"
 )
 
@@ -791,7 +791,7 @@ func alignmentView(op *animeFilesAlignmentOp) *AnimeFileAlignmentView {
 	}
 	// A live move waiting for retention; a settled one (retention could not
 	// decide) is a failure with the same reason.
-	if op.FailureCode == ReasonRetentionPending && (op.State == string(AlignmentPlanned) || op.State == string(AlignmentReady)) {
+	if op.FailureCode == ReasonReplacementPending && (op.State == string(AlignmentPlanned) || op.State == string(AlignmentReady)) {
 		return &AnimeFileAlignmentView{State: animeFilesAlignmentStateWaiting, ReasonCode: op.FailureCode}
 	}
 	switch op.State {
