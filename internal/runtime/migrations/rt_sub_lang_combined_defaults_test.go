@@ -7,10 +7,9 @@ import (
 
 // 094 replaces the rt.sub_lang item of a stored quality profile with the
 // combined JPSC/JPTC ranking, per item and only while that item still holds
-// the old default ranks. It covers the Global default and the per-anime
-// copies (the live value and the business snapshot copy, whose digest moves
-// with it). An edited rt.sub_lang item is left as it is, and a profile whose
-// other items were edited keeps those edits.
+// the old default ranks. Only the Global default changes: a Global whose other
+// items were edited keeps those edits, and per-anime copies are never touched
+// (an upgrade does not change settings stored on existing subscriptions).
 func TestRtSubLangCombinedDefaultsUpgrade(t *testing.T) {
 	ctx := context.Background()
 	db := openDisposableDB(t)
@@ -38,18 +37,16 @@ UPDATE global_config_sections
 		t.Fatalf("seed global: %v", err)
 	}
 
-	if _, err := db.ExecContext(ctx, `INSERT INTO managed_anime(id, title) VALUES ('rt-lang-old', 'Old'), ('rt-lang-edited', 'Edited')`); err != nil {
+	// A per-anime copy that still holds the old default ranks.
+	if _, err := db.ExecContext(ctx, `INSERT INTO managed_anime(id, title) VALUES ('rt-lang-old', 'Old')`); err != nil {
 		t.Fatal(err)
 	}
 	seedFixtureCandidate(t, db, "cand-rt-lang-old")
 	insertRevision(t, db, "cand-rt-lang-old", 1, sha256Fixture("f"), sha256Fixture("e"))
-	seedFixtureCandidate(t, db, "cand-rt-lang-edited")
-	insertRevision(t, db, "cand-rt-lang-edited", 1, sha256Fixture("a"), sha256Fixture("b"))
 	for _, instance := range []struct {
 		animeID, candidateID, profile string
 	}{
 		{"rt-lang-old", "cand-rt-lang-old", profile(defaultResolution, oldRanks)},
-		{"rt-lang-edited", "cand-rt-lang-edited", profile(defaultResolution, editedRanks)},
 	} {
 		snapshot := `{"replacement":{"admission_mode":"all","quality_profile":` + instance.profile + `}}`
 		if _, err := db.ExecContext(ctx, `
@@ -78,25 +75,43 @@ SELECT value->'quality_profile' = $1::jsonb, version FROM global_config_sections
 		t.Fatalf("global: only the rt.sub_lang item may change, version bumped once: ok=%v version=%d", globalOK, globalVersion)
 	}
 
-	for _, want := range []struct {
-		animeID, profile string
-		version          int64
-	}{
-		{"rt-lang-old", profile(defaultResolution, newRanks), 2},
-		{"rt-lang-edited", profile(defaultResolution, editedRanks), 1},
-	} {
-		var columnOK, snapshotOK, digestOK bool
-		var version int64
-		if err := db.QueryRowContext(ctx, `
-SELECT quality_profile = $2::jsonb,
-       business_snapshot->'replacement'->'quality_profile' = $2::jsonb,
+	// The per-anime copy is unchanged: column, snapshot, digest and version.
+	var columnOK, snapshotOK, digestOK bool
+	var version int64
+	if err := db.QueryRowContext(ctx, `
+SELECT quality_profile = $1::jsonb,
+       business_snapshot->'replacement'->'quality_profile' = $1::jsonb,
        business_digest = 'sha256:' || encode(digest(convert_to(anime_config_candidate_canonical_json(business_snapshot), 'UTF8'), 'sha256'), 'hex'),
        business_version
-  FROM anime_business_configs WHERE managed_anime_id = $1`, want.animeID, want.profile).Scan(&columnOK, &snapshotOK, &digestOK, &version); err != nil {
-			t.Fatal(err)
-		}
-		if !columnOK || !snapshotOK || !digestOK || version != want.version {
-			t.Fatalf("%s: column=%v snapshot=%v digest=%v business_version=%d, want version %d", want.animeID, columnOK, snapshotOK, digestOK, version, want.version)
-		}
+  FROM anime_business_configs WHERE managed_anime_id = 'rt-lang-old'`, profile(defaultResolution, oldRanks)).Scan(&columnOK, &snapshotOK, &digestOK, &version); err != nil {
+		t.Fatal(err)
+	}
+	if !columnOK || !snapshotOK || !digestOK || version != 1 {
+		t.Fatalf("per-anime copy must be unchanged: column=%v snapshot=%v digest=%v business_version=%d", columnOK, snapshotOK, digestOK, version)
+	}
+}
+
+// A Global whose rt.sub_lang item was edited keeps it.
+func TestRtSubLangCombinedDefaultsKeepsEditedGlobalItem(t *testing.T) {
+	ctx := context.Background()
+	db := openDisposableDB(t)
+	installMigrationsThrough(t, db, "093_diagnostic_conditions.sql")
+	const edited = `{"version":"profile-v1","items":[{"key":"subgroup.score","ranks":[]},{"key":"rt.sub_lang","ranks":[["TC"],["SC"]]},{"key":"release.revision","ranks":[]}]}`
+	if _, err := db.ExecContext(ctx, `
+UPDATE global_config_sections
+   SET value = jsonb_set(value, '{quality_profile}', $1::jsonb), version = 5
+ WHERE section_name = 'replacement'`, edited); err != nil {
+		t.Fatalf("seed global: %v", err)
+	}
+	if err := (Runner{DB: db, Dir: migrationsDir(t)}).Apply(ctx); err != nil {
+		t.Fatalf("upgrade: %v", err)
+	}
+	var same bool
+	var version int64
+	if err := db.QueryRowContext(ctx, `SELECT value->'quality_profile' = $1::jsonb, version FROM global_config_sections WHERE section_name = 'replacement'`, edited).Scan(&same, &version); err != nil {
+		t.Fatal(err)
+	}
+	if !same || version != 5 {
+		t.Fatalf("an edited rt.sub_lang item must stay: same=%v version=%d", same, version)
 	}
 }
