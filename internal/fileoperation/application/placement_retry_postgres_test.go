@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	acquisitionsettlement "bansoko/internal/acquisition/terminal/settlement"
 	"bansoko/internal/library/domain"
 	observabilityapplication "bansoko/internal/observability/application"
 	"bansoko/internal/runtime/worker"
@@ -138,6 +139,49 @@ func TestPlacementObligationCommittedWithCompletion(t *testing.T) {
 		t.Fatalf("settled continuation must leave no live item, got %d", live)
 	}
 	assertOperationCompleted(t, db, operationID)
+}
+
+// A settle that runs while the placement continuation is still live defers on
+// it and consumes the settle item. The continuation's exit wakes settlement
+// again (migration 091), so the root settles without the continuation arming
+// anything itself.
+func TestPlacementContinuationWakesConsumedSettlement(t *testing.T) {
+	sink := &flakyPlacementSink{}
+	db, service, fixture, operationID := typedPlacementCompletion(t, sink)
+	root := acquisitionOf(t, db, operationID)
+	settler, err := acquisitionsettlement.NewSettlementService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, err := settler.SettleRoot(context.Background(), root); err != nil || status != "deferred" {
+		t.Fatalf("early settlement = %q, %v; want deferred", status, err)
+	}
+	if n := settleItemCount(t, db, root); n != 0 {
+		t.Fatalf("a defer on live work left %d settle items, want it consumed", n)
+	}
+	continuationOutcome := runClaim(t, db, service, fixture)
+	if continuationOutcome.Kind != worker.OutcomeFinish || continuationOutcome.TerminalState != workitems.StateSucceeded {
+		t.Fatalf("continuation must settle succeeded, got %+v", continuationOutcome)
+	}
+	if n := settleItemCount(t, db, root); n != 1 {
+		t.Fatalf("the continuation exit left %d settle items, want 1", n)
+	}
+	if status, err := settler.SettleRoot(context.Background(), root); err != nil || status != "settled" {
+		t.Fatalf("post-continuation settlement = %q, %v; want settled", status, err)
+	}
+	var state string
+	if err := db.QueryRow(`SELECT state FROM acquisitions WHERE id=$1`, root).Scan(&state); err != nil || state != "succeeded" {
+		t.Fatalf("root state=%q, %v; want succeeded", state, err)
+	}
+}
+
+func settleItemCount(t *testing.T, db *sql.DB, root string) int {
+	t.Helper()
+	var n int
+	if err := db.QueryRow(`SELECT count(*) FROM work_items WHERE owner_type='acquisition' AND owner_id=$1 AND kind='acquisition_settle'`, root).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
 }
 
 // TestPlacementSinkFailureIsVisibleAndRetried proves the independent

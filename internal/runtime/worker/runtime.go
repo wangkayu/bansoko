@@ -713,6 +713,16 @@ func (r *Runtime) handleWithRecovery(ctx context.Context, claim workitems.Claim,
 			r.logEvent(ctx, runtimeError, workerEvent(claim, "file recovery mode could not be confirmed", "handler", "recovery_mode_unknown", "recovery_mode_unknown", false))
 			return
 		}
+		if _, ok := handler.(RecoveryObserver); ok && claim.Attempt >= claim.MaxAttempts {
+			// An ordinary retry on the last attempt fails the item with no
+			// owner writer, leaving the owner (and its acquisition) waiting on
+			// work that no longer exists. Like a deadline on the last attempt,
+			// the claim goes to the kind's recovery observer, which writes the
+			// owner's exhausted result.
+			r.logEvent(ctx, runtimeError, workerEvent(claim, "worker handler failed on its last attempt; claim held for recovery", "handler", reasonCode, reasonCode, false))
+			r.blockRecovery(claim, "attempt_exhausted")
+			return
+		}
 		retryable := retryableAttempt(claim)
 		r.logEvent(ctx, severityForAttempt(claim), workerEvent(claim, "worker handler recovery fallback used ordinary retry", "handler", reasonCode, reasonCode, retryable))
 		r.applyOutcome(ctx, claim, Retry(reasonCode, "handler recovery fallback", time.Second, nil), lease)

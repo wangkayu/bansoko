@@ -35,18 +35,28 @@ func settleImportRoot(t *testing.T, owner *sql.DB, outcome string) {
 func settleImportRootAs(t *testing.T, owner *sql.DB, outcome, entryKind string) {
 	t.Helper()
 	ctx := context.Background()
-	if _, err := owner.ExecContext(ctx, `SELECT public.work_item_close(id,'succeeded') FROM work_items WHERE acquisition_id=$1`, importRetryRoot); err != nil {
+	// The work closes and the terminal write commit together: a running root
+	// never commits without a work item (migration 091).
+	tx, err := owner.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `SELECT public.work_item_close(id,'succeeded') FROM work_items WHERE acquisition_id=$1`, importRetryRoot); err != nil {
 		t.Fatalf("close live work: %v", err)
 	}
-	if _, err := owner.ExecContext(ctx, `UPDATE acquisitions SET entry_kind=$2 WHERE id=$1 AND entry_kind<>$2`, importRetryRoot, entryKind); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE acquisitions SET entry_kind=$2 WHERE id=$1 AND entry_kind<>$2`, importRetryRoot, entryKind); err != nil {
 		t.Fatalf("label root as %s: %v", entryKind, err)
 	}
 	receipt := `{"schema_version":1,"outcome":"` + outcome + `","requirements_status":"sealed","counts":{"total":1,"required":1,"excluded":0,"succeeded":0,"failed":1},"primary_failure":{"stage":"file_execution","reason_code":"typed_publication_failed","file_ref":"primary"},"effect_summary":{"complete":false,"has_confirmed":false,"has_unknown":false},"settled_at":"2026-10-20T00:00:00Z"}`
 	if outcome == "succeeded" {
 		receipt = `{"schema_version":1,"outcome":"succeeded","requirements_status":"sealed","counts":{"total":1,"required":1,"excluded":0,"succeeded":1,"failed":0},"primary_failure":null,"effect_summary":{"complete":true,"has_confirmed":true,"has_unknown":false},"settled_at":"2026-10-20T00:00:00Z"}`
 	}
-	if _, err := owner.ExecContext(ctx, `SELECT public.acquisition_write_terminal($1,$2,$3::jsonb,clock_timestamp())`, importRetryRoot, outcome, receipt); err != nil {
+	if _, err := tx.ExecContext(ctx, `SELECT public.acquisition_write_terminal($1,$2,$3::jsonb,clock_timestamp())`, importRetryRoot, outcome, receipt); err != nil {
 		t.Fatalf("settle root: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit settled root: %v", err)
 	}
 }
 
