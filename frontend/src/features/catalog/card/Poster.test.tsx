@@ -91,3 +91,86 @@ describe("Poster 候选链", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+// A transient failure (the service restarting, a network blip, an upstream 5xx) only skips the
+//   source until a retry round; a 404 fails for good.
+describe("Poster 暂时失败重试", () => {
+  let responses: Map<string, Array<number | "network">>;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    URL.createObjectURL = vi.fn((blob: Blob) => `blob:${(blob as Blob & { tag?: string }).tag ?? "x"}`);
+    URL.revokeObjectURL = vi.fn();
+    setSessionTokenProvider(() => "t-1");
+    responses = new Map();
+    // Each path answers from its queue in order; the last answer repeats.
+    fetchMock = vi.fn(async (url: string) => {
+      const queue = responses.get(url) ?? [404];
+      const status = queue.length > 1 ? queue.shift()! : queue[0];
+      if (status === "network") throw new TypeError("Failed to fetch");
+      if (status !== 200) return new Response(null, { status });
+      const blob = new Blob(["img"], { type: "image/jpeg" }) as Blob & { tag?: string };
+      blob.tag = url === POSTER ? "poster" : "cover";
+      return { ok: true, status: 200, blob: async () => blob } as unknown as Response;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    resetAuthedImageCache();
+    vi.unstubAllGlobals();
+    setSessionTokenProvider(() => "");
+  });
+
+  const callsFor = (url: string) => fetchMock.mock.calls.filter(([called]) => called === url).length;
+
+  it("502 后先显示占位，窗口回到前台立即重试并显示封面", async () => {
+    responses.set(COVER, [502, 200]);
+    const container = renderPoster({ entry: entry({ coverUrl: COVER }) });
+    await waitFor(() => expect(screen.getByText("测")).toBeInTheDocument());
+
+    window.dispatchEvent(new Event("focus"));
+    await waitFor(() => expect(container.querySelector("img")?.getAttribute("src")).toBe("blob:cover"));
+    expect(callsFor(COVER)).toBe(2);
+  });
+
+  it("网络错误后按退避计时重试", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    responses.set(COVER, ["network", "network", 200]);
+    const container = renderPoster({ entry: entry({ coverUrl: COVER }) });
+    await waitFor(() => expect(callsFor(COVER)).toBe(1));
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    await waitFor(() => expect(callsFor(COVER)).toBe(2));
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(callsFor(COVER)).toBe(2);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    await waitFor(() => expect(container.querySelector("img")?.getAttribute("src")).toBe("blob:cover"));
+    expect(callsFor(COVER)).toBe(3);
+  });
+
+  it("404 不重试", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const container = renderPoster({ entry: entry({ coverUrl: COVER }) });
+    await waitFor(() => expect(screen.getByText("测")).toBeInTheDocument());
+
+    window.dispatchEvent(new Event("focus"));
+    await vi.advanceTimersByTimeAsync(20 * 60_000);
+    expect(container.querySelector("img")).not.toBeInTheDocument();
+    expect(callsFor(COVER)).toBe(1);
+  });
+
+  it("已显示后备海报时不再重试封面", async () => {
+    responses.set(COVER, [502, 200]);
+    responses.set(POSTER, [200]);
+    const container = renderPoster({ entry: entry({ coverUrl: COVER, posterUrl: POSTER }) });
+    await waitFor(() => expect(container.querySelector("img")?.getAttribute("src")).toBe("blob:poster"));
+
+    window.dispatchEvent(new Event("focus"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(container.querySelector("img")?.getAttribute("src")).toBe("blob:poster");
+    expect(callsFor(COVER)).toBe(1);
+  });
+});

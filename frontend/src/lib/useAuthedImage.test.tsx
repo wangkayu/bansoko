@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { RefObject } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchAuthedAssetObjectUrl, setSessionTokenProvider } from "./api/client";
+import { ApiError, fetchAuthedAssetObjectUrl, setSessionTokenProvider } from "./api/client";
 import { MAX_AUTHED_IMAGE_CACHE_ENTRIES, resetAuthedImageCache, useAuthedImage, useAuthedImageState } from "./useAuthedImage";
 
 vi.mock("./api/client", async () => {
@@ -127,17 +127,35 @@ describe("useAuthedImage", () => {
   });
 
   it("reports a failed load so callers can fall back to the next source", async () => {
-    fetchAsset.mockRejectedValueOnce(new Error("404"));
+    fetchAsset.mockRejectedValueOnce(new ApiError({ status: 404, message: "资源加载失败 (404)" }));
     fetchAsset.mockResolvedValueOnce("blob:next");
     const rendered = renderHook(({ src }) => useAuthedImageState(src), {
       initialProps: { src: "/api/v1/images/cover/aa" },
     });
-    expect(rendered.result.current).toEqual({ src: undefined, failed: false });
+    expect(rendered.result.current).toEqual({ src: undefined, failed: false, retryable: false });
     await waitFor(() => expect(rendered.result.current.failed).toBe(true));
+    expect(rendered.result.current.retryable).toBe(false);
     rendered.rerender({ src: "/api/v1/images/cover/bb" });
     // The previous source's failure must not leak onto the new source.
     expect(rendered.result.current.failed).toBe(false);
     await waitFor(() => expect(rendered.result.current.src).toBe("blob:next"));
+  });
+
+  it("marks network and 5xx failures retryable and requests the same path again on a new round", async () => {
+    fetchAsset.mockRejectedValueOnce(new ApiError({ status: 502, message: "资源加载失败 (502)" }));
+    fetchAsset.mockRejectedValueOnce(new ApiError({ status: 0, code: "NETWORK_ERROR", message: "无法连接到服务" }));
+    fetchAsset.mockResolvedValueOnce("blob:back");
+    const rendered = renderHook(({ round }) => useAuthedImageState("/api/v1/images/cover/aa", undefined, round), {
+      initialProps: { round: 0 },
+    });
+    await waitFor(() => expect(rendered.result.current).toEqual({ src: undefined, failed: true, retryable: true }));
+    rendered.rerender({ round: 1 });
+    // The earlier round's failure is not carried into the new round.
+    expect(rendered.result.current.failed).toBe(false);
+    await waitFor(() => expect(rendered.result.current.retryable).toBe(true));
+    rendered.rerender({ round: 2 });
+    await waitFor(() => expect(rendered.result.current.src).toBe("blob:back"));
+    expect(fetchAsset).toHaveBeenCalledTimes(3);
   });
 });
 
