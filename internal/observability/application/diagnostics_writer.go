@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -83,13 +84,26 @@ func prepareFailure(req observabilityport.DiagnosticFailureRequest) (preparedFai
 	if f.Via != "" && f.Via != outbound.ViaDirect && f.Via != outbound.ViaProxy {
 		return preparedFailure{}, fmt.Errorf("diagnostic route %q is not allowlisted", f.Via)
 	}
-	if len(f.Host) > maxHostLength || strings.ContainsAny(f.Host, "/?#@: \r\n\x00") {
-		return preparedFailure{}, errors.New("diagnostic host must be a bare host name")
-	}
+	req.Failure.Host = bareHost(f.Host)
 	if len(req.AffectedID) > maxIdentityLength {
 		return preparedFailure{}, errors.New("diagnostic affected id must be bounded")
 	}
 	return preparedFailure{req: req}, nil
+}
+
+// bareHost keeps a host that is an IP literal or a bare name and drops anything
+// else: a malformed host must cost the record only its host, not the episode.
+func bareHost(host string) string {
+	if host == "" || len(host) > maxHostLength {
+		return ""
+	}
+	if net.ParseIP(host) != nil {
+		return host
+	}
+	if strings.ContainsAny(host, "/?#@: \r\n\x00") {
+		return ""
+	}
+	return host
 }
 
 // mergeFailure folds one failure into the open episode (nil starts one). The

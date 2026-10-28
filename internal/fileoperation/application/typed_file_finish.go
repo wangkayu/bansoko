@@ -85,13 +85,13 @@ func (s *Service) finishPreparedFileSuccess(ctx context.Context, c workitems.Cla
 		if committed {
 			out := worker.Committed(c, workitems.OwnerResult{State: "completed"})
 			out.Disposition = workitems.DispositionConfirmed
-			return out, nil
+			return worker.WithAfterCommit(out, s.fileSuccessAfterCommit()), nil
 		}
 		return worker.Outcome{}, fmt.Errorf("%w: %w", ErrFinishNotCommitted, err)
 	}
 	out := worker.Committed(c, workitems.OwnerResult{State: reply.State})
 	out.Disposition = workitems.DispositionConfirmed
-	return out, nil
+	return worker.WithAfterCommit(out, s.fileSuccessAfterCommit()), nil
 }
 
 // ErrFinishNotCommitted marks a finish attempt whose transaction rolled back

@@ -129,15 +129,38 @@ func (s *Service) typedSync(ctx context.Context, claim workitems.Claim) (worker.
 const syncUnreachableThreshold = 3
 
 // withSyncDiagnostics feeds one committed sync outcome into the downloader
-// detection. A retryable sync failure counts; three in a row open the episode
-// and every later one adds its task to it. Any sync that reached qBittorrent
-// (success or a definite answer) resets the run and closes the episode. The
-// counter is in memory: a restart only delays detection by three polls.
+// detection. Only a retryable failure whose cause carries outbound facts counts
+// toward the unreachable run: three in a row open the episode and every later
+// one adds its task to it. Refused credentials are a definite answer, so they
+// open downloader.auth_failed at once and reset the run. Any sync that reached
+// qBittorrent (success or another definite answer) resets the run and closes
+// the episode. The counter is in memory: a restart only delays detection by
+// three polls.
 func (s *Service) withSyncDiagnostics(outcome worker.Outcome, err error, code, taskID string, cause error) (worker.Outcome, error) {
 	if err != nil || outcome.Kind != worker.OutcomeCommitted {
 		return outcome, err
 	}
-	if code == "qb_sync_retryable" {
+	record := func(variant observabilityport.ConditionVariant, failure outbound.Failure) (worker.Outcome, error) {
+		return worker.WithAfterCommit(outcome, func(ctx context.Context) {
+			request := observabilityport.DiagnosticFailureRequest{
+				Condition: observabilityport.Condition{Kind: observabilityport.KindDownloader, Variant: variant},
+				Severity:  observabilityport.SeverityError, TargetID: s.downloaderTarget(ctx), TargetName: "qBittorrent",
+				Failure: failure, AffectedID: taskID,
+			}
+			if record := observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, s.logger, request); record != nil {
+				record(ctx)
+			}
+		}), nil
+	}
+	if errors.Is(cause, qbittorrent.ErrAuthFailed) {
+		s.syncMu.Lock()
+		s.syncFailures = 0
+		// The next success must close the episode this opens.
+		s.syncChecked = false
+		s.syncMu.Unlock()
+		return record(observabilityport.VariantAuthFailed, outbound.Failure{})
+	}
+	if facts, ok := outbound.FailureOf(cause); ok && code == "qb_sync_retryable" {
 		s.syncMu.Lock()
 		s.syncFailures++
 		open := s.syncFailures >= syncUnreachableThreshold
@@ -145,17 +168,7 @@ func (s *Service) withSyncDiagnostics(outcome worker.Outcome, err error, code, t
 		if !open {
 			return outcome, nil
 		}
-		request := observabilityport.DiagnosticFailureRequest{
-			Condition: observabilityport.Condition{Kind: observabilityport.KindDownloader, Variant: observabilityport.VariantUnreachable},
-			Severity:  observabilityport.SeverityError, TargetName: "qBittorrent", AffectedID: taskID,
-			Failure: outbound.Failure{Class: outbound.Classify(cause)},
-		}
-		return worker.WithAfterCommit(outcome, func(ctx context.Context) {
-			request.TargetID = s.downloaderTarget(ctx)
-			if record := observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, s.logger, request); record != nil {
-				record(ctx)
-			}
-		}), nil
+		return record(observabilityport.VariantUnreachable, facts)
 	}
 	if code != "qb_sync_succeeded" && code != SyncCodeTaskAbsent {
 		return outcome, nil

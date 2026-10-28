@@ -118,9 +118,6 @@ func TestPrepareFailureRejectsMalformedFacts(t *testing.T) {
 		"unknown class": func(r *observabilityport.DiagnosticFailureRequest) {
 			r.Failure = outbound.Failure{Class: "weird"}
 		},
-		"host with a path": func(r *observabilityport.DiagnosticFailureRequest) {
-			r.Failure = outbound.Failure{Host: "example.test/private"}
-		},
 		"request id on a user condition": func(r *observabilityport.DiagnosticFailureRequest) { r.RequestID = "request-1" },
 	}
 	for name, edit := range cases {
@@ -134,5 +131,34 @@ func TestPrepareFailureRejectsMalformedFacts(t *testing.T) {
 	}
 	if _, err := prepareFailure(base); err != nil {
 		t.Fatalf("valid request rejected: %v", err)
+	}
+}
+
+// An IPv6 literal is a valid host; a malformed one loses only the host, never
+// the episode.
+func TestPrepareFailureKeepsRecordWhenHostIsUnusable(t *testing.T) {
+	cases := map[string]string{
+		"ipv6 literal": "fd00::5",
+		"ipv4 literal": "10.0.0.5",
+		"bare name":    "qb.lan",
+		"with a path":  "example.test/private",
+		"with a zone":  "fe80::1%eth0",
+	}
+	want := map[string]string{"ipv6 literal": "fd00::5", "ipv4 literal": "10.0.0.5", "bare name": "qb.lan"}
+	for name, host := range cases {
+		t.Run(name, func(t *testing.T) {
+			prepared, err := prepareFailure(observabilityport.DiagnosticFailureRequest{
+				Condition: observabilityport.Condition{Kind: observabilityport.KindMetadata, Variant: observabilityport.VariantUnreachable},
+				Severity:  observabilityport.SeverityWarning, TargetID: "tmdb",
+				Failure: outbound.Failure{Host: host, Class: outbound.ClassTimeout},
+			})
+			if err != nil {
+				t.Fatalf("record lost: %v", err)
+			}
+			state := mergeFailure(nil, prepared, time.Now())
+			if state.TargetHost != want[name] || state.Recent[0].Host != want[name] {
+				t.Fatalf("host = %q / %q, want %q", state.TargetHost, state.Recent[0].Host, want[name])
+			}
+		})
 	}
 }

@@ -106,8 +106,9 @@ func (r *Repository) PurgeAutomationDispatchRuns(ctx context.Context, scope txsc
 	return replacementRows(result, "automation dispatch runs")
 }
 
-// PurgeDiagnosticEpisodes deletes expired resolved diagnostic episodes while
-// leaving open incidents available for recovery and investigation.
+// PurgeDiagnosticEpisodes deletes expired closed diagnostic episodes and expired
+// open internal ones (a source with no natural success never closes). Open
+// owner-facing episodes stay until a success closes them.
 func (r *Repository) PurgeDiagnosticEpisodes(ctx context.Context, scope txscope.Tx, batchSize int) (int64, error) {
 	tx, err := r.transaction(scope, batchSize)
 	if err != nil {

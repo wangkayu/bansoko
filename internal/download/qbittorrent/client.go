@@ -406,7 +406,7 @@ func classifyProviderError(err error) domain.ProviderErrorClass {
 	if err == nil {
 		return domain.ProviderErrorUnknown
 	}
-	if errors.Is(err, ErrPathSnapshotChanged) {
+	if errors.Is(err, ErrPathSnapshotChanged) || errors.Is(err, ErrAuthFailed) {
 		return domain.ProviderErrorRetryable
 	}
 	if errors.Is(err, ErrHashOccupied) {
@@ -586,7 +586,7 @@ func (c Client) submitFile(ctx context.Context, payload []byte, filename, savePa
 		return domain.ProviderTask{}, fmt.Errorf("create qB add request: %w", err)
 	}
 	request.Header.Set("Content-Type", writer.FormDataContentType())
-	response, err := client.Do(request)
+	response, err := doRequest(client, request)
 	if err != nil {
 		return domain.ProviderTask{}, fmt.Errorf("submit qB task: %w", err)
 	}
@@ -721,7 +721,7 @@ func (c Client) Health(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("create qB health request: %w", err)
 	}
-	response, err := client.Do(request)
+	response, err := doRequest(client, request)
 	if err != nil {
 		return "", fmt.Errorf("check qB health: %w", err)
 	}
@@ -767,7 +767,7 @@ func (c Client) Cancel(ctx context.Context, providerTaskID string) error {
 		return fmt.Errorf("create qB cancel request: %w", err)
 	}
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	response, err := client.Do(request)
+	response, err := doRequest(client, request)
 	if err != nil {
 		return fmt.Errorf("cancel qB task: %w", err)
 	}
@@ -791,7 +791,7 @@ func (c Client) ListTorrents(ctx context.Context) ([]TorrentInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create qB list request: %w", err)
 	}
-	response, err := client.Do(request)
+	response, err := doRequest(client, request)
 	if err != nil {
 		return nil, fmt.Errorf("request qB torrent list: %w", err)
 	}
@@ -846,7 +846,7 @@ func (c Client) postTorrentAction(ctx context.Context, path, hash string) error 
 		return fmt.Errorf("create qB action request: %w", err)
 	}
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	response, err := client.Do(request)
+	response, err := doRequest(client, request)
 	if err != nil {
 		return fmt.Errorf("request qB action %s: %w", path, err)
 	}
@@ -877,7 +877,7 @@ func (c Client) DeleteTorrent(ctx context.Context, hash string, deleteFiles bool
 		return fmt.Errorf("create qB delete request: %w", err)
 	}
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	response, err := client.Do(request)
+	response, err := doRequest(client, request)
 	if err != nil {
 		return fmt.Errorf("request qB delete: %w", err)
 	}
@@ -929,7 +929,7 @@ func (c Client) SetShareLimits(ctx context.Context, hash string, limits ShareLim
 		return fmt.Errorf("create qB share limits request: %w", err)
 	}
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	response, err := client.Do(request)
+	response, err := doRequest(client, request)
 	if err != nil {
 		return fmt.Errorf("request qB share limits: %w", err)
 	}
@@ -951,7 +951,7 @@ func (c Client) WebAPIVersion(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("create qB WebAPI version request: %w", err)
 	}
-	response, err := client.Do(request)
+	response, err := doRequest(client, request)
 	if err != nil {
 		return "", fmt.Errorf("request qB WebAPI version: %w", err)
 	}
@@ -1023,7 +1023,7 @@ func (c Client) GetTorrentFiles(ctx context.Context, hash string) ([]TorrentFile
 	if err != nil {
 		return nil, fmt.Errorf("create qB files request: %w", err)
 	}
-	response, err := client.Do(request)
+	response, err := doRequest(client, request)
 	if err != nil {
 		return nil, fmt.Errorf("request qB torrent files: %w", err)
 	}
@@ -1061,7 +1061,7 @@ func (c Client) GetServerStatus(ctx context.Context) (ServerStatus, error) {
 	if err != nil {
 		return ServerStatus{}, fmt.Errorf("create qB maindata request: %w", err)
 	}
-	response, err := client.Do(request)
+	response, err := doRequest(client, request)
 	if err != nil {
 		return ServerStatus{}, fmt.Errorf("request qB server status: %w", err)
 	}
@@ -1104,7 +1104,7 @@ func (c Client) appVersion(ctx context.Context, client *http.Client) (string, er
 	if err != nil {
 		return "", fmt.Errorf("create qB version request: %w", err)
 	}
-	response, err := client.Do(request)
+	response, err := doRequest(client, request)
 	if err != nil {
 		return "", fmt.Errorf("request qB version: %w", err)
 	}
@@ -1126,13 +1126,21 @@ func (c Client) login(ctx context.Context, client *http.Client) error {
 		return fmt.Errorf("create qB login request: %w", err)
 	}
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	response, err := client.Do(request)
+	response, err := doRequest(client, request)
 	if err != nil {
 		return fmt.Errorf("login to qB: %w", err)
 	}
 	defer response.Body.Close()
+	if response.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("qB login refused with HTTP 403: %w", ErrAuthFailed)
+	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return fmt.Errorf("qB login failed with HTTP %d", response.StatusCode)
+	}
+	// qB answers 200 with "Fails." for a wrong username or password.
+	body, _ := io.ReadAll(io.LimitReader(response.Body, 256))
+	if strings.TrimSpace(string(body)) == "Fails." {
+		return fmt.Errorf("qB login rejected the credentials: %w", ErrAuthFailed)
 	}
 	return nil
 }
@@ -1190,7 +1198,7 @@ func (c Client) findTorrents(ctx context.Context, client *http.Client, query str
 	if err != nil {
 		return TorrentInfo{}, false, fmt.Errorf("create qB task lookup request: %w", err)
 	}
-	response, err := client.Do(request)
+	response, err := doRequest(client, request)
 	if err != nil {
 		return TorrentInfo{}, false, fmt.Errorf("request qB task lookup: %w", err)
 	}
@@ -1267,7 +1275,7 @@ func (c Client) hashOccupied(ctx context.Context, client *http.Client, hashes []
 	if err != nil {
 		return false, fmt.Errorf("create qB hash lookup request: %w", err)
 	}
-	response, err := client.Do(request)
+	response, err := doRequest(client, request)
 	if err != nil {
 		return false, fmt.Errorf("request qB hash lookup: %w", err)
 	}
@@ -1305,7 +1313,7 @@ func (c Client) artifactFiles(ctx context.Context, client *http.Client, item Tor
 	if err != nil {
 		return nil, fmt.Errorf("create qB torrent files request: %w", err)
 	}
-	response, err := client.Do(request)
+	response, err := doRequest(client, request)
 	if err != nil {
 		return nil, fmt.Errorf("request qB torrent files: %w", err)
 	}

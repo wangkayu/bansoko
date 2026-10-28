@@ -19,6 +19,7 @@ import (
 	"bansoko/internal/download/domain"
 	"bansoko/internal/download/qbittorrent"
 	"bansoko/internal/events"
+	"bansoko/internal/observability/outbound"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
 	plugintargetport "bansoko/internal/plugintarget/port"
@@ -748,8 +749,7 @@ func (s *Service) handleSubmit(ctx context.Context, claim workitems.Claim) (work
 	if claim.Owner.Type != workitems.OwnerDownloadTask || strings.TrimSpace(claim.Owner.ID) == "" {
 		return worker.Outcome{}, ErrInvalidClaim
 	}
-	task, err := s.loadTask(ctx, claim.Owner.ID, false)
-	if err != nil {
+	if _, err := s.loadTask(ctx, claim.Owner.ID, false); err != nil {
 		return worker.Outcome{}, err
 	}
 	outcome, err := s.typedSubmit(ctx, claim)
@@ -758,7 +758,11 @@ func (s *Service) handleSubmit(ctx context.Context, claim workitems.Claim) (work
 	}
 	switch outcome.OwnerResult.State {
 	case "failed":
-		outcome = worker.WithAfterCommit(outcome, observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, s.logger, s.submitFailureRequest(ctx, task.id, outcome.OwnerResult.ReasonCode)))
+		// Failures that reached finishUnstartedSubmission already carry the
+		// diagnostic built from their cause.
+		if outcome.AfterCommit == nil {
+			outcome = worker.WithAfterCommit(outcome, observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, s.logger, observabilityport.InternalFailure(observabilityport.InternalDownloadSubmit, "")))
+		}
 	case "submitting", "downloading", "completed":
 		outcome = worker.WithAfterCommit(outcome, func(ctx context.Context) {
 			target := s.downloaderTarget(ctx)
@@ -1059,15 +1063,31 @@ func (s *Service) downloaderTarget(ctx context.Context) string {
 	return "qbittorrent"
 }
 
-// submitFailureRequest maps a failed submission onto the catalog: a downloader
-// that could not be reached is a downloader condition; every other submit
-// failure is a product fault and stays internal. The task is the affected unit.
-func (s *Service) submitFailureRequest(ctx context.Context, taskID, reasonCode string) observabilityport.DiagnosticFailureRequest {
-	if reasonCode == "qb_connection_unavailable" {
-		return observabilityport.DiagnosticFailureRequest{
-			Condition: observabilityport.Condition{Kind: observabilityport.KindDownloader, Variant: observabilityport.VariantUnreachable},
-			Severity:  observabilityport.SeverityError, TargetID: s.downloaderTarget(ctx), TargetName: "qBittorrent", AffectedID: taskID,
+// submitFailureDiagnostic maps a failed submission onto the catalog from the
+// cause in hand: outbound facts mean the downloader could not be reached,
+// refused credentials mean its login is wrong, and everything else (an unreadable
+// runtime configuration included) is a product fault that stays internal. The
+// task is the affected unit.
+func (s *Service) submitFailureDiagnostic(taskID, code string, cause error) func(context.Context) {
+	if code != "qb_connection_unavailable" {
+		condition := observabilityport.Condition{Kind: observabilityport.KindDownloader}
+		var failure outbound.Failure
+		if facts, ok := outbound.FailureOf(cause); ok {
+			condition.Variant, failure = observabilityport.VariantUnreachable, facts
+		} else if errors.Is(cause, qbittorrent.ErrAuthFailed) {
+			condition.Variant = observabilityport.VariantAuthFailed
+		}
+		if condition.Variant != "" {
+			return func(ctx context.Context) {
+				request := observabilityport.DiagnosticFailureRequest{
+					Condition: condition, Severity: observabilityport.SeverityError,
+					TargetID: s.downloaderTarget(ctx), TargetName: "qBittorrent", Failure: failure, AffectedID: taskID,
+				}
+				if record := observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, s.logger, request); record != nil {
+					record(ctx)
+				}
+			}
 		}
 	}
-	return observabilityport.InternalFailure(observabilityport.InternalDownloadSubmit, "")
+	return observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, s.logger, observabilityport.InternalFailure(observabilityport.InternalDownloadSubmit, ""))
 }

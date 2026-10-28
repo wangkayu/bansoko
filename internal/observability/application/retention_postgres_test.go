@@ -52,6 +52,8 @@ func TestRetentionServicePurgeExpired(t *testing.T) {
 	assertCount(t, ctx, db, "diagnostic_episodes", "id = 'diagnostic-future'", 1)
 	assertCount(t, ctx, db, "diagnostic_episodes", "id = 'diagnostic-expired'", 0)
 	assertCount(t, ctx, db, "diagnostic_episodes", "id = 'diagnostic-open-expired'", 1)
+	assertCount(t, ctx, db, "diagnostic_episodes", "id = 'diagnostic-internal-open-expired'", 0)
+	assertCount(t, ctx, db, "diagnostic_episodes", "id = 'diagnostic-internal-open-future'", 1)
 	assertCount(t, ctx, db, "plugin_deliveries", "id = 'delivery-future'", 1)
 	assertCount(t, ctx, db, "plugin_deliveries", "state IN ('pending', 'delivering', 'waiting_retry')", 4)
 	assertCount(t, ctx, db, "plugin_deliveries", "id = 'delivery-delivered-expired'", 0)
@@ -134,7 +136,12 @@ func seedReplacementRows(t *testing.T, ctx context.Context, db *sql.DB) {
 		 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL, 1, CURRENT_TIMESTAMP + INTERVAL '1 day'),
 		('diagnostic-open-expired', 'metadata', 'unreachable', 'error', 'tmdb-open', '{}', '[]'::jsonb,
 		 CURRENT_TIMESTAMP - INTERVAL '2 hours', CURRENT_TIMESTAMP - INTERVAL '2 hours', NULL, 1,
-		 CURRENT_TIMESTAMP - INTERVAL '1 hour')`)
+		 CURRENT_TIMESTAMP - INTERVAL '1 hour'),
+		('diagnostic-internal-open-expired', 'internal', NULL, 'error', 'http.5xx', '{}', '[]'::jsonb,
+		 CURRENT_TIMESTAMP - INTERVAL '2 hours', CURRENT_TIMESTAMP - INTERVAL '2 hours', NULL, 1,
+		 CURRENT_TIMESTAMP - INTERVAL '1 hour'),
+		('diagnostic-internal-open-future', 'internal', NULL, 'error', 'download.submit', '{}', '[]'::jsonb,
+		 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL, 1, CURRENT_TIMESTAMP + INTERVAL '1 day')`)
 
 	exec(`INSERT INTO plugin_target_configs(
 		id, name, plugin_kind, adapter_kind, enabled, trigger_kinds, config_schema_version,
