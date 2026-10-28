@@ -103,11 +103,20 @@ type AnimeDraft struct {
 	NewReleasesOnly bool               `json:"new_releases_only,omitempty"`
 	Origin          SubscriptionOrigin `json:"origin"`
 	OriginEntryRef  *string            `json:"origin_entry_ref"`
-	RssSources      []RSSSourceDraft   `json:"rss_sources"`
-	Rules           RulesDraft         `json:"rules"`
-	Subgroups       SubgroupsSection   `json:"subgroups"`
-	Title           string             `json:"title"`
-	TitleOverride   *string            `json:"title_override"`
+	// ProviderGroupOffsets seeds the link rows subscribe creates for a provider
+	// origin's groups; the link row stays the only offset authority.
+	ProviderGroupOffsets []ProviderGroupOffsetDraft `json:"provider_group_offsets,omitempty"`
+	RssSources           []RSSSourceDraft           `json:"rss_sources"`
+	Rules                RulesDraft                 `json:"rules"`
+	Subgroups            SubgroupsSection           `json:"subgroups"`
+	Title                string                     `json:"title"`
+	TitleOverride        *string                    `json:"title_override"`
+}
+
+// ProviderGroupOffsetDraft is one provider group's episode offset in a draft.
+type ProviderGroupOffsetDraft struct {
+	EpisodeOffset    int    `json:"episode_offset"`
+	ProviderGroupRef string `json:"provider_group_ref"`
 }
 
 type RSSSourceDraft struct {

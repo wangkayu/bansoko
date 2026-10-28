@@ -4469,6 +4469,59 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/Unprocessable'
+  /anime/{managed_anime_id}/provider-groups/{provider}/{provider_group_ref}/offset:
+    put:
+      tags: [Anime]
+      operationId: setProviderGroupOffset
+      x-scope: write
+      x-mcp:
+        tool: set_provider_group_offset
+        group: subscription
+        write: true
+        description: >-
+          Set the episode offset of one provider group a subscription lists, by
+          group identity. Unlike patch_rss_source_offset it works before the
+          subscription starts, when the group has no RSS source yet: pass
+          expected_version 0 and the source is created with that offset. Once a
+          source exists, pass its version (patch_rss_source_offset stays for
+          existing sources).
+      description: >-
+        Sets the offset of a listed provider group. expected_version 0 means
+        the group has no RSS source yet; the source is then created without any
+        network call or work, and the first discovery refreshes it while
+        keeping the offset. With an existing source this is the same write as
+        patchRSSSourceOffset.
+      parameters:
+        - $ref: '#/components/parameters/ManagedAnimeID'
+        - $ref: '#/components/parameters/CatalogProvider'
+        - name: provider_group_ref
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 256
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderGroupOffsetPut'
+      responses:
+        '200':
+          description: Provider group episode offset saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RSSSource'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
   /anime/{managed_anime_id}/rss-sources/{rss_source_id}/anibt-mode:
     patch:
       tags: [Anime]
@@ -12190,6 +12243,12 @@ components:
           $ref: '#/components/schemas/SubgroupsSection'
         rules:
           $ref: '#/components/schemas/RulesDraft'
+        provider_group_offsets:
+          type: array
+          maxItems: 100
+          description: Per-group episode offsets of a provider origin; subscribe creates each non-zero one as the group's RSS source offset.
+          items:
+            $ref: '#/components/schemas/ProviderGroupOffsetDraft'
         rss_sources:
           type: array
           maxItems: 100
@@ -15377,6 +15436,34 @@ components:
           minimum: -1000
           maximum: 1000
           description: The new episode offset of this RSS link; 0 means no offset.
+    ProviderGroupOffsetPut:
+      type: object
+      additionalProperties: false
+      required: [expected_version, episode_offset]
+      properties:
+        expected_version:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Version of the group's RSS source; 0 when it has none yet.
+        episode_offset:
+          type: integer
+          minimum: -1000
+          maximum: 1000
+          description: The new episode offset of this group; 0 means no offset.
+    ProviderGroupOffsetDraft:
+      type: object
+      additionalProperties: false
+      required: [provider_group_ref, episode_offset]
+      properties:
+        provider_group_ref:
+          type: string
+          minLength: 1
+          maxLength: 256
+        episode_offset:
+          type: integer
+          minimum: -1000
+          maximum: 1000
     RSSSourceAniBTModePatch:
       type: object
       additionalProperties: false

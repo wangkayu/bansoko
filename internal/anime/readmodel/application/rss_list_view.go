@@ -143,9 +143,9 @@ type RSSListGroupSelection struct {
 // RSSListOffset is the episode offset of one RSS link (or of the draft source
 // that will become it). There is no inheritance; 0 means no offset.
 //
-// Editable reports the offset patch's own precondition: only a persisted RSS
-// link whose ManagedAnime is still active accepts a save, so draft/preview rows
-// without a persisted link and retired anime are read-only.
+// Editable reports the offset save's own precondition: a persisted RSS link, or
+// a pending provider group (saved by group identity), of a ManagedAnime that is
+// still active. Draft/preview rows and retired anime are read-only.
 type RSSListOffset struct {
 	Value    int
 	Editable bool
@@ -166,9 +166,9 @@ const (
 	RSSListOffsetSourceDefault = "default"
 )
 
-// rssListOffsetEditable is the lifecycle fence the offset patch takes
-// (ownership.PatchRSSSourceOffset locks the ManagedAnime and requires the active
-// state). A row with no persisted link never reaches that patch, so its caller
+// rssListOffsetEditable is the lifecycle fence the offset saves take
+// (ownership.PatchRSSSourceOffset and SetProviderGroupOffset lock the
+// ManagedAnime and require the active state). A row that reaches neither save
 // passes the empty state and stays read-only.
 func rssListOffsetEditable(lifecycleState string) bool {
 	return lifecycleState == "active"
@@ -1425,13 +1425,14 @@ func rssListGroupEntriesFor(draft animedomain.AnimeDraft, effective animedomain.
 	if draft.OriginEntryRef != nil {
 		entryRef = strings.TrimSpace(*draft.OriginEntryRef)
 	}
-	// A provider draft's offset belongs to the source that will become its RSS
-	// link row. Subscribe persists one link row per draft source, and that row's
-	// identity is the source's provider provenance triple (the DB provenance sync
-	// derives provider/provider_entry_ref/provider_group_ref from it), so the
-	// draft side matches a group entry to its source by the same triple. A group
-	// with no matching source keeps offset 0.
-	offsetsByGroup := make(map[string]int, len(draft.RssSources))
+	// A provider group's offset is its link row's. A pending owner bench carries
+	// its link rows as draft sources, whose identity is the provider provenance
+	// triple (the DB provenance sync derives provider/provider_entry_ref/
+	// provider_group_ref from it), so a group entry matches its source by the
+	// same triple. A provider draft has no link rows yet and carries the offsets
+	// subscribe will turn into them (ProviderGroupOffsets). A group with neither
+	// keeps offset 0.
+	offsetsByGroup := make(map[string]int, len(draft.RssSources)+len(draft.ProviderGroupOffsets))
 	for _, source := range draft.RssSources {
 		provenance := source.ProviderProvenance
 		if provenance == nil {
@@ -1441,6 +1442,9 @@ func rssListGroupEntriesFor(draft animedomain.AnimeDraft, effective animedomain.
 			continue
 		}
 		offsetsByGroup[provenance.ProviderGroupRef] = source.EpisodeOffset
+	}
+	for _, entry := range draft.ProviderGroupOffsets {
+		offsetsByGroup[entry.ProviderGroupRef] = entry.EpisodeOffset
 	}
 	display := make(map[string]animedomain.SubgroupScoreEntry, len(draft.Subgroups.Entries))
 	for _, entry := range draft.Subgroups.Entries {

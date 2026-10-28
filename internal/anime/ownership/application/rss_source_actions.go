@@ -13,7 +13,9 @@ import (
 	"bansoko/internal/events"
 	"bansoko/internal/observability/businesslog"
 	"bansoko/internal/persistence/txscope"
+	providerdomain "bansoko/internal/provider/domain"
 	subscriptiondomain "bansoko/internal/subscription/domain"
+	"bansoko/internal/subscription/groupsource"
 	"bansoko/internal/workitems"
 )
 
@@ -43,10 +45,25 @@ func (s *Service) PatchRSSSourceOffset(ctx context.Context, managedAnimeID, rssS
 	if err := s.lockActiveLifecycleTx(ctx, tx, managedAnimeID); err != nil {
 		return RSSSource{}, err
 	}
+	result, err := s.applyRSSSourceOffsetTx(ctx, tx, managedAnimeID, rssSourceID, patch, false)
+	if err != nil {
+		return RSSSource{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return RSSSource{}, fmt.Errorf("commit rss source offset patch: %w", err)
+	}
+	s.publishInvalidations(events.TargetRSS)
+	return result, nil
+}
 
+// applyRSSSourceOffsetTx is the one write of a link's offset: CAS on the row
+// version, offset migration admission, re-evaluation of unsubmitted releases
+// and the policy activity. created marks a row made in this same transaction,
+// which can hold no release and so needs neither admission nor re-evaluation.
+func (s *Service) applyRSSSourceOffsetTx(ctx context.Context, tx *sql.Tx, managedAnimeID, rssSourceID string, patch RSSSourceOffsetPatchInput, created bool) (RSSSource, error) {
 	var version int64
 	var oldOffset int
-	err = tx.QueryRowContext(ctx, `
+	err := tx.QueryRowContext(ctx, `
 SELECT src.version, src.episode_offset
 FROM rss_sources src
 JOIN subscriptions sub ON sub.id = src.subscription_id
@@ -66,20 +83,22 @@ UPDATE rss_sources SET episode_offset = $2, version = version + 1, updated_at = 
 WHERE id = $1`, rssSourceID, patch.EpisodeOffset); err != nil {
 		return RSSSource{}, fmt.Errorf("save rss source offset: %w", err)
 	}
-	if oldOffset != patch.EpisodeOffset {
-		if s.offsetMigrationAdmission == nil {
-			return RSSSource{}, errors.New("rss link offset change requires offset migration admission")
+	if !created {
+		if oldOffset != patch.EpisodeOffset {
+			if s.offsetMigrationAdmission == nil {
+				return RSSSource{}, errors.New("rss link offset change requires offset migration admission")
+			}
+			if _, _, err := s.offsetMigrationAdmission.AdmitRSSSourceTx(ctx, txscope.Wrap(tx), managedAnimeID, rssSourceID, version+1, oldOffset, patch.EpisodeOffset); err != nil {
+				return RSSSource{}, fmt.Errorf("admit rss source offset migration: %w", err)
+			}
 		}
-		if _, _, err := s.offsetMigrationAdmission.AdmitRSSSourceTx(ctx, txscope.Wrap(tx), managedAnimeID, rssSourceID, version+1, oldOffset, patch.EpisodeOffset); err != nil {
-			return RSSSource{}, fmt.Errorf("admit rss source offset migration: %w", err)
-		}
-	}
-	if err := s.scheduleUnsubmittedReleaseEvaluation(ctx, tx, `
+		if err := s.scheduleUnsubmittedReleaseEvaluation(ctx, tx, `
 SELECT r.id, r.version
 FROM releases r
 WHERE r.rss_source_id = $1 AND `+animeapplication.ReleaseReevaluationScopeSQL+`
 FOR UPDATE OF r`, rssSourceID, "offset_patch"); err != nil {
-		return RSSSource{}, err
+			return RSSSource{}, err
+		}
 	}
 
 	var subscriptionID, sourceKind, locatorDisplay, groupName, title sql.NullString
@@ -101,10 +120,6 @@ WHERE id = $1`, rssSourceID).Scan(&subscriptionID, &sourceKind, &locatorDisplay,
 			return RSSSource{}, fmt.Errorf("write rss source offset policy activity: %w", err)
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return RSSSource{}, fmt.Errorf("commit rss source offset patch: %w", err)
-	}
-	s.publishInvalidations(events.TargetRSS)
 
 	result := RSSSource{
 		ID:             rssSourceID,
@@ -123,6 +138,130 @@ WHERE id = $1`, rssSourceID).Scan(&subscriptionID, &sourceKind, &locatorDisplay,
 		}
 		result.ProviderProvenance = &value
 	}
+	return result, nil
+}
+
+// listedProviderGroupNameTx finds a group the instance lists: a discovered
+// selection row, else an entry of its stored subgroups section (a pending
+// instance has only the section until its first discovery).
+func (s *Service) listedProviderGroupNameTx(ctx context.Context, tx *sql.Tx, managedAnimeID, subscriptionID, provider, groupRef string) (string, bool, error) {
+	var displayName string
+	err := tx.QueryRowContext(ctx, `
+SELECT display_name
+FROM provider_group_selections
+WHERE subscription_id = $1 AND provider = $2 AND group_ref = $3`, subscriptionID, provider, groupRef).Scan(&displayName)
+	if err == nil {
+		return displayName, true, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return "", false, fmt.Errorf("read provider group selection: %w", err)
+	}
+	subgroups, rules, err := animeapplication.ReadOverridesFrom(ctx, tx, managedAnimeID)
+	if err != nil {
+		return "", false, err
+	}
+	effective, err := animedomain.ResolveEffective(subgroups, rules)
+	if err != nil {
+		return "", false, err
+	}
+	for _, entry := range effective.Selection.Entries {
+		if string(entry.Provider) == provider && entry.GroupRef == groupRef {
+			return entry.DisplayName, true, nil
+		}
+	}
+	return "", false, nil
+}
+
+// ProviderGroupOffsetInput sets a provider group's offset by group identity.
+// ExpectedVersion 0 means the group has no link row yet.
+type ProviderGroupOffsetInput struct {
+	ExpectedVersion int64
+	EpisodeOffset   int
+}
+
+// SetProviderGroupOffset sets the episode offset of one of the instance's
+// listed provider groups, before or after the subscription starts. An existing
+// link takes the same path as PatchRSSSourceOffset. Without a link the row and
+// its runtime are created through the shared group source upsert with a pending
+// snapshot version, so the first discovery refreshes its locator and provenance
+// and keeps the offset. Nothing is fetched and no work is scheduled.
+func (s *Service) SetProviderGroupOffset(ctx context.Context, managedAnimeID, provider, providerGroupRef string, in ProviderGroupOffsetInput) (RSSSource, error) {
+	if !animedomain.EpisodeOffsetInRange(in.EpisodeOffset) {
+		return RSSSource{}, &apperrors.BadRequest{Code: "OFFSET_OUT_OF_RANGE", Message: animedomain.EpisodeOffsetRangeMessage() + "."}
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return RSSSource{}, fmt.Errorf("begin provider group offset: %w", err)
+	}
+	defer tx.Rollback()
+	if err := s.lockActiveLifecycleTx(ctx, tx, managedAnimeID); err != nil {
+		return RSSSource{}, err
+	}
+
+	var subscriptionID, origin, animeTitle string
+	var entryRef sql.NullString
+	err = tx.QueryRowContext(ctx, `
+SELECT s.id, s.origin, s.origin_entry_ref, m.title
+FROM subscriptions s
+JOIN managed_anime m ON m.id = s.managed_anime_id
+WHERE s.managed_anime_id = $1`, managedAnimeID).Scan(&subscriptionID, &origin, &entryRef, &animeTitle)
+	if err != nil {
+		return RSSSource{}, fmt.Errorf("read subscription for provider group offset: %w", err)
+	}
+	displayName, listed, err := s.listedProviderGroupNameTx(ctx, tx, managedAnimeID, subscriptionID, provider, providerGroupRef)
+	if err != nil {
+		return RSSSource{}, err
+	}
+	if !listed || origin != provider || !entryRef.Valid {
+		return RSSSource{}, &apperrors.Business{Status: 409, Code: "PROVIDER_GROUP_NOT_LISTED", Message: "The subscription does not list this group."}
+	}
+
+	var rssSourceID string
+	err = tx.QueryRowContext(ctx, `
+SELECT id
+FROM rss_sources
+WHERE subscription_id = $1 AND provider = $2 AND provider_entry_ref = $3
+  AND provider_group_ref = $4 AND source_kind = 'provider_group'`,
+		subscriptionID, provider, entryRef.String, providerGroupRef).Scan(&rssSourceID)
+	created := false
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		if in.ExpectedVersion != 0 {
+			return RSSSource{}, &apperrors.VersionConflict{Owner: "rss_source", CurrentVersion: 0}
+		}
+		rssURL, err := providerdomain.BuildProviderRSSURL(providerdomain.Kind(provider), groupsource.ReaderEndpoint(ctx, s.connections, providerdomain.Kind(provider)), entryRef.String, providerGroupRef)
+		if err != nil {
+			return RSSSource{}, fmt.Errorf("prepare group source URL: %w", err)
+		}
+		rssSourceID, _, err = groupsource.UpsertTx(ctx, tx, groupsource.Source{
+			SubscriptionID:  subscriptionID,
+			Provider:        provider,
+			CatalogEntryRef: entryRef.String,
+			GroupExternalID: providerGroupRef,
+			DisplayName:     displayName,
+			AnimeTitle:      animeTitle,
+			RSSURL:          rssURL,
+			SnapshotVersion: groupsource.PendingSnapshotVersion,
+		})
+		if err != nil {
+			return RSSSource{}, err
+		}
+		if err := tx.QueryRowContext(ctx, `SELECT version FROM rss_sources WHERE id = $1`, rssSourceID).Scan(&in.ExpectedVersion); err != nil {
+			return RSSSource{}, fmt.Errorf("read created rss source version: %w", err)
+		}
+		created = true
+	case err != nil:
+		return RSSSource{}, fmt.Errorf("read provider group link: %w", err)
+	}
+
+	result, err := s.applyRSSSourceOffsetTx(ctx, tx, managedAnimeID, rssSourceID, RSSSourceOffsetPatchInput{ExpectedVersion: in.ExpectedVersion, EpisodeOffset: in.EpisodeOffset}, created)
+	if err != nil {
+		return RSSSource{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return RSSSource{}, fmt.Errorf("commit provider group offset: %w", err)
+	}
+	s.publishInvalidations(events.TargetRSS)
 	return result, nil
 }
 

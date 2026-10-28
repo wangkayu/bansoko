@@ -80,6 +80,7 @@ type OwnershipService interface {
 	DeleteAnimeSubscription(ctx context.Context, managedAnimeID string, input ownershipapplication.SubscriptionDeleteInput) error
 	CleanupAnimeLocalData(ctx context.Context, managedAnimeID string, input ownershipapplication.LocalDataCleanupInput, idempotencyKey string) error
 	PatchRSSSourceOffset(ctx context.Context, managedAnimeID, rssSourceID string, patch ownershipapplication.RSSSourceOffsetPatchInput) (ownershipapplication.RSSSource, error)
+	SetProviderGroupOffset(ctx context.Context, managedAnimeID, provider, providerGroupRef string, input ownershipapplication.ProviderGroupOffsetInput) (ownershipapplication.RSSSource, error)
 	PatchRSSSourceAniBTMode(ctx context.Context, managedAnimeID, rssSourceID string, patch ownershipapplication.RSSSourceAniBTModePatchInput) (ownershipapplication.RSSSource, error)
 	RefreshRSSSource(ctx context.Context, rssSourceID, idempotencyKey string) (ownershipapplication.RSSRefreshAccepted, error)
 	EffectiveNamingRules(ctx context.Context, managedAnimeID string) (naming.NamingRules, error)

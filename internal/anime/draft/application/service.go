@@ -29,7 +29,9 @@ import (
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
 	plugintargetport "bansoko/internal/plugintarget/port"
+	providerdomain "bansoko/internal/provider/domain"
 	subscriptiondomain "bansoko/internal/subscription/domain"
+	"bansoko/internal/subscription/groupsource"
 	"bansoko/internal/workitems"
 )
 
@@ -61,6 +63,9 @@ type (
 // built after this service; a nil port degrades only the path that needs it.
 type Dependencies struct {
 	WorkItems *workitems.Store
+	// Connections resolves the provider endpoint of the link rows a subscribe
+	// creates for per-group offsets.
+	Connections groupsource.ConnectionSource
 }
 
 // Service owns anime candidate drafts and the Subscribe/activation transaction.
@@ -78,6 +83,7 @@ type Service struct {
 	logger             observabilityport.RuntimeLogger
 	invalidator        *animeapplication.Invalidator
 	candidateLockHook  func(operation string)
+	connections        groupsource.ConnectionSource
 	// notifications admits subscription_changed notices; nil admits none.
 	notifications plugintargetport.BusinessDeliveryEnqueuer
 }
@@ -109,6 +115,7 @@ func NewService(db *sql.DB, deps Dependencies) (*Service, error) {
 		discovery:     discovery,
 		logger:        logger,
 		invalidator:   animeapplication.NewInvalidator(nil),
+		connections:   deps.Connections,
 		observability: nil,
 	}, nil
 }
@@ -739,6 +746,9 @@ VALUES ($1, $2, $3, $4)`, animeID, title, fixedTitle, nullableOptionalText(provi
 		}
 		sources = append(sources, source)
 	}
+	if err := s.createProviderGroupOffsetSourcesTx(ctx, tx, subscriptionID, title, draft); err != nil {
+		return SubscribeResult{}, err
+	}
 
 	result := SubscribeResult{
 		ManagedAnime: ManagedAnime{ID: animeID, Title: title, TitleOverride: cloneString(fixedTitle), Version: 1},
@@ -808,6 +818,52 @@ VALUES ('subscribe', $1, $2, $3, $4)`, key, requestHash, animeID, snapshot); err
 		postCommit(ctx, result)
 	}
 	return result, nil
+}
+
+// createProviderGroupOffsetSourcesTx turns the draft's per-group offsets into
+// link rows through the same upsert discovery uses, so the first discovery
+// refreshes them and keeps the offsets. Only groups the draft lists get a row,
+// and a zero offset is the absence of a link. Nothing is fetched and no work is
+// scheduled here; discovery owns that.
+func (s *Service) createProviderGroupOffsetSourcesTx(ctx context.Context, tx *sql.Tx, subscriptionID, title string, draft animedomain.AnimeDraft) error {
+	if len(draft.ProviderGroupOffsets) == 0 || draft.OriginEntryRef == nil {
+		return nil
+	}
+	provider := string(draft.Origin)
+	endpoint := groupsource.ReaderEndpoint(ctx, s.connections, providerdomain.Kind(provider))
+	for _, offset := range draft.ProviderGroupOffsets {
+		if offset.EpisodeOffset == 0 {
+			continue
+		}
+		displayName, listed := "", false
+		for _, entry := range draft.Subgroups.Entries {
+			if string(entry.Provider) == provider && entry.GroupRef == offset.ProviderGroupRef {
+				displayName, listed = entry.DisplayName, true
+				break
+			}
+		}
+		if !listed {
+			continue
+		}
+		rssURL, err := providerdomain.BuildProviderRSSURL(providerdomain.Kind(provider), endpoint, *draft.OriginEntryRef, offset.ProviderGroupRef)
+		if err != nil {
+			return fmt.Errorf("prepare group source URL: %w", err)
+		}
+		if _, _, err := groupsource.UpsertTx(ctx, tx, groupsource.Source{
+			SubscriptionID:  subscriptionID,
+			Provider:        provider,
+			CatalogEntryRef: *draft.OriginEntryRef,
+			GroupExternalID: offset.ProviderGroupRef,
+			DisplayName:     displayName,
+			AnimeTitle:      title,
+			RSSURL:          rssURL,
+			SnapshotVersion: groupsource.PendingSnapshotVersion,
+			EpisodeOffset:   offset.EpisodeOffset,
+		}); err != nil {
+			return fmt.Errorf("create provider group source: %w", err)
+		}
+	}
+	return nil
 }
 
 // insertRSSSource persists one source draft as an opaque RSSSource

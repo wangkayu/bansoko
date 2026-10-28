@@ -163,6 +163,7 @@ export type PlacementHandoffView = Schema<"PlacementHandoffView">;
 export type AnimeWorkspace = Schema<"AnimeWorkspace">;
 export type SubscriptionLogEntry = Schema<"SubscriptionLogEntry">;
 export type RSSSourceOffsetPatch = Schema<"RSSSourceOffsetPatch">;
+export type ProviderGroupOffsetPut = Schema<"ProviderGroupOffsetPut">;
 export type RSSRefreshAccepted = Schema<"RSSRefreshAccepted">;
 export type AutomationSchedule = Schema<"AutomationSchedule">;
 export type AutomationSchedulePatch = Schema<"AutomationSchedulePatch">;
@@ -1188,6 +1189,19 @@ export function patchRSSSourceOffset(
     method: "PATCH",
     body: patch,
   });
+}
+
+/** Sets a listed provider group's offset by group identity; expected_version 0 creates the group's RSS source. */
+export function setProviderGroupOffset(
+  managedAnimeID: string,
+  provider: "anibt" | "mikan",
+  providerGroupRef: string,
+  body: ProviderGroupOffsetPut,
+): Promise<RSSSource> {
+  return request(
+    `/anime/${encodePathSegment(managedAnimeID)}/provider-groups/${encodePathSegment(provider)}/${encodePathSegment(providerGroupRef)}/offset`,
+    { method: "PUT", body },
+  );
 }
 
 export function refreshRSSSource(

@@ -14,7 +14,6 @@ import (
 	animeapp "bansoko/internal/anime/application"
 	catalogapp "bansoko/internal/catalog/application"
 	catalogdomain "bansoko/internal/catalog/domain"
-	configurationdomain "bansoko/internal/configuration/domain"
 	"bansoko/internal/events"
 	"bansoko/internal/metadata/backfill"
 	"bansoko/internal/metadata/matcher"
@@ -25,6 +24,7 @@ import (
 	"bansoko/internal/redact"
 	selectiondomain "bansoko/internal/selection/domain"
 	subscriptiondomain "bansoko/internal/subscription/domain"
+	"bansoko/internal/subscription/groupsource"
 	"bansoko/internal/workitems"
 )
 
@@ -917,74 +917,25 @@ func (d *Dispatcher) createProviderGroupSource(ctx context.Context, subscription
 }
 
 func (d *Dispatcher) createProviderGroupSourceTx(ctx context.Context, tx *sql.Tx, subscriptionID, providerName, catalogEntryRef, groupRefKey, groupExternalID, displayName, animeTitle, rssURL, snapshotVersion string) (bool, error) {
-	providerKind := providerdomain.Kind(providerName)
-	groupRef, err := providerdomain.NewGroupRef(providerKind, groupExternalID)
+	groupRef, err := providerdomain.NewGroupRef(providerdomain.Kind(providerName), groupExternalID)
 	if err != nil {
 		return false, fmt.Errorf("validate provider group ref: %w", err)
 	}
 	if groupRefKey != groupRef.ExternalID {
 		return false, errors.New("provider group ref key does not match normalized group ref")
 	}
-	if err := (providerdomain.FeedLocator{
-		Provider:        providerKind,
+	sourceID, _, err := groupsource.UpsertTx(ctx, tx, groupsource.Source{
+		SubscriptionID:  subscriptionID,
+		Provider:        providerName,
 		CatalogEntryRef: catalogEntryRef,
-		Group:           groupRef,
-	}).Validate(); err != nil {
-		return false, fmt.Errorf("validate provider feed locator: %w", err)
-	}
-
-	sourceID := uuid.NewString()
-	upsertErr := tx.QueryRowContext(ctx, `
-INSERT INTO rss_sources(
-    id, subscription_id, source_kind, locator, locator_display, group_name, title,
-    provider, provider_entry_ref, provider_group_ref, discovery_snapshot_version
-)
-VALUES ($1, $2, 'provider_group', $3, $4, $5, $6, $7, $8, $9, $10)
-ON CONFLICT (subscription_id, provider, provider_entry_ref, provider_group_ref)
-    WHERE source_kind = 'provider_group' DO UPDATE SET
-    locator = EXCLUDED.locator,
-    locator_display = EXCLUDED.locator_display,
-    group_name = EXCLUDED.group_name,
-    title = EXCLUDED.title,
-    provider = EXCLUDED.provider,
-    provider_entry_ref = EXCLUDED.provider_entry_ref,
-    provider_group_ref = EXCLUDED.provider_group_ref,
-    discovery_snapshot_version = EXCLUDED.discovery_snapshot_version,
-    provenance = EXCLUDED.provenance,
-    version = rss_sources.version + 1,
-    updated_at = NOW()
-WHERE
-    (
-        substring(rss_sources.discovery_snapshot_version FROM '^v([0-9]+)(:.*)?$') IS NULL
-        AND substring(EXCLUDED.discovery_snapshot_version FROM '^v([0-9]+)(:.*)?$') IS NOT NULL
-    )
-    OR (
-        substring(rss_sources.discovery_snapshot_version FROM '^v([0-9]+)(:.*)?$') IS NOT NULL
-        AND substring(EXCLUDED.discovery_snapshot_version FROM '^v([0-9]+)(:.*)?$') IS NOT NULL
-        AND CAST(substring(EXCLUDED.discovery_snapshot_version FROM '^v([0-9]+)(:.*)?$') AS NUMERIC)
-            >= CAST(substring(rss_sources.discovery_snapshot_version FROM '^v([0-9]+)(:.*)?$') AS NUMERIC)
-    )
-RETURNING id`,
-		sourceID, subscriptionID, rssURL, rssURL, displayName, animeTitle,
-		providerName, catalogEntryRef, groupRef.ExternalID, snapshotVersion).Scan(&sourceID)
-	if upsertErr != nil && !errors.Is(upsertErr, sql.ErrNoRows) {
-		return false, fmt.Errorf("upsert rss source: %w", upsertErr)
-	}
-	if errors.Is(upsertErr, sql.ErrNoRows) {
-		if err := tx.QueryRowContext(ctx, `
-SELECT id
-FROM rss_sources
-WHERE subscription_id = $1 AND provider = $2 AND provider_entry_ref = $3
-  AND provider_group_ref = $4 AND source_kind = 'provider_group'`,
-			subscriptionID, providerName, catalogEntryRef, groupRef.ExternalID).Scan(&sourceID); err != nil {
-			return false, fmt.Errorf("read existing rss source after stale snapshot: %w", err)
-		}
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-INSERT INTO rss_source_runtime(rss_source_id) VALUES ($1)
-ON CONFLICT (rss_source_id) DO NOTHING`, sourceID); err != nil {
-		return false, fmt.Errorf("ensure rss source runtime: %w", err)
+		GroupExternalID: groupExternalID,
+		DisplayName:     displayName,
+		AnimeTitle:      animeTitle,
+		RSSURL:          rssURL,
+		SnapshotVersion: snapshotVersion,
+	})
+	if err != nil {
+		return false, err
 	}
 
 	runtimeVersion, ineligibility, err := sourceRefreshEligibilityTx(ctx, tx, sourceID)
@@ -1535,25 +1486,10 @@ ON CONFLICT (provider, catalog_entry_ref) DO UPDATE SET
 
 // readerEndpoint resolves the connection endpoint for a provider kind.
 func readerEndpoint(ctx context.Context, d *Dispatcher, providerKind providerdomain.Kind) string {
-	if d == nil || d.Connections == nil {
+	if d == nil {
 		return ""
 	}
-	connections, err := d.Connections.ListConnections(ctx)
-	if err != nil {
-		return ""
-	}
-	selected, err := configurationdomain.SelectSingleEnabledConnection(connections, configurationdomain.ConnectionKind(providerKind))
-	if err != nil {
-		if !errors.Is(err, configurationdomain.ErrNoEnabledConnection) {
-			return ""
-		}
-		fallback, ok := configurationdomain.DefaultConnectionForKind(configurationdomain.ConnectionKind(providerKind))
-		if !ok {
-			return ""
-		}
-		selected = fallback
-	}
-	return selected.Endpoint
+	return groupsource.ReaderEndpoint(ctx, d.Connections, providerKind)
 }
 
 // logError emits a structured error event. Raw error text never enters the

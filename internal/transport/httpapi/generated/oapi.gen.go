@@ -2517,6 +2517,12 @@ const (
 	GetAgentGuideParamsFormatSkill GetAgentGuideParamsFormat = "skill"
 )
 
+// Defines values for SetProviderGroupOffsetParamsProvider.
+const (
+	SetProviderGroupOffsetParamsProviderAnibt SetProviderGroupOffsetParamsProvider = "anibt"
+	SetProviderGroupOffsetParamsProviderMikan SetProviderGroupOffsetParamsProvider = "mikan"
+)
+
 // Defines values for DiscoverProviderEntryGroupsParamsProvider.
 const (
 	DiscoverProviderEntryGroupsParamsProviderAnibt DiscoverProviderEntryGroupsParamsProvider = "anibt"
@@ -3177,11 +3183,14 @@ type AnimeDraft struct {
 	// Origin The unique four-value source-of-subscription enum: anibt | mikan are discovery providers, custom is a user-supplied manual source, agent is reserved for one-shot acquisition: an agent draft is a candidate snapshot for acquire-seed-once and the temporary one-shot mount carries it, but it can never be subscribed or activated (422 ORIGIN_NOT_SUBSCRIBABLE). This is the only four-value enum; ProviderKind stays a two-value discovery enum, SnapshotSeedProvider is the separate seed-provenance vocabulary (anibt | mikan | custom), and RSS SourceKind stays provider_group | custom_rss.
 	Origin         SubscriptionOrigin `json:"origin"`
 	OriginEntryRef *string            `json:"origin_entry_ref"`
-	RssSources     []RSSSourceDraft   `json:"rss_sources"`
-	Rules          RulesDraft         `json:"rules"`
-	Subgroups      SubgroupsSection   `json:"subgroups"`
-	Title          string             `json:"title"`
-	TitleOverride  *string            `json:"title_override"`
+
+	// ProviderGroupOffsets Per-group episode offsets of a provider origin; subscribe creates each non-zero one as the group's RSS source offset.
+	ProviderGroupOffsets *[]ProviderGroupOffsetDraft `json:"provider_group_offsets,omitempty"`
+	RssSources           []RSSSourceDraft            `json:"rss_sources"`
+	Rules                RulesDraft                  `json:"rules"`
+	Subgroups            SubgroupsSection            `json:"subgroups"`
+	Title                string                      `json:"title"`
+	TitleOverride        *string                     `json:"title_override"`
 }
 
 // AnimeFile defines model for AnimeFile.
@@ -6930,6 +6939,21 @@ type ProviderGroupDiscoveryResult struct {
 	SourceVersion    string                        `json:"source_version"`
 }
 
+// ProviderGroupOffsetDraft defines model for ProviderGroupOffsetDraft.
+type ProviderGroupOffsetDraft struct {
+	EpisodeOffset    int    `json:"episode_offset"`
+	ProviderGroupRef string `json:"provider_group_ref"`
+}
+
+// ProviderGroupOffsetPut defines model for ProviderGroupOffsetPut.
+type ProviderGroupOffsetPut struct {
+	// EpisodeOffset The new episode offset of this group; 0 means no offset.
+	EpisodeOffset int `json:"episode_offset"`
+
+	// ExpectedVersion Version of the group's RSS source; 0 when it has none yet.
+	ExpectedVersion int64 `json:"expected_version"`
+}
+
 // ProviderGroupSelection defines model for ProviderGroupSelection.
 type ProviderGroupSelection struct {
 	AvailabilityGeneration *int64       `json:"availability_generation,omitempty"`
@@ -9344,6 +9368,9 @@ type MatchAnimeMetadataParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// SetProviderGroupOffsetParamsProvider defines parameters for SetProviderGroupOffset.
+type SetProviderGroupOffsetParamsProvider string
+
 // RetryArtifactParams defines parameters for RetryArtifact.
 type RetryArtifactParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
@@ -9763,6 +9790,9 @@ type PatchAnimeMetadataJSONRequestBody = AnimeMetadataPatch
 
 // MatchAnimeMetadataJSONRequestBody defines body for MatchAnimeMetadata for application/json ContentType.
 type MatchAnimeMetadataJSONRequestBody = MetadataMatchInput
+
+// SetProviderGroupOffsetJSONRequestBody defines body for SetProviderGroupOffset for application/json ContentType.
+type SetProviderGroupOffsetJSONRequestBody = ProviderGroupOffsetPut
 
 // PatchRSSSourceAniBTModeJSONRequestBody defines body for PatchRSSSourceAniBTMode for application/json ContentType.
 type PatchRSSSourceAniBTModeJSONRequestBody = RSSSourceAniBTModePatch
@@ -11757,6 +11787,9 @@ type ServerInterface interface {
 	// (POST /anime/{managed_anime_id}/metadata/refresh)
 	RefreshAnimeMetadata(w http.ResponseWriter, r *http.Request, managedAnimeId ManagedAnimeID)
 
+	// (PUT /anime/{managed_anime_id}/provider-groups/{provider}/{provider_group_ref}/offset)
+	SetProviderGroupOffset(w http.ResponseWriter, r *http.Request, managedAnimeId ManagedAnimeID, provider SetProviderGroupOffsetParamsProvider, providerGroupRef string)
+
 	// (POST /anime/{managed_anime_id}/releases/reevaluate)
 	ReevaluateAnimeReleases(w http.ResponseWriter, r *http.Request, managedAnimeId ManagedAnimeID)
 
@@ -13350,6 +13383,55 @@ func (siw *ServerInterfaceWrapper) RefreshAnimeMetadata(w http.ResponseWriter, r
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RefreshAnimeMetadata(w, r, managedAnimeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetProviderGroupOffset operation middleware
+func (siw *ServerInterfaceWrapper) SetProviderGroupOffset(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "managed_anime_id" -------------
+	var managedAnimeId ManagedAnimeID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "managed_anime_id", r.PathValue("managed_anime_id"), &managedAnimeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "managed_anime_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "provider" -------------
+	var provider SetProviderGroupOffsetParamsProvider
+
+	err = runtime.BindStyledParameterWithOptions("simple", "provider", r.PathValue("provider"), &provider, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "provider", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "provider_group_ref" -------------
+	var providerGroupRef string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "provider_group_ref", r.PathValue("provider_group_ref"), &providerGroupRef, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "provider_group_ref", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetProviderGroupOffset(w, r, managedAnimeId, provider, providerGroupRef)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -19129,6 +19211,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("PATCH "+options.BaseURL+"/anime/{managed_anime_id}/metadata", wrapper.PatchAnimeMetadata)
 	m.HandleFunc("POST "+options.BaseURL+"/anime/{managed_anime_id}/metadata/match", wrapper.MatchAnimeMetadata)
 	m.HandleFunc("POST "+options.BaseURL+"/anime/{managed_anime_id}/metadata/refresh", wrapper.RefreshAnimeMetadata)
+	m.HandleFunc("PUT "+options.BaseURL+"/anime/{managed_anime_id}/provider-groups/{provider}/{provider_group_ref}/offset", wrapper.SetProviderGroupOffset)
 	m.HandleFunc("POST "+options.BaseURL+"/anime/{managed_anime_id}/releases/reevaluate", wrapper.ReevaluateAnimeReleases)
 	m.HandleFunc("PATCH "+options.BaseURL+"/anime/{managed_anime_id}/rss-sources/{rss_source_id}/anibt-mode", wrapper.PatchRSSSourceAniBTMode)
 	m.HandleFunc("PATCH "+options.BaseURL+"/anime/{managed_anime_id}/rss-sources/{rss_source_id}/offset", wrapper.PatchRSSSourceOffset)

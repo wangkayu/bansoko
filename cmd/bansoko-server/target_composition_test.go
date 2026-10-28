@@ -41,7 +41,7 @@ func TestProductionCompositionWiresTargetAcquisition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	draftService, err := provideDraftService(db, workStore)
+	draftService, err := provideDraftService(db, workStore, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

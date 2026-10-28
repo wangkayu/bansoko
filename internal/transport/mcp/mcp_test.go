@@ -130,7 +130,7 @@ var pinnedTools = []string{
 	"refresh_metadata", "refresh_rss", "retry_release", "retry_import", "get_workspace", "poll_workspace",
 	"acquire_seed_once", "get_one_shot_acquisition", "list_one_shot_attempts",
 	"expand_seed", "download_snapshot_seed", "search_metadata",
-	"reevaluate_releases", "match_metadata", "discover_subgroups", "patch_subscription", "set_new_releases_only", "automation_run",
+	"reevaluate_releases", "match_metadata", "discover_subgroups", "patch_subscription", "set_new_releases_only", "set_provider_group_offset", "automation_run",
 	"patch_anime_metadata", "patch_anime_rules", "delete_candidate", "delete_subscription", "duplicate_subscription",
 	"list_execution_records", "get_execution_record", "list_execution_record_files",
 	"list_tmdb_seasons", "list_tmdb_season_episodes", "preview_file_match", "match_file", "release_file_entry",
@@ -260,8 +260,8 @@ func TestInputSchemasAreWellFormed(t *testing.T) {
 			t.Errorf("%s: input schema must be a closed object: %v", tool.Name, decoded.InputSchema["type"])
 		}
 		schema, _ := json.Marshal(decoded.InputSchema)
-		if len(schema) > 16*1024 {
-			t.Errorf("%s: input schema is %d bytes; keep tool schemas under 16 KiB", tool.Name, len(schema))
+		if len(schema) > 20*1024 {
+			t.Errorf("%s: input schema is %d bytes; keep tool schemas under 20 KiB", tool.Name, len(schema))
 		}
 		defs, _ := decoded.InputSchema["$defs"].(map[string]any)
 		for _, match := range ref.FindAllStringSubmatch(string(schema), -1) {

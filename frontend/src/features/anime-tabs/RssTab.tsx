@@ -8,12 +8,14 @@ import {
   fetchOwnerCustomSnapshot,
   newUUID,
   readAnimeRSSListView,
+  setProviderGroupOffset,
   retryRelease,
   retryRSSSourceRuntime,
   toUserMessage,
   type AnimeMetadataPreview,
   type Release,
   type PreviewFeedSnapshotRef,
+  type RSSListGroup,
   type RSSListView,
   type RulesSections,
 } from "../../lib/api/client";
@@ -23,6 +25,7 @@ import { Checkbox, Dialog, HelpTip } from "../../ui/base";
 import { DraftSubgroupRefresh } from "../anime-config/DraftSubgroupRefresh";
 import { useRecordLink } from "../../shell/recordLinkContext";
 import { refreshEligibleRSSSources, rssActions } from "../workspace/rssActions";
+import { offsetConversionLine } from "../rss-list/offsetConversion";
 import { ownerViewModel, type OffsetDrawerSource, type RetryTarget } from "../rss-list/ownerModel";
 import { RssListViewPanel } from "../rss-list/RssListViewPanel";
 import { RssWorkspace } from "../rss-list/RssWorkspace";
@@ -233,6 +236,17 @@ function PendingRssBench({
     () => (provider === "custom" ? { fetch: () => fetchOwnerCustomSnapshot(animeID) } : undefined),
     [provider, animeID],
   );
+  // The link is found by provenance; a group without one is saved at version 0, which creates it.
+  // The workspace is re-read after the save so the next save carries the new version.
+  async function saveGroupOffset(group: RSSListGroup, offset: number) {
+    if (provider === "custom") return;
+    const ref = group.scope.provider_group_ref;
+    const link = workspace.rss_sources.find(
+      (source) => source.provider_provenance?.provider === provider && source.provider_provenance.provider_group_ref === ref,
+    );
+    await setProviderGroupOffset(animeID, provider, ref, { expected_version: link?.version ?? 0, episode_offset: offset });
+    host.onChanged();
+  }
   return (
     <div className="rss-tab-stack">
       {provider === "custom" && customFeedLocators(workspace.rss_sources).map((locator, index) => (
@@ -261,6 +275,7 @@ function PendingRssBench({
         onFeedSnapshotsChange={setFeedSnapshots}
         autoLoad={active ?? true}
         onViewRead={onViewRead}
+        onSaveGroupOffset={provider === "custom" ? undefined : saveGroupOffset}
         help={t("rss.pendingBenchHelp")}
       />
     </div>
@@ -431,6 +446,10 @@ function OwnerRssTab({
       setRefreshBusy(false);
     }
   }
+
+  const ownerConversion = offsetDrawerSource
+    ? offsetConversionLine(view?.groups.find((group) => group.scope.rss_source_id === offsetDrawerSource.id), offsetDraft)
+    : undefined;
 
   function openOffsetDrawer(source: OffsetDrawerSource) {
     setOffsetDrawerSource(source);
@@ -648,6 +667,7 @@ function OwnerRssTab({
                 }}
               />
             </Field>
+            {ownerConversion && <p className="text-caption text-muted">{ownerConversion}</p>}
             {offsetError && (
               <StateBlock kind="error" title={offsetError} />
             )}

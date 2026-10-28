@@ -35,6 +35,7 @@ export const rssCopy = {
   offsetTitleGeneric: "调整偏移",
   saveOffset: "保存偏移",
   offsetFieldHint: "该 RSS 链接的集数偏移，0 表示不偏移",
+  offsetConversion: "第 {from} 集 → 第 {to} 集",
   customBenchSaveFirst: "保存后可读取该 RSS 源的种子",
   nothingToRefresh: "没有可刷新的 RSS 源",
   refreshSubmitted: "RSS 刷新已提交（{n} 个 RSS 源）",

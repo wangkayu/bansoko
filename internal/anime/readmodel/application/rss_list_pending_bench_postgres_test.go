@@ -16,6 +16,7 @@ import (
 	catalogpersistence "bansoko/internal/catalog/adapter/persistence"
 	catalogapplication "bansoko/internal/catalog/application"
 	animecatalogdomain "bansoko/internal/catalog/domain"
+	"bansoko/internal/subscription/groupsource"
 	"bansoko/internal/testutil/animetest"
 	"bansoko/internal/testutil/frozenpolicy"
 	"bansoko/internal/transport/httpapi/generated"
@@ -194,6 +195,35 @@ func TestRSSListPendingOwnerReadIsTheDraftBench(t *testing.T) {
 	}
 	if after := animetest.ProductRowCounts(t, db); !reflect.DeepEqual(before, after) {
 		t.Fatalf("the bench wrote product rows: before=%v after=%v", before, after)
+	}
+
+	// A pending provider group takes an offset save by group identity, so the
+	// bench opens the pencil even with no link yet; once the link row exists the
+	// bench reports its offset.
+	if !got.Offset.Editable || got.Offset.Value != 0 {
+		t.Fatalf("pending bench offset = %+v, want editable at 0 before any link", got.Offset)
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if _, _, err := groupsource.UpsertTx(ctx, tx, groupsource.Source{
+		SubscriptionID: activated.Subscription.ID, Provider: "mikan", CatalogEntryRef: entryRef, GroupExternalID: groupRef,
+		DisplayName: "Group 679", AnimeTitle: "Parity Show",
+		RSSURL: "https://mikanani.me/RSS/Bangumi?bangumiId=70032&subgroupid=679", SnapshotVersion: groupsource.PendingSnapshotVersion, EpisodeOffset: -3,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	linked, err := readmodel.ReadAnimeRSSListView(ctx, ReadRSSListViewInput{InputSource: "owner", ManagedAnimeID: animeID, Feed: feed})
+	if err != nil {
+		t.Fatalf("pending owner read with a link: %v", err)
+	}
+	if len(linked.Groups) != 1 || !linked.Groups[0].Offset.Editable || linked.Groups[0].Offset.Value != -3 {
+		t.Fatalf("bench offset with a link = %+v, want editable at the link row's -3", linked.Groups)
 	}
 
 	// New releases only: with the option on, a seed published before the instance

@@ -1738,6 +1738,23 @@ export interface paths {
         patch: operations["patchRSSSourceOffset"];
         trace?: never;
     };
+    "/anime/{managed_anime_id}/provider-groups/{provider}/{provider_group_ref}/offset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Sets the offset of a listed provider group. expected_version 0 means the group has no RSS source yet; the source is then created without any network call or work, and the first discovery refreshes it while keeping the offset. With an existing source this is the same write as patchRSSSourceOffset. */
+        put: operations["setProviderGroupOffset"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/anime/{managed_anime_id}/rss-sources/{rss_source_id}/anibt-mode": {
         parameters: {
             query?: never;
@@ -4771,6 +4788,8 @@ export interface components {
             metadata: components["schemas"]["AnimeMetadataDraft"];
             subgroups: components["schemas"]["SubgroupsSection"];
             rules: components["schemas"]["RulesDraft"];
+            /** @description Per-group episode offsets of a provider origin; subscribe creates each non-zero one as the group's RSS source offset. */
+            provider_group_offsets?: components["schemas"]["ProviderGroupOffsetDraft"][];
             rss_sources: components["schemas"]["RSSSourceDraft"][];
         };
         CustomSnapshotFetchInput: {
@@ -6115,6 +6134,19 @@ export interface components {
         RSSSourceOffsetPatch: {
             expected_version: components["schemas"]["Version"];
             /** @description The new episode offset of this RSS link; 0 means no offset. */
+            episode_offset: number;
+        };
+        ProviderGroupOffsetPut: {
+            /**
+             * Format: int64
+             * @description Version of the group's RSS source; 0 when it has none yet.
+             */
+            expected_version: number;
+            /** @description The new episode offset of this group; 0 means no offset. */
+            episode_offset: number;
+        };
+        ProviderGroupOffsetDraft: {
+            provider_group_ref: string;
             episode_offset: number;
         };
         RSSSourceAniBTModePatch: {
@@ -11255,6 +11287,39 @@ export interface operations {
         };
         responses: {
             /** @description RSS link episode offset saved with expected-version CAS. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RSSSource"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    setProviderGroupOffset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                managed_anime_id: components["parameters"]["ManagedAnimeID"];
+                /** @description Provider namespace for the catalog. */
+                provider: components["parameters"]["CatalogProvider"];
+                provider_group_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderGroupOffsetPut"];
+            };
+        };
+        responses: {
+            /** @description Provider group episode offset saved. */
             200: {
                 headers: {
                     [name: string]: unknown;

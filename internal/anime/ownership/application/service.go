@@ -19,6 +19,7 @@ import (
 	"bansoko/internal/persistence/txscope"
 	plugintargetport "bansoko/internal/plugintarget/port"
 	facts "bansoko/internal/release/facts"
+	"bansoko/internal/subscription/groupsource"
 	"bansoko/internal/workitems"
 )
 
@@ -63,6 +64,8 @@ type Dependencies struct {
 	Observability            observabilityport.Recorder
 	ReplacementTrigger       ReplacementTriggerPort
 	OffsetMigrationAdmission SourceOffsetMigrationAdmission
+	// Connections resolves the provider endpoint of a link created before discovery.
+	Connections groupsource.ConnectionSource
 }
 
 // Service owns the anime ownership mutations and owner-set readers. The kernel
@@ -81,6 +84,7 @@ type Service struct {
 	invalidator              *animeapplication.Invalidator
 	replacement              ReplacementTriggerPort
 	offsetMigrationAdmission SourceOffsetMigrationAdmission
+	connections              groupsource.ConnectionSource
 	observability            observabilityport.Recorder
 	activityWriter           observabilityport.ActivityWriter
 	// mediaFacts writes the Release media fact snapshot a forced acquisition
@@ -140,6 +144,7 @@ func NewService(db *sql.DB, deps Dependencies) (*Service, error) {
 		invalidator:              animeapplication.NewInvalidator(deps.EventHub),
 		replacement:              deps.ReplacementTrigger,
 		offsetMigrationAdmission: deps.OffsetMigrationAdmission,
+		connections:              deps.Connections,
 		observability:            deps.Observability,
 		activityWriter:           deps.ActivityWriter,
 		mediaFacts:               facts.NewStore(db),

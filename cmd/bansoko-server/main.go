@@ -214,11 +214,11 @@ func main() {
 	if err != nil {
 		fatalStartup(runtimeLogger, "anime service build failed", "anime_service_build_failed")
 	}
-	ownershipService, err := provideOwnershipService(db, workStore)
+	ownershipService, err := provideOwnershipService(db, workStore, configService)
 	if err != nil {
 		fatalStartup(runtimeLogger, "ownership service build failed", "ownership_service_build_failed")
 	}
-	draftService, err := provideDraftService(db, workStore)
+	draftService, err := provideDraftService(db, workStore, configService)
 	if err != nil {
 		fatalStartup(runtimeLogger, "draft service build failed", "draft_service_build_failed")
 	}

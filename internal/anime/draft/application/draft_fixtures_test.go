@@ -30,7 +30,7 @@ func draftNewTestService(t *testing.T, db *sql.DB) *Service {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewService(db, Dependencies{WorkItems: store})
+	service, err := NewService(db, Dependencies{WorkItems: store, Connections: draftNoConnections{}})
 	if err != nil {
 		t.Fatal(err)
 	}

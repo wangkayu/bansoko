@@ -126,6 +126,7 @@ required_paths = {
   "/catalog/custom/feed-snapshots:fetch" => ["post"],
   "/catalog/feed-sites" => ["get"],
   "/anime/{managed_anime_id}/rss-sources/{rss_source_id}/offset" => ["patch"],
+  "/anime/{managed_anime_id}/provider-groups/{provider}/{provider_group_ref}/offset" => ["put"],
   "/anime/{managed_anime_id}/rss-sources/{rss_source_id}/anibt-mode" => ["patch"],
   "/rss-sources/{rss_source_id}/refresh" => ["post"],
   "/file-maintenance/decisions" => ["get", "post"],
