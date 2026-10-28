@@ -80,7 +80,8 @@ LEFT JOIN LATERAL (
 LEFT JOIN LATERAL (
   -- Progress is what the library holds: the episode coverage keys of the
   -- anime's active verified placements (a batch counts every placed file;
-  -- every episode key counts, specials included; unknown files carry none).
+  -- every episode key counts, specials included; unknown files carry none;
+  -- a file kept out of the instance's identity counts nothing).
   SELECT ARRAY_TO_STRING(ARRAY_AGG(DISTINCT keys.episode ORDER BY keys.episode), ',') AS episodes
   FROM (
     SELECT substring(pc.observation_key FROM '^tv:(?:s[0-9]+:)?e([0-9]+)$')::int AS episode
@@ -89,6 +90,7 @@ LEFT JOIN LATERAL (
     WHERE p.managed_anime_id = a.id
       AND p.state = 'active'
       AND p.verification_state = 'verified'
+      AND p.replacement_eligible
       AND pc.observation_key ~ '^tv:(?:s[0-9]+:)?e[0-9]+$'
   ) keys
 ) progress_agg ON TRUE

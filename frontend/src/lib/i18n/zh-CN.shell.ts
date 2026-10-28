@@ -197,6 +197,7 @@ export const logCopy = {
     unknown_file_released: "以未知文件导入，已解绑",
     placement_recorded: "已记录入库位置",
     file_recovered: "已找回文件",
+    placements_excluded: "已保留 {count} 个其他季的文件，不参与替换版本",
     old_version_deleted: "已删除旧版本",
     old_version_kept: "已保留旧版本",
     old_version_delete_failed: "旧版本删除失败",

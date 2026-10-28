@@ -97,7 +97,11 @@ const (
 	MessageUnknownFileReleased    MessageCode = "unknown_file_released"
 	MessagePlacementRecorded      MessageCode = "placement_recorded"
 	MessageFileRecovered          MessageCode = "file_recovered"
-	MessageOldVersionDeleted      MessageCode = "old_version_deleted"
+	// MessagePlacementsExcluded is written once per instance by the seasonless
+	// key rewrite (migration 096): count files of another season stay on disk
+	// and listed but no longer take part in replacement or coverage.
+	MessagePlacementsExcluded MessageCode = "placements_excluded"
+	MessageOldVersionDeleted  MessageCode = "old_version_deleted"
 	// MessageOldVersionKept is a deletion the identity check skipped; the
 	// reason is the entry's reason_code.
 	MessageOldVersionKept MessageCode = "old_version_kept"
@@ -192,6 +196,7 @@ var (
 		{Code: MessageUnknownFileReleased, Kind: ActivityKindPlacementChanged},
 		{Code: MessagePlacementRecorded, Kind: ActivityKindPlacementChanged},
 		{Code: MessageFileRecovered, Kind: ActivityKindPlacementChanged},
+		{Code: MessagePlacementsExcluded, Kind: ActivityKindPlacementChanged, Params: []MessageParam{{Name: ParamCount, Type: MessageParamInteger, Required: true}}},
 		{Code: MessageOldVersionDeleted, Kind: ActivityKindCleanupCompleted},
 		{Code: MessageOldVersionKept, Kind: ActivityKindCleanupCompleted},
 		{Code: MessageOldVersionDeleteFailed, Kind: ActivityKindCleanupFailed},

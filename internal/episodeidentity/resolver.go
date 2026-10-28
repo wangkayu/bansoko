@@ -311,6 +311,37 @@ func DecomposeCoverageKey(key string) (TVCoverageKey, bool) {
 	return parsed, true
 }
 
+// CanonicalCoverageKey is the instance-scoped shape of one coverage key: a key
+// in the sealed v1 shape tv:s<season>:e<episode> becomes tv:e<episode>, and
+// every other key (tv:e<episode>, movie:0, the unresolved marker) is returned
+// unchanged. It is the one rule by which a key leaves a sealed acquisition
+// input or a pre-upgrade fact for an instance row, and the same rewrite
+// migration 096 applied to stored rows.
+func CanonicalCoverageKey(key string) string {
+	rest, ok := strings.CutPrefix(key, "tv:s")
+	if !ok {
+		return key
+	}
+	season, episode, ok := strings.Cut(rest, ":e")
+	if !ok || season == "" || strings.Trim(season, "0123456789") != "" {
+		return key
+	}
+	return "tv:e" + episode
+}
+
+// CanonicalCoverageKeys maps CanonicalCoverageKey over keys, keeping order;
+// the keys of one identity share one season, so no two collapse.
+func CanonicalCoverageKeys(keys []string) []string {
+	if keys == nil {
+		return nil
+	}
+	out := make([]string, len(keys))
+	for i, key := range keys {
+		out[i] = CanonicalCoverageKey(key)
+	}
+	return out
+}
+
 func inputDigest(input EpisodeIdentityInput) string {
 	parts := []string{
 		input.MediaKind,

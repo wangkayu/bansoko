@@ -179,7 +179,8 @@ func coverageVerdicts(mode AdmissionMode, keys []string, group string, pools []P
 // (succeeded, failed, cancelled, stalled). A key the release already placed is
 // no longer in flight even while the root is still settling: the placement is
 // in the pool and the pool decides it (keep or replace). A placement the
-// latest calibrated scan reports missing or changed holds no coverage, so its
+// latest calibrated scan reports missing or changed, or one kept out of the
+// instance's identity (not replacement-eligible), holds no coverage, so its
 // key stays claimed. One-shot acquisitions
 // are a temporary owner that never enters the library, so they claim nothing.
 func loadInFlightClaimsTx(ctx context.Context, tx *sql.Tx, managedAnimeID, releaseID string) ([]inFlightClaim, error) {
@@ -195,6 +196,7 @@ SELECT COALESCE((
                AND p.quality_facts_ref = a.source_release_ref
                AND p.state = 'active'
                AND p.verification_state = 'verified'
+               AND p.replacement_eligible
                AND `+latestObservationIssue+` = ''
                AND pc.observation_key = k.key)
        ), '[]'::jsonb),

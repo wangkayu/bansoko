@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"bansoko/internal/episodeidentity"
 	planner "bansoko/internal/filemaintenance/planner"
 	"bansoko/internal/observability/businesslog"
 	observabilityport "bansoko/internal/observability/port"
@@ -133,6 +134,19 @@ func FrozenFileCoverage(ctx context.Context, reader MediaFileFactsReader, releas
 // must carry provenance-backed coverage; the owner never invents an episode, and
 // the caller must choose the unknown-file admission.
 var ErrPlacementCoverageMissing = errors.New("verified video file operation has no frozen coverage")
+
+// ExcludedPlacementSQL is the SQL predicate, over the placements row alias,
+// of a placement kept out of the instance's episode identity: active and
+// verified but not replacement-eligible. The seasonless key rewrite
+// (migration 096) marks a placement so when its v1 keys named another season
+// than the instance's reference season, and keeps those keys. Such a file
+// stays on disk and stays listed for the owner to clean up by hand; it never
+// enters a pool, is never a retention loser, never counts as coverage, and is
+// never claimed by a release. A renderer that aligns placements to the
+// current naming config must not move one onto the instance's own targets.
+func ExcludedPlacementSQL(alias string) string {
+	return "(" + alias + ".state = 'active' AND " + alias + ".verification_state = 'verified' AND NOT " + alias + ".replacement_eligible)"
+}
 
 // ErrPlacementEvidenceMissing reports that the frozen per-file evidence a
 // verified video placement must carry does not exist at all: the Release has
@@ -451,7 +465,7 @@ func (s *PlacementService) admitTx(ctx context.Context, tx *sql.Tx, input placem
 	if input.SnapshotGeneration > 0 {
 		generation = input.SnapshotGeneration
 	}
-	_, err := tx.ExecContext(ctx, `
+	result, err := tx.ExecContext(ctx, `
 INSERT INTO placements
 (id, physical_path, managed_anime_id, source_evidence_type, source_owner_ref,
  source_fingerprint, target_fingerprint, quality_facts_ref, facts_version, snapshot_generation,
@@ -465,6 +479,10 @@ ON CONFLICT (source_evidence_type, source_owner_ref) DO NOTHING`,
 	if err != nil {
 		return "", err
 	}
+	inserted, err := result.RowsAffected()
+	if err != nil {
+		return "", err
+	}
 	// Coverage set must commit atomically with the placement. Missing coverage
 	// is a fail-closed condition for eligible placements; an unknown file
 	// (replacement_eligible=false, released in the same transaction)
@@ -472,14 +490,20 @@ ON CONFLICT (source_evidence_type, source_owner_ref) DO NOTHING`,
 	if len(input.Coverage) == 0 && input.ReplacementEligible {
 		return "", fmt.Errorf("placement %s has no coverage set; not admitted", placementID)
 	}
-	for ordinal, key := range input.Coverage {
-		if _, err := tx.ExecContext(ctx, `
+	// A replay of an existing placement keeps the coverage set it committed
+	// with (an offset migration or the seasonless rewrite may have changed it
+	// since); only a new placement writes one. Keys enter in the instance
+	// shape: an acquisition sealed with v1 keys lands as tv:e<N>.
+	if inserted == 1 {
+		for ordinal, key := range episodeidentity.CanonicalCoverageKeys(input.Coverage) {
+			if _, err := tx.ExecContext(ctx, `
 INSERT INTO placement_coverage
 (placement_id, observation_key, coverage_ordinal, facts_version, evidence_ref)
 VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (placement_id, observation_key) DO NOTHING`,
-			placementID, key, ordinal, input.FactsVersion, input.SourceOwnerRef); err != nil {
-			return "", err
+				placementID, key, ordinal, input.FactsVersion, input.SourceOwnerRef); err != nil {
+				return "", err
+			}
 		}
 	}
 	if input.SourceEvidenceType == "file_operation" {

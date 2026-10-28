@@ -27,7 +27,9 @@ import (
 const staleReasonClaimedExisting = "candidate_claimed_existing"
 
 // scanManagedUnclaimedAt reports whether path holds an active scan-managed
-// placement of the anime that no release has claimed.
+// placement of the anime that no release has claimed. A placement kept out of
+// the instance's identity (not replacement-eligible) is never claimable, so a
+// claim never makes it eligible again.
 func scanManagedUnclaimedAt(ctx context.Context, q queryer, managedAnimeID, path string) (bool, error) {
 	var claimable bool
 	if err := q.QueryRowContext(ctx, `
@@ -35,7 +37,7 @@ SELECT EXISTS (
     SELECT 1 FROM placements p
     WHERE p.managed_anime_id = $1 AND p.physical_path = $2
       AND p.source_evidence_type = 'reconciliation' AND p.quality_facts_ref IS NULL
-      AND p.state = 'active' AND p.verification_state = 'verified')`, managedAnimeID, path).Scan(&claimable); err != nil {
+      AND p.state = 'active' AND p.verification_state = 'verified' AND p.replacement_eligible)`, managedAnimeID, path).Scan(&claimable); err != nil {
 		return false, fmt.Errorf("read scan-managed file at target: %w", err)
 	}
 	return claimable, nil
@@ -68,7 +70,7 @@ SET quality_facts_ref = $2, replacement_eligible = true,
     version = version + 1, updated_at = CURRENT_TIMESTAMP
 WHERE p.managed_anime_id = $1 AND p.physical_path = ANY($3)
   AND p.source_evidence_type = 'reconciliation' AND p.quality_facts_ref IS NULL
-  AND p.state = 'active' AND p.verification_state = 'verified'`, managedAnimeID, releaseID, paths)
+  AND p.state = 'active' AND p.verification_state = 'verified' AND p.replacement_eligible`, managedAnimeID, releaseID, paths)
 	if err != nil {
 		return 0, nil, fmt.Errorf("claim scan-managed placements: %w", err)
 	}

@@ -2282,6 +2282,7 @@ const (
 	SubscriptionLogMessageCodeOldVersionKept             SubscriptionLogMessageCode = "old_version_kept"
 	SubscriptionLogMessageCodePlacementRecorded          SubscriptionLogMessageCode = "placement_recorded"
 	SubscriptionLogMessageCodePlacementReleased          SubscriptionLogMessageCode = "placement_released"
+	SubscriptionLogMessageCodePlacementsExcluded         SubscriptionLogMessageCode = "placements_excluded"
 	SubscriptionLogMessageCodeReleaseAccepted            SubscriptionLogMessageCode = "release_accepted"
 	SubscriptionLogMessageCodeReleaseAcquisitionFailed   SubscriptionLogMessageCode = "release_acquisition_failed"
 	SubscriptionLogMessageCodeReleaseAdoptedExisting     SubscriptionLogMessageCode = "release_adopted_existing"

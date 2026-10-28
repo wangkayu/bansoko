@@ -9516,6 +9516,7 @@ components:
         - unknown_file_released
         - placement_recorded
         - file_recovered
+        - placements_excluded
         - old_version_deleted
         - old_version_kept
         - old_version_delete_failed

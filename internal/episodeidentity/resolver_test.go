@@ -396,3 +396,31 @@ func TestDecomposeCoverageKeyReadsBothShapes(t *testing.T) {
 		}
 	}
 }
+
+// A v1 key leaves for an instance row in the seasonless shape; every other
+// key, including a malformed v1-looking one, is left as it is.
+func TestCanonicalCoverageKeyDropsTheV1Season(t *testing.T) {
+	for key, want := range map[string]string{
+		"tv:s1:e12":   "tv:e12",
+		"tv:s0:e5":    "tv:e5",
+		"tv:s12:e05":  "tv:e05",
+		"tv:s2:e12.5": "tv:e12.5",
+		"tv:e3":       "tv:e3",
+		"movie:0":     "movie:0",
+		"unresolved":  "unresolved",
+		"tv:s:e3":     "tv:s:e3",
+		"tv:sx:e3":    "tv:sx:e3",
+		"tv:s1":       "tv:s1",
+		"":            "",
+	} {
+		if got := CanonicalCoverageKey(key); got != want {
+			t.Fatalf("CanonicalCoverageKey(%q) = %q, want %q", key, got, want)
+		}
+	}
+	if got := CanonicalCoverageKeys([]string{"tv:s2:e1", "tv:s2:e2"}); strings.Join(got, ",") != "tv:e1,tv:e2" {
+		t.Fatalf("CanonicalCoverageKeys = %v", got)
+	}
+	if CanonicalCoverageKeys(nil) != nil {
+		t.Fatal("CanonicalCoverageKeys(nil) must stay nil")
+	}
+}

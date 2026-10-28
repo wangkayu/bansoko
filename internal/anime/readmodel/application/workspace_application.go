@@ -146,7 +146,7 @@ FROM (
   SELECT substring(pc.observation_key FROM '^tv:(?:s[0-9]+:)?e([0-9]+)$')::int AS episode
   FROM placements p JOIN placement_coverage pc ON pc.placement_id = p.id
   WHERE p.managed_anime_id = $1 AND p.state = 'active' AND p.verification_state = 'verified'
-    AND pc.observation_key ~ '^tv:(?:s[0-9]+:)?e[0-9]+$'
+    AND p.replacement_eligible AND pc.observation_key ~ '^tv:(?:s[0-9]+:)?e[0-9]+$'
 ) keys`, managedAnimeID).Scan(&progressEpisodes); err != nil {
 		return AnimeWorkspace{}, fmt.Errorf("read anime episode progress: %w", err)
 	}

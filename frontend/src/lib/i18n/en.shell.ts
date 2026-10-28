@@ -206,6 +206,7 @@ export const enLogCopy = {
     unknown_file_released: "Imported as an unknown file and unlinked",
     placement_recorded: "Library location recorded",
     file_recovered: "File recovered",
+    placements_excluded: "Kept {count} files from other seasons; they're excluded from version replacement",
     old_version_deleted: "Old version deleted",
     old_version_kept: "Old version kept",
     old_version_delete_failed: "Couldn't delete the old version",
