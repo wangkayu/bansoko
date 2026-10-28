@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 
-import { fetchAuthedAssetObjectUrl } from "./api/client";
+import { ApiError, fetchAuthedAssetObjectUrl } from "./api/client";
 
 // A season page renders 100–300 cards. The cache holds a whole page so a
 // revisit (tab switch, filter toggle) shows every cover without re-queueing,
@@ -226,21 +226,32 @@ export function isAuthedImagePath(src?: string): src is string {
   return !!src && src.startsWith("/api/v1/");
 }
 
-type AuthedImageResult = { source: string; objectUrl?: string; failed: boolean };
+type AuthedImageResult = { source: string; round: number; objectUrl?: string; failed: boolean; retryable: boolean };
 
 export type AuthedImageState = {
   /** The blob objectURL; present only after a successful load. */
   src?: string;
   /** The session fetch failed (404/502/network). The caller moves to the next candidate or a placeholder on this. */
   failed: boolean;
+  /** The failure is transient (network error, 408, 429, 5xx: the service restarting or an upstream
+   *  timeout), so the same path may load later; a 404 is final. */
+  retryable: boolean;
 };
+
+/** A failed image load worth retrying later: the request never reached the service, or the service
+ *  or the image upstream was briefly unavailable. */
+function isTransientImageError(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return true;
+  return error.status === 0 || error.status === 408 || error.status === 429 || error.status >= 500;
+}
 
 // An <img> cannot carry the Bearer session; images pointing at the own /api/v1 (the
 // poster/cover proxy) must be fetched as a blob through the session and handed to <img> as an
 // objectURL. Non-API paths (including third-party URLs) are not loaded and yield the empty
 // state. With a target (a card container) given, the request goes out only when it nears the
 // scroll viewport, cards inside the viewport first; without one it requests immediately.
-export function useAuthedImageState(src?: string, target?: RefObject<Element | null>): AuthedImageState {
+// A new retryRound requests the same path again: the result of an earlier round is never reused.
+export function useAuthedImageState(src?: string, target?: RefObject<Element | null>, retryRound = 0): AuthedImageState {
   const path = isAuthedImagePath(src) ? src : undefined;
   const { near, visible } = useViewportPresence(target);
   const [result, setResult] = useState<AuthedImageResult>();
@@ -252,28 +263,30 @@ export function useAuthedImageState(src?: string, target?: RefObject<Element | n
   }, [visible]);
 
   useEffect(() => {
-    if (!path || !near || settledRef.current === path) return;
+    const settledKey = path && `${retryRound}:${path}`;
+    if (!path || !near || settledRef.current === settledKey) return;
     let cancelled = false;
     const interest = interestRef.current;
     requestImage(path, interest)
       .then((objectUrl) => {
         if (cancelled) return;
-        settledRef.current = path;
-        setResult({ source: path, objectUrl, failed: false });
+        settledRef.current = settledKey;
+        setResult({ source: path, round: retryRound, objectUrl, failed: false, retryable: false });
       })
       .catch((error: unknown) => {
         if (cancelled || error instanceof ImageLoadWithdrawn) return;
-        settledRef.current = path;
-        setResult({ source: path, failed: true });
+        settledRef.current = settledKey;
+        setResult({ source: path, round: retryRound, failed: true, retryable: isTransientImageError(error) });
       });
     return () => {
       cancelled = true;
       withdrawImage(path, interest);
     };
-  }, [path, near]);
+  }, [path, near, retryRound]);
 
-  // Results are reconciled by path: the first frame after src changes never inherits the previous image's state.
-  const current = result && result.source === path ? result : undefined;
+  // Results are reconciled by path and round: the first frame after src changes (or a retry starts)
+  // never inherits the previous state.
+  const current = result && result.source === path && result.round === retryRound ? result : undefined;
   const shown = current?.objectUrl ? current.source : undefined;
 
   // A shown image pins its cache entry so eviction never revokes it.
@@ -283,7 +296,7 @@ export function useAuthedImageState(src?: string, target?: RefObject<Element | n
     return () => releaseImage(shown);
   }, [shown]);
 
-  return { src: current?.objectUrl, failed: current?.failed ?? false };
+  return { src: current?.objectUrl, failed: current?.failed ?? false, retryable: current?.retryable ?? false };
 }
 
 export function useAuthedImage(src?: string): string | undefined {

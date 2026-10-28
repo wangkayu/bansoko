@@ -5,6 +5,7 @@ export type CatalogTabKey = "all" | ProviderKey;
 
 export const catalogKeys = {
   all: ["catalog"] as const,
+  listTab: (tab: CatalogTabKey) => ["catalog", "list", tab] as const,
   list: (tab: CatalogTabKey, season: string) => ["catalog", "list", tab, season] as const,
   preference: (provider: "anibt" | "mikan", season: string) => ["catalog", "preference", provider, season] as const,
   suppressions: ["catalog", "suppressions"] as const,
