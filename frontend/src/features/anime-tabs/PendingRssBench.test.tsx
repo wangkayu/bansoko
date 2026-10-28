@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -9,6 +9,7 @@ import {
   readProviderEntryRSS,
   refreshRSSSource,
   retryRelease,
+  setProviderGroupOffset,
   submitReconciliationScan,
   type AnimeMetadataPreview,
   type AnimeWorkspace,
@@ -34,6 +35,7 @@ vi.mock("../../lib/api/client", async (importOriginal) => {
     expandSnapshotSeed: vi.fn(),
     refreshRSSSource: vi.fn(),
     retryRelease: vi.fn(),
+    setProviderGroupOffset: vi.fn(),
     submitReconciliationScan: vi.fn(),
     fetchOwnerCustomSnapshot: vi.fn(),
   };
@@ -140,6 +142,54 @@ describe("未开始订阅的 RSS 测试台", () => {
     expect(vi.mocked(refreshRSSSource)).not.toHaveBeenCalled();
     expect(vi.mocked(retryRelease)).not.toHaveBeenCalled();
     expect(vi.mocked(submitReconciliationScan)).not.toHaveBeenCalled();
+  });
+
+  function editableBench(): RSSListView {
+    const view = benchView();
+    view.groups[0]!.offset = { value: 0, source: "link", editable: true };
+    return view;
+  }
+
+  it("可编辑的组头有偏移笔，缺链接时按组身份保存（版本 0），保存后重读测试台和订阅", async () => {
+    mockedView.mockResolvedValue(editableBench());
+    vi.mocked(setProviderGroupOffset).mockResolvedValue({ id: "link-1", version: 1, episode_offset: 4 } as never);
+    const host = pendingHost();
+    renderBench(host);
+    await screen.findByText("一号组");
+
+    fireEvent.click(screen.getByRole("button", { name: t("rss.adjustOffset", { name: "一号组" }) }));
+    const dialog = await screen.findByRole("dialog");
+    // The seed shows episode 1 under offset 0; typing 4 converts it live.
+    fireEvent.change(within(dialog).getByLabelText(t("anime.offset.label")), { target: { value: "4" } });
+    expect(within(dialog).getByText(t("rss.offsetConversion", { from: 1, to: 5 }))).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: t("rss.saveOffset") }));
+
+    await waitFor(() => expect(setProviderGroupOffset).toHaveBeenCalledWith("anime-1", "mikan", "g-1", { expected_version: 0, episode_offset: 4 }));
+    await waitFor(() => expect(host.onChanged).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mockedView).toHaveBeenCalledTimes(2));
+  });
+
+  it("已有链接时保存带该链接的版本", async () => {
+    mockedView.mockResolvedValue(editableBench());
+    vi.mocked(setProviderGroupOffset).mockResolvedValue({ id: "link-1", version: 8, episode_offset: 4 } as never);
+    const host = pendingHost();
+    host.workspace.rss_sources = [
+      { id: "link-1", version: 7, provider_provenance: { provider: "mikan", provider_entry_ref: "entry-1", provider_group_ref: "g-1" } },
+    ] as never;
+    renderBench(host);
+    await screen.findByText("一号组");
+    fireEvent.click(screen.getByRole("button", { name: t("rss.adjustOffset", { name: "一号组" }) }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText(t("anime.offset.label")), { target: { value: "2" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("rss.saveOffset") }));
+    await waitFor(() => expect(setProviderGroupOffset).toHaveBeenCalledWith("anime-1", "mikan", "g-1", { expected_version: 7, episode_offset: 2 }));
+  });
+
+  it("服务端标为不可编辑的组没有偏移笔", async () => {
+    mockedView.mockResolvedValue(benchView());
+    renderBench(pendingHost());
+    await screen.findByText("一号组");
+    expect(screen.queryByRole("button", { name: t("rss.adjustOffset", { name: "一号组" }) })).not.toBeInTheDocument();
   });
 
   it("未保存的规则修改随读取提交（owner_draft），配置变化后标为过时", async () => {

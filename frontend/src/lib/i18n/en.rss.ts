@@ -38,6 +38,7 @@ export const enRssCopy = {
   offsetTitleGeneric: "Adjust Offset",
   saveOffset: "Save Offset",
   offsetFieldHint: "Episode offset for this RSS link; 0 means none",
+  offsetConversion: "Episode {from} → Episode {to}",
   customBenchSaveFirst: "Save to load torrents from this RSS feed",
   nothingToRefresh: "No RSS feeds to refresh",
   refreshSubmitted: "RSS refresh submitted (feeds: {n})",

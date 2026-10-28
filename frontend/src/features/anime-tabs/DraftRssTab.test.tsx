@@ -727,19 +727,10 @@ describe("订阅前 RSS 工作区：草稿偏移编辑与文件行", () => {
     mockedExpand.mockReset();
   });
 
-  // Carries one provider_group source named after the view group: the write target of the draft-side offset editing.
+  // Carries the group's offset in provider_group_offsets: the write target of a provider draft's offset editing.
   function offsetDraft(): AnimeDraft {
     const draft = providerDraft();
-    draft.rss_sources = [
-      {
-        source_kind: "provider_group",
-        locator: "https://feeds.example.test/g-1.xml",
-        locator_display: "https://feeds.example.test/g-1.xml",
-        group_name: "一号组",
-        title: "测试番",
-        episode_offset: 2,
-      },
-    ];
+    draft.provider_group_offsets = [{ provider_group_ref: "g-1", episode_offset: 2 }];
     return draft;
   }
 
@@ -761,14 +752,15 @@ describe("订阅前 RSS 工作区：草稿偏移编辑与文件行", () => {
     fireEvent.change(input, { target: { value: "5" } });
     fireEvent.click(within(dialog).getByRole("button", { name: t("rss.saveOffset") }));
 
-    // Writes only the matching draft source's episode_offset, triggering no owner action.
+    // Writes only the group's provider_group_offsets entry, triggering no owner action.
     expect(onDraftChange).toHaveBeenCalledTimes(1);
     const nextDraft = onDraftChange.mock.calls[0][0] as AnimeDraft;
-    expect(nextDraft.rss_sources[0]).toMatchObject({ group_name: "一号组", episode_offset: 5 });
+    expect(nextDraft.provider_group_offsets).toEqual([{ provider_group_ref: "g-1", episode_offset: 5 }]);
+    expect(nextDraft.rss_sources).toEqual([]);
 
     // Follows the draft-change → view-re-read channel: the preview re-reads with the new draft immediately.
     await waitFor(() => expect(mockedView).toHaveBeenCalledTimes(2));
-    expect((mockedView.mock.calls[1][0].draft as AnimeDraft).rss_sources[0]?.episode_offset).toBe(5);
+    expect((mockedView.mock.calls[1][0].draft as AnimeDraft).provider_group_offsets).toEqual([{ provider_group_ref: "g-1", episode_offset: 5 }]);
   });
 
   it("偏移越界内联报错，不保存也不重读", async () => {
@@ -790,15 +782,54 @@ describe("订阅前 RSS 工作区：草稿偏移编辑与文件行", () => {
     expect(mockedView).toHaveBeenCalledTimes(1);
   });
 
-  it("没有对应草稿源的组不渲染偏移入口", async () => {
+  it("偏移弹窗按输入实时换算：第 15 集 → 第 20 集，无效输入时隐藏", async () => {
+    // The fixture view's seed shows episode 16 under the group's current offset 1, so its raw episode is 15.
     mockedView.mockResolvedValue(viewFixture());
     renderRssTab({
-      draft: providerDraft(),
+      draft: offsetDraft(),
       subgroupDiscovery: { provider: "anibt", providerEntryRef: "entry-1" },
     });
     fireEvent.click(screen.getByRole("button", { name: t("settings.notifications.template.preview") }));
     await screen.findByText("一号组");
-    expect(screen.queryByRole("button", { name: t("rss.adjustOffset", { name: "一号组" }) })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: t("rss.adjustOffset", { name: "一号组" }) }));
+    const dialog = await screen.findByRole("dialog");
+    const input = within(dialog).getByLabelText(t("anime.offset.label"));
+    expect(within(dialog).getByText(t("rss.offsetConversion", { from: 15, to: 17 }))).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "5" } });
+    expect(within(dialog).getByText(t("rss.offsetConversion", { from: 15, to: 20 }))).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "" } });
+    expect(dialog.querySelector("p.text-muted")).toBeNull();
+  });
+
+  it("组内没有集数时偏移弹窗不显示换算行", async () => {
+    const view = viewFixture();
+    view.groups[0]!.items[0]!.evaluation.parsed_facts = { group_name: "一号组", special: false };
+    mockedView.mockResolvedValue(view);
+    renderRssTab({
+      draft: offsetDraft(),
+      subgroupDiscovery: { provider: "anibt", providerEntryRef: "entry-1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: t("settings.notifications.template.preview") }));
+    await screen.findByText("一号组");
+    fireEvent.click(screen.getByRole("button", { name: t("rss.adjustOffset", { name: "一号组" }) }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText(t("anime.offset.label")), { target: { value: "5" } });
+    expect(dialog.querySelector("p.text-muted")).toBeNull();
+  });
+
+  it("provider 草稿的偏移改回 0 时移除该组条目", async () => {
+    mockedView.mockResolvedValue(viewFixture());
+    const { onDraftChange } = renderRssTab({
+      draft: offsetDraft(),
+      subgroupDiscovery: { provider: "anibt", providerEntryRef: "entry-1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: t("settings.notifications.template.preview") }));
+    await screen.findByText("一号组");
+    fireEvent.click(screen.getByRole("button", { name: t("rss.adjustOffset", { name: "一号组" }) }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText(t("anime.offset.label")), { target: { value: "0" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("rss.saveOffset") }));
+    expect((onDraftChange.mock.calls[0][0] as AnimeDraft).provider_group_offsets).toEqual([]);
   });
 
   it("展开种子不再显示「来源」行；文件 meta 单行不折行", async () => {

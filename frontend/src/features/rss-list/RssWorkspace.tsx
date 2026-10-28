@@ -16,6 +16,7 @@ import { Dialog, HelpTip } from "../../ui/base";
 import { RssListViewPanel } from "./RssListViewPanel";
 import { draftWorkspaceModel, matchDraftSourceIndex, type DraftExpandState } from "./draftModel";
 import { reasonLabel } from "../../lib/i18n/reasons";
+import { offsetConversionLine } from "./offsetConversion";
 import { useRssListWorkspace, type CustomSnapshotSource, type OwnerBenchInput } from "./useRssListWorkspace";
 import { t } from "../../lib/i18n";
 
@@ -33,6 +34,7 @@ export function RssWorkspace({
   onViewRead,
   onSnapshotsChanged,
   onDraftChange,
+  onSaveGroupOffset,
   help,
 }: {
   /** A custom source (a draft or a not-yet-started subscription) has no provider entry; the snapshot is fetched via customSource. */
@@ -57,6 +59,8 @@ export function RssWorkspace({
   onSnapshotsChanged?: () => void;
   /** The in-memory draft write entry: draft-side offset edits update draft.rss_sources through it; when absent no offset entry renders. */
   onDraftChange?: (next: AnimeDraft) => void;
+  /** A not-yet-started subscription's offset save (by group identity); the bench shows the entry only on groups the server marks editable. */
+  onSaveGroupOffset?: (group: RSSListGroup, offset: number) => Promise<void>;
   /** The toolbar HelpTip's content; defaults to the draft's release note. */
   help?: string;
 }) {
@@ -96,29 +100,48 @@ export function RssWorkspace({
 //   affects the other). The target records the draft source's index, not the source object — on
 //   save the source is taken from the latest draft prop, so an edit never writes back a stale copy
 //   after the draft was updated elsewhere while editing.
-  const [offsetTarget, setOffsetTarget] = useState<{ name: string; sourceIndex: number }>();
+  const [offsetTarget, setOffsetTarget] = useState<{ name: string; group: RSSListGroup; current: number }>();
   const [offsetDraft, setOffsetDraft] = useState("");
   const [offsetError, setOffsetError] = useState<string>();
+  const [offsetSaving, setOffsetSaving] = useState(false);
+
+  // The offset a group's entry shows and edits, or undefined when the group has no entry. A custom
+  // draft keeps it on its matching source; a provider draft has no link yet and keeps it in
+  // provider_group_offsets; a subscription bench takes it from the server read, where editable
+  // says the save is open.
+  function groupOffset(group: RSSListGroup): number | undefined {
+    if (draft && onDraftChange) {
+      if (draft.origin === "custom") {
+        const index = matchDraftSourceIndex(draft, group);
+        return index === undefined ? undefined : (draft.rss_sources[index]?.episode_offset ?? 0);
+      }
+      return draft.provider_group_offsets?.find((entry) => entry.provider_group_ref === group.scope.provider_group_ref)?.episode_offset ?? 0;
+    }
+    return onSaveGroupOffset && group.offset.editable ? group.offset.value : undefined;
+  }
+
+  const conversion = offsetTarget ? offsetConversionLine(offsetTarget.group, offsetDraft) : undefined;
 
   function openOffsetDialog(group: RSSListGroup) {
-    if (!draft) return;
-    const index = matchDraftSourceIndex(draft, group);
-    if (index === undefined) return;
-    setOffsetTarget({ name: group.display_name, sourceIndex: index });
-    setOffsetDraft(String(draft.rss_sources[index]?.episode_offset ?? 0));
+    const current = groupOffset(group);
+    if (current === undefined) return;
+    setOffsetTarget({ name: group.display_name, group, current });
+    setOffsetDraft(String(current));
     setOffsetError(undefined);
   }
 
-  function closeOffsetDialog() {
+  function closeOffsetDialog(force = false) {
+    if (offsetSaving && !force) return;
     setOffsetTarget(undefined);
     setOffsetDraft("");
     setOffsetError(undefined);
   }
 
-  // Saving writes only the in-memory draft (the episode_offset of the matching source in
-//   draft.rss_sources), then re-reads the preview immediately with the new draft (the existing
-//   draft change -> view re-read channel; the preview's draftOverride parameter exists exactly for
-//   the gap where the parent has not yet passed back the new draft prop).
+  // A draft save writes only the in-memory draft (the matching source's episode_offset, or the
+  // group's provider_group_offsets entry), then re-reads the preview immediately with the new
+  // draft (the existing draft change -> view re-read channel; the preview's draftOverride
+  // parameter exists exactly for the gap where the parent has not yet passed back the new draft
+  // prop). A subscription bench saves through the owner operation, then re-reads.
   async function saveOffset() {
     if (!offsetTarget) return;
     const trimmed = offsetDraft.trim();
@@ -127,17 +150,44 @@ export function RssWorkspace({
       setOffsetError(t("rss.offsetInvalid"));
       return;
     }
-    const source = draft?.rss_sources[offsetTarget.sourceIndex];
-    if (!draft || !source || !onDraftChange) {
+    const group = offsetTarget.group;
+    if (draft && onDraftChange) {
+      let next: AnimeDraft | undefined;
+      if (draft.origin === "custom") {
+        const index = matchDraftSourceIndex(draft, group);
+        const source = index === undefined ? undefined : draft.rss_sources[index];
+        if (index !== undefined && source) {
+          const nextSources = draft.rss_sources.slice();
+          nextSources[index] = { ...source, episode_offset: offset };
+          next = { ...draft, rss_sources: nextSources };
+        }
+      } else {
+        const ref = group.scope.provider_group_ref;
+        const rest = (draft.provider_group_offsets ?? []).filter((entry) => entry.provider_group_ref !== ref);
+        next = { ...draft, provider_group_offsets: offset === 0 ? rest : [...rest, { provider_group_ref: ref, episode_offset: offset }] };
+      }
+      closeOffsetDialog();
+      if (!next) return;
+      onDraftChange(next);
+      await workspace.preview(undefined, next);
+      return;
+    }
+    if (!onSaveGroupOffset) {
       closeOffsetDialog();
       return;
     }
-    const nextSources = draft.rss_sources.slice();
-    nextSources[offsetTarget.sourceIndex] = { ...source, episode_offset: offset };
-    const next = { ...draft, rss_sources: nextSources };
-    onDraftChange(next);
-    closeOffsetDialog();
-    await workspace.preview(undefined, next);
+    setOffsetSaving(true);
+    setOffsetError(undefined);
+    try {
+      await onSaveGroupOffset(group, offset);
+      toast.success(t("rss.offsetSaved"));
+      closeOffsetDialog(true);
+      await workspace.preview();
+    } catch (cause) {
+      setOffsetError(toUserMessage(cause, t("rss.offsetSaveFailed")));
+    } finally {
+      setOffsetSaving(false);
+    }
   }
   function setExpandState(seedKey: string, state?: DraftExpandState) {
     setExpandStates((prev) => {
@@ -260,27 +310,22 @@ export function RssWorkspace({
               })();
             },
             refreshingGroup: workspace.refreshingGroup,
-            draftOffsetFor: onDraftChange && draft
-              ? (group) => {
-                  const index = matchDraftSourceIndex(draft, group);
-                  return index === undefined ? undefined : (draft.rss_sources[index]?.episode_offset ?? 0);
-                }
-              : undefined,
-            onEditOffset: onDraftChange && draft ? openOffsetDialog : undefined,
+            draftOffsetFor: groupOffset,
+            onEditOffset: openOffsetDialog,
           })}
           showFiltered={showFiltered}
         />
       )}
       <Dialog
         open={offsetTarget !== undefined}
-        onRequestClose={closeOffsetDialog}
+        onRequestClose={() => closeOffsetDialog()}
         tier="S"
         title={offsetTarget ? t("rss.offsetTitle", { name: offsetTarget.name }) : t("rss.offsetTitleGeneric")}
         footer={
           <>
-            <Button onClick={closeOffsetDialog}>{t("act.cancel")}</Button>
-            <Button variant="primary" onClick={() => void saveOffset()}>
-              {t("rss.saveOffset")}
+            <Button disabled={offsetSaving} onClick={() => closeOffsetDialog()}>{t("act.cancel")}</Button>
+            <Button variant="primary" disabled={offsetSaving} onClick={() => void saveOffset()}>
+              {offsetSaving ? t("act.saving") : t("rss.saveOffset")}
             </Button>
           </>
         }
@@ -302,6 +347,7 @@ export function RssWorkspace({
                 }}
               />
             </Field>
+            {conversion && <p className="text-caption text-muted">{conversion}</p>}
             {offsetError && (
               <StateBlock kind="error" title={offsetError} />
             )}
