@@ -464,7 +464,7 @@ func retireManagedAnimeForTest(t *testing.T, db *sql.DB, animeID string) {
 	t.Helper()
 	if _, err := db.ExecContext(context.Background(), `
 UPDATE managed_anime
-SET lifecycle_state = 'retired', retired_at = CURRENT_TIMESTAMP,
+SET lifecycle_state = 'retired', fence_epoch = fence_epoch + 1, retired_at = CURRENT_TIMESTAMP,
     retired_subscription_version = (SELECT version FROM subscriptions WHERE managed_anime_id = $1),
     lifecycle_version = lifecycle_version + 1
 WHERE id = $1`, animeID); err != nil {
