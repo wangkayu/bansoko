@@ -12,7 +12,7 @@ func animeFilesBase() animeFilesFacts {
 		Scan:       &animeFilesScanOwner{State: "completed", Generation: 3},
 		Generation: 3,
 		Placements: []animeFilesPlacement{{
-			ID: "p1", Path: "/lib/Show/raw ep1.mkv", ReleaseID: "r1", Coverage: []string{"tv:s1:e1"},
+			ID: "p1", Path: "/lib/Show/raw ep1.mkv", ReleaseID: "r1", Coverage: []string{"tv:e1"},
 			Companions: []animeFilesCompanion{{ID: "c1", MediaKind: "subtitle", Path: "/lib/Show/raw ep1.zh.ass", SizeBytes: 10}},
 		}},
 	}
@@ -37,7 +37,7 @@ func TestDeriveAnimeFilesMisalignedWithCompanion(t *testing.T) {
 	if view.Root != "/" || row.RelativePath != "lib/Show/raw ep1.mkv" || *row.TargetRelativePath != "lib/Show/Season 01/Show - E01.mkv" {
 		t.Fatalf("root=%q rel=%q target=%q", view.Root, row.RelativePath, *row.TargetRelativePath)
 	}
-	if row.MediaKind != "tv" || row.Season == nil || *row.Season != 1 || len(row.Episodes) != 1 || row.Episodes[0] != "1" {
+	if row.MediaKind != "tv" || len(row.Episodes) != 1 || row.Episodes[0] != "1" {
 		t.Fatalf("episode facts = %+v", row)
 	}
 	if row.SizeBytes == nil || *row.SizeBytes != 100 {

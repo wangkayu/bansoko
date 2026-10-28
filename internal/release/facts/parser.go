@@ -46,7 +46,6 @@ type Candidate struct {
 	Language           string
 	Group              string
 	Special            bool
-	Season             int
 	Episode            string
 	Coverage           []string // canonical, deduped, sorted coverage keys
 	CoverageUnresolved bool
@@ -97,9 +96,8 @@ func CandidateFromCoverage(title string, rules attrrules.Rules, keys []string) C
 		candidate.MediaKind = "movie"
 	}
 	if len(coverage) == 1 {
-		if season, episode, ok := episodeidentity.DecomposeCoverageKey(coverage[0]); ok {
-			candidate.Season = season
-			candidate.Episode = episode
+		if parsed, ok := episodeidentity.DecomposeCoverageKey(coverage[0]); ok {
+			candidate.Episode = parsed.Episode
 		}
 	}
 	candidate.Coverage = coverage

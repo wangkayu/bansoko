@@ -213,7 +213,7 @@ func mapWorkspaceParsedFacts(value *readmodelapplication.ReleaseParsedFacts) *ge
 		Special:   cloneWorkspaceBool(value.Special),
 	}
 	if value.Coverage != nil {
-		mapped.Coverage = &generated.ReleaseCoverage{Season: value.Coverage.Season, Episodes: append([]int(nil), value.Coverage.Episodes...)}
+		mapped.Coverage = &generated.ReleaseCoverage{Episodes: append([]int(nil), value.Coverage.Episodes...)}
 	}
 	return mapped
 }

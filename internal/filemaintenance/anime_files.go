@@ -6,9 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -134,7 +132,6 @@ type AnimeFileView struct {
 	// ReleaseTitle is the release's feed title; "" when unknown.
 	ReleaseTitle       string
 	MediaKind          string // tv | movie | unresolved
-	Season             *int
 	Episodes           []string
 	Path               string
 	RelativePath       string
@@ -833,7 +830,7 @@ func deriveAnimeFiles(f animeFilesFacts) AnimeFilesView {
 			SizeBytes:    placement.ExpectedSize,
 			Status:       AnimeFileUnscanned,
 		}
-		row.MediaKind, row.Season, row.Episodes = coverageEpisodes(placement.Coverage)
+		row.MediaKind, row.Episodes = coverageEpisodes(placement.Coverage)
 		paths = append(paths, placement.Path)
 		diff, observed := diffs[placement.ID]
 		var videoOp *animeFilesAlignmentOp
@@ -1160,32 +1157,24 @@ func rowAlignmentSettled(row AnimeFileView, videoOp *animeFilesAlignmentOp, comp
 	return true
 }
 
-var tvCoveragePattern = regexp.MustCompile(`^tv:s(\d+):e(.+)$`)
-
-// coverageEpisodes reads the frozen coverage keys of a placement: tv keys give
-// the season and the episodes, movie:0 a movie.
-func coverageEpisodes(coverage []string) (string, *int, []string) {
+// coverageEpisodes reads the frozen coverage keys of a placement: tv keys
+// (tv:e<N>, or the v1 tv:s<S>:e<N>) give the episodes, movie:0 a movie.
+func coverageEpisodes(coverage []string) (string, []string) {
 	episodes := []string{}
-	var season *int
 	kind := "unresolved"
 	for _, key := range coverage {
 		if strings.HasPrefix(key, "movie:") {
 			kind = "movie"
 			continue
 		}
-		match := tvCoveragePattern.FindStringSubmatch(key)
+		match := coverageEpisodePattern.FindStringSubmatch(key)
 		if match == nil {
 			continue
 		}
 		kind = "tv"
-		if season == nil {
-			if value, err := strconv.Atoi(match[1]); err == nil {
-				season = &value
-			}
-		}
-		episodes = append(episodes, match[2])
+		episodes = append(episodes, match[1])
 	}
-	return kind, season, episodes
+	return kind, episodes
 }
 
 func relativeTo(root, path string) string {

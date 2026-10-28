@@ -1044,7 +1044,7 @@ func applyParsedReleaseFiles(files []RSSListFile, releaseFiles []ReleaseFile, fr
 func persistedParsedFacts(stored ReleaseParsedFacts) *animedomain.ParsedReleaseFacts {
 	facts := &animedomain.ParsedReleaseFacts{Episode: stored.Episode, GroupName: stored.GroupName, Languages: stored.Languages, Quality: stored.Quality, Special: stored.Special}
 	if stored.Coverage != nil {
-		facts.Coverage = &animedomain.ReleaseCoverage{Season: stored.Coverage.Season, Episodes: append([]int(nil), stored.Coverage.Episodes...)}
+		facts.Coverage = &animedomain.ReleaseCoverage{Episodes: append([]int(nil), stored.Coverage.Episodes...)}
 	}
 	return facts
 }

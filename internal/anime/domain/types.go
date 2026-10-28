@@ -281,10 +281,9 @@ type ParsedReleaseFacts struct {
 	Special   *bool            `json:"special,omitempty"`
 }
 
-// ReleaseCoverage is the bound season and the sorted episode numbers a batch
-// release places (display only; coverage keys are the authority).
+// ReleaseCoverage is the sorted episode numbers a batch release places
+// (display only; coverage keys are the authority).
 type ReleaseCoverage struct {
-	Season   int   `json:"season"`
 	Episodes []int `json:"episodes"`
 }
 
@@ -361,7 +360,7 @@ func ApplyPlanCoverage(result *PreviewReleaseResult, plan *batchplan.Plan) {
 		result.ParsedFacts.Episode = &episode
 		return
 	}
-	season, episodes, ok := plan.Episodes()
+	episodes, ok := plan.Episodes()
 	if !ok {
 		return
 	}
@@ -370,5 +369,5 @@ func ApplyPlanCoverage(result *PreviewReleaseResult, plan *batchplan.Plan) {
 		result.ParsedFacts.Episode = &episode
 		return
 	}
-	result.ParsedFacts.Coverage = &ReleaseCoverage{Season: season, Episodes: episodes}
+	result.ParsedFacts.Coverage = &ReleaseCoverage{Episodes: episodes}
 }

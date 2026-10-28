@@ -187,7 +187,7 @@ func releaseDiscoveredFacts(snapshot releaseSnapshot, item acquisitiondomain.Fee
 		}
 	}
 	if plan != nil {
-		if _, episodes, ok := plan.Episodes(); ok {
+		if episodes, ok := plan.Episodes(); ok {
 			facts["release.episodes"] = batchplan.EpisodesLabel(episodes)
 			if len(episodes) > 1 {
 				// A batch has no single episode.

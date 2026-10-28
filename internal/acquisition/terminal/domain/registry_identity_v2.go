@@ -9,7 +9,8 @@ import (
 
 // IdentityV2 is IdentityV1 plus multi-episode files: a resolved TV
 // identity of shape range or list occupies 2..MaxEpisodesPerFile consecutive
-// coverage keys, from episode to episode_end, all in one season. A single
+// coverage keys, from episode to episode_end, all of one key shape (the keys of
+// a sealed v1 identity all name one season). A single
 // episode, a movie and every non-resolved identity read exactly as in V1, with
 // episode_end absent. IdentityV1 stays frozen.
 func init() {
@@ -59,13 +60,19 @@ func init() {
 		if len(coverage) != last-first+1 || len(coverage) < 2 || len(coverage) > episodeidentity.MaxEpisodesPerFile {
 			return constraint(r, "coverage_keys")
 		}
-		season := ""
+		var firstKey episodeidentity.TVCoverageKey
 		for index, key := range coverage {
-			keySeason, episode, ok := episodeidentity.DecomposeCoverageKey(key.String)
-			if !ok || episode != strconv.Itoa(first+index) || (index > 0 && strconv.Itoa(keySeason) != season) {
+			parsed, ok := episodeidentity.DecomposeCoverageKey(key.String)
+			if !ok || parsed.Episode != strconv.Itoa(first+index) {
 				return constraint(r, "coverage_keys")
 			}
-			season = strconv.Itoa(keySeason)
+			if index == 0 {
+				firstKey = parsed
+				continue
+			}
+			if (parsed.Season == nil) != (firstKey.Season == nil) || (parsed.Season != nil && *parsed.Season != *firstKey.Season) {
+				return constraint(r, "coverage_keys")
+			}
 		}
 		return nil
 	}))

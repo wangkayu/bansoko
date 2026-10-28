@@ -11,7 +11,7 @@ describe("release episode label", () => {
   });
 
   it("shows a batch's planned episodes, else the single episode", () => {
-    expect(releaseEpisodeLabel({ special: false, coverage: { season: 1, episodes: [1, 2, 3, 4] } })).toBe(t("rss.episodes", { range: "01-04" }));
+    expect(releaseEpisodeLabel({ special: false, coverage: { episodes: [1, 2, 3, 4] } })).toBe(t("rss.episodes", { range: "01-04" }));
     expect(releaseEpisodeLabel({ special: false, episode: 5 })).toBe(t("rss.episode", { n: 5 }));
     expect(releaseEpisodeLabel({ special: false })).toBeUndefined();
     expect(releaseEpisodeLabel(undefined)).toBeUndefined();

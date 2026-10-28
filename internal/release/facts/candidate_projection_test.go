@@ -25,11 +25,12 @@ func TestCandidateFromCoverageNeverInventsCoverage(t *testing.T) {
 		keys         []string
 		wantCoverage []string
 		wantEpisode  string
-		wantSeason   int
 		wantKind     string
 	}{
-		{name: "single key projects season and episode", title: "[Group] Show - 99 [1080p]", keys: []string{"tv:s1:e12"},
-			wantCoverage: []string{"tv:s1:e12"}, wantEpisode: "12", wantSeason: 1, wantKind: "video"},
+		{name: "single key projects the episode", title: "[Group] Show - 99 [1080p]", keys: []string{"tv:e12"},
+			wantCoverage: []string{"tv:e12"}, wantEpisode: "12", wantKind: "video"},
+		{name: "a frozen v1 key projects the episode", title: "[Group] Show - 99 [1080p]", keys: []string{"tv:s1:e12"},
+			wantCoverage: []string{"tv:s1:e12"}, wantEpisode: "12", wantKind: "video"},
 		{name: "batch keys are deduplicated and sorted without a scalar episode", title: "[Group] Show 01-04 [1080p]",
 			keys: []string{"tv:s1:e3", "tv:s1:e1", "tv:s1:e3", "tv:s1:e2"}, wantCoverage: []string{"tv:s1:e1", "tv:s1:e2", "tv:s1:e3"}, wantKind: "video"},
 		{name: "movie key is a movie", title: "[Group] Movie [1080p]", keys: []string{"movie:0"},
@@ -46,7 +47,7 @@ func TestCandidateFromCoverageNeverInventsCoverage(t *testing.T) {
 			if candidate.CoverageUnresolved != (len(test.keys) == 0) {
 				t.Fatalf("unresolved = %v for keys %v", candidate.CoverageUnresolved, test.keys)
 			}
-			if candidate.Episode != test.wantEpisode || candidate.Season != test.wantSeason || candidate.MediaKind != test.wantKind {
+			if candidate.Episode != test.wantEpisode || candidate.MediaKind != test.wantKind {
 				t.Fatalf("candidate = %+v", candidate)
 			}
 			if candidate.Resolution != "1080p" {

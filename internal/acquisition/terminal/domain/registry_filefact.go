@@ -50,7 +50,7 @@ func init() {
 		F("provider", FVOf(Text(1, 256))), F("locator_display", FVOf(Display)), F("release", FVOf(Ref("RefVersion"))), F("source", FVOf(Ref("RefVersion"))),
 	))
 	register("IdentityCoverageV1", Obj(
-		F("identity", FVOf(Ref("IdentityV1"))), F("coverage_schema", Enum("episode-identity-v1")),
+		F("identity", FVOf(Ref("IdentityV1"))), F("coverage_schema", Enum("episode-identity-v1", "episode-identity-v2")),
 		F("coverage_keys", Array(Text(1, 256), 0, 16)),
 	).Check(func(r reader, m map[string]Value) error {
 		identity := m["identity"]

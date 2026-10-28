@@ -450,7 +450,13 @@ func registerMedia() {
 		if fvState(source) != "known" || (source.Object["value"].String != "file_parser" && source.Object["value"].String != "release_parser") {
 			return constraint(r, "selected_source")
 		}
-		if len(coverage) != 1 || !strings.HasPrefix(coverage[0].String, "tv:s") || !strings.HasSuffix(coverage[0].String, ":e"+eff.Object["value"].String) {
+		// The one key is tv:e<episode>, or the v1 shape tv:s<season>:e<episode>
+		// a sealed input keeps forever.
+		if len(coverage) != 1 {
+			return constraint(r, "coverage_keys")
+		}
+		key, episode := coverage[0].String, eff.Object["value"].String
+		if key != "tv:e"+episode && (!strings.HasPrefix(key, "tv:s") || !strings.HasSuffix(key, ":e"+episode)) {
 			return constraint(r, "coverage_keys")
 		}
 		return nil

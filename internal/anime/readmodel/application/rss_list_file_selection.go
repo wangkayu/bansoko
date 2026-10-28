@@ -44,7 +44,6 @@ type RSSListManifestFile struct {
 	ReasonCode           string
 	DefaultSelected      bool
 	Recognition          string
-	Season               *int
 	Episodes             []int
 	BoundVideoSourcePath string
 }
@@ -228,22 +227,19 @@ func recognizeManifestVideo(row *RSSListManifestFile, entry batchplan.File, movi
 	}
 	row.Recognition = RSSListRecognitionEpisode
 	episodes := []int{}
-	season := 0
 	for _, key := range entry.Keys() {
-		keySeason, episode, ok := episodeidentity.DecomposeCoverageKey(key)
+		parsed, ok := episodeidentity.DecomposeCoverageKey(key)
 		if !ok {
 			continue
 		}
-		number, err := strconv.Atoi(episode)
+		number, err := strconv.Atoi(parsed.Episode)
 		if err != nil {
 			continue
 		}
-		season = keySeason
 		episodes = append(episodes, number)
 	}
 	if len(episodes) > 0 {
 		sort.Ints(episodes)
-		row.Season = &season
 		row.Episodes = episodes
 	}
 }

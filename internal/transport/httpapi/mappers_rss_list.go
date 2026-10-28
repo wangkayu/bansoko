@@ -331,10 +331,6 @@ func mapRSSListManifestFile(file readmodelapplication.RSSListManifestFile) gener
 		recognition := generated.RSSListManifestFileRecognition(file.Recognition)
 		mapped.Recognition = &recognition
 	}
-	if file.Season != nil {
-		season := *file.Season
-		mapped.Season = &season
-	}
 	if len(file.Episodes) > 0 {
 		episodes := append([]int{}, file.Episodes...)
 		mapped.Episodes = &episodes

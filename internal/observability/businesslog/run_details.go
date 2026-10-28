@@ -46,7 +46,7 @@ func PlanEpisodes(raw sql.NullString) []int {
 		return nil
 	}
 	plan := batchplan.Plan{CoverageKeys: keys}
-	_, episodes, ok := plan.Episodes()
+	episodes, ok := plan.Episodes()
 	if !ok {
 		return nil
 	}

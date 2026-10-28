@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"reflect"
 	"testing"
 
 	"bansoko/internal/batchplan"
@@ -13,9 +14,11 @@ func TestApplyPlanCoverage(t *testing.T) {
 		episode  *float32
 		coverage *ReleaseCoverage
 	}{
-		{name: "single tv key", keys: []string{"tv:s1:e7"}, episode: ptrFloat(7)},
+		{name: "single tv key", keys: []string{"tv:e7"}, episode: ptrFloat(7)},
+		{name: "single frozen v1 key", keys: []string{"tv:s1:e7"}, episode: ptrFloat(7)},
 		{name: "movie keeps canonical zero", keys: []string{"movie:0"}, episode: ptrFloat(0)},
-		{name: "several keys are a coverage", keys: []string{"tv:s2:e1", "tv:s2:e2", "tv:s2:e3"}, coverage: &ReleaseCoverage{Season: 2, Episodes: []int{1, 2, 3}}},
+		{name: "several keys are a coverage", keys: []string{"tv:e1", "tv:e2", "tv:e3"}, coverage: &ReleaseCoverage{Episodes: []int{1, 2, 3}}},
+		{name: "several frozen v1 keys are a coverage", keys: []string{"tv:s2:e1", "tv:s2:e2", "tv:s2:e3"}, coverage: &ReleaseCoverage{Episodes: []int{1, 2, 3}}},
 		{name: "no key clears the title episode", keys: []string{}},
 	}
 	for _, tc := range cases {
@@ -30,7 +33,7 @@ func TestApplyPlanCoverage(t *testing.T) {
 			if (got.Coverage == nil) != (tc.coverage == nil) {
 				t.Fatalf("coverage = %+v, want %+v", got.Coverage, tc.coverage)
 			}
-			if tc.coverage != nil && (got.Coverage.Season != tc.coverage.Season || len(got.Coverage.Episodes) != len(tc.coverage.Episodes)) {
+			if tc.coverage != nil && !reflect.DeepEqual(got.Coverage.Episodes, tc.coverage.Episodes) {
 				t.Fatalf("coverage = %+v, want %+v", got.Coverage, tc.coverage)
 			}
 		})

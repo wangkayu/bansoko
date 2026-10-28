@@ -107,13 +107,12 @@ type ReleaseParsedFacts struct {
 	Languages *[]string `json:"languages"`
 	Quality   *string   `json:"quality"`
 	Special   *bool     `json:"special"`
-	// Coverage is a batch release's planned season and episodes.
+	// Coverage is a batch release's planned episodes.
 	Coverage *ReleaseCoverage `json:"coverage"`
 }
 
-// ReleaseCoverage is the season and the sorted episodes a batch places.
+// ReleaseCoverage is the sorted episodes a batch places.
 type ReleaseCoverage struct {
-	Season   int   `json:"season"`
 	Episodes []int `json:"episodes"`
 }
 

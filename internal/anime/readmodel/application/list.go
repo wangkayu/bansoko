@@ -80,16 +80,16 @@ LEFT JOIN LATERAL (
 LEFT JOIN LATERAL (
   -- Progress is what the library holds: the episode coverage keys of the
   -- anime's active verified placements (a batch counts every placed file;
-  -- season 0 specials and unknown files carry no such key).
+  -- every episode key counts, specials included; unknown files carry none).
   SELECT ARRAY_TO_STRING(ARRAY_AGG(DISTINCT keys.episode ORDER BY keys.episode), ',') AS episodes
   FROM (
-    SELECT substring(pc.observation_key FROM '^tv:s[1-9][0-9]*:e([0-9]+)$')::int AS episode
+    SELECT substring(pc.observation_key FROM '^tv:(?:s[0-9]+:)?e([0-9]+)$')::int AS episode
     FROM placements p
     JOIN placement_coverage pc ON pc.placement_id = p.id
     WHERE p.managed_anime_id = a.id
       AND p.state = 'active'
       AND p.verification_state = 'verified'
-      AND pc.observation_key ~ '^tv:s[1-9][0-9]*:e[0-9]+$'
+      AND pc.observation_key ~ '^tv:(?:s[0-9]+:)?e[0-9]+$'
   ) keys
 ) progress_agg ON TRUE
 LEFT JOIN LATERAL (

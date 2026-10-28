@@ -750,7 +750,7 @@ RETURNING version`, snapshot.releaseID, nullableJSON(parsedFacts), nullableJSON(
 			factsJSON, _ := json.Marshal(map[string]any{
 				"resolution": candidate.Resolution, "quality": candidate.Quality,
 				"language": candidate.Language, "group": candidate.Group,
-				"special": candidate.Special, "season": candidate.Season, "episode": candidate.Episode,
+				"special": candidate.Special, "episode": candidate.Episode,
 				"coverage_unresolved": candidate.CoverageUnresolved, "unresolved_reason": candidate.UnresolvedReason,
 			})
 			if err := s.candidateFacts.UpsertForRelease(ctx, txscope.Wrap(tx), facts.ReleaseCandidateFacts{

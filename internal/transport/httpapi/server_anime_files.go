@@ -214,7 +214,6 @@ func mapAnimeFilesView(view filemaintenance.AnimeFilesView) generated.AnimeFiles
 		row := generated.AnimeFile{
 			PlacementId:        generated.ID(file.PlacementID),
 			MediaKind:          generated.AnimeFileMediaKind(file.MediaKind),
-			Season:             file.Season,
 			Episodes:           append([]string{}, file.Episodes...),
 			Path:               file.Path,
 			RelativePath:       file.RelativePath,

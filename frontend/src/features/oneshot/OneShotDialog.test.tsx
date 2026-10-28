@@ -1433,7 +1433,7 @@ describe("OneShotDialog 手动选择文件", () => {
   const DEEP_SUB = "Pack/SPs/测试番剧 SP.ass";
   const COVER = "Pack/cover.jpg";
   const manifestFiles: NonNullable<RSSListItem["manifest_files"]> = [
-    { source_path: VIDEO, size_bytes: 700, media_kind: "video", selectable: true, default_selected: true, recognition: "episode", season: 1, episodes: [1] },
+    { source_path: VIDEO, size_bytes: 700, media_kind: "video", selectable: true, default_selected: true, recognition: "episode", episodes: [1] },
     { source_path: SUB, size_bytes: 20, media_kind: "subtitle", selectable: true, default_selected: true, bound_video_source_path: VIDEO },
     { source_path: DEEP, size_bytes: 500, media_kind: "video", selectable: true, default_selected: false, recognition: "unrecognized" },
     { source_path: DEEP_SUB, size_bytes: 20, media_kind: "subtitle", selectable: true, default_selected: false, bound_video_source_path: DEEP },

@@ -3163,7 +3163,6 @@ type AnimeFile struct {
 
 	// ReleaseTitle Feed title of the placement's release; absent when unknown.
 	ReleaseTitle *string         `json:"release_title,omitempty"`
-	Season       *int            `json:"season,omitempty"`
 	SizeBytes    *int64          `json:"size_bytes,omitempty"`
 	Status       AnimeFileStatus `json:"status"`
 
@@ -7316,9 +7315,6 @@ type RSSListManifestFile struct {
 	// Recognition A selectable video's own filename recognition under the read's parser and episode offset, decided by the same batch plan an acceptance freezes: episode (episodes holds the numbers), movie (the main video of a movie binding), or unrecognized (an unknown file, handled by the unclassified route). Absent for a subtitle and an unselectable file. For a movie binding it is computed within the read's selection for that seed (the default files without one) and is absent for a video outside it, so only one video is the main video.
 	Recognition *RSSListManifestFileRecognition `json:"recognition,omitempty"`
 
-	// Season The season of an episode recognition.
-	Season *int `json:"season,omitempty"`
-
 	// Selectable True for a video the file rules keep and for every subtitle; a file of another kind or a video the rules exclude cannot be chosen.
 	Selectable bool   `json:"selectable"`
 	SizeBytes  int64  `json:"size_bytes"`
@@ -7772,7 +7768,6 @@ type ReleaseCandidateFactsView struct {
 // ReleaseCoverage The episodes a batch release places (two or more), from its accepted batch plan. Display only: coverage keys stay the authority.
 type ReleaseCoverage struct {
 	Episodes []int `json:"episodes"`
-	Season   int   `json:"season"`
 }
 
 // ReleaseFile defines model for ReleaseFile.

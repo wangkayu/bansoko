@@ -219,9 +219,15 @@ func TestMovieMainAndUnknown(t *testing.T) {
 
 func TestEpisodesAndLabel(t *testing.T) {
 	plan := classify(t, RouteSkip, "Show/Show - 01.mkv", "Show/Show - 03.mkv", "Show/Show - 07.mkv")
-	season, episodes, ok := plan.Episodes()
-	if !ok || season != 1 || !reflect.DeepEqual(episodes, []int{1, 3, 7}) {
-		t.Fatalf("episodes = %d %v %v", season, episodes, ok)
+	episodes, ok := plan.Episodes()
+	if !ok || !reflect.DeepEqual(episodes, []int{1, 3, 7}) {
+		t.Fatalf("episodes = %v %v", episodes, ok)
+	}
+	// A frozen plan keeps the v1 keys it was accepted with; both shapes read
+	// back as their episodes.
+	frozen := Plan{CoverageKeys: []string{"tv:s2:e5", "tv:e3", "movie:0"}}
+	if episodes, ok := frozen.Episodes(); !ok || !reflect.DeepEqual(episodes, []int{3, 5}) {
+		t.Fatalf("frozen episodes = %v %v", episodes, ok)
 	}
 	for in, want := range map[string]string{
 		"1,3,7":     "01, 03, 07",

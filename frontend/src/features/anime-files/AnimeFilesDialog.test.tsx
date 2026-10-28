@@ -17,7 +17,6 @@ function fileRow(overrides: Partial<AnimeFile>): AnimeFile {
     placement_id: "p-1",
     release_id: "r-1",
     media_kind: "tv",
-    season: 1,
     episodes: ["1"],
     path: "/library/Show/EP 01.mkv",
     relative_path: "Show/EP 01.mkv",

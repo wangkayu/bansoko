@@ -2926,8 +2926,6 @@ export interface components {
              * @enum {string}
              */
             recognition?: "episode" | "movie" | "unrecognized";
-            /** @description The season of an episode recognition. */
-            season?: number;
             /** @description The episode numbers of an episode recognition, ascending. */
             episodes?: number[];
             /** @description The selectable video of the same folder this subtitle follows by the strict filename prefix rule (longest match, then path order), considering every selectable video of that folder. Absent for a video and for a subtitle that follows no video. */
@@ -3970,7 +3968,6 @@ export interface components {
         };
         /** @description The episodes a batch release places (two or more), from its accepted batch plan. Display only: coverage keys stay the authority. */
         ReleaseCoverage: {
-            season: number;
             episodes: number[];
         };
         MediaRecognitionPreviewInput: {
@@ -6955,7 +6952,6 @@ export interface components {
             release_title?: string;
             /** @enum {string} */
             media_kind: "tv" | "movie" | "unresolved";
-            season?: number;
             episodes: string[];
             path: string;
             relative_path: string;

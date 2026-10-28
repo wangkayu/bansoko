@@ -353,3 +353,38 @@ func TestResolveReleaseTitleEvidence(t *testing.T) {
 		t.Fatalf("source=%v, want release_parser", identity.SelectedSource)
 	}
 }
+
+// A coverage key reads back in both shapes: the current tv:e<N> carries no
+// season, the v1 tv:s<S>:e<N> a sealed input keeps reports its season. A
+// fractional or malformed key is no TV key.
+func TestDecomposeCoverageKeyReadsBothShapes(t *testing.T) {
+	season := func(value int) *int { return &value }
+	for key, want := range map[string]*TVCoverageKey{
+		"tv:e12":     {Episode: "12"},
+		"tv:e0":      {Episode: "0"},
+		" tv:e3 ":    {Episode: "3"},
+		"tv:s1:e12":  {Episode: "12", Season: season(1)},
+		"tv:s0:e5":   {Episode: "5", Season: season(0)},
+		"tv:s2:e05":  {Episode: "05", Season: season(2)},
+		"tv:e12.5":   nil,
+		"tv:s0:e1.5": nil,
+		"tv:s-1:e3":  nil,
+		"tv:sx:e3":   nil,
+		"tv:s1:e":    nil,
+		"tv:e":       nil,
+		"tv:3":       nil,
+		"movie:0":    nil,
+		"e3":         nil,
+	} {
+		got, ok := DecomposeCoverageKey(key)
+		if want == nil {
+			if ok {
+				t.Fatalf("%q decomposed to %+v, want no TV key", key, got)
+			}
+			continue
+		}
+		if !ok || got.Episode != want.Episode || (got.Season == nil) != (want.Season == nil) || (got.Season != nil && *got.Season != *want.Season) {
+			t.Fatalf("%q = %+v ok=%v, want %+v", key, got, ok, *want)
+		}
+	}
+}

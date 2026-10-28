@@ -34,7 +34,9 @@ func NewPathDiffService(db *sql.DB, renderer *NamingTargetRenderer, logger obser
 	return &PathDiffService{db: db, renderer: renderer, logger: logger}
 }
 
-var coverageEpisodePattern = regexp.MustCompile(`^tv:s(\d+):e(.+)$`)
+// coverageEpisodePattern reads the episode of a frozen tv coverage key: the
+// current tv:e<N> or the v1 tv:s<S>:e<N> that frozen rows keep.
+var coverageEpisodePattern = regexp.MustCompile(`^tv:(?:s\d+:)?e(.+)$`)
 
 // ListPathDiffs returns the calibration rows of one generation (0 = latest)
 // with their rendered expected target and the differs flag.
@@ -213,11 +215,11 @@ func parseCoverageList(raw string) ([]string, error) {
 }
 
 // episodeFromCoverage extracts the canonical episode display from the first
-// tv coverage key (tv:s2:e5 -> "5"); movie/empty coverage returns "".
+// tv coverage key (tv:e5 or tv:s2:e5 -> "5"); movie/empty coverage returns "".
 func episodeFromCoverage(coverage []string) string {
 	for _, key := range coverage {
 		if match := coverageEpisodePattern.FindStringSubmatch(key); match != nil {
-			return match[2]
+			return match[1]
 		}
 	}
 	return ""

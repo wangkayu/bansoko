@@ -953,7 +953,7 @@ func downloadSubmittedFacts(row downloadNotificationRow, managedAnimeID string, 
 	_ = json.Unmarshal(row.coverageKeys, &coverage)
 	plan := batchplan.Plan{CoverageKeys: coverage}
 	facts["release.episodes"] = nil
-	if _, episodes, ok := plan.Episodes(); ok {
+	if episodes, ok := plan.Episodes(); ok {
 		facts["release.episodes"] = batchplan.EpisodesLabel(episodes)
 	}
 	if len(coverage) > 1 {

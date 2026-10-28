@@ -270,28 +270,47 @@ func coverageKey(mediaKind string, season int, seasonBound bool, episode Episode
 	return "tv:s" + strconv.Itoa(season) + ":e" + string(episode)
 }
 
-// DecomposeCoverageKey reads back the season and episode of a canonical TV
-// coverage key ("tv:s<season>:e<episode>"). It is the only sanctioned way to
-// derive a season from a frozen identity: callers must not hand-parse coverage
-// keys or re-parse a title to obtain one.
-func DecomposeCoverageKey(key string) (int, string, bool) {
-	trimmed := strings.TrimSpace(key)
-	if !strings.HasPrefix(trimmed, "tv:s") {
-		return 0, "", false
-	}
-	rest := strings.TrimPrefix(trimmed, "tv:s")
-	seasonText, episodeText, ok := strings.Cut(rest, ":e")
+// TVCoverageKey is one parsed canonical TV coverage key. Season is set only
+// for a key in the sealed v1 shape tv:s<season>:e<episode>; a key in the
+// current shape tv:e<episode> carries no season, because season is a naming
+// field and never part of an episode identity.
+type TVCoverageKey struct {
+	Episode string
+	Season  *int
+}
+
+// DecomposeCoverageKey reads back the episode of a canonical TV coverage key.
+// It accepts the current shape tv:e<episode> and, permanently, the sealed v1
+// shape tv:s<season>:e<episode> that frozen acquisition inputs keep. It is the
+// only sanctioned way to read an episode back from a frozen identity: callers
+// must not hand-parse coverage keys or re-parse a title to obtain one.
+func DecomposeCoverageKey(key string) (TVCoverageKey, bool) {
+	rest, ok := strings.CutPrefix(strings.TrimSpace(key), "tv:")
 	if !ok {
-		return 0, "", false
+		return TVCoverageKey{}, false
 	}
-	season, err := strconv.Atoi(seasonText)
-	if err != nil || season < 0 {
-		return 0, "", false
+	var parsed TVCoverageKey
+	if seasoned, isV1 := strings.CutPrefix(rest, "s"); isV1 {
+		seasonText, episodeText, ok := strings.Cut(seasoned, ":e")
+		if !ok {
+			return TVCoverageKey{}, false
+		}
+		season, err := strconv.Atoi(seasonText)
+		if err != nil || season < 0 {
+			return TVCoverageKey{}, false
+		}
+		parsed.Season = &season
+		rest = "e" + episodeText
+	}
+	episodeText, ok := strings.CutPrefix(rest, "e")
+	if !ok {
+		return TVCoverageKey{}, false
 	}
 	if episode, err := CanonicalEpisode(episodeText); err != nil || episode.IsFractional() {
-		return 0, "", false
+		return TVCoverageKey{}, false
 	}
-	return season, episodeText, true
+	parsed.Episode = episodeText
+	return parsed, true
 }
 
 func inputDigest(input EpisodeIdentityInput) string {

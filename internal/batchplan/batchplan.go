@@ -671,26 +671,26 @@ func (p *Plan) Required(sourcePath string) bool {
 	return p.placed(file) || file.Outcome == OutcomeSubtitleFollows
 }
 
-// Episodes projects the coverage keys onto the bound season and the episode
-// numbers (display only). ok is false when no key is a TV episode key.
-func (p *Plan) Episodes() (season int, episodes []int, ok bool) {
+// Episodes projects the coverage keys onto their episode numbers (display
+// only). ok is false when no key is a TV episode key.
+func (p *Plan) Episodes() (episodes []int, ok bool) {
 	if p == nil {
-		return 0, nil, false
+		return nil, false
 	}
 	for _, key := range p.CoverageKeys {
-		keySeason, episode, decomposed := episodeidentity.DecomposeCoverageKey(key)
+		parsed, decomposed := episodeidentity.DecomposeCoverageKey(key)
 		if !decomposed {
 			continue
 		}
-		number, err := strconv.Atoi(episode)
+		number, err := strconv.Atoi(parsed.Episode)
 		if err != nil {
 			continue
 		}
-		season, ok = keySeason, true
+		ok = true
 		episodes = append(episodes, number)
 	}
 	sort.Ints(episodes)
-	return season, episodes, ok
+	return episodes, ok
 }
 
 func sortedKeys(keys map[string]bool) []string {

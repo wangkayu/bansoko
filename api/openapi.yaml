@@ -7624,9 +7624,6 @@ components:
             within the read's selection for that seed (the default files
             without one) and is absent for a video outside it, so only one
             video is the main video.
-        season:
-          type: integer
-          description: The season of an episode recognition.
         episodes:
           type: array
           items:
@@ -10200,14 +10197,11 @@ components:
     ReleaseCoverage:
       type: object
       additionalProperties: false
-      required: [season, episodes]
+      required: [episodes]
       description: >-
         The episodes a batch release places (two or more), from its accepted
         batch plan. Display only: coverage keys stay the authority.
       properties:
-        season:
-          type: integer
-          minimum: 0
         episodes:
           type: array
           minItems: 2
@@ -17154,9 +17148,6 @@ components:
         media_kind:
           type: string
           enum: [tv, movie, unresolved]
-        season:
-          type: integer
-          minimum: 0
         episodes:
           type: array
           items:
