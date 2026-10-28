@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ObservabilityRecord } from "../lib/api/client";
-import { dedupeReplacements, groupEvents, runView, type BusinessEntry } from "./logRuns";
+import { dedupeReplacements, groupEvents, runView, stepText, type BusinessEntry } from "./logRuns";
 
 let seq = 0;
 function entry(overrides: Partial<BusinessEntry>): BusinessEntry {
@@ -64,6 +64,33 @@ describe("groupEvents", () => {
     const run = items[0]!;
     if (run.type !== "run") throw new Error("expected a run");
     expect(runView(run.steps).state).toBe("in_progress");
+  });
+
+  it("an import waiting for configuration says so until the configuration step resumes it", () => {
+    const common = { release_id: "r-4", details: { episodes: [2] } };
+    const steps = [
+      entry({ ...common, kind: "download_changed", outcome: "success", message_code: "download_completed", occurred_at: at(1) }),
+      entry({ ...common, kind: "artifact_verified", outcome: "success", message_code: "artifact_verified", occurred_at: at(2) }),
+      entry({
+        ...common,
+        kind: "import_waiting_config",
+        message_code: "import_waiting_template_variable",
+        message_params: { variables: "vars.a,vars.b", count: 2 },
+        occurred_at: at(2),
+      }),
+    ];
+    const waiting = groupEvents(steps.map(record))[0]!;
+    if (waiting.type !== "run") throw new Error("expected a run");
+    // Same second as the verification: the configuration step still sorts after it.
+    expect(waiting.steps.map((step) => step.kind)).toEqual(["download_changed", "artifact_verified", "import_waiting_config"]);
+    expect(runView(waiting.steps).result).toBe("入库等待配置");
+    expect(stepText(waiting.steps[2]!)).toBe("入库等待配置：模板变量未定义：vars.a、vars.b（2 个文件）");
+
+    const resumed = entry({ ...common, kind: "import_waiting_config", message_code: "import_config_resumed", occurred_at: at(3) });
+    const continued = groupEvents([...steps, resumed].map(record))[0]!;
+    if (continued.type !== "run") throw new Error("expected a run");
+    expect(runView(continued.steps).result).toBe("入库中");
+    expect(stepText(resumed)).toBe("配置已补全，继续入库");
   });
 });
 

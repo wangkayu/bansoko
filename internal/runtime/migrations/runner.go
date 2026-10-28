@@ -214,7 +214,7 @@ var requiredColumns = map[string][]string{
 	"provider_image_cache":             {"image_key", "provider", "source_url", "image_bytes", "content_type", "fetched_at", "expires_at", "last_used"},
 	"metadata_work_titles":             {"provider", "media_kind", "work_id", "title", "title_cn", "original_title", "overview", "year", "observed_at"},
 	"provider_group_scope_generations": {"subscription_id", "provider", "generation"},
-	"postprocessing_plans":             {"id", "artifact_id", "artifact_version", "acquisition_id"},
+	"postprocessing_plans":             {"id", "artifact_id", "artifact_version", "acquisition_id", "config_hold", "config_hold_files", "config_hold_revision", "config_hold_logged_revision"},
 	"artifacts":                        {"acquisition_id", "inspection_requirements_status", "activity_logged_at"},
 	"download_tasks":                   {"activity_submit_logged_at", "activity_terminal_logged_at", "submit_permit_id", "submit_dispatch_state", "submit_effect_class", "submit_retry_safe", "submit_attempt"},
 	"artifact_files":                   {"acquisition_id"},

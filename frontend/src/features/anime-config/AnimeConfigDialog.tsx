@@ -500,10 +500,12 @@ function SubscribedBody({
               help={<HelpTip label={t("anime.pending.helpLabel")}>{t("anime.pending.help")}</HelpTip>}
             />
           )}
-          {/* When blocked, the info row becomes one warning line with the fix action. */}
-          {!capability.readOnly && workspace.data.metadata_hold.held ? (
+          {/* When blocked, the info row becomes one warning line with the fix action; imports waiting
+              for the configuration add their file count to it (they continue by themselves). */}
+          {!capability.readOnly && (workspace.data.metadata_hold.held || workspace.data.config_waiting_files > 0) ? (
             <BlockingRow
-              phrases={metadataHoldBlocking(workspace.data.metadata_hold)!}
+              phrases={metadataHoldBlocking(workspace.data.metadata_hold)}
+              waitingFiles={workspace.data.config_waiting_files}
               active={workspace.data.subscription.state === "active"}
               onFix={(link) => setMatchRequest((prev) => ({ provider: link, seq: (prev?.seq ?? 0) + 1 }))}
             />
@@ -1211,25 +1213,33 @@ function StateLine({ text, help }: { text: string; help?: ReactNode }) {
 /**
  * 自动化阻塞警告行：订阅中写长形（自动下载已暂停：未关联 TMDB），未开始/已停止本来就
  * 不下载，写短形（未关联 TMDB）；后面跟修复动作（关联 TMDB，打开元数据匹配弹窗）。
+ * 等待配置的入库文件数跟在后面（· 分隔）；只有它时没有修复动作。
  */
 function BlockingRow({
   phrases,
+  waitingFiles,
   active,
   onFix,
 }: {
-  phrases: BlockingPhrases;
+  phrases: BlockingPhrases | undefined;
+  waitingFiles: number;
   active: boolean;
   onFix: (link: "bgm" | "tmdb") => void;
 }) {
+  const parts = [
+    ...(phrases ? [active ? phrases.long : phrases.short] : []),
+    ...(waitingFiles > 0 ? [t("anime.configWaiting", { count: waitingFiles })] : []),
+  ];
+  const fix = phrases?.fix;
   return (
     <div role="status" className="anime-config-summary anime-config-blocking text-caption">
       <span className="tw:inline-flex tw:min-w-0 tw:items-center tw:gap-1.5 tw:text-warning tw:font-medium">
         <AlertTriangle aria-hidden className="tw:size-3.5 tw:shrink-0" />
-        {active ? phrases.long : phrases.short}
+        {parts.join(" · ")}
       </span>
-      {phrases.fix && (
-        <Button size="sm" variant="secondary" onClick={() => onFix(phrases.fix!.link)}>
-          {phrases.fix.label}
+      {fix && (
+        <Button size="sm" variant="secondary" onClick={() => onFix(fix.link)}>
+          {fix.label}
         </Button>
       )}
     </div>

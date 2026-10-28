@@ -164,6 +164,20 @@ FROM (
 	if value := buildApplicationEpisodeProgress(progressEpisodes, metadata.TotalEpisodes, nil); value != nil {
 		episodeProgress = value
 	}
+	// A waiting plan of a settled root (the instance was deleted while it
+	// waited) no longer waits for anything.
+	var configWaitingFiles int64
+	if err := s.db.QueryRowContext(ctx, `
+SELECT COALESCE(sum(p.config_hold_files), 0)
+FROM postprocessing_plans p
+JOIN acquisitions r ON r.id = p.acquisition_id AND r.state = 'running'
+WHERE p.state = 'waiting_config' AND EXISTS (
+  SELECT 1 FROM download_tasks t
+  JOIN releases rel ON rel.id = t.release_id
+  JOIN rss_sources src ON src.id = rel.rss_source_id
+  WHERE t.acquisition_id = r.id AND src.subscription_id = $1)`, subscription.ID).Scan(&configWaitingFiles); err != nil {
+		return AnimeWorkspace{}, fmt.Errorf("read anime imports waiting for configuration: %w", err)
+	}
 	return AnimeWorkspace{
 		ManagedAnime: managedAnime, Metadata: metadata,
 		MetadataHold: metadataHoldFromApplication(metadata.BGM, metadata.TMDB), Subscription: subscription,
@@ -171,5 +185,6 @@ FROM (
 		Releases: releases, DownloadTasks: tasks, Artifacts: artifacts, FileOperations: operations,
 		PlacementHandoffs:  placementHandoffs,
 		AcquisitionTargets: &targets, TargetObservations: &observations, Logs: logs, EpisodeProgress: episodeProgress,
+		ConfigWaitingFiles: configWaitingFiles,
 	}, nil
 }

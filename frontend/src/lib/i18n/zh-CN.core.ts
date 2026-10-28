@@ -40,6 +40,8 @@ export const animeCopy = {
   ended: {
     banner: "订阅已结束，当前为只读查看，不再自动刷新或下载",
   },
+  // 已下载但当前配置无法生成入库路径的文件数；补全配置后自动继续，没有修复按钮。
+  configWaiting: "{count} 个已下载文件等待配置后入库",
   pending: {
     banner: "订阅未开始，不会刷新或下载",
     helpLabel: "说明：未开始的订阅",

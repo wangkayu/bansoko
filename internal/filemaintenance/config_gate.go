@@ -15,22 +15,23 @@ const configItemNamesLimit = 200
 
 // CurrentConfigHold reports what the anime's current configuration lacks to
 // render the given import files: each missing item with the number of files it
-// blocks. It is the import plan's configuration gate and gives the refusal a
-// maintenance render of the placed file would give — a missing binding
-// (currentAnimeConfig's own check, counting every file) and the engine's
+// blocks, and the number of files any item blocks. It is the import plan's
+// configuration gate and gives the refusal a maintenance render of the placed
+// file would give — a missing binding (currentAnimeConfig's own check,
+// counting every file) and the engine's
 // undefined-variable refusal under the current rules and the current naming
 // renderer. Each file context carries the frozen release and file facts; the
 // anime facts and the configuration are replaced with the current ones here.
 // Any other render error holds nothing: the plan executes its frozen target
 // and reports the failure itself. It performs no filesystem or provider I/O.
-func (r *NamingTargetRenderer) CurrentConfigHold(ctx context.Context, animeID string, files []naming.NamingContext) (map[string]int, error) {
+func (r *NamingTargetRenderer) CurrentConfigHold(ctx context.Context, animeID string, files []naming.NamingContext) (map[string]int, int, error) {
 	if len(files) == 0 {
-		return nil, nil
+		return nil, 0, nil
 	}
 	config, err := r.currentAnimeConfig(ctx, animeID)
 	var incomplete *ConfigIncompleteError
 	if err != nil && !errors.As(err, &incomplete) {
-		return nil, err
+		return nil, 0, err
 	}
 	hold := map[string]int{}
 	unbound := map[string]bool{}
@@ -39,21 +40,26 @@ func (r *NamingTargetRenderer) CurrentConfigHold(ctx context.Context, animeID st
 		root := strings.TrimPrefix(item, "binding_missing:")
 		unbound[root] = true
 	}
+	// A missing binding blocks every file.
+	blocked := 0
+	if len(hold) > 0 {
+		blocked = len(files)
+	}
 	anime, err := r.animeFacts(ctx, animeID)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	rules, err := r.renderRules(ctx, animeID)
 	if errors.Is(err, naming.ErrRenderFactsUnavailable) {
-		return hold, nil
+		return hold, blocked, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	engine := naming.NewEngine()
 	compiled, err := engine.CompileRulesWithVars(rules, files[0].Vars)
 	if err != nil {
-		return hold, nil
+		return hold, blocked, nil
 	}
 	for _, facts := range files {
 		facts.Anime.ID, facts.Anime.Title, facts.Anime.TitleOverride, facts.Anime.ProviderTitle = animeID, anime.title, anime.titleOverride, anime.providerTitle
@@ -79,9 +85,12 @@ func (r *NamingTargetRenderer) CurrentConfigHold(ctx context.Context, animeID st
 		}
 		if item := templateVariableItem(undefined); item != "" {
 			hold[item]++
+			if len(unbound) == 0 {
+				blocked++
+			}
 		}
 	}
-	return hold, nil
+	return hold, blocked, nil
 }
 
 // templateVariableItem is the template item naming the undefined variables in

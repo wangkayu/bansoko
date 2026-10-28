@@ -56,7 +56,8 @@ SELECT r.id, r.entry_kind, r.execution_branch, r.state, r.record_state,
        COALESCE(r.input->'delivery'->>'intent' = 'replace', false),
        CASE WHEN rel.id IS NULL THEN NULL
             ELSE jsonb_build_object('title_tags', rel.source_facts->'title_tags', 'anibt', rel.source_facts->'anibt',
-                                    'published_at', rel.raw_facts->'published_at')::text END
+                                    'published_at', rel.raw_facts->'published_at')::text END,
+       p.config_hold::text
 FROM acquisitions r
 LEFT JOIN managed_anime ma ON ma.id = r.origin_managed_anime_ref
 LEFT JOIN releases rel ON rel.id = r.source_release_ref
@@ -143,6 +144,7 @@ type acquisitionRootRow struct {
 	seedSource                                []byte
 	replacesExisting                          bool
 	seedRelease                               []byte
+	configHold                                []byte
 }
 
 type nullableStageOwner struct {
@@ -183,7 +185,7 @@ func scanAcquisitionRoot(scanner interface{ Scan(...any) error }) (acquisitionRo
 		&row.coverageKeys,
 		&row.version, &row.importRetryAvailable, &row.importRetries, &row.importRetriedAt,
 		&row.placementsFailed, &row.placementFailedReason,
-		&row.seedSource, &row.replacesExisting, &row.seedRelease)
+		&row.seedSource, &row.replacesExisting, &row.seedRelease, &row.configHold)
 	return row, err
 }
 
@@ -253,6 +255,13 @@ func (row acquisitionRootRow) project(asOf time.Time) (AcquisitionRecordDetail, 
 		detail.FilesAvailable = facts.Requirements != nil
 	}
 	detail.Stage, detail.StageState, detail.ReasonCode = summaryPosition(row.state, detail.Stages, detail.Outcome)
+	if detail.StageState != nil && *detail.StageState == AcquisitionStageStateWaitingConfig {
+		hold, err := decodeConfigHold(row.configHold)
+		if err != nil {
+			return AcquisitionRecordDetail{}, err
+		}
+		detail.ConfigHold = hold
+	}
 	if detail.Stage != nil && *detail.Stage == AcquisitionStageDownloadWait && detail.StageState != nil && *detail.StageState == AcquisitionStageStateRunning {
 		detail.Transfer = downloadTransfer(row.completedBytes, row.totalBytes, row.downloadSpeed, row.task.updatedAt)
 	}

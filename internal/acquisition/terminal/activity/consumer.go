@@ -6,6 +6,7 @@
 //
 //   - the download task: qB submission confirmed, download completed/failed;
 //   - the verified Artifact;
+//   - the import's wait for configuration (each hold revision of the plan);
 //   - each delivery result (file delivered, adopted, retained or failed);
 //   - the root's terminal state (succeeded, failed, cancelled).
 //
@@ -86,7 +87,10 @@ type Result struct {
 type entry struct {
 	managedAnimeID string
 	record         observabilityport.ActivityRecord
-	fact           fact
+	// more are further records of the same fact (a waiting import's other
+	// missing items), appended with record in its transaction.
+	more []observabilityport.ActivityRecord
+	fact fact
 	// notReplaced is set on the settlement of a failed or cancelled root:
 	// the replace decisions its terminal transition staled.
 	notReplaced *notReplacedScope
@@ -177,8 +181,10 @@ func (c *Consumer) write(ctx context.Context, e entry) (bool, error) {
 	if !marked {
 		return false, nil
 	}
-	if err := c.Writer.AppendTx(ctx, txscope.Wrap(tx), e.record); err != nil {
-		return false, err
+	for _, record := range append([]observabilityport.ActivityRecord{e.record}, e.more...) {
+		if err := c.Writer.AppendTx(ctx, txscope.Wrap(tx), record); err != nil {
+			return false, err
+		}
 	}
 	if e.notReplaced != nil {
 		if err := c.writeNotReplacedTx(ctx, tx, e); err != nil {
@@ -234,7 +240,7 @@ JOIN LATERAL (
 
 type source func(context.Context, *sql.DB, time.Duration, int) ([]entry, error)
 
-var sources = []source{submittedEntries, downloadTerminalEntries, artifactVerifiedEntries, fileResultEntries, settledEntries}
+var sources = []source{submittedEntries, downloadTerminalEntries, artifactVerifiedEntries, configHoldEntries, fileResultEntries, settledEntries}
 
 func windowStart(window time.Duration) string {
 	return fmt.Sprintf("%d seconds", int64(window/time.Second))

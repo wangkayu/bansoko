@@ -44,14 +44,23 @@ const (
 )
 
 // Stage states of a present stage. cancelled marks a stage that never finished
-// because the root reached its terminal outcome first.
+// because the root reached its terminal outcome first; waiting_config is a plan
+// that waits for the anime's configuration (not a failure).
 const (
-	AcquisitionStageStatePending   = "pending"
-	AcquisitionStageStateRunning   = "running"
-	AcquisitionStageStateSucceeded = "succeeded"
-	AcquisitionStageStateFailed    = "failed"
-	AcquisitionStageStateBlocked   = "blocked"
-	AcquisitionStageStateCancelled = "cancelled"
+	AcquisitionStageStatePending       = "pending"
+	AcquisitionStageStateRunning       = "running"
+	AcquisitionStageStateSucceeded     = "succeeded"
+	AcquisitionStageStateFailed        = "failed"
+	AcquisitionStageStateBlocked       = "blocked"
+	AcquisitionStageStateCancelled     = "cancelled"
+	AcquisitionStageStateWaitingConfig = "waiting_config"
+)
+
+// What a waiting import's configuration lacks.
+const (
+	AcquisitionConfigMissingBGM      = "bgm_binding"
+	AcquisitionConfigMissingTMDB     = "tmdb_binding"
+	AcquisitionConfigMissingVariable = "template_variable"
 )
 
 // Display value states.
@@ -193,6 +202,18 @@ type AcquisitionRecordSummary struct {
 	Seed *AcquisitionSeedIdentity
 	// ReplacesExisting: the accepted input froze a replace delivery intent.
 	ReplacesExisting bool
+	// ConfigHold is what the anime's current configuration lacks to place the
+	// files, set only while the running root's plan waits for it.
+	ConfigHold []AcquisitionConfigHoldItem
+}
+
+// AcquisitionConfigHoldItem is one missing configuration item of a waiting
+// import and the number of files it blocks. Variables names the undefined
+// template variables of a template_variable item.
+type AcquisitionConfigHoldItem struct {
+	Missing   string
+	Variables []string
+	Files     int64
 }
 
 // AcquisitionSeedIdentity is the seed identity of a record. Group, provider,

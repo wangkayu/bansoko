@@ -106,3 +106,53 @@ func CommitOperations(t *testing.T, tx *sql.Tx, artifact string, operations []Pl
 		t.Fatal(err)
 	}
 }
+
+// ParkWaitingPlan arranges the artifact's plan and its work item as owner,
+// then, as runtime, claims it and parks it through the real wait owner
+// function: the shape the plan stage's configuration gate leaves (the hold
+// and its file count, no attempt spent, the work item available after the
+// park). It returns the plan and its work item.
+func ParkWaitingPlan(t *testing.T, tx *sql.Tx, artifact, hold string, files int) (string, string) {
+	t.Helper()
+	ctx := context.Background()
+	plan := "fixture-plan-" + artifact
+	var root, digest string
+	var version int64
+	if err := tx.QueryRowContext(ctx, `SELECT a.acquisition_id,a.version,i.admission_digest FROM artifacts a JOIN acquisitions i ON i.id=a.acquisition_id WHERE a.id=$1 AND a.state='verified'`, artifact).Scan(&root, &version, &digest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO postprocessing_plans(id,artifact_id,acquisition_id,artifact_version,input_digest,state) VALUES($1,$2,$3,$4,$5,'queued')`, plan, artifact, root, version, digest); err != nil {
+		t.Fatal(err)
+	}
+	var created string
+	if err := tx.QueryRowContext(ctx, `SELECT work_item_create($1,'postprocessing_plan',$2,'postprocess_plan',$3,3,'{}'::jsonb,1::bigint,0::double precision,7::smallint)`, "fixture-plan-work-"+artifact, plan, "plan:"+plan).Scan(&created); err != nil {
+		t.Fatal(err)
+	}
+	return plan, ParkDuePlan(t, tx, plan, hold, files)
+}
+
+// ParkDuePlan claims the plan's due work item as runtime and parks it through
+// the real wait owner function, as a claim that finds the configuration still
+// incomplete does. It returns the work item.
+func ParkDuePlan(t *testing.T, tx *sql.Tx, plan, hold string, files int) string {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := tx.ExecContext(ctx, `SET LOCAL ROLE bansoko_runtime`); err != nil {
+		t.Fatal(err)
+	}
+	var work, claimed string
+	var token int64
+	if err := tx.QueryRowContext(ctx, `SELECT id,owner_id,fencing_token FROM work_item_claim_due($1::double precision,ARRAY['postprocess_plan']::text[])`, time.Minute.Seconds()).Scan(&work, &claimed, &token); err != nil {
+		t.Fatal(err)
+	}
+	if claimed != plan {
+		t.Fatalf("fixture claim %s instead of %s", claimed, plan)
+	}
+	if _, err := tx.ExecContext(ctx, `SELECT postprocessing_plan_wait_config($1,$2,$3,$4::jsonb,$5,3600)`, plan, work, token, hold, files); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.ExecContext(ctx, `RESET ROLE`); err != nil {
+		t.Fatal(err)
+	}
+	return work
+}

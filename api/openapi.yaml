@@ -9546,6 +9546,7 @@ components:
         - release_processed
         - download_changed
         - artifact_verified
+        - import_waiting_config
         - placement_changed
         - replacement_decided
         - cleanup_completed
@@ -9591,6 +9592,10 @@ components:
         - download_removed
         - download_failed
         - artifact_verified
+        - import_waiting_binding_bgm
+        - import_waiting_binding_tmdb
+        - import_waiting_template_variable
+        - import_config_resumed
         - file_imported
         - file_adopted
         - file_retained
@@ -9638,6 +9643,11 @@ components:
           format: int64
           minimum: 0
           description: Non-negative item count.
+        variables:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Template variable names, comma separated.
     SubscriptionLogSource:
       type: string
       enum: [subscription, one_shot]
@@ -13509,6 +13519,7 @@ components:
         - placement_handoffs
         - logs
         - episode_progress
+        - config_waiting_files
       properties:
         managed_anime:
           $ref: '#/components/schemas/ManagedAnime'
@@ -13518,6 +13529,16 @@ components:
           $ref: '#/components/schemas/AnimeMetadata'
         metadata_hold:
           $ref: '#/components/schemas/MetadataHold'
+        config_waiting_files:
+          type: integer
+          format: int64
+          minimum: 0
+          description: >-
+            Downloaded files whose import waits for the anime's configuration:
+            the current configuration cannot render their import path (a
+            missing BGM or TMDB binding, or an undefined template variable).
+            The files stay in the download directory and the import continues
+            by itself once the configuration is complete.
         subgroups:
           $ref: '#/components/schemas/SubgroupsOwnerResult'
         rules:
@@ -18590,7 +18611,45 @@ components:
       enum: [submit, download_wait, inspect, plan, file_execution, settlement, completion]
     AcquisitionStageState:
       type: string
-      enum: [pending, running, succeeded, failed, blocked, cancelled]
+      description: >-
+        waiting_config is a plan stage that waits for the anime's configuration
+        (see config_hold); it is not a failure, spends no attempt and has no
+        retry. It continues by itself once the configuration is complete.
+      enum: [pending, running, succeeded, failed, blocked, cancelled, waiting_config]
+    AcquisitionConfigHold:
+      type: array
+      description: >-
+        Present only while a running record's plan stage is waiting_config:
+        what the anime's current configuration lacks, in a stable order (the
+        BGM binding, the TMDB binding, then the template variables). The
+        downloaded files stay in the download directory; the import continues
+        by itself once the configuration is complete.
+      minItems: 1
+      maxItems: 16
+      items:
+        $ref: '#/components/schemas/AcquisitionConfigHoldItem'
+    AcquisitionConfigHoldItem:
+      type: object
+      additionalProperties: false
+      description: >-
+        One item the anime's current configuration lacks to render the import
+        path of a waiting import, with the number of files it blocks.
+      required: [missing, files]
+      properties:
+        missing:
+          type: string
+          enum: [bgm_binding, tmdb_binding, template_variable]
+        variables:
+          type: array
+          description: The undefined template variables of a template_variable item.
+          minItems: 1
+          items:
+            type: string
+            minLength: 1
+        files:
+          type: integer
+          format: int64
+          minimum: 1
     AcquisitionDisplayValue:
       type: object
       additionalProperties: false
@@ -18681,6 +18740,8 @@ components:
         reason_code:
           type: string
           minLength: 1
+        config_hold:
+          $ref: '#/components/schemas/AcquisitionConfigHold'
         one_shot_id:
           allOf:
             - $ref: '#/components/schemas/ID'
@@ -19002,6 +19063,8 @@ components:
         reason_code:
           type: string
           minLength: 1
+        config_hold:
+          $ref: '#/components/schemas/AcquisitionConfigHold'
         one_shot_id:
           allOf:
             - $ref: '#/components/schemas/ID'

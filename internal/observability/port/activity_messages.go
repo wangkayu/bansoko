@@ -29,6 +29,7 @@ const (
 	ActivityKindReleaseProcessed       ActivityKind = "release_processed"
 	ActivityKindDownloadChanged        ActivityKind = "download_changed"
 	ActivityKindArtifactVerified       ActivityKind = "artifact_verified"
+	ActivityKindImportWaitingConfig    ActivityKind = "import_waiting_config"
 	ActivityKindPlacementChanged       ActivityKind = "placement_changed"
 	ActivityKindReplacementDecided     ActivityKind = "replacement_decided"
 	ActivityKindCleanupCompleted       ActivityKind = "cleanup_completed"
@@ -73,13 +74,19 @@ const (
 	MessageDownloadRemoved  MessageCode = "download_removed"
 	MessageDownloadFailed   MessageCode = "download_failed"
 	MessageArtifactVerified MessageCode = "artifact_verified"
-	MessageFileImported     MessageCode = "file_imported"
-	MessageFileAdopted      MessageCode = "file_adopted"
-	MessageFileRetained     MessageCode = "file_retained"
-	MessageFileImportFailed MessageCode = "file_import_failed"
-	MessageAcquisitionDone  MessageCode = "acquisition_succeeded"
-	MessageAcquisitionFail  MessageCode = "acquisition_failed"
-	MessageAcquisitionStop  MessageCode = "acquisition_cancelled"
+	// The import waits for configuration: one message per missing item, with
+	// the number of files it blocks; and the configuration complete again.
+	MessageImportWaitingBGM      MessageCode = "import_waiting_binding_bgm"
+	MessageImportWaitingTMDB     MessageCode = "import_waiting_binding_tmdb"
+	MessageImportWaitingVariable MessageCode = "import_waiting_template_variable"
+	MessageImportConfigResumed   MessageCode = "import_config_resumed"
+	MessageFileImported          MessageCode = "file_imported"
+	MessageFileAdopted           MessageCode = "file_adopted"
+	MessageFileRetained          MessageCode = "file_retained"
+	MessageFileImportFailed      MessageCode = "file_import_failed"
+	MessageAcquisitionDone       MessageCode = "acquisition_succeeded"
+	MessageAcquisitionFail       MessageCode = "acquisition_failed"
+	MessageAcquisitionStop       MessageCode = "acquisition_cancelled"
 	// MessageReplacementKeptExisting is a keep/retain verdict: an existing
 	// version stays and the candidate does not replace it.
 	MessageReplacementKeptExisting MessageCode = "replacement_kept_existing"
@@ -133,6 +140,8 @@ const (
 	ParamGroupName = "group_name"
 	// ParamCount is a non-negative item count.
 	ParamCount = "count"
+	// ParamVariables lists template variable names, comma separated.
+	ParamVariables = "variables"
 )
 
 // MessageParam declares one param of a message.
@@ -152,6 +161,7 @@ type MessageSpec struct {
 
 var (
 	optionalFileName = []MessageParam{{Name: ParamFileName, Type: MessageParamString}}
+	requiredCount    = []MessageParam{{Name: ParamCount, Type: MessageParamInteger, Required: true}}
 	messageSpecs     = []MessageSpec{
 		{Code: MessageSubscriptionCreated, Kind: ActivityKindSubscriptionCreated},
 		{Code: MessageSubscriptionStarted, Kind: ActivityKindSubscriptionStarted},
@@ -180,6 +190,10 @@ var (
 		{Code: MessageDownloadRemoved, Kind: ActivityKindDownloadChanged},
 		{Code: MessageDownloadFailed, Kind: ActivityKindDownloadChanged},
 		{Code: MessageArtifactVerified, Kind: ActivityKindArtifactVerified},
+		{Code: MessageImportWaitingBGM, Kind: ActivityKindImportWaitingConfig, Params: requiredCount},
+		{Code: MessageImportWaitingTMDB, Kind: ActivityKindImportWaitingConfig, Params: requiredCount},
+		{Code: MessageImportWaitingVariable, Kind: ActivityKindImportWaitingConfig, Params: []MessageParam{{Name: ParamVariables, Type: MessageParamString, Required: true}, {Name: ParamCount, Type: MessageParamInteger, Required: true}}},
+		{Code: MessageImportConfigResumed, Kind: ActivityKindImportWaitingConfig},
 		{Code: MessageFileImported, Kind: ActivityKindFileAlignmentCompleted, Params: optionalFileName},
 		{Code: MessageFileAdopted, Kind: ActivityKindFileAlignmentCompleted, Params: optionalFileName},
 		{Code: MessageFileRetained, Kind: ActivityKindFileAlignmentCompleted, Params: optionalFileName},

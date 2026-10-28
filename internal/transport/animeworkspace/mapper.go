@@ -24,6 +24,7 @@ func MapAnimeWorkspace(value readmodelapplication.AnimeWorkspace) (generated.Ani
 	return generated.AnimeWorkspace{
 		AcquisitionTargets: mapWorkspaceTargets(value.AcquisitionTargets),
 		Artifacts:          mapWorkspaceArtifacts(value.Artifacts),
+		ConfigWaitingFiles: value.ConfigWaitingFiles,
 		DownloadTasks:      mapWorkspaceDownloadTasks(value.DownloadTasks),
 		EpisodeProgress:    mapWorkspaceEpisodeProgress(value.EpisodeProgress),
 		FileOperations:     mapWorkspaceFileOperations(value.FileOperations),

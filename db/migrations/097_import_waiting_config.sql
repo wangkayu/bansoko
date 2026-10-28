@@ -6,7 +6,8 @@
 -- before it spends an attempt and parks the plan in waiting_config instead:
 --
 --   * postprocessing_plans.state gains waiting_config. config_hold lists the
---     missing items with the number of required files each one blocks;
+--     missing items with the number of required files each one blocks,
+--     config_hold_files the number of files any of them blocks;
 --     config_hold_since is when the plan started waiting. A one-shot plan never
 --     waits.
 --   * postprocessing_plan_wait_config records the hold and returns the work
@@ -19,8 +20,8 @@
 --     wall by the time it waited, so waiting never exhausts the budget the
 --     first planning attempt would have had.
 --   * postprocessing_plan_wake_config makes waiting plans due now. Every
---     configuration write calls it in its own transaction (one anime, or every
---     anime for a global change) and a periodic sweep calls it as the
+--     configuration write of an anime calls it for that anime in its own
+--     transaction, and a periodic sweep calls it for every anime as the
 --     backstop; both are bounded per call.
 --   * config_hold_revision moves whenever the hold or the state changes, and
 --     the acquisition activity consumer logs each revision once
@@ -35,11 +36,13 @@
 
 ALTER TABLE postprocessing_plans
     ADD COLUMN config_hold JSONB,
+    ADD COLUMN config_hold_files INTEGER,
     ADD COLUMN config_hold_since TIMESTAMPTZ,
     ADD COLUMN config_hold_revision INTEGER NOT NULL DEFAULT 0,
     ADD COLUMN config_hold_logged_revision INTEGER NOT NULL DEFAULT 0;
 
 COMMENT ON COLUMN postprocessing_plans.config_hold IS 'While waiting_config: the configuration items the current render lacks, [{"item","files"}], item binding_missing:bgm|tmdb or template_variable_undefined:<names>.';
+COMMENT ON COLUMN postprocessing_plans.config_hold_files IS 'While waiting_config: the number of files at least one hold item blocks.';
 COMMENT ON COLUMN postprocessing_plans.config_hold_revision IS 'Moves with every change of the hold or of the waiting state; the activity consumer logs each revision once (config_hold_logged_revision).';
 
 -- The hold shape: 1..16 distinct items, each {"item","files"} with a known
@@ -73,6 +76,8 @@ ALTER TABLE postprocessing_plans ADD CONSTRAINT postprocessing_plans_state_matri
 ALTER TABLE postprocessing_plans ADD CONSTRAINT postprocessing_plans_config_hold_check
     CHECK ((state = 'waiting_config') = (config_hold IS NOT NULL)
        AND (config_hold IS NULL) = (config_hold_since IS NULL)
+       AND (config_hold IS NULL) = (config_hold_files IS NULL)
+       AND (config_hold_files IS NULL OR config_hold_files BETWEEN 1 AND 999999)
        AND (config_hold IS NULL OR postprocessing_plan_config_hold_valid(config_hold))
        AND (state <> 'waiting_config' OR one_shot_id IS NULL)
        AND config_hold_logged_revision BETWEEN 0 AND config_hold_revision);
@@ -228,7 +233,7 @@ BEGIN
  outcome_reason=p_reason,planning_requirements_status=status,
  planning_diagnostic=jsonb_build_object('schema_version',1,'reason_code',p_code,'requirements_status',status),
  planning_facts_revision=(SELECT facts_revision FROM public.acquisitions WHERE id=p.acquisition_id),
- config_hold=NULL,config_hold_since=NULL,config_hold_logged_revision=config_hold_revision,
+ config_hold=NULL,config_hold_files=NULL,config_hold_since=NULL,config_hold_logged_revision=config_hold_revision,
  version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=p_plan RETURNING version INTO v;
  IF public.work_item_fail_at_attempt_budget(v,p_code,p_reason,p_work,p.version)<>1 THEN
  RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='PLAN_STAGE_STALE_CLAIM'; END IF;
@@ -236,10 +241,10 @@ BEGIN
 END $$;
 
 -- The plan stage found the current configuration incomplete: record the hold
--- (its revision moves only when the hold or the state changes) and return
--- the work item, due after p_park_seconds, with this claim's attempt
--- refunded. A cancelled work item fails the plan instead.
-CREATE FUNCTION postprocessing_plan_wait_config(p_plan text, p_work text, p_token bigint, p_hold jsonb, p_park_seconds double precision) RETURNS jsonb
+-- and the files it blocks (the revision moves only when they or the state
+-- change) and return the work item, due after p_park_seconds, with this
+-- claim's attempt refunded. A cancelled work item fails the plan instead.
+CREATE FUNCTION postprocessing_plan_wait_config(p_plan text, p_work text, p_token bigint, p_hold jsonb, p_files integer, p_park_seconds double precision) RETURNS jsonb
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
     AS $$
@@ -248,14 +253,14 @@ BEGIN
  p:=public.postprocessing_plan_recovery_lock(p_plan,p_work,p_token);
  SELECT * INTO STRICT w FROM public.work_item_history WHERE id=p_work;
  IF w.recovery_blocked OR p.one_shot_id IS NOT NULL OR p_park_seconds IS NULL OR p_park_seconds<0 OR p_park_seconds>86400
- OR public.postprocessing_plan_config_hold_valid(p_hold) IS NOT TRUE THEN
+ OR public.postprocessing_plan_config_hold_valid(p_hold) IS NOT TRUE OR p_files IS NULL OR p_files NOT BETWEEN 1 AND 999999 THEN
  RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='PLAN_STAGE_STALE_CLAIM'; END IF;
  IF w.cancel_requested THEN
  PERFORM public.postprocessing_plan_fail(p_plan,p_work,'PLAN_CANCELLED','read-only planning was cancelled');
  RETURN jsonb_build_object('state','failed','reason_code','PLAN_CANCELLED');
  END IF;
- changed:=p.state IS DISTINCT FROM 'waiting_config' OR p.config_hold IS DISTINCT FROM p_hold;
- UPDATE public.postprocessing_plans SET state='waiting_config',config_hold=p_hold,
+ changed:=p.state IS DISTINCT FROM 'waiting_config' OR p.config_hold IS DISTINCT FROM p_hold OR p.config_hold_files IS DISTINCT FROM p_files;
+ UPDATE public.postprocessing_plans SET state='waiting_config',config_hold=p_hold,config_hold_files=p_files,
  config_hold_since=COALESCE(config_hold_since,clock_timestamp()),
  config_hold_revision=config_hold_revision+CASE WHEN changed THEN 1 ELSE 0 END,
  updated_at=CASE WHEN changed THEN CURRENT_TIMESTAMP ELSE updated_at END,
@@ -279,7 +284,7 @@ DECLARE p public.postprocessing_plans%ROWTYPE;
 BEGIN
  p:=public.postprocessing_plan_recovery_lock(p_plan,p_work,p_token);
  IF p.state IS DISTINCT FROM 'waiting_config' THEN RETURN jsonb_build_object('resumed',false); END IF;
- UPDATE public.postprocessing_plans SET state='queued',config_hold=NULL,config_hold_since=NULL,
+ UPDATE public.postprocessing_plans SET state='queued',config_hold=NULL,config_hold_files=NULL,config_hold_since=NULL,
  config_hold_revision=config_hold_revision+1,
  plan_wall_until=plan_wall_until+(clock_timestamp()-config_hold_since),updated_at=CURRENT_TIMESTAMP
  WHERE id=p_plan;
@@ -355,9 +360,9 @@ ALTER TABLE subscription_log_entries DROP CONSTRAINT subscription_log_entries_ki
 ALTER TABLE subscription_log_entries ADD CONSTRAINT subscription_log_entries_kind_check CHECK (kind IN ('subscription_created', 'subscription_started', 'subscription_stopped', 'subscription_resumed', 'metadata_applied', 'group_changed', 'policy_changed', 'rss_new_content', 'release_processed', 'download_changed', 'artifact_verified', 'import_waiting_config', 'placement_changed', 'replacement_decided', 'cleanup_completed', 'cleanup_failed', 'file_alignment_completed', 'file_alignment_failed', 'acquisition_settled'));
 
 REVOKE ALL ON FUNCTION postprocessing_plan_config_hold_valid(jsonb) FROM PUBLIC;
-REVOKE ALL ON FUNCTION postprocessing_plan_wait_config(text, text, bigint, jsonb, double precision) FROM PUBLIC;
+REVOKE ALL ON FUNCTION postprocessing_plan_wait_config(text, text, bigint, jsonb, integer, double precision) FROM PUBLIC;
 REVOKE ALL ON FUNCTION postprocessing_plan_config_resume(text, text, bigint) FROM PUBLIC;
 REVOKE ALL ON FUNCTION postprocessing_plan_wake_config(text, integer) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION postprocessing_plan_wait_config(text, text, bigint, jsonb, double precision) TO bansoko_runtime;
+GRANT EXECUTE ON FUNCTION postprocessing_plan_wait_config(text, text, bigint, jsonb, integer, double precision) TO bansoko_runtime;
 GRANT EXECUTE ON FUNCTION postprocessing_plan_config_resume(text, text, bigint) TO bansoko_runtime;
 GRANT EXECUTE ON FUNCTION postprocessing_plan_wake_config(text, integer) TO bansoko_runtime;

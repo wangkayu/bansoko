@@ -117,6 +117,7 @@ export const enLogCopy = {
       downloaded: "Downloaded",
       downloadFailed: "Download failed",
       importFailed: "Import failed",
+      waitingConfig: "Import waiting for configuration",
     },
   },
   delivery: {
@@ -190,6 +191,10 @@ export const enLogCopy = {
     download_removed: "Deleted in the download client",
     download_failed: "Download failed",
     artifact_verified: "Files checked",
+    import_waiting_binding_bgm: "Import waiting for configuration: no BGM binding ({count} files)",
+    import_waiting_binding_tmdb: "Import waiting for configuration: no TMDB binding ({count} files)",
+    import_waiting_template_variable: "Import waiting for configuration: template variable not defined: {variables} ({count} files)",
+    import_config_resumed: "Configuration complete; import continues",
     file_imported: "Imported: {file_name}",
     file_adopted: "Used the file already in the library: {file_name}",
     file_retained: "The file in the library already matches: {file_name}",

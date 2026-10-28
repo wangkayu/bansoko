@@ -437,6 +437,40 @@ describe("ExecutionRecordsDialog 详情", () => {
     expect(screen.queryByText(t("records.importRetry.accepted"))).not.toBeInTheDocument();
   });
 
+  it("入库等待配置：计划阶段写缺什么与自动继续，警告色、没有重试", async () => {
+    const waiting: AcquisitionRecordDetail = {
+      ...failedDetail,
+      state: "running",
+      stage: "plan",
+      stage_state: "waiting_config",
+      reason_code: undefined,
+      config_hold: [
+        { missing: "tmdb_binding", files: 3 },
+        { missing: "template_variable", variables: ["vars.a", "vars.b"], files: 1 },
+      ],
+      outcome: undefined,
+      stages: [
+        ...failedDetail.stages.slice(0, 3),
+        { stage: "plan", availability: "present", state: "waiting_config" },
+        { stage: "file_execution", availability: "not_reached" },
+        { stage: "settlement", availability: "not_reached" },
+        { stage: "completion", availability: "not_applicable" },
+      ],
+      import_retry_available: false,
+    };
+    fetchMock.mockImplementationOnce(async () => json(waiting));
+    renderDialog({ record: "acq-failed" });
+    const stages = await screen.findByRole("list", { name: t("records.detail.stagesAria") });
+    const plan = within(stages).getByText(t("records.stage.plan")).closest("li")!;
+    const reason = "当前配置无法生成入库路径：缺少 TMDB 绑定；模板变量未定义：vars.a、vars.b";
+    expect(within(plan).getByText("等待配置")).toBeInTheDocument();
+    expect(within(plan).getByText(reason)).toBeInTheDocument();
+    expect(within(plan).getByText("文件保留在下载目录，补全配置后自动继续入库")).toBeInTheDocument();
+    expect(within(stages).queryByRole("button")).not.toBeInTheDocument();
+    // The header position carries the same reason.
+    expect(screen.getByText(`${t("records.atStage", { stage: t("records.stage.plan"), state: "等待配置" })} · ${reason}`)).toBeInTheDocument();
+  });
+
   it("服务端不提供入库重试时没有重试按钮；其他阶段失败也没有", async () => {
     failedDetailBody = { ...failedDetail, import_retry_available: false };
     renderDialog({ record: "acq-failed" });
