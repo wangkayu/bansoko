@@ -7,6 +7,7 @@
 - Execution records show the seed: list rows carry the subtitle group, main tags, version, size and torrent title, and replacements carry a "Replaces a version" mark; details add the source site, published time, info hash (copyable) and all tags.
 - Episode offsets can be set per subtitle group before a subscription starts: drafts and not-yet-started subscriptions offer the offset on every group in the RSS tab, and the test run re-numbers immediately. The offset dialog shows a conversion example such as "Episode 53 → Episode 5".
 - While editing an anime title, the TMDB and BGM names and the source title appear as suggestions you can click to fill in; confirming a TMDB match can also set the title to the matched name.
+- When a TMDB/BGM match is missing or the template uses a variable that does not exist, finished downloads wait for configuration: the files stay in the download folder, the import continues by itself once the settings are complete, and it does not count as a failure.
 
 ## Improved
 
@@ -19,6 +20,9 @@
 - Clicking an anime you already subscribe to in Browse or search opens that subscription instead of a new draft; for a second subscription, use "Duplicate as New Subscription" on the subscription card.
 - An anime's type (TV or movie) is now its own setting: it is filled once from the first TMDB match and is not changed when the match is replaced or cleared.
 - After you change a subscription's title, season, year or TMDB/BGM match, its library files are renamed to the new settings, as when the naming template changes; when a match is missing or the template uses a variable that does not exist, the file stays where it is and the file list shows why.
+- After you change a subgroup's episode offset, library files move to their new episode: files of the same episode are compared under the subscription's version-keeping mode, the preferred one is kept and the others are deleted; when all are kept, the collision policy applies, and the subscription activity records the result. The offset dialog explains these effects.
+- When a file is aligned onto a path that already holds the same episode of the same subscription, the two are compared by the version-keeping mode first and the kept file moves; other cases follow the collision policy.
+- A file whose subscription settings changed while it downloaded moves to the path the current settings give right after import, whether or not automatic alignment is on.
 
 ## Fixed
 
@@ -38,4 +42,4 @@
 
 - Only one downloader is supported, and its download folder is now required.
 - On upgrade, if one subscription already holds files from different seasons, only the current season's files take part in version replacement; the others stay where they are, and the subscription activity records how many, for manual cleanup.
-- An anime's type cannot be switched between TV and movie while it has library files or downloads in progress.
+- An anime's type cannot be switched between TV and movie while it has library files or unfinished downloads or imports.
