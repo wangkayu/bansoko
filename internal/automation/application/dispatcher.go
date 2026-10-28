@@ -1330,7 +1330,7 @@ func (d *Dispatcher) matchOne(ctx context.Context, managedAnimeID, title, origin
 	skipBgm := bgmWorkID.Valid
 	skipTmdb := tmdbWorkID.Valid && tmdbKind.Valid && tmdbSeason.Valid
 
-	result, err := d.MetadataMatcher.Match(ctx, origin, entryRef, title, skipBgm, skipTmdb)
+	result, err := d.MetadataMatcher.Match(matcher.WithAffectedAnime(ctx, managedAnimeID), origin, entryRef, title, skipBgm, skipTmdb)
 	if err != nil {
 		d.recordMetadataMatchOutcome(ctx, managedAnimeID, "failure", metadataMatchErrorCode(err), safeDispatchError(err))
 		return counts, fmt.Errorf("match: %w", err)

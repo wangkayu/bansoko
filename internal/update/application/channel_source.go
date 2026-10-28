@@ -1,6 +1,7 @@
 package application
 
 import (
+	"bansoko/internal/observability/outbound"
 	"context"
 	"crypto/ed25519"
 	"errors"
@@ -151,11 +152,15 @@ func (r *channelResolver) resolve(ctx context.Context) (resolution, error) {
 	}
 	manifest, digest, raw, err := FetchAndVerifyManifestFromSourceRaw(ctx, source, r.publicKey)
 	if err != nil {
-		return resolution{}, &apperrors.Business{
+		business := &apperrors.Business{
 			Status:  503,
 			Code:    "UPDATE_CHANNEL_UNAVAILABLE",
 			Message: "The update channel names a release that could not be verified.",
 		}
+		if failure, ok := outbound.FailureOf(err); ok {
+			return resolution{}, outbound.WithFailure(business, failure)
+		}
+		return resolution{}, business
 	}
 	if err := document.Matches(manifest.ReleaseID, manifest.Version, digest, manifest.ReleaseSequence); err != nil {
 		return resolution{}, &apperrors.Business{
@@ -171,19 +176,23 @@ func (r *channelResolver) resolve(ctx context.Context) (resolution, error) {
 func (r *channelResolver) fetchDocument(ctx context.Context) (channel.Document, error) {
 	resp, err := r.documentSource.Do(ctx, http.MethodGet, r.documentURL)
 	if err != nil {
-		return channel.Document{}, &apperrors.Business{
+		business := &apperrors.Business{
 			Status:  503,
 			Code:    "UPDATE_CHANNEL_UNAVAILABLE",
 			Message: "The update channel could not be read.",
 		}
+		if failure, ok := outbound.FailureOf(err); ok {
+			return channel.Document{}, outbound.WithFailure(business, failure)
+		}
+		return channel.Document{}, business
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return channel.Document{}, &apperrors.Business{
+		return channel.Document{}, outbound.WithFailure(&apperrors.Business{
 			Status:  503,
 			Code:    "UPDATE_CHANNEL_UNAVAILABLE",
 			Message: "The update channel could not be read.",
-		}
+		}, outbound.Describe(nil, resp.Request, resp, ""))
 	}
 	body, readErr := io.ReadAll(io.LimitReader(resp.Body, channel.MaxDocumentBytes+1))
 	if readErr != nil {

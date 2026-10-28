@@ -1,6 +1,7 @@
 package application
 
 import (
+	"bansoko/internal/observability/outbound"
 	"context"
 	"errors"
 	"fmt"
@@ -134,7 +135,11 @@ func (s *UpdateHTTPSource) Do(ctx context.Context, method, rawURL string) (*http
 	if err != nil {
 		return nil, err
 	}
-	return s.client.Do(req)
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, outbound.WithFailure(err, outbound.Describe(err, req, nil, outbound.ViaOf(s.client, req)))
+	}
+	return resp, nil
 }
 
 // Client returns the policy-bound HTTP client. The returned client must not be

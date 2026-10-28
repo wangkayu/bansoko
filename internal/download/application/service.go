@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"bansoko/internal/acquisition/torrent"
@@ -83,6 +84,9 @@ type Service struct {
 	downloadSubmittedSink plugintargetport.BusinessDeliveryEnqueuer
 	retryAfter            time.Duration
 	diagnostics           observabilityport.Recorder
+	syncMu                sync.Mutex
+	syncFailures          int
+	syncChecked           bool
 	logger                observabilityport.RuntimeLogger
 	eventHub              *events.Hub
 }

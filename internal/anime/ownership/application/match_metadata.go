@@ -101,7 +101,7 @@ func (s *Service) MatchAnimeMetadata(ctx context.Context, managedAnimeID string,
 	if target.entryRef.Valid {
 		entryRef = target.entryRef.String
 	}
-	match, matchErr := s.metadataMatcher.Match(ctx, target.origin, entryRef, target.title,
+	match, matchErr := s.metadataMatcher.Match(matcher.WithAffectedAnime(ctx, managedAnimeID), target.origin, entryRef, target.title,
 		target.bgmWorkID.Valid,
 		target.tmdbWorkID.Valid && target.tmdbKind.Valid && target.tmdbSeason.Valid)
 	outcome := MetadataMatchOutcomeNoResult

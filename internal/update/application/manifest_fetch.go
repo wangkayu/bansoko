@@ -1,6 +1,7 @@
 package application
 
 import (
+	"bansoko/internal/observability/outbound"
 	"context"
 	"crypto/ed25519"
 	"errors"
@@ -91,8 +92,8 @@ func decodeAndVerifyManifest(resp *http.Response, publicKey ed25519.PublicKey) (
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return hardeningdomain.ReleaseManifest{}, "", nil, fmt.Errorf(
-			"release manifest source answered HTTP %d; refusing admission", resp.StatusCode)
+		return hardeningdomain.ReleaseManifest{}, "", nil, outbound.WithFailure(fmt.Errorf(
+			"release manifest source answered HTTP %d; refusing admission", resp.StatusCode), outbound.Describe(nil, resp.Request, resp, ""))
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxManifestBytes+1))
 	if err != nil {

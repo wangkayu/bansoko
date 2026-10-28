@@ -21,6 +21,8 @@ import (
 
 	"bansoko/internal/apperrors"
 	hardeningdomain "bansoko/internal/hardening/domain"
+	"bansoko/internal/observability/outbound"
+	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/update/journal"
 )
 
@@ -55,6 +57,10 @@ type Deps struct {
 	BuildBootstrapVersion     string
 	Clock                     func() time.Time
 	UpdateMode                string
+	// Diagnostics and Logger are optional: the update-index reachability
+	// condition is recorded only when a recorder is wired.
+	Diagnostics observabilityport.Recorder
+	Logger      observabilityport.RuntimeLogger
 }
 
 type Service struct {
@@ -72,6 +78,8 @@ type Service struct {
 	lastStatus                                                         Status
 	done                                                               chan struct{}
 	doneOnce                                                           sync.Once
+	diagnostics                                                        observabilityport.Recorder
+	logger                                                             observabilityport.RuntimeLogger
 }
 
 func NewService(deps Deps) (*Service, error) {
@@ -118,7 +126,7 @@ func NewService(deps Deps) (*Service, error) {
 	if clock == nil {
 		clock = func() time.Time { return time.Now().UTC() }
 	}
-	return &Service{db: deps.DB, publicKey: deps.PublicKey, updatesRoot: deps.UpdatesRoot, manifestURL: manifestURL, source: source, channel: resolver, packageRoot: packageRoot, packageConfig: config, buildID: strings.TrimSpace(deps.BuildReleaseID), buildVersion: strings.TrimSpace(deps.BuildVersion), buildCompatibilityVersion: strings.TrimSpace(deps.BuildCompatibilityVersion), bootstrapVersion: deps.BuildBootstrapVersion, clock: clock, done: make(chan struct{})}, nil
+	return &Service{db: deps.DB, publicKey: deps.PublicKey, updatesRoot: deps.UpdatesRoot, manifestURL: manifestURL, source: source, channel: resolver, packageRoot: packageRoot, packageConfig: config, buildID: strings.TrimSpace(deps.BuildReleaseID), buildVersion: strings.TrimSpace(deps.BuildVersion), buildCompatibilityVersion: strings.TrimSpace(deps.BuildCompatibilityVersion), bootstrapVersion: deps.BuildBootstrapVersion, clock: clock, done: make(chan struct{}), diagnostics: deps.Diagnostics, logger: deps.Logger}, nil
 }
 
 func (s *Service) ExitRequested() <-chan struct{} { return s.done }
@@ -319,7 +327,46 @@ func (s *Service) AdmitUpdate(ctx context.Context, input AdmitInput, idempotency
 	}
 	return s.admit(ctx, idempotencyKey, input.TargetReleaseID, input.ManifestDigest)
 }
+
+// updateDiagnosticTarget is the single target of the update-index condition.
+const updateDiagnosticTarget = "update"
+
+// CheckUpdate reads the update index. An unreachable index repeats into one
+// open diagnostic; a successful index fetch closes it. Verification refusals
+// carry no outbound failure and are not reachability problems.
 func (s *Service) CheckUpdate(ctx context.Context) (Check, error) {
+	result, err := s.checkUpdate(ctx)
+	s.recordIndexReachability(ctx, result, err)
+	return result, err
+}
+
+func (s *Service) recordIndexReachability(ctx context.Context, result Check, err error) {
+	if s.diagnostics == nil {
+		return
+	}
+	logger := s.logger
+	if logger == nil {
+		logger = observabilityport.NopRuntimeLogger{}
+	}
+	if err == nil {
+		// Only a completed check proves the index was reachable.
+		if result.Status == "" || result.Status == "check_failed" {
+			return
+		}
+		observabilityport.DiagnosticSuccessAfterCommit(s.diagnostics, logger, observabilityport.DiagnosticSuccessRequest{Kind: observabilityport.KindUpdate, TargetID: updateDiagnosticTarget})(ctx)
+		return
+	}
+	failure, ok := outbound.FailureOf(err)
+	if !ok {
+		return
+	}
+	observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, logger, observabilityport.DiagnosticFailureRequest{
+		Condition: observabilityport.Condition{Kind: observabilityport.KindUpdate, Variant: observabilityport.VariantUnreachable},
+		Severity:  observabilityport.SeverityWarning, TargetID: updateDiagnosticTarget, TargetName: updateDiagnosticTarget, Failure: failure,
+	})(ctx)
+}
+
+func (s *Service) checkUpdate(ctx context.Context) (Check, error) {
 	checked := s.clock().UTC()
 	result := Check{CheckedAt: checked, Current: Current{ReleaseID: s.buildID, Version: s.buildVersion, ImageCompatibility: s.buildCompatibilityVersion, ReleaseNotes: s.currentReleaseNotes()}, Compatibility: Compatibility{Kind: "incompatible", Reason: "No compatible candidate has been checked."}}
 	if marker, ok, err := s.readPendingStatus(); err != nil || ok {
