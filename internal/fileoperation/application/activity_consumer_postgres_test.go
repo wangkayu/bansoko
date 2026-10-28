@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"os"
+	"sort"
+	"strings"
 	"testing"
 
 	acquisitionactivity "bansoko/internal/acquisition/terminal/activity"
@@ -505,14 +507,14 @@ func ownerExec(t *testing.T, statements ...string) {
 func TestAcquisitionActivityNotReplaced(t *testing.T) {
 	ctx := context.Background()
 	const decision = "decision-planned"
-	assertOneNotReplaced := func(t *testing.T, x typedRuntimeFixture, cause string) {
+	assertOneNotReplaced := func(t *testing.T, x typedRuntimeFixture, root, cause string) {
 		t.Helper()
-		var state, staleReason string
-		if err := x.db.QueryRow(`SELECT state, COALESCE(stale_reason,'') FROM replacement_decisions WHERE id=$1`, decision).Scan(&state, &staleReason); err != nil {
+		var state, staleReason, staleRoot string
+		if err := x.db.QueryRow(`SELECT state, COALESCE(stale_reason,''), COALESCE(stale_acquisition_id,'') FROM replacement_decisions WHERE id=$1`, decision).Scan(&state, &staleReason, &staleRoot); err != nil {
 			t.Fatal(err)
 		}
-		if state != "stale" || staleReason != "candidate_acquisition_failed" {
-			t.Fatalf("decision %s/%s, want stale by the failed candidate", state, staleReason)
+		if state != "stale" || staleReason != "candidate_acquisition_failed" || staleRoot != root {
+			t.Fatalf("decision %s/%s by root %q, want stale by the failed candidate %s", state, staleReason, staleRoot, root)
 		}
 		want := replacementLine{decision, "not_replaced", "replacement_not_replaced", cause, "replacement:" + decision + ":not_replaced", "release-file-test"}
 		if got := replacementLines(t, x.db); len(got) != 1 || got[0] != want {
@@ -537,11 +539,11 @@ func TestAcquisitionActivityNotReplaced(t *testing.T) {
 		if err := x.db.QueryRow(`SELECT count(*) FROM subscription_log_entries WHERE dedupe_key=$1`, "acquisition:settled:"+root).Scan(&settled); err != nil || settled != 1 {
 			t.Fatalf("settled entries = %d (%v), want 1", settled, err)
 		}
-		assertOneNotReplaced(t, x, cause)
+		assertOneNotReplaced(t, x, root, cause)
 		if again, err := consumer.ConsumeOnce(ctx); err != nil || again.Written != 0 {
 			t.Fatalf("repeated pass = %+v, %v; want nothing written", again, err)
 		}
-		assertOneNotReplaced(t, x, cause)
+		assertOneNotReplaced(t, x, root, cause)
 	}
 
 	t.Run("import_failed", func(t *testing.T) {
@@ -600,6 +602,75 @@ CREATE TRIGGER reject_replacement_line BEFORE INSERT ON subscription_log_entries
 		if err := x.db.QueryRow(`SELECT count(*) FROM subscription_log_entries WHERE dedupe_key=$1`, "acquisition:settled:"+root).Scan(&settled); err != nil || settled != 1 {
 			t.Fatalf("settled entries after retry = %d (%v), want 1", settled, err)
 		}
-		assertOneNotReplaced(t, x, "import_failed")
+		assertOneNotReplaced(t, x, root, "import_failed")
+	})
+
+	// The consumer finds the decisions by the root the trigger named, not by
+	// time: a decision staled after the root's recorded terminal time still
+	// gets its line.
+	t.Run("found_by_the_root_not_by_time", func(t *testing.T) {
+		run(t, func(t *testing.T, x typedRuntimeFixture, root string) {
+			ownerExec(t,
+				`ALTER TABLE acquisitions DISABLE TRIGGER USER`,
+				`UPDATE acquisitions SET accepted_at=accepted_at-INTERVAL '1 hour', retention_anchor_at=retention_anchor_at-INTERVAL '1 hour',
+					terminal_at=terminal_at-INTERVAL '1 hour', detail_until=detail_until-INTERVAL '1 hour' WHERE id='`+root+`'`,
+				`ALTER TABLE acquisitions ENABLE TRIGGER USER`)
+			var outside bool
+			if err := x.db.QueryRow(`
+SELECT d.updated_at > r.terminal_at OR d.updated_at < r.accepted_at
+FROM replacement_decisions d, acquisitions r WHERE d.id=$1 AND r.id=$2`, decision, root).Scan(&outside); err != nil {
+				t.Fatal(err)
+			}
+			if !outside {
+				t.Fatal("arrangement: the decision's stale time must lie outside the root's acceptance-to-terminal span")
+			}
+		}, "import_failed")
+	})
+
+	// An import retry re-runs the root; when it fails again, its re-settlement
+	// finds the first run's decision again (its line is a no-op) and the
+	// decision the second failure staled (a new line).
+	t.Run("retried_root_writes_only_the_new_decision", func(t *testing.T) {
+		x := newTypedRuntimeFixture(t, nil, false)
+		consumer := activityConsumer(t, x)
+		seedPlannedReplacement(t, x, decision)
+		root := failRootOnImport(t, x)
+		if _, err := consumer.ConsumeOnce(ctx); err != nil {
+			t.Fatal(err)
+		}
+		assertOneNotReplaced(t, x, root, "import_failed")
+
+		// The retried run failed again: the retry is recorded, the root's
+		// settlement is a fact again, and the second failure staled the
+		// retried run's own decision.
+		const retried = "decision-retried"
+		pools, _ := json.Marshal([]any{map[string]any{"pool_key": "tv:s1:e1", "verdict": "replace", "winner": map[string]any{"placement_id": "release:release-file-test", "version": 1, "fingerprint": "candidate"}}})
+		ownerExec(t,
+			`INSERT INTO acquisition_import_retries(acquisition_id, ordinal, idempotency_key, request_hash, retried_files, reopened_placements,
+					result_version, previous_state, previous_terminal_at, previous_terminal_receipt)
+				SELECT id, 1, 'retry-key-0001', 'sha256:`+strings.Repeat("0", 64)+`', 1, 0, version, state, terminal_at, terminal_receipt
+				FROM acquisitions WHERE id='`+root+`'`,
+			`ALTER TABLE acquisitions DISABLE TRIGGER USER`,
+			`UPDATE acquisitions SET activity_logged_at=NULL WHERE id='`+root+`'`,
+			`ALTER TABLE acquisitions ENABLE TRIGGER USER`,
+			`INSERT INTO replacement_decisions(id,idempotency_key,managed_anime_id,candidate_release_id,policy_version,profile_version,candidate_facts_ref,coverage_key,coverage_keys,admission_mode,pools,verdict,state,stale_reason,stale_acquisition_id,subscription_version,input_digest,version)
+				SELECT '`+retried+`','`+retried+`',managed_anime_id,candidate_release_id,1,'profile-v1','release:1','tv:s1:e1','["tv:s1:e1"]','single_copy','`+string(pools)+`'::jsonb,'replace','stale','candidate_acquisition_failed','`+root+`',1,'digest',2
+				FROM replacement_decisions WHERE id='`+decision+`'`)
+		if _, err := consumer.ConsumeOnce(ctx); err != nil {
+			t.Fatal(err)
+		}
+		var settled int
+		if err := x.db.QueryRow(`SELECT count(*) FROM subscription_log_entries WHERE dedupe_key=$1`, "acquisition:settled:"+root+":r1").Scan(&settled); err != nil || settled != 1 {
+			t.Fatalf("retried settlement entries = %d (%v), want 1", settled, err)
+		}
+		got := replacementLines(t, x.db)
+		sort.Slice(got, func(i, j int) bool { return got[i].subject < got[j].subject })
+		want := []replacementLine{
+			{decision, "not_replaced", "replacement_not_replaced", "import_failed", "replacement:" + decision + ":not_replaced", "release-file-test"},
+			{retried, "not_replaced", "replacement_not_replaced", "import_failed", "replacement:" + retried + ":not_replaced", "release-file-test"},
+		}
+		if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+			t.Fatalf("replacement lines after the retry = %+v, want %+v", got, want)
+		}
 	})
 }

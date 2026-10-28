@@ -1,6 +1,9 @@
 package port
 
-import "sort"
+import (
+	"fmt"
+	"sort"
+)
 
 // The business journal stores no display text. Each entry names one message
 // of a closed catalog (message_code, registered under exactly one kind) plus
@@ -63,11 +66,8 @@ const (
 	MessageReleaseAwaitingCompet MessageCode = "release_awaiting_competition"
 	MessageReleaseResumeBaseline MessageCode = "release_resume_baseline"
 	MessageReleaseStartBaseline  MessageCode = "release_start_baseline"
-	// MessageReleaseEvaluated is the evaluation result of a verdict the
-	// catalog does not name.
-	MessageReleaseEvaluated  MessageCode = "release_evaluated"
-	MessageDownloadSubmitted MessageCode = "download_submitted"
-	MessageDownloadCompleted MessageCode = "download_completed"
+	MessageDownloadSubmitted     MessageCode = "download_submitted"
+	MessageDownloadCompleted     MessageCode = "download_completed"
 	// MessageDownloadRemoved is a task deleted in the downloader (cancelled,
 	// not a failure).
 	MessageDownloadRemoved  MessageCode = "download_removed"
@@ -171,7 +171,6 @@ var (
 		{Code: MessageReleaseAwaitingCompet, Kind: ActivityKindReleaseProcessed},
 		{Code: MessageReleaseResumeBaseline, Kind: ActivityKindReleaseProcessed},
 		{Code: MessageReleaseStartBaseline, Kind: ActivityKindReleaseProcessed},
-		{Code: MessageReleaseEvaluated, Kind: ActivityKindReleaseProcessed},
 		{Code: MessageDownloadSubmitted, Kind: ActivityKindDownloadChanged, Params: []MessageParam{{Name: ParamName, Type: MessageParamString}}},
 		{Code: MessageDownloadCompleted, Kind: ActivityKindDownloadChanged},
 		{Code: MessageDownloadRemoved, Kind: ActivityKindDownloadChanged},
@@ -246,35 +245,37 @@ func IsActivityKind(kind string) bool {
 }
 
 // ReleaseVerdictMessage is the release_processed message of one evaluation
-// verdict; a verdict the catalog does not name is release_evaluated.
-func ReleaseVerdictMessage(verdict string) MessageCode {
+// verdict. The mapping covers exactly the verdicts releases_verdict_check
+// admits; any other verdict is an error, which fails the evaluation entry
+// instead of writing a message no reader has copy for.
+func ReleaseVerdictMessage(verdict string) (MessageCode, error) {
 	switch verdict {
 	case "discovered":
-		return MessageReleaseDiscovered
+		return MessageReleaseDiscovered, nil
 	case "waiting_metadata":
-		return MessageReleaseWaitingMeta
+		return MessageReleaseWaitingMeta, nil
 	case "subscription_stopped":
-		return MessageReleaseSubStopped
+		return MessageReleaseSubStopped, nil
 	case "source_unavailable":
-		return MessageReleaseSourceDown
+		return MessageReleaseSourceDown, nil
 	case "parse_failed":
-		return MessageReleaseParseFailed
+		return MessageReleaseParseFailed, nil
 	case "accepted_pending_download":
-		return MessageReleaseAccepted
+		return MessageReleaseAccepted, nil
 	case "filtered":
-		return MessageReleaseFiltered
+		return MessageReleaseFiltered, nil
 	case "adopted_existing":
-		return MessageReleaseAdopted
+		return MessageReleaseAdopted, nil
 	case "acquisition_failed":
-		return MessageReleaseAcquireFailed
+		return MessageReleaseAcquireFailed, nil
 	case "submitted":
-		return MessageReleaseSubmitted
+		return MessageReleaseSubmitted, nil
 	case "awaiting_competition":
-		return MessageReleaseAwaitingCompet
+		return MessageReleaseAwaitingCompet, nil
 	case "resume_baseline":
-		return MessageReleaseResumeBaseline
+		return MessageReleaseResumeBaseline, nil
 	case "start_baseline":
-		return MessageReleaseStartBaseline
+		return MessageReleaseStartBaseline, nil
 	}
-	return MessageReleaseEvaluated
+	return "", fmt.Errorf("release verdict %q has no release_processed message", verdict)
 }

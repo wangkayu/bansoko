@@ -261,11 +261,67 @@ func TestMessageCatalogMirrors(t *testing.T) {
 	}
 }
 
-func TestReleaseVerdictMessagesBelongToReleaseProcessed(t *testing.T) {
-	for _, verdict := range []string{"discovered", "waiting_metadata", "parse_failed", "accepted", "bogus"} {
-		spec, ok := LookupMessage(ReleaseVerdictMessage(verdict))
-		if !ok || spec.Kind != ActivityKindReleaseProcessed {
-			t.Errorf("verdict %q maps to %q (kind %q)", verdict, ReleaseVerdictMessage(verdict), spec.Kind)
+// latestReleaseVerdicts reads the verdict list of the newest migration that
+// (re)defines releases_verdict_check.
+func latestReleaseVerdicts(t *testing.T) []string {
+	t.Helper()
+	paths, err := filepath.Glob(repoPath("db/migrations/*.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(paths)
+	pattern := regexp.MustCompile(`releases_verdict_check CHECK \(verdict IN \(([^)]*)\)`)
+	var latest []byte
+	for _, path := range paths {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
 		}
+		for _, match := range pattern.FindAllSubmatch(raw, -1) {
+			latest = match[1]
+		}
+	}
+	if latest == nil {
+		t.Fatal("no migration defines releases_verdict_check")
+	}
+	verdicts := []string{}
+	for _, value := range strings.Split(string(latest), ",") {
+		verdicts = append(verdicts, strings.Trim(strings.TrimSpace(value), "'"))
+	}
+	return verdicts
+}
+
+// TestReleaseVerdictMessagesCoverTheVerdictCheck: every verdict the latest
+// releases_verdict_check admits maps to its own release_processed message,
+// every release_processed message is some verdict's, and a verdict outside
+// the CHECK is an error.
+func TestReleaseVerdictMessagesCoverTheVerdictCheck(t *testing.T) {
+	verdicts := latestReleaseVerdicts(t)
+	if len(verdicts) != 13 {
+		t.Errorf("releases_verdict_check admits %d verdicts, want 13: %v", len(verdicts), verdicts)
+	}
+	mapped := map[MessageCode]string{}
+	for _, verdict := range verdicts {
+		code, err := ReleaseVerdictMessage(verdict)
+		if err != nil {
+			t.Errorf("verdict %q: %v", verdict, err)
+			continue
+		}
+		spec, ok := LookupMessage(code)
+		if !ok || spec.Kind != ActivityKindReleaseProcessed {
+			t.Errorf("verdict %q maps to %q (kind %q), want a release_processed message", verdict, code, spec.Kind)
+		}
+		if other, dup := mapped[code]; dup {
+			t.Errorf("verdicts %q and %q share message %q", other, verdict, code)
+		}
+		mapped[code] = verdict
+	}
+	for _, spec := range MessageSpecs() {
+		if _, ok := mapped[spec.Code]; spec.Kind == ActivityKindReleaseProcessed && !ok {
+			t.Errorf("release_processed message %q is no verdict's message", spec.Code)
+		}
+	}
+	if code, err := ReleaseVerdictMessage("bogus"); err == nil {
+		t.Errorf("unknown verdict maps to %q, want an error", code)
 	}
 }

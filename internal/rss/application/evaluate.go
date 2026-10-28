@@ -826,6 +826,10 @@ RETURNING version`, snapshot.releaseID, nullableJSON(parsedFacts), nullableJSON(
 		if err != nil {
 			return 0, err
 		}
+		message, err := observabilityport.ReleaseVerdictMessage(verdict)
+		if err != nil {
+			return 0, err
+		}
 		if err := appendActivity(ctx, tx, s.activityWriter, observabilityport.ActivityRecord{
 			SubscriptionID:  snapshot.subscriptionID,
 			ManagedAnimeID:  snapshot.managedAnimeID,
@@ -839,7 +843,7 @@ RETURNING version`, snapshot.releaseID, nullableJSON(parsedFacts), nullableJSON(
 			RSSSourceID:     snapshot.sourceID,
 			ReleaseID:       snapshot.releaseID,
 			GroupRef:        snapshot.groupName,
-			MessageCode:     observabilityport.ReleaseVerdictMessage(verdict),
+			MessageCode:     message,
 			Details:         details,
 			CorrelationID:   correlationID,
 		}); err != nil {

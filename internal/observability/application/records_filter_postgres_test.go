@@ -39,6 +39,12 @@ func seedRecordFilterFixture(t *testing.T) filterFixture {
 		VALUES ('sub-alpha', 'anime-alpha', 'custom', 'alpha', 'active')`)
 	exec(`INSERT INTO subscriptions(id, managed_anime_id, origin, instance_label, state)
 		VALUES ('sub-beta', 'anime-beta', 'oneshot', 'beta one-shot', 'stopped')`)
+	exec(`INSERT INTO rss_sources(id, subscription_id, source_kind, locator, locator_display, group_name, title)
+		VALUES ('src-alpha', 'sub-alpha', 'custom_rss', 'https://feeds.example.test/alpha.xml', 'https://feeds.example.test/alpha.xml', 'GrpX', 'Alpha Saga'),
+		       ('src-beta', 'sub-beta', 'custom_rss', 'https://feeds.example.test/beta.xml', 'https://feeds.example.test/beta.xml', 'GrpY', 'Beta Original')`)
+	exec(`INSERT INTO releases(id, rss_source_id, stable_item_key, raw_facts, source_facts, verdict, reason_code)
+		VALUES ('rel-1', 'src-alpha', 'rel-1', '{}', '{}', 'discovered', 'discovered'),
+		       ('rel-2', 'src-beta', 'rel-2', '{}', '{}', 'discovered', 'discovered')`)
 
 	base := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
 	at := func(minutes int) time.Time { return base.Add(time.Duration(minutes) * time.Minute) }

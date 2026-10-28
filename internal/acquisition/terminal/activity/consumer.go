@@ -443,7 +443,6 @@ SELECT fact.id, fact.version, fact.state, fact.terminal_at,
        COALESCE(fact.terminal_receipt->'primary_failure'->>'reason_code', ''),
        (SELECT count(*) FROM acquisition_files df WHERE df.acquisition_id = fact.id AND df.outcome = 'succeeded'),
        (SELECT count(*) FROM acquisition_files df WHERE df.acquisition_id = fact.id AND df.outcome = 'failed'),
-       COALESCE(fact.origin_managed_anime_ref, ''), COALESCE(fact.source_release_ref, ''), fact.accepted_at,
        EXISTS (SELECT 1 FROM download_tasks t WHERE t.acquisition_id = fact.id AND t.state = 'completed'),
        `+scopeColumns+`
 FROM (SELECT r.*, r.id AS acquisition_id FROM acquisitions r
@@ -458,13 +457,13 @@ LIMIT $2`, windowStart(window), batch)
 	defer rows.Close()
 	var out []entry
 	for rows.Next() {
-		var id, state, code, originAnime, sourceRelease string
+		var id, state, code string
 		var version, delivered, failed int64
-		var at, acceptedAt time.Time
+		var at time.Time
 		var downloaded bool
 		var scope runScope
 		if err := rows.Scan(append([]any{&id, &version, &state, &at, &code, &delivered, &failed,
-			&originAnime, &sourceRelease, &acceptedAt, &downloaded}, scope.targets()...)...); err != nil {
+			&downloaded}, scope.targets()...)...); err != nil {
 			return nil, err
 		}
 		outcome, reason, message := "success", "acquisition_succeeded", observabilityport.MessageAcquisitionDone
@@ -476,13 +475,10 @@ LIMIT $2`, windowStart(window), batch)
 			if downloaded {
 				cause = businesslog.NotReplacedImportFailed
 			}
-			notReplaced = newNotReplacedScope(originAnime, sourceRelease, acceptedAt, at, cause)
+			notReplaced = &notReplacedScope{reason: cause, runContext: scope.runContext()}
 		case "cancelled":
 			outcome, reason, message = "info", reasonCode(code, "owner_retired"), observabilityport.MessageAcquisitionStop
-			notReplaced = newNotReplacedScope(originAnime, sourceRelease, acceptedAt, at, businesslog.NotReplacedCancelled)
-		}
-		if notReplaced != nil {
-			notReplaced.runContext = scope.runContext()
+			notReplaced = &notReplacedScope{reason: businesslog.NotReplacedCancelled, runContext: scope.runContext()}
 		}
 		step := map[string]any{"item_count": delivered}
 		if failed > 0 {

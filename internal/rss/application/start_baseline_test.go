@@ -44,7 +44,7 @@ func TestStartBaselineIsTerminalButRetryable(t *testing.T) {
 	if !decision.Allowed {
 		t.Fatalf("start_baseline must stay retryable: %+v", decision)
 	}
-	if got := observabilityport.ReleaseVerdictMessage(ReleaseVerdictStartBaseline); got != observabilityport.MessageReleaseStartBaseline {
-		t.Fatalf("message = %q", got)
+	if got, err := observabilityport.ReleaseVerdictMessage(ReleaseVerdictStartBaseline); err != nil || got != observabilityport.MessageReleaseStartBaseline {
+		t.Fatalf("message = %q (%v)", got, err)
 	}
 }

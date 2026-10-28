@@ -6,8 +6,8 @@ import (
 	observabilityport "bansoko/internal/observability/port"
 )
 
-// Every Release verdict names its own message: the evaluation entry never
-// falls back to the generic release_evaluated for a verdict the API defines.
+// Every Release verdict names its own message, and a verdict the catalog does
+// not map is an error, never a generic message.
 func TestReleaseVerdictMessageNamesEveryVerdict(t *testing.T) {
 	verdicts := []string{
 		"discovered", "waiting_metadata", "subscription_stopped", "source_unavailable",
@@ -17,9 +17,9 @@ func TestReleaseVerdictMessageNamesEveryVerdict(t *testing.T) {
 	}
 	seen := map[observabilityport.MessageCode]string{}
 	for _, verdict := range verdicts {
-		code := observabilityport.ReleaseVerdictMessage(verdict)
-		if code == observabilityport.MessageReleaseEvaluated {
-			t.Fatalf("verdict %q has no message of its own", verdict)
+		code, err := observabilityport.ReleaseVerdictMessage(verdict)
+		if err != nil {
+			t.Fatalf("verdict %q has no message of its own: %v", verdict, err)
 		}
 		if spec, ok := observabilityport.LookupMessage(code); !ok || spec.Kind != observabilityport.ActivityKindReleaseProcessed {
 			t.Fatalf("verdict %q message %q is not a release_processed message", verdict, code)
@@ -29,7 +29,7 @@ func TestReleaseVerdictMessageNamesEveryVerdict(t *testing.T) {
 		}
 		seen[code] = verdict
 	}
-	if got := observabilityport.ReleaseVerdictMessage("unknown_verdict"); got != observabilityport.MessageReleaseEvaluated {
-		t.Fatalf("unknown verdict message = %q", got)
+	if got, err := observabilityport.ReleaseVerdictMessage("unknown_verdict"); err == nil {
+		t.Fatalf("unknown verdict message = %q, want an error", got)
 	}
 }

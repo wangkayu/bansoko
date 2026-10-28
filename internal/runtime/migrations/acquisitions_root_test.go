@@ -206,6 +206,11 @@ func acquisitionOwnedRelation(name string) bool {
 		// with the root when the execution graph is compacted (it freezes its own
 		// copy of the task identity), and a root is never deleted.
 		return true
+	case "replacement_decisions":
+		// stale_acquisition_id names the candidate root whose failure or
+		// cancellation staled the decision. The decision belongs to its anime
+		// and is deleted with it; the root it names is never deleted.
+		return true
 	}
 	return strings.HasPrefix(name, "acquisition_")
 }

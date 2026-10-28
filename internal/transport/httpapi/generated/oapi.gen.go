@@ -2221,7 +2221,6 @@ const (
 	SubscriptionLogMessageCodeReleaseAdoptedExisting     SubscriptionLogMessageCode = "release_adopted_existing"
 	SubscriptionLogMessageCodeReleaseAwaitingCompetition SubscriptionLogMessageCode = "release_awaiting_competition"
 	SubscriptionLogMessageCodeReleaseDiscovered          SubscriptionLogMessageCode = "release_discovered"
-	SubscriptionLogMessageCodeReleaseEvaluated           SubscriptionLogMessageCode = "release_evaluated"
 	SubscriptionLogMessageCodeReleaseFiltered            SubscriptionLogMessageCode = "release_filtered"
 	SubscriptionLogMessageCodeReleaseParseFailed         SubscriptionLogMessageCode = "release_parse_failed"
 	SubscriptionLogMessageCodeReleaseResumeBaseline      SubscriptionLogMessageCode = "release_resume_baseline"

@@ -804,7 +804,10 @@ ON CONFLICT (idempotency_key) DO NOTHING`,
 	// A replace verdict is only a plan when it is frozen: its one line is
 	// written when it ends, replaced at settlement or not_replaced when it
 	// will never take effect. Every other verdict is final here.
-	message, final := admissionReplacementMessage(verdict)
+	message, final, err := admissionReplacementMessage(verdict)
+	if err != nil {
+		return ReplacementDecisionView{}, err
+	}
 	if s.activity != nil && final {
 		details, logReleaseID, err := replacementActivityDetailsTx(ctx, tx, input.AnimeID, input.CandidateRelease, key, verdict, pools, candidatePlacementID)
 		if err != nil {
@@ -1827,15 +1830,18 @@ LIMIT 1`, releaseID).Scan(&raw)
 // admissionReplacementMessage is the message of a key decision frozen with
 // one verdict, and whether that verdict is final when it is frozen. A replace
 // verdict is not: it writes replaced at settlement or not_replaced when it
-// will never take effect.
-func admissionReplacementMessage(verdict string) (observabilityport.MessageCode, bool) {
+// will never take effect. The cases are the verdicts
+// replacement_decisions_verdict_check admits; any other verdict is an error.
+func admissionReplacementMessage(verdict string) (observabilityport.MessageCode, bool, error) {
 	switch verdict {
 	case "keep", "retain":
-		return observabilityport.MessageReplacementKeptExisting, true
+		return observabilityport.MessageReplacementKeptExisting, true, nil
 	case "queue":
-		return observabilityport.MessageReplacementKeptAll, true
+		return observabilityport.MessageReplacementKeptAll, true, nil
 	case "blocked":
-		return observabilityport.MessageReplacementBlocked, true
+		return observabilityport.MessageReplacementBlocked, true, nil
+	case "replace":
+		return "", false, nil
 	}
-	return "", false
+	return "", false, fmt.Errorf("replacement verdict %q has no admission message", verdict)
 }

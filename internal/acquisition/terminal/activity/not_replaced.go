@@ -4,52 +4,38 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"time"
 
 	"bansoko/internal/observability/businesslog"
 	"bansoko/internal/persistence/txscope"
 )
 
 // notReplacedScope is what the settlement of a failed or cancelled root needs
-// to find the replace decisions its terminal transition staled: the trigger
-// (stale_failed_candidate_decisions) stales the admitted, unbound decisions of
-// (origin anime, source Release) at the root's terminal time, which lies
-// between the root's acceptance and its terminal_at.
+// to write the not_replaced lines of the replace decisions its terminal
+// transition staled: the trigger (stale_failed_candidate_decisions) names the
+// root in each decision it stales (stale_acquisition_id), so the decisions are
+// found by that link alone.
 type notReplacedScope struct {
-	animeID, releaseID     string
-	acceptedAt, terminalAt time.Time
-	reason                 businesslog.NotReplacedReason
-	runContext             map[string]any
-}
-
-// newNotReplacedScope is nil for a root without an origin anime or a source
-// Release: the trigger stales nothing for it.
-func newNotReplacedScope(animeID, releaseID string, acceptedAt, terminalAt time.Time, reason businesslog.NotReplacedReason) *notReplacedScope {
-	if animeID == "" || releaseID == "" {
-		return nil
-	}
-	return &notReplacedScope{animeID: animeID, releaseID: releaseID, acceptedAt: acceptedAt, terminalAt: terminalAt, reason: reason}
+	reason     businesslog.NotReplacedReason
+	runContext map[string]any
 }
 
 // writeNotReplacedTx writes, in the settlement entry's transaction and after
 // it, the not_replaced line of each replace decision the root's failure or
 // cancellation staled. The decisions are a plain read and every line names the
 // settlement's own subscription and Release, so it takes no lock the
-// settlement entry has not already taken. The key is the decision, so a
-// replay, or a re-settlement after an import retry, is a no-op.
+// settlement entry has not already taken; a decision of an anime other than the
+// entry's is not written under it. The key is the decision, so a replay is a
+// no-op, and after an import retry the re-settlement finds the first run's
+// decisions again (no-ops) beside the ones its own failure staled.
 func (c *Consumer) writeNotReplacedTx(ctx context.Context, tx *sql.Tx, e entry) error {
 	scope := e.notReplaced
-	if scope.animeID != e.managedAnimeID {
-		return nil
-	}
 	rows, err := tx.QueryContext(ctx, `
 SELECT d.id, d.version
 FROM replacement_decisions d
-WHERE d.managed_anime_id = $1 AND d.candidate_release_id = $2
-  AND d.verdict = 'replace' AND d.state = 'stale' AND d.stale_reason = 'candidate_acquisition_failed'
-  AND d.candidate_placement_id IS NULL
-  AND d.updated_at >= $3 AND d.updated_at <= $4
-ORDER BY d.id`, scope.animeID, scope.releaseID, scope.acceptedAt, scope.terminalAt)
+WHERE d.stale_acquisition_id = $1
+  AND d.verdict = 'replace' AND d.stale_reason = 'candidate_acquisition_failed'
+  AND d.managed_anime_id = $2
+ORDER BY d.id`, e.record.SubjectID, e.managedAnimeID)
 	if err != nil {
 		return fmt.Errorf("read staled replace decisions: %w", err)
 	}

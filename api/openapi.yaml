@@ -9462,7 +9462,6 @@ components:
         - release_awaiting_competition
         - release_resume_baseline
         - release_start_baseline
-        - release_evaluated
         - download_submitted
         - download_completed
         - download_removed

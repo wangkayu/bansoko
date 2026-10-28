@@ -111,9 +111,9 @@ func TestFinalVerdictLogsItsLineWhenFrozen(t *testing.T) {
 	if err != nil || len(views) != 1 || views[0].Verdict == "replace" {
 		t.Fatalf("evaluate = %+v, %v; want one final (non-replace) decision for a worse candidate", views, err)
 	}
-	message, final := admissionReplacementMessage(views[0].Verdict)
-	if !final {
-		t.Fatalf("verdict %q is not final at admission", views[0].Verdict)
+	message, final, err := admissionReplacementMessage(views[0].Verdict)
+	if err != nil || !final {
+		t.Fatalf("verdict %q is not final at admission (%v)", views[0].Verdict, err)
 	}
 	got := lifecycleLines(t, db)
 	if len(got) != 1 || got[0].subject != views[0].ID || got[0].message != string(message) || got[0].reason != views[0].Verdict {
