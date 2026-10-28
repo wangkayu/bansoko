@@ -215,7 +215,9 @@ func TestInstancePolicySaveEnqueuesNoReplacementWork(t *testing.T) {
 	// The candidate is still downloading: a policy change has nothing to do
 	// with it until the next comparison moment.
 	// acquisitions is not writable by the runtime role; the fixture goes through the schema owner.
-	if _, err := disposabledb.Owner(t).Exec(`UPDATE acquisitions SET entry_kind = 'subscription_add', state = 'running' WHERE source_release_ref = 'release-r1'`); err != nil {
+	// A running root holds a work item, here its settle item.
+	if _, err := disposabledb.Owner(t).Exec(`UPDATE acquisitions SET entry_kind = 'subscription_add', state = 'running' WHERE source_release_ref = 'release-r1';
+SELECT public.acquisition_settle_wake(id) FROM acquisitions WHERE source_release_ref = 'release-r1'`); err != nil {
 		t.Fatal(err)
 	}
 	service := NewService(NewPolicyService(db), NewReplacementPolicyService(db), nil, nil, nil)

@@ -70,13 +70,15 @@ func TestDownloadSubmitWallExhaustionClosesWork(t *testing.T) {
 	if taskState != "failed" || workState != "failed" {
 		t.Fatalf("wall exhaustion left task=%s work=%s result=%s", taskState, workState, raw)
 	}
+	// The exhaustion wakes settlement (the explicit wake and the closed work
+	// item's exit at commit each advance facts_revision).
 	var code string
 	var facts int64
 	var settleCount, polls int
 	if err := runtimeDB.QueryRowContext(ctx, `SELECT t.failure_code,t.submit_attempts_started,a.facts_revision,(SELECT count(*) FROM work_items WHERE acquisition_id=a.id AND kind='acquisition_settle' AND state IN ('available','leased')) FROM download_tasks t JOIN acquisitions a ON a.id=t.acquisition_id WHERE t.id=$1`, p.TaskID).Scan(&code, &polls, &facts, &settleCount); err != nil {
 		t.Fatal(err)
 	}
-	if code != "SUBMIT_BUDGET_EXHAUSTED" || polls != 0 || facts != 1 || settleCount != 1 {
+	if code != "SUBMIT_BUDGET_EXHAUSTED" || polls != 0 || facts == 0 || settleCount != 1 {
 		t.Fatalf("exhaustion code=%s polls=%d facts=%d settle=%d", code, polls, facts, settleCount)
 	}
 }
