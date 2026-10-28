@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RSSListItem, RSSListGroup, RSSListView, SeedSearchSnapshotSeed } from "../../lib/api/client";
+import type { RSSListFile, RSSListItem, RSSListGroup, RSSListView, SeedSearchSnapshotSeed } from "../../lib/api/client";
 import { createEmptyDraft, createEmptySourceDraft } from "../../lib/draft";
 import { t } from "../../lib/i18n";
 import { namingFactLabel, reasonLabel } from "../../lib/i18n/reasons";
@@ -1439,97 +1439,298 @@ describe("OneShotDialog 手动选择文件", () => {
     { source_path: DEEP_SUB, size_bytes: 20, media_kind: "subtitle", selectable: true, default_selected: false, bound_video_source_path: DEEP },
     { source_path: COVER, size_bytes: 7, media_kind: "other", selectable: false, default_selected: false, reason_code: "ignored_kind" },
   ];
-  const pickerView = () => viewOf([seedGroup({ items: [seedItem("seed-a", SEED_A, { manifest_files: manifestFiles })] })]);
-
-  async function openPicker() {
-    fireEvent.click(await screen.findByRole("button", { name: t("oneshot.filePickerToggle", { n: 2, total: 4 }) }));
-    return screen.findByRole("group", { name: t("oneshot.filePickerTitle") });
+  const nameOf = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+  const targetOf = (path: string) => `/media/测试番剧/${nameOf(path)}`;
+  const previewFile = (path: string): RSSListFile => {
+    const manifest = manifestFiles.find((file) => file.source_path === path)!;
+    return {
+      file_ref: path,
+      ordinal: 0,
+      source_path: path,
+      filename: nameOf(path),
+      media_kind: manifest.media_kind,
+      included: true,
+      rendered_target: targetOf(path),
+      safety: "valid",
+      ...(manifest.bound_video_source_path ? { bound_video_source_path: manifest.bound_video_source_path } : {}),
+    };
+  };
+  /** The read model as the server answers it: preview rows only for the selected files under a manual selection, else the defaults. */
+  const pickerView = (selected?: string[]) =>
+    viewOf([
+      seedGroup({
+        items: [
+          seedItem("seed-a", SEED_A, {
+            manifest_files: manifestFiles,
+            files: (selected ?? [VIDEO, SUB]).map(previewFile),
+          }),
+        ],
+      }),
+    ]);
+  const stubPicker = () =>
+    stubFetch({
+      view: pickerView(),
+      viewFor: (body) => pickerView((body as { file_selections?: { source_paths: string[] }[] }).file_selections?.[0]?.source_paths),
+    });
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  /** Lets any debounced preview read fire and finish, then reports how many reads were made. */
+  async function settledReads() {
+    await sleep(450);
+    return reads().length;
   }
 
-  it("列出种子的全部文件：默认勾选第一层，不可选的写原因，视频写识别结果，未识别的按当前处理方式写去向", async () => {
-    stubFetch({ view: pickerView() });
+  async function openPicker(selected = 2) {
+    fireEvent.click(await screen.findByRole("button", { name: t("oneshot.filePickerToggle", { n: selected, total: 4 }) }));
+    return screen.findByRole("dialog", { name: t("oneshot.filePickerTitle") });
+  }
+  const check = (picker: HTMLElement, path: string) => within(picker).getByRole("checkbox", { name: path });
+  const folderBox = (picker: HTMLElement, path: string) => within(picker).getByRole("checkbox", { name: t("oneshot.filePickerFolder", { name: path }) });
+  const foldButton = (picker: HTMLElement, path: string) => within(picker).getByRole("button", { name: t("oneshot.filePickerFold", { name: path }) });
+  const confirmButton = (picker: HTMLElement) => within(picker).getByRole("button", { name: t("ui.confirm") });
+  const expandSps = (picker: HTMLElement) => fireEvent.click(foldButton(picker, "Pack/SPs"));
+
+  it("卡片只列将处理的文件：没有内联文件树，入口显示已选数，列表是服务端对所选文件的预览", async () => {
+    stubPicker();
+    await renderAndEnter();
+    await advanceToSettings([SEED_A]);
+    await screen.findByRole("button", { name: t("oneshot.filePickerToggle", { n: 2, total: 4 }) });
+    expect(screen.queryByRole("group", { name: t("oneshot.filePickerTitle") })).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: COVER })).not.toBeInTheDocument();
+    expect(await screen.findByText(targetOf(VIDEO))).toBeInTheDocument();
+    expect(screen.queryByText(targetOf(DEEP))).not.toBeInTheDocument();
+    expect(screen.queryByText(t("oneshot.filePickerCustom"))).not.toBeInTheDocument();
+  });
+
+  it("弹窗按服务端判断列出文件：默认只展开含已选文件的目录，字幕嵌在视频下写「跟随视频」，不处理的文件收成一行", async () => {
+    stubPicker();
     await renderAndEnter();
     await advanceToSettings([SEED_A]);
     const picker = await openPicker();
 
-    expect(within(picker).getByRole("checkbox", { name: VIDEO })).toBeChecked();
-    expect(within(picker).getByRole("checkbox", { name: SUB })).toBeChecked();
-    expect(within(picker).getByRole("checkbox", { name: DEEP })).not.toBeChecked();
+    expect(foldButton(picker, "Pack")).toHaveAttribute("aria-expanded", "true");
+    expect(foldButton(picker, "Pack/SPs")).toHaveAttribute("aria-expanded", "false");
+    expect(check(picker, VIDEO)).toBeChecked();
+    expect(check(picker, SUB)).toBeChecked();
+    expect(within(picker).getByText(t("oneshot.filePickerFollowsVideo"))).toBeInTheDocument();
+    expect(within(picker).getByText(t("rss.episode", { n: 1 }))).toBeInTheDocument();
+    // A folded folder keeps a summary over everything below it and a working checkbox.
+    expect(within(picker).queryByRole("checkbox", { name: DEEP })).not.toBeInTheDocument();
+    expect(within(picker).getByText(`${t("oneshot.filePickerSummaryVideos", { n: 1 })} · ${t("oneshot.filePickerSummarySelected", { n: 0 })} · ${t("oneshot.filePickerSummarySubtitlesPartial", { selected: 0, total: 1 })}`)).toBeInTheDocument();
+    expect(folderBox(picker, "Pack/SPs")).toHaveAttribute("aria-checked", "false");
+    // The file that is not processed collapses into one line, listed with the server's reason on request.
+    expect(within(picker).queryByRole("checkbox", { name: COVER })).not.toBeInTheDocument();
+    fireEvent.click(within(picker).getByRole("button", { name: t("oneshot.filePickerOthers", { n: 1 }) }));
     expect(within(picker).getByRole("checkbox", { name: COVER })).toHaveAttribute("aria-disabled", "true");
     expect(within(picker).getByText(reasonLabel("ignored_kind")!)).toBeInTheDocument();
-    expect(within(picker).getByText(t("rss.episode", { n: 1 }))).toBeInTheDocument();
+    // Rows carry the file name only, with the full path as the tooltip.
+    expect(within(picker).getByText(nameOf(VIDEO), { exact: false })).toHaveAttribute("title", VIDEO);
+
+    expandSps(picker);
+    expect(check(picker, DEEP)).not.toBeChecked();
     // The business preset routes unknown files; the copy follows the draft's current option.
     expect(within(picker).getByText(t("oneshot.fileUnrecognizedRoute"))).toBeInTheDocument();
     // A subtitle can be checked only while the video it follows is checked.
-    expect(within(picker).getByRole("checkbox", { name: DEEP_SUB })).toHaveAttribute("aria-disabled", "true");
+    expect(check(picker, DEEP_SUB)).toHaveAttribute("aria-disabled", "true");
     expect(within(picker).getByText(t("oneshot.fileSubtitleNeedsVideo"))).toBeInTheDocument();
+  });
+
+  it("未识别文件的去向跟随当前设置：改成跳过后重新打开显示跳过", async () => {
+    stubPicker();
+    await renderAndEnter();
+    await advanceToSettings([SEED_A]);
+    let picker = await openPicker();
+    expandSps(picker);
+    expect(within(picker).getByText(t("oneshot.fileUnrecognizedRoute"))).toBeInTheDocument();
+    fireEvent.click(within(picker).getByRole("button", { name: t("act.cancel") }));
 
     openAdvanced();
     const user = userEvent.setup();
     await user.click(screen.getByRole("combobox", { name: t("file.unclassifiedTitle") }));
     await user.click(await screen.findByRole("option", { name: t("file.unclassified.skip") }));
-    expect(await within(picker).findByText(t("oneshot.fileUnrecognizedSkip"))).toBeInTheDocument();
+    picker = await openPicker();
+    expandSps(picker);
+    expect(within(picker).getByText(t("oneshot.fileUnrecognizedSkip"))).toBeInTheDocument();
   });
 
-  it("勾选子文件夹里的视频：带上它的字幕，预览按所选重读，下载请求带 file_selection", async () => {
-    stubFetch({ view: pickerView() });
+  it("弹窗里勾选、折叠、恢复默认都只改本地，不发预览读取", async () => {
+    stubPicker();
     await renderAndEnter();
     await advanceToSettings([SEED_A]);
     const picker = await openPicker();
+    const before = await settledReads();
 
-    fireEvent.click(within(picker).getByRole("checkbox", { name: DEEP }));
-    expect(within(picker).getByRole("checkbox", { name: DEEP_SUB })).toBeChecked();
-    expect(screen.getByText(t("oneshot.filePickerCustom"))).toBeInTheDocument();
+    fireEvent.click(check(picker, VIDEO));
+    fireEvent.click(folderBox(picker, "Pack/SPs"));
+    fireEvent.click(foldButton(picker, "Pack/SPs"));
+    fireEvent.click(foldButton(picker, "Pack"));
+    fireEvent.click(foldButton(picker, "Pack"));
+    fireEvent.click(within(picker).getByRole("button", { name: t("oneshot.filePickerRestore") }));
+    expect(check(picker, VIDEO)).toBeChecked();
+    expect(await settledReads()).toBe(before);
+  });
+
+  it("折叠的文件夹保留勾选框：整体勾选其下的视频和字幕，摘要随之更新", async () => {
+    stubPicker();
+    await renderAndEnter();
+    await advanceToSettings([SEED_A]);
+    const picker = await openPicker();
+    const pack = folderBox(picker, "Pack");
+    const sps = folderBox(picker, "Pack/SPs");
+    expect(pack).toHaveAttribute("aria-checked", "mixed");
+
+    fireEvent.click(sps);
+    expect(within(picker).queryByRole("checkbox", { name: DEEP })).not.toBeInTheDocument();
+    expect(sps).toHaveAttribute("aria-checked", "true");
+    expect(pack).toHaveAttribute("aria-checked", "true");
+    expect(within(picker).getByText(t("oneshot.filePickerCounter", { n: 4, total: 4 }))).toBeInTheDocument();
+    expect(within(picker).getByText(`${t("oneshot.filePickerSummaryVideos", { n: 1 })} · ${t("oneshot.filePickerSummarySelected", { n: 1 })} · ${t("oneshot.filePickerSummarySubtitles", { n: 1 })}`)).toBeInTheDocument();
+    expandSps(picker);
+    expect(check(picker, DEEP)).toBeChecked();
+    expect(check(picker, DEEP_SUB)).toBeChecked();
+
+    fireEvent.click(pack);
+    for (const path of [VIDEO, SUB, DEEP, DEEP_SUB]) expect(check(picker, path)).not.toBeChecked();
+    expect(pack).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("确认只读一次预览，卡片按所选文件列出，下载请求带 file_selection", async () => {
+    stubPicker();
+    await renderAndEnter();
+    await advanceToSettings([SEED_A]);
+    const picker = await openPicker();
+    const before = await settledReads();
+
+    expandSps(picker);
+    fireEvent.click(check(picker, DEEP));
+    expect(check(picker, DEEP_SUB)).toBeChecked();
+    fireEvent.click(confirmButton(picker));
+
     const selection = [DEEP_SUB, DEEP, SUB, VIDEO].sort();
-    await waitFor(() =>
-      expect(reads().at(-1)!.body).toMatchObject({
-        one_shot: true,
-        file_selections: [{ snapshot_id: "snap-1", stable_seed_key: "seed-a", source_paths: selection }],
-      }),
-    );
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: t("oneshot.filePickerTitle") })).not.toBeInTheDocument());
+    expect(await settledReads()).toBe(before + 1);
+    expect(reads().at(-1)!.body).toMatchObject({
+      one_shot: true,
+      file_selections: [{ snapshot_id: "snap-1", stable_seed_key: "seed-a", source_paths: selection }],
+    });
+    expect(screen.getByText(t("oneshot.filePickerCustom"))).toBeInTheDocument();
+    expect(await screen.findByText(targetOf(DEEP))).toBeInTheDocument();
 
     fireEvent.click(button(t("oneshot.create", { n: 1 })));
     await waitFor(() => expect(screen.getByText(t("oneshot.resultOk"))).toBeInTheDocument());
     expect(downloads()[0]!.body).toMatchObject({ file_selection: selection });
   });
 
-  it("文件夹勾选框：按子树可勾视频显示全选/部分/无，点击整体勾选或取消，字幕随视频", async () => {
-    stubFetch({ view: pickerView() });
+  it("没有改动就确认：只关闭弹窗，不读预览", async () => {
+    stubPicker();
     await renderAndEnter();
     await advanceToSettings([SEED_A]);
     const picker = await openPicker();
-    const pack = within(picker).getByRole("checkbox", { name: t("oneshot.filePickerFolder", { name: "Pack" }) });
-    const sps = within(picker).getByRole("checkbox", { name: t("oneshot.filePickerFolder", { name: "Pack/SPs" }) });
-    expect(pack).toHaveAttribute("aria-checked", "mixed");
-    expect(sps).toHaveAttribute("aria-checked", "false");
+    const before = await settledReads();
 
-    fireEvent.click(sps);
-    expect(within(picker).getByRole("checkbox", { name: DEEP })).toBeChecked();
-    expect(within(picker).getByRole("checkbox", { name: DEEP_SUB })).toBeChecked();
-    expect(pack).toHaveAttribute("aria-checked", "true");
+    expandSps(picker);
+    fireEvent.click(check(picker, DEEP));
+    fireEvent.click(check(picker, DEEP));
+    fireEvent.click(confirmButton(picker));
 
-    fireEvent.click(pack);
-    for (const path of [VIDEO, SUB, DEEP, DEEP_SUB]) expect(within(picker).getByRole("checkbox", { name: path })).not.toBeChecked();
-    expect(pack).toHaveAttribute("aria-checked", "false");
-    expect(button(t("oneshot.create", { n: 1 }))).toBeDisabled();
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: t("oneshot.filePickerTitle") })).not.toBeInTheDocument());
+    expect(await settledReads()).toBe(before);
+    expect(screen.queryByText(t("oneshot.filePickerCustom"))).not.toBeInTheDocument();
   });
 
-  it("取消全部视频不能提交；「恢复默认」清除手动选择，读取与提交都回到默认文件", async () => {
-    stubFetch({ view: pickerView() });
+  it("取消、关闭和 Esc 都丢弃本次改动：重新打开仍是原来的选择，不读预览", async () => {
+    stubPicker();
+    await renderAndEnter();
+    await advanceToSettings([SEED_A]);
+    const before = await settledReads();
+    const user = userEvent.setup();
+
+    let picker = await openPicker();
+    expandSps(picker);
+    fireEvent.click(check(picker, DEEP));
+    fireEvent.click(within(picker).getByRole("button", { name: t("act.cancel") }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: t("oneshot.filePickerTitle") })).not.toBeInTheDocument());
+
+    picker = await openPicker();
+    expandSps(picker);
+    expect(check(picker, DEEP)).not.toBeChecked();
+    fireEvent.click(check(picker, DEEP));
+    fireEvent.click(within(picker).getByRole("button", { name: t("ui.close") }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: t("oneshot.filePickerTitle") })).not.toBeInTheDocument());
+
+    picker = await openPicker();
+    expandSps(picker);
+    expect(check(picker, DEEP)).not.toBeChecked();
+    fireEvent.click(check(picker, DEEP));
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: t("oneshot.filePickerTitle") })).not.toBeInTheDocument());
+
+    expect(screen.getByRole("button", { name: t("oneshot.filePickerToggle", { n: 2, total: 4 }) })).toBeInTheDocument();
+    expect(await settledReads()).toBe(before);
+  });
+
+  it("重新打开时含已选文件的目录展开：手动勾过的子文件夹保持展开", async () => {
+    stubPicker();
+    await renderAndEnter();
+    await advanceToSettings([SEED_A]);
+    let picker = await openPicker();
+    fireEvent.click(folderBox(picker, "Pack/SPs"));
+    fireEvent.click(confirmButton(picker));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: t("oneshot.filePickerTitle") })).not.toBeInTheDocument());
+
+    picker = await openPicker(4);
+    expect(foldButton(picker, "Pack/SPs")).toHaveAttribute("aria-expanded", "true");
+    expect(check(picker, DEEP)).toBeChecked();
+  });
+
+  it("没有勾选任何视频时不能确认，并说明原因；恢复默认后可以确认", async () => {
+    stubPicker();
     await renderAndEnter();
     await advanceToSettings([SEED_A]);
     const picker = await openPicker();
 
-    fireEvent.click(within(picker).getByRole("checkbox", { name: VIDEO }));
-    expect(within(picker).getByRole("checkbox", { name: SUB })).not.toBeChecked();
-    expect(button(t("oneshot.create", { n: 1 }))).toBeDisabled();
-    expect(screen.getByText(t("oneshot.filesNoVideo"))).toBeInTheDocument();
+    fireEvent.click(check(picker, VIDEO));
+    expect(check(picker, SUB)).not.toBeChecked();
+    expect(confirmButton(picker)).toBeDisabled();
+    expect(within(picker).getByText(t("oneshot.filesNoVideo"))).toBeInTheDocument();
 
-    fireEvent.click(button(t("oneshot.restoreDefaults")));
-    await waitFor(() => expect(within(picker).getByRole("checkbox", { name: VIDEO })).toBeChecked());
-    await waitFor(() => expect(reads().at(-1)!.body).not.toHaveProperty("file_selections"));
+    fireEvent.click(within(picker).getByRole("button", { name: t("oneshot.filePickerRestore") }));
+    expect(check(picker, VIDEO)).toBeChecked();
+    expect(confirmButton(picker)).toBeEnabled();
+    expect(within(picker).queryByText(t("oneshot.filesNoVideo"))).not.toBeInTheDocument();
+  });
+
+  it("卡片上的「使用默认文件」清除手动选择并读一次预览，提交不再带 file_selection", async () => {
+    stubPicker();
+    await renderAndEnter();
+    await advanceToSettings([SEED_A]);
+    let picker = await openPicker();
+    fireEvent.click(folderBox(picker, "Pack/SPs"));
+    fireEvent.click(confirmButton(picker));
+    await screen.findByText(t("oneshot.filePickerCustom"));
+    const before = await settledReads();
+
+    fireEvent.click(button(t("oneshot.filePickerReset")));
+    await waitFor(() => expect(screen.queryByText(t("oneshot.filePickerCustom"))).not.toBeInTheDocument());
+    expect(await settledReads()).toBe(before + 1);
+    expect(reads().at(-1)!.body).not.toHaveProperty("file_selections");
     fireEvent.click(button(t("oneshot.create", { n: 1 })));
     await waitFor(() => expect(screen.getByText(t("oneshot.resultOk"))).toBeInTheDocument());
     expect(downloads()[0]!.body).not.toHaveProperty("file_selection");
+  });
+
+  it("任务级的「恢复默认」同样复位已确认的文件选择并重读", async () => {
+    stubPicker();
+    await renderAndEnter();
+    await advanceToSettings([SEED_A]);
+    const picker = await openPicker();
+    fireEvent.click(folderBox(picker, "Pack/SPs"));
+    fireEvent.click(confirmButton(picker));
+    await screen.findByText(t("oneshot.filePickerCustom"));
+    const before = await settledReads();
+
+    fireEvent.click(button(t("oneshot.restoreDefaults")));
+    await waitFor(() => expect(screen.queryByText(t("oneshot.filePickerCustom"))).not.toBeInTheDocument());
+    expect(await settledReads()).toBe(before + 1);
+    expect(reads().at(-1)!.body).not.toHaveProperty("file_selections");
   });
 });
