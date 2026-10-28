@@ -3412,7 +3412,7 @@ type AnimeMetadataMediaKindOverride string
 type AnimeMetadataDraft struct {
 	Bgm *NullableBGMBinding `json:"bgm"`
 
-	// MediaKindOverride Owner media kind (tv | movie) the episode identity resolves with. NULL is tv; the TMDB binding's media_kind is never read for it. Subscribing a draft that binds a TMDB tuple while it is NULL stores the tuple's media_kind once. It never rewrites the TMDB tuple.
+	// MediaKindOverride Owner media kind (tv | movie) the episode identity resolves with. While it is NULL, a bound TMDB tuple's media_kind fills it once: subscribing stores that value, and every draft read (preview, evaluation) already resolves with it. NULL without a TMDB tuple is tv. It never rewrites the TMDB tuple.
 	MediaKindOverride *AnimeMetadataDraftMediaKindOverride `json:"media_kind_override"`
 
 	// Season Owner-edited season that naming reads as anime.season (and anime.season_folder, anime.season_path, ep.s00e00); 0 is the specials season. NULL means unset: the season composites render empty and ep.s00e00 renders the episode alone (E07). The shipped TV directory template keeps anime.season_folder as its own folder level, so a season-less render refuses (naming_fact_missing_anime_season_folder). It is independent of the TMDB binding: tmdb.season stays the bound TMDB season used for TMDB episode lookups, and editing one never changes the other. Confirming a TMDB match in the UI fills it with the matched season only while it is unset; nothing is stored until the owner saves.
@@ -3426,7 +3426,7 @@ type AnimeMetadataDraft struct {
 	Year *int `json:"year"`
 }
 
-// AnimeMetadataDraftMediaKindOverride Owner media kind (tv | movie) the episode identity resolves with. NULL is tv; the TMDB binding's media_kind is never read for it. Subscribing a draft that binds a TMDB tuple while it is NULL stores the tuple's media_kind once. It never rewrites the TMDB tuple.
+// AnimeMetadataDraftMediaKindOverride Owner media kind (tv | movie) the episode identity resolves with. While it is NULL, a bound TMDB tuple's media_kind fills it once: subscribing stores that value, and every draft read (preview, evaluation) already resolves with it. NULL without a TMDB tuple is tv. It never rewrites the TMDB tuple.
 type AnimeMetadataDraftMediaKindOverride string
 
 // AnimeMetadataPatch defines model for AnimeMetadataPatch.

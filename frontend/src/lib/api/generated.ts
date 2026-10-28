@@ -3788,7 +3788,7 @@ export interface components {
             bgm?: components["schemas"]["NullableBGMBinding"];
             tmdb?: components["schemas"]["NullableTMDBBinding"];
             /**
-             * @description Owner media kind (tv | movie) the episode identity resolves with. NULL is tv; the TMDB binding's media_kind is never read for it. Subscribing a draft that binds a TMDB tuple while it is NULL stores the tuple's media_kind once. It never rewrites the TMDB tuple.
+             * @description Owner media kind (tv | movie) the episode identity resolves with. While it is NULL, a bound TMDB tuple's media_kind fills it once: subscribing stores that value, and every draft read (preview, evaluation) already resolves with it. NULL without a TMDB tuple is tv. It never rewrites the TMDB tuple.
              * @enum {string|null}
              */
             media_kind_override?: "tv" | "movie" | null;
