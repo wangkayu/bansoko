@@ -39,6 +39,14 @@ export const enRssCopy = {
   saveOffset: "Save Offset",
   offsetFieldHint: "Episode offset for this RSS link; 0 means none",
   offsetConversion: "Episode {from} → Episode {to}",
+  offsetImported: "Imported files move to the episode the new offset gives them.",
+  offsetMode: {
+    single_copy: "One copy: files of the same episode are compared across subtitle groups; the preferred one is kept and the others are deleted.",
+    per_group:
+      "One per subtitle group: files of the same episode from one group are compared and the preferred one is kept; different groups aren't compared, and a file already at the target follows the setting below.",
+    all: "All: nothing is compared; a file already at the target follows the setting below.",
+  },
+  offsetCollision: "When a file exists: {policy}",
   customBenchSaveFirst: "Save to load torrents from this RSS feed",
   nothingToRefresh: "No RSS feeds to refresh",
   refreshSubmitted: "RSS refresh submitted (feeds: {n})",

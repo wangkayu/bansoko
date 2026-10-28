@@ -36,6 +36,13 @@ export const rssCopy = {
   saveOffset: "保存偏移",
   offsetFieldHint: "该 RSS 链接的集数偏移，0 表示不偏移",
   offsetConversion: "第 {from} 集 → 第 {to} 集",
+  offsetImported: "已入库的文件会换到新偏移对应的集数。",
+  offsetMode: {
+    single_copy: "只留一份：同一集的文件跨字幕组比较，保留优先的一份，其余删除。",
+    per_group: "每个字幕组留一份：同一字幕组的同一集比较后保留优先的一份；不同字幕组不比较，目标位置已有文件时按下方设置处理。",
+    all: "全部保留：不比较，目标位置已有文件时按下方设置处理。",
+  },
+  offsetCollision: "同名文件处理：{policy}",
   customBenchSaveFirst: "保存后可读取该 RSS 源的种子",
   nothingToRefresh: "没有可刷新的 RSS 源",
   refreshSubmitted: "RSS 刷新已提交（{n} 个 RSS 源）",
