@@ -341,7 +341,9 @@ SELECT EXISTS(
 //   - the source, target and result path of every file-manager user operation
 //     (a detached file that was moved or renamed lives at its result path, which
 //     is recorded only there);
-//   - the target of every file operation that wrote or may write a file.
+//   - the target of every file operation that wrote or may write a file, and
+//     of every alignment operation (an offset or post-import alignment moves a
+//     file there before its placement names the path).
 func (s *Store) EachLibraryPath(ctx context.Context, visit func(path string) error) error {
 	rows, err := s.DB.QueryContext(ctx, `
 SELECT physical_path FROM placements
@@ -354,7 +356,9 @@ SELECT target_path FROM file_manager_operations WHERE target_path IS NOT NULL
 UNION
 SELECT result_path FROM file_manager_operations WHERE result_path IS NOT NULL
 UNION
-SELECT target_path FROM file_operations WHERE state IN ('pending', 'running', 'completed', 'waiting_retry')`)
+SELECT target_path FROM file_operations WHERE state IN ('pending', 'running', 'completed', 'waiting_retry')
+UNION
+SELECT target_path FROM alignment_operations WHERE target_path IS NOT NULL`)
 	if err != nil {
 		return fmt.Errorf("list library paths: %w", err)
 	}
