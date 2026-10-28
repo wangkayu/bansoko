@@ -169,7 +169,7 @@ func ownershipNewTestService(t *testing.T, db *sql.DB, fetcher FeedFetcher) *own
 	if err != nil {
 		t.Fatal(err)
 	}
-	draftService, err := draftapplication.NewService(db, draftapplication.Dependencies{WorkItems: store})
+	draftService, err := draftapplication.NewService(db, draftapplication.Dependencies{WorkItems: store, Connections: ownershipNoConnections{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,6 +189,7 @@ func ownershipNewTestService(t *testing.T, db *sql.DB, fetcher FeedFetcher) *own
 		OneShotMarkers:           animepersistence.NewRepository(db),
 		ActivityWriter:           activityWriter,
 		OffsetMigrationAdmission: filemaintenance.NewOffsetMigrationAdmissionService(),
+		Connections:              ownershipNoConnections{},
 	})
 	if err != nil {
 		t.Fatal(err)
