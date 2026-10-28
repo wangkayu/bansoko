@@ -152,6 +152,12 @@ export function SettingsUpdates() {
     const consumedPendingReceipt = isHistoricalStatus(next) && consumePendingReceipt(next.operation_id);
     if (isHistoricalStatus(next) && (crossedActiveBoundary || consumedPendingReceipt)) {
       setReceipt(next);
+      // A check made before the operation describes the version it replaced:
+      // drop it so the panel asks for a fresh check instead of offering it again.
+      setCheckResult(undefined);
+      setCheckError(undefined);
+      setCheckPhase("idle");
+      setSubmitError(undefined);
     }
 
     previousStepRef.current = next.step;
