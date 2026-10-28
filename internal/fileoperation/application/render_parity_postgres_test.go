@@ -42,7 +42,7 @@ func openParityFixtureDB(t *testing.T, rules naming.NamingRules) (*sql.DB, fileF
 }
 
 // seedParityFrozenEvidence also sets the anime's current configuration to what
-// acquisition rendered with (bindings, TMDB season, owner season 1), so the
+// acquisition rendered with (bindings, TMDB season, owner season 1, year 2025), so the
 // maintenance render, which reads the current configuration, has the same
 // inputs. It writes the durable evidence acquisition consumes,
 // exactly as production writes it: the original release title on the release
@@ -52,7 +52,7 @@ func openParityFixtureDB(t *testing.T, rules naming.NamingRules) (*sql.DB, fileF
 func seedParityFrozenEvidence(t *testing.T, db *sql.DB, fixture fileFixture) {
 	t.Helper()
 	ctx := context.Background()
-	if _, err := db.ExecContext(ctx, `UPDATE anime_metadata SET bgm_work_id='bgm-original', tmdb_work_id='tmdb-original', tmdb_media_kind='tv', tmdb_season=1, season=1 WHERE managed_anime_id=$1`, fixture.animeID); err != nil {
+	if _, err := db.ExecContext(ctx, `UPDATE anime_metadata SET bgm_work_id='bgm-original', tmdb_work_id='tmdb-original', tmdb_media_kind='tv', tmdb_season=1, season=1, year=2025 WHERE managed_anime_id=$1`, fixture.animeID); err != nil {
 		t.Fatal(err)
 	}
 	rawTitle, err := json.Marshal(map[string]string{"title": parityReleaseTitle})
