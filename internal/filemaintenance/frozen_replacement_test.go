@@ -202,7 +202,7 @@ func seedFrozenDecision(t *testing.T, db *sql.DB, id, animeID, candidatePlacemen
 	if err != nil {
 		t.Fatal(err)
 	}
-	digest, err := decisionInputDigest(animeID, "release-new", candidatePlacementID, subVersion, policyVersion, mode, qualityprofile.Version, "candidate-facts-v1", "fp", "tv:e1", nil, 0, nil)
+	digest, err := decisionInputDigest(animeID, "release-new", candidatePlacementID, subVersion, policyVersion, mode, qualityprofile.Version, "candidate-facts-v1", "fp", "tv:e1", nil, 0, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

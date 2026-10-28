@@ -75,6 +75,7 @@ export const tabsCopy = {
     readFailed: "读取文件失败",
     empty: "还没有已入库的文件",
     aligning: "对齐中",
+    alignWaiting: "等待比较",
     alignFailedBecause: "对齐失败：{reason}",
     alignFailed: "对齐失败",
     alignAdmitted: "已开始对齐 {n} 个文件",

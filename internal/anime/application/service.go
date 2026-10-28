@@ -66,10 +66,11 @@ type ReplacementTriggerPort interface {
 	TriggerSubscriptionResumed(ctx context.Context, animeID string) error
 }
 
-// SourceOffsetMigrationAdmission admits a durable source generation inside the
-// RSSSource owner's existing CAS transaction.
-type SourceOffsetMigrationAdmission interface {
-	AdmitRSSSourceTx(ctx context.Context, scope txscope.Tx, animeID, rssSourceID string, sourceVersion int64, oldEffectiveOffset, newEffectiveOffset int) (generationID string, created bool, err error)
+// SourceOffsetAlignment re-keys a link's imported files to their new episode
+// inside the RSSSource owner's offset CAS transaction and records the change
+// whose alignment follows.
+type SourceOffsetAlignment interface {
+	AdmitRSSSourceTx(ctx context.Context, scope txscope.Tx, animeID, rssSourceID string, sourceVersion int64, oldEffectiveOffset, newEffectiveOffset int) (changeID string, created bool, err error)
 }
 
 // Service holds the kernel ports the anime owners share: the lifecycle fences,
@@ -77,12 +78,12 @@ type SourceOffsetMigrationAdmission interface {
 // product command lives in its own owner package and receives its own narrow
 // ports; nothing here runs a bucket's transaction.
 type Service struct {
-	db                       *sql.DB
-	workItems                *workitems.Store
-	metadataMatcher          MetadataMatcher
-	fences                   *Fences
-	replacement              ReplacementTriggerPort
-	offsetMigrationAdmission SourceOffsetMigrationAdmission
+	db              *sql.DB
+	workItems       *workitems.Store
+	metadataMatcher MetadataMatcher
+	fences          *Fences
+	replacement     ReplacementTriggerPort
+	offsetAlignment SourceOffsetAlignment
 }
 
 func NewService(db *sql.DB, workItems *workitems.Store, _ FeedFetcher) (*Service, error) {
@@ -103,11 +104,11 @@ func (s *Service) SetMetadataMatcher(metadataMatcher MetadataMatcher) {
 	s.metadataMatcher = metadataMatcher
 }
 
-// SetOffsetMigrationAdmission wires durable generation admission for effective
-// RSSSource offset changes.
-func (s *Service) SetOffsetMigrationAdmission(admission SourceOffsetMigrationAdmission) {
+// SetOffsetAlignment wires the re-key of imported files on an RSSSource offset
+// change.
+func (s *Service) SetOffsetAlignment(admission SourceOffsetAlignment) {
 	if s != nil {
-		s.offsetMigrationAdmission = admission
+		s.offsetAlignment = admission
 	}
 }
 

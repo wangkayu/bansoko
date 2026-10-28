@@ -110,10 +110,10 @@ func newOwnerServices(db *sql.DB) (*ownerServices, error) {
 	draftService.SetActivityWriter(activity)
 	draftService.SetFrozenParserPolicy(parserpolicy.NewService(db))
 	owners, err := ownershipapplication.NewService(db, ownershipapplication.Dependencies{
-		WorkItems:                store,
-		OneShotMarkers:           rootanimepersistence.NewRepository(db),
-		ActivityWriter:           activity,
-		OffsetMigrationAdmission: filemaintenance.NewOffsetMigrationAdmissionService(),
+		WorkItems:       store,
+		OneShotMarkers:  rootanimepersistence.NewRepository(db),
+		ActivityWriter:  activity,
+		OffsetAlignment: filemaintenance.NewOffsetAlignmentService(),
 	})
 	if err != nil {
 		return nil, err

@@ -189,7 +189,6 @@ const (
 	InProgressAlignment        InProgressKind = "alignment"
 	InProgressCleanup          InProgressKind = "cleanup"
 	InProgressReplacement      InProgressKind = "replacement"
-	InProgressOffsetMigration  InProgressKind = "offset_migration"
 	InProgressUserOperation    InProgressKind = "user_operation"
 )
 

@@ -41,6 +41,12 @@ type EvaluateRequest struct {
 	// plannedUnits maps each planned key to the keys of the planned file that
 	// holds it (one file replaces only what it covers).
 	plannedUnits map[string][]string
+	// recheck marks a retention recheck of placed files (RecheckPlacements):
+	// every key is evaluated afresh for the placement, never bound to a
+	// pre-acquisition decision, and the key's current members enter the
+	// decision digest, so a key whose pool changed (an offset change moved a
+	// file onto it) is decided again.
+	recheck bool
 }
 
 // Typed business codes for evaluate failure conditions. A candidate Release
@@ -605,7 +611,7 @@ func (s *ReplacementDecisionService) evaluateKeysTx(ctx context.Context, tx *sql
 			ok   bool
 			err  error
 		)
-		if placed {
+		if placed && !ev.request.recheck {
 			// A pre-acquisition winner is initially represented by a synthetic
 			// release ref. Once the verified FileOperation admits the
 			// Placement, bind that exact frozen decision instead of creating a
@@ -613,7 +619,7 @@ func (s *ReplacementDecisionService) evaluateKeysTx(ctx context.Context, tx *sql
 			// version-gated and happens before any new pool evaluation/effect
 			// is persisted.
 			view, ok, err = s.bindPreAcquisitionDecisionTxApplication(ctx, tx, ev, key, units[key], candidate, correlation)
-		} else {
+		} else if !placed {
 			view, ok, err = s.liveUnboundDecisionTx(ctx, tx, ev, key)
 		}
 		if err != nil {
@@ -764,8 +770,12 @@ WHERE managed_anime_id = $1 AND candidate_release_id = $2 AND coverage_key = $3 
 		input.AnimeID, input.CandidateRelease, key).Scan(&staleDecisions); err != nil {
 		return ReplacementDecisionView{}, err
 	}
+	var members []string
+	if input.recheck {
+		members = keyMembers(ev.placements, key, candidatePlacementID)
+	}
 	digest, err := decisionInputDigest(input.AnimeID, input.CandidateRelease, candidatePlacementID,
-		ev.subscriptionVersion, ev.policyVersion, ev.mode, ev.profile.Version, ev.factsVersion, ev.factsFingerprint, key, unit, staleDecisions, poolsSubgroupScores(pools))
+		ev.subscriptionVersion, ev.policyVersion, ev.mode, ev.profile.Version, ev.factsVersion, ev.factsFingerprint, key, unit, staleDecisions, poolsSubgroupScores(pools), members)
 	if err != nil {
 		return ReplacementDecisionView{}, err
 	}
@@ -990,10 +1000,10 @@ WHERE sub.managed_anime_id = $1`, animeID)
 // decisionInputDigest is the deterministic digest over the complete frozen
 // input of one key decision: candidate identity, versions, mode, facts
 // identity, the coverage key, the candidate file's unit and the subgroup
-// scores the comparison used. The count of the key's stale decisions and the
-// scores enter only when non-empty, so a key decided once keeps its
-// historical digest.
-func decisionInputDigest(animeID, releaseID, placementID string, subscriptionVersion, policyVersion int64, mode AdmissionMode, profileVersion, factsVersion, factsFingerprint, coverageKey string, unit []string, staleDecisions int, scores []FrozenSubgroupScore) (string, error) {
+// scores the comparison used. The count of the key's stale decisions, the
+// scores and the key's members (a recheck's only) enter only when non-empty,
+// so a key decided once keeps its historical digest.
+func decisionInputDigest(animeID, releaseID, placementID string, subscriptionVersion, policyVersion int64, mode AdmissionMode, profileVersion, factsVersion, factsFingerprint, coverageKey string, unit []string, staleDecisions int, scores []FrozenSubgroupScore, members []string) (string, error) {
 	raw, err := json.Marshal(struct {
 		AnimeID             string                `json:"anime_id"`
 		CandidateRelease    string                `json:"candidate_release_id"`
@@ -1008,13 +1018,14 @@ func decisionInputDigest(animeID, releaseID, placementID string, subscriptionVer
 		Unit                []string              `json:"unit,omitempty"`
 		StaleDecisions      int                   `json:"stale_decisions,omitempty"`
 		SubgroupScores      []FrozenSubgroupScore `json:"subgroup_scores,omitempty"`
+		Members             []string              `json:"members,omitempty"`
 	}{
 		AnimeID: animeID, CandidateRelease: releaseID, CandidatePlacement: placementID,
 		SubscriptionVersion: subscriptionVersion, PolicyVersion: policyVersion,
 		AdmissionMode: string(mode), ProfileVersion: profileVersion,
 		FactsVersion: factsVersion, FactsFingerprint: factsFingerprint,
 		CoverageKey: coverageKey, Unit: SortCoverage(unit), StaleDecisions: staleDecisions,
-		SubgroupScores: scores,
+		SubgroupScores: scores, Members: members,
 	})
 	if err != nil {
 		return "", err
@@ -1113,7 +1124,7 @@ WHERE id = $1 AND state = 'admitted'`, id, staleSubgroupScoreChanged); err != ni
 		return ReplacementDecisionView{}, false, err
 	}
 	digest, err := decisionInputDigest(input.AnimeID, input.CandidateRelease, candidate.PlacementID,
-		ev.subscriptionVersion, ev.policyVersion, ev.mode, ev.profile.Version, ev.factsVersion, ev.factsFingerprint, key, unit, 0, poolsSubgroupScores(pools))
+		ev.subscriptionVersion, ev.policyVersion, ev.mode, ev.profile.Version, ev.factsVersion, ev.factsFingerprint, key, unit, 0, poolsSubgroupScores(pools), nil)
 	if err != nil {
 		return ReplacementDecisionView{}, false, err
 	}

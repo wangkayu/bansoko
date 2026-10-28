@@ -436,9 +436,6 @@ var allowedKinds = [...]string{
 	workitems.KindReconciliationCalibrate,
 	workitems.KindReconciliationConsumeAlignment,
 	workitems.KindReconciliationConsumeReplacement,
-	// Offset migration execution is claimable by the runtime contract;
-	// its concrete handler/recovery are wired by a later slice.
-	workitems.KindOffsetMigrationExecute,
 	// EXEC-001 post-processing plan stage: one frozen plan per verified
 	// artifact executes naming/target planning independently of the artifact
 	// success transaction.

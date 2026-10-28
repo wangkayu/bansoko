@@ -80,6 +80,7 @@ type AlignmentService struct {
 	executor  executorpkg.FileExecutor
 	observer  executorpkg.FileObserver
 	workItems *workitems.Store
+	retention AlignmentRetention
 }
 
 // NewAlignmentService wires the operations owner.
@@ -302,7 +303,7 @@ WHERE attempt IS NOT NULL AND state IN ('ready', 'running') AND overwrite_recove
 			// not a silent success, not an unconditional block.
 			continue
 		}
-		if !offsetFingerprintsEqual(observed, fingerprint) {
+		if !fingerprintsEqual(observed, fingerprint) {
 			result := deployment.ReconcileResult{State: deployment.StateConflict, Effect: deployment.EffectPresent,
 				Reason: fmt.Sprintf("alignment operation %s target fingerprint differs from frozen source", operationID)}
 			firstIssue = &result
@@ -377,7 +378,7 @@ func (s *AlignmentService) alignmentBusinessHandler() worker.Handler {
 			// A video and its companions are one unit: nothing moves while
 			// any target in the unit holds a file the mode does not allow
 			// replacing.
-			sourceFingerprint, err := offsetSourceFingerprintValue(op.SourceFingerprint)
+			sourceFingerprint, err := frozenFingerprintValue(op.SourceFingerprint)
 			if err == nil {
 				outcome, err := s.videoUnitPrecheck(ctx, op, sourceFingerprint, collision)
 				if err != nil {
@@ -452,7 +453,7 @@ func (s *AlignmentService) alignmentBusinessHandler() worker.Handler {
 		if err != nil {
 			return worker.Outcome{}, err
 		}
-		sourceFingerprint, err := offsetSourceFingerprintValue(op.SourceFingerprint)
+		sourceFingerprint, err := frozenFingerprintValue(op.SourceFingerprint)
 		if err != nil {
 			writer := alignmentSettleWriter(op, nextVersion, AlignmentFailed, "alignment_fingerprint_invalid", safeReason(err), "")
 			return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "failed", ReasonCode: "alignment_fingerprint_invalid", Reason: safeReason(err)}, writer), nil
@@ -467,15 +468,15 @@ func (s *AlignmentService) alignmentBusinessHandler() worker.Handler {
 		// target). Commit the authoritative Placement current path and settle
 		// without a second file effect.
 		if op.State == AlignmentRunning {
-			if observed, err := executorpkg.ObserveLike(ctx, s.observer, op.TargetPath, sourceFingerprint); err == nil && observed != "" && offsetFingerprintsEqual(observed, sourceFingerprint) {
+			if observed, err := executorpkg.ObserveLike(ctx, s.observer, op.TargetPath, sourceFingerprint); err == nil && observed != "" && fingerprintsEqual(observed, sourceFingerprint) {
 				writer := alignmentSettleWriter(op, nextVersion, AlignmentCompleted, "recovered_aligned", "target already verified after restart", op.TargetPath)
 				return worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: "completed", ReasonCode: "recovered_aligned", Reason: "target verified after restart"}, writer), nil
 			}
-			if observed, err := executorpkg.ObserveLike(ctx, s.observer, op.SourcePath, sourceFingerprint); err != nil || !offsetFingerprintsEqual(observed, sourceFingerprint) {
+			if observed, err := executorpkg.ObserveLike(ctx, s.observer, op.SourcePath, sourceFingerprint); err != nil || !fingerprintsEqual(observed, sourceFingerprint) {
 				writer := alignmentSettleWriter(op, nextVersion, AlignmentBlocked, "target_conflict", "neither frozen source nor target matches after restart", "")
 				return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "blocked", ReasonCode: "target_conflict", Reason: "neither frozen source nor target matches after restart"}, writer), nil
 			}
-		} else if observed, err := executorpkg.ObserveLike(ctx, s.observer, op.TargetPath, sourceFingerprint); err == nil && observed != "" && offsetFingerprintsEqual(observed, sourceFingerprint) {
+		} else if observed, err := executorpkg.ObserveLike(ctx, s.observer, op.TargetPath, sourceFingerprint); err == nil && observed != "" && fingerprintsEqual(observed, sourceFingerprint) {
 			writer := alignmentSettleWriter(op, nextVersion, AlignmentCompleted, "recovered_aligned", "target already verified", op.TargetPath)
 			return worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: "completed", ReasonCode: "recovered_aligned", Reason: "target already verified"}, writer), nil
 		}
@@ -532,7 +533,7 @@ func (s *AlignmentService) alignmentBusinessHandler() worker.Handler {
 			return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "failed", ReasonCode: "alignment_execute_failed", Reason: safeReason(err)}, writer), nil
 		}
 		observed, err := executorpkg.ObserveLike(ctx, s.observer, executed.TargetPath, sourceFingerprint)
-		if err != nil || observed == "" || !offsetFingerprintsEqual(observed, sourceFingerprint) {
+		if err != nil || observed == "" || !fingerprintsEqual(observed, sourceFingerprint) {
 			reason := "target fingerprint mismatch after alignment effect"
 			if err != nil {
 				reason = fmt.Sprintf("target reread failed: %v", err)

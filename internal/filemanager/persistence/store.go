@@ -128,9 +128,8 @@ func scanPlacement(scan func(...any) error, extra ...any) (filemanager.Placement
 // inProgressOwners is every non-terminal owner path:
 // unfinished file operations (source and target), pending or retrying
 // placement handoffs, admitted alignments, admitted deletions (source and
-// quarantine), and admitted or queued replacement decisions (candidate and
-// frozen losers), unfinished offset migrations (old and new target), and
-// unfinished user file operations (source, requested target, resolved result
+// quarantine), admitted or queued replacement decisions (candidate and
+// frozen losers), and unfinished user file operations (source, requested target, resolved result
 // and delete capture).
 const automaticOwners = `
 SELECT fo.source_path AS path, 'file_operation' AS kind, COALESCE(fo.acquisition_id, '') AS acquisition_id
@@ -160,13 +159,7 @@ SELECT p.physical_path, 'replacement', '' FROM replacement_decisions d
   CROSS JOIN LATERAL jsonb_array_elements(d.pools) pool
   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(pool->'losers') = 'array' THEN pool->'losers' ELSE '[]'::jsonb END) loser
   JOIN placements p ON p.id = loser->>'placement_id'
-  WHERE d.state IN ('admitted', 'queued')
-UNION ALL
-SELECT m.old_target_path, 'offset_migration', '' FROM offset_migration_plans m
-  WHERE m.state IN ('planned', 'ready', 'running', 'waiting_retry', 'effect_unknown')
-UNION ALL
-SELECT m.new_target_path, 'offset_migration', '' FROM offset_migration_plans m
-  WHERE m.state IN ('planned', 'ready', 'running', 'waiting_retry', 'effect_unknown')`
+  WHERE d.state IN ('admitted', 'queued')`
 
 // inProgressOwners adds the unfinished user file operations to the automatic
 // owners.

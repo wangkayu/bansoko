@@ -210,7 +210,7 @@ FROM provider_group_scope_generations WHERE subscription_id = $2`, subscriptionI
 	// configuration: copied as a new version-1 row, editable on the copy like
 	// any instance override. The managed state those settings drive
 	// (placements, companions, scan generations and observations, alignment,
-	// offset migration, cleanup and replacement rows) belongs to the source's
+	// offset changes, cleanup and replacement rows) belongs to the source's
 	// files and is never copied.
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO filemaintenance_policies(scope_key, enabled, scan_interval_seconds, alignment_enabled, safety, version, updated_at)

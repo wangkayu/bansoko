@@ -120,6 +120,13 @@ function pendingMove(file: PathInput): { name?: string; folder?: { from: string;
 
 function AlignmentPill({ file }: { file: PathInput }) {
   if (file.alignment?.state === "in_progress") return <StatePill busy>{t("tabs.files.aligning")}</StatePill>;
+  if (file.alignment?.state === "waiting") {
+    return (
+      <StatePill busy title={file.alignment.reason_code ? reasonText(file.alignment.reason_code) : undefined}>
+        {t("tabs.files.alignWaiting")}
+      </StatePill>
+    );
+  }
   if (file.alignment?.state === "failed") {
     return (
       <StatePill tone="offline">

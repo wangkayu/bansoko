@@ -44,11 +44,11 @@ type (
 
 // Kernel-owned ports and vocabulary the ownership commands consume.
 type (
-	MetadataMatcher                = animeapplication.MetadataMatcher
-	GroupDiscoveryProvider         = animeapplication.GroupDiscoveryProvider
-	DiscoverResult                 = animeapplication.DiscoverResult
-	ReplacementTriggerPort         = animeapplication.ReplacementTriggerPort
-	SourceOffsetMigrationAdmission = animeapplication.SourceOffsetMigrationAdmission
+	MetadataMatcher        = animeapplication.MetadataMatcher
+	GroupDiscoveryProvider = animeapplication.GroupDiscoveryProvider
+	DiscoverResult         = animeapplication.DiscoverResult
+	ReplacementTriggerPort = animeapplication.ReplacementTriggerPort
+	SourceOffsetAlignment  = animeapplication.SourceOffsetAlignment
 )
 
 // Dependencies are the explicit collaborators of the ownership commands. Every
@@ -56,14 +56,14 @@ type (
 // the command that needs it, and the product owners still fail closed where the
 // original service did.
 type Dependencies struct {
-	WorkItems                *workitems.Store
-	OneShotMarkers           animeport.OneShotMarkerRepository
-	MetadataMatcher          MetadataMatcher
-	EventHub                 *events.Hub
-	ActivityWriter           observabilityport.ActivityWriter
-	Observability            observabilityport.Recorder
-	ReplacementTrigger       ReplacementTriggerPort
-	OffsetMigrationAdmission SourceOffsetMigrationAdmission
+	WorkItems          *workitems.Store
+	OneShotMarkers     animeport.OneShotMarkerRepository
+	MetadataMatcher    MetadataMatcher
+	EventHub           *events.Hub
+	ActivityWriter     observabilityport.ActivityWriter
+	Observability      observabilityport.Recorder
+	ReplacementTrigger ReplacementTriggerPort
+	OffsetAlignment    SourceOffsetAlignment
 	// Connections resolves the provider endpoint of a link created before discovery.
 	Connections groupsource.ConnectionSource
 }
@@ -73,20 +73,20 @@ type Dependencies struct {
 // discovery holder; the draft transaction and the one-shot flow are injected
 // into the other owners instead of being reached through this service.
 type Service struct {
-	db                       *sql.DB
-	workItems                *workitems.Store
-	oneShotMarkers           animeport.OneShotMarkerRepository
-	metadataMatcher          MetadataMatcher
-	groupDiscovery           GroupDiscoveryProvider
-	discovery                *animeapplication.Discovery
-	logger                   observabilityport.RuntimeLogger
-	fences                   *animeapplication.Fences
-	invalidator              *animeapplication.Invalidator
-	replacement              ReplacementTriggerPort
-	offsetMigrationAdmission SourceOffsetMigrationAdmission
-	connections              groupsource.ConnectionSource
-	observability            observabilityport.Recorder
-	activityWriter           observabilityport.ActivityWriter
+	db              *sql.DB
+	workItems       *workitems.Store
+	oneShotMarkers  animeport.OneShotMarkerRepository
+	metadataMatcher MetadataMatcher
+	groupDiscovery  GroupDiscoveryProvider
+	discovery       *animeapplication.Discovery
+	logger          observabilityport.RuntimeLogger
+	fences          *animeapplication.Fences
+	invalidator     *animeapplication.Invalidator
+	replacement     ReplacementTriggerPort
+	offsetAlignment SourceOffsetAlignment
+	connections     groupsource.ConnectionSource
+	observability   observabilityport.Recorder
+	activityWriter  observabilityport.ActivityWriter
 	// mediaFacts writes the Release media fact snapshot a forced acquisition
 	// freezes.
 	mediaFacts facts.MediaRepository
@@ -134,20 +134,20 @@ func NewService(db *sql.DB, deps Dependencies) (*Service, error) {
 	discovery := &animeapplication.Discovery{}
 	discovery.SetLogger(logger)
 	service := &Service{
-		db:                       db,
-		workItems:                deps.WorkItems,
-		oneShotMarkers:           deps.OneShotMarkers,
-		metadataMatcher:          deps.MetadataMatcher,
-		discovery:                discovery,
-		logger:                   logger,
-		fences:                   animeapplication.NewFences(db),
-		invalidator:              animeapplication.NewInvalidator(deps.EventHub),
-		replacement:              deps.ReplacementTrigger,
-		offsetMigrationAdmission: deps.OffsetMigrationAdmission,
-		connections:              deps.Connections,
-		observability:            deps.Observability,
-		activityWriter:           deps.ActivityWriter,
-		mediaFacts:               facts.NewStore(db),
+		db:              db,
+		workItems:       deps.WorkItems,
+		oneShotMarkers:  deps.OneShotMarkers,
+		metadataMatcher: deps.MetadataMatcher,
+		discovery:       discovery,
+		logger:          logger,
+		fences:          animeapplication.NewFences(db),
+		invalidator:     animeapplication.NewInvalidator(deps.EventHub),
+		replacement:     deps.ReplacementTrigger,
+		offsetAlignment: deps.OffsetAlignment,
+		connections:     deps.Connections,
+		observability:   deps.Observability,
+		activityWriter:  deps.ActivityWriter,
+		mediaFacts:      facts.NewStore(db),
 	}
 	return service, nil
 }
@@ -222,11 +222,11 @@ func (s *Service) SetReplacementTrigger(port ReplacementTriggerPort) {
 	}
 }
 
-// SetOffsetMigrationAdmission wires durable generation admission for effective
-// RSSSource offset changes.
-func (s *Service) SetOffsetMigrationAdmission(admission SourceOffsetMigrationAdmission) {
+// SetOffsetAlignment wires the re-key of imported files on an RSSSource offset
+// change.
+func (s *Service) SetOffsetAlignment(admission SourceOffsetAlignment) {
 	if s != nil {
-		s.offsetMigrationAdmission = admission
+		s.offsetAlignment = admission
 	}
 }
 

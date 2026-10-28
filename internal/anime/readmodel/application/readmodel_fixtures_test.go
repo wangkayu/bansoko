@@ -114,10 +114,10 @@ func readmodelNewTestServices(t *testing.T, db *sql.DB, fetcher rootapplication.
 	// retention, parser and file-effect axes its draft's business snapshot froze.
 	draftService.SetFrozenParserPolicy(parserpolicy.NewService(db))
 	owners, err := ownershipapplication.NewService(db, ownershipapplication.Dependencies{
-		WorkItems:                store,
-		OneShotMarkers:           rootanimepersistence.NewRepository(db),
-		ActivityWriter:           activityWriter,
-		OffsetMigrationAdmission: filemaintenance.NewOffsetMigrationAdmissionService(),
+		WorkItems:       store,
+		OneShotMarkers:  rootanimepersistence.NewRepository(db),
+		ActivityWriter:  activityWriter,
+		OffsetAlignment: filemaintenance.NewOffsetAlignmentService(),
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -6,6 +6,7 @@ import {
   ApiError,
   fetchCustomSnapshot,
   fetchOwnerCustomSnapshot,
+  getInstanceReplacementPolicy,
   newUUID,
   readAnimeRSSListView,
   setProviderGroupOffset,
@@ -19,7 +20,7 @@ import {
   type RSSListView,
   type RulesSections,
 } from "../../lib/api/client";
-import { rssListKeys } from "../../lib/queryKeys";
+import { fileMaintenanceKeys, rssListKeys } from "../../lib/queryKeys";
 import { Chip, StateBlock, Button, Field, Input } from "../../ui";
 import { Checkbox, Dialog, HelpTip } from "../../ui/base";
 import { DraftSubgroupRefresh } from "../anime-config/DraftSubgroupRefresh";
@@ -450,6 +451,15 @@ function OwnerRssTab({
   const ownerConversion = offsetDrawerSource
     ? offsetConversionLine(view?.groups.find((group) => group.scope.rss_source_id === offsetDrawerSource.id), offsetDraft)
     : undefined;
+  // An offset change moves the imported files to their new episode: the dialog states what the
+  // keep mode and the same-name setting then do with them.
+  const hasImported = (workspace.episode_progress?.episodes.length ?? 0) > 0;
+  const replacementPolicy = useQuery({
+    queryKey: fileMaintenanceKeys.replacement(animeID),
+    queryFn: () => getInstanceReplacementPolicy(animeID),
+    enabled: offsetDrawerSource !== undefined && hasImported,
+  });
+  const offsetMode = replacementPolicy.data?.admission_mode;
 
   function openOffsetDrawer(source: OffsetDrawerSource) {
     setOffsetDrawerSource(source);
@@ -668,6 +678,17 @@ function OwnerRssTab({
               />
             </Field>
             {ownerConversion && <p className="text-caption text-muted">{ownerConversion}</p>}
+            {hasImported && (
+              <div className="text-caption text-muted">
+                <p>{t("rss.offsetImported")}</p>
+                {offsetMode && <p>{t(`rss.offsetMode.${offsetMode}`)}</p>}
+                <p>
+                  {t("rss.offsetCollision", {
+                    policy: t(`file.collision.${workspace.rules.effective.file_effect.collision_policy}`),
+                  })}
+                </p>
+              </div>
+            )}
             {offsetError && (
               <StateBlock kind="error" title={offsetError} />
             )}

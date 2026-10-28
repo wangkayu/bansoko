@@ -8,11 +8,10 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 )
 
 func TestMandatoryMaintenanceRecoveryActualFactoriesAreTyped(t *testing.T) {
-	for _, h := range []worker.Handler{(&AlignmentService{}).ExecuteHandler(), (&OffsetMigrationExecuteService{}).ExecuteHandler(), (&ReplacementDecisionService{}).EvaluateHandler(), (&CleanupService{}).DeleteHandler()} {
+	for _, h := range []worker.Handler{(&AlignmentService{}).ExecuteHandler(), (&ReplacementDecisionService{}).EvaluateHandler(), (&CleanupService{}).DeleteHandler()} {
 		if _, ok := h.(worker.RecoveryObserver); !ok {
 			t.Fatalf("actual factory %T lacks observer", h)
 		}
@@ -62,46 +61,6 @@ func TestPGAlignmentRecoveryNoEffectCompletedUnknownAndFence(t *testing.T) {
 	_ = tx.Rollback()
 	if !errors.Is(err, workitems.ErrStaleClaim) {
 		t.Fatalf("writer fence=%v", err)
-	}
-}
-func TestPGOffsetRecoveryNoEffectCompletedUnknownAndFence(t *testing.T) {
-	db := disposabledb.ResetDisposableSchema(t)
-	ctx := context.Background()
-	store := newOffsetMigrationWorkStore(t, db)
-	generationID := seedOffsetRecoveryReadyFixture(t, db, store)
-	if _, err := workItemFixtureDB(t).Exec(`UPDATE work_items SET available_at=CURRENT_TIMESTAMP WHERE kind='offset_migration_execute' AND owner_id IN (SELECT id FROM offset_migration_plans WHERE generation_id=$1)`, generationID); err != nil {
-		t.Fatal(err)
-	}
-	c, err := store.ClaimDue(ctx, "offset-recovery", []string{workitems.KindOffsetMigrationExecute}, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	id := c.Owner.ID
-	s := NewOffsetMigrationExecuteService(db)
-	observer := s.ExecuteHandler().(worker.RecoveryObserver)
-	o, err := observer.ObserveRecovery(ctx, c)
-	if err != nil || o.Disposition != workitems.DispositionNoExternalEffect {
-		t.Fatalf("no effect: %+v %v", o, err)
-	}
-	for _, state := range []string{"running", "applied"} {
-		if _, err := db.Exec(`UPDATE offset_migration_plans SET state=$2,attempt='{}' WHERE id=$1`, id, state); err != nil {
-			t.Fatal(err)
-		}
-		o, err = observer.ObserveRecovery(ctx, c)
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := workitems.DispositionAmbiguous
-		if state == "applied" {
-			want = workitems.DispositionConfirmed
-		}
-		if o.Disposition != want {
-			t.Fatalf("%s: %+v", state, o)
-		}
-	}
-	c.ExpectedOwnerVersion++
-	if _, err := observer.ObserveRecovery(ctx, c); !errors.Is(err, workitems.ErrStaleClaim) {
-		t.Fatalf("fence=%v", err)
 	}
 }
 func TestPGCleanupRecoveryNoEffectCompletedUnknownAndFence(t *testing.T) {

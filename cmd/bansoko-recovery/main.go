@@ -302,17 +302,6 @@ func wireRegistry(db *sql.DB) (*deployment.Registry, error) {
 		Handler: replacementDeletions,
 		Enabled: func() bool { return true },
 	}
-	// Offset migration operations own a typed reconcile for the uncertain
-	// Offset migration attempts also converge through the typed effect reconciler.
-	offsetMigrationExecute := filemaintenance.NewOffsetMigrationExecuteService(db)
-	offsetMigrationExecute.SetFilePorts(filesystem.OSFileExecutor{}, filesystem.OSFileObserver{})
-	offsetMigrationRegistration := deployment.Registration{
-		Key:     "offset_migration_operation",
-		Effect:  deployment.EffectIdentity{Owner: "offset_migration_operation", Effect: "filesystem_unknown_effect"},
-		Version: 1,
-		Handler: offsetMigrationExecute,
-		Enabled: func() bool { return true },
-	}
 	// File manager user operations: a running operation's stage is
 	// settled from its exact invocation receipt, resumed by its work item when
 	// it provably never started, or blocks the gate as an unknown effect.
@@ -358,7 +347,6 @@ func wireRegistry(db *sql.DB) (*deployment.Registry, error) {
 		},
 		alignmentRegistration,
 		cleanupRegistration,
-		offsetMigrationRegistration,
 		userOperationRegistration,
 	)
 }

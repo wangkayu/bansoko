@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"bansoko/internal/namingvars"
@@ -101,6 +102,32 @@ func (f placedRenderFacts) frozenEpisode() (*naming.FrozenEpisodeNamingFacts, er
 	if identity.EpisodeEnd != nil {
 		frozen.NumberEnd = *identity.EpisodeEnd
 	}
+	return frozen, nil
+}
+
+// coverageEpisode is the frozen episode a single-episode file renders with
+// when its coverage names another episode (an episode offset change re-keys
+// the placement and leaves the acquisition identity as it was): the number
+// and display become the coverage episode and the offset moves by the same
+// distance. nil keeps the frozen identity: no coverage episode, the same
+// episode, or a multi-episode file (an offset change never re-keys one).
+func (f placedRenderFacts) coverageEpisode(episode string) (*naming.FrozenEpisodeNamingFacts, error) {
+	if episode == "" {
+		return nil, nil
+	}
+	frozen, err := f.frozenEpisode()
+	if err != nil {
+		return nil, err
+	}
+	if frozen.NumberEnd != "" || frozen.Number == episode {
+		return nil, nil
+	}
+	if from, err := strconv.Atoi(frozen.Number); err == nil {
+		if to, err := strconv.Atoi(episode); err == nil {
+			frozen.Offset += to - from
+		}
+	}
+	frozen.Number, frozen.Display = episode, episode
 	return frozen, nil
 }
 

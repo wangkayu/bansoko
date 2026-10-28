@@ -320,7 +320,7 @@ func newRealChainServices(t *testing.T, client *http.Client) *realChainServices 
 	ownershipService.SetOneShotMarkerRepository(animepersistence.NewRepository(db))
 	ownershipService.SetMetadataMatcher(matcher.NewMatcher(matcher.NewBangumiDataIndex(nil), nil, nil, nil))
 	ownershipService.SetObservabilityRecorder(observability)
-	ownershipService.SetOffsetMigrationAdmission(filemaintenance.NewOffsetMigrationAdmissionService())
+	ownershipService.SetOffsetAlignment(filemaintenance.NewOffsetAlignmentService())
 	// Mirror the production composition root: candidate activation must write
 	// the revision-frozen instance parser policy, or the automatic refresh and
 	// evaluate path fails closed with parser_policy_required.

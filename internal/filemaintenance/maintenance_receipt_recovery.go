@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"path/filepath"
 )
 
 // maintenanceAttemptNotStarted reports whether a persisted move attempt provably
@@ -24,7 +23,7 @@ func maintenanceAttemptNotStarted(ctx context.Context, observer executorpkg.File
 		return false
 	}
 	observed, err := executorpkg.ObserveLike(ctx, observer, source, fingerprint)
-	if err != nil || !offsetFingerprintsEqual(observed, fingerprint) {
+	if err != nil || !fingerprintsEqual(observed, fingerprint) {
 		return false
 	}
 	observed, err = executorpkg.ObserveLike(ctx, observer, target, fingerprint)
@@ -43,7 +42,7 @@ func (h alignmentRecoveryHandler) resolveAttempt(ctx context.Context, c workitem
 	if !ok {
 		return worker.AwaitRecovery(""), false, nil
 	}
-	fp, err := offsetSourceFingerprintValue(op.SourceFingerprint)
+	fp, err := frozenFingerprintValue(op.SourceFingerprint)
 	if err != nil {
 		return worker.Outcome{}, false, err
 	}
@@ -85,38 +84,6 @@ func (h alignmentRecoveryHandler) resumeOverwrite(ctx context.Context, c workite
 	return recoveryCommitted("completed", maintenanceAttemptWriter("alignment_operations", c, string(op.State), op.Attempt, writer)), false, nil
 }
 
-func (h offsetRecoveryHandler) recoverReceipt(ctx context.Context, c workitems.Claim, op *OffsetMigrationOperation) (worker.Outcome, error) {
-	o, _, err := h.resolveAttempt(ctx, c, op)
-	return o, err
-}
-
-// resolveAttempt reads the exact invocation receipt once. resume=true means the
-// attempt provably never started and the caller may execute it unchanged.
-func (h offsetRecoveryHandler) resolveAttempt(ctx context.Context, c workitems.Claim, op *OffsetMigrationOperation) (worker.Outcome, bool, error) {
-	e, ok := h.service.executor.(executorpkg.MaintenanceFileExecutor)
-	if !ok {
-		return worker.AwaitRecovery(""), false, nil
-	}
-	fp, err := offsetSourceFingerprintValue(op.SourceFingerprint)
-	if err != nil {
-		return worker.Outcome{}, false, err
-	}
-	target := filepath.Clean(op.NewTargetPath)
-	i := maintenanceInvocation(c, op.Attempt, op.OldTargetPath, target, fp)
-	r, err := e.ReadMaintenanceReceipt(ctx, i)
-	if err != nil || r.Validate(i) != nil {
-		if maintenanceAttemptNotStarted(ctx, h.service.observer, err, op.OldTargetPath, target, fp) {
-			return worker.Outcome{}, true, nil
-		}
-		return worker.AwaitRecovery(""), false, nil
-	}
-	committed := *op
-	committed.NewTargetPath = target
-	writer := func(ctx context.Context, scope txscope.Tx, _ workitems.OwnerResult) (int64, error) {
-		return h.service.commitAppliedTx(ctx, scope.SQLTx(), &committed, op.Version)
-	}
-	return recoveryCommitted("applied", maintenanceAttemptWriter("offset_migration_plans", c, string(op.State), op.Attempt, writer)), false, nil
-}
 func maintenanceAttemptWriter(table string, c workitems.Claim, state string, attempt json.RawMessage, next workitems.OwnerWriter) workitems.OwnerWriter {
 	return func(ctx context.Context, scope txscope.Tx, result workitems.OwnerResult) (int64, error) {
 		if _, err := lockedMaintenanceEvidence(table, c, state, c.ExpectedOwnerVersion)(ctx, scope, result); err != nil {

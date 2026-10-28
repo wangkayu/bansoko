@@ -326,28 +326,25 @@ func provideFileManager(db *sql.DB, workStore *workitems.Store, denialZone filem
 }
 
 type fileMaintenanceGraph struct {
-	replacementPolicies      *filemaintenance.ReplacementPolicyService
-	parserPolicies           *parserpolicy.Service
-	fileEffectPolicies       *filemaintenance.FileEffectPolicyService
-	policyService            *filemaintenancepolicy.PolicyService
-	planner                  *filemaintenanceplanner.Planner
-	mediaFactsStore          *facts.Store
-	replacementTrigger       *filemaintenance.ReplacementTriggerService
-	cleanupService           *filemaintenance.CleanupService
-	fileMaintenanceSnapshot  *filemaintenance.ReconciliationSnapshotReader
-	namingRenderer           *filemaintenance.NamingTargetRenderer
-	offsetMigrationPlanner   *filemaintenance.OffsetMigrationService
-	offsetMigrationExecute   *filemaintenance.OffsetMigrationExecuteService
-	offsetMigrationAdmission *filemaintenance.OffsetMigrationAdmissionService
-	placementService         *filemaintenance.PlacementService
-	alignmentOperations      *filemaintenance.AlignmentService
-	calibrationService       *filemaintenance.CalibrationService
-	replacementDecisions     *filemaintenance.ReplacementDecisionService
-	candidateFactsRepo       facts.Repository
-	oneShotMarkers           *animepersistence.Repository
-	fileManager              *filemanager.Service
-	userOperations           *filemaintenance.UserOperationService
-	metadataRefresher        filemaintenance.MetadataWorkRefresher
+	replacementPolicies     *filemaintenance.ReplacementPolicyService
+	parserPolicies          *parserpolicy.Service
+	fileEffectPolicies      *filemaintenance.FileEffectPolicyService
+	policyService           *filemaintenancepolicy.PolicyService
+	planner                 *filemaintenanceplanner.Planner
+	mediaFactsStore         *facts.Store
+	replacementTrigger      *filemaintenance.ReplacementTriggerService
+	cleanupService          *filemaintenance.CleanupService
+	fileMaintenanceSnapshot *filemaintenance.ReconciliationSnapshotReader
+	namingRenderer          *filemaintenance.NamingTargetRenderer
+	placementService        *filemaintenance.PlacementService
+	alignmentOperations     *filemaintenance.AlignmentService
+	calibrationService      *filemaintenance.CalibrationService
+	replacementDecisions    *filemaintenance.ReplacementDecisionService
+	candidateFactsRepo      facts.Repository
+	oneShotMarkers          *animepersistence.Repository
+	fileManager             *filemanager.Service
+	userOperations          *filemaintenance.UserOperationService
+	metadataRefresher       filemaintenance.MetadataWorkRefresher
 }
 
 func provideFileMaintenanceGraph(
@@ -388,23 +385,16 @@ func provideFileMaintenanceGraph(
 	namingRenderer := filemaintenance.NewNamingTargetRenderer(db, ownershipService)
 	policyService := filemaintenancepolicy.NewPolicyService(db)
 	planner := filemaintenanceplanner.NewPlanner(fileMaintenanceSnapshot, namingRenderer)
-	offsetMigrationPlanner := filemaintenance.NewOffsetMigrationService(db, namingRenderer)
-	offsetMigrationPlanner.SetWorkItems(workStore)
-	offsetMigrationExecute := filemaintenance.NewOffsetMigrationExecuteService(db)
-	offsetExecutor, err := newOffsetMigrationPauseExecutor(filesystem.OSFileExecutor{}, os.Getenv)
-	if err != nil {
-		return nil, err
-	}
-	offsetMigrationExecute.SetFilePorts(offsetExecutor, filesystem.OSFileObserver{})
-	offsetMigrationExecute.SetWorkItems(workStore)
-	offsetMigrationAdmission := filemaintenance.NewOffsetMigrationAdmissionService()
-	ownershipService.SetOffsetMigrationAdmission(offsetMigrationAdmission)
+	// An offset change re-keys the link's files inside its own transaction;
+	// the scan scheduler's request dispatch moves them afterwards.
+	ownershipService.SetOffsetAlignment(filemaintenance.NewOffsetAlignmentService())
 
 	candidateFactsRepo := facts.NewPGRepository(db)
 	placementService := filemaintenance.NewPlacementService(db, filemaintenance.NewFileOperationEvidenceReader(db), fileMaintenanceSnapshot)
 	alignmentOperations := filemaintenance.NewAlignmentService(db)
 	alignmentOperations.SetFilePorts(filesystem.OSFileExecutor{}, filesystem.OSFileObserver{})
 	alignmentOperations.SetWorkItems(workStore)
+	alignmentOperations.SetRetention(replacementDecisions)
 	calibrationService := filemaintenance.NewCalibrationService(
 		db,
 		placementService,
@@ -429,9 +419,8 @@ func provideFileMaintenanceGraph(
 		replacementTrigger: replacementTrigger, cleanupService: cleanupService,
 		fileMaintenanceSnapshot: fileMaintenanceSnapshot,
 		namingRenderer:          namingRenderer,
-		offsetMigrationPlanner:  offsetMigrationPlanner, offsetMigrationExecute: offsetMigrationExecute,
-		offsetMigrationAdmission: offsetMigrationAdmission, placementService: placementService,
-		alignmentOperations: alignmentOperations, calibrationService: calibrationService,
+		placementService:        placementService,
+		alignmentOperations:     alignmentOperations, calibrationService: calibrationService,
 		replacementDecisions: replacementDecisions, candidateFactsRepo: candidateFactsRepo,
 		oneShotMarkers: markerRepo,
 		fileManager:    fileManager, userOperations: userOperations,
@@ -905,7 +894,6 @@ func provideWorkerGraph(
 	reconciliationService *reconciliationapplication.Service,
 	calibrationService *filemaintenance.CalibrationService,
 	alignmentOperations *filemaintenance.AlignmentService,
-	offsetMigrationExecute *filemaintenance.OffsetMigrationExecuteService,
 	replacementDecisions *filemaintenance.ReplacementDecisionService,
 	cleanupService *filemaintenance.CleanupService,
 	userOperations *filemaintenance.UserOperationService,
@@ -925,7 +913,6 @@ func provideWorkerGraph(
 		{kind: workitems.KindReconciliationConsumeAlignment, handler: calibrationService.ConsumeAlignmentHandler()},
 		{kind: workitems.KindReconciliationConsumeReplacement, handler: calibrationService.ConsumeReplacementHandler()},
 		{kind: workitems.KindAlignmentExecute, handler: alignmentOperations.ExecuteHandler()},
-		{kind: workitems.KindOffsetMigrationExecute, handler: offsetMigrationExecute.ExecuteHandler()},
 		{kind: workitems.KindReplacementEvaluate, handler: replacementDecisions.EvaluateHandler()},
 		{kind: workitems.KindSubscriptionCompetition, handler: rssService.CompetitionHandler()},
 		{kind: workitems.KindReplacementDelete, handler: cleanupService.DeleteHandler()},
@@ -976,7 +963,6 @@ func provideFileMaintenanceService(
 		currentScanAdapter{reconciliation: reconciliationService},
 	)
 	service.SetAnimeExistence(filemaintenance.NewSQLAnimeExistenceReader(db))
-	service.SetOffsetMigration(fileMaintenanceGraph.offsetMigrationPlanner)
 	service.SetParserPolicy(fileMaintenanceGraph.parserPolicies)
 	service.SetFileEffectPolicy(fileMaintenanceGraph.fileEffectPolicies)
 	// The 对齐（刷新元数据）variant re-pulls the bound work through the

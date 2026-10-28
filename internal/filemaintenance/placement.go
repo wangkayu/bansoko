@@ -491,7 +491,7 @@ ON CONFLICT (source_evidence_type, source_owner_ref) DO NOTHING`,
 		return "", fmt.Errorf("placement %s has no coverage set; not admitted", placementID)
 	}
 	// A replay of an existing placement keeps the coverage set it committed
-	// with (an offset migration or the seasonless rewrite may have changed it
+	// with (an offset change or the seasonless rewrite may have changed it
 	// since); only a new placement writes one. Keys enter in the instance
 	// shape: an acquisition sealed with v1 keys lands as tv:e<N>.
 	if inserted == 1 {
@@ -502,6 +502,14 @@ INSERT INTO placement_coverage
 VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (placement_id, observation_key) DO NOTHING`,
 				placementID, key, ordinal, input.FactsVersion, input.SourceOwnerRef); err != nil {
+				return "", err
+			}
+		}
+		if input.SourceEvidenceType == "file_operation" && input.ReplacementEligible {
+			// A new import is published at its frozen admission target; once
+			// its retention decision is in, a scan aligns it to the current
+			// render whatever the alignment setting (alignment_requests.go).
+			if err := requestAlignmentTx(ctx, tx, placementID, ""); err != nil {
 				return "", err
 			}
 		}

@@ -293,6 +293,7 @@ const (
 const (
 	AnimeFileAlignmentStateFailed     AnimeFileAlignmentState = "failed"
 	AnimeFileAlignmentStateInProgress AnimeFileAlignmentState = "in_progress"
+	AnimeFileAlignmentStateWaiting    AnimeFileAlignmentState = "waiting"
 )
 
 // Defines values for AnimeFileCompanionMediaKind.
@@ -834,7 +835,6 @@ const (
 	FileManagerInProgressKindAlignment        FileManagerInProgressKind = "alignment"
 	FileManagerInProgressKindCleanup          FileManagerInProgressKind = "cleanup"
 	FileManagerInProgressKindFileOperation    FileManagerInProgressKind = "file_operation"
-	FileManagerInProgressKindOffsetMigration  FileManagerInProgressKind = "offset_migration"
 	FileManagerInProgressKindPlacementHandoff FileManagerInProgressKind = "placement_handoff"
 	FileManagerInProgressKindReplacement      FileManagerInProgressKind = "replacement"
 	FileManagerInProgressKindUserOperation    FileManagerInProgressKind = "user_operation"
@@ -1300,36 +1300,6 @@ const (
 	ObservabilityRecordStateInProgress ObservabilityRecordState = "in_progress"
 	ObservabilityRecordStateInfo       ObservabilityRecordState = "info"
 	ObservabilityRecordStateSuccess    ObservabilityRecordState = "success"
-)
-
-// Defines values for OffsetMigrationGenerationViewScopeKind.
-const (
-	OffsetMigrationGenerationViewScopeKindRssSource OffsetMigrationGenerationViewScopeKind = "rss_source"
-)
-
-// Defines values for OffsetMigrationGenerationViewState.
-const (
-	OffsetMigrationGenerationViewStateCompleted           OffsetMigrationGenerationViewState = "completed"
-	OffsetMigrationGenerationViewStateCompletedWithBlocks OffsetMigrationGenerationViewState = "completed_with_blocks"
-	OffsetMigrationGenerationViewStateFailed              OffsetMigrationGenerationViewState = "failed"
-	OffsetMigrationGenerationViewStatePending             OffsetMigrationGenerationViewState = "pending"
-	OffsetMigrationGenerationViewStatePlanning            OffsetMigrationGenerationViewState = "planning"
-	OffsetMigrationGenerationViewStateReady               OffsetMigrationGenerationViewState = "ready"
-	OffsetMigrationGenerationViewStateRunning             OffsetMigrationGenerationViewState = "running"
-	OffsetMigrationGenerationViewStateSuperseded          OffsetMigrationGenerationViewState = "superseded"
-)
-
-// Defines values for OffsetMigrationPlanViewState.
-const (
-	OffsetMigrationPlanViewStateApplied       OffsetMigrationPlanViewState = "applied"
-	OffsetMigrationPlanViewStateBlocked       OffsetMigrationPlanViewState = "blocked"
-	OffsetMigrationPlanViewStateEffectUnknown OffsetMigrationPlanViewState = "effect_unknown"
-	OffsetMigrationPlanViewStateFailed        OffsetMigrationPlanViewState = "failed"
-	OffsetMigrationPlanViewStatePlanned       OffsetMigrationPlanViewState = "planned"
-	OffsetMigrationPlanViewStateReady         OffsetMigrationPlanViewState = "ready"
-	OffsetMigrationPlanViewStateRunning       OffsetMigrationPlanViewState = "running"
-	OffsetMigrationPlanViewStateSuperseded    OffsetMigrationPlanViewState = "superseded"
-	OffsetMigrationPlanViewStateWaitingRetry  OffsetMigrationPlanViewState = "waiting_retry"
 )
 
 // Defines values for OneShotAcquisitionState.
@@ -2290,6 +2260,7 @@ const (
 	SubscriptionLogMessageCodeImportWaitingBindingTmdb      SubscriptionLogMessageCode = "import_waiting_binding_tmdb"
 	SubscriptionLogMessageCodeImportWaitingTemplateVariable SubscriptionLogMessageCode = "import_waiting_template_variable"
 	SubscriptionLogMessageCodeMetadataApplied               SubscriptionLogMessageCode = "metadata_applied"
+	SubscriptionLogMessageCodeOffsetAligned                 SubscriptionLogMessageCode = "offset_aligned"
 	SubscriptionLogMessageCodeOldVersionDeleteFailed        SubscriptionLogMessageCode = "old_version_delete_failed"
 	SubscriptionLogMessageCodeOldVersionDeleted             SubscriptionLogMessageCode = "old_version_deleted"
 	SubscriptionLogMessageCodeOldVersionKept                SubscriptionLogMessageCode = "old_version_kept"
@@ -3246,7 +3217,7 @@ type AnimeDraft struct {
 type AnimeFile struct {
 	Actions AnimeFileActions `json:"actions"`
 
-	// Alignment The latest scan's alignment of this file when it has not completed.
+	// Alignment The latest scan's alignment of this file when it has not completed. waiting means the move waits for retention to compare it with the file already at its target (reason_code replacement_pending).
 	Alignment  *AnimeFileAlignment  `json:"alignment,omitempty"`
 	Companions []AnimeFileCompanion `json:"companions"`
 	Episodes   []string             `json:"episodes"`
@@ -3293,7 +3264,7 @@ type AnimeFileActions struct {
 	Rerun   AnimeFileAction `json:"rerun"`
 }
 
-// AnimeFileAlignment The latest scan's alignment of this file when it has not completed.
+// AnimeFileAlignment The latest scan's alignment of this file when it has not completed. waiting means the move waits for retention to compare it with the file already at its target (reason_code replacement_pending).
 type AnimeFileAlignment struct {
 	ReasonCode *string                 `json:"reason_code,omitempty"`
 	State      AnimeFileAlignmentState `json:"state"`
@@ -3304,7 +3275,7 @@ type AnimeFileAlignmentState string
 
 // AnimeFileCompanion defines model for AnimeFileCompanion.
 type AnimeFileCompanion struct {
-	// Alignment The latest scan's alignment of this file when it has not completed.
+	// Alignment The latest scan's alignment of this file when it has not completed. waiting means the move waits for retention to compare it with the file already at its target (reason_code replacement_pending).
 	Alignment          *AnimeFileAlignment         `json:"alignment,omitempty"`
 	Id                 ID                          `json:"id"`
 	MediaKind          AnimeFileCompanionMediaKind `json:"media_kind"`
@@ -6183,54 +6154,6 @@ type ObservabilityRecordPage struct {
 // ObservabilityRecordState defines model for ObservabilityRecordState.
 type ObservabilityRecordState string
 
-// OffsetMigrationGenerationView defines model for OffsetMigrationGenerationView.
-type OffsetMigrationGenerationView struct {
-	AppliedCount    *int                                   `json:"applied_count,omitempty"`
-	BlockedCount    *int                                   `json:"blocked_count,omitempty"`
-	CompletedAt     *time.Time                             `json:"completed_at,omitempty"`
-	CreatedAt       time.Time                              `json:"created_at"`
-	Id              string                                 `json:"id"`
-	ManagedAnimeId  string                                 `json:"managed_anime_id"`
-	NewOffset       int                                    `json:"new_offset"`
-	OldOffset       int                                    `json:"old_offset"`
-	PlannedCount    *int                                   `json:"planned_count,omitempty"`
-	PolicyVersion   int                                    `json:"policy_version"`
-	Reason          *string                                `json:"reason,omitempty"`
-	ReasonCode      *string                                `json:"reason_code,omitempty"`
-	ScopeKind       OffsetMigrationGenerationViewScopeKind `json:"scope_kind"`
-	ScopeOwnerId    string                                 `json:"scope_owner_id"`
-	State           OffsetMigrationGenerationViewState     `json:"state"`
-	SupersededCount *int                                   `json:"superseded_count,omitempty"`
-	UpdatedAt       *time.Time                             `json:"updated_at,omitempty"`
-	Version         int                                    `json:"version"`
-}
-
-// OffsetMigrationGenerationViewScopeKind defines model for OffsetMigrationGenerationView.ScopeKind.
-type OffsetMigrationGenerationViewScopeKind string
-
-// OffsetMigrationGenerationViewState defines model for OffsetMigrationGenerationView.State.
-type OffsetMigrationGenerationViewState string
-
-// OffsetMigrationPlanView defines model for OffsetMigrationPlanView.
-type OffsetMigrationPlanView struct {
-	CreatedAt      time.Time                    `json:"created_at"`
-	FailureReason  *string                      `json:"failure_reason,omitempty"`
-	Id             string                       `json:"id"`
-	ManagedAnimeId *string                      `json:"managed_anime_id,omitempty"`
-	NewEpisode     string                       `json:"new_episode"`
-	NewTargetPath  string                       `json:"new_target_path"`
-	OldTargetPath  string                       `json:"old_target_path"`
-	PlacementId    string                       `json:"placement_id"`
-	PolicyVersion  int                          `json:"policy_version"`
-	RawEpisode     string                       `json:"raw_episode"`
-	State          OffsetMigrationPlanViewState `json:"state"`
-	UpdatedAt      *time.Time                   `json:"updated_at,omitempty"`
-	Version        int                          `json:"version"`
-}
-
-// OffsetMigrationPlanViewState defines model for OffsetMigrationPlanView.State.
-type OffsetMigrationPlanViewState string
-
 // OneShotAcquisitionState Internal one-shot marker state. running admits gated effects; reclaim_pending is terminal and drained awaiting bounded batch reclamation; cleanup_blocked retains owners with an actionable bounded reason; reclaiming is the fenced drain phase that admits no new effects; cleaned has no owner graph and keeps anchors plus replay evidence until marker purge.
 type OneShotAcquisitionState string
 
@@ -8816,6 +8739,9 @@ type SubscriptionLogMessageParams struct {
 	// Count Non-negative item count.
 	Count *int64 `json:"count,omitempty"`
 
+	// Deleted Files the retention comparison of an offset change deleted.
+	Deleted *int64 `json:"deleted,omitempty"`
+
 	// FileName Base name of the file a file result is about.
 	FileName *string `json:"file_name,omitempty"`
 
@@ -8825,8 +8751,20 @@ type SubscriptionLogMessageParams struct {
 	// Name Torrent name the downloader reports.
 	Name *string `json:"name,omitempty"`
 
+	// Overwritten Moved files that overwrote the file at their target.
+	Overwritten *int64 `json:"overwritten,omitempty"`
+
+	// Rekeyed Imported files an offset change moved to another episode.
+	Rekeyed *int64 `json:"rekeyed,omitempty"`
+
+	// Skipped Files the collision policy left in place.
+	Skipped *int64 `json:"skipped,omitempty"`
+
 	// Variables Template variable names, comma separated.
 	Variables *string `json:"variables,omitempty"`
+
+	// Versioned Moved files the collision policy gave a version suffix.
+	Versioned *int64 `json:"versioned,omitempty"`
 }
 
 // SubscriptionLogOutcome defines model for SubscriptionLogOutcome.
@@ -9566,21 +9504,6 @@ type RetryDownloadTaskParams struct {
 
 // ListReplacementDecisionsParams defines parameters for ListReplacementDecisions.
 type ListReplacementDecisionsParams struct {
-	ManagedAnimeId *ID  `form:"managed_anime_id,omitempty" json:"managed_anime_id,omitempty"`
-	Limit          *int `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset         *int `form:"offset,omitempty" json:"offset,omitempty"`
-}
-
-// ListOffsetMigrationsParams defines parameters for ListOffsetMigrations.
-type ListOffsetMigrationsParams struct {
-	ManagedAnimeId *ID  `form:"managed_anime_id,omitempty" json:"managed_anime_id,omitempty"`
-	PolicyVersion  *int `form:"policy_version,omitempty" json:"policy_version,omitempty"`
-	Limit          *int `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset         *int `form:"offset,omitempty" json:"offset,omitempty"`
-}
-
-// ListOffsetMigrationGenerationsParams defines parameters for ListOffsetMigrationGenerations.
-type ListOffsetMigrationGenerationsParams struct {
 	ManagedAnimeId *ID  `form:"managed_anime_id,omitempty" json:"managed_anime_id,omitempty"`
 	Limit          *int `form:"limit,omitempty" json:"limit,omitempty"`
 	Offset         *int `form:"offset,omitempty" json:"offset,omitempty"`
@@ -12096,12 +12019,6 @@ type ServerInterface interface {
 
 	// (PUT /file-maintenance/file-effect/default)
 	SaveFileEffectPolicyDefault(w http.ResponseWriter, r *http.Request)
-
-	// (GET /file-maintenance/offset-migrations)
-	ListOffsetMigrations(w http.ResponseWriter, r *http.Request, params ListOffsetMigrationsParams)
-
-	// (GET /file-maintenance/offset-migrations/generations)
-	ListOffsetMigrationGenerations(w http.ResponseWriter, r *http.Request, params ListOffsetMigrationGenerationsParams)
 
 	// (GET /file-maintenance/overview/{managed_anime_id})
 	GetFileMaintenanceOverview(w http.ResponseWriter, r *http.Request, managedAnimeId ID)
@@ -16080,112 +15997,6 @@ func (siw *ServerInterfaceWrapper) SaveFileEffectPolicyDefault(w http.ResponseWr
 	handler.ServeHTTP(w, r)
 }
 
-// ListOffsetMigrations operation middleware
-func (siw *ServerInterfaceWrapper) ListOffsetMigrations(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ListOffsetMigrationsParams
-
-	// ------------- Optional query parameter "managed_anime_id" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "managed_anime_id", r.URL.Query(), &params.ManagedAnimeId)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "managed_anime_id", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "policy_version" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "policy_version", r.URL.Query(), &params.PolicyVersion)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "policy_version", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "limit" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "limit", r.URL.Query(), &params.Limit)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "offset" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "offset", r.URL.Query(), &params.Offset)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListOffsetMigrations(w, r, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ListOffsetMigrationGenerations operation middleware
-func (siw *ServerInterfaceWrapper) ListOffsetMigrationGenerations(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ListOffsetMigrationGenerationsParams
-
-	// ------------- Optional query parameter "managed_anime_id" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "managed_anime_id", r.URL.Query(), &params.ManagedAnimeId)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "managed_anime_id", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "limit" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "limit", r.URL.Query(), &params.Limit)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "offset" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "offset", r.URL.Query(), &params.Offset)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListOffsetMigrationGenerations(w, r, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 // GetFileMaintenanceOverview operation middleware
 func (siw *ServerInterfaceWrapper) GetFileMaintenanceOverview(w http.ResponseWriter, r *http.Request) {
 
@@ -19363,8 +19174,6 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("PUT "+options.BaseURL+"/file-maintenance/file-effect/anime/{managed_anime_id}", wrapper.SaveInstanceFileEffectPolicy)
 	m.HandleFunc("GET "+options.BaseURL+"/file-maintenance/file-effect/default", wrapper.GetFileEffectPolicyDefault)
 	m.HandleFunc("PUT "+options.BaseURL+"/file-maintenance/file-effect/default", wrapper.SaveFileEffectPolicyDefault)
-	m.HandleFunc("GET "+options.BaseURL+"/file-maintenance/offset-migrations", wrapper.ListOffsetMigrations)
-	m.HandleFunc("GET "+options.BaseURL+"/file-maintenance/offset-migrations/generations", wrapper.ListOffsetMigrationGenerations)
 	m.HandleFunc("GET "+options.BaseURL+"/file-maintenance/overview/{managed_anime_id}", wrapper.GetFileMaintenanceOverview)
 	m.HandleFunc("GET "+options.BaseURL+"/file-maintenance/parser-policy/anime/{managed_anime_id}", wrapper.GetInstanceParserPolicy)
 	m.HandleFunc("PUT "+options.BaseURL+"/file-maintenance/parser-policy/anime/{managed_anime_id}", wrapper.SaveInstanceParserPolicy)

@@ -26,9 +26,18 @@ func openOpsTestDB(t *testing.T) *opsFixture {
 	return &opsFixture{svc: NewAlignmentService(db), db: db}
 }
 
+func newTestWorkStore(t *testing.T, db *sql.DB) *workitems.Store {
+	t.Helper()
+	store, err := workitems.NewStore(db, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store
+}
+
 func alignmentWorkItemClaim(t *testing.T, ctx context.Context, db *sql.DB, operationID string, ownerVersion int64) (*workitems.Store, workitems.Claim) {
 	t.Helper()
-	store := newOffsetMigrationWorkStore(t, db)
+	store := newTestWorkStore(t, db)
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -534,7 +543,7 @@ func TestAlignmentReclaimedAttemptConverges(t *testing.T) {
 			}
 			sum := sha256.Sum256(content)
 			fingerprint := hex.EncodeToString(sum[:])
-			store := newOffsetMigrationWorkStore(t, fixture.db)
+			store := newTestWorkStore(t, fixture.db)
 			fixture.svc.SetWorkItems(store)
 			if _, err := fixture.db.ExecContext(ctx, `INSERT INTO managed_anime(id,title) VALUES ('anime-align','Align')`); err != nil {
 				t.Fatal(err)

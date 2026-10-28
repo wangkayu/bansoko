@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"testing"
 	"time"
@@ -315,6 +316,16 @@ func TestSharedTorrentAndLibraryPaths(t *testing.T) {
 VALUES ('placement-a', '/library/Show/S01E01.mkv', 'anime-trace', 'reconciliation', 'ref-a', 'sf', 'tf', 'v1', 'active'), ('placement-gone', '/library/Show/S01E02.mkv', 'anime-trace', 'reconciliation', 'ref-b', 'sf', 'tf', 'v1', 'superseded')`); err != nil {
 		t.Fatal(err)
 	}
+	// An alignment (an offset change's included) moves the file to its target
+	// before the placement names that path.
+	if _, err := f.owner.Exec(`INSERT INTO alignment_operations
+(id, idempotency_key, managed_anime_id, scan_generation, observation_ref, candidate_ref, policy_version,
+ metadata_version, rules_version, naming_version, source_path, source_fingerprint, target_path,
+ target_contract, dry_run_result, state)
+VALUES ('align-a', 'align:a', 'anime-trace', 1, 'obs-a', 'c', 1, 1, 1, 1,
+ '/library/Show/S01E01.mkv', 'fp', '/library/Show/Season 01/E02.mkv', '{}', '{}', 'planned')`); err != nil {
+		t.Fatal(err)
+	}
 	var paths []string
 	if err := f.store.EachLibraryPath(ctx, func(path string) error { paths = append(paths, path); return nil }); err != nil {
 		t.Fatal(err)
@@ -322,8 +333,9 @@ VALUES ('placement-a', '/library/Show/S01E01.mkv', 'anime-trace', 'reconciliatio
 	// Every placement counts whatever its state: a superseded or released file
 	// is still somebody's file.
 	sort.Strings(paths)
-	if len(paths) != 2 || paths[0] != "/library/Show/S01E01.mkv" || paths[1] != "/library/Show/S01E02.mkv" {
-		t.Fatalf("library paths = %v, want the active and the superseded placement", paths)
+	want := []string{"/library/Show/S01E01.mkv", "/library/Show/S01E02.mkv", "/library/Show/Season 01/E02.mkv"}
+	if !slices.Equal(paths, want) {
+		t.Fatalf("library paths = %v, want the active and the superseded placement and the alignment target", paths)
 	}
 }
 

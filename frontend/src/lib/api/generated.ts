@@ -921,7 +921,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Create a new ManagedAnime and Subscription from the source instance's current saved configuration in one transaction, as Subscribe creates an owner set. The copy is always pending, whatever the source state, and carries the required display-only instance_label. Configuration is copied, including the per-anime file-maintenance settings; subscription state, history, releases, download tasks, logs, notification state and the managed file state (placements, companions, reconciliation scans and observations, alignment, offset migration, cleanup and replacement rows) are not. Exact replay of the Idempotency-Key with the same source and label returns the first result; a different request with the same key is 409 IDEMPOTENCY_KEY_REUSED. A retired source is 409 MANAGED_ANIME_RETIRED. */
+        /** @description Create a new ManagedAnime and Subscription from the source instance's current saved configuration in one transaction, as Subscribe creates an owner set. The copy is always pending, whatever the source state, and carries the required display-only instance_label. Configuration is copied, including the per-anime file-maintenance settings; subscription state, history, releases, download tasks, logs, notification state and the managed file state (placements, companions, reconciliation scans and observations, alignment, offset alignment, cleanup and replacement rows) are not. Exact replay of the Idempotency-Key with the same source and label returns the first result; a different request with the same key is 409 IDEMPOTENCY_KEY_REUSED. A retired source is 409 MANAGED_ANIME_RETIRED. */
         post: operations["duplicateAnimeSubscription"];
         delete?: never;
         options?: never;
@@ -939,7 +939,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** @description Explicitly authorized physical local cleanup of one RETIRED ManagedAnime's local business/config/runtime records: the complete leaf-first local owner graph, including work items, reconciliation scans/observations/calibrations/checkpoints, placement/replacement/ cleanup/alignment/offset-migration owners, media fact snapshots/files, file operations, artifacts, download tasks, releases, RSS runtime and sources, instance configuration and metadata, the subscription and the lifecycle row. It never calls qBittorrent and never deletes qB torrents/data or media-library files.
+        /** @description Explicitly authorized physical local cleanup of one RETIRED ManagedAnime's local business/config/runtime records: the complete leaf-first local owner graph, including work items, reconciliation scans/observations/calibrations/checkpoints, placement/replacement/ cleanup/alignment owners, media fact snapshots/files, file operations, artifacts, download tasks, releases, RSS runtime and sources, instance configuration and metadata, the subscription and the lifecycle row. It never calls qBittorrent and never deletes qB torrents/data or media-library files.
          *     Retirement and cleanup are separate: retirement preserves the graph, cleanup deletes it later. Only a retired lifecycle is eligible; active or stopped instances return a typed 409. An Idempotency-Key plus the retired lifecycle epoch (CAS) and a fixed confirmation string are mandatory. A replay with the same key and request returns the original success; the same key with a different request is a typed 409; a stale epoch is a typed 409.
          *     Cleanup does not wait for external effects to settle. Retirement's lifecycle fence already rejects every owner-row and WorkItem write for the retired owner, so a leased or externally-admitted WorkItem, a downloading/waiting_retry download, an effect-unknown operation or an unknown plugin delivery can no longer write local state; cleanup deletes the local graph and the late writer fails on the fence. The transaction still serializes on the lifecycle row with any writer that is inside its own fenced transaction, so it never races a live local write. A relocation whose bytes may still land leaves them untouched: this command never deletes qB torrents/data or media-library files. */
         delete: operations["cleanupAnimeLocalData"];
@@ -1097,40 +1097,6 @@ export interface paths {
         };
         /** @description Verified physical placements (side-effect free). Never enumerates, hashes or re-parses; admission policy belongs to the replacement owner. */
         get: operations["listPlacements"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/file-maintenance/offset-migrations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Frozen offset-correction migration plans of one anime (side-effect free). A plan is created when an RSS link offset edit changes the resolved episode of an existing placement. */
-        get: operations["listOffsetMigrations"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/file-maintenance/offset-migrations/generations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Durable offset migration generations of one anime (side-effect free). A generation is admitted atomically when an RSS link offset edit changes that link's offset; its state shows pending/planning/ ready/completed/superseded/failed owner truth with aggregate counts. */
-        get: operations["listOffsetMigrationGenerations"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3736,7 +3702,7 @@ export interface components {
          * @description The message of a business journal entry in the closed catalog the server registers per entry kind (published to the frontend as a generated artifact). The client renders the text from the code and message_params; entries carry no display text.
          * @enum {string}
          */
-        SubscriptionLogMessageCode: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "rules_changed" | "episode_offset_changed" | "rss_new_content" | "release_discovered" | "release_waiting_metadata" | "release_subscription_stopped" | "release_source_unavailable" | "release_parse_failed" | "release_accepted" | "release_filtered" | "release_adopted_existing" | "release_acquisition_failed" | "release_submitted" | "release_awaiting_competition" | "release_resume_baseline" | "release_start_baseline" | "download_submitted" | "download_completed" | "download_removed" | "download_failed" | "artifact_verified" | "import_waiting_binding_bgm" | "import_waiting_binding_tmdb" | "import_waiting_template_variable" | "import_config_resumed" | "file_imported" | "file_adopted" | "file_retained" | "file_import_failed" | "acquisition_succeeded" | "acquisition_failed" | "acquisition_cancelled" | "replacement_kept_existing" | "replacement_kept_all" | "replacement_blocked" | "replacement_replaced" | "replacement_not_replaced" | "placement_released" | "unknown_file_released" | "placement_recorded" | "file_recovered" | "placements_excluded" | "old_version_deleted" | "old_version_kept" | "old_version_delete_failed";
+        SubscriptionLogMessageCode: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "rules_changed" | "episode_offset_changed" | "rss_new_content" | "release_discovered" | "release_waiting_metadata" | "release_subscription_stopped" | "release_source_unavailable" | "release_parse_failed" | "release_accepted" | "release_filtered" | "release_adopted_existing" | "release_acquisition_failed" | "release_submitted" | "release_awaiting_competition" | "release_resume_baseline" | "release_start_baseline" | "download_submitted" | "download_completed" | "download_removed" | "download_failed" | "artifact_verified" | "import_waiting_binding_bgm" | "import_waiting_binding_tmdb" | "import_waiting_template_variable" | "import_config_resumed" | "file_imported" | "file_adopted" | "file_retained" | "file_import_failed" | "acquisition_succeeded" | "acquisition_failed" | "acquisition_cancelled" | "replacement_kept_existing" | "replacement_kept_all" | "replacement_blocked" | "replacement_replaced" | "replacement_not_replaced" | "placement_released" | "unknown_file_released" | "placement_recorded" | "file_recovered" | "placements_excluded" | "offset_aligned" | "old_version_deleted" | "old_version_kept" | "old_version_delete_failed";
         /** @description Scalar values the message interpolates. Each message declares its params; an optional param is absent rather than empty. */
         SubscriptionLogMessageParams: {
             /** @description Torrent name the downloader reports. */
@@ -3752,6 +3718,31 @@ export interface components {
             count?: number;
             /** @description Template variable names, comma separated. */
             variables?: string;
+            /**
+             * Format: int64
+             * @description Imported files an offset change moved to another episode.
+             */
+            rekeyed?: number;
+            /**
+             * Format: int64
+             * @description Files the retention comparison of an offset change deleted.
+             */
+            deleted?: number;
+            /**
+             * Format: int64
+             * @description Moved files the collision policy gave a version suffix.
+             */
+            versioned?: number;
+            /**
+             * Format: int64
+             * @description Moved files that overwrote the file at their target.
+             */
+            overwritten?: number;
+            /**
+             * Format: int64
+             * @description Files the collision policy left in place.
+             */
+            skipped?: number;
         };
         /**
          * @description Where the entry's work came from: the anime's subscription, or a one-shot download (its temporary anime and subscription).
@@ -5799,7 +5790,7 @@ export interface components {
             ended: boolean;
         };
         /** @enum {string} */
-        FileManagerInProgressKind: "file_operation" | "placement_handoff" | "alignment" | "cleanup" | "replacement" | "offset_migration" | "user_operation";
+        FileManagerInProgressKind: "file_operation" | "placement_handoff" | "alignment" | "cleanup" | "replacement" | "user_operation";
         FileManagerInProgressOwner: {
             kind: components["schemas"]["FileManagerInProgressKind"];
             acquisition_id?: components["schemas"]["ID"];
@@ -6972,10 +6963,10 @@ export interface components {
             /** @description Why the action is unavailable (a reason code, shown through the copy catalog). */
             reason_code?: string;
         };
-        /** @description The latest scan's alignment of this file when it has not completed. */
+        /** @description The latest scan's alignment of this file when it has not completed. waiting means the move waits for retention to compare it with the file already at its target (reason_code replacement_pending). */
         AnimeFileAlignment: {
             /** @enum {string} */
-            state: "in_progress" | "failed";
+            state: "in_progress" | "waiting" | "failed";
             reason_code?: string;
         };
         AnimeFileCompanion: {
@@ -7213,49 +7204,6 @@ export interface components {
         ReplacementEvaluateInput: {
             managed_anime_id: components["schemas"]["ID"];
             candidate_release_id: components["schemas"]["ID"];
-        };
-        OffsetMigrationPlanView: {
-            id: string;
-            placement_id: string;
-            managed_anime_id?: string;
-            policy_version: number;
-            raw_episode: string;
-            new_episode: string;
-            old_target_path: string;
-            new_target_path: string;
-            /** @enum {string} */
-            state: "planned" | "ready" | "running" | "waiting_retry" | "effect_unknown" | "applied" | "blocked" | "failed" | "superseded";
-            failure_reason?: string;
-            version: number;
-            /** Format: date-time */
-            created_at: string;
-            /** Format: date-time */
-            updated_at?: string;
-        };
-        OffsetMigrationGenerationView: {
-            id: string;
-            managed_anime_id: string;
-            /** @enum {string} */
-            scope_kind: "rss_source";
-            scope_owner_id: string;
-            policy_version: number;
-            old_offset: number;
-            new_offset: number;
-            /** @enum {string} */
-            state: "pending" | "planning" | "ready" | "running" | "completed" | "completed_with_blocks" | "failed" | "superseded";
-            reason_code?: string;
-            reason?: string;
-            planned_count?: number;
-            blocked_count?: number;
-            applied_count?: number;
-            superseded_count?: number;
-            version: number;
-            /** Format: date-time */
-            created_at: string;
-            /** Format: date-time */
-            updated_at?: string;
-            /** Format: date-time */
-            completed_at?: string;
         };
         PlacementView: {
             id: string;
@@ -10083,57 +10031,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlacementView"][];
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-        };
-    };
-    listOffsetMigrations: {
-        parameters: {
-            query?: {
-                managed_anime_id?: components["schemas"]["ID"];
-                policy_version?: number;
-                limit?: number;
-                offset?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Offset migration plan list. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OffsetMigrationPlanView"][];
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-        };
-    };
-    listOffsetMigrationGenerations: {
-        parameters: {
-            query?: {
-                managed_anime_id?: components["schemas"]["ID"];
-                limit?: number;
-                offset?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Offset migration generation list. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OffsetMigrationGenerationView"][];
                 };
             };
             401: components["responses"]["Unauthorized"];

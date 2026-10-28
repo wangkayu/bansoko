@@ -212,6 +212,8 @@ export const enLogCopy = {
     placement_recorded: "Library location recorded",
     file_recovered: "File recovered",
     placements_excluded: "Kept {count} files from other seasons; they're excluded from version replacement",
+    offset_aligned:
+      "Episode offset applied to {group_name}: {rekeyed} files changed episode; {deleted} deleted, {versioned} given a version number, {overwritten} overwrote a file, {skipped} skipped",
     old_version_deleted: "Old version deleted",
     old_version_kept: "Old version kept",
     old_version_delete_failed: "Couldn't delete the old version",

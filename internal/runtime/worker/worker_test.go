@@ -163,7 +163,6 @@ func TestRegisterUsesExplicitAllowlist(t *testing.T) {
 		workitems.KindReconciliationCalibrate,
 		workitems.KindReconciliationConsumeAlignment,
 		workitems.KindReconciliationConsumeReplacement,
-		workitems.KindOffsetMigrationExecute,
 		workitems.KindPostProcessPlan,
 		workitems.KindFileManagerExecute,
 		workitems.KindCompletionExecute,

@@ -457,7 +457,7 @@ func (h userOperationRecoveryHandler) effect(ctx context.Context, claim workitem
 		return h.fail(op, op.Version, "failed", userFailureExecuteFailed, safeReason(err)), nil
 	}
 	observed, err := s.observer.Observe(ctx, executed.TargetPath)
-	if err != nil || !offsetFingerprintsEqual(observed, attempt.SourceFingerprint) {
+	if err != nil || !fingerprintsEqual(observed, attempt.SourceFingerprint) {
 		return h.fail(op, op.Version, "failed", userFailureExecuteFailed, "the result does not match the file"), nil
 	}
 	return h.complete(op, op.Version, executed.TargetPath), nil

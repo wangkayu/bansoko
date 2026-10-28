@@ -87,8 +87,8 @@ func recoveryPathsOccupied(ctx context.Context, q queryer, paths []string, excep
 // recoveryUnfinishedOwners is the non-terminal owner surface the file manager
 // holds checks refuse on: unfinished file operations (source and target),
 // pending/retrying placement handoffs, live alignments, admitted deletions
-// (source and quarantine), admitted/queued replacement decisions, unfinished
-// offset migrations and unfinished user file operations. The reconciliation
+// (source and quarantine), admitted/queued replacement decisions and
+// unfinished user file operations. The reconciliation
 // package cannot import the filemanager store (layering), so the read lives
 // here verbatim; a drift is a boundary-check finding.
 const recoveryUnfinishedOwners = `
@@ -109,10 +109,6 @@ UNION ALL SELECT p.physical_path FROM replacement_decisions d
   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(pool->'losers') = 'array' THEN pool->'losers' ELSE '[]'::jsonb END) loser
   JOIN placements p ON p.id = loser->>'placement_id'
   WHERE d.state IN ('admitted', 'queued')
-UNION ALL SELECT m.old_target_path FROM offset_migration_plans m
-  WHERE m.state IN ('planned', 'ready', 'running', 'waiting_retry', 'effect_unknown')
-UNION ALL SELECT m.new_target_path FROM offset_migration_plans m
-  WHERE m.state IN ('planned', 'ready', 'running', 'waiting_retry', 'effect_unknown')
 UNION ALL SELECT u.source_path FROM file_manager_operations u WHERE u.state IN ('ready', 'running')
 UNION ALL SELECT u.target_path FROM file_manager_operations u
   WHERE u.state IN ('ready', 'running') AND u.target_path IS NOT NULL

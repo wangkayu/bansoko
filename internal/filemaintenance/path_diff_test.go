@@ -126,7 +126,7 @@ VALUES ('anime-diff', 1, $1, 0, 'fp-indexed', 1024, ('{"placement_id":"' || $2 |
 		t.Fatalf("seed indexed reconciliation file row: %v", err)
 	}
 
-	service := NewPathDiffService(db, NewNamingTargetRenderer(db, fakeRulesSource{}), logger)
+	service := NewPathDiffService(db, NewNamingTargetRenderer(db, fakeNamingRulesSource{rules: frozenRulesForTest()}), logger)
 	views, err := service.ListPathDiffs(ctx, "anime-diff", 1, 100, 0)
 	if err != nil {
 		t.Fatalf("list path diffs: %v", err)
@@ -231,7 +231,7 @@ VALUES ($1, 1, $2, 0, 'fp-moved', 1024, jsonb_build_object('placement_id', $3::t
 		t.Fatalf("seed moved reconciliation row: %v", err)
 	}
 
-	service := NewPathDiffService(db, NewNamingTargetRenderer(db, fakeRulesSource{}), logger)
+	service := NewPathDiffService(db, NewNamingTargetRenderer(db, fakeNamingRulesSource{rules: frozenRulesForTest()}), logger)
 	views, err := service.ListPathDiffs(ctx, animeID, 1, 100, 0)
 	if err != nil {
 		t.Fatalf("list path diffs: %v", err)

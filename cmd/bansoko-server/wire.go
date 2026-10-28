@@ -135,7 +135,6 @@ func initializeWorkerGraph(
 	reconciliationService *reconciliationapplication.Service,
 	calibrationService *filemaintenance.CalibrationService,
 	alignmentOperations *filemaintenance.AlignmentService,
-	offsetMigrationExecute *filemaintenance.OffsetMigrationExecuteService,
 	replacementDecisions *filemaintenance.ReplacementDecisionService,
 	cleanupService *filemaintenance.CleanupService,
 	userOperations *filemaintenance.UserOperationService,

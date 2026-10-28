@@ -663,8 +663,11 @@ func settleAlignmentConsumerCheckpoint(ctx context.Context, db *sql.DB, animeID 
 // the replacement facts), and — when the effective alignment policy enables
 // it — plans rename/move operations with the naming target renderer and
 // admits alignment_execute claims. The Subscription state is NOT a gate:
-// stopped instances still align under their own policy. A disabled alignment
-// policy or an unwired planner finishes the consumer blocked; the replacement
+// stopped instances still align under their own policy. The alignment
+// setting gates only the files already in place: the alignment requests
+// recorded before the scan (a new import, an offset change) are aligned
+// either way and resolved here. A disabled alignment policy without requests
+// or an unwired planner finishes the consumer blocked; the replacement
 // consumer is untouched.
 func (s *CalibrationService) ConsumeAlignmentHandler() worker.Handler {
 	return calibrationRecoveryHandler{service: s, kind: workitems.KindReconciliationConsumeAlignment, handle: func(ctx context.Context, claim workitems.Claim) (worker.Outcome, error) {
@@ -693,7 +696,12 @@ func (s *CalibrationService) ConsumeAlignmentHandler() worker.Handler {
 		if err != nil {
 			return worker.Outcome{}, err
 		}
-		if effective.AlignmentEnabled == nil || !*effective.AlignmentEnabled {
+		requests, err := requestsBeforeScan(ctx, s.db, animeID, generation)
+		if err != nil {
+			return worker.Outcome{}, err
+		}
+		enabled := effective.AlignmentEnabled != nil && *effective.AlignmentEnabled
+		if !enabled && len(requests) == 0 {
 			// Alignment is policy-gated, not subscription-gated: the consumer
 			// records its own disabled outcome and never touches replacement.
 			if err := settleConsumerCheckpoint(ctx, s.db, animeID, generation, ConsumerAlignment, ConsumerBlocked, "alignment_disabled", "alignment is disabled by the effective policy"); err != nil {
@@ -701,12 +709,29 @@ func (s *CalibrationService) ConsumeAlignmentHandler() worker.Handler {
 			}
 			return worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: "blocked", ReasonCode: "alignment_disabled", Reason: "alignment is disabled by the effective policy"}, nil), nil
 		}
-		plan, err := s.planner.Plan(ctx, animeID, generation, effective.PolicyVersion)
+		// The policy version is provenance on the operation; an instance whose
+		// policy was never saved aligns its requests under the first version.
+		policyVersion := effective.PolicyVersion
+		if policyVersion < 1 {
+			policyVersion = 1
+		}
+		plan, err := s.planner.Plan(ctx, animeID, generation, policyVersion)
 		if err != nil {
 			return worker.Outcome{}, err
 		}
-		admitted, err := s.admitAlignmentOperations(ctx, animeID, generation, plan)
+		var include func(planner.PlanCandidate) bool
+		if !enabled {
+			paths := requestedPaths(requests)
+			include = func(candidate planner.PlanCandidate) bool {
+				return paths[filepath.Clean(candidate.SourcePath)]
+			}
+		}
+		routes := map[string]alignmentRoute{}
+		admitted, err := s.admitAlignmentOperationsFor(ctx, animeID, generation, plan, include, routes)
 		if err != nil {
+			return worker.Outcome{}, err
+		}
+		if err := resolveAlignmentRequests(ctx, s.db, requests, routes); err != nil {
 			return worker.Outcome{}, err
 		}
 		settled, err := settleAlignmentConsumerCheckpoint(ctx, s.db, animeID, generation, ConsumerConsumed, "alignment_consumed", fmt.Sprintf("aligned %d candidates", admitted))
@@ -760,16 +785,6 @@ func classifyAlignmentCandidate(candidate planner.PlanCandidate) alignmentCandid
 	return alignmentCandidateClassification{target: target}
 }
 
-func duplicateAlignmentTargets(classifications []alignmentCandidateClassification) map[string]int {
-	counts := make(map[string]int)
-	for _, classification := range classifications {
-		if classification.reason == "" {
-			counts[classification.target]++
-		}
-	}
-	return counts
-}
-
 // alignmentCandidateSummary reports the bounded planner result without exposing
 // candidate paths or free-form exclusion reasons. executable_count is the
 // number of candidates eligible for an alignment effect; it is deliberately
@@ -799,17 +814,15 @@ func normalizeAlignmentExcludeReasonCode(value string) string {
 	return "unknown"
 }
 
-// plan candidate whose naming target differs from the observed path, marks
-// them ready and enqueues the alignment_execute claims. Everything is
-// idempotent per (generation, observation), so consumer replays converge.
-func (s *CalibrationService) admitAlignmentOperations(ctx context.Context, animeID string, generation int64, plan *planner.PlanResult) (int, error) {
-	return s.admitAlignmentOperationsFor(ctx, animeID, generation, plan, nil)
-}
-
-// admitAlignmentOperationsFor is admitAlignmentOperations restricted to the
-// candidates include accepts (nil = all). Target conflicts are still counted
-// over the whole plan, so a selection never hides a duplicate target.
-func (s *CalibrationService) admitAlignmentOperationsFor(ctx context.Context, animeID string, generation int64, plan *planner.PlanResult, include func(planner.PlanCandidate) bool) (int, error) {
+// admitAlignmentOperationsFor creates an alignment operation for every plan
+// candidate include accepts (nil = all) whose naming target differs from the
+// observed path, marks them ready and enqueues the alignment_execute claims.
+// Everything is idempotent per (generation, observation), so consumer replays
+// converge. Each video unit's target is routed (alignment_routing.go) against
+// what holds it: a file on disk, or a candidate of the same plan that claimed
+// the same target earlier. routes, when given, receives each routed
+// placement's route.
+func (s *CalibrationService) admitAlignmentOperationsFor(ctx context.Context, animeID string, generation int64, plan *planner.PlanResult, include func(planner.PlanCandidate) bool, routes map[string]alignmentRoute) (int, error) {
 	metadataVersion, rulesVersion, err := ownerVersions(ctx, s.db, animeID)
 	if err != nil {
 		return 0, err
@@ -824,7 +837,10 @@ func (s *CalibrationService) admitAlignmentOperationsFor(ctx context.Context, an
 	for index, candidate := range plan.Candidates {
 		classifications[index] = classifyAlignmentCandidate(candidate)
 	}
-	targetCounts := duplicateAlignmentTargets(classifications)
+	// claimants are the placements that claimed a target earlier in this
+	// plan; claimed are the versioned targets taken by earlier units.
+	claimants := map[string]string{}
+	claimed := map[string]bool{}
 	for index, candidate := range plan.Candidates {
 		if include != nil && !include(candidate) {
 			continue
@@ -854,13 +870,33 @@ func (s *CalibrationService) admitAlignmentOperationsFor(ctx context.Context, an
 			continue
 		}
 		target := classification.target
-		if targetCounts[target] <= 1 {
+		moverID, _, err := activePlacementAt(ctx, s.db, animeID, candidate.SourcePath)
+		if err != nil {
+			return admitted, err
+		}
+		route, err := s.alignment.routeUnitTarget(ctx, animeID, moverID, candidate.SourcePath, candidate.Fingerprint, target, claimants[target], policy)
+		if err != nil {
+			return admitted, err
+		}
+		if routes != nil && moverID != "" {
+			routes[moverID] = route
+		}
+		if route.Action == routeDrop {
+			// The file lost retention to the occupant: its deletion owns it.
+			continue
+		}
+		if claimants[target] == "" {
+			claimants[target] = moverID
+		}
+		if route.Action == routeVersion || route.Action == routeProceed {
 			// The video and its companions are one unit: under version one
-			// suffix keeps every target in the unit free.
-			target, err = s.chooseUnitTarget(ctx, policy, candidate.SourcePath, candidate.Fingerprint, target, unit)
+			// suffix keeps every target in the unit free (and clear of the
+			// targets earlier units of this plan took).
+			target, err = s.chooseUnitTarget(ctx, policy, candidate.SourcePath, candidate.Fingerprint, target, unit, claimed)
 			if err != nil {
 				return admitted, err
 			}
+			claimed[target] = true
 			if samePath(target, candidate.SourcePath) {
 				// Already at its versioned target: only its companions move.
 				count, err := s.admitCompanionAlignments(ctx, base, candidate, candidate.SourcePath, unit, policy, true)
@@ -897,13 +933,19 @@ func (s *CalibrationService) admitAlignmentOperationsFor(ctx context.Context, an
 		dryRun, _ := json.Marshal(candidate)
 		op.TargetContract = contract
 		op.DryRunResult = dryRun
-		if targetCounts[target] > 1 {
+		if route.Action == routeSkip || (route.Action == routeHold && route.Settle) {
+			// The collision policy is skip, or retention cannot decide now:
+			// the file stays where it is, with the reason.
+			code, reason := "target_occupied", safeReason(fmt.Errorf("occupied: %s", filepath.Base(target)))
+			if route.Action == routeHold {
+				code, reason = ReasonReplacementPending, "waiting for retention to compare the file at the target: "+filepath.Base(target)
+			}
 			created, err := s.alignment.CreateOperation(ctx, op)
 			if err != nil {
 				return admitted, err
 			}
 			if created.State == AlignmentPlanned {
-				if err := s.alignment.BlockPlanned(ctx, created.ID, "target_conflict", "multiple candidates render the same target path"); err != nil {
+				if err := s.alignment.BlockPlanned(ctx, created.ID, code, reason); err != nil {
 					return admitted, err
 				}
 			}

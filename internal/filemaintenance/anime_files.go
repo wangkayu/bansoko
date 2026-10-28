@@ -59,6 +59,9 @@ const (
 	animeFilesPathDiffPage             = 500
 	animeFilesAlignmentStateInProgress = "in_progress"
 	animeFilesAlignmentStateFailed     = "failed"
+	// animeFilesAlignmentStateWaiting: the move waits for retention to
+	// compare a same-key file (replacement_pending); not a problem.
+	animeFilesAlignmentStateWaiting = "waiting"
 )
 
 // AnimeFileAction is one action with its availability; ReasonCode explains an
@@ -786,6 +789,11 @@ func alignmentView(op *animeFilesAlignmentOp) *AnimeFileAlignmentView {
 	if op == nil {
 		return nil
 	}
+	// A live move waiting for retention; a settled one (retention could not
+	// decide) is a failure with the same reason.
+	if op.FailureCode == ReasonReplacementPending && (op.State == string(AlignmentPlanned) || op.State == string(AlignmentReady)) {
+		return &AnimeFileAlignmentView{State: animeFilesAlignmentStateWaiting, ReasonCode: op.FailureCode}
+	}
 	switch op.State {
 	case string(AlignmentPlanned), string(AlignmentReady), string(AlignmentRunning):
 		return &AnimeFileAlignmentView{State: animeFilesAlignmentStateInProgress}
@@ -1256,7 +1264,7 @@ func (s *CalibrationService) AdmitOneOffAlignment(ctx context.Context, animeID s
 	admitted, err := s.admitAlignmentOperationsFor(ctx, animeID, latest, plan, func(candidate planner.PlanCandidate) bool {
 		_, ok := present[filepath.Clean(candidate.SourcePath)]
 		return ok
-	})
+	}, nil)
 	if err != nil {
 		return AnimeFilesAlignResult{}, err
 	}

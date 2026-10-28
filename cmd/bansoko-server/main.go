@@ -233,13 +233,11 @@ func main() {
 	}
 	replacementTrigger := fileMaintenanceGraph.replacementTrigger
 	cleanupService := fileMaintenanceGraph.cleanupService
-	offsetMigrationPlanner := fileMaintenanceGraph.offsetMigrationPlanner
 	placementService := fileMaintenanceGraph.placementService
 	alignmentOperations := fileMaintenanceGraph.alignmentOperations
 	calibrationService := fileMaintenanceGraph.calibrationService
 	replacementDecisions := fileMaintenanceGraph.replacementDecisions
 	candidateFactsRepo := fileMaintenanceGraph.candidateFactsRepo
-	offsetMigrationExecute := fileMaintenanceGraph.offsetMigrationExecute
 
 	coreGraph, err := initializeCoreApplicationGraph(
 		db,
@@ -415,7 +413,6 @@ func main() {
 		reconciliationService,
 		calibrationService,
 		alignmentOperations,
-		offsetMigrationExecute,
 		replacementDecisions,
 		cleanupService,
 		fileMaintenanceGraph.userOperations,
@@ -535,12 +532,7 @@ func main() {
 		func(ctx context.Context) { runAcquisitionActivity(ctx, acquisitionActivity, eventHub, runtimeLogger) },
 		func(ctx context.Context) { runDownloadCompletion(ctx, completionService, runtimeLogger) },
 		func(ctx context.Context) {
-			startFileMaintenanceScheduler(ctx, db, fileMaintenanceGraph.policyService, reconciliationService, readmodelService, runtimeLogger)
-		},
-		func(ctx context.Context) {
-			// Durable planning phase: admitted offset generations become
-			// per-placement operations and execute work items on a 30s tick.
-			runOffsetMigrationPlannerScheduler(ctx, db, offsetMigrationPlanner, runtimeLogger)
+			startFileMaintenanceScheduler(ctx, db, fileMaintenanceGraph.policyService, reconciliationService, readmodelService, replacementDecisions, observabilityService, runtimeLogger)
 		},
 		func(ctx context.Context) { runAutomationDispatcher(ctx, dispatcher, runtimeLogger) },
 		func(ctx context.Context) {
@@ -1261,7 +1253,6 @@ func serverWorkItemKinds() []string {
 		workitems.KindReconciliationConsumeAlignment,
 		workitems.KindReconciliationConsumeReplacement,
 		workitems.KindAlignmentExecute,
-		workitems.KindOffsetMigrationExecute,
 		workitems.KindReplacementEvaluate,
 		workitems.KindSubscriptionCompetition,
 		workitems.KindReplacementDelete,

@@ -126,7 +126,7 @@ func newTestRig(t *testing.T, environment string, skipAuth bool, options ...rigO
 	}
 	ownershipService.SetOneShotMarkerRepository(animepersistence.NewRepository(db))
 	ownershipService.SetActivityWriter(observability)
-	ownershipService.SetOffsetMigrationAdmission(filemaintenance.NewOffsetMigrationAdmissionService())
+	ownershipService.SetOffsetAlignment(filemaintenance.NewOffsetAlignmentService())
 	retryService, err := animeapplication.NewManualRetryService(db, workStore)
 	if err != nil {
 		t.Fatal(err)

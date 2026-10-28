@@ -41,6 +41,10 @@ type ScanScheduler struct {
 	submitter   ScanSubmitter
 	animeLister AnimeLister
 	logger      observabilityport.RuntimeLogger
+	// retention and activity serve the alignment request dispatch
+	// (alignment_requests.go).
+	retention AlignmentRetention
+	activity  observabilityport.ActivityWriter
 
 	mu         sync.Mutex
 	lastSubmit map[string]time.Time
@@ -65,6 +69,18 @@ func NewScanScheduler(db *sql.DB, policies *policy.PolicyService, submitter Scan
 // with nothing enabled at all the tick ends after one small query.
 func (s *ScanScheduler) Tick(ctx context.Context) error {
 	now := time.Now()
+	// Alignment requests are dispatched whatever the scan policy says; a
+	// failure is retried on the next tick and does not hold the periodic scans.
+	if err := s.dispatchAlignmentRequests(ctx); err != nil {
+		s.logger.Warn(ctx, observabilityport.RuntimeEvent{
+			Message:    "alignment request dispatch failed",
+			Component:  "filemaintenance",
+			Operation:  "alignment_dispatch",
+			Outcome:    "failure",
+			ReasonCode: "alignment_dispatch_failed",
+			ErrorClass: "scan_scheduler",
+		})
+	}
 	// Enumerate explicit scopes (including disabled overrides) plus global
 	// candidates; use the policy owner's resolver for every decision.
 	rows, err := s.db.QueryContext(ctx, `SELECT scope_key, enabled FROM filemaintenance_policies WHERE scope_key = $1 OR scope_key LIKE 'anime:%'`, policy.GlobalScope)

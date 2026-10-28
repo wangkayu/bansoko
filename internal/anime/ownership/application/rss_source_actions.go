@@ -57,7 +57,7 @@ func (s *Service) PatchRSSSourceOffset(ctx context.Context, managedAnimeID, rssS
 }
 
 // applyRSSSourceOffsetTx is the one write of a link's offset: CAS on the row
-// version, offset migration admission, re-evaluation of unsubmitted releases
+// version, the re-key of the link's imported files, re-evaluation of unsubmitted releases
 // and the policy activity. created marks a row made in this same transaction,
 // which can hold no release and so needs neither admission nor re-evaluation.
 func (s *Service) applyRSSSourceOffsetTx(ctx context.Context, tx *sql.Tx, managedAnimeID, rssSourceID string, patch RSSSourceOffsetPatchInput, created bool) (RSSSource, error) {
@@ -85,11 +85,11 @@ WHERE id = $1`, rssSourceID, patch.EpisodeOffset); err != nil {
 	}
 	if !created {
 		if oldOffset != patch.EpisodeOffset {
-			if s.offsetMigrationAdmission == nil {
-				return RSSSource{}, errors.New("rss link offset change requires offset migration admission")
+			if s.offsetAlignment == nil {
+				return RSSSource{}, errors.New("rss link offset change requires offset alignment")
 			}
-			if _, _, err := s.offsetMigrationAdmission.AdmitRSSSourceTx(ctx, txscope.Wrap(tx), managedAnimeID, rssSourceID, version+1, oldOffset, patch.EpisodeOffset); err != nil {
-				return RSSSource{}, fmt.Errorf("admit rss source offset migration: %w", err)
+			if _, _, err := s.offsetAlignment.AdmitRSSSourceTx(ctx, txscope.Wrap(tx), managedAnimeID, rssSourceID, version+1, oldOffset, patch.EpisodeOffset); err != nil {
+				return RSSSource{}, fmt.Errorf("re-key rss source files: %w", err)
 			}
 		}
 		if err := s.scheduleUnsubmittedReleaseEvaluation(ctx, tx, `

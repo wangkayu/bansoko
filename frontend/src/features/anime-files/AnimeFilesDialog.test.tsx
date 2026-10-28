@@ -178,6 +178,21 @@ describe("AnimeFilesDialog", () => {
     expect(screen.getByText("→ Show - E02.mkv")).toBeInTheDocument();
   });
 
+  it("shows a move waiting for the version comparison as pending, not as a problem", async () => {
+    const waiting = fileRow({
+      status: "misaligned",
+      target_relative_path: "Show/Season 01/Show - E01.mkv",
+      alignment: { state: "waiting", reason_code: "replacement_pending" },
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(filesView([waiting]))));
+    renderFiles();
+    const pill = await screen.findByText(t("tabs.files.alignWaiting"));
+    expect(pill.closest("[title]")).toHaveAttribute("title", reasonLabel("replacement_pending"));
+    expect(screen.queryByText(new RegExp(t("tabs.files.alignFailed")))).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: new RegExp(t("tabs.files.filter.problem")) }));
+    expect(screen.queryByText("EP 01.mkv")).toBeNull();
+  });
+
   it("shows 未扫描 before any scan", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(filesView([fileRow({ status: "unscanned" })], { scan: { state: "idle", generation: 0, rescan_required: false } }))));
     renderFiles();

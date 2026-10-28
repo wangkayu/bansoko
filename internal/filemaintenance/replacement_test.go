@@ -10,6 +10,8 @@ import (
 
 func sizePtr(size int64) *int64 { return &size }
 
+func int64Ptr(value int64) *int64 { return &value }
+
 // Compare reads only the frozen values: the title-parse fields alone do not
 // rank a release.
 func TestCompareReadsFrozenValuesOnly(t *testing.T) {

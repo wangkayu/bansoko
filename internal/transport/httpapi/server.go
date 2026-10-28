@@ -236,8 +236,6 @@ type FileMaintenanceService interface {
 	ReplanApplication(ctx context.Context, input filemaintenance.ReplanInput) (filemaintenanceplanner.PlanResult, error)
 	ListPlacementViews(ctx context.Context, animeID string, limit, offset int) ([]filemaintenance.PlacementView, error)
 	GetPlacementCoverageViews(ctx context.Context, placementID string) ([]filemaintenance.PlacementCoverageView, error)
-	ListOffsetMigrationViews(ctx context.Context, animeID string, policyVersion *int64, limit, offset int) ([]filemaintenance.OffsetMigrationPlanView, error)
-	ListOffsetMigrationGenerationViews(ctx context.Context, animeID string, limit, offset int) ([]filemaintenance.OffsetMigrationGenerationView, error)
 	ListReconciliationPathDiffs(ctx context.Context, animeID string, generation int64, limit, offset int) ([]filemaintenance.PathDiffView, error)
 	ListDecisionViews(ctx context.Context, animeID string, limit, offset int) ([]filemaintenance.ReplacementDecisionView, error)
 	EvaluateDecisionApplication(ctx context.Context, input filemaintenance.EvaluateRequest) ([]filemaintenance.ReplacementDecisionView, error)

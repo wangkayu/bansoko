@@ -179,9 +179,10 @@ func (s *CalibrationService) unitCompanions(ctx context.Context, observed []obse
 // overwrite it is the rendered target; the execution precheck decides the unit.
 // Under version it is the first of target, "target (2)", "target (3)", ...
 // where the video target and every companion target derived from it are free
-// (or already hold the file that moves there). A candidate equal to the
-// video's current path means the video is already aligned under version.
-func (s *CalibrationService) chooseUnitTarget(ctx context.Context, policy domain.CollisionPolicy, sourcePath, sourceFingerprint, rendered string, companions []unitCompanion) (string, error) {
+// (or already hold the file that moves there) and that no earlier unit of
+// the same admission took (claimed). A candidate equal to the video's current
+// path means the video is already aligned under version.
+func (s *CalibrationService) chooseUnitTarget(ctx context.Context, policy domain.CollisionPolicy, sourcePath, sourceFingerprint, rendered string, companions []unitCompanion, claimed map[string]bool) (string, error) {
 	if policy != domain.CollisionVersion || s.alignment == nil || s.alignment.observer == nil {
 		return rendered, nil
 	}
@@ -192,6 +193,9 @@ func (s *CalibrationService) chooseUnitTarget(ctx context.Context, policy domain
 		}
 		if samePath(candidate, sourcePath) {
 			return candidate, nil
+		}
+		if claimed[candidate] {
+			continue
 		}
 		free, err := s.alignment.targetFree(ctx, candidate, sourceFingerprint, "")
 		if err != nil {
@@ -344,8 +348,13 @@ func (s *AlignmentService) companionSettle(op *AlignmentOperation, state Alignme
 
 // targetFree reports whether path holds no file, or already holds the file
 // that moves there (fingerprint) or is that file's current path (self).
+// Without a filesystem observer nothing can be read and nothing moves (the
+// executor settles alignment_executor_unavailable): the target counts free.
 func (s *AlignmentService) targetFree(ctx context.Context, path, fingerprint, self string) (bool, error) {
 	if self != "" && samePath(path, self) {
+		return true, nil
+	}
+	if s.observer == nil {
 		return true, nil
 	}
 	observed, err := executorpkg.ObserveLike(ctx, s.observer, path, fingerprint)
@@ -355,17 +364,23 @@ func (s *AlignmentService) targetFree(ctx context.Context, path, fingerprint, se
 	if err != nil {
 		return false, nil // not a readable regular file: occupied
 	}
-	return observed == "" || (fingerprint != "" && offsetFingerprintsEqual(observed, fingerprint)), nil
+	return observed == "" || (fingerprint != "" && fingerprintsEqual(observed, fingerprint)), nil
 }
 
-// videoUnitPrecheck runs before a video alignment's effect: every target in
-// the unit (the video's and the companions' frozen in its contract) must be
-// free, unless the unit's mode is overwrite, which replaces any occupant — a
+// videoUnitPrecheck runs before a video alignment's effect. The video's
+// target is routed first (alignment_routing.go): a same-key file of the
+// instance waits for retention, a file moving away is waited for, and the
+// moving file losing retention ends the move. Then every target in the unit
+// (the video's and the companions' frozen in its contract) must be free,
+// unless the unit's mode is overwrite, which replaces any occupant — a
 // managed one's placement is displaced, or its companion relation ends, when
 // the move commits. Under block and version any occupant (target_occupied /
 // companion_target_occupied) settles the video blocked and nothing in the
 // unit moves; the reason names the files.
 func (s *AlignmentService) videoUnitPrecheck(ctx context.Context, op *AlignmentOperation, sourceFingerprint string, collision domain.CollisionPolicy) (*worker.Outcome, error) {
+	if outcome, err := s.routedPrecheck(ctx, op, sourceFingerprint, collision); err != nil || outcome != nil {
+		return outcome, err
+	}
 	if collision == domain.CollisionOverwrite {
 		return nil, nil
 	}
@@ -439,7 +454,7 @@ func resumeOverwriteOperation(op *AlignmentOperation) (domain.FileOperation, boo
 	if json.Unmarshal(op.OverwriteRecovery, &recovery) != nil {
 		return domain.FileOperation{}, false
 	}
-	fingerprint, err := offsetSourceFingerprintValue(op.SourceFingerprint)
+	fingerprint, err := frozenFingerprintValue(op.SourceFingerprint)
 	if err != nil {
 		return domain.FileOperation{}, false
 	}

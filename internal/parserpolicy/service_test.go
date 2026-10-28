@@ -222,7 +222,7 @@ func TestSaveInstanceKindChangeSchedulesReleaseReevaluation(t *testing.T) {
 	service.SetReleaseReevaluationScheduler(hook)
 
 	// A same-policy save (kind unchanged) never schedules reevaluation and
-	// never admits an offset migration: the policy carries no offset.
+	// never re-keys files for an offset: the policy carries no offset.
 	if _, err := service.SaveInstance(ctx, "anime-reeval", 1, Policy{Kind: parser.ParserReltitle}); err != nil {
 		t.Fatalf("unchanged-kind save: %v", err)
 	}
