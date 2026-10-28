@@ -67,8 +67,10 @@ func (s *Service) finishTypedFailure(ctx context.Context, c workitems.Claim, cod
 	return worker.WithAfterCommit(out, observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, s.logger, fileFailureRequest(cause, c.Owner.ID))), nil
 }
 
-// libraryTarget is the one library root the product writes to. Its episode
-// carries no target name: the UI names the library in the owner's language.
+// libraryTarget is the single diagnostic target of every placement write.
+// There is no configured library root (templates render absolute paths) and an
+// episode never stores a path, so all library faults share it and carry no
+// target name.
 const libraryTarget = "library"
 
 // fileSuccessAfterCommit closes the library episode and the internal
