@@ -171,8 +171,10 @@ jobs:
           done
           echo "go mod download failed after 5 attempts" >&2
           exit 1
+      # The job container starts as root; the gate runs as an unprivileged
+      # user so the real permission tests mean what they say (see the script).
       - name: build, vet, database-free unit tests (no skips)
-        run: bash scripts/ci/ci-unit-static.sh
+        run: bash scripts/ci/run-unprivileged.sh bash scripts/ci/ci-unit-static.sh
 
   frontend-quality:
     name: frontend quality
@@ -299,7 +301,7 @@ jobs:
           export GOTMPDIR="$GITHUB_WORKSPACE/.gotmp"
           echo "TMPDIR filesystem: $(stat -f -c %T "$TMPDIR")"
           echo "GOTMPDIR filesystem: $(stat -f -c %T "$GOTMPDIR")"
-          bash scripts/ci/test-integration.sh
+          bash scripts/ci/run-unprivileged.sh bash scripts/ci/test-integration.sh
 
   postgres-integration-shard-2:
     name: postgres integration (shard 2/3)
@@ -349,7 +351,7 @@ jobs:
           export GOTMPDIR="$GITHUB_WORKSPACE/.gotmp"
           echo "TMPDIR filesystem: $(stat -f -c %T "$TMPDIR")"
           echo "GOTMPDIR filesystem: $(stat -f -c %T "$GOTMPDIR")"
-          bash scripts/ci/test-integration.sh
+          bash scripts/ci/run-unprivileged.sh bash scripts/ci/test-integration.sh
 
   postgres-integration-shard-3:
     name: postgres integration (shard 3/3)
@@ -399,7 +401,7 @@ jobs:
           export GOTMPDIR="$GITHUB_WORKSPACE/.gotmp"
           echo "TMPDIR filesystem: $(stat -f -c %T "$TMPDIR")"
           echo "GOTMPDIR filesystem: $(stat -f -c %T "$GOTMPDIR")"
-          bash scripts/ci/test-integration.sh
+          bash scripts/ci/run-unprivileged.sh bash scripts/ci/test-integration.sh
 
   qb-real-chain:
     name: qB real chain
