@@ -84,7 +84,7 @@ func activityEpisodes(t *testing.T, db *sql.DB) (open, total int) {
 	t.Helper()
 	if err := db.QueryRow(`
 SELECT count(*) FILTER (WHERE succeeded_after_at IS NULL), count(*) FROM diagnostic_episodes
-WHERE component='activity' AND operation='consume' AND error_code='activity_consume_failed' AND scope_kind='global'`).Scan(&open, &total); err != nil {
+WHERE kind='internal' AND target_id='activity.consume'`).Scan(&open, &total); err != nil {
 		t.Fatal(err)
 	}
 	return open, total

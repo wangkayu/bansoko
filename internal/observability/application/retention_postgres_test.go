@@ -34,13 +34,13 @@ func TestRetentionServicePurgeExpired(t *testing.T) {
 		PluginDeliveries:       3,
 		SubscriptionLogEntries: 2,
 		AutomationDispatchRuns: 1,
-		DiagnosticEpisodes:     1,
+		DiagnosticEpisodes:     2,
 	}
 	if result != want {
 		t.Fatalf("purge result: got %+v, want %+v", result, want)
 	}
-	if result.Total() != 10 {
-		t.Fatalf("purge total: got %d, want 10", result.Total())
+	if result.Total() != 11 {
+		t.Fatalf("purge total: got %d, want 11", result.Total())
 	}
 
 	assertCount(t, ctx, db, "subscription_log_entries", "id = 'log-future'", 1)

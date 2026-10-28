@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"testing"
@@ -227,7 +228,14 @@ func TestDiagnosticRowsHoldNoFreeText(t *testing.T) {
 	}
 	bad := downloaderFailure("task-2")
 	bad.Failure.Host = "qb.local/private/path"
-	if err := service.RecordDiagnosticFailure(ctx, bad); err == nil {
-		t.Fatal("a host carrying a path was accepted")
+	if err := service.RecordDiagnosticFailure(ctx, bad); err != nil {
+		t.Fatalf("a malformed host must cost only the host: %v", err)
+	}
+	var host sql.NullString
+	if err := db.QueryRowContext(ctx, `SELECT target_host FROM diagnostic_episodes WHERE kind='downloader' AND succeeded_after_at IS NULL`).Scan(&host); err != nil {
+		t.Fatal(err)
+	}
+	if host.Valid {
+		t.Fatalf("a host carrying a path was stored: %q", host.String)
 	}
 }
