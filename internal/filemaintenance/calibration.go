@@ -790,11 +790,13 @@ func alignmentCandidateSummary(candidates []planner.PlanCandidate) (candidateCou
 
 func normalizeAlignmentExcludeReasonCode(value string) string {
 	switch value {
-	case "coverage_unresolved", "target_render_failed", "render_facts_unavailable", "episode_title_lookup_failed", "unknown", "target_missing", "already_aligned", "target_not_absolute":
+	case "coverage_unresolved", "target_render_failed", "render_facts_unavailable", "episode_title_lookup_failed", "unknown", "target_missing", "already_aligned", "target_not_absolute", ReasonPlacementExcluded:
 		return value
-	default:
-		return "unknown"
 	}
+	if isConfigIncompleteReason(value) {
+		return value
+	}
+	return "unknown"
 }
 
 // plan candidate whose naming target differs from the observed path, marks

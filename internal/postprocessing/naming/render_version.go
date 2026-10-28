@@ -89,6 +89,20 @@ func (e *Engine) ForRenderer(version string) (*Engine, error) {
 	return &replay, nil
 }
 
+// CurrentConfigRenderer is the renderer version a maintenance render of the
+// current configuration uses for a placement that recorded version. The owner
+// season and year are always read now, so the pre-owner-season semantics
+// (naming-render-1 to 3, which name the TMDB binding's season) have no replay
+// there; they render with naming-render-4, the first owner-season version.
+// naming-render-4 to 6 keep their own subtitle-mode derivation.
+func CurrentConfigRenderer(recorded string) string {
+	switch version := strings.TrimSpace(recorded); version {
+	case RendererVersion, renderer5Version, renderer4Version:
+		return version
+	}
+	return renderer4Version
+}
+
 // Legacy reports whether the engine replays naming-render-1.
 func (e *Engine) Legacy() bool { return e.legacy() }
 

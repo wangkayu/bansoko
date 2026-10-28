@@ -399,7 +399,9 @@ func (s *OffsetMigrationService) planOffsetMigrationCandidate(ctx context.Contex
 	newTarget, err := s.renderer.renderTargetWithFrozenEpisode(ctx, generation.ManagedAnimeID, candidate.physicalPath, candidate.sizeBytes, candidate.placementID, frozen)
 	if err != nil {
 		reason := "target_render_failed"
-		if errors.Is(err, naming.ErrRenderFactsUnavailable) {
+		if typed := RenderExclusionReason(err); typed != "" {
+			reason = typed
+		} else if errors.Is(err, naming.ErrRenderFactsUnavailable) {
 			reason = "render_facts_unavailable"
 		}
 		return blockedOffsetOperation(operation, reason, safeReason(err)), nil

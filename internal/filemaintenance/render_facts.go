@@ -16,12 +16,20 @@ import (
 	"bansoko/internal/templatefacts"
 )
 
+// placedRenderFacts is what a placed file contributes to a maintenance render:
+// its frozen release and file facts (episode, rt.*, anibt.*, media.*, torrent.*,
+// subgroup, release title, Vars). The anime's configuration (template, title,
+// owner season and year, media kind, TMDB/BGM binding and bound-work titles) is
+// never taken from here; it is read current by renderNamingContext.
 type placedRenderFacts struct {
 	placementID string
 	lineage     bool
-	releaseID   string
-	sourceKind  string
-	groupName   string
+	// excluded marks a placement kept out of the instance's identity (see
+	// ExcludedPlacementSQL): it never renders.
+	excluded   bool
+	releaseID  string
+	sourceKind string
+	groupName  string
 	// sourceProvider/sourceGroupRef are the provider-namespaced external group
 	// identity read from the same source row as groupName.
 	sourceProvider string
@@ -96,7 +104,10 @@ func (f placedRenderFacts) frozenEpisode() (*naming.FrozenEpisodeNamingFacts, er
 	return frozen, nil
 }
 
-// placedRenderFacts reads the frozen render evidence of one placement.
+// placedRenderFacts reads the frozen release and file evidence of one
+// placement: the facts of the release and the file, never the configuration the
+// file renders with (renderNamingContext reads that now). An excluded placement
+// is reported as ErrPlacementExcluded before any lineage check.
 //
 // The placement identity is the id when the caller has one. The path is only
 // the identifier of the legacy callers that know no id, so a calibration row
@@ -107,7 +118,7 @@ func (f placedRenderFacts) frozenEpisode() (*naming.FrozenEpisodeNamingFacts, er
 // the alignment had just placed at its target as unscanned.
 func (r *NamingTargetRenderer) placedRenderFacts(ctx context.Context, animeID, path, placementID string) (placedRenderFacts, bool, error) {
 	var f placedRenderFacts
-	query := `SELECT p.id, p.source_evidence_type = 'file_operation', COALESCE(rel.id,''), COALESCE(src.source_kind,''), COALESCE(src.group_name,''), COALESCE(src.provider,''), COALESCE(src.provider_group_ref,''), COALESCE(rel.raw_facts->>'title',''), COALESCE(rel.version,0), COALESCE(af.file_ref,''), COALESCE(mf.file_evidence->>'name', af.relative_path, ''), COALESCE(mf.size_bytes, af.size_bytes, 0), COALESCE(af.media_kind,''), COALESCE(af.facts,'{}'::jsonb), COALESCE(mf.effective_facts,'{}'::jsonb), COALESCE(snap.id,''), COALESCE(snap.release_facts,'{}'::jsonb), COALESCE(fo.frozen_config_snapshot,'{}'::jsonb), COALESCE(fo.frozen_render_snapshot,'{}'::jsonb), COALESCE(rel.source_facts,'{}'::jsonb), COALESCE(fo.id,'')
+	query := `SELECT p.id, ` + ExcludedPlacementSQL("p") + `, p.source_evidence_type = 'file_operation', COALESCE(rel.id,''), COALESCE(src.source_kind,''), COALESCE(src.group_name,''), COALESCE(src.provider,''), COALESCE(src.provider_group_ref,''), COALESCE(rel.raw_facts->>'title',''), COALESCE(rel.version,0), COALESCE(af.file_ref,''), COALESCE(mf.file_evidence->>'name', af.relative_path, ''), COALESCE(mf.size_bytes, af.size_bytes, 0), COALESCE(af.media_kind,''), COALESCE(af.facts,'{}'::jsonb), COALESCE(mf.effective_facts,'{}'::jsonb), COALESCE(snap.id,''), COALESCE(snap.release_facts,'{}'::jsonb), COALESCE(fo.frozen_config_snapshot,'{}'::jsonb), COALESCE(fo.frozen_render_snapshot,'{}'::jsonb), COALESCE(rel.source_facts,'{}'::jsonb), COALESCE(fo.id,'')
 FROM placements p
 LEFT JOIN file_operations fo ON fo.id=p.source_owner_ref AND p.source_evidence_type='file_operation'
 LEFT JOIN artifact_files af ON af.id=fo.artifact_file_id
@@ -120,12 +131,15 @@ LEFT JOIN media_fact_files mf ON mf.snapshot_id=snap.id AND mf.file_ref=af.file_
 WHERE p.managed_anime_id=$1 AND p.state IN ('active','superseded')
   AND CASE WHEN NULLIF($2,'') IS NULL THEN p.physical_path=$3 ELSE p.id=$2 END
 ORDER BY p.created_at DESC LIMIT 1`
-	err := r.db.QueryRowContext(ctx, query, animeID, placementID, path).Scan(&f.placementID, &f.lineage, &f.releaseID, &f.sourceKind, &f.groupName, &f.sourceProvider, &f.sourceGroupRef, &f.originalTitle, &f.releaseVersion, &f.fileRef, &f.fileName, &f.fileSize, &f.fileKind, &f.fileFacts, &f.effectiveFacts, &f.snapshotID, &f.releaseFacts, &f.frozenConfig, &f.renderSnapshot, &f.sourceFacts, &f.fileOperationID)
+	err := r.db.QueryRowContext(ctx, query, animeID, placementID, path).Scan(&f.placementID, &f.excluded, &f.lineage, &f.releaseID, &f.sourceKind, &f.groupName, &f.sourceProvider, &f.sourceGroupRef, &f.originalTitle, &f.releaseVersion, &f.fileRef, &f.fileName, &f.fileSize, &f.fileKind, &f.fileFacts, &f.effectiveFacts, &f.snapshotID, &f.releaseFacts, &f.frozenConfig, &f.renderSnapshot, &f.sourceFacts, &f.fileOperationID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return f, false, nil
 	}
 	if err != nil {
 		return f, false, fmt.Errorf("read placed render lineage: %w", err)
+	}
+	if f.excluded {
+		return f, true, ErrPlacementExcluded
 	}
 	if !f.lineage {
 		return f, true, nil
@@ -160,23 +174,26 @@ func providerYear(value *int64) *int {
 	return &year
 }
 
-// namingRenderer is the naming renderer version the file effect recorded
-// ("" for a snapshot written before the field existed, which replays
-// naming-render-1).
+// namingRenderer is the naming renderer version a render of the current
+// configuration uses: the version the file effect recorded when it already
+// names the owner season (naming-render-4 and later), naming-render-4
+// otherwise (see naming.CurrentConfigRenderer).
 func (f placedRenderFacts) namingRenderer() string {
 	var snapshot struct {
 		NamingRenderer string `json:"naming_renderer"`
 	}
 	if len(f.renderSnapshot) == 0 || json.Unmarshal(f.renderSnapshot, &snapshot) != nil {
-		return ""
+		return naming.CurrentConfigRenderer("")
 	}
-	return snapshot.NamingRenderer
+	return naming.CurrentConfigRenderer(snapshot.NamingRenderer)
 }
 
 // renderFacts reads the replay facts the file effect recorded in the frozen
 // render snapshot, keyed by the catalog paths naming.ReplayFactValues returns.
 // An operation written before the field existed reports none, which leaves the
-// required-fact check alone.
+// required-fact check alone. The two metadata work ids are not replay facts of
+// a maintenance render: they are the current binding, and a missing binding is
+// the typed config-incomplete refusal instead.
 func (f placedRenderFacts) renderFacts() map[string]string {
 	if len(f.renderSnapshot) == 0 {
 		return nil
@@ -187,12 +204,15 @@ func (f placedRenderFacts) renderFacts() map[string]string {
 	if json.Unmarshal(f.renderSnapshot, &snapshot) != nil {
 		return nil
 	}
+	delete(snapshot.RenderFacts, "Anime.BGM.WorkID")
+	delete(snapshot.RenderFacts, "Anime.TMDB.WorkID")
 	return snapshot.RenderFacts
 }
 
 // frozenRenderBindingFacts is the metadata binding the file effect read when it
-// rendered the target: exactly the facts naming takes from the binding, which
-// are the media-kind branch, the season folder and the two work ids.
+// rendered the target. A maintenance render reads only the torrent facts from
+// it (they belong to the release); everything else is the current
+// configuration (currentAnimeConfig).
 type frozenRenderBindingFacts struct {
 	MediaKind string `json:"media_kind"`
 	Season    int    `json:"season"`
@@ -221,25 +241,6 @@ type frozenRenderBindingFacts struct {
 	TorrentFileCount  *int64 `json:"torrent_file_count"`
 	TorrentHashV1     string `json:"torrent_hash_v1"`
 	TorrentHashV2     string `json:"torrent_hash_v2"`
-}
-
-// ownerSeason is the owner-edited season the render read. A snapshot that
-// recorded none predates the owner season: it names the season its TMDB
-// binding named (naming.AnimeSeason), the value its renderer replays anyway.
-func (b frozenRenderBindingFacts) ownerSeason(tmdb naming.TMDBNamingFacts) *int {
-	if len(b.AnimeSeason) == 0 {
-		legacy := naming.AnimeSeason("", tmdb, false)
-		if legacy == nil {
-			return nil
-		}
-		season := int(*legacy)
-		return &season
-	}
-	var season *int
-	if json.Unmarshal(b.AnimeSeason, &season) != nil || season == nil || *season < 0 {
-		return nil
-	}
-	return season
 }
 
 // bindingFacts reads the frozen render snapshot's recorded binding. It reports
@@ -274,6 +275,10 @@ func (r *NamingTargetRenderer) renderNamingContext(ctx context.Context, animeID,
 	if !found || !lineage.lineage {
 		return naming.ResolvedContext{}, "", renderFactsUnavailable("placement has no file-operation lineage")
 	}
+	animeConfig, err := r.currentAnimeConfig(ctx, animeID)
+	if err != nil {
+		return naming.ResolvedContext{}, "", err
+	}
 	base := filepath.Base(lineage.fileName)
 	size = lineage.fileSize
 	frozenEpisode := frozen
@@ -284,7 +289,7 @@ func (r *NamingTargetRenderer) renderNamingContext(ctx context.Context, animeID,
 		}
 	}
 	ctxFacts := naming.NamingContext{
-		Anime: naming.AnimeNamingFacts{ID: animeID, Title: anime.title, TitleOverride: anime.titleOverride, ProviderTitle: anime.providerTitle, BGM: anime.bgm, TMDB: anime.tmdb},
+		Anime: naming.AnimeNamingFacts{ID: animeID, Title: anime.title, TitleOverride: anime.titleOverride, ProviderTitle: anime.providerTitle},
 		File: naming.FileNamingFacts{
 			OriginalName: base,
 			Basename:     strings.TrimSuffix(base, filepath.Ext(base)),
@@ -308,17 +313,7 @@ func (r *NamingTargetRenderer) renderNamingContext(ctx context.Context, animeID,
 		return naming.ResolvedContext{}, "", renderFactsUnavailable("placement is not a video file")
 	}
 	var releaseFacts struct {
-		Resolution       string `json:"resolution"`
-		MediaKind        string `json:"media_kind"`
-		Season           int    `json:"season"`
-		SeasonBound      bool   `json:"season_bound"`
-		BGMWorkID        string `json:"bgm_work_id"`
-		TMDBWorkID       string `json:"tmdb_work_id"`
-		ParserProvenance struct {
-			MediaKind   string `json:"media_kind"`
-			Season      int    `json:"season"`
-			SeasonBound bool   `json:"season_bound"`
-		} `json:"parser_provenance"`
+		Resolution string `json:"resolution"`
 	}
 	if err := json.Unmarshal(lineage.releaseFacts, &releaseFacts); err != nil {
 		return naming.ResolvedContext{}, "", renderFactsUnavailable("frozen release facts are invalid")
@@ -326,64 +321,15 @@ func (r *NamingTargetRenderer) renderNamingContext(ctx context.Context, animeID,
 	if ctxFacts.File.Media.Resolution == "" {
 		ctxFacts.File.Media.Resolution = strings.TrimSpace(releaseFacts.Resolution)
 	}
-	mediaKind, season := releaseFacts.MediaKind, releaseFacts.Season
-	if releaseFacts.ParserProvenance.MediaKind != "" {
-		mediaKind, season = releaseFacts.ParserProvenance.MediaKind, releaseFacts.ParserProvenance.Season
-	}
-	// The binding the file effect actually read wins over the release snapshot.
-	// The snapshot is frozen when the release is evaluated, so a TMDB binding
-	// set between that evaluation and the effect exists nowhere else, and
-	// re-rendering without it disagrees with the placement the effect committed.
-	// A recorded binding is a complete answer: it carries all four facts,
-	// including the ones that were empty, so the season and the work ids are
-	// taken from it verbatim — falling back per field would resurrect a value
-	// the effect did not use. An operation written before the field existed has
-	// no binding record and keeps the release-snapshot behaviour.
-	// Never fall back to the current metadata row: a metadata edit after the
-	// effect must not move the render.
-	binding, hasBinding := lineage.bindingFacts()
-	if hasBinding {
-		season = binding.Season
-		if binding.MediaKind != "" {
-			mediaKind = binding.MediaKind
-		}
-	}
-	if mediaKind != "tv" && mediaKind != "movie" {
-		// A snapshot frozen before the binding existed still carries the typed
-		// episode identity, which is the same evidence the offset planner reads
-		// (frozenIdentityMediaKind). Never fall back to the current metadata row:
-		// a metadata edit after acquisition must not move the render branch.
-		effective, effectiveErr := lineage.effective()
-		if effectiveErr != nil {
-			return naming.ResolvedContext{}, "", effectiveErr
-		}
-		if derived := frozenIdentityMediaKind(effective.Identity.Kind); derived != "" {
-			mediaKind = derived
-		}
-	}
-	if mediaKind != "tv" && mediaKind != "movie" {
-		return naming.ResolvedContext{}, "", renderFactsUnavailable("frozen media kind is unavailable")
-	}
-	ctxFacts.Anime.TMDB.MediaKind, ctxFacts.Anime.TMDB.Season = mediaKind, season
-	if hasBinding {
-		// The recorded presence is what the render read: a bound season 0
-		// renders Season 00, an unbound one reads no season.
-		ctxFacts.Anime.TMDB.SeasonPresent = binding.SeasonBound
-		ctxFacts.Anime.TMDB.SeasonBound = binding.SeasonBound && season == 0
-		ctxFacts.Anime.BGM.WorkID = strings.TrimSpace(binding.BGMWorkID)
-		ctxFacts.Anime.TMDB.WorkID = strings.TrimSpace(binding.TMDBWorkID)
-		ctxFacts.Anime.BGM.Title, ctxFacts.Anime.BGM.TitleCN = binding.BGMTitle, binding.BGMTitleCN
-		ctxFacts.Anime.BGM.Year = binding.BGMYear
-		ctxFacts.Anime.Year = binding.AnimeYear
-		ctxFacts.Anime.Season = binding.ownerSeason(ctxFacts.Anime.TMDB)
-		ctxFacts.Anime.TMDB.TitleCN, ctxFacts.Anime.TMDB.OriginalTitle = binding.TMDBTitleCN, binding.TMDBOriginalTitle
-		ctxFacts.Anime.TMDB.Year = binding.TMDBYear
+	// The torrent facts belong to the release and stay as the effect read them.
+	if binding, hasBinding := lineage.bindingFacts(); hasBinding {
 		ctxFacts.Torrent = naming.TorrentNamingFacts{Size: binding.TorrentSize, FileCount: binding.TorrentFileCount, HashV1: binding.TorrentHashV1, HashV2: binding.TorrentHashV2}
-	} else {
-		ctxFacts.Anime.BGM.WorkID = strings.TrimSpace(releaseFacts.BGMWorkID)
-		ctxFacts.Anime.TMDB.WorkID = strings.TrimSpace(releaseFacts.TMDBWorkID)
-		ctxFacts.Anime.Season = frozenRenderBindingFacts{}.ownerSeason(ctxFacts.Anime.TMDB)
 	}
+	// Everything the anime itself configures is read now: the media kind, the
+	// owner season and year, and the metadata binding with its work titles. An
+	// input the configuration lacks refuses the render; the frozen values are
+	// never a fallback.
+	animeConfig.apply(&ctxFacts.Anime)
 	if frozen == nil {
 		ctxFacts.Release.FrozenEpisode, err = lineage.frozenEpisode()
 		if err != nil {
