@@ -9,10 +9,6 @@ import type { RSSListManifestFile } from "../../lib/api/client";
 // A seed with no manual change has no entry at all: its download request carries no file_selection
 //   and previews the default files, byte-identical to a request made without the picker.
 
-export type FileTreeNode =
-  | { kind: "dir"; name: string; path: string; children: FileTreeNode[] }
-  | { kind: "file"; name: string; file: RSSListManifestFile };
-
 /** The default checked set: what the download takes when the user changes nothing. */
 export function defaultFileSelection(files: readonly RSSListManifestFile[]): ReadonlySet<string> {
   return new Set(files.filter((file) => file.default_selected).map((file) => file.source_path));
@@ -125,28 +121,104 @@ export function selectedVideoCount(files: readonly RSSListManifestFile[], select
   return files.filter((file) => file.media_kind === "video" && selection.has(file.source_path)).length;
 }
 
-/** The torrent's folder structure: folders first, then files, each in path order. */
-export function buildFileTree(files: readonly RSSListManifestFile[]): FileTreeNode[] {
-  type Dir = { name: string; path: string; dirs: Map<string, Dir>; files: FileTreeNode[] };
-  const root: Dir = { name: "", path: "", dirs: new Map(), files: [] };
-  for (const file of [...files].sort((a, b) => a.source_path.localeCompare(b.source_path))) {
-    const segments = file.source_path.split("/");
-    const name = segments.pop() ?? file.source_path;
-    let dir = root;
-    for (const segment of segments) {
-      const path = dir.path ? `${dir.path}/${segment}` : segment;
-      let child = dir.dirs.get(segment);
-      if (!child) {
-        child = { name: segment, path, dirs: new Map(), files: [] };
-        dir.dirs.set(segment, child);
-      }
-      dir = child;
+/** One processable video with the subtitles that follow it (they render nested under it). */
+export type PickerVideo = { file: RSSListManifestFile; subtitles: RSSListManifestFile[] };
+
+/**
+ * One folder of the picker's tree. `videos` are the selectable videos directly in the folder;
+ * `skipped` are the folder's own files that will not be processed (not selectable, or a subtitle
+ * with no selectable video to follow); `folders` are the subfolders. A level lists its files
+ * before its subfolders.
+ */
+export type PickerFolder = {
+  name: string;
+  path: string;
+  videos: PickerVideo[];
+  skipped: RSSListManifestFile[];
+  folders: PickerFolder[];
+};
+
+const byName = (a: string, b: string): number => a.localeCompare(b, undefined, { numeric: true });
+
+/**
+ * The torrent's folder structure for the picker, from the manifest rows alone: a selectable video
+ * carries the selectable subtitles that follow it; every other file is "not processed" in the folder
+ * it sits in. The root has an empty name and path.
+ */
+export function buildPickerTree(files: readonly RSSListManifestFile[]): PickerFolder {
+  const root: PickerFolder = { name: "", path: "", videos: [], skipped: [], folders: [] };
+  const folders = new Map<string, PickerFolder>([["", root]]);
+  const folderOf = (path: string): PickerFolder => {
+    const known = folders.get(path);
+    if (known) return known;
+    const cut = path.lastIndexOf("/");
+    const parent = folderOf(cut < 0 ? "" : path.slice(0, cut));
+    const folder: PickerFolder = { name: cut < 0 ? path : path.slice(cut + 1), path, videos: [], skipped: [], folders: [] };
+    folders.set(path, folder);
+    parent.folders.push(folder);
+    return folder;
+  };
+  const dirOf = (path: string): string => path.slice(0, Math.max(0, path.lastIndexOf("/")));
+
+  const sorted = [...files].sort((a, b) => byName(a.source_path, b.source_path));
+  const videos = new Map<string, PickerVideo>();
+  for (const file of sorted) {
+    if (file.media_kind === "video" && file.selectable) {
+      const video: PickerVideo = { file, subtitles: [] };
+      videos.set(file.source_path, video);
+      folderOf(dirOf(file.source_path)).videos.push(video);
     }
-    dir.files.push({ kind: "file", name, file });
   }
-  const flatten = (dir: Dir): FileTreeNode[] => [
-    ...[...dir.dirs.values()].map((child): FileTreeNode => ({ kind: "dir", name: child.name, path: child.path, children: flatten(child) })),
-    ...dir.files,
-  ];
-  return flatten(root);
+  for (const file of sorted) {
+    if (file.media_kind === "video" && file.selectable) continue;
+    const owner = file.media_kind === "subtitle" && file.selectable && file.bound_video_source_path !== undefined ? videos.get(file.bound_video_source_path) : undefined;
+    if (owner) owner.subtitles.push(file);
+    else folderOf(dirOf(file.source_path)).skipped.push(file);
+  }
+  const order = (folder: PickerFolder): void => {
+    folder.folders.sort((a, b) => byName(a.name, b.name));
+    folder.folders.forEach(order);
+  };
+  order(root);
+  return root;
+}
+
+/** The folders open when the picker opens: every folder holding a currently checked file, found from the data alone. */
+export function initialExpandedFolders(files: readonly RSSListManifestFile[], selection: ReadonlySet<string>): Set<string> {
+  const open = new Set<string>();
+  for (const file of files) {
+    if (!selection.has(file.source_path)) continue;
+    const segments = file.source_path.split("/");
+    segments.pop();
+    let path = "";
+    for (const segment of segments) {
+      path = path ? `${path}/${segment}` : segment;
+      open.add(path);
+    }
+  }
+  return open;
+}
+
+/** What a folder row reports about everything below it, at any depth. */
+export type FolderSummary = { videos: number; selectedVideos: number; subtitles: number; selectedSubtitles: number };
+
+export function folderSummary(folder: PickerFolder, selection: ReadonlySet<string>): FolderSummary {
+  const total: FolderSummary = { videos: 0, selectedVideos: 0, subtitles: 0, selectedSubtitles: 0 };
+  const walk = (level: PickerFolder): void => {
+    for (const { file, subtitles } of level.videos) {
+      total.videos += 1;
+      if (selection.has(file.source_path)) total.selectedVideos += 1;
+      total.subtitles += subtitles.length;
+      total.selectedSubtitles += subtitles.filter((subtitle) => selection.has(subtitle.source_path)).length;
+    }
+    level.folders.forEach(walk);
+  };
+  walk(folder);
+  return total;
+}
+
+/** Whether two manual choices (normalized: undefined = the defaults, else sorted paths) are the same. */
+export function sameFileChoice(a: readonly string[] | undefined, b: readonly string[] | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return a.length === b.length && a.every((path, index) => path === b[index]);
 }
