@@ -1322,7 +1322,8 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
       bgm: null,
       tmdb: { work_id: "265010", media_kind: "tv", season: 1 },
       title_override: "新覆盖",
-      media_kind_override: null,
+      // The unset type is filled once from the matched work's kind.
+      media_kind_override: "tv",
       // Selecting a candidate pre-fills total episodes from the chosen season's count (S1 has 12).
       total_episodes: 12,
       // The match fills the candidate year into the form, persisted with the save.
@@ -1347,7 +1348,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
     expect(metadataPatchBodies(fetchMock)[0]).toMatchObject({ title_override: "测试番" });
   });
 
-  it("类型行：默认分段选中「跟随匹配」并附绑定类型；选电影由 footer 保存并安排重评估", async () => {
+  it("类型行：只有剧集与电影两项；选电影由 footer 保存并安排重评估", async () => {
     const fetchMock = stubMetadataPatchFetch();
     const workspace = workspaceFixture();
     workspace.metadata = {
@@ -1355,16 +1356,15 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
       bgm: { work_id: "486109" },
       tmdb: { work_id: "265010", media_kind: "tv", season: 2 },
       title_override: null,
-      media_kind_override: null,
+      media_kind_override: "tv",
       total_episodes: null,
       version: 3,
     };
     renderTabs({ animeID: "anime-1", workspace, onChanged: () => {}, initialTab: "metadata" });
 
     const kindRegion = screen.getByRole("region", { name: t("forms.mediaKind") });
-    expect(within(kindRegion).getByRole("radio", { name: t("forms.mediaKindFollow") })).toHaveAttribute("aria-checked", "true");
-    // While following the match, the binding kind (tv) is attached as reference.
-    expect(within(kindRegion).getAllByText(t("forms.tv")).length).toBeGreaterThan(1);
+    expect(within(kindRegion).getAllByRole("radio")).toHaveLength(2);
+    expect(within(kindRegion).getByRole("radio", { name: t("forms.tv") })).toHaveAttribute("aria-checked", "true");
 
     fireEvent.click(within(kindRegion).getByRole("radio", { name: t("forms.movie") }));
     expect(within(kindRegion).getByRole("radio", { name: t("forms.movie") })).toHaveAttribute("aria-checked", "true");
@@ -1390,7 +1390,26 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
     expect(reevaluateCalls(fetchMock)).toHaveLength(1);
   });
 
-  it("类型行：已设置电影时选「跟随匹配」清除针（上送 null）", async () => {
+  it("类型行：未设置且未关联 TMDB 时显示剧集", () => {
+    stubMetadataPatchFetch();
+    const workspace = workspaceFixture();
+    workspace.metadata = {
+      managed_anime_id: "anime-1",
+      bgm: null,
+      tmdb: null,
+      title_override: null,
+      media_kind_override: null,
+      total_episodes: null,
+      version: 5,
+    };
+    renderTabs({ animeID: "anime-1", workspace, onChanged: () => {}, initialTab: "metadata" });
+
+    const kindRegion = screen.getByRole("region", { name: t("forms.mediaKind") });
+    expect(within(kindRegion).getByRole("radio", { name: t("forms.tv") })).toHaveAttribute("aria-checked", "true");
+    expect(footerSave()).toBeDisabled();
+  });
+
+  it("类型行：已设置电影时可改回剧集", async () => {
     const fetchMock = stubMetadataPatchFetch();
     const workspace = workspaceFixture();
     workspace.metadata = {
@@ -1407,7 +1426,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
     const kindRegion = screen.getByRole("region", { name: t("forms.mediaKind") });
     expect(within(kindRegion).getByRole("radio", { name: t("forms.movie") })).toHaveAttribute("aria-checked", "true");
 
-    fireEvent.click(within(kindRegion).getByRole("radio", { name: t("forms.mediaKindFollow") }));
+    fireEvent.click(within(kindRegion).getByRole("radio", { name: t("forms.tv") }));
     clickFooterSave();
 
     const { toast } = await import("sonner");
@@ -1419,7 +1438,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
       bgm: null,
       tmdb: null,
       title_override: "测试番",
-      media_kind_override: null,
+      media_kind_override: "tv",
       total_episodes: null,
       year: null,
       season: null,
@@ -1433,6 +1452,8 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
       managed_anime_id: "anime-1",
       bgm: null,
       tmdb: { work_id: "265010", media_kind: "tv", season: 1 },
+      // A bound TMDB tuple always comes with the type it backfilled.
+      media_kind_override: "tv",
       // Equal to the candidate's S1 episodes/year/season: confirms that with an identical binding even the prefill produces no diff.
       total_episodes: 12,
       year: 2024,
@@ -1471,9 +1492,9 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
     fireEvent.click(await within(dialog).findByRole("option", { name: /匹配到的番名/ }));
     fireEvent.click(within(dialog).getByRole("button", { name: t("forms.confirmMatch") }));
 
-    // After the match: the input shows the candidate year; bindings/year/season/total-episodes are four unsaved spots with no PATCH sent.
+    // After the match: the input shows the candidate year; binding/type/year/season/total-episodes are five unsaved spots with no PATCH sent.
     await waitFor(() => expect(within(yearRegion).getByRole("textbox")).toHaveValue("2024"));
-    expect(footerStatus()).toHaveTextContent(t("act.unsavedCount", { n: 4 }));
+    expect(footerStatus()).toHaveTextContent(t("act.unsavedCount", { n: 5 }));
     expect(metadataPatchBodies(fetchMock)).toHaveLength(0);
 
     // The user edits the year: invalid input is not written back and reports on blur.

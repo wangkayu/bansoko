@@ -1027,7 +1027,12 @@ export function OneShotDialog({
                     if (!(latestDraft.current ?? draft).title.trim()) setTitle(matched);
                   }}
                   value={draft.metadata}
-                  onChange={(metadata) => commitDraft({ ...(latestDraft.current ?? draft), metadata })}
+                  onChange={(metadata, mediaKind) =>
+                    commitDraft({
+                      ...(latestDraft.current ?? draft),
+                      metadata: mediaKind ? { ...metadata, media_kind_override: mediaKind } : metadata,
+                    })
+                  }
                   matchProvider={matchProvider}
                   onMatchProviderChange={setMatchProvider}
                   onSaveTotalEpisodes={async (total) => {

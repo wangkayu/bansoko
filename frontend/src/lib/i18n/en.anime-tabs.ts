@@ -180,7 +180,6 @@ export const enFormsCopy = {
   manualTmdbTitle: "TMDB {id}",
   manualTmdbNote: "Not checked online; saved as entered",
   mediaKind: "Type",
-  mediaKindFollow: "Follow match",
   saveMediaKind: "Save type",
   editMediaKindAria: "Edit type",
   saveSeason: "Save Season",

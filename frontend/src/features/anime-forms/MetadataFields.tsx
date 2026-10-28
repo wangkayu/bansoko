@@ -20,6 +20,10 @@ import { Dialog, Select, type SelectOption } from "../../ui/base";
 // only when the season is unset (a one-time prefill); an existing season is never overwritten.
 // The TMDB row always shows the bound TMDB season inline (it may differ from the anime's
 // season).
+// The media kind (tv / movie) is the anime's own field too. Unset reads as the bound TMDB kind
+// (the server stores it once when a TMDB tuple is bound while the kind is unset), else tv.
+// Binding or clearing TMDB while the kind is unset writes that kind in the same change, so a
+// later clear or replacement of the TMDB binding keeps it.
 
 export function MetadataFields({
   value,
@@ -41,7 +45,11 @@ export function MetadataFields({
   onMatchTitle,
 }: {
   value: AnimeMetadataDraft;
-  onChange: (next: AnimeMetadataDraft) => void;
+  /**
+   * mediaKind is given when the change also sets the media kind (binding or clearing TMDB while
+   * the kind is unset); the caller stores both in one update.
+   */
+  onChange: (next: AnimeMetadataDraft, mediaKind?: "tv" | "movie") => void;
   idPrefix: string;
   title?: string;
   searcher?: MetadataSearcher;
@@ -63,10 +71,10 @@ export function MetadataFields({
   /** When given, renders a separate total-episodes row; returning true means the save succeeded (the row leaves editing). */
   onSaveTotalEpisodes?: (total: number | null) => Promise<boolean>;
   /** When given, renders a separate media-kind row; returning true means the save succeeded (the row leaves editing). */
-  onSaveMediaKind?: (next: "tv" | "movie" | null) => Promise<boolean>;
+  onSaveMediaKind?: (next: "tv" | "movie") => Promise<boolean>;
   /**
-   * 类型针的显示值（tv|movie|null）。刻意独立于 value：owner 模式的类型针与标题覆盖
-   * 一样不进 AnimeMetadataDraft（否则「保存后 refetch 前」的本地值与服务端基线不等，
+   * 类型的存储值（tv|movie|null，null = 未设置）。刻意独立于 value：owner 模式的类型与标题
+   * 覆盖一样不进 AnimeMetadataDraft（否则「保存后 refetch 前」的本地值与服务端基线不等，
    * 会误报 dirty），由调用方用独立状态传入。draft 模式传草稿里的字段。
    */
   mediaKindOverride?: "tv" | "movie" | null;
@@ -90,7 +98,14 @@ export function MetadataFields({
   onMatchTitle?: (title: string) => void;
 }) {
   const season = value.season ?? null;
-  const effectiveKind = mediaKindOverride ?? value.tmdb?.media_kind;
+  // The kind the server resolves with: the stored kind, else the bound TMDB kind it backfills, else tv.
+  const resolvedKind = mediaKindOverride ?? value.tmdb?.media_kind ?? "tv";
+  // A TMDB change while the kind is unset carries the kind it resolves to, so the kind stays when
+  // the binding is cleared or replaced later.
+  function changeTMDB(next: AnimeMetadataDraft, boundKind: "tv" | "movie" | undefined) {
+    if (onSaveMediaKind && mediaKindOverride == null && boundKind) onChange(next, boundKind);
+    else onChange(next);
+  }
   function reportMatchTitle(candidate: MetadataCandidate) {
     if (!onMatchTitle || (candidate.provider === "tmdb" && candidate.detailsStatus === "not_applicable")) return;
     const name = candidate.title.trim() || candidate.originalTitle?.trim();
@@ -117,14 +132,13 @@ export function MetadataFields({
             ? { workId: value.tmdb.work_id, mediaKind: value.tmdb.media_kind, season: value.tmdb.season }
             : undefined
         }
-        onClear={() => onChange({ ...value, tmdb: null })}
+        onClear={() => changeTMDB({ ...value, tmdb: null }, value.tmdb?.media_kind)}
         onMatch={() => onMatchProviderChange?.("tmdb")}
       />
       {onSaveMediaKind && directEdit && (
         <DirectMediaKindRow
           idPrefix={idPrefix}
-          mediaKindOverride={mediaKindOverride}
-          tmdbMediaKind={value.tmdb?.media_kind}
+          mediaKind={resolvedKind}
           disabled={busy}
           onChange={(next) => void onSaveMediaKind(next)}
         />
@@ -132,8 +146,7 @@ export function MetadataFields({
       {onSaveMediaKind && !directEdit && (
         <MediaKindRow
           idPrefix={idPrefix}
-          mediaKindOverride={mediaKindOverride}
-          tmdbMediaKind={value.tmdb?.media_kind}
+          mediaKind={resolvedKind}
           busy={busy}
           onSaveMediaKind={onSaveMediaKind}
         />
@@ -142,7 +155,7 @@ export function MetadataFields({
         <DirectSeasonRow
           idPrefix={idPrefix}
           season={season}
-          mediaKind={effectiveKind}
+          mediaKind={resolvedKind}
           readOnly={readOnly}
           disabled={busy}
           onChange={(next) => onChange({ ...value, season: next })}
@@ -152,7 +165,7 @@ export function MetadataFields({
         <SeasonRow
           idPrefix={idPrefix}
           season={season}
-          mediaKind={effectiveKind}
+          mediaKind={resolvedKind}
           busy={busy}
           onSaveSeason={async (next) => {
             onChange({ ...value, season: next });
@@ -224,7 +237,9 @@ export function MetadataFields({
             if (value.year == null && candidate.year !== undefined && validYear(candidate.year)) {
               next.year = candidate.year;
             }
-            onChange(next);
+            // An unset kind is filled once: from the tuple already bound (its kind is what the
+            // anime resolves with now), else from the chosen work.
+            changeTMDB(next, value.tmdb?.media_kind ?? mediaKind);
             reportMatchTitle(candidate);
             onMatchProviderChange(undefined);
           }}
@@ -426,46 +441,38 @@ function SeasonRow({
 
 // --- The standalone media-kind row (series / movie) --------------------------------
 //
-// media_kind_override is the pin of the naming branch: it decides whether files land on the
-// "series" or "movie" naming path. While unset it follows the TMDB binding's media_kind, and
-// with no TMDB binding it is treated as a series (the backend FrozenMediaBinding's fallback
-// chain; the frontend never re-derives it). Row interaction matches the season/total-episodes
-// rows: view -> edit -> save/cancel. Editing is a three-way segment: follow the match (saving
-// null = clearing the pin) / series / movie. Viewing presents only the server's value: with a
-// pin, series or movie; unset shows "follow match", plus the binding's kind as reference when
-// TMDB is bound (the binding kind is server data).
+// The media kind decides the episode identity (a movie is one item) and whether files land on
+// the series or movie naming path. It is the anime's own field: the TMDB binding only locates the
+// work. Row interaction matches the season/total-episodes rows: view -> edit -> save/cancel,
+// with a two-way segment: series / movie.
 
 function MediaKindRow({
   idPrefix,
-  mediaKindOverride,
-  tmdbMediaKind,
+  mediaKind,
   busy = false,
   onSaveMediaKind,
 }: {
   idPrefix: string;
-  /** The set pin; undefined/null = not set (follow the match). */
-  mediaKindOverride?: "tv" | "movie" | null;
-  /** The kind the TMDB binding itself carries, shown only as reference while unset. */
-  tmdbMediaKind?: "tv" | "movie";
+  /** The kind the anime resolves with (unset reads as the bound TMDB kind, else series). */
+  mediaKind: "tv" | "movie";
   busy?: boolean;
-  onSaveMediaKind: (next: "tv" | "movie" | null) => Promise<boolean>;
+  onSaveMediaKind: (next: "tv" | "movie") => Promise<boolean>;
 }) {
   const [editing, setEditing] = useState(false);
-  const [choice, setChoice] = useState<"auto" | "tv" | "movie">("auto");
+  const [choice, setChoice] = useState<"tv" | "movie">(mediaKind);
 
   function startEdit() {
-    setChoice(mediaKindOverride ?? "auto");
+    setChoice(mediaKind);
     setEditing(true);
   }
 
   async function save() {
-    if (await onSaveMediaKind(choice === "auto" ? null : choice)) {
+    if (await onSaveMediaKind(choice)) {
       setEditing(false);
     }
   }
 
   const kindLabel = (kind: "tv" | "movie") => (kind === "movie" ? t("forms.movie") : t("forms.tv"));
-  const pinned = mediaKindOverride ?? undefined;
 
   return (
     <section className="metadata-card" aria-labelledby={`${idPrefix}-media-kind-label`}>
@@ -481,7 +488,6 @@ function MediaKindRow({
               value={choice}
               onChange={setChoice}
               options={[
-                { value: "auto", label: t("forms.mediaKindFollow") },
                 { value: "tv", label: t("forms.tv") },
                 { value: "movie", label: t("forms.movie") },
               ]}
@@ -495,12 +501,7 @@ function MediaKindRow({
           </>
         ) : (
           <>
-            <span className="metadata-row-value text-body">
-              {pinned ? kindLabel(pinned) : t("forms.mediaKindFollow")}
-            </span>
-            {!pinned && tmdbMediaKind && (
-              <span className="metadata-muted text-caption">{kindLabel(tmdbMediaKind)}</span>
-            )}
+            <span className="metadata-row-value text-body">{kindLabel(mediaKind)}</span>
             <Button size="sm" variant="ghost" className="metadata-edit-action" disabled={busy} onClick={startEdit} aria-label={t("forms.editMediaKindAria")}>
               <Pencil className="metadata-icon" />
               {t("act.edit")}
@@ -628,19 +629,16 @@ function TotalEpisodesRow({
 
 function DirectMediaKindRow({
   idPrefix,
-  mediaKindOverride,
-  tmdbMediaKind,
+  mediaKind,
   disabled,
   onChange,
 }: {
   idPrefix: string;
-  mediaKindOverride?: "tv" | "movie" | null;
-  tmdbMediaKind?: "tv" | "movie";
+  mediaKind: "tv" | "movie";
   disabled: boolean;
-  onChange: (next: "tv" | "movie" | null) => void;
+  onChange: (next: "tv" | "movie") => void;
 }) {
   const labelId = `${idPrefix}-media-kind-label`;
-  const choice = mediaKindOverride ?? "auto";
   return (
     <section className="metadata-card" aria-labelledby={labelId}>
       <div className="metadata-header">
@@ -649,19 +647,15 @@ function DirectMediaKindRow({
         </span>
         <SegmentedControl
           ariaLabel={t("forms.mediaKindAria")}
-          value={choice}
+          value={mediaKind}
           onChange={(next) => {
-            if (!disabled) onChange(next === "auto" ? null : next);
+            if (!disabled) onChange(next);
           }}
           options={[
-            { value: "auto", label: t("forms.mediaKindFollow") },
             { value: "tv", label: t("forms.tv") },
             { value: "movie", label: t("forms.movie") },
           ]}
         />
-        {choice === "auto" && tmdbMediaKind && (
-          <span className="metadata-muted text-caption">{tmdbMediaKind === "movie" ? t("forms.movie") : t("forms.tv")}</span>
-        )}
       </div>
     </section>
   );

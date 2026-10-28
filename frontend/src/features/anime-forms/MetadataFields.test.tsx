@@ -881,3 +881,79 @@ describe("MetadataFields 播出形式", () => {
     expect(onChange).toHaveBeenLastCalledWith({ bgm: { work_id: "486109" }, tmdb: null });
   });
 });
+
+// The type is the anime's own field: unset reads as the bound TMDB kind, else series. Binding or
+// clearing TMDB while it is unset writes that kind in the same change, so it survives the clear.
+describe("MetadataFields 类型行", () => {
+  function KindHarness({ initial, candidates = [] }: { initial: AnimeMetadataDraft; candidates?: MetadataCandidate[] }) {
+    const [value, setValue] = useState<AnimeMetadataDraft>(initial);
+    const [matchProvider, setMatchProvider] = useState<MetadataProvider>();
+    return (
+      <>
+        <button onClick={() => setMatchProvider("tmdb")}>匹配 TMDB</button>
+        <MetadataFields
+          idPrefix="kind"
+          title="星际邮差艾拉"
+          directEdit
+          value={value}
+          onChange={(next, mediaKind) => setValue(mediaKind ? { ...next, media_kind_override: mediaKind } : next)}
+          onSaveMediaKind={async (next) => {
+            setValue((current) => ({ ...current, media_kind_override: next }));
+            return true;
+          }}
+          mediaKindOverride={value.media_kind_override}
+          searcher={searcherReturning(candidates)}
+          matchProvider={matchProvider}
+          onMatchProviderChange={setMatchProvider}
+        />
+      </>
+    );
+  }
+
+  function kindRadio(kind: "tv" | "movie") {
+    const region = screen.getByRole("region", { name: t("forms.mediaKind") });
+    return within(region).getByRole("radio", { name: kind === "movie" ? t("forms.movie") : t("forms.tv") });
+  }
+
+  it("只有剧集与电影两项，未设置且未关联时显示剧集", () => {
+    render(<KindHarness initial={{ bgm: null, tmdb: null, media_kind_override: null }} />);
+    expect(within(screen.getByRole("region", { name: t("forms.mediaKind") })).getAllByRole("radio")).toHaveLength(2);
+    expect(kindRadio("tv")).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("未设置时关联电影写入电影类型，之后清除 TMDB 不改类型", async () => {
+    const movie: MetadataCandidate = { ...tmdbCandidate, mediaKind: "movie", suggestedSeason: undefined };
+    render(<KindHarness initial={{ bgm: null, tmdb: null, media_kind_override: null }} candidates={[movie]} />);
+
+    clickMatch("tmdb");
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: t("forms.search") }));
+    fireEvent.click(await within(dialog).findByRole("option", { name: /星际邮差艾拉/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: t("forms.confirmMatch") }));
+    await waitFor(() => expect(kindRadio("movie")).toHaveAttribute("aria-checked", "true"));
+
+    fireEvent.click(screen.getByRole("button", { name: t("forms.clearAria", { label: t("forms.tmdb") }) }));
+    expect(kindRadio("movie")).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("已设置类型时关联 TMDB 不改类型", async () => {
+    const movie: MetadataCandidate = { ...tmdbCandidate, mediaKind: "movie", suggestedSeason: undefined };
+    render(<KindHarness initial={{ bgm: null, tmdb: null, media_kind_override: "tv" }} candidates={[movie]} />);
+
+    clickMatch("tmdb");
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: t("forms.search") }));
+    fireEvent.click(await within(dialog).findByRole("option", { name: /星际邮差艾拉/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: t("forms.confirmMatch") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(kindRadio("tv")).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("未设置但已关联电影的草稿显示电影，清除 TMDB 时保留电影", () => {
+    render(<KindHarness initial={{ bgm: null, tmdb: { work_id: "265010", media_kind: "movie", season: 0 }, media_kind_override: null }} />);
+    expect(kindRadio("movie")).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: t("forms.clearAria", { label: t("forms.tmdb") }) }));
+    expect(kindRadio("movie")).toHaveAttribute("aria-checked", "true");
+  });
+});

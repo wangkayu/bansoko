@@ -196,9 +196,10 @@ function MetadataTabView({
   title: ReactNode;
   readOnly?: boolean;
   value: AnimeMetadataDraft;
-  onValueChange: (next: AnimeMetadataDraft) => void;
+  /** mediaKind is given when the change also sets the media kind; store both in one update. */
+  onValueChange: (next: AnimeMetadataDraft, mediaKind?: "tv" | "movie") => void;
   onTotalEpisodesChange: (total: number | null) => void;
-  onMediaKindChange: (next: "tv" | "movie" | null) => void;
+  onMediaKindChange: (next: "tv" | "movie") => void;
   mediaKindOverride?: "tv" | "movie" | null;
   searchTitle: string;
   matchProvider?: "bgm" | "tmdb";
@@ -263,7 +264,9 @@ function DraftMetadataTab({
       }
       searchTitle={draftTitle}
       value={draft.metadata}
-      onValueChange={setMetadata}
+      onValueChange={(metadata, mediaKind) =>
+        setMetadata(mediaKind ? { ...metadata, media_kind_override: mediaKind } : metadata)
+      }
       onTotalEpisodesChange={(total) => setMetadata({ ...draft.metadata, total_episodes: total })}
       onMediaKindChange={(next) => setMetadata({ ...draft.metadata, media_kind_override: next })}
       mediaKindOverride={draft.metadata.media_kind_override}
@@ -422,7 +425,9 @@ function OwnerMetadataTab({
       readOnly={readOnly}
       busy={busy}
       value={edit.metadata}
-      onValueChange={(metadata) => setEdit({ ...edit, metadata })}
+      onValueChange={(metadata, mediaKind) =>
+        setEdit({ ...edit, metadata, mediaKindOverride: mediaKind ?? edit.mediaKindOverride })
+      }
       onTotalEpisodesChange={(total) => setEdit({ ...edit, metadata: { ...edit.metadata, total_episodes: total } })}
       onMediaKindChange={(mediaKindOverride) => setEdit({ ...edit, mediaKindOverride })}
       mediaKindOverride={edit.mediaKindOverride}

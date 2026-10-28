@@ -177,7 +177,6 @@ export const formsCopy = {
   manualTmdbTitle: "TMDB {id}",
   manualTmdbNote: "不联网核对，按填写内容保存",
   mediaKind: "类型",
-  mediaKindFollow: "跟随匹配",
   saveMediaKind: "保存类型",
   editMediaKindAria: "编辑类型",
   saveSeason: "保存季度",
