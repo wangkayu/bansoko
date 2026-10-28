@@ -1487,11 +1487,20 @@ paths:
           create_candidate plus activate_candidate). The subscription starts pending
           unless start is true. The draft must carry its business snapshot
           (load_business_preset first). A draft with origin oneshot is refused.
+          A provider entry (anibt or mikan) that already has a non-retired
+          subscription is refused with 409 PROVIDER_ENTRY_ALREADY_SUBSCRIBED
+          (details carry managed_anime_ids); use duplicate_subscription for a
+          second instance.
       description: >-
         Create the complete owner set from one draft. The subscription is
         created pending (not started) unless start is true. A draft with the
         agent origin is refused with 422 ORIGIN_NOT_SUBSCRIBABLE; that origin
-        is only valid for one-shot acquisition.
+        is only valid for one-shot acquisition. A draft of a provider entry
+        (anibt or mikan) that already has a subscription whose managed anime is
+        not retired is refused with 409 PROVIDER_ENTRY_ALREADY_SUBSCRIBED; the
+        error details carry the existing managed_anime_ids. A second instance
+        is made with the duplicate operation. A replay of a key that already
+        succeeded returns its original result.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -2373,7 +2382,10 @@ paths:
           pending (not started): nothing runs until patch_subscription sets state active.
           Pass start: true to start it at once when the saved configuration is complete.
           Optional initial_state 'stopped' creates a one-off instance that runs no
-          automatic work but accepts manual commands.
+          automatic work but accepts manual commands. A provider entry that already
+          has a non-retired subscription is refused with 409
+          PROVIDER_ENTRY_ALREADY_SUBSCRIBED (details carry managed_anime_ids); use
+          duplicate_subscription for a second instance.
       description: >-
         Activate exactly the saved revision named by the request. The server
         locks the candidate and revision, requires the requested revision to be
@@ -2388,7 +2400,10 @@ paths:
         all three plus the effective digest, so stale or wrong revisions fail
         closed with no owner effect and exact replay remains stable. A candidate
         whose draft has the oneshot origin is refused with 422
-        ORIGIN_NOT_SUBSCRIBABLE.
+        ORIGIN_NOT_SUBSCRIBABLE. A candidate of a provider entry that already
+        has a subscription whose managed anime is not retired is refused with
+        409 PROVIDER_ENTRY_ALREADY_SUBSCRIBED (details carry managed_anime_ids);
+        a second instance is made with the duplicate operation.
       parameters:
         - $ref: '#/components/parameters/CandidateID'
         - $ref: '#/components/parameters/IfMatchVersion'
@@ -14059,6 +14074,14 @@ components:
           items:
             type: string
             maxLength: 4096
+        managed_anime_ids:
+          type: array
+          description: >-
+            On 409 PROVIDER_ENTRY_ALREADY_SUBSCRIBED: the managed anime ids of
+            the existing non-retired subscriptions of that provider entry.
+          maxItems: 64
+          items:
+            type: string
     NamingVarsVersion:
       type: object
       additionalProperties: false

@@ -289,6 +289,51 @@ func rejectOneShotOnlyOrigin(draft animedomain.AnimeDraft) error {
 	return nil
 }
 
+// rejectLiveProviderEntryTx refuses a provider-origin subscribe when the same
+// origin and entry already has a subscription whose managed anime is not
+// retired (pending and stopped instances count). Custom and oneshot drafts and
+// duplicate are not guarded. Existing duplicates are never touched.
+func rejectLiveProviderEntryTx(ctx context.Context, tx *sql.Tx, draft animedomain.AnimeDraft) error {
+	if draft.Origin != animedomain.SubscriptionOriginAnibt && draft.Origin != animedomain.SubscriptionOriginMikan {
+		return nil
+	}
+	if draft.OriginEntryRef == nil || strings.TrimSpace(*draft.OriginEntryRef) == "" {
+		return nil
+	}
+	entryRef := strings.TrimSpace(*draft.OriginEntryRef)
+	// Serialize concurrent subscribes of one entry; the per-key lock above does
+	// not cover two different keys.
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, "provider_entry:"+string(draft.Origin)+":"+entryRef); err != nil {
+		return fmt.Errorf("lock provider entry: %w", err)
+	}
+	rows, err := tx.QueryContext(ctx, `
+SELECT subscription.managed_anime_id
+FROM subscriptions AS subscription
+JOIN managed_anime AS anime ON anime.id = subscription.managed_anime_id
+WHERE subscription.origin = $1 AND subscription.origin_entry_ref = $2
+  AND anime.lifecycle_state <> 'retired'
+ORDER BY subscription.created_at, subscription.id`, string(draft.Origin), entryRef)
+	if err != nil {
+		return fmt.Errorf("read live provider entry subscriptions: %w", err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return fmt.Errorf("scan live provider entry subscription: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("read live provider entry subscriptions: %w", err)
+	}
+	if len(ids) > 0 {
+		return &apperrors.ProviderEntryAlreadySubscribed{ManagedAnimeIDs: ids}
+	}
+	return nil
+}
+
 // SubscribeAnimeApplication consumes the complete draft and commits the full owner set.
 func (s *Service) SubscribeAnimeApplication(ctx context.Context, input SubscribeAnimeInput, idempotencyKey string) (SubscribeResult, error) {
 	if err := validateIdempotencyKey(idempotencyKey); err != nil {
@@ -571,6 +616,12 @@ FOR UPDATE`, key).Scan(&existingHash, &existingSnapshot, &existingManagedAnimeID
 	}
 
 	draft := command.Draft
+	// One live subscription per provider entry: a second instance is made with
+	// duplicate, never with another subscribe. The guard runs after the replay
+	// lookup so a replayed key still returns its original result.
+	if err := rejectLiveProviderEntryTx(ctx, tx, draft); err != nil {
+		return SubscribeResult{}, err
+	}
 	animeID := uuid.NewString()
 	title := strings.TrimSpace(draft.Title)
 	providerTitle, err := providerTitleTx(ctx, tx, string(draft.Origin), draft.OriginEntryRef)
