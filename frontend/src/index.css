@@ -813,7 +813,8 @@ h1, h2, h3, h4, h5, h6 {
 
 .app-shell { display: flex; height: 100dvh; flex-direction: column; overflow: hidden; background: hsl(var(--background)); color: hsl(var(--foreground)); }
 .app-main { flex: 1 1 0%; overflow-y: auto; }
-.app-content { margin-left: auto; margin-right: auto; width: 100%; max-width: 77.5rem; padding: 1.5rem 1rem; }
+.app-content { width: 100%; padding: 1.5rem 1rem; }
+@media (min-width: 640px) { .app-content { padding-left: 1.5rem; padding-right: 1.5rem; } }
 @media (min-width: 768px) { .app-content { padding-left: 1.5rem; padding-right: 1.5rem; } }
 /* Phone: leave room for the floating tab bar at the bottom of the content. */
 @media (width <= 600px) { .app-content { padding-bottom: calc(6rem + env(safe-area-inset-bottom)); } }
@@ -1049,7 +1050,7 @@ h1, h2, h3, h4, h5, h6 {
 @media (min-width: 640px) { .catalog-grid-browse { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (min-width: 768px) { .catalog-grid-browse { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @media (min-width: 1024px) { .catalog-grid-browse { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
-@media (min-width: 1280px) { .catalog-grid-browse { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+@media (min-width: 1280px) { .catalog-grid-browse { grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); } }
 /* ===== TopNav / AccountMenu / LogDialog semantic classes =====
    Carries only the composed styles of these three components; the design tokens
    still all come from the :root / .dark blocks of index.css. Colors are always
