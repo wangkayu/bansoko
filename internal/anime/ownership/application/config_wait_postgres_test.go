@@ -15,8 +15,8 @@ import (
 	"bansoko/internal/transport/httpapi/generated"
 )
 
-// seedSubscriptionDownload seeds one running download of the anime's
-// subscription, completed and verified. With a hold its import waits for
+// seedSubscriptionDownload seeds one running automatic download of the
+// anime's subscription, completed and verified. With a hold its import waits for
 // configuration (the real wait owner function parked the plan) and the plan's
 // work item is returned; without one no plan exists yet.
 func seedSubscriptionDownload(t *testing.T, db *sql.DB, animeID, key, hold string) string {
@@ -43,6 +43,9 @@ FROM subscriptions WHERE managed_anime_id = $1`, animeID, key); err != nil {
 VALUES ('release-'||$1, 'source-'||$1, 'guid:'||$1, '{"title":"[Group] Wait Show - 01"}', '{}', '{}', 'accepted_pending_download', 'accepted')`, key)
 	acquisitionfixture.SeedObservedDownloadManifest(t, tx, "root-"+key, "task-"+key, "release-"+key, "download:"+key, `{}`, `{}`, "completed", `null`,
 		`[{"file_ref":"primary","ordinal":0,"relative_path":"Wait Show - 01.mkv","exact_size":7,"media_kind":"video","identity_evidence":{}}]`)
+	// The shared fixture accepts a one-shot root; the root is re-labelled as
+	// the automatic acquisition the subscription's RSS admission accepts.
+	exec(`UPDATE acquisitions SET entry_kind = 'automatic', request_namespace = 'auto_acquire_v1' WHERE id = 'root-'||$1`, key)
 	exec(`UPDATE releases SET download_task_id = 'task-'||$1 WHERE id = 'release-'||$1`, key)
 	exec(`INSERT INTO artifacts(id, download_task_id, acquisition_id, inventory_snapshot, fingerprint_snapshot, state, verified_at)
 VALUES ('artifact-'||$1, 'task-'||$1, 'root-'||$1, '{}', '{"fingerprints":[]}', 'verified', CURRENT_TIMESTAMP)`, key)
