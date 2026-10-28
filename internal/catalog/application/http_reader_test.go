@@ -237,7 +237,7 @@ func TestMikanHTTPReaderRecordsWarningForEmptyCatalog(t *testing.T) {
 	if err != nil || len(result.Entries) != 0 {
 		t.Fatalf("empty Mikan catalog failed: %+v err=%v", result, err)
 	}
-	if len(recorder.failures) != 1 || recorder.failures[0].Identity.ErrorCode != observabilityport.ErrorProviderParserEmpty {
+	if len(recorder.failures) != 1 || !isMikanParserFault(recorder.failures[0]) {
 		t.Fatalf("empty catalog warning = %+v", recorder.failures)
 	}
 	if len(recorder.routines) != 1 || recorder.routines[0].Identity.Outcome != observabilityport.RoutineOutcomeWarning || recorder.routines[0].Identity.ResultCode != observabilityport.RoutineResultProviderParserWarning {
@@ -259,11 +259,11 @@ func TestMikanHTTPReaderRecordsWarningForSchemaVersionChange(t *testing.T) {
 	if err != nil || len(result.Entries) != 1 {
 		t.Fatalf("schema-version Mikan catalog failed: %+v err=%v", result, err)
 	}
-	if len(recorder.failures) != 1 || recorder.failures[0].Identity.ErrorCode != observabilityport.ErrorProviderParserSchemaMismatch {
+	if len(recorder.failures) != 1 || !isMikanParserFault(recorder.failures[0]) {
 		t.Fatalf("schema catalog warning = %+v", recorder.failures)
 	}
-	if !strings.Contains(string(recorder.failures[0].Details), "mikan-season-html-v2") {
-		t.Fatalf("schema catalog warning details = %s", recorder.failures[0].Details)
+	if !strings.Contains(string(recorder.routines[0].Details), "mikan-season-html-v2") {
+		t.Fatalf("schema catalog warning details = %s", recorder.routines[0].Details)
 	}
 }
 
@@ -369,4 +369,9 @@ func TestMikanHTTPReaderClassifiesFailuresWithStableCodes(t *testing.T) {
 			t.Fatalf("want unreachable, got %v", err)
 		}
 	})
+}
+
+func isMikanParserFault(request observabilityport.DiagnosticFailureRequest) bool {
+	return request.Condition == (observabilityport.Condition{Kind: observabilityport.KindSite, Variant: observabilityport.VariantUnreadable}) &&
+		request.TargetID == observabilityport.SiteMikanParser
 }

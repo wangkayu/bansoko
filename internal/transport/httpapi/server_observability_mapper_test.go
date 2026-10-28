@@ -7,87 +7,36 @@ import (
 	"time"
 
 	observabilityapplication "bansoko/internal/observability/application"
-	"bansoko/internal/transport/httpapi/generated"
 )
 
-// TestMapDiagnosticEpisodeDetailsStatus proves the optional details payload is
-// always accompanied by an honest bounded status: decoded details are
-// available, absent details are unavailable, and stored details that no longer
-// decode into the contract shape are reported invalid — never silently
-// dropped, never serialised raw — with a bounded runtime event recorded.
-func TestMapDiagnosticEpisodeDetailsStatus(t *testing.T) {
-	occurredAt := time.Date(2026, 9, 12, 10, 0, 0, 0, time.UTC)
-	base := observabilityapplication.DiagnosticEpisode{
-		ID: "episode-1", Severity: "error", Component: "rss", Operation: "refresh",
-		ErrorCode: "rss_refresh_failed", ScopeKind: "subscription", ScopeID: "subscription-1",
-		FirstFailedAt: occurredAt, LastFailedAt: occurredAt, OccurrenceCount: 2,
-		LastError: "refresh failed", RetentionUntil: occurredAt.Add(30 * 24 * time.Hour),
+// TestMapDiagnosticEpisodeCarriesStructuredFactsOnly proves the wire episode
+// is built from the structured fields and never gains free text.
+func TestMapDiagnosticEpisodeCarriesStructuredFactsOnly(t *testing.T) {
+	at := time.Date(2026, 9, 12, 10, 0, 0, 0, time.UTC)
+	status := 503
+	via := "proxy"
+	settings := "metadata_connection"
+	mapped := mapDiagnosticEpisode(observabilityapplication.DiagnosticEpisode{
+		ID: "episode-1", Kind: "metadata", Variant: "auth_failed", Severity: "warning",
+		Target:        observabilityapplication.DiagnosticTarget{Kind: "metadata", ID: "tmdb", Name: "TMDB"},
+		Detail:        &observabilityapplication.DiagnosticDetail{ErrorClass: "http_status", HTTPStatus: &status, Via: &via},
+		Affected:      &observabilityapplication.DiagnosticAffected{Kind: "anime", Count: 4},
+		Recent:        []observabilityapplication.DiagnosticOccurrence{{At: at, Via: &via}},
+		Retry:         observabilityapplication.DiagnosticRetry{Mode: "settings", SettingsTarget: &settings},
+		FirstFailedAt: at, LastFailedAt: at, OccurrenceCount: 4, RetentionUntil: at.Add(14 * 24 * time.Hour),
+	})
+	if mapped.Affected == nil || mapped.Affected.Count != 4 || mapped.Retry.SettingsTarget == nil || mapped.Detail == nil || *mapped.Detail.HttpStatus != 503 {
+		t.Fatalf("structured facts lost: %+v", mapped)
 	}
-
-	t.Run("absent details are unavailable", func(t *testing.T) {
-		logger := &captureRuntimeLogger{}
-		mapped := mapDiagnosticEpisode(requestWithRuntimeLogger("req-unavailable", logger).Context(), base)
-		if mapped.DetailsStatus != generated.DiagnosticDetailsStatusUnavailable {
-			t.Fatalf("details_status = %q, want unavailable", mapped.DetailsStatus)
+	serialised, err := json.Marshal(mapped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, removed := range []string{"last_error", "error_code", "details_status", "scope_id", "component"} {
+		if strings.Contains(string(serialised), `"`+removed+`"`) {
+			t.Fatalf("removed field %q on the wire: %s", removed, serialised)
 		}
-		if mapped.Details != nil {
-			t.Fatalf("details must stay nil, got %+v", mapped.Details)
-		}
-		if len(logger.events) != 0 {
-			t.Fatalf("absent details must not log, got %+v", logger.events)
-		}
-	})
-
-	t.Run("decodable details are available", func(t *testing.T) {
-		episode := base
-		episode.Details = &observabilityapplication.DiagnosticDetails{
-			Raw: json.RawMessage(`{"reason_code":"http_403","reason_detail":"provider rejected the request"}`),
-		}
-		logger := &captureRuntimeLogger{}
-		mapped := mapDiagnosticEpisode(requestWithRuntimeLogger("req-available", logger).Context(), episode)
-		if mapped.DetailsStatus != generated.DiagnosticDetailsStatusAvailable {
-			t.Fatalf("details_status = %q, want available", mapped.DetailsStatus)
-		}
-		if mapped.Details == nil || mapped.Details.ReasonCode == nil || *mapped.Details.ReasonCode != "http_403" {
-			t.Fatalf("details must survive decoding, got %+v", mapped.Details)
-		}
-		if len(logger.events) != 0 {
-			t.Fatalf("decodable details must not log, got %+v", logger.events)
-		}
-	})
-
-	t.Run("undecodable details are invalid and withheld", func(t *testing.T) {
-		const rawDetails = `{"reason_code": 403, "safe_context": "not-an-object"}`
-		episode := base
-		episode.Details = &observabilityapplication.DiagnosticDetails{Raw: json.RawMessage(rawDetails)}
-		logger := &captureRuntimeLogger{}
-		mapped := mapDiagnosticEpisode(requestWithRuntimeLogger("req-invalid", logger).Context(), episode)
-		if mapped.DetailsStatus != generated.DiagnosticDetailsStatusInvalid {
-			t.Fatalf("details_status = %q, want invalid", mapped.DetailsStatus)
-		}
-		if mapped.Details != nil {
-			t.Fatalf("invalid details must be withheld, got %+v", mapped.Details)
-		}
-
-		serialised, err := json.Marshal(mapped)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(string(serialised), "not-an-object") || strings.Contains(string(serialised), `"reason_code":403`) {
-			t.Fatalf("raw details leaked into the contract response: %s", serialised)
-		}
-
-		if len(logger.events) != 1 {
-			t.Fatalf("runtime events = %d, want 1", len(logger.events))
-		}
-		event := logger.events[0]
-		if event.ReasonCode != "diagnostic_details_invalid" || event.ErrorClass != "diagnostic_details_decode_error" {
-			t.Fatalf("runtime event = %+v, want bounded decode evidence", event)
-		}
-		if strings.Contains(event.Message, "not-an-object") {
-			t.Fatalf("runtime event leaked raw details: %+v", event)
-		}
-	})
+	}
 }
 
 // TestMapObservabilityRecordProjectsContractAllowlist proves the raw record

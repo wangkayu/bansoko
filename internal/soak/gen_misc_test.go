@@ -240,11 +240,11 @@ SELECT 'ra-' || w, (ARRAY['catalog_refresh','provider_refresh','rss_refresh','me
        jsonb_build_object('pad', soak_ext.pad(w, 120)), %[1]s
 FROM generate_series(1, %[2]d) w`, g.baseSQL, p.Routines)
 	g.execf("diagnostic_episodes", `
-INSERT INTO diagnostic_episodes(id, severity, component, operation, error_code, scope_kind, scope_id, managed_anime_id, first_failed_at, last_failed_at,
-                                occurrence_count, last_error, details, succeeded_after_at, retention_until)
-SELECT 'de-' || w, CASE WHEN w %% 4 = 0 THEN 'error' ELSE 'warning' END, 'worker', 'rss_refresh', 'feed_unreachable', 'rss_source', 'src-' || w, NULL,
-       lf - interval '1 hour', lf, 1 + (w %% 20), 'feed unreachable',
-       NULL, CASE WHEN w %% 3 <> 0 THEN lf + interval '10 minutes' END,
+INSERT INTO diagnostic_episodes(id, kind, variant, severity, target_id, affected_ids, recent, first_failed_at, last_failed_at,
+                                occurrence_count, succeeded_after_at, retention_until)
+SELECT 'de-' || w, 'site', 'unreadable', CASE WHEN w %% 4 = 0 THEN 'error' ELSE 'warning' END, 'src-' || w, '{}', '[]'::jsonb,
+       lf - interval '1 hour', lf, 1 + (w %% 20),
+       CASE WHEN w %% 3 <> 0 THEN lf + interval '10 minutes' END,
        CASE WHEN w %% 3 <> 0 THEN lf + interval '10 minutes' + CASE WHEN w %% 7 = 0 THEN interval '-1 day' ELSE interval '14 days' END
             ELSE lf + interval '14 days' END
 FROM (SELECT w, %[1]s - make_interval(mins => 60 + (soak_ext.rnd('de', w) * 25 * 1440)::int) AS lf FROM generate_series(1, %[2]d) w) q`, g.baseSQL, p.Episodes)

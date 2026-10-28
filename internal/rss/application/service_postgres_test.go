@@ -564,20 +564,16 @@ func TestRefreshFailureOpensAndSuccessClosesDiagnosticEpisode(t *testing.T) {
 	}
 	outcome.AfterCommit(ctx)
 
-	var component, operation, errorCode, scopeKind, scopeID, animeID string
+	var kind, targetID string
 	var occurrences int
 	var succeededAfter sql.NullTime
 	if err := db.QueryRowContext(ctx, `
-SELECT component, operation, error_code, scope_kind, scope_id, COALESCE(managed_anime_id, ''),
-       occurrence_count, succeeded_after_at
-FROM diagnostic_episodes`).Scan(&component, &operation, &errorCode, &scopeKind, &scopeID, &animeID, &occurrences, &succeededAfter); err != nil {
+SELECT kind, target_id, occurrence_count, succeeded_after_at
+FROM diagnostic_episodes`).Scan(&kind, &targetID, &occurrences, &succeededAfter); err != nil {
 		t.Fatalf("read diagnostic episode: %v", err)
 	}
-	if component != "rss" || operation != "refresh" || errorCode != "rss_refresh_failed" ||
-		scopeKind != "rss_source" || scopeID != sourceID || animeID != "anime-rss-test" ||
-		occurrences != 1 || succeededAfter.Valid {
-		t.Fatalf("unexpected open episode: %s/%s/%s scope=%s/%s anime=%q count=%d succeeded=%v",
-			component, operation, errorCode, scopeKind, scopeID, animeID, occurrences, succeededAfter)
+	if kind != "internal" || targetID != "rss.refresh" || occurrences != 1 || succeededAfter.Valid {
+		t.Fatalf("unexpected open episode: %s/%s count=%d succeeded=%v", kind, targetID, occurrences, succeededAfter)
 	}
 
 	// A later successful refresh closes the open episode for the same identity.

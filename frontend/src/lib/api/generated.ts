@@ -1867,6 +1867,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/observability/runtime-log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The most recent runtime log lines, for attaching to a bug report. The lines are a bounded in-memory tail of what the process wrote to stdout (at most 500 lines and a byte cap, oldest dropped first); nothing is stored, and a restart empties it. Lines come oldest first. Only a signed-in web session may read it: an API token (and so MCP or any agent) gets 403 WEB_SESSION_REQUIRED whatever its scopes. */
+        get: operations["getRuntimeLog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/plugin-targets": {
         parameters: {
             query?: never;
@@ -6182,39 +6199,97 @@ export interface components {
         /** @enum {string} */
         DiagnosticSeverity: "warning" | "error";
         /**
-         * @description Bounded health of the optional details payload. available means the stored details decoded into the contract shape; unavailable means the episode carries no details; invalid means stored details failed to decode and were withheld instead of leaking raw bytes.
+         * @description What the condition is about. Internal product faults are not episodes; they are summarised on the first page of the list (see internal).
          * @enum {string}
          */
-        DiagnosticDetailsStatus: "available" | "unavailable" | "invalid";
+        DiagnosticConditionKind: "metadata" | "update" | "site" | "downloader" | "library" | "notify";
         /** @enum {string} */
-        DiagnosticScopeKind: "global" | "provider" | "subscription" | "rss_source" | "owner" | "worker";
-        DiagnosticDetails: {
-            reason_code?: string;
-            reason_detail?: string;
-            safe_context?: Record<string, never>;
+        DiagnosticConditionVariant: "unreachable" | "auth_failed" | "paused" | "unreadable" | "refresh_failed" | "not_writable" | "no_space" | "secret" | "template" | "request" | "address_rejected";
+        /**
+         * @description auto: the product retries on its own schedule. resume: paused work continues once the target answers. settings: the owner changes a setting first. manual: the owner triggers the retry.
+         * @enum {string}
+         */
+        DiagnosticRetryMode: "auto" | "resume" | "settings" | "manual";
+        /** @enum {string} */
+        DiagnosticSettingsTarget: "metadata_connection" | "downloader_connection" | "notification_target";
+        DiagnosticTarget: {
+            kind: components["schemas"]["DiagnosticConditionKind"];
+            id: string;
+            name: string;
+            /** @description Bare host name of the failing peer; never a URL, port or credential. */
+            host?: string;
         };
+        /** @description Structured fact of the latest failure; never upstream or error text. */
+        DiagnosticDetail: {
+            /** @enum {string} */
+            error_class: "timeout" | "connection_refused" | "connection_reset" | "dns" | "tls" | "http_status" | "unknown";
+            http_status?: number;
+            /** @enum {string} */
+            via?: "direct" | "proxy";
+        };
+        DiagnosticAffected: {
+            /** @enum {string} */
+            kind: "anime" | "task";
+            /** @description Distinct objects the condition kept from working (deduplicated). */
+            count: number;
+        };
+        DiagnosticOccurrence: {
+            /** Format: date-time */
+            at: string;
+            error_class?: string;
+            /** @enum {string} */
+            via?: "direct" | "proxy";
+            host?: string;
+        };
+        DiagnosticRetry: {
+            mode: components["schemas"]["DiagnosticRetryMode"];
+            settings_target?: components["schemas"]["DiagnosticSettingsTarget"];
+        };
+        /** @description One condition on one target. An open episode (succeeded_after_at null) is unique per kind and target; a recovered one is history until retention. */
         DiagnosticEpisode: {
             id: components["schemas"]["ID"];
-            severity: components["schemas"]["DiagnosticSeverity"];
-            component: string;
-            operation: string;
-            error_code: string;
-            scope_kind: components["schemas"]["DiagnosticScopeKind"];
-            scope_id: string;
-            managed_anime_id?: components["schemas"]["ID"] | null;
+            kind: components["schemas"]["DiagnosticConditionKind"];
+            variant: components["schemas"]["DiagnosticConditionVariant"];
+            target: components["schemas"]["DiagnosticTarget"];
+            detail?: components["schemas"]["DiagnosticDetail"];
+            affected?: components["schemas"]["DiagnosticAffected"];
+            /** @description Latest occurrences, newest first. */
+            recent: components["schemas"]["DiagnosticOccurrence"][];
             /** Format: date-time */
             first_failed_at: string;
             /** Format: date-time */
             last_failed_at: string;
-            occurrence_count: number;
-            /** @description Bounded diagnostic error text. The storage column allows 8192 characters, so the contract mirrors that bound; the read boundary re-redacts stored text and truncates by runes, and values written before the writer's redaction may already have collapsed to the redaction marker. */
-            last_error: string;
-            details?: components["schemas"]["DiagnosticDetails"] | null;
-            details_status: components["schemas"]["DiagnosticDetailsStatus"];
             /** Format: date-time */
             succeeded_after_at?: string | null;
+            occurrence_count: number;
+            retry: components["schemas"]["DiagnosticRetry"];
+            severity: components["schemas"]["DiagnosticSeverity"];
             /** Format: date-time */
             retention_until: string;
+        };
+        RuntimeLogLine: {
+            /** Format: date-time */
+            at: string;
+            /** @enum {string} */
+            level: "debug" | "info" | "warn" | "error";
+            message: string;
+            component?: string;
+            operation?: string;
+            outcome?: string;
+            reason_code?: string;
+            request_id?: string;
+            correlation_id?: string;
+            error_class?: string;
+        };
+        RuntimeLogPage: {
+            lines: components["schemas"]["RuntimeLogLine"][];
+        };
+        /** @description Open internal product faults folded into one entry for bug reports. last_request_id correlates with the runtime log. */
+        DiagnosticInternalSummary: {
+            occurrence_count: number;
+            /** Format: date-time */
+            last_failed_at: string;
+            last_request_id?: string;
         };
         /** @description Explicit per-contract projection of the four observability record sources. Each member is an allowlisted field set: storage-only columns such as plugin secret references are never selected, and the transport re-projects the stored payload through the typed member so a column added later cannot reach a client on its own. */
         ObservabilityRecord: components["schemas"]["RoutineRecord"] | components["schemas"]["BusinessRecord"] | components["schemas"]["AutomationRecord"] | components["schemas"]["PluginRecord"];
@@ -6255,7 +6330,9 @@ export interface components {
             next_cursor?: string | null;
         };
         DiagnosticEpisodePage: {
+            /** @description Open episodes first, then recovered ones, each group newest first. */
             episodes: components["schemas"]["DiagnosticEpisode"][];
+            internal?: components["schemas"]["DiagnosticInternalSummary"];
             next_cursor?: string | null;
         };
         /** @enum {string} */
@@ -11373,10 +11450,7 @@ export interface operations {
                 /** @description Opaque keyset pagination cursor. */
                 cursor?: components["parameters"]["Cursor"];
                 limit?: components["parameters"]["Limit"];
-                severity?: "warning" | "error";
-                component?: string;
-                from?: components["parameters"]["FromTime"];
-                to?: components["parameters"]["ToTime"];
+                state?: "open" | "recovered";
             };
             header?: never;
             path?: never;
@@ -11394,6 +11468,33 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getRuntimeLog: {
+        parameters: {
+            query?: {
+                /** @description all lines, warnings and errors, or errors only. */
+                level?: "all" | "warn" | "error";
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The runtime log tail. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeLogPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             422: components["responses"]["Unprocessable"];
         };
     };

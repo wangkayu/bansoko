@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
+	"syscall"
 	"time"
 
 	observabilityport "bansoko/internal/observability/port"
@@ -62,10 +64,31 @@ func (s *Service) finishTypedFailure(ctx context.Context, c workitems.Claim, cod
 	}
 	out := worker.Committed(c, workitems.OwnerResult{State: ownerStateFailed, ReasonCode: code, Reason: reason})
 	out.Disposition = disposition
-	return worker.WithAfterCommit(out, observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, s.logger, observabilityport.DiagnosticFailureRequest{
-		Identity: observabilityport.FileOperationFailure(), Severity: observabilityport.SeverityError,
-		ScopeID: c.Owner.ID, LastError: reason,
-	})), nil
+	return worker.WithAfterCommit(out, observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, s.logger, fileFailureRequest(cause, c.Owner.ID))), nil
+}
+
+// libraryTarget is the one library root the product writes to.
+const libraryTarget = "library"
+
+// fileFailureRequest maps a failed file operation onto the catalog. Only a
+// cause with a typed filesystem error becomes a library condition (read-only
+// or permission-denied is not_writable, a full disk is no_space); every other
+// file-operation failure is a product fault and stays internal.
+func fileFailureRequest(cause error, operationID string) observabilityport.DiagnosticFailureRequest {
+	variant := observabilityport.ConditionVariant("")
+	switch {
+	case errors.Is(cause, syscall.ENOSPC):
+		variant = observabilityport.VariantNoSpace
+	case errors.Is(cause, fs.ErrPermission), errors.Is(cause, syscall.EROFS):
+		variant = observabilityport.VariantNotWritable
+	}
+	if variant == "" {
+		return observabilityport.InternalFailure(observabilityport.InternalFileOperation, "")
+	}
+	return observabilityport.DiagnosticFailureRequest{
+		Condition: observabilityport.Condition{Kind: observabilityport.KindLibrary, Variant: variant},
+		Severity:  observabilityport.SeverityError, TargetID: libraryTarget, TargetName: libraryTarget, AffectedID: operationID,
+	}
 }
 
 func (s *Service) confirmTypedFailureCommitted(ctx context.Context, c workitems.Claim) (bool, error) {

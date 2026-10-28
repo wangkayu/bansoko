@@ -92,7 +92,7 @@ func TestDescribeNeverLeaksErrorText(t *testing.T) {
 type proxyRoundTripper struct{ via Via }
 
 func (p proxyRoundTripper) RoundTrip(*http.Request) (*http.Response, error) { return nil, nil }
-func (p proxyRoundTripper) OutboundVia(*http.Request) Via                     { return p.via }
+func (p proxyRoundTripper) OutboundVia(*http.Request) Via                   { return p.via }
 
 func TestViaOf(t *testing.T) {
 	req := request(t, "https://api.example.test/")

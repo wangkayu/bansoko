@@ -78,7 +78,8 @@ func newDeliveryRequest(t *testing.T, target string) *http.Request {
 func sendThrough(t *testing.T, client HTTPDoer, adapterKind, target string) attemptResult {
 	t.Helper()
 	handler := NewPluginDeliverHandler(nil, nil, nil, client, nil)
-	return handler.sendRequest(newDeliveryRequest(t, target), adapterKind, newSecretRedactor(""))
+	result, _ := handler.sendRequest(newDeliveryRequest(t, target), adapterKind, newSecretRedactor(""))
+	return result
 }
 
 func closedLoopbackAddress(t *testing.T) string {
@@ -390,7 +391,7 @@ func TestSendRequestRedactsTransportErrorText(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			handler := NewPluginDeliverHandler(nil, nil, nil, client, nil)
-			result := handler.sendRequest(newDeliveryRequest(t, "https://hook.example/send"), "webhook", newSecretRedactor(secret))
+			result, _ := handler.sendRequest(newDeliveryRequest(t, "https://hook.example/send"), "webhook", newSecretRedactor(secret))
 			if strings.Contains(result.err, secret) {
 				t.Fatalf("secret leaked into the attempt error: %q", result.err)
 			}

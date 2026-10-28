@@ -32,38 +32,76 @@ type RecordPage struct {
 	NextCursor *string
 }
 
+// DiagnosticQuery selects diagnostic episodes. State is "open" or "recovered";
+// nil lists both groups, open first.
 type DiagnosticQuery struct {
-	Cursor    *string
-	Limit     *int
-	Severity  *string
-	Component *string
-	From      *time.Time
-	To        *time.Time
+	Cursor *string
+	Limit  *int
+	State  *string
 }
 
-type DiagnosticDetails struct {
-	Raw json.RawMessage
+// DiagnosticTarget is the thing an episode is about.
+type DiagnosticTarget struct {
+	Kind string
+	ID   string
+	Name string
+	Host *string
+}
+
+// DiagnosticDetail is the structured fact of the latest failure.
+type DiagnosticDetail struct {
+	ErrorClass string
+	HTTPStatus *int
+	Via        *string
+}
+
+// DiagnosticAffected counts the distinct objects a condition kept from working.
+type DiagnosticAffected struct {
+	Kind  string
+	Count int
+}
+
+// DiagnosticOccurrence is one entry of an episode's bounded recent history.
+type DiagnosticOccurrence struct {
+	At         time.Time
+	ErrorClass *string
+	Via        *string
+	Host       *string
+}
+
+// DiagnosticRetry says what the product does about the condition.
+type DiagnosticRetry struct {
+	Mode           string
+	SettingsTarget *string
 }
 
 type DiagnosticEpisode struct {
-	Component        string
-	Details          *DiagnosticDetails
-	ErrorCode        string
-	FirstFailedAt    time.Time
 	ID               string
-	LastError        string
+	Kind             string
+	Variant          string
+	Target           DiagnosticTarget
+	Detail           *DiagnosticDetail
+	Affected         *DiagnosticAffected
+	Recent           []DiagnosticOccurrence
+	FirstFailedAt    time.Time
 	LastFailedAt     time.Time
-	ManagedAnimeID   *string
-	OccurrenceCount  int
-	Operation        string
-	RetentionUntil   time.Time
-	ScopeID          string
-	ScopeKind        string
-	Severity         string
 	SucceededAfterAt *time.Time
+	OccurrenceCount  int
+	Retry            DiagnosticRetry
+	Severity         string
+	RetentionUntil   time.Time
+}
+
+// DiagnosticInternal folds every open internal episode into one summary.
+type DiagnosticInternal struct {
+	OccurrenceCount int
+	LastFailedAt    time.Time
+	LastRequestID   *string
 }
 
 type DiagnosticPage struct {
 	Episodes   []DiagnosticEpisode
 	NextCursor *string
+	// Internal is set on the first page when internal errors are open.
+	Internal *DiagnosticInternal
 }

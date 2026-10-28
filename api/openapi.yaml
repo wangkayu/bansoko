@@ -4725,26 +4725,20 @@ paths:
         group: records
         write: false
         description: >-
-          Page through persisted diagnostic episodes (warnings and errors raised by
-          system components), newest first. Filter by severity, component or time
-          range.
+          Page through diagnostic episodes: conditions (a downloader that cannot
+          be reached, a site that is paused, ...) with the target, structured
+          detail, affected count and retry mode. Open episodes come first, then
+          recovered ones. The first page also carries a summary of open internal
+          faults. Filter with state open or recovered.
       parameters:
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
-        - name: severity
+        - name: state
           in: query
           required: false
           schema:
             type: string
-            enum: [warning, error]
-        - name: component
-          in: query
-          required: false
-          schema:
-            type: string
-            maxLength: 128
-        - $ref: '#/components/parameters/FromTime'
-        - $ref: '#/components/parameters/ToTime'
+            enum: [open, recovered]
       responses:
         '200':
           description: Persisted bounded diagnostic episodes.
@@ -4754,6 +4748,49 @@ paths:
                 $ref: '#/components/schemas/DiagnosticEpisodePage'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+  /observability/runtime-log:
+    get:
+      tags: [Observability]
+      operationId: getRuntimeLog
+      x-scope: read
+      x-surface-keep: "owner web UI: raw-log view under the diagnostics tab; the frontend caller lands with the log dialog"
+      description: >-
+        The most recent runtime log lines, for attaching to a bug report. The
+        lines are a bounded in-memory tail of what the process wrote to stdout
+        (at most 500 lines and a byte cap, oldest dropped first); nothing is
+        stored, and a restart empties it. Lines come oldest first. Only a
+        signed-in web session may read it: an API token (and so MCP or any
+        agent) gets 403 WEB_SESSION_REQUIRED whatever its scopes.
+      parameters:
+        - name: level
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [all, warn, error]
+            default: all
+          description: all lines, warnings and errors, or errors only.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 200
+      responses:
+        '200':
+          description: The runtime log tail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeLogPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '422':
           $ref: '#/components/responses/Unprocessable'
   /plugin-targets:
@@ -15470,93 +15507,206 @@ components:
     DiagnosticSeverity:
       type: string
       enum: [warning, error]
-    DiagnosticDetailsStatus:
+    DiagnosticConditionKind:
       type: string
-      enum: [available, unavailable, invalid]
+      enum: [metadata, update, site, downloader, library, notify]
       description: >-
-        Bounded health of the optional details payload. available means the
-        stored details decoded into the contract shape; unavailable means the
-        episode carries no details; invalid means stored details failed to
-        decode and were withheld instead of leaking raw bytes.
-    DiagnosticScopeKind:
+        What the condition is about. Internal product faults are not episodes;
+        they are summarised on the first page of the list (see internal).
+    DiagnosticConditionVariant:
       type: string
-      enum: [global, provider, subscription, rss_source, owner, worker]
-    DiagnosticDetails:
+      enum: [unreachable, auth_failed, paused, unreadable, refresh_failed, not_writable, no_space, secret, template, request, address_rejected]
+    DiagnosticRetryMode:
+      type: string
+      enum: [auto, resume, settings, manual]
+      description: >-
+        auto: the product retries on its own schedule. resume: paused work
+        continues once the target answers. settings: the owner changes a
+        setting first. manual: the owner triggers the retry.
+    DiagnosticSettingsTarget:
+      type: string
+      enum: [metadata_connection, downloader_connection, notification_target]
+    DiagnosticTarget:
       type: object
       additionalProperties: false
+      required: [kind, id, name]
       properties:
-        reason_code:
+        kind:
+          $ref: '#/components/schemas/DiagnosticConditionKind'
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        name:
           type: string
           maxLength: 128
-        reason_detail:
+        host:
           type: string
-          maxLength: 2048
-        safe_context:
-          type: object
-          additionalProperties: false
+          maxLength: 253
+          description: Bare host name of the failing peer; never a URL, port or credential.
+    DiagnosticDetail:
+      type: object
+      additionalProperties: false
+      required: [error_class]
+      description: Structured fact of the latest failure; never upstream or error text.
+      properties:
+        error_class:
+          type: string
+          enum: [timeout, connection_refused, connection_reset, dns, tls, http_status, unknown]
+        http_status:
+          type: integer
+          minimum: 100
+          maximum: 599
+        via:
+          type: string
+          enum: [direct, proxy]
+    DiagnosticAffected:
+      type: object
+      additionalProperties: false
+      required: [kind, count]
+      properties:
+        kind:
+          type: string
+          enum: [anime, task]
+        count:
+          type: integer
+          minimum: 1
+          description: Distinct objects the condition kept from working (deduplicated).
+    DiagnosticOccurrence:
+      type: object
+      additionalProperties: false
+      required: [at]
+      properties:
+        at:
+          type: string
+          format: date-time
+        error_class:
+          type: string
+          maxLength: 32
+        via:
+          type: string
+          enum: [direct, proxy]
+        host:
+          type: string
+          maxLength: 253
+    DiagnosticRetry:
+      type: object
+      additionalProperties: false
+      required: [mode]
+      properties:
+        mode:
+          $ref: '#/components/schemas/DiagnosticRetryMode'
+        settings_target:
+          $ref: '#/components/schemas/DiagnosticSettingsTarget'
     DiagnosticEpisode:
       type: object
       additionalProperties: false
-      required: [id, severity, component, operation, error_code, scope_kind, scope_id, first_failed_at, last_failed_at, occurrence_count, last_error, details_status, retention_until]
+      required: [id, kind, variant, target, recent, first_failed_at, last_failed_at, occurrence_count, retry, severity, retention_until]
+      description: >-
+        One condition on one target. An open episode (succeeded_after_at null)
+        is unique per kind and target; a recovered one is history until
+        retention.
       properties:
         id:
           $ref: '#/components/schemas/ID'
-        severity:
-          $ref: '#/components/schemas/DiagnosticSeverity'
-        component:
-          type: string
-          minLength: 1
-          maxLength: 128
-        operation:
-          type: string
-          minLength: 1
-          maxLength: 128
-        error_code:
-          type: string
-          minLength: 1
-          maxLength: 128
-        scope_kind:
-          $ref: '#/components/schemas/DiagnosticScopeKind'
-        scope_id:
-          type: string
-          minLength: 1
-          maxLength: 256
-        managed_anime_id:
-          allOf:
-            - $ref: '#/components/schemas/ID'
-          nullable: true
+        kind:
+          $ref: '#/components/schemas/DiagnosticConditionKind'
+        variant:
+          $ref: '#/components/schemas/DiagnosticConditionVariant'
+        target:
+          $ref: '#/components/schemas/DiagnosticTarget'
+        detail:
+          $ref: '#/components/schemas/DiagnosticDetail'
+        affected:
+          $ref: '#/components/schemas/DiagnosticAffected'
+        recent:
+          type: array
+          maxItems: 5
+          description: Latest occurrences, newest first.
+          items:
+            $ref: '#/components/schemas/DiagnosticOccurrence'
         first_failed_at:
           type: string
           format: date-time
         last_failed_at:
           type: string
           format: date-time
-        occurrence_count:
-          type: integer
-          minimum: 1
-        last_error:
-          type: string
-          minLength: 1
-          maxLength: 8192
-          description: >-
-            Bounded diagnostic error text. The storage column allows 8192
-            characters, so the contract mirrors that bound; the read boundary
-            re-redacts stored text and truncates by runes, and values written
-            before the writer's redaction may already have collapsed to the
-            redaction marker.
-        details:
-          allOf:
-            - $ref: '#/components/schemas/DiagnosticDetails'
-          nullable: true
-        details_status:
-          $ref: '#/components/schemas/DiagnosticDetailsStatus'
         succeeded_after_at:
           type: string
           format: date-time
           nullable: true
+        occurrence_count:
+          type: integer
+          minimum: 1
+        retry:
+          $ref: '#/components/schemas/DiagnosticRetry'
+        severity:
+          $ref: '#/components/schemas/DiagnosticSeverity'
         retention_until:
           type: string
           format: date-time
+    RuntimeLogLine:
+      type: object
+      additionalProperties: false
+      required: [at, level, message]
+      properties:
+        at:
+          type: string
+          format: date-time
+        level:
+          type: string
+          enum: [debug, info, warn, error]
+        message:
+          type: string
+          maxLength: 1024
+        component:
+          type: string
+          maxLength: 512
+        operation:
+          type: string
+          maxLength: 512
+        outcome:
+          type: string
+          maxLength: 512
+        reason_code:
+          type: string
+          maxLength: 512
+        request_id:
+          type: string
+          maxLength: 128
+        correlation_id:
+          type: string
+          maxLength: 512
+        error_class:
+          type: string
+          maxLength: 512
+    RuntimeLogPage:
+      type: object
+      additionalProperties: false
+      required: [lines]
+      properties:
+        lines:
+          type: array
+          maxItems: 500
+          items:
+            $ref: '#/components/schemas/RuntimeLogLine'
+    DiagnosticInternalSummary:
+      type: object
+      additionalProperties: false
+      required: [occurrence_count, last_failed_at]
+      description: >-
+        Open internal product faults folded into one entry for bug reports.
+        last_request_id correlates with the runtime log.
+      properties:
+        occurrence_count:
+          type: integer
+          minimum: 1
+        last_failed_at:
+          type: string
+          format: date-time
+        last_request_id:
+          type: string
+          maxLength: 128
     ObservabilityRecord:
       description: >-
         Explicit per-contract projection of the four observability record
@@ -15638,8 +15788,11 @@ components:
         episodes:
           type: array
           maxItems: 100
+          description: Open episodes first, then recovered ones, each group newest first.
           items:
             $ref: '#/components/schemas/DiagnosticEpisode'
+        internal:
+          $ref: '#/components/schemas/DiagnosticInternalSummary'
         next_cursor:
           type: string
           nullable: true

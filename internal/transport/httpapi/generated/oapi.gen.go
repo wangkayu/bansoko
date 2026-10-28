@@ -582,21 +582,73 @@ const (
 	DeploymentIdentitySelectedSourceOverlay DeploymentIdentitySelectedSource = "overlay"
 )
 
-// Defines values for DiagnosticDetailsStatus.
+// Defines values for DiagnosticAffectedKind.
 const (
-	DiagnosticDetailsStatusAvailable   DiagnosticDetailsStatus = "available"
-	DiagnosticDetailsStatusInvalid     DiagnosticDetailsStatus = "invalid"
-	DiagnosticDetailsStatusUnavailable DiagnosticDetailsStatus = "unavailable"
+	DiagnosticAffectedKindAnime DiagnosticAffectedKind = "anime"
+	DiagnosticAffectedKindTask  DiagnosticAffectedKind = "task"
 )
 
-// Defines values for DiagnosticScopeKind.
+// Defines values for DiagnosticConditionKind.
 const (
-	DiagnosticScopeKindGlobal       DiagnosticScopeKind = "global"
-	DiagnosticScopeKindOwner        DiagnosticScopeKind = "owner"
-	DiagnosticScopeKindProvider     DiagnosticScopeKind = "provider"
-	DiagnosticScopeKindRssSource    DiagnosticScopeKind = "rss_source"
-	DiagnosticScopeKindSubscription DiagnosticScopeKind = "subscription"
-	DiagnosticScopeKindWorker       DiagnosticScopeKind = "worker"
+	DiagnosticConditionKindDownloader DiagnosticConditionKind = "downloader"
+	DiagnosticConditionKindLibrary    DiagnosticConditionKind = "library"
+	DiagnosticConditionKindMetadata   DiagnosticConditionKind = "metadata"
+	DiagnosticConditionKindNotify     DiagnosticConditionKind = "notify"
+	DiagnosticConditionKindSite       DiagnosticConditionKind = "site"
+	DiagnosticConditionKindUpdate     DiagnosticConditionKind = "update"
+)
+
+// Defines values for DiagnosticConditionVariant.
+const (
+	DiagnosticConditionVariantAddressRejected DiagnosticConditionVariant = "address_rejected"
+	DiagnosticConditionVariantAuthFailed      DiagnosticConditionVariant = "auth_failed"
+	DiagnosticConditionVariantNoSpace         DiagnosticConditionVariant = "no_space"
+	DiagnosticConditionVariantNotWritable     DiagnosticConditionVariant = "not_writable"
+	DiagnosticConditionVariantPaused          DiagnosticConditionVariant = "paused"
+	DiagnosticConditionVariantRefreshFailed   DiagnosticConditionVariant = "refresh_failed"
+	DiagnosticConditionVariantRequest         DiagnosticConditionVariant = "request"
+	DiagnosticConditionVariantSecret          DiagnosticConditionVariant = "secret"
+	DiagnosticConditionVariantTemplate        DiagnosticConditionVariant = "template"
+	DiagnosticConditionVariantUnreachable     DiagnosticConditionVariant = "unreachable"
+	DiagnosticConditionVariantUnreadable      DiagnosticConditionVariant = "unreadable"
+)
+
+// Defines values for DiagnosticDetailErrorClass.
+const (
+	DiagnosticDetailErrorClassConnectionRefused DiagnosticDetailErrorClass = "connection_refused"
+	DiagnosticDetailErrorClassConnectionReset   DiagnosticDetailErrorClass = "connection_reset"
+	DiagnosticDetailErrorClassDns               DiagnosticDetailErrorClass = "dns"
+	DiagnosticDetailErrorClassHttpStatus        DiagnosticDetailErrorClass = "http_status"
+	DiagnosticDetailErrorClassTimeout           DiagnosticDetailErrorClass = "timeout"
+	DiagnosticDetailErrorClassTls               DiagnosticDetailErrorClass = "tls"
+	DiagnosticDetailErrorClassUnknown           DiagnosticDetailErrorClass = "unknown"
+)
+
+// Defines values for DiagnosticDetailVia.
+const (
+	DiagnosticDetailViaDirect DiagnosticDetailVia = "direct"
+	DiagnosticDetailViaProxy  DiagnosticDetailVia = "proxy"
+)
+
+// Defines values for DiagnosticOccurrenceVia.
+const (
+	DiagnosticOccurrenceViaDirect DiagnosticOccurrenceVia = "direct"
+	DiagnosticOccurrenceViaProxy  DiagnosticOccurrenceVia = "proxy"
+)
+
+// Defines values for DiagnosticRetryMode.
+const (
+	DiagnosticRetryModeAuto     DiagnosticRetryMode = "auto"
+	DiagnosticRetryModeManual   DiagnosticRetryMode = "manual"
+	DiagnosticRetryModeResume   DiagnosticRetryMode = "resume"
+	DiagnosticRetryModeSettings DiagnosticRetryMode = "settings"
+)
+
+// Defines values for DiagnosticSettingsTarget.
+const (
+	DiagnosticSettingsTargetDownloaderConnection DiagnosticSettingsTarget = "downloader_connection"
+	DiagnosticSettingsTargetMetadataConnection   DiagnosticSettingsTarget = "metadata_connection"
+	DiagnosticSettingsTargetNotificationTarget   DiagnosticSettingsTarget = "notification_target"
 )
 
 // Defines values for DiagnosticSeverity.
@@ -2020,6 +2072,14 @@ const (
 	RoutineRecordRecordTypeRoutine RoutineRecordRecordType = "routine"
 )
 
+// Defines values for RuntimeLogLineLevel.
+const (
+	RuntimeLogLineLevelDebug RuntimeLogLineLevel = "debug"
+	RuntimeLogLineLevelError RuntimeLogLineLevel = "error"
+	RuntimeLogLineLevelInfo  RuntimeLogLineLevel = "info"
+	RuntimeLogLineLevelWarn  RuntimeLogLineLevel = "warn"
+)
+
 // Defines values for SOCKS5RouteKind.
 const (
 	SOCKS5RouteKindSocks5 SOCKS5RouteKind = "socks5"
@@ -2523,10 +2583,10 @@ const (
 	SearchMetadataParamsProviderTmdb SearchMetadataParamsProvider = "tmdb"
 )
 
-// Defines values for ListObservabilityDiagnosticsParamsSeverity.
+// Defines values for ListObservabilityDiagnosticsParamsState.
 const (
-	ListObservabilityDiagnosticsParamsSeverityError   ListObservabilityDiagnosticsParamsSeverity = "error"
-	ListObservabilityDiagnosticsParamsSeverityWarning ListObservabilityDiagnosticsParamsSeverity = "warning"
+	ListObservabilityDiagnosticsParamsStateOpen      ListObservabilityDiagnosticsParamsState = "open"
+	ListObservabilityDiagnosticsParamsStateRecovered ListObservabilityDiagnosticsParamsState = "recovered"
 )
 
 // Defines values for ListObservabilityRecordsParamsKind.
@@ -2535,6 +2595,13 @@ const (
 	ListObservabilityRecordsParamsKindBusiness   ListObservabilityRecordsParamsKind = "business"
 	ListObservabilityRecordsParamsKindPlugin     ListObservabilityRecordsParamsKind = "plugin"
 	ListObservabilityRecordsParamsKindRoutine    ListObservabilityRecordsParamsKind = "routine"
+)
+
+// Defines values for GetRuntimeLogParamsLevel.
+const (
+	GetRuntimeLogParamsLevelAll   GetRuntimeLogParamsLevel = "all"
+	GetRuntimeLogParamsLevelError GetRuntimeLogParamsLevel = "error"
+	GetRuntimeLogParamsLevelWarn  GetRuntimeLogParamsLevel = "warn"
 )
 
 // Defines values for ListPluginDeliveriesParamsSourceOwnerType.
@@ -4131,51 +4198,113 @@ type DeploymentIdentity struct {
 // DeploymentIdentitySelectedSource Whether the served tree comes from the base image or the updates-volume overlay.
 type DeploymentIdentitySelectedSource string
 
-// DiagnosticDetails defines model for DiagnosticDetails.
-type DiagnosticDetails struct {
-	ReasonCode   *string                 `json:"reason_code,omitempty"`
-	ReasonDetail *string                 `json:"reason_detail,omitempty"`
-	SafeContext  *map[string]interface{} `json:"safe_context,omitempty"`
+// DiagnosticAffected defines model for DiagnosticAffected.
+type DiagnosticAffected struct {
+	// Count Distinct objects the condition kept from working (deduplicated).
+	Count int                    `json:"count"`
+	Kind  DiagnosticAffectedKind `json:"kind"`
 }
 
-// DiagnosticDetailsStatus Bounded health of the optional details payload. available means the stored details decoded into the contract shape; unavailable means the episode carries no details; invalid means stored details failed to decode and were withheld instead of leaking raw bytes.
-type DiagnosticDetailsStatus string
+// DiagnosticAffectedKind defines model for DiagnosticAffected.Kind.
+type DiagnosticAffectedKind string
 
-// DiagnosticEpisode defines model for DiagnosticEpisode.
+// DiagnosticConditionKind What the condition is about. Internal product faults are not episodes; they are summarised on the first page of the list (see internal).
+type DiagnosticConditionKind string
+
+// DiagnosticConditionVariant defines model for DiagnosticConditionVariant.
+type DiagnosticConditionVariant string
+
+// DiagnosticDetail Structured fact of the latest failure; never upstream or error text.
+type DiagnosticDetail struct {
+	ErrorClass DiagnosticDetailErrorClass `json:"error_class"`
+	HttpStatus *int                       `json:"http_status,omitempty"`
+	Via        *DiagnosticDetailVia       `json:"via,omitempty"`
+}
+
+// DiagnosticDetailErrorClass defines model for DiagnosticDetail.ErrorClass.
+type DiagnosticDetailErrorClass string
+
+// DiagnosticDetailVia defines model for DiagnosticDetail.Via.
+type DiagnosticDetailVia string
+
+// DiagnosticEpisode One condition on one target. An open episode (succeeded_after_at null) is unique per kind and target; a recovered one is history until retention.
 type DiagnosticEpisode struct {
-	Component string             `json:"component"`
-	Details   *DiagnosticDetails `json:"details"`
+	Affected *DiagnosticAffected `json:"affected,omitempty"`
 
-	// DetailsStatus Bounded health of the optional details payload. available means the stored details decoded into the contract shape; unavailable means the episode carries no details; invalid means stored details failed to decode and were withheld instead of leaking raw bytes.
-	DetailsStatus DiagnosticDetailsStatus `json:"details_status"`
-	ErrorCode     string                  `json:"error_code"`
-	FirstFailedAt time.Time               `json:"first_failed_at"`
-	Id            ID                      `json:"id"`
+	// Detail Structured fact of the latest failure; never upstream or error text.
+	Detail        *DiagnosticDetail `json:"detail,omitempty"`
+	FirstFailedAt time.Time         `json:"first_failed_at"`
+	Id            ID                `json:"id"`
 
-	// LastError Bounded diagnostic error text. The storage column allows 8192 characters, so the contract mirrors that bound; the read boundary re-redacts stored text and truncates by runes, and values written before the writer's redaction may already have collapsed to the redaction marker.
-	LastError        string              `json:"last_error"`
-	LastFailedAt     time.Time           `json:"last_failed_at"`
-	ManagedAnimeId   *ID                 `json:"managed_anime_id"`
-	OccurrenceCount  int                 `json:"occurrence_count"`
-	Operation        string              `json:"operation"`
-	RetentionUntil   time.Time           `json:"retention_until"`
-	ScopeId          string              `json:"scope_id"`
-	ScopeKind        DiagnosticScopeKind `json:"scope_kind"`
-	Severity         DiagnosticSeverity  `json:"severity"`
-	SucceededAfterAt *time.Time          `json:"succeeded_after_at"`
+	// Kind What the condition is about. Internal product faults are not episodes; they are summarised on the first page of the list (see internal).
+	Kind            DiagnosticConditionKind `json:"kind"`
+	LastFailedAt    time.Time               `json:"last_failed_at"`
+	OccurrenceCount int                     `json:"occurrence_count"`
+
+	// Recent Latest occurrences, newest first.
+	Recent           []DiagnosticOccurrence     `json:"recent"`
+	RetentionUntil   time.Time                  `json:"retention_until"`
+	Retry            DiagnosticRetry            `json:"retry"`
+	Severity         DiagnosticSeverity         `json:"severity"`
+	SucceededAfterAt *time.Time                 `json:"succeeded_after_at"`
+	Target           DiagnosticTarget           `json:"target"`
+	Variant          DiagnosticConditionVariant `json:"variant"`
 }
 
 // DiagnosticEpisodePage defines model for DiagnosticEpisodePage.
 type DiagnosticEpisodePage struct {
-	Episodes   []DiagnosticEpisode `json:"episodes"`
-	NextCursor *string             `json:"next_cursor"`
+	// Episodes Open episodes first, then recovered ones, each group newest first.
+	Episodes []DiagnosticEpisode `json:"episodes"`
+
+	// Internal Open internal product faults folded into one entry for bug reports. last_request_id correlates with the runtime log.
+	Internal   *DiagnosticInternalSummary `json:"internal,omitempty"`
+	NextCursor *string                    `json:"next_cursor"`
 }
 
-// DiagnosticScopeKind defines model for DiagnosticScopeKind.
-type DiagnosticScopeKind string
+// DiagnosticInternalSummary Open internal product faults folded into one entry for bug reports. last_request_id correlates with the runtime log.
+type DiagnosticInternalSummary struct {
+	LastFailedAt    time.Time `json:"last_failed_at"`
+	LastRequestId   *string   `json:"last_request_id,omitempty"`
+	OccurrenceCount int       `json:"occurrence_count"`
+}
+
+// DiagnosticOccurrence defines model for DiagnosticOccurrence.
+type DiagnosticOccurrence struct {
+	At         time.Time                `json:"at"`
+	ErrorClass *string                  `json:"error_class,omitempty"`
+	Host       *string                  `json:"host,omitempty"`
+	Via        *DiagnosticOccurrenceVia `json:"via,omitempty"`
+}
+
+// DiagnosticOccurrenceVia defines model for DiagnosticOccurrence.Via.
+type DiagnosticOccurrenceVia string
+
+// DiagnosticRetry defines model for DiagnosticRetry.
+type DiagnosticRetry struct {
+	// Mode auto: the product retries on its own schedule. resume: paused work continues once the target answers. settings: the owner changes a setting first. manual: the owner triggers the retry.
+	Mode           DiagnosticRetryMode       `json:"mode"`
+	SettingsTarget *DiagnosticSettingsTarget `json:"settings_target,omitempty"`
+}
+
+// DiagnosticRetryMode auto: the product retries on its own schedule. resume: paused work continues once the target answers. settings: the owner changes a setting first. manual: the owner triggers the retry.
+type DiagnosticRetryMode string
+
+// DiagnosticSettingsTarget defines model for DiagnosticSettingsTarget.
+type DiagnosticSettingsTarget string
 
 // DiagnosticSeverity defines model for DiagnosticSeverity.
 type DiagnosticSeverity string
+
+// DiagnosticTarget defines model for DiagnosticTarget.
+type DiagnosticTarget struct {
+	// Host Bare host name of the failing peer; never a URL, port or credential.
+	Host *string `json:"host,omitempty"`
+	Id   string  `json:"id"`
+
+	// Kind What the condition is about. Internal product faults are not episodes; they are summarised on the first page of the list (see internal).
+	Kind DiagnosticConditionKind `json:"kind"`
+	Name string                  `json:"name"`
+}
 
 // DirectRoute defines model for DirectRoute.
 type DirectRoute struct {
@@ -7973,6 +8102,28 @@ type RulesSections struct {
 	TagFilters    *TagFilterRulesOverride     `json:"tag_filters,omitempty"`
 }
 
+// RuntimeLogLine defines model for RuntimeLogLine.
+type RuntimeLogLine struct {
+	At            time.Time           `json:"at"`
+	Component     *string             `json:"component,omitempty"`
+	CorrelationId *string             `json:"correlation_id,omitempty"`
+	ErrorClass    *string             `json:"error_class,omitempty"`
+	Level         RuntimeLogLineLevel `json:"level"`
+	Message       string              `json:"message"`
+	Operation     *string             `json:"operation,omitempty"`
+	Outcome       *string             `json:"outcome,omitempty"`
+	ReasonCode    *string             `json:"reason_code,omitempty"`
+	RequestId     *string             `json:"request_id,omitempty"`
+}
+
+// RuntimeLogLineLevel defines model for RuntimeLogLine.Level.
+type RuntimeLogLineLevel string
+
+// RuntimeLogPage defines model for RuntimeLogPage.
+type RuntimeLogPage struct {
+	Lines []RuntimeLogLine `json:"lines"`
+}
+
 // SOCKS5Route defines model for SOCKS5Route.
 type SOCKS5Route struct {
 	CredentialConfigured bool            `json:"credential_configured"`
@@ -9374,16 +9525,13 @@ type SaveNamingVarsVersionParams struct {
 // ListObservabilityDiagnosticsParams defines parameters for ListObservabilityDiagnostics.
 type ListObservabilityDiagnosticsParams struct {
 	// Cursor Opaque keyset pagination cursor.
-	Cursor    *Cursor                                     `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit     *Limit                                      `form:"limit,omitempty" json:"limit,omitempty"`
-	Severity  *ListObservabilityDiagnosticsParamsSeverity `form:"severity,omitempty" json:"severity,omitempty"`
-	Component *string                                     `form:"component,omitempty" json:"component,omitempty"`
-	From      *FromTime                                   `form:"from,omitempty" json:"from,omitempty"`
-	To        *ToTime                                     `form:"to,omitempty" json:"to,omitempty"`
+	Cursor *Cursor                                  `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *Limit                                   `form:"limit,omitempty" json:"limit,omitempty"`
+	State  *ListObservabilityDiagnosticsParamsState `form:"state,omitempty" json:"state,omitempty"`
 }
 
-// ListObservabilityDiagnosticsParamsSeverity defines parameters for ListObservabilityDiagnostics.
-type ListObservabilityDiagnosticsParamsSeverity string
+// ListObservabilityDiagnosticsParamsState defines parameters for ListObservabilityDiagnostics.
+type ListObservabilityDiagnosticsParamsState string
 
 // ListObservabilityRecordsParams defines parameters for ListObservabilityRecords.
 type ListObservabilityRecordsParams struct {
@@ -9407,6 +9555,16 @@ type ListObservabilityRecordsParams struct {
 
 // ListObservabilityRecordsParamsKind defines parameters for ListObservabilityRecords.
 type ListObservabilityRecordsParamsKind string
+
+// GetRuntimeLogParams defines parameters for GetRuntimeLog.
+type GetRuntimeLogParams struct {
+	// Level all lines, warnings and errors, or errors only.
+	Level *GetRuntimeLogParamsLevel `form:"level,omitempty" json:"level,omitempty"`
+	Limit *int                      `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// GetRuntimeLogParamsLevel defines parameters for GetRuntimeLog.
+type GetRuntimeLogParamsLevel string
 
 // AcquireSeedOnceParams defines parameters for AcquireSeedOnce.
 type AcquireSeedOnceParams struct {
@@ -11924,6 +12082,9 @@ type ServerInterface interface {
 
 	// (GET /observability/records)
 	ListObservabilityRecords(w http.ResponseWriter, r *http.Request, params ListObservabilityRecordsParams)
+
+	// (GET /observability/runtime-log)
+	GetRuntimeLog(w http.ResponseWriter, r *http.Request, params GetRuntimeLogParams)
 
 	// (POST /one-shot-acquisitions)
 	AcquireSeedOnce(w http.ResponseWriter, r *http.Request, params AcquireSeedOnceParams)
@@ -17148,35 +17309,11 @@ func (siw *ServerInterfaceWrapper) ListObservabilityDiagnostics(w http.ResponseW
 		return
 	}
 
-	// ------------- Optional query parameter "severity" -------------
+	// ------------- Optional query parameter "state" -------------
 
-	err = runtime.BindQueryParameter("form", true, false, "severity", r.URL.Query(), &params.Severity)
+	err = runtime.BindQueryParameter("form", true, false, "state", r.URL.Query(), &params.State)
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "severity", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "component" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "component", r.URL.Query(), &params.Component)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "component", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "from" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "from", r.URL.Query(), &params.From)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "to" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "to", r.URL.Query(), &params.To)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
 		return
 	}
 
@@ -17279,6 +17416,47 @@ func (siw *ServerInterfaceWrapper) ListObservabilityRecords(w http.ResponseWrite
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListObservabilityRecords(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetRuntimeLog operation middleware
+func (siw *ServerInterfaceWrapper) GetRuntimeLog(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetRuntimeLogParams
+
+	// ------------- Optional query parameter "level" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "level", r.URL.Query(), &params.Level)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "level", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "limit", r.URL.Query(), &params.Limit)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRuntimeLog(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -19033,6 +19211,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("GET "+options.BaseURL+"/naming-vars/versions/{revision}", wrapper.GetNamingVarsVersion)
 	m.HandleFunc("GET "+options.BaseURL+"/observability/diagnostics", wrapper.ListObservabilityDiagnostics)
 	m.HandleFunc("GET "+options.BaseURL+"/observability/records", wrapper.ListObservabilityRecords)
+	m.HandleFunc("GET "+options.BaseURL+"/observability/runtime-log", wrapper.GetRuntimeLog)
 	m.HandleFunc("POST "+options.BaseURL+"/one-shot-acquisitions", wrapper.AcquireSeedOnce)
 	m.HandleFunc("GET "+options.BaseURL+"/one-shot-acquisitions/{one_shot_id}", wrapper.GetOneShotAcquisition)
 	m.HandleFunc("GET "+options.BaseURL+"/one-shot-acquisitions/{one_shot_id}/attempts", wrapper.ListOneShotExecutionAttempts)

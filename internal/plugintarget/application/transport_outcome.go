@@ -12,7 +12,7 @@ import (
 // sendRequest performs the delivery request once and settles what the
 // transport produced into an attemptResult. Whether the request was fully
 // written is observed with httptrace, never inferred from error text.
-func (h *PluginDeliverHandler) sendRequest(req *http.Request, adapterKind string, redactor secretRedactor) attemptResult {
+func (h *PluginDeliverHandler) sendRequest(req *http.Request, adapterKind string, redactor secretRedactor) (attemptResult, error) {
 	var written atomic.Bool
 	trace := &httptrace.ClientTrace{
 		// The hook runs on the transport's write goroutine. A write error means
@@ -25,9 +25,9 @@ func (h *PluginDeliverHandler) sendRequest(req *http.Request, adapterKind string
 	}
 	resp, err := h.client.Do(req.WithContext(httptrace.WithClientTrace(req.Context(), trace)))
 	if err != nil {
-		return transportFailureResult(err, written.Load(), redactor)
+		return transportFailureResult(err, written.Load(), redactor), err
 	}
-	return readResponseResult(resp, adapterKind, redactor)
+	return readResponseResult(resp, adapterKind, redactor), nil
 }
 
 // transportFailureResult classifies a failed round trip. The safe transport's

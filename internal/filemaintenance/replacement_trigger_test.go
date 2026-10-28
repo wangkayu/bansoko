@@ -422,12 +422,8 @@ func TestTriggerFailureRecordsObservableFailure(t *testing.T) {
 	if err := trigger.TriggerPlacementCommitted(ctx, "anime-1", "release-r1"); err == nil {
 		t.Fatal("unwired store must fail the trigger")
 	}
-	identity := port.ReplacementTriggerFailure()
-	if len(rec.failures) == 0 || rec.failures[0].Identity != identity || rec.failures[0].Severity != port.SeverityError {
-		t.Fatalf("diagnostic identity expected: %+v", rec.failures)
-	}
-	if rec.failures[0].Identity.ScopeKind != port.ScopeOwner || rec.failures[0].ScopeID != "anime-1" || rec.failures[0].ManagedAnimeID != "anime-1" {
-		t.Fatalf("diagnostic owner scope expected: %+v", rec.failures[0])
+	if len(rec.failures) == 0 || rec.failures[0].Condition.Kind != port.KindInternal || rec.failures[0].TargetID != port.InternalReplacementTrigger || rec.failures[0].Severity != port.SeverityError {
+		t.Fatalf("internal replacement.trigger failure expected: %+v", rec.failures)
 	}
 	store, err := workitems.NewStore(db, workitems.DefaultRetentionDays, port.NopRuntimeLogger{})
 	if err != nil {
@@ -437,11 +433,8 @@ func TestTriggerFailureRecordsObservableFailure(t *testing.T) {
 	if err := trigger.TriggerPlacementCommitted(ctx, "anime-1", "release-r1"); err != nil {
 		t.Fatalf("recovered trigger should merge successfully: %v", err)
 	}
-	if len(rec.successes) != 1 || rec.successes[0].Identity != identity || rec.successes[0].Identity.ScopeKind != port.ScopeOwner || rec.successes[0].ScopeID != "anime-1" {
-		t.Fatalf("diagnostic recovery close expected same identity and owner scope: %+v", rec.successes)
-	}
-	if rec.failures[0].Identity.ScopeKind != port.ScopeOwner || rec.failures[0].ScopeID != "anime-1" || rec.failures[0].ManagedAnimeID != "anime-1" {
-		t.Fatalf("diagnostic owner scope expected: %+v", rec.failures[0])
+	if len(rec.successes) != 1 || rec.successes[0].Kind != port.KindInternal || rec.successes[0].TargetID != port.InternalReplacementTrigger {
+		t.Fatalf("diagnostic recovery close expected on replacement.trigger: %+v", rec.successes)
 	}
 	// Recovery admits the merged item after closing the original diagnostic identity.
 	if item := loadLiveEvaluateItem(t, db, "anime-1"); item == nil {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"bansoko/internal/observability/outbound"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
 	adapterconfig "bansoko/internal/plugintarget/config"
@@ -108,6 +109,8 @@ var _ worker.Handler = (*PluginDeliverHandler)(nil)
 
 type deliveryRow struct {
 	id                  string
+	targetID            string
+	targetName          sql.NullString
 	adapterKind         string
 	adapterConfigJSON   []byte
 	adapterConfigStatus string
@@ -215,16 +218,16 @@ func (h *PluginDeliverHandler) Handle(ctx context.Context, claim workitems.Claim
 
 	title, body, err := h.resolveMessage(row)
 	if err != nil {
-		return h.prepareFailure(claim, attempt, "notification_template_invalid", "notification template is invalid", newSecretRedactor("")), nil
+		return h.prepareFailure(claim, row, attempt, "notification_template_invalid", "notification template is invalid", newSecretRedactor("")), nil
 	}
 	secret, err := h.resolveSecret(row)
 	if err != nil {
-		return h.prepareFailure(claim, attempt, "secret_resolve_failed", err.Error(), newSecretRedactor("")), nil
+		return h.prepareFailure(claim, row, attempt, "secret_resolve_failed", err.Error(), newSecretRedactor("")), nil
 	}
 	redactor := newSecretRedactor(secret)
 	req, err := h.buildRequest(ctx, row, title, body, secret, claim.Owner.ID, attempt.number)
 	if err != nil {
-		return h.prepareFailure(claim, attempt, "request_build_failed", err.Error(), redactor), nil
+		return h.prepareFailure(claim, row, attempt, "request_build_failed", err.Error(), redactor), nil
 	}
 
 	summary := requestSummary(req)
@@ -238,7 +241,7 @@ func (h *PluginDeliverHandler) Handle(ctx context.Context, claim workitems.Claim
 		}
 	}
 
-	result := h.sendRequest(req, row.adapterKind, redactor)
+	result, sendErr := h.sendRequest(req, row.adapterKind, redactor)
 	if h.hooks.afterResponseBeforeFinal != nil {
 		if err := h.hooks.afterResponseBeforeFinal(); err != nil {
 			return worker.Outcome{}, err
@@ -248,9 +251,10 @@ func (h *PluginDeliverHandler) Handle(ctx context.Context, claim workitems.Claim
 	if result.state == "delivered" {
 		owner := workitems.OwnerResult{State: result.state, ReasonCode: "delivered", Reason: "notification delivered successfully"}
 		outcome := worker.Finish(workitems.StateSucceeded, owner, h.finalWriter(claim, attempt, result, redactor))
-		return worker.WithAfterCommit(outcome, h.prepareDiagnosticRecoveryAfterCommit(claim.Owner.ID)), nil
+		return worker.WithAfterCommit(outcome, h.targetRecoveryAfterCommit(row.targetID)), nil
 	}
-	return h.settleAttempt(claim, row, attempt, result, redactor), nil
+	outcome := h.settleAttempt(claim, row, attempt, result, redactor)
+	return worker.WithAfterCommit(outcome, h.sendDiagnosticAfterCommit(row, req, result, sendErr)), nil
 }
 
 // settleAttempt records a non-delivered attempt and decides what follows. An
@@ -285,41 +289,63 @@ func (h *PluginDeliverHandler) settleAttempt(claim workitems.Claim, row delivery
 	return worker.Finish(workitems.StateFailed, owner, h.finalWriter(claim, attempt, result, redactor))
 }
 
-func (h *PluginDeliverHandler) prepareDiagnosticRecoveryAfterCommit(deliveryID string) func(context.Context) {
-	return func(ctx context.Context) {
-		// Error code participates in the episode identity, so close each prepare
-		// failure that may have opened for this delivery.
-		for _, code := range [...]observabilityport.DiagnosticErrorCode{
-			observabilityport.ErrorNotificationTemplateInvalid,
-			observabilityport.ErrorSecretResolveFailed,
-			observabilityport.ErrorRequestBuildFailed,
-		} {
-			if closeDiagnostic := observabilityport.DiagnosticSuccessAfterCommit(h.observability, h.logger, observabilityport.DiagnosticSuccessRequest{
-				Identity: observabilityport.PluginPrepareFailure(code), ScopeID: deliveryID,
-			}); closeDiagnostic != nil {
-				closeDiagnostic(ctx)
-			}
-		}
-	}
+// targetRecoveryAfterCommit closes the open condition of a notification target
+// once one of its deliveries is delivered.
+func (h *PluginDeliverHandler) targetRecoveryAfterCommit(targetID string) func(context.Context) {
+	return observabilityport.DiagnosticSuccessAfterCommit(h.observability, h.logger, observabilityport.DiagnosticSuccessRequest{
+		Kind: observabilityport.KindNotify, TargetID: targetID,
+	})
 }
 
-func (h *PluginDeliverHandler) prepareFailure(claim workitems.Claim, attempt durableAttempt, code, reason string, redactor secretRedactor) worker.Outcome {
+func (h *PluginDeliverHandler) prepareFailure(claim workitems.Claim, row deliveryRow, attempt durableAttempt, code, reason string, redactor secretRedactor) worker.Outcome {
 	redactedReason := redactor.text(reason, 4096)
 	result := attemptResult{state: "failed", errorCode: code, err: redactedReason}
 	outcome := worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: result.state, ReasonCode: code, Reason: redactedReason}, h.finalWriter(claim, attempt, result, redactor))
-	return worker.WithAfterCommit(outcome, h.diagnosticAfterCommit(claim.Owner.ID, code, redactedReason))
+	variant := map[string]observabilityport.ConditionVariant{
+		"notification_template_invalid": observabilityport.VariantTemplate,
+		"secret_resolve_failed":         observabilityport.VariantSecret,
+		"request_build_failed":          observabilityport.VariantRequest,
+	}[code]
+	return worker.WithAfterCommit(outcome, h.notifyDiagnostic(row, variant, outbound.Failure{}))
 }
 
-func (h *PluginDeliverHandler) diagnosticAfterCommit(deliveryID, code, reason string) func(context.Context) {
-	identity := observabilityport.PluginPrepareFailure(observabilityport.DiagnosticErrorCode(code))
+// sendDiagnosticAfterCommit records the condition a failed send leaves on its
+// notification target. Only failures that are definite about the target (the
+// request never left, or the address was refused) count: a response status is
+// the receiver's answer and an unknown outcome says nothing about the target.
+func (h *PluginDeliverHandler) sendDiagnosticAfterCommit(row deliveryRow, req *http.Request, result attemptResult, sendErr error) func(context.Context) {
+	if sendErr == nil {
+		return nil
+	}
+	failure := outbound.Failure{Host: req.URL.Hostname()}
+	var variant observabilityport.ConditionVariant
+	switch result.errorCode {
+	case "address_rejected", "redirect_rejected":
+		variant = observabilityport.VariantAddressRejected
+	case "dns_failed", "connection_refused", "connect_timeout", "tls_failed", "connection_failed":
+		variant = observabilityport.VariantUnreachable
+		via := outbound.Via("")
+		if client, ok := h.client.(*http.Client); ok {
+			via = outbound.ViaOf(client, req)
+		}
+		failure = outbound.Describe(sendErr, req, nil, via)
+	default:
+		return nil
+	}
+	return h.notifyDiagnostic(row, variant, failure)
+}
+
+func (h *PluginDeliverHandler) notifyDiagnostic(row deliveryRow, variant observabilityport.ConditionVariant, failure outbound.Failure) func(context.Context) {
 	return observabilityport.DiagnosticFailureAfterCommit(h.observability, h.logger, observabilityport.DiagnosticFailureRequest{
-		Identity: identity, Severity: observabilityport.SeverityError, ScopeID: deliveryID, LastError: reason,
+		Condition: observabilityport.Condition{Kind: observabilityport.KindNotify, Variant: variant},
+		Severity:  observabilityport.SeverityError, TargetID: row.targetID, TargetName: row.targetName.String,
+		Failure: failure, AffectedID: row.id,
 	})
 }
 
 func (h *PluginDeliverHandler) loadDelivery(ctx context.Context, id string) (deliveryRow, error) {
 	var row deliveryRow
-	err := h.db.QueryRowContext(ctx, `SELECT id, adapter_kind, adapter_config_snapshot, config_status, config_schema_version, secret_ref, delivery_kind, trigger_kind, state, version, attempt_count, payload, payload_digest, target_display, template_catalog_version, title_template_snapshot, body_template_snapshot, rendered_title, rendered_body FROM plugin_deliveries WHERE id=$1`, id).Scan(&row.id, &row.adapterKind, &row.adapterConfigJSON, &row.adapterConfigStatus, &row.configSchemaVersion, &row.secretRef, &row.deliveryKind, &row.triggerKind, &row.state, &row.version, &row.attemptCount, &row.payload, &row.payloadDigest, &row.targetDisplay, &row.templateCatalog, &row.titleTemplate, &row.bodyTemplate, &row.renderedTitle, &row.renderedBody)
+	err := h.db.QueryRowContext(ctx, `SELECT id, plugin_target_config_id, adapter_kind, adapter_config_snapshot, config_status, config_schema_version, secret_ref, delivery_kind, trigger_kind, state, version, attempt_count, payload, payload_digest, target_display, template_catalog_version, title_template_snapshot, body_template_snapshot, rendered_title, rendered_body, (SELECT t.name FROM plugin_target_configs t WHERE t.id = plugin_deliveries.plugin_target_config_id) FROM plugin_deliveries WHERE id=$1`, id).Scan(&row.id, &row.targetID, &row.adapterKind, &row.adapterConfigJSON, &row.adapterConfigStatus, &row.configSchemaVersion, &row.secretRef, &row.deliveryKind, &row.triggerKind, &row.state, &row.version, &row.attemptCount, &row.payload, &row.payloadDigest, &row.targetDisplay, &row.templateCatalog, &row.titleTemplate, &row.bodyTemplate, &row.renderedTitle, &row.renderedBody, &row.targetName)
 	if errors.Is(err, sql.ErrNoRows) {
 		return row, errors.New("plugin delivery not found")
 	}

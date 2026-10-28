@@ -5,13 +5,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
 	"bansoko/internal/apperrors"
 	observabilityport "bansoko/internal/observability/port"
-	"bansoko/internal/redact"
 )
 
 func TestNewServiceNilDB(t *testing.T) {
@@ -315,26 +313,26 @@ func TestValidateRoutineRejectsInvalidScopeAndNestedSecret(t *testing.T) {
 }
 
 func TestValidateDiagnosticRequests(t *testing.T) {
-	failure := observabilityport.DiagnosticFailureRequest{
-		Identity: observabilityport.AutomationDispatchFailure(observabilityport.ScopeWorker), Severity: observabilityport.SeverityError,
-		ScopeID: "rss_refresh", LastError: "dispatch failed",
+	bad := observabilityport.DiagnosticFailureRequest{
+		Condition: observabilityport.Condition{Kind: observabilityport.KindInternal}, Severity: observabilityport.SeverityError,
+		TargetID: "rss_refresh",
 	}
-	failure.Identity.ScopeKind = "automation"
-	if err := validateDiagnosticFailure(failure); err == nil {
-		t.Fatal("diagnostic scope must reject automation; use worker or owner scope")
+	if err := prepareFailure2(bad); err == nil {
+		t.Fatal("an uncatalogued internal source must be rejected")
 	}
-	replacement := observabilityport.DiagnosticFailureRequest{Identity: observabilityport.ReplacementTriggerFailure(), Severity: observabilityport.SeverityError, ScopeID: "anime-1", ManagedAnimeID: "anime-1", LastError: "replacement trigger failed"}
-	if err := validateDiagnosticFailure(replacement); err != nil {
-		t.Fatalf("production replacement identity rejected: %v", err)
+	if err := prepareFailure2(observabilityport.InternalFailure(observabilityport.InternalReplacementTrigger, "")); err != nil {
+		t.Fatalf("internal source rejected: %v", err)
 	}
-	placement := observabilityport.DiagnosticFailureRequest{Identity: observabilityport.PlacementAdmissionFailure(), Severity: observabilityport.SeverityWarning, ScopeID: "op-1", LastError: "placement admission failed", Details: json.RawMessage(`{"reason_code":"placement_evidence_missing"}`)}
-	if err := validateDiagnosticFailure(placement); err != nil {
-		t.Fatalf("production placement identity rejected: %v", err)
+	user := observabilityport.DiagnosticFailureRequest{
+		Condition: observabilityport.Condition{Kind: observabilityport.KindMetadata, Variant: observabilityport.VariantUnreachable},
+		Severity:  observabilityport.SeverityWarning, TargetID: "tmdb", TargetName: "TMDB",
 	}
-	if err := validateDiagnosticSuccess(observabilityport.DiagnosticSuccessRequest{Identity: observabilityport.PlacementAdmissionFailure(), ScopeID: "op-1"}); err != nil {
-		t.Fatalf("production placement settle identity rejected: %v", err)
+	if err := prepareFailure2(user); err != nil {
+		t.Fatalf("catalogued condition rejected: %v", err)
 	}
-
+	if err := validateDiagnosticSuccess(observabilityport.InternalSuccess(observabilityport.InternalPlacementSink)); err != nil {
+		t.Fatalf("internal settle rejected: %v", err)
+	}
 }
 
 func TestActivityValidationAndDedupe(t *testing.T) {
@@ -422,44 +420,6 @@ func TestValidateActivityRejectsSensitiveText(t *testing.T) {
 	}
 }
 
-// TestSanitizeDiagnosticLastErrorRedactsLegacyText proves stored values written
-// before the writer's validation are re-redacted and bounded at the read
-// boundary: credential markers, URLs and private paths collapse, multi-byte
-// text truncates by runes, and the result always satisfies the contract's
-// non-empty bound.
-func TestSanitizeDiagnosticLastErrorRedactsLegacyText(t *testing.T) {
-	redacted := []string{
-		"provider replied api_key=AKIAIOSFODNN7EXAMPLE",
-		"token=abcdef0123456789",
-		"fetch https://user:pass@example.test/private",
-		"failed at /home/alice/private/torrent",
-		`open C:\Users\alice\Downloads\show.mkv`,
-		`copy \\nas\share\private\show.mkv`,
-		"config ~/.config/app/settings.toml",
-		"escape via ../secrets/key.pem",
-	}
-	for _, value := range redacted {
-		got := sanitizeDiagnosticLastError(value)
-		if got != redact.Redacted {
-			t.Fatalf("sanitizeDiagnosticLastError(%q) = %q, want %q", value, got, redact.Redacted)
-		}
-	}
-	if got := sanitizeDiagnosticLastError("   "); got != redact.Redacted {
-		t.Fatalf("whitespace-only legacy value must stay non-empty, got %q", got)
-	}
-	ordinary := "provider rejected the request with http_403"
-	if got := sanitizeDiagnosticLastError(ordinary); got != ordinary {
-		t.Fatalf("ordinary text changed: %q", got)
-	}
-	// Multi-byte truncation must land exactly on the bound without splitting a
-	// rune or overflowing it.
-	multiByte := strings.Repeat("診", 9000)
-	got := sanitizeDiagnosticLastError(multiByte)
-	if len([]rune(got)) != 8192 {
-		t.Fatalf("multi-byte truncation = %d runes, want 8192", len([]rune(got)))
-	}
-}
-
 // TestRecordFromRowProjectsPluginPayloadStatus proves the union member carries
 // the delivery payload through the same projection the dedicated endpoint
 // uses: a canonical payload is served, a legacy payload is withheld with an
@@ -527,4 +487,9 @@ func TestRecordFromRowProjectsPluginPayloadStatus(t *testing.T) {
 			}
 		})
 	}
+}
+
+func prepareFailure2(req observabilityport.DiagnosticFailureRequest) error {
+	_, err := prepareFailure(req)
+	return err
 }

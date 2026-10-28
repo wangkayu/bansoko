@@ -498,32 +498,17 @@ func (d *Dispatcher) recordObservability(ctx context.Context, kind, state string
 		d.logError(ctx, observabilityport.RuntimeEvent{Message: "automation routine write failed", Operation: "observability", ReasonCode: "routine_write_failed", ErrorClass: "observability"})
 	}
 	if dispatchErr != nil || counts.errors > 0 {
-		identity := observabilityport.AutomationDispatchFailure(observabilityport.ScopeWorker)
+		failure := observabilityport.InternalFailure(observabilityport.InternalAutomationDispatch, "")
 		if dispatchErr == nil {
-			identity = observabilityport.AutomationDispatchPartial(observabilityport.ScopeWorker)
+			failure.Severity = observabilityport.SeverityWarning
 		}
-		lastError := "dispatch returned an error"
-		if dispatchErr != nil {
-			lastError = safeDispatchError(dispatchErr)
-		}
-		severity := observabilityport.SeverityError
-		if dispatchErr == nil {
-			severity = observabilityport.SeverityWarning
-		}
-		if err := d.Recorder.RecordDiagnosticFailure(ctx, observabilityport.DiagnosticFailureRequest{Identity: identity, Severity: severity, ScopeID: scopeID, LastError: lastError}); err != nil {
+		if err := d.Recorder.RecordDiagnosticFailure(ctx, failure); err != nil {
 			d.logError(ctx, observabilityport.RuntimeEvent{Message: "automation diagnostic write failed", Operation: "observability", ReasonCode: "diagnostic_write_failed", ErrorClass: "observability"})
 		}
 		return
 	}
-	for _, identity := range []observabilityport.DiagnosticIdentity{
-		observabilityport.AutomationDispatchFailure(observabilityport.ScopeWorker),
-		observabilityport.AutomationDispatchPartial(observabilityport.ScopeWorker),
-	} {
-		if err := d.Recorder.RecordDiagnosticSuccess(ctx, observabilityport.DiagnosticSuccessRequest{
-			Identity: identity, ScopeID: scopeID,
-		}); err != nil {
-			d.logError(ctx, observabilityport.RuntimeEvent{Message: "automation recovery write failed", Operation: "observability", ReasonCode: "recovery_write_failed", ErrorClass: "observability"})
-		}
+	if err := d.Recorder.RecordDiagnosticSuccess(ctx, observabilityport.InternalSuccess(observabilityport.InternalAutomationDispatch)); err != nil {
+		d.logError(ctx, observabilityport.RuntimeEvent{Message: "automation recovery write failed", Operation: "observability", ReasonCode: "recovery_write_failed", ErrorClass: "observability"})
 	}
 }
 

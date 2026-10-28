@@ -29,7 +29,6 @@ func TestRedactionParityAcrossObservabilitySinks(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			write := sanitizeFreeText(tc.input, maxErrorLength)
 			runtime := safeRuntimeMessage(tc.input)
-			read := sanitizeDiagnosticLastError(tc.input)
 			// The validator stays reject-only for unsanitized text; the write
 			// path masks the fragment first, so its output must then pass.
 			if err := validateSafeText("last_error", tc.input, maxErrorLength, true); err == nil {
@@ -46,10 +45,7 @@ func TestRedactionParityAcrossObservabilitySinks(t *testing.T) {
 			if runtime != "<redacted runtime message>" {
 				t.Errorf("Runtime Log = %q, want mask marker", runtime)
 			}
-			if read != redact.Redacted {
-				t.Errorf("diagnostics read = %q, want %q", read, redact.Redacted)
-			}
-			for sink, value := range map[string]string{"write": write, "runtime": runtime, "read": read} {
+			for sink, value := range map[string]string{"write": write, "runtime": runtime} {
 				if strings.Contains(value, tc.secret) {
 					t.Errorf("%s sink leaked %q: %q", sink, tc.secret, value)
 				}

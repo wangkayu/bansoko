@@ -46,18 +46,18 @@ func TestRoutineActivityScopeConstraints(t *testing.T) {
 			CURRENT_TIMESTAMP, 'ok', 'Provider refresh completed')`)
 }
 
-// Only one open diagnostic episode exists per identity; closing it lets a new
-// episode with the same identity open.
+// Only one open diagnostic episode exists per target; closing it lets a new
+// episode on the same target open.
 func TestDiagnosticEpisodeOpenIdentity(t *testing.T) {
 	p := newConstraintProbe(t)
 	const insert = `
 		INSERT INTO diagnostic_episodes(
-			id, severity, component, operation, error_code, scope_kind, scope_id,
-			first_failed_at, last_failed_at, occurrence_count, last_error
-		) VALUES ($1, 'error', 'worker', 'persist', 'database_unavailable',
-			'global', 'global', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 'database unavailable')`
+			id, kind, variant, severity, target_id, affected_ids, recent,
+			first_failed_at, last_failed_at, occurrence_count
+		) VALUES ($1, 'metadata', 'unreachable', 'warning', 'tmdb', '{}', '[]'::jsonb,
+			CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1)`
 	p.accept("open episode", insert, "diagnostic-1")
-	p.reject("second open episode with the same identity", insert, "diagnostic-2")
+	p.reject("second open episode on the same target", insert, "diagnostic-2")
 	p.accept("close episode", `UPDATE diagnostic_episodes SET succeeded_after_at = CURRENT_TIMESTAMP WHERE id = 'diagnostic-1'`)
 	p.accept("new episode after the success boundary", insert, "diagnostic-2")
 }

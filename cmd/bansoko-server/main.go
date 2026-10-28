@@ -85,7 +85,7 @@ func fatalStartupDetail(logger observabilityport.RuntimeLogger, message, reasonC
 }
 
 func main() {
-	runtimeLogger := observabilityapplication.NewJSONRuntimeLogger(os.Stderr)
+	runtimeLogger := observabilityapplication.NewTeedRuntimeLogger(os.Stderr)
 	cfg, err := config.FromFlags(os.Args[1:])
 	if err != nil {
 		fatalStartup(runtimeLogger, "configuration parse failed", "config_parse_failed")

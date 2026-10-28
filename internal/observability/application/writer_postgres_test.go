@@ -17,17 +17,20 @@ func TestDiagnosticCatalogConformsToPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for index, identity := range observabilityport.DiagnosticIdentities() {
-		scopeID := fmt.Sprintf("catalog-%d", index)
-		if identity.ScopeKind == observabilityport.ScopeGlobal {
-			scopeID = "global"
+	for index, spec := range observabilityport.ConditionCatalog() {
+		targets := []string{fmt.Sprintf("catalog-%d", index)}
+		if spec.Audience == observabilityport.AudienceInternal {
+			targets = observabilityport.InternalSources()
 		}
-		for _, severity := range []observabilityport.DiagnosticSeverity{observabilityport.SeverityWarning, observabilityport.SeverityError} {
-			if err := service.RecordDiagnosticFailure(ctx, observabilityport.DiagnosticFailureRequest{Identity: identity, Severity: severity, ScopeID: scopeID, LastError: "catalog conformance"}); err != nil {
-				t.Fatalf("insert catalog identity %s/%s/%s/%s severity=%s: %v", identity.Component, identity.Operation, identity.ErrorCode, identity.ScopeKind, severity, err)
-			}
-			if err := service.RecordDiagnosticSuccess(ctx, observabilityport.DiagnosticSuccessRequest{Identity: identity, ScopeID: scopeID}); err != nil {
-				t.Fatalf("close catalog identity: %v", err)
+		for _, target := range targets {
+			for _, severity := range []observabilityport.DiagnosticSeverity{observabilityport.SeverityWarning, observabilityport.SeverityError} {
+				req := observabilityport.DiagnosticFailureRequest{Condition: spec.Condition, Severity: severity, TargetID: target, TargetName: "Catalog", AffectedID: "affected-1"}
+				if err := service.RecordDiagnosticFailure(ctx, req); err != nil {
+					t.Fatalf("insert catalog condition %+v target=%s severity=%s: %v", spec.Condition, target, severity, err)
+				}
+				if err := service.RecordDiagnosticSuccess(ctx, observabilityport.DiagnosticSuccessRequest{Kind: spec.Kind, TargetID: target}); err != nil {
+					t.Fatalf("close catalog condition: %v", err)
+				}
 			}
 		}
 	}
@@ -40,31 +43,12 @@ func TestDiagnosticCatalogConformsToPostgres(t *testing.T) {
 			t.Fatalf("insert routine identity %s/%s/%s: %v", identity.Kind, identity.ScopeKind, identity.ResultCode, err)
 		}
 	}
-	// Every catalog identity above must be accepted by PostgreSQL. Removing a
-	// constructor-covered map entry therefore makes this test red; adding a Go
-	// scope absent from the schema fails the matching real INSERT.
-	unknownScope := observabilityport.DiagnosticFailureRequest{Identity: observabilityport.ReplacementTriggerFailure(), Severity: observabilityport.SeverityError, ScopeID: "catalog-negative", LastError: "negative"}
-	managedAnimeScope := observabilityport.DiagnosticFailureRequest{
-		Identity: observabilityport.ReplacementTriggerFailure(), Severity: observabilityport.SeverityError,
-		ScopeID: "catalog-negative", LastError: "negative",
+	unknown := observabilityport.DiagnosticFailureRequest{
+		Condition: observabilityport.Condition{Kind: observabilityport.KindMetadata, Variant: "unknown_variant"},
+		Severity:  observabilityport.SeverityError, TargetID: "tmdb",
 	}
-	managedAnimeScope.Identity.ScopeKind = "managed_anime"
-	if err := validateDiagnosticFailure(managedAnimeScope); err == nil {
-		t.Fatal("Go diagnostic catalog accepts managed_anime although the PostgreSQL scope CHECK rejects it")
-	}
-	unknownScope.Identity.ScopeKind = "unknown_scope"
-	if err := service.RecordDiagnosticFailure(ctx, unknownScope); err == nil {
-		t.Fatal("unknown scope accepted")
-	}
-	unknownOperation := observabilityport.ReplacementTriggerFailure()
-	unknownOperation.Operation = observabilityport.DiagnosticOperation("unknown_operation")
-	if err := service.RecordDiagnosticFailure(ctx, observabilityport.DiagnosticFailureRequest{Identity: unknownOperation, Severity: observabilityport.SeverityError, ScopeID: "catalog-negative", LastError: "negative"}); err == nil {
-		t.Fatal("unknown operation accepted")
-	}
-	unknownCode := observabilityport.ReplacementTriggerFailure()
-	unknownCode.ErrorCode = observabilityport.DiagnosticErrorCode("unknown_code")
-	if err := service.RecordDiagnosticFailure(ctx, observabilityport.DiagnosticFailureRequest{Identity: unknownCode, Severity: observabilityport.SeverityError, ScopeID: "catalog-negative", LastError: "negative"}); err == nil {
-		t.Fatal("unknown error code accepted")
+	if err := service.RecordDiagnosticFailure(ctx, unknown); err == nil {
+		t.Fatal("uncatalogued variant accepted")
 	}
 }
 
@@ -430,14 +414,10 @@ WHERE kind = 'automation_dispatch' AND scope_kind = 'automation' AND scope_id = 
 		t.Fatalf("routine row: count=%d outcome=%q summary=%q", routineCount, routineOutcome, routineSummary)
 	}
 
-	failure := observabilityport.DiagnosticFailureRequest{
-		Identity: observabilityport.AutomationDispatchFailure(observabilityport.ScopeWorker),
-		Severity: observabilityport.SeverityError, ScopeID: "rss_refresh", LastError: "first failure",
-	}
+	failure := observabilityport.InternalFailure(observabilityport.InternalAutomationDispatch, "request-1")
 	if err := service.RecordDiagnosticFailure(ctx, failure); err != nil {
 		t.Fatalf("first diagnostic failure: %v", err)
 	}
-	failure.LastError = "second failure"
 	if err := service.RecordDiagnosticFailure(ctx, failure); err != nil {
 		t.Fatalf("repeated diagnostic failure: %v", err)
 	}
@@ -447,29 +427,35 @@ WHERE kind = 'automation_dispatch' AND scope_kind = 'automation' AND scope_id = 
 	if err := db.QueryRowContext(ctx, `
 SELECT COUNT(*), MAX(occurrence_count), MAX(succeeded_after_at)
 FROM diagnostic_episodes
-WHERE component = 'automation' AND operation = 'dispatch'
-  AND error_code = 'dispatch_failed' AND scope_kind = 'worker' AND scope_id = 'rss_refresh'`).Scan(&episodeCount, &occurrences, &succeededAfter); err != nil {
+WHERE kind = 'internal' AND target_id = 'automation.dispatch'`).Scan(&episodeCount, &occurrences, &succeededAfter); err != nil {
 		t.Fatalf("read open diagnostic episode: %v", err)
 	}
 	if episodeCount != 1 || occurrences != 2 || succeededAfter != nil {
 		t.Fatalf("open episode: count=%d occurrences=%d succeeded_after=%v", episodeCount, occurrences, succeededAfter)
 	}
 
-	if err := service.RecordDiagnosticSuccess(ctx, observabilityport.DiagnosticSuccessRequest{
-		Identity: observabilityport.AutomationDispatchFailure(observabilityport.ScopeWorker), ScopeID: "rss_refresh",
-	}); err != nil {
+	if err := service.RecordDiagnosticSuccess(ctx, observabilityport.InternalSuccess(observabilityport.InternalAutomationDispatch)); err != nil {
 		t.Fatalf("close diagnostic episode: %v", err)
 	}
 	var closedCount int
 	if err := db.QueryRowContext(ctx, `
 SELECT COUNT(*) FROM diagnostic_episodes
-WHERE component = 'automation' AND operation = 'dispatch'
-  AND error_code = 'dispatch_failed' AND scope_kind = 'worker' AND scope_id = 'rss_refresh'
-  AND succeeded_after_at IS NOT NULL`).Scan(&closedCount); err != nil {
+WHERE kind = 'internal' AND target_id = 'automation.dispatch' AND succeeded_after_at IS NOT NULL`).Scan(&closedCount); err != nil {
 		t.Fatalf("read closed diagnostic episode: %v", err)
 	}
 	if closedCount != 1 {
 		t.Fatalf("expected one closed diagnostic episode, got %d", closedCount)
+	}
+	// A new failure after recovery opens a second episode on the same target.
+	if err := service.RecordDiagnosticFailure(ctx, failure); err != nil {
+		t.Fatalf("failure after recovery: %v", err)
+	}
+	var total int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM diagnostic_episodes WHERE kind = 'internal' AND target_id = 'automation.dispatch'`).Scan(&total); err != nil {
+		t.Fatal(err)
+	}
+	if total != 2 {
+		t.Fatalf("episodes after recovery = %d, want closed history plus a new open one", total)
 	}
 }
 

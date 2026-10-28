@@ -67,7 +67,7 @@ VALUES ('selection-backoff', $1, 'anibt', 'alpha', 'Group', 'auto', NULL, TRUE, 
 	}
 	pauseEpisodeOpen := func() bool {
 		var open bool
-		err := db.QueryRowContext(ctx, `SELECT succeeded_after_at IS NULL FROM diagnostic_episodes WHERE error_code = 'rss_provider_paused' AND scope_kind = 'provider' AND scope_id = 'anibt'`).Scan(&open)
+		err := db.QueryRowContext(ctx, `SELECT succeeded_after_at IS NULL FROM diagnostic_episodes WHERE kind = 'site' AND variant = 'paused' AND target_id = 'anibt' ORDER BY first_failed_at DESC LIMIT 1`).Scan(&open)
 		if errors.Is(err, sql.ErrNoRows) {
 			return false
 		}

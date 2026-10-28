@@ -147,7 +147,7 @@ func TestMikanGroupReaderEmptyResultWithoutTitleAnchorIsFlagged(t *testing.T) {
 	if err != nil || len(result.Groups) != 0 {
 		t.Fatalf("structure-broken empty Mikan result rejected: %+v err=%v", result, err)
 	}
-	if len(recorder.failures) != 1 || recorder.failures[0].Identity.ErrorCode != observabilityport.ErrorProviderParserEmpty {
+	if len(recorder.failures) != 1 || !isMikanParserFault(recorder.failures[0]) {
 		t.Fatalf("missing-anchor empty result should flag provider_parser_empty: %+v", recorder.failures)
 	}
 	if len(recorder.routines) != 1 || recorder.routines[0].Identity.Outcome != observabilityport.RoutineOutcomeWarning || recorder.routines[0].Identity.ResultCode != observabilityport.RoutineResultProviderParserWarning {
@@ -171,7 +171,7 @@ func TestMikanGroupReaderWithGroupsDoesNotFlagEmptyWarning(t *testing.T) {
 		t.Fatalf("non-empty Mikan result failed: %+v err=%v", result, err)
 	}
 	for _, failure := range recorder.failures {
-		if failure.Identity.ErrorCode == observabilityport.ErrorProviderParserEmpty {
+		if isMikanParserFault(failure) {
 			t.Fatalf("non-empty result flagged provider_parser_empty: %+v", recorder.failures)
 		}
 	}
@@ -204,11 +204,11 @@ func TestMikanGroupReaderRecordsWarningForSchemaVersionChange(t *testing.T) {
 	if err != nil || len(result.Groups) != 1 {
 		t.Fatalf("schema-version Mikan result failed: %+v err=%v", result, err)
 	}
-	if len(recorder.failures) != 1 || recorder.failures[0].Identity.ErrorCode != observabilityport.ErrorProviderParserSchemaMismatch {
+	if len(recorder.failures) != 1 || !isMikanParserFault(recorder.failures[0]) {
 		t.Fatalf("schema parser warning = %+v", recorder.failures)
 	}
-	if string(recorder.failures[0].Details) == "" || !containsWarningDetail(string(recorder.failures[0].Details), "mikan-detail-groups-v2") {
-		t.Fatalf("schema warning details = %s", recorder.failures[0].Details)
+	if string(recorder.routines[0].Details) == "" || !containsWarningDetail(string(recorder.routines[0].Details), "mikan-detail-groups-v2") {
+		t.Fatalf("schema warning details = %s", recorder.routines[0].Details)
 	}
 }
 
@@ -243,4 +243,9 @@ func TestAniBTGroupReaderRejectsSchemaMismatch(t *testing.T) {
 	if _, err := (AniBTGroupReader{Endpoint: server.URL, Client: server.Client()}).ReadGroups(context.Background(), "1"); err == nil {
 		t.Fatal("AniBT total mismatch accepted as valid empty snapshot")
 	}
+}
+
+func isMikanParserFault(request observabilityport.DiagnosticFailureRequest) bool {
+	return request.Condition == (observabilityport.Condition{Kind: observabilityport.KindSite, Variant: observabilityport.VariantUnreadable}) &&
+		request.TargetID == observabilityport.SiteMikanParser
 }

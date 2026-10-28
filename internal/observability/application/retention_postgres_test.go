@@ -124,21 +124,17 @@ func seedReplacementRows(t *testing.T, ctx context.Context, db *sql.DB) {
 		 CURRENT_TIMESTAMP - INTERVAL '2 hours', NULL, CURRENT_TIMESTAMP - INTERVAL '1 hour')`)
 
 	exec(`INSERT INTO diagnostic_episodes(
-		id, severity, component, operation, error_code, scope_kind, scope_id, managed_anime_id,
-		first_failed_at, last_failed_at, succeeded_after_at, occurrence_count, last_error, retention_until
+		id, kind, variant, severity, target_id, affected_ids, recent,
+		first_failed_at, last_failed_at, succeeded_after_at, occurrence_count, retention_until
 	) VALUES
-		('diagnostic-expired', 'error', 'retention_test', 'expired_operation', 'expired_error',
-		 'subscription', 'subscription-retention', 'anime-retention',
+		('diagnostic-expired', 'metadata', 'unreachable', 'error', 'tmdb-expired', '{}', '[]'::jsonb,
 		 CURRENT_TIMESTAMP - INTERVAL '2 hours', CURRENT_TIMESTAMP - INTERVAL '2 hours',
-		 CURRENT_TIMESTAMP - INTERVAL '30 minutes', 1,
-		 'Expired diagnostic', CURRENT_TIMESTAMP - INTERVAL '1 hour'),
-		('diagnostic-future', 'warning', 'retention_test', 'future_operation', 'future_error',
-		 'subscription', 'subscription-retention', 'anime-retention',
-		 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL, 1, 'Future diagnostic', CURRENT_TIMESTAMP + INTERVAL '1 day'),
-		('diagnostic-open-expired', 'error', 'retention_test', 'open_operation', 'open_error',
-		 'subscription', 'subscription-retention', 'anime-retention',
+		 CURRENT_TIMESTAMP - INTERVAL '30 minutes', 1, CURRENT_TIMESTAMP - INTERVAL '1 hour'),
+		('diagnostic-future', 'metadata', 'unreachable', 'warning', 'tmdb-future', '{}', '[]'::jsonb,
+		 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL, 1, CURRENT_TIMESTAMP + INTERVAL '1 day'),
+		('diagnostic-open-expired', 'metadata', 'unreachable', 'error', 'tmdb-open', '{}', '[]'::jsonb,
 		 CURRENT_TIMESTAMP - INTERVAL '2 hours', CURRENT_TIMESTAMP - INTERVAL '2 hours', NULL, 1,
-		 'Open diagnostic', CURRENT_TIMESTAMP - INTERVAL '1 hour')`)
+		 CURRENT_TIMESTAMP - INTERVAL '1 hour')`)
 
 	exec(`INSERT INTO plugin_target_configs(
 		id, name, plugin_kind, adapter_kind, enabled, trigger_kinds, config_schema_version,

@@ -298,10 +298,10 @@ func TestRunPassRecordsOneSummaryAndDurableFailureIdentity(t *testing.T) {
 		t.Fatalf("incident writes = %d", len(recorder.failures))
 	}
 	incident := recorder.failures[0]
-	if incident.Identity != observabilityport.DiagnosticRetentionSweepFailure() || incident.ScopeID != "global" || incident.Severity != observabilityport.SeverityError {
+	if incident.Condition.Kind != observabilityport.KindInternal || incident.TargetID != observabilityport.InternalRetentionSweep || incident.Severity != observabilityport.SeverityError {
 		t.Fatalf("incident = %+v", incident)
 	}
-	if incident.LastError == failure.Error() || logger.events[0].Message == failure.Error() {
+	if logger.events[0].Message == failure.Error() {
 		t.Fatal("raw cleaner error escaped observability")
 	}
 }
@@ -334,7 +334,7 @@ func TestRetentionPassPersistsRoutineAndIncidentPostgres(t *testing.T) {
 	if err := db.QueryRow(`SELECT count(*) FROM routine_activities WHERE kind='retention_pass' AND scope_kind='global' AND scope_id='global' AND outcome='failure' AND last_result_code='retention_pass_failed'`).Scan(&routineCount); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.QueryRow(`SELECT count(*) FROM diagnostic_episodes WHERE component='retention' AND operation='sweep' AND error_code='retention_sweep_failed' AND scope_kind='global' AND scope_id='global' AND succeeded_after_at IS NULL`).Scan(&incidentCount); err != nil {
+	if err := db.QueryRow(`SELECT count(*) FROM diagnostic_episodes WHERE kind='internal' AND target_id='retention.sweep' AND succeeded_after_at IS NULL`).Scan(&incidentCount); err != nil {
 		t.Fatal(err)
 	}
 	if routineCount != 1 || incidentCount != 1 {

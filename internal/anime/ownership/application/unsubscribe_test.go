@@ -447,17 +447,11 @@ INSERT INTO subscription_log_entries(id, subscription_id, managed_anime_id, kind
 VALUES ('del-log', $1, $2, 'group_changed', 'info', 'group_changed', '{}', 'group_changed:$1:v9')`, subscriptionID, animeID); err != nil {
 		t.Fatal(err)
 	}
-	// A routine activity and diagnostic episode pointing at the anime (nullable
+	// A routine activity pointing at the anime (nullable
 	// FK; the rows must survive with managed_anime_id NULLed).
 	if _, err := db.ExecContext(ctx, `
 INSERT INTO routine_activities(id, kind, scope_kind, scope_id, managed_anime_id, outcome, last_executed_at, last_result_code, summary)
 VALUES ('del-act', 'rss_refresh', 'subscription', $1, $2, 'success', NOW(), 'ok', 's')`, subscriptionID, animeID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, `
-INSERT INTO diagnostic_episodes(id, severity, component, operation, error_code, scope_kind, scope_id, managed_anime_id,
-    first_failed_at, last_failed_at, occurrence_count, last_error)
-VALUES ('del-ep', 'warning', 'rss', 'refresh', 'err', 'subscription', $1, $2, NOW(), NOW(), 1, 'e')`, subscriptionID, animeID); err != nil {
 		t.Fatal(err)
 	}
 	// An activated candidate linking back to the anime (nullable FK; the
@@ -505,18 +499,15 @@ VALUES ('del-sup', 'mikan', 'del-entry-ref', 'Suppressed Title')`); err != nil {
 	if state != "retired" || epoch != 2 {
 		t.Fatalf("lifecycle = %s/%d", state, epoch)
 	}
-	var candAnimeID, actAnimeID, epAnimeID sql.NullString
+	var candAnimeID, actAnimeID sql.NullString
 	if err := db.QueryRowContext(ctx, `SELECT activated_managed_anime_id FROM anime_config_candidates WHERE id = 'del-cand'`).Scan(&candAnimeID); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.QueryRowContext(ctx, `SELECT managed_anime_id FROM routine_activities WHERE id = 'del-act'`).Scan(&actAnimeID); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.QueryRowContext(ctx, `SELECT managed_anime_id FROM diagnostic_episodes WHERE id = 'del-ep'`).Scan(&epAnimeID); err != nil {
-		t.Fatal(err)
-	}
-	if !candAnimeID.Valid || candAnimeID.String != animeID || !actAnimeID.Valid || !epAnimeID.Valid {
-		t.Fatalf("retirement changed retained references candidate=%v activity=%v diagnostic=%v", candAnimeID, actAnimeID, epAnimeID)
+	if !candAnimeID.Valid || candAnimeID.String != animeID || !actAnimeID.Valid {
+		t.Fatalf("retirement changed retained references candidate=%v activity=%v", candAnimeID, actAnimeID)
 	}
 	if animetest.CountRows(t, db, "idempotency_records") < 2 || animetest.CountRows(t, db, "catalog_suppressions") != 1 {
 		t.Fatal("retirement removed replay or independent suppression evidence")

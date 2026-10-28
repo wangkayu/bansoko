@@ -197,15 +197,13 @@ func (c *Consumer) recordDiagnostic(ctx context.Context, result Result, err erro
 	if c.Diagnostics == nil {
 		return
 	}
-	identity := observabilityport.AcquisitionActivityConsumeFailure()
 	if err != nil {
-		_ = c.Diagnostics.RecordDiagnosticFailure(ctx, observabilityport.DiagnosticFailureRequest{
-			Identity: identity, Severity: observabilityport.SeverityWarning, ScopeID: "global",
-			LastError: fmt.Sprintf("%d run-log entries could not be written: %s", result.Failed, err.Error()),
-		})
+		failure := observabilityport.InternalFailure(observabilityport.InternalActivityConsume, "")
+		failure.Severity = observabilityport.SeverityWarning
+		_ = c.Diagnostics.RecordDiagnosticFailure(ctx, failure)
 		return
 	}
-	_ = c.Diagnostics.RecordDiagnosticSuccess(ctx, observabilityport.DiagnosticSuccessRequest{Identity: identity, ScopeID: "global"})
+	_ = c.Diagnostics.RecordDiagnosticSuccess(ctx, observabilityport.InternalSuccess(observabilityport.InternalActivityConsume))
 }
 
 // The fixed scope of an acquisition: the subscription and managed anime its

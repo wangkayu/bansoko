@@ -79,46 +79,51 @@ func TestObservabilityRecordsEndpointDropsUndeclaredFields(t *testing.T) {
 }
 
 // TestObservabilityDiagnosticsEndpointSatisfiesContract proves the diagnostics
-// response object is additionalProperties:false compliant even when an episode
-// carries undecodable details (withheld, status invalid) and a legacy error
-// text at the storage bound.
+// response is additionalProperties:false compliant for an open episode with
+// structured detail, a recovered one without, and the internal summary.
 func TestObservabilityDiagnosticsEndpointSatisfiesContract(t *testing.T) {
 	occurredAt := time.Date(2026, 9, 12, 10, 0, 0, 0, time.UTC)
+	status := 503
+	via := "proxy"
+	host := "api.example.test"
+	recoveredAt := occurredAt.Add(time.Hour)
+	requestID := "request-1"
 	server := &Server{deps: Dependencies{Observability: fakeObservabilityService{
 		diagnostics: observabilityapplication.DiagnosticPage{
 			Episodes: []observabilityapplication.DiagnosticEpisode{
 				{
-					ID: "episode-invalid-details", Severity: "error", Component: "rss", Operation: "refresh",
-					ErrorCode: "rss_refresh_failed", ScopeKind: "subscription", ScopeID: "subscription-1",
-					FirstFailedAt: occurredAt, LastFailedAt: occurredAt, OccurrenceCount: 1,
-					LastError: "<redacted>", RetentionUntil: occurredAt.Add(14 * 24 * time.Hour),
-					Details: &observabilityapplication.DiagnosticDetails{
-						Raw: json.RawMessage(`{"reason_code":403,"raw_secret":"must-not-leak"}`),
-					},
+					ID: "episode-open", Kind: "metadata", Variant: "unreachable", Severity: "warning",
+					Target:        observabilityapplication.DiagnosticTarget{Kind: "metadata", ID: "tmdb", Name: "TMDB", Host: &host},
+					Detail:        &observabilityapplication.DiagnosticDetail{ErrorClass: "http_status", HTTPStatus: &status, Via: &via},
+					Affected:      &observabilityapplication.DiagnosticAffected{Kind: "anime", Count: 3},
+					Recent:        []observabilityapplication.DiagnosticOccurrence{{At: occurredAt, Via: &via, Host: &host}},
+					FirstFailedAt: occurredAt, LastFailedAt: occurredAt, OccurrenceCount: 3,
+					Retry:          observabilityapplication.DiagnosticRetry{Mode: "auto"},
+					RetentionUntil: occurredAt.Add(14 * 24 * time.Hour),
 				},
 				{
-					ID: "episode-long-error", Severity: "warning", Component: "rss", Operation: "refresh",
-					ErrorCode: "rss_refresh_timeout", ScopeKind: "subscription", ScopeID: "subscription-1",
-					FirstFailedAt: occurredAt, LastFailedAt: occurredAt, OccurrenceCount: 2,
-					LastError:      strings.Repeat("provider rejected the refresh ", 213),
+					ID: "episode-recovered", Kind: "update", Variant: "unreachable", Severity: "warning",
+					Target:        observabilityapplication.DiagnosticTarget{Kind: "update", ID: "update-index", Name: "Update"},
+					FirstFailedAt: occurredAt, LastFailedAt: occurredAt, SucceededAfterAt: &recoveredAt, OccurrenceCount: 1,
+					Retry:          observabilityapplication.DiagnosticRetry{Mode: "manual"},
 					RetentionUntil: occurredAt.Add(14 * 24 * time.Hour),
 				},
 			},
+			Internal: &observabilityapplication.DiagnosticInternal{OccurrenceCount: 2, LastFailedAt: occurredAt, LastRequestID: &requestID},
 		},
 	}}}
 	recorder := httptest.NewRecorder()
-	request := requestWithRuntimeLogger("diagnostic-invalid-details", &panicRuntimeLogger{})
+	request := requestWithRuntimeLogger("diagnostic-contract", &panicRuntimeLogger{})
 	server.ListObservabilityDiagnostics(recorder, request, generated.ListObservabilityDiagnosticsParams{})
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d; body=%s", recorder.Code, recorder.Body.String())
 	}
 	body := recorder.Body.Bytes()
-	if strings.Contains(string(body), "must-not-leak") {
-		t.Fatalf("withheld details leaked into the response: %s", body)
-	}
-	if !strings.Contains(string(body), `"details_status":"invalid"`) {
-		t.Fatalf("an undecodable details payload must report an invalid status: %s", body)
+	for _, forbidden := range []string{"last_error", "error_code", "details_status"} {
+		if strings.Contains(string(body), forbidden) {
+			t.Fatalf("removed field %q is back in the response: %s", forbidden, body)
+		}
 	}
 	validateAgainstOpenAPI(t, "DiagnosticEpisodePage", body)
 }

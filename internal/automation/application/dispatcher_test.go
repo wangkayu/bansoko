@@ -153,17 +153,9 @@ func TestRecordObservabilitySuccessfulDispatchClosesAllDispatchEpisodes(t *testi
 	d := &Dispatcher{Recorder: recorder}
 	d.recordObservability(context.Background(), "rss_refresh", "completed", dispatchCounts{}, nil)
 
-	want := []observabilityport.DiagnosticIdentity{
-		observabilityport.AutomationDispatchFailure(observabilityport.ScopeWorker),
-		observabilityport.AutomationDispatchPartial(observabilityport.ScopeWorker),
-	}
-	if len(recorder.successes) != len(want) {
-		t.Fatalf("got %d recovery writes, want %d: %+v", len(recorder.successes), len(want), recorder.successes)
-	}
-	for i, identity := range want {
-		if got := recorder.successes[i]; got.Identity != identity || got.ScopeID != "rss_refresh" {
-			t.Errorf("recovery[%d]=%+v, want identity=%+v scope_id=%q", i, got, identity, "rss_refresh")
-		}
+	want := observabilityport.InternalSuccess(observabilityport.InternalAutomationDispatch)
+	if len(recorder.successes) != 1 || recorder.successes[0] != want {
+		t.Fatalf("recovery writes = %+v, want exactly %+v", recorder.successes, want)
 	}
 }
 

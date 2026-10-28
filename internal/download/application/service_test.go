@@ -976,17 +976,16 @@ func TestQBSubmitFailureOpensAndSuccessClosesDiagnosticEpisode(t *testing.T) {
 	}
 	outcome.AfterCommit(ctx)
 
-	var component, operation, errorCode, scopeKind, scopeID string
+	var kind, targetID string
 	var succeededAfter sql.NullTime
 	if err := db.QueryRowContext(ctx, `
-SELECT component, operation, error_code, scope_kind, scope_id, succeeded_after_at
-FROM diagnostic_episodes`).Scan(&component, &operation, &errorCode, &scopeKind, &scopeID, &succeededAfter); err != nil {
+SELECT kind, target_id, succeeded_after_at
+FROM diagnostic_episodes`).Scan(&kind, &targetID, &succeededAfter); err != nil {
 		t.Fatalf("read diagnostic episode: %v", err)
 	}
-	if component != "download" || operation != "qb_submit" || errorCode != "qb_submit_failed" ||
-		scopeKind != "owner" || scopeID != "release-qb-test" || succeededAfter.Valid {
-		t.Fatalf("unexpected open episode: %s/%s/%s scope=%s/%s succeeded=%v",
-			component, operation, errorCode, scopeKind, scopeID, succeededAfter)
+	// A frozen-input fault is a product fault, not a downloader condition.
+	if kind != "internal" || targetID != observabilityport.InternalDownloadSubmit || succeededAfter.Valid {
+		t.Fatalf("unexpected open episode: %s/%s succeeded=%v", kind, targetID, succeededAfter)
 	}
 
 	// Restore the frozen input, retry the submit successfully, and the open
@@ -1020,7 +1019,6 @@ VALUES ('torrent-input-qb-test', 'release-qb-test', $1, $2, 'sha256:test', 'QB T
 	}
 	frozen = strings.ReplaceAll(frozen, "torrent-input-qb-test", "torrent-input-diag-success")
 	acquisitionfixture.SeedDownload(t, ownerTestDB(t), "acq-task-qb-diag-success", "task-qb-diag-success", "release-qb-diag-success", "anime-qb-test", "sub-qb-test", "source-qb-test", "qb:release-qb-diag-success", payload, metadata.InfoHashV1, frozen)
-	observabilityport.DiagnosticFailureAfterCommit(recorder, nil, observabilityport.DiagnosticFailureRequest{Identity: observabilityport.DownloadSubmitFailure(), Severity: observabilityport.SeverityError, ScopeID: "release-qb-diag-success", LastError: "fixture prior failure"})(ctx)
 	var ownerVersion int64
 	if err := db.QueryRowContext(ctx, `SELECT version FROM download_tasks WHERE id = 'task-qb-diag-success'`).Scan(&ownerVersion); err != nil {
 		t.Fatal(err)
@@ -1060,7 +1058,7 @@ VALUES ('torrent-input-qb-test', 'release-qb-test', $1, $2, 'sha256:test', 'QB T
 	}
 	retryOutcome.AfterCommit(ctx)
 
-	if err := db.QueryRowContext(ctx, `SELECT succeeded_after_at FROM diagnostic_episodes WHERE scope_id='release-qb-diag-success'`).Scan(&succeededAfter); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT succeeded_after_at FROM diagnostic_episodes WHERE kind='internal' AND target_id='download.submit'`).Scan(&succeededAfter); err != nil {
 		t.Fatal(err)
 	}
 	if !succeededAfter.Valid {

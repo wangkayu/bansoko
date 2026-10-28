@@ -1,12 +1,10 @@
 package httpapi
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 
 	observabilityapplication "bansoko/internal/observability/application"
-	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/transport/httpapi/generated"
 )
 
@@ -44,15 +42,12 @@ func mapObservabilityRecordQuery(value generated.ListObservabilityRecordsParams)
 }
 
 func mapObservabilityDiagnosticQuery(value generated.ListObservabilityDiagnosticsParams) observabilityapplication.DiagnosticQuery {
-	var severity *string
-	if value.Severity != nil {
-		mapped := string(*value.Severity)
-		severity = &mapped
+	var state *string
+	if value.State != nil {
+		mapped := string(*value.State)
+		state = &mapped
 	}
-	return observabilityapplication.DiagnosticQuery{
-		Cursor: value.Cursor, Limit: value.Limit, Severity: severity,
-		Component: value.Component, From: value.From, To: value.To,
-	}
+	return observabilityapplication.DiagnosticQuery{Cursor: value.Cursor, Limit: value.Limit, State: state}
 }
 
 // mapObservabilityRecord projects one stored record onto the contract's
@@ -128,48 +123,79 @@ func mapObservabilityRecordPage(value observabilityapplication.RecordPage) (gene
 	return generated.ObservabilityRecordPage{Records: records, NextCursor: value.NextCursor}, nil
 }
 
-func mapDiagnosticEpisode(ctx context.Context, value observabilityapplication.DiagnosticEpisode) generated.DiagnosticEpisode {
+func mapDiagnosticEpisode(value observabilityapplication.DiagnosticEpisode) generated.DiagnosticEpisode {
 	mapped := generated.DiagnosticEpisode{
-		Component: value.Component, ErrorCode: value.ErrorCode, FirstFailedAt: value.FirstFailedAt,
-		Id: generated.ID(value.ID), LastError: value.LastError, LastFailedAt: value.LastFailedAt,
-		OccurrenceCount: value.OccurrenceCount, Operation: value.Operation, RetentionUntil: value.RetentionUntil,
-		ScopeId: value.ScopeID, ScopeKind: generated.DiagnosticScopeKind(value.ScopeKind),
-		Severity: generated.DiagnosticSeverity(value.Severity), SucceededAfterAt: value.SucceededAfterAt,
+		Id: generated.ID(value.ID), Kind: generated.DiagnosticConditionKind(value.Kind),
+		Variant: generated.DiagnosticConditionVariant(value.Variant),
+		Target: generated.DiagnosticTarget{
+			Kind: generated.DiagnosticConditionKind(value.Target.Kind), Id: value.Target.ID,
+			Name: value.Target.Name, Host: value.Target.Host,
+		},
+		Recent:        make([]generated.DiagnosticOccurrence, 0, len(value.Recent)),
+		FirstFailedAt: value.FirstFailedAt, LastFailedAt: value.LastFailedAt, SucceededAfterAt: value.SucceededAfterAt,
+		OccurrenceCount: value.OccurrenceCount, Severity: generated.DiagnosticSeverity(value.Severity),
+		RetentionUntil: value.RetentionUntil,
+		Retry:          generated.DiagnosticRetry{Mode: generated.DiagnosticRetryMode(value.Retry.Mode)},
 	}
-	if value.ManagedAnimeID != nil {
-		id := generated.ID(*value.ManagedAnimeID)
-		mapped.ManagedAnimeId = &id
+	if value.Retry.SettingsTarget != nil {
+		target := generated.DiagnosticSettingsTarget(*value.Retry.SettingsTarget)
+		mapped.Retry.SettingsTarget = &target
 	}
-	mapped.DetailsStatus = generated.DiagnosticDetailsStatusUnavailable
-	if value.Details != nil {
-		var details generated.DiagnosticDetails
-		if err := json.Unmarshal(value.Details.Raw, &details); err != nil {
-			// Stored details that no longer decode into the contract shape are
-			// reported as a bounded invalid status, never silently dropped and
-			// never serialised raw. The runtime event records the decode class
-			// only; the failing bytes stay out of every log and response.
-			mapped.DetailsStatus = generated.DiagnosticDetailsStatusInvalid
-			runtimeLoggerFrom(ctx).Error(ctx, observabilityport.RuntimeEvent{
-				Message:    "diagnostic details decode failed",
-				Component:  "httpapi",
-				Operation:  "map_diagnostic_episode",
-				Outcome:    "failure",
-				ReasonCode: "diagnostic_details_invalid",
-				RequestID:  RequestIDFrom(ctx),
-				ErrorClass: "diagnostic_details_decode_error",
-			})
-		} else {
-			mapped.Details = &details
-			mapped.DetailsStatus = generated.DiagnosticDetailsStatusAvailable
+	if value.Detail != nil {
+		detail := generated.DiagnosticDetail{ErrorClass: generated.DiagnosticDetailErrorClass(value.Detail.ErrorClass), HttpStatus: value.Detail.HTTPStatus}
+		if value.Detail.Via != nil {
+			via := generated.DiagnosticDetailVia(*value.Detail.Via)
+			detail.Via = &via
 		}
+		mapped.Detail = &detail
+	}
+	if value.Affected != nil {
+		mapped.Affected = &generated.DiagnosticAffected{Kind: generated.DiagnosticAffectedKind(value.Affected.Kind), Count: value.Affected.Count}
+	}
+	for _, occurrence := range value.Recent {
+		item := generated.DiagnosticOccurrence{At: occurrence.At, ErrorClass: occurrence.ErrorClass, Host: occurrence.Host}
+		if occurrence.Via != nil {
+			via := generated.DiagnosticOccurrenceVia(*occurrence.Via)
+			item.Via = &via
+		}
+		mapped.Recent = append(mapped.Recent, item)
 	}
 	return mapped
 }
 
-func mapDiagnosticPage(ctx context.Context, value observabilityapplication.DiagnosticPage) generated.DiagnosticEpisodePage {
+func mapDiagnosticPage(value observabilityapplication.DiagnosticPage) generated.DiagnosticEpisodePage {
 	episodes := make([]generated.DiagnosticEpisode, 0, len(value.Episodes))
 	for _, episode := range value.Episodes {
-		episodes = append(episodes, mapDiagnosticEpisode(ctx, episode))
+		episodes = append(episodes, mapDiagnosticEpisode(episode))
 	}
-	return generated.DiagnosticEpisodePage{Episodes: episodes, NextCursor: value.NextCursor}
+	page := generated.DiagnosticEpisodePage{Episodes: episodes, NextCursor: value.NextCursor}
+	if value.Internal != nil {
+		page.Internal = &generated.DiagnosticInternalSummary{
+			OccurrenceCount: value.Internal.OccurrenceCount, LastFailedAt: value.Internal.LastFailedAt,
+			LastRequestId: value.Internal.LastRequestID,
+		}
+	}
+	return page
+}
+
+func mapRuntimeLogPage(entries []observabilityapplication.RuntimeLogEntry) generated.RuntimeLogPage {
+	lines := make([]generated.RuntimeLogLine, 0, len(entries))
+	for _, entry := range entries {
+		line := generated.RuntimeLogLine{
+			At: entry.At, Level: generated.RuntimeLogLineLevel(entry.Level), Message: entry.Message,
+			Component: optionalText(entry.Component), Operation: optionalText(entry.Operation),
+			Outcome: optionalText(entry.Outcome), ReasonCode: optionalText(entry.ReasonCode),
+			RequestId: optionalText(entry.RequestID), CorrelationId: optionalText(entry.CorrelationID),
+			ErrorClass: optionalText(entry.ErrorClass),
+		}
+		lines = append(lines, line)
+	}
+	return generated.RuntimeLogPage{Lines: lines}
+}
+
+func optionalText(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }

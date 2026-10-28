@@ -101,9 +101,7 @@ func (s *Service) handleRefresh(ctx context.Context, claim workitems.Claim) (wor
 		effect := &circuitEffect{}
 		return worker.WithAfterCommit(
 			worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: "ready", ReasonCode: "refresh_not_modified"}, s.refreshNotModifiedWriter(claim, snapshot, effect)),
-			s.circuitAfterCommit(snapshot, effect, observabilityport.DiagnosticSuccessAfterCommit(s.diagnostics, s.logger, observabilityport.DiagnosticSuccessRequest{
-				Identity: observabilityport.RSSRefreshFailure(), ScopeID: snapshot.sourceID,
-			}))), nil
+			s.circuitAfterCommit(snapshot, effect, nil)), nil
 	}
 	if err != nil {
 		reason := safeReason(err.Error())
@@ -115,14 +113,16 @@ func (s *Service) handleRefresh(ctx context.Context, claim workitems.Claim) (wor
 		// a listed site whose format changed) keeps its plain summary on the
 		// work item; the runtime detail carries the stable code the RSS page
 		// names it by.
+		variant := observabilityport.VariantRefreshFailed
 		var failure *acquisitiondomain.FeedFailure
 		if errors.As(err, &failure) {
 			code, runtimeDetail = failure.Code, failure.Code
+			variant = observabilityport.VariantUnreadable
 		}
 		effect := &circuitEffect{}
 		return worker.WithAfterCommit(
 			worker.Retry(code, reason, subscriptiondomain.RefreshBackoff(snapshot.consecutiveFailures+1), s.refreshFailureWriter(claim, snapshot, runtimeDetail, effect)),
-			s.circuitAfterCommit(snapshot, effect, nil)), nil
+			s.circuitAfterCommit(snapshot, effect, &refreshFailureNote{err: err, variant: variant})), nil
 	}
 
 	feed, err := buildFeedEvaluations(ctx, items, snapshot)
@@ -130,14 +130,12 @@ func (s *Service) handleRefresh(ctx context.Context, claim workitems.Claim) (wor
 		effect := &circuitEffect{}
 		return worker.WithAfterCommit(
 			worker.Retry("feed_parse_failed", safeReason(err.Error()), subscriptiondomain.RefreshBackoff(snapshot.consecutiveFailures+1), s.refreshFailureWriter(claim, snapshot, safeReason(err.Error()), effect)),
-			s.circuitAfterCommit(snapshot, effect, nil)), nil
+			s.circuitAfterCommit(snapshot, effect, &refreshFailureNote{err: err, variant: observabilityport.VariantUnreadable})), nil
 	}
 	effect := &circuitEffect{}
 	return worker.WithAfterCommit(
 		worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: "ready", ReasonCode: "refresh_succeeded"}, s.refreshSuccessWriter(claim, snapshot, feed, completeFeedValidators(exchange, feed), effect)),
-		s.circuitAfterCommit(snapshot, effect, observabilityport.DiagnosticSuccessAfterCommit(s.diagnostics, s.logger, observabilityport.DiagnosticSuccessRequest{
-			Identity: observabilityport.RSSRefreshFailure(), ScopeID: snapshot.sourceID,
-		}))), nil
+		s.circuitAfterCommit(snapshot, effect, nil)), nil
 }
 
 // refreshTriggerIsManual reports whether the WorkItem carries an explicit
@@ -382,10 +380,8 @@ RETURNING version`, snapshot.sourceID, ownerHealth, reasonCode, nullableString(s
 func (s *Service) refreshTerminalFailure(ctx context.Context, claim workitems.Claim, snapshot sourceSnapshot, reasonCode string, err error) worker.Outcome {
 	reason := safeReason(err.Error())
 	outcome := worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: workitems.StateFailed, ReasonCode: reasonCode, Reason: reason}, s.refreshOwnerWriter(claim, snapshot, "failed", reasonCode, reason, nil))
-	return worker.WithAfterCommit(outcome, observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, s.logger, observabilityport.DiagnosticFailureRequest{
-		Identity: observabilityport.RSSRefreshFailure(), Severity: observabilityport.SeverityError,
-		ScopeID: snapshot.sourceID, ManagedAnimeID: snapshot.managedAnimeID, LastError: reason,
-	}))
+	return worker.WithAfterCommit(outcome, observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, s.logger,
+		observabilityport.InternalFailure(observabilityport.InternalRSSRefresh, "")))
 }
 
 func refreshFacts(feed []feedEvaluation, snapshot sourceSnapshot) (rssCursor, rssLastGoodFacts) {

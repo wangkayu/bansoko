@@ -306,8 +306,7 @@
     ],
     "reason": "product owner DML from the listed application code",
     "direct_access": [
-      "internal/workitems/oneshot_reclaim.go (one-shot reclaim D-a leaf deletion)",
-      "internal/observability/application/writer.go",
+      "internal/observability/application/diagnostics_writer.go",
       "internal/observability/adapter/persistence/query.sql",
       "internal/observability/adapter/persistence/generated/query.sql.go",
       "internal/observability/adapter/persistence/generated/querier.go"

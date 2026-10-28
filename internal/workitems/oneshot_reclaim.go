@@ -95,7 +95,7 @@ var oneShotClassifiedOwnerTables = []string{
 	"placement_companions",
 	"replacement_decisions", "reconciliation_files", "reconciliation_scans",
 	"notification_admissions",
-	"routine_activities", "diagnostic_episodes",
+	"routine_activities",
 	"one_shot_acquisitions",
 }
 
@@ -1177,10 +1177,6 @@ func deleteTemporaryOwnerGraphTx(ctx context.Context, tx *sql.Tx, graph oneShotG
 		}},
 		{"routine_activities", func() error {
 			_, err := tx.ExecContext(ctx, `DELETE FROM routine_activities WHERE managed_anime_id = $1`, graph.animeID)
-			return err
-		}},
-		{"diagnostic_episodes", func() error {
-			_, err := tx.ExecContext(ctx, `DELETE FROM diagnostic_episodes WHERE managed_anime_id = $1`, graph.animeID)
 			return err
 		}},
 		{"managed_anime", func() error { return queries.DeleteOneShotManagedAnime(ctx, graph.animeID) }},

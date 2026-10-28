@@ -16,7 +16,6 @@ import (
 	observabilityapplication "bansoko/internal/observability/application"
 	plugintargetapplication "bansoko/internal/plugintarget/application"
 	deliverypayload "bansoko/internal/plugintarget/payload"
-	"bansoko/internal/redact"
 	"bansoko/internal/workitems"
 )
 
@@ -149,8 +148,7 @@ func TestUnknownHTTP500PersistsDiagnosticEpisodeOverPostgres(t *testing.T) {
 		if err := rig.db.QueryRowContext(ctx, `
 SELECT COUNT(*), COALESCE(MAX(occurrence_count), 0)
 FROM diagnostic_episodes
-WHERE component = 'httpapi' AND operation = 'request' AND error_code = 'http_500'
-  AND scope_kind = 'global' AND scope_id = 'global'`).Scan(&episodeCount, &occurrenceCount); err != nil {
+WHERE kind = 'internal' AND target_id = 'http.5xx'`).Scan(&episodeCount, &occurrenceCount); err != nil {
 			t.Fatalf("read HTTP diagnostic episode: %v", err)
 		}
 		return episodeCount, occurrenceCount
@@ -173,35 +171,28 @@ WHERE component = 'httpapi' AND operation = 'request' AND error_code = 'http_500
 	}
 
 	diagnosticsResponse, diagnosticsBody := rig.do(t, http.MethodGet,
-		"/api/v1/observability/diagnostics?component=httpapi&limit=20", nil, nil)
+		"/api/v1/observability/diagnostics?limit=20", nil, nil)
 	if diagnosticsResponse.Code != http.StatusOK {
 		t.Fatalf("diagnostics status = %d; body=%s", diagnosticsResponse.Code, diagnosticsBody)
 	}
 	validateAgainstOpenAPI(t, "DiagnosticEpisodePage", diagnosticsBody)
 	var page struct {
-		Episodes []struct {
-			Component       string `json:"component"`
-			Operation       string `json:"operation"`
-			ErrorCode       string `json:"error_code"`
-			ScopeKind       string `json:"scope_kind"`
-			ScopeID         string `json:"scope_id"`
-			LastError       string `json:"last_error"`
-			OccurrenceCount int    `json:"occurrence_count"`
-		} `json:"episodes"`
+		Episodes []json.RawMessage `json:"episodes"`
+		Internal *struct {
+			OccurrenceCount int     `json:"occurrence_count"`
+			LastRequestID   *string `json:"last_request_id"`
+		} `json:"internal"`
 	}
 	if err := json.Unmarshal(diagnosticsBody, &page); err != nil {
 		t.Fatalf("decode diagnostics page: %v; body=%s", err, diagnosticsBody)
 	}
-	if len(page.Episodes) != 1 {
-		t.Fatalf("HTTP diagnostics episodes = %d, want one: %s", len(page.Episodes), diagnosticsBody)
+	if len(page.Episodes) != 0 {
+		t.Fatalf("an internal error must not be listed as an episode: %s", diagnosticsBody)
 	}
-	episode := page.Episodes[0]
-	if episode.Component != "httpapi" || episode.Operation != "request" || episode.ErrorCode != "http_500" ||
-		episode.ScopeKind != "global" || episode.ScopeID != "global" || episode.OccurrenceCount != 2 ||
-		episode.LastError != "<redacted>" {
-		t.Fatalf("unexpected HTTP diagnostic episode: %+v", episode)
+	if page.Internal == nil || page.Internal.OccurrenceCount != 2 || page.Internal.LastRequestID == nil || *page.Internal.LastRequestID != secondID {
+		t.Fatalf("internal summary = %+v, want two occurrences and the latest request id: %s", page.Internal, diagnosticsBody)
 	}
-	for _, forbidden := range []string{firstID, secondID, secretValue, privatePath, dsnValue, "db-password"} {
+	for _, forbidden := range []string{firstID, secretValue, privatePath, dsnValue, "db-password"} {
 		if bytes.Contains(diagnosticsBody, []byte(forbidden)) {
 			t.Fatalf("diagnostics response leaked %q: %s", forbidden, diagnosticsBody)
 		}
@@ -294,79 +285,6 @@ func TestPluginDeliveryNeverExposesSecretRefOverPostgres(t *testing.T) {
 	}
 	if storedRef != secretRef {
 		t.Fatalf("fixture did not store the secret reference, got %q", storedRef)
-	}
-}
-
-// TestDiagnosticLastErrorIsRedactedAndContractBoundedOverPostgres proves legacy
-// diagnostic rows that predate the writer's validation are re-redacted at the
-// read boundary, that a value between the old 4096 contract bound and the
-// storage bound of 8192 survives intact, and that multi-byte text is truncated
-// by runes, with every response satisfying api/openapi.yaml.
-func TestDiagnosticLastErrorIsRedactedAndContractBoundedOverPostgres(t *testing.T) {
-	rig := newTestRig(t, "development", true, withObservabilityContractDeps(t))
-	ctx := t.Context()
-
-	insert := func(id, errorCode, lastError string) {
-		t.Helper()
-		if _, err := rig.db.ExecContext(ctx, `
-INSERT INTO diagnostic_episodes(
-	id, severity, component, operation, error_code, scope_kind, scope_id,
-	first_failed_at, last_failed_at, occurrence_count, last_error, retention_until)
-VALUES ($1, 'error', 'rss', 'refresh', $2, 'subscription', 'subscription-contract',
-        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, $3, CURRENT_TIMESTAMP + INTERVAL '14 days')`, id, errorCode, lastError); err != nil {
-			t.Fatalf("seed diagnostic fixture: %v", err)
-		}
-	}
-
-	legacy := "provider replied api_key=AKIAIOSFODNN7EXAMPLE and fetch https://user:pass@example.test/private failed at /home/alice/private/torrent"
-	insert("episode-legacy", "rss_refresh_failed", legacy)
-
-	// Longer than the retired 4096 contract bound, still inside storage.
-	withinStorage := strings.Repeat("provider rejected the refresh;", 213)
-	insert("episode-within-storage", "rss_refresh_timeout", withinStorage)
-
-	// Multi-byte text at the storage bound: the read boundary must return it
-	// intact and never split a rune. (Truncation of an over-long value is
-	// exercised by TestSanitizeDiagnosticLastErrorRedactsLegacyText, since the
-	// column itself refuses more than 8192 characters.)
-	multiByteStored := strings.Repeat("診", 8192)
-	insert("episode-multibyte", "rss_refresh_conflict", multiByteStored)
-
-	recorder, body := rig.do(t, http.MethodGet, "/api/v1/observability/diagnostics?limit=20", nil, nil)
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("diagnostics status = %d; body=%s", recorder.Code, body)
-	}
-	validateAgainstOpenAPI(t, "DiagnosticEpisodePage", body)
-
-	var page struct {
-		Episodes []struct {
-			ID        string `json:"id"`
-			LastError string `json:"last_error"`
-		} `json:"episodes"`
-	}
-	if err := json.Unmarshal(body, &page); err != nil {
-		t.Fatalf("decode diagnostics page: %v (%s)", err, body)
-	}
-	byID := map[string]string{}
-	for _, episode := range page.Episodes {
-		byID[episode.ID] = episode.LastError
-	}
-
-	if got := byID["episode-legacy"]; got != redact.Redacted {
-		t.Fatalf("legacy diagnostic error must be re-redacted, got %q", got)
-	}
-	if got := byID["episode-within-storage"]; got != withinStorage {
-		t.Fatalf("a %d character value must survive the 8192 storage bound, got %d characters",
-			len([]rune(withinStorage)), len([]rune(got)))
-	}
-	multiByte := byID["episode-multibyte"]
-	if multiByte != multiByteStored {
-		t.Fatalf("multi-byte value at the storage bound must survive intact, got %d runes", len([]rune(multiByte)))
-	}
-	for _, forbidden := range []string{"AKIAIOSFODNN7EXAMPLE", "user:pass", "/home/alice", "private/torrent"} {
-		if strings.Contains(string(body), forbidden) {
-			t.Fatalf("diagnostics response leaked %q: %s", forbidden, body)
-		}
 	}
 }
 
