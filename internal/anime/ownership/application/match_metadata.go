@@ -101,7 +101,7 @@ func (s *Service) MatchAnimeMetadata(ctx context.Context, managedAnimeID string,
 	if target.entryRef.Valid {
 		entryRef = target.entryRef.String
 	}
-	match, matchErr := s.metadataMatcher.Match(ctx, target.origin, entryRef, target.title,
+	match, matchErr := s.metadataMatcher.Match(matcher.WithAffectedAnime(ctx, managedAnimeID), target.origin, entryRef, target.title,
 		target.bgmWorkID.Valid,
 		target.tmdbWorkID.Valid && target.tmdbKind.Valid && target.tmdbSeason.Valid)
 	outcome := MetadataMatchOutcomeNoResult
@@ -339,7 +339,7 @@ FROM anime_metadata WHERE managed_anime_id = $1 FOR UPDATE`, managedAnimeID).Sca
 					return MetadataMatchResult{}, err
 				}
 			}
-			if err := businesslog.WriteMetadataAppliedTx(ctx, txscope.Wrap(tx), s.activityWriter, subscriptionID, managedAnimeID, title, expectedVersion+1); err != nil {
+			if err := businesslog.WriteMetadataAppliedTx(ctx, txscope.Wrap(tx), s.activityWriter, subscriptionID, managedAnimeID, expectedVersion+1); err != nil {
 				return MetadataMatchResult{}, fmt.Errorf("write metadata applied log: %w", err)
 			}
 		}

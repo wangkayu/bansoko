@@ -251,10 +251,7 @@ func recordUnknownRequestFailure(r *http.Request, _ error) {
 	// This fixed identity is a cumulative unknown-fault bucket, not an endpoint
 	// health signal. Never report success here: an arbitrary successful request
 	// must not close an episode for a later or concurrent unknown failure.
-	failure := observabilityport.DiagnosticFailureRequest{
-		Identity: observabilityport.HTTPRequestFailure(observabilityport.DiagnosticErrorCode("http_500")),
-		Severity: observabilityport.SeverityError, ScopeID: "global", LastError: redact.Redacted,
-	}
+	failure := observabilityport.InternalFailure(observabilityport.InternalHTTP5xx, RequestIDFrom(ctx))
 	recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
 	if diagnosticRecorderFailed(recordCtx, recorder, failure) {

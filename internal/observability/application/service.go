@@ -18,7 +18,6 @@ import (
 	"bansoko/internal/apperrors"
 	adapterconfig "bansoko/internal/plugintarget/config"
 	deliverypayload "bansoko/internal/plugintarget/payload"
-	"bansoko/internal/redact"
 )
 
 // Service is the observability read service.
@@ -79,7 +78,10 @@ func validRecordSourceRank(rank int) bool {
 }
 
 // ListRecords returns the union of routine, business, automation, and plugin
-// records ordered by record_time DESC with keyset cursor pagination.
+// records ordered by record_time DESC with keyset cursor pagination. The state
+// and search filters select whole Release runs: a business entry of a run is
+// in the state of its run and matches a search when any entry of its run
+// does.
 func (s *Service) ListRecords(ctx context.Context, params RecordQuery) (RecordPage, error) {
 	limit := defaultRecordLimit
 	if params.Limit != nil {
@@ -105,8 +107,8 @@ func (s *Service) ListRecords(ctx context.Context, params RecordQuery) (RecordPa
 		cursorID = id
 	}
 
-	// Build the UNION ALL query. Each source projects into a common shape:
-	// (record_time, id, kind, kind_rank, outcome, managed_anime_id, row_data).
+	// Build the UNION ALL query. Each source projects the page key
+	// (record_time, id, kind, kind_rank); row_data is built for the page rows.
 	//
 	// row_data is an explicit per-contract jsonb_build_object, never
 	// to_jsonb(table.*): the record union is marshalled verbatim to the client,
@@ -135,11 +137,19 @@ func (s *Service) ListRecords(ctx context.Context, params RecordQuery) (RecordPa
 		}
 	}
 
-	// outcome filter
-	var outcomeFilter string
-	if params.Outcome != nil {
-		outcomeFilter = string(*params.Outcome)
+	stateFilter, err := recordStateParam(params.State)
+	if err != nil {
+		return RecordPage{}, err
 	}
+	searchPattern, err := recordSearchParam(params.Q)
+	if err != nil {
+		return RecordPage{}, err
+	}
+	entryKinds, err := recordEntryKindsParam(params.EntryKind)
+	if err != nil {
+		return RecordPage{}, err
+	}
+	businessKinds := classifyBusinessKinds(entryKinds)
 
 	// time range
 	var fromTime, toTime *time.Time
@@ -158,42 +168,50 @@ func (s *Service) ListRecords(ctx context.Context, params RecordQuery) (RecordPa
 		managedAnimeID = string(*params.ManagedAnimeID)
 	}
 
-	// A source is one record table. Only its sort key columns are read while the
-	// page is selected; the contract JSON of a record is built afterwards for the
-	// rows of the page alone (rowData), so the cost of a page does not grow with
-	// the size of the history.
+	// A source is one record table, read under the alias e. Only its sort key
+	// columns are read while the page is selected; the contract JSON of a
+	// record is built afterwards for the rows of the page alone (rowData), so
+	// the cost of a page does not grow with the size of the history.
 	type sourceQuery struct {
 		kind    string
 		table   string
 		timeCol string // the record_time column, ordered DESC with id
-		outcome string // SQL expression of the projected outcome
-		managed string // SQL expression of the managed anime id; "" = none
+		// state is the WHERE fragment selecting the source's rows in a state.
+		state func(state string) string
+		// search is the WHERE fragment of a search pattern bind parameter
+		// (e.g. "$4"); nil = the source has no searchable text.
+		search  func(pattern string) string
+		managed string // column of the managed anime id; "" = none
 		columns []string
+		// computed members of the contract JSON: name -> SQL over alias src.
+		computed [][2]string
 	}
 
 	sources := []sourceQuery{
 		{
 			kind: "routine", table: "routine_activities", timeCol: "last_executed_at",
-			outcome: "outcome", managed: "managed_anime_id",
+			state: routineStates.predicate, managed: "managed_anime_id",
+			search: func(pattern string) string { return animeTitleMatch("e.managed_anime_id", pattern) },
 			columns: []string{"id", "kind", "scope_kind", "scope_id", "managed_anime_id", "outcome",
 				"last_executed_at", "last_result_code", "summary", "details", "updated_at"},
 		},
 		{
 			kind: "business", table: "subscription_log_entries", timeCol: "occurred_at",
-			outcome: "outcome", managed: "managed_anime_id",
+			state:   func(state string) string { return businessStatePredicate(businessKinds, state) },
+			search:  businessSearchPredicate,
+			managed: "managed_anime_id",
 			columns: []string{"id", "subscription_id", "managed_anime_id", "kind", "outcome", "occurred_at",
-				"title", "summary", "rss_source_id", "release_id", "group_ref", "details", "reason_code",
+				"message_code", "message_params", "rss_source_id", "release_id", "group_ref", "details", "reason_code",
 				"subject_type", "subject_id", "subject_version", "correlation_id", "causation_type",
 				"causation_id", "dedupe_key", "retention_until"},
+			computed: [][2]string{
+				{"anime_title", `COALESCE((SELECT left(COALESCE(NULLIF(btrim(ma.title_override), ''), ma.title), 512) FROM managed_anime ma WHERE ma.id = src.managed_anime_id), '')`},
+				{"source", `COALESCE((SELECT CASE WHEN sub.origin = 'oneshot' THEN 'one_shot' ELSE 'subscription' END FROM subscriptions sub WHERE sub.id = src.subscription_id), 'subscription')`},
+			},
 		},
 		{
 			kind: "automation", table: "automation_dispatch_runs", timeCol: "created_at",
-			outcome: `CASE state
-					WHEN 'completed' THEN 'success'
-					WHEN 'partial' THEN 'partial'
-					WHEN 'failed' THEN 'failure'
-					ELSE 'pending'
-				END`,
+			state: automationStates.predicate,
 			columns: []string{"id", "kind", "trigger", "state", "target_count", "enqueued_count", "merged_count",
 				"skipped_count", "dispatch_error_count", "started_at", "finished_at", "retention_until"},
 		},
@@ -201,12 +219,7 @@ func (s *Service) ListRecords(ctx context.Context, params RecordQuery) (RecordPa
 			// secret_ref is deliberately absent: it is storage lineage for the
 			// encrypted secret value and must never cross the API boundary.
 			kind: "plugin", table: "plugin_deliveries", timeCol: "created_at",
-			outcome: `CASE state
-					WHEN 'delivered' THEN 'success'
-					WHEN 'failed' THEN 'failure'
-					WHEN 'unknown' THEN 'unknown'
-					ELSE 'pending'
-				END`,
+			state: pluginStates.predicate, search: pluginSearchPredicate,
 			managed: "managed_anime_id",
 			columns: []string{"id", "plugin_target_config_id", "plugin_target_config_version", "adapter_kind",
 				"adapter_config_snapshot", "delivery_kind", "trigger_kind", "source_owner_type", "source_owner_id",
@@ -228,6 +241,9 @@ func (s *Service) ListRecords(ctx context.Context, params RecordQuery) (RecordPa
 				b.WriteString(", ")
 			}
 			fmt.Fprintf(&b, "'%s', %s.%s", column, alias, column)
+		}
+		for _, member := range src.computed {
+			fmt.Fprintf(&b, ", '%s', %s", member[0], member[1])
 		}
 		b.WriteString(")")
 		return b.String()
@@ -281,19 +297,31 @@ func (s *Service) ListRecords(ctx context.Context, params RecordQuery) (RecordPa
 			return RecordPage{}, fmt.Errorf("observability record source %q has no cursor rank", src.kind)
 		}
 		var where []string
+		timeCol := "e." + src.timeCol
 
-		if outcomeFilter != "" {
-			where = append(where, fmt.Sprintf("(%s) = $%d", src.outcome, argIdx))
-			args = append(args, outcomeFilter)
-			argIdx++
+		// entry_kind narrows the business source alone.
+		if src.kind == "business" && entryKinds != nil {
+			where = append(where, "e.kind IN "+sqlList(entryKinds))
+		}
+		if stateFilter != "" {
+			where = append(where, src.state(stateFilter))
+		}
+		if searchPattern != "" {
+			if src.search == nil {
+				where = append(where, "FALSE")
+			} else {
+				where = append(where, src.search(fmt.Sprintf("$%d", argIdx)))
+				args = append(args, searchPattern)
+				argIdx++
+			}
 		}
 		if fromTime != nil {
-			where = append(where, fmt.Sprintf("%s >= $%d", src.timeCol, argIdx))
+			where = append(where, fmt.Sprintf("%s >= $%d", timeCol, argIdx))
 			args = append(args, *fromTime)
 			argIdx++
 		}
 		if toTime != nil {
-			where = append(where, fmt.Sprintf("%s <= $%d", src.timeCol, argIdx))
+			where = append(where, fmt.Sprintf("%s <= $%d", timeCol, argIdx))
 			args = append(args, *toTime)
 			argIdx++
 		}
@@ -301,7 +329,7 @@ func (s *Service) ListRecords(ctx context.Context, params RecordQuery) (RecordPa
 			if src.managed == "" {
 				where = append(where, "FALSE")
 			} else {
-				where = append(where, fmt.Sprintf("%s = $%d", src.managed, argIdx))
+				where = append(where, fmt.Sprintf("e.%s = $%d", src.managed, argIdx))
 				args = append(args, managedAnimeID)
 				argIdx++
 			}
@@ -309,19 +337,19 @@ func (s *Service) ListRecords(ctx context.Context, params RecordQuery) (RecordPa
 		if cursorID != "" {
 			switch {
 			case rank < cursorRank:
-				where = append(where, fmt.Sprintf("%s <= $%d", src.timeCol, cursorTimeIdx))
+				where = append(where, fmt.Sprintf("%s <= $%d", timeCol, cursorTimeIdx))
 			case rank > cursorRank:
-				where = append(where, fmt.Sprintf("%s < $%d", src.timeCol, cursorTimeIdx))
+				where = append(where, fmt.Sprintf("%s < $%d", timeCol, cursorTimeIdx))
 			default:
-				where = append(where, fmt.Sprintf("(%s, id) < ($%d, $%d)", src.timeCol, cursorTimeIdx, cursorIDIdx))
+				where = append(where, fmt.Sprintf("(%s, e.id) < ($%d, $%d)", timeCol, cursorTimeIdx, cursorIDIdx))
 			}
 		}
 
-		part := fmt.Sprintf("(SELECT %s AS record_time, id, '%s'::text AS kind, %d::int AS kind_rank FROM %s", src.timeCol, src.kind, rank, src.table)
+		part := fmt.Sprintf("(SELECT %s AS record_time, e.id, '%s'::text AS kind, %d::int AS kind_rank FROM %s e", timeCol, src.kind, rank, src.table)
 		if len(where) > 0 {
 			part += " WHERE " + strings.Join(where, " AND ")
 		}
-		part += fmt.Sprintf(" ORDER BY %s DESC, id DESC LIMIT $%d)", src.timeCol, limitIdx)
+		part += fmt.Sprintf(" ORDER BY %s DESC, e.id DESC LIMIT $%d)", timeCol, limitIdx)
 		unionParts = append(unionParts, part)
 	}
 
@@ -440,179 +468,6 @@ func recordFromRow(kind string, rowData []byte) (Record, error) {
 		return Record{}, fmt.Errorf("build %s record: %w", kind, err)
 	}
 	return Record{Raw: raw}, nil
-}
-
-const defaultDiagnosticLimit = 20
-const maxDiagnosticLimit = 100
-
-// maxDiagnosticLastErrorRunes mirrors the storage bound on
-// diagnostic_episodes.last_error (001_baseline: 1..8192 characters)
-// and the contract's maxLength. The writer rejects secrets, URLs and private
-// paths before storing, and older rows predate that validation, so the read
-// boundary re-redacts with the shared redactor instead of trusting stored
-// text. Truncation is rune-based: a byte cut could split a multi-byte rune and
-// produce a value the contract forbids.
-const maxDiagnosticLastErrorRunes = 8192
-
-// sanitizeDiagnosticLastError bounds and redacts one stored diagnostic error.
-// A value that sanitises to empty (whitespace or control characters only)
-// collapses to the redaction marker rather than the empty string, because
-// last_error is required with minLength 1.
-func sanitizeDiagnosticLastError(value string) string {
-	safe, _ := redact.Apply(value, maxDiagnosticLastErrorRunes, redact.Mask, redact.Redacted)
-	if safe == "" {
-		return redact.Redacted
-	}
-	return safe
-}
-
-// ListDiagnostics returns diagnostic episodes ordered by effective time DESC
-// with keyset cursor pagination.
-func (s *Service) ListDiagnostics(ctx context.Context, params DiagnosticQuery) (DiagnosticPage, error) {
-	limit := defaultDiagnosticLimit
-	if params.Limit != nil {
-		limit = int(*params.Limit)
-	}
-	if limit < 1 {
-		limit = 1
-	}
-	if limit > maxDiagnosticLimit {
-		limit = maxDiagnosticLimit
-	}
-
-	var cursorTime time.Time
-	var cursorID string
-	if params.Cursor != nil && *params.Cursor != "" {
-		// Diagnostics read a single table whose id is the primary key, so the
-		// rank component is a constant 0; it shares the versioned codec with
-		// the union stream so both surfaces accept and produce one shape. A
-		// union cursor is a foreign position for this stream and is rejected
-		// rather than silently reinterpreted against another table's ids.
-		t, rank, id, err := decodeCursor(string(*params.Cursor))
-		if err != nil || rank != diagnosticCursorRank {
-			return DiagnosticPage{}, invalidCursorError()
-		}
-		cursorTime = t
-		cursorID = id
-	}
-
-	var conditions []string
-	var args []interface{}
-	argIdx := 1
-
-	if params.Severity != nil {
-		conditions = append(conditions, fmt.Sprintf("severity = $%d", argIdx))
-		args = append(args, string(*params.Severity))
-		argIdx++
-	}
-	if params.Component != nil && *params.Component != "" {
-		conditions = append(conditions, fmt.Sprintf("component = $%d", argIdx))
-		args = append(args, *params.Component)
-		argIdx++
-	}
-	if params.From != nil {
-		conditions = append(conditions, fmt.Sprintf("COALESCE(succeeded_after_at, last_failed_at) >= $%d", argIdx))
-		args = append(args, time.Time(*params.From))
-		argIdx++
-	}
-	if params.To != nil {
-		conditions = append(conditions, fmt.Sprintf("COALESCE(succeeded_after_at, last_failed_at) <= $%d", argIdx))
-		args = append(args, time.Time(*params.To))
-		argIdx++
-	}
-	if cursorID != "" {
-		conditions = append(conditions, fmt.Sprintf("(COALESCE(succeeded_after_at, last_failed_at), id) < ($%d, $%d)", argIdx, argIdx+1))
-		args = append(args, cursorTime, cursorID)
-		argIdx += 2
-	}
-
-	whereClause := ""
-	if len(conditions) > 0 {
-		whereClause = " WHERE " + strings.Join(conditions, " AND ")
-	}
-
-	query := fmt.Sprintf(`SELECT id, severity, component, operation, error_code, scope_kind, scope_id,
-		managed_anime_id, first_failed_at, last_failed_at, occurrence_count, last_error,
-		details, succeeded_after_at, retention_until
-		FROM diagnostic_episodes%s
-		ORDER BY COALESCE(succeeded_after_at, last_failed_at) DESC, id DESC
-		LIMIT $%d`, whereClause, argIdx)
-	args = append(args, limit+1)
-
-	rows, err := s.db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return DiagnosticPage{}, fmt.Errorf("query diagnostic episodes: %w", err)
-	}
-	defer rows.Close()
-
-	type episodeWithPos struct {
-		ep   DiagnosticEpisode
-		time time.Time
-		id   string
-	}
-
-	var episodes []episodeWithPos
-
-	for rows.Next() {
-		var ep DiagnosticEpisode
-		var severity, component, operation, errorCode, scopeKind, scopeID string
-		var managedAnimeID sql.NullString
-		var details []byte
-		var succeededAfterAt sql.NullTime
-
-		if err := rows.Scan(
-			&ep.ID, &severity, &component, &operation, &errorCode, &scopeKind, &scopeID,
-			&managedAnimeID, &ep.FirstFailedAt, &ep.LastFailedAt, &ep.OccurrenceCount,
-			&ep.LastError, &details, &succeededAfterAt, &ep.RetentionUntil,
-		); err != nil {
-			return DiagnosticPage{}, fmt.Errorf("scan diagnostic episode: %w", err)
-		}
-
-		ep.Severity = severity
-		ep.Component = component
-		ep.Operation = operation
-		ep.ErrorCode = errorCode
-		ep.ScopeKind = scopeKind
-		ep.ScopeID = scopeID
-		ep.LastError = sanitizeDiagnosticLastError(ep.LastError)
-		ep.ManagedAnimeID = nullableStringPointer(managedAnimeID)
-		if succeededAfterAt.Valid {
-			ep.SucceededAfterAt = &succeededAfterAt.Time
-		}
-		if details != nil {
-			ep.Details = &DiagnosticDetails{Raw: append(json.RawMessage(nil), details...)}
-		}
-
-		// Effective sort time
-		effectiveTime := ep.LastFailedAt
-		if ep.SucceededAfterAt != nil {
-			effectiveTime = *ep.SucceededAfterAt
-		}
-
-		episodes = append(episodes, episodeWithPos{ep: ep, time: effectiveTime, id: ep.ID})
-	}
-	if err := rows.Err(); err != nil {
-		return DiagnosticPage{}, fmt.Errorf("iterate diagnostic episodes: %w", err)
-	}
-
-	var nextCursor *string
-	pageEpisodes := make([]DiagnosticEpisode, 0, limit)
-	for i, ewp := range episodes {
-		if i >= limit {
-			break
-		}
-		pageEpisodes = append(pageEpisodes, ewp.ep)
-	}
-	if len(episodes) > limit {
-		lastPos := episodes[limit-1]
-		c := encodeCursor(lastPos.time, diagnosticCursorRank, lastPos.id)
-		nextCursor = &c
-	}
-
-	return DiagnosticPage{
-		Episodes:   pageEpisodes,
-		NextCursor: nextCursor,
-	}, nil
 }
 
 // --- Cursor helpers ---

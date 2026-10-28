@@ -131,7 +131,7 @@ func (p *PreparedSubmission) Execute(ctx context.Context) (SubmissionResult, err
 		return SubmissionResult{}, err
 	}
 	request.Header.Set("Content-Type", p.contentType)
-	response, err := p.client.Do(request)
+	response, err := doOutbound(p.client, request)
 	if err != nil {
 		return SubmissionResult{}, fmt.Errorf("submit qB task: %w", err)
 	}
@@ -140,6 +140,9 @@ func (p *PreparedSubmission) Execute(ctx context.Context) (SubmissionResult, err
 	result := SubmissionResult{ResponseReceived: true, StatusCode: response.StatusCode}
 	if err != nil {
 		return result, err
+	}
+	if response.StatusCode == http.StatusForbidden {
+		return result, fmt.Errorf("qB task submission refused with HTTP 403: %w", ErrAuthFailed)
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 || strings.TrimSpace(string(body)) != "Ok." {
 		// qB refuses a torrent it already holds (4.x: 200 "Fails.", 5.x: 409).

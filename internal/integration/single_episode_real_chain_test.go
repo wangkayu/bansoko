@@ -715,7 +715,7 @@ SELECT correlation_id, acquisition_id FROM file_operations WHERE artifact_id = $
 	// repeated pass writes nothing new.
 	delivered := false
 	for _, entry := range workspace.Logs {
-		if entry.Kind == generated.SubscriptionLogKindFileAlignmentCompleted && strings.HasPrefix(entry.Summary, "文件已入库：") &&
+		if entry.Kind == generated.SubscriptionLogKindFileAlignmentCompleted && entry.MessageCode == generated.SubscriptionLogMessageCodeFileImported &&
 			entry.ReasonCode != nil && *entry.ReasonCode == "file_alignment_completed" {
 			delivered = true
 		}
@@ -731,7 +731,7 @@ SELECT correlation_id, acquisition_id FROM file_operations WHERE artifact_id = $
 		t.Fatalf("real chain root settled to %q, want succeeded", rootState)
 	}
 	var settled int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM subscription_log_entries WHERE managed_anime_id = $1 AND kind = 'acquisition_settled' AND outcome = 'success' AND summary = '获取完成'`, result.ManagedAnime.Id).Scan(&settled); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM subscription_log_entries WHERE managed_anime_id = $1 AND kind = 'acquisition_settled' AND outcome = 'success' AND message_code = 'acquisition_succeeded'`, result.ManagedAnime.Id).Scan(&settled); err != nil {
 		t.Fatal(err)
 	}
 	if settled != 1 {

@@ -40,7 +40,6 @@ const (
 
 	rssLogKindReleaseProcessed = "release_processed"
 	rssLogKindNewContent       = "rss_new_content"
-	rssLogKindRefreshFailed    = "rss_refresh_failed"
 	rssLogOutcomeFailure       = "failure"
 	rssLogOutcomeInfo          = "info"
 )

@@ -14,6 +14,7 @@ import (
 
 	"bansoko/internal/acquisition/domain"
 	hardeningtransport "bansoko/internal/hardening/transport"
+	"bansoko/internal/observability/outbound"
 	"bansoko/internal/redact"
 	"bansoko/internal/runtime/buildinfo"
 )
@@ -82,14 +83,14 @@ func (f HTTPMikanRSSFetcher) FetchAnimeDetailed(ctx context.Context, bangumiID, 
 	applyFeedValidators(ctx, request)
 	response, err := clientCopy.Do(request)
 	if err != nil {
-		return RSSFetchResult{}, fmt.Errorf("fetch Mikan RSS source: %w", redact.URLError(err))
+		return RSSFetchResult{}, outbound.WithFailure(fmt.Errorf("fetch Mikan RSS source: %w", redact.URLError(err)), outbound.Describe(err, request, nil, outbound.ViaOf(&clientCopy, request)))
 	}
 	defer response.Body.Close()
 	if recordFeedResponse(ctx, response) {
 		return RSSFetchResult{}, ErrFeedNotModified
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return RSSFetchResult{}, fmt.Errorf("Mikan RSS source returned HTTP %d", response.StatusCode)
+		return RSSFetchResult{}, outbound.WithFailure(fmt.Errorf("Mikan RSS source returned HTTP %d", response.StatusCode), outbound.Describe(nil, request, response, outbound.ViaOf(&clientCopy, request)))
 	}
 	maxSize := f.MaxSize
 	if maxSize <= 0 {

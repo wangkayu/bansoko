@@ -265,11 +265,11 @@ func (m *BGMMatcher) getJSON(ctx context.Context, client *http.Client, rawURL st
 	req.Header.Set("User-Agent", buildinfo.UserAgent("metadata-matcher"))
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return requestFailure(client, req, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("bgm API returned HTTP %d", resp.StatusCode)
+		return statusFailure(fmt.Errorf("bgm API returned HTTP %d", resp.StatusCode), client, req, resp)
 	}
 	return json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(target)
 }

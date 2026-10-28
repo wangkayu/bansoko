@@ -12,6 +12,7 @@ import (
 
 	"bansoko/internal/download/domain"
 	"bansoko/internal/download/qbittorrent"
+	"bansoko/internal/observability/outbound"
 	"bansoko/internal/persistence/txscope"
 	"bansoko/internal/runtime/worker"
 	"bansoko/internal/workitems"
@@ -48,7 +49,7 @@ func (s *Service) typedSubmit(ctx context.Context, c workitems.Claim) (worker.Ou
 		return worker.Outcome{}, err
 	}
 	fail := func(code string, e error, retry bool) (worker.Outcome, error) {
-		return s.finishUnstartedSubmission(ctx, c, task, session, code, safeReason(e.Error()), retry)
+		return s.finishUnstartedSubmission(ctx, c, task, session, code, safeReason(e.Error()), retry, e)
 	}
 	input, err := decodeFrozenInput(task.frozenInputRaw)
 	if err != nil {
@@ -224,9 +225,17 @@ func (s *Service) typedSubmit(ctx context.Context, c workitems.Claim) (worker.Ou
 		if submitErr != nil {
 			detail = safeReason(submitErr.Error())
 		}
-		return s.finishUnstartedSubmission(ctx, c, task, session, ReasonDownloaderHashOccupied, detail, false)
+		return s.finishUnstartedSubmission(ctx, c, task, session, ReasonDownloaderHashOccupied, detail, false, submitErr)
 	}
 	if effect != "confirmed" {
+		// An await-recovery outcome runs no after-commit work, so a definite
+		// transport or credential answer is recorded here; the receipt above
+		// is already committed.
+		if submitErr != nil {
+			if record := s.submitFailureDiagnostic(task.id, "qb_submit_effect_unknown", submitErr); record != nil && submitDiagnosticIsDownloader(submitErr) {
+				record(ctx)
+			}
+		}
 		return worker.AwaitRecovery("qb_submit_effect_unknown"), nil
 	}
 	return s.finishTypedSubmission(ctx, c, task, session, permit, observed, config.ConnectionID)
@@ -245,6 +254,13 @@ func prepareFailure(err error, class domain.ProviderErrorClass) (string, bool) {
 	return "qb_submit_prepare_failed", class != domain.ProviderErrorTerminal
 }
 
+// submitDiagnosticIsDownloader reports whether err carries a typed fact that
+// makes it a downloader condition rather than an internal one.
+func submitDiagnosticIsDownloader(err error) bool {
+	_, facts := outbound.FailureOf(err)
+	return facts || errors.Is(err, qbittorrent.ErrAuthFailed)
+}
+
 // submitRefusedAsOccupied reports a dispatched add that qB answered (so the
 // channel is closed) with a refusal the client attributed to another task
 // holding the same torrent.
@@ -252,7 +268,10 @@ func submitRefusedAsOccupied(result qbittorrent.SubmissionResult, err error) boo
 	return err != nil && result.ResponseReceived && !result.Accepted && errors.Is(err, qbittorrent.ErrHashOccupied)
 }
 
-func (s *Service) finishUnstartedSubmission(ctx context.Context, c workitems.Claim, task taskSnapshot, session, code, reason string, retry bool) (worker.Outcome, error) {
+// finishUnstartedSubmission closes an attempt that sent nothing. cause is the
+// error in hand; once the outcome commits, a waiting or failed task records the
+// diagnostic that cause stands for.
+func (s *Service) finishUnstartedSubmission(ctx context.Context, c workitems.Claim, task taskSnapshot, session, code, reason string, retry bool, cause error) (worker.Outcome, error) {
 	var reply stageReply
 	err := s.workItems.WithTypedStageTransaction(ctx, c, func(scope txscope.Tx) (workitems.EffectDisposition, error) {
 		var raw []byte
@@ -267,5 +286,9 @@ func (s *Service) finishUnstartedSubmission(ctx context.Context, c workitems.Cla
 	if err != nil {
 		return worker.Outcome{}, err
 	}
-	return worker.Committed(c, workitems.OwnerResult{State: reply.State, ReasonCode: code, Reason: reason}), nil
+	outcome := worker.Committed(c, workitems.OwnerResult{State: reply.State, ReasonCode: code, Reason: reason})
+	if reply.State == "waiting_retry" || reply.State == "failed" {
+		outcome = worker.WithAfterCommit(outcome, s.submitFailureDiagnostic(task.id, code, cause))
+	}
+	return outcome, nil
 }

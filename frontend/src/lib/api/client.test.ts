@@ -466,7 +466,8 @@ describe("api client", () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { records: [], next_cursor: null }));
     await listObservabilityRecords({
       kind: ["business", "plugin"],
-      outcome: "failure",
+      state: "failure",
+      q: "ova",
       managed_anime_id: "anime-1",
       limit: 50,
       cursor: "cursor-1",
@@ -474,7 +475,8 @@ describe("api client", () => {
     const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
     const params = new URL(url, "http://localhost").searchParams;
     expect(params.getAll("kind")).toEqual(["business", "plugin"]);
-    expect(params.get("outcome")).toBe("failure");
+    expect(params.get("state")).toBe("failure");
+    expect(params.get("q")).toBe("ova");
     expect(params.get("managed_anime_id")).toBe("anime-1");
     expect(params.get("limit")).toBe("50");
     expect(params.get("cursor")).toBe("cursor-1");

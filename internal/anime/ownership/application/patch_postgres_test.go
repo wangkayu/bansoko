@@ -62,25 +62,25 @@ SELECT COUNT(*) FROM work_item_history WHERE owner_type = 'release' AND kind = '
 	if evalItems != 1 {
 		t.Fatalf("expected one release_evaluate work item, got %d", evalItems)
 	}
-	var logKind, logOutcome, logTitle, logSummary, dedupeKey string
+	var logKind, logOutcome, logCode, logParams, dedupeKey string
 	var logReasonCode, logSubjectType, logSubjectID string
 	var logSubjectVersion int64
 	var rssSourceID, releaseID, groupRef sql.NullString
 	if err := db.QueryRowContext(context.Background(), `
-SELECT kind, outcome, title, summary, dedupe_key, reason_code, subject_type, subject_id, subject_version,
+SELECT kind, outcome, message_code, message_params::text, dedupe_key, reason_code, subject_type, subject_id, subject_version,
        rss_source_id, release_id, group_ref
 FROM subscription_log_entries
 WHERE subscription_id = $1 AND kind = 'metadata_applied'`, subscribe.Subscription.Id).Scan(
-		&logKind, &logOutcome, &logTitle, &logSummary, &dedupeKey, &logReasonCode, &logSubjectType, &logSubjectID, &logSubjectVersion,
+		&logKind, &logOutcome, &logCode, &logParams, &dedupeKey, &logReasonCode, &logSubjectType, &logSubjectID, &logSubjectVersion,
 		&rssSourceID, &releaseID, &groupRef); err != nil {
 		t.Fatalf("read metadata application log: %v", err)
 	}
-	if logKind != "metadata_applied" || logOutcome != "success" || logTitle != subscribe.ManagedAnime.Title ||
-		logSummary != "已关联 Bangumi、TMDB" || logReasonCode != "metadata_applied" ||
+	if logKind != "metadata_applied" || logOutcome != "success" || logCode != "metadata_applied" ||
+		logParams != "{}" || logReasonCode != "metadata_applied" ||
 		logSubjectType != "metadata" || logSubjectID != animeID || logSubjectVersion != 2 ||
 		dedupeKey != "metadata_applied:metadata:"+animeID+":v2:metadata_applied" {
-		t.Fatalf("unexpected metadata application log: kind=%s outcome=%s title=%s summary=%s reason=%s subject=%s/%s/v%d dedupe=%s",
-			logKind, logOutcome, logTitle, logSummary, logReasonCode, logSubjectType, logSubjectID, logSubjectVersion, dedupeKey)
+		t.Fatalf("unexpected metadata application log: kind=%s outcome=%s code=%s params=%s reason=%s subject=%s/%s/v%d dedupe=%s",
+			logKind, logOutcome, logCode, logParams, logReasonCode, logSubjectType, logSubjectID, logSubjectVersion, dedupeKey)
 	}
 	if rssSourceID.Valid || releaseID.Valid || groupRef.Valid {
 		t.Fatalf("metadata application log must not contain RSS facts: rss=%v release=%v group=%v", rssSourceID, releaseID, groupRef)
@@ -298,17 +298,19 @@ func TestPatchRulesReplaceAndCAS(t *testing.T) {
 	if patched.Reevaluation.ManagedAnimeID != animeID || patched.Reevaluation.ScheduledCount != 0 {
 		t.Fatalf("rules patch reevaluation summary = %+v, want anime %s with zero releases", patched.Reevaluation, animeID)
 	}
-	var policyKind, policyReason, policySubjectType, policySubjectID, policySummary string
+	var policyKind, policyReason, policySubjectType, policySubjectID, policyCode string
 	var policyVersion int64
+	var policyParser bool
 	if err := db.QueryRowContext(context.Background(), `
-SELECT kind, reason_code, subject_type, subject_id, subject_version, summary
+SELECT kind, reason_code, subject_type, subject_id, subject_version, message_code,
+       COALESCE(details->'changed_sections' ? 'parser', false)
 FROM subscription_log_entries
 WHERE subscription_id = $1 AND managed_anime_id = $2`, subscribe.Subscription.Id, animeID).Scan(
-		&policyKind, &policyReason, &policySubjectType, &policySubjectID, &policyVersion, &policySummary); err != nil {
+		&policyKind, &policyReason, &policySubjectType, &policySubjectID, &policyVersion, &policyCode, &policyParser); err != nil {
 		t.Fatalf("read rules policy activity: %v", err)
 	}
-	if policyKind != "policy_changed" || policyReason != "rules_policy_changed" || policySubjectType != "rules" || policySubjectID != animeID || policyVersion != 2 || !strings.HasPrefix(policySummary, "规则：") || !strings.Contains(policySummary, "解析") {
-		t.Fatalf("unexpected rules policy activity: kind=%q reason=%q subject=%s/%s v%d summary=%q", policyKind, policyReason, policySubjectType, policySubjectID, policyVersion, policySummary)
+	if policyKind != "policy_changed" || policyReason != "rules_policy_changed" || policySubjectType != "rules" || policySubjectID != animeID || policyVersion != 2 || policyCode != "rules_changed" || !policyParser {
+		t.Fatalf("unexpected rules policy activity: kind=%q reason=%q subject=%s/%s v%d code=%q parser_changed=%v", policyKind, policyReason, policySubjectType, policySubjectID, policyVersion, policyCode, policyParser)
 	}
 	// Every section is stored as a complete value.
 	var parserNull, namingNull bool
@@ -474,21 +476,32 @@ VALUES
 		t.Fatalf("unexpected patched source: %+v", patched)
 	}
 	assertOffsetActivity := func(wantVersion int64) {
-		var kind, reasonCode, subjectType, subjectID, summary, dedupeKey string
+		var kind, reasonCode, subjectType, subjectID, messageCode, messageParams, dedupeKey string
 		var subjectVersion int64
+		var groupName sql.NullString
 		if err := db.QueryRowContext(ctx, `
-	SELECT kind, reason_code, subject_type, subject_id, subject_version, summary, dedupe_key
-	FROM subscription_log_entries
-	WHERE subscription_id = $1 AND subject_type = 'rss_source' AND subject_id = $2 AND subject_version = $3`,
+	SELECT l.kind, l.reason_code, l.subject_type, l.subject_id, l.subject_version, l.message_code, l.message_params::text, l.dedupe_key, s.group_name
+	FROM subscription_log_entries l
+	JOIN rss_sources s ON s.id = l.subject_id
+	WHERE l.subscription_id = $1 AND l.subject_type = 'rss_source' AND l.subject_id = $2 AND l.subject_version = $3`,
 			first.Subscription.Id, first.RssSources[0].Id, wantVersion).Scan(
-			&kind, &reasonCode, &subjectType, &subjectID, &subjectVersion, &summary, &dedupeKey); err != nil {
+			&kind, &reasonCode, &subjectType, &subjectID, &subjectVersion, &messageCode, &messageParams, &dedupeKey, &groupName); err != nil {
 			t.Fatalf("read RSS source offset policy activity v%d: %v", wantVersion, err)
+		}
+		var params map[string]any
+		if err := json.Unmarshal([]byte(messageParams), &params); err != nil {
+			t.Fatalf("decode offset message params %q: %v", messageParams, err)
+		}
+		wantParams := map[string]any{}
+		if name := strings.TrimSpace(groupName.String); name != "" {
+			wantParams["group_name"] = name
 		}
 		wantDedupe := "policy_changed:rss_source:" + first.RssSources[0].Id + ":v" + fmt.Sprint(wantVersion) + ":rss_source_offset_changed"
 		if kind != "policy_changed" || reasonCode != "rss_source_offset_changed" || subjectType != "rss_source" ||
-			subjectID != first.RssSources[0].Id || subjectVersion != wantVersion || !strings.HasSuffix(summary, "集数偏移已更新") || dedupeKey != wantDedupe {
-			t.Fatalf("unexpected RSS source offset policy activity: kind=%q reason=%q subject=%s/%s v%d summary=%q dedupe=%q",
-				kind, reasonCode, subjectType, subjectID, subjectVersion, summary, dedupeKey)
+			subjectID != first.RssSources[0].Id || subjectVersion != wantVersion || messageCode != "episode_offset_changed" ||
+			fmt.Sprint(params) != fmt.Sprint(wantParams) || dedupeKey != wantDedupe {
+			t.Fatalf("unexpected RSS source offset policy activity: kind=%q reason=%q subject=%s/%s v%d code=%q params=%s (want %v) dedupe=%q",
+				kind, reasonCode, subjectType, subjectID, subjectVersion, messageCode, messageParams, wantParams, dedupeKey)
 		}
 	}
 	assertStoredOffset := func(want int) {
@@ -963,13 +976,14 @@ func TestPatchSubscriptionWritesStateTransitionLogs(t *testing.T) {
 	type logRow struct {
 		kind    string
 		outcome string
-		summary string
+		code    string
+		params  string
 		dedupe  string
 	}
 	readTransitionLogs := func(t *testing.T) []logRow {
 		t.Helper()
 		rows, err := db.QueryContext(context.Background(), `
-	SELECT kind, outcome, summary, dedupe_key FROM subscription_log_entries
+	SELECT kind, outcome, message_code, message_params::text, dedupe_key FROM subscription_log_entries
 	WHERE subscription_id = $1 AND kind IN ('subscription_stopped', 'subscription_resumed')
 	ORDER BY occurred_at, id`, subscriptionID)
 		if err != nil {
@@ -979,7 +993,7 @@ func TestPatchSubscriptionWritesStateTransitionLogs(t *testing.T) {
 		var logs []logRow
 		for rows.Next() {
 			var row logRow
-			if err := rows.Scan(&row.kind, &row.outcome, &row.summary, &row.dedupe); err != nil {
+			if err := rows.Scan(&row.kind, &row.outcome, &row.code, &row.params, &row.dedupe); err != nil {
 				t.Fatalf("scan transition log: %v", err)
 			}
 			logs = append(logs, row)
@@ -1001,7 +1015,7 @@ func TestPatchSubscriptionWritesStateTransitionLogs(t *testing.T) {
 	}
 	logs := readTransitionLogs(t)
 	if len(logs) != 1 || logs[0].kind != "subscription_stopped" || logs[0].outcome != "info" ||
-		logs[0].summary != "订阅已停止" || logs[0].dedupe != "subscription_stopped:subscription:"+subscriptionID+":v2:subscription_stopped" {
+		logs[0].code != "subscription_stopped" || logs[0].params != "{}" || logs[0].dedupe != "subscription_stopped:subscription:"+subscriptionID+":v2:subscription_stopped" {
 		t.Fatalf("stop must write one stopped log: %+v", logs)
 	}
 
@@ -1026,7 +1040,7 @@ func TestPatchSubscriptionWritesStateTransitionLogs(t *testing.T) {
 	}
 	logs = readTransitionLogs(t)
 	if len(logs) != 2 || logs[1].kind != "subscription_resumed" || logs[1].outcome != "info" ||
-		logs[1].summary != "订阅已恢复" || logs[1].dedupe != "subscription_resumed:subscription:"+subscriptionID+":v4:subscription_resumed" {
+		logs[1].code != "subscription_resumed" || logs[1].params != "{}" || logs[1].dedupe != "subscription_resumed:subscription:"+subscriptionID+":v4:subscription_resumed" {
 		t.Fatalf("resume must append one resumed log: %+v", logs)
 	}
 }
@@ -1062,14 +1076,14 @@ func TestPatchSubgroupsWritesGroupChangedLogOnActualChange(t *testing.T) {
 	if count := countGroupLogs(t); count != 1 {
 		t.Fatalf("changed subgroups must write one group_changed log, got %d", count)
 	}
-	var summary, dedupe, outcome string
+	var code, params, dedupe, outcome string
 	if err := db.QueryRowContext(context.Background(), `
-	SELECT summary, dedupe_key, outcome FROM subscription_log_entries
-	WHERE subscription_id = $1 AND kind = 'group_changed'`, subscriptionID).Scan(&summary, &dedupe, &outcome); err != nil {
+	SELECT message_code, message_params::text, dedupe_key, outcome FROM subscription_log_entries
+	WHERE subscription_id = $1 AND kind = 'group_changed'`, subscriptionID).Scan(&code, &params, &dedupe, &outcome); err != nil {
 		t.Fatalf("read group_changed log: %v", err)
 	}
-	if summary != "字幕组选择已更新" || dedupe != "group_changed:subgroups:"+animeID+":v2:group_changed" || outcome != "info" {
-		t.Fatalf("unexpected group_changed log: summary=%q dedupe=%q outcome=%q", summary, dedupe, outcome)
+	if code != "group_changed" || params != "{}" || dedupe != "group_changed:subgroups:"+animeID+":v2:group_changed" || outcome != "info" {
+		t.Fatalf("unexpected group_changed log: code=%q params=%s dedupe=%q outcome=%q", code, params, dedupe, outcome)
 	}
 
 	// Saving the same value bumps the CAS version but writes no new log.

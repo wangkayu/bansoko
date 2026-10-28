@@ -126,6 +126,7 @@ type Matcher struct {
 	bgmMatcher   *BGMMatcher
 	tmdbMatcher  *TMDBMatcher
 	logger       observabilityport.RuntimeLogger
+	diag         *diagnosticTracker
 }
 
 // NewMatcher builds a composite matcher. Any layer may be nil to disable it.
@@ -175,6 +176,7 @@ func (m *Matcher) Match(ctx context.Context, origin, entryRef, title string, ski
 	// --- Layer 2: BGM API search ---
 	if result.BgmID == nil && !skipBgm && m.bgmMatcher != nil {
 		bgmResult, err := m.bgmMatcher.Match(ctx, title)
+		m.observe(ctx, sourceBGM, err)
 		if err != nil {
 			matchErr := &MatchError{Kind: ErrorProvider, Layer: "bgm", Err: err}
 			matchErrs = append(matchErrs, matchErr)
@@ -208,6 +210,7 @@ func (m *Matcher) Match(ctx context.Context, origin, entryRef, title string, ski
 		// If we have a BGM subject with a Japanese title, try it as TMDB query.
 		tmdbQuery := title
 		tmdbResult, err := m.tmdbMatcher.Match(ctx, tmdbQuery)
+		m.observe(ctx, sourceTMDB, err)
 		if err != nil {
 			var matchErr *MatchError
 			if !errors.As(err, &matchErr) {

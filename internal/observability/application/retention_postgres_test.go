@@ -34,13 +34,13 @@ func TestRetentionServicePurgeExpired(t *testing.T) {
 		PluginDeliveries:       3,
 		SubscriptionLogEntries: 2,
 		AutomationDispatchRuns: 1,
-		DiagnosticEpisodes:     1,
+		DiagnosticEpisodes:     2,
 	}
 	if result != want {
 		t.Fatalf("purge result: got %+v, want %+v", result, want)
 	}
-	if result.Total() != 10 {
-		t.Fatalf("purge total: got %d, want 10", result.Total())
+	if result.Total() != 11 {
+		t.Fatalf("purge total: got %d, want 11", result.Total())
 	}
 
 	assertCount(t, ctx, db, "subscription_log_entries", "id = 'log-future'", 1)
@@ -52,6 +52,8 @@ func TestRetentionServicePurgeExpired(t *testing.T) {
 	assertCount(t, ctx, db, "diagnostic_episodes", "id = 'diagnostic-future'", 1)
 	assertCount(t, ctx, db, "diagnostic_episodes", "id = 'diagnostic-expired'", 0)
 	assertCount(t, ctx, db, "diagnostic_episodes", "id = 'diagnostic-open-expired'", 1)
+	assertCount(t, ctx, db, "diagnostic_episodes", "id = 'diagnostic-internal-open-expired'", 0)
+	assertCount(t, ctx, db, "diagnostic_episodes", "id = 'diagnostic-internal-open-future'", 1)
 	assertCount(t, ctx, db, "plugin_deliveries", "id = 'delivery-future'", 1)
 	assertCount(t, ctx, db, "plugin_deliveries", "state IN ('pending', 'delivering', 'waiting_retry')", 4)
 	assertCount(t, ctx, db, "plugin_deliveries", "id = 'delivery-delivered-expired'", 0)
@@ -97,17 +99,17 @@ func seedReplacementRows(t *testing.T, ctx context.Context, db *sql.DB) {
 		'success', 'retention fixture activity')`, "routine-retention", "subscription-retention", "anime-retention")
 
 	exec(`INSERT INTO subscription_log_entries(
-		id, subscription_id, managed_anime_id, kind, outcome, occurred_at, title, summary,
+		id, subscription_id, managed_anime_id, kind, outcome, occurred_at, message_code, message_params,
 		dedupe_key, retention_until
 	) VALUES
 		('log-expired', 'subscription-retention', 'anime-retention', 'rss_new_content', 'info',
-		 CURRENT_TIMESTAMP - INTERVAL '2 hours', 'Expired log', 'Expired evidence', 'expired',
+		 CURRENT_TIMESTAMP - INTERVAL '2 hours', 'rss_new_content', '{"count":1}', 'expired',
 		 CURRENT_TIMESTAMP - INTERVAL '1 hour'),
 		('log-expired-stopped', 'subscription-retention-stopped', 'anime-retention-stopped', 'rss_new_content', 'info',
-		 CURRENT_TIMESTAMP - INTERVAL '2 hours', 'Expired stopped log', 'Expired stopped evidence', 'expired-stopped',
+		 CURRENT_TIMESTAMP - INTERVAL '2 hours', 'rss_new_content', '{"count":1}', 'expired-stopped',
 		 CURRENT_TIMESTAMP - INTERVAL '1 hour'),
 		('log-future', 'subscription-retention', 'anime-retention', 'rss_new_content', 'info',
-		 CURRENT_TIMESTAMP, 'Future log', 'Future evidence', 'future',
+		 CURRENT_TIMESTAMP, 'rss_new_content', '{"count":1}', 'future',
 		 CURRENT_TIMESTAMP + INTERVAL '1 day')`)
 
 	exec(`INSERT INTO automation_dispatch_runs(
@@ -124,21 +126,22 @@ func seedReplacementRows(t *testing.T, ctx context.Context, db *sql.DB) {
 		 CURRENT_TIMESTAMP - INTERVAL '2 hours', NULL, CURRENT_TIMESTAMP - INTERVAL '1 hour')`)
 
 	exec(`INSERT INTO diagnostic_episodes(
-		id, severity, component, operation, error_code, scope_kind, scope_id, managed_anime_id,
-		first_failed_at, last_failed_at, succeeded_after_at, occurrence_count, last_error, retention_until
+		id, kind, variant, severity, target_id, affected_ids, recent,
+		first_failed_at, last_failed_at, succeeded_after_at, occurrence_count, retention_until
 	) VALUES
-		('diagnostic-expired', 'error', 'retention_test', 'expired_operation', 'expired_error',
-		 'subscription', 'subscription-retention', 'anime-retention',
+		('diagnostic-expired', 'metadata', 'unreachable', 'error', 'tmdb-expired', '{}', '[]'::jsonb,
 		 CURRENT_TIMESTAMP - INTERVAL '2 hours', CURRENT_TIMESTAMP - INTERVAL '2 hours',
-		 CURRENT_TIMESTAMP - INTERVAL '30 minutes', 1,
-		 'Expired diagnostic', CURRENT_TIMESTAMP - INTERVAL '1 hour'),
-		('diagnostic-future', 'warning', 'retention_test', 'future_operation', 'future_error',
-		 'subscription', 'subscription-retention', 'anime-retention',
-		 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL, 1, 'Future diagnostic', CURRENT_TIMESTAMP + INTERVAL '1 day'),
-		('diagnostic-open-expired', 'error', 'retention_test', 'open_operation', 'open_error',
-		 'subscription', 'subscription-retention', 'anime-retention',
+		 CURRENT_TIMESTAMP - INTERVAL '30 minutes', 1, CURRENT_TIMESTAMP - INTERVAL '1 hour'),
+		('diagnostic-future', 'metadata', 'unreachable', 'warning', 'tmdb-future', '{}', '[]'::jsonb,
+		 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL, 1, CURRENT_TIMESTAMP + INTERVAL '1 day'),
+		('diagnostic-open-expired', 'metadata', 'unreachable', 'error', 'tmdb-open', '{}', '[]'::jsonb,
 		 CURRENT_TIMESTAMP - INTERVAL '2 hours', CURRENT_TIMESTAMP - INTERVAL '2 hours', NULL, 1,
-		 'Open diagnostic', CURRENT_TIMESTAMP - INTERVAL '1 hour')`)
+		 CURRENT_TIMESTAMP - INTERVAL '1 hour'),
+		('diagnostic-internal-open-expired', 'internal', NULL, 'error', 'http.5xx', '{}', '[]'::jsonb,
+		 CURRENT_TIMESTAMP - INTERVAL '2 hours', CURRENT_TIMESTAMP - INTERVAL '2 hours', NULL, 1,
+		 CURRENT_TIMESTAMP - INTERVAL '1 hour'),
+		('diagnostic-internal-open-future', 'internal', NULL, 'error', 'download.submit', '{}', '[]'::jsonb,
+		 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL, 1, CURRENT_TIMESTAMP + INTERVAL '1 day')`)
 
 	exec(`INSERT INTO plugin_target_configs(
 		id, name, plugin_kind, adapter_kind, enabled, trigger_kinds, config_schema_version,
@@ -256,12 +259,12 @@ func TestRetentionServicePurgeExpiredIsBoundedAndIdempotent(t *testing.T) {
 	rowCount := retentionBatchSize*2 + 1
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO subscription_log_entries(
-			id, subscription_id, managed_anime_id, kind, outcome, occurred_at, title, summary,
+			id, subscription_id, managed_anime_id, kind, outcome, occurred_at, message_code, message_params,
 			dedupe_key, retention_until
 		)
 		SELECT format('batch-log-%s', series), 'subscription-retention-batch', 'anime-retention-batch',
 			'rss_new_content', 'info', CURRENT_TIMESTAMP - INTERVAL '2 hours',
-			'Batch log', 'Expired batch evidence', format('batch-%s', series),
+			'rss_new_content', '{"count":1}'::jsonb, format('batch-%s', series),
 			CURRENT_TIMESTAMP - INTERVAL '1 hour'
 		FROM generate_series(1, $1) AS series`, rowCount); err != nil {
 		t.Fatalf("seed expired retention batch: %v", err)

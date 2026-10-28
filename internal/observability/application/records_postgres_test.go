@@ -27,9 +27,9 @@ func TestListRecordsKindFilterIsRepeatable(t *testing.T) {
 	) VALUES ('routine-records', 'rss_refresh', 'subscription', 'subscription-records',
 		'anime-records', 'success', CURRENT_TIMESTAMP, 'success', 'routine fixture')`)
 	exec(`INSERT INTO subscription_log_entries(
-		id, subscription_id, managed_anime_id, kind, outcome, occurred_at, title, summary, dedupe_key
+		id, subscription_id, managed_anime_id, kind, outcome, occurred_at, message_code, message_params, dedupe_key
 	) VALUES ('log-records', 'subscription-records', 'anime-records', 'rss_new_content', 'info',
-		CURRENT_TIMESTAMP, 'Records Test Anime', 'business fixture', 'records-fixture')`)
+		CURRENT_TIMESTAMP, 'rss_new_content', '{"count":1}', 'records-fixture')`)
 
 	service, err := NewService(db)
 	if err != nil {
@@ -115,9 +115,9 @@ func TestListRecordsPaginationIsStrictAcrossKindTies(t *testing.T) {
 	// fixed occurred_at in the past would violate the check once the wall clock
 	// passes it.
 	exec(`INSERT INTO subscription_log_entries(
-		id, subscription_id, managed_anime_id, kind, outcome, occurred_at, title, summary, dedupe_key, retention_until
+		id, subscription_id, managed_anime_id, kind, outcome, occurred_at, message_code, message_params, dedupe_key, retention_until
 	) VALUES ('tie-break', 'subscription-ties', 'anime-ties', 'rss_new_content', 'info',
-		$1, 'Ties Anime', 'business tie', 'tie-business', $1::timestamptz + INTERVAL '30 days')`, tieTime)
+		$1, 'rss_new_content', '{"count":1}', 'tie-business', $1::timestamptz + INTERVAL '30 days')`, tieTime)
 	exec(`INSERT INTO automation_dispatch_runs(
 		id, kind, trigger, state, target_count, enqueued_count, created_at, started_at, finished_at, retention_until
 	) VALUES ('tie-break', 'rss_refresh', 'scheduled', 'completed', 1, 1, $1, $1, $1, $1::timestamptz + INTERVAL '1 day')`, tieTime)

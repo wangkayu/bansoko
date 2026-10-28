@@ -146,8 +146,8 @@ VALUES ('release_retry', 'retry-graph', 'sha256:00000000000000000000000000000000
 	stopSubscription(t, owner, "sub-logged", "31 days")
 	seedDiscoveryRelease(t, owner, "release-logged", "source-logged", "guid:logged")
 	if _, err := owner.ExecContext(ctx, `
-INSERT INTO subscription_log_entries(id, subscription_id, managed_anime_id, kind, outcome, title, summary, release_id, dedupe_key)
-VALUES ('log-logged', 'sub-logged', 'anime-logged', 'release_processed', 'info', 'Discovery Show', 'processed', 'release-logged', 'logged')`); err != nil {
+INSERT INTO subscription_log_entries(id, subscription_id, managed_anime_id, kind, outcome, message_code, message_params, release_id, dedupe_key)
+VALUES ('log-logged', 'sub-logged', 'anime-logged', 'release_processed', 'info', 'release_discovered', '{}', 'release-logged', 'logged')`); err != nil {
 		t.Fatalf("seed subscription log: %v", err)
 	}
 

@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"bansoko/internal/observability/outbound"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
 	adapterconfig "bansoko/internal/plugintarget/config"
@@ -37,11 +38,12 @@ const (
 )
 
 // deliveryRetryDelays is the bounded backoff of a business delivery whose
-// outcome is unknown (timeout, connection lost before a response, a crash
-// after the request started) or retryable (429, 5xx). Entry n is the wait
-// after attempt n+1; once it is spent the delivery settles visibly. Every
-// attempt carries the same delivery_id, so a receiver that saw an earlier
-// attempt can drop the repeat.
+// outcome is unknown (the request was written but no response arrived:
+// response timeout, connection lost; a crash after the request started) or
+// whose failure may clear (429, 5xx, a connection that failed before the
+// request was written). Entry n is the wait after attempt n+1; once it is
+// spent the delivery settles visibly. Every attempt carries the same
+// delivery_id, so a receiver that saw an earlier attempt can drop the repeat.
 var deliveryRetryDelays = []time.Duration{time.Minute, 5 * time.Minute, 15 * time.Minute, time.Hour, time.Hour}
 
 // MaxDeliveryAttempts is the number of attempts one business delivery makes
@@ -107,6 +109,8 @@ var _ worker.Handler = (*PluginDeliverHandler)(nil)
 
 type deliveryRow struct {
 	id                  string
+	targetID            string
+	targetName          sql.NullString
 	adapterKind         string
 	adapterConfigJSON   []byte
 	adapterConfigStatus string
@@ -214,16 +218,16 @@ func (h *PluginDeliverHandler) Handle(ctx context.Context, claim workitems.Claim
 
 	title, body, err := h.resolveMessage(row)
 	if err != nil {
-		return h.prepareFailure(claim, attempt, "notification_template_invalid", "notification template is invalid", newSecretRedactor("")), nil
+		return h.prepareFailure(claim, row, attempt, "notification_template_invalid", "notification template is invalid", newSecretRedactor("")), nil
 	}
 	secret, err := h.resolveSecret(row)
 	if err != nil {
-		return h.prepareFailure(claim, attempt, "secret_resolve_failed", err.Error(), newSecretRedactor("")), nil
+		return h.prepareFailure(claim, row, attempt, "secret_resolve_failed", err.Error(), newSecretRedactor("")), nil
 	}
 	redactor := newSecretRedactor(secret)
 	req, err := h.buildRequest(ctx, row, title, body, secret, claim.Owner.ID, attempt.number)
 	if err != nil {
-		return h.prepareFailure(claim, attempt, "request_build_failed", err.Error(), redactor), nil
+		return h.prepareFailure(claim, row, attempt, "request_build_failed", err.Error(), redactor), nil
 	}
 
 	summary := requestSummary(req)
@@ -237,13 +241,7 @@ func (h *PluginDeliverHandler) Handle(ctx context.Context, claim workitems.Claim
 		}
 	}
 
-	resp, doErr := h.client.Do(req)
-	result := attemptResult{}
-	if doErr != nil {
-		result = attemptResult{state: "unknown", errorCode: "transport_unknown", err: redactor.text(safeTransportError(doErr).Error(), 4096)}
-	} else {
-		result = readResponseResult(resp, row.adapterKind, redactor)
-	}
+	result, sendErr := h.sendRequest(req, row.adapterKind, redactor)
 	if h.hooks.afterResponseBeforeFinal != nil {
 		if err := h.hooks.afterResponseBeforeFinal(); err != nil {
 			return worker.Outcome{}, err
@@ -253,20 +251,22 @@ func (h *PluginDeliverHandler) Handle(ctx context.Context, claim workitems.Claim
 	if result.state == "delivered" {
 		owner := workitems.OwnerResult{State: result.state, ReasonCode: "delivered", Reason: "notification delivered successfully"}
 		outcome := worker.Finish(workitems.StateSucceeded, owner, h.finalWriter(claim, attempt, result, redactor))
-		return worker.WithAfterCommit(outcome, h.prepareDiagnosticRecoveryAfterCommit(claim.Owner.ID)), nil
+		return worker.WithAfterCommit(outcome, h.targetRecoveryAfterCommit(row.targetID)), nil
 	}
-	return h.settleAttempt(claim, row, attempt, result, redactor), nil
+	outcome := h.settleAttempt(claim, row, attempt, result, redactor)
+	return worker.WithAfterCommit(outcome, h.sendDiagnosticAfterCommit(row, req, result, sendErr)), nil
 }
 
 // settleAttempt records a non-delivered attempt and decides what follows. An
 // unknown or retryable outcome of a business delivery schedules the next
 // attempt on the bounded backoff (deliveryRetryDelays) while attempts remain
 // and the WorkItem's claim budget allows another claim; otherwise the
-// delivery settles visibly: unknown stays unknown, a retryable status that
-// never cleared becomes failed. A definite failure (4xx, a rejected provider
-// reply) never retries. A test delivery is interactive feedback: an unknown
-// outcome settles at once and a retryable status retries only within the
-// WorkItem's claim budget.
+// delivery settles visibly: unknown stays unknown, a retryable failure (a
+// 429/5xx status, a connection that failed before the request was written)
+// that never cleared becomes failed. A definite failure (4xx, a rejected
+// provider reply, a refusal of the safe transport) never retries. A test
+// delivery is interactive feedback: an unknown outcome settles at once and a
+// retryable failure retries only within the WorkItem's claim budget.
 func (h *PluginDeliverHandler) settleAttempt(claim workitems.Claim, row deliveryRow, attempt durableAttempt, result attemptResult, redactor secretRedactor) worker.Outcome {
 	retry := func(delay time.Duration) worker.Outcome {
 		result.state = "waiting_retry"
@@ -289,41 +289,63 @@ func (h *PluginDeliverHandler) settleAttempt(claim workitems.Claim, row delivery
 	return worker.Finish(workitems.StateFailed, owner, h.finalWriter(claim, attempt, result, redactor))
 }
 
-func (h *PluginDeliverHandler) prepareDiagnosticRecoveryAfterCommit(deliveryID string) func(context.Context) {
-	return func(ctx context.Context) {
-		// Error code participates in the episode identity, so close each prepare
-		// failure that may have opened for this delivery.
-		for _, code := range [...]observabilityport.DiagnosticErrorCode{
-			observabilityport.ErrorNotificationTemplateInvalid,
-			observabilityport.ErrorSecretResolveFailed,
-			observabilityport.ErrorRequestBuildFailed,
-		} {
-			if closeDiagnostic := observabilityport.DiagnosticSuccessAfterCommit(h.observability, h.logger, observabilityport.DiagnosticSuccessRequest{
-				Identity: observabilityport.PluginPrepareFailure(code), ScopeID: deliveryID,
-			}); closeDiagnostic != nil {
-				closeDiagnostic(ctx)
-			}
-		}
-	}
+// targetRecoveryAfterCommit closes the open condition of a notification target
+// once one of its deliveries is delivered.
+func (h *PluginDeliverHandler) targetRecoveryAfterCommit(targetID string) func(context.Context) {
+	return observabilityport.DiagnosticSuccessAfterCommit(h.observability, h.logger, observabilityport.DiagnosticSuccessRequest{
+		Kind: observabilityport.KindNotify, TargetID: targetID,
+	})
 }
 
-func (h *PluginDeliverHandler) prepareFailure(claim workitems.Claim, attempt durableAttempt, code, reason string, redactor secretRedactor) worker.Outcome {
+func (h *PluginDeliverHandler) prepareFailure(claim workitems.Claim, row deliveryRow, attempt durableAttempt, code, reason string, redactor secretRedactor) worker.Outcome {
 	redactedReason := redactor.text(reason, 4096)
 	result := attemptResult{state: "failed", errorCode: code, err: redactedReason}
 	outcome := worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: result.state, ReasonCode: code, Reason: redactedReason}, h.finalWriter(claim, attempt, result, redactor))
-	return worker.WithAfterCommit(outcome, h.diagnosticAfterCommit(claim.Owner.ID, code, redactedReason))
+	variant := map[string]observabilityport.ConditionVariant{
+		"notification_template_invalid": observabilityport.VariantTemplate,
+		"secret_resolve_failed":         observabilityport.VariantSecret,
+		"request_build_failed":          observabilityport.VariantRequest,
+	}[code]
+	return worker.WithAfterCommit(outcome, h.notifyDiagnostic(row, variant, outbound.Failure{}))
 }
 
-func (h *PluginDeliverHandler) diagnosticAfterCommit(deliveryID, code, reason string) func(context.Context) {
-	identity := observabilityport.PluginPrepareFailure(observabilityport.DiagnosticErrorCode(code))
+// sendDiagnosticAfterCommit records the condition a failed send leaves on its
+// notification target. Only failures that are definite about the target (the
+// request never left, or the address was refused) count: a response status is
+// the receiver's answer and an unknown outcome says nothing about the target.
+func (h *PluginDeliverHandler) sendDiagnosticAfterCommit(row deliveryRow, req *http.Request, result attemptResult, sendErr error) func(context.Context) {
+	if sendErr == nil {
+		return nil
+	}
+	failure := outbound.Failure{Host: req.URL.Hostname()}
+	var variant observabilityport.ConditionVariant
+	switch result.errorCode {
+	case "address_rejected", "redirect_rejected":
+		variant = observabilityport.VariantAddressRejected
+	case "dns_failed", "connection_refused", "connect_timeout", "tls_failed", "connection_failed":
+		variant = observabilityport.VariantUnreachable
+		via := outbound.Via("")
+		if client, ok := h.client.(*http.Client); ok {
+			via = outbound.ViaOf(client, req)
+		}
+		failure = outbound.Describe(sendErr, req, nil, via)
+	default:
+		return nil
+	}
+	return h.notifyDiagnostic(row, variant, failure)
+}
+
+func (h *PluginDeliverHandler) notifyDiagnostic(row deliveryRow, variant observabilityport.ConditionVariant, failure outbound.Failure) func(context.Context) {
 	return observabilityport.DiagnosticFailureAfterCommit(h.observability, h.logger, observabilityport.DiagnosticFailureRequest{
-		Identity: identity, Severity: observabilityport.SeverityError, ScopeID: deliveryID, LastError: reason,
+		Condition: observabilityport.Condition{Kind: observabilityport.KindNotify, Variant: variant},
+		Severity:  observabilityport.SeverityError, TargetID: row.targetID, TargetName: row.targetName.String,
+		Failure: failure, AffectedID: row.id,
 	})
 }
 
 func (h *PluginDeliverHandler) loadDelivery(ctx context.Context, id string) (deliveryRow, error) {
 	var row deliveryRow
-	err := h.db.QueryRowContext(ctx, `SELECT id, adapter_kind, adapter_config_snapshot, config_status, config_schema_version, secret_ref, delivery_kind, trigger_kind, state, version, attempt_count, payload, payload_digest, target_display, template_catalog_version, title_template_snapshot, body_template_snapshot, rendered_title, rendered_body FROM plugin_deliveries WHERE id=$1`, id).Scan(&row.id, &row.adapterKind, &row.adapterConfigJSON, &row.adapterConfigStatus, &row.configSchemaVersion, &row.secretRef, &row.deliveryKind, &row.triggerKind, &row.state, &row.version, &row.attemptCount, &row.payload, &row.payloadDigest, &row.targetDisplay, &row.templateCatalog, &row.titleTemplate, &row.bodyTemplate, &row.renderedTitle, &row.renderedBody)
+	err := h.db.QueryRowContext(ctx, `SELECT id, plugin_target_config_id, adapter_kind, adapter_config_snapshot, config_status, config_schema_version, secret_ref, delivery_kind, trigger_kind, state, version, attempt_count, payload, payload_digest, target_display, template_catalog_version, title_template_snapshot, body_template_snapshot, rendered_title, rendered_body, (SELECT t.name FROM plugin_target_configs t WHERE t.id = plugin_deliveries.plugin_target_config_id) FROM plugin_deliveries WHERE id=$1`, id).Scan(&row.id, &row.targetID, &row.adapterKind, &row.adapterConfigJSON, &row.adapterConfigStatus, &row.configSchemaVersion, &row.secretRef, &row.deliveryKind, &row.triggerKind, &row.state, &row.version, &row.attemptCount, &row.payload, &row.payloadDigest, &row.targetDisplay, &row.templateCatalog, &row.titleTemplate, &row.bodyTemplate, &row.renderedTitle, &row.renderedBody, &row.targetName)
 	if errors.Is(err, sql.ErrNoRows) {
 		return row, errors.New("plugin delivery not found")
 	}
@@ -481,31 +503,41 @@ func requestSummary(req *http.Request) json.RawMessage {
 	return raw
 }
 
+// readResponseResult settles a received response. The status code decides
+// every non-2xx outcome even when the body is unusable. A 2xx is delivered by
+// the status alone, except for adapters whose provider confirms delivery in
+// the body (telegram, feishu): their 2xx with an unreadable or oversized body
+// is unknown.
 func readResponseResult(resp *http.Response, adapterKind string, redactor secretRedactor) attemptResult {
 	if resp == nil {
-		return attemptResult{state: "unknown", errorCode: "transport_unknown", err: "transport returned no response"}
+		return attemptResult{state: "unknown", errorCode: "connection_lost", err: "transport returned no response"}
 	}
 	defer resp.Body.Close()
 	result := attemptResult{responseStatus: &resp.StatusCode}
 	limited := &io.LimitedReader{R: resp.Body, N: maxResponseBody + 1}
-	body, err := io.ReadAll(limited)
+	body, readErr := io.ReadAll(limited)
 	result.responseBytes = int64(len(body))
-	if err != nil {
-		result.state = "unknown"
-		result.errorCode = "response_read_failed"
-		result.err = "response body could not be read"
-		return result
+	bodyErrorCode, bodyError := "", ""
+	switch {
+	case readErr != nil:
+		bodyErrorCode, bodyError = "response_read_failed", "response body could not be read"
+	case len(body) > maxResponseBody:
+		bodyErrorCode, bodyError = "response_too_large", "response body exceeded the safe limit"
+	default:
+		result.providerAck = allowlistedProviderAck(adapterKind, body)
 	}
-	if len(body) > maxResponseBody {
-		result.state = "unknown"
-		result.errorCode = "response_too_large"
-		result.err = "response body exceeded the safe limit"
-		return result
-	}
-	result.providerAck = allowlistedProviderAck(adapterKind, body)
 	switch {
 	case resp.StatusCode >= 200 && resp.StatusCode < 300:
-		return classifySuccessfulResponse(result, adapterKind, body)
+		if bodyErrorCode == "" {
+			return classifySuccessfulResponse(result, adapterKind, body)
+		}
+		if bodyAcknowledged(adapterKind) {
+			result.state = "unknown"
+			result.errorCode = bodyErrorCode
+			result.err = bodyError
+			return result
+		}
+		result.state = "delivered"
 	case resp.StatusCode == 429 || resp.StatusCode >= 500:
 		result.state = "waiting_retry"
 		result.errorCode = fmt.Sprintf("http_%d", resp.StatusCode)
@@ -516,6 +548,12 @@ func readResponseResult(resp *http.Response, adapterKind string, redactor secret
 		result.err = "provider returned a permanent HTTP status"
 	}
 	return result
+}
+
+// bodyAcknowledged reports whether the adapter's provider confirms delivery in
+// the response body, so a 2xx status alone is not enough.
+func bodyAcknowledged(adapterKind string) bool {
+	return adapterKind == "telegram" || adapterKind == "feishu"
 }
 
 func classifySuccessfulResponse(result attemptResult, adapterKind string, body []byte) attemptResult {

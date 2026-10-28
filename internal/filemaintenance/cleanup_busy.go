@@ -314,6 +314,10 @@ func (s *CleanupService) appendCleanupFailureTx(ctx context.Context, scope txsco
 		case err != nil:
 			return err
 		default:
+			details, err := cleanupActivityDetails(op)
+			if err != nil {
+				return err
+			}
 			if err := s.activity.AppendTx(ctx, scope, observabilityport.ActivityRecord{
 				SubscriptionID:  subscriptionID,
 				ManagedAnimeID:  op.ManagedAnimeID,
@@ -324,8 +328,8 @@ func (s *CleanupService) appendCleanupFailureTx(ctx context.Context, scope txsco
 				SubjectID:       op.ID,
 				SubjectVersion:  op.Version,
 				StableResultKey: code,
-				Title:           "清理失败",
-				Summary:         "旧版本未删除：" + reason,
+				MessageCode:     observabilityport.MessageOldVersionDeleteFailed,
+				Details:         details,
 				CorrelationID:   op.CorrelationID,
 				CausationType:   "replacement_decision",
 				CausationID:     op.ReplacementRef,

@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/url"
 
 	animedomain "bansoko/internal/anime/domain"
+	"bansoko/internal/observability/outbound"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
 	subscriptiondomain "bansoko/internal/subscription/domain"
@@ -101,31 +103,87 @@ RETURNING TRUE`, provider).Scan(&reset)
 	return nil
 }
 
-// circuitAfterCommit opens or closes the provider-scoped pause diagnostic
-// according to what the owner writer observed.
-func (s *Service) circuitAfterCommit(snapshot sourceSnapshot, effect *circuitEffect, next func(context.Context)) func(context.Context) {
-	provider := circuitProvider(snapshot)
-	return func(ctx context.Context) {
-		if next != nil {
-			next(ctx)
-		}
-		if provider == "" {
-			return
-		}
-		switch {
-		case effect.paused:
-			if record := observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, s.logger, observabilityport.DiagnosticFailureRequest{
-				Identity: observabilityport.RSSProviderPaused(), Severity: observabilityport.SeverityWarning,
-				ScopeID: provider, LastError: "automatic RSS refresh for this provider is paused after repeated failures",
-			}); record != nil {
-				record(ctx)
-			}
-		case effect.recovered:
-			if record := observabilityport.DiagnosticSuccessAfterCommit(s.diagnostics, s.logger, observabilityport.DiagnosticSuccessRequest{
-				Identity: observabilityport.RSSProviderPaused(), ScopeID: provider,
-			}); record != nil {
-				record(ctx)
+// refreshFailureNote is what a failed refresh tells the diagnostics: the
+// error (for its attached outbound facts only) and the variant the failure
+// maps to when the provider circuit did not just trip.
+type refreshFailureNote struct {
+	err     error
+	variant observabilityport.ConditionVariant
+}
+
+// siteTarget names the diagnostic target of a source: the provider for the
+// two catalog providers, the feed host for a custom RSS source.
+func siteTarget(snapshot sourceSnapshot, failure outbound.Failure) (id, name, host string) {
+	if provider := circuitProvider(snapshot); provider != "" {
+		return provider, provider, ""
+	}
+	host = failure.Host
+	if host == "" {
+		if raw, err := animedomain.LocatorURL(snapshot.locator); err == nil {
+			if parsed, perr := url.Parse(raw); perr == nil {
+				host = parsed.Hostname()
 			}
 		}
 	}
+	if host == "" {
+		return "", "", ""
+	}
+	return "host:" + host, host, host
+}
+
+// circuitAfterCommit records the site diagnostic of one refresh outcome: a
+// failure opens (or merges into) the source's target, as site.paused when the
+// provider circuit just tripped; a success closes it. A nil note is a success.
+func (s *Service) circuitAfterCommit(snapshot sourceSnapshot, effect *circuitEffect, note *refreshFailureNote) func(context.Context) {
+	return func(ctx context.Context) {
+		if note == nil {
+			if record := observabilityport.DiagnosticSuccessAfterCommit(s.diagnostics, s.logger,
+				observabilityport.InternalSuccess(observabilityport.InternalRSSRefresh)); record != nil {
+				record(ctx)
+			}
+			failure := outbound.Failure{}
+			id, _, _ := siteTarget(snapshot, failure)
+			if id == "" {
+				return
+			}
+			if record := observabilityport.DiagnosticSuccessAfterCommit(s.diagnostics, s.logger, observabilityport.DiagnosticSuccessRequest{
+				Kind: observabilityport.KindSite, TargetID: id,
+			}); record != nil {
+				record(ctx)
+			}
+			return
+		}
+		failure, _ := outbound.FailureOf(note.err)
+		id, name, host := siteTarget(snapshot, failure)
+		if id == "" {
+			return
+		}
+		variant, severity := note.variant, observabilityport.SeverityWarning
+		if effect.paused {
+			variant = observabilityport.VariantPaused
+		}
+		if record := observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, s.logger, observabilityport.DiagnosticFailureRequest{
+			Condition: observabilityport.Condition{Kind: observabilityport.KindSite, Variant: variant},
+			Severity:  severity, TargetID: id, TargetName: name, Failure: withHost(failure, host),
+			AffectedID: affectedAnime(variant, snapshot),
+		}); record != nil {
+			record(ctx)
+		}
+	}
+}
+
+func withHost(failure outbound.Failure, host string) outbound.Failure {
+	if failure.Host == "" {
+		failure.Host = host
+	}
+	return failure
+}
+
+// affectedAnime is the anime a refresh failure kept from updating; only a
+// plain refresh failure counts it, a pause or unreadable feed is source-wide.
+func affectedAnime(variant observabilityport.ConditionVariant, snapshot sourceSnapshot) string {
+	if variant == observabilityport.VariantRefreshFailed {
+		return snapshot.managedAnimeID
+	}
+	return ""
 }

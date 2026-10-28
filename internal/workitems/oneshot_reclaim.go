@@ -95,7 +95,7 @@ var oneShotClassifiedOwnerTables = []string{
 	"placement_companions",
 	"replacement_decisions", "reconciliation_files", "reconciliation_scans",
 	"notification_admissions",
-	"routine_activities", "diagnostic_episodes",
+	"routine_activities",
 	"one_shot_acquisitions",
 }
 
@@ -1094,6 +1094,11 @@ func deleteTemporaryOwnerGraphTx(ctx context.Context, tx *sql.Tx, graph oneShotG
 		name string
 		call func() error
 	}{
+		// The run log is the leaf of the whole graph: its entries name the
+		// Release, the RSS source and the subscription, so they go first.
+		{"subscription_log_entries", func() error {
+			return queries.DeleteOneShotSubscriptionLogEntries(ctx, graph.subscriptionID)
+		}},
 		{"work_items", func() error { return queries.DeleteOneShotWorkItems(ctx, arg) }},
 		{"file_operations", func() error {
 			return queries.DeleteOneShotFileOperations(ctx, graph.fileOpIDs)
@@ -1128,9 +1133,6 @@ func deleteTemporaryOwnerGraphTx(ctx context.Context, tx *sql.Tx, graph oneShotG
 		{"releases", func() error { return queries.DeleteOneShotReleases(ctx, graph.releaseID) }},
 		{"rss_source_runtime", func() error { return queries.DeleteOneShotRSSSourceRuntime(ctx, graph.rssSourceID) }},
 		{"rss_sources", func() error { return queries.DeleteOneShotRSSSources(ctx, graph.rssSourceID) }},
-		{"subscription_log_entries", func() error {
-			return queries.DeleteOneShotSubscriptionLogEntries(ctx, graph.subscriptionID)
-		}},
 		{"provider_group_selections", func() error {
 			return queries.DeleteOneShotProviderGroupSelections(ctx, graph.subscriptionID)
 		}},
@@ -1175,10 +1177,6 @@ func deleteTemporaryOwnerGraphTx(ctx context.Context, tx *sql.Tx, graph oneShotG
 		}},
 		{"routine_activities", func() error {
 			_, err := tx.ExecContext(ctx, `DELETE FROM routine_activities WHERE managed_anime_id = $1`, graph.animeID)
-			return err
-		}},
-		{"diagnostic_episodes", func() error {
-			_, err := tx.ExecContext(ctx, `DELETE FROM diagnostic_episodes WHERE managed_anime_id = $1`, graph.animeID)
 			return err
 		}},
 		{"managed_anime", func() error { return queries.DeleteOneShotManagedAnime(ctx, graph.animeID) }},

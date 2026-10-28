@@ -5,7 +5,6 @@ package businesslog
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
@@ -15,7 +14,7 @@ import (
 // metadata application through the central Activity writer. It participates in
 // the caller's owner transaction; the writer owns validation, redaction, and
 // deterministic replay dedupe.
-func WriteMetadataAppliedTx(ctx context.Context, scope txscope.Tx, writer observabilityport.ActivityWriter, subscriptionID, managedAnimeID, title string, metadataVersion int64) error {
+func WriteMetadataAppliedTx(ctx context.Context, scope txscope.Tx, writer observabilityport.ActivityWriter, subscriptionID, managedAnimeID string, metadataVersion int64) error {
 	if writer == nil {
 		return fmt.Errorf("activity writer is nil")
 	}
@@ -28,7 +27,6 @@ func WriteMetadataAppliedTx(ctx context.Context, scope txscope.Tx, writer observ
 		SubjectType:    "metadata",
 		SubjectID:      managedAnimeID,
 		SubjectVersion: metadataVersion,
-		Title:          strings.TrimSpace(title),
-		Summary:        "已关联 Bangumi、TMDB",
+		MessageCode:    observabilityport.MessageMetadataApplied,
 	})
 }

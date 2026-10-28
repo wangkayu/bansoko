@@ -415,7 +415,6 @@ export const reasonCopy = {
   notification_admission_retry_exhausted: "通知多次处理失败，已停止重试",
   secret_resolve_failed: "无法读取已保存的凭据",
   request_build_failed: "无法生成通知请求",
-  rss_refresh_failed: "RSS 刷新失败",
   file_operation_failed: "入库失败",
   provider_parser_empty: "站点返回的内容为空",
   provider_parser_schema_mismatch: "站点返回的内容格式已变化",

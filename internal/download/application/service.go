@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"bansoko/internal/acquisition/torrent"
@@ -18,6 +19,7 @@ import (
 	"bansoko/internal/download/domain"
 	"bansoko/internal/download/qbittorrent"
 	"bansoko/internal/events"
+	"bansoko/internal/observability/outbound"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
 	plugintargetport "bansoko/internal/plugintarget/port"
@@ -83,6 +85,9 @@ type Service struct {
 	downloadSubmittedSink plugintargetport.BusinessDeliveryEnqueuer
 	retryAfter            time.Duration
 	diagnostics           observabilityport.Recorder
+	syncMu                sync.Mutex
+	syncFailures          int
+	syncChecked           bool
 	logger                observabilityport.RuntimeLogger
 	eventHub              *events.Hub
 }
@@ -744,22 +749,32 @@ func (s *Service) handleSubmit(ctx context.Context, claim workitems.Claim) (work
 	if claim.Owner.Type != workitems.OwnerDownloadTask || strings.TrimSpace(claim.Owner.ID) == "" {
 		return worker.Outcome{}, ErrInvalidClaim
 	}
-	task, err := s.loadTask(ctx, claim.Owner.ID, false)
-	if err != nil {
+	if _, err := s.loadTask(ctx, claim.Owner.ID, false); err != nil {
 		return worker.Outcome{}, err
 	}
 	outcome, err := s.typedSubmit(ctx, claim)
 	if err != nil || outcome.Kind != worker.OutcomeCommitted {
 		return outcome, err
 	}
-	if outcome.OwnerResult.State == "failed" {
-		outcome = worker.WithAfterCommit(outcome, observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, s.logger, observabilityport.DiagnosticFailureRequest{
-			Identity: observabilityport.DownloadSubmitFailure(), Severity: observabilityport.SeverityError, ScopeID: task.releaseID, LastError: safeReason(outcome.OwnerResult.Reason),
-		}))
-	} else if outcome.OwnerResult.State == "submitting" || outcome.OwnerResult.State == "downloading" || outcome.OwnerResult.State == "completed" {
-		outcome = worker.WithAfterCommit(outcome, observabilityport.DiagnosticSuccessAfterCommit(s.diagnostics, s.logger, observabilityport.DiagnosticSuccessRequest{
-			Identity: observabilityport.DownloadSubmitFailure(), ScopeID: task.releaseID,
-		}))
+	switch outcome.OwnerResult.State {
+	case "failed":
+		// Failures that reached finishUnstartedSubmission already carry the
+		// diagnostic built from their cause.
+		if outcome.AfterCommit == nil {
+			outcome = worker.WithAfterCommit(outcome, observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, s.logger, observabilityport.InternalFailure(observabilityport.InternalDownloadSubmit, "")))
+		}
+	case "submitting", "downloading", "completed":
+		outcome = worker.WithAfterCommit(outcome, func(ctx context.Context) {
+			target := s.downloaderTarget(ctx)
+			for _, request := range []observabilityport.DiagnosticSuccessRequest{
+				{Kind: observabilityport.KindDownloader, TargetID: target},
+				observabilityport.InternalSuccess(observabilityport.InternalDownloadSubmit),
+			} {
+				if record := observabilityport.DiagnosticSuccessAfterCommit(s.diagnostics, s.logger, request); record != nil {
+					record(ctx)
+				}
+			}
+		})
 	}
 	return outcome, nil
 }
@@ -1035,4 +1050,44 @@ func redactProviderError(err error) string {
 	default:
 		return "qBittorrent operation failed"
 	}
+}
+
+// downloaderTarget is the diagnostic target of the configured downloader: its
+// connection id, or a fixed label when the runtime configuration cannot be read.
+func (s *Service) downloaderTarget(ctx context.Context) string {
+	if s.runtimeConfig != nil {
+		if config, err := s.runtimeConfig.GetQBittorrentRuntimeConfig(ctx); err == nil && config.ConnectionID != "" {
+			return config.ConnectionID
+		}
+	}
+	return "qbittorrent"
+}
+
+// submitFailureDiagnostic maps a failed submission onto the catalog from the
+// cause in hand: outbound facts mean the downloader could not be reached,
+// refused credentials mean its login is wrong, and everything else (an unreadable
+// runtime configuration included) is a product fault that stays internal. The
+// task is the affected unit.
+func (s *Service) submitFailureDiagnostic(taskID, code string, cause error) func(context.Context) {
+	if code != "qb_connection_unavailable" {
+		condition := observabilityport.Condition{Kind: observabilityport.KindDownloader}
+		var failure outbound.Failure
+		if facts, ok := outbound.FailureOf(cause); ok {
+			condition.Variant, failure = observabilityport.VariantUnreachable, facts
+		} else if errors.Is(cause, qbittorrent.ErrAuthFailed) {
+			condition.Variant = observabilityport.VariantAuthFailed
+		}
+		if condition.Variant != "" {
+			return func(ctx context.Context) {
+				request := observabilityport.DiagnosticFailureRequest{
+					Condition: condition, Severity: observabilityport.SeverityError,
+					TargetID: s.downloaderTarget(ctx), TargetName: "qBittorrent", Failure: failure, AffectedID: taskID,
+				}
+				if record := observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, s.logger, request); record != nil {
+					record(ctx)
+				}
+			}
+		}
+	}
+	return observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, s.logger, observabilityport.InternalFailure(observabilityport.InternalDownloadSubmit, ""))
 }

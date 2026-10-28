@@ -14,6 +14,22 @@ import (
 
 const maxRedirects = 3
 
+// The safe transport's own refusals. Each one is decided from the request
+// alone, so a retry cannot change it; the delivery handler matches them with
+// errors.Is and settles the attempt failed at once.
+var (
+	errMalformedDialAddress = errors.New("safe transport rejected malformed dial address")
+	errNonPublicAddress     = errors.New("safe transport rejected a non-public address")
+	errInvalidProxy         = errors.New("safe transport egress proxy is invalid")
+	errCrossOriginRedirect  = errors.New("safe transport rejected cross-origin redirect")
+	errRedirectLimit        = errors.New("safe transport redirect limit exceeded")
+	errRedirectTarget       = errors.New("safe transport rejected redirect target")
+	// errDNSResolution is not a refusal: the name may resolve later, so it
+	// is a failure that may clear. It wraps the resolver's own error when one
+	// exists, and stands alone for an answer without addresses.
+	errDNSResolution = errors.New("safe transport DNS resolution failed")
+)
+
 type ipResolver interface {
 	LookupIPAddr(context.Context, string) ([]net.IPAddr, error)
 }
@@ -59,7 +75,7 @@ func newSafeHTTPClient(hooks safeHTTPHooks) *http.Client {
 		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
 			host, port, err := net.SplitHostPort(address)
 			if err != nil {
-				return nil, errors.New("safe transport rejected malformed dial address")
+				return nil, errMalformedDialAddress
 			}
 			addresses, err := resolvePublic(ctx, resolver, host)
 			if err != nil {
@@ -81,14 +97,14 @@ func newSafeHTTPClient(hooks safeHTTPHooks) *http.Client {
 	client := &http.Client{Transport: transport, Timeout: handlerRequestTimeout}
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) > maxRedirects {
-			return errors.New("safe transport redirect limit exceeded")
+			return errRedirectLimit
 		}
 		if err := validateHTTPSURL(req.URL); err != nil {
-			return err
+			return fmt.Errorf("%w: %w", errRedirectTarget, err)
 		}
 		origin := via[0].URL
 		if !strings.EqualFold(req.URL.Scheme, origin.Scheme) || !strings.EqualFold(req.URL.Host, origin.Host) {
-			return errors.New("safe transport rejected cross-origin redirect")
+			return errCrossOriginRedirect
 		}
 		return nil
 	}
@@ -108,7 +124,9 @@ type safeRoundTripper struct {
 func (t safeRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
 	proxyURL, err := t.proxy(request)
 	if err != nil {
-		return nil, errors.New("safe transport egress proxy is invalid")
+		// The proxy's own error can quote the configured proxy URL, which may
+		// carry credentials, so only the sentinel is returned.
+		return nil, errInvalidProxy
 	}
 	if proxyURL == nil {
 		return t.direct.RoundTrip(request)
@@ -123,17 +141,20 @@ func (t safeRoundTripper) RoundTrip(request *http.Request) (*http.Response, erro
 func resolvePublic(ctx context.Context, resolver ipResolver, host string) ([]net.IPAddr, error) {
 	if ip := net.ParseIP(host); ip != nil {
 		if unsafeIP(ip) {
-			return nil, errors.New("safe transport rejected a non-public address")
+			return nil, errNonPublicAddress
 		}
 		return []net.IPAddr{{IP: ip}}, nil
 	}
 	addresses, err := resolver.LookupIPAddr(ctx, host)
-	if err != nil || len(addresses) == 0 {
-		return nil, errors.New("safe transport DNS resolution failed")
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", errDNSResolution, err)
+	}
+	if len(addresses) == 0 {
+		return nil, errDNSResolution
 	}
 	for _, candidate := range addresses {
 		if unsafeIP(candidate.IP) {
-			return nil, errors.New("safe transport rejected a non-public address")
+			return nil, errNonPublicAddress
 		}
 	}
 	return addresses, nil

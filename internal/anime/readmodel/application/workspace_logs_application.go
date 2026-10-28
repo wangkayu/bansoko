@@ -12,13 +12,17 @@ func (s *Service) readSubscriptionLogsApplication(ctx context.Context, subscript
 	// must survive the read projection: reason code, subject, and
 	// correlation/causation are owner-first truth, not derived at read time.
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, subscription_id, managed_anime_id, kind, outcome, occurred_at,
-       title, summary, rss_source_id, release_id, group_ref, details,
-       dedupe_key, retention_until, reason_code, subject_type, subject_id,
-       subject_version, correlation_id, causation_type, causation_id
-FROM subscription_log_entries
-WHERE subscription_id = $1 AND managed_anime_id = $2
-ORDER BY occurred_at DESC, id DESC
+SELECT l.id, l.subscription_id, l.managed_anime_id, l.kind, l.outcome, l.occurred_at,
+       l.message_code, l.message_params, l.rss_source_id, l.release_id, l.group_ref, l.details,
+       l.dedupe_key, l.retention_until, l.reason_code, l.subject_type, l.subject_id,
+       l.subject_version, l.correlation_id, l.causation_type, l.causation_id,
+       COALESCE(left(COALESCE(NULLIF(btrim(ma.title_override), ''), ma.title), 512), ''),
+       CASE WHEN s.origin = 'oneshot' THEN 'one_shot' ELSE 'subscription' END
+FROM subscription_log_entries l
+JOIN subscriptions s ON s.id = l.subscription_id
+LEFT JOIN managed_anime ma ON ma.id = l.managed_anime_id
+WHERE l.subscription_id = $1 AND l.managed_anime_id = $2
+ORDER BY l.occurred_at DESC, l.id DESC
 LIMIT 100`, subscriptionID, managedAnimeID)
 	if err != nil {
 		return nil, fmt.Errorf("read subscription logs: %w", err)
@@ -29,13 +33,17 @@ LIMIT 100`, subscriptionID, managedAnimeID)
 		var entry SubscriptionLogEntry
 		var kind, outcome string
 		var rssSourceID, releaseID, groupRef sql.NullString
-		var details []byte
+		var details, params []byte
 		var reasonCode, subjectType, subjectID, correlationID, causationType, causationID sql.NullString
 		var subjectVersion sql.NullInt64
 		if err := rows.Scan(&entry.ID, &entry.SubscriptionID, &entry.ManagedAnimeID, &kind, &outcome, &entry.OccurredAt,
-			&entry.Title, &entry.Summary, &rssSourceID, &releaseID, &groupRef, &details, &entry.DedupeKey, &entry.RetentionUntil,
-			&reasonCode, &subjectType, &subjectID, &subjectVersion, &correlationID, &causationType, &causationID); err != nil {
+			&entry.MessageCode, &params, &rssSourceID, &releaseID, &groupRef, &details, &entry.DedupeKey, &entry.RetentionUntil,
+			&reasonCode, &subjectType, &subjectID, &subjectVersion, &correlationID, &causationType, &causationID,
+			&entry.AnimeTitle, &entry.Source); err != nil {
 			return nil, fmt.Errorf("scan subscription log: %w", err)
+		}
+		if err := json.Unmarshal(params, &entry.MessageParams); err != nil {
+			return nil, fmt.Errorf("decode subscription log message params: %w", err)
 		}
 		entry.Kind, entry.Outcome = kind, outcome
 		entry.RSSSourceID = cloneNullableString(rssSourceID)

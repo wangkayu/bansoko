@@ -334,7 +334,7 @@ func (s *Service) recordPlacementDiagnosticSuccessTx(ctx context.Context, tx *sq
 		return
 	}
 	if err := s.diagnostics.RecordDiagnosticSuccessTx(ctx, txscope.Wrap(tx), observabilityport.DiagnosticSuccessRequest{
-		Identity: observabilityport.PlacementAdmissionFailure(), ScopeID: operationID,
+		Kind: observabilityport.KindInternal, TargetID: observabilityport.InternalPlacementSink,
 	}); err != nil && s.logger != nil {
 		s.logger.Error(ctx, observabilityport.RuntimeEvent{
 			Message:    "placement diagnostic success could not be recorded",
@@ -352,14 +352,9 @@ func (s *Service) recordPlacementDiagnosticFailureTx(ctx context.Context, tx *sq
 	if s.diagnostics == nil {
 		return
 	}
-	details := placementFailureDetails(map[string]string{
-		"reason_code": reasonCode,
-	})
-	if err := s.diagnostics.RecordDiagnosticFailureTx(ctx, txscope.Wrap(tx), observabilityport.DiagnosticFailureRequest{
-		Identity: observabilityport.PlacementAdmissionFailure(),
-		Severity: observabilityport.SeverityWarning,
-		ScopeID:  operationID, LastError: reason, Details: details,
-	}); err != nil && s.logger != nil {
+	request := observabilityport.InternalFailure(observabilityport.InternalPlacementSink, "")
+	request.Severity = observabilityport.SeverityWarning
+	if err := s.diagnostics.RecordDiagnosticFailureTx(ctx, txscope.Wrap(tx), request); err != nil && s.logger != nil {
 		s.logger.Error(ctx, observabilityport.RuntimeEvent{
 			Message: "placement diagnostic failure could not be recorded", Component: "fileoperation",
 			Operation: placementDiagnosticOperation, Outcome: "failure", ReasonCode: reasonCode,
@@ -373,11 +368,9 @@ func (s *Service) recordPlacementDiagnosticFailureTx(ctx context.Context, tx *sq
 // paths). Best-effort visibility only: the durable obligation row and the
 // terminal WorkItem are the authoritative records.
 func (s *Service) placementFailureDiagnosticAfterCommit(operationID, reasonCode string, cause error) func(context.Context) {
-	return observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, s.logger, observabilityport.DiagnosticFailureRequest{
-		Identity: observabilityport.PlacementAdmissionFailure(), Severity: observabilityport.SeverityWarning,
-		ScopeID: operationID, LastError: safeReason(cause),
-		Details: placementFailureDetails(map[string]string{"reason_code": reasonCode}),
-	})
+	request := observabilityport.InternalFailure(observabilityport.InternalPlacementSink, "")
+	request.Severity = observabilityport.SeverityWarning
+	return observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, s.logger, request)
 }
 
 // placementRetryDelay is the backoff between placement-stage attempts. It is

@@ -582,21 +582,73 @@ const (
 	DeploymentIdentitySelectedSourceOverlay DeploymentIdentitySelectedSource = "overlay"
 )
 
-// Defines values for DiagnosticDetailsStatus.
+// Defines values for DiagnosticAffectedKind.
 const (
-	DiagnosticDetailsStatusAvailable   DiagnosticDetailsStatus = "available"
-	DiagnosticDetailsStatusInvalid     DiagnosticDetailsStatus = "invalid"
-	DiagnosticDetailsStatusUnavailable DiagnosticDetailsStatus = "unavailable"
+	DiagnosticAffectedKindAnime DiagnosticAffectedKind = "anime"
+	DiagnosticAffectedKindTask  DiagnosticAffectedKind = "task"
 )
 
-// Defines values for DiagnosticScopeKind.
+// Defines values for DiagnosticConditionKind.
 const (
-	DiagnosticScopeKindGlobal       DiagnosticScopeKind = "global"
-	DiagnosticScopeKindOwner        DiagnosticScopeKind = "owner"
-	DiagnosticScopeKindProvider     DiagnosticScopeKind = "provider"
-	DiagnosticScopeKindRssSource    DiagnosticScopeKind = "rss_source"
-	DiagnosticScopeKindSubscription DiagnosticScopeKind = "subscription"
-	DiagnosticScopeKindWorker       DiagnosticScopeKind = "worker"
+	DiagnosticConditionKindDownloader DiagnosticConditionKind = "downloader"
+	DiagnosticConditionKindLibrary    DiagnosticConditionKind = "library"
+	DiagnosticConditionKindMetadata   DiagnosticConditionKind = "metadata"
+	DiagnosticConditionKindNotify     DiagnosticConditionKind = "notify"
+	DiagnosticConditionKindSite       DiagnosticConditionKind = "site"
+	DiagnosticConditionKindUpdate     DiagnosticConditionKind = "update"
+)
+
+// Defines values for DiagnosticConditionVariant.
+const (
+	DiagnosticConditionVariantAddressRejected DiagnosticConditionVariant = "address_rejected"
+	DiagnosticConditionVariantAuthFailed      DiagnosticConditionVariant = "auth_failed"
+	DiagnosticConditionVariantNoSpace         DiagnosticConditionVariant = "no_space"
+	DiagnosticConditionVariantNotWritable     DiagnosticConditionVariant = "not_writable"
+	DiagnosticConditionVariantPaused          DiagnosticConditionVariant = "paused"
+	DiagnosticConditionVariantRefreshFailed   DiagnosticConditionVariant = "refresh_failed"
+	DiagnosticConditionVariantRequest         DiagnosticConditionVariant = "request"
+	DiagnosticConditionVariantSecret          DiagnosticConditionVariant = "secret"
+	DiagnosticConditionVariantTemplate        DiagnosticConditionVariant = "template"
+	DiagnosticConditionVariantUnreachable     DiagnosticConditionVariant = "unreachable"
+	DiagnosticConditionVariantUnreadable      DiagnosticConditionVariant = "unreadable"
+)
+
+// Defines values for DiagnosticDetailErrorClass.
+const (
+	DiagnosticDetailErrorClassConnectionRefused DiagnosticDetailErrorClass = "connection_refused"
+	DiagnosticDetailErrorClassConnectionReset   DiagnosticDetailErrorClass = "connection_reset"
+	DiagnosticDetailErrorClassDns               DiagnosticDetailErrorClass = "dns"
+	DiagnosticDetailErrorClassHttpStatus        DiagnosticDetailErrorClass = "http_status"
+	DiagnosticDetailErrorClassTimeout           DiagnosticDetailErrorClass = "timeout"
+	DiagnosticDetailErrorClassTls               DiagnosticDetailErrorClass = "tls"
+	DiagnosticDetailErrorClassUnknown           DiagnosticDetailErrorClass = "unknown"
+)
+
+// Defines values for DiagnosticDetailVia.
+const (
+	DiagnosticDetailViaDirect DiagnosticDetailVia = "direct"
+	DiagnosticDetailViaProxy  DiagnosticDetailVia = "proxy"
+)
+
+// Defines values for DiagnosticOccurrenceVia.
+const (
+	DiagnosticOccurrenceViaDirect DiagnosticOccurrenceVia = "direct"
+	DiagnosticOccurrenceViaProxy  DiagnosticOccurrenceVia = "proxy"
+)
+
+// Defines values for DiagnosticRetryMode.
+const (
+	DiagnosticRetryModeAuto     DiagnosticRetryMode = "auto"
+	DiagnosticRetryModeManual   DiagnosticRetryMode = "manual"
+	DiagnosticRetryModeResume   DiagnosticRetryMode = "resume"
+	DiagnosticRetryModeSettings DiagnosticRetryMode = "settings"
+)
+
+// Defines values for DiagnosticSettingsTarget.
+const (
+	DiagnosticSettingsTargetDownloaderConnection DiagnosticSettingsTarget = "downloader_connection"
+	DiagnosticSettingsTargetMetadataConnection   DiagnosticSettingsTarget = "metadata_connection"
+	DiagnosticSettingsTargetNotificationTarget   DiagnosticSettingsTarget = "notification_target"
 )
 
 // Defines values for DiagnosticSeverity.
@@ -1226,6 +1278,14 @@ const (
 // Defines values for NyaaConnectionInputKind.
 const (
 	NyaaConnectionInputKindNyaa NyaaConnectionInputKind = "nyaa"
+)
+
+// Defines values for ObservabilityRecordState.
+const (
+	ObservabilityRecordStateFailure    ObservabilityRecordState = "failure"
+	ObservabilityRecordStateInProgress ObservabilityRecordState = "in_progress"
+	ObservabilityRecordStateInfo       ObservabilityRecordState = "info"
+	ObservabilityRecordStateSuccess    ObservabilityRecordState = "success"
 )
 
 // Defines values for OffsetMigrationGenerationViewScopeKind.
@@ -2012,6 +2072,14 @@ const (
 	RoutineRecordRecordTypeRoutine RoutineRecordRecordType = "routine"
 )
 
+// Defines values for RuntimeLogLineLevel.
+const (
+	RuntimeLogLineLevelDebug RuntimeLogLineLevel = "debug"
+	RuntimeLogLineLevelError RuntimeLogLineLevel = "error"
+	RuntimeLogLineLevelInfo  RuntimeLogLineLevel = "info"
+	RuntimeLogLineLevelWarn  RuntimeLogLineLevel = "warn"
+)
+
 // Defines values for SOCKS5RouteKind.
 const (
 	SOCKS5RouteKindSocks5 SOCKS5RouteKind = "socks5"
@@ -2179,11 +2247,60 @@ const (
 	SubscriptionLogKindReleaseProcessed       SubscriptionLogKind = "release_processed"
 	SubscriptionLogKindReplacementDecided     SubscriptionLogKind = "replacement_decided"
 	SubscriptionLogKindRssNewContent          SubscriptionLogKind = "rss_new_content"
-	SubscriptionLogKindRssRefreshFailed       SubscriptionLogKind = "rss_refresh_failed"
 	SubscriptionLogKindSubscriptionCreated    SubscriptionLogKind = "subscription_created"
 	SubscriptionLogKindSubscriptionResumed    SubscriptionLogKind = "subscription_resumed"
 	SubscriptionLogKindSubscriptionStarted    SubscriptionLogKind = "subscription_started"
 	SubscriptionLogKindSubscriptionStopped    SubscriptionLogKind = "subscription_stopped"
+)
+
+// Defines values for SubscriptionLogMessageCode.
+const (
+	SubscriptionLogMessageCodeAcquisitionCancelled       SubscriptionLogMessageCode = "acquisition_cancelled"
+	SubscriptionLogMessageCodeAcquisitionFailed          SubscriptionLogMessageCode = "acquisition_failed"
+	SubscriptionLogMessageCodeAcquisitionSucceeded       SubscriptionLogMessageCode = "acquisition_succeeded"
+	SubscriptionLogMessageCodeArtifactVerified           SubscriptionLogMessageCode = "artifact_verified"
+	SubscriptionLogMessageCodeDownloadCompleted          SubscriptionLogMessageCode = "download_completed"
+	SubscriptionLogMessageCodeDownloadFailed             SubscriptionLogMessageCode = "download_failed"
+	SubscriptionLogMessageCodeDownloadRemoved            SubscriptionLogMessageCode = "download_removed"
+	SubscriptionLogMessageCodeDownloadSubmitted          SubscriptionLogMessageCode = "download_submitted"
+	SubscriptionLogMessageCodeEpisodeOffsetChanged       SubscriptionLogMessageCode = "episode_offset_changed"
+	SubscriptionLogMessageCodeFileAdopted                SubscriptionLogMessageCode = "file_adopted"
+	SubscriptionLogMessageCodeFileImportFailed           SubscriptionLogMessageCode = "file_import_failed"
+	SubscriptionLogMessageCodeFileImported               SubscriptionLogMessageCode = "file_imported"
+	SubscriptionLogMessageCodeFileRecovered              SubscriptionLogMessageCode = "file_recovered"
+	SubscriptionLogMessageCodeFileRetained               SubscriptionLogMessageCode = "file_retained"
+	SubscriptionLogMessageCodeGroupChanged               SubscriptionLogMessageCode = "group_changed"
+	SubscriptionLogMessageCodeMetadataApplied            SubscriptionLogMessageCode = "metadata_applied"
+	SubscriptionLogMessageCodeOldVersionDeleteFailed     SubscriptionLogMessageCode = "old_version_delete_failed"
+	SubscriptionLogMessageCodeOldVersionDeleted          SubscriptionLogMessageCode = "old_version_deleted"
+	SubscriptionLogMessageCodeOldVersionKept             SubscriptionLogMessageCode = "old_version_kept"
+	SubscriptionLogMessageCodePlacementRecorded          SubscriptionLogMessageCode = "placement_recorded"
+	SubscriptionLogMessageCodePlacementReleased          SubscriptionLogMessageCode = "placement_released"
+	SubscriptionLogMessageCodeReleaseAccepted            SubscriptionLogMessageCode = "release_accepted"
+	SubscriptionLogMessageCodeReleaseAcquisitionFailed   SubscriptionLogMessageCode = "release_acquisition_failed"
+	SubscriptionLogMessageCodeReleaseAdoptedExisting     SubscriptionLogMessageCode = "release_adopted_existing"
+	SubscriptionLogMessageCodeReleaseAwaitingCompetition SubscriptionLogMessageCode = "release_awaiting_competition"
+	SubscriptionLogMessageCodeReleaseDiscovered          SubscriptionLogMessageCode = "release_discovered"
+	SubscriptionLogMessageCodeReleaseFiltered            SubscriptionLogMessageCode = "release_filtered"
+	SubscriptionLogMessageCodeReleaseParseFailed         SubscriptionLogMessageCode = "release_parse_failed"
+	SubscriptionLogMessageCodeReleaseResumeBaseline      SubscriptionLogMessageCode = "release_resume_baseline"
+	SubscriptionLogMessageCodeReleaseSourceUnavailable   SubscriptionLogMessageCode = "release_source_unavailable"
+	SubscriptionLogMessageCodeReleaseStartBaseline       SubscriptionLogMessageCode = "release_start_baseline"
+	SubscriptionLogMessageCodeReleaseSubmitted           SubscriptionLogMessageCode = "release_submitted"
+	SubscriptionLogMessageCodeReleaseSubscriptionStopped SubscriptionLogMessageCode = "release_subscription_stopped"
+	SubscriptionLogMessageCodeReleaseWaitingMetadata     SubscriptionLogMessageCode = "release_waiting_metadata"
+	SubscriptionLogMessageCodeReplacementBlocked         SubscriptionLogMessageCode = "replacement_blocked"
+	SubscriptionLogMessageCodeReplacementKeptAll         SubscriptionLogMessageCode = "replacement_kept_all"
+	SubscriptionLogMessageCodeReplacementKeptExisting    SubscriptionLogMessageCode = "replacement_kept_existing"
+	SubscriptionLogMessageCodeReplacementNotReplaced     SubscriptionLogMessageCode = "replacement_not_replaced"
+	SubscriptionLogMessageCodeReplacementReplaced        SubscriptionLogMessageCode = "replacement_replaced"
+	SubscriptionLogMessageCodeRssNewContent              SubscriptionLogMessageCode = "rss_new_content"
+	SubscriptionLogMessageCodeRulesChanged               SubscriptionLogMessageCode = "rules_changed"
+	SubscriptionLogMessageCodeSubscriptionCreated        SubscriptionLogMessageCode = "subscription_created"
+	SubscriptionLogMessageCodeSubscriptionResumed        SubscriptionLogMessageCode = "subscription_resumed"
+	SubscriptionLogMessageCodeSubscriptionStarted        SubscriptionLogMessageCode = "subscription_started"
+	SubscriptionLogMessageCodeSubscriptionStopped        SubscriptionLogMessageCode = "subscription_stopped"
+	SubscriptionLogMessageCodeUnknownFileReleased        SubscriptionLogMessageCode = "unknown_file_released"
 )
 
 // Defines values for SubscriptionLogOutcome.
@@ -2191,6 +2308,12 @@ const (
 	SubscriptionLogOutcomeFailure SubscriptionLogOutcome = "failure"
 	SubscriptionLogOutcomeInfo    SubscriptionLogOutcome = "info"
 	SubscriptionLogOutcomeSuccess SubscriptionLogOutcome = "success"
+)
+
+// Defines values for SubscriptionLogSource.
+const (
+	SubscriptionLogSourceOneShot      SubscriptionLogSource = "one_shot"
+	SubscriptionLogSourceSubscription SubscriptionLogSource = "subscription"
 )
 
 // Defines values for SubscriptionOrigin.
@@ -2460,10 +2583,10 @@ const (
 	SearchMetadataParamsProviderTmdb SearchMetadataParamsProvider = "tmdb"
 )
 
-// Defines values for ListObservabilityDiagnosticsParamsSeverity.
+// Defines values for ListObservabilityDiagnosticsParamsState.
 const (
-	ListObservabilityDiagnosticsParamsSeverityError   ListObservabilityDiagnosticsParamsSeverity = "error"
-	ListObservabilityDiagnosticsParamsSeverityWarning ListObservabilityDiagnosticsParamsSeverity = "warning"
+	ListObservabilityDiagnosticsParamsStateOpen      ListObservabilityDiagnosticsParamsState = "open"
+	ListObservabilityDiagnosticsParamsStateRecovered ListObservabilityDiagnosticsParamsState = "recovered"
 )
 
 // Defines values for ListObservabilityRecordsParamsKind.
@@ -2474,15 +2597,11 @@ const (
 	ListObservabilityRecordsParamsKindRoutine    ListObservabilityRecordsParamsKind = "routine"
 )
 
-// Defines values for ListObservabilityRecordsParamsOutcome.
+// Defines values for GetRuntimeLogParamsLevel.
 const (
-	ListObservabilityRecordsParamsOutcomeFailure ListObservabilityRecordsParamsOutcome = "failure"
-	ListObservabilityRecordsParamsOutcomeInfo    ListObservabilityRecordsParamsOutcome = "info"
-	ListObservabilityRecordsParamsOutcomePartial ListObservabilityRecordsParamsOutcome = "partial"
-	ListObservabilityRecordsParamsOutcomePending ListObservabilityRecordsParamsOutcome = "pending"
-	ListObservabilityRecordsParamsOutcomeSuccess ListObservabilityRecordsParamsOutcome = "success"
-	ListObservabilityRecordsParamsOutcomeUnknown ListObservabilityRecordsParamsOutcome = "unknown"
-	ListObservabilityRecordsParamsOutcomeWarning ListObservabilityRecordsParamsOutcome = "warning"
+	GetRuntimeLogParamsLevelAll   GetRuntimeLogParamsLevel = "all"
+	GetRuntimeLogParamsLevelError GetRuntimeLogParamsLevel = "error"
+	GetRuntimeLogParamsLevelWarn  GetRuntimeLogParamsLevel = "warn"
 )
 
 // Defines values for ListPluginDeliveriesParamsSourceOwnerType.
@@ -4079,51 +4198,113 @@ type DeploymentIdentity struct {
 // DeploymentIdentitySelectedSource Whether the served tree comes from the base image or the updates-volume overlay.
 type DeploymentIdentitySelectedSource string
 
-// DiagnosticDetails defines model for DiagnosticDetails.
-type DiagnosticDetails struct {
-	ReasonCode   *string                 `json:"reason_code,omitempty"`
-	ReasonDetail *string                 `json:"reason_detail,omitempty"`
-	SafeContext  *map[string]interface{} `json:"safe_context,omitempty"`
+// DiagnosticAffected defines model for DiagnosticAffected.
+type DiagnosticAffected struct {
+	// Count Distinct objects the condition kept from working (deduplicated).
+	Count int                    `json:"count"`
+	Kind  DiagnosticAffectedKind `json:"kind"`
 }
 
-// DiagnosticDetailsStatus Bounded health of the optional details payload. available means the stored details decoded into the contract shape; unavailable means the episode carries no details; invalid means stored details failed to decode and were withheld instead of leaking raw bytes.
-type DiagnosticDetailsStatus string
+// DiagnosticAffectedKind defines model for DiagnosticAffected.Kind.
+type DiagnosticAffectedKind string
 
-// DiagnosticEpisode defines model for DiagnosticEpisode.
+// DiagnosticConditionKind What the condition is about. Internal product faults are not episodes; they are summarised on the first page of the list (see internal).
+type DiagnosticConditionKind string
+
+// DiagnosticConditionVariant defines model for DiagnosticConditionVariant.
+type DiagnosticConditionVariant string
+
+// DiagnosticDetail Structured fact of the latest failure; never upstream or error text.
+type DiagnosticDetail struct {
+	ErrorClass DiagnosticDetailErrorClass `json:"error_class"`
+	HttpStatus *int                       `json:"http_status,omitempty"`
+	Via        *DiagnosticDetailVia       `json:"via,omitempty"`
+}
+
+// DiagnosticDetailErrorClass defines model for DiagnosticDetail.ErrorClass.
+type DiagnosticDetailErrorClass string
+
+// DiagnosticDetailVia defines model for DiagnosticDetail.Via.
+type DiagnosticDetailVia string
+
+// DiagnosticEpisode One condition on one target. An open episode (succeeded_after_at null) is unique per kind and target; a recovered one is history until retention.
 type DiagnosticEpisode struct {
-	Component string             `json:"component"`
-	Details   *DiagnosticDetails `json:"details"`
+	Affected *DiagnosticAffected `json:"affected,omitempty"`
 
-	// DetailsStatus Bounded health of the optional details payload. available means the stored details decoded into the contract shape; unavailable means the episode carries no details; invalid means stored details failed to decode and were withheld instead of leaking raw bytes.
-	DetailsStatus DiagnosticDetailsStatus `json:"details_status"`
-	ErrorCode     string                  `json:"error_code"`
-	FirstFailedAt time.Time               `json:"first_failed_at"`
-	Id            ID                      `json:"id"`
+	// Detail Structured fact of the latest failure; never upstream or error text.
+	Detail        *DiagnosticDetail `json:"detail,omitempty"`
+	FirstFailedAt time.Time         `json:"first_failed_at"`
+	Id            ID                `json:"id"`
 
-	// LastError Bounded diagnostic error text. The storage column allows 8192 characters, so the contract mirrors that bound; the read boundary re-redacts stored text and truncates by runes, and values written before the writer's redaction may already have collapsed to the redaction marker.
-	LastError        string              `json:"last_error"`
-	LastFailedAt     time.Time           `json:"last_failed_at"`
-	ManagedAnimeId   *ID                 `json:"managed_anime_id"`
-	OccurrenceCount  int                 `json:"occurrence_count"`
-	Operation        string              `json:"operation"`
-	RetentionUntil   time.Time           `json:"retention_until"`
-	ScopeId          string              `json:"scope_id"`
-	ScopeKind        DiagnosticScopeKind `json:"scope_kind"`
-	Severity         DiagnosticSeverity  `json:"severity"`
-	SucceededAfterAt *time.Time          `json:"succeeded_after_at"`
+	// Kind What the condition is about. Internal product faults are not episodes; they are summarised on the first page of the list (see internal).
+	Kind            DiagnosticConditionKind `json:"kind"`
+	LastFailedAt    time.Time               `json:"last_failed_at"`
+	OccurrenceCount int                     `json:"occurrence_count"`
+
+	// Recent Latest occurrences, newest first.
+	Recent           []DiagnosticOccurrence     `json:"recent"`
+	RetentionUntil   time.Time                  `json:"retention_until"`
+	Retry            DiagnosticRetry            `json:"retry"`
+	Severity         DiagnosticSeverity         `json:"severity"`
+	SucceededAfterAt *time.Time                 `json:"succeeded_after_at"`
+	Target           DiagnosticTarget           `json:"target"`
+	Variant          DiagnosticConditionVariant `json:"variant"`
 }
 
 // DiagnosticEpisodePage defines model for DiagnosticEpisodePage.
 type DiagnosticEpisodePage struct {
-	Episodes   []DiagnosticEpisode `json:"episodes"`
-	NextCursor *string             `json:"next_cursor"`
+	// Episodes Open episodes first, then recovered ones, each group newest first.
+	Episodes []DiagnosticEpisode `json:"episodes"`
+
+	// Internal Open internal product faults folded into one entry for bug reports. last_request_id correlates with the runtime log.
+	Internal   *DiagnosticInternalSummary `json:"internal,omitempty"`
+	NextCursor *string                    `json:"next_cursor"`
 }
 
-// DiagnosticScopeKind defines model for DiagnosticScopeKind.
-type DiagnosticScopeKind string
+// DiagnosticInternalSummary Open internal product faults folded into one entry for bug reports. last_request_id correlates with the runtime log.
+type DiagnosticInternalSummary struct {
+	LastFailedAt    time.Time `json:"last_failed_at"`
+	LastRequestId   *string   `json:"last_request_id,omitempty"`
+	OccurrenceCount int       `json:"occurrence_count"`
+}
+
+// DiagnosticOccurrence defines model for DiagnosticOccurrence.
+type DiagnosticOccurrence struct {
+	At         time.Time                `json:"at"`
+	ErrorClass *string                  `json:"error_class,omitempty"`
+	Host       *string                  `json:"host,omitempty"`
+	Via        *DiagnosticOccurrenceVia `json:"via,omitempty"`
+}
+
+// DiagnosticOccurrenceVia defines model for DiagnosticOccurrence.Via.
+type DiagnosticOccurrenceVia string
+
+// DiagnosticRetry defines model for DiagnosticRetry.
+type DiagnosticRetry struct {
+	// Mode auto: the product retries on its own schedule. resume: paused work continues once the target answers. settings: the owner changes a setting first. manual: the owner triggers the retry.
+	Mode           DiagnosticRetryMode       `json:"mode"`
+	SettingsTarget *DiagnosticSettingsTarget `json:"settings_target,omitempty"`
+}
+
+// DiagnosticRetryMode auto: the product retries on its own schedule. resume: paused work continues once the target answers. settings: the owner changes a setting first. manual: the owner triggers the retry.
+type DiagnosticRetryMode string
+
+// DiagnosticSettingsTarget defines model for DiagnosticSettingsTarget.
+type DiagnosticSettingsTarget string
 
 // DiagnosticSeverity defines model for DiagnosticSeverity.
 type DiagnosticSeverity string
+
+// DiagnosticTarget defines model for DiagnosticTarget.
+type DiagnosticTarget struct {
+	// Host Bare host name of the failing peer; never a URL, port or credential.
+	Host *string `json:"host,omitempty"`
+	Id   string  `json:"id"`
+
+	// Kind What the condition is about. Internal product faults are not episodes; they are summarised on the first page of the list (see internal).
+	Kind DiagnosticConditionKind `json:"kind"`
+	Name string                  `json:"name"`
+}
 
 // DirectRoute defines model for DirectRoute.
 type DirectRoute struct {
@@ -5888,6 +6069,9 @@ type ObservabilityRecordPage struct {
 	NextCursor *string               `json:"next_cursor"`
 	Records    []ObservabilityRecord `json:"records"`
 }
+
+// ObservabilityRecordState defines model for ObservabilityRecordState.
+type ObservabilityRecordState string
 
 // OffsetMigrationGenerationView defines model for OffsetMigrationGenerationView.
 type OffsetMigrationGenerationView struct {
@@ -7918,6 +8102,28 @@ type RulesSections struct {
 	TagFilters    *TagFilterRulesOverride     `json:"tag_filters,omitempty"`
 }
 
+// RuntimeLogLine defines model for RuntimeLogLine.
+type RuntimeLogLine struct {
+	At            time.Time           `json:"at"`
+	Component     *string             `json:"component,omitempty"`
+	CorrelationId *string             `json:"correlation_id,omitempty"`
+	ErrorClass    *string             `json:"error_class,omitempty"`
+	Level         RuntimeLogLineLevel `json:"level"`
+	Message       string              `json:"message"`
+	Operation     *string             `json:"operation,omitempty"`
+	Outcome       *string             `json:"outcome,omitempty"`
+	ReasonCode    *string             `json:"reason_code,omitempty"`
+	RequestId     *string             `json:"request_id,omitempty"`
+}
+
+// RuntimeLogLineLevel defines model for RuntimeLogLine.Level.
+type RuntimeLogLineLevel string
+
+// RuntimeLogPage defines model for RuntimeLogPage.
+type RuntimeLogPage struct {
+	Lines []RuntimeLogLine `json:"lines"`
+}
+
 // SOCKS5Route defines model for SOCKS5Route.
 type SOCKS5Route struct {
 	CredentialConfigured bool            `json:"credential_configured"`
@@ -8441,6 +8647,8 @@ type SubscriptionLogDetailsMetadataMissing string
 
 // SubscriptionLogEntry defines model for SubscriptionLogEntry.
 type SubscriptionLogEntry struct {
+	// AnimeTitle The anime's current display title, read with the entry (empty when the anime is gone).
+	AnimeTitle     string                  `json:"anime_title"`
 	CausationId    *string                 `json:"causation_id"`
 	CausationType  *string                 `json:"causation_type"`
 	CorrelationId  *string                 `json:"correlation_id"`
@@ -8450,27 +8658,55 @@ type SubscriptionLogEntry struct {
 	Id             ID                      `json:"id"`
 	Kind           SubscriptionLogKind     `json:"kind"`
 	ManagedAnimeId ID                      `json:"managed_anime_id"`
-	OccurredAt     time.Time               `json:"occurred_at"`
-	Outcome        SubscriptionLogOutcome  `json:"outcome"`
+
+	// MessageCode The message of a business journal entry in the closed catalog the server registers per entry kind (published to the frontend as a generated artifact). The client renders the text from the code and message_params; entries carry no display text.
+	MessageCode SubscriptionLogMessageCode `json:"message_code"`
+
+	// MessageParams Scalar values the message interpolates. Each message declares its params; an optional param is absent rather than empty.
+	MessageParams SubscriptionLogMessageParams `json:"message_params"`
+	OccurredAt    time.Time                    `json:"occurred_at"`
+	Outcome       SubscriptionLogOutcome       `json:"outcome"`
 
 	// ReasonCode Owner-first stable reason code persisted with the record; never derived at read time.
 	ReasonCode     *string   `json:"reason_code"`
 	ReleaseId      *ID       `json:"release_id"`
 	RetentionUntil time.Time `json:"retention_until"`
 	RssSourceId    *ID       `json:"rss_source_id"`
-	SubjectId      *string   `json:"subject_id"`
-	SubjectType    *string   `json:"subject_type"`
-	SubjectVersion *int64    `json:"subject_version"`
-	SubscriptionId ID        `json:"subscription_id"`
-	Summary        string    `json:"summary"`
-	Title          string    `json:"title"`
+
+	// Source Where the entry's work came from: the anime's subscription, or a one-shot download (its temporary anime and subscription).
+	Source         SubscriptionLogSource `json:"source"`
+	SubjectId      *string               `json:"subject_id"`
+	SubjectType    *string               `json:"subject_type"`
+	SubjectVersion *int64                `json:"subject_version"`
+	SubscriptionId ID                    `json:"subscription_id"`
 }
 
 // SubscriptionLogKind defines model for SubscriptionLogKind.
 type SubscriptionLogKind string
 
+// SubscriptionLogMessageCode The message of a business journal entry in the closed catalog the server registers per entry kind (published to the frontend as a generated artifact). The client renders the text from the code and message_params; entries carry no display text.
+type SubscriptionLogMessageCode string
+
+// SubscriptionLogMessageParams Scalar values the message interpolates. Each message declares its params; an optional param is absent rather than empty.
+type SubscriptionLogMessageParams struct {
+	// Count Non-negative item count.
+	Count *int64 `json:"count,omitempty"`
+
+	// FileName Base name of the file a file result is about.
+	FileName *string `json:"file_name,omitempty"`
+
+	// GroupName Subgroup display name.
+	GroupName *string `json:"group_name,omitempty"`
+
+	// Name Torrent name the downloader reports.
+	Name *string `json:"name,omitempty"`
+}
+
 // SubscriptionLogOutcome defines model for SubscriptionLogOutcome.
 type SubscriptionLogOutcome string
+
+// SubscriptionLogSource Where the entry's work came from: the anime's subscription, or a one-shot download (its temporary anime and subscription).
+type SubscriptionLogSource string
 
 // SubscriptionOrigin The unique four-value source-of-subscription enum: anibt | mikan are discovery providers, custom is a user-supplied manual source, agent is reserved for one-shot acquisition: an agent draft is a candidate snapshot for acquire-seed-once and the temporary one-shot mount carries it, but it can never be subscribed or activated (422 ORIGIN_NOT_SUBSCRIBABLE). This is the only four-value enum; ProviderKind stays a two-value discovery enum, SnapshotSeedProvider is the separate seed-provenance vocabulary (anibt | mikan | custom), and RSS SourceKind stays provider_group | custom_rss.
 type SubscriptionOrigin string
@@ -9289,34 +9525,46 @@ type SaveNamingVarsVersionParams struct {
 // ListObservabilityDiagnosticsParams defines parameters for ListObservabilityDiagnostics.
 type ListObservabilityDiagnosticsParams struct {
 	// Cursor Opaque keyset pagination cursor.
-	Cursor    *Cursor                                     `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit     *Limit                                      `form:"limit,omitempty" json:"limit,omitempty"`
-	Severity  *ListObservabilityDiagnosticsParamsSeverity `form:"severity,omitempty" json:"severity,omitempty"`
-	Component *string                                     `form:"component,omitempty" json:"component,omitempty"`
-	From      *FromTime                                   `form:"from,omitempty" json:"from,omitempty"`
-	To        *ToTime                                     `form:"to,omitempty" json:"to,omitempty"`
+	Cursor *Cursor                                  `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *Limit                                   `form:"limit,omitempty" json:"limit,omitempty"`
+	State  *ListObservabilityDiagnosticsParamsState `form:"state,omitempty" json:"state,omitempty"`
 }
 
-// ListObservabilityDiagnosticsParamsSeverity defines parameters for ListObservabilityDiagnostics.
-type ListObservabilityDiagnosticsParamsSeverity string
+// ListObservabilityDiagnosticsParamsState defines parameters for ListObservabilityDiagnostics.
+type ListObservabilityDiagnosticsParamsState string
 
 // ListObservabilityRecordsParams defines parameters for ListObservabilityRecords.
 type ListObservabilityRecordsParams struct {
 	// Cursor Opaque keyset pagination cursor.
-	Cursor         *Cursor                                `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit          *Limit                                 `form:"limit,omitempty" json:"limit,omitempty"`
-	Kind           *[]ListObservabilityRecordsParamsKind  `form:"kind,omitempty" json:"kind,omitempty"`
-	Outcome        *ListObservabilityRecordsParamsOutcome `form:"outcome,omitempty" json:"outcome,omitempty"`
-	From           *FromTime                              `form:"from,omitempty" json:"from,omitempty"`
-	To             *ToTime                                `form:"to,omitempty" json:"to,omitempty"`
-	ManagedAnimeId *ID                                    `form:"managed_anime_id,omitempty" json:"managed_anime_id,omitempty"`
+	Cursor *Cursor                               `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *Limit                                `form:"limit,omitempty" json:"limit,omitempty"`
+	Kind   *[]ListObservabilityRecordsParamsKind `form:"kind,omitempty" json:"kind,omitempty"`
+
+	// EntryKind Narrows the business records to these journal entry kinds; the other record kinds are unaffected.
+	EntryKind *[]SubscriptionLogKind `form:"entry_kind,omitempty" json:"entry_kind,omitempty"`
+
+	// State Selects records in this state. A business record of a Release run (download, verification, import, placement and replacement entries closed by the run's acquisition result) takes the state of its run: the result's outcome, or in_progress while the run has no result. failure includes failed acquisitions, failed business records, failed and partial automation runs, and failed or unconfirmed (unknown) notification deliveries.
+	State *ObservabilityRecordState `form:"state,omitempty" json:"state,omitempty"`
+
+	// Q Case-insensitive search text (trimmed; blank means no search). It matches the anime title, a business record's release title, file name or subgroup name, and a notification's target name; a business record of a Release run matches when any record of its run does.
+	Q              *string   `form:"q,omitempty" json:"q,omitempty"`
+	From           *FromTime `form:"from,omitempty" json:"from,omitempty"`
+	To             *ToTime   `form:"to,omitempty" json:"to,omitempty"`
+	ManagedAnimeId *ID       `form:"managed_anime_id,omitempty" json:"managed_anime_id,omitempty"`
 }
 
 // ListObservabilityRecordsParamsKind defines parameters for ListObservabilityRecords.
 type ListObservabilityRecordsParamsKind string
 
-// ListObservabilityRecordsParamsOutcome defines parameters for ListObservabilityRecords.
-type ListObservabilityRecordsParamsOutcome string
+// GetRuntimeLogParams defines parameters for GetRuntimeLog.
+type GetRuntimeLogParams struct {
+	// Level all lines, warnings and errors, or errors only.
+	Level *GetRuntimeLogParamsLevel `form:"level,omitempty" json:"level,omitempty"`
+	Limit *int                      `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// GetRuntimeLogParamsLevel defines parameters for GetRuntimeLog.
+type GetRuntimeLogParamsLevel string
 
 // AcquireSeedOnceParams defines parameters for AcquireSeedOnce.
 type AcquireSeedOnceParams struct {
@@ -11834,6 +12082,9 @@ type ServerInterface interface {
 
 	// (GET /observability/records)
 	ListObservabilityRecords(w http.ResponseWriter, r *http.Request, params ListObservabilityRecordsParams)
+
+	// (GET /observability/runtime-log)
+	GetRuntimeLog(w http.ResponseWriter, r *http.Request, params GetRuntimeLogParams)
 
 	// (POST /one-shot-acquisitions)
 	AcquireSeedOnce(w http.ResponseWriter, r *http.Request, params AcquireSeedOnceParams)
@@ -17058,35 +17309,11 @@ func (siw *ServerInterfaceWrapper) ListObservabilityDiagnostics(w http.ResponseW
 		return
 	}
 
-	// ------------- Optional query parameter "severity" -------------
+	// ------------- Optional query parameter "state" -------------
 
-	err = runtime.BindQueryParameter("form", true, false, "severity", r.URL.Query(), &params.Severity)
+	err = runtime.BindQueryParameter("form", true, false, "state", r.URL.Query(), &params.State)
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "severity", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "component" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "component", r.URL.Query(), &params.Component)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "component", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "from" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "from", r.URL.Query(), &params.From)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
-		return
-	}
-
-	// ------------- Optional query parameter "to" -------------
-
-	err = runtime.BindQueryParameter("form", true, false, "to", r.URL.Query(), &params.To)
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
 		return
 	}
 
@@ -17139,11 +17366,27 @@ func (siw *ServerInterfaceWrapper) ListObservabilityRecords(w http.ResponseWrite
 		return
 	}
 
-	// ------------- Optional query parameter "outcome" -------------
+	// ------------- Optional query parameter "entry_kind" -------------
 
-	err = runtime.BindQueryParameter("form", true, false, "outcome", r.URL.Query(), &params.Outcome)
+	err = runtime.BindQueryParameter("form", true, false, "entry_kind", r.URL.Query(), &params.EntryKind)
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "outcome", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "entry_kind", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "state", r.URL.Query(), &params.State)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "q", r.URL.Query(), &params.Q)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
 		return
 	}
 
@@ -17173,6 +17416,47 @@ func (siw *ServerInterfaceWrapper) ListObservabilityRecords(w http.ResponseWrite
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListObservabilityRecords(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetRuntimeLog operation middleware
+func (siw *ServerInterfaceWrapper) GetRuntimeLog(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetRuntimeLogParams
+
+	// ------------- Optional query parameter "level" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "level", r.URL.Query(), &params.Level)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "level", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "limit", r.URL.Query(), &params.Limit)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRuntimeLog(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -18927,6 +19211,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("GET "+options.BaseURL+"/naming-vars/versions/{revision}", wrapper.GetNamingVarsVersion)
 	m.HandleFunc("GET "+options.BaseURL+"/observability/diagnostics", wrapper.ListObservabilityDiagnostics)
 	m.HandleFunc("GET "+options.BaseURL+"/observability/records", wrapper.ListObservabilityRecords)
+	m.HandleFunc("GET "+options.BaseURL+"/observability/runtime-log", wrapper.GetRuntimeLog)
 	m.HandleFunc("POST "+options.BaseURL+"/one-shot-acquisitions", wrapper.AcquireSeedOnce)
 	m.HandleFunc("GET "+options.BaseURL+"/one-shot-acquisitions/{one_shot_id}", wrapper.GetOneShotAcquisition)
 	m.HandleFunc("GET "+options.BaseURL+"/one-shot-acquisitions/{one_shot_id}/attempts", wrapper.ListOneShotExecutionAttempts)

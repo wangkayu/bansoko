@@ -5,13 +5,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
 	"bansoko/internal/apperrors"
 	observabilityport "bansoko/internal/observability/port"
-	"bansoko/internal/redact"
 )
 
 func TestNewServiceNilDB(t *testing.T) {
@@ -85,8 +83,10 @@ func TestRecordFromRowWrapsBusinessEntryWithLineageContract(t *testing.T) {
 		"kind":"release_processed",
 		"outcome":"info",
 		"occurred_at":"2026-09-10T12:00:00Z",
-		"title":"Trace Show",
-		"summary":"filtered",
+		"anime_title":"Trace Show",
+		"source":"subscription",
+		"message_code":"release_filtered",
+		"message_params":{},
 		"release_id":"release-1",
 		"reason_code":"group_filtered",
 		"subject_type":"release",
@@ -313,33 +313,33 @@ func TestValidateRoutineRejectsInvalidScopeAndNestedSecret(t *testing.T) {
 }
 
 func TestValidateDiagnosticRequests(t *testing.T) {
-	failure := observabilityport.DiagnosticFailureRequest{
-		Identity: observabilityport.AutomationDispatchFailure(observabilityport.ScopeWorker), Severity: observabilityport.SeverityError,
-		ScopeID: "rss_refresh", LastError: "dispatch failed",
+	bad := observabilityport.DiagnosticFailureRequest{
+		Condition: observabilityport.Condition{Kind: observabilityport.KindInternal}, Severity: observabilityport.SeverityError,
+		TargetID: "rss_refresh",
 	}
-	failure.Identity.ScopeKind = "automation"
-	if err := validateDiagnosticFailure(failure); err == nil {
-		t.Fatal("diagnostic scope must reject automation; use worker or owner scope")
+	if err := prepareFailure2(bad); err == nil {
+		t.Fatal("an uncatalogued internal source must be rejected")
 	}
-	replacement := observabilityport.DiagnosticFailureRequest{Identity: observabilityport.ReplacementTriggerFailure(), Severity: observabilityport.SeverityError, ScopeID: "anime-1", ManagedAnimeID: "anime-1", LastError: "replacement trigger failed"}
-	if err := validateDiagnosticFailure(replacement); err != nil {
-		t.Fatalf("production replacement identity rejected: %v", err)
+	if err := prepareFailure2(observabilityport.InternalFailure(observabilityport.InternalReplacementTrigger, "")); err != nil {
+		t.Fatalf("internal source rejected: %v", err)
 	}
-	placement := observabilityport.DiagnosticFailureRequest{Identity: observabilityport.PlacementAdmissionFailure(), Severity: observabilityport.SeverityWarning, ScopeID: "op-1", LastError: "placement admission failed", Details: json.RawMessage(`{"reason_code":"placement_evidence_missing"}`)}
-	if err := validateDiagnosticFailure(placement); err != nil {
-		t.Fatalf("production placement identity rejected: %v", err)
+	user := observabilityport.DiagnosticFailureRequest{
+		Condition: observabilityport.Condition{Kind: observabilityport.KindMetadata, Variant: observabilityport.VariantUnreachable},
+		Severity:  observabilityport.SeverityWarning, TargetID: "tmdb", TargetName: "TMDB",
 	}
-	if err := validateDiagnosticSuccess(observabilityport.DiagnosticSuccessRequest{Identity: observabilityport.PlacementAdmissionFailure(), ScopeID: "op-1"}); err != nil {
-		t.Fatalf("production placement settle identity rejected: %v", err)
+	if err := prepareFailure2(user); err != nil {
+		t.Fatalf("catalogued condition rejected: %v", err)
 	}
-
+	if err := validateDiagnosticSuccess(observabilityport.InternalSuccess(observabilityport.InternalPlacementSink)); err != nil {
+		t.Fatalf("internal settle rejected: %v", err)
+	}
 }
 
 func TestActivityValidationAndDedupe(t *testing.T) {
 	record := observabilityport.ActivityRecord{
 		SubscriptionID: "sub-1", ManagedAnimeID: "anime-1", Kind: "policy_changed", Outcome: "info",
 		ReasonCode: "rules_policy_changed", SubjectType: "rules", SubjectID: "anime-1", SubjectVersion: 3,
-		Title: "Anime", Summary: "规则策略已更新",
+		MessageCode: observabilityport.MessageRulesChanged,
 	}
 	if err := validateActivity(record); err != nil {
 		t.Fatalf("valid activity rejected: %v", err)
@@ -351,7 +351,7 @@ func TestActivityValidationAndDedupe(t *testing.T) {
 	metadata := observabilityport.ActivityRecord{
 		SubscriptionID: "sub-1", ManagedAnimeID: "anime-1", Kind: "metadata_applied", Outcome: "success",
 		ReasonCode: "metadata_applied", SubjectType: "metadata", SubjectID: "anime-1", SubjectVersion: 2,
-		Title: "Anime", Summary: "已关联 Bangumi、TMDB",
+		MessageCode: observabilityport.MessageMetadataApplied,
 	}
 	if err := validateActivity(metadata); err != nil {
 		t.Fatalf("metadata activity rejected: %v", err)
@@ -360,15 +360,26 @@ func TestActivityValidationAndDedupe(t *testing.T) {
 		t.Fatalf("metadata dedupe: got %q, want %q", got, want)
 	}
 
-	record.Kind = "rss_refresh_failed"
-	if err := validateActivity(record); err != nil {
-		t.Fatalf("RSS refresh failure activity rejected: %v", err)
+	retired := record
+	retired.Kind = "rss_refresh_failed"
+	if err := validateActivity(retired); err == nil {
+		t.Fatal("the retired rss_refresh_failed kind must be rejected")
 	}
-	record.Kind = "release_processed"
+	unregistered := record
+	unregistered.MessageCode = "rules_policy_changed"
+	if err := validateActivity(unregistered); err == nil {
+		t.Fatal("an unregistered message code must be rejected")
+	}
+	foreign := record
+	foreign.MessageCode = observabilityport.MessageMetadataApplied
+	if err := validateActivity(foreign); err == nil {
+		t.Fatal("a message code of another kind must be rejected")
+	}
+	record.Kind, record.MessageCode = "release_processed", observabilityport.MessageReleaseAccepted
 	if err := validateActivity(record); err != nil {
 		t.Fatalf("release processed activity rejected: %v", err)
 	}
-	record.Kind = "group_changed"
+	record.Kind, record.MessageCode = "group_changed", observabilityport.MessageGroupChanged
 	record.SubjectVersion = 0
 	if err := validateActivity(record); err == nil {
 		t.Fatal("expected invalid subject version rejection")
@@ -379,19 +390,12 @@ func TestValidateActivityRejectsSensitiveText(t *testing.T) {
 	base := observabilityport.ActivityRecord{
 		SubscriptionID: "sub-1", ManagedAnimeID: "anime-1", Kind: "metadata_applied", Outcome: "success",
 		ReasonCode: "metadata_applied", SubjectType: "metadata", SubjectID: "anime-1", SubjectVersion: 2,
-		Title: "Anime", Summary: "已关联 Bangumi、TMDB",
+		MessageCode: observabilityport.MessageMetadataApplied,
 	}
 	cases := []struct {
 		name string
 		edit func(*observabilityport.ActivityRecord)
 	}{
-		{"url in title", func(record *observabilityport.ActivityRecord) {
-			record.Title = "fetch https://user:pass@example.test/meta"
-		}},
-		{"magnet in summary", func(record *observabilityport.ActivityRecord) { record.Summary = "magnet:?xt=urn:btih:deadbeef" }},
-		{"dsn in summary", func(record *observabilityport.ActivityRecord) {
-			record.Summary = "connect postgres://user:pass@example.test/db"
-		}},
 		{"credential in details", func(record *observabilityport.ActivityRecord) {
 			record.Details = json.RawMessage(`{"provider":"metadata","access_token":"secret"}`)
 		}},
@@ -413,44 +417,6 @@ func TestValidateActivityRejectsSensitiveText(t *testing.T) {
 				t.Fatal("expected sensitive Activity text rejection")
 			}
 		})
-	}
-}
-
-// TestSanitizeDiagnosticLastErrorRedactsLegacyText proves stored values written
-// before the writer's validation are re-redacted and bounded at the read
-// boundary: credential markers, URLs and private paths collapse, multi-byte
-// text truncates by runes, and the result always satisfies the contract's
-// non-empty bound.
-func TestSanitizeDiagnosticLastErrorRedactsLegacyText(t *testing.T) {
-	redacted := []string{
-		"provider replied api_key=AKIAIOSFODNN7EXAMPLE",
-		"token=abcdef0123456789",
-		"fetch https://user:pass@example.test/private",
-		"failed at /home/alice/private/torrent",
-		`open C:\Users\alice\Downloads\show.mkv`,
-		`copy \\nas\share\private\show.mkv`,
-		"config ~/.config/app/settings.toml",
-		"escape via ../secrets/key.pem",
-	}
-	for _, value := range redacted {
-		got := sanitizeDiagnosticLastError(value)
-		if got != redact.Redacted {
-			t.Fatalf("sanitizeDiagnosticLastError(%q) = %q, want %q", value, got, redact.Redacted)
-		}
-	}
-	if got := sanitizeDiagnosticLastError("   "); got != redact.Redacted {
-		t.Fatalf("whitespace-only legacy value must stay non-empty, got %q", got)
-	}
-	ordinary := "provider rejected the request with http_403"
-	if got := sanitizeDiagnosticLastError(ordinary); got != ordinary {
-		t.Fatalf("ordinary text changed: %q", got)
-	}
-	// Multi-byte truncation must land exactly on the bound without splitting a
-	// rune or overflowing it.
-	multiByte := strings.Repeat("診", 9000)
-	got := sanitizeDiagnosticLastError(multiByte)
-	if len([]rune(got)) != 8192 {
-		t.Fatalf("multi-byte truncation = %d runes, want 8192", len([]rune(got)))
 	}
 }
 
@@ -521,4 +487,9 @@ func TestRecordFromRowProjectsPluginPayloadStatus(t *testing.T) {
 			}
 		})
 	}
+}
+
+func prepareFailure2(req observabilityport.DiagnosticFailureRequest) error {
+	_, err := prepareFailure(req)
+	return err
 }

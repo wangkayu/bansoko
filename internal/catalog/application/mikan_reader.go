@@ -225,10 +225,10 @@ func recordMikanCatalogParserWarning(ctx context.Context, recorder observability
 		"observed_schema_version": observedSchemaVersion,
 	})
 	if err := recorder.RecordDiagnosticFailure(ctx, observabilityport.DiagnosticFailureRequest{
-		Identity: observabilityport.ProviderRefreshFailure(observabilityport.DiagnosticErrorCode(errorCode)), Severity: observabilityport.SeverityWarning,
-		ScopeID: scopeID, LastError: "Mikan catalog parser warning", Details: details,
+		Condition: observabilityport.Condition{Kind: observabilityport.KindSite, Variant: observabilityport.VariantUnreadable},
+		Severity:  observabilityport.SeverityWarning, TargetID: observabilityport.SiteMikanParser, TargetName: "mikan",
 	}); err != nil {
-		observabilityport.RecordDiagnosticError(nil, "provider", "refresh", scopeID, errorCode, "diagnostic_write_failed")
+		observabilityport.RecordDiagnosticError(nil, "site", "unreadable", observabilityport.SiteMikanParser, "diagnostic_write_failed")
 	}
 	if err := recorder.UpsertRoutine(ctx, observabilityport.RoutineRequest{
 		Identity: observabilityport.ProviderRefreshRoutine(observabilityport.RoutineOutcomeWarning, observabilityport.RoutineResultProviderParserWarning),
@@ -243,9 +243,9 @@ func closeMikanCatalogParserWarning(ctx context.Context, recorder observabilityp
 		return
 	}
 	if err := recorder.RecordDiagnosticSuccess(ctx, observabilityport.DiagnosticSuccessRequest{
-		Identity: observabilityport.ProviderRefreshFailure(observabilityport.DiagnosticErrorCode(errorCode)), ScopeID: scopeID,
+		Kind: observabilityport.KindSite, TargetID: observabilityport.SiteMikanParser,
 	}); err != nil {
-		observabilityport.RecordDiagnosticError(nil, "provider", "refresh", scopeID, errorCode, "diagnostic_close_failed")
+		observabilityport.RecordDiagnosticError(nil, "site", "unreadable", observabilityport.SiteMikanParser, "diagnostic_close_failed")
 	}
 }
 

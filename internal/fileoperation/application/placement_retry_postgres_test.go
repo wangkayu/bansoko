@@ -83,8 +83,7 @@ func assertPlacementEpisode(t *testing.T, db *sql.DB, operationID string, wantCl
 	var count int
 	if err := db.QueryRowContext(context.Background(),
 		`SELECT COUNT(*) FROM diagnostic_episodes
-WHERE component = 'fileoperation' AND operation = 'placement_admit' AND error_code = 'placement_sink_failed'
-  AND scope_kind = 'owner' AND scope_id = $1`, operationID).Scan(&count); err != nil {
+WHERE kind = 'internal' AND target_id = 'placement.sink'`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	if count != 1 {
@@ -93,8 +92,7 @@ WHERE component = 'fileoperation' AND operation = 'placement_admit' AND error_co
 	var closed sql.NullTime
 	if err := db.QueryRowContext(context.Background(),
 		`SELECT succeeded_after_at FROM diagnostic_episodes
-WHERE component = 'fileoperation' AND operation = 'placement_admit' AND error_code = 'placement_sink_failed'
-  AND scope_kind = 'owner' AND scope_id = $1`, operationID).Scan(&closed); err != nil {
+WHERE kind = 'internal' AND target_id = 'placement.sink'`).Scan(&closed); err != nil {
 		t.Fatal(err)
 	}
 	if wantClosed && !closed.Valid {

@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+
+	observabilityport "bansoko/internal/observability/port"
 )
 
 func TestNormalizeRequestID(t *testing.T) {
@@ -59,7 +61,7 @@ func TestPanicRecoveryReturnsGenericJSONWithExactRequestID(t *testing.T) {
 	if strings.Contains(response.Body.String(), panicValue) || strings.Contains(response.Body.String(), "password") {
 		t.Fatalf("panic value leaked into response: %q", response.Body.String())
 	}
-	if len(diagnostic.failures) != 1 || diagnostic.failures[0].LastError != "<redacted>" {
+	if len(diagnostic.failures) != 1 || diagnostic.failures[0].TargetID != observabilityport.InternalHTTP5xx {
 		t.Fatalf("panic diagnostic = %+v, want one redacted failure", diagnostic.failures)
 	}
 	if len(logger.events) != 1 || logger.events[0].RequestID != requestID || logger.events[0].ReasonCode != "unknown_error" {
@@ -156,7 +158,7 @@ func TestPanicRecoveryDoesNotBufferSSEResponse(t *testing.T) {
 	if response.Header().Get("X-Request-ID") != "sse-panic-request" {
 		t.Fatalf("SSE request ID = %q, want exact request ID", response.Header().Get("X-Request-ID"))
 	}
-	if len(diagnostic.failures) != 1 || diagnostic.failures[0].LastError != "<redacted>" {
+	if len(diagnostic.failures) != 1 || diagnostic.failures[0].TargetID != observabilityport.InternalHTTP5xx {
 		t.Fatalf("SSE panic diagnostic = %+v", diagnostic.failures)
 	}
 }

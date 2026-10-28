@@ -184,6 +184,7 @@ export type RoutineActivityKind = Schema<"RoutineActivityKind">;
 export type ObservabilityRecord = Schema<"ObservabilityRecord">;
 export type ObservabilityRecordPage = Schema<"ObservabilityRecordPage">;
 export type DiagnosticEpisode = Schema<"DiagnosticEpisode">;
+export type RuntimeLogLine = Schema<"RuntimeLogLine">;
 export type DiagnosticEpisodePage = Schema<"DiagnosticEpisodePage">;
 export type AcquisitionRecordSummary = Schema<"AcquisitionRecordSummary">;
 export type AcquisitionRecordPage = Schema<"AcquisitionRecordPage">;
@@ -1360,6 +1361,12 @@ export function listObservabilityDiagnostics(
   query: ObservabilityDiagnosticsQuery = {},
 ): Promise<DiagnosticEpisodePage> {
   return request(`/observability/diagnostics${queryString(query)}`, { method: "GET" });
+}
+
+export type RuntimeLogQuery = NonNullable<operations["getRuntimeLog"]["parameters"]["query"]>;
+
+export function getRuntimeLog(query: RuntimeLogQuery = {}): Promise<Schema<"RuntimeLogPage">> {
+  return request(`/observability/runtime-log${queryString(query)}`, { method: "GET" });
 }
 
 // Execution records: the read-only list, detail and file pages of admitted acquisitions. Reads never retry, reorder or recover anything.

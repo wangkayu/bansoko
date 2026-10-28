@@ -15,7 +15,6 @@ import (
 	"bansoko/internal/apperrors"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
-	"bansoko/internal/redact"
 	"bansoko/internal/transport/httpapi/generated"
 )
 
@@ -248,15 +247,11 @@ func TestWriteErrorUnknownRecordsFixedRedactedDiagnosticFailure(t *testing.T) {
 				t.Fatalf("diagnostic failures = %d, want 1", len(diagnostic.failures))
 			}
 			failure := diagnostic.failures[0]
-			if failure.Severity != observabilityport.SeverityError || failure.Identity.Component != observabilityport.ComponentHTTPAPI || failure.Identity.Operation != observabilityport.OperationRequest ||
-				failure.Identity.ErrorCode != observabilityport.DiagnosticErrorCode("http_500") || failure.Identity.ScopeKind != observabilityport.ScopeGlobal || failure.ScopeID != "global" {
+			if failure.Severity != observabilityport.SeverityError || failure.Condition.Kind != observabilityport.KindInternal || failure.TargetID != observabilityport.InternalHTTP5xx {
 				t.Fatalf("unexpected diagnostic identity: %+v", failure)
 			}
-			if failure.Details != nil || failure.ManagedAnimeID != "" {
-				t.Fatalf("diagnostic carries forbidden context: %+v", failure)
-			}
-			if failure.LastError != redact.Redacted {
-				t.Fatalf("diagnostic last_error = %q, want %q", failure.LastError, redact.Redacted)
+			if failure.RequestID != test.requestID || failure.AffectedID != "" {
+				t.Fatalf("diagnostic carries unexpected context: %+v", failure)
 			}
 			if len(logger.events) != 1 {
 				t.Fatalf("runtime events = %+v, want one event", logger.events)
@@ -266,7 +261,7 @@ func TestWriteErrorUnknownRecordsFixedRedactedDiagnosticFailure(t *testing.T) {
 				t.Fatalf("runtime event = %+v, want fixed message and request ID", event)
 			}
 
-			observabilityValues := event.Message + "\x00" + failure.LastError
+			observabilityValues := event.Message + "\x00" + failure.RequestID
 			if strings.Contains(observabilityValues, test.rawError) {
 				t.Fatalf("raw error entered runtime/episode values: %q", observabilityValues)
 			}
@@ -386,7 +381,7 @@ func TestWriteErrorWrappedTyped500RecordsUnknownFailure(t *testing.T) {
 	if len(logger.events) != 1 || logger.events[0].ReasonCode != "unknown_error" {
 		t.Fatalf("runtime events = %+v, want one unknown-error event", logger.events)
 	}
-	if len(diagnostic.failures) != 1 || diagnostic.failures[0].Identity.ErrorCode != observabilityport.DiagnosticErrorCode("http_500") {
+	if len(diagnostic.failures) != 1 || diagnostic.failures[0].TargetID != observabilityport.InternalHTTP5xx {
 		t.Fatalf("diagnostic failures = %+v, want fixed http_500 bucket", diagnostic.failures)
 	}
 }

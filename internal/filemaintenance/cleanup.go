@@ -13,6 +13,7 @@ import (
 	persistence "bansoko/internal/filemaintenance/adapter/persistence"
 	executorpkg "bansoko/internal/filemaintenance/executor"
 	"bansoko/internal/library/domain"
+	"bansoko/internal/observability/businesslog"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
 	plugintargetport "bansoko/internal/plugintarget/port"
@@ -693,10 +694,15 @@ func (s *CleanupService) appendCleanupActivityTx(ctx context.Context, scope txsc
 	if err != nil {
 		return err
 	}
-	summary := "旧版本已删除"
+	details, err := cleanupActivityDetails(op)
+	if err != nil {
+		return err
+	}
+	message := observabilityport.MessageOldVersionDeleted
 	activityOutcome := "success"
 	if outcome == "skipped" {
-		summary = "旧版本未删除：" + cleanupSkipSummary(reasonCode)
+		// The skip reason is the entry's reason code (CleanupSkip*).
+		message = observabilityport.MessageOldVersionKept
 		activityOutcome = "info"
 	}
 	return s.activity.AppendTx(ctx, scope, observabilityport.ActivityRecord{
@@ -709,26 +715,20 @@ func (s *CleanupService) appendCleanupActivityTx(ctx context.Context, scope txsc
 		SubjectID:       op.ID,
 		SubjectVersion:  op.Version,
 		StableResultKey: reasonCode,
-		Title:           "清理完成",
-		Summary:         summary,
+		MessageCode:     message,
+		Details:         details,
 		CorrelationID:   op.CorrelationID,
 		CausationType:   "replacement_decision",
 		CausationID:     op.ReplacementRef,
 	})
 }
 
-func cleanupSkipSummary(code string) string {
-	switch code {
-	case CleanupSkipLoserMissing:
-		return "文件已不在原路径"
-	case CleanupSkipLoserNotRegular:
-		return "原路径不再是普通文件"
-	case CleanupSkipLoserIdentityChanged:
-		return "原路径上的文件已变化"
-	case CleanupSkipLoserIdentityUnknown:
-		return "没有记录文件大小"
-	case CleanupSkipLoserPathOwned:
-		return "路径已归其他受管文件"
+// cleanupActivityDetails names the old version's file on its cleanup entry
+// (the name only, never the private directory).
+func cleanupActivityDetails(op *ReplacementDeletion) (json.RawMessage, error) {
+	details, err := businesslog.MarshalDetails(map[string]any{"file_name": businesslog.FileName(op.SourcePath)})
+	if err != nil {
+		return nil, fmt.Errorf("encode cleanup activity details: %w", err)
 	}
-	return "身份核对未通过"
+	return details, nil
 }

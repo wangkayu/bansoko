@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"bansoko/internal/apperrors"
+	"bansoko/internal/observability/businesslog"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
 )
@@ -164,6 +165,10 @@ WHERE placement_id = ANY($1) AND state = 'active'`, released); err != nil {
 			return PlacementReleaseResult{}, fmt.Errorf("read subscription for placement activity: %w", err)
 		}
 		if err == nil {
+			details, err := businesslog.MarshalDetails(map[string]any{"file_name": businesslog.FileName(path)})
+			if err != nil {
+				return PlacementReleaseResult{}, fmt.Errorf("encode placement activity details: %w", err)
+			}
 			if err := s.activity.AppendTx(ctx, txscope.Wrap(tx), observabilityport.ActivityRecord{
 				SubscriptionID:  subscriptionID,
 				ManagedAnimeID:  animeID,
@@ -174,8 +179,8 @@ WHERE placement_id = ANY($1) AND state = 'active'`, released); err != nil {
 				SubjectID:       placementID,
 				SubjectVersion:  subjectVersion,
 				StableResultKey: "placement_released",
-				Title:           "文件已脱离管理",
-				Summary:         "文件保留在原处，不再由订阅管理",
+				MessageCode:     observabilityport.MessagePlacementReleased,
+				Details:         details,
 			}); err != nil {
 				return PlacementReleaseResult{}, fmt.Errorf("append placement activity: %w", err)
 			}

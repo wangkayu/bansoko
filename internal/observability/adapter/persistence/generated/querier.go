@@ -29,7 +29,7 @@ type Querier interface {
 	//      SELECT episode.id
 	//      FROM diagnostic_episodes AS episode
 	//      WHERE episode.retention_until <= CURRENT_TIMESTAMP
-	//        AND episode.succeeded_after_at IS NOT NULL
+	//        AND (episode.succeeded_after_at IS NOT NULL OR episode.kind = 'internal')
 	//      ORDER BY episode.retention_until, episode.id
 	//      LIMIT $1
 	//  )

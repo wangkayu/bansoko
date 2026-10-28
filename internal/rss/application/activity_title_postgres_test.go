@@ -33,7 +33,7 @@ func TestReleaseEvaluateCompletesForUpstreamTitlesWithSlashesAndSecrets(t *testi
 			releaseID := "release-title"
 			insertReleaseForEvaluation(t, db, sourceID, releaseID, tc.title, "https://downloads.example.test/show-01.torrent")
 			// seedNativeTorrent also copies the title into raw_facts, which is
-			// what the Activity title is read from.
+			// what the entry's frozen release_title is read from.
 			seedNativeTorrent(t, db, "torrent-title", releaseID)
 
 			store, err := workitems.NewStore(db, 0, nil)
@@ -62,7 +62,7 @@ func TestReleaseEvaluateCompletesForUpstreamTitlesWithSlashesAndSecrets(t *testi
 			}
 			var activityTitle string
 			if err := db.QueryRowContext(ctx, `
-SELECT title FROM subscription_log_entries
+SELECT COALESCE(details->>'release_title', '') FROM subscription_log_entries
 WHERE kind = 'release_processed' AND subject_type = 'release' AND subject_id = $1`, releaseID).Scan(&activityTitle); err != nil {
 				t.Fatalf("release_processed activity missing: %v", err)
 			}

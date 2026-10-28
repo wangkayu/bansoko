@@ -13,18 +13,38 @@ const realAniBTTitle = "[7³ACG] 【我推的孩子】/Oshi no Ko S01 [01-11][10
 
 func sanitizeBaseRecord() observabilityport.ActivityRecord {
 	return observabilityport.ActivityRecord{
-		SubscriptionID: "sub-1", ManagedAnimeID: "anime-1", Kind: "release_processed", Outcome: "info",
-		ReasonCode: "submitted", SubjectType: "release", SubjectID: "release-1", SubjectVersion: 2,
-		Title: "Anime", Summary: "已提交下载",
+		SubscriptionID: "sub-1", ManagedAnimeID: "anime-1", Kind: "download_changed", Outcome: "info",
+		ReasonCode: "download_submitted", SubjectType: "download_task", SubjectID: "task-1", SubjectVersion: 2,
+		MessageCode: observabilityport.MessageDownloadSubmitted,
 	}
 }
 
-// TestSanitizeActivityTitles pins the write-side policy for upstream titles:
-// ordinary slashes survive, and a URL, absolute path or credential fragment is
-// masked in place so the owner transaction still commits.
-func TestSanitizeActivityTitles(t *testing.T) {
+// sanitizedName sanitizes record and encodes its params as the writer does,
+// returning the stored name param.
+func sanitizedName(t *testing.T, record observabilityport.ActivityRecord) (observabilityport.ActivityRecord, string) {
+	t.Helper()
+	got := sanitizeActivity(record)
+	if err := validateActivity(got); err != nil {
+		t.Fatalf("sanitized activity still rejected: %v", err)
+	}
+	encoded, err := encodeMessageParams(got.MessageCode, got.MessageParams)
+	if err != nil {
+		t.Fatalf("sanitized params rejected: %v", err)
+	}
+	var params map[string]string
+	if err := json.Unmarshal(encoded, &params); err != nil {
+		t.Fatal(err)
+	}
+	return got, params[observabilityport.ParamName]
+}
+
+// TestSanitizeActivityMessageParams pins the write-side policy for upstream
+// text in string params: ordinary slashes survive, and a URL, absolute path or
+// credential fragment is masked in place so the owner transaction still
+// commits.
+func TestSanitizeActivityMessageParams(t *testing.T) {
 	cases := []struct {
-		name, title, want, secret string
+		name, text, want, secret string
 	}{
 		{"real AniBT title is unchanged", realAniBTTitle, realAniBTTitle, ""},
 		{"http URL is masked", "[Group] Show - 01 http://tracker.example/announce?passkey=abc [1080p]", "[Group] Show - 01 <redacted> [1080p]", "tracker.example"},
@@ -34,17 +54,13 @@ func TestSanitizeActivityTitles(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			record := sanitizeBaseRecord()
-			record.Title = tc.title
-			record.Summary = tc.title
-			got := sanitizeActivity(record)
-			if got.Title != tc.want || got.Summary != tc.want {
-				t.Fatalf("sanitized title=%q summary=%q, want %q", got.Title, got.Summary, tc.want)
+			record.MessageParams = map[string]any{observabilityport.ParamName: tc.text}
+			_, got := sanitizedName(t, record)
+			if got != tc.want {
+				t.Fatalf("sanitized name=%q, want %q", got, tc.want)
 			}
-			if tc.secret != "" && strings.Contains(got.Title, tc.secret) {
-				t.Fatalf("secret %q survived: %q", tc.secret, got.Title)
-			}
-			if err := validateActivity(got); err != nil {
-				t.Fatalf("sanitized activity still rejected: %v", err)
+			if tc.secret != "" && strings.Contains(got, tc.secret) {
+				t.Fatalf("secret %q survived: %q", tc.secret, got)
 			}
 		})
 	}
@@ -52,17 +68,25 @@ func TestSanitizeActivityTitles(t *testing.T) {
 
 func TestSanitizeActivityBoundsAndControls(t *testing.T) {
 	record := sanitizeBaseRecord()
-	record.Title = strings.Repeat("番", 400) // 1200 bytes, over the 512-byte bound
+	record.MessageParams = map[string]any{observabilityport.ParamName: strings.Repeat("番", 400)} // 1200 bytes, over the 256-byte bound
 	record.GroupRef = "Group\r\nName"
-	got := sanitizeActivity(record)
-	if len(got.Title) > maxActivityTitleLength || !strings.HasPrefix(got.Title, "番") || strings.ContainsRune(got.Title, '�') {
-		t.Fatalf("title not bounded on a rune boundary: %d bytes", len(got.Title))
+	got, name := sanitizedName(t, record)
+	if len(name) > observabilityport.MaxMessageParamBytes || !strings.HasPrefix(name, "番") || strings.ContainsRune(name, '\uFFFD') {
+		t.Fatalf("name not bounded on a rune boundary: %d bytes", len(name))
 	}
 	if got.GroupRef != "Group  Name" {
 		t.Fatalf("group ref controls not folded: %q", got.GroupRef)
 	}
-	if err := validateActivity(got); err != nil {
-		t.Fatalf("bounded activity rejected: %v", err)
+
+	// Control characters (NUL included) fold before the bound check.
+	record.MessageParams = map[string]any{observabilityport.ParamName: "a\x00b"}
+	if _, name := sanitizedName(t, record); strings.ContainsRune(name, 0) {
+		t.Fatalf("NUL survived sanitizing: %q", name)
+	}
+	// Whitespace-only text is an absent optional param.
+	record.MessageParams = map[string]any{observabilityport.ParamName: "   "}
+	if _, name := sanitizedName(t, record); name != "" {
+		t.Fatalf("blank name must be omitted, got %q", name)
 	}
 }
 

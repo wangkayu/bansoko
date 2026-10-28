@@ -3,6 +3,7 @@ package httpapi
 import (
 	"net/http"
 
+	observabilityapplication "bansoko/internal/observability/application"
 	"bansoko/internal/transport/httpapi/generated"
 )
 
@@ -13,7 +14,38 @@ func (s *Server) ListObservabilityDiagnostics(w http.ResponseWriter, r *http.Req
 		writeError(w, r, err)
 		return
 	}
-	writeJSON(w, r.Context(), http.StatusOK, mapDiagnosticPage(r.Context(), result))
+	writeJSON(w, r.Context(), http.StatusOK, mapDiagnosticPage(result))
+}
+
+// runtimeLogReader is implemented by the runtime logger when it keeps an
+// in-memory tail.
+type runtimeLogReader interface {
+	Tail() *observabilityapplication.RuntimeLogTail
+}
+
+// GetRuntimeLog returns the bounded in-memory tail of the runtime log. It is
+// for the owner at the keyboard only: an API token (and so MCP or any agent)
+// is refused whatever its scopes.
+func (s *Server) GetRuntimeLog(w http.ResponseWriter, r *http.Request, params generated.GetRuntimeLogParams) {
+	if account, ok := AccountFrom(r.Context()); !ok || !account.WebSession {
+		writeError(w, r, webSessionRequired())
+		return
+	}
+	level := observabilityapplication.RuntimeLogAll
+	if params.Level != nil {
+		level = observabilityapplication.RuntimeLogLevel(*params.Level)
+	}
+	limit := 200
+	if params.Limit != nil {
+		limit = *params.Limit
+	}
+	var entries []observabilityapplication.RuntimeLogEntry
+	if reader, ok := s.deps.RuntimeLogger.(runtimeLogReader); ok {
+		if tail := reader.Tail(); tail != nil {
+			entries = tail.Entries(level, limit)
+		}
+	}
+	writeJSON(w, r.Context(), http.StatusOK, mapRuntimeLogPage(entries))
 }
 
 // ListObservabilityRecords returns the union record stream from the read service.

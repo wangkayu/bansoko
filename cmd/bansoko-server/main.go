@@ -85,7 +85,7 @@ func fatalStartupDetail(logger observabilityport.RuntimeLogger, message, reasonC
 }
 
 func main() {
-	runtimeLogger := observabilityapplication.NewJSONRuntimeLogger(os.Stderr)
+	runtimeLogger := observabilityapplication.NewTeedRuntimeLogger(os.Stderr)
 	cfg, err := config.FromFlags(os.Args[1:])
 	if err != nil {
 		fatalStartup(runtimeLogger, "configuration parse failed", "config_parse_failed")
@@ -459,6 +459,7 @@ func main() {
 		Trimmer:        metadataTrimmer,
 	}
 	metadataMatcher := matcher.NewMatcher(metadataIndex, bgmMatcher, tmdbMatcher, runtimeLogger)
+	metadataMatcher.SetDiagnostics(observabilityService)
 	// B13 P2: the file manager's match lists the bound show's seasons and
 	// episodes through the same connections and egress routes, with an
 	// in-process TTL cache.
@@ -616,7 +617,8 @@ func main() {
 			Production:     cfg.Environment == "production",
 			BuildReleaseID: buildinfo.Current().BuildID, BuildVersion: buildinfo.Current().Version,
 			BuildCompatibilityVersion: buildinfo.Current().BaseCompatibilityVersion, BuildBootstrapVersion: os.Getenv(deploymentidentity.EnvBootstrapVersion),
-			UpdateMode: cfg.UpdateMode,
+			UpdateMode:  cfg.UpdateMode,
+			Diagnostics: observabilityService, Logger: runtimeLogger,
 		})
 		if svcErr != nil {
 			fatalStartup(runtimeLogger, "embedded update service failed", "embedded_update_service_failed")

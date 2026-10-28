@@ -8,6 +8,8 @@ import (
 
 	"bansoko/internal/download/domain"
 	"bansoko/internal/download/qbittorrent"
+	"bansoko/internal/observability/outbound"
+	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
 	"bansoko/internal/runtime/worker"
 	"bansoko/internal/workitems"
@@ -115,9 +117,77 @@ func (s *Service) typedSync(ctx context.Context, claim workitems.Claim) (worker.
 	}
 	if err != nil {
 		code, reason, observationError := classifySyncError(s.provider, err)
-		return s.finishTypedSync(ctx, claim, task, session, input.Ordinal, domain.ProviderTask{}, code, reason, observationError)
+		outcome, finishErr := s.finishTypedSync(ctx, claim, task, session, input.Ordinal, domain.ProviderTask{}, code, reason, observationError)
+		return s.withSyncDiagnostics(outcome, finishErr, code, task.id, err)
 	}
-	return s.finishTypedSync(ctx, claim, task, session, input.Ordinal, observed, "qb_sync_succeeded", "", false)
+	outcome, finishErr := s.finishTypedSync(ctx, claim, task, session, input.Ordinal, observed, "qb_sync_succeeded", "", false)
+	return s.withSyncDiagnostics(outcome, finishErr, "qb_sync_succeeded", task.id, nil)
+}
+
+// syncUnreachableThreshold is how many consecutive connection-class sync
+// failures turn a flaky poll into a downloader.unreachable episode.
+const syncUnreachableThreshold = 3
+
+// withSyncDiagnostics feeds one committed sync outcome into the downloader
+// detection. Only a retryable failure whose cause carries outbound facts counts
+// toward the unreachable run: three in a row open the episode and every later
+// one adds its task to it. Refused credentials are a definite answer, so they
+// open downloader.auth_failed at once and reset the run. Any sync that reached
+// qBittorrent (success or another definite answer) resets the run and closes
+// the episode. The counter is in memory: a restart only delays detection by
+// three polls.
+func (s *Service) withSyncDiagnostics(outcome worker.Outcome, err error, code, taskID string, cause error) (worker.Outcome, error) {
+	if err != nil || outcome.Kind != worker.OutcomeCommitted {
+		return outcome, err
+	}
+	record := func(variant observabilityport.ConditionVariant, failure outbound.Failure) (worker.Outcome, error) {
+		return worker.WithAfterCommit(outcome, func(ctx context.Context) {
+			request := observabilityport.DiagnosticFailureRequest{
+				Condition: observabilityport.Condition{Kind: observabilityport.KindDownloader, Variant: variant},
+				Severity:  observabilityport.SeverityError, TargetID: s.downloaderTarget(ctx), TargetName: "qBittorrent",
+				Failure: failure, AffectedID: taskID,
+			}
+			if record := observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, s.logger, request); record != nil {
+				record(ctx)
+			}
+		}), nil
+	}
+	if errors.Is(cause, qbittorrent.ErrAuthFailed) {
+		s.syncMu.Lock()
+		s.syncFailures = 0
+		// The next success must close the episode this opens.
+		s.syncChecked = false
+		s.syncMu.Unlock()
+		return record(observabilityport.VariantAuthFailed, outbound.Failure{})
+	}
+	if facts, ok := outbound.FailureOf(cause); ok && code == "qb_sync_retryable" {
+		s.syncMu.Lock()
+		s.syncFailures++
+		open := s.syncFailures >= syncUnreachableThreshold
+		s.syncMu.Unlock()
+		if !open {
+			return outcome, nil
+		}
+		return record(observabilityport.VariantUnreachable, facts)
+	}
+	if code != "qb_sync_succeeded" && code != SyncCodeTaskAbsent {
+		return outcome, nil
+	}
+	s.syncMu.Lock()
+	// The first success after start also closes: an episode opened by a
+	// previous process has no counter to remember it.
+	due := s.syncFailures > 0 || !s.syncChecked
+	s.syncFailures = 0
+	s.syncChecked = true
+	s.syncMu.Unlock()
+	if !due {
+		return outcome, nil
+	}
+	return worker.WithAfterCommit(outcome, func(ctx context.Context) {
+		if record := observabilityport.DiagnosticSuccessAfterCommit(s.diagnostics, s.logger, observabilityport.DiagnosticSuccessRequest{Kind: observabilityport.KindDownloader, TargetID: s.downloaderTarget(ctx)}); record != nil {
+			record(ctx)
+		}
+	}), nil
 }
 
 // classifySyncError maps a failed sync observation onto the code the owner-held

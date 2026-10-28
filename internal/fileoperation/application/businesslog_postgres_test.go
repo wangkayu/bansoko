@@ -24,13 +24,12 @@ func fileOperationID(t *testing.T, db *sql.DB, artifactID string) string {
 // Journal entry for the file result is not part of the finish write set; it
 // belongs to the independent activity consumer.
 func TestTypedFileFailureOpensDiagnosticEpisode(t *testing.T) {
-	episodes := func(t *testing.T, db *sql.DB, operationID string) (open, total int) {
+	episodes := func(t *testing.T, db *sql.DB) (open, total int) {
 		t.Helper()
 		if err := db.QueryRow(`
 SELECT count(*) FILTER (WHERE succeeded_after_at IS NULL), count(*)
 FROM diagnostic_episodes
-WHERE component = 'fileoperation' AND operation = 'execute' AND error_code = 'file_operation_failed'
-  AND scope_kind = 'owner' AND scope_id = $1`, operationID).Scan(&open, &total); err != nil {
+WHERE kind = 'internal' AND target_id = 'fileoperation.execute'`).Scan(&open, &total); err != nil {
 			t.Fatal(err)
 		}
 		return open, total
@@ -47,7 +46,7 @@ WHERE component = 'fileoperation' AND operation = 'execute' AND error_code = 'fi
 		if got := x.state(t, x.opID); got.opState != ownerStateFailed || got.opCode != "SOURCE_MISSING" {
 			t.Fatalf("operation not failed: %+v", got)
 		}
-		if open, total := episodes(t, x.db, x.opID); open != 1 || total != 1 {
+		if open, total := episodes(t, x.db); open != 1 || total != 1 {
 			t.Fatalf("typed failure diagnostic episodes open=%d total=%d, want 1/1", open, total)
 		}
 	})
@@ -58,7 +57,7 @@ WHERE component = 'fileoperation' AND operation = 'execute' AND error_code = 'fi
 			t.Fatalf("typed copy run: handled=%v err=%v", handled, err)
 		}
 		assertOperationCompleted(t, x.db, x.opID)
-		if _, total := episodes(t, x.db, x.opID); total != 0 {
+		if _, total := episodes(t, x.db); total != 0 {
 			t.Fatalf("completed operation opened %d diagnostic episodes", total)
 		}
 	})

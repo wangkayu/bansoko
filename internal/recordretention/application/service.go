@@ -352,14 +352,9 @@ func (s *Service) RunPass(ctx context.Context) (PassResult, error) {
 	message := fmt.Sprintf("retention sweep completed (cleaners=%d failed=%t deleted=%d)", len(pass.Results), failed, pass.deletedCount())
 	var recordErr error
 	if failed {
-		recordErr = errors.Join(recordErr, s.recorder.RecordDiagnosticFailure(ctx, observabilityport.DiagnosticFailureRequest{
-			Identity: observabilityport.DiagnosticRetentionSweepFailure(), Severity: observabilityport.SeverityError,
-			ScopeID: "global", LastError: "one or more retention cleaners failed",
-		}))
+		recordErr = errors.Join(recordErr, s.recorder.RecordDiagnosticFailure(ctx, observabilityport.InternalFailure(observabilityport.InternalRetentionSweep, "")))
 	} else {
-		recordErr = errors.Join(recordErr, s.recorder.RecordDiagnosticSuccess(ctx, observabilityport.DiagnosticSuccessRequest{
-			Identity: observabilityport.DiagnosticRetentionSweepFailure(), ScopeID: "global",
-		}))
+		recordErr = errors.Join(recordErr, s.recorder.RecordDiagnosticSuccess(ctx, observabilityport.InternalSuccess(observabilityport.InternalRetentionSweep)))
 	}
 	recordErr = errors.Join(recordErr, s.recorder.UpsertRoutine(ctx, observabilityport.RoutineRequest{
 		Identity: observabilityport.RoutineRetentionPassIdentity(outcome, resultCode), ScopeID: "global",
@@ -370,8 +365,8 @@ func (s *Service) RunPass(ctx context.Context) (PassResult, error) {
 		level = "failure"
 	}
 	event := observabilityport.RuntimeEvent{
-		Message: message, Component: string(observabilityport.ComponentRetention),
-		Operation: string(observabilityport.OperationSweep), Outcome: level,
+		Message: message, Component: "retention",
+		Operation: "sweep", Outcome: level,
 		ReasonCode: string(resultCode),
 	}
 	if level == "failure" {

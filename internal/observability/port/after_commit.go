@@ -4,25 +4,26 @@ import (
 	"context"
 )
 
-func recordDiagnosticError(logger RuntimeLogger, component, operation, scopeID, errorCode, result string) {
+func recordDiagnosticError(logger RuntimeLogger, kind, variant, targetID, result string) {
 	if logger == nil {
 		logger = NopRuntimeLogger{}
 	}
 	logger.Error(context.Background(), RuntimeEvent{
 		Message:    "observability persistence failed",
-		Component:  component,
-		Operation:  operation,
+		Component:  "observability",
+		Operation:  "diagnostic_write",
 		Outcome:    "failure",
 		ReasonCode: result,
-		OwnerID:    scopeID,
-		ErrorClass: errorCode,
+		OwnerType:  kind,
+		OwnerID:    targetID,
+		ErrorClass: variant,
 	})
 }
 
 // RecordDiagnosticError reports a best-effort diagnostic persistence failure
 // without exposing the underlying error, which may contain infrastructure details.
-func RecordDiagnosticError(logger RuntimeLogger, component, operation, scopeID, errorCode, result string) {
-	recordDiagnosticError(logger, component, operation, scopeID, errorCode, result)
+func RecordDiagnosticError(logger RuntimeLogger, kind, variant, targetID, result string) {
+	recordDiagnosticError(logger, kind, variant, targetID, result)
 }
 
 // RecordRoutineError reports a best-effort routine persistence failure without
@@ -52,7 +53,7 @@ func DiagnosticFailureAfterCommit(recorder Recorder, logger RuntimeLogger, req D
 	}
 	return func(ctx context.Context) {
 		if err := recorder.RecordDiagnosticFailure(ctx, req); err != nil {
-			recordDiagnosticError(logger, string(req.Identity.Component), string(req.Identity.Operation), req.ScopeID, string(req.Identity.ErrorCode), "diagnostic_write_failed")
+			recordDiagnosticError(logger, string(req.Condition.Kind), string(req.Condition.Variant), req.TargetID, "diagnostic_write_failed")
 		}
 	}
 }
@@ -66,7 +67,7 @@ func DiagnosticSuccessAfterCommit(recorder Recorder, logger RuntimeLogger, req D
 	}
 	return func(ctx context.Context) {
 		if err := recorder.RecordDiagnosticSuccess(ctx, req); err != nil {
-			recordDiagnosticError(logger, string(req.Identity.Component), string(req.Identity.Operation), req.ScopeID, string(req.Identity.ErrorCode), "diagnostic_close_failed")
+			recordDiagnosticError(logger, string(req.Kind), "", req.TargetID, "diagnostic_close_failed")
 		}
 	}
 }

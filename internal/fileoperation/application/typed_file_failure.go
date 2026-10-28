@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
+	"syscall"
 	"time"
 
 	observabilityport "bansoko/internal/observability/port"
@@ -62,10 +64,64 @@ func (s *Service) finishTypedFailure(ctx context.Context, c workitems.Claim, cod
 	}
 	out := worker.Committed(c, workitems.OwnerResult{State: ownerStateFailed, ReasonCode: code, Reason: reason})
 	out.Disposition = disposition
-	return worker.WithAfterCommit(out, observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, s.logger, observabilityport.DiagnosticFailureRequest{
-		Identity: observabilityport.FileOperationFailure(), Severity: observabilityport.SeverityError,
-		ScopeID: c.Owner.ID, LastError: reason,
-	})), nil
+	return worker.WithAfterCommit(out, observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, s.logger, fileFailureRequest(cause, c.Owner.ID))), nil
+}
+
+// libraryTarget is the single diagnostic target of every placement write.
+// There is no configured library root (templates render absolute paths) and an
+// episode never stores a path, so all library faults share it and carry no
+// target name.
+const libraryTarget = "library"
+
+// fileSuccessAfterCommit closes the library episode and the internal
+// file-operation source once an operation committed its placement: the library
+// accepted a write, so earlier library faults no longer hold.
+func (s *Service) fileSuccessAfterCommit() func(context.Context) {
+	closes := []func(context.Context){
+		observabilityport.DiagnosticSuccessAfterCommit(s.diagnostics, s.logger, observabilityport.DiagnosticSuccessRequest{Kind: observabilityport.KindLibrary, TargetID: libraryTarget}),
+		observabilityport.DiagnosticSuccessAfterCommit(s.diagnostics, s.logger, observabilityport.InternalSuccess(observabilityport.InternalFileOperation)),
+	}
+	return func(ctx context.Context) {
+		for _, closeEpisode := range closes {
+			if closeEpisode != nil {
+				closeEpisode(ctx)
+			}
+		}
+	}
+}
+
+// fileFailureRequest maps a failed file operation onto the catalog. Only a
+// cause with a typed filesystem error becomes a library condition (read-only
+// or permission-denied is not_writable, a full disk is no_space, errno typical
+// of a lost network mount is unreachable); every other
+// file-operation failure is a product fault and stays internal.
+func fileFailureRequest(cause error, operationID string) observabilityport.DiagnosticFailureRequest {
+	variant := observabilityport.ConditionVariant("")
+	switch {
+	case errors.Is(cause, syscall.ENOSPC):
+		variant = observabilityport.VariantNoSpace
+	case errors.Is(cause, fs.ErrPermission), errors.Is(cause, syscall.EROFS):
+		variant = observabilityport.VariantNotWritable
+	case isLostMount(cause):
+		variant = observabilityport.VariantUnreachable
+	}
+	if variant == "" {
+		return observabilityport.InternalFailure(observabilityport.InternalFileOperation, "")
+	}
+	return observabilityport.DiagnosticFailureRequest{
+		Condition: observabilityport.Condition{Kind: observabilityport.KindLibrary, Variant: variant},
+		Severity:  observabilityport.SeverityError, TargetID: libraryTarget, AffectedID: operationID,
+	}
+}
+
+// isLostMount reports errno typical of a network mount that went away.
+func isLostMount(err error) bool {
+	for _, errno := range []syscall.Errno{syscall.ESTALE, syscall.ENOTCONN, syscall.EHOSTDOWN, syscall.EHOSTUNREACH, syscall.ETIMEDOUT} {
+		if errors.Is(err, errno) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) confirmTypedFailureCommitted(ctx context.Context, c workitems.Claim) (bool, error) {

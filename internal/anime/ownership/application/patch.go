@@ -117,7 +117,7 @@ WHERE managed_anime_id = $1`, managedAnimeID); err != nil {
 		return SubgroupsOwnerResult{}, err
 	}
 	if selectionChanged {
-		if err := businesslog.WriteGroupChangedTx(ctx, txscope.Wrap(tx), s.activityWriter, subscriptionID, managedAnimeID, animeTitle, ownerVersion+1); err != nil {
+		if err := businesslog.WriteGroupChangedTx(ctx, txscope.Wrap(tx), s.activityWriter, subscriptionID, managedAnimeID, ownerVersion+1); err != nil {
 			return SubgroupsOwnerResult{}, fmt.Errorf("write group changed log: %w", err)
 		}
 	}
@@ -255,7 +255,7 @@ FOR UPDATE OF r`, managedAnimeID, "rules_patch")
 	}
 	// A save that changed no section is a no-change success: no log entry.
 	if subscriptionID.Valid && len(changedSections) > 0 {
-		if err := businesslog.WriteRulesPolicyChangedTx(ctx, txscope.Wrap(tx), s.activityWriter, subscriptionID.String, managedAnimeID, animeTitle, ownerVersion+1, changedSections); err != nil {
+		if err := businesslog.WriteRulesPolicyChangedTx(ctx, txscope.Wrap(tx), s.activityWriter, subscriptionID.String, managedAnimeID, ownerVersion+1, changedSections); err != nil {
 			return RulesPatchResult{}, fmt.Errorf("write rules policy changed log: %w", err)
 		}
 	}
@@ -459,7 +459,7 @@ WHERE src.subscription_id = $1 AND src.source_kind = 'custom_rss'
 		case patch.State == subscriptiondomain.SubscriptionStopped:
 			transition, action = businesslog.SubscriptionTransitionStopped, plugintargetport.SubscriptionStopped
 		}
-		if err := businesslog.WriteSubscriptionStateTx(ctx, txscope.Wrap(tx), s.activityWriter, subscriptionID, managedAnimeID, animeTitle,
+		if err := businesslog.WriteSubscriptionStateTx(ctx, txscope.Wrap(tx), s.activityWriter, subscriptionID, managedAnimeID,
 			transition, version+1); err != nil {
 			return Subscription{}, fmt.Errorf("write subscription state log: %w", err)
 		}

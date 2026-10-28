@@ -236,11 +236,8 @@ SELECT state, version FROM subscriptions WHERE managed_anime_id = $1 FOR UPDATE`
 		OwnerID:    animeID,
 	})
 	if s.recorder != nil {
-		identity := port.ReplacementTriggerFailure()
-		if err := s.recorder.RecordDiagnosticSuccess(ctx, port.DiagnosticSuccessRequest{
-			Identity: identity, ScopeID: animeID,
-		}); err != nil {
-			port.RecordDiagnosticError(s.logger, string(identity.Component), string(identity.Operation), animeID, string(identity.ErrorCode), "diagnostic_write_failed")
+		if err := s.recorder.RecordDiagnosticSuccess(ctx, port.InternalSuccess(port.InternalReplacementTrigger)); err != nil {
+			port.RecordDiagnosticError(s.logger, "internal", "", port.InternalReplacementTrigger, "diagnostic_write_failed")
 		}
 	}
 	return nil
@@ -278,20 +275,9 @@ func (s *ReplacementTriggerService) recordFailure(ctx context.Context, animeID s
 	if s == nil {
 		return
 	}
-	lastError := ""
-	if cause != nil {
-		lastError = cause.Error()
-		if len(lastError) > 300 {
-			lastError = lastError[:300]
-		}
-	}
 	if s.recorder != nil {
-		identity := port.ReplacementTriggerFailure()
-		if err := s.recorder.RecordDiagnosticFailure(ctx, port.DiagnosticFailureRequest{
-			Identity: identity, Severity: port.SeverityError,
-			ScopeID: animeID, ManagedAnimeID: animeID, LastError: lastError,
-		}); err != nil {
-			port.RecordDiagnosticError(s.logger, string(identity.Component), string(identity.Operation), animeID, string(identity.ErrorCode), "diagnostic_write_failed")
+		if err := s.recorder.RecordDiagnosticFailure(ctx, port.InternalFailure(port.InternalReplacementTrigger, "")); err != nil {
+			port.RecordDiagnosticError(s.logger, "internal", "", port.InternalReplacementTrigger, "diagnostic_write_failed")
 		}
 	}
 	if s.logger != nil {

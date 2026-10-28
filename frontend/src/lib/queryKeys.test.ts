@@ -88,40 +88,28 @@ describe("query key contracts", () => {
     expect(observabilityKeys.all).toEqual(["observability"]);
     expect(observabilityKeys.records).toEqual(["observability", "records"]);
     expect(observabilityKeys.diagnostics).toEqual(["observability", "diagnostics"]);
-    expect(observabilityKeys.businessLine("success", "anime-42")).toEqual([
+    expect(observabilityKeys.businessLine("success", "anime-42", "")).toEqual([
       "observability",
       "records",
       "business-line",
       "success",
       "anime-42",
+      "",
       undefined,
       undefined,
     ]);
-    expect(observabilityKeys.businessLine("failure", "anime-42", "2025-01-01", "2025-01-31")).toEqual([
+    expect(observabilityKeys.businessLine("failure", "anime-42", "ova", "2025-01-01", "2025-01-31")).toEqual([
       "observability",
       "records",
       "business-line",
       "failure",
       "anime-42",
+      "ova",
       "2025-01-01",
       "2025-01-31",
     ]);
-    expect(observabilityKeys.diagnosticsFiltered("error", "rss")).toEqual([
-      "observability",
-      "diagnostics",
-      "error",
-      "rss",
-      undefined,
-      undefined,
-    ]);
-    expect(observabilityKeys.diagnosticsFiltered("warning", "catalog", "2025-02-01", "2025-02-28")).toEqual([
-      "observability",
-      "diagnostics",
-      "warning",
-      "catalog",
-      "2025-02-01",
-      "2025-02-28",
-    ]);
+    expect(observabilityKeys.diagnosticsFiltered("open")).toEqual(["observability", "diagnostics", "list", "open"]);
+    expect(observabilityKeys.runtimeLog("warn")).toEqual(["observability", "runtime-log", "warn"]);
   });
 
   it("emits the exact file-maintenance and reconciliation tuples", () => {
@@ -180,8 +168,8 @@ describe("query key contracts", () => {
 
     expectPrefix(observabilityKeys.all, observabilityKeys.records);
     expectPrefix(observabilityKeys.all, observabilityKeys.diagnostics);
-    expectPrefix(observabilityKeys.records, observabilityKeys.businessLine("success", "anime-42"));
-    expectPrefix(observabilityKeys.diagnostics, observabilityKeys.diagnosticsFiltered("error", "rss"));
+    expectPrefix(observabilityKeys.records, observabilityKeys.businessLine("success", "anime-42", ""));
+    expectPrefix(observabilityKeys.diagnostics, observabilityKeys.diagnosticsFiltered("open"));
   });
 
   it("preserves the shared prefixes for grouped query refreshes", () => {

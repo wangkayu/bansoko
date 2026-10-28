@@ -318,8 +318,7 @@ RETURNING version`, id, UnknownFileReleaseActor, "unknown-file:"+id).Scan(&versi
 			SubjectID:       id,
 			SubjectVersion:  version,
 			StableResultKey: "unknown_file_released",
-			Title:           "以未知文件导入，已解绑",
-			Summary:         "以未知文件导入，已解绑",
+			MessageCode:     observabilityport.MessageUnknownFileReleased,
 			CorrelationID:   evidence.CorrelationID,
 			CausationType:   "file_operation",
 			CausationID:     fileOperationID,
@@ -400,10 +399,6 @@ func (s *PlacementService) admit(ctx context.Context, input placementInput) (str
 		if err != nil {
 			return "", fmt.Errorf("read subscription for placement activity: %w", err)
 		}
-		title, err := activityAnimeTitle(ctx, tx, input.ManagedAnimeID)
-		if err != nil {
-			return "", fmt.Errorf("read anime title for placement activity: %w", err)
-		}
 		// A file-operation placement belongs to its Release's download run:
 		// the quality facts ref is that Release.
 		releaseID := ""
@@ -430,8 +425,7 @@ func (s *PlacementService) admit(ctx context.Context, input placementInput) (str
 			SubjectID:       id,
 			SubjectVersion:  1,
 			StableResultKey: "admitted",
-			Title:           title,
-			Summary:         "已记录入库位置",
+			MessageCode:     observabilityport.MessagePlacementRecorded,
 			ReleaseID:       releaseID,
 			Details:         details,
 			CorrelationID:   input.CorrelationID,
@@ -601,15 +595,6 @@ func subscriptionIDForAnime(ctx context.Context, tx *sql.Tx, animeID string) (st
 	err := tx.QueryRowContext(ctx, `
 SELECT id FROM subscriptions WHERE managed_anime_id = $1`, animeID).Scan(&subscriptionID)
 	return subscriptionID, err
-}
-
-// activityAnimeTitle is the business-history heading of an anime-scoped
-// entry: the anime's display title, like every other entry of the anime.
-func activityAnimeTitle(ctx context.Context, tx *sql.Tx, animeID string) (string, error) {
-	var title string
-	err := tx.QueryRowContext(ctx, `
-SELECT left(COALESCE(NULLIF(btrim(title_override), ''), title), 256) FROM managed_anime WHERE id = $1`, animeID).Scan(&title)
-	return title, err
 }
 
 // PlacementIDFor derives the stable bounded placement id from the evidence

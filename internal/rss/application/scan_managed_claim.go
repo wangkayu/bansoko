@@ -4,8 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 
 	"bansoko/internal/acquisition/target"
+	"bansoko/internal/observability/businesslog"
+	"bansoko/internal/persistence/txscope"
 )
 
 // A scan-managed file (a placement the library scan admitted, source evidence
@@ -38,19 +41,26 @@ SELECT EXISTS (
 	return claimable, nil
 }
 
+// staledReplaceDecision is one admitted replace decision a claim staled: it
+// will never take effect, so the release writes its not_replaced line.
+type staledReplaceDecision struct {
+	id      string
+	version int64
+}
+
 // claimScanManagedTargetsTx attaches the release to every unclaimed
 // scan-managed placement of the anime at one of the adopted targets, inside
 // the release owner transaction: quality_facts_ref = release and
-// replacement_eligible. The release's pre-acquisition replace decisions go
-// stale (they never bind: the release places no file of its own). It returns
-// the number of claimed placements.
-func claimScanManagedTargetsTx(ctx context.Context, tx *sql.Tx, managedAnimeID, releaseID string, set target.Set) (int64, error) {
+// replacement_eligible. The release's pre-acquisition decisions go stale
+// (they never bind: the release places no file of its own). It returns the
+// number of claimed placements and the replace decisions it staled.
+func claimScanManagedTargetsTx(ctx context.Context, tx *sql.Tx, managedAnimeID, releaseID string, set target.Set) (int64, []staledReplaceDecision, error) {
 	paths := make([]string, 0, len(set.Targets))
 	for _, spec := range set.Targets {
 		paths = append(paths, spec.TargetPath)
 	}
 	if len(paths) == 0 {
-		return 0, nil
+		return 0, nil, nil
 	}
 	result, err := tx.ExecContext(ctx, `
 UPDATE placements p
@@ -60,21 +70,57 @@ WHERE p.managed_anime_id = $1 AND p.physical_path = ANY($3)
   AND p.source_evidence_type = 'reconciliation' AND p.quality_facts_ref IS NULL
   AND p.state = 'active' AND p.verification_state = 'verified'`, managedAnimeID, releaseID, paths)
 	if err != nil {
-		return 0, fmt.Errorf("claim scan-managed placements: %w", err)
+		return 0, nil, fmt.Errorf("claim scan-managed placements: %w", err)
 	}
 	claimed, err := result.RowsAffected()
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	if claimed == 0 {
-		return 0, nil
+		return 0, nil, nil
 	}
-	if _, err := tx.ExecContext(ctx, `
+	rows, err := tx.QueryContext(ctx, `
 UPDATE replacement_decisions
 SET state = 'stale', stale_reason = $3, version = version + 1, updated_at = CURRENT_TIMESTAMP
 WHERE managed_anime_id = $1 AND candidate_release_id = $2
-  AND candidate_placement_id IS NULL AND state = 'admitted'`, managedAnimeID, releaseID, staleReasonClaimedExisting); err != nil {
-		return 0, fmt.Errorf("stale claimed release decisions: %w", err)
+  AND candidate_placement_id IS NULL AND state = 'admitted'
+RETURNING id, version, verdict`, managedAnimeID, releaseID, staleReasonClaimedExisting)
+	if err != nil {
+		return 0, nil, fmt.Errorf("stale claimed release decisions: %w", err)
 	}
-	return claimed, nil
+	defer rows.Close()
+	var staled []staledReplaceDecision
+	for rows.Next() {
+		var decision staledReplaceDecision
+		var verdict string
+		if err := rows.Scan(&decision.id, &decision.version, &verdict); err != nil {
+			return 0, nil, fmt.Errorf("read stale claimed release decision: %w", err)
+		}
+		if verdict == "replace" {
+			staled = append(staled, decision)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, nil, fmt.Errorf("stale claimed release decisions: %w", err)
+	}
+	sort.Slice(staled, func(i, j int) bool { return staled[i].id < staled[j].id })
+	return claimed, staled, nil
+}
+
+// writeClaimNotReplacedTx writes the not_replaced line (superseded) of every
+// replace decision the release's claim staled, after the release's own entry,
+// so it takes no row lock that entry has not already taken.
+func (s *Service) writeClaimNotReplacedTx(ctx context.Context, tx *sql.Tx, snapshot releaseSnapshot, staled []staledReplaceDecision, correlationID string) error {
+	for _, decision := range staled {
+		if err := businesslog.WriteReplacementNotReplacedTx(ctx, txscope.Wrap(tx), s.activityWriter, businesslog.NotReplaced{
+			SubscriptionID: snapshot.subscriptionID, ManagedAnimeID: snapshot.managedAnimeID,
+			DecisionID: decision.id, DecisionVersion: decision.version,
+			ReleaseID: snapshot.releaseID, RunContext: snapshot.activityRunContext(),
+			Reason: businesslog.NotReplacedSuperseded, CorrelationID: correlationID,
+			CausationType: "release", CausationID: snapshot.releaseID,
+		}); err != nil {
+			return fmt.Errorf("write claimed release not-replaced activity: %w", err)
+		}
+	}
+	return nil
 }

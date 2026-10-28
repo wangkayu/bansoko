@@ -256,8 +256,8 @@ func upsertOverride(ctx context.Context, tx *sql.Tx, animeID, ownerType, section
 	return animeapplication.UpsertOverride(ctx, tx, animeID, ownerType, section, override)
 }
 
-func writeSubscriptionCreatedLog(ctx context.Context, tx *sql.Tx, writer observabilityport.ActivityWriter, subscriptionID, managedAnimeID, title string) error {
-	return animeapplication.WriteSubscriptionCreatedLog(ctx, tx, writer, subscriptionID, managedAnimeID, title)
+func writeSubscriptionCreatedLog(ctx context.Context, tx *sql.Tx, writer observabilityport.ActivityWriter, subscriptionID, managedAnimeID string) error {
+	return animeapplication.WriteSubscriptionCreatedLog(ctx, tx, writer, subscriptionID, managedAnimeID)
 }
 
 const defaultMaxAttempts = animeapplication.DefaultMaxAttempts
@@ -722,7 +722,7 @@ VALUES ('subscribe', $1, $2, $3, $4)`, key, requestHash, animeID, snapshot); err
 			return SubscribeResult{}, err
 		}
 	}
-	if err := writeSubscriptionCreatedLog(ctx, tx, s.activityWriter, subscriptionID, animeID, title); err != nil {
+	if err := writeSubscriptionCreatedLog(ctx, tx, s.activityWriter, subscriptionID, animeID); err != nil {
 		return SubscribeResult{}, err
 	}
 	if s.notifications != nil && initialState != subscriptiondomain.SubscriptionPending {

@@ -14,6 +14,7 @@ import (
 	"bansoko/internal/events"
 	"bansoko/internal/filemaintenance"
 	"bansoko/internal/filemanager"
+	"bansoko/internal/observability/businesslog"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
 	"bansoko/internal/workitems"
@@ -438,6 +439,12 @@ func (c *Commands) appendReleaseActivity(ctx context.Context, tx *sql.Tx, a file
 	if err != nil {
 		return fmt.Errorf("read release activity subscription: %w", err)
 	}
+	var details json.RawMessage
+	if len(a.Spellings) > 0 {
+		if details, err = businesslog.MarshalDetails(map[string]any{"file_name": businesslog.FileName(a.Spellings[0])}); err != nil {
+			return fmt.Errorf("encode release activity details: %w", err)
+		}
+	}
 	return c.activity.AppendTx(ctx, txscope.Wrap(tx), observabilityport.ActivityRecord{
 		SubscriptionID:  subscriptionID,
 		ManagedAnimeID:  a.ManagedAnimeID,
@@ -448,8 +455,8 @@ func (c *Commands) appendReleaseActivity(ctx context.Context, tx *sql.Tx, a file
 		SubjectID:       a.Placement.ID,
 		SubjectVersion:  version,
 		StableResultKey: "placement_released",
-		Title:           "文件已脱离管理",
-		Summary:         "文件保留在原处，不再由订阅管理",
+		MessageCode:     observabilityport.MessagePlacementReleased,
+		Details:         details,
 	})
 }
 

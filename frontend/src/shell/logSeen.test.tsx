@@ -1,189 +1,140 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useState } from "react";
+import { renderHook, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DiagnosticEpisode, ObservabilityRecord } from "../lib/api/client";
-import { observabilityKeys } from "../lib/queryKeys";
-import { t } from "../lib/i18n";
-import { LogDialog } from "./LogDialog";
-import { useLogFailureBadge } from "./logSeen";
+import { badgeText, markLogSeen, newBadgeRecords, newOpenEpisodes, useLogFailureBadge } from "./logSeen";
+import { deliveryState, entryState, isBadgeRecord } from "./logState";
 
-// The log entry badge: only failures visible in the log, and only those after they were last seen in this browser.
+// Badge rule (a): failed acquisition results, failed or unconfirmed notifications, and open
+// conditions whose first failure is newer than the last time the tab was seen.
 
-function business(id: string, outcome: "success" | "failure", occurredAt: string): ObservabilityRecord {
+function settled(id: string, outcome: "success" | "failure", occurredAt: string): ObservabilityRecord {
   return {
     record_type: "business",
     entry: {
       id,
-      subscription_id: "subscription-1",
+      subscription_id: "sub-1",
       managed_anime_id: "anime-1",
-      kind: "release_processed",
+      anime_title: "Example",
+      source: "subscription",
+      kind: "acquisition_settled",
       outcome,
       occurred_at: occurredAt,
-      title: `标题 ${id}`,
-      summary: `摘要 ${id}`,
+      message_code: outcome === "success" ? "acquisition_succeeded" : "acquisition_failed",
+      message_params: {},
       dedupe_key: id,
       retention_until: "2026-12-01T00:00:00Z",
     },
   };
 }
 
-const routineFailure: ObservabilityRecord = {
-  record_type: "routine",
-  routine: {
-    id: "routine-1",
-    kind: "catalog_refresh",
-    scope_kind: "provider",
-    scope_id: "mikan",
-    outcome: "failure",
-    last_executed_at: "2026-10-20T09:00:00Z",
-    last_result_code: "catalog_refresh_failed",
-    summary: "刷新失败",
-    updated_at: "2026-10-20T09:00:00Z",
-  },
-};
+function delivery(id: string, state: string, updatedAt: string): ObservabilityRecord {
+  return { record_type: "plugin", delivery: { id, state, created_at: updatedAt, updated_at: updatedAt } } as unknown as ObservabilityRecord;
+}
 
-const automationFailure = {
-  record_type: "automation",
-  run: { id: "run-1", kind: "rss_refresh", trigger: "schedule", state: "failed", created_at: "2026-10-20T09:00:00Z" },
-} as unknown as ObservabilityRecord;
-
-function diagnostic(id: string, lastFailedAt: string, succeededAfterAt?: string): DiagnosticEpisode {
+function episode(id: string, first: string, last = first, recovered?: string): DiagnosticEpisode {
   return {
     id,
-    component: "rss",
-    operation: "refresh",
-    severity: "error",
-    error_code: "rss_fetch_failed",
-    first_failed_at: lastFailedAt,
-    last_failed_at: lastFailedAt,
+    kind: "downloader",
+    variant: "unreachable",
+    target: { kind: "downloader", id: "d1", name: "qB" },
+    recent: [],
+    first_failed_at: first,
+    last_failed_at: last,
+    succeeded_after_at: recovered ?? null,
     occurrence_count: 1,
-    details_status: "available",
-    ...(succeededAfterAt ? { succeeded_after_at: succeededAfterAt } : {}),
+    retry: { mode: "resume" },
+    severity: "error",
+    retention_until: "2026-12-01T00:00:00Z",
   } as DiagnosticEpisode;
 }
 
-let records: ObservabilityRecord[];
-let episodes: DiagnosticEpisode[];
-let fetchMock: ReturnType<typeof vi.fn>;
-
-function serverOutcome(record: ObservabilityRecord): string {
-  if (record.record_type === "business") return record.entry.outcome;
-  if (record.record_type === "routine") return record.routine.outcome;
-  if (record.record_type === "plugin") return record.delivery.state === "failed" ? "failure" : record.delivery.state;
-  return "failure";
-}
-
-// A fake server: narrowed by kind / outcome / severity, in descending time order.
-function stubFetch() {
-  fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-    const url = new URL(String(input), "http://localhost");
-    let body: unknown = [];
-    if (url.pathname.endsWith("/observability/records")) {
-      const kinds = url.searchParams.getAll("kind");
-      const outcome = url.searchParams.get("outcome");
-      body = {
-        records: records.filter(
-          (record) => (kinds.length === 0 || kinds.includes(record.record_type)) && (!outcome || serverOutcome(record) === outcome),
-        ),
-        next_cursor: null,
-      };
-    } else if (url.pathname.endsWith("/observability/diagnostics")) {
-      const severity = url.searchParams.get("severity");
-      body = { episodes: episodes.filter((episode) => !severity || episode.severity === severity), next_cursor: null };
-    }
-    return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+describe("badge predicates", () => {
+  it("counts only failed acquisition results and failed or unconfirmed notifications", () => {
+    expect(isBadgeRecord(settled("a", "failure", "2026-10-20T08:00:00Z"))).toBe(true);
+    expect(isBadgeRecord(settled("b", "success", "2026-10-20T08:00:00Z"))).toBe(false);
+    expect(isBadgeRecord(delivery("c", "failed", "2026-10-20T08:00:00Z"))).toBe(true);
+    expect(isBadgeRecord(delivery("d", "unknown", "2026-10-20T08:00:00Z"))).toBe(true);
+    expect(isBadgeRecord(delivery("e", "delivered", "2026-10-20T08:00:00Z"))).toBe(false);
+    expect(isBadgeRecord(delivery("f", "waiting_retry", "2026-10-20T08:00:00Z"))).toBe(false);
   });
-  vi.stubGlobal("fetch", fetchMock);
-}
 
-function Harness() {
-  const count = useLogFailureBadge();
-  const [open, setOpen] = useState(false);
-  const [view, setView] = useState("records");
-  return (
-    <>
-      <span data-testid="badge">{count}</span>
-      <button type="button" onClick={() => setOpen(true)}>
-        打开日志
-      </button>
-      <LogDialog open={open} onOpenChange={setOpen} view={view} onViewChange={setView} />
-    </>
-  );
-}
+  it("every badge record is a record the failure filter lists", () => {
+    const all = [
+      settled("a", "failure", "2026-10-20T08:00:00Z"),
+      settled("b", "success", "2026-10-20T08:00:00Z"),
+      delivery("c", "unknown", "2026-10-20T08:00:00Z"),
+      delivery("d", "delivered", "2026-10-20T08:00:00Z"),
+    ];
+    for (const record of all.filter(isBadgeRecord)) {
+      const state = record.record_type === "business" ? entryState(record.entry) : deliveryState((record as Extract<ObservabilityRecord, { record_type: "plugin" }>).delivery);
+      expect(state).toBe("failure");
+    }
+  });
 
-function renderHarness() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(
-    <QueryClientProvider client={client}>
-      <Harness />
-    </QueryClientProvider>,
-  );
-  return client;
-}
+  it("only records newer than the seen mark count", () => {
+    const records = [settled("old", "failure", "2026-10-20T08:00:00Z"), settled("new", "failure", "2026-10-20T10:00:00Z")];
+    expect(newBadgeRecords(records, null)).toHaveLength(2);
+    expect(newBadgeRecords(records, "2026-10-20T09:00:00Z")).toHaveLength(1);
+  });
 
-async function expectBadge(value: number) {
-  await waitFor(() => expect(screen.getByTestId("badge")).toHaveTextContent(String(value)));
-}
+  it("repeats of a known condition do not count, a new condition adds one, recovery changes nothing", () => {
+    const mark = "2026-10-20T09:00:00Z";
+    const known = episode("k", "2026-10-20T08:00:00Z", "2026-10-20T12:00:00Z");
+    expect(newOpenEpisodes([known], mark)).toHaveLength(0);
+    expect(newOpenEpisodes([known, episode("n", "2026-10-20T11:00:00Z")], mark)).toHaveLength(1);
+    const recovered = episode("r", "2026-10-20T10:00:00Z", "2026-10-20T10:00:00Z", "2026-10-20T10:30:00Z");
+    expect(newOpenEpisodes([known, recovered], mark)).toHaveLength(0);
+  });
+});
 
-describe("日志入口徽标", () => {
+describe("useLogFailureBadge", () => {
+  let records: ObservabilityRecord[];
+  let episodes: DiagnosticEpisode[];
+
   beforeEach(() => {
     localStorage.clear();
-    records = [routineFailure, automationFailure, business("b-old", "failure", "2026-10-20T08:00:00Z"), business("b-ok", "success", "2026-10-20T07:00:00Z")];
-    episodes = [diagnostic("d-open", "2026-10-20T08:30:00Z"), diagnostic("d-recovered", "2026-10-20T06:00:00Z", "2026-10-20T06:30:00Z")];
-    stubFetch();
+    records = [settled("f1", "failure", "2026-10-20T08:00:00Z")];
+    episodes = [episode("d1", "2026-10-20T08:30:00Z"), episode("d2", "2026-10-20T06:00:00Z", "2026-10-20T06:00:00Z", "2026-10-20T06:30:00Z")];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input), "http://localhost");
+        const body = url.pathname.endsWith("/observability/records")
+          ? { records, next_cursor: null }
+          : { episodes, internal: { occurrence_count: 4, last_failed_at: "2026-10-20T09:00:00Z" }, next_cursor: null };
+        return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+      }),
+    );
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
-  it("不算 routine/automation 失败和已恢复的诊断", async () => {
-    renderHarness();
-    await expectBadge(2);
-    const recordURLs = fetchMock.mock.calls.map(([input]) => String(input)).filter((url) => url.includes("/observability/records"));
-    expect(recordURLs.length).toBeGreaterThan(0);
-    for (const url of recordURLs) expect(url).not.toMatch(/kind=(routine|automation)/);
+  function setup() {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    return renderHook(() => useLogFailureBadge(), { wrapper });
+  }
+
+  it("counts failures and open conditions, never recovered ones or the internal row", async () => {
+    const { result } = setup();
+    await waitFor(() => expect(result.current).toBe(2));
   });
 
-  it("打开日志后清零，之后的新失败再次计入并标“新”", async () => {
-    const client = renderHarness();
-    await expectBadge(2);
-
-    fireEvent.click(screen.getByRole("button", { name: "打开日志" }));
-    await screen.findByText("标题 b-old");
-    await expectBadge(1);
-    fireEvent.click(screen.getByRole("tab", { name: t("log.tabDiagnostics") }));
-    await expectBadge(0);
-    // The first opening has no old mark: nothing is tagged as new.
-    expect(screen.queryByText(t("log.new"))).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("tab", { name: t("log.tabRecords") }));
-    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
-    await waitFor(() => expect(screen.queryByText("标题 b-old")).not.toBeInTheDocument());
-
-    records = [business("b-new", "failure", "2026-10-20T10:00:00Z"), ...records];
-    await act(() => client.invalidateQueries({ queryKey: observabilityKeys.all }));
-    await expectBadge(1);
-
-    fireEvent.click(screen.getByRole("button", { name: "打开日志" }));
-    await screen.findByText("标题 b-new");
-    expect(screen.getAllByText(t("log.new"))).toHaveLength(1);
-    await expectBadge(0);
+  it("clears once both tabs were seen", async () => {
+    markLogSeen("records", "2026-10-20T08:00:00Z");
+    markLogSeen("diagnostics", "2026-10-20T08:30:00Z");
+    const { result } = setup();
+    await waitFor(() => expect(result.current).toBe(0));
   });
+});
 
-  it("localStorage 不可用时照常渲染，计入全部失败", async () => {
-    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-      throw new Error("blocked");
-    });
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new Error("blocked");
-    });
-    renderHarness();
-    await expectBadge(2);
-    fireEvent.click(screen.getByRole("button", { name: "打开日志" }));
-    await screen.findByText("标题 b-old");
-    await expectBadge(2);
+describe("badgeText", () => {
+  it("caps at 99+", () => {
+    expect(badgeText(7)).toBe("7");
+    expect(badgeText(120)).toBe("99+");
   });
 });

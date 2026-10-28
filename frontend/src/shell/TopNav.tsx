@@ -415,6 +415,10 @@ export function TopNav({
               useLogDialogStore.getState().closeDialog();
               routeDialogs.open({ anime: id, tab: "metadata" });
             }}
+            onOpenSettings={(path) => {
+              useLogDialogStore.getState().closeDialog();
+              navigate(path, { state: ROUTE_DIALOG_STATE });
+            }}
           />
         </Suspense>
       )}

@@ -1867,6 +1867,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/observability/runtime-log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The most recent runtime log lines, for attaching to a bug report. The lines are a bounded in-memory tail of what the process wrote to stdout (at most 500 lines and a byte cap, oldest dropped first); nothing is stored, and a restart empties it. Lines come oldest first. Only a signed-in web session may read it: an API token (and so MCP or any agent) gets 403 WEB_SESSION_REQUIRED whatever its scopes. */
+        get: operations["getRuntimeLog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/plugin-targets": {
         parameters: {
             query?: never;
@@ -3695,9 +3712,35 @@ export interface components {
         /** @enum {string} */
         AutomationState: "queued" | "running" | "completed" | "partial" | "failed";
         /** @enum {string} */
-        SubscriptionLogKind: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "policy_changed" | "rss_new_content" | "rss_refresh_failed" | "release_processed" | "download_changed" | "artifact_verified" | "placement_changed" | "replacement_decided" | "cleanup_completed" | "cleanup_failed" | "file_alignment_completed" | "file_alignment_failed" | "acquisition_settled";
+        SubscriptionLogKind: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "policy_changed" | "rss_new_content" | "release_processed" | "download_changed" | "artifact_verified" | "placement_changed" | "replacement_decided" | "cleanup_completed" | "cleanup_failed" | "file_alignment_completed" | "file_alignment_failed" | "acquisition_settled";
         /** @enum {string} */
         SubscriptionLogOutcome: "info" | "success" | "failure";
+        /**
+         * @description The message of a business journal entry in the closed catalog the server registers per entry kind (published to the frontend as a generated artifact). The client renders the text from the code and message_params; entries carry no display text.
+         * @enum {string}
+         */
+        SubscriptionLogMessageCode: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "rules_changed" | "episode_offset_changed" | "rss_new_content" | "release_discovered" | "release_waiting_metadata" | "release_subscription_stopped" | "release_source_unavailable" | "release_parse_failed" | "release_accepted" | "release_filtered" | "release_adopted_existing" | "release_acquisition_failed" | "release_submitted" | "release_awaiting_competition" | "release_resume_baseline" | "release_start_baseline" | "download_submitted" | "download_completed" | "download_removed" | "download_failed" | "artifact_verified" | "file_imported" | "file_adopted" | "file_retained" | "file_import_failed" | "acquisition_succeeded" | "acquisition_failed" | "acquisition_cancelled" | "replacement_kept_existing" | "replacement_kept_all" | "replacement_blocked" | "replacement_replaced" | "replacement_not_replaced" | "placement_released" | "unknown_file_released" | "placement_recorded" | "file_recovered" | "old_version_deleted" | "old_version_kept" | "old_version_delete_failed";
+        /** @description Scalar values the message interpolates. Each message declares its params; an optional param is absent rather than empty. */
+        SubscriptionLogMessageParams: {
+            /** @description Torrent name the downloader reports. */
+            name?: string;
+            /** @description Base name of the file a file result is about. */
+            file_name?: string;
+            /** @description Subgroup display name. */
+            group_name?: string;
+            /**
+             * Format: int64
+             * @description Non-negative item count.
+             */
+            count?: number;
+        };
+        /**
+         * @description Where the entry's work came from: the anime's subscription, or a one-shot download (its temporary anime and subscription).
+         * @enum {string}
+         */
+        SubscriptionLogSource: "subscription" | "one_shot";
+        /** @enum {string} */
+        ObservabilityRecordState: "in_progress" | "success" | "failure" | "info";
         /** @description Formal anime owner. The id is the sole formal owner identity. Provider refs, custom RSS locators/URLs, labels, titles, and other external attributes are not owner identity and may collide across owners. */
         ManagedAnime: {
             /** @description Sole formal owner identity for this ManagedAnime. */
@@ -4494,12 +4537,15 @@ export interface components {
             id: components["schemas"]["ID"];
             subscription_id: components["schemas"]["ID"];
             managed_anime_id: components["schemas"]["ID"];
+            /** @description The anime's current display title, read with the entry (empty when the anime is gone). */
+            anime_title: string;
+            source: components["schemas"]["SubscriptionLogSource"];
             kind: components["schemas"]["SubscriptionLogKind"];
             outcome: components["schemas"]["SubscriptionLogOutcome"];
             /** Format: date-time */
             occurred_at: string;
-            title: string;
-            summary: string;
+            message_code: components["schemas"]["SubscriptionLogMessageCode"];
+            message_params: components["schemas"]["SubscriptionLogMessageParams"];
             rss_source_id?: components["schemas"]["ID"] | null;
             release_id?: components["schemas"]["ID"] | null;
             group_ref?: string | null;
@@ -6153,39 +6199,97 @@ export interface components {
         /** @enum {string} */
         DiagnosticSeverity: "warning" | "error";
         /**
-         * @description Bounded health of the optional details payload. available means the stored details decoded into the contract shape; unavailable means the episode carries no details; invalid means stored details failed to decode and were withheld instead of leaking raw bytes.
+         * @description What the condition is about. Internal product faults are not episodes; they are summarised on the first page of the list (see internal).
          * @enum {string}
          */
-        DiagnosticDetailsStatus: "available" | "unavailable" | "invalid";
+        DiagnosticConditionKind: "metadata" | "update" | "site" | "downloader" | "library" | "notify";
         /** @enum {string} */
-        DiagnosticScopeKind: "global" | "provider" | "subscription" | "rss_source" | "owner" | "worker";
-        DiagnosticDetails: {
-            reason_code?: string;
-            reason_detail?: string;
-            safe_context?: Record<string, never>;
+        DiagnosticConditionVariant: "unreachable" | "auth_failed" | "paused" | "unreadable" | "refresh_failed" | "not_writable" | "no_space" | "secret" | "template" | "request" | "address_rejected";
+        /**
+         * @description auto: the product retries on its own schedule. resume: paused work continues once the target answers. settings: the owner changes a setting first. manual: the owner triggers the retry.
+         * @enum {string}
+         */
+        DiagnosticRetryMode: "auto" | "resume" | "settings" | "manual";
+        /** @enum {string} */
+        DiagnosticSettingsTarget: "metadata_connection" | "downloader_connection" | "notification_target";
+        DiagnosticTarget: {
+            kind: components["schemas"]["DiagnosticConditionKind"];
+            id: string;
+            name: string;
+            /** @description Bare host name of the failing peer; never a URL, port or credential. */
+            host?: string;
         };
+        /** @description Structured fact of the latest failure; never upstream or error text. */
+        DiagnosticDetail: {
+            /** @enum {string} */
+            error_class: "timeout" | "connection_refused" | "connection_reset" | "dns" | "tls" | "http_status" | "unknown";
+            http_status?: number;
+            /** @enum {string} */
+            via?: "direct" | "proxy";
+        };
+        DiagnosticAffected: {
+            /** @enum {string} */
+            kind: "anime" | "task";
+            /** @description Distinct objects the condition kept from working (deduplicated). */
+            count: number;
+        };
+        DiagnosticOccurrence: {
+            /** Format: date-time */
+            at: string;
+            error_class?: string;
+            /** @enum {string} */
+            via?: "direct" | "proxy";
+            host?: string;
+        };
+        DiagnosticRetry: {
+            mode: components["schemas"]["DiagnosticRetryMode"];
+            settings_target?: components["schemas"]["DiagnosticSettingsTarget"];
+        };
+        /** @description One condition on one target. An open episode (succeeded_after_at null) is unique per kind and target; a recovered one is history until retention. */
         DiagnosticEpisode: {
             id: components["schemas"]["ID"];
-            severity: components["schemas"]["DiagnosticSeverity"];
-            component: string;
-            operation: string;
-            error_code: string;
-            scope_kind: components["schemas"]["DiagnosticScopeKind"];
-            scope_id: string;
-            managed_anime_id?: components["schemas"]["ID"] | null;
+            kind: components["schemas"]["DiagnosticConditionKind"];
+            variant: components["schemas"]["DiagnosticConditionVariant"];
+            target: components["schemas"]["DiagnosticTarget"];
+            detail?: components["schemas"]["DiagnosticDetail"];
+            affected?: components["schemas"]["DiagnosticAffected"];
+            /** @description Latest occurrences, newest first. */
+            recent: components["schemas"]["DiagnosticOccurrence"][];
             /** Format: date-time */
             first_failed_at: string;
             /** Format: date-time */
             last_failed_at: string;
-            occurrence_count: number;
-            /** @description Bounded diagnostic error text. The storage column allows 8192 characters, so the contract mirrors that bound; the read boundary re-redacts stored text and truncates by runes, and values written before the writer's redaction may already have collapsed to the redaction marker. */
-            last_error: string;
-            details?: components["schemas"]["DiagnosticDetails"] | null;
-            details_status: components["schemas"]["DiagnosticDetailsStatus"];
             /** Format: date-time */
             succeeded_after_at?: string | null;
+            occurrence_count: number;
+            retry: components["schemas"]["DiagnosticRetry"];
+            severity: components["schemas"]["DiagnosticSeverity"];
             /** Format: date-time */
             retention_until: string;
+        };
+        RuntimeLogLine: {
+            /** Format: date-time */
+            at: string;
+            /** @enum {string} */
+            level: "debug" | "info" | "warn" | "error";
+            message: string;
+            component?: string;
+            operation?: string;
+            outcome?: string;
+            reason_code?: string;
+            request_id?: string;
+            correlation_id?: string;
+            error_class?: string;
+        };
+        RuntimeLogPage: {
+            lines: components["schemas"]["RuntimeLogLine"][];
+        };
+        /** @description Open internal product faults folded into one entry for bug reports. last_request_id correlates with the runtime log. */
+        DiagnosticInternalSummary: {
+            occurrence_count: number;
+            /** Format: date-time */
+            last_failed_at: string;
+            last_request_id?: string;
         };
         /** @description Explicit per-contract projection of the four observability record sources. Each member is an allowlisted field set: storage-only columns such as plugin secret references are never selected, and the transport re-projects the stored payload through the typed member so a column added later cannot reach a client on its own. */
         ObservabilityRecord: components["schemas"]["RoutineRecord"] | components["schemas"]["BusinessRecord"] | components["schemas"]["AutomationRecord"] | components["schemas"]["PluginRecord"];
@@ -6226,7 +6330,9 @@ export interface components {
             next_cursor?: string | null;
         };
         DiagnosticEpisodePage: {
+            /** @description Open episodes first, then recovered ones, each group newest first. */
             episodes: components["schemas"]["DiagnosticEpisode"][];
+            internal?: components["schemas"]["DiagnosticInternalSummary"];
             next_cursor?: string | null;
         };
         /** @enum {string} */
@@ -11308,7 +11414,12 @@ export interface operations {
                 cursor?: components["parameters"]["Cursor"];
                 limit?: components["parameters"]["Limit"];
                 kind?: ("routine" | "business" | "automation" | "plugin")[];
-                outcome?: "success" | "info" | "warning" | "failure" | "partial" | "pending" | "unknown";
+                /** @description Narrows the business records to these journal entry kinds; the other record kinds are unaffected. */
+                entry_kind?: components["schemas"]["SubscriptionLogKind"][];
+                /** @description Selects records in this state. A business record of a Release run (download, verification, import, placement and replacement entries closed by the run's acquisition result) takes the state of its run: the result's outcome, or in_progress while the run has no result. failure includes failed acquisitions, failed business records, failed and partial automation runs, and failed or unconfirmed (unknown) notification deliveries. */
+                state?: components["schemas"]["ObservabilityRecordState"];
+                /** @description Case-insensitive search text (trimmed; blank means no search). It matches the anime title, a business record's release title, file name or subgroup name, and a notification's target name; a business record of a Release run matches when any record of its run does. */
+                q?: string;
                 from?: components["parameters"]["FromTime"];
                 to?: components["parameters"]["ToTime"];
                 managed_anime_id?: components["schemas"]["ID"];
@@ -11328,6 +11439,7 @@ export interface operations {
                     "application/json": components["schemas"]["ObservabilityRecordPage"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             422: components["responses"]["Unprocessable"];
         };
@@ -11338,10 +11450,7 @@ export interface operations {
                 /** @description Opaque keyset pagination cursor. */
                 cursor?: components["parameters"]["Cursor"];
                 limit?: components["parameters"]["Limit"];
-                severity?: "warning" | "error";
-                component?: string;
-                from?: components["parameters"]["FromTime"];
-                to?: components["parameters"]["ToTime"];
+                state?: "open" | "recovered";
             };
             header?: never;
             path?: never;
@@ -11359,6 +11468,33 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getRuntimeLog: {
+        parameters: {
+            query?: {
+                /** @description all lines, warnings and errors, or errors only. */
+                level?: "all" | "warn" | "error";
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The runtime log tail. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeLogPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             422: components["responses"]["Unprocessable"];
         };
     };

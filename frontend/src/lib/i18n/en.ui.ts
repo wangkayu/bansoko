@@ -85,7 +85,6 @@ export const enStatusCopy = {
     group_changed: "Group changed",
     policy_changed: "Settings changed",
     rss_new_content: "New content",
-    rss_refresh_failed: "Refresh failed",
     release_processed: "Torrent processed",
     download_changed: "Download status",
     artifact_verified: "File verification",

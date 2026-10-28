@@ -296,8 +296,8 @@ FROM soak_ext.acq a CROSS JOIN generate_series(0, 1) f(i) WHERE a.cls = 'infligh
 	// keeps are set here. compact_pinned: a Release still points at the root's
 	// task, or a placement obligation exists. completion_open: every succeeded
 	// root already has its completion. Activity markers: facts older than the
-	// consumer window were logged long ago (one-shot facts never are); facts
-	// inside the window stay unlogged and the drain logs them.
+	// consumer window were logged long ago; facts inside the window stay unlogged
+	// and the drain logs them (one-shot facts included).
 	g.exec("acquisitions: compact_pinned", `
 UPDATE acquisitions r SET compact_pinned = true
 FROM soak_ext.acq a
@@ -307,19 +307,19 @@ WHERE r.id = a.id
 	g.execf("acquisitions: activity_logged_at", `
 UPDATE acquisitions r SET activity_logged_at = r.terminal_at + interval '5 seconds'
 FROM soak_ext.acq a
-WHERE r.id = a.id AND a.entry_kind <> 'one_shot' AND r.terminal_at < %[1]s - interval '14 days'`, g.baseSQL)
+WHERE r.id = a.id AND r.terminal_at < %[1]s - interval '14 days'`, g.baseSQL)
 	g.execf("download_tasks: activity markers", `
 UPDATE download_tasks t SET
   activity_submit_logged_at = CASE WHEN t.provider_correlation IS NOT NULL THEN t.updated_at + interval '5 seconds' END,
   activity_terminal_logged_at = CASE WHEN t.state IN ('completed', 'failed') THEN t.updated_at + interval '5 seconds' END
 FROM soak_ext.acq a
-WHERE t.acquisition_id = a.id AND a.entry_kind <> 'one_shot' AND t.updated_at < %[1]s - interval '14 days'`, g.baseSQL)
+WHERE t.acquisition_id = a.id AND t.updated_at < %[1]s - interval '14 days'`, g.baseSQL)
 	g.execf("artifacts: activity_logged_at", `
 UPDATE artifacts x SET activity_logged_at = x.verified_at + interval '5 seconds'
 FROM soak_ext.acq a
-WHERE x.acquisition_id = a.id AND a.entry_kind <> 'one_shot' AND x.verified_at < %[1]s - interval '14 days'`, g.baseSQL)
+WHERE x.acquisition_id = a.id AND x.verified_at < %[1]s - interval '14 days'`, g.baseSQL)
 	g.execf("acquisition_files: activity_logged_at", `
 UPDATE acquisition_files d SET activity_logged_at = d.delivered_at + interval '5 seconds'
 FROM soak_ext.acq a
-WHERE d.acquisition_id = a.id AND a.entry_kind <> 'one_shot' AND d.outcome IS NOT NULL AND d.delivered_at < %[1]s - interval '14 days'`, g.baseSQL)
+WHERE d.acquisition_id = a.id AND d.outcome IS NOT NULL AND d.delivered_at < %[1]s - interval '14 days'`, g.baseSQL)
 }

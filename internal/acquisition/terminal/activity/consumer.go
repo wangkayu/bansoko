@@ -27,10 +27,21 @@
 // A consumer failure rolls back only its own entry, marker included: the
 // acquisition it describes is otherwise never touched. The next pass retries;
 // while entries keep failing one global diagnostic episode stays open. A fact
-// that has no scope (one-shot roots, inactive owners) keeps a NULL marker and is
-// never logged, as before.
-// One-shot acquisitions have no subscription and get no run-log entry; their
-// execution record shows the real result.
+// that has no scope (inactive owners, a Release that is gone) keeps a NULL
+// marker and is never logged.
+//
+// One-shot acquisitions are logged like subscription ones: the one-shot's
+// temporary anime and its subscription (origin oneshot) are the scope, and the
+// records read derives the entry's source from that origin.
+//
+// An import retry re-runs the root: its file results and its settlement are
+// facts again, so their keys carry the retry ordinal (":r<n>") and the second
+// run gets its own entries.
+//
+// The settlement of a failed or cancelled root also writes, in its own
+// transaction, the not_replaced line of each replace decision its terminal
+// transition staled (stale_failed_candidate_decisions), so a planned
+// replacement that never happens says so in the run.
 package activity
 
 import (
@@ -76,6 +87,9 @@ type entry struct {
 	managedAnimeID string
 	record         observabilityport.ActivityRecord
 	fact           fact
+	// notReplaced is set on the settlement of a failed or cancelled root:
+	// the replace decisions its terminal transition staled.
+	notReplaced *notReplacedScope
 }
 
 // fact names one fact row for acquisition_activity_mark_logged: its kind, its
@@ -166,6 +180,11 @@ func (c *Consumer) write(ctx context.Context, e entry) (bool, error) {
 	if err := c.Writer.AppendTx(ctx, txscope.Wrap(tx), e.record); err != nil {
 		return false, err
 	}
+	if e.notReplaced != nil {
+		if err := c.writeNotReplacedTx(ctx, tx, e); err != nil {
+			return false, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
@@ -178,28 +197,24 @@ func (c *Consumer) recordDiagnostic(ctx context.Context, result Result, err erro
 	if c.Diagnostics == nil {
 		return
 	}
-	identity := observabilityport.AcquisitionActivityConsumeFailure()
 	if err != nil {
-		_ = c.Diagnostics.RecordDiagnosticFailure(ctx, observabilityport.DiagnosticFailureRequest{
-			Identity: identity, Severity: observabilityport.SeverityWarning, ScopeID: "global",
-			LastError: fmt.Sprintf("%d run-log entries could not be written: %s", result.Failed, err.Error()),
-		})
+		failure := observabilityport.InternalFailure(observabilityport.InternalActivityConsume, "")
+		failure.Severity = observabilityport.SeverityWarning
+		_ = c.Diagnostics.RecordDiagnosticFailure(ctx, failure)
 		return
 	}
-	_ = c.Diagnostics.RecordDiagnosticSuccess(ctx, observabilityport.DiagnosticSuccessRequest{Identity: identity, ScopeID: "global"})
+	_ = c.Diagnostics.RecordDiagnosticSuccess(ctx, observabilityport.InternalSuccess(observabilityport.InternalActivityConsume))
 }
 
 // The fixed scope of an acquisition: the subscription and managed anime its
-// Release belongs to. One-shot roots, roots whose Release is gone and owners
-// that are not active have no scope (no row). The title is the root's frozen
-// display title, falling back to the anime's current title.
+// Release belongs to (a one-shot's Release belongs to its temporary anime and
+// subscription). Roots whose Release is gone and owners that are not active
+// have no scope (no row). retry_ordinal counts the root's import retries.
 const scopeJoin = `
-JOIN acquisitions root ON root.id = fact.acquisition_id AND root.entry_kind <> 'one_shot'
+JOIN acquisitions root ON root.id = fact.acquisition_id
 JOIN LATERAL (
   SELECT sub.id AS subscription_id, sub.managed_anime_id, release.id AS release_id,
-         COALESCE(CASE WHEN root.display_title->>'state' = 'known' AND jsonb_typeof(root.display_title->'value') = 'string'
-                       THEN NULLIF(btrim(root.display_title->>'value'), '') END,
-                  NULLIF(btrim(anime.title_override), ''), anime.title) AS title,
+         (SELECT COALESCE(max(x.ordinal), 0) FROM acquisition_import_retries x WHERE x.acquisition_id = root.id) AS retry_ordinal,
          COALESCE(btrim(source.group_name), '') AS group_name,
          COALESCE(btrim(release.raw_facts->>'title'), '') AS release_title,
          (SELECT (snap.release_facts->'batch_plan'->'coverage_keys')::text
@@ -254,8 +269,9 @@ LIMIT $2`, windowStart(window), batch)
 		out = append(out, entry{managedAnimeID: scope.managedAnimeID, record: observabilityport.ActivityRecord{
 			SubscriptionID: scope.subscriptionID, ManagedAnimeID: scope.managedAnimeID, Kind: "download_changed", Outcome: "info",
 			ReasonCode: "submitted", SubjectType: "download_task", SubjectID: taskID, SubjectVersion: version,
-			DedupeKey: "acquisition:submitted:" + taskID, ReleaseID: scope.releaseID, Title: scope.title,
-			Summary: withName("已提交下载", name), CorrelationID: correlation,
+			DedupeKey: "acquisition:submitted:" + taskID, ReleaseID: scope.releaseID,
+			MessageCode:   observabilityport.MessageDownloadSubmitted,
+			MessageParams: map[string]any{observabilityport.ParamName: name}, CorrelationID: correlation,
 			CausationType: "release", CausationID: scope.releaseID, OccurredAt: at,
 			Details: scope.details(map[string]any{"item_count": files, "size_bytes": size}),
 		}, fact: fact{kind: "download_submitted", id: taskID}})
@@ -288,19 +304,19 @@ LIMIT $2`, windowStart(window), batch)
 		if err := rows.Scan(append([]any{&taskID, &version, &correlation, &state, &code, &at, &files, &size}, scope.targets()...)...); err != nil {
 			return nil, err
 		}
-		outcome, reason, summary := "success", "qb_sync_succeeded", "下载完成"
+		outcome, reason, message := "success", "qb_sync_succeeded", observabilityport.MessageDownloadCompleted
 		switch {
 		case state == "failed" && code == downloaderTaskRemoved:
 			// Deleted in the downloader by the user: the record is cancelled, which
 			// is not a failure.
-			outcome, reason, summary = "info", reasonCode(code, "qb_sync_failed"), "已在下载器中删除"
+			outcome, reason, message = "info", reasonCode(code, "qb_sync_failed"), observabilityport.MessageDownloadRemoved
 		case state == "failed":
-			outcome, reason, summary = "failure", reasonCode(code, "qb_sync_failed"), "下载失败"
+			outcome, reason, message = "failure", reasonCode(code, "qb_sync_failed"), observabilityport.MessageDownloadFailed
 		}
 		out = append(out, entry{managedAnimeID: scope.managedAnimeID, record: observabilityport.ActivityRecord{
 			SubscriptionID: scope.subscriptionID, ManagedAnimeID: scope.managedAnimeID, Kind: "download_changed", Outcome: outcome,
 			ReasonCode: reason, SubjectType: "download_task", SubjectID: taskID, SubjectVersion: version,
-			DedupeKey: "acquisition:download:" + taskID, ReleaseID: scope.releaseID, Title: scope.title, Summary: summary,
+			DedupeKey: "acquisition:download:" + taskID, ReleaseID: scope.releaseID, MessageCode: message,
 			CorrelationID: correlation, CausationType: "release", CausationID: scope.releaseID, OccurredAt: at,
 			Details: scope.details(map[string]any{"item_count": files, "size_bytes": size}),
 		}, fact: fact{kind: "download_terminal", id: taskID}})
@@ -336,7 +352,7 @@ LIMIT $2`, windowStart(window), batch)
 		out = append(out, entry{managedAnimeID: scope.managedAnimeID, record: observabilityport.ActivityRecord{
 			SubscriptionID: scope.subscriptionID, ManagedAnimeID: scope.managedAnimeID, Kind: "artifact_verified", Outcome: "success",
 			ReasonCode: "verified", SubjectType: "artifact", SubjectID: artifactID, SubjectVersion: version,
-			DedupeKey: "acquisition:verified:" + artifactID, ReleaseID: scope.releaseID, Title: scope.title, Summary: "媒体文件核验完成",
+			DedupeKey: "acquisition:verified:" + artifactID, ReleaseID: scope.releaseID, MessageCode: observabilityport.MessageArtifactVerified,
 			CorrelationID: correlation, CausationType: "download_task", CausationID: taskID, OccurredAt: at,
 			Details: scope.details(map[string]any{"item_count": files, "size_bytes": size}),
 		}, fact: fact{kind: "artifact_verified", id: artifactID}})
@@ -379,15 +395,15 @@ LIMIT $2`, windowStart(window), batch)
 			subjectType, subjectID = "acquisition", acquisitionID
 		}
 		name := baseName(targetPath, sourcePath)
-		kind, result, reason, summary := "file_alignment_completed", "success", "file_alignment_completed", withName("文件已入库", name)
+		kind, result, reason, message := "file_alignment_completed", "success", "file_alignment_completed", observabilityport.MessageFileImported
 		switch {
 		case outcome == "failed":
 			name = baseName(sourcePath, targetPath)
-			kind, result, reason, summary = "file_alignment_failed", "failure", reasonCode(code, "file_operation_failed"), withName("文件入库失败", name)
+			kind, result, reason, message = "file_alignment_failed", "failure", reasonCode(code, "file_operation_failed"), observabilityport.MessageFileImportFailed
 		case mode == "adopted":
-			reason, summary = "file_adopted", withName("已使用媒体库中的文件", name)
+			reason, message = "file_adopted", observabilityport.MessageFileAdopted
 		case mode == "retain":
-			reason, summary = "file_retained", withName("媒体库中的文件已符合要求", name)
+			reason, message = "file_retained", observabilityport.MessageFileRetained
 		}
 		step := map[string]any{"file_name": businesslog.BoundText(name, 1024), "size_bytes": size}
 		if outcome != "failed" {
@@ -400,7 +416,8 @@ LIMIT $2`, windowStart(window), batch)
 		out = append(out, entry{managedAnimeID: scope.managedAnimeID, record: observabilityport.ActivityRecord{
 			SubscriptionID: scope.subscriptionID, ManagedAnimeID: scope.managedAnimeID, Kind: kind, Outcome: result,
 			ReasonCode: reason, SubjectType: subjectType, SubjectID: subjectID, SubjectVersion: version,
-			DedupeKey: "acquisition:file:" + acquisitionID + ":" + fileRef, ReleaseID: scope.releaseID, Title: scope.title, Summary: summary,
+			DedupeKey: scope.attemptKey("acquisition:file:" + acquisitionID + ":" + fileRef), ReleaseID: scope.releaseID,
+			MessageCode: message, MessageParams: map[string]any{observabilityport.ParamFileName: name},
 			CorrelationID: acquisitionID, CausationType: causationType, CausationID: causationID, OccurredAt: at,
 			Details: scope.details(step),
 		}, fact: fact{kind: "file_result", id: acquisitionID, fileRef: fileRef}})
@@ -416,15 +433,18 @@ const downloaderTaskRemoved = "DOWNLOADER_TASK_REMOVED"
 // either the retirement disposition (OWNER_RETIRED; its owner is retired, so in
 // practice it has no scope and is skipped like every retired owner) or a
 // download deleted in the downloader (DOWNLOADER_TASK_REMOVED), logged as info.
+// A failed or cancelled root carries the not_replaced follow-up; whether its
+// download completed tells a failed download from a failed import.
 func settledEntries(ctx context.Context, db *sql.DB, window time.Duration, batch int) ([]entry, error) {
 	rows, err := db.QueryContext(ctx, `
 SELECT fact.id, fact.version, fact.state, fact.terminal_at,
        COALESCE(fact.terminal_receipt->'primary_failure'->>'reason_code', ''),
        (SELECT count(*) FROM acquisition_files df WHERE df.acquisition_id = fact.id AND df.outcome = 'succeeded'),
        (SELECT count(*) FROM acquisition_files df WHERE df.acquisition_id = fact.id AND df.outcome = 'failed'),
+       EXISTS (SELECT 1 FROM download_tasks t WHERE t.acquisition_id = fact.id AND t.state = 'completed'),
        `+scopeColumns+`
 FROM (SELECT r.*, r.id AS acquisition_id FROM acquisitions r
-      WHERE r.terminal_at IS NOT NULL AND r.activity_logged_at IS NULL AND r.entry_kind <> 'one_shot'
+      WHERE r.terminal_at IS NOT NULL AND r.activity_logged_at IS NULL
         AND r.state IN ('succeeded', 'failed', 'cancelled')
         AND r.terminal_at > CURRENT_TIMESTAMP - $1::interval) fact`+scopeJoin+`
 ORDER BY fact.terminal_at, fact.id
@@ -438,16 +458,25 @@ LIMIT $2`, windowStart(window), batch)
 		var id, state, code string
 		var version, delivered, failed int64
 		var at time.Time
+		var downloaded bool
 		var scope runScope
-		if err := rows.Scan(append([]any{&id, &version, &state, &at, &code, &delivered, &failed}, scope.targets()...)...); err != nil {
+		if err := rows.Scan(append([]any{&id, &version, &state, &at, &code, &delivered, &failed,
+			&downloaded}, scope.targets()...)...); err != nil {
 			return nil, err
 		}
-		outcome, reason, summary := "success", "acquisition_succeeded", "获取完成"
+		outcome, reason, message := "success", "acquisition_succeeded", observabilityport.MessageAcquisitionDone
+		var notReplaced *notReplacedScope
 		switch state {
 		case "failed":
-			outcome, reason, summary = "failure", reasonCode(code, "acquisition_failed"), "获取失败"
+			outcome, reason, message = "failure", reasonCode(code, "acquisition_failed"), observabilityport.MessageAcquisitionFail
+			cause := businesslog.NotReplacedDownloadFailed
+			if downloaded {
+				cause = businesslog.NotReplacedImportFailed
+			}
+			notReplaced = &notReplacedScope{reason: cause, runContext: scope.runContext()}
 		case "cancelled":
-			outcome, reason, summary = "info", reasonCode(code, "owner_retired"), "获取已取消"
+			outcome, reason, message = "info", reasonCode(code, "owner_retired"), observabilityport.MessageAcquisitionStop
+			notReplaced = &notReplacedScope{reason: businesslog.NotReplacedCancelled, runContext: scope.runContext()}
 		}
 		step := map[string]any{"item_count": delivered}
 		if failed > 0 {
@@ -456,10 +485,10 @@ LIMIT $2`, windowStart(window), batch)
 		out = append(out, entry{managedAnimeID: scope.managedAnimeID, record: observabilityport.ActivityRecord{
 			SubscriptionID: scope.subscriptionID, ManagedAnimeID: scope.managedAnimeID, Kind: "acquisition_settled", Outcome: outcome,
 			ReasonCode: reason, SubjectType: "acquisition", SubjectID: id, SubjectVersion: version,
-			DedupeKey: "acquisition:settled:" + id, ReleaseID: scope.releaseID, Title: scope.title, Summary: summary,
+			DedupeKey: scope.attemptKey("acquisition:settled:" + id), ReleaseID: scope.releaseID, MessageCode: message,
 			CorrelationID: id, CausationType: "acquisition", CausationID: id, OccurredAt: at,
 			Details: scope.details(step),
-		}, fact: fact{kind: "acquisition_settled", id: id}})
+		}, fact: fact{kind: "acquisition_settled", id: id}, notReplaced: notReplaced})
 	}
 	return out, rows.Err()
 }
@@ -477,15 +506,6 @@ func reasonCode(code, fallback string) string {
 		}
 	}
 	return code
-}
-
-// withName appends the file or torrent name; an empty name never leaves a
-// dangling colon.
-func withName(summary, name string) string {
-	if name = strings.TrimSpace(name); name != "" {
-		return summary + "：" + name
-	}
-	return summary
 }
 
 // baseName returns the last path element of the first non-empty path; only

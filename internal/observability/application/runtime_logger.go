@@ -18,6 +18,7 @@ import (
 type JSONRuntimeLogger struct {
 	mu     sync.Mutex
 	logger *slog.Logger
+	tail   *RuntimeLogTail
 }
 
 const maxRuntimeMessageBytes = 1024

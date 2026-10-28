@@ -28,17 +28,11 @@ const (
 
 var identifierPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,127}$`)
 
-var activityKinds = map[string]struct{}{
-	"subscription_created": {}, "subscription_started": {}, "subscription_stopped": {}, "subscription_resumed": {}, "metadata_applied": {}, "group_changed": {}, "policy_changed": {},
-	"rss_new_content": {}, "rss_refresh_failed": {}, "release_processed": {},
-	"download_changed": {}, "artifact_verified": {}, "placement_changed": {}, "replacement_decided": {}, "cleanup_completed": {}, "cleanup_failed": {},
-	"file_alignment_completed": {}, "file_alignment_failed": {}, "acquisition_settled": {},
-}
 var activityOutcomes = map[string]struct{}{"info": {}, "success": {}, "failure": {}}
 
-// AppendTx validates and persists one Activity using the legacy subscription-log
-// columns as the compatibility projection. The unique legacy key preserves
-// replay idempotency while the new envelope columns carry typed lineage.
+// AppendTx validates and persists one Activity. The entry carries a message
+// code of the closed catalog and its scalar params, never display text; the
+// unique (subscription, dedupe key) keeps replays idempotent.
 func (s *Service) AppendTx(ctx context.Context, scope txscope.Tx, record observabilityport.ActivityRecord) error {
 	tx := scope.SQLTx()
 	if tx == nil {
@@ -48,15 +42,19 @@ func (s *Service) AppendTx(ctx context.Context, scope txscope.Tx, record observa
 	if err := validateActivity(record); err != nil {
 		return err
 	}
+	params, err := encodeMessageParams(record.MessageCode, record.MessageParams)
+	if err != nil {
+		return err
+	}
 	details := nullableJSON(record.Details)
 	dedupeKey := activityDedupeKey(record)
 	var occurredAt any
 	if !record.OccurredAt.IsZero() {
 		occurredAt = record.OccurredAt.UTC()
 	}
-	_, err := tx.ExecContext(ctx, `
+	_, err = tx.ExecContext(ctx, `
 INSERT INTO subscription_log_entries(
-    id, subscription_id, managed_anime_id, kind, outcome, title, summary,
+    id, subscription_id, managed_anime_id, kind, outcome, message_code, message_params,
     rss_source_id, release_id, group_ref, details, dedupe_key, reason_code,
     subject_type, subject_id, subject_version, correlation_id, causation_type, causation_id,
     occurred_at, retention_until
@@ -69,7 +67,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, ''), NULLIF($9, ''), NULLIF($10, 
         COALESCE($20::timestamptz, CURRENT_TIMESTAMP) + INTERVAL '30 days')
 ON CONFLICT (subscription_id, dedupe_key) DO NOTHING`,
 		uuid.NewString(), record.SubscriptionID, record.ManagedAnimeID, record.Kind,
-		record.Outcome, record.Title, record.Summary, record.RSSSourceID, record.ReleaseID,
+		record.Outcome, string(record.MessageCode), params, record.RSSSourceID, record.ReleaseID,
 		record.GroupRef, details, dedupeKey, record.ReasonCode, record.SubjectType,
 		record.SubjectID, record.SubjectVersion, record.CorrelationID, record.CausationType,
 		record.CausationID, occurredAt)
@@ -79,18 +77,25 @@ ON CONFLICT (subscription_id, dedupe_key) DO NOTHING`,
 	return nil
 }
 
-const maxActivityTitleLength = 512
-
 // sanitizeActivity applies the write-side redaction policy to the free-text
-// fields of one Activity. Titles, summaries, group names and detail string
-// values carry upstream text (release titles, torrent names, error reasons), so
-// a sensitive fragment inside them is masked in place and the text is bounded,
-// instead of failing the owner transaction the Activity belongs to. Structural
-// fields (kind, identities, reason code, detail keys) stay reject-only: those
-// are produced by code, and a bad value there is a programming error.
+// fields of one Activity. String message params, group names and detail string
+// values carry upstream text (release titles, torrent and file names, error
+// reasons), so a sensitive fragment inside them is masked in place and the text
+// is bounded, instead of failing the owner transaction the Activity belongs to.
+// Structural fields (kind, message code, param names, identities, reason code,
+// detail keys) stay reject-only: those are produced by code, and a bad value
+// there is a programming error.
 func sanitizeActivity(record observabilityport.ActivityRecord) observabilityport.ActivityRecord {
-	record.Title = sanitizeFreeText(record.Title, maxActivityTitleLength)
-	record.Summary = sanitizeFreeText(record.Summary, maxSummaryLength)
+	if len(record.MessageParams) > 0 {
+		params := make(map[string]any, len(record.MessageParams))
+		for name, value := range record.MessageParams {
+			if text, ok := value.(string); ok {
+				value = strings.TrimSpace(sanitizeFreeText(text, observabilityport.MaxMessageParamBytes))
+			}
+			params[name] = value
+		}
+		record.MessageParams = params
+	}
 	if record.GroupRef != "" {
 		record.GroupRef = sanitizeFreeText(record.GroupRef, maxGroupRefLength)
 	}
@@ -193,8 +198,15 @@ func sanitizeDetailString(value string) string {
 }
 
 func validateActivity(record observabilityport.ActivityRecord) error {
-	if _, ok := activityKinds[record.Kind]; !ok {
+	if !observabilityport.IsActivityKind(record.Kind) {
 		return fmt.Errorf("activity kind %q is not allowlisted", record.Kind)
+	}
+	spec, ok := observabilityport.LookupMessage(record.MessageCode)
+	if !ok {
+		return fmt.Errorf("activity message code %q is not registered", record.MessageCode)
+	}
+	if string(spec.Kind) != record.Kind {
+		return fmt.Errorf("activity message code %q belongs to kind %q, not %q", record.MessageCode, spec.Kind, record.Kind)
 	}
 	if _, ok := activityOutcomes[record.Outcome]; !ok {
 		return fmt.Errorf("activity outcome %q is not allowlisted", record.Outcome)
@@ -230,12 +242,6 @@ func validateActivity(record observabilityport.ActivityRecord) error {
 	if dedupeKey := activityDedupeKey(record); len(dedupeKey) > maxDedupeKeyLength {
 		return fmt.Errorf("activity dedupe key exceeds %d bytes", maxDedupeKeyLength)
 	}
-	if err := validateSafeText("activity title", record.Title, maxActivityTitleLength, true); err != nil {
-		return err
-	}
-	if err := validateSafeText("activity summary", record.Summary, maxSummaryLength, true); err != nil {
-		return err
-	}
 	if err := validateDetails(record.Details); err != nil {
 		return fmt.Errorf("activity details: %w", err)
 	}
@@ -249,6 +255,73 @@ func validateActivity(record observabilityport.ActivityRecord) error {
 		}
 	}
 	return nil
+}
+
+// encodeMessageParams checks the (sanitized) params against the code's
+// declaration and encodes them as one JSON object: every name declared, each
+// value of its declared scalar type, every required param present. An empty
+// string param is omitted. A mismatch is a programming error of the writer.
+func encodeMessageParams(code observabilityport.MessageCode, values map[string]any) ([]byte, error) {
+	spec, ok := observabilityport.LookupMessage(code)
+	if !ok {
+		return nil, fmt.Errorf("activity message code %q is not registered", code)
+	}
+	declared := make(map[string]observabilityport.MessageParam, len(spec.Params))
+	for _, param := range spec.Params {
+		declared[param.Name] = param
+	}
+	params := make(map[string]any, len(values))
+	for name, value := range values {
+		param, ok := declared[name]
+		if !ok {
+			return nil, fmt.Errorf("activity message %q has no param %q", code, name)
+		}
+		switch param.Type {
+		case observabilityport.MessageParamString:
+			text, ok := value.(string)
+			if !ok {
+				return nil, fmt.Errorf("activity message %q param %q must be a string", code, name)
+			}
+			if len(text) > observabilityport.MaxMessageParamBytes || strings.ContainsRune(text, 0) {
+				return nil, fmt.Errorf("activity message %q param %q is not bounded text", code, name)
+			}
+			if text != "" {
+				params[name] = text
+			}
+		case observabilityport.MessageParamInteger:
+			number, ok := messageInteger(value)
+			if !ok || number < 0 {
+				return nil, fmt.Errorf("activity message %q param %q must be a non-negative integer", code, name)
+			}
+			params[name] = number
+		default:
+			return nil, fmt.Errorf("activity message %q param %q has unknown type %q", code, name, param.Type)
+		}
+	}
+	for _, param := range spec.Params {
+		if _, ok := params[param.Name]; param.Required && !ok {
+			return nil, fmt.Errorf("activity message %q requires param %q", code, param.Name)
+		}
+	}
+	encoded, err := json.Marshal(params)
+	if err != nil {
+		return nil, fmt.Errorf("encode activity message params: %w", err)
+	}
+	return encoded, nil
+}
+
+func messageInteger(value any) (int64, bool) {
+	switch typed := value.(type) {
+	case int:
+		return int64(typed), true
+	case int32:
+		return int64(typed), true
+	case int64:
+		return typed, true
+	case uint32:
+		return int64(typed), true
+	}
+	return 0, false
 }
 
 func validateOptionalActivityField(label, value string, max int) error {
@@ -329,106 +402,6 @@ ON CONFLICT (kind, scope_kind, scope_id) DO UPDATE SET
 	return nil
 }
 
-// RecordDiagnosticFailure creates or updates the currently open fault episode.
-func (s *Service) RecordDiagnosticFailure(ctx context.Context, req observabilityport.DiagnosticFailureRequest) error {
-	req.LastError = sanitizeFreeText(req.LastError, maxErrorLength)
-	req.Details = sanitizeDetails(req.Details)
-	if err := validateDiagnosticFailure(req); err != nil {
-		return err
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin diagnostic failure transaction: %w", err)
-	}
-	defer tx.Rollback()
-	if err := s.RecordDiagnosticFailureTx(ctx, txscope.Wrap(tx), req); err != nil {
-		return err
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit diagnostic failure transaction: %w", err)
-	}
-	return nil
-}
-
-// RecordDiagnosticFailureTx writes diagnostic evidence in the caller transaction.
-func (s *Service) RecordDiagnosticFailureTx(ctx context.Context, scope txscope.Tx, req observabilityport.DiagnosticFailureRequest) error {
-	tx := scope.SQLTx()
-	if tx == nil {
-		return errors.New("diagnostic failure transaction is nil")
-	}
-	req.LastError = sanitizeFreeText(req.LastError, maxErrorLength)
-	req.Details = sanitizeDetails(req.Details)
-	if err := validateDiagnosticFailure(req); err != nil {
-		return err
-	}
-	details := nullableJSON(req.Details)
-	_, err := tx.ExecContext(ctx, `
-INSERT INTO diagnostic_episodes(
-    id, severity, component, operation, error_code, scope_kind, scope_id,
-    managed_anime_id, first_failed_at, last_failed_at, occurrence_count,
-    last_error, details, retention_until
-)
-VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, ''), CURRENT_TIMESTAMP,
-        CURRENT_TIMESTAMP, 1, $9, $10, CURRENT_TIMESTAMP + INTERVAL '14 days')
-ON CONFLICT (component, operation, error_code, scope_kind, scope_id)
-WHERE succeeded_after_at IS NULL
-DO UPDATE SET
-    last_failed_at = CURRENT_TIMESTAMP,
-    occurrence_count = diagnostic_episodes.occurrence_count + 1,
-    managed_anime_id = EXCLUDED.managed_anime_id,
-    last_error = EXCLUDED.last_error,
-    details = EXCLUDED.details,
-    retention_until = CURRENT_TIMESTAMP + INTERVAL '14 days'`,
-		uuid.NewString(), req.Severity, req.Identity.Component, req.Identity.Operation, req.Identity.ErrorCode,
-		req.Identity.ScopeKind, req.ScopeID, req.ManagedAnimeID, req.LastError, details)
-	if err != nil {
-		return fmt.Errorf("record diagnostic failure: %w", err)
-	}
-	return nil
-}
-
-// RecordDiagnosticSuccess closes the current open episode, if present.
-func (s *Service) RecordDiagnosticSuccess(ctx context.Context, req observabilityport.DiagnosticSuccessRequest) error {
-	if err := validateDiagnosticSuccess(req); err != nil {
-		return err
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin diagnostic success transaction: %w", err)
-	}
-	defer tx.Rollback()
-	if err := s.RecordDiagnosticSuccessTx(ctx, txscope.Wrap(tx), req); err != nil {
-		return err
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit diagnostic success transaction: %w", err)
-	}
-	return nil
-}
-
-// RecordDiagnosticSuccessTx closes an open episode in the caller transaction.
-func (s *Service) RecordDiagnosticSuccessTx(ctx context.Context, scope txscope.Tx, req observabilityport.DiagnosticSuccessRequest) error {
-	tx := scope.SQLTx()
-	if tx == nil {
-		return errors.New("diagnostic success transaction is nil")
-	}
-	if err := validateDiagnosticSuccess(req); err != nil {
-		return err
-	}
-	_, err := tx.ExecContext(ctx, `
-UPDATE diagnostic_episodes
-SET succeeded_after_at = CURRENT_TIMESTAMP,
-    retention_until = CURRENT_TIMESTAMP + INTERVAL '14 days'
-WHERE component = $1 AND operation = $2 AND error_code = $3
-  AND scope_kind = $4 AND scope_id = $5
-  AND succeeded_after_at IS NULL`,
-		req.Identity.Component, req.Identity.Operation, req.Identity.ErrorCode, req.Identity.ScopeKind, req.ScopeID)
-	if err != nil {
-		return fmt.Errorf("record diagnostic success: %w", err)
-	}
-	return nil
-}
-
 func validateRoutine(req observabilityport.RoutineRequest) error {
 	id := req.Identity
 	if !observabilityport.IsRoutineKind(id.Kind) {
@@ -453,52 +426,6 @@ func validateRoutine(req observabilityport.RoutineRequest) error {
 		return err
 	}
 	return validateDetails(req.Details)
-}
-
-func validateDiagnosticFailure(req observabilityport.DiagnosticFailureRequest) error {
-	id := req.Identity
-	if !observabilityport.IsDiagnosticSeverity(req.Severity) {
-		return fmt.Errorf("diagnostic severity %q is not allowlisted", req.Severity)
-	}
-	if !observabilityport.IsDiagnosticComponent(id.Component) {
-		return fmt.Errorf("diagnostic component %q is not allowlisted", id.Component)
-	}
-	if !observabilityport.IsDiagnosticOperation(id.Operation) {
-		return fmt.Errorf("diagnostic operation %q is not allowlisted", id.Operation)
-	}
-	if !observabilityport.IsDiagnosticErrorCode(id.ErrorCode) {
-		return fmt.Errorf("diagnostic error code %q is not allowlisted", id.ErrorCode)
-	}
-	if !observabilityport.IsDiagnosticScopeKind(id.ScopeKind) {
-		return fmt.Errorf("diagnostic scope kind %q is not allowlisted", id.ScopeKind)
-	}
-	if err := validateScopeID(string(id.ScopeKind), req.ScopeID); err != nil {
-		return err
-	}
-	if err := validateManagedAnimeID(req.ManagedAnimeID); err != nil {
-		return err
-	}
-	if err := validateSafeText("diagnostic last error", req.LastError, maxErrorLength, true); err != nil {
-		return err
-	}
-	return validateDetails(req.Details)
-}
-
-func validateDiagnosticSuccess(req observabilityport.DiagnosticSuccessRequest) error {
-	id := req.Identity
-	if !observabilityport.IsDiagnosticComponent(id.Component) {
-		return fmt.Errorf("diagnostic component %q is not allowlisted", id.Component)
-	}
-	if !observabilityport.IsDiagnosticOperation(id.Operation) {
-		return fmt.Errorf("diagnostic operation %q is not allowlisted", id.Operation)
-	}
-	if !observabilityport.IsDiagnosticErrorCode(id.ErrorCode) {
-		return fmt.Errorf("diagnostic error code %q is not allowlisted", id.ErrorCode)
-	}
-	if !observabilityport.IsDiagnosticScopeKind(id.ScopeKind) {
-		return fmt.Errorf("diagnostic scope kind %q is not allowlisted", id.ScopeKind)
-	}
-	return validateScopeID(string(id.ScopeKind), req.ScopeID)
 }
 
 func validateScopeID(scopeKind, scopeID string) error {

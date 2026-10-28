@@ -168,6 +168,7 @@ required_paths = {
   "/automation/runs/{run_id}" => ["get"],
   "/observability/records" => ["get"],
   "/observability/diagnostics" => ["get"],
+  "/observability/runtime-log" => ["get"],
   "/plugin-targets" => ["get", "post"],
   "/plugin-targets/{plugin_target_id}" => ["patch", "delete"],
   "/plugin-targets/{plugin_target_id}/test" => ["post"],
@@ -228,12 +229,12 @@ required_paths.each do |path, methods|
   actual = paths.fetch(path).keys & %w[get post put patch delete options head trace]
   abort "wrong methods for #{path}" unless actual.sort == methods.sort
 end
-%w[
-  /observability/records
-  /observability/diagnostics
-].each do |path|
+{
+  "/observability/records" => %w[Cursor Limit FromTime ToTime],
+  "/observability/diagnostics" => %w[Cursor Limit]
+}.each do |path, names|
   refs = paths.fetch(path).fetch("get").fetch("parameters").map { |parameter| parameter["$ref"] }.compact
-  %w[Cursor Limit FromTime ToTime].each do |name|
+  names.each do |name|
     abort "#{path} must reference #{name}" unless refs.include?("#/components/parameters/#{name}")
   end
 end
@@ -334,8 +335,9 @@ required_schemas = %w[
   ErrorResponse
   ProviderKind SubscriptionOrigin SubscriptionState SourceKind TMDBMediaKind SelectionMode
   GroupAction AutomationKind AutomationTrigger AutomationIntervalUnit AutomationState
-  SubscriptionLogKind SubscriptionLogOutcome RoutineActivityKind RoutineActivityScopeKind RoutineActivityOutcome
-  DiagnosticSeverity DiagnosticScopeKind PluginKind NotificationTriggerKind
+  SubscriptionLogKind SubscriptionLogOutcome SubscriptionLogMessageCode SubscriptionLogMessageParams
+  SubscriptionLogSource ObservabilityRecordState RoutineActivityKind RoutineActivityScopeKind RoutineActivityOutcome
+  DiagnosticSeverity DiagnosticConditionKind DiagnosticConditionVariant DiagnosticRetryMode DiagnosticSettingsTarget PluginKind NotificationTriggerKind
   PluginAdapterKind PluginDeliveryKind PluginDeliveryState SubgroupScoreEntry SubgroupsSection
   NameKeywordRule ProviderNameKeywordRules ReleaseReevaluationResult
   DiscoverSubgroupsInput DiscoverSubgroupsOutcome DiscoverSubgroupsResult
@@ -370,11 +372,13 @@ end
   "AutomationIntervalUnit" => %w[minute hour day],
   "AutomationState" => %w[queued running completed partial failed],
   "SubscriptionLogOutcome" => %w[info success failure],
+  "SubscriptionLogSource" => %w[subscription one_shot],
+  "ObservabilityRecordState" => %w[in_progress success failure info],
   "RoutineActivityKind" => %w[catalog_refresh provider_refresh rss_refresh metadata_match automation_dispatch retention_pass file_manager_operation],
   "RoutineActivityScopeKind" => %w[global automation provider subscription rss_source component],
   "RoutineActivityOutcome" => %w[success warning failure],
   "DiagnosticSeverity" => %w[warning error],
-  "DiagnosticScopeKind" => %w[global provider subscription rss_source owner worker],
+  "DiagnosticRetryMode" => %w[auto resume settings manual],
   "PluginKind" => %w[notification],
   "NotificationTriggerKind" => %w[download_submitted file_operation_completed file_operation_failed release_discovered download_failed subscription_changed unknown_files_imported replacement_deletion_failed],
   "PluginAdapterKind" => %w[telegram feishu webhook],
@@ -424,7 +428,7 @@ abort "instance replacement view must not ask the client to merge a default" if 
 end
 assert_enum.call("SubscriptionLogKind", %w[
   subscription_created subscription_started subscription_stopped subscription_resumed metadata_applied
-  group_changed policy_changed rss_new_content rss_refresh_failed release_processed
+  group_changed policy_changed rss_new_content release_processed
   download_changed artifact_verified placement_changed replacement_decided cleanup_completed cleanup_failed
   file_alignment_completed file_alignment_failed acquisition_settled
 ])
@@ -549,21 +553,21 @@ discover_result = assert_object.call("DiscoverSubgroupsResult", %w[managed_anime
 abort "DiscoverSubgroupsResult subgroups must use SubgroupsOwnerResult" unless discover_result.fetch("properties").fetch("subgroups").fetch("$ref").end_with?("/SubgroupsOwnerResult")
 abort "DiscoverSubgroupsResult reason must be optional" if required_fields.call(discover_result).include?("reason")
 
-%w[ProviderGroupSelection CatalogSuppression AutomationSchedule AutomationDispatchRun SubscriptionLogEntry RoutineActivity DiagnosticEpisode PluginTargetConfig PluginTargetCreate PluginTargetUpdate PluginTargetTestInput PluginTargetPage PluginTestAccepted PluginDelivery PluginDeliveryAttempt PluginDeliveryDetail NotificationTemplateSet NotificationTemplateCatalog NotificationTemplatePreview NamingTemplateCatalog NamingTemplatePreview].each do |name|
+%w[ProviderGroupSelection CatalogSuppression AutomationSchedule AutomationDispatchRun SubscriptionLogEntry RoutineActivity DiagnosticEpisode DiagnosticEpisodePage RuntimeLogLine RuntimeLogPage PluginTargetConfig PluginTargetCreate PluginTargetUpdate PluginTargetTestInput PluginTargetPage PluginTestAccepted PluginDelivery PluginDeliveryAttempt PluginDeliveryDetail NotificationTemplateSet NotificationTemplateCatalog NotificationTemplatePreview NamingTemplateCatalog NamingTemplatePreview].each do |name|
   schema = schemas.fetch(name)
   abort "#{name} must reject additional properties" unless schema["additionalProperties"] == false
 end
 routine = assert_object.call("RoutineActivity", %w[id kind scope_kind scope_id outcome last_executed_at last_result_code summary updated_at], %w[id kind scope_kind scope_id managed_anime_id outcome last_executed_at last_result_code summary details updated_at])
 assert_optional_nullable.call("RoutineActivity", "managed_anime_id")
 assert_optional_nullable.call("RoutineActivity", "details")
-diagnostic = assert_object.call("DiagnosticEpisode", %w[id severity component operation error_code scope_kind scope_id first_failed_at last_failed_at occurrence_count last_error details_status retention_until], %w[id severity component operation error_code scope_kind scope_id managed_anime_id first_failed_at last_failed_at occurrence_count last_error details details_status succeeded_after_at retention_until])
-assert_optional_nullable.call("DiagnosticEpisode", "managed_anime_id")
-assert_optional_nullable.call("DiagnosticEpisode", "details")
+diagnostic = assert_object.call("DiagnosticEpisode", %w[id kind variant target recent first_failed_at last_failed_at occurrence_count retry severity retention_until], %w[id kind variant target detail affected recent first_failed_at last_failed_at succeeded_after_at occurrence_count retry severity retention_until])
+%w[last_error error_code scope_id component operation details details_status managed_anime_id].each do |removed|
+  abort "DiagnosticEpisode must not expose #{removed}" if diagnostic.fetch("properties").key?(removed)
+end
 assert_optional_nullable.call("DiagnosticEpisode", "succeeded_after_at")
-abort "DiagnosticDetailsStatus enum drifted" unless enum_values.call(schemas.fetch("DiagnosticDetailsStatus")) == %w[available unavailable invalid]
 record_page = assert_object.call("ObservabilityRecordPage", %w[records], %w[records next_cursor])
 assert_optional_nullable.call("ObservabilityRecordPage", "next_cursor")
-diagnostic_page = assert_object.call("DiagnosticEpisodePage", %w[episodes], %w[episodes next_cursor])
+diagnostic_page = assert_object.call("DiagnosticEpisodePage", %w[episodes], %w[episodes next_cursor internal])
 assert_optional_nullable.call("DiagnosticEpisodePage", "next_cursor")
 record = schemas.fetch("ObservabilityRecord")
 abort "ObservabilityRecord must be a four-way discriminated union" unless record.fetch("oneOf").length == 4 && record.fetch("discriminator").fetch("propertyName") == "record_type"
@@ -591,7 +595,8 @@ automation_run = schemas.fetch("AutomationDispatchRun")
 abort "AutomationDispatchRun required fields drifted" unless required_fields.call(automation_run).sort == %w[id kind trigger state target_count enqueued_count merged_count skipped_count dispatch_error_count retention_until].sort
 %w[started_at finished_at].each { |field| assert_optional_nullable.call("AutomationDispatchRun", field) }
 log_entry = schemas.fetch("SubscriptionLogEntry")
-abort "SubscriptionLogEntry required fields drifted" unless required_fields.call(log_entry).sort == %w[id subscription_id managed_anime_id kind outcome occurred_at title summary dedupe_key retention_until].sort
+abort "SubscriptionLogEntry required fields drifted" unless required_fields.call(log_entry).sort == %w[id subscription_id managed_anime_id anime_title source kind outcome occurred_at message_code message_params dedupe_key retention_until].sort
+abort "SubscriptionLogEntry must not carry display text" if (log_entry.fetch("properties").keys & %w[title summary]).any?
 %w[rss_source_id release_id group_ref details].each { |field| assert_optional_nullable.call("SubscriptionLogEntry", field) }
 
 error = schemas.fetch("ErrorResponse")

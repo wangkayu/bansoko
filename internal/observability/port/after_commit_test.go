@@ -3,7 +3,6 @@ package port
 import (
 	"context"
 	"errors"
-	"sort"
 	"testing"
 
 	"bansoko/internal/persistence/txscope"
@@ -13,18 +12,32 @@ import (
 // never blocks the business path — it only emits a safe operator log line, and
 // nil recorder returns nil closure.
 
-func TestDiagnosticComponentsCoverAcceptedComponentsInStableOrder(t *testing.T) {
-	components := DiagnosticComponents()
-	if !sort.SliceIsSorted(components, func(i, j int) bool { return components[i] < components[j] }) {
-		t.Fatal("DiagnosticComponents() is not sorted")
-	}
-	if len(components) != len(diagnosticComponents) {
-		t.Fatalf("DiagnosticComponents() returned %d entries; allowlist has %d", len(components), len(diagnosticComponents))
-	}
-	for _, component := range components {
-		if !IsDiagnosticComponent(component) {
-			t.Errorf("enumerated component %q is not accepted by the write-path validator", component)
+func TestConditionCatalogIsUniqueAndValidatesItsRequests(t *testing.T) {
+	seen := map[Condition]bool{}
+	for _, spec := range ConditionCatalog() {
+		if seen[spec.Condition] {
+			t.Fatalf("duplicate condition %+v", spec.Condition)
 		}
+		seen[spec.Condition] = true
+		if spec.Audience == AudienceInternal {
+			continue
+		}
+		if spec.Retry == RetrySettings && spec.Settings == "" {
+			t.Errorf("%+v retries via settings but names no settings target", spec.Condition)
+		}
+		req := DiagnosticFailureRequest{Condition: spec.Condition, Severity: SeverityWarning, TargetID: "t-1"}
+		if !req.Validate() {
+			t.Errorf("catalogued condition %+v rejected by Validate", spec.Condition)
+		}
+	}
+	if (DiagnosticFailureRequest{Condition: Condition{Kind: KindMetadata, Variant: "nope"}, Severity: SeverityWarning, TargetID: "t"}).Validate() {
+		t.Fatal("uncatalogued variant accepted")
+	}
+	if (DiagnosticFailureRequest{Condition: Condition{Kind: KindInternal}, Severity: SeverityError, TargetID: "not.a.source"}).Validate() {
+		t.Fatal("unknown internal source accepted")
+	}
+	if !InternalFailure(InternalAutomationDispatch, "").Validate() {
+		t.Fatal("internal failure rejected")
 	}
 }
 
@@ -73,23 +86,22 @@ func (l *captureRuntimeLogger) Error(_ context.Context, event RuntimeEvent) {
 
 func TestDiagnosticFailureAfterCommitInvokesRecorder(t *testing.T) {
 	rec := &recordingRecorder{}
-	req := DiagnosticFailureRequest{Identity: RSSRefreshFailure(), ScopeID: "s-1"}
+	req := InternalFailure(InternalRSSRefresh, "")
 	closure := DiagnosticFailureAfterCommit(rec, nil, req)
 	if closure == nil {
 		t.Fatal("closure must not be nil for a configured recorder")
 	}
 	closure(context.Background())
-	if len(rec.failures) != 1 || rec.failures[0].Identity.Component != ComponentRSS {
+	if len(rec.failures) != 1 || rec.failures[0].TargetID != InternalRSSRefresh {
 		t.Fatalf("failure not recorded: %+v", rec.failures)
 	}
 }
 
 func TestDiagnosticSuccessAfterCommitInvokesRecorder(t *testing.T) {
 	rec := &recordingRecorder{}
-	req := DiagnosticSuccessRequest{Identity: RSSRefreshFailure(), ScopeID: "s-1"}
-	closure := DiagnosticSuccessAfterCommit(rec, nil, req)
+	closure := DiagnosticSuccessAfterCommit(rec, nil, InternalSuccess(InternalRSSRefresh))
 	closure(context.Background())
-	if len(rec.success) != 1 || rec.success[0].Identity.ErrorCode != ErrorRSSRefreshFailed {
+	if len(rec.success) != 1 || rec.success[0].Kind != KindInternal {
 		t.Fatalf("success not recorded: %+v", rec.success)
 	}
 }
@@ -106,14 +118,12 @@ func TestAfterCommitNilRecorderReturnsNilClosure(t *testing.T) {
 func TestFailedDiagnosticWriteLogsButDoesNotError(t *testing.T) {
 	logger := &captureRuntimeLogger{}
 	rec := &recordingRecorder{err: errors.New("write failed")}
-	req := DiagnosticFailureRequest{Identity: RSSRefreshFailure(), ScopeID: "s-1"}
-	closure := DiagnosticFailureAfterCommit(rec, logger, req)
-	// The closure must not panic/return an error to the caller; it just logs.
+	closure := DiagnosticFailureAfterCommit(rec, logger, InternalFailure(InternalRSSRefresh, ""))
 	closure(context.Background())
 	if len(logger.events) != 1 || logger.events[0].ReasonCode != "diagnostic_write_failed" {
 		t.Fatalf("expected structured diagnostic_write_failed event, got %+v", logger.events)
 	}
-	if logger.events[0].ErrorClass != string(ErrorRSSRefreshFailed) || logger.events[0].Component != string(ComponentRSS) {
+	if logger.events[0].OwnerType != string(KindInternal) || logger.events[0].OwnerID != InternalRSSRefresh {
 		t.Fatalf("event lost typed identity: %+v", logger.events[0])
 	}
 }

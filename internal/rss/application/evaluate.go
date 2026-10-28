@@ -16,6 +16,7 @@ import (
 	draft "bansoko/internal/anime/draft/application"
 	"bansoko/internal/attrrules"
 	"bansoko/internal/batchplan"
+	"bansoko/internal/observability/businesslog"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/parser"
 	"bansoko/internal/persistence/txscope"
@@ -592,6 +593,9 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 		reasonDetail := pointerString(result.ReasonDetail)
 		taskID := ""
 		correlationID := ""
+		// Replace decisions a claim of existing files staled; their
+		// not_replaced lines follow the release's own entry.
+		var claimStaled []staledReplaceDecision
 		if !admits {
 			verdict = "subscription_stopped"
 			reasonCode = "subscription_stopped"
@@ -604,9 +608,11 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 				reasonDetail = "all rendered targets already exist with the exact entry sizes"
 				// Claiming promotes: a scan-managed file at an adopted target
 				// takes this release's group and frozen comparison values.
-				if _, err := claimScanManagedTargetsTx(ctx, tx, snapshot.managedAnimeID, snapshot.releaseID, acquisition.set); err != nil {
+				_, staled, err := claimScanManagedTargetsTx(ctx, tx, snapshot.managedAnimeID, snapshot.releaseID, acquisition.set)
+				if err != nil {
 					return 0, err
 				}
+				claimStaled = staled
 			case target.AdmissionFailed:
 				verdict = "acquisition_failed"
 				reasonCode = acquisition.admission.Reason
@@ -813,7 +819,14 @@ RETURNING version`, snapshot.releaseID, nullableJSON(parsedFacts), nullableJSON(
 			activityDetails["episode_state"] = evidence.Identity.State
 			activityDetails["episode_shape"] = evidence.Identity.Shape
 		}
+		for key, value := range snapshot.activityRunContext() {
+			activityDetails[key] = value
+		}
 		details, err := marshalActivityDetails(activityDetails)
+		if err != nil {
+			return 0, err
+		}
+		message, err := observabilityport.ReleaseVerdictMessage(verdict)
 		if err != nil {
 			return 0, err
 		}
@@ -830,11 +843,13 @@ RETURNING version`, snapshot.releaseID, nullableJSON(parsedFacts), nullableJSON(
 			RSSSourceID:     snapshot.sourceID,
 			ReleaseID:       snapshot.releaseID,
 			GroupRef:        snapshot.groupName,
-			Title:           snapshot.title(),
-			Summary:         releaseSummary(verdict),
+			MessageCode:     message,
 			Details:         details,
 			CorrelationID:   correlationID,
 		}); err != nil {
+			return 0, err
+		}
+		if err := s.writeClaimNotReplacedTx(ctx, tx, snapshot, claimStaled, correlationID); err != nil {
 			return 0, err
 		}
 		return updatedVersion, nil
@@ -920,7 +935,11 @@ WHERE id = $1 AND version = $5 AND download_task_id IS NULL
 			return 0, fmt.Errorf("persist release evaluation failure: %w", err)
 		}
 		// reasonCode is in its dedicated column; detail keys must stay non-sensitive.
-		details, err := marshalActivityDetails(map[string]any{"verdict": "parse_failed"})
+		failureDetails := map[string]any{"verdict": "parse_failed", "reason_detail": safeReason(reason)}
+		for key, value := range snapshot.activityRunContext() {
+			failureDetails[key] = value
+		}
+		details, err := marshalActivityDetails(failureDetails)
 		if err != nil {
 			return 0, err
 		}
@@ -937,8 +956,7 @@ WHERE id = $1 AND version = $5 AND download_task_id IS NULL
 			RSSSourceID:     snapshot.sourceID,
 			ReleaseID:       snapshot.releaseID,
 			GroupRef:        snapshot.groupName,
-			Title:           snapshot.title(),
-			Summary:         safeReason(reason),
+			MessageCode:     observabilityport.MessageReleaseParseFailed,
 			Details:         details,
 		}); err != nil {
 			return 0, err
@@ -1074,37 +1092,17 @@ func createDownloadTaskAndWorkItem(ctx context.Context, tx *sql.Tx, db *sql.DB, 
 	return pending.TaskID(), correlation, nil
 }
 
-// releaseVerdictSummaries mirrors the frontend verdict labels so the run log
-// never shows a raw verdict enum.
-var releaseVerdictSummaries = map[string]string{
-	"discovered":                "已发现",
-	"waiting_metadata":          "等待关联元数据",
-	"subscription_stopped":      "订阅已停止",
-	"source_unavailable":        "RSS 源不可用",
-	"parse_failed":              "解析失败",
-	"accepted_pending_download": "等待下载",
-	"filtered":                  "已过滤",
-	"adopted_existing":          "已有文件",
-	"acquisition_failed":        "获取失败",
-	"submitted":                 "已提交下载",
-	"awaiting_competition":      "等待比较",
-	"resume_baseline":           "恢复时已存在",
-	"start_baseline":            "订阅前发布",
-}
-
-func releaseSummary(verdict string) string {
-	if label, ok := releaseVerdictSummaries[verdict]; ok {
-		return "评估结果：" + label
-	}
-	return "评估完成"
-}
-
-func (s releaseSnapshot) title() string {
+// activityRunContext is the run context of the Release's evaluation entries:
+// the subgroup display name and the feed title, the same keys the acquisition
+// run entries carry, so the records search finds the Release by either. A feed
+// item without a title has no release_title.
+func (s releaseSnapshot) activityRunContext() map[string]any {
 	var facts storedFeedFacts
-	if err := json.Unmarshal(s.rawFacts, &facts); err == nil && strings.TrimSpace(facts.Title) != "" {
-		return facts.Title
+	title := ""
+	if err := json.Unmarshal(s.rawFacts, &facts); err == nil {
+		title = facts.Title
 	}
-	return "Release " + s.stableItemKey
+	return businesslog.RunContext(s.groupName, title, sql.NullString{})
 }
 
 // persistReleaseMediaSnapshot freezes the Release-level evidence through the

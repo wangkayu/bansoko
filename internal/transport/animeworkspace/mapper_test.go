@@ -185,7 +185,7 @@ func TestMapAnimeWorkspaceProjectsRepresentativeOwners(t *testing.T) {
 	targetFingerprint := readmodelapplication.Fingerprint{Algorithm: "sha256", SizeBytes: 1234, Value: "target-fp"}
 	fileOperation := readmodelapplication.FileOperation{ArtifactFileRef: "video-42", ArtifactID: artifact.ID, CollisionPolicy: "fail", ExpectedSizeBytes: int64Pointer(1234), FailedWorkItemID: stringPointer("work-45"), FailureCode: stringPointer("COPY_FAILED"), FailureReason: stringPointer("permission denied"), FrozenConfigSnapshot: readmodelapplication.FrozenFileConfigSnapshot{RulesVersion: 9, SafetyVersion: "safe-42"}, FrozenRenderSnapshot: readmodelapplication.FrozenRenderSnapshot{Directory: "Show", Filename: "Show - 03.mkv", RendererVersion: "renderer-42"}, ID: "operation-42", IdempotencyKey: "file-effect-42", Intent: &intent, ObservedAt: &observedAt, ObservedTargetSizeBytes: int64Pointer(1234), Operation: "copy", SourceFingerprint: readmodelapplication.Fingerprint{Algorithm: "sha256", SizeBytes: 1234, Value: "source-fp"}, SourcePath: "downloads/show.mkv", State: "completed", TargetFingerprint: &targetFingerprint, TargetPath: "library/Show/Show - 03.mkv", Version: 12}
 	logDetails := &readmodelapplication.SubscriptionLogDetails{ErrorCount: intPointer(1), ItemCount: intPointer(4), ReasonCode: stringPointer("REFRESHED"), ReasonDetail: stringPointer("details")}
-	log := readmodelapplication.SubscriptionLogEntry{DedupeKey: "log-42", Details: logDetails, GroupRef: stringPointer("group-42"), ID: "log-entry-42", Kind: "rss_refresh", ManagedAnimeID: "anime-42", OccurredAt: observedAt, Outcome: "success", ReleaseID: stringPointer(release.ID), RetentionUntil: observedAt.Add(24 * time.Hour), RSSSourceID: stringPointer(source.ID), SubscriptionID: "subscription-42", Summary: "refresh complete", Title: "Show"}
+	log := readmodelapplication.SubscriptionLogEntry{DedupeKey: "log-42", Details: logDetails, GroupRef: stringPointer("group-42"), ID: "log-entry-42", Kind: "rss_refresh", ManagedAnimeID: "anime-42", OccurredAt: observedAt, Outcome: "success", ReleaseID: stringPointer(release.ID), RetentionUntil: observedAt.Add(24 * time.Hour), RSSSourceID: stringPointer(source.ID), SubscriptionID: "subscription-42", AnimeTitle: "Show", Source: "subscription", MessageCode: "rss_new_content", MessageParams: readmodelapplication.SubscriptionLogMessageParams{Count: int64Pointer(4)}}
 
 	workspace := readmodelapplication.AnimeWorkspace{
 		AcquisitionTargets: &[]readmodelapplication.AcquisitionTarget{target}, Artifacts: []readmodelapplication.Artifact{artifact}, DownloadTasks: []readmodelapplication.WorkspaceDownloadTask{downloadTask},
@@ -392,8 +392,10 @@ func TestMapWorkspaceLogsPreservesActivityLineage(t *testing.T) {
 		SubjectType:    &subjectType,
 		SubjectVersion: &subjectVersion,
 		SubscriptionID: "sub-1",
-		Summary:        "processed",
-		Title:          "Show",
+		AnimeTitle:     "Show",
+		Source:         "one_shot",
+		MessageCode:    "release_accepted",
+		MessageParams:  readmodelapplication.SubscriptionLogMessageParams{GroupName: stringPointer("Group")},
 	}})
 	if len(logs) != 1 {
 		t.Fatalf("expected one mapped log, got %d", len(logs))
@@ -418,6 +420,10 @@ func TestMapWorkspaceLogsPreservesActivityLineage(t *testing.T) {
 	}
 	if got.SubjectVersion == nil || *got.SubjectVersion != subjectVersion {
 		t.Fatalf("subject_version lineage was dropped or altered: %v", got.SubjectVersion)
+	}
+	if got.AnimeTitle != "Show" || got.Source != "one_shot" || got.MessageCode != "release_accepted" ||
+		got.MessageParams.GroupName == nil || *got.MessageParams.GroupName != "Group" || got.MessageParams.Count != nil {
+		t.Fatalf("message projection was dropped or altered: %+v", got)
 	}
 }
 

@@ -334,19 +334,15 @@ func TestHandlerDiagnosticFailureRunsAfterCommittedBusinessEvidence(t *testing.T
 	}
 	finishHandlerOutcome(t, successService, successClaim, successOut)
 	successOut.AfterCommit(context.Background())
-	wantCodes := []observabilityport.DiagnosticErrorCode{
-		observabilityport.ErrorNotificationTemplateInvalid,
-		observabilityport.ErrorSecretResolveFailed,
-		observabilityport.ErrorRequestBuildFailed,
+	var targetID string
+	if err := successService.db.QueryRowContext(context.Background(), `SELECT plugin_target_config_id FROM plugin_deliveries WHERE id=$1`, successID).Scan(&targetID); err != nil {
+		t.Fatal(err)
 	}
-	if len(recorder.successCalls) != len(wantCodes) {
-		t.Fatalf("diagnostic close calls=%d, want %d", len(recorder.successCalls), len(wantCodes))
+	if len(recorder.successCalls) != 1 {
+		t.Fatalf("diagnostic close calls=%d, want 1", len(recorder.successCalls))
 	}
-	for i, req := range recorder.successCalls {
-		want := observabilityport.PluginPrepareFailure(wantCodes[i])
-		if req.Identity != want || req.ScopeID != successID {
-			t.Fatalf("diagnostic close[%d]=%+v/%q, want %+v/%q", i, req.Identity, req.ScopeID, want, successID)
-		}
+	if got := recorder.successCalls[0]; got.Kind != observabilityport.KindNotify || got.TargetID != targetID {
+		t.Fatalf("diagnostic close=%+v, want notify/%s", got, targetID)
 	}
 }
 
@@ -515,7 +511,7 @@ func TestHandlerResponseCrashReclaimsUnknownAndExpectedStatusCreatesNoDiagnostic
 
 func TestHandlerTimeoutFinalizesExistingAttemptUnknownWithoutDiagnostic(t *testing.T) {
 	service, id, claim := seedHandlerDelivery(t)
-	client := &countingHTTPClient{err: fmt.Errorf("Authorization: Bearer secret https://private.example: %w", context.DeadlineExceeded)}
+	client := writtenThenFailingClient{err: fmt.Errorf("Authorization: Bearer secret https://private.example: %w", context.DeadlineExceeded)}
 	handler := NewPluginDeliverHandler(service.db, service.secrets, service.workItems, client, &fakeTemplateRenderer{title: "title", body: "body"})
 	out, err := handler.Handle(context.Background(), claim)
 	if err != nil {
@@ -528,7 +524,7 @@ func TestHandlerTimeoutFinalizesExistingAttemptUnknownWithoutDiagnostic(t *testi
 	if err := service.db.QueryRowContext(context.Background(), `SELECT d.state,d.attempt_count,a.error,a.error_code,a.response_received_at IS NOT NULL FROM plugin_deliveries d JOIN plugin_delivery_attempts a ON a.plugin_delivery_id=d.id WHERE d.id=$1`, id).Scan(&state, &attempts, &attemptError, &errorCode, &responseReceived); err != nil {
 		t.Fatal(err)
 	}
-	if state != "unknown" || attempts != 1 || errorCode != "transport_unknown" || responseReceived {
+	if state != "unknown" || attempts != 1 || errorCode != "response_timeout" || responseReceived {
 		t.Fatalf("state=%s attempts=%d error_code=%s response_received=%v", state, attempts, errorCode, responseReceived)
 	}
 	if strings.Contains(attemptError, "secret") || strings.Contains(attemptError, "https://") {
@@ -918,26 +914,27 @@ func TestPluginPrepareDiagnosticRealWriterClosesSameEpisode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	deliveryID := "plugin-prepare-recovery-delivery"
-	identity := observabilityport.PluginPrepareFailure(observabilityport.ErrorNotificationTemplateInvalid)
+	targetID := "plugin-prepare-recovery-target"
 	if err := writer.RecordDiagnosticFailure(ctx, observabilityport.DiagnosticFailureRequest{
-		Identity: identity, Severity: observabilityport.SeverityError, ScopeID: deliveryID, LastError: "invalid notification template",
+		Condition: observabilityport.Condition{Kind: observabilityport.KindNotify, Variant: observabilityport.VariantTemplate},
+		Severity:  observabilityport.SeverityError, TargetID: targetID, TargetName: "Target", AffectedID: "delivery-1",
 	}); err != nil {
 		t.Fatalf("record prepare diagnostic failure: %v", err)
 	}
 	var id string
 	var succeededAfter sql.NullTime
-	if err := db.QueryRowContext(ctx, `SELECT id, succeeded_after_at FROM diagnostic_episodes WHERE component=$1 AND operation=$2 AND error_code=$3 AND scope_kind=$4 AND scope_id=$5`, identity.Component, identity.Operation, identity.ErrorCode, identity.ScopeKind, deliveryID).Scan(&id, &succeededAfter); err != nil {
+	query := `SELECT id, succeeded_after_at FROM diagnostic_episodes WHERE kind='notify' AND target_id=$1`
+	if err := db.QueryRowContext(ctx, query, targetID).Scan(&id, &succeededAfter); err != nil {
 		t.Fatal(err)
 	}
 	if id == "" || succeededAfter.Valid {
 		t.Fatalf("failure episode before recovery: id=%q succeeded_after=%v", id, succeededAfter)
 	}
-	if err := writer.RecordDiagnosticSuccess(ctx, observabilityport.DiagnosticSuccessRequest{Identity: identity, ScopeID: deliveryID}); err != nil {
+	if err := writer.RecordDiagnosticSuccess(ctx, observabilityport.DiagnosticSuccessRequest{Kind: observabilityport.KindNotify, TargetID: targetID}); err != nil {
 		t.Fatalf("close prepare diagnostic episode: %v", err)
 	}
 	var closedID string
-	if err := db.QueryRowContext(ctx, `SELECT id, succeeded_after_at FROM diagnostic_episodes WHERE component=$1 AND operation=$2 AND error_code=$3 AND scope_kind=$4 AND scope_id=$5`, identity.Component, identity.Operation, identity.ErrorCode, identity.ScopeKind, deliveryID).Scan(&closedID, &succeededAfter); err != nil {
+	if err := db.QueryRowContext(ctx, query, targetID).Scan(&closedID, &succeededAfter); err != nil {
 		t.Fatal(err)
 	}
 	if closedID != id || !succeededAfter.Valid {
