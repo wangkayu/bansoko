@@ -29,7 +29,6 @@ func TestCurrentAnimeConfigCheckReasons(t *testing.T) {
 		{name: "no bgm binding", mutate: func(c *currentAnimeConfig) { c.bgmWorkID = "  " }, want: "config_incomplete:binding_missing:bgm"},
 		{name: "no tmdb binding", mutate: func(c *currentAnimeConfig) { c.tmdbWorkID = "" }, want: "config_incomplete:binding_missing:tmdb"},
 		{name: "both missing reports bgm first", mutate: func(c *currentAnimeConfig) { c.bgmWorkID, c.tmdbWorkID = "", "" }, want: "config_incomplete:binding_missing:bgm"},
-		{name: "unknown owner kind", mutate: func(c *currentAnimeConfig) { c.mediaKindOverride = sql.NullString{String: "ova", Valid: true} }, want: "config_incomplete:media_kind_unresolved"},
 		{name: "unset owner kind is tv", mutate: func(c *currentAnimeConfig) { c.mediaKindOverride = sql.NullString{} }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -130,7 +129,7 @@ func TestExclusionReasonCodes(t *testing.T) {
 	}
 	for _, reason := range []string{
 		"config_incomplete:binding_missing:bgm", "config_incomplete:binding_missing:tmdb",
-		"config_incomplete:media_kind_unresolved", "config_incomplete:template_variable_undefined:vars.a,vars.b",
+		"config_incomplete:template_variable_undefined:vars.a,vars.b",
 	} {
 		if !isConfigIncompleteReason(reason) || normalizeAlignmentExcludeReasonCode(reason) != reason {
 			t.Fatalf("%q is not kept as an alignment exclusion reason", reason)

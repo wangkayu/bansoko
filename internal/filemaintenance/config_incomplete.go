@@ -26,8 +26,6 @@ const (
 	// ConfigItemTemplateVariableUndefinedPrefix is followed by the variable
 	// names the current template reads and the render does not define.
 	ConfigItemTemplateVariableUndefinedPrefix = "template_variable_undefined:"
-	// ConfigItemMediaKindUnresolved: the owner media kind is not a known kind.
-	ConfigItemMediaKindUnresolved = "media_kind_unresolved"
 	// ReasonPlacementExcluded: the placement is kept as it is (it belongs to
 	// another season or kind) and never takes part in a render.
 	ReasonPlacementExcluded = "placement_excluded"
@@ -74,7 +72,7 @@ func isConfigIncompleteReason(value string) bool {
 		return false
 	}
 	switch item {
-	case ConfigItemBindingMissingBGM, ConfigItemBindingMissingTMDB, ConfigItemMediaKindUnresolved:
+	case ConfigItemBindingMissingBGM, ConfigItemBindingMissingTMDB:
 		return true
 	}
 	names, ok := strings.CutPrefix(item, ConfigItemTemplateVariableUndefinedPrefix)
@@ -124,11 +122,6 @@ func (c currentAnimeConfig) check() error {
 	}
 	if strings.TrimSpace(c.tmdbWorkID) == "" {
 		return &ConfigIncompleteError{Item: ConfigItemBindingMissingTMDB}
-	}
-	switch strings.TrimSpace(c.mediaKindOverride.String) {
-	case "", "tv", "movie":
-	default:
-		return &ConfigIncompleteError{Item: ConfigItemMediaKindUnresolved}
 	}
 	return nil
 }

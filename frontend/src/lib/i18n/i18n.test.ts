@@ -104,7 +104,6 @@ describe("config incomplete reasons", () => {
   it("explains what the current configuration lacks", () => {
     expect(reasonLabel("config_incomplete:binding_missing:tmdb")).toBe("当前配置无法生成路径：缺少 TMDB 绑定");
     expect(reasonLabel("config_incomplete:binding_missing:bgm")).toBe("当前配置无法生成路径：缺少 BGM 绑定");
-    expect(reasonLabel("config_incomplete:media_kind_unresolved")).toBe("当前配置无法生成路径：媒体类型无法确定");
     expect(reasonLabel("config_incomplete:template_variable_undefined:vars.a,vars.b")).toBe("当前配置无法生成路径：模板变量未定义：vars.a、vars.b");
     expect(reasonLabel("placement_excluded")).toBe("已保留，不参与对齐");
     setLocale("en", { persist: false });

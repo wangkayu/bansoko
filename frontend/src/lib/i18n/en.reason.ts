@@ -380,7 +380,6 @@ export const enReasonCopy = {
   render_facts_unavailable: "The naming template is missing required information",
   config_incomplete_binding_missing_tmdb: "The current configuration cannot build the path: no TMDB binding",
   config_incomplete_binding_missing_bgm: "The current configuration cannot build the path: no BGM binding",
-  config_incomplete_media_kind_unresolved: "The current configuration cannot build the path: media type unknown",
   config_incomplete_template_variable_undefined: "The current configuration cannot build the path: template variable not defined: {vars}",
   placement_excluded: "Kept as is, not aligned",
   calibration_scan_missing: "Missing file scan results",

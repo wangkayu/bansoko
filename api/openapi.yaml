@@ -18504,7 +18504,7 @@ components:
           type: string
         exclude_reason_code:
           type: string
-          description: Typed reason a file is kept as is, such as config_incomplete:binding_missing:tmdb, config_incomplete:binding_missing:bgm, config_incomplete:template_variable_undefined:<names>, config_incomplete:media_kind_unresolved or placement_excluded.
+          description: Typed reason a file is kept as is, such as config_incomplete:binding_missing:tmdb, config_incomplete:binding_missing:bgm, config_incomplete:template_variable_undefined:<names> or placement_excluded.
     AcquisitionEntryKind:
       type: string
       enum: [automatic, subscription_add, one_shot]

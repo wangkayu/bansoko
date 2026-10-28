@@ -386,7 +386,6 @@ export const reasonCopy = {
   render_facts_unavailable: "命名模板缺少所需信息",
   config_incomplete_binding_missing_tmdb: "当前配置无法生成路径：缺少 TMDB 绑定",
   config_incomplete_binding_missing_bgm: "当前配置无法生成路径：缺少 BGM 绑定",
-  config_incomplete_media_kind_unresolved: "当前配置无法生成路径：媒体类型无法确定",
   config_incomplete_template_variable_undefined: "当前配置无法生成路径：模板变量未定义：{vars}",
   placement_excluded: "已保留，不参与对齐",
   calibration_scan_missing: "缺少文件扫描结果",
