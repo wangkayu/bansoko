@@ -214,6 +214,11 @@ export function mapCatalogItem(item: CatalogItem, provider: ProviderKey): Catalo
   // ended subscription still counts as subscribed while the instance remains on the
   // subscribed wall; only when local-record cleanup removes the instance is it unsubscribed again.
   const subscribed = (item.instances ?? []).length > 0;
+  // A click opens an existing subscription instead of a second draft while the entry has a
+  // non-retired instance; a retired-only entry may be subscribed again.
+  const liveInstanceRefs = (item.instances ?? [])
+    .filter((instance) => instance.lifecycle_state !== "retired")
+    .map((instance) => instance.managed_anime_ref);
   return {
     providerEntryRef: item.provider_entry_ref,
     source: provider,
@@ -238,6 +243,7 @@ export function mapCatalogItem(item: CatalogItem, provider: ProviderKey): Catalo
       bgmId: item.bgm_id ?? undefined,
     },
     ...(subscribed ? { subscribed: true } : {}),
+    ...(liveInstanceRefs.length > 0 ? { liveInstanceRefs } : {}),
   };
 }
 

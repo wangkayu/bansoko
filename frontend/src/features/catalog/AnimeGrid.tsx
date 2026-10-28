@@ -23,7 +23,7 @@ import { Button } from "../../ui/base/controls";
 import { Segmented } from "../../ui/base";
 import { PHONE_MEDIA_QUERY, useMediaQuery } from "../../lib/useMediaQuery";
 import { isOneOf, ROUTE_ANIME_TABS, ROUTE_RECORD_LIST, useRouteDialogs, type RouteAnimeTab } from "../../shell/routeDialogs";
-import { rememberBaseSeason, useCatalogTab, type CatalogTabKey } from "../../shell/catalogTabs";
+import { CATALOG_FILTER_QUERY_KEY, rememberBaseSeason, useCatalogTab, type CatalogTabKey } from "../../shell/catalogTabs";
 import { StateBlock } from "../../ui/StateBlock";
 import { loadAnimeConfigDialog } from "../anime-config/loadAnimeConfigDialog";
 import { loadOneShotDialog } from "../oneshot/loadOneShotDialog";
@@ -34,6 +34,7 @@ import { WallDayRow } from "./WallDayRow";
 import { WALL_ROW_ITEM_CLASS, WALL_ROWS_CLASS } from "./wallRowClasses";
 import { FilterInput, FilterToggle, StatsChips, StatusLine, ToolbarRow, type StatusTone } from "./GridToolbar";
 import { useCollapseOnScroll } from "./useCollapseOnScroll";
+import { useOpenLiveSubscription } from "./useOpenLiveSubscription";
 
 const AnimeConfigDialogEntry = lazy(loadAnimeConfigDialog);
 const OneShotDialogEntry = lazy(loadOneShotDialog);
@@ -60,7 +61,8 @@ const LocalDataCleanupDialogEntry = lazy(() =>
 //                (hiding is browse-area curation).
 //   AniBT      — browse: a wall of large 2:3 poster cards, one candidate card per entry, marked only
 //                "subscribed" when a subscription exists (a boolean, never its state), with
-//                subscribe/browse/hide actions.
+//                subscribe/browse/hide actions; an entry with a live subscription opens that
+//                subscription instead of a second draft.
 //   Mikan      — the same as AniBT.
 //   Custom     — browse: the user's saved custom RSS presets; adding a preset does not activate
 //                anything, and subscribing on the card is what creates the instance.
@@ -136,6 +138,20 @@ export function AnimeGrid() {
   );
   // Each catalog column keeps its own local filter; switching providers never drops the user's just-made filter.
   const [filtersByTab, setFiltersByTab] = useState<Record<TabKey, CatalogFilterState>>(initialCatalogFilters);
+  // A browse card of an entry with several live instances lands here with the filter preset
+  // (`?filter=`): applied once to the subscription column, then dropped from the address.
+  const filterParam = searchParams.get(CATALOG_FILTER_QUERY_KEY);
+  useEffect(() => {
+    if (filterParam === null) return;
+    setFiltersByTab((current) => ({ ...current, all: { query: filterParam, statsFilter: null } }));
+    setSearchParams(
+      (prev) => {
+        prev.delete(CATALOG_FILTER_QUERY_KEY);
+        return prev;
+      },
+      { replace: true },
+    );
+  }, [filterParam, setSearchParams]);
   const query = filtersByTab[tab].query;
   const statsFilter = filtersByTab[tab].statsFilter;
   const [stateChanging, setStateChanging] = useState<Set<string>>(new Set());
@@ -149,6 +165,7 @@ export function AnimeGrid() {
 //   unmount (confirming unsaved changes first), so configRow clears only after the dialog reports
 //   closed.
   const routeDialogs = useRouteDialogs();
+  const { openLiveSubscription, openSubscriptionById } = useOpenLiveSubscription();
   const animeParam = routeDialogs.get("anime");
   const animeTabParam = routeDialogs.get("tab");
   const [configRow, setConfigRow] = useState<{ key: string; row: GridRow; initialTab: RouteAnimeTab } | null>(null);
@@ -580,7 +597,9 @@ export function AnimeGrid() {
         <BrowseCard
           entry={row.entry}
           onHide={() => hideEntry(row.entry)}
-          onOpenConfig={(entry) => openConfig({ ...row, entry })}
+          onOpenConfig={(entry) => {
+            if (!openLiveSubscription(entry)) openConfig({ ...row, entry });
+          }}
           onDeleteCandidate={onDeleteCandidate}
           onBrowseSeeds={openBrowseSeeds}
         />
@@ -765,6 +784,7 @@ export function AnimeGrid() {
             sourceLabel={providerLabel(configRow.row.entry.source)}
             onSubscribed={onSubscribed}
             onCandidateStateChanged={onSubscribed}
+            onOpenExisting={openSubscriptionById}
             initialTab={configRow.initialTab}
             onTabChange={(next) => {
               if (!isOneOf(ROUTE_ANIME_TABS, next)) return;

@@ -4495,9 +4495,12 @@ type ErrorDetail struct {
 	Count *int64 `json:"count,omitempty"`
 
 	// End Byte offset where a template source diagnostic ends in the template named by field.
-	End     *int    `json:"end,omitempty"`
-	Field   *string `json:"field,omitempty"`
-	Message string  `json:"message"`
+	End   *int    `json:"end,omitempty"`
+	Field *string `json:"field,omitempty"`
+
+	// ManagedAnimeIds On 409 PROVIDER_ENTRY_ALREADY_SUBSCRIBED: the managed anime ids of the existing non-retired subscriptions of that provider entry.
+	ManagedAnimeIds *[]string `json:"managed_anime_ids,omitempty"`
+	Message         string    `json:"message"`
 
 	// Paths Absolute paths this detail is about, when a refusal names specific files (the managed files inside a refused directory, for example).
 	Paths *[]string `json:"paths,omitempty"`

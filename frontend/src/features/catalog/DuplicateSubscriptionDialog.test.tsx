@@ -30,6 +30,11 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("DuplicateSubscriptionDialog", () => {
+  it("提示副本标题和季与原订阅相同，启动前需要修改", () => {
+    render(<DuplicateSubscriptionDialog entry={entry} onOpenChange={vi.fn()} onDuplicated={vi.fn()} />);
+    expect(screen.getByText(t("grid.duplicateSamePathHint"))).toBeInTheDocument();
+  });
+
   it("要求填写订阅备注后才能复制", () => {
     render(<DuplicateSubscriptionDialog entry={entry} onOpenChange={vi.fn()} onDuplicated={vi.fn()} />);
     const confirm = screen.getByRole("button", { name: t("grid.duplicateConfirm") });

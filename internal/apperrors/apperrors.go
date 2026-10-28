@@ -63,6 +63,18 @@ type Business struct {
 
 func (e *Business) Error() string { return e.Code + ": " + e.Message }
 
+// ProviderEntryAlreadySubscribed reports a subscribe of a provider entry
+// (anibt or mikan) that already has a subscription whose managed anime is not
+// retired. It carries those managed anime ids for the typed 409 response; a
+// second instance is made with duplicate, never with another subscribe.
+type ProviderEntryAlreadySubscribed struct {
+	ManagedAnimeIDs []string
+}
+
+func (e *ProviderEntryAlreadySubscribed) Error() string {
+	return "PROVIDER_ENTRY_ALREADY_SUBSCRIBED: the provider entry already has a subscription"
+}
+
 // BadRequest reports a malformed request (missing headers, bad input shape).
 type BadRequest struct {
 	Code    string

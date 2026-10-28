@@ -12,6 +12,8 @@ import type { CopyKey } from "../lib/i18n";
 export type CatalogTabKey = "all" | "mikan" | "anibt" | "custom";
 
 export const CATALOG_SOURCE_QUERY_KEY = "source";
+/** One-shot preset of the subscription column's filter box (`?filter=`): AnimeGrid applies it and drops it. */
+export const CATALOG_FILTER_QUERY_KEY = "filter";
 
 const TAB_MEMORY_KEY = "bansoko.catalog-tab";
 const BROWSE_TAB_MEMORY_KEY = "bansoko.catalog-browse-tab";

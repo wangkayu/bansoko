@@ -309,6 +309,10 @@ func isKnownApplicationError(err error) bool {
 	if errors.As(err, &business) {
 		return true
 	}
+	var providerEntrySubscribed *apperrors.ProviderEntryAlreadySubscribed
+	if errors.As(err, &providerEntrySubscribed) {
+		return true
+	}
 	var badRequest *apperrors.BadRequest
 	if errors.As(err, &badRequest) {
 		return true
@@ -337,6 +341,19 @@ func mapApplicationError(err error) *APIError {
 	var bootstrapTooOld *apperrors.BootstrapTooOldError
 	if errors.As(err, &bootstrapTooOld) {
 		return &APIError{Status: http.StatusConflict, Code: "BOOTSTRAP_TOO_OLD", Message: "This update requires a newer bootstrap in the base image. Update the image channel first."}
+	}
+	var providerEntrySubscribed *apperrors.ProviderEntryAlreadySubscribed
+	if errors.As(err, &providerEntrySubscribed) {
+		return &APIError{
+			Status:  http.StatusConflict,
+			Code:    "PROVIDER_ENTRY_ALREADY_SUBSCRIBED",
+			Message: "This provider entry already has a subscription. Use duplicate_subscription to make a second instance.",
+			Details: []generated.ErrorDetail{{
+				Code:            "PROVIDER_ENTRY_ALREADY_SUBSCRIBED",
+				Message:         "Existing subscription for this provider entry.",
+				ManagedAnimeIds: &providerEntrySubscribed.ManagedAnimeIDs,
+			}},
+		}
 	}
 	var business *apperrors.Business
 	if errors.As(err, &business) {

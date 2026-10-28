@@ -460,7 +460,8 @@ func TestSaveAnimeConfigCandidateDoesNotReuseActivatedCandidate(t *testing.T) {
 	ctx := context.Background()
 
 	activated := saveCandidate(t, service, providerDraft(t, "mikan-entry-1", "Show A"))
-	if _, err := service.SubscribeAnimeConfigCandidate(ctx, activated.Id, activated.Version, "candidate-activate-1", generated.CandidateSubscribeInput{Start: new(true)}); err != nil {
+	first, err := service.SubscribeAnimeConfigCandidate(ctx, activated.Id, activated.Version, "candidate-activate-1", generated.CandidateSubscribeInput{Start: new(true)})
+	if err != nil {
 		t.Fatalf("activate candidate: %v", err)
 	}
 
@@ -474,8 +475,16 @@ func TestSaveAnimeConfigCandidateDoesNotReuseActivatedCandidate(t *testing.T) {
 	if replanned.ActivatedManagedAnimeId != nil {
 		t.Fatalf("re-planned candidate is already activated")
 	}
-	if _, err := service.SubscribeAnimeConfigCandidate(ctx, replanned.Id, replanned.Version, "candidate-activate-2", generated.CandidateSubscribeInput{Start: new(true)}); err != nil {
-		t.Fatalf("the re-planned candidate must be activatable: %v", err)
+	// While the first instance is live the entry refuses a second subscription;
+	// once it is retired the fresh candidate activates.
+	_, err = service.SubscribeAnimeConfigCandidate(ctx, replanned.Id, replanned.Version, "candidate-activate-2", generated.CandidateSubscribeInput{Start: new(true)})
+	var subscribed *apperrors.ProviderEntryAlreadySubscribed
+	if !errors.As(err, &subscribed) {
+		t.Fatalf("activate re-planned candidate while the first is live: err = %v, want ProviderEntryAlreadySubscribed", err)
+	}
+	retireManagedAnimeForTest(t, db, first.ManagedAnime.Id)
+	if _, err := service.SubscribeAnimeConfigCandidate(ctx, replanned.Id, replanned.Version, "candidate-activate-3", generated.CandidateSubscribeInput{Start: new(true)}); err != nil {
+		t.Fatalf("the re-planned candidate must be activatable after retirement: %v", err)
 	}
 }
 

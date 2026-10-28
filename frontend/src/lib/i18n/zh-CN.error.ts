@@ -98,6 +98,7 @@ export const errorCopy = {
   // --- 草稿与自定义 RSS ---
   CANDIDATE_ALREADY_ACTIVATED: "该草稿已转为订阅",
   CANDIDATE_WORKING_DUPLICATE: "已有相同的草稿，请直接编辑它",
+  PROVIDER_ENTRY_ALREADY_SUBSCRIBED: "该番剧已有订阅，如需第二个订阅请在订阅卡片上使用「复制为新订阅」。",
   CANDIDATE_NOT_WORKING: "该草稿已不可编辑，请刷新后重试",
   CANDIDATE_REVISION_MISMATCH: DRAFT_CHANGED,
   CANDIDATE_REVISION_REQUIRED: DRAFT_CHANGED,

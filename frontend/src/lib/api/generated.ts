@@ -690,7 +690,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Create the complete owner set from one draft. The subscription is created pending (not started) unless start is true. A draft with the agent origin is refused with 422 ORIGIN_NOT_SUBSCRIBABLE; that origin is only valid for one-shot acquisition. */
+        /** @description Create the complete owner set from one draft. The subscription is created pending (not started) unless start is true. A draft with the agent origin is refused with 422 ORIGIN_NOT_SUBSCRIBABLE; that origin is only valid for one-shot acquisition. A draft of a provider entry (anibt or mikan) that already has a subscription whose managed anime is not retired is refused with 409 PROVIDER_ENTRY_ALREADY_SUBSCRIBED; the error details carry the existing managed_anime_ids. A second instance is made with the duplicate operation. A replay of a key that already succeeded returns its original result. */
         post: operations["subscribeAnime"];
         delete?: never;
         options?: never;
@@ -993,7 +993,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Activate exactly the saved revision named by the request. The server locks the candidate and revision, requires the requested revision to be the candidate's current pointer, and materializes it into the new instance-owned configuration: every rules section and subgroups are stored as the draft's complete values (tag_filters too; a draft without one stores the built-in default). Nothing follows Global afterwards. The owner set and the candidate's activated_managed_anime_id link are committed in one transaction, and the candidate changes atomically from working to dormant. The caller MUST pass revision, If-Match with the candidate version it read, and Idempotency-Key; the activation identity includes all three plus the effective digest, so stale or wrong revisions fail closed with no owner effect and exact replay remains stable. A candidate whose draft has the oneshot origin is refused with 422 ORIGIN_NOT_SUBSCRIBABLE. */
+        /** @description Activate exactly the saved revision named by the request. The server locks the candidate and revision, requires the requested revision to be the candidate's current pointer, and materializes it into the new instance-owned configuration: every rules section and subgroups are stored as the draft's complete values (tag_filters too; a draft without one stores the built-in default). Nothing follows Global afterwards. The owner set and the candidate's activated_managed_anime_id link are committed in one transaction, and the candidate changes atomically from working to dormant. The caller MUST pass revision, If-Match with the candidate version it read, and Idempotency-Key; the activation identity includes all three plus the effective digest, so stale or wrong revisions fail closed with no owner effect and exact replay remains stable. A candidate whose draft has the oneshot origin is refused with 422 ORIGIN_NOT_SUBSCRIBABLE. A candidate of a provider entry that already has a subscription whose managed anime is not retired is refused with 409 PROVIDER_ENTRY_ALREADY_SUBSCRIBED (details carry managed_anime_ids); a second instance is made with the duplicate operation. */
         post: operations["subscribeAnimeConfigCandidate"];
         delete?: never;
         options?: never;
@@ -5542,6 +5542,8 @@ export interface components {
             end?: number;
             /** @description Absolute paths this detail is about, when a refusal names specific files (the managed files inside a refused directory, for example). */
             paths?: string[];
+            /** @description On 409 PROVIDER_ENTRY_ALREADY_SUBSCRIBED: the managed anime ids of the existing non-retired subscriptions of that provider entry. */
+            managed_anime_ids?: string[];
         };
         NamingVarsVersion: {
             /**

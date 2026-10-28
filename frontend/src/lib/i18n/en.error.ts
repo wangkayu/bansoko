@@ -99,6 +99,7 @@ export const enErrorCopy = {
   // --- Drafts and custom RSS ---
   CANDIDATE_ALREADY_ACTIVATED: "This draft has already become a subscription",
   CANDIDATE_WORKING_DUPLICATE: "An identical draft already exists. Edit that one instead.",
+  PROVIDER_ENTRY_ALREADY_SUBSCRIBED: "This anime already has a subscription. For a second one, use \"Duplicate as New Subscription\" on the subscription card.",
   CANDIDATE_NOT_WORKING: "This draft can no longer be edited. Refresh and try again.",
   CANDIDATE_REVISION_MISMATCH: DRAFT_CHANGED,
   CANDIDATE_REVISION_REQUIRED: DRAFT_CHANGED,

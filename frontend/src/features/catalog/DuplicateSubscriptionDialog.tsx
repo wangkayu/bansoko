@@ -63,6 +63,7 @@ export function DuplicateSubscriptionDialog({
         }}
       >
         <p className="tw:text-sm">{t("grid.duplicateLine")}</p>
+        <p className="tw:text-sm tw:text-muted">{t("grid.duplicateSamePathHint")}</p>
         <label className="candidate-field">
           {t("grid.duplicateLabel")}
           <Input

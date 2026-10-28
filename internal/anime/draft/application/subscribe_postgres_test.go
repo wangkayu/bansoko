@@ -401,6 +401,9 @@ INSERT INTO provider_catalog_entries(id, snapshot_id, provider, provider_entry_r
 VALUES ('provider-title-entry-z', 'snapshot-provider-title-tie', 'mikan', '5001', '并列标题', '{}', 'present', '2026-01-01 01:00:00+00')`); err != nil {
 		t.Fatal(err)
 	}
+	// The entry holds one live subscription; retire the first so the entry can
+	// be subscribed again.
+	retireManagedAnimeForTest(t, db, subscribed.ManagedAnime.Id)
 	tied, err := service.SubscribeAnime(ctx, generated.SubscribeAnimeInput{Draft: presetdraft.Load(t, service.db, providerDraft(t, "5001", "Test Show")), Start: new(true)}, "subscribe-provider-title-tie")
 	if err != nil {
 		t.Fatalf("provider subscription with a tied observation: %v", err)
@@ -453,4 +456,18 @@ func managedProviderTitle(t *testing.T, db *sql.DB, animeID string) (string, boo
 		t.Fatal(err)
 	}
 	return title.String, title.Valid
+}
+
+// retireManagedAnimeForTest ends one instance the way deletion leaves it
+// (lifecycle retired), without the ownership service this package lacks.
+func retireManagedAnimeForTest(t *testing.T, db *sql.DB, animeID string) {
+	t.Helper()
+	if _, err := db.ExecContext(context.Background(), `
+UPDATE managed_anime
+SET lifecycle_state = 'retired', fence_epoch = fence_epoch + 1, retired_at = CURRENT_TIMESTAMP,
+    retired_subscription_version = (SELECT version FROM subscriptions WHERE managed_anime_id = $1),
+    lifecycle_version = lifecycle_version + 1
+WHERE id = $1`, animeID); err != nil {
+		t.Fatalf("retire managed anime: %v", err)
+	}
 }

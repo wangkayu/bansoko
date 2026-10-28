@@ -33,6 +33,7 @@ export const enGridCopy = {
   localDeleteFailed: "Failed to delete local records for \"{title}\"",
   duplicateTitle: "Duplicate \"{title}\"",
   duplicateLine: "Creates a new subscription with the current settings. It is not started, and download history and files are not copied.",
+  duplicateSamePathHint: "The copy has the same title and season as the original. Change them before starting, or both write to the same location.",
   duplicateLabel: "Subscription note",
   duplicatePlaceholder: "e.g. One group only",
   duplicateConfirm: "Duplicate",
