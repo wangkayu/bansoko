@@ -4667,7 +4667,7 @@ type FileMaintenancePlanCandidate struct {
 	Coverage      []string `json:"coverage"`
 	ExcludeReason *string  `json:"exclude_reason,omitempty"`
 
-	// ExcludeReasonCode Typed reason a file is kept as is, such as config_incomplete:binding_missing:tmdb, config_incomplete:binding_missing:bgm, config_incomplete:template_variable_undefined:<names>, config_incomplete:media_kind_unresolved or placement_excluded.
+	// ExcludeReasonCode Typed reason a file is kept as is, such as config_incomplete:binding_missing:tmdb, config_incomplete:binding_missing:bgm, config_incomplete:template_variable_undefined:<names> or placement_excluded.
 	ExcludeReasonCode *string `json:"exclude_reason_code,omitempty"`
 	Excluded          *bool   `json:"excluded,omitempty"`
 	Fingerprint       string  `json:"fingerprint"`
