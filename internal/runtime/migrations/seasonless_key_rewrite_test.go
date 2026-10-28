@@ -201,18 +201,18 @@ func TestSeasonlessKeyRewriteIsANoOpWithoutV1Keys(t *testing.T) {
 	db := openDisposableDB(t)
 	installMigrationsThrough(t, db, "095_seasonless_episode_identity.sql")
 	seedRewriteInstance(t, db, "v2", `tmdb_work_id, tmdb_media_kind, tmdb_season`, `'300', 'tv', 2`)
-	seedRewritePlacement(t, db, "v2", "v2-1", "active", "tv:e1")
-	seedRewritePlacement(t, db, "v2", "v2-2", "active", "tv:e2")
-	seedRewritePlacement(t, db, "v2", "v2-movie", "active", "movie:0")
+	seedRewritePlacement(t, db, "v2", "seasonless-1", "active", "tv:e1")
+	seedRewritePlacement(t, db, "v2", "seasonless-2", "active", "tv:e2")
+	seedRewritePlacement(t, db, "v2", "seasonless-movie", "active", "movie:0")
 	rewriteExec(t, db,
 		`INSERT INTO release_candidate_facts(release_id, release_version, parser_version, input_fingerprint, raw_evidence, facts, coverage_keys)
 		 VALUES ('rel-v2', 1, 'parser-v1', 'input-v2', '{}', '{"episode":2}', '["tv:e2"]')`)
 	if err := (Runner{DB: db, Dir: migrationsDir(t)}).Apply(ctx); err != nil {
 		t.Fatalf("upgrade v2 rows: %v", err)
 	}
-	assertRewritePlacement(t, db, "v2", "v2-1", "active", true, 1, "tv:e1")
-	assertRewritePlacement(t, db, "v2", "v2-2", "active", true, 1, "tv:e2")
-	assertRewritePlacement(t, db, "v2", "v2-movie", "active", true, 1, "movie:0")
+	assertRewritePlacement(t, db, "v2", "seasonless-1", "active", true, 1, "tv:e1")
+	assertRewritePlacement(t, db, "v2", "seasonless-2", "active", true, 1, "tv:e2")
+	assertRewritePlacement(t, db, "v2", "seasonless-movie", "active", true, 1, "movie:0")
 	rewriteExpect(t, db, "v2", "v2 candidate facts stay as written",
 		`SELECT coverage_keys = '["tv:e2"]'::jsonb AND facts = '{"episode":2}'::jsonb FROM release_candidate_facts WHERE release_id = 'rel-v2'`)
 	rewriteExpect(t, db, "v2", "no entry is written",

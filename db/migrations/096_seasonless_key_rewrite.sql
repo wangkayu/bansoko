@@ -5,9 +5,8 @@
 -- migration rewrites them to tv:e<N> once, so a new file and a stored file of
 -- the same episode compare equal. Sealed rows keep their v1 keys: acquisition
 -- inputs (acquisitions.input and its canonical bytes), file facts (checked
--- against the input by filefact_source_relation_valid), replacement_deletions
--- and the unused cleanup_operations; digests and idempotency keys are not
--- recomputed. No library file is moved or deleted and no subscription setting
+-- against the input by filefact_source_relation_valid) and replacement_deletions;
+-- digests and idempotency keys are not recomputed. No library file is moved or deleted and no subscription setting
 -- changes.
 --
 -- 1. Keep and exclude. Under v1 an instance could hold active files of more
