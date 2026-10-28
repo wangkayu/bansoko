@@ -275,6 +275,73 @@ VALUES ($1, 'release-record', 'v1', 'resolver-v1', 'regex', 'digest', '{}', json
 	}
 }
 
+// TestAcquisitionRecordsCarrySeedIdentity proves a row reads the seed's size
+// from the root's frozen accepted input and its tags, release version and
+// publish time from the source release's frozen facts; that a release without
+// frozen tags leaves them out; and that a compacted root whose release is gone
+// keeps the frozen size but no tags.
+func TestAcquisitionRecordsCarrySeedIdentity(t *testing.T) {
+	service, _, downloadID, failedID := seedRecordRoots(t)
+	ctx := context.Background()
+	owner := disposabledb.Owner(t)
+
+	page, err := service.ListAcquisitionRecords(ctx, AcquisitionRecordQuery{})
+	if err != nil || len(page.Items) != 2 {
+		t.Fatalf("list: %+v %v", page.Items, err)
+	}
+	for _, item := range page.Items {
+		if item.AcquisitionID == downloadID && item.Seed != nil && (len(item.Seed.TitleTags) != 0 || item.Seed.PublishedAt != nil) {
+			t.Fatalf("a release without frozen facts must not invent tags or a publish time: %+v", item.Seed)
+		}
+		if item.ReplacesExisting {
+			t.Fatalf("an ensure_present acceptance is not a replacement: %s", item.AcquisitionID)
+		}
+	}
+
+	if _, err := owner.ExecContext(ctx, `
+UPDATE releases SET raw_facts = '{"title":"[Group] Record Show - 01","published_at":"2026-10-01T02:03:04Z"}',
+  source_facts = '{"group_name":"Group","identity_kind":"guid","identity_value":"record","title_tags":{"schema":"reltitle-attrs-v1","implementation":"x","tags":["resolution:1080p","sub_lang:SC"],"value_tags":["title:Record Show","version:v2"]},"anibt":{"tags":["resolution:1080p"]}}'
+WHERE id = 'release-record'`); err != nil {
+		t.Fatal(err)
+	}
+	detail, err := service.GetAcquisitionRecord(ctx, downloadID)
+	if err != nil || detail.Seed == nil {
+		t.Fatalf("detail must carry the seed identity: %+v %v", detail.Seed, err)
+	}
+	seed := detail.Seed
+	if seed.SizeBytes == nil || *seed.SizeBytes != 7 {
+		t.Fatalf("size must come from the frozen torrent total: %+v", seed.SizeBytes)
+	}
+	if strings.Join(seed.TitleTags, ",") != "resolution:1080p,sub_lang:SC" || seed.ReleaseVersion == nil || *seed.ReleaseVersion != "v2" ||
+		strings.Join(seed.AniBTTags, ",") != "resolution:1080p" {
+		t.Fatalf("tags and version must come from the frozen release facts: %+v", seed)
+	}
+	if seed.PublishedAt == nil || seed.PublishedAt.UTC().Format("2006-01-02T15:04:05Z") != "2026-10-01T02:03:04Z" {
+		t.Fatalf("publish time must come from the release raw facts: %+v", seed.PublishedAt)
+	}
+
+	// Owner cleanup deletes the failed root's release and compacts the root.
+	if _, err := owner.ExecContext(ctx, `UPDATE managed_anime SET lifecycle_state = 'retired', fence_epoch = fence_epoch + 1,
+    retired_at = CURRENT_TIMESTAMP, retired_subscription_version = 1, lifecycle_version = lifecycle_version + 1 WHERE id = 'anime-failed'`); err != nil {
+		t.Fatal(err)
+	}
+	var epoch int64
+	if err := owner.QueryRowContext(ctx, `SELECT fence_epoch FROM managed_anime WHERE id = 'anime-failed'`).Scan(&epoch); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner.ExecContext(ctx, `SELECT public.cleanup_managed_anime_local_data('anime-failed', 'record-cleanup', $1, $2)`,
+		"sha256:"+strings.Repeat("0", 64), epoch); err != nil {
+		t.Fatal(err)
+	}
+	compact, err := service.GetAcquisitionRecord(ctx, failedID)
+	if err != nil || compact.RecordDetail != "compact" {
+		t.Fatalf("root must be compact: %+v %v", compact, err)
+	}
+	if compact.Seed == nil || compact.Seed.SizeBytes == nil || len(compact.Seed.TitleTags) != 0 || compact.Seed.PublishedAt != nil {
+		t.Fatalf("a compact root keeps the frozen input facts but not the deleted release's tags: %+v", compact.Seed)
+	}
+}
+
 // TestAcquisitionRecordsCompactAndScope proves a compact root keeps its title
 // and outcome only, that hiding is gone (PRUNE-046 S4), and that a root of
 // another access scope reads as not found.

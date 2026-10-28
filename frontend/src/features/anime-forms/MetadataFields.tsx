@@ -16,8 +16,9 @@ import { Dialog, Select, type SelectOption } from "../../ui/base";
 // binding's season is TMDB's raw season number, used only for TMDB series queries.
 // The season used by naming is the anime's own field (value.season, like year): with showSeason
 // given, a separate "season" row renders — unset shows "not set" and can be cleared — and never
-// rewrites the TMDB binding nor vice versa. Confirming a match pre-fills the chosen TMDB season
-// only when the season is unset (a one-time prefill); an existing season is never overwritten.
+// rewrites the TMDB binding nor vice versa. The season, year and total episodes are values tied to
+// the TMDB binding: clearing the binding resets all three to unset, replacing a bound one
+// overwrites them from the new candidate, and a first binding prefills them only when empty.
 // The TMDB row always shows the bound TMDB season inline (it may differ from the anime's
 // season).
 // The media kind (tv / movie) is the anime's own field too. Unset reads as the bound TMDB kind
@@ -80,7 +81,7 @@ export function MetadataFields({
   mediaKindOverride?: "tv" | "movie" | null;
   /**
    * 渲染年份行。年份是表单值（value.year）：输入直接经 onChange 写回，随调用方的
-   * 保存落库（owner=底部保存，draft=草稿）；TMDB 匹配确认只在年份为空时填入候选年份。
+   * 保存落库（owner=底部保存，draft=草稿）；TMDB 匹配确认：首次绑定只在年份为空时填入候选年份，替换绑定则覆盖，清除绑定则重置。
    */
   showYear?: boolean;
   /**
@@ -132,7 +133,9 @@ export function MetadataFields({
             ? { workId: value.tmdb.work_id, mediaKind: value.tmdb.media_kind, season: value.tmdb.season }
             : undefined
         }
-        onClear={() => changeTMDB({ ...value, tmdb: null }, value.tmdb?.media_kind)}
+        onClear={() =>
+          changeTMDB({ ...value, tmdb: null, season: null, year: null, total_episodes: null }, value.tmdb?.media_kind)
+        }
         onMatch={() => onMatchProviderChange?.("tmdb")}
       />
       {onSaveMediaKind && directEdit && (
@@ -212,30 +215,28 @@ export function MetadataFields({
             onMatchProviderChange(undefined);
           }}
           onSelectTMDB={(candidate, mediaKind, tmdbSeason) => {
-            // An empty total-episodes pre-fills from the chosen season's count
-            // (seasons[].episodeCount in the candidate detail), prefill only: the user can still
-            // edit or clear it in the row. Movies are not prefilled.
+            // The season, year and total episodes are values tied to the TMDB binding. Replacing an
+            // existing binding overwrites all three from the new candidate (null where it has none),
+            // so a re-match never keeps the first match's values; a first binding only fills the
+            // empty ones, so values typed beforehand survive.
             const seasonEpisodes =
               mediaKind === "tv" ? candidate.seasons?.find((s) => s.seasonNumber === tmdbSeason)?.episodeCount : undefined;
+            const candidateTotal = seasonEpisodes && seasonEpisodes > 0 ? seasonEpisodes : null;
+            const candidateSeason = mediaKind === "tv" ? tmdbSeason : null;
+            const candidateYear = candidate.year !== undefined && validYear(candidate.year) ? candidate.year : null;
+            const replacing = value.tmdb != null;
             const next: AnimeMetadataDraft = {
               ...value,
               tmdb: { work_id: candidate.workId, media_kind: mediaKind, season: tmdbSeason },
             };
-            if (value.total_episodes == null && seasonEpisodes && seasonEpisodes > 0) {
-              next.total_episodes = seasonEpisodes;
-            }
-            // The season pre-fills once from the chosen TMDB season only while unset (the same
-            // fill-if-empty as year); an existing season is never overwritten and the two stay
-            // independent afterwards. Movies have no season and are not prefilled.
-            if (value.season == null && mediaKind === "tv") {
-              next.season = tmdbSeason;
-            }
-            // Year follows the same rule as the server's backfill (fill-if-empty): the candidate
-            // year fills only while the form's year is empty, an existing year is never
-            // overwritten, and no year is invented when the candidate has none. It belongs to the
-            // user afterwards.
-            if (value.year == null && candidate.year !== undefined && validYear(candidate.year)) {
-              next.year = candidate.year;
+            if (replacing) {
+              next.total_episodes = candidateTotal;
+              next.season = candidateSeason;
+              next.year = candidateYear;
+            } else {
+              if (value.total_episodes == null && candidateTotal !== null) next.total_episodes = candidateTotal;
+              if (value.season == null && candidateSeason !== null) next.season = candidateSeason;
+              if (value.year == null && candidateYear !== null) next.year = candidateYear;
             }
             // An unset kind is filled once: from the tuple already bound (its kind is what the
             // anime resolves with now), else from the chosen work.

@@ -49,7 +49,14 @@ SELECT r.id, r.entry_kind, r.execution_branch, r.state, r.record_state,
        CASE WHEN r.record_state = 'full' AND r.state IN ('succeeded', 'failed')
             THEN acquisition_import_retry_refusal(r.id) IS NULL ELSE false END,
        COALESCE(ir.retries, 0), ir.last_at,
-       COALESCE(pf.failed, 0), pf.first_reason
+       COALESCE(pf.failed, 0), pf.first_reason,
+       jsonb_build_object('group', r.input->'source'->'group', 'provider', r.input->'source'->'provider',
+                          'infohash_v1', r.input->'source'->'infohash_v1', 'infohash_v2', r.input->'source'->'infohash_v2',
+                          'torrent_size', r.input->'source'->'torrent_size')::text,
+       COALESCE(r.input->'delivery'->>'intent' = 'replace', false),
+       CASE WHEN rel.id IS NULL THEN NULL
+            ELSE jsonb_build_object('title_tags', rel.source_facts->'title_tags', 'anibt', rel.source_facts->'anibt',
+                                    'published_at', rel.raw_facts->'published_at')::text END
 FROM acquisitions r
 LEFT JOIN managed_anime ma ON ma.id = r.origin_managed_anime_ref
 LEFT JOIN releases rel ON rel.id = r.source_release_ref
@@ -133,6 +140,9 @@ type acquisitionRootRow struct {
 	importRetriedAt                           sql.NullTime
 	placementsFailed                          int64
 	placementFailedReason                     sql.NullString
+	seedSource                                []byte
+	replacesExisting                          bool
+	seedRelease                               []byte
 }
 
 type nullableStageOwner struct {
@@ -172,7 +182,8 @@ func scanAcquisitionRoot(scanner interface{ Scan(...any) error }) (acquisitionRo
 		&row.completedBytes, &row.totalBytes, &row.downloadSpeed,
 		&row.coverageKeys,
 		&row.version, &row.importRetryAvailable, &row.importRetries, &row.importRetriedAt,
-		&row.placementsFailed, &row.placementFailedReason)
+		&row.placementsFailed, &row.placementFailedReason,
+		&row.seedSource, &row.replacesExisting, &row.seedRelease)
 	return row, err
 }
 
@@ -206,6 +217,8 @@ func (row acquisitionRootRow) project(asOf time.Time) (AcquisitionRecordDetail, 
 		detail.Release = &AcquisitionReleaseLink{ReleaseID: row.releaseID.String, Title: displayValue(nullableStringPointer(row.releaseTitle))}
 	}
 	detail.Episodes = frozenPlanEpisodes(row.coverageKeys)
+	detail.Seed = projectSeedIdentity(row.seedSource, row.seedRelease)
+	detail.ReplacesExisting = row.replacesExisting
 	if row.state != "running" {
 		outcome, err := storedTerminalReceipt(row.terminalSchema.String, row.terminalReceipt)
 		if err != nil {

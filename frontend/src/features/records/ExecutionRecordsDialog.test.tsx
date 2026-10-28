@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AcquisitionFilePage, AcquisitionRecordDetail, AcquisitionRecordPage } from "../../lib/api/client";
 import { t } from "../../lib/i18n";
 import { labelValue } from "../../lib/i18n/format";
+import { formatBytes } from "../../lib/labels";
+import { titleTagLabel } from "../../lib/titleTags";
 import { ExecutionRecordsDialog } from "./ExecutionRecordsDialog";
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() } }));
@@ -508,6 +510,72 @@ describe("ExecutionRecordsDialog 详情", () => {
     filesStatus = 409;
     renderDialog({ record: "acq-failed" });
     expect(await screen.findByText(t("records.file.notReady"))).toBeInTheDocument();
+  });
+
+  it("列表行显示字幕组、关键标签、版本、大小、种子标题和洗版标记；缺失的值不显示", async () => {
+    listPages = [
+      {
+        as_of: "2026-10-11T10:00:00Z",
+        items: [
+          {
+            ...runningSummary,
+            acquisition_id: "acq-seed",
+            episodes: [2],
+            replaces_existing: true,
+            release: { release_id: "release-2", title: { state: "visible", value: "[NEST] Show - 02 [v2]" } },
+            seed: {
+              group_name: "NEST",
+              provider: "mikan",
+              size_bytes: 1024,
+              release_version: "v2",
+              title_tags: ["resolution:1080p", "sub_lang:SC", "codec:HEVC"],
+            },
+          },
+          { ...runningSummary, acquisition_id: "acq-bare", episodes: [3] },
+        ],
+      },
+    ];
+    renderDialog();
+    const list = await screen.findByRole("list", { name: t("records.listAria") });
+    const [seeded, bare] = within(list).getAllByRole("listitem");
+    expect(seeded.textContent).toContain(["NEST", titleTagLabel("resolution:1080p"), titleTagLabel("sub_lang:SC"), "v2", formatBytes(1024)].join(" · "));
+    expect(seeded.textContent).not.toContain(titleTagLabel("codec:HEVC"));
+    expect(within(seeded).getByTitle("[NEST] Show - 02 [v2]")).toBeInTheDocument();
+    expect(seeded.textContent).toContain(t("records.replacement"));
+    expect(bare.textContent).not.toContain(t("records.replacement"));
+    expect(bare.textContent).not.toContain(" · v");
+  });
+
+  it("详情显示字幕组与来源站点、发布时间、大小、信息哈希和全部标签，且可复制哈希", async () => {
+    const writeText = vi.fn(async () => undefined);
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    failedDetailBody = {
+      ...failedDetail,
+      seed: {
+        group_name: "NEST",
+        provider: "anibt",
+        size_bytes: 2048,
+        published_at: "2026-10-01T02:03:04Z",
+        info_hash: "abcdef0123456789",
+        title_tags: ["resolution:1080p", "codec:HEVC"],
+        anibt_tags: ["audio:flac"],
+      },
+    };
+    renderDialog({ record: "acq-failed" });
+    expect(await screen.findByText(t("records.detail.infoHash"))).toBeInTheDocument();
+    expect(screen.getByText(t("records.detail.groupWithSite", { group: "NEST", site: "AniBT" }))).toBeInTheDocument();
+    expect(screen.getByText(t("records.detail.published"))).toBeInTheDocument();
+    expect(screen.getByText(formatBytes(2048))).toBeInTheDocument();
+    expect(screen.getByText(titleTagLabel("codec:HEVC"))).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: t("records.detail.copyHash") }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("abcdef0123456789"));
+  });
+
+  it("详情没有来源标识时不显示这些行", async () => {
+    renderDialog({ record: "acq-failed" });
+    expect(await screen.findByText(t("records.detail.accepted"))).toBeInTheDocument();
+    expect(screen.queryByText(t("records.detail.infoHash"))).not.toBeInTheDocument();
+    expect(screen.queryByText(t("records.detail.group"))).not.toBeInTheDocument();
   });
 
   it("精简记录只保留名称与结果，不请求文件列表", async () => {

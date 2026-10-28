@@ -140,7 +140,9 @@ type Profile struct {
 // languages AniBT declares and reltitle reads from the title, then the
 // built-in rules' resolution and revision. The two language items are
 // separate layers with no fallback between them, each in its own source's
-// spelling. Each entry is a language combination; a release hits the first
+// spelling: reltitle reports Chinese plus Japanese subtitles as one combined
+// value (JPSC, JPTC), not SC plus JPN, so its entries mirror the AniBT order
+// with those values. Each entry is a language combination; a release hits the first
 // entry its languages contain, so a release with Simplified, Traditional and
 // Japanese hits the first entry, not the Simplified-only one. A layer the
 // release has no data for ties and the next item decides (Compare), so AniBT
@@ -149,7 +151,7 @@ func Default() Profile {
 	return Profile{Version: Version, Items: []Item{
 		{Key: KeySubgroupScore, Ranks: [][]string{}},
 		{Key: KeyAniBTLanguage, Ranks: [][]string{{"CHS", "CHT", "JP"}, {"CHS", "JP"}, {"CHS", "CHT"}, {"CHS"}, {"CHT", "JP"}, {"CHT"}, {"JP"}, {"EN"}}},
-		{Key: KeyRtSubLang, Ranks: [][]string{{"SC", "TC", "JPN"}, {"SC", "JPN"}, {"SC", "TC"}, {"SC"}, {"TC", "JPN"}, {"TC"}, {"JPN"}, {"ENG"}}},
+		{Key: KeyRtSubLang, Ranks: [][]string{{"JPSC", "JPTC"}, {"JPSC"}, {"SC", "TC"}, {"SC"}, {"JPTC"}, {"TC"}, {"JPN"}, {"ENG"}}},
 		{Key: KeyAniBTResolution, Ranks: [][]string{{"4K"}, {"2160p"}, {"1080p"}, {"720p"}, {"480p"}, {"360p"}}},
 		{Key: KeyRtResolution, Ranks: [][]string{{"2160p"}, {"1080p"}, {"720p"}, {"480p"}}},
 		{Key: KeyReleaseRevision, Ranks: [][]string{}},

@@ -176,6 +176,12 @@ const (
 	AcquisitionRequirementsStatusSealed     AcquisitionRequirementsStatus = "sealed"
 )
 
+// Defines values for AcquisitionSeedIdentityProvider.
+const (
+	AcquisitionSeedIdentityProviderAnibt AcquisitionSeedIdentityProvider = "anibt"
+	AcquisitionSeedIdentityProviderMikan AcquisitionSeedIdentityProvider = "mikan"
+)
+
 // Defines values for AcquisitionStageAvailability.
 const (
 	AcquisitionStageAvailabilityNotApplicable AcquisitionStageAvailability = "not_applicable"
@@ -2853,7 +2859,13 @@ type AcquisitionRecordDetail struct {
 	ReasonCode   *string                             `json:"reason_code,omitempty"`
 	RecordDetail AcquisitionRecordDetailRecordDetail `json:"record_detail"`
 	Release      *AcquisitionReleaseLink             `json:"release,omitempty"`
-	Requirements *AcquisitionRequirements            `json:"requirements,omitempty"`
+
+	// ReplacesExisting Present and true only when the acquisition was accepted to replace an existing managed file: the replacement decision frozen into the accepted input (delivery intent replace). Absent otherwise.
+	ReplacesExisting *bool                    `json:"replaces_existing,omitempty"`
+	Requirements     *AcquisitionRequirements `json:"requirements,omitempty"`
+
+	// Seed Which seed an execution record took, from facts frozen when the acquisition was accepted: the group, source site, torrent size and info hash come from the accepted input, the tags and publish time from the source release's frozen facts. A value that is unavailable is absent. The torrent location is never part of it.
+	Seed *AcquisitionSeedIdentity `json:"seed,omitempty"`
 
 	// SourceTitle Bounded, redacted display text. A redacted or unavailable value carries no text.
 	SourceTitle AcquisitionDisplayValue `json:"source_title"`
@@ -2918,6 +2930,12 @@ type AcquisitionRecordSummary struct {
 	RecordDetail AcquisitionRecordSummaryRecordDetail `json:"record_detail"`
 	Release      *AcquisitionReleaseLink              `json:"release,omitempty"`
 
+	// ReplacesExisting Present and true only when the acquisition was accepted to replace an existing managed file: the replacement decision frozen into the accepted input (delivery intent replace). Absent otherwise.
+	ReplacesExisting *bool `json:"replaces_existing,omitempty"`
+
+	// Seed Which seed an execution record took, from facts frozen when the acquisition was accepted: the group, source site, torrent size and info hash come from the accepted input, the tags and publish time from the source release's frozen facts. A value that is unavailable is absent. The torrent location is never part of it.
+	Seed *AcquisitionSeedIdentity `json:"seed,omitempty"`
+
 	// SourceTitle Bounded, redacted display text. A redacted or unavailable value carries no text.
 	SourceTitle AcquisitionDisplayValue `json:"source_title"`
 	Stage       *AcquisitionStageName   `json:"stage,omitempty"`
@@ -2949,6 +2967,28 @@ type AcquisitionRequirements struct {
 
 // AcquisitionRequirementsStatus defines model for AcquisitionRequirements.Status.
 type AcquisitionRequirementsStatus string
+
+// AcquisitionSeedIdentity Which seed an execution record took, from facts frozen when the acquisition was accepted: the group, source site, torrent size and info hash come from the accepted input, the tags and publish time from the source release's frozen facts. A value that is unavailable is absent. The torrent location is never part of it.
+type AcquisitionSeedIdentity struct {
+	// AnibtTags The frozen AniBT tags ("dimension:value"); present only for an AniBT seed.
+	AnibtTags *[]string `json:"anibt_tags,omitempty"`
+	GroupName *string   `json:"group_name,omitempty"`
+	InfoHash  *string   `json:"info_hash,omitempty"`
+
+	// Provider The source site the seed was found through; absent for a custom feed.
+	Provider    *AcquisitionSeedIdentityProvider `json:"provider,omitempty"`
+	PublishedAt *time.Time                       `json:"published_at,omitempty"`
+
+	// ReleaseVersion The release version the title states (for example v2).
+	ReleaseVersion *string `json:"release_version,omitempty"`
+	SizeBytes      *int64  `json:"size_bytes,omitempty"`
+
+	// TitleTags The frozen title-parse tags ("type:value").
+	TitleTags *[]string `json:"title_tags,omitempty"`
+}
+
+// AcquisitionSeedIdentityProvider The source site the seed was found through; absent for a custom feed.
+type AcquisitionSeedIdentityProvider string
 
 // AcquisitionStage One fixed stage. Only a present stage carries a state; done/total is the delivered-of-required file progress of file_execution, whose attempts_started counts the import runs (1 plus each accepted import retry) and whose started_at is the start of the latest run. The completion stage is the download-completion action on the qBittorrent task: not_applicable unless the record succeeded and downloaded, pending/running while the action is queued, succeeded or failed with its result in reason_code (seed_kept, seed_limits_set, seed_limits_set_global_action, paused, removed, removed_with_data, task_absent, skipped_torrent_shared; or a typed refusal such as placement_inside_content).
 type AcquisitionStage struct {

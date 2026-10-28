@@ -957,3 +957,80 @@ describe("MetadataFields 类型行", () => {
     expect(kindRadio("movie")).toHaveAttribute("aria-checked", "true");
   });
 });
+
+describe("MetadataFields TMDB 绑定关联值", () => {
+  const bound: AnimeMetadataDraft = {
+    bgm: null,
+    tmdb: { work_id: "111", media_kind: "tv", season: 1 },
+    season: 1,
+    year: 2020,
+    total_episodes: 24,
+  };
+
+  async function confirmCandidate(candidate: MetadataCandidate, onChange: (next: AnimeMetadataDraft) => void, initial: AnimeMetadataDraft) {
+    render(<Controlled searcher={searcherReturning([candidate])} initial={initial} onChange={onChange} />);
+    clickMatch("tmdb");
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: t("forms.search") }));
+    fireEvent.click(await within(dialog).findByRole("option", { name: new RegExp(candidate.title) }));
+    // The dialog seeds the TMDB season from the anime's own season; choose the candidate's season 2 explicitly.
+    if (candidate.seasons?.length) await pickSeason(dialog, new RegExp(t("forms.seasonOption", { n: 2, name: "第二季", count: 12 })));
+    fireEvent.click(within(dialog).getByRole("button", { name: t("forms.confirmMatch") }));
+  }
+
+  it("清除 TMDB 绑定同时重置季度、年份和总集数", () => {
+    const onChange = vi.fn();
+    render(<Controlled searcher={searcherReturning([])} initial={{ ...bound, bgm: { work_id: "9" } }} onChange={onChange} />);
+    fireEvent.click(screen.getByRole("button", { name: t("forms.clearAria", { label: t("forms.tmdb") }) }));
+    expect(onChange).toHaveBeenLastCalledWith({
+      bgm: { work_id: "9" },
+      tmdb: null,
+      season: null,
+      year: null,
+      total_episodes: null,
+    });
+  });
+
+  it("替换已有绑定（tv）用新候选覆盖季度、年份和总集数", async () => {
+    const onChange = vi.fn();
+    await confirmCandidate({ ...tmdbCandidate, year: 2024 }, onChange, bound);
+    expect(onChange).toHaveBeenLastCalledWith({
+      bgm: null,
+      tmdb: { work_id: "265010", media_kind: "tv", season: 2 },
+      season: 2,
+      year: 2024,
+      total_episodes: 12,
+    });
+  });
+
+  it("替换已有绑定时候选缺年份或集数则置空", async () => {
+    const onChange = vi.fn();
+    await confirmCandidate({ ...tmdbCandidate, seasons: [] }, onChange, { ...bound, season: 2 });
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ season: 2, year: null, total_episodes: null }));
+  });
+
+  it("替换已有绑定（movie）季度与总集数置空，年份取候选", async () => {
+    const onChange = vi.fn();
+    const movie: MetadataCandidate = { provider: "tmdb", workId: "777", title: "剧场版候选", mediaKind: "movie", detailsStatus: "available", year: 2023 };
+    await confirmCandidate(movie, onChange, bound);
+    expect(onChange).toHaveBeenLastCalledWith({
+      bgm: null,
+      tmdb: { work_id: "777", media_kind: "movie", season: 0 },
+      season: null,
+      year: 2023,
+      total_episodes: null,
+    });
+  });
+
+  it("首次绑定保留此前手填的值，只填空缺", async () => {
+    const onChange = vi.fn();
+    await confirmCandidate({ ...tmdbCandidate, year: 2024 }, onChange, { bgm: null, tmdb: null, season: 5, year: 2010 });
+    expect(onChange).toHaveBeenLastCalledWith({
+      bgm: null,
+      tmdb: { work_id: "265010", media_kind: "tv", season: 2 },
+      season: 5,
+      year: 2010,
+      total_episodes: 12,
+    });
+  });
+});

@@ -18504,12 +18504,64 @@ components:
             reads (marker and attempts).
         counts:
           $ref: '#/components/schemas/AcquisitionCounts'
+        seed:
+          $ref: '#/components/schemas/AcquisitionSeedIdentity'
+        replaces_existing:
+          type: boolean
+          description: >-
+            Present and true only when the acquisition was accepted to replace
+            an existing managed file: the replacement decision frozen into the
+            accepted input (delivery intent replace). Absent otherwise.
         release:
           $ref: '#/components/schemas/AcquisitionReleaseLink'
         episodes:
           $ref: '#/components/schemas/AcquisitionEpisodes'
         transfer:
           $ref: '#/components/schemas/AcquisitionTransfer'
+    AcquisitionSeedIdentity:
+      type: object
+      additionalProperties: false
+      description: >-
+        Which seed an execution record took, from facts frozen when the
+        acquisition was accepted: the group, source site, torrent size and info
+        hash come from the accepted input, the tags and publish time from the
+        source release's frozen facts. A value that is unavailable is absent.
+        The torrent location is never part of it.
+      properties:
+        group_name:
+          type: string
+          minLength: 1
+          maxLength: 256
+        provider:
+          type: string
+          enum: [mikan, anibt]
+          description: The source site the seed was found through; absent for a custom feed.
+        size_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        published_at:
+          type: string
+          format: date-time
+        info_hash:
+          type: string
+          minLength: 1
+          maxLength: 128
+        release_version:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: The release version the title states (for example v2).
+        title_tags:
+          type: array
+          description: The frozen title-parse tags ("type:value").
+          items:
+            type: string
+        anibt_tags:
+          type: array
+          description: The frozen AniBT tags ("dimension:value"); present only for an AniBT seed.
+          items:
+            type: string
     AcquisitionEpisodes:
       type: array
       description: >-
@@ -18771,6 +18823,14 @@ components:
             One-shot marker handle, present only when entry_kind is one_shot and
             null for every other entry kind. Use it with the one-shot acquisition
             reads (marker and attempts).
+        seed:
+          $ref: '#/components/schemas/AcquisitionSeedIdentity'
+        replaces_existing:
+          type: boolean
+          description: >-
+            Present and true only when the acquisition was accepted to replace
+            an existing managed file: the replacement decision frozen into the
+            accepted input (delivery intent replace). Absent otherwise.
         outcome:
           $ref: '#/components/schemas/AcquisitionOutcome'
         stages:

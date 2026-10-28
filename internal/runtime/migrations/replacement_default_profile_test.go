@@ -62,9 +62,9 @@ SELECT value->'quality_profile' FROM global_config_sections WHERE section_name =
 			}
 		}
 	}
-	// Migrations 064 and 067: each language layer ranks combinations, Simplified +
-	// Traditional + Japanese first.
-	for key, first := range map[string]string{"anibt.language": "CHS+CHT+JP", "rt.sub_lang": "SC+TC+JPN"} {
+	// Migrations 064, 067 and 094: each language layer ranks combinations, Simplified +
+	// Traditional + Japanese first (reltitle spells it JPSC+JPTC).
+	for key, first := range map[string]string{"anibt.language": "CHS+CHT+JP", "rt.sub_lang": "JPSC+JPTC"} {
 		if len(ranks[key]) != 8 || strings.Join(ranks[key][0], "+") != first {
 			t.Fatalf("%s ranks = %v, want 8 combinations starting with %s", key, ranks[key], first)
 		}

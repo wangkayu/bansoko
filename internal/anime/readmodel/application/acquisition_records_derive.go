@@ -658,3 +658,103 @@ func downloadTransfer(completed, total sql.NullInt64, speed sql.NullString, obse
 	}
 	return transfer
 }
+
+// frozenSeedValue is one {state, value} field of the accepted input's source
+// block; only a known value carries a value.
+type frozenSeedValue struct {
+	State string          `json:"state"`
+	Value json.RawMessage `json:"value"`
+}
+
+func (v frozenSeedValue) text() *string {
+	if v.State != "known" {
+		return nil
+	}
+	var text string
+	if json.Unmarshal(v.Value, &text) != nil {
+		return nil
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
+	}
+	return &text
+}
+
+func (v frozenSeedValue) integer() *int64 {
+	if v.State != "known" {
+		return nil
+	}
+	var number int64
+	if json.Unmarshal(v.Value, &number) != nil || number < 0 {
+		return nil
+	}
+	return &number
+}
+
+// unnamedSeedGroup is the label a one-shot keyword-search seed freezes when
+// its title names no group; it names nothing, so it reads as no group.
+const unnamedSeedGroup = "unknown"
+
+// projectSeedIdentity builds the seed identity from the accepted input's
+// source block (group, site, size, info hash) and the source release's frozen
+// facts (title tags, release version, publish time). Either half may be absent
+// or undecodable; what cannot be read is left out, never guessed. The torrent
+// location is not selected by the read, so it cannot appear here.
+func projectSeedIdentity(source, release []byte) *AcquisitionSeedIdentity {
+	var seed AcquisitionSeedIdentity
+	var frozen struct {
+		Group       frozenSeedValue `json:"group"`
+		Provider    frozenSeedValue `json:"provider"`
+		InfoHashV1  frozenSeedValue `json:"infohash_v1"`
+		InfoHashV2  frozenSeedValue `json:"infohash_v2"`
+		TorrentSize frozenSeedValue `json:"torrent_size"`
+	}
+	if len(source) > 0 && json.Unmarshal(source, &frozen) == nil {
+		if group := frozen.Group.text(); group != nil && !strings.EqualFold(*group, unnamedSeedGroup) {
+			seed.GroupName = group
+		}
+		if provider := frozen.Provider.text(); provider != nil && (*provider == "mikan" || *provider == "anibt") {
+			seed.Provider = provider
+		}
+		seed.SizeBytes = frozen.TorrentSize.integer()
+		if seed.InfoHash = frozen.InfoHashV1.text(); seed.InfoHash == nil {
+			seed.InfoHash = frozen.InfoHashV2.text()
+		}
+	}
+	var facts struct {
+		TitleTags *struct {
+			Tags      []string `json:"tags"`
+			ValueTags []string `json:"value_tags"`
+		} `json:"title_tags"`
+		AniBT *struct {
+			Tags []string `json:"tags"`
+		} `json:"anibt"`
+		PublishedAt *time.Time `json:"published_at"`
+	}
+	if len(release) > 0 && json.Unmarshal(release, &facts) == nil {
+		if facts.TitleTags != nil {
+			if len(facts.TitleTags.Tags) > 0 {
+				seed.TitleTags = facts.TitleTags.Tags
+			}
+			for _, tag := range facts.TitleTags.ValueTags {
+				if value, ok := strings.CutPrefix(tag, "version:"); ok && strings.TrimSpace(value) != "" {
+					value = strings.TrimSpace(value)
+					seed.ReleaseVersion = &value
+					break
+				}
+			}
+		}
+		if facts.AniBT != nil && len(facts.AniBT.Tags) > 0 {
+			seed.AniBTTags = facts.AniBT.Tags
+		}
+		if facts.PublishedAt != nil && !facts.PublishedAt.IsZero() {
+			seed.PublishedAt = facts.PublishedAt
+		}
+	}
+	if seed.GroupName == nil && seed.Provider == nil && seed.SizeBytes == nil && seed.PublishedAt == nil &&
+		seed.InfoHash == nil && seed.ReleaseVersion == nil && len(seed.TitleTags) == 0 && len(seed.AniBTTags) == 0 {
+		return nil
+	}
+	return &seed
+}
