@@ -7549,7 +7549,7 @@ export interface components {
             target_path?: string;
             excluded?: boolean;
             exclude_reason?: string;
-            /** @description Typed reason a file is kept as is, such as config_incomplete:binding_missing:tmdb, config_incomplete:binding_missing:bgm, config_incomplete:template_variable_undefined:<names>, config_incomplete:media_kind_unresolved or placement_excluded. */
+            /** @description Typed reason a file is kept as is, such as config_incomplete:binding_missing:tmdb, config_incomplete:binding_missing:bgm, config_incomplete:template_variable_undefined:<names> or placement_excluded. */
             exclude_reason_code?: string;
         };
         /** @enum {string} */

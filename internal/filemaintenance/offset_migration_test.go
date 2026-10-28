@@ -33,8 +33,8 @@ INSERT INTO managed_anime(id, title) VALUES ('anime-offmig', 'Offset Anime')`); 
 		t.Fatal(err)
 	}
 	if _, err := tx.ExecContext(ctx, `
-INSERT INTO anime_metadata(managed_anime_id, tmdb_work_id, tmdb_media_kind, tmdb_season)
-VALUES ('anime-offmig', 'tmdb-1', 'tv', 1)`); err != nil {
+INSERT INTO anime_metadata(managed_anime_id, bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season, season)
+VALUES ('anime-offmig', 'bgm-1', 'tmdb-1', 'tv', 1, 1)`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := tx.ExecContext(ctx, `

@@ -34,11 +34,19 @@ const (
 // ConfigIncompleteError is a render refused because the anime's current
 // configuration lacks an input. It fails closed: there is no fallback to the
 // values the file was acquired with and no provider request.
-type ConfigIncompleteError struct{ Item string }
+type ConfigIncompleteError struct {
+	Item string
+	// cause is the engine refusal behind a template-variable item, kept so
+	// callers that classify the naming error (the file manager match) still
+	// see it.
+	cause error
+}
 
 func (e *ConfigIncompleteError) Error() string {
 	return "current configuration is incomplete: " + e.Item
 }
+
+func (e *ConfigIncompleteError) Unwrap() error { return e.cause }
 
 // ExcludeReasonCode is the typed reason recorded for the candidate.
 func (e *ConfigIncompleteError) ExcludeReasonCode() string { return ConfigIncompletePrefix + e.Item }
@@ -84,7 +92,7 @@ func isConfigIncompleteReason(value string) bool {
 func templateVariableUndefined(err error) error {
 	var named *naming.Error
 	if errors.As(err, &named) && named.Code == naming.ErrCodeNamingFactUndefined && len(named.Missing) > 0 {
-		return &ConfigIncompleteError{Item: ConfigItemTemplateVariableUndefinedPrefix + strings.Join(named.Missing, ",")}
+		return &ConfigIncompleteError{Item: ConfigItemTemplateVariableUndefinedPrefix + strings.Join(named.Missing, ","), cause: err}
 	}
 	return err
 }

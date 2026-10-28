@@ -41,7 +41,10 @@ func openParityFixtureDB(t *testing.T, rules naming.NamingRules) (*sql.DB, fileF
 	})
 }
 
-// seedParityFrozenEvidence writes the durable evidence acquisition consumes,
+// seedParityFrozenEvidence also sets the anime's current configuration to what
+// acquisition rendered with (bindings, TMDB season, owner season 1), so the
+// maintenance render, which reads the current configuration, has the same
+// inputs. It writes the durable evidence acquisition consumes,
 // exactly as production writes it: the original release title on the release
 // row, the inspected media facts on the artifact file, and one release media
 // fact snapshot carrying the frozen release facts, one resolved TV episode
@@ -49,7 +52,7 @@ func openParityFixtureDB(t *testing.T, rules naming.NamingRules) (*sql.DB, fileF
 func seedParityFrozenEvidence(t *testing.T, db *sql.DB, fixture fileFixture) {
 	t.Helper()
 	ctx := context.Background()
-	if _, err := db.ExecContext(ctx, `UPDATE anime_metadata SET bgm_work_id='bgm-original', tmdb_work_id='tmdb-original', tmdb_media_kind='tv', tmdb_season=1 WHERE managed_anime_id=$1`, fixture.animeID); err != nil {
+	if _, err := db.ExecContext(ctx, `UPDATE anime_metadata SET bgm_work_id='bgm-original', tmdb_work_id='tmdb-original', tmdb_media_kind='tv', tmdb_season=1, season=1 WHERE managed_anime_id=$1`, fixture.animeID); err != nil {
 		t.Fatal(err)
 	}
 	rawTitle, err := json.Marshal(map[string]string{"title": parityReleaseTitle})
@@ -201,12 +204,6 @@ func TestMaintenanceRenderParityWithAcquisitionRender(t *testing.T) {
 				t.Fatalf("acquisition target %q is not under the fixture root %q", target, fixture.root)
 			}
 			renderer := filemaintenance.NewNamingTargetRenderer(db, parityRulesSourceUnder(fixture, tc.rules))
-			if tc.name == "custom work ID template" {
-				if _, err := db.ExecContext(ctx, `UPDATE anime_metadata SET bgm_work_id='bgm-current', tmdb_work_id='tmdb-current' WHERE managed_anime_id=$1`, fixture.animeID); err != nil {
-					t.Fatal(err)
-				}
-			}
-
 			// The observation deliberately carries no scan-provided facts: the
 			// render must reproduce the acquisition path from the frozen
 			// evidence of the placement alone.
@@ -252,12 +249,11 @@ func TestMaintenanceRenderParityWithAcquisitionRender(t *testing.T) {
 	}
 }
 
-func TestMaintenanceWorkIDTemplateBlockedWithoutFrozenBindings(t *testing.T) {
+func TestMaintenanceWorkIDTemplateFollowsCurrentBindings(t *testing.T) {
 	rules := workIDParityRules()
 
-	// The maintenance render reproduces the operation-frozen naming rules, so
-	// a placed file whose frozen template needs ids the effect never had can
-	// only exist if acquisition placed it. Acquisition must refuse that render
+	// A placed file whose template needs ids the effect never had can only
+	// exist if acquisition placed it. Acquisition must refuse that render
 	// (naming spec 2.4.1: templates reject missing interpolation values; never
 	// guess a target): a failed declaration, no operation, no placement.
 	t.Run("the effect never had the ids", func(t *testing.T) {
@@ -298,9 +294,10 @@ func TestMaintenanceWorkIDTemplateBlockedWithoutFrozenBindings(t *testing.T) {
 		}
 	})
 
-	// The binding the effect used is frozen on the operation, so losing the ids
-	// from the release snapshot alone must not block the render: the maintenance
-	// render reproduces the name the effect committed.
+	// A maintenance render reads the current binding, never the ids the release
+	// snapshot or the effect recorded: losing the ids from the snapshot changes
+	// nothing, a rebinding moves the target, and a cleared binding fails closed
+	// with the file left where it is.
 	t.Run("the release snapshot lost the ids the effect recorded", func(t *testing.T) {
 		db, fixture := openParityFixtureDB(t, rules)
 		defer db.Close()
@@ -313,12 +310,63 @@ func TestMaintenanceWorkIDTemplateBlockedWithoutFrozenBindings(t *testing.T) {
 		observation := filemaintenance.SnapshotObservation{AnimeID: fixture.animeID, PlacementID: placementID, FilePath: target, SizeBytes: fixture.size, Coverage: []string{"tv:e1"}}
 		rendered, err := renderer.RenderTarget(context.Background(), observation)
 		if err != nil {
-			t.Fatalf("the frozen binding must reproduce the acquisition name: %v", err)
+			t.Fatalf("the current binding must render: %v", err)
 		}
-		if !strings.Contains(rendered, "bgm-original") || !strings.Contains(rendered, "tmdb-original") {
-			t.Fatalf("render = %q, want the frozen work ids", rendered)
+		if rendered != target {
+			t.Fatalf("render = %q, want the acquisition name %q", rendered, target)
 		}
 	})
+
+	t.Run("rebinding moves the target", func(t *testing.T) {
+		db, fixture := openParityFixtureDB(t, rules)
+		defer db.Close()
+		seedParityFrozenEvidence(t, db, fixture)
+		placementID, target := prepareParityPlacement(t, db, fixture)
+		if _, err := db.Exec(`UPDATE anime_metadata SET bgm_work_id='bgm-current', tmdb_work_id='tmdb-current' WHERE managed_anime_id=$1`, fixture.animeID); err != nil {
+			t.Fatal(err)
+		}
+		renderer := filemaintenance.NewNamingTargetRenderer(db, parityRulesSourceUnder(fixture, rules))
+		observation := filemaintenance.SnapshotObservation{AnimeID: fixture.animeID, PlacementID: placementID, FilePath: target, SizeBytes: fixture.size, Coverage: []string{"tv:e1"}}
+		rendered, err := renderer.RenderTarget(context.Background(), observation)
+		if err != nil {
+			t.Fatalf("render: %v", err)
+		}
+		if !strings.Contains(rendered, "bgm-current") || !strings.Contains(rendered, "tmdb-current") {
+			t.Fatalf("render = %q, want the current work ids", rendered)
+		}
+	})
+
+	for _, tc := range []struct {
+		name   string
+		update string
+		want   string
+	}{
+		{name: "the BGM binding was cleared", update: `bgm_work_id = NULL`, want: "config_incomplete:binding_missing:bgm"},
+		{name: "the TMDB binding was cleared", update: `tmdb_work_id = NULL, tmdb_media_kind = NULL, tmdb_season = NULL`, want: "config_incomplete:binding_missing:tmdb"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, fixture := openParityFixtureDB(t, rules)
+			defer db.Close()
+			seedParityFrozenEvidence(t, db, fixture)
+			placementID, target := prepareParityPlacement(t, db, fixture)
+			if _, err := db.Exec(`UPDATE anime_metadata SET `+tc.update+` WHERE managed_anime_id=$1`, fixture.animeID); err != nil {
+				t.Fatal(err)
+			}
+			renderer := filemaintenance.NewNamingTargetRenderer(db, parityRulesSourceUnder(fixture, rules))
+			observation := filemaintenance.SnapshotObservation{AnimeID: fixture.animeID, PlacementID: placementID, FilePath: target, SizeBytes: fixture.size, Coverage: []string{"tv:e1"}}
+			rendered, err := renderer.RenderTarget(context.Background(), observation)
+			if got := filemaintenance.RenderExclusionReason(err); got != tc.want {
+				t.Fatalf("render = %q, %v; want reason %q", rendered, err, tc.want)
+			}
+			planned, err := filemaintenance.NewPlanner(paritySnapshotReader{observation: observation}, renderer).Plan(context.Background(), fixture.animeID, 1, 1)
+			if err != nil || len(planned.Candidates) != 1 {
+				t.Fatalf("plan = %+v, %v", planned, err)
+			}
+			if candidate := planned.Candidates[0]; !candidate.Excluded || candidate.ExcludeReasonCode != tc.want || candidate.TargetPath != "" {
+				t.Fatalf("candidate = %+v, want excluded with %q and no target", candidate, tc.want)
+			}
+		})
+	}
 }
 
 // TestMaintenanceOffsetChangeTouchesOnlyEpisode shifts the frozen episode
