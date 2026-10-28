@@ -128,7 +128,11 @@ func (r *NamingTargetRenderer) RenderCalibratedTarget(ctx context.Context, anime
 	if err != nil {
 		return "", err
 	}
-	resolved, base, err := r.renderNamingContext(ctx, animeID, filePath, sizeBytes, facts.PlacementID, nil)
+	frozen, err := lineage.coverageEpisode(facts.EpisodeDisplay)
+	if err != nil {
+		return "", err
+	}
+	resolved, base, err := r.renderNamingContext(ctx, animeID, filePath, sizeBytes, facts.PlacementID, frozen)
 	if err != nil {
 		return "", err
 	}
@@ -162,14 +166,20 @@ func (r *NamingTargetRenderer) RenderTarget(ctx context.Context, observation pla
 	if err != nil {
 		return "", err
 	}
-	resolved, base, err := r.renderNamingContext(ctx, observation.AnimeID, observation.FilePath, observation.SizeBytes, observation.PlacementID, nil)
+	// An episode offset change re-keys the placement's coverage while the
+	// admission identity stays as it was. Match the calibration preview: the
+	// coverage episode is the episode the file renders with (number and
+	// display), never a live offset or filename.
+	episode := episodeFromCoverage(observation.Coverage)
+	frozen, err := lineage.coverageEpisode(episode)
 	if err != nil {
 		return "", err
 	}
-	// Completed offset migration atomically switches Placement coverage, while
-	// the admission identity remains immutable. Match the calibration preview:
-	// use the snapshot's canonical episode, never a live offset or filename.
-	if episode := episodeFromCoverage(observation.Coverage); episode != "" {
+	resolved, base, err := r.renderNamingContext(ctx, observation.AnimeID, observation.FilePath, observation.SizeBytes, observation.PlacementID, frozen)
+	if err != nil {
+		return "", err
+	}
+	if episode != "" {
 		resolved.Context.Parsed.Episode.Display = episode
 		resolved.Context.Parsed.Episode.Raw = episode
 	}
