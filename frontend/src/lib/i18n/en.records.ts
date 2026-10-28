@@ -63,7 +63,7 @@ export const enRecordsCopy = {
     not_reached: "Not started",
     not_applicable: "Not applicable",
   },
-  replacement: "Replaces older version",
+  replacement: "Replaces a version",
   atStage: "{stage} · {state}",
   episode: "Episode {n}",
   episodes: "Episodes {range}",

@@ -10,8 +10,8 @@ import (
 // here is projected from the root and its own execution graph; nothing is
 // derived from a subscription log or the newest task (the seed identity reads
 // the accepted input frozen on the root plus the source release's frozen
-// facts), and no read drives execution. There is no retry, replan or recover action: repair is a
-// new acquisition elsewhere.
+// facts), and no read drives execution. There is no retry, replan or recover
+// action: repair is a new acquisition elsewhere.
 
 // acquisitionAccessScope is the single deployment-owner access domain every
 // root is written in today. Reads filter on it in the first predicate, so a row

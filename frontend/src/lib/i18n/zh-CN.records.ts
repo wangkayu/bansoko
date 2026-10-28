@@ -61,7 +61,7 @@ export const recordsCopy = {
     not_reached: "未开始",
     not_applicable: "不适用",
   },
-  replacement: "洗版",
+  replacement: "替换版本",
   atStage: "{stage} · {state}",
   episode: "第 {n} 集",
   episodes: "第 {range} 集",
