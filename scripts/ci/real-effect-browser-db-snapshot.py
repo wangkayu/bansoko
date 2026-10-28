@@ -55,7 +55,6 @@ TABLES = {
     "file_maintenance": ("reconciliation_scans", "managed_anime_id", "state", "version"),
     "alignment_operation": ("alignment_operations", "id", "state", "version"),
     "replacement_deletion": ("replacement_deletions", "id", "state", "version"),
-    "offset_migration_operation": ("offset_migration_plans", "id", "state", "version"),
     "postprocessing_plan": ("postprocessing_plans", "id", "state", "version"),
     # Acquisition roots own the acquisition_settle WorkItem; they carry no
     # updated_at column, so their last transition time stands in for it.
@@ -84,7 +83,6 @@ SCOPES = {
     "file_maintenance": "managed_anime_id=:'managed_id'",
     "alignment_operation": "managed_anime_id=:'managed_id'",
     "replacement_deletion": "managed_anime_id=:'managed_id'",
-    "offset_migration_operation": "managed_anime_id=:'managed_id'",
     "postprocessing_plan": "artifact_id IN (SELECT id FROM artifacts WHERE download_task_id IN (SELECT download_task_id FROM releases WHERE id=:'release_id'))",
     "acquisition": "source_release_ref=:'release_id'",
 }

@@ -51,7 +51,7 @@ assert "'fence_epoch',q.fence_epoch" in sql
 assert 'FROM anime_config_candidate_revisions' in sql
 assert "'owner_lifecycle_epoch',w.owner_lifecycle_epoch" in sql
 assert "'current_revision',current_revision" in sql
-assert "SELECT 'alignment_operation'" in sql and "SELECT 'offset_migration_operation'" in sql
+assert "SELECT 'alignment_operation'" in sql and "offset_migration" not in sql
 assert os.environ['PGOPTIONS']=='-c default_transaction_read_only=on'
 assert 'SECRET_SENTINEL' not in ' '.join(sys.argv)
 assert '-f' in sys.argv and '-' in sys.argv

@@ -68,12 +68,10 @@ cleanup() {
   if [[ -d "${summary_dir:-}" ]]; then cp -R "$summary_dir/." "$durable_evidence_dir/"; fi
   if (( rc != 0 )) && [[ -n "${PSQL:-}" ]]; then
     {
-      echo '== offset migration generations =='
-      $PSQL -t -A -F $'\t' -c "SELECT id, scope_kind, scope_owner_id, policy_version, state, planned_count, blocked_count, applied_count, reason_code, reason FROM offset_migration_generations WHERE managed_anime_id='anime-e2e' ORDER BY created_at" || true
-      echo '== offset migration plans =='
-      $PSQL -t -A -F $'\t' -c "SELECT id, generation_id, scope_kind, scope_owner_id, placement_id, state, reason_code, failure_reason, old_target_path, new_target_path FROM offset_migration_plans WHERE managed_anime_id='anime-e2e' ORDER BY created_at" || true
-      echo '== offset migration work items =='
-      $PSQL -t -A -F $'\t' -c "SELECT wi.id, wi.owner_id, wi.kind, wi.state, wi.attempt, wi.max_attempts, wi.last_error_code, wi.last_error_reason FROM e2e_aux.work_items_all wi WHERE wi.owner_type='offset_migration_operation' AND wi.owner_id IN (SELECT id FROM offset_migration_plans WHERE managed_anime_id='anime-e2e') ORDER BY wi.created_at" || true
+      echo '== offset changes =='
+      $PSQL -t -A -F $'\t' -c "SELECT id, rss_source_id, source_version, old_offset, new_offset, rekeyed_count, deleted_count, state FROM offset_alignment_changes ORDER BY created_at" || true
+      echo '== alignment requests =='
+      $PSQL -t -A -F $'\t' -c "SELECT r.placement_id, COALESCE(r.offset_change_id,''), COALESCE(r.outcome,''), r.requested_at FROM alignment_requests r JOIN placements p ON p.id=r.placement_id WHERE p.managed_anime_id='anime-e2e' ORDER BY r.requested_at" || true
       echo '== alignment operations =='
       $PSQL -t -A -F $'\t' -c "SELECT id, scan_generation, source_path, target_path, state, COALESCE(failure_code,''), COALESCE(reason,''), version FROM alignment_operations WHERE managed_anime_id='anime-e2e' ORDER BY created_at" || true
       echo '== calibration rows =='
@@ -149,11 +147,6 @@ start_server() {
     export BANSOKO_ENVIRONMENT=development BANSOKO_SKIP_AUTH=false BANSOKO_LISTEN_ADDRESS="$listen"
     export BANSOKO_FRONTEND_DIR="$root/frontend/dist" BANSOKO_CONFIG_DIR
     export BANSOKO_DOWNLOAD_ROOT="$BANSOKO_HARNESS_DOWNLOAD_ROOT"
-    if [[ "${BANSOKO_FM_E2E_SCENARIO3_PAUSE:-0}" == 1 && -n "${scenario3_pause_source:-}" ]]; then
-      export BANSOKO_FIXTURE_OFFSET_MIGRATION_PAUSE_SOURCE="$scenario3_pause_source"
-    else
-      unset BANSOKO_FIXTURE_OFFSET_MIGRATION_PAUSE_SOURCE
-    fi
     exec "$server_bin"
   ) >>"$summary_dir/server.log" 2>&1 &
   server_pid=$!
@@ -857,23 +850,23 @@ print(matches[0].get("expected_path") or "")' "$2"
     echo "timed out waiting for SQL value $expected: $query (last=$value)" >&2
     return 1
   }
-  wait_offset_applied() {
-    local generation_id="$1" placement_id="$2" deadline=$(( $(date +%s) + 240 )) state plan_state
+  # An offset change re-keys the link's files in the PATCH transaction; the
+  # scan scheduler's tick (once a minute) compares the keys through retention,
+  # submits the scan whose alignment routes the files, and records the change
+  # once every request is resolved. The file has moved when its placement path
+  # changed after the change was recorded.
+  wait_offset_moved() {
+    local source_id="$1" placement_id="$2" before_path="$3" deadline=$(( $(date +%s) + 300 )) state path
     while (( $(date +%s) < deadline )); do
-      state="$($PSQL -tAc "SELECT state FROM offset_migration_generations WHERE id='$generation_id'" | tr -d '[:space:]')"
-      plan_state="$($PSQL -tAc "SELECT state FROM offset_migration_plans WHERE generation_id='$generation_id' AND placement_id='$placement_id'" | tr -d '[:space:]')"
-      [[ "$plan_state" == applied ]] && return 0
-      if [[ "$state" == failed || "$state" == superseded || "$plan_state" == blocked || "$plan_state" == failed || "$plan_state" == superseded ]]; then
-        $PSQL -c "SELECT id, scope_kind, scope_owner_id, state, reason_code, reason FROM offset_migration_generations WHERE id='$generation_id'" >&2
-        $PSQL -c "SELECT p.id, p.placement_id, p.state, p.reason_code, p.failure_reason, wi.kind, wi.state, wi.attempt, wi.max_attempts, wi.last_error_code, wi.last_error_reason FROM offset_migration_plans p LEFT JOIN e2e_aux.work_items_all wi ON wi.owner_type='offset_migration_operation' AND wi.owner_id=p.id WHERE p.generation_id='$generation_id'" >&2
-        echo "offset operation for placement $placement_id did not apply (generation=$state, operation=$plan_state)" >&2
-        return 1
-      fi
+      state="$($PSQL -tAc "SELECT state FROM offset_alignment_changes WHERE rss_source_id='$source_id' ORDER BY created_at DESC LIMIT 1" | tr -d '[:space:]')"
+      path="$($PSQL -tAc "SELECT physical_path FROM placements WHERE id='$placement_id'" | tr -d '\r')"
+      [[ "$state" == recorded && "$path" != "$before_path" ]] && return 0
       sleep 2
     done
-    $PSQL -c "SELECT id, scope_kind, scope_owner_id, state, reason_code, reason FROM offset_migration_generations WHERE id='$generation_id'" >&2
-    $PSQL -c "SELECT p.id, p.placement_id, p.state, p.reason_code, p.failure_reason, wi.kind, wi.state, wi.attempt, wi.max_attempts, wi.last_error_code, wi.last_error_reason FROM offset_migration_plans p LEFT JOIN e2e_aux.work_items_all wi ON wi.owner_type='offset_migration_operation' AND wi.owner_id=p.id WHERE p.generation_id='$generation_id'" >&2
-    echo 'offset operation did not converge within 240 seconds' >&2
+    $PSQL -c "SELECT id, rss_source_id, source_version, old_offset, new_offset, rekeyed_count, deleted_count, state FROM offset_alignment_changes WHERE rss_source_id='$source_id' ORDER BY created_at" >&2
+    $PSQL -c "SELECT placement_id, offset_change_id, outcome FROM alignment_requests WHERE placement_id='$placement_id'" >&2
+    $PSQL -c "SELECT id, source_path, target_path, state, failure_code, reason FROM alignment_operations WHERE managed_anime_id='anime-e2e' ORDER BY created_at" >&2
+    echo "offset change of $source_id did not move placement $placement_id within 300 seconds (change=$state)" >&2
     return 1
   }
   scenario_json="$summary_dir/file022-scenarios.jsonl"
@@ -1048,17 +1041,15 @@ E2ESECOND
     [[ "$($PSQL -tAc "SELECT state FROM placements WHERE id='plc-old-m'" | tr -d '[:space:]')" == superseded ]] || { echo 'scenario 7 old movie placement not superseded' >&2; exit 1; }
     [[ ! -e "$movie_old_file" ]] || { echo 'scenario 7 superseded movie source still present after deletion' >&2; exit 1; }
     observe_disk scenario-7-movie-placement "$movie_path"
-    # M4: the offset edit admits and plans, then blocks the movie placement as
-    # a typed no-op; the file never moves.
+    # M4: the offset edit re-keys nothing (a movie does not move with an
+    # offset): the change is recorded at once and the file never moves.
     m_src_version="$($PSQL -tAc "SELECT version FROM rss_sources WHERE id='src-e2e-m'" | tr -d '[:space:]')"
     api_patch "/anime/anime-e2e-m/rss-sources/src-e2e-m/offset" "{\"expected_version\":$m_src_version,\"episode_offset\":1}" >"$summary_dir/scenario-7-offset.json"
-    wait_sql "SELECT state FROM offset_migration_generations WHERE managed_anime_id='anime-e2e-m' AND scope_kind='rss_source' AND scope_owner_id='src-e2e-m' ORDER BY created_at DESC LIMIT 1" completed_with_blocks
-    m_generation_id="$($PSQL -tAc "SELECT id FROM offset_migration_generations WHERE managed_anime_id='anime-e2e-m' AND scope_kind='rss_source' AND scope_owner_id='src-e2e-m' ORDER BY created_at DESC LIMIT 1" | tr -d '[:space:]')"
-    m_plan_row="$($PSQL -tAc "SELECT state || '|' || COALESCE(reason_code,'') FROM offset_migration_plans WHERE generation_id='$m_generation_id'" | tr -d '\r')"
-    [[ "$m_plan_row" == "blocked|movie_noop" ]] || { echo "scenario 7 offset operation ended [$m_plan_row], want blocked|movie_noop" >&2; exit 1; }
+    m_change_row="$($PSQL -tAc "SELECT state || '|' || rekeyed_count FROM offset_alignment_changes WHERE rss_source_id='src-e2e-m' ORDER BY created_at DESC LIMIT 1" | tr -d '[:space:]')"
+    [[ "$m_change_row" == "recorded|0" ]] || { echo "scenario 7 offset change is [$m_change_row], want recorded|0" >&2; exit 1; }
     [[ "$($PSQL -tAc "SELECT physical_path FROM placements WHERE id='$movie_placement_id'" | tr -d '\r')" == "$movie_path" && -f "$movie_path" && "$(fingerprint "$movie_path")" == "$movie_hex" ]] || { echo 'scenario 7 movie_noop moved or rewrote the placement' >&2; exit 1; }
     observe_disk scenario-7-after-offset "$movie_path"
-    printf '{"scenario":7,"m1":"movie chain settled at the movie row","m4":"offset no-op","db_state":"completed_with_blocks","failure_code":"movie_noop","placement":"%s","sha256":"%s"}\n' "$movie_path" "$movie_hex" >>"$scenario_json"
+    printf '{"scenario":7,"m1":"movie chain settled at the movie row","m4":"offset no-op","db_state":"recorded","rekeyed":0,"placement":"%s","sha256":"%s"}\n' "$movie_path" "$movie_hex" >>"$scenario_json"
     cat "$scenario_json" | tee -a "$durable_evidence_dir/file022-scenarios.jsonl"
     cat "$summary_dir/disk-observations.txt" | tee -a "$durable_evidence_dir/disk-observations.txt"
   fi
@@ -1074,13 +1065,12 @@ E2ESECOND
     second_before_hash="$(fingerprint "$second_before")"
     api_patch "/anime/anime-e2e/rss-sources/src-e2e/offset" "{\"expected_version\":$source_version,\"episode_offset\":$new_offset}" >"$summary_dir/scenario-1-source.json"
     [[ "$(fingerprint "$second_before")" == "$second_before_hash" ]] || { echo 'scenario 1 touched another link file' >&2; exit 1; }
-    generation_id="$($PSQL -tAc "SELECT id FROM offset_migration_generations WHERE managed_anime_id='anime-e2e' AND scope_kind='rss_source' AND scope_owner_id='src-e2e' ORDER BY created_at DESC LIMIT 1" | tr -d '[:space:]')"
-    [[ -n "$generation_id" ]] || { echo 'scenario 1 offset generation was not admitted' >&2; exit 1; }
-    wait_offset_applied "$generation_id" "$placement_id"
+    [[ "$($PSQL -tAc "SELECT rekeyed_count FROM offset_alignment_changes WHERE rss_source_id='src-e2e' ORDER BY created_at DESC LIMIT 1" | tr -d '[:space:]')" == 1 ]] || { echo 'scenario 1 offset change did not re-key the link file' >&2; exit 1; }
+    wait_offset_moved src-e2e "$placement_id" "$original_path"
     offset_target="$($PSQL -tAc "SELECT physical_path FROM placements WHERE id='$placement_id'" | tr -d '\r')"
     [[ "$offset_target" != "$original_path" && -f "$offset_target" && ! -e "$original_path" && "$(dirname "$offset_target")" == "$before_dir" && "$(basename "$offset_target")" != "$before_base" && "$(fingerprint "$offset_target")" == "$original_hash" ]] || { echo 'scenario 1 disk/name/fingerprint mismatch' >&2; exit 1; }
     observe_disk scenario-1-before "$original_path"; observe_disk scenario-1-after "$offset_target"; observe_disk scenario-1-other-source-unchanged "$second_before"
-    printf '{"scenario":1,"db_state":"applied","before":"%s","after":"%s","other_source":"%s","other_source_sha256":"%s","sha256":"%s"}\n' "$original_path" "$offset_target" "$second_before" "$second_before_hash" "$original_hash" >>"$scenario_json"
+    printf '{"scenario":1,"db_state":"recorded","before":"%s","after":"%s","other_source":"%s","other_source_sha256":"%s","sha256":"%s"}\n' "$original_path" "$offset_target" "$second_before" "$second_before_hash" "$original_hash" >>"$scenario_json"
     cat "$scenario_json" | tee -a "$durable_evidence_dir/file022-scenarios.jsonl"
     cat "$summary_dir/disk-observations.txt" | tee -a "$durable_evidence_dir/disk-observations.txt"
   else
@@ -1092,57 +1082,42 @@ E2ESECOND
     first_before="$offset_target"; first_before_hash="$(fingerprint "$first_before")"
     source_version="$($PSQL -tAc "SELECT version FROM rss_sources WHERE id='src-e2e-2'" | tr -d '[:space:]')"
     api_patch "/anime/anime-e2e/rss-sources/src-e2e-2/offset" "{\"expected_version\":$source_version,\"episode_offset\":$((new_offset + 1))}" >"$summary_dir/scenario-2-source.json"
-    wait_sql "SELECT count(*) FROM offset_migration_plans WHERE scope_kind='rss_source' AND scope_owner_id='src-e2e-2' AND state='applied'" 1
+    wait_offset_moved src-e2e-2 plc-e2e-2 "$second_path"
     source_after="$($PSQL -tAc "SELECT physical_path FROM placements WHERE id='plc-e2e-2'" | tr -d '\r')"
     [[ "$source_after" != "$second_path" && -f "$source_after" && ! -e "$second_path" && "$(fingerprint "$source_after")" == "$second_hash" ]] || { echo 'scenario 2 source placement did not move with preserved fingerprint' >&2; exit 1; }
     [[ "$(fingerprint "$first_before")" == "$first_before_hash" ]] || { echo 'scenario 2 moved another source' >&2; exit 1; }
     observe_disk scenario-2-before "$second_path"; observe_disk scenario-2-after "$source_after"; observe_disk scenario-2-other-source-unchanged "$first_before"
-    printf '{"scenario":2,"source_id":"src-e2e-2","db_state":"applied","before":"%s","after":"%s","other_source":"%s","other_source_sha256":"%s","sha256":"%s"}\n' "$second_path" "$source_after" "$first_before" "$first_before_hash" "$second_hash" >>"$scenario_json"
+    printf '{"scenario":2,"source_id":"src-e2e-2","db_state":"recorded","before":"%s","after":"%s","other_source":"%s","other_source_sha256":"%s","sha256":"%s"}\n' "$second_path" "$source_after" "$first_before" "$first_before_hash" "$second_hash" >>"$scenario_json"
     cat "$scenario_json" | tee -a "$durable_evidence_dir/file022-scenarios.jsonl"
     cat "$summary_dir/disk-observations.txt" | tee -a "$durable_evidence_dir/disk-observations.txt"
   fi
   if scenario_requested 3; then
-    # 3. Pause only the real executor for this source after the handler's
-    # durable running checkpoint, then SIGKILL and allow natural lease recovery.
+    # 3. SIGKILL right after the offset edit commits: the re-keyed file and its
+    # alignment request are durable, so the restarted server compares, scans
+    # and moves it.
     offset_for_restart=$((new_offset + 1))
     before_restart_path="$($PSQL -tAc "SELECT physical_path FROM placements WHERE id='$placement_id'" | tr -d '\r')"
-    scenario3_pause_source="$before_restart_path"
-    kill -KILL "$server_pid" 2>/dev/null || true
-    wait "$server_pid" 2>/dev/null || true
-    server_pid=""
-    BANSOKO_FM_E2E_SCENARIO3_PAUSE=1 start_server
-    live_ok=""
-    for _ in $(seq 1 60); do if curl -sf "http://$listen/api/v1/livez" >/dev/null 2>&1; then live_ok=1; break; fi; sleep 1; done
-    [[ -n "$live_ok" ]] || { echo 'scenario 3 paused server failed to start' >&2; exit 1; }
     source_version="$($PSQL -tAc "SELECT version FROM rss_sources WHERE id='src-e2e'" | tr -d '[:space:]')"
     api_patch "/anime/anime-e2e/rss-sources/src-e2e/offset" "{\"expected_version\":$source_version,\"episode_offset\":$offset_for_restart}" >"$summary_dir/scenario-3-source.json"
-    wait_sql "SELECT state FROM offset_migration_plans WHERE scope_kind='rss_source' AND scope_owner_id='src-e2e' ORDER BY created_at DESC LIMIT 1" running
-    restart_operation="$($PSQL -tAc "SELECT id FROM offset_migration_plans WHERE scope_kind='rss_source' AND scope_owner_id='src-e2e' AND state='running' ORDER BY created_at DESC LIMIT 1" | tr -d '[:space:]')"
-    target_path="$($PSQL -tAc "SELECT new_target_path FROM offset_migration_plans WHERE id='$restart_operation'" | tr -d '\r')"
-    if [[ "$target_path" != /* ]]; then target_path="$library_root/$target_path"; fi
-    # An offset plan owns its execute WorkItem through the generic
-    # (owner_type, owner_id) pair; there is no dedicated foreign key column.
-    item_id="$($PSQL -tAc "SELECT id FROM e2e_aux.work_items_all WHERE owner_type='offset_migration_operation' AND owner_id='$restart_operation' AND kind='offset_migration_execute' AND state='leased'" | tr -d '[:space:]')"
-    [[ -n "$item_id" ]] || { echo 'scenario 3 running operation lacks a leased execute WorkItem' >&2; exit 1; }
-    lease_before="$($PSQL -tAc "SELECT attempt FROM e2e_aux.work_items_all WHERE id='$item_id'" | tr -d '[:space:]')"
-    observe_disk scenario-3-running-before-restart "$before_restart_path"
-    [[ -f "$before_restart_path" && ! -e "$target_path" ]] || { echo 'scenario 3 pause did not preserve source before restart' >&2; exit 1; }
     kill -KILL "$server_pid" 2>/dev/null || true
     wait "$server_pid" 2>/dev/null || true
     server_pid=""
+    change_before="$($PSQL -tAc "SELECT id || '|' || state FROM offset_alignment_changes WHERE rss_source_id='src-e2e' ORDER BY created_at DESC LIMIT 1" | tr -d '[:space:]')"
+    [[ "$change_before" == *"|comparing" || "$change_before" == *"|aligning" ]] || { echo "scenario 3 offset change before restart is [$change_before], want comparing or aligning" >&2; exit 1; }
+    observe_disk scenario-3-before-restart "$before_restart_path"
+    [[ -f "$before_restart_path" ]] || { echo 'scenario 3 file moved before the restart' >&2; exit 1; }
     start_server
     live_ok=""
     for _ in $(seq 1 60); do if curl -sf "http://$listen/api/v1/livez" >/dev/null 2>&1; then live_ok=1; break; fi; sleep 1; done
     [[ -n "$live_ok" ]] || { echo 'scenario 3 recovery server failed to start' >&2; exit 1; }
-    wait_sql "SELECT state FROM offset_migration_plans WHERE id='$restart_operation'" applied
-    recovery_path="$($PSQL -tAc "SELECT physical_path FROM placements WHERE id=(SELECT placement_id FROM offset_migration_plans WHERE id='$restart_operation')" | tr -d '\r')"
-    lease_after="$($PSQL -tAc "SELECT attempt FROM e2e_aux.work_items_all WHERE id='$item_id' AND state='succeeded'" | tr -d '[:space:]')"
-    if [[ "$recovery_path" != "$target_path" || ! -f "$recovery_path" || -e "$before_restart_path" || -z "$lease_after" || "$lease_after" -le "$lease_before" ]]; then
-      echo "scenario 3 mismatch: recovery=$recovery_path target=$target_path recovery_exists=$([[ -f "$recovery_path" ]] && echo yes || echo no) source_still_there=$([[ -e "$before_restart_path" ]] && echo yes || echo no) lease_before=$lease_before lease_after=${lease_after:-none}" >&2
+    wait_offset_moved src-e2e "$placement_id" "$before_restart_path"
+    recovery_path="$($PSQL -tAc "SELECT physical_path FROM placements WHERE id='$placement_id'" | tr -d '\r')"
+    if [[ ! -f "$recovery_path" || -e "$before_restart_path" || "$(fingerprint "$recovery_path")" != "$original_hash" ]]; then
+      echo "scenario 3 mismatch: recovery=$recovery_path recovery_exists=$([[ -f "$recovery_path" ]] && echo yes || echo no) source_still_there=$([[ -e "$before_restart_path" ]] && echo yes || echo no)" >&2
       exit 1
     fi
     observe_disk scenario-3-after-restart "$recovery_path"
-    printf '{"scenario":3,"operation_id":"%s","work_item_id":"%s","db_state":"applied_after_crash_restart","before":"%s","after":"%s","sha256":"%s","lease_attempt_before":%s,"lease_attempt_after":%s,"lease":"naturally_reclaimed"}\n' "$restart_operation" "$item_id" "$before_restart_path" "$recovery_path" "$(fingerprint "$recovery_path")" "$lease_before" "$lease_after" >>"$scenario_json"
+    printf '{"scenario":3,"offset_change":"%s","db_state":"recorded_after_crash_restart","before":"%s","after":"%s","sha256":"%s"}\n' "${change_before%%|*}" "$before_restart_path" "$recovery_path" "$(fingerprint "$recovery_path")" >>"$scenario_json"
     cat "$scenario_json" | tee -a "$durable_evidence_dir/file022-scenarios.jsonl"
     cat "$summary_dir/disk-observations.txt" | tee -a "$durable_evidence_dir/disk-observations.txt"
   fi
