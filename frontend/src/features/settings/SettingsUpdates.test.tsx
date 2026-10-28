@@ -263,6 +263,35 @@ describe("SettingsUpdates", () => {
     expect(await screen.findByText(t("settings.updates.cardLast"))).toBeInTheDocument();
     expect(screen.queryByText(t("settings.updates.receiptDone"))).not.toBeInTheDocument();
   });
+  it("drops the pre-update check result once the operation ends", async () => {
+    const user = userEvent.setup();
+    const succeeded = { ...pendingBackupStatus, step: "succeeded", updated_at: "2026-08-29T02:05:00Z" };
+    let statusReads = 0;
+    stubFetch((url) => {
+      if (url.endsWith("/update/status")) {
+        statusReads += 1;
+        if (statusReads === 1) return jsonResponse({ code: "UPDATE_NOT_FOUND" }, 404);
+        if (statusReads === 2) return jsonResponse(acceptedStatus);
+        return jsonResponse(succeeded);
+      }
+      if (url.endsWith("/update/check")) return jsonResponse(updateCheck);
+      if (url.endsWith("/update/admit")) return jsonResponse(acceptedStatus, 201);
+      return jsonResponse({ code: "NOT_FOUND" }, 404);
+    });
+    renderUpdates();
+
+    await user.click(await screen.findByRole("button", { name: t("settings.updates.check") }));
+    await user.click(await screen.findByRole("button", { name: t("settings.updates.update") }));
+    await user.click(await screen.findByRole("button", { name: t("settings.updates.confirmAction") }));
+    expect(await screen.findByText(t("settings.updates.step.accepted"))).toBeInTheDocument();
+
+    fireEvent(window, new Event("focus"));
+    expect(await screen.findByText(t("settings.updates.receiptDone"))).toBeInTheDocument();
+    expect(screen.queryByText(t("settings.updates.candidateTitle"))).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: t("settings.updates.update") })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: t("settings.updates.check") })).toBeInTheDocument();
+  });
+
   it("performs one read-only check after the user asks", async () => {
     const user = userEvent.setup();
     const checkResponse = deferred<Response>();
