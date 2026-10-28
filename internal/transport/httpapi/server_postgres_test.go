@@ -693,10 +693,10 @@ func TestSubscribePreviewWorkspaceOverHTTP(t *testing.T) {
 	if _, err := rig.db.ExecContext(context.Background(), `
 INSERT INTO subscription_log_entries(
     id, subscription_id, managed_anime_id, kind, outcome, occurred_at,
-    title, summary, rss_source_id, dedupe_key, retention_until
+    message_code, message_params, rss_source_id, dedupe_key, retention_until
 )
 VALUES ('http-log-1', $1, $2, 'subscription_created', 'info', $3::timestamptz,
-        'Subscription created', 'Created from the custom RSS draft', $4,
+        'subscription_created', '{}'::jsonb, $4,
         'http-log-dedupe-1', $3::timestamptz + INTERVAL '30 days')`,
 		subscribed.Subscription.Id, subscribed.ManagedAnime.Id, time.Now().UTC(), subscribed.RssSources[0].Id); err != nil {
 		t.Fatalf("insert subscription log: %v", err)

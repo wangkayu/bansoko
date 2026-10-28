@@ -102,7 +102,7 @@ RETURNING title_override`,
 		if err := s.scheduleMetadataReleaseEvaluation(ctx, tx, managedAnimeID); err != nil {
 			return AnimeMetadata{}, err
 		}
-		if err := businesslog.WriteMetadataAppliedTx(ctx, txscope.Wrap(tx), s.activityWriter, subscriptionID, managedAnimeID, title, version+1); err != nil {
+		if err := businesslog.WriteMetadataAppliedTx(ctx, txscope.Wrap(tx), s.activityWriter, subscriptionID, managedAnimeID, version+1); err != nil {
 			return AnimeMetadata{}, fmt.Errorf("write metadata applied log: %w", err)
 		}
 	}

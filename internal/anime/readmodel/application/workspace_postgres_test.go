@@ -507,15 +507,15 @@ VALUES ('rel-files', $1, 'key-files', '{}', '{}', $2, 'accepted_pending_download
 	if _, err := db.ExecContext(context.Background(), `
 INSERT INTO subscription_log_entries(
     id, subscription_id, managed_anime_id, kind, outcome, occurred_at,
-    title, summary, rss_source_id, release_id, group_ref, details,
+    message_code, message_params, rss_source_id, release_id, group_ref, details,
     dedupe_key, retention_until
 )
 VALUES
     ('log-old', $1, $2, 'rss_new_content', 'info', $3::timestamptz,
-     'Older entry', 'One older item', $4, NULL, NULL,
+     'rss_new_content', '{"count":1}'::jsonb, $4, NULL, NULL,
      '{"item_count":1}'::jsonb, 'dedupe-old', $3::timestamptz + INTERVAL '30 days'),
-    ('log-new', $1, $2, 'rss_refresh_failed', 'failure', $5::timestamptz,
-     'Newer entry', 'Refresh failed', $4, NULL, 'test-group',
+    ('log-new', $1, $2, 'policy_changed', 'failure', $5::timestamptz,
+     'episode_offset_changed', '{"group_name":"Test Group"}'::jsonb, $4, NULL, 'test-group',
      '{"reason_code":"feed_fetch_failed","error_count":1}'::jsonb,
      'dedupe-new', $5::timestamptz + INTERVAL '30 days')`,
 		subscribe.Subscription.Id, animeID, older, subscribe.RssSources[0].Id, newer); err != nil {
@@ -533,7 +533,14 @@ VALUES
 		t.Fatalf("workspace logs must be newest first: %+v", workspace.Logs)
 	}
 	newest := workspace.Logs[1]
-	if newest.Kind != "rss_refresh_failed" || newest.Outcome != "failure" || newest.RSSSourceID == nil || *newest.RSSSourceID != subscribe.RssSources[0].Id || newest.GroupRef == nil || *newest.GroupRef != "test-group" {
+	if newest.MessageCode != "episode_offset_changed" || newest.MessageParams.GroupName == nil || *newest.MessageParams.GroupName != "Test Group" ||
+		newest.Source != "subscription" || newest.AnimeTitle != workspace.ManagedAnime.Title {
+		t.Fatalf("newest subscription log message was not mapped: %+v", newest)
+	}
+	if older := workspace.Logs[2]; older.MessageParams.Count == nil || *older.MessageParams.Count != 1 {
+		t.Fatalf("older subscription log params were not mapped: %+v", older.MessageParams)
+	}
+	if newest.Kind != "policy_changed" || newest.Outcome != "failure" || newest.RSSSourceID == nil || *newest.RSSSourceID != subscribe.RssSources[0].Id || newest.GroupRef == nil || *newest.GroupRef != "test-group" {
 		t.Fatalf("newest subscription log was not mapped safely: %+v", newest)
 	}
 	if newest.Details == nil || newest.Details.ReasonCode == nil || *newest.Details.ReasonCode != "feed_fetch_failed" || newest.Details.ErrorCount == nil || *newest.Details.ErrorCount != 1 {

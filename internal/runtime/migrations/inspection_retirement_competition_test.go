@@ -142,7 +142,7 @@ func TestAnimeRetirementVersusInspectionActivityBothOrders(t *testing.T) {
 							return err
 						}
 						<-probeResult
-						return activity.AppendTx(ctx, txscope.Wrap(inspectTx), observabilityport.ActivityRecord{SubscriptionID: subscription, ManagedAnimeID: anime, Kind: "artifact_verified", Outcome: "success", ReasonCode: "verified", SubjectType: "artifact", SubjectID: claim.Owner.ID, SubjectVersion: 2, StableResultKey: "verified", Title: "媒体文件核验完成", Summary: "媒体文件核验完成", CorrelationID: "corr-" + p.AcquisitionID, CausationType: "download_task", CausationID: p.TaskID})
+						return activity.AppendTx(ctx, txscope.Wrap(inspectTx), observabilityport.ActivityRecord{SubscriptionID: subscription, ManagedAnimeID: anime, Kind: "artifact_verified", Outcome: "success", ReasonCode: "verified", SubjectType: "artifact", SubjectID: claim.Owner.ID, SubjectVersion: 2, StableResultKey: "verified", MessageCode: observabilityport.MessageArtifactVerified, CorrelationID: "corr-" + p.AcquisitionID, CausationType: "download_task", CausationID: p.TaskID})
 					}
 					lockRetire := func() (int64, error) {
 						var epoch int64

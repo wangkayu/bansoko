@@ -3695,9 +3695,35 @@ export interface components {
         /** @enum {string} */
         AutomationState: "queued" | "running" | "completed" | "partial" | "failed";
         /** @enum {string} */
-        SubscriptionLogKind: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "policy_changed" | "rss_new_content" | "rss_refresh_failed" | "release_processed" | "download_changed" | "artifact_verified" | "placement_changed" | "replacement_decided" | "cleanup_completed" | "cleanup_failed" | "file_alignment_completed" | "file_alignment_failed" | "acquisition_settled";
+        SubscriptionLogKind: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "policy_changed" | "rss_new_content" | "release_processed" | "download_changed" | "artifact_verified" | "placement_changed" | "replacement_decided" | "cleanup_completed" | "cleanup_failed" | "file_alignment_completed" | "file_alignment_failed" | "acquisition_settled";
         /** @enum {string} */
         SubscriptionLogOutcome: "info" | "success" | "failure";
+        /**
+         * @description The message of a business journal entry in the closed catalog the server registers per entry kind (published to the frontend as a generated artifact). The client renders the text from the code and message_params; entries carry no display text.
+         * @enum {string}
+         */
+        SubscriptionLogMessageCode: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "rules_changed" | "episode_offset_changed" | "rss_new_content" | "release_discovered" | "release_waiting_metadata" | "release_subscription_stopped" | "release_source_unavailable" | "release_parse_failed" | "release_accepted" | "release_filtered" | "release_adopted_existing" | "release_acquisition_failed" | "release_submitted" | "release_awaiting_competition" | "release_resume_baseline" | "release_start_baseline" | "release_evaluated" | "download_submitted" | "download_completed" | "download_removed" | "download_failed" | "artifact_verified" | "file_imported" | "file_adopted" | "file_retained" | "file_import_failed" | "acquisition_succeeded" | "acquisition_failed" | "acquisition_cancelled" | "replacement_kept_existing" | "replacement_kept_all" | "replacement_blocked" | "replacement_replaced" | "replacement_not_replaced" | "placement_released" | "unknown_file_released" | "placement_recorded" | "file_recovered" | "old_version_deleted" | "old_version_kept" | "old_version_delete_failed";
+        /** @description Scalar values the message interpolates. Each message declares its params; an optional param is absent rather than empty. */
+        SubscriptionLogMessageParams: {
+            /** @description Torrent name the downloader reports. */
+            name?: string;
+            /** @description Base name of the file a file result is about. */
+            file_name?: string;
+            /** @description Subgroup display name. */
+            group_name?: string;
+            /**
+             * Format: int64
+             * @description Non-negative item count.
+             */
+            count?: number;
+        };
+        /**
+         * @description Where the entry's work came from: the anime's subscription, or a one-shot download (its temporary anime and subscription).
+         * @enum {string}
+         */
+        SubscriptionLogSource: "subscription" | "one_shot";
+        /** @enum {string} */
+        ObservabilityRecordState: "in_progress" | "success" | "failure" | "info";
         /** @description Formal anime owner. The id is the sole formal owner identity. Provider refs, custom RSS locators/URLs, labels, titles, and other external attributes are not owner identity and may collide across owners. */
         ManagedAnime: {
             /** @description Sole formal owner identity for this ManagedAnime. */
@@ -4494,12 +4520,15 @@ export interface components {
             id: components["schemas"]["ID"];
             subscription_id: components["schemas"]["ID"];
             managed_anime_id: components["schemas"]["ID"];
+            /** @description The anime's current display title, read with the entry (empty when the anime is gone). */
+            anime_title: string;
+            source: components["schemas"]["SubscriptionLogSource"];
             kind: components["schemas"]["SubscriptionLogKind"];
             outcome: components["schemas"]["SubscriptionLogOutcome"];
             /** Format: date-time */
             occurred_at: string;
-            title: string;
-            summary: string;
+            message_code: components["schemas"]["SubscriptionLogMessageCode"];
+            message_params: components["schemas"]["SubscriptionLogMessageParams"];
             rss_source_id?: components["schemas"]["ID"] | null;
             release_id?: components["schemas"]["ID"] | null;
             group_ref?: string | null;
@@ -11308,7 +11337,12 @@ export interface operations {
                 cursor?: components["parameters"]["Cursor"];
                 limit?: components["parameters"]["Limit"];
                 kind?: ("routine" | "business" | "automation" | "plugin")[];
-                outcome?: "success" | "info" | "warning" | "failure" | "partial" | "pending" | "unknown";
+                /** @description Narrows the business records to these journal entry kinds; the other record kinds are unaffected. */
+                entry_kind?: components["schemas"]["SubscriptionLogKind"][];
+                /** @description Selects records in this state. A business record of a Release run (download, verification, import, placement and replacement entries closed by the run's acquisition result) takes the state of its run: the result's outcome, or in_progress while the run has no result. failure includes failed acquisitions, failed business records, failed and partial automation runs, and failed or unconfirmed (unknown) notification deliveries. */
+                state?: components["schemas"]["ObservabilityRecordState"];
+                /** @description Case-insensitive search text (trimmed; blank means no search). It matches the anime title, a business record's release title, file name or subgroup name, and a notification's target name; a business record of a Release run matches when any record of its run does. */
+                q?: string;
                 from?: components["parameters"]["FromTime"];
                 to?: components["parameters"]["ToTime"];
                 managed_anime_id?: components["schemas"]["ID"];
@@ -11328,6 +11362,7 @@ export interface operations {
                     "application/json": components["schemas"]["ObservabilityRecordPage"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             422: components["responses"]["Unprocessable"];
         };

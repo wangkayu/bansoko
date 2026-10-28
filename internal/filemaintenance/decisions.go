@@ -15,6 +15,7 @@ import (
 	acquisitiontarget "bansoko/internal/acquisition/target"
 	"bansoko/internal/apperrors"
 	"bansoko/internal/batchplan"
+	"bansoko/internal/observability/businesslog"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
 	"bansoko/internal/qualityprofile"
@@ -800,11 +801,11 @@ ON CONFLICT (idempotency_key) DO NOTHING`,
 	if err != nil {
 		return ReplacementDecisionView{}, err
 	}
-	if s.activity != nil {
-		title, err := activityAnimeTitle(ctx, tx, input.AnimeID)
-		if err != nil {
-			return ReplacementDecisionView{}, fmt.Errorf("read anime title for replacement activity: %w", err)
-		}
+	// A replace verdict is only a plan when it is frozen: its one line is
+	// written when it ends, replaced at settlement or not_replaced when it
+	// will never take effect. Every other verdict is final here.
+	message, final := admissionReplacementMessage(verdict)
+	if s.activity != nil && final {
 		details, logReleaseID, err := replacementActivityDetailsTx(ctx, tx, input.AnimeID, input.CandidateRelease, key, verdict, pools, candidatePlacementID)
 		if err != nil {
 			return ReplacementDecisionView{}, err
@@ -819,8 +820,7 @@ ON CONFLICT (idempotency_key) DO NOTHING`,
 			SubjectID:       view.ID,
 			SubjectVersion:  1,
 			StableResultKey: verdict,
-			Title:           title,
-			Summary:         replacementActivitySummary(verdict),
+			MessageCode:     message,
 			ReleaseID:       logReleaseID,
 			Details:         details,
 			CorrelationID:   correlation,
@@ -1237,6 +1237,7 @@ func (s *ReplacementDecisionService) settleDecisions(ctx context.Context, ids []
 	valid := make([]*decisionRow, 0, len(decisions))
 	validIDs := []string{}
 	losers := []string{}
+	staled := []supersededDecision{}
 	for _, decision := range decisions {
 		stale, err := revalidateDecisionTx(ctx, tx, decision)
 		if err != nil {
@@ -1248,11 +1249,12 @@ func (s *ReplacementDecisionService) settleDecisions(ctx context.Context, ids []
 			}
 		}
 		if stale != "" {
-			if _, err := tx.ExecContext(ctx, `
-UPDATE replacement_decisions
-SET state = 'stale', stale_reason = $2, version = version + 1, updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND state = 'admitted'`, decision.ID, stale); err != nil {
+			superseded, err := staleAdmittedDecisionTx(ctx, tx, decision.ID, stale)
+			if err != nil {
 				return err
+			}
+			if superseded != nil {
+				staled = append(staled, *superseded)
 			}
 			continue
 		}
@@ -1283,6 +1285,14 @@ WHERE id = ANY($1) AND state = 'admitted'`, validIDs); err != nil {
 			return err
 		}
 	}
+	// The decisions revalidation staled will never take effect. Their lines
+	// come last, so they take no lock the settle has not already taken
+	// (revalidation holds the subscription row).
+	for _, decision := range staled {
+		if err := s.appendNotReplacedTx(ctx, tx, decision); err != nil {
+			return err
+		}
+	}
 	return tx.Commit()
 }
 
@@ -1292,9 +1302,9 @@ WHERE id = ANY($1) AND state = 'admitted'`, validIDs); err != nil {
 const replacementSettledReason = "replaced"
 
 // appendSettledActivityTx records, in the settle transaction, that one replace
-// decision took effect. The decision line written at acceptance only plans the
-// replacement; this line is written only here, so a release whose import
-// fails never shows a replacement as done.
+// decision took effect. A replace decision writes nothing when it is frozen;
+// this line is written only here, so a release whose import fails never
+// shows a replacement as done (it gets the not_replaced line instead).
 func (s *ReplacementDecisionService) appendSettledActivityTx(ctx context.Context, tx *sql.Tx, decision *decisionRow) error {
 	if s.activity == nil {
 		return nil
@@ -1313,10 +1323,6 @@ SELECT candidate_release_id, coverage_key, pools FROM replacement_decisions WHER
 	if err != nil {
 		return fmt.Errorf("read subscription for replacement activity: %w", err)
 	}
-	title, err := activityAnimeTitle(ctx, tx, decision.AnimeID)
-	if err != nil {
-		return fmt.Errorf("read anime title for replacement activity: %w", err)
-	}
 	details, logReleaseID, err := replacementActivityDetailsTx(ctx, tx, decision.AnimeID, releaseID, key, "replace", pools, decision.CandidatePlacementID)
 	if err != nil {
 		return err
@@ -1331,8 +1337,7 @@ SELECT candidate_release_id, coverage_key, pools FROM replacement_decisions WHER
 		SubjectID:       decision.ID,
 		SubjectVersion:  1,
 		StableResultKey: replacementSettledReason,
-		Title:           title,
-		Summary:         replacementActivitySummary(replacementSettledReason),
+		MessageCode:     observabilityport.MessageReplacementReplaced,
 		ReleaseID:       logReleaseID,
 		Details:         details,
 		CorrelationID:   decision.CorrelationID,
@@ -1371,13 +1376,104 @@ SELECT EXISTS (
 
 // markStale transitions an admitted decision to stale with the typed reason
 // (zero effects). A decision that already left 'admitted' (stale or settled)
-// is a no-op.
+// is a no-op. A replace decision staled here will never take effect, so it
+// writes its not_replaced line in the same transaction. The subscription row
+// is locked first (FOR KEY SHARE), in the order the settle transaction takes
+// it before the decision rows.
 func (s *ReplacementDecisionService) markStale(ctx context.Context, decisionID, reason string) error {
-	_, err := s.db.ExecContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if s.activity != nil {
+		var one int
+		err := tx.QueryRowContext(ctx, `
+SELECT 1 FROM subscriptions s
+JOIN replacement_decisions d ON d.managed_anime_id = s.managed_anime_id
+WHERE d.id = $1
+FOR KEY SHARE OF s`, decisionID).Scan(&one)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+	}
+	superseded, err := staleAdmittedDecisionTx(ctx, tx, decisionID, reason)
+	if err != nil {
+		return err
+	}
+	if superseded != nil {
+		if err := s.appendNotReplacedTx(ctx, tx, *superseded); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// supersededDecision is one admitted replace decision that went stale when it
+// was to take effect.
+type supersededDecision struct {
+	id, animeID, releaseID, correlationID string
+	version                               int64
+}
+
+// staleAdmittedDecisionTx stales one admitted decision. It returns the
+// decision when it was an admitted replace decision (it will never take
+// effect), nil when it was not admitted or not a replace.
+func staleAdmittedDecisionTx(ctx context.Context, tx *sql.Tx, decisionID, reason string) (*supersededDecision, error) {
+	var decision supersededDecision
+	var verdict string
+	var correlation sql.NullString
+	err := tx.QueryRowContext(ctx, `
 UPDATE replacement_decisions
 SET state = 'stale', stale_reason = $2, version = version + 1, updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND state = 'admitted'`, decisionID, reason)
-	return err
+WHERE id = $1 AND state = 'admitted'
+RETURNING id, managed_anime_id, candidate_release_id, correlation_id, version, verdict`, decisionID, reason).
+		Scan(&decision.id, &decision.animeID, &decision.releaseID, &correlation, &decision.version, &verdict)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if verdict != "replace" {
+		return nil, nil
+	}
+	decision.correlationID = correlation.String
+	return &decision, nil
+}
+
+// appendNotReplacedTx writes the not_replaced line (superseded) of one replace
+// decision that went stale when it was to take effect. An anime without a
+// subscription has no log to append to.
+func (s *ReplacementDecisionService) appendNotReplacedTx(ctx context.Context, tx *sql.Tx, decision supersededDecision) error {
+	if s.activity == nil {
+		return nil
+	}
+	subscriptionID, err := subscriptionIDForAnime(ctx, tx, decision.animeID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read subscription for not-replaced activity: %w", err)
+	}
+	runContext, found, err := releaseRunContextFoundTx(ctx, tx, decision.releaseID)
+	if err != nil {
+		return err
+	}
+	releaseID := decision.releaseID
+	if !found {
+		releaseID = ""
+	}
+	if err := businesslog.WriteReplacementNotReplacedTx(ctx, txscope.Wrap(tx), s.activity, businesslog.NotReplaced{
+		SubscriptionID: subscriptionID, ManagedAnimeID: decision.animeID,
+		DecisionID: decision.id, DecisionVersion: decision.version,
+		ReleaseID: releaseID, RunContext: runContext,
+		Reason: businesslog.NotReplacedSuperseded, CorrelationID: decision.correlationID,
+		CausationType: "replacement_decision", CausationID: decision.id,
+	}); err != nil {
+		return fmt.Errorf("append not-replaced activity: %w", err)
+	}
+	return nil
 }
 
 // queryer is the shared SQL row source for the revalidation read (database
@@ -1728,23 +1824,18 @@ LIMIT 1`, releaseID).Scan(&raw)
 	return SortCoverage(plan.CoverageKeys), plan.CandidateUnits(), true
 }
 
-// replacementActivitySummary is the business-history line of one replacement
-// decision. The verdict stays the typed reason code; the line never shows it raw.
-// A replace decision is only planned until it settles (replacementSettledReason
-// records the outcome), so its line is in the future tense.
-func replacementActivitySummary(verdict string) string {
+// admissionReplacementMessage is the message of a key decision frozen with
+// one verdict, and whether that verdict is final when it is frozen. A replace
+// verdict is not: it writes replaced at settlement or not_replaced when it
+// will never take effect.
+func admissionReplacementMessage(verdict string) (observabilityport.MessageCode, bool) {
 	switch verdict {
-	case "replace":
-		return "替换版本：将替换旧文件"
-	case replacementSettledReason:
-		return "替换版本：已替换旧文件"
 	case "keep", "retain":
-		return "替换版本：保留现有文件"
+		return observabilityport.MessageReplacementKeptExisting, true
 	case "queue":
-		return "替换版本：保留所有版本"
+		return observabilityport.MessageReplacementKeptAll, true
 	case "blocked":
-		return "替换版本：无法比较，未替换"
-	default:
-		return "替换版本已评估"
+		return observabilityport.MessageReplacementBlocked, true
 	}
+	return "", false
 }

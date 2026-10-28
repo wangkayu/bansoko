@@ -90,12 +90,3 @@ func TestBoundTextKeepsRunes(t *testing.T) {
 		t.Fatalf("BoundText = %q", got)
 	}
 }
-
-func TestRulesChangedSummary(t *testing.T) {
-	if got := RulesChangedSummary([]string{"release_rules", "naming_rules"}); got != "规则：标题过滤、命名" {
-		t.Fatalf("summary = %q", got)
-	}
-	if got := RulesChangedSummary(nil); got != "规则已更新" {
-		t.Fatalf("summary = %q", got)
-	}
-}

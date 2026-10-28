@@ -19,10 +19,18 @@ func mapObservabilityRecordQuery(value generated.ListObservabilityRecordsParams)
 		}
 		kinds = &mapped
 	}
-	var outcome *string
-	if value.Outcome != nil {
-		mapped := string(*value.Outcome)
-		outcome = &mapped
+	var entryKinds *[]string
+	if value.EntryKind != nil {
+		mapped := make([]string, len(*value.EntryKind))
+		for i, kind := range *value.EntryKind {
+			mapped[i] = string(kind)
+		}
+		entryKinds = &mapped
+	}
+	var state *string
+	if value.State != nil {
+		mapped := string(*value.State)
+		state = &mapped
 	}
 	var managedAnimeID *string
 	if value.ManagedAnimeId != nil {
@@ -30,7 +38,7 @@ func mapObservabilityRecordQuery(value generated.ListObservabilityRecordsParams)
 		managedAnimeID = &mapped
 	}
 	return observabilityapplication.RecordQuery{
-		Cursor: value.Cursor, Limit: value.Limit, Kind: kinds, Outcome: outcome,
+		Cursor: value.Cursor, Limit: value.Limit, Kind: kinds, EntryKind: entryKinds, State: state, Q: value.Q,
 		From: value.From, To: value.To, ManagedAnimeID: managedAnimeID,
 	}
 }

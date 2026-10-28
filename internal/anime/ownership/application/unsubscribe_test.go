@@ -443,8 +443,8 @@ VALUES ('del-pgs', $1, 'mikan', 'del-group', 'Del Group', 'auto', true, 100)`, s
 	}
 	// A subscription log entry (created by Subscribe already; add a second).
 	if _, err := db.ExecContext(ctx, `
-INSERT INTO subscription_log_entries(id, subscription_id, managed_anime_id, kind, outcome, title, summary, dedupe_key)
-VALUES ('del-log', $1, $2, 'group_changed', 'info', 't', 's', 'group_changed:$1:v9')`, subscriptionID, animeID); err != nil {
+INSERT INTO subscription_log_entries(id, subscription_id, managed_anime_id, kind, outcome, message_code, message_params, dedupe_key)
+VALUES ('del-log', $1, $2, 'group_changed', 'info', 'group_changed', '{}', 'group_changed:$1:v9')`, subscriptionID, animeID); err != nil {
 		t.Fatal(err)
 	}
 	// A routine activity and diagnostic episode pointing at the anime (nullable

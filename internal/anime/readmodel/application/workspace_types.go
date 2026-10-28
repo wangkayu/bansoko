@@ -277,6 +277,10 @@ type FrozenRenderSnapshot struct {
 }
 
 type SubscriptionLogEntry struct {
+	// AnimeTitle is the anime's current display title, read with the entry.
+	AnimeTitle string
+	// Source is subscription, or one_shot for the work of a one-shot download.
+	Source         string
 	CausationID    *string
 	CausationType  *string
 	CorrelationID  *string
@@ -286,6 +290,8 @@ type SubscriptionLogEntry struct {
 	ID             string
 	Kind           string
 	ManagedAnimeID string
+	MessageCode    string
+	MessageParams  SubscriptionLogMessageParams
 	OccurredAt     time.Time
 	Outcome        string
 	ReasonCode     *string
@@ -296,8 +302,15 @@ type SubscriptionLogEntry struct {
 	SubjectType    *string
 	SubjectVersion *int64
 	SubscriptionID string
-	Summary        string
-	Title          string
+}
+
+// SubscriptionLogMessageParams are the scalar values an entry's message
+// interpolates.
+type SubscriptionLogMessageParams struct {
+	Count     *int64  `json:"count"`
+	FileName  *string `json:"file_name"`
+	GroupName *string `json:"group_name"`
+	Name      *string `json:"name"`
 }
 
 type SubscriptionLogDetails struct {

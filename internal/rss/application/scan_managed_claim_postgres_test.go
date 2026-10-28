@@ -66,7 +66,7 @@ func TestClaimScanManagedTargetsAttachesOnlyUnclaimedScanFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	claimed, err := claimScanManagedTargetsTx(ctx, tx, "anime-rss-test", "release-claim", set)
+	claimed, _, err := claimScanManagedTargetsTx(ctx, tx, "anime-rss-test", "release-claim", set)
 	if err != nil {
 		_ = tx.Rollback()
 		t.Fatal(err)
@@ -93,7 +93,7 @@ func TestClaimScanManagedTargetsAttachesOnlyUnclaimedScanFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, err := claimScanManagedTargetsTx(ctx, tx, "anime-rss-test", "release-other", set)
+	again, _, err := claimScanManagedTargetsTx(ctx, tx, "anime-rss-test", "release-other", set)
 	if err != nil {
 		_ = tx.Rollback()
 		t.Fatal(err)

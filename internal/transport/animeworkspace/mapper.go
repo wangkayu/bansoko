@@ -564,8 +564,15 @@ func mapWorkspaceLogs(value []readmodelapplication.SubscriptionLogEntry) []gener
 			SubjectType:    cloneWorkspaceString(item.SubjectType),
 			SubjectVersion: cloneWorkspaceInt64(item.SubjectVersion),
 			SubscriptionId: generated.ID(item.SubscriptionID),
-			Summary:        item.Summary,
-			Title:          item.Title,
+			AnimeTitle:     item.AnimeTitle,
+			Source:         generated.SubscriptionLogSource(item.Source),
+			MessageCode:    generated.SubscriptionLogMessageCode(item.MessageCode),
+			MessageParams: generated.SubscriptionLogMessageParams{
+				Count:     cloneWorkspaceInt64(item.MessageParams.Count),
+				FileName:  cloneWorkspaceString(item.MessageParams.FileName),
+				GroupName: cloneWorkspaceString(item.MessageParams.GroupName),
+				Name:      cloneWorkspaceString(item.MessageParams.Name),
+			},
 		}
 	}
 	return result

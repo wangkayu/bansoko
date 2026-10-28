@@ -1473,7 +1473,7 @@ FOR UPDATE OF r`,
 		}
 	}
 
-	if err := businesslog.WriteMetadataAppliedTx(ctx, txscope.Wrap(tx), d.ActivityWriter, lockedSubscriptionID, managedAnimeID, lockedTitle, metadataVersion+1); err != nil {
+	if err := businesslog.WriteMetadataAppliedTx(ctx, txscope.Wrap(tx), d.ActivityWriter, lockedSubscriptionID, managedAnimeID, metadataVersion+1); err != nil {
 		return counts, fmt.Errorf("write metadata applied log: %w", err)
 	}
 	if err := tx.Commit(); err != nil {

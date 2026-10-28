@@ -6,10 +6,18 @@ import (
 )
 
 type RecordQuery struct {
-	Cursor         *string
-	Limit          *int
-	Kind           *[]string
-	Outcome        *string
+	Cursor *string
+	Limit  *int
+	Kind   *[]string
+	// EntryKind narrows the business source to these journal entry kinds; the
+	// other sources are unaffected.
+	EntryKind *[]string
+	// State selects records by their state (in_progress, success, failure,
+	// info); a business entry of a Release run takes the state of its run.
+	State *string
+	// Q is a case-insensitive search text; a business entry of a Release run
+	// matches when any entry of its run does.
+	Q              *string
 	From           *time.Time
 	To             *time.Time
 	ManagedAnimeID *string

@@ -265,20 +265,20 @@ WHERE subscription_id = $1 AND kind = 'rss_new_content'`, subscriptionID).Scan(
 		t.Fatalf("accepted release should create one download task, got %d", taskCount)
 	}
 	var activityCount int
-	var activityKind, activityReason, activitySubjectType, activitySubjectID, activitySourceID, activityReleaseID, activityGroupRef, activityDedupe string
+	var activityKind, activityReason, activitySubjectType, activitySubjectID, activitySourceID, activityReleaseID, activityGroupRef, activityDedupe, activityMessage string
 	var activityVersion int64
 	var activityDetails []byte
 	if err := db.QueryRowContext(context.Background(), `
 SELECT COUNT(*), MIN(kind), MIN(reason_code), MIN(subject_type), MIN(subject_id), MIN(subject_version),
        MIN(COALESCE(rss_source_id, '')), MIN(COALESCE(release_id, '')), MIN(COALESCE(group_ref, '')), MIN(dedupe_key),
-       (array_agg(details::text ORDER BY id))[1]
+       (array_agg(details::text ORDER BY id))[1], MIN(message_code)
 FROM subscription_log_entries
 WHERE subscription_id = $1 AND kind = 'release_processed'`, subscriptionID).Scan(
 		&activityCount, &activityKind, &activityReason, &activitySubjectType, &activitySubjectID, &activityVersion,
-		&activitySourceID, &activityReleaseID, &activityGroupRef, &activityDedupe, &activityDetails); err != nil {
+		&activitySourceID, &activityReleaseID, &activityGroupRef, &activityDedupe, &activityDetails, &activityMessage); err != nil {
 		t.Fatal(err)
 	}
-	if activityCount != 1 || activityKind != "release_processed" || activityReason != "accepted" ||
+	if activityCount != 1 || activityKind != "release_processed" || activityReason != "accepted" || activityMessage != "release_accepted" ||
 		activitySubjectType != "release" || activitySubjectID != releaseID || activityVersion < 1 ||
 		activitySourceID != sourceID || activityReleaseID != releaseID || activityGroupRef != "Test Group" ||
 		!strings.HasPrefix(activityDedupe, "release_processed:release:"+releaseID+":v") ||
@@ -375,26 +375,16 @@ func TestRefreshUnsupportedLocatorPersistsStableRuntimeReasonWithoutFetch(t *tes
 	if err := store.FinishWithResult(context.Background(), claim, workitems.StateFailed, outcome.OwnerResult, outcome.WriteOwner); err != nil {
 		t.Fatal(err)
 	}
+	// A refresh failure is a diagnostic condition, not a journal entry: the
+	// failed refresh writes no subscription log entry.
 	var activityCount int
-	var activityKind, activityReason, activitySubjectType, activitySubjectID, activitySourceID, activityDedupe string
-	var activityVersion int64
-	var activityDetails []byte
 	if err := db.QueryRowContext(context.Background(), `
-SELECT COUNT(*), MIN(kind), MIN(reason_code), MIN(subject_type), MIN(subject_id), MIN(subject_version),
-       MIN(COALESCE(rss_source_id, '')), MIN(dedupe_key), (array_agg(details::text ORDER BY id))[1]
-FROM subscription_log_entries
-WHERE subscription_id = 'sub-rss-test' AND kind = 'rss_refresh_failed'`).Scan(
-		&activityCount, &activityKind, &activityReason, &activitySubjectType, &activitySubjectID, &activityVersion,
-		&activitySourceID, &activityDedupe, &activityDetails); err != nil {
+SELECT COUNT(*) FROM subscription_log_entries
+WHERE subscription_id = 'sub-rss-test' AND (subject_type = 'rss_source' OR rss_source_id = $1)`, sourceID).Scan(&activityCount); err != nil {
 		t.Fatal(err)
 	}
-	if activityCount != 1 || activityKind != "rss_refresh_failed" || activityReason != "RSS_LOCATOR_SCHEME_UNSUPPORTED" ||
-		activitySubjectType != "rss_source" || activitySubjectID != sourceID || activityVersion != 2 ||
-		activitySourceID != sourceID || !strings.HasPrefix(activityDedupe, "rss_refresh_failed:rss_source:"+sourceID+":v2:sha256:") ||
-		strings.Contains(string(activityDetails), "DO_NOT_DISCLOSE_SECRET_MARKER") || strings.Contains(string(activityDetails), "opaque://") {
-		t.Fatalf("unexpected refresh failure Activity: count=%d kind=%q reason=%q subject=%s/%s/v%d source=%q dedupe=%q details=%s",
-			activityCount, activityKind, activityReason, activitySubjectType, activitySubjectID, activityVersion,
-			activitySourceID, activityDedupe, activityDetails)
+	if activityCount != 0 {
+		t.Fatalf("a refresh failure wrote %d journal entries, want none", activityCount)
 	}
 	var health, reasonCode, reasonDetail string
 	if err := db.QueryRowContext(context.Background(), `

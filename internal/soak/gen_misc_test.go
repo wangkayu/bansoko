@@ -204,15 +204,18 @@ WHERE (x.kind <> 'qb_sync' OR a.rn IS NOT NULL) AND (x.kind <> 'plugin_deliver' 
 
 	// ---- subscription log entries ---------------------------------------------------
 	g.execf("subscription_log_entries", `
-INSERT INTO subscription_log_entries(id, subscription_id, managed_anime_id, kind, outcome, occurred_at, title, summary, rss_source_id, release_id,
+INSERT INTO subscription_log_entries(id, subscription_id, managed_anime_id, kind, outcome, occurred_at, message_code, message_params, rss_source_id, release_id,
                                      details, dedupe_key, retention_until, created_at, reason_code, subject_type, subject_id, subject_version)
-SELECT 'lg-' || x.w, o.sid, o.aid, x.kind, CASE WHEN x.kind = 'rss_refresh_failed' THEN 'failure' WHEN x.kind IN ('release_processed', 'download_changed') THEN 'success' ELSE 'info' END,
-       x.occ, 'Soak Anime ' || o.n, 'event ' || x.kind || ' for owner ' || o.n,
+SELECT 'lg-' || x.w, o.sid, o.aid, x.kind, CASE WHEN x.kind IN ('release_processed', 'download_changed', 'acquisition_settled') THEN 'success' ELSE 'info' END,
+       x.occ,
+       CASE x.kind WHEN 'release_processed' THEN 'release_accepted' WHEN 'download_changed' THEN 'download_completed'
+                   WHEN 'placement_changed' THEN 'placement_recorded' WHEN 'acquisition_settled' THEN 'acquisition_succeeded' ELSE x.kind END,
+       CASE WHEN x.kind = 'rss_new_content' THEN jsonb_build_object('count', 1 + (x.w %% 5)) ELSE '{}'::jsonb END,
        NULL, NULL, jsonb_build_object('pad', soak_ext.pad(x.w, 160), 'kind', x.kind), 'lg:' || x.w, x.occ + interval '30 days', x.occ, x.kind,
        'subscription', o.sid, 1
 FROM (
   SELECT w,
-         (ARRAY['rss_new_content','rss_refresh_failed','release_processed','download_changed','artifact_verified','placement_changed','acquisition_settled'])[soak_ext.pick('lgk', w, 7)] AS kind,
+         (ARRAY['rss_new_content','subscription_started','release_processed','download_changed','artifact_verified','placement_changed','acquisition_settled'])[soak_ext.pick('lgk', w, 7)] AS kind,
          soak_ext.pick('lgo', w, %[2]d) AS owner_n,
          CASE WHEN w <= %[3]d THEN %[1]s - make_interval(mins => 31 * 1440 + (soak_ext.rnd('lgt', w) * 30 * 1440)::int)
               ELSE %[1]s - make_interval(mins => 30 + (soak_ext.rnd('lgt', w) * (30 * 1440 - 60))::int) END AS occ

@@ -324,8 +324,8 @@ SELECT '%[1]s-w-' || w, 'rss_source_runtime', s.id, 'rss_refresh', 'succeeded', 
 FROM (SELECT w, now() - make_interval(secs => soak_ext.rnd('%[1]s', w) * 86000) AS t, soak_ext.pick('%[1]ssrc', w, (SELECT count(*) FROM rss_sources WHERE id LIKE 'r%%')) AS pick FROM generate_series(1, %[2]d) w) q
 JOIN (SELECT row_number() OVER (ORDER BY id) AS rn, id FROM rss_sources WHERE id LIKE 'r%%') s ON s.rn = q.pick`, tag, rss+re+pd+qs))
 	replicaExec(t, owner, fmt.Sprintf(`
-INSERT INTO subscription_log_entries(id, subscription_id, managed_anime_id, kind, outcome, occurred_at, title, summary, details, dedupe_key, retention_until, created_at, reason_code, subject_type, subject_id, subject_version)
-SELECT '%[1]s-l-' || w, s.id, s.managed_anime_id, 'rss_new_content', 'info', t, 'Soak', 'simulated day event', '{}'::jsonb, '%[1]s:' || w, t + interval '30 days', t, 'rss_new_content', 'subscription', s.id, 1
+INSERT INTO subscription_log_entries(id, subscription_id, managed_anime_id, kind, outcome, occurred_at, message_code, message_params, details, dedupe_key, retention_until, created_at, reason_code, subject_type, subject_id, subject_version)
+SELECT '%[1]s-l-' || w, s.id, s.managed_anime_id, 'rss_new_content', 'info', t, 'rss_new_content', '{"count":1}'::jsonb, '{}'::jsonb, '%[1]s:' || w, t + interval '30 days', t, 'rss_new_content', 'subscription', s.id, 1
 FROM (SELECT w, now() - make_interval(secs => soak_ext.rnd('%[1]sl', w) * 86000) AS t, soak_ext.pick('%[1]sls', w, (SELECT count(*) FROM subscriptions)) AS pick FROM generate_series(1, %[2]d) w) q
 JOIN (SELECT row_number() OVER (ORDER BY id) AS rn, id, managed_anime_id FROM subscriptions) s ON s.rn = q.pick`, tag, logs))
 	replicaExec(t, owner, fmt.Sprintf(`

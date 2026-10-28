@@ -85,8 +85,10 @@ func TestRecordFromRowWrapsBusinessEntryWithLineageContract(t *testing.T) {
 		"kind":"release_processed",
 		"outcome":"info",
 		"occurred_at":"2026-09-10T12:00:00Z",
-		"title":"Trace Show",
-		"summary":"filtered",
+		"anime_title":"Trace Show",
+		"source":"subscription",
+		"message_code":"release_filtered",
+		"message_params":{},
 		"release_id":"release-1",
 		"reason_code":"group_filtered",
 		"subject_type":"release",
@@ -339,7 +341,7 @@ func TestActivityValidationAndDedupe(t *testing.T) {
 	record := observabilityport.ActivityRecord{
 		SubscriptionID: "sub-1", ManagedAnimeID: "anime-1", Kind: "policy_changed", Outcome: "info",
 		ReasonCode: "rules_policy_changed", SubjectType: "rules", SubjectID: "anime-1", SubjectVersion: 3,
-		Title: "Anime", Summary: "规则策略已更新",
+		MessageCode: observabilityport.MessageRulesChanged,
 	}
 	if err := validateActivity(record); err != nil {
 		t.Fatalf("valid activity rejected: %v", err)
@@ -351,7 +353,7 @@ func TestActivityValidationAndDedupe(t *testing.T) {
 	metadata := observabilityport.ActivityRecord{
 		SubscriptionID: "sub-1", ManagedAnimeID: "anime-1", Kind: "metadata_applied", Outcome: "success",
 		ReasonCode: "metadata_applied", SubjectType: "metadata", SubjectID: "anime-1", SubjectVersion: 2,
-		Title: "Anime", Summary: "已关联 Bangumi、TMDB",
+		MessageCode: observabilityport.MessageMetadataApplied,
 	}
 	if err := validateActivity(metadata); err != nil {
 		t.Fatalf("metadata activity rejected: %v", err)
@@ -360,15 +362,26 @@ func TestActivityValidationAndDedupe(t *testing.T) {
 		t.Fatalf("metadata dedupe: got %q, want %q", got, want)
 	}
 
-	record.Kind = "rss_refresh_failed"
-	if err := validateActivity(record); err != nil {
-		t.Fatalf("RSS refresh failure activity rejected: %v", err)
+	retired := record
+	retired.Kind = "rss_refresh_failed"
+	if err := validateActivity(retired); err == nil {
+		t.Fatal("the retired rss_refresh_failed kind must be rejected")
 	}
-	record.Kind = "release_processed"
+	unregistered := record
+	unregistered.MessageCode = "rules_policy_changed"
+	if err := validateActivity(unregistered); err == nil {
+		t.Fatal("an unregistered message code must be rejected")
+	}
+	foreign := record
+	foreign.MessageCode = observabilityport.MessageMetadataApplied
+	if err := validateActivity(foreign); err == nil {
+		t.Fatal("a message code of another kind must be rejected")
+	}
+	record.Kind, record.MessageCode = "release_processed", observabilityport.MessageReleaseAccepted
 	if err := validateActivity(record); err != nil {
 		t.Fatalf("release processed activity rejected: %v", err)
 	}
-	record.Kind = "group_changed"
+	record.Kind, record.MessageCode = "group_changed", observabilityport.MessageGroupChanged
 	record.SubjectVersion = 0
 	if err := validateActivity(record); err == nil {
 		t.Fatal("expected invalid subject version rejection")
@@ -379,19 +392,12 @@ func TestValidateActivityRejectsSensitiveText(t *testing.T) {
 	base := observabilityport.ActivityRecord{
 		SubscriptionID: "sub-1", ManagedAnimeID: "anime-1", Kind: "metadata_applied", Outcome: "success",
 		ReasonCode: "metadata_applied", SubjectType: "metadata", SubjectID: "anime-1", SubjectVersion: 2,
-		Title: "Anime", Summary: "已关联 Bangumi、TMDB",
+		MessageCode: observabilityport.MessageMetadataApplied,
 	}
 	cases := []struct {
 		name string
 		edit func(*observabilityport.ActivityRecord)
 	}{
-		{"url in title", func(record *observabilityport.ActivityRecord) {
-			record.Title = "fetch https://user:pass@example.test/meta"
-		}},
-		{"magnet in summary", func(record *observabilityport.ActivityRecord) { record.Summary = "magnet:?xt=urn:btih:deadbeef" }},
-		{"dsn in summary", func(record *observabilityport.ActivityRecord) {
-			record.Summary = "connect postgres://user:pass@example.test/db"
-		}},
 		{"credential in details", func(record *observabilityport.ActivityRecord) {
 			record.Details = json.RawMessage(`{"provider":"metadata","access_token":"secret"}`)
 		}},

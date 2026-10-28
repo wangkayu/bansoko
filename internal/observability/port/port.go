@@ -349,9 +349,14 @@ type ActivityRecord struct {
 	RSSSourceID     string
 	ReleaseID       string
 	GroupRef        string
-	Title           string
-	Summary         string
-	Details         json.RawMessage
+	// MessageCode names the entry's message in the closed catalog
+	// (activity_messages.go); it must belong to Kind.
+	MessageCode MessageCode
+	// MessageParams are the scalar values the message interpolates: exactly
+	// the params the code declares (string or integer). Strings are redacted
+	// and cut to MaxMessageParamBytes; an empty string is omitted.
+	MessageParams map[string]any
+	Details       json.RawMessage
 	// OccurredAt is the time of the business fact when it differs from the
 	// write time (the independent acquisition consumer writes after commit);
 	// zero means "now".

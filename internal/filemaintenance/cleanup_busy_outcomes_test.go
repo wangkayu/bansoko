@@ -213,17 +213,22 @@ func TestCleanupPurgeBusyWindowExhaustedRestoresFile(t *testing.T) {
 	}
 }
 
-// failureCopy returns the summary of the deletion's failure Activity and the
+// failureCopy returns the reason code of the deletion's failure Activity (its
+// message is old_version_delete_failed; the client words the reason) and the
 // category its notice carries for the template.
-func (f busyFixture) failureCopy(t *testing.T, id string) (summary, category string) {
+func (f busyFixture) failureCopy(t *testing.T, id string) (reason, category string) {
 	t.Helper()
-	if err := f.db.QueryRow(`SELECT summary FROM subscription_log_entries WHERE kind = 'cleanup_failed' AND subject_id = $1`, id).Scan(&summary); err != nil {
+	var message string
+	if err := f.db.QueryRow(`SELECT reason_code, message_code FROM subscription_log_entries WHERE kind = 'cleanup_failed' AND subject_id = $1`, id).Scan(&reason, &message); err != nil {
 		t.Fatalf("read failure activity: %v", err)
+	}
+	if message != "old_version_delete_failed" {
+		t.Fatalf("failure activity message = %q", message)
 	}
 	if err := f.db.QueryRow(`SELECT payload->>'result.category' FROM notification_admissions WHERE trigger_kind = 'replacement_deletion_failed' AND source_owner_id = $1`, id).Scan(&category); err != nil {
 		t.Fatalf("read failure notice: %v", err)
 	}
-	return summary, category
+	return reason, category
 }
 
 // giveUpAfterCapture captures the file, refuses its purge busy and runs the
@@ -267,8 +272,8 @@ func TestCleanupPurgeRestoreOccupiedFails(t *testing.T) {
 	if a, n := f.failureActivities(t, op.ID), f.failureNotices(t, op.ID); a != 1 || n != 1 {
 		t.Fatalf("activities=%d notices=%d, want 1/1", a, n)
 	}
-	if summary, category := f.failureCopy(t, op.ID); summary != "旧版本未删除：旧文件已移到同一文件夹的隐藏目录，原位置已有同名文件" || category != "path_occupied" {
-		t.Fatalf("failure copy = %q / %q", summary, category)
+	if reason, category := f.failureCopy(t, op.ID); reason != CleanupRestoreOccupied || category != "path_occupied" {
+		t.Fatalf("failure copy = %q / %q", reason, category)
 	}
 	if n, err := f.service.ReleaseBlockedDeletions(context.Background(), "anime-1"); err != nil || n != 0 {
 		t.Fatalf("release = %d %v, want 0", n, err)
@@ -326,8 +331,8 @@ func TestCleanupPurgeRestoreFailureBlocksForRecovery(t *testing.T) {
 	if a, n := f.failureActivities(t, op.ID), f.failureNotices(t, op.ID); a != 1 || n != 1 {
 		t.Fatalf("activities=%d notices=%d, want 1/1", a, n)
 	}
-	if summary, category := f.failureCopy(t, op.ID); summary != "旧版本未删除：旧文件已移到同一文件夹的隐藏目录，未能放回原位置" || category != "not_restored" {
-		t.Fatalf("failure copy = %q / %q", summary, category)
+	if reason, category := f.failureCopy(t, op.ID); reason != CleanupRestoreFailed || category != "not_restored" {
+		t.Fatalf("failure copy = %q / %q", reason, category)
 	}
 	if n, err := f.service.ReleaseBlockedDeletions(context.Background(), "anime-1"); err != nil || n != 0 {
 		t.Fatalf("release = %d %v, want 0", n, err)
@@ -404,8 +409,8 @@ func TestCleanupReadOnlyFailsWithoutRetry(t *testing.T) {
 	if a, n := f.failureActivities(t, op.ID), f.failureNotices(t, op.ID); a != 1 || n != 1 {
 		t.Fatalf("activities=%d notices=%d, want 1/1", a, n)
 	}
-	if summary, category := f.failureCopy(t, op.ID); summary != "旧版本未删除：文件所在位置只读，未能删除" || category != "read_only" {
-		t.Fatalf("failure copy = %q / %q", summary, category)
+	if reason, category := f.failureCopy(t, op.ID); reason != CleanupFileRefused || category != "read_only" {
+		t.Fatalf("failure copy = %q / %q", reason, category)
 	}
 	if n, err := f.service.ReleaseBlockedDeletions(context.Background(), "anime-1"); err != nil || n != 0 {
 		t.Fatalf("release = %d %v, want 0", n, err)

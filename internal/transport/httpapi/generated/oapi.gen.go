@@ -1228,6 +1228,14 @@ const (
 	NyaaConnectionInputKindNyaa NyaaConnectionInputKind = "nyaa"
 )
 
+// Defines values for ObservabilityRecordState.
+const (
+	ObservabilityRecordStateFailure    ObservabilityRecordState = "failure"
+	ObservabilityRecordStateInProgress ObservabilityRecordState = "in_progress"
+	ObservabilityRecordStateInfo       ObservabilityRecordState = "info"
+	ObservabilityRecordStateSuccess    ObservabilityRecordState = "success"
+)
+
 // Defines values for OffsetMigrationGenerationViewScopeKind.
 const (
 	OffsetMigrationGenerationViewScopeKindRssSource OffsetMigrationGenerationViewScopeKind = "rss_source"
@@ -2179,11 +2187,61 @@ const (
 	SubscriptionLogKindReleaseProcessed       SubscriptionLogKind = "release_processed"
 	SubscriptionLogKindReplacementDecided     SubscriptionLogKind = "replacement_decided"
 	SubscriptionLogKindRssNewContent          SubscriptionLogKind = "rss_new_content"
-	SubscriptionLogKindRssRefreshFailed       SubscriptionLogKind = "rss_refresh_failed"
 	SubscriptionLogKindSubscriptionCreated    SubscriptionLogKind = "subscription_created"
 	SubscriptionLogKindSubscriptionResumed    SubscriptionLogKind = "subscription_resumed"
 	SubscriptionLogKindSubscriptionStarted    SubscriptionLogKind = "subscription_started"
 	SubscriptionLogKindSubscriptionStopped    SubscriptionLogKind = "subscription_stopped"
+)
+
+// Defines values for SubscriptionLogMessageCode.
+const (
+	SubscriptionLogMessageCodeAcquisitionCancelled       SubscriptionLogMessageCode = "acquisition_cancelled"
+	SubscriptionLogMessageCodeAcquisitionFailed          SubscriptionLogMessageCode = "acquisition_failed"
+	SubscriptionLogMessageCodeAcquisitionSucceeded       SubscriptionLogMessageCode = "acquisition_succeeded"
+	SubscriptionLogMessageCodeArtifactVerified           SubscriptionLogMessageCode = "artifact_verified"
+	SubscriptionLogMessageCodeDownloadCompleted          SubscriptionLogMessageCode = "download_completed"
+	SubscriptionLogMessageCodeDownloadFailed             SubscriptionLogMessageCode = "download_failed"
+	SubscriptionLogMessageCodeDownloadRemoved            SubscriptionLogMessageCode = "download_removed"
+	SubscriptionLogMessageCodeDownloadSubmitted          SubscriptionLogMessageCode = "download_submitted"
+	SubscriptionLogMessageCodeEpisodeOffsetChanged       SubscriptionLogMessageCode = "episode_offset_changed"
+	SubscriptionLogMessageCodeFileAdopted                SubscriptionLogMessageCode = "file_adopted"
+	SubscriptionLogMessageCodeFileImportFailed           SubscriptionLogMessageCode = "file_import_failed"
+	SubscriptionLogMessageCodeFileImported               SubscriptionLogMessageCode = "file_imported"
+	SubscriptionLogMessageCodeFileRecovered              SubscriptionLogMessageCode = "file_recovered"
+	SubscriptionLogMessageCodeFileRetained               SubscriptionLogMessageCode = "file_retained"
+	SubscriptionLogMessageCodeGroupChanged               SubscriptionLogMessageCode = "group_changed"
+	SubscriptionLogMessageCodeMetadataApplied            SubscriptionLogMessageCode = "metadata_applied"
+	SubscriptionLogMessageCodeOldVersionDeleteFailed     SubscriptionLogMessageCode = "old_version_delete_failed"
+	SubscriptionLogMessageCodeOldVersionDeleted          SubscriptionLogMessageCode = "old_version_deleted"
+	SubscriptionLogMessageCodeOldVersionKept             SubscriptionLogMessageCode = "old_version_kept"
+	SubscriptionLogMessageCodePlacementRecorded          SubscriptionLogMessageCode = "placement_recorded"
+	SubscriptionLogMessageCodePlacementReleased          SubscriptionLogMessageCode = "placement_released"
+	SubscriptionLogMessageCodeReleaseAccepted            SubscriptionLogMessageCode = "release_accepted"
+	SubscriptionLogMessageCodeReleaseAcquisitionFailed   SubscriptionLogMessageCode = "release_acquisition_failed"
+	SubscriptionLogMessageCodeReleaseAdoptedExisting     SubscriptionLogMessageCode = "release_adopted_existing"
+	SubscriptionLogMessageCodeReleaseAwaitingCompetition SubscriptionLogMessageCode = "release_awaiting_competition"
+	SubscriptionLogMessageCodeReleaseDiscovered          SubscriptionLogMessageCode = "release_discovered"
+	SubscriptionLogMessageCodeReleaseEvaluated           SubscriptionLogMessageCode = "release_evaluated"
+	SubscriptionLogMessageCodeReleaseFiltered            SubscriptionLogMessageCode = "release_filtered"
+	SubscriptionLogMessageCodeReleaseParseFailed         SubscriptionLogMessageCode = "release_parse_failed"
+	SubscriptionLogMessageCodeReleaseResumeBaseline      SubscriptionLogMessageCode = "release_resume_baseline"
+	SubscriptionLogMessageCodeReleaseSourceUnavailable   SubscriptionLogMessageCode = "release_source_unavailable"
+	SubscriptionLogMessageCodeReleaseStartBaseline       SubscriptionLogMessageCode = "release_start_baseline"
+	SubscriptionLogMessageCodeReleaseSubmitted           SubscriptionLogMessageCode = "release_submitted"
+	SubscriptionLogMessageCodeReleaseSubscriptionStopped SubscriptionLogMessageCode = "release_subscription_stopped"
+	SubscriptionLogMessageCodeReleaseWaitingMetadata     SubscriptionLogMessageCode = "release_waiting_metadata"
+	SubscriptionLogMessageCodeReplacementBlocked         SubscriptionLogMessageCode = "replacement_blocked"
+	SubscriptionLogMessageCodeReplacementKeptAll         SubscriptionLogMessageCode = "replacement_kept_all"
+	SubscriptionLogMessageCodeReplacementKeptExisting    SubscriptionLogMessageCode = "replacement_kept_existing"
+	SubscriptionLogMessageCodeReplacementNotReplaced     SubscriptionLogMessageCode = "replacement_not_replaced"
+	SubscriptionLogMessageCodeReplacementReplaced        SubscriptionLogMessageCode = "replacement_replaced"
+	SubscriptionLogMessageCodeRssNewContent              SubscriptionLogMessageCode = "rss_new_content"
+	SubscriptionLogMessageCodeRulesChanged               SubscriptionLogMessageCode = "rules_changed"
+	SubscriptionLogMessageCodeSubscriptionCreated        SubscriptionLogMessageCode = "subscription_created"
+	SubscriptionLogMessageCodeSubscriptionResumed        SubscriptionLogMessageCode = "subscription_resumed"
+	SubscriptionLogMessageCodeSubscriptionStarted        SubscriptionLogMessageCode = "subscription_started"
+	SubscriptionLogMessageCodeSubscriptionStopped        SubscriptionLogMessageCode = "subscription_stopped"
+	SubscriptionLogMessageCodeUnknownFileReleased        SubscriptionLogMessageCode = "unknown_file_released"
 )
 
 // Defines values for SubscriptionLogOutcome.
@@ -2191,6 +2249,12 @@ const (
 	SubscriptionLogOutcomeFailure SubscriptionLogOutcome = "failure"
 	SubscriptionLogOutcomeInfo    SubscriptionLogOutcome = "info"
 	SubscriptionLogOutcomeSuccess SubscriptionLogOutcome = "success"
+)
+
+// Defines values for SubscriptionLogSource.
+const (
+	SubscriptionLogSourceOneShot      SubscriptionLogSource = "one_shot"
+	SubscriptionLogSourceSubscription SubscriptionLogSource = "subscription"
 )
 
 // Defines values for SubscriptionOrigin.
@@ -2472,17 +2536,6 @@ const (
 	ListObservabilityRecordsParamsKindBusiness   ListObservabilityRecordsParamsKind = "business"
 	ListObservabilityRecordsParamsKindPlugin     ListObservabilityRecordsParamsKind = "plugin"
 	ListObservabilityRecordsParamsKindRoutine    ListObservabilityRecordsParamsKind = "routine"
-)
-
-// Defines values for ListObservabilityRecordsParamsOutcome.
-const (
-	ListObservabilityRecordsParamsOutcomeFailure ListObservabilityRecordsParamsOutcome = "failure"
-	ListObservabilityRecordsParamsOutcomeInfo    ListObservabilityRecordsParamsOutcome = "info"
-	ListObservabilityRecordsParamsOutcomePartial ListObservabilityRecordsParamsOutcome = "partial"
-	ListObservabilityRecordsParamsOutcomePending ListObservabilityRecordsParamsOutcome = "pending"
-	ListObservabilityRecordsParamsOutcomeSuccess ListObservabilityRecordsParamsOutcome = "success"
-	ListObservabilityRecordsParamsOutcomeUnknown ListObservabilityRecordsParamsOutcome = "unknown"
-	ListObservabilityRecordsParamsOutcomeWarning ListObservabilityRecordsParamsOutcome = "warning"
 )
 
 // Defines values for ListPluginDeliveriesParamsSourceOwnerType.
@@ -5889,6 +5942,9 @@ type ObservabilityRecordPage struct {
 	Records    []ObservabilityRecord `json:"records"`
 }
 
+// ObservabilityRecordState defines model for ObservabilityRecordState.
+type ObservabilityRecordState string
+
 // OffsetMigrationGenerationView defines model for OffsetMigrationGenerationView.
 type OffsetMigrationGenerationView struct {
 	AppliedCount    *int                                   `json:"applied_count,omitempty"`
@@ -8441,6 +8497,8 @@ type SubscriptionLogDetailsMetadataMissing string
 
 // SubscriptionLogEntry defines model for SubscriptionLogEntry.
 type SubscriptionLogEntry struct {
+	// AnimeTitle The anime's current display title, read with the entry (empty when the anime is gone).
+	AnimeTitle     string                  `json:"anime_title"`
 	CausationId    *string                 `json:"causation_id"`
 	CausationType  *string                 `json:"causation_type"`
 	CorrelationId  *string                 `json:"correlation_id"`
@@ -8450,27 +8508,55 @@ type SubscriptionLogEntry struct {
 	Id             ID                      `json:"id"`
 	Kind           SubscriptionLogKind     `json:"kind"`
 	ManagedAnimeId ID                      `json:"managed_anime_id"`
-	OccurredAt     time.Time               `json:"occurred_at"`
-	Outcome        SubscriptionLogOutcome  `json:"outcome"`
+
+	// MessageCode The message of a business journal entry in the closed catalog the server registers per entry kind (published to the frontend as a generated artifact). The client renders the text from the code and message_params; entries carry no display text.
+	MessageCode SubscriptionLogMessageCode `json:"message_code"`
+
+	// MessageParams Scalar values the message interpolates. Each message declares its params; an optional param is absent rather than empty.
+	MessageParams SubscriptionLogMessageParams `json:"message_params"`
+	OccurredAt    time.Time                    `json:"occurred_at"`
+	Outcome       SubscriptionLogOutcome       `json:"outcome"`
 
 	// ReasonCode Owner-first stable reason code persisted with the record; never derived at read time.
 	ReasonCode     *string   `json:"reason_code"`
 	ReleaseId      *ID       `json:"release_id"`
 	RetentionUntil time.Time `json:"retention_until"`
 	RssSourceId    *ID       `json:"rss_source_id"`
-	SubjectId      *string   `json:"subject_id"`
-	SubjectType    *string   `json:"subject_type"`
-	SubjectVersion *int64    `json:"subject_version"`
-	SubscriptionId ID        `json:"subscription_id"`
-	Summary        string    `json:"summary"`
-	Title          string    `json:"title"`
+
+	// Source Where the entry's work came from: the anime's subscription, or a one-shot download (its temporary anime and subscription).
+	Source         SubscriptionLogSource `json:"source"`
+	SubjectId      *string               `json:"subject_id"`
+	SubjectType    *string               `json:"subject_type"`
+	SubjectVersion *int64                `json:"subject_version"`
+	SubscriptionId ID                    `json:"subscription_id"`
 }
 
 // SubscriptionLogKind defines model for SubscriptionLogKind.
 type SubscriptionLogKind string
 
+// SubscriptionLogMessageCode The message of a business journal entry in the closed catalog the server registers per entry kind (published to the frontend as a generated artifact). The client renders the text from the code and message_params; entries carry no display text.
+type SubscriptionLogMessageCode string
+
+// SubscriptionLogMessageParams Scalar values the message interpolates. Each message declares its params; an optional param is absent rather than empty.
+type SubscriptionLogMessageParams struct {
+	// Count Non-negative item count.
+	Count *int64 `json:"count,omitempty"`
+
+	// FileName Base name of the file a file result is about.
+	FileName *string `json:"file_name,omitempty"`
+
+	// GroupName Subgroup display name.
+	GroupName *string `json:"group_name,omitempty"`
+
+	// Name Torrent name the downloader reports.
+	Name *string `json:"name,omitempty"`
+}
+
 // SubscriptionLogOutcome defines model for SubscriptionLogOutcome.
 type SubscriptionLogOutcome string
+
+// SubscriptionLogSource Where the entry's work came from: the anime's subscription, or a one-shot download (its temporary anime and subscription).
+type SubscriptionLogSource string
 
 // SubscriptionOrigin The unique four-value source-of-subscription enum: anibt | mikan are discovery providers, custom is a user-supplied manual source, agent is reserved for one-shot acquisition: an agent draft is a candidate snapshot for acquire-seed-once and the temporary one-shot mount carries it, but it can never be subscribed or activated (422 ORIGIN_NOT_SUBSCRIBABLE). This is the only four-value enum; ProviderKind stays a two-value discovery enum, SnapshotSeedProvider is the separate seed-provenance vocabulary (anibt | mikan | custom), and RSS SourceKind stays provider_group | custom_rss.
 type SubscriptionOrigin string
@@ -9303,20 +9389,25 @@ type ListObservabilityDiagnosticsParamsSeverity string
 // ListObservabilityRecordsParams defines parameters for ListObservabilityRecords.
 type ListObservabilityRecordsParams struct {
 	// Cursor Opaque keyset pagination cursor.
-	Cursor         *Cursor                                `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit          *Limit                                 `form:"limit,omitempty" json:"limit,omitempty"`
-	Kind           *[]ListObservabilityRecordsParamsKind  `form:"kind,omitempty" json:"kind,omitempty"`
-	Outcome        *ListObservabilityRecordsParamsOutcome `form:"outcome,omitempty" json:"outcome,omitempty"`
-	From           *FromTime                              `form:"from,omitempty" json:"from,omitempty"`
-	To             *ToTime                                `form:"to,omitempty" json:"to,omitempty"`
-	ManagedAnimeId *ID                                    `form:"managed_anime_id,omitempty" json:"managed_anime_id,omitempty"`
+	Cursor *Cursor                               `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *Limit                                `form:"limit,omitempty" json:"limit,omitempty"`
+	Kind   *[]ListObservabilityRecordsParamsKind `form:"kind,omitempty" json:"kind,omitempty"`
+
+	// EntryKind Narrows the business records to these journal entry kinds; the other record kinds are unaffected.
+	EntryKind *[]SubscriptionLogKind `form:"entry_kind,omitempty" json:"entry_kind,omitempty"`
+
+	// State Selects records in this state. A business record of a Release run (download, verification, import, placement and replacement entries closed by the run's acquisition result) takes the state of its run: the result's outcome, or in_progress while the run has no result. failure includes failed acquisitions, failed business records, failed and partial automation runs, and failed or unconfirmed (unknown) notification deliveries.
+	State *ObservabilityRecordState `form:"state,omitempty" json:"state,omitempty"`
+
+	// Q Case-insensitive search text (trimmed; blank means no search). It matches the anime title, a business record's release title, file name or subgroup name, and a notification's target name; a business record of a Release run matches when any record of its run does.
+	Q              *string   `form:"q,omitempty" json:"q,omitempty"`
+	From           *FromTime `form:"from,omitempty" json:"from,omitempty"`
+	To             *ToTime   `form:"to,omitempty" json:"to,omitempty"`
+	ManagedAnimeId *ID       `form:"managed_anime_id,omitempty" json:"managed_anime_id,omitempty"`
 }
 
 // ListObservabilityRecordsParamsKind defines parameters for ListObservabilityRecords.
 type ListObservabilityRecordsParamsKind string
-
-// ListObservabilityRecordsParamsOutcome defines parameters for ListObservabilityRecords.
-type ListObservabilityRecordsParamsOutcome string
 
 // AcquireSeedOnceParams defines parameters for AcquireSeedOnce.
 type AcquireSeedOnceParams struct {
@@ -17139,11 +17230,27 @@ func (siw *ServerInterfaceWrapper) ListObservabilityRecords(w http.ResponseWrite
 		return
 	}
 
-	// ------------- Optional query parameter "outcome" -------------
+	// ------------- Optional query parameter "entry_kind" -------------
 
-	err = runtime.BindQueryParameter("form", true, false, "outcome", r.URL.Query(), &params.Outcome)
+	err = runtime.BindQueryParameter("form", true, false, "entry_kind", r.URL.Query(), &params.EntryKind)
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "outcome", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "entry_kind", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "state", r.URL.Query(), &params.State)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "q", r.URL.Query(), &params.Q)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
 		return
 	}
 

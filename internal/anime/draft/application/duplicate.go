@@ -261,7 +261,7 @@ INSERT INTO idempotency_records(kind, idempotency_key, request_hash, managed_ani
 VALUES ('subscribe', $1, $2, $3, $4)`, idempotencyKey, requestHash, animeID, snapshot); err != nil {
 		return SubscribeResult{}, fmt.Errorf("record duplicate idempotency: %w", err)
 	}
-	if err := writeSubscriptionCreatedLog(ctx, tx, s.activityWriter, subscriptionID, animeID, sourceTitle); err != nil {
+	if err := writeSubscriptionCreatedLog(ctx, tx, s.activityWriter, subscriptionID, animeID); err != nil {
 		return SubscribeResult{}, err
 	}
 	// The copy is pending, so it admits no started notice (its first start

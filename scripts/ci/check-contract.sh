@@ -334,7 +334,8 @@ required_schemas = %w[
   ErrorResponse
   ProviderKind SubscriptionOrigin SubscriptionState SourceKind TMDBMediaKind SelectionMode
   GroupAction AutomationKind AutomationTrigger AutomationIntervalUnit AutomationState
-  SubscriptionLogKind SubscriptionLogOutcome RoutineActivityKind RoutineActivityScopeKind RoutineActivityOutcome
+  SubscriptionLogKind SubscriptionLogOutcome SubscriptionLogMessageCode SubscriptionLogMessageParams
+  SubscriptionLogSource ObservabilityRecordState RoutineActivityKind RoutineActivityScopeKind RoutineActivityOutcome
   DiagnosticSeverity DiagnosticScopeKind PluginKind NotificationTriggerKind
   PluginAdapterKind PluginDeliveryKind PluginDeliveryState SubgroupScoreEntry SubgroupsSection
   NameKeywordRule ProviderNameKeywordRules ReleaseReevaluationResult
@@ -370,6 +371,8 @@ end
   "AutomationIntervalUnit" => %w[minute hour day],
   "AutomationState" => %w[queued running completed partial failed],
   "SubscriptionLogOutcome" => %w[info success failure],
+  "SubscriptionLogSource" => %w[subscription one_shot],
+  "ObservabilityRecordState" => %w[in_progress success failure info],
   "RoutineActivityKind" => %w[catalog_refresh provider_refresh rss_refresh metadata_match automation_dispatch retention_pass file_manager_operation],
   "RoutineActivityScopeKind" => %w[global automation provider subscription rss_source component],
   "RoutineActivityOutcome" => %w[success warning failure],
@@ -424,7 +427,7 @@ abort "instance replacement view must not ask the client to merge a default" if 
 end
 assert_enum.call("SubscriptionLogKind", %w[
   subscription_created subscription_started subscription_stopped subscription_resumed metadata_applied
-  group_changed policy_changed rss_new_content rss_refresh_failed release_processed
+  group_changed policy_changed rss_new_content release_processed
   download_changed artifact_verified placement_changed replacement_decided cleanup_completed cleanup_failed
   file_alignment_completed file_alignment_failed acquisition_settled
 ])
@@ -591,7 +594,8 @@ automation_run = schemas.fetch("AutomationDispatchRun")
 abort "AutomationDispatchRun required fields drifted" unless required_fields.call(automation_run).sort == %w[id kind trigger state target_count enqueued_count merged_count skipped_count dispatch_error_count retention_until].sort
 %w[started_at finished_at].each { |field| assert_optional_nullable.call("AutomationDispatchRun", field) }
 log_entry = schemas.fetch("SubscriptionLogEntry")
-abort "SubscriptionLogEntry required fields drifted" unless required_fields.call(log_entry).sort == %w[id subscription_id managed_anime_id kind outcome occurred_at title summary dedupe_key retention_until].sort
+abort "SubscriptionLogEntry required fields drifted" unless required_fields.call(log_entry).sort == %w[id subscription_id managed_anime_id anime_title source kind outcome occurred_at message_code message_params dedupe_key retention_until].sort
+abort "SubscriptionLogEntry must not carry display text" if (log_entry.fetch("properties").keys & %w[title summary]).any?
 %w[rss_source_id release_id group_ref details].each { |field| assert_optional_nullable.call("SubscriptionLogEntry", field) }
 
 error = schemas.fetch("ErrorResponse")

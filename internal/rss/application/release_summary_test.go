@@ -1,17 +1,35 @@
 package application
 
 import (
-	"strings"
 	"testing"
+
+	observabilityport "bansoko/internal/observability/port"
 )
 
-func TestReleaseSummaryNeverShowsRawVerdict(t *testing.T) {
-	for verdict, label := range releaseVerdictSummaries {
-		if got := releaseSummary(verdict); got != "评估结果："+label || strings.Contains(got, verdict) {
-			t.Fatalf("releaseSummary(%q) = %q", verdict, got)
-		}
+// Every Release verdict names its own message: the evaluation entry never
+// falls back to the generic release_evaluated for a verdict the API defines.
+func TestReleaseVerdictMessageNamesEveryVerdict(t *testing.T) {
+	verdicts := []string{
+		"discovered", "waiting_metadata", "subscription_stopped", "source_unavailable",
+		"parse_failed", "accepted_pending_download", "filtered", "adopted_existing",
+		"acquisition_failed", "submitted", ReleaseVerdictResumeBaseline,
+		ReleaseVerdictStartBaseline, "awaiting_competition",
 	}
-	if got := releaseSummary("unknown_verdict"); got != "评估完成" {
-		t.Fatalf("unknown verdict summary = %q", got)
+	seen := map[observabilityport.MessageCode]string{}
+	for _, verdict := range verdicts {
+		code := observabilityport.ReleaseVerdictMessage(verdict)
+		if code == observabilityport.MessageReleaseEvaluated {
+			t.Fatalf("verdict %q has no message of its own", verdict)
+		}
+		if spec, ok := observabilityport.LookupMessage(code); !ok || spec.Kind != observabilityport.ActivityKindReleaseProcessed {
+			t.Fatalf("verdict %q message %q is not a release_processed message", verdict, code)
+		}
+		if other, dup := seen[code]; dup {
+			t.Fatalf("verdicts %q and %q share message %q", other, verdict, code)
+		}
+		seen[code] = verdict
+	}
+	if got := observabilityport.ReleaseVerdictMessage("unknown_verdict"); got != observabilityport.MessageReleaseEvaluated {
+		t.Fatalf("unknown verdict message = %q", got)
 	}
 }

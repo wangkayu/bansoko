@@ -97,17 +97,17 @@ func seedReplacementRows(t *testing.T, ctx context.Context, db *sql.DB) {
 		'success', 'retention fixture activity')`, "routine-retention", "subscription-retention", "anime-retention")
 
 	exec(`INSERT INTO subscription_log_entries(
-		id, subscription_id, managed_anime_id, kind, outcome, occurred_at, title, summary,
+		id, subscription_id, managed_anime_id, kind, outcome, occurred_at, message_code, message_params,
 		dedupe_key, retention_until
 	) VALUES
 		('log-expired', 'subscription-retention', 'anime-retention', 'rss_new_content', 'info',
-		 CURRENT_TIMESTAMP - INTERVAL '2 hours', 'Expired log', 'Expired evidence', 'expired',
+		 CURRENT_TIMESTAMP - INTERVAL '2 hours', 'rss_new_content', '{"count":1}', 'expired',
 		 CURRENT_TIMESTAMP - INTERVAL '1 hour'),
 		('log-expired-stopped', 'subscription-retention-stopped', 'anime-retention-stopped', 'rss_new_content', 'info',
-		 CURRENT_TIMESTAMP - INTERVAL '2 hours', 'Expired stopped log', 'Expired stopped evidence', 'expired-stopped',
+		 CURRENT_TIMESTAMP - INTERVAL '2 hours', 'rss_new_content', '{"count":1}', 'expired-stopped',
 		 CURRENT_TIMESTAMP - INTERVAL '1 hour'),
 		('log-future', 'subscription-retention', 'anime-retention', 'rss_new_content', 'info',
-		 CURRENT_TIMESTAMP, 'Future log', 'Future evidence', 'future',
+		 CURRENT_TIMESTAMP, 'rss_new_content', '{"count":1}', 'future',
 		 CURRENT_TIMESTAMP + INTERVAL '1 day')`)
 
 	exec(`INSERT INTO automation_dispatch_runs(
@@ -256,12 +256,12 @@ func TestRetentionServicePurgeExpiredIsBoundedAndIdempotent(t *testing.T) {
 	rowCount := retentionBatchSize*2 + 1
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO subscription_log_entries(
-			id, subscription_id, managed_anime_id, kind, outcome, occurred_at, title, summary,
+			id, subscription_id, managed_anime_id, kind, outcome, occurred_at, message_code, message_params,
 			dedupe_key, retention_until
 		)
 		SELECT format('batch-log-%s', series), 'subscription-retention-batch', 'anime-retention-batch',
 			'rss_new_content', 'info', CURRENT_TIMESTAMP - INTERVAL '2 hours',
-			'Batch log', 'Expired batch evidence', format('batch-%s', series),
+			'rss_new_content', '{"count":1}'::jsonb, format('batch-%s', series),
 			CURRENT_TIMESTAMP - INTERVAL '1 hour'
 		FROM generate_series(1, $1) AS series`, rowCount); err != nil {
 		t.Fatalf("seed expired retention batch: %v", err)

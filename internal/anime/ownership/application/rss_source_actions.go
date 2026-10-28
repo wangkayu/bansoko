@@ -97,7 +97,7 @@ WHERE id = $1`, rssSourceID).Scan(&subscriptionID, &sourceKind, &locatorDisplay,
 	// degraded wiring; the supported server composition root injects it.
 	if s.activityWriter != nil {
 		if err := businesslog.WriteRSSSourceOffsetPolicyChangedTx(ctx, txscope.Wrap(tx), s.activityWriter,
-			subscriptionID.String, managedAnimeID, rssSourceID, groupName.String, title.String, version); err != nil {
+			subscriptionID.String, managedAnimeID, rssSourceID, groupName.String, version); err != nil {
 			return RSSSource{}, fmt.Errorf("write rss source offset policy activity: %w", err)
 		}
 	}

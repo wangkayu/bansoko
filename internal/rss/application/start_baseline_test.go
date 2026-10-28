@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	observabilityport "bansoko/internal/observability/port"
 )
 
 func TestStartBaselineApplies(t *testing.T) {
@@ -42,7 +44,7 @@ func TestStartBaselineIsTerminalButRetryable(t *testing.T) {
 	if !decision.Allowed {
 		t.Fatalf("start_baseline must stay retryable: %+v", decision)
 	}
-	if releaseSummary(ReleaseVerdictStartBaseline) != "评估结果：订阅前发布" {
-		t.Fatalf("summary = %q", releaseSummary(ReleaseVerdictStartBaseline))
+	if got := observabilityport.ReleaseVerdictMessage(ReleaseVerdictStartBaseline); got != observabilityport.MessageReleaseStartBaseline {
+		t.Fatalf("message = %q", got)
 	}
 }

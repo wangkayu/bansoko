@@ -339,8 +339,8 @@ RETURNING version`, snapshot.sourceID, cursorJSON, lastGoodJSON, claim.ExpectedO
 				StableResultKey: digestStableKeys(newKeys),
 				RSSSourceID:     snapshot.sourceID,
 				GroupRef:        snapshot.groupName,
-				Title:           snapshot.title,
-				Summary:         fmt.Sprintf("发现 %d 条新 RSS 内容", count),
+				MessageCode:     observabilityport.MessageRSSNewContent,
+				MessageParams:   map[string]any{observabilityport.ParamCount: count},
 				Details:         details,
 			}); err != nil {
 				return 0, err
@@ -374,32 +374,6 @@ RETURNING version`, snapshot.sourceID, ownerHealth, reasonCode, nullableString(s
 				return 0, fmt.Errorf("RSS source runtime version conflict")
 			}
 			return 0, fmt.Errorf("update RSS failure runtime: %w", err)
-		}
-		if result.State == workitems.StateFailed {
-			details, err := marshalActivityDetails(map[string]any{
-				"error_count": 1, "reason_code": reasonCode, "reason_detail": safeReason(reason),
-			})
-			if err != nil {
-				return 0, err
-			}
-			if err := appendActivity(ctx, tx, s.activityWriter, observabilityport.ActivityRecord{
-				SubscriptionID:  snapshot.subscriptionID,
-				ManagedAnimeID:  snapshot.managedAnimeID,
-				Kind:            rssLogKindRefreshFailed,
-				Outcome:         rssLogOutcomeFailure,
-				ReasonCode:      reasonCode,
-				SubjectType:     "rss_source",
-				SubjectID:       snapshot.sourceID,
-				SubjectVersion:  version,
-				StableResultKey: stableDigest(safeReason(reason)),
-				RSSSourceID:     snapshot.sourceID,
-				GroupRef:        snapshot.groupName,
-				Title:           snapshot.title,
-				Summary:         safeReason(reason),
-				Details:         details,
-			}); err != nil {
-				return 0, err
-			}
 		}
 		return version, nil
 	}

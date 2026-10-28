@@ -112,21 +112,21 @@ func TestSubscribeCreatesCompleteOwnerSetAtomically(t *testing.T) {
 	if animetest.CountRows(t, db, "subscription_log_entries") != 1 {
 		t.Fatal("Subscribe must append exactly one creation log entry")
 	}
-	var logSubscriptionID, logAnimeID, logKind, logOutcome, logTitle, logSummary, logDedupeKey string
+	var logSubscriptionID, logAnimeID, logKind, logOutcome, logCode, logParams, logDedupeKey string
 	var logSourceNull, logReleaseNull, logGroupNull, logDetailsNull bool
 	if err := db.QueryRowContext(context.Background(), `
-SELECT subscription_id, managed_anime_id, kind, outcome, title, summary, dedupe_key,
+SELECT subscription_id, managed_anime_id, kind, outcome, message_code, message_params::text, dedupe_key,
        rss_source_id IS NULL, release_id IS NULL, group_ref IS NULL, details IS NULL
 FROM subscription_log_entries`).Scan(
-		&logSubscriptionID, &logAnimeID, &logKind, &logOutcome, &logTitle, &logSummary, &logDedupeKey,
+		&logSubscriptionID, &logAnimeID, &logKind, &logOutcome, &logCode, &logParams, &logDedupeKey,
 		&logSourceNull, &logReleaseNull, &logGroupNull, &logDetailsNull); err != nil {
 		t.Fatalf("read subscription creation log: %v", err)
 	}
 	if logSubscriptionID != result.Subscription.Id || logAnimeID != result.ManagedAnime.Id ||
-		logKind != "subscription_created" || logOutcome != "info" || logTitle != result.ManagedAnime.Title ||
-		logSummary != "订阅已创建" || logDedupeKey != "subscription_created:subscription:"+result.Subscription.Id+":v1:subscription_created" {
-		t.Fatalf("subscription creation log fields mismatch: subscription=%q anime=%q kind=%q outcome=%q title=%q summary=%q dedupe=%q",
-			logSubscriptionID, logAnimeID, logKind, logOutcome, logTitle, logSummary, logDedupeKey)
+		logKind != "subscription_created" || logOutcome != "info" || logCode != "subscription_created" ||
+		logParams != "{}" || logDedupeKey != "subscription_created:subscription:"+result.Subscription.Id+":v1:subscription_created" {
+		t.Fatalf("subscription creation log fields mismatch: subscription=%q anime=%q kind=%q outcome=%q code=%q params=%s dedupe=%q",
+			logSubscriptionID, logAnimeID, logKind, logOutcome, logCode, logParams, logDedupeKey)
 	}
 	if !logSourceNull || !logReleaseNull || !logGroupNull || !logDetailsNull {
 		t.Fatalf("subscription creation log must leave unrelated fields NULL: source=%v release=%v group=%v details=%v",

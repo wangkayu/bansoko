@@ -394,10 +394,10 @@ func TestObservabilityUnionMembersSatisfyContractOverPostgres(t *testing.T) {
 	exec(`INSERT INTO subscriptions(id, managed_anime_id, origin, instance_label, state)
 		VALUES ('subscription-contract', 'anime-contract', 'custom', 'Contract', 'active')`)
 	exec(`INSERT INTO subscription_log_entries(
-			id, subscription_id, managed_anime_id, kind, outcome, occurred_at, title, summary,
+			id, subscription_id, managed_anime_id, kind, outcome, occurred_at, message_code, message_params,
 			dedupe_key, retention_until)
 		VALUES ('business-contract', 'subscription-contract', 'anime-contract', 'release_processed',
-			'info', CURRENT_TIMESTAMP, 'Business fixture', 'business contract fixture',
+			'info', CURRENT_TIMESTAMP, 'release_accepted', '{"group_name":"Contract Group"}'::jsonb,
 			'business-contract:1', CURRENT_TIMESTAMP + INTERVAL '30 days')`)
 	exec(`INSERT INTO automation_dispatch_runs(
 			id, kind, trigger, state, target_count, enqueued_count, merged_count, skipped_count,

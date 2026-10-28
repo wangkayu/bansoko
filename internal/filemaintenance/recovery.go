@@ -895,12 +895,11 @@ func recoveryTargetFingerprintEnvelope(fingerprint string, sizeBytes int64) (str
 // same generation) a no-op instead of a second entry.
 //
 // A nil writer skips the entry instead of failing the confirm — the same
-// entity-committed-activity-optional tradeoff as
-// internal/filemaintenance/decisions.go:803 (replacement_decisions),
-// internal/filemanager/persistence/commands.go:429 (release) and
-// internal/filemaintenance/cleanup.go:1062 (cleanup): the ownership change is
-// the effect, the journal entry is its record. The composition root always
-// wires an observability service, so the skip is a test-only path.
+// entity-committed-activity-optional tradeoff as freezeKeyDecisionTx
+// (replacement_decisions), the file manager's appendReleaseActivity (release)
+// and appendCleanupActivityTx (cleanup): the ownership change is the effect,
+// the journal entry is its record. The composition root always wires an
+// observability service, so the skip is a test-only path.
 func (s *Service) appendRecoveryActivityTx(ctx context.Context, tx *sql.Tx, input writeRecoveryOwnershipInput) error {
 	if s.recoveryActivity == nil {
 		return nil
@@ -908,10 +907,6 @@ func (s *Service) appendRecoveryActivityTx(ctx context.Context, tx *sql.Tx, inpu
 	subscriptionID, err := subscriptionIDForAnime(ctx, tx, input.animeID)
 	if err != nil {
 		return fmt.Errorf("read subscription for recovery activity: %w", err)
-	}
-	title, err := activityAnimeTitle(ctx, tx, input.animeID)
-	if err != nil {
-		return fmt.Errorf("read anime title for recovery activity: %w", err)
 	}
 	details, err := businesslog.MarshalDetails(map[string]any{
 		"file_name":      businesslog.FileName(input.candidate.TargetPath),
@@ -932,8 +927,7 @@ func (s *Service) appendRecoveryActivityTx(ctx context.Context, tx *sql.Tx, inpu
 		SubjectID:      input.candidate.PlacementID,
 		SubjectVersion: input.previousVersion + 1,
 		DedupeKey:      fmt.Sprintf("recovery:%s:%d", input.candidate.PlacementID, input.candidate.Generation),
-		Title:          title,
-		Summary:        "文件已恢复对齐",
+		MessageCode:    observabilityport.MessageFileRecovered,
 		Details:        details,
 		CausationType:  "reconciliation_scan",
 		CausationID:    fmt.Sprintf("recon:scan:%s:%d", input.animeID, input.candidate.Generation),

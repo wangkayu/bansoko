@@ -87,7 +87,8 @@ VALUES ('file-activity-subscription', 'file-activity-anime', 'custom', 'File Act
 		SubscriptionID: "file-activity-subscription", ManagedAnimeID: "file-activity-anime",
 		Kind: "file_alignment_completed", Outcome: "success", ReasonCode: "file_alignment_completed",
 		SubjectType: "file_operation", SubjectID: "operation-file-activity", SubjectVersion: 2,
-		StableResultKey: "file_alignment_completed:operation-file-activity", Title: "File Activity Anime", Summary: "文件已入库",
+		StableResultKey: "file_alignment_completed:operation-file-activity",
+		MessageCode:     observabilityport.MessageFileImported, MessageParams: map[string]any{observabilityport.ParamFileName: "Show - 01.mkv"},
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -144,7 +145,7 @@ VALUES ('file-kind-subscription', 'file-kind-anime', 'custom', 'File Kind test',
 		SubscriptionID: "file-kind-subscription", ManagedAnimeID: "file-kind-anime",
 		Kind: "file_alignment_failed", Outcome: "failure", ReasonCode: "file_alignment_failed",
 		SubjectType: "file_operation", SubjectID: "file-kind-operation", SubjectVersion: 1,
-		StableResultKey: "file_alignment_failed:file-kind-operation", Title: "File Kind Anime", Summary: "文件入库失败：file_alignment_failed",
+		StableResultKey: "file_alignment_failed:file-kind-operation", MessageCode: observabilityport.MessageFileImportFailed,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +173,7 @@ VALUES ('activity-subscription', 'activity-anime', 'custom', 'Activity test', 'a
 	record := observabilityport.ActivityRecord{
 		SubscriptionID: "activity-subscription", ManagedAnimeID: "activity-anime", Kind: "metadata_applied", Outcome: "success",
 		ReasonCode: "metadata_applied", SubjectType: "metadata", SubjectID: "activity-anime", SubjectVersion: 2,
-		Title: "Activity Anime", Summary: "已应用完整的 BGM/TMDB 元数据",
+		MessageCode: observabilityport.MessageMetadataApplied,
 	}
 
 	tx, err := db.BeginTx(ctx, nil)
@@ -259,7 +260,7 @@ VALUES
 		Kind: "rss_new_content", Outcome: "info", ReasonCode: "rss_new_content",
 		SubjectType: "rss_source", SubjectID: "rss-activity-source-a", SubjectVersion: 2,
 		StableResultKey: "same-result-key", RSSSourceID: "rss-activity-source-a", GroupRef: longGroupRef,
-		Title: "RSS Activity Anime", Summary: "发现 1 条新 RSS 内容",
+		MessageCode: observabilityport.MessageRSSNewContent, MessageParams: map[string]any{observabilityport.ParamCount: 1},
 		Details: []byte(`{"item_count":1}`),
 	}
 
@@ -291,21 +292,28 @@ VALUES
 		Kind: "release_processed", Outcome: "success", ReasonCode: "accepted_pending_download",
 		SubjectType: "release", SubjectID: "rss-activity-release", SubjectVersion: 2,
 		StableResultKey: "evaluator-v1:accepted_pending_download", RSSSourceID: "rss-activity-source-a",
-		ReleaseID: "rss-activity-release", GroupRef: "Group A", Title: "RSS Activity Anime",
-		Summary: "发布评估完成：accepted_pending_download",
+		ReleaseID: "rss-activity-release", GroupRef: "Group A", MessageCode: observabilityport.MessageReleaseAccepted,
 		Details: []byte(`{"verdict":"accepted_pending_download","reason_code":"accepted_pending_download"}`),
 	}
 	appendRecord(releaseRecord)
 
+	// A refresh failure is a diagnostic condition, not a journal entry: the
+	// retired kind is refused before any row is written.
 	failureRecord := sourceRecord
 	failureRecord.Kind = "rss_refresh_failed"
 	failureRecord.Outcome = "failure"
 	failureRecord.ReasonCode = "feed_locator_unsafe"
 	failureRecord.SubjectVersion = 3
 	failureRecord.StableResultKey = "failure-result"
-	failureRecord.Summary = "RSS source refresh failed"
 	failureRecord.Details = []byte(`{"error_count":1,"reason_code":"feed_locator_unsafe"}`)
-	appendRecord(failureRecord)
+	failureTx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.AppendTx(ctx, txscope.Wrap(failureTx), failureRecord); err == nil {
+		t.Fatal("the retired rss_refresh_failed kind must be refused")
+	}
+	_ = failureTx.Rollback()
 
 	var newContentCount, sourceACount, sourceBCount, releaseCount, failureCount int
 	if err := db.QueryRowContext(ctx, `
@@ -318,23 +326,27 @@ SELECT
 		&newContentCount, &sourceACount, &sourceBCount, &releaseCount, &failureCount); err != nil {
 		t.Fatal(err)
 	}
-	if newContentCount != 2 || sourceACount != 1 || sourceBCount != 1 || releaseCount != 1 || failureCount != 1 {
+	if newContentCount != 2 || sourceACount != 1 || sourceBCount != 1 || releaseCount != 1 || failureCount != 0 {
 		t.Fatalf("unexpected RSS Activity counts: new=%d sourceA=%d sourceB=%d release=%d failure=%d",
 			newContentCount, sourceACount, sourceBCount, releaseCount, failureCount)
 	}
 
-	var kind, reasonCode, subjectType, subjectID, rssSourceID, releaseID, groupRef, dedupeKey string
+	var kind, reasonCode, subjectType, subjectID, rssSourceID, releaseID, groupRef, dedupeKey, messageCode string
 	var subjectVersion int64
-	var details []byte
+	var details, messageParams []byte
 	if err := db.QueryRowContext(ctx, `
 SELECT kind, reason_code, subject_type, subject_id, subject_version,
-       COALESCE(rss_source_id, ''), COALESCE(release_id, ''), COALESCE(group_ref, ''), dedupe_key, details
+       COALESCE(rss_source_id, ''), COALESCE(release_id, ''), COALESCE(group_ref, ''), dedupe_key, details,
+       message_code, message_params
 FROM subscription_log_entries
 WHERE subscription_id = 'rss-activity-subscription' AND kind = 'rss_new_content'
   AND subject_id = 'rss-activity-source-a'`).Scan(
 		&kind, &reasonCode, &subjectType, &subjectID, &subjectVersion,
-		&rssSourceID, &releaseID, &groupRef, &dedupeKey, &details); err != nil {
+		&rssSourceID, &releaseID, &groupRef, &dedupeKey, &details, &messageCode, &messageParams); err != nil {
 		t.Fatal(err)
+	}
+	if messageCode != "rss_new_content" || string(messageParams) != `{"count": 1}` {
+		t.Fatalf("unexpected message: code=%q params=%s", messageCode, messageParams)
 	}
 	if kind != "rss_new_content" || reasonCode != "rss_new_content" || subjectType != "rss_source" ||
 		subjectID != "rss-activity-source-a" || subjectVersion != 2 || rssSourceID != "rss-activity-source-a" ||
@@ -359,20 +371,6 @@ WHERE subscription_id = 'rss-activity-subscription' AND kind = 'release_processe
 		dedupeKey != "release_processed:release:rss-activity-release:v2:evaluator-v1:accepted_pending_download" {
 		t.Fatalf("unexpected release Activity envelope: subject=%s/%s/v%d reason=%q source=%q release=%q group=%q dedupe=%q",
 			subjectType, subjectID, subjectVersion, reasonCode, rssSourceID, releaseID, groupRef, dedupeKey)
-	}
-
-	if err := db.QueryRowContext(ctx, `
-SELECT reason_code, subject_type, subject_id, subject_version, COALESCE(rss_source_id, ''), dedupe_key
-FROM subscription_log_entries
-WHERE subscription_id = 'rss-activity-subscription' AND kind = 'rss_refresh_failed'`).Scan(
-		&reasonCode, &subjectType, &subjectID, &subjectVersion, &rssSourceID, &dedupeKey); err != nil {
-		t.Fatal(err)
-	}
-	if reasonCode != "feed_locator_unsafe" || subjectType != "rss_source" || subjectID != "rss-activity-source-a" ||
-		subjectVersion != 3 || rssSourceID != "rss-activity-source-a" ||
-		dedupeKey != "rss_refresh_failed:rss_source:rss-activity-source-a:v3:failure-result" {
-		t.Fatalf("unexpected failure Activity envelope: reason=%q subject=%s/%s/v%d source=%q dedupe=%q",
-			reasonCode, subjectType, subjectID, subjectVersion, rssSourceID, dedupeKey)
 	}
 
 	tx, err := db.BeginTx(ctx, nil)
@@ -476,9 +474,9 @@ WHERE component = 'automation' AND operation = 'dispatch'
 }
 
 // TestWriterMasksUpstreamTitleFragmentsInsteadOfFailing proves that the
-// Activity writer commits an upstream title carrying an alias slash, a URL, an
-// absolute path or a token, storing the masked text instead of failing the
-// caller's owner transaction.
+// Activity writer commits an upstream name param carrying an alias slash, a
+// URL, an absolute path or a token, storing the masked text instead of failing
+// the caller's owner transaction.
 func TestWriterMasksUpstreamTitleFragmentsInsteadOfFailing(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
@@ -507,9 +505,9 @@ VALUES ('title-subscription', 'title-anime', 'custom', 'Title test', 'active')`)
 			t.Fatal(err)
 		}
 		record := observabilityport.ActivityRecord{
-			SubscriptionID: "title-subscription", ManagedAnimeID: "title-anime", Kind: "release_processed", Outcome: "info",
-			ReasonCode: "submitted", SubjectType: "release", SubjectID: fmt.Sprintf("release-%d", index), SubjectVersion: 1,
-			Title: tc.title, Summary: "下载任务已提交：" + tc.title,
+			SubscriptionID: "title-subscription", ManagedAnimeID: "title-anime", Kind: "download_changed", Outcome: "info",
+			ReasonCode: "download_submitted", SubjectType: "download_task", SubjectID: fmt.Sprintf("task-%d", index), SubjectVersion: 1,
+			MessageCode: observabilityport.MessageDownloadSubmitted, MessageParams: map[string]any{observabilityport.ParamName: tc.title},
 		}
 		if err := service.AppendTx(ctx, txscope.Wrap(tx), record); err != nil {
 			_ = tx.Rollback()
@@ -518,13 +516,13 @@ VALUES ('title-subscription', 'title-anime', 'custom', 'Title test', 'active')`)
 		if err := tx.Commit(); err != nil {
 			t.Fatal(err)
 		}
-		var title, summary string
+		var name string
 		if err := db.QueryRowContext(ctx, `
-SELECT title, summary FROM subscription_log_entries WHERE subject_id = $1`, record.SubjectID).Scan(&title, &summary); err != nil {
+SELECT message_params->>'name' FROM subscription_log_entries WHERE subject_id = $1`, record.SubjectID).Scan(&name); err != nil {
 			t.Fatal(err)
 		}
-		if title != tc.want || summary != "下载任务已提交："+tc.want {
-			t.Fatalf("stored title=%q summary=%q, want %q", title, summary, tc.want)
+		if name != tc.want {
+			t.Fatalf("stored name=%q, want %q", name, tc.want)
 		}
 	}
 }
