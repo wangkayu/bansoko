@@ -11,6 +11,7 @@ import { deleteCatalogSubscription, cleanupCatalogLocalData } from "../../lib/pr
 import type { CatalogEntryView, CatalogSnapshotView } from "../../lib/providers/viewmodels";
 import { formatTimeAgo } from "../../lib/labels";
 import { animeKeys } from "../../lib/queryKeys";
+import { useBoundedRefresh } from "../../lib/events/useBoundedRefresh";
 import { SeasonPicker } from "./SeasonPicker";
 import { currentSeason, parseSeason } from "./season";
 import { BrowseCard, InstanceCard } from "./card";
@@ -167,6 +168,9 @@ export function AnimeGrid() {
   // A deep link to a subscribed instance missing from the current column (e.g. another season): fall back to resolving in the subscribed list.
   const resolvingAnime = animeParam !== null && configRow === null;
   const subscribedCatalog = useCatalog("all", season, { enabled: resolvingAnime && tab !== "all" });
+  // The subscription list follows import progress through push invalidation; while the stream is
+  // disconnected it falls back to bounded polling.
+  useBoundedRefresh(tab === "all" ? [catalogKeys.listTab("all")] : []);
   const blacklist = useBlacklist();
   const { add: addBlacklist } = useBlacklistActions();
   // The key carries the provider: the same bare ref is two entries under two providers.
