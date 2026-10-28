@@ -151,25 +151,70 @@ func (r *errorAfterReader) Read(p []byte) (int, error) {
 
 func (r *errorAfterReader) Close() error { return nil }
 
-func TestResponseBodyOversizeIsSafeUnknown(t *testing.T) {
-	resp := &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(strings.Repeat("x", maxResponseBody+1)))}
-	result := readResponseResult(resp, "webhook", newSecretRedactor(""))
-	if result.state != "unknown" || result.errorCode != "response_too_large" || result.responseStatus == nil || *result.responseStatus != http.StatusOK || result.responseBytes != maxResponseBody+1 {
-		t.Fatalf("unexpected result: %+v", result)
-	}
-	if len(result.providerAck) != 0 || strings.Contains(result.err, "xxx") {
-		t.Fatalf("raw oversized body escaped: %+v", result)
+func TestResponseBodyOversizeIsUnknownOnlyWhereTheBodyAcknowledges(t *testing.T) {
+	for _, tc := range []struct {
+		adapterKind string
+		wantState   string
+		wantCode    string
+	}{
+		{"webhook", "delivered", ""},
+		{"telegram", "unknown", "response_too_large"},
+		{"feishu", "unknown", "response_too_large"},
+	} {
+		t.Run(tc.adapterKind, func(t *testing.T) {
+			resp := &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(strings.Repeat("x", maxResponseBody+1)))}
+			result := readResponseResult(resp, tc.adapterKind, newSecretRedactor(""))
+			if result.state != tc.wantState || result.errorCode != tc.wantCode || result.responseStatus == nil || *result.responseStatus != http.StatusOK || result.responseBytes != maxResponseBody+1 {
+				t.Fatalf("unexpected result: %+v", result)
+			}
+			if len(result.providerAck) != 0 || strings.Contains(result.err, "xxx") {
+				t.Fatalf("raw oversized body escaped: %+v", result)
+			}
+		})
 	}
 }
 
 func TestResponseReadErrorPreservesSafeResponseEvidence(t *testing.T) {
-	resp := &http.Response{StatusCode: http.StatusAccepted, Body: &errorAfterReader{data: []byte("partial-secret-body")}}
-	result := readResponseResult(resp, "webhook", newSecretRedactor(""))
-	if result.state != "unknown" || result.errorCode != "response_read_failed" || result.responseStatus == nil || *result.responseStatus != http.StatusAccepted {
-		t.Fatalf("unexpected result: %+v", result)
+	for _, tc := range []struct {
+		adapterKind string
+		wantState   string
+		wantCode    string
+	}{
+		{"webhook", "delivered", ""},
+		{"telegram", "unknown", "response_read_failed"},
+		{"feishu", "unknown", "response_read_failed"},
+	} {
+		t.Run(tc.adapterKind, func(t *testing.T) {
+			resp := &http.Response{StatusCode: http.StatusAccepted, Body: &errorAfterReader{data: []byte("partial-secret-body")}}
+			result := readResponseResult(resp, tc.adapterKind, newSecretRedactor(""))
+			if result.state != tc.wantState || result.errorCode != tc.wantCode || result.responseStatus == nil || *result.responseStatus != http.StatusAccepted {
+				t.Fatalf("unexpected result: %+v", result)
+			}
+			if result.responseBytes != int64(len("partial-secret-body")) || len(result.providerAck) != 0 || strings.Contains(result.err, "secret") {
+				t.Fatalf("unsafe or incomplete evidence: %+v", result)
+			}
+		})
 	}
-	if result.responseBytes != int64(len("partial-secret-body")) || len(result.providerAck) != 0 || strings.Contains(result.err, "secret") {
-		t.Fatalf("unsafe or incomplete evidence: %+v", result)
+}
+
+// The status code alone decides a non-2xx outcome, whatever the body does.
+func TestResponseStatusDecidesWhenBodyIsUnusable(t *testing.T) {
+	for _, tc := range []struct {
+		status    int
+		wantState string
+		wantCode  string
+	}{
+		{http.StatusTooManyRequests, "waiting_retry", "http_429"},
+		{http.StatusBadGateway, "waiting_retry", "http_502"},
+		{http.StatusForbidden, "failed", "http_403"},
+	} {
+		t.Run(http.StatusText(tc.status), func(t *testing.T) {
+			resp := &http.Response{StatusCode: tc.status, Body: &errorAfterReader{data: []byte("partial")}}
+			result := readResponseResult(resp, "telegram", newSecretRedactor(""))
+			if result.state != tc.wantState || result.errorCode != tc.wantCode {
+				t.Fatalf("unexpected result: %+v", result)
+			}
+		})
 	}
 }
 

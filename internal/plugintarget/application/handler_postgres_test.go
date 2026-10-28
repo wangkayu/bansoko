@@ -515,7 +515,7 @@ func TestHandlerResponseCrashReclaimsUnknownAndExpectedStatusCreatesNoDiagnostic
 
 func TestHandlerTimeoutFinalizesExistingAttemptUnknownWithoutDiagnostic(t *testing.T) {
 	service, id, claim := seedHandlerDelivery(t)
-	client := &countingHTTPClient{err: fmt.Errorf("Authorization: Bearer secret https://private.example: %w", context.DeadlineExceeded)}
+	client := writtenThenFailingClient{err: fmt.Errorf("Authorization: Bearer secret https://private.example: %w", context.DeadlineExceeded)}
 	handler := NewPluginDeliverHandler(service.db, service.secrets, service.workItems, client, &fakeTemplateRenderer{title: "title", body: "body"})
 	out, err := handler.Handle(context.Background(), claim)
 	if err != nil {
@@ -528,7 +528,7 @@ func TestHandlerTimeoutFinalizesExistingAttemptUnknownWithoutDiagnostic(t *testi
 	if err := service.db.QueryRowContext(context.Background(), `SELECT d.state,d.attempt_count,a.error,a.error_code,a.response_received_at IS NOT NULL FROM plugin_deliveries d JOIN plugin_delivery_attempts a ON a.plugin_delivery_id=d.id WHERE d.id=$1`, id).Scan(&state, &attempts, &attemptError, &errorCode, &responseReceived); err != nil {
 		t.Fatal(err)
 	}
-	if state != "unknown" || attempts != 1 || errorCode != "transport_unknown" || responseReceived {
+	if state != "unknown" || attempts != 1 || errorCode != "response_timeout" || responseReceived {
 		t.Fatalf("state=%s attempts=%d error_code=%s response_received=%v", state, attempts, errorCode, responseReceived)
 	}
 	if strings.Contains(attemptError, "secret") || strings.Contains(attemptError, "https://") {

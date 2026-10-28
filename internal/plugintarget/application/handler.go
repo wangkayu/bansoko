@@ -37,11 +37,12 @@ const (
 )
 
 // deliveryRetryDelays is the bounded backoff of a business delivery whose
-// outcome is unknown (timeout, connection lost before a response, a crash
-// after the request started) or retryable (429, 5xx). Entry n is the wait
-// after attempt n+1; once it is spent the delivery settles visibly. Every
-// attempt carries the same delivery_id, so a receiver that saw an earlier
-// attempt can drop the repeat.
+// outcome is unknown (the request was written but no response arrived:
+// response timeout, connection lost; a crash after the request started) or
+// whose failure may clear (429, 5xx, a connection that failed before the
+// request was written). Entry n is the wait after attempt n+1; once it is
+// spent the delivery settles visibly. Every attempt carries the same
+// delivery_id, so a receiver that saw an earlier attempt can drop the repeat.
 var deliveryRetryDelays = []time.Duration{time.Minute, 5 * time.Minute, 15 * time.Minute, time.Hour, time.Hour}
 
 // MaxDeliveryAttempts is the number of attempts one business delivery makes
@@ -237,13 +238,7 @@ func (h *PluginDeliverHandler) Handle(ctx context.Context, claim workitems.Claim
 		}
 	}
 
-	resp, doErr := h.client.Do(req)
-	result := attemptResult{}
-	if doErr != nil {
-		result = attemptResult{state: "unknown", errorCode: "transport_unknown", err: redactor.text(safeTransportError(doErr).Error(), 4096)}
-	} else {
-		result = readResponseResult(resp, row.adapterKind, redactor)
-	}
+	result := h.sendRequest(req, row.adapterKind, redactor)
 	if h.hooks.afterResponseBeforeFinal != nil {
 		if err := h.hooks.afterResponseBeforeFinal(); err != nil {
 			return worker.Outcome{}, err
@@ -262,11 +257,12 @@ func (h *PluginDeliverHandler) Handle(ctx context.Context, claim workitems.Claim
 // unknown or retryable outcome of a business delivery schedules the next
 // attempt on the bounded backoff (deliveryRetryDelays) while attempts remain
 // and the WorkItem's claim budget allows another claim; otherwise the
-// delivery settles visibly: unknown stays unknown, a retryable status that
-// never cleared becomes failed. A definite failure (4xx, a rejected provider
-// reply) never retries. A test delivery is interactive feedback: an unknown
-// outcome settles at once and a retryable status retries only within the
-// WorkItem's claim budget.
+// delivery settles visibly: unknown stays unknown, a retryable failure (a
+// 429/5xx status, a connection that failed before the request was written)
+// that never cleared becomes failed. A definite failure (4xx, a rejected
+// provider reply, a refusal of the safe transport) never retries. A test
+// delivery is interactive feedback: an unknown outcome settles at once and a
+// retryable failure retries only within the WorkItem's claim budget.
 func (h *PluginDeliverHandler) settleAttempt(claim workitems.Claim, row deliveryRow, attempt durableAttempt, result attemptResult, redactor secretRedactor) worker.Outcome {
 	retry := func(delay time.Duration) worker.Outcome {
 		result.state = "waiting_retry"
@@ -481,31 +477,41 @@ func requestSummary(req *http.Request) json.RawMessage {
 	return raw
 }
 
+// readResponseResult settles a received response. The status code decides
+// every non-2xx outcome even when the body is unusable. A 2xx is delivered by
+// the status alone, except for adapters whose provider confirms delivery in
+// the body (telegram, feishu): their 2xx with an unreadable or oversized body
+// is unknown.
 func readResponseResult(resp *http.Response, adapterKind string, redactor secretRedactor) attemptResult {
 	if resp == nil {
-		return attemptResult{state: "unknown", errorCode: "transport_unknown", err: "transport returned no response"}
+		return attemptResult{state: "unknown", errorCode: "connection_lost", err: "transport returned no response"}
 	}
 	defer resp.Body.Close()
 	result := attemptResult{responseStatus: &resp.StatusCode}
 	limited := &io.LimitedReader{R: resp.Body, N: maxResponseBody + 1}
-	body, err := io.ReadAll(limited)
+	body, readErr := io.ReadAll(limited)
 	result.responseBytes = int64(len(body))
-	if err != nil {
-		result.state = "unknown"
-		result.errorCode = "response_read_failed"
-		result.err = "response body could not be read"
-		return result
+	bodyErrorCode, bodyError := "", ""
+	switch {
+	case readErr != nil:
+		bodyErrorCode, bodyError = "response_read_failed", "response body could not be read"
+	case len(body) > maxResponseBody:
+		bodyErrorCode, bodyError = "response_too_large", "response body exceeded the safe limit"
+	default:
+		result.providerAck = allowlistedProviderAck(adapterKind, body)
 	}
-	if len(body) > maxResponseBody {
-		result.state = "unknown"
-		result.errorCode = "response_too_large"
-		result.err = "response body exceeded the safe limit"
-		return result
-	}
-	result.providerAck = allowlistedProviderAck(adapterKind, body)
 	switch {
 	case resp.StatusCode >= 200 && resp.StatusCode < 300:
-		return classifySuccessfulResponse(result, adapterKind, body)
+		if bodyErrorCode == "" {
+			return classifySuccessfulResponse(result, adapterKind, body)
+		}
+		if bodyAcknowledged(adapterKind) {
+			result.state = "unknown"
+			result.errorCode = bodyErrorCode
+			result.err = bodyError
+			return result
+		}
+		result.state = "delivered"
 	case resp.StatusCode == 429 || resp.StatusCode >= 500:
 		result.state = "waiting_retry"
 		result.errorCode = fmt.Sprintf("http_%d", resp.StatusCode)
@@ -516,6 +522,12 @@ func readResponseResult(resp *http.Response, adapterKind string, redactor secret
 		result.err = "provider returned a permanent HTTP status"
 	}
 	return result
+}
+
+// bodyAcknowledged reports whether the adapter's provider confirms delivery in
+// the response body, so a 2xx status alone is not enough.
+func bodyAcknowledged(adapterKind string) bool {
+	return adapterKind == "telegram" || adapterKind == "feishu"
 }
 
 func classifySuccessfulResponse(result attemptResult, adapterKind string, body []byte) attemptResult {

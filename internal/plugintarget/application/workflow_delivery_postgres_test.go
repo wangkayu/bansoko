@@ -21,20 +21,23 @@ import (
 	"bansoko/internal/workitems"
 )
 
-// NF2 delivery: a business delivery is at-least-once. An unknown outcome or a
-// retryable status retries on the bounded backoff and then settles visibly;
-// every attempt carries the same delivery_id; a definite failure never
-// retries; the retry state lives in the database and survives a restart.
+// NF2 delivery: a business delivery is at-least-once. A failure before the
+// request was written, an unknown outcome or a retryable status retries on the
+// bounded backoff and then settles visibly; every attempt carries the same
+// delivery_id; a definite failure never retries; the retry state lives in the
+// database and survives a restart.
 
 const workflowSigningSecret = "whsec_workflow_probe_0123456789"
 
 // webhookCaptureClient records every webhook attempt and answers with a fixed
-// status or transport error.
+// status or transport error. written marks the transport error as one that
+// happened after the request was fully written.
 type webhookCaptureClient struct {
 	mu       sync.Mutex
 	status   int
 	body     string
 	err      error
+	written  bool
 	requests []capturedWebhook
 }
 
@@ -49,6 +52,9 @@ func (c *webhookCaptureClient) Do(req *http.Request) (*http.Response, error) {
 	body, _ := io.ReadAll(req.Body)
 	c.requests = append(c.requests, capturedWebhook{header: req.Header.Clone(), body: body})
 	if c.err != nil {
+		if c.written {
+			markRequestWritten(req)
+		}
 		return nil, c.err
 	}
 	text := c.body
@@ -162,7 +168,8 @@ func TestBusinessDeliveryRetriesOnBackoffToVisibleTerminal(t *testing.T) {
 		client   *webhookCaptureClient
 		terminal string
 	}{
-		{name: "unknown outcome stays unknown", client: &webhookCaptureClient{err: errors.New("connection reset by peer")}, terminal: "unknown"},
+		{name: "unknown outcome stays unknown", client: &webhookCaptureClient{err: errors.New("connection reset by peer"), written: true}, terminal: "unknown"},
+		{name: "failure before the request was written ends failed", client: &webhookCaptureClient{err: errors.New("connection reset by peer")}, terminal: "failed"},
 		{name: "retryable status ends failed", client: &webhookCaptureClient{status: http.StatusServiceUnavailable}, terminal: "failed"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
