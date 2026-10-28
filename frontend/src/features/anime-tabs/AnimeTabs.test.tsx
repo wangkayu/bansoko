@@ -1467,7 +1467,6 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: t("forms.search") }));
     fireEvent.click(await within(dialog).findByRole("option", { name: /匹配到的番名/ }));
-    fireEvent.click(within(dialog).getByRole("checkbox", { name: t("forms.alsoSetTitle", { title: "匹配到的番名" }) }));
     fireEvent.click(within(dialog).getByRole("button", { name: t("forms.confirmMatch") }));
 
     // Regression: the binding confirm writes equal to saved — no false dirty, and closing the dialog never misfires the discard confirmation.
@@ -1528,7 +1527,13 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
     for (const checked of [true, false]) {
       const fetchMock = stubMetadataPatchFetch();
       const workspace = workspaceFixture();
-      workspace.metadata = { managed_anime_id: "anime-1", bgm: null, tmdb: null, version: 1 };
+      workspace.metadata = {
+        managed_anime_id: "anime-1",
+        bgm: null,
+        tmdb: null,
+        title_suggestions: [{ source: "provider", text: "测试番" }],
+        version: 1,
+      };
       const { unmount } = renderTabs({ animeID: "anime-1", workspace, onChanged: () => {}, initialTab: "metadata" });
 
       const dialog = await confirmTmdbMatch();
@@ -1552,7 +1557,14 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
   it("TMDB 匹配确认：标题已被改过时勾选不预选；候选名与现标题相同时不显示", async () => {
     stubMetadataPatchFetch();
     const workspace = workspaceFixture();
-    workspace.metadata = { managed_anime_id: "anime-1", bgm: null, tmdb: null, title_override: "我的覆盖", version: 1 };
+    workspace.metadata = {
+      managed_anime_id: "anime-1",
+      bgm: null,
+      tmdb: null,
+      title_override: "我的覆盖",
+      title_suggestions: [{ source: "provider", text: "测试番" }],
+      version: 1,
+    };
     const { unmount } = renderTabs({ animeID: "anime-1", workspace, onChanged: () => {}, initialTab: "metadata" });
     let dialog = await confirmTmdbMatch();
     expect(within(dialog).getByRole("checkbox", { name: alsoSetTitleName })).not.toBeChecked();
@@ -1578,8 +1590,6 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: t("forms.search") }));
     fireEvent.click(await within(dialog).findByRole("option", { name: /匹配到的番名/ }));
-    // The title stays as it is: the pre-checked "also set the title" is switched off.
-    fireEvent.click(within(dialog).getByRole("checkbox", { name: t("forms.alsoSetTitle", { title: "匹配到的番名" }) }));
     fireEvent.click(within(dialog).getByRole("button", { name: t("forms.confirmMatch") }));
 
     // After the match: the input shows the candidate year; binding/type/year/season/total-episodes are five unsaved spots with no PATCH sent.

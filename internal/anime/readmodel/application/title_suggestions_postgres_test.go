@@ -26,8 +26,15 @@ func TestGetAnimeWorkspaceListsTitleSuggestions(t *testing.T) {
 		return workspace.Metadata.TitleSuggestions
 	}
 
-	// Nothing is cached yet: only the provider title (the subscription's own title) is known.
-	if got := suggestions(); len(got) != 1 || got[0].Source != "provider" || got[0].Text != "Test Show" {
+	// A custom subscription has no provider title, and nothing is cached yet.
+	if got := suggestions(); len(got) != 0 {
+		t.Fatalf("suggestions without a provider title or cache = %+v, want none", got)
+	}
+	// The provider title is the catalog title frozen at subscribe, not the subscription's own title.
+	if _, err := db.ExecContext(ctx, `UPDATE managed_anime SET provider_title = 'Catalog Show' WHERE id = $1`, animeID); err != nil {
+		t.Fatal(err)
+	}
+	if got := suggestions(); len(got) != 1 || got[0].Source != "provider" || got[0].Text != "Catalog Show" {
 		t.Fatalf("uncached suggestions = %+v, want the provider title alone", got)
 	}
 
@@ -46,7 +53,7 @@ func TestGetAnimeWorkspaceListsTitleSuggestions(t *testing.T) {
 		{Source: "tmdb_original", Text: "Sample Original"},
 		{Source: "bgm_cn", Text: "示例 BGM"},
 		{Source: "bgm", Text: "サンプル"},
-		{Source: "provider", Text: "Test Show"},
+		{Source: "provider", Text: "Catalog Show"},
 	}
 	got := suggestions()
 	if len(got) != len(want) {

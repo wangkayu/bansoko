@@ -468,7 +468,10 @@ function OwnerMetadataTab({
           titleOverride: title ?? edit.titleOverride,
         })
       }
-      titleOffer={{ current: effectiveTitle, provider: baseTitle }}
+      titleOffer={{
+        current: effectiveTitle,
+        provider: workspace.metadata.title_suggestions?.find((item) => item.source === "provider")?.text ?? "",
+      }}
       onTotalEpisodesChange={(total) => setEdit({ ...edit, metadata: { ...edit.metadata, total_episodes: total } })}
       onMediaKindChange={(mediaKindOverride) => setEdit({ ...edit, mediaKindOverride })}
       mediaKindOverride={edit.mediaKindOverride}
