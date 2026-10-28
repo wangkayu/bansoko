@@ -273,7 +273,7 @@ Release and log diagnostics:
 | Read the facts one release was judged on (parsed title, tags, group, verdict inputs) | `get_release_candidate_facts` | `getReleaseCandidateFacts` | - |
 | Read the torrent file structure of a release | `get_release_torrent_structure` | `getReleaseTorrentStructure` | - |
 | Unified feed of routine, business, automation and plugin records (filters: `kind`, `outcome`, `from`, `to`, `managed_anime_id`; page with `cursor`) | `list_observability_records` | `listObservabilityRecords` | - |
-| Persisted diagnostic episodes (warnings and errors; filters: `severity`, `component`, `from`, `to`) | `list_observability_diagnostics` | `listObservabilityDiagnostics` | - |
+| Persisted diagnostic episodes: conditions on a target (downloader, site, metadata, notify, ...) with structured detail, affected count and retry mode; open first (filter: `state` open or recovered; page with `cursor`) | `list_observability_diagnostics` | `listObservabilityDiagnostics` | - |
 
 `list_execution_record_files` fails with `ACQUISITION_FILES_NOT_READY` before the file set is sealed and `ACQUISITION_DETAIL_UNAVAILABLE` once the record is compact.
 Each record names its source `release` and, when the frozen plan numbers them, the `episodes` it places; a running download also carries `transfer` (bytes done, total, speed) from the last sync poll, about a minute old at most. A delivered file carries `placed_path`, where it landed relative to the library, and `collision_outcome` (`none`, `skipped`, `versioned`, `overwritten`) when the recorded facts say how the collision setting played out.
