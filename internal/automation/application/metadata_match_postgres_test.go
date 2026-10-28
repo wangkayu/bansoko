@@ -395,7 +395,8 @@ VALUES ('plc-kind-held', 'tv:e1', 0, 'facts-v1', 'plc-kind-held')`); err != nil 
 	if err != nil {
 		t.Fatalf("metadata dispatch: %v", err)
 	}
-	if counts.targetCount != 2 || counts.enqueued != 2 || counts.errors != 0 {
+	// Both writes apply; no release waits on metadata, so nothing is enqueued.
+	if counts.targetCount != 2 || counts.skipped != 0 || counts.errors != 0 {
 		t.Fatalf("unexpected metadata dispatch counts: %+v", counts)
 	}
 	for _, want := range []struct {
