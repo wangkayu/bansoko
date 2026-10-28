@@ -8,10 +8,12 @@ import {
   type AnimeMetadata,
   type AnimeMetadataDraft,
   type AnimeMetadataPreview,
+  type TitleSuggestion,
 } from "../../lib/api/client";
 import { metadataDraftFromOwner, valuesEqual } from "../../lib/draft";
 import { useSavePart } from "../../lib/saveParts";
 import { MetadataFields } from "../anime-forms/MetadataFields";
+import { TitleSuggestionBadges } from "../anime-forms/TitleSuggestionBadges";
 import { Pencil } from "lucide-react";
 import { StateBlock, ConflictBlock, Input, Button } from "../../ui";
 import type { AnimeTabHost, DraftTabHost, OwnerTabHost } from "./host";
@@ -32,9 +34,12 @@ export function MetadataTab({
   host,
   readOnly = false,
   matchRequest,
+  draftTitleSuggestions,
   onPreviewChange,
 }: {
   host: AnimeTabHost;
+  /** Draft mode: title candidates from the draft's RSS read (an owner's come with the workspace). */
+  draftTitleSuggestions?: TitleSuggestion[];
   /** A read-only workspace (a retired owner): shows the effective values, renders no editing entry. */
   readOnly?: boolean;
   matchRequest?: MetadataMatchRequest;
@@ -51,7 +56,12 @@ export function MetadataTab({
   }, [matchRequest, readOnly]);
   if (host.mode === "draft") {
     return (
-      <DraftMetadataTab host={host} matchProvider={matchProvider} onMatchProviderChange={setMatchProvider} />
+      <DraftMetadataTab
+        host={host}
+        suggestions={draftTitleSuggestions}
+        matchProvider={matchProvider}
+        onMatchProviderChange={setMatchProvider}
+      />
     );
   }
   return (
@@ -71,17 +81,20 @@ export function MetadataTab({
 // afterwards untouched by site or metadata changes. It displays read-only at rest and becomes
 // editable through "edit"; "save title" writes it back into the caller's draft (an owner commits
 // through the footer's single save) and "cancel" drops the input. The title may not be empty.
+// While editing, the title candidates show as badges; a click saves that text like a typed title.
 
 function TitleRow({
   idPrefix,
   value,
   readOnly = false,
+  suggestions,
   onChange,
 }: {
   idPrefix: string;
   /** The current title (the value already written into the draft). */
   value: string;
   readOnly?: boolean;
+  suggestions?: readonly TitleSuggestion[];
   onChange: (next: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -168,6 +181,17 @@ function TitleRow({
           </>
         )}
       </div>
+      {editing && (
+        <TitleSuggestionBadges
+          suggestions={suggestions}
+          current={value}
+          onPick={(text) => {
+            onChange(text);
+            setEditing(false);
+            setError(undefined);
+          }}
+        />
+      )}
       {error && (
         <p role="alert" className="title-row-error text-caption">
           {error}
@@ -183,6 +207,7 @@ function MetadataTabView({
   readOnly = false,
   value,
   onValueChange,
+  titleOffer,
   onTotalEpisodesChange,
   onMediaKindChange,
   mediaKindOverride,
@@ -196,8 +221,10 @@ function MetadataTabView({
   title: ReactNode;
   readOnly?: boolean;
   value: AnimeMetadataDraft;
-  /** mediaKind is given when the change also sets the media kind; store both in one update. */
-  onValueChange: (next: AnimeMetadataDraft, mediaKind?: "tv" | "movie") => void;
+  /** mediaKind / title are given when the change also sets them (a match confirm); store all in one update. */
+  onValueChange: (next: AnimeMetadataDraft, mediaKind?: "tv" | "movie", title?: string) => void;
+  /** The match dialog's "also set the title" choice (current title and the provider's). */
+  titleOffer?: { current: string; provider: string };
   onTotalEpisodesChange: (total: number | null) => void;
   onMediaKindChange: (next: "tv" | "movie") => void;
   mediaKindOverride?: "tv" | "movie" | null;
@@ -222,6 +249,7 @@ function MetadataTabView({
         title={searchTitle}
         value={value}
         onChange={onValueChange}
+        titleOffer={readOnly ? undefined : titleOffer}
         busy={busy}
         readOnly={readOnly}
         directEdit
@@ -241,10 +269,12 @@ function MetadataTabView({
 
 function DraftMetadataTab({
   host,
+  suggestions,
   matchProvider,
   onMatchProviderChange,
 }: {
   host: DraftTabHost;
+  suggestions?: TitleSuggestion[];
   matchProvider?: "bgm" | "tmdb";
   onMatchProviderChange: (provider: "bgm" | "tmdb" | undefined) => void;
 }) {
@@ -259,14 +289,18 @@ function DraftMetadataTab({
         <TitleRow
           idPrefix="draft"
           value={draftTitle}
+          suggestions={suggestions}
           onChange={(title) => onDraftChange({ ...draft, title, title_override: null })}
         />
       }
       searchTitle={draftTitle}
       value={draft.metadata}
-      onValueChange={(metadata, mediaKind) =>
-        setMetadata(mediaKind ? { ...metadata, media_kind_override: mediaKind } : metadata)
-      }
+      onValueChange={(metadata, mediaKind, title) => {
+        const next = mediaKind ? { ...metadata, media_kind_override: mediaKind } : metadata;
+        if (title === undefined) setMetadata(next);
+        else onDraftChange({ ...draft, metadata: next, title, title_override: null });
+      }}
+      titleOffer={{ current: draftTitle, provider: suggestions?.find((item) => item.source === "provider")?.text ?? "" }}
       onTotalEpisodesChange={(total) => setMetadata({ ...draft.metadata, total_episodes: total })}
       onMediaKindChange={(next) => setMetadata({ ...draft.metadata, media_kind_override: next })}
       mediaKindOverride={draft.metadata.media_kind_override}
@@ -418,6 +452,7 @@ function OwnerMetadataTab({
           idPrefix="owner"
           value={readOnly ? (normalizedTitle(saved.titleOverride) ?? baseTitle) : effectiveTitle}
           readOnly={readOnly}
+          suggestions={workspace.metadata.title_suggestions}
           onChange={(titleOverride) => setEdit({ ...edit, titleOverride })}
         />
       }
@@ -425,9 +460,18 @@ function OwnerMetadataTab({
       readOnly={readOnly}
       busy={busy}
       value={edit.metadata}
-      onValueChange={(metadata, mediaKind) =>
-        setEdit({ ...edit, metadata, mediaKindOverride: mediaKind ?? edit.mediaKindOverride })
+      onValueChange={(metadata, mediaKind, title) =>
+        setEdit({
+          ...edit,
+          metadata,
+          mediaKindOverride: mediaKind ?? edit.mediaKindOverride,
+          titleOverride: title ?? edit.titleOverride,
+        })
       }
+      titleOffer={{
+        current: effectiveTitle,
+        provider: workspace.metadata.title_suggestions?.find((item) => item.source === "provider")?.text ?? "",
+      }}
       onTotalEpisodesChange={(total) => setEdit({ ...edit, metadata: { ...edit.metadata, total_episodes: total } })}
       onMediaKindChange={(mediaKindOverride) => setEdit({ ...edit, mediaKindOverride })}
       mediaKindOverride={edit.mediaKindOverride}

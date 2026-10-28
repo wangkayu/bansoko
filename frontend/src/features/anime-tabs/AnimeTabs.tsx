@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "../../ui/toast";
 import { SavePartsProvider, useSaveParts } from "../../lib/saveParts";
-import { draftTabChangeCounts } from "../../lib/draft";
+import { draftTabChangeCounts, valuesEqual } from "../../lib/draft";
 import { SaveButton, SaveStatus, UnsavedDot } from "../../ui/SaveFooter";
-import type { AnimeMetadataPreview, RulesSections } from "../../lib/api/client";
+import type { AnimeMetadataPreview, RSSListView, RulesSections, TitleSuggestion } from "../../lib/api/client";
 import type { AnimeTabHost } from "./host";
 import { MetadataTab, type MetadataMatchRequest } from "./MetadataTab";
 import { SubgroupsTab } from "./SubgroupsTab";
@@ -97,6 +97,13 @@ export function AnimeTabs({
     return () => clearTimeout(timer);
   }, [metadataPreviewLive]);
 
+  // A draft has no workspace to carry title candidates: they come with the RSS tab's draft read.
+  const [draftTitleSuggestions, setDraftTitleSuggestions] = useState<TitleSuggestion[]>();
+  const handleViewRead = useCallback((view: RSSListView) => {
+    const next = view.title_suggestions;
+    setDraftTitleSuggestions((prev) => (valuesEqual(prev, next) ? prev : next));
+  }, []);
+
   // Each tab's unsaved-change count: an owner's comes from the registered save parts, a draft's from the diff against savedDraft.
   const draftCounts = useMemo(
     () => (host.mode === "draft" && host.savedDraft ? draftTabChangeCounts(host.savedDraft, host.draft) : undefined),
@@ -186,6 +193,7 @@ export function AnimeTabs({
               host={host}
               readOnly={readOnly}
               matchRequest={matchRequest}
+              draftTitleSuggestions={draftTitleSuggestions}
               onPreviewChange={host.mode === "owner" ? setMetadataPreviewLive : undefined}
             />
           </TabsPanel>
@@ -209,6 +217,7 @@ export function AnimeTabs({
               metadataPreview={host.mode === "owner" ? metadataPreview : undefined}
               onExitRulesPreview={exitRulesPreview}
               active={tab === "rss"}
+              onViewRead={host.mode === "draft" ? handleViewRead : undefined}
             />
           </TabsPanel>
         </div>

@@ -1379,6 +1379,11 @@ describe("OneShotDialog 搜索快照来源", () => {
     await matchOnce();
     await waitFor(() => expect(screen.queryByRole("dialog", { name: t("forms.matchTitle", { provider: "TMDB" }) })).not.toBeInTheDocument());
     expect(title).toHaveValue("我的标题");
+
+    // The matched name stays on offer as a badge under the title input; a click sets it as the title.
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(`${t("tabs.metadata.suggestionSource.tmdb_cn")}\\s*匹配作品名`) }));
+    expect(title).toHaveValue("匹配作品名");
+    expect(screen.queryByRole("group", { name: t("tabs.metadata.suggestionsAria") })).not.toBeInTheDocument();
   });
 
   it("读取返回 409：提示重新搜索，不提供重试，也不静默重发", async () => {

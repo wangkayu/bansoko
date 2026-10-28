@@ -54,6 +54,25 @@ type AnimeMetadata struct {
 	// nil means unset. It is independent of TMDB.Season.
 	Season  *int  `json:"season"`
 	Version int64 `json:"version"`
+	// TitleSuggestions are the workspace read's title candidates; other
+	// responses leave it empty.
+	TitleSuggestions []TitleSuggestion `json:"title_suggestions,omitempty"`
+}
+
+// Title suggestion sources, in the order a view lists them.
+const (
+	TitleSourceTMDBCN       = "tmdb_cn"
+	TitleSourceTMDBOriginal = "tmdb_original"
+	TitleSourceBGMCN        = "bgm_cn"
+	TitleSourceBGM          = "bgm"
+	TitleSourceProvider     = "provider"
+)
+
+// TitleSuggestion is one candidate for the owner-fixed title: a name the bound
+// works' cached titles or the provider catalog carry. It is read-only.
+type TitleSuggestion struct {
+	Source string `json:"source"`
+	Text   string `json:"text"`
 }
 
 type BGMBinding struct {

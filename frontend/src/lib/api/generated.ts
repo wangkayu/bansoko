@@ -3148,6 +3148,8 @@ export interface components {
             /** @description The exact configuration identity this view was computed from, so a stale response can never be mistaken for the current one. */
             config_identity: string;
             metadata_hold: components["schemas"]["MetadataHold"];
+            /** @description Title candidates of a current_input read, from the draft's bindings and origin entry; absent in the other modes (an owner reads them from the workspace metadata). */
+            title_suggestions?: components["schemas"]["TitleSuggestion"][];
             versions: components["schemas"]["RSSListViewVersions"];
             /** Format: date-time */
             generated_at: string;
@@ -3832,7 +3834,18 @@ export interface components {
             /** @description Owner-edited season that naming reads as anime.season (and anime.season_folder, anime.season_path, ep.s00e00); 0 is the specials season. NULL means unset: the season composites render empty and ep.s00e00 renders the episode alone (E07). The shipped TV directory template keeps anime.season_folder as its own folder level, so a season-less render refuses (naming_fact_missing_anime_season_folder). It is independent of the TMDB binding: tmdb.season stays the bound TMDB season used for TMDB episode lookups, and editing one never changes the other. Confirming a TMDB match in the UI fills it with the matched season only while it is unset; nothing is stored until the owner saves. */
             season?: number | null;
             title_override?: string | null;
+            /** @description Read-only title candidates, present on the workspace read: the cached titles of the bound works and the provider title, every non-empty one in the order tmdb_cn, tmdb_original, bgm_cn, bgm, provider. Nothing is fetched; duplicates are not removed. */
+            title_suggestions?: components["schemas"]["TitleSuggestion"][];
             version: components["schemas"]["Version"];
+        };
+        /** @description One candidate for the anime's fixed title (title_override). Using one is the owner's choice; no automatic path writes the title. */
+        TitleSuggestion: {
+            /**
+             * @description tmdb_cn: the bound TMDB work's Chinese title. tmdb_original: its original title. bgm_cn: the bound Bangumi subject's Chinese title. bgm: its original title. provider: the title the subscription's source (catalog entry) gave.
+             * @enum {string}
+             */
+            source: "tmdb_cn" | "tmdb_original" | "bgm_cn" | "bgm" | "provider";
+            text: string;
         };
         ProviderProvenance: {
             provider: components["schemas"]["ProviderKind"];
@@ -5001,7 +5014,7 @@ export interface components {
             year?: number | null;
             /** @description Complete owner value of the naming season (anime.season; 0 is the specials season): null or an omitted field clears it, a value replaces it. It never rewrites the TMDB tuple, and the TMDB tuple never rewrites it. */
             season?: number | null;
-            /** @description The anime's fixed title (anime.title_override), written when the anime is created. A value replaces it; null or an omitted field keeps the stored title. It cannot be cleared. */
+            /** @description The anime's fixed title (anime.title_override). A value replaces it in the same version step as the bindings; null or an omitted field keeps the stored title. It cannot be cleared. It is the owner's choice: clearing or replacing a binding, a metadata match and a TMDB rename never change it. The subscription's library files are named from the current title, so a changed title renames them. title_suggestions on the workspace metadata lists the candidates. */
             title_override?: string | null;
         };
         /** @description The complete unsaved metadata value an owner_draft RSS list read previews with: the AnimeMetadataPatch fields without expected_version, with the same complete-value semantics (null or an omitted field clears, except title_override, where null keeps the fixed title). It replaces the persisted metadata for the read only. The read consumes title_override (anime.title_override), year (anime.year), season (anime.season and the season composites), bgm (bgm.* facts and the metadata hold), tmdb (tmdb.* facts, the bound season carried as naming evidence, and the metadata hold) and media_kind_override (the media kind of episode parsing, filled from the tmdb media_kind by the same rule as the patch). total_episodes is validated but does not change a preview. No value is filled from network metadata. */

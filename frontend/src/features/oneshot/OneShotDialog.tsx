@@ -11,6 +11,7 @@ import {
   type RSSListFileSelection,
   type RulesSections,
   type SnapshotSeedDownloadInput,
+  type TitleSuggestion,
 } from "../../lib/api/client";
 import { searchProviderLabel } from "../../lib/providers/registry";
 import type { CatalogEntryView } from "../../lib/providers/viewmodels";
@@ -19,6 +20,7 @@ import { namingFactLabel, namingFailureDetail, namingPendingLabel, reasonLabel }
 import { joinList } from "../../lib/i18n/format";
 import { RulesSectionsFields, type SectionKey } from "../anime-forms/RulesSectionsFields";
 import { MetadataFields } from "../anime-forms/MetadataFields";
+import { TitleSuggestionBadges } from "../anime-forms/TitleSuggestionBadges";
 import { draftParserKind, freezeBusinessDraft, withDraftParserKind } from "../anime-config/businessDraft";
 import { Button, Field, Input, StateBlock, StatePill } from "../../ui";
 import { Dialog, HelpTip, SpinnerIcon } from "../../ui/base";
@@ -324,6 +326,8 @@ export function OneShotDialog({
   const [filter, setFilter] = useState("");
   const [offsetText, setOffsetText] = useState(String(source.initialOffset));
   const [matchProvider, setMatchProvider] = useState<"bgm" | "tmdb">();
+  // The works matched so far, offered as title badges (one-shot has no workspace to carry candidates).
+  const [matchedNames, setMatchedNames] = useState<TitleSuggestion[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [outcomes, setOutcomes] = useState<ReadonlyMap<string, SeedOutcome>>(new Map());
   const [expandErrors, setExpandErrors] = useState<ReadonlyMap<string, string>>(new Map());
@@ -1016,6 +1020,7 @@ export function OneShotDialog({
                     }
                   />
                 </Field>
+                <TitleSuggestionBadges suggestions={matchedNames} current={draft.title} onPick={setTitle} />
                 <MetadataFields
                   idPrefix="oneshot"
                   showYear
@@ -1023,6 +1028,10 @@ export function OneShotDialog({
                   title={draft.title}
                   matchQueryCandidates={matchQueryCandidates}
                   onMatchTitle={(matched) => {
+                    setMatchedNames((names) => [
+                      ...names,
+                      { source: matchProvider === "bgm" ? "bgm_cn" : "tmdb_cn", text: matched },
+                    ]);
                     // Only fills an empty title; a title the user already has is never overwritten.
                     if (!(latestDraft.current ?? draft).title.trim()) setTitle(matched);
                   }}

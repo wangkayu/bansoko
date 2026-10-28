@@ -1533,7 +1533,8 @@ paths:
         write: false
         description: >-
           Read one anime's workspace: owners, releases, download tasks, artifacts, file
-          operations, and reasons.
+          operations, and reasons. metadata.title_suggestions lists title candidates
+          (tmdb_cn, tmdb_original, bgm_cn, bgm, provider; every non-empty one).
       parameters:
         - $ref: '#/components/parameters/ManagedAnimeID'
       responses:
@@ -1626,7 +1627,10 @@ paths:
           Replace the metadata owner (BGM/TMDB bindings, title override) with
           expected-version CAS. Call get_workspace first to obtain the current
           expected_version. The patch replaces the whole metadata owner; NULL bindings
-          clear the binding. Changing the effective media kind (tv/movie) while
+          clear the binding. To fix a season-2 style title, read
+          metadata.title_suggestions, pick one and send the binding and
+          title_override in this one call; changing the title renames the
+          subscription's library files. Changing the effective media kind (tv/movie) while
           the anime has library files or running acquisitions returns 409
           IDENTITY_KIND_CHANGE_BLOCKED with the counts in details.
       parameters:
@@ -1676,7 +1680,8 @@ paths:
           from the matched TMDB kind only while unset, and is left unset when
           that would turn it into movie while the anime has library files or
           running acquisitions. Only active subscriptions are
-          matched; pending and stopped ones return SUBSCRIPTION_INACTIVE.
+          matched; pending and stopped ones return SUBSCRIPTION_INACTIVE. It never
+          writes the title; use patch_anime_metadata with title_override.
       description: >-
         Runs the configured matcher and writes only missing metadata fields
         (CAS-guarded), by the same fill-if-empty rule as the scheduled
@@ -8356,6 +8361,14 @@ components:
             stale response can never be mistaken for the current one.
         metadata_hold:
           $ref: '#/components/schemas/MetadataHold'
+        title_suggestions:
+          type: array
+          items:
+            $ref: '#/components/schemas/TitleSuggestion'
+          description: >-
+            Title candidates of a current_input read, from the draft's
+            bindings and origin entry; absent in the other modes (an owner
+            reads them from the workspace metadata).
         versions:
           $ref: '#/components/schemas/RSSListViewVersions'
         generated_at:
@@ -9873,8 +9886,37 @@ components:
           nullable: true
           minLength: 1
           maxLength: 512
+        title_suggestions:
+          type: array
+          items:
+            $ref: '#/components/schemas/TitleSuggestion'
+          description: >-
+            Read-only title candidates, present on the workspace read: the
+            cached titles of the bound works and the provider title, every
+            non-empty one in the order tmdb_cn, tmdb_original, bgm_cn, bgm,
+            provider. Nothing is fetched; duplicates are not removed.
         version:
           $ref: '#/components/schemas/Version'
+    TitleSuggestion:
+      type: object
+      additionalProperties: false
+      required: [source, text]
+      description: >-
+        One candidate for the anime's fixed title (title_override). Using one
+        is the owner's choice; no automatic path writes the title.
+      properties:
+        source:
+          type: string
+          enum: [tmdb_cn, tmdb_original, bgm_cn, bgm, provider]
+          description: >-
+            tmdb_cn: the bound TMDB work's Chinese title. tmdb_original: its
+            original title. bgm_cn: the bound Bangumi subject's Chinese title.
+            bgm: its original title. provider: the title the subscription's
+            source (catalog entry) gave.
+        text:
+          type: string
+          minLength: 1
+          maxLength: 512
     ProviderProvenance:
       type: object
       additionalProperties: false
@@ -12701,9 +12743,14 @@ components:
           minLength: 1
           maxLength: 512
           description: >-
-            The anime's fixed title (anime.title_override), written when the
-            anime is created. A value replaces it; null or an omitted field
-            keeps the stored title. It cannot be cleared.
+            The anime's fixed title (anime.title_override). A value replaces
+            it in the same version step as the bindings; null or an omitted
+            field keeps the stored title. It cannot be cleared. It is the
+            owner's choice: clearing or replacing a binding, a metadata match
+            and a TMDB rename never change it. The subscription's library
+            files are named from the current title, so a changed title
+            renames them. title_suggestions on the workspace metadata lists
+            the candidates.
     AnimeMetadataPreview:
       type: object
       additionalProperties: false

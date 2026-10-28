@@ -571,6 +571,50 @@ describe("MetadataMatchDialog 检索词候选与作品名回传", () => {
   });
 });
 
+describe("MetadataMatchDialog 同时改标题", () => {
+  function renderOffer(candidate: MetadataCandidate, titleOffer: { current: string; provider: string }, onChange = vi.fn()) {
+    render(
+      <MetadataFields
+        idPrefix="test"
+        title="t"
+        value={{ bgm: null, tmdb: null }}
+        onChange={onChange}
+        searcher={searcherReturning([candidate])}
+        matchProvider="tmdb"
+        onMatchProviderChange={() => {}}
+        titleOffer={titleOffer}
+      />,
+    );
+    return onChange;
+  }
+  async function pickCandidate() {
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: t("forms.search") }));
+    fireEvent.click(await within(dialog).findByRole("option"));
+    return dialog;
+  }
+
+  it("没有中文名时用原名；确认时作为 onChange 第三个参数传出", async () => {
+    const onChange = renderOffer(
+      { ...tmdbCandidate, title: "", originalTitle: "Original Name" },
+      { current: "来源标题", provider: "来源标题" },
+    );
+    const dialog = await pickCandidate();
+    const box = within(dialog).getByRole("checkbox", { name: t("forms.alsoSetTitle", { title: "Original Name" }) });
+    expect(box).toBeChecked();
+    fireEvent.click(within(dialog).getByRole("button", { name: t("forms.confirmMatch") }));
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ tmdb: expect.anything() }), undefined, "Original Name");
+  });
+
+  it("中文名与原名都为空时不显示，确认不带标题", async () => {
+    const onChange = renderOffer({ ...tmdbCandidate, title: "", originalTitle: "" }, { current: "来源标题", provider: "来源标题" });
+    const dialog = await pickCandidate();
+    expect(within(dialog).queryByRole("checkbox")).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: t("forms.confirmMatch") }));
+    expect(onChange.mock.calls[0]).toHaveLength(1);
+  });
+});
+
 describe("MetadataMatchDialog 按 ID 填写", () => {
   it("TMDB ID 直接确认时默认 TV 第 1 季", async () => {
     const onChange = vi.fn();
