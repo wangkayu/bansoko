@@ -8,9 +8,10 @@ import (
 // Execution records: the read-only list and detail of accepted acquisition
 // roots (subscription automatic, subscription add and one-shot). Every value
 // here is projected from the root and its own execution graph; nothing is
-// derived from a Release, a subscription log or the newest task, and no read
-// drives execution. There is no retry, replan or recover action: repair is a
-// new acquisition elsewhere.
+// derived from a subscription log or the newest task (the seed identity reads
+// the accepted input frozen on the root plus the source release's frozen
+// facts), and no read drives execution. There is no retry, replan or recover
+// action: repair is a new acquisition elsewhere.
 
 // acquisitionAccessScope is the single deployment-owner access domain every
 // root is written in today. Reads filter on it in the first predicate, so a row
@@ -188,6 +189,26 @@ type AcquisitionRecordSummary struct {
 	// Transfer is the last persisted download observation; set only while the
 	// root is running at download_wait.
 	Transfer *AcquisitionTransfer
+	// Seed names which seed the record took; nil when nothing about it is known.
+	Seed *AcquisitionSeedIdentity
+	// ReplacesExisting: the accepted input froze a replace delivery intent.
+	ReplacesExisting bool
+}
+
+// AcquisitionSeedIdentity is the seed identity of a record. Group, provider,
+// size and info hash are read from the root's frozen accepted input and so
+// outlive a compacted detail; tags, release version and publish time come from
+// the source release's frozen facts and are absent once the release is gone.
+// Every unavailable value is nil. The torrent location is never carried.
+type AcquisitionSeedIdentity struct {
+	GroupName      *string
+	Provider       *string
+	SizeBytes      *int64
+	PublishedAt    *time.Time
+	InfoHash       *string
+	ReleaseVersion *string
+	TitleTags      []string
+	AniBTTags      []string
 }
 
 // AcquisitionTransfer is the download sync poll's last persisted observation.

@@ -78,6 +78,35 @@ func mapRelease(value *readmodelapplication.AcquisitionReleaseLink) *generated.A
 	return &generated.AcquisitionReleaseLink{ReleaseId: generated.ID(value.ReleaseID), Title: mapDisplay(value.Title)}
 }
 
+func mapSeed(value *readmodelapplication.AcquisitionSeedIdentity) *generated.AcquisitionSeedIdentity {
+	if value == nil {
+		return nil
+	}
+	seed := &generated.AcquisitionSeedIdentity{GroupName: value.GroupName, SizeBytes: value.SizeBytes,
+		PublishedAt: value.PublishedAt, InfoHash: value.InfoHash, ReleaseVersion: value.ReleaseVersion}
+	if value.Provider != nil {
+		provider := generated.AcquisitionSeedIdentityProvider(*value.Provider)
+		seed.Provider = &provider
+	}
+	if len(value.TitleTags) > 0 {
+		tags := append([]string(nil), value.TitleTags...)
+		seed.TitleTags = &tags
+	}
+	if len(value.AniBTTags) > 0 {
+		tags := append([]string(nil), value.AniBTTags...)
+		seed.AnibtTags = &tags
+	}
+	return seed
+}
+
+// mapReplaces keeps the flag absent unless it is true.
+func mapReplaces(value bool) *bool {
+	if !value {
+		return nil
+	}
+	return &value
+}
+
 // mapEpisodes keeps an absent list absent; the contract has no empty list.
 func mapEpisodes(value []int) *generated.AcquisitionEpisodes {
 	if len(value) == 0 {
@@ -104,6 +133,7 @@ func MapSummary(item readmodelapplication.AcquisitionRecordSummary) generated.Ac
 		Anime: mapAnime(item.Anime), Stage: mapStageName(item.Stage), StageState: mapStageState(item.StageState),
 		ReasonCode: item.ReasonCode, Counts: mapCounts(item.Counts), OneShotId: mapID(item.OneShotID),
 		Release: mapRelease(item.Release), Episodes: mapEpisodes(item.Episodes), Transfer: mapTransfer(item.Transfer),
+		Seed: mapSeed(item.Seed), ReplacesExisting: mapReplaces(item.ReplacesExisting),
 	}
 }
 
@@ -119,6 +149,7 @@ func MapDetail(item readmodelapplication.AcquisitionRecordDetail) generated.Acqu
 		Stages: make([]generated.AcquisitionStage, len(item.Stages)), FilesAvailable: item.FilesAvailable,
 		Version: item.Version, ImportRetryAvailable: item.ImportRetryAvailable,
 		Release: mapRelease(item.Release), Episodes: mapEpisodes(item.Episodes), Transfer: mapTransfer(item.Transfer),
+		Seed: mapSeed(item.Seed), ReplacesExisting: mapReplaces(item.ReplacesExisting),
 	}
 	if item.CompactReason != nil {
 		reason := generated.AcquisitionRecordDetailCompactReason(*item.CompactReason)

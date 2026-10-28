@@ -7584,9 +7584,32 @@ export interface components {
             /** @description One-shot marker handle, present only when entry_kind is one_shot and null for every other entry kind. Use it with the one-shot acquisition reads (marker and attempts). */
             one_shot_id?: components["schemas"]["ID"] | null;
             counts?: components["schemas"]["AcquisitionCounts"];
+            seed?: components["schemas"]["AcquisitionSeedIdentity"];
+            /** @description Present and true only when the acquisition was accepted to replace an existing managed file: the replacement decision frozen into the accepted input (delivery intent replace). Absent otherwise. */
+            replaces_existing?: boolean;
             release?: components["schemas"]["AcquisitionReleaseLink"];
             episodes?: components["schemas"]["AcquisitionEpisodes"];
             transfer?: components["schemas"]["AcquisitionTransfer"];
+        };
+        /** @description Which seed an execution record took, from facts frozen when the acquisition was accepted: the group, source site, torrent size and info hash come from the accepted input, the tags and publish time from the source release's frozen facts. A value that is unavailable is absent. The torrent location is never part of it. */
+        AcquisitionSeedIdentity: {
+            group_name?: string;
+            /**
+             * @description The source site the seed was found through; absent for a custom feed.
+             * @enum {string}
+             */
+            provider?: "mikan" | "anibt";
+            /** Format: int64 */
+            size_bytes?: number;
+            /** Format: date-time */
+            published_at?: string;
+            info_hash?: string;
+            /** @description The release version the title states (for example v2). */
+            release_version?: string;
+            /** @description The frozen title-parse tags ("type:value"). */
+            title_tags?: string[];
+            /** @description The frozen AniBT tags ("dimension:value"); present only for an AniBT seed. */
+            anibt_tags?: string[];
         };
         /** @description The episode numbers this record places, ascending and unique: the coverage of the batch plan frozen with the acquisition's release when it was accepted (the plan its files are placed by). Display only; a read never re-parses a title or filename. Absent when the plan covers no numbered TV episode (a movie, an unrecognized seed) or the frozen plan is no longer kept; show the release title instead. */
         AcquisitionEpisodes: number[];
@@ -7710,6 +7733,9 @@ export interface components {
             reason_code?: string;
             /** @description One-shot marker handle, present only when entry_kind is one_shot and null for every other entry kind. Use it with the one-shot acquisition reads (marker and attempts). */
             one_shot_id?: components["schemas"]["ID"] | null;
+            seed?: components["schemas"]["AcquisitionSeedIdentity"];
+            /** @description Present and true only when the acquisition was accepted to replace an existing managed file: the replacement decision frozen into the accepted input (delivery intent replace). Absent otherwise. */
+            replaces_existing?: boolean;
             outcome?: components["schemas"]["AcquisitionOutcome"];
             stages: components["schemas"]["AcquisitionStage"][];
             requirements?: components["schemas"]["AcquisitionRequirements"];

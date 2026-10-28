@@ -30,6 +30,9 @@ import { SegmentedControl } from "../../ui";
 import { SegmentCountLabel } from "../../ui/SegmentCountLabel";
 import { ReasonText } from "../../ui/ReasonText";
 import { episodesRangeLabel } from "../rss-list/model";
+import { TagBadges } from "../rss-list/TagBadges";
+import { providerLabel } from "../../lib/providers/registry";
+import { seedIdentityParts } from "./seedIdentity";
 import { ImportRetryConfirmDialog } from "./ImportRetryConfirmDialog";
 
 // ExecutionRecordsDialog — the read-only list and details of execution records (accepted
@@ -342,18 +345,27 @@ function RecordRow({ item, showEntry, onOpen }: { item: AcquisitionRecordSummary
   // A subscription download's name is the anime title; when they match, no second line.
   const animeTitle = item.anime && item.anime.title !== title ? item.anime.title : undefined;
   const subject = recordSubject(item);
+  const identity = seedIdentityParts(item.seed).join(" · ");
+  const torrentTitle = item.release?.title.state === "visible" && item.release.title.value ? item.release.title.value : undefined;
   return (
     <li>
       <button type="button" className={ITEM_BUTTON} onClick={onOpen}>
         <div className={ITEM_HEAD}>
           <RecordStateTag state={item.state} />
           {showEntry ? <Chip>{entryLabel(item.entry_kind)}</Chip> : null}
+          {item.replaces_existing ? <Chip>{t("records.replacement")}</Chip> : null}
           <span className={META}>{formatDateTime(item.accepted_at)}</span>
         </div>
         <strong className="tw:font-semibold tw:break-words">{title}</strong>
         {subject && subject !== title ? (
           <span className="tw:min-w-0 tw:truncate tw:text-sm" title={subject}>
             {subject}
+          </span>
+        ) : null}
+        {identity ? <span className="tw:text-sm">{identity}</span> : null}
+        {torrentTitle && torrentTitle !== title && torrentTitle !== subject ? (
+          <span className={`${META} tw:min-w-0 tw:truncate`} title={torrentTitle}>
+            {torrentTitle}
           </span>
         ) : null}
         {animeTitle ? <span className={META}>{animeTitle}</span> : null}
@@ -459,9 +471,46 @@ function DetailHeader({ detail, onOpenAnime }: { detail: AcquisitionRecordDetail
   if (detail.release) {
     items.push({ label: t("records.detail.release"), value: <span className="tw:break-words">{displayText(detail.release.title)}</span> });
   }
+  const seed = detail.seed;
+  if (seed?.group_name) {
+    const site = seed.provider ? providerLabel(seed.provider) : undefined;
+    items.push({
+      label: t("records.detail.group"),
+      value: site ? t("records.detail.groupWithSite", { group: seed.group_name, site }) : seed.group_name,
+    });
+  } else if (seed?.provider) {
+    items.push({ label: t("records.detail.site"), value: providerLabel(seed.provider) });
+  }
+  if (seed?.published_at) items.push({ label: t("records.detail.published"), value: formatDateTime(seed.published_at) });
+  if (typeof seed?.size_bytes === "number") items.push({ label: t("records.detail.size"), value: formatBytes(seed.size_bytes) });
+  if (seed?.info_hash) items.push({ label: t("records.detail.infoHash"), value: <InfoHash hash={seed.info_hash} /> });
+  if (seed?.title_tags?.length || seed?.anibt_tags?.length) {
+    items.push({ label: t("records.detail.tags"), value: <TagBadges anibt={seed.anibt_tags} title={seed.title_tags} /> });
+  }
   items.push({ label: t("records.detail.accepted"), value: formatDateTime(detail.accepted_at) });
   if (detail.ended_at) items.push({ label: t("records.detail.ended"), value: formatDateTime(detail.ended_at) });
   return <DescriptionList items={items} />;
+}
+
+function InfoHash({ hash }: { hash: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(hash);
+      setCopied(true);
+      globalThis.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  };
+  return (
+    <span className={ITEM_HEAD}>
+      <code className="tw:break-all tw:text-xs">{hash}</code>
+      <Button size="sm" variant="link" onClick={() => void copy()}>
+        {copied ? t("records.detail.hashCopied") : t("records.detail.copyHash")}
+      </Button>
+    </span>
+  );
 }
 
 function StageList({ detail }: { detail: AcquisitionRecordDetail }) {
