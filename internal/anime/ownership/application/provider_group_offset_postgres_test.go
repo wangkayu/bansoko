@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	draftapplication "bansoko/internal/anime/draft/application"
 	apperrors "bansoko/internal/apperrors"
 	configurationdomain "bansoko/internal/configuration/domain"
 	"bansoko/internal/subscription/groupsource"
@@ -125,22 +126,17 @@ func TestSetProviderGroupOffsetThroughADuplicatedPendingCopy(t *testing.T) {
 	db := animetest.OpenTestDB(t)
 	service := ownershipNewTestService(t, db, &ownershipFakeFetcher{})
 	first := pendingProviderGroupAnime(t, service, "group-offset-copy-0001")
-	// A second instance of the same entry is a copy with its own subgroups section and its own link.
-	draft := ownershipProviderDraft(t, "3000", "Pending Offset Show")
-	draft.InstanceLabel = new("copy")
-	draft.Subgroups.Entries = []generated.SubgroupScoreEntry{
-		{Provider: generated.ProviderKindMikan, GroupRef: "202", DisplayName: "Group 202", SelectionMode: generated.SelectionModeAuto, EffectiveSelected: true, Score: 50},
-	}
-	second, err := service.SubscribeAnime(context.Background(), generated.SubscribeAnimeInput{Draft: draft, Start: new(false)}, "group-offset-copy-0002")
-	if err != nil {
-		t.Fatalf("subscribe copy: %v", err)
-	}
 	ctx := context.Background()
+	// A second instance of the same entry is a copy with its own subgroups section and its own link.
+	second, err := service.Draft.DuplicateAnimeSubscription(ctx, first.ManagedAnime.Id, draftapplication.DuplicateSubscriptionInput{InstanceLabel: "copy"}, "group-offset-copy-0002")
+	if err != nil {
+		t.Fatalf("duplicate: %v", err)
+	}
 	firstLink, err := service.SetProviderGroupOffset(ctx, first.ManagedAnime.Id, "mikan", "202", ProviderGroupOffsetInput{EpisodeOffset: 5})
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondLink, err := service.SetProviderGroupOffset(ctx, second.ManagedAnime.Id, "mikan", "202", ProviderGroupOffsetInput{EpisodeOffset: -2})
+	secondLink, err := service.SetProviderGroupOffset(ctx, second.ManagedAnime.ID, "mikan", "202", ProviderGroupOffsetInput{EpisodeOffset: -2})
 	if err != nil {
 		t.Fatal(err)
 	}
