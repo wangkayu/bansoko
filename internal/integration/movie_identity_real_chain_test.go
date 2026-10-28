@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -20,8 +21,10 @@ import (
 	acquisitiontarget "bansoko/internal/acquisition/target"
 	targetpersistence "bansoko/internal/acquisition/target/adapter/persistence"
 	animepersistence "bansoko/internal/anime/adapter/persistence"
+	animeapplication "bansoko/internal/anime/application"
 	draftapplication "bansoko/internal/anime/draft/application"
 	ownershipapplication "bansoko/internal/anime/ownership/application"
+	"bansoko/internal/apperrors"
 	artifactadapter "bansoko/internal/artifact/adapter"
 	artifactapplication "bansoko/internal/artifact/application"
 	configurationpersistence "bansoko/internal/configuration/adapter/persistence"
@@ -482,14 +485,26 @@ WHERE p.managed_anime_id = $1`, animeID).Scan(&placementCoverage, &placementFact
 	}
 
 	// The frozen evidence is authoritative: rebinding the instance metadata to
-	// TV after submission must not move any hop of the chain.
+	// TV after submission must not move any hop of the chain. A rebinding that
+	// would backfill the kind to tv is refused while the movie file is in the
+	// library; the owner kind stays movie when the patch keeps it.
 	var metadataVersion int64
 	if err := db.QueryRowContext(ctx, `SELECT version FROM anime_metadata WHERE managed_anime_id = $1`, animeID).Scan(&metadataVersion); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ownershipService.PatchAnimeMetadata(ctx, animeID, generated.AnimeMetadataPatch{
+	_, err = ownershipService.PatchAnimeMetadata(ctx, animeID, generated.AnimeMetadataPatch{
 		ExpectedVersion: metadataVersion,
 		Tmdb:            &generated.NullableTMDBBinding{WorkId: "m1-movie-tmdb", MediaKind: generated.TMDBMediaKindTv, Season: 3},
+	})
+	var blocked *apperrors.Business
+	if !errors.As(err, &blocked) || blocked.Code != animeapplication.IdentityKindChangeBlockedCode {
+		t.Fatalf("rebinding to tv without the owner kind: err = %v, want %s", err, animeapplication.IdentityKindChangeBlockedCode)
+	}
+	keepMovie := generated.AnimeMetadataPatchMediaKindOverrideMovie
+	if _, err := ownershipService.PatchAnimeMetadata(ctx, animeID, generated.AnimeMetadataPatch{
+		ExpectedVersion:   metadataVersion,
+		Tmdb:              &generated.NullableTMDBBinding{WorkId: "m1-movie-tmdb", MediaKind: generated.TMDBMediaKindTv, Season: 3},
+		MediaKindOverride: &keepMovie,
 	}); err != nil {
 		t.Fatal(err)
 	}
