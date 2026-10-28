@@ -3729,14 +3729,14 @@ export interface components {
         /** @enum {string} */
         AutomationState: "queued" | "running" | "completed" | "partial" | "failed";
         /** @enum {string} */
-        SubscriptionLogKind: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "policy_changed" | "rss_new_content" | "release_processed" | "download_changed" | "artifact_verified" | "placement_changed" | "replacement_decided" | "cleanup_completed" | "cleanup_failed" | "file_alignment_completed" | "file_alignment_failed" | "acquisition_settled";
+        SubscriptionLogKind: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "policy_changed" | "rss_new_content" | "release_processed" | "download_changed" | "artifact_verified" | "import_waiting_config" | "placement_changed" | "replacement_decided" | "cleanup_completed" | "cleanup_failed" | "file_alignment_completed" | "file_alignment_failed" | "acquisition_settled";
         /** @enum {string} */
         SubscriptionLogOutcome: "info" | "success" | "failure";
         /**
          * @description The message of a business journal entry in the closed catalog the server registers per entry kind (published to the frontend as a generated artifact). The client renders the text from the code and message_params; entries carry no display text.
          * @enum {string}
          */
-        SubscriptionLogMessageCode: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "rules_changed" | "episode_offset_changed" | "rss_new_content" | "release_discovered" | "release_waiting_metadata" | "release_subscription_stopped" | "release_source_unavailable" | "release_parse_failed" | "release_accepted" | "release_filtered" | "release_adopted_existing" | "release_acquisition_failed" | "release_submitted" | "release_awaiting_competition" | "release_resume_baseline" | "release_start_baseline" | "download_submitted" | "download_completed" | "download_removed" | "download_failed" | "artifact_verified" | "file_imported" | "file_adopted" | "file_retained" | "file_import_failed" | "acquisition_succeeded" | "acquisition_failed" | "acquisition_cancelled" | "replacement_kept_existing" | "replacement_kept_all" | "replacement_blocked" | "replacement_replaced" | "replacement_not_replaced" | "placement_released" | "unknown_file_released" | "placement_recorded" | "file_recovered" | "placements_excluded" | "old_version_deleted" | "old_version_kept" | "old_version_delete_failed";
+        SubscriptionLogMessageCode: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "rules_changed" | "episode_offset_changed" | "rss_new_content" | "release_discovered" | "release_waiting_metadata" | "release_subscription_stopped" | "release_source_unavailable" | "release_parse_failed" | "release_accepted" | "release_filtered" | "release_adopted_existing" | "release_acquisition_failed" | "release_submitted" | "release_awaiting_competition" | "release_resume_baseline" | "release_start_baseline" | "download_submitted" | "download_completed" | "download_removed" | "download_failed" | "artifact_verified" | "import_waiting_binding_bgm" | "import_waiting_binding_tmdb" | "import_waiting_template_variable" | "import_config_resumed" | "file_imported" | "file_adopted" | "file_retained" | "file_import_failed" | "acquisition_succeeded" | "acquisition_failed" | "acquisition_cancelled" | "replacement_kept_existing" | "replacement_kept_all" | "replacement_blocked" | "replacement_replaced" | "replacement_not_replaced" | "placement_released" | "unknown_file_released" | "placement_recorded" | "file_recovered" | "placements_excluded" | "old_version_deleted" | "old_version_kept" | "old_version_delete_failed";
         /** @description Scalar values the message interpolates. Each message declares its params; an optional param is absent rather than empty. */
         SubscriptionLogMessageParams: {
             /** @description Torrent name the downloader reports. */
@@ -3750,6 +3750,8 @@ export interface components {
              * @description Non-negative item count.
              */
             count?: number;
+            /** @description Template variable names, comma separated. */
+            variables?: string;
         };
         /**
          * @description Where the entry's work came from: the anime's subscription, or a one-shot download (its temporary anime and subscription).
@@ -3823,7 +3825,7 @@ export interface components {
             bgm?: components["schemas"]["NullableBGMBinding"];
             tmdb?: components["schemas"]["NullableTMDBBinding"];
             /**
-             * @description Owner media kind (tv | movie) the episode identity resolves with. NULL is tv; the TMDB binding's media_kind is never read for it. It is filled once from the TMDB media_kind when a TMDB tuple is bound while it is NULL (subscribe, metadata patch or metadata match); clearing or replacing the tuple later never changes it. It never rewrites the TMDB tuple. The effective kind (NULL is tv) changes between tv and movie only while the anime has no active library file and no running acquisition: a metadata patch that would change it then returns 409 IDENTITY_KIND_CHANGE_BLOCKED, and a metadata match or the scheduled metadata_match automation leaves it unchanged and still fills the other empty fields.
+             * @description Owner media kind (tv | movie) the episode identity resolves with. NULL is tv; the TMDB binding's media_kind is never read for it. It is filled once from the TMDB media_kind when a TMDB tuple is bound while it is NULL (subscribe, metadata patch or metadata match); clearing or replacing the tuple later never changes it. It never rewrites the TMDB tuple. The effective kind (NULL is tv) changes between tv and movie only while the anime has no active library file and no acquisition that has not settled (an import waiting for configuration included): a metadata patch that would change it then returns 409 IDENTITY_KIND_CHANGE_BLOCKED, and a metadata match or the scheduled metadata_match automation leaves it unchanged and still fills the other empty fields.
              * @enum {string|null}
              */
             media_kind_override?: "tv" | "movie" | null;
@@ -5004,7 +5006,7 @@ export interface components {
             bgm: components["schemas"]["NullableBGMBinding"];
             tmdb: components["schemas"]["NullableTMDBBinding"];
             /**
-             * @description Complete owner value of the media kind: a value (tv | movie) replaces it; null leaves it unset (tv) unless the patch carries a TMDB tuple, which fills it with the tuple's media_kind. It never rewrites the TMDB tuple. A patch whose resulting effective kind (NULL is tv) differs from the stored one while the anime has an active library file or a running acquisition returns 409 IDENTITY_KIND_CHANGE_BLOCKED and changes nothing.
+             * @description Complete owner value of the media kind: a value (tv | movie) replaces it; null leaves it unset (tv) unless the patch carries a TMDB tuple, which fills it with the tuple's media_kind. It never rewrites the TMDB tuple. A patch whose resulting effective kind (NULL is tv) differs from the stored one while the anime has an active library file or an acquisition that has not settled (an import waiting for configuration included) returns 409 IDENTITY_KIND_CHANGE_BLOCKED and changes nothing.
              * @enum {string|null}
              */
             media_kind_override?: "tv" | "movie" | null;
@@ -5323,6 +5325,11 @@ export interface components {
             subscription: components["schemas"]["Subscription"];
             metadata: components["schemas"]["AnimeMetadata"];
             metadata_hold: components["schemas"]["MetadataHold"];
+            /**
+             * Format: int64
+             * @description Downloaded files whose import waits for the anime's configuration: the current configuration cannot render their import path (a missing BGM or TMDB binding, or an undefined template variable). The files stay in the download directory and the import continues by itself once the configuration is complete.
+             */
+            config_waiting_files: number;
             subgroups: components["schemas"]["SubgroupsOwnerResult"];
             rules: components["schemas"]["AnimeRules"];
             rss_sources: components["schemas"]["RSSSource"][];
@@ -7583,8 +7590,22 @@ export interface components {
         };
         /** @enum {string} */
         AcquisitionStageName: "submit" | "download_wait" | "inspect" | "plan" | "file_execution" | "settlement" | "completion";
-        /** @enum {string} */
-        AcquisitionStageState: "pending" | "running" | "succeeded" | "failed" | "blocked" | "cancelled";
+        /**
+         * @description waiting_config is a plan stage that waits for the anime's configuration (see config_hold); it is not a failure, spends no attempt and has no retry. It continues by itself once the configuration is complete.
+         * @enum {string}
+         */
+        AcquisitionStageState: "pending" | "running" | "succeeded" | "failed" | "blocked" | "cancelled" | "waiting_config";
+        /** @description Present only while a running record's plan stage is waiting_config: what the anime's current configuration lacks, in a stable order (the BGM binding, the TMDB binding, then the template variables). The downloaded files stay in the download directory; the import continues by itself once the configuration is complete. */
+        AcquisitionConfigHold: components["schemas"]["AcquisitionConfigHoldItem"][];
+        /** @description One item the anime's current configuration lacks to render the import path of a waiting import, with the number of files it blocks. */
+        AcquisitionConfigHoldItem: {
+            /** @enum {string} */
+            missing: "bgm_binding" | "tmdb_binding" | "template_variable";
+            /** @description The undefined template variables of a template_variable item. */
+            variables?: string[];
+            /** Format: int64 */
+            files: number;
+        };
         /** @description Bounded, redacted display text. A redacted or unavailable value carries no text. */
         AcquisitionDisplayValue: {
             /** @enum {string} */
@@ -7627,6 +7648,7 @@ export interface components {
             stage?: components["schemas"]["AcquisitionStageName"];
             stage_state?: components["schemas"]["AcquisitionStageState"];
             reason_code?: string;
+            config_hold?: components["schemas"]["AcquisitionConfigHold"];
             /** @description One-shot marker handle, present only when entry_kind is one_shot and null for every other entry kind. Use it with the one-shot acquisition reads (marker and attempts). */
             one_shot_id?: components["schemas"]["ID"] | null;
             counts?: components["schemas"]["AcquisitionCounts"];
@@ -7777,6 +7799,7 @@ export interface components {
             stage?: components["schemas"]["AcquisitionStageName"];
             stage_state?: components["schemas"]["AcquisitionStageState"];
             reason_code?: string;
+            config_hold?: components["schemas"]["AcquisitionConfigHold"];
             /** @description One-shot marker handle, present only when entry_kind is one_shot and null for every other entry kind. Use it with the one-shot acquisition reads (marker and attempts). */
             one_shot_id?: components["schemas"]["ID"] | null;
             seed?: components["schemas"]["AcquisitionSeedIdentity"];

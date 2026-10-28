@@ -1,6 +1,8 @@
 package application
 
 import (
+	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -41,6 +43,10 @@ func TestDeriveAcquisitionStages(t *testing.T) {
 			"succeeded,running,<not_reached>,<not_reached>,<not_reached>,pending,<not_reached>"},
 		{"plan queued", acquisitionGraphFacts{Branch: "download", RootState: "running", Task: owner("completed"), Artifact: owner("verified"), Plan: owner("queued")},
 			"succeeded,succeeded,succeeded,pending,<not_reached>,pending,<not_reached>"},
+		{"import waiting for configuration", acquisitionGraphFacts{Branch: "download", RootState: "running", Task: owner("completed"), Artifact: owner("verified"), Plan: owner("waiting_config")},
+			"succeeded,succeeded,succeeded,waiting_config,<not_reached>,pending,<not_reached>"},
+		{"retired while waiting for configuration", acquisitionGraphFacts{Branch: "download", RootState: "cancelled", Task: owner("completed"), Artifact: owner("verified"), Plan: owner("waiting_config")},
+			"succeeded,succeeded,succeeded,cancelled,<not_reached>,cancelled,<not_applicable>"},
 		{"files partly delivered", acquisitionGraphFacts{Branch: "download", RootState: "running", Task: owner("completed"), Artifact: owner("verified"), Plan: owner("succeeded"),
 			Requirements: &acquisitionRequirementFacts{Items: 2, Required: 2}, Operations: 2, LiveOperations: 1, DeliveredOK: 1},
 			"succeeded,succeeded,succeeded,succeeded,running,pending,<not_reached>"},
@@ -131,6 +137,32 @@ func TestSummaryPosition(t *testing.T) {
 	}
 	if stage, state, reason := summaryPosition("succeeded", nil, &AcquisitionOutcome{Outcome: "succeeded"}); stage != nil || state != nil || reason != nil {
 		t.Fatal("a success reports no stage")
+	}
+	completed := &acquisitionStageOwner{State: "completed", WaitStartedAt: ptr(time.Time{})}
+	waiting := deriveAcquisitionStages(acquisitionGraphFacts{Branch: "download", RootState: "running", Task: completed,
+		Artifact: &acquisitionStageOwner{State: "verified"}, Plan: &acquisitionStageOwner{State: "waiting_config"}})
+	if stage, state, reason := summaryPosition("running", waiting, nil); *stage != AcquisitionStagePlan || *state != AcquisitionStageStateWaitingConfig || reason != nil {
+		t.Fatalf("an import waiting for configuration reports the plan stage: %v %v %v", *stage, *state, reason)
+	}
+}
+
+func TestDecodeConfigHold(t *testing.T) {
+	hold, err := decodeConfigHold([]byte(`[{"item":"binding_missing:bgm","files":2},{"item":"binding_missing:tmdb","files":2},{"item":"template_variable_undefined:rt.title,vars.a","files":1}]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []AcquisitionConfigHoldItem{
+		{Missing: AcquisitionConfigMissingBGM, Files: 2},
+		{Missing: AcquisitionConfigMissingTMDB, Files: 2},
+		{Missing: AcquisitionConfigMissingVariable, Variables: []string{"rt.title", "vars.a"}, Files: 1},
+	}
+	if !reflect.DeepEqual(hold, want) {
+		t.Fatalf("hold = %+v, want %+v", hold, want)
+	}
+	for _, raw := range []string{``, `null`, `[]`, `{}`, `[{"item":"binding_missing:anidb","files":1}]`} {
+		if _, err := decodeConfigHold([]byte(raw)); !errors.Is(err, ErrAcquisitionReadInconsistent) {
+			t.Errorf("hold %q decoded with %v, want an inconsistent read", raw, err)
+		}
 	}
 }
 

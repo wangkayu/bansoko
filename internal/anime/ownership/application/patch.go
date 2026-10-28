@@ -259,6 +259,10 @@ FOR UPDATE OF r`, managedAnimeID, "rules_patch")
 			return RulesPatchResult{}, fmt.Errorf("write rules policy changed log: %w", err)
 		}
 	}
+	// A naming change may complete (or break) the render an import waits for.
+	if err := animeapplication.WakeConfigWaitingPlansTx(ctx, tx, managedAnimeID); err != nil {
+		return RulesPatchResult{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return RulesPatchResult{}, fmt.Errorf("commit rules patch: %w", err)
 	}
@@ -447,6 +451,11 @@ WHERE src.subscription_id = $1 AND src.source_kind = 'custom_rss'
 			}); err != nil && !errors.Is(err, workitems.ErrLiveItemConflict) {
 				return Subscription{}, fmt.Errorf("schedule refresh on resume: %w", err)
 			}
+		}
+		// Imports that waited for configuration while the subscription was
+		// stopped check it again.
+		if err := animeapplication.WakeConfigWaitingPlansTx(ctx, tx, managedAnimeID); err != nil {
+			return Subscription{}, err
 		}
 	}
 	// Record the business main-line entry for an actual state transition;

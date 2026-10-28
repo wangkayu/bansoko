@@ -11,6 +11,9 @@ import (
 type AnimeWorkspace struct {
 	AcquisitionTargets *[]AcquisitionTarget
 	Artifacts          []Artifact
+	// ConfigWaitingFiles counts the downloaded files whose import waits for
+	// the anime's configuration (waiting plans of running acquisitions).
+	ConfigWaitingFiles int64
 	DownloadTasks      []WorkspaceDownloadTask
 	EpisodeProgress    *EpisodeProgress
 	FileOperations     []FileOperation

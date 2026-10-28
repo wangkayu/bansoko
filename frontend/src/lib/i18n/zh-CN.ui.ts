@@ -85,6 +85,7 @@ export const statusCopy = {
     release_processed: "处理种子",
     download_changed: "下载状态变化",
     artifact_verified: "媒体文件校验",
+    import_waiting_config: "入库等待配置",
     placement_changed: "入库位置变化",
     replacement_decided: "替换版本",
     cleanup_completed: "清理完成",

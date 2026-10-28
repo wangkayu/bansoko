@@ -107,6 +107,7 @@ export const logCopy = {
       downloaded: "下载完成",
       downloadFailed: "下载失败",
       importFailed: "入库失败",
+      waitingConfig: "入库等待配置",
     },
   },
   delivery: {
@@ -181,6 +182,10 @@ export const logCopy = {
     download_removed: "已在下载器中删除",
     download_failed: "下载失败",
     artifact_verified: "文件校验完成",
+    import_waiting_binding_bgm: "入库等待配置：缺少 BGM 绑定（{count} 个文件）",
+    import_waiting_binding_tmdb: "入库等待配置：缺少 TMDB 绑定（{count} 个文件）",
+    import_waiting_template_variable: "入库等待配置：模板变量未定义：{variables}（{count} 个文件）",
+    import_config_resumed: "配置已补全，继续入库",
     file_imported: "已入库：{file_name}",
     file_adopted: "已使用媒体库中的文件：{file_name}",
     file_retained: "媒体库中的文件已符合要求：{file_name}",

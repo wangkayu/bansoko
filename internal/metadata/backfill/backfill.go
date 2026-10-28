@@ -129,7 +129,8 @@ func Classify(plan Plan, match *matcher.MatchResult) Outcome {
 // The native names of the newly bound works are recorded in the same tx.
 //
 // A media-kind fill that would change the effective kind (unset is tv) of an
-// instance whose identity is in use (active files or running acquisitions) is
+// instance whose identity is in use (active files or acquisitions that have
+// not settled) is
 // dropped from the plan before the write: the kind stays unset and every other
 // planned field is still written. The caller reads the plan afterwards for
 // what was written.
@@ -184,6 +185,11 @@ func ApplyTx(ctx context.Context, tx *sql.Tx, managedAnimeID string, expectedVer
 		return false, nil
 	}
 	if err := workTitles.UpsertWorkTitles(ctx, tx, match.WorkTitles(plan.NewBGM, plan.NewTMDB)); err != nil {
+		return false, err
+	}
+	// A filled binding or owner value may complete the configuration an
+	// import waits for.
+	if err := animeapplication.WakeConfigWaitingPlansTx(ctx, tx, managedAnimeID); err != nil {
 		return false, err
 	}
 	return true, nil

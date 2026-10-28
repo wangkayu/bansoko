@@ -88,6 +88,7 @@ export const enStatusCopy = {
     release_processed: "Torrent processed",
     download_changed: "Download status",
     artifact_verified: "File verification",
+    import_waiting_config: "Import waiting for configuration",
     placement_changed: "Import location",
     replacement_decided: "Replaced by a better version",
     cleanup_completed: "Cleanup done",

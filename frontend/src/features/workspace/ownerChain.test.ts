@@ -140,6 +140,7 @@ function workspaceFixture(): AnimeWorkspace {
     ],
     logs: [],
     episode_progress: null,
+    config_waiting_files: 0,
   };
 }
 

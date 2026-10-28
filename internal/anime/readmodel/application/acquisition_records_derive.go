@@ -316,7 +316,8 @@ func deriveAcquisitionStages(f acquisitionGraphFacts) []AcquisitionStage {
 	if f.RootState != "running" {
 		// The root is settled: a stage that never finished stopped with it.
 		for i := range stages {
-			if stages[i].State != nil && (*stages[i].State == AcquisitionStageStatePending || *stages[i].State == AcquisitionStageStateRunning) {
+			if stages[i].State != nil && (*stages[i].State == AcquisitionStageStatePending || *stages[i].State == AcquisitionStageStateRunning ||
+				*stages[i].State == AcquisitionStageStateWaitingConfig) {
 				stages[i].State = ptr(AcquisitionStageStateCancelled)
 			}
 		}
@@ -433,9 +434,39 @@ func inspectStage(artifact *acquisitionStageOwner) AcquisitionStage {
 
 func planStage(plan *acquisitionStageOwner) AcquisitionStage {
 	return ownerStage(AcquisitionStagePlan, plan, map[string]string{
-		"queued":    AcquisitionStageStatePending,
+		"queued": AcquisitionStageStatePending, "waiting_config": AcquisitionStageStateWaitingConfig,
 		"succeeded": AcquisitionStageStateSucceeded, "failed": AcquisitionStageStateFailed,
 	})
+}
+
+// decodeConfigHold reads a waiting plan's hold ([{"item","files"}], items
+// binding_missing:bgm|tmdb or template_variable_undefined:<names>) in the
+// stored order. A missing or unknown hold on a waiting plan is an
+// inconsistent read.
+func decodeConfigHold(raw []byte) ([]AcquisitionConfigHoldItem, error) {
+	var stored []struct {
+		Item  string `json:"item"`
+		Files int64  `json:"files"`
+	}
+	if err := json.Unmarshal(raw, &stored); err != nil || len(stored) == 0 {
+		return nil, fmt.Errorf("%w: plan configuration hold", ErrAcquisitionReadInconsistent)
+	}
+	hold := make([]AcquisitionConfigHoldItem, 0, len(stored))
+	for _, entry := range stored {
+		item := AcquisitionConfigHoldItem{Files: entry.Files}
+		switch names, variable := strings.CutPrefix(entry.Item, "template_variable_undefined:"); {
+		case variable:
+			item.Missing, item.Variables = AcquisitionConfigMissingVariable, strings.Split(names, ",")
+		case entry.Item == "binding_missing:bgm":
+			item.Missing = AcquisitionConfigMissingBGM
+		case entry.Item == "binding_missing:tmdb":
+			item.Missing = AcquisitionConfigMissingTMDB
+		default:
+			return nil, fmt.Errorf("%w: plan configuration hold item %q", ErrAcquisitionReadInconsistent, entry.Item)
+		}
+		hold = append(hold, item)
+	}
+	return hold, nil
 }
 
 // fileExecutionStage is the aggregate over every required file: delivered of

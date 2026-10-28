@@ -1,6 +1,7 @@
 import type { ObservabilityRecord } from "../lib/api/client";
 import { MESSAGE_SPECS } from "../lib/observabilityCatalog.generated";
 import { tryT } from "../lib/i18n";
+import { joinList } from "../lib/i18n/format";
 import { subscriptionLogKindLabel } from "../lib/labels";
 
 // One predicate set for the events tab: the row marker, the state filter and the log badge all
@@ -57,7 +58,8 @@ export function messageText(entry: Pick<BusinessEntry, "message_code" | "message
   for (const param of spec?.params ?? []) {
     const value = params[param.name];
     if (value === undefined || value === null || value === "") complete = false;
-    else vars[param.name] = value;
+    // variables is a comma-separated name list (template variables an import waits for).
+    else vars[param.name] = param.name === "variables" ? joinList(String(value).split(",")) : value;
   }
   const bare = complete ? undefined : tryT(`log.msgBare.${code}`);
   if (bare !== undefined) return bare;

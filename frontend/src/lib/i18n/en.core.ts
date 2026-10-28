@@ -43,6 +43,7 @@ export const enAnimeCopy = {
   ended: {
     banner: "The subscription has ended. This page is read-only and no longer refreshes or downloads automatically.",
   },
+  configWaiting: "{count} downloaded files waiting for the configuration before import",
   pending: {
     banner: "Not started. Nothing is refreshed or downloaded",
     helpLabel: "Help: subscription not started",

@@ -96,6 +96,16 @@ func (s *Service) handlePostProcessPlan(ctx context.Context, claim workitems.Cla
 		return runtimeworker.Outcome{}, fmt.Errorf("%w: plan declares one-shot %q but the claim does not carry it", workitems.ErrInvalidOneShotClaim, plan.oneShotID.String)
 	}
 
+	// Configuration gate: a subscription plan the anime's current
+	// configuration cannot render waits for it, before any attempt is spent.
+	waiting, err := s.configurationGate(ctx, claim, plan)
+	if err != nil {
+		return runtimeworker.Outcome{}, err
+	}
+	if waiting != nil {
+		return *waiting, nil
+	}
+
 	// Attempt-budget gate: the checks above cost only the claim; capture and
 	// naming read the filesystem and cost one business attempt, bounded by the
 	// ticket's attempt_until. Exhaustion is the typed terminal plan failure.

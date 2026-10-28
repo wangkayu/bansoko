@@ -430,7 +430,7 @@ end
 assert_enum.call("SubscriptionLogKind", %w[
   subscription_created subscription_started subscription_stopped subscription_resumed metadata_applied
   group_changed policy_changed rss_new_content release_processed
-  download_changed artifact_verified placement_changed replacement_decided cleanup_completed cleanup_failed
+  download_changed artifact_verified import_waiting_config placement_changed replacement_decided cleanup_completed cleanup_failed
   file_alignment_completed file_alignment_failed acquisition_settled
 ])
 abort "GroupAction action enum drifted" unless schemas.fetch("GroupAction").fetch("properties").fetch("action").fetch("enum") == %w[force_include force_exclude restore_auto]

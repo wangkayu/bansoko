@@ -32,17 +32,19 @@ export type EventItem =
 const RUN_KIND_ORDER: Partial<Record<BusinessEntry["kind"], number>> = {
   download_changed: 1,
   artifact_verified: 2,
-  file_alignment_completed: 3,
-  file_alignment_failed: 3,
-  placement_changed: 4,
-  replacement_decided: 5,
-  acquisition_settled: 6,
+  import_waiting_config: 3,
+  file_alignment_completed: 4,
+  file_alignment_failed: 4,
+  placement_changed: 5,
+  replacement_decided: 6,
+  acquisition_settled: 7,
 };
 
 /** A download needs at least one record of the acquisition itself; a sequence with only an import location or a replacement (file scan, a later re-decision) renders as single rows. */
 const CORE_RUN_KINDS = new Set<BusinessEntry["kind"]>([
   "download_changed",
   "artifact_verified",
+  "import_waiting_config",
   "file_alignment_completed",
   "file_alignment_failed",
   "acquisition_settled",
@@ -271,6 +273,9 @@ function runResult(settled: BusinessEntry | undefined, failure: BusinessEntry | 
     if (settled.outcome === "failure") return failureResult(failure);
     return isRemovedInDownloader(steps) ? t("log.run.result.removed") : t("log.run.result.cancelled");
   }
+  // The newest configuration step decides: still waiting, or resumed (then the import continues).
+  const hold = [...steps].reverse().find((step) => step.kind === "import_waiting_config");
+  if (hold && hold.message_code !== "import_config_resumed") return t("log.run.result.waitingConfig");
   const kinds = new Set(steps.map((step) => step.kind));
   if (kinds.has("file_alignment_completed")) return t("log.run.result.importing");
   if (kinds.has("artifact_verified")) return t("log.run.result.importing");

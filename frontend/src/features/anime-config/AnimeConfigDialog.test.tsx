@@ -153,6 +153,7 @@ function workspaceFixture(): AnimeWorkspace {
     file_operations: [],
     logs: [],
     episode_progress: null,
+    config_waiting_files: 0,
   };
 }
 
@@ -1754,6 +1755,28 @@ describe("AnimeConfigDialog 头部摘要行", () => {
     expect(screen.getAllByText(t("anime.metadata.missing", { names: "Bangumi、TMDB" })).length).toBeGreaterThan(0);
     expect(screen.queryByText(t("anime.metadata.paused", { names: "Bangumi、TMDB" }))).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: t("anime.metadata.link", { name: "Bangumi" }) })).toBeInTheDocument();
+  });
+
+  it("缺关联且有入库等待配置：警告行后接等待配置的文件数，修复动作不变", async () => {
+    const workspace = workspaceFixture();
+    workspace.metadata_hold = { held: true, missing: ["tmdb"] };
+    workspace.config_waiting_files = 3;
+    renderDialog([workspace]);
+    await flushQuery();
+
+    expect(screen.getByText(`${t("anime.metadata.paused", { names: "TMDB" })} · 3 个已下载文件等待配置后入库`)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: t("anime.metadata.link", { name: "TMDB" }) })).toBeInTheDocument();
+  });
+
+  it("只有入库等待配置（模板变量未定义）：信息行换成等待配置警告行，没有修复按钮", async () => {
+    const workspace = workspaceFixture();
+    workspace.config_waiting_files = 2;
+    renderDialog([workspace]);
+    await flushQuery();
+
+    expect(screen.queryByRole("status", { name: t("config.summary.aria") })).not.toBeInTheDocument();
+    expect(screen.getByText("2 个已下载文件等待配置后入库")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /关联/ })).not.toBeInTheDocument();
   });
 
   it("draft 模式显示「未订阅」，无数据源格子显示「—」", async () => {

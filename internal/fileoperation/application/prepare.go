@@ -150,18 +150,7 @@ func (s *Service) prepareForArtifactTxWithOverrides(ctx context.Context, tx *sql
 	if frozen.plan != nil {
 		prep.config.unclassifiedRoute = frozen.plan.UnclassifiedRoute
 	}
-	if frozen.hasFrozenBinding {
-		// The snapshot freezes the metadata media kind/season binding at
-		// evaluation time; after submission the current anime_metadata row
-		// must not drift the naming branch (movie vs tv) or the bound season.
-		artifact.tmdbMediaKind = sql.NullString{String: frozen.mediaKind, Valid: true}
-		artifact.tmdbSeason = frozenSeasonColumn(frozen.season, frozen.seasonBound)
-	} else if override := strings.TrimSpace(artifact.mediaKindOverride.String); override == "tv" || override == "movie" {
-		// A legacy snapshot without any frozen binding falls back to the
-		// current metadata row, exactly like before — but through the same
-		// override-first precedence, so the pin still selects the branch.
-		artifact.tmdbMediaKind = sql.NullString{String: override, Valid: true}
-	}
+	applyFrozenBinding(&artifact, frozen)
 
 	// Only first-level videos and subtitles exist for planning (see
 	// fileSelection); videos are planned first, subtitles bind to a planned
@@ -196,23 +185,7 @@ func (s *Service) prepareForArtifactTxWithOverrides(ctx context.Context, tx *sql
 			finalVideos = append(finalVideos, video)
 		}
 	}
-	// A movie plans exactly its main video (the largest known size, ties and
-	// unknown sizes by manifest order). Every other eligible video is a plain
-	// unknown file, handled by the unclassified route like a TV unknown.
-	unknownVideos := map[string]bool{}
-	if artifact.tmdbMediaKind.Valid && artifact.tmdbMediaKind.String == "movie" {
-		candidates := make([]organizingpolicy.Video, 0, len(finalVideos))
-		for i, video := range finalVideos {
-			size := uint64(video.sizeBytes)
-			candidates = append(candidates, organizingpolicy.Video{Ref: organizingpolicy.FileRef(video.fileRef), Order: uint32(i), Size: &size, Eligible: true})
-		}
-		main := organizingpolicy.SelectMovie(candidates).Main
-		for _, video := range finalVideos {
-			if organizingpolicy.FileRef(video.fileRef) != main {
-				unknownVideos[video.fileRef] = true
-			}
-		}
-	}
+	unknownVideos := movieExtras(artifact, finalVideos)
 	eligibleVideos := videos
 	videos = finalVideos
 	// Every video the rules keep must agree with the frozen plan: the
@@ -373,6 +346,47 @@ func (s *Service) excludeDuplicateSubtitleTargets(subtitles []artifactFileContex
 // frozen batch plan: no plan entry, a different coverage key set (a
 // multi-episode file compares all its keys), or one side resolved while the
 // other is not.
+// applyFrozenBinding points the naming branch and the bound season at the
+// binding frozen on the snapshot.
+func applyFrozenBinding(artifact *artifactContext, frozen frozenReleaseFacts) {
+	if frozen.hasFrozenBinding {
+		// The snapshot freezes the metadata media kind/season binding at
+		// evaluation time; after submission the current anime_metadata row
+		// must not drift the naming branch (movie vs tv) or the bound season.
+		artifact.tmdbMediaKind = sql.NullString{String: frozen.mediaKind, Valid: true}
+		artifact.tmdbSeason = frozenSeasonColumn(frozen.season, frozen.seasonBound)
+	} else if override := strings.TrimSpace(artifact.mediaKindOverride.String); override == "tv" || override == "movie" {
+		// A legacy snapshot without any frozen binding falls back to the
+		// current metadata row, exactly like before — but through the same
+		// override-first precedence, so the pin still selects the branch.
+		artifact.tmdbMediaKind = sql.NullString{String: override, Valid: true}
+	}
+}
+
+// movieExtras are the videos a movie does not plan as its main video. A
+// movie plans exactly its main video (the largest known size, ties and
+// unknown sizes by manifest order). Every other eligible video is a plain
+// unknown file, handled by the unclassified route like a TV unknown. videos
+// are the final videos in manifest path order.
+func movieExtras(artifact artifactContext, videos []artifactFileContext) map[string]bool {
+	extras := map[string]bool{}
+	if !artifact.tmdbMediaKind.Valid || artifact.tmdbMediaKind.String != "movie" {
+		return extras
+	}
+	candidates := make([]organizingpolicy.Video, 0, len(videos))
+	for i, video := range videos {
+		size := uint64(video.sizeBytes)
+		candidates = append(candidates, organizingpolicy.Video{Ref: organizingpolicy.FileRef(video.fileRef), Order: uint32(i), Size: &size, Eligible: true})
+	}
+	main := organizingpolicy.SelectMovie(candidates).Main
+	for _, video := range videos {
+		if organizingpolicy.FileRef(video.fileRef) != main {
+			extras[video.fileRef] = true
+		}
+	}
+	return extras
+}
+
 func planDrift(plan *batchplan.Plan, selection fileSelection, videos []artifactFileContext, coverage map[string]string, movie bool) map[string]bool {
 	drift := map[string]bool{}
 	if plan == nil || movie {

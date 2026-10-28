@@ -199,6 +199,7 @@ export type AcquisitionStage = Schema<"AcquisitionStage">;
 export type AcquisitionTransfer = Schema<"AcquisitionTransfer">;
 export type AcquisitionStageName = Schema<"AcquisitionStageName">;
 export type AcquisitionStageState = Schema<"AcquisitionStageState">;
+export type AcquisitionConfigHold = Schema<"AcquisitionConfigHold">;
 export type AcquisitionDisplayValue = Schema<"AcquisitionDisplayValue">;
 export type AcquisitionFile = Schema<"AcquisitionFile">;
 export type AcquisitionFilePlacementFailure = Schema<"AcquisitionFilePlacementFailure">;

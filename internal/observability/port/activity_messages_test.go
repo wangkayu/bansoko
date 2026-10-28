@@ -70,8 +70,8 @@ func TestMessageCatalogIsWellFormed(t *testing.T) {
 			paramTypes[param.Name] = param.Type
 		}
 	}
-	if len(ActivityKinds()) != 18 {
-		t.Errorf("expected 18 journal kinds, got %d: %v", len(ActivityKinds()), ActivityKinds())
+	if len(ActivityKinds()) != 19 {
+		t.Errorf("expected 19 journal kinds, got %d: %v", len(ActivityKinds()), ActivityKinds())
 	}
 	if IsActivityKind("rss_refresh_failed") {
 		t.Error("rss_refresh_failed is retired")
@@ -244,20 +244,9 @@ func TestMessageCatalogMirrors(t *testing.T) {
 		}
 	}
 
-	migration, err := os.ReadFile(repoPath("db/migrations/092_activity_message_codes.sql"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	check := regexp.MustCompile(`subscription_log_entries_kind_check CHECK \(kind IN \(([^)]*)\)\)`).FindSubmatch(migration)
-	if check == nil {
-		t.Fatal("092 kind CHECK not found")
-	}
-	values := []string{}
-	for _, value := range strings.Split(string(check[1]), ",") {
-		values = append(values, strings.Trim(strings.TrimSpace(value), "'"))
-	}
+	values := latestCheckValues(t, `subscription_log_entries_kind_check CHECK \(kind IN \(([^)]*)\)`)
 	if got, want := sortedStrings(values), registeredKinds(); strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Errorf("092 kind CHECK %v differs from the catalog kinds %v", got, want)
+		t.Errorf("latest kind CHECK %v differs from the catalog kinds %v", got, want)
 	}
 }
 
@@ -265,12 +254,19 @@ func TestMessageCatalogMirrors(t *testing.T) {
 // (re)defines releases_verdict_check.
 func latestReleaseVerdicts(t *testing.T) []string {
 	t.Helper()
+	return latestCheckValues(t, `releases_verdict_check CHECK \(verdict IN \(([^)]*)\)`)
+}
+
+// latestCheckValues reads the value list (the pattern's first group) of the
+// newest migration that (re)defines a CHECK.
+func latestCheckValues(t *testing.T, check string) []string {
+	t.Helper()
 	paths, err := filepath.Glob(repoPath("db/migrations/*.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	sort.Strings(paths)
-	pattern := regexp.MustCompile(`releases_verdict_check CHECK \(verdict IN \(([^)]*)\)`)
+	pattern := regexp.MustCompile(check)
 	var latest []byte
 	for _, path := range paths {
 		raw, err := os.ReadFile(path)
@@ -282,13 +278,13 @@ func latestReleaseVerdicts(t *testing.T) []string {
 		}
 	}
 	if latest == nil {
-		t.Fatal("no migration defines releases_verdict_check")
+		t.Fatalf("no migration defines %s", check)
 	}
-	verdicts := []string{}
+	values := []string{}
 	for _, value := range strings.Split(string(latest), ",") {
-		verdicts = append(verdicts, strings.Trim(strings.TrimSpace(value), "'"))
+		values = append(values, strings.Trim(strings.TrimSpace(value), "'"))
 	}
-	return verdicts
+	return values
 }
 
 // TestReleaseVerdictMessagesCoverTheVerdictCheck: every verdict the latest

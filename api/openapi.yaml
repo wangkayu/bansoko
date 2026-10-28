@@ -1631,7 +1631,8 @@ paths:
           metadata.title_suggestions, pick one and send the binding and
           title_override in this one call; changing the title renames the
           subscription's library files. Changing the effective media kind (tv/movie) while
-          the anime has library files or running acquisitions returns 409
+          the anime has library files or acquisitions that have not settled
+          (including an import waiting for configuration) returns 409
           IDENTITY_KIND_CHANGE_BLOCKED with the counts in details.
       parameters:
         - $ref: '#/components/parameters/ManagedAnimeID'
@@ -1679,7 +1680,7 @@ paths:
           result (for example BGM alone) is saved. The media kind is filled
           from the matched TMDB kind only while unset, and is left unset when
           that would turn it into movie while the anime has library files or
-          running acquisitions. Only active subscriptions are
+          acquisitions that have not settled. Only active subscriptions are
           matched; pending and stopped ones return SUBSCRIPTION_INACTIVE. It never
           writes the title; use patch_anime_metadata with title_override.
       description: >-
@@ -9545,6 +9546,7 @@ components:
         - release_processed
         - download_changed
         - artifact_verified
+        - import_waiting_config
         - placement_changed
         - replacement_decided
         - cleanup_completed
@@ -9590,6 +9592,10 @@ components:
         - download_removed
         - download_failed
         - artifact_verified
+        - import_waiting_binding_bgm
+        - import_waiting_binding_tmdb
+        - import_waiting_template_variable
+        - import_config_resumed
         - file_imported
         - file_adopted
         - file_retained
@@ -9637,6 +9643,11 @@ components:
           format: int64
           minimum: 0
           description: Non-negative item count.
+        variables:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Template variable names, comma separated.
     SubscriptionLogSource:
       type: string
       enum: [subscription, one_shot]
@@ -9845,7 +9856,8 @@ components:
             clearing or replacing the tuple later never changes it. It never
             rewrites the TMDB tuple. The effective kind (NULL is tv) changes
             between tv and movie only while the anime has no active library
-            file and no running acquisition: a metadata patch that would change
+            file and no acquisition that has not settled (an import waiting
+            for configuration included): a metadata patch that would change
             it then returns 409 IDENTITY_KIND_CHANGE_BLOCKED, and a metadata
             match or the scheduled metadata_match automation leaves it
             unchanged and still fills the other empty fields.
@@ -12713,7 +12725,8 @@ components:
             TMDB tuple, which fills it with the tuple's media_kind. It never
             rewrites the TMDB tuple. A patch whose resulting effective kind
             (NULL is tv) differs from the stored one while the anime has an
-            active library file or a running acquisition returns 409
+            active library file or an acquisition that has not settled (an
+            import waiting for configuration included) returns 409
             IDENTITY_KIND_CHANGE_BLOCKED and changes nothing.
         total_episodes:
           type: integer
@@ -13506,6 +13519,7 @@ components:
         - placement_handoffs
         - logs
         - episode_progress
+        - config_waiting_files
       properties:
         managed_anime:
           $ref: '#/components/schemas/ManagedAnime'
@@ -13515,6 +13529,16 @@ components:
           $ref: '#/components/schemas/AnimeMetadata'
         metadata_hold:
           $ref: '#/components/schemas/MetadataHold'
+        config_waiting_files:
+          type: integer
+          format: int64
+          minimum: 0
+          description: >-
+            Downloaded files whose import waits for the anime's configuration:
+            the current configuration cannot render their import path (a
+            missing BGM or TMDB binding, or an undefined template variable).
+            The files stay in the download directory and the import continues
+            by itself once the configuration is complete.
         subgroups:
           $ref: '#/components/schemas/SubgroupsOwnerResult'
         rules:
@@ -18587,7 +18611,45 @@ components:
       enum: [submit, download_wait, inspect, plan, file_execution, settlement, completion]
     AcquisitionStageState:
       type: string
-      enum: [pending, running, succeeded, failed, blocked, cancelled]
+      description: >-
+        waiting_config is a plan stage that waits for the anime's configuration
+        (see config_hold); it is not a failure, spends no attempt and has no
+        retry. It continues by itself once the configuration is complete.
+      enum: [pending, running, succeeded, failed, blocked, cancelled, waiting_config]
+    AcquisitionConfigHold:
+      type: array
+      description: >-
+        Present only while a running record's plan stage is waiting_config:
+        what the anime's current configuration lacks, in a stable order (the
+        BGM binding, the TMDB binding, then the template variables). The
+        downloaded files stay in the download directory; the import continues
+        by itself once the configuration is complete.
+      minItems: 1
+      maxItems: 16
+      items:
+        $ref: '#/components/schemas/AcquisitionConfigHoldItem'
+    AcquisitionConfigHoldItem:
+      type: object
+      additionalProperties: false
+      description: >-
+        One item the anime's current configuration lacks to render the import
+        path of a waiting import, with the number of files it blocks.
+      required: [missing, files]
+      properties:
+        missing:
+          type: string
+          enum: [bgm_binding, tmdb_binding, template_variable]
+        variables:
+          type: array
+          description: The undefined template variables of a template_variable item.
+          minItems: 1
+          items:
+            type: string
+            minLength: 1
+        files:
+          type: integer
+          format: int64
+          minimum: 1
     AcquisitionDisplayValue:
       type: object
       additionalProperties: false
@@ -18678,6 +18740,8 @@ components:
         reason_code:
           type: string
           minLength: 1
+        config_hold:
+          $ref: '#/components/schemas/AcquisitionConfigHold'
         one_shot_id:
           allOf:
             - $ref: '#/components/schemas/ID'
@@ -18999,6 +19063,8 @@ components:
         reason_code:
           type: string
           minLength: 1
+        config_hold:
+          $ref: '#/components/schemas/AcquisitionConfigHold'
         one_shot_id:
           allOf:
             - $ref: '#/components/schemas/ID'

@@ -26,6 +26,13 @@ const (
 	AcquireSeedOnceInputInputSourceSavedRevision AcquireSeedOnceInputInputSource = "saved_revision"
 )
 
+// Defines values for AcquisitionConfigHoldItemMissing.
+const (
+	AcquisitionConfigHoldItemMissingBgmBinding       AcquisitionConfigHoldItemMissing = "bgm_binding"
+	AcquisitionConfigHoldItemMissingTemplateVariable AcquisitionConfigHoldItemMissing = "template_variable"
+	AcquisitionConfigHoldItemMissingTmdbBinding      AcquisitionConfigHoldItemMissing = "tmdb_binding"
+)
+
 // Defines values for AcquisitionDisplayValueState.
 const (
 	AcquisitionDisplayValueStateRedacted    AcquisitionDisplayValueState = "redacted"
@@ -202,12 +209,13 @@ const (
 
 // Defines values for AcquisitionStageState.
 const (
-	AcquisitionStageStateBlocked   AcquisitionStageState = "blocked"
-	AcquisitionStageStateCancelled AcquisitionStageState = "cancelled"
-	AcquisitionStageStateFailed    AcquisitionStageState = "failed"
-	AcquisitionStageStatePending   AcquisitionStageState = "pending"
-	AcquisitionStageStateRunning   AcquisitionStageState = "running"
-	AcquisitionStageStateSucceeded AcquisitionStageState = "succeeded"
+	AcquisitionStageStateBlocked       AcquisitionStageState = "blocked"
+	AcquisitionStageStateCancelled     AcquisitionStageState = "cancelled"
+	AcquisitionStageStateFailed        AcquisitionStageState = "failed"
+	AcquisitionStageStatePending       AcquisitionStageState = "pending"
+	AcquisitionStageStateRunning       AcquisitionStageState = "running"
+	AcquisitionStageStateSucceeded     AcquisitionStageState = "succeeded"
+	AcquisitionStageStateWaitingConfig AcquisitionStageState = "waiting_config"
 )
 
 // Defines values for AcquisitionTargetCollisionPolicy.
@@ -2247,6 +2255,7 @@ const (
 	SubscriptionLogKindFileAlignmentCompleted SubscriptionLogKind = "file_alignment_completed"
 	SubscriptionLogKindFileAlignmentFailed    SubscriptionLogKind = "file_alignment_failed"
 	SubscriptionLogKindGroupChanged           SubscriptionLogKind = "group_changed"
+	SubscriptionLogKindImportWaitingConfig    SubscriptionLogKind = "import_waiting_config"
 	SubscriptionLogKindMetadataApplied        SubscriptionLogKind = "metadata_applied"
 	SubscriptionLogKindPlacementChanged       SubscriptionLogKind = "placement_changed"
 	SubscriptionLogKindPolicyChanged          SubscriptionLogKind = "policy_changed"
@@ -2261,53 +2270,57 @@ const (
 
 // Defines values for SubscriptionLogMessageCode.
 const (
-	SubscriptionLogMessageCodeAcquisitionCancelled       SubscriptionLogMessageCode = "acquisition_cancelled"
-	SubscriptionLogMessageCodeAcquisitionFailed          SubscriptionLogMessageCode = "acquisition_failed"
-	SubscriptionLogMessageCodeAcquisitionSucceeded       SubscriptionLogMessageCode = "acquisition_succeeded"
-	SubscriptionLogMessageCodeArtifactVerified           SubscriptionLogMessageCode = "artifact_verified"
-	SubscriptionLogMessageCodeDownloadCompleted          SubscriptionLogMessageCode = "download_completed"
-	SubscriptionLogMessageCodeDownloadFailed             SubscriptionLogMessageCode = "download_failed"
-	SubscriptionLogMessageCodeDownloadRemoved            SubscriptionLogMessageCode = "download_removed"
-	SubscriptionLogMessageCodeDownloadSubmitted          SubscriptionLogMessageCode = "download_submitted"
-	SubscriptionLogMessageCodeEpisodeOffsetChanged       SubscriptionLogMessageCode = "episode_offset_changed"
-	SubscriptionLogMessageCodeFileAdopted                SubscriptionLogMessageCode = "file_adopted"
-	SubscriptionLogMessageCodeFileImportFailed           SubscriptionLogMessageCode = "file_import_failed"
-	SubscriptionLogMessageCodeFileImported               SubscriptionLogMessageCode = "file_imported"
-	SubscriptionLogMessageCodeFileRecovered              SubscriptionLogMessageCode = "file_recovered"
-	SubscriptionLogMessageCodeFileRetained               SubscriptionLogMessageCode = "file_retained"
-	SubscriptionLogMessageCodeGroupChanged               SubscriptionLogMessageCode = "group_changed"
-	SubscriptionLogMessageCodeMetadataApplied            SubscriptionLogMessageCode = "metadata_applied"
-	SubscriptionLogMessageCodeOldVersionDeleteFailed     SubscriptionLogMessageCode = "old_version_delete_failed"
-	SubscriptionLogMessageCodeOldVersionDeleted          SubscriptionLogMessageCode = "old_version_deleted"
-	SubscriptionLogMessageCodeOldVersionKept             SubscriptionLogMessageCode = "old_version_kept"
-	SubscriptionLogMessageCodePlacementRecorded          SubscriptionLogMessageCode = "placement_recorded"
-	SubscriptionLogMessageCodePlacementReleased          SubscriptionLogMessageCode = "placement_released"
-	SubscriptionLogMessageCodePlacementsExcluded         SubscriptionLogMessageCode = "placements_excluded"
-	SubscriptionLogMessageCodeReleaseAccepted            SubscriptionLogMessageCode = "release_accepted"
-	SubscriptionLogMessageCodeReleaseAcquisitionFailed   SubscriptionLogMessageCode = "release_acquisition_failed"
-	SubscriptionLogMessageCodeReleaseAdoptedExisting     SubscriptionLogMessageCode = "release_adopted_existing"
-	SubscriptionLogMessageCodeReleaseAwaitingCompetition SubscriptionLogMessageCode = "release_awaiting_competition"
-	SubscriptionLogMessageCodeReleaseDiscovered          SubscriptionLogMessageCode = "release_discovered"
-	SubscriptionLogMessageCodeReleaseFiltered            SubscriptionLogMessageCode = "release_filtered"
-	SubscriptionLogMessageCodeReleaseParseFailed         SubscriptionLogMessageCode = "release_parse_failed"
-	SubscriptionLogMessageCodeReleaseResumeBaseline      SubscriptionLogMessageCode = "release_resume_baseline"
-	SubscriptionLogMessageCodeReleaseSourceUnavailable   SubscriptionLogMessageCode = "release_source_unavailable"
-	SubscriptionLogMessageCodeReleaseStartBaseline       SubscriptionLogMessageCode = "release_start_baseline"
-	SubscriptionLogMessageCodeReleaseSubmitted           SubscriptionLogMessageCode = "release_submitted"
-	SubscriptionLogMessageCodeReleaseSubscriptionStopped SubscriptionLogMessageCode = "release_subscription_stopped"
-	SubscriptionLogMessageCodeReleaseWaitingMetadata     SubscriptionLogMessageCode = "release_waiting_metadata"
-	SubscriptionLogMessageCodeReplacementBlocked         SubscriptionLogMessageCode = "replacement_blocked"
-	SubscriptionLogMessageCodeReplacementKeptAll         SubscriptionLogMessageCode = "replacement_kept_all"
-	SubscriptionLogMessageCodeReplacementKeptExisting    SubscriptionLogMessageCode = "replacement_kept_existing"
-	SubscriptionLogMessageCodeReplacementNotReplaced     SubscriptionLogMessageCode = "replacement_not_replaced"
-	SubscriptionLogMessageCodeReplacementReplaced        SubscriptionLogMessageCode = "replacement_replaced"
-	SubscriptionLogMessageCodeRssNewContent              SubscriptionLogMessageCode = "rss_new_content"
-	SubscriptionLogMessageCodeRulesChanged               SubscriptionLogMessageCode = "rules_changed"
-	SubscriptionLogMessageCodeSubscriptionCreated        SubscriptionLogMessageCode = "subscription_created"
-	SubscriptionLogMessageCodeSubscriptionResumed        SubscriptionLogMessageCode = "subscription_resumed"
-	SubscriptionLogMessageCodeSubscriptionStarted        SubscriptionLogMessageCode = "subscription_started"
-	SubscriptionLogMessageCodeSubscriptionStopped        SubscriptionLogMessageCode = "subscription_stopped"
-	SubscriptionLogMessageCodeUnknownFileReleased        SubscriptionLogMessageCode = "unknown_file_released"
+	SubscriptionLogMessageCodeAcquisitionCancelled          SubscriptionLogMessageCode = "acquisition_cancelled"
+	SubscriptionLogMessageCodeAcquisitionFailed             SubscriptionLogMessageCode = "acquisition_failed"
+	SubscriptionLogMessageCodeAcquisitionSucceeded          SubscriptionLogMessageCode = "acquisition_succeeded"
+	SubscriptionLogMessageCodeArtifactVerified              SubscriptionLogMessageCode = "artifact_verified"
+	SubscriptionLogMessageCodeDownloadCompleted             SubscriptionLogMessageCode = "download_completed"
+	SubscriptionLogMessageCodeDownloadFailed                SubscriptionLogMessageCode = "download_failed"
+	SubscriptionLogMessageCodeDownloadRemoved               SubscriptionLogMessageCode = "download_removed"
+	SubscriptionLogMessageCodeDownloadSubmitted             SubscriptionLogMessageCode = "download_submitted"
+	SubscriptionLogMessageCodeEpisodeOffsetChanged          SubscriptionLogMessageCode = "episode_offset_changed"
+	SubscriptionLogMessageCodeFileAdopted                   SubscriptionLogMessageCode = "file_adopted"
+	SubscriptionLogMessageCodeFileImportFailed              SubscriptionLogMessageCode = "file_import_failed"
+	SubscriptionLogMessageCodeFileImported                  SubscriptionLogMessageCode = "file_imported"
+	SubscriptionLogMessageCodeFileRecovered                 SubscriptionLogMessageCode = "file_recovered"
+	SubscriptionLogMessageCodeFileRetained                  SubscriptionLogMessageCode = "file_retained"
+	SubscriptionLogMessageCodeGroupChanged                  SubscriptionLogMessageCode = "group_changed"
+	SubscriptionLogMessageCodeImportConfigResumed           SubscriptionLogMessageCode = "import_config_resumed"
+	SubscriptionLogMessageCodeImportWaitingBindingBgm       SubscriptionLogMessageCode = "import_waiting_binding_bgm"
+	SubscriptionLogMessageCodeImportWaitingBindingTmdb      SubscriptionLogMessageCode = "import_waiting_binding_tmdb"
+	SubscriptionLogMessageCodeImportWaitingTemplateVariable SubscriptionLogMessageCode = "import_waiting_template_variable"
+	SubscriptionLogMessageCodeMetadataApplied               SubscriptionLogMessageCode = "metadata_applied"
+	SubscriptionLogMessageCodeOldVersionDeleteFailed        SubscriptionLogMessageCode = "old_version_delete_failed"
+	SubscriptionLogMessageCodeOldVersionDeleted             SubscriptionLogMessageCode = "old_version_deleted"
+	SubscriptionLogMessageCodeOldVersionKept                SubscriptionLogMessageCode = "old_version_kept"
+	SubscriptionLogMessageCodePlacementRecorded             SubscriptionLogMessageCode = "placement_recorded"
+	SubscriptionLogMessageCodePlacementReleased             SubscriptionLogMessageCode = "placement_released"
+	SubscriptionLogMessageCodePlacementsExcluded            SubscriptionLogMessageCode = "placements_excluded"
+	SubscriptionLogMessageCodeReleaseAccepted               SubscriptionLogMessageCode = "release_accepted"
+	SubscriptionLogMessageCodeReleaseAcquisitionFailed      SubscriptionLogMessageCode = "release_acquisition_failed"
+	SubscriptionLogMessageCodeReleaseAdoptedExisting        SubscriptionLogMessageCode = "release_adopted_existing"
+	SubscriptionLogMessageCodeReleaseAwaitingCompetition    SubscriptionLogMessageCode = "release_awaiting_competition"
+	SubscriptionLogMessageCodeReleaseDiscovered             SubscriptionLogMessageCode = "release_discovered"
+	SubscriptionLogMessageCodeReleaseFiltered               SubscriptionLogMessageCode = "release_filtered"
+	SubscriptionLogMessageCodeReleaseParseFailed            SubscriptionLogMessageCode = "release_parse_failed"
+	SubscriptionLogMessageCodeReleaseResumeBaseline         SubscriptionLogMessageCode = "release_resume_baseline"
+	SubscriptionLogMessageCodeReleaseSourceUnavailable      SubscriptionLogMessageCode = "release_source_unavailable"
+	SubscriptionLogMessageCodeReleaseStartBaseline          SubscriptionLogMessageCode = "release_start_baseline"
+	SubscriptionLogMessageCodeReleaseSubmitted              SubscriptionLogMessageCode = "release_submitted"
+	SubscriptionLogMessageCodeReleaseSubscriptionStopped    SubscriptionLogMessageCode = "release_subscription_stopped"
+	SubscriptionLogMessageCodeReleaseWaitingMetadata        SubscriptionLogMessageCode = "release_waiting_metadata"
+	SubscriptionLogMessageCodeReplacementBlocked            SubscriptionLogMessageCode = "replacement_blocked"
+	SubscriptionLogMessageCodeReplacementKeptAll            SubscriptionLogMessageCode = "replacement_kept_all"
+	SubscriptionLogMessageCodeReplacementKeptExisting       SubscriptionLogMessageCode = "replacement_kept_existing"
+	SubscriptionLogMessageCodeReplacementNotReplaced        SubscriptionLogMessageCode = "replacement_not_replaced"
+	SubscriptionLogMessageCodeReplacementReplaced           SubscriptionLogMessageCode = "replacement_replaced"
+	SubscriptionLogMessageCodeRssNewContent                 SubscriptionLogMessageCode = "rss_new_content"
+	SubscriptionLogMessageCodeRulesChanged                  SubscriptionLogMessageCode = "rules_changed"
+	SubscriptionLogMessageCodeSubscriptionCreated           SubscriptionLogMessageCode = "subscription_created"
+	SubscriptionLogMessageCodeSubscriptionResumed           SubscriptionLogMessageCode = "subscription_resumed"
+	SubscriptionLogMessageCodeSubscriptionStarted           SubscriptionLogMessageCode = "subscription_started"
+	SubscriptionLogMessageCodeSubscriptionStopped           SubscriptionLogMessageCode = "subscription_stopped"
+	SubscriptionLogMessageCodeUnknownFileReleased           SubscriptionLogMessageCode = "unknown_file_released"
 )
 
 // Defines values for SubscriptionLogOutcome.
@@ -2687,6 +2700,21 @@ type AcquisitionAnimeLink struct {
 	Title          string `json:"title"`
 }
 
+// AcquisitionConfigHold Present only while a running record's plan stage is waiting_config: what the anime's current configuration lacks, in a stable order (the BGM binding, the TMDB binding, then the template variables). The downloaded files stay in the download directory; the import continues by itself once the configuration is complete.
+type AcquisitionConfigHold = []AcquisitionConfigHoldItem
+
+// AcquisitionConfigHoldItem One item the anime's current configuration lacks to render the import path of a waiting import, with the number of files it blocks.
+type AcquisitionConfigHoldItem struct {
+	Files   int64                            `json:"files"`
+	Missing AcquisitionConfigHoldItemMissing `json:"missing"`
+
+	// Variables The undefined template variables of a template_variable item.
+	Variables *[]string `json:"variables,omitempty"`
+}
+
+// AcquisitionConfigHoldItemMissing defines model for AcquisitionConfigHoldItem.Missing.
+type AcquisitionConfigHoldItemMissing string
+
 // AcquisitionCounts defines model for AcquisitionCounts.
 type AcquisitionCounts struct {
 	Excluded  int64 `json:"excluded"`
@@ -2856,8 +2884,11 @@ type AcquisitionRecordDetail struct {
 	AsOf          time.Time                             `json:"as_of"`
 	CompactReason *AcquisitionRecordDetailCompactReason `json:"compact_reason,omitempty"`
 	CompactedAt   *time.Time                            `json:"compacted_at,omitempty"`
-	EndedAt       *time.Time                            `json:"ended_at,omitempty"`
-	EntryKind     AcquisitionEntryKind                  `json:"entry_kind"`
+
+	// ConfigHold Present only while a running record's plan stage is waiting_config: what the anime's current configuration lacks, in a stable order (the BGM binding, the TMDB binding, then the template variables). The downloaded files stay in the download directory; the import continues by itself once the configuration is complete.
+	ConfigHold *AcquisitionConfigHold `json:"config_hold,omitempty"`
+	EndedAt    *time.Time             `json:"ended_at,omitempty"`
+	EntryKind  AcquisitionEntryKind   `json:"entry_kind"`
 
 	// Episodes The episode numbers this record places, ascending and unique: the coverage of the batch plan frozen with the acquisition's release when it was accepted (the plan its files are placed by). Display only; a read never re-parses a title or filename. Absent when the plan covers no numbered TV episode (a movie, an unrecognized seed) or the frozen plan is no longer kept; show the release title instead.
 	Episodes        *AcquisitionEpisodes                   `json:"episodes,omitempty"`
@@ -2886,9 +2917,11 @@ type AcquisitionRecordDetail struct {
 	// SourceTitle Bounded, redacted display text. A redacted or unavailable value carries no text.
 	SourceTitle AcquisitionDisplayValue `json:"source_title"`
 	Stage       *AcquisitionStageName   `json:"stage,omitempty"`
-	StageState  *AcquisitionStageState  `json:"stage_state,omitempty"`
-	Stages      []AcquisitionStage      `json:"stages"`
-	State       AcquisitionRecordState  `json:"state"`
+
+	// StageState waiting_config is a plan stage that waits for the anime's configuration (see config_hold); it is not a failure, spends no attempt and has no retry. It continues by itself once the configuration is complete.
+	StageState *AcquisitionStageState `json:"stage_state,omitempty"`
+	Stages     []AcquisitionStage     `json:"stages"`
+	State      AcquisitionRecordState `json:"state"`
 
 	// Transfer The downloader's last persisted observation of a running download, written by the download sync poll (about once a minute); a read never calls the downloader. Present only while the record is at the download_wait stage and running, and only once the downloader reported a byte count; absent on every other record.
 	Transfer *AcquisitionTransfer `json:"transfer,omitempty"`
@@ -2933,9 +2966,12 @@ type AcquisitionRecordSummary struct {
 	AcceptedAt    time.Time             `json:"accepted_at"`
 	AcquisitionId ID                    `json:"acquisition_id"`
 	Anime         *AcquisitionAnimeLink `json:"anime,omitempty"`
-	Counts        *AcquisitionCounts    `json:"counts,omitempty"`
-	EndedAt       *time.Time            `json:"ended_at,omitempty"`
-	EntryKind     AcquisitionEntryKind  `json:"entry_kind"`
+
+	// ConfigHold Present only while a running record's plan stage is waiting_config: what the anime's current configuration lacks, in a stable order (the BGM binding, the TMDB binding, then the template variables). The downloaded files stay in the download directory; the import continues by itself once the configuration is complete.
+	ConfigHold *AcquisitionConfigHold `json:"config_hold,omitempty"`
+	Counts     *AcquisitionCounts     `json:"counts,omitempty"`
+	EndedAt    *time.Time             `json:"ended_at,omitempty"`
+	EntryKind  AcquisitionEntryKind   `json:"entry_kind"`
 
 	// Episodes The episode numbers this record places, ascending and unique: the coverage of the batch plan frozen with the acquisition's release when it was accepted (the plan its files are placed by). Display only; a read never re-parses a title or filename. Absent when the plan covers no numbered TV episode (a movie, an unrecognized seed) or the frozen plan is no longer kept; show the release title instead.
 	Episodes *AcquisitionEpisodes `json:"episodes,omitempty"`
@@ -2955,8 +2991,10 @@ type AcquisitionRecordSummary struct {
 	// SourceTitle Bounded, redacted display text. A redacted or unavailable value carries no text.
 	SourceTitle AcquisitionDisplayValue `json:"source_title"`
 	Stage       *AcquisitionStageName   `json:"stage,omitempty"`
-	StageState  *AcquisitionStageState  `json:"stage_state,omitempty"`
-	State       AcquisitionRecordState  `json:"state"`
+
+	// StageState waiting_config is a plan stage that waits for the anime's configuration (see config_hold); it is not a failure, spends no attempt and has no retry. It continues by itself once the configuration is complete.
+	StageState *AcquisitionStageState `json:"stage_state,omitempty"`
+	State      AcquisitionRecordState `json:"state"`
 
 	// Transfer The downloader's last persisted observation of a running download, written by the download sync poll (about once a minute); a read never calls the downloader. Present only while the record is at the download_wait stage and running, and only once the downloader reported a byte count; absent on every other record.
 	Transfer *AcquisitionTransfer `json:"transfer,omitempty"`
@@ -3014,9 +3052,11 @@ type AcquisitionStage struct {
 	ReasonCode      *string                      `json:"reason_code,omitempty"`
 	Stage           AcquisitionStageName         `json:"stage"`
 	StartedAt       *time.Time                   `json:"started_at,omitempty"`
-	State           *AcquisitionStageState       `json:"state,omitempty"`
-	Total           *int64                       `json:"total,omitempty"`
-	UpdatedAt       *time.Time                   `json:"updated_at,omitempty"`
+
+	// State waiting_config is a plan stage that waits for the anime's configuration (see config_hold); it is not a failure, spends no attempt and has no retry. It continues by itself once the configuration is complete.
+	State     *AcquisitionStageState `json:"state,omitempty"`
+	Total     *int64                 `json:"total,omitempty"`
+	UpdatedAt *time.Time             `json:"updated_at,omitempty"`
 }
 
 // AcquisitionStageAvailability defines model for AcquisitionStage.Availability.
@@ -3025,7 +3065,7 @@ type AcquisitionStageAvailability string
 // AcquisitionStageName defines model for AcquisitionStageName.
 type AcquisitionStageName string
 
-// AcquisitionStageState defines model for AcquisitionStageState.
+// AcquisitionStageState waiting_config is a plan stage that waits for the anime's configuration (see config_hold); it is not a failure, spends no attempt and has no retry. It continues by itself once the configuration is complete.
 type AcquisitionStageState string
 
 // AcquisitionTarget defines model for AcquisitionTarget.
@@ -3448,7 +3488,7 @@ type AnimeMetadata struct {
 	Bgm            *NullableBGMBinding `json:"bgm"`
 	ManagedAnimeId ID                  `json:"managed_anime_id"`
 
-	// MediaKindOverride Owner media kind (tv | movie) the episode identity resolves with. NULL is tv; the TMDB binding's media_kind is never read for it. It is filled once from the TMDB media_kind when a TMDB tuple is bound while it is NULL (subscribe, metadata patch or metadata match); clearing or replacing the tuple later never changes it. It never rewrites the TMDB tuple. The effective kind (NULL is tv) changes between tv and movie only while the anime has no active library file and no running acquisition: a metadata patch that would change it then returns 409 IDENTITY_KIND_CHANGE_BLOCKED, and a metadata match or the scheduled metadata_match automation leaves it unchanged and still fills the other empty fields.
+	// MediaKindOverride Owner media kind (tv | movie) the episode identity resolves with. NULL is tv; the TMDB binding's media_kind is never read for it. It is filled once from the TMDB media_kind when a TMDB tuple is bound while it is NULL (subscribe, metadata patch or metadata match); clearing or replacing the tuple later never changes it. It never rewrites the TMDB tuple. The effective kind (NULL is tv) changes between tv and movie only while the anime has no active library file and no acquisition that has not settled (an import waiting for configuration included): a metadata patch that would change it then returns 409 IDENTITY_KIND_CHANGE_BLOCKED, and a metadata match or the scheduled metadata_match automation leaves it unchanged and still fills the other empty fields.
 	MediaKindOverride *AnimeMetadataMediaKindOverride `json:"media_kind_override"`
 
 	// Season Owner-edited season that naming reads as anime.season (and anime.season_folder, anime.season_path, ep.s00e00); 0 is the specials season. NULL means unset: the season composites render empty and ep.s00e00 renders the episode alone (E07). The shipped TV directory template keeps anime.season_folder as its own folder level, so a season-less render refuses (naming_fact_missing_anime_season_folder). It is independent of the TMDB binding: tmdb.season stays the bound TMDB season used for TMDB episode lookups, and editing one never changes the other. Confirming a TMDB match in the UI fills it with the matched season only while it is unset; nothing is stored until the owner saves.
@@ -3467,7 +3507,7 @@ type AnimeMetadata struct {
 	Year *int `json:"year"`
 }
 
-// AnimeMetadataMediaKindOverride Owner media kind (tv | movie) the episode identity resolves with. NULL is tv; the TMDB binding's media_kind is never read for it. It is filled once from the TMDB media_kind when a TMDB tuple is bound while it is NULL (subscribe, metadata patch or metadata match); clearing or replacing the tuple later never changes it. It never rewrites the TMDB tuple. The effective kind (NULL is tv) changes between tv and movie only while the anime has no active library file and no running acquisition: a metadata patch that would change it then returns 409 IDENTITY_KIND_CHANGE_BLOCKED, and a metadata match or the scheduled metadata_match automation leaves it unchanged and still fills the other empty fields.
+// AnimeMetadataMediaKindOverride Owner media kind (tv | movie) the episode identity resolves with. NULL is tv; the TMDB binding's media_kind is never read for it. It is filled once from the TMDB media_kind when a TMDB tuple is bound while it is NULL (subscribe, metadata patch or metadata match); clearing or replacing the tuple later never changes it. It never rewrites the TMDB tuple. The effective kind (NULL is tv) changes between tv and movie only while the anime has no active library file and no acquisition that has not settled (an import waiting for configuration included): a metadata patch that would change it then returns 409 IDENTITY_KIND_CHANGE_BLOCKED, and a metadata match or the scheduled metadata_match automation leaves it unchanged and still fills the other empty fields.
 type AnimeMetadataMediaKindOverride string
 
 // AnimeMetadataDraft The draft metadata bindings. bgm and tmdb carry the match bindings selected for this draft: the candidate write path stores them, and the stored binding is then the naming fact source (title/kind) of every render of that exact revision. A draft that selects no match keeps both null: no default binding is fabricated, and a template that reads bgm.* or tmdb.* fails as an undefined variable until one is selected.
@@ -3496,7 +3536,7 @@ type AnimeMetadataPatch struct {
 	Bgm             *NullableBGMBinding `json:"bgm"`
 	ExpectedVersion Version             `json:"expected_version"`
 
-	// MediaKindOverride Complete owner value of the media kind: a value (tv | movie) replaces it; null leaves it unset (tv) unless the patch carries a TMDB tuple, which fills it with the tuple's media_kind. It never rewrites the TMDB tuple. A patch whose resulting effective kind (NULL is tv) differs from the stored one while the anime has an active library file or a running acquisition returns 409 IDENTITY_KIND_CHANGE_BLOCKED and changes nothing.
+	// MediaKindOverride Complete owner value of the media kind: a value (tv | movie) replaces it; null leaves it unset (tv) unless the patch carries a TMDB tuple, which fills it with the tuple's media_kind. It never rewrites the TMDB tuple. A patch whose resulting effective kind (NULL is tv) differs from the stored one while the anime has an active library file or an acquisition that has not settled (an import waiting for configuration included) returns 409 IDENTITY_KIND_CHANGE_BLOCKED and changes nothing.
 	MediaKindOverride *AnimeMetadataPatchMediaKindOverride `json:"media_kind_override"`
 
 	// Season Complete owner value of the naming season (anime.season; 0 is the specials season): null or an omitted field clears it, a value replaces it. It never rewrites the TMDB tuple, and the TMDB tuple never rewrites it.
@@ -3513,7 +3553,7 @@ type AnimeMetadataPatch struct {
 	Year *int `json:"year"`
 }
 
-// AnimeMetadataPatchMediaKindOverride Complete owner value of the media kind: a value (tv | movie) replaces it; null leaves it unset (tv) unless the patch carries a TMDB tuple, which fills it with the tuple's media_kind. It never rewrites the TMDB tuple. A patch whose resulting effective kind (NULL is tv) differs from the stored one while the anime has an active library file or a running acquisition returns 409 IDENTITY_KIND_CHANGE_BLOCKED and changes nothing.
+// AnimeMetadataPatchMediaKindOverride Complete owner value of the media kind: a value (tv | movie) replaces it; null leaves it unset (tv) unless the patch carries a TMDB tuple, which fills it with the tuple's media_kind. It never rewrites the TMDB tuple. A patch whose resulting effective kind (NULL is tv) differs from the stored one while the anime has an active library file or an acquisition that has not settled (an import waiting for configuration included) returns 409 IDENTITY_KIND_CHANGE_BLOCKED and changes nothing.
 type AnimeMetadataPatchMediaKindOverride string
 
 // AnimeMetadataPreview The complete unsaved metadata value an owner_draft RSS list read previews with: the AnimeMetadataPatch fields without expected_version, with the same complete-value semantics (null or an omitted field clears, except title_override, where null keeps the fixed title). It replaces the persisted metadata for the read only. The read consumes title_override (anime.title_override), year (anime.year), season (anime.season and the season composites), bgm (bgm.* facts and the metadata hold), tmdb (tmdb.* facts, the bound season carried as naming evidence, and the metadata hold) and media_kind_override (the media kind of episode parsing, filled from the tmdb media_kind by the same rule as the patch). total_episodes is validated but does not change a preview. No value is filled from network metadata.
@@ -3550,7 +3590,10 @@ type AnimeRules struct {
 type AnimeWorkspace struct {
 	AcquisitionTargets *[]AcquisitionTarget `json:"acquisition_targets,omitempty"`
 	Artifacts          []Artifact           `json:"artifacts"`
-	DownloadTasks      []DownloadTask       `json:"download_tasks"`
+
+	// ConfigWaitingFiles Downloaded files whose import waits for the anime's configuration: the current configuration cannot render their import path (a missing BGM or TMDB binding, or an undefined template variable). The files stay in the download directory and the import continues by itself once the configuration is complete.
+	ConfigWaitingFiles int64          `json:"config_waiting_files"`
+	DownloadTasks      []DownloadTask `json:"download_tasks"`
 
 	// EpisodeProgress 已入库进度（与 AnimeListItem.episode_progress 同构，按数量计：
 	// len(episodes) 与 total 比较，不按集号对位）。首集入库前为 null。workspace 的 total 仅取 metadata.total_episodes，
@@ -8781,6 +8824,9 @@ type SubscriptionLogMessageParams struct {
 
 	// Name Torrent name the downloader reports.
 	Name *string `json:"name,omitempty"`
+
+	// Variables Template variable names, comma separated.
+	Variables *string `json:"variables,omitempty"`
 }
 
 // SubscriptionLogOutcome defines model for SubscriptionLogOutcome.

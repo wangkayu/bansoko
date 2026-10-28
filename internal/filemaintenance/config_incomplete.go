@@ -125,13 +125,22 @@ func (c currentAnimeConfig) effectiveMediaKind() string {
 // check reports the first missing input: a missing binding is the metadata
 // hold's own basis (BGM work id blank, TMDB work id absent).
 func (c currentAnimeConfig) check() error {
-	if strings.TrimSpace(c.bgmWorkID) == "" {
-		return &ConfigIncompleteError{Item: ConfigItemBindingMissingBGM}
-	}
-	if strings.TrimSpace(c.tmdbWorkID) == "" {
-		return &ConfigIncompleteError{Item: ConfigItemBindingMissingTMDB}
+	if missing := c.missingBindings(); len(missing) > 0 {
+		return &ConfigIncompleteError{Item: missing[0]}
 	}
 	return nil
+}
+
+// missingBindings lists every missing binding item in check order.
+func (c currentAnimeConfig) missingBindings() []string {
+	var missing []string
+	if strings.TrimSpace(c.bgmWorkID) == "" {
+		missing = append(missing, ConfigItemBindingMissingBGM)
+	}
+	if strings.TrimSpace(c.tmdbWorkID) == "" {
+		missing = append(missing, ConfigItemBindingMissingTMDB)
+	}
+	return missing
 }
 
 // apply writes the configuration into the render context, leaving every

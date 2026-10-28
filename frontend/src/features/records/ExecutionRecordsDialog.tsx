@@ -6,6 +6,7 @@ import {
   listAcquisitionRecordFiles,
   listAcquisitionRecords,
   toUserMessage,
+  type AcquisitionConfigHold,
   type AcquisitionDisplayValue,
   type AcquisitionEntryKind,
   type AcquisitionFile,
@@ -34,6 +35,7 @@ import { TagBadges } from "../rss-list/TagBadges";
 import { providerLabel } from "../../lib/providers/registry";
 import { seedIdentityParts } from "./seedIdentity";
 import { ImportRetryConfirmDialog } from "./ImportRetryConfirmDialog";
+import { configHoldText } from "./configHold";
 
 // ExecutionRecordsDialog — the read-only list and details of execution records (accepted
 //   acquisitions). Route-carried (`?record=list|<id>`, see shell/routeDialogs.ts), full screen on
@@ -71,6 +73,7 @@ const STAGE_TONE: Record<AcquisitionStageState, Tone> = {
   failed: "offline",
   blocked: "warning",
   cancelled: "muted",
+  waiting_config: "warning",
 };
 
 type StateFilter = "" | AcquisitionRecordState;
@@ -142,16 +145,22 @@ function RecordStateTag({ state }: { state: AcquisitionRecordState }) {
   return <StatePill tone={STATE_TONE[state] ?? "muted"}>{stateLabel(state)}</StatePill>;
 }
 
-/** The location summary for list rows and the detail header: the stage while running (with progress and speed while downloading), or the failed stage and reason at a terminal state. */
+/**
+ * The location summary for list rows and the detail header: the stage while running (with progress and speed while
+ *   downloading, or what the configuration lacks while the import waits for it), or the failed stage and reason at a
+ *   terminal state.
+ */
 function Position({
   stage,
   stageState,
   reasonCode,
+  configHold,
   transfer,
 }: {
   stage?: AcquisitionStageName;
   stageState?: string;
   reasonCode?: string;
+  configHold?: AcquisitionConfigHold;
   transfer?: AcquisitionTransfer;
 }) {
   if (!stage || !stageState) return null;
@@ -159,6 +168,7 @@ function Position({
     <span className={META}>
       {t("records.atStage", { stage: stageLabel(stage), state: stageStateLabel(stageState) })}
       {transfer ? ` · ${transferText(transfer)}` : null}
+      {configHold ? ` · ${configHoldText(configHold)}` : null}
       {reasonCode ? (
         <>
           {" · "}
@@ -369,7 +379,13 @@ function RecordRow({ item, showEntry, onOpen }: { item: AcquisitionRecordSummary
           </span>
         ) : null}
         {animeTitle ? <span className={META}>{animeTitle}</span> : null}
-        <Position stage={item.stage} stageState={item.stage_state} reasonCode={item.reason_code} transfer={item.transfer} />
+        <Position
+          stage={item.stage}
+          stageState={item.stage_state}
+          reasonCode={item.reason_code}
+          configHold={item.config_hold}
+          transfer={item.transfer}
+        />
       </button>
     </li>
   );
@@ -448,7 +464,7 @@ function DetailHeader({ detail, onOpenAnime }: { detail: AcquisitionRecordDetail
       value: (
         <span className={ITEM_HEAD}>
           <RecordStateTag state={detail.state} />
-          <Position stage={detail.stage} stageState={detail.stage_state} reasonCode={detail.reason_code} />
+          <Position stage={detail.stage} stageState={detail.stage_state} reasonCode={detail.reason_code} configHold={detail.config_hold} />
         </span>
       ),
     },
@@ -531,6 +547,13 @@ function StageList({ detail }: { detail: AcquisitionRecordDetail }) {
               {stage.updated_at ? <span className={META}>{formatDateTime(stage.updated_at)}</span> : null}
             </div>
             <StageMeta stage={stage} transfer={stage.stage === "download_wait" && stage.state === "running" ? transfer : undefined} />
+            {/* Waiting for configuration is not a failure: what is missing and that it continues by itself; no retry. */}
+            {stage.state === "waiting_config" && detail.config_hold ? (
+              <>
+                <p className={META}>{configHoldText(detail.config_hold)}</p>
+                <p className={META}>{t("records.configHold.note")}</p>
+              </>
+            ) : null}
             {stage.stage === "file_execution" && stage.state === "failed" && detail.import_retry_available ? (
               <ImportRetry acquisitionID={detail.acquisition_id} version={detail.version} />
             ) : null}

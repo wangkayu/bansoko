@@ -124,6 +124,22 @@ func mapTransfer(value *readmodelapplication.AcquisitionTransfer) *generated.Acq
 		DownloadSpeed: value.DownloadSpeed, ObservedAt: value.ObservedAt}
 }
 
+// mapConfigHold keeps an absent hold absent; the contract has no empty hold.
+func mapConfigHold(value []readmodelapplication.AcquisitionConfigHoldItem) *generated.AcquisitionConfigHold {
+	if len(value) == 0 {
+		return nil
+	}
+	hold := make(generated.AcquisitionConfigHold, len(value))
+	for i, item := range value {
+		hold[i] = generated.AcquisitionConfigHoldItem{Missing: generated.AcquisitionConfigHoldItemMissing(item.Missing), Files: item.Files}
+		if len(item.Variables) > 0 {
+			variables := append([]string(nil), item.Variables...)
+			hold[i].Variables = &variables
+		}
+	}
+	return &hold
+}
+
 // MapSummary maps one record list item.
 func MapSummary(item readmodelapplication.AcquisitionRecordSummary) generated.AcquisitionRecordSummary {
 	return generated.AcquisitionRecordSummary{
@@ -131,7 +147,7 @@ func MapSummary(item readmodelapplication.AcquisitionRecordSummary) generated.Ac
 		State: generated.AcquisitionRecordState(item.State), RecordDetail: generated.AcquisitionRecordSummaryRecordDetail(item.RecordDetail),
 		AcceptedAt: item.AcceptedAt, EndedAt: item.TerminalAt, SourceTitle: mapDisplay(item.SourceTitle),
 		Anime: mapAnime(item.Anime), Stage: mapStageName(item.Stage), StageState: mapStageState(item.StageState),
-		ReasonCode: item.ReasonCode, Counts: mapCounts(item.Counts), OneShotId: mapID(item.OneShotID),
+		ReasonCode: item.ReasonCode, ConfigHold: mapConfigHold(item.ConfigHold), Counts: mapCounts(item.Counts), OneShotId: mapID(item.OneShotID),
 		Release: mapRelease(item.Release), Episodes: mapEpisodes(item.Episodes), Transfer: mapTransfer(item.Transfer),
 		Seed: mapSeed(item.Seed), ReplacesExisting: mapReplaces(item.ReplacesExisting),
 	}
@@ -145,7 +161,7 @@ func MapDetail(item readmodelapplication.AcquisitionRecordDetail) generated.Acqu
 		State:           generated.AcquisitionRecordState(item.State), RecordDetail: generated.AcquisitionRecordDetailRecordDetail(item.RecordDetail),
 		AcceptedAt: item.AcceptedAt, EndedAt: item.TerminalAt, CompactedAt: item.CompactedAt,
 		AsOf: item.AsOf, SourceTitle: mapDisplay(item.SourceTitle), Anime: mapAnime(item.Anime),
-		Stage: mapStageName(item.Stage), StageState: mapStageState(item.StageState), ReasonCode: item.ReasonCode, OneShotId: mapID(item.OneShotID),
+		Stage: mapStageName(item.Stage), StageState: mapStageState(item.StageState), ReasonCode: item.ReasonCode, ConfigHold: mapConfigHold(item.ConfigHold), OneShotId: mapID(item.OneShotID),
 		Stages: make([]generated.AcquisitionStage, len(item.Stages)), FilesAvailable: item.FilesAvailable,
 		Version: item.Version, ImportRetryAvailable: item.ImportRetryAvailable,
 		Release: mapRelease(item.Release), Episodes: mapEpisodes(item.Episodes), Transfer: mapTransfer(item.Transfer),

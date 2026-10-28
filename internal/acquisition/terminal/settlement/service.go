@@ -287,7 +287,7 @@ func readUpstreamFailure(ctx context.Context, tx *sql.Tx, root string) (*domain.
 	}
 	var planCode sql.NullString
 	err = tx.QueryRowContext(ctx, `SELECT outcome_code FROM postprocessing_plans WHERE acquisition_id=$1 AND state='failed'
-  AND NOT EXISTS(SELECT 1 FROM postprocessing_plans s WHERE s.acquisition_id=$1 AND s.state IN ('queued','succeeded'))
+  AND NOT EXISTS(SELECT 1 FROM postprocessing_plans s WHERE s.acquisition_id=$1 AND s.state IN ('queued','waiting_config','succeeded'))
 ORDER BY created_at DESC, id LIMIT 1`, root).Scan(&planCode)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("read settlement plan %s: %w", root, err)
