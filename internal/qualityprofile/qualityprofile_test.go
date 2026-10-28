@@ -353,3 +353,18 @@ func TestUncensoredFlagItemPrefersOneDirection(t *testing.T) {
 		}
 	}
 }
+
+func TestDefaultRtSubLangRanksCombinedChineseJapanese(t *testing.T) {
+	profile := Default()
+	order := [][]string{{"JPSC", "JPTC"}, {"JPSC"}, {"SC", "TC"}, {"SC"}}
+	for i := 0; i+1 < len(order); i++ {
+		better := subject(map[string][]string{KeyRtSubLang: order[i]}, nil, nil)
+		worse := subject(map[string][]string{KeyRtSubLang: order[i+1]}, nil, nil)
+		if result := Compare(better, worse, profile); !result.Better {
+			t.Fatalf("%v must beat %v: %+v", order[i], order[i+1], result)
+		}
+		if result := Compare(worse, better, profile); result.Better {
+			t.Fatalf("%v must not beat %v: %+v", order[i+1], order[i], result)
+		}
+	}
+}
