@@ -366,6 +366,29 @@ func (s *Server) PatchRSSSourceOffset(w http.ResponseWriter, r *http.Request, ma
 	writeJSON(w, r.Context(), http.StatusOK, mapRSSSource(source))
 }
 
+// SetProviderGroupOffset sets a listed provider group's episode offset by group
+// identity; expected_version 0 creates the group's RSS source.
+func (s *Server) SetProviderGroupOffset(w http.ResponseWriter, r *http.Request, managedAnimeID generated.ManagedAnimeID, provider generated.SetProviderGroupOffsetParamsProvider, providerGroupRef string) {
+	ownership := s.ownershipService(w, r)
+	if ownership == nil {
+		return
+	}
+	var body generated.ProviderGroupOffsetPut
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	source, err := ownership.SetProviderGroupOffset(r.Context(), managedAnimeID, string(provider), providerGroupRef, ownershipapplication.ProviderGroupOffsetInput{
+		ExpectedVersion: body.ExpectedVersion,
+		EpisodeOffset:   body.EpisodeOffset,
+	})
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, r.Context(), http.StatusOK, mapRSSSource(source))
+}
+
 func mapRSSSourceOffsetPatch(value generated.RSSSourceOffsetPatch) ownershipapplication.RSSSourceOffsetPatchInput {
 	return ownershipapplication.RSSSourceOffsetPatchInput{
 		ExpectedVersion: int64(value.ExpectedVersion),

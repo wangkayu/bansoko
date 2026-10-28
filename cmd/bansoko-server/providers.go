@@ -65,6 +65,7 @@ import (
 	"bansoko/internal/runtime/readiness"
 	runtimeworker "bansoko/internal/runtime/worker"
 	selectionapplication "bansoko/internal/selection/application"
+	"bansoko/internal/subscription/groupsource"
 	templatecatalogapplication "bansoko/internal/templatecatalog/application"
 	"bansoko/internal/transport/httpapi"
 	"bansoko/internal/workitems"
@@ -165,8 +166,8 @@ func provideTemplateCatalogService(runtime *pluginRuntime) httpapi.TemplateCatal
 // owner-set ports are injected by the file-maintenance and automation graphs
 // after construction, so the graph keeps one instance shared by the HTTP
 // ownership slot, the readmodel owner readers, and the naming renderer.
-func provideOwnershipService(db *sql.DB, workStore *workitems.Store) (*ownershipapplication.Service, error) {
-	return ownershipapplication.NewService(db, ownershipapplication.Dependencies{WorkItems: workStore})
+func provideOwnershipService(db *sql.DB, workStore *workitems.Store, connections groupsource.ConnectionSource) (*ownershipapplication.Service, error) {
+	return ownershipapplication.NewService(db, ownershipapplication.Dependencies{WorkItems: workStore, Connections: connections})
 }
 
 // provideDraftService constructs the candidate-draft service, the owner of
@@ -175,8 +176,8 @@ func provideOwnershipService(db *sql.DB, workStore *workitems.Store) (*ownership
 // graph and its activity journal by the application graph, so the graph keeps
 // one instance shared by the HTTP draft slot, the MCP draft pipeline, the
 // readmodel revision reader and the one-shot revision reader.
-func provideDraftService(db *sql.DB, workStore *workitems.Store) (*draftapplication.Service, error) {
-	return draftapplication.NewService(db, draftapplication.Dependencies{WorkItems: workStore})
+func provideDraftService(db *sql.DB, workStore *workitems.Store, connections groupsource.ConnectionSource) (*draftapplication.Service, error) {
+	return draftapplication.NewService(db, draftapplication.Dependencies{WorkItems: workStore, Connections: connections})
 }
 
 // provideReadmodelService constructs the readmodel service with explicit

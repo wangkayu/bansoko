@@ -60,6 +60,8 @@ type Source struct {
 	AnimeTitle      string
 	RSSURL          string
 	SnapshotVersion string
+	// EpisodeOffset seeds a row this call inserts; an existing row keeps its own.
+	EpisodeOffset int
 }
 
 // UpsertTx upserts the provider_group source and ensures its runtime row. A
@@ -83,9 +85,9 @@ func UpsertTx(ctx context.Context, tx *sql.Tx, src Source) (sourceID string, ins
 	upsertErr := tx.QueryRowContext(ctx, `
 INSERT INTO rss_sources(
     id, subscription_id, source_kind, locator, locator_display, group_name, title,
-    provider, provider_entry_ref, provider_group_ref, discovery_snapshot_version
+    provider, provider_entry_ref, provider_group_ref, discovery_snapshot_version, episode_offset
 )
-VALUES ($1, $2, 'provider_group', $3, $4, $5, $6, $7, $8, $9, $10)
+VALUES ($1, $2, 'provider_group', $3, $4, $5, $6, $7, $8, $9, $10, $11)
 ON CONFLICT (subscription_id, provider, provider_entry_ref, provider_group_ref)
     WHERE source_kind = 'provider_group' DO UPDATE SET
     locator = EXCLUDED.locator,
@@ -112,7 +114,7 @@ WHERE
     )
 RETURNING id, (xmax = 0)`,
 		sourceID, src.SubscriptionID, src.RSSURL, src.RSSURL, src.DisplayName, src.AnimeTitle,
-		src.Provider, src.CatalogEntryRef, groupRef.ExternalID, src.SnapshotVersion).Scan(&sourceID, &inserted)
+		src.Provider, src.CatalogEntryRef, groupRef.ExternalID, src.SnapshotVersion, src.EpisodeOffset).Scan(&sourceID, &inserted)
 	if upsertErr != nil && !errors.Is(upsertErr, sql.ErrNoRows) {
 		return "", false, fmt.Errorf("upsert rss source: %w", upsertErr)
 	}

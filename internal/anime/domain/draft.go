@@ -112,6 +112,24 @@ func ValidateDraft(draft AnimeDraft) []FieldViolation {
 	if (draft.Origin == SubscriptionOriginAnibt || draft.Origin == SubscriptionOriginMikan) && len(draft.RssSources) != 0 {
 		violations = append(violations, FieldViolation{Field: "rss_sources", Code: "DRAFT_INVALID", Message: "provider subscriptions carry no RSS sources in the draft; subgroups selection supplies the provider_group sources after discovery"})
 	}
+	if len(draft.ProviderGroupOffsets) > 0 && draft.Origin != SubscriptionOriginAnibt && draft.Origin != SubscriptionOriginMikan {
+		violations = append(violations, FieldViolation{Field: "provider_group_offsets", Code: "DRAFT_INVALID", Message: "provider_group_offsets are only valid for provider subscriptions"})
+	}
+	seenOffsetGroups := make(map[string]struct{}, len(draft.ProviderGroupOffsets))
+	for index, entry := range draft.ProviderGroupOffsets {
+		field := fmt.Sprintf("provider_group_offsets[%d]", index)
+		ref := strings.TrimSpace(entry.ProviderGroupRef)
+		if ref == "" || ref != entry.ProviderGroupRef || len(ref) > 256 {
+			violations = append(violations, FieldViolation{Field: field + ".provider_group_ref", Code: "DRAFT_INVALID", Message: "provider_group_ref must be non-empty, trimmed and at most 256 characters"})
+		}
+		if _, dup := seenOffsetGroups[entry.ProviderGroupRef]; dup {
+			violations = append(violations, FieldViolation{Field: field + ".provider_group_ref", Code: "DRAFT_INVALID", Message: "provider_group_ref must be unique"})
+		}
+		seenOffsetGroups[entry.ProviderGroupRef] = struct{}{}
+		if !EpisodeOffsetInRange(entry.EpisodeOffset) {
+			violations = append(violations, FieldViolation{Field: field + ".episode_offset", Code: "DRAFT_INVALID", Message: EpisodeOffsetRangeMessage()})
+		}
+	}
 	for index, source := range draft.RssSources {
 		field := fmt.Sprintf("rss_sources[%d]", index)
 		if source.SourceKind != SourceKindCustomRss && source.SourceKind != SourceKindProviderGroup {
