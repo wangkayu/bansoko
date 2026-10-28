@@ -2787,6 +2787,8 @@ export interface components {
             revision?: components["schemas"]["Version"] | null;
             /** @description The one episode offset of this one-shot. It is written to the one-shot's placeholder RSS link and frozen into the input snapshot and the idempotency request identity; it is never read from an existing subscription, link or the submitted draft. Omitted means 0. Out of range is a 422 OFFSET_OUT_OF_RANGE with zero writes. */
             episode_offset?: number;
+            /** @description Optional manual file selection: the source paths (as listed in the item's manifest_files) of the files to import, at any depth. Omitted means the default files (first-level videos and subtitles the file rules keep). The selection replaces only the first-level gate: the chosen files are named, bound and placed exactly like first-level ones, under the same file rules, episode recognition, unknown-file route and collision policy, and a subtitle binds to a selected video of its own folder. The download itself is unchanged (the whole torrent; no file priorities): an unselected file stays in the download location untouched. Every path must be a file of this seed's torrent, of the video or subtitle kind; a selected video must pass the file rules; at least one video is selected; and every selected subtitle must follow a selected video of its folder. Otherwise 422 FILE_SELECTION_INVALID with zero writes. The selection is part of the request identity and freezes with the acceptance. */
+            file_selection?: string[];
         };
         /** @description One seed of one exact persisted snapshot to expand. It carries identities only, exactly like SnapshotSeedDownloadInput: the stable seed key is the path segment and the locator, title and published identity are read server-side from the snapshot, so expansion can only ever fetch the locator the snapshot already published for that seed. A keyword search seed names its derived search-scope/search-query refs the same way, and the server proves the snapshot's own kind before expanding. */
         SnapshotSeedExpandInput: {
@@ -2877,10 +2879,42 @@ export interface components {
              * @default 100
              */
             limit_per_group: number;
-            /** @description Preview-only episode offset. Shifts the file-level parse and render of a group with no offset of its own, so a non-zero offset previews exactly what a one-shot request with that offset would render. A group's own offset wins: a persisted owner link keeps its stored offset and a draft group with a matching draft source keeps that source's episode_offset, so the preview never rewrites a stored offset or invents a second rule. Omitted or null means 0; a pure read that never changes the episode_offset a later one-shot request carries. With one_shot it is the offset of every group. */
+            /** @description Preview-only episode offset (null/omitted = 0) for a group with no offset of its own; a stored link or matching draft source offset wins and is never rewritten. With one_shot it is every group's offset. */
             episode_offset?: number | null;
-            /** @description Omitted or false: the ordinary read. current_input only (400 INPUT_SOURCE_INVALID with any other mode). Reads the draft as a one-shot browse: a one-shot names its seed directly and is not bound by group selection, so every configured and observed group is listed with its supplied snapshot and seeds regardless of the draft's selection, and its one_shot download action never answers group_not_selected. Every group previews with episode_offset (the one-shot request's own offset), never a draft source's or a link's. A custom draft binds the exact persisted custom snapshot its single feed identity names instead of a saved-revision scope, so an unsaved one-shot configuration previews the seed it will download. An origin=one_shot draft binds the exact persisted search snapshot its single feed identity names; a missing, stale or expired identity fails 409 FEED_SNAPSHOT_REFRESH_REQUIRED, never re-searched. A pure read. */
+            /** @description current_input only (else 400 INPUT_SOURCE_INVALID). A one-shot browse: every configured and observed group lists its supplied snapshot and seeds regardless of group selection (download action never group_not_selected), previews with episode_offset, and every item lists manifest_files. A custom draft binds the custom snapshot its single feed identity names; an origin=one_shot draft binds the named search snapshot (missing/stale/expired: 409 FEED_SNAPSHOT_REFRESH_REQUIRED, never re-searched). A pure read. */
             one_shot?: boolean;
+            /** @description one_shot only. Per-seed preview of a download's file_selection; unlisted seeds preview their default files. */
+            file_selections?: components["schemas"]["RSSListFileSelection"][];
+        };
+        RSSListFileSelection: {
+            snapshot_id: components["schemas"]["ID"];
+            stable_seed_key: string;
+            source_paths: string[];
+        };
+        /** @description One file of a seed's exact torrent manifest, at any depth, for the one-shot file picker. It is the server's decision under the read's draft (file rules, parser, episode offset): which files may be chosen, which the default list holds, each video's own filename episode recognition, and the video each subtitle follows. */
+        RSSListManifestFile: {
+            source_path: string;
+            /** Format: int64 */
+            size_bytes: number;
+            /** @enum {string} */
+            media_kind: "video" | "subtitle" | "other";
+            /** @description True for a video the file rules keep and for every subtitle; a file of another kind or a video the rules exclude cannot be chosen. */
+            selectable: boolean;
+            /** @description Why the file cannot be chosen: ignored_kind (neither video nor subtitle) or the file_* rule reason of an excluded video. Absent for a selectable file. */
+            reason_code?: string;
+            /** @description Whether the default file list (no manual selection) holds the file: a first-level video the rules keep, or a first-level subtitle that follows such a video. */
+            default_selected: boolean;
+            /**
+             * @description A selectable video's own filename recognition under the read's parser and episode offset, decided by the same batch plan an acceptance freezes: episode (episodes holds the numbers), movie (the main video of a movie binding), or unrecognized (an unknown file, handled by the unclassified route). Absent for a subtitle and an unselectable file. For a movie binding it is computed within the read's selection for that seed (the default files without one) and is absent for a video outside it, so only one video is the main video.
+             * @enum {string}
+             */
+            recognition?: "episode" | "movie" | "unrecognized";
+            /** @description The season of an episode recognition. */
+            season?: number;
+            /** @description The episode numbers of an episode recognition, ascending. */
+            episodes?: number[];
+            /** @description The selectable video of the same folder this subtitle follows by the strict filename prefix rule (longest match, then path order), considering every selectable video of that folder. Absent for a video and for a subtitle that follows no video. */
+            bound_video_source_path?: string;
         };
         /** @description The exact version set the whole view was produced by. A consumer can tell which derivation produced any file decision from this one block. */
         RSSListViewVersions: {
@@ -2986,7 +3020,7 @@ export interface components {
             reason_detail?: string | null;
             parsed_facts?: components["schemas"]["ParsedReleaseFacts"] | null;
         };
-        /** @description One projected file of a seed's exact torrent manifest with its own filter verdict and rendered target. An excluded or unrenderable file stays in the list so the reader can see what was filtered and why. A file that failed one of the two hard gates (below the torrent's first level, or neither video nor subtitle) is not a candidate and takes no row at all: the plan and the download cleanup still classify it, but it is never published as an RSS file row. Size and media kind are read from that exact manifest: a file the release never parsed keeps them absent, so an unknown file is never published as a 0-byte file of kind "other", and a seed whose structure was never acquired lists no file row at all. */
+        /** @description One projected file of a seed's exact torrent manifest with its own filter verdict and rendered target. An excluded or unrenderable file stays in the list so the reader can see what was filtered and why. A file that failed one of the two hard gates (below the torrent's first level, or neither video nor subtitle) is not a candidate and takes no row at all: the plan and the download cleanup still classify it, but it is never published as an RSS file row. Under a one-shot read's manual file selection the selection replaces the first-level gate: the selected files take rows at any depth and every unselected video or subtitle (ignored_unselected) takes none. Size and media kind are read from that exact manifest: a file the release never parsed keeps them absent, so an unknown file is never published as a 0-byte file of kind "other", and a seed whose structure was never acquired lists no file row at all. */
         RSSListFile: {
             /** @description Stable identity of this file inside its payload. It is derived from the payload digest and the canonical source path, so it survives a re-parse and cannot be confused with a same-named file elsewhere. */
             file_ref: string;
@@ -3063,6 +3097,8 @@ export interface components {
             files: components["schemas"]["RSSListFile"][];
             download_action: components["schemas"]["RSSListDownloadAction"];
             library_overlap: components["schemas"]["LibraryOverlap"];
+            /** @description one_shot reads only: every file of the seed's exact torrent manifest (any depth, any kind) for the one-shot file picker, in source path order. Absent for other reads and for a seed whose torrent was not expanded. */
+            manifest_files?: components["schemas"]["RSSListManifestFile"][];
         };
         RSSListGroup: {
             scope: components["schemas"]["RSSListGroupScope"];
@@ -4073,7 +4109,7 @@ export interface components {
          * @description Per-file conclusion of the batch plan the release was accepted with. Absent when the release has no accepted plan.
          * @enum {string}
          */
-        ReleaseFileOutcome: "planned" | "ignored_nested" | "ignored_kind" | "excluded_by_rule" | "episode_unrecognized" | "covered_existing" | "covered_in_flight" | "target_collision" | "subtitle_follows" | "subtitle_unbound";
+        ReleaseFileOutcome: "planned" | "ignored_nested" | "ignored_kind" | "ignored_unselected" | "excluded_by_rule" | "episode_unrecognized" | "covered_existing" | "covered_in_flight" | "target_collision" | "subtitle_follows" | "subtitle_unbound";
         /** @description Exact parser/profile evidence used by admission. It is evidence, not a live policy lookup: retries and downstream owners must use this frozen selection instead of current instance parser configuration. */
         ParserProvenance: {
             kind: string;

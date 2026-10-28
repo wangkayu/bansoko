@@ -4,6 +4,7 @@ import (
 	target "bansoko/internal/acquisition/target"
 	anime "bansoko/internal/anime/domain"
 	draft "bansoko/internal/anime/draft/application"
+	"bansoko/internal/filekinds"
 	"bansoko/internal/persistence/txscope"
 	"bansoko/internal/workitems"
 	"context"
@@ -21,6 +22,10 @@ type OneShotTask struct {
 	RequestHash string
 	OneShot     workitems.OneShotRef
 	Evidence    target.ParserEvidence
+	// FileSelection is the one-shot's explicit manual file selection (nil =
+	// the product default); it replaces the first-level gate of the required
+	// file check exactly like the frozen batch plan.
+	FileSelection *filekinds.Selection
 }
 type OneShotAcceptor struct{ entry *entryAcceptor }
 
@@ -57,6 +62,7 @@ func (a *OneShotAcceptor) Prepare(ctx context.Context, scope txscope.Tx, in OneS
 	}
 	intent := acquisitionIntent{entryMode: "one_shot_seed", capture: req, submit: &submitProjection{frozenInput: in.FrozenInput, frozenPolicy: in.FrozenPolicy, effectKey: "qb:" + in.ReleaseID, correlation: in.CorrelationID, causationType: "release", causationID: in.ReleaseID, trigger: "one_shot_acquire", oneShot: &in.OneShot}, evidence: &in.Evidence, connection: in.QbConnectionID, production: true}
 	intent.replacements = in.Replacements
+	intent.fileSelection = in.FileSelection
 	p, err := a.entry.service.PrepareNativeTx(ctx, scope, access, request, intent)
 	if err != nil {
 		return PreparedHandle{}, err

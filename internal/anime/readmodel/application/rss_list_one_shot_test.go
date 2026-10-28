@@ -27,7 +27,7 @@ func TestOneShotBrowseListsUnselectedGroupSeeds(t *testing.T) {
 	seedPreviewBusiness(t, service, &draft)
 	feed := []PreviewFeedSnapshotRef{previewTestRef(animedomain.ProviderKindAnibt, "12"), previewTestRef(animedomain.ProviderKindAnibt, "13")}
 
-	ordinary, err := service.composeRSSListViewFor(context.Background(), "current_input", "draft:x", draft, effective, previewTestSelection(), feed, nil, nil, 0, false)
+	ordinary, err := service.composeRSSListViewFor(context.Background(), "current_input", "draft:x", draft, effective, previewTestSelection(), feed, nil, nil, 0, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestOneShotBrowseListsUnselectedGroupSeeds(t *testing.T) {
 		t.Fatalf("ordinary read listed an unselected group's seeds: %+v", group)
 	}
 
-	browse, err := service.composeRSSListViewFor(context.Background(), "current_input", "draft:x", draft, oneShotBrowseSelection(draft, effective), previewTestSelection(), feed, nil, nil, 0, true)
+	browse, err := service.composeRSSListViewFor(context.Background(), "current_input", "draft:x", draft, oneShotBrowseSelection(draft, effective), previewTestSelection(), feed, nil, nil, 0, true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

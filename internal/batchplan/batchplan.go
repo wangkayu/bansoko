@@ -33,9 +33,12 @@ const Version = "batch-plan-v1"
 type Outcome string
 
 const (
-	OutcomePlanned             Outcome = "planned"
-	OutcomeIgnoredNested       Outcome = "ignored_nested"
-	OutcomeIgnoredKind         Outcome = "ignored_kind"
+	OutcomePlanned       Outcome = "planned"
+	OutcomeIgnoredNested Outcome = "ignored_nested"
+	OutcomeIgnoredKind   Outcome = "ignored_kind"
+	// OutcomeIgnoredUnselected is a file outside the plan's explicit manual
+	// selection (one-shot only): never parsed, planned or placed.
+	OutcomeIgnoredUnselected   Outcome = "ignored_unselected"
 	OutcomeExcludedByRule      Outcome = "excluded_by_rule"
 	OutcomeEpisodeUnrecognized Outcome = "episode_unrecognized"
 	OutcomeCoveredExisting     Outcome = "covered_existing"
@@ -199,6 +202,18 @@ type File struct {
 	BoundVideo string  `json:"bound_video,omitempty"`
 	Outcome    Outcome `json:"outcome"`
 	ReasonCode string  `json:"reason_code,omitempty"`
+	// TargetVersion is the version number admission gave a planned video
+	// (SameEpisodeTargets under a manual selection and the versioned policy):
+	// its target is VersionedTargetPath(rendered, TargetVersion). Absent (0)
+	// means the rendered target itself.
+	TargetVersion int `json:"target_version,omitempty"`
+}
+
+// MarkTargetVersion records the version number of a planned video's target.
+func (p *Plan) MarkTargetVersion(sourcePath string, version int) {
+	if index := p.indexOf(sourcePath); index >= 0 && version > 1 {
+		p.Files[index].TargetVersion = version
+	}
 }
 
 // Keys are every coverage key the file occupies: all members of a
@@ -229,7 +244,13 @@ type Plan struct {
 	// frozen with it. A plan without them seeds without a limit.
 	DownloadCompletionSeedLimits *SeedLimits `json:"download_completion_seed_limits,omitempty"`
 	MediaKind                    string      `json:"media_kind"`
-	Files                        []File      `json:"files"`
+	// SelectedPaths is the explicit manual file selection frozen at
+	// acceptance (one-shot only), in ascending manifest path order. With it the
+	// first-level gate is replaced: exactly the selected videos and subtitles,
+	// at any depth, are candidates. Absent is the product default (first-level
+	// videos and subtitles); a subscription plan never carries it.
+	SelectedPaths []string `json:"selected_paths,omitempty"`
+	Files         []File   `json:"files"`
 	// CoverageKeys are the deduplicated, sorted coverage keys of the planned
 	// videos: the placeable coverage of this Release.
 	CoverageKeys []string `json:"coverage_keys"`
@@ -273,14 +294,28 @@ type Input struct {
 	DownloadCompletionSeedLimits *SeedLimits
 	Movie                        bool
 	MovieIdentity                episodeidentity.EpisodeIdentity
-	Files                        []InputFile
-	RuleExclusion                func(sourcePath string) string
-	Identity                     func(sourcePath string) (episodeidentity.EpisodeIdentity, error)
+	// Selection is the explicit manual file selection (nil = default).
+	Selection     *filekinds.Selection
+	Files         []InputFile
+	RuleExclusion func(sourcePath string) string
+	Identity      func(sourcePath string) (episodeidentity.EpisodeIdentity, error)
 }
 
 // NormalizePath is the canonical manifest path form the plan is keyed by.
-func NormalizePath(value string) string {
-	return strings.Trim(strings.ReplaceAll(strings.TrimSpace(value), `\`, "/"), "/")
+func NormalizePath(value string) string { return filekinds.NormalizePath(value) }
+
+// Selection is the frozen manual file selection (nil = default).
+func (p *Plan) Selection() *filekinds.Selection {
+	if p == nil || p.SelectedPaths == nil {
+		return nil
+	}
+	return filekinds.NewSelection(p.SelectedPaths)
+}
+
+// ignored reports the product gates' read-only outcomes: such a file is not a
+// candidate, so it never binds or follows anything.
+func ignored(outcome Outcome) bool {
+	return outcome == OutcomeIgnoredNested || outcome == OutcomeIgnoredKind || outcome == OutcomeIgnoredUnselected
 }
 
 func baseName(value string) string {
@@ -309,6 +344,7 @@ func Classify(in Input) (Plan, error) {
 	if in.Movie {
 		plan.MediaKind = MediaKindFilm
 	}
+	plan.SelectedPaths = in.Selection.Paths()
 	ordered := make([]InputFile, 0, len(in.Files))
 	seen := map[string]bool{}
 	for _, file := range in.Files {
@@ -322,9 +358,9 @@ func Classify(in Input) (Plan, error) {
 	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].SourcePath < ordered[j].SourcePath })
 	movieCandidates := []organizingpolicy.Video{}
 	for _, file := range ordered {
-		kind, ignored := filekinds.Eligibility(in.FileKindsVersion, file.SourcePath)
+		kind, ignored := filekinds.EligibilityIn(in.FileKindsVersion, file.SourcePath, in.Selection)
 		entry := File{SourcePath: file.SourcePath, Kind: kind, Level: LevelFirst}
-		if ignored == filekinds.ReasonIgnoredNested {
+		if !filekinds.FirstLevel(file.SourcePath) {
 			entry.Level = LevelNested
 		}
 		switch {
@@ -332,6 +368,8 @@ func Classify(in Input) (Plan, error) {
 			entry.Outcome, entry.ReasonCode = OutcomeIgnoredNested, filekinds.ReasonIgnoredNested
 		case ignored == filekinds.ReasonIgnoredKind:
 			entry.Outcome, entry.ReasonCode = OutcomeIgnoredKind, filekinds.ReasonIgnoredKind
+		case ignored == filekinds.ReasonIgnoredUnselected:
+			entry.Outcome, entry.ReasonCode = OutcomeIgnoredUnselected, filekinds.ReasonIgnoredUnselected
 		case kind == filekinds.KindVideo:
 			entry.Rule = RuleAllowed
 			if in.RuleExclusion != nil {
@@ -389,13 +427,15 @@ func Classify(in Input) (Plan, error) {
 			file.ReasonCode = strings.TrimSpace(*identity.FailureCode)
 		}
 	}
-	// Subtitles bind by strict prefix over every first-level video in path
-	// order (rule-excluded ones included, so a subtitle of an excluded video
-	// is excluded with it rather than reported unbound).
+	// Subtitles bind by strict prefix over every candidate video of their own
+	// directory in path order (rule-excluded ones included, so a subtitle of
+	// an excluded video is excluded with it rather than reported unbound).
+	// The default candidates are the first-level files, which share the
+	// torrent root.
 	videos := []string{}
 	videoStems := []string{}
 	for _, file := range plan.Files {
-		if file.Kind == filekinds.KindVideo && file.Level == LevelFirst {
+		if file.Kind == filekinds.KindVideo && !ignored(file.Outcome) {
 			videos = append(videos, file.SourcePath)
 			videoStems = append(videoStems, stem(file.SourcePath))
 		}
@@ -405,7 +445,7 @@ func Classify(in Input) (Plan, error) {
 		if file.Kind != filekinds.KindSubtitle || file.Outcome != "" {
 			continue
 		}
-		if bound := filekinds.BindSubtitle(baseName(file.SourcePath), videoStems); bound >= 0 {
+		if bound := filekinds.BindSubtitleInDirectory(file.SourcePath, videos, videoStems); bound >= 0 {
 			file.BoundVideo = videos[bound]
 		}
 	}
@@ -584,7 +624,7 @@ func (p *Plan) Finalize() {
 	}
 	for index := range p.Files {
 		file := &p.Files[index]
-		if file.Kind != filekinds.KindSubtitle || file.Level != LevelFirst || file.Outcome == OutcomeIgnoredKind {
+		if file.Kind != filekinds.KindSubtitle || ignored(file.Outcome) {
 			continue
 		}
 		switch video, ok := byPath[file.BoundVideo]; {

@@ -330,6 +330,9 @@ type prepareContext struct {
 	// inspected identity disagrees with it.
 	plan  *batchplan.Plan
 	drift map[string]bool
+	// targetVersions holds the version number the frozen plan gives a video
+	// (file ref -> number, recordTargetVersion); a re-render applies it.
+	targetVersions map[string]int
 }
 
 // mediaFactsErr is the prepare-time integrity check of one video: it must

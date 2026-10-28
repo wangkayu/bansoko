@@ -22,6 +22,9 @@ type BatchPlanInput struct {
 	Files             []acquisitiondomain.ReleaseFile
 	FileFilter        animedomain.FileFilterRules
 	UnclassifiedRoute string
+	// Selection is the one-shot's explicit manual file selection (nil = the
+	// product default). The plan freezes it as selected_paths.
+	Selection *filekinds.Selection
 	// DownloadCompletion is the resolved download-completion action the plan
 	// freezes (seed, pause, remove, remove_with_data).
 	DownloadCompletion string
@@ -75,9 +78,10 @@ func BuildBatchPlan(ctx context.Context, in BatchPlanInput) (batchplan.Plan, err
 		DownloadCompletionSeedLimits: in.DownloadCompletionSeedLimits,
 		Movie:                        evidence.mediaKind() == "movie",
 		MovieIdentity:                evidence.Identity,
+		Selection:                    in.Selection,
 		Files:                        files,
 		RuleExclusion: func(sourcePath string) string {
-			return animedomain.ManifestFileExclusion(filekinds.Version, in.FileFilter, sourcePath)
+			return animedomain.ManifestFileExclusionIn(filekinds.Version, in.FileFilter, sourcePath, in.Selection)
 		},
 		Identity: func(sourcePath string) (episodeidentity.EpisodeIdentity, error) {
 			identity, _, err := ResolveFileEpisode(ctx, evidence, filenames[sourcePath])

@@ -12,7 +12,7 @@ func TestOneShotFilterGateIndependentOfTargetConfiguration(t *testing.T) {
 	for _, c := range []struct{ must, exclude, code string }{{"", "01", "FILE_SELECTION_EMPTY"}, {"", "Show", ""}, {"^01", "", ""}, {"[", "", "FILTER_INVALID"}} {
 		effective := animedomain.EffectiveConfig{}
 		effective.Rules.FileFilter = animedomain.RegexFilter{MustContain: c.must, NotIn: c.exclude}
-		if got := typedErrorCode(validateOneShotFilterGate(item, effective)); got != c.code {
+		if got := typedErrorCode(validateOneShotFilterGate(item, effective, nil)); got != c.code {
 			t.Fatalf("got %s want %s", got, c.code)
 		}
 	}

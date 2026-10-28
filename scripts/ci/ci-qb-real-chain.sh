@@ -210,6 +210,7 @@ required_tests=(
   TestMovieBindingRealChainPostgres
   TestOneShotMovieQBRealChain
   TestOneShotQBRealChain
+  TestOneShotManualFileSelectionRealChain
   TestOneShotQBConcurrentSameKeyAdmitsOnce
   TestOneShotQBSameTorrentSecondSubmissionOccupied
   TestReplacementRealChainActiveAndStopped

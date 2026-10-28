@@ -8,6 +8,7 @@ import {
   toUserMessage,
   type AnimeDraft,
   type RSSListFile,
+  type RSSListFileSelection,
   type RulesSections,
   type SnapshotSeedDownloadInput,
 } from "../../lib/api/client";
@@ -42,6 +43,8 @@ import { UnclassifiedRouteField } from "../anime-config/UnclassifiedRouteField";
 import { OneShotParserSelect } from "./OneShotParserSelect";
 import { useOneShotParserOptions } from "./parserOptions";
 import { useOneShotSeedSource, type SearchSeedBrowse } from "./useOneShotSeeds";
+import { FilePicker } from "./FilePicker";
+import { effectiveFileSelection, sanitizeFileSelection, selectedVideoCount, toggleDirectorySelection, toggleFileSelection } from "./fileSelection";
 
 // The one-shot download: a centered dialog opened by a card's "browse seeds". Two steps:
 //   1. Catalog: subgroups listed first, and entering a group fetches its seed list and renders all
@@ -160,17 +163,86 @@ function FileRow({ file, subtitles, onJump }: { file: RSSListFile; subtitles: RS
   );
 }
 
+type UnclassifiedRoute = NonNullable<AnimeDraft["business"]>["unclassified_route"];
+
+/** The preview read's per-seed manual selections: only seeds whose choice differs from the defaults. */
+function fileSelectionsFor(rows: readonly OneShotSeedRow[], choices: ReadonlyMap<string, string[]>): RSSListFileSelection[] {
+  return rows.flatMap((row) => {
+    const choice = sanitizeFileSelection(row.item.manifest_files ?? [], choices.get(row.key));
+    return choice ? [{ snapshot_id: row.snapshotID, stable_seed_key: row.stableSeedKey, source_paths: choice }] : [];
+  });
+}
+
+/** The collapsed "choose files" control of one seed: a toggle with the checked count, then the tree. */
+function SeedFiles({
+  row,
+  choice,
+  route,
+  onChange,
+}: {
+  row: OneShotSeedRow;
+  choice: string[] | undefined;
+  route: UnclassifiedRoute | undefined;
+  onChange: (next: string[] | undefined) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const pickerId = useId();
+  const files = row.item.manifest_files ?? [];
+  if (files.length === 0) return null;
+  const selection = effectiveFileSelection(files, choice);
+  const selectable = files.filter((file) => file.selectable).length;
+  return (
+    <div className="tw:grid tw:gap-1">
+      <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={pickerId}
+          onClick={() => setOpen((value) => !value)}
+          className="text-caption tw:inline-flex tw:cursor-pointer tw:items-center tw:gap-1 tw:rounded-sm tw:border-0 tw:bg-transparent tw:p-0 tw:text-foreground tw:hover:text-primary tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-ring"
+        >
+          <ChevronRight
+            aria-hidden="true"
+            className={cn("icon-sm tw:flex-none tw:transition-transform tw:duration-200 tw:ease-out tw:motion-reduce:transition-none", open && "tw:rotate-90")}
+          />
+          {t("oneshot.filePickerToggle", { n: selection.size, total: selectable })}
+        </button>
+        {choice && <StatePill tone="warning">{t("oneshot.filePickerCustom")}</StatePill>}
+        {choice && (
+          <button type="button" className={cn(inlineLink, "text-caption tw:text-muted-foreground")} onClick={() => onChange(undefined)}>
+            {t("oneshot.filePickerReset")}
+          </button>
+        )}
+      </div>
+      <Reveal open={open}>
+        <div id={pickerId} className="tw:grid tw:gap-1.5 tw:pt-1">
+          <p className="text-caption tw:m-0 tw:text-muted-foreground">{t("oneshot.filePickerHint")}</p>
+          <FilePicker files={files} selection={selection} route={route} onToggle={(path) => onChange(toggleFileSelection(files, choice, path))}
+            onToggleDirectory={(path) => onChange(toggleDirectorySelection(files, choice, path))}
+          />
+        </div>
+      </Reveal>
+    </div>
+  );
+}
+
 /** One seed's render: a one-line verdict, per-file targets, and the submission result. */
 function SeedRender({
   row,
   expandError,
   outcome,
   onJump,
+  fileChoice,
+  route,
+  onFileChoiceChange,
 }: {
   row: OneShotSeedRow;
   expandError?: string;
   outcome?: SeedOutcome;
   onJump: (field: FactField) => void;
+  fileChoice: string[] | undefined;
+  route: UnclassifiedRoute | undefined;
+  onFileChoiceChange: (next: string[] | undefined) => void;
 }) {
   const files = row.item.files;
   const groups = groupBoundSubtitles(files, (file) => file.source_path, (file) => file.bound_video_source_path);
@@ -195,9 +267,13 @@ function SeedRender({
           <span className="tw:block tw:h-3 tw:w-1/2 tw:rounded tw:bg-muted tw:motion-safe:animate-pulse" />
         </span>
       ) : files.length === 0 ? (
-        <p className="text-muted text-caption tw:m-0">{t("oneshot.previewEmpty")}</p>
+        <>
+          <SeedFiles row={row} choice={fileChoice} route={route} onChange={onFileChoiceChange} />
+          <p className="text-muted text-caption tw:m-0">{t("oneshot.previewEmpty")}</p>
+        </>
       ) : (
         <>
+          <SeedFiles row={row} choice={fileChoice} route={route} onChange={onFileChoiceChange} />
           {/* Episodes, the per-video-unit file count and library overlap are peer meta facts: one line joined with " · ". */}
           <p className="text-caption tw:m-0 tw:text-muted-foreground">
             {episode && <span>{episode} · </span>}
@@ -266,6 +342,9 @@ export function OneShotDialog({
   const [submitting, setSubmitting] = useState(false);
   const [outcomes, setOutcomes] = useState<ReadonlyMap<string, SeedOutcome>>(new Map());
   const [expandErrors, setExpandErrors] = useState<ReadonlyMap<string, string>>(new Map());
+  // Per-seed manual file choices (row key -> chosen paths). A seed without an entry downloads its
+  //   default files and its request carries no file_selection.
+  const [fileChoices, setFileChoices] = useState<ReadonlyMap<string, string[]>>(new Map());
   // One idempotency key per seed: a retry of the same request (e.g. after a network failure) reuses
 //   the same key and the server dedups by it; a changed request (config edited) takes a new key, or
 //   the server rejects same-key different-body.
@@ -357,8 +436,8 @@ export function OneShotDialog({
     source.setDraft(withDraftParserKind(draft, kind, baselineParser.current));
   }
   // The preview input is a read-only ref: selection changes must not change the effect identity, yet a re-read must use the latest selection.
-  const previewInput = useRef({ draft, offset: effectiveOffset, rows: selectedRows });
-  previewInput.current = { draft, offset: effectiveOffset, rows: selectedRows };
+  const previewInput = useRef({ draft, offset: effectiveOffset, rows: selectedRows, choices: fileChoices });
+  previewInput.current = { draft, offset: effectiveOffset, rows: selectedRows, choices: fileChoices };
 
   /** Expands a seed (fetching bytes only), then re-reads the view under the current draft and offset on success. */
   async function expandRow(row: OneShotSeedRow): Promise<string | undefined> {
@@ -372,8 +451,8 @@ export function OneShotDialog({
         return next;
       });
       if (!outcome.error) {
-        const { draft: current, offset } = previewInput.current;
-        await sourceRef.current.preview(current, offset);
+        const { draft: current, offset, rows, choices } = previewInput.current;
+        await sourceRef.current.preview(current, offset, fileSelectionsFor(rows, choices));
       }
       return outcome.error;
     } finally {
@@ -396,7 +475,7 @@ export function OneShotDialog({
     const seq = ++previewSeq.current;
     const timer = window.setTimeout(() => {
       void (async () => {
-        const { draft: current, offset, rows } = previewInput.current;
+        const { draft: current, offset, rows, choices } = previewInput.current;
         const errors = new Map<string, string>();
         for (const row of rows) {
           if (!needsExpand(row)) continue;
@@ -405,11 +484,11 @@ export function OneShotDialog({
         }
         if (seq !== previewSeq.current) return;
         setExpandErrors(errors);
-        await sourceRef.current.preview(current, offset);
+        await sourceRef.current.preview(current, offset, fileSelectionsFor(rows, choices));
       })();
     }, PREVIEW_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [open, step, offsetValid, draft, offsetText, selected, source.kind]);
+  }, [open, step, offsetValid, draft, offsetText, selected, fileChoices, source.kind]);
 
   function openGroup(key: string) {
     setDirection("forward");
@@ -459,6 +538,7 @@ export function OneShotDialog({
   /** Resets the naming / file-filter / parser sections and the episode offset to their task-start values. */
   function restoreDefaults() {
     setOffsetText(String(source.initialOffset));
+    setFileChoices(new Map());
     const base = baseline.current;
     if (!base || !draft) return;
     const sections: RulesSections = {
@@ -499,7 +579,26 @@ export function OneShotDialog({
         ? t("oneshot.expanding")
         : pendingSubmit.some((row) => row.feed.snapshot_version == null || !row.feed.content_hash)
           ? t("oneshot.previewStale")
-          : undefined;
+          : pendingSubmit.some((row) => {
+                const choice = fileChoiceOf(row);
+                return choice !== undefined && selectedVideoCount(row.item.manifest_files ?? [], new Set(choice)) === 0;
+              })
+            ? t("oneshot.filesNoVideo")
+            : undefined;
+
+  /** A seed's manual file choice re-checked against its newest manifest rows; undefined = the default files. */
+  function fileChoiceOf(row: OneShotSeedRow): string[] | undefined {
+    return sanitizeFileSelection(row.item.manifest_files ?? [], fileChoices.get(row.key));
+  }
+
+  function changeFileChoice(row: OneShotSeedRow, next: string[] | undefined) {
+    setFileChoices((current) => {
+      const updated = new Map(current);
+      if (next) updated.set(row.key, next);
+      else updated.delete(row.key);
+      return updated;
+    });
+  }
 
   function requestFor(row: OneShotSeedRow, prepared: AnimeDraft): SnapshotSeedDownloadInput {
     return {
@@ -511,6 +610,7 @@ export function OneShotDialog({
       input_source: "current_input",
       draft: prepared,
       ...(effectiveOffset !== 0 ? { episode_offset: effectiveOffset } : {}),
+      ...(fileChoiceOf(row) ? { file_selection: fileChoiceOf(row) } : {}),
     };
   }
 
@@ -882,6 +982,9 @@ export function OneShotDialog({
                     expandError={expandErrors.get(row.key)}
                     outcome={outcomes.get(row.key)}
                     onJump={jumpTo}
+                    fileChoice={fileChoiceOf(row)}
+                    route={draft?.business?.unclassified_route}
+                    onFileChoiceChange={(next) => changeFileChoice(row, next)}
                   />
                 ))}
               </ul>

@@ -1691,6 +1691,20 @@ const (
 	RSSListGroupSelectionSourceObservedDefault RSSListGroupSelectionSource = "observed_default"
 )
 
+// Defines values for RSSListManifestFileMediaKind.
+const (
+	RSSListManifestFileMediaKindOther    RSSListManifestFileMediaKind = "other"
+	RSSListManifestFileMediaKindSubtitle RSSListManifestFileMediaKind = "subtitle"
+	RSSListManifestFileMediaKindVideo    RSSListManifestFileMediaKind = "video"
+)
+
+// Defines values for RSSListManifestFileRecognition.
+const (
+	RSSListManifestFileRecognitionEpisode      RSSListManifestFileRecognition = "episode"
+	RSSListManifestFileRecognitionMovie        RSSListManifestFileRecognition = "movie"
+	RSSListManifestFileRecognitionUnrecognized RSSListManifestFileRecognition = "unrecognized"
+)
+
 // Defines values for RSSListObservationProvider.
 const (
 	RSSListObservationProviderAnibt RSSListObservationProvider = "anibt"
@@ -1840,6 +1854,7 @@ const (
 	ReleaseFileOutcomeExcludedByRule      ReleaseFileOutcome = "excluded_by_rule"
 	ReleaseFileOutcomeIgnoredKind         ReleaseFileOutcome = "ignored_kind"
 	ReleaseFileOutcomeIgnoredNested       ReleaseFileOutcome = "ignored_nested"
+	ReleaseFileOutcomeIgnoredUnselected   ReleaseFileOutcome = "ignored_unselected"
 	ReleaseFileOutcomePlanned             ReleaseFileOutcome = "planned"
 	ReleaseFileOutcomeSubtitleFollows     ReleaseFileOutcome = "subtitle_follows"
 	ReleaseFileOutcomeSubtitleUnbound     ReleaseFileOutcome = "subtitle_unbound"
@@ -6961,7 +6976,7 @@ type RSSListFeedStatus struct {
 // RSSListFeedStatusState defines model for RSSListFeedStatus.State.
 type RSSListFeedStatusState string
 
-// RSSListFile One projected file of a seed's exact torrent manifest with its own filter verdict and rendered target. An excluded or unrenderable file stays in the list so the reader can see what was filtered and why. A file that failed one of the two hard gates (below the torrent's first level, or neither video nor subtitle) is not a candidate and takes no row at all: the plan and the download cleanup still classify it, but it is never published as an RSS file row. Size and media kind are read from that exact manifest: a file the release never parsed keeps them absent, so an unknown file is never published as a 0-byte file of kind "other", and a seed whose structure was never acquired lists no file row at all.
+// RSSListFile One projected file of a seed's exact torrent manifest with its own filter verdict and rendered target. An excluded or unrenderable file stays in the list so the reader can see what was filtered and why. A file that failed one of the two hard gates (below the torrent's first level, or neither video nor subtitle) is not a candidate and takes no row at all: the plan and the download cleanup still classify it, but it is never published as an RSS file row. Under a one-shot read's manual file selection the selection replaces the first-level gate: the selected files take rows at any depth and every unselected video or subtitle (ignored_unselected) takes none. Size and media kind are read from that exact manifest: a file the release never parsed keeps them absent, so an unknown file is never published as a 0-byte file of kind "other", and a seed whose structure was never acquired lists no file row at all.
 type RSSListFile struct {
 	// BoundVideoSourcePath Source path, inside this same torrent, of the video a bound subtitle follows under the plan's own strict-prefix binding. It is the server's decision, so the reader lists the subtitle under that video instead of binding it again itself. Present only for a subtitle bound to a video of the same release; absent for a video and for a subtitle bound to no video.
 	BoundVideoSourcePath *string `json:"bound_video_source_path,omitempty"`
@@ -7016,6 +7031,13 @@ type RSSListFileSafety string
 
 // RSSListFileSubLangSource Where sub_lang was read: the subtitle's own filename tag (file) or the release title (release). Absent with sub_lang.
 type RSSListFileSubLangSource string
+
+// RSSListFileSelection defines model for RSSListFileSelection.
+type RSSListFileSelection struct {
+	SnapshotId    ID       `json:"snapshot_id"`
+	SourcePaths   []string `json:"source_paths"`
+	StableSeedKey string   `json:"stable_seed_key"`
+}
 
 // RSSListGroup defines model for RSSListGroup.
 type RSSListGroup struct {
@@ -7077,14 +7099,50 @@ type RSSListItem struct {
 	Files      []RSSListFile     `json:"files"`
 
 	// LibraryOverlap Read-only per-seed library overlap fact, computed by the server from the placements the library already holds. It only reads: it creates no placement, reserves no path and produces no WorkItem, and it is a fact rather than a plan, so pending_files counts files this seed would still have to write without promising that write. undetermined is a first-class answer and is never folded into absent: it means the overlap cannot be decided (no write set to compare, or a server with no library facts to read at all), and both counts and every per-file in_library value are then null.
-	LibraryOverlap LibraryOverlap   `json:"library_overlap"`
-	Seed           RSSListSeedFacts `json:"seed"`
-	SnapshotId     ID               `json:"snapshot_id"`
-	StableSeedKey  string           `json:"stable_seed_key"`
+	LibraryOverlap LibraryOverlap `json:"library_overlap"`
+
+	// ManifestFiles one_shot reads only: every file of the seed's exact torrent manifest (any depth, any kind) for the one-shot file picker, in source path order. Absent for other reads and for a seed whose torrent was not expanded.
+	ManifestFiles *[]RSSListManifestFile `json:"manifest_files,omitempty"`
+	Seed          RSSListSeedFacts       `json:"seed"`
+	SnapshotId    ID                     `json:"snapshot_id"`
+	StableSeedKey string                 `json:"stable_seed_key"`
 
 	// Torrent Torrent acquisition state of one seed. An unusable torrent keeps its place in the group with a bounded reason instead of disappearing, and it never fabricates a manifest. pending is the view's own state for a seed the server has not expanded yet: the persisted snapshot still records not_applicable and the row is rendered from RSS facts alone.
 	Torrent RSSListTorrentState `json:"torrent"`
 }
+
+// RSSListManifestFile One file of a seed's exact torrent manifest, at any depth, for the one-shot file picker. It is the server's decision under the read's draft (file rules, parser, episode offset): which files may be chosen, which the default list holds, each video's own filename episode recognition, and the video each subtitle follows.
+type RSSListManifestFile struct {
+	// BoundVideoSourcePath The selectable video of the same folder this subtitle follows by the strict filename prefix rule (longest match, then path order), considering every selectable video of that folder. Absent for a video and for a subtitle that follows no video.
+	BoundVideoSourcePath *string `json:"bound_video_source_path,omitempty"`
+
+	// DefaultSelected Whether the default file list (no manual selection) holds the file: a first-level video the rules keep, or a first-level subtitle that follows such a video.
+	DefaultSelected bool `json:"default_selected"`
+
+	// Episodes The episode numbers of an episode recognition, ascending.
+	Episodes  *[]int                       `json:"episodes,omitempty"`
+	MediaKind RSSListManifestFileMediaKind `json:"media_kind"`
+
+	// ReasonCode Why the file cannot be chosen: ignored_kind (neither video nor subtitle) or the file_* rule reason of an excluded video. Absent for a selectable file.
+	ReasonCode *string `json:"reason_code,omitempty"`
+
+	// Recognition A selectable video's own filename recognition under the read's parser and episode offset, decided by the same batch plan an acceptance freezes: episode (episodes holds the numbers), movie (the main video of a movie binding), or unrecognized (an unknown file, handled by the unclassified route). Absent for a subtitle and an unselectable file. For a movie binding it is computed within the read's selection for that seed (the default files without one) and is absent for a video outside it, so only one video is the main video.
+	Recognition *RSSListManifestFileRecognition `json:"recognition,omitempty"`
+
+	// Season The season of an episode recognition.
+	Season *int `json:"season,omitempty"`
+
+	// Selectable True for a video the file rules keep and for every subtitle; a file of another kind or a video the rules exclude cannot be chosen.
+	Selectable bool   `json:"selectable"`
+	SizeBytes  int64  `json:"size_bytes"`
+	SourcePath string `json:"source_path"`
+}
+
+// RSSListManifestFileMediaKind defines model for RSSListManifestFile.MediaKind.
+type RSSListManifestFileMediaKind string
+
+// RSSListManifestFileRecognition A selectable video's own filename recognition under the read's parser and episode offset, decided by the same batch plan an acceptance freezes: episode (episodes holds the numbers), movie (the main video of a movie binding), or unrecognized (an unknown file, handled by the unclassified route). Absent for a subtitle and an unselectable file. For a movie binding it is computed within the read's selection for that seed (the default files without one) and is absent for a video outside it, so only one video is the main video.
+type RSSListManifestFileRecognition string
 
 // RSSListObservation The observation an RSS list view was composed with.
 type RSSListObservation struct {
@@ -7198,12 +7256,15 @@ type RSSListViewInput struct {
 	// Draft Required for current_input; unused by other modes.
 	Draft *AnimeDraft `json:"draft"`
 
-	// EpisodeOffset Preview-only episode offset. Shifts the file-level parse and render of a group with no offset of its own, so a non-zero offset previews exactly what a one-shot request with that offset would render. A group's own offset wins: a persisted owner link keeps its stored offset and a draft group with a matching draft source keeps that source's episode_offset, so the preview never rewrites a stored offset or invents a second rule. Omitted or null means 0; a pure read that never changes the episode_offset a later one-shot request carries. With one_shot it is the offset of every group.
+	// EpisodeOffset Preview-only episode offset (null/omitted = 0) for a group with no offset of its own; a stored link or matching draft source offset wins and is never rewritten. With one_shot it is every group's offset.
 	EpisodeOffset *int `json:"episode_offset"`
 
 	// Feed Optional advisory snapshot identities for current_input, candidate_revision, and pending-subscription owner modes. Matched to effective-selected groups; absent selected identities require snapshot acquisition; unmatched ones return as unused_feed_identities.
-	Feed        *[]PreviewFeedSnapshotRef   `json:"feed,omitempty"`
-	InputSource RSSListViewInputInputSource `json:"input_source"`
+	Feed *[]PreviewFeedSnapshotRef `json:"feed,omitempty"`
+
+	// FileSelections one_shot only. Per-seed preview of a download's file_selection; unlisted seeds preview their default files.
+	FileSelections *[]RSSListFileSelection     `json:"file_selections,omitempty"`
+	InputSource    RSSListViewInputInputSource `json:"input_source"`
 
 	// LimitPerGroup Maximum persisted Release items per group in owner and owner_draft modes. Defaults to 100; maximum 500.
 	LimitPerGroup *int `json:"limit_per_group,omitempty"`
@@ -7217,7 +7278,7 @@ type RSSListViewInput struct {
 	// Observation current_input only. The persisted provider group observation (the snapshot_version group discovery returned) whose groups are listed next to the draft's configured ones; observed groups nobody configured take the provider default policy, ranked with the configured ones under max_rss. A pure read: the observation must belong to the draft's provider and entry, and one no longer retained is reported on the view instead of failing the request.
 	Observation *RSSListObservationRef `json:"observation"`
 
-	// OneShot Omitted or false: the ordinary read. current_input only (400 INPUT_SOURCE_INVALID with any other mode). Reads the draft as a one-shot browse: a one-shot names its seed directly and is not bound by group selection, so every configured and observed group is listed with its supplied snapshot and seeds regardless of the draft's selection, and its one_shot download action never answers group_not_selected. Every group previews with episode_offset (the one-shot request's own offset), never a draft source's or a link's. A custom draft binds the exact persisted custom snapshot its single feed identity names instead of a saved-revision scope, so an unsaved one-shot configuration previews the seed it will download. An origin=one_shot draft binds the exact persisted search snapshot its single feed identity names; a missing, stale or expired identity fails 409 FEED_SNAPSHOT_REFRESH_REQUIRED, never re-searched. A pure read.
+	// OneShot current_input only (else 400 INPUT_SOURCE_INVALID). A one-shot browse: every configured and observed group lists its supplied snapshot and seeds regardless of group selection (download action never group_not_selected), previews with episode_offset, and every item lists manifest_files. A custom draft binds the custom snapshot its single feed identity names; an origin=one_shot draft binds the named search snapshot (missing/stale/expired: 409 FEED_SNAPSHOT_REFRESH_REQUIRED, never re-searched). A pure read.
 	OneShot *bool `json:"one_shot,omitempty"`
 
 	// Revision Required for candidate_revision; with candidate_id, the saved preset revision that scopes a custom current_input draft's source snapshot. Forbidden in the owner modes.
@@ -8043,7 +8104,10 @@ type SnapshotSeedDownloadInput struct {
 	Draft       *AnimeDraft `json:"draft"`
 
 	// EpisodeOffset The one episode offset of this one-shot. It is written to the one-shot's placeholder RSS link and frozen into the input snapshot and the idempotency request identity; it is never read from an existing subscription, link or the submitted draft. Omitted means 0. Out of range is a 422 OFFSET_OUT_OF_RANGE with zero writes.
-	EpisodeOffset *int                                 `json:"episode_offset,omitempty"`
+	EpisodeOffset *int `json:"episode_offset,omitempty"`
+
+	// FileSelection Optional manual file selection: the source paths (as listed in the item's manifest_files) of the files to import, at any depth. Omitted means the default files (first-level videos and subtitles the file rules keep). The selection replaces only the first-level gate: the chosen files are named, bound and placed exactly like first-level ones, under the same file rules, episode recognition, unknown-file route and collision policy, and a subtitle binds to a selected video of its own folder. The download itself is unchanged (the whole torrent; no file priorities): an unselected file stays in the download location untouched. Every path must be a file of this seed's torrent, of the video or subtitle kind; a selected video must pass the file rules; at least one video is selected; and every selected subtitle must follow a selected video of its folder. Otherwise 422 FILE_SELECTION_INVALID with zero writes. The selection is part of the request identity and freezes with the acceptance.
+	FileSelection *[]string                            `json:"file_selection,omitempty"`
 	InputSource   SnapshotSeedDownloadInputInputSource `json:"input_source"`
 
 	// Provider Provenance provider of one selected one-shot seed. It repeats the two discovery provider kinds, adds nyaa for a seed read from a Nyaa keyword search snapshot (search-only: Nyaa is never a discovery provider), and adds custom for a seed read from a frozen custom/oneshot draft source's own feed snapshot. It is a seed-provenance vocabulary only: ProviderKind stays a two-value discovery enum, and a custom seed never becomes a discoverable provider, a subgroup, or a subscribable origin.

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -90,15 +91,20 @@ type bindingFileFacts struct {
 	ref      string
 	filename string
 	basename string
+	// directory is the file's own torrent directory (of its manifest relative
+	// path): a subtitle binds only to a video of the same directory (all
+	// first-level files share one).
+	directory string
 }
 
 // fileBindingFacts extracts the binder facts for one artifact file.
 func fileBindingFacts(file artifactFileContext) bindingFileFacts {
 	filename := filepath.Base(file.sourcePath)
 	return bindingFileFacts{
-		ref:      file.fileRef,
-		filename: filename,
-		basename: strings.TrimSuffix(filename, filepath.Ext(filename)),
+		ref:       file.fileRef,
+		filename:  filename,
+		basename:  strings.TrimSuffix(filename, filepath.Ext(filename)),
+		directory: path.Dir(filepath.ToSlash(file.relativePath)),
 	}
 }
 
@@ -114,7 +120,9 @@ func fileBindingFacts(file artifactFileContext) bindingFileFacts {
 func decideSubtitleBinding(sub bindingFileFacts, videos []bindingFileFacts) bindingDecision {
 	basenames := make([]string, len(videos))
 	for index := range videos {
-		basenames[index] = videos[index].basename
+		if videos[index].directory == sub.directory {
+			basenames[index] = videos[index].basename
+		}
 	}
 	index := filekinds.BindSubtitle(sub.filename, basenames)
 	var match *bindingFileFacts

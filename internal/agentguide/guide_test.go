@@ -88,7 +88,7 @@ var extraWords = []string{
 	"http_status", "exit_code", "request_id", "current_version", "candidate_revision",
 	"current_input", "saved_revision", "owner_draft", "owner_chain", "agent_guide",
 	"seed_not_expanded", "torrent_fetch_failed", "torrent_parse_failed", "torrent_missing",
-	"target_duplicate", "placement_not_active", "file_not_missing", "source_release_unavailable",
+	"target_duplicate", "target_replaced_in_release", "placement_not_active", "file_not_missing", "source_release_unavailable",
 	"download_in_progress", "scan_changed", "target_season",
 }
 

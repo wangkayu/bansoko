@@ -1425,3 +1425,111 @@ describe("OneShotDialog 搜索快照来源", () => {
     expect(downloads()).toHaveLength(1);
   });
 });
+
+describe("OneShotDialog 手动选择文件", () => {
+  const VIDEO = "Pack/测试番剧 - 01.mkv";
+  const SUB = "Pack/测试番剧 - 01.ass";
+  const DEEP = "Pack/SPs/测试番剧 SP.mkv";
+  const DEEP_SUB = "Pack/SPs/测试番剧 SP.ass";
+  const COVER = "Pack/cover.jpg";
+  const manifestFiles: NonNullable<RSSListItem["manifest_files"]> = [
+    { source_path: VIDEO, size_bytes: 700, media_kind: "video", selectable: true, default_selected: true, recognition: "episode", season: 1, episodes: [1] },
+    { source_path: SUB, size_bytes: 20, media_kind: "subtitle", selectable: true, default_selected: true, bound_video_source_path: VIDEO },
+    { source_path: DEEP, size_bytes: 500, media_kind: "video", selectable: true, default_selected: false, recognition: "unrecognized" },
+    { source_path: DEEP_SUB, size_bytes: 20, media_kind: "subtitle", selectable: true, default_selected: false, bound_video_source_path: DEEP },
+    { source_path: COVER, size_bytes: 7, media_kind: "other", selectable: false, default_selected: false, reason_code: "ignored_kind" },
+  ];
+  const pickerView = () => viewOf([seedGroup({ items: [seedItem("seed-a", SEED_A, { manifest_files: manifestFiles })] })]);
+
+  async function openPicker() {
+    fireEvent.click(await screen.findByRole("button", { name: t("oneshot.filePickerToggle", { n: 2, total: 4 }) }));
+    return screen.findByRole("group", { name: t("oneshot.filePickerTitle") });
+  }
+
+  it("列出种子的全部文件：默认勾选第一层，不可选的写原因，视频写识别结果，未识别的按当前处理方式写去向", async () => {
+    stubFetch({ view: pickerView() });
+    await renderAndEnter();
+    await advanceToSettings([SEED_A]);
+    const picker = await openPicker();
+
+    expect(within(picker).getByRole("checkbox", { name: VIDEO })).toBeChecked();
+    expect(within(picker).getByRole("checkbox", { name: SUB })).toBeChecked();
+    expect(within(picker).getByRole("checkbox", { name: DEEP })).not.toBeChecked();
+    expect(within(picker).getByRole("checkbox", { name: COVER })).toHaveAttribute("aria-disabled", "true");
+    expect(within(picker).getByText(reasonLabel("ignored_kind")!)).toBeInTheDocument();
+    expect(within(picker).getByText(t("rss.episode", { n: 1 }))).toBeInTheDocument();
+    // The business preset routes unknown files; the copy follows the draft's current option.
+    expect(within(picker).getByText(t("oneshot.fileUnrecognizedRoute"))).toBeInTheDocument();
+    // A subtitle can be checked only while the video it follows is checked.
+    expect(within(picker).getByRole("checkbox", { name: DEEP_SUB })).toHaveAttribute("aria-disabled", "true");
+    expect(within(picker).getByText(t("oneshot.fileSubtitleNeedsVideo"))).toBeInTheDocument();
+
+    openAdvanced();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("combobox", { name: t("file.unclassifiedTitle") }));
+    await user.click(await screen.findByRole("option", { name: t("file.unclassified.skip") }));
+    expect(await within(picker).findByText(t("oneshot.fileUnrecognizedSkip"))).toBeInTheDocument();
+  });
+
+  it("勾选子文件夹里的视频：带上它的字幕，预览按所选重读，下载请求带 file_selection", async () => {
+    stubFetch({ view: pickerView() });
+    await renderAndEnter();
+    await advanceToSettings([SEED_A]);
+    const picker = await openPicker();
+
+    fireEvent.click(within(picker).getByRole("checkbox", { name: DEEP }));
+    expect(within(picker).getByRole("checkbox", { name: DEEP_SUB })).toBeChecked();
+    expect(screen.getByText(t("oneshot.filePickerCustom"))).toBeInTheDocument();
+    const selection = [DEEP_SUB, DEEP, SUB, VIDEO].sort();
+    await waitFor(() =>
+      expect(reads().at(-1)!.body).toMatchObject({
+        one_shot: true,
+        file_selections: [{ snapshot_id: "snap-1", stable_seed_key: "seed-a", source_paths: selection }],
+      }),
+    );
+
+    fireEvent.click(button(t("oneshot.create", { n: 1 })));
+    await waitFor(() => expect(screen.getByText(t("oneshot.resultOk"))).toBeInTheDocument());
+    expect(downloads()[0]!.body).toMatchObject({ file_selection: selection });
+  });
+
+  it("文件夹勾选框：按子树可勾视频显示全选/部分/无，点击整体勾选或取消，字幕随视频", async () => {
+    stubFetch({ view: pickerView() });
+    await renderAndEnter();
+    await advanceToSettings([SEED_A]);
+    const picker = await openPicker();
+    const pack = within(picker).getByRole("checkbox", { name: t("oneshot.filePickerFolder", { name: "Pack" }) });
+    const sps = within(picker).getByRole("checkbox", { name: t("oneshot.filePickerFolder", { name: "Pack/SPs" }) });
+    expect(pack).toHaveAttribute("aria-checked", "mixed");
+    expect(sps).toHaveAttribute("aria-checked", "false");
+
+    fireEvent.click(sps);
+    expect(within(picker).getByRole("checkbox", { name: DEEP })).toBeChecked();
+    expect(within(picker).getByRole("checkbox", { name: DEEP_SUB })).toBeChecked();
+    expect(pack).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.click(pack);
+    for (const path of [VIDEO, SUB, DEEP, DEEP_SUB]) expect(within(picker).getByRole("checkbox", { name: path })).not.toBeChecked();
+    expect(pack).toHaveAttribute("aria-checked", "false");
+    expect(button(t("oneshot.create", { n: 1 }))).toBeDisabled();
+  });
+
+  it("取消全部视频不能提交；「恢复默认」清除手动选择，读取与提交都回到默认文件", async () => {
+    stubFetch({ view: pickerView() });
+    await renderAndEnter();
+    await advanceToSettings([SEED_A]);
+    const picker = await openPicker();
+
+    fireEvent.click(within(picker).getByRole("checkbox", { name: VIDEO }));
+    expect(within(picker).getByRole("checkbox", { name: SUB })).not.toBeChecked();
+    expect(button(t("oneshot.create", { n: 1 }))).toBeDisabled();
+    expect(screen.getByText(t("oneshot.filesNoVideo"))).toBeInTheDocument();
+
+    fireEvent.click(button(t("oneshot.restoreDefaults")));
+    await waitFor(() => expect(within(picker).getByRole("checkbox", { name: VIDEO })).toBeChecked());
+    await waitFor(() => expect(reads().at(-1)!.body).not.toHaveProperty("file_selections"));
+    fireEvent.click(button(t("oneshot.create", { n: 1 })));
+    await waitFor(() => expect(screen.getByText(t("oneshot.resultOk"))).toBeInTheDocument());
+    expect(downloads()[0]!.body).not.toHaveProperty("file_selection");
+  });
+});

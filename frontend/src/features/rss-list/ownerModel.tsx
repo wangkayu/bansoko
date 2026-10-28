@@ -191,7 +191,7 @@ function OwnerReleaseFileRow({ preview, parsed, target, observation, subtitles =
   const outcome = parsed?.outcome ?? undefined;
   const diagnosticCode = parsed?.target_diagnostic?.code;
   // A duplicate target arrives as target_diagnostic but its semantics are a conflict (③), not a render failure (②).
-  const duplicateConflict = diagnosticCode === "target_duplicate";
+  const duplicateConflict = diagnosticCode === "target_duplicate" || diagnosticCode === "target_replaced_in_release";
   // The admission layer (the accepted plan) is authoritative; only without a plan does it fall
 //   back to the browse layer's per-file verdict, and only when that is absent too does it look for
 //   an already-rendered target.

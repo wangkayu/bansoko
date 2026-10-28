@@ -2,6 +2,7 @@ package target
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	acquisitiondomain "bansoko/internal/acquisition/domain"
 	animedomain "bansoko/internal/anime/domain"
 	"bansoko/internal/batchplan"
+	"bansoko/internal/filekinds"
 )
 
 func batchScenario(t *testing.T, names ...string) parityScenario {
@@ -76,6 +78,67 @@ func TestBatchPreflightDuplicateTargetKeepsTheFirstSourcePath(t *testing.T) {
 	}
 	if got := planOutcome(result, "Pack/Preview Show [E01].mkv"); got != "target_collision/target_duplicate" {
 		t.Fatalf("duplicate = %s", got)
+	}
+}
+
+// Two selected videos of one episode on one target under a manual one-shot
+// selection follow the global collision policy in source path order: skip
+// keeps the first, versioned keeps both (the later one versioned), overwrite
+// keeps only the last (the earlier one is replaced inside the release and never
+// written). Without a manual selection the first keeps it under every policy.
+func TestBatchPreflightManualSelectionSameEpisodeFollowsCollisionPolicy(t *testing.T) {
+	first, second := "Pack/Preview Show [E01] v2.mkv", "Pack/Preview Show [E01].mkv"
+	cases := []struct {
+		policy  animedomain.CollisionPolicy
+		manual  bool
+		kept    []string
+		dropped map[string]string
+	}{
+		{animedomain.CollisionPolicyFail, true, []string{first}, map[string]string{second: "target_collision/target_duplicate"}},
+		{animedomain.CollisionPolicyVersioned, true, []string{first, second}, nil},
+		{animedomain.CollisionPolicyOverwrite, true, []string{second}, map[string]string{first: "target_collision/target_replaced_in_release"}},
+		{animedomain.CollisionPolicyVersioned, false, []string{first}, map[string]string{second: "target_collision/target_duplicate"}},
+		{animedomain.CollisionPolicyOverwrite, false, []string{first}, map[string]string{second: "target_collision/target_duplicate"}},
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("%s/manual=%t", c.policy, c.manual), func(t *testing.T) {
+			scenario := batchScenario(t, "Preview Show [E01].mkv", "Preview Show [E01] v2.mkv")
+			scenario.effective.Rules.FileEffect.CollisionPolicy = c.policy
+			request := scenario.oneShot()
+			if c.manual {
+				request.FileSelection = filekinds.NewSelection([]string{first, second})
+			}
+			result := PreflightOneShot(context.Background(), request, FilesystemProbe{})
+			if result.Admission.Admission != AdmissionDownload || len(result.Set.Targets) != len(c.kept) {
+				t.Fatalf("admission = %+v with %d targets, want %d", result.Admission, len(result.Set.Targets), len(c.kept))
+			}
+			paths := map[string]string{}
+			for _, spec := range result.Set.Targets {
+				paths[spec.SourcePath] = spec.TargetPath
+			}
+			for _, source := range c.kept {
+				if _, ok := paths[source]; !ok {
+					t.Fatalf("targets %v miss %s", paths, source)
+				}
+			}
+			if len(c.kept) == 2 {
+				if want := batchplan.VersionedTargetPath(paths[first], 2); paths[second] != want {
+					t.Fatalf("versioned target = %q, want %q", paths[second], want)
+				}
+				// The frozen plan carries the number for the file operation re-render.
+				if entry, _ := result.BatchPlan.File(second); entry.TargetVersion != 2 {
+					t.Fatalf("plan target_version = %d, want 2", entry.TargetVersion)
+				}
+				if entry, _ := result.BatchPlan.File(first); entry.TargetVersion != 0 {
+					t.Fatalf("first copy target_version = %d, want none", entry.TargetVersion)
+				}
+			}
+			for source, want := range c.dropped {
+				if got := planOutcome(result, source); got != want {
+					t.Fatalf("%s = %s, want %s", source, got, want)
+				}
+			}
+		})
 	}
 }
 

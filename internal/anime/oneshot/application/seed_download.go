@@ -32,6 +32,9 @@ type SnapshotSeedDownloadInput struct {
 	// EpisodeOffset is the one-shot request's own episode offset (0 when the
 	// caller omits it); see AcquireSeedInput.EpisodeOffset.
 	EpisodeOffset int
+	// FileSelection is the manual file selection (nil = the default files);
+	// see AcquireSeedInput.FileSelection.
+	FileSelection []string
 }
 
 // DownloadSnapshotSeed admits one finite one-shot download for one persisted
@@ -105,6 +108,7 @@ func (s *Service) DownloadSnapshotSeed(ctx context.Context, input SnapshotSeedDo
 	admission := AcquireSeedInput{
 		Seed:          seed,
 		EpisodeOffset: input.EpisodeOffset,
+		FileSelection: input.FileSelection,
 		Caller:        AcquireSeedCaller{Kind: AcquireSeedCallerHuman},
 	}
 	switch input.InputSource {

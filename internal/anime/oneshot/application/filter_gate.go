@@ -8,7 +8,9 @@ import (
 )
 
 // This gate is unconditional: unconfigured target acquisition cannot bypass it.
-func validateOneShotFilterGate(item acquisitiondomain.FeedItem, effective animedomain.EffectiveConfig) error {
+// A manual file selection replaces the first-level gate exactly like the
+// frozen batch plan, so the gate needs a selected video the rules keep.
+func validateOneShotFilterGate(item acquisitiondomain.FeedItem, effective animedomain.EffectiveConfig, selection *filekinds.Selection) error {
 	release, err := animedomain.CompileRegexFilter(effective.Rules.ReleaseFilter)
 	if err != nil {
 		return &apperrors.Business{Status: 422, Code: "FILTER_INVALID", Message: err.Error()}
@@ -24,7 +26,7 @@ func validateOneShotFilterGate(item acquisitiondomain.FeedItem, effective animed
 	for i, f := range item.ReleaseFiles {
 		paths[i] = f.SourcePath
 	}
-	result, err := file.SelectOrganizationFiles(filekinds.Version, paths)
+	result, err := file.SelectOrganizationFilesIn(filekinds.Version, paths, selection)
 	if err != nil {
 		return &apperrors.Business{Status: 422, Code: "FILE_FILTER_INVALID", Message: err.Error()}
 	}

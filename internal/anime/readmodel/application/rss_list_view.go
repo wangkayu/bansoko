@@ -77,6 +77,10 @@ type ReadRSSListViewInput struct {
 	// draft binds the exact persisted snapshot it names instead of a scope
 	// derived from a saved revision. The read stays pure.
 	OneShot bool
+	// FileSelections, for a one-shot read only, are preview-only manual file
+	// selections per seed: the named seeds render exactly as a download with
+	// that file_selection would place them.
+	FileSelections []RSSListFileSelectionInput
 }
 
 type RSSListView struct {
@@ -192,6 +196,9 @@ type RSSListItem struct {
 	// LibraryOverlap is the read-only library fact of this seed: whether the
 	// library already holds the targets this seed would write.
 	LibraryOverlap LibraryOverlap
+	// ManifestFiles, for a one-shot read only, lists every manifest file of an
+	// expanded seed for the file picker; nil otherwise.
+	ManifestFiles []RSSListManifestFile
 }
 
 // Library overlap verdicts.
@@ -391,6 +398,9 @@ func (s *Service) ReadAnimeRSSListView(ctx context.Context, input ReadRSSListVie
 	if input.OneShot && input.InputSource != "current_input" {
 		return RSSListView{}, &apperrors.Business{Status: 400, Code: "INPUT_SOURCE_INVALID", Message: "one_shot is valid only with input_source=current_input."}
 	}
+	if len(input.FileSelections) > 0 && !input.OneShot {
+		return RSSListView{}, &apperrors.Business{Status: 400, Code: "INPUT_SOURCE_INVALID", Message: "file_selections apply to one_shot reads only."}
+	}
 	switch input.InputSource {
 	case "current_input":
 		if input.Draft == nil {
@@ -400,7 +410,7 @@ func (s *Service) ReadAnimeRSSListView(ctx context.Context, input ReadRSSListVie
 		if err != nil {
 			return RSSListView{}, err
 		}
-		return s.readRSSListViewForDraft(ctx, *input.Draft, input.Feed, input.Observation, input.PreviewEpisodeOffset, input.OneShot, scope)
+		return s.readRSSListViewForDraft(ctx, *input.Draft, input.Feed, input.Observation, input.PreviewEpisodeOffset, input.OneShot, scope, newRSSListFileSelections(input.FileSelections))
 	case "candidate_revision":
 		if strings.TrimSpace(input.CandidateID) == "" || input.Revision < 1 {
 			return RSSListView{}, &apperrors.Business{Status: 400, Code: "INPUT_SOURCE_INVALID", Message: "input_source=candidate_revision requires candidate_id and revision."}
@@ -449,7 +459,7 @@ func draftCustomSnapshotScope(draft animedomain.AnimeDraft, input ReadRSSListVie
 	return catalogapplication.CandidateCustomSnapshotIdentity(candidateID, input.Revision), nil
 }
 
-func (s *Service) readRSSListViewForDraft(ctx context.Context, draft animedomain.AnimeDraft, feed []PreviewFeedSnapshotRef, observation *RSSListObservationRef, previewOffset int, oneShot bool, customScope string) (RSSListView, error) {
+func (s *Service) readRSSListViewForDraft(ctx context.Context, draft animedomain.AnimeDraft, feed []PreviewFeedSnapshotRef, observation *RSSListObservationRef, previewOffset int, oneShot bool, customScope string, fileSelections rssListFileSelections) (RSSListView, error) {
 	if violations := animedomain.ValidateDraft(draft); len(violations) > 0 {
 		return RSSListView{}, draftInvalidError(violations)
 	}
@@ -478,14 +488,17 @@ func (s *Service) readRSSListViewForDraft(ctx context.Context, draft animedomain
 	if oneShot {
 		effective = oneShotBrowseSelection(draft, effective)
 		configIdentity += "#one_shot"
+		if digest := fileSelections.identity(); digest != "" {
+			configIdentity += "#files:" + digest
+		}
 	}
 	if customScope == "" {
-		return s.composeRSSListViewFor(ctx, "current_input", configIdentity, draft, effective, selection, feed, sources, used, previewOffset, oneShot)
+		return s.composeRSSListViewFor(ctx, "current_input", configIdentity, draft, effective, selection, feed, sources, used, previewOffset, oneShot, fileSelections)
 	}
 	// The custom projection derives its snapshot scope from the compose
 	// identity; the view keeps the draft's own identity, scoped by the preset
 	// revision whose snapshot it reads.
-	view, err := s.composeRSSListViewFor(ctx, "current_input", customScope, draft, effective, selection, feed, sources, used, previewOffset, oneShot)
+	view, err := s.composeRSSListViewFor(ctx, "current_input", customScope, draft, effective, selection, feed, sources, used, previewOffset, oneShot, fileSelections)
 	if err != nil {
 		return RSSListView{}, err
 	}
@@ -838,7 +851,7 @@ func (s *Service) composeOwnerRSSListView(ctx context.Context, mode string, work
 		// manifest exactly like admission (no deduplication, it never reads
 		// the library), so it cannot show accepted what admission filters.
 		if mode == "owner_draft" {
-			if err := previewBatchPlan(ctx, &evaluated, item, manifest, evidence, effective, unknownRoute); err != nil {
+			if err := previewBatchPlan(ctx, &evaluated, item, manifest, evidence, effective, unknownRoute, nil); err != nil {
 				return RSSListView{}, fmt.Errorf("plan release files %s: %w", release.ID, err)
 			}
 		}
@@ -883,7 +896,7 @@ func (s *Service) composeOwnerRSSListView(ctx context.Context, mode string, work
 				evaluated.FrozenVars = &frozen
 			}
 		}
-		previewFiles, err := previewFilesForItem(ctx, item, release.StableItemKey, evaluated, manifest, evalInput, effective, workspace.ManagedAnime.Title, rules, evidence, unknownRoute)
+		previewFiles, err := previewFilesForItem(ctx, item, release.StableItemKey, evaluated, manifest, evalInput, effective, workspace.ManagedAnime.Title, rules, evidence, unknownRoute, nil)
 		if err != nil {
 			return RSSListView{}, fmt.Errorf("resolve release file episodes %s: %w", release.ID, err)
 		}
@@ -1068,7 +1081,7 @@ func (s *Service) composeRSSListViewObserved(
 	observation *RSSListObservation,
 	previewOffset int,
 ) (RSSListView, error) {
-	return s.composeRSSListViewFor(ctx, mode, configIdentity, draft, effective, selection, feed, sources, observation, previewOffset, false)
+	return s.composeRSSListViewFor(ctx, mode, configIdentity, draft, effective, selection, feed, sources, observation, previewOffset, false, nil)
 }
 
 // composeRSSListViewFor is composeRSSListViewObserved with the one-shot browse
@@ -1085,6 +1098,7 @@ func (s *Service) composeRSSListViewFor(
 	observation *RSSListObservation,
 	previewOffset int,
 	oneShot bool,
+	fileSelections rssListFileSelections,
 ) (RSSListView, error) {
 	hold := animedomain.MetadataHoldFromBindings(draft.Metadata.Bgm, draft.Metadata.Tmdb)
 	varsAnime, err := s.draftVarsAnimeEvidence(ctx, draft)
@@ -1168,6 +1182,8 @@ func (s *Service) composeRSSListViewFor(
 			ContentHash:     preview.Ref.ContentHash,
 		}
 		result := newPreviewEvaluation()
+		result.OneShot = oneShot
+		result.Selections = fileSelections.forSnapshot(preview.Ref.SnapshotID)
 		sourceKind := animedomain.SourceKindProviderGroup
 		if draft.Origin == animedomain.SubscriptionOriginCustom {
 			sourceKind = animedomain.SourceKindCustomRss
@@ -1210,6 +1226,7 @@ func (s *Service) composeRSSListViewFor(
 					item.Files = append(item.Files, mapped)
 				}
 			}
+			item.ManifestFiles = result.ManifestFiles[seed.StableSeedKey]
 			item.DownloadAction = rssListDownloadAction(entry.selected, group.Feed, item)
 			group.Items = append(group.Items, item)
 		}
@@ -1732,7 +1749,7 @@ func rssListFileRow(file animedomain.PreviewFileResult, manifest *animecatalogdo
 // isHardGateFileReason reports the two reasons the file-level hard gates carry
 // (filekinds.ReasonIgnoredNested / ReasonIgnoredKind).
 func isHardGateFileReason(reasonCode string) bool {
-	return reasonCode == filekinds.ReasonIgnoredNested || reasonCode == filekinds.ReasonIgnoredKind
+	return reasonCode == filekinds.ReasonIgnoredNested || reasonCode == filekinds.ReasonIgnoredKind || reasonCode == filekinds.ReasonIgnoredUnselected
 }
 
 func rssListFile(file animedomain.PreviewFileResult, manifest *animecatalogdomain.TorrentManifest) RSSListFile {

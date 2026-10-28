@@ -149,6 +149,7 @@ export const errorCopy = {
   FILE_FILTER_INVALID: "文件筛选规则有误，请检查后重试",
   FILE_RULE_PATH_SEPARATOR: "文件规则只匹配文件名，不能含 /",
   FILE_SELECTION_EMPTY: "没有可入库的文件，请调整过滤规则",
+  FILE_SELECTION_INVALID: "所选文件无法入库，请重新选择",
   MEDIA_RECOGNITION_INVALID: "媒体识别设置有误，请检查后重试",
 
   // --- 番剧与订阅 ---

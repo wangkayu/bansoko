@@ -145,6 +145,9 @@ type OneShotInputSnapshot struct {
 	// empty for a saved-revision admission, whose draft lives in the revision.
 	DraftDigest string          `json:"draft_digest,omitempty"`
 	Draft       json.RawMessage `json:"draft,omitempty"`
+	// FileSelection is the frozen manual file selection (canonical manifest
+	// paths, ascending); absent for the product default.
+	FileSelection []string `json:"file_selection,omitempty"`
 }
 
 // oneShotInputSnapshotJSON is the wire form of the stored snapshot. A
@@ -166,6 +169,7 @@ type oneShotInputSnapshotJSON struct {
 	InputSource       AcquireSeedInputSource                  `json:"input_source,omitempty"`
 	DraftDigest       string                                  `json:"draft_digest,omitempty"`
 	Draft             json.RawMessage                         `json:"draft,omitempty"`
+	FileSelection     []string                                `json:"file_selection,omitempty"`
 }
 
 type oneShotSelectedSeedJSON struct {
@@ -202,6 +206,7 @@ func (snapshot OneShotInputSnapshot) MarshalJSON() ([]byte, error) {
 		InputSource:       snapshot.InputSource,
 		DraftDigest:       snapshot.DraftDigest,
 		Draft:             snapshot.Draft,
+		FileSelection:     snapshot.FileSelection,
 	}
 	if snapshot.CandidateID != "" {
 		candidateID := snapshot.CandidateID
@@ -237,6 +242,7 @@ func (snapshot *OneShotInputSnapshot) UnmarshalJSON(raw []byte) error {
 	snapshot.InputSource = value.InputSource
 	snapshot.DraftDigest = value.DraftDigest
 	snapshot.Draft = append(json.RawMessage(nil), value.Draft...)
+	snapshot.FileSelection = value.FileSelection
 	return nil
 }
 
@@ -334,7 +340,15 @@ type AcquireSeedInput struct {
 	// value (0 when omitted), never read from an existing subscription, RSS
 	// link or the submitted draft. It is written to the placeholder link,
 	// frozen into the input snapshot and part of the replay identity.
-	EpisodeOffset   int               `json:"episode_offset,omitempty"`
+	EpisodeOffset int `json:"episode_offset,omitempty"`
+	// FileSelection is the explicit manual file selection: the manifest paths
+	// of the seed the user chose (any depth, videos and subtitles only). nil is
+	// the product default (first-level videos and subtitles). It is
+	// canonicalized (normalized, ascending) before anything is hashed, is part
+	// of the replay identity, is validated against the seed's own manifest
+	// and file rules inside the admission transaction, and freezes into the
+	// batch plan and the input snapshot.
+	FileSelection   []string          `json:"file_selection,omitempty"`
 	Caller          AcquireSeedCaller `json:"caller"`
 	EffectiveDigest string            `json:"-"`
 }
@@ -501,6 +515,13 @@ func (s *Service) AcquireSeedOnce(ctx context.Context, input AcquireSeedInput, r
 	if err := validateOneShotEpisodeOffset(input.EpisodeOffset); err != nil {
 		return OneShotAdmissionResult{}, err
 	}
+	// The manual file selection's shape is a request fact: it is canonical
+	// before the replay lookup so a reordered body replays the same request.
+	selection, err := canonicalOneShotFileSelection(input.FileSelection)
+	if err != nil {
+		return OneShotAdmissionResult{}, err
+	}
+	input.FileSelection = selection
 
 	// The input variants are mutually exclusive; a mixed or mis-discriminated
 	// body is a structural request error before any config read or marker
@@ -976,7 +997,14 @@ VALUES ($1, $2, 'custom_rss', $3, $4, $5, $6, $7)`,
 		}
 	}
 	selection.Offset = episodeOffset
-	if err := validateOneShotFilterGate(item, effective); err != nil {
+	// The manual file selection is proven against this seed's own manifest and
+	// the captured file rules before anything is planned; a selection the
+	// product would not place refuses the command with zero writes.
+	fileSelection, err := resolveOneShotFileSelection(input.FileSelection, item.ReleaseFiles, effective.Rules.FileFilter)
+	if err != nil {
+		return OneShotAdmissionResult{}, err
+	}
+	if err := validateOneShotFilterGate(item, effective, fileSelection); err != nil {
 		return OneShotAdmissionResult{}, err
 	}
 	evidence, evidenceErr := acquisitiontarget.ResolveParserEvidence(ctx, selection, item.Title)
@@ -1030,7 +1058,9 @@ VALUES ($1, $2, 'custom_rss', $3, $4, $5, $6, $7)`,
 	if s.targetAcquisitionConfigured {
 		parserKind := string(evidence.Selection.Kind())
 		planned := evidence
-		targetPlan = planOneShotTargets(ctx, s.targetProbe, oneShotTargetRequest(releaseID, draft, groupName, episodeOffset, parserKind, effective, item, evaluation, &planned, route))
+		request := oneShotTargetRequest(releaseID, draft, groupName, episodeOffset, parserKind, effective, item, evaluation, &planned, route)
+		request.FileSelection = fileSelection
+		targetPlan = planOneShotTargets(ctx, s.targetProbe, request)
 		switch targetPlan.Admission.Admission {
 		case acquisitiontarget.AdmissionDownload:
 		case acquisitiontarget.AdmissionAdopted:
@@ -1067,6 +1097,7 @@ VALUES ($1, $2, 'custom_rss', $3, $4, $5, $6, $7)`,
 		ConfigIdentity:    configIdentity,
 		Parser:            parserEvidence,
 		TargetFacts:       targetFactsRaw,
+		FileSelection:     fileSelection.Paths(),
 	}
 	if input.isCurrentInput() {
 		draftRaw, err := json.Marshal(draft)
@@ -1141,7 +1172,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
 	// planning ran, otherwise the plain classification under the route.
 	snapshotInput := acquisitiontarget.ReleaseMediaSnapshotInput{
 		ReleaseID: releaseID, Title: item.Title, BGMWorkID: bgmWorkID, TMDBWorkID: tmdbWorkID, Evidence: evidence,
-		Files: item.ReleaseFiles, FileFilter: effective.Rules.FileFilter, UnclassifiedRoute: route,
+		Files: item.ReleaseFiles, FileFilter: effective.Rules.FileFilter, UnclassifiedRoute: route, Selection: fileSelection,
 		DownloadCompletion: string(effective.DownloadCompletion.Rules.Action), DownloadCompletionSeedLimits: effective.DownloadCompletion.Rules.SeedLimits,
 	}
 	if targetPlan.BatchPlan.Version != "" {
@@ -1332,7 +1363,7 @@ WHERE release_id = $1`, releaseID).Scan(&torrentInputID, &torrentPayloadDigest, 
 		if err != nil {
 			return OneShotAdmissionResult{}, err
 		}
-		prepared, err := nativeAcceptor.Prepare(ctx, txscope.Wrap(tx), terminal.OneShotTask{EntryTask: terminal.EntryTask{ReleaseID: releaseID, ExpectedVersion: releaseVersion, FrozenInput: frozenInputRaw, FrozenPolicy: frozenPolicyRaw, CorrelationID: correlationID, QbConnectionID: qbConnectionID, MaxAttempts: animeapplication.DefaultMaxAttempts}, RequestKey: key, CandidateID: input.CandidateID, Revision: input.Revision, Draft: draft, Business: nativeBusiness, RequestHash: requestHash, Evidence: evidence, OneShot: workitems.OneShotRef{MarkerID: oneShotID, CorrelationID: correlationID, AdmissionEpoch: 1}})
+		prepared, err := nativeAcceptor.Prepare(ctx, txscope.Wrap(tx), terminal.OneShotTask{EntryTask: terminal.EntryTask{ReleaseID: releaseID, ExpectedVersion: releaseVersion, FrozenInput: frozenInputRaw, FrozenPolicy: frozenPolicyRaw, CorrelationID: correlationID, QbConnectionID: qbConnectionID, MaxAttempts: animeapplication.DefaultMaxAttempts}, RequestKey: key, CandidateID: input.CandidateID, Revision: input.Revision, Draft: draft, Business: nativeBusiness, RequestHash: requestHash, Evidence: evidence, FileSelection: fileSelection, OneShot: workitems.OneShotRef{MarkerID: oneShotID, CorrelationID: correlationID, AdmissionEpoch: 1}})
 		if err != nil {
 			return OneShotAdmissionResult{}, err
 		}
@@ -1867,6 +1898,9 @@ type oneShotCanonicalRequest struct {
 	// EpisodeOffset is omitted at 0 so an offset-free request keeps its
 	// replay identity; any other value is a different request.
 	EpisodeOffset int `json:"episode_offset,omitempty"`
+	// FileSelection is omitted without a manual selection so a default
+	// request keeps its replay identity.
+	FileSelection []string `json:"file_selection,omitempty"`
 }
 
 func canonicalOneShotRequestHash(input AcquireSeedInput, key string) (string, error) {
@@ -1878,6 +1912,7 @@ func canonicalOneShotRequestHash(input AcquireSeedInput, key string) (string, er
 		EffectiveDigest: input.EffectiveDigest,
 		SelectedSeed:    input.Seed,
 		EpisodeOffset:   input.EpisodeOffset,
+		FileSelection:   input.FileSelection,
 	})
 }
 
@@ -1893,6 +1928,7 @@ type oneShotCurrentInputCanonicalRequest struct {
 	DraftDigest    string       `json:"draft_digest"`
 	SelectedSeed   SelectedSeed `json:"selected_seed"`
 	EpisodeOffset  int          `json:"episode_offset,omitempty"`
+	FileSelection  []string     `json:"file_selection,omitempty"`
 }
 
 func canonicalOneShotCurrentInputRequestHash(draftDigest string, input AcquireSeedInput, key string) (string, error) {
@@ -1902,6 +1938,7 @@ func canonicalOneShotCurrentInputRequestHash(draftDigest string, input AcquireSe
 		DraftDigest:    draftDigest,
 		SelectedSeed:   input.Seed,
 		EpisodeOffset:  input.EpisodeOffset,
+		FileSelection:  input.FileSelection,
 	})
 }
 

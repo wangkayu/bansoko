@@ -150,6 +150,7 @@ export const enErrorCopy = {
   FILE_FILTER_INVALID: "The file rules have errors. Check them and try again.",
   FILE_RULE_PATH_SEPARATOR: "File rules match the file name only. Remove / from the rule.",
   FILE_SELECTION_EMPTY: "No files to import. Adjust the filter rules.",
+  FILE_SELECTION_INVALID: "The chosen files cannot be imported. Choose them again.",
   MEDIA_RECOGNITION_INVALID: "Media recognition settings have errors. Check them and try again.",
 
   // --- Anime and subscriptions ---

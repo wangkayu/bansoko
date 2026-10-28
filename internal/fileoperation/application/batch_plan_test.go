@@ -26,7 +26,7 @@ func TestPlanDriftComparesRowsWithThePlan(t *testing.T) {
 		mediafactsfixture.PlanVideo{Path: "Show/Show - 02.mkv", Identity: episodeIdentity("2")},
 		mediafactsfixture.PlanVideo{Path: "Show/Show SP.mkv", Identity: episodeIdentity("")},
 	)
-	selection := newFileSelection(manifestInput("Show/Show - 01.mkv", "Show/Show - 02.mkv", "Show/Show SP.mkv", "Show/Show - 03.mkv"), filekinds.Version)
+	selection := newFileSelection(manifestInput("Show/Show - 01.mkv", "Show/Show - 02.mkv", "Show/Show SP.mkv", "Show/Show - 03.mkv"), filekinds.Version, nil)
 	videos := []artifactFileContext{
 		{fileRef: "a", relativePath: "Show - 01.mkv"},
 		{fileRef: "b", relativePath: "Show/Show - 02.mkv"},
@@ -53,7 +53,7 @@ func TestPlanDriftComparesMultiEpisodeKeySets(t *testing.T) {
 	double := episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{MediaKind: "tv", Season: 1, SeasonBound: true,
 		FileEvidence: episodeidentity.NewUnsupportedEvidence(episodeidentity.EpisodeSourceFileParser, "file_name", episodeidentity.ShapeRange, "01-02", "")})
 	plan := mediafactsfixture.Plan(t, batchplan.RouteSkip, mediafactsfixture.PlanVideo{Path: "Show - 01-02.mkv", Identity: double})
-	selection := newFileSelection(manifestInput("Show - 01-02.mkv"), filekinds.Version)
+	selection := newFileSelection(manifestInput("Show - 01-02.mkv"), filekinds.Version, nil)
 	videos := []artifactFileContext{{fileRef: "a", relativePath: "Show - 01-02.mkv"}}
 	if drift := planDrift(&plan, selection, videos, map[string]string{"a": "tv:s1:e1,tv:s1:e2"}, false); drift["a"] {
 		t.Fatal("matching key set is not drift")
@@ -72,7 +72,7 @@ func TestPlanExclusionReadsThePlanOutcome(t *testing.T) {
 		mediafactsfixture.PlanVideo{Path: "Show - 03.mkv", Identity: episodeIdentity("3")},
 	)
 	plan.ApplyDedup(map[string]batchplan.Verdict{"tv:s1:e1": batchplan.VerdictExisting, "tv:s1:e2": batchplan.VerdictInFlight})
-	selection := newFileSelection(nil, filekinds.Version)
+	selection := newFileSelection(nil, filekinds.Version, nil)
 	for path, want := range map[string]string{
 		"Show - 01.mkv": batchplan.ReasonCoveredExisting,
 		"Show - 02.mkv": batchplan.ReasonCoveredInFlight,
