@@ -82,7 +82,6 @@ export const statusCopy = {
     group_changed: "字幕组变化",
     policy_changed: "设置变化",
     rss_new_content: "发现新内容",
-    rss_refresh_failed: "刷新失败",
     release_processed: "处理种子",
     download_changed: "下载状态变化",
     artifact_verified: "媒体文件校验",

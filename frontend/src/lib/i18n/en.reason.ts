@@ -409,7 +409,6 @@ export const enReasonCopy = {
   notification_admission_retry_exhausted: "Notification failed repeatedly; retries stopped",
   secret_resolve_failed: "Cannot read the saved credentials",
   request_build_failed: "Cannot build the notification request",
-  rss_refresh_failed: "RSS refresh failed",
   file_operation_failed: "Import failed",
   provider_parser_empty: "The site returned empty content",
   provider_parser_schema_mismatch: "The site's content format has changed",

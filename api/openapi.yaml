@@ -4755,7 +4755,6 @@ paths:
       tags: [Observability]
       operationId: getRuntimeLog
       x-scope: read
-      x-surface-keep: "owner web UI: raw-log view under the diagnostics tab; the frontend caller lands with the log dialog"
       description: >-
         The most recent runtime log lines, for attaching to a bug report. The
         lines are a bounded in-memory tail of what the process wrote to stdout

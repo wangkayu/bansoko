@@ -6,14 +6,17 @@ import {
   type DiagnosticEpisode,
   type ObservabilityRecord,
 } from "../lib/api/client";
+import { isBadgeRecord } from "./logState";
 import { observabilityKeys } from "../lib/queryKeys";
 
 // The "seen" marks behind the log badge: they exist only in this browser (the contract has
-// no database read state and no inbox). Each tab (events / diagnostics) records one time: when
-// that tab is open and unfiltered and the first page has rendered, the mark is set to the
-// server time of the newest entry in the list (never the local clock, to avoid clock skew).
-// The badge = the failures across both tabs that are newer than their tab's mark. When
-// localStorage is unavailable, reads and writes silently skip and everything counts as unseen.
+// no database read state and no inbox). Two independent marks: the events mark advances to the
+// server time of the newest entry when the unfiltered events list renders, the diagnostics mark
+// when the diagnostics tab opens. Badge = failed acquisition results (one per seed) and
+// failed / unconfirmed notifications newer than the events mark, plus open diagnostic episodes
+// that first failed after the diagnostics mark. Repeats and recoveries never change it; the
+// internal-error row never counts. When localStorage is unavailable, reads and writes silently
+// skip and everything counts as unseen.
 
 export type LogSeenTab = "records" | "diagnostics";
 
@@ -82,21 +85,19 @@ export function recordSeenTime(record: ObservabilityRecord): string | undefined 
   return undefined;
 }
 
-/** A diagnostic episode's sort time (recovery time first), consistent with the list order. */
-export function diagnosticSeenTime(episode: DiagnosticEpisode): string {
-  return episode.succeeded_after_at ?? episode.last_failed_at;
+/** An open episode is a badge candidate: recovered ones never count. */
+export function isOpenEpisode(episode: DiagnosticEpisode): boolean {
+  return !episode.succeeded_after_at;
 }
 
-/** Events shown as failures in the log: business failures, failed notification deliveries or unknown outcomes. */
-export function isFailureRecord(record: ObservabilityRecord): boolean {
-  if (record.record_type === "business") return record.entry?.outcome === "failure";
-  if (record.record_type === "plugin") return record.delivery?.state === "failed" || record.delivery?.state === "unknown";
-  return false;
+/** Open diagnostic episodes that first failed after the mark (repeats keep their first time, so they never re-count). */
+export function newOpenEpisodes(episodes: readonly DiagnosticEpisode[], mark: string | null): DiagnosticEpisode[] {
+  return episodes.filter((episode) => isOpenEpisode(episode) && isNewer(episode.first_failed_at, mark));
 }
 
-/** Error diagnostics not yet recovered. */
-export function isOpenError(episode: DiagnosticEpisode): boolean {
-  return episode.severity === "error" && !episode.succeeded_after_at;
+/** Records the badge counts: failed acquisition results and failed / unconfirmed notifications newer than the mark. */
+export function newBadgeRecords(records: readonly ObservabilityRecord[], mark: string | null): ObservabilityRecord[] {
+  return records.filter((record) => isBadgeRecord(record) && isNewer(recordSeenTime(record), mark));
 }
 
 export function latestTime(times: Array<string | undefined>): string | undefined {
@@ -106,33 +107,22 @@ export function latestTime(times: Array<string | undefined>): string | undefined
 }
 
 /**
- * The count behind the log entry badge: only failures visible in the log (business +
- * notification deliveries on the events tab, unrecovered errors on the diagnostics tab), and
- * only those newer than the tab's "seen" mark. Shared by the top bar, the phone bottom bar
- * and the More sheet.
+ * The count behind the log entry badge (rule a, see the header). Shared by the top bar, the
+ * phone bottom bar and the More sheet.
  */
 export function useLogFailureBadge(): number {
   const recordsSeen = useLogSeen("records");
   const diagnosticsSeen = useLogSeen("diagnostics");
   const failures = useQuery({
-    queryKey: observabilityKeys.badgeRecords("failure"),
-    queryFn: () => listObservabilityRecords({ kind: ["business", "plugin"], outcome: "failure", limit: BADGE_LIMIT }),
+    queryKey: observabilityKeys.badgeRecords,
+    queryFn: () =>
+      listObservabilityRecords({ kind: ["business", "plugin"], entry_kind: ["acquisition_settled"], state: "failure", limit: BADGE_LIMIT }),
   });
-  // A notification delivery with an unknown result also shows as a failure in the log; the server outcome is unknown.
-  const unknownDeliveries = useQuery({
-    queryKey: observabilityKeys.badgeRecords("unknown"),
-    queryFn: () => listObservabilityRecords({ kind: ["plugin"], outcome: "unknown", limit: BADGE_LIMIT }),
-  });
-  const errors = useQuery({
+  const open = useQuery({
     queryKey: observabilityKeys.badgeDiagnostics,
-    queryFn: () => listObservabilityDiagnostics({ severity: "error", limit: BADGE_LIMIT }),
+    queryFn: () => listObservabilityDiagnostics({ state: "open", limit: BADGE_LIMIT }),
   });
-  const records = [...(failures.data?.records ?? []), ...(unknownDeliveries.data?.records ?? [])];
-  const recordCount = records.filter((record) => isFailureRecord(record) && isNewer(recordSeenTime(record), recordsSeen)).length;
-  const errorCount = (errors.data?.episodes ?? []).filter(
-    (episode) => isOpenError(episode) && isNewer(episode.last_failed_at, diagnosticsSeen),
-  ).length;
-  return recordCount + errorCount;
+  return newBadgeRecords(failures.data?.records ?? [], recordsSeen).length + newOpenEpisodes(open.data?.episodes ?? [], diagnosticsSeen).length;
 }
 
 export function badgeText(count: number): string {

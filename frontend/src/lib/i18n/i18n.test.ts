@@ -56,7 +56,7 @@ describe("reason codes", () => {
   });
 
   it("诊断错误码都有中文说明", () => {
-    for (const code of ["dispatch_failed", "dispatch_partial", "rss_refresh_failed", "qb_submit_failed", "file_operation_failed", "provider_parser_empty", "retention_sweep_failed", "hardlink_cross_device"]) {
+    for (const code of ["dispatch_failed", "dispatch_partial", "qb_submit_failed", "file_operation_failed", "provider_parser_empty", "retention_sweep_failed", "hardlink_cross_device"]) {
       expect(reasonView(code)?.title).toBeUndefined();
     }
   });
