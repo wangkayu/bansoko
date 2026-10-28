@@ -37,6 +37,10 @@ type Stored struct {
 	// TMDB season only when this merge writes the TMDB tuple (the one-time
 	// prefill at binding) and only while it is unset.
 	Season *int
+	// MediaKind is the owner media kind (media_kind_override; unset is tv). It
+	// is filled from the matched TMDB kind only when this merge writes the
+	// TMDB tuple and only while it is unset.
+	MediaKind *string
 }
 
 func (s Stored) HasBGM() bool { return s.BGMWorkID != nil && *s.BGMWorkID != "" }
@@ -53,17 +57,18 @@ func (s Stored) Complete() bool { return s.HasBGM() && s.HasTMDB() }
 type Plan struct {
 	Merged                                Stored
 	NewBGM, NewTMDB, NewEpisodes, NewYear bool
-	NewSeason                             bool
+	NewSeason, NewMediaKind               bool
 }
 
 // Changed reports whether any field would be written.
 func (p Plan) Changed() bool {
-	return p.NewBGM || p.NewTMDB || p.NewEpisodes || p.NewYear || p.NewSeason
+	return p.NewBGM || p.NewTMDB || p.NewEpisodes || p.NewYear || p.NewSeason || p.NewMediaKind
 }
 
 // Merge fills each empty field from the match. TMDB is written as a tuple or
 // not at all. Year comes from the matched TMDB work and only while empty;
-// Season comes from the TMDB tuple this merge binds and only while empty.
+// Season and MediaKind come from the TMDB tuple this merge binds and only
+// while empty.
 func Merge(current Stored, match *matcher.MatchResult) Plan {
 	plan := Plan{Merged: current}
 	if match == nil {
@@ -84,6 +89,12 @@ func Merge(current Stored, match *matcher.MatchResult) Plan {
 		if current.Season == nil && kind == "tv" {
 			owner := season
 			m.Season, plan.NewSeason = &owner, true
+		}
+		// The owner media kind is backfilled once from the bound TMDB kind,
+		// and only while unset; replacing the tuple later never changes it.
+		if current.MediaKind == nil {
+			owner := kind
+			m.MediaKind, plan.NewMediaKind = &owner, true
 		}
 	}
 	if current.TotalEpisodes == nil && match.TotalEpisodes != nil {
@@ -141,6 +152,9 @@ func ApplyTx(ctx context.Context, tx *sql.Tx, managedAnimeID string, expectedVer
 	}
 	if plan.NewSeason {
 		add("season", *plan.Merged.Season)
+	}
+	if plan.NewMediaKind {
+		add("media_kind_override", *plan.Merged.MediaKind)
 	}
 	res, err := tx.ExecContext(ctx, `UPDATE anime_metadata SET `+strings.Join(sets, ", ")+
 		`, version = version + 1, updated_at = NOW() WHERE managed_anime_id = $1 AND version = $2`, args...)

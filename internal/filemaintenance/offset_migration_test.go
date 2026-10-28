@@ -179,10 +179,10 @@ SELECT state, COALESCE(reason_code, '') FROM offset_migration_plans WHERE genera
 		t.Fatalf("frozen movie placement = %s/%s, want blocked/movie_noop", state, reason)
 	}
 
-	// The reverse rebinding: a frozen TV identity with a current movie metadata
-	// row still plans the TV offset change.
+	// The reverse rebinding: a frozen TV identity with a current movie owner
+	// kind still plans the TV offset change.
 	if _, err := db.ExecContext(ctx, `
-UPDATE anime_metadata SET tmdb_media_kind = 'movie', tmdb_season = 0, version = version + 1
+UPDATE anime_metadata SET media_kind_override = 'movie', tmdb_media_kind = 'movie', tmdb_season = 0, version = version + 1
 WHERE managed_anime_id = 'anime-offmig'`); err != nil {
 		t.Fatal(err)
 	}

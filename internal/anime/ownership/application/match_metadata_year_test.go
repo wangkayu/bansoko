@@ -56,3 +56,19 @@ func TestMergeMetadataFillsTheOwnerSeasonOnlyWhenEmpty(t *testing.T) {
 		t.Fatalf("re-match on a bound tuple season = %v, want it left unset", *got)
 	}
 }
+
+// The owner media kind follows the same fill-if-empty rule: the match writes it
+// from the TMDB tuple it newly binds, only while the kind is unset. A stored
+// kind is never overwritten.
+func TestMergeMetadataFillsTheOwnerMediaKindOnlyWhenEmpty(t *testing.T) {
+	workID, tv, movie, movieSeason := "265010", "tv", "movie", 0
+	movieMatch := &matcher.MatchResult{TmdbWorkID: &workID, TmdbKind: &movie, TmdbSeason: &movieSeason}
+
+	if got := mergeMetadata(MetadataMatchMetadata{}, movieMatch).MediaKindOverride; got == nil || *got != "movie" {
+		t.Fatalf("unset kind = %v, want the matched movie", got)
+	}
+
+	if got := mergeMetadata(MetadataMatchMetadata{MediaKindOverride: &tv}, movieMatch).MediaKindOverride; got == nil || *got != "tv" {
+		t.Fatalf("stored kind = %v, want it kept at tv", got)
+	}
+}

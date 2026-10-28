@@ -9,10 +9,13 @@ import (
 	"bansoko/internal/transport/httpapi/generated"
 )
 
-// The owner metadata PATCH is complete-owner replacement: the media-kind pin is
-// persisted verbatim, a nil pin clears it, and the pin never rewrites the TMDB
-// tuple it sits next to. A value outside the persisted vocabulary is refused
-// before the transaction, so it cannot bump the owner version.
+// The owner media kind is an owner field next to the TMDB tuple. Subscribing a
+// draft that binds a TMDB tuple without a kind backfills the kind from the
+// tuple. The metadata PATCH is complete-owner replacement: a submitted kind is
+// persisted verbatim and never rewrites the tuple; an unset kind is backfilled
+// from the TMDB tuple the patch binds, and stays unset (tv) without one. A
+// value outside the persisted vocabulary is refused before the transaction, so
+// it cannot bump the owner version.
 func TestPatchAnimeMetadataMediaKindOverrideRoundTrip(t *testing.T) {
 	db := animetest.OpenTestDB(t)
 	service := ownershipNewTestService(t, db, &ownershipFakeFetcher{})
@@ -23,8 +26,8 @@ func TestPatchAnimeMetadataMediaKindOverrideRoundTrip(t *testing.T) {
 		t.Fatalf("subscribe: %v", err)
 	}
 	animeID := subscribed.ManagedAnime.Id
-	if subscribed.Metadata.MediaKindOverride != nil {
-		t.Fatalf("a fresh subscribe must not pin a media kind, got %q", string(*subscribed.Metadata.MediaKindOverride))
+	if subscribed.Metadata.MediaKindOverride == nil || string(*subscribed.Metadata.MediaKindOverride) != "tv" {
+		t.Fatalf("subscribing a TV tuple without a kind must backfill tv, got %v", subscribed.Metadata.MediaKindOverride)
 	}
 
 	readRow := func() (sql.NullString, string, int64) {
@@ -38,6 +41,9 @@ FROM anime_metadata WHERE managed_anime_id = $1`, animeID).Scan(&override, &tupl
 		}
 		return override, tupleKind.String, version
 	}
+	if override, _, _ := readRow(); !override.Valid || override.String != "tv" {
+		t.Fatalf("subscribed kind = %v, want the backfilled tv", override)
+	}
 
 	movie := "movie"
 	pinned, err := service.PatchAnimeMetadataApplication(ctx, animeID, MetadataPatchInput{
@@ -47,14 +53,14 @@ FROM anime_metadata WHERE managed_anime_id = $1`, animeID).Scan(&override, &tupl
 		MediaKindOverride: &movie,
 	})
 	if err != nil {
-		t.Fatalf("pin media kind: %v", err)
+		t.Fatalf("set media kind: %v", err)
 	}
 	if pinned.MediaKindOverride == nil || *pinned.MediaKindOverride != "movie" || pinned.TMDB == nil || pinned.TMDB.MediaKind != "tv" {
-		t.Fatalf("patch result must echo the pin and the untouched tuple: %+v", pinned)
+		t.Fatalf("patch result must echo the kind and the untouched tuple: %+v", pinned)
 	}
 	override, tupleKind, version := readRow()
 	if !override.Valid || override.String != "movie" {
-		t.Fatalf("persisted pin = %v, want movie", override)
+		t.Fatalf("persisted kind = %v, want movie", override)
 	}
 	if tupleKind != "tv" {
 		t.Fatalf("tmdb_media_kind = %q, want the untouched tv binding", tupleKind)
@@ -63,38 +69,63 @@ FROM anime_metadata WHERE managed_anime_id = $1`, animeID).Scan(&override, &tupl
 		t.Fatalf("metadata version = %d, want 2", version)
 	}
 
-	// A nil pin is the clear: the column returns to NULL and the tuple stays.
-	cleared, err := service.PatchAnimeMetadataApplication(ctx, animeID, MetadataPatchInput{
+	// An unset kind next to a bound tuple is backfilled from the tuple kind.
+	backfilled, err := service.PatchAnimeMetadataApplication(ctx, animeID, MetadataPatchInput{
 		ExpectedVersion:   2,
 		BGM:               &BGMBinding{WorkID: "bgm-123"},
 		TMDB:              &TMDBBinding{WorkID: "tmdb-456", MediaKind: "tv", Season: 1},
 		MediaKindOverride: nil,
 	})
 	if err != nil {
-		t.Fatalf("clear media kind pin: %v", err)
+		t.Fatalf("patch an unset kind with a bound tuple: %v", err)
 	}
-	if cleared.MediaKindOverride != nil {
-		t.Fatalf("cleared pin must read back nil, got %q", *cleared.MediaKindOverride)
+	if backfilled.MediaKindOverride == nil || *backfilled.MediaKindOverride != "tv" {
+		t.Fatalf("an unset kind with a tv tuple must read back tv, got %v", backfilled.MediaKindOverride)
 	}
 	override, tupleKind, version = readRow()
-	if override.Valid {
-		t.Fatalf("cleared pin must persist NULL, got %q", override.String)
+	if !override.Valid || override.String != "tv" || tupleKind != "tv" || version != 3 {
+		t.Fatalf("backfill must persist tv, keep the tuple and bump the version once: kind=%v tuple=%q version=%d", override, tupleKind, version)
 	}
-	if tupleKind != "tv" || version != 3 {
-		t.Fatalf("clear must keep the tuple and bump the version once: tuple=%q version=%d", tupleKind, version)
+
+	// Clearing the tuple keeps a submitted kind.
+	kept, err := service.PatchAnimeMetadataApplication(ctx, animeID, MetadataPatchInput{
+		ExpectedVersion:   3,
+		BGM:               &BGMBinding{WorkID: "bgm-123"},
+		MediaKindOverride: &movie,
+	})
+	if err != nil {
+		t.Fatalf("clear the tuple: %v", err)
+	}
+	if kept.MediaKindOverride == nil || *kept.MediaKindOverride != "movie" || kept.TMDB != nil {
+		t.Fatalf("clearing the tuple must keep the submitted kind: %+v", kept)
+	}
+	if override, _, version = readRow(); !override.Valid || override.String != "movie" || version != 4 {
+		t.Fatalf("persisted kind after clearing the tuple = %v (version %d), want movie", override, version)
+	}
+
+	// Without a tuple an unset kind stays unset, which is tv.
+	if _, err := service.PatchAnimeMetadataApplication(ctx, animeID, MetadataPatchInput{
+		ExpectedVersion:   4,
+		BGM:               &BGMBinding{WorkID: "bgm-123"},
+		MediaKindOverride: nil,
+	}); err != nil {
+		t.Fatalf("unset the kind: %v", err)
+	}
+	if override, _, version = readRow(); override.Valid || version != 5 {
+		t.Fatalf("an unset kind without a tuple must persist NULL: kind=%v version=%d", override, version)
 	}
 
 	// A value the column cannot store is refused before any write.
 	invalid := "ova"
 	if _, err := service.PatchAnimeMetadataApplication(ctx, animeID, MetadataPatchInput{
-		ExpectedVersion:   3,
+		ExpectedVersion:   5,
 		BGM:               &BGMBinding{WorkID: "bgm-123"},
 		TMDB:              &TMDBBinding{WorkID: "tmdb-456", MediaKind: "tv", Season: 1},
 		MediaKindOverride: &invalid,
 	}); err == nil {
-		t.Fatal("an out-of-vocabulary pin must be refused")
+		t.Fatal("an out-of-vocabulary kind must be refused")
 	}
-	if override, _, version = readRow(); override.Valid || version != 3 {
-		t.Fatalf("refused pin must not write: override=%v version=%d", override, version)
+	if override, _, version = readRow(); override.Valid || version != 5 {
+		t.Fatalf("a refused kind must not write: kind=%v version=%d", override, version)
 	}
 }

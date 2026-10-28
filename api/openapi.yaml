@@ -2294,7 +2294,7 @@ paths:
         candidate's current pointer to it; a stale expected_version is a typed
         409 (OWNER_VERSION_CONFLICT) and never a silent merge. A metadata match
         written here (metadata.bgm and/or metadata.tmdb, plus the optional
-        metadata.media_kind_override pin) is the naming fact source for every
+        metadata.media_kind_override) is the naming fact source for every
         later render of that revision; a draft that selects no match keeps
         metadata absent and naming stays fail-closed. A one-shot never writes
         here: its title, metadata and rules are its own unsaved configuration,
@@ -9694,9 +9694,10 @@ components:
           nullable: true
           enum: [tv, movie]
           description: >-
-            Owner pin of the frozen media kind. NULL means unset; the frozen
-            kind is then the TMDB binding's media_kind, then the unbound TV
-            default. It never rewrites the TMDB tuple.
+            Owner media kind (tv | movie) the episode identity resolves with.
+            NULL is tv; the TMDB binding's media_kind is never read for it.
+            Subscribing a draft that binds a TMDB tuple while it is NULL stores
+            the tuple's media_kind once. It never rewrites the TMDB tuple.
         total_episodes:
           type: integer
           nullable: true
@@ -9745,9 +9746,12 @@ components:
           nullable: true
           enum: [tv, movie]
           description: >-
-            Owner pin of the frozen media kind. NULL means unset; the frozen
-            kind is then the TMDB binding's media_kind, then the unbound TV
-            default. It never rewrites the TMDB tuple.
+            Owner media kind (tv | movie) the episode identity resolves with.
+            NULL is tv; the TMDB binding's media_kind is never read for it. It
+            is filled once from the TMDB media_kind when a TMDB tuple is bound
+            while it is NULL (subscribe, metadata patch or metadata match);
+            clearing or replacing the tuple later never changes it. It never
+            rewrites the TMDB tuple.
         total_episodes:
           type: integer
           nullable: true
@@ -12572,8 +12576,10 @@ components:
           nullable: true
           enum: [tv, movie]
           description: >-
-            Complete owner value of the pin: null clears it, a value
-            (tv | movie) replaces it. It never rewrites the TMDB tuple.
+            Complete owner value of the media kind: a value (tv | movie)
+            replaces it; null leaves it unset (tv) unless the patch carries a
+            TMDB tuple, which fills it with the tuple's media_kind. It never
+            rewrites the TMDB tuple.
         total_episodes:
           type: integer
           nullable: true
@@ -12617,8 +12623,9 @@ components:
         replaces the persisted metadata for the read only. The
         read consumes title_override (anime.title_override), year (anime.year),
         season (anime.season and the season composites), bgm (bgm.* facts and the metadata hold), tmdb (tmdb.* facts, the
-        bound season and media kind of episode parsing, and the metadata hold)
-        and media_kind_override (the media kind of episode parsing).
+        bound season carried as naming evidence, and the metadata hold)
+        and media_kind_override (the media kind of episode parsing, filled
+        from the tmdb media_kind by the same rule as the patch).
         total_episodes is validated but does not change a
         preview. No value is filled from network metadata.
       properties:

@@ -73,7 +73,7 @@ func TestNamingTargetRendererFrozenBindingSurvivesMetadataRebinding(t *testing.T
 			// Change the complete current binding after the first render. A live
 			// metadata read would switch the naming branch as well as IDs/season.
 			if _, err := db.Exec(`UPDATE anime_metadata
-SET tmdb_media_kind = 'movie', tmdb_season = 9,
+SET media_kind_override = 'movie', tmdb_media_kind = 'movie', tmdb_season = 9,
     tmdb_work_id = 'rebound-tmdb', bgm_work_id = 'rebound-bgm', version = version + 1
 WHERE managed_anime_id = $1`, observation.AnimeID); err != nil {
 				t.Fatal(err)

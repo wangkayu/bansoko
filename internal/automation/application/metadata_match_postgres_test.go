@@ -207,10 +207,13 @@ func TestMetadataBackfillFillsEmptyNeverOverwritesAndHonoursCAS(t *testing.T) {
 	apply := func(version int64) bool {
 		t.Helper()
 		var stored backfill.Stored
-		var bgm, tmdb, kind sql.NullString
+		var bgm, tmdb, kind, ownerKind sql.NullString
 		var season, eps, year sql.NullInt64
-		if err := db.QueryRowContext(ctx, `SELECT bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season, total_episodes, year FROM anime_metadata WHERE managed_anime_id='anime-meta-fill'`).Scan(&bgm, &tmdb, &kind, &season, &eps, &year); err != nil {
+		if err := db.QueryRowContext(ctx, `SELECT bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season, total_episodes, year, media_kind_override FROM anime_metadata WHERE managed_anime_id='anime-meta-fill'`).Scan(&bgm, &tmdb, &kind, &season, &eps, &year, &ownerKind); err != nil {
 			t.Fatal(err)
+		}
+		if ownerKind.Valid {
+			stored.MediaKind = &ownerKind.String
 		}
 		if bgm.Valid {
 			stored.BGMWorkID = &bgm.String
@@ -255,23 +258,24 @@ func TestMetadataBackfillFillsEmptyNeverOverwritesAndHonoursCAS(t *testing.T) {
 		t.Fatal("empty metadata must be filled")
 	}
 	var eps, year, season int
-	var tmdb string
-	if err := db.QueryRowContext(ctx, `SELECT version, bgm_work_id, total_episodes, year, tmdb_work_id, tmdb_season FROM anime_metadata WHERE managed_anime_id='anime-meta-fill'`).Scan(&version, &bgm, &eps, &year, &tmdb, &season); err != nil {
+	var tmdb, ownerKind string
+	if err := db.QueryRowContext(ctx, `SELECT version, bgm_work_id, total_episodes, year, tmdb_work_id, tmdb_season, media_kind_override FROM anime_metadata WHERE managed_anime_id='anime-meta-fill'`).Scan(&version, &bgm, &eps, &year, &tmdb, &season, &ownerKind); err != nil {
 		t.Fatal(err)
 	}
-	if version != 2 || bgm.String != "b1" || eps != 12 || year != 2024 || tmdb != "t1" || season != 2 {
-		t.Fatalf("unexpected fill: v%d %v %d %d %s %d", version, bgm, eps, year, tmdb, season)
+	// Binding the TMDB tuple backfills the unset owner kind from the tuple kind.
+	if version != 2 || bgm.String != "b1" || eps != 12 || year != 2024 || tmdb != "t1" || season != 2 || ownerKind != "tv" {
+		t.Fatalf("unexpected fill: v%d %v %d %d %s %d kind=%s", version, bgm, eps, year, tmdb, season, ownerKind)
 	}
 	// A different result never overwrites stored values.
 	match = &matcher.MatchResult{BgmID: str("b2"), TotalEpisodes: num(24), TmdbWorkID: str("t2"), TmdbKind: str("movie"), TmdbSeason: num(0), TmdbYear: num(2000)}
 	if apply(2) {
 		t.Fatal("full metadata must not be rewritten")
 	}
-	if err := db.QueryRowContext(ctx, `SELECT version, bgm_work_id, total_episodes, year FROM anime_metadata WHERE managed_anime_id='anime-meta-fill'`).Scan(&version, &bgm, &eps, &year); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT version, bgm_work_id, total_episodes, year, media_kind_override FROM anime_metadata WHERE managed_anime_id='anime-meta-fill'`).Scan(&version, &bgm, &eps, &year, &ownerKind); err != nil {
 		t.Fatal(err)
 	}
-	if version != 2 || bgm.String != "b1" || eps != 12 || year != 2024 {
-		t.Fatalf("overwrite happened: v%d %v %d %d", version, bgm, eps, year)
+	if version != 2 || bgm.String != "b1" || eps != 12 || year != 2024 || ownerKind != "tv" {
+		t.Fatalf("overwrite happened: v%d %v %d %d kind=%s", version, bgm, eps, year, ownerKind)
 	}
 }
 

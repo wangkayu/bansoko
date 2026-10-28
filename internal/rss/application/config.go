@@ -122,14 +122,12 @@ func metadataHoldFromBindings(bgm *animedomain.BGMBinding, tmdb *animedomain.TMD
 	return animedomain.MetadataHoldFromBindings(bgm, tmdb), nil
 }
 
-// frozenMediaBinding projects the TMDB metadata binding and the owner
-// media-kind override into the frozen media kind/season context one release
-// identity resolves with. The override wins when set; otherwise a missing
-// binding is the historical TV default (season unset) and a movie binding
-// short-circuits the resolver to the canonical movie:0 identity. The bound
-// season participates in the TV coverage key; a bound season 0 keeps the
-// historical default of season 1 (SeasonBound stays false on the automatic
-// path; only explicit continuous-SP recognition opts into preserving 0).
+// frozenMediaBinding projects the owner media kind and the TMDB metadata
+// binding into the frozen media kind/season context one release resolves with.
+// The kind is the owner kind alone (unset is tv; the TMDB kind is never read),
+// and a movie kind short-circuits the resolver to the canonical movie:0
+// identity. The bound TMDB season is naming evidence only; it is not part of
+// the coverage key.
 //
 // The projection itself lives in anime/domain so the saved-revision preview and
 // the one-shot admission resolve the identical binding; this wrapper only keeps

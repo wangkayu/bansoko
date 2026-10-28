@@ -142,9 +142,10 @@ func seedPlacedRenderChain(t *testing.T, db *sql.DB, spec placedRenderChainSpec)
 
 	exec(`INSERT INTO managed_anime(id, title) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING`,
 		spec.AnimeID, spec.AnimeTitle)
-	exec(`INSERT INTO anime_metadata(managed_anime_id, tmdb_work_id, tmdb_media_kind, tmdb_season)
-VALUES ($1, 'work-' || $1, $2, $3)
-ON CONFLICT (managed_anime_id) DO UPDATE SET tmdb_media_kind = EXCLUDED.tmdb_media_kind, tmdb_season = EXCLUDED.tmdb_season`,
+	exec(`INSERT INTO anime_metadata(managed_anime_id, tmdb_work_id, tmdb_media_kind, tmdb_season, media_kind_override)
+VALUES ($1, 'work-' || $1, $2, $3, $2)
+ON CONFLICT (managed_anime_id) DO UPDATE SET tmdb_media_kind = EXCLUDED.tmdb_media_kind, tmdb_season = EXCLUDED.tmdb_season,
+    media_kind_override = EXCLUDED.media_kind_override`,
 		spec.AnimeID, spec.TMDBMediaKind, spec.TMDBSeason)
 	// One subscription per anime (unique managed_anime_id): reuse the caller's
 	// subscription when the test already seeded one.

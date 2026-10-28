@@ -1630,7 +1630,7 @@ func TestPatchCustomCandidateWritesTheChosenMetadataMatch(t *testing.T) {
 	}
 	// The match is the naming fact source: the same frozen media binding the
 	// render resolves the tv branch and the season directory from.
-	mediaKind, season, _ := animedomain.FrozenMediaBinding(revision.Draft.Metadata.Tmdb, revision.Draft.Metadata.MediaKindOverride)
+	mediaKind, season, _ := animedomain.FrozenMediaBinding(revision.Draft.Metadata.Tmdb, revision.Draft.Metadata.BackfilledMediaKind())
 	if mediaKind != string(animedomain.TMDBMediaKindTv) || season != 2 {
 		t.Fatalf("naming media binding = %q/%d, want tv/2", mediaKind, season)
 	}

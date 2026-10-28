@@ -68,9 +68,13 @@ FOR UPDATE`, managedAnimeID).Scan(&currentBgm, &currentTmdbWorkID, &currentTmdbK
 		animeapplication.NullableValueChanged(currentTmdbKind, animeapplication.TMDBMediaKind(domainTMDB)) ||
 		animeapplication.NullableIntChanged(currentTmdbSeason, animeapplication.TMDBSeason(domainTMDB)) ||
 		animeapplication.NullableIntPtrChanged(currentTotalEpisodes, patch.TotalEpisodes)
+	// The owner media kind is backfilled from the TMDB tuple this patch binds
+	// while the submitted kind is unset; a submitted kind is kept whatever
+	// the tuple.
+	nextMediaKind := animedomain.BackfilledMediaKind(patch.MediaKindOverride, domainTMDB)
 	nextMediaKindOverride := ""
-	if patch.MediaKindOverride != nil {
-		nextMediaKindOverride = *patch.MediaKindOverride
+	if nextMediaKind != nil {
+		nextMediaKindOverride = *nextMediaKind
 	}
 	changed = changed || animeapplication.NullableValueChanged(currentMediaKindOverride, nextMediaKindOverride)
 	if _, err := tx.ExecContext(ctx, `
@@ -116,7 +120,7 @@ RETURNING title_override`,
 		TMDB:              animeapplication.ApplicationTMDBFromDomain(domainTMDB),
 		TitleOverride:     nullStringPtr(storedTitleOverride),
 		TotalEpisodes:     animeapplication.CloneInt(patch.TotalEpisodes),
-		MediaKindOverride: animeapplication.CloneString(patch.MediaKindOverride),
+		MediaKindOverride: animeapplication.CloneString(nextMediaKind),
 		Year:              animeapplication.CloneInt(patch.Year),
 		Season:            animeapplication.CloneInt(patch.Season),
 		Version:           version + 1,

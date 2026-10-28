@@ -249,7 +249,7 @@ func metadataMatchComplete(metadata MetadataMatchMetadata) bool {
 
 // storedMetadata projects the owner view onto the shared backfill input.
 func storedMetadata(m MetadataMatchMetadata) backfill.Stored {
-	stored := backfill.Stored{TotalEpisodes: m.TotalEpisodes, Year: m.Year, Season: m.Season}
+	stored := backfill.Stored{TotalEpisodes: m.TotalEpisodes, Year: m.Year, Season: m.Season, MediaKind: m.MediaKindOverride}
 	if m.BGM != nil {
 		stored.BGMWorkID = &m.BGM.WorkID
 	}
@@ -269,7 +269,7 @@ func mergeMetadata(current MetadataMatchMetadata, match *matcher.MatchResult) Me
 	if m.HasTMDB() {
 		merged.TMDB = &MetadataMatchTMDB{WorkID: *m.TMDBWorkID, MediaKind: *m.TMDBKind, Season: *m.TMDBSeason}
 	}
-	merged.TotalEpisodes, merged.Year, merged.Season = m.TotalEpisodes, m.Year, m.Season
+	merged.TotalEpisodes, merged.Year, merged.Season, merged.MediaKindOverride = m.TotalEpisodes, m.Year, m.Season, m.MediaKind
 	return merged
 }
 

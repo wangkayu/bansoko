@@ -120,13 +120,12 @@ func TestResolveReleaseParserEvidenceMediaKindOverridePinsMovieIdentity(t *testi
 	}
 }
 
-// Clearing the pin (or never setting one) falls back to the bound TMDB kind,
-// so a movie override that is removed returns to the ordinary TV path without
-// touching the TMDB tuple.
-func TestResolveReleaseParserEvidenceClearedMediaKindOverrideFallsBackToBinding(t *testing.T) {
-	tvBinding := &animedomain.TMDBBinding{WorkId: "260972", MediaKind: animedomain.TMDBMediaKindTv, Season: 2}
+// An unset owner kind is tv and never falls back to the TMDB kind: a movie
+// binding without an owner kind resolves the ordinary TV path.
+func TestResolveReleaseParserEvidenceUnsetMediaKindIsTVWhateverTheBinding(t *testing.T) {
+	movieBinding := &animedomain.TMDBBinding{WorkId: "260972", MediaKind: animedomain.TMDBMediaKindMovie, Season: 0}
 	snapshot := targetPlanningSnapshot(t, string(parser.ParserRegex), `\[E(?P<episode>\d{1,4})\]`, 0)
-	snapshot.mediaKind, snapshot.mediaSeason, snapshot.mediaSeasonBound = animedomain.FrozenMediaBinding(tvBinding, nil)
+	snapshot.mediaKind, snapshot.mediaSeason, snapshot.mediaSeasonBound = animedomain.FrozenMediaBinding(movieBinding, nil)
 
 	evidence, err := resolveReleaseParserEvidence(context.Background(), snapshot, "[RealGroup] Preview Show [E07] [1080p]")
 	if err != nil {
@@ -136,7 +135,7 @@ func TestResolveReleaseParserEvidenceClearedMediaKindOverrideFallsBackToBinding(
 		t.Fatalf("kind=%s coverage=%v, want tv:e7", evidence.Identity.Kind, evidence.Identity.CoverageKey)
 	}
 	if provenance := evidence.Provenance(); provenance.MediaKind != "tv" {
-		t.Fatalf("provenance media_kind=%q, want the bound tv kind", provenance.MediaKind)
+		t.Fatalf("provenance media_kind=%q, want tv for an unset owner kind", provenance.MediaKind)
 	}
 }
 

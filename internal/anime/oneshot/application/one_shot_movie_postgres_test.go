@@ -432,13 +432,13 @@ func TestAcquireSeedOnceMovieEvidenceDoesNotDriftAfterMetadataEdit(t *testing.T)
 	// assertion below is not vacuous.
 	if _, err := service.db.ExecContext(context.Background(), `
 UPDATE anime_metadata
-SET tmdb_media_kind = 'tv', tmdb_season = 5, version = version + 1
+SET media_kind_override = 'tv', tmdb_media_kind = 'tv', tmdb_season = 5, version = version + 1
 WHERE managed_anime_id = $1`, result.ManagedAnimeID); err != nil {
 		t.Fatalf("rebind metadata to tv: %v", err)
 	}
 	var reboundKind string
 	if err := service.db.QueryRowContext(context.Background(), `
-SELECT tmdb_media_kind FROM anime_metadata WHERE managed_anime_id = $1`, result.ManagedAnimeID).Scan(&reboundKind); err != nil {
+SELECT media_kind_override FROM anime_metadata WHERE managed_anime_id = $1`, result.ManagedAnimeID).Scan(&reboundKind); err != nil {
 		t.Fatal(err)
 	}
 	if reboundKind != "tv" {

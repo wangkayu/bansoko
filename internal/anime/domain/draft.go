@@ -248,53 +248,62 @@ func validateAnimeYear(field string, year *int) []FieldViolation {
 	return []FieldViolation{{Field: field, Code: "DRAFT_INVALID", Message: "year must be between 1900 and 2100 when provided; send null to clear"}}
 }
 
-// FrozenMediaBinding projects a TMDB binding into the frozen media kind/season
-// context one release identity resolves with. It mirrors the RSS snapshot
-// projection exactly (`rss/application.frozenMediaBinding` delegates here) so a
-// saved revision preview, a one-shot admission and an ordinary RSS evaluation
-// can never disagree about the binding.
+// MediaKind is the media kind an identity resolves with: the owner field
+// (anime_metadata.media_kind_override, or a draft's media_kind_override),
+// where unset is tv. The TMDB kind is never read: a metadata binding only
+// locates the work. Only movie selects the movie branch; the writer validates
+// the tv|movie vocabulary, so nothing else is ever stored.
+func MediaKind(owner *string) string {
+	if owner != nil && strings.TrimSpace(*owner) == string(TMDBMediaKindMovie) {
+		return string(TMDBMediaKindMovie)
+	}
+	return string(TMDBMediaKindTv)
+}
+
+// BackfilledMediaKind is the owner media kind after the one-time backfill: a
+// set owner value is kept; an unset one takes the kind of the bound TMDB
+// tuple. Every path that binds a TMDB tuple applies it, so the owner value is
+// set whenever a TMDB tuple is bound, and clearing or replacing the tuple
+// later never changes it.
+func BackfilledMediaKind(owner *string, tmdb *NullableTMDBBinding) *string {
+	if owner != nil || tmdb == nil {
+		return owner
+	}
+	switch tmdb.MediaKind {
+	case TMDBMediaKindTv, TMDBMediaKindMovie:
+		kind := string(tmdb.MediaKind)
+		return &kind
+	}
+	return nil
+}
+
+// BackfilledMediaKind is the draft's owner media kind after the one-time
+// backfill: what subscribing writes and what every draft-side identity
+// resolves with. A stored draft keeps its own value; the rule is applied where
+// the draft is read.
+func (m AnimeMetadataDraft) BackfilledMediaKind() *string {
+	return BackfilledMediaKind(m.MediaKindOverride, m.Tmdb)
+}
+
+// FrozenMediaBinding projects the owner media kind and the TMDB binding into
+// the frozen media kind/season context one release resolves with. It mirrors
+// the RSS snapshot projection exactly (`rss/application.frozenMediaBinding`
+// delegates here) so a saved revision preview, a one-shot admission and an
+// ordinary RSS evaluation can never disagree about the binding.
 //
-// Semantics, driven by the metadata-hold contract:
-//
-//   - media_kind_override, when set, wins: it is the owner's explicit pin of
-//     the naming branch and is never inferred from a title. It replaces only
-//     the kind: the season source stays exactly the TMDB binding's season.
-//   - no TMDB binding (BGM-only or unbound) and no override — the hold already
-//     marks `tmdb` missing, and the binding is the *unbound TV default*: kind
-//     "tv", season 0, SeasonBound false. It is never "unknown" and never
-//     "movie": nothing is guessed from a title.
-//   - TMDB bound with media_kind movie — kind "movie"; the episode identity
-//     resolver then short-circuits to the canonical movie:0 identity. A
-//     movie override resolves identically (same kind, same season evidence).
-//   - TMDB bound with media_kind tv (or any other stored value) — kind "tv",
-//     the bound season, SeasonBound false (the automatic path keeps the
-//     historical season-1 default for a bound season 0). A tv override keeps
-//     that ordinary TV path with its unchanged season source.
-//
-// A stored override outside tv|movie (impossible through the writer, which
-// validates the vocabulary) falls back to the binding instead of selecting a
-// branch on its own.
+//   - The kind is MediaKind(mediaKindOverride): the owner value, unset is tv.
+//     A movie kind short-circuits the episode identity resolver to the
+//     canonical movie:0 identity. The TMDB kind is never read; a draft whose
+//     kind is still unset applies BackfilledMediaKind before calling this.
+//   - The season is the TMDB binding's season (0 when unbound), frozen for
+//     naming only: an episode identity carries no season. SeasonBound is
+//     false (the naming path keeps the historical season-1 default for a
+//     bound season 0).
 func FrozenMediaBinding(tmdb *NullableTMDBBinding, mediaKindOverride *string) (mediaKind string, season int, seasonBound bool) {
-	season = 0
 	if tmdb != nil {
 		season = tmdb.Season
 	}
-	if mediaKindOverride != nil {
-		switch strings.TrimSpace(*mediaKindOverride) {
-		case string(TMDBMediaKindMovie):
-			return string(TMDBMediaKindMovie), season, false
-		case string(TMDBMediaKindTv):
-			return string(TMDBMediaKindTv), season, false
-		}
-	}
-	if tmdb == nil {
-		return string(TMDBMediaKindTv), 0, false
-	}
-	kind := strings.TrimSpace(string(tmdb.MediaKind))
-	if kind != string(TMDBMediaKindMovie) {
-		kind = string(TMDBMediaKindTv)
-	}
-	return kind, tmdb.Season, false
+	return MediaKind(mediaKindOverride), season, false
 }
 
 // MetadataHoldFromBindings computes the sole product-level hold: BGM absent or

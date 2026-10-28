@@ -176,9 +176,8 @@ type offsetMigrationCandidate struct {
 	targetFingerprint string
 	sourceID          string
 	sourceOffset      *int
-	mediaKind         string
-	// mediaKindOverride is the owner media-kind pin (tv | movie); it is the
-	// legacy-identity branch when the frozen identity itself carries no kind.
+	// mediaKindOverride is the owner media kind (tv | movie; empty is tv); it
+	// is read only when the frozen identity itself carries no kind.
 	mediaKindOverride string
 	snapshotID        string
 	fileRef           string
@@ -191,7 +190,7 @@ func loadOffsetMigrationCandidates(ctx context.Context, tx *sql.Tx, generation O
 	rows, err := tx.QueryContext(ctx, `
 SELECT p.id, p.version, p.physical_path, p.source_fingerprint,
        p.target_fingerprint, COALESCE(src.id, ''), src.episode_offset,
-       COALESCE(meta.tmdb_media_kind, ''), COALESCE(meta.media_kind_override, ''),
+       COALESCE(meta.media_kind_override, ''),
        COALESCE(snap.id, ''), COALESCE(mf.file_ref, ''),
        COALESCE(mf.size_bytes, af.size_bytes, 0),
        COALESCE(mf.effective_facts, '{}'::jsonb),
@@ -234,7 +233,7 @@ ORDER BY p.created_at, p.id`, generation.ManagedAnimeID, generation.ScopeKind, g
 			&candidate.placementID, &candidate.placementVersion,
 			&candidate.physicalPath, &candidate.sourceFingerprint,
 			&candidate.targetFingerprint, &candidate.sourceID, &sourceOffset,
-			&candidate.mediaKind, &candidate.mediaKindOverride, &candidate.snapshotID,
+			&candidate.mediaKindOverride, &candidate.snapshotID,
 			&candidate.fileRef, &candidate.sizeBytes,
 			&candidate.effectiveFacts, &candidate.fileEvidence); err != nil {
 			return nil, fmt.Errorf("scan offset migration candidate: %w", err)
@@ -299,7 +298,7 @@ func (s *OffsetMigrationService) planOffsetMigrationCandidate(ctx context.Contex
 		fileRef:           candidate.fileRef,
 		sourceID:          candidate.sourceID,
 		sourceOffset:      candidate.sourceOffset,
-		mediaKind:         candidate.mediaKind,
+		mediaKind:         ownerMediaKind(candidate.mediaKindOverride),
 		oldTargetPath:     candidate.physicalPath,
 		state:             OffsetMigrationOperationBlocked,
 	}
@@ -333,16 +332,13 @@ func (s *OffsetMigrationService) planOffsetMigrationCandidate(ctx context.Contex
 	if oldIdentity.MultiEpisode() {
 		return blockedOffsetOperation(operation, "multi_episode_offset_unsupported", "a multi-episode file is not moved by an offset change"), nil
 	}
-	// The frozen identity kind is the media-kind authority: a metadata rebinding
+	// The frozen identity kind is the media-kind authority: an owner kind edit
 	// after submission must not turn a frozen movie into a TV re-identification
-	// (or the reverse). The current metadata kind is only read for a legacy
+	// (or the reverse). The current owner kind is only read for a legacy
 	// frozen identity that never carried a kind.
 	mediaKind := frozenIdentityMediaKind(oldIdentity.Kind)
 	if mediaKind == "" {
-		mediaKind = resolveLegacyMediaKind(candidate.mediaKind, candidate.mediaKindOverride)
-	}
-	if mediaKind != "tv" && mediaKind != "movie" {
-		return blockedOffsetOperation(operation, "media_kind_unavailable", "metadata media kind is unavailable"), nil
+		mediaKind = ownerMediaKind(candidate.mediaKindOverride)
 	}
 	operation.mediaKind = mediaKind
 	if len(operation.fingerprint) == 0 {
@@ -430,7 +426,7 @@ func (s *OffsetMigrationService) planOffsetMigrationCandidate(ctx context.Contex
 
 // frozenIdentityMediaKind maps a frozen EpisodeIdentity kind to the metadata
 // media kind the resolver consumes. An identity frozen before the kind existed
-// returns "" so the caller can fall back to the stored metadata evidence.
+// returns "" so the caller reads the current owner kind.
 func frozenIdentityMediaKind(kind string) string {
 	switch kind {
 	case episodeidentity.KindMovie:

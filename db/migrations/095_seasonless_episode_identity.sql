@@ -88,3 +88,14 @@ BEGIN
  RETURN p_fact->'provenance'->'exact_selection'=expected;
 EXCEPTION WHEN OTHERS THEN RETURN false;
 END $$;
+
+-- The media kind is an owner field (anime_metadata.media_kind_override, NULL
+-- is tv): an identity reads only the owner kind, never the TMDB kind. The
+-- owner kind is backfilled once from the TMDB kind when a TMDB tuple is bound
+-- while it is NULL; clearing or replacing the tuple later never changes it.
+-- Rows bound before this rule receive that one-time backfill here, so every
+-- bound row keeps the kind it resolved with.
+UPDATE anime_metadata
+SET media_kind_override = tmdb_media_kind
+WHERE media_kind_override IS NULL
+  AND tmdb_media_kind IS NOT NULL;

@@ -61,8 +61,7 @@ type MatchAnimeFact struct {
 	OneShot           bool
 	TMDBWorkID        string
 	TMDBMediaKind     string
-	// MediaKindOverride is the owner media-kind pin (tv | movie); empty means
-	// unset. It selects the branch before TMDBMediaKind, like FrozenMediaBinding.
+	// MediaKindOverride is the owner media kind (tv | movie); empty is tv.
 	MediaKindOverride string
 }
 
@@ -73,18 +72,13 @@ func (a MatchAnimeFact) Selectable() bool {
 	return !a.Retired && !a.OneShot && (a.SubscriptionState == "active" || a.SubscriptionState == "stopped")
 }
 
-// EffectiveMediaKind resolves the owner pin first, then the bound TMDB kind,
-// then the unbound TV default. It is the same precedence FrozenMediaBinding
-// applies, so the file manager refuses to match into a movie branch exactly
-// when the naming/identity chain would resolve a movie.
-func (a MatchAnimeFact) EffectiveMediaKind() string {
-	if a.MediaKindOverride == "tv" || a.MediaKindOverride == "movie" {
-		return a.MediaKindOverride
+// MediaKind is the owner media kind (unset is tv), the kind the identity
+// chain resolves with (FrozenMediaBinding); the TMDB kind is never read for it.
+func (a MatchAnimeFact) MediaKind() string {
+	if a.MediaKindOverride == "movie" {
+		return "movie"
 	}
-	if a.TMDBMediaKind == "" {
-		return "tv"
-	}
-	return a.TMDBMediaKind
+	return "tv"
 }
 
 // MatchAnimeReader reads an anime's match facts. It returns nil for an anime
@@ -632,7 +626,9 @@ func (s *Service) tmdbShow(ctx context.Context, managedAnimeID string) (string, 
 	if anime == nil {
 		return "", notFound(CodeMatchAnimeUnavailable, "anime does not exist")
 	}
-	if anime.TMDBWorkID == "" || anime.EffectiveMediaKind() != "tv" {
+	// The episode catalog is read from a TMDB TV work, and an episode match
+	// needs a TV anime: the owner kind decides that, never the TMDB kind.
+	if anime.TMDBWorkID == "" || anime.TMDBMediaKind != "tv" || anime.MediaKind() != "tv" {
 		return "", conflict(CodeTMDBBindingRequired, "the anime has no TMDB TV binding")
 	}
 	return anime.TMDBWorkID, nil

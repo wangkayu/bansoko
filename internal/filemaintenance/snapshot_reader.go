@@ -200,41 +200,31 @@ func placementCoverageFor(byPlacement map[string][]string, facts []byte) []strin
 	return []string{}
 }
 
-// animeIsMovie resolves the atomic TMDB media kind: a movie binding makes the
+// animeIsMovie resolves the owner media kind: a movie anime makes the
 // observation key movie:0 with one unique episode slot.
 func (r *ReconciliationSnapshotReader) animeIsMovie(ctx context.Context, animeID string) (bool, error) {
-	var mediaKind, override sql.NullString
+	var override sql.NullString
 	err := r.db.QueryRowContext(ctx, `
-SELECT tmdb_media_kind, media_kind_override
+SELECT media_kind_override
 FROM anime_metadata
-WHERE managed_anime_id = $1`, animeID).Scan(&mediaKind, &override)
+WHERE managed_anime_id = $1`, animeID).Scan(&override)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
 		return false, fmt.Errorf("read anime media kind: %w", err)
 	}
-	return resolveAnimeMediaKind(mediaKind, override) == "movie", nil
+	return ownerMediaKind(override.String) == "movie", nil
 }
 
-// resolveAnimeMediaKind applies the owner media-kind override on top of the
-// bound TMDB media kind. The override wins when it is a persisted vocabulary
-// value; otherwise the bound kind is used, and an unbound row keeps the
-// historical TV default. It is the same precedence FrozenMediaBinding uses, so
-// a legacy observation and a fresh release never disagree about the branch.
-func resolveAnimeMediaKind(binding, override sql.NullString) string {
-	return resolveLegacyMediaKind(binding.String, override.String)
-}
-
-// resolveLegacyMediaKind applies the same override-first precedence for the
-// paths that read plain column values: the override wins when it is a
-// persisted vocabulary value, otherwise the bound kind is used (empty when
-// there is no binding).
-func resolveLegacyMediaKind(binding, override string) string {
-	if override == "tv" || override == "movie" {
-		return override
+// ownerMediaKind is the owner media kind (anime_metadata.media_kind_override)
+// with unset as tv, the same rule FrozenMediaBinding applies. The TMDB kind is
+// never read: a metadata binding only locates the work.
+func ownerMediaKind(override string) string {
+	if override == "movie" {
+		return "movie"
 	}
-	return binding
+	return "tv"
 }
 
 // coverageForObservation resolves canonical coverage keys for one frozen file.

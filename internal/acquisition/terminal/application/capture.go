@@ -135,7 +135,7 @@ func captureQualificationTx(ctx context.Context, tx *sql.Tx, revisions *draft.Se
 					}
 				}
 				m.bgm, m.tmdb = saved.Draft.Metadata.Bgm, saved.Draft.Metadata.Tmdb
-				m.mediaKindOverride = saved.Draft.Metadata.MediaKindOverride
+				m.mediaKindOverride = saved.Draft.Metadata.BackfilledMediaKind()
 				m.animeYear = saved.Draft.Metadata.Year
 				m.animeSeason = saved.Draft.Metadata.Season
 				m.config.candidateID, m.config.revision, m.config.revisionDigest = saved.CandidateID, saved.Revision, saved.EffectiveDigest
@@ -149,7 +149,7 @@ func captureQualificationTx(ctx context.Context, tx *sql.Tx, revisions *draft.Se
 			return admissionCapture{}, materialError("metadata", nil)
 		}
 		m.bgm, m.tmdb = req.submittedDraft.Metadata.Bgm, req.submittedDraft.Metadata.Tmdb
-		m.mediaKindOverride = req.submittedDraft.Metadata.MediaKindOverride
+		m.mediaKindOverride = req.submittedDraft.Metadata.BackfilledMediaKind()
 		m.animeYear = req.submittedDraft.Metadata.Year
 		m.animeSeason = req.submittedDraft.Metadata.Season
 		m.config.business, err = req.submitted.Freeze()

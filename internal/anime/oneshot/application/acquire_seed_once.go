@@ -985,7 +985,7 @@ VALUES ($1, $2, 'custom_rss', $3, $4, $5, $6, $7)`,
 			return OneShotAdmissionResult{}, s.candidateDigestMismatchError()
 		}
 	} else {
-		mediaKind, season, seasonBound := animedomain.FrozenMediaBinding(draft.Metadata.Tmdb, draft.Metadata.MediaKindOverride)
+		mediaKind, season, seasonBound := animedomain.FrozenMediaBinding(draft.Metadata.Tmdb, draft.Metadata.BackfilledMediaKind())
 		selection = acquisitiontarget.ParserSelectionInput{
 			Kind:            parserPolicy.Kind,
 			EpisodePatterns: effective.Rules.Parser.EpisodePatterns,

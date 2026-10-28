@@ -115,7 +115,7 @@ func (r CandidateRevision) ParserSelectionInput(resolved animedomain.ResolvedSec
 	if err != nil {
 		return acquisitiontarget.ParserSelectionInput{}, err
 	}
-	mediaKind, season, seasonBound := animedomain.FrozenMediaBinding(r.Draft.Metadata.Tmdb, r.Draft.Metadata.MediaKindOverride)
+	mediaKind, season, seasonBound := animedomain.FrozenMediaBinding(r.Draft.Metadata.Tmdb, r.Draft.Metadata.BackfilledMediaKind())
 	return acquisitiontarget.ParserSelectionInput{
 		Kind:              r.ParserPolicy.Kind,
 		EpisodePatterns:   effective.Rules.Parser.EpisodePatterns,

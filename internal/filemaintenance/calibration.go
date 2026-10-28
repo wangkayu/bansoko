@@ -516,21 +516,21 @@ func calibrationFactsDigest(disposition string, coverage []string, resolution, l
 	return hex.EncodeToString(sum[:])
 }
 
-// calibrationAnimeIsMovie resolves the atomic TMDB media kind inside the
-// caller's transaction (movie -> observation key movie:0).
+// calibrationAnimeIsMovie resolves the owner media kind inside the caller's
+// transaction (movie -> observation key movie:0).
 func calibrationAnimeIsMovie(ctx context.Context, q queryer, animeID string) (bool, error) {
-	var mediaKind, override sql.NullString
+	var override sql.NullString
 	err := q.QueryRowContext(ctx, `
-SELECT tmdb_media_kind, media_kind_override
+SELECT media_kind_override
 FROM anime_metadata
-WHERE managed_anime_id = $1`, animeID).Scan(&mediaKind, &override)
+WHERE managed_anime_id = $1`, animeID).Scan(&override)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	return resolveAnimeMediaKind(mediaKind, override) == "movie", nil
+	return ownerMediaKind(override.String) == "movie", nil
 }
 
 // consumerCheckpointRow is the folded checkpoint of one consumer generation.

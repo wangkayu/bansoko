@@ -39,7 +39,7 @@ func (s *Service) draftParserSelectionInput(_ context.Context, draft animedomain
 		return acquisitiontarget.ParserSelectionInput{}, &apperrors.Business{Status: 422, Code: "BUSINESS_SNAPSHOT_INVALID", Message: "draft must carry a complete business snapshot"}
 	}
 	policy := draft.Business.Parser
-	mediaKind, season, seasonBound := animedomain.FrozenMediaBinding(draft.Metadata.Tmdb, draft.Metadata.MediaKindOverride)
+	mediaKind, season, seasonBound := animedomain.FrozenMediaBinding(draft.Metadata.Tmdb, draft.Metadata.BackfilledMediaKind())
 	return acquisitiontarget.ParserSelectionInput{
 		Kind: policy.Kind, EpisodePatterns: effective.Rules.Parser.EpisodePatterns,
 		MediaKind: mediaKind, Season: season, SeasonBound: seasonBound,

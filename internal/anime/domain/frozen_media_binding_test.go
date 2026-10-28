@@ -8,11 +8,10 @@ import (
 
 // FrozenMediaBinding is the one projection the RSS snapshot, the saved-revision
 // preview, the one-shot admission and the artifact chain resolve with. These
-// cases pin the three-state matrix (override unset / tv / movie, each against
-// an unbound, a TV-bound and a movie-bound metadata row) and the metadata-hold
-// contract: BGM-only is the unbound TV default, a movie binding is never
-// guessed from a title, and a TV binding keeps its season without claiming
-// continuous-SP season 0 semantics.
+// cases pin the owner-kind matrix (owner kind unset / tv / movie, each against
+// an unbound, a TV-bound and a movie-bound metadata row): the kind is the owner
+// value with unset as tv and the TMDB kind never read, and the season is the
+// TMDB binding's season, frozen for naming only.
 func TestFrozenMediaBindingProjection(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -20,37 +19,58 @@ func TestFrozenMediaBindingProjection(t *testing.T) {
 		binding    *TMDBBinding
 		wantKind   string
 		wantSeason int
-		wantBound  bool
 	}{
-		{name: "no override and no tmdb binding is the unbound tv default", binding: nil, wantKind: "tv", wantSeason: 0, wantBound: false},
-		{name: "no override with a tv binding keeps the season", binding: &TMDBBinding{MediaKind: TMDBMediaKindTv, Season: 2, WorkId: "1"}, wantKind: "tv", wantSeason: 2, wantBound: false},
-		{name: "no override with a movie binding", binding: &TMDBBinding{MediaKind: TMDBMediaKindMovie, Season: 0, WorkId: "1"}, wantKind: "movie", wantSeason: 0, wantBound: false},
-		{name: "no override with a movie binding keeps its season as evidence", binding: &TMDBBinding{MediaKind: TMDBMediaKindMovie, Season: 3, WorkId: "1"}, wantKind: "movie", wantSeason: 3, wantBound: false},
-		{name: "no override with an unknown stored kind is the tv default, never movie", binding: &TMDBBinding{MediaKind: "", Season: 4, WorkId: "1"}, wantKind: "tv", wantSeason: 4, wantBound: false},
-		{name: "no override with a tv season zero stays unbound", binding: &TMDBBinding{MediaKind: TMDBMediaKindTv, Season: 0, WorkId: "1"}, wantKind: "tv", wantSeason: 0, wantBound: false},
+		{name: "unset kind and no tmdb binding is tv", binding: nil, wantKind: "tv", wantSeason: 0},
+		{name: "unset kind with a tv binding keeps the season", binding: &TMDBBinding{MediaKind: TMDBMediaKindTv, Season: 2, WorkId: "1"}, wantKind: "tv", wantSeason: 2},
+		{name: "unset kind with a movie binding is tv, never the tmdb kind", binding: &TMDBBinding{MediaKind: TMDBMediaKindMovie, Season: 3, WorkId: "1"}, wantKind: "tv", wantSeason: 3},
+		{name: "unset kind with a tv season zero", binding: &TMDBBinding{MediaKind: TMDBMediaKindTv, Season: 0, WorkId: "1"}, wantKind: "tv", wantSeason: 0},
 
-		{name: "tv override without a tmdb binding stays the unbound tv default", override: stringPtr("tv"), binding: nil, wantKind: "tv", wantSeason: 0, wantBound: false},
-		{name: "tv override with a tv binding keeps the tv season", override: stringPtr("tv"), binding: &TMDBBinding{MediaKind: TMDBMediaKindTv, Season: 2, WorkId: "1"}, wantKind: "tv", wantSeason: 2, wantBound: false},
-		{name: "tv override with a movie binding returns to the tv path", override: stringPtr("tv"), binding: &TMDBBinding{MediaKind: TMDBMediaKindMovie, Season: 3, WorkId: "1"}, wantKind: "tv", wantSeason: 3, wantBound: false},
+		{name: "tv kind without a tmdb binding", override: stringPtr("tv"), binding: nil, wantKind: "tv", wantSeason: 0},
+		{name: "tv kind with a tv binding keeps the tv season", override: stringPtr("tv"), binding: &TMDBBinding{MediaKind: TMDBMediaKindTv, Season: 2, WorkId: "1"}, wantKind: "tv", wantSeason: 2},
+		{name: "tv kind with a movie binding stays tv", override: stringPtr("tv"), binding: &TMDBBinding{MediaKind: TMDBMediaKindMovie, Season: 3, WorkId: "1"}, wantKind: "tv", wantSeason: 3},
 
-		{name: "movie override without a tmdb binding by name only is enough", override: stringPtr("movie"), binding: nil, wantKind: "movie", wantSeason: 0, wantBound: false},
-		{name: "movie override with a tv binding resolves exactly like a movie binding", override: stringPtr("movie"), binding: &TMDBBinding{MediaKind: TMDBMediaKindTv, Season: 2, WorkId: "1"}, wantKind: "movie", wantSeason: 2, wantBound: false},
-		{name: "movie override with a movie binding is idempotent", override: stringPtr("movie"), binding: &TMDBBinding{MediaKind: TMDBMediaKindMovie, Season: 3, WorkId: "1"}, wantKind: "movie", wantSeason: 3, wantBound: false},
-		{name: "movie override keeps the season source of the binding", override: stringPtr("movie"), binding: &TMDBBinding{MediaKind: TMDBMediaKindTv, Season: 0, WorkId: "1"}, wantKind: "movie", wantSeason: 0, wantBound: false},
-
-		// A stored value outside tv|movie cannot be persisted by the writer; if
-		// one is ever read back, the binding stays the resolution instead of the
-		// unknown value silently pinning a branch.
-		{name: "a blank override falls back to the binding", override: stringPtr(""), binding: &TMDBBinding{MediaKind: TMDBMediaKindMovie, Season: 1, WorkId: "1"}, wantKind: "movie", wantSeason: 1, wantBound: false},
-		{name: "an unknown override falls back to the binding", override: stringPtr("unknown"), binding: &TMDBBinding{MediaKind: TMDBMediaKindTv, Season: 5, WorkId: "1"}, wantKind: "tv", wantSeason: 5, wantBound: false},
+		{name: "movie kind without a tmdb binding", override: stringPtr("movie"), binding: nil, wantKind: "movie", wantSeason: 0},
+		{name: "movie kind with a tv binding", override: stringPtr("movie"), binding: &TMDBBinding{MediaKind: TMDBMediaKindTv, Season: 2, WorkId: "1"}, wantKind: "movie", wantSeason: 2},
+		{name: "movie kind with a movie binding", override: stringPtr("movie"), binding: &TMDBBinding{MediaKind: TMDBMediaKindMovie, Season: 3, WorkId: "1"}, wantKind: "movie", wantSeason: 3},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			kind, season, bound := FrozenMediaBinding(tc.binding, tc.override)
-			if kind != tc.wantKind || season != tc.wantSeason || bound != tc.wantBound {
-				t.Fatalf("binding = %s/%d/%t, want %s/%d/%t", kind, season, bound, tc.wantKind, tc.wantSeason, tc.wantBound)
+			if kind != tc.wantKind || season != tc.wantSeason || bound {
+				t.Fatalf("binding = %s/%d/%t, want %s/%d/false", kind, season, bound, tc.wantKind, tc.wantSeason)
 			}
 		})
+	}
+}
+
+// The owner kind is filled once from the TMDB kind, only while it is unset:
+// a set kind is kept whatever the binding, and no binding leaves it unset.
+func TestBackfilledMediaKindFillsOnlyAnUnsetKind(t *testing.T) {
+	tv := &TMDBBinding{MediaKind: TMDBMediaKindTv, Season: 1, WorkId: "1"}
+	movie := &TMDBBinding{MediaKind: TMDBMediaKindMovie, WorkId: "2"}
+	cases := []struct {
+		name    string
+		owner   *string
+		binding *TMDBBinding
+		want    *string
+	}{
+		{name: "unset kind takes the movie binding kind", binding: movie, want: stringPtr("movie")},
+		{name: "unset kind takes the tv binding kind", binding: tv, want: stringPtr("tv")},
+		{name: "unset kind without a binding stays unset", binding: nil, want: nil},
+		{name: "a set tv kind is kept against a movie binding", owner: stringPtr("tv"), binding: movie, want: stringPtr("tv")},
+		{name: "a set movie kind is kept against a tv binding", owner: stringPtr("movie"), binding: tv, want: stringPtr("movie")},
+		{name: "a set kind is kept when the binding is cleared", owner: stringPtr("movie"), binding: nil, want: stringPtr("movie")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := BackfilledMediaKind(tc.owner, tc.binding)
+			if (got == nil) != (tc.want == nil) || (got != nil && *got != *tc.want) {
+				t.Fatalf("kind = %v, want %v", got, tc.want)
+			}
+		})
+	}
+	if MediaKind(nil) != "tv" || MediaKind(stringPtr("tv")) != "tv" || MediaKind(stringPtr("movie")) != "movie" {
+		t.Fatal("MediaKind must read unset as tv and the owner value otherwise")
 	}
 }
 
@@ -70,7 +90,7 @@ func TestFrozenMediaBindingSelectsTheNamingBranch(t *testing.T) {
 		want     string
 	}{
 		{name: "unset override unbound renders tv", want: "tv"},
-		{name: "unset override movie binding renders movie", binding: &TMDBBinding{MediaKind: TMDBMediaKindMovie, WorkId: "1"}, want: "movie"},
+		{name: "unset override movie binding renders tv", binding: &TMDBBinding{MediaKind: TMDBMediaKindMovie, WorkId: "1"}, want: "tv"},
 		{name: "tv override movie binding renders tv", override: stringPtr("tv"), binding: &TMDBBinding{MediaKind: TMDBMediaKindMovie, WorkId: "1"}, want: "tv"},
 		{name: "movie override tv binding renders movie", override: stringPtr("movie"), binding: &TMDBBinding{MediaKind: TMDBMediaKindTv, Season: 2, WorkId: "1"}, want: "movie"},
 		{name: "movie override without a binding renders movie", override: stringPtr("movie"), want: "movie"},

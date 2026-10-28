@@ -31,9 +31,10 @@ ON CONFLICT (id) DO NOTHING`, animeID, title); err != nil {
 		return
 	}
 	if _, err := db.Exec(`
-INSERT INTO anime_metadata(managed_anime_id, tmdb_work_id, tmdb_media_kind, tmdb_season, version)
-VALUES ($1, 'work-' || $1, $2, 1, 1)
-ON CONFLICT (managed_anime_id) DO UPDATE SET tmdb_media_kind = EXCLUDED.tmdb_media_kind, tmdb_season = EXCLUDED.tmdb_season`,
+INSERT INTO anime_metadata(managed_anime_id, tmdb_work_id, tmdb_media_kind, tmdb_season, media_kind_override, version)
+VALUES ($1, 'work-' || $1, $2, 1, $2, 1)
+ON CONFLICT (managed_anime_id) DO UPDATE SET tmdb_media_kind = EXCLUDED.tmdb_media_kind, tmdb_season = EXCLUDED.tmdb_season,
+    media_kind_override = EXCLUDED.media_kind_override`,
 		animeID, tmdbMediaKind); err != nil {
 		t.Fatal(err)
 	}

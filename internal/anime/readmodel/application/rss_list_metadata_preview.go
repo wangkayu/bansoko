@@ -103,10 +103,10 @@ func overlayVarsAnimeEvidence(evidence *namingvars.AnimeEvidence, preview Metada
 
 // overlayParserSelection rebinds the media kind and season a persisted
 // source's parser selection froze from the saved metadata to the unsaved
-// value, through the same projection the save path uses.
+// value, through the same projection (and kind backfill) the save path uses.
 func overlayParserSelection(selection acquisitiontarget.ParserSelectionInput, preview MetadataPreviewInput) acquisitiontarget.ParserSelectionInput {
 	_, tmdb := metadataPatchBindingsForDomain(nil, preview.TMDB)
-	selection.MediaKind, selection.Season, selection.SeasonBound = animedomain.FrozenMediaBinding(tmdb, preview.MediaKindOverride)
+	selection.MediaKind, selection.Season, selection.SeasonBound = animedomain.FrozenMediaBinding(tmdb, animedomain.BackfilledMediaKind(preview.MediaKindOverride, tmdb))
 	return selection
 }
 

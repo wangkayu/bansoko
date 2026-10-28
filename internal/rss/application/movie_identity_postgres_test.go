@@ -20,14 +20,15 @@ import (
 	"bansoko/internal/workitems"
 )
 
-// seedMovieMetadataBinding switches the seeded instance metadata to a movie
+// seedMovieMetadataBinding switches the seeded instance to a movie: the owner
+// kind is movie (the identity reads only that) and the TMDB tuple is a movie
 // binding, so a release evaluation must resolve the canonical movie identity.
 // The owner year stays the one the seed set.
 func seedMovieMetadataBinding(t *testing.T, db *sql.DB) {
 	t.Helper()
 	if _, err := db.ExecContext(context.Background(), `
 UPDATE anime_metadata
-SET tmdb_media_kind = 'movie', tmdb_season = 0, version = version + 1
+SET media_kind_override = 'movie', tmdb_media_kind = 'movie', tmdb_season = 0, version = version + 1
 WHERE managed_anime_id = 'anime-rss-test'`); err != nil {
 		t.Fatalf("switch metadata to a movie binding: %v", err)
 	}
@@ -157,11 +158,12 @@ WHERE release_id = 'release-movie' ORDER BY release_version DESC LIMIT 1`).Scan(
 		t.Fatalf("frozen download policy parser = %+v, want media_kind movie", frozenPolicy.Parser)
 	}
 
-	// Submitted work is frozen: mutating the metadata binding afterwards must
-	// not move the already-frozen snapshot, candidate projection, or policy.
+	// Submitted work is frozen: switching the owner kind and the metadata
+	// binding afterwards must not move the already-frozen snapshot, candidate
+	// projection, or policy.
 	if _, err := db.ExecContext(ctx, `
 UPDATE anime_metadata
-SET tmdb_media_kind = 'tv', tmdb_season = 4, version = version + 1
+SET media_kind_override = 'tv', tmdb_media_kind = 'tv', tmdb_season = 4, version = version + 1
 WHERE managed_anime_id = 'anime-rss-test'`); err != nil {
 		t.Fatal(err)
 	}
@@ -356,10 +358,10 @@ SELECT id FROM media_fact_snapshots WHERE release_id = 'release-movie-target'`).
 		}
 	}
 
-	// Submitted work is frozen: rebinding the instance metadata to TV after
-	// submission must not move the persisted target or its provenance.
+	// Submitted work is frozen: switching the instance to TV after submission
+	// must not move the persisted target or its provenance.
 	if _, err := db.ExecContext(ctx, `
-UPDATE anime_metadata SET tmdb_media_kind = 'tv', tmdb_season = 4, version = version + 1
+UPDATE anime_metadata SET media_kind_override = 'tv', tmdb_media_kind = 'tv', tmdb_season = 4, version = version + 1
 WHERE managed_anime_id = 'anime-rss-test'`); err != nil {
 		t.Fatal(err)
 	}

@@ -74,12 +74,12 @@ func nullIfEmpty(value string) interface{} {
 }
 
 // seedCurrentMetadataBinding inserts the current metadata row a drift attempt
-// would edit after submission.
+// would edit after submission; the owner kind is the one the binding backfilled.
 func seedCurrentMetadataBinding(t *testing.T, db *sql.DB, animeID, mediaKind string, season int) {
 	t.Helper()
 	if _, err := db.ExecContext(context.Background(), `
-INSERT INTO anime_metadata(managed_anime_id, bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season)
-VALUES ($1, 'bgm-1', 'tmdb-1', $2, $3)`, animeID, mediaKind, season); err != nil {
+INSERT INTO anime_metadata(managed_anime_id, bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season, media_kind_override)
+VALUES ($1, 'bgm-1', 'tmdb-1', $2, $3, $2)`, animeID, mediaKind, season); err != nil {
 		t.Fatalf("seed current metadata binding: %v", err)
 	}
 }
@@ -122,7 +122,7 @@ func TestMovieBindingFileFactsUseFrozenBindingPostgres(t *testing.T) {
 	// Post-submission metadata drift: the current binding becomes TV season 9
 	// before the artifact is inspected. The frozen snapshot must win.
 	if _, err := db.ExecContext(context.Background(), `
-UPDATE anime_metadata SET tmdb_media_kind = 'tv', tmdb_season = 9, version = version + 1
+UPDATE anime_metadata SET media_kind_override = 'tv', tmdb_media_kind = 'tv', tmdb_season = 9, version = version + 1
 WHERE managed_anime_id = 'anime-artifact-test'`); err != nil {
 		t.Fatal(err)
 	}

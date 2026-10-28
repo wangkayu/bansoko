@@ -1255,7 +1255,7 @@ func (d *Dispatcher) dispatchMetadataMatch(ctx context.Context) (dispatchCounts,
 	rows, err := d.DB.QueryContext(ctx, `
 SELECT ma.id, ma.title, s.origin, s.origin_entry_ref,
        m.bgm_work_id, m.tmdb_work_id, m.tmdb_media_kind, m.tmdb_season,
-       m.total_episodes, m.year, m.season, m.version
+       m.total_episodes, m.year, m.season, m.media_kind_override, m.version
 FROM managed_anime ma
 JOIN subscriptions s ON s.managed_anime_id = ma.id AND s.state = 'active'
 JOIN anime_metadata m ON m.managed_anime_id = ma.id
@@ -1280,13 +1280,14 @@ WHERE m.bgm_work_id IS NULL
 		totalEpisodes   sql.NullInt64
 		year            sql.NullInt64
 		season          sql.NullInt64
+		mediaKind       sql.NullString
 		metadataVersion int64
 	}
 	var targets []metaTarget
 	for rows.Next() {
 		var t metaTarget
 		if err := rows.Scan(&t.managedAnimeID, &t.title, &t.origin, &t.entryRef,
-			&t.bgmWorkID, &t.tmdbWorkID, &t.tmdbKind, &t.tmdbSeason, &t.totalEpisodes, &t.year, &t.season, &t.metadataVersion); err != nil {
+			&t.bgmWorkID, &t.tmdbWorkID, &t.tmdbKind, &t.tmdbSeason, &t.totalEpisodes, &t.year, &t.season, &t.mediaKind, &t.metadataVersion); err != nil {
 			return counts, fmt.Errorf("scan metadata target: %w", err)
 		}
 		targets = append(targets, t)
@@ -1303,7 +1304,7 @@ WHERE m.bgm_work_id IS NULL
 			entryRef = target.entryRef.String
 		}
 		c, err := d.matchOne(ctx, target.managedAnimeID, target.title, target.origin, entryRef,
-			target.bgmWorkID, target.tmdbWorkID, target.tmdbKind, target.tmdbSeason, target.totalEpisodes, target.year, target.season, target.metadataVersion)
+			target.bgmWorkID, target.tmdbWorkID, target.tmdbKind, target.mediaKind, target.tmdbSeason, target.totalEpisodes, target.year, target.season, target.metadataVersion)
 		if err != nil {
 			counts.errors++
 			d.logWarn(ctx, observabilityport.RuntimeEvent{
@@ -1324,7 +1325,7 @@ WHERE m.bgm_work_id IS NULL
 }
 
 func (d *Dispatcher) matchOne(ctx context.Context, managedAnimeID, title, origin, entryRef string,
-	bgmWorkID, tmdbWorkID, tmdbKind sql.NullString, tmdbSeason, totalEpisodes, year, ownerSeason sql.NullInt64, metadataVersion int64) (dispatchCounts, error) {
+	bgmWorkID, tmdbWorkID, tmdbKind, ownerMediaKind sql.NullString, tmdbSeason, totalEpisodes, year, ownerSeason sql.NullInt64, metadataVersion int64) (dispatchCounts, error) {
 	var counts dispatchCounts
 
 	skipBgm := bgmWorkID.Valid
@@ -1360,6 +1361,10 @@ func (d *Dispatcher) matchOne(ctx context.Context, managedAnimeID, title, origin
 	if ownerSeason.Valid {
 		s := int(ownerSeason.Int64)
 		stored.Season = &s
+	}
+	if ownerMediaKind.Valid {
+		kind := ownerMediaKind.String
+		stored.MediaKind = &kind
 	}
 	plan := backfill.Merge(stored, result)
 	outcome := backfill.Classify(plan, result)
