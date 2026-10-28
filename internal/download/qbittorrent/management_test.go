@@ -298,21 +298,31 @@ func TestListTorrentsAuthFailureReturnsError(t *testing.T) {
 	}
 }
 
-// TestMapStateQB5StoppedStates maps the qBittorrent 5 stopped states the same
-// way as their 4.x paused names.
-func TestMapStateQB5StoppedStates(t *testing.T) {
+// TestMapStateTrustsQBVerdictOverProgress: a failure state wins at any
+// progress, completion needs qB's upload state, and a torrent near or at 100%
+// that is still downloading, checking or moving is not complete. qB 5 stopped
+// states map like their 4.x paused names.
+func TestMapStateTrustsQBVerdictOverProgress(t *testing.T) {
 	for _, tc := range []struct {
-		state    string
-		progress float64
-		want     domain.TaskState
+		state string
+		want  domain.TaskState
 	}{
-		{"stoppedDL", 0.4, domain.TaskDownloading},
-		{"pausedDL", 0.4, domain.TaskDownloading},
-		{"stoppedUP", 0.5, domain.TaskCompleted},
-		{"pausedUP", 0.5, domain.TaskCompleted},
+		{"error", domain.TaskFailed},
+		{"missingFiles", domain.TaskFailed},
+		{"unknown", domain.TaskFailed},
+		{"stalledDL", domain.TaskDownloading},
+		{"downloading", domain.TaskDownloading},
+		{"checkingUP", domain.TaskDownloading},
+		{"moving", domain.TaskDownloading},
+		{"stoppedDL", domain.TaskDownloading},
+		{"pausedDL", domain.TaskDownloading},
+		{"stoppedUP", domain.TaskCompleted},
+		{"pausedUP", domain.TaskCompleted},
+		{"stalledUP", domain.TaskCompleted},
+		{"uploading", domain.TaskCompleted},
 	} {
-		if got := mapState(tc.state, tc.progress); got != tc.want {
-			t.Errorf("mapState(%q, %v) = %v, want %v", tc.state, tc.progress, got, tc.want)
+		if got := mapState(tc.state); got != tc.want {
+			t.Errorf("mapState(%q) = %v, want %v", tc.state, got, tc.want)
 		}
 	}
 }
