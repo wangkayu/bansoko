@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getBusinessPreset, type AnimeConfigCandidate, type AnimeDraft, type AnimeWorkspace, type SubscribeResult } from "../../lib/api/client";
+import { ApiError, getBusinessPreset, type AnimeConfigCandidate, type AnimeDraft, type AnimeWorkspace, type SubscribeResult } from "../../lib/api/client";
 import { CandidateVersionConflict, type CandidateStore } from "../../lib/candidate/port";
 import { getCandidateStore } from "../../lib/candidate/serverCandidateStore";
 import type { CatalogProvider } from "../../lib/providers/port";
@@ -1343,6 +1343,59 @@ describe("AnimeConfigDialog 草稿保存与 RSS 预览", () => {
     expect(subscribeMock).toHaveBeenCalledTimes(1);
     expect(subscribeMock).toHaveBeenCalledWith("candidate-new", 4, expect.any(String), { revision: 2 });
     expect(onSubscribed).toHaveBeenCalledTimes(1);
+  });
+
+  // The entry already has a live subscription (stale browse data): one existing id opens that
+  // subscription, several show the message and keep the draft.
+  it.each([
+    { ids: ["anime-live"], opens: "anime-live" },
+    { ids: ["anime-a", "anime-b"], opens: null },
+  ])("订阅被 PROVIDER_ENTRY_ALREADY_SUBSCRIBED 拒绝（$ids.length 个已有订阅）", async ({ ids, opens }) => {
+    stubCustomDraftFetch();
+    const created = candidateFixture({ id: "candidate-new", version: 4, current_revision: 2 });
+    const subscribeMock = vi.fn(async () => {
+      throw new ApiError({
+        status: 409,
+        code: "PROVIDER_ENTRY_ALREADY_SUBSCRIBED",
+        message: "already subscribed",
+        details: [{ code: "PROVIDER_ENTRY_ALREADY_SUBSCRIBED", message: "existing", managed_anime_ids: ids }],
+      });
+    });
+    const onOpenExisting = vi.fn();
+    const onSubscribed = vi.fn();
+    vi.mocked(getCandidateStore).mockReturnValue({
+      ...candidateStoreMock(async () => []),
+      save: vi.fn(async () => created),
+      subscribe: subscribeMock,
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <AnimeConfigDialog
+          open
+          onOpenChange={() => {}}
+          provider={provider}
+          entry={draftEntryWithoutCandidate}
+          sourceLabel={t("grid.tabCustom")}
+          onSubscribed={onSubscribed}
+          onOpenExisting={onOpenExisting}
+          initialTab="rss"
+        />
+      </QueryClientProvider>,
+    );
+    await flushQuery();
+
+    fireEvent.click(screen.getByRole("button", { name: t("anime.subscribe") }));
+    await flushQuery();
+
+    expect(subscribeMock).toHaveBeenCalledTimes(1);
+    expect(onSubscribed).not.toHaveBeenCalled();
+    if (opens) {
+      expect(onOpenExisting).toHaveBeenCalledWith(opens);
+    } else {
+      expect(onOpenExisting).not.toHaveBeenCalled();
+      expect(screen.getByText(t("error.PROVIDER_ENTRY_ALREADY_SUBSCRIBED"))).toBeInTheDocument();
+    }
   });
 
   it("没有候选的干净草稿也能单独保存", async () => {

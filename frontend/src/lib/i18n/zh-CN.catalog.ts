@@ -30,6 +30,7 @@ export const gridCopy = {
   localDeleteFailed: "删除《{title}》的本地记录失败",
   duplicateTitle: "复制《{title}》",
   duplicateLine: "按当前设置新建一个未开始的订阅，下载记录和文件不会复制",
+  duplicateSamePathHint: "副本标题和季与原订阅相同，启动前请修改，否则会写入同一位置。",
   duplicateLabel: "订阅备注",
   duplicatePlaceholder: "例如 只订阅某个字幕组",
   duplicateConfirm: "复制",

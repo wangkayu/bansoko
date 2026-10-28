@@ -9,16 +9,19 @@ import { lifecycleStateLabel } from "../../../lib/labels";
 // The browse card (shared by the catalog browse areas and global search results, after the card
 //   redesign): a 2:3 poster with a fixed information budget — one title line + the original name +
 //   one caption line (group count / updated) + top-left badges (broadcast day / score / state).
-//   The card face has no full-width button: the whole card opens the config — a provider entry is
-//   always a candidate draft (subscribing completes there), while a subscribed custom preset opens
-//   its subscription configuration. Browse (the one-shot download's browse-seeds entry) is a
-//   persistent low-contrast small icon button at the strip's right end, a hit area of its own, never
-//   opening the config; hiding and deleting a preset live in the top-right menu.
+//   The card face has no full-width button: the whole card opens the config — a provider entry
+//   with no live subscription opens a candidate draft (subscribing completes there); one with a live
+//   (non-retired) subscription opens that subscription instead, or the subscription column filtered
+//   to the entry when there are several (the host decides, see useOpenLiveSubscription); a retired-only
+//   entry opens a draft again. A subscribed custom preset opens its subscription configuration.
+//   Browse (the one-shot download's browse-seeds entry) is a persistent low-contrast small icon
+//   button at the strip's right end, a hit area of its own, never opening the config; hiding and
+//   deleting a preset live in the top-right menu.
 //   Hidden anime enter no list at all, so the card carries no hidden state and no unhide entry
 //   (those live only in settings' hidden-anime section).
 //   Subscribed-or-not is a boolean, never the subscription's state: with a subscription the card
-//   simply adds a subscribed badge at the top left, while click, browse and hide behave exactly like
-//   an unsubscribed candidate. Subscription state, progress, RSS signals and subscription actions
+//   simply adds a subscribed badge at the top left; browse and hide behave exactly like an
+//   unsubscribed candidate. Subscription state, progress, RSS signals and subscription actions
 //   belong to the subscribed wall and never render here.
 
 function captionParts(entry: CatalogEntryView): string[] {
@@ -43,8 +46,9 @@ export function BrowseCard({
   entry: CatalogEntryView;
   /** Hides a provider entry; custom goes through delete-preset, and the subscription list and search results pass none. */
   onHide?: (entry: CatalogEntryView) => void;
-  /** Opens on a card click: a provider entry opens the candidate draft the same with or without a
-   *  subscription; a subscribed custom preset opens its subscription configuration. */
+  /** Opens on a card click. The host routes a provider entry with live instances (liveInstanceRefs)
+   *  to its subscription before falling back to the candidate draft; a subscribed custom preset
+   *  opens its subscription configuration. */
   onOpenConfig: (entry: CatalogEntryView) => void;
   /** Deletes an unsubscribed custom preset; a subscribed preset shows nothing. */
   onDeleteCandidate?: (entry: CatalogEntryView) => void;

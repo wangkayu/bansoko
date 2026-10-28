@@ -119,6 +119,7 @@ export function AnimeConfigDialog({
   sourceLabel,
   onSubscribed,
   onCandidateStateChanged = () => {},
+  onOpenExisting,
   initialTab,
   onTabChange,
   routeHosted = false,
@@ -134,6 +135,9 @@ export function AnimeConfigDialog({
   onSubscribed: () => void;
   /** Refresh catalog after an activation conflict without closing the dialog. */
   onCandidateStateChanged?: () => void;
+  /** A subscribe was refused because the provider entry already has one live subscription (stale
+   *  browse data): the host opens that subscription's configuration. */
+  onOpenExisting?: (managedAnimeID: string) => void;
   /** The tab selected at open (e.g. a card's "subscription policy" landing directly on subgroups). */
   initialTab?: string;
   /** Reports the current tab (written into `?tab=` when the route carries it). */
@@ -316,6 +320,14 @@ export function AnimeConfigDialog({
               entry={entry}
               onSubscribed={handleSubscribed}
               onCandidateStateChanged={onCandidateStateChanged}
+              onOpenExisting={
+                onOpenExisting
+                  ? (id) => {
+                      draftDirtyRef.current = false;
+                      onOpenExisting(id);
+                    }
+                  : undefined
+              }
               onDirtyChange={handleDraftDirtyChange}
               onHeaderMetadata={reportHeaderMetadata}
               onRequestClose={requestClose}
@@ -542,6 +554,7 @@ function DraftBody({
   entry,
   onSubscribed,
   onCandidateStateChanged,
+  onOpenExisting,
   onDirtyChange,
   onHeaderMetadata,
   onRequestClose,
@@ -553,6 +566,7 @@ function DraftBody({
   onSubscribed: () => void;
   /** Activation conflicts invalidate the catalog without closing this draft dialog. */
   onCandidateStateChanged: () => void;
+  onOpenExisting?: (managedAnimeID: string) => void;
   onDirtyChange: (dirty: boolean) => void;
   onHeaderMetadata: (value: HeaderMetadata) => void;
   onRequestClose: () => void;
@@ -956,6 +970,13 @@ function DraftBody({
         setError(t("config.draftNotFound"));
       } else if (cause instanceof ApiError && cause.code === "IDEMPOTENCY_KEY_REUSED") {
         setError(t("config.opConflict"));
+      } else if (cause instanceof ApiError && cause.code === "PROVIDER_ENTRY_ALREADY_SUBSCRIBED") {
+        // Stale browse data: the entry already has a live subscription. Exactly one id opens it;
+        // several (older duplicates) show the message.
+        onCandidateStateChanged();
+        const existing = (cause.details ?? []).flatMap((detail) => detail.managed_anime_ids ?? []);
+        if (existing.length === 1 && onOpenExisting) onOpenExisting(existing[0]);
+        else setError(toUserMessage(cause, t("config.subscribeFailed")));
       } else {
         setError(toUserMessage(cause, t("config.subscribeFailed")));
       }

@@ -307,6 +307,15 @@ describe("catalog mapping", () => {
     expect(mixed?.subscribed).toBe(true);
   });
 
+  it("carries only the non-retired instance refs, in order, for the click to resolve", () => {
+    const [mixed] = mapCatalogEntries([providerCatalogItem({ instances: [INST_RETIRED, INST_A, INST_B] })], "mikan");
+    expect(mixed?.liveInstanceRefs).toEqual(["anime-a", "anime-b"]);
+    const [retiredOnly] = mapCatalogEntries([providerCatalogItem({ instances: [INST_RETIRED] })], "mikan");
+    expect(retiredOnly?.liveInstanceRefs).toBeUndefined();
+    const [none] = mapCatalogEntries([providerCatalogItem()], "mikan");
+    expect(none?.liveInstanceRefs).toBeUndefined();
+  });
+
   it("leaves an entry without subscriptions unmarked", () => {
     const [entry] = mapCatalogEntries([providerCatalogItem()], "mikan");
     expect(entry?.subscribed).toBeUndefined();

@@ -88,6 +88,11 @@ export interface CatalogEntryView {
    *  subscription. A candidate card is only marked "subscribed" from this and carries no
    *  subscription's identity, version or state (subscriptionState and friends stay empty). */
   subscribed?: boolean;
+  /** Provider browse/search candidate card: the managed anime ids of the external entry's
+   *  non-retired instances (lifecycle active), oldest first. Absent or empty means a click opens
+   *  the candidate draft; one id opens that subscription; several open the subscription column
+   *  filtered to the entry. Identity only: no version or state is carried. */
+  liveInstanceRefs?: string[];
   /** The current subscription version patchAnimeSubscription needs. */
   subscriptionVersion?: number;
   /** The owner's irreversible lifecycle boundary. Retired is read-only: the card shows "retired" and no longer offers start/stop/config/unsubscribe. */

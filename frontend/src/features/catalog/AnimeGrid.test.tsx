@@ -199,6 +199,7 @@ function catalogWorkspace(provider: "mikan" | "anibt") {
         managed_anime_ref: (candidate.managed_anime as Record<string, unknown>).id,
         subscription_ref: subscription.id,
         subscription_state: subscription.state,
+        lifecycle_state: subscription.lifecycle_state,
         subscription_version: subscription.version,
       };
     });
@@ -1234,10 +1235,11 @@ describe("AnimeGrid（fixture 目录）", () => {
     expect(screen.getAllByText("只订阅一个字幕组").length).toBeGreaterThan(0);
   }, 15000);
 
-  // Clicking a subscribed candidate card behaves exactly like an unsubscribed one: it opens the
-  //   candidate draft (the same provider ref row key), never any subscription's workspace.
-  it("浏览区点有订阅的卡片：打开候选草稿，不读任何订阅的工作区", async () => {
-    candidates = [{ ...mikanActivatedCandidate }, { ...mikanSecondOwner }];
+  // A provider entry holds at most one live subscription, so a click on its browse card goes to what
+  //   exists: one live instance opens that subscription's configuration (the same route-carried
+  //   dialog the subscribed wall opens), never a second candidate draft.
+  it("浏览区点有一个存续订阅的卡片：打开该订阅的配置，不开候选草稿", async () => {
+    candidates = [{ ...mikanActivatedCandidate }];
     const { router } = await renderGrid("/?source=mikan");
     await flush();
 
@@ -1246,11 +1248,43 @@ describe("AnimeGrid（fixture 目录）", () => {
     await flush();
 
     expect(screen.getByRole("dialog", { name: "进击的巨人" })).toBeInTheDocument();
+    expect(new URLSearchParams(router.state.location.search).get("anime")).toBe("anime:cand-m1");
+    expect(screen.queryByRole("tab", { name: t("tabs.names.rssPreview") })).not.toBeInTheDocument();
+    // Let the workspace read settle and close the dialog, so the shared animation-frame scheduler is idle.
+    await flush();
+    await act(() => router.navigate(-1));
+    await flush();
+  }, 15000);
+
+  it("浏览区点有多个存续订阅的卡片：切到订阅列，标题筛选预设为该条目", async () => {
+    candidates = [{ ...mikanActivatedCandidate }, { ...mikanSecondOwner }];
+    const { router } = await renderGrid("/?source=mikan");
+    await flush();
+
+    fireEvent.click(screen.getByRole("button", { name: t("grid.card.openConfig", { title: "进击的巨人" }) }));
+    await flush();
+
     const search = new URLSearchParams(router.state.location.search);
-    expect(search.get("anime")).toBe("mikan:sample-giant");
-    expect(search.get("tab")).toBe("metadata");
+    expect(search.get("source")).toBe("all");
+    expect(search.get("anime")).toBeNull();
+    // The filter parameter is consumed into the column's filter box and removed from the address.
+    expect(search.get("filter")).toBeNull();
+    expect(screen.getByDisplayValue("进击的巨人")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: t("grid.card.moreFor", { title: "进击的巨人" }) })).toHaveLength(2);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  }, 15000);
+
+  it("浏览区点只有已退役订阅的卡片：照常打开候选草稿", async () => {
+    candidates = [{ ...mikanActivatedCandidate, lifecycle_state: "retired", lifecycle_epoch: 2 }];
+    const { router } = await renderGrid("/?source=mikan");
+    await flush();
+
+    fireEvent.click(screen.getByRole("button", { name: t("grid.card.openConfig", { title: "进击的巨人" }) }));
+    await flushLazyEntry("config");
+    await flush();
+
+    expect(new URLSearchParams(router.state.location.search).get("anime")).toBe("mikan:sample-giant");
     expect(screen.getByRole("tab", { name: t("tabs.names.rssPreview") })).toBeInTheDocument();
-    expect(fetchMock.mock.calls.filter(([input]) => /\/anime\/[^/]+\/workspace$/.test(String(input)))).toHaveLength(0);
   }, 15000);
 
   it("同一外部 provider ref 关联的两个 owner：已订阅 tab 按各自 managed id/version 结束订阅", async () => {

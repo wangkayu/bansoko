@@ -5,6 +5,7 @@ import { fetchSeedSearchSnapshot, searchProviderCatalog, toUserMessage, type Cat
 import { blacklistKey, useBlacklist } from "../../lib/blacklist";
 import { getCatalogProvider, providerLabel, searchProviderLabel } from "../../lib/providers/registry";
 import { BrowseCard } from "./card";
+import { useOpenLiveSubscription } from "./useOpenLiveSubscription";
 import { mapCatalogItem } from "../../lib/providers/catalogProvider";
 import type { CatalogProvider } from "../../lib/providers/port";
 import type { CatalogEntryView, ProviderKey, SearchProviderKey } from "../../lib/providers/viewmodels";
@@ -67,6 +68,7 @@ export function GlobalSearchDialog({
   }, []);
 
   const queryClient = useQueryClient();
+  const { openLiveSubscription, openSubscriptionById } = useOpenLiveSubscription();
   const [keyword, setKeyword] = useState("");
   const [mode, setMode] = useState<SearchMode>("program");
   const [site, setSite] = useState<SearchSite>("anibt");
@@ -174,6 +176,9 @@ export function GlobalSearchDialog({
 
   function openCandidate(item: CatalogItem) {
     const providerKey = item.provider;
+    // An entry with a live subscription opens it (the route change closes this dialog); only an
+    // entry with none, or only retired ones, opens a candidate draft.
+    if (openLiveSubscription(mapCatalogItem(item, providerKey))) return;
     setConfigTarget({
       providerKey,
       provider: getCatalogProvider(providerKey),
@@ -351,6 +356,11 @@ export function GlobalSearchDialog({
             entry={configTarget.entry}
             sourceLabel={providerLabel(configTarget.providerKey)}
             onSubscribed={handleSubscribed}
+            onCandidateStateChanged={handleSubscribed}
+            onOpenExisting={(id) => {
+              setConfigTarget(null);
+              openSubscriptionById(id);
+            }}
           />
         </Suspense>
       )}

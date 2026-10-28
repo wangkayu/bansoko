@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CatalogItem, RSSListItem, RSSListView, SeedSearchSnapshotSeed, SeedSearchSnapshotView } from "../../lib/api/client";
 import { GlobalSearchDialog } from "./GlobalSearchDialog";
@@ -408,6 +408,60 @@ describe("GlobalSearchDialog（顶栏全局搜索）", () => {
     // Beyond the card title the config dialog's own title appears (the stubbed onOpenChange never actually closes the search dialog).
     await waitFor(async () => expect((await screen.findAllByRole("heading", { name: /全局搜索番剧/ })).length).toBeGreaterThan(1));
     expect(await screen.findByRole("tab", { name: t("tabs.names.metadata") })).toBeInTheDocument();
+  });
+
+  // A provider entry with a live subscription opens that subscription instead of a second draft.
+  describe("已有存续订阅的搜索结果", () => {
+    const liveInstance = (ref: string, lifecycle: "active" | "retired") => ({
+      managed_anime_ref: ref,
+      subscription_ref: `sub-${ref}`,
+      subscription_state: "active" as const,
+      lifecycle_state: lifecycle,
+      lifecycle_epoch: 1,
+      subscription_version: 1,
+    });
+
+    function LocationProbe() {
+      const location = useLocation();
+      return <output data-testid="location">{location.pathname + location.search}</output>;
+    }
+
+    async function clickHit(instances: CatalogItem["instances"]) {
+      searchResult = { status: 200, body: [{ ...anibtHit, instances }] };
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(
+        <QueryClientProvider client={client}>
+          <MemoryRouter>
+            <GlobalSearchDialog open onOpenChange={() => {}} />
+            <LocationProbe />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+      await submitSearch("BanG Dream");
+      fireEvent.click(await screen.findByRole("button", { name: t("grid.card.openConfig", { title: "全局搜索番剧" }) }));
+    }
+
+    it("一个存续订阅：路由到该订阅的配置，不开候选草稿", async () => {
+      await clickHit([liveInstance("anime-live", "active")]);
+      await waitFor(() => expect(new URLSearchParams(screen.getByTestId("location").textContent!.split("?")[1]).get("anime")).toBe("anime-live"));
+      expect(screen.queryByRole("tab", { name: t("tabs.names.rssPreview") })).not.toBeInTheDocument();
+    });
+
+    it("多个存续订阅：去订阅列并预设标题筛选", async () => {
+      await clickHit([liveInstance("anime-a", "active"), liveInstance("anime-b", "active")]);
+      await waitFor(() => {
+        const search = new URLSearchParams(screen.getByTestId("location").textContent!.split("?")[1]);
+        expect(search.get("source")).toBe("all");
+        expect(search.get("filter")).toBe("全局搜索番剧");
+        expect(search.get("anime")).toBeNull();
+      });
+    });
+
+    it("只有已退役订阅：照常打开候选草稿", async () => {
+      await clickHit([liveInstance("anime-old", "retired")]);
+      expect(await screen.findByRole("tab", { name: t("tabs.names.metadata") })).toBeInTheDocument();
+      expect(screen.getByTestId("location").textContent).not.toContain("anime=");
+    });
   });
 
   it("候选行的「浏览种子」：关闭搜索弹窗并打开一次性下载入口，不进订阅配置", async () => {
