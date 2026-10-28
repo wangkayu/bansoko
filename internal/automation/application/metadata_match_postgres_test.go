@@ -235,7 +235,8 @@ func TestMetadataBackfillFillsEmptyNeverOverwritesAndHonoursCAS(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer tx.Rollback()
-		ok, err := backfill.ApplyTx(ctx, tx, "anime-meta-fill", version, backfill.Merge(stored, match), match)
+		plan := backfill.Merge(stored, match)
+		ok, err := backfill.ApplyTx(ctx, tx, "anime-meta-fill", version, &plan, match)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -352,6 +353,71 @@ WHERE kind = 'metadata_match'`); err != nil {
 	}
 	if version != 1 {
 		t.Fatalf("disabled schedule must not update metadata, got version %d", version)
+	}
+}
+
+// The scheduled backfill never turns an instance with files into a movie: the
+// matched movie TMDB tuple is still bound and the unset owner kind (tv) stays
+// unset, while the same match on an instance without files fills movie.
+func TestMetadataMatchKeepsABlockedMediaKindAndFillsTheRest(t *testing.T) {
+	db := openDispatcherTestDB(t)
+	ctx := context.Background()
+	insertMetadataSubscriptionFixture(t, db, "anime-kind-held", "sub-kind-held", "Show")
+	insertMetadataSubscriptionFixture(t, db, "anime-kind-free", "sub-kind-free", "Other")
+	if _, err := db.ExecContext(ctx, `
+INSERT INTO placements(id, physical_path, managed_anime_id, source_evidence_type, source_owner_ref, source_fingerprint, target_fingerprint, facts_version, verification_state, replacement_eligible)
+VALUES ('plc-kind-held', '/library/plc-kind-held.mkv', 'anime-kind-held', 'reconciliation', 'scan:plc-kind-held', 'source', 'target', 'facts-v1', 'verified', true)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `
+INSERT INTO placement_coverage(placement_id, observation_key, coverage_ordinal, facts_version, evidence_ref)
+VALUES ('plc-kind-held', 'tv:e1', 0, 'facts-v1', 'plc-kind-held')`); err != nil {
+		t.Fatal(err)
+	}
+	store, err := workitems.NewStore(db, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	activityWriter, err := observabilityapplication.NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatcher := &Dispatcher{
+		DB:        db,
+		WorkItems: store,
+		MetadataMatcher: matcher.NewMatcher(matcher.NewBangumiDataIndex([]matcher.DataItem{
+			{BgmID: "bgm-held", TmdbID: "movie/41", Titles: []string{"Show"}},
+			{BgmID: "bgm-free", TmdbID: "movie/42", Titles: []string{"Other"}},
+		}), nil, nil, nil),
+		ActivityWriter: activityWriter,
+	}
+	counts, err := dispatcher.dispatchMetadataMatch(ctx)
+	if err != nil {
+		t.Fatalf("metadata dispatch: %v", err)
+	}
+	if counts.targetCount != 2 || counts.enqueued != 2 || counts.errors != 0 {
+		t.Fatalf("unexpected metadata dispatch counts: %+v", counts)
+	}
+	for _, want := range []struct {
+		anime string
+		bgm   string
+		kind  sql.NullString
+	}{
+		{anime: "anime-kind-held", bgm: "bgm-held"},
+		{anime: "anime-kind-free", bgm: "bgm-free", kind: sql.NullString{String: "movie", Valid: true}},
+	} {
+		var bgm, tupleKind sql.NullString
+		var kind sql.NullString
+		var version int64
+		if err := db.QueryRowContext(ctx, `
+SELECT bgm_work_id, tmdb_media_kind, media_kind_override, version
+FROM anime_metadata WHERE managed_anime_id = $1`, want.anime).Scan(&bgm, &tupleKind, &kind, &version); err != nil {
+			t.Fatal(err)
+		}
+		if bgm.String != want.bgm || tupleKind.String != "movie" || kind != want.kind || version != 2 {
+			t.Fatalf("%s: bgm=%v tuple=%v kind=%v version=%d, want kind %v beside the bound movie tuple",
+				want.anime, bgm, tupleKind, kind, version, want.kind)
+		}
 	}
 }
 

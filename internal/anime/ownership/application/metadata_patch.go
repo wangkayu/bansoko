@@ -77,6 +77,19 @@ FOR UPDATE`, managedAnimeID).Scan(&currentBgm, &currentTmdbWorkID, &currentTmdbK
 		nextMediaKindOverride = *nextMediaKind
 	}
 	changed = changed || animeapplication.NullableValueChanged(currentMediaKindOverride, nextMediaKindOverride)
+	// The effective kind (unset is tv) decides the episode key shape; it
+	// changes only while no file or running acquisition holds the identity.
+	var currentMediaKind *string
+	if currentMediaKindOverride.Valid {
+		currentMediaKind = &currentMediaKindOverride.String
+	}
+	allowed, blockers, err := animeapplication.IdentityKindChangeAllowedTx(ctx, tx, managedAnimeID, currentMediaKind, nextMediaKind)
+	if err != nil {
+		return AnimeMetadata{}, err
+	}
+	if !allowed {
+		return AnimeMetadata{}, animeapplication.IdentityKindChangeBlockedError(blockers)
+	}
 	if _, err := tx.ExecContext(ctx, `
 UPDATE anime_metadata
 SET bgm_work_id = $2, tmdb_work_id = $3, tmdb_media_kind = $4, tmdb_season = $5,

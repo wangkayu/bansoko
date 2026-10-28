@@ -772,7 +772,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Runs the configured matcher and writes only missing metadata fields (CAS-guarded), by the same fill-if-empty rule as the scheduled metadata_match automation: the BGM binding, the TMDB tuple (written together or not at all), total_episodes, and year (from the matched TMDB work's year, only while year is null; a stored year is never overwritten and a match without a year leaves it null), and season (the matched TMDB season, only when this call writes the TMDB tuple and season is null; an existing season is never overwritten). A partial result such as BGM alone is saved. Requires an active subscription (otherwise SUBSCRIPTION_INACTIVE). The Idempotency-Key dedupes repeated clicks / retries: a replay with the same key and request body returns the original result without re-running the provider match or touching metadata. */
+        /** @description Runs the configured matcher and writes only missing metadata fields (CAS-guarded), by the same fill-if-empty rule as the scheduled metadata_match automation: the BGM binding, the TMDB tuple (written together or not at all), total_episodes, and year (from the matched TMDB work's year, only while year is null; a stored year is never overwritten and a match without a year leaves it null), and season (the matched TMDB season, only when this call writes the TMDB tuple and season is null; an existing season is never overwritten), and the media kind (the matched TMDB kind, only when this call writes the TMDB tuple and the kind is null, and never while that would change the effective kind of an anime with an active library file or a running acquisition). A partial result such as BGM alone is saved. Requires an active subscription (otherwise SUBSCRIPTION_INACTIVE). The Idempotency-Key dedupes repeated clicks / retries: a replay with the same key and request body returns the original result without re-running the provider match or touching metadata. */
         post: operations["matchAnimeMetadata"];
         delete?: never;
         options?: never;
@@ -3804,7 +3804,7 @@ export interface components {
             bgm?: components["schemas"]["NullableBGMBinding"];
             tmdb?: components["schemas"]["NullableTMDBBinding"];
             /**
-             * @description Owner media kind (tv | movie) the episode identity resolves with. NULL is tv; the TMDB binding's media_kind is never read for it. It is filled once from the TMDB media_kind when a TMDB tuple is bound while it is NULL (subscribe, metadata patch or metadata match); clearing or replacing the tuple later never changes it. It never rewrites the TMDB tuple.
+             * @description Owner media kind (tv | movie) the episode identity resolves with. NULL is tv; the TMDB binding's media_kind is never read for it. It is filled once from the TMDB media_kind when a TMDB tuple is bound while it is NULL (subscribe, metadata patch or metadata match); clearing or replacing the tuple later never changes it. It never rewrites the TMDB tuple. The effective kind (NULL is tv) changes between tv and movie only while the anime has no active library file and no running acquisition: a metadata patch that would change it then returns 409 IDENTITY_KIND_CHANGE_BLOCKED, and a metadata match or the scheduled metadata_match automation leaves it unchanged and still fills the other empty fields.
              * @enum {string|null}
              */
             media_kind_override?: "tv" | "movie" | null;
@@ -4972,7 +4972,7 @@ export interface components {
             bgm: components["schemas"]["NullableBGMBinding"];
             tmdb: components["schemas"]["NullableTMDBBinding"];
             /**
-             * @description Complete owner value of the media kind: a value (tv | movie) replaces it; null leaves it unset (tv) unless the patch carries a TMDB tuple, which fills it with the tuple's media_kind. It never rewrites the TMDB tuple.
+             * @description Complete owner value of the media kind: a value (tv | movie) replaces it; null leaves it unset (tv) unless the patch carries a TMDB tuple, which fills it with the tuple's media_kind. It never rewrites the TMDB tuple. A patch whose resulting effective kind (NULL is tv) differs from the stored one while the anime has an active library file or a running acquisition returns 409 IDENTITY_KIND_CHANGE_BLOCKED and changes nothing.
              * @enum {string|null}
              */
             media_kind_override?: "tv" | "movie" | null;
@@ -5533,6 +5533,11 @@ export interface components {
             message: string;
             /** @description Byte offset where a template source diagnostic starts in the template named by field. */
             start?: number;
+            /**
+             * Format: int64
+             * @description How many of the things the detail code names exist, when a refusal is about a count (IDENTITY_KIND_CHANGE_BLOCKED carries active_placements and pending_acquisitions).
+             */
+            count?: number;
             /** @description Byte offset where a template source diagnostic ends in the template named by field. */
             end?: number;
             /** @description Absolute paths this detail is about, when a refusal names specific files (the managed files inside a refused directory, for example). */

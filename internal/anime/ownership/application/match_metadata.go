@@ -261,8 +261,12 @@ func storedMetadata(m MetadataMatchMetadata) backfill.Stored {
 
 // mergeMetadata applies the shared fill-if-empty rule to the owner view.
 func mergeMetadata(current MetadataMatchMetadata, match *matcher.MatchResult) MetadataMatchMetadata {
+	return mergedMetadata(current, backfill.Merge(storedMetadata(current), match).Merged)
+}
+
+// mergedMetadata projects merged backfill fields onto the owner view.
+func mergedMetadata(current MetadataMatchMetadata, m backfill.Stored) MetadataMatchMetadata {
 	merged := current
-	m := backfill.Merge(storedMetadata(current), match).Merged
 	if m.HasBGM() {
 		merged.BGM = &MetadataMatchBGM{WorkID: *m.BGMWorkID}
 	}
@@ -321,7 +325,7 @@ FROM anime_metadata WHERE managed_anime_id = $1 FOR UPDATE`, managedAnimeID).Sca
 
 	if write {
 		plan := backfill.Merge(storedMetadata(current), match)
-		applied, err := backfill.ApplyTx(ctx, tx, managedAnimeID, expectedVersion, plan, match)
+		applied, err := backfill.ApplyTx(ctx, tx, managedAnimeID, expectedVersion, &plan, match)
 		if err != nil {
 			return MetadataMatchResult{}, err
 		}
@@ -331,7 +335,9 @@ FROM anime_metadata WHERE managed_anime_id = $1 FOR UPDATE`, managedAnimeID).Sca
 			// CAS conflict: nothing was written.
 			return MetadataMatchResult{}, &apperrors.VersionConflict{Owner: "anime_metadata", CurrentVersion: target.version.Int64}
 		} else {
-			merged := mergeMetadata(current, match)
+			// The written fields: a media kind the identity guard kept unset
+			// is not in the plan any more.
+			merged := mergedMetadata(current, plan.Merged)
 			merged.Version = expectedVersion + 1
 			current = merged
 			if plan.Merged.Complete() {

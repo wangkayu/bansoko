@@ -161,6 +161,7 @@ export const enErrorCopy = {
   MANAGED_ANIME_RETIRED: RETIRED,
   SUBSCRIPTION_INACTIVE: "The subscription is stopped. Resume it first.",
   SUBSCRIPTION_STOPPED: "The subscription is stopped. Resume it first.",
+  IDENTITY_KIND_CHANGE_BLOCKED: "Files are already in the library or still downloading, so the media type can't be changed.",
   METADATA_INCOMPLETE: "Not linked to Bangumi or TMDB. Link them first.",
   TMDB_BINDING_INCOMPLETE: "The TMDB link is incomplete. Complete it and try again.",
   TMDB_CREDENTIAL_NOT_CONFIGURED: "No TMDB key configured. Add one in Settings first.",

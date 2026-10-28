@@ -52,11 +52,13 @@ func (e *VersionConflict) Error() string {
 
 // Business reports a typed conflict/validation/availability condition from
 // the contract error matrix (for example IDEMPOTENCY_KEY_REUSED or
-// METADATA_REQUIRED). Status is one of 409, 422, or 503.
+// METADATA_REQUIRED). Status is one of 409, 422, or 503. Details optionally
+// name what the condition is about (counts, for example).
 type Business struct {
 	Status  int
 	Code    string
 	Message string
+	Details []FieldViolation
 }
 
 func (e *Business) Error() string { return e.Code + ": " + e.Message }
@@ -79,6 +81,9 @@ type FieldViolation struct {
 	// into the template named by Field).
 	Start *int
 	End   *int
+	// Count optionally carries how many of the thing the detail names exist
+	// (the blockers of a refused change, for example).
+	Count *int64
 }
 
 // Validation carries typed 422 field violations. The first violation

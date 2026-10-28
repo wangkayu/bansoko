@@ -344,7 +344,7 @@ func mapApplicationError(err error) *APIError {
 		if status != http.StatusConflict && status != http.StatusUnprocessableEntity && status != http.StatusServiceUnavailable {
 			status = http.StatusConflict
 		}
-		return &APIError{Status: status, Code: business.Code, Message: business.Message}
+		return &APIError{Status: status, Code: business.Code, Message: business.Message, Details: mapValidationDetails(business.Details)}
 	}
 	var badRequest *apperrors.BadRequest
 	if errors.As(err, &badRequest) {
@@ -366,6 +366,7 @@ func mapValidationDetails(details []apperrors.FieldViolation) []generated.ErrorD
 			Message: detail.Message,
 			Start:   detail.Start,
 			End:     detail.End,
+			Count:   detail.Count,
 		})
 	}
 	return result

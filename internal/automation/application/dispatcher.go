@@ -1400,7 +1400,7 @@ func (d *Dispatcher) matchOne(ctx context.Context, managedAnimeID, title, origin
 
 	// CAS write of the empty fields only: a version conflict writes nothing and
 	// the next run retries.
-	applied, err := backfill.ApplyTx(ctx, tx, managedAnimeID, metadataVersion, plan, result)
+	applied, err := backfill.ApplyTx(ctx, tx, managedAnimeID, metadataVersion, &plan, result)
 	if err != nil {
 		return counts, err
 	}

@@ -160,6 +160,7 @@ export const errorCopy = {
   MANAGED_ANIME_RETIRED: RETIRED,
   SUBSCRIPTION_INACTIVE: "订阅已停止，请先恢复订阅",
   SUBSCRIPTION_STOPPED: "订阅已停止，请先恢复订阅",
+  IDENTITY_KIND_CHANGE_BLOCKED: "已有入库文件或正在获取的内容，不能更改媒体类型",
   METADATA_INCOMPLETE: "未关联 Bangumi 或 TMDB，请先关联",
   TMDB_BINDING_INCOMPLETE: "TMDB 关联不完整，请补全后重试",
   TMDB_CREDENTIAL_NOT_CONFIGURED: "尚未配置 TMDB 密钥，请先到设置中添加",

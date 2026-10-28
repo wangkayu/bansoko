@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 
+	animeapplication "bansoko/internal/anime/application"
 	animedomain "bansoko/internal/anime/domain"
 	workTitles "bansoko/internal/identitymetadata/adapter/persistence"
 	"bansoko/internal/metadata/matcher"
@@ -126,7 +127,24 @@ func Classify(plan Plan, match *matcher.MatchResult) Outcome {
 // the round; the next run retries) or when the plan changes nothing. A stored
 // value is never overwritten: only the planned empty fields appear in SET.
 // The native names of the newly bound works are recorded in the same tx.
-func ApplyTx(ctx context.Context, tx *sql.Tx, managedAnimeID string, expectedVersion int64, plan Plan, match *matcher.MatchResult) (bool, error) {
+//
+// A media-kind fill that would change the effective kind (unset is tv) of an
+// instance whose identity is in use (active files or running acquisitions) is
+// dropped from the plan before the write: the kind stays unset and every other
+// planned field is still written. The caller reads the plan afterwards for
+// what was written.
+func ApplyTx(ctx context.Context, tx *sql.Tx, managedAnimeID string, expectedVersion int64, plan *Plan, match *matcher.MatchResult) (bool, error) {
+	if plan.NewMediaKind {
+		// Merge fills the kind only while it is unset, so the stored kind is
+		// NULL here.
+		allowed, _, err := animeapplication.IdentityKindChangeAllowedTx(ctx, tx, managedAnimeID, nil, plan.Merged.MediaKind)
+		if err != nil {
+			return false, err
+		}
+		if !allowed {
+			plan.Merged.MediaKind, plan.NewMediaKind = nil, false
+		}
+	}
 	if !plan.Changed() {
 		return false, nil
 	}
