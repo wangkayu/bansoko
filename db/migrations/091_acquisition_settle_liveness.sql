@@ -16,9 +16,10 @@
 --     stage has to remember the call; the explicit calls stay as harmless
 --     early wakes.
 --   * The same trigger on a settle item, and acquisitions_settle_liveness on a
---     root that is (again) running: at commit a running root must still hold
---     some work item, its stage work or its settle item. A transaction that
---     would leave a running root without either fails instead of stranding it.
+--     root that is (again) running: a running root that holds no work item at
+--     commit, neither stage work nor its settle item, gets a due settle item
+--     (acquisition_settle_keep_live). The guarantee does not depend on the
+--     order the deferred triggers of one transaction run in.
 --   * acquisition_settle_defer still consumes the settle item when stage work
 --     is live (that work's exit wakes it again). A root whose execution graph
 --     is incomplete has nothing live to wake it, so its settle item is kept and
@@ -69,15 +70,16 @@ END;
 $$;
 
 -- A running root holds at least one work item: stage work whose exit wakes
--- settlement, or the settle item itself.
-CREATE FUNCTION acquisition_assert_settle_liveness(p_root text) RETURNS void
+-- settlement, or the settle item itself. One left with neither gets a due
+-- settle item.
+CREATE FUNCTION acquisition_settle_keep_live(p_root text) RETURNS void
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public'
     AS $$
 BEGIN
     IF EXISTS(SELECT 1 FROM public.acquisitions WHERE id=p_root AND state='running' AND record_state='full')
         AND NOT EXISTS(SELECT 1 FROM public.work_items WHERE acquisition_id=p_root) THEN
-        RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='ACQ_SETTLE_LIVENESS';
+        PERFORM public.acquisition_settle_wake(p_root);
     END IF;
 END;
 $$;
@@ -88,7 +90,7 @@ CREATE FUNCTION acquisition_settle_on_work_exit() RETURNS trigger
     AS $$
 BEGIN
     IF OLD.kind='acquisition_settle' THEN
-        PERFORM public.acquisition_assert_settle_liveness(OLD.acquisition_id);
+        PERFORM public.acquisition_settle_keep_live(OLD.acquisition_id);
     ELSE
         PERFORM public.acquisition_settle_wake(OLD.acquisition_id);
     END IF;
@@ -101,7 +103,7 @@ CREATE FUNCTION acquisition_settle_on_root_running() RETURNS trigger
     SET search_path TO 'pg_catalog', 'public'
     AS $$
 BEGIN
-    PERFORM public.acquisition_assert_settle_liveness(NEW.id);
+    PERFORM public.acquisition_settle_keep_live(NEW.id);
     RETURN NULL;
 END;
 $$;
@@ -152,7 +154,7 @@ BEGIN
  RETURN jsonb_build_object('status','deferred');
 END $$;
 
-REVOKE ALL ON FUNCTION acquisition_settle_wake(text), acquisition_assert_settle_liveness(text),
+REVOKE ALL ON FUNCTION acquisition_settle_wake(text), acquisition_settle_keep_live(text),
     acquisition_settle_on_work_exit(), acquisition_settle_on_root_running() FROM PUBLIC;
 
 SELECT public.acquisition_settle_wake(r.id)

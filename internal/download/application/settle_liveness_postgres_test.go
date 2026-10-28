@@ -3,7 +3,6 @@ package application
 import (
 	"context"
 	"database/sql"
-	"strings"
 	"testing"
 
 	"bansoko/internal/acquisition/terminal/settlement"
@@ -13,7 +12,8 @@ import (
 // A running root always holds a work item, and its stage work leaving the queue
 // is what wakes settlement (migration 091): no stage arms the settle item by
 // hand, an incomplete graph keeps its settle item and stays visibly blocked, and
-// a transaction that would leave the root with no work at all is refused.
+// a transaction that leaves the root with no work at all gets a fresh settle
+// item.
 func TestSettleLivenessFollowsStageWorkExit(t *testing.T) {
 	ctx := context.Background()
 	db := openDownloadDB(t)
@@ -58,13 +58,15 @@ func TestSettleLivenessFollowsStageWorkExit(t *testing.T) {
 		t.Fatalf("stage exit: items=%d due=%t; want one due settle item", items, due)
 	}
 
-	// The settle item is now the root's only work: removing it is refused.
-	_, err = owner.ExecContext(ctx, `DELETE FROM work_items WHERE owner_type='acquisition' AND owner_id=$1 AND kind='acquisition_settle'`, root)
-	if err == nil || !strings.Contains(err.Error(), "ACQ_SETTLE_LIVENESS") {
-		t.Fatalf("removing the last work of a running root = %v; want ACQ_SETTLE_LIVENESS", err)
+	// The settle item is now the root's only work: removing it leaves a fresh,
+	// due one in its place.
+	var removed string
+	if err := owner.QueryRowContext(ctx, `DELETE FROM work_items WHERE owner_type='acquisition' AND owner_id=$1 AND kind='acquisition_settle' RETURNING id`, root).Scan(&removed); err != nil {
+		t.Fatal(err)
 	}
-	if items, _, _ := settleLiveness(t, db, root); items != 1 {
-		t.Fatalf("refused removal left %d settle items", items)
+	var fresh string
+	if err := db.QueryRowContext(ctx, `SELECT id FROM work_items WHERE owner_type='acquisition' AND owner_id=$1 AND kind='acquisition_settle' AND available_at<=clock_timestamp()`, root).Scan(&fresh); err != nil || fresh == removed {
+		t.Fatalf("removing the last work of a running root left settle item %q (removed %q), %v; want a fresh due one", fresh, removed, err)
 	}
 }
 
