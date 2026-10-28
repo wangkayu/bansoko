@@ -231,14 +231,14 @@ export const logCopy = {
     typeSite: "站点",
     typeExternal: "外部服务",
     typeDownloader: "下载器",
-    typeLibrary: "媒体库",
+    typeLibrary: "目标位置",
     typeNotify: "通知",
     target: {
       metadata: "元数据源",
       update: "更新源",
       site: "站点",
       downloader: "下载器",
-      library: "媒体库",
+      library: "目标位置",
       notify: "通知目标",
     },
     retry: {
@@ -250,7 +250,7 @@ export const logCopy = {
       },
       cond: {
         metadata_unreachable: "下次匹配时自动重试",
-        update_unreachable: "下次检查更新时自动重试",
+        update_unreachable: "下次检查更新时重试",
         site_paused: "约 1 小时后自动恢复",
         site_unreadable: "下次刷新时自动重试",
         site_refresh_failed: "自动重试，间隔从 5 分钟起逐步加长到 2 小时",

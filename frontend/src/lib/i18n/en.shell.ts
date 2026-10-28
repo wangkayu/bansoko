@@ -240,14 +240,14 @@ export const enLogCopy = {
     typeSite: "Sites",
     typeExternal: "External services",
     typeDownloader: "Download client",
-    typeLibrary: "Library",
+    typeLibrary: "Target location",
     typeNotify: "Notifications",
     target: {
       metadata: "Metadata source",
       update: "Update source",
       site: "Site",
       downloader: "Download client",
-      library: "Library",
+      library: "Target location",
       notify: "Notification target",
     },
     retry: {
@@ -259,7 +259,7 @@ export const enLogCopy = {
       },
       cond: {
         metadata_unreachable: "Retries automatically on the next match",
-        update_unreachable: "Retries automatically on the next update check",
+        update_unreachable: "Retried on the next update check",
         site_paused: "Resumes automatically in about 1 hour",
         site_unreadable: "Retries automatically on the next refresh",
         site_refresh_failed: "Retries automatically, starting at 5 minutes and backing off to 2 hours",
