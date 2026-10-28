@@ -31,7 +31,7 @@ var identifierPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,127}$`)
 var activityKinds = map[string]struct{}{
 	"subscription_created": {}, "subscription_started": {}, "subscription_stopped": {}, "subscription_resumed": {}, "metadata_applied": {}, "group_changed": {}, "policy_changed": {},
 	"rss_new_content": {}, "rss_refresh_failed": {}, "release_processed": {},
-	"download_changed": {}, "artifact_verified": {}, "placement_changed": {}, "replacement_decided": {}, "cleanup_completed": {},
+	"download_changed": {}, "artifact_verified": {}, "placement_changed": {}, "replacement_decided": {}, "cleanup_completed": {}, "cleanup_failed": {},
 	"file_alignment_completed": {}, "file_alignment_failed": {}, "acquisition_settled": {},
 }
 var activityOutcomes = map[string]struct{}{"info": {}, "success": {}, "failure": {}}

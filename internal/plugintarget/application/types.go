@@ -16,13 +16,14 @@ type TriggerKind string
 // (it also owns each trigger's variables and defaults); a conformance test in
 // plugintarget compares that copy to this registry as a closed set.
 const (
-	TriggerDownloadSubmitted      TriggerKind = plugintargetport.TriggerDownloadSubmitted
-	TriggerFileOperationCompleted TriggerKind = plugintargetport.TriggerFileOperationCompleted
-	TriggerFileOperationFailed    TriggerKind = plugintargetport.TriggerFileOperationFailed
-	TriggerReleaseDiscovered      TriggerKind = plugintargetport.TriggerReleaseDiscovered
-	TriggerDownloadFailed         TriggerKind = plugintargetport.TriggerDownloadFailed
-	TriggerSubscriptionChanged    TriggerKind = plugintargetport.TriggerSubscriptionChanged
-	TriggerUnknownFilesImported   TriggerKind = plugintargetport.TriggerUnknownFilesImported
+	TriggerDownloadSubmitted         TriggerKind = plugintargetport.TriggerDownloadSubmitted
+	TriggerFileOperationCompleted    TriggerKind = plugintargetport.TriggerFileOperationCompleted
+	TriggerFileOperationFailed       TriggerKind = plugintargetport.TriggerFileOperationFailed
+	TriggerReleaseDiscovered         TriggerKind = plugintargetport.TriggerReleaseDiscovered
+	TriggerDownloadFailed            TriggerKind = plugintargetport.TriggerDownloadFailed
+	TriggerSubscriptionChanged       TriggerKind = plugintargetport.TriggerSubscriptionChanged
+	TriggerUnknownFilesImported      TriggerKind = plugintargetport.TriggerUnknownFilesImported
+	TriggerReplacementDeletionFailed TriggerKind = plugintargetport.TriggerReplacementDeletionFailed
 )
 
 type PluginKind string

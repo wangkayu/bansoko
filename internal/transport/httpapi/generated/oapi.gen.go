@@ -1208,13 +1208,14 @@ const (
 
 // Defines values for NotificationTriggerKind.
 const (
-	NotificationTriggerKindDownloadFailed         NotificationTriggerKind = "download_failed"
-	NotificationTriggerKindDownloadSubmitted      NotificationTriggerKind = "download_submitted"
-	NotificationTriggerKindFileOperationCompleted NotificationTriggerKind = "file_operation_completed"
-	NotificationTriggerKindFileOperationFailed    NotificationTriggerKind = "file_operation_failed"
-	NotificationTriggerKindReleaseDiscovered      NotificationTriggerKind = "release_discovered"
-	NotificationTriggerKindSubscriptionChanged    NotificationTriggerKind = "subscription_changed"
-	NotificationTriggerKindUnknownFilesImported   NotificationTriggerKind = "unknown_files_imported"
+	NotificationTriggerKindDownloadFailed            NotificationTriggerKind = "download_failed"
+	NotificationTriggerKindDownloadSubmitted         NotificationTriggerKind = "download_submitted"
+	NotificationTriggerKindFileOperationCompleted    NotificationTriggerKind = "file_operation_completed"
+	NotificationTriggerKindFileOperationFailed       NotificationTriggerKind = "file_operation_failed"
+	NotificationTriggerKindReleaseDiscovered         NotificationTriggerKind = "release_discovered"
+	NotificationTriggerKindReplacementDeletionFailed NotificationTriggerKind = "replacement_deletion_failed"
+	NotificationTriggerKindSubscriptionChanged       NotificationTriggerKind = "subscription_changed"
+	NotificationTriggerKindUnknownFilesImported      NotificationTriggerKind = "unknown_files_imported"
 )
 
 // Defines values for NyaaConnectionKind.
@@ -2167,6 +2168,7 @@ const (
 	SubscriptionLogKindAcquisitionSettled     SubscriptionLogKind = "acquisition_settled"
 	SubscriptionLogKindArtifactVerified       SubscriptionLogKind = "artifact_verified"
 	SubscriptionLogKindCleanupCompleted       SubscriptionLogKind = "cleanup_completed"
+	SubscriptionLogKindCleanupFailed          SubscriptionLogKind = "cleanup_failed"
 	SubscriptionLogKindDownloadChanged        SubscriptionLogKind = "download_changed"
 	SubscriptionLogKindFileAlignmentCompleted SubscriptionLogKind = "file_alignment_completed"
 	SubscriptionLogKindFileAlignmentFailed    SubscriptionLogKind = "file_alignment_failed"
@@ -5812,13 +5814,14 @@ type NotificationTemplateSet struct {
 
 	// Events An omitted workflow event renders with its system default.
 	Events struct {
-		DownloadFailed         *NotificationEventTemplate `json:"download_failed,omitempty"`
-		DownloadSubmitted      NotificationEventTemplate  `json:"download_submitted"`
-		FileOperationCompleted NotificationEventTemplate  `json:"file_operation_completed"`
-		FileOperationFailed    NotificationEventTemplate  `json:"file_operation_failed"`
-		ReleaseDiscovered      *NotificationEventTemplate `json:"release_discovered,omitempty"`
-		SubscriptionChanged    *NotificationEventTemplate `json:"subscription_changed,omitempty"`
-		UnknownFilesImported   *NotificationEventTemplate `json:"unknown_files_imported,omitempty"`
+		DownloadFailed            *NotificationEventTemplate `json:"download_failed,omitempty"`
+		DownloadSubmitted         NotificationEventTemplate  `json:"download_submitted"`
+		FileOperationCompleted    NotificationEventTemplate  `json:"file_operation_completed"`
+		FileOperationFailed       NotificationEventTemplate  `json:"file_operation_failed"`
+		ReleaseDiscovered         *NotificationEventTemplate `json:"release_discovered,omitempty"`
+		ReplacementDeletionFailed *NotificationEventTemplate `json:"replacement_deletion_failed,omitempty"`
+		SubscriptionChanged       *NotificationEventTemplate `json:"subscription_changed,omitempty"`
+		UnknownFilesImported      *NotificationEventTemplate `json:"unknown_files_imported,omitempty"`
 	} `json:"events"`
 	LanguageVersion NotificationTemplateSetLanguageVersion `json:"language_version"`
 

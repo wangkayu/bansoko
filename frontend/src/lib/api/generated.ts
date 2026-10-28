@@ -3695,7 +3695,7 @@ export interface components {
         /** @enum {string} */
         AutomationState: "queued" | "running" | "completed" | "partial" | "failed";
         /** @enum {string} */
-        SubscriptionLogKind: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "policy_changed" | "rss_new_content" | "rss_refresh_failed" | "release_processed" | "download_changed" | "artifact_verified" | "placement_changed" | "replacement_decided" | "cleanup_completed" | "file_alignment_completed" | "file_alignment_failed" | "acquisition_settled";
+        SubscriptionLogKind: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "policy_changed" | "rss_new_content" | "rss_refresh_failed" | "release_processed" | "download_changed" | "artifact_verified" | "placement_changed" | "replacement_decided" | "cleanup_completed" | "cleanup_failed" | "file_alignment_completed" | "file_alignment_failed" | "acquisition_settled";
         /** @enum {string} */
         SubscriptionLogOutcome: "info" | "success" | "failure";
         /** @description Formal anime owner. The id is the sole formal owner identity. Provider refs, custom RSS locators/URLs, labels, titles, and other external attributes are not owner identity and may collide across owners. */
@@ -6236,7 +6236,7 @@ export interface components {
          *
          * @enum {string}
          */
-        NotificationTriggerKind: "download_submitted" | "file_operation_completed" | "file_operation_failed" | "release_discovered" | "download_failed" | "subscription_changed" | "unknown_files_imported";
+        NotificationTriggerKind: "download_submitted" | "file_operation_completed" | "file_operation_failed" | "release_discovered" | "download_failed" | "subscription_changed" | "unknown_files_imported" | "replacement_deletion_failed";
         /** @description The published notification trigger vocabulary: every trigger kind of the closed registry, in catalog order. Served from the same registry the delivery admission and the template catalog validate against, so the list cannot drift from what the backend accepts. */
         NotificationTriggerKindVocabulary: {
             trigger_kinds: components["schemas"]["NotificationTriggerKind"][];
@@ -6397,6 +6397,7 @@ export interface components {
                 download_failed?: components["schemas"]["NotificationEventTemplate"];
                 subscription_changed?: components["schemas"]["NotificationEventTemplate"];
                 unknown_files_imported?: components["schemas"]["NotificationEventTemplate"];
+                replacement_deletion_failed?: components["schemas"]["NotificationEventTemplate"];
             };
         };
         PluginTargetConfig: {

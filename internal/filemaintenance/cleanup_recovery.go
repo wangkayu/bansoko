@@ -112,21 +112,11 @@ func (s *CleanupService) ReconcileUnknownEffect(ctx context.Context, _ deploymen
 			}
 			continue
 		}
-		attempt, err := decodeCleanupAttempt(op.Attempt)
+		released, err := s.releaseBlocked(ctx, receipts, op)
 		if err != nil {
-			unknown = op.ID
-			continue
+			return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectUnknown, EvidenceRef: op.ID, Reason: "cleanup reconcile: " + safeCleanupReason(err)}, nil
 		}
-		switch resolveCleanupAttempt(ctx, s.executor, receipts, op, attempt) {
-		case cleanupResolutionPurged:
-			if err := s.settleRecovered(ctx, op); err != nil {
-				return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectUnknown, EvidenceRef: op.ID, Reason: safeCleanupReason(err)}, nil
-			}
-		case cleanupResolutionCaptured, cleanupResolutionCaptureNotStarted, cleanupResolutionPurgeNotStarted:
-			if err := s.readmit(ctx, op, true); err != nil {
-				return deployment.ReconcileResult{State: deployment.StateRetryable, Effect: deployment.EffectUnknown, EvidenceRef: op.ID, Reason: "cleanup reconcile: re-admission failed: " + safeCleanupReason(err)}, nil
-			}
-		default:
+		if !released {
 			unknown = op.ID
 		}
 	}
@@ -134,6 +124,82 @@ func (s *CleanupService) ReconcileUnknownEffect(ctx context.Context, _ deploymen
 		return deployment.ReconcileResult{State: deployment.StateBlocked, Effect: deployment.EffectUnknown, EvidenceRef: unknown, Reason: "cleanup reconcile: a blocked deletion has no receipt"}, nil
 	}
 	return deployment.ReconcileResult{State: deployment.StateCompleted, Effect: deployment.EffectNone, Reason: "cleanup reconcile: no unresolved deletion"}, nil
+}
+
+// releaseBlocked settles one blocked obligation from its exact invocation
+// receipts: a returned purge is deleted, a finished capture or a provably
+// unstarted (or provably unapplied) stage is re-admitted for a fresh claim.
+// It reports false, touching nothing, when the receipts prove neither: the
+// obligation stays blocked as an unknown effect.
+func (s *CleanupService) releaseBlocked(ctx context.Context, receipts executorpkg.MaintenanceCleanupExecutor, op *ReplacementDeletion) (bool, error) {
+	attempt, err := decodeCleanupAttempt(op.Attempt)
+	if err != nil {
+		return false, nil
+	}
+	switch resolveCleanupAttempt(ctx, s.executor, receipts, op, attempt) {
+	case cleanupResolutionPurged:
+		if err := s.settleRecovered(ctx, op); err != nil {
+			return false, err
+		}
+		return true, nil
+	case cleanupResolutionCaptured, cleanupResolutionCaptureNotStarted, cleanupResolutionPurgeNotStarted:
+		if err := s.readmit(ctx, op, true); err != nil {
+			return false, fmt.Errorf("re-admission failed: %w", err)
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+// scanReleasableCodes are the blocked reasons a scan completion may release:
+// an effect left uncertain at the time (an interrupted or refused stage
+// whose files did not prove its state yet), which a later receipt read can
+// prove. A blocked deletion whose file changed, whose executor was missing,
+// or that could not move its captured file back is left to deployment
+// recovery: re-running it on every scan would repeat the same refusal with
+// no notice.
+var scanReleasableCodes = map[string]bool{
+	"cleanup_capture_failed":   true,
+	"cleanup_purge_failed":     true,
+	"cleanup_capture_unpurged": true,
+	"cleanup_effect_uncertain": true,
+}
+
+// ReleaseBlockedDeletions is the scan-completion release of one anime's
+// blocked deletions with a releasable reason: each one whose receipts prove
+// its state is settled or re-admitted exactly as deployment recovery would;
+// the others stay blocked. It reports how many it released. A failure on one
+// deletion does not stop the others; the joined errors are returned and the
+// next scan completion or deployment recovery retries them.
+func (s *CleanupService) ReleaseBlockedDeletions(ctx context.Context, managedAnimeID string) (int, error) {
+	if s == nil || s.executor == nil {
+		return 0, nil
+	}
+	receipts, ok := s.executor.(executorpkg.MaintenanceCleanupExecutor)
+	if !ok {
+		return 0, nil
+	}
+	rows, err := s.repository.ListBlockedForAnime(ctx, managedAnimeID)
+	if err != nil {
+		return 0, err
+	}
+	released := 0
+	var failures []error
+	for _, row := range rows {
+		op := replacementDeletionFromPersistence(row)
+		if !scanReleasableCodes[op.FailureCode] {
+			continue
+		}
+		ok, err := s.releaseBlocked(ctx, receipts, op)
+		if err != nil {
+			failures = append(failures, fmt.Errorf("release blocked deletion %s: %w", op.ID, err))
+			continue
+		}
+		if ok {
+			released++
+		}
+	}
+	return released, errors.Join(failures...)
 }
 
 // readmit (re)creates the work item of an obligation. A blocked obligation is

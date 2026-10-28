@@ -409,7 +409,8 @@
     ],
     "excluded_column_prefixes": [
       "publication_",
-      "import_retry_"
+      "import_retry_",
+      "busy_requeue_"
     ],
     "reason": "acquisition graph rows written by the listed owners next to the owner-held SQL functions",
     "direct_access": [

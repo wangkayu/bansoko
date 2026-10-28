@@ -376,7 +376,7 @@ end
   "DiagnosticSeverity" => %w[warning error],
   "DiagnosticScopeKind" => %w[global provider subscription rss_source owner worker],
   "PluginKind" => %w[notification],
-  "NotificationTriggerKind" => %w[download_submitted file_operation_completed file_operation_failed release_discovered download_failed subscription_changed unknown_files_imported],
+  "NotificationTriggerKind" => %w[download_submitted file_operation_completed file_operation_failed release_discovered download_failed subscription_changed unknown_files_imported replacement_deletion_failed],
   "PluginAdapterKind" => %w[telegram feishu webhook],
   "PluginDeliveryKind" => %w[business test],
   "PluginDeliveryState" => %w[pending delivering waiting_retry delivered failed unknown],
@@ -425,7 +425,7 @@ end
 assert_enum.call("SubscriptionLogKind", %w[
   subscription_created subscription_started subscription_stopped subscription_resumed metadata_applied
   group_changed policy_changed rss_new_content rss_refresh_failed release_processed
-  download_changed artifact_verified placement_changed replacement_decided cleanup_completed
+  download_changed artifact_verified placement_changed replacement_decided cleanup_completed cleanup_failed
   file_alignment_completed file_alignment_failed acquisition_settled
 ])
 abort "GroupAction action enum drifted" unless schemas.fetch("GroupAction").fetch("properties").fetch("action").fetch("enum") == %w[force_include force_exclude restore_auto]

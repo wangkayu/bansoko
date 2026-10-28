@@ -193,6 +193,12 @@ func (s *Service) typedPublicationFaultOutcome(ctx context.Context, claim workit
 			return s.finishTypedFailure(ctx, claim, "SOURCE_MISSING", cause)
 		}
 	}
+	// An overwrite target found busy (its preparation observation refused,
+	// or the replacing rename refused with the temp removed) is untouched:
+	// retried on the busy schedule before any terminal mapping.
+	if busyPublication(cause) {
+		return s.requeueBusyPublication(ctx, claim, cause)
+	}
 	// Inherent filesystem limits (hardlink across devices or unsupported,
 	// invalid or too-long names, permissions, a changed source or target) are
 	// terminal per-file failures with their own code. None is retried and

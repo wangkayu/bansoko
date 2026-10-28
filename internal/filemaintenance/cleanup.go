@@ -15,6 +15,7 @@ import (
 	"bansoko/internal/library/domain"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
+	plugintargetport "bansoko/internal/plugintarget/port"
 	"bansoko/internal/runtime/worker"
 	"bansoko/internal/workitems"
 )
@@ -86,6 +87,9 @@ type CleanupService struct {
 	executor   executorpkg.CleanupFileExecutor
 	workItems  *workitems.Store
 	activity   observabilityport.ActivityWriter
+	// notifications admits the replacement_deletion_failed notice; nil
+	// admits none.
+	notifications plugintargetport.BusinessDeliveryEnqueuer
 }
 
 // NewCleanupService wires the cleanup owner.
@@ -191,10 +195,21 @@ func (s *CleanupService) admitTx(ctx context.Context, scope txscope.Tx, input Cl
 // enqueueTx creates (or merges into) the single replacement_delete work item of
 // an admitted obligation at its current owner version.
 func (s *CleanupService) enqueueTx(ctx context.Context, tx *sql.Tx, cleanupID string, version int64) error {
+	return s.enqueueNextTx(ctx, tx, cleanupID, version, time.Time{}, 0)
+}
+
+// enqueueNextTx creates the work item of an obligation, due after delay. A
+// non-zero busySince continues a busy chain (see cleanupWorkInput).
+func (s *CleanupService) enqueueNextTx(ctx context.Context, tx *sql.Tx, cleanupID string, version int64, busySince time.Time, delay time.Duration) error {
 	if s.workItems == nil {
 		return errors.New("cleanup work items store is not wired")
 	}
-	snapshot, err := json.Marshal(map[string]string{"cleanup_id": cleanupID})
+	input := cleanupWorkInput{CleanupID: cleanupID}
+	if !busySince.IsZero() {
+		since := busySince.UTC()
+		input.BusySince = &since
+	}
+	snapshot, err := json.Marshal(input)
 	if err != nil {
 		return err
 	}
@@ -203,6 +218,7 @@ func (s *CleanupService) enqueueTx(ctx context.Context, tx *sql.Tx, cleanupID st
 		Kind:                 workitems.KindReplacementDelete,
 		IdempotencyKey:       "cln:" + cleanupID + ":" + workitems.KindReplacementDelete,
 		InputSnapshot:        snapshot,
+		AvailableAfter:       delay,
 		MaxAttempts:          3,
 		ExpectedOwnerVersion: version,
 	})
@@ -267,7 +283,8 @@ func (s *CleanupService) retryOwner(claim workitems.Claim) workitems.OwnerWriter
 
 // settleWriter moves the owner to one terminal state at the expected version
 // in the WorkItem's own terminal transaction and records the Activity of a
-// deleted or skipped obligation there too.
+// deleted or skipped obligation there too; a deletion that stayed busy for the
+// whole retry window also admits its notice.
 func (s *CleanupService) settleWriter(op *ReplacementDeletion, expected int64, to CleanupState, code, reason string) workitems.OwnerWriter {
 	return func(ctx context.Context, scope txscope.Tx, _ workitems.OwnerResult) (int64, error) {
 		version, err := s.repository.TransitionTx(ctx, scope, op.ID, expected, string(to), code, reason)
@@ -286,6 +303,14 @@ func (s *CleanupService) settleWriter(op *ReplacementDeletion, expected int64, t
 			settled.Version = version
 			if err := s.appendCleanupActivityTx(ctx, scope, &settled, "skipped", code); err != nil {
 				return 0, err
+			}
+		case CleanupFailed, CleanupBlocked:
+			if cleanupGaveUp(code) {
+				settled := *op
+				settled.Version = version
+				if err := s.appendCleanupFailureTx(ctx, scope, &settled, code); err != nil {
+					return 0, err
+				}
 			}
 		}
 		return version, nil
@@ -433,6 +458,8 @@ func (r *cleanupRun) start(ctx context.Context) (worker.Outcome, error) {
 		return r.skip(CleanupSkipLoserMissing, "the replaced file is no longer at its path"), nil
 	case errors.Is(err, domain.ErrNotRegularFile):
 		return r.skip(CleanupSkipLoserNotRegular, "the path no longer holds a regular file"), nil
+	case domain.FileBusy(err):
+		return r.observationBusy(err), nil
 	case err != nil:
 		return worker.Retry("cleanup_source_observation_failed", safeCleanupReason(err), 30*time.Second, s.retryOwner(r.claim)), nil
 	}
@@ -505,7 +532,7 @@ func (r *cleanupRun) capture(ctx context.Context, attempt cleanupAttemptEvidence
 	expected := attempt.SourceObservation
 	moved, err := e.MoveMaintenance(ctx, attempt.SourcePath, attempt.CapturePath, expected, cleanupInvocation(op, attempt, cleanupCaptureInvocation))
 	if err != nil {
-		return r.block("cleanup_capture_failed", safeCleanupReason(err)), nil
+		return r.refused(ctx, attempt, "cleanup_capture_failed", err), nil
 	}
 	if _, err := observeCleanupFile(ctx, s.executor, attempt.SourcePath, op.SourceFingerprint); !isMissingCleanupError(err) {
 		return r.block("cleanup_capture_source_present", "the capture returned without proven source absence"), nil
@@ -519,6 +546,7 @@ func (r *cleanupRun) capture(ctx context.Context, attempt cleanupAttemptEvidence
 
 func (r *cleanupRun) advanceToPurge(ctx context.Context, attempt cleanupAttemptEvidence, captured string, observed domain.FileObservation) (worker.Outcome, error) {
 	attempt.Stage = cleanupStagePurge
+	attempt.BusyRefused = false
 	attempt.CapturePath = captured
 	attempt.CaptureObservation = observed
 	attempt.WorkItemID = r.claim.ID
@@ -538,7 +566,7 @@ func (r *cleanupRun) purge(ctx context.Context, attempt cleanupAttemptEvidence) 
 		return r.block("cleanup_executor_unavailable", "cleanup executor has no receipts"), nil
 	}
 	if err := e.PurgeMaintenance(ctx, attempt.CapturePath, attempt.CaptureObservation, cleanupInvocation(op, attempt, cleanupPurgeInvocation)); err != nil {
-		return r.block("cleanup_purge_failed", safeCleanupReason(err)), nil
+		return r.refused(ctx, attempt, "cleanup_purge_failed", err), nil
 	}
 	if _, err := observeCleanupFile(ctx, s.executor, attempt.CapturePath, op.SourceFingerprint); !isMissingCleanupError(err) {
 		return r.block("cleanup_purge_object_present", "the purge returned without proven absence"), nil
@@ -570,7 +598,10 @@ func (r *cleanupRun) resume(ctx context.Context) (worker.Outcome, error) {
 	case cleanupResolutionCaptureNotStarted:
 		return r.start(ctx)
 	case cleanupResolutionPurgeNotStarted:
+		// The new invocation writes its own receipts: a refusal recorded on
+		// the previous hop must not make them unreadable.
 		next := attempt
+		next.BusyRefused = false
 		next.WorkItemID = r.claim.ID
 		next.OwnerVersion = r.claim.ExpectedOwnerVersion + 1
 		next.FencingToken = r.claim.FencingToken
@@ -654,6 +685,11 @@ func (s *CleanupService) appendCleanupActivityTx(ctx context.Context, scope txsc
 		return nil
 	}
 	subscriptionID, err := s.repository.SubscriptionIDForAnimeTx(ctx, scope, op.ManagedAnimeID)
+	if errors.Is(err, sql.ErrNoRows) {
+		// The subscription was removed meanwhile: the result is still
+		// settled, it just has no subscription log to append to.
+		return nil
+	}
 	if err != nil {
 		return err
 	}

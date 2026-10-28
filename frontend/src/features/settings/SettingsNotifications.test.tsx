@@ -28,6 +28,7 @@ const ALL_TRIGGER_KINDS = [
   "download_failed",
   "subscription_changed",
   "unknown_files_imported",
+  "replacement_deletion_failed",
 ];
 
 const TEMPLATE_EVENTS = ["download_submitted", "file_operation_completed", "file_operation_failed"];

@@ -9,7 +9,7 @@ import (
 // Scenario is one template kind that reads facts. A fact lists the scenarios
 // whose producer fills it; it is never advertised to a scenario that cannot
 // supply it.
-type Scenario uint8
+type Scenario uint16
 
 const (
 	ScenarioNaming Scenario = 1 << iota
@@ -23,6 +23,9 @@ const (
 	ScenarioDownloadFailed
 	ScenarioSubscriptionChanged
 	ScenarioUnknownImported
+	// ScenarioDeletionFailed is an old managed file a replacement could not
+	// delete after the automatic retries ran out.
+	ScenarioDeletionFailed
 )
 
 const (
@@ -31,7 +34,7 @@ const (
 	scenarioMedia = ScenarioDownloadSubmitted | scenarioFile
 	// scenarioWorkflow is the workflow triggers; they read only the facts
 	// that list them.
-	scenarioWorkflow = ScenarioReleaseDiscovered | ScenarioDownloadFailed | ScenarioSubscriptionChanged | ScenarioUnknownImported
+	scenarioWorkflow = ScenarioReleaseDiscovered | ScenarioDownloadFailed | ScenarioSubscriptionChanged | ScenarioUnknownImported | ScenarioDeletionFailed
 	scenarioNotify   = scenarioMedia | scenarioWorkflow
 	scenarioAll      = ScenarioNaming | scenarioMedia
 	// scenarioRelease is the workflow triggers that concern one release.
@@ -40,7 +43,7 @@ const (
 
 // Scenarios lists every scenario in registry order.
 var Scenarios = []Scenario{ScenarioNaming, ScenarioDownloadSubmitted, ScenarioFileCompleted, ScenarioFileFailed,
-	ScenarioReleaseDiscovered, ScenarioDownloadFailed, ScenarioSubscriptionChanged, ScenarioUnknownImported}
+	ScenarioReleaseDiscovered, ScenarioDownloadFailed, ScenarioSubscriptionChanged, ScenarioUnknownImported, ScenarioDeletionFailed}
 
 // Phase is when a fact becomes available.
 type Phase string
@@ -604,7 +607,7 @@ var systemFacts = []Fact{
 		"Show S01/   12.4 GiB · 24 files\nreadme.txt  4.0 KiB\n合计: 12.4 GiB · 25 files", func(f *FactSet) any { return f.Torrent.Tree }).derived(),
 
 	// file
-	fact("file.name", TypeString, PhaseRelease, ScenarioNaming|scenarioFile, scenarioFile,
+	fact("file.name", TypeString, PhaseRelease, ScenarioNaming|scenarioFile|ScenarioDeletionFailed, scenarioFile,
 		Text{"文件名", "File name"}, Text{"原始完整文件名。", "Original full file name."},
 		sampleFile, func(f *FactSet) any { return f.File.Name }),
 	fact("file.stem", TypeString, PhaseRelease, ScenarioNaming|scenarioFile, scenarioFile,
@@ -682,7 +685,8 @@ var systemFacts = []Fact{
 		"download_submitted", func(f *FactSet) any { return f.Event.Type }).derived().
 		with(ScenarioFileCompleted, "file_operation_completed").with(ScenarioFileFailed, "file_operation_failed").
 		with(ScenarioReleaseDiscovered, "release_discovered").with(ScenarioDownloadFailed, "download_failed").
-		with(ScenarioSubscriptionChanged, "subscription_changed").with(ScenarioUnknownImported, "unknown_files_imported"),
+		with(ScenarioSubscriptionChanged, "subscription_changed").with(ScenarioUnknownImported, "unknown_files_imported").
+		with(ScenarioDeletionFailed, "replacement_deletion_failed"),
 	fact("event.at", TypeTimestamp, PhaseExecution, scenarioNotify, 0,
 		Text{"发生时间", "Occurred at"}, Text{"事件发生时间，RFC 3339。", "When the event happened, RFC 3339."},
 		sampleOccurredAt, func(f *FactSet) any { return f.Event.At }).derived(),
@@ -696,13 +700,14 @@ var systemFacts = []Fact{
 		Text{"结果", "Outcome"}, Text{"success 或 failure。", "success or failure."},
 		"success", func(f *FactSet) any { return f.Result.Outcome }).derived().
 		with(ScenarioFileFailed, "failure"),
-	fact("result.reason", TypeString, PhaseExecution, scenarioFile, 0,
+	fact("result.reason", TypeString, PhaseExecution, scenarioFile|ScenarioDeletionFailed, 0,
 		Text{"原因", "Reason"}, Text{"结果原因，已去除敏感信息。", "Reason for the outcome, with sensitive details removed."},
 		"file_operation_completed", func(f *FactSet) any { return f.Result.Reason }).derived().
-		with(ScenarioFileFailed, "目标文件已存在"),
-	fact("result.category", TypeString, PhaseExecution, ScenarioDownloadFailed, 0,
-		Text{"失败类别", "Failure category"}, Text{"stalled（停滞）、timeout（超时）、client（下载客户端报错）、unobservable（无法读取状态）、occupied（下载器中已有同一种子的任务）或 submit（提交失败）。", "stalled, timeout, client (the download client reported an error), unobservable (status could not be read), occupied (the download client already has a task for this torrent) or submit (submission failed)."},
-		"stalled", func(f *FactSet) any { return f.Result.Category }).derived(),
+		with(ScenarioFileFailed, "目标文件已存在").with(ScenarioDeletionFailed, "文件可能被占用或没有权限"),
+	fact("result.category", TypeString, PhaseExecution, ScenarioDownloadFailed|ScenarioDeletionFailed, 0,
+		Text{"失败类别", "Failure category"}, Text{"下载失败：stalled（停滞）、timeout（超时）、client（下载客户端报错）、unobservable（无法读取状态）、occupied（下载器中已有同一种子的任务）或 submit（提交失败）。旧版本未删除：busy（可能被占用或没有权限）、read_only（所在位置只读）、not_restored（已移到隐藏目录，未能放回原位置）或 path_occupied（已移到隐藏目录，原位置已有同名文件）。", "Download failed: stalled, timeout, client (the download client reported an error), unobservable (status could not be read), occupied (the download client already has a task for this torrent) or submit (submission failed). Old version not deleted: busy (may be in use or not permitted to change), read_only (on a read-only location), not_restored (moved to a hidden folder and could not be moved back) or path_occupied (moved to a hidden folder; another file now has its name)."},
+		"stalled", func(f *FactSet) any { return f.Result.Category }).derived().
+		with(ScenarioDeletionFailed, "busy"),
 	fact("result.retryable", TypeBoolean, PhaseExecution, ScenarioDownloadFailed, 0,
 		Text{"可重试", "Retryable"}, Text{"能否在 RSS 页面重试这个发布。", "Whether the release can be retried from the RSS page."},
 		true, func(f *FactSet) any { return f.Result.Retryable }).derived(),

@@ -48,6 +48,11 @@ const (
 	CodeTargetSizeMismatch     = "TARGET_SIZE_MISMATCH"
 	CodeTargetUnreadable       = "TARGET_UNREADABLE"
 	CodeSourceChanged          = "SOURCE_CHANGED"
+	// CodeTargetBusy: the rename over an existing target was refused because
+	// the target is held open or the change is not permitted. Unlike the
+	// codes above it is retried on the file-busy schedule before it ends the
+	// operation.
+	CodeTargetBusy = "TARGET_BUSY"
 )
 
 // PublicationError carries one of the publication failure codes above.
@@ -91,7 +96,7 @@ func TerminalPublicationCode(code string) bool {
 	switch code {
 	case CodeHardlinkCrossDevice, CodeHardlinkUnsupported, CodeHardlinkNotPermitted, CodeHardlinkLimit,
 		CodeTargetNameInvalid, CodeTargetNameTooLong, CodeTargetPermissionDenied, CodeSourcePermissionDenied,
-		CodeTargetSizeMismatch, CodeTargetUnreadable, CodeSourceChanged, FileErrorCodeTargetOccupied:
+		CodeTargetSizeMismatch, CodeTargetUnreadable, CodeSourceChanged, FileErrorCodeTargetOccupied, CodeTargetBusy:
 		return true
 	}
 	return false

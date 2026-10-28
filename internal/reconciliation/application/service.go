@@ -13,6 +13,7 @@ import (
 	"bansoko/internal/apperrors"
 	"bansoko/internal/events"
 	"bansoko/internal/library/domain"
+	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/workitems"
 	"bansoko/internal/worktree"
 )
@@ -32,9 +33,12 @@ type Service struct {
 	db        *sql.DB
 	scanner   FileScanner
 	targets   TargetObserver
-	workItems *workitems.Store
-	eventHub  *events.Hub
-	now       func() time.Time
+	deletions BlockedDeletionReleaser
+	// deletionLog records a failed scan-completion release.
+	deletionLog observabilityport.RuntimeLogger
+	workItems   *workitems.Store
+	eventHub    *events.Hub
+	now         func() time.Time
 	// recoveryTargets, recoveryObserver and recoveryOccupancy are the
 	// optional scan-alignment recovery ports: the composition root injects the
 	// filemaintenance renderer, the library filesystem observer and the SQL
@@ -71,6 +75,22 @@ func NewService(db *sql.DB, workItems *workitems.Store, scanner FileScanner, clo
 		now = clocks[0]
 	}
 	return &Service{db: db, scanner: scanner, workItems: workItems, now: now}, nil
+}
+
+// BlockedDeletionReleaser re-releases the blocked replacement deletions of one
+// anime whose receipts prove their state; the others stay blocked. The scan
+// calls it after its completion committed, best effort.
+type BlockedDeletionReleaser interface {
+	ReleaseBlockedDeletions(ctx context.Context, managedAnimeID string) (int, error)
+}
+
+// SetBlockedDeletionReleaser wires the scan-completion release of blocked
+// replacement deletions; logger records a release that failed (nil: none).
+func (s *Service) SetBlockedDeletionReleaser(releaser BlockedDeletionReleaser, logger observabilityport.RuntimeLogger) {
+	if s != nil {
+		s.deletions = releaser
+		s.deletionLog = logger
+	}
 }
 
 // SetTargetObserver wires the target pass of every scan run.

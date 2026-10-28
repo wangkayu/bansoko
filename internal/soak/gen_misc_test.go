@@ -30,7 +30,7 @@ VALUES ('secret-plugin-1', 'plugin_target', decode('000102030405060708090a0b', '
 INSERT INTO plugin_target_configs(id, name, plugin_kind, adapter_kind, enabled, trigger_kinds, config_schema_version, config, template_set,
                                   secret_ref, version, signing_secret_set)
 VALUES ('t1', 'Soak webhook', 'notification', 'webhook', true,
-        '["download_submitted","file_operation_completed","file_operation_failed","release_discovered","download_failed","subscription_changed","unknown_files_imported"]'::jsonb,
+        '["download_submitted","file_operation_completed","file_operation_failed","release_discovered","download_failed","subscription_changed","unknown_files_imported","replacement_deletion_failed"]'::jsonb,
         1, '{"adapter_kind":"webhook","auth_kind":"none"}'::jsonb, '{}'::jsonb, 'secret-plugin-1', 1, false);
 `)
 
@@ -57,7 +57,7 @@ INSERT INTO plugin_deliveries(id, plugin_target_config_id, plugin_target_config_
                               last_error, delivered_at, created_at, updated_at, retention_until, next_attempt_at)
 SELECT d.id, 't1', 1, 'webhook', '{"adapter_kind":"webhook","auth_kind":"none"}'::jsonb, 'secret-plugin-1',
        'business',
-       (ARRAY['download_submitted','file_operation_completed','file_operation_failed','release_discovered','download_failed','subscription_changed','unknown_files_imported'])[1 + (d.rn %% 7)],
+       (ARRAY['download_submitted','file_operation_completed','file_operation_failed','release_discovered','download_failed','subscription_changed','unknown_files_imported','replacement_deletion_failed'])[1 + (d.rn %% 8)],
        'release', d.rel_id, 1, 'r' || d.rn, d.aid, d.state, 1, 'pdk-' || d.id, 1,
        jsonb_build_object('schema_version', 1, 'release_title', d.title, 'pad', soak_ext.pad(d.rn, 300)),
        soak_ext.dg('soak-payload', d.id), 'bansoko-template-1', 'notification-catalog-v1', '{{title}}', '{{body}}',
@@ -72,7 +72,7 @@ SELECT d.id, 't1', 1, 'webhook', '{"adapter_kind":"webhook","auth_kind":"none"}'
 FROM soak_ext.dl d`, g.baseSQL)
 	// The frozen payload is the canonical delivery payload (the plugin payload codec owns the shape and the digest).
 	var payloadCases, digestCases strings.Builder
-	for _, tk := range []string{"download_submitted", "file_operation_completed", "file_operation_failed", "release_discovered", "download_failed", "subscription_changed", "unknown_files_imported"} {
+	for _, tk := range []string{"download_submitted", "file_operation_completed", "file_operation_failed", "release_discovered", "download_failed", "subscription_changed", "unknown_files_imported", "replacement_deletion_failed"} {
 		raw, err := deliverypayload.Encode(tk, map[string]any{"release_title": "Soak Anime", "source": "soak"})
 		if err != nil {
 			g.t.Fatalf("encode delivery payload: %v", err)

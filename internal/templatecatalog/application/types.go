@@ -6,13 +6,14 @@ import "time"
 type NotificationTriggerKind string
 
 const (
-	NotificationTriggerKindDownloadSubmitted      NotificationTriggerKind = "download_submitted"
-	NotificationTriggerKindFileOperationCompleted NotificationTriggerKind = "file_operation_completed"
-	NotificationTriggerKindFileOperationFailed    NotificationTriggerKind = "file_operation_failed"
-	NotificationTriggerKindReleaseDiscovered      NotificationTriggerKind = "release_discovered"
-	NotificationTriggerKindDownloadFailed         NotificationTriggerKind = "download_failed"
-	NotificationTriggerKindSubscriptionChanged    NotificationTriggerKind = "subscription_changed"
-	NotificationTriggerKindUnknownFilesImported   NotificationTriggerKind = "unknown_files_imported"
+	NotificationTriggerKindDownloadSubmitted         NotificationTriggerKind = "download_submitted"
+	NotificationTriggerKindFileOperationCompleted    NotificationTriggerKind = "file_operation_completed"
+	NotificationTriggerKindFileOperationFailed       NotificationTriggerKind = "file_operation_failed"
+	NotificationTriggerKindReleaseDiscovered         NotificationTriggerKind = "release_discovered"
+	NotificationTriggerKindDownloadFailed            NotificationTriggerKind = "download_failed"
+	NotificationTriggerKindSubscriptionChanged       NotificationTriggerKind = "subscription_changed"
+	NotificationTriggerKindUnknownFilesImported      NotificationTriggerKind = "unknown_files_imported"
+	NotificationTriggerKindReplacementDeletionFailed NotificationTriggerKind = "replacement_deletion_failed"
 )
 
 type TemplateVariableType string

@@ -18,3 +18,8 @@ func captureCleanupObject(string, string, string, domain.FileObservation, func()
 func purgeCleanupObject(string, string, domain.FileObservation, ...cleanupMutationProbe) error {
 	return errors.New("private cleanup purge unsupported")
 }
+func restoreCleanupObject(string, string, string, domain.FileObservation) error {
+	return errors.New("private cleanup restore unsupported")
+}
+func busyObservationError(err error) error           { return err }
+func namespaceAbsentAfterRefusal(string, error) bool { return false }

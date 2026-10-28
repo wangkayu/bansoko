@@ -15,6 +15,10 @@ type publicationSyscalls struct{}
 
 func defaultPublicationSyscalls() publicationSyscalls           { return publicationSyscalls{} }
 func (s publicationSyscalls) withDefaults() publicationSyscalls { return s }
+func (s publicationSyscalls) withRenameHook(func(string, string) error) publicationSyscalls {
+	return s
+}
+func (s publicationSyscalls) withObserveHook(func(string) error) publicationSyscalls { return s }
 func (OSFileExecutor) PreparePublication(context.Context, domain.FileOperation, string) (domain.PublicationPreparation, error) {
 	return domain.PublicationPreparation{}, errPublicationUnsupported
 }

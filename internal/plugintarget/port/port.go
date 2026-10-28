@@ -6,6 +6,7 @@ package port
 import (
 	"context"
 	"encoding/json"
+	"path"
 
 	"bansoko/internal/persistence/txscope"
 )
@@ -22,6 +23,10 @@ const (
 	OwnerSubscription = "subscription"
 	// OwnerAcquisition is one acquisition whose file operations all settled.
 	OwnerAcquisition = "acquisition"
+	// OwnerReplacementDeletion is one deletion obligation of a replacement: an
+	// old managed file that had to be removed; the owner version is the
+	// obligation version at the exhausted attempt.
+	OwnerReplacementDeletion = "replacement_deletion"
 
 	TriggerDownloadSubmitted      = "download_submitted"
 	TriggerFileOperationCompleted = "file_operation_completed"
@@ -30,16 +35,20 @@ const (
 	TriggerDownloadFailed         = "download_failed"
 	TriggerSubscriptionChanged    = "subscription_changed"
 	TriggerUnknownFilesImported   = "unknown_files_imported"
+	// TriggerReplacementDeletionFailed fires when an old file a replacement
+	// decided to delete stayed undeletable until the automatic retries ran out.
+	TriggerReplacementDeletionFailed = "replacement_deletion_failed"
 )
 
 // Triggers is the closed notification trigger registry in catalog order.
 var Triggers = []string{
 	TriggerDownloadSubmitted, TriggerFileOperationCompleted, TriggerFileOperationFailed,
 	TriggerReleaseDiscovered, TriggerDownloadFailed, TriggerSubscriptionChanged, TriggerUnknownFilesImported,
+	TriggerReplacementDeletionFailed,
 }
 
 // OwnerTypes lists the source owners a business admission may name.
-var OwnerTypes = []string{OwnerDownloadTask, OwnerFileOperation, OwnerRelease, OwnerSubscription, OwnerAcquisition}
+var OwnerTypes = []string{OwnerDownloadTask, OwnerFileOperation, OwnerRelease, OwnerSubscription, OwnerAcquisition, OwnerReplacementDeletion}
 
 // IsTrigger reports whether trigger is in the registry.
 func IsTrigger(trigger string) bool {
@@ -104,6 +113,34 @@ func SubscriptionChangedRequest(subscriptionID string, version int64, managedAni
 	return BusinessDeliveryRequest{
 		SourceOwnerType: OwnerSubscription, SourceOwnerID: subscriptionID, SourceOwnerVersion: version,
 		ManagedAnimeID: fenced, TriggerKind: TriggerSubscriptionChanged, Payload: payload, ResultKey: action,
+	}, nil
+}
+
+// ReplacementDeletionFailedResultKey is the result key of the one notice per
+// deletion obligation.
+const ReplacementDeletionFailedResultKey = "busy_exhausted"
+
+// ReplacementDeletionFailedRequest builds the replacement_deletion_failed
+// admission of one deletion obligation that gave up. fileName is the base name
+// only, never a path; reason is already user-facing text; category names why
+// (busy, read_only, not_restored or path_occupied) for templates to word.
+func ReplacementDeletionFailedRequest(deletionID string, version int64, managedAnimeID, animeTitle, fileName, reason, category string) (BusinessDeliveryRequest, error) {
+	title := any(nil)
+	if animeTitle != "" {
+		title = animeTitle
+	}
+	payload, err := json.Marshal(map[string]any{
+		"anime.id": managedAnimeID, "anime.title": title,
+		"file.name": path.Base(fileName), "result.reason": reason,
+		"result.category": category,
+	})
+	if err != nil {
+		return BusinessDeliveryRequest{}, err
+	}
+	return BusinessDeliveryRequest{
+		SourceOwnerType: OwnerReplacementDeletion, SourceOwnerID: deletionID, SourceOwnerVersion: version,
+		ManagedAnimeID: managedAnimeID, TriggerKind: TriggerReplacementDeletionFailed, Payload: payload,
+		ResultKey: ReplacementDeletionFailedResultKey,
 	}, nil
 }
 

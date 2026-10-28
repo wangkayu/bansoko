@@ -313,7 +313,7 @@ export const factsCopy = {
   result: {
     category: {
       label: "失败类别",
-      description: "派生值：stalled（停滞）、timeout（超时）、client（下载客户端报错）、unobservable（无法读取状态）、occupied（下载器中已有同一种子的任务）或 submit（提交失败）。",
+      description: "派生值：下载失败：stalled（停滞）、timeout（超时）、client（下载客户端报错）、unobservable（无法读取状态）、occupied（下载器中已有同一种子的任务）或 submit（提交失败）。旧版本未删除：busy（可能被占用或没有权限）、read_only（所在位置只读）、not_restored（已移到隐藏目录，未能放回原位置）或 path_occupied（已移到隐藏目录，原位置已有同名文件）。",
     },
     outcome: {
       label: "结果",
@@ -760,7 +760,7 @@ export const enFactsCopy = {
   result: {
     category: {
       label: "Failure category",
-      description: "Derived: stalled, timeout, client (the download client reported an error), unobservable (status could not be read), occupied (the download client already has a task for this torrent) or submit (submission failed).",
+      description: "Derived: Download failed: stalled, timeout, client (the download client reported an error), unobservable (status could not be read), occupied (the download client already has a task for this torrent) or submit (submission failed). Old version not deleted: busy (may be in use or not permitted to change), read_only (on a read-only location), not_restored (moved to a hidden folder and could not be moved back) or path_occupied (moved to a hidden folder; another file now has its name).",
     },
     outcome: {
       label: "Outcome",

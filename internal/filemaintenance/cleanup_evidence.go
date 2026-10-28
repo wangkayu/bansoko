@@ -25,6 +25,10 @@ type cleanupAttemptEvidence struct {
 	SourceObservation  domain.FileObservation `json:"source_observation"`
 	CaptureObservation domain.FileObservation `json:"capture_observation"`
 	FencingToken       int64                  `json:"fencing_token"`
+	// BusyRefused marks a stage the claim that ran it saw refused (busy)
+	// and proved unapplied; its invocation was retired and its markers
+	// removed, so the next claim decides from the files alone.
+	BusyRefused bool `json:"busy_refused,omitempty"`
 }
 
 func decodeCleanupAttempt(raw []byte) (cleanupAttemptEvidence, error) {
@@ -95,19 +99,31 @@ const (
 
 // resolveCleanupAttempt reads the exact receipt of the attempt's stage once.
 // Absence of a file is never a receipt: a purge without its receipt stays
-// unknown.
+// unknown. A started stage whose effect provably did not apply (the source or
+// the captured object is still the frozen object) resolves like an unstarted
+// one, so a refused rename or unlink can run again.
 func resolveCleanupAttempt(ctx context.Context, observer executorpkg.CleanupFileExecutor, receipts executorpkg.MaintenanceCleanupExecutor, op *ReplacementDeletion, attempt cleanupAttemptEvidence) cleanupResolution {
+	if attempt.BusyRefused {
+		// A refused, proven-unapplied stage has no receipt left to read.
+		// A capture: nothing at the capture path means it never happened
+		// (only this deletion renames into it); the fresh start re-observes
+		// the source.
+		if attempt.Stage == cleanupStagePurge {
+			return resolveUnpurgedCleanup(ctx, observer, op, attempt)
+		}
+		if _, err := observeCleanupFile(ctx, observer, attempt.CapturePath, op.SourceFingerprint); isMissingCleanupError(err) {
+			return cleanupResolutionCaptureNotStarted
+		}
+		return cleanupResolutionUnknown
+	}
 	if attempt.Stage == cleanupStagePurge {
 		invocation := cleanupInvocation(op, attempt, cleanupPurgeInvocation)
 		receipt, err := receipts.ReadMaintenanceReceipt(ctx, invocation)
 		if err == nil && receipt.Validate(invocation) == nil {
 			return cleanupResolutionPurged
 		}
-		if errors.Is(err, executorpkg.ErrMaintenanceNotStarted) {
-			observed, observeErr := observeCleanupFile(ctx, observer, attempt.CapturePath, op.SourceFingerprint)
-			if observeErr == nil && sameFrozenCleanupObservation(observed, attempt.CaptureObservation) {
-				return cleanupResolutionPurgeNotStarted
-			}
+		if stageProvablyNotRun(err) {
+			return resolveUnpurgedCleanup(ctx, observer, op, attempt)
 		}
 		return cleanupResolutionUnknown
 	}
@@ -116,7 +132,7 @@ func resolveCleanupAttempt(ctx context.Context, observer executorpkg.CleanupFile
 	if err == nil && receipt.Validate(invocation) == nil && sameFrozenCleanupObservation(receipt.Observation, attempt.SourceObservation) {
 		return cleanupResolutionCaptured
 	}
-	if errors.Is(err, executorpkg.ErrMaintenanceNotStarted) {
+	if stageProvablyNotRun(err) {
 		observed, observeErr := observeCleanupFile(ctx, observer, attempt.SourcePath, op.SourceFingerprint)
 		_, targetErr := observeCleanupFile(ctx, observer, attempt.CapturePath, op.SourceFingerprint)
 		if observeErr == nil && sameFrozenCleanupObservation(observed, attempt.SourceObservation) && isMissingCleanupError(targetErr) {
@@ -124,6 +140,34 @@ func resolveCleanupAttempt(ctx context.Context, observer executorpkg.CleanupFile
 		}
 	}
 	return cleanupResolutionUnknown
+}
+
+// resolveUnpurgedCleanup resolves a purge proven not to have run: the
+// captured object still intact means the purge is next. A give-up that moved
+// the object back to its public path before its settlement committed (its
+// refused markers already discarded) leaves nothing captured and the object
+// where it was, exactly as before the capture.
+func resolveUnpurgedCleanup(ctx context.Context, observer executorpkg.CleanupFileExecutor, op *ReplacementDeletion, attempt cleanupAttemptEvidence) cleanupResolution {
+	observed, err := observeCleanupFile(ctx, observer, attempt.CapturePath, op.SourceFingerprint)
+	if err == nil && sameFrozenCleanupObservation(observed, attempt.CaptureObservation) {
+		return cleanupResolutionPurgeNotStarted
+	}
+	if isMissingCleanupError(err) {
+		source, sourceErr := observeCleanupFile(ctx, observer, attempt.SourcePath, op.SourceFingerprint)
+		if sourceErr == nil && sameFrozenCleanupObservation(source, attempt.CaptureObservation) {
+			return cleanupResolutionCaptureNotStarted
+		}
+	}
+	return cleanupResolutionUnknown
+}
+
+// stageProvablyNotRun reports a receipt read that proves the stage's effect
+// did not happen: the invocation never wrote its start marker, or it started
+// and the executor observed, under the invocation lock, that the syscall did
+// not apply (a refused rename or unlink of a busy file). Either way the
+// resolver still compares the paths with the frozen evidence itself.
+func stageProvablyNotRun(err error) bool {
+	return errors.Is(err, executorpkg.ErrMaintenanceNotStarted) || errors.Is(err, executorpkg.ErrMaintenanceNotApplied)
 }
 
 // observeCleanupFile observes a path in the mode of the frozen identity. A

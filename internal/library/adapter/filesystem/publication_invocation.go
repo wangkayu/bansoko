@@ -46,6 +46,7 @@ func (executor OSFileExecutor) NewPublicationInvocation() (*PublicationInvocatio
 	if executor.publicationSys != nil {
 		sys = executor.publicationSys.withDefaults()
 	}
+	sys = sys.withRenameHook(executor.Hooks.PublicationRename).withObserveHook(executor.Hooks.PublicationObserveTarget)
 	return &PublicationInvocation{session: domain.PublicationSession{ExecutorSession: publicationBoot.nonce + ":" + call, BootNonce: publicationBoot.nonce, CallNonce: call}, cleanupProbe: executor.Hooks.PublicationCleanupPoint, beforePublish: executor.Hooks.BeforePublish, sys: sys}, nil
 }
 
