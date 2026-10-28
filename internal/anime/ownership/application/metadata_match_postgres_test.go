@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
 
@@ -108,12 +109,30 @@ VALUES ('match-held-release', $1, 'match-key', '{}', '{}', 'waiting_metadata', '
 		t.Fatal(err)
 	}
 
+	// The matched work carries a cached name; a match never turns it into the title.
+	if _, err := db.ExecContext(context.Background(), `
+INSERT INTO metadata_work_titles(provider, media_kind, work_id, title_cn, original_title)
+VALUES ('tmdb', 'tv', $1, '匹配作品中文名', 'Matched Work')`, tmdbID); err != nil {
+		t.Fatal(err)
+	}
+	var titleBefore sql.NullString
+	if err := db.QueryRowContext(context.Background(), `SELECT title_override FROM managed_anime WHERE id = $1`, subscribed.ManagedAnime.Id).Scan(&titleBefore); err != nil {
+		t.Fatal(err)
+	}
+
 	result, err := service.MatchAnimeMetadata(context.Background(), subscribed.ManagedAnime.Id, MetadataMatchInput{ExpectedVersion: 1}, "match-key-1")
 	if err != nil {
 		t.Fatalf("metadata match: %v", err)
 	}
 	if result.Outcome != MetadataMatchOutcomeComplete || result.Metadata.Version != 2 {
 		t.Fatalf("unexpected complete response: %+v", result)
+	}
+	var titleAfter sql.NullString
+	if err := db.QueryRowContext(context.Background(), `SELECT title_override FROM managed_anime WHERE id = $1`, subscribed.ManagedAnime.Id).Scan(&titleAfter); err != nil {
+		t.Fatal(err)
+	}
+	if titleAfter != titleBefore {
+		t.Fatalf("a metadata match must leave the title unchanged: %+v -> %+v", titleBefore, titleAfter)
 	}
 	if result.Metadata.BGM == nil || result.Metadata.BGM.WorkID != bgmID || result.Metadata.TMDB == nil || result.Metadata.TMDB.WorkID != tmdbID || result.Metadata.TMDB.Season != season {
 		t.Fatalf("matched metadata was not persisted: %+v", result.Metadata)

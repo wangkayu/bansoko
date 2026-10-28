@@ -70,6 +70,16 @@ WHERE a.id = $1`, managedAnimeID).Scan(
 	metadata.TotalEpisodes = nullableIntPointer(totalEpisodes)
 	metadata.Year = nullableIntPointer(year)
 	metadata.Season = nullableIntPointer(ownerSeason)
+	var bgmID, tmdbID, tmdbKind string
+	if metadata.BGM != nil {
+		bgmID = metadata.BGM.WorkID
+	}
+	if metadata.TMDB != nil {
+		tmdbID, tmdbKind = metadata.TMDB.WorkID, metadata.TMDB.MediaKind
+	}
+	if metadata.TitleSuggestions, err = s.readTitleSuggestions(ctx, bgmID, tmdbID, tmdbKind, managedAnime.Title); err != nil {
+		return AnimeWorkspace{}, fmt.Errorf("read title suggestions: %w", err)
+	}
 	subscription.ManagedAnimeID = managedAnimeID
 	subscription.Origin, subscription.OriginEntryRef, subscription.InstanceLabel = origin, nullableStringPointer(originEntryRef), nullableStringPointer(instanceLabel)
 	subscription.State = subscriptionStateFromDB(state)

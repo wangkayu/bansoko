@@ -71,7 +71,21 @@ func mapWorkspaceMetadata(value animeapplication.AnimeMetadata) generated.AnimeM
 			Season:    value.TMDB.Season,
 		}
 	}
+	result.TitleSuggestions = MapTitleSuggestions(value.TitleSuggestions)
 	return result
+}
+
+// MapTitleSuggestions maps title candidates; nil when there are none, so the
+// field is omitted rather than sent as an empty list.
+func MapTitleSuggestions(value []animeapplication.TitleSuggestion) *[]generated.TitleSuggestion {
+	if len(value) == 0 {
+		return nil
+	}
+	result := make([]generated.TitleSuggestion, 0, len(value))
+	for _, item := range value {
+		result = append(result, generated.TitleSuggestion{Source: generated.TitleSuggestionSource(item.Source), Text: item.Text})
+	}
+	return &result
 }
 
 func mapWorkspaceMetadataHold(value animeapplication.MetadataHold) generated.MetadataHold {

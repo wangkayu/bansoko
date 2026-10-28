@@ -9,6 +9,7 @@ import (
 	readmodelapplication "bansoko/internal/anime/readmodel/application"
 	"bansoko/internal/apperrors"
 	animecatalogdomain "bansoko/internal/catalog/domain"
+	animeworkspace "bansoko/internal/transport/animeworkspace"
 	"bansoko/internal/transport/httpapi/generated"
 )
 
@@ -213,6 +214,7 @@ func mapRSSListView(view readmodelapplication.RSSListView) (generated.RSSListVie
 		LimitPerGroup: view.LimitPerGroup, Truncated: view.Truncated, UnusedFeedIdentities: unused,
 		Versions:    generated.RSSListViewVersions{Parser: view.Versions.Parser, Evaluator: view.Versions.Evaluator, Renderer: view.Versions.Renderer, Safety: view.Versions.Safety, TorrentParser: view.Versions.TorrentParser},
 		GeneratedAt: view.GeneratedAt, Groups: groups, Observation: mapRSSListObservation(view.Observation),
+		TitleSuggestions: animeworkspace.MapTitleSuggestions(view.TitleSuggestions),
 	}, nil
 }
 

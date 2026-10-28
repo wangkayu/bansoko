@@ -85,6 +85,7 @@ func NewService(db *sql.DB, deps Dependencies) (*Service, error) {
 type ManagedAnime = animeapplication.ManagedAnime
 type Subscription = animeapplication.Subscription
 type AnimeMetadata = animeapplication.AnimeMetadata
+type TitleSuggestion = animeapplication.TitleSuggestion
 type MetadataHold = animeapplication.MetadataHold
 type BGMBinding = animeapplication.BGMBinding
 type TMDBBinding = animeapplication.TMDBBinding

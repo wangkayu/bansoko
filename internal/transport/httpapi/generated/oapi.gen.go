@@ -2454,6 +2454,15 @@ const (
 	TemplateVariableTypeTimestamp TemplateVariableType = "timestamp"
 )
 
+// Defines values for TitleSuggestionSource.
+const (
+	TitleSuggestionSourceBgm          TitleSuggestionSource = "bgm"
+	TitleSuggestionSourceBgmCn        TitleSuggestionSource = "bgm_cn"
+	TitleSuggestionSourceProvider     TitleSuggestionSource = "provider"
+	TitleSuggestionSourceTmdbCn       TitleSuggestionSource = "tmdb_cn"
+	TitleSuggestionSourceTmdbOriginal TitleSuggestionSource = "tmdb_original"
+)
+
 // Defines values for TorrentManifestViewTorrentVersion.
 const (
 	TorrentManifestViewTorrentVersionHybrid TorrentManifestViewTorrentVersion = "hybrid"
@@ -3443,9 +3452,12 @@ type AnimeMetadata struct {
 	MediaKindOverride *AnimeMetadataMediaKindOverride `json:"media_kind_override"`
 
 	// Season Owner-edited season that naming reads as anime.season (and anime.season_folder, anime.season_path, ep.s00e00); 0 is the specials season. NULL means unset: the season composites render empty and ep.s00e00 renders the episode alone (E07). The shipped TV directory template keeps anime.season_folder as its own folder level, so a season-less render refuses (naming_fact_missing_anime_season_folder). It is independent of the TMDB binding: tmdb.season stays the bound TMDB season used for TMDB episode lookups, and editing one never changes the other. Confirming a TMDB match in the UI fills it with the matched season only while it is unset; nothing is stored until the owner saves.
-	Season        *int                 `json:"season"`
-	TitleOverride *string              `json:"title_override"`
-	Tmdb          *NullableTMDBBinding `json:"tmdb"`
+	Season        *int    `json:"season"`
+	TitleOverride *string `json:"title_override"`
+
+	// TitleSuggestions Read-only title candidates, present on the workspace read: the cached titles of the bound works and the provider title, every non-empty one in the order tmdb_cn, tmdb_original, bgm_cn, bgm, provider. Nothing is fetched; duplicates are not removed.
+	TitleSuggestions *[]TitleSuggestion   `json:"title_suggestions,omitempty"`
+	Tmdb             *NullableTMDBBinding `json:"tmdb"`
 
 	// TotalEpisodes Planned total episode count for the series.
 	TotalEpisodes *int    `json:"total_episodes"`
@@ -3490,7 +3502,7 @@ type AnimeMetadataPatch struct {
 	// Season Complete owner value of the naming season (anime.season; 0 is the specials season): null or an omitted field clears it, a value replaces it. It never rewrites the TMDB tuple, and the TMDB tuple never rewrites it.
 	Season *int `json:"season"`
 
-	// TitleOverride The anime's fixed title (anime.title_override), written when the anime is created. A value replaces it; null or an omitted field keeps the stored title. It cannot be cleared.
+	// TitleOverride The anime's fixed title (anime.title_override). A value replaces it in the same version step as the bindings; null or an omitted field keeps the stored title. It cannot be cleared. It is the owner's choice: clearing or replacing a binding, a metadata match and a TMDB rename never change it. The subscription's library files are named from the current title, so a changed title renames them. title_suggestions on the workspace metadata lists the candidates.
 	TitleOverride *string              `json:"title_override"`
 	Tmdb          *NullableTMDBBinding `json:"tmdb"`
 
@@ -7487,6 +7499,9 @@ type RSSListView struct {
 	// Observation Present only when the request named an observation: which one the view used, or that it is no longer retained and the view was composed without it.
 	Observation *RSSListObservation `json:"observation"`
 
+	// TitleSuggestions Title candidates of a current_input read, from the draft's bindings and origin entry; absent in the other modes (an owner reads them from the workspace metadata).
+	TitleSuggestions *[]TitleSuggestion `json:"title_suggestions,omitempty"`
+
 	// Truncated True when an owner-mode group was limited by limit_per_group.
 	Truncated bool `json:"truncated"`
 
@@ -9031,6 +9046,16 @@ type TemplateWarning struct {
 	Message  string  `json:"message"`
 	Variable *string `json:"variable,omitempty"`
 }
+
+// TitleSuggestion One candidate for the anime's fixed title (title_override). Using one is the owner's choice; no automatic path writes the title.
+type TitleSuggestion struct {
+	// Source tmdb_cn: the bound TMDB work's Chinese title. tmdb_original: its original title. bgm_cn: the bound Bangumi subject's Chinese title. bgm: its original title. provider: the title the subscription's source (catalog entry) gave.
+	Source TitleSuggestionSource `json:"source"`
+	Text   string                `json:"text"`
+}
+
+// TitleSuggestionSource tmdb_cn: the bound TMDB work's Chinese title. tmdb_original: its original title. bgm_cn: the bound Bangumi subject's Chinese title. bgm: its original title. provider: the title the subscription's source (catalog entry) gave.
+type TitleSuggestionSource string
 
 // TitleTagDimension defines model for TitleTagDimension.
 type TitleTagDimension struct {

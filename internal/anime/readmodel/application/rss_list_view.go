@@ -84,9 +84,12 @@ type ReadRSSListViewInput struct {
 }
 
 type RSSListView struct {
-	Mode                 string
-	ConfigIdentity       string
-	MetadataHold         animedomain.MetadataHold
+	Mode           string
+	ConfigIdentity string
+	MetadataHold   animedomain.MetadataHold
+	// TitleSuggestions are the draft's title candidates (a current_input
+	// read); empty for an owner read, whose workspace carries them.
+	TitleSuggestions     []TitleSuggestion
 	Versions             RSSListViewVersions
 	GeneratedAt          time.Time
 	Groups               []RSSListGroup
@@ -1106,14 +1109,26 @@ func (s *Service) composeRSSListViewFor(
 		return RSSListView{}, err
 	}
 	baseline := rssListVersions()
+	var bgmID, tmdbID, tmdbKind string
+	if b := draft.Metadata.Bgm; b != nil {
+		bgmID = b.WorkId
+	}
+	if b := draft.Metadata.Tmdb; b != nil {
+		tmdbID, tmdbKind = b.WorkId, string(b.MediaKind)
+	}
+	titleSuggestions, err := s.readTitleSuggestions(ctx, bgmID, tmdbID, tmdbKind, varsAnime.AnimeProviderTitle)
+	if err != nil {
+		return RSSListView{}, err
+	}
 	view := RSSListView{
-		Mode:           mode,
-		ConfigIdentity: configIdentity,
-		MetadataHold:   hold,
-		Versions:       baseline,
-		GeneratedAt:    time.Now().UTC(),
-		Groups:         []RSSListGroup{},
-		Observation:    observation,
+		Mode:             mode,
+		ConfigIdentity:   configIdentity,
+		MetadataHold:     hold,
+		TitleSuggestions: titleSuggestions,
+		Versions:         baseline,
+		GeneratedAt:      time.Now().UTC(),
+		Groups:           []RSSListGroup{},
+		Observation:      observation,
 	}
 
 	var previews []providerGroupPreview
