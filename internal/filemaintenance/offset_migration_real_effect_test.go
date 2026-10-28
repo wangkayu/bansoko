@@ -79,8 +79,8 @@ func seedOffsetMigrationRealChain(t *testing.T, db *sql.DB, root, rawEpisode str
 	defer tx.Rollback()
 	owners := []string{
 		`INSERT INTO managed_anime(id, title) VALUES ('anime-real', 'Offset Anime')`,
-		`INSERT INTO anime_metadata(managed_anime_id, tmdb_work_id, tmdb_media_kind, tmdb_season)
-		 VALUES ('anime-real', 'tmdb-1', 'tv', 1)`,
+		`INSERT INTO anime_metadata(managed_anime_id, bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season, season)
+		 VALUES ('anime-real', 'bgm-1', 'tmdb-1', 'tv', 1, 1)`,
 		`INSERT INTO subscriptions(id, managed_anime_id, origin, instance_label, state)
 		 VALUES ('sub-real', 'anime-real', 'custom', 'Offset', 'active')`,
 		`INSERT INTO rss_sources(id, subscription_id, source_kind, locator, locator_display, group_name, title)
