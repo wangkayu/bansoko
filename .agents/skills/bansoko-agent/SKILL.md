@@ -154,6 +154,7 @@ Subscribe straight from the catalog, or adjust a running anime (each needs the o
 | Preview the subgroup selection a score or list change would produce (writes nothing) | `preview_subgroups_selection` | `previewAnimeSubgroupsSelection` | - |
 | Apply a subgroup selection to a running anime | `patch_anime_subgroups` | `patchAnimeSubgroups` | - |
 | Change one RSS source's `episode_offset` | `patch_rss_source_offset` | `patchRSSSourceOffset` | - |
+| Set a provider group's `episode_offset` by `provider_group_ref`, also while the subscription is `pending` (`expected_version` 0 creates the link; a draft carries the same as `provider_group_offsets`) | `set_provider_group_offset` | `setProviderGroupOffset` | - |
 | Set or clear an AniBT source's auxiliary merge mode | `patch_rss_source_anibt_mode` | `patchRSSSourceAniBTMode` | - |
 | Fetch a running anime's custom feed now and store the snapshot | `fetch_owner_custom_snapshot` | `fetchOwnerCustomSnapshot` | - |
 | Fetch a custom feed from a draft source and store the snapshot | `fetch_custom_snapshot` | `fetchCustomSnapshot` | - |
