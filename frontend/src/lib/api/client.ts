@@ -65,6 +65,7 @@ export type Subscription = Schema<"Subscription">;
 export type SubscriptionOrigin = Schema<"SubscriptionOrigin">;
 export type AnimeListItem = Schema<"AnimeListItem">;
 export type AnimeMetadata = Schema<"AnimeMetadata">;
+export type TitleSuggestion = Schema<"TitleSuggestion">;
 export type AnimeMetadataDraft = Schema<"AnimeMetadataDraft">;
 export type ReleaseFormat = Schema<"ReleaseFormat">;
 export type AnimeMetadataPatch = Schema<"AnimeMetadataPatch">;

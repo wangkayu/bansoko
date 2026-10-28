@@ -1467,6 +1467,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: t("forms.search") }));
     fireEvent.click(await within(dialog).findByRole("option", { name: /匹配到的番名/ }));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: t("forms.alsoSetTitle", { title: "匹配到的番名" }) }));
     fireEvent.click(within(dialog).getByRole("button", { name: t("forms.confirmMatch") }));
 
     // Regression: the binding confirm writes equal to saved — no false dirty, and closing the dialog never misfires the discard confirmation.
@@ -1475,6 +1476,93 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
     expect(footerSave()).toBeDisabled();
     expect(onDirtyChange).not.toHaveBeenCalledWith(true);
     expect(metadataPatchBodies(fetchMock)).toHaveLength(0);
+  });
+
+  it("标题候选：编辑时按来源顺序去重显示，隐藏现值；点击即写入并退出编辑，由 footer 保存上送", async () => {
+    const fetchMock = stubMetadataPatchFetch();
+    const workspace = workspaceFixture();
+    workspace.metadata = {
+      managed_anime_id: "anime-1",
+      bgm: null,
+      tmdb: null,
+      title_suggestions: [
+        { source: "tmdb_cn", text: "候选甲" },
+        { source: "tmdb_original", text: "Candidate B" },
+        { source: "bgm_cn", text: "候选甲" },
+        { source: "provider", text: "测试番" },
+      ],
+      version: 1,
+    };
+    renderTabs({ animeID: "anime-1", workspace, onChanged: () => {}, initialTab: "metadata" });
+
+    expect(screen.queryByRole("group", { name: t("tabs.metadata.suggestionsAria") })).not.toBeInTheDocument();
+    fireEvent.click(titleEditButton());
+    const badges = within(screen.getByRole("group", { name: t("tabs.metadata.suggestionsAria") })).getAllByRole("button");
+    // The duplicate text keeps its first source; the provider title equals the current one and is hidden.
+    expect(badges).toHaveLength(2);
+    expect(badges[0]).toHaveTextContent(`${t("tabs.metadata.suggestionSource.tmdb_cn")}候选甲`);
+    expect(badges[1]).toHaveTextContent(`${t("tabs.metadata.suggestionSource.tmdb_original")}Candidate B`);
+
+    fireEvent.click(badges[1]!);
+    expect(within(titleRegion()).queryByRole("textbox")).not.toBeInTheDocument();
+    expect(titleRegion()).toHaveTextContent("Candidate B");
+    expect(footerStatus()).toHaveTextContent(t("act.unsavedCount", { n: 1 }));
+
+    clickFooterSave();
+    const { toast } = await import("sonner");
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(t("tabs.metadata.saved")));
+    expect(metadataPatchBodies(fetchMock)[0]).toMatchObject({ title_override: "Candidate B" });
+  });
+
+  async function confirmTmdbMatch() {
+    const tmdbRegion = screen.getByRole("region", { name: t("forms.tmdb") });
+    fireEvent.click(within(tmdbRegion).getByRole("button", { name: t("forms.matchProvider", { provider: "TMDB" }) }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: t("forms.search") }));
+    fireEvent.click(await within(dialog).findByRole("option", { name: /匹配到的番名/ }));
+    return dialog;
+  }
+  const alsoSetTitleName = t("forms.alsoSetTitle", { title: "匹配到的番名" });
+
+  it("TMDB 匹配确认：标题仍是来源标题时勾选预选，绑定与标题由一次保存一起上送；取消勾选则标题不动", async () => {
+    for (const checked of [true, false]) {
+      const fetchMock = stubMetadataPatchFetch();
+      const workspace = workspaceFixture();
+      workspace.metadata = { managed_anime_id: "anime-1", bgm: null, tmdb: null, version: 1 };
+      const { unmount } = renderTabs({ animeID: "anime-1", workspace, onChanged: () => {}, initialTab: "metadata" });
+
+      const dialog = await confirmTmdbMatch();
+      const box = within(dialog).getByRole("checkbox", { name: alsoSetTitleName });
+      expect(box).toBeChecked();
+      if (!checked) fireEvent.click(box);
+      fireEvent.click(within(dialog).getByRole("button", { name: t("forms.confirmMatch") }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      expect(titleRegion()).toHaveTextContent(checked ? "匹配到的番名" : "测试番");
+
+      clickFooterSave();
+      await waitFor(() => expect(metadataPatchBodies(fetchMock)).toHaveLength(1));
+      expect(metadataPatchBodies(fetchMock)[0]).toMatchObject({
+        tmdb: { work_id: "265010", media_kind: "tv", season: 1 },
+        title_override: checked ? "匹配到的番名" : "测试番",
+      });
+      unmount();
+    }
+  });
+
+  it("TMDB 匹配确认：标题已被改过时勾选不预选；候选名与现标题相同时不显示", async () => {
+    stubMetadataPatchFetch();
+    const workspace = workspaceFixture();
+    workspace.metadata = { managed_anime_id: "anime-1", bgm: null, tmdb: null, title_override: "我的覆盖", version: 1 };
+    const { unmount } = renderTabs({ animeID: "anime-1", workspace, onChanged: () => {}, initialTab: "metadata" });
+    let dialog = await confirmTmdbMatch();
+    expect(within(dialog).getByRole("checkbox", { name: alsoSetTitleName })).not.toBeChecked();
+    unmount();
+
+    const same = workspaceFixture();
+    same.metadata = { managed_anime_id: "anime-1", bgm: null, tmdb: null, title_override: "匹配到的番名", version: 1 };
+    renderTabs({ animeID: "anime-1", workspace: same, onChanged: () => {}, initialTab: "metadata" });
+    dialog = await confirmTmdbMatch();
+    expect(within(dialog).queryByRole("checkbox")).not.toBeInTheDocument();
   });
 
   it("年份：TMDB 匹配只把年份填进表单，不落库；改后由 footer 保存上送编辑值", async () => {
@@ -1490,6 +1578,8 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: t("forms.search") }));
     fireEvent.click(await within(dialog).findByRole("option", { name: /匹配到的番名/ }));
+    // The title stays as it is: the pre-checked "also set the title" is switched off.
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: t("forms.alsoSetTitle", { title: "匹配到的番名" }) }));
     fireEvent.click(within(dialog).getByRole("button", { name: t("forms.confirmMatch") }));
 
     // After the match: the input shows the candidate year; binding/type/year/season/total-episodes are five unsaved spots with no PATCH sent.
