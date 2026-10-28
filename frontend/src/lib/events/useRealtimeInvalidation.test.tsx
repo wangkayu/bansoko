@@ -122,6 +122,36 @@ describe("useRealtimeInvalidation", () => {
     expect(invalidate).toHaveBeenCalledTimes(3);
   });
 
+  it("rss/records 合并为一次订阅列表刷新", () => {
+    vi.useFakeTimers();
+    try {
+      initRealtimeInvalidation(client);
+      useSessionStore.getState().setAuthenticated("owner");
+      const invalidate = vi.spyOn(client, "invalidateQueries");
+
+      emit({ target: "rss", managedAnimeId: "anime-1" });
+      emit({ target: "rss", managedAnimeId: "anime-2" });
+      emit({ target: "records" });
+      const listCalls = () =>
+        invalidate.mock.calls.filter(([filters]) => {
+          const key = filters?.queryKey;
+          return key === animeKeys.list || (Array.isArray(key) && key.join("/") === catalogKeys.listTab("all").join("/"));
+        }).length;
+      expect(listCalls()).toBe(0);
+
+      act(() => vi.advanceTimersByTime(1000));
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: catalogKeys.listTab("all") });
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: animeKeys.list });
+      expect(listCalls()).toBe(2);
+
+      emit({ target: "catalog" });
+      act(() => vi.advanceTimersByTime(1000));
+      expect(listCalls()).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("connected 状态经 useRealtimeConnected 传播", () => {
     initRealtimeInvalidation(client);
     useSessionStore.getState().setAuthenticated("owner");

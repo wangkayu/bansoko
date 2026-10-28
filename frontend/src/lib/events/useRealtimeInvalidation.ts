@@ -25,6 +25,10 @@ import { createRealtimeEventStream, type RealtimeEvent, type RealtimeStreamHandl
 //   operation work items that move an acquisition forward publish rss; the
 //   settlement pass publishes rss and records; completion and newly written
 //   business log entries publish records.
+//   rss and records also re-read the subscription list (["catalog", "list", "all"]
+//   + ["anime", "list"]): its cards show import progress and RSS health, which
+//   that work moves. A download or import run publishes in bursts, so the list
+//   re-read is coalesced into one trailing refetch per second.
 //
 // Manual refresh buttons are untouched and remain the ultimate fallback.
 
@@ -37,12 +41,16 @@ const TARGET_QUERY_KEYS: Record<RealtimeEvent["target"], ReadonlyArray<QueryKey>
   records: [observabilityKeys.all, fileManagerKeys.all, acquisitionRecordKeys.all],
 };
 
+const SUBSCRIPTION_LIST_KEYS: ReadonlyArray<QueryKey> = [catalogKeys.listTab("all"), animeKeys.list];
+const SUBSCRIPTION_LIST_COALESCE_MS = 1000;
+
 type Listener = () => void;
 
 let queryClient: QueryClient | undefined;
 let stream: RealtimeStreamHandle | undefined;
 let running = false;
 let connected = false;
+let subscriptionListTimer: ReturnType<typeof setTimeout> | undefined;
 const listeners = new Set<Listener>();
 
 function emitChange() {
@@ -56,11 +64,23 @@ function queryKeysFor(event: RealtimeEvent): ReadonlyArray<QueryKey> {
   return TARGET_QUERY_KEYS[event.target];
 }
 
+function scheduleSubscriptionListRefresh() {
+  if (subscriptionListTimer) return;
+  subscriptionListTimer = setTimeout(() => {
+    subscriptionListTimer = undefined;
+    if (!queryClient) return;
+    for (const queryKey of SUBSCRIPTION_LIST_KEYS) {
+      void queryClient.invalidateQueries({ queryKey });
+    }
+  }, SUBSCRIPTION_LIST_COALESCE_MS);
+}
+
 function handleEvent(event: RealtimeEvent) {
   if (!queryClient) return;
   for (const queryKey of queryKeysFor(event)) {
     void queryClient.invalidateQueries({ queryKey });
   }
+  if (event.target === "rss" || event.target === "records") scheduleSubscriptionListRefresh();
 }
 
 function syncWithSession() {
@@ -98,6 +118,8 @@ export function initRealtimeInvalidation(client: QueryClient): void {
 
 /** Test hook: tear the singleton down between suites. */
 export function resetRealtimeInvalidationForTests(): void {
+  clearTimeout(subscriptionListTimer);
+  subscriptionListTimer = undefined;
   stream?.stop();
   stream = undefined;
   queryClient = undefined;
