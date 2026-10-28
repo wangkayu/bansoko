@@ -676,7 +676,7 @@ func (c Client) buildProviderTask(providerTaskID string, item TorrentInfo, files
 	}
 	path := primaryArtifactPath(paths)
 	result := domain.ProviderTask{ID: providerTaskID, Hash: item.Hash, Name: item.Name, SavePath: item.SavePath,
-		State: mapState(item.State, item.Progress), ProviderState: normalizeProviderState(item.State),
+		State: mapState(item.State), ProviderState: normalizeProviderState(item.State),
 		Path: path, Paths: paths, Files: files, ContentPath: strings.TrimSpace(item.ContentPath),
 		Progress: clampProgress(item.Progress), Error: item.TrackerStatus}
 	if item.Dlspeed >= 0 {
@@ -1435,16 +1435,20 @@ func normalizeProviderState(state string) string {
 	return state
 }
 
-func mapState(state string, progress float64) domain.TaskState {
+// mapState reads qB's own verdict. A failure state wins over any progress, and
+// a task is complete only once qB moves it to an upload state: progress is a
+// rounded ratio, and a torrent stalled at 99.9% (a missing piece) still has
+// full-size files that would pass the path+size inspection.
+func mapState(state string) domain.TaskState {
 	state = strings.ToLower(strings.TrimSpace(state))
-	// qBittorrent 5 renamed pausedDL/pausedUP to stoppedDL/stoppedUP.
-	if progress >= 0.999 || state == "uploading" || state == "stalledup" || state == "pausedup" || state == "stoppedup" || state == "queuedup" || state == "forcedup" {
-		return domain.TaskCompleted
-	}
 	switch state {
 	case "error", "missingfiles", "unknown":
 		return domain.TaskFailed
-	case "pauseddl", "stoppeddl", "queued", "queueddl", "allocating", "checkingdl", "checkingup", "metadl", "forceddl", "stalleddl", "downloading":
+	// qBittorrent 5 renamed pausedUP to stoppedUP.
+	case "uploading", "stalledup", "pausedup", "stoppedup", "queuedup", "forcedup":
+		return domain.TaskCompleted
+	// checkingUP and moving keep a finished torrent's files in flux.
+	case "pauseddl", "stoppeddl", "queued", "queueddl", "allocating", "checkingdl", "checkingup", "checkingresumedata", "moving", "metadl", "forcedmetadl", "forceddl", "stalleddl", "downloading":
 		return domain.TaskDownloading
 	default:
 		return domain.TaskSubmitted

@@ -61,16 +61,13 @@ func completeCleanupObservation(observation domain.FileObservation) bool {
 // cleanupInvocation is the exact receipt identity of one stage, derived only
 // from the owner and its persisted attempt.
 func cleanupInvocation(op *ReplacementDeletion, attempt cleanupAttemptEvidence, kind string) executorpkg.MaintenanceInvocation {
-	var parsed any
-	_ = json.Unmarshal(op.Attempt, &parsed)
-	normalized, _ := json.Marshal(parsed)
 	invocation := executorpkg.MaintenanceInvocation{
 		OwnerType:    "replacement_deletion",
 		OwnerID:      op.ID,
 		Kind:         kind,
 		WorkItemID:   attempt.WorkItemID,
 		OwnerVersion: attempt.OwnerVersion,
-		Attempt:      normalized,
+		Attempt:      normalizeAttemptJSON(op.Attempt),
 	}
 	if kind == cleanupCaptureInvocation {
 		invocation.Source, invocation.Target, invocation.Fingerprint = attempt.SourcePath, attempt.CapturePath, attempt.SourceObservation.Fingerprint

@@ -23,7 +23,10 @@ const (
 	MaxContextBytes        = 64 << 10
 	MaxCollectionLen       = 256
 	maxSubtitleSuffixBytes = 255
-	DefaultTimeout         = 50 * time.Millisecond
+	// DefaultTimeout only stops a runaway template (an endless loop). It is
+	// not a speed budget: a target path must not depend on how loaded the
+	// host is, and an ordinary template finishes far inside it.
+	DefaultTimeout = time.Second
 )
 
 const (
@@ -605,7 +608,7 @@ func (e *Engine) execute(profile *languageProfile, t CompiledTemplate, facts *te
 	guardContext(rt, contextValue, profile)
 	// The budget is for the template, so it starts only now: building the
 	// context object and installing its access guards is engine work sized by
-	// the declared fields, and charging it to the 50ms template budget made a
+	// the declared fields, and charging it to the template budget made a
 	// loaded host report TEMPLATE_TIMEOUT for a template that never ran.
 	timer = time.AfterFunc(e.timeout, func() {
 		select {
