@@ -192,6 +192,17 @@ func frozenSeasonColumn(season int, seasonBound bool) sql.NullInt64 {
 // It performs no I/O and no implicit metadata lookups. The frozen episode of
 // the file is the only episode authority; without one parsed.episode is null.
 func buildNamingContext(artifact artifactContext, file artifactFileContext, frozenEpisode *naming.FrozenEpisodeNamingFacts, evaluations ...*namingvars.FrozenEvaluation) (naming.ResolvedContext, error) {
+	facts, err := namingContextFacts(artifact, file, frozenEpisode, evaluations...)
+	if err != nil {
+		return naming.ResolvedContext{}, err
+	}
+	return naming.DefaultRegistry().ResolveAll(naming.ResolverInput{Facts: facts}), nil
+}
+
+// namingContextFacts is buildNamingContext before resolution: the Layer 1
+// facts alone, which the configuration gate resolves again with the anime's
+// current configuration in place of the frozen one.
+func namingContextFacts(artifact artifactContext, file artifactFileContext, frozenEpisode *naming.FrozenEpisodeNamingFacts, evaluations ...*namingvars.FrozenEvaluation) (naming.NamingContext, error) {
 	var ctx naming.NamingContext
 
 	animeTitle := strings.TrimSpace(artifact.animeTitle)
@@ -273,7 +284,7 @@ func buildNamingContext(artifact artifactContext, file artifactFileContext, froz
 	if !artifact.acceptedFacts && ctx.File.Media.Resolution == "" && strings.TrimSpace(ctx.Release.OriginalTitle) != "" {
 		rules, _, err := attrrules.Current()
 		if err != nil {
-			return naming.ResolvedContext{}, err
+			return naming.NamingContext{}, err
 		}
 		if parsed := acquisitiondomain.ParseReleaseFacts(ctx.Release.OriginalTitle, rules); parsed.Resolution != "" {
 			ctx.File.Media.Resolution = parsed.Resolution
@@ -284,12 +295,12 @@ func buildNamingContext(artifact artifactContext, file artifactFileContext, froz
 	// block the pre-download TargetSet rendered with.
 	namespaces, err := templatefacts.FromSourceFacts(artifact.sourceFacts)
 	if err != nil {
-		return naming.ResolvedContext{}, err
+		return naming.NamingContext{}, err
 	}
 	ctx = naming.WithTemplateFacts(ctx, namespaces)
 
 	if len(evaluations) == 0 || evaluations[0] == nil || evaluations[0].Status != "ok" {
-		return naming.ResolvedContext{}, fmt.Errorf("exact frozen Vars output required")
+		return naming.NamingContext{}, fmt.Errorf("exact frozen Vars output required")
 	}
 	// anime.year is the owner-edited year the acceptance froze with the Vars
 	// input, the value the pre-download target rendered with.
@@ -297,11 +308,7 @@ func buildNamingContext(artifact artifactContext, file artifactFileContext, froz
 	// anime.season is the owner-edited season frozen the same way; an input
 	// accepted before it was frozen names the season its binding named.
 	ctx.Anime.Season = naming.FrozenAnimeSeason(evaluations[0].Input.Facts, ctx.Anime.TMDB)
-	withVars, err := naming.WithVars(ctx, evaluations[0].Output)
-	if err != nil {
-		return naming.ResolvedContext{}, err
-	}
-	return naming.DefaultRegistry().ResolveAll(naming.ResolverInput{Facts: withVars}), nil
+	return naming.WithVars(ctx, evaluations[0].Output)
 }
 
 func mediaFactString(facts map[string]any, key string) string {

@@ -45,14 +45,16 @@ func LoadIdentityKindBlockersTx(ctx context.Context, tx *sql.Tx, managedAnimeID 
 	var blockers IdentityKindBlockers
 	// An acquisition belongs to the instance by its origin or by the
 	// subscription whose RSS release it downloads; a one-shot acquisition never
-	// enters the library and holds nothing. Acquisitions that wait on
-	// configuration (waiting_config) join this count when that state exists.
+	// enters the library and holds nothing. Every acquisition that has not
+	// settled counts, whatever stage it is in — including one whose import
+	// waits for configuration (plan waiting_config), which keeps its root
+	// running until it completes or is cancelled.
 	err := tx.QueryRowContext(ctx, `
 SELECT
     (SELECT count(*) FROM placements p
      WHERE p.managed_anime_id = $1 AND p.state = 'active'),
     (SELECT count(*) FROM acquisitions r
-     WHERE r.state = 'running'
+     WHERE r.state NOT IN ('succeeded', 'failed', 'cancelled')
        AND r.entry_kind <> 'one_shot'
        AND (r.origin_managed_anime_ref = $1 OR EXISTS (
             SELECT 1 FROM download_tasks d
@@ -89,7 +91,7 @@ func IdentityKindChangeBlockedError(blockers IdentityKindBlockers) error {
 	return &apperrors.Business{
 		Status:  409,
 		Code:    IdentityKindChangeBlockedCode,
-		Message: "The media kind cannot change while the anime has library files or running acquisitions.",
+		Message: "The media kind cannot change while the anime has library files or acquisitions that have not settled.",
 		Details: []apperrors.FieldViolation{
 			{Code: "active_placements", Message: "Active library files of the anime.", Count: &placements},
 			{Code: "pending_acquisitions", Message: "Acquisitions of the anime that have not settled.", Count: &acquisitions},

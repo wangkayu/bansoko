@@ -1631,7 +1631,8 @@ paths:
           metadata.title_suggestions, pick one and send the binding and
           title_override in this one call; changing the title renames the
           subscription's library files. Changing the effective media kind (tv/movie) while
-          the anime has library files or running acquisitions returns 409
+          the anime has library files or acquisitions that have not settled
+          (including an import waiting for configuration) returns 409
           IDENTITY_KIND_CHANGE_BLOCKED with the counts in details.
       parameters:
         - $ref: '#/components/parameters/ManagedAnimeID'
@@ -1679,7 +1680,7 @@ paths:
           result (for example BGM alone) is saved. The media kind is filled
           from the matched TMDB kind only while unset, and is left unset when
           that would turn it into movie while the anime has library files or
-          running acquisitions. Only active subscriptions are
+          acquisitions that have not settled. Only active subscriptions are
           matched; pending and stopped ones return SUBSCRIPTION_INACTIVE. It never
           writes the title; use patch_anime_metadata with title_override.
       description: >-
@@ -9845,7 +9846,8 @@ components:
             clearing or replacing the tuple later never changes it. It never
             rewrites the TMDB tuple. The effective kind (NULL is tv) changes
             between tv and movie only while the anime has no active library
-            file and no running acquisition: a metadata patch that would change
+            file and no acquisition that has not settled (an import waiting
+            for configuration included): a metadata patch that would change
             it then returns 409 IDENTITY_KIND_CHANGE_BLOCKED, and a metadata
             match or the scheduled metadata_match automation leaves it
             unchanged and still fills the other empty fields.
@@ -12713,7 +12715,8 @@ components:
             TMDB tuple, which fills it with the tuple's media_kind. It never
             rewrites the TMDB tuple. A patch whose resulting effective kind
             (NULL is tv) differs from the stored one while the anime has an
-            active library file or a running acquisition returns 409
+            active library file or an acquisition that has not settled (an
+            import waiting for configuration included) returns 409
             IDENTITY_KIND_CHANGE_BLOCKED and changes nothing.
         total_episodes:
           type: integer

@@ -131,6 +131,9 @@ type Service struct {
 	// Nil means not wired and every lookup surfaces a transient error; the
 	// composition root always wires one.
 	episodeTitles *namingfacts.Querier
+	// configGate checks a subscription plan against the anime's current
+	// configuration before it runs; nil means not wired and nothing waits.
+	configGate    CurrentConfigGate
 	preparedBatch *artifactPreparedBatch // invocation-local clone only; never shared Service
 }
 

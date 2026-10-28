@@ -78,7 +78,7 @@ FOR UPDATE`, managedAnimeID).Scan(&currentBgm, &currentTmdbWorkID, &currentTmdbK
 	}
 	changed = changed || animeapplication.NullableValueChanged(currentMediaKindOverride, nextMediaKindOverride)
 	// The effective kind (unset is tv) decides the episode key shape; it
-	// changes only while no file or running acquisition holds the identity.
+	// changes only while no file or unsettled acquisition holds the identity.
 	var currentMediaKind *string
 	if currentMediaKindOverride.Valid {
 		currentMediaKind = &currentMediaKindOverride.String
@@ -122,6 +122,10 @@ RETURNING title_override`,
 		if err := businesslog.WriteMetadataAppliedTx(ctx, txscope.Wrap(tx), s.activityWriter, subscriptionID, managedAnimeID, version+1); err != nil {
 			return AnimeMetadata{}, fmt.Errorf("write metadata applied log: %w", err)
 		}
+	}
+	// Any metadata write may complete the configuration an import waits for.
+	if err := animeapplication.WakeConfigWaitingPlansTx(ctx, tx, managedAnimeID); err != nil {
+		return AnimeMetadata{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return AnimeMetadata{}, fmt.Errorf("commit metadata patch: %w", err)

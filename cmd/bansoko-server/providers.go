@@ -715,6 +715,10 @@ func provideCoreApplicationGraph(
 	// leaves them empty with a bounded diagnostic; it never fails an inspection.
 	artifactService.SetMediaProber(artifactadapter.OSMediaProber{}, logger)
 	fileOperationService.SetMediaFactsStore(fileMaintenanceGraph.mediaFactsStore)
+	// The plan stage's configuration gate predicts the current-configuration
+	// render of the maintenance renderer: a subscription import waits for a
+	// configuration that cannot render it.
+	fileOperationService.SetCurrentConfigGate(fileMaintenanceGraph.namingRenderer)
 
 	reconciliationService, err := reconciliationapplication.NewService(db, workStore, filesystem.OSFileScanner{})
 	if err != nil {

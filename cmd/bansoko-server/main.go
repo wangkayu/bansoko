@@ -7,6 +7,7 @@ import (
 	"bansoko/internal/episodetitle"
 	episodetitleadapter "bansoko/internal/episodetitle/adapter"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -545,6 +546,7 @@ func main() {
 		func(ctx context.Context) {
 			runStrandedFileWorkRevival(ctx, fileOperationService.ReviveStrandedWork, runtimeLogger)
 		},
+		func(ctx context.Context) { runConfigWaitSweep(ctx, db, runtimeLogger) },
 	}
 	backgroundRuntime := NewBackgroundRuntime(maintenanceGate, buildWorker, producers, runtimeLogger)
 	if cfg.WorkerDisabled {
@@ -858,6 +860,37 @@ func runStrandedFileWorkRevival(ctx context.Context, revive func(context.Context
 			ReasonCode: "file_work_revival_pass_failed",
 			ErrorClass: "fileoperation",
 		})
+	}
+}
+
+// configWaitSweepInterval is the backstop cadence of the configuration wake:
+// an import waiting for configuration that no write woke checks again within
+// it.
+const configWaitSweepInterval = 15 * time.Minute
+
+// runConfigWaitSweep makes imports waiting for configuration due again on a
+// fixed cadence, for configuration a write path changed without a wake. A
+// pass that finds nothing new writes nothing; a woken plan that still waits
+// logs nothing either.
+func runConfigWaitSweep(ctx context.Context, db *sql.DB, logger observabilityport.RuntimeLogger) {
+	ticker := time.NewTicker(configWaitSweepInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if _, err := animeapplication.SweepConfigWaitingPlans(ctx, db); err != nil && ctx.Err() == nil {
+				logger.Warn(ctx, observabilityport.RuntimeEvent{
+					Message:    "configuration wait sweep failed",
+					Component:  "fileoperation",
+					Operation:  "config_wait_sweep",
+					Outcome:    "failure",
+					ReasonCode: "config_wait_sweep_failed",
+					ErrorClass: "fileoperation",
+				})
+			}
+		}
 	}
 }
 

@@ -68,7 +68,7 @@ func (s *Service) observePlanRecovery(ctx context.Context, c workitems.Claim) (w
 		}
 		return blockedPlanRecovery("PLAN_RECOVERY_GRAPH_INCONSISTENT"), nil
 	}
-	if state != "queued" || !live {
+	if (state != "queued" && state != "waiting_config") || !live {
 		return blockedPlanRecovery("PLAN_RECOVERY_GRAPH_INCONSISTENT"), nil
 	}
 	if err := tx.Commit(); err != nil {
