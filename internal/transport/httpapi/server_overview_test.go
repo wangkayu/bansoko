@@ -62,7 +62,7 @@ VALUES ('plc-ov', '/library/Show/EP01.mkv', 'anime-ov', 'reconciliation', 'obs-1
 INSERT INTO replacement_decisions
 (id, idempotency_key, managed_anime_id, candidate_release_id, policy_version, profile_version,
  candidate_facts_ref, coverage_key, coverage_keys, admission_mode, pools, verdict, state, stale_reason, version, created_at, updated_at)
-VALUES ('dec-ov', 'repl:ov:x', 'anime-ov', 'rel-x', 1, 'profile-v1', 'rel-x:1', 'tv:s1:e1', '["tv:s1:e1"]',
+VALUES ('dec-ov', 'repl:ov:x', 'anime-ov', 'rel-x', 1, 'profile-v1', 'rel-x:1', 'tv:e1', '["tv:e1"]',
  'single_copy', '[]', 'replace', 'stale', 'subscription_stopped', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ VALUES ('dec-ov', 'repl:ov:x', 'anime-ov', 'rel-x', 1, 'profile-v1', 'rel-x:1', 
 INSERT INTO replacement_deletions
 (id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
  admission_mode, source_path, source_fingerprint, state, version, created_at, updated_at)
-VALUES ('cln-ov', 'cln:plc-ov:dec-ov', 'plc-ov', 'anime-ov', '["tv:s1:e1"]', 'dec-ov',
+VALUES ('cln-ov', 'cln:plc-ov:dec-ov', 'plc-ov', 'anime-ov', '["tv:e1"]', 'dec-ov',
  'single_copy', '/library/Show/EP01.mkv', 'fp', 'admitted', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
 		t.Fatal(err)
 	}

@@ -89,7 +89,7 @@ VALUES ('plc-offmig', '/library/Offset Anime/Season 01/Offset Anime - 01 [Group]
 	}
 	source := episodeidentity.EpisodeSourceFileParser
 	identity.SelectedSource = &source
-	coverage := "tv:s1:e" + rawEpisode
+	coverage := "tv:e" + rawEpisode
 	identity.CoverageKey = &coverage
 	identityRaw, _ := json.Marshal(identity)
 	if _, err := tx.ExecContext(ctx, `
@@ -187,7 +187,7 @@ WHERE managed_anime_id = 'anime-offmig'`); err != nil {
 		t.Fatal(err)
 	}
 	tvEpisode := episodeidentity.EpisodeNumber("1")
-	tvCoverage := "tv:s1:e1"
+	tvCoverage := "tv:e1"
 	tvSource := episodeidentity.EpisodeSourceFileParser
 	seedFrozenIdentity(episodeidentity.EpisodeIdentity{
 		State: episodeidentity.StateResolved, Kind: episodeidentity.KindTVEpisode,

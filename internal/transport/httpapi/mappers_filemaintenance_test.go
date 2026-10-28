@@ -161,10 +161,10 @@ func TestMapPlacementCoverageViewsPreservesNilAndEmptyShape(t *testing.T) {
 		CoverageOrdinal: 2,
 		EvidenceRef:     "observation-2",
 		FactsVersion:    "facts-v1",
-		ObservationKey:  "tv:s1:e2",
+		ObservationKey:  "tv:e2",
 	}})
 	if mapped[0].CoverageOrdinal != 2 || mapped[0].EvidenceRef != "observation-2" ||
-		mapped[0].FactsVersion != "facts-v1" || mapped[0].ObservationKey != "tv:s1:e2" {
+		mapped[0].FactsVersion != "facts-v1" || mapped[0].ObservationKey != "tv:e2" {
 		t.Fatalf("mapped coverage = %+v", mapped[0])
 	}
 }

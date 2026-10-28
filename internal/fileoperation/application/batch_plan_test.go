@@ -14,7 +14,7 @@ func episodeIdentity(episode string) episodeidentity.EpisodeIdentity {
 	if episode != "" {
 		evidence = episodeidentity.NewValueEvidence(episodeidentity.EpisodeSourceFileParser, "file_name", episode)
 	}
-	return episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{MediaKind: "tv", Season: 1, SeasonBound: true, FileEvidence: evidence})
+	return episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{MediaKind: "tv", FileEvidence: evidence})
 }
 
 // The plan is keyed by manifest path; the local relative path may omit the
@@ -33,7 +33,7 @@ func TestPlanDriftComparesRowsWithThePlan(t *testing.T) {
 		{fileRef: "c", relativePath: "Show SP.mkv"},
 		{fileRef: "d", relativePath: "Show - 03.mkv"},
 	}
-	coverage := map[string]string{"a": "tv:s1:e1", "b": "tv:s1:e5", "d": "tv:s1:e3"}
+	coverage := map[string]string{"a": "tv:e1", "b": "tv:e5", "d": "tv:e3"}
 	drift := planDrift(&plan, selection, videos, coverage, false)
 	for ref, want := range map[string]bool{"a": false, "b": true, "c": false, "d": true} {
 		if drift[ref] != want {
@@ -50,15 +50,15 @@ func TestPlanDriftComparesRowsWithThePlan(t *testing.T) {
 
 // A multi-episode file's row matches its plan entry only with every key.
 func TestPlanDriftComparesMultiEpisodeKeySets(t *testing.T) {
-	double := episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{MediaKind: "tv", Season: 1, SeasonBound: true,
+	double := episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{MediaKind: "tv",
 		FileEvidence: episodeidentity.NewUnsupportedEvidence(episodeidentity.EpisodeSourceFileParser, "file_name", episodeidentity.ShapeRange, "01-02", "")})
 	plan := mediafactsfixture.Plan(t, batchplan.RouteSkip, mediafactsfixture.PlanVideo{Path: "Show - 01-02.mkv", Identity: double})
 	selection := newFileSelection(manifestInput("Show - 01-02.mkv"), filekinds.Version, nil)
 	videos := []artifactFileContext{{fileRef: "a", relativePath: "Show - 01-02.mkv"}}
-	if drift := planDrift(&plan, selection, videos, map[string]string{"a": "tv:s1:e1,tv:s1:e2"}, false); drift["a"] {
+	if drift := planDrift(&plan, selection, videos, map[string]string{"a": "tv:e1,tv:e2"}, false); drift["a"] {
 		t.Fatal("matching key set is not drift")
 	}
-	if drift := planDrift(&plan, selection, videos, map[string]string{"a": "tv:s1:e1"}, false); !drift["a"] {
+	if drift := planDrift(&plan, selection, videos, map[string]string{"a": "tv:e1"}, false); !drift["a"] {
 		t.Fatal("a row with only the first key is drift")
 	}
 }
@@ -71,7 +71,7 @@ func TestPlanExclusionReadsThePlanOutcome(t *testing.T) {
 		mediafactsfixture.PlanVideo{Path: "Show - 02.mkv", Identity: episodeIdentity("2")},
 		mediafactsfixture.PlanVideo{Path: "Show - 03.mkv", Identity: episodeIdentity("3")},
 	)
-	plan.ApplyDedup(map[string]batchplan.Verdict{"tv:s1:e1": batchplan.VerdictExisting, "tv:s1:e2": batchplan.VerdictInFlight})
+	plan.ApplyDedup(map[string]batchplan.Verdict{"tv:e1": batchplan.VerdictExisting, "tv:e2": batchplan.VerdictInFlight})
 	selection := newFileSelection(nil, filekinds.Version, nil)
 	for path, want := range map[string]string{
 		"Show - 01.mkv": batchplan.ReasonCoveredExisting,

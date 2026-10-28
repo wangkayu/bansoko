@@ -12,8 +12,8 @@ import (
 func TestPGReplacementRecoveryLoserHandoffRollsBackAndCommitsAtomically(t *testing.T) {
 	db := openFrozenTestDB(t)
 	ctx := context.Background()
-	loserID := seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"}, Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
-	winnerID := seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:s1:e1"}, Facts{Resolution: "1080p", Group: "GroupA"}, "2026-08-01T00:00:00Z")
+	loserID := seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"}, Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
+	winnerID := seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:e1"}, Facts{Resolution: "1080p", Group: "GroupA"}, "2026-08-01T00:00:00Z")
 	// Distinct physical objects, so the loser requires actual cleanup admission.
 	if _, err := db.Exec(`UPDATE placements SET physical_path=physical_path||'.old' WHERE id=$1`, loserID); err != nil {
 		t.Fatal(err)

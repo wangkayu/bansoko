@@ -67,18 +67,18 @@ func TestResolveReleaseParserEvidenceDefaultBindingStaysTV(t *testing.T) {
 	if identity.State != episodeidentity.StateResolved || identity.Kind != episodeidentity.KindTVEpisode {
 		t.Fatalf("state=%s kind=%s, want resolved/tv_episode", identity.State, identity.Kind)
 	}
-	if identity.CoverageKey == nil || *identity.CoverageKey != "tv:s1:e7" {
-		t.Fatalf("coverage=%v, want tv:s1:e7", identity.CoverageKey)
+	if identity.CoverageKey == nil || *identity.CoverageKey != "tv:e7" {
+		t.Fatalf("coverage=%v, want tv:e7", identity.CoverageKey)
 	}
 	if provenance := evidence.Provenance(); provenance.MediaKind != "tv" {
 		t.Fatalf("provenance media_kind=%q, want the tv default", provenance.MediaKind)
 	}
 }
 
-// A bound TV season participates in the release coverage key, matching the
-// per-file recognition semantics; the bound season travels into the frozen
-// provenance evidence.
-func TestResolveReleaseParserEvidenceBoundSeasonShapesTVCoverage(t *testing.T) {
+// A bound TV season is not part of the release coverage key (an identity is
+// the instance plus the episode number); it travels into the frozen provenance
+// evidence for naming only.
+func TestResolveReleaseParserEvidenceBoundSeasonIsNamingOnly(t *testing.T) {
 	snapshot := targetPlanningSnapshot(t, string(parser.ParserRegex), `\[E(?P<episode>\d{1,4})\]`, 0)
 	snapshot.mediaKind = "tv"
 	snapshot.mediaSeason = 2
@@ -87,8 +87,8 @@ func TestResolveReleaseParserEvidenceBoundSeasonShapesTVCoverage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if evidence.Identity.CoverageKey == nil || *evidence.Identity.CoverageKey != "tv:s2:e7" {
-		t.Fatalf("coverage=%v, want tv:s2:e7 for the bound season 2", evidence.Identity.CoverageKey)
+	if evidence.Identity.CoverageKey == nil || *evidence.Identity.CoverageKey != "tv:e7" {
+		t.Fatalf("coverage=%v, want tv:e7 whatever the bound season", evidence.Identity.CoverageKey)
 	}
 	if provenance := evidence.Provenance(); provenance.Season != 2 {
 		t.Fatalf("provenance season=%d, want 2", provenance.Season)
@@ -132,8 +132,8 @@ func TestResolveReleaseParserEvidenceClearedMediaKindOverrideFallsBackToBinding(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if evidence.Identity.Kind != episodeidentity.KindTVEpisode || evidence.Identity.CoverageKey == nil || *evidence.Identity.CoverageKey != "tv:s2:e7" {
-		t.Fatalf("kind=%s coverage=%v, want tv:s2:e7", evidence.Identity.Kind, evidence.Identity.CoverageKey)
+	if evidence.Identity.Kind != episodeidentity.KindTVEpisode || evidence.Identity.CoverageKey == nil || *evidence.Identity.CoverageKey != "tv:e7" {
+		t.Fatalf("kind=%s coverage=%v, want tv:e7", evidence.Identity.Kind, evidence.Identity.CoverageKey)
 	}
 	if provenance := evidence.Provenance(); provenance.MediaKind != "tv" {
 		t.Fatalf("provenance media_kind=%q, want the bound tv kind", provenance.MediaKind)

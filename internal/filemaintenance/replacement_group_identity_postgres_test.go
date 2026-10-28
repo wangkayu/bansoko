@@ -100,11 +100,11 @@ func TestPGPerGroupPoolsByStableGroupIdentity(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	sameSource := seedFilePlacement(t, db, "anime-1", "sub-1", "pg-same-source", []string{"tv:s1:e1"},
+	sameSource := seedFilePlacement(t, db, "anime-1", "sub-1", "pg-same-source", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "OtherTitle", Subgroup: customGroup("pg-new")}, "2026-07-01T00:00:00Z")
-	otherSource := seedFilePlacement(t, db, "anime-1", "sub-1", "pg-other-source", []string{"tv:s1:e1"},
+	otherSource := seedFilePlacement(t, db, "anime-1", "sub-1", "pg-other-source", []string{"tv:e1"},
 		Facts{Resolution: "480p", Group: "SameTitle", Subgroup: customGroup("pg-other-source")}, "2026-07-02T00:00:00Z")
-	candidate := seedFilePlacement(t, db, "anime-1", "sub-1", "pg-new", []string{"tv:s1:e1"},
+	candidate := seedFilePlacement(t, db, "anime-1", "sub-1", "pg-new", []string{"tv:e1"},
 		Facts{Resolution: "1080p", Group: "SameTitle", Subgroup: customGroup("pg-new")}, "2026-08-01T00:00:00Z")
 	moveReleaseToSource(t, db, "pg-same-source", "pg-new")
 
@@ -116,7 +116,7 @@ func TestPGPerGroupPoolsByStableGroupIdentity(t *testing.T) {
 		t.Fatalf("per_group decision = %+v", view)
 	}
 	pool := (*view.Pools)[0]
-	if pool.PoolKey != "tv:s1:e1|custom:src-pg-new" {
+	if pool.PoolKey != "tv:e1|custom:src-pg-new" {
 		t.Fatalf("pool key = %s, want coverage + custom source identity", pool.PoolKey)
 	}
 	if pool.Losers == nil || len(*pool.Losers) != 1 || (*pool.Losers)[0].PlacementId != sameSource {
@@ -153,9 +153,9 @@ func TestPGUnclaimedScanManagedFileIsReplacedAndDeleted(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			seedScanManagedPlacement(t, db, "plc-scan", "anime-1", scanPath, observed.Fingerprint, "", []string{"tv:s1:e1"}, "2026-07-01T00:00:00Z")
+			seedScanManagedPlacement(t, db, "plc-scan", "anime-1", scanPath, observed.Fingerprint, "", []string{"tv:e1"}, "2026-07-01T00:00:00Z")
 			// The candidate ranks lowest on every item and still wins.
-			candidate := seedFilePlacement(t, db, "anime-1", "sub-1", "scan-new", []string{"tv:s1:e1"},
+			candidate := seedFilePlacement(t, db, "anime-1", "sub-1", "scan-new", []string{"tv:e1"},
 				Facts{Resolution: "unranked", Group: "G"}, "2026-08-01T00:00:00Z")
 
 			store := cleanupWorkItemStore(t, db)
@@ -224,18 +224,18 @@ func TestPGClaimedScanManagedFilePoolsByReleaseGroup(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 	// The claiming release: its chain freezes 720p and its source identity.
-	seedFilePlacement(t, db, "anime-1", "sub-1", "claim-rel", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "claim-rel", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "G", Subgroup: customGroup("claim-rel")}, "2026-06-01T00:00:00Z")
 	// The release's own file placement is gone; the scan-managed file it
 	// claimed holds the episode.
 	if _, err := db.Exec(`UPDATE placements SET state = 'released', released_at = now(), released_by = 'test', release_request_key = 'test-release' WHERE quality_facts_ref = 'claim-rel'`); err != nil {
 		t.Fatal(err)
 	}
-	seedScanManagedPlacement(t, db, "plc-claimed", "anime-1", "/library/Show/claimed.mkv", `{"size_bytes":12}`, "claim-rel", []string{"tv:s1:e1"}, "2026-07-01T00:00:00Z")
+	seedScanManagedPlacement(t, db, "plc-claimed", "anime-1", "/library/Show/claimed.mkv", `{"size_bytes":12}`, "claim-rel", []string{"tv:e1"}, "2026-07-01T00:00:00Z")
 
 	service := NewReplacementDecisionService(db)
 	// Another group's better candidate: another pool, the claimed file stays.
-	seedFilePlacement(t, db, "anime-1", "sub-1", "claim-other", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "claim-other", []string{"tv:e1"},
 		Facts{Resolution: "1080p", Group: "G", Subgroup: customGroup("claim-other")}, "2026-08-01T00:00:00Z")
 	if _, err := service.EvaluateServer(ctx, EvaluateRequest{AnimeID: "anime-1", CandidateRelease: "claim-other"}); err != nil {
 		t.Fatal(err)
@@ -244,14 +244,14 @@ func TestPGClaimedScanManagedFilePoolsByReleaseGroup(t *testing.T) {
 		t.Fatalf("another group's candidate must not compare with the claimed file: %v", losers)
 	}
 	// The claiming group's better candidate replaces it.
-	seedFilePlacement(t, db, "anime-1", "sub-1", "claim-same", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "claim-same", []string{"tv:e1"},
 		Facts{Resolution: "1080p", Group: "G", Subgroup: customGroup("claim-rel")}, "2026-08-02T00:00:00Z")
 	moveReleaseToSource(t, db, "claim-same", "claim-rel")
 	if _, err := service.EvaluateServer(ctx, EvaluateRequest{AnimeID: "anime-1", CandidateRelease: "claim-same"}); err != nil {
 		t.Fatal(err)
 	}
 	pools := decisionPools(t, db, "claim-same")
-	if !loserIDs(pools)["plc-claimed"] || len(pools) != 1 || pools[0].PoolKey != "tv:s1:e1|custom:src-claim-rel" {
+	if !loserIDs(pools)["plc-claimed"] || len(pools) != 1 || pools[0].PoolKey != "tv:e1|custom:src-claim-rel" {
 		t.Fatalf("the claiming group's candidate must replace the claimed file: %+v", pools)
 	}
 }
@@ -266,9 +266,9 @@ func TestPGMissingPlacementIsNeitherPooledNorCompared(t *testing.T) {
 			defer db.Close()
 			ctx := context.Background()
 			setAdmissionMode(t, db, ModeSingleCopy)
-			old := seedFilePlacement(t, db, "anime-1", "sub-1", "missing-old", []string{"tv:s1:e1"},
+			old := seedFilePlacement(t, db, "anime-1", "sub-1", "missing-old", []string{"tv:e1"},
 				Facts{Resolution: "2160p", Group: "G"}, "2026-07-01T00:00:00Z")
-			seedFilePlacement(t, db, "anime-1", "sub-1", "missing-new", []string{"tv:s1:e1"},
+			seedFilePlacement(t, db, "anime-1", "sub-1", "missing-new", []string{"tv:e1"},
 				Facts{Resolution: "720p", Group: "G"}, "2026-08-01T00:00:00Z")
 			if disposition != "" {
 				seedCompletedGeneration(t, db, "anime-1", 1, map[string]string{})
@@ -308,9 +308,9 @@ func TestPGPolicySwitchWithoutNewCandidateDeletesNothing(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 	setAdmissionMode(t, db, ModeAll)
-	seedFilePlacement(t, db, "anime-1", "sub-1", "switch-old", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "switch-old", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "G"}, "2026-07-01T00:00:00Z")
-	seedFilePlacement(t, db, "anime-1", "sub-1", "switch-new", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "switch-new", []string{"tv:e1"},
 		Facts{Resolution: "1080p", Group: "G"}, "2026-08-01T00:00:00Z")
 	var version int
 	if err := db.QueryRow(`SELECT replacement_version FROM anime_business_configs WHERE managed_anime_id = 'anime-1'`).Scan(&version); err != nil {
@@ -360,14 +360,14 @@ func TestPGPoolHoldsOnlyTheAnimesManagedPlacements(t *testing.T) {
 	setAdmissionMode(t, db, ModeSingleCopy)
 	seedAnimeSubscription(t, db, "anime-2", "sub-2", "active")
 	seedInstanceReplacement(t, db, "anime-2", ModeSingleCopy, "", 1)
-	foreign := seedFilePlacement(t, db, "anime-2", "sub-2", "foreign-old", []string{"tv:s1:e1"},
+	foreign := seedFilePlacement(t, db, "anime-2", "sub-2", "foreign-old", []string{"tv:e1"},
 		Facts{Resolution: "480p", Group: "G"}, "2026-07-01T00:00:00Z")
-	released := seedFilePlacement(t, db, "anime-1", "sub-1", "released-old", []string{"tv:s1:e1"},
+	released := seedFilePlacement(t, db, "anime-1", "sub-1", "released-old", []string{"tv:e1"},
 		Facts{Resolution: "480p", Group: "G"}, "2026-07-02T00:00:00Z")
 	if _, err := db.Exec(`UPDATE placements SET state = 'released', released_at = now(), released_by = 'test', release_request_key = 'test-released' WHERE id = $1`, released); err != nil {
 		t.Fatal(err)
 	}
-	seedFilePlacement(t, db, "anime-1", "sub-1", "own-new", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "own-new", []string{"tv:e1"},
 		Facts{Resolution: "1080p", Group: "G"}, "2026-08-01T00:00:00Z")
 	view, err := evaluateSingle(NewReplacementDecisionService(db).EvaluateServer(ctx, EvaluateRequest{AnimeID: "anime-1", CandidateRelease: "own-new"}))
 	if err != nil {

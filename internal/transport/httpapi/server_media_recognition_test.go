@@ -114,5 +114,5 @@ func (httpPolicyLeakAdapter) Descriptor() parser.ParserDescriptor {
 }
 func (httpPolicyLeakAdapter) ValidateConfig(json.RawMessage) error { return nil }
 func (httpPolicyLeakAdapter) ParseDraft(context.Context, parser.EpisodeParseInput, json.RawMessage) (parser.EpisodeEvidenceDraft, error) {
-	return parser.EpisodeEvidenceDraft{Status: parser.StatusValue, Shape: parser.ShapeSingle, Episode: "1", CoverageKeys: []string{"tv:s1:e1"}}, nil
+	return parser.EpisodeEvidenceDraft{Status: parser.StatusValue, Shape: parser.ShapeSingle, Episode: "1", CoverageKeys: []string{"tv:e1"}}, nil
 }

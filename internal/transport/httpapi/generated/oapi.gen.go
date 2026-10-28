@@ -5321,8 +5321,6 @@ type ManualRetryResultOwnerType string
 // MediaRecognitionContext defines model for MediaRecognitionContext.
 type MediaRecognitionContext struct {
 	EpisodeOffset *int                            `json:"episode_offset,omitempty"`
-	Season        *int                            `json:"season,omitempty"`
-	SeasonBound   *bool                           `json:"season_bound,omitempty"`
 	WorkKind      MediaRecognitionContextWorkKind `json:"work_kind"`
 }
 
@@ -6406,7 +6404,7 @@ type ParserProvenance struct {
 	InputDigest           *string                 `json:"input_digest,omitempty"`
 	Kind                  string                  `json:"kind"`
 
-	// MediaKind The frozen TMDB metadata media kind this identity resolved with (absent on legacy rows, meaning the TV default). A movie binding short-circuits to the canonical movie:0 identity; downstream owners consume this frozen value instead of current metadata.
+	// MediaKind The frozen owner media kind this identity resolved with (absent on legacy rows, meaning tv). A movie kind short-circuits to the canonical movie:0 identity; downstream owners consume this frozen value instead of current metadata.
 	MediaKind         *ParserProvenanceMediaKind `json:"media_kind,omitempty"`
 	NormalizerVersion *string                    `json:"normalizer_version,omitempty"`
 
@@ -6431,17 +6429,17 @@ type ParserProvenance struct {
 	// RulesOwnerVersion The CAS version of the anime rules config owner the profile was resolved from (evidence only).
 	RulesOwnerVersion *int64 `json:"rules_owner_version,omitempty"`
 
-	// Season The bound metadata season frozen at evaluation time (0 when unbound or on legacy rows).
+	// Season The TMDB season frozen at evaluation time for naming only (0 when unbound or on legacy rows); it is not part of the episode identity.
 	Season *int `json:"season,omitempty"`
 
-	// SeasonBound Whether a bound season 0 was preserved for a continuous-SP subscription instead of defaulting to season 1.
+	// SeasonBound Whether a TMDB season 0 was preserved for naming instead of defaulting to season 1; it is not part of the episode identity.
 	SeasonBound *bool `json:"season_bound,omitempty"`
 
 	// SourceVersion The RSS source CAS version the offset was read from at selection time (0 when unknown).
 	SourceVersion *int64 `json:"source_version,omitempty"`
 }
 
-// ParserProvenanceMediaKind The frozen TMDB metadata media kind this identity resolved with (absent on legacy rows, meaning the TV default). A movie binding short-circuits to the canonical movie:0 identity; downstream owners consume this frozen value instead of current metadata.
+// ParserProvenanceMediaKind The frozen owner media kind this identity resolved with (absent on legacy rows, meaning tv). A movie kind short-circuits to the canonical movie:0 identity; downstream owners consume this frozen value instead of current metadata.
 type ParserProvenanceMediaKind string
 
 // ParserProvenanceParseShape The selected parser's typed result shape.

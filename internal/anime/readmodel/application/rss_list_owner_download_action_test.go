@@ -82,7 +82,7 @@ func TestRSSListReleaseReevaluatingFollowsTheSchedulerScope(t *testing.T) {
 func TestApplyFrozenPlanToFiles(t *testing.T) {
 	plan := &batchplan.Plan{Version: batchplan.Version, UnclassifiedRoute: batchplan.RouteSkip, Files: []batchplan.File{
 		{SourcePath: "Show/Show - 01.mkv", Kind: "video", Outcome: batchplan.OutcomeCoveredExisting, ReasonCode: batchplan.ReasonCoveredExisting},
-		{SourcePath: "Show/Show - 02.mkv", Kind: "video", Outcome: batchplan.OutcomePlanned, CoverageKey: "tv:s1:e2"},
+		{SourcePath: "Show/Show - 02.mkv", Kind: "video", Outcome: batchplan.OutcomePlanned, CoverageKey: "tv:e2"},
 		{SourcePath: "Show/Show - 02.chs.ass", Kind: "subtitle", BoundVideo: "Show/Show - 02.mkv", Outcome: batchplan.OutcomeSubtitleFollows},
 		{SourcePath: "Show/cover.jpg", Kind: "other", Outcome: batchplan.OutcomeIgnoredKind},
 	}}

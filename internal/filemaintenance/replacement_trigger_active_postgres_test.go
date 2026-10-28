@@ -37,8 +37,8 @@ func triggerScanDuplicate(t *testing.T, db *sql.DB, store *workitems.Store) (str
 	if err != nil {
 		t.Fatal(err)
 	}
-	seedScanManagedPlacement(t, db, "plc-scan-dup", "anime-1", scanPath, observed.Fingerprint, "", []string{"tv:s1:e1"}, "2026-07-01T00:00:00Z")
-	seedFilePlacement(t, db, "anime-1", "sub-1", "trigger-placed", []string{"tv:s1:e1"},
+	seedScanManagedPlacement(t, db, "plc-scan-dup", "anime-1", scanPath, observed.Fingerprint, "", []string{"tv:e1"}, "2026-07-01T00:00:00Z")
+	seedFilePlacement(t, db, "anime-1", "sub-1", "trigger-placed", []string{"tv:e1"},
 		Facts{Resolution: "1080p", Group: "G"}, "2026-08-01T00:00:00Z")
 	cleanup := NewCleanupService(db)
 	cleanup.SetFileExecutor(executor)

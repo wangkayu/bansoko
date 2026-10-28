@@ -21,8 +21,8 @@ func TestSubscriptionScoresCannotChangeProductionReplacementQuality(t *testing.T
 			if _, err := db.Exec(`UPDATE anime_business_configs SET admission_mode='single_copy',quality_profile='{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["2160p"],["1080p"],["720p"]]}]}',replacement_version=replacement_version+1 WHERE managed_anime_id='anime-1'`); err != nil {
 				t.Fatal(err)
 			}
-			old := seedFilePlacement(t, db, "anime-1", "sub-1", "quality-old", []string{"tv:s1:e1"}, Facts{Resolution: "1080p", Group: "Incumbent"}, "2026-07-01T00:00:00Z")
-			candidate := seedFilePlacement(t, db, "anime-1", "sub-1", "quality-new", []string{"tv:s1:e1"}, Facts{Resolution: tc.resolution, Group: "Candidate"}, "2026-08-01T00:00:00Z")
+			old := seedFilePlacement(t, db, "anime-1", "sub-1", "quality-old", []string{"tv:e1"}, Facts{Resolution: "1080p", Group: "Incumbent"}, "2026-07-01T00:00:00Z")
+			candidate := seedFilePlacement(t, db, "anime-1", "sub-1", "quality-new", []string{"tv:e1"}, Facts{Resolution: tc.resolution, Group: "Candidate"}, "2026-08-01T00:00:00Z")
 			for _, entry := range []struct {
 				id, group string
 				score     int

@@ -13,9 +13,9 @@ import (
 // stays unsupported.
 func TestMultiEpisodeFileNameResolves(t *testing.T) {
 	for text, want := range map[string]string{
-		"Repl Double Show - 03-04.mkv":     "tv:s1:e3,tv:s1:e4",
-		"[Group] Show - 01-02 [1080p].mkv": "tv:s1:e1,tv:s1:e2",
-		"[Group] Show [01][02][1080p].mkv": "tv:s1:e1,tv:s1:e2",
+		"Repl Double Show - 03-04.mkv":     "tv:e3,tv:e4",
+		"[Group] Show - 01-02 [1080p].mkv": "tv:e1,tv:e2",
+		"[Group] Show [01][02][1080p].mkv": "tv:e1,tv:e2",
 		"[Group] Show - 01-05 [1080p].mkv": "",
 		"[Group] Show [01][03][1080p].mkv": "",
 	} {
@@ -23,7 +23,7 @@ func TestMultiEpisodeFileNameResolves(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		identity := episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{MediaKind: "tv", Season: 1, SeasonBound: true, FileEvidence: Evidence(parsed, InputFileName)})
+		identity := episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{MediaKind: "tv", FileEvidence: Evidence(parsed, InputFileName)})
 		got := ""
 		if identity.State == episodeidentity.StateResolved {
 			got = strings.Join(identity.Keys(), ",")
@@ -36,7 +36,7 @@ func TestMultiEpisodeFileNameResolves(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	identity := episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{MediaKind: "tv", Season: 1, SeasonBound: true, FileEvidence: Evidence(parsed, InputReleaseTitle)})
+	identity := episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{MediaKind: "tv", FileEvidence: Evidence(parsed, InputReleaseTitle)})
 	if identity.State == episodeidentity.StateResolved {
 		t.Fatalf("release title range resolved: %v", identity.Keys())
 	}

@@ -151,7 +151,7 @@ func TestTriggerPlacementCommittedCreatesLiveEvaluateItem(t *testing.T) {
 	db, _, trigger := newTriggerTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-r1", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-r1", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
 
 	if err := trigger.TriggerPlacementCommitted(ctx, "anime-1", "release-r1"); err != nil {
@@ -182,7 +182,7 @@ func TestTriggerPlacementCommittedStoppedSkips(t *testing.T) {
 	if _, err := db.Exec(`UPDATE subscriptions SET state = 'stopped', version = version + 1 WHERE managed_anime_id = 'anime-1'`); err != nil {
 		t.Fatal(err)
 	}
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-r1", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-r1", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
 
 	if err := trigger.TriggerPlacementCommitted(ctx, "anime-1", "release-r1"); err != nil {
@@ -210,7 +210,7 @@ func TestInstancePolicySaveEnqueuesNoReplacementWork(t *testing.T) {
 	db, _, trigger := newTriggerTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-r1", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-r1", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
 	// The candidate is still downloading: a policy change has nothing to do
 	// with it until the next comparison moment.
@@ -266,9 +266,9 @@ func TestTriggerMergesLatestInputAcrossTriggers(t *testing.T) {
 	db, _, trigger := newTriggerTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-r1", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-r1", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-r2", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-r2", []string{"tv:e1"},
 		Facts{Resolution: "1080p", Group: "GroupA"}, "2026-08-01T00:00:00Z")
 
 	if err := trigger.TriggerPlacementCommitted(ctx, "anime-1", "release-r1"); err != nil {
@@ -304,7 +304,7 @@ func TestTriggerConcurrentNotificationsKeepSingleLiveItem(t *testing.T) {
 	db, _, trigger := newTriggerTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-r1", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-r1", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
 
 	var wg sync.WaitGroup
@@ -347,9 +347,9 @@ func TestTriggerGenerationCompletedGatedByActive(t *testing.T) {
 	seedInstanceReplacement(t, db, "anime-stopped", ModePerGroup, ``, 1)
 	seedAnimeSubscription(t, db, "anime-active", "sub-a", "active")
 	seedInstanceReplacement(t, db, "anime-active", ModePerGroup, ``, 1)
-	seedFilePlacement(t, db, "anime-stopped", "sub-s", "release-s", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-stopped", "sub-s", "release-s", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
-	seedFilePlacement(t, db, "anime-active", "sub-a", "release-a", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-active", "sub-a", "release-a", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
 
 	store, err := workitems.NewStore(db, workitems.DefaultRetentionDays, port.NopRuntimeLogger{})
@@ -457,9 +457,9 @@ func TestEvaluateThenStopBeforeSettleMarksStaleZeroEffects(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	oldPlacement := seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"},
+	oldPlacement := seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
-	candidate := seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:s1:e1"},
+	candidate := seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:e1"},
 		Facts{Resolution: "1080p", Group: "GroupA"}, "2026-08-01T00:00:00Z")
 
 	service := NewReplacementDecisionService(db)
@@ -528,9 +528,9 @@ func TestStopRaceEvaluateSettleNeverProducesEffect(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
-	candidate := seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:s1:e1"},
+	candidate := seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:e1"},
 		Facts{Resolution: "1080p", Group: "GroupA"}, "2026-08-01T00:00:00Z")
 	service := NewReplacementDecisionService(db)
 	cleanup := NewCleanupService(db)

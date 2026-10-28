@@ -44,13 +44,13 @@ type Provenance struct {
 	RulesOwnerVersion int64  `json:"rules_owner_version,omitempty"`
 	InputDigest       string `json:"input_digest,omitempty"`
 	ResultDigest      string `json:"result_digest,omitempty"`
-	// MediaKind and Season are the frozen metadata binding (TMDB media kind and
-	// bound season) the release identity resolved with: "movie" short-circuits
-	// to the canonical movie:0 identity, "tv" covers tv:s<season>:e<episode>.
-	// SeasonBound records whether a bound season 0 was preserved (continuous-SP
-	// subscriptions) instead of defaulting to season 1. They are evidence of
-	// the one evaluation, never a live metadata lookup: downstream owners must
-	// not re-read anime_metadata after submission.
+	// MediaKind is the owner media kind the release identity resolved with:
+	// "movie" short-circuits to the canonical movie:0 identity, "tv" covers
+	// tv:e<episode>. Season and SeasonBound are the TMDB season (and whether a
+	// season 0 was preserved) frozen for naming only; they are not part of the
+	// identity. All are evidence of the one evaluation, never a live metadata
+	// lookup: downstream owners must not re-read anime_metadata after
+	// submission.
 	MediaKind   string `json:"media_kind,omitempty"`
 	Season      int    `json:"season,omitempty"`
 	SeasonBound bool   `json:"season_bound,omitempty"`

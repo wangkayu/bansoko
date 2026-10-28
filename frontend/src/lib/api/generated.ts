@@ -3986,9 +3986,6 @@ export interface components {
         MediaRecognitionContext: {
             /** @enum {string} */
             work_kind: "tv" | "movie";
-            season?: number;
-            /** @default false */
-            season_bound: boolean;
             /** @default 0 */
             episode_offset: number;
         };
@@ -4181,13 +4178,13 @@ export interface components {
              */
             parse_shape?: "single" | "range" | "list" | "season_only" | "special" | "unknown";
             /**
-             * @description The frozen TMDB metadata media kind this identity resolved with (absent on legacy rows, meaning the TV default). A movie binding short-circuits to the canonical movie:0 identity; downstream owners consume this frozen value instead of current metadata.
+             * @description The frozen owner media kind this identity resolved with (absent on legacy rows, meaning tv). A movie kind short-circuits to the canonical movie:0 identity; downstream owners consume this frozen value instead of current metadata.
              * @enum {string}
              */
             media_kind?: "tv" | "movie";
-            /** @description The bound metadata season frozen at evaluation time (0 when unbound or on legacy rows). */
+            /** @description The TMDB season frozen at evaluation time for naming only (0 when unbound or on legacy rows); it is not part of the episode identity. */
             season?: number;
-            /** @description Whether a bound season 0 was preserved for a continuous-SP subscription instead of defaulting to season 1. */
+            /** @description Whether a TMDB season 0 was preserved for naming instead of defaulting to season 1; it is not part of the episode identity. */
             season_bound?: boolean;
             /** @description The instance parser-policy owner CAS version (evidence only). */
             policy_version?: number;

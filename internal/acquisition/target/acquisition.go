@@ -36,17 +36,17 @@ var ErrTargetNotAbsolute = errors.New("target is not absolute")
 // single explicit selection (instance parser-policy kind plus effective episode
 // patterns) and the parse that selection produced. It is the one source for the
 // naming plan, the target config snapshot, and the frozen downstream policy, so
-// no consumer re-parses the title with a second implementation. MediaKind and
-// Season are the frozen metadata binding the identity resolved with (movie
-// short-circuits to the canonical movie:0 identity); SeasonBound records that a
-// bound season 0 was preserved instead of defaulting to season 1.
+// no consumer re-parses the title with a second implementation. MediaKind is
+// the owner media kind the identity resolved with (movie short-circuits to the
+// canonical movie:0 identity); Season and SeasonBound are the TMDB season
+// frozen for naming only, never part of the identity.
 type ParserEvidence struct {
 	Selection parser.Selection
 	Parsed    parser.EpisodeParseResult
 	Identity  episodeidentity.EpisodeIdentity
-	// MediaKind is the frozen TMDB media kind ("tv" or "movie"); empty means
-	// the historical TV default. Season is the bound metadata season and
-	// SeasonBound marks a preserved season 0 (continuous-SP subscriptions).
+	// MediaKind is the frozen owner media kind ("tv" or "movie"); empty means
+	// tv. Season is the TMDB season and SeasonBound marks a preserved season 0,
+	// both frozen for naming only.
 	MediaKind   string
 	Season      int
 	SeasonBound bool
@@ -140,15 +140,15 @@ func (e ParserEvidence) mediaKind() string {
 // this release (its RSS link's offset, or the one-shot input's own offset). The
 // offset is applied by the episode identity resolver exactly once, never by the
 // parser adapter. MediaKind ("tv" or
-// "movie"), Season and SeasonBound are the frozen metadata binding the identity
-// resolves with; an empty MediaKind keeps the historical TV default.
+// "movie") is the owner media kind the identity resolves with (empty is tv);
+// Season and SeasonBound are the TMDB season frozen for naming only.
 type ParserSelectionInput struct {
 	Kind            string
 	EpisodePatterns []string
 	Offset          int
-	// MediaKind is the bound TMDB media kind ("tv" or "movie"); empty defaults
-	// to "tv". Season is the bound metadata season; SeasonBound preserves a
-	// bound season 0 (continuous-SP subscriptions) instead of defaulting to 1.
+	// MediaKind is the owner media kind ("tv" or "movie"); empty defaults to
+	// "tv". Season is the TMDB season and SeasonBound marks a preserved season
+	// 0, both frozen for naming only.
 	MediaKind   string
 	Season      int
 	SeasonBound bool
@@ -193,8 +193,6 @@ func ResolveParserEvidence(ctx context.Context, selection ParserSelectionInput, 
 	}
 	identity := episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{
 		MediaKind:    evidence.mediaKind(),
-		Season:       selection.Season,
-		SeasonBound:  selection.SeasonBound,
 		FileEvidence: parser.Evidence(parsed, parser.InputReleaseTitle),
 		// The release-level identity is the title's own evidence; it never
 		// becomes the identity of a file.
@@ -206,8 +204,8 @@ func ResolveParserEvidence(ctx context.Context, selection ParserSelectionInput, 
 
 // ResolveFileEpisode resolves the episode of one video from its own filename
 // alone, with the release's selected parser (the same frozen kind and config
-// that parsed the title), its effective offset, and the bound media kind and
-// season. A filename without an episode yields an unresolved identity and nil
+// that parsed the title), its effective offset, and the frozen media kind. A
+// filename without an episode yields an unresolved identity and nil
 // naming facts: the file is an unknown file, and the release title never
 // stands in for it.
 func ResolveFileEpisode(ctx context.Context, release ParserEvidence, filename string) (episodeidentity.EpisodeIdentity, *naming.FrozenEpisodeNamingFacts, error) {
@@ -217,8 +215,6 @@ func ResolveFileEpisode(ctx context.Context, release ParserEvidence, filename st
 	}
 	identity := episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{
 		MediaKind:    release.mediaKind(),
-		Season:       release.Season,
-		SeasonBound:  release.SeasonBound,
 		FileEvidence: parser.Evidence(parsed, parser.InputFileName),
 		Offset:       release.Identity.Offset,
 	})

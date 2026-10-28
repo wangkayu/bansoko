@@ -19,7 +19,7 @@ var (
 // NN-MM.mkv" to the range NN..MM, and every other name to a missing identity,
 // like the filename parser does.
 func identityOf(sourcePath string) (episodeidentity.EpisodeIdentity, error) {
-	input := episodeidentity.EpisodeIdentityInput{MediaKind: "tv", Season: 1, SeasonBound: true}
+	input := episodeidentity.EpisodeIdentityInput{MediaKind: "tv"}
 	if match := episodeRange.FindStringSubmatch(sourcePath); match != nil {
 		input.FileEvidence = episodeidentity.NewUnsupportedEvidence(episodeidentity.EpisodeSourceFileParser, "file_name", episodeidentity.ShapeRange, match[1], "")
 	} else if match := episodeName.FindStringSubmatch(sourcePath); match != nil {
@@ -77,7 +77,7 @@ func TestClassifyBatchPartialCoverage(t *testing.T) {
 	if got := outcomes(plan); !reflect.DeepEqual(got, want) {
 		t.Fatalf("outcomes = %v\nwant %v", got, want)
 	}
-	if !reflect.DeepEqual(plan.CoverageKeys, []string{"tv:s1:e1", "tv:s1:e2"}) {
+	if !reflect.DeepEqual(plan.CoverageKeys, []string{"tv:e1", "tv:e2"}) {
 		t.Fatalf("coverage keys = %v", plan.CoverageKeys)
 	}
 	if !plan.Accepted() {
@@ -145,10 +145,10 @@ func TestAcceptanceMatrix(t *testing.T) {
 func TestDedupKeepReplaceInFlight(t *testing.T) {
 	plan := classify(t, RouteSkip, "Show/Show - 01.mkv", "Show/Show - 02.mkv", "Show/Show - 03.mkv", "Show/Show - 04.mkv", "Show/Show - 02.ass")
 	plan.ApplyDedup(map[string]Verdict{
-		"tv:s1:e1": VerdictExisting,
-		"tv:s1:e2": VerdictReplace,
-		"tv:s1:e3": VerdictInFlight,
-		"tv:s1:e4": VerdictOpen,
+		"tv:e1": VerdictExisting,
+		"tv:e2": VerdictReplace,
+		"tv:e3": VerdictInFlight,
+		"tv:e4": VerdictOpen,
 	})
 	got := outcomes(plan)
 	for path, want := range map[string]string{
@@ -163,11 +163,11 @@ func TestDedupKeepReplaceInFlight(t *testing.T) {
 		}
 	}
 	// A replaced file of a batch stays planned: it replaces only its own key.
-	if !reflect.DeepEqual(plan.CoverageKeys, []string{"tv:s1:e2", "tv:s1:e4"}) {
+	if !reflect.DeepEqual(plan.CoverageKeys, []string{"tv:e2", "tv:e4"}) {
 		t.Fatalf("coverage = %v", plan.CoverageKeys)
 	}
 	all := classify(t, RouteSkip, "Show/Show - 01.mkv", "Show/Show - 02.mkv")
-	all.ApplyDedup(map[string]Verdict{"tv:s1:e1": VerdictExisting, "tv:s1:e2": VerdictExisting})
+	all.ApplyDedup(map[string]Verdict{"tv:e1": VerdictExisting, "tv:e2": VerdictExisting})
 	if all.Accepted() {
 		t.Fatal("a batch whose every key exists is not accepted (no_placeable_files)")
 	}
@@ -175,11 +175,11 @@ func TestDedupKeepReplaceInFlight(t *testing.T) {
 
 func TestSingleKeyedVideoKeepsReplacement(t *testing.T) {
 	plan := classify(t, RouteSkip, "Show - 05.mkv")
-	plan.ApplyDedup(map[string]Verdict{"tv:s1:e5": VerdictReplace})
+	plan.ApplyDedup(map[string]Verdict{"tv:e5": VerdictReplace})
 	if got := outcomes(plan)["Show - 05.mkv"]; got != "planned/" {
 		t.Fatalf("single-episode replace stays planned, got %s", got)
 	}
-	plan.ApplyDedup(map[string]Verdict{"tv:s1:e5": VerdictInFlight})
+	plan.ApplyDedup(map[string]Verdict{"tv:e5": VerdictInFlight})
 	if plan.Accepted() {
 		t.Fatal("an in-flight single episode is not accepted")
 	}
@@ -318,14 +318,14 @@ func TestSeedLimitsValidateAndRead(t *testing.T) {
 func TestMultiEpisodeFileKeysAndDedup(t *testing.T) {
 	plan := classify(t, RouteSkip, "Show/Show - 01-02.mkv", "Show/Show - 03.mkv", "Show/Show - 01-02.ass")
 	file, _ := plan.File("Show/Show - 01-02.mkv")
-	if file.Outcome != OutcomePlanned || file.CoverageKey != "tv:s1:e1" || !reflect.DeepEqual(file.Keys(), []string{"tv:s1:e1", "tv:s1:e2"}) {
+	if file.Outcome != OutcomePlanned || file.CoverageKey != "tv:e1" || !reflect.DeepEqual(file.Keys(), []string{"tv:e1", "tv:e2"}) {
 		t.Fatalf("double file = %+v keys=%v", file, file.Keys())
 	}
-	if !reflect.DeepEqual(plan.CoverageKeys, []string{"tv:s1:e1", "tv:s1:e2", "tv:s1:e3"}) || !reflect.DeepEqual(plan.CandidateKeys(), plan.CoverageKeys) {
+	if !reflect.DeepEqual(plan.CoverageKeys, []string{"tv:e1", "tv:e2", "tv:e3"}) || !reflect.DeepEqual(plan.CandidateKeys(), plan.CoverageKeys) {
 		t.Fatalf("coverage = %v candidates=%v", plan.CoverageKeys, plan.CandidateKeys())
 	}
 	units := plan.CandidateUnits()
-	if !reflect.DeepEqual(units["tv:s1:e2"], []string{"tv:s1:e1", "tv:s1:e2"}) || !reflect.DeepEqual(units["tv:s1:e3"], []string{"tv:s1:e3"}) {
+	if !reflect.DeepEqual(units["tv:e2"], []string{"tv:e1", "tv:e2"}) || !reflect.DeepEqual(units["tv:e3"], []string{"tv:e3"}) {
 		t.Fatalf("units = %v", units)
 	}
 	for _, tc := range []struct {
@@ -333,11 +333,11 @@ func TestMultiEpisodeFileKeysAndDedup(t *testing.T) {
 		verdicts map[string]Verdict
 		want     string
 	}{
-		{"both replace", map[string]Verdict{"tv:s1:e1": VerdictReplace, "tv:s1:e2": VerdictReplace}, "planned/"},
-		{"replace and fill", map[string]Verdict{"tv:s1:e1": VerdictReplace, "tv:s1:e2": VerdictOpen}, "planned/"},
-		{"one key kept", map[string]Verdict{"tv:s1:e1": VerdictReplace, "tv:s1:e2": VerdictExisting}, "covered_existing/covered_existing"},
-		{"partial", map[string]Verdict{"tv:s1:e1": VerdictReplacePartial, "tv:s1:e2": VerdictReplace}, "covered_existing/replacement_partial_coverage"},
-		{"one key in flight", map[string]Verdict{"tv:s1:e2": VerdictInFlight}, "covered_in_flight/covered_in_flight"},
+		{"both replace", map[string]Verdict{"tv:e1": VerdictReplace, "tv:e2": VerdictReplace}, "planned/"},
+		{"replace and fill", map[string]Verdict{"tv:e1": VerdictReplace, "tv:e2": VerdictOpen}, "planned/"},
+		{"one key kept", map[string]Verdict{"tv:e1": VerdictReplace, "tv:e2": VerdictExisting}, "covered_existing/covered_existing"},
+		{"partial", map[string]Verdict{"tv:e1": VerdictReplacePartial, "tv:e2": VerdictReplace}, "covered_existing/replacement_partial_coverage"},
+		{"one key in flight", map[string]Verdict{"tv:e2": VerdictInFlight}, "covered_in_flight/covered_in_flight"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			plan := classify(t, RouteSkip, "Show/Show - 01-02.mkv", "Show/Show - 03.mkv")

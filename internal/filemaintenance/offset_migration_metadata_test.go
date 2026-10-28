@@ -70,8 +70,8 @@ func TestOffsetMigrationExecutesRecoveryMetadataFingerprint(t *testing.T) {
 	if err := db.QueryRow(`SELECT observation_key FROM placement_coverage WHERE placement_id = 'plc-offmig'`).Scan(&coverage); err != nil {
 		t.Fatal(err)
 	}
-	if state != string(OffsetMigrationOperationApplied) || coverage != "tv:s1:e2" {
-		t.Fatalf("metadata migration state=%s coverage=%s, want applied/tv:s1:e2", state, coverage)
+	if state != string(OffsetMigrationOperationApplied) || coverage != "tv:e2" {
+		t.Fatalf("metadata migration state=%s coverage=%s, want applied/tv:e2", state, coverage)
 	}
 }
 

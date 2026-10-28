@@ -17,11 +17,11 @@ func TestAlignmentAndPreviewUseMigratedPlacementCoverage(t *testing.T) {
 	})
 	freezeRenderFixtureBusiness(t, db, chain.OperationID)
 	// Admission identity remains 1; a completed offset migration owns new coverage.
-	if _, err := db.Exec(`UPDATE placement_coverage SET observation_key='tv:s1:e3' WHERE placement_id=$1`, chain.PlacementID); err != nil {
+	if _, err := db.Exec(`UPDATE placement_coverage SET observation_key='tv:e3' WHERE placement_id=$1`, chain.PlacementID); err != nil {
 		t.Fatal(err)
 	}
 	renderer := NewNamingTargetRenderer(db, fakeNamingRulesSource{rules: rendererRules()})
-	observation := SnapshotObservation{AnimeID: "anime-offset-alignment", PlacementID: chain.PlacementID, FilePath: "/library/Drift/03.mkv", SizeBytes: 1024, Coverage: []string{"tv:s1:e3"}}
+	observation := SnapshotObservation{AnimeID: "anime-offset-alignment", PlacementID: chain.PlacementID, FilePath: "/library/Drift/03.mkv", SizeBytes: 1024, Coverage: []string{"tv:e3"}}
 	planned, err := renderer.RenderTarget(context.Background(), observation)
 	if err != nil {
 		t.Fatal(err)

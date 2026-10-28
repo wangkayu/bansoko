@@ -247,7 +247,7 @@ SELECT 'pl-' || a.rel_id || '-' || f.i, CASE f.i WHEN 0 THEN a.p0 ELSE a.p1 END,
 FROM soak_ext.acq a CROSS JOIN generate_series(0, 1) f(i) WHERE a.cls = 'succeeded'`)
 	g.exec("placement_coverage", `
 INSERT INTO placement_coverage(placement_id, observation_key, coverage_ordinal, facts_version, evidence_ref)
-SELECT 'pl-' || a.rel_id || '-' || f.i, 'tv:s1:e' || (a.k + f.i), 0, 'facts-v1', 'fo-' || a.rel_id || '-' || f.i
+SELECT 'pl-' || a.rel_id || '-' || f.i, 'tv:e' || (a.k + f.i), 0, 'facts-v1', 'fo-' || a.rel_id || '-' || f.i
 FROM soak_ext.acq a CROSS JOIN generate_series(0, 1) f(i) WHERE a.cls = 'succeeded'`)
 	g.exec("placement_obligations", `
 INSERT INTO placement_obligations(file_operation_id, state, attempts, max_attempts, created_at, updated_at, settled_at)

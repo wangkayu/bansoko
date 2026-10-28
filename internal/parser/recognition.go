@@ -447,8 +447,6 @@ type RecognitionItem struct {
 
 type RecognitionContext struct {
 	WorkKind      string
-	Season        int
-	SeasonBound   bool
 	EpisodeOffset int
 	Parser        ParserSelection
 }
@@ -484,7 +482,6 @@ func Recognize(ctx context.Context, registry *Registry, items []RecognitionItem,
 		}
 		identity := resolver.Resolve(episodeidentity.EpisodeIdentityInput{
 			MediaKind: input.WorkKind, FileRef: item.ClientRef,
-			Season: input.Season, SeasonBound: input.SeasonBound,
 			FileEvidence: Evidence(parsed, InputFileName),
 			Offset:       input.EpisodeOffset,
 		})

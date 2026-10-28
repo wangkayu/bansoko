@@ -452,12 +452,12 @@ func seedPlannedReplacement(t *testing.T, x typedRuntimeFixture, id string) {
 	if anime != x.f.animeID || release == "" {
 		t.Fatalf("fixture root refs anime=%q release=%q; the stale trigger needs the origin anime and source Release", anime, release)
 	}
-	pools, _ := json.Marshal([]any{map[string]any{"pool_key": "tv:s1:e1", "verdict": "replace", "winner": map[string]any{"placement_id": "release:" + release, "version": 1, "fingerprint": "candidate"}}})
+	pools, _ := json.Marshal([]any{map[string]any{"pool_key": "tv:e1", "verdict": "replace", "winner": map[string]any{"placement_id": "release:" + release, "version": 1, "fingerprint": "candidate"}}})
 	owner := disposabledb.Owner(t)
 	defer owner.Close()
 	if _, err := owner.Exec(`
 INSERT INTO replacement_decisions(id,idempotency_key,managed_anime_id,candidate_release_id,policy_version,profile_version,candidate_facts_ref,coverage_key,coverage_keys,admission_mode,pools,verdict,state,subscription_version,input_digest)
-VALUES ($1,$1,$2,$3,1,'profile-v1','release:1','tv:s1:e1','["tv:s1:e1"]','single_copy',$4,'replace','admitted',1,'digest')`, id, anime, release, string(pools)); err != nil {
+VALUES ($1,$1,$2,$3,1,'profile-v1','release:1','tv:e1','["tv:e1"]','single_copy',$4,'replace','admitted',1,'digest')`, id, anime, release, string(pools)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -644,7 +644,7 @@ FROM replacement_decisions d, acquisitions r WHERE d.id=$1 AND r.id=$2`, decisio
 		// settlement is a fact again, and the second failure staled the
 		// retried run's own decision.
 		const retried = "decision-retried"
-		pools, _ := json.Marshal([]any{map[string]any{"pool_key": "tv:s1:e1", "verdict": "replace", "winner": map[string]any{"placement_id": "release:release-file-test", "version": 1, "fingerprint": "candidate"}}})
+		pools, _ := json.Marshal([]any{map[string]any{"pool_key": "tv:e1", "verdict": "replace", "winner": map[string]any{"placement_id": "release:release-file-test", "version": 1, "fingerprint": "candidate"}}})
 		ownerExec(t,
 			`INSERT INTO acquisition_import_retries(acquisition_id, ordinal, idempotency_key, request_hash, retried_files, reopened_placements,
 					result_version, previous_state, previous_terminal_at, previous_terminal_receipt)
@@ -654,7 +654,7 @@ FROM replacement_decisions d, acquisitions r WHERE d.id=$1 AND r.id=$2`, decisio
 			`UPDATE acquisitions SET activity_logged_at=NULL WHERE id='`+root+`'`,
 			`ALTER TABLE acquisitions ENABLE TRIGGER USER`,
 			`INSERT INTO replacement_decisions(id,idempotency_key,managed_anime_id,candidate_release_id,policy_version,profile_version,candidate_facts_ref,coverage_key,coverage_keys,admission_mode,pools,verdict,state,stale_reason,stale_acquisition_id,subscription_version,input_digest,version)
-				SELECT '`+retried+`','`+retried+`',managed_anime_id,candidate_release_id,1,'profile-v1','release:1','tv:s1:e1','["tv:s1:e1"]','single_copy','`+string(pools)+`'::jsonb,'replace','stale','candidate_acquisition_failed','`+root+`',1,'digest',2
+				SELECT '`+retried+`','`+retried+`',managed_anime_id,candidate_release_id,1,'profile-v1','release:1','tv:e1','["tv:e1"]','single_copy','`+string(pools)+`'::jsonb,'replace','stale','candidate_acquisition_failed','`+root+`',1,'digest',2
 				FROM replacement_decisions WHERE id='`+decision+`'`)
 		if _, err := consumer.ConsumeOnce(ctx); err != nil {
 			t.Fatal(err)

@@ -194,9 +194,8 @@ VALUES ($1, $2, (SELECT acquisition_id FROM artifacts WHERE id=$2), 'primary', $
 	exec(`SELECT public.work_item_close(id,'succeeded') FROM work_items WHERE owner_type='file_operation' AND owner_id=$1`, chain.OperationID)
 
 	identity := episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{
-		MediaKind:    spec.TMDBMediaKind,
-		Season:       spec.TMDBSeason,
-		SeasonBound:  true,
+		MediaKind: spec.TMDBMediaKind,
+
 		FileEvidence: episodeidentity.NewValueEvidence(episodeidentity.EpisodeSourceFileParser, "file_name", spec.FrozenEpisode),
 	})
 	identityRaw, err := json.Marshal(identity)

@@ -2,6 +2,7 @@ package application
 
 import (
 	protocol "bansoko/internal/acquisition/terminal/domain"
+	"bansoko/internal/episodeidentity"
 	"bansoko/internal/postprocessing/naming"
 	"bytes"
 	"encoding/json"
@@ -44,7 +45,7 @@ func observedSatisfactionFileFact(b *artifactPreparedBatch, file artifactFileCon
 		replay[key] = unknown()
 	}
 	provenance := map[string]any{"mode": "native", "acquisition_ref": frozenKnown(capture.Artifact.Root), "operation_ref": map[string]any{"state": "absent", "value": nil, "reason_code": nil}, "artifact_ref": frozenKnown(b.capture.ArtifactID), "artifact_file_ref": frozenKnown(file.id), "media_snapshot": unknown(), "delivery_digest": frozenKnown(evidence["digest"]), "exact_selection": unknown(), "missing_paths": []string{}}
-	groups := map[string]any{"locator": map[string]any{"final_object": frozenKnown(evidence["final_object"]), "source_cleanup": "not_required"}, "content_source": source, "identity_coverage": map[string]any{"identity": unknown(), "coverage_schema": "episode-identity-v1", "coverage_keys": []string{}}, "quality": unknown(), "render_inputs": map[string]any{"replay": replay, "binding": unknown(), "vars": unknown(), "naming_schema": unknown(), "naming_digest": unknown(), "render_program_version": unknown()}, "episode_offset": map[string]any{"offset": unknown(), "media_kind": unknown(), "season": unknown(), "season_bound": unknown(), "video_count": unknown()}, "provenance": provenance, "schema_version": 2}
+	groups := map[string]any{"locator": map[string]any{"final_object": frozenKnown(evidence["final_object"]), "source_cleanup": "not_required"}, "content_source": source, "identity_coverage": map[string]any{"identity": unknown(), "coverage_schema": episodeidentity.ResolverVersion, "coverage_keys": []string{}}, "quality": unknown(), "render_inputs": map[string]any{"replay": replay, "binding": unknown(), "vars": unknown(), "naming_schema": unknown(), "naming_digest": unknown(), "render_program_version": unknown()}, "episode_offset": map[string]any{"offset": unknown(), "media_kind": unknown(), "season": unknown(), "season_bound": unknown(), "video_count": unknown()}, "provenance": provenance, "schema_version": 2}
 	if capture.Witness != nil {
 		if capture.Witness.Root != capture.Artifact.Root {
 			return "", fmt.Errorf("PLAN_HANDOFF_INVALID")
@@ -80,13 +81,19 @@ func observedSatisfactionFileFact(b *artifactPreparedBatch, file artifactFileCon
 		var fv struct {
 			State string `json:"state"`
 			Value struct {
-				Keys   []string `json:"coverage_keys"`
-				Offset int64    `json:"offset"`
+				Keys            []string `json:"coverage_keys"`
+				Offset          int64    `json:"offset"`
+				ResolverVersion string   `json:"resolver_version"`
 			} `json:"value"`
 		}
 		json.Unmarshal(raw, &fv)
 		if fv.State == "known" {
 			coverage["coverage_keys"] = fv.Value.Keys
+			// The coverage schema is the contract the frozen identity was
+			// resolved with: a sealed v1 identity keeps tv:s<S>:e<N> keys.
+			if fv.Value.ResolverVersion == episodeidentity.LegacyResolverVersion {
+				coverage["coverage_schema"] = episodeidentity.LegacyResolverVersion
+			}
 			// The one offset the frozen identity resolved with.
 			offset["offset"] = frozenKnown(fv.Value.Offset)
 		}

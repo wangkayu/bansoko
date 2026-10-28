@@ -479,7 +479,7 @@ func TestReleaseMediaSnapshotFreezesTheSelectedParserProfile(t *testing.T) {
 		t.Fatalf("resolve release parser evidence: %v", err)
 	}
 	repository := &recordingMediaRepository{}
-	plan := &batchplan.Plan{Version: batchplan.Version, UnclassifiedRoute: batchplan.RouteSkip, CoverageKeys: []string{"tv:s1:e42"}}
+	plan := &batchplan.Plan{Version: batchplan.Version, UnclassifiedRoute: batchplan.RouteSkip, CoverageKeys: []string{"tv:e42"}}
 	if err := persistReleaseMediaSnapshot(context.Background(), nil, repository, snapshot, title, evidence, plan); err != nil {
 		t.Fatalf("persist release media snapshot: %v", err)
 	}

@@ -166,11 +166,11 @@ func TestUnknownVideoUnderSkipIsExcludedNotFailed(t *testing.T) {
 
 	ctx := context.Background()
 	resolved := episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{
-		MediaKind: "tv", Season: 1, SeasonBound: true,
+		MediaKind:    "tv",
 		FileEvidence: episodeidentity.NewValueEvidence(episodeidentity.EpisodeSourceFileParser, "file_name", "1"),
 	})
 	unresolved := episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{
-		MediaKind: "tv", Season: 1, SeasonBound: true,
+		MediaKind:    "tv",
 		FileEvidence: episodeidentity.NewMissingEvidence(episodeidentity.EpisodeSourceFileParser, "file_name"),
 	})
 	identityRaw, err := facts.MarshalIdentity(resolved)

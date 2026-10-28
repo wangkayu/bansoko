@@ -70,9 +70,8 @@ func seedParityFrozenEvidence(t *testing.T, db *sql.DB, fixture fileFixture) {
 		Offset:    0,
 	}
 	identity := episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{
-		MediaKind:    "tv",
-		Season:       1,
-		SeasonBound:  true,
+		MediaKind: "tv",
+
 		FileEvidence: episodeidentity.NewValueEvidence(episodeidentity.EpisodeSourceFileParser, "file_name", "1"),
 	})
 	releaseFactsRaw, err := json.Marshal(facts.ReleaseFacts{
@@ -216,7 +215,7 @@ func TestMaintenanceRenderParityWithAcquisitionRender(t *testing.T) {
 				PlacementID: placementID,
 				FilePath:    target,
 				SizeBytes:   fixture.size,
-				Coverage:    []string{"tv:s1:e1"},
+				Coverage:    []string{"tv:e1"},
 			})
 			if err != nil {
 				t.Fatalf("RenderTarget: %v", err)
@@ -311,7 +310,7 @@ func TestMaintenanceWorkIDTemplateBlockedWithoutFrozenBindings(t *testing.T) {
 		}
 		placementID, target := prepareParityPlacement(t, db, fixture)
 		renderer := filemaintenance.NewNamingTargetRenderer(db, parityRulesSourceUnder(fixture, rules))
-		observation := filemaintenance.SnapshotObservation{AnimeID: fixture.animeID, PlacementID: placementID, FilePath: target, SizeBytes: fixture.size, Coverage: []string{"tv:s1:e1"}}
+		observation := filemaintenance.SnapshotObservation{AnimeID: fixture.animeID, PlacementID: placementID, FilePath: target, SizeBytes: fixture.size, Coverage: []string{"tv:e1"}}
 		rendered, err := renderer.RenderTarget(context.Background(), observation)
 		if err != nil {
 			t.Fatalf("the frozen binding must reproduce the acquisition name: %v", err)
@@ -374,7 +373,7 @@ INSERT INTO reconciliation_files
 (managed_anime_id, generation, file_path, batch_index, fingerprint, size_bytes, facts, observed_at,
  disposition, coverage, resolution, source, language, "group", parser_version, facts_fingerprint, version, created_at, updated_at)
 VALUES ($1, 1, $2, 0, 'fp-parity', $3, $4::jsonb, CURRENT_TIMESTAMP,
-        'present', '["tv:s1:e1"]'::jsonb, '1080p', NULL, 'sc', 'Test Group', 'v1', 'ff-parity', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        'present', '["tv:e1"]'::jsonb, '1080p', NULL, 'sc', 'Test Group', 'v1', 'ff-parity', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
 		fixture.animeID, target, fixture.size, facts); err != nil {
 		t.Fatal(err)
 	}
@@ -427,7 +426,7 @@ func TestMaintenanceRenderBlockedWhenTemplateFactsAreMissing(t *testing.T) {
 		PlacementID: placementID,
 		FilePath:    target,
 		SizeBytes:   fixture.size,
-		Coverage:    []string{"tv:s1:e1"},
+		Coverage:    []string{"tv:e1"},
 	}
 
 	rendered, err := renderer.RenderTarget(ctx, observation)

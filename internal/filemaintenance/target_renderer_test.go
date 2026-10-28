@@ -68,7 +68,7 @@ func TestNamingTargetRendererTvBranch(t *testing.T) {
 	target, err := renderer.RenderTarget(context.Background(), SnapshotObservation{
 		AnimeID: "anime-render-tv", PlacementID: chain.PlacementID,
 		FilePath: "/library/Anime/EP03.mkv", SizeBytes: 1024,
-		Coverage: []string{"tv:s1:e3"},
+		Coverage: []string{"tv:e3"},
 	})
 	if err != nil {
 		t.Fatal(err)

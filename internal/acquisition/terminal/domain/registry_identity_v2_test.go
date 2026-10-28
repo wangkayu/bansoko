@@ -8,7 +8,7 @@ import (
 
 func resolveFile(t *testing.T, evidence episodeidentity.EpisodeEvidence) episodeidentity.EpisodeIdentity {
 	t.Helper()
-	return episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{MediaKind: "tv", Season: 2, SeasonBound: true, FileEvidence: evidence})
+	return episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{MediaKind: "tv", FileEvidence: evidence})
 }
 
 // Resolver output validates against its schema: a single episode and a movie
@@ -56,20 +56,21 @@ func withEpisodeEnd(v Value) Value {
 }
 
 // IdentityV2 refuses a multi-episode identity whose keys are not the
-// consecutive members from episode to episode_end in one season, more than
+// consecutive members from episode to episode_end in one key shape, more than
 // MaxEpisodesPerFile members, or one taken from a release title.
 func TestIdentityV2RefusesInconsistentRanges(t *testing.T) {
 	double := resolveFile(t, episodeidentity.NewUnsupportedEvidence(episodeidentity.EpisodeSourceFileParser, "file_name", episodeidentity.ShapeRange, "07-08", ""))
 	cases := map[string]func(v Value){
-		"gap":            func(v Value) { v.Object["coverage_keys"] = arr([]Value{str("tv:s2:e7"), str("tv:s2:e9")}) },
+		"gap":            func(v Value) { v.Object["coverage_keys"] = arr([]Value{str("tv:e7"), str("tv:e9")}) },
 		"mixed season":   func(v Value) { v.Object["coverage_keys"] = arr([]Value{str("tv:s2:e7"), str("tv:s3:e8")}) },
+		"mixed shape":    func(v Value) { v.Object["coverage_keys"] = arr([]Value{str("tv:e7"), str("tv:s1:e8")}) },
 		"end mismatch":   func(v Value) { v.Object["episode_end"] = Known("9").value(str) },
 		"end absent":     func(v Value) { v.Object["episode_end"] = Absent[string]().value(str) },
 		"release source": func(v Value) { v.Object["selected_source"] = Known("release_parser").value(str) },
 		"too many": func(v Value) {
 			v.Object["episode_end"] = Known("11").value(str)
 			keys := []Value{}
-			for _, key := range []string{"tv:s2:e7", "tv:s2:e8", "tv:s2:e9", "tv:s2:e10", "tv:s2:e11"} {
+			for _, key := range []string{"tv:e7", "tv:e8", "tv:e9", "tv:e10", "tv:e11"} {
 				keys = append(keys, str(key))
 			}
 			v.Object["coverage_keys"] = arr(keys)

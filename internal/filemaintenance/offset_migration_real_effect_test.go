@@ -127,7 +127,7 @@ func seedOffsetMigrationRealChain(t *testing.T, db *sql.DB, root, rawEpisode str
 	}
 	source := episodeidentity.EpisodeSourceFileParser
 	identity.SelectedSource = &source
-	coverage := "tv:s1:e" + rawEpisode
+	coverage := "tv:e" + rawEpisode
 	identity.CoverageKey = &coverage
 	identityRaw, _ := json.Marshal(identity)
 	if _, err := tx.ExecContext(ctx, `
@@ -243,8 +243,8 @@ func TestOffsetMigrationRealEffectChain(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT observation_key FROM placement_coverage WHERE placement_id = 'plc-real'`).Scan(&coverage); err != nil {
 		t.Fatal(err)
 	}
-	if coverage != "tv:s1:e2" {
-		t.Fatalf("coverage=%s, want tv:s1:e2", coverage)
+	if coverage != "tv:e2" {
+		t.Fatalf("coverage=%s, want tv:e2", coverage)
 	}
 	if err := db.QueryRowContext(ctx, `SELECT state FROM offset_migration_plans WHERE id = $1`, claim.Owner.ID).Scan(&opState); err != nil {
 		t.Fatal(err)

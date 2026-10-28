@@ -14,7 +14,7 @@ import (
 
 // subscribeRealChainShow subscribes one show to the fixture feed with the
 // given naming rules (and, when overwrite, a move/overwrite file effect), then
-// binds TMDB season 1 so episode keys are tv:s1:eN. It returns the managed
+// binds TMDB season 1; episode keys are tv:eN. It returns the managed
 // anime and RSS source ids.
 func subscribeRealChainShow(t *testing.T, ctx context.Context, svc *realChainServices, feedURL, title string, rules generated.NamingRules, overwrite bool) (string, string) {
 	t.Helper()
@@ -173,7 +173,7 @@ WHERE p.managed_anime_id = $1 AND p.state = 'active' AND r.stable_item_key = 're
 	var e1State string
 	if err := svc.db.QueryRowContext(ctx, `
 SELECT d.state FROM replacement_decisions d JOIN releases r ON r.id = d.candidate_release_id
-WHERE d.managed_anime_id = $1 AND r.stable_item_key = 'repl-batch-b-guid' AND d.coverage_key = 'tv:s1:e1' AND d.state <> 'stale'
+WHERE d.managed_anime_id = $1 AND r.stable_item_key = 'repl-batch-b-guid' AND d.coverage_key = 'tv:e1' AND d.state <> 'stale'
 ORDER BY d.created_at DESC, d.id DESC LIMIT 1`, animeID).Scan(&e1State); err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +240,7 @@ func TestMultiEpisodeFileRealChain(t *testing.T) {
 	if err := svc.db.QueryRowContext(ctx, `SELECT string_agg(observation_key, ',' ORDER BY observation_key) FROM placement_coverage WHERE placement_id = $1`, placementID).Scan(&coverage); err != nil {
 		t.Fatal(err)
 	}
-	if coverage != "tv:s1:e3,tv:s1:e4" {
-		t.Fatalf("double-episode coverage = %q, want tv:s1:e3,tv:s1:e4", coverage)
+	if coverage != "tv:e3,tv:e4" {
+		t.Fatalf("double-episode coverage = %q, want tv:e3,tv:e4", coverage)
 	}
 }

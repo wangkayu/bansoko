@@ -144,8 +144,8 @@ WHERE snapshot_id = 'snapshot-frozen-profile' AND media_kind = 'video'`).Scan(&e
 		t.Fatalf("per-file episode = %v, want 42 from the frozen profile pattern (the bundled defaults cannot parse %q)",
 			identity.Episode, frozenProfileFile)
 	}
-	if identity.CoverageKey == nil || *identity.CoverageKey != "tv:s1:e42" {
-		t.Fatalf("per-file coverage = %v, want tv:s1:e42", identity.CoverageKey)
+	if identity.CoverageKey == nil || *identity.CoverageKey != "tv:e42" {
+		t.Fatalf("per-file coverage = %v, want tv:e42", identity.CoverageKey)
 	}
 }
 

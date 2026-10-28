@@ -1485,13 +1485,11 @@ type fileFactsContext struct {
 	SnapshotID      string
 	SnapshotBinding json.RawMessage
 	EffectiveOffset int
-	// MediaKind/Season/SeasonBound are the metadata binding frozen on the
-	// snapshot ("movie" short-circuits every file to the canonical movie:0
-	// identity); a legacy snapshot without frozen binding decodes to the TV
-	// default. Current anime_metadata is never consulted.
-	MediaKind   string
-	Season      int
-	SeasonBound bool
+	// MediaKind is the media kind frozen on the snapshot ("movie"
+	// short-circuits every file to the canonical movie:0 identity); a legacy
+	// snapshot without a frozen binding decodes to the TV default. Current
+	// anime_metadata is never consulted.
+	MediaKind string
 	// FileKindsVersion is the file kind list frozen on the snapshot.
 	FileKindsVersion string
 	Parser           frozenParserEvidence
@@ -1548,11 +1546,9 @@ func (s *Service) loadFileFactsContext(ctx context.Context, query interface {
 	if err != nil {
 		return nil, err
 	}
-	mediaKind, season, seasonBound := facts.DecodeFrozenMediaBinding(releaseFactsRaw)
+	mediaKind, _, _ := facts.DecodeFrozenMediaBinding(releaseFactsRaw)
 	context := &fileFactsContext{
 		MediaKind:       mediaKind,
-		Season:          season,
-		SeasonBound:     seasonBound,
 		SnapshotBinding: json.RawMessage(snapshotBinding),
 		Parser: frozenParserEvidence{
 			Kind:        parserKind.String,
@@ -1654,10 +1650,8 @@ func (s *Service) prepareFileFacts(ctx context.Context, artifactID string, files
 		// nested file, a subtitle or another kind never gets an episode.
 		eligible := (file.firstLevel || selectedArtifactFile(context.Selected, context.Manifest, file.relativePath)) && filekinds.Classify(context.FileKindsVersion, name) == filekinds.KindVideo
 		input := episodeidentity.EpisodeIdentityInput{
-			MediaKind:   context.MediaKind,
-			FileRef:     file.fileRef,
-			Season:      context.Season,
-			SeasonBound: context.SeasonBound,
+			MediaKind: context.MediaKind,
+			FileRef:   file.fileRef,
 			// The frozen offset is the one offset the Release evaluation
 			// resolved with; it is applied exactly once and the current link
 			// offset is never re-read.

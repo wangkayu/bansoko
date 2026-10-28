@@ -52,13 +52,13 @@ func TestCandidateIntentProjectsSelectedEvidenceOnFirstAdmission(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "G"}, "2026-07-01T00:00:00Z")
 	seedCandidateRelease(t, db, "sub-1", "release-new", "[G] Show - 01 [1080p]")
 
 	service := NewReplacementDecisionService(db)
 	intent, err := releaseIntent(service.CandidateIntents(ctx, "anime-1", "release-new",
-		resolvedTVEvidence(t, "[G] Show - 01 [1080p]", "tv:s1:e1", "1")))
+		resolvedTVEvidence(t, "[G] Show - 01 [1080p]", "tv:e1", "1")))
 	if err != nil {
 		t.Fatalf("candidate intent: %v", err)
 	}
@@ -75,8 +75,8 @@ WHERE release_id = 'release-new' ORDER BY release_version DESC LIMIT 1`).Scan(&c
 	if err := json.Unmarshal(coverageRaw, &coverage); err != nil {
 		t.Fatal(err)
 	}
-	if len(coverage) != 1 || coverage[0] != "tv:s1:e1" {
-		t.Fatalf("projected coverage = %v, want [tv:s1:e1]", coverage)
+	if len(coverage) != 1 || coverage[0] != "tv:e1" {
+		t.Fatalf("projected coverage = %v, want [tv:e1]", coverage)
 	}
 	var verdict, state string
 	if err := db.QueryRowContext(ctx, `
@@ -129,7 +129,7 @@ func TestCandidateIntentProjectionFailureRollsBackAndRetries(t *testing.T) {
 	defer db.Close()
 	owner := disposabledb.Owner(t)
 	ctx := context.Background()
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "G"}, "2026-07-01T00:00:00Z")
 	seedCandidateRelease(t, db, "sub-1", "release-new", "[G] Show - 01 [1080p]")
 
@@ -149,7 +149,7 @@ func TestCandidateIntentProjectionFailureRollsBackAndRetries(t *testing.T) {
 	defer restore()
 
 	service := NewReplacementDecisionService(db)
-	evidence := resolvedTVEvidence(t, "[G] Show - 01 [1080p]", "tv:s1:e1", "1")
+	evidence := resolvedTVEvidence(t, "[G] Show - 01 [1080p]", "tv:e1", "1")
 	if _, err := releaseIntent(service.CandidateIntents(ctx, "anime-1", "release-new", evidence)); err == nil {
 		t.Fatal("projection failure must surface as an error")
 	}
@@ -188,12 +188,12 @@ func TestCandidateFactsArrivingAfterFreezeDoNotMoveDecision(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "G"}, "2026-07-01T00:00:00Z")
 	seedCandidateRelease(t, db, "sub-1", "release-new", "[G] Show - 01 [1080p]")
 
 	service := NewReplacementDecisionService(db)
-	evidence := resolvedTVEvidence(t, "[G] Show - 01 [1080p]", "tv:s1:e1", "1")
+	evidence := resolvedTVEvidence(t, "[G] Show - 01 [1080p]", "tv:e1", "1")
 	if _, err := releaseIntent(service.CandidateIntents(ctx, "anime-1", "release-new", evidence)); err != nil {
 		t.Fatalf("candidate intent: %v", err)
 	}
@@ -227,7 +227,7 @@ WHERE release_id = 'release-new' ORDER BY release_version DESC LIMIT 1`).Scan(&p
 INSERT INTO release_candidate_facts
 (release_id, release_version, parser_version, input_fingerprint, raw_evidence, facts, coverage_keys,
  resolution, "group", size_bytes)
-VALUES ('release-new', 2, $1, $2, '{"title":"[G] Show - 01 [1080p]"}', '{}', '["tv:s1:e1"]'::jsonb,
+VALUES ('release-new', 2, $1, $2, '{"title":"[G] Show - 01 [1080p]"}', '{}', '["tv:e1"]'::jsonb,
  '1080p', 'G', 4096)`, parserVersion, inputFingerprint); err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +261,7 @@ func TestCandidateIntentKeepsUnresolvedIdentityNonReplaceable(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "G"}, "2026-07-01T00:00:00Z")
 	seedCandidateRelease(t, db, "sub-1", "release-new", "[G] Show - 01-12 [1080p]")
 

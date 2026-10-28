@@ -79,23 +79,23 @@ func TestFileOperationOverwriteDisplacesManagedPlacement(t *testing.T) {
 	ctx := context.Background()
 	seedDisplaceAnime(t, db, "anime-a", "anime-b")
 	service := NewPlacementService(db, nil, nil)
-	foreign := seedDisplacePlacement(t, service, db, "anime-b", "obs-b", "/library/Shared/EP03.mkv", "tv:s1:e3")
-	sibling := seedDisplacePlacement(t, service, db, "anime-a", "obs-a", "/library/A/EP02.mkv", "tv:s1:e2")
-	bystander := seedDisplacePlacement(t, service, db, "anime-a", "obs-a2", "/library/A/EP04.mkv", "tv:s1:e4")
+	foreign := seedDisplacePlacement(t, service, db, "anime-b", "obs-b", "/library/Shared/EP03.mkv", "tv:e3")
+	sibling := seedDisplacePlacement(t, service, db, "anime-a", "obs-a", "/library/A/EP02.mkv", "tv:e2")
+	bystander := seedDisplacePlacement(t, service, db, "anime-a", "obs-a2", "/library/A/EP04.mkv", "tv:e4")
 
-	successor := admitFileOperation(t, db, "op-cross", "anime-a", "/library/Shared/EP03.mkv", "tv:s1:e1")
+	successor := admitFileOperation(t, db, "op-cross", "anime-a", "/library/Shared/EP03.mkv", "tv:e1")
 	got := readDisplaced(t, db, foreign)
 	if got != (displacedRow{"displaced", "overwrite", successor, "anime-a", "file_operation:op-cross", "ended", "displaced"}) {
 		t.Fatalf("another instance's placement = %+v, want displaced by %s", got, successor)
 	}
-	sameAnime := admitFileOperation(t, db, "op-same", "anime-a", "/library/A/EP02.mkv", "tv:s1:e5")
+	sameAnime := admitFileOperation(t, db, "op-same", "anime-a", "/library/A/EP02.mkv", "tv:e5")
 	if got := readDisplaced(t, db, sibling); got.state != "displaced" || got.successor != sameAnime || got.cause != "overwrite" {
 		t.Fatalf("same instance's other episode = %+v, want displaced by %s", got, sameAnime)
 	}
 	if got := readDisplaced(t, db, bystander); got.state != "active" || got.companionState != "active" {
 		t.Fatalf("a placement at another path must stay: %+v", got)
 	}
-	if again := admitFileOperation(t, db, "op-cross", "anime-a", "/library/Shared/EP03.mkv", "tv:s1:e1"); again != successor {
+	if again := admitFileOperation(t, db, "op-cross", "anime-a", "/library/Shared/EP03.mkv", "tv:e1"); again != successor {
 		t.Fatalf("replay = %s, want %s", again, successor)
 	}
 	views, err := service.ListPlacements(ctx, "anime-b", 10, 0)
@@ -105,7 +105,7 @@ func TestFileOperationOverwriteDisplacesManagedPlacement(t *testing.T) {
 	var covering int
 	if err := db.QueryRow(`
 SELECT count(*) FROM placement_coverage c JOIN placements p ON p.id = c.placement_id
-WHERE p.managed_anime_id = 'anime-a' AND p.state = 'active' AND c.observation_key = 'tv:s1:e2'`).Scan(&covering); err != nil || covering != 0 {
+WHERE p.managed_anime_id = 'anime-a' AND p.state = 'active' AND c.observation_key = 'tv:e2'`).Scan(&covering); err != nil || covering != 0 {
 		t.Fatalf("episode 2 still covered by %d active placements (err=%v)", covering, err)
 	}
 }
@@ -117,8 +117,8 @@ func TestDisplacedIsTerminal(t *testing.T) {
 	defer db.Close()
 	seedDisplaceAnime(t, db, "anime-a")
 	service := NewPlacementService(db, nil, nil)
-	old := seedDisplacePlacement(t, service, db, "anime-a", "obs-old", "/library/A/EP01.mkv", "tv:s1:e1")
-	admitFileOperation(t, db, "op-new", "anime-a", "/library/A/EP01.mkv", "tv:s1:e1")
+	old := seedDisplacePlacement(t, service, db, "anime-a", "obs-old", "/library/A/EP01.mkv", "tv:e1")
+	admitFileOperation(t, db, "op-new", "anime-a", "/library/A/EP01.mkv", "tv:e1")
 	for _, stmt := range []string{
 		`UPDATE placements SET state = 'active', displaced_at = NULL, displaced_cause = NULL, displaced_by_placement_id = NULL, displaced_by_anime_id = NULL, displaced_by_ref = NULL WHERE id = $1`,
 		`UPDATE placements SET physical_path = '/library/A/moved.mkv' WHERE id = $1`,
@@ -147,15 +147,15 @@ func TestRedownloadRequestDisplacesWhereverTheNewFileLands(t *testing.T) {
 	defer db.Close()
 	seedDisplaceAnime(t, db, "anime-a", "anime-b")
 	service := NewPlacementService(db, nil, nil)
-	old := seedDisplacePlacement(t, service, db, "anime-a", "obs-old", "/library/A/EP07 [old].mkv", "tv:s1:e7")
+	old := seedDisplacePlacement(t, service, db, "anime-a", "obs-old", "/library/A/EP07 [old].mkv", "tv:e7")
 	if _, err := db.Exec(`UPDATE placements SET redownload_requested_at = now(), redownload_request_key = 'redownload-key-1' WHERE id = $1`, old); err != nil {
 		t.Fatal(err)
 	}
-	admitFileOperation(t, db, "op-other-anime", "anime-b", "/library/B/EP07.mkv", "tv:s1:e7")
+	admitFileOperation(t, db, "op-other-anime", "anime-b", "/library/B/EP07.mkv", "tv:e7")
 	if got := readDisplaced(t, db, old); got.state != "active" {
 		t.Fatalf("another instance's file must not take the redownload: %+v", got)
 	}
-	successor := admitFileOperation(t, db, "op-redownload", "anime-a", "/library/A/EP07 [new].mkv", "tv:s1:e7")
+	successor := admitFileOperation(t, db, "op-redownload", "anime-a", "/library/A/EP07 [new].mkv", "tv:e7")
 	if got := readDisplaced(t, db, old); got.state != "displaced" || got.cause != "redownload" || got.successor != successor || got.companionReason != "displaced" {
 		t.Fatalf("redownloaded placement = %+v, want displaced (redownload) by %s", got, successor)
 	}
@@ -170,8 +170,8 @@ func TestPlacementExitRelease(t *testing.T) {
 	ctx := context.Background()
 	seedDisplaceAnime(t, db, "anime-a")
 	service := NewPlacementService(db, nil, nil)
-	missing := seedDisplacePlacement(t, service, db, "anime-a", "obs-missing", "/library/A/EP01.mkv", "tv:s1:e1")
-	present := seedDisplacePlacement(t, service, db, "anime-a", "obs-present", "/library/A/EP02.mkv", "tv:s1:e2")
+	missing := seedDisplacePlacement(t, service, db, "anime-a", "obs-missing", "/library/A/EP01.mkv", "tv:e1")
+	present := seedDisplacePlacement(t, service, db, "anime-a", "obs-present", "/library/A/EP02.mkv", "tv:e2")
 	observe := func(generation int, id, path, disposition string) {
 		if _, err := db.Exec(`
 INSERT INTO reconciliation_files(managed_anime_id, generation, file_path, fingerprint, size_bytes, facts, observed_at, disposition)
@@ -225,7 +225,7 @@ func TestPlacementIssueClearsWhenTheFileReturns(t *testing.T) {
 	ctx := context.Background()
 	seedDisplaceAnime(t, db, "anime-a")
 	service := NewPlacementService(db, nil, nil)
-	id := seedDisplacePlacement(t, service, db, "anime-a", "obs-1", "/library/A/EP01.mkv", "tv:s1:e1")
+	id := seedDisplacePlacement(t, service, db, "anime-a", "obs-1", "/library/A/EP01.mkv", "tv:e1")
 	for generation, disposition := range map[int]string{1: "fingerprint_conflict", 2: "present"} {
 		if _, err := db.Exec(`
 INSERT INTO reconciliation_files(managed_anime_id, generation, file_path, fingerprint, size_bytes, facts, observed_at, disposition)
@@ -257,7 +257,7 @@ func TestRedownloadOverFingerprintConflictPerPolicy(t *testing.T) {
 			ctx := context.Background()
 			seedDisplaceAnime(t, db, "anime-a")
 			service := NewPlacementService(db, nil, nil)
-			old := seedDisplacePlacement(t, service, db, "anime-a", "obs-old", "/library/A/EP01.mkv", "tv:s1:e1")
+			old := seedDisplacePlacement(t, service, db, "anime-a", "obs-old", "/library/A/EP01.mkv", "tv:e1")
 			if _, err := db.Exec(`
 INSERT INTO reconciliation_files(managed_anime_id, generation, file_path, fingerprint, size_bytes, facts, observed_at, disposition)
 VALUES ('anime-a', 1, '/library/A/EP01.mkv', 'other', 1, jsonb_build_object('placement_id', $1::text), now(), 'fingerprint_conflict')`, old); err != nil {
@@ -279,14 +279,14 @@ VALUES ('anime-a', 1, '/library/A/EP01.mkv', 'other', 1, jsonb_build_object('pla
 				}
 				return
 			}
-			successor := admitFileOperation(t, db, "op-redownload", "anime-a", c.newPath, "tv:s1:e1")
+			successor := admitFileOperation(t, db, "op-redownload", "anime-a", c.newPath, "tv:e1")
 			if got := readDisplaced(t, db, old); got.state != "displaced" || got.cause != "redownload" || got.successor != successor {
 				t.Fatalf("old placement = %+v, want displaced (redownload) by %s", got, successor)
 			}
 			var covering int
 			if err := db.QueryRow(`
 SELECT count(*) FROM placement_coverage c JOIN placements p ON p.id = c.placement_id
-WHERE p.managed_anime_id = 'anime-a' AND p.state = 'active' AND c.observation_key = 'tv:s1:e1'`).Scan(&covering); err != nil || covering != 1 {
+WHERE p.managed_anime_id = 'anime-a' AND p.state = 'active' AND c.observation_key = 'tv:e1'`).Scan(&covering); err != nil || covering != 1 {
 				t.Fatalf("episode 1 covered by %d active placements (err=%v), want the new one", covering, err)
 			}
 		})

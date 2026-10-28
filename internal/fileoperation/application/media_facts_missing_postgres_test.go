@@ -29,7 +29,7 @@ func TestPrepareBlocksVideoWithoutReleaseMediaFacts(t *testing.T) {
 			`UPDATE media_fact_snapshots SET release_facts = release_facts - 'batch_plan' WHERE id = 'snap-fixture-default'`,
 		}, reason: "media_facts_missing"},
 		"plan drift": {statements: []string{
-			`UPDATE media_fact_files SET effective_facts = jsonb_set(effective_facts, '{identity,CoverageKey}', '"tv:s1:e2"') WHERE snapshot_id = 'snap-fixture-default'`,
+			`UPDATE media_fact_files SET effective_facts = jsonb_set(effective_facts, '{identity,CoverageKey}', '"tv:e2"') WHERE snapshot_id = 'snap-fixture-default'`,
 		}, reason: "batch_plan_drift"},
 	} {
 		statements, wantReason := tc.statements, tc.reason

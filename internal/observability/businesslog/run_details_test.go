@@ -9,7 +9,7 @@ import (
 )
 
 func TestRunContextFreezesGroupTitleAndPlanEpisodes(t *testing.T) {
-	got := RunContext(" NEST ", "[NEST] Title - 02 [1080p].mkv", sql.NullString{String: `["tv:s2:e2"]`, Valid: true})
+	got := RunContext(" NEST ", "[NEST] Title - 02 [1080p].mkv", sql.NullString{String: `["tv:e2"]`, Valid: true})
 	want := map[string]any{"group_name": "NEST", "release_title": "[NEST] Title - 02 [1080p].mkv", "episodes": []int{2}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("RunContext = %#v, want %#v", got, want)
@@ -28,9 +28,9 @@ func TestPlanEpisodes(t *testing.T) {
 		"invalid json":  {sql.NullString{String: "{", Valid: true}, nil},
 		"empty":         {sql.NullString{String: "[]", Valid: true}, nil},
 		"movie only":    {sql.NullString{String: `["movie:0"]`, Valid: true}, nil},
-		"batch sorted":  {sql.NullString{String: `["tv:s1:e3","tv:s1:e1","tv:s1:e2"]`, Valid: true}, []int{1, 2, 3}},
-		"deduplicated":  {sql.NullString{String: `["tv:s1:e5","tv:s1:e5"]`, Valid: true}, []int{5}},
-		"unresolved ok": {sql.NullString{String: `["unresolved","tv:s1:e4"]`, Valid: true}, []int{4}},
+		"batch sorted":  {sql.NullString{String: `["tv:e3","tv:e1","tv:e2"]`, Valid: true}, []int{1, 2, 3}},
+		"deduplicated":  {sql.NullString{String: `["tv:e5","tv:e5"]`, Valid: true}, []int{5}},
+		"unresolved ok": {sql.NullString{String: `["unresolved","tv:e4"]`, Valid: true}, []int{4}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if got := PlanEpisodes(tc.raw); !reflect.DeepEqual(got, tc.want) {

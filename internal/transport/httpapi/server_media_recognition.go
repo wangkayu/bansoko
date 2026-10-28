@@ -79,19 +79,12 @@ func (s *mediaRecognitionService) Preview(ctx context.Context, input generated.M
 			MediaKindHint: item.MediaKindHint,
 		})
 	}
-	season, seasonBound, offset := 0, false, 0
-	if input.Context.Season != nil {
-		season = *input.Context.Season
-	}
-	if input.Context.SeasonBound != nil {
-		seasonBound = *input.Context.SeasonBound
-	}
+	offset := 0
 	if input.Context.EpisodeOffset != nil {
 		offset = *input.Context.EpisodeOffset
 	}
 	recognized, err := parser.Recognize(ctx, s.registry, items, parser.RecognitionContext{
-		WorkKind: string(input.Context.WorkKind), Season: season, SeasonBound: seasonBound,
-		EpisodeOffset: offset, Parser: parser.ParserSelection{ID: input.Parser.Id, Config: config},
+		WorkKind: string(input.Context.WorkKind), EpisodeOffset: offset, Parser: parser.ParserSelection{ID: input.Parser.Id, Config: config},
 	})
 	if err != nil {
 		return generated.MediaRecognitionPreviewResult{}, err

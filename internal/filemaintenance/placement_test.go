@@ -47,11 +47,11 @@ func TestAdmitFromFileOperationIdempotent(t *testing.T) {
 	}}
 	service := NewPlacementService(db, reader, nil)
 	ctx := context.Background()
-	first, err := service.AdmitFromFileOperation(ctx, "op-1", []string{"tv:s1:e1"}, "facts-v1")
+	first, err := service.AdmitFromFileOperation(ctx, "op-1", []string{"tv:e1"}, "facts-v1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := service.AdmitFromFileOperation(ctx, "op-1", []string{"tv:s1:e1"}, "facts-v1")
+	second, err := service.AdmitFromFileOperation(ctx, "op-1", []string{"tv:e1"}, "facts-v1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestAdmitRejectsUnverifiedEvidence(t *testing.T) {
 		SourceFingerprint: "fp", TargetFingerprint: "",
 	}}
 	service := NewPlacementService(db, reader, nil)
-	if _, err := service.AdmitFromFileOperation(context.Background(), "op-2", []string{"tv:s1:e2"}, "facts-v1"); err == nil {
+	if _, err := service.AdmitFromFileOperation(context.Background(), "op-2", []string{"tv:e2"}, "facts-v1"); err == nil {
 		t.Fatal("unverified file operation must fail closed")
 	}
 }
@@ -105,7 +105,7 @@ func TestAdmitAllowsMultiplePlacementsPerCoverage(t *testing.T) {
 	first, err := service.admit(ctx, placementInput{
 		SourceEvidenceType: "reconciliation", SourceOwnerRef: "obs-a",
 		PhysicalPath: "/library/Show/EP01.mkv", SourceFingerprint: "fp-a", TargetFingerprint: "fp-a",
-		FactsVersion: "facts-v1", Coverage: []string{"tv:s1:e1"}, ManagedAnimeID: "anime-1", SnapshotGeneration: 1,
+		FactsVersion: "facts-v1", Coverage: []string{"tv:e1"}, ManagedAnimeID: "anime-1", SnapshotGeneration: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -113,7 +113,7 @@ func TestAdmitAllowsMultiplePlacementsPerCoverage(t *testing.T) {
 	second, err := service.admit(ctx, placementInput{
 		SourceEvidenceType: "reconciliation", SourceOwnerRef: "obs-b",
 		PhysicalPath: "/library/Show/EP01-2.mkv", SourceFingerprint: "fp-b", TargetFingerprint: "fp-b",
-		FactsVersion: "facts-v1", Coverage: []string{"tv:s1:e1"}, ManagedAnimeID: "anime-1", SnapshotGeneration: 1,
+		FactsVersion: "facts-v1", Coverage: []string{"tv:e1"}, ManagedAnimeID: "anime-1", SnapshotGeneration: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -293,7 +293,7 @@ VALUES
 	}
 	if _, err := db.ExecContext(ctx, `
 INSERT INTO placement_coverage(placement_id, observation_key, coverage_ordinal, facts_version, evidence_ref)
-VALUES ('plc-file_operation-op-eligible', 'tv:s1:e1', 0, 'facts-v1', 'op-eligible')`); err != nil {
+VALUES ('plc-file_operation-op-eligible', 'tv:e1', 0, 'facts-v1', 'op-eligible')`); err != nil {
 		t.Fatal(err)
 	}
 	decisionService := NewReplacementDecisionService(db)

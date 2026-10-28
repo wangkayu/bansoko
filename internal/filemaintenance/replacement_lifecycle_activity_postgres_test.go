@@ -64,9 +64,9 @@ func TestReplaceDecisionLogsOnlyReplacedAtSettlement(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
-	candidate := seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:s1:e1"},
+	candidate := seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:e1"},
 		Facts{Resolution: "1080p", Group: "GroupA"}, "2026-08-01T00:00:00Z")
 	service, _ := lifecycleService(t, db)
 
@@ -101,9 +101,9 @@ func TestFinalVerdictLogsItsLineWhenFrozen(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},
 		Facts{Resolution: "1080p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "GroupA"}, "2026-08-01T00:00:00Z")
 	service, _ := lifecycleService(t, db)
 
@@ -155,8 +155,8 @@ func TestLegacyReplaceWithoutWinnerLogsSuperseded(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	seedPlacement(t, db, "plc-winner", "anime-1", "/library/W/EP01.mkv", "fp-w", []string{"tv:s1:e1"}, "2026-07-01T00:00:00Z")
-	seedPlacement(t, db, "plc-loser", "anime-1", "/library/L/EP01.mkv", "fp-l", []string{"tv:s1:e1"}, "2026-08-01T00:00:00Z")
+	seedPlacement(t, db, "plc-winner", "anime-1", "/library/W/EP01.mkv", "fp-w", []string{"tv:e1"}, "2026-07-01T00:00:00Z")
+	seedPlacement(t, db, "plc-loser", "anime-1", "/library/L/EP01.mkv", "fp-l", []string{"tv:e1"}, "2026-08-01T00:00:00Z")
 	seedFrozenDecision(t, db, "dec-legacy", "anime-1", "plc-winner", 1, 1, ModeSingleCopy, nil,
 		[]PlacementRef{{PlacementID: "plc-loser", Version: 1, Fingerprint: "fp-l"}}, "admitted")
 	service, _ := lifecycleService(t, db)
@@ -184,18 +184,18 @@ func TestRetriedCandidateLogsReplacedAfterNotReplaced(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 	owner := disposabledb.Owner(t)
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
-	candidate := seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:s1:e1"},
+	candidate := seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:e1"},
 		Facts{Resolution: "1080p", Group: "GroupA"}, "2026-08-01T00:00:00Z")
 	service, writer := lifecycleService(t, db)
 
 	// The first acquisition's planned decision, staled when it failed, with
 	// the line the settlement consumer writes for it.
-	pools, _ := json.Marshal([]any{map[string]any{"pool_key": "tv:s1:e1", "verdict": "replace", "winner": map[string]any{"placement_id": "release:release-new", "version": 1, "fingerprint": "candidate"}}})
+	pools, _ := json.Marshal([]any{map[string]any{"pool_key": "tv:e1", "verdict": "replace", "winner": map[string]any{"placement_id": "release:release-new", "version": 1, "fingerprint": "candidate"}}})
 	if _, err := owner.ExecContext(ctx, `
 INSERT INTO replacement_decisions(id,idempotency_key,managed_anime_id,candidate_release_id,policy_version,profile_version,candidate_facts_ref,coverage_key,coverage_keys,admission_mode,pools,verdict,state,stale_reason,subscription_version,input_digest,version)
-VALUES ('dec-first','dec-first','anime-1','release-new',1,'profile-v1','release:1','tv:s1:e1','["tv:s1:e1"]','per_group',$1,'replace','stale','candidate_acquisition_failed',1,'digest',2)`, string(pools)); err != nil {
+VALUES ('dec-first','dec-first','anime-1','release-new',1,'profile-v1','release:1','tv:e1','["tv:e1"]','per_group',$1,'replace','stale','candidate_acquisition_failed',1,'digest',2)`, string(pools)); err != nil {
 		t.Fatal(err)
 	}
 	tx, err := db.BeginTx(ctx, nil)

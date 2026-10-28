@@ -81,7 +81,7 @@ func TestRecognizeResolvesFileIdentityWithoutProviderEpisode(t *testing.T) {
 	registry := NewDefaultRegistry()
 	items := []RecognitionItem{{ClientRef: "video-1", Name: "Show - 07.mkv"}}
 	result, err := Recognize(context.Background(), registry, items, RecognitionContext{
-		WorkKind: "tv", Season: 1, SeasonBound: true, Parser: ParserSelection{ID: ParserRegex},
+		WorkKind: "tv", Parser: ParserSelection{ID: ParserRegex},
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -18,7 +18,7 @@ func TestReplacementCaptureRequiresNewApprovedComparison(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 	// The incumbent shares the candidate's source, so per_group pools them.
-	placement := seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"}, Facts{Resolution: "720p", Group: "G", Subgroup: customGroup("release-new")}, "2026-07-01T00:00:00Z")
+	placement := seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"}, Facts{Resolution: "720p", Group: "G", Subgroup: customGroup("release-new")}, "2026-07-01T00:00:00Z")
 	seedCandidateRelease(t, db, "sub-1", "release-new", "[G] Show - 01 [1080p]")
 	path := filepath.Join(t.TempDir(), "incumbent")
 	data := []byte("approved incumbent")
@@ -31,7 +31,7 @@ func TestReplacementCaptureRequiresNewApprovedComparison(t *testing.T) {
 	if _, err := disposabledb.Owner(t).Exec(`UPDATE placements SET physical_path=$2,target_fingerprint=$3 WHERE id=$1`, placement, path, document); err != nil {
 		t.Fatal(err)
 	}
-	intent, err := releaseIntent(NewReplacementDecisionService(db).CandidateIntents(ctx, "anime-1", "release-new", resolvedTVEvidence(t, "[G] Show - 01 [1080p]", "tv:s1:e1", "1")))
+	intent, err := releaseIntent(NewReplacementDecisionService(db).CandidateIntents(ctx, "anime-1", "release-new", resolvedTVEvidence(t, "[G] Show - 01 [1080p]", "tv:e1", "1")))
 	if err != nil || intent != target.IntentReplace {
 		t.Fatalf("decision %s %v", intent, err)
 	}

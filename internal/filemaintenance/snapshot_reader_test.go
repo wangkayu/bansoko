@@ -122,9 +122,9 @@ func TestSnapshotReaderCoverageComputation(t *testing.T) {
 	ctx := context.Background()
 
 	seedScanOwner(t, db, "anime-snap-3", "completed", 1)
-	seedPlacementOwnedObservation(t, db, "anime-snap-3", 1, 0, "plc-snap-1", "/library/Anime/EP01.mkv", "fp-1", "tv:s1:e1")
+	seedPlacementOwnedObservation(t, db, "anime-snap-3", 1, 0, "plc-snap-1", "/library/Anime/EP01.mkv", "fp-1", "tv:e1")
 	seedObservationFacts(t, db, "anime-snap-3", 1, 1, "/library/Anime/Season 2/EP03.mkv", "fp-2", 200,
-		`{"coverage":["tv:s2:e3"],"coverage_unresolved":false}`)
+		`{"coverage":["tv:e3"],"coverage_unresolved":false}`)
 	seedObservation(t, db, "anime-snap-3", 1, 2, "/library/Anime/S02E05.mkv", "fp-3", 300)
 
 	observations, err := reader.ListObservations(ctx, "anime-snap-3", 1)
@@ -138,11 +138,11 @@ func TestSnapshotReaderCoverageComputation(t *testing.T) {
 	for _, obs := range observations {
 		byPath[obs.FilePath] = obs.Coverage
 	}
-	if got := byPath["/library/Anime/EP01.mkv"]; len(got) != 1 || got[0] != "tv:s1:e1" {
-		t.Fatalf("placement-owned frozen coverage = %v, want tv:s1:e1", got)
+	if got := byPath["/library/Anime/EP01.mkv"]; len(got) != 1 || got[0] != "tv:e1" {
+		t.Fatalf("placement-owned frozen coverage = %v, want tv:e1", got)
 	}
-	if got := byPath["/library/Anime/Season 2/EP03.mkv"]; len(got) != 1 || got[0] != "tv:s2:e3" {
-		t.Fatalf("persisted coverage = %v, want tv:s2:e3", got)
+	if got := byPath["/library/Anime/Season 2/EP03.mkv"]; len(got) != 1 || got[0] != "tv:e3" {
+		t.Fatalf("persisted coverage = %v, want tv:e3", got)
 	}
 	// A parseable-looking path carries no coverage when nothing persisted it.
 	if got := byPath["/library/Anime/S02E05.mkv"]; len(got) != 1 || got[0] != "unresolved" {
@@ -194,7 +194,7 @@ func TestSnapshotReaderReadObservationByRef(t *testing.T) {
 
 	seedScanOwner(t, db, "anime-snap-5", "completed", 7)
 	seedObservationFacts(t, db, "anime-snap-5", 7, 0, "/library/Anime/S01E01.mkv", "fp-ref", 123,
-		`{"coverage":["tv:s1:e1"],"coverage_unresolved":false}`)
+		`{"coverage":["tv:e1"],"coverage_unresolved":false}`)
 
 	obs, found, err := reader.ReadObservation(ctx, "anime-snap-5", 7, "anime-snap-5:7:/library/Anime/S01E01.mkv")
 	if err != nil || !found {
@@ -203,8 +203,8 @@ func TestSnapshotReaderReadObservationByRef(t *testing.T) {
 	if obs.FilePath != "/library/Anime/S01E01.mkv" || obs.Fingerprint != "fp-ref" || obs.SizeBytes != 123 {
 		t.Fatalf("observation mismatch: %+v", obs)
 	}
-	if len(obs.Coverage) != 1 || obs.Coverage[0] != "tv:s1:e1" {
-		t.Fatalf("ref observation coverage = %v, want tv:s1:e1", obs.Coverage)
+	if len(obs.Coverage) != 1 || obs.Coverage[0] != "tv:e1" {
+		t.Fatalf("ref observation coverage = %v, want tv:e1", obs.Coverage)
 	}
 
 	obs, found, err = reader.ReadObservation(ctx, "anime-snap-5", 7, "anime-snap-5:7:/library/Anime/Missing.mkv")
@@ -227,7 +227,7 @@ func TestSnapshotReaderPrefersPersistedCoverage(t *testing.T) {
 	// A file whose basename would never parse (e.g. renamed/obfuscated) but
 	// whose persisted scan facts froze canonical coverage: the reader must use
 	// the persisted facts, never re-parse the path.
-	facts := `{"coverage":["tv:s3:e12"],"coverage_unresolved":false,"episode":"12","season":3}`
+	facts := `{"coverage":["tv:e12"],"coverage_unresolved":false,"episode":"12","season":3}`
 	if _, err := db.ExecContext(ctx, `
 INSERT INTO reconciliation_files
 (managed_anime_id, generation, batch_index, file_path, fingerprint, size_bytes, facts, observed_at)
@@ -242,8 +242,8 @@ VALUES ('anime-snap-persisted', 1, 0, '/library/Anime/WEIRD NAME 7.mkv', 'fp-p',
 	if len(observations) != 1 {
 		t.Fatalf("expected 1 observation, got %d", len(observations))
 	}
-	if got := observations[0].Coverage; len(got) != 1 || got[0] != "tv:s3:e12" {
-		t.Fatalf("persisted coverage = %v, want tv:s3:e12 (path must not be re-parsed)", got)
+	if got := observations[0].Coverage; len(got) != 1 || got[0] != "tv:e12" {
+		t.Fatalf("persisted coverage = %v, want tv:e12 (path must not be re-parsed)", got)
 	}
 
 	// Movie classification is metadata truth and bypasses parsing entirely.
@@ -274,7 +274,7 @@ func TestSnapshotReaderPlacementCoverageSurvivesMetadataRebinding(t *testing.T) 
 	ctx := context.Background()
 
 	seedScanOwner(t, db, "anime-snap-rebind", "completed", 1)
-	seedPlacementOwnedObservation(t, db, "anime-snap-rebind", 1, 0, "plc-rebind-1", "/library/Anime/EP01.mkv", "fp-1", "tv:s1:e1")
+	seedPlacementOwnedObservation(t, db, "anime-snap-rebind", 1, 0, "plc-rebind-1", "/library/Anime/EP01.mkv", "fp-1", "tv:e1")
 	seedPlacementOwnedObservation(t, db, "anime-snap-rebind", 1, 1, "plc-rebind-2", "/library/Anime/Movie.mkv", "fp-2", "movie:0")
 	seedObservation(t, db, "anime-snap-rebind", 1, 2, "/library/Anime/S02E05.mkv", "fp-3", 300)
 
@@ -292,8 +292,8 @@ func TestSnapshotReaderPlacementCoverageSurvivesMetadataRebinding(t *testing.T) 
 	}
 
 	before := coverageByPath()
-	if got := before["/library/Anime/EP01.mkv"]; len(got) != 1 || got[0] != "tv:s1:e1" {
-		t.Fatalf("frozen placement coverage = %v, want tv:s1:e1", got)
+	if got := before["/library/Anime/EP01.mkv"]; len(got) != 1 || got[0] != "tv:e1" {
+		t.Fatalf("frozen placement coverage = %v, want tv:e1", got)
 	}
 	if got := before["/library/Anime/Movie.mkv"]; len(got) != 1 || got[0] != "movie:0" {
 		t.Fatalf("frozen movie placement coverage = %v, want movie:0", got)
@@ -303,7 +303,7 @@ func TestSnapshotReaderPlacementCoverageSurvivesMetadataRebinding(t *testing.T) 
 	// coverage must not move in either direction.
 	seedMovieMetadata(t, db, "anime-snap-rebind")
 	after := coverageByPath()
-	if got := after["/library/Anime/EP01.mkv"]; len(got) != 1 || got[0] != "tv:s1:e1" {
+	if got := after["/library/Anime/EP01.mkv"]; len(got) != 1 || got[0] != "tv:e1" {
 		t.Fatalf("placement coverage drifted after the movie rebinding: %v", got)
 	}
 	if got := after["/library/Anime/Movie.mkv"]; len(got) != 1 || got[0] != "movie:0" {
@@ -318,7 +318,7 @@ func TestSnapshotReaderPlacementCoverageSurvivesMetadataRebinding(t *testing.T) 
 	if err != nil || !found {
 		t.Fatalf("read placement observation: found=%v err=%v", found, err)
 	}
-	if len(obs.Coverage) != 1 || obs.Coverage[0] != "tv:s1:e1" {
-		t.Fatalf("single-read placement coverage = %v, want the frozen tv:s1:e1", obs.Coverage)
+	if len(obs.Coverage) != 1 || obs.Coverage[0] != "tv:e1" {
+		t.Fatalf("single-read placement coverage = %v, want the frozen tv:e1", obs.Coverage)
 	}
 }

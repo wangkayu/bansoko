@@ -122,8 +122,8 @@ SELECT id, owner_id, state FROM work_item_history WHERE kind = $1`, workitems.Ki
 	if err := db.QueryRowContext(ctx, `SELECT observation_key FROM placement_coverage WHERE placement_id = 'plc-offmig'`).Scan(&coverage); err != nil {
 		t.Fatal(err)
 	}
-	if coverage != "tv:s1:e2" {
-		t.Fatalf("coverage=%s, want tv:s1:e2", coverage)
+	if coverage != "tv:e2" {
+		t.Fatalf("coverage=%s, want tv:e2", coverage)
 	}
 	if err := db.QueryRowContext(ctx, `SELECT state FROM offset_migration_plans WHERE id = $1`, ownerID).Scan(&opState); err != nil {
 		t.Fatal(err)

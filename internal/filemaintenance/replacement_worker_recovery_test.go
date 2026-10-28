@@ -13,7 +13,7 @@ import (
 func TestPGReplacementRecoveryCommittedUnknownAndFence(t *testing.T) {
 	db := openFrozenTestDB(t)
 	ctx := context.Background()
-	placementID := seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:s1:e1"}, Facts{Resolution: "1080p", Group: "GroupA"}, "2026-08-01T00:00:00Z")
+	placementID := seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:e1"}, Facts{Resolution: "1080p", Group: "GroupA"}, "2026-08-01T00:00:00Z")
 	if _, err := db.Exec(`UPDATE anime_business_configs SET admission_mode='single_copy',quality_profile='{"version":"profile-v1","items":[]}' WHERE managed_anime_id='anime-1'`); err != nil {
 		t.Fatal(err)
 	}

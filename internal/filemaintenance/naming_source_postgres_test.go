@@ -57,7 +57,7 @@ func TestSubscriptionlessNamingSourceServesPathDiffAndPlanner(t *testing.T) {
 	// without creating a subscription so preview exercises the production source.
 	seedNamingOwnerWithoutSubscription(t, db, "anime-diff")
 	seedScanOwner(t, db, animeID, "completed", 1)
-	seedObservationCoverage(t, db, animeID, 1, 0, "/library/退订番组/Season 01/EP01.mkv", "fp-planner", 100, "tv:s1:e1")
+	seedObservationCoverage(t, db, animeID, 1, 0, "/library/退订番组/Season 01/EP01.mkv", "fp-planner", 100, "tv:e1")
 	// The observed file descends from a completed file operation whose frozen
 	// rules are the render authority; the subscription-neutral rules owner stays
 	// the source for a placement without frozen evidence.
@@ -66,7 +66,7 @@ func TestSubscriptionlessNamingSourceServesPathDiffAndPlanner(t *testing.T) {
 		TMDBMediaKind: "tv", TMDBSeason: 1, SourceGroup: "Group",
 		ReleaseTitle: "[Group] 退订番组 - 01", PlacedPath: "/library/退订番组/Season 01/EP01.mkv",
 		DownloadName: "EP01.mkv", Rules: rendererRules(), FrozenEpisode: "1",
-		Coverage: []string{"tv:s1:e1"},
+		Coverage: []string{"tv:e1"},
 	})
 	freezeRenderFixtureBusiness(t, db, chain.OperationID)
 	if _, err := db.Exec(`UPDATE reconciliation_files SET facts = facts || jsonb_build_object('placement_id', $1::text) WHERE managed_anime_id = $2 AND generation = 1 AND file_path = $3`,

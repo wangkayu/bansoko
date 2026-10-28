@@ -59,9 +59,9 @@ func TestSettleStalesWhenSubgroupScoreChanged(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 	high, low := seedScoredSelections(t, db)
-	old := seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"},
+	old := seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},
 		Facts{Resolution: "1080p", Group: "GroupA", Subgroup: low}, "2026-07-01T00:00:00Z")
-	candidate := seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:s1:e1"},
+	candidate := seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:e1"},
 		Facts{Resolution: "1080p", Group: "GroupB", Subgroup: high}, "2026-08-01T00:00:00Z")
 
 	service := NewReplacementDecisionService(db)
@@ -106,9 +106,9 @@ func TestSettleStalesWhenLoserSubgroupScoreChanged(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 	high, low := seedScoredSelections(t, db)
-	old := seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"},
+	old := seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},
 		Facts{Resolution: "1080p", Group: "GroupA", Subgroup: low}, "2026-07-01T00:00:00Z")
-	candidate := seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:s1:e1"},
+	candidate := seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:e1"},
 		Facts{Resolution: "1080p", Group: "GroupB", Subgroup: high}, "2026-08-01T00:00:00Z")
 	service := NewReplacementDecisionService(db)
 	service.SetCleanupHandoff(NewCleanupService(db))
@@ -143,10 +143,10 @@ WHERE managed_anime_id = 'anime-1'`, `{"version":"profile-v1","items":[{"key":"s
 	// The incumbent's group has no selection row yet (no score): the
 	// unscored candidate ties on subgroup.score and wins on resolution.
 	low := &qualityprofile.SubgroupSource{Provider: "anibt", GroupRef: "group-low"}
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "GroupA", Subgroup: low}, "2026-07-01T00:00:00Z")
 	seedCandidateRelease(t, db, "sub-1", "release-new", "[G] Show - 01 [1080p]")
-	evidence := resolvedTVEvidence(t, "[G] Show - 01 [1080p]", "tv:s1:e1", "1")
+	evidence := resolvedTVEvidence(t, "[G] Show - 01 [1080p]", "tv:e1", "1")
 	service := NewReplacementDecisionService(db)
 	latest := func() (id, verdict string) {
 		t.Helper()
@@ -207,15 +207,15 @@ func TestCoverageVerdictsReadsSubgroupScoresReadOnly(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 	_, low := seedScoredSelections(t, db)
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},
 		Facts{Resolution: "1080p", Group: "GroupA", Subgroup: low}, "2026-07-01T00:00:00Z")
 	seedCandidateRelease(t, db, "sub-1", "release-new", "[G] Show - 01 [720p]")
 	verdicts, err := NewReplacementDecisionService(db).CoverageVerdicts(ctx, "anime-1", "release-new",
-		acquisitiontarget.CandidateEvidence{Title: "[G] Show - 01 [720p]", Coverage: []string{"tv:s1:e1", "tv:s1:e2"}})
+		acquisitiontarget.CandidateEvidence{Title: "[G] Show - 01 [720p]", Coverage: []string{"tv:e1", "tv:e2"}})
 	if err != nil {
 		t.Fatalf("coverage verdicts: %v", err)
 	}
-	if verdicts["tv:s1:e1"] != batchplan.VerdictExisting || verdicts["tv:s1:e2"] != batchplan.VerdictOpen {
+	if verdicts["tv:e1"] != batchplan.VerdictExisting || verdicts["tv:e2"] != batchplan.VerdictOpen {
 		t.Fatalf("verdicts = %v", verdicts)
 	}
 }
@@ -248,9 +248,9 @@ VALUES ('sel-required','sub-1','anibt','group-required','Required','manual',TRUE
        ('sel-auto','sub-1','anibt','group-auto','Auto','auto',NULL,TRUE,99,TRUE,1)`); err != nil {
 				t.Fatal(err)
 			}
-			seedFilePlacement(t, db, "anime-1", "sub-1", "required-old", []string{"tv:s1:e1"},
+			seedFilePlacement(t, db, "anime-1", "sub-1", "required-old", []string{"tv:e1"},
 				Facts{Resolution: "1080p", Group: "Old", Subgroup: subgroup("anibt", tc.incumbentRef)}, "2026-07-01T00:00:00Z")
-			seedFilePlacement(t, db, "anime-1", "sub-1", "required-new", []string{"tv:s1:e1"},
+			seedFilePlacement(t, db, "anime-1", "sub-1", "required-new", []string{"tv:e1"},
 				Facts{Resolution: "1080p", Group: "New", Subgroup: subgroup("anibt", tc.candidateRef)}, "2026-08-01T00:00:00Z")
 			view, err := evaluateSingle(NewReplacementDecisionService(db).EvaluateServer(context.Background(), EvaluateRequest{AnimeID: "anime-1", CandidateRelease: "required-new"}))
 			if err != nil {

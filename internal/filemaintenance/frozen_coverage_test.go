@@ -31,7 +31,7 @@ func (f frozenCoverageFakeReader) ListFileRows(context.Context, string) ([]facts
 // must retry instead of ever recording the file as unknown.
 func TestFrozenFileCoverageDistinguishesOutcomes(t *testing.T) {
 	ctx := context.Background()
-	coverageKey := "tv:s1:e1"
+	coverageKey := "tv:e1"
 
 	t.Run("resolved identity", func(t *testing.T) {
 		reader := frozenCoverageFakeReader{

@@ -75,7 +75,7 @@ func TestRecoveredCompanionCleanupMatchesRegistrationIdentity(t *testing.T) {
 		IdempotencyKey:    "cln:" + companion.ID + ":dec-recovered",
 		PlacementID:       scene.candidate.PlacementID,
 		ManagedAnimeID:    scene.animeID,
-		Coverage:          []string{"tv:s1:e1"},
+		Coverage:          []string{"tv:e1"},
 		ReplacementRef:    "dec-recovered",
 		AdmissionMode:     "single_copy",
 		SourcePath:        losers[0].Path,

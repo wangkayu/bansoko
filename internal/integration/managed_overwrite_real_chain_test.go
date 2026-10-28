@@ -53,7 +53,7 @@ VALUES ('plc-occupant', $1, 'anime-occupant', 'reconciliation', 'obs-occupant', 
 	}
 	if _, err := owner.ExecContext(ctx, `
 INSERT INTO placement_coverage(placement_id, observation_key, coverage_ordinal, facts_version, evidence_ref)
-VALUES ('plc-occupant', 'tv:s1:e1', 0, 'facts-v1', 'obs-occupant')`); err != nil {
+VALUES ('plc-occupant', 'tv:e1', 0, 'facts-v1', 'obs-occupant')`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := owner.ExecContext(ctx, `

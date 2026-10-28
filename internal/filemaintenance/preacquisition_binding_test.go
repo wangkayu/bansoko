@@ -10,7 +10,7 @@ func TestBindPreAcquisitionDecisionReplacesSyntheticWinner(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
 	pools, err := json.Marshal([]PoolEvidence{{
-		PoolKey: "tv:s1:e1", Verdict: "replace",
+		PoolKey: "tv:e1", Verdict: "replace",
 		Winner: &PlacementRef{PlacementID: "release:rel-pre", Version: 1, Fingerprint: "facts-fp"},
 	}})
 	if err != nil {
@@ -24,14 +24,14 @@ INSERT INTO replacement_decisions
  verdict, state, version, created_at, updated_at)
 VALUES ('dec-pre', 'key-pre', 'anime-pre', 'rel-pre', NULL,
  2, 'profile-v1', 3, 'old-digest', 'rel-pre:facts', NULL,
- 'tv:s1:e1', '["tv:s1:e1"]', 'single_copy', $1::jsonb, 'replace', 'admitted', 1,
+ 'tv:e1', '["tv:e1"]', 'single_copy', $1::jsonb, 'replace', 'admitted', 1,
  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, string(pools)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`INSERT INTO managed_anime(id, title) VALUES ('anime-pre', 'Show')`); err != nil {
 		t.Fatal(err)
 	}
-	seedPlacement(t, db, "plc-candidate", "anime-pre", "/library/Show/ep.mkv", "target-fp", []string{"tv:s1:e1"}, "2026-08-01T00:00:00Z")
+	seedPlacement(t, db, "plc-candidate", "anime-pre", "/library/Show/ep.mkv", "target-fp", []string{"tv:e1"}, "2026-08-01T00:00:00Z")
 
 	tx, err := db.BeginTx(context.Background(), nil)
 	if err != nil {
@@ -39,7 +39,7 @@ VALUES ('dec-pre', 'key-pre', 'anime-pre', 'rel-pre', NULL,
 	}
 	service := NewReplacementDecisionService(db)
 	view, bound, err := service.bindPreAcquisitionDecisionTxApplication(context.Background(), tx,
-		bindingEvaluation("anime-pre", "rel-pre", 3, 2), "tv:s1:e1", []string{"tv:s1:e1"},
+		bindingEvaluation("anime-pre", "rel-pre", 3, 2), "tv:e1", []string{"tv:e1"},
 		PlacementRef{PlacementID: "plc-candidate", Version: 2, Fingerprint: "target-fp"}, "corr-1")
 	if err != nil || !bound {
 		_ = tx.Rollback()
@@ -48,7 +48,7 @@ VALUES ('dec-pre', 'key-pre', 'anime-pre', 'rel-pre', NULL,
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	if view.CandidatePlacementID == nil || *view.CandidatePlacementID != "plc-candidate" || view.State != "admitted" || view.CoverageKey != "tv:s1:e1" {
+	if view.CandidatePlacementID == nil || *view.CandidatePlacementID != "plc-candidate" || view.State != "admitted" || view.CoverageKey != "tv:e1" {
 		t.Fatalf("unexpected bound view: %+v", view)
 	}
 	var storedPools []PoolEvidence
@@ -67,7 +67,7 @@ VALUES ('dec-pre', 'key-pre', 'anime-pre', 'rel-pre', NULL,
 func TestBindPreAcquisitionDecisionStalesVersionMismatch(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
-	pools := `[ {"pool_key":"tv:s1:e1","verdict":"replace","winner":{"placement_id":"release:rel-stale","version":1,"fingerprint":"fp"}} ]`
+	pools := `[ {"pool_key":"tv:e1","verdict":"replace","winner":{"placement_id":"release:rel-stale","version":1,"fingerprint":"fp"}} ]`
 	if _, err := db.Exec(`
 INSERT INTO replacement_decisions
 (id, idempotency_key, managed_anime_id, candidate_release_id, candidate_placement_id,
@@ -76,7 +76,7 @@ INSERT INTO replacement_decisions
  verdict, state, version, created_at, updated_at)
 VALUES ('dec-stale', 'key-stale', 'anime-stale', 'rel-stale', NULL,
  2, 'profile-v1', 3, 'old-digest', 'rel-stale:facts', NULL,
- 'tv:s1:e1', '["tv:s1:e1"]', 'single_copy', $1::jsonb, 'replace', 'admitted', 1,
+ 'tv:e1', '["tv:e1"]', 'single_copy', $1::jsonb, 'replace', 'admitted', 1,
  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, pools); err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ VALUES ('dec-stale', 'key-stale', 'anime-stale', 'rel-stale', NULL,
 	}
 	service := NewReplacementDecisionService(db)
 	_, bound, err := service.bindPreAcquisitionDecisionTxApplication(context.Background(), tx,
-		bindingEvaluation("anime-stale", "rel-stale", 4, 2), "tv:s1:e1", []string{"tv:s1:e1"},
+		bindingEvaluation("anime-stale", "rel-stale", 4, 2), "tv:e1", []string{"tv:e1"},
 		PlacementRef{PlacementID: "plc-stale", Version: 1, Fingerprint: "target-fp"}, "")
 	if err != nil || bound {
 		_ = tx.Rollback()

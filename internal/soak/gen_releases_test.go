@@ -113,7 +113,7 @@ INSERT INTO media_fact_snapshots(id, release_id, schema_version, resolver_versio
                                  release_identity, release_facts, created_at, parser_config)
 SELECT 'mf-' || id, id, 'media-facts-v1', 'resolver-v1', 'regex', NULL, soak_ext.dg('soak-input', id),
        jsonb_build_object('State', 'resolved', 'Kind', 'tv', 'Shape', 'single', 'RawEpisode', k::text, 'Episode', k::text,
-                          'CoverageKey', 'tv:s1:e' || k, 'ResolverVersion', 'resolver-v1', 'InputDigest', soak_ext.dg('soak-input', id)),
+                          'CoverageKey', 'tv:e' || k, 'ResolverVersion', 'resolver-v1', 'InputDigest', soak_ext.dg('soak-input', id)),
        jsonb_build_object('title', title, 'group', 'Group' || src_idx, 'resolution', '1080p', 'languages', jsonb_build_array('chs')),
        discovered_at + interval '1 second', NULL
 FROM soak_ext.rel`)
@@ -123,7 +123,7 @@ SELECT 'mf-' || id, 'file-0', 'video', size_bytes, NULL,
        jsonb_build_object('name', title || '.mkv', 'media_kind', 'video', 'size_bytes', size_bytes, 'group_name', 'Group' || src_idx,
                           'resolution', '1080p', 'languages', jsonb_build_array('chs')),
        jsonb_build_object('identity', jsonb_build_object('State', 'resolved', 'Kind', 'tv', 'Shape', 'single', 'RawEpisode', k::text,
-                                                         'Episode', k::text, 'CoverageKey', 'tv:s1:e' || k),
+                                                         'Episode', k::text, 'CoverageKey', 'tv:e' || k),
                           'quality', jsonb_build_object('size_bytes', size_bytes, 'resolution', '1080p'),
                           'mapping_version', 'facts-map-v1'),
        discovered_at + interval '1 second'

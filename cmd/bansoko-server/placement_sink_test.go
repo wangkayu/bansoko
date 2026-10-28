@@ -275,7 +275,7 @@ INSERT INTO rss_sources(id, subscription_id, source_kind, locator, locator_displ
 INSERT INTO releases(id, rss_source_id, stable_item_key, raw_facts, source_facts, verdict, reason_code) VALUES ('rel-1', 'src-1', 'k', '{}', '{}', 'discovered', 'new');`); err != nil {
 		t.Fatal(err)
 	}
-	seedFrozenMediaCoverage(t, db, "rel-1", "ep.mkv", "tv:s1:e1")
+	seedFrozenMediaCoverage(t, db, "rel-1", "ep.mkv", "tv:e1")
 	sink := &placementSinkAdapter{
 		evidence: fakeEvidenceSource{found: true, evidence: &filemaintenance.FileOperationEvidence{
 			OperationID: "op-video", ManagedAnimeID: "anime-1", ReleaseID: "rel-1",
@@ -452,7 +452,7 @@ VALUES ($1, $2, $3, '{"title":"[G] Show - 01 [1080p]"}', '{}', 'discovered', 'ne
 	stmt(`INSERT INTO release_candidate_facts
 (release_id, release_version, parser_version, input_fingerprint, raw_evidence, facts, coverage_keys)
 VALUES ($1, 1, 'candidate-facts-v1', $2, '{}', '{}', $3::jsonb)`,
-		releaseID, "fp-"+releaseID, `["tv:s1:e1"]`)
+		releaseID, "fp-"+releaseID, `["tv:e1"]`)
 	acquisitionfixture.SeedObservedDownloadManifest(t, tx, "acq-"+releaseID, "dt-"+releaseID, releaseID, "dt-"+releaseID, `{}`, `{}`, "completed", `null`, `[{"file_ref":"ep.mkv","ordinal":0,"relative_path":"ep.mkv","exact_size":0,"media_kind":"video","identity_evidence":{}}]`)
 	stmt(`UPDATE releases SET download_task_id = $1, verdict = 'submitted' WHERE id = $2`, "dt-"+releaseID, releaseID)
 	stmt(`INSERT INTO artifacts(id, download_task_id, acquisition_id, inventory_snapshot, fingerprint_snapshot, state, verified_at)
@@ -470,7 +470,7 @@ VALUES ($1, $2, (SELECT acquisition_id FROM artifacts WHERE id=$2), $3, $4, $5, 
 	}
 	// The frozen selected-parser evidence the sink projects into the placement
 	// coverage. Coverage must come from here, never from the candidate-facts row.
-	seedFrozenMediaCoverage(t, db, releaseID, "ep.mkv", "tv:s1:e1")
+	seedFrozenMediaCoverage(t, db, releaseID, "ep.mkv", "tv:e1")
 }
 
 func newPlacementService(db *sql.DB) *filemaintenance.PlacementService {

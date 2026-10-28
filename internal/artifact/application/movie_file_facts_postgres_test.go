@@ -41,7 +41,6 @@ func seedMovieFactSnapshot(t *testing.T, db *sql.DB, snapshotID, releaseID, medi
 	}
 	identity := episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{
 		MediaKind:    mediaKind,
-		Season:       season,
 		FileEvidence: releaseEvidence,
 	})
 	factsRaw, err := json.Marshal(releaseFacts)
@@ -156,10 +155,10 @@ SELECT effective_facts FROM media_fact_files WHERE snapshot_id = 'snapshot-movie
 	}
 }
 
-// A TV snapshot resolves per-file coverage with the frozen bound season, never
-// the current metadata season: mutating the binding after submission must not
-// move already-frozen recognition.
-func TestTVBindingFileFactsUseFrozenSeasonPostgres(t *testing.T) {
+// A TV snapshot resolves per-file coverage from the frozen recognition alone:
+// the coverage key carries no season, so mutating the binding season after
+// submission must not move it.
+func TestTVBindingFileFactsIgnoreMetadataSeasonPostgres(t *testing.T) {
 	db := openArtifactTestDB(t)
 	root := t.TempDir()
 	videoPath := filepath.Join(root, "Show", "Show - 07 [1080p].mkv")
@@ -215,7 +214,7 @@ SELECT effective_facts FROM media_fact_files WHERE snapshot_id = 'snapshot-tv'`)
 		t.Fatal(err)
 	}
 	identity := effective.Identity
-	if identity.Kind != episodeidentity.KindTVEpisode || identity.CoverageKey == nil || *identity.CoverageKey != "tv:s5:e7" {
-		t.Fatalf("per-file identity = %+v, want tv:s5:e7 from the frozen season 5 (current metadata says 9)", identity)
+	if identity.Kind != episodeidentity.KindTVEpisode || identity.CoverageKey == nil || *identity.CoverageKey != "tv:e7" {
+		t.Fatalf("per-file identity = %+v, want tv:e7 (current metadata season 9 is not read)", identity)
 	}
 }

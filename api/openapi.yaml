@@ -10253,12 +10253,6 @@ components:
         work_kind:
           type: string
           enum: [tv, movie]
-        season:
-          type: integer
-          minimum: 0
-        season_bound:
-          type: boolean
-          default: false
         episode_offset:
           type: integer
           default: 0
@@ -10695,20 +10689,20 @@ components:
           type: string
           enum: [tv, movie]
           description: >-
-            The frozen TMDB metadata media kind this identity resolved with
-            (absent on legacy rows, meaning the TV default). A movie binding
-            short-circuits to the canonical movie:0 identity; downstream owners
-            consume this frozen value instead of current metadata.
+            The frozen owner media kind this identity resolved with (absent on
+            legacy rows, meaning tv). A movie kind short-circuits to the
+            canonical movie:0 identity; downstream owners consume this frozen
+            value instead of current metadata.
         season:
           type: integer
           description: >-
-            The bound metadata season frozen at evaluation time (0 when
-            unbound or on legacy rows).
+            The TMDB season frozen at evaluation time for naming only (0 when
+            unbound or on legacy rows); it is not part of the episode identity.
         season_bound:
           type: boolean
           description: >-
-            Whether a bound season 0 was preserved for a continuous-SP
-            subscription instead of defaulting to season 1.
+            Whether a TMDB season 0 was preserved for naming instead of
+            defaulting to season 1; it is not part of the episode identity.
         policy_version:
           type: integer
           minimum: 0

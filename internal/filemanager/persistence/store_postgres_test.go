@@ -94,7 +94,7 @@ VALUES ('alg-busy', 'align:busy', 'anime-a', 1, 'obs-busy', 'c', 1, 1, 1, 1,
 	exec(`INSERT INTO replacement_deletions
 (id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
  admission_mode, source_path, source_fingerprint, state, version, created_at, updated_at)
-VALUES ('cln-q', 'cln:q', 'p-old', 'anime-a', '["tv:s1:e1"]', 'dec-q',
+VALUES ('cln-q', 'cln:q', 'p-old', 'anime-a', '["tv:e1"]', 'dec-q',
  'single_copy', $1, 'fp', 'admitted', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, abs("Cleanup/q.mkv"))
 	// Retire anime-r last: its owner rows are fenced once it is retired.
 	exec(`UPDATE managed_anime SET lifecycle_state = 'retired', fence_epoch = fence_epoch + 1,

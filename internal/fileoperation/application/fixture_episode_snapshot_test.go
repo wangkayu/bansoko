@@ -41,7 +41,7 @@ func seedFixtureEpisodeSnapshot(t *testing.T, db *sql.DB, manifest json.RawMessa
 			episode = "1"
 		}
 		return episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{
-			MediaKind: "tv", Season: 1, SeasonBound: true,
+			MediaKind:    "tv",
 			FileEvidence: episodeidentity.NewValueEvidence(episodeidentity.EpisodeSourceFileParser, "file_name", episode),
 		})
 	}

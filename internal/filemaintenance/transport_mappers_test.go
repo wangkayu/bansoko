@@ -78,7 +78,7 @@ func TestReplacementDecisionViewToGeneratedPreservesPoolShape(t *testing.T) {
 // Frozen comparison steps reach the decision view as stored: the scanner keeps
 // them and the transport maps them field by field (empty values omitted).
 func TestReplacementDecisionStepsReachTheView(t *testing.T) {
-	raw := []byte(`[{"pool_key":"tv:s1:e1","verdict":"replace","steps":[{"key":"subgroup.score","candidate":"90","current":"10","result":"equal"},{"key":"anibt.resolution","candidate":"1080p","current":"720p","candidate_listed":true,"current_listed":true,"result":"better"}]}]`)
+	raw := []byte(`[{"pool_key":"tv:e1","verdict":"replace","steps":[{"key":"subgroup.score","candidate":"90","current":"10","result":"equal"},{"key":"anibt.resolution","candidate":"1080p","current":"720p","candidate_listed":true,"current_listed":true,"result":"better"}]}]`)
 	view, err := scanDecisionViewApplication(decisionScan(raw))
 	if err != nil {
 		t.Fatal(err)
@@ -135,7 +135,7 @@ func decisionScan(pools []byte) func(...any) error {
 		*dest[0].(*string) = "decision"
 		*dest[1].(*string) = "anime"
 		*dest[2].(*string) = "release"
-		*dest[3].(*string) = "tv:s1:e1"
+		*dest[3].(*string) = "tv:e1"
 		*dest[4].(*sql.NullString) = sql.NullString{}
 		*dest[5].(*int) = 1
 		*dest[6].(*string) = "profile"

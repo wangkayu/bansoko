@@ -185,14 +185,14 @@ WHERE release_id = 'release-movie' ORDER BY release_version DESC LIMIT 1`).Scan(
 	}
 }
 
-// A TV binding keeps the existing typed shape contract: the coverage key uses
-// the bound season and the release-level evidence is unchanged.
-func TestTVBindingReleaseChainKeepsSeasonCoveragePostgres(t *testing.T) {
+// A TV binding keeps the existing typed shape contract: the coverage key
+// carries no season while the bound season is frozen for naming.
+func TestTVBindingReleaseChainFreezesSeasonForNamingPostgres(t *testing.T) {
 	db := openRSSDatabase(t)
 	ctx := context.Background()
 	sourceID, _ := seedRSSOwner(t, db, false, true)
 	// The seeded fixture binds tv season 1; rebind to season 2 to prove the
-	// bound season shapes the release coverage key.
+	// bound season is frozen for naming but stays out of the coverage key.
 	if _, err := db.ExecContext(ctx, `
 UPDATE anime_metadata SET tmdb_season = 2, version = version + 1 WHERE managed_anime_id = 'anime-rss-test'`); err != nil {
 		t.Fatal(err)
@@ -223,8 +223,8 @@ SELECT release_identity FROM media_fact_snapshots WHERE release_id = 'release-tv
 	if err != nil {
 		t.Fatalf("decode frozen identity: %v", err)
 	}
-	if identity.Kind != episodeidentity.KindTVEpisode || identity.CoverageKey == nil || *identity.CoverageKey != "tv:s2:e7" {
-		t.Fatalf("frozen TV identity = %+v, want tv:s2:e7 for the bound season 2", identity)
+	if identity.Kind != episodeidentity.KindTVEpisode || identity.CoverageKey == nil || *identity.CoverageKey != "tv:e7" {
+		t.Fatalf("frozen TV identity = %+v, want tv:e7 whatever the bound season", identity)
 	}
 	var releaseFactsRaw []byte
 	if err := db.QueryRowContext(ctx, `

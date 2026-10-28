@@ -17,8 +17,13 @@ import (
 	"strings"
 )
 
-// ResolverVersion identifies this resolver contract implementation.
-const ResolverVersion = "episode-identity-v1"
+// ResolverVersion identifies this resolver contract implementation: v2 keys an
+// episode tv:e<N>. LegacyResolverVersion is the v1 contract a sealed input
+// keeps forever; its keys are tv:s<S>:e<N>.
+const (
+	ResolverVersion       = "episode-identity-v2"
+	LegacyResolverVersion = "episode-identity-v1"
+)
 
 // Canonical episode evidence syntax: non-negative ASCII decimal, optional
 // fraction, no sign, no exponent, no leading/trailing zero noise. A fraction

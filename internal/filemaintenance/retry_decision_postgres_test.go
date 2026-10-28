@@ -18,11 +18,11 @@ func TestCandidateIntentAfterStaleDecisionFreezesANewOne(t *testing.T) {
 	defer db.Close()
 	owner := disposabledb.Owner(t)
 	ctx := context.Background()
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "G"}, "2026-07-01T00:00:00Z")
 	seedCandidateRelease(t, db, "sub-1", "release-new", "[G] Show - 01 [1080p]")
 	service := NewReplacementDecisionService(db)
-	evidence := resolvedTVEvidence(t, "[G] Show - 01 [1080p]", "tv:s1:e1", "1")
+	evidence := resolvedTVEvidence(t, "[G] Show - 01 [1080p]", "tv:e1", "1")
 	if intent, err := releaseIntent(service.CandidateIntents(ctx, "anime-1", "release-new", evidence)); err != nil || intent != acquisitiontarget.IntentReplace {
 		t.Fatalf("first intent = %q, %v; want replace", intent, err)
 	}
@@ -60,24 +60,24 @@ func TestCandidateIntentPoolsFollowTheAdmittedPlan(t *testing.T) {
 	defer db.Close()
 	owner := disposabledb.Owner(t)
 	ctx := context.Background()
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "G"}, "2026-07-01T00:00:00Z")
 	seedCandidateRelease(t, db, "sub-1", "release-new", "[G] Show - 01-02 [1080p]")
 	// The earlier acquisition's frozen plan covered both episodes.
 	if _, err := owner.ExecContext(ctx, `
 INSERT INTO media_fact_snapshots(id, release_id, schema_version, resolver_version, parser_kind, input_digest, release_identity, release_facts)
 VALUES ('snap-old-plan', 'release-new', 'media-facts-v1', 'episode-identity-v1', 'regex', 'digest-old-plan', '{}'::jsonb,
-        '{"title":"[G] Show - 01-02 [1080p]","batch_plan":{"coverage_keys":["tv:s1:e1","tv:s1:e2"]}}'::jsonb)`); err != nil {
+        '{"title":"[G] Show - 01-02 [1080p]","batch_plan":{"coverage_keys":["tv:e1","tv:e2"]}}'::jsonb)`); err != nil {
 		t.Fatal(err)
 	}
 	service := NewReplacementDecisionService(db)
-	evidence := &acquisitiontarget.CandidateEvidence{Title: "[G] Show - 01-02 [1080p]", Coverage: []string{"tv:s1:e1"}}
+	evidence := &acquisitiontarget.CandidateEvidence{Title: "[G] Show - 01-02 [1080p]", Coverage: []string{"tv:e1"}}
 	intents, err := service.CandidateIntents(ctx, "anime-1", "release-new", evidence)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(intents) != 1 || intents["tv:s1:e1"] != acquisitiontarget.IntentReplace {
-		t.Fatalf("intents = %v, want only tv:s1:e1 replace", intents)
+	if len(intents) != 1 || intents["tv:e1"] != acquisitiontarget.IntentReplace {
+		t.Fatalf("intents = %v, want only tv:e1 replace", intents)
 	}
 	rows, err := db.QueryContext(ctx, `SELECT coverage_key, coverage_keys FROM replacement_decisions WHERE candidate_release_id = 'release-new'`)
 	if err != nil {
@@ -95,8 +95,8 @@ VALUES ('snap-old-plan', 'release-new', 'media-facts-v1', 'episode-identity-v1',
 		if err := json.Unmarshal(raw, &coverage); err != nil {
 			t.Fatal(err)
 		}
-		if key != "tv:s1:e1" || len(coverage) != 1 || coverage[0] != "tv:s1:e1" {
-			t.Fatalf("decision for %s %v, want only the admitted plan's tv:s1:e1", key, coverage)
+		if key != "tv:e1" || len(coverage) != 1 || coverage[0] != "tv:e1" {
+			t.Fatalf("decision for %s %v, want only the admitted plan's tv:e1", key, coverage)
 		}
 		count++
 	}

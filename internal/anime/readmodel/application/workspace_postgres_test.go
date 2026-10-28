@@ -145,15 +145,16 @@ VALUES ('anime-progress')`); err != nil {
 	}
 
 	// Episodes 1, 2 and 3, the first two from one batch placement.
-	animetest.SeedPlacementCoverage(t, db, "anime-progress", "placement-e1-2", "verified", "tv:s1:e1", "tv:s1:e2")
-	animetest.SeedPlacementCoverage(t, db, "anime-progress", "placement-e3", "verified", "tv:s1:e3")
-	// A season 0 special and a movie key are not episode progress.
+	animetest.SeedPlacementCoverage(t, db, "anime-progress", "placement-e1-2", "verified", "tv:e1", "tv:e2")
+	animetest.SeedPlacementCoverage(t, db, "anime-progress", "placement-e3", "verified", "tv:e3")
+	// Every episode key counts, a special included, also in the v1 shape a
+	// stored row keeps; a movie key is not episode progress.
 	animetest.SeedPlacementCoverage(t, db, "anime-progress", "placement-sp", "verified", "tv:s0:e7")
 	animetest.SeedPlacementCoverage(t, db, "anime-progress", "placement-movie", "verified", "movie:0")
 	// Episode 5 (gap at 4 -> array keeps [1,2,3,5]).
-	animetest.SeedPlacementCoverage(t, db, "anime-progress", "placement-e5", "verified", "tv:s1:e5")
+	animetest.SeedPlacementCoverage(t, db, "anime-progress", "placement-e5", "verified", "tv:e5")
 	// An excluded placement of episode 6 is not counted.
-	animetest.SeedPlacementCoverage(t, db, "anime-progress", "placement-e6", "excluded", "tv:s1:e6")
+	animetest.SeedPlacementCoverage(t, db, "anime-progress", "placement-e6", "excluded", "tv:e6")
 
 	// anime-empty has a subscription and source but no placement.
 	if _, err := db.ExecContext(ctx, `INSERT INTO managed_anime(id, title) VALUES ('anime-empty', 'Empty Show')`); err != nil {
@@ -187,8 +188,8 @@ VALUES ('source-empty', 'subscription-empty', 'custom_rss', 'https://feed.exampl
 	if progress == nil {
 		t.Fatal("anime-progress episode_progress is nil")
 	}
-	// Special (EP7) excluded, gap at 4 preserved -> [1,2,3,5].
-	want := []int{1, 2, 3, 5}
+	// Special (EP7) counted, gap at 4 preserved -> [1,2,3,5,7].
+	want := []int{1, 2, 3, 5, 7}
 	if !reflect.DeepEqual(progress.Episodes, want) {
 		t.Fatalf("anime-progress episodes = %v, want %v", progress.Episodes, want)
 	}

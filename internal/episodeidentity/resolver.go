@@ -24,8 +24,8 @@ func NewResolver() *Resolver {
 // identity) the release title. The episode of a file comes only from its own
 // filename: release evidence is never copied to a file, sibling files never
 // supply evidence to each other, and a filename without an episode is
-// unresolved. Season is never read from evidence; coverage uses the bound
-// season.
+// unresolved. An identity is the instance plus the episode number: coverage
+// keys carry no season (season is a naming field, never identity).
 func (r *Resolver) Resolve(input EpisodeIdentityInput) EpisodeIdentity {
 	base := EpisodeIdentity{
 		Kind:            KindTVEpisode,
@@ -91,7 +91,7 @@ func (r *Resolver) resolveRaw(base EpisodeIdentity, evidence EpisodeEvidence, in
 	base.Offset = offset
 	base.Episode = &final
 	base.SelectedSource = &source
-	key := coverageKey(input.MediaKind, input.Season, input.SeasonBound, final)
+	key := coverageKey(final)
 	base.CoverageKey = &key
 	return base
 }
@@ -116,7 +116,7 @@ func (r *Resolver) resolveMulti(base EpisodeIdentity, evidence EpisodeEvidence, 
 			return base
 		}
 		finals = append(finals, final)
-		keys = append(keys, coverageKey(input.MediaKind, input.Season, input.SeasonBound, final))
+		keys = append(keys, coverageKey(final))
 	}
 	source := evidence.Source
 	rawFirst, rawLast := members[0], members[len(members)-1]
@@ -263,11 +263,9 @@ func movieIdentity(base EpisodeIdentity) EpisodeIdentity {
 	return base
 }
 
-func coverageKey(mediaKind string, season int, seasonBound bool, episode EpisodeNumber) string {
-	if !seasonBound && season < 1 {
-		season = 1
-	}
-	return "tv:s" + strconv.Itoa(season) + ":e" + string(episode)
+// coverageKey is the canonical TV coverage key of one episode: tv:e<episode>.
+func coverageKey(episode EpisodeNumber) string {
+	return "tv:e" + string(episode)
 }
 
 // TVCoverageKey is one parsed canonical TV coverage key. Season is set only

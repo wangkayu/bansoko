@@ -487,7 +487,7 @@ VALUES ($1, $2, $3, 'file_operation', $4, $5, $5, 'fixture-v1', 'verified', 'act
 	}
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO placement_coverage(placement_id, observation_key, coverage_ordinal, facts_version, evidence_ref)
-VALUES ($1, 'tv:s01:e01', 0, 'fixture-v1', $2)`, placementID, foID); err != nil {
+VALUES ($1, 'tv:e01', 0, 'fixture-v1', $2)`, placementID, foID); err != nil {
 		t.Fatalf("seed placement coverage: %v", err)
 	}
 	if _, err := tx.ExecContext(ctx, `

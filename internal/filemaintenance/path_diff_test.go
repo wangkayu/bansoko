@@ -49,21 +49,21 @@ ON CONFLICT (managed_anime_id) DO UPDATE SET unclassified_route = EXCLUDED.uncla
 		TMDBMediaKind: "tv", TMDBSeason: 1, SourceGroup: "Group",
 		ReleaseTitle: "[Group] Diff Anime - 01", PlacedPath: "/library/Diff Anime/Season 01/Diff Anime - 1 [Group]",
 		DownloadName: "Diff Anime - 01.mkv", Rules: rules, FrozenEpisode: "1",
-		Coverage: []string{"tv:s1:e1"},
+		Coverage: []string{"tv:e1"},
 	})
 	drifted := seedPlacedRenderChain(t, db, placedRenderChainSpec{
 		Key: "diff-e2", AnimeID: "anime-diff", AnimeTitle: "Diff Anime",
 		TMDBMediaKind: "tv", TMDBSeason: 1, SourceGroup: "Group",
 		ReleaseTitle: "[Group] Diff Anime - 02", PlacedPath: "/library/Diff Anime/Season 01/Diff Anime - 02.mkv",
 		DownloadName: "Diff Anime - 02.mkv", Rules: rules, FrozenEpisode: "2",
-		Coverage: []string{"tv:s1:e2"},
+		Coverage: []string{"tv:e2"},
 	})
 	type seedRow struct {
 		filePath, disposition, fingerprint, coverage, placement string
 	}
 	rows := []seedRow{
-		{"/library/Diff Anime/Season 01/Diff Anime - 1 [Group]", "present", "fp-1", `["tv:s1:e1"]`, matching.PlacementID},
-		{"/library/Diff Anime/Season 01/Diff Anime - 02.mkv", "present", "fp-2", `["tv:s1:e2"]`, drifted.PlacementID},
+		{"/library/Diff Anime/Season 01/Diff Anime - 1 [Group]", "present", "fp-1", `["tv:e1"]`, matching.PlacementID},
+		{"/library/Diff Anime/Season 01/Diff Anime - 02.mkv", "present", "fp-2", `["tv:e2"]`, drifted.PlacementID},
 		{"/library/Diff Anime/Season 01/OVA.mkv", "unresolved", "fp-3", `[]`, ""},
 	}
 	for _, row := range rows {
@@ -121,7 +121,7 @@ INSERT INTO reconciliation_files
 (managed_anime_id, generation, file_path, batch_index, fingerprint, size_bytes, facts, observed_at,
  disposition, coverage, parser_version, facts_fingerprint, version, created_at, updated_at)
 VALUES ('anime-diff', 1, $1, 0, 'fp-indexed', 1024, ('{"placement_id":"' || $2 || '"}')::jsonb, CURRENT_TIMESTAMP,
-        'present', '["tv:s1:e3"]'::jsonb, 'v1', 'ff-indexed', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        'present', '["tv:e3"]'::jsonb, 'v1', 'ff-indexed', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
 		indexedPath, indexedPlacement); err != nil {
 		t.Fatalf("seed indexed reconciliation file row: %v", err)
 	}
@@ -219,14 +219,14 @@ func TestPathDiffRendersPlacementMovedAfterCalibration(t *testing.T) {
 		TMDBMediaKind: "tv", TMDBSeason: 1, SourceGroup: "Group",
 		ReleaseTitle: "[Group] Moved Anime - 03", PlacedPath: target,
 		DownloadName: "Moved Anime - 03.mkv", Rules: frozenRulesForTest(), FrozenEpisode: "3",
-		Coverage: []string{"tv:s1:e3"},
+		Coverage: []string{"tv:e3"},
 	})
 	if _, err := db.ExecContext(ctx, `
 INSERT INTO reconciliation_files
 (managed_anime_id, generation, file_path, batch_index, fingerprint, size_bytes, facts, observed_at,
  disposition, coverage, parser_version, facts_fingerprint, version, created_at, updated_at)
 VALUES ($1, 1, $2, 0, 'fp-moved', 1024, jsonb_build_object('placement_id', $3::text), CURRENT_TIMESTAMP,
-        'present', '["tv:s1:e3"]'::jsonb, 'v1', 'ff-moved', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        'present', '["tv:e3"]'::jsonb, 'v1', 'ff-moved', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
 		animeID, observed, chain.PlacementID); err != nil {
 		t.Fatalf("seed moved reconciliation row: %v", err)
 	}

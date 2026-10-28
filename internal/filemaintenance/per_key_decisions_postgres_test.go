@@ -77,10 +77,10 @@ func TestPerKeyDecisionsReplaceOneEpisodeAndFillAnother(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	old := seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"}, Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
-	e1 := seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:s1:e1"}, Facts{Resolution: "1080p", Group: "GroupA"}, "2026-08-01T00:00:00Z")
-	seedReleasePlacement(t, db, "plc-new-e2", "release-new", "/library/Show/E02.mkv", "fp-e2", "tv:s1:e2")
-	setCandidateCoverage(t, db, "release-new", `["tv:s1:e1","tv:s1:e2"]`)
+	old := seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"}, Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
+	e1 := seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:e1"}, Facts{Resolution: "1080p", Group: "GroupA"}, "2026-08-01T00:00:00Z")
+	seedReleasePlacement(t, db, "plc-new-e2", "release-new", "/library/Show/E02.mkv", "fp-e2", "tv:e2")
+	setCandidateCoverage(t, db, "release-new", `["tv:e1","tv:e2"]`)
 
 	service := NewReplacementDecisionService(db)
 	service.SetCleanupHandoff(NewCleanupService(db))
@@ -89,7 +89,7 @@ func TestPerKeyDecisionsReplaceOneEpisodeAndFillAnother(t *testing.T) {
 		t.Fatal(err)
 	}
 	byKey := decisionsByKey(t, views)
-	first, second := byKey["tv:s1:e1"], byKey["tv:s1:e2"]
+	first, second := byKey["tv:e1"], byKey["tv:e2"]
 	if len(views) != 2 || first.Verdict != "replace" || second.Verdict != "replace" {
 		t.Fatalf("decisions = %+v", views)
 	}
@@ -100,7 +100,7 @@ func TestPerKeyDecisionsReplaceOneEpisodeAndFillAnother(t *testing.T) {
 		t.Fatalf("E02 decision = %+v", second)
 	}
 	again, err := service.EvaluateApplication(ctx, EvaluateRequest{AnimeID: "anime-1", CandidateRelease: "release-new"})
-	if err != nil || len(again) != 2 || decisionsByKey(t, again)["tv:s1:e1"].ID != first.ID {
+	if err != nil || len(again) != 2 || decisionsByKey(t, again)["tv:e1"].ID != first.ID {
 		t.Fatalf("re-evaluate must reuse the decisions: %+v %v", again, err)
 	}
 
@@ -133,8 +133,8 @@ func TestPerKeyDecisionsShareOneMultiEpisodeLoser(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	seedPlacement(t, db, "plc-old-e1e2", "anime-1", "/library/Show/E01-E02.mkv", "fp-old", []string{"tv:s1:e1", "tv:s1:e2"}, "2026-07-01T00:00:00Z")
-	candidate := seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:s1:e1", "tv:s1:e2"}, Facts{Resolution: "1080p", Group: "GroupA"}, "2026-08-01T00:00:00Z")
+	seedPlacement(t, db, "plc-old-e1e2", "anime-1", "/library/Show/E01-E02.mkv", "fp-old", []string{"tv:e1", "tv:e2"}, "2026-07-01T00:00:00Z")
+	candidate := seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:e1", "tv:e2"}, Facts{Resolution: "1080p", Group: "GroupA"}, "2026-08-01T00:00:00Z")
 
 	service := NewReplacementDecisionService(db)
 	service.SetCleanupHandoff(NewCleanupService(db))
@@ -174,8 +174,8 @@ func TestPerKeyDecisionKeepsPartlyCoveredMultiEpisodeFile(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	seedPlacement(t, db, "plc-old-e1e2", "anime-1", "/library/Show/E01-E02.mkv", "fp-old", []string{"tv:s1:e1", "tv:s1:e2"}, "2026-07-01T00:00:00Z")
-	candidate := seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:s1:e1"}, Facts{Resolution: "1080p", Group: "GroupA"}, "2026-08-01T00:00:00Z")
+	seedPlacement(t, db, "plc-old-e1e2", "anime-1", "/library/Show/E01-E02.mkv", "fp-old", []string{"tv:e1", "tv:e2"}, "2026-07-01T00:00:00Z")
+	candidate := seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:e1"}, Facts{Resolution: "1080p", Group: "GroupA"}, "2026-08-01T00:00:00Z")
 
 	service := NewReplacementDecisionService(db)
 	service.SetCleanupHandoff(NewCleanupService(db))
@@ -204,17 +204,17 @@ func TestPerKeyPreAcquisitionDecisionsBindPerFile(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"}, Facts{Resolution: "720p", Group: "G"}, "2026-07-01T00:00:00Z")
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"}, Facts{Resolution: "720p", Group: "G"}, "2026-07-01T00:00:00Z")
 	seedCandidateRelease(t, db, "sub-1", "release-new", "[G] Show - 01-02 [1080p]")
 
 	service := NewReplacementDecisionService(db)
 	intents, err := service.CandidateIntents(ctx, "anime-1", "release-new", &acquisitiontarget.CandidateEvidence{
-		Title: "[G] Show - 01-02 [1080p]", Coverage: []string{"tv:s1:e1", "tv:s1:e2"},
+		Title: "[G] Show - 01-02 [1080p]", Coverage: []string{"tv:e1", "tv:e2"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if intents["tv:s1:e1"] != acquisitiontarget.IntentReplace || intents["tv:s1:e2"] != acquisitiontarget.IntentReplace {
+	if intents["tv:e1"] != acquisitiontarget.IntentReplace || intents["tv:e2"] != acquisitiontarget.IntentReplace {
 		t.Fatalf("intents = %v", intents)
 	}
 	before := map[string]string{}
@@ -235,7 +235,7 @@ func TestPerKeyPreAcquisitionDecisionsBindPerFile(t *testing.T) {
 	}
 	// Asking again freezes nothing new.
 	if _, err := service.CandidateIntents(ctx, "anime-1", "release-new", &acquisitiontarget.CandidateEvidence{
-		Title: "[G] Show - 01-02 [1080p]", Coverage: []string{"tv:s1:e1", "tv:s1:e2"},
+		Title: "[G] Show - 01-02 [1080p]", Coverage: []string{"tv:e1", "tv:e2"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -244,16 +244,16 @@ func TestPerKeyPreAcquisitionDecisionsBindPerFile(t *testing.T) {
 		t.Fatalf("decisions after a second ask = %d err=%v", count, err)
 	}
 
-	seedReleasePlacement(t, db, "plc-new-e1", "release-new", "/library/Show/E01.v2.mkv", "fp-new-e1", "tv:s1:e1")
+	seedReleasePlacement(t, db, "plc-new-e1", "release-new", "/library/Show/E01.v2.mkv", "fp-new-e1", "tv:e1")
 	views, err := service.EvaluateApplication(ctx, EvaluateRequest{AnimeID: "anime-1", CandidateRelease: "release-new"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	byKey := decisionsByKey(t, views)
-	if got := byKey["tv:s1:e1"]; got.ID != before["tv:s1:e1"] || got.CandidatePlacementID == nil || *got.CandidatePlacementID != "plc-new-e1" {
+	if got := byKey["tv:e1"]; got.ID != before["tv:e1"] || got.CandidatePlacementID == nil || *got.CandidatePlacementID != "plc-new-e1" {
 		t.Fatalf("E01 must bind its own pre-acquisition decision: %+v", got)
 	}
-	if got := byKey["tv:s1:e2"]; got.ID != before["tv:s1:e2"] || got.CandidatePlacementID != nil {
+	if got := byKey["tv:e2"]; got.ID != before["tv:e2"] || got.CandidatePlacementID != nil {
 		t.Fatalf("E02 keeps its unbound decision: %+v", got)
 	}
 }

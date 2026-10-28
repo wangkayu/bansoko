@@ -40,7 +40,7 @@ func testFacts(releaseID string, version int64) ReleaseCandidateFacts {
 		InputFingerprint: "fp-" + releaseID + "-" + itoa(version),
 		RawEvidence:      evidence,
 		Facts:            facts,
-		CoverageKeys:     []string{"tv:s1:e1"},
+		CoverageKeys:     []string{"tv:e1"},
 		Resolution:       "1080p",
 		Language:         "ja",
 		Group:            "G",
@@ -99,7 +99,7 @@ func TestUpsertIdempotentSameFingerprint(t *testing.T) {
 	if err != nil || facts == nil {
 		t.Fatalf("read facts: %v", err)
 	}
-	if facts.ReleaseVersion != 1 || len(facts.CoverageKeys) != 1 || facts.CoverageKeys[0] != "tv:s1:e1" {
+	if facts.ReleaseVersion != 1 || len(facts.CoverageKeys) != 1 || facts.CoverageKeys[0] != "tv:e1" {
 		t.Fatalf("unexpected facts: %+v", facts)
 	}
 	if facts.Resolution != "1080p" || facts.Group != "G" {

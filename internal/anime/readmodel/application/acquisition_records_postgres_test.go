@@ -235,8 +235,8 @@ func TestAcquisitionRecordsNameTheirEpisodes(t *testing.T) {
 	ctx := context.Background()
 	owner := disposabledb.Owner(t)
 	for _, snapshot := range []struct{ id, coverage, at string }{
-		{"snapshot-record-old", `["tv:s1:e9"]`, "2026-10-01T00:00:00Z"},
-		{"snapshot-record-new", `["tv:s1:e2","tv:s1:e1"]`, "2026-10-02T00:00:00Z"},
+		{"snapshot-record-old", `["tv:e9"]`, "2026-10-01T00:00:00Z"},
+		{"snapshot-record-new", `["tv:e2","tv:e1"]`, "2026-10-02T00:00:00Z"},
 	} {
 		if _, err := owner.ExecContext(ctx, `
 INSERT INTO media_fact_snapshots(id, release_id, schema_version, resolver_version, parser_kind, input_digest, release_identity, release_facts, created_at)

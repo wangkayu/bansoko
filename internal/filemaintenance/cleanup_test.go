@@ -82,7 +82,7 @@ func (f *cleanupFixture) input() CleanupInput {
 		IdempotencyKey:    "cln:cleanup-1",
 		PlacementID:       "plc-old",
 		ManagedAnimeID:    "anime-1",
-		Coverage:          []string{"tv:s1:e1"},
+		Coverage:          []string{"tv:e1"},
 		ReplacementRef:    "dec-new-1",
 		AdmissionMode:     "single_copy",
 		SourcePath:        f.source,
@@ -167,7 +167,7 @@ func TestCleanupAdmitIdempotentWithOneDeleteWorkItem(t *testing.T) {
 	if first.ID != second.ID || first.State != CleanupAdmitted {
 		t.Fatalf("idempotent admit failed: %+v %+v", first, second)
 	}
-	if len(first.Coverage) != 1 || first.Coverage[0] != "tv:s1:e1" {
+	if len(first.Coverage) != 1 || first.Coverage[0] != "tv:e1" {
 		t.Fatalf("coverage must freeze: %+v", first.Coverage)
 	}
 	if got := liveCleanupWorkItems(t, f.db, first.ID); got != 1 {
@@ -370,7 +370,7 @@ func seedReplacementDeletion(t *testing.T, db *sql.DB, id, animeID, sourcePath, 
 INSERT INTO replacement_deletions
 (id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
  admission_mode, source_path, source_fingerprint, state, version, created_at, updated_at)
-VALUES ($1, $2, 'plc-1', $3, '["tv:s1:e1"]', 'dec-1', 'single_copy', $4, $5, 'admitted', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+VALUES ($1, $2, 'plc-1', $3, '["tv:e1"]', 'dec-1', 'single_copy', $4, $5, 'admitted', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT (idempotency_key) DO NOTHING`,
 		id, key, animeID, sourcePath, fingerprint); err != nil {
 		t.Fatal(err)

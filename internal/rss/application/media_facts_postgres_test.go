@@ -41,8 +41,8 @@ func TestReleaseEvaluatePersistsMediaFactSnapshot(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("media fact snapshots = %d, want 1", count)
 	}
-	if planKeys != `["tv:s1:e7"]` {
-		t.Fatalf("frozen batch plan coverage = %s, want [\"tv:s1:e7\"]", planKeys)
+	if planKeys != `["tv:e7"]` {
+		t.Fatalf("frozen batch plan coverage = %s, want [\"tv:e7\"]", planKeys)
 	}
 
 	var identityRaw, parserConfigRaw []byte
@@ -76,7 +76,7 @@ FROM media_fact_snapshots WHERE release_id = 'release-facts-snap'`).
 	if identity.State != "resolved" {
 		t.Fatalf("identity state=%s, want resolved", identity.State)
 	}
-	if identity.CoverageKey == nil || *identity.CoverageKey != "tv:s1:e7" {
-		t.Fatalf("coverage=%v, want tv:s1:e7", identity.CoverageKey)
+	if identity.CoverageKey == nil || *identity.CoverageKey != "tv:e7" {
+		t.Fatalf("coverage=%v, want tv:e7", identity.CoverageKey)
 	}
 }

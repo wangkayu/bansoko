@@ -41,7 +41,7 @@ func TestPlanKeepsAllCandidatesAndExclusions(t *testing.T) {
 	reader := &fakeSnapshotReader{
 		usable: true,
 		obs: []SnapshotObservation{
-			{FilePath: "EP01.mkv", Fingerprint: "fp-1", SizeBytes: 100, Coverage: []string{"tv:s1:e1"}},
+			{FilePath: "EP01.mkv", Fingerprint: "fp-1", SizeBytes: 100, Coverage: []string{"tv:e1"}},
 			{FilePath: "SPECIAL.mkv", Fingerprint: "fp-2", SizeBytes: 50, Coverage: []string{"unresolved"}},
 		},
 	}
@@ -74,7 +74,7 @@ func (missingFactsRenderer) RenderTarget(context.Context, SnapshotObservation) (
 }
 
 func TestPlanExcludesMissingRenderFactsWithOperationalCode(t *testing.T) {
-	reader := &fakeSnapshotReader{usable: true, obs: []SnapshotObservation{{FilePath: "EP01.mkv", Fingerprint: "fp", Coverage: []string{"tv:s1:e1"}}}}
+	reader := &fakeSnapshotReader{usable: true, obs: []SnapshotObservation{{FilePath: "EP01.mkv", Fingerprint: "fp", Coverage: []string{"tv:e1"}}}}
 	result, err := NewPlanner(reader, missingFactsRenderer{}).Plan(context.Background(), "anime-1", 1, 1)
 	if err != nil {
 		t.Fatal(err)
@@ -88,7 +88,7 @@ func TestPlanDeterministicFingerprint(t *testing.T) {
 	reader := &fakeSnapshotReader{
 		usable: true,
 		obs: []SnapshotObservation{
-			{FilePath: "EP01.mkv", Fingerprint: "fp-1", SizeBytes: 100, Coverage: []string{"tv:s1:e1"}},
+			{FilePath: "EP01.mkv", Fingerprint: "fp-1", SizeBytes: 100, Coverage: []string{"tv:e1"}},
 		},
 	}
 	planner := NewPlanner(reader, fakeRenderer{})

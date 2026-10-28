@@ -32,7 +32,7 @@ func TestCandidateFromCoverageNeverInventsCoverage(t *testing.T) {
 		{name: "a frozen v1 key projects the episode", title: "[Group] Show - 99 [1080p]", keys: []string{"tv:s1:e12"},
 			wantCoverage: []string{"tv:s1:e12"}, wantEpisode: "12", wantKind: "video"},
 		{name: "batch keys are deduplicated and sorted without a scalar episode", title: "[Group] Show 01-04 [1080p]",
-			keys: []string{"tv:s1:e3", "tv:s1:e1", "tv:s1:e3", "tv:s1:e2"}, wantCoverage: []string{"tv:s1:e1", "tv:s1:e2", "tv:s1:e3"}, wantKind: "video"},
+			keys: []string{"tv:e3", "tv:e1", "tv:e3", "tv:e2"}, wantCoverage: []string{"tv:e1", "tv:e2", "tv:e3"}, wantKind: "video"},
 		{name: "movie key is a movie", title: "[Group] Movie [1080p]", keys: []string{"movie:0"},
 			wantCoverage: []string{"movie:0"}, wantKind: "movie"},
 		{name: "no key is unresolved", title: "[Group] Show - 05 [1080p]", keys: nil,

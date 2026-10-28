@@ -18,8 +18,8 @@ func TestPlannerRealSnapshotChain(t *testing.T) {
 
 	seedAnimeForRenderer(t, db, "anime-plan-tv", "规划番组", "tv")
 	seedScanOwner(t, db, "anime-plan-tv", "completed", 1)
-	seedObservationCoverage(t, db, "anime-plan-tv", 1, 0, "/library/Anime/S01E01.mkv", "fp-1", 100, "tv:s1:e1")
-	seedObservationCoverage(t, db, "anime-plan-tv", 1, 1, "/library/Anime/S01E02.mkv", "fp-2", 200, "tv:s1:e2")
+	seedObservationCoverage(t, db, "anime-plan-tv", 1, 0, "/library/Anime/S01E01.mkv", "fp-1", 100, "tv:e1")
+	seedObservationCoverage(t, db, "anime-plan-tv", 1, 1, "/library/Anime/S01E02.mkv", "fp-2", 200, "tv:e2")
 	// Each observed file descends from its own completed file operation, so the
 	// planner renders it from the frozen evidence of that placement.
 	first := seedPlacedRenderChain(t, db, placedRenderChainSpec{
@@ -27,14 +27,14 @@ func TestPlannerRealSnapshotChain(t *testing.T) {
 		TMDBMediaKind: "tv", TMDBSeason: 1, SourceGroup: "Group",
 		ReleaseTitle: "[Group] 规划番组 - 01", PlacedPath: "/library/Anime/S01E01.mkv",
 		DownloadName: "S01E01.mkv", Rules: rendererRules(), FrozenEpisode: "1",
-		Coverage: []string{"tv:s1:e1"},
+		Coverage: []string{"tv:e1"},
 	})
 	second := seedPlacedRenderChain(t, db, placedRenderChainSpec{
 		Key: "plan-e2", AnimeID: "anime-plan-tv", AnimeTitle: "规划番组",
 		TMDBMediaKind: "tv", TMDBSeason: 1, SourceGroup: "Group",
 		ReleaseTitle: "[Group] 规划番组 - 02", PlacedPath: "/library/Anime/S01E02.mkv",
 		DownloadName: "S01E02.mkv", Rules: rendererRules(), FrozenEpisode: "2",
-		Coverage: []string{"tv:s1:e2"},
+		Coverage: []string{"tv:e2"},
 	})
 	for batch, placementID := range map[int64]string{0: first.PlacementID, 1: second.PlacementID} {
 		if _, err := db.Exec(`UPDATE reconciliation_files SET facts = facts || jsonb_build_object('placement_id', $1::text) WHERE managed_anime_id = 'anime-plan-tv' AND generation = 1 AND batch_index = $2`, placementID, batch); err != nil {
@@ -67,8 +67,8 @@ func TestPlannerRealSnapshotChain(t *testing.T) {
 			t.Fatalf("candidate %s must render a target path", candidate.SourcePath)
 		}
 	}
-	if !seen["tv:s1:e1"] || !seen["tv:s1:e2"] {
-		t.Fatalf("coverage keys = %v, want tv:s1:e1 + tv:s1:e2", seen)
+	if !seen["tv:e1"] || !seen["tv:e2"] {
+		t.Fatalf("coverage keys = %v, want tv:e1 + tv:e2", seen)
 	}
 }
 

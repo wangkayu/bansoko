@@ -228,7 +228,7 @@ func TestAlignmentRenderIsCacheFirst(t *testing.T) {
 		ReleaseTitle: "[Group] Show - 1",
 		PlacedPath:   "/library/EP 01.mkv", Rules: rules,
 		BindingFacts: &frozenRenderBindingFacts{MediaKind: "tv", Season: 1, SeasonBound: true, TMDBWorkID: "work-" + animeID},
-		Coverage:     []string{"tv:s1:e1"},
+		Coverage:     []string{"tv:e1"},
 	})
 	target, err := renderTargetOnce(t, renderer, animeID, "/library/EP 01.mkv", chain.PlacementID)
 	if err != nil {
@@ -270,7 +270,7 @@ func TestAlignmentRenderUnboundRefusesUndefinedAndNeverQueries(t *testing.T) {
 		TMDBMediaKind: "tv", TMDBSeason: 1,
 		ReleaseTitle: "[Group] Show - 1",
 		PlacedPath:   "/library/EP 01.mkv", Rules: rules,
-		Coverage: []string{"tv:s1:e1"},
+		Coverage: []string{"tv:e1"},
 	})
 	_, err := renderTargetOnce(t, renderer, animeID, "/library/EP 01.mkv", chain.PlacementID)
 	var undefined *naming.Error

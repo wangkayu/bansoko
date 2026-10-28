@@ -15,11 +15,11 @@ func scoredFacts(groupRef string, score *int64) Facts {
 // it compared (candidate and members), sorted and once each.
 func TestEvaluatePoolsFreezesTheSubgroupScoresItCompared(t *testing.T) {
 	members := []PlacementFacts{
-		{PlacementID: "plc-a", Coverage: []string{"tv:s1:e1"}, Facts: scoredFacts("group-z", int64Ptr(10)), FactsOK: true, CreatedAt: time.Unix(1, 0)},
-		{PlacementID: "plc-b", Coverage: []string{"tv:s1:e1"}, Facts: scoredFacts("group-a", nil), FactsOK: true, CreatedAt: time.Unix(2, 0)},
+		{PlacementID: "plc-a", Coverage: []string{"tv:e1"}, Facts: scoredFacts("group-z", int64Ptr(10)), FactsOK: true, CreatedAt: time.Unix(1, 0)},
+		{PlacementID: "plc-b", Coverage: []string{"tv:e1"}, Facts: scoredFacts("group-a", nil), FactsOK: true, CreatedAt: time.Unix(2, 0)},
 	}
 	candidate := scoredFacts("group-m", int64Ptr(90))
-	pools := EvaluatePools(ModeSingleCopy, []string{"tv:s1:e1"}, candidate, PlacementRef{}, members, qualityprofile.Default(), nil)
+	pools := EvaluatePools(ModeSingleCopy, []string{"tv:e1"}, candidate, PlacementRef{}, members, qualityprofile.Default(), nil)
 	if len(pools) != 1 || pools[0].Verdict != "replace" {
 		t.Fatalf("the higher score must replace: %+v", pools)
 	}
@@ -30,10 +30,10 @@ func TestEvaluatePoolsFreezesTheSubgroupScoresItCompared(t *testing.T) {
 	}
 
 	// No subgroup.score item, or an empty pool: nothing compared a score.
-	if pools := EvaluatePools(ModeSingleCopy, []string{"tv:s1:e1"}, candidate, PlacementRef{}, members, resolutionProfile("1080p"), nil); pools[0].SubgroupScores != nil {
+	if pools := EvaluatePools(ModeSingleCopy, []string{"tv:e1"}, candidate, PlacementRef{}, members, resolutionProfile("1080p"), nil); pools[0].SubgroupScores != nil {
 		t.Fatalf("a profile without subgroup.score freezes no scores: %+v", pools[0].SubgroupScores)
 	}
-	if pools := EvaluatePools(ModeSingleCopy, []string{"tv:s1:e2"}, candidate, PlacementRef{}, members, qualityprofile.Default(), nil); pools[0].SubgroupScores != nil {
+	if pools := EvaluatePools(ModeSingleCopy, []string{"tv:e2"}, candidate, PlacementRef{}, members, qualityprofile.Default(), nil); pools[0].SubgroupScores != nil {
 		t.Fatalf("an empty pool compares nothing: %+v", pools[0].SubgroupScores)
 	}
 }

@@ -310,7 +310,7 @@ VALUES ('rel-e2e', 'src-e2e', 'guid:e2e', '{"title":"[示例字幕组] 进击的
         '{"episode":1,"group_name":"示例字幕组","group":"示例字幕组","resolution":"1080p","quality":"web-dl","revision":"v2","source":"web-dl","language":"chs","size_bytes":65536}', 'accepted_pending_download', 'accepted');
 INSERT INTO release_candidate_facts(release_id, release_version, parser_version, input_fingerprint, raw_evidence, facts, coverage_keys, resolution, revision, source, language, "group", size_bytes)
 VALUES ('rel-e2e', 1, 'parser-v1', 'fp-e2e', '{"title":"[示例字幕组] 进击的巨人 - 01 [1080p][chs]"}', '{"episode":1,"group_name":"示例字幕组","group":"示例字幕组","resolution":"1080p","quality":"web-dl","revision":"v2","source":"web-dl","language":"chs","size_bytes":65536}',
-        '["tv:s1:e1"]', '1080p', 'v2', 'web-dl', 'chs', '示例字幕组', 65536);
+        '["tv:e1"]', '1080p', 'v2', 'web-dl', 'chs', '示例字幕组', 65536);
 -- Older generation evidence for the current placement: same coverage, lower
 -- quality (720p < 1080p), so the frozen replacement chain must pick the new
 -- file_operation placement as winner and supersede plc-old.
@@ -319,7 +319,7 @@ VALUES ('rel-old', 'src-e2e', 'guid:old', '{"title":"[示例字幕组] 进击的
         '{"episode":1,"group_name":"示例字幕组","group":"示例字幕组","resolution":"720p","quality":"web-dl","revision":"v1","source":"web-dl","language":"chs","size_bytes":32768}', 'accepted_pending_download', 'accepted');
 INSERT INTO release_candidate_facts(release_id, release_version, parser_version, input_fingerprint, raw_evidence, facts, coverage_keys, resolution, revision, source, language, "group", size_bytes)
 VALUES ('rel-old', 1, 'parser-v1', 'fp-old', '{"title":"[示例字幕组] 进击的巨人 - 01 [720p][chs]"}', '{"episode":1,"group_name":"示例字幕组","group":"示例字幕组","resolution":"720p","quality":"web-dl","revision":"v1","source":"web-dl","language":"chs","size_bytes":32768}',
-        '["tv:s1:e1"]', '720p', 'v1', 'web-dl', 'chs', '示例字幕组', 32768);
+        '["tv:e1"]', '720p', 'v1', 'web-dl', 'chs', '示例字幕组', 32768);
 BEGIN;
 -- The finished download's admission root, accepted two hours ago and still
 -- running: the root terminalizes only once its file work settles, so every
@@ -388,7 +388,7 @@ INSERT INTO placements(id, physical_path, managed_anime_id, source_evidence_type
  source_fingerprint, target_fingerprint, quality_facts_ref, facts_version, verification_state, state, version, created_at, updated_at)
 VALUES ('plc-old', '$BANSOKO_HARNESS_LIBRARY_ROOT/Old/EP01.mkv', 'anime-e2e', 'reconciliation', 'obs-old', '$old_fp', '$old_fp', 'rel-old', 'parser-v1', 'verified', 'active', 1, now() - interval '7 days', now() - interval '7 days');
 INSERT INTO placement_coverage(placement_id, observation_key, coverage_ordinal, facts_version, evidence_ref)
-VALUES ('plc-old', 'tv:s1:e1', 0, 'parser-v1', 'obs-old');
+VALUES ('plc-old', 'tv:e1', 0, 'parser-v1', 'obs-old');
 -- Complete retention axis (single_copy, version 1) on the same business row:
 -- the frozen evaluate/settle chain requires it and revalidates its version at
 -- settle; without it evaluate fails closed. The quality profile (profile-v1)
@@ -930,8 +930,8 @@ print(matches[0].get("expected_path") or "")' "$2"
 import json,sys
 fixture=json.load(open(sys.argv[1], encoding="utf-8"))
 plan=fixture["release_facts"]["batch_plan"]
-if plan["coverage_keys"] != ["tv:s1:e5"]:
-    raise SystemExit("second fixture batch plan does not cover tv:s1:e5")
+if plan["coverage_keys"] != ["tv:e5"]:
+    raise SystemExit("second fixture batch plan does not cover tv:e5")
 if fixture["file_evidence"]["name"] != "EP05.mkv":
     raise SystemExit("second fixture file evidence is not EP05.mkv")
 PY
@@ -989,7 +989,7 @@ VALUES ('plan-e2e-2','art-e2e-2',1,'queued','sha256:' || repeat('2', 64),'acq-e2
 INSERT INTO file_operations(id,artifact_id,acquisition_id,artifact_version,artifact_file_id,file_ref,operation,source_path,target_path,source_fingerprint,target_fingerprint,collision_policy,frozen_render_snapshot,frozen_config_snapshot,state,observed_at,idempotency_key,correlation_id,causation_type,causation_id,postprocessing_plan_id,file_ready_at,file_wall_until,file_max_attempts,file_attempt_timeout_seconds)
 SELECT 'op-e2e-2','art-e2e-2','acq-e2e-2',1,'af-e2e-2','$second_file_ref','move','$second_download','$second_path','$second_fp'::jsonb,'$second_fp'::jsonb,'block','{}',frozen_config_snapshot,'completed',CURRENT_TIMESTAMP,'op-e2e-2','corr-e2e-2','artifact','art-e2e-2','plan-e2e-2',file_ready_at,file_wall_until,file_max_attempts,file_attempt_timeout_seconds FROM file_operations WHERE id=(SELECT source_owner_ref FROM placements WHERE id='$placement_id');
 -- The snapshot is built from the EP05 fixture itself so release_facts' frozen
--- batch plan matches the placement's tv:s1:e5 coverage instead of the first
+-- batch plan matches the placement's tv:e5 coverage instead of the first
 -- chain's EP01 plan.
 INSERT INTO media_fact_snapshots(id,release_id,schema_version,resolver_version,parser_kind,input_digest,release_identity,release_facts)
 VALUES ('snap-e2e-2','rel-e2e-2','media-facts-v1','episode-identity-v1','regex','digest-e2e-2','$second_identity_sql'::jsonb,'$second_release_facts_sql'::jsonb);
@@ -998,7 +998,7 @@ VALUES ('snap-e2e-2','$second_file_ref','video',65536,'$second_hash','$second_fi
 INSERT INTO placements(id,physical_path,managed_anime_id,source_evidence_type,source_owner_ref,source_fingerprint,target_fingerprint,quality_facts_ref,facts_version,correlation_id,causation_type,causation_id,replacement_eligible,verification_state,state,version)
 VALUES ('plc-e2e-2','$second_path','anime-e2e','file_operation','op-e2e-2','$second_fp'::jsonb,'$second_fp'::jsonb,'rel-e2e-2','media-facts-v1','corr-e2e-2','file_operation','op-e2e-2',true,'verified','active',1);
 INSERT INTO placement_coverage(placement_id,observation_key,coverage_ordinal,facts_version,evidence_ref)
-VALUES ('plc-e2e-2','tv:s1:e5',0,'media-facts-v1','op-e2e-2');
+VALUES ('plc-e2e-2','tv:e5',0,'media-facts-v1','op-e2e-2');
 COMMIT;
 E2ESECOND
   observe_disk baseline "$original_path"
@@ -1336,8 +1336,8 @@ PY
 import json,sys
 fixture=json.load(open(sys.argv[1], encoding="utf-8"))
 plan=fixture["release_facts"]["batch_plan"]
-if plan["coverage_keys"] != ["tv:s1:e8"]:
-    raise SystemExit("scenario 8 fixture batch plan does not cover tv:s1:e8: %r" % (plan["coverage_keys"],))
+if plan["coverage_keys"] != ["tv:e8"]:
+    raise SystemExit("scenario 8 fixture batch plan does not cover tv:e8: %r" % (plan["coverage_keys"],))
 if fixture["file_evidence"]["name"] != "EP08.mkv":
     raise SystemExit("scenario 8 fixture file evidence is not EP08.mkv")
 PY
@@ -1396,7 +1396,7 @@ INSERT INTO file_operations(id,artifact_id,acquisition_id,artifact_version,artif
 SELECT 'op-e2e-8','art-e2e-8','acq-e2e-8',1,'af-e2e-8','$s8_file_ref','move','$s8_download','$s8_source_path','$s8_fp'::jsonb,'$s8_fp'::jsonb,'block','{}',frozen_config_snapshot,'completed',CURRENT_TIMESTAMP,'op-e2e-8','corr-e2e-8','artifact','art-e2e-8','plan-e2e-8',file_ready_at,file_wall_until,file_max_attempts,file_attempt_timeout_seconds FROM file_operations WHERE id=(SELECT source_owner_ref FROM placements WHERE id='$placement_id');
 INSERT INTO release_candidate_facts(release_id,release_version,parser_version,input_fingerprint,raw_evidence,facts,coverage_keys,resolution,revision,source,language,"group",size_bytes)
 VALUES ('rel-e2e-8',1,'parser-v1','fp-e2e-8','{"title":"[示例字幕组] 进击的巨人 - 08 [1080p][chs]"}','{"episode":8,"group_name":"示例字幕组","group":"示例字幕组","resolution":"1080p","quality":"web-dl","revision":"v1","source":"web-dl","language":"chs","size_bytes":65536}',
-        '["tv:s1:e8"]','1080p','v1','web-dl','chs','示例字幕组',65536);
+        '["tv:e8"]','1080p','v1','web-dl','chs','示例字幕组',65536);
 INSERT INTO media_fact_snapshots(id,release_id,schema_version,resolver_version,parser_kind,input_digest,release_identity,release_facts)
 VALUES ('snap-e2e-8','rel-e2e-8','media-facts-v1','episode-identity-v1','regex','digest-e2e-8','$s8_identity_sql'::jsonb,'$s8_release_facts_sql'::jsonb);
 INSERT INTO media_fact_files(snapshot_id,file_ref,media_kind,size_bytes,source_fingerprint,file_evidence,effective_facts)
@@ -1407,7 +1407,7 @@ VALUES ('snap-e2e-8','$s8_file_ref','video',65536,'$s8_hex','$s8_file_evidence_s
 INSERT INTO placements(id,physical_path,managed_anime_id,source_evidence_type,source_owner_ref,source_fingerprint,target_fingerprint,quality_facts_ref,facts_version,correlation_id,causation_type,causation_id,replacement_eligible,verification_state,state,version)
 VALUES ('$s8_placement_id','$s8_source_path','anime-e2e','file_operation','op-e2e-8','$s8_fp'::jsonb,'$s8_fp'::jsonb,'rel-e2e-8','media-facts-v1','corr-e2e-8','file_operation','op-e2e-8',false,'verified','active',1);
 INSERT INTO placement_coverage(placement_id,observation_key,coverage_ordinal,facts_version,evidence_ref)
-VALUES ('$s8_placement_id','tv:s1:e8',0,'media-facts-v1','op-e2e-8');
+VALUES ('$s8_placement_id','tv:e8',0,'media-facts-v1','op-e2e-8');
 -- One active subtitle companion. `fingerprint` is the registration-time
 -- content digest of the file (hex, as the column CHECK demands); recovery
 -- keeps it, and the loser cleanup handoff freezes and checks it before moving
@@ -1793,7 +1793,7 @@ PY
   s8b_file_evidence_sql="$(python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["file_evidence"]))' <<<"$s8b_fixture_json")"
   s8b_effective_facts_sql="$(python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["effective_facts"]))' <<<"$s8b_fixture_json")"
   # The winner is a completed file_operation placement of a 2160p release for
-  # the same episode (tv:s1:e8): the anime's quality profile ranks it above the
+  # the same episode (tv:e8): the anime's quality profile ranks it above the
   # recovered 1080p file, so the single_copy pool must supersede the recovered
   # placement. It is created last, so the generation trigger picks its release.
   if ! $PSQL -q -e >"$summary_dir/scenario-8b-seed.log" 2>&1 <<E2EEIGHTB
@@ -1843,7 +1843,7 @@ INSERT INTO file_operations(id,artifact_id,acquisition_id,artifact_version,artif
 SELECT 'op-e2e-8b','art-e2e-8b','acq-e2e-8b',1,'af-e2e-8b','$s8b_file_ref','move','$s8b_download','$s8b_path','$s8b_fp'::jsonb,'$s8b_fp'::jsonb,'block','{}',frozen_config_snapshot,'completed',CURRENT_TIMESTAMP,'op-e2e-8b','corr-e2e-8b','artifact','art-e2e-8b','plan-e2e-8b',file_ready_at,file_wall_until,file_max_attempts,file_attempt_timeout_seconds FROM file_operations WHERE id='op-e2e-8';
 INSERT INTO release_candidate_facts(release_id,release_version,parser_version,input_fingerprint,raw_evidence,facts,coverage_keys,resolution,revision,source,language,"group",size_bytes)
 VALUES ('rel-e2e-8b',1,'parser-v1','fp-e2e-8b','{"title":"[示例字幕组] 进击的巨人 - 08 [2160p][chs]"}','{"episode":8,"group_name":"示例字幕组","group":"示例字幕组","resolution":"2160p","quality":"web-dl","revision":"v1","source":"web-dl","language":"chs","size_bytes":65536}',
-        '["tv:s1:e8"]','2160p','v1','web-dl','chs','示例字幕组',65536);
+        '["tv:e8"]','2160p','v1','web-dl','chs','示例字幕组',65536);
 INSERT INTO media_fact_snapshots(id,release_id,schema_version,resolver_version,parser_kind,input_digest,release_identity,release_facts)
 VALUES ('snap-e2e-8b','rel-e2e-8b','media-facts-v1','episode-identity-v1','regex','digest-e2e-8b','$s8b_identity_sql'::jsonb,'$s8b_release_facts_sql'::jsonb);
 INSERT INTO media_fact_files(snapshot_id,file_ref,media_kind,size_bytes,source_fingerprint,file_evidence,effective_facts)
@@ -1851,7 +1851,7 @@ VALUES ('snap-e2e-8b','$s8b_file_ref','video',65536,'$s8b_hex','$s8b_file_eviden
 INSERT INTO placements(id,physical_path,managed_anime_id,source_evidence_type,source_owner_ref,source_fingerprint,target_fingerprint,quality_facts_ref,facts_version,correlation_id,causation_type,causation_id,replacement_eligible,verification_state,state,version)
 VALUES ('plc-e2e-8b','$s8b_path','anime-e2e','file_operation','op-e2e-8b','$s8b_fp'::jsonb,'$s8b_fp'::jsonb,'rel-e2e-8b','media-facts-v1','corr-e2e-8b','file_operation','op-e2e-8b',true,'verified','active',1);
 INSERT INTO placement_coverage(placement_id,observation_key,coverage_ordinal,facts_version,evidence_ref)
-VALUES ('plc-e2e-8b','tv:s1:e8',0,'media-facts-v1','op-e2e-8b');
+VALUES ('plc-e2e-8b','tv:e8',0,'media-facts-v1','op-e2e-8b');
 COMMIT;
 E2EEIGHTB
   then

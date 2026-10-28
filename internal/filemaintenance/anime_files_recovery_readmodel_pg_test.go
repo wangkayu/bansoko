@@ -77,7 +77,7 @@ func newRecoveryReadModelScene(t *testing.T) *recoveryReadModelScene {
 		DownloadName:  "EP 01.mkv",
 		Rules:         rules,
 		FrozenEpisode: "1",
-		Coverage:      []string{"tv:s1:e1"},
+		Coverage:      []string{"tv:e1"},
 	})
 	if _, err := db.Exec(`
 INSERT INTO subscriptions(id, managed_anime_id, origin, instance_label, state, version)

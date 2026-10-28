@@ -26,7 +26,6 @@ func seedFrozenMovieNamingSnapshot(t *testing.T, db *sql.DB, mediaKind string, s
 	}
 	identity := episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{
 		MediaKind:    mediaKind,
-		Season:       season,
 		FileEvidence: episodeidentity.NewValueEvidence(episodeidentity.EpisodeSourceFileParser, "file_name", "1"),
 	})
 	releaseFacts := facts.ReleaseFacts{

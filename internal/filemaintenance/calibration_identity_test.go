@@ -45,15 +45,15 @@ func TestCalibrationComparesMetadataObservationWithRecordedSize(t *testing.T) {
 	typedSource := `{"algorithm":"sha256","value":"` + digest + `"}`
 	typedTarget := `{"algorithm":"sha256","value":"` + digest + `","size_bytes":100}`
 	seedPlacementWithFingerprints(t, fixture.db, anime, 1, "plc-meta-same", "/library/Show/EP 01.mkv",
-		typedSource, typedTarget, "tv:s1:e1", "meta:size=100;dev=7;ino=11", 100)
+		typedSource, typedTarget, "tv:e1", "meta:size=100;dev=7;ino=11", 100)
 	seedPlacementWithFingerprints(t, fixture.db, anime, 1, "plc-meta-grown", "/library/Show/EP 02.mkv",
-		typedSource, typedTarget, "tv:s1:e2", "meta:size=101;dev=7;ino=12", 101)
+		typedSource, typedTarget, "tv:e2", "meta:size=101;dev=7;ino=12", 101)
 	seedPlacementWithFingerprints(t, fixture.db, anime, 1, "plc-meta-inode", "/library/Show/EP 03.mkv",
-		"meta:size=100;dev=7;ino=13", "meta:size=100;dev=7;ino=13", "tv:s1:e3", "meta:size=100;dev=9;ino=14", 100)
+		"meta:size=100;dev=7;ino=13", "meta:size=100;dev=7;ino=13", "tv:e3", "meta:size=100;dev=9;ino=14", 100)
 	seedPlacementWithFingerprints(t, fixture.db, anime, 1, "plc-meta-remount", "/library/Show/EP 04.mkv",
-		"meta:size=100;dev=7;ino=15", "meta:size=100;dev=7;ino=15", "tv:s1:e4", "meta:size=100;dev=9;ino=15", 100)
+		"meta:size=100;dev=7;ino=15", "meta:size=100;dev=7;ino=15", "tv:e4", "meta:size=100;dev=9;ino=15", 100)
 	seedPlacementWithFingerprints(t, fixture.db, anime, 1, "plc-meta-unrecorded", "/library/Show/EP 05.mkv",
-		"legacy-digest", "legacy-digest", "tv:s1:e5", "meta:size=55;dev=7;ino=16", 55)
+		"legacy-digest", "legacy-digest", "tv:e5", "meta:size=55;dev=7;ino=16", 55)
 
 	calibrate := fixture.calibration.CalibrateHandler()
 	outcome := fixture.runHandler(t, calibrate, fixture.claimDue(t, workitems.KindReconciliationCalibrate))

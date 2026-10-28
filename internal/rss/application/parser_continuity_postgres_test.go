@@ -83,8 +83,8 @@ FROM media_fact_snapshots WHERE release_id = 'release-continuity'`).
 	if identity.Episode == nil || string(*identity.Episode) != "45" {
 		t.Fatalf("frozen episode = %v, want 45 (selected parser 42 + link offset 3)", identity.Episode)
 	}
-	if identity.CoverageKey == nil || *identity.CoverageKey != "tv:s1:e45" {
-		t.Fatalf("frozen coverage key = %v, want tv:s1:e45", identity.CoverageKey)
+	if identity.CoverageKey == nil || *identity.CoverageKey != "tv:e45" {
+		t.Fatalf("frozen coverage key = %v, want tv:e45", identity.CoverageKey)
 	}
 	var frozenFacts facts.ReleaseFacts
 	if err := json.Unmarshal(releaseFactsRaw, &frozenFacts); err != nil {
@@ -112,8 +112,8 @@ WHERE release_id = 'release-continuity' ORDER BY release_version DESC LIMIT 1`).
 	if err := json.Unmarshal(coverageRaw, &candidateCoverage); err != nil {
 		t.Fatal(err)
 	}
-	if len(candidateCoverage) != 1 || candidateCoverage[0] != "tv:s1:e45" {
-		t.Fatalf("candidate coverage = %v, want the frozen key tv:s1:e45", candidateCoverage)
+	if len(candidateCoverage) != 1 || candidateCoverage[0] != "tv:e45" {
+		t.Fatalf("candidate coverage = %v, want the frozen key tv:e45", candidateCoverage)
 	}
 
 	// download task frozen policy: the same selection, so a retry never reads
@@ -168,7 +168,7 @@ WHERE release_id = 'release-continuity' ORDER BY release_version DESC LIMIT 1`).
 	// verdict: the lazy refresh re-projects the frozen identity.
 	if _, err := db.ExecContext(ctx, `
 UPDATE release_candidate_facts
-SET coverage_keys = '["tv:s1:e999"]'::jsonb, parser_version = 'stale'
+SET coverage_keys = '["tv:e999"]'::jsonb, parser_version = 'stale'
 WHERE release_id = 'release-continuity'`); err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ WHERE release_id = 'release-continuity' ORDER BY release_version DESC LIMIT 1`).
 	if err := json.Unmarshal(coverageRaw, &candidateCoverage); err != nil {
 		t.Fatal(err)
 	}
-	if len(candidateCoverage) != 1 || candidateCoverage[0] != "tv:s1:e45" {
+	if len(candidateCoverage) != 1 || candidateCoverage[0] != "tv:e45" {
 		t.Fatalf("candidate coverage after refresh = %v, want the frozen key restored", candidateCoverage)
 	}
 	assertReleaseState(t, db, "release-continuity", "accepted_pending_download", "accepted", true)

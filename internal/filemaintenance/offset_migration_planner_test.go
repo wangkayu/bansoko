@@ -70,11 +70,11 @@ FROM offset_migration_plans WHERE generation_id = $1`, generationID).Scan(
 	if newTarget == "" || newTarget == oldTarget {
 		t.Fatalf("new_target=%q, want a re-rendered different target", newTarget)
 	}
-	if !oldCoverage.Valid || oldCoverage.String != "tv:s1:e1" {
-		t.Fatalf("old_coverage=%v, want tv:s1:e1", oldCoverage)
+	if !oldCoverage.Valid || oldCoverage.String != "tv:e1" {
+		t.Fatalf("old_coverage=%v, want tv:e1", oldCoverage)
 	}
-	if !newCoverage.Valid || newCoverage.String != "tv:s1:e2" {
-		t.Fatalf("new_coverage=%v, want tv:s1:e2", newCoverage)
+	if !newCoverage.Valid || newCoverage.String != "tv:e2" {
+		t.Fatalf("new_coverage=%v, want tv:e2", newCoverage)
 	}
 
 	// Simulate a planner crash after the generation was marked planning but

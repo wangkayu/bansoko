@@ -180,7 +180,6 @@ type offsetMigrationCandidate struct {
 	// mediaKindOverride is the owner media-kind pin (tv | movie); it is the
 	// legacy-identity branch when the frozen identity itself carries no kind.
 	mediaKindOverride string
-	season            *int
 	snapshotID        string
 	fileRef           string
 	sizeBytes         int64
@@ -192,7 +191,7 @@ func loadOffsetMigrationCandidates(ctx context.Context, tx *sql.Tx, generation O
 	rows, err := tx.QueryContext(ctx, `
 SELECT p.id, p.version, p.physical_path, p.source_fingerprint,
        p.target_fingerprint, COALESCE(src.id, ''), src.episode_offset,
-       COALESCE(meta.tmdb_media_kind, ''), COALESCE(meta.media_kind_override, ''), meta.tmdb_season,
+       COALESCE(meta.tmdb_media_kind, ''), COALESCE(meta.media_kind_override, ''),
        COALESCE(snap.id, ''), COALESCE(mf.file_ref, ''),
        COALESCE(mf.size_bytes, af.size_bytes, 0),
        COALESCE(mf.effective_facts, '{}'::jsonb),
@@ -231,12 +230,11 @@ ORDER BY p.created_at, p.id`, generation.ManagedAnimeID, generation.ScopeKind, g
 	for rows.Next() {
 		var candidate offsetMigrationCandidate
 		var sourceOffset sql.NullInt64
-		var season sql.NullInt64
 		if err := rows.Scan(
 			&candidate.placementID, &candidate.placementVersion,
 			&candidate.physicalPath, &candidate.sourceFingerprint,
 			&candidate.targetFingerprint, &candidate.sourceID, &sourceOffset,
-			&candidate.mediaKind, &candidate.mediaKindOverride, &season, &candidate.snapshotID,
+			&candidate.mediaKind, &candidate.mediaKindOverride, &candidate.snapshotID,
 			&candidate.fileRef, &candidate.sizeBytes,
 			&candidate.effectiveFacts, &candidate.fileEvidence); err != nil {
 			return nil, fmt.Errorf("scan offset migration candidate: %w", err)
@@ -244,10 +242,6 @@ ORDER BY p.created_at, p.id`, generation.ManagedAnimeID, generation.ScopeKind, g
 		if sourceOffset.Valid {
 			value := int(sourceOffset.Int64)
 			candidate.sourceOffset = &value
-		}
-		if season.Valid {
-			value := int(season.Int64)
-			candidate.season = &value
 		}
 		candidates = append(candidates, candidate)
 	}
@@ -274,7 +268,6 @@ type plannedOffsetOperation struct {
 	sourceID          string
 	sourceOffset      *int
 	mediaKind         string
-	season            *int
 	rawEpisode        *string
 	newEpisode        *string
 	oldTargetPath     string
@@ -307,7 +300,6 @@ func (s *OffsetMigrationService) planOffsetMigrationCandidate(ctx context.Contex
 		sourceID:          candidate.sourceID,
 		sourceOffset:      candidate.sourceOffset,
 		mediaKind:         candidate.mediaKind,
-		season:            candidate.season,
 		oldTargetPath:     candidate.physicalPath,
 		state:             OffsetMigrationOperationBlocked,
 	}
@@ -370,17 +362,9 @@ func (s *OffsetMigrationService) planOffsetMigrationCandidate(ctx context.Contex
 		RawCapture: string(raw),
 		Episode:    &raw,
 	}
-	season := 0
-	seasonBound := false
-	if candidate.season != nil {
-		season = *candidate.season
-		seasonBound = true
-	}
 	identity := episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{
 		MediaKind:    mediaKind,
 		FileRef:      candidate.fileRef,
-		Season:       season,
-		SeasonBound:  seasonBound,
 		FileEvidence: fileEvidence,
 		Offset:       generation.NewOffset,
 	})
@@ -497,7 +481,8 @@ ON CONFLICT (policy_version, placement_id, source_fingerprint) DO NOTHING`,
 		operation.sourceFingerprint, jsonOrEmpty(operation.fingerprint),
 		operation.snapshotID, operation.fileRef, operation.sourceID,
 		nullableInt(operation.sourceOffset), operation.mediaKind,
-		nullableInt(operation.season), nullableString(operation.rawEpisode),
+		// An episode identity binds no season, so a plan records none.
+		nil, nullableString(operation.rawEpisode),
 		nullableString(operation.newEpisode), operation.oldTargetPath,
 		nullableString(operation.newTargetPath), jsonOrEmpty(operation.oldIdentity),
 		jsonOrEmpty(operation.newIdentity), nullableString(operation.oldCoverageKey),

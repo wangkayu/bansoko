@@ -14,7 +14,7 @@ func TestRetentionProviderScopeGateFailsClosed(t *testing.T) {
 		t.Run(state, func(t *testing.T) {
 			db := openFrozenTestDB(t)
 			defer db.Close()
-			seedFilePlacement(t, db, "anime-1", "sub-1", "scope-candidate", []string{"tv:s1:e1"}, Facts{Resolution: "1080p", Group: "GroupA"}, "2026-08-01T00:00:00Z")
+			seedFilePlacement(t, db, "anime-1", "sub-1", "scope-candidate", []string{"tv:e1"}, Facts{Resolution: "1080p", Group: "GroupA"}, "2026-08-01T00:00:00Z")
 			if _, err := db.Exec(`UPDATE rss_sources SET source_kind='provider_group',provider='anibt',provider_entry_ref='123',provider_group_ref='alpha',discovery_snapshot_version='v1' WHERE id='src-scope-candidate'`); err != nil {
 				t.Fatal(err)
 			}

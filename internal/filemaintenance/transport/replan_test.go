@@ -21,7 +21,7 @@ func TestReplanResultMapsCandidatesAndIsolatesSlices(t *testing.T) {
 	target := "/library/Show/episode.mkv"
 	reason := "coverage unresolved"
 	code := "coverage_unresolved"
-	coverage := []string{"tv:s1:e1"}
+	coverage := []string{"tv:e1"}
 	result := ReplanResult(filemaintenance.PlanResult{
 		AnimeID:          "anime-1",
 		Generation:       3,
@@ -47,7 +47,7 @@ func TestReplanResultMapsCandidatesAndIsolatesSlices(t *testing.T) {
 		t.Fatalf("mapped candidate = %+v", candidate)
 	}
 	coverage[0] = "changed"
-	if candidate.Coverage[0] != "tv:s1:e1" {
+	if candidate.Coverage[0] != "tv:e1" {
 		t.Fatal("mapped coverage aliases application slice")
 	}
 	*candidate.TargetPath = "changed"

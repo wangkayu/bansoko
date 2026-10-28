@@ -84,7 +84,7 @@ VALUES ($1, $2, 0, $3, $4, 100, $5, CURRENT_TIMESTAMP)`,
 func persistedSeedFacts(filePath string) map[string]any {
 	facts := map[string]any{}
 	if match := seedEpisodePath.FindStringSubmatch(filePath); match != nil {
-		facts["coverage"] = []string{"tv:s1:e" + strings.TrimLeft(match[1], "0")}
+		facts["coverage"] = []string{"tv:e" + strings.TrimLeft(match[1], "0")}
 		facts["coverage_unresolved"] = false
 	}
 	return facts
@@ -115,7 +115,7 @@ func seedCompletedGenerationWithRenderChains(t *testing.T, db *sql.DB, animeID s
 			ReleaseTitle: "[Group] Show - " + episode,
 			PlacedPath:   path, DownloadName: filepath.Base(path),
 			Rules: rules, FrozenEpisode: episode,
-			Coverage: []string{"tv:s1:e" + episode},
+			Coverage: []string{"tv:e" + episode},
 		}
 		if len(bindings) > 0 {
 			chainSpec.BindingFacts = bindings[0]
@@ -378,7 +378,7 @@ func TestCalibrationPlacementCoverageSurvivesMetadataRebinding(t *testing.T) {
 	seedCompletedGeneration(t, fixture.db, "anime-cal-rebind", 1, map[string]string{})
 	// One Placement-owned observation (frozen coverage) and one legacy
 	// observation with no frozen coverage at all.
-	seedPlacementOwnedObservation(t, fixture.db, "anime-cal-rebind", 1, 0, "plc-cal-rebind", "/library/Show/EP 01.mkv", "fp-1", "tv:s1:e1")
+	seedPlacementOwnedObservation(t, fixture.db, "anime-cal-rebind", 1, 0, "plc-cal-rebind", "/library/Show/EP 01.mkv", "fp-1", "tv:e1")
 	seedObservationFacts(t, fixture.db, "anime-cal-rebind", 1, 1, "/library/Show/legacy.mkv", "fp-legacy", 100, `{}`)
 	// The instance metadata binding flips to a movie before calibration runs.
 	seedMovieMetadata(t, fixture.db, "anime-cal-rebind")
@@ -403,8 +403,8 @@ WHERE managed_anime_id = 'anime-cal-rebind' AND generation = 1 AND file_path = $
 		}
 		return coverage
 	}
-	if got := calibratedCoverage("/library/Show/EP 01.mkv"); len(got) != 1 || got[0] != "tv:s1:e1" {
-		t.Fatalf("placement-owned calibrated coverage = %v, want the frozen tv:s1:e1", got)
+	if got := calibratedCoverage("/library/Show/EP 01.mkv"); len(got) != 1 || got[0] != "tv:e1" {
+		t.Fatalf("placement-owned calibrated coverage = %v, want the frozen tv:e1", got)
 	}
 	if got := calibratedCoverage("/library/Show/legacy.mkv"); len(got) != 1 || got[0] != "movie:0" {
 		t.Fatalf("legacy calibrated coverage = %v, want the metadata movie classification", got)
@@ -414,8 +414,8 @@ WHERE managed_anime_id = 'anime-cal-rebind' AND generation = 1 AND file_path = $
 SELECT observation_key FROM placement_coverage WHERE placement_id = 'plc-cal-rebind'`).Scan(&frozenKey); err != nil {
 		t.Fatal(err)
 	}
-	if frozenKey != "tv:s1:e1" {
-		t.Fatalf("frozen placement coverage = %q, want tv:s1:e1", frozenKey)
+	if frozenKey != "tv:e1" {
+		t.Fatalf("frozen placement coverage = %q, want tv:e1", frozenKey)
 	}
 }
 
@@ -604,7 +604,7 @@ VALUES ('plc-1', '/library/Old/EP01.mkv', 'anime-unsub-1', 'reconciliation', 'ob
 INSERT INTO replacement_deletions
 (id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
  admission_mode, source_path, source_fingerprint, state, version, created_at, updated_at)
-VALUES ('cln-1', 'cln:plc-1:dec-1', 'plc-1', 'anime-unsub-1', '["tv:s1:e1"]', 'dec-1',
+VALUES ('cln-1', 'cln:plc-1:dec-1', 'plc-1', 'anime-unsub-1', '["tv:e1"]', 'dec-1',
  'single_copy', '/library/Old/EP01.mkv', 'fp', 'admitted', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
 		t.Fatal(err)
 	}
@@ -664,20 +664,20 @@ INSERT INTO placements(id, physical_path, managed_anime_id, source_evidence_type
 VALUES ('plc-old', '/library/Old/EP01.mkv', 'anime-unsub-2', 'reconciliation', 'obs-old', 'fp', 'fp', NULL, 'parser-v1', 'superseded', 2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
 		t.Fatal(err)
 	}
-	seedPlacement(t, fixture.db, "plc-new", "anime-unsub-2", "/library/Show/EP01.mkv", "fp-new", []string{"tv:s1:e1"}, "2026-08-02T00:00:00Z")
+	seedPlacement(t, fixture.db, "plc-new", "anime-unsub-2", "/library/Show/EP01.mkv", "fp-new", []string{"tv:e1"}, "2026-08-02T00:00:00Z")
 	if _, err := fixture.db.Exec(`
 INSERT INTO replacement_decisions
 (id, idempotency_key, managed_anime_id, candidate_release_id, candidate_placement_id, policy_version,
  profile_version, subscription_version, candidate_facts_ref, coverage_key, coverage_keys, admission_mode, pools, verdict, state, version, created_at, updated_at)
 VALUES ('dec-settled', 'repl:anime-unsub-2:x', 'anime-unsub-2', 'rel-1', 'plc-new', 1, 'profile-v1', 1,
- 'rel-1:1', 'tv:s1:e1', '["tv:s1:e1"]', 'single_copy', '[]', 'replace', 'settled', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
+ 'rel-1:1', 'tv:e1', '["tv:e1"]', 'single_copy', '[]', 'replace', 'settled', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := fixture.db.Exec(`
 INSERT INTO replacement_deletions
 (id, idempotency_key, placement_id, managed_anime_id, coverage_keys, replacement_ref,
  admission_mode, source_path, source_fingerprint, state, version, created_at, updated_at)
-VALUES ('cln-done', 'cln:plc-old:dec-settled', 'plc-old', 'anime-unsub-2', '["tv:s1:e1"]', 'dec-settled',
+VALUES ('cln-done', 'cln:plc-old:dec-settled', 'plc-old', 'anime-unsub-2', '["tv:e1"]', 'dec-settled',
  'single_copy', '/library/Old/EP01.mkv', 'fp', 'deleted', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
 		t.Fatal(err)
 	}
@@ -798,7 +798,7 @@ func TestResumeCreatesFreshEpochFromLatestFacts(t *testing.T) {
 		`{"version":"profile-v1","items":[{"key":"release.resolution","ranks":[["1080p"],["720p"],["480p"]]}]}`, 1)
 	// Release-backed verified placement: the evaluate candidate chain.
 	seedFilePlacement(t, fixture.db, "anime-resume-1", "sub-1", "release-r1",
-		[]string{"tv:s1:e1"}, Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
+		[]string{"tv:e1"}, Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
 	ctx := context.Background()
 
 	// Generation 1 while active: replacement consumer merges the evaluate
@@ -944,8 +944,8 @@ func TestAlignmentDuplicatePlannerTargetsPersistBlockedWithoutWorkItems(t *testi
 	service := NewAlignmentService(fixture.db)
 	fixture.calibration.SetAlignmentConsumer(service)
 	plan := &planner.PlanResult{AnimeID: "anime-dupes", Generation: 1, PolicyVersion: 1, Candidates: []planner.PlanCandidate{
-		{ObservationRef: "obs-1", SourcePath: "/library/A/EP01.mkv", Fingerprint: "fp-a", TargetPath: "/library/Show/EP01.mkv", Coverage: []string{"tv:s1:e1"}},
-		{ObservationRef: "obs-2", SourcePath: "/library/B/EP01.mkv", Fingerprint: "fp-b", TargetPath: "/library/Show/EP01.mkv", Coverage: []string{"tv:s1:e1"}},
+		{ObservationRef: "obs-1", SourcePath: "/library/A/EP01.mkv", Fingerprint: "fp-a", TargetPath: "/library/Show/EP01.mkv", Coverage: []string{"tv:e1"}},
+		{ObservationRef: "obs-2", SourcePath: "/library/B/EP01.mkv", Fingerprint: "fp-b", TargetPath: "/library/Show/EP01.mkv", Coverage: []string{"tv:e1"}},
 	}}
 
 	if _, err := fixture.calibration.admitAlignmentOperations(context.Background(), "anime-dupes", 1, plan); err != nil {

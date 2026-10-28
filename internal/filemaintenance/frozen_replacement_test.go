@@ -195,14 +195,14 @@ func poolRef(placementID string, version int64, fingerprint string) PlacementRef
 func seedFrozenDecision(t *testing.T, db *sql.DB, id, animeID, candidatePlacementID string, subVersion, policyVersion int64, mode AdmissionMode, winner *PlacementRef, losers []PlacementRef, state string) {
 	t.Helper()
 	pool := PoolEvidence{
-		PoolKey: "tv:s1:e1", Verdict: "replace", Reason: "candidate strictly better",
+		PoolKey: "tv:e1", Verdict: "replace", Reason: "candidate strictly better",
 		Winner: winner, Losers: losers,
 	}
 	poolsRaw, err := json.Marshal([]PoolEvidence{pool})
 	if err != nil {
 		t.Fatal(err)
 	}
-	digest, err := decisionInputDigest(animeID, "release-new", candidatePlacementID, subVersion, policyVersion, mode, qualityprofile.Version, "candidate-facts-v1", "fp", "tv:s1:e1", nil, 0, nil)
+	digest, err := decisionInputDigest(animeID, "release-new", candidatePlacementID, subVersion, policyVersion, mode, qualityprofile.Version, "candidate-facts-v1", "fp", "tv:e1", nil, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ INSERT INTO replacement_decisions
  policy_version, profile_version, subscription_version, input_digest,
  candidate_facts_ref, snapshot_generation, coverage_key, coverage_keys, admission_mode, pools, verdict, state, version, created_at, updated_at)
 VALUES ($1, $2, $3, 'release-new', $4, $5, 'profile-v1', $6, $7, 'release-new:facts', NULL,
- 'tv:s1:e1', '["tv:s1:e1"]', $8, $9::jsonb, 'replace', $10, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ 'tv:e1', '["tv:e1"]', $8, $9::jsonb, 'replace', $10, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT (idempotency_key) DO NOTHING`,
 		id, key, animeID, candidatePlacementID, policyVersion, subVersion, digest, string(mode), string(poolsRaw), state); err != nil {
 		t.Fatal(err)
@@ -251,9 +251,9 @@ func placementState(t *testing.T, db *sql.DB, placementID string) string {
 func TestEvaluatePoolsAllModeNeverProducesLosers(t *testing.T) {
 	candidate := released(Facts{Resolution: "480p"})
 	candidateRef := poolRef("plc-candidate", 1, "fp-c")
-	current := []PlacementFacts{{PlacementID: "plc-old", Version: 1, Fingerprint: "fp-o", Coverage: []string{"tv:s1:e1"}, Facts: released(Facts{Resolution: "1080p"}), FactsOK: true}}
+	current := []PlacementFacts{{PlacementID: "plc-old", Version: 1, Fingerprint: "fp-o", Coverage: []string{"tv:e1"}, Facts: released(Facts{Resolution: "1080p"}), FactsOK: true}}
 	profile := resolutionProfile("2160p", "1080p", "720p", "480p")
-	pools := EvaluatePools(ModeAll, []string{"tv:s1:e1"}, candidate, candidateRef, current, profile, nil)
+	pools := EvaluatePools(ModeAll, []string{"tv:e1"}, candidate, candidateRef, current, profile, nil)
 	if len(pools) != 1 || pools[0].Verdict != "queue" || pools[0].Winner != nil || len(pools[0].Losers) != 0 {
 		t.Fatalf("all-mode must queue without winners/losers: %+v", pools)
 	}
@@ -268,17 +268,17 @@ func TestEvaluatePoolsPerGroupPoolsByCoveragePlusGroup(t *testing.T) {
 	candidateRef := poolRef("plc-candidate", 1, "fp-c")
 	current := []PlacementFacts{
 		// Same source group, a different bracketed title group: same pool.
-		{PlacementID: "plc-a", Version: 1, Fingerprint: "fp-a", Coverage: []string{"tv:s1:e1"}, Facts: released(Facts{Resolution: "720p", Group: "GroupA-Renamed", Subgroup: subgroup("mikan", "583")}), FactsOK: true},
+		{PlacementID: "plc-a", Version: 1, Fingerprint: "fp-a", Coverage: []string{"tv:e1"}, Facts: released(Facts{Resolution: "720p", Group: "GroupA-Renamed", Subgroup: subgroup("mikan", "583")}), FactsOK: true},
 		// Same coverage, the same bracketed title but another source group:
 		// another pool, never compared here.
-		{PlacementID: "plc-b", Version: 1, Fingerprint: "fp-b", Coverage: []string{"tv:s1:e1"}, Facts: released(Facts{Resolution: "480p", Group: "GroupA", Subgroup: subgroup("mikan", "612")}), FactsOK: true},
-		{PlacementID: "plc-c", Version: 1, Fingerprint: "fp-c2", Coverage: []string{"tv:s1:e1"}, Facts: released(Facts{Resolution: "2160p", Group: "GroupB", Subgroup: subgroup("anibt", "583")}), FactsOK: true},
+		{PlacementID: "plc-b", Version: 1, Fingerprint: "fp-b", Coverage: []string{"tv:e1"}, Facts: released(Facts{Resolution: "480p", Group: "GroupA", Subgroup: subgroup("mikan", "612")}), FactsOK: true},
+		{PlacementID: "plc-c", Version: 1, Fingerprint: "fp-c2", Coverage: []string{"tv:e1"}, Facts: released(Facts{Resolution: "2160p", Group: "GroupB", Subgroup: subgroup("anibt", "583")}), FactsOK: true},
 	}
-	pools := EvaluatePools(ModePerGroup, []string{"tv:s1:e1"}, candidate, candidateRef, current, profile, nil)
+	pools := EvaluatePools(ModePerGroup, []string{"tv:e1"}, candidate, candidateRef, current, profile, nil)
 	if len(pools) != 1 || pools[0].Verdict != "replace" {
 		t.Fatalf("per_group must replace inside the group pool: %+v", pools)
 	}
-	if pools[0].PoolKey != "tv:s1:e1|mikan:583" {
+	if pools[0].PoolKey != "tv:e1|mikan:583" {
 		t.Fatalf("per_group pool key must be coverage+provider:group_ref: %s", pools[0].PoolKey)
 	}
 	if len(pools[0].Losers) != 1 || pools[0].Losers[0].PlacementID != "plc-a" {
@@ -294,14 +294,14 @@ func TestEvaluatePoolsSingleCopyCrossesGroups(t *testing.T) {
 	candidate := released(Facts{Resolution: "2160p", Group: "GroupC"})
 	candidateRef := poolRef("plc-candidate", 1, "fp-c")
 	current := []PlacementFacts{
-		{PlacementID: "plc-a", Version: 1, Fingerprint: "fp-a", Coverage: []string{"tv:s1:e1"}, Facts: released(Facts{Resolution: "720p", Group: "GroupA"}), FactsOK: true},
-		{PlacementID: "plc-b", Version: 1, Fingerprint: "fp-b", Coverage: []string{"tv:s1:e1"}, Facts: released(Facts{Resolution: "1080p", Group: "GroupB"}), FactsOK: true},
+		{PlacementID: "plc-a", Version: 1, Fingerprint: "fp-a", Coverage: []string{"tv:e1"}, Facts: released(Facts{Resolution: "720p", Group: "GroupA"}), FactsOK: true},
+		{PlacementID: "plc-b", Version: 1, Fingerprint: "fp-b", Coverage: []string{"tv:e1"}, Facts: released(Facts{Resolution: "1080p", Group: "GroupB"}), FactsOK: true},
 	}
-	pools := EvaluatePools(ModeSingleCopy, []string{"tv:s1:e1"}, candidate, candidateRef, current, profile, nil)
+	pools := EvaluatePools(ModeSingleCopy, []string{"tv:e1"}, candidate, candidateRef, current, profile, nil)
 	if len(pools) != 1 || pools[0].Verdict != "replace" {
 		t.Fatalf("single_copy must replace across groups: %+v", pools)
 	}
-	if pools[0].PoolKey != "tv:s1:e1" {
+	if pools[0].PoolKey != "tv:e1" {
 		t.Fatalf("single_copy pool key must be the coverage key: %s", pools[0].PoolKey)
 	}
 	if len(pools[0].Losers) != 2 {
@@ -312,7 +312,7 @@ func TestEvaluatePoolsSingleCopyCrossesGroups(t *testing.T) {
 func TestEvaluatePoolsPerGroupMissingGroupBlocks(t *testing.T) {
 	profile := Profile{Version: qualityprofile.Version}
 	candidate := released(Facts{Resolution: "1080p"}) // no stable group identity
-	pools := EvaluatePools(ModePerGroup, []string{"tv:s1:e1"}, candidate, poolRef("plc-candidate", 1, "fp-c"), nil, profile, nil)
+	pools := EvaluatePools(ModePerGroup, []string{"tv:e1"}, candidate, poolRef("plc-candidate", 1, "fp-c"), nil, profile, nil)
 	if pools[0].Verdict != "blocked" || pools[0].Reason != "group_missing" {
 		t.Fatalf("per_group without group must block with group_missing: %+v", pools)
 	}
@@ -342,9 +342,9 @@ func TestEvaluatePoolsUnclaimedScanFileLosesToAnyCandidate(t *testing.T) {
 	candidateRef := poolRef("plc-candidate", 1, "fp-c")
 	current := []PlacementFacts{
 		// FactsOK false: no release chain for this placement.
-		{PlacementID: "plc-unknown", Version: 1, Fingerprint: "fp-u", Coverage: []string{"tv:s1:e1"}, FactsOK: false},
+		{PlacementID: "plc-unknown", Version: 1, Fingerprint: "fp-u", Coverage: []string{"tv:e1"}, FactsOK: false},
 	}
-	pools := EvaluatePools(ModeSingleCopy, []string{"tv:s1:e1"}, candidate, candidateRef, current, profile, nil)
+	pools := EvaluatePools(ModeSingleCopy, []string{"tv:e1"}, candidate, candidateRef, current, profile, nil)
 	if pools[0].Verdict != "replace" {
 		t.Fatalf("a scoring candidate must replace a facts-missing placement instead of blocking: %+v", pools)
 	}
@@ -353,7 +353,7 @@ func TestEvaluatePoolsUnclaimedScanFileLosesToAnyCandidate(t *testing.T) {
 	}
 	// Even a candidate that ranks lowest on every item beats it.
 	zero := released(Facts{Resolution: "unknown-res"})
-	pools = EvaluatePools(ModeSingleCopy, []string{"tv:s1:e1"}, zero, candidateRef, current, profile, nil)
+	pools = EvaluatePools(ModeSingleCopy, []string{"tv:e1"}, zero, candidateRef, current, profile, nil)
 	if pools[0].Verdict != "replace" || len(pools[0].Losers) != 1 || pools[0].Reason != ReasonExistingWithoutFacts {
 		t.Fatalf("any candidate must replace an unclaimed scan-managed file: %+v", pools)
 	}
@@ -361,14 +361,14 @@ func TestEvaluatePoolsUnclaimedScanFileLosesToAnyCandidate(t *testing.T) {
 	// candidates of two different groups each replace it; nothing blocks.
 	for _, group := range []*qualityprofile.SubgroupSource{subgroup("mikan", "1"), subgroup("custom", "src-9")} {
 		grouped := released(Facts{Resolution: "720p", Subgroup: group})
-		pools = EvaluatePools(ModePerGroup, []string{"tv:s1:e1"}, grouped, candidateRef, current, profile, nil)
-		if len(pools) != 1 || pools[0].Verdict != "replace" || pools[0].PoolKey != "tv:s1:e1|"+group.Key() ||
+		pools = EvaluatePools(ModePerGroup, []string{"tv:e1"}, grouped, candidateRef, current, profile, nil)
+		if len(pools) != 1 || pools[0].Verdict != "replace" || pools[0].PoolKey != "tv:e1|"+group.Key() ||
 			len(pools[0].Losers) != 1 || pools[0].Losers[0].PlacementID != "plc-unknown" {
 			t.Fatalf("per_group %s must replace the group-less file: %+v", group.Key(), pools)
 		}
 	}
 	// all mode never compares.
-	pools = EvaluatePools(ModeAll, []string{"tv:s1:e1"}, zero, candidateRef, current, profile, nil)
+	pools = EvaluatePools(ModeAll, []string{"tv:e1"}, zero, candidateRef, current, profile, nil)
 	if pools[0].Verdict != "queue" || len(pools[0].Losers) != 0 {
 		t.Fatalf("all mode must leave the scan-managed file alone: %+v", pools)
 	}
@@ -381,12 +381,12 @@ func TestEvaluatePoolsPerGroupCustomSourceIsItsOwnGroup(t *testing.T) {
 	profile := resolutionProfile("2160p", "1080p", "720p")
 	candidate := released(Facts{Resolution: "2160p", Group: "Same", Subgroup: subgroup(qualityprofile.CustomSubgroupProvider, "src-1")})
 	current := []PlacementFacts{
-		{PlacementID: "plc-same-source", Version: 1, Fingerprint: "fp-1", Coverage: []string{"tv:s1:e1"}, Facts: released(Facts{Resolution: "720p", Group: "Same", Subgroup: subgroup(qualityprofile.CustomSubgroupProvider, "src-1")}), FactsOK: true},
-		{PlacementID: "plc-other-source", Version: 1, Fingerprint: "fp-2", Coverage: []string{"tv:s1:e1"}, Facts: released(Facts{Resolution: "720p", Group: "Same", Subgroup: subgroup(qualityprofile.CustomSubgroupProvider, "src-2")}), FactsOK: true},
-		{PlacementID: "plc-provider", Version: 1, Fingerprint: "fp-3", Coverage: []string{"tv:s1:e1"}, Facts: released(Facts{Resolution: "720p", Group: "Same", Subgroup: subgroup("mikan", "src-1")}), FactsOK: true},
+		{PlacementID: "plc-same-source", Version: 1, Fingerprint: "fp-1", Coverage: []string{"tv:e1"}, Facts: released(Facts{Resolution: "720p", Group: "Same", Subgroup: subgroup(qualityprofile.CustomSubgroupProvider, "src-1")}), FactsOK: true},
+		{PlacementID: "plc-other-source", Version: 1, Fingerprint: "fp-2", Coverage: []string{"tv:e1"}, Facts: released(Facts{Resolution: "720p", Group: "Same", Subgroup: subgroup(qualityprofile.CustomSubgroupProvider, "src-2")}), FactsOK: true},
+		{PlacementID: "plc-provider", Version: 1, Fingerprint: "fp-3", Coverage: []string{"tv:e1"}, Facts: released(Facts{Resolution: "720p", Group: "Same", Subgroup: subgroup("mikan", "src-1")}), FactsOK: true},
 	}
-	pools := EvaluatePools(ModePerGroup, []string{"tv:s1:e1"}, candidate, poolRef("plc-candidate", 1, "fp-c"), current, profile, nil)
-	if len(pools) != 1 || pools[0].PoolKey != "tv:s1:e1|custom:src-1" || pools[0].Verdict != "replace" ||
+	pools := EvaluatePools(ModePerGroup, []string{"tv:e1"}, candidate, poolRef("plc-candidate", 1, "fp-c"), current, profile, nil)
+	if len(pools) != 1 || pools[0].PoolKey != "tv:e1|custom:src-1" || pools[0].Verdict != "replace" ||
 		len(pools[0].Losers) != 1 || pools[0].Losers[0].PlacementID != "plc-same-source" {
 		t.Fatalf("custom source pool = %+v", pools)
 	}
@@ -397,9 +397,9 @@ func TestEvaluatePoolsUnrankedCandidateRetains(t *testing.T) {
 	candidate := released(Facts{Resolution: "unknown-res"}) // not in the rank list: 0 score
 	candidateRef := poolRef("plc-candidate", 1, "fp-c")
 	current := []PlacementFacts{
-		{PlacementID: "plc-a", Version: 1, Fingerprint: "fp-a", Coverage: []string{"tv:s1:e1"}, Facts: released(Facts{Resolution: "720p"}), FactsOK: true},
+		{PlacementID: "plc-a", Version: 1, Fingerprint: "fp-a", Coverage: []string{"tv:e1"}, Facts: released(Facts{Resolution: "720p"}), FactsOK: true},
 	}
-	pools := EvaluatePools(ModeSingleCopy, []string{"tv:s1:e1"}, candidate, candidateRef, current, profile, nil)
+	pools := EvaluatePools(ModeSingleCopy, []string{"tv:e1"}, candidate, candidateRef, current, profile, nil)
 	if pools[0].Verdict != "retain" {
 		t.Fatalf("unranked candidate must retain, not block: %+v", pools)
 	}
@@ -416,26 +416,26 @@ func TestEvaluatePoolsSubgroupScoreDecidesFirst(t *testing.T) {
 	candidate := released(Facts{Resolution: "1080p", Group: "ANi", Size: sizePtr(1 << 30), Score: int64Ptr(60)})
 	candidateRef := poolRef("plc-candidate", 1, "fp-c")
 	current := []PlacementFacts{
-		{PlacementID: "plc-samplegroup", Version: 1, Fingerprint: "fp-l", Coverage: []string{"tv:s1:e1"},
+		{PlacementID: "plc-samplegroup", Version: 1, Fingerprint: "fp-l", Coverage: []string{"tv:e1"},
 			Facts: released(Facts{Resolution: "1080p", Group: "SampleGroup", Size: sizePtr(2 << 30), Score: int64Ptr(90)}), FactsOK: true},
 	}
-	pools := EvaluatePools(ModeSingleCopy, []string{"tv:s1:e1"}, candidate, candidateRef, current, profile, nil)
+	pools := EvaluatePools(ModeSingleCopy, []string{"tv:e1"}, candidate, candidateRef, current, profile, nil)
 	if pools[0].Verdict != "retain" || len(pools[0].Steps) != 1 || pools[0].Steps[0].Key != qualityprofile.KeySubgroupScore {
 		t.Fatalf("the lower subgroup score must retain on the first step: %+v", pools)
 	}
 	candidate.Score = int64Ptr(95)
-	pools = EvaluatePools(ModeSingleCopy, []string{"tv:s1:e1"}, candidate, candidateRef, current, profile, nil)
+	pools = EvaluatePools(ModeSingleCopy, []string{"tv:e1"}, candidate, candidateRef, current, profile, nil)
 	if pools[0].Verdict != "replace" {
 		t.Fatalf("the higher subgroup score must replace despite the smaller size: %+v", pools)
 	}
 	// No score on either side: everything ties and the size decides.
 	candidate.Score, current[0].Facts.Score = nil, nil
-	pools = EvaluatePools(ModeSingleCopy, []string{"tv:s1:e1"}, candidate, candidateRef, current, profile, nil)
+	pools = EvaluatePools(ModeSingleCopy, []string{"tv:e1"}, candidate, candidateRef, current, profile, nil)
 	if pools[0].Verdict != "retain" {
 		t.Fatalf("equal items must fall to size (current larger): %+v", pools)
 	}
 	candidate.Size = sizePtr(3 << 30)
-	pools = EvaluatePools(ModeSingleCopy, []string{"tv:s1:e1"}, candidate, candidateRef, current, profile, nil)
+	pools = EvaluatePools(ModeSingleCopy, []string{"tv:e1"}, candidate, candidateRef, current, profile, nil)
 	if pools[0].Verdict != "replace" || len(pools[0].Losers) != 1 || pools[0].Losers[0].PlacementID != "plc-samplegroup" {
 		t.Fatalf("equal items with a larger size must replace: %+v", pools)
 	}
@@ -445,7 +445,7 @@ func TestEvaluatePoolsSubgroupScoreDecidesFirst(t *testing.T) {
 	// A source without a score ranks below any scored source.
 	candidate.Size = sizePtr(1 << 30)
 	current[0].Facts.Score = int64Ptr(-50)
-	pools = EvaluatePools(ModeSingleCopy, []string{"tv:s1:e1"}, candidate, candidateRef, current, profile, nil)
+	pools = EvaluatePools(ModeSingleCopy, []string{"tv:e1"}, candidate, candidateRef, current, profile, nil)
 	if pools[0].Verdict != "retain" {
 		t.Fatalf("no score must rank below a negative score: %+v", pools)
 	}
@@ -456,9 +456,9 @@ func TestEvaluatePoolsSubgroupScoreDecidesFirst(t *testing.T) {
 func TestEvaluatePoolsPerGroupIgnoresSubgroupScore(t *testing.T) {
 	profile := qualityprofile.Default()
 	candidate := released(Facts{Resolution: "1080p", Group: "GroupA", Subgroup: subgroup("anibt", "a"), Score: int64Ptr(1)})
-	current := []PlacementFacts{{PlacementID: "plc-a", Version: 1, Fingerprint: "fp-a", Coverage: []string{"tv:s1:e1"},
+	current := []PlacementFacts{{PlacementID: "plc-a", Version: 1, Fingerprint: "fp-a", Coverage: []string{"tv:e1"},
 		Facts: released(Facts{Resolution: "720p", Group: "GroupA", Subgroup: subgroup("anibt", "a"), Score: int64Ptr(100)}), FactsOK: true}}
-	pools := EvaluatePools(ModePerGroup, []string{"tv:s1:e1"}, candidate, poolRef("plc-candidate", 1, "fp-c"), current, profile, nil)
+	pools := EvaluatePools(ModePerGroup, []string{"tv:e1"}, candidate, poolRef("plc-candidate", 1, "fp-c"), current, profile, nil)
 	if pools[0].Verdict != "replace" {
 		t.Fatalf("per_group must ignore the subgroup score: %+v", pools)
 	}
@@ -475,9 +475,9 @@ func TestEvaluatePoolsTieRetainsCurrentWinner(t *testing.T) {
 	candidateRef := poolRef("plc-candidate", 1, "fp-c")
 	created := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
 	current := []PlacementFacts{
-		{PlacementID: "plc-old", Version: 1, Fingerprint: "fp-o", Coverage: []string{"tv:s1:e1"}, Facts: released(Facts{Resolution: "720p"}), FactsOK: true, CreatedAt: created},
+		{PlacementID: "plc-old", Version: 1, Fingerprint: "fp-o", Coverage: []string{"tv:e1"}, Facts: released(Facts{Resolution: "720p"}), FactsOK: true, CreatedAt: created},
 	}
-	pools := EvaluatePools(ModeSingleCopy, []string{"tv:s1:e1"}, candidate, candidateRef, current, profile, nil)
+	pools := EvaluatePools(ModeSingleCopy, []string{"tv:e1"}, candidate, candidateRef, current, profile, nil)
 	if pools[0].Verdict != "retain" {
 		t.Fatalf("equal quality must retain the current winner: %+v", pools)
 	}
@@ -506,9 +506,9 @@ func TestEvaluateServerFreezesDecisionFromServerFacts(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
-	candidate := seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:s1:e1"},
+	candidate := seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:e1"},
 		Facts{Resolution: "1080p", Group: "GroupA"}, "2026-08-01T00:00:00Z")
 
 	service := NewReplacementDecisionService(db)
@@ -562,9 +562,9 @@ UPDATE anime_business_configs SET admission_mode = 'single_copy', replacement_ve
 WHERE managed_anime_id = 'anime-1'`); err != nil {
 		t.Fatal(err)
 	}
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:e1"},
 		Facts{Resolution: "2160p", Group: "GroupB"}, "2026-08-01T00:00:00Z")
 
 	service := NewReplacementDecisionService(db)
@@ -589,9 +589,9 @@ UPDATE anime_business_configs SET admission_mode = 'all', replacement_version = 
 WHERE managed_anime_id = 'anime-1'`); err != nil {
 		t.Fatal(err)
 	}
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},
 		Facts{Resolution: "2160p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:e1"},
 		Facts{Resolution: "480p", Group: "GroupA"}, "2026-08-01T00:00:00Z")
 
 	service := NewReplacementDecisionService(db)
@@ -612,10 +612,10 @@ func TestEvaluateServerBlockedOnMissingGroup(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
 	// Candidate has no stable group identity.
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:e1"},
 		Facts{Resolution: "1080p"}, "2026-08-01T00:00:00Z")
 
 	service := NewReplacementDecisionService(db)
@@ -655,9 +655,9 @@ VALUES ('anime-1', 'subgroups', 'subgroups', 'subgroups-v1',
 	storedsections.Seed(t, db, "anime-1")
 	// The profile does not list subgroup.score: equal quality keeps the
 	// incumbent whatever the group scores.
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},
 		Facts{Resolution: "1080p", Group: "SampleGroup"}, "2026-07-01T00:00:00Z")
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:e1"},
 		Facts{Resolution: "1080p", Group: "ANi"}, "2026-08-01T00:00:00Z")
 
 	service := NewReplacementDecisionService(db)
@@ -690,9 +690,9 @@ SET admission_mode = 'single_copy', quality_profile = $1::jsonb, replacement_ver
 WHERE managed_anime_id = 'anime-1'`, `{"version":"profile-v1","items":[{"key":"anibt.resolution","ranks":[["1080p"],["720p"]]}]}`); err != nil {
 		t.Fatal(err)
 	}
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},
 		Facts{Resolution: "1080p", Group: "GroupA", Values: map[string][]string{qualityprofile.KeyAniBTResolution: {"720p"}}}, "2026-07-01T00:00:00Z")
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "GroupB", Values: map[string][]string{qualityprofile.KeyAniBTResolution: {"1080p"}}}, "2026-08-01T00:00:00Z")
 
 	view, err := evaluateSingle(NewReplacementDecisionService(db).EvaluateServer(ctx, EvaluateRequest{AnimeID: "anime-1", CandidateRelease: "release-new"}))
@@ -738,14 +738,14 @@ VALUES ($1,'sub-1','anibt',$2,$2,'auto',TRUE,$3,TRUE,1)`, row.id, row.ref, row.s
 	high := &qualityprofile.SubgroupSource{Provider: "anibt", GroupRef: "group-high"}
 	low := &qualityprofile.SubgroupSource{Provider: "anibt", GroupRef: "group-low"}
 	// The incumbent has the better title quality but the lower group score.
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},
 		Facts{Resolution: "2160p", Group: "GroupA", Subgroup: low}, "2026-07-01T00:00:00Z")
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "GroupB", Subgroup: high}, "2026-08-01T00:00:00Z")
 	// No RSS source group: ranks below every scored source.
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-orphan", []string{"tv:s1:e2"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-orphan", []string{"tv:e2"},
 		Facts{Resolution: "2160p", Group: "GroupC"}, "2026-07-01T00:00:00Z")
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-low", []string{"tv:s1:e2"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-low", []string{"tv:e2"},
 		Facts{Resolution: "480p", Group: "GroupD", Subgroup: low}, "2026-08-01T00:00:00Z")
 
 	service := NewReplacementDecisionService(db)
@@ -775,7 +775,7 @@ func TestEvaluateServerSubscriptionStoppedIsNoop(t *testing.T) {
 	if _, err := db.Exec(`UPDATE subscriptions SET state = 'stopped', version = version + 1 WHERE managed_anime_id = 'anime-1'`); err != nil {
 		t.Fatal(err)
 	}
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:e1"},
 		Facts{Resolution: "1080p", Group: "GroupA"}, "2026-08-01T00:00:00Z")
 
 	service := NewReplacementDecisionService(db)
@@ -798,7 +798,7 @@ func TestEvaluateServerCandidatePlacementMissing(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 	// Release without a video placement (facts exist, no file operation).
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
 	service := NewReplacementDecisionService(db)
 	_, err := evaluateSingle(service.EvaluateServer(ctx, EvaluateRequest{AnimeID: "anime-1", CandidateRelease: "release-old-other"}))
@@ -818,8 +818,8 @@ func TestSettleKeepsFrozenWinnerOlderThanLoser(t *testing.T) {
 	ctx := context.Background()
 	// The frozen winner was created BEFORE the loser: settlement must keep the
 	// frozen winner and never re-rank by created_at.
-	seedPlacement(t, db, "plc-winner", "anime-1", "/library/Winner/EP01.mkv", "fp-w", []string{"tv:s1:e1"}, "2026-07-01T00:00:00Z")
-	seedPlacement(t, db, "plc-loser", "anime-1", "/library/Loser/EP01.mkv", "fp-l", []string{"tv:s1:e1"}, "2026-08-01T00:00:00Z")
+	seedPlacement(t, db, "plc-winner", "anime-1", "/library/Winner/EP01.mkv", "fp-w", []string{"tv:e1"}, "2026-07-01T00:00:00Z")
+	seedPlacement(t, db, "plc-loser", "anime-1", "/library/Loser/EP01.mkv", "fp-l", []string{"tv:e1"}, "2026-08-01T00:00:00Z")
 	seedFrozenDecision(t, db, "dec-frozen", "anime-1", "plc-winner", 1, 1, ModeSingleCopy,
 		&PlacementRef{PlacementID: "plc-winner", Version: 1, Fingerprint: "fp-w"},
 		[]PlacementRef{{PlacementID: "plc-loser", Version: 1, Fingerprint: "fp-l"}}, "admitted")
@@ -856,10 +856,10 @@ func TestSettleOnlySupersedesFrozenLosers(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	seedPlacement(t, db, "plc-winner", "anime-1", "/library/W/EP01.mkv", "fp-w", []string{"tv:s1:e1"}, "2026-07-01T00:00:00Z")
-	seedPlacement(t, db, "plc-loser", "anime-1", "/library/L/EP01.mkv", "fp-l", []string{"tv:s1:e1"}, "2026-08-01T00:00:00Z")
+	seedPlacement(t, db, "plc-winner", "anime-1", "/library/W/EP01.mkv", "fp-w", []string{"tv:e1"}, "2026-07-01T00:00:00Z")
+	seedPlacement(t, db, "plc-loser", "anime-1", "/library/L/EP01.mkv", "fp-l", []string{"tv:e1"}, "2026-08-01T00:00:00Z")
 	// Same anime, active, NOT listed in the decision: must stay untouched.
-	seedPlacement(t, db, "plc-other", "anime-1", "/library/O/EP02.mkv", "fp-o", []string{"tv:s1:e2"}, "2026-06-01T00:00:00Z")
+	seedPlacement(t, db, "plc-other", "anime-1", "/library/O/EP02.mkv", "fp-o", []string{"tv:e2"}, "2026-06-01T00:00:00Z")
 	seedFrozenDecision(t, db, "dec-frozen", "anime-1", "plc-winner", 1, 1, ModeSingleCopy,
 		&PlacementRef{PlacementID: "plc-winner", Version: 1, Fingerprint: "fp-w"},
 		[]PlacementRef{{PlacementID: "plc-loser", Version: 1, Fingerprint: "fp-l"}}, "admitted")
@@ -894,8 +894,8 @@ func TestSettleCleanupGetsFrozenAdmissionMode(t *testing.T) {
 		sub := fmt.Sprintf("sub-%s", mode)
 		seedAnimeSubscription(t, db, anime, sub, "active")
 		seedInstanceReplacement(t, db, anime, mode, ``, 1)
-		seedPlacement(t, db, "plc-"+string(mode)+"-w", anime, "/library/W/EP01.mkv", "fp-w", []string{"tv:s1:e1"}, "2026-07-01T00:00:00Z")
-		seedPlacement(t, db, "plc-"+string(mode)+"-l", anime, "/library/L/EP01.mkv", "fp-l", []string{"tv:s1:e1"}, "2026-08-01T00:00:00Z")
+		seedPlacement(t, db, "plc-"+string(mode)+"-w", anime, "/library/W/EP01.mkv", "fp-w", []string{"tv:e1"}, "2026-07-01T00:00:00Z")
+		seedPlacement(t, db, "plc-"+string(mode)+"-l", anime, "/library/L/EP01.mkv", "fp-l", []string{"tv:e1"}, "2026-08-01T00:00:00Z")
 		seedFrozenDecision(t, db, "dec-"+string(mode), anime, "plc-"+string(mode)+"-w", 1, 1, mode,
 			&PlacementRef{PlacementID: "plc-" + string(mode) + "-w", Version: 1, Fingerprint: "fp-w"},
 			[]PlacementRef{{PlacementID: "plc-" + string(mode) + "-l", Version: 1, Fingerprint: "fp-l"}}, "admitted")
@@ -921,8 +921,8 @@ SELECT admission_mode FROM replacement_deletions WHERE managed_anime_id = $1`, a
 // losers so each stale test can mutate exactly one frozen input.
 func settleStaleFixture(t *testing.T, db *sql.DB) *ReplacementDecisionService {
 	t.Helper()
-	seedPlacement(t, db, "plc-winner", "anime-1", "/library/W/EP01.mkv", "fp-w", []string{"tv:s1:e1"}, "2026-07-01T00:00:00Z")
-	seedPlacement(t, db, "plc-loser", "anime-1", "/library/L/EP01.mkv", "fp-l", []string{"tv:s1:e1"}, "2026-08-01T00:00:00Z")
+	seedPlacement(t, db, "plc-winner", "anime-1", "/library/W/EP01.mkv", "fp-w", []string{"tv:e1"}, "2026-07-01T00:00:00Z")
+	seedPlacement(t, db, "plc-loser", "anime-1", "/library/L/EP01.mkv", "fp-l", []string{"tv:e1"}, "2026-08-01T00:00:00Z")
 	seedFrozenDecision(t, db, "dec-frozen", "anime-1", "plc-winner", 1, 1, ModeSingleCopy,
 		&PlacementRef{PlacementID: "plc-winner", Version: 1, Fingerprint: "fp-w"},
 		[]PlacementRef{{PlacementID: "plc-loser", Version: 1, Fingerprint: "fp-l"}}, "admitted")
@@ -1075,11 +1075,11 @@ func TestSettleReplayRegistersOneDeletionPerFrozenLoser(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	seedPlacement(t, db, "plc-winner", "anime-1", "/library/W/EP01.mkv", "fp-w", []string{"tv:s1:e1"}, "2026-07-01T00:00:00Z")
-	seedPlacement(t, db, "plc-loser", "anime-1", "/library/L/EP01.mkv", "fp-l", []string{"tv:s1:e1"}, "2026-08-01T00:00:00Z")
+	seedPlacement(t, db, "plc-winner", "anime-1", "/library/W/EP01.mkv", "fp-w", []string{"tv:e1"}, "2026-07-01T00:00:00Z")
+	seedPlacement(t, db, "plc-loser", "anime-1", "/library/L/EP01.mkv", "fp-l", []string{"tv:e1"}, "2026-08-01T00:00:00Z")
 	// A superseded placement of the SAME anime that is NOT in the decision:
 	// convergence must never hand it off.
-	seedPlacement(t, db, "plc-unrelated", "anime-1", "/library/U/EP02.mkv", "fp-u", []string{"tv:s1:e2"}, "2026-05-01T00:00:00Z")
+	seedPlacement(t, db, "plc-unrelated", "anime-1", "/library/U/EP02.mkv", "fp-u", []string{"tv:e2"}, "2026-05-01T00:00:00Z")
 	seedFrozenDecision(t, db, "dec-frozen", "anime-1", "plc-winner", 1, 1, ModeSingleCopy,
 		&PlacementRef{PlacementID: "plc-winner", Version: 1, Fingerprint: "fp-w"},
 		[]PlacementRef{{PlacementID: "plc-loser", Version: 1, Fingerprint: "fp-l"}}, "admitted")
@@ -1123,10 +1123,10 @@ func TestSettleForPlacementOnlyExecutesOwnDecision(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	seedPlacement(t, db, "plc-w1", "anime-1", "/library/W1/EP01.mkv", "fp-w1", []string{"tv:s1:e1"}, "2026-07-01T00:00:00Z")
-	seedPlacement(t, db, "plc-l1", "anime-1", "/library/L1/EP01.mkv", "fp-l1", []string{"tv:s1:e1"}, "2026-08-01T00:00:00Z")
-	seedPlacement(t, db, "plc-w2", "anime-1", "/library/W2/EP02.mkv", "fp-w2", []string{"tv:s1:e2"}, "2026-07-02T00:00:00Z")
-	seedPlacement(t, db, "plc-l2", "anime-1", "/library/L2/EP02.mkv", "fp-l2", []string{"tv:s1:e2"}, "2026-08-02T00:00:00Z")
+	seedPlacement(t, db, "plc-w1", "anime-1", "/library/W1/EP01.mkv", "fp-w1", []string{"tv:e1"}, "2026-07-01T00:00:00Z")
+	seedPlacement(t, db, "plc-l1", "anime-1", "/library/L1/EP01.mkv", "fp-l1", []string{"tv:e1"}, "2026-08-01T00:00:00Z")
+	seedPlacement(t, db, "plc-w2", "anime-1", "/library/W2/EP02.mkv", "fp-w2", []string{"tv:e2"}, "2026-07-02T00:00:00Z")
+	seedPlacement(t, db, "plc-l2", "anime-1", "/library/L2/EP02.mkv", "fp-l2", []string{"tv:e2"}, "2026-08-02T00:00:00Z")
 	seedFrozenDecision(t, db, "dec-1", "anime-1", "plc-w1", 1, 1, ModeSingleCopy,
 		&PlacementRef{PlacementID: "plc-w1", Version: 1, Fingerprint: "fp-w1"},
 		[]PlacementRef{{PlacementID: "plc-l1", Version: 1, Fingerprint: "fp-l1"}}, "admitted")
@@ -1162,7 +1162,7 @@ func TestSettleForPlacementOnlyExecutesOwnDecision(t *testing.T) {
 func TestSettleNoDecisionIsNoop(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
-	seedPlacement(t, db, "plc-new", "anime-1", "/library/N/EP01.mkv", "fp-n", []string{"tv:s1:e1"}, "2026-08-01T00:00:00Z")
+	seedPlacement(t, db, "plc-new", "anime-1", "/library/N/EP01.mkv", "fp-n", []string{"tv:e1"}, "2026-08-01T00:00:00Z")
 	cleanup := NewCleanupService(db)
 	service := NewReplacementDecisionService(db)
 	service.SetCleanupHandoff(cleanup)
@@ -1183,9 +1183,9 @@ func TestEvaluateHandlerRunsRealOwner(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:e1"},
 		Facts{Resolution: "1080p", Group: "GroupA"}, "2026-08-01T00:00:00Z")
 
 	store := &workitems.Store{DB: db, RetentionDays: workitems.DefaultRetentionDays}
@@ -1265,7 +1265,7 @@ func TestEvaluateHandlerSubscriptionStoppedCompletesWithoutDecision(t *testing.T
 	if _, err := db.Exec(`UPDATE subscriptions SET state = 'stopped', version = version + 1 WHERE managed_anime_id = 'anime-1'`); err != nil {
 		t.Fatal(err)
 	}
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-new", []string{"tv:e1"},
 		Facts{Resolution: "1080p", Group: "GroupA"}, "2026-08-01T00:00:00Z")
 	service := NewReplacementDecisionService(db)
 	outcome, err := service.EvaluateHandler().Handle(ctx, workitems.Claim{
@@ -1296,7 +1296,7 @@ func TestEvaluateHandlerRetriesMissingCandidatePlacement(t *testing.T) {
 	db := openFrozenTestDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:s1:e1"},
+	seedFilePlacement(t, db, "anime-1", "sub-1", "release-old", []string{"tv:e1"},
 		Facts{Resolution: "720p", Group: "GroupA"}, "2026-07-01T00:00:00Z")
 	service := NewReplacementDecisionService(db)
 	outcome, err := service.EvaluateHandler().Handle(ctx, workitems.Claim{
@@ -1373,8 +1373,8 @@ func TestSettleDeletesLoserAndReplayIsIdempotent(t *testing.T) {
 	winnerFP := sha256Hex(winnerContent)
 	loserFP := loserObservation.Fingerprint
 
-	seedPlacement(t, db, "plc-winner", "anime-1", winnerPath, winnerFP, []string{"tv:s1:e1"}, "2026-07-01T00:00:00Z")
-	seedPlacement(t, db, "plc-loser", "anime-1", loserPath, loserFP, []string{"tv:s1:e1"}, "2026-08-01T00:00:00Z")
+	seedPlacement(t, db, "plc-winner", "anime-1", winnerPath, winnerFP, []string{"tv:e1"}, "2026-07-01T00:00:00Z")
+	seedPlacement(t, db, "plc-loser", "anime-1", loserPath, loserFP, []string{"tv:e1"}, "2026-08-01T00:00:00Z")
 	seedFrozenDecision(t, db, "dec-frozen", "anime-1", "plc-winner", 1, 1, ModeSingleCopy,
 		&PlacementRef{PlacementID: "plc-winner", Version: 1, Fingerprint: winnerFP},
 		[]PlacementRef{{PlacementID: "plc-loser", Version: 1, Fingerprint: loserFP}}, "admitted")
@@ -1460,8 +1460,8 @@ func TestSettleStaleLeavesPhysicalFilesUntouched(t *testing.T) {
 	}
 	winnerFP := sha256Hex([]byte("winner"))
 	loserFP := sha256Hex([]byte("loser"))
-	seedPlacement(t, db, "plc-winner", "anime-1", winnerPath, winnerFP, []string{"tv:s1:e1"}, "2026-07-01T00:00:00Z")
-	seedPlacement(t, db, "plc-loser", "anime-1", loserPath, loserFP, []string{"tv:s1:e1"}, "2026-08-01T00:00:00Z")
+	seedPlacement(t, db, "plc-winner", "anime-1", winnerPath, winnerFP, []string{"tv:e1"}, "2026-07-01T00:00:00Z")
+	seedPlacement(t, db, "plc-loser", "anime-1", loserPath, loserFP, []string{"tv:e1"}, "2026-08-01T00:00:00Z")
 	seedFrozenDecision(t, db, "dec-frozen", "anime-1", "plc-winner", 1, 1, ModeSingleCopy,
 		&PlacementRef{PlacementID: "plc-winner", Version: 1, Fingerprint: winnerFP},
 		[]PlacementRef{{PlacementID: "plc-loser", Version: 1, Fingerprint: loserFP}}, "admitted")

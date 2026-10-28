@@ -49,7 +49,7 @@ func TestDownloadSubmittedFactsFillEpisodeAndCatalog(t *testing.T) {
 // episode facts and labels the one episode.
 func TestDownloadSubmittedFactsLabelTheBatchEpisodes(t *testing.T) {
 	identity := []byte(`{"State":"resolved","Kind":"tv_episode","Shape":"single","RawEpisode":"1","Offset":0,"Episode":"1"}`)
-	batch := downloadSubmittedFacts(downloadNotificationRow{releaseIdentity: identity, coverageKeys: []byte(`["tv:s1:e1","tv:s1:e2","tv:s1:e3","tv:s1:e7"]`)}, "anime-1", taskSnapshot{}, providerCorrelation{})
+	batch := downloadSubmittedFacts(downloadNotificationRow{releaseIdentity: identity, coverageKeys: []byte(`["tv:e1","tv:e2","tv:e3","tv:e7"]`)}, "anime-1", taskSnapshot{}, providerCorrelation{})
 	if batch["release.episodes"] != "01-03, 07" {
 		t.Fatalf("release.episodes = %v", batch["release.episodes"])
 	}
@@ -58,7 +58,7 @@ func TestDownloadSubmittedFactsLabelTheBatchEpisodes(t *testing.T) {
 			t.Errorf("batch %s = %v, want empty", key, batch[key])
 		}
 	}
-	single := downloadSubmittedFacts(downloadNotificationRow{releaseIdentity: identity, coverageKeys: []byte(`["tv:s1:e1"]`)}, "anime-1", taskSnapshot{}, providerCorrelation{})
+	single := downloadSubmittedFacts(downloadNotificationRow{releaseIdentity: identity, coverageKeys: []byte(`["tv:e1"]`)}, "anime-1", taskSnapshot{}, providerCorrelation{})
 	if single["release.episodes"] != "01" || single["ep.display"] != "1" {
 		t.Fatalf("single = %v / %v", single["release.episodes"], single["ep.display"])
 	}

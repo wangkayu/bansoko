@@ -22,9 +22,9 @@ func TestRecomputeCurrentProfileProjectsFrozenCoverage(t *testing.T) {
 		InputFingerprint: InputFingerprint("[Group] Show - 01 [720p]", nil, false),
 		RawEvidence:      []byte(`{"title":"[Group] Show - 99 [1080p]"}`),
 		Facts:            []byte(`{"resolution":"720p"}`),
-		CoverageKeys:     []string{"tv:s1:e1"},
+		CoverageKeys:     []string{"tv:e1"},
 	}
-	coverage := []string{"tv:s1:e12"}
+	coverage := []string{"tv:e12"}
 	updated, changed, err := RecomputeCurrentProfile(existing, testRules(), &coverage, CompareSource{})
 	if err != nil {
 		t.Fatal(err)
@@ -35,8 +35,8 @@ func TestRecomputeCurrentProfileProjectsFrozenCoverage(t *testing.T) {
 	if updated.Resolution != "1080p" || updated.ParserVersion == existing.ParserVersion {
 		t.Fatalf("current attr profile was not applied: %+v", updated)
 	}
-	if len(updated.CoverageKeys) != 1 || updated.CoverageKeys[0] != "tv:s1:e12" {
-		t.Fatalf("coverage = %v, want the frozen plan key tv:s1:e12", updated.CoverageKeys)
+	if len(updated.CoverageKeys) != 1 || updated.CoverageKeys[0] != "tv:e12" {
+		t.Fatalf("coverage = %v, want the frozen plan key tv:e12", updated.CoverageKeys)
 	}
 	if updated.InputFingerprint != InputFingerprint("[Group] Show - 99 [1080p]", nil, false) {
 		t.Fatal("input fingerprint must remain the title/input identity")
@@ -74,7 +74,7 @@ func TestRecomputeCurrentProfileNoOpWithoutFrozenPlan(t *testing.T) {
 		ReleaseID: "release-1", ReleaseVersion: 3,
 		ParserVersion: "release-facts-v1@sha256:old",
 		RawEvidence:   []byte(`{"title":"[Group] Show - 01 [1080p]"}`),
-		CoverageKeys:  []string{"tv:s1:e1"},
+		CoverageKeys:  []string{"tv:e1"},
 	}
 	updated, changed, err := RecomputeCurrentProfile(existing, testRules(), nil, CompareSource{})
 	if err != nil || changed {
@@ -86,7 +86,7 @@ func TestRecomputeCurrentProfileNoOpWithoutFrozenPlan(t *testing.T) {
 }
 
 func TestRecomputeCurrentProfileNoOpWithoutTitle(t *testing.T) {
-	coverage := []string{"tv:s1:e12"}
+	coverage := []string{"tv:e12"}
 	for _, raw := range []json.RawMessage{nil, []byte(`{}`), []byte(`{"title":"  "}`), []byte(`not-json`)} {
 		updated, changed, err := RecomputeCurrentProfile(ReleaseCandidateFacts{RawEvidence: raw}, testRules(), &coverage, CompareSource{})
 		if err != nil || changed || updated.ParserVersion != "" {

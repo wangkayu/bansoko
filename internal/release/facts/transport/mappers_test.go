@@ -19,7 +19,7 @@ func TestViewPreservesHTTPShape(t *testing.T) {
 		InputFingerprint: "fingerprint",
 		RawEvidence:      &raw,
 		Facts:            map[string]any{"episode": "1"},
-		CoverageKeys:     []string{"tv:s1:e1"},
+		CoverageKeys:     []string{"tv:e1"},
 		Resolution:       stringPtr("1080p"),
 		Revision:         stringPtr("v2"),
 		Source:           stringPtr("rss"),
@@ -40,7 +40,7 @@ func TestViewPreservesHTTPShape(t *testing.T) {
 	if got["release_id"] != "release-1" || got["release_version"] != float64(2) || got["size_bytes"] != float64(123) {
 		t.Fatalf("mapped JSON = %s", encoded)
 	}
-	if got["coverage_keys"].([]any)[0] != "tv:s1:e1" {
+	if got["coverage_keys"].([]any)[0] != "tv:e1" {
 		t.Fatalf("coverage_keys = %v", got["coverage_keys"])
 	}
 }

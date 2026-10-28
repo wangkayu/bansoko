@@ -134,8 +134,8 @@ func TestResolveOffsetAppliedExactlyOnce(t *testing.T) {
 	if identity.Offset != 3 {
 		t.Fatalf("offset=%d, want 3", identity.Offset)
 	}
-	if identity.CoverageKey == nil || *identity.CoverageKey != "tv:s1:e15" {
-		t.Fatalf("coverage=%v, want tv:s1:e15", identity.CoverageKey)
+	if identity.CoverageKey == nil || *identity.CoverageKey != "tv:e15" {
+		t.Fatalf("coverage=%v, want tv:e15", identity.CoverageKey)
 	}
 }
 
@@ -183,12 +183,12 @@ func TestResolveMultiEpisodeFile(t *testing.T) {
 		episode, end         string
 		keys                 []string
 	}{
-		{"range", ShapeRange, "01-02", 0, "1", "2", []string{"tv:s1:e1", "tv:s1:e2"}},
-		{"chinese range", ShapeRange, "第01-03话", 0, "1", "3", []string{"tv:s1:e1", "tv:s1:e2", "tv:s1:e3"}},
-		{"E range", ShapeRange, "E11-E14", 0, "11", "14", []string{"tv:s1:e11", "tv:s1:e12", "tv:s1:e13", "tv:s1:e14"}},
-		{"tilde range offset", ShapeRange, "13~14", -12, "1", "2", []string{"tv:s1:e1", "tv:s1:e2"}},
-		{"S E list", ShapeList, "S01E05E06", 0, "5", "6", []string{"tv:s1:e5", "tv:s1:e6"}},
-		{"bracket list", ShapeList, "[07][08]", 0, "7", "8", []string{"tv:s1:e7", "tv:s1:e8"}},
+		{"range", ShapeRange, "01-02", 0, "1", "2", []string{"tv:e1", "tv:e2"}},
+		{"chinese range", ShapeRange, "第01-03话", 0, "1", "3", []string{"tv:e1", "tv:e2", "tv:e3"}},
+		{"E range", ShapeRange, "E11-E14", 0, "11", "14", []string{"tv:e11", "tv:e12", "tv:e13", "tv:e14"}},
+		{"tilde range offset", ShapeRange, "13~14", -12, "1", "2", []string{"tv:e1", "tv:e2"}},
+		{"S E list", ShapeList, "S01E05E06", 0, "5", "6", []string{"tv:e5", "tv:e6"}},
+		{"bracket list", ShapeList, "[07][08]", 0, "7", "8", []string{"tv:e7", "tv:e8"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -286,23 +286,31 @@ func TestResolveUsesTheOneOffsetItIsGiven(t *testing.T) {
 	if shifted.InputDigest == zero.InputDigest {
 		t.Fatal("a different offset must produce a different input digest")
 	}
-	if zero.ResolverVersion != "episode-identity-v1" {
-		t.Fatalf("resolver version=%q, want episode-identity-v1", zero.ResolverVersion)
+	if zero.ResolverVersion != "episode-identity-v2" {
+		t.Fatalf("resolver version=%q, want episode-identity-v2", zero.ResolverVersion)
 	}
 }
 
-// Coverage uses the bound season; a season is never read from evidence.
-func TestResolveSeasonDefaultsToOne(t *testing.T) {
+// An identity is the instance plus the episode number: a TV coverage key is
+// tv:e<N> with no season, and a movie is the canonical movie:0.
+func TestResolveCoverageKeyCarriesNoSeason(t *testing.T) {
 	r := resolver(t)
 	base := tvInput(valueEvidence(EpisodeSourceFileParser, "file_name", "3"))
 	identity := r.Resolve(base)
-	if identity.CoverageKey == nil || *identity.CoverageKey != "tv:s1:e3" {
-		t.Fatalf("coverage=%v, want tv:s1:e3", identity.CoverageKey)
+	if identity.CoverageKey == nil || *identity.CoverageKey != "tv:e3" {
+		t.Fatalf("coverage=%v, want tv:e3", identity.CoverageKey)
 	}
-	base.Season = 4
-	identity = r.Resolve(base)
-	if identity.CoverageKey == nil || *identity.CoverageKey != "tv:s4:e3" {
-		t.Fatalf("coverage=%v, want tv:s4:e3", identity.CoverageKey)
+	if identity.ResolverVersion != ResolverVersion {
+		t.Fatalf("resolver version=%q, want %q", identity.ResolverVersion, ResolverVersion)
+	}
+	special := r.Resolve(tvInput(valueEvidence(EpisodeSourceFileParser, "file_name", "0")))
+	if special.CoverageKey == nil || *special.CoverageKey != "tv:e0" {
+		t.Fatalf("special coverage=%v, want tv:e0", special.CoverageKey)
+	}
+	base.MediaKind = "movie"
+	movie := r.Resolve(base)
+	if movie.CoverageKey == nil || *movie.CoverageKey != "movie:0" {
+		t.Fatalf("movie coverage=%v, want movie:0", movie.CoverageKey)
 	}
 }
 
@@ -346,8 +354,8 @@ func TestResolveDeterministicDigest(t *testing.T) {
 func TestResolveReleaseTitleEvidence(t *testing.T) {
 	r := resolver(t)
 	identity := r.Resolve(tvInput(valueEvidence(EpisodeSourceReleaseParser, "release_title", "2")))
-	if identity.State != StateResolved || identity.CoverageKey == nil || *identity.CoverageKey != "tv:s1:e2" {
-		t.Fatalf("identity=%+v, want resolved tv:s1:e2", identity)
+	if identity.State != StateResolved || identity.CoverageKey == nil || *identity.CoverageKey != "tv:e2" {
+		t.Fatalf("identity=%+v, want resolved tv:e2", identity)
 	}
 	if identity.SelectedSource == nil || *identity.SelectedSource != EpisodeSourceReleaseParser {
 		t.Fatalf("source=%v, want release_parser", identity.SelectedSource)

@@ -125,15 +125,11 @@ const (
 // EpisodeIdentityInput is the pure resolver input. MediaKind is "tv" or
 // "movie". FileEvidence is the episode evidence of the one subject being
 // identified: the video's own filename, or the release title for the
-// release-level identity; no other evidence participates. Season is the
-// bound metadata season (a season in the evidence can never replace it). When
-// SeasonBound is false, TV defaults to season 1 for backward compatibility;
-// when true, season 0 is preserved for continuous-SP subscriptions.
+// release-level identity; no other evidence participates. No season is an
+// input: an identity is the instance plus the episode number.
 type EpisodeIdentityInput struct {
 	MediaKind    string
 	FileRef      string
-	Season       int
-	SeasonBound  bool
 	FileEvidence EpisodeEvidence
 	// Offset is the one episode offset of this identity, chosen by the caller:
 	// the offset of the RSS link the release came through, or the one-shot

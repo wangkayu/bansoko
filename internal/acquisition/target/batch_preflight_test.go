@@ -205,7 +205,7 @@ func TestBatchPreflightTargetsOnlyThePlannedVideos(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan.ApplyDedup(map[string]batchplan.Verdict{"tv:s1:e1": batchplan.VerdictExisting})
+	plan.ApplyDedup(map[string]batchplan.Verdict{"tv:e1": batchplan.VerdictExisting})
 	request.Evidence, request.BatchPlan = &evidence, &plan
 	result := PreflightOrdinary(context.Background(), request, FilesystemProbe{})
 	if len(result.Set.Targets) != 1 || result.Set.Targets[0].SourcePath != "Pack/Preview Show [E02].mkv" {
@@ -214,7 +214,7 @@ func TestBatchPreflightTargetsOnlyThePlannedVideos(t *testing.T) {
 	if got := planOutcome(result, "Pack/Preview Show [E01].mkv"); got != "covered_existing/covered_existing" {
 		t.Fatalf("covered file = %s", got)
 	}
-	plan.ApplyDedup(map[string]batchplan.Verdict{"tv:s1:e2": batchplan.VerdictInFlight})
+	plan.ApplyDedup(map[string]batchplan.Verdict{"tv:e2": batchplan.VerdictInFlight})
 	request.BatchPlan = &plan
 	if skipped := PreflightOrdinary(context.Background(), request, FilesystemProbe{}); skipped.Admission.Admission != AdmissionSkipped {
 		t.Fatalf("a fully covered batch is skipped, got %+v", skipped.Admission)

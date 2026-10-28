@@ -19,7 +19,7 @@ func TestFrozenPlanEpisodes(t *testing.T) {
 		if i > 0 {
 			oversized += ","
 		}
-		oversized += `"tv:s1:e` + strconv.Itoa(i+1) + `"`
+		oversized += `"tv:e` + strconv.Itoa(i+1) + `"`
 	}
 	oversized += "]"
 	for _, tc := range []struct {
@@ -27,10 +27,10 @@ func TestFrozenPlanEpisodes(t *testing.T) {
 		raw  sql.NullString
 		want []int
 	}{
-		{"single episode", valid(`["tv:s1:e7"]`), []int{7}},
-		{"batch ascending", valid(`["tv:s1:e1","tv:s1:e3","tv:s1:e2"]`), []int{1, 2, 3}},
+		{"single episode", valid(`["tv:e7"]`), []int{7}},
+		{"batch ascending", valid(`["tv:e1","tv:e3","tv:e2"]`), []int{1, 2, 3}},
 		{"movie key", valid(`["movie:0"]`), nil},
-		{"fractional key", valid(`["tv:s1:e7.5"]`), nil},
+		{"fractional key", valid(`["tv:e7.5"]`), nil},
 		{"no snapshot", sql.NullString{}, nil},
 		{"null plan", valid(`null`), nil},
 		{"corrupt plan", valid(`{"not":"a list"}`), nil},

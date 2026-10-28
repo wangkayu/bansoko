@@ -41,15 +41,16 @@ func TestResolveFileEpisodeNeverBorrowsTheReleaseTitle(t *testing.T) {
 	}
 }
 
-// The season is never parsed from a filename: coverage uses the bound season.
-func TestResolveFileEpisodeUsesTheBoundSeason(t *testing.T) {
+// The season is never parsed from a filename and is not part of the identity:
+// an S02E05 file covers tv:e5.
+func TestResolveFileEpisodeKeysCarryNoSeason(t *testing.T) {
 	evidence := releaseEvidenceFor(t, "[Grp] Show - 03 [1080p]")
 	identity, _, err := ResolveFileEpisode(context.Background(), evidence, "Show S02E05.mkv")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if identity.CoverageKey == nil || *identity.CoverageKey != "tv:s1:e5" {
-		t.Fatalf("coverage = %v, want the bound season tv:s1:e5", identity.CoverageKey)
+	if identity.CoverageKey == nil || *identity.CoverageKey != "tv:e5" {
+		t.Fatalf("coverage = %v, want tv:e5", identity.CoverageKey)
 	}
 }
 
@@ -63,8 +64,8 @@ func TestResolveFileEpisodeMultiEpisodeFilename(t *testing.T) {
 		if err != nil || facts == nil || facts.Number != "1" || facts.NumberEnd != "2" {
 			t.Fatalf("%s: facts=%+v err=%v, want episodes 1-2", name, facts, err)
 		}
-		if keys := identity.Keys(); len(keys) != 2 || keys[0] != "tv:s1:e1" || keys[1] != "tv:s1:e2" {
-			t.Fatalf("%s: keys=%v, want tv:s1:e1,tv:s1:e2", name, keys)
+		if keys := identity.Keys(); len(keys) != 2 || keys[0] != "tv:e1" || keys[1] != "tv:e2" {
+			t.Fatalf("%s: keys=%v, want tv:e1,tv:e2", name, keys)
 		}
 	}
 	for _, name := range []string{"Show 第01-12话.mkv", "Show [01][03].mkv"} {
