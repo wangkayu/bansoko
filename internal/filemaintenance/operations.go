@@ -80,6 +80,7 @@ type AlignmentService struct {
 	executor  executorpkg.FileExecutor
 	observer  executorpkg.FileObserver
 	workItems *workitems.Store
+	retention AlignmentRetention
 }
 
 // NewAlignmentService wires the operations owner.

@@ -78,6 +78,7 @@ export const enTabsCopy = {
     readFailed: "Failed to load files",
     empty: "No imported files yet",
     aligning: "Aligning",
+    alignWaiting: "Awaiting comparison",
     alignFailedBecause: "Alignment failed: {reason}",
     alignFailed: "Alignment failed",
     alignAdmitted: "Aligning files: {n}",

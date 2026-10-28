@@ -926,15 +926,11 @@ func TestAlignmentCandidateSummary(t *testing.T) {
 	}
 }
 
-func TestDuplicateAlignmentTargetsCountsBothCandidates(t *testing.T) {
-	classifications := []alignmentCandidateClassification{{target: "/library/same.mkv"}, {target: "/library/same.mkv"}, {reason: "target_missing"}}
-	counts := duplicateAlignmentTargets(classifications)
-	if counts["/library/same.mkv"] != 2 {
-		t.Fatalf("duplicate target count=%d, want 2", counts["/library/same.mkv"])
-	}
-}
-
-func TestAlignmentDuplicatePlannerTargetsPersistBlockedWithoutWorkItems(t *testing.T) {
+// Two candidates of one plan rendering the same target are routed like any
+// occupant: the first claims the target, the second meets it. Under all mode
+// retention keeps both, so the collision policy decides: unwired it is skip,
+// and the second stays where it is (target_occupied) with no work item.
+func TestAlignmentDuplicatePlannerTargetsRouteTheSecondByPolicy(t *testing.T) {
 	fixture := newCalibrationFixture(t)
 	defer fixture.db.Close()
 	seedAnimeSubscription(t, fixture.db, "anime-dupes", "sub-dupes", "stopped")
@@ -952,13 +948,13 @@ func TestAlignmentDuplicatePlannerTargetsPersistBlockedWithoutWorkItems(t *testi
 		t.Fatal(err)
 	}
 	var total, blocked, ready, items int
-	if err := fixture.db.QueryRow(`SELECT COUNT(*),COUNT(*) FILTER (WHERE state='blocked' AND failure_code='target_conflict'),COUNT(*) FILTER (WHERE state IN ('ready','running')) FROM alignment_operations WHERE managed_anime_id='anime-dupes'`).Scan(&total, &blocked, &ready); err != nil {
+	if err := fixture.db.QueryRow(`SELECT COUNT(*),COUNT(*) FILTER (WHERE state='blocked' AND failure_code='target_occupied' AND source_path='/library/B/EP01.mkv'),COUNT(*) FILTER (WHERE state IN ('ready','running') AND source_path='/library/A/EP01.mkv') FROM alignment_operations WHERE managed_anime_id='anime-dupes'`).Scan(&total, &blocked, &ready); err != nil {
 		t.Fatal(err)
 	}
 	if err := fixture.db.QueryRow(`SELECT COUNT(*) FROM work_item_history WHERE kind='alignment_execute' AND owner_id IN (SELECT id FROM alignment_operations WHERE managed_anime_id='anime-dupes')`).Scan(&items); err != nil {
 		t.Fatal(err)
 	}
-	if total != 2 || blocked != 2 || ready != 0 || items != 0 {
+	if total != 2 || blocked != 1 || ready != 1 || items != 1 {
 		t.Fatalf("operations=%d blocked=%d ready=%d workitems=%d", total, blocked, ready, items)
 	}
 }

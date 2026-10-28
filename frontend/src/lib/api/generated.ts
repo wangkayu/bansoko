@@ -6965,10 +6965,10 @@ export interface components {
             /** @description Why the action is unavailable (a reason code, shown through the copy catalog). */
             reason_code?: string;
         };
-        /** @description The latest scan's alignment of this file when it has not completed. */
+        /** @description The latest scan's alignment of this file when it has not completed. waiting means the move waits for retention to compare it with the file already at its target (reason_code retention_pending). */
         AnimeFileAlignment: {
             /** @enum {string} */
-            state: "in_progress" | "failed";
+            state: "in_progress" | "waiting" | "failed";
             reason_code?: string;
         };
         AnimeFileCompanion: {

@@ -285,6 +285,7 @@ const (
 const (
 	AnimeFileAlignmentStateFailed     AnimeFileAlignmentState = "failed"
 	AnimeFileAlignmentStateInProgress AnimeFileAlignmentState = "in_progress"
+	AnimeFileAlignmentStateWaiting    AnimeFileAlignmentState = "waiting"
 )
 
 // Defines values for AnimeFileCompanionMediaKind.
@@ -3206,7 +3207,7 @@ type AnimeDraft struct {
 type AnimeFile struct {
 	Actions AnimeFileActions `json:"actions"`
 
-	// Alignment The latest scan's alignment of this file when it has not completed.
+	// Alignment The latest scan's alignment of this file when it has not completed. waiting means the move waits for retention to compare it with the file already at its target (reason_code retention_pending).
 	Alignment  *AnimeFileAlignment  `json:"alignment,omitempty"`
 	Companions []AnimeFileCompanion `json:"companions"`
 	Episodes   []string             `json:"episodes"`
@@ -3253,7 +3254,7 @@ type AnimeFileActions struct {
 	Rerun   AnimeFileAction `json:"rerun"`
 }
 
-// AnimeFileAlignment The latest scan's alignment of this file when it has not completed.
+// AnimeFileAlignment The latest scan's alignment of this file when it has not completed. waiting means the move waits for retention to compare it with the file already at its target (reason_code retention_pending).
 type AnimeFileAlignment struct {
 	ReasonCode *string                 `json:"reason_code,omitempty"`
 	State      AnimeFileAlignmentState `json:"state"`
@@ -3264,7 +3265,7 @@ type AnimeFileAlignmentState string
 
 // AnimeFileCompanion defines model for AnimeFileCompanion.
 type AnimeFileCompanion struct {
-	// Alignment The latest scan's alignment of this file when it has not completed.
+	// Alignment The latest scan's alignment of this file when it has not completed. waiting means the move waits for retention to compare it with the file already at its target (reason_code retention_pending).
 	Alignment          *AnimeFileAlignment         `json:"alignment,omitempty"`
 	Id                 ID                          `json:"id"`
 	MediaKind          AnimeFileCompanionMediaKind `json:"media_kind"`

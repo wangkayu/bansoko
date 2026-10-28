@@ -17260,11 +17260,14 @@ components:
       type: object
       additionalProperties: false
       required: [state]
-      description: The latest scan's alignment of this file when it has not completed.
+      description: >-
+        The latest scan's alignment of this file when it has not completed.
+        waiting means the move waits for retention to compare it with the file
+        already at its target (reason_code retention_pending).
       properties:
         state:
           type: string
-          enum: [in_progress, failed]
+          enum: [in_progress, waiting, failed]
         reason_code:
           type: string
     AnimeFileCompanion:

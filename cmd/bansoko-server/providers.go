@@ -405,6 +405,7 @@ func provideFileMaintenanceGraph(
 	alignmentOperations := filemaintenance.NewAlignmentService(db)
 	alignmentOperations.SetFilePorts(filesystem.OSFileExecutor{}, filesystem.OSFileObserver{})
 	alignmentOperations.SetWorkItems(workStore)
+	alignmentOperations.SetRetention(replacementDecisions)
 	calibrationService := filemaintenance.NewCalibrationService(
 		db,
 		placementService,
