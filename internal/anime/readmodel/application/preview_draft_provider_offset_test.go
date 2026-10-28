@@ -253,3 +253,23 @@ func TestComposeRSSListViewPreviewOffsetShiftsAnUnownedGroupOnly(t *testing.T) {
 		t.Fatalf("group 13 episode = %v, want 1 (title 02 shifted by the preview input)", got)
 	}
 }
+
+// A provider draft carries no link rows, so its groups take their offsets from
+// the draft's provider_group_offsets; a group without an entry keeps 0.
+func TestRSSListGroupEntriesReadOffsetFromDraftProviderGroupOffsets(t *testing.T) {
+	draft := previewTestDraft(animedomain.ProviderKindAnibt, "12", "13")
+	draft.ProviderGroupOffsets = []animedomain.ProviderGroupOffsetDraft{{ProviderGroupRef: "12", EpisodeOffset: -48}}
+	effective := previewTestEffective(animedomain.ProviderKindAnibt, "12", "13")
+
+	entries, err := rssListGroupEntries(draft, effective, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	offsets := make(map[string]int, len(entries))
+	for _, entry := range entries {
+		offsets[entry.groupRef] = entry.offset.Value
+	}
+	if offsets["12"] != -48 || offsets["13"] != 0 {
+		t.Fatalf("offsets = %+v, want 12 at -48 and 13 at 0", offsets)
+	}
+}

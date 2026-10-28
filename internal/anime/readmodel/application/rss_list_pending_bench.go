@@ -117,9 +117,12 @@ func (s *Service) composePendingOwnerBench(ctx context.Context, mode string, wor
 	if view.UnusedFeedIdentities == nil {
 		view.UnusedFeedIdentities = []PreviewFeedSnapshotRef{}
 	}
+	// A provider group's offset is saved by group identity, which creates the
+	// link row when none exists yet; a custom origin's single source has no
+	// such entry on the bench.
+	offsetEditable := draft.Origin != animedomain.SubscriptionOriginCustom && rssListOffsetEditable(workspace.Subscription.LifecycleState)
 	for g := range view.Groups {
-		// Offsets are edited on the owner's own link rows, not on the bench.
-		view.Groups[g].Offset.Editable = false
+		view.Groups[g].Offset.Editable = offsetEditable
 		for i := range view.Groups[g].Items {
 			view.Groups[g].Items[i].DownloadAction = pendingBenchAction(workspace.Subscription, view.Groups[g].Items[i].Seed.PublishedAt)
 		}
