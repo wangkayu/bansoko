@@ -121,12 +121,6 @@ describe("query key contracts", () => {
     expect(fileMaintenanceKeys.files(animeID)).toEqual(["file-maintenance", "files", animeID]);
     expect(fileMaintenanceKeys.fileEffect(animeID)).toEqual(["file-maintenance", "file-effect", animeID]);
     expect(fileMaintenanceKeys.parserPolicy(animeID)).toEqual(["file-maintenance", "parser-policy", animeID]);
-    expect(fileMaintenanceKeys.offsetMigrations(animeID)).toEqual(["file-maintenance", "offset-migrations", animeID]);
-    expect(fileMaintenanceKeys.offsetMigrationGenerations(animeID)).toEqual([
-      "file-maintenance",
-      "offset-migration-generations",
-      animeID,
-    ]);
     expect(reconciliationKeys.pathDiffs(animeID, 7)).toEqual(["reconciliation", "path-diffs", animeID, 7]);
   });
 

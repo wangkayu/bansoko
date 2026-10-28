@@ -84,7 +84,6 @@ const (
 	OwnerFileMaintenance     = "file_maintenance"
 	OwnerAlignment           = "alignment_operation"
 	OwnerReplacementDeletion = "replacement_deletion"
-	OwnerOffsetMigration     = "offset_migration_operation"
 	// OwnerPostProcessingPlan is the dedicated post-processing planning stage
 	// where one frozen plan per verified artifact executes naming/target
 	// planning in its own transaction so the artifact success never rolls back
@@ -139,10 +138,6 @@ const (
 	// completed generation (active-gated; stopped generations produce zero
 	// replacement increments).
 	KindReconciliationConsumeReplacement = "reconciliation_consume_replacement"
-	// KindOffsetMigrationExecute is the durable execution kind for one frozen
-	// offset migration operation. Its file-effect handler/recovery are wired by
-	// a later slice.
-	KindOffsetMigrationExecute = "offset_migration_execute"
 	// KindPostProcessPlan executes one post-processing plan: naming/target
 	// planning from the frozen verified artifact, freezing FileOperations and
 	// their file_execute WorkItems. No external effect happens in this kind.
@@ -163,7 +158,7 @@ const (
 func KindHasExternalEffect(kind string) bool {
 	switch kind {
 	case KindQBSubmit, KindFileExecute, KindPluginDeliver, KindAlignmentExecute,
-		KindReplacementDelete, KindOffsetMigrationExecute, KindFileManagerExecute:
+		KindReplacementDelete, KindFileManagerExecute:
 		return true
 	default:
 		return false
@@ -196,9 +191,6 @@ var ownerKinds = map[string]struct {
 	OwnerFileMaintenance:     {kinds: []string{KindReconciliationScan, KindReplacementEvaluate, KindSubscriptionCompetition, KindReconciliationCalibrate, KindReconciliationConsumeAlignment, KindReconciliationConsumeReplacement}},
 	OwnerAlignment:           {kinds: []string{KindAlignmentExecute}},
 	OwnerReplacementDeletion: {kinds: []string{KindReplacementDelete}},
-	// Offset migration operations are durable typed owners. The execute handler
-	// and recovery lane are intentionally registered by a later slice.
-	OwnerOffsetMigration: {kinds: []string{KindOffsetMigrationExecute}},
 	// Post-processing plans execute the dedicated planning stage; the stage
 	// performs no external effect, so file conflicts stay write-stage guarded.
 	OwnerPostProcessingPlan: {kinds: []string{KindPostProcessPlan}},

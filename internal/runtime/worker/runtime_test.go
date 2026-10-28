@@ -66,11 +66,10 @@ func TestRegistryLaneGrouping(t *testing.T) {
 	// (DB-bound, no external effect) + the post-processing plan stage (EXEC-001,
 	// plans naming without any external effect) + the MF3 download-completion
 	// action (idempotent qBittorrent calls) + the replacement fallback query
-	// (DB-bound, enqueues evaluations only) = 10; heavy = 9 (external-effect
-	// work, plus the durable offset migration execute lane and the file
-	// manager's user operations).
-	if len(light) != 10 || len(heavy) != 9 {
-		t.Fatalf("light=%d heavy=%d, want 10/9", len(light), len(heavy))
+	// (DB-bound, enqueues evaluations only) = 10; heavy = 8 (external-effect
+	// work, plus the file manager's user operations).
+	if len(light) != 10 || len(heavy) != 8 {
+		t.Fatalf("light=%d heavy=%d, want 10/8", len(light), len(heavy))
 	}
 }
 

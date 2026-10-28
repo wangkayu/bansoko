@@ -86,7 +86,6 @@ export const enFileManagerCopy = {
     alignment: "Alignment",
     cleanup: "Old file cleanup",
     replacement: "Version replacement",
-    offset_migration: "Episode offset change",
     user_operation: "File operation",
   },
   operation: {

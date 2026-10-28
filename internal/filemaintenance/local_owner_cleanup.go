@@ -39,9 +39,8 @@ func (s *LocalOwnerCleanup) CleanupLocalOwnersTx(ctx context.Context, scope txsc
 // checkLiveDestructiveEffects fails closed with a typed conflict when any
 // checkpointed destructive effect has not converged: live alignment/cleanup
 // claims, checkpointed alignment (ready/running) or cleanup
-// (admitted, or blocked with a checkpointed attempt) operations, an offset migration
-// generation/operation/work item that is still live, or an admitted frozen
-// replace decision. All row locks serialize against the effect handlers that
+// (admitted, or blocked with a checkpointed attempt) operations, or an
+// admitted frozen replace decision. All row locks serialize against the effect handlers that
 // revalidate the same owners (settle locks the Subscription/placements; the
 // cleanup/alignment handlers lock their own owner rows), so the check and the
 // delete commit atomically.
@@ -65,27 +64,6 @@ SELECT EXISTS (
     JOIN replacement_deletions c ON c.id = wi.owner_id
     WHERE wi.owner_type = 'replacement_deletion' AND c.managed_anime_id = $1 AND wi.state IN ('available', 'leased')
 ) OR EXISTS (
-    -- An offset execution claim is live while it is available or leased. The
-    -- plan is the typed owner and is scoped by its managed anime id.
-    SELECT 1 FROM work_items wi
-    JOIN offset_migration_plans p ON p.id = wi.owner_id
-    WHERE wi.owner_type = 'offset_migration_operation'
-      AND wi.kind = 'offset_migration_execute'
-      AND p.managed_anime_id = $1
-      AND wi.state IN ('available', 'leased')
-) OR EXISTS (
-    -- A generation is not converged until planning/execution reaches a
-    -- terminal generation state.
-    SELECT 1 FROM offset_migration_generations
-    WHERE managed_anime_id = $1
-      AND state IN ('pending', 'planning', 'ready', 'running')
-) OR EXISTS (
-    -- Per-placement offset operations retain frozen effect intent until they
-    -- reach applied/failed/blocked/superseded.
-    SELECT 1 FROM offset_migration_plans
-    WHERE managed_anime_id = $1
-      AND state IN ('planned', 'ready', 'running', 'waiting_retry', 'effect_unknown')
-) OR EXISTS (
     -- Checkpointed alignment operation with a frozen attempt (or about to
     -- write one): the effect may have landed or is about to.
     SELECT 1 FROM alignment_operations
@@ -108,7 +86,7 @@ SELECT EXISTS (
 		return &apperrors.Business{
 			Status:  409,
 			Code:    "LOCAL_OWNER_CLEANUP_ACTIVE_EFFECT",
-			Message: "the instance has checkpointed FileMaintenance effects in flight (alignment/cleanup/replacement/offset migration); local owner cleanup is refused until they converge",
+			Message: "the instance has checkpointed FileMaintenance effects in flight (alignment/cleanup/replacement); local owner cleanup is refused until they converge",
 		}
 	}
 	return nil
@@ -118,19 +96,9 @@ SELECT EXISTS (
 // order mirrors the FK-free rows (no cascade) and the PRD leaf-first order.
 func (s *LocalOwnerCleanup) deleteLeafFirst(ctx context.Context, tx *sql.Tx, animeID string) error {
 	// Work items of every FileMaintenance kind: file_maintenance owners plus
-	// alignment_operation / replacement_deletion / offset_migration_operation owners
-	// of this anime.
+	// alignment_operation / replacement_deletion owners of this anime.
 	if err := workitems.DeleteLocalMaintenanceTreeTx(ctx, tx, animeID); err != nil {
 		return fmt.Errorf("delete FileMaintenance work items: %w", err)
-	}
-	// Offset migration work items point at plans, and plans point at
-	// generations. Remove this owner chain before any downstream Release-level
-	// media-fact files are deleted by the anime subscription cascade.
-	if _, err := tx.ExecContext(ctx, `DELETE FROM offset_migration_plans WHERE managed_anime_id = $1`, animeID); err != nil {
-		return fmt.Errorf("delete offset migration plans: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM offset_migration_generations WHERE managed_anime_id = $1`, animeID); err != nil {
-		return fmt.Errorf("delete offset migration generations: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM replacement_deletions WHERE managed_anime_id = $1`, animeID); err != nil {
 		return fmt.Errorf("delete cleanup operations: %w", err)

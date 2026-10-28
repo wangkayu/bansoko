@@ -156,7 +156,7 @@ SELECT
 	// stays its own, and every managed-state table is empty for the copy.
 	for _, table := range []string{
 		"placements", "placement_companions", "reconciliation_scans", "reconciliation_files", "alignment_operations",
-		"offset_migration_generations", "offset_migration_plans", "replacement_deletions", "replacement_decisions",
+		"replacement_deletions", "replacement_decisions",
 	} {
 		var n int
 		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM `+table+` WHERE managed_anime_id = $1`, copyID).Scan(&n); err != nil {
@@ -165,6 +165,10 @@ SELECT
 		if n != 0 {
 			t.Fatalf("the copy has %d %s rows, want 0", n, table)
 		}
+	}
+	var offsetChanges int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM offset_alignment_changes ch JOIN rss_sources src ON src.id = ch.rss_source_id JOIN subscriptions sub ON sub.id = src.subscription_id WHERE sub.managed_anime_id = $1`, copyID).Scan(&offsetChanges); err != nil || offsetChanges != 0 {
+		t.Fatalf("the copy has %d offset changes, want 0: %v", offsetChanges, err)
 	}
 	var coverage int
 	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM placement_coverage c JOIN placements p ON p.id = c.placement_id WHERE p.managed_anime_id = $1`, copyID).Scan(&coverage); err != nil {

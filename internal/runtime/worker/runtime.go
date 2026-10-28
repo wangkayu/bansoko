@@ -178,7 +178,7 @@ func (r *Runtime) Start() {
 			// lane serial until those owner-level gates are proven; the bounded
 			// dispatcher can use two slots for lanes without file effects.
 			for _, kind := range r.registry.KindsForLane(lane) {
-				if kind == workitems.KindFileExecute || kind == workitems.KindAlignmentExecute || kind == workitems.KindReplacementEvaluate || kind == workitems.KindReplacementDelete || kind == workitems.KindOffsetMigrationExecute || kind == workitems.KindFileManagerExecute {
+				if kind == workitems.KindFileExecute || kind == workitems.KindAlignmentExecute || kind == workitems.KindReplacementEvaluate || kind == workitems.KindReplacementDelete || kind == workitems.KindFileManagerExecute {
 					concurrency = 1
 					break
 				}

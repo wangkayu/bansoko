@@ -364,7 +364,7 @@ func (s *AlignmentService) targetFree(ctx context.Context, path, fingerprint, se
 	if err != nil {
 		return false, nil // not a readable regular file: occupied
 	}
-	return observed == "" || (fingerprint != "" && offsetFingerprintsEqual(observed, fingerprint)), nil
+	return observed == "" || (fingerprint != "" && fingerprintsEqual(observed, fingerprint)), nil
 }
 
 // videoUnitPrecheck runs before a video alignment's effect. The video's
@@ -454,7 +454,7 @@ func resumeOverwriteOperation(op *AlignmentOperation) (domain.FileOperation, boo
 	if json.Unmarshal(op.OverwriteRecovery, &recovery) != nil {
 		return domain.FileOperation{}, false
 	}
-	fingerprint, err := offsetSourceFingerprintValue(op.SourceFingerprint)
+	fingerprint, err := frozenFingerprintValue(op.SourceFingerprint)
 	if err != nil {
 		return domain.FileOperation{}, false
 	}

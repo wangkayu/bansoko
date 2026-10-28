@@ -105,15 +105,16 @@ var oneShotClassifiedOwnerTables = []string{
 // every public table with that exact column to appear in exactly one of this
 // list, oneShotClassifiedOwnerTables, or oneShotKnownBlockingTables.
 //
-// Empty today: every table that carries the exact column is either reclaimed
-// or is reachable-but-not-yet-deletable (below). Two owner-shaped tables are
-// outside the closed set because their column is not named managed_anime_id:
+// The retired offset migration tables keep the column but hold no rows since
+// migration 098, and the runtime role can no longer write them. Two
+// owner-shaped tables are outside the closed set because their column is not
+// named managed_anime_id:
 // managed_anime is the owner row itself (deleted last), and
 // anime_config_candidates carries activated_managed_anime_id, which is
 // non-NULL only while a durable (subscribable) owner is activated — a oneshot
 // draft can never be subscribed or activated (422 ORIGIN_NOT_SUBSCRIBABLE),
 // so it never points at a temporary owner.
-var oneShotNeverOwnerTables = []string{}
+var oneShotNeverOwnerTables = []string{"offset_migration_generations", "offset_migration_plans"}
 
 // oneShotKnownBlockingTables are tables that can hold a row of a temporary
 // one-shot owner but are deliberately NOT deleted by reclaim, so the marker
@@ -135,13 +136,6 @@ var oneShotKnownBlockingTables = []string{
 	// fences a state patch on it, so replacement_deletions is not provably absent;
 	// its cleanup_execute WorkItem is outside the quiescence proof.
 	"replacement_deletions",
-	// Offset migration admission is reachable through PatchRSSSourceOffset: the
-	// one-shot view exposes the temporary ManagedAnime id and the route only
-	// requires an active lifecycle, which the temporary owner has. Plans hang
-	// off their generation and also name the placeholder RSS source, so the
-	// source cannot be deleted without the plan rows.
-	"offset_migration_generations",
-	"offset_migration_plans",
 	// download_submitted resolves the temporary ManagedAnime through the
 	// download task's owner chain and the business-delivery sink is wired
 	// globally, so a configured target creates a plugin_deliveries row carrying

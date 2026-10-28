@@ -160,43 +160,6 @@ type PlacementCoverageView struct {
 	ObservationKey  string
 }
 
-type OffsetMigrationPlanView struct {
-	CreatedAt      time.Time
-	FailureReason  *string
-	ID             string
-	ManagedAnimeID *string
-	NewEpisode     string
-	NewTargetPath  string
-	OldTargetPath  string
-	PlacementID    string
-	PolicyVersion  int
-	RawEpisode     string
-	State          string
-	UpdatedAt      *time.Time
-	Version        int
-}
-
-type OffsetMigrationGenerationView struct {
-	AppliedCount    *int
-	BlockedCount    *int
-	CompletedAt     *time.Time
-	CreatedAt       time.Time
-	ID              string
-	ManagedAnimeID  string
-	NewOffset       int
-	OldOffset       int
-	PlannedCount    *int
-	PolicyVersion   int
-	Reason          *string
-	ReasonCode      *string
-	ScopeKind       string
-	ScopeOwnerID    string
-	State           string
-	SupersededCount *int
-	UpdatedAt       *time.Time
-	Version         int
-}
-
 type ReplacementPolicyWriteInput struct {
 	ExpectedVersion int64
 	Policy          ReplacementPolicy

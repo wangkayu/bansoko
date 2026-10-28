@@ -101,7 +101,11 @@ const (
 	// key rewrite (migration 096): count files of another season stay on disk
 	// and listed but no longer take part in replacement or coverage.
 	MessagePlacementsExcluded MessageCode = "placements_excluded"
-	MessageOldVersionDeleted  MessageCode = "old_version_deleted"
+	// MessageOffsetAligned is written once per offset change of a link that
+	// re-keyed imported files: how many moved to another episode, and what
+	// retention and the collision policy did with them.
+	MessageOffsetAligned     MessageCode = "offset_aligned"
+	MessageOldVersionDeleted MessageCode = "old_version_deleted"
 	// MessageOldVersionKept is a deletion the identity check skipped; the
 	// reason is the entry's reason_code.
 	MessageOldVersionKept MessageCode = "old_version_kept"
@@ -133,6 +137,14 @@ const (
 	ParamGroupName = "group_name"
 	// ParamCount is a non-negative item count.
 	ParamCount = "count"
+	// The offset_aligned counts: files re-keyed to another episode, deleted
+	// after the retention comparison, given a version suffix, overwriting a
+	// file, and left in place by the skip policy.
+	ParamRekeyed     = "rekeyed"
+	ParamDeleted     = "deleted"
+	ParamVersioned   = "versioned"
+	ParamOverwritten = "overwritten"
+	ParamSkipped     = "skipped"
 )
 
 // MessageParam declares one param of a message.
@@ -197,6 +209,14 @@ var (
 		{Code: MessagePlacementRecorded, Kind: ActivityKindPlacementChanged},
 		{Code: MessageFileRecovered, Kind: ActivityKindPlacementChanged},
 		{Code: MessagePlacementsExcluded, Kind: ActivityKindPlacementChanged, Params: []MessageParam{{Name: ParamCount, Type: MessageParamInteger, Required: true}}},
+		{Code: MessageOffsetAligned, Kind: ActivityKindPlacementChanged, Params: []MessageParam{
+			{Name: ParamGroupName, Type: MessageParamString, Required: true},
+			{Name: ParamRekeyed, Type: MessageParamInteger, Required: true},
+			{Name: ParamDeleted, Type: MessageParamInteger, Required: true},
+			{Name: ParamVersioned, Type: MessageParamInteger, Required: true},
+			{Name: ParamOverwritten, Type: MessageParamInteger, Required: true},
+			{Name: ParamSkipped, Type: MessageParamInteger, Required: true},
+		}},
 		{Code: MessageOldVersionDeleted, Kind: ActivityKindCleanupCompleted},
 		{Code: MessageOldVersionKept, Kind: ActivityKindCleanupCompleted},
 		{Code: MessageOldVersionDeleteFailed, Kind: ActivityKindCleanupFailed},

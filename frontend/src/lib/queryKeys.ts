@@ -106,9 +106,6 @@ export const fileMaintenanceKeys = {
   fileEffect: (animeID: string) => ["file-maintenance", "file-effect", animeID] as const,
   parserPolicy: (animeID: string) => ["file-maintenance", "parser-policy", animeID] as const,
   parserPolicyDefault: ["file-maintenance", "parser-policy", "default"] as const,
-  offsetMigrations: (animeID: string) => ["file-maintenance", "offset-migrations", animeID] as const,
-  offsetMigrationGenerations: (animeID: string) =>
-    ["file-maintenance", "offset-migration-generations", animeID] as const,
 };
 
 export const reconciliationKeys = {

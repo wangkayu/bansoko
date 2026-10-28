@@ -119,9 +119,6 @@ func DefaultPolicies() []KindPolicy {
 		{Kind: workitems.KindReconciliationCalibrate, Lane: LaneLight, Lease: 120 * time.Second, Heartbeat: 30 * time.Second, Deadline: 30 * time.Minute, MaxAttempts: 3, Backoff: defaultBackoff},
 		{Kind: workitems.KindReconciliationConsumeAlignment, Lane: LaneLight, Lease: 60 * time.Second, Heartbeat: 15 * time.Second, Deadline: 300 * time.Second, MaxAttempts: 3, Backoff: defaultBackoff},
 		{Kind: workitems.KindReconciliationConsumeReplacement, Lane: LaneLight, Lease: 60 * time.Second, Heartbeat: 15 * time.Second, Deadline: 300 * time.Second, MaxAttempts: 3, Backoff: defaultBackoff},
-		// Offset migration execution is a heavy file-effect lane. The concrete
-		// handler and recovery registration land in a later slice.
-		{Kind: workitems.KindOffsetMigrationExecute, Lane: LaneHeavy, Lease: 120 * time.Second, Heartbeat: 30 * time.Second, Deadline: 30 * time.Minute, MaxAttempts: 3, Backoff: defaultBackoff},
 		// A user file operation (file manager) hashes and moves, copies or
 		// deletes one file: heavy file-effect lane, serial with the others.
 		{Kind: workitems.KindFileManagerExecute, Lane: LaneHeavy, Lease: 120 * time.Second, Heartbeat: 30 * time.Second, Deadline: 30 * time.Minute, MaxAttempts: 3, Backoff: defaultBackoff},

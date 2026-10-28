@@ -1833,8 +1833,6 @@ export type FileEffectPolicyDefaultInput = Schema<"FileEffectPolicyDefaultInput"
 export type InstanceFileEffectPolicyView = Schema<"InstanceFileEffectPolicyView">;
 export type InstanceFileEffectPolicyInput = Schema<"InstanceFileEffectPolicyInput">;
 export type UnclassifiedRoutePolicyValue = Schema<"UnclassifiedRoutePolicyValue">;
-export type OffsetMigrationPlanView = Schema<"OffsetMigrationPlanView">;
-export type OffsetMigrationGenerationView = Schema<"OffsetMigrationGenerationView">;
 export type InstanceReplacementPolicyInput = Schema<"InstanceReplacementPolicyInput">;
 export type ReconciliationScanView = Schema<"ReconciliationScanView">;
 export type ReconciliationPathDiffView = Schema<"ReconciliationPathDiffView">;
@@ -1959,8 +1957,6 @@ export function saveInstanceReplacementPolicy(
 }
 
 /** Frozen per-instance parser policy (parser kind + default offset). */
-/** Frozen offset-correction migration plans of one anime. */
-/** Durable offset migration generations of one anime (owner truth). */
 /** Singleton file-effect default (new instances only; snapshot semantics). */
 export function getFileEffectPolicyDefault(): Promise<FileEffectPolicyDefaultView> {
   return request("/file-maintenance/file-effect/default", { method: "GET" });

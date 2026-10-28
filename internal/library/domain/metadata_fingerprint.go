@@ -8,7 +8,7 @@ import (
 // MetadataFingerprintPrefix marks a path-level file identity: the file's size
 // plus its device/inode when the platform provides them. It is what the
 // library scan records and what every comparer of a scan-derived fingerprint
-// (calibration, alignment planning and execution, offset migration) matches
+// (calibration, alignment planning and execution) matches
 // against. It is produced from metadata only; the file content is never read.
 const MetadataFingerprintPrefix = "meta:"
 

@@ -198,6 +198,7 @@ export const logCopy = {
     placement_recorded: "已记录入库位置",
     file_recovered: "已找回文件",
     placements_excluded: "已保留 {count} 个其他季的文件，不参与替换版本",
+    offset_aligned: "已按新的集数偏移整理 {group_name}：{rekeyed} 个文件换到其他集，删除 {deleted} 个，加版本号 {versioned} 个，覆盖 {overwritten} 个，跳过 {skipped} 个",
     old_version_deleted: "已删除旧版本",
     old_version_kept: "已保留旧版本",
     old_version_delete_failed: "旧版本删除失败",

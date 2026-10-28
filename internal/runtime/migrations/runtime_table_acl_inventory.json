@@ -28,6 +28,22 @@
     "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
   },
   {
+    "table": "alignment_requests",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/filemaintenance/alignment_requests.go",
+      "internal/filemaintenance/offset_alignment.go",
+      "internal/filemaintenance/placement.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
     "table": "anime_business_configs",
     "privileges": [
       "DELETE",
@@ -658,7 +674,7 @@
     "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
   },
   {
-    "table": "offset_migration_generations",
+    "table": "offset_alignment_changes",
     "privileges": [
       "DELETE",
       "INSERT",
@@ -666,28 +682,32 @@
     ],
     "reason": "product owner DML from the listed application code",
     "direct_access": [
-      "internal/filemaintenance/local_owner_cleanup.go",
-      "internal/filemaintenance/offset_migration_planner.go",
-      "internal/filemaintenance/offset_migration_admission.go"
+      "internal/filemaintenance/alignment_requests.go",
+      "internal/filemaintenance/offset_alignment.go"
     ],
     "closure_slice": "retained product owner",
     "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
   },
   {
-    "table": "offset_migration_plans",
-    "privileges": [
-      "DELETE",
-      "INSERT",
-      "UPDATE"
-    ],
-    "reason": "product owner DML from the listed application code",
+    "table": "offset_migration_generations",
+    "privileges": [],
+    "reason": "retired by migration 098 (empty, no runtime DML); kept because the SECURITY DEFINER local cleanup function still deletes from it",
     "direct_access": [
-      "internal/filemaintenance/local_owner_cleanup.go",
-      "internal/filemaintenance/offset_migration_planner.go",
-      "internal/filemaintenance/offset_migration_execute.go"
+      "db/migrations/093_diagnostic_conditions.sql (cleanup_managed_anime_local_data)"
     ],
-    "closure_slice": "retained product owner",
-    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+    "closure_slice": "retired offset executor",
+    "exit_condition": "drop together with its references in the cleanup function"
+  },
+  {
+    "table": "offset_migration_plans",
+    "privileges": [],
+    "reason": "retired by migration 098 (empty, no runtime DML); kept because the SECURITY DEFINER local cleanup and work item purge functions still read or delete it",
+    "direct_access": [
+      "db/migrations/093_diagnostic_conditions.sql (cleanup_managed_anime_local_data)",
+      "db/migrations/063_retention_renames.sql (work_item_delete_file_maintenance, work_item_delete_local_maintenance_tree)"
+    ],
+    "closure_slice": "retired offset executor",
+    "exit_condition": "drop together with its references in the cleanup and purge functions"
   },
   {
     "table": "one_shot_acquisitions",
@@ -753,7 +773,7 @@
     ],
     "reason": "product owner DML from the listed application code",
     "direct_access": [
-      "internal/filemaintenance/offset_migration_execute.go",
+      "internal/filemaintenance/offset_alignment.go",
       "internal/filemaintenance/placement.go"
     ],
     "closure_slice": "retained product owner",
@@ -786,7 +806,7 @@
     "direct_access": [
       "internal/workitems/oneshot_reclaim.go (one-shot reclaim D-a leaf deletion)",
       "internal/filemaintenance/local_owner_cleanup.go",
-      "internal/filemaintenance/offset_migration_execute.go",
+      "internal/filemaintenance/offset_alignment.go",
       "internal/filemaintenance/decisions.go",
       "internal/filemaintenance/operations.go",
       "internal/filemaintenance/calibration.go",

@@ -154,7 +154,7 @@ func TestMultiFileRealPostgresChain(t *testing.T) {
 	}
 	ownershipService.SetActivityWriter(observability)
 	ownershipService.SetOneShotMarkerRepository(animepersistence.NewRepository(db))
-	ownershipService.SetOffsetMigrationAdmission(filemaintenance.NewOffsetMigrationAdmissionService())
+	ownershipService.SetOffsetAlignment(filemaintenance.NewOffsetAlignmentService())
 	accessService := accessapplication.NewServiceWithSessionSecret(db, []byte("m1-multi-session-secret-32-bytes"))
 	rssFetcher := acquisitionapplication.HTTPRSSFetcher{
 		Client:            fixtureClient,

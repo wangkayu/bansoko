@@ -25,7 +25,6 @@ type Service struct {
 	calibration      *CalibrationService
 	cleanup          *CleanupService
 	alignment        *AlignmentService
-	offsetMigation   *OffsetMigrationService
 	parserPolicy     ParserPolicyOwner
 	fileEffectPolicy FileEffectPolicyOwner
 	scanReader       ScanOwnerReader
@@ -263,47 +262,6 @@ func (s *Service) SaveInstanceParserPolicy(ctx context.Context, animeID string, 
 		return parserpolicy.Instance{}, err
 	}
 	return instance, nil
-}
-
-// SetOffsetMigration wires the offset-correction planner for the migration
-// owner API.
-func (s *Service) SetOffsetMigration(planner *OffsetMigrationService) {
-	if s != nil {
-		s.offsetMigation = planner
-	}
-}
-
-// ListOffsetMigrationViews returns the frozen migration plans of one anime.
-func (s *Service) ListOffsetMigrationViews(ctx context.Context, animeID string, policyVersion *int64, limit, offset int) ([]OffsetMigrationPlanView, error) {
-	if s.offsetMigation == nil {
-		return nil, &apperrors.NotFound{Resource: "offset_migration_planner", ID: "not_wired"}
-	}
-	return s.offsetMigation.ListMigrationsApplication(ctx, animeID, policyVersion, limit, offset)
-}
-
-// ListOffsetMigrationGenerationViews returns durable offset migration generations.
-func (s *Service) ListOffsetMigrationGenerationViews(ctx context.Context, animeID string, limit, offset int) ([]OffsetMigrationGenerationView, error) {
-	if s.offsetMigation == nil {
-		return nil, &apperrors.NotFound{Resource: "offset_migration_planner", ID: "not_wired"}
-	}
-	return s.offsetMigation.ListGenerationsApplication(ctx, animeID, limit, offset)
-}
-
-// ListOffsetMigrations returns the frozen migration plans of one anime.
-func (s *Service) ListOffsetMigrations(ctx context.Context, animeID string, policyVersion *int64, limit, offset int) ([]generated.OffsetMigrationPlanView, error) {
-	if s.offsetMigation == nil {
-		return nil, &apperrors.NotFound{Resource: "offset_migration_planner", ID: "not_wired"}
-	}
-	return s.offsetMigation.ListMigrations(ctx, animeID, policyVersion, limit, offset)
-}
-
-// ListOffsetMigrationGenerations returns the durable offset migration
-// generations of one anime (side-effect free).
-func (s *Service) ListOffsetMigrationGenerations(ctx context.Context, animeID string, limit, offset int) ([]generated.OffsetMigrationGenerationView, error) {
-	if s.offsetMigation == nil {
-		return nil, &apperrors.NotFound{Resource: "offset_migration_planner", ID: "not_wired"}
-	}
-	return s.offsetMigation.ListGenerations(ctx, animeID, limit, offset)
 }
 
 // GetPolicyApplication returns the global (animeID="") or override policy.

@@ -227,7 +227,7 @@ func TestMovieBindingRealChainPostgres(t *testing.T) {
 	ownershipService.SetOneShotMarkerRepository(animepersistence.NewRepository(db))
 	ownershipService.SetMetadataMatcher(matcher.NewMatcher(matcher.NewBangumiDataIndex(nil), nil, nil, nil))
 	ownershipService.SetObservabilityRecorder(observability)
-	ownershipService.SetOffsetMigrationAdmission(filemaintenance.NewOffsetMigrationAdmissionService())
+	ownershipService.SetOffsetAlignment(filemaintenance.NewOffsetAlignmentService())
 	accessService := accessapplication.NewServiceWithSessionSecret(db, []byte("m1-movie-real-session-secret-32-bytes"))
 	rssFetcher := acquisitionapplication.HTTPRSSFetcher{
 		Client:            fixtureClient,

@@ -2099,7 +2099,7 @@ paths:
         copied, including the per-anime file-maintenance settings; subscription
         state, history, releases, download tasks, logs, notification state and
         the managed file state (placements, companions, reconciliation scans
-        and observations, alignment, offset migration, cleanup and replacement
+        and observations, alignment, offset alignment, cleanup and replacement
         rows) are not. Exact
         replay of the Idempotency-Key with the same source and label returns
         the first result; a different request with the same key is 409
@@ -2148,7 +2148,7 @@ paths:
         ManagedAnime's local business/config/runtime records: the complete
         leaf-first local owner graph, including work items, reconciliation
         scans/observations/calibrations/checkpoints, placement/replacement/
-        cleanup/alignment/offset-migration owners, media fact snapshots/files,
+        cleanup/alignment owners, media fact snapshots/files,
         file operations, artifacts, download tasks, releases, RSS runtime and
         sources, instance configuration and metadata, the subscription and the
         lifecycle row. It never calls qBittorrent and never deletes qB
@@ -2764,111 +2764,6 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/PlacementView'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-  /file-maintenance/offset-migrations:
-    get:
-      tags: [FileMaintenance]
-      operationId: listOffsetMigrations
-      x-scope: read
-      x-mcp:
-        tool: list_offset_migrations
-        group: files
-        write: false
-        description: >-
-          List the frozen offset-correction plans of one anime. A plan exists when
-          an RSS source's episode offset edit changed the resolved episode of an
-          already placed file. Pass managed_anime_id.
-      description: >-
-        Frozen offset-correction migration plans of one anime (side-effect
-        free). A plan is created when an RSS link offset edit changes the
-        resolved episode of an existing placement.
-      parameters:
-        - name: managed_anime_id
-          in: query
-          required: false
-          schema:
-            $ref: '#/components/schemas/ID'
-        - name: policy_version
-          in: query
-          required: false
-          schema:
-            type: integer
-            minimum: 1
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 200
-            default: 100
-        - name: offset
-          in: query
-          required: false
-          schema:
-            type: integer
-            minimum: 0
-            default: 0
-      responses:
-        '200':
-          description: Offset migration plan list.
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/OffsetMigrationPlanView'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-  /file-maintenance/offset-migrations/generations:
-    get:
-      tags: [FileMaintenance]
-      operationId: listOffsetMigrationGenerations
-      x-scope: read
-      x-mcp:
-        tool: list_offset_migration_generations
-        group: files
-        write: false
-        description: >-
-          List the offset migration generations of one anime with their state
-          (pending, planning, ready, completed, superseded, failed) and counts. Pass
-          managed_anime_id.
-      description: >-
-        Durable offset migration generations of one anime (side-effect free).
-        A generation is admitted atomically when an RSS link offset edit
-        changes that link's offset; its state shows pending/planning/
-        ready/completed/superseded/failed owner truth with aggregate counts.
-      parameters:
-        - name: managed_anime_id
-          in: query
-          required: false
-          schema:
-            $ref: '#/components/schemas/ID'
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 200
-            default: 100
-        - name: offset
-          in: query
-          required: false
-          schema:
-            type: integer
-            minimum: 0
-            default: 0
-      responses:
-        '200':
-          description: Offset migration generation list.
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/OffsetMigrationGenerationView'
         '401':
           $ref: '#/components/responses/Unauthorized'
   /placements/issues:
@@ -4448,8 +4343,9 @@ paths:
         write: true
         description: >-
           Set the episode offset of one RSS source of a managed anime (shifts how
-          its release episode numbers map to the season). It can plan file-migration
-          work for already placed files; see list_offset_migrations.
+          its release episode numbers map to the season). Imported files of the
+          source move to their new episode: same-episode copies are compared by
+          the retention mode first, then the global collision policy applies.
       parameters:
         - $ref: '#/components/parameters/ManagedAnimeID'
         - $ref: '#/components/parameters/RSSSourceID'
@@ -9607,6 +9503,7 @@ components:
         - placement_recorded
         - file_recovered
         - placements_excluded
+        - offset_aligned
         - old_version_deleted
         - old_version_kept
         - old_version_delete_failed
@@ -9637,6 +9534,31 @@ components:
           format: int64
           minimum: 0
           description: Non-negative item count.
+        rekeyed:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Imported files an offset change moved to another episode.
+        deleted:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Files the retention comparison of an offset change deleted.
+        versioned:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Moved files the collision policy gave a version suffix.
+        overwritten:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Moved files that overwrote the file at their target.
+        skipped:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Files the collision policy left in place.
     SubscriptionLogSource:
       type: string
       enum: [subscription, one_shot]
@@ -14647,7 +14569,7 @@ components:
           description: The subscription was ended (unsubscribed).
     FileManagerInProgressKind:
       type: string
-      enum: [file_operation, placement_handoff, alignment, cleanup, replacement, offset_migration, user_operation]
+      enum: [file_operation, placement_handoff, alignment, cleanup, replacement, user_operation]
     FileManagerInProgressOwner:
       type: object
       additionalProperties: false
@@ -17766,94 +17688,6 @@ components:
           $ref: '#/components/schemas/ID'
         candidate_release_id:
           $ref: '#/components/schemas/ID'
-    OffsetMigrationPlanView:
-      type: object
-      additionalProperties: false
-      required: [id, placement_id, policy_version, raw_episode, new_episode, old_target_path, new_target_path, state, version, created_at]
-      properties:
-        id:
-          type: string
-        placement_id:
-          type: string
-        managed_anime_id:
-          type: string
-        policy_version:
-          type: integer
-          minimum: 1
-        raw_episode:
-          type: string
-        new_episode:
-          type: string
-        old_target_path:
-          type: string
-        new_target_path:
-          type: string
-        state:
-          type: string
-          enum: [planned, ready, running, waiting_retry, effect_unknown, applied, blocked, failed, superseded]
-        failure_reason:
-          type: string
-        version:
-          type: integer
-          minimum: 1
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-    OffsetMigrationGenerationView:
-      type: object
-      additionalProperties: false
-      required: [id, managed_anime_id, scope_kind, scope_owner_id, policy_version, old_offset, new_offset, state, version, created_at]
-      properties:
-        id:
-          type: string
-        managed_anime_id:
-          type: string
-        scope_kind:
-          type: string
-          enum: [rss_source]
-        scope_owner_id:
-          type: string
-        policy_version:
-          type: integer
-          minimum: 1
-        old_offset:
-          type: integer
-        new_offset:
-          type: integer
-        state:
-          type: string
-          enum: [pending, planning, ready, running, completed, completed_with_blocks, failed, superseded]
-        reason_code:
-          type: string
-        reason:
-          type: string
-        planned_count:
-          type: integer
-          minimum: 0
-        blocked_count:
-          type: integer
-          minimum: 0
-        applied_count:
-          type: integer
-          minimum: 0
-        superseded_count:
-          type: integer
-          minimum: 0
-        version:
-          type: integer
-          minimum: 1
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-        completed_at:
-          type: string
-          format: date-time
     PlacementView:
       type: object
       additionalProperties: false

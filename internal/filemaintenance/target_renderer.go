@@ -15,7 +15,7 @@ import (
 )
 
 // NamingRulesSource supplies the current effective rules-owner value for one
-// anime to every render (alignment, path diff, offset migration and match).
+// anime to every render (alignment, path diff and match).
 // The source is typed and subscription-neutral; the renderer never reads
 // configuration tables directly.
 type NamingRulesSource interface {
@@ -31,7 +31,7 @@ type NamingRulesSource interface {
 // the provider episode title read (bgm.ep_title / tmdb.ep_title) in
 // RenderTarget (the alignment candidate render) and RenderMatch — both
 // user-initiated renders; every other entry point (path diff previews, the
-// readmodel placement targets, offset migration) never queries.
+// readmodel placement targets) never queries.
 type NamingTargetRenderer struct {
 	db          *sql.DB
 	rulesSource NamingRulesSource
@@ -91,7 +91,7 @@ func (r *NamingTargetRenderer) resolveEpisodeTitlesInto(ctx context.Context, tem
 
 // CalibratedRenderFacts carries the reconciliation facts used to render the
 // expected target path of an existing file row. Facts are authoritative: the
-// renderer never re-parses the filename (same philosophy as offset migration),
+// renderer never re-parses the filename (same philosophy as the offset re-key),
 // so the preview cannot drift from the calibration snapshot.
 type CalibratedRenderFacts struct {
 	// EpisodeDisplay is the canonical episode presentation (from coverage).

@@ -153,24 +153,6 @@ func decisionScan(pools []byte) func(...any) error {
 	}
 }
 
-func TestOffsetMigrationMappersCloneNullableValues(t *testing.T) {
-	reason := "blocked"
-	updatedAt := time.Unix(20, 0)
-	view := OffsetMigrationPlanView{
-		FailureReason:  &reason,
-		ManagedAnimeID: &reason,
-		UpdatedAt:      &updatedAt,
-	}
-	mapped := offsetMigrationPlanViewToGenerated(view)
-	*mapped.FailureReason = "changed"
-	*mapped.ManagedAnimeId = "changed"
-	*mapped.UpdatedAt = mapped.UpdatedAt.Add(time.Hour)
-
-	if *view.FailureReason != "blocked" || *view.ManagedAnimeID != "blocked" || !view.UpdatedAt.Equal(updatedAt) {
-		t.Fatal("nullable migration values alias application view")
-	}
-}
-
 func TestPlacementMappersPreserveEmptySliceShape(t *testing.T) {
 	if mapped := placementViewsToGenerated([]PlacementView{}); mapped == nil || len(mapped) != 0 {
 		t.Fatal("empty placement list shape was not preserved")

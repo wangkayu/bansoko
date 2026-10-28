@@ -42,34 +42,6 @@ func (h alignmentRecoveryHandler) ObserveRecovery(ctx context.Context, c workite
 	return h.recoverReceipt(ctx, c, op)
 }
 
-type offsetRecoveryHandler struct {
-	service *OffsetMigrationExecuteService
-	handle  worker.Handler
-}
-
-func (h offsetRecoveryHandler) Handle(ctx context.Context, c workitems.Claim) (worker.Outcome, error) {
-	return h.handle.Handle(ctx, c)
-}
-func (h offsetRecoveryHandler) ObserveRecovery(ctx context.Context, c workitems.Claim) (worker.Outcome, error) {
-	if h.service == nil || c.Kind != workitems.KindOffsetMigrationExecute || c.Owner.Type != workitems.OwnerOffsetMigration {
-		return worker.Outcome{}, workitems.ErrInvalidSpec
-	}
-	op, err := loadOffsetMigrationOperation(ctx, h.service.db, c.Owner.ID)
-	if err != nil {
-		return worker.Outcome{}, err
-	}
-	if op.Version != c.ExpectedOwnerVersion {
-		return worker.Outcome{}, workitems.ErrStaleClaim
-	}
-	if op.State == OffsetMigrationOperationApplied {
-		return recoveryCommitted("applied", lockedMaintenanceEvidence("offset_migration_plans", c, "applied", op.Version)), nil
-	}
-	if op.State == OffsetMigrationOperationReady && len(op.Attempt) == 0 {
-		return recoveryNoEffect(maintenanceNoAttemptWriter("offset_migration_plans", c, "ready", offsetMigrationTerminalWriter(op.ID, op.Version, OffsetMigrationOperationFailed, "WORKER_EXECUTION_STOPPED", "no attempt admitted"))), nil
-	}
-	return h.recoverReceipt(ctx, c, op)
-}
-
 type replacementRecoveryHandler struct {
 	service *ReplacementDecisionService
 	handle  worker.Handler

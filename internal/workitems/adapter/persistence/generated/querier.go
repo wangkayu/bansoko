@@ -266,15 +266,6 @@ type Querier interface {
 	//        AND wi.kind = 'replacement_delete'
 	//        AND co.managed_anime_id = $1
 	//        AND wi.state IN ('available', 'leased')
-	//  ) OR EXISTS (
-	//      SELECT 1
-	//      FROM work_items wi
-	//      JOIN offset_migration_plans omp ON omp.id = wi.owner_id
-	//      WHERE wi.owner_type = 'offset_migration_operation'
-	//        AND wi.owner_id = omp.id
-	//        AND wi.kind = 'offset_migration_execute'
-	//        AND omp.managed_anime_id = $1
-	//        AND wi.state IN ('available', 'leased')
 	//  )
 	HasLiveFileMaintenanceWorkItems(ctx context.Context, managedAnimeID string) (sql.NullBool, error)
 	//HasLiveOneShotWorkItems

@@ -185,11 +185,11 @@ func ownershipNewTestService(t *testing.T, db *sql.DB, fetcher FeedFetcher) *own
 	// frozen parser port writes the instance parser row, as in production.
 	draftService.SetFrozenParserPolicy(parserPolicies)
 	service, err := NewService(db, Dependencies{
-		WorkItems:                store,
-		OneShotMarkers:           animepersistence.NewRepository(db),
-		ActivityWriter:           activityWriter,
-		OffsetMigrationAdmission: filemaintenance.NewOffsetMigrationAdmissionService(),
-		Connections:              ownershipNoConnections{},
+		WorkItems:       store,
+		OneShotMarkers:  animepersistence.NewRepository(db),
+		ActivityWriter:  activityWriter,
+		OffsetAlignment: filemaintenance.NewOffsetAlignmentService(),
+		Connections:     ownershipNoConnections{},
 	})
 	if err != nil {
 		t.Fatal(err)

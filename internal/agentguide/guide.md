@@ -254,8 +254,6 @@ Both need an `Idempotency-Key` and answer `PLACEMENT_EXIT_UNAVAILABLE` (409) wit
 | List replacement (washing) decisions made for an anime | `list_replacement_decisions` | `listReplacementDecisions` | - |
 | Evaluate what the replacement policy would decide now (a dry evaluation; nothing is replaced) | `evaluate_replacement` | `evaluateReplacement` | - |
 | Recompute the file-maintenance plan after a policy or setting change | `replan_file_maintenance` | `replanFileMaintenance` | - |
-| List episode-offset migrations | `list_offset_migrations` | `listOffsetMigrations` | - |
-| List the generations of one offset migration | `list_offset_migration_generations` | `listOffsetMigrationGenerations` | - |
 
 Browsing is HTTP only and goes by absolute path: `listFileManagerMounts` returns the quick entries (the filesystem root, each downloader's application-side root, each anime's directory), and `listFileManagerEntries` lists one directory by `path`, paged with `cursor`. A mount is a navigation shortcut only and never bounds a read or a write, so every path you send must be absolute; a relative path, a path through a symbolic link, and a path inside an application-data or system directory are all refused. `getFileManagerEntry` reads one entry, and the other file operations and alignment are HTTP only too (`submitFileManagerOperation`, `getFileManagerOperation`, `alignFileManagerEntry`). A changed file or target is refused with `FILE_MANAGER_ENTRY_CHANGED` or `FILE_MANAGER_MATCH_TARGET_CHANGED` and nothing is written: preview again. Writing to a directory that holds files the product manages is refused with `FILE_MANAGER_ENTRY_LOCKED`, whose `details` names the locked paths.
 

@@ -84,7 +84,6 @@ export const fileManagerCopy = {
     alignment: "对齐",
     cleanup: "清理旧文件",
     replacement: "替换版本",
-    offset_migration: "集数偏移变更",
     user_operation: "文件操作",
   },
   operation: {

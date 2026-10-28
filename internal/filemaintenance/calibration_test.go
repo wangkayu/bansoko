@@ -691,43 +691,8 @@ VALUES ('alg-done', 'align:x', 'anime-unsub-2', 1, 'anime-unsub-2:1:/library/Sho
 		t.Fatal(err)
 	}
 
-	if _, err := fixture.db.Exec(`
- INSERT INTO offset_migration_generations
- (id, managed_anime_id, scope_kind, scope_owner_id, policy_version, old_offset, new_offset, state, version, created_at, updated_at, completed_at)
- VALUES ('offgen-unsub', 'anime-unsub-2', 'rss_source', 'rss-unsub-2', 2, 0, 1, 'completed', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := fixture.db.Exec(`
- INSERT INTO offset_migration_plans
- (id, managed_anime_id, placement_id, policy_version, source_fingerprint, raw_episode, new_episode, old_target_path, new_target_path, state, version, generation_id, scope_kind, scope_owner_id)
- VALUES ('offplan-unsub', 'anime-unsub-2', 'plc-new', 2, 'fp-new', 'E01', 'E02', '/library/Show/EP01.mkv', '/library/Show/EP02.mkv', 'applied', 1, 'offgen-unsub', 'rss_source', 'rss-unsub-2')`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := workItemFixtureDB(t).Exec(`
- INSERT INTO work_item_outcomes
- (id, kind, owner_type, owner_id, state, idempotency_key, max_attempts, input_snapshot, expected_owner_version, terminal_at, retention_until, available_at, created_at, updated_at)
- VALUES ('wi-offgen-unsub', 'offset_migration_execute', 'offset_migration_operation', 'offplan-unsub', 'succeeded', 'offplan-unsub-key', 3, '{}'::jsonb, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '7 days', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
-		t.Fatal(err)
-	}
-	// Keep a separate anime's offset migration owner graph to prove the
-	// managed_anime_id predicate does not broaden the delete scope.
-	seedAnimeSubscription(t, fixture.db, "anime-unsub-other", "sub-other", "stopped")
-	if _, err := fixture.db.Exec(`
- INSERT INTO offset_migration_generations
- (id, managed_anime_id, scope_kind, scope_owner_id, policy_version, old_offset, new_offset, state, version, created_at, updated_at, completed_at)
- VALUES ('offgen-unsub-other', 'anime-unsub-other', 'rss_source', 'rss-unsub-other', 2, 0, 1, 'completed', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := fixture.db.Exec(`
- INSERT INTO offset_migration_plans
- (id, managed_anime_id, placement_id, policy_version, source_fingerprint, raw_episode, new_episode, old_target_path, new_target_path, state, version, generation_id, scope_kind, scope_owner_id)
- VALUES ('offplan-unsub-other', 'anime-unsub-other', 'plc-other', 2, 'fp-other', 'E01', 'E02', '/library/Other/EP01.mkv', '/library/Other/EP02.mkv', 'applied', 1, 'offgen-unsub-other', 'rss_source', 'rss-unsub-other')`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := workItemFixtureDB(t).Exec(`
- INSERT INTO work_item_outcomes
- (id, kind, owner_type, owner_id, state, idempotency_key, max_attempts, input_snapshot, expected_owner_version, terminal_at, retention_until, available_at, created_at, updated_at)
- VALUES ('wi-offgen-unsub-other', 'offset_migration_execute', 'offset_migration_operation', 'offplan-unsub-other', 'succeeded', 'offplan-unsub-other-key', 3, '{}'::jsonb, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '7 days', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`); err != nil {
+	// A resolved alignment request of the placement goes with it.
+	if _, err := fixture.db.Exec(`INSERT INTO alignment_requests (placement_id) VALUES ('plc-new')`); err != nil {
 		t.Fatal(err)
 	}
 	cleanup := NewLocalOwnerCleanup(fixture.db)
@@ -743,16 +708,15 @@ VALUES ('alg-done', 'align:x', 'anime-unsub-2', 1, 'anime-unsub-2:1:/library/Sho
 		t.Fatal(err)
 	}
 	for table, columns := range map[string]string{
-		"work_item_history":            "id IN ('wi-unsub', 'wi-offgen-unsub') OR owner_id = 'anime-unsub-2' OR (owner_type = 'alignment_operation' AND owner_id IN (SELECT id FROM alignment_operations WHERE managed_anime_id = 'anime-unsub-2')) OR (owner_type = 'replacement_deletion' AND owner_id IN (SELECT id FROM replacement_deletions WHERE managed_anime_id = 'anime-unsub-2')) OR (owner_type = 'offset_migration_operation' AND owner_id IN (SELECT id FROM offset_migration_plans WHERE managed_anime_id = 'anime-unsub-2'))",
-		"offset_migration_plans":       "managed_anime_id = 'anime-unsub-2'",
-		"offset_migration_generations": "managed_anime_id = 'anime-unsub-2'",
-		"replacement_decisions":        "managed_anime_id = 'anime-unsub-2'",
-		"placements":                   "managed_anime_id = 'anime-unsub-2'",
-		"placement_coverage":           "placement_id IN (SELECT id FROM placements WHERE managed_anime_id = 'anime-unsub-2')",
-		"reconciliation_files":         "managed_anime_id = 'anime-unsub-2'",
-		"reconciliation_scans":         "managed_anime_id = 'anime-unsub-2'",
-		"anime_business_configs":       "managed_anime_id = 'anime-unsub-2'",
-		"filemaintenance_policies":     "scope_key = 'anime:anime-unsub-2'",
+		"work_item_history":        "id = 'wi-unsub' OR owner_id = 'anime-unsub-2' OR (owner_type = 'alignment_operation' AND owner_id IN (SELECT id FROM alignment_operations WHERE managed_anime_id = 'anime-unsub-2')) OR (owner_type = 'replacement_deletion' AND owner_id IN (SELECT id FROM replacement_deletions WHERE managed_anime_id = 'anime-unsub-2'))",
+		"alignment_requests":       "placement_id = 'plc-new'",
+		"replacement_decisions":    "managed_anime_id = 'anime-unsub-2'",
+		"placements":               "managed_anime_id = 'anime-unsub-2'",
+		"placement_coverage":       "placement_id IN (SELECT id FROM placements WHERE managed_anime_id = 'anime-unsub-2')",
+		"reconciliation_files":     "managed_anime_id = 'anime-unsub-2'",
+		"reconciliation_scans":     "managed_anime_id = 'anime-unsub-2'",
+		"anime_business_configs":   "managed_anime_id = 'anime-unsub-2'",
+		"filemaintenance_policies": "scope_key = 'anime:anime-unsub-2'",
 	} {
 		var count int
 		if err := fixture.db.QueryRow(`SELECT COUNT(*) FROM ` + table + ` WHERE ` + columns).Scan(&count); err != nil {
@@ -761,22 +725,6 @@ VALUES ('alg-done', 'align:x', 'anime-unsub-2', 1, 'anime-unsub-2:1:/library/Sho
 		if count != 0 {
 			t.Fatalf("orphan rows in %s after unsubscribe: %d", table, count)
 		}
-	}
-	// Unsubscribe removes instance-owned observation/maintenance owners.
-	// Physical files remain outside this owner cleanup and are rediscovered
-	// only through a new TargetSet probe.
-	var otherGenerations, otherPlans, otherWorkItems int
-	if err := fixture.db.QueryRow(`SELECT COUNT(*) FROM offset_migration_generations WHERE managed_anime_id = 'anime-unsub-other'`).Scan(&otherGenerations); err != nil {
-		t.Fatal(err)
-	}
-	if err := fixture.db.QueryRow(`SELECT COUNT(*) FROM offset_migration_plans WHERE managed_anime_id = 'anime-unsub-other'`).Scan(&otherPlans); err != nil {
-		t.Fatal(err)
-	}
-	if err := fixture.db.QueryRow(`SELECT COUNT(*) FROM work_item_history WHERE owner_id = 'offplan-unsub-other'`).Scan(&otherWorkItems); err != nil {
-		t.Fatal(err)
-	}
-	if otherGenerations != 1 || otherPlans != 1 || otherWorkItems != 1 {
-		t.Fatalf("other anime offset owners must survive: generations=%d plans=%d work_items=%d", otherGenerations, otherPlans, otherWorkItems)
 	}
 }
 
@@ -944,7 +892,7 @@ func TestAlignmentDuplicatePlannerTargetsRouteTheSecondByPolicy(t *testing.T) {
 		{ObservationRef: "obs-2", SourcePath: "/library/B/EP01.mkv", Fingerprint: "fp-b", TargetPath: "/library/Show/EP01.mkv", Coverage: []string{"tv:e1"}},
 	}}
 
-	if _, err := fixture.calibration.admitAlignmentOperations(context.Background(), "anime-dupes", 1, plan); err != nil {
+	if _, err := fixture.calibration.admitAlignmentOperationsFor(context.Background(), "anime-dupes", 1, plan, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	var total, blocked, ready, items int

@@ -139,8 +139,8 @@ var pinnedTools = []string{
 	"list_feed_sites",
 	// Owner-delegated coverage (2026-10-27): diagnostics, downloads, configuration, catalog.
 	"get_system_health", "get_release_candidate_facts", "get_release_torrent_structure", "list_replacement_decisions",
-	"list_placements", "get_placement_coverage", "get_file_maintenance_overview", "list_offset_migrations",
-	"list_offset_migration_generations", "get_reconciliation_scan", "list_reconciliation_observations", "list_reconciliation_path_diffs",
+	"list_placements", "get_placement_coverage", "get_file_maintenance_overview",
+	"get_reconciliation_scan", "list_reconciliation_observations", "list_reconciliation_path_diffs",
 	"submit_reconciliation_scan", "get_one_shot_attempt", "list_observability_records", "list_observability_diagnostics", "get_automation_run", "list_automation_schedules",
 	"get_title_tag_vocabulary", "get_replacement_compare_vocabulary", "list_parser_catalog", "list_notification_trigger_kinds",
 	"get_notification_template_catalog", "get_naming_template_catalog", "get_update_status", "check_update",

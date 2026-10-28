@@ -70,8 +70,9 @@ func (a currentScanAdapter) CurrentScan(ctx context.Context, animeID string) (*r
 }
 
 // startFileMaintenanceScheduler runs the periodic scan loop when any policy
-// enables it. The loop never blocks the core chain.
-func startFileMaintenanceScheduler(ctx context.Context, db *sql.DB, policies *filemaintenancepolicy.PolicyService, reconciliation *reconciliationapplication.Service, readmodel httpapi.ReadmodelService, logger observabilityport.RuntimeLogger) {
+// enables it, and the alignment request dispatch on every tick. The loop never
+// blocks the core chain.
+func startFileMaintenanceScheduler(ctx context.Context, db *sql.DB, policies *filemaintenancepolicy.PolicyService, reconciliation *reconciliationapplication.Service, readmodel httpapi.ReadmodelService, retention filemaintenance.AlignmentRetention, activity observabilityport.ActivityWriter, logger observabilityport.RuntimeLogger) {
 	scheduler := filemaintenance.NewScanScheduler(
 		db,
 		policies,
@@ -79,5 +80,6 @@ func startFileMaintenanceScheduler(ctx context.Context, db *sql.DB, policies *fi
 		animeListerAdapter{readmodel: readmodel},
 		logger,
 	)
+	scheduler.SetAlignmentRequests(retention, activity)
 	go scheduler.Run(ctx, time.Minute)
 }

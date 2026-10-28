@@ -1,6 +1,9 @@
 package migrations
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // At most one live work item exists per owner and kind; state, retention and
 // the owner/kind pairing are closed sets.
@@ -34,16 +37,17 @@ WHERE id = 'wi-1'`)
 }
 
 // The owner/kind constraint has a branch for every owner type, including the
-// offset migration operation and replacement evaluation shapes.
+// replacement evaluation shape; the retired offset migration operation has none.
 func TestWorkItemOwnerShapeCoversEveryOwnerType(t *testing.T) {
 	db := installedDB(t)
 	var definitions string
 	if err := db.QueryRow(`SELECT string_agg(pg_get_constraintdef(oid), ' ') FROM pg_constraint WHERE conrelid = 'work_items'::regclass`).Scan(&definitions); err != nil {
 		t.Fatal(err)
 	}
+	if strings.Contains(definitions, "offset_migration") {
+		t.Fatalf("work item owner shape still admits the retired offset migration operation: %s", definitions)
+	}
 	fragments := []string{
-		"owner_type = 'offset_migration_operation'",
-		"kind = 'offset_migration_execute'",
 		"owner_type = 'file_maintenance'",
 		"'replacement_evaluate'::text",
 	}

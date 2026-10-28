@@ -88,7 +88,12 @@ func TestSeasonlessKeyRewriteKeepsTheBoundSeasonAndExcludesTheRest(t *testing.T)
 		         '[{"pool_key":"tv:s2:e1","winner":{"placement_id":"a4-s2-1"}}]', 'keep', 'settled')`,
 	)
 
-	if err := (Runner{DB: db, Dir: migrationsDir(t)}).Apply(ctx); err != nil {
+	// 098 retires the offset plans, so the rewrite is read right after 096.
+	raw, err := os.ReadFile(filepath.Join(migrationsDir(t), seasonlessKeyRewriteMigration))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, string(raw)); err != nil {
 		t.Fatalf("upgrade: %v", err)
 	}
 
@@ -139,10 +144,6 @@ func TestSeasonlessKeyRewriteKeepsTheBoundSeasonAndExcludesTheRest(t *testing.T)
 	}
 	assertRewriteState("upgrade")
 
-	raw, err := os.ReadFile(filepath.Join(migrationsDir(t), seasonlessKeyRewriteMigration))
-	if err != nil {
-		t.Fatal(err)
-	}
 	if _, err := db.ExecContext(ctx, string(raw)); err != nil {
 		t.Fatalf("second run: %v", err)
 	}
