@@ -183,6 +183,7 @@ function ownerWorkspace(retried: boolean): AnimeWorkspace {
     placement_handoffs: [],
     logs: [],
     episode_progress: null,
+    config_waiting_files: 0,
   };
 }
 

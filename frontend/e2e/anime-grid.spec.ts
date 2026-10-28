@@ -296,6 +296,7 @@ function workspaceFixture(id: string, title: string, state?: FixtureState): Anim
       },
     ],
     episode_progress: null,
+    config_waiting_files: 0,
   };
 }
 
