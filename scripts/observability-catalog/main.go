@@ -23,6 +23,44 @@ func main() {
 	}
 	writeCatalog("DIAGNOSTIC_COMPONENTS", components)
 	writeCatalog("ROUTINE_KINDS", sortedKeys(routines))
+
+	kinds := make([]string, 0)
+	for _, kind := range observabilityport.ActivityKinds() {
+		kinds = append(kinds, string(kind))
+	}
+	codes := make([]string, 0)
+	for _, spec := range observabilityport.MessageSpecs() {
+		codes = append(codes, string(spec.Code))
+	}
+	writeCatalog("ACTIVITY_KINDS", kinds)
+	writeCatalog("MESSAGE_CODES", codes)
+	writeMessageSpecs(observabilityport.MessageSpecs())
+}
+
+// writeMessageSpecs publishes the business journal message catalog: per
+// code, its kind and the params it interpolates, in registration order.
+func writeMessageSpecs(specs []observabilityport.MessageSpec) {
+	if _, err := fmt.Fprintf(os.Stdout, "\nexport const MESSAGE_PARAM_MAX_LENGTH = %d;\n", observabilityport.MaxMessageParamBytes); err != nil {
+		panic(err)
+	}
+	if _, err := fmt.Fprintln(os.Stdout, "\nexport const MESSAGE_SPECS = {"); err != nil {
+		panic(err)
+	}
+	for _, spec := range specs {
+		params := ""
+		for i, param := range spec.Params {
+			if i > 0 {
+				params += ", "
+			}
+			params += fmt.Sprintf("{ name: %q, type: %q, required: %t }", param.Name, string(param.Type), param.Required)
+		}
+		if _, err := fmt.Fprintf(os.Stdout, "  %q: { kind: %q, params: [%s] },\n", string(spec.Code), string(spec.Kind), params); err != nil {
+			panic(err)
+		}
+	}
+	if _, err := fmt.Fprintln(os.Stdout, "} as const;"); err != nil {
+		panic(err)
+	}
 }
 
 func sortedKeys(values map[string]struct{}) []string {
