@@ -281,12 +281,13 @@ SELECT id, owner_type, owner_id, kind, state, attempt, max_attempts, last_error_
 FROM work_item_history;
 -- The title must match the fixture's media fact (进击的巨人): offset/alignment
 -- renders with the anime's CURRENT managed_anime title, and the scenario
--- asserts the move stays inside the same directory. Both bindings and the
--- owner season are the current configuration the import gate and every
--- maintenance render read; without them the import waits for configuration.
+-- asserts the move stays inside the same directory. Both bindings are what
+-- the import gate needs; without them the import waits for configuration.
+-- The owner season is the one the fixtures' frozen render named (Season 00),
+-- so the current render keeps the imported files' directory.
 INSERT INTO managed_anime(id, title) VALUES ('anime-e2e', '进击的巨人');
 INSERT INTO anime_metadata(managed_anime_id, bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season, season)
-VALUES ('anime-e2e', 'e2e-bgm-work', 'e2e-tv-work', 'tv', 1, 1);
+VALUES ('anime-e2e', 'e2e-bgm-work', 'e2e-tv-work', 'tv', 1, 0);
 -- One anime_business_configs row carries every owner version and the three
 -- policy axes; the S7 convergence replaced anime_config_owners,
 -- anime_config_overrides and the instance_* policy snapshots with it.
