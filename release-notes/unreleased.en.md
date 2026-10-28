@@ -3,6 +3,7 @@
 - Torrent search adds Nyaa as a source, with its own access settings under connections.
 - The update check shows the release notes of newer versions.
 - One-shot downloads can choose whether files without an episode number are skipped or organized as unknown content.
+- The one-shot settings step lets you pick the files of each seed, including videos and subtitles in subfolders; several picked copies of one episode follow the global collision policy.
 
 ## Improved
 
