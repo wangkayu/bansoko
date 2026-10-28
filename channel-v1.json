@@ -1,0 +1,12 @@
+{
+  "schema_version": "update-channel-1",
+  "channel": "test",
+  "release_id": "v0.1.0-test.82",
+  "version": "0.1.0-test.82",
+  "release_sequence": 82,
+  "manifest_url": "https://raw.githubusercontent.com/wangkayu/bansoko/update-channel-test/0.1.0-test.82/release-manifest.json",
+  "manifest_digest": "d56764228992151743fbf959d909d50701ba850af9c3d3ccdceabc41b7864f36",
+  "source_commit": "f2f7daa1501166488d1d0b959246abd046795cba",
+  "published_at": "2026-10-27T23:16:06Z",
+  "signature": "upU9Xrpy/8gjXMTsdNWuKVav1YUPH/AgX1bzNG5SM6q62A0U8yA4FjiNl4B9F1xBBjnBRBPBPqpDGCQB7GJaAw"
+}
