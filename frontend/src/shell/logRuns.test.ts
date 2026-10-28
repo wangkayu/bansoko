@@ -138,9 +138,15 @@ describe("stepText", () => {
   });
 
   it("替换版本写替换了哪个文件或保留了哪个版本", () => {
+    // Acceptance only plans the replacement; the settled record says it happened.
     expect(stepText(entry({ kind: "replacement_decided", reason_code: "replace", details: { replaced_files: ["old.mkv"] } }))).toBe(
+      t("log.step.willReplace", { names: "old.mkv" }),
+    );
+    expect(stepText(entry({ kind: "replacement_decided", reason_code: "replaced", details: { replaced_files: ["old.mkv"] } }))).toBe(
       t("log.step.replaced", { names: "old.mkv" }),
     );
+    expect(t("log.step.willReplace", { names: "old.mkv" })).toBe("替换版本：将替换 old.mkv");
+    expect(t("log.step.replaced", { names: "old.mkv" })).toBe("替换版本：已替换 old.mkv");
     expect(stepText(entry({ kind: "replacement_decided", reason_code: "retain", details: { kept_file: "old.mkv" } }))).toBe(
       t("log.step.kept", { name: "old.mkv" }),
     );

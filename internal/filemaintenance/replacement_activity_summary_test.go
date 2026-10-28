@@ -9,12 +9,15 @@ import (
 // stays in the reason code and never shows raw.
 func TestReplacementActivitySummaryNeverShowsTheVerdict(t *testing.T) {
 	for verdict, want := range map[string]string{
-		"replace": "替换版本：新文件替换旧文件",
-		"keep":    "替换版本：保留现有文件",
-		"retain":  "替换版本：保留现有文件",
-		"queue":   "替换版本：保留所有版本",
-		"blocked": "替换版本：无法比较，未替换",
-		"other":   "替换版本已评估",
+		// A replace decision is planned at acceptance; only its settle
+		// writes the replacement as done.
+		"replace":  "替换版本：将替换旧文件",
+		"replaced": "替换版本：已替换旧文件",
+		"keep":     "替换版本：保留现有文件",
+		"retain":   "替换版本：保留现有文件",
+		"queue":    "替换版本：保留所有版本",
+		"blocked":  "替换版本：无法比较，未替换",
+		"other":    "替换版本已评估",
 	} {
 		got := replacementActivitySummary(verdict)
 		if got != want {

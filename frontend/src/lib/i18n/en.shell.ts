@@ -129,6 +129,7 @@ export const enLogCopy = {
     importFailed: "Import failed: {name}",
     placement: "Library location recorded",
     unknownReleased: "Imported as an unknown file and unlinked",
+    willReplace: "Version replacement: will replace {names}",
     replaced: "Version replacement: replaced {names}",
     kept: "Version replacement: kept the existing version {name}",
     versions: "Version replacement: kept, {n} versions of this episode",

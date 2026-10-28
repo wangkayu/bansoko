@@ -214,6 +214,7 @@ required_tests=(
   TestOneShotQBSameTorrentSecondSubmissionOccupied
   TestReplacementRealChainActiveAndStopped
   TestReplacementRealChainBatchReplacesPerFile
+  TestReplacementSamePathUnderSkipPolicyRealChain
   TestReplacementFallbackOnDownloaderRemovalRealQB
   TestReplacementFallbackAfterSuccessWashesRealQB
   TestMultiEpisodeFileRealChain

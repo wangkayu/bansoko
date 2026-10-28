@@ -142,11 +142,15 @@ func productionIntent(ctx context.Context, tx *sql.Tx, c admissionCapture, mode,
 		// path before publication; no replacement approval is involved.
 		collision = "block"
 	}
-	if collision == "overwrite" && len(captures) > 0 {
-		// One approval per present managed overwrite target (a batch replaces
-		// per file). A target observed absent needs none: the file plan
-		// downgrades its operation to an ordinary ensure_present. Without any
-		// approval the delivery stays ensure_present/overwrite: it replaces what
+	if len(captures) > 0 {
+		// One approval per present approved target (a batch replaces per
+		// file). An approved replacement takes effect above the global policy:
+		// under skip (block) or version the delivery keeps that collision for
+		// every other target and still carries intent replace with the
+		// approvals, so the file plan overwrites exactly the approved paths. A
+		// target observed absent needs none: the file plan downgrades its
+		// operation to an ordinary ensure_present. Without any approval an
+		// overwrite delivery stays ensure_present/overwrite: it replaces what
 		// it finds, and a managed file's placement is displaced when the new
 		// placement is admitted.
 		ordered := append([]*ReplacementCapture(nil), captures...)

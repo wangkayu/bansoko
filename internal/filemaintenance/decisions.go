@@ -1279,8 +1279,69 @@ WHERE id = ANY($1) AND state = 'admitted'`, validIDs); err != nil {
 		if err := s.admitLoserDeletionsTx(ctx, txscope.Wrap(tx), decision, handed); err != nil {
 			return err
 		}
+		if err := s.appendSettledActivityTx(ctx, tx, decision); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
+}
+
+// replacementSettledReason is the reason code of the run-log line a settled
+// replace decision writes: the candidate is placed and the losers are
+// superseded, so the replacement has happened.
+const replacementSettledReason = "replaced"
+
+// appendSettledActivityTx records, in the settle transaction, that one replace
+// decision took effect. The decision line written at acceptance only plans the
+// replacement; this line is written only here, so a release whose import
+// fails never shows a replacement as done.
+func (s *ReplacementDecisionService) appendSettledActivityTx(ctx context.Context, tx *sql.Tx, decision *decisionRow) error {
+	if s.activity == nil {
+		return nil
+	}
+	var releaseID, key string
+	var poolsRaw []byte
+	if err := tx.QueryRowContext(ctx, `
+SELECT candidate_release_id, coverage_key, pools FROM replacement_decisions WHERE id = $1`, decision.ID).Scan(&releaseID, &key, &poolsRaw); err != nil {
+		return fmt.Errorf("read settled replacement decision: %w", err)
+	}
+	var pools []PoolEvidence
+	if err := json.Unmarshal(poolsRaw, &pools); err != nil {
+		return fmt.Errorf("decode settled replacement pools: %w", err)
+	}
+	subscriptionID, err := subscriptionIDForAnime(ctx, tx, decision.AnimeID)
+	if err != nil {
+		return fmt.Errorf("read subscription for replacement activity: %w", err)
+	}
+	title, err := activityAnimeTitle(ctx, tx, decision.AnimeID)
+	if err != nil {
+		return fmt.Errorf("read anime title for replacement activity: %w", err)
+	}
+	details, logReleaseID, err := replacementActivityDetailsTx(ctx, tx, decision.AnimeID, releaseID, key, "replace", pools, decision.CandidatePlacementID)
+	if err != nil {
+		return err
+	}
+	if err := s.activity.AppendTx(ctx, txscope.Wrap(tx), observabilityport.ActivityRecord{
+		SubscriptionID:  subscriptionID,
+		ManagedAnimeID:  decision.AnimeID,
+		Kind:            "replacement_decided",
+		Outcome:         "info",
+		ReasonCode:      replacementSettledReason,
+		SubjectType:     "replacement_decision",
+		SubjectID:       decision.ID,
+		SubjectVersion:  1,
+		StableResultKey: replacementSettledReason,
+		Title:           title,
+		Summary:         replacementActivitySummary(replacementSettledReason),
+		ReleaseID:       logReleaseID,
+		Details:         details,
+		CorrelationID:   decision.CorrelationID,
+		CausationType:   "placement",
+		CausationID:     decision.CandidatePlacementID,
+	}); err != nil {
+		return fmt.Errorf("append settled replacement activity: %w", err)
+	}
+	return nil
 }
 
 // loserCoverageOutsideCandidateTx returns loser_coverage_outside_candidate
@@ -1669,10 +1730,14 @@ LIMIT 1`, releaseID).Scan(&raw)
 
 // replacementActivitySummary is the business-history line of one replacement
 // decision. The verdict stays the typed reason code; the line never shows it raw.
+// A replace decision is only planned until it settles (replacementSettledReason
+// records the outcome), so its line is in the future tense.
 func replacementActivitySummary(verdict string) string {
 	switch verdict {
 	case "replace":
-		return "替换版本：新文件替换旧文件"
+		return "替换版本：将替换旧文件"
+	case replacementSettledReason:
+		return "替换版本：已替换旧文件"
 	case "keep", "retain":
 		return "替换版本：保留现有文件"
 	case "queue":

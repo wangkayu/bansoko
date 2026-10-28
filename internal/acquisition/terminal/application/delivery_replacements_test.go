@@ -26,9 +26,10 @@ func approvalFixture(t *testing.T, path string) protocol.Value {
 	return value
 }
 
-// The delivery replacements list (input schema 1) carries one approval per present overwrite
-// target, sorted and unique by target path; an overwrite needs at least one
-// and intent replace, and any other collision carries none.
+// The delivery replacements list (input schema 1) carries one approval per
+// present approved target, sorted and unique by target path. Approvals mean
+// intent replace under any global collision (an approved replacement takes
+// effect above skip and version), and intent replace needs at least one.
 func TestDeliveryReplacementsApprovalList(t *testing.T) {
 	digest := "sha256:" + strings.Repeat("a", 64)
 	input, err := protocol.ParseStrict([]byte(nativeinput.Canonical(t, digest, digest)))
@@ -54,14 +55,17 @@ func TestDeliveryReplacementsApprovalList(t *testing.T) {
 		value protocol.Value
 		ok    bool
 	}{
-		"two approvals":              {delivery("overwrite", "replace", "/library/a.mkv", "/library/b.mkv"), true},
-		"one approval":               {delivery("overwrite", "replace", "/library/a.mkv"), true},
-		"no overwrite":               {delivery("block", "ensure_present"), true},
-		"unsorted":                   {delivery("overwrite", "replace", "/library/b.mkv", "/library/a.mkv"), false},
-		"duplicate path":             {delivery("overwrite", "replace", "/library/a.mkv", "/library/a.mkv"), false},
-		"overwrite, no approval":     {delivery("overwrite", "replace"), false},
-		"approval without overwrite": {delivery("block", "replace", "/library/a.mkv"), false},
-		"overwrite not replace":      {delivery("overwrite", "ensure_present", "/library/a.mkv"), false},
+		"two approvals":             {delivery("overwrite", "replace", "/library/a.mkv", "/library/b.mkv"), true},
+		"one approval":              {delivery("overwrite", "replace", "/library/a.mkv"), true},
+		"no overwrite":              {delivery("block", "ensure_present"), true},
+		"unsorted":                  {delivery("overwrite", "replace", "/library/b.mkv", "/library/a.mkv"), false},
+		"duplicate path":            {delivery("overwrite", "replace", "/library/a.mkv", "/library/a.mkv"), false},
+		"overwrite, no approval":    {delivery("overwrite", "replace"), false},
+		"approval under skip":       {delivery("block", "replace", "/library/a.mkv"), true},
+		"approval under version":    {delivery("version", "replace", "/library/a.mkv"), true},
+		"skip replace, no approval": {delivery("block", "replace"), false},
+		"approval not replace":      {delivery("block", "ensure_present", "/library/a.mkv"), false},
+		"overwrite not replace":     {delivery("overwrite", "ensure_present", "/library/a.mkv"), false},
 	} {
 		err := protocol.Validate("DeliveryV1", c.value)
 		if (err == nil) != c.ok {
