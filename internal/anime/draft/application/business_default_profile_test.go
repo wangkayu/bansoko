@@ -91,8 +91,50 @@ func TestBusinessDefaultProfileMatchesFreshMigrationAndTypedContract(t *testing.
 	if guard068.String() != written067.String() {
 		t.Fatal("migration 068 does not guard on the profile 067 writes")
 	}
+	// Migration 094 replaces the rt.sub_lang item of the profile 068 wrote, only
+	// while its ranks are exactly the ones 068 wrote; the fresh persisted default
+	// is the 068 profile with that one item replaced.
+	combined, err := os.ReadFile("../../../../db/migrations/094_rt_sub_lang_combined_defaults.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := regexp.MustCompile(`(?s)i\.item->>'key' = 'rt\.sub_lang'\s+AND i\.item->'ranks' = '(\[.*?\])'::jsonb\s+THEN jsonb_set\(i\.item, '\{ranks\}', '(\[.*?\])'::jsonb\)`).FindSubmatch(combined)
+	if item == nil {
+		t.Fatal("rt.sub_lang item update not found in migration 094")
+	}
+	var written068 qualityprofile.Profile
+	if err := json.Unmarshal(last[1], &written068); err != nil {
+		t.Fatal(err)
+	}
+	var guard094, replaced094 [][]string
+	if err := json.Unmarshal(item[1], &guard094); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(item[2], &replaced094); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for i := range written068.Items {
+		if written068.Items[i].Key != qualityprofile.KeyRtSubLang {
+			continue
+		}
+		guardJSON, _ := json.Marshal(guard094)
+		writtenJSON, _ := json.Marshal(written068.Items[i].Ranks)
+		if string(guardJSON) != string(writtenJSON) {
+			t.Fatal("migration 094 does not guard on the rt.sub_lang ranks 068 writes")
+		}
+		written068.Items[i].Ranks = replaced094
+		found = true
+	}
+	if !found {
+		t.Fatal("profile 068 writes has no rt.sub_lang item")
+	}
+	written094, err := json.Marshal(written068)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var persisted, code bytes.Buffer
-	if err := json.Compact(&persisted, last[1]); err != nil {
+	if err := json.Compact(&persisted, written094); err != nil {
 		t.Fatal(err)
 	}
 	if err := json.Compact(&code, filemaintenance.DefaultQualityProfileJSON); err != nil {
