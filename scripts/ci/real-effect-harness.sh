@@ -281,7 +281,7 @@ up() {
 
   echo "waiting for postgres..." >&2
   local deadline=$(( $(date +%s) + 60 ))
-  until docker exec "$pg_id" pg_isready -U harness -d "$db_name" >/dev/null 2>&1; do
+  until docker exec "$pg_id" pg_isready -h 127.0.0.1 -U harness -d "$db_name" >/dev/null 2>&1; do
     if (( $(date +%s) > deadline )); then
       # EXIT trap rolls the recorded resources back.
       die "postgres not ready in 60s"

@@ -356,10 +356,10 @@ pg_go_test() {
     -p 127.0.0.1::5432 -e POSTGRES_PASSWORD -e POSTGRES_USER=harness -e POSTGRES_DB=bansoko_ci_disp \
     postgres:17 >/dev/null
   for _ in $(seq 1 60); do
-    docker exec "$cname" pg_isready -U harness >/dev/null 2>&1 && break
+    docker exec "$cname" pg_isready -h 127.0.0.1 -U harness >/dev/null 2>&1 && break
     sleep 1
   done
-  docker exec "$cname" pg_isready -U harness >/dev/null
+  docker exec "$cname" pg_isready -h 127.0.0.1 -U harness >/dev/null
   port="$(docker port "$cname" 5432/tcp | head -n 1 | awk -F: '{print $NF}')"
   export BANSOKO_TEST_DATABASE_URL="postgres://harness:$password@127.0.0.1:$port/bansoko_ci_disp?sslmode=disable"
   export BANSOKO_TEST_DB_DISPOSABLE=1

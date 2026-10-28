@@ -185,10 +185,10 @@ start_database() {
     -c logging_collector=on -c log_directory=log -c log_filename=soak-%Y%m%d-%H%M%S.log \
     -c log_rotation_size=512MB -c log_rotation_age=0 >/dev/null
   for _ in $(seq 1 90); do
-    docker exec "$cname" pg_isready -U harness -d bansoko_ci_disp >/dev/null 2>&1 && break
+    docker exec "$cname" pg_isready -h 127.0.0.1 -U harness -d bansoko_ci_disp >/dev/null 2>&1 && break
     sleep 1
   done
-  docker exec "$cname" pg_isready -U harness -d bansoko_ci_disp >/dev/null || die "postgres did not become ready"
+  docker exec "$cname" pg_isready -h 127.0.0.1 -U harness -d bansoko_ci_disp >/dev/null || die "postgres did not become ready"
   # The extension lives in its own schema: the dataset code never drops it.
   docker exec "$cname" psql -v ON_ERROR_STOP=1 -U harness -d bansoko_ci_disp -c \
     "CREATE SCHEMA soak_ext; CREATE EXTENSION pg_stat_statements SCHEMA soak_ext;" >/dev/null
