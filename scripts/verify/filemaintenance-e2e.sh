@@ -281,9 +281,12 @@ SELECT id, owner_type, owner_id, kind, state, attempt, max_attempts, last_error_
 FROM work_item_history;
 -- The title must match the fixture's media fact (进击的巨人): offset/alignment
 -- renders with the anime's CURRENT managed_anime title, and the scenario
--- asserts the move stays inside the same directory.
+-- asserts the move stays inside the same directory. Both bindings and the
+-- owner season are the current configuration the import gate and every
+-- maintenance render read; without them the import waits for configuration.
 INSERT INTO managed_anime(id, title) VALUES ('anime-e2e', '进击的巨人');
-INSERT INTO anime_metadata(managed_anime_id) VALUES ('anime-e2e');
+INSERT INTO anime_metadata(managed_anime_id, bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season, season)
+VALUES ('anime-e2e', 'e2e-bgm-work', 'e2e-tv-work', 'tv', 1, 1);
 -- One anime_business_configs row carries every owner version and the three
 -- policy axes; the S7 convergence replaced anime_config_owners,
 -- anime_config_overrides and the instance_* policy snapshots with it.
@@ -415,9 +418,9 @@ seeded_frozen_policy="$($PSQL -tAc "SELECT frozen_policy FROM download_tasks WHE
 printf '%s' "$seeded_frozen_policy" | python3 -c 'import json,sys; sections=json.load(sys.stdin).get("effective_sections", {}); sys.exit(0 if sections.get("parser") else "seeded DownloadTask frozen policy missing effective_sections.parser")'
 
 if scenario_requested 7; then
-  # Scenario 7 seeds a parallel movie chain: its own anime pinned to
-  # tmdb_media_kind 'movie' (the plan stage's movie branch reads exactly that
-  # column), so the movie identity (movie:0, no episode) flows through
+  # Scenario 7 seeds a parallel movie chain: its own anime pinned to the movie
+  # media kind (the current-config render's movie branch reads it), so the
+  # movie identity (movie:0, no episode) flows through
   # inspect -> plan -> execute -> settle -> cleanup next to the TV chain.
   echo "== seed the movie chain + real source file =="
   movie_download="$download_root/进击的巨人 剧场版.mkv"
@@ -462,12 +465,13 @@ PY
   movie_config_overrides_sql="$(config_overrides_for anime-e2e-m "$summary_dir/movie-acquisition-fixture.json")"
   if ! $PSQL -q -e >"$summary_dir/movie-seed.log" 2>&1 <<E2EMOVIE
 INSERT INTO managed_anime(id, title) VALUES ('anime-e2e-m', '进击的巨人');
--- The atomic tmdb CHECK requires work id and season beside the kind; the plan
--- stage's movie branch reads only tmdb_media_kind. The instance title matches
--- the fixture's frozen binding (the work title), like the TV instance; the
--- 剧场版 marker lives in the file name, as a real movie release would.
-INSERT INTO anime_metadata(managed_anime_id, tmdb_work_id, tmdb_media_kind, tmdb_season)
-VALUES ('anime-e2e-m', 'e2e-movie-work', 'movie', 0);
+-- The atomic tmdb CHECK requires work id and season beside the kind. The
+-- current-config render selects the movie branch from the owner media kind,
+-- and the import gate needs both bindings. The instance title matches the
+-- fixture's frozen binding (the work title), like the TV instance; the 剧场版
+-- marker lives in the file name, as a real movie release would.
+INSERT INTO anime_metadata(managed_anime_id, bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season, media_kind_override)
+VALUES ('anime-e2e-m', 'e2e-bgm-movie-work', 'e2e-movie-work', 'movie', 0, 'movie');
 INSERT INTO anime_business_configs(managed_anime_id) VALUES ('anime-e2e-m');
 $movie_config_overrides_sql
 INSERT INTO anime_config_overrides(managed_anime_id, owner_type, section_name, schema_version, value)
