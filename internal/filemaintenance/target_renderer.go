@@ -104,10 +104,12 @@ type CalibratedRenderFacts struct {
 // RenderCalibratedTarget renders the expected canonical target for one
 // reconciliation calibration row: it resolves the naming context but then
 // overrides Parsed.Episode / File.Media.Resolution / Parsed.Language with the
-// frozen calibration facts before rendering. The Directory season and
-// metadata IDs use operation-frozen binding facts first; without them,
-// release-frozen facts remain the source. Current metadata rebinding is never
-// consulted to replace those facts.
+// frozen calibration facts before rendering. The release and file facts stay
+// as acquisition froze them; the title, the owner season, year and media kind
+// and the metadata binding are the anime's current configuration. A missing
+// binding or an undefined template variable fails the render with a typed
+// config-incomplete error; an excluded placement fails with
+// ErrPlacementExcluded. Nothing falls back to the frozen binding.
 func (r *NamingTargetRenderer) RenderCalibratedTarget(ctx context.Context, animeID, filePath string, sizeBytes int64, facts CalibratedRenderFacts) (string, error) {
 	if r.db == nil {
 		return "", errors.New("naming target renderer is not wired")
@@ -212,7 +214,7 @@ func renderResolvedTarget(base string, rules naming.NamingRules, facts naming.Na
 	}
 	directory, filename, err := compiled.RenderVideo(engine, facts)
 	if err != nil {
-		return "", fmt.Errorf("render naming target for %s: %w", base, err)
+		return "", templateVariableUndefined(fmt.Errorf("render naming target for %s: %w", base, err))
 	}
 	if strings.TrimSpace(filename) == "" {
 		return "", fmt.Errorf("naming render produced an empty filename for %s", base)
@@ -241,8 +243,8 @@ type animeRenderFacts struct {
 	tmdb          naming.TMDBNamingFacts
 }
 
-// animeFacts reads only the managed display titles. Metadata bindings come
-// from operation-frozen facts, with release-frozen fallback, not current rows.
+// animeFacts reads only the managed display titles. The metadata binding and
+// the owner season, year and media kind come from currentAnimeConfig.
 func (r *NamingTargetRenderer) animeFacts(ctx context.Context, animeID string) (animeRenderFacts, error) {
 	var facts animeRenderFacts
 	var title, titleOverride, providerTitle sql.NullString
@@ -267,9 +269,10 @@ WHERE id = $1`, animeID).Scan(&title, &titleOverride, &providerTitle)
 // change on the anime moves its existing files to the new paths through
 // alignment, the per-anime files dialog shows that target, and offset
 // migration renders with the same rules. Only the rules come from the current
-// owner value; every release-level fact (Vars output, rt/anibt values, release
-// title, group, probed media facts, frozen episode identity, binding facts and
-// the recorded renderer version) still comes from the placement's lineage.
+// owner value, as do the title, the owner season, year and media kind and the
+// metadata binding (currentAnimeConfig); every release-level fact (Vars output,
+// rt/anibt values, release title, group, probed media facts, frozen episode
+// identity and torrent facts) still comes from the placement's lineage.
 // An anime without a current rules owner (or an unwired source) fails closed
 // as render-facts-unavailable; the frozen rules are never a fallback.
 func (r *NamingTargetRenderer) renderRules(ctx context.Context, animeID string) (naming.NamingRules, error) {

@@ -89,9 +89,26 @@ function spacedAfterCjk(label: string): string {
   return getLocale() === "zh-CN" && /[A-Za-z0-9]$/.test(label) ? `${label} ` : label;
 }
 
+const CONFIG_INCOMPLETE_PREFIX = "config_incomplete:";
+const TEMPLATE_VARIABLE_UNDEFINED_ITEM = "template_variable_undefined:";
+
+/** The copy of config_incomplete:<item> (the current configuration lacks an input a path needs); other codes return undefined. */
+function configIncompleteLabel(code: string): string | undefined {
+  const normalized = normalizeReasonCode(code);
+  if (!normalized.startsWith(CONFIG_INCOMPLETE_PREFIX)) return undefined;
+  const item = normalized.slice(CONFIG_INCOMPLETE_PREFIX.length);
+  if (item.startsWith(TEMPLATE_VARIABLE_UNDEFINED_ITEM)) {
+    const names = item.slice(TEMPLATE_VARIABLE_UNDEFINED_ITEM.length).split(",").filter(Boolean);
+    if (names.length === 0) return undefined;
+    return tryT("reason.config_incomplete_template_variable_undefined", { vars: joinList([...new Set(names)]) });
+  }
+  return tryT(`reason.config_incomplete_${item.replaceAll(":", "_")}`);
+}
+
 /** A registered reason code returns its copy; unregistered (or empty) returns undefined. */
 export function knownReasonLabel(code: string | null | undefined): string | undefined {
   if (!code) return undefined;
+  if (normalizeReasonCode(code).startsWith(CONFIG_INCOMPLETE_PREFIX)) return configIncompleteLabel(code);
   const variables = undefinedVariables(code);
   if (variables !== null) {
     return variables === undefined ? t("reason.naming_fact_undefined_unknown") : t("reason.naming_fact_undefined", { vars: variables });

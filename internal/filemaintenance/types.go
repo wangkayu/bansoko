@@ -80,8 +80,8 @@ type PathDiffView struct {
 	PlacementID string
 	SizeBytes   int64
 	// TargetUnavailable is the typed reason the row has no rendered target
-	// (coverage_unresolved, render_facts_unavailable, target_render_failed);
-	// the row then keeps its actual path and never differs.
+	// (coverage_unresolved, render_facts_unavailable, target_render_failed,
+	// config_incomplete:<item> or placement_excluded); the row then keeps its actual path and never differs.
 	TargetUnavailable string
 }
 

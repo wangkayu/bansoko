@@ -252,11 +252,10 @@ func TestAlignmentRenderIsCacheFirst(t *testing.T) {
 	}
 }
 
-// TestAlignmentRenderUnboundRefusesUndefinedAndNeverQueries: a referenced
-// ep_title fact on a chain whose tmdb namespace has no binding is a template
-// reading an undefined variable — the render is refused without any network
-// call, the refused name is the resolver's not_bound state and never a query.
-func TestAlignmentRenderUnboundRefusesUndefinedAndNeverQueries(t *testing.T) {
+// TestAlignmentRenderUnboundRefusesIncompleteConfigAndNeverQueries: an anime
+// whose current configuration has no TMDB binding cannot render its files —
+// the render is refused as config_incomplete without any network call.
+func TestAlignmentRenderUnboundRefusesIncompleteConfigAndNeverQueries(t *testing.T) {
 	db := disposabledb.ResetDisposableSchema(t)
 	defer db.Close()
 	rules := episodeTitleRules()
@@ -272,10 +271,12 @@ func TestAlignmentRenderUnboundRefusesUndefinedAndNeverQueries(t *testing.T) {
 		PlacedPath:   "/library/EP 01.mkv", Rules: rules,
 		Coverage: []string{"tv:e1"},
 	})
+	if _, err := db.Exec(`UPDATE anime_metadata SET tmdb_work_id = NULL, tmdb_media_kind = NULL, tmdb_season = NULL WHERE managed_anime_id = $1`, animeID); err != nil {
+		t.Fatal(err)
+	}
 	_, err := renderTargetOnce(t, renderer, animeID, "/library/EP 01.mkv", chain.PlacementID)
-	var undefined *naming.Error
-	if err == nil || !errors.As(err, &undefined) || undefined.Code != naming.ErrCodeNamingFactUndefined {
-		t.Fatalf("a chain whose tmdb namespace is unbound refuses as undefined, got %v", err)
+	if got := RenderExclusionReason(err); got != "config_incomplete:binding_missing:tmdb" {
+		t.Fatalf("an anime without a tmdb binding refuses as config_incomplete, got %q (%v)", got, err)
 	}
 	if got := tmdb.callCount(); got != 0 {
 		t.Fatalf("an unbound chain never queries, got %d", got)

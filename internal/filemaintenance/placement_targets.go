@@ -10,8 +10,9 @@ import (
 	"github.com/lib/pq"
 )
 
-// RenderPlacementTargets renders, with the anime's current naming rules, the
-// target each given active placement would be aligned to, and the target of
+// RenderPlacementTargets renders, with the anime's current configuration
+// (naming rules, title, owner season, year and media kind, metadata binding),
+// the target each given active placement would be aligned to, and the target of
 // each of its active companions: the RSS row of an imported file shows the new
 // path when the current template renders a different one. It is the files
 // dialog's render without a scan: the same renderer (RenderCalibratedTarget)

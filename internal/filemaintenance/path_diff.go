@@ -97,6 +97,14 @@ func (s *PathDiffService) ListPathDiffs(ctx context.Context, animeID string, gen
 			Language:       language,
 			PlacementID:    placementID,
 		})
+		if reason := RenderExclusionReason(err); reason != "" {
+			// A configuration gap or an excluded placement is the answer, not a
+			// fault: the file keeps its path and the row says why.
+			view.ExpectedPath = &filePath
+			view.TargetUnavailable = reason
+			views = append(views, withCompanionDiffs(view, companionsRaw))
+			continue
+		}
 		if err != nil {
 			// Every render failure degrades that row instead of failing the
 			// whole preview: the response is the UI's only view of what

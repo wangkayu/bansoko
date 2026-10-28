@@ -6995,7 +6995,7 @@ export interface components {
             size_bytes?: number;
             /** @enum {string} */
             status: "unscanned" | "aligned" | "misaligned" | "missing" | "changed" | "no_target";
-            /** @description Why a no_target row has no target (coverage_unresolved, render_facts_unavailable, target_render_failed). */
+            /** @description Why a no_target row has no target (coverage_unresolved, render_facts_unavailable, target_render_failed, placement_excluded, or config_incomplete:<item> when the current configuration lacks a binding, a media kind or a template variable). */
             status_reason?: string;
             target_path?: string;
             target_relative_path?: string;
@@ -7549,6 +7549,7 @@ export interface components {
             target_path?: string;
             excluded?: boolean;
             exclude_reason?: string;
+            /** @description Typed reason a file is kept as is, such as config_incomplete:binding_missing:tmdb, config_incomplete:binding_missing:bgm, config_incomplete:template_variable_undefined:<names>, config_incomplete:media_kind_unresolved or placement_excluded. */
             exclude_reason_code?: string;
         };
         /** @enum {string} */

@@ -3216,7 +3216,7 @@ type AnimeFile struct {
 	SizeBytes    *int64          `json:"size_bytes,omitempty"`
 	Status       AnimeFileStatus `json:"status"`
 
-	// StatusReason Why a no_target row has no target (coverage_unresolved, render_facts_unavailable, target_render_failed).
+	// StatusReason Why a no_target row has no target (coverage_unresolved, render_facts_unavailable, target_render_failed, placement_excluded, or config_incomplete:<item> when the current configuration lacks a binding, a media kind or a template variable).
 	StatusReason       *string `json:"status_reason,omitempty"`
 	TargetPath         *string `json:"target_path,omitempty"`
 	TargetRelativePath *string `json:"target_relative_path,omitempty"`
@@ -4652,15 +4652,17 @@ type FileMaintenanceOverviewView struct {
 
 // FileMaintenancePlanCandidate defines model for FileMaintenancePlanCandidate.
 type FileMaintenancePlanCandidate struct {
-	Coverage          []string `json:"coverage"`
-	ExcludeReason     *string  `json:"exclude_reason,omitempty"`
-	ExcludeReasonCode *string  `json:"exclude_reason_code,omitempty"`
-	Excluded          *bool    `json:"excluded,omitempty"`
-	Fingerprint       string   `json:"fingerprint"`
-	ObservationRef    string   `json:"observation_ref"`
-	SizeBytes         int      `json:"size_bytes"`
-	SourcePath        string   `json:"source_path"`
-	TargetPath        *string  `json:"target_path,omitempty"`
+	Coverage      []string `json:"coverage"`
+	ExcludeReason *string  `json:"exclude_reason,omitempty"`
+
+	// ExcludeReasonCode Typed reason a file is kept as is, such as config_incomplete:binding_missing:tmdb, config_incomplete:binding_missing:bgm, config_incomplete:template_variable_undefined:<names>, config_incomplete:media_kind_unresolved or placement_excluded.
+	ExcludeReasonCode *string `json:"exclude_reason_code,omitempty"`
+	Excluded          *bool   `json:"excluded,omitempty"`
+	Fingerprint       string  `json:"fingerprint"`
+	ObservationRef    string  `json:"observation_ref"`
+	SizeBytes         int     `json:"size_bytes"`
+	SourcePath        string  `json:"source_path"`
+	TargetPath        *string `json:"target_path,omitempty"`
 }
 
 // FileMaintenancePolicyInput defines model for FileMaintenancePolicyInput.

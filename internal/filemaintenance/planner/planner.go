@@ -134,7 +134,14 @@ func (p *Planner) Plan(ctx context.Context, animeID string, generation int64, po
 			candidate.Excluded = true
 			candidate.ExcludeReason = fmt.Sprintf("target render failed: %v", err)
 			candidate.ExcludeReasonCode = "target_render_failed"
-			if errors.Is(err, episodetitle.ErrTransient) {
+			var typed interface{ ExcludeReasonCode() string }
+			if errors.As(err, &typed) {
+				// The renderer's own typed refusal: the current configuration
+				// lacks an input, or the placement is kept as it is. The file
+				// stays where it is.
+				candidate.ExcludeReason = err.Error()
+				candidate.ExcludeReasonCode = typed.ExcludeReasonCode()
+			} else if errors.Is(err, episodetitle.ErrTransient) {
 				// The alignment render is on the episode-title whitelist: a
 				// provider lookup that failed transiently excludes the
 				// candidate with its own typed reason (the owner re-runs the
