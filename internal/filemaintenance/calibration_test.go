@@ -14,6 +14,8 @@ import (
 
 	"bansoko/internal/apperrors"
 	"bansoko/internal/filemaintenance/planner"
+	filesystem "bansoko/internal/library/adapter/filesystem"
+	"bansoko/internal/library/domain"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
 	"bansoko/internal/postprocessing/naming"
@@ -876,34 +878,68 @@ func TestAlignmentCandidateSummary(t *testing.T) {
 
 // Two candidates of one plan rendering the same target are routed like any
 // occupant: the first claims the target, the second meets it. Under all mode
-// retention keeps both, so the collision policy decides: unwired it is skip,
-// and the second stays where it is (target_occupied) with no work item.
+// retention keeps both, so the collision policy decides: skip leaves the
+// second where it is (target_occupied) with no work item, version gives it the
+// first free suffixed target. Each candidate is an active placement, as every
+// scan candidate is; one without an active placement claims nothing (its
+// execution settles placement_not_active).
 func TestAlignmentDuplicatePlannerTargetsRouteTheSecondByPolicy(t *testing.T) {
-	fixture := newCalibrationFixture(t)
-	defer fixture.db.Close()
-	seedAnimeSubscription(t, fixture.db, "anime-dupes", "sub-dupes", "stopped")
-	seedAnimeForRenderer(t, fixture.db, "anime-dupes", "Show", "tv")
-	seedInstanceReplacement(t, fixture.db, "anime-dupes", ModeAll, ``, 1)
-	enableAlignment(t, fixture.db, "anime-dupes")
-	service := NewAlignmentService(fixture.db)
-	fixture.calibration.SetAlignmentConsumer(service)
-	plan := &planner.PlanResult{AnimeID: "anime-dupes", Generation: 1, PolicyVersion: 1, Candidates: []planner.PlanCandidate{
-		{ObservationRef: "obs-1", SourcePath: "/library/A/EP01.mkv", Fingerprint: "fp-a", TargetPath: "/library/Show/EP01.mkv", Coverage: []string{"tv:e1"}},
-		{ObservationRef: "obs-2", SourcePath: "/library/B/EP01.mkv", Fingerprint: "fp-b", TargetPath: "/library/Show/EP01.mkv", Coverage: []string{"tv:e1"}},
-	}}
+	cases := []struct {
+		policy      domain.CollisionPolicy
+		secondState string
+		secondCode  string
+		secondName  string
+		items       int
+	}{
+		{policy: domain.CollisionBlock, secondState: "blocked", secondCode: "target_occupied", secondName: "EP01.mkv", items: 1},
+		{policy: domain.CollisionVersion, secondState: "ready", secondName: "EP01 (2).mkv", items: 2},
+	}
+	for _, tc := range cases {
+		t.Run(string(tc.policy), func(t *testing.T) {
+			fixture := newCalibrationFixture(t)
+			defer fixture.db.Close()
+			root, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			seedAnimeSubscription(t, fixture.db, "anime-dupes", "sub-dupes", "stopped")
+			seedAnimeForRenderer(t, fixture.db, "anime-dupes", "Show", "tv")
+			seedInstanceReplacement(t, fixture.db, "anime-dupes", ModeAll, ``, 1)
+			enableAlignment(t, fixture.db, "anime-dupes")
+			first, second, target := filepath.Join(root, "A", "EP01.mkv"), filepath.Join(root, "B", "EP01.mkv"), filepath.Join(root, "Show", "EP01.mkv")
+			seedPlacement(t, fixture.db, "plc-dupe-a", "anime-dupes", first, "fp-a", []string{"tv:e1"}, "2026-01-01T00:00:00Z")
+			seedPlacement(t, fixture.db, "plc-dupe-b", "anime-dupes", second, "fp-b", []string{"tv:e1"}, "2026-01-02T00:00:00Z")
+			service := NewAlignmentService(fixture.db)
+			service.SetFilePorts(filesystem.OSFileExecutor{}, filesystem.OSFileObserver{})
+			fixture.calibration.SetAlignmentConsumer(service)
+			fixture.calibration.SetCompanionCollisionSource(fixedCollision(tc.policy))
+			plan := &planner.PlanResult{AnimeID: "anime-dupes", Generation: 1, PolicyVersion: 1, Candidates: []planner.PlanCandidate{
+				{ObservationRef: "obs-1", SourcePath: first, Fingerprint: "fp-a", TargetPath: target, Coverage: []string{"tv:e1"}},
+				{ObservationRef: "obs-2", SourcePath: second, Fingerprint: "fp-b", TargetPath: target, Coverage: []string{"tv:e1"}},
+			}}
 
-	if _, err := fixture.calibration.admitAlignmentOperationsFor(context.Background(), "anime-dupes", 1, plan, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	var total, blocked, ready, items int
-	if err := fixture.db.QueryRow(`SELECT COUNT(*),COUNT(*) FILTER (WHERE state='blocked' AND failure_code='target_occupied' AND source_path='/library/B/EP01.mkv'),COUNT(*) FILTER (WHERE state IN ('ready','running') AND source_path='/library/A/EP01.mkv') FROM alignment_operations WHERE managed_anime_id='anime-dupes'`).Scan(&total, &blocked, &ready); err != nil {
-		t.Fatal(err)
-	}
-	if err := fixture.db.QueryRow(`SELECT COUNT(*) FROM work_item_history WHERE kind='alignment_execute' AND owner_id IN (SELECT id FROM alignment_operations WHERE managed_anime_id='anime-dupes')`).Scan(&items); err != nil {
-		t.Fatal(err)
-	}
-	if total != 2 || blocked != 1 || ready != 1 || items != 1 {
-		t.Fatalf("operations=%d blocked=%d ready=%d workitems=%d", total, blocked, ready, items)
+			if _, err := fixture.calibration.admitAlignmentOperationsFor(context.Background(), "anime-dupes", 1, plan, nil, nil); err != nil {
+				t.Fatal(err)
+			}
+			var firstState, firstTarget, secondState, secondCode, secondTarget string
+			if err := fixture.db.QueryRow(`SELECT state, target_path FROM alignment_operations WHERE managed_anime_id='anime-dupes' AND source_path=$1`, first).Scan(&firstState, &firstTarget); err != nil {
+				t.Fatal(err)
+			}
+			if err := fixture.db.QueryRow(`SELECT state, COALESCE(failure_code, ''), target_path FROM alignment_operations WHERE managed_anime_id='anime-dupes' AND source_path=$1`, second).Scan(&secondState, &secondCode, &secondTarget); err != nil {
+				t.Fatal(err)
+			}
+			var items int
+			if err := fixture.db.QueryRow(`SELECT COUNT(*) FROM work_item_history WHERE kind='alignment_execute' AND owner_id IN (SELECT id FROM alignment_operations WHERE managed_anime_id='anime-dupes')`).Scan(&items); err != nil {
+				t.Fatal(err)
+			}
+			if firstState != "ready" || firstTarget != target {
+				t.Fatalf("first = %s -> %s, want ready -> %s", firstState, firstTarget, target)
+			}
+			wantSecond := filepath.Join(root, "Show", tc.secondName)
+			if secondState != tc.secondState || secondCode != tc.secondCode || secondTarget != wantSecond || items != tc.items {
+				t.Fatalf("second = %s/%q -> %s, work items %d; want %s/%q -> %s, %d", secondState, secondCode, secondTarget, items, tc.secondState, tc.secondCode, wantSecond, tc.items)
+			}
+		})
 	}
 }
 
