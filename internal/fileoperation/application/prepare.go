@@ -9,11 +9,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 
 	animedomain "bansoko/internal/anime/domain"
 	"bansoko/internal/episodeidentity"
@@ -1603,7 +1603,7 @@ func buildOverwriteExecutionSnapshot(plan operationPlan, authorizer ParentIdenti
 		return nil, fmt.Errorf("observe overwrite source %s: %w", canonicalSource, err)
 	}
 	planFingerprint, err := decodeFingerprint(plan.sourceFingerprint)
-	if err != nil || !sameFingerprint(sourceObservation.Fingerprint, planFingerprint.Value) ||
+	if err != nil || !sameFileFingerprint(sourceObservation.Fingerprint, planFingerprint.Value) ||
 		(fingerprintFactUsesSize(planFingerprint) && sourceObservation.SizeBytes != planFingerprint.SizeBytes) {
 		return nil, fmt.Errorf("%w: overwrite source changed before checkpoint preparation", ErrArtifactFingerprintMismatch)
 	}
@@ -1675,8 +1675,10 @@ func canonicalOverwriteSource(path string) (string, error) {
 	return filepath.Clean(resolved), nil
 }
 
-// observeFileObservation stats and hashes one regular file into the typed
-// observation the overwrite checkpoint requires (fingerprint + size + identity).
+// observeFileObservation stats one regular file into the typed observation
+// the overwrite checkpoint requires (path-level fingerprint + size +
+// identity). The content is never read: the fingerprint is the metadata
+// identity "meta:size=<n>;dev=<d>;ino=<i>".
 func observeFileObservation(path string) (domain.FileObservation, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
@@ -1692,24 +1694,20 @@ func observeFileObservation(path string) (domain.FileObservation, error) {
 	if !fileidentity.IsPresent(pathIdentity) {
 		return domain.FileObservation{}, errors.New("file identity is unavailable")
 	}
-	initialChange, err := fileidentity.ChangeNanosFromPath(path)
-	if err != nil {
-		return domain.FileObservation{}, fmt.Errorf("stat file change marker: %w", err)
-	}
-	file, err := os.Open(path)
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return domain.FileObservation{}, err
 	}
 	defer file.Close()
-	initial, err := file.Stat()
+	opened, err := file.Stat()
 	if err != nil {
 		return domain.FileObservation{}, err
 	}
-	initialIdentity, err := fileidentity.FromFile(file)
+	identity, err := fileidentity.FromFile(file)
 	if err != nil {
 		return domain.FileObservation{}, err
 	}
-	if !initial.Mode().IsRegular() || !fileidentity.Matches(pathIdentity, initialIdentity) {
+	if !opened.Mode().IsRegular() || !fileidentity.Matches(pathIdentity, identity) {
 		return domain.FileObservation{}, errors.New("file path changed while opening descriptor")
 	}
 	handleEvidence, err := fileidentity.HandleEvidenceFromFile(file)
@@ -1720,69 +1718,15 @@ func observeFileObservation(path string) (domain.FileObservation, error) {
 		}
 		handleEvidence = nil
 	}
-	// Re-sample after opening so a same-inode mutation in the path/open gap is
-	// not mistaken for a stable observation. The descriptor identity remains the
-	// authoritative object check; ChangeNanos is only an observation marker.
-	openedChange, err := fileidentity.ChangeNanosFromPath(path)
+	change, err := fileidentity.ChangeNanosFromPath(path)
 	if err != nil {
-		return domain.FileObservation{}, fmt.Errorf("stat file change marker after opening descriptor: %w", err)
-	}
-	if initialChange != 0 && openedChange != 0 && initialChange != openedChange {
-		return domain.FileObservation{}, errors.New("file changed while opening descriptor")
-	}
-
-	sum := sha256.New()
-	readSize, err := io.Copy(sum, file)
-	if err != nil {
-		return domain.FileObservation{}, err
-	}
-	final, err := file.Stat()
-	if err != nil {
-		return domain.FileObservation{}, err
-	}
-	finalIdentity, err := fileidentity.FromFile(file)
-	if err != nil {
-		return domain.FileObservation{}, err
-	}
-	if !final.Mode().IsRegular() || initial.Size() != final.Size() || readSize != final.Size() || !fileidentity.Matches(initialIdentity, finalIdentity) {
-		return domain.FileObservation{}, errors.New("file size or identity changed while reading")
-	}
-	finalChange, err := fileidentity.ChangeNanosFromPath(path)
-	if err != nil {
-		return domain.FileObservation{}, fmt.Errorf("stat file change marker after read: %w", err)
-	}
-	if openedChange != 0 && finalChange != 0 && openedChange != finalChange {
-		return domain.FileObservation{}, errors.New("file changed while reading")
+		return domain.FileObservation{}, fmt.Errorf("stat file change marker: %w", err)
 	}
 	return domain.FileObservation{
-		Fingerprint:    hex.EncodeToString(sum.Sum(nil)),
-		SizeBytes:      final.Size(),
-		Identity:       finalIdentity,
+		Fingerprint:    domain.MetadataFingerprint(opened.Size(), identity),
+		SizeBytes:      opened.Size(),
+		Identity:       identity,
 		HandleEvidence: handleEvidence,
-		ChangeNanos:    finalChange,
+		ChangeNanos:    change,
 	}, nil
-}
-
-// hashFileSHA256File returns the hex sha256 digest of a regular file.
-func hashFileSHA256File(path string) (string, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-	sum := sha256.New()
-	buffer := make([]byte, 1<<20)
-	for {
-		n, readErr := file.Read(buffer)
-		if n > 0 {
-			_, _ = sum.Write(buffer[:n])
-		}
-		if readErr != nil {
-			if errors.Is(readErr, io.EOF) {
-				break
-			}
-			return "", readErr
-		}
-	}
-	return hex.EncodeToString(sum.Sum(nil)), nil
 }

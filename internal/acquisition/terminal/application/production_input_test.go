@@ -8,7 +8,7 @@ import (
 )
 
 func TestProductionLimitsMatchRuntimePolicy(t *testing.T) {
-	v, err := productionLimits(nil, anime.DefaultDownloadTimeouts())
+	v, err := productionLimits(nil, 0, anime.DefaultDownloadTimeouts())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestProductionLimitsMatchRuntimePolicy(t *testing.T) {
 // limits snapshot never exceeds the claim budget the SQL work-creation paths
 // use; recovery (150/152) judges exhaustion by the claim budget.
 func TestProductionLimitsBusinessBudgetWithinClaimBudget(t *testing.T) {
-	v, err := productionLimits(nil, anime.DefaultDownloadTimeouts())
+	v, err := productionLimits(nil, 0, anime.DefaultDownloadTimeouts())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestProductionLimitsScaleFileStageWithLargestFile(t *testing.T) {
 		}
 	}
 	const gib = int64(1) << 30
-	v, err := productionLimits([]int64{gib / 4, 3 * gib, gib}, anime.DefaultDownloadTimeouts())
+	v, err := productionLimits([]int64{gib / 4, 3 * gib, gib}, 0, anime.DefaultDownloadTimeouts())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestProductionLimitsScaleFileStageWithLargestFile(t *testing.T) {
 	if want := base + 615; got != want {
 		t.Fatalf("file attempt timeout=%d want %d", got, want)
 	}
-	v, err = productionLimits([]int64{1 << 50}, anime.DefaultDownloadTimeouts())
+	v, err = productionLimits([]int64{1 << 50}, 0, anime.DefaultDownloadTimeouts())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,9 +76,9 @@ func TestProductionLimitsScaleFileStageWithLargestFile(t *testing.T) {
 	}
 }
 
-// One inspect attempt covers hashing the whole batch plus the primary
-// re-read, so a large batch on slow storage fits a single attempt.
-func TestProductionLimitsScaleInspectStageWithBatchBytes(t *testing.T) {
+// One inspect attempt stats every file and probes every video; it never
+// reads content, so the budget grows with the counts and not with bytes.
+func TestProductionLimitsScaleInspectStageWithCountsNotBytes(t *testing.T) {
 	base := int64(0)
 	for _, p := range worker.DefaultPolicies() {
 		if p.Kind == workitems.KindArtifactInspect {
@@ -86,17 +86,27 @@ func TestProductionLimitsScaleInspectStageWithBatchBytes(t *testing.T) {
 		}
 	}
 	const gib = int64(1) << 30
-	// 12 x 5 GiB: 60 GiB hashed plus a 5 GiB re-read at 10 MiB/s = 6656s.
-	sizes := make([]int64, 12)
+	// 619 files (131 videos): 619 x 0.25s + 131 x 17s = 2381.75s, rounded up.
+	sizes := make([]int64, 619)
 	for i := range sizes {
 		sizes[i] = 5 * gib
 	}
-	v, err := productionLimits(sizes, anime.DefaultDownloadTimeouts())
+	v, err := productionLimits(sizes, 131, anime.DefaultDownloadTimeouts())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := v.Object["inspect"].Object["attempt_timeout_seconds"].Int, base+6656; got != want {
+	if got, want := v.Object["inspect"].Object["attempt_timeout_seconds"].Int, base+2382; got != want {
 		t.Fatalf("inspect attempt timeout=%d want %d", got, want)
+	}
+	for i := range sizes {
+		sizes[i] = 1
+	}
+	small, err := productionLimits(sizes, 131, anime.DefaultDownloadTimeouts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if small.Object["inspect"].Object["attempt_timeout_seconds"].Int != v.Object["inspect"].Object["attempt_timeout_seconds"].Int {
+		t.Fatal("inspect attempt timeout must not depend on file sizes")
 	}
 }
 
@@ -114,7 +124,7 @@ func TestProductionLimitsScalePlanStageWithFiles(t *testing.T) {
 	for i := range sizes {
 		sizes[i] = gib / 2
 	}
-	v, err := productionLimits(sizes, anime.DefaultDownloadTimeouts())
+	v, err := productionLimits(sizes, 0, anime.DefaultDownloadTimeouts())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +144,7 @@ func TestProductionLimitsFreezeConfiguredDownloadTimeouts(t *testing.T) {
 		{StallSeconds: anime.MaxDownloadStallSeconds, DownloadWaitSeconds: anime.MaxDownloadWaitSeconds},
 		{StallSeconds: 3601, DownloadWaitSeconds: 3601},
 	} {
-		v, err := productionLimits(nil, timeouts)
+		v, err := productionLimits(nil, 0, timeouts)
 		if err != nil {
 			t.Fatalf("%+v: %v", timeouts, err)
 		}
@@ -151,7 +161,7 @@ func TestProductionLimitsFreezeConfiguredDownloadTimeouts(t *testing.T) {
 		}
 	}
 	// The default keeps the former fixed values (7 days, 10081 polls, 6 h).
-	v, err := productionLimits(nil, anime.DefaultDownloadTimeouts())
+	v, err := productionLimits(nil, 0, anime.DefaultDownloadTimeouts())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +177,7 @@ func TestProductionLimitsRefuseInvalidDownloadTimeouts(t *testing.T) {
 		{StallSeconds: anime.DefaultDownloadStallSeconds, DownloadWaitSeconds: anime.MaxDownloadWaitSeconds + 1},
 		{StallSeconds: 2 * 86400, DownloadWaitSeconds: 86400},
 	} {
-		if _, err := productionLimits(nil, timeouts); err == nil {
+		if _, err := productionLimits(nil, 0, timeouts); err == nil {
 			t.Fatalf("%+v accepted", timeouts)
 		}
 	}

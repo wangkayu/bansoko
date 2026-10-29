@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"testing"
 
 	"bansoko/internal/apperrors"
@@ -144,7 +143,6 @@ VALUES ($1, $2, $3, 'facts-v1', $1)`, placementID, key, ordinal); err != nil {
 func SeedCompletedFileOp(t *testing.T, db *sql.DB, sourceID string, episode int, special bool, opState string) {
 	t.Helper()
 	ctx := context.Background()
-	repeat64 := strings.Repeat("a", 64)
 	tag := "ep"
 	if special {
 		tag = "sp"
@@ -187,7 +185,7 @@ INSERT INTO artifacts(id, download_task_id, acquisition_id, inventory_snapshot, 
 SELECT $1, id, acquisition_id, '{}', '{"fingerprints":[]}', 'verified', CURRENT_TIMESTAMP FROM download_tasks WHERE id=$2`, artifactID, taskID); err != nil {
 		t.Fatalf("insert artifact: %v", err)
 	}
-	fingerprint := `{"algorithm":"sha256","value":"` + repeat64 + `","size_bytes":1}`
+	fingerprint := `{"algorithm":"metadata","value":"meta:size=1","size_bytes":1}`
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO artifact_files(id, artifact_id, acquisition_id, file_ref, relative_path, source_path, media_kind, size_bytes, fingerprint, facts, subtitle_binding_state)
 VALUES ($1, $2, (SELECT acquisition_id FROM artifacts WHERE id=$2), 'primary', $3, $4, 'video', 1, $5::jsonb, '{}', 'not_applicable')`,

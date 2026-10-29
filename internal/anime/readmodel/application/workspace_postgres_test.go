@@ -23,7 +23,6 @@ import (
 func TestReadArtifactsExposesSubtitleBinding(t *testing.T) {
 	db := animetest.OpenTestDB(t)
 	ctx := context.Background()
-	repeat64 := strings.Repeat("a", 64)
 
 	// This projection reads a complete workspace owner (metadata, lifecycle,
 	// subgroup/rules owners, and their inherited overrides). The former shared-package
@@ -74,12 +73,12 @@ VALUES ('artifact-binding', 'download-binding', (SELECT acquisition_id FROM down
 	}
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO artifact_files(id, artifact_id, acquisition_id, file_ref, relative_path, source_path, media_kind, size_bytes, fingerprint, facts, subtitle_binding_state)
-VALUES ('file-binding-video', 'artifact-binding', (SELECT acquisition_id FROM artifacts WHERE id='artifact-binding'), 'primary', 'show.mkv', '/downloads/show.mkv', 'video', 1, '{"algorithm":"sha256","value":"`+repeat64+`","size_bytes":1}', '{}', 'not_applicable')`); err != nil {
+VALUES ('file-binding-video', 'artifact-binding', (SELECT acquisition_id FROM artifacts WHERE id='artifact-binding'), 'primary', 'show.mkv', '/downloads/show.mkv', 'video', 1, '{"algorithm":"metadata","value":"meta:size=1","size_bytes":1}', '{}', 'not_applicable')`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO artifact_files(id, artifact_id, acquisition_id, file_ref, relative_path, source_path, media_kind, size_bytes, fingerprint, facts, subtitle_binding_state, bound_video_file_ref, subtitle_binding_snapshot)
-VALUES ('file-binding-sub', 'artifact-binding', (SELECT acquisition_id FROM artifacts WHERE id='artifact-binding'), 'sub-1', 'show.chs.ass', '/downloads/show.chs.ass', 'subtitle', 1, '{"algorithm":"sha256","value":"`+repeat64+`","size_bytes":1}', '{}', 'bound', 'primary',
+VALUES ('file-binding-sub', 'artifact-binding', (SELECT acquisition_id FROM artifacts WHERE id='artifact-binding'), 'sub-1', 'show.chs.ass', '/downloads/show.chs.ass', 'subtitle', 1, '{"algorithm":"metadata","value":"meta:size=1","size_bytes":1}', '{}', 'bound', 'primary',
         '{"version":"subtitle-binding-1","method":"basename_match","confidence":1,"diagnostics":[]}')`); err != nil {
 		t.Fatal(err)
 	}

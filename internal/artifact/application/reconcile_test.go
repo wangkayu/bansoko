@@ -2,14 +2,11 @@ package application
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"bansoko/internal/deployment"
@@ -27,23 +24,22 @@ VALUES ('reconcile-primary', $1, (SELECT acquisition_id FROM artifacts WHERE id=
 	}
 }
 
-func writeReconcileFile(t *testing.T, content string) (string, int64, string) {
+func writeReconcileFile(t *testing.T, content string) (string, int64) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "show.mkv")
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	digest := sha256.Sum256([]byte(content))
-	return path, int64(len(content)), hex.EncodeToString(digest[:])
+	return path, int64(len(content))
 }
 
-func artifactFingerprintJSON(sha string, size int64) string {
-	return fmt.Sprintf(`{"algorithm":"sha256","value":"%s","size_bytes":%d}`, sha, size)
+func artifactFingerprintJSON(value string, size int64) string {
+	return fmt.Sprintf(`{"algorithm":"metadata","value":"%s","size_bytes":%d}`, value, size)
 }
 
 func TestReconcileArtifactSettlesCommittedObservation(t *testing.T) {
 	db := openArtifactTestDB(t)
-	path, size, sha := writeReconcileFile(t, "artifact-content")
+	path, size := writeReconcileFile(t, "artifact-content")
 	correlation, _ := json.Marshal(map[string]any{
 		"artifact_path":  path,
 		"files_complete": true,
@@ -52,11 +48,11 @@ func TestReconcileArtifactSettlesCommittedObservation(t *testing.T) {
 		}},
 	})
 	seedArtifactOwner(t, db, "artifact-rec", "task-rec", "completed", "pending", string(correlation), "{}")
-	insertPrimaryArtifactFile(t, db, "artifact-rec", path, size, artifactFingerprintJSON(sha, size))
+	insertPrimaryArtifactFile(t, db, "artifact-rec", path, size, artifactFingerprintJSON(fmt.Sprintf("meta:size=%d", size), size))
 
 	claim, _ := claimArtifactWorkItem(t, db, "artifact-rec", []byte(`{}`))
 	service, err := NewService(db, &fakeInspector{byPath: map[string]domain.ArtifactFacts{
-		path: {Path: path, SizeBytes: size, SHA256: sha},
+		path: {Path: path, SizeBytes: size},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -79,7 +75,7 @@ func TestReconcileArtifactSettlesCommittedObservation(t *testing.T) {
 
 func TestReconcileArtifactFingerprintChangedIsConflict(t *testing.T) {
 	db := openArtifactTestDB(t)
-	path, size, _ := writeReconcileFile(t, "artifact-content")
+	path, size := writeReconcileFile(t, "artifact-content")
 	correlation, _ := json.Marshal(map[string]any{
 		"artifact_path":  path,
 		"files_complete": true,
@@ -88,11 +84,11 @@ func TestReconcileArtifactFingerprintChangedIsConflict(t *testing.T) {
 		}},
 	})
 	seedArtifactOwner(t, db, "artifact-conf", "task-conf", "completed", "pending", string(correlation), "{}")
-	// Frozen fingerprint differs from the actual file content.
-	insertPrimaryArtifactFile(t, db, "artifact-conf", path, size, artifactFingerprintJSON(strings.Repeat("0", 64), size))
+	// Frozen fingerprint names another file of the same size.
+	insertPrimaryArtifactFile(t, db, "artifact-conf", path, size, artifactFingerprintJSON(fmt.Sprintf("meta:size=%d;dev=1;ino=1", size), size))
 
 	service, err := NewService(db, &fakeInspector{byPath: map[string]domain.ArtifactFacts{
-		path: {Path: path, SizeBytes: size, SHA256: strings.Repeat("d", 64)},
+		path: {Path: path, SizeBytes: size},
 	}})
 	if err != nil {
 		t.Fatal(err)

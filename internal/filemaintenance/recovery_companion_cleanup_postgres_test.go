@@ -2,8 +2,6 @@ package filemaintenance
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -35,8 +33,8 @@ func TestRecoveredCompanionCleanupMatchesRegistrationIdentity(t *testing.T) {
 		t.Fatalf("companion target %q is not under the test root %q", companion.TargetPath, root)
 	}
 
-	// The subtitle the user moved by hand: same bytes as at registration, so
-	// its registered digest is the sha256 of these bytes.
+	// The subtitle the user moved by hand: same size as at registration, so
+	// its registered fingerprint is the metadata form of that size.
 	content := []byte(strings.Repeat("s", int(companion.SizeBytes)))
 	if err := os.MkdirAll(filepath.Dir(companion.TargetPath), 0o755); err != nil {
 		t.Fatal(err)
@@ -44,9 +42,8 @@ func TestRecoveredCompanionCleanupMatchesRegistrationIdentity(t *testing.T) {
 	if err := os.WriteFile(companion.TargetPath, content, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	sum := sha256.Sum256(content)
-	digest := hex.EncodeToString(sum[:])
-	if _, err := db.Exec(`UPDATE placement_companions SET fingerprint = $2 WHERE id = $1`, companion.ID, digest); err != nil {
+	registered := domain.MetadataFingerprint(int64(len(content)), domain.FileIdentity{})
+	if _, err := db.Exec(`UPDATE placement_companions SET fingerprint = $2 WHERE id = $1`, companion.ID, registered); err != nil {
 		t.Fatal(err)
 	}
 

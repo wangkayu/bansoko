@@ -44,6 +44,10 @@
 - When editing a title, the title suggestions no longer cover the input's focus outline.
 - Template variables with long examples (such as the info hash or the file name) wrap inside their item instead of pushing narrow columns such as the one-shot settings out of the window.
 - Submitting a one-shot download of a season batch (24 episodes with extra files, for example) no longer fails with an internal error, and box sets listing several hundred files download as well. A torrent that lists too many files to record is refused with "This torrent lists too many files to download.", and such a torrent in a subscription is marked with the same reason.
+- Torrents with more than 128 files no longer fail at file verification once downloaded, and every video of a box set is imported.
+- File verification checks each file's size and location instead of reading the whole file, so verifying a large box set no longer takes longer as it grows.
+- Each video in a box set gets its own media check for resolution, codec and similar details, so later videos no longer lose them to a shared time limit.
+- With an empty subtitle suffix template, releases that include subtitles no longer fail while their files are prepared for import.
 
 ## Important
 
@@ -52,3 +56,4 @@
 - An anime's type cannot be switched between TV and movie while it has library files or unfinished downloads or imports.
 - The anime metadata type field is renamed media_kind in the API and MCP; scripts and assistants that use it need the new name.
 - In the API, target_facts of one-shot downloads and download tasks no longer list each target; they give the number of targets as target_count, and existing records are rewritten on upgrade.
+- In the API, file fingerprints use the metadata form (the file size and, when available, the device and inode) instead of a sha256 content digest; existing records are rewritten on upgrade.

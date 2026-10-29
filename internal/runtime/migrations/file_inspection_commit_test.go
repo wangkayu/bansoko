@@ -32,7 +32,7 @@ func TestFileInspectionAtomicCommit(t *testing.T) {
 	}
 	files := make([]map[string]any, 0, len(manifest))
 	for _, f := range manifest {
-		files = append(files, map[string]any{"id": "commit-file-" + f["file_ref"].(string), "file_ref": f["file_ref"], "relative_path": f["relative_path"], "source_path": "/downloads/" + f["relative_path"].(string), "size_bytes": f["exact_size"], "media_kind": f["media_kind"], "fingerprint": map[string]any{"algorithm": "sha256", "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}, "facts": map[string]any{}})
+		files = append(files, map[string]any{"id": "commit-file-" + f["file_ref"].(string), "file_ref": f["file_ref"], "relative_path": f["relative_path"], "source_path": "/downloads/" + f["relative_path"].(string), "size_bytes": f["exact_size"], "media_kind": f["media_kind"], "fingerprint": metadataFingerprintFixture(f["exact_size"]), "facts": map[string]any{}})
 	}
 	body, err := json.Marshal(files)
 	if err != nil {

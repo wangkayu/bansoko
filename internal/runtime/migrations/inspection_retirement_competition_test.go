@@ -74,7 +74,7 @@ func TestAnimeRetirementVersusInspectionActivityBothOrders(t *testing.T) {
 					}
 					files := make([]map[string]any, 0, len(manifest))
 					for i, f := range manifest {
-						files = append(files, map[string]any{"id": fmt.Sprintf("race-file-%d", i), "file_ref": f["file_ref"], "relative_path": f["relative_path"], "source_path": "/downloads/" + f["relative_path"].(string), "size_bytes": f["exact_size"], "media_kind": f["media_kind"], "fingerprint": map[string]any{"algorithm": "sha256", "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}, "facts": map[string]any{}})
+						files = append(files, map[string]any{"id": fmt.Sprintf("race-file-%d", i), "file_ref": f["file_ref"], "relative_path": f["relative_path"], "source_path": "/downloads/" + f["relative_path"].(string), "size_bytes": f["exact_size"], "media_kind": f["media_kind"], "fingerprint": metadataFingerprintFixture(f["exact_size"]), "facts": map[string]any{}})
 					}
 					body, err := json.Marshal(files)
 					if err != nil {
@@ -104,7 +104,7 @@ func TestAnimeRetirementVersusInspectionActivityBothOrders(t *testing.T) {
 					inventory, fingerprints := inspectionSnapshotFixture(t, files)
 					mediaFiles := make([]map[string]any, 0, len(files))
 					for _, f := range files {
-						mediaFiles = append(mediaFiles, map[string]any{"file_ref": f["file_ref"], "media_kind": f["media_kind"], "size_bytes": f["size_bytes"], "source_fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "file_evidence": map[string]any{}, "effective_facts": map[string]any{}, "snapshot_binding": mediaBinding})
+						mediaFiles = append(mediaFiles, map[string]any{"file_ref": f["file_ref"], "media_kind": f["media_kind"], "size_bytes": f["size_bytes"], "source_fingerprint": f["fingerprint"].(map[string]any)["value"], "file_evidence": map[string]any{}, "effective_facts": map[string]any{}, "snapshot_binding": mediaBinding})
 					}
 					mediaRaw, err := json.Marshal(mediaFiles)
 					if err != nil {

@@ -74,7 +74,7 @@ VALUES ($1, $2, $3, 'reconciliation', 'obs-'||$1, 'fp', 'fp', 'parser-v1', $4, $
 (id, placement_id, managed_anime_id, source_ref, registration, media_kind, suffix, original_extension,
  current_path, size_bytes, fingerprint, state, ended_reason)
 VALUES ($1, $2, $3, 'src-'||$1, 'intake', 'subtitle', 'zh', 'ass', $4, 1, $5, $6, $7)`,
-			id, placementID, anime, path, strings.Repeat("0", 64), state, reason)
+			id, placementID, anime, path, "meta:size=1", state, reason)
 	}
 	companion("c-managed", "p-managed", "anime-a", abs("Show/ep01.zh.ass"), "active")
 	companion("c-busy", "p-busy", "anime-a", abs("Show/ep02.zh.ass"), "active")

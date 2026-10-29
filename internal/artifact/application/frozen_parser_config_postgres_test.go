@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -78,7 +77,7 @@ func seedFrozenProfileArtifact(t *testing.T, fingerprint, config string) (*sql.D
 		[]byte(`{"download_task_id":"task-frozen-profile","provider_task_id":"tag:frozen-profile","local_root":"`+root+`"}`))
 	at := time.Date(2026, 9, 12, 10, 0, 0, 0, time.UTC)
 	inspector := &fakeInspector{facts: domain.ArtifactFacts{
-		Path: canonicalPath, SizeBytes: size, SHA256: strings.Repeat("f", 64), ObservedAt: at, MediaKind: "video",
+		Path: canonicalPath, SizeBytes: size, ObservedAt: at, MediaKind: "video",
 	}}
 	service, err := NewService(db, inspector, func() time.Time { return at })
 	if err != nil {

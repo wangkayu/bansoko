@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -140,7 +139,7 @@ func TestA11InspectGateCrashSidesAndSameTokenThroughWorker(t *testing.T) {
 
 	// 4. Recovery: the next real run (third claim) supersedes and verifies.
 	expireA11Lease(t, claim.ID)
-	good := &fakeInspector{facts: domain.ArtifactFacts{Path: canonical, SizeBytes: 1024, SHA256: strings.Repeat("e", 64), ObservedAt: time.Now().UTC(), MediaKind: "video"}}
+	good := &fakeInspector{facts: domain.ArtifactFacts{Path: canonical, SizeBytes: 1024, ObservedAt: time.Now().UTC(), MediaKind: "video"}}
 	service.inspector = good
 	if handled, err := newA11InspectWorker(t, store, service).RunOnce(context.Background()); err != nil || !handled {
 		t.Fatalf("recovery run: handled=%v err=%v", handled, err)

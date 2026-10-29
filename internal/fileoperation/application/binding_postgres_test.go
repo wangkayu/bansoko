@@ -55,7 +55,7 @@ func addArtifactFile(t *testing.T, db *sql.DB, fixture fileFixture, id, ref, rel
 INSERT INTO artifact_files(id, artifact_id, acquisition_id, file_ref, relative_path, source_path, media_kind, size_bytes, fingerprint, facts, subtitle_binding_state)
 VALUES ($1, $2, (SELECT acquisition_id FROM artifacts WHERE id=$2), $3, $4, $5, $6, $7, $8, '{}', $9)`,
 		id, fixture.artifactID, ref, relativePath, sourcePath, mediaKind, size,
-		fingerprintJSONForTest(digestForTest(t, sourcePath), size), bindingState); err != nil {
+		fingerprintJSONForTest(metadataFingerprintForTest(t, sourcePath), size), bindingState); err != nil {
 		t.Fatal(err)
 	}
 }

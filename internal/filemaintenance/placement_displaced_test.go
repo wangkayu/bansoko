@@ -31,7 +31,7 @@ func seedDisplacePlacement(t *testing.T, service *PlacementService, db *sql.DB, 
 	}
 	if _, err := db.Exec(`
 INSERT INTO placement_companions(id, placement_id, managed_anime_id, source_ref, registration, media_kind, suffix, original_extension, current_path, size_bytes, fingerprint)
-VALUES ($1, $2, $3, $4, 'adopted', 'subtitle', 'chs', 'ass', $5, 1, repeat('c', 64))`,
+VALUES ($1, $2, $3, $4, 'adopted', 'subtitle', 'chs', 'ass', $5, 1, 'meta:size=1')`,
 		"cmp-"+ref, id, animeID, "src-"+ref, CompanionPath(path, "chs", "ass")); err != nil {
 		t.Fatal(err)
 	}

@@ -96,11 +96,11 @@ const WORKSPACE: AnimeWorkspace = {
   artifacts: [
     { id: "artifact-1", download_task_id: "task-1", files: [], fingerprints: [], state: "failed", failed_work_item_id: "work-verify", version: 1 },
     { id: "artifact-2", download_task_id: "task-1", files: [], fingerprints: [], state: "waiting_retry", version: 1 },
-    { id: "artifact-3", download_task_id: "task-1", files: [{ ref: "file-ref-1", path: "Show/source.mkv", media_kind: "video", fingerprint: { algorithm: "sha256", value: "fingerprint", size_bytes: 123 }, subtitle_binding: { state: "not_applicable" } }], fingerprints: [], state: "verified", version: 1 },
+    { id: "artifact-3", download_task_id: "task-1", files: [{ ref: "file-ref-1", path: "Show/source.mkv", media_kind: "video", fingerprint: { algorithm: "metadata", value: "meta:size=123", size_bytes: 123 }, subtitle_binding: { state: "not_applicable" } }], fingerprints: [], state: "verified", version: 1 },
   ],
   file_operations: [
-    { id: "operation-1", artifact_id: "artifact-1", artifact_file_ref: "failed-ref", source_path: "Show/fail.mkv", source_fingerprint: { algorithm: "sha256", value: "failed", size_bytes: 123 }, state: "failed", failed_work_item_id: "work-place", operation: "copy", target_path: "/library/Show/EP01.mkv", version: 1 },
-    { id: "operation-3", artifact_id: "artifact-3", artifact_file_ref: "file-ref-1", source_path: "Show/source.mkv", source_fingerprint: { algorithm: "sha256", value: "fingerprint", size_bytes: 123 }, state: "completed", operation: "copy", target_path: "/library/Show/final.mkv", version: 1 },
+    { id: "operation-1", artifact_id: "artifact-1", artifact_file_ref: "failed-ref", source_path: "Show/fail.mkv", source_fingerprint: { algorithm: "metadata", value: "meta:size=123", size_bytes: 123 }, state: "failed", failed_work_item_id: "work-place", operation: "copy", target_path: "/library/Show/EP01.mkv", version: 1 },
+    { id: "operation-3", artifact_id: "artifact-3", artifact_file_ref: "file-ref-1", source_path: "Show/source.mkv", source_fingerprint: { algorithm: "metadata", value: "meta:size=123", size_bytes: 123 }, state: "completed", operation: "copy", target_path: "/library/Show/final.mkv", version: 1 },
   ],
   placement_handoffs: [],
   logs: [],

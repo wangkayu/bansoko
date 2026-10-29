@@ -3,9 +3,7 @@ package application
 import (
 	"bansoko/internal/testutil/acquisitionfixture"
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -95,7 +93,7 @@ func TestSanitizeInventoryDropsCredentialBearingValuesAndBoundsPayload(t *testin
 	}
 }
 
-func TestBuildInspectionPlanRequiresSHA256AndProducesObjectSnapshots(t *testing.T) {
+func TestBuildInspectionPlanRecordsMetadataFingerprint(t *testing.T) {
 	// Hermetic: a real host /downloads (e.g. a harness symlink) must not
 	// change the pure plan result.
 	downloads := hermeticDownloadsRoot(t)
@@ -103,31 +101,36 @@ func TestBuildInspectionPlanRequiresSHA256AndProducesObjectSnapshots(t *testing.
 	plan, err := buildInspectionPlan(artifactSnapshot{id: "artifact-1", providerCorrelation: []byte(`{"external_id":"tag:task-1","file_count":1}`)}, inspectInput{LocalRoot: downloads}, domain.ArtifactFacts{
 		Path:       downloads + "/show/show.mkv",
 		SizeBytes:  42,
-		SHA256:     strings.Repeat("a", 64),
+		Device:     7,
+		Inode:      99,
 		ObservedAt: at,
 		MediaKind:  "video",
 	}, at)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, raw := range map[string][]byte{
-		"inventory":    plan.inventorySnapshot,
-		"fingerprints": plan.fingerprintSnapshot,
-		"file":         plan.file.fingerprint,
-	} {
-		var object map[string]any
-		if err := json.Unmarshal(raw, &object); err != nil {
-			t.Fatalf("%s JSON: %v", name, err)
-		}
-		if object == nil {
-			t.Fatalf("%s JSON is not an object", name)
-		}
+	var fingerprint map[string]any
+	if err := json.Unmarshal(plan.file.fingerprint, &fingerprint); err != nil {
+		t.Fatal(err)
+	}
+	if len(fingerprint) != 3 || fingerprint["algorithm"] != "metadata" || fingerprint["value"] != "meta:size=42;dev=7;ino=99" || fingerprint["size_bytes"] != float64(42) {
+		t.Fatalf("file fingerprint = %s", plan.file.fingerprint)
 	}
 	if plan.file.relativePath != "show/show.mkv" || plan.file.mediaKind != "video" {
 		t.Fatalf("unexpected artifact file plan: %+v", plan.file)
 	}
-	if _, err := buildInspectionPlan(artifactSnapshot{id: "artifact-1"}, inspectInput{}, domain.ArtifactFacts{Path: downloads + "/show.mkv", SizeBytes: 1, SHA256: "bad"}, at); !errors.Is(err, ErrArtifactFactsInvalid) {
-		t.Fatalf("invalid fingerprint error = %v", err)
+	for _, key := range inventoryListKeys {
+		if _, ok := plan.inventoryBase[key]; ok {
+			t.Fatalf("inventory base kept file list %q: %+v", key, plan.inventoryBase)
+		}
+	}
+	if plan.inventoryBase["provider_task_id"] != "tag:task-1" {
+		t.Fatalf("inventory base dropped provider facts: %+v", plan.inventoryBase)
+	}
+	// A device without an inode is an incomplete identity, never a size-only
+	// fingerprint.
+	if _, err := buildInspectionPlan(artifactSnapshot{id: "artifact-1"}, inspectInput{LocalRoot: downloads}, domain.ArtifactFacts{Path: downloads + "/show.mkv", SizeBytes: 1, Device: 3}, at); !errors.Is(err, ErrArtifactFactsInvalid) {
+		t.Fatalf("incomplete identity error = %v", err)
 	}
 }
 
@@ -142,7 +145,7 @@ func TestBuildInspectionPlanRejectsFrozenExpectedSizeMismatch(t *testing.T) {
 		artifactSnapshot{id: "artifact-size-mismatch"},
 		inspectInput{LocalRoot: downloads},
 		[]artifactInspectionTarget{{path: path, expectedSize: &expectedSize, sourceHash: "torrent-infohash", primary: true}},
-		[]domain.ArtifactFacts{{Path: path, SizeBytes: 41, SHA256: strings.Repeat("a", 64), MediaKind: "video", ObservedAt: at}},
+		[]domain.ArtifactFacts{{Path: path, SizeBytes: 41, MediaKind: "video", ObservedAt: at}},
 		at,
 	)
 	if !errors.Is(err, ErrArtifactFactsInvalid) || !errors.Is(err, ErrArtifactSizeMismatch) {
@@ -154,7 +157,7 @@ func TestBuildInspectionPlanRejectsFrozenExpectedSizeMismatch(t *testing.T) {
 		artifactSnapshot{id: "artifact-size-unknown"},
 		inspectInput{LocalRoot: downloads},
 		[]artifactInspectionTarget{{path: path, expectedSize: &negativeExpectedSize, primary: true}},
-		[]domain.ArtifactFacts{{Path: path, SizeBytes: 41, SHA256: strings.Repeat("b", 64), MediaKind: "video", ObservedAt: at}},
+		[]domain.ArtifactFacts{{Path: path, SizeBytes: 41, MediaKind: "video", ObservedAt: at}},
 		at,
 	)
 	if err != nil {
@@ -178,8 +181,8 @@ func TestBuildInspectionPlanForFilesUsesStableRefsAndRecordsEveryFile(t *testing
 			{path: subtitlePath, mediaKind: "subtitle", language: "zh"},
 		},
 		[]domain.ArtifactFacts{
-			{Path: primaryPath, SizeBytes: 100, SHA256: strings.Repeat("a", 64), MediaKind: "video", ObservedAt: at},
-			{Path: subtitlePath, SizeBytes: 20, SHA256: strings.Repeat("b", 64), MediaKind: "subtitle", ObservedAt: at},
+			{Path: primaryPath, SizeBytes: 100, MediaKind: "video", ObservedAt: at},
+			{Path: subtitlePath, SizeBytes: 20, MediaKind: "subtitle", ObservedAt: at},
 		},
 		at,
 	)
@@ -192,21 +195,43 @@ func TestBuildInspectionPlanForFilesUsesStableRefsAndRecordsEveryFile(t *testing
 	if plan.files[1].fileRef != stableArtifactFileRef(filepath.ToSlash(filepath.Clean(subtitlePath))) {
 		t.Fatalf("secondary file ref is not stable: %+v", plan.files)
 	}
-	var inventory map[string]any
-	if err := json.Unmarshal(plan.inventorySnapshot, &inventory); err != nil {
+	inventoryRaw, fingerprintsRaw, err := inspectionSnapshots(plan.inventoryBase, plan.files, "primary")
+	if err != nil {
 		t.Fatal(err)
 	}
-	inspected, ok := inventory["inspected_files"].([]any)
-	if !ok || len(inspected) != 2 || inventory["primary_file_ref"] != "primary" {
-		t.Fatalf("inventory did not record all inspected files: %s", plan.inventorySnapshot)
+	var inventory map[string]any
+	if err := json.Unmarshal(inventoryRaw, &inventory); err != nil {
+		t.Fatal(err)
+	}
+	digest, _ := inventory["files_digest"].(string)
+	if inventory["schema_version"] != inventorySchemaVersion || inventory["primary_file_ref"] != "primary" ||
+		inventory["file_count"] != float64(2) || inventory["video_count"] != float64(1) || inventory["subtitle_count"] != float64(1) ||
+		inventory["other_count"] != float64(0) || inventory["total_size_bytes"] != float64(120) || !strings.HasPrefix(digest, "sha256:") {
+		t.Fatalf("inventory summary = %s", inventoryRaw)
+	}
+	for _, key := range inventoryListKeys {
+		if _, ok := inventory[key]; ok {
+			t.Fatalf("inventory summary carries the file list %q: %s", key, inventoryRaw)
+		}
 	}
 	var fingerprints map[string]any
-	if err := json.Unmarshal(plan.fingerprintSnapshot, &fingerprints); err != nil {
+	if err := json.Unmarshal(fingerprintsRaw, &fingerprints); err != nil {
 		t.Fatal(err)
 	}
-	files, ok := fingerprints["files"].(map[string]any)
-	if !ok || len(files) != 2 {
-		t.Fatalf("fingerprint snapshot did not record all files: %s", plan.fingerprintSnapshot)
+	if len(fingerprints) != 4 || fingerprints["schema_version"] != fingerprintSchemaVersion || fingerprints["files_digest"] != digest || fingerprints["file_count"] != float64(2) {
+		t.Fatalf("fingerprint summary = %s", fingerprintsRaw)
+	}
+	// The digest binds every file's reference, path, kind, size and
+	// fingerprint, independent of the order the files were inspected in.
+	reversed := []artifactFilePlan{plan.files[1], plan.files[0]}
+	again, err := inspectionFilesDigest(reversed)
+	if err != nil || again != digest {
+		t.Fatalf("digest depends on order: %q vs %q (%v)", again, digest, err)
+	}
+	changed := append([]artifactFilePlan(nil), plan.files...)
+	changed[1].sizeBytes++
+	if other, err := inspectionFilesDigest(changed); err != nil || other == digest {
+		t.Fatalf("digest ignores a size change: %q (%v)", other, err)
 	}
 }
 
@@ -426,7 +451,7 @@ func TestHandleSuccessfulInspectionPersistsArtifactFileAndSanitizedJSON(t *testi
 	seedArtifactOwner(t, db, "artifact-success", "task-success", "completed", "pending", correlation, `{"files":[{"name":"Show - 01.mkv"}],"passkey_url":"https://example.test/?passkey=secret"}`)
 	claim, store := claimArtifactWorkItem(t, db, "artifact-success", []byte(`{"download_task_id":"task-success","provider_task_id":"tag:artifact-task","local_root":"/stale/configured-root"}`))
 	at := time.Date(2026, 7, 20, 8, 30, 0, 0, time.UTC)
-	inspector := &fakeInspector{facts: domain.ArtifactFacts{Path: canonicalPath, SizeBytes: 1024, SHA256: strings.Repeat("b", 64), ObservedAt: at, MediaKind: "video"}}
+	inspector := &fakeInspector{facts: domain.ArtifactFacts{Path: canonicalPath, SizeBytes: 1024, ObservedAt: at, MediaKind: "video"}}
 	service, err := NewService(db, inspector, func() time.Time { return at })
 	if err != nil {
 		t.Fatal(err)
@@ -466,7 +491,7 @@ func TestHandleSuccessfulInspectionPersistsArtifactFileAndSanitizedJSON(t *testi
 	if err := db.QueryRowContext(context.Background(), `SELECT file_ref, relative_path, source_path, media_kind, size_bytes, fingerprint FROM artifact_files WHERE artifact_id = 'artifact-success'`).Scan(&fileRef, &relativePath, &sourcePath, &mediaKind, &size, &fingerprint); err != nil {
 		t.Fatal(err)
 	}
-	if fileRef != stableArtifactFileRef("Show/Show - 01.mkv") || relativePath != "Show/Show - 01.mkv" || sourcePath != canonicalPath || mediaKind != "video" || size != 1024 || !strings.Contains(string(fingerprint), strings.Repeat("b", 64)) {
+	if fileRef != stableArtifactFileRef("Show/Show - 01.mkv") || relativePath != "Show/Show - 01.mkv" || sourcePath != canonicalPath || mediaKind != "video" || size != 1024 || !strings.Contains(string(fingerprint), `"meta:size=1024"`) {
 		t.Fatalf("unexpected artifact file ref=%q relative=%q source=%q media=%q size=%d fingerprint=%s", fileRef, relativePath, sourcePath, mediaKind, size, fingerprint)
 	}
 }
@@ -498,14 +523,14 @@ func TestHandleMultiFileInspectionPersistsAllArtifactFiles(t *testing.T) {
 	seedArtifactOwner(t, db, "artifact-multi", "task-multi", "completed", "pending", correlation, `{}`)
 	if _, err := db.ExecContext(context.Background(), `
 INSERT INTO artifact_files(id, artifact_id, acquisition_id, file_ref, relative_path, source_path, media_kind, size_bytes, fingerprint, facts, subtitle_binding_state)
-VALUES ('stale-file', 'artifact-multi', 'acq-task-multi', 'stale', 'old.mkv', '/old/old.mkv', 'video', 1, '{"algorithm":"sha256","value":"`+strings.Repeat("c", 64)+`","size_bytes":1}', '{}', 'not_applicable')`); err != nil {
+VALUES ('stale-file', 'artifact-multi', 'acq-task-multi', 'stale', 'old.mkv', '/old/old.mkv', 'video', 1, '{"algorithm":"metadata","value":"meta:size=1","size_bytes":1}', '{}', 'not_applicable')`); err != nil {
 		t.Fatal(err)
 	}
 	claim, store := claimArtifactWorkItem(t, db, "artifact-multi", []byte(`{"download_task_id":"task-multi","provider_task_id":"tag:multi","local_root":"`+root+`"}`))
 	at := time.Date(2026, 7, 20, 8, 30, 0, 0, time.UTC)
 	inspector := &fakeInspector{byPath: map[string]domain.ArtifactFacts{
-		canonicalPrimary:  {Path: canonicalPrimary, SizeBytes: 100, SHA256: strings.Repeat("a", 64), ObservedAt: at, MediaKind: "video"},
-		canonicalSubtitle: {Path: canonicalSubtitle, SizeBytes: 20, SHA256: strings.Repeat("b", 64), ObservedAt: at, MediaKind: "subtitle"},
+		canonicalPrimary:  {Path: canonicalPrimary, SizeBytes: 100, ObservedAt: at, MediaKind: "video"},
+		canonicalSubtitle: {Path: canonicalSubtitle, SizeBytes: 20, ObservedAt: at, MediaKind: "subtitle"},
 	}}
 	service, err := NewService(db, inspector, func() time.Time { return at })
 	if err != nil {
@@ -577,7 +602,7 @@ func TestHandleIncompleteProviderFileSnapshotCannotVerifyArtifact(t *testing.T) 
 	correlation := `{"external_id":"tag:incomplete","artifact_path":"` + path + `","file_count":2,"files_complete":false,"files":[{"path":"` + path + `","size_bytes":10,"media_kind":"video"}]}`
 	seedArtifactOwner(t, db, "artifact-incomplete", "task-incomplete", "completed", "pending", correlation, `{}`)
 	claim, store := claimArtifactWorkItem(t, db, "artifact-incomplete", []byte(`{"download_task_id":"task-incomplete","provider_task_id":"tag:incomplete","local_root":"`+root+`"}`))
-	inspector := &fakeInspector{facts: domain.ArtifactFacts{Path: path, SizeBytes: 10, SHA256: strings.Repeat("a", 64), MediaKind: "video"}}
+	inspector := &fakeInspector{facts: domain.ArtifactFacts{Path: path, SizeBytes: 10, MediaKind: "video"}}
 	service, err := NewService(db, inspector)
 	if err != nil {
 		t.Fatal(err)
@@ -783,7 +808,6 @@ func TestBuildInspectionPlanAcceptsCanonicalInspectorPathUnderSymlinkedRoot(t *t
 		t.Fatal(err)
 	}
 	size := int64(len(content))
-	sum := sha256.Sum256(content)
 	canonicalPath, err := filepath.EvalSymlinks(filepath.Join(root, name))
 	if err != nil {
 		t.Fatal(err)
@@ -795,7 +819,6 @@ func TestBuildInspectionPlanAcceptsCanonicalInspectorPathUnderSymlinkedRoot(t *t
 	facts := domain.ArtifactFacts{
 		Path:       canonicalPath,
 		SizeBytes:  size,
-		SHA256:     hex.EncodeToString(sum[:]),
 		ObservedAt: time.Now().UTC(),
 		MediaKind:  "video",
 	}
@@ -851,12 +874,13 @@ func TestHandleUnstablePrimaryFileRetriesAfterSettle(t *testing.T) {
 	seedArtifactOwner(t, db, "artifact-unstable", "task-unstable", "completed", "pending", correlation, `{"files":[{"name":"Show - 01.mkv"}]}`)
 	claim, store := claimArtifactWorkItem(t, db, "artifact-unstable", []byte(`{"download_task_id":"task-unstable","provider_task_id":"tag:unstable","local_root":"`+root+`"}`))
 	at := time.Date(2026, 7, 20, 8, 30, 0, 0, time.UTC)
-	// First read observes a partially-flushed file (fingerprint a), the settle
-	// re-read observes the final file (fingerprint b): the handler must retry
-	// with artifact_unstable instead of freezing the unstable fingerprint.
+	// First read observes a file still being written (same size, an older
+	// modification time); the settle re-read observes a later modification
+	// time: the handler must retry with artifact_unstable instead of freezing
+	// an unsettled observation.
 	inspector := &sequenceInspector{facts: []domain.ArtifactFacts{
-		{Path: canonicalPath, SizeBytes: 1024, SHA256: strings.Repeat("a", 64), ObservedAt: at, MediaKind: "video"},
-		{Path: canonicalPath, SizeBytes: 1024, SHA256: strings.Repeat("b", 64), ObservedAt: at, MediaKind: "video"},
+		{Path: canonicalPath, SizeBytes: 1024, ModifiedAt: at, ObservedAt: at, MediaKind: "video"},
+		{Path: canonicalPath, SizeBytes: 1024, ModifiedAt: at.Add(time.Second), ObservedAt: at, MediaKind: "video"},
 	}}
 	service, err := NewService(db, inspector, func() time.Time { return at })
 	if err != nil {
@@ -898,7 +922,7 @@ func TestHandleStablePrimaryFileVerifiesAfterSettle(t *testing.T) {
 	seedArtifactOwner(t, db, "artifact-stable", "task-stable", "completed", "pending", correlation, `{"files":[{"name":"Show - 01.mkv"}]}`)
 	claim, _ := claimArtifactWorkItem(t, db, "artifact-stable", []byte(`{"download_task_id":"task-stable","provider_task_id":"tag:stable","local_root":"`+root+`"}`))
 	at := time.Date(2026, 7, 20, 8, 30, 0, 0, time.UTC)
-	stable := domain.ArtifactFacts{Path: canonicalPath, SizeBytes: 1024, SHA256: strings.Repeat("a", 64), ObservedAt: at, MediaKind: "video"}
+	stable := domain.ArtifactFacts{Path: canonicalPath, SizeBytes: 1024, ObservedAt: at, MediaKind: "video"}
 	inspector := &sequenceInspector{facts: []domain.ArtifactFacts{stable, stable}}
 	service, err := NewService(db, inspector, func() time.Time { return at })
 	if err != nil {

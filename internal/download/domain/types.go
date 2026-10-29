@@ -151,10 +151,15 @@ type ProviderFile struct {
 	Progress  float64
 }
 
+// ArtifactFacts is the path-level observation of one downloaded file: its
+// size, device/inode and modification time from one fstat. The content is
+// never read.
 type ArtifactFacts struct {
 	Path       string
 	SizeBytes  int64
-	SHA256     string
+	Device     uint64
+	Inode      uint64
+	ModifiedAt time.Time
 	ObservedAt time.Time
 	MediaKind  string
 }

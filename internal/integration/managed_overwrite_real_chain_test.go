@@ -58,7 +58,7 @@ VALUES ('plc-occupant', 'tv:e1', 0, 'facts-v1', 'obs-occupant')`); err != nil {
 	}
 	if _, err := owner.ExecContext(ctx, `
 INSERT INTO placement_companions(id, placement_id, managed_anime_id, source_ref, registration, media_kind, suffix, original_extension, current_path, size_bytes, fingerprint)
-VALUES ('cmp-occupant', 'plc-occupant', 'anime-occupant', 'src-occupant', 'adopted', 'subtitle', 'jpn', 'ass', $1, 14, repeat('c', 64))`, otherSubtitle); err != nil {
+VALUES ('cmp-occupant', 'plc-occupant', 'anime-occupant', 'src-occupant', 'adopted', 'subtitle', 'jpn', 'ass', $1, 14, 'meta:size=14')`, otherSubtitle); err != nil {
 		t.Fatal(err)
 	}
 

@@ -74,7 +74,7 @@ func TestHandleVerifiedTransactionRollsBackOnOwnedWriteFailures(t *testing.T) {
 			claim, _ := claimArtifactWorkItem(t, db, "artifact-rollback", []byte(`{"download_task_id":"task-rollback","provider_task_id":"tag:rollback-task"}`))
 
 			at := time.Date(2026, 7, 20, 8, 30, 0, 0, time.UTC)
-			inspector := &fakeInspector{facts: domain.ArtifactFacts{Path: canonicalPath, SizeBytes: 1024, SHA256: strings.Repeat("c", 64), ObservedAt: at, MediaKind: "video"}}
+			inspector := &fakeInspector{facts: domain.ArtifactFacts{Path: canonicalPath, SizeBytes: 1024, ObservedAt: at, MediaKind: "video"}}
 			service, err := NewService(db, inspector, func() time.Time { return at })
 			if err != nil {
 				t.Fatal(err)

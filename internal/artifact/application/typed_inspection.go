@@ -49,7 +49,7 @@ func (s *Service) commitInspection(ctx context.Context, c workitems.Claim, plan 
 	files := plan.filesOrFallback()
 	buildManifest := len(manifest) == 0
 	prepared := make([]map[string]any, 0, len(files))
-	rebindings := make(map[string]string, len(files))
+	primaryRef := ""
 	for index, file := range files {
 		ref := refs[file.relativePath]
 		if ref == "" {
@@ -58,16 +58,14 @@ func (s *Service) commitInspection(ctx context.Context, c workitems.Claim, plan 
 		if buildManifest {
 			manifest = append(manifest, map[string]any{"file_ref": ref, "ordinal": index, "relative_path": file.relativePath, "exact_size": file.sizeBytes, "media_kind": file.mediaKind, "identity_evidence": map[string]any{}})
 		}
-		rebindings[file.fileRef] = ref
+		if file.fileRef == "primary" {
+			primaryRef = ref
+		}
 		files[index].fileRef = ref
 		files[index].id = stableID("artifact-file", c.Owner.ID, ref)
 		prepared = append(prepared, map[string]any{"id": stableID("artifact-file", c.Owner.ID, ref), "file_ref": ref, "relative_path": file.relativePath, "source_path": filepath.Clean(file.sourcePath), "media_kind": file.mediaKind, "size_bytes": file.sizeBytes, "fingerprint": json.RawMessage(file.fingerprint), "facts": json.RawMessage(file.facts)})
 	}
-	plan.inventorySnapshot, err = rebindInspectionSnapshot(plan.inventorySnapshot, rebindings, false)
-	if err != nil {
-		return worker.Outcome{}, err
-	}
-	plan.fingerprintSnapshot, err = rebindInspectionSnapshot(plan.fingerprintSnapshot, rebindings, true)
+	inventorySnapshot, fingerprintSnapshot, err := inspectionSnapshots(plan.inventoryBase, files, primaryRef)
 	if err != nil {
 		return worker.Outcome{}, err
 	}
@@ -90,11 +88,11 @@ func (s *Service) commitInspection(ctx context.Context, c workitems.Claim, plan 
 	if err != nil {
 		return worker.Outcome{}, err
 	}
-	sum := sha256.Sum256(append(append([]byte(fmt.Sprintf("%s:%d:", c.Owner.ID, c.ExpectedOwnerVersion+1)), plan.inventorySnapshot...), plan.fingerprintSnapshot...))
+	sum := sha256.Sum256(append(append([]byte(fmt.Sprintf("%s:%d:", c.Owner.ID, c.ExpectedOwnerVersion+1)), inventorySnapshot...), fingerprintSnapshot...))
 	digest := "sha256:" + hex.EncodeToString(sum[:])
 	return s.inspectionTransaction(ctx, c, func(scope txscope.Tx) ([]byte, error) {
 		var raw []byte
-		err := scope.SQLTx().QueryRowContext(ctx, `SELECT public.artifact_commit_inspection($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb,$10,$11,$12,$13,$14::jsonb)`, c.Owner.ID, c.ID, c.FencingToken, admission, manifestDigest, manifestRaw, plan.inventorySnapshot, plan.fingerprintSnapshot, filesRaw, uuid.NewString(), uuid.NewString(), digest, mediaSnapshot, mediaRaw).Scan(&raw)
+		err := scope.SQLTx().QueryRowContext(ctx, `SELECT public.artifact_commit_inspection($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb,$10,$11,$12,$13,$14::jsonb)`, c.Owner.ID, c.ID, c.FencingToken, admission, manifestDigest, manifestRaw, inventorySnapshot, fingerprintSnapshot, filesRaw, uuid.NewString(), uuid.NewString(), digest, mediaSnapshot, mediaRaw).Scan(&raw)
 		if err != nil {
 			return nil, err
 		}

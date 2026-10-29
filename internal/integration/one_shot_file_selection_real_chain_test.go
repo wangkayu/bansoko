@@ -64,15 +64,16 @@ func nestedFileTorrent(name string, files []torrentFile, webSeedRoot string) []b
 	return b.Bytes()
 }
 
-// startNestedFileFixture serves the nested torrent and its web-seed files.
-func startNestedFileFixture(t *testing.T, files []torrentFile) (*http.Client, fixtureEndpoint, []byte, func()) {
+// startNestedFileFixture serves the nested torrent named name and its
+// web-seed files.
+func startNestedFileFixture(t *testing.T, name string, files []torrentFile) (*http.Client, fixtureEndpoint, []byte, func()) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "0.0.0.0:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
-	torrent := nestedFileTorrent(fileSelectionTorrentName, files, fmt.Sprintf("http://%s:%d", realChainFixtureHost(), port))
+	torrent := nestedFileTorrent(name, files, fmt.Sprintf("http://%s:%d", realChainFixtureHost(), port))
 	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/artifact.torrent" {
 			w.Header().Set("Content-Type", "application/x-bittorrent")
@@ -80,7 +81,7 @@ func startNestedFileFixture(t *testing.T, files []torrentFile) (*http.Client, fi
 			return
 		}
 		for _, file := range files {
-			if r.URL.Path == "/"+fileSelectionTorrentName+"/"+file.Name {
+			if r.URL.Path == "/"+name+"/"+file.Name {
 				http.ServeContent(w, r, path.Base(file.Name), time.Unix(0, 0), bytes.NewReader(file.Content))
 				return
 			}
@@ -123,7 +124,7 @@ func TestOneShotManualFileSelectionRealChain(t *testing.T) {
 	for _, file := range files {
 		byManifest[fileSelectionTorrentName+"/"+file.Name] = file.Content
 	}
-	fixtureClient, fixtureURL, torrentBytes, closeFixture := startNestedFileFixture(t, files)
+	fixtureClient, fixtureURL, torrentBytes, closeFixture := startNestedFileFixture(t, fileSelectionTorrentName, files)
 	t.Cleanup(closeFixture)
 
 	svc := newRealChainServices(t, fixtureClient)

@@ -87,9 +87,12 @@ type Resolution struct {
 }
 
 // Assessed reports whether at least one render template referenced an
-// ep_title fact, so the sources carry states and the block is written.
+// ep_title fact, so the sources carry states and the block is written. The
+// zero Resolution (a render with no template to assess, such as an empty
+// subtitle suffix) is not assessed either.
 func (r Resolution) Assessed() bool {
-	return r.BGM.State != ReasonNotRequest || r.TMDB.State != ReasonNotRequest
+	assessed := func(state SourceState) bool { return state.State != "" && state.State != ReasonNotRequest }
+	return assessed(r.BGM) || assessed(r.TMDB)
 }
 
 // EpisodeTitlesBlock builds the render snapshot's episode_titles block, the

@@ -1305,9 +1305,10 @@ PY
   mkdir -p "$(dirname "$s8_source_path")"
   cp "$s8_download" "$s8_source_path"
   head -c "$s8_companion_size" /dev/urandom >"$s8_companion_source"
-  # The companion's registered identity is the sha256 of its bytes, exactly as
-  # registration stores it from the sidecar operation / artifact file.
-  s8_companion_digest="$(shasum -a 256 "$s8_companion_source" | awk '{print $1}')"
+  # The companion's registered identity is the path-level metadata value of
+  # its size, exactly as registration stores it from the sidecar operation /
+  # artifact file; no content is hashed.
+  s8_companion_fingerprint="meta:size=$s8_companion_size"
   s8_payload_digest="sha256:$(repeat_hex 3)"
   s8_manifest_digest="sha256:$(repeat_hex 4)"
   s8_file_ref="$(torrent_file_ref "$s8_payload_digest" 'EP08.mkv')"
@@ -1395,14 +1396,14 @@ VALUES ('$s8_placement_id','$s8_source_path','anime-e2e','file_operation','op-e2
 INSERT INTO placement_coverage(placement_id,observation_key,coverage_ordinal,facts_version,evidence_ref)
 VALUES ('$s8_placement_id','tv:e8',0,'media-facts-v1','op-e2e-8');
 -- One active subtitle companion. `fingerprint` is the registration-time
--- content digest of the file (hex, as the column CHECK demands); recovery
--- keeps it, and the loser cleanup handoff freezes and checks it before moving
--- the file. The recovery candidate freezes the METADATA fingerprint it
--- observes, never this digest.
+-- metadata value of the file ("meta:size=<n>", as the column CHECK demands);
+-- recovery keeps it, and the loser cleanup handoff checks the size before
+-- moving the file. The recovery candidate freezes the metadata fingerprint it
+-- observes.
 INSERT INTO placement_companions(id,placement_id,managed_anime_id,source_ref,registration,media_kind,suffix,original_extension,current_path,size_bytes,fingerprint,state,version)
 VALUES ('$s8_companion_id','$s8_placement_id','anime-e2e','e2e-scenario-8-companion','adopted','subtitle','zh','ass',
         '$s8_companion_source','$s8_companion_size',
-        '$s8_companion_digest','active',1);
+        '$s8_companion_fingerprint','active',1);
 COMMIT;
 E2ETHIRD
   then
@@ -1743,11 +1744,12 @@ PY
   case "$s8b_btime" in 0|-|unknown|'') s8b_has_btime=false ;; *) s8b_has_btime=true ;; esac
   echo "scenario 8b target mount: fstype=$s8b_fstype mount=[$s8b_mount] btime=$s8b_btime has_btime=$s8b_has_btime"
   s8b_target_inode_before="$(ls -i "$s8_target" | awk '{print $1}')"
-  # The companion cleanup checks the companion's registered digest against
-  # the file before moving it; a seed whose digest is not the file's would
-  # block that cleanup for a reason unrelated to recovery.
-  s8b_companion_digest="$($PSQL -tAc "SELECT fingerprint FROM placement_companions WHERE id='$s8_companion_id'" | tr -d '[:space:]')"
-  [[ "$s8b_companion_digest" == "$(fingerprint "$s8_companion_target")" ]] || { echo "scenario 8b: companion $s8_companion_id registered digest [$s8b_companion_digest] is not the sha256 of $s8_companion_target" >&2; exit 1; }
+  # The companion cleanup checks the companion's registered metadata value
+  # (its size) against the file before moving it; a seed whose size is not
+  # the file's would block that cleanup for a reason unrelated to recovery.
+  s8b_companion_fingerprint="$($PSQL -tAc "SELECT fingerprint FROM placement_companions WHERE id='$s8_companion_id'" | tr -d '[:space:]')"
+  s8b_companion_size="$(wc -c <"$s8_companion_target" | tr -d '[:space:]')"
+  [[ "$s8b_companion_fingerprint" == "meta:size=$s8b_companion_size" || "$s8b_companion_fingerprint" == "meta:size=$s8b_companion_size;"* ]] || { echo "scenario 8b: companion $s8_companion_id registered fingerprint [$s8b_companion_fingerprint] is not the metadata value of $s8_companion_target ($s8b_companion_size bytes)" >&2; exit 1; }
   s8b_target_fp="$($PSQL -tAc "SELECT target_fingerprint::text FROM placements WHERE id='$s8_placement_id'" | tr -d '\r')"
   [[ "$s8b_target_fp" == *'"algorithm": "metadata"'* || "$s8b_target_fp" == *'"algorithm":"metadata"'* ]] || { echo "scenario 8b: the recovered placement's target fingerprint is not the metadata envelope: $s8b_target_fp" >&2; exit 1; }
   # The scenario seeded the placement out of the replacement pool so the

@@ -231,6 +231,8 @@ required_tests=(
   TestVersionedCompanionRederivesRealChain
   TestLocalCleanupPreservesRealExternalEffects
   TestDownloadCompletionRealQB
+  TestLargeReleaseSubscriptionRealChain
+  TestLargeReleaseOneShotRealChain
 )
 required_regex="^($(IFS='|'; echo "${required_tests[*]}"))$"
 

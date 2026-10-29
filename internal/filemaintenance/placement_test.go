@@ -3,7 +3,6 @@ package filemaintenance
 import (
 	"context"
 	"database/sql"
-	"strings"
 	"testing"
 
 	observabilityapplication "bansoko/internal/observability/application"
@@ -231,7 +230,7 @@ func TestCompanionOfReleasedPlacementIsRecordedReleased(t *testing.T) {
 	done, err := registerCompanionTx(ctx, tx, placement, companionCandidate{
 		sourceRef: "op-unknown-subtitle", registration: "intake", mediaKind: "subtitle",
 		path: "/library/Show/extras/SPECIAL.zh.ass", sizeBytes: 8,
-		fingerprint: strings.Repeat("a", 64), frozenSuffix: &suffix,
+		fingerprint: "meta:size=8", frozenSuffix: &suffix,
 	})
 	if err != nil || !done {
 		t.Fatalf("register companion of a released placement: done=%v err=%v", done, err)

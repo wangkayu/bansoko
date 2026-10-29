@@ -121,7 +121,7 @@ func encodeOverwriteExecutionSnapshotForPlan(operationID, planDigest string, rec
 	if strings.TrimSpace(operationID) == "" {
 		return nil, errors.New("overwrite checkpoint operation id is required")
 	}
-	if !validFingerprintText(planDigest) {
+	if !validDigestHex(planDigest) {
 		return nil, errors.New("overwrite checkpoint plan digest is required")
 	}
 	if err := validateOverwriteRecovery(recovery); err != nil {
@@ -179,7 +179,7 @@ func validateOverwriteRecovery(recovery domain.OverwriteRecovery) error {
 		"displaced": recovery.DisplacedObservation,
 		"foreign":   recovery.ForeignEvidence,
 	} {
-		if observation.Fingerprint != "" && !validFingerprintText(observation.Fingerprint) {
+		if observation.Fingerprint != "" && !validObservationFingerprint(observation.Fingerprint) {
 			return fmt.Errorf("overwrite checkpoint %s fingerprint is invalid", name)
 		}
 		if observation.SizeBytes < 0 {

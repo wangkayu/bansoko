@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"bansoko/internal/library/domain"
 )
 
 // Companion files ("subtitle follows video"): a prefix-bound subtitle is
@@ -87,31 +89,29 @@ func companionID(sourceRef string) string {
 	return "cmp-" + hex.EncodeToString(sum[:16])
 }
 
-// fingerprintHex normalizes a stored fingerprint to the lowercase sha256 hex
-// form filesystem observations report. Fingerprints are stored either as the
-// bare hex value, as "sha256:<hex>", or as the FileOperation fingerprint
-// object {"algorithm":"sha256","value":"<hex>",...}.
-func fingerprintHex(value string) string {
+// companionFingerprint normalizes a stored fingerprint to the path-level
+// metadata value ("meta:size=<n>[;dev=<d>;ino=<i>]") a companion records.
+// Fingerprints are stored either as the bare value or as the FileOperation
+// fingerprint object {"algorithm":"metadata","value":"meta:...",...}. The
+// result is re-rendered in canonical form; any other form yields "" (no
+// valid companion fingerprint).
+func companionFingerprint(value string) string {
 	trimmed := strings.TrimSpace(value)
 	if strings.HasPrefix(trimmed, "{") {
 		var parsed struct {
 			Algorithm string `json:"algorithm"`
 			Value     string `json:"value"`
 		}
-		if json.Unmarshal([]byte(trimmed), &parsed) == nil && (parsed.Algorithm == "" || parsed.Algorithm == "sha256") {
-			trimmed = strings.TrimSpace(parsed.Value)
+		if json.Unmarshal([]byte(trimmed), &parsed) != nil || parsed.Algorithm != "metadata" {
+			return ""
 		}
+		trimmed = strings.TrimSpace(parsed.Value)
 	}
-	trimmed = strings.TrimPrefix(trimmed, "sha256:")
-	return strings.ToLower(trimmed)
-}
-
-func validFingerprintHex(value string) bool {
-	if len(value) != 64 {
-		return false
+	facts, ok := domain.ParseMetadataFingerprint(trimmed)
+	if !ok {
+		return ""
 	}
-	_, err := hex.DecodeString(value)
-	return err == nil
+	return domain.MetadataFingerprint(facts.SizeBytes, domain.FileIdentity{Device: facts.Device, Inode: facts.Inode})
 }
 
 // companionCandidate is one sidecar that may become a companion of a video
@@ -154,7 +154,7 @@ WHERE fo.id = $1`, fileOperationID).Scan(&op.id, &op.mediaKind, &op.artifactID, 
 		return op, false, err
 	}
 	op.boundVideoOperationID = bound.String
-	op.fingerprint = fingerprintHex(fingerprint.String)
+	op.fingerprint = companionFingerprint(fingerprint.String)
 	op.sizeBytes = size.Int64
 	op.completed = state == "completed"
 	return op, true, nil
@@ -217,7 +217,7 @@ func registerCompanionsTx(ctx context.Context, tx *sql.Tx, fileOperationID strin
 		if err != nil || !ok {
 			return 0, err
 		}
-		if !validFingerprintHex(op.fingerprint) {
+		if op.fingerprint == "" {
 			return 0, fmt.Errorf("sidecar operation %s has no verified target fingerprint", op.id)
 		}
 		suffix := op.suffix
@@ -278,9 +278,9 @@ ORDER BY fo.id`, video.artifactID, video.id)
 			return nil, err
 		}
 		c.registration = "intake"
-		c.fingerprint = fingerprintHex(fingerprint.String)
+		c.fingerprint = companionFingerprint(fingerprint.String)
 		c.frozenSuffix = &suffix
-		if !validFingerprintHex(c.fingerprint) {
+		if c.fingerprint == "" {
 			continue
 		}
 		candidates = append(candidates, c)
@@ -292,13 +292,13 @@ ORDER BY fo.id`, video.artifactID, video.id)
 	// Subtitles the same typed plan adopted in place (an existing regular file
 	// of the expected size at its target) have no FileOperation; their declared
 	// target and adoption evidence are the frozen facts. Adoption is path +
-	// size, so the evidence carries no content digest: the companion records
-	// the adopted artifact file's fingerprint, as a typed publication records
-	// its source fingerprint as the target's.
+	// size: the companion records the metadata fingerprint of the adopted
+	// target object (its observed size and device/inode), never the source's.
 	adopted, err := tx.QueryContext(ctx, `
 SELECT fo.postprocessing_plan_id, i.file_ref, af.media_kind, i.canonical_path,
        COALESCE(i.plan_evidence->'final_object'->>'size', '-1'),
-       af.fingerprint::text
+       COALESCE(i.plan_evidence->'final_object'->'identity'->>'device', '0'),
+       COALESCE(i.plan_evidence->'final_object'->'identity'->>'inode', '0')
 FROM file_operations fo
 JOIN acquisition_files i ON i.acquisition_id = fo.acquisition_id AND i.plan_kind = 'adopt'
 JOIN artifact_files af ON af.artifact_id = fo.artifact_id AND af.file_ref = i.file_ref
@@ -309,9 +309,9 @@ ORDER BY i.file_ref`, video.id)
 	}
 	defer adopted.Close()
 	for adopted.Next() {
-		var planID, fileRef, size, sha string
+		var planID, fileRef, size, device, inode string
 		var c companionCandidate
-		if err := adopted.Scan(&planID, &fileRef, &c.mediaKind, &c.path, &size, &sha); err != nil {
+		if err := adopted.Scan(&planID, &fileRef, &c.mediaKind, &c.path, &size, &device, &inode); err != nil {
 			return nil, err
 		}
 		if _, _, ok := splitCompanionName(video.targetPath, c.path); !ok {
@@ -322,8 +322,15 @@ ORDER BY i.file_ref`, video.id)
 		}
 		c.sourceRef = "adopt:" + planID + ":" + fileRef
 		c.registration = "adopted"
-		c.fingerprint = fingerprintHex(sha)
-		if !validFingerprintHex(c.fingerprint) {
+		var identity domain.FileIdentity
+		if _, err := fmt.Sscan(device, &identity.Device); err != nil {
+			continue
+		}
+		if _, err := fmt.Sscan(inode, &identity.Inode); err != nil {
+			continue
+		}
+		c.fingerprint = companionFingerprint(domain.MetadataFingerprint(c.sizeBytes, identity))
+		if c.fingerprint == "" {
 			continue
 		}
 		candidates = append(candidates, c)

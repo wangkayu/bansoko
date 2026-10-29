@@ -150,7 +150,7 @@ INSERT INTO artifact_files(id, artifact_id, file_ref, relative_path, source_path
                            subtitle_binding_state, acquisition_id)
 SELECT 'ff-' || a.rel_id || '-' || f.i, 'af-' || a.rel_id, 'file-' || f.i, CASE f.i WHEN 0 THEN a.f0 ELSE a.f1 END,
        '/downloads/' || CASE f.i WHEN 0 THEN a.f0 ELSE a.f1 END, 'video', a.size_bytes,
-       jsonb_build_object('algorithm', 'sha256', 'value', soak_ext.hexn('fp' || f.i, a.i, 64), 'size_bytes', a.size_bytes),
+       jsonb_build_object('algorithm', 'metadata', 'value', 'meta:size=' || a.size_bytes, 'size_bytes', a.size_bytes),
        '{}'::jsonb, a.accepted_at + interval '15 minutes', 'not_applicable', a.id
 FROM soak_ext.acq a CROSS JOIN generate_series(0, 1) f(i) WHERE a.cls IN ('succeeded', 'inflight')`)
 
@@ -202,8 +202,8 @@ INSERT INTO file_operations(id, artifact_id, artifact_version, artifact_file_id,
                             causation_type, causation_id)
 SELECT 'fo-' || a.rel_id || '-' || f.i, 'af-' || a.rel_id, 1, 'ff-' || a.rel_id || '-' || f.i, a.op,
        '/downloads/' || CASE f.i WHEN 0 THEN a.f0 ELSE a.f1 END, CASE f.i WHEN 0 THEN a.p0 ELSE a.p1 END,
-       jsonb_build_object('algorithm', 'sha256', 'value', soak_ext.hexn('fp' || f.i, a.i, 64), 'size_bytes', a.size_bytes),
-       CASE WHEN a.cls = 'succeeded' THEN jsonb_build_object('algorithm', 'sha256', 'value', soak_ext.hexn('fp' || f.i, a.i, 64), 'size_bytes', a.size_bytes) END,
+       jsonb_build_object('algorithm', 'metadata', 'value', 'meta:size=' || a.size_bytes, 'size_bytes', a.size_bytes),
+       CASE WHEN a.cls = 'succeeded' THEN jsonb_build_object('algorithm', 'metadata', 'value', 'meta:size=' || a.size_bytes, 'size_bytes', a.size_bytes) END,
        'block', jsonb_build_object('renderer_version', 'soak-render-v1', 'title', 'Soak Anime ' || a.owner_n),
        jsonb_build_object('operation', a.op, 'pad', soak_ext.pad(a.i + f.i, 900)),
        CASE WHEN a.cls = 'succeeded' THEN 'completed'

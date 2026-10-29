@@ -3,9 +3,7 @@ package integration
 import (
 	"bansoko/internal/testutil/storedsections"
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -78,16 +76,15 @@ func seedRealEffectFileFixtureWithPolicy(t *testing.T, db *sql.DB, policy map[st
 	if err != nil {
 		t.Fatal(err)
 	}
-	digest := sha256.Sum256(content)
 	fixture := realEffectFileFixture{
 		artifactID:  "artifact-real-effect-fault",
 		fileID:      "artifact-file-fault",
 		root:        root,
 		sourcePath:  sourcePath,
-		fingerprint: hex.EncodeToString(digest[:]),
+		fingerprint: fmt.Sprintf("meta:size=%d", len(content)),
 		size:        int64(len(content)),
 	}
-	fingerprintJSON := fmt.Sprintf(`{"algorithm":"sha256","value":"%s","size_bytes":%d}`, fixture.fingerprint, fixture.size)
+	fingerprintJSON := fmt.Sprintf(`{"algorithm":"metadata","value":"%s","size_bytes":%d}`, fixture.fingerprint, fixture.size)
 
 	for _, stmt := range []string{
 		`INSERT INTO managed_anime(id, title) VALUES ('anime-real-effect-fault', 'Fault Anime')`,

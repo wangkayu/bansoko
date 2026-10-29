@@ -11035,14 +11035,15 @@ components:
     Fingerprint:
       type: object
       additionalProperties: false
+      description: Path-level file fingerprint. The value records the file size and, when it was observed, the device and inode; file content is never read.
       required: [algorithm, value, size_bytes]
       properties:
         algorithm:
           type: string
-          enum: [sha256]
+          enum: [metadata]
         value:
           type: string
-          pattern: '^[a-fA-F0-9]{64}$'
+          pattern: '^meta:size=(0|[1-9][0-9]*)(;dev=[1-9][0-9]*;ino=[1-9][0-9]*)?$'
         size_bytes:
           type: integer
           format: int64

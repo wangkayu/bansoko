@@ -66,7 +66,7 @@ func seedBudgetOwners(t *testing.T, tag string, limitsPatch map[string]any) (*sq
 	}
 	files := []map[string]any{}
 	for _, f := range manifest {
-		files = append(files, map[string]any{"id": "plan-file-" + f["file_ref"].(string), "file_ref": f["file_ref"], "relative_path": f["relative_path"], "source_path": "/downloads/" + f["relative_path"].(string), "size_bytes": f["exact_size"], "media_kind": f["media_kind"], "fingerprint": map[string]any{"algorithm": "sha256", "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}, "facts": map[string]any{}})
+		files = append(files, map[string]any{"id": "plan-file-" + f["file_ref"].(string), "file_ref": f["file_ref"], "relative_path": f["relative_path"], "source_path": "/downloads/" + f["relative_path"].(string), "size_bytes": f["exact_size"], "media_kind": f["media_kind"], "fingerprint": metadataFingerprintFixture(f["exact_size"]), "facts": map[string]any{}})
 	}
 	body, err := json.Marshal(files)
 	if err != nil {

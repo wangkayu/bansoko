@@ -40,10 +40,10 @@ type recoveryApplicationScene struct {
 	generation int64
 	candidate  recoveryCandidateFact
 	files      map[string]domain.FileObservation
-	// companionDigest is the registration-time hex digest stored in the
+	// companionDigest is the registration-time fingerprint stored in the
 	// companion's CHECK-guarded fingerprint column. The confirm must leave it
 	// byte-identical; the candidate's companion Fingerprint is a DIFFERENT
-	// value (the observed metadata fingerprint).
+	// value (the observed metadata fingerprint with its device/inode).
 	companionDigest string
 }
 
@@ -103,7 +103,7 @@ func seedRecoveryApplicationSceneWithRules(t *testing.T, fixture *calibrationFix
 	//     fingerprint the scan observed at the target (meta:size=..;dev=..;ino=..),
 	//     which is what the confirm's MetadataFingerprintsMatch compares.
 	// Every NOT NULL / CHECK column of the baseline is supplied.
-	const companionDigest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	const companionDigest = "meta:size=64"
 	const companionMetadata = "meta:size=64;dev=2;ino=12"
 	companionKey := "cmp-" + strings.TrimPrefix(animeID, "anime-")
 	var companionID string
@@ -396,12 +396,12 @@ func TestRecoverAnimeFileApplicationCommitsUnit(t *testing.T) {
 	if after.CompanionPath != scene.candidate.Companions[0].TargetPath {
 		t.Fatalf("companion path = %q, want the rendered companion target", after.CompanionPath)
 	}
-	// The companion's CHECK-guarded fingerprint column keeps the ORIGINAL hex
-	// digest: the confirm updates current_path/version only and never rewrites
-	// content identity. It must NOT become the candidate's metadata
+	// The companion's CHECK-guarded fingerprint column keeps the ORIGINAL
+	// registration fingerprint: the confirm updates current_path/version only
+	// and never rewrites file identity. It must NOT become the candidate's metadata
 	// fingerprint (which lives in a different field entirely).
 	if after.CompanionHex != scene.companionDigest {
-		t.Fatalf("companion digest = %q, want the untouched hex digest %q", after.CompanionHex, scene.companionDigest)
+		t.Fatalf("companion digest = %q, want the untouched registration fingerprint %q", after.CompanionHex, scene.companionDigest)
 	}
 	if after.CompanionHex == scene.candidate.Companions[0].Fingerprint {
 		t.Fatalf("companion digest was overwritten with the metadata fingerprint %q", after.CompanionHex)
@@ -496,7 +496,7 @@ VALUES ('cmp-late', $1, $2, 'src:cmp-late', 'adopted', 'subtitle', 'en',
         'ass', '/library/Show/raw ep1.en.ass', 48, $3, 'active', 1)
 ON CONFLICT (source_ref) DO NOTHING`,
 			scene.candidate.PlacementID, scene.animeID,
-			"fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210")
+			"meta:size=48")
 		if err != nil {
 			t.Errorf("register concurrent companion: %v", err)
 			return

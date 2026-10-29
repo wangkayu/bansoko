@@ -495,7 +495,7 @@ INSERT INTO placement_companions(id, placement_id, managed_anime_id, source_ref,
     media_kind, suffix, original_extension, current_path, size_bytes, fingerprint)
 VALUES ($1, $2, $3, $4, 'intake', 'subtitle', '.zh', 'ass', $5, 42, $6)`,
 		"pc-"+markerID, placementID, "anime-"+markerID, "companion:"+markerID,
-		filepath.Join(filepath.Dir(targetPath), "preserve.zh.ass"), strings.Repeat("b", 64)); err != nil {
+		filepath.Join(filepath.Dir(targetPath), "preserve.zh.ass"), "meta:size=42"); err != nil {
 		t.Fatalf("seed placement companion: %v", err)
 	}
 	if err := tx.Commit(); err != nil {

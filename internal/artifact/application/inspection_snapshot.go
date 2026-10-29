@@ -1,85 +1,112 @@
 package application
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"sort"
+	"strconv"
 )
 
-// Rebind only reference-bearing fields in the already prepared observation.
-// Paths, fingerprints, timestamps and frozen evidence retain their values.
-func rebindInspectionSnapshot(raw []byte, refs map[string]string, fingerprint bool) ([]byte, error) {
-	var snapshot map[string]any
-	if err := json.Unmarshal(raw, &snapshot); err != nil {
-		return nil, err
-	}
-	rebind := func(ref string) (string, error) {
-		next, ok := refs[ref]
-		if !ok || next == "" {
-			return "", fmt.Errorf("inspection snapshot has unbound file reference %q", ref)
+const (
+	// inventorySchemaVersion and fingerprintSchemaVersion name the summary
+	// snapshots an inspection commits. They hold counts and a digest of the
+	// inspected file set, never the file list: per-file data lives in
+	// artifact_files rows, so the snapshots stay small for any file count.
+	inventorySchemaVersion   = "artifact-inspect/v2"
+	fingerprintSchemaVersion = "artifact-fingerprint/v2"
+
+	// fingerprintAlgorithmMetadata is the only artifact file fingerprint
+	// form: {"algorithm":"metadata","value":"meta:size=<n>[;dev=<d>;ino=<i>]",
+	// "size_bytes":<n>}.
+	fingerprintAlgorithmMetadata = "metadata"
+
+	// filesDigestDomain separates the file-set digest from every other
+	// digest. public.artifact_files_digest (SQL) computes the same value.
+	filesDigestDomain = "artifact-files:v1"
+)
+
+// inventoryListKeys are file-list keys a pending provider snapshot (or an
+// older summary) may carry; the committed summary never keeps them.
+var inventoryListKeys = []string{"files", "inspected_files", "inspected_primary_file"}
+
+// inspectionFilesDigest digests the bound file set: files ordered by file_ref
+// (bytewise), each contributing its file_ref, relative_path, media_kind,
+// size_bytes and fingerprint value, every field written as
+// "<byte length>:<value>". The SQL commit recomputes it from the submitted
+// rows (public.artifact_files_digest).
+func inspectionFilesDigest(files []artifactFilePlan) (string, error) {
+	sorted := append([]artifactFilePlan(nil), files...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].fileRef < sorted[j].fileRef })
+	sum := sha256.New()
+	sum.Write([]byte(filesDigestDomain))
+	sum.Write([]byte{0})
+	for _, file := range sorted {
+		var fingerprint struct {
+			Value string `json:"value"`
 		}
-		return next, nil
-	}
-	if primary, ok := snapshot["primary_file_ref"].(string); ok {
-		next, err := rebind(primary)
-		if err != nil {
-			return nil, err
+		if err := json.Unmarshal(file.fingerprint, &fingerprint); err != nil || fingerprint.Value == "" {
+			return "", errors.New("inspected file fingerprint has no value")
 		}
-		snapshot["primary_file_ref"] = next
-	}
-	rebindEntry := func(value any) error {
-		entry, ok := value.(map[string]any)
-		if !ok {
-			return fmt.Errorf("inspection snapshot file entry is not an object")
-		}
-		ref, ok := entry["file_ref"].(string)
-		if !ok {
-			return fmt.Errorf("inspection snapshot file reference is missing")
-		}
-		next, err := rebind(ref)
-		if err != nil {
-			return err
-		}
-		entry["file_ref"] = next
-		return nil
-	}
-	for _, key := range []string{"files", "inspected_files"} {
-		value, exists := snapshot[key]
-		if !exists {
-			continue
-		}
-		if key == "files" && fingerprint {
-			entries, ok := value.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("inspection fingerprint files is not an object")
-			}
-			rebound := make(map[string]any, len(entries))
-			for ref, facts := range entries {
-				next, err := rebind(ref)
-				if err != nil {
-					return nil, err
-				}
-				if _, exists := rebound[next]; exists {
-					return nil, fmt.Errorf("duplicate rebound inspection reference %q", next)
-				}
-				rebound[next] = facts
-			}
-			snapshot[key] = rebound
-		} else {
-			entries, ok := value.([]any)
-			if !ok {
-				return nil, fmt.Errorf("inspection snapshot files is not an array")
-			}
-			for _, entry := range entries {
-				if err := rebindEntry(entry); err != nil {
-					return nil, err
-				}
-			}
+		for _, field := range []string{file.fileRef, file.relativePath, file.mediaKind, strconv.FormatInt(file.sizeBytes, 10), fingerprint.Value} {
+			fmt.Fprintf(sum, "%d:%s", len(field), field)
 		}
 	}
-	if entry, exists := snapshot["inspected_primary_file"]; exists {
-		if err := rebindEntry(entry); err != nil {
-			return nil, err
-		}
+	return "sha256:" + hex.EncodeToString(sum.Sum(nil)), nil
+}
+
+// inspectionSnapshots completes the inventory and fingerprint summaries for
+// the bound file set. primaryRef is the primary file's bound reference.
+func inspectionSnapshots(base map[string]any, files []artifactFilePlan, primaryRef string) ([]byte, []byte, error) {
+	if len(files) == 0 || primaryRef == "" {
+		return nil, nil, errors.New("inspection summary needs files and a primary reference")
 	}
-	return json.Marshal(snapshot)
+	digest, err := inspectionFilesDigest(files)
+	if err != nil {
+		return nil, nil, err
+	}
+	var videos, subtitles, others int
+	var total int64
+	for _, file := range files {
+		switch file.mediaKind {
+		case "video":
+			videos++
+		case "subtitle":
+			subtitles++
+		default:
+			others++
+		}
+		total += file.sizeBytes
+	}
+	inventory := make(map[string]any, len(base)+9)
+	for key, value := range base {
+		inventory[key] = value
+	}
+	for _, key := range inventoryListKeys {
+		delete(inventory, key)
+	}
+	inventory["schema_version"] = inventorySchemaVersion
+	inventory["primary_file_ref"] = primaryRef
+	inventory["file_count"] = len(files)
+	inventory["video_count"] = videos
+	inventory["subtitle_count"] = subtitles
+	inventory["other_count"] = others
+	inventory["total_size_bytes"] = total
+	inventory["files_digest"] = digest
+	inventoryRaw, err := marshalObject(inventory)
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal artifact inventory: %w", err)
+	}
+	fingerprintsRaw, err := marshalObject(map[string]any{
+		"schema_version":   fingerprintSchemaVersion,
+		"primary_file_ref": primaryRef,
+		"file_count":       len(files),
+		"files_digest":     digest,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal artifact fingerprint snapshot: %w", err)
+	}
+	return inventoryRaw, fingerprintsRaw, nil
 }

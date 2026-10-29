@@ -111,7 +111,7 @@ func TestMovieBindingFileFactsUseFrozenBindingPostgres(t *testing.T) {
 
 	claim, store := claimArtifactWorkItem(t, db, "artifact-movie", []byte(`{"download_task_id":"task-movie","provider_task_id":"tag:movie-artifact","local_root":"`+root+`"}`))
 	at := time.Date(2026, 9, 12, 8, 30, 0, 0, time.UTC)
-	inspector := &fakeInspector{facts: domain.ArtifactFacts{Path: canonicalPath, SizeBytes: 11, SHA256: strings.Repeat("d", 64), ObservedAt: at, MediaKind: "video"}}
+	inspector := &fakeInspector{facts: domain.ArtifactFacts{Path: canonicalPath, SizeBytes: 11, ObservedAt: at, MediaKind: "video"}}
 	service, err := NewService(db, inspector, func() time.Time { return at })
 	if err != nil {
 		t.Fatal(err)
@@ -181,7 +181,7 @@ func TestTVBindingFileFactsIgnoreMetadataSeasonPostgres(t *testing.T) {
 
 	claim, store := claimArtifactWorkItem(t, db, "artifact-tv", []byte(`{"download_task_id":"task-tv","provider_task_id":"tag:tv-artifact","local_root":"`+root+`"}`))
 	at := time.Date(2026, 9, 12, 9, 0, 0, 0, time.UTC)
-	inspector := &fakeInspector{facts: domain.ArtifactFacts{Path: canonicalPath, SizeBytes: 8, SHA256: strings.Repeat("e", 64), ObservedAt: at, MediaKind: "video"}}
+	inspector := &fakeInspector{facts: domain.ArtifactFacts{Path: canonicalPath, SizeBytes: 8, ObservedAt: at, MediaKind: "video"}}
 	service, err := NewService(db, inspector, func() time.Time { return at })
 	if err != nil {
 		t.Fatal(err)

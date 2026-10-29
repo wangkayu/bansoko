@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -29,7 +28,7 @@ func (inspectionFixtureInspector) Inspect(ctx context.Context, path string) (dom
 	if filepath.Ext(path) == ".ass" {
 		kind = "subtitle"
 	}
-	return domain.ArtifactFacts{Path: path, SizeBytes: st.Size(), SHA256: strings.Repeat("c", 64), ObservedAt: time.Now(), MediaKind: kind}, nil
+	return domain.ArtifactFacts{Path: path, SizeBytes: st.Size(), ObservedAt: time.Now(), MediaKind: kind}, nil
 }
 
 // The inspection handler writes no Activity: the artifact_verified run-log

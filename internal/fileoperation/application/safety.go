@@ -13,6 +13,7 @@ import (
 	"strings"
 	"unicode"
 
+	librarydomain "bansoko/internal/library/domain"
 	"bansoko/internal/postprocessing/naming"
 	"bansoko/internal/redact"
 )
@@ -161,12 +162,19 @@ func isJSONObject(raw []byte) bool {
 	return json.Unmarshal(raw, &object) == nil && object != nil
 }
 
+// fingerprintFact is the decoded artifact file fingerprint document
+// {"algorithm":"metadata","value":"meta:size=<n>[;dev=<d>;ino=<i>]",
+// "size_bytes":<n>}: the path-level identity the inspection recorded. The
+// content is never hashed.
 type fingerprintFact struct {
 	Algorithm string
 	Value     string
 	SizeBytes int64
 	HasSize   bool
 }
+
+// fingerprintAlgorithmMetadata names the only artifact fingerprint form.
+const fingerprintAlgorithmMetadata = "metadata"
 
 func decodeFingerprint(raw []byte) (fingerprintFact, error) {
 	var fields map[string]json.RawMessage
@@ -178,26 +186,26 @@ func decodeFingerprint(raw []byte) (fingerprintFact, error) {
 	}
 
 	var fact fingerprintFact
-	if err := json.Unmarshal(fields["algorithm"], &fact.Algorithm); err != nil || fact.Algorithm != "sha256" {
-		return fingerprintFact{}, errors.New("fingerprint algorithm must be sha256")
+	if err := json.Unmarshal(fields["algorithm"], &fact.Algorithm); err != nil || fact.Algorithm != fingerprintAlgorithmMetadata {
+		return fingerprintFact{}, errors.New("fingerprint algorithm must be metadata")
 	}
-	if err := json.Unmarshal(fields["value"], &fact.Value); err != nil || !validFingerprintText(fact.Value) {
+	if err := json.Unmarshal(fields["value"], &fact.Value); err != nil || len(fact.Value) > maxFingerprintLength {
 		return fingerprintFact{}, errors.New("fingerprint value is invalid")
 	}
-	if size, ok := fields["size_bytes"]; ok {
-		var sizeValue *int64
-		if err := json.Unmarshal(size, &sizeValue); err != nil || sizeValue == nil || *sizeValue < 0 {
-			return fingerprintFact{}, errors.New("fingerprint size_bytes is invalid")
-		}
-		fact.SizeBytes = *sizeValue
-		fact.HasSize = true
+	parsed, ok := librarydomain.ParseMetadataFingerprint(fact.Value)
+	if !ok {
+		return fingerprintFact{}, errors.New("fingerprint value is invalid")
 	}
+	var sizeValue *int64
+	if err := json.Unmarshal(fields["size_bytes"], &sizeValue); err != nil || sizeValue == nil || *sizeValue < 0 || *sizeValue != parsed.SizeBytes {
+		return fingerprintFact{}, errors.New("fingerprint size_bytes is invalid")
+	}
+	fact.SizeBytes = *sizeValue
+	fact.HasSize = true
 	return fact, nil
 }
 
 func fingerprintFactUsesSize(fact fingerprintFact) bool {
-	// A missing size field is the only legacy hash-only compatibility case.
-	// An explicit zero is a valid size fact and must be checked strictly.
 	return fact.HasSize
 }
 
@@ -227,17 +235,29 @@ func fingerprintValue(raw []byte) string {
 	return ""
 }
 
-func validFingerprintText(value string) bool {
+// validDigestHex reports a 64-hex digest (the overwrite plan digest).
+func validDigestHex(value string) bool {
 	value = strings.TrimSpace(value)
-	if len(value) != 64 || len(value) > maxFingerprintLength || strings.ContainsAny(value, "\r\n\x00") {
+	if len(value) != 64 || strings.ContainsAny(value, "\r\n\x00") {
 		return false
 	}
 	_, err := hex.DecodeString(value)
 	return err == nil
 }
 
-func sameFingerprint(left, right string) bool {
-	return validFingerprintText(left) && validFingerprintText(right) && strings.EqualFold(strings.TrimSpace(left), strings.TrimSpace(right))
+// validObservationFingerprint reports a path-level metadata fingerprint.
+func validObservationFingerprint(value string) bool {
+	if len(value) > maxFingerprintLength {
+		return false
+	}
+	_, ok := librarydomain.ParseMetadataFingerprint(value)
+	return ok
+}
+
+// sameFileFingerprint is the path-level same-file rule over two metadata
+// fingerprints: equal size, and equal inode when both recorded one.
+func sameFileFingerprint(left, right string) bool {
+	return librarydomain.MetadataFingerprintsMatch(left, right)
 }
 
 func stableBoundedKey(value string) string {

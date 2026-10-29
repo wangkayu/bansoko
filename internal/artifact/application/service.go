@@ -20,10 +20,12 @@ import (
 	"time"
 
 	terminaldomain "bansoko/internal/acquisition/terminal/domain"
+	catalog "bansoko/internal/catalog/domain"
 	"bansoko/internal/download/domain"
 	"bansoko/internal/episodeidentity"
 	"bansoko/internal/events"
 	"bansoko/internal/filekinds"
+	librarydomain "bansoko/internal/library/domain"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/parser"
 	"bansoko/internal/redact"
@@ -39,7 +41,9 @@ const (
 	maxPathLength       = 4096
 	maxReasonLength     = 2048
 	maxFingerprintLen   = 256
-	maxCorrelationFiles = 128
+	// maxInspectionFiles is the torrent manifest bound: inspection accepts
+	// every file a parsed .torrent may list.
+	maxInspectionFiles = catalog.MaxTorrentManifestFiles
 	// maxFrozenInputBytes is the stored bound of download_tasks.frozen_input
 	// (pg_column_size <= 1048576); a stored input is never refused here.
 	maxFrozenInputBytes = 1 << 20
@@ -314,11 +318,11 @@ func (s *Service) handle(ctx context.Context, claim workitems.Claim) (worker.Out
 	}
 
 	// A download client reports completion at progress>=0.999, which can race
-	// the final piece flush: the first read may observe a partially-written
-	// primary file whose fingerprint will never match the settled file.
-	// Re-inspect the primary file after a short settle window and retry when
-	// it changed, instead of freezing an unstable fingerprint (evidence:
-	// E01 SOURCE_CHANGED was unrecoverable because frozen inputs are immutable).
+	// the final piece flush: the first stat may observe a primary file that
+	// is still being written. Re-stat the primary file after a short settle
+	// window and retry when its size or modification time changed, instead
+	// of freezing an unstable observation (evidence: E01 SOURCE_CHANGED was
+	// unrecoverable because frozen inputs are immutable).
 	if s.settleDelay > 0 {
 		primaryIndex := -1
 		for index, target := range targets {
@@ -332,7 +336,7 @@ func (s *Service) handle(ctx context.Context, claim workitems.Claim) (worker.Out
 		}
 		time.Sleep(s.settleDelay)
 		rechecked, recheckErr := s.inspector.Inspect(inspectCtx, targets[primaryIndex].path)
-		if recheckErr != nil || rechecked.SizeBytes != facts[primaryIndex].SizeBytes || rechecked.SHA256 != facts[primaryIndex].SHA256 {
+		if recheckErr != nil || !samePathObservation(rechecked, facts[primaryIndex]) {
 			reasonCode := "artifact_unstable"
 			reason := "artifact file changed during inspection; retrying after settle"
 			if recheckErr != nil {
@@ -464,11 +468,12 @@ type artifactFilePlan struct {
 }
 
 type inspectionPlan struct {
-	inventorySnapshot   []byte
-	fingerprintSnapshot []byte
-	file                artifactFilePlan
-	files               []artifactFilePlan
-	verifiedAt          time.Time
+	// inventoryBase holds the pending provider facts and the observation
+	// time; commitInspection adds the bound summary (counts and digest).
+	inventoryBase map[string]any
+	file          artifactFilePlan
+	files         []artifactFilePlan
+	verifiedAt    time.Time
 }
 
 func (plan inspectionPlan) filesOrFallback() []artifactFilePlan {
@@ -651,6 +656,12 @@ func resolveArtifactFilesFromFrozenInput(input inspectInput, frozen frozenDownlo
 		// qB file list, so rebuild the inspection targets from it instead of
 		// freezing the artifact as a terminal failure.
 		if strings.TrimSpace(frozen.TorrentVersion) == "v1" && len(correlation.Files) > 0 {
+			// The provider snapshot keeps a bounded file list (the download
+			// sync marks it files_complete=false when it cut the list); a
+			// truncated one cannot stand in for the torrent's files.
+			if (correlation.FilesCompletePresent && !correlation.FilesComplete) || correlation.FileCount > len(correlation.Files) {
+				return nil, fmt.Errorf("%w: the download client file list is truncated", ErrProviderFilesIncomplete)
+			}
 			var err error
 			targets, err = buildTargetsFromProviderCorrelation(input, correlation)
 			if err != nil {
@@ -663,8 +674,8 @@ func resolveArtifactFilesFromFrozenInput(input inspectInput, frozen frozenDownlo
 			return nil, nil
 		}
 	} else {
-		if len(frozen.ReleaseFiles) > maxCorrelationFiles {
-			return nil, ErrProviderFilesIncomplete
+		if len(frozen.ReleaseFiles) > maxInspectionFiles {
+			return nil, fmt.Errorf("%w: the release lists more than %d files", ErrProviderFilesIncomplete, maxInspectionFiles)
 		}
 		var err error
 		targets, err = buildTargetsFromReleaseFiles(input, frozen.ReleaseFiles)
@@ -923,7 +934,7 @@ func buildInspectionPlan(snapshot artifactSnapshot, input inspectInput, facts do
 }
 
 func buildInspectionPlanForFiles(snapshot artifactSnapshot, input inspectInput, targets []artifactInspectionTarget, facts []domain.ArtifactFacts, now time.Time) (inspectionPlan, error) {
-	if len(targets) == 0 || len(targets) != len(facts) || len(targets) > maxCorrelationFiles {
+	if len(targets) == 0 || len(targets) != len(facts) || len(targets) > maxInspectionFiles {
 		return inspectionPlan{}, fmt.Errorf("%w: inspected file set is invalid", ErrArtifactFactsInvalid)
 	}
 	if now.IsZero() {
@@ -958,13 +969,11 @@ func buildInspectionPlanForFiles(snapshot artifactSnapshot, input inspectInput, 
 		if expectedSize != nil && inspected.SizeBytes != *expectedSize {
 			return inspectionPlan{}, fmt.Errorf("%w: %w: expected %d bytes, inspected %d bytes for %s", ErrArtifactFactsInvalid, ErrArtifactSizeMismatch, *expectedSize, inspected.SizeBytes, filepath.ToSlash(filepath.Clean(target.path)))
 		}
-		fingerprintValue := strings.TrimSpace(inspected.SHA256)
-		if len(fingerprintValue) != sha256.Size*2 || len(fingerprintValue) > maxFingerprintLen || !safeToken(fingerprintValue) {
-			return inspectionPlan{}, fmt.Errorf("%w: fingerprint is missing or unsafe", ErrArtifactFactsInvalid)
+		if (inspected.Device == 0) != (inspected.Inode == 0) {
+			return inspectionPlan{}, fmt.Errorf("%w: file identity is incomplete", ErrArtifactFactsInvalid)
 		}
-		if _, err := hex.DecodeString(fingerprintValue); err != nil {
-			return inspectionPlan{}, fmt.Errorf("%w: fingerprint is not hexadecimal", ErrArtifactFactsInvalid)
-		}
+		// Path-level fingerprint: size plus device/inode, never a content hash.
+		fingerprintValue := librarydomain.MetadataFingerprint(inspected.SizeBytes, librarydomain.FileIdentity{Device: inspected.Device, Inode: inspected.Inode})
 		sourcePath, err := filepath.Abs(filepath.Clean(path))
 		if err != nil {
 			return inspectionPlan{}, fmt.Errorf("%w: resolve source path", ErrArtifactFactsInvalid)
@@ -999,7 +1008,7 @@ func buildInspectionPlanForFiles(snapshot artifactSnapshot, input inspectInput, 
 		}
 		observedAt = observedAt.UTC()
 		fingerprintRaw, err := marshalObject(map[string]any{
-			"algorithm":  "sha256",
+			"algorithm":  fingerprintAlgorithmMetadata,
 			"value":      fingerprintValue,
 			"size_bytes": inspected.SizeBytes,
 		})
@@ -1010,6 +1019,9 @@ func buildInspectionPlanForFiles(snapshot artifactSnapshot, input inspectInput, 
 			"source":      "artifact_inspect",
 			"media_kind":  mediaKind,
 			"observed_at": observedAt.Format(time.RFC3339Nano),
+		}
+		if !inspected.ModifiedAt.IsZero() {
+			fileFactsValue["modified_at"] = inspected.ModifiedAt.UTC().Format(time.RFC3339Nano)
 		}
 		if language := strings.TrimSpace(target.language); language != "" {
 			fileFactsValue["language"] = bounded(language, 512)
@@ -1056,37 +1068,22 @@ func buildInspectionPlanForFiles(snapshot artifactSnapshot, input inspectInput, 
 	})
 
 	correlation, _ := decodeProviderCorrelation(snapshot.providerCorrelation)
-	inspectedFiles := make([]any, 0, len(files))
-	fingerprintFiles := make(map[string]any, len(files))
-	fingerprintEntries := make([]any, 0, len(files))
 	var primaryFile artifactFilePlan
 	for _, file := range files {
-		fingerprint := json.RawMessage(file.fingerprint)
-		factsValue := json.RawMessage(file.facts)
-		inspectedFile := map[string]any{
-			"file_ref":      file.fileRef,
-			"relative_path": file.relativePath,
-			"source_path":   file.sourcePath,
-			"media_kind":    file.mediaKind,
-			"size_bytes":    file.sizeBytes,
-			"fingerprint":   fingerprint,
-			"facts":         factsValue,
-		}
-		inspectedFiles = append(inspectedFiles, inspectedFile)
-		fingerprintFiles[file.fileRef] = fingerprint
-		fingerprintEntries = append(fingerprintEntries, map[string]any{
-			"file_ref":      file.fileRef,
-			"relative_path": file.relativePath,
-			"source_path":   file.sourcePath,
-			"fingerprint":   fingerprint,
-		})
 		if file.fileRef == "primary" {
 			primaryFile = file
 		}
 	}
+	// The pending provider snapshot keeps its scalar facts; any file list it
+	// carried is dropped. Per-file data lives in artifact_files rows; the
+	// committed snapshots carry counts and a digest only (commitInspection
+	// completes them once the manifest references are bound).
 	inventory := sanitizeInventory(snapshot.inventorySnapshot)
 	if inventory == nil {
 		inventory = make(map[string]any)
+	}
+	for _, key := range inventoryListKeys {
+		delete(inventory, key)
 	}
 	observedAt := now
 	if primaryFacts := primaryFile.facts; len(primaryFacts) > 0 {
@@ -1099,41 +1096,34 @@ func buildInspectionPlanForFiles(snapshot artifactSnapshot, input inspectInput, 
 			}
 		}
 	}
-	inventory["schema_version"] = "artifact-inspect/v1"
 	inventory["observed_at"] = observedAt.Format(time.RFC3339Nano)
-	inventory["primary_file_ref"] = "primary"
-	inventory["inspected_primary_file"] = inspectedFiles[0]
-	inventory["files"] = inspectedFiles
-	inventory["inspected_files"] = inspectedFiles
 	if providerID := safeIdentifier(correlation.ExternalID); providerID != "" {
 		inventory["provider_task_id"] = providerID
 	}
-	if correlation.FileCount >= 0 && correlation.FileCount <= maxCorrelationFiles {
+	if correlation.FileCount >= 0 && correlation.FileCount <= maxInspectionFiles {
 		inventory["provider_file_count"] = correlation.FileCount
 	}
 	if correlation.FilesPresent || correlation.FilesCompletePresent {
 		inventory["provider_files_complete"] = correlation.FilesComplete
 	}
-	inventoryRaw, err := marshalObject(inventory)
-	if err != nil {
-		return inspectionPlan{}, fmt.Errorf("marshal artifact inventory: %w", err)
-	}
-	fingerprintsRaw, err := marshalObject(map[string]any{
-		"schema_version":   "artifact-fingerprint/v1",
-		"primary_file_ref": "primary",
-		"files":            fingerprintFiles,
-		"inspected_files":  fingerprintEntries,
-	})
-	if err != nil {
-		return inspectionPlan{}, fmt.Errorf("marshal artifact fingerprint snapshot: %w", err)
-	}
 	return inspectionPlan{
-		inventorySnapshot:   inventoryRaw,
-		fingerprintSnapshot: fingerprintsRaw,
-		file:                primaryFile,
-		files:               files,
-		verifiedAt:          now,
+		inventoryBase: inventory,
+		file:          primaryFile,
+		files:         files,
+		verifiedAt:    now,
 	}, nil
+}
+
+// samePathObservation is the settle rule: the primary file kept its size,
+// modification time and (when recorded) inode across the settle window.
+func samePathObservation(left, right domain.ArtifactFacts) bool {
+	if left.SizeBytes != right.SizeBytes || !left.ModifiedAt.Equal(right.ModifiedAt) {
+		return false
+	}
+	if left.Inode != 0 && right.Inode != 0 {
+		return left.Inode == right.Inode
+	}
+	return true
 }
 
 func stableArtifactFileRef(normalizedSourcePath string) string {
@@ -1714,12 +1704,10 @@ func qualityFactsFromEvidence(evidence facts.FileEvidence, parsed episodeidentit
 	return quality
 }
 
-// fingerprintValue extracts the bare sha256 hex value from the artifact
-// fingerprint envelope. media_fact_files.source_fingerprint is compared
-// against file-operation fingerprints (bare sha256 hex, bounded to 128 chars
-// by migration 051), so the envelope's value is the authoritative source
-// fingerprint; hex-encoding the whole envelope would exceed that bound and
-// break the comparison semantics.
+// fingerprintValue extracts the bare metadata value ("meta:size=...") from
+// the artifact fingerprint envelope. media_fact_files.source_fingerprint is
+// bounded to 128 chars and the commit binds it to the envelope's value, so
+// the value, not the whole envelope, is stored.
 func fingerprintValue(raw []byte) string {
 	var envelope struct {
 		Value string `json:"value"`

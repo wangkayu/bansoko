@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -69,7 +68,7 @@ func TestHandleInspectorFailureThenRetrySucceeds(t *testing.T) {
 
 	// The inspector recovers; the next claim must re-inspect and verify.
 	inspector.err = nil
-	inspector.facts = domain.ArtifactFacts{Path: canonicalPath, SizeBytes: 1024, SHA256: strings.Repeat("d", 64), ObservedAt: at, MediaKind: "video"}
+	inspector.facts = domain.ArtifactFacts{Path: canonicalPath, SizeBytes: 1024, ObservedAt: at, MediaKind: "video"}
 	makeArtifactWorkItemDue(t, db, claim.ID)
 	claim2, err := store.ClaimDue(context.Background(), "artifact-test-worker", []string{workitems.KindArtifactInspect}, time.Minute)
 	if err != nil {

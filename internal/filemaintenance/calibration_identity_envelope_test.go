@@ -38,3 +38,44 @@ func TestPlacementIdentityRecordUnwrapsRecoveryEnvelope(t *testing.T) {
 		t.Fatal("a device-only remount of the recovered file read as a change")
 	}
 }
+
+// A copy-mode file operation publishes a new inode: the placement records the
+// published target's identity and, as its source, the inspected download
+// file's. A scan that finds the placement through its source-provenance
+// locator observes that source object, which is the placement's file; any
+// other same-size inode is a conflict, and a size-only source never widens
+// the match.
+func TestPlacementIdentityRecordAcceptsTheCopySourceObject(t *testing.T) {
+	envelope := func(size int64, inode uint64) string {
+		value := domain.MetadataFingerprint(size, domain.FileIdentity{Device: 3, Inode: inode})
+		raw, err := recoveryTargetFingerprintEnvelope(value, size)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	observe := func(size int64, inode uint64) domain.MetadataFacts {
+		facts, ok := domain.ParseMetadataFingerprint(domain.MetadataFingerprint(size, domain.FileIdentity{Device: 3, Inode: inode}))
+		if !ok {
+			t.Fatal("observation did not parse")
+		}
+		return facts
+	}
+	copied := placementIdentityRecord{sourceFingerprint: envelope(4096, 5), targetFingerprint: envelope(4096, 9)}
+	if copied.observationConflicts(observe(4096, 9)) {
+		t.Fatal("the published target conflicted with its placement")
+	}
+	if copied.observationConflicts(observe(4096, 5)) {
+		t.Fatal("the source object the copy was published from conflicted with its placement")
+	}
+	if !copied.observationConflicts(observe(4096, 7)) {
+		t.Fatal("a same-size file with another inode matched the placement")
+	}
+	if !copied.observationConflicts(observe(4097, 5)) {
+		t.Fatal("a resized source object matched the placement")
+	}
+	sizeOnly := placementIdentityRecord{sourceFingerprint: `{"algorithm":"metadata","value":"meta:size=4096","size_bytes":4096}`, targetFingerprint: envelope(4096, 9)}
+	if !sizeOnly.observationConflicts(observe(4096, 7)) {
+		t.Fatal("a size-only source widened the match to any same-size inode")
+	}
+}

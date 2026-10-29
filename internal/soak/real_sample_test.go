@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"testing"
 
 	"bansoko/internal/testutil/acquisitionfixture"
@@ -21,7 +20,6 @@ import (
 func realSample(t *testing.T, owner *sql.DB, p Profile) {
 	t.Helper()
 	ctx := context.Background()
-	repeat64 := strings.Repeat("a", 64)
 	for i := 1; i <= p.RealSample; i++ {
 		n := 1 + (i*7)%p.Owners
 		sourceID := fmt.Sprintf("r%05d-0", n)
@@ -58,7 +56,7 @@ INSERT INTO artifacts(id, download_task_id, acquisition_id, inventory_snapshot, 
 SELECT $1, id, acquisition_id, '{}', '{"fingerprints":[]}', 'verified', CURRENT_TIMESTAMP FROM download_tasks WHERE id=$2`, artifactID, taskID); err != nil {
 			t.Fatalf("real sample artifact: %v", err)
 		}
-		fingerprint := `{"algorithm":"sha256","value":"` + repeat64 + `","size_bytes":1}`
+		fingerprint := `{"algorithm":"metadata","value":"meta:size=1","size_bytes":1}`
 		var ops []acquisitionfixture.PlanOperation
 		for f := 0; f < 2; f++ {
 			fileID := fmt.Sprintf("real-ff-%03d-%d", i, f)

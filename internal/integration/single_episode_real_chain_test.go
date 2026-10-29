@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha1"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -88,7 +86,6 @@ func TestSingleEpisodeRealPostgresQBRSSFileOperation(t *testing.T) {
 	// A tiny valid Matroska file (HEVC 1920x1080 video, AAC audio, no frames);
 	// the title makes every run's bytes, and so its info hash, unique.
 	artifactBytes := mkvfixture.HEVC1080pAAC("real chain real artifact " + time.Now().UTC().Format(time.RFC3339Nano))
-	artifactDigest := sha256.Sum256(artifactBytes)
 	targetRoot := t.TempDir()
 
 	fixtureClient, fixtureURL, torrentBytes, closeFixture := startSingleEpisodeFixture(t, artifactName, artifactBytes)
@@ -559,8 +556,10 @@ func TestSingleEpisodeRealPostgresQBRSSFileOperation(t *testing.T) {
 	FROM artifact_files WHERE artifact_id = $1 AND media_kind = 'video'`, artifactID).Scan(&sourcePath, &sourceSize, &sourceFingerprint, &fingerprintJSON); err != nil {
 		t.Fatal(err)
 	}
-	if sourceSize != int64(len(artifactBytes)) || sourceFingerprint != hex.EncodeToString(artifactDigest[:]) {
-		t.Fatalf("artifact facts mismatch: path=%q size=%d sha=%q want_size=%d want_sha=%q", sourcePath, sourceSize, sourceFingerprint, len(artifactBytes), hex.EncodeToString(artifactDigest[:]))
+	// Inspection is path-level: the fingerprint is the downloaded file's size
+	// and device/inode, never a content digest.
+	if want := pathMetadataFingerprint(t, sourcePath); sourceSize != int64(len(artifactBytes)) || sourceFingerprint != want {
+		t.Fatalf("artifact facts mismatch: path=%q size=%d fingerprint=%q want_size=%d want_fingerprint=%q", sourcePath, sourceSize, sourceFingerprint, len(artifactBytes), want)
 	}
 	actual, err := os.ReadFile(sourcePath)
 	if err != nil {
@@ -640,9 +639,12 @@ WHERE r.download_task_id = $1`, taskID).Scan(&observedTargetState); err != nil {
 	if !bytes.Equal(target, artifactBytes) {
 		t.Fatalf("target bytes differ from source: target=%q source=%q", target, artifactBytes)
 	}
-	if workspace.FileOperations[0].TargetFingerprint == nil || workspace.FileOperations[0].TargetFingerprint.Value != sourceFingerprint || workspace.FileOperations[0].TargetFingerprint.SizeBytes != sourceSize {
-		t.Fatalf("target fingerprint does not match source: target_fingerprint=%+v source_sha=%q source_size=%d", workspace.FileOperations[0].TargetFingerprint, sourceFingerprint, sourceSize)
+	// The completion records the published object's own metadata fingerprint
+	// (a copy is a new inode), with the source size.
+	if workspace.FileOperations[0].TargetFingerprint == nil || workspace.FileOperations[0].TargetFingerprint.SizeBytes != sourceSize {
+		t.Fatalf("target fingerprint does not carry the source size: target_fingerprint=%+v source_size=%d", workspace.FileOperations[0].TargetFingerprint, sourceSize)
 	}
+	requireMetadataFingerprint(t, "target fingerprint", workspace.FileOperations[0].TargetFingerprint.Value, sourceSize)
 	// Migration 186: the typed completion itself stores the target size; the
 	// read-side fallback to expected_size_bytes is only for older rows.
 	var storedTargetSize sql.NullInt64
@@ -665,7 +667,7 @@ WHERE r.download_task_id = $1`, taskID).Scan(&observedTargetState); err != nil {
 		t.Fatalf("file operation target escaped test root: %q", targetPath)
 	}
 	if !strings.Contains(string(fingerprintJSON), sourceFingerprint) {
-		t.Fatalf("stored artifact fingerprint is missing source digest: %s", fingerprintJSON)
+		t.Fatalf("stored artifact fingerprint is missing the source fingerprint: %s", fingerprintJSON)
 	}
 	// A typed (S4) FileOperation records its acquisition root as
 	// correlation_id (plan commit 153, re-checked by 154/170); the Business Log

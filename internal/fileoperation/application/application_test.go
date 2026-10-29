@@ -6,9 +6,7 @@ import (
 	"bansoko/internal/testutil/acquisitionfixture"
 	"bansoko/internal/testutil/storedsections"
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -99,7 +97,7 @@ func TestObserveTargetUsesExplicitLegacyCompatibilityPath(t *testing.T) {
 }
 
 func TestBuildNamingContextAndRenderTarget(t *testing.T) {
-	digest := strings.Repeat("a", 64)
+	digest := "meta:size=42"
 	resolved, err := buildNamingContext(artifactContext{
 		managedAnimeID: "anime-builder-proof", animeTitle: "Anime title", titleOverride: sql.NullString{String: "Override", Valid: true},
 		groupName: "Group", sourceKind: "provider_group", releaseID: "release-builder-proof", releaseVersion: 3,
@@ -406,12 +404,12 @@ func TestOverwriteExecutionSnapshotRejectsInvalidForeignObservation(t *testing.T
 		CanonicalRoot: "/library", CanonicalSource: "/source", CanonicalTarget: "/target", StagingPath: "/staging",
 		SourceParentIdentity: domain.FileIdentity{Device: 1, Inode: 2},
 		TargetParentIdentity: domain.FileIdentity{Device: 1, Inode: 3},
-		SourceObservation:    domain.FileObservation{Fingerprint: strings.Repeat("a", 64), SizeBytes: 1, Identity: domain.FileIdentity{Device: 1, Inode: 1}},
-		TargetObservation:    domain.FileObservation{Fingerprint: strings.Repeat("b", 64), SizeBytes: 1, Identity: domain.FileIdentity{Device: 1, Inode: 2}},
-		StagedObservation:    domain.FileObservation{Fingerprint: strings.Repeat("a", 64), SizeBytes: 1, Identity: domain.FileIdentity{Device: 1, Inode: 3}},
-		DisplacedObservation: domain.FileObservation{Fingerprint: strings.Repeat("b", 64), SizeBytes: 1, Identity: domain.FileIdentity{Device: 1, Inode: 2}},
+		SourceObservation:    domain.FileObservation{Fingerprint: "meta:size=1;dev=1;ino=1", SizeBytes: 1, Identity: domain.FileIdentity{Device: 1, Inode: 1}},
+		TargetObservation:    domain.FileObservation{Fingerprint: "meta:size=1;dev=1;ino=2", SizeBytes: 1, Identity: domain.FileIdentity{Device: 1, Inode: 2}},
+		StagedObservation:    domain.FileObservation{Fingerprint: "meta:size=1;dev=1;ino=3", SizeBytes: 1, Identity: domain.FileIdentity{Device: 1, Inode: 3}},
+		DisplacedObservation: domain.FileObservation{Fingerprint: "meta:size=1;dev=1;ino=2", SizeBytes: 1, Identity: domain.FileIdentity{Device: 1, Inode: 2}},
 		ForeignEvidencePath:  "/library/.bansoko-quarantine-aaaaaaaaaaaaaaaaaaaaaaaa",
-		ForeignEvidence:      domain.FileObservation{Fingerprint: strings.Repeat("c", 64), SizeBytes: 1, Identity: domain.FileIdentity{Device: 1, Inode: 4}},
+		ForeignEvidence:      domain.FileObservation{Fingerprint: "meta:size=1;dev=1;ino=4", SizeBytes: 1, Identity: domain.FileIdentity{Device: 1, Inode: 4}},
 	}
 	for name, mutate := range map[string]func(*domain.OverwriteRecovery){
 		"negative size":       func(r *domain.OverwriteRecovery) { r.ForeignEvidence.SizeBytes = -1 },
@@ -1083,14 +1081,13 @@ func openFileOperationDBWithPolicy(t *testing.T, mutate func(map[string]any)) (*
 	if err := os.WriteFile(sourcePath, content, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	digest := sha256.Sum256(content)
 	fixture := fileFixture{
 		animeID:     "anime-file-test",
 		artifactID:  "artifact-file-test",
 		fileID:      "artifact-file-primary",
 		root:        libraryRoot,
 		sourcePath:  sourcePath,
-		fingerprint: hex.EncodeToString(digest[:]),
+		fingerprint: metadataFingerprintForTest(t, sourcePath),
 		size:        int64(len(content)),
 	}
 	policy := frozenpolicy.CompleteMap()
@@ -1372,7 +1369,7 @@ func runClaim(t *testing.T, db *sql.DB, service *Service, _ fileFixture) worker.
 }
 
 func fingerprintJSONForTest(value string, size int64) json.RawMessage {
-	return json.RawMessage(fmt.Sprintf(`{"algorithm":"sha256","value":"%s","size_bytes":%d}`, value, size))
+	return json.RawMessage(fmt.Sprintf(`{"algorithm":"metadata","value":"%s","size_bytes":%d}`, value, size))
 }
 
 type recordingPlacementSink struct {
@@ -1395,7 +1392,7 @@ func TestBuildOverwriteExecutionSnapshotTargetExists(t *testing.T) {
 	if err := os.WriteFile(target, []byte("old target bytes"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	plan := operationPlan{id: "op-overwrite-1", sourcePath: source, targetPath: target, sourceFingerprint: fingerprintJSONForTest(digestForTest(t, source), int64(len("source bytes for overwrite")))}
+	plan := operationPlan{id: "op-overwrite-1", sourcePath: source, targetPath: target, sourceFingerprint: fingerprintJSONForTest(metadataFingerprintForTest(t, source), int64(len("source bytes for overwrite")))}
 	snapshot, err := buildOverwriteExecutionSnapshot(plan, testParentIdentityAuthorizer{})
 	if err != nil {
 		t.Fatalf("build overwrite snapshot: %v", err)
@@ -1461,7 +1458,8 @@ func TestBuildOverwriteExecutionSnapshotRejectsSourceDrift(t *testing.T) {
 		id:                "op-overwrite-drift",
 		sourcePath:        source,
 		targetPath:        target,
-		sourceFingerprint: fingerprintJSONForTest(strings.Repeat("0", 64), int64(len("actual source"))),
+		// Same size, another file: the inode no longer matches.
+		sourceFingerprint: fingerprintJSONForTest(fmt.Sprintf("meta:size=%d;dev=1;ino=1", len("actual source")), int64(len("actual source"))),
 	}
 	if _, err := buildOverwriteExecutionSnapshot(plan, testParentIdentityAuthorizer{}); !errors.Is(err, ErrArtifactFingerprintMismatch) {
 		t.Fatalf("source drift was not rejected with artifact fingerprint mismatch: %v", err)
@@ -1474,7 +1472,7 @@ func TestBuildOverwriteExecutionSnapshotTargetAbsent(t *testing.T) {
 	if err := os.WriteFile(source, []byte("source bytes"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	plan := operationPlan{id: "op-overwrite-2", sourcePath: source, targetPath: filepath.Join(root, "absent.mkv"), sourceFingerprint: fingerprintJSONForTest(digestForTest(t, source), int64(len("source bytes")))}
+	plan := operationPlan{id: "op-overwrite-2", sourcePath: source, targetPath: filepath.Join(root, "absent.mkv"), sourceFingerprint: fingerprintJSONForTest(metadataFingerprintForTest(t, source), int64(len("source bytes")))}
 	snapshot, err := buildOverwriteExecutionSnapshot(plan, testParentIdentityAuthorizer{})
 	if err != nil {
 		t.Fatalf("absent target must not error: %v", err)
@@ -1521,12 +1519,13 @@ func TestObserveFileObservation(t *testing.T) {
 	}
 }
 
-func digestForTest(t *testing.T, path string) string {
+// metadataFingerprintForTest is the path-level fingerprint value inspection
+// records for path: its size and device/inode identity, no content.
+func metadataFingerprintForTest(t *testing.T, path string) string {
 	t.Helper()
-	content, err := os.ReadFile(path)
+	observation, err := observeFileObservation(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sum := sha256.Sum256(content)
-	return hex.EncodeToString(sum[:])
+	return observation.Fingerprint
 }

@@ -2,9 +2,7 @@ package application
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -34,8 +32,7 @@ func checkAcceptedVarsPrepare(t *testing.T, ctx context.Context, owner, runtime 
 	if err := os.WriteFile(source, content, 0600); err != nil {
 		t.Fatal(err)
 	}
-	sum := sha256.Sum256(content)
-	fingerprint, _ := json.Marshal(map[string]any{"algorithm": "sha256", "value": hex.EncodeToString(sum[:]), "size_bytes": 1000})
+	fingerprint, _ := json.Marshal(map[string]any{"algorithm": "metadata", "value": "meta:size=1000", "size_bytes": 1000})
 	var placement, rootDir string
 	if err := owner.QueryRowContext(ctx, `SELECT input->'placement'->>'mode',COALESCE(input->'delivery'->'route'->'root'->>'value','') FROM acquisitions WHERE id=$1`, root).Scan(&placement, &rootDir); err != nil {
 		t.Fatal(err)

@@ -4,6 +4,7 @@ import (
 	acquisitiondomain "bansoko/internal/acquisition/domain"
 	protocol "bansoko/internal/acquisition/terminal/domain"
 	anime "bansoko/internal/anime/domain"
+	catalog "bansoko/internal/catalog/domain"
 	"bansoko/internal/download/qbittorrent"
 	"bansoko/internal/runtime/worker"
 	"bansoko/internal/workitems"
@@ -184,16 +185,20 @@ func productionIntent(ctx context.Context, tx *sql.Tx, c admissionCapture, mode,
 	}
 	delivery := map[string]any{"operation": effect.Operation, "intent": intent, "collision": collision, "route": map[string]any{"mode": "unclassified", "root": root, "path_mapping": mapping}, "naming": map[string]any{"schema_version": "naming-rules-v1", "templates": json.RawMessage(protocol.Canonical(naming)), "vars_choice": "frozen", "runtime_version": "naming-v1"}, "source_cleanup": map[string]any{"mode": cleanup}, "replacements": replacements}
 	var files []int64
+	videos := 0
 	if seed, err := admissionSeed(c); err == nil && seed != nil {
 		for _, file := range seed.Manifest.Files {
 			files = append(files, file.SizeBytes)
+			if file.MediaKind == catalog.TorrentFileMediaVideo {
+				videos++
+			}
 		}
 	}
 	timeouts, err := readDownloadTimeouts(ctx, tx)
 	if err != nil {
 		return acquisitionIntent{}, err
 	}
-	limits, err := productionLimits(files, timeouts)
+	limits, err := productionLimits(files, videos, timeouts)
 	if err != nil {
 		return acquisitionIntent{}, err
 	}
@@ -221,27 +226,38 @@ const fileStagePasses = 2
 // content, so the plan budget does not scale with bytes.
 const planPerFile = 2 * time.Second
 
+// inspectPerFile is the inspection cost of one release file: one open and
+// fstat (the observation is path-level and never reads content) plus its DB
+// rows. inspectPerVideo is one media probe: the prober's per-call timeout
+// (15s) plus its kill wait (2s). The inspect budget grows with the file and
+// video counts, never with bytes.
+const (
+	inspectPerFile  = 250 * time.Millisecond
+	inspectPerVideo = 17 * time.Second
+)
+
 // Fixed policy V1 values are baked in. Runtime-owned attempt limits and timeouts are read from the
 // canonical KindPolicy registry, never from a client or test golden vector.
-// Storage stages scale their per-attempt timeout with the accepted inventory
+// The file stage scales its per-attempt timeout with the accepted inventory
 // (fileSizes, one entry per release file): a progressing slow copy must not be
-// cut off by a fixed wall clock.
+// cut off by a fixed wall clock. Inspect and plan scale with counts only
+// (videos is the manifest's video count).
 //
 // The two download timeouts come from the Global download_timeouts setting
 // read in the accepting transaction (readDownloadTimeouts) and are frozen here
 // with the derived sync.max_polls; the download task never reads the setting.
-func productionLimits(fileSizes []int64, timeouts anime.DownloadTimeouts) (protocol.Value, error) {
+func productionLimits(fileSizes []int64, videos int, timeouts anime.DownloadTimeouts) (protocol.Value, error) {
 	if err := timeouts.Validate(); err != nil {
 		return protocol.Value{}, fmt.Errorf("production limits: %w", err)
 	}
-	var largest, total int64
+	var largest int64
 	for _, size := range fileSizes {
 		if size > largest {
 			largest = size
 		}
-		if size > 0 {
-			total += size
-		}
+	}
+	if videos < 0 {
+		videos = 0
 	}
 	policies := map[string]worker.KindPolicy{}
 	for _, p := range worker.DefaultPolicies() {
@@ -261,9 +277,9 @@ func productionLimits(fileSizes []int64, timeouts anime.DownloadTimeouts) (proto
 	stage := func(kind string) any { return stageTimeout(kind, policies[kind].BusinessAttemptTimeout()) }
 	// One file operation moves one file, so its budget covers the largest one.
 	fileTimeout := worker.ScaleStorageAttempt(policies[workitems.KindFileExecute].BusinessAttemptTimeout(), largest, fileStagePasses)
-	// One inspect attempt hashes the whole batch once and re-reads the primary
-	// (largest) file after the settle window.
-	inspectTimeout := worker.ScaleStorageAttempt(policies[workitems.KindArtifactInspect].BusinessAttemptTimeout(), total+largest, 1)
+	// One inspect attempt stats every file and probes every video; it reads
+	// no content, so the budget does not scale with bytes.
+	inspectTimeout := worker.ScaleStorageAttempt(policies[workitems.KindArtifactInspect].BusinessAttemptTimeout()+time.Duration(len(fileSizes))*inspectPerFile+time.Duration(videos)*inspectPerVideo, 0, 1)
 	planTimeout := worker.ScaleStorageAttempt(policies[workitems.KindPostProcessPlan].BusinessAttemptTimeout()+time.Duration(len(fileSizes))*planPerFile, 0, 1)
 	sync := policies[workitems.KindQBSync]
 	submit := policies[workitems.KindQBSubmit]

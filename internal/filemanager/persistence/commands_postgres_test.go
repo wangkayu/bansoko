@@ -70,7 +70,7 @@ VALUES ($1, $2, 'anime-a', 'reconciliation', 'obs-'||$1, 'fp', 'fp', 'parser-v1'
 (id, placement_id, managed_anime_id, source_ref, registration, media_kind, suffix, original_extension,
  current_path, size_bytes, fingerprint, state)
 VALUES ('c-ep01', 'p-ep01', 'anime-a', 'src-c', 'intake', 'subtitle', 'zh', 'ass', $1, 1, $2, 'active')`,
-		abs("Show/ep01.zh.ass"), strings.Repeat("0", 64))
+		abs("Show/ep01.zh.ass"), "meta:size=1")
 
 	// The database refuses a row born released.
 	expectCheck(t, placement("p-born", abs("Show/born.mkv"), "released"), "PLACEMENT_RELEASE_REQUIRES_ACTIVE")

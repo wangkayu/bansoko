@@ -17,8 +17,9 @@ import (
 // File verification is path-level: the scan records a metadata fingerprint (size plus device/inode,
 // domain.MetadataFingerprint) and never reads content, so "changed" means the
 // observed size differs from the size recorded for the placement, or the
-// observed inode differs from an inode the placement recorded. A placement
-// with no recorded size is treated as unchanged. A same-size, same-inode
+// observed inode is neither the published target's nor that of the source
+// object it was published from (both as the placement recorded them). A
+// placement with no recorded size is treated as unchanged. A same-size, same-inode
 // content swap is not detected (accepted cost).
 //
 // An observation that still carries a content digest (a generation scanned
@@ -33,11 +34,7 @@ func placementObservationConflictTx(ctx context.Context, tx *sql.Tx, placementID
 		return false, err
 	}
 	if facts, ok := domain.ParseMetadataFingerprint(observed); ok {
-		recorded, known := record.metadataFacts()
-		if !known {
-			return false, nil
-		}
-		return !domain.MetadataFactsMatch(facts, recorded), nil
+		return record.observationConflicts(facts), nil
 	}
 	if strings.TrimSpace(record.sourceFingerprint) == "" {
 		return false, nil
@@ -96,6 +93,35 @@ func (r placementIdentityRecord) metadataFacts() (domain.MetadataFacts, bool) {
 		return domain.MetadataFacts{SizeBytes: r.operationSize.Int64}, true
 	}
 	return domain.MetadataFacts{}, false
+}
+
+// observationConflicts reports whether a metadata observation contradicts the
+// recorded identity. A copy publishes a new inode, so the source object the
+// placement was published from (still at its source-provenance locator) is
+// the placement's file too. No recorded size means unchanged.
+func (r placementIdentityRecord) observationConflicts(observed domain.MetadataFacts) bool {
+	recorded, known := r.metadataFacts()
+	if !known || domain.MetadataFactsMatch(observed, recorded) {
+		return false
+	}
+	source, ok := r.sourceObjectFacts()
+	return !ok || !domain.MetadataFactsMatch(observed, source)
+}
+
+// sourceObjectFacts is the identity of the object the placement was published
+// from: its source fingerprint when that is a metadata fingerprint carrying a
+// device/inode (an inspection or scan observation). A size-only source never
+// stands in for the recorded target identity.
+func (r placementIdentityRecord) sourceObjectFacts() (domain.MetadataFacts, bool) {
+	raw, ok := metadataFingerprintValue(r.sourceFingerprint)
+	if !ok {
+		return domain.MetadataFacts{}, false
+	}
+	facts, ok := domain.ParseMetadataFingerprint(raw)
+	if !ok || facts.Inode == 0 {
+		return domain.MetadataFacts{}, false
+	}
+	return facts, true
 }
 
 // typedFingerprintSize reads size_bytes from a typed fingerprint envelope

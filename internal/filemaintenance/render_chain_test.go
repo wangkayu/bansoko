@@ -174,7 +174,7 @@ VALUES ($1, $2, $3, $4::jsonb, '{}'::jsonb, '{}'::jsonb, 'submitted', 'submitted
 VALUES ($1, $2, (SELECT acquisition_id FROM download_tasks WHERE id=$2), '{}'::jsonb, '{}'::jsonb, 'verified', CURRENT_TIMESTAMP)`,
 		spec.Key+"-art", spec.Key+"-task")
 
-	fingerprint := fmt.Sprintf(`{"algorithm":"sha256","value":"%s"}`, fmt.Sprintf("%064d", len(spec.Key)))
+	fingerprint := fmt.Sprintf(`{"algorithm":"metadata","value":"meta:size=%d","size_bytes":%d}`, spec.SizeBytes, spec.SizeBytes)
 	mediaFacts := spec.MediaFacts
 	if mediaFacts == "" {
 		mediaFacts = "{}"

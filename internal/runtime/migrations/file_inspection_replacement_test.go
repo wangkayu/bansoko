@@ -13,7 +13,7 @@ import (
 )
 
 func TestFileInspectionReplacesExistingArtifactFiles(t *testing.T) {
-	scenarios := []string{"pending", "waiting_retry_bound", "plan", "wrong_token", "expired", "cancel", "version", "inventory_missing", "inventory_extra", "inventory_duplicate", "inspected_duplicate", "files_duplicate", "primary", "path", "size", "fingerprint_hash", "fingerprint_missing", "fingerprint_duplicate", "fingerprint_extra", "media_duplicate", "media_missing", "media_extra", "media_identity", "media_binding", "media_size", "media_kind", "media_fingerprint", "rollback_media", "manifest", "rollback_delete", "rollback_insert", "rollback_plan", "rollback_work", "rollback_facts"}
+	scenarios := []string{"pending", "waiting_retry_bound", "plan", "wrong_token", "expired", "cancel", "version", "inventory_count", "inventory_video_count", "inventory_list", "inventory_digest", "files_duplicate", "primary", "path", "size", "fingerprint_sha256", "fingerprint_size", "fingerprint_identity", "fingerprint_missing", "fingerprint_count", "fingerprint_extra", "fingerprint_digest", "media_duplicate", "media_missing", "media_extra", "media_identity", "media_binding", "media_size", "media_kind", "media_fingerprint", "rollback_media", "manifest", "rollback_delete", "rollback_insert", "rollback_plan", "rollback_work", "rollback_facts"}
 	for _, scenario := range scenarios {
 		t.Run(scenario, func(t *testing.T) {
 			owner, db, p := progressProbe(t, "replace-"+scenario, nil, nil)
@@ -36,13 +36,13 @@ func TestFileInspectionReplacesExistingArtifactFiles(t *testing.T) {
 			}
 			files := make([]map[string]any, 0, len(manifest))
 			for i, f := range manifest {
-				files = append(files, map[string]any{"id": fmt.Sprintf("replace-new-%d", i), "file_ref": f["file_ref"], "relative_path": f["relative_path"], "source_path": "/downloads/" + f["relative_path"].(string), "size_bytes": f["exact_size"], "media_kind": f["media_kind"], "fingerprint": map[string]any{"algorithm": "sha256", "value": strings.Repeat("c", 64)}, "facts": map[string]any{}})
+				files = append(files, map[string]any{"id": fmt.Sprintf("replace-new-%d", i), "file_ref": f["file_ref"], "relative_path": f["relative_path"], "source_path": "/downloads/" + f["relative_path"].(string), "size_bytes": f["exact_size"], "media_kind": f["media_kind"], "fingerprint": metadataFingerprintFixture(f["exact_size"]), "facts": map[string]any{}})
 			}
 			oldRef := "old-video"
 			if scenario == "waiting_retry_bound" {
 				oldRef = files[0]["file_ref"].(string)
 			}
-			must(`INSERT INTO artifact_files(id,artifact_id,acquisition_id,file_ref,relative_path,source_path,media_kind,size_bytes,fingerprint,facts,subtitle_binding_state) VALUES('replace-old','replace-artifact',$1,$2,'old.mkv','/old/old.mkv','video',99,'{"algorithm":"sha256","value":"old"}','{"old":true}','not_applicable')`, p.AcquisitionID, oldRef)
+			must(`INSERT INTO artifact_files(id,artifact_id,acquisition_id,file_ref,relative_path,source_path,media_kind,size_bytes,fingerprint,facts,subtitle_binding_state) VALUES('replace-old','replace-artifact',$1,$2,'old.mkv','/old/old.mkv','video',99,'{"algorithm":"metadata","value":"meta:size=99","size_bytes":99}','{"old":true}','not_applicable')`, p.AcquisitionID, oldRef)
 			if scenario == "waiting_retry_bound" {
 				must(`INSERT INTO artifact_files(id,artifact_id,acquisition_id,file_ref,relative_path,source_path,media_kind,size_bytes,fingerprint,subtitle_binding_state,bound_video_file_ref) VALUES('replace-old-sub','replace-artifact',$1,'old-sub','old.ass','/old/old.ass','subtitle',9,'{}','bound',$2)`, p.AcquisitionID, oldRef)
 			}
@@ -74,33 +74,37 @@ func TestFileInspectionReplacesExistingArtifactFiles(t *testing.T) {
 				must(`UPDATE work_items SET cancel_requested=true WHERE id=$1`, claim.ID)
 			case "version":
 				must(`UPDATE artifacts SET version=version+1 WHERE id='replace-artifact'`)
-			case "inventory_missing":
-				inv["files"] = inv["files"].([]any)[:1]
-			case "inventory_extra":
-				inv["files"] = append(inv["files"].([]any), inv["files"].([]any)[0])
-			case "inventory_duplicate":
-				list := inv["files"].([]any)
-				list[1] = list[0]
+			case "inventory_count":
+				inv["file_count"] = inv["file_count"].(float64) + 1
+			case "inventory_video_count":
+				inv["video_count"] = inv["video_count"].(float64) + 1
+			case "inventory_list":
+				inv["files"] = []any{}
+			case "inventory_digest":
+				inv["files_digest"] = "sha256:" + strings.Repeat("0", 64)
 			case "primary":
 				inv["primary_file_ref"] = "old-video"
 			case "path":
-				inv["inspected_files"].([]any)[0].(map[string]any)["relative_path"] = "old.mkv"
+				// The committed files no longer match the summarized ones.
+				files[0]["relative_path"] = "old.mkv"
 			case "size":
-				inv["inspected_files"].([]any)[0].(map[string]any)["size_bytes"] = 99
-			case "fingerprint_hash":
-				fp["files"].(map[string]any)[files[0]["file_ref"].(string)] = map[string]any{"algorithm": "sha256", "value": "forged"}
+				inv["total_size_bytes"] = inv["total_size_bytes"].(float64) + 99
+			case "fingerprint_sha256":
+				files[0]["fingerprint"] = map[string]any{"algorithm": "sha256", "value": strings.Repeat("c", 64), "size_bytes": files[0]["size_bytes"]}
+			case "fingerprint_size":
+				files[0]["fingerprint"] = map[string]any{"algorithm": "metadata", "value": "meta:size=1", "size_bytes": files[0]["size_bytes"]}
+			case "fingerprint_identity":
+				files[0]["fingerprint"] = map[string]any{"algorithm": "metadata", "value": fmt.Sprintf("meta:size=%d;dev=1", fixtureSize(files[0]["size_bytes"])), "size_bytes": files[0]["size_bytes"]}
 			case "fingerprint_missing":
-				delete(fp["files"].(map[string]any), files[0]["file_ref"].(string))
-			case "inspected_duplicate":
-				list := inv["inspected_files"].([]any)
-				list[1] = list[0]
+				delete(fp, "files_digest")
 			case "files_duplicate":
 				files[1] = files[0]
+			case "fingerprint_count":
+				fp["file_count"] = fp["file_count"].(float64) + 1
 			case "fingerprint_extra":
-				fp["inspected_files"] = append(fp["inspected_files"].([]any), fp["inspected_files"].([]any)[0])
-			case "fingerprint_duplicate":
-				list := fp["inspected_files"].([]any)
-				list[1] = list[0]
+				fp["files"] = map[string]any{}
+			case "fingerprint_digest":
+				fp["files_digest"] = "sha256:" + strings.Repeat("0", 64)
 			case "manifest":
 				files[0]["size_bytes"] = 999
 				inventory, fingerprints = inspectionSnapshotFixture(t, files)
@@ -132,7 +136,7 @@ func TestFileInspectionReplacesExistingArtifactFiles(t *testing.T) {
 					t.Fatal(err)
 				}
 				for _, f := range files {
-					mediaFiles = append(mediaFiles, map[string]any{"file_ref": f["file_ref"], "media_kind": f["media_kind"], "size_bytes": f["size_bytes"], "source_fingerprint": strings.Repeat("c", 64), "file_evidence": map[string]any{}, "effective_facts": map[string]any{}, "snapshot_binding": binding})
+					mediaFiles = append(mediaFiles, map[string]any{"file_ref": f["file_ref"], "media_kind": f["media_kind"], "size_bytes": f["size_bytes"], "source_fingerprint": f["fingerprint"].(map[string]any)["value"], "file_evidence": map[string]any{}, "effective_facts": map[string]any{}, "snapshot_binding": binding})
 				}
 				switch scenario {
 				case "media_duplicate":
@@ -150,7 +154,7 @@ func TestFileInspectionReplacesExistingArtifactFiles(t *testing.T) {
 				case "media_kind":
 					mediaFiles[0]["media_kind"] = "other"
 				case "media_fingerprint":
-					mediaFiles[0]["source_fingerprint"] = strings.Repeat("a", 64)
+					mediaFiles[0]["source_fingerprint"] = "meta:size=1"
 				}
 			}
 			mediaRaw, err := json.Marshal(mediaFiles)

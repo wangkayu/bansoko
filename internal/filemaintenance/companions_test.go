@@ -44,20 +44,30 @@ func TestSplitCompanionNameRoundTrips(t *testing.T) {
 	}
 }
 
-func TestFingerprintHexNormalizesStoredForms(t *testing.T) {
-	hexValue := strings.Repeat("ab", 32)
+func TestCompanionFingerprintNormalizesStoredForms(t *testing.T) {
+	const value = "meta:size=12;dev=3;ino=44"
 	for _, input := range []string{
-		hexValue,
-		"sha256:" + hexValue,
-		strings.ToUpper(hexValue),
-		`{"algorithm":"sha256","value":"` + hexValue + `","size_bytes":12}`,
+		value,
+		" " + value + " ",
+		`{"algorithm":"metadata","value":"` + value + `","size_bytes":12}`,
 	} {
-		if got := fingerprintHex(input); got != hexValue || !validFingerprintHex(got) {
-			t.Fatalf("fingerprintHex(%q)=%q", input, got)
+		if got := companionFingerprint(input); got != value {
+			t.Fatalf("companionFingerprint(%q)=%q", input, got)
 		}
 	}
-	if validFingerprintHex(fingerprintHex(`{"algorithm":"md5","value":"x"}`)) {
-		t.Fatal("a non-sha256 fingerprint must not normalize to a valid hex value")
+	if got := companionFingerprint(`{"algorithm":"metadata","value":"meta:size=12","size_bytes":12}`); got != "meta:size=12" {
+		t.Fatalf("a size-only metadata fingerprint must normalize, got %q", got)
+	}
+	for _, input := range []string{
+		strings.Repeat("ab", 32),
+		`{"algorithm":"sha256","value":"` + strings.Repeat("ab", 32) + `","size_bytes":12}`,
+		`{"algorithm":"md5","value":"x"}`,
+		"meta:size=x",
+		"",
+	} {
+		if got := companionFingerprint(input); got != "" {
+			t.Fatalf("companionFingerprint(%q)=%q, want rejection", input, got)
+		}
 	}
 	if companionID("op-1") == companionID("op-2") || !strings.HasPrefix(companionID("op-1"), "cmp-") {
 		t.Fatal("companion ids must be stable and distinct per source ref")

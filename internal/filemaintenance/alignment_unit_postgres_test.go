@@ -183,7 +183,7 @@ VALUES ('plc-align-managed', $1, $2, 'reconciliation', 'obs-align-managed', $3, 
 		}
 		if _, err := u.f.db.Exec(`
 INSERT INTO placement_companions(id, placement_id, managed_anime_id, source_ref, registration, media_kind, suffix, original_extension, current_path, size_bytes, fingerprint)
-VALUES ('cmp-align-managed', 'plc-align-managed', $2, 'src-align-managed', 'adopted', 'subtitle', 'jpn', 'ass', $1, 1, $3)`, CompanionPath(u.target, "jpn", "ass"), u.op.ManagedAnimeID, strings.Repeat("c", 64)); err != nil {
+VALUES ('cmp-align-managed', 'plc-align-managed', $2, 'src-align-managed', 'adopted', 'subtitle', 'jpn', 'ass', $1, 1, $3)`, CompanionPath(u.target, "jpn", "ass"), u.op.ManagedAnimeID, "meta:size=1"); err != nil {
 			t.Fatal(err)
 		}
 		outcome, err := u.f.svc.ExecuteHandler().Handle(ctx, u.claim)
@@ -221,7 +221,7 @@ VALUES ('plc-align-other', $1, $2, 'reconciliation', 'obs-align-other', $3, $3, 
 		}
 		if _, err := u.f.db.Exec(`
 INSERT INTO placement_companions(id, placement_id, managed_anime_id, source_ref, registration, media_kind, suffix, original_extension, current_path, size_bytes, fingerprint)
-VALUES ('cmp-align-other', 'plc-align-other', $2, 'src-align-other', 'adopted', 'subtitle', 'chs', 'ass', $1, 1, $3)`, u.companionTarget, u.op.ManagedAnimeID, strings.Repeat("c", 64)); err != nil {
+VALUES ('cmp-align-other', 'plc-align-other', $2, 'src-align-other', 'adopted', 'subtitle', 'chs', 'ass', $1, 1, $3)`, u.companionTarget, u.op.ManagedAnimeID, "meta:size=1"); err != nil {
 			t.Fatal(err)
 		}
 		outcome, err := u.f.svc.ExecuteHandler().Handle(ctx, u.claim)

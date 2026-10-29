@@ -10,27 +10,34 @@ import (
 )
 
 const (
-	// mediaProbeBudget bounds the total time one inspection spends reading
-	// media facts, so a season pack cannot spend the whole attempt window on
-	// probing. Files left over when it runs out keep empty facts.
-	mediaProbeBudget = 60 * time.Second
+	// mediaProbeCommitReserve is kept free before the attempt deadline so the
+	// inspection still commits after probing: each probe has its own bound
+	// (the prober's per-call timeout), and probing stops when the attempt
+	// runs out. Videos left over keep empty facts.
+	mediaProbeCommitReserve = 30 * time.Second
 
 	mediaProbeComponent = "artifact"
 	mediaProbeOperation = "media_probe"
 )
 
 // probeMediaFacts reads the execution-time media facts of every video file
-// into targets[i].media. It is best effort by contract: a missing tool, a
-// timeout, a failure or an empty answer leaves that file's facts empty and
-// never fails the inspection. Naming then renders the empty facts per the
+// into targets[i].media. Each video gets its own probe budget (the prober's
+// per-call timeout); the whole run is bounded by the attempt deadline, not a
+// shared budget. It is best effort by contract: a missing tool, a timeout, a
+// failure or an empty answer leaves that file's facts empty and never fails
+// the inspection. Naming then renders the empty facts per the
 // empty-value rules (NAMING_FACT_MISSING only when the path becomes invalid).
 // Preview is unaffected: it never reads this data.
 func (s *Service) probeMediaFacts(ctx context.Context, artifactID string, targets []artifactInspectionTarget, inspected []domain.ArtifactFacts) {
 	if s == nil || s.prober == nil {
 		return
 	}
-	probeCtx, cancel := context.WithTimeout(ctx, mediaProbeBudget)
-	defer cancel()
+	probeCtx := ctx
+	if deadline, ok := ctx.Deadline(); ok {
+		var cancel context.CancelFunc
+		probeCtx, cancel = context.WithDeadline(ctx, deadline.Add(-mediaProbeCommitReserve))
+		defer cancel()
+	}
 
 	for index, file := range inspected {
 		if normalizeMediaKind(file.MediaKind, file.Path) != "video" {

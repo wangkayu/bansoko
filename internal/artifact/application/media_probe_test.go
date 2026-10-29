@@ -278,8 +278,8 @@ func TestBuildInspectionPlanStoresMediaFactsUnderTheNamingKeys(t *testing.T) {
 			{path: subtitlePath, mediaKind: "subtitle", language: "zh"},
 		},
 		[]domain.ArtifactFacts{
-			{Path: videoPath, SizeBytes: 100, SHA256: strings.Repeat("a", 64), MediaKind: "video", ObservedAt: at},
-			{Path: subtitlePath, SizeBytes: 20, SHA256: strings.Repeat("b", 64), MediaKind: "subtitle", ObservedAt: at},
+			{Path: videoPath, SizeBytes: 100, MediaKind: "video", ObservedAt: at},
+			{Path: subtitlePath, SizeBytes: 20, MediaKind: "subtitle", ObservedAt: at},
 		},
 		at,
 	)
@@ -318,7 +318,7 @@ func TestBuildInspectionPlanOmitsEmptyMediaFactsAndBoundsValues(t *testing.T) {
 		artifactSnapshot{id: "artifact-partial"},
 		inspectInput{LocalRoot: root},
 		[]artifactInspectionTarget{{path: videoPath, mediaKind: "video", primary: true, media: domain.MediaFacts{VideoCodec: strings.Repeat("X", 100), Container: "mkv"}}},
-		[]domain.ArtifactFacts{{Path: videoPath, SizeBytes: 100, SHA256: strings.Repeat("a", 64), MediaKind: "video", ObservedAt: at}},
+		[]domain.ArtifactFacts{{Path: videoPath, SizeBytes: 100, MediaKind: "video", ObservedAt: at}},
 		at,
 	)
 	if err != nil {
@@ -375,7 +375,7 @@ func TestHandlePersistsProbedMediaFactsOnTheArtifactFile(t *testing.T) {
 	seedArtifactOwner(t, db, "artifact-media-ok", "task-media-ok", "completed", "pending", correlation, `{"files":[{"name":"Show - 01.mkv"}]}`)
 	claim, store := claimArtifactWorkItem(t, db, "artifact-media-ok", []byte(`{"download_task_id":"task-media-ok","provider_task_id":"tag:media-task","local_root":"/stale/configured-root"}`))
 	at := time.Date(2026, 10, 19, 8, 30, 0, 0, time.UTC)
-	inspector := &fakeInspector{facts: domain.ArtifactFacts{Path: canonicalPath, SizeBytes: 1024, SHA256: strings.Repeat("b", 64), ObservedAt: at, MediaKind: "video"}}
+	inspector := &fakeInspector{facts: domain.ArtifactFacts{Path: canonicalPath, SizeBytes: 1024, ObservedAt: at, MediaKind: "video"}}
 	service, err := NewService(db, inspector, func() time.Time { return at })
 	if err != nil {
 		t.Fatal(err)
@@ -426,7 +426,7 @@ func TestHandleProbeFailureStillVerifiesWithEmptyMediaFacts(t *testing.T) {
 	seedArtifactOwner(t, db, "artifact-media-fail", "task-media-fail", "completed", "pending", correlation, `{"files":[{"name":"Show - 01.mkv"}]}`)
 	claim, store := claimArtifactWorkItem(t, db, "artifact-media-fail", []byte(`{"download_task_id":"task-media-fail","provider_task_id":"tag:media-fail","local_root":"/stale/configured-root"}`))
 	at := time.Date(2026, 10, 19, 8, 30, 0, 0, time.UTC)
-	inspector := &fakeInspector{facts: domain.ArtifactFacts{Path: canonicalPath, SizeBytes: 1024, SHA256: strings.Repeat("b", 64), ObservedAt: at, MediaKind: "video"}}
+	inspector := &fakeInspector{facts: domain.ArtifactFacts{Path: canonicalPath, SizeBytes: 1024, ObservedAt: at, MediaKind: "video"}}
 	service, err := NewService(db, inspector, func() time.Time { return at })
 	if err != nil {
 		t.Fatal(err)

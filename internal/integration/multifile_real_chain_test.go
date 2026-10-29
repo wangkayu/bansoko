@@ -80,7 +80,6 @@ func TestMultiFileRealPostgresChain(t *testing.T) {
 		{Name: subtitleName, Content: subtitleContent},
 		{Name: extraName, Content: extraContent},
 	}
-	videoDigest := sha256.Sum256(videoContent)
 
 	fixtureClient, fixtureURL, torrentBytes, closeFixture := startMultiFileFixture(t, "[RealGroup] M1 Multi Real Show - 01 [1080p][CHS]", files)
 	t.Cleanup(closeFixture)
@@ -413,9 +412,9 @@ WHERE artifact_id = $1 AND target_path LIKE '%.ass'`, artifactID).Scan(&subtitle
 	if err := json.Unmarshal([]byte(placementFingerprintJSON), &placementFingerprint); err != nil || placementFingerprint.Value == "" {
 		t.Fatalf("placement fingerprint must be a typed JSON fingerprint, got %q", placementFingerprintJSON)
 	}
-	if placementFingerprint.Value != hex.EncodeToString(videoDigest[:]) {
-		t.Fatalf("placement fingerprint must match the video digest: got %q", placementFingerprint.Value)
-	}
+	// The placement keeps the operation's source fingerprint: the downloaded
+	// video's path-level metadata fingerprint.
+	requireMetadataFingerprint(t, "placement fingerprint", placementFingerprint.Value, int64(len(videoContent)))
 
 	// The bound subtitle is registered as a companion of the video
 	// placement at its delivered path, with its original extension.
@@ -433,12 +432,12 @@ WHERE artifact_id = $1 AND target_path LIKE '%.ass'`, artifactID).Scan(&subtitle
 			t.Fatalf("expected one companion for the video placement, got %+v", companions)
 		}
 		c := companions[0]
-		subtitleDigest := sha256.Sum256(subtitleContent)
 		if c.State != filemaintenance.CompanionStateActive || c.MediaKind != "subtitle" || c.OriginalExtension != "ass" ||
 			c.CurrentPath != subtitleTarget || c.SourceRef != subtitleOpID || c.Registration != wantRegistration ||
-			c.SizeBytes != int64(len(subtitleContent)) || c.Fingerprint != hex.EncodeToString(subtitleDigest[:]) {
+			c.SizeBytes != int64(len(subtitleContent)) {
 			t.Fatalf("subtitle companion mismatch: %+v (target=%q op=%q)", c, subtitleTarget, subtitleOpID)
 		}
+		requireMetadataFingerprint(t, "subtitle companion fingerprint", c.Fingerprint, int64(len(subtitleContent)))
 		if got := filemaintenance.CompanionPath(placementPath, c.Suffix, c.OriginalExtension); got != subtitleTarget {
 			t.Fatalf("companion path must derive from the video placement: got %q want %q", got, subtitleTarget)
 		}

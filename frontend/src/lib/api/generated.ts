@@ -4316,9 +4316,10 @@ export interface components {
             /** @description Opaque handle of the terminal failed work item accepted by this owner's manual-retry endpoint; absent when the owner has no failed work item. */
             failed_work_item_id?: components["schemas"]["ID"];
         };
+        /** @description Path-level file fingerprint. The value records the file size and, when it was observed, the device and inode; file content is never read. */
         Fingerprint: {
             /** @enum {string} */
-            algorithm: "sha256";
+            algorithm: "metadata";
             value: string;
             /** Format: int64 */
             size_bytes: number;

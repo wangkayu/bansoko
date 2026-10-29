@@ -955,7 +955,7 @@ const (
 
 // Defines values for FingerprintAlgorithm.
 const (
-	FingerprintAlgorithmSha256 FingerprintAlgorithm = "sha256"
+	FingerprintAlgorithmMetadata FingerprintAlgorithm = "metadata"
 )
 
 // Defines values for GlobalSectionName.
@@ -3638,6 +3638,7 @@ type ArtifactState string
 
 // ArtifactFile defines model for ArtifactFile.
 type ArtifactFile struct {
+	// Fingerprint Path-level file fingerprint. The value records the file size and, when it was observed, the device and inode; file content is never read.
 	Fingerprint Fingerprint           `json:"fingerprint"`
 	MediaKind   ArtifactFileMediaKind `json:"media_kind"`
 
@@ -5107,12 +5108,16 @@ type FileOperation struct {
 	ObservedAt              *time.Time               `json:"observed_at,omitempty"`
 	ObservedTargetSizeBytes *int64                   `json:"observed_target_size_bytes"`
 	Operation               FileOperationOperation   `json:"operation"`
-	SourceFingerprint       Fingerprint              `json:"source_fingerprint"`
+
+	// SourceFingerprint Path-level file fingerprint. The value records the file size and, when it was observed, the device and inode; file content is never read.
+	SourceFingerprint Fingerprint `json:"source_fingerprint"`
 
 	// SourcePath Redacted canonical source path.
-	SourcePath        string             `json:"source_path"`
-	State             FileOperationState `json:"state"`
-	TargetFingerprint *Fingerprint       `json:"target_fingerprint,omitempty"`
+	SourcePath string             `json:"source_path"`
+	State      FileOperationState `json:"state"`
+
+	// TargetFingerprint Path-level file fingerprint. The value records the file size and, when it was observed, the device and inode; file content is never read.
+	TargetFingerprint *Fingerprint `json:"target_fingerprint,omitempty"`
 
 	// TargetPath Redacted canonical path under an allowed root.
 	TargetPath string  `json:"target_path"`
@@ -5128,7 +5133,7 @@ type FileOperationOperation string
 // FileOperationState defines model for FileOperation.State.
 type FileOperationState string
 
-// Fingerprint defines model for Fingerprint.
+// Fingerprint Path-level file fingerprint. The value records the file size and, when it was observed, the device and inode; file content is never read.
 type Fingerprint struct {
 	Algorithm FingerprintAlgorithm `json:"algorithm"`
 	SizeBytes int64                `json:"size_bytes"`

@@ -2,8 +2,6 @@ package integration
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -688,11 +686,10 @@ func TestCompanionReplacementCleanupRealChain(t *testing.T) {
 	if videoB == videoA {
 		t.Fatalf("revision paths must differ by resolution: %q", videoA)
 	}
-	digestB := sha256.Sum256(filesB[0].Content)
 	if _, err := disposabledb.Owner(t).ExecContext(ctx, `
 INSERT INTO placement_companions (id, placement_id, managed_anime_id, source_ref, registration, media_kind, suffix, original_extension, current_path, size_bytes, fingerprint)
 VALUES ('cmp-guard', $1, $2, 'guard-source', 'intake', 'other', '', 'mkv', $3, $4, $5)`,
-		placementA, animeID, videoB, len(filesB[0].Content), hex.EncodeToString(digestB[:])); err != nil {
+		placementA, animeID, videoB, len(filesB[0].Content), fmt.Sprintf("meta:size=%d", len(filesB[0].Content))); err != nil {
 		t.Fatal(err)
 	}
 

@@ -84,7 +84,7 @@ func (i *stageRetryInspector) Inspect(_ context.Context, _ string) (downloaddoma
 	if i.fail {
 		return downloaddomain.ArtifactFacts{}, i.failError
 	}
-	return downloaddomain.ArtifactFacts{Path: "/downloads/show.mkv", SizeBytes: 1, SHA256: "audit"}, nil
+	return downloaddomain.ArtifactFacts{Path: "/downloads/show.mkv", SizeBytes: 1}, nil
 }
 
 // stageRetryRow is one recorded fact about a work item.
