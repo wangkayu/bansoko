@@ -177,7 +177,7 @@ Maintain a running anime (each needs the owner `expected_version` from `get_work
 
 | Step | MCP tool | operationId | CLI |
 |---|---|---|---|
-| Replace metadata bindings (BGM, TMDB, title override, total episodes, year, season) | `patch_anime_metadata` | `patchAnimeMetadata` | - |
+| Replace metadata bindings (BGM, TMDB, title override, total episodes, year, season). A change to anything but the title also re-evaluates the anime's unsubmitted releases in the same call (`reevaluated_releases` in the response), so do not call `reevaluate_releases` after it. A change to the title, a binding, the season, the year or the media kind re-checks the anime's library files: they move to the new paths only when its automatic alignment is on, and nothing is downloaded again | `patch_anime_metadata` | `patchAnimeMetadata` | - |
 | Re-run metadata matching for an active subscription (useful when an anime is held waiting for metadata). It follows the same fill-if-empty rule as the scheduled `metadata_match`: BGM, the TMDB tuple, `total_episodes`, `year` and `season` are filled only when empty, never overwritten, and a partial result such as BGM alone is saved | `match_metadata` | `matchAnimeMetadata` | - |
 | Re-pull the bound work from its provider and refresh the stored titles (BGM, TMDB) for an active subscription. It bypasses lookup caches: naming templates that read `bgm.ep_title` or `tmdb.ep_title` re-resolve from fresh provider data on the next render, and pending file alignment previews show the refreshed titles | `refresh_metadata` | `refreshAnimeMetadata` | - |
 | Replace rule sections (parser, release filter, file filter, naming, file effect) | `patch_anime_rules` | `patchAnimeRules` | - |
@@ -396,7 +396,7 @@ When something failed, find the failed stage in `get_workspace` (or `get_executi
 | Symptom | Fix |
 |---|---|
 | Feed not fetched, or source unhealthy | `refresh_rss` |
-| A release was filtered or held and rules or metadata changed since | `reevaluate_releases`, then `refresh_rss` |
+| A release was filtered or held and a setting changed since (`patch_anime_metadata` and `patch_anime_rules` already re-evaluate in the same call) | `reevaluate_releases`, then `refresh_rss` |
 | A release's download failed or never started, its post-processing failed, or its placed file is missing from the library | `retry_release` re-runs the whole chain under the current rules (refused with `RELEASE_NOT_RETRYABLE` while a download or processing is in progress, or while its files are in the library) |
 | Anime held waiting for metadata | `patch_anime_metadata` or `match_metadata` |
 | An import waits for configuration (`waiting_config`, `config_hold`) | add the missing binding (`patch_anime_metadata` or `match_metadata`) or fix the naming template (`patch_anime_rules`); the import continues by itself |

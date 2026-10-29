@@ -179,6 +179,11 @@ WHERE subscription_id = $1 AND kind = 'metadata_applied'`, subscribed.Subscripti
 	if appliedLogs != 1 {
 		t.Fatalf("repeated complete metadata must not duplicate metadata_applied log, got %d", appliedLogs)
 	}
+	// The filled bindings are render inputs: one scan request, and the repeat
+	// that fills nothing does not bump it.
+	if rev := configScanRevision(t, db, subscribed.ManagedAnime.Id); rev != 1 {
+		t.Fatalf("a backfill that fills the bindings requests one scan, revision %d", rev)
+	}
 }
 
 func TestMatchAnimeMetadataRequiresActiveSubscription(t *testing.T) {

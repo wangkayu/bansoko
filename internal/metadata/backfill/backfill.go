@@ -192,5 +192,12 @@ func ApplyTx(ctx context.Context, tx *sql.Tx, managedAnimeID string, expectedVer
 	if err := animeapplication.WakeConfigWaitingPlansTx(ctx, tx, managedAnimeID); err != nil {
 		return false, err
 	}
+	// The bindings, year, season and media kind are render inputs: the files
+	// re-render under the filled values. The total episodes never reach a path.
+	if plan.NewBGM || plan.NewTMDB || plan.NewYear || plan.NewSeason || plan.NewMediaKind {
+		if err := animeapplication.RequestConfigScanTx(ctx, tx, managedAnimeID); err != nil {
+			return false, err
+		}
+	}
 	return true, nil
 }

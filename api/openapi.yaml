@@ -1633,7 +1633,13 @@ paths:
           subscription's library files. Changing the effective media kind (tv/movie) while
           the anime has library files or acquisitions that have not settled
           (including an import waiting for configuration) returns 409
-          IDENTITY_KIND_CHANGE_BLOCKED with the counts in details.
+          IDENTITY_KIND_CHANGE_BLOCKED with the counts in details. A change
+          to anything but the title re-evaluates the anime's unsubmitted
+          releases in the same call (reevaluated_releases in the response; no
+          separate reevaluate_releases call is needed). A change to the title,
+          a binding, the season, the year or the media kind also requests a
+          re-check of the anime's library files, which move to the new paths
+          only when its automatic alignment is on and never re-download.
       parameters:
         - $ref: '#/components/parameters/ManagedAnimeID'
       requestBody:
@@ -9829,6 +9835,13 @@ components:
             cached titles of the bound works and the provider title, every
             non-empty one in the order tmdb_cn, tmdb_original, bgm_cn, bgm,
             provider. Nothing is fetched; duplicates are not removed.
+        reevaluated_releases:
+          type: integer
+          minimum: 0
+          description: >-
+            Present on the metadata patch response only: how many releases not
+            yet submitted the same transaction scheduled for re-evaluation.
+            Absent when the patch changed only the title.
         version:
           $ref: '#/components/schemas/Version'
     TitleSuggestion:

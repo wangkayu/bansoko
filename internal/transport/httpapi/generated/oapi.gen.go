@@ -3462,6 +3462,9 @@ type AnimeMetadata struct {
 	// MediaKindOverride Owner media kind (tv | movie) the episode identity resolves with. NULL is tv; the TMDB binding's media_kind is never read for it. It is filled once from the TMDB media_kind when a TMDB tuple is bound while it is NULL (subscribe, metadata patch or metadata match); clearing or replacing the tuple later never changes it. It never rewrites the TMDB tuple. The effective kind (NULL is tv) changes between tv and movie only while the anime has no active library file and no acquisition that has not settled (an import waiting for configuration included): a metadata patch that would change it then returns 409 IDENTITY_KIND_CHANGE_BLOCKED, and a metadata match or the scheduled metadata_match automation leaves it unchanged and still fills the other empty fields.
 	MediaKindOverride *AnimeMetadataMediaKindOverride `json:"media_kind_override"`
 
+	// ReevaluatedReleases Present on the metadata patch response only: how many releases not yet submitted the same transaction scheduled for re-evaluation. Absent when the patch changed only the title.
+	ReevaluatedReleases *int `json:"reevaluated_releases,omitempty"`
+
 	// Season Owner-edited season that naming reads as anime.season (and anime.season_folder, anime.season_path, ep.s00e00); 0 is the specials season. NULL means unset: the season composites render empty and ep.s00e00 renders the episode alone (E07). The shipped TV directory template keeps anime.season_folder as its own folder level, so a season-less render refuses (naming_fact_missing_anime_season_folder). It is independent of the TMDB binding: tmdb.season stays the bound TMDB season used for TMDB episode lookups, and editing one never changes the other. Confirming a TMDB match in the UI fills it with the matched season only while it is unset; nothing is stored until the owner saves.
 	Season        *int    `json:"season"`
 	TitleOverride *string `json:"title_override"`

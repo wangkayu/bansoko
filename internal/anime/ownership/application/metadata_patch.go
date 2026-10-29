@@ -32,12 +32,13 @@ func (s *Service) PatchAnimeMetadataApplication(ctx context.Context, managedAnim
 		return AnimeMetadata{}, err
 	}
 	var subscriptionID, title string
+	var currentTitleOverride sql.NullString
 	if err := tx.QueryRowContext(ctx, `
-SELECT s.id, ma.title
+SELECT s.id, ma.title, ma.title_override
 FROM subscriptions s
 JOIN managed_anime ma ON ma.id = s.managed_anime_id
 WHERE s.managed_anime_id = $1
-FOR UPDATE OF s, ma`, managedAnimeID).Scan(&subscriptionID, &title); errors.Is(err, sql.ErrNoRows) {
+FOR UPDATE OF s, ma`, managedAnimeID).Scan(&subscriptionID, &title, &currentTitleOverride); errors.Is(err, sql.ErrNoRows) {
 		return AnimeMetadata{}, &apperrors.NotFound{Resource: "subscription", ID: managedAnimeID}
 	} else if err != nil {
 		return AnimeMetadata{}, fmt.Errorf("lock metadata subscription: %w", err)
@@ -45,14 +46,14 @@ FOR UPDATE OF s, ma`, managedAnimeID).Scan(&subscriptionID, &title); errors.Is(e
 
 	var version int64
 	var currentBgm, currentTmdbWorkID, currentTmdbKind, currentMediaKindOverride sql.NullString
-	var currentTmdbSeason, currentTotalEpisodes sql.NullInt64
+	var currentTmdbSeason, currentTotalEpisodes, currentYear, currentSeason sql.NullInt64
 	err = tx.QueryRowContext(ctx, `
 SELECT bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season,
-       total_episodes, media_kind_override, version
+       total_episodes, media_kind_override, year, season, version
 FROM anime_metadata
 WHERE managed_anime_id = $1
 FOR UPDATE`, managedAnimeID).Scan(&currentBgm, &currentTmdbWorkID, &currentTmdbKind, &currentTmdbSeason,
-		&currentTotalEpisodes, &currentMediaKindOverride, &version)
+		&currentTotalEpisodes, &currentMediaKindOverride, &currentYear, &currentSeason, &version)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AnimeMetadata{}, &apperrors.NotFound{Resource: "anime_metadata", ID: managedAnimeID}
 	}
@@ -63,11 +64,6 @@ FOR UPDATE`, managedAnimeID).Scan(&currentBgm, &currentTmdbWorkID, &currentTmdbK
 		return AnimeMetadata{}, &apperrors.VersionConflict{Owner: "anime_metadata", CurrentVersion: version}
 	}
 
-	changed := animeapplication.NullableValueChanged(currentBgm, animeapplication.BGMWorkID(domainBGM)) ||
-		animeapplication.NullableValueChanged(currentTmdbWorkID, animeapplication.TMDBWorkID(domainTMDB)) ||
-		animeapplication.NullableValueChanged(currentTmdbKind, animeapplication.TMDBMediaKind(domainTMDB)) ||
-		animeapplication.NullableIntChanged(currentTmdbSeason, animeapplication.TMDBSeason(domainTMDB)) ||
-		animeapplication.NullableIntPtrChanged(currentTotalEpisodes, patch.TotalEpisodes)
 	// The owner media kind is backfilled from the TMDB tuple this patch binds
 	// while the submitted kind is unset; a submitted kind is kept whatever
 	// the tuple.
@@ -76,7 +72,17 @@ FOR UPDATE`, managedAnimeID).Scan(&currentBgm, &currentTmdbWorkID, &currentTmdbK
 	if nextMediaKind != nil {
 		nextMediaKindOverride = *nextMediaKind
 	}
-	changed = changed || animeapplication.NullableValueChanged(currentMediaKindOverride, nextMediaKindOverride)
+	change := metadataChange{
+		title: patch.TitleOverride != nil && *patch.TitleOverride != effectiveTitle(title, currentTitleOverride),
+		bindings: animeapplication.NullableValueChanged(currentBgm, animeapplication.BGMWorkID(domainBGM)) ||
+			animeapplication.NullableValueChanged(currentTmdbWorkID, animeapplication.TMDBWorkID(domainTMDB)) ||
+			animeapplication.NullableValueChanged(currentTmdbKind, animeapplication.TMDBMediaKind(domainTMDB)) ||
+			animeapplication.NullableIntChanged(currentTmdbSeason, animeapplication.TMDBSeason(domainTMDB)),
+		total:     animeapplication.NullableIntPtrChanged(currentTotalEpisodes, patch.TotalEpisodes),
+		mediaKind: animeapplication.NullableValueChanged(currentMediaKindOverride, nextMediaKindOverride),
+		year:      animeapplication.NullableIntPtrChanged(currentYear, patch.Year),
+		season:    animeapplication.NullableIntPtrChanged(currentSeason, patch.Season),
+	}
 	// The effective kind (unset is tv) decides the episode key shape; it
 	// changes only while no file or unsettled acquisition holds the identity.
 	var currentMediaKind *string
@@ -115,7 +121,18 @@ RETURNING title_override`,
 		managedAnimeID, titleOverrideValue).Scan(&storedTitleOverride); err != nil {
 		return AnimeMetadata{}, fmt.Errorf("save anime title: %w", err)
 	}
-	if patch.BGM != nil && patch.TMDB != nil && changed {
+	// A change to anything but the title re-evaluates the releases not yet
+	// submitted, exactly as the manual re-evaluation does; the title never
+	// affects release evaluation.
+	var reevaluated *int
+	if change.reevaluatesReleases() {
+		scheduled, err := s.scheduleUnsubmittedReleaseEvaluationCount(ctx, tx, unsubmittedReleasesSQL, managedAnimeID, "metadata_patch")
+		if err != nil {
+			return AnimeMetadata{}, err
+		}
+		reevaluated = &scheduled
+	}
+	if patch.BGM != nil && patch.TMDB != nil && change.bindingsOrKindOrTotal() {
 		if err := s.scheduleMetadataReleaseEvaluation(ctx, tx, managedAnimeID); err != nil {
 			return AnimeMetadata{}, err
 		}
@@ -127,20 +144,28 @@ RETURNING title_override`,
 	if err := animeapplication.WakeConfigWaitingPlansTx(ctx, tx, managedAnimeID); err != nil {
 		return AnimeMetadata{}, err
 	}
+	// Subscription files render with the current configuration: a change to a
+	// rendered input requests the scan that re-renders them.
+	if change.rendersFiles() {
+		if err := animeapplication.RequestConfigScanTx(ctx, tx, managedAnimeID); err != nil {
+			return AnimeMetadata{}, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return AnimeMetadata{}, fmt.Errorf("commit metadata patch: %w", err)
 	}
 	s.publishInvalidations(events.TargetSubscribed, events.TargetRSS)
 	return AnimeMetadata{
-		ManagedAnimeID:    managedAnimeID,
-		BGM:               animeapplication.ApplicationBGMFromDomain(domainBGM),
-		TMDB:              animeapplication.ApplicationTMDBFromDomain(domainTMDB),
-		TitleOverride:     nullStringPtr(storedTitleOverride),
-		TotalEpisodes:     animeapplication.CloneInt(patch.TotalEpisodes),
-		MediaKindOverride: animeapplication.CloneString(nextMediaKind),
-		Year:              animeapplication.CloneInt(patch.Year),
-		Season:            animeapplication.CloneInt(patch.Season),
-		Version:           version + 1,
+		ManagedAnimeID:      managedAnimeID,
+		BGM:                 animeapplication.ApplicationBGMFromDomain(domainBGM),
+		TMDB:                animeapplication.ApplicationTMDBFromDomain(domainTMDB),
+		TitleOverride:       nullStringPtr(storedTitleOverride),
+		TotalEpisodes:       animeapplication.CloneInt(patch.TotalEpisodes),
+		MediaKindOverride:   animeapplication.CloneString(nextMediaKind),
+		Year:                animeapplication.CloneInt(patch.Year),
+		Season:              animeapplication.CloneInt(patch.Season),
+		Version:             version + 1,
+		ReevaluatedReleases: reevaluated,
 	}, nil
 }
 
@@ -157,4 +182,37 @@ func nullStringPtr(value sql.NullString) *string {
 	}
 	text := value.String
 	return &text
+}
+
+// metadataChange is which owner fields a metadata patch changes against the
+// stored values (the media kind compared after the TMDB backfill).
+type metadataChange struct {
+	title, bindings, total, mediaKind, year, season bool
+}
+
+// rendersFiles reports whether the change can alter a rendered path: the
+// naming reads the title, both bindings, the owner season, year and media
+// kind. The planned total episodes never reach a path.
+func (c metadataChange) rendersFiles() bool {
+	return c.title || c.bindings || c.mediaKind || c.year || c.season
+}
+
+// reevaluatesReleases reports whether the change re-evaluates the releases not
+// yet submitted: every field but the title.
+func (c metadataChange) reevaluatesReleases() bool {
+	return c.bindings || c.total || c.mediaKind || c.year || c.season
+}
+
+// bindingsOrKindOrTotal is the change that completes metadata a release is
+// held for (the year and season never hold a release).
+func (c metadataChange) bindingsOrKindOrTotal() bool {
+	return c.bindings || c.total || c.mediaKind
+}
+
+// effectiveTitle is the title the anime shows: its fixed title when set.
+func effectiveTitle(title string, override sql.NullString) string {
+	if override.Valid {
+		return override.String
+	}
+	return title
 }

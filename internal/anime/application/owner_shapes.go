@@ -57,6 +57,9 @@ type AnimeMetadata struct {
 	// TitleSuggestions are the workspace read's title candidates; other
 	// responses leave it empty.
 	TitleSuggestions []TitleSuggestion `json:"title_suggestions,omitempty"`
+	// ReevaluatedReleases is set by the metadata patch only: how many
+	// unsubmitted releases it scheduled for re-evaluation.
+	ReevaluatedReleases *int `json:"-"`
 }
 
 // Title suggestion sources, in the order a view lists them.

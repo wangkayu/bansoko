@@ -165,6 +165,17 @@ WHERE managed_anime_id = $1 AND section_name = $2`, managedAnimeID, section).Sca
 	return changed, nil
 }
 
+// rulesRenderChanged reports whether a changed section can alter a rendered
+// path: only the naming rules reach the maintenance render.
+func rulesRenderChanged(changedSections []string) bool {
+	for _, section := range changedSections {
+		if section == animedomain.SectionNamingRules {
+			return true
+		}
+	}
+	return false
+}
+
 // sectionOverrideChanged reports whether the next owner value of a section
 // differs from the stored one (schema version or decoded JSON value).
 func sectionOverrideChanged(section string, previousSchema sql.NullString, previousValue []byte, next animedomain.OverrideValue) bool {
@@ -180,6 +191,16 @@ func sectionOverrideChanged(section string, previousSchema sql.NullString, previ
 	}
 	return !reflect.DeepEqual(previousJSON, nextJSON)
 }
+
+// unsubmittedReleasesSQL locks the anime's releases that have no download task
+// yet and are not terminal: the releases a re-evaluation covers.
+const unsubmittedReleasesSQL = `
+SELECT r.id, r.version
+FROM releases r
+JOIN rss_sources src ON src.id = r.rss_source_id
+JOIN subscriptions sub ON sub.id = src.subscription_id
+WHERE sub.managed_anime_id = $1 AND ` + animeapplication.ReleaseReevaluationScopeSQL + `
+FOR UPDATE OF r`
 
 // PatchAnimeRules replaces the rules owner sections with expected-version CAS
 // and reports how many new Release evaluation WorkItems were scheduled.
@@ -243,13 +264,7 @@ WHERE managed_anime_id = $1`, managedAnimeID); err != nil {
 	if _, err := animeconfig.SyncInstanceBusinessSnapshotTx(ctx, tx, managedAnimeID); err != nil {
 		return RulesPatchResult{}, err
 	}
-	scheduled, err := s.scheduleUnsubmittedReleaseEvaluationCount(ctx, tx, `
-SELECT r.id, r.version
-FROM releases r
-JOIN rss_sources src ON src.id = r.rss_source_id
-JOIN subscriptions sub ON sub.id = src.subscription_id
-WHERE sub.managed_anime_id = $1 AND `+animeapplication.ReleaseReevaluationScopeSQL+`
-FOR UPDATE OF r`, managedAnimeID, "rules_patch")
+	scheduled, err := s.scheduleUnsubmittedReleaseEvaluationCount(ctx, tx, unsubmittedReleasesSQL, managedAnimeID, "rules_patch")
 	if err != nil {
 		return RulesPatchResult{}, err
 	}
@@ -262,6 +277,13 @@ FOR UPDATE OF r`, managedAnimeID, "rules_patch")
 	// A naming change may complete (or break) the render an import waits for.
 	if err := animeapplication.WakeConfigWaitingPlansTx(ctx, tx, managedAnimeID); err != nil {
 		return RulesPatchResult{}, err
+	}
+	// The naming templates are the rules a render reads: a changed template
+	// requests the scan that re-renders the subscription's files.
+	if subscriptionID.Valid && rulesRenderChanged(changedSections) {
+		if err := animeapplication.RequestConfigScanTx(ctx, tx, managedAnimeID); err != nil {
+			return RulesPatchResult{}, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return RulesPatchResult{}, fmt.Errorf("commit rules patch: %w", err)
@@ -669,13 +691,7 @@ func (s *Service) ReevaluateAnimeReleasesApplication(ctx context.Context, manage
 	if err := s.lockActiveLifecycleTx(ctx, tx, managedAnimeID); err != nil {
 		return ReleaseReevaluationResult{}, err
 	}
-	scheduled, err := s.scheduleUnsubmittedReleaseEvaluationCount(ctx, tx, `
-SELECT r.id, r.version
-FROM releases r
-JOIN rss_sources src ON src.id = r.rss_source_id
-JOIN subscriptions sub ON sub.id = src.subscription_id
-WHERE sub.managed_anime_id = $1 AND `+animeapplication.ReleaseReevaluationScopeSQL+`
-FOR UPDATE OF r`, managedAnimeID, "manual_reevaluate")
+	scheduled, err := s.scheduleUnsubmittedReleaseEvaluationCount(ctx, tx, unsubmittedReleasesSQL, managedAnimeID, "manual_reevaluate")
 	if err != nil {
 		return ReleaseReevaluationResult{}, err
 	}
