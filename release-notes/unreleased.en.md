@@ -39,9 +39,12 @@
 - Posters that failed to load during a service restart or a network blip now retry on their own, and at once when the window regains focus or the network comes back, so the page no longer needs a reload.
 - The subscription list now updates its import progress and status as downloads and imports move, without a manual refresh.
 - Changing the TMDB season while downloading no longer downloads the same episode a second time as a different episode: episodes are identified by subscription and episode number, and the season is used only for naming.
+- The next automatic task time in the top-bar status now updates once it passes and is re-read when the status panel opens, instead of showing a time already gone.
+- When editing a title, the title suggestions no longer cover the input's focus outline.
 
 ## Important
 
 - Only one downloader is supported, and its download folder is now required.
 - On upgrade, if one subscription already holds files from different seasons, only the current season's files take part in version replacement; the others stay where they are, and the subscription activity records how many, for manual cleanup.
 - An anime's type cannot be switched between TV and movie while it has library files or unfinished downloads or imports.
+- The anime metadata type field is renamed media_kind in the API and MCP; scripts and assistants that use it need the new name.
