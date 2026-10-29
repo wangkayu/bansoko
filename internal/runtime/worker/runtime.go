@@ -56,6 +56,14 @@ type OneShotAdmissionStore interface {
 	AdmitOneShotEffect(ctx context.Context, claim workitems.Claim) (workitems.AdmissionLease, error)
 }
 
+// OneShotResumeStore is the optional extension for a claim the one-shot gate
+// refused: a marker blocked while its chain's work was live returns to
+// running and the claim returns to available without using an attempt. It
+// reports false for every other refusal, which keeps the non-mutating abort.
+type OneShotResumeStore interface {
+	ResumeRefusedOneShotClaim(ctx context.Context, claim workitems.Claim) (bool, error)
+}
+
 // ManagedAnimeAdmissionStore fences every persistent-owner handler before it
 // runs. Retirement serializes against this gate; the store records admission
 // only for kinds that can perform an external effect.
@@ -79,6 +87,7 @@ type oneShotPostTransitionFinisher interface {
 
 var (
 	_ OneShotAdmissionStore         = (*workitems.Store)(nil)
+	_ OneShotResumeStore            = (*workitems.Store)(nil)
 	_ ManagedAnimeAdmissionStore    = (*workitems.Store)(nil)
 	_ OneShotTransitionStore        = (*workitems.Store)(nil)
 	_ postTransitionFinisher        = (*workitems.Store)(nil)
@@ -636,6 +645,22 @@ func (r *Runtime) executeRegistered(handlerCtx context.Context, cancel context.C
 		lease, gateErr := admissionStore.AdmitOneShotEffect(handlerCtx, claim)
 		if gateErr != nil {
 			if errors.Is(gateErr, workitems.ErrOneShotReclaiming) {
+				// A marker blocked while this chain's work was live resumes,
+				// and the claim returns without using an attempt.
+				if resumer, ok := r.store.(OneShotResumeStore); ok {
+					resumed, resumeErr := resumer.ResumeRefusedOneShotClaim(handlerCtx, claim)
+					if resumeErr != nil {
+						r.logEvent(handlerCtx, runtimeError, workerEvent(claim, "one-shot blocked-chain resume failed; claim left for normal recovery", "oneshot_gate", "one_shot_resume_failed", "one_shot_resume_error", true))
+						return
+					}
+					if resumed {
+						event := workerEvent(claim, "one-shot acquisition resumed; claim returned without using an attempt", "oneshot_gate", "one_shot_resumed", "", true)
+						event.Outcome = "info"
+						event.Retryable = nil
+						r.logEvent(handlerCtx, runtimeInfo, event)
+						return
+					}
+				}
 				// ONE_SHOT_RECLAIMING: non-mutating abort. The worker abandons
 				// the claim — no Retry (ordinary Retry mutates the WorkItem
 				// row), no owner write, no external effect. The item stays

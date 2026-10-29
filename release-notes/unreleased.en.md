@@ -52,6 +52,7 @@
 - File verification checks each file's size and location instead of reading the whole file, so verifying a large box set no longer takes longer as it grows.
 - Each video in a box set gets its own media check for resolution, codec and similar details, so later videos no longer lose them to a shared time limit.
 - With an empty subtitle suffix template, releases that include subtitles no longer fail while their files are prepared for import.
+- One-shot downloads no longer get finalized prematurely after file verification while import planning is still pending; records already stuck in progress resume planning and file import automatically after upgrading.
 
 ## Important
 

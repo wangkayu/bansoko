@@ -23,6 +23,22 @@ type oneShotStore struct {
 	lastLease     workitems.AdmissionLease
 	lastDisp      workitems.EffectDisposition
 	leaseToReturn workitems.AdmissionLease
+	claimDue      *workitems.Claim
+	resumeResult  bool
+	resumeErr     error
+	resumeCount   atomic.Int64
+}
+
+func (s *oneShotStore) ClaimDue(ctx context.Context, workerID string, kinds []string, lease time.Duration) (workitems.Claim, error) {
+	if s.claimDue != nil {
+		return *s.claimDue, nil
+	}
+	return s.fakeRuntimeStore.ClaimDue(ctx, workerID, kinds, lease)
+}
+
+func (s *oneShotStore) ResumeRefusedOneShotClaim(ctx context.Context, claim workitems.Claim) (bool, error) {
+	s.resumeCount.Add(1)
+	return s.resumeResult, s.resumeErr
 }
 
 func (s *oneShotStore) AdmitOneShotEffect(ctx context.Context, claim workitems.Claim) (workitems.AdmissionLease, error) {
@@ -158,6 +174,68 @@ func TestOneShotReclaimingAbandonsClaimWithoutMutation(t *testing.T) {
 	}
 	if _, _, ok := capture.event("one_shot_reclaiming"); !ok {
 		t.Fatal("structured ONE_SHOT_RECLAIMING record was not emitted")
+	}
+}
+
+func TestOneShotGateRefusalResumeSkipsRuntimeHandler(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		resumed    bool
+		resumeErr  error
+		wantReason string
+	}{
+		{name: "resumed", resumed: true, wantReason: "one_shot_resumed"},
+		{name: "resume_error", resumeErr: errors.New("resume unavailable"), wantReason: "one_shot_resume_failed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &oneShotStore{fakeRuntimeStore: *newFakeRuntimeStore(), gateErr: workitems.ErrOneShotReclaiming, resumeResult: tc.resumed, resumeErr: tc.resumeErr}
+			handlerCalled := atomic.Bool{}
+			handler := HandlerFunc(func(ctx context.Context, claim workitems.Claim) (Outcome, error) {
+				handlerCalled.Store(true)
+				return Finish(workitems.StateSucceeded, workitems.OwnerResult{}, nil), nil
+			})
+			rt, capture := newOneShotRuntime(t, store, handler)
+			rt.execute(context.Background(), oneShotClaim(), rt.registry.MustGet("qb_submit"))
+			if handlerCalled.Load() || store.resumeCount.Load() != 1 {
+				t.Fatalf("handler=%t resume calls=%d", handlerCalled.Load(), store.resumeCount.Load())
+			}
+			if store.finish1Count.Load() != 0 || store.retry1Count.Load() != 0 {
+				t.Fatal("resume path mutated the owner")
+			}
+			if _, _, ok := capture.event(tc.wantReason); !ok {
+				t.Fatalf("structured %s record was not emitted", tc.wantReason)
+			}
+		})
+	}
+}
+
+func TestWorkerOneShotGateRefusalResume(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		resumeErr error
+	}{
+		{name: "resumed"},
+		{name: "resume_error", resumeErr: errors.New("resume unavailable")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			claim := oneShotClaim()
+			store := &oneShotStore{fakeRuntimeStore: *newFakeRuntimeStore(), gateErr: workitems.ErrOneShotReclaiming, claimDue: &claim, resumeResult: true, resumeErr: tc.resumeErr}
+			handlerCalled := atomic.Bool{}
+			worker := NewWorker(store, "worker-oneshot-resume", time.Minute)
+			if err := worker.Register("qb_submit", HandlerFunc(func(ctx context.Context, claim workitems.Claim) (Outcome, error) {
+				handlerCalled.Store(true)
+				return Finish(workitems.StateSucceeded, workitems.OwnerResult{}, nil), nil
+			})); err != nil {
+				t.Fatal(err)
+			}
+			handled, err := worker.RunOnce(context.Background())
+			if !handled || !errors.Is(err, tc.resumeErr) || handlerCalled.Load() || store.resumeCount.Load() != 1 {
+				t.Fatalf("handled=%t err=%v handler=%t resume calls=%d", handled, err, handlerCalled.Load(), store.resumeCount.Load())
+			}
+			if store.finish1Count.Load() != 0 || store.retry1Count.Load() != 0 {
+				t.Fatal("resume path mutated the owner")
+			}
+		})
 	}
 }
 

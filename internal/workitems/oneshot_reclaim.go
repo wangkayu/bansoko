@@ -9,8 +9,10 @@ package workitems
 // lock order with the effect gate and every downstream insertion; it proceeds
 // only when the admission ledger is empty, active_effect_count=0, no related
 // WorkItem is available or leased, and the anchored owner graph validates by
-// exact identity. Anything unprovable leaves cleanup_blocked with a bounded
-// reason; failed rechecks extend the deadline within the hard maximum.
+// exact identity. A running root or live chain work retains the current
+// running/pending marker without a write. Once the chain is terminal, anything
+// unprovable leaves cleanup_blocked with a bounded reason; failed rechecks
+// extend the deadline within the hard maximum.
 
 import (
 	"context"
@@ -46,12 +48,19 @@ const (
 // created. It is the only verdict allowed with a NULL marker download task.
 const oneShotAdoptedReleaseVerdict = "adopted_existing"
 
+// errOneShotChainRunning reports a download chain whose acquisition root is
+// still running. The root, not the marker, owns that chain's progress (a
+// running root always holds work, migration 091), so the chain is not
+// terminal and the drain leaves the marker running without a write.
+var errOneShotChainRunning = errors.New("the acquisition root is still running")
+
 // OneShotReclaimResult summarizes one bounded RunPass pass.
 type OneShotReclaimResult struct {
 	Drained   int // running -> reclaim_pending
 	Blocked   int // proof failures -> cleanup_blocked (or deadline extended)
 	Reclaimed int // reclaim_pending -> reclaiming -> cleaned
 	Rechecked int // cleanup_blocked rechecks evaluated
+	Revived   int // cleanup_blocked markers whose chain was still open -> running
 	Purged    int // cleaned markers physically deleted after retention
 }
 
@@ -174,8 +183,8 @@ func NewOneShotReclaimService(db *sql.DB, logger observabilityport.RuntimeLogger
 }
 
 // RunPass executes one bounded pass: drain terminal chains out of running,
-// reclaim due reclaim_pending markers, recheck due cleanup_blocked markers,
-// and purge expired cleaned markers.
+// reclaim due reclaim_pending markers, resume cleanup_blocked markers whose
+// chain is still open and recheck due ones, and purge expired cleaned markers.
 func (s *OneShotReclaimService) RunPass(ctx context.Context) (OneShotReclaimResult, error) {
 	var result OneShotReclaimResult
 	drained, blocked, err := s.drainCandidates(ctx)
@@ -192,12 +201,13 @@ func (s *OneShotReclaimService) RunPass(ctx context.Context) (OneShotReclaimResu
 	result.Reclaimed = reclaimed
 	result.Blocked += blocked
 
-	rechecked, extended, err := s.recheckBlocked(ctx)
+	rechecked, extended, revived, err := s.recheckBlocked(ctx)
 	if err != nil {
 		return result, err
 	}
 	result.Rechecked = rechecked
 	result.Blocked += extended
+	result.Revived = revived
 
 	purged, err := s.purgeCleaned(ctx)
 	if err != nil {
@@ -306,10 +316,13 @@ func (s *OneShotReclaimService) drainOne(ctx context.Context, markerID string) (
 		return "blocked", nil
 	}
 	outcome, outcomeErr := s.evaluateChainTx(ctx, tx, graph)
+	if errors.Is(outcomeErr, errOneShotChainRunning) {
+		return "", nil // the running root owns progress; retry next pass
+	}
 	if outcomeErr != nil {
 		// Unprovable quiescence or unsettled owners: keep running when work
 		// may still be live, otherwise block with the bounded reason.
-		live, liveErr := s.hasLiveWorkItemsTx(ctx, tx, graph)
+		live, liveErr := s.chainLiveTx(ctx, tx, graph)
 		if liveErr != nil {
 			return "", liveErr
 		}
@@ -325,6 +338,14 @@ func (s *OneShotReclaimService) drainOne(ctx context.Context, markerID string) (
 		s.logEvent(ctx, "oneshot_drain", "cleanup_blocked", "one-shot chain blocked: "+boundedText(outcomeErr.Error(), 160))
 		return "blocked", nil
 	}
+	// Live chain work keeps the marker running whatever the ledger holds: an
+	// admission lease of live work settles with that work. Only a ledger
+	// that no live work can settle blocks the marker.
+	if live, liveErr := s.chainLiveTx(ctx, tx, graph); liveErr != nil {
+		return "", liveErr
+	} else if live {
+		return "", nil
+	}
 	if len(row.Leases) > 0 {
 		if _, updateErr := s.blockMarkerWithOutcomeTx(ctx, tx, markerID, "admission_ledger_not_drained", "the admission ledger must be empty before reclamation", outcome.outcome); updateErr != nil {
 			return "", updateErr
@@ -334,11 +355,6 @@ func (s *OneShotReclaimService) drainOne(ctx context.Context, markerID string) (
 		}
 		s.logEvent(ctx, "oneshot_drain", "cleanup_blocked", "one-shot chain terminal but admission ledger is not drained")
 		return "blocked", nil
-	}
-	if live, liveErr := s.hasLiveWorkItemsTx(ctx, tx, graph); liveErr != nil {
-		return "", liveErr
-	} else if live {
-		return "", nil
 	}
 	if err := s.setTerminalPendingTx(ctx, tx, markerID, outcome); err != nil {
 		return "", err
@@ -421,6 +437,17 @@ func (s *OneShotReclaimService) reclaimOne(ctx context.Context, markerID string)
 		}
 	}
 	if _, outcomeErr := s.evaluateChainTx(ctx, tx, graph); outcomeErr != nil {
+		if !errors.Is(outcomeErr, errOneShotChainRunning) {
+			live, liveErr := s.chainLiveTx(ctx, tx, graph)
+			if liveErr != nil {
+				return false, liveErr
+			}
+			if live {
+				return false, nil
+			}
+		} else {
+			return false, nil
+		}
 		if _, updateErr := s.blockMarkerTx(ctx, tx, markerID, "chain_unsettled", boundedText(outcomeErr.Error(), maxOneShotReason)); updateErr != nil {
 			return false, updateErr
 		}
@@ -428,6 +455,11 @@ func (s *OneShotReclaimService) reclaimOne(ctx context.Context, markerID string)
 			return false, fmt.Errorf("commit one-shot cleanup_blocked: %w", commitErr)
 		}
 		s.logEvent(ctx, "oneshot_reclaim", "cleanup_blocked", "reclamation blocked: "+boundedText(outcomeErr.Error(), 160))
+		return false, nil
+	}
+	if live, liveErr := s.chainLiveTx(ctx, tx, graph); liveErr != nil {
+		return false, liveErr
+	} else if live {
 		return false, nil
 	}
 	if len(row.Leases) > 0 {
@@ -440,6 +472,13 @@ func (s *OneShotReclaimService) reclaimOne(ctx context.Context, markerID string)
 		return false, nil
 	}
 	if outcomeErr := s.proveQuiescentTx(ctx, tx, graph); outcomeErr != nil {
+		live, liveErr := s.chainLiveTx(ctx, tx, graph)
+		if liveErr != nil {
+			return false, liveErr
+		}
+		if live {
+			return false, nil
+		}
 		if _, updateErr := s.blockMarkerTx(ctx, tx, markerID, "quiescence_unproven", boundedText(outcomeErr.Error(), maxOneShotReason)); updateErr != nil {
 			return false, updateErr
 		}
@@ -500,46 +539,75 @@ func (s *OneShotReclaimService) reclaimOne(ctx context.Context, markerID string)
 	return true, nil
 }
 
-// recheckBlocked re-evaluates due cleanup_blocked markers. A passing proof
-// returns the marker to reclaim_pending with a fresh deadline; a failing
-// proof extends the deadline within the hard maximum from terminal_at.
-func (s *OneShotReclaimService) recheckBlocked(ctx context.Context) (rechecked, extended int, err error) {
+// recheckBlocked processes selected cleanup_blocked markers. A marker whose
+// chain is still open (blocked while its work was live) returns to running;
+// for a due marker, a passing proof returns it to reclaim_pending with a fresh
+// deadline and a failing proof extends the deadline within the hard maximum
+// from terminal_at.
+func (s *OneShotReclaimService) recheckBlocked(ctx context.Context) (rechecked, extended, revived int, err error) {
 	ids, err := s.oneShotDueIDs(ctx, []string{OneShotStateCleanupBlocked}, true)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	for _, id := range ids {
-		passed, blockErr := s.recheckOne(ctx, id)
+		status, blockErr := s.recheckOne(ctx, id)
 		if blockErr != nil {
-			return rechecked, extended, blockErr
+			return rechecked, extended, revived, blockErr
 		}
-		rechecked++
-		if passed {
-			// counted under reclaimed-style progress, not an extension
-			continue
+		switch status {
+		case "revived":
+			revived++
+		case "passed":
+			rechecked++
+		case "extended":
+			rechecked++
+			extended++
 		}
-		extended++
 	}
-	return rechecked, extended, nil
+	return rechecked, extended, revived, nil
 }
 
-func (s *OneShotReclaimService) recheckOne(ctx context.Context, markerID string) (bool, error) {
+func (s *OneShotReclaimService) recheckOne(ctx context.Context, markerID string) (string, error) {
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
-		return false, fmt.Errorf("begin one-shot recheck: %w", err)
+		return "", fmt.Errorf("begin one-shot recheck: %w", err)
 	}
 	defer tx.Rollback()
 	row, err := lockOneShotMarkerForUpdateTx(ctx, tx, markerID)
 	if errors.Is(err, ErrOneShotMarkerMissing) {
-		return false, nil
+		return "", nil
 	}
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	if row.State != OneShotStateCleanupBlocked {
-		return false, nil
+		return "", nil
 	}
 	graph, graphErr := s.loadAnchorsTx(ctx, tx, markerID)
+	if graphErr == nil && graph.downloadTaskID != "" {
+		// A drain that read a chain as terminal while its root still ran
+		// blocked it with live work behind the gate. Such a chain resumes:
+		// the marker returns to running and the attempts the gate refused are
+		// given back, so the chain completes instead of exhausting its work.
+		reply, err := resumeBlockedOneShotChainTx(ctx, tx, markerID, nil)
+		if err != nil {
+			return "", err
+		}
+		if reply.Resumed {
+			if err := tx.Commit(); err != nil {
+				return "", fmt.Errorf("commit one-shot resume: %w", err)
+			}
+			s.logEvent(ctx, "oneshot_recheck", "running", fmt.Sprintf("cleanup_blocked chain was still open; marker returned to running (plans=%d refunded_attempts=%d)", reply.Plans, reply.Refunded))
+			return "revived", nil
+		}
+	}
+	var due bool
+	if err := tx.QueryRowContext(ctx, `SELECT retention_until <= CURRENT_TIMESTAMP FROM one_shot_acquisitions WHERE id=$1`, markerID).Scan(&due); err != nil {
+		return "", fmt.Errorf("read one-shot recheck deadline: %w", err)
+	}
+	if !due {
+		return "", nil // selected as open but cannot resume: recheck when due
+	}
 	if graphErr == nil {
 		// A marker may have become cleanup_blocked because an owner was still
 		// settling. Rechecking the ledger and live WorkItems alone is not enough:
@@ -549,25 +617,25 @@ func (s *OneShotReclaimService) recheckOne(ctx context.Context, markerID string)
 		if evaluateErr == nil && len(row.Leases) == 0 && s.proveQuiescentTx(ctx, tx, graph) == nil {
 			deadline, err := s.reclaimDeadlineTx(ctx, tx)
 			if err != nil {
-				return false, err
+				return "", err
 			}
 			result, err := persistence.New(tx).UnblockOneShotMarker(ctx, persistence.UnblockOneShotMarkerParams{
 				RetentionUntil: sql.NullTime{Time: deadline, Valid: true},
 				MarkerID:       markerID,
 			})
 			if err != nil {
-				return false, fmt.Errorf("unblock one-shot marker: %w", err)
+				return "", fmt.Errorf("unblock one-shot marker: %w", err)
 			}
 			if affected, err := result.RowsAffected(); err != nil {
-				return false, fmt.Errorf("read unblocked one-shot marker result: %w", err)
+				return "", fmt.Errorf("read unblocked one-shot marker result: %w", err)
 			} else if affected != 1 {
-				return false, ErrOneShotMarkerMissing
+				return "", ErrOneShotMarkerMissing
 			}
 			if err := tx.Commit(); err != nil {
-				return false, fmt.Errorf("commit one-shot recheck: %w", err)
+				return "", fmt.Errorf("commit one-shot recheck: %w", err)
 			}
 			s.logEvent(ctx, "oneshot_recheck", "reclaim_pending", "cleanup_blocked recheck passed; marker returned to reclaim_pending")
-			return true, nil
+			return "passed", nil
 		}
 	}
 	// Failed recheck: extend the deadline within the hard maximum.
@@ -577,18 +645,50 @@ func (s *OneShotReclaimService) recheckOne(ctx context.Context, markerID string)
 		MarkerID:         markerID,
 	})
 	if err != nil {
-		return false, fmt.Errorf("extend one-shot cleanup_blocked deadline: %w", err)
+		return "", fmt.Errorf("extend one-shot cleanup_blocked deadline: %w", err)
 	}
 	if affected, err := result.RowsAffected(); err != nil {
-		return false, fmt.Errorf("read one-shot deadline extension result: %w", err)
+		return "", fmt.Errorf("read one-shot deadline extension result: %w", err)
 	} else if affected != 1 {
-		return false, ErrOneShotMarkerMissing
+		return "", ErrOneShotMarkerMissing
 	}
 	if err := tx.Commit(); err != nil {
-		return false, fmt.Errorf("commit one-shot recheck extension: %w", err)
+		return "", fmt.Errorf("commit one-shot recheck extension: %w", err)
 	}
 	s.logEvent(ctx, "oneshot_recheck", "deadline_extended", "cleanup_blocked recheck failed; deadline extended within the hard maximum")
-	return false, nil
+	return "extended", nil
+}
+
+// oneShotResumeReply is the reply of one_shot_resume_blocked_chain.
+type oneShotResumeReply struct {
+	Resumed       bool   `json:"resumed"`
+	Reason        string `json:"reason"`
+	Plans         int    `json:"plans"`
+	Refunded      int    `json:"refunded"`
+	HeldSeconds   int64  `json:"held_seconds"`
+	ClaimReturned bool   `json:"claim_returned"`
+}
+
+// resumeBlockedOneShotChainTx resumes a cleanup_blocked marker whose chain is
+// still open (migration 104). The caller holds the marker lock and has
+// validated the anchors. With a refused claim, that claim returns to available
+// without using an attempt in the same transaction. A marker that cannot
+// resume is left unchanged and the reply carries the reason.
+func resumeBlockedOneShotChainTx(ctx context.Context, tx *sql.Tx, markerID string, refused *Claim) (oneShotResumeReply, error) {
+	params := persistence.ResumeBlockedOneShotChainParams{MarkerID: markerID}
+	if refused != nil {
+		params.WorkItemID = sql.NullString{String: refused.ID, Valid: true}
+		params.FencingToken = sql.NullInt64{Int64: refused.FencingToken, Valid: true}
+	}
+	raw, err := persistence.New(tx).ResumeBlockedOneShotChain(ctx, params)
+	if err != nil {
+		return oneShotResumeReply{}, fmt.Errorf("resume blocked one-shot chain: %w", err)
+	}
+	var reply oneShotResumeReply
+	if err := json.Unmarshal(raw, &reply); err != nil {
+		return oneShotResumeReply{}, fmt.Errorf("decode one-shot resume reply: %w", err)
+	}
+	return reply, nil
 }
 
 // purgeCleaned physically deletes cleaned markers whose reclaim window has passed.
@@ -718,9 +818,10 @@ type oneShotOutcome struct {
 	failedStage string
 }
 
-// evaluateChainTx proves OSA-10 completion: DownloadTask terminal, every
-// created Artifact verified-or-known-failure, every created FileOperation
-// completed-or-known-failure. qB disposition knowledge is guaranteed by the
+// evaluateChainTx proves OSA-10 completion: the acquisition root no longer
+// running, DownloadTask terminal, every created Artifact
+// verified-or-known-failure, every created post-processing plan settled, every
+// created FileOperation completed-or-known-failure. qB disposition knowledge is guaranteed by the
 // drained admission ledger (every effect settled confirmed/no_external_effect).
 func (s *OneShotReclaimService) evaluateChainTx(ctx context.Context, tx *sql.Tx, graph oneShotGraph) (oneShotOutcome, error) {
 	if graph.downloadTaskID == "" {
@@ -735,6 +836,16 @@ func (s *OneShotReclaimService) evaluateChainTx(ctx context.Context, tx *sql.Tx,
 			return oneShotOutcome{}, err
 		}
 		return oneShotOutcome{outcome: "succeeded", reasonCode: "one_shot_completed", reason: "one-shot acquisition adopted the existing exact target set"}, nil
+	}
+	// A download chain is terminal only once its acquisition root is: until
+	// the root settles, a verified artifact can still have a queued plan that
+	// has not committed its file operations yet.
+	var rootRunning bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM acquisitions r WHERE r.id IN (`+oneShotRootsQuery+`) AND r.state='running')`, graph.markerID).Scan(&rootRunning); err != nil {
+		return oneShotOutcome{}, fmt.Errorf("read one-shot acquisition roots: %w", err)
+	}
+	if rootRunning {
+		return oneShotOutcome{}, errOneShotChainRunning
 	}
 	task, err := persistence.New(tx).GetAnchoredDownloadTaskState(ctx, graph.downloadTaskID)
 	if err != nil {
@@ -824,9 +935,9 @@ func (s *OneShotReclaimService) firstAnchoredStageFailureTx(ctx context.Context,
 	return nil, nil
 }
 
-// assertOwnersSettledTx verifies every anchored Artifact and FileOperation is
-// terminal; a non-terminal owner without live work is an anomaly that blocks
-// reclamation instead of guessing.
+// assertOwnersSettledTx verifies every anchored Artifact, post-processing plan
+// and FileOperation is terminal; a non-terminal owner without live work is an
+// anomaly that blocks reclamation instead of guessing.
 func (s *OneShotReclaimService) assertOwnersSettledTx(ctx context.Context, tx *sql.Tx, graph oneShotGraph) error {
 	artifactRows, err := persistence.New(tx).ListAnchoredArtifactStates(ctx, graph.artifactIDs)
 	if err != nil {
@@ -835,6 +946,15 @@ func (s *OneShotReclaimService) assertOwnersSettledTx(ctx context.Context, tx *s
 	for _, row := range artifactRows {
 		if row.State != "verified" && row.State != "failed" {
 			return fmt.Errorf("artifact %s is still %q", row.ID, row.State)
+		}
+	}
+	planRows, err := persistence.New(tx).ListAnchoredPlanStates(ctx, graph.artifactIDs)
+	if err != nil {
+		return fmt.Errorf("read anchored post-processing plans: %w", err)
+	}
+	for _, row := range planRows {
+		if row.State != "succeeded" && row.State != "failed" {
+			return fmt.Errorf("post-processing plan %s is still %q", row.ID, row.State)
 		}
 	}
 	if len(graph.fileOpIDs) == 0 {
@@ -864,6 +984,22 @@ func (s *OneShotReclaimService) proveQuiescentTx(ctx context.Context, tx *sql.Tx
 		return errors.New("a related WorkItem is still available or leased")
 	}
 	return nil
+}
+
+// chainLiveTx reports live work anywhere in the marker's chain: the anchored
+// owners' WorkItems, or the running root and root work that
+// one_shot_chain_open reads. It is the predicate a blocked marker resumes on,
+// so the drain never blocks a marker a later pass would resume.
+func (s *OneShotReclaimService) chainLiveTx(ctx context.Context, tx *sql.Tx, graph oneShotGraph) (bool, error) {
+	live, err := s.hasLiveWorkItemsTx(ctx, tx, graph)
+	if err != nil || live {
+		return live, err
+	}
+	open, err := persistence.New(tx).OneShotChainOpen(ctx, graph.markerID)
+	if err != nil {
+		return false, fmt.Errorf("check open one-shot chain: %w", err)
+	}
+	return open, nil
 }
 
 func (s *OneShotReclaimService) hasLiveWorkItemsTx(ctx context.Context, tx *sql.Tx, graph oneShotGraph) (bool, error) {

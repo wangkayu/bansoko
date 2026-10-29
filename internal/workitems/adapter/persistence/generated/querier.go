@@ -334,13 +334,18 @@ type Querier interface {
 	//         WHERE af.artifact_id = ANY($2::text[])
 	//     )
 	ListCorrelatedAnchoredFileOperationsJSON(ctx context.Context, arg ListCorrelatedAnchoredFileOperationsJSONParams) (string, error)
-	//ListDueCleanupBlockedOneShotMarkers
+	// A due marker is rechecked; a marker whose chain is still open (a running
+	// root or live chain work) is selected at once, ahead of due ones, so a chain
+	// blocked while its work was live resumes on the next pass.
 	//
-	//  SELECT id
-	//  FROM one_shot_acquisitions
-	//  WHERE state = 'cleanup_blocked'
-	//    AND retention_until <= CURRENT_TIMESTAMP
-	//  ORDER BY retention_until NULLS LAST, id
+	//  SELECT marker.id
+	//  FROM one_shot_acquisitions marker
+	//  CROSS JOIN LATERAL (
+	//      SELECT marker.download_task_id IS NOT NULL AND public.one_shot_chain_open(marker.id) AS chain_open
+	//  ) open_chain
+	//  WHERE marker.state = 'cleanup_blocked'
+	//    AND (marker.retention_until <= CURRENT_TIMESTAMP OR open_chain.chain_open)
+	//  ORDER BY open_chain.chain_open DESC, marker.retention_until NULLS LAST, marker.id
 	//  LIMIT $1
 	ListDueCleanupBlockedOneShotMarkers(ctx context.Context, batchSize int32) ([]string, error)
 	//ListDueOneShotMarkers
@@ -433,6 +438,10 @@ type Querier interface {
 	//
 	//  SELECT public.work_item_merge($1::text, $2::text, $3::text, $4::text, $5::text, $6::integer, $7::jsonb, $8::bigint, $9::double precision, $10::smallint) AS id
 	MergeWorkItem(ctx context.Context, arg MergeWorkItemParams) (string, error)
+	//OneShotChainOpen
+	//
+	//  SELECT public.one_shot_chain_open($1::text)::boolean AS chain_open
+	OneShotChainOpen(ctx context.Context, markerID string) (bool, error)
 	//PatchOneShotWorkItemOwnerVersion
 	//
 	//  SELECT public.work_item_patch_one_shot_owner_version($1::bigint, $2::text)
@@ -498,6 +507,10 @@ type Querier interface {
 	//  LEFT JOIN download_tasks AS dt ON dt.id = m.download_task_id AND dt.release_id = r.id
 	//  WHERE m.id = $1
 	ResolveOneShotAnchors(ctx context.Context, markerID string) (ResolveOneShotAnchorsRow, error)
+	//ResumeBlockedOneShotChain
+	//
+	//  SELECT public.one_shot_resume_blocked_chain($1::text, $2::text, $3::bigint)::jsonb AS reply
+	ResumeBlockedOneShotChain(ctx context.Context, arg ResumeBlockedOneShotChainParams) (json.RawMessage, error)
 	//ReturnWorkItemToAvailable
 	//
 	//  SELECT public.work_item_return_available($1::double precision, $2::bigint, $3::text, $4::text, $5::text, $6::bigint)::bigint AS affected

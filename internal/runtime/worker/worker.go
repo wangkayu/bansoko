@@ -318,8 +318,15 @@ func (w *Worker) RunOnce(ctx context.Context) (handled bool, err error) {
 		}
 		admitted, gateErr := gate.AdmitOneShotEffect(ctx, claim)
 		if errors.Is(gateErr, workitems.ErrOneShotReclaiming) {
-			// Non-mutating abort, as in the Runtime: the item stays leased
-			// for normal lease expiry/reclaim.
+			// As in the Runtime: a marker blocked while this chain's work was
+			// live resumes and the claim returns without using an attempt;
+			// any other refusal is a non-mutating abort and the item stays
+			// leased for normal lease expiry/reclaim.
+			if resumer, ok := w.store.(OneShotResumeStore); ok {
+				if _, err := resumer.ResumeRefusedOneShotClaim(ctx, claim); err != nil {
+					return true, err
+				}
+			}
 			return true, nil
 		}
 		if gateErr != nil {

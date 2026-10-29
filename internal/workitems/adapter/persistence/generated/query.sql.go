@@ -1171,21 +1171,29 @@ func (q *Queries) ListCorrelatedAnchoredFileOperationsJSON(ctx context.Context, 
 }
 
 const listDueCleanupBlockedOneShotMarkers = `-- name: ListDueCleanupBlockedOneShotMarkers :many
-SELECT id
-FROM one_shot_acquisitions
-WHERE state = 'cleanup_blocked'
-  AND retention_until <= CURRENT_TIMESTAMP
-ORDER BY retention_until NULLS LAST, id
+SELECT marker.id
+FROM one_shot_acquisitions marker
+CROSS JOIN LATERAL (
+    SELECT marker.download_task_id IS NOT NULL AND public.one_shot_chain_open(marker.id) AS chain_open
+) open_chain
+WHERE marker.state = 'cleanup_blocked'
+  AND (marker.retention_until <= CURRENT_TIMESTAMP OR open_chain.chain_open)
+ORDER BY open_chain.chain_open DESC, marker.retention_until NULLS LAST, marker.id
 LIMIT $1
 `
 
-// ListDueCleanupBlockedOneShotMarkers
+// A due marker is rechecked; a marker whose chain is still open (a running
+// root or live chain work) is selected at once, ahead of due ones, so a chain
+// blocked while its work was live resumes on the next pass.
 //
-//	SELECT id
-//	FROM one_shot_acquisitions
-//	WHERE state = 'cleanup_blocked'
-//	  AND retention_until <= CURRENT_TIMESTAMP
-//	ORDER BY retention_until NULLS LAST, id
+//	SELECT marker.id
+//	FROM one_shot_acquisitions marker
+//	CROSS JOIN LATERAL (
+//	    SELECT marker.download_task_id IS NOT NULL AND public.one_shot_chain_open(marker.id) AS chain_open
+//	) open_chain
+//	WHERE marker.state = 'cleanup_blocked'
+//	  AND (marker.retention_until <= CURRENT_TIMESTAMP OR open_chain.chain_open)
+//	ORDER BY open_chain.chain_open DESC, marker.retention_until NULLS LAST, marker.id
 //	LIMIT $1
 func (q *Queries) ListDueCleanupBlockedOneShotMarkers(ctx context.Context, batchSize int32) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, listDueCleanupBlockedOneShotMarkers, batchSize)
@@ -1623,6 +1631,20 @@ func (q *Queries) MergeWorkItem(ctx context.Context, arg MergeWorkItemParams) (s
 	return id, err
 }
 
+const oneShotChainOpen = `-- name: OneShotChainOpen :one
+SELECT public.one_shot_chain_open($1::text)::boolean AS chain_open
+`
+
+// OneShotChainOpen
+//
+//	SELECT public.one_shot_chain_open($1::text)::boolean AS chain_open
+func (q *Queries) OneShotChainOpen(ctx context.Context, markerID string) (bool, error) {
+	row := q.db.QueryRowContext(ctx, oneShotChainOpen, markerID)
+	var chain_open bool
+	err := row.Scan(&chain_open)
+	return chain_open, err
+}
+
 const patchOneShotWorkItemOwnerVersion = `-- name: PatchOneShotWorkItemOwnerVersion :exec
 SELECT public.work_item_patch_one_shot_owner_version($1::bigint, $2::text)
 `
@@ -1836,6 +1858,26 @@ func (q *Queries) ResolveOneShotAnchors(ctx context.Context, markerID string) (R
 		&i.Verdict,
 	)
 	return i, err
+}
+
+const resumeBlockedOneShotChain = `-- name: ResumeBlockedOneShotChain :one
+SELECT public.one_shot_resume_blocked_chain($1::text, $2::text, $3::bigint)::jsonb AS reply
+`
+
+type ResumeBlockedOneShotChainParams struct {
+	MarkerID     string
+	WorkItemID   sql.NullString
+	FencingToken sql.NullInt64
+}
+
+// ResumeBlockedOneShotChain
+//
+//	SELECT public.one_shot_resume_blocked_chain($1::text, $2::text, $3::bigint)::jsonb AS reply
+func (q *Queries) ResumeBlockedOneShotChain(ctx context.Context, arg ResumeBlockedOneShotChainParams) (json.RawMessage, error) {
+	row := q.db.QueryRowContext(ctx, resumeBlockedOneShotChain, arg.MarkerID, arg.WorkItemID, arg.FencingToken)
+	var reply json.RawMessage
+	err := row.Scan(&reply)
+	return reply, err
 }
 
 const returnWorkItemToAvailable = `-- name: ReturnWorkItemToAvailable :one

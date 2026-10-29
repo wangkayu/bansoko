@@ -283,8 +283,9 @@ func TestRunPassDrainsCompleteTerminalChainToReclaimPending(t *testing.T) {
 	}
 	const markerID = "m-drain-full"
 	files := createOneShotChain(t, db, markerID, []string{"full.mkv"})
-	insertOneShotFileOperation(t, db, "fo-"+markerID, "art-"+markerID, files[0], "corr-"+markerID)
+	failOneShotFileOperation(t, db, "fo-"+markerID, "art-"+markerID, files[0], "/library/full.mkv")
 	insertOneShotMarker(t, db, markerID, OneShotStateRunning, nil)
+	settleOneShotRoot(t, db, markerID)
 
 	result, err := service.RunPass(context.Background())
 	if err != nil {
@@ -294,8 +295,8 @@ func TestRunPassDrainsCompleteTerminalChainToReclaimPending(t *testing.T) {
 		t.Fatalf("RunPass result = %+v, want drained=1 blocked=0", result)
 	}
 	state, outcome, reasonCode := oneShotMarkerTerminalState(t, db, markerID)
-	if state != OneShotStateReclaimPending || outcome != "succeeded" || reasonCode != "one_shot_completed" {
-		t.Fatalf("marker = (%s, %s, %s), want (reclaim_pending, succeeded, one_shot_completed)", state, outcome, reasonCode)
+	if state != OneShotStateReclaimPending || outcome != "failed" || reasonCode != "one_shot_failed" {
+		t.Fatalf("marker = (%s, %s, %s), want (reclaim_pending, failed, one_shot_failed)", state, outcome, reasonCode)
 	}
 }
 
@@ -310,8 +311,9 @@ func TestRunPassTerminalizesCurrentAttemptWithMarkerProjection(t *testing.T) {
 	}
 	const markerID = "m-drain-attempt"
 	files := createOneShotChain(t, db, markerID, []string{"attempt.mkv"})
-	insertOneShotFileOperation(t, db, "fo-"+markerID, "art-"+markerID, files[0], "corr-"+markerID)
+	failOneShotFileOperation(t, db, "fo-"+markerID, "art-"+markerID, files[0], "/library/attempt.mkv")
 	insertOneShotMarker(t, db, markerID, OneShotStateRunning, nil)
+	settleOneShotRoot(t, db, markerID)
 	// The admission path creates the attempt row with the marker; direct test
 	// seeding reproduces exactly that pair.
 	if _, err := db.ExecContext(context.Background(), `
@@ -332,8 +334,8 @@ UPDATE one_shot_acquisitions SET current_attempt_id = 'attempt-'||$1 WHERE id = 
 		t.Fatalf("RunPass result = %+v, want drained=1 blocked=0", result)
 	}
 	state, outcome, reasonCode := oneShotMarkerTerminalState(t, db, markerID)
-	if state != OneShotStateReclaimPending || outcome != "succeeded" || reasonCode != "one_shot_completed" {
-		t.Fatalf("marker = (%s, %s, %s), want (reclaim_pending, succeeded, one_shot_completed)", state, outcome, reasonCode)
+	if state != OneShotStateReclaimPending || outcome != "failed" || reasonCode != "one_shot_failed" {
+		t.Fatalf("marker = (%s, %s, %s), want (reclaim_pending, failed, one_shot_failed)", state, outcome, reasonCode)
 	}
 	var attemptState, outcomeCode string
 	var terminalAt *time.Time
@@ -344,8 +346,8 @@ JOIN one_shot_acquisitions m ON m.current_attempt_id = a.id
 WHERE m.id = $1 AND a.sequence = 1`, markerID).Scan(&attemptState, &outcomeCode, &terminalAt); err != nil {
 		t.Fatalf("read current attempt: %v", err)
 	}
-	if attemptState != "succeeded" || outcomeCode != "one_shot_completed" || terminalAt == nil {
-		t.Fatalf("attempt = (%s, %s, %v), want terminal succeeded evidence", attemptState, outcomeCode, terminalAt)
+	if attemptState != "failed" || outcomeCode != "one_shot_failed" || terminalAt == nil {
+		t.Fatalf("attempt = (%s, %s, %v), want terminal failed evidence", attemptState, outcomeCode, terminalAt)
 	}
 }
 
@@ -360,6 +362,12 @@ func TestRunPassDrainsChainWithoutFileOperations(t *testing.T) {
 	const markerID = "m-drain-nofileops"
 	createOneShotChain(t, db, markerID, []string{"solo.mkv"})
 	insertOneShotMarker(t, db, markerID, OneShotStateRunning, nil)
+	if _, err := workItemFixtureDB(t).Exec(`
+INSERT INTO postprocessing_plans(id, artifact_id, acquisition_id, artifact_version, state, outcome_code, outcome_reason, input_digest)
+VALUES ('plan-'||$1, 'art-'||$1, 'acq-'||$1, 1, 'failed', 'plan_failed', 'fixture planning failure', 'sha256:'||repeat('b',64))`, markerID); err != nil {
+		t.Fatal(err)
+	}
+	settleOneShotRoot(t, db, markerID)
 
 	result, err := service.RunPass(context.Background())
 	if err != nil {
@@ -369,8 +377,8 @@ func TestRunPassDrainsChainWithoutFileOperations(t *testing.T) {
 		t.Fatalf("RunPass result = %+v, want drained=1 blocked=0", result)
 	}
 	state, outcome, reasonCode := oneShotMarkerTerminalState(t, db, markerID)
-	if state != OneShotStateReclaimPending || outcome != "succeeded" || reasonCode != "one_shot_completed" {
-		t.Fatalf("marker = (%s, %s, %s), want (reclaim_pending, succeeded, one_shot_completed)", state, outcome, reasonCode)
+	if state != OneShotStateReclaimPending || outcome != "failed" || reasonCode != "one_shot_failed" {
+		t.Fatalf("marker = (%s, %s, %s), want (reclaim_pending, failed, one_shot_failed)", state, outcome, reasonCode)
 	}
 }
 
@@ -771,6 +779,17 @@ func failOneShotFileOperation(t *testing.T, db *sql.DB, foID, artifactID string,
 	}
 }
 
+func settleOneShotRoot(t *testing.T, db *sql.DB, markerID string) {
+	t.Helper()
+	settler, err := settlement.NewSettlementService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, err := settler.SettleRoot(context.Background(), "acq-"+markerID); err != nil || status != "settled" {
+		t.Fatalf("settle one-shot root %s: status=%q err=%v", markerID, status, err)
+	}
+}
+
 // Contract: a cleanup_blocked marker whose anchored Artifact or FileOperation
 // is still non-terminal must never pass a recheck — even with an empty ledger
 // and no live WorkItem — and the owner graph must survive. Only after every
@@ -785,8 +804,20 @@ func TestRecheckOneBlocksOnNonTerminalOwnersAndRecovers(t *testing.T) {
 	const markerID = "m-recheck-owners"
 	files := createOneShotChain(t, db, markerID, []string{"recheck.mkv"})
 	foID := "fo-" + markerID
-	insertOneShotFileOperation(t, db, foID, "art-"+markerID, files[0], "corr-"+markerID)
+	failOneShotFileOperation(t, db, foID, "art-"+markerID, files[0], "/library/recheck.mkv")
+	settler, err := settlement.NewSettlementService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, err := settler.SettleRoot(context.Background(), "acq-"+markerID); err != nil || status != "settled" {
+		t.Fatalf("settle recheck root: status=%q err=%v", status, err)
+	}
 	insertOneShotMarker(t, db, markerID, OneShotStateCleanupBlocked, oneShotReclaimAt(time.Now().Add(-time.Hour)))
+	if _, err := db.Exec(`UPDATE one_shot_acquisitions
+SET terminal_outcome='failed',terminal_reason_code='chain_unsettled',terminal_reason='fixture owner still settling'
+WHERE id=$1`, markerID); err != nil {
+		t.Fatal(err)
+	}
 
 	before := readOneShotDeadline(t, db, markerID)
 
@@ -798,14 +829,17 @@ func TestRecheckOneBlocksOnNonTerminalOwnersAndRecovers(t *testing.T) {
 		{name: "file_operation_running", demote: func() { demoteAnchoredFileOperation(t, db, foID) }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			if _, err := db.Exec(`UPDATE one_shot_acquisitions SET retention_until=CURRENT_TIMESTAMP-INTERVAL '1 hour' WHERE id=$1`, markerID); err != nil {
+				t.Fatal(err)
+			}
 			tc.demote()
 
-			passed, err := service.recheckOne(context.Background(), markerID)
+			status, err := service.recheckOne(context.Background(), markerID)
 			if err != nil {
 				t.Fatalf("recheckOne: %v", err)
 			}
-			if passed {
-				t.Fatal("recheck must not pass while an anchored owner is non-terminal")
+			if status != "extended" {
+				t.Fatalf("recheck status = %q, want extended while an anchored owner is non-terminal", status)
 			}
 			state, _, _ := oneShotMarkerTerminalState(t, db, markerID)
 			if state != OneShotStateCleanupBlocked {
@@ -825,25 +859,28 @@ func TestRecheckOneBlocksOnNonTerminalOwnersAndRecovers(t *testing.T) {
 	if _, err := db.Exec(`UPDATE artifacts SET state = 'verified', verified_at = CURRENT_TIMESTAMP WHERE id = $1`, "art-"+markerID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`UPDATE file_operations SET state = 'completed' WHERE id = $1`, foID); err != nil {
+	if _, err := db.Exec(`UPDATE file_operations SET state = 'failed' WHERE id = $1`, foID); err != nil {
 		t.Fatal(err)
 	}
-	passed, err := service.recheckOne(context.Background(), markerID)
+	if _, err := db.Exec(`UPDATE one_shot_acquisitions SET retention_until=CURRENT_TIMESTAMP-INTERVAL '1 hour' WHERE id=$1`, markerID); err != nil {
+		t.Fatal(err)
+	}
+	status, err := service.recheckOne(context.Background(), markerID)
 	if err != nil {
 		t.Fatalf("recheckOne after repair: %v", err)
 	}
-	if !passed {
-		t.Fatal("recheck with all owners terminal must pass")
+	if status != "passed" {
+		t.Fatalf("recheck status = %q, want passed with all owners terminal", status)
 	}
 	state, outcome, reasonCode := oneShotMarkerTerminalState(t, db, markerID)
-	if state != OneShotStateReclaimPending || outcome != "succeeded" || reasonCode != "one_shot_completed" {
-		t.Fatalf("marker = (%s, %s, %s), want (reclaim_pending, succeeded, one_shot_completed)", state, outcome, reasonCode)
+	if state != OneShotStateReclaimPending || outcome != "failed" || reasonCode != "chain_unsettled" {
+		t.Fatalf("marker = (%s, %s, %s), want (reclaim_pending, failed, chain_unsettled)", state, outcome, reasonCode)
 	}
 }
 
-// Contract: reclaim_pending reclamation with a non-terminal anchored owner
-// must fail closed — the marker lands in cleanup_blocked with chain_unsettled
-// and the whole temporary owner graph survives untouched.
+// Contract: reclaim_pending reclamation with a non-terminal anchored owner and
+// an independently running root is retained before the terminal-chain proof;
+// the marker and whole temporary owner graph survive untouched.
 func TestReclaimOneBlocksOnNonTerminalOwners(t *testing.T) {
 	db := openTestDB(t)
 	service, err := NewOneShotReclaimService(db, nil)
@@ -885,10 +922,8 @@ WHERE id = $1`, markerID, OneShotStateReclaimPending); err != nil {
 			if reclaimed {
 				t.Fatal("reclamation must not proceed while an anchored owner is non-terminal")
 			}
-			// The failed proof must land in cleanup_blocked. blockMarkerTx
-			// retains the already-known terminal reason of a reclaim_pending
-			// row (CASE WHEN ... IS NOT NULL), so only the state itself is the
-			// stable contract here.
+			// Root detail retention precedes the owner-terminal proof, so this
+			// running-root shape remains pending without even a marker write.
 			state, _, _ := oneShotMarkerTerminalState(t, db, markerID)
 			if acquisitionfixture.Snapshot(t, disposabledb.Owner(t)) != before {
 				t.Fatal("running-root waiting changed graph")
@@ -898,6 +933,65 @@ WHERE id = $1`, markerID, OneShotStateReclaimPending); err != nil {
 			}
 			if got := countOneShotOwnerGraphRows(t, db, markerID); got != 8 {
 				t.Fatalf("owner graph rows = %d, want 8 (owner graph must not be deleted)", got)
+			}
+		})
+	}
+}
+
+// Reclaim must never turn live work into cleanup_blocked: either an owner that
+// still looks non-terminal or a terminal chain with live work retains the
+// reclaim_pending marker and the complete graph until normal work settles.
+func TestReclaimOneKeepsLiveChainPending(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		demoteArtifact bool
+	}{
+		{name: "nonterminal_owner", demoteArtifact: true},
+		{name: "terminal_chain"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openTestDB(t)
+			service, err := NewOneShotReclaimService(db, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := context.Background()
+			markerID := "m-reclaim-live-" + tc.name
+			files := createOneShotChain(t, db, markerID, []string{"live.mkv"})
+			failOneShotFileOperation(t, db, "fo-"+markerID, "art-"+markerID, files[0], "/library/live.mkv")
+			insertOneShotMarker(t, db, markerID, OneShotStateReclaimPending, oneShotReclaimAt(time.Now().Add(-time.Hour)))
+			settleOneShotRoot(t, db, markerID)
+			service.Now = func() time.Time { return time.Now().Add(48 * time.Hour) }
+			if tc.demoteArtifact {
+				demoteAnchoredArtifact(t, db, markerID)
+			}
+			store := &Store{DB: db, RetentionDays: DefaultRetentionDays}
+			if err := store.WithTx(ctx, func(tx *sql.Tx) error {
+				_, err := store.Create(ctx, tx, WorkItemSpec{
+					Owner:                OwnerRef{Type: OwnerRelease, ID: "rel-" + markerID},
+					Kind:                 KindReleaseEvaluate,
+					IdempotencyKey:       "live-reclaim-guard-" + markerID,
+					MaxAttempts:          3,
+					ExpectedOwnerVersion: 1,
+				})
+				return err
+			}); err != nil {
+				t.Fatalf("seed live chain work: %v", err)
+			}
+			before := acquisitionfixture.Snapshot(t, disposabledb.Owner(t))
+			reclaimed, err := service.reclaimOne(ctx, markerID)
+			if err != nil {
+				t.Fatalf("reclaimOne with live work: %v", err)
+			}
+			if reclaimed {
+				t.Fatal("live chain was reclaimed")
+			}
+			if after := acquisitionfixture.Snapshot(t, disposabledb.Owner(t)); after != before {
+				t.Fatal("live-chain reclamation guard mutated the graph")
+			}
+			state, _, _ := oneShotMarkerTerminalState(t, db, markerID)
+			if state != OneShotStateReclaimPending {
+				t.Fatalf("marker state = %s, want reclaim_pending", state)
 			}
 		})
 	}
@@ -956,12 +1050,7 @@ VALUES ('plan-'||$1, $2, (SELECT acquisition_id FROM artifacts WHERE id=$2), 1, 
 		{
 			markerID: "m-stage-fileexec",
 			mutate: func(markerID, artifactID string, files []oneShotFixtureFile) {
-				insertOneShotFileOperation(t, db, "fo-"+markerID, artifactID, files[0], "corr-"+markerID)
-				if _, err := db.ExecContext(ctx, `
-UPDATE file_operations SET state = 'failed', failure_code = 'FILE_EFFECT_FAILED', failure_reason = 'copy failed'
-WHERE id = $1`, "fo-"+markerID); err != nil {
-					t.Fatal(err)
-				}
+				failOneShotFileOperation(t, db, "fo-"+markerID, artifactID, files[0], "/library/"+markerID+".mkv")
 			},
 			want: "file_execution",
 		},
@@ -980,6 +1069,7 @@ UPDATE one_shot_acquisitions SET current_attempt_id = 'attempt-'||$1 WHERE id = 
 			t.Fatal(err)
 		}
 		testCase.mutate(testCase.markerID, "art-"+testCase.markerID, files)
+		settleOneShotRoot(t, db, testCase.markerID)
 	}
 
 	if _, err := service.RunPass(ctx); err != nil {

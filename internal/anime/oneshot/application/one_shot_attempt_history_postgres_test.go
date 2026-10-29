@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
+	"bansoko/internal/acquisition/terminal/settlement"
 	animeport "bansoko/internal/anime/port"
 	"bansoko/internal/apperrors"
 	animecatalogdomain "bansoko/internal/catalog/domain"
@@ -45,15 +46,18 @@ FROM one_shot_acquisitions WHERE id = $1`, oneShotID).Scan(
 
 // failAndDrainOneShot forces the current one-shot chain into the terminal
 // failed / reclaim_pending shape the real drain produces: the live download
-// work fails, the download task fails, and one retention pass settles the
-// marker and its current attempt.
+// work and download task fail, formal settlement settles the acquisition root,
+// and one retention pass settles the marker and its current attempt.
 func failAndDrainOneShot(t *testing.T, db *sql.DB, oneShotID string) {
 	t.Helper()
 	ctx := context.Background()
 	var downloadTaskID string
 	var attemptID string
+	var rootID string
 	if err := db.QueryRowContext(ctx, `
-SELECT download_task_id, current_attempt_id FROM one_shot_acquisitions WHERE id = $1`, oneShotID).Scan(&downloadTaskID, &attemptID); err != nil {
+SELECT m.download_task_id, m.current_attempt_id, d.acquisition_id
+FROM one_shot_acquisitions m JOIN download_tasks d ON d.id = m.download_task_id
+WHERE m.id = $1`, oneShotID).Scan(&downloadTaskID, &attemptID, &rootID); err != nil {
 		t.Fatalf("read one-shot anchors: %v", err)
 	}
 	if _, err := workItemFixtureDB(t).ExecContext(ctx, `
@@ -73,6 +77,13 @@ SET state = 'failed', failure_code = 'qB_SUBMIT_FAILED', failure_reason = 'force
     version = version + 1, updated_at = CURRENT_TIMESTAMP
 WHERE id = $1`, downloadTaskID); err != nil {
 		t.Fatalf("fail one-shot download task: %v", err)
+	}
+	settler, err := settlement.NewSettlementService(db)
+	if err != nil {
+		t.Fatalf("construct root settlement service: %v", err)
+	}
+	if status, err := settler.SettleRoot(ctx, rootID); err != nil || status != "settled" {
+		t.Fatalf("settle one-shot root: status=%q err=%v", status, err)
 	}
 	retention, err := workitems.NewOneShotReclaimService(db, nil)
 	if err != nil {

@@ -177,12 +177,24 @@ ORDER BY retention_until NULLS LAST, id
 LIMIT sqlc.arg(batch_size);
 
 -- name: ListDueCleanupBlockedOneShotMarkers :many
-SELECT id
-FROM one_shot_acquisitions
-WHERE state = 'cleanup_blocked'
-  AND retention_until <= CURRENT_TIMESTAMP
-ORDER BY retention_until NULLS LAST, id
+-- A due marker is rechecked; a marker whose chain is still open (a running
+-- root or live chain work) is selected at once, ahead of due ones, so a chain
+-- blocked while its work was live resumes on the next pass.
+SELECT marker.id
+FROM one_shot_acquisitions marker
+CROSS JOIN LATERAL (
+    SELECT marker.download_task_id IS NOT NULL AND public.one_shot_chain_open(marker.id) AS chain_open
+) open_chain
+WHERE marker.state = 'cleanup_blocked'
+  AND (marker.retention_until <= CURRENT_TIMESTAMP OR open_chain.chain_open)
+ORDER BY open_chain.chain_open DESC, marker.retention_until NULLS LAST, marker.id
 LIMIT sqlc.arg(batch_size);
+
+-- name: OneShotChainOpen :one
+SELECT public.one_shot_chain_open(sqlc.arg(marker_id)::text)::boolean AS chain_open;
+
+-- name: ResumeBlockedOneShotChain :one
+SELECT public.one_shot_resume_blocked_chain(sqlc.arg(marker_id)::text, sqlc.narg(work_item_id)::text, sqlc.narg(fencing_token)::bigint)::jsonb AS reply;
 
 -- name: PurgeExpiredCleanedOneShotMarkers :execresult
 -- The immutable attempt summaries are retained exactly until marker

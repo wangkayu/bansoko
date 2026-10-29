@@ -1088,7 +1088,7 @@ func runAcquisitionSettlement(ctx context.Context, service *acquisitionsettlemen
 func runOneShotReclaimMaintenance(ctx context.Context, service *workitems.OneShotReclaimService, drainDue <-chan struct{}, hub *events.Hub, logger observabilityport.RuntimeLogger) {
 	run := func() {
 		result, err := service.RunPass(ctx)
-		if result.Drained > 0 || result.Blocked > 0 || result.Reclaimed > 0 || result.Rechecked > 0 {
+		if result.Drained > 0 || result.Blocked > 0 || result.Reclaimed > 0 || result.Rechecked > 0 || result.Revived > 0 {
 			hub.Publish(events.Event{Target: events.TargetRecords})
 		}
 		if err != nil {
@@ -1104,10 +1104,10 @@ func runOneShotReclaimMaintenance(ctx context.Context, service *workitems.OneSho
 			}
 			return
 		}
-		if result.Drained > 0 || result.Reclaimed > 0 || result.Rechecked > 0 || result.Purged > 0 {
+		if result.Drained > 0 || result.Reclaimed > 0 || result.Rechecked > 0 || result.Revived > 0 || result.Purged > 0 {
 			logger.Info(ctx, observabilityport.RuntimeEvent{
-				Message: fmt.Sprintf("one-shot reclaim pass completed (drained=%d reclaimed=%d rechecked=%d blocked=%d purged=%d)",
-					result.Drained, result.Reclaimed, result.Rechecked, result.Blocked, result.Purged),
+				Message: fmt.Sprintf("one-shot reclaim pass completed (drained=%d reclaimed=%d rechecked=%d resumed=%d blocked=%d purged=%d)",
+					result.Drained, result.Reclaimed, result.Rechecked, result.Revived, result.Blocked, result.Purged),
 				Component:  "retention",
 				Operation:  "oneshot_reclaim",
 				Outcome:    "success",

@@ -527,6 +527,53 @@ func (s *Store) AdmitOneShotEffect(ctx context.Context, claim Claim) (AdmissionL
 	return lease, nil
 }
 
+// ResumeRefusedOneShotClaim handles a claim the gate refused with
+// ErrOneShotReclaiming. When its marker is cleanup_blocked at the claim's
+// epoch and the chain is still open (blocked while its work was live), the
+// marker returns to running and the claim returns to available without using
+// an attempt, in one transaction (migration 104); the next claim is admitted.
+// Any other refusal is left untouched and reported false: the claim keeps
+// the non-mutating abort and its lease expires.
+func (s *Store) ResumeRefusedOneShotClaim(ctx context.Context, claim Claim) (bool, error) {
+	if err := validateOneShotClaimContext(claim); err != nil {
+		return false, err
+	}
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("begin one-shot claim resume: %w", err)
+	}
+	defer tx.Rollback()
+	row, err := lockOneShotMarkerForUpdateTx(ctx, tx, claim.OneShot.MarkerID)
+	if errors.Is(err, ErrOneShotMarkerMissing) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if row.State != OneShotStateCleanupBlocked || row.Epoch != claim.OneShot.AdmissionEpoch {
+		return false, nil
+	}
+	// The anchored graph must still resolve: a marker blocked on corrupt
+	// anchors stays blocked, so its refusals keep the ordinary abort.
+	graph, graphErr := (&OneShotReclaimService{}).loadAnchorsTx(ctx, tx, claim.OneShot.MarkerID)
+	if graphErr != nil || graph.downloadTaskID == "" {
+		return false, nil
+	}
+	reply, err := resumeBlockedOneShotChainTx(ctx, tx, claim.OneShot.MarkerID, &claim)
+	if err != nil {
+		return false, err
+	}
+	if !reply.Resumed {
+		return false, nil
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit one-shot claim resume: %w", err)
+	}
+	s.logEvent(claim.Owner, claim.ID, "oneshot_resume", "one_shot_resumed",
+		fmt.Sprintf("marker=%s epoch=%d plans=%d refunded_attempts=%d", hashToken(claim.OneShot.MarkerID), claim.OneShot.AdmissionEpoch, reply.Plans, reply.Refunded), claim.Attempt)
+	return true, nil
+}
+
 // writeOneShotLedgerTx persists the ledger array and synchronized count. The
 // caller already holds the marker row lock.
 func writeOneShotLedgerTx(ctx context.Context, tx *sql.Tx, markerID string, entries []oneShotLedgerEntry) error {
