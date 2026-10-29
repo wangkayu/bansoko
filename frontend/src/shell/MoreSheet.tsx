@@ -9,10 +9,9 @@ import {
   Settings,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { listAutomationSchedules, type AutomationKind, type AutomationSchedule, type Connection } from "../lib/api/client";
+import type { AutomationKind, Connection } from "../lib/api/client";
+import { useNextAutomationRun } from "../lib/automationSchedules";
 import { formatDateTime } from "../lib/labels";
-import { automationKeys } from "../lib/queryKeys";
 import { badgeText } from "./logSeen";
 import { cn } from "@/lib/utils";
 import { Dialog, Segmented, StatePill } from "../ui/base";
@@ -74,10 +73,7 @@ export function MoreSheet({
 }: MoreSheetProps) {
   const { theme, setTheme } = useTheme();
   const locale = useLocale();
-  const schedules = useQuery({ queryKey: automationKeys.schedules, queryFn: listAutomationSchedules });
-  const nextRun = (schedules.data ?? [])
-    .filter((s): s is AutomationSchedule & { next_run_at: string } => s.enabled && Boolean(s.next_run_at))
-    .sort((a, b) => a.next_run_at.localeCompare(b.next_run_at))[0];
+  const nextRun = useNextAutomationRun(open);
 
   const noDownloader = !connections.some((connection) => connection.kind === "qbittorrent" && connection.enabled);
   const statusConnections = connections.filter((connection) => STATUS_ORDER.includes(connection.kind)).sort((a, b) => STATUS_ORDER.indexOf(a.kind) - STATUS_ORDER.indexOf(b.kind));

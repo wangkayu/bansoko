@@ -37,17 +37,16 @@ const GlobalSearchDialog = lazy(() =>
   import("../features/catalog/GlobalSearchDialog").then((module) => ({ default: module.GlobalSearchDialog })),
 );
 import {
-  listAutomationSchedules,
   listConnections,
   testConnection,
   type AutomationKind,
-  type AutomationSchedule,
   type Connection,
   type ConnectionTestResult,
 } from "../lib/api/client";
 import { formatDateTime } from "../lib/labels";
 import { reasonLabel } from "../lib/i18n/reasons";
-import { automationKeys, configKeys } from "../lib/queryKeys";
+import { configKeys } from "../lib/queryKeys";
+import { useNextAutomationRun } from "../lib/automationSchedules";
 import { PHONE_MEDIA_QUERY, useMediaQuery } from "../lib/useMediaQuery";
 import { useLogDialogStore } from "./logDialogStore";
 import { isOneOf, ROUTE_DIALOG_STATE, ROUTE_LOG_VIEWS, ROUTE_QB_SEGMENTS, ROUTE_RECORD_LIST, ROUTE_RECORD_SEGMENTS, ROUTE_TOOLS, useRouteDialogs, type RouteLogView } from "./routeDialogs";
@@ -522,12 +521,8 @@ function StatusPopover({ connections: allConnections, loading }: { connections: 
   const connections = useMemo(() => allConnections.filter((c) => STATUS_KINDS.includes(c.kind)), [allConnections]);
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
-  const schedules = useQuery({ queryKey: automationKeys.schedules, queryFn: listAutomationSchedules });
+  const nextRun = useNextAutomationRun(open);
   const [tests, setTests] = useState<Record<string, ReachState>>({});
-
-  const nextRun = (schedules.data ?? [])
-    .filter((s): s is AutomationSchedule & { next_run_at: string } => s.enabled && Boolean(s.next_run_at))
-    .sort((a, b) => a.next_run_at.localeCompare(b.next_run_at))[0];
 
   const runTests = useCallback(() => {
     const targets = connections.filter((connection) => connection.enabled);

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { valuesEqual } from "../../lib/draft";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useBoundedRefresh } from "@/lib/events/useBoundedRefresh";
+import { useAutomationSchedules } from "@/lib/automationSchedules";
 import { Pencil, Zap } from "lucide-react";
 import { toast } from "../../ui/toast";
 import {
@@ -98,7 +99,7 @@ async function waitForAutomationRun(runID: string): Promise<AutomationState> {
 
 function SchedulesCard() {
   const queryClient = useQueryClient();
-  const schedules = useQuery({ queryKey: automationKeys.schedules, queryFn: listAutomationSchedules });
+  const schedules = useAutomationSchedules();
   // Automatic metadata matching depends on the TMDB connection's API Key; reuse the connections card's query cache, showing a read-only hint with no action.
   const connections = useQuery({ queryKey: configKeys.connections, queryFn: listConnections });
   const tmdbCredentialMissing =
