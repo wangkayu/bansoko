@@ -219,7 +219,7 @@ ALLOW = [
     # historical seasonless-identity migration test seeds the pre-100 shape.
     ("history", "media-kind-rename",
      r"^(?:db/migrations/(?:0[0-9]{2}|100)_"
-     r"|internal/runtime/migrations/seasonless_episode_identity_test\.go$)", r".*", None),
+     r"|internal/runtime/migrations/(?:seasonless_episode_identity|media_kind_rename_upgrade)_test\.go$)", r".*", None),
 ]
 ALLOW = [(c, fam, re.compile(pp), re.compile(mp), re.compile(lp) if lp else None) for c, fam, pp, mp, lp in ALLOW]
 
