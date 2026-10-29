@@ -26,6 +26,9 @@
 - After the title, bindings, season, year, type or naming rules change, a subscription's files are checked again against the current settings; with automatic alignment on they move to the new place, and nothing is downloaded again.
 - Saving metadata now re-evaluates the unsubmitted releases in the same save, with no separate re-evaluation.
 - The browse season dropdown always offers the next two seasons back to two years ago, so the current season is always one pick away; reach older seasons with the arrows, or find works by search.
+- Deselecting a subgroup cancels its unfinished downloads in the subscription and deletes them from qBittorrent together with their downloaded data, and other subgroups' releases download the episode instead; finished downloads and imports in progress are not touched, and no failure notification is sent.
+- After a subgroup is selected again, the releases skipped while it was deselected are evaluated again right away, without waiting for an RSS refresh or a new release; when it is selected while the subscription is stopped, they are evaluated when the subscription resumes.
+- A download that has not been imported yet can be cancelled in the execution record dialog (also through the API, MCP and CLI), and its record shows Cancelled; a subscription release can be downloaded again with Retry, while a cancelled one-shot download cannot be retried.
 
 ## Fixed
 

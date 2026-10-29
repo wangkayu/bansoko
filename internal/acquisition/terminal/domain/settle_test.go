@@ -466,6 +466,37 @@ func TestDownloaderRemovalSettlesCancelled(t *testing.T) {
 	}
 }
 
+// A download cancelled before import, because its subgroup left the selection
+// or the user cancelled it, settles cancelled like a downloader removal, with a
+// receipt that validates; the same codes past the download are failures.
+func TestDownloadCancelBeforeImportSettlesCancelled(t *testing.T) {
+	for _, code := range []Reason{ReasonProviderGroupNotAllowed, ReasonUserCancelled} {
+		if !IsDownloadCancellation(code) {
+			t.Fatalf("%s must be a download cancellation", code)
+		}
+		for _, stage := range []Stage{StageSubmit, StageDownloadWait} {
+			r := mustSettle(t, SettlementFacts{Branch: BranchDownload, Requirements: RequirementsNotReached, SettledAt: settledAt,
+				Upstream: &Failure{Stage: stage, ReasonCode: code}}).Receipt
+			if r.Outcome != OutcomeCancelled || r.PrimaryFailure.ReasonCode != code || r.PrimaryFailure.Stage != stage {
+				t.Fatalf("%s/%s: %+v", code, stage, r)
+			}
+			if err := Validate("TerminalReceiptV1", r.Value()); err != nil {
+				t.Fatalf("%s/%s receipt must validate: %v", code, stage, err)
+			}
+		}
+		r := mustSettle(t, SettlementFacts{Branch: BranchDownload, Requirements: RequirementsNotReached, SettledAt: settledAt,
+			Upstream: &Failure{Stage: StageInspect, ReasonCode: code}}).Receipt
+		if r.Outcome != OutcomeFailed {
+			t.Fatalf("%s past the download is a failure: %+v", code, r)
+		}
+	}
+	for _, code := range []Reason{"SYNC_ERROR_BUDGET_EXHAUSTED", ReasonOwnerRetired, "PROVIDER_GROUP_NOT_SELECTED"} {
+		if IsDownloadCancellation(code) {
+			t.Fatalf("%s is not a download cancellation", code)
+		}
+	}
+}
+
 func TestCancelledReceiptAdmitsOnlyTheCancellationReasons(t *testing.T) {
 	removed := mustSettle(t, SettlementFacts{Branch: BranchDownload, Requirements: RequirementsNotReached, SettledAt: settledAt,
 		Upstream: &Failure{Stage: StageDownloadWait, ReasonCode: ReasonDownloaderTaskRemoved}}).Receipt.Value()

@@ -165,4 +165,17 @@ export const recordsCopy = {
     accepted: "已重新开始入库",
     ok: "知道了",
   },
+  // 下载阶段的取消：下载尚未入库且服务端会接受时出现。
+  downloadCancel: {
+    action: "取消下载",
+    title: "取消下载",
+    line1: "取消后删除 qBittorrent 中的任务及已下载的数据，这一集改由其他资源下载",
+    line2: "之后可在 RSS 列表重试",
+    oneShotLine1: "取消后删除 qBittorrent 中的任务及已下载的数据",
+    oneShotLine2: "一次性下载取消后不能重试",
+    submit: "取消下载",
+    accepted: "已取消下载",
+    stale: "记录已变化，请刷新后再试",
+    ok: "知道了",
+  },
 } as const;

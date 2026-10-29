@@ -256,3 +256,19 @@ func (a TorrentAdapter) SetShareLimits(ctx context.Context, hash string, limits 
 		ShareLimitAction: limits.Action, ShareLimitsMode: limits.Mode,
 	})
 }
+
+// RemoveCancelled deletes the qBittorrent task of a download cancelled before
+// import, with its data, under the ownership rule of the remove_with_data
+// action: a task another running acquisition shares is kept
+// (ResultTorrentShared), a task the safety check refuses is kept (a
+// non-retryable failure), an absent task is ResultTaskAbsent, and a delete is
+// confirmed by re-reading until the task is gone. The facts come from the
+// task's correlation and frozen input exactly as a completion row freezes them.
+func (s *Service) RemoveCancelled(ctx context.Context, acquisitionID string, correlation, frozenInput []byte) Outcome {
+	if s == nil {
+		return retryable(FailureQBUnavailable, "the completion action is not wired")
+	}
+	f := factsOf(candidate{AcquisitionID: acquisitionID, Correlation: correlation, FrozenInput: frozenInput})
+	return s.executor.Run(ctx, Completion{AcquisitionID: acquisitionID, Action: ActionRemoveWithData,
+		InfoHash: f.InfoHash, RemoteRoot: f.RemoteRoot, ApplicationRoot: f.ApplicationRoot})
+}

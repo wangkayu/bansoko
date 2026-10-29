@@ -135,9 +135,19 @@ export function isDownloaderRemoved(task: Pick<DownloadTask, "state" | "failure_
   return task.state === "failed" && task.failure_code === "DOWNLOADER_TASK_REMOVED";
 }
 
-/** A download task's state label and tone; a task deleted in the downloader shows the reason in a neutral tone. */
+/** The failure codes of a download cancelled before import: its group is not selected, or the user cancelled it. */
+function cancelledDownloadLabel(task: Pick<DownloadTask, "state" | "failure_code">): string | undefined {
+  if (task.state !== "failed") return undefined;
+  if (task.failure_code === "PROVIDER_GROUP_NOT_ALLOWED") return t("reason.provider_group_not_allowed");
+  if (task.failure_code === "USER_CANCELLED") return t("reason.user_cancelled");
+  return undefined;
+}
+
+/** A download task's state label and tone; a task deleted in the downloader or cancelled shows the reason in a neutral tone. */
 export function downloadTaskPill(task: Pick<DownloadTask, "state" | "failure_code">): { label: string; tone: StatePillTone } {
   if (isDownloaderRemoved(task)) return { label: t("reason.downloader_task_removed"), tone: "muted" };
+  const cancelled = cancelledDownloadLabel(task);
+  if (cancelled) return { label: cancelled, tone: "muted" };
   return { label: downloadTaskStateLabel(task.state), tone: downloadTaskStateTone(task.state) };
 }
 

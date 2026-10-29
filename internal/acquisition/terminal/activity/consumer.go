@@ -316,6 +316,10 @@ LIMIT $2`, windowStart(window), batch)
 			// Deleted in the downloader by the user: the record is cancelled, which
 			// is not a failure.
 			outcome, reason, message = "info", reasonCode(code, "qb_sync_failed"), observabilityport.MessageDownloadRemoved
+		case state == "failed" && code == providerGroupNotAllowed:
+			outcome, reason, message = "info", reasonCode(code, "qb_sync_failed"), observabilityport.MessageDownloadGroupNotAllowed
+		case state == "failed" && code == userCancelled:
+			outcome, reason, message = "info", reasonCode(code, "qb_sync_failed"), observabilityport.MessageDownloadCancelled
 		case state == "failed":
 			outcome, reason, message = "failure", reasonCode(code, "qb_sync_failed"), observabilityport.MessageDownloadFailed
 		}
@@ -431,14 +435,21 @@ LIMIT $2`, windowStart(window), batch)
 	return out, rows.Err()
 }
 
-// downloaderTaskRemoved is the DownloadTask failure code of a task deleted in
-// the downloader; its root settles cancelled.
-const downloaderTaskRemoved = "DOWNLOADER_TASK_REMOVED"
+// The DownloadTask failure codes whose root settles cancelled: a task deleted
+// in the downloader, and a download cancelled before import because its
+// subgroup left the selection or the user cancelled it.
+const (
+	downloaderTaskRemoved   = "DOWNLOADER_TASK_REMOVED"
+	providerGroupNotAllowed = "PROVIDER_GROUP_NOT_ALLOWED"
+	userCancelled           = "USER_CANCELLED"
+)
 
 // settledEntries: the root reached its one terminal state. A cancelled root is
 // either the retirement disposition (OWNER_RETIRED; its owner is retired, so in
 // practice it has no scope and is skipped like every retired owner) or a
-// download deleted in the downloader (DOWNLOADER_TASK_REMOVED), logged as info.
+// download deleted in the downloader or cancelled before import
+// (DOWNLOADER_TASK_REMOVED, PROVIDER_GROUP_NOT_ALLOWED, USER_CANCELLED),
+// logged as info.
 // A failed or cancelled root carries the not_replaced follow-up; whether its
 // download completed tells a failed download from a failed import.
 func settledEntries(ctx context.Context, db *sql.DB, window time.Duration, batch int) ([]entry, error) {

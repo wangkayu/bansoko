@@ -700,6 +700,50 @@ func cmdRetryImport(args []string) error {
 	return nil
 }
 
+func cmdCancelDownload(args []string) error {
+	fs := flag.NewFlagSet("cancel-download", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	cf := newCommonFlags(fs)
+	acquisitionID := fs.String("acquisition-id", "", "acquisition (execution record) ID")
+	version := fs.Int64("version", 0, "the record version you read (get_execution_record)")
+	key := fs.String("key", "", "idempotency key (default: a new key)")
+	if err := fs.Parse(args); err != nil {
+		return parseError(err)
+	}
+	if strings.TrimSpace(*acquisitionID) == "" {
+		return newUsageError("--acquisition-id is required")
+	}
+	if *version < 1 {
+		return newUsageError("--version is required")
+	}
+	idempotencyKey := strings.TrimSpace(*key)
+	if idempotencyKey == "" {
+		idempotencyKey = newID()
+	}
+	c, err := cf.resolve()
+	if err != nil {
+		return err
+	}
+	code, raw, err := c.do(context.Background(), "POST", "/acquisitions/"+*acquisitionID+"/download/cancel", nil,
+		map[string]string{"Idempotency-Key": idempotencyKey, "If-Match": strconv.FormatInt(*version, 10)})
+	if err != nil {
+		return err
+	}
+	if code != 202 {
+		return fail(code, raw)
+	}
+	if cf.json {
+		printRaw(raw)
+		return nil
+	}
+	var result generated.AcquisitionDownloadCancelResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return err
+	}
+	fmt.Fprintf(human(), "download of %s is cancelled (version %d); the record ends cancelled once the download worker acts\n", result.AcquisitionId, result.Version)
+	return nil
+}
+
 func cmdStatus(args []string) error {
 	fs := flag.NewFlagSet("status", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)

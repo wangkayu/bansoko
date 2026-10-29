@@ -2244,8 +2244,10 @@ const (
 	SubscriptionLogMessageCodeAcquisitionFailed             SubscriptionLogMessageCode = "acquisition_failed"
 	SubscriptionLogMessageCodeAcquisitionSucceeded          SubscriptionLogMessageCode = "acquisition_succeeded"
 	SubscriptionLogMessageCodeArtifactVerified              SubscriptionLogMessageCode = "artifact_verified"
+	SubscriptionLogMessageCodeDownloadCancelled             SubscriptionLogMessageCode = "download_cancelled"
 	SubscriptionLogMessageCodeDownloadCompleted             SubscriptionLogMessageCode = "download_completed"
 	SubscriptionLogMessageCodeDownloadFailed                SubscriptionLogMessageCode = "download_failed"
+	SubscriptionLogMessageCodeDownloadGroupNotAllowed       SubscriptionLogMessageCode = "download_group_not_allowed"
 	SubscriptionLogMessageCodeDownloadRemoved               SubscriptionLogMessageCode = "download_removed"
 	SubscriptionLogMessageCodeDownloadSubmitted             SubscriptionLogMessageCode = "download_submitted"
 	SubscriptionLogMessageCodeEpisodeOffsetChanged          SubscriptionLogMessageCode = "episode_offset_changed"
@@ -2684,6 +2686,12 @@ type AcquisitionDisplayValue struct {
 // AcquisitionDisplayValueState defines model for AcquisitionDisplayValue.State.
 type AcquisitionDisplayValueState string
 
+// AcquisitionDownloadCancelResult An accepted download cancel. version is the record version after it; the record settles cancelled once the download worker has acted.
+type AcquisitionDownloadCancelResult struct {
+	AcquisitionId ID    `json:"acquisition_id"`
+	Version       int64 `json:"version"`
+}
+
 // AcquisitionEntryKind defines model for AcquisitionEntryKind.
 type AcquisitionEntryKind string
 
@@ -2829,12 +2837,15 @@ type AcquisitionOutcomeRequirementsStatus string
 
 // AcquisitionRecordDetail Stable detail of one execution record. A compact record has no stages or requirements and no file page; it keeps its safe title and outcome.
 type AcquisitionRecordDetail struct {
-	AcceptedAt    time.Time                             `json:"accepted_at"`
-	AcquisitionId ID                                    `json:"acquisition_id"`
-	Anime         *AcquisitionAnimeLink                 `json:"anime,omitempty"`
-	AsOf          time.Time                             `json:"as_of"`
-	CompactReason *AcquisitionRecordDetailCompactReason `json:"compact_reason,omitempty"`
-	CompactedAt   *time.Time                            `json:"compacted_at,omitempty"`
+	AcceptedAt    time.Time             `json:"accepted_at"`
+	AcquisitionId ID                    `json:"acquisition_id"`
+	Anime         *AcquisitionAnimeLink `json:"anime,omitempty"`
+	AsOf          time.Time             `json:"as_of"`
+
+	// CancelAvailable True when POST /acquisitions/{acquisition_id}/download/cancel would be accepted as of this read: the record is running, its download has not completed, no cancel was accepted yet, and its owner is not retired.
+	CancelAvailable bool                                  `json:"cancel_available"`
+	CompactReason   *AcquisitionRecordDetailCompactReason `json:"compact_reason,omitempty"`
+	CompactedAt     *time.Time                            `json:"compacted_at,omitempty"`
 
 	// ConfigHold Present only while a running record's plan stage is waiting_config: what the anime's current configuration lacks, in a stable order (the BGM binding, the TMDB binding, then the template variables). The downloaded files stay in the download directory; the import continues by itself once the configuration is complete.
 	ConfigHold *AcquisitionConfigHold `json:"config_hold,omitempty"`
@@ -2877,7 +2888,7 @@ type AcquisitionRecordDetail struct {
 	// Transfer The downloader's last persisted observation of a running download, written by the download sync poll (about once a minute); a read never calls the downloader. Present only while the record is at the download_wait stage and running, and only once the downloader reported a byte count; absent on every other record.
 	Transfer *AcquisitionTransfer `json:"transfer,omitempty"`
 
-	// Version The record version; an import retry sends it as If-Match.
+	// Version The record version; an import retry or a download cancel sends it as If-Match.
 	Version int64 `json:"version"`
 }
 
@@ -9279,6 +9290,13 @@ type ListAcquisitionRecordsParams struct {
 	To             *ToTime                  `form:"to,omitempty" json:"to,omitempty"`
 }
 
+// CancelAcquisitionDownloadParams defines parameters for CancelAcquisitionDownload.
+type CancelAcquisitionDownloadParams struct {
+	// IfMatch Expected current owner version for optimistic concurrency. Use 0 to create: the request succeeds only when the owner does not exist yet.
+	IfMatch        IfMatchVersion `json:"If-Match"`
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
 // ListAcquisitionRecordFilesParams defines parameters for ListAcquisitionRecordFiles.
 type ListAcquisitionRecordFilesParams struct {
 	// Cursor Opaque keyset pagination cursor.
@@ -11678,6 +11696,9 @@ type ServerInterface interface {
 	// (GET /acquisitions/{acquisition_id})
 	GetAcquisitionRecord(w http.ResponseWriter, r *http.Request, acquisitionId AcquisitionID)
 
+	// (POST /acquisitions/{acquisition_id}/download/cancel)
+	CancelAcquisitionDownload(w http.ResponseWriter, r *http.Request, acquisitionId AcquisitionID, params CancelAcquisitionDownloadParams)
+
 	// (GET /acquisitions/{acquisition_id}/files)
 	ListAcquisitionRecordFiles(w http.ResponseWriter, r *http.Request, acquisitionId AcquisitionID, params ListAcquisitionRecordFilesParams)
 
@@ -12348,6 +12369,88 @@ func (siw *ServerInterfaceWrapper) GetAcquisitionRecord(w http.ResponseWriter, r
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetAcquisitionRecord(w, r, acquisitionId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CancelAcquisitionDownload operation middleware
+func (siw *ServerInterfaceWrapper) CancelAcquisitionDownload(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "acquisition_id" -------------
+	var acquisitionId AcquisitionID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "acquisition_id", r.PathValue("acquisition_id"), &acquisitionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "acquisition_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CancelAcquisitionDownloadParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatchVersion
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CancelAcquisitionDownload(w, r, acquisitionId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -19038,6 +19141,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 
 	m.HandleFunc("GET "+options.BaseURL+"/acquisitions", wrapper.ListAcquisitionRecords)
 	m.HandleFunc("GET "+options.BaseURL+"/acquisitions/{acquisition_id}", wrapper.GetAcquisitionRecord)
+	m.HandleFunc("POST "+options.BaseURL+"/acquisitions/{acquisition_id}/download/cancel", wrapper.CancelAcquisitionDownload)
 	m.HandleFunc("GET "+options.BaseURL+"/acquisitions/{acquisition_id}/files", wrapper.ListAcquisitionRecordFiles)
 	m.HandleFunc("POST "+options.BaseURL+"/acquisitions/{acquisition_id}/import/retry", wrapper.RetryAcquisitionImport)
 	m.HandleFunc("GET "+options.BaseURL+"/agent-guide", wrapper.GetAgentGuide)

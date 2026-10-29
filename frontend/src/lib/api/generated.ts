@@ -2521,6 +2521,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/acquisitions/{acquisition_id}/download/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Records the cancel of one running record whose download task has not completed (queued, submitting, waiting_retry or downloading) and wakes its download work. The download worker then deletes the qBittorrent task with its data under the download-completion ownership rule, or cancels a submission that sent nothing without calling qBittorrent; the task ends failed with USER_CANCELLED and the record settles cancelled. A download that completes before the worker acts keeps its normal course. A subscription release keeps the cancelled task until a release retry; a one-shot record has no retry. If-Match carries the record version the caller saw. The same Idempotency-Key replays the accepted result. 409 DOWNLOAD_CANCEL_NOT_APPLICABLE when the record is not a running download record or its download already completed, DOWNLOAD_CANCEL_ALREADY_REQUESTED after an accepted cancel, MANAGED_ANIME_RETIRED for a retired owner, OWNER_VERSION_CONFLICT for a stale version, IDEMPOTENCY_KEY_REUSED for a reused key with another version. */
+        post: operations["cancelAcquisitionDownload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/one-shot-acquisitions": {
         parameters: {
             query?: never;
@@ -3702,7 +3719,7 @@ export interface components {
          * @description The message of a business journal entry in the closed catalog the server registers per entry kind (published to the frontend as a generated artifact). The client renders the text from the code and message_params; entries carry no display text.
          * @enum {string}
          */
-        SubscriptionLogMessageCode: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "rules_changed" | "episode_offset_changed" | "rss_new_content" | "release_discovered" | "release_waiting_metadata" | "release_subscription_stopped" | "release_source_unavailable" | "release_parse_failed" | "release_accepted" | "release_filtered" | "release_adopted_existing" | "release_acquisition_failed" | "release_submitted" | "release_awaiting_competition" | "release_resume_baseline" | "release_start_baseline" | "download_submitted" | "download_completed" | "download_removed" | "download_failed" | "artifact_verified" | "import_waiting_binding_bgm" | "import_waiting_binding_tmdb" | "import_waiting_template_variable" | "import_config_resumed" | "file_imported" | "file_adopted" | "file_retained" | "file_import_failed" | "acquisition_succeeded" | "acquisition_failed" | "acquisition_cancelled" | "replacement_kept_existing" | "replacement_kept_all" | "replacement_blocked" | "replacement_replaced" | "replacement_not_replaced" | "placement_released" | "unknown_file_released" | "placement_recorded" | "file_recovered" | "placements_excluded" | "offset_aligned" | "old_version_deleted" | "old_version_kept" | "old_version_delete_failed";
+        SubscriptionLogMessageCode: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "rules_changed" | "episode_offset_changed" | "rss_new_content" | "release_discovered" | "release_waiting_metadata" | "release_subscription_stopped" | "release_source_unavailable" | "release_parse_failed" | "release_accepted" | "release_filtered" | "release_adopted_existing" | "release_acquisition_failed" | "release_submitted" | "release_awaiting_competition" | "release_resume_baseline" | "release_start_baseline" | "download_submitted" | "download_completed" | "download_removed" | "download_group_not_allowed" | "download_cancelled" | "download_failed" | "artifact_verified" | "import_waiting_binding_bgm" | "import_waiting_binding_tmdb" | "import_waiting_template_variable" | "import_config_resumed" | "file_imported" | "file_adopted" | "file_retained" | "file_import_failed" | "acquisition_succeeded" | "acquisition_failed" | "acquisition_cancelled" | "replacement_kept_existing" | "replacement_kept_all" | "replacement_blocked" | "replacement_replaced" | "replacement_not_replaced" | "placement_released" | "unknown_file_released" | "placement_recorded" | "file_recovered" | "placements_excluded" | "offset_aligned" | "old_version_deleted" | "old_version_kept" | "old_version_delete_failed";
         /** @description Scalar values the message interpolates. Each message declares its params; an optional param is absent rather than empty. */
         SubscriptionLogMessageParams: {
             /** @description Torrent name the downloader reports. */
@@ -7676,6 +7693,12 @@ export interface components {
             /** Format: int64 */
             version: number;
         };
+        /** @description An accepted download cancel. version is the record version after it; the record settles cancelled once the download worker has acted. */
+        AcquisitionDownloadCancelResult: {
+            acquisition_id: components["schemas"]["ID"];
+            /** Format: int64 */
+            version: number;
+        };
         /** @description One fixed stage. Only a present stage carries a state; done/total is the delivered-of-required file progress of file_execution, whose attempts_started counts the import runs (1 plus each accepted import retry) and whose started_at is the start of the latest run. The completion stage is the download-completion action on the qBittorrent task: not_applicable unless the record succeeded and downloaded, pending/running while the action is queued, succeeded or failed with its result in reason_code (seed_kept, seed_limits_set, seed_limits_set_global_action, paused, removed, removed_with_data, task_absent, skipped_torrent_shared; or a typed refusal such as placement_inside_content). */
         AcquisitionStage: {
             stage: components["schemas"]["AcquisitionStageName"];
@@ -7709,11 +7732,13 @@ export interface components {
             acquisition_id: components["schemas"]["ID"];
             /**
              * Format: int64
-             * @description The record version; an import retry sends it as If-Match.
+             * @description The record version; an import retry or a download cancel sends it as If-Match.
              */
             version: number;
             /** @description True when POST /acquisitions/{acquisition_id}/import/retry would be accepted as of this read: the record has settled, its import stage has a failed file or a failed placement handoff, and its owner is not retired. */
             import_retry_available: boolean;
+            /** @description True when POST /acquisitions/{acquisition_id}/download/cancel would be accepted as of this read: the record is running, its download has not completed, no cancel was accepted yet, and its owner is not retired. */
+            cancel_available: boolean;
             entry_kind: components["schemas"]["AcquisitionEntryKind"];
             /** @enum {string} */
             execution_branch: "download";
@@ -12622,6 +12647,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AcquisitionImportRetryResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    cancelAcquisitionDownload: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Expected current owner version for optimistic concurrency. Use 0 to create: the request succeeds only when the owner does not exist yet. */
+                "If-Match": components["parameters"]["IfMatchVersion"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description Execution record (acquisition root) id. */
+                acquisition_id: components["parameters"]["AcquisitionID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The cancel is recorded; the download worker carries it out. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcquisitionDownloadCancelResult"];
                 };
             };
             400: components["responses"]["BadRequest"];

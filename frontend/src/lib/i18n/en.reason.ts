@@ -197,6 +197,8 @@ export const enReasonCopy = {
   qb_submission_preparer_required: "Sending to the download client is temporarily unavailable",
   download_stalled: "Download has made no progress for a long time",
   downloader_task_removed: "Deleted in the download client",
+  provider_group_not_allowed: "Cancelled: the group is not selected",
+  user_cancelled: "Cancelled",
   qb_task_absent: "Task not found in the download client. Checking again.",
 
   // --- Downloaded file verification ---

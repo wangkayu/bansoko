@@ -271,7 +271,9 @@ function runResult(settled: BusinessEntry | undefined, failure: BusinessEntry | 
   if (settled) {
     if (settled.outcome === "success") return t("log.run.result.imported");
     if (settled.outcome === "failure") return failureResult(failure);
-    return isRemovedInDownloader(steps) ? t("log.run.result.removed") : t("log.run.result.cancelled");
+    if (isRemovedInDownloader(steps)) return t("log.run.result.removed");
+    if (steps.some((step) => step.message_code === "download_group_not_allowed")) return t("log.run.result.groupNotAllowed");
+    return t("log.run.result.cancelled");
   }
   // The newest configuration step decides: still waiting, or resumed (then the import continues).
   const hold = [...steps].reverse().find((step) => step.kind === "import_waiting_config");

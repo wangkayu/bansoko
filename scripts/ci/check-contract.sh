@@ -157,6 +157,7 @@ required_paths = {
   "/acquisitions/{acquisition_id}" => ["get"],
   "/acquisitions/{acquisition_id}/files" => ["get"],
   "/acquisitions/{acquisition_id}/import/retry" => ["post"],
+  "/acquisitions/{acquisition_id}/download/cancel" => ["post"],
   "/one-shot-acquisitions" => ["post"],
   "/one-shot-acquisitions/{one_shot_id}" => ["get"],
   "/one-shot-acquisitions/{one_shot_id}/attempts" => ["get"],
@@ -783,6 +784,14 @@ abort "import retry must not take a request body" if import_retry.key?("requestB
 import_retry_params = import_retry.fetch("parameters").map { |parameter| parameter["$ref"] }.compact
 %w[#/components/parameters/IfMatchVersion #/components/parameters/IdempotencyKey].each do |ref|
   abort "import retry must require #{ref}" unless import_retry_params.include?(ref)
+end
+# The record download cancel is version-guarded and idempotent, with no
+# request body, like the import retry.
+download_cancel = paths.fetch("/acquisitions/{acquisition_id}/download/cancel").fetch("post")
+abort "download cancel must not take a request body" if download_cancel.key?("requestBody")
+download_cancel_params = download_cancel.fetch("parameters").map { |parameter| parameter["$ref"] }.compact
+%w[#/components/parameters/IfMatchVersion #/components/parameters/IdempotencyKey].each do |ref|
+  abort "download cancel must require #{ref}" unless download_cancel_params.include?(ref)
 end
 %w[/file-operations/{file_operation_id}/retry /file-operations/{file_operation_id}/placement-retry /acquisitions/{acquisition_id}/completion/retry].each do |retired|
   abort "#{retired} is retired" if paths.key?(retired)

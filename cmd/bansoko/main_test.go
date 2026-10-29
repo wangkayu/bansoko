@@ -273,6 +273,13 @@ func (f *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"id": "attempt-1", "acquisition_id": "shot-1", "sequence": 1, "mode": "initial", "state": "failed",
 			"created_at": "2026-08-11T00:00:00Z", "updated_at": "2026-08-11T00:00:00Z", "input_digest": "sha256:attempt-1",
 		})
+	case r.Method == "POST" && r.URL.Path == "/api/v1/acquisitions/acq-1/download/cancel":
+		if r.Header.Get("If-Match") != "3" || r.Header.Get("Idempotency-Key") == "" {
+			http.Error(w, `{"code":"REQUEST_INVALID","message":"download cancel headers"}`, http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(map[string]any{"acquisition_id": "acq-1", "version": 4})
 	case r.Method == "POST" && r.URL.Path == "/api/v1/acquisitions/acq-1/import/retry":
 		if r.Header.Get("If-Match") != "3" || r.Header.Get("Idempotency-Key") == "" {
 			http.Error(w, `{"code":"REQUEST_INVALID","message":"import retry headers"}`, http.StatusBadRequest)
@@ -678,6 +685,10 @@ func TestExternalCommandsUseContractEndpoints(t *testing.T) {
 		t.Fatalf("retry-import: %v", err)
 	}
 	assertRequestSeen(t, server, "POST /api/v1/acquisitions/acq-1/import/retry")
+	if err := runCommand("cancel-download", "--acquisition-id", "acq-1", "--version", "3"); err != nil {
+		t.Fatalf("cancel-download: %v", err)
+	}
+	assertRequestSeen(t, server, "POST /api/v1/acquisitions/acq-1/download/cancel")
 	if err := runCommand("metadata", "search", "--q", "Test Show", "--limit", "5"); err != nil {
 		t.Fatalf("metadata search: %v", err)
 	}

@@ -22,7 +22,12 @@ import (
 func (s *Service) typedSubmit(ctx context.Context, c workitems.Claim) (worker.Outcome, error) {
 	session := uuid.NewString()
 	var gate stageReply
+	var cancelled stageReply
 	err := s.workItems.WithTypedStageTransaction(ctx, c, func(scope txscope.Tx) (workitems.EffectDisposition, error) {
+		applied, err := cancelUnsentSubmission(ctx, scope, c, &cancelled)
+		if err != nil || applied {
+			return workitems.DispositionNoExternalEffect, err
+		}
 		var raw []byte
 		if err := scope.SQLTx().QueryRowContext(ctx, `SELECT download_start_submit_attempt($1,$2,$3,$4)`, c.Owner.ID, c.ID, c.FencingToken, session).Scan(&raw); err != nil {
 			return "", err
@@ -37,6 +42,9 @@ func (s *Service) typedSubmit(ctx context.Context, c workitems.Claim) (worker.Ou
 	})
 	if err != nil {
 		return worker.Outcome{}, err
+	}
+	if cancelled.Applied {
+		return cancelledSubmission(c, cancelled), nil
 	}
 	if !gate.Granted {
 		if gate.Reason == "SUBMIT_RECONCILE_REQUIRED" {
@@ -146,6 +154,16 @@ func (s *Service) typedSubmit(ctx context.Context, c workitems.Claim) (worker.Ou
 	}
 	start := time.Now()
 	err = s.workItems.WithTypedStageTransaction(ctx, c, func(scope txscope.Tx) (workitems.EffectDisposition, error) {
+		// The last point before anything leaves the process: a cancel that
+		// arrived while the submission was being prepared sends nothing. An
+		// existing qB task found by the lookup is recorded first and cancelled
+		// by the sync stage, so its delete follows the ownership rule.
+		if !found {
+			applied, err := cancelUnsentSubmission(ctx, scope, c, &cancelled)
+			if err != nil || applied {
+				return workitems.DispositionNoExternalEffect, err
+			}
+		}
 		var raw []byte
 		if err := scope.SQLTx().QueryRowContext(ctx, `SELECT download_start_dispatch($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, task.id, c.ID, c.FencingToken, session, permit, spec, config.ConnectionID, namespaceDigest, locator, path, identity).Scan(&raw); err != nil {
 			return "", err
@@ -154,6 +172,9 @@ func (s *Service) typedSubmit(ctx context.Context, c workitems.Claim) (worker.Ou
 	})
 	if err != nil {
 		return worker.Outcome{}, err
+	}
+	if cancelled.Applied {
+		return cancelledSubmission(c, cancelled), nil
 	}
 	if !dispatch.Granted {
 		return worker.Committed(c, workitems.OwnerResult{ReasonCode: dispatch.Reason}), nil
@@ -291,4 +312,24 @@ func (s *Service) finishUnstartedSubmission(ctx context.Context, c workitems.Cla
 		outcome = worker.WithAfterCommit(outcome, s.submitFailureDiagnostic(task.id, code, cause))
 	}
 	return outcome, nil
+}
+
+// cancelUnsentSubmission cancels a task whose submission sent nothing yet,
+// under the owner lock of the surrounding stage transaction. applied=false
+// leaves the submission to its normal flow (no intent, a withdrawn group
+// intent, or a possibly sent permit that the lookup recovery reconciles).
+func cancelUnsentSubmission(ctx context.Context, scope txscope.Tx, c workitems.Claim, reply *stageReply) (bool, error) {
+	var raw []byte
+	if err := scope.SQLTx().QueryRowContext(ctx, `SELECT download_cancel_unsent_submission($1,$2,$3)`, c.Owner.ID, c.ID, c.FencingToken).Scan(&raw); err != nil {
+		return false, err
+	}
+	if err := json.Unmarshal(raw, reply); err != nil {
+		return false, err
+	}
+	return reply.Applied, nil
+}
+
+func cancelledSubmission(c workitems.Claim, reply stageReply) worker.Outcome {
+	return worker.Committed(c, workitems.OwnerResult{State: reply.State, ReasonCode: reply.ReasonCode,
+		Reason: safeReason(reply.CommittedReason)})
 }

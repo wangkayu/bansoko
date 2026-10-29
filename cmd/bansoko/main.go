@@ -77,6 +77,8 @@ func run(args []string) error {
 		return cmdRetryRelease(args[1:])
 	case "retry-import":
 		return cmdRetryImport(args[1:])
+	case "cancel-download":
+		return cmdCancelDownload(args[1:])
 	case "status":
 		return cmdStatus(args[1:])
 	case "wait":
@@ -132,6 +134,7 @@ Usage:
   bansoko refresh --source-id ID                     manual RSS refresh
   bansoko retry-release --release-id ID              accept a failed release again
   bansoko retry-import --acquisition-id ID --version V [--key K]  retry a failed import stage
+  bansoko cancel-download --acquisition-id ID --version V [--key K]  cancel a download before import
   bansoko status --anime-id ID [--json]              owner-chain status
   bansoko wait --anime-id ID [--interval S] [--timeout S]
   bansoko retry --owner rss|download|artifact --owner-id ID [--reason R]

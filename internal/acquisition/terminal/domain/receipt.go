@@ -14,10 +14,11 @@ const (
 	OutcomeSucceeded Outcome = "succeeded"
 	OutcomeFailed    Outcome = "failed"
 	// OutcomeCancelled is never a success and always carries a primary failure
-	// whose reason is one of the two cancellation reasons: ReasonOwnerRetired
-	// (the retirement disposition: the owner retired while the root was still
-	// running) or ReasonDownloaderTaskRemoved (the settler: the download task was
-	// deleted in the downloader before it completed).
+	// whose reason is one of the cancellation reasons: ReasonOwnerRetired (the
+	// retirement disposition: the owner retired while the root was still
+	// running), or one of the settler's download cancellations before import
+	// (ReasonDownloaderTaskRemoved, ReasonProviderGroupNotAllowed,
+	// ReasonUserCancelled).
 	OutcomeCancelled Outcome = "cancelled"
 )
 
@@ -29,7 +30,23 @@ const (
 	// consecutive definitive absent observations in qB. The task row stays failed with this code; the root settles it
 	// as cancelled at the submit or download_wait stage.
 	ReasonDownloaderTaskRemoved Reason = "DOWNLOADER_TASK_REMOVED"
+	// ReasonProviderGroupNotAllowed is the download task's failure code after
+	// its provider group left the subscription's selection before import.
+	ReasonProviderGroupNotAllowed Reason = "PROVIDER_GROUP_NOT_ALLOWED"
+	// ReasonUserCancelled is the download task's failure code after an explicit
+	// cancel of the execution record before import.
+	ReasonUserCancelled Reason = "USER_CANCELLED"
 )
+
+// IsDownloadCancellation reports a download task failure code the settler
+// ends as cancelled when it stopped the submit or download stage.
+func IsDownloadCancellation(code Reason) bool {
+	switch code {
+	case ReasonDownloaderTaskRemoved, ReasonProviderGroupNotAllowed, ReasonUserCancelled:
+		return true
+	}
+	return false
+}
 
 // RequirementsStatus is how far the file requirements got. Only sealed means the
 // manifest was verified and every file was classified required or excluded.
@@ -219,9 +236,10 @@ func init() {
 				if effects["complete"].Bool {
 					return r.at("effect_summary").fail(CodeConstraintViolated)
 				}
-			case string(ReasonDownloaderTaskRemoved):
+			case string(ReasonDownloaderTaskRemoved), string(ReasonProviderGroupNotAllowed), string(ReasonUserCancelled):
 				// Only a download that never completed can have been deleted in the
-				// downloader: the failure is always the submit or download stage's.
+				// downloader or cancelled: the failure is always the submit or
+				// download stage's.
 				if stage := failure["stage"].String; stage != string(StageSubmit) && stage != string(StageDownloadWait) {
 					return r.at("primary_failure").fail(CodeConstraintViolated)
 				}

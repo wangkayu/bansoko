@@ -52,6 +52,12 @@ describe("FR-10 产品语言表", () => {
     expect(isDownloaderRemoved({ state: "downloading", failure_code: "DOWNLOADER_TASK_REMOVED" })).toBe(false);
   });
 
+  it("DownloadTask cancelled before import is not a failure", () => {
+    expect(downloadTaskPill({ state: "failed", failure_code: "PROVIDER_GROUP_NOT_ALLOWED" })).toEqual({ label: "已取消：字幕组未选中", tone: "muted" });
+    expect(downloadTaskPill({ state: "failed", failure_code: "USER_CANCELLED" })).toEqual({ label: "已取消", tone: "muted" });
+    expect(downloadTaskPill({ state: "downloading", failure_code: "USER_CANCELLED" }).tone).not.toBe("muted");
+  });
+
   it("Artifact", () => {
     expect(artifactStateLabel("pending")).toBe("待校验");
     expect(artifactStateLabel("verified")).toBe("已校验");

@@ -369,7 +369,8 @@
       "UPDATE"
     ],
     "excluded_column_prefixes": [
-      "submit_"
+      "submit_",
+      "cancel_"
     ],
     "reason": "acquisition graph rows written by the listed owners next to the owner-held SQL functions",
     "direct_access": [

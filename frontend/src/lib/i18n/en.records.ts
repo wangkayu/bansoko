@@ -166,4 +166,17 @@ export const enRecordsCopy = {
     accepted: "Import started again",
     ok: "Got It",
   },
+  // Cancel on the download stage: shown while the download has not reached import and the server will accept it.
+  downloadCancel: {
+    action: "Cancel Download",
+    title: "Cancel Download",
+    line1: "Deletes the task and its downloaded data in qBittorrent; this episode is downloaded from another release instead",
+    line2: "You can retry it later from the RSS list",
+    oneShotLine1: "Deletes the task and its downloaded data in qBittorrent",
+    oneShotLine2: "A cancelled one-shot download cannot be retried",
+    submit: "Cancel Download",
+    accepted: "Download cancelled",
+    stale: "The record has changed. Refresh and try again.",
+    ok: "Got It",
+  },
 } as const satisfies CopyShape<typeof recordsCopy>;

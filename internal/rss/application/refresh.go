@@ -546,7 +546,10 @@ func syncReleaseEvaluationVersion(ctx context.Context, tx *sql.Tx, workItemID st
 
 // CreateOrMergeReleaseEvaluation enqueues a release_evaluate WorkItem for a
 // release if no live (available/leased) one exists. trigger is recorded in the
-// input snapshot for observability (for example "rss_refresh").
+// input snapshot for observability (for example "rss_refresh"). Its SQL twin
+// is release_reopen_selected_group (migration 103, trigger "group_selected"):
+// the same work_item_merge spec, run when a provider group enters the
+// selection at commit.
 func CreateOrMergeReleaseEvaluation(ctx context.Context, scope txscope.Tx, store *workitems.Store, releaseID string, releaseVersion int64, trigger string) error {
 	tx := scope.SQLTx()
 	if tx == nil {

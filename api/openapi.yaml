@@ -6192,6 +6192,67 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/Unprocessable'
+  /acquisitions/{acquisition_id}/download/cancel:
+    post:
+      tags: [Releases]
+      operationId: cancelAcquisitionDownload
+      x-scope: write
+      x-mcp:
+        tool: cancel_download
+        group: records
+        write: true
+        description: >-
+          Cancel the download of one running execution record before it reaches import.
+          The qBittorrent task is deleted together with its downloaded data (a task this
+          record did not create or shares with another running download is only left
+          alone), the record ends cancelled and no download_failed notification is sent.
+          A subscription record releases its episodes to the other versions at once and
+          its release can be downloaded again with retry_release; a one-shot record ends
+          for good. Works for subscription and one-shot records. Send the record's version
+          as If-Match and a fresh Idempotency-Key; cancel_available on the record says
+          whether the cancel is accepted now. Fails with DOWNLOAD_CANCEL_NOT_APPLICABLE
+          once the download completed or the record ended,
+          DOWNLOAD_CANCEL_ALREADY_REQUESTED after an accepted cancel,
+          MANAGED_ANIME_RETIRED for a retired owner and OWNER_VERSION_CONFLICT for a stale
+          version.
+      description: >-
+        Records the cancel of one running record whose download task has not
+        completed (queued, submitting, waiting_retry or downloading) and wakes
+        its download work. The download worker then deletes the qBittorrent
+        task with its data under the download-completion ownership rule, or
+        cancels a submission that sent nothing without calling qBittorrent; the
+        task ends failed with USER_CANCELLED and the record settles cancelled.
+        A download that completes before the worker acts keeps its normal
+        course. A subscription release keeps the cancelled task until a
+        release retry; a one-shot record has no retry. If-Match carries the
+        record version the caller saw. The same Idempotency-Key replays the
+        accepted result. 409 DOWNLOAD_CANCEL_NOT_APPLICABLE when the record is
+        not a running download record or its download already completed,
+        DOWNLOAD_CANCEL_ALREADY_REQUESTED after an accepted cancel,
+        MANAGED_ANIME_RETIRED for a retired owner, OWNER_VERSION_CONFLICT for a
+        stale version, IDEMPOTENCY_KEY_REUSED for a reused key with another
+        version.
+      parameters:
+        - $ref: '#/components/parameters/AcquisitionID'
+        - $ref: '#/components/parameters/IfMatchVersion'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: The cancel is recorded; the download worker carries it out.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcquisitionDownloadCancelResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
   /one-shot-acquisitions:
     post:
       tags: [Releases]
@@ -9492,6 +9553,8 @@ components:
         - download_submitted
         - download_completed
         - download_removed
+        - download_group_not_allowed
+        - download_cancelled
         - download_failed
         - artifact_verified
         - import_waiting_binding_bgm
@@ -18757,6 +18820,20 @@ components:
           type: integer
           format: int64
           minimum: 1
+    AcquisitionDownloadCancelResult:
+      type: object
+      additionalProperties: false
+      description: >-
+        An accepted download cancel. version is the record version after it;
+        the record settles cancelled once the download worker has acted.
+      required: [acquisition_id, version]
+      properties:
+        acquisition_id:
+          $ref: '#/components/schemas/ID'
+        version:
+          type: integer
+          format: int64
+          minimum: 1
     AcquisitionStage:
       type: object
       additionalProperties: false
@@ -18828,7 +18905,7 @@ components:
       description: >-
         Stable detail of one execution record. A compact record has no stages
         or requirements and no file page; it keeps its safe title and outcome.
-      required: [acquisition_id, version, entry_kind, execution_branch, state, record_detail, accepted_at, as_of, source_title, stages, files_available, import_retry_available]
+      required: [acquisition_id, version, entry_kind, execution_branch, state, record_detail, accepted_at, as_of, source_title, stages, files_available, import_retry_available, cancel_available]
       properties:
         acquisition_id:
           $ref: '#/components/schemas/ID'
@@ -18836,7 +18913,7 @@ components:
           type: integer
           format: int64
           minimum: 1
-          description: The record version; an import retry sends it as If-Match.
+          description: The record version; an import retry or a download cancel sends it as If-Match.
         import_retry_available:
           type: boolean
           description: >-
@@ -18844,6 +18921,13 @@ components:
             accepted as of this read: the record has settled, its import stage
             has a failed file or a failed placement handoff, and its owner is
             not retired.
+        cancel_available:
+          type: boolean
+          description: >-
+            True when POST /acquisitions/{acquisition_id}/download/cancel would
+            be accepted as of this read: the record is running, its download has
+            not completed, no cancel was accepted yet, and its owner is not
+            retired.
         entry_kind:
           $ref: '#/components/schemas/AcquisitionEntryKind'
         execution_branch:

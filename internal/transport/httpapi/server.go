@@ -334,6 +334,9 @@ type Dependencies struct {
 	// ImportRetry is set after construction (SetImportRetry); the import
 	// retry command answers 503 until it is wired.
 	ImportRetry ImportRetryService
+	// DownloadCancel is set after construction (SetDownloadCancel); the
+	// download cancel command answers 503 until it is wired.
+	DownloadCancel DownloadCancelService
 	// Backup is set after construction (SetBackup); the backup endpoints
 	// answer 503 until it is wired.
 	Backup           BackupService

@@ -48,6 +48,8 @@ SELECT r.id, r.entry_kind, r.execution_branch, r.state, r.record_state,
        r.version,
        CASE WHEN r.record_state = 'full' AND r.state IN ('succeeded', 'failed')
             THEN acquisition_import_retry_refusal(r.id) IS NULL ELSE false END,
+       CASE WHEN r.record_state = 'full' AND r.state = 'running'
+            THEN acquisition_cancel_refusal(r.id) IS NULL ELSE false END,
        COALESCE(ir.retries, 0), ir.last_at,
        COALESCE(pf.failed, 0), pf.first_reason,
        jsonb_build_object('group', r.input->'source'->'group', 'provider', r.input->'source'->'provider',
@@ -137,6 +139,7 @@ type acquisitionRootRow struct {
 	coverageKeys                              sql.NullString
 	version                                   int64
 	importRetryAvailable                      bool
+	cancelAvailable                           bool
 	importRetries                             int64
 	importRetriedAt                           sql.NullTime
 	placementsFailed                          int64
@@ -183,7 +186,7 @@ func scanAcquisitionRoot(scanner interface{ Scan(...any) error }) (acquisitionRo
 		&row.oneShotID,
 		&row.completedBytes, &row.totalBytes, &row.downloadSpeed,
 		&row.coverageKeys,
-		&row.version, &row.importRetryAvailable, &row.importRetries, &row.importRetriedAt,
+		&row.version, &row.importRetryAvailable, &row.cancelAvailable, &row.importRetries, &row.importRetriedAt,
 		&row.placementsFailed, &row.placementFailedReason,
 		&row.seedSource, &row.replacesExisting, &row.seedRelease, &row.configHold)
 	return row, err
@@ -210,7 +213,7 @@ func (row acquisitionRootRow) project(asOf time.Time) (AcquisitionRecordDetail, 
 		},
 		ExecutionBranch: row.branch, CompactedAt: nullTimePointer(row.compactedAt),
 		CompactReason: nullableStringPointer(row.compactTrigger), AsOf: asOf, Stages: []AcquisitionStage{},
-		Version: row.version, ImportRetryAvailable: row.importRetryAvailable,
+		Version: row.version, ImportRetryAvailable: row.importRetryAvailable, CancelAvailable: row.cancelAvailable,
 	}
 	if row.animeID.Valid {
 		detail.Anime = &AcquisitionAnimeLink{ManagedAnimeID: row.animeID.String, Title: row.animeTitle.String}

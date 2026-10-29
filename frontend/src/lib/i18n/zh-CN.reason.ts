@@ -194,6 +194,8 @@ export const reasonCopy = {
   qb_submission_preparer_required: "下载器提交暂不可用",
   download_stalled: "下载长时间没有进展",
   downloader_task_removed: "已在下载器中删除",
+  provider_group_not_allowed: "已取消：字幕组未选中",
+  user_cancelled: "已取消",
   qb_task_absent: "下载器中未找到该任务，将再次确认",
 
   // --- 下载文件校验 ---

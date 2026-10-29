@@ -64,6 +64,10 @@ func TestDeriveAcquisitionStages(t *testing.T) {
 			"succeeded,cancelled,<not_reached>,<not_reached>,<not_reached>,cancelled,<not_applicable>"},
 		{"deleted in the downloader before the first observation", acquisitionGraphFacts{Branch: "download", RootState: "cancelled", Task: &acquisitionStageOwner{State: "failed", FailureCode: ptr("DOWNLOADER_TASK_REMOVED"), CreatedAt: now, UpdatedAt: now}},
 			"cancelled,<not_reached>,<not_reached>,<not_reached>,<not_reached>,cancelled,<not_applicable>"},
+		{"subgroup no longer allowed while downloading", acquisitionGraphFacts{Branch: "download", RootState: "cancelled", Task: &acquisitionStageOwner{State: "failed", FailureCode: ptr("PROVIDER_GROUP_NOT_ALLOWED"), CreatedAt: now, UpdatedAt: now, WaitStartedAt: ptr(now)}},
+			"succeeded,cancelled,<not_reached>,<not_reached>,<not_reached>,cancelled,<not_applicable>"},
+		{"cancelled by the user before submit", acquisitionGraphFacts{Branch: "download", RootState: "cancelled", Task: &acquisitionStageOwner{State: "failed", FailureCode: ptr("USER_CANCELLED"), CreatedAt: now, UpdatedAt: now}},
+			"cancelled,<not_reached>,<not_reached>,<not_reached>,<not_reached>,cancelled,<not_applicable>"},
 		{"adopted", acquisitionGraphFacts{Branch: "adopted", RootState: "succeeded"},
 			"<not_applicable>,<not_applicable>,<not_applicable>,<not_applicable>,<not_applicable>,succeeded,<not_applicable>"},
 		// Download completion: the completion stage of a succeeded download root.

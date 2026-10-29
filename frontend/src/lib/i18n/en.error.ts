@@ -199,6 +199,8 @@ export const enErrorCopy = {
   MANUAL_RETRY_INVALID: "This task cannot be retried right now",
   IMPORT_RETRY_IN_FLIGHT: "This record is still running. Try again later.",
   IMPORT_RETRY_NOT_APPLICABLE: "This record has no failed import to retry",
+  DOWNLOAD_CANCEL_NOT_APPLICABLE: "The download already finished or the record ended",
+  DOWNLOAD_CANCEL_ALREADY_REQUESTED: "This download is already cancelled",
 
   // --- Import and files ---
   FILE_OPERATION_ID_REQUIRED: BAD_REQUEST,

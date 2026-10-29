@@ -246,11 +246,11 @@ func settleSealed(f SettlementFacts) (Decision, error) {
 }
 
 // upstreamOutcome is the outcome a definite upstream failure ends the root with.
-// A download task deleted in the downloader before it completed is a
-// cancellation, not a failure; every other upstream
-// failure, including the same code at any later stage, fails the root.
+// A download task deleted in the downloader, or cancelled, before it completed
+// is a cancellation, not a failure; every other upstream failure, including the
+// same code at any later stage, fails the root.
 func upstreamOutcome(f Failure) Outcome {
-	if f.ReasonCode == ReasonDownloaderTaskRemoved && (f.Stage == StageSubmit || f.Stage == StageDownloadWait) {
+	if IsDownloadCancellation(f.ReasonCode) && (f.Stage == StageSubmit || f.Stage == StageDownloadWait) {
 		return OutcomeCancelled
 	}
 	return OutcomeFailed

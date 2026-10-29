@@ -108,6 +108,7 @@ func jsonModeRoutes() map[string]route {
 		"POST /rss-sources/src-1/refresh":                          {202, `{"accepted":true,"work_item_id":"w1"}`},
 		"POST /releases/rel-1/retry":                               {200, `{"release_id":"rel-1","outcome":"accepted"}`},
 		"POST /acquisitions/acq-1/import/retry":                    {202, `{"acquisition_id":"acq-1","attempt":2,"retried_files":1,"reopened_placements":0,"version":4}`},
+		"POST /acquisitions/acq-1/download/cancel":                 {202, `{"acquisition_id":"acq-1","version":4}`},
 		"GET /anime/anime-1/workspace":                             {200, stubWorkspaceDone},
 		"POST /artifacts/art-1/retry":                              {202, `{"owner_type":"artifact","owner_id":"art-1"}`},
 		"POST /api-tokens":                                         {201, `{"token_id":"t1","token":"raw","name":"n"}`},
@@ -159,6 +160,7 @@ func TestJSONModePrintsExactlyOneDocumentForEverySubcommand(t *testing.T) {
 		{"refresh", "--source-id", "src-1"},
 		{"retry-release", "--release-id", "rel-1"},
 		{"retry-import", "--acquisition-id", "acq-1", "--version", "3"},
+		{"cancel-download", "--acquisition-id", "acq-1", "--version", "3"},
 		{"status", "--anime-id", "anime-1"},
 		{"wait", "--anime-id", "anime-1", "--interval", "1ms", "--timeout", "5s"},
 		{"retry", "--owner", "artifact", "--owner-id", "art-1", "--work-item-id", "w1"},
@@ -376,7 +378,7 @@ func TestUsageListsEveryCommand(t *testing.T) {
 	text := usage()
 	for _, command := range []string{
 		"login", "list", "search", "parse-title", "parse-torrent", "preview", "candidate", "feed",
-		"one-shot", "metadata", "refresh", "retry-release", "retry-import", "status", "wait",
+		"one-shot", "metadata", "refresh", "retry-release", "retry-import", "cancel-download", "status", "wait",
 		"retry", "api-token", "guide",
 	} {
 		if !strings.Contains(text, "bansoko "+command) {

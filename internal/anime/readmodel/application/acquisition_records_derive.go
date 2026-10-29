@@ -352,15 +352,23 @@ func completionStage(f acquisitionGraphFacts) AcquisitionStage {
 	return stage
 }
 
-// downloaderTaskRemoved is the DownloadTask failure code of a task deleted in
-// the downloader. The root settles it cancelled, so its stage is cancelled too,
-// never a failure.
-const downloaderTaskRemoved = "DOWNLOADER_TASK_REMOVED"
+// The DownloadTask failure codes of a download that ended before import
+// without failing: deleted in the downloader, or cancelled because its
+// subgroup left the selection or the user cancelled it. The root settles them
+// cancelled, so the stage is cancelled too, never a failure.
+const (
+	downloaderTaskRemoved   = "DOWNLOADER_TASK_REMOVED"
+	providerGroupNotAllowed = "PROVIDER_GROUP_NOT_ALLOWED"
+	userCancelled           = "USER_CANCELLED"
+)
 
 // failedTaskStageState is the stage state of a failed download task.
 func failedTaskStageState(task *acquisitionStageOwner) string {
-	if task.FailureCode != nil && *task.FailureCode == downloaderTaskRemoved {
-		return AcquisitionStageStateCancelled
+	if task.FailureCode != nil {
+		switch *task.FailureCode {
+		case downloaderTaskRemoved, providerGroupNotAllowed, userCancelled:
+			return AcquisitionStageStateCancelled
+		}
 	}
 	return AcquisitionStageStateFailed
 }

@@ -163,7 +163,7 @@ func MapDetail(item readmodelapplication.AcquisitionRecordDetail) generated.Acqu
 		AsOf: item.AsOf, SourceTitle: mapDisplay(item.SourceTitle), Anime: mapAnime(item.Anime),
 		Stage: mapStageName(item.Stage), StageState: mapStageState(item.StageState), ReasonCode: item.ReasonCode, ConfigHold: mapConfigHold(item.ConfigHold), OneShotId: mapID(item.OneShotID),
 		Stages: make([]generated.AcquisitionStage, len(item.Stages)), FilesAvailable: item.FilesAvailable,
-		Version: item.Version, ImportRetryAvailable: item.ImportRetryAvailable,
+		Version: item.Version, ImportRetryAvailable: item.ImportRetryAvailable, CancelAvailable: item.CancelAvailable,
 		Release: mapRelease(item.Release), Episodes: mapEpisodes(item.Episodes), Transfer: mapTransfer(item.Transfer),
 		Seed: mapSeed(item.Seed), ReplacesExisting: mapReplaces(item.ReplacesExisting),
 	}

@@ -203,6 +203,7 @@ export type AcquisitionDisplayValue = Schema<"AcquisitionDisplayValue">;
 export type AcquisitionFile = Schema<"AcquisitionFile">;
 export type AcquisitionFilePlacementFailure = Schema<"AcquisitionFilePlacementFailure">;
 export type AcquisitionImportRetryResult = Schema<"AcquisitionImportRetryResult">;
+export type AcquisitionDownloadCancelResult = Schema<"AcquisitionDownloadCancelResult">;
 export type AcquisitionFilePage = Schema<"AcquisitionFilePage">;
 export type FileManagerMount = Schema<"FileManagerMount">;
 export type FileManagerMountList = Schema<"FileManagerMountList">;
@@ -1398,6 +1399,21 @@ export function retryAcquisitionImport(
   idempotencyKey: string,
 ): Promise<AcquisitionImportRetryResult> {
   return request(`/acquisitions/${encodePathSegment(acquisitionID)}/import/retry`, {
+    method: "POST",
+    ifMatchVersion: expectedVersion,
+    idempotencyKey,
+  });
+}
+
+/** Cancels the download of a running record before import: the qBittorrent task is deleted with
+ *  its downloaded data and the record ends cancelled. `expectedVersion` is the detail's `version`;
+ *  available only while `cancel_available` is true, otherwise 409. */
+export function cancelAcquisitionDownload(
+  acquisitionID: string,
+  expectedVersion: number,
+  idempotencyKey: string,
+): Promise<AcquisitionDownloadCancelResult> {
+  return request(`/acquisitions/${encodePathSegment(acquisitionID)}/download/cancel`, {
     method: "POST",
     ifMatchVersion: expectedVersion,
     idempotencyKey,

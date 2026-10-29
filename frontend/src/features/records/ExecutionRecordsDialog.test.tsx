@@ -64,6 +64,7 @@ const failedDetail: AcquisitionRecordDetail = {
   files_available: true,
   version: 4,
   import_retry_available: true,
+  cancel_available: false,
 };
 
 // A succeeded record whose download-completion action was refused: no repair.
@@ -698,5 +699,106 @@ describe("ExecutionRecordsDialog 一次性下载失败", () => {
     renderDialog({ record: "acq-auto" });
     await screen.findByText(t("records.detail.outcomeTitle"));
     expect(screen.queryByText(t("records.detail.oneShotFailed"))).not.toBeInTheDocument();
+  });
+});
+
+describe("ExecutionRecordsDialog 取消下载", () => {
+  const downloading = (entryKind: AcquisitionRecordDetail["entry_kind"]): AcquisitionRecordDetail => ({
+    ...failedDetail,
+    acquisition_id: "acq-dl",
+    entry_kind: entryKind,
+    state: "running",
+    stage: "download_wait",
+    stage_state: "running",
+    reason_code: undefined,
+    ended_at: undefined,
+    outcome: undefined,
+    stages: [
+      { stage: "submit", availability: "present", state: "succeeded" },
+      { stage: "download_wait", availability: "present", state: "running" },
+      { stage: "inspect", availability: "not_reached" },
+      { stage: "plan", availability: "not_reached" },
+      { stage: "file_execution", availability: "not_reached" },
+      { stage: "settlement", availability: "not_reached" },
+      { stage: "completion", availability: "not_applicable" },
+    ],
+    files_available: false,
+    version: 7,
+    import_retry_available: false,
+    cancel_available: true,
+  });
+
+  function serveDownloading(detail: AcquisitionRecordDetail, cancel: () => Response) {
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === "/api/v1/acquisitions/acq-dl") return json(detail);
+      if (url.pathname === "/api/v1/acquisitions/acq-dl/download/cancel") {
+        if (init?.method !== "POST") return json({ code: "METHOD", message: "method" }, 405);
+        return cancel();
+      }
+      return base(input, init);
+    });
+  }
+
+  async function openCancel() {
+    const stages = await screen.findByRole("list", { name: t("records.detail.stagesAria") });
+    const buttons = within(stages).getAllByRole("button", { name: t("records.downloadCancel.action") });
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0].closest("li")?.textContent).toContain(t("records.stage.download_wait"));
+    fireEvent.click(buttons[0]);
+  }
+
+  it("下载阶段可取消订阅下载：确认框说明删除与重试，带版本和幂等键提交，并重新读取记录", async () => {
+    serveDownloading(downloading("automatic"), () => json({ acquisition_id: "acq-dl", version: 8 }, 202));
+    renderDialog({ record: "acq-dl" });
+    await openCancel();
+
+    expect(await screen.findByText(t("records.downloadCancel.line1"))).toBeInTheDocument();
+    expect(screen.getByText(t("records.downloadCancel.line2"))).toBeInTheDocument();
+    expect(screen.queryByText(t("records.downloadCancel.oneShotLine2"))).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("download-cancel-confirm"));
+    expect(await screen.findByText(t("records.downloadCancel.accepted"))).toBeInTheDocument();
+
+    const call = fetchMock.mock.calls.find(([input]) => String(input).endsWith("/acquisitions/acq-dl/download/cancel"));
+    expect(call).toBeDefined();
+    const init = call?.[1] as RequestInit;
+    expect(init.method).toBe("POST");
+    expect(init.body).toBeUndefined();
+    const headers = new Headers(init.headers);
+    expect(headers.get("If-Match")).toBe("7");
+    expect(headers.get("Idempotency-Key")).toMatch(/^download-cancel-/);
+
+    fireEvent.click(screen.getByRole("button", { name: t("records.downloadCancel.ok") }));
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith("/acquisitions/acq-dl")).length).toBeGreaterThan(1));
+  });
+
+  it("一次性下载的确认框说明取消后不能重试", async () => {
+    serveDownloading(downloading("one_shot"), () => json({ acquisition_id: "acq-dl", version: 8 }, 202));
+    renderDialog({ record: "acq-dl" });
+    await openCancel();
+    expect(await screen.findByText(t("records.downloadCancel.oneShotLine1"))).toBeInTheDocument();
+    expect(screen.getByText(t("records.downloadCancel.oneShotLine2"))).toBeInTheDocument();
+    expect(screen.queryByText(t("records.downloadCancel.line2"))).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["DOWNLOAD_CANCEL_ALREADY_REQUESTED", t("error.DOWNLOAD_CANCEL_ALREADY_REQUESTED")],
+    ["DOWNLOAD_CANCEL_NOT_APPLICABLE", t("error.DOWNLOAD_CANCEL_NOT_APPLICABLE")],
+    ["OWNER_VERSION_CONFLICT", t("records.downloadCancel.stale")],
+  ])("取消被拒绝（%s）时在确认框里显示简短说明", async (code, message) => {
+    serveDownloading(downloading("automatic"), () => json({ code, message: "refused" }, 409));
+    renderDialog({ record: "acq-dl" });
+    await openCancel();
+    fireEvent.click(await screen.findByTestId("download-cancel-confirm"));
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.queryByText(t("records.downloadCancel.accepted"))).not.toBeInTheDocument();
+  });
+
+  it("服务端不提供取消时没有取消按钮", async () => {
+    serveDownloading({ ...downloading("automatic"), cancel_available: false }, () => json({}, 500));
+    renderDialog({ record: "acq-dl" });
+    const stages = await screen.findByRole("list", { name: t("records.detail.stagesAria") });
+    expect(within(stages).queryByRole("button", { name: t("records.downloadCancel.action") })).not.toBeInTheDocument();
   });
 });

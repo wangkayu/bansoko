@@ -127,7 +127,7 @@ var pinnedTools = []string{
 	"get_subscriptions", "search_anime", "parse_title", "parse_torrent", "rss_list_view",
 	"discover_feed_groups", "get_feed_snapshot", "refresh_feed_snapshot", "get_business_preset", "load_business_preset",
 	"list_candidates", "get_candidate", "create_candidate", "patch_candidate", "activate_candidate",
-	"refresh_metadata", "refresh_rss", "retry_release", "retry_import", "get_workspace", "poll_workspace",
+	"refresh_metadata", "refresh_rss", "retry_release", "retry_import", "cancel_download", "get_workspace", "poll_workspace",
 	"acquire_seed_once", "get_one_shot_acquisition", "list_one_shot_attempts",
 	"expand_seed", "download_snapshot_seed", "search_metadata",
 	"reevaluate_releases", "match_metadata", "discover_subgroups", "patch_subscription", "set_new_releases_only", "set_provider_group_offset", "automation_run",

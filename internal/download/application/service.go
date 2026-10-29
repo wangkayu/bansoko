@@ -90,6 +90,7 @@ type Service struct {
 	syncChecked           bool
 	logger                observabilityport.RuntimeLogger
 	eventHub              *events.Hub
+	cancelRemover         CancelRemover
 }
 
 // SetDiagnosticRecorder wires the optional diagnostic episode boundary.
@@ -232,6 +233,7 @@ func (s *Service) SyncHandler() worker.Handler   { return QBSyncHandler{service:
 // is never returned from this package as a public read model.
 type taskSnapshot struct {
 	id             string
+	acquisitionID  string
 	releaseID      string
 	connectionID   sql.NullString
 	providerRaw    []byte
@@ -302,12 +304,12 @@ func (s *Service) loadTask(ctx context.Context, taskID string, lock bool) (taskS
 	if strings.TrimSpace(taskID) == "" {
 		return taskSnapshot{}, ErrInvalidClaim
 	}
-	query := `SELECT id, release_id, qbittorrent_connection_id, provider_correlation, frozen_input, state, idempotency_key, version FROM download_tasks WHERE id = $1`
+	query := `SELECT id, acquisition_id, release_id, qbittorrent_connection_id, provider_correlation, frozen_input, state, idempotency_key, version FROM download_tasks WHERE id = $1`
 	if lock {
 		query += ` FOR UPDATE`
 	}
 	var task taskSnapshot
-	if err := s.db.QueryRowContext(ctx, query, taskID).Scan(&task.id, &task.releaseID, &task.connectionID, &task.providerRaw, &task.frozenInputRaw, &task.state, &task.idempotencyKey, &task.version); err != nil {
+	if err := s.db.QueryRowContext(ctx, query, taskID).Scan(&task.id, &task.acquisitionID, &task.releaseID, &task.connectionID, &task.providerRaw, &task.frozenInputRaw, &task.state, &task.idempotencyKey, &task.version); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return taskSnapshot{}, fmt.Errorf("download task %q not found: %w", taskID, err)
 		}
@@ -759,8 +761,9 @@ func (s *Service) handleSubmit(ctx context.Context, claim workitems.Claim) (work
 	switch outcome.OwnerResult.State {
 	case "failed":
 		// Failures that reached finishUnstartedSubmission already carry the
-		// diagnostic built from their cause.
-		if outcome.AfterCommit == nil {
+		// diagnostic built from their cause. A cancelled submission is not a
+		// failure of the submit path.
+		if outcome.AfterCommit == nil && !isCancelCode(outcome.OwnerResult.ReasonCode) {
 			outcome = worker.WithAfterCommit(outcome, observabilityport.DiagnosticFailureAfterCommit(s.diagnostics, s.logger, observabilityport.InternalFailure(observabilityport.InternalDownloadSubmit, "")))
 		}
 	case "submitting", "downloading", "completed":

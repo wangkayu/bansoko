@@ -58,6 +58,21 @@ describe("groupEvents", () => {
     expect(runView(auto.steps).oneShot).toBe(false);
   });
 
+  it("a download cancelled before import says why", () => {
+    const cancelled = (release: string, message: BusinessEntry["message_code"]) =>
+      groupEvents([
+        entry({ release_id: release, kind: "download_changed", outcome: "info", message_code: message, occurred_at: at(30) }),
+        entry({ release_id: release, kind: "acquisition_settled", outcome: "info", message_code: "acquisition_cancelled", occurred_at: at(31) }),
+      ].map(record))[0]!;
+    const group = cancelled("r-5", "download_group_not_allowed");
+    const user = cancelled("r-6", "download_cancelled");
+    const removed = cancelled("r-7", "download_removed");
+    if (group.type !== "run" || user.type !== "run" || removed.type !== "run") throw new Error("expected runs");
+    expect(runView(group.steps).result).toBe("已取消：字幕组未选中");
+    expect(runView(user.steps).result).toBe("已取消");
+    expect(runView(removed.steps).result).toBe("已在下载器中删除");
+  });
+
   it("a run without an acquisition result is in progress", () => {
     const [, , started] = download("r-3", 5);
     const items = groupEvents([record(started!)]);

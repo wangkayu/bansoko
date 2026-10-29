@@ -55,8 +55,24 @@ func (s *Service) typedSync(ctx context.Context, claim workitems.Claim) (worker.
 	}
 	session := uuid.NewString()
 	var gate stageReply
+	var cancel cancelGateReply
 	err := s.workItems.WithTypedStageTransaction(ctx, claim, func(scope txscope.Tx) (workitems.EffectDisposition, error) {
 		var raw []byte
+		// A cancel intent (or a provider group that left the selection) is
+		// decided first, under the same owner lock; only a sync with no cancel
+		// to run goes on to the poll gate.
+		if err := scope.SQLTx().QueryRowContext(ctx, `SELECT download_cancel_start($1,$2,$3,$4,$5)`, claim.Owner.ID, claim.ID, claim.FencingToken, input.Ordinal, session).Scan(&raw); err != nil {
+			return "", err
+		}
+		if err := json.Unmarshal(raw, &cancel); err != nil {
+			return "", err
+		}
+		if cancel.Granted {
+			return workitems.DispositionAmbiguous, nil
+		}
+		if cancel.Reason == "CANCEL_WITHDRAWN" {
+			return workitems.DispositionNoExternalEffect, nil
+		}
 		if err := scope.SQLTx().QueryRowContext(ctx, `SELECT download_start_sync($1,$2,$3,$4,$5)`, claim.Owner.ID, claim.ID, claim.FencingToken, input.Ordinal, session).Scan(&raw); err != nil {
 			return "", err
 		}
@@ -70,6 +86,12 @@ func (s *Service) typedSync(ctx context.Context, claim workitems.Claim) (worker.
 	})
 	if err != nil {
 		return worker.Outcome{}, err
+	}
+	if cancel.Granted {
+		return s.typedCancel(ctx, claim, session)
+	}
+	if cancel.Reason == "CANCEL_WITHDRAWN" {
+		return worker.Committed(claim, workitems.OwnerResult{ReasonCode: cancel.Reason}), nil
 	}
 	if !gate.Granted {
 		return worker.Committed(claim, workitems.OwnerResult{State: gate.State, ReasonCode: gate.Reason}), nil

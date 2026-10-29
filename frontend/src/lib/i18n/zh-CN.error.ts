@@ -198,6 +198,8 @@ export const errorCopy = {
   MANUAL_RETRY_INVALID: "该任务当前不能重试",
   IMPORT_RETRY_IN_FLIGHT: "这条记录仍在处理，请稍后重试",
   IMPORT_RETRY_NOT_APPLICABLE: "这条记录没有需要重试的入库",
+  DOWNLOAD_CANCEL_NOT_APPLICABLE: "下载已完成或记录已结束，不能取消",
+  DOWNLOAD_CANCEL_ALREADY_REQUESTED: "这次下载已取消",
 
   // --- 入库与文件 ---
   FILE_OPERATION_ID_REQUIRED: BAD_REQUEST,

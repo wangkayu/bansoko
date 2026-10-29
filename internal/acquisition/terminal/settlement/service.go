@@ -22,7 +22,9 @@ import (
 //     acquisition_settle_defer). The owner-held function re-checks the
 //     facts revision and live work under the root lock, so a decision made on
 //     stale facts never lands. A download task deleted in the downloader
-//     (DOWNLOADER_TASK_REMOVED) settles its root cancelled, not failed.
+//     (DOWNLOADER_TASK_REMOVED) or cancelled before import
+//     (PROVIDER_GROUP_NOT_ALLOWED, USER_CANCELLED) settles its root
+//     cancelled, not failed.
 //   - Dispose: a running root whose owner retired settles to cancelled /
 //     OWNER_RETIRED once no admitted external effect is still in flight.
 //   - Compact: a terminal full root whose detail_until has passed, whose task

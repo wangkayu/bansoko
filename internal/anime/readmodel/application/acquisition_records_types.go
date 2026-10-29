@@ -271,6 +271,9 @@ type AcquisitionRecordDetail struct {
 	// ImportRetryAvailable is true when the import retry would be accepted as
 	// of this read (acquisition_import_retry_refusal answers NULL).
 	ImportRetryAvailable bool
+	// CancelAvailable is true when a cancel of the download would be accepted
+	// as of this read (acquisition_cancel_refusal answers NULL).
+	CancelAvailable bool
 }
 
 // AcquisitionFileOperation is the newest file operation of one required file.

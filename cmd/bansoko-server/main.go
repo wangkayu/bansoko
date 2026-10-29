@@ -400,6 +400,7 @@ func main() {
 		fatalStartup(runtimeLogger, "download completion build failed", "download_completion_build_failed")
 	}
 	completionService.SetEventHub(eventHub)
+	downloadService.SetCancelRemover(cancelRemover{completion: completionService})
 
 	workerGraph, err := initializeWorkerGraph(
 		workStore,
@@ -667,6 +668,13 @@ func main() {
 	}
 	importRetry.SetEventHub(eventHub)
 	apiServer.SetImportRetry(importRetry)
+	downloadCancel, err := animeapplication.NewDownloadCancelService(db)
+	if err != nil {
+		_ = db.Close()
+		fatalStartup(runtimeLogger, "download cancel service build failed", "http_server_build_failed")
+	}
+	downloadCancel.SetEventHub(eventHub)
+	apiServer.SetDownloadCancel(downloadCancel)
 	apiServer.SetBackup(backupService)
 
 	server := &http.Server{

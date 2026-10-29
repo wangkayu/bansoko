@@ -124,3 +124,117 @@ func TestSelectionIntermediateStatesKeepWaitingReleasesPostgres(t *testing.T) {
 		requireWaitingRelease(t, db, "filtered", "provider_group_not_selected", false)
 	})
 }
+
+func groupSelectedEvaluations(t *testing.T, db *sql.DB) int {
+	t.Helper()
+	var count int
+	if err := db.QueryRow(`SELECT count(*) FROM work_items WHERE owner_type = 'release' AND owner_id = 'release-1'
+AND kind = 'release_evaluate' AND input_snapshot->>'trigger' = 'group_selected'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	return count
+}
+
+// The selection's entry mirrors its exit (migration 103): a release that left
+// with the selection is evaluated again from its stored facts when its group
+// is available and selected at commit, whichever writer selected it. A
+// selection that only passes through selected inside one transaction, and a
+// stopped subscription, schedule nothing.
+func TestSelectionEntryReopensDroppedReleasesPostgres(t *testing.T) {
+	ctx := context.Background()
+	dropped := func(t *testing.T) (*sql.DB, Dispatcher) {
+		t.Helper()
+		db, d, _, _ := waitingReleaseFixture(t)
+		if _, err := db.Exec(`UPDATE provider_group_selections SET effective_selected = FALSE, version = version + 1 WHERE subscription_id = 'sub-1'`); err != nil {
+			t.Fatal(err)
+		}
+		requireWaitingRelease(t, db, "filtered", "provider_group_not_selected", false)
+		if n := groupSelectedEvaluations(t, db); n != 0 {
+			t.Fatalf("a deselect scheduled %d evaluations", n)
+		}
+		return db, d
+	}
+	t.Run("manual selection", func(t *testing.T) {
+		db, _ := dropped(t)
+		if _, err := db.Exec(`UPDATE provider_group_selections SET effective_selected = TRUE, version = version + 1 WHERE subscription_id = 'sub-1'`); err != nil {
+			t.Fatal(err)
+		}
+		if n := groupSelectedEvaluations(t, db); n != 1 {
+			t.Fatalf("group_selected evaluations = %d, want 1", n)
+		}
+	})
+	t.Run("recompute", func(t *testing.T) {
+		db, d := dropped(t)
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback()
+		if err := d.RecomputeSubscriptionSelections(ctx, txscope.Wrap(tx), "sub-1", "anime-1"); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+		if n := groupSelectedEvaluations(t, db); n != 1 {
+			t.Fatalf("group_selected evaluations = %d, want 1", n)
+		}
+	})
+	t.Run("discovery restores availability", func(t *testing.T) {
+		db, d, result, decisions := waitingReleaseFixture(t)
+		inactive, active := false, true
+		result.Groups[0].Active = &inactive
+		if err := d.applyDiscoveryScope(ctx, "sub-1", "anibt", result, decisions, true); err != nil {
+			t.Fatal(err)
+		}
+		requireWaitingRelease(t, db, "filtered", "provider_group_not_selected", false)
+		if n := groupSelectedEvaluations(t, db); n != 0 {
+			t.Fatalf("an unavailable group scheduled %d evaluations", n)
+		}
+		result.Groups[0].Active = &active
+		if err := d.applyDiscoveryScope(ctx, "sub-1", "anibt", result, decisions, true); err != nil {
+			t.Fatal(err)
+		}
+		if n := groupSelectedEvaluations(t, db); n != 1 {
+			t.Fatalf("group_selected evaluations = %d, want 1", n)
+		}
+	})
+	t.Run("intermediate selection", func(t *testing.T) {
+		db, _ := dropped(t)
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback()
+		for _, selected := range []bool{true, false} {
+			if _, err := tx.Exec(`UPDATE provider_group_selections SET effective_selected = $1, version = version + 1 WHERE subscription_id = 'sub-1'`, selected); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+		if n := groupSelectedEvaluations(t, db); n != 0 {
+			t.Fatalf("an intermediate selection scheduled %d evaluations", n)
+		}
+	})
+	t.Run("stopped subscription", func(t *testing.T) {
+		db, _ := dropped(t)
+		if _, err := db.Exec(`UPDATE subscriptions SET state = 'stopped', version = version + 1 WHERE id = 'sub-1'`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`UPDATE provider_group_selections SET effective_selected = TRUE, version = version + 1 WHERE subscription_id = 'sub-1'`); err != nil {
+			t.Fatal(err)
+		}
+		if n := groupSelectedEvaluations(t, db); n != 0 {
+			t.Fatalf("a stopped subscription scheduled %d evaluations", n)
+		}
+		// The resume is the entry the stopped reselect could not make.
+		if _, err := db.Exec(`UPDATE subscriptions SET state = 'active', version = version + 1 WHERE id = 'sub-1'`); err != nil {
+			t.Fatal(err)
+		}
+		if n := groupSelectedEvaluations(t, db); n != 1 {
+			t.Fatalf("group_selected evaluations after the resume = %d, want 1", n)
+		}
+	})
+}

@@ -21,7 +21,7 @@ import {
 } from "../../lib/api/client";
 import { formatBytes, formatDateTime } from "../../lib/labels";
 import { useRememberedSegment } from "../../lib/rememberedSegment";
-import { acquisitionRecordKeys } from "../../lib/queryKeys";
+import { acquisitionRecordKeys, rssListKeys } from "../../lib/queryKeys";
 import { useBoundedRefresh } from "../../lib/events/useBoundedRefresh";
 import { t, tryT } from "../../lib/i18n";
 import { labelValue } from "../../lib/i18n/format";
@@ -35,13 +35,15 @@ import { TagBadges } from "../rss-list/TagBadges";
 import { providerLabel } from "../../lib/providers/registry";
 import { seedIdentityParts } from "./seedIdentity";
 import { ImportRetryConfirmDialog } from "./ImportRetryConfirmDialog";
+import { DownloadCancelConfirmDialog } from "./DownloadCancelConfirmDialog";
 import { configHoldText } from "./configHold";
 
 // ExecutionRecordsDialog — the read-only list and details of execution records (accepted
 //   acquisitions). Route-carried (`?record=list|<id>`, see shell/routeDialogs.ts), full screen on
 //   phones. Exactly one repair entry exists: "retry" when the import stage fails and the server
 //   reports import_retry_available (the same for subscriptions and one-shot downloads), re-running
-//   every failed file; any other repair is a re-enqueue and never happens here. Display text uses
+//   every failed file; any other repair is a re-enqueue and never happens here. The one other action
+//   is "cancel download" on the download stage while the server reports cancel_available. Display text uses
 //   only server-provided safe values; hidden or unavailable values show a placeholder and are
 //   never reconstructed on the frontend. While open it refreshes with live events
 //   (rss/records invalidating ["acquisition-records"]), falling back to the low-frequency
@@ -554,6 +556,9 @@ function StageList({ detail }: { detail: AcquisitionRecordDetail }) {
                 <p className={META}>{t("records.configHold.note")}</p>
               </>
             ) : null}
+            {stage.stage === "download_wait" && detail.cancel_available ? (
+              <DownloadCancel acquisitionID={detail.acquisition_id} version={detail.version} oneShot={detail.entry_kind === "one_shot"} />
+            ) : null}
             {stage.stage === "file_execution" && stage.state === "failed" && detail.import_retry_available ? (
               <ImportRetry acquisitionID={detail.acquisition_id} version={detail.version} />
             ) : null}
@@ -579,6 +584,32 @@ function ImportRetry({ acquisitionID, version }: { acquisitionID: string; versio
           version={version}
           onClose={() => setConfirming(false)}
           onAccepted={() => void queryClient.invalidateQueries({ queryKey: acquisitionRecordKeys.all })}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+// Cancel a download that has not reached import (the server reports cancel_available): after confirming, the
+//   qBittorrent task is deleted with its data. Records and RSS lists refresh on success.
+function DownloadCancel({ acquisitionID, version, oneShot }: { acquisitionID: string; version: number; oneShot: boolean }) {
+  const queryClient = useQueryClient();
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+      <Button size="sm" variant="secondary" onClick={() => setConfirming(true)}>
+        {t("records.downloadCancel.action")}
+      </Button>
+      {confirming ? (
+        <DownloadCancelConfirmDialog
+          acquisitionID={acquisitionID}
+          version={version}
+          oneShot={oneShot}
+          onClose={() => setConfirming(false)}
+          onAccepted={() => {
+            void queryClient.invalidateQueries({ queryKey: acquisitionRecordKeys.all });
+            void queryClient.invalidateQueries({ queryKey: rssListKeys.all });
+          }}
         />
       ) : null}
     </div>

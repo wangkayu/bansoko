@@ -64,6 +64,7 @@ type queryer interface {
 var knownRelations = map[string]string{
 	"acquisition_files":                "r",
 	"acquisition_import_retries":       "r",
+	"acquisition_cancel_requests":      "r",
 	"acquisition_targets":              "r",
 	"acquisitions":                     "r",
 	"alignment_operations":             "r",
@@ -219,7 +220,7 @@ var requiredColumns = map[string][]string{
 	"provider_group_scope_generations": {"subscription_id", "provider", "generation"},
 	"postprocessing_plans":             {"id", "artifact_id", "artifact_version", "acquisition_id", "config_hold", "config_hold_files", "config_hold_revision", "config_hold_logged_revision"},
 	"artifacts":                        {"acquisition_id", "inspection_requirements_status", "activity_logged_at"},
-	"download_tasks":                   {"activity_submit_logged_at", "activity_terminal_logged_at", "submit_permit_id", "submit_dispatch_state", "submit_effect_class", "submit_retry_safe", "submit_attempt"},
+	"download_tasks":                   {"activity_submit_logged_at", "activity_terminal_logged_at", "submit_permit_id", "submit_dispatch_state", "submit_effect_class", "submit_retry_safe", "submit_attempt", "cancel_cause"},
 	"artifact_files":                   {"acquisition_id"},
 	"acquisitions":                     {"id", "execution_branch", "entry_kind", "access_scope", "request_namespace", "request_key", "request_hash", "admission_digest", "accepted_at", "retention_anchor_at", "receipt_until", "detail_until", "state", "record_state", "preparation_mode", "version", "facts_revision", "checked_revision", "settlement_error_count", "display_title", "compacted_at", "compact_trigger", "completion_open", "compact_pinned", "activity_logged_at", "input_canonical_utf8", "input", "payload_digest", "preparation_witness_canonical_utf8", "preparation_witness", "manifest_digest", "manifest_item_count", "manifest_sealed_at", "requirements_manifest_digest", "requirements_selection_digest", "requirements_evidence_digest", "requirements_digest", "requirements_item_count", "requirements_required_count", "requirements_sealed_at", "target_requirements_digest", "target_digest", "target_sealed_at", "vars_evaluation_canonical_utf8", "vars_evaluation"},
 	"acquisition_files":                {"acquisition_id", "file_ref", "ordinal", "relative_path", "exact_size", "media_kind", "identity_evidence", "requirement", "requirement_reason_code", "selection_evidence", "spec_digest", "intent", "operation", "canonical_path", "collision", "target_source_cleanup", "render_snapshot", "plan_kind", "plan_target_file_ref", "plan_operation_ref", "plan_evidence", "plan_reason_code", "plan_diagnostic", "delivery_schema_version", "outcome", "completion_mode", "effect_class", "final_object", "delivery_source_cleanup", "delivery_reason_code", "evidence_digest", "operation_id", "receipt", "delivered_at", "activity_logged_at"},

@@ -71,9 +71,14 @@ const (
 	MessageDownloadCompleted     MessageCode = "download_completed"
 	// MessageDownloadRemoved is a task deleted in the downloader (cancelled,
 	// not a failure).
-	MessageDownloadRemoved  MessageCode = "download_removed"
-	MessageDownloadFailed   MessageCode = "download_failed"
-	MessageArtifactVerified MessageCode = "artifact_verified"
+	MessageDownloadRemoved MessageCode = "download_removed"
+	// MessageDownloadGroupNotAllowed is a download cancelled because its
+	// subgroup left the subscription's selection (cancelled, not a failure).
+	MessageDownloadGroupNotAllowed MessageCode = "download_group_not_allowed"
+	// MessageDownloadCancelled is a download the user cancelled before import.
+	MessageDownloadCancelled MessageCode = "download_cancelled"
+	MessageDownloadFailed    MessageCode = "download_failed"
+	MessageArtifactVerified  MessageCode = "artifact_verified"
 	// The import waits for configuration: one message per missing item, with
 	// the number of files it blocks; and the configuration complete again.
 	MessageImportWaitingBGM      MessageCode = "import_waiting_binding_bgm"
@@ -200,6 +205,8 @@ var (
 		{Code: MessageDownloadSubmitted, Kind: ActivityKindDownloadChanged, Params: []MessageParam{{Name: ParamName, Type: MessageParamString}}},
 		{Code: MessageDownloadCompleted, Kind: ActivityKindDownloadChanged},
 		{Code: MessageDownloadRemoved, Kind: ActivityKindDownloadChanged},
+		{Code: MessageDownloadGroupNotAllowed, Kind: ActivityKindDownloadChanged},
+		{Code: MessageDownloadCancelled, Kind: ActivityKindDownloadChanged},
 		{Code: MessageDownloadFailed, Kind: ActivityKindDownloadChanged},
 		{Code: MessageArtifactVerified, Kind: ActivityKindArtifactVerified},
 		{Code: MessageImportWaitingBGM, Kind: ActivityKindImportWaitingConfig, Params: requiredCount},
