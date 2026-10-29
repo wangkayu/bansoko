@@ -993,7 +993,7 @@ export function OneShotDialog({
           <section
             ref={settingsRef}
             aria-label={t("oneshot.configTitle")}
-            className="tw:grid tw:min-h-0 tw:content-start tw:gap-3 tw:overflow-y-auto tw:border-l tw:border-border tw:px-5 tw:pt-3 tw:pb-4 tw:phone:overflow-visible tw:phone:border-l-0 tw:phone:border-t tw:phone:px-4 tw:phone:pt-4"
+            className="tw:grid tw:min-h-0 tw:grid-cols-1 tw:content-start tw:gap-3 tw:overflow-y-auto tw:border-l tw:border-border tw:px-5 tw:pt-3 tw:pb-4 tw:phone:overflow-visible tw:phone:border-l-0 tw:phone:border-t tw:phone:px-4 tw:phone:pt-4"
           >
             <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
               <h3 className="text-body tw:m-0 tw:flex-1">{t("oneshot.configTitle")}</h3>
@@ -1007,7 +1007,7 @@ export function OneShotDialog({
             </p>
 
             {draft && (
-              <div className="tw:grid tw:gap-2">
+              <div className="tw:grid tw:grid-cols-1 tw:gap-2">
                 <Field label={t("field.title")}>
                   <Input
                     id="oneshot-title"

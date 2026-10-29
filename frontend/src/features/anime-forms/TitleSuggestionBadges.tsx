@@ -41,9 +41,17 @@ export function TitleSuggestionBadges({
   return (
     <div className={cn("tw:flex tw:flex-wrap tw:gap-1.5", className)} role="group" aria-label={t("tabs.metadata.suggestionsAria")}>
       {visible.map((suggestion) => (
-        <Button key={suggestion.text} size="sm" variant="secondary" onClick={() => onPick(suggestion.text)}>
-          <span className="tw:text-muted-foreground">{t(`tabs.metadata.suggestionSource.${suggestion.source}`)}</span>
-          {suggestion.text}
+        // A long name truncates inside the badge (full text on hover) instead of widening the host column.
+        <Button
+          key={suggestion.text}
+          size="sm"
+          variant="secondary"
+          className="tw:min-w-0 tw:max-w-full"
+          title={suggestion.text}
+          onClick={() => onPick(suggestion.text)}
+        >
+          <span className="tw:shrink-0 tw:text-muted-foreground">{t(`tabs.metadata.suggestionSource.${suggestion.source}`)}</span>
+          <span className="tw:min-w-0 tw:truncate">{suggestion.text}</span>
         </Button>
       ))}
     </div>
