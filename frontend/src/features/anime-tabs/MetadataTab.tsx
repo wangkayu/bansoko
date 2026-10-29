@@ -3,7 +3,6 @@ import { toast } from "../../ui/toast";
 import {
   isVersionConflict,
   patchAnimeMetadata,
-  reevaluateAnimeReleases,
   toUserMessage,
   type AnimeMetadata,
   type AnimeMetadataDraft,
@@ -396,13 +395,10 @@ function OwnerMetadataTab({
   }, [previewKey, onPreviewChange]);
   useEffect(() => () => onPreviewChange?.(undefined), [onPreviewChange]);
 
-  // The title never affects release evaluation; changes to the other fields (bindings, media
-  // kind, season, year, total episodes) schedule a re-evaluation whose failure never drags the
-  // save down.
+  // The server re-evaluates the unsubmitted releases in the same transaction when anything but the
+  // title changed, and reports how many it scheduled.
   const save = useCallback(async () => {
     if (!edit || !baseline) return { ok: true as const };
-    const reevaluate =
-      metadataChangeCount({ ...baseline, titleOverride: edit.titleOverride }, edit) > 0;
     setBusy(true);
     setError(undefined);
     setConflict(undefined);
@@ -414,15 +410,10 @@ function OwnerMetadataTab({
       setSavedVersion({ base: workspace.metadata.version, next: result.version });
       markSaved(edit);
       onChanged();
-      let message = t("tabs.metadata.saved");
-      if (reevaluate) {
-        try {
-          const scheduled = await reevaluateAnimeReleases(animeID);
-          message = t("tabs.metadata.savedReevaluated", { n: scheduled.scheduled_count });
-        } catch {
-          toast.error(t("tabs.metadata.reevaluateFailed"));
-        }
-      }
+      const message =
+        result.reevaluated_releases === undefined
+          ? t("tabs.metadata.saved")
+          : t("tabs.metadata.savedReevaluated", { n: result.reevaluated_releases });
       return { ok: true as const, message };
     } catch (cause) {
       if (isVersionConflict(cause)) setConflict(cause.currentVersion);

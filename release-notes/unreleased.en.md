@@ -23,6 +23,8 @@
 - After you change a subgroup's episode offset, library files move to their new episode: files of the same episode are compared under the subscription's version-keeping mode, the preferred one is kept and the others are deleted; when all are kept, the collision policy applies, and the subscription activity records the result. The offset dialog explains these effects.
 - When a file is aligned onto a path that already holds the same episode of the same subscription, the two are compared by the version-keeping mode first and the kept file moves; other cases follow the collision policy.
 - A file whose subscription settings changed while it downloaded moves to the path the current settings give right after import, whether or not automatic alignment is on.
+- After the title, bindings, season, year, type or naming rules change, a subscription's files are checked again against the current settings; with automatic alignment on they move to the new place, and nothing is downloaded again.
+- Saving metadata now re-evaluates the unsubmitted releases in the same save, with no separate re-evaluation.
 
 ## Fixed
 

@@ -1118,7 +1118,8 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
 
   type FetchStub = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
-  function stubMetadataPatchFetch(opts: { reevaluateFails?: boolean; patchFails?: boolean } = {}) {
+  // reevaluated is the count the server's patch response reports; null is a title-only patch.
+  function stubMetadataPatchFetch(opts: { reevaluated?: number | null; patchFails?: boolean } = {}) {
     let metadataVersion = 1;
     const fetchMock = vi.fn<FetchStub>(async (input, init) => {
       const url = String(input);
@@ -1156,21 +1157,16 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
           });
         }
         metadataVersion += 1;
-        return new Response(JSON.stringify({ managed_anime_id: "anime-1", bgm: null, tmdb: null, version: metadataVersion }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      // After a successful metadata save the frontend schedules the re-evaluation automatically.
-      if (init?.method === "POST" && url.includes("/anime/anime-1/releases/reevaluate")) {
-        if (opts.reevaluateFails) {
-          return new Response(JSON.stringify({ code: "INTERNAL", message: "boom" }), {
-            status: 500,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
+        // The server re-evaluates the unsubmitted releases inside the patch.
+        const reevaluated = opts.reevaluated === undefined ? 2 : opts.reevaluated;
         return new Response(
-          JSON.stringify({ managed_anime_id: "anime-1", accepted: true, scheduled_count: 2 }),
+          JSON.stringify({
+            managed_anime_id: "anime-1",
+            bgm: null,
+            tmdb: null,
+            version: metadataVersion,
+            ...(reevaluated === null ? {} : { reevaluated_releases: reevaluated }),
+          }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
@@ -1209,7 +1205,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
   }
 
   it("标题：只读显示，点编辑后修改；保存标题后由 footer 保存一次上送 title_override（去空白），不安排重评估", async () => {
-    const fetchMock = stubMetadataPatchFetch();
+    const fetchMock = stubMetadataPatchFetch({ reevaluated: null });
     const workspace = workspaceFixture();
     workspace.metadata = {
       managed_anime_id: "anime-1",
@@ -1332,7 +1328,8 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
       // Season unset: pre-fills once from the chosen TMDB season.
       season: 1,
     });
-    expect(reevaluateCalls(fetchMock)).toHaveLength(1);
+    // The re-evaluation is the server's: no separate call.
+    expect(reevaluateCalls(fetchMock)).toHaveLength(0);
   });
 
   it("标题：没有固定标题的旧数据显示订阅时的标题，不算未保存；绑定保存时一并写入", async () => {
@@ -1388,7 +1385,8 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
       year: null,
       season: null,
     });
-    expect(reevaluateCalls(fetchMock)).toHaveLength(1);
+    // The re-evaluation is the server's: no separate call.
+    expect(reevaluateCalls(fetchMock)).toHaveLength(0);
   });
 
   it("类型行：未设置且未关联 TMDB 时显示剧集", () => {
@@ -1479,7 +1477,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
   });
 
   it("标题候选：编辑时按来源顺序去重显示，隐藏现值；点击即写入并退出编辑，由 footer 保存上送", async () => {
-    const fetchMock = stubMetadataPatchFetch();
+    const fetchMock = stubMetadataPatchFetch({ reevaluated: null });
     const workspace = workspaceFixture();
     workspace.metadata = {
       managed_anime_id: "anime-1",
@@ -1688,29 +1686,6 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
     const bodies = metadataPatchBodies(fetchMock);
     expect(bodies).toHaveLength(1);
     expect(bodies[0]).toEqual({ expected_version: 4, bgm: null, tmdb: null, title_override: "保留我", media_kind_override: null, total_episodes: null, year: null, season: null });
-  });
-
-  it("绑定保存成功后自动安排重评估（R4），重评估失败不拖累保存", async () => {
-    const fetchMock = stubMetadataPatchFetch({ reevaluateFails: true });
-    const workspace = workspaceFixture();
-    workspace.metadata = {
-      managed_anime_id: "anime-1",
-      bgm: { work_id: "486109" },
-      tmdb: null,
-      version: 3,
-    };
-    renderTabs({ animeID: "anime-1", workspace, onChanged: () => {}, initialTab: "metadata" });
-
-    fireEvent.click(screen.getByRole("button", { name: t("forms.clearAria", { label: t("forms.bangumi") }) }));
-    clickFooterSave();
-    const { toast } = await import("sonner");
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(t("tabs.metadata.reevaluateFailed")));
-    // The save itself succeeds: one success notice, unsaved count to zero, the footer reports no failure.
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(t("tabs.metadata.saved")));
-    expect(reevaluateCalls(fetchMock)).toHaveLength(1);
-    expect(metadataPatchBodies(fetchMock)).toHaveLength(1);
-    await waitFor(() => expect(footerSave()).toBeDisabled());
-    expect(within(ownerFooter()).queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("保存失败：footer 报出失败的部分，改动保持未保存", async () => {

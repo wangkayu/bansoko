@@ -41,7 +41,6 @@ export const enTabsCopy = {
       provider: "Source title",
     },
     reevaluateScheduled: "Re-evaluation scheduled for torrents: {n}",
-    reevaluateFailed: "Failed to submit re-evaluation. It will run with the next RSS refresh.",
     saveFailed: "Failed to save metadata",
     saved: "Metadata saved",
     savedReevaluated: "Metadata saved. Re-evaluation scheduled for torrents: {n}",

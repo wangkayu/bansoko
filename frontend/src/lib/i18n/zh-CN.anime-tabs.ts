@@ -38,7 +38,6 @@ export const tabsCopy = {
       provider: "来源标题",
     },
     reevaluateScheduled: "已安排重新评估 {n} 个种子",
-    reevaluateFailed: "重新评估提交失败，将随 RSS 刷新处理",
     saveFailed: "保存元数据失败",
     saved: "元数据已保存",
     savedReevaluated: "元数据已保存，已安排重新评估 {n} 个种子",

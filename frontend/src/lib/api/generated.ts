@@ -3829,6 +3829,8 @@ export interface components {
             title_override?: string | null;
             /** @description Read-only title candidates, present on the workspace read: the cached titles of the bound works and the provider title, every non-empty one in the order tmdb_cn, tmdb_original, bgm_cn, bgm, provider. Nothing is fetched; duplicates are not removed. */
             title_suggestions?: components["schemas"]["TitleSuggestion"][];
+            /** @description Present on the metadata patch response only: how many releases not yet submitted the same transaction scheduled for re-evaluation. Absent when the patch changed only the title. */
+            reevaluated_releases?: number;
             version: components["schemas"]["Version"];
         };
         /** @description One candidate for the anime's fixed title (title_override). Using one is the owner's choice; no automatic path writes the title. */

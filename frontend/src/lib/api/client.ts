@@ -156,7 +156,6 @@ export type SubscriptionDelete = Schema<"SubscriptionDelete">;
 export type SubscriptionDuplicateInput = Schema<"SubscriptionDuplicateInput">;
 export type LocalDataCleanup = Schema<"LocalDataCleanup">;
 export type ReleaseRetryResult = Schema<"ReleaseRetryResult">;
-export type ReleaseReevaluationResult = Schema<"ReleaseReevaluationResult">;
 export type CandidateSubscribeInput = Schema<"CandidateSubscribeInput">;
 export type ManualRetryInput = Schema<"ManualRetryInput">;
 export type ManualRetryResult = Schema<"ManualRetryResult">;
@@ -768,14 +767,6 @@ export function patchAnimeRules(
   return request(`/anime/${encodePathSegment(managedAnimeID)}/rules`, {
     method: "PATCH",
     body: patch,
-  });
-}
-
-
-// Re-evaluation: re-queues evaluation for every unsubmitted release (submitted ones stay frozen).
-export function reevaluateAnimeReleases(managedAnimeID: string): Promise<ReleaseReevaluationResult> {
-  return request(`/anime/${encodePathSegment(managedAnimeID)}/releases/reevaluate`, {
-    method: "POST",
   });
 }
 
