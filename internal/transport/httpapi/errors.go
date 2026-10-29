@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
+	"regexp"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"bansoko/internal/apperrors"
 	observabilityport "bansoko/internal/observability/port"
@@ -228,7 +230,7 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	writeJSON(w, ctx, apiErr.Status, response)
 }
 
-func recordUnknownRequestFailure(r *http.Request, _ error) {
+func recordUnknownRequestFailure(r *http.Request, err error) {
 	var ctx context.Context = context.Background()
 	if r != nil && r.Context() != nil {
 		ctx = r.Context()
@@ -241,7 +243,7 @@ func recordUnknownRequestFailure(r *http.Request, _ error) {
 		Outcome:    "failure",
 		ReasonCode: "unknown_error",
 		RequestID:  RequestIDFrom(ctx),
-		ErrorClass: "unknown_application_error",
+		ErrorClass: unknownFailureClass(err),
 	})
 
 	recorder := diagnosticRecorderFrom(ctx)
@@ -267,16 +269,48 @@ func recordUnknownRequestFailure(r *http.Request, _ error) {
 	}
 }
 
-// unknownFailureOperation names the matched route TEMPLATE (method plus path
-// pattern with placeholder names) so an unknown failure can be reproduced from
-// the runtime log alone. The template never carries request content: the
-// concrete URL — its seed keys, query strings, credential-bearing parameters —
-// stays out of the log, exactly like the redacted error text.
+// unknownFailureOperation names the contract operation (its OpenAPI
+// operationId) the request matched, so an unknown failure can be traced to
+// its endpoint from the runtime log alone. The operationId is a fixed
+// identifier: it never carries request content (the concrete URL, its seed
+// keys, query strings or credential-bearing parameters), and unlike a path
+// template it holds no "/" the runtime redaction would mask. A request that
+// matches no operation keeps the fixed "request".
 func unknownFailureOperation(r *http.Request) string {
-	if r == nil || strings.TrimSpace(r.Pattern) == "" {
+	if r == nil || r.URL == nil {
 		return "request"
 	}
-	return "request " + r.Pattern
+	table, err := scopeTable()
+	if err != nil {
+		return "request"
+	}
+	route, ok := table.Match(r.Method, r.URL.EscapedPath())
+	if !ok || !operationIDPattern.MatchString(route.OperationID) {
+		return "request"
+	}
+	return "request " + route.OperationID
+}
+
+var (
+	operationIDPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,127}$`)
+	sqlStatePattern    = regexp.MustCompile(`^[0-9A-Z]{5}$`)
+	sqlNamePattern     = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
+)
+
+// unknownFailureClass is the error class of an unknown failure. A database
+// refusal names its SQLSTATE and, when it has one, the violated constraint:
+// schema identifiers only, never the error text, the statement or row
+// content. Anything else keeps the fixed class.
+func unknownFailureClass(err error) string {
+	var pg *pgconn.PgError
+	if !errors.As(err, &pg) || pg == nil || !sqlStatePattern.MatchString(pg.Code) {
+		return "unknown_application_error"
+	}
+	class := "postgres_" + pg.Code
+	if sqlNamePattern.MatchString(pg.ConstraintName) {
+		class += ":" + pg.ConstraintName
+	}
+	return class
 }
 
 func diagnosticRecorderFailed(ctx context.Context, recorder observabilityport.Recorder, failure observabilityport.DiagnosticFailureRequest) (failed bool) {

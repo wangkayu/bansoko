@@ -153,12 +153,13 @@ func (s *Service) fetchMissingReleaseTorrent(ctx context.Context, snapshot relea
 	} else {
 		acquisitionapplication.ApplyTorrentPayload(&item, payload)
 		item.TorrentErrorCode, item.TorrentErrorReason = "", ""
+		item = refuseOversizedTorrent(item)
 	}
 	internalFacts, err := encodeInternalFeedFacts(item)
 	if err != nil {
 		return nil, fmt.Errorf("encode fetched torrent facts: %w", err)
 	}
-	return &releaseTorrentFetch{item: item, internalFacts: internalFacts, fetched: fetchErr == nil}, nil
+	return &releaseTorrentFetch{item: item, internalFacts: internalFacts, fetched: fetchErr == nil && item.TorrentErrorCode == ""}, nil
 }
 
 // storeReleaseTorrentFetchTx stores one fetch on the Release at the version

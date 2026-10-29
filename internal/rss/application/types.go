@@ -557,24 +557,15 @@ type selectedReleaseIdentity struct {
 	StableItemKey  string          `json:"stable_item_key"`
 	RawFacts       json.RawMessage `json:"raw_facts"`
 	SourceFacts    json.RawMessage `json:"source_facts"`
-	InternalFacts  json.RawMessage `json:"internal_facts"`
 	ReleaseVersion int64           `json:"release_version"`
 	SubscriptionID string          `json:"subscription_id"`
 	ManagedAnimeID string          `json:"managed_anime_id"`
 }
 
-type frozenTargetFacts struct {
-	Admission       string               `json:"admission"`
-	Reason          string               `json:"reason,omitempty"`
-	TargetSetDigest string               `json:"target_set_digest,omitempty"`
-	Targets         []target.Spec        `json:"targets"`
-	Observations    []target.Observation `json:"observations"`
-}
-
 type internalFrozenDownloadInput struct {
 	ReleaseStableItemKey string                        `json:"release_stable_item_key"`
 	SelectedRelease      selectedReleaseIdentity       `json:"selected_release"`
-	TargetFacts          *frozenTargetFacts            `json:"target_facts,omitempty"`
+	TargetFacts          *target.FrozenFacts           `json:"target_facts,omitempty"`
 	TargetSetDigest      string                        `json:"target_set_digest,omitempty"`
 	SourceLocatorDisplay string                        `json:"source_locator_display"`
 	TorrentInputID       string                        `json:"torrent_input_id"`

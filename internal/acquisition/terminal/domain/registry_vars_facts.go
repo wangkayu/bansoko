@@ -7,6 +7,10 @@ import (
 	"bansoko/internal/templatefacts"
 )
 
+// varsInputMaxFiles is the torrent manifest's file bound
+// (catalog/domain.MaxTorrentManifestFiles).
+const varsInputMaxFiles = 20000
+
 // registerVarsFacts registers VarsFactsV1, the closed shape of the
 // naming-vars-v1 release fact object (known_inputs.facts): exactly the
 // templatefacts Vars input facts, grouped by root, each present and either
@@ -39,7 +43,10 @@ func registerVarsFacts() {
 		fields = append(fields, F(root, Obj(roots[root]...).Optional(templatefacts.VarsInputOptionalMembers[root]...)))
 	}
 	register("VarsFactsV1", Obj(fields...))
+	// The files are every file of the release, as many as a torrent manifest
+	// may list; their bytes are bounded by the program's input bound
+	// (namingvars.MaxInputBytes), which acceptance checks before it freezes.
 	register("VarsInputV1", Obj(
-		F("release_title", FVOf(Display)), F("files", Array(Ref("VarsFileV1"), 0, 256)), F("facts", Ref("VarsFactsV1")),
+		F("release_title", FVOf(Display)), F("files", Array(Ref("VarsFileV1"), 0, varsInputMaxFiles)), F("facts", Ref("VarsFactsV1")),
 	))
 }

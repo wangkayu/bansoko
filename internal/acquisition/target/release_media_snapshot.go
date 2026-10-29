@@ -2,6 +2,7 @@ package target
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -45,6 +46,32 @@ type ReleaseMediaSnapshotInput struct {
 	DownloadCompletion string
 	// DownloadCompletionSeedLimits are the seed limits a nil Plan freezes.
 	DownloadCompletionSeedLimits *batchplan.SeedLimits
+}
+
+// MaxReleaseMediaFactsBytes is the stored bound of
+// media_fact_snapshots.release_facts (pg_column_size <= 2097152). The batch
+// plan it holds has one entry per file of the torrent.
+const MaxReleaseMediaFactsBytes = 2 << 20
+
+// releaseMediaFactsRawLimit is the raw JSON bound checked before the snapshot
+// is written, with the same one eighth of headroom over the jsonb datum the
+// frozen task documents keep.
+const releaseMediaFactsRawLimit = MaxReleaseMediaFactsBytes - MaxReleaseMediaFactsBytes/8
+
+// batchPlanRawLimit leaves the release's own facts (its title, parser
+// evidence and provenance, a few KiB) room next to the plan.
+const batchPlanRawLimit = releaseMediaFactsRawLimit - 64<<10
+
+// ErrReleaseMediaFactsTooLarge refuses a release whose batch plan is over the
+// stored bound of its media fact snapshot: the torrent lists too many files
+// for its download record. Nothing is written.
+var ErrReleaseMediaFactsTooLarge = errors.New("release media facts exceed their stored bound")
+
+// BatchPlanTooLarge reports a plan that FreezeReleaseMediaSnapshotTx refuses
+// for its size, so an admission can refuse the release before it accepts it.
+func BatchPlanTooLarge(plan batchplan.Plan) bool {
+	raw, err := json.Marshal(plan)
+	return err == nil && len(raw) > batchPlanRawLimit
 }
 
 // FreezeReleaseMediaSnapshotTx writes one append-only Release media fact
@@ -112,6 +139,9 @@ func FreezeReleaseMediaSnapshotTx(ctx context.Context, scope txscope.Tx, store f
 	releaseFacts.ParserProvenance = &provenance
 	releaseFacts.FileKindsVersion = filekinds.Version
 	releaseFacts.BatchPlan = &plan
+	if raw, err := json.Marshal(releaseFacts); err == nil && len(raw) > releaseMediaFactsRawLimit {
+		return ErrReleaseMediaFactsTooLarge
+	}
 	return store.CreateReleaseSnapshotTx(ctx, scope, facts.Snapshot{
 		ID:                      uuid.NewString(),
 		ReleaseID:               in.ReleaseID,

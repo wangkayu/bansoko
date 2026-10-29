@@ -2359,26 +2359,6 @@ const (
 	TagFilterRulesReplaceModeReplace TagFilterRulesReplaceMode = "replace"
 )
 
-// Defines values for TargetFactCollisionPolicy.
-const (
-	TargetFactCollisionPolicyBlock     TargetFactCollisionPolicy = "block"
-	TargetFactCollisionPolicyOverwrite TargetFactCollisionPolicy = "overwrite"
-	TargetFactCollisionPolicyVersion   TargetFactCollisionPolicy = "version"
-)
-
-// Defines values for TargetFactIntent.
-const (
-	TargetFactIntentEnsurePresent TargetFactIntent = "ensure_present"
-	TargetFactIntentReplace       TargetFactIntent = "replace"
-)
-
-// Defines values for TargetFactMediaKind.
-const (
-	TargetFactMediaKindOther    TargetFactMediaKind = "other"
-	TargetFactMediaKindSubtitle TargetFactMediaKind = "subtitle"
-	TargetFactMediaKindVideo    TargetFactMediaKind = "video"
-)
-
 // Defines values for TargetFactsSnapshotAdmission.
 const (
 	TargetFactsSnapshotAdmissionAcquisitionFailed TargetFactsSnapshotAdmission = "acquisition_failed"
@@ -8911,34 +8891,13 @@ type TargetDiagnostic struct {
 	SourcePath *string `json:"source_path,omitempty"`
 }
 
-// TargetFact defines model for TargetFact.
-type TargetFact struct {
-	CollisionPolicy   TargetFactCollisionPolicy `json:"collision_policy"`
-	ExpectedSizeBytes int64                     `json:"expected_size_bytes"`
-	Intent            TargetFactIntent          `json:"intent"`
-	MediaKind         TargetFactMediaKind       `json:"media_kind"`
-	SourcePath        string                    `json:"source_path"`
-	SpecDigest        string                    `json:"spec_digest"`
-	TargetPath        string                    `json:"target_path"`
-	TargetRef         string                    `json:"target_ref"`
-}
-
-// TargetFactCollisionPolicy defines model for TargetFact.CollisionPolicy.
-type TargetFactCollisionPolicy string
-
-// TargetFactIntent defines model for TargetFact.Intent.
-type TargetFactIntent string
-
-// TargetFactMediaKind defines model for TargetFact.MediaKind.
-type TargetFactMediaKind string
-
-// TargetFactsSnapshot Complete target-set and observation facts frozen before qB admission.
+// TargetFactsSnapshot Admission outcome of the target set planned before qB admission. The set's targets and their observations are stored once per release and read through the anime workspace; the frozen record names the admitted set by digest and count only, so it does not grow with the number of targets.
 type TargetFactsSnapshot struct {
 	Admission       TargetFactsSnapshotAdmission `json:"admission"`
-	Observations    []TargetObservation          `json:"observations"`
 	Reason          *string                      `json:"reason"`
+	ReasonCode      *string                      `json:"reason_code"`
+	TargetCount     int                          `json:"target_count"`
 	TargetSetDigest *string                      `json:"target_set_digest"`
-	Targets         []TargetFact                 `json:"targets"`
 }
 
 // TargetFactsSnapshotAdmission defines model for TargetFactsSnapshot.Admission.

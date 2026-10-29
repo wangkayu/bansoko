@@ -12,7 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"bansoko/internal/apperrors"
+	observabilityapplication "bansoko/internal/observability/application"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
 	"bansoko/internal/transport/httpapi/generated"
@@ -188,10 +191,11 @@ func TestWriteErrorUnknownWithoutRouteKeepsFixedOperation(t *testing.T) {
 	}
 }
 
-// The unknown-failure log must name the matched route TEMPLATE, so a 500 can
-// be reproduced from the log alone. The template carries placeholder names,
-// never the concrete request path.
-func TestWriteErrorUnknownLogsTheMatchedRouteTemplate(t *testing.T) {
+// The unknown-failure log must name the contract operation the request
+// matched, so a 500 can be traced to its endpoint from the log alone. The
+// operationId carries no request content and survives the runtime redaction
+// that masks any value holding a "/".
+func TestWriteErrorUnknownLogsTheMatchedOperation(t *testing.T) {
 	logger := &captureRuntimeLogger{}
 	base := requestWithRuntimeLogger("request-unknown-route", logger)
 	mux := http.NewServeMux()
@@ -209,12 +213,62 @@ func TestWriteErrorUnknownLogsTheMatchedRouteTemplate(t *testing.T) {
 	if len(logger.events) != 1 {
 		t.Fatalf("runtime events = %d, want 1", len(logger.events))
 	}
-	const want = "request POST /api/v1/provider-feed-snapshots/{snapshot_id}/seeds/{stable_seed_key}/expand"
+	const want = "request expandSnapshotSeed"
 	if logger.events[0].Operation != want {
 		t.Fatalf("operation = %q, want %q", logger.events[0].Operation, want)
 	}
 	if strings.Contains(logger.events[0].Operation, "snap-1") || strings.Contains(logger.events[0].Operation, "seed-1") {
 		t.Fatalf("operation leaks the concrete request path: %q", logger.events[0].Operation)
+	}
+}
+
+// The written runtime line keeps the operation and a database refusal's
+// SQLSTATE and constraint unmasked, and never carries the error text.
+func TestWriteErrorUnknownRuntimeLineNamesOperationAndDatabaseClass(t *testing.T) {
+	var line bytes.Buffer
+	base := requestWithRuntimeLogger("request-unknown-pg", observabilityapplication.NewJSONRuntimeLogger(&line))
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/v1/one-shot-acquisitions", func(w http.ResponseWriter, r *http.Request) {
+		writeError(w, r, fmt.Errorf("insert marker: %w", &pgconn.PgError{
+			Code: "23514", ConstraintName: "one_shot_acquisitions_input_snapshot_check",
+			Message: `new row violates check constraint at https://tracker.example.test/announce?passkey=abc`,
+		}))
+	})
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/one-shot-acquisitions", nil).WithContext(base.Context())
+	mux.ServeHTTP(httptest.NewRecorder(), request)
+
+	var event map[string]any
+	if err := json.Unmarshal(line.Bytes(), &event); err != nil {
+		t.Fatalf("decode runtime line %q: %v", line.String(), err)
+	}
+	if event["operation"] != "request acquireSeedOnce" {
+		t.Fatalf("operation = %v, want request acquireSeedOnce (line %s)", event["operation"], line.String())
+	}
+	if event["error_class"] != "postgres_23514:one_shot_acquisitions_input_snapshot_check" {
+		t.Fatalf("error_class = %v (line %s)", event["error_class"], line.String())
+	}
+	if strings.Contains(line.String(), "passkey") || strings.Contains(line.String(), "tracker.example.test") || strings.Contains(line.String(), "violates") {
+		t.Fatalf("runtime line leaks the error text: %s", line.String())
+	}
+}
+
+func TestUnknownFailureClass(t *testing.T) {
+	for _, test := range []struct {
+		err  error
+		want string
+	}{
+		{errors.New("boom"), "unknown_application_error"},
+		{nil, "unknown_application_error"},
+		{&pgconn.PgError{Code: "40001"}, "postgres_40001"},
+		{fmt.Errorf("wrapped: %w", &pgconn.PgError{Code: "23505", ConstraintName: "releases_pkey"}), "postgres_23505:releases_pkey"},
+		// A constraint name that is not a plain identifier is dropped, never
+		// copied into the class.
+		{&pgconn.PgError{Code: "23514", ConstraintName: "bad name; DROP"}, "postgres_23514"},
+		{&pgconn.PgError{Code: "not-a-state"}, "unknown_application_error"},
+	} {
+		if got := unknownFailureClass(test.err); got != test.want {
+			t.Errorf("unknownFailureClass(%v) = %q, want %q", test.err, got, test.want)
+		}
 	}
 }
 

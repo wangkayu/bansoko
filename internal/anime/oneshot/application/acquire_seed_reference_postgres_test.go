@@ -20,16 +20,21 @@ type frozenOneShotEvidence struct {
 	inputSnapshot string
 	requestHash   string
 	taskSeed      string
+	// targets is the persisted target set the snapshot references by digest,
+	// reduced to what does not name the admission's own release.
+	targets string
 }
 
 func readFrozenOneShotEvidence(t *testing.T, service *oneShotTestServices, oneShotID string) frozenOneShotEvidence {
 	t.Helper()
 	var evidence frozenOneShotEvidence
 	if err := service.db.QueryRowContext(context.Background(), `
-SELECT o.input_snapshot::text, o.request_hash, (d.frozen_input->'selected_seed')::text
+SELECT o.input_snapshot::text, o.request_hash, (d.frozen_input->'selected_seed')::text,
+       COALESCE((SELECT string_agg(t.target_ref || '|' || t.source_path || '|' || t.target_path || '|' || t.intent, E'\n' ORDER BY t.target_ref)
+                 FROM acquisition_targets t WHERE t.release_id = o.release_id), '')
 FROM one_shot_acquisitions o
 JOIN download_tasks d ON d.id = o.download_task_id
-WHERE o.id = $1`, oneShotID).Scan(&evidence.inputSnapshot, &evidence.requestHash, &evidence.taskSeed); err != nil {
+WHERE o.id = $1`, oneShotID).Scan(&evidence.inputSnapshot, &evidence.requestHash, &evidence.taskSeed, &evidence.targets); err != nil {
 		t.Fatalf("read frozen one-shot evidence: %v", err)
 	}
 	return evidence
@@ -37,9 +42,9 @@ WHERE o.id = $1`, oneShotID).Scan(&evidence.inputSnapshot, &evidence.requestHash
 
 // comparableInputSnapshot is the frozen input snapshot with its target facts
 // reduced to what does not name the admission's own release: every admission
-// mints a new release, and the planned target specs, their observations and
-// the set digest carry that release id. The admission outcome and the planned
-// target paths must still be identical.
+// mints a new release, and the set digest carries that release id. The
+// admission outcome and the target count must still be identical; the planned
+// target paths are compared on the persisted rows (frozenOneShotEvidence).
 func comparableInputSnapshot(t *testing.T, raw string) string {
 	t.Helper()
 	var snapshot map[string]json.RawMessage
@@ -47,14 +52,9 @@ func comparableInputSnapshot(t *testing.T, raw string) string {
 		t.Fatalf("decode input snapshot: %v", err)
 	}
 	var facts struct {
-		Admission  string `json:"admission"`
-		ReasonCode string `json:"reason_code"`
-		Targets    []struct {
-			TargetRef  string `json:"target_ref"`
-			SourcePath string `json:"source_path"`
-			TargetPath string `json:"target_path"`
-			Intent     string `json:"intent"`
-		} `json:"targets"`
+		Admission   string `json:"admission"`
+		ReasonCode  string `json:"reason_code"`
+		TargetCount int    `json:"target_count"`
 	}
 	if err := json.Unmarshal(snapshot["target_facts"], &facts); err != nil {
 		t.Fatalf("decode target facts: %v", err)
@@ -104,6 +104,9 @@ func TestAcquireSeedOnceReferenceFreezesExactlyTheLocatorForm(t *testing.T) {
 	}
 	if referenceEvidence.taskSeed != locatorEvidence.taskSeed {
 		t.Fatalf("DownloadTask frozen seeds differ:\nlocator   %s\nreference %s", locatorEvidence.taskSeed, referenceEvidence.taskSeed)
+	}
+	if referenceEvidence.targets != locatorEvidence.targets {
+		t.Fatalf("persisted target sets differ:\nlocator   %s\nreference %s", locatorEvidence.targets, referenceEvidence.targets)
 	}
 
 	// The stored replay identity of the reference admission is the canonical
@@ -213,7 +216,7 @@ func TestAcquireSeedOnceCurrentInputReferenceFreezesExactlyTheLocatorForm(t *tes
 	}
 	locatorEvidence := readFrozenOneShotEvidence(t, service, byLocator.OneShotID)
 	referenceEvidence := readFrozenOneShotEvidence(t, service, byReference.OneShotID)
-	if comparableInputSnapshot(t, referenceEvidence.inputSnapshot) != comparableInputSnapshot(t, locatorEvidence.inputSnapshot) || referenceEvidence.taskSeed != locatorEvidence.taskSeed {
+	if comparableInputSnapshot(t, referenceEvidence.inputSnapshot) != comparableInputSnapshot(t, locatorEvidence.inputSnapshot) || referenceEvidence.taskSeed != locatorEvidence.taskSeed || referenceEvidence.targets != locatorEvidence.targets {
 		t.Fatalf("current_input frozen evidence differs:\nlocator   %s\nreference %s", locatorEvidence.inputSnapshot, referenceEvidence.inputSnapshot)
 	}
 	if replayed, err := service.AcquireSeedOnce(ctx, locatorInput, "one-shot-ci-reference-ref-1"); err != nil || replayed.OneShotID != byReference.OneShotID {

@@ -18,11 +18,11 @@ func TestFrozenDownloadMappersPreserveNeutralFields(t *testing.T) {
 		ReleaseStableItemKey: "stable-1", SelectedURLDigest: downloadStringPointer("sha256:url"), SourceLocatorDisplay: "https://example.test/feed",
 		SelectedRelease: &animeapplication.SelectedReleaseIdentity{
 			ReleaseID: "release-1", RSSSourceID: "source-1", StableItemKey: "stable-1",
-			RawFacts: json.RawMessage(`{"title":"frozen"}`), SourceFacts: json.RawMessage(`{}`), InternalFacts: json.RawMessage(`{}`),
+			RawFacts: json.RawMessage(`{"title":"frozen"}`), SourceFacts: json.RawMessage(`{}`),
 			ReleaseVersion: 2, SubscriptionID: "subscription-1", ManagedAnimeID: managedAnimeID,
 		},
 		SelectedSeed: json.RawMessage(`{"locator":"https://example.test/seed.torrent","provider":"mikan","provider_entry_ref":"entry-1","provider_group_ref":"group-1","published_at":"2026-09-11T00:00:00Z","title":"seed"}`),
-		TargetFacts:  json.RawMessage(`{"admission":"download_required","targets":[],"observations":[]}`),
+		TargetFacts:  json.RawMessage(`{"admission":"download_required","target_set_digest":"sha256:set","target_count":2}`),
 	})
 	if err != nil {
 		t.Fatal(err)

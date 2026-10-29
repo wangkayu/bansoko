@@ -40,7 +40,11 @@ func freezeBusinessVarsTx(ctx context.Context, tx *sql.Tx, business domain.Busin
 		}
 		evidence.Files = append(evidence.Files, namingvars.File{Name: path.Base(file.SourcePath), Path: file.SourcePath, Size: *file.SizeBytes})
 	}
-	frozen, err := program.Freeze(namingvars.BuildInput(evidence))
+	input := namingvars.BuildInput(evidence)
+	if namingvars.InputTooLarge(input) {
+		return namingvars.FrozenEvaluation{}, torrentTooLargeError()
+	}
+	frozen, err := program.Freeze(input)
 	if err != nil {
 		return frozen, err
 	}

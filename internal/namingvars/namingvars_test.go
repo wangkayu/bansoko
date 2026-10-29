@@ -6,6 +6,26 @@ import (
 	"time"
 )
 
+// InputTooLarge agrees with the evaluator's own input bound: an input it
+// reports is refused by every evaluation, one it does not is evaluated.
+func TestInputTooLargeMatchesTheEvaluatorBound(t *testing.T) {
+	// The payload carries the release title more than once.
+	within := Input{ReleaseTitle: strings.Repeat("x", MaxInputBytes/8)}
+	over := Input{ReleaseTitle: strings.Repeat("x", MaxInputBytes+1)}
+	if InputTooLarge(within) {
+		t.Fatal("an input within the bound was reported too large")
+	}
+	if _, err := Run(`vars.x = {v: "1"};`, within, time.Second); err != nil {
+		t.Fatalf("an input within the bound was refused: %v", err)
+	}
+	if !InputTooLarge(over) {
+		t.Fatal("an input over the bound was not reported")
+	}
+	if _, err := Run(`vars.x = {v: "1"};`, over, time.Second); err == nil {
+		t.Fatal("the evaluator accepted an input InputTooLarge reports")
+	}
+}
+
 func TestRunLoadsStringVarsAndRejectsReservedGroup(t *testing.T) {
 	vars, err := Run(`vars.anime = {ep: 12}; vars.info = {tag: " [HDR]"}`, Input{ReleaseTitle: "Show"}, time.Second)
 	if err != nil {

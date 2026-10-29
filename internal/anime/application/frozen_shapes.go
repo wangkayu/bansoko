@@ -20,7 +20,6 @@ type SelectedReleaseIdentity struct {
 	StableItemKey  string          `json:"stable_item_key"`
 	RawFacts       json.RawMessage `json:"raw_facts"`
 	SourceFacts    json.RawMessage `json:"source_facts"`
-	InternalFacts  json.RawMessage `json:"internal_facts"`
 	ReleaseVersion int64           `json:"release_version"`
 	SubscriptionID string          `json:"subscription_id"`
 	ManagedAnimeID string          `json:"managed_anime_id"`

@@ -146,6 +146,7 @@ export const errorCopy = {
   TORRENT_FETCHER_NOT_CONFIGURED: NOT_READY,
   TORRENT_PARSE_INVALID: "种子文件无法解析",
   TORRENT_PAYLOAD_MISSING: "缺少种子文件，请先获取",
+  TORRENT_TOO_LARGE: "种子包含的文件过多，无法下载",
   TITLE_PARSE_FAILED: "无法识别该标题",
   FILE_FILTER_INVALID: "文件筛选规则有误，请检查后重试",
   FILE_RULE_PATH_SEPARATOR: "文件规则只匹配文件名，不能含 /",

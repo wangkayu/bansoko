@@ -238,6 +238,14 @@ func (in Input) Payload() map[string]any {
 	return payload
 }
 
+// InputTooLarge reports an input whose program payload is over MaxInputBytes.
+// Every evaluation refuses such an input, whatever the program, so an
+// admission can refuse the release for its size before freezing anything.
+func InputTooLarge(input Input) bool {
+	raw, err := json.Marshal(input.Payload())
+	return err == nil && len(raw) > MaxInputBytes
+}
+
 // Run retains the legacy empty-input sample fallback for startup callers. It
 // evaluates the current runtime's input.
 func Run(source string, input Input, timeout time.Duration) (Vars, error) {

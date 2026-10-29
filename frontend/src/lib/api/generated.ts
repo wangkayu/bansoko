@@ -4233,28 +4233,14 @@ export interface components {
             managed_anime_id?: components["schemas"]["ID"] | null;
             effective_digest: string;
         };
-        TargetFact: {
-            target_ref: string;
-            source_path: string;
-            target_path: string;
-            /** @enum {string} */
-            media_kind: "video" | "subtitle" | "other";
-            /** Format: int64 */
-            expected_size_bytes: number;
-            /** @enum {string} */
-            intent: "ensure_present" | "replace";
-            /** @enum {string} */
-            collision_policy: "block" | "version" | "overwrite";
-            spec_digest: string;
-        };
-        /** @description Complete target-set and observation facts frozen before qB admission. */
+        /** @description Admission outcome of the target set planned before qB admission. The set's targets and their observations are stored once per release and read through the anime workspace; the frozen record names the admitted set by digest and count only, so it does not grow with the number of targets. */
         TargetFactsSnapshot: {
             target_set_digest?: string | null;
             /** @enum {string} */
             admission: "adopted_existing" | "download_required" | "acquisition_failed";
+            reason_code?: string | null;
             reason?: string | null;
-            targets: components["schemas"]["TargetFact"][];
-            observations: components["schemas"]["TargetObservation"][];
+            target_count: number;
         };
         /** @description Public identity projection of the exact persisted release selected at admission; private execution facts remain only in the internal frozen owner snapshot. */
         SelectedReleaseIdentity: {

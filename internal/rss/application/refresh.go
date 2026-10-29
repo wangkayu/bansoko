@@ -166,6 +166,7 @@ func buildFeedEvaluations(ctx context.Context, items []acquisitiondomain.FeedIte
 			continue
 		}
 		seen[seenKey] = struct{}{}
+		item = refuseOversizedTorrent(item)
 		rules, _, err := attrrules.Current()
 		if err != nil {
 			return nil, fmt.Errorf("read active attr rules: %w", err)

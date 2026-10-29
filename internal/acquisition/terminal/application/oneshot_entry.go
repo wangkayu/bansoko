@@ -45,6 +45,9 @@ func (a *OneShotAcceptor) Prepare(ctx context.Context, scope txscope.Tx, in OneS
 	if tx == nil {
 		return PreparedHandle{}, acceptError(500, "INTERNAL_INVARIANT", "invalid_txscope", nil)
 	}
+	if err := checkFrozenTaskSizes(in.EntryTask); err != nil {
+		return PreparedHandle{}, err
+	}
 	access := acceptAccess{scope: "deployment_owner_v1"}
 	raw, err := json.Marshal(map[string]any{"request_hash": in.RequestHash})
 	if err != nil {

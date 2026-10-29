@@ -99,6 +99,12 @@ func (s *Service) preflightTargetAcquisition(ctx context.Context, snapshot relea
 	if err != nil {
 		return failed("file_parser_unavailable", err.Error())
 	}
+	// The plan freezes with the release's media facts; one over that row's
+	// bound is refused before anything is planned or written.
+	if acquisitiontarget.BatchPlanTooLarge(plan) {
+		_, reason, detail := torrentTooLargeOutcome()
+		return failed(reason, detail)
+	}
 	intent := acquisitiontarget.IntentEnsurePresent
 	if decision := snapshot.competitionDecision; decision != nil {
 		// Decided stage: the competition's per-key verdicts deduplicate the
@@ -161,7 +167,12 @@ func (s *Service) preflightTargetAcquisition(ctx context.Context, snapshot relea
 		}
 		varsEvidence.Files = append(varsEvidence.Files, namingvars.File{Name: path.Base(file.SourcePath), Path: file.SourcePath, Size: *file.SizeBytes})
 	}
-	frozenVars, varsErr := program.Freeze(namingvars.BuildInput(varsEvidence))
+	varsInput := namingvars.BuildInput(varsEvidence)
+	if namingvars.InputTooLarge(varsInput) {
+		_, code, detail := torrentTooLargeOutcome()
+		return &targetAcquisition{admission: acquisitiontarget.AdmissionResult{Admission: acquisitiontarget.AdmissionFailed, Reason: code}, planReason: detail}
+	}
+	frozenVars, varsErr := program.Freeze(varsInput)
 	if varsErr != nil {
 		return &targetAcquisition{varsInterrupted: varsErr}
 	}

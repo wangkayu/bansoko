@@ -136,6 +136,9 @@ func (a *entryAcceptor) prepare(ctx context.Context, scope txscope.Tx, input Ent
 	if input.Attempt < 0 {
 		return PreparedHandle{}, acceptError(400, "INPUT_INVALID", "entry_task_invalid", nil)
 	}
+	if err := checkFrozenTaskSizes(input); err != nil {
+		return PreparedHandle{}, err
+	}
 	attempt := input.Attempt
 	if attempt == 0 {
 		attempt = 1
@@ -153,8 +156,20 @@ func (a *entryAcceptor) prepare(ctx context.Context, scope txscope.Tx, input Ent
 	if err != nil {
 		return PreparedHandle{}, mapAcceptanceError(err)
 	}
-	raw := string(protocol.Canonical(request))
-	r := requestIdentity{namespace: namespace, key: key, hash: protocol.Digest("acquisition-entry-request:v1", []byte(raw)), canonical: raw}
+	// The request hash binds the whole task input and policy exactly as it
+	// always has. The stored request body names them by digest instead: both
+	// documents are kept whole on the download task, and the body's own bound
+	// (64 KiB) must not grow with the release's file inventory.
+	stored, err := valueOf(map[string]any{
+		"release_ref":        input.ReleaseID,
+		"expected_version":   input.ExpectedVersion,
+		"task_input_digest":  protocol.DigestValue("acquisition-entry-task-input:v1", request.Object["task_input"]),
+		"task_policy_digest": protocol.DigestValue("acquisition-entry-task-policy:v1", request.Object["task_policy"]),
+	})
+	if err != nil {
+		return PreparedHandle{}, mapAcceptanceError(err)
+	}
+	r := requestIdentity{namespace: namespace, key: key, hash: protocol.Digest("acquisition-entry-request:v1", protocol.Canonical(request)), canonical: string(protocol.Canonical(stored))}
 	access := acceptAccess{scope: "deployment_owner_v1"}
 	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, access.scope+"\x1f"+namespace+"\x1f"+key); err != nil {
 		return PreparedHandle{}, mapAcceptanceError(err)

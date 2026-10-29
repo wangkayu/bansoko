@@ -42,8 +42,14 @@ func (f fixedCatalogFeedFetcher) FetchProviderFeed(context.Context, providerdoma
 // feed snapshot store and returns everything needed to assert on the outcome.
 func humanOneShotFixture(t *testing.T) (*oneShotTestServices, *catalogapplication.Service, *sql.DB, SelectedSeed, func(items []acquisitiondomain.FeedItem) animecatalogdomain.ProviderRSSPreviewResult) {
 	t.Helper()
+	return humanOneShotFixtureWithPayload(t, parseOneShotTestTorrent(t))
+}
+
+// humanOneShotFixtureWithPayload is humanOneShotFixture for a seed whose
+// retained torrent is payload.
+func humanOneShotFixtureWithPayload(t *testing.T, payload animeapplication.TorrentPayload) (*oneShotTestServices, *catalogapplication.Service, *sql.DB, SelectedSeed, func(items []acquisitiondomain.FeedItem) animecatalogdomain.ProviderRSSPreviewResult) {
+	t.Helper()
 	db := animetest.OpenTestDB(t)
-	payload := parseOneShotTestTorrent(t)
 	service := oneShotNewTestService(t, db, &oneShotFakeTorrentFetcher{payload: payload}, nil)
 	animetest.SeedQbConnection(t, db)
 

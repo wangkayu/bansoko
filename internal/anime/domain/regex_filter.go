@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path"
 	"regexp"
@@ -192,6 +193,19 @@ func (f CompiledRegexFilter) SelectOrganizationFiles(fileKindsVersion string, pa
 	return f.SelectOrganizationFilesIn(fileKindsVersion, paths, nil)
 }
 
+// ErrInventoryEntryBudget and ErrInventoryByteBudget refuse a torrent whose
+// file inventory is over the filter's entry or byte budget: a property of
+// the torrent's size, not of the rules.
+var (
+	ErrInventoryEntryBudget = errors.New("inventory entry budget exceeded")
+	ErrInventoryByteBudget  = errors.New("inventory byte budget exceeded")
+)
+
+// IsInventoryBudgetExceeded reports a refusal of the inventory's size.
+func IsInventoryBudgetExceeded(err error) bool {
+	return errors.Is(err, ErrInventoryEntryBudget) || errors.Is(err, ErrInventoryByteBudget)
+}
+
 // SelectOrganizationFilesIn is SelectOrganizationFiles under an explicit
 // manual file selection (one-shot): the selection replaces the first-level
 // gate, so exactly the selected videos and subtitles at any depth are
@@ -201,7 +215,7 @@ func (f CompiledRegexFilter) SelectOrganizationFilesIn(fileKindsVersion string, 
 		return OrganizationPathSelection{}, fmt.Errorf("invalid compiled filter")
 	}
 	if len(paths) > MaxFilterInventoryEntries {
-		return OrganizationPathSelection{}, fmt.Errorf("inventory entry budget exceeded")
+		return OrganizationPathSelection{}, ErrInventoryEntryBudget
 	}
 	result := OrganizationPathSelection{Decisions: make([]RegexFilterDecision, 0, len(paths)), SelectedOrdinals: []int{}, Reason: "no_applicable_files"}
 	seen := make(map[string]struct{}, len(paths))
@@ -209,7 +223,7 @@ func (f CompiledRegexFilter) SelectOrganizationFilesIn(fileKindsVersion string, 
 	for index, raw := range paths {
 		total += len(raw)
 		if total > MaxFilterInventoryBytes {
-			return OrganizationPathSelection{}, fmt.Errorf("inventory byte budget exceeded")
+			return OrganizationPathSelection{}, ErrInventoryByteBudget
 		}
 		normalized, err := NormalizeFilterRelativePath(raw)
 		if err != nil {

@@ -304,9 +304,35 @@ func encodeOneShotInputSnapshot(snapshot OneShotInputSnapshot) (json.RawMessage,
 		return nil, errors.New("one-shot input snapshot must be a JSON object")
 	}
 	if len(raw) > maxOneShotInputSnapshotBytes {
-		return nil, fmt.Errorf("one-shot input snapshot exceeds %d bytes", maxOneShotInputSnapshotBytes)
+		return nil, torrentTooLargeError()
 	}
 	return raw, nil
+}
+
+// torrentTooLargeError is the typed refusal of an admission whose frozen
+// record would exceed a stored bound (terminal.TorrentTooLargeCode). No frozen
+// carrier grows with the target count; what remains bounded by the file
+// inventory (the release's file list and naming vars input, a large manual
+// file selection) is refused here rather than failing as an internal error.
+func torrentTooLargeError() error {
+	return &apperrors.Business{Status: 422, Code: terminal.TorrentTooLargeCode, Message: "The torrent lists too many files to freeze its download record."}
+}
+
+// oneShotSizeRefusal turns a size refusal raised anywhere in the admission
+// transaction (the acceptor's own check, or a stored bound the database
+// enforced) into the typed refusal; the transaction rolls back either way.
+func oneShotSizeRefusal(err error) error {
+	if err != nil && terminal.IsTorrentTooLarge(err) {
+		return torrentTooLargeError()
+	}
+	return err
+}
+
+// isTorrentTooLargeRefusal reports the typed refusal torrentTooLargeError
+// builds.
+func isTorrentTooLargeRefusal(err error) bool {
+	var business *apperrors.Business
+	return errors.As(err, &business) && business.Code == terminal.TorrentTooLargeCode
 }
 
 // AcquireSeedInputSource discriminates the two mutually exclusive config input
@@ -709,7 +735,8 @@ func (s *Service) AcquireSeedOnce(ctx context.Context, input AcquireSeedInput, r
 		input.Seed.AniBTTags = cloneStoredAniBTTags(fact.AniBTTags)
 	}
 
-	return s.admitOneShotSeed(ctx, input, requestIdempotencyKey, requestHash, payload, saved)
+	result, err := s.admitOneShotSeed(ctx, input, requestIdempotencyKey, requestHash, payload, saved)
+	return result, oneShotSizeRefusal(err)
 }
 
 // savedOneShotRevision carries the pre-transaction saved-revision resolution
@@ -1020,6 +1047,9 @@ VALUES ($1, $2, 'custom_rss', $3, $4, $5, $6, $7)`,
 	_, evaluation.StableItemKey = animedomain.PublicStableItemKey(item)
 	releaseID := uuid.NewString()
 	frozenVars, varsErr := freezeBusinessVarsTx(ctx, tx, *business, item, animeID, releaseID, naming.VarsEpisode(evidence.NamingFacts()))
+	if isTorrentTooLargeRefusal(varsErr) {
+		return OneShotAdmissionResult{}, varsErr
+	}
 	if varsErr != nil {
 		status := 422
 		if namingvars.IsInterrupted(varsErr) {
@@ -1083,7 +1113,7 @@ VALUES ($1, $2, 'custom_rss', $3, $4, $5, $6, $7)`,
 	if err != nil {
 		return OneShotAdmissionResult{}, fmt.Errorf("encode one-shot effective sections: %w", err)
 	}
-	targetFactsRaw, err := encodeOneShotTargetFacts(targetPlan, s.targetAcquisitionConfigured, input)
+	targetFactsRaw, err := encodeOneShotTargetFacts(targetPlan, s.targetAcquisitionConfigured, targetPlanFailed)
 	if err != nil {
 		return OneShotAdmissionResult{}, err
 	}
@@ -1321,7 +1351,7 @@ WHERE release_id = $1`, releaseID).Scan(&torrentInputID, &torrentPayloadDigest, 
 			ReleaseStableItemKey: evaluation.StableItemKey,
 			SelectedRelease: &animeapplication.SelectedReleaseIdentity{
 				ReleaseID: releaseID, RSSSourceID: sourceID, StableItemKey: evaluation.StableItemKey,
-				RawFacts: rawFacts, SourceFacts: sourceFacts, InternalFacts: internalFacts,
+				RawFacts: rawFacts, SourceFacts: sourceFacts,
 				ReleaseVersion: 1, SubscriptionID: subscriptionID, ManagedAnimeID: animeID,
 			},
 			SelectedSeed:         oneShotSelectedSeedJSONFromDomain(seed),
@@ -2054,36 +2084,25 @@ func truncateRunes(value string, max int) string {
 	return string(runes)
 }
 
-func encodeOneShotTargetFacts(plan acquisitiontarget.PlanResult, configured bool, input AcquireSeedInput) (json.RawMessage, error) {
-	if !configured {
-		return json.RawMessage(`{"admission":"download_required","targets":[],"observations":[]}`), nil
-	}
-	value := struct {
-		Admission       string                          `json:"admission"`
-		ReasonCode      *string                         `json:"reason_code,omitempty"`
-		Reason          *string                         `json:"reason,omitempty"`
-		TargetSetDigest *string                         `json:"target_set_digest,omitempty"`
-		Targets         []acquisitiontarget.Spec        `json:"targets"`
-		Observations    []acquisitiontarget.Observation `json:"observations"`
-	}{
-		Admission:    string(plan.Admission.Admission),
-		Targets:      plan.Set.Targets,
-		Observations: plan.Observations,
-	}
-	// ReasonCode is the typed planner admission reason (e.g.
-	// target_not_absolute, parser_identity_unresolved); Reason keeps the
-	// human-readable plan detail. Both travel with the frozen input so the
-	// post-processing stages surface the exact condition without re-planning.
-	if reasonCode := strings.TrimSpace(plan.Admission.Reason); reasonCode != "" {
-		value.ReasonCode = &reasonCode
-	}
-	if plan.PlanReason != "" {
-		reason := plan.PlanReason
-		value.Reason = &reason
-	}
-	if plan.Set.Digest != "" {
-		digest := plan.Set.Digest
-		value.TargetSetDigest = &digest
+// encodeOneShotTargetFacts is the carrier reference to the admitted target
+// set (acquisitiontarget.FrozenFacts): the set's rows and observations are
+// persisted once in acquisition_targets, and the snapshot names them by digest
+// and count. A failed plan persists no set, so it names none.
+func encodeOneShotTargetFacts(plan acquisitiontarget.PlanResult, configured, failed bool) (json.RawMessage, error) {
+	value := acquisitiontarget.UnplannedFrozenFacts()
+	if configured {
+		// ReasonCode is the typed planner admission reason (e.g.
+		// target_not_absolute, parser_identity_unresolved); Reason keeps the
+		// human-readable plan detail.
+		value = acquisitiontarget.FrozenFacts{
+			Admission:  string(plan.Admission.Admission),
+			ReasonCode: strings.TrimSpace(plan.Admission.Reason),
+			Reason:     plan.PlanReason,
+		}
+		if !failed {
+			value.TargetSetDigest = plan.Set.Digest
+			value.TargetCount = len(plan.Set.Targets)
+		}
 	}
 	raw, err := json.Marshal(value)
 	if err != nil {

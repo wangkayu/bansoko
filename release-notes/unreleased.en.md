@@ -42,6 +42,7 @@
 - The next automatic task time in the top-bar status now updates once it passes and is re-read when the status panel opens, instead of showing a time already gone.
 - When editing a title, the title suggestions no longer cover the input's focus outline.
 - Template variables with long examples (such as the info hash or the file name) wrap inside their item instead of pushing narrow columns such as the one-shot settings out of the window.
+- Submitting a one-shot download of a season batch (24 episodes with extra files, for example) no longer fails with an internal error, and box sets listing several hundred files download as well. A torrent that lists too many files to record is refused with "This torrent lists too many files to download.", and such a torrent in a subscription is marked with the same reason.
 
 ## Important
 
@@ -49,3 +50,4 @@
 - On upgrade, if one subscription already holds files from different seasons, only the current season's files take part in version replacement; the others stay where they are, and the subscription activity records how many, for manual cleanup.
 - An anime's type cannot be switched between TV and movie while it has library files or unfinished downloads or imports.
 - The anime metadata type field is renamed media_kind in the API and MCP; scripts and assistants that use it need the new name.
+- In the API, target_facts of one-shot downloads and download tasks no longer list each target; they give the number of targets as target_count, and existing records are rewritten on upgrade.

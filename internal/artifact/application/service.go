@@ -40,6 +40,9 @@ const (
 	maxReasonLength     = 2048
 	maxFingerprintLen   = 256
 	maxCorrelationFiles = 128
+	// maxFrozenInputBytes is the stored bound of download_tasks.frozen_input
+	// (pg_column_size <= 1048576); a stored input is never refused here.
+	maxFrozenInputBytes = 1 << 20
 	maxMediaFactLen     = 32
 
 	// inspectBudgetExhaustedCode is the typed terminal failure when the
@@ -599,7 +602,7 @@ func decodeFrozenInput(raw []byte) (frozenDownloadInput, error) {
 	if trimmed == "" || trimmed == "null" || trimmed == "{}" {
 		return frozenDownloadInput{}, nil
 	}
-	if len(trimmed) > 262144 {
+	if len(trimmed) > maxFrozenInputBytes {
 		return frozenDownloadInput{}, errors.New("frozen input is too large")
 	}
 	var input frozenDownloadInput

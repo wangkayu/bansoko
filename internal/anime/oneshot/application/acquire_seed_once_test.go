@@ -153,14 +153,18 @@ func TestEncodeOneShotInputSnapshotPreservesCompleteInput(t *testing.T) {
 func TestEncodeOneShotInputSnapshotRejectsOversize(t *testing.T) {
 	candidateID := "candidate-1"
 	revision := int64(1)
-	if _, err := encodeOneShotInputSnapshot(OneShotInputSnapshot{
+	_, err := encodeOneShotInputSnapshot(OneShotInputSnapshot{
 		CandidateID:       candidateID,
 		Revision:          revision,
 		SelectedSeed:      validOneShotSeed(),
 		EffectiveSections: json.RawMessage(`{"rules":{"naming":"` + strings.Repeat("x", maxOneShotInputSnapshotBytes) + `"}}`),
 		ConfigIdentity:    animeapplication.ConfigRevisionIdentity{CandidateID: &candidateID, Revision: &revision, IdentityKind: "candidate_revision"},
-	}); err == nil {
-		t.Fatal("oversized one-shot input snapshot unexpectedly succeeded")
+	})
+	// An over-bound snapshot is the typed business refusal, never an
+	// untyped error the HTTP boundary would answer as INTERNAL.
+	var business *apperrors.Business
+	if !errors.As(err, &business) || business.Status != 422 || business.Code != "TORRENT_TOO_LARGE" {
+		t.Fatalf("oversized snapshot error = %v, want the 422 TORRENT_TOO_LARGE refusal", err)
 	}
 }
 

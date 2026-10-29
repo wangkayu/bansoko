@@ -98,3 +98,9 @@ func canonicalBusinessJSON(raw []byte) ([]byte, error) {
 	}
 	return raw, nil
 }
+
+// CanonicalJSON returns the canonical byte form of one JSON document: object
+// keys in byte order, no whitespace, no HTML escaping. It is byte-equal to
+// anime_config_candidate_canonical_json for the same value, so a digest over
+// it can be recomputed in SQL.
+func CanonicalJSON(raw []byte) ([]byte, error) { return businessDigestBytes(raw) }

@@ -10829,41 +10829,11 @@ components:
         effective_digest:
           type: string
           pattern: '^sha256:[0-9a-f]{64}$'
-    TargetFact:
-      type: object
-      additionalProperties: false
-      required: [target_ref, source_path, target_path, media_kind, expected_size_bytes, intent, collision_policy, spec_digest]
-      properties:
-        target_ref:
-          type: string
-          minLength: 1
-        source_path:
-          type: string
-          minLength: 1
-        target_path:
-          type: string
-          minLength: 1
-        media_kind:
-          type: string
-          enum: [video, subtitle, other]
-        expected_size_bytes:
-          type: integer
-          format: int64
-          minimum: 0
-        intent:
-          type: string
-          enum: [ensure_present, replace]
-        collision_policy:
-          type: string
-          enum: [block, version, overwrite]
-        spec_digest:
-          type: string
-          pattern: '^sha256:[0-9a-f]{64}$'
     TargetFactsSnapshot:
       type: object
       additionalProperties: false
-      required: [admission, targets, observations]
-      description: Complete target-set and observation facts frozen before qB admission.
+      required: [admission, target_count]
+      description: Admission outcome of the target set planned before qB admission. The set's targets and their observations are stored once per release and read through the anime workspace; the frozen record names the admitted set by digest and count only, so it does not grow with the number of targets.
       properties:
         target_set_digest:
           type: string
@@ -10872,17 +10842,15 @@ components:
         admission:
           type: string
           enum: [adopted_existing, download_required, acquisition_failed]
+        reason_code:
+          type: string
+          nullable: true
         reason:
           type: string
           nullable: true
-        targets:
-          type: array
-          items:
-            $ref: '#/components/schemas/TargetFact'
-        observations:
-          type: array
-          items:
-            $ref: '#/components/schemas/TargetObservation'
+        target_count:
+          type: integer
+          minimum: 0
     SelectedReleaseIdentity:
       type: object
       additionalProperties: false

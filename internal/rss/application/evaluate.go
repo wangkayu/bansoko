@@ -461,6 +461,32 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 			frozenEvidence = &resolved
 			return resolved, nil
 		}
+		// The batch plan this evaluation froze: the admission's own plan when
+		// target planning ran, otherwise a plain classification of the
+		// manifest under the instance unknown-file route. The admission size
+		// check, candidate facts and the media fact snapshot all read this one
+		// plan, so their coverage cannot disagree. It is first read after the
+		// owner inputs below are current.
+		var frozenPlan *batchplan.Plan
+		loadFrozenPlan := func(evidence releaseParserEvidence) (*batchplan.Plan, error) {
+			if frozenPlan != nil {
+				return frozenPlan, nil
+			}
+			if acquisition != nil && acquisition.batchPlan != nil {
+				frozenPlan = acquisition.batchPlan
+				return frozenPlan, nil
+			}
+			route, err := loadUnclassifiedRoute(ctx, tx, snapshot.managedAnimeID)
+			if err != nil {
+				return nil, err
+			}
+			plan, err := target.BuildBatchPlan(ctx, target.BatchPlanInput{Evidence: evidence.ParserEvidence, Files: item.ReleaseFiles, FileFilter: snapshot.effective.Rules.FileFilter, UnclassifiedRoute: route, DownloadCompletion: string(snapshot.effective.DownloadCompletion.Rules.Action), DownloadCompletionSeedLimits: snapshot.effective.DownloadCompletion.Rules.SeedLimits})
+			if err != nil {
+				return nil, fmt.Errorf("classify release files: %w", err)
+			}
+			frozenPlan = &plan
+			return frozenPlan, nil
+		}
 		admits := snapshot.admitsWork(currentSubscriptionState)
 		if admits && acquisition == nil {
 			currentInputs, err := loadCurrentReleaseEvaluationInputs(ctx, tx, snapshot)
@@ -636,6 +662,8 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 					verdict = "parse_failed"
 					reasonCode = "torrent_payload_missing"
 					reasonDetail = "the release has no program-owned torrent payload"
+				} else if terminal.IsTorrentTooLarge(err) {
+					verdict, reasonCode, reasonDetail = torrentTooLargeOutcome()
 				} else {
 					return 0, err
 				}
@@ -650,11 +678,26 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 			if evidenceErr != nil {
 				return 0, evidenceErr
 			}
-			taskID, correlationID, err = createDownloadTaskAndWorkItem(ctx, tx, s.db, s.workItems, snapshot, item, evidence)
+			// The release's batch plan freezes with its media facts below; a
+			// plan over that row's bound downloads nothing.
+			if s.mediaFacts != nil && item.Title != "" {
+				plan, planErr := loadFrozenPlan(evidence)
+				if planErr != nil {
+					return 0, planErr
+				}
+				if target.BatchPlanTooLarge(*plan) {
+					err = target.ErrReleaseMediaFactsTooLarge
+				}
+			}
+			if err == nil {
+				taskID, correlationID, err = createDownloadTaskAndWorkItem(ctx, tx, s.db, s.workItems, snapshot, item, evidence)
+			}
 			if errors.Is(err, errTorrentPayloadMissing) {
 				verdict = "parse_failed"
 				reasonCode = "torrent_payload_missing"
 				reasonDetail = "the release has no program-owned torrent payload"
+			} else if terminal.IsTorrentTooLarge(err) {
+				verdict, reasonCode, reasonDetail = torrentTooLargeOutcome()
 			} else if err != nil {
 				return 0, err
 			} else {
@@ -703,31 +746,6 @@ WHERE id = $1 AND version = $10 AND download_task_id IS NOT DISTINCT FROM NULLIF
 RETURNING version`, snapshot.releaseID, nullableJSON(parsedFacts), nullableJSON(internalFacts), verdict, reasonCode,
 			safeReason(reasonDetail), evaluationVersionString(), snapshot.rulesVersion, taskID, claim.ExpectedOwnerVersion, retryKey).Scan(&updatedVersion); err != nil {
 			return 0, fmt.Errorf("update evaluated release: %w", err)
-		}
-		// The batch plan this evaluation froze: the admission's own plan when
-		// target planning ran, otherwise a plain classification of the
-		// manifest under the instance unknown-file route. Candidate facts and
-		// the media fact snapshot both read this one plan, so their coverage
-		// cannot disagree.
-		var frozenPlan *batchplan.Plan
-		loadFrozenPlan := func(evidence releaseParserEvidence) (*batchplan.Plan, error) {
-			if frozenPlan != nil {
-				return frozenPlan, nil
-			}
-			if acquisition != nil && acquisition.batchPlan != nil {
-				frozenPlan = acquisition.batchPlan
-				return frozenPlan, nil
-			}
-			route, err := loadUnclassifiedRoute(ctx, tx, snapshot.managedAnimeID)
-			if err != nil {
-				return nil, err
-			}
-			plan, err := target.BuildBatchPlan(ctx, target.BatchPlanInput{Evidence: evidence.ParserEvidence, Files: item.ReleaseFiles, FileFilter: snapshot.effective.Rules.FileFilter, UnclassifiedRoute: route, DownloadCompletion: string(snapshot.effective.DownloadCompletion.Rules.Action), DownloadCompletionSeedLimits: snapshot.effective.DownloadCompletion.Rules.SeedLimits})
-			if err != nil {
-				return nil, fmt.Errorf("classify release files: %w", err)
-			}
-			frozenPlan = &plan
-			return frozenPlan, nil
 		}
 		// P3.2: versioned candidate facts (admission-neutral; idempotent).
 		// Coverage is the batch plan's placeable coverage; the title is never
@@ -792,7 +810,10 @@ RETURNING version`, snapshot.releaseID, nullableJSON(parsedFacts), nullableJSON(
 			if planErr != nil {
 				return 0, planErr
 			}
-			if err := persistReleaseMediaSnapshot(ctx, tx, s.mediaFacts, snapshot, item.Title, evidence, plan); err != nil {
+			// A release whose plan is over the snapshot's bound was refused
+			// above (torrent_too_large) and downloads nothing, so it freezes
+			// no media facts; nothing was written for it.
+			if err := persistReleaseMediaSnapshot(ctx, tx, s.mediaFacts, snapshot, item.Title, evidence, plan); err != nil && (taskID != "" || !errors.Is(err, target.ErrReleaseMediaFactsTooLarge)) {
 				return 0, err
 			}
 		}
@@ -1014,7 +1035,7 @@ func createDownloadTaskAndWorkItem(ctx context.Context, tx *sql.Tx, db *sql.DB, 
 		ReleaseStableItemKey: snapshot.stableItemKey,
 		SelectedRelease: selectedReleaseIdentity{
 			ReleaseID: snapshot.releaseID, RSSSourceID: snapshot.sourceID, StableItemKey: snapshot.stableItemKey,
-			RawFacts: append(json.RawMessage(nil), snapshot.rawFacts...), SourceFacts: append(json.RawMessage(nil), snapshot.sourceFacts...), InternalFacts: append(json.RawMessage(nil), snapshot.internalFacts...),
+			RawFacts: append(json.RawMessage(nil), snapshot.rawFacts...), SourceFacts: append(json.RawMessage(nil), snapshot.sourceFacts...),
 			ReleaseVersion: snapshot.releaseVersion, SubscriptionID: snapshot.subscriptionID, ManagedAnimeID: snapshot.managedAnimeID,
 		},
 		SourceLocatorDisplay: animedomain.SanitizeLocatorDisplay(snapshot.locatorDisplay),
@@ -1024,9 +1045,11 @@ func createDownloadTaskAndWorkItem(ctx context.Context, tx *sql.Tx, db *sql.DB, 
 	if len(acquisitions) > 0 && acquisitions[0] != nil {
 		acquisition := acquisitions[0]
 		frozenInput.TargetSetDigest = acquisition.set.Digest
-		frozenInput.TargetFacts = &frozenTargetFacts{
+		// The set's rows and observations were persisted by the evaluation
+		// (acquisition_targets); the frozen input names them by digest and count.
+		frozenInput.TargetFacts = &target.FrozenFacts{
 			Admission: string(acquisition.admission.Admission), Reason: acquisition.admission.Reason,
-			TargetSetDigest: acquisition.set.Digest, Targets: acquisition.set.Targets, Observations: acquisition.observations,
+			TargetSetDigest: acquisition.set.Digest, TargetCount: len(acquisition.set.Targets),
 		}
 		if acquisition.downloaderAdmission != nil {
 			pathSnapshot := acquisition.downloaderAdmission.PathSnapshot
@@ -1078,18 +1101,42 @@ func createDownloadTaskAndWorkItem(ctx context.Context, tx *sql.Tx, db *sql.DB, 
 		replacements = acquisitions[0].replacements
 		overwriteTargetAbsent = acquisitions[0].overwriteTargetAbsent && len(replacements) == 0 && !acquisitions[0].overwriteDirectPresent
 	}
-	prepared, err := acceptor.Prepare(ctx, txscope.Wrap(tx), terminal.EntryTask{ReleaseID: snapshot.releaseID, ExpectedVersion: snapshot.releaseVersion, Attempt: snapshot.downloadAttempt(), FrozenInput: inputJSON, FrozenPolicy: policyJSON, CorrelationID: correlation, MaxAttempts: defaultMaxAttempts, ParserEvidence: &evidence.ParserEvidence, Resolution: resolution, Replacements: replacements, OverwriteTargetAbsent: overwriteTargetAbsent})
-	if err != nil {
+	// A stored size bound the database enforces (terminal.IsTorrentTooLarge)
+	// aborts the statement that reached it; rolling back to this savepoint
+	// keeps the evaluation's transaction usable, so the release still records
+	// its torrent_too_large outcome instead of failing the whole evaluation.
+	const acceptanceSavepoint = "release_acceptance"
+	if _, err := tx.ExecContext(ctx, `SAVEPOINT `+acceptanceSavepoint); err != nil {
 		return "", "", err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE releases SET verdict='accepted_pending_download' WHERE id=$1`, snapshot.releaseID); err != nil {
+	taskID, err := acceptReleaseTask(ctx, tx, acceptor, snapshot.releaseID, terminal.EntryTask{ReleaseID: snapshot.releaseID, ExpectedVersion: snapshot.releaseVersion, Attempt: snapshot.downloadAttempt(), FrozenInput: inputJSON, FrozenPolicy: policyJSON, CorrelationID: correlation, MaxAttempts: defaultMaxAttempts, ParserEvidence: &evidence.ParserEvidence, Resolution: resolution, Replacements: replacements, OverwriteTargetAbsent: overwriteTargetAbsent})
+	if err != nil {
+		if terminal.IsTorrentTooLarge(err) {
+			if _, rollbackErr := tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT `+acceptanceSavepoint); rollbackErr != nil {
+				return "", "", rollbackErr
+			}
+		}
 		return "", "", err
+	}
+	if _, err := tx.ExecContext(ctx, `RELEASE SAVEPOINT `+acceptanceSavepoint); err != nil {
+		return "", "", err
+	}
+	return taskID, correlation, nil
+}
+
+func acceptReleaseTask(ctx context.Context, tx *sql.Tx, acceptor releaseEntryAcceptor, releaseID string, task terminal.EntryTask) (string, error) {
+	prepared, err := acceptor.Prepare(ctx, txscope.Wrap(tx), task)
+	if err != nil {
+		return "", err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE releases SET verdict='accepted_pending_download' WHERE id=$1`, releaseID); err != nil {
+		return "", err
 	}
 	pending, err := acceptor.Accept(ctx, txscope.Wrap(tx), prepared)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
-	return pending.TaskID(), correlation, nil
+	return pending.TaskID(), nil
 }
 
 // activityRunContext is the run context of the Release's evaluation entries:

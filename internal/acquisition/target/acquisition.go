@@ -472,6 +472,9 @@ func preflight(ctx context.Context, input PlanInput, probe Probe) PlanResult {
 	// The organization selection validates the manifest paths (canonical,
 	// unique, within the inventory budget); the plan decides placement.
 	organization, err := fileFilter.SelectOrganizationFilesIn(filekinds.Version, paths, input.FileSelection)
+	if animedomain.IsInventoryBudgetExceeded(err) {
+		return fail("torrent_too_large", "the torrent lists too many files to freeze its download record")
+	}
 	if err != nil {
 		return fail("file_filter_path_invalid", err.Error())
 	}
@@ -513,6 +516,9 @@ func preflight(ctx context.Context, input PlanInput, probe Probe) PlanResult {
 			return fail("file_parser_unavailable", strings.TrimSpace(err.Error()))
 		}
 	}
+	if BatchPlanTooLarge(plan) {
+		return fail("torrent_too_large", "the torrent lists too many files to freeze its download record")
+	}
 	result := func(admission AdmissionResult, set Set, observations []Observation) PlanResult {
 		return PlanResult{ReleaseFiles: files, Set: set, Observations: observations, Admission: admission, Evidence: evidence, BatchPlan: plan}
 	}
@@ -524,6 +530,12 @@ func preflight(ctx context.Context, input PlanInput, probe Probe) PlanResult {
 	}
 	preview := input.Preview
 	preview.FrozenEpisode = evidence.NamingFacts()
+	// The release-level vars evaluation is frozen once on the carrier's policy;
+	// each target names it by digest (see VarsDigest).
+	varsDigest, err := VarsDigest(preview.FrozenVars)
+	if err != nil {
+		return fail("naming_vars_unavailable", strings.TrimSpace(err.Error()))
+	}
 	collision := collisionPolicyForTarget(fileEffectCollisionPolicy(input.Effective))
 	operation := fileEffectOperation(input.Effective)
 	animeTitle := strings.TrimSpace(input.AnimeTitle)
@@ -611,13 +623,16 @@ func preflight(ctx context.Context, input PlanInput, probe Probe) PlanResult {
 			setTargetDiagnostic(file, reasonCode, message)
 			return fail(reasonCode, reasonDetail)
 		}
-		renderSnapshot, _ := json.Marshal(map[string]any{
+		render := map[string]any{
 			"renderer":        "anime.preview_file.v2",
 			"naming_renderer": naming.RendererVersion,
 			"target":          targetPath,
 			"source":          sourcePath,
-			"vars":            preview.FrozenVars,
-		})
+		}
+		if varsDigest != "" {
+			render["vars_digest"] = varsDigest
+		}
+		renderSnapshot, _ := json.Marshal(render)
 		configSnapshot, _ := json.Marshal(map[string]any{
 			"collision_policy": collision,
 			"operation":        operation,

@@ -3,10 +3,37 @@ package application
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
+	"bansoko/internal/acquisition/target"
 	"github.com/jackc/pgx/v5/pgconn"
 )
+
+// A task input or policy over the raw pre-check bound is refused with the
+// typed size refusal before anything is written; one within it passes.
+func TestCheckFrozenTaskSizesRefusesOverTheRawBound(t *testing.T) {
+	within := EntryTask{FrozenInput: make([]byte, frozenBlobRawLimit), FrozenPolicy: make([]byte, frozenBlobRawLimit)}
+	if err := checkFrozenTaskSizes(within); err != nil {
+		t.Fatalf("a task at the raw bound was refused: %v", err)
+	}
+	for name, task := range map[string]EntryTask{
+		"input":  {FrozenInput: make([]byte, frozenBlobRawLimit+1)},
+		"policy": {FrozenPolicy: make([]byte, frozenBlobRawLimit+1)},
+	} {
+		err := checkFrozenTaskSizes(task)
+		var got *AcceptanceError
+		if !errors.As(err, &got) || got.Status != 422 || got.Code != TorrentTooLargeCode || !IsTorrentTooLarge(err) {
+			t.Fatalf("%s over the raw bound: %v", name, err)
+		}
+	}
+	if frozenBlobRawLimit >= MaxFrozenTaskBlobBytes {
+		t.Fatal("the raw pre-check bound leaves no headroom below the stored bound")
+	}
+	if !IsTorrentTooLarge(fmt.Errorf("freeze release media facts: %w", target.ErrReleaseMediaFactsTooLarge)) {
+		t.Fatal("a batch plan over the media fact snapshot's bound is not the typed size refusal")
+	}
+}
 
 func TestAcceptanceErrorMatrix(t *testing.T) {
 	for _, tc := range []struct {
@@ -22,6 +49,11 @@ func TestAcceptanceErrorMatrix(t *testing.T) {
 		{"feed changed", &pgconn.PgError{Code: "23514", Message: "ACQ_QUALIFICATION_FEED_CHANGED"}, 409, "SEED_REFRESH_REQUIRED", "seed_refresh_required"},
 		{"capacity", &pgconn.PgError{Code: "23514", Message: "ACQ_WITNESS_LIMIT"}, 422, "INPUT_TOO_LARGE", "witness_limit"},
 		{"unregistered SQL", &pgconn.PgError{Code: "23514", Message: "secret internal error"}, 500, "INTERNAL_INVARIANT", "acceptance_database_invariant"},
+		{"frozen input over its bound", &pgconn.PgError{Code: "23514", ConstraintName: "download_tasks_frozen_input_check"}, 422, TorrentTooLargeCode, "torrent_too_large"},
+		{"one-shot snapshot over its bound", &pgconn.PgError{Code: "23514", ConstraintName: "one_shot_acquisitions_input_snapshot_check"}, 422, TorrentTooLargeCode, "torrent_too_large"},
+		{"release facts over their bound", &pgconn.PgError{Code: "23514", ConstraintName: "releases_internal_facts_check"}, 422, TorrentTooLargeCode, "torrent_too_large"},
+		{"media facts over their bound", &pgconn.PgError{Code: "23514", ConstraintName: "media_fact_snapshots_release_facts_check"}, 422, TorrentTooLargeCode, "torrent_too_large"},
+		{"other column check", &pgconn.PgError{Code: "23514", ConstraintName: "download_tasks_state_check"}, 500, "INTERNAL_INVARIANT", "acceptance_database_invariant"},
 		{"connection", &pgconn.PgError{Code: "08006", Message: "secret connection"}, 503, "ACCEPTANCE_UNKNOWN", "acceptance_unknown"},
 		{"cancellation", context.Canceled, 503, "ACCEPTANCE_UNKNOWN", "acceptance_unknown"},
 		{"deadline", context.DeadlineExceeded, 503, "ACCEPTANCE_UNKNOWN", "acceptance_unknown"},

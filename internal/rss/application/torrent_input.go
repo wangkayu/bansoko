@@ -13,6 +13,7 @@ import (
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
 	"bansoko/internal/acquisition/torrent"
+	animedomain "bansoko/internal/anime/domain"
 	"bansoko/internal/persistence/txscope"
 )
 
@@ -25,6 +26,43 @@ const TorrentInputParserVersion = torrentInputParserVersion
 
 var errTorrentPayloadMissing = errors.New("torrent_payload_missing")
 var errTorrentPayloadInvalid = errors.New("torrent_payload_invalid")
+
+// torrentTooLargeOutcome is the release outcome of an acceptance refused for
+// size (terminal.TorrentTooLargeCode): the torrent lists more files than its
+// frozen download record can hold, so the release is not downloaded and the
+// evaluation itself still completes.
+func torrentTooLargeOutcome() (verdict, reasonCode, reasonDetail string) {
+	return "acquisition_failed", "torrent_too_large", "the torrent lists too many files to freeze its download record"
+}
+
+// releaseInternalFactsRawLimit is the raw JSON bound of a release's internal
+// facts, which carry its parsed file list: releases.internal_facts is bound
+// to pg_column_size <= 2097152, and the raw bound keeps the same one eighth of
+// headroom over the jsonb datum the frozen task documents keep.
+const releaseInternalFactsRawLimit = 2<<20 - (2<<20)/8
+
+// refuseOversizedTorrent marks a fetched torrent whose file list its release
+// row cannot store, or which lists more files than the file filter reads, as
+// torrent_too_large: the file list and payload are dropped, so the release is
+// stored and evaluated (parse_failed with that reason) instead of failing the
+// refresh of its whole feed.
+func refuseOversizedTorrent(item acquisitiondomain.FeedItem) acquisitiondomain.FeedItem {
+	if item.TorrentErrorCode != "" || len(item.ReleaseFiles) == 0 {
+		return item
+	}
+	tooLarge := len(item.ReleaseFiles) > animedomain.MaxFilterInventoryEntries
+	if !tooLarge {
+		raw, err := encodeInternalFeedFacts(item)
+		tooLarge = err == nil && len(raw) > releaseInternalFactsRawLimit
+	}
+	if !tooLarge {
+		return item
+	}
+	_, item.TorrentErrorCode, item.TorrentErrorReason = torrentTooLargeOutcome()
+	item.ReleaseFiles = nil
+	item.TorrentPayload = nil
+	return item
+}
 
 // persistReleaseTorrentInput stores only program-fetched and bencode-validated
 // bytes. A URL, magnet, or provider hint is never a substitute for this input.

@@ -400,6 +400,9 @@ func evaluateFrozenVars(c admissionCapture, e target.ParserEvidence, ctx context
 		files = append(files, map[string]any{"name": file.Filename, "path": file.SourcePath, "size": file.SizeBytes})
 	}
 	input := namingvars.BuildInput(evidence)
+	if namingvars.InputTooLarge(input) {
+		return nil, torrentTooLarge(nil)
+	}
 	result, err := evaluateVarsCompletion(ctx, c.material.programs.vars, input, serverVarsEvidenceClock)
 	if namingvars.IsInterrupted(err) {
 		// Transient: nothing is frozen or committed; the acceptance may retry.

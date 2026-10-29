@@ -147,6 +147,7 @@ export const enErrorCopy = {
   TORRENT_FETCHER_NOT_CONFIGURED: NOT_READY,
   TORRENT_PARSE_INVALID: "Cannot parse the torrent file",
   TORRENT_PAYLOAD_MISSING: "Torrent file missing. Fetch it first.",
+  TORRENT_TOO_LARGE: "This torrent lists too many files to download.",
   TITLE_PARSE_FAILED: "Cannot recognize this title",
   FILE_FILTER_INVALID: "The file rules have errors. Check them and try again.",
   FILE_RULE_PATH_SEPARATOR: "File rules match the file name only. Remove / from the rule.",

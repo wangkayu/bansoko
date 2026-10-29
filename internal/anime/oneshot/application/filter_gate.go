@@ -27,6 +27,9 @@ func validateOneShotFilterGate(item acquisitiondomain.FeedItem, effective animed
 		paths[i] = f.SourcePath
 	}
 	result, err := file.SelectOrganizationFilesIn(filekinds.Version, paths, selection)
+	if animedomain.IsInventoryBudgetExceeded(err) {
+		return torrentTooLargeError()
+	}
 	if err != nil {
 		return &apperrors.Business{Status: 422, Code: "FILE_FILTER_INVALID", Message: err.Error()}
 	}
