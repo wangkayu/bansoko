@@ -79,7 +79,7 @@ FOR UPDATE`, managedAnimeID).Scan(&currentBgm, &currentTmdbWorkID, &currentTmdbK
 			animeapplication.NullableValueChanged(currentTmdbKind, animeapplication.TMDBMediaKind(domainTMDB)) ||
 			animeapplication.NullableIntChanged(currentTmdbSeason, animeapplication.TMDBSeason(domainTMDB)),
 		total:     animeapplication.NullableIntPtrChanged(currentTotalEpisodes, patch.TotalEpisodes),
-		mediaKind: animeapplication.NullableValueChanged(currentMediaKindOverride, nextMediaKindOverride),
+		mediaKind: effectiveMediaKind(currentMediaKindOverride.String) != effectiveMediaKind(nextMediaKindOverride),
 		year:      animeapplication.NullableIntPtrChanged(currentYear, patch.Year),
 		season:    animeapplication.NullableIntPtrChanged(currentSeason, patch.Season),
 	}
@@ -207,6 +207,15 @@ func (c metadataChange) reevaluatesReleases() bool {
 // held for (the year and season never hold a release).
 func (c metadataChange) bindingsOrKindOrTotal() bool {
 	return c.bindings || c.total || c.mediaKind
+}
+
+// effectiveMediaKind is the naming kind of a stored owner value: unset is tv,
+// so NULL and an explicit tv are the same kind.
+func effectiveMediaKind(value string) string {
+	if value == "" {
+		return "tv"
+	}
+	return value
 }
 
 // effectiveTitle is the title the anime shows: its fixed title when set.
