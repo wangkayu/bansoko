@@ -2432,7 +2432,7 @@ h1, h2, h3, h4, h5, h6 {
 .naming-help-item { border: 1px solid hsl(var(--border)); border-radius: 0.25rem; background: hsl(var(--muted) / 0.2); padding: 0.375rem 0.5rem; }
 .naming-help-row { display: flex; flex-wrap: wrap; align-items: center; column-gap: 0.5rem; row-gap: 0.125rem; }
 .naming-help-sample-ref { margin-left: 0.5rem; color: hsl(var(--muted-foreground)); }
-.naming-help-description { margin: 0.125rem 0 0; color: hsl(var(--muted-foreground)); }
+.naming-help-description { margin: 0.125rem 0 0; color: hsl(var(--muted-foreground)); overflow-wrap: anywhere; }
 .naming-help-example { display: block; margin-top: 0.125rem; color: hsl(var(--muted-foreground) / 0.8); }
 .naming-palette { border: 1px solid hsl(var(--border)); border-radius: 0.375rem; background: hsl(var(--muted) / 0.2); padding: 0.5rem; }
 .naming-palette-toggle { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 0.5rem; color: hsl(var(--muted-foreground)); }
@@ -2440,7 +2440,9 @@ h1, h2, h3, h4, h5, h6 {
 .naming-palette-group { display: grid; gap: 0.25rem; }
 .naming-palette-label { color: hsl(var(--muted-foreground) / 0.8); }
 .naming-palette-items { display: flex; flex-wrap: wrap; gap: 0.25rem; }
-.naming-palette-item { border: 1px solid hsl(var(--border)); border-radius: 0.25rem; background: hsl(var(--card)); padding: 0.125rem 0.375rem; color: hsl(var(--foreground)); transition: border-color 150ms ease, color 150ms ease; }
+/* A sample value can be one unbroken token (an info hash, a file name): it wraps anywhere inside
+   its item, so its width never widens the column the catalog sits in. */
+.naming-palette-item { max-width: 100%; min-width: 0; border: 1px solid hsl(var(--border)); border-radius: 0.25rem; background: hsl(var(--card)); padding: 0.125rem 0.375rem; color: hsl(var(--foreground)); text-align: start; overflow-wrap: anywhere; transition: border-color 150ms ease, color 150ms ease; }
 .naming-palette-item:hover { border-color: hsl(var(--primary)); color: hsl(var(--primary)); }
 .naming-palette-detail { margin-left: 0.25rem; color: hsl(var(--muted-foreground)); }
 .naming-palette-example { margin-left: 0.25rem; color: hsl(var(--muted-foreground) / 0.7); }
