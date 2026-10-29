@@ -37,10 +37,10 @@ import (
 )
 
 const (
-	defaultRetryAfter   = 5 * time.Minute
-	maxPathLength       = 4096
-	maxReasonLength     = 2048
-	maxFingerprintLen   = 256
+	defaultRetryAfter = 5 * time.Minute
+	maxPathLength     = 4096
+	maxReasonLength   = 2048
+	maxFingerprintLen = 256
 	// maxInspectionFiles is the torrent manifest bound: inspection accepts
 	// every file a parsed .torrent may list.
 	maxInspectionFiles = catalog.MaxTorrentManifestFiles

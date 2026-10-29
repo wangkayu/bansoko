@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"bansoko/internal/download/domain"
-	"bansoko/internal/filekinds"
 	"bansoko/internal/fileidentity"
+	"bansoko/internal/filekinds"
 )
 
 // OSArtifactInspector observes a downloaded artifact at the path reported by

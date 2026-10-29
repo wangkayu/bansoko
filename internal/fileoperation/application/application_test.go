@@ -1455,9 +1455,9 @@ func TestBuildOverwriteExecutionSnapshotRejectsSourceDrift(t *testing.T) {
 		t.Fatal(err)
 	}
 	plan := operationPlan{
-		id:                "op-overwrite-drift",
-		sourcePath:        source,
-		targetPath:        target,
+		id:         "op-overwrite-drift",
+		sourcePath: source,
+		targetPath: target,
 		// Same size, another file: the inode no longer matches.
 		sourceFingerprint: fingerprintJSONForTest(fmt.Sprintf("meta:size=%d;dev=1;ino=1", len("actual source")), int64(len("actual source"))),
 	}
