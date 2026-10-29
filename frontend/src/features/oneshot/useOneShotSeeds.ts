@@ -19,6 +19,7 @@ import {
   type RSSListObservationRef,
   type RSSListView,
   type SeedSearchSnapshotView,
+  type TitleSuggestion,
 } from "../../lib/api/client";
 import { createEmptyDraft } from "../../lib/draft";
 import { configKeys } from "../../lib/queryKeys";
@@ -90,6 +91,8 @@ export type OneShotSeedSource = {
    * 由调用方随后带着它编辑中的草稿重读。失败返回有界原因文案，成功返回空对象。
    */
   expand: (row: OneShotSeedRow) => Promise<{ error?: string }>;
+  /** The title candidates of the last read: the bound works' cached names and the source title, in the server's order. */
+  titleSuggestions?: TitleSuggestion[];
   /** Re-reads the read model with this task's draft, episode offset and per-seed manual file selections (step two only). */
   preview: (draft: AnimeDraft | undefined, offset: number, fileSelections?: RSSListFileSelection[]) => Promise<void>;
   /** custom: no usable seed-list snapshot yet; the user must fetch explicitly. */
@@ -394,6 +397,7 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
     refreshError,
     refreshGroup,
     expand,
+    titleSuggestions: view?.title_suggestions,
     preview: read,
     fetchRequired: false,
     fetchBusy: false,
@@ -571,6 +575,7 @@ function useCustomSeedSource({ entry, enabled }: { entry: CatalogEntryView | und
     openGroup: async () => {},
     refreshGroup: async () => false,
     expand,
+    titleSuggestions: view?.title_suggestions,
     preview: readView,
     // No fetch is required before a candidate has been read; a ready candidate with no snapshot means an explicit fetch is needed.
     fetchRequired: Boolean(request) && draft !== undefined && !snapshot && !fetchBusy,
@@ -726,6 +731,7 @@ function useSearchSeedSource({ search, enabled }: { search: SearchSeedBrowse | u
     openGroup: async () => {},
     refreshGroup: async () => false,
     expand,
+    titleSuggestions: view?.title_suggestions,
     preview: readView,
     fetchRequired: false,
     fetchBusy: false,

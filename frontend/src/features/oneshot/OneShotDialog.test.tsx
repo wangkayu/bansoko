@@ -126,7 +126,9 @@ type Scenario = {
   /** The persisted seed list (GET .../rss): by default the fresh snap-1. */
   persisted?: (groupRef: string) => { status: number; body?: unknown };
   /** Answers the read model per read request (e.g. different episodes per the draft's parser). */
-  viewFor?: (body: { draft?: { business?: { parser?: { kind?: string } } } }) => RSSListView;
+  viewFor?: (body: {
+    draft?: { business?: { parser?: { kind?: string } }; metadata?: { tmdb?: { work_id?: string } | null } };
+  }) => RSSListView;
   /** TMDB search results (GET /metadata/search). */
   metadataCandidates?: unknown[];
 };
@@ -1352,8 +1354,21 @@ describe("OneShotDialog 搜索快照来源", () => {
     expect(after.map((chip) => chip.textContent)).toEqual(["作品乙", "搜索关键词甲"]);
   });
 
-  it("确认匹配：标题为空时回填作品名（同时带上元数据）；标题已有时不覆盖", async () => {
-    stubFetch({ view: threeSeedView(), metadataCandidates: [tmdbCandidate] });
+  it("确认匹配：标题为空时回填作品名（同时带上元数据）；标题已有时不覆盖；候选标签来自读取结果", async () => {
+    // The read model offers the bound work's cached names (localized and original) once the draft binds it.
+    stubFetch({
+      viewFor: (body) => ({
+        ...threeSeedView(),
+        title_suggestions:
+          body.draft?.metadata?.tmdb?.work_id === "777"
+            ? [
+                { source: "tmdb_cn", text: "匹配作品名" },
+                { source: "tmdb_original", text: "Matched Original" },
+              ]
+            : [],
+      }),
+      metadataCandidates: [tmdbCandidate],
+    });
     renderSearchDialog();
     await advanceToSettings([SEED_A]);
 
@@ -1380,10 +1395,15 @@ describe("OneShotDialog 搜索快照来源", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: t("forms.matchTitle", { provider: "TMDB" }) })).not.toBeInTheDocument());
     expect(title).toHaveValue("我的标题");
 
-    // The matched name stays on offer as a badge under the title input; a click sets it as the title.
+    // The bound work's names are on offer as badges under the title input; a click sets one as the title.
+    const original = await screen.findByRole("button", {
+      name: new RegExp(`${t("tabs.metadata.suggestionSource.tmdb_original")}\\s*Matched Original`),
+    });
     fireEvent.click(screen.getByRole("button", { name: new RegExp(`${t("tabs.metadata.suggestionSource.tmdb_cn")}\\s*匹配作品名`) }));
     expect(title).toHaveValue("匹配作品名");
-    expect(screen.queryByRole("group", { name: t("tabs.metadata.suggestionsAria") })).not.toBeInTheDocument();
+    expect(original).toBeInTheDocument();
+    fireEvent.click(original);
+    expect(title).toHaveValue("Matched Original");
   });
 
   it("读取返回 409：提示重新搜索，不提供重试，也不静默重发", async () => {
