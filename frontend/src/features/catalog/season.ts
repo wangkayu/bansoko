@@ -52,10 +52,21 @@ export function currentSeason(now: Date = new Date()): string {
   return `${now.getFullYear()}-${term}`;
 }
 
-/** Inclusive list around the center season (used by the picker popover). */
+/** Inclusive list around the center season. */
 export function listSeasonsAround(center: string, back: number, forward: number): string[] {
   const index = seasonIndex(center) ?? seasonIndex(currentSeason())!;
   const seasons: string[] = [];
   for (let i = -back; i <= forward; i += 1) seasons.push(seasonFromIndex(index + i));
   return seasons;
+}
+
+// The browse dropdown's window: the two coming seasons and two years back. It is a fixed set around
+//   the current season, never derived from the season on screen; the arrows step past it, and older
+//   works are found by search.
+const BROWSE_SEASONS_FORWARD = 2;
+const BROWSE_SEASONS_BACK = 8;
+
+/** The seasons the browse dropdown offers, newest first. */
+export function browseSeasons(current: string = currentSeason()): string[] {
+  return listSeasonsAround(current, BROWSE_SEASONS_BACK, BROWSE_SEASONS_FORWARD).reverse();
 }

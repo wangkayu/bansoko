@@ -1385,6 +1385,30 @@ describe("AnimeGrid（fixture 目录）", () => {
     expect(urls.length).toBeGreaterThan(0);
     expect(urls.every((url) => !url.includes("nonsense"))).toBe(true);
   });
+
+  it("季度下拉固定在本季附近，箭头可翻出下拉范围且照常加载", async () => {
+    // FIXED_NOW is 2026 summer: the dropdown runs 2027 winter … 2024 summer whatever the address holds.
+    const { router } = await renderGrid("/?source=mikan&season=2024-summer");
+    await flush();
+    const trigger = screen.getByRole("combobox", { name: "选择季度" });
+    expect(trigger).toHaveTextContent("2024 夏");
+
+    fireEvent.click(screen.getByRole("button", { name: "上一季" }));
+    await flush();
+    expect(new URLSearchParams(router.state.location.search).get("season")).toBe("2024-spring");
+    expect(trigger).toHaveTextContent("2024 春");
+    const seasonGets = fetchMock.mock.calls.map(([input]) => String(input)).filter((url) => url.includes("/seasons/2024-spring"));
+    expect(seasonGets.length).toBeGreaterThan(0);
+
+    fireEvent.click(trigger);
+    await flush();
+    const options = screen.getAllByRole("option").map((option) => option.textContent?.trim());
+    expect(options[0]).toBe("2027 冬");
+    expect(options).toContain("2026 夏");
+    expect(options.at(-2)).toBe("2024 夏");
+    expect(options.at(-1)).toBe("2024 春");
+    expect(options).toHaveLength(12);
+  });
 });
 
 // Custom-preset regression: a save failure must produce toast feedback and leave the form filled;

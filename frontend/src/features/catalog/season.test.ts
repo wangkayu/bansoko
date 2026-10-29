@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  browseSeasons,
   currentSeason,
   listSeasonsAround,
   parseSeason,
@@ -39,5 +40,13 @@ describe("season helpers", () => {
 
   it("lists seasons around the center", () => {
     expect(listSeasonsAround("2026-summer", 1, 1)).toEqual(["2026-spring", "2026-summer", "2026-fall"]);
+  });
+
+  it("offers a fixed browse window: two coming seasons and two years back, newest first", () => {
+    const seasons = browseSeasons("2026-fall");
+    expect(seasons).toHaveLength(11);
+    expect(seasons[0]).toBe("2027-spring");
+    expect(seasons[2]).toBe("2026-fall");
+    expect(seasons.at(-1)).toBe("2024-fall");
   });
 });

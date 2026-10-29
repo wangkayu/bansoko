@@ -25,6 +25,7 @@
 - A file whose subscription settings changed while it downloaded moves to the path the current settings give right after import, whether or not automatic alignment is on.
 - After the title, bindings, season, year, type or naming rules change, a subscription's files are checked again against the current settings; with automatic alignment on they move to the new place, and nothing is downloaded again.
 - Saving metadata now re-evaluates the unsubmitted releases in the same save, with no separate re-evaluation.
+- The browse season dropdown always offers the next two seasons back to two years ago, so the current season is always one pick away; reach older seasons with the arrows, or find works by search.
 
 ## Fixed
 
