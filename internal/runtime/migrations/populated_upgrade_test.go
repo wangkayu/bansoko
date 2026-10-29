@@ -45,6 +45,45 @@ VALUES ('tmdb', 'tv', '1', '星际邮差艾拉', NULL, 'Interstellar Postgirl')`
 	}
 }
 
+// Migration 101 rewrites populated download rows and queues their deferred
+// foreign-key events. Migration 103 then alters that table, which PostgreSQL
+// refuses while those events are still pending in the runner's transaction.
+// An installed database therefore needs the same event boundary it would get
+// at commit, without giving up the all-or-nothing migration transaction.
+func TestUpgradeFlushesDeferredEventsBetweenMigrations(t *testing.T) {
+	ctx := context.Background()
+	db := openDisposableDB(t)
+	installMigrationsThrough(t, db, "096_seasonless_key_rewrite.sql")
+	seedCompletedFileOperation(t, db, "deferred103", "op-deferred103")
+	if _, err := db.ExecContext(ctx, `
+INSERT INTO one_shot_acquisitions(id,managed_anime_id,subscription_id,rss_source_id,release_id,download_task_id,correlation_id,request_idempotency_key,request_hash,input_snapshot,result_snapshot,state)
+SELECT 'oneshot-deferred103',s.managed_anime_id,s.id,r.rss_source_id,r.id,$1,'deferred103-corr','deferred103-request',$2,
+       '{"target_facts":{"targets":[],"observations":[]}}'::jsonb,'{}','running'
+FROM releases r JOIN rss_sources src ON src.id=r.rss_source_id JOIN subscriptions s ON s.id=src.subscription_id
+WHERE r.download_task_id=$1`, "dt-acq-deferred103", acqDigest("a")); err != nil {
+		t.Fatalf("seed the one-shot input migration 101 rewrites: %v", err)
+	}
+
+	if _, err := db.ExecContext(ctx, `
+UPDATE download_tasks
+SET frozen_input = jsonb_set(
+    jsonb_set(
+        jsonb_set(frozen_input, '{target_facts}', '{"targets":[],"observations":[]}'::jsonb, true),
+        '{selected_release}', '{}'::jsonb, true),
+    '{selected_release,internal_facts}', '{}'::jsonb, true)
+WHERE id = 'dt-acq-deferred103'`); err != nil {
+		t.Fatalf("seed the frozen input migration 101 rewrites: %v", err)
+	}
+
+	if err := (Runner{DB: db, Dir: migrationsDir(t)}).Apply(ctx); err != nil {
+		t.Fatalf("upgrade a populated database through migration 103: %v", err)
+	}
+	rewriteExpect(t, db, "deferred upgrade", "101 rewrites the row before 103 alters its table",
+		`SELECT NOT COALESCE(frozen_input->'target_facts' ? 'targets', false)
+		        AND NOT COALESCE(frozen_input->'selected_release' ? 'internal_facts', false)
+		 FROM download_tasks WHERE id = 'dt-acq-deferred103'`)
+}
+
 // The ordering is load-bearing and static, so it is also pinned without a
 // database: a future edit that moves the UPDATE back above the DROP restores
 // the upgrade failure on every populated database.

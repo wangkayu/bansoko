@@ -283,6 +283,9 @@ CREATE TABLE schema_migrations (
 		}
 	}
 	for _, item := range migrations[applied:] {
+		if err := settleMigrationTriggerEvents(ctx, tx); err != nil {
+			return fmt.Errorf("settle migration trigger events before %s: %w", item.version, err)
+		}
 		if _, err := tx.ExecContext(ctx, string(item.contents)); err != nil {
 			return fmt.Errorf("migration apply failed: %w", &MigrationApplyError{Operation: "apply", Version: item.version, Err: err})
 		}
@@ -297,6 +300,31 @@ CREATE TABLE schema_migrations (
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit migrations: %w", err)
+	}
+	return nil
+}
+
+// settleMigrationTriggerEvents gives each migration file the deferred-event
+// boundary it would have at commit while keeping the whole apply atomic. A
+// populated rewrite can leave deferred foreign-key events on a table that the
+// next migration alters; PostgreSQL refuses that ALTER until the events fire.
+// Restore the catalog-declared initial modes afterwards so the next migration
+// keeps the same constraint timing it would have in a fresh transaction.
+func settleMigrationTriggerEvents(ctx context.Context, tx *sql.Tx) error {
+	var deferred sql.NullString
+	if err := tx.QueryRowContext(ctx, `
+SELECT string_agg(quote_ident(conname), ',')
+FROM pg_constraint
+WHERE condeferrable AND condeferred`).Scan(&deferred); err != nil {
+		return fmt.Errorf("read deferred constraints: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `SET CONSTRAINTS ALL IMMEDIATE`); err != nil {
+		return fmt.Errorf("fire deferred events: %w", err)
+	}
+	if deferred.Valid && deferred.String != "" {
+		if _, err := tx.ExecContext(ctx, `SET CONSTRAINTS `+deferred.String+` DEFERRED`); err != nil {
+			return fmt.Errorf("restore deferred constraints: %w", err)
+		}
 	}
 	return nil
 }
