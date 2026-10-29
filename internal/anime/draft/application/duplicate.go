@@ -304,7 +304,7 @@ func loadSourceMetadataDraftTx(ctx context.Context, tx *sql.Tx, animeID string) 
 		season, total, year, ownerSeason  sql.NullInt64
 	)
 	err := tx.QueryRowContext(ctx, `
-SELECT bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season, media_kind_override, total_episodes, year, season
+SELECT bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season, media_kind, total_episodes, year, season
 FROM anime_metadata WHERE managed_anime_id = $1`, animeID).Scan(&bgm, &tmdb, &tmdbKind, &season, &kindOverride, &total, &year, &ownerSeason)
 	if errors.Is(err, sql.ErrNoRows) {
 		return animedomain.AnimeMetadataDraft{}, nil
@@ -319,7 +319,7 @@ FROM anime_metadata WHERE managed_anime_id = $1`, animeID).Scan(&bgm, &tmdb, &tm
 	if tmdb.Valid && tmdbKind.Valid && season.Valid {
 		draft.Tmdb = &animedomain.TMDBBinding{WorkId: tmdb.String, MediaKind: animedomain.TMDBMediaKind(tmdbKind.String), Season: int(season.Int64)}
 	}
-	draft.MediaKindOverride = stringPtr(kindOverride)
+	draft.MediaKind = stringPtr(kindOverride)
 	if total.Valid {
 		value := int(total.Int64)
 		draft.TotalEpisodes = &value

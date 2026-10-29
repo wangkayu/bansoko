@@ -144,10 +144,10 @@ func seedPlacedRenderChain(t *testing.T, db *sql.DB, spec placedRenderChainSpec)
 		spec.AnimeID, spec.AnimeTitle)
 	// A maintenance render reads the current configuration: both bindings and
 	// the owner season (the TMDB season when it is a real one) are seeded.
-	exec(`INSERT INTO anime_metadata(managed_anime_id, bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season, season, media_kind_override)
+	exec(`INSERT INTO anime_metadata(managed_anime_id, bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season, season, media_kind)
 VALUES ($1, 'bgm-' || $1, 'work-' || $1, $2, $3, NULLIF($3::int, 0), $2)
 ON CONFLICT (managed_anime_id) DO UPDATE SET bgm_work_id = EXCLUDED.bgm_work_id, tmdb_media_kind = EXCLUDED.tmdb_media_kind,
-    tmdb_season = EXCLUDED.tmdb_season, season = EXCLUDED.season, media_kind_override = EXCLUDED.media_kind_override`,
+    tmdb_season = EXCLUDED.tmdb_season, season = EXCLUDED.season, media_kind = EXCLUDED.media_kind`,
 		spec.AnimeID, spec.TMDBMediaKind, spec.TMDBSeason)
 	// One subscription per anime (unique managed_anime_id): reuse the caller's
 	// subscription when the test already seeded one.

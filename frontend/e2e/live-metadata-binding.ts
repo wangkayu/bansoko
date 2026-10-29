@@ -76,7 +76,7 @@ export async function bindWorkspaceMetadata(page: Page, workspace: Locator, mana
       total_episodes?: number | null;
       year?: number | null;
       season?: number | null;
-      media_kind_override?: "tv" | "movie" | null;
+      media_kind?: "tv" | "movie" | null;
     };
     // The metadata owner is replaced wholesale: an omitted field clears (the
     // contract says so). Carry back every owner value the save just wrote, or
@@ -90,7 +90,7 @@ export async function bindWorkspaceMetadata(page: Page, workspace: Locator, mana
         total_episodes: savedBody.total_episodes ?? null,
         year: savedBody.year ?? null,
         season: savedBody.season ?? null,
-        media_kind_override: savedBody.media_kind_override ?? null,
+        media_kind: savedBody.media_kind ?? null,
       },
     });
     expect(response.status(), await response.text()).toBe(200);

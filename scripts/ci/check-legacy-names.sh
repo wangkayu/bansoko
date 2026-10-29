@@ -165,6 +165,15 @@ FAMILIES = [
         r"/file-maintenance/retention(?:/[A-Za-z0-9_{}.-]+)*"),
      keep_none,
      "retention split by meaning: washing -> replacement*, one-shot -> reclaim*"),
+    # The owner media kind lost its "_override" suffix in migration 100 (lane
+    # L7): column, constraint, API field, Go and TS identifiers and the stored
+    # draft JSON key are all plain media_kind. The TMDB binding's own
+    # media_kind and tmdb_media_kind were never renamed and are not matched.
+    ("media-kind-rename", P(
+        r"\bmedia_kind_override\b", r"\bMediaKindOverride\b", r"\bmediaKindOverride\b",
+        r"\banime_metadata_media_kind_override_check\b"),
+     keep_none,
+     "owner media kind: media_kind_override -> media_kind"),
 ]
 
 def path_family(f):
@@ -183,7 +192,7 @@ if paths_mode:
         if h: print(f"{','.join(h)}\t{f}")
     sys.exit(0)
 
-STRICT = {"dir-v2", "go-module", "api-path", "env-prefix", "kebab-v2", "mikan-product", "slim", "db-prefix", "ident-v2", "retention-split"}
+STRICT = {"dir-v2", "go-module", "api-path", "env-prefix", "kebab-v2", "mikan-product", "slim", "db-prefix", "ident-v2", "retention-split", "media-kind-rename"}
 
 # (category, family, path regex, match regex, optional line regex). A strict-family
 # hit is allowed when every given regex matches (path: re.search on the path;
@@ -205,6 +214,12 @@ ALLOW = [
     # 063.
     ("history", "retention-split",
      r"^db/migrations/0(?:0[1-9]|[1-5][0-9]|6[0-3])_", r".*", None),
+    # --- history: migrations 001..100 created and then renamed the column
+    # (100 names both sides of the rename and the draft JSON key). The
+    # historical seasonless-identity migration test seeds the pre-100 shape.
+    ("history", "media-kind-rename",
+     r"^(?:db/migrations/(?:0[0-9]{2}|100)_"
+     r"|internal/runtime/migrations/seasonless_episode_identity_test\.go$)", r".*", None),
 ]
 ALLOW = [(c, fam, re.compile(pp), re.compile(mp), re.compile(lp) if lp else None) for c, fam, pp, mp, lp in ALLOW]
 

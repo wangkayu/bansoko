@@ -43,7 +43,7 @@ func TestOffsetRekeyedKeyMovesOnlySingleEpisodeFiles(t *testing.T) {
 		{"several coverage keys", offsetRekeyCandidate{keyCount: 2, fileRef: "ep.mkv", effectiveFacts: frozenIdentityFacts(t, episodeidentity.KindTVEpisode, "1")}, 1, "", false},
 		{"multi-episode identity", offsetRekeyCandidate{keyCount: 1, fileRef: "ep.mkv", effectiveFacts: frozenIdentityFacts(t, episodeidentity.KindTVEpisode, "1", "tv:e1", "tv:e2")}, 1, "", false},
 		{"frozen movie", offsetRekeyCandidate{keyCount: 1, fileRef: "ep.mkv", effectiveFacts: frozenIdentityFacts(t, episodeidentity.KindMovie, "1")}, 1, "", false},
-		{"owner movie for a kindless identity", offsetRekeyCandidate{keyCount: 1, fileRef: "ep.mkv", mediaKindOverride: "movie", effectiveFacts: frozenIdentityFacts(t, "", "1")}, 1, "", false},
+		{"owner movie for a kindless identity", offsetRekeyCandidate{keyCount: 1, fileRef: "ep.mkv", ownerMediaKind: "movie", effectiveFacts: frozenIdentityFacts(t, "", "1")}, 1, "", false},
 		{"unresolved identity", offsetRekeyCandidate{keyCount: 1, fileRef: "ep.mkv", effectiveFacts: unresolved}, 1, "", false},
 		{"no media facts", offsetRekeyCandidate{keyCount: 1, effectiveFacts: []byte(`{}`)}, 1, "", false},
 	}

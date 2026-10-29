@@ -222,7 +222,7 @@ describe("未开始订阅的 RSS 测试台", () => {
       tmdb: { work_id: "265010", media_kind: "tv", season: 3 },
       year: 2031,
       title_override: null,
-      media_kind_override: null,
+      media_kind: null,
       total_episodes: null,
     };
     rerender(ui(metadata));

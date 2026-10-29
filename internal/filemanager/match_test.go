@@ -81,7 +81,7 @@ func newMatchFixture(t *testing.T) matchFixture {
 		"oneshot": {ID: "oneshot", Title: "Temp", SubscriptionState: "stopped", OneShot: true},
 		"movie":   {ID: "movie", Title: "Film", SubscriptionState: "active", TMDBWorkID: "7", TMDBMediaKind: "movie"},
 		// A movie owner kind next to a TV tuple: the owner kind decides.
-		"owner-movie": {ID: "owner-movie", Title: "Pinned", SubscriptionState: "active", TMDBWorkID: "8", TMDBMediaKind: "tv", MediaKindOverride: "movie"},
+		"owner-movie": {ID: "owner-movie", Title: "Pinned", SubscriptionState: "active", TMDBWorkID: "8", TMDBMediaKind: "tv", OwnerMediaKind: "movie"},
 	}
 	f.service.SetMatch(renderer, animes, fakeCatalog{
 		seasons:  []episodetitle.Season{{Number: 0, Name: "Specials", EpisodeCount: 2}, {Number: 1, EpisodeCount: 12}},

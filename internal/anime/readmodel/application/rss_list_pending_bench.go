@@ -165,7 +165,7 @@ func pendingBenchDraft(workspace AnimeWorkspace, business *animedomain.BusinessS
 	}
 	draft.Metadata.Bgm, draft.Metadata.Tmdb = metadataPatchBindingsForDomain(workspace.Metadata.BGM, workspace.Metadata.TMDB)
 	draft.Metadata.TotalEpisodes = workspace.Metadata.TotalEpisodes
-	draft.Metadata.MediaKindOverride = workspace.Metadata.MediaKindOverride
+	draft.Metadata.MediaKind = workspace.Metadata.MediaKind
 	// The owner-edited year is anime.year; without it the bench rendered every
 	// saved (or unsaved, owner_draft) year as missing.
 	draft.Metadata.Year = workspace.Metadata.Year

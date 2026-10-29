@@ -39,7 +39,7 @@ export function MetadataFields({
   showSeason = false,
   onSaveTotalEpisodes,
   onSaveMediaKind,
-  mediaKindOverride,
+  mediaKind,
   showYear = false,
   directEdit = false,
   matchQueryCandidates,
@@ -79,7 +79,7 @@ export function MetadataFields({
    * 覆盖一样不进 AnimeMetadataDraft（否则「保存后 refetch 前」的本地值与服务端基线不等，
    * 会误报 dirty），由调用方用独立状态传入。draft 模式传草稿里的字段。
    */
-  mediaKindOverride?: "tv" | "movie" | null;
+  mediaKind?: "tv" | "movie" | null;
   /**
    * 渲染年份行。年份是表单值（value.year）：输入直接经 onChange 写回，随调用方的
    * 保存落库（owner=底部保存，draft=草稿）；TMDB 匹配确认：首次绑定只在年份为空时填入候选年份，替换绑定则覆盖，清除绑定则重置。
@@ -107,11 +107,11 @@ export function MetadataFields({
 }) {
   const season = value.season ?? null;
   // The kind the server resolves with: the stored kind, else the bound TMDB kind it backfills, else tv.
-  const resolvedKind = mediaKindOverride ?? value.tmdb?.media_kind ?? "tv";
+  const resolvedKind = mediaKind ?? value.tmdb?.media_kind ?? "tv";
   // A TMDB change while the kind is unset carries the kind it resolves to, so the kind stays when
   // the binding is cleared or replaced later.
   function changeTMDB(next: AnimeMetadataDraft, boundKind: "tv" | "movie" | undefined, title?: string) {
-    const kind = onSaveMediaKind && mediaKindOverride == null ? boundKind : undefined;
+    const kind = onSaveMediaKind && mediaKind == null ? boundKind : undefined;
     if (title !== undefined) onChange(next, kind, title);
     else if (kind) onChange(next, kind);
     else onChange(next);

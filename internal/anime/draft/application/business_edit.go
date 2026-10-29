@@ -56,7 +56,7 @@ func (s *Service) GetAnimeBusinessEdit(ctx context.Context, animeID string) (Bus
 	// stable source identities. Dedicated metadata/source editors remain separate.
 	var bgm, tmdb, kind sql.NullString
 	var season, year, ownerSeason sql.NullInt64
-	if err := tx.QueryRowContext(ctx, `SELECT bgm_work_id,tmdb_work_id,tmdb_media_kind,tmdb_season,media_kind_override,year,season FROM anime_metadata WHERE managed_anime_id=$1`, animeID).Scan(&bgm, &tmdb, &kind, &season, &draft.Metadata.MediaKindOverride, &year, &ownerSeason); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT bgm_work_id,tmdb_work_id,tmdb_media_kind,tmdb_season,media_kind,year,season FROM anime_metadata WHERE managed_anime_id=$1`, animeID).Scan(&bgm, &tmdb, &kind, &season, &draft.Metadata.MediaKind, &year, &ownerSeason); err != nil {
 		return result, err
 	}
 	draft.Metadata.Year = nil

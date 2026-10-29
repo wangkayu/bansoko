@@ -84,7 +84,7 @@ function draftHeaderMetadataMatch(metadata: AnimeMetadataDraft): CatalogMetadata
     tmdbWorkId,
     tmdbMediaKind: tmdb?.media_kind,
     tmdbSeason: tmdb?.season,
-    mediaKindOverride: metadata.media_kind_override ?? undefined,
+    mediaKind: metadata.media_kind ?? undefined,
   };
 }
 
@@ -98,7 +98,7 @@ function workspaceHeaderMetadata(workspace: AnimeWorkspace): HeaderMetadata {
       tmdbWorkId: tmdb?.work_id || undefined,
       tmdbMediaKind: tmdb?.media_kind,
       tmdbSeason: tmdb?.season,
-      mediaKindOverride: workspace.metadata.media_kind_override ?? undefined,
+      mediaKind: workspace.metadata.media_kind ?? undefined,
     },
     metadataHold: workspace.metadata_hold,
   };

@@ -221,10 +221,10 @@ type artifactContext struct {
 	metadataBGM   sql.NullString
 	tmdbWorkID    sql.NullString
 	tmdbMediaKind sql.NullString
-	// mediaKindOverride is the current owner pin (tv | movie); it only matters
+	// ownerMediaKind is the current owner pin (tv | movie); it only matters
 	// when the media fact snapshot carries no frozen binding.
-	mediaKindOverride sql.NullString
-	tmdbSeason        sql.NullInt64
+	ownerMediaKind sql.NullString
+	tmdbSeason     sql.NullInt64
 	// bindingTitles and torrent are the native work titles, provider years and
 	// the torrent metadata frozen in the accepted input (schema 6 / 4); empty for
 	// legacy plans and older inputs, which never froze them. A nil year is a work

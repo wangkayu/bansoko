@@ -542,7 +542,7 @@ export function AnimeGrid() {
       tab === "all" || browsable
         ? wallRows(visibleRows, (row) => ({
             broadcastDay: row.entry.broadcastDay,
-            mediaKind: row.entry.metadataMatch.mediaKindOverride ?? row.entry.metadataMatch.tmdbMediaKind,
+            mediaKind: row.entry.metadataMatch.mediaKind ?? row.entry.metadataMatch.tmdbMediaKind,
             format: row.entry.releaseFormat,
             custom: row.entry.source === "custom",
           }))

@@ -108,15 +108,15 @@ type currentAnimeConfig struct {
 	tmdbSeason      sql.NullInt64
 	ownerSeason     sql.NullInt64
 	ownerYear       sql.NullInt64
-	// mediaKindOverride is the stored owner media kind; NULL reads as tv.
-	mediaKindOverride sql.NullString
-	titles            namingvars.AnimeEvidence
+	// ownerMediaKind is the stored owner media kind; NULL reads as tv.
+	ownerMediaKind sql.NullString
+	titles         namingvars.AnimeEvidence
 }
 
 // effectiveMediaKind is the owner media kind: only movie selects the movie
 // branch, an unset kind is tv.
 func (c currentAnimeConfig) effectiveMediaKind() string {
-	if strings.TrimSpace(c.mediaKindOverride.String) == "movie" {
+	if strings.TrimSpace(c.ownerMediaKind.String) == "movie" {
 		return "movie"
 	}
 	return "tv"
@@ -173,8 +173,8 @@ func (c currentAnimeConfig) apply(facts *naming.AnimeNamingFacts) {
 func (r *NamingTargetRenderer) currentAnimeConfig(ctx context.Context, animeID string) (currentAnimeConfig, error) {
 	var c currentAnimeConfig
 	var bgm, tmdb, tmdbKind sql.NullString
-	err := r.db.QueryRowContext(ctx, `SELECT bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season, season, year, media_kind_override FROM anime_metadata WHERE managed_anime_id=$1`, animeID).
-		Scan(&bgm, &tmdb, &tmdbKind, &c.tmdbSeason, &c.ownerSeason, &c.ownerYear, &c.mediaKindOverride)
+	err := r.db.QueryRowContext(ctx, `SELECT bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season, season, year, media_kind FROM anime_metadata WHERE managed_anime_id=$1`, animeID).
+		Scan(&bgm, &tmdb, &tmdbKind, &c.tmdbSeason, &c.ownerSeason, &c.ownerYear, &c.ownerMediaKind)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return c, fmt.Errorf("read current anime configuration: %w", err)
 	}

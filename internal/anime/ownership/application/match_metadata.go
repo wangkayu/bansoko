@@ -20,19 +20,19 @@ import (
 )
 
 type metadataMatchTarget struct {
-	title             string
-	origin            string
-	entryRef          sql.NullString
-	state             sql.NullString
-	bgmWorkID         sql.NullString
-	tmdbWorkID        sql.NullString
-	tmdbKind          sql.NullString
-	tmdbSeason        sql.NullInt64
-	totalEpisodes     sql.NullInt64
-	mediaKindOverride sql.NullString
-	year              sql.NullInt64
-	season            sql.NullInt64
-	version           sql.NullInt64
+	title          string
+	origin         string
+	entryRef       sql.NullString
+	state          sql.NullString
+	bgmWorkID      sql.NullString
+	tmdbWorkID     sql.NullString
+	tmdbKind       sql.NullString
+	tmdbSeason     sql.NullInt64
+	totalEpisodes  sql.NullInt64
+	ownerMediaKind sql.NullString
+	year           sql.NullInt64
+	season         sql.NullInt64
+	version        sql.NullInt64
 }
 
 // MatchAnimeMetadata runs the configured matcher outside the write transaction,
@@ -183,14 +183,14 @@ func readMetadataMatchTarget(ctx context.Context, db *sql.DB, managedAnimeID str
 	err := db.QueryRowContext(ctx, `
 SELECT ma.title, s.origin, s.origin_entry_ref, s.state,
        m.bgm_work_id, m.tmdb_work_id, m.tmdb_media_kind, m.tmdb_season,
-       m.total_episodes, m.media_kind_override, m.year, m.season, m.version
+       m.total_episodes, m.media_kind, m.year, m.season, m.version
 FROM managed_anime ma
 JOIN subscriptions s ON s.managed_anime_id = ma.id
 JOIN anime_metadata m ON m.managed_anime_id = ma.id
 WHERE ma.id = $1`, managedAnimeID).Scan(
 		&target.title, &target.origin, &target.entryRef, &target.state,
 		&target.bgmWorkID, &target.tmdbWorkID, &target.tmdbKind, &target.tmdbSeason,
-		&target.totalEpisodes, &target.mediaKindOverride, &target.year, &target.season, &target.version)
+		&target.totalEpisodes, &target.ownerMediaKind, &target.year, &target.season, &target.version)
 	if errors.Is(err, sql.ErrNoRows) {
 		return metadataMatchTarget{}, &apperrors.NotFound{Resource: "managed_anime", ID: managedAnimeID}
 	}
@@ -220,7 +220,7 @@ func (t metadataMatchTarget) metadata(managedAnimeID string) MetadataMatchMetada
 		episodes := int(t.totalEpisodes.Int64)
 		result.TotalEpisodes = &episodes
 	}
-	result.MediaKindOverride = animeapplication.NullableStringPointer(t.mediaKindOverride)
+	result.MediaKind = animeapplication.NullableStringPointer(t.ownerMediaKind)
 	if t.year.Valid {
 		year := int(t.year.Int64)
 		result.Year = &year
@@ -249,7 +249,7 @@ func metadataMatchComplete(metadata MetadataMatchMetadata) bool {
 
 // storedMetadata projects the owner view onto the shared backfill input.
 func storedMetadata(m MetadataMatchMetadata) backfill.Stored {
-	stored := backfill.Stored{TotalEpisodes: m.TotalEpisodes, Year: m.Year, Season: m.Season, MediaKind: m.MediaKindOverride}
+	stored := backfill.Stored{TotalEpisodes: m.TotalEpisodes, Year: m.Year, Season: m.Season, MediaKind: m.MediaKind}
 	if m.BGM != nil {
 		stored.BGMWorkID = &m.BGM.WorkID
 	}
@@ -273,7 +273,7 @@ func mergedMetadata(current MetadataMatchMetadata, m backfill.Stored) MetadataMa
 	if m.HasTMDB() {
 		merged.TMDB = &MetadataMatchTMDB{WorkID: *m.TMDBWorkID, MediaKind: *m.TMDBKind, Season: *m.TMDBSeason}
 	}
-	merged.TotalEpisodes, merged.Year, merged.Season, merged.MediaKindOverride = m.TotalEpisodes, m.Year, m.Season, m.MediaKind
+	merged.TotalEpisodes, merged.Year, merged.Season, merged.MediaKind = m.TotalEpisodes, m.Year, m.Season, m.MediaKind
 	return merged
 }
 
@@ -310,10 +310,10 @@ func (s *Service) commitMetadataMatch(ctx context.Context, managedAnimeID string
 	var target metadataMatchTarget
 	if err := tx.QueryRowContext(ctx, `
 SELECT bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season,
-       total_episodes, media_kind_override, year, season, version
+       total_episodes, media_kind, year, season, version
 FROM anime_metadata WHERE managed_anime_id = $1 FOR UPDATE`, managedAnimeID).Scan(
 		&target.bgmWorkID, &target.tmdbWorkID, &target.tmdbKind, &target.tmdbSeason,
-		&target.totalEpisodes, &target.mediaKindOverride, &target.year, &target.season, &target.version); errors.Is(err, sql.ErrNoRows) {
+		&target.totalEpisodes, &target.ownerMediaKind, &target.year, &target.season, &target.version); errors.Is(err, sql.ErrNoRows) {
 		return MetadataMatchResult{}, &apperrors.NotFound{Resource: "anime_metadata", ID: managedAnimeID}
 	} else if err != nil {
 		return MetadataMatchResult{}, fmt.Errorf("lock anime metadata: %w", err)

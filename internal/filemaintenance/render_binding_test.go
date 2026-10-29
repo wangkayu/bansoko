@@ -41,7 +41,7 @@ func TestNamingTargetRendererFollowsMetadataChanges(t *testing.T) {
 	}{
 		{
 			name:   "rebinding and kind switch the naming branch",
-			update: `media_kind_override = 'movie', tmdb_media_kind = 'movie', tmdb_season = 9, tmdb_work_id = 'rebound-tmdb', bgm_work_id = 'rebound-bgm'`,
+			update: `media_kind = 'movie', tmdb_media_kind = 'movie', tmdb_season = 9, tmdb_work_id = 'rebound-tmdb', bgm_work_id = 'rebound-bgm'`,
 			want:   "/library/MOVIE/rebound-tmdb/rebound-bgm/2021/episode.mkv",
 		},
 		{

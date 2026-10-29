@@ -1206,7 +1206,7 @@ func (d *Dispatcher) dispatchMetadataMatch(ctx context.Context) (dispatchCounts,
 	rows, err := d.DB.QueryContext(ctx, `
 SELECT ma.id, ma.title, s.origin, s.origin_entry_ref,
        m.bgm_work_id, m.tmdb_work_id, m.tmdb_media_kind, m.tmdb_season,
-       m.total_episodes, m.year, m.season, m.media_kind_override, m.version
+       m.total_episodes, m.year, m.season, m.media_kind, m.version
 FROM managed_anime ma
 JOIN subscriptions s ON s.managed_anime_id = ma.id AND s.state = 'active'
 JOIN anime_metadata m ON m.managed_anime_id = ma.id

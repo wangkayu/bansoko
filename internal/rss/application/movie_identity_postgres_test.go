@@ -28,7 +28,7 @@ func seedMovieMetadataBinding(t *testing.T, db *sql.DB) {
 	t.Helper()
 	if _, err := db.ExecContext(context.Background(), `
 UPDATE anime_metadata
-SET media_kind_override = 'movie', tmdb_media_kind = 'movie', tmdb_season = 0, version = version + 1
+SET media_kind = 'movie', tmdb_media_kind = 'movie', tmdb_season = 0, version = version + 1
 WHERE managed_anime_id = 'anime-rss-test'`); err != nil {
 		t.Fatalf("switch metadata to a movie binding: %v", err)
 	}
@@ -163,7 +163,7 @@ WHERE release_id = 'release-movie' ORDER BY release_version DESC LIMIT 1`).Scan(
 	// projection, or policy.
 	if _, err := db.ExecContext(ctx, `
 UPDATE anime_metadata
-SET media_kind_override = 'tv', tmdb_media_kind = 'tv', tmdb_season = 4, version = version + 1
+SET media_kind = 'tv', tmdb_media_kind = 'tv', tmdb_season = 4, version = version + 1
 WHERE managed_anime_id = 'anime-rss-test'`); err != nil {
 		t.Fatal(err)
 	}
@@ -361,7 +361,7 @@ SELECT id FROM media_fact_snapshots WHERE release_id = 'release-movie-target'`).
 	// Submitted work is frozen: switching the instance to TV after submission
 	// must not move the persisted target or its provenance.
 	if _, err := db.ExecContext(ctx, `
-UPDATE anime_metadata SET media_kind_override = 'tv', tmdb_media_kind = 'tv', tmdb_season = 4, version = version + 1
+UPDATE anime_metadata SET media_kind = 'tv', tmdb_media_kind = 'tv', tmdb_season = 4, version = version + 1
 WHERE managed_anime_id = 'anime-rss-test'`); err != nil {
 		t.Fatal(err)
 	}

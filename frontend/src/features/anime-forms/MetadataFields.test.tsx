@@ -940,12 +940,12 @@ describe("MetadataFields 类型行", () => {
           title="星际邮差艾拉"
           directEdit
           value={value}
-          onChange={(next, mediaKind) => setValue(mediaKind ? { ...next, media_kind_override: mediaKind } : next)}
+          onChange={(next, mediaKind) => setValue(mediaKind ? { ...next, media_kind: mediaKind } : next)}
           onSaveMediaKind={async (next) => {
-            setValue((current) => ({ ...current, media_kind_override: next }));
+            setValue((current) => ({ ...current, media_kind: next }));
             return true;
           }}
-          mediaKindOverride={value.media_kind_override}
+          mediaKind={value.media_kind}
           searcher={searcherReturning(candidates)}
           matchProvider={matchProvider}
           onMatchProviderChange={setMatchProvider}
@@ -960,14 +960,14 @@ describe("MetadataFields 类型行", () => {
   }
 
   it("只有剧集与电影两项，未设置且未关联时显示剧集", () => {
-    render(<KindHarness initial={{ bgm: null, tmdb: null, media_kind_override: null }} />);
+    render(<KindHarness initial={{ bgm: null, tmdb: null, media_kind: null }} />);
     expect(within(screen.getByRole("region", { name: t("forms.mediaKind") })).getAllByRole("radio")).toHaveLength(2);
     expect(kindRadio("tv")).toHaveAttribute("aria-checked", "true");
   });
 
   it("未设置时关联电影写入电影类型，之后清除 TMDB 不改类型", async () => {
     const movie: MetadataCandidate = { ...tmdbCandidate, mediaKind: "movie", suggestedSeason: undefined };
-    render(<KindHarness initial={{ bgm: null, tmdb: null, media_kind_override: null }} candidates={[movie]} />);
+    render(<KindHarness initial={{ bgm: null, tmdb: null, media_kind: null }} candidates={[movie]} />);
 
     clickMatch("tmdb");
     const dialog = await screen.findByRole("dialog");
@@ -982,7 +982,7 @@ describe("MetadataFields 类型行", () => {
 
   it("已设置类型时关联 TMDB 不改类型", async () => {
     const movie: MetadataCandidate = { ...tmdbCandidate, mediaKind: "movie", suggestedSeason: undefined };
-    render(<KindHarness initial={{ bgm: null, tmdb: null, media_kind_override: "tv" }} candidates={[movie]} />);
+    render(<KindHarness initial={{ bgm: null, tmdb: null, media_kind: "tv" }} candidates={[movie]} />);
 
     clickMatch("tmdb");
     const dialog = await screen.findByRole("dialog");
@@ -994,7 +994,7 @@ describe("MetadataFields 类型行", () => {
   });
 
   it("未设置但已关联电影的草稿显示电影，清除 TMDB 时保留电影", () => {
-    render(<KindHarness initial={{ bgm: null, tmdb: { work_id: "265010", media_kind: "movie", season: 0 }, media_kind_override: null }} />);
+    render(<KindHarness initial={{ bgm: null, tmdb: { work_id: "265010", media_kind: "movie", season: 0 }, media_kind: null }} />);
     expect(kindRadio("movie")).toHaveAttribute("aria-checked", "true");
 
     fireEvent.click(screen.getByRole("button", { name: t("forms.clearAria", { label: t("forms.tmdb") }) }));

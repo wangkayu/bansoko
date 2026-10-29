@@ -15,7 +15,7 @@ func (s *Service) loadSourceSnapshot(ctx context.Context, sourceID string) (sour
 	var snapshot sourceSnapshot
 	var sourceKind, subscriptionState string
 	var httpFeedConnection, networkRoute, provider, providerEntryRef, providerGroupRef sql.NullString
-	var bgmWorkID, tmdbWorkID, tmdbMediaKind, mediaKindOverride sql.NullString
+	var bgmWorkID, tmdbWorkID, tmdbMediaKind, ownerMediaKind sql.NullString
 	var tmdbSeason sql.NullInt64
 	var cursorJSON, lastGoodJSON []byte
 	var policyKind sql.NullString
@@ -28,7 +28,7 @@ SELECT src.id, src.subscription_id, sub.managed_anime_id, src.source_kind,
  sub.state, selection.id IS NOT NULL, COALESCE(selection.effective_selected AND selection.available, FALSE),
        rt.version, rt.cursor, rt.last_good_facts, COALESCE(rt.etag, ''), COALESCE(rt.last_modified, ''), rt.consecutive_failures,
        (sub.resumed_at IS NOT NULL AND rt.created_at < sub.resumed_at AND rt.resume_baseline_at IS DISTINCT FROM sub.resumed_at),
-       m.bgm_work_id, m.tmdb_work_id, m.tmdb_media_kind, m.tmdb_season, m.media_kind_override,
+       m.bgm_work_id, m.tmdb_work_id, m.tmdb_media_kind, m.tmdb_season, m.media_kind,
        m.version, COALESCE(rules.rules_version, 1),
        pp.parser_kind, pp.parser_version,
        sub.new_releases_only, sub.start_baseline_at
@@ -52,7 +52,7 @@ WHERE src.id = $1`, sourceID).Scan(
 		&subscriptionState, &snapshot.selectionExists, &snapshot.providerSelected,
 		&snapshot.runtimeVersion, &cursorJSON, &lastGoodJSON, &snapshot.etag, &snapshot.lastModified, &snapshot.consecutiveFailures,
 		&snapshot.resumeBaselinePending,
-		&bgmWorkID, &tmdbWorkID, &tmdbMediaKind, &tmdbSeason, &mediaKindOverride,
+		&bgmWorkID, &tmdbWorkID, &tmdbMediaKind, &tmdbSeason, &ownerMediaKind,
 		&snapshot.metadataVersion, &snapshot.rulesVersion,
 		&policyKind, &policyVersion,
 		&snapshot.newReleasesOnly, &snapshot.startBaselineAt); err != nil {
@@ -91,7 +91,7 @@ WHERE src.id = $1`, sourceID).Scan(
 	if err != nil {
 		return sourceSnapshot{}, fmt.Errorf("map metadata hold: %w", err)
 	}
-	snapshot.mediaKind, snapshot.mediaSeason, snapshot.mediaSeasonBound = frozenMediaBinding(tmdb, nullableStringPtr(mediaKindOverride))
+	snapshot.mediaKind, snapshot.mediaSeason, snapshot.mediaSeasonBound = frozenMediaBinding(tmdb, nullableStringPtr(ownerMediaKind))
 
 	effective, err := s.loadEffectiveConfig(ctx, snapshot.managedAnimeID)
 	if err != nil {
@@ -132,8 +132,8 @@ func metadataHoldFromBindings(bgm *animedomain.BGMBinding, tmdb *animedomain.TMD
 // The projection itself lives in anime/domain so the saved-revision preview and
 // the one-shot admission resolve the identical binding; this wrapper only keeps
 // the local call sites unchanged.
-func frozenMediaBinding(tmdb *animedomain.TMDBBinding, mediaKindOverride *string) (mediaKind string, season int, seasonBound bool) {
-	return animedomain.FrozenMediaBinding(tmdb, mediaKindOverride)
+func frozenMediaBinding(tmdb *animedomain.TMDBBinding, ownerMediaKind *string) (mediaKind string, season int, seasonBound bool) {
+	return animedomain.FrozenMediaBinding(tmdb, ownerMediaKind)
 }
 
 // nullableStringPtr projects a nullable text column into the optional owner

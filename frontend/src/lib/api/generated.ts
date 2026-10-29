@@ -980,7 +980,7 @@ export interface paths {
         delete: operations["deleteAnimeConfigCandidate"];
         options?: never;
         head?: never;
-        /** @description Replace a candidate's complete draft under expected-version CAS. A successful patch appends one immutable revision and moves the candidate's current pointer to it; a stale expected_version is a typed 409 (OWNER_VERSION_CONFLICT) and never a silent merge. A metadata match written here (metadata.bgm and/or metadata.tmdb, plus the optional metadata.media_kind_override) is the naming fact source for every later render of that revision; a draft that selects no match keeps metadata absent and naming stays fail-closed. A one-shot never writes here: its title, metadata and rules are its own unsaved configuration, submitted with input_source=current_input. */
+        /** @description Replace a candidate's complete draft under expected-version CAS. A successful patch appends one immutable revision and moves the candidate's current pointer to it; a stale expected_version is a typed 409 (OWNER_VERSION_CONFLICT) and never a silent merge. A metadata match written here (metadata.bgm and/or metadata.tmdb, plus the optional metadata.media_kind) is the naming fact source for every later render of that revision; a draft that selects no match keeps metadata absent and naming stays fail-closed. A one-shot never writes here: its title, metadata and rules are its own unsaved configuration, submitted with input_source=current_input. */
         patch: operations["patchAnimeConfigCandidate"];
         trace?: never;
     };
@@ -3803,7 +3803,7 @@ export interface components {
              * @description Owner media kind (tv | movie) the episode identity resolves with. While it is NULL, a bound TMDB tuple's media_kind fills it once: subscribing stores that value, and every draft read (preview, evaluation) already resolves with it. NULL without a TMDB tuple is tv. It never rewrites the TMDB tuple.
              * @enum {string|null}
              */
-            media_kind_override?: "tv" | "movie" | null;
+            media_kind?: "tv" | "movie" | null;
             /** @description Planned total episode count for the series. */
             total_episodes?: number | null;
             /** @description Owner-edited year that naming reads as anime.year. NULL means unset and anime.year renders empty. It is never read from metadata; matching TMDB in the UI only fills the form with the work's year until the owner saves. */
@@ -3819,7 +3819,7 @@ export interface components {
              * @description Owner media kind (tv | movie) the episode identity resolves with. NULL is tv; the TMDB binding's media_kind is never read for it. It is filled once from the TMDB media_kind when a TMDB tuple is bound while it is NULL (subscribe, metadata patch or metadata match); clearing or replacing the tuple later never changes it. It never rewrites the TMDB tuple. The effective kind (NULL is tv) changes between tv and movie only while the anime has no active library file and no acquisition that has not settled (an import waiting for configuration included): a metadata patch that would change it then returns 409 IDENTITY_KIND_CHANGE_BLOCKED, and a metadata match or the scheduled metadata_match automation leaves it unchanged and still fills the other empty fields.
              * @enum {string|null}
              */
-            media_kind_override?: "tv" | "movie" | null;
+            media_kind?: "tv" | "movie" | null;
             /** @description Planned total episode count for the series. */
             total_episodes?: number | null;
             /** @description Owner-edited year that naming reads as anime.year. NULL means unset and anime.year renders empty. It is never read from metadata; matching TMDB in the UI only fills the form with the work's year until the owner saves. */
@@ -5002,7 +5002,7 @@ export interface components {
              * @description Complete owner value of the media kind: a value (tv | movie) replaces it; null leaves it unset (tv) unless the patch carries a TMDB tuple, which fills it with the tuple's media_kind. It never rewrites the TMDB tuple. A patch whose resulting effective kind (NULL is tv) differs from the stored one while the anime has an active library file or an acquisition that has not settled (an import waiting for configuration included) returns 409 IDENTITY_KIND_CHANGE_BLOCKED and changes nothing.
              * @enum {string|null}
              */
-            media_kind_override?: "tv" | "movie" | null;
+            media_kind?: "tv" | "movie" | null;
             /** @description NULL clears; a non-null value (including 0) replaces. */
             total_episodes?: number | null;
             /** @description Complete owner value of the naming year (anime.year): null or an omitted field clears it, a value replaces it. */
@@ -5012,12 +5012,12 @@ export interface components {
             /** @description The anime's fixed title (anime.title_override). A value replaces it in the same version step as the bindings; null or an omitted field keeps the stored title. It cannot be cleared. It is the owner's choice: clearing or replacing a binding, a metadata match and a TMDB rename never change it. The subscription's library files are named from the current title, so a changed title renames them. title_suggestions on the workspace metadata lists the candidates. */
             title_override?: string | null;
         };
-        /** @description The complete unsaved metadata value an owner_draft RSS list read previews with: the AnimeMetadataPatch fields without expected_version, with the same complete-value semantics (null or an omitted field clears, except title_override, where null keeps the fixed title). It replaces the persisted metadata for the read only. The read consumes title_override (anime.title_override), year (anime.year), season (anime.season and the season composites), bgm (bgm.* facts and the metadata hold), tmdb (tmdb.* facts, the bound season carried as naming evidence, and the metadata hold) and media_kind_override (the media kind of episode parsing, filled from the tmdb media_kind by the same rule as the patch). total_episodes is validated but does not change a preview. No value is filled from network metadata. */
+        /** @description The complete unsaved metadata value an owner_draft RSS list read previews with: the AnimeMetadataPatch fields without expected_version, with the same complete-value semantics (null or an omitted field clears, except title_override, where null keeps the fixed title). It replaces the persisted metadata for the read only. The read consumes title_override (anime.title_override), year (anime.year), season (anime.season and the season composites), bgm (bgm.* facts and the metadata hold), tmdb (tmdb.* facts, the bound season carried as naming evidence, and the metadata hold) and media_kind (the media kind of episode parsing, filled from the tmdb media_kind by the same rule as the patch). total_episodes is validated but does not change a preview. No value is filled from network metadata. */
         AnimeMetadataPreview: {
             bgm: components["schemas"]["NullableBGMBinding"];
             tmdb: components["schemas"]["NullableTMDBBinding"];
             /** @enum {string|null} */
-            media_kind_override?: "tv" | "movie" | null;
+            media_kind?: "tv" | "movie" | null;
             total_episodes?: number | null;
             year?: number | null;
             season?: number | null;

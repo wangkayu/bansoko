@@ -92,13 +92,13 @@ func ValidateDraft(draft AnimeDraft) []FieldViolation {
 			violations = append(violations, FieldViolation{Field: "metadata.tmdb", Code: "TMDB_BINDING_INCOMPLETE", Message: "tmdb requires work_id, media_kind, and season together"})
 		}
 	}
-	// media_kind_override mirrors title_override: nil means unset (no pin),
+	// media_kind mirrors title_override: nil means unset (no pin),
 	// and a provided value must be the exact frozen media-kind vocabulary.
-	if draft.Metadata.MediaKindOverride != nil {
+	if draft.Metadata.MediaKind != nil {
 		// No trimming: the persisted column is CHECKed against the exact
 		// vocabulary, so an accept here must be byte-for-byte storable.
-		if *draft.Metadata.MediaKindOverride != string(TMDBMediaKindTv) && *draft.Metadata.MediaKindOverride != string(TMDBMediaKindMovie) {
-			violations = append(violations, FieldViolation{Field: "metadata.media_kind_override", Code: "DRAFT_INVALID", Message: "media_kind_override must be tv or movie when provided"})
+		if *draft.Metadata.MediaKind != string(TMDBMediaKindTv) && *draft.Metadata.MediaKind != string(TMDBMediaKindMovie) {
+			violations = append(violations, FieldViolation{Field: "metadata.media_kind", Code: "DRAFT_INVALID", Message: "media_kind must be tv or movie when provided"})
 		}
 	}
 	violations = append(violations, validateAnimeYear("metadata.year", draft.Metadata.Year)...)
@@ -203,7 +203,7 @@ func ValidateDraft(draft AnimeDraft) []FieldViolation {
 // ValidateMetadataPatch checks the owner-scoped metadata replacement. TMDB is
 // atomic: either null or a complete tuple. total_episodes is an optional
 // nullable field; a non-nil value must be valid.
-func ValidateMetadataPatch(bgm *NullableBGMBinding, tmdb *NullableTMDBBinding, titleOverride *string, mediaKindOverride *string, totalEpisodes *int, year ...*int) []FieldViolation {
+func ValidateMetadataPatch(bgm *NullableBGMBinding, tmdb *NullableTMDBBinding, titleOverride *string, ownerMediaKind *string, totalEpisodes *int, year ...*int) []FieldViolation {
 	var violations []FieldViolation
 	if bgm != nil && strings.TrimSpace(bgm.WorkId) == "" {
 		violations = append(violations, FieldViolation{Field: "bgm", Code: "DRAFT_INVALID", Message: "bgm work_id must be non-empty"})
@@ -227,14 +227,14 @@ func ValidateMetadataPatch(bgm *NullableBGMBinding, tmdb *NullableTMDBBinding, t
 	if totalEpisodes != nil && *totalEpisodes < 0 {
 		violations = append(violations, FieldViolation{Field: "total_episodes", Code: "DRAFT_INVALID", Message: "total_episodes must be >= 0 when provided"})
 	}
-	// media_kind_override follows the same complete-owner-replacement contract as
+	// media_kind follows the same complete-owner-replacement contract as
 	// title_override: nil (JSON null, or an omitted field on a full replacement)
 	// clears the pin, and a provided value must be tv or movie.
-	if mediaKindOverride != nil {
+	if ownerMediaKind != nil {
 		// No trimming, for the same reason as the draft validation: the column
 		// CHECK compares the exact stored bytes.
-		if *mediaKindOverride != string(TMDBMediaKindTv) && *mediaKindOverride != string(TMDBMediaKindMovie) {
-			violations = append(violations, FieldViolation{Field: "media_kind_override", Code: "DRAFT_INVALID", Message: "media_kind_override must be tv or movie when provided; send null to clear"})
+		if *ownerMediaKind != string(TMDBMediaKindTv) && *ownerMediaKind != string(TMDBMediaKindMovie) {
+			violations = append(violations, FieldViolation{Field: "media_kind", Code: "DRAFT_INVALID", Message: "media_kind must be tv or movie when provided; send null to clear"})
 		}
 	}
 	// year follows the same complete-owner-replacement contract: nil clears it.
@@ -267,7 +267,7 @@ func validateAnimeYear(field string, year *int) []FieldViolation {
 }
 
 // MediaKind is the media kind an identity resolves with: the owner field
-// (anime_metadata.media_kind_override, or a draft's media_kind_override),
+// (anime_metadata.media_kind, or a draft's media_kind),
 // where unset is tv. The TMDB kind is never read: a metadata binding only
 // locates the work. Only movie selects the movie branch; the writer validates
 // the tv|movie vocabulary, so nothing else is ever stored.
@@ -300,7 +300,7 @@ func BackfilledMediaKind(owner *string, tmdb *NullableTMDBBinding) *string {
 // resolves with. A stored draft keeps its own value; the rule is applied where
 // the draft is read.
 func (m AnimeMetadataDraft) BackfilledMediaKind() *string {
-	return BackfilledMediaKind(m.MediaKindOverride, m.Tmdb)
+	return BackfilledMediaKind(m.MediaKind, m.Tmdb)
 }
 
 // FrozenMediaBinding projects the owner media kind and the TMDB binding into
@@ -309,7 +309,7 @@ func (m AnimeMetadataDraft) BackfilledMediaKind() *string {
 // delegates here) so a saved revision preview, a one-shot admission and an
 // ordinary RSS evaluation can never disagree about the binding.
 //
-//   - The kind is MediaKind(mediaKindOverride): the owner value, unset is tv.
+//   - The kind is MediaKind(ownerMediaKind): the owner value, unset is tv.
 //     A movie kind short-circuits the episode identity resolver to the
 //     canonical movie:0 identity. The TMDB kind is never read; a draft whose
 //     kind is still unset applies BackfilledMediaKind before calling this.
@@ -317,11 +317,11 @@ func (m AnimeMetadataDraft) BackfilledMediaKind() *string {
 //     naming only: an episode identity carries no season. SeasonBound is
 //     false (the naming path keeps the historical season-1 default for a
 //     bound season 0).
-func FrozenMediaBinding(tmdb *NullableTMDBBinding, mediaKindOverride *string) (mediaKind string, season int, seasonBound bool) {
+func FrozenMediaBinding(tmdb *NullableTMDBBinding, ownerMediaKind *string) (mediaKind string, season int, seasonBound bool) {
 	if tmdb != nil {
 		season = tmdb.Season
 	}
-	return MediaKind(mediaKindOverride), season, false
+	return MediaKind(ownerMediaKind), season, false
 }
 
 // MetadataHoldFromBindings computes the sole product-level hold: BGM absent or

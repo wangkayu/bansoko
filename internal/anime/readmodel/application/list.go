@@ -43,7 +43,7 @@ SELECT a.id, a.title, a.title_override, a.version,
        sub.id, sub.origin, sub.origin_entry_ref, sub.instance_label, sub.state, sub.version,
        sub.new_releases_only, sub.start_baseline_at,
        a.lifecycle_state, a.fence_epoch, a.retired_at,
-       m.bgm_work_id, m.tmdb_work_id, m.tmdb_media_kind, m.tmdb_season, m.media_kind_override,
+       m.bgm_work_id, m.tmdb_work_id, m.tmdb_media_kind, m.tmdb_season, m.media_kind,
        m.total_episodes, m.year, m.season, m.version,
        groups_agg.group_names,
        health_agg.worst_health,
@@ -123,7 +123,7 @@ ORDER BY a.created_at, a.id`)
 		var origin, state string
 		var retiredAt sql.NullTime
 		var startBaselineAt sql.NullTime
-		var bgmWorkID, tmdbWorkID, tmdbMediaKind, mediaKindOverride sql.NullString
+		var bgmWorkID, tmdbWorkID, tmdbMediaKind, ownerMediaKind sql.NullString
 		var tmdbSeason, metadataTotalEpisodes, metadataYear, metadataSeason sql.NullInt32
 		var metadataVersion int64
 		var groupNames sql.NullString
@@ -137,7 +137,7 @@ ORDER BY a.created_at, a.id`)
 			&item.Subscription.ID, &origin, &originEntryRef, &instanceLabel, &state, &item.Subscription.Version,
 			&item.Subscription.NewReleasesOnly, &startBaselineAt,
 			&item.Subscription.LifecycleState, &item.Subscription.LifecycleEpoch, &retiredAt,
-			&bgmWorkID, &tmdbWorkID, &tmdbMediaKind, &tmdbSeason, &mediaKindOverride,
+			&bgmWorkID, &tmdbWorkID, &tmdbMediaKind, &tmdbSeason, &ownerMediaKind,
 			&metadataTotalEpisodes, &metadataYear, &metadataSeason, &metadataVersion,
 			&groupNames, &worstHealth, &healthReason, &episodes, &catalogTotalEpisodes, &weekdayLabel, &weekday, &providerFormat, &coverURL); err != nil {
 			return nil, fmt.Errorf("scan anime list item: %w", err)
@@ -156,7 +156,7 @@ ORDER BY a.created_at, a.id`)
 		}
 		bgm, tmdb := applicationBindingsFromRow(bgmWorkID, tmdbWorkID, tmdbMediaKind, tmdbSeason)
 		item.Metadata = AnimeMetadata{ManagedAnimeID: item.ManagedAnime.ID, BGM: bgm, TMDB: tmdb, Version: metadataVersion}
-		item.Metadata.MediaKindOverride = nullableStringPointer(mediaKindOverride)
+		item.Metadata.MediaKind = nullableStringPointer(ownerMediaKind)
 		item.Metadata.TotalEpisodes = nullableIntPointer(metadataTotalEpisodes)
 		item.Metadata.Year = nullableIntPointer(metadataYear)
 		item.Metadata.Season = nullableIntPointer(metadataSeason)

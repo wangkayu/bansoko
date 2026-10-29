@@ -79,17 +79,17 @@ func (p Provisioner) InitializeAnimeOwnerRowsTx(ctx context.Context, tx *sql.Tx,
 	// while it is unset, so a bound tuple always comes with a kind.
 	mediaKind := metadataDraft.BackfilledMediaKind()
 	metadata := AnimeMetadata{
-		ManagedAnimeID:    animeID,
-		BGM:               applicationBGMFromDomain(metadataDraft.Bgm),
-		TMDB:              applicationTMDBFromDomain(metadataDraft.Tmdb),
-		TotalEpisodes:     CloneInt(metadataDraft.TotalEpisodes),
-		MediaKindOverride: CloneString(mediaKind),
-		Year:              CloneInt(metadataDraft.Year),
-		Season:            CloneInt(metadataDraft.Season),
-		Version:           1,
+		ManagedAnimeID: animeID,
+		BGM:            applicationBGMFromDomain(metadataDraft.Bgm),
+		TMDB:           applicationTMDBFromDomain(metadataDraft.Tmdb),
+		TotalEpisodes:  CloneInt(metadataDraft.TotalEpisodes),
+		MediaKind:      CloneString(mediaKind),
+		Year:           CloneInt(metadataDraft.Year),
+		Season:         CloneInt(metadataDraft.Season),
+		Version:        1,
 	}
 	if _, err := tx.ExecContext(ctx, `
-INSERT INTO anime_metadata(managed_anime_id, bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season, media_kind_override, total_episodes, year, season)
+INSERT INTO anime_metadata(managed_anime_id, bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season, media_kind, total_episodes, year, season)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
 		animeID, nullableTrimmed(bgmWorkID(metadataDraft.Bgm)), nullableTrimmed(tmdbWorkID(metadataDraft.Tmdb)), nullableString(tmdbMediaKind(metadataDraft.Tmdb)), nullableInt(tmdbSeason(metadataDraft.Tmdb)), nullableOptionalText(mediaKind), nullableIntPtr(metadataDraft.TotalEpisodes), nullableIntPtr(metadataDraft.Year), nullableIntPtr(metadataDraft.Season)); err != nil {
 		return AnimeMetadata{}, fmt.Errorf("create anime metadata: %w", err)

@@ -355,7 +355,7 @@ func applyFrozenBinding(artifact *artifactContext, frozen frozenReleaseFacts) {
 		// must not drift the naming branch (movie vs tv) or the bound season.
 		artifact.tmdbMediaKind = sql.NullString{String: frozen.mediaKind, Valid: true}
 		artifact.tmdbSeason = frozenSeasonColumn(frozen.season, frozen.seasonBound)
-	} else if override := strings.TrimSpace(artifact.mediaKindOverride.String); override == "tv" || override == "movie" {
+	} else if override := strings.TrimSpace(artifact.ownerMediaKind.String); override == "tv" || override == "movie" {
 		// A legacy snapshot without any frozen binding falls back to the
 		// current metadata row, exactly like before — but through the same
 		// override-first precedence, so the pin still selects the branch.
@@ -1243,7 +1243,7 @@ SELECT a.id, a.version, a.download_task_id, a.state, a.correlation_id,
        r.id, r.version, r.stable_item_key, r.raw_facts, r.source_facts, r.parsed_facts,
        src.id, src.source_kind, src.group_name, COALESCE(src.provider, ''), COALESCE(src.provider_group_ref, ''),
        anime.id, anime.title, anime.title_override, COALESCE(anime.provider_title, ''),
-       m.bgm_work_id, m.tmdb_work_id, m.tmdb_media_kind, m.tmdb_season, m.media_kind_override
+       m.bgm_work_id, m.tmdb_work_id, m.tmdb_media_kind, m.tmdb_season, m.media_kind
 FROM artifacts a
 JOIN download_tasks t ON t.id = a.download_task_id
 JOIN releases r ON r.id = t.release_id
@@ -1258,7 +1258,7 @@ WHERE a.id = $1
 		&result.releaseID, &result.releaseVersion, &result.stableItemKey, &result.rawFacts, &result.sourceFacts, &result.parsedFacts,
 		&result.sourceID, &result.sourceKind, &result.groupName, &result.sourceProvider, &result.sourceGroupRef,
 		&result.managedAnimeID, &result.animeTitle, &result.titleOverride, &result.providerTitle,
-		&result.metadataBGM, &result.tmdbWorkID, &result.tmdbMediaKind, &result.tmdbSeason, &result.mediaKindOverride)
+		&result.metadataBGM, &result.tmdbWorkID, &result.tmdbMediaKind, &result.tmdbSeason, &result.ownerMediaKind)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return artifactContext{}, fmt.Errorf("%w: %q", ErrOperationNotFound, artifactID)

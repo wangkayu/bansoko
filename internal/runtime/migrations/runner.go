@@ -163,7 +163,7 @@ var requiredColumns = map[string][]string{
 	"auth_sessions":                    {"id", "account_id", "token_hash", "expires_at", "created_at", "revoked_at"},
 	"api_tokens":                       {"id", "account_id", "name", "token_hash", "created_at", "last_used_at", "version", "secret_ref", "scopes"},
 	"managed_anime":                    {"title_override", "provider_title", "lifecycle_state", "fence_epoch", "lifecycle_version", "retired_at", "retired_subscription_version"},
-	"anime_metadata":                   {"media_kind_override", "year", "season"},
+	"anime_metadata":                   {"media_kind", "year", "season"},
 	"subscriptions":                    {"origin", "origin_entry_ref", "instance_label"},
 	"rss_sources":                      {"source_kind", "locator", "locator_display", "group_name", "title", "episode_offset", "provenance", "http_feed_connection_ref", "network_route_ref"},
 	"provider_group_selections":        {"id", "subscription_id", "provider", "group_ref", "display_name", "selection_mode", "manual_selected", "effective_selected", "effective_score", "version", "available", "availability_generation"},

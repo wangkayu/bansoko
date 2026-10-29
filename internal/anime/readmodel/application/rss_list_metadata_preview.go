@@ -15,18 +15,18 @@ import (
 // read; it is never written.
 //
 // The read consumes title_override, year, season, the BGM and TMDB bindings
-// and media_kind_override: they are the naming facts (anime.title_override,
+// and media_kind: they are the naming facts (anime.title_override,
 // anime.year, anime.season, bgm.*, tmdb.*), the metadata hold, and the media kind and
 // season episode parsing binds. TotalEpisodes is validated with the rest but
 // no preview reads it.
 type MetadataPreviewInput struct {
-	BGM               *BGMBinding
-	TMDB              *TMDBBinding
-	TitleOverride     *string
-	MediaKindOverride *string
-	TotalEpisodes     *int
-	Year              *int
-	Season            *int
+	BGM           *BGMBinding
+	TMDB          *TMDBBinding
+	TitleOverride *string
+	MediaKind     *string
+	TotalEpisodes *int
+	Year          *int
+	Season        *int
 }
 
 // validateMetadataPreview applies the metadata PATCH validation. A violation
@@ -34,7 +34,7 @@ type MetadataPreviewInput struct {
 // silently dropped.
 func validateMetadataPreview(preview MetadataPreviewInput) error {
 	bgm, tmdb := metadataPatchBindingsForDomain(preview.BGM, preview.TMDB)
-	violations := animedomain.ValidateMetadataPatch(bgm, tmdb, preview.TitleOverride, preview.MediaKindOverride, preview.TotalEpisodes, preview.Year)
+	violations := animedomain.ValidateMetadataPatch(bgm, tmdb, preview.TitleOverride, preview.MediaKind, preview.TotalEpisodes, preview.Year)
 	violations = append(violations, animedomain.ValidateAnimeSeason("season", preview.Season)...)
 	if len(violations) == 0 {
 		return nil
@@ -64,7 +64,7 @@ func overlayWorkspaceMetadata(workspace *AnimeWorkspace, preview MetadataPreview
 		metadata.TitleOverride = cloneOptionalString(preview.TitleOverride)
 		workspace.ManagedAnime.TitleOverride = cloneOptionalString(preview.TitleOverride)
 	}
-	metadata.MediaKindOverride = cloneOptionalString(preview.MediaKindOverride)
+	metadata.MediaKind = cloneOptionalString(preview.MediaKind)
 	metadata.TotalEpisodes = cloneOptionalInt(preview.TotalEpisodes)
 	metadata.Year = cloneOptionalInt(preview.Year)
 	metadata.Season = cloneOptionalInt(preview.Season)
@@ -106,7 +106,7 @@ func overlayVarsAnimeEvidence(evidence *namingvars.AnimeEvidence, preview Metada
 // value, through the same projection (and kind backfill) the save path uses.
 func overlayParserSelection(selection acquisitiontarget.ParserSelectionInput, preview MetadataPreviewInput) acquisitiontarget.ParserSelectionInput {
 	_, tmdb := metadataPatchBindingsForDomain(nil, preview.TMDB)
-	selection.MediaKind, selection.Season, selection.SeasonBound = animedomain.FrozenMediaBinding(tmdb, animedomain.BackfilledMediaKind(preview.MediaKindOverride, tmdb))
+	selection.MediaKind, selection.Season, selection.SeasonBound = animedomain.FrozenMediaBinding(tmdb, animedomain.BackfilledMediaKind(preview.MediaKind, tmdb))
 	return selection
 }
 

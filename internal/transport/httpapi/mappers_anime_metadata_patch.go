@@ -11,12 +11,12 @@ import (
 
 func mapMetadataPatchInput(value generated.AnimeMetadataPatch) ownershipapplication.MetadataPatchInput {
 	input := ownershipapplication.MetadataPatchInput{
-		ExpectedVersion:   int64(value.ExpectedVersion),
-		TitleOverride:     cloneRulesPreviewString(value.TitleOverride),
-		TotalEpisodes:     cloneRulesPreviewInt(value.TotalEpisodes),
-		MediaKindOverride: (*string)(cloneRulesPreviewString((*string)(value.MediaKindOverride))),
-		Year:              cloneRulesPreviewInt(value.Year),
-		Season:            cloneRulesPreviewInt(value.Season),
+		ExpectedVersion: int64(value.ExpectedVersion),
+		TitleOverride:   cloneRulesPreviewString(value.TitleOverride),
+		TotalEpisodes:   cloneRulesPreviewInt(value.TotalEpisodes),
+		MediaKind:       (*string)(cloneRulesPreviewString((*string)(value.MediaKind))),
+		Year:            cloneRulesPreviewInt(value.Year),
+		Season:          cloneRulesPreviewInt(value.Season),
 	}
 	if value.Bgm != nil {
 		input.BGM = &animeapplication.BGMBinding{WorkID: value.Bgm.WorkId}
@@ -36,11 +36,11 @@ func mapMetadataPatchInput(value generated.AnimeMetadataPatch) ownershipapplicat
 // mapped field for field; the read model applies the PATCH validation.
 func mapMetadataPreviewInput(value generated.AnimeMetadataPreview) readmodelapplication.MetadataPreviewInput {
 	input := readmodelapplication.MetadataPreviewInput{
-		TitleOverride:     cloneRulesPreviewString(value.TitleOverride),
-		TotalEpisodes:     cloneRulesPreviewInt(value.TotalEpisodes),
-		MediaKindOverride: cloneRulesPreviewString((*string)(value.MediaKindOverride)),
-		Year:              cloneRulesPreviewInt(value.Year),
-		Season:            cloneRulesPreviewInt(value.Season),
+		TitleOverride: cloneRulesPreviewString(value.TitleOverride),
+		TotalEpisodes: cloneRulesPreviewInt(value.TotalEpisodes),
+		MediaKind:     cloneRulesPreviewString((*string)(value.MediaKind)),
+		Year:          cloneRulesPreviewInt(value.Year),
+		Season:        cloneRulesPreviewInt(value.Season),
 	}
 	if value.Bgm != nil {
 		input.BGM = &animeapplication.BGMBinding{WorkID: value.Bgm.WorkId}
@@ -60,13 +60,13 @@ func mapMetadataPatchResult(value animeapplication.AnimeMetadata) (generated.Ani
 		return generated.AnimeMetadata{}, fmt.Errorf("metadata patch result has empty managed anime id")
 	}
 	result := generated.AnimeMetadata{
-		ManagedAnimeId:    generated.ID(value.ManagedAnimeID),
-		TitleOverride:     cloneRulesPreviewString(value.TitleOverride),
-		TotalEpisodes:     cloneRulesPreviewInt(value.TotalEpisodes),
-		MediaKindOverride: (*generated.AnimeMetadataMediaKindOverride)(cloneRulesPreviewString(value.MediaKindOverride)),
-		Year:              cloneRulesPreviewInt(value.Year),
-		Season:            cloneRulesPreviewInt(value.Season),
-		Version:           generated.Version(value.Version),
+		ManagedAnimeId: generated.ID(value.ManagedAnimeID),
+		TitleOverride:  cloneRulesPreviewString(value.TitleOverride),
+		TotalEpisodes:  cloneRulesPreviewInt(value.TotalEpisodes),
+		MediaKind:      (*generated.AnimeMetadataMediaKind)(cloneRulesPreviewString(value.MediaKind)),
+		Year:           cloneRulesPreviewInt(value.Year),
+		Season:         cloneRulesPreviewInt(value.Season),
+		Version:        generated.Version(value.Version),
 	}
 	result.ReevaluatedReleases = cloneRulesPreviewInt(value.ReevaluatedReleases)
 	if value.BGM != nil {

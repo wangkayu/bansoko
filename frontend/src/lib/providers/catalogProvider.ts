@@ -61,7 +61,7 @@ function metadataMatchFromItem(item: AnimeListItem): CatalogEntryView["metadataM
     tmdbWorkId: item.metadata.tmdb?.work_id,
     tmdbMediaKind: item.metadata.tmdb?.media_kind,
     tmdbSeason: item.metadata.tmdb?.season,
-    mediaKindOverride: item.metadata.media_kind_override ?? undefined,
+    mediaKind: item.metadata.media_kind ?? undefined,
   };
 }
 
@@ -81,7 +81,7 @@ function metadataMatchFromCandidateDraft(candidate: AnimeConfigCandidate): Catal
     tmdbWorkId,
     tmdbMediaKind: tmdb?.media_kind,
     tmdbSeason: tmdb?.season,
-    mediaKindOverride: metadata.media_kind_override ?? undefined,
+    mediaKind: metadata.media_kind ?? undefined,
   };
 }
 

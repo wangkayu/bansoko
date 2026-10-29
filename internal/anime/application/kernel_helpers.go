@@ -21,12 +21,12 @@ import (
 )
 
 // ResolveInstanceParserEvidenceTx loads and resolves parser evidence inside the caller's transaction.
-func ResolveInstanceParserEvidenceTx(ctx context.Context, tx *sql.Tx, animeID, title string, effective animedomain.EffectiveConfig, tmdb *animedomain.NullableTMDBBinding, mediaKindOverride *string) (acquisitiontarget.ParserEvidence, error) {
+func ResolveInstanceParserEvidenceTx(ctx context.Context, tx *sql.Tx, animeID, title string, effective animedomain.EffectiveConfig, tmdb *animedomain.NullableTMDBBinding, ownerMediaKind *string) (acquisitiontarget.ParserEvidence, error) {
 	policy, err := parserpolicy.LoadInstanceRequired(ctx, tx, animeID)
 	if err != nil {
 		return acquisitiontarget.ParserEvidence{}, err
 	}
-	mediaKind, season, seasonBound := animedomain.FrozenMediaBinding(tmdb, mediaKindOverride)
+	mediaKind, season, seasonBound := animedomain.FrozenMediaBinding(tmdb, ownerMediaKind)
 	return acquisitiontarget.ResolveParserEvidence(ctx, acquisitiontarget.ParserSelectionInput{
 		Kind:            string(policy.Policy.Kind),
 		EpisodePatterns: effective.Rules.Parser.EpisodePatterns,
@@ -38,8 +38,8 @@ func ResolveInstanceParserEvidenceTx(ctx context.Context, tx *sql.Tx, animeID, t
 	}, title)
 }
 
-func resolveInstanceParserEvidenceTx(ctx context.Context, tx *sql.Tx, animeID, title string, effective animedomain.EffectiveConfig, tmdb *animedomain.NullableTMDBBinding, mediaKindOverride *string) (acquisitiontarget.ParserEvidence, error) {
-	return ResolveInstanceParserEvidenceTx(ctx, tx, animeID, title, effective, tmdb, mediaKindOverride)
+func resolveInstanceParserEvidenceTx(ctx context.Context, tx *sql.Tx, animeID, title string, effective animedomain.EffectiveConfig, tmdb *animedomain.NullableTMDBBinding, ownerMediaKind *string) (acquisitiontarget.ParserEvidence, error) {
+	return ResolveInstanceParserEvidenceTx(ctx, tx, animeID, title, effective, tmdb, ownerMediaKind)
 }
 
 func cloneStringPointer(value *string) *string {

@@ -10,20 +10,20 @@ import (
 func TestMapMetadataPatchInput(t *testing.T) {
 	title := "Title"
 	episodes := 12
-	override := generated.AnimeMetadataPatchMediaKindOverrideMovie
+	override := generated.AnimeMetadataPatchMediaKindMovie
 	value := generated.AnimeMetadataPatch{
-		Bgm:               &generated.NullableBGMBinding{WorkId: "bgm-1"},
-		ExpectedVersion:   7,
-		TitleOverride:     &title,
-		Tmdb:              &generated.NullableTMDBBinding{WorkId: "tmdb-1", MediaKind: generated.TMDBMediaKindTv, Season: 2},
-		TotalEpisodes:     &episodes,
-		MediaKindOverride: &override,
+		Bgm:             &generated.NullableBGMBinding{WorkId: "bgm-1"},
+		ExpectedVersion: 7,
+		TitleOverride:   &title,
+		Tmdb:            &generated.NullableTMDBBinding{WorkId: "tmdb-1", MediaKind: generated.TMDBMediaKindTv, Season: 2},
+		TotalEpisodes:   &episodes,
+		MediaKind:       &override,
 	}
 	mapped := mapMetadataPatchInput(value)
-	if mapped.ExpectedVersion != 7 || mapped.BGM == nil || mapped.BGM.WorkID != "bgm-1" || mapped.TMDB == nil || mapped.TMDB.WorkID != "tmdb-1" || mapped.TMDB.MediaKind != "tv" || mapped.TMDB.Season != 2 || mapped.TitleOverride == nil || *mapped.TitleOverride != title || mapped.TotalEpisodes == nil || *mapped.TotalEpisodes != episodes || mapped.MediaKindOverride == nil || *mapped.MediaKindOverride != "movie" {
+	if mapped.ExpectedVersion != 7 || mapped.BGM == nil || mapped.BGM.WorkID != "bgm-1" || mapped.TMDB == nil || mapped.TMDB.WorkID != "tmdb-1" || mapped.TMDB.MediaKind != "tv" || mapped.TMDB.Season != 2 || mapped.TitleOverride == nil || *mapped.TitleOverride != title || mapped.TotalEpisodes == nil || *mapped.TotalEpisodes != episodes || mapped.MediaKind == nil || *mapped.MediaKind != "movie" {
 		t.Fatalf("unexpected mapped input: %+v", mapped)
 	}
-	if mapped.TitleOverride == value.TitleOverride || mapped.TotalEpisodes == value.TotalEpisodes || (*string)(mapped.MediaKindOverride) == (*string)(value.MediaKindOverride) {
+	if mapped.TitleOverride == value.TitleOverride || mapped.TotalEpisodes == value.TotalEpisodes || (*string)(mapped.MediaKind) == (*string)(value.MediaKind) {
 		t.Fatal("mapped pointers alias generated input")
 	}
 }
@@ -33,25 +33,25 @@ func TestMapMetadataPatchResult(t *testing.T) {
 	episodes := 12
 	override := "movie"
 	value := animeapplication.AnimeMetadata{
-		ManagedAnimeID:    "anime-1",
-		BGM:               &animeapplication.BGMBinding{WorkID: "bgm-1"},
-		TMDB:              &animeapplication.TMDBBinding{WorkID: "tmdb-1", MediaKind: "tv", Season: 2},
-		TitleOverride:     &title,
-		TotalEpisodes:     &episodes,
-		MediaKindOverride: &override,
-		Version:           3,
+		ManagedAnimeID: "anime-1",
+		BGM:            &animeapplication.BGMBinding{WorkID: "bgm-1"},
+		TMDB:           &animeapplication.TMDBBinding{WorkID: "tmdb-1", MediaKind: "tv", Season: 2},
+		TitleOverride:  &title,
+		TotalEpisodes:  &episodes,
+		MediaKind:      &override,
+		Version:        3,
 	}
 	mapped, err := mapMetadataPatchResult(value)
 	if err != nil {
 		t.Fatalf("map metadata patch result: %v", err)
 	}
-	if mapped.ManagedAnimeId != "anime-1" || mapped.Version != 3 || mapped.Bgm == nil || mapped.Bgm.WorkId != "bgm-1" || mapped.Tmdb == nil || mapped.Tmdb.MediaKind != generated.TMDBMediaKindTv || mapped.TitleOverride == nil || *mapped.TitleOverride != title || mapped.TotalEpisodes == nil || *mapped.TotalEpisodes != episodes || mapped.MediaKindOverride == nil || string(*mapped.MediaKindOverride) != "movie" {
+	if mapped.ManagedAnimeId != "anime-1" || mapped.Version != 3 || mapped.Bgm == nil || mapped.Bgm.WorkId != "bgm-1" || mapped.Tmdb == nil || mapped.Tmdb.MediaKind != generated.TMDBMediaKindTv || mapped.TitleOverride == nil || *mapped.TitleOverride != title || mapped.TotalEpisodes == nil || *mapped.TotalEpisodes != episodes || mapped.MediaKind == nil || string(*mapped.MediaKind) != "movie" {
 		t.Fatalf("unexpected mapped result: %+v", mapped)
 	}
 	*value.TitleOverride = "changed"
 	*value.TotalEpisodes = 99
-	*value.MediaKindOverride = "tv"
-	if *mapped.TitleOverride != "Title" || *mapped.TotalEpisodes != 12 || string(*mapped.MediaKindOverride) != "movie" {
+	*value.MediaKind = "tv"
+	if *mapped.TitleOverride != "Title" || *mapped.TotalEpisodes != 12 || string(*mapped.MediaKind) != "movie" {
 		t.Fatal("mapped result aliases application input")
 	}
 }

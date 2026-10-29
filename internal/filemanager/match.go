@@ -61,8 +61,8 @@ type MatchAnimeFact struct {
 	OneShot           bool
 	TMDBWorkID        string
 	TMDBMediaKind     string
-	// MediaKindOverride is the owner media kind (tv | movie); empty is tv.
-	MediaKindOverride string
+	// OwnerMediaKind is the owner media kind (tv | movie); empty is tv.
+	OwnerMediaKind string
 }
 
 // Selectable reports whether new files may be matched into the anime: its
@@ -75,7 +75,7 @@ func (a MatchAnimeFact) Selectable() bool {
 // MediaKind is the owner media kind (unset is tv), the kind the identity
 // chain resolves with (FrozenMediaBinding); the TMDB kind is never read for it.
 func (a MatchAnimeFact) MediaKind() string {
-	if a.MediaKindOverride == "movie" {
+	if a.OwnerMediaKind == "movie" {
 		return "movie"
 	}
 	return "tv"

@@ -11,16 +11,16 @@ import (
 // column is CHECKed against tv|movie, so validation must accept exactly the
 // bytes the column can store and reject everything else (blank, other case,
 // surrounding whitespace, an unknown kind).
-func TestValidateDraftMediaKindOverride(t *testing.T) {
-	tv := generated.AnimeMetadataDraftMediaKindOverrideTv
-	movie := generated.AnimeMetadataDraftMediaKindOverrideMovie
-	blank := generated.AnimeMetadataDraftMediaKindOverride("")
-	upper := generated.AnimeMetadataDraftMediaKindOverride("TV")
-	padded := generated.AnimeMetadataDraftMediaKindOverride(" movie")
+func TestValidateDraftMediaKind(t *testing.T) {
+	tv := generated.AnimeMetadataDraftMediaKindTv
+	movie := generated.AnimeMetadataDraftMediaKindMovie
+	blank := generated.AnimeMetadataDraftMediaKind("")
+	upper := generated.AnimeMetadataDraftMediaKind("TV")
+	padded := generated.AnimeMetadataDraftMediaKind(" movie")
 
 	cases := []struct {
 		name         string
-		override     *generated.AnimeMetadataDraftMediaKindOverride
+		override     *generated.AnimeMetadataDraftMediaKind
 		wantViolated bool
 	}{
 		{name: "unset", override: nil, wantViolated: false},
@@ -37,20 +37,20 @@ func TestValidateDraftMediaKindOverride(t *testing.T) {
 				Origin:         generated.SubscriptionOriginAnibt,
 				OriginEntryRef: &entryRef,
 				Title:          "Show",
-				Metadata:       generated.AnimeMetadataDraft{MediaKindOverride: tc.override},
+				Metadata:       generated.AnimeMetadataDraft{MediaKind: tc.override},
 				RssSources:     []generated.RSSSourceDraft{},
 			})
 			violated := false
 			for _, violation := range ValidateDraft(draft) {
-				if violation.Field == "metadata.media_kind_override" {
+				if violation.Field == "metadata.media_kind" {
 					violated = true
 				}
 			}
 			if violated != tc.wantViolated {
-				t.Fatalf("metadata.media_kind_override violation = %v, want %v", violated, tc.wantViolated)
+				t.Fatalf("metadata.media_kind violation = %v, want %v", violated, tc.wantViolated)
 			}
-			if tc.override != nil && draft.Metadata.MediaKindOverride != nil && *draft.Metadata.MediaKindOverride != string(*tc.override) {
-				t.Fatalf("decoded override = %q, want %q", *draft.Metadata.MediaKindOverride, string(*tc.override))
+			if tc.override != nil && draft.Metadata.MediaKind != nil && *draft.Metadata.MediaKind != string(*tc.override) {
+				t.Fatalf("decoded override = %q, want %q", *draft.Metadata.MediaKind, string(*tc.override))
 			}
 		})
 	}
@@ -58,7 +58,7 @@ func TestValidateDraftMediaKindOverride(t *testing.T) {
 
 // The owner PATCH carries the same value: nil clears the pin, and only the exact
 // persisted vocabulary is accepted.
-func TestValidateMetadataPatchMediaKindOverride(t *testing.T) {
+func TestValidateMetadataPatchMediaKind(t *testing.T) {
 	tv := "tv"
 	movie := "movie"
 	blank := ""
@@ -81,12 +81,12 @@ func TestValidateMetadataPatchMediaKindOverride(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			violated := false
 			for _, violation := range ValidateMetadataPatch(nil, nil, nil, tc.override, nil) {
-				if violation.Field == "media_kind_override" {
+				if violation.Field == "media_kind" {
 					violated = true
 				}
 			}
 			if violated != tc.wantViolated {
-				t.Fatalf("media_kind_override violation = %v, want %v", violated, tc.wantViolated)
+				t.Fatalf("media_kind violation = %v, want %v", violated, tc.wantViolated)
 			}
 		})
 	}

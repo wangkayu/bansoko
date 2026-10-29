@@ -32,7 +32,7 @@ func (s *Service) GetAnimeWorkspaceApplication(ctx context.Context, managedAnime
 }
 
 func (s *Service) readAnimeWorkspace(ctx context.Context, managedAnimeID string, options workspaceReadOptions) (AnimeWorkspace, error) {
-	var bgmWorkID, tmdbWorkID, tmdbMediaKind, mediaKindOverride sql.NullString
+	var bgmWorkID, tmdbWorkID, tmdbMediaKind, ownerMediaKind sql.NullString
 	var tmdbSeason, totalEpisodes, year, ownerSeason sql.NullInt32
 	var titleOverride, providerTitle, originEntryRef, instanceLabel sql.NullString
 	var retiredAt sql.NullTime
@@ -45,7 +45,7 @@ func (s *Service) readAnimeWorkspace(ctx context.Context, managedAnimeID string,
 SELECT a.id, a.title, a.title_override, a.provider_title, a.version,
        sub.id, sub.origin, sub.origin_entry_ref, sub.instance_label, sub.state, sub.version,
        a.lifecycle_state, a.fence_epoch, a.retired_at,
-       m.bgm_work_id, m.tmdb_work_id, m.tmdb_media_kind, m.tmdb_season, m.media_kind_override,
+       m.bgm_work_id, m.tmdb_work_id, m.tmdb_media_kind, m.tmdb_season, m.media_kind,
        m.total_episodes, m.year, m.season, m.version, sub.new_releases_only, sub.start_baseline_at
 FROM managed_anime a
 JOIN subscriptions sub ON sub.managed_anime_id = a.id
@@ -54,7 +54,7 @@ WHERE a.id = $1`, managedAnimeID).Scan(
 		&managedAnime.ID, &managedAnime.Title, &titleOverride, &providerTitle, &managedAnime.Version,
 		&subscription.ID, &origin, &originEntryRef, &instanceLabel, &state, &subscription.Version,
 		&subscription.LifecycleState, &subscription.LifecycleEpoch, &retiredAt,
-		&bgmWorkID, &tmdbWorkID, &tmdbMediaKind, &tmdbSeason, &mediaKindOverride, &totalEpisodes, &year, &ownerSeason, &metadata.Version, &subscription.NewReleasesOnly, &startBaselineAt)
+		&bgmWorkID, &tmdbWorkID, &tmdbMediaKind, &tmdbSeason, &ownerMediaKind, &totalEpisodes, &year, &ownerSeason, &metadata.Version, &subscription.NewReleasesOnly, &startBaselineAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AnimeWorkspace{}, &apperrors.NotFound{Resource: "managed_anime", ID: managedAnimeID}
 	}
@@ -66,7 +66,7 @@ WHERE a.id = $1`, managedAnimeID).Scan(
 	metadata.ManagedAnimeID = managedAnimeID
 	metadata.TitleOverride = nullableStringPointer(titleOverride)
 	metadata.BGM, metadata.TMDB = applicationBindingsFromRow(bgmWorkID, tmdbWorkID, tmdbMediaKind, tmdbSeason)
-	metadata.MediaKindOverride = nullableStringPointer(mediaKindOverride)
+	metadata.MediaKind = nullableStringPointer(ownerMediaKind)
 	metadata.TotalEpisodes = nullableIntPointer(totalEpisodes)
 	metadata.Year = nullableIntPointer(year)
 	metadata.Season = nullableIntPointer(ownerSeason)

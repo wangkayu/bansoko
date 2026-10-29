@@ -31,7 +31,7 @@ func duplicateConfigFingerprint(t *testing.T, db *sql.DB, animeID string) string
 SELECT concat_ws(' | ',
   (SELECT concat_ws(',', ma.title, ma.title_override, ma.provider_title, s.origin, s.origin_entry_ref)
      FROM managed_anime ma JOIN subscriptions s ON s.managed_anime_id = ma.id WHERE ma.id = $1),
-  (SELECT concat_ws(',', bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season, media_kind_override, total_episodes, year, season)
+  (SELECT concat_ws(',', bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season, media_kind, total_episodes, year, season)
      FROM anime_metadata WHERE managed_anime_id = $1),
   (SELECT concat_ws(',', parser_kind, parser_source_default_version, admission_mode, quality_profile::text,
                     replacement_source_default_version, unclassified_route, file_effect_source_default_version,
@@ -67,7 +67,7 @@ func TestDuplicateSubscriptionCopiesConfigIntoNewPendingInstance(t *testing.T) {
 	// Edit the saved configuration the copy must take over.
 	for _, statement := range []string{
 		`UPDATE managed_anime SET title_override = 'Custom Title', provider_title = 'Provider Title' WHERE id = $1`,
-		`UPDATE anime_metadata SET year = 2026, season = 0, total_episodes = 12, media_kind_override = 'tv' WHERE managed_anime_id = $1`,
+		`UPDATE anime_metadata SET year = 2026, season = 0, total_episodes = 12, media_kind = 'tv' WHERE managed_anime_id = $1`,
 		`UPDATE rss_sources SET episode_offset = -12 WHERE subscription_id = (SELECT id FROM subscriptions WHERE managed_anime_id = $1)`,
 		`INSERT INTO anime_config_overrides(managed_anime_id, owner_type, section_name, schema_version, value)
 		 VALUES ($1, 'rules', 'tag_filters', 'tag-filters-v1', '{"include":["1080p"]}')

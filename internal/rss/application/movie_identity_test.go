@@ -100,7 +100,7 @@ func TestResolveReleaseParserEvidenceBoundSeasonIsNamingOnly(t *testing.T) {
 // is frozen through FrozenMediaBinding, so the override — not the tuple — picks
 // the branch. This is the release-side half of the three-state matrix; the
 // domain test pins the projection itself.
-func TestResolveReleaseParserEvidenceMediaKindOverridePinsMovieIdentity(t *testing.T) {
+func TestResolveReleaseParserEvidenceMediaKindPinsMovieIdentity(t *testing.T) {
 	override := "movie"
 	// A TV tuple with a bound season: with no override this resolves a TV
 	// episode, so the movie:0 result below can only come from the pin.

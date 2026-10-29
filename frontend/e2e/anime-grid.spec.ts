@@ -1542,7 +1542,7 @@ test.describe("AnimeGrid", () => {
       // 季度是 owner 字段（与 TMDB id 解耦），同一 PATCH 回送当前值。
       season: null,
       // 类型行与标题行共用同一 PATCH：省略即在服务端清除固定值，故每次都要回送当前值。
-      media_kind_override: null,
+      media_kind: null,
     });
   });
 

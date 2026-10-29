@@ -58,11 +58,11 @@ func TestSeasonlessEpisodeIdentityUpgradeBackfillsTheOwnerMediaKind(t *testing.T
 	}
 	for id, expected := range want {
 		var kind sql.NullString
-		if err := db.QueryRowContext(ctx, `SELECT media_kind_override FROM anime_metadata WHERE managed_anime_id = $1`, id).Scan(&kind); err != nil {
+		if err := db.QueryRowContext(ctx, `SELECT media_kind FROM anime_metadata WHERE managed_anime_id = $1`, id).Scan(&kind); err != nil {
 			t.Fatal(err)
 		}
 		if kind != expected {
-			t.Fatalf("%s media_kind_override = %+v, want %+v", id, kind, expected)
+			t.Fatalf("%s media_kind = %+v, want %+v", id, kind, expected)
 		}
 	}
 }

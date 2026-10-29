@@ -13,14 +13,14 @@ import (
 func TestMapRSSListReadInputCarriesMetadataPreview(t *testing.T) {
 	id := generated.ID("anime-1")
 	year := 2031
-	kind := generated.AnimeMetadataPreviewMediaKindOverrideMovie
+	kind := generated.AnimeMetadataPreviewMediaKindMovie
 	title := "Edited Title"
 	preview := generated.AnimeMetadataPreview{
-		Bgm:               &generated.NullableBGMBinding{WorkId: "bgm-9"},
-		Tmdb:              &generated.NullableTMDBBinding{WorkId: "tmdb-9", MediaKind: generated.TMDBMediaKindTv, Season: 3},
-		Year:              &year,
-		MediaKindOverride: &kind,
-		TitleOverride:     &title,
+		Bgm:           &generated.NullableBGMBinding{WorkId: "bgm-9"},
+		Tmdb:          &generated.NullableTMDBBinding{WorkId: "tmdb-9", MediaKind: generated.TMDBMediaKindTv, Season: 3},
+		Year:          &year,
+		MediaKind:     &kind,
+		TitleOverride: &title,
 	}
 	mapped, err := mapRSSListReadInput(generated.RSSListViewInput{InputSource: "owner_draft", ManagedAnimeId: &id, MetadataPreview: &preview})
 	if err != nil {
@@ -31,7 +31,7 @@ func TestMapRSSListReadInputCarriesMetadataPreview(t *testing.T) {
 		t.Fatalf("mapped previews rules=%v metadata=%v", mapped.RulesPreview, got)
 	}
 	if got.Year == nil || *got.Year != 2031 || got.TMDB == nil || got.TMDB.Season != 3 || got.TMDB.WorkID != "tmdb-9" || got.TMDB.MediaKind != "tv" ||
-		got.BGM == nil || got.BGM.WorkID != "bgm-9" || got.MediaKindOverride == nil || *got.MediaKindOverride != "movie" || got.TitleOverride == nil || *got.TitleOverride != title {
+		got.BGM == nil || got.BGM.WorkID != "bgm-9" || got.MediaKind == nil || *got.MediaKind != "movie" || got.TitleOverride == nil || *got.TitleOverride != title {
 		t.Fatalf("mapped metadata preview = %+v", got)
 	}
 

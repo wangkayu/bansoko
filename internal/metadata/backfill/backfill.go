@@ -38,7 +38,7 @@ type Stored struct {
 	// TMDB season only when this merge writes the TMDB tuple (the one-time
 	// prefill at binding) and only while it is unset.
 	Season *int
-	// MediaKind is the owner media kind (media_kind_override; unset is tv). It
+	// MediaKind is the owner media kind (media_kind; unset is tv). It
 	// is filled from the matched TMDB kind only when this merge writes the
 	// TMDB tuple and only while it is unset.
 	MediaKind *string
@@ -173,7 +173,7 @@ func ApplyTx(ctx context.Context, tx *sql.Tx, managedAnimeID string, expectedVer
 		add("season", *plan.Merged.Season)
 	}
 	if plan.NewMediaKind {
-		add("media_kind_override", *plan.Merged.MediaKind)
+		add("media_kind", *plan.Merged.MediaKind)
 	}
 	res, err := tx.ExecContext(ctx, `UPDATE anime_metadata SET `+strings.Join(sets, ", ")+
 		`, version = version + 1, updated_at = NOW() WHERE managed_anime_id = $1 AND version = $2`, args...)

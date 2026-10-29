@@ -184,7 +184,7 @@ describe("catalog mapping", () => {
         metadata: {
           bgm: { work_id: "bgm-2" },
           tmdb: { work_id: "888", media_kind: "tv", season: 3 },
-          media_kind_override: "movie",
+          media_kind: "movie",
         },
       }),
     };
@@ -193,7 +193,7 @@ describe("catalog mapping", () => {
     expect(entry.metadataMatch.bgmId).toBe("bgm-2");
     expect(entry.metadataMatch.tmdbWorkId).toBe("888");
     expect(entry.metadataMatch.tmdbSeason).toBe(3);
-    expect(entry.metadataMatch.mediaKindOverride).toBe("movie");
+    expect(entry.metadataMatch.mediaKind).toBe("movie");
   });
 
   it("gives a custom preset the poster of its own Bangumi binding", () => {

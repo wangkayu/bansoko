@@ -78,11 +78,11 @@ type NullableTMDBBinding = TMDBBinding
 
 type AnimeMetadataDraft struct {
 	Bgm *BGMBinding `json:"bgm"`
-	// MediaKindOverride pins the naming branch selector (tv | movie). Nil
+	// MediaKind pins the naming branch selector (tv | movie). Nil
 	// means unset; it never rewrites the TMDB tuple.
-	MediaKindOverride *string      `json:"media_kind_override"`
-	Tmdb              *TMDBBinding `json:"tmdb"`
-	TotalEpisodes     *int         `json:"total_episodes"`
+	MediaKind     *string      `json:"media_kind"`
+	Tmdb          *TMDBBinding `json:"tmdb"`
+	TotalEpisodes *int         `json:"total_episodes"`
 	// Year is the owner-edited year naming reads as anime.year. Nil means
 	// unset (anime.year renders empty); it is never read from metadata.
 	Year *int `json:"year"`

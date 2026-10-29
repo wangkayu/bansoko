@@ -27,7 +27,7 @@ func metadataPreviewFixture() MetadataPreviewInput {
 // owner state is read.
 func TestOwnerDraftMetadataPreviewValidatesLikeThePatch(t *testing.T) {
 	year, blank, kind := 1800, " ", "anime"
-	preview := MetadataPreviewInput{TMDB: &TMDBBinding{WorkID: "", MediaKind: "tv", Season: 1}, Year: &year, TitleOverride: &blank, MediaKindOverride: &kind}
+	preview := MetadataPreviewInput{TMDB: &TMDBBinding{WorkID: "", MediaKind: "tv", Season: 1}, Year: &year, TitleOverride: &blank, MediaKind: &kind}
 	_, err := (&Service{}).ReadAnimeRSSListView(context.Background(), ReadRSSListViewInput{InputSource: "owner_draft", ManagedAnimeID: "anime-1", MetadataPreview: &preview})
 	var validation *apperrors.Validation
 	if !errors.As(err, &validation) {
@@ -39,7 +39,7 @@ func TestOwnerDraftMetadataPreviewValidatesLikeThePatch(t *testing.T) {
 			fields[*detail.Field] = true
 		}
 	}
-	for _, want := range []string{"metadata_preview.tmdb", "metadata_preview.year", "metadata_preview.title_override", "metadata_preview.media_kind_override"} {
+	for _, want := range []string{"metadata_preview.tmdb", "metadata_preview.year", "metadata_preview.title_override", "metadata_preview.media_kind"} {
 		if !fields[want] {
 			t.Fatalf("violations %v miss %s", fields, want)
 		}
@@ -92,9 +92,9 @@ func TestMetadataPreviewOverlaysParserSelectionAndWorkspace(t *testing.T) {
 	}
 	movie := "movie"
 	preview := metadataPreviewFixture()
-	preview.MediaKindOverride = &movie
+	preview.MediaKind = &movie
 	if selection := overlayParserSelection(acquisitiontarget.ParserSelectionInput{MediaKind: "tv"}, preview); selection.MediaKind != "movie" {
-		t.Fatalf("media_kind_override not applied: %+v", selection)
+		t.Fatalf("media_kind not applied: %+v", selection)
 	}
 
 	savedYear := 2020

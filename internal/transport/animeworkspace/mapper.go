@@ -54,13 +54,13 @@ func mapWorkspaceManagedAnime(value animeapplication.ManagedAnime) generated.Man
 
 func mapWorkspaceMetadata(value animeapplication.AnimeMetadata) generated.AnimeMetadata {
 	result := generated.AnimeMetadata{
-		ManagedAnimeId:    generated.ID(value.ManagedAnimeID),
-		TitleOverride:     cloneWorkspaceString(value.TitleOverride),
-		TotalEpisodes:     cloneWorkspaceInt(value.TotalEpisodes),
-		MediaKindOverride: (*generated.AnimeMetadataMediaKindOverride)(cloneWorkspaceString(value.MediaKindOverride)),
-		Year:              cloneWorkspaceInt(value.Year),
-		Season:            cloneWorkspaceInt(value.Season),
-		Version:           generated.Version(value.Version),
+		ManagedAnimeId: generated.ID(value.ManagedAnimeID),
+		TitleOverride:  cloneWorkspaceString(value.TitleOverride),
+		TotalEpisodes:  cloneWorkspaceInt(value.TotalEpisodes),
+		MediaKind:      (*generated.AnimeMetadataMediaKind)(cloneWorkspaceString(value.MediaKind)),
+		Year:           cloneWorkspaceInt(value.Year),
+		Season:         cloneWorkspaceInt(value.Season),
+		Version:        generated.Version(value.Version),
 	}
 	if value.BGM != nil {
 		result.Bgm = &generated.NullableBGMBinding{WorkId: value.BGM.WorkID}

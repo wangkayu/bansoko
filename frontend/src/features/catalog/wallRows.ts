@@ -15,7 +15,7 @@ export const WALL_ROW_ORDER: readonly WallRowKey[] = [...WEEKDAYS, "movie", "ova
 /** The facts row placement needs. */
 export interface WallRowFacts {
   broadcastDay?: BroadcastDay;
-  /** The effective media kind: the pinned media_kind_override when present, otherwise the TMDB-binding's media_kind. */
+  /** The effective media kind: the pinned media_kind when present, otherwise the TMDB-binding's media_kind. */
   mediaKind?: "tv" | "movie";
   /** The release format the provider catalog states (a read-only fact); null or absent means there is none. */
   format?: ReleaseFormat | null;
