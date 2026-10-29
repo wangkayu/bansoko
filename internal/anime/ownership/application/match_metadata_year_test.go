@@ -64,11 +64,11 @@ func TestMergeMetadataFillsTheOwnerMediaKindOnlyWhenEmpty(t *testing.T) {
 	workID, tv, movie, movieSeason := "265010", "tv", "movie", 0
 	movieMatch := &matcher.MatchResult{TmdbWorkID: &workID, TmdbKind: &movie, TmdbSeason: &movieSeason}
 
-	if got := mergeMetadata(MetadataMatchMetadata{}, movieMatch).MediaKindOverride; got == nil || *got != "movie" {
+	if got := mergeMetadata(MetadataMatchMetadata{}, movieMatch).MediaKind; got == nil || *got != "movie" {
 		t.Fatalf("unset kind = %v, want the matched movie", got)
 	}
 
-	if got := mergeMetadata(MetadataMatchMetadata{MediaKindOverride: &tv}, movieMatch).MediaKindOverride; got == nil || *got != "tv" {
+	if got := mergeMetadata(MetadataMatchMetadata{MediaKind: &tv}, movieMatch).MediaKind; got == nil || *got != "tv" {
 		t.Fatalf("stored kind = %v, want it kept at tv", got)
 	}
 }

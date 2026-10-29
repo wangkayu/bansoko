@@ -7,10 +7,10 @@ type MetadataPatchInput struct {
 	TitleOverride   *string
 	TMDB            *TMDBBinding
 	TotalEpisodes   *int
-	// MediaKindOverride is the complete owner value of the media-kind pin: nil
+	// MediaKind is the complete owner value of the media-kind pin: nil
 	// clears it and a value (tv | movie) replaces it. It is independent of the
 	// TMDB tuple and never rewrites it.
-	MediaKindOverride *string
+	MediaKind *string
 	// Year is the complete owner value of the naming year: nil clears it.
 	Year *int
 	// Season is the complete owner value of the naming season (0 = specials):

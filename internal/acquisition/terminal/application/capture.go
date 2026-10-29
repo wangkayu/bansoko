@@ -135,7 +135,7 @@ func captureQualificationTx(ctx context.Context, tx *sql.Tx, revisions *draft.Se
 					}
 				}
 				m.bgm, m.tmdb = saved.Draft.Metadata.Bgm, saved.Draft.Metadata.Tmdb
-				m.mediaKindOverride = saved.Draft.Metadata.BackfilledMediaKind()
+				m.ownerMediaKind = saved.Draft.Metadata.BackfilledMediaKind()
 				m.animeYear = saved.Draft.Metadata.Year
 				m.animeSeason = saved.Draft.Metadata.Season
 				m.config.candidateID, m.config.revision, m.config.revisionDigest = saved.CandidateID, saved.Revision, saved.EffectiveDigest
@@ -149,7 +149,7 @@ func captureQualificationTx(ctx context.Context, tx *sql.Tx, revisions *draft.Se
 			return admissionCapture{}, materialError("metadata", nil)
 		}
 		m.bgm, m.tmdb = req.submittedDraft.Metadata.Bgm, req.submittedDraft.Metadata.Tmdb
-		m.mediaKindOverride = req.submittedDraft.Metadata.BackfilledMediaKind()
+		m.ownerMediaKind = req.submittedDraft.Metadata.BackfilledMediaKind()
 		m.animeYear = req.submittedDraft.Metadata.Year
 		m.animeSeason = req.submittedDraft.Metadata.Season
 		m.config.business, err = req.submitted.Freeze()
@@ -174,7 +174,7 @@ func captureQualificationTx(ctx context.Context, tx *sql.Tx, revisions *draft.Se
 		}
 		var bgm, tmdb, kind, override sql.NullString
 		var season, year, ownerSeason sql.NullInt64
-		if err := tx.QueryRowContext(ctx, `SELECT bgm_work_id,tmdb_work_id,tmdb_media_kind,tmdb_season,media_kind_override,year,season,version FROM anime_metadata WHERE managed_anime_id=$1`, mg.managedID).Scan(&bgm, &tmdb, &kind, &season, &override, &year, &ownerSeason, &m.metadataVersion); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT bgm_work_id,tmdb_work_id,tmdb_media_kind,tmdb_season,media_kind,year,season,version FROM anime_metadata WHERE managed_anime_id=$1`, mg.managedID).Scan(&bgm, &tmdb, &kind, &season, &override, &year, &ownerSeason, &m.metadataVersion); err != nil {
 			return admissionCapture{}, materialError("metadata", err)
 		}
 		m.animeYear = nil
@@ -191,7 +191,7 @@ func captureQualificationTx(ctx context.Context, tx *sql.Tx, revisions *draft.Se
 		if err != nil {
 			return admissionCapture{}, materialError("metadata", err)
 		}
-		m.mediaKindOverride = nullableMetadataOverride(override)
+		m.ownerMediaKind = nullableOwnerMediaKind(override)
 	}
 	if m.managementNone {
 		if err := captureMountMetadataTx(ctx, tx, &m); err != nil {

@@ -284,7 +284,7 @@ func benchMetadataRow(t *testing.T, db *sql.DB, animeID string) string {
 	var row string
 	if err := db.QueryRowContext(context.Background(), `
 SELECT concat_ws('|', m.bgm_work_id, m.tmdb_work_id, m.tmdb_media_kind, m.tmdb_season::text, m.year::text, m.season::text,
-       m.media_kind_override, m.total_episodes::text, m.version::text, ma.title_override)
+       m.media_kind, m.total_episodes::text, m.version::text, ma.title_override)
 FROM anime_metadata m JOIN managed_anime ma ON ma.id = m.managed_anime_id
 WHERE m.managed_anime_id = $1`, animeID).Scan(&row); err != nil {
 		t.Fatal(err)

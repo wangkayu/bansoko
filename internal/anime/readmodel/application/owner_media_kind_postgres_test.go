@@ -14,7 +14,7 @@ import (
 // movie kind is set, the read model must still report the TMDB tuple the
 // matcher wrote: the kind is a separate owner field, never a rewrite of the
 // binding.
-func TestWorkspaceAndListProjectMediaKindOverride(t *testing.T) {
+func TestWorkspaceAndListProjectMediaKind(t *testing.T) {
 	db := animetest.OpenTestDB(t)
 	readmodel, root := readmodelNewTestServices(t, db, &readmodelFakeFetcher{})
 	ctx := context.Background()
@@ -29,7 +29,7 @@ func TestWorkspaceAndListProjectMediaKindOverride(t *testing.T) {
 		}
 		for _, item := range items {
 			if item.ManagedAnime.ID == animeID {
-				return item.Metadata.MediaKindOverride
+				return item.Metadata.MediaKind
 			}
 		}
 		t.Fatalf("subscribed anime %q is missing from the list", animeID)
@@ -40,8 +40,8 @@ func TestWorkspaceAndListProjectMediaKindOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read workspace: %v", err)
 	}
-	if workspace.Metadata.MediaKindOverride == nil || *workspace.Metadata.MediaKindOverride != "tv" {
-		t.Fatalf("a fresh TV subscription must read back the backfilled tv kind, got %v", workspace.Metadata.MediaKindOverride)
+	if workspace.Metadata.MediaKind == nil || *workspace.Metadata.MediaKind != "tv" {
+		t.Fatalf("a fresh TV subscription must read back the backfilled tv kind, got %v", workspace.Metadata.MediaKind)
 	}
 	if got := listOverride(); got == nil || *got != "tv" {
 		t.Fatalf("a fresh TV subscription must list the backfilled tv kind, got %v", got)
@@ -49,10 +49,10 @@ func TestWorkspaceAndListProjectMediaKindOverride(t *testing.T) {
 
 	movie := "movie"
 	if _, err := root.PatchAnimeMetadataApplication(ctx, animeID, ownershipapplication.MetadataPatchInput{
-		ExpectedVersion:   int64(workspace.Metadata.Version),
-		BGM:               &ownershipapplication.BGMBinding{WorkID: "bgm-123"},
-		TMDB:              &ownershipapplication.TMDBBinding{WorkID: "tmdb-456", MediaKind: "tv", Season: 1},
-		MediaKindOverride: &movie,
+		ExpectedVersion: int64(workspace.Metadata.Version),
+		BGM:             &ownershipapplication.BGMBinding{WorkID: "bgm-123"},
+		TMDB:            &ownershipapplication.TMDBBinding{WorkID: "tmdb-456", MediaKind: "tv", Season: 1},
+		MediaKind:       &movie,
 	}); err != nil {
 		t.Fatalf("pin media kind: %v", err)
 	}
@@ -61,22 +61,22 @@ func TestWorkspaceAndListProjectMediaKindOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read workspace after pin: %v", err)
 	}
-	if workspace.Metadata.MediaKindOverride == nil || *workspace.Metadata.MediaKindOverride != "movie" {
-		t.Fatalf("workspace metadata.media_kind_override must echo the pin, got %+v", workspace.Metadata.MediaKindOverride)
+	if workspace.Metadata.MediaKind == nil || *workspace.Metadata.MediaKind != "movie" {
+		t.Fatalf("workspace metadata.media_kind must echo the pin, got %+v", workspace.Metadata.MediaKind)
 	}
 	if workspace.Metadata.TMDB == nil || workspace.Metadata.TMDB.MediaKind != "tv" || workspace.Metadata.TMDB.WorkID != "tmdb-456" {
 		t.Fatalf("the pin must not rewrite the TMDB tuple, got %+v", workspace.Metadata.TMDB)
 	}
 	if got := listOverride(); got == nil || *got != "movie" {
-		t.Fatalf("list item media_kind_override must echo the pin, got %v", got)
+		t.Fatalf("list item media_kind must echo the pin, got %v", got)
 	}
 
 	tv := "tv"
 	if _, err := root.PatchAnimeMetadataApplication(ctx, animeID, ownershipapplication.MetadataPatchInput{
-		ExpectedVersion:   int64(workspace.Metadata.Version),
-		BGM:               &ownershipapplication.BGMBinding{WorkID: "bgm-123"},
-		TMDB:              &ownershipapplication.TMDBBinding{WorkID: "tmdb-456", MediaKind: "tv", Season: 1},
-		MediaKindOverride: &tv,
+		ExpectedVersion: int64(workspace.Metadata.Version),
+		BGM:             &ownershipapplication.BGMBinding{WorkID: "bgm-123"},
+		TMDB:            &ownershipapplication.TMDBBinding{WorkID: "tmdb-456", MediaKind: "tv", Season: 1},
+		MediaKind:       &tv,
 	}); err != nil {
 		t.Fatalf("set media kind back to tv: %v", err)
 	}
@@ -85,10 +85,10 @@ func TestWorkspaceAndListProjectMediaKindOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read workspace after the tv edit: %v", err)
 	}
-	if workspace.Metadata.MediaKindOverride == nil || *workspace.Metadata.MediaKindOverride != "tv" {
-		t.Fatalf("workspace metadata.media_kind_override must read back tv, got %v", workspace.Metadata.MediaKindOverride)
+	if workspace.Metadata.MediaKind == nil || *workspace.Metadata.MediaKind != "tv" {
+		t.Fatalf("workspace metadata.media_kind must read back tv, got %v", workspace.Metadata.MediaKind)
 	}
 	if got := listOverride(); got == nil || *got != "tv" {
-		t.Fatalf("list media_kind_override must read back tv, got %v", got)
+		t.Fatalf("list media_kind must read back tv, got %v", got)
 	}
 }

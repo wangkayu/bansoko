@@ -29,7 +29,7 @@ func TestCurrentAnimeConfigCheckReasons(t *testing.T) {
 		{name: "no bgm binding", mutate: func(c *currentAnimeConfig) { c.bgmWorkID = "  " }, want: "config_incomplete:binding_missing:bgm"},
 		{name: "no tmdb binding", mutate: func(c *currentAnimeConfig) { c.tmdbWorkID = "" }, want: "config_incomplete:binding_missing:tmdb"},
 		{name: "both missing reports bgm first", mutate: func(c *currentAnimeConfig) { c.bgmWorkID, c.tmdbWorkID = "", "" }, want: "config_incomplete:binding_missing:bgm"},
-		{name: "unset owner kind is tv", mutate: func(c *currentAnimeConfig) { c.mediaKindOverride = sql.NullString{} }},
+		{name: "unset owner kind is tv", mutate: func(c *currentAnimeConfig) { c.ownerMediaKind = sql.NullString{} }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			config := completeAnimeConfig()
@@ -56,7 +56,7 @@ func TestCurrentAnimeConfigApplyReadsOwnerValues(t *testing.T) {
 	}
 
 	movie := completeAnimeConfig()
-	movie.mediaKindOverride = sql.NullString{String: "movie", Valid: true}
+	movie.ownerMediaKind = sql.NullString{String: "movie", Valid: true}
 	movie.tmdbSeason = sql.NullInt64{Int64: 0, Valid: true}
 	movie.apply(&facts)
 	if facts.TMDB.MediaKind != "movie" || !facts.TMDB.SeasonBound {

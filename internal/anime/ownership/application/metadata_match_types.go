@@ -40,15 +40,15 @@ type MetadataMatch struct {
 // result. It deliberately retains the complete HTTP response shape while
 // remaining independent of generated transport types.
 type MetadataMatchMetadata struct {
-	BGM               *MetadataMatchBGM  `json:"bgm"`
-	ManagedAnimeID    string             `json:"managed_anime_id"`
-	TitleOverride     *string            `json:"title_override"`
-	TMDB              *MetadataMatchTMDB `json:"tmdb"`
-	TotalEpisodes     *int               `json:"total_episodes"`
-	MediaKindOverride *string            `json:"media_kind_override"`
-	Year              *int               `json:"year"`
-	Season            *int               `json:"season"`
-	Version           int64              `json:"version"`
+	BGM            *MetadataMatchBGM  `json:"bgm"`
+	ManagedAnimeID string             `json:"managed_anime_id"`
+	TitleOverride  *string            `json:"title_override"`
+	TMDB           *MetadataMatchTMDB `json:"tmdb"`
+	TotalEpisodes  *int               `json:"total_episodes"`
+	MediaKind      *string            `json:"media_kind"`
+	Year           *int               `json:"year"`
+	Season         *int               `json:"season"`
+	Version        int64              `json:"version"`
 }
 
 // MetadataMatchResult is the application result for a metadata matching

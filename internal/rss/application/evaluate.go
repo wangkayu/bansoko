@@ -222,7 +222,7 @@ func (s *Service) loadReleaseSnapshot(ctx context.Context, releaseID string) (re
 	var rawFacts, sourceFacts, parsedFacts, internalFacts []byte
 	var reasonDetail, evaluationVersion, downloadTaskID sql.NullString
 	var anibtMode sql.NullString
-	var bgmWorkID, tmdbWorkID, tmdbMediaKind, mediaKindOverride sql.NullString
+	var bgmWorkID, tmdbWorkID, tmdbMediaKind, ownerMediaKind sql.NullString
 	var tmdbSeason sql.NullInt64
 	var policyKind sql.NullString
 	var policyVersion sql.NullInt64
@@ -233,7 +233,7 @@ func (s *Service) loadReleaseSnapshot(ctx context.Context, releaseID string) (re
        r.verdict, r.reason_code, r.reason_detail, r.evaluation_version,
        r.download_task_id, r.version, src.locator, src.locator_display,
        src.group_name, src.episode_offset, src.version, src.anibt_aux_mode, src.source_kind, src.provider, src.provider_group_ref, sub.state,
-       m.bgm_work_id, m.tmdb_work_id, m.tmdb_media_kind, m.tmdb_season, m.media_kind_override,
+       m.bgm_work_id, m.tmdb_work_id, m.tmdb_media_kind, m.tmdb_season, m.media_kind,
        m.version, COALESCE(rules.rules_version, 1),
        pp.parser_kind, pp.parser_version,
        COALESCE(lifecycle.lifecycle_state, ''), COALESCE(task.state, ''), COALESCE(acq.state, ''),
@@ -258,7 +258,7 @@ WHERE r.id = $1`, releaseID).Scan(
 		&verdict, &snapshot.reasonCode, &reasonDetail, &evaluationVersion,
 		&downloadTaskID, &snapshot.releaseVersion, &snapshot.locator, &snapshot.locatorDisplay,
 		&snapshot.groupName, &snapshot.episodeOffset, &snapshot.sourceVersion, &anibtMode, &snapshot.sourceKind, &snapshot.sourceProvider, &snapshot.sourceGroupRef, &subscriptionState,
-		&bgmWorkID, &tmdbWorkID, &tmdbMediaKind, &tmdbSeason, &mediaKindOverride,
+		&bgmWorkID, &tmdbWorkID, &tmdbMediaKind, &tmdbSeason, &ownerMediaKind,
 		&snapshot.metadataVersion, &snapshot.rulesVersion,
 		&policyKind, &policyVersion,
 		&snapshot.lifecycleState, &snapshot.taskState, &snapshot.acquisitionState, &snapshot.taskCount,
@@ -299,7 +299,7 @@ WHERE r.id = $1`, releaseID).Scan(
 	if err != nil {
 		return releaseSnapshot{}, fmt.Errorf("map metadata hold: %w", err)
 	}
-	snapshot.mediaKind, snapshot.mediaSeason, snapshot.mediaSeasonBound = frozenMediaBinding(tmdb, nullableStringPtr(mediaKindOverride))
+	snapshot.mediaKind, snapshot.mediaSeason, snapshot.mediaSeasonBound = frozenMediaBinding(tmdb, nullableStringPtr(ownerMediaKind))
 	snapshot.bgmWorkID, snapshot.tmdbWorkID = bgmWorkID.String, tmdbWorkID.String
 	resolved, effective, err := loadResolvedConfig(ctx, s.db, snapshot.managedAnimeID)
 	if err != nil {
@@ -333,13 +333,13 @@ type currentReleaseEvaluationInputs struct {
 
 func loadCurrentReleaseEvaluationInputs(ctx context.Context, q queryer, snapshot releaseSnapshot) (currentReleaseEvaluationInputs, error) {
 	var inputs currentReleaseEvaluationInputs
-	var bgmWorkID, tmdbWorkID, tmdbMediaKind, mediaKindOverride sql.NullString
+	var bgmWorkID, tmdbWorkID, tmdbMediaKind, ownerMediaKind sql.NullString
 	var tmdbSeason sql.NullInt64
 	var policyKind sql.NullString
 	var policyVersion sql.NullInt64
 	if err := q.QueryRowContext(ctx, `
 SELECT src.group_name, COALESCE(src.provider, ''), COALESCE(src.provider_group_ref, ''), src.episode_offset,
-       m.bgm_work_id, m.tmdb_work_id, m.tmdb_media_kind, m.tmdb_season, m.media_kind_override,
+       m.bgm_work_id, m.tmdb_work_id, m.tmdb_media_kind, m.tmdb_season, m.media_kind,
        m.version, COALESCE(rules.rules_version, 1),
        pp.parser_kind, pp.parser_version
 FROM rss_sources src
@@ -351,7 +351,7 @@ LEFT JOIN anime_business_configs pp
   ON pp.managed_anime_id = sub.managed_anime_id
 WHERE src.id = $1 AND sub.managed_anime_id = $2`, snapshot.sourceID, snapshot.managedAnimeID).Scan(
 		&inputs.groupName, &inputs.sourceProvider, &inputs.sourceGroupRef, &inputs.episodeOffset,
-		&bgmWorkID, &tmdbWorkID, &tmdbMediaKind, &tmdbSeason, &mediaKindOverride,
+		&bgmWorkID, &tmdbWorkID, &tmdbMediaKind, &tmdbSeason, &ownerMediaKind,
 		&inputs.metadataVersion, &inputs.rulesVersion,
 		&policyKind, &policyVersion); err != nil {
 		return currentReleaseEvaluationInputs{}, fmt.Errorf("read current release evaluation inputs: %w", err)
@@ -370,7 +370,7 @@ WHERE src.id = $1 AND sub.managed_anime_id = $2`, snapshot.sourceID, snapshot.ma
 	if err != nil {
 		return currentReleaseEvaluationInputs{}, fmt.Errorf("map metadata hold: %w", err)
 	}
-	inputs.mediaKind, inputs.mediaSeason, inputs.mediaSeasonBound = frozenMediaBinding(tmdb, nullableStringPtr(mediaKindOverride))
+	inputs.mediaKind, inputs.mediaSeason, inputs.mediaSeasonBound = frozenMediaBinding(tmdb, nullableStringPtr(ownerMediaKind))
 	inputs.bgmWorkID, inputs.tmdbWorkID = bgmWorkID.String, tmdbWorkID.String
 	inputs.resolved, inputs.effective, err = loadResolvedConfig(ctx, q, snapshot.managedAnimeID)
 	if err != nil {

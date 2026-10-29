@@ -93,10 +93,10 @@ type qualificationMaterial struct {
 	programs       programMaterial
 	bgm            *anime.BGMBinding
 	tmdb           *anime.TMDBBinding
-	// mediaKindOverride is the owner pin of the naming branch (tv | movie). It
+	// ownerMediaKind is the owner pin of the naming branch (tv | movie). It
 	// is a separate field from the TMDB tuple: the tuple stays exactly what the
 	// matcher wrote and the override only selects the frozen media kind.
-	mediaKindOverride *string
+	ownerMediaKind *string
 	// animeYear is the owner-edited naming year (anime.year); nil when unset.
 	// It comes from the same source as the binding (saved or submitted draft,
 	// or the owner's metadata row) and is frozen in the Vars input.

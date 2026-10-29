@@ -501,11 +501,11 @@ func (s *Store) MatchAnime(ctx context.Context, managedAnimeID string) (*fileman
 	err := s.db.QueryRowContext(ctx, `SELECT ma.id, COALESCE(ma.title_override, ma.title, ''),
  ma.lifecycle_state IS DISTINCT FROM 'active', COALESCE(sub.state, ''),
  EXISTS (SELECT 1 FROM one_shot_acquisitions o WHERE o.managed_anime_id = ma.id),
- COALESCE(m.tmdb_work_id, ''), COALESCE(m.tmdb_media_kind, ''), COALESCE(m.media_kind_override, '')
+ COALESCE(m.tmdb_work_id, ''), COALESCE(m.tmdb_media_kind, ''), COALESCE(m.media_kind, '')
 FROM managed_anime ma
 LEFT JOIN subscriptions sub ON sub.managed_anime_id = ma.id
 LEFT JOIN anime_metadata m ON m.managed_anime_id = ma.id
-WHERE ma.id = $1`, managedAnimeID).Scan(&fact.ID, &fact.Title, &fact.Retired, &fact.SubscriptionState, &fact.OneShot, &fact.TMDBWorkID, &fact.TMDBMediaKind, &fact.MediaKindOverride)
+WHERE ma.id = $1`, managedAnimeID).Scan(&fact.ID, &fact.Title, &fact.Retired, &fact.SubscriptionState, &fact.OneShot, &fact.TMDBWorkID, &fact.TMDBMediaKind, &fact.OwnerMediaKind)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

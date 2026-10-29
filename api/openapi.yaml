@@ -2324,7 +2324,7 @@ paths:
         candidate's current pointer to it; a stale expected_version is a typed
         409 (OWNER_VERSION_CONFLICT) and never a silent merge. A metadata match
         written here (metadata.bgm and/or metadata.tmdb, plus the optional
-        metadata.media_kind_override) is the naming fact source for every
+        metadata.media_kind) is the naming fact source for every
         later render of that revision; a draft that selects no match keeps
         metadata absent and naming stays fail-closed. A one-shot never writes
         here: its title, metadata and rules are its own unsaved configuration,
@@ -9719,7 +9719,7 @@ components:
           $ref: '#/components/schemas/NullableBGMBinding'
         tmdb:
           $ref: '#/components/schemas/NullableTMDBBinding'
-        media_kind_override:
+        media_kind:
           type: string
           nullable: true
           enum: [tv, movie]
@@ -9772,7 +9772,7 @@ components:
           $ref: '#/components/schemas/NullableBGMBinding'
         tmdb:
           $ref: '#/components/schemas/NullableTMDBBinding'
-        media_kind_override:
+        media_kind:
           type: string
           nullable: true
           enum: [tv, movie]
@@ -12650,7 +12650,7 @@ components:
           $ref: '#/components/schemas/NullableBGMBinding'
         tmdb:
           $ref: '#/components/schemas/NullableTMDBBinding'
-        media_kind_override:
+        media_kind:
           type: string
           nullable: true
           enum: [tv, movie]
@@ -12712,7 +12712,7 @@ components:
         read consumes title_override (anime.title_override), year (anime.year),
         season (anime.season and the season composites), bgm (bgm.* facts and the metadata hold), tmdb (tmdb.* facts, the
         bound season carried as naming evidence, and the metadata hold)
-        and media_kind_override (the media kind of episode parsing, filled
+        and media_kind (the media kind of episode parsing, filled
         from the tmdb media_kind by the same rule as the patch).
         total_episodes is validated but does not change a
         preview. No value is filled from network metadata.
@@ -12721,7 +12721,7 @@ components:
           $ref: '#/components/schemas/NullableBGMBinding'
         tmdb:
           $ref: '#/components/schemas/NullableTMDBBinding'
-        media_kind_override:
+        media_kind:
           type: string
           nullable: true
           enum: [tv, movie]

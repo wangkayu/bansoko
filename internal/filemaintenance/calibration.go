@@ -521,7 +521,7 @@ func calibrationFactsDigest(disposition string, coverage []string, resolution, l
 func calibrationAnimeIsMovie(ctx context.Context, q queryer, animeID string) (bool, error) {
 	var override sql.NullString
 	err := q.QueryRowContext(ctx, `
-SELECT media_kind_override
+SELECT media_kind
 FROM anime_metadata
 WHERE managed_anime_id = $1`, animeID).Scan(&override)
 	if errors.Is(err, sql.ErrNoRows) {

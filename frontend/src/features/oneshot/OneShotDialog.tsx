@@ -1039,7 +1039,7 @@ export function OneShotDialog({
                   onChange={(metadata, mediaKind) =>
                     commitDraft({
                       ...(latestDraft.current ?? draft),
-                      metadata: mediaKind ? { ...metadata, media_kind_override: mediaKind } : metadata,
+                      metadata: mediaKind ? { ...metadata, media_kind: mediaKind } : metadata,
                     })
                   }
                   matchProvider={matchProvider}
@@ -1049,10 +1049,10 @@ export function OneShotDialog({
                     return true;
                   }}
                   onSaveMediaKind={async (next) => {
-                    source.setDraft({ ...draft, metadata: { ...draft.metadata, media_kind_override: next } });
+                    source.setDraft({ ...draft, metadata: { ...draft.metadata, media_kind: next } });
                     return true;
                   }}
-                  mediaKindOverride={draft.metadata.media_kind_override}
+                  mediaKind={draft.metadata.media_kind}
                 />
               </div>
             )}

@@ -45,9 +45,9 @@ type AnimeMetadata struct {
 	TMDB           *TMDBBinding `json:"tmdb"`
 	TitleOverride  *string      `json:"title_override"`
 	TotalEpisodes  *int         `json:"total_episodes"`
-	// MediaKindOverride pins the naming branch selector (tv | movie); nil means
+	// MediaKind pins the naming branch selector (tv | movie); nil means
 	// unset. The TMDB tuple above stays exactly the binding the matcher wrote.
-	MediaKindOverride *string `json:"media_kind_override"`
+	MediaKind *string `json:"media_kind"`
 	// Year is the owner-edited naming year (anime.year); nil means unset.
 	Year *int `json:"year"`
 	// Season is the owner-edited naming season (anime.season; 0 = specials);

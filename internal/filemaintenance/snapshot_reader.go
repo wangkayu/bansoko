@@ -205,7 +205,7 @@ func placementCoverageFor(byPlacement map[string][]string, facts []byte) []strin
 func (r *ReconciliationSnapshotReader) animeIsMovie(ctx context.Context, animeID string) (bool, error) {
 	var override sql.NullString
 	err := r.db.QueryRowContext(ctx, `
-SELECT media_kind_override
+SELECT media_kind
 FROM anime_metadata
 WHERE managed_anime_id = $1`, animeID).Scan(&override)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -217,7 +217,7 @@ WHERE managed_anime_id = $1`, animeID).Scan(&override)
 	return ownerMediaKind(override.String) == "movie", nil
 }
 
-// ownerMediaKind is the owner media kind (anime_metadata.media_kind_override)
+// ownerMediaKind is the owner media kind (anime_metadata.media_kind)
 // with unset as tv, the same rule FrozenMediaBinding applies. The TMDB kind is
 // never read: a metadata binding only locates the work.
 func ownerMediaKind(override string) string {

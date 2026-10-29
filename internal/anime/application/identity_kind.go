@@ -40,7 +40,7 @@ func EffectiveMediaKind(override *string) string {
 }
 
 // LoadIdentityKindBlockersTx counts the blockers of one instance inside the
-// caller's transaction. Every writer of media_kind_override reads it.
+// caller's transaction. Every writer of media_kind reads it.
 func LoadIdentityKindBlockersTx(ctx context.Context, tx *sql.Tx, managedAnimeID string) (IdentityKindBlockers, error) {
 	var blockers IdentityKindBlockers
 	// An acquisition belongs to the instance by its origin or by the

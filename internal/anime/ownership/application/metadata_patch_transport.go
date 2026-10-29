@@ -20,12 +20,12 @@ func (s *Service) PatchAnimeMetadata(ctx context.Context, managedAnimeID string,
 
 func metadataPatchInputFromHTTP(patch generated.AnimeMetadataPatch) MetadataPatchInput {
 	input := MetadataPatchInput{
-		ExpectedVersion:   int64(patch.ExpectedVersion),
-		TitleOverride:     animeapplication.CloneString(patch.TitleOverride),
-		TotalEpisodes:     animeapplication.CloneInt(patch.TotalEpisodes),
-		MediaKindOverride: animeapplication.CloneString((*string)(patch.MediaKindOverride)),
-		Year:              animeapplication.CloneInt(patch.Year),
-		Season:            animeapplication.CloneInt(patch.Season),
+		ExpectedVersion: int64(patch.ExpectedVersion),
+		TitleOverride:   animeapplication.CloneString(patch.TitleOverride),
+		TotalEpisodes:   animeapplication.CloneInt(patch.TotalEpisodes),
+		MediaKind:       animeapplication.CloneString((*string)(patch.MediaKind)),
+		Year:            animeapplication.CloneInt(patch.Year),
+		Season:          animeapplication.CloneInt(patch.Season),
 	}
 	if patch.Bgm != nil {
 		input.BGM = &BGMBinding{WorkID: patch.Bgm.WorkId}
@@ -42,13 +42,13 @@ func metadataPatchInputFromHTTP(patch generated.AnimeMetadataPatch) MetadataPatc
 
 func metadataPatchResultForHTTP(value AnimeMetadata) generated.AnimeMetadata {
 	result := generated.AnimeMetadata{
-		ManagedAnimeId:    generated.ID(value.ManagedAnimeID),
-		TitleOverride:     animeapplication.CloneString(value.TitleOverride),
-		TotalEpisodes:     animeapplication.CloneInt(value.TotalEpisodes),
-		MediaKindOverride: (*generated.AnimeMetadataMediaKindOverride)(animeapplication.CloneString(value.MediaKindOverride)),
-		Year:              animeapplication.CloneInt(value.Year),
-		Season:            animeapplication.CloneInt(value.Season),
-		Version:           generated.Version(value.Version),
+		ManagedAnimeId: generated.ID(value.ManagedAnimeID),
+		TitleOverride:  animeapplication.CloneString(value.TitleOverride),
+		TotalEpisodes:  animeapplication.CloneInt(value.TotalEpisodes),
+		MediaKind:      (*generated.AnimeMetadataMediaKind)(animeapplication.CloneString(value.MediaKind)),
+		Year:           animeapplication.CloneInt(value.Year),
+		Season:         animeapplication.CloneInt(value.Season),
+		Version:        generated.Version(value.Version),
 	}
 	if value.BGM != nil {
 		result.Bgm = &generated.NullableBGMBinding{WorkId: value.BGM.WorkID}

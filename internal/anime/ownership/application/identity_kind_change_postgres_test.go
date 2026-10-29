@@ -31,18 +31,18 @@ func TestPatchAnimeMetadataBlocksAMediaKindChangeWhileFilesExist(t *testing.T) {
 	movie, tv := "movie", "tv"
 	patch := func(version int64, kind *string, episodes *int) (AnimeMetadata, error) {
 		return service.PatchAnimeMetadataApplication(ctx, animeID, MetadataPatchInput{
-			ExpectedVersion:   version,
-			BGM:               &BGMBinding{WorkID: "bgm-123"},
-			TMDB:              &TMDBBinding{WorkID: "tmdb-456", MediaKind: "tv", Season: 1},
-			MediaKindOverride: kind,
-			TotalEpisodes:     episodes,
+			ExpectedVersion: version,
+			BGM:             &BGMBinding{WorkID: "bgm-123"},
+			TMDB:            &TMDBBinding{WorkID: "tmdb-456", MediaKind: "tv", Season: 1},
+			MediaKind:       kind,
+			TotalEpisodes:   episodes,
 		})
 	}
 	readKind := func() (sql.NullString, int64) {
 		t.Helper()
 		var kind sql.NullString
 		var version int64
-		if err := db.QueryRowContext(ctx, `SELECT media_kind_override, version FROM anime_metadata WHERE managed_anime_id = $1`, animeID).Scan(&kind, &version); err != nil {
+		if err := db.QueryRowContext(ctx, `SELECT media_kind, version FROM anime_metadata WHERE managed_anime_id = $1`, animeID).Scan(&kind, &version); err != nil {
 			t.Fatal(err)
 		}
 		return kind, version
@@ -84,7 +84,7 @@ func TestPatchAnimeMetadataBlocksAMediaKindChangeWhileFilesExist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a patch that keeps the effective kind must save: %v", err)
 	}
-	if saved.TotalEpisodes == nil || *saved.TotalEpisodes != 12 || saved.MediaKindOverride == nil || *saved.MediaKindOverride != "tv" {
+	if saved.TotalEpisodes == nil || *saved.TotalEpisodes != 12 || saved.MediaKind == nil || *saved.MediaKind != "tv" {
 		t.Fatalf("saved patch = %+v", saved)
 	}
 }
@@ -104,7 +104,7 @@ func TestMatchAnimeMetadataKeepsABlockedMediaKindAndFillsTheRest(t *testing.T) {
 	draft := ownershipTestDraft(t)
 	draft.Metadata.Bgm = nil
 	draft.Metadata.Tmdb = nil
-	draft.Metadata.MediaKindOverride = nil
+	draft.Metadata.MediaKind = nil
 	subscribed, err := service.SubscribeAnime(ctx, generated.SubscribeAnimeInput{Draft: draft, Start: new(true)}, "identity-kind-match-0001")
 	if err != nil {
 		t.Fatal(err)
@@ -119,13 +119,13 @@ func TestMatchAnimeMetadataKeepsABlockedMediaKindAndFillsTheRest(t *testing.T) {
 	if result.Metadata.TMDB == nil || result.Metadata.TMDB.MediaKind != "movie" || result.Metadata.BGM == nil {
 		t.Fatalf("the bindings must still be written: %+v", result.Metadata)
 	}
-	if result.Metadata.MediaKindOverride != nil {
-		t.Fatalf("the response must keep the unset kind, got %v", *result.Metadata.MediaKindOverride)
+	if result.Metadata.MediaKind != nil {
+		t.Fatalf("the response must keep the unset kind, got %v", *result.Metadata.MediaKind)
 	}
 	var override sql.NullString
 	var tupleKind string
 	var version int64
-	if err := db.QueryRowContext(ctx, `SELECT media_kind_override, tmdb_media_kind, version FROM anime_metadata WHERE managed_anime_id = $1`, animeID).Scan(&override, &tupleKind, &version); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT media_kind, tmdb_media_kind, version FROM anime_metadata WHERE managed_anime_id = $1`, animeID).Scan(&override, &tupleKind, &version); err != nil {
 		t.Fatal(err)
 	}
 	if override.Valid || tupleKind != "movie" || version != 2 {

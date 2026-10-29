@@ -47,14 +47,14 @@ func (s *Service) RefreshAnimeMetadataApplication(ctx context.Context, managedAn
 	var bgmWorkID, tmdbWorkID, tmdbKind, titleOverride sql.NullString
 	var tmdbSeason, totalEpisodes, year, season sql.NullInt64
 	var version int64
-	var mediaKindOverride sql.NullString
+	var ownerMediaKind sql.NullString
 	err := s.db.QueryRowContext(ctx, `
 SELECT ma.title_override, m.bgm_work_id, m.tmdb_work_id, m.tmdb_media_kind, m.tmdb_season,
-       m.total_episodes, m.media_kind_override, m.year, m.season, m.version
+       m.total_episodes, m.media_kind, m.year, m.season, m.version
 FROM managed_anime ma
 JOIN anime_metadata m ON m.managed_anime_id = ma.id
 WHERE ma.id = $1`, managedAnimeID).Scan(&titleOverride, &bgmWorkID, &tmdbWorkID, &tmdbKind, &tmdbSeason,
-		&totalEpisodes, &mediaKindOverride, &year, &season, &version)
+		&totalEpisodes, &ownerMediaKind, &year, &season, &version)
 	if err == sql.ErrNoRows {
 		return animeapplication.AnimeMetadata{}, &apperrors.NotFound{Resource: "anime_metadata", ID: managedAnimeID}
 	}
@@ -87,11 +87,11 @@ WHERE ma.id = $1`, managedAnimeID).Scan(&titleOverride, &bgmWorkID, &tmdbWorkID,
 		TMDB:           animeApplicationTMDB(tmdbWorkID.String, tmdbKind.String, tmdbSeason),
 		TitleOverride:  nullStringPtr(titleOverride),
 		TotalEpisodes:  nullInt64Ptr(totalEpisodes),
-		// MediaKindOverride is the naming branch pin, unchanged here.
-		MediaKindOverride: nullStringPtr(mediaKindOverride),
-		Year:              nullInt64Ptr(year),
-		Season:            nullInt64Ptr(season),
-		Version:           version,
+		// MediaKind is the naming branch pin, unchanged here.
+		MediaKind: nullStringPtr(ownerMediaKind),
+		Year:      nullInt64Ptr(year),
+		Season:    nullInt64Ptr(season),
+		Version:   version,
 	}, nil
 }
 

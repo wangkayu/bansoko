@@ -1040,7 +1040,7 @@ describe("AnimeTabs owner RSS read model preview", () => {
       body: {
         input_source: "owner_draft",
         managed_anime_id: "anime-1",
-        metadata_preview: { bgm: null, tmdb: null, title_override: "测试番", media_kind_override: null, total_episodes: null, year: 2031, season: null },
+        metadata_preview: { bgm: null, tmdb: null, title_override: "测试番", media_kind: null, total_episodes: null, year: 2031, season: null },
         limit_per_group: 100,
       },
     }));
@@ -1242,7 +1242,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
       bgm: { work_id: "486109" },
       tmdb: { work_id: "265010", media_kind: "tv", season: 2 },
       title_override: "新标题",
-      media_kind_override: null,
+      media_kind: null,
       total_episodes: null,
       year: null,
       season: null,
@@ -1320,7 +1320,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
       tmdb: { work_id: "265010", media_kind: "tv", season: 1 },
       title_override: "新覆盖",
       // The unset type is filled once from the matched work's kind.
-      media_kind_override: "tv",
+      media_kind: "tv",
       // Selecting a candidate pre-fills total episodes from the chosen season's count (S1 has 12).
       total_episodes: 12,
       // The match fills the candidate year into the form, persisted with the save.
@@ -1354,7 +1354,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
       bgm: { work_id: "486109" },
       tmdb: { work_id: "265010", media_kind: "tv", season: 2 },
       title_override: null,
-      media_kind_override: "tv",
+      media_kind: "tv",
       total_episodes: null,
       version: 3,
     };
@@ -1380,7 +1380,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
       bgm: { work_id: "486109" },
       tmdb: { work_id: "265010", media_kind: "tv", season: 2 },
       title_override: "测试番",
-      media_kind_override: "movie",
+      media_kind: "movie",
       total_episodes: null,
       year: null,
       season: null,
@@ -1397,7 +1397,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
       bgm: null,
       tmdb: null,
       title_override: null,
-      media_kind_override: null,
+      media_kind: null,
       total_episodes: null,
       version: 5,
     };
@@ -1416,7 +1416,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
       bgm: null,
       tmdb: null,
       title_override: null,
-      media_kind_override: "movie",
+      media_kind: "movie",
       total_episodes: null,
       version: 5,
     };
@@ -1437,7 +1437,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
       bgm: null,
       tmdb: null,
       title_override: "测试番",
-      media_kind_override: "tv",
+      media_kind: "tv",
       total_episodes: null,
       year: null,
       season: null,
@@ -1452,7 +1452,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
       bgm: null,
       tmdb: { work_id: "265010", media_kind: "tv", season: 1 },
       // A bound TMDB tuple always comes with the type it backfilled.
-      media_kind_override: "tv",
+      media_kind: "tv",
       // Equal to the candidate's S1 episodes/year/season: confirms that with an identical binding even the prefill produces no diff.
       total_episodes: 12,
       year: 2024,
@@ -1620,7 +1620,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
       managed_anime_id: "anime-1",
       bgm: null,
       tmdb: null,
-      media_kind_override: "movie",
+      media_kind: "movie",
       year: 2020,
       total_episodes: 6,
       version: 1,
@@ -1647,7 +1647,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith(t("tabs.metadata.savedReevaluated", { n: 2 })));
     const bodies = metadataPatchBodies(fetchMock);
     expect(bodies).toHaveLength(1);
-    expect(bodies[0]).toMatchObject({ media_kind_override: "movie", total_episodes: 1, year: 2021 });
+    expect(bodies[0]).toMatchObject({ media_kind: "movie", total_episodes: 1, year: 2021 });
   });
 
   it("总集数：清空上送 total_episodes: null", async () => {
@@ -1685,7 +1685,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
 
     const bodies = metadataPatchBodies(fetchMock);
     expect(bodies).toHaveLength(1);
-    expect(bodies[0]).toEqual({ expected_version: 4, bgm: null, tmdb: null, title_override: "保留我", media_kind_override: null, total_episodes: null, year: null, season: null });
+    expect(bodies[0]).toEqual({ expected_version: 4, bgm: null, tmdb: null, title_override: "保留我", media_kind: null, total_episodes: null, year: null, season: null });
   });
 
   it("保存失败：footer 报出失败的部分，改动保持未保存", async () => {
@@ -1738,7 +1738,7 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
       bgm: { work_id: "486109" },
       tmdb: { work_id: "265010", media_kind: "tv", season: 2 },
       title_override: "保留我",
-      media_kind_override: null,
+      media_kind: null,
       total_episodes: null,
       year: null,
       season: 3,

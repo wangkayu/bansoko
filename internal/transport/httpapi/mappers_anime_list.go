@@ -48,13 +48,13 @@ func mapAnimeListItems(values []readmodelapplication.AnimeListItem) []generated.
 
 func mapAnimeListMetadata(value animeapplication.AnimeMetadata) generated.AnimeMetadata {
 	result := generated.AnimeMetadata{
-		ManagedAnimeId:    value.ManagedAnimeID,
-		TitleOverride:     mapAnimeListString(value.TitleOverride),
-		TotalEpisodes:     mapAnimeListInt(value.TotalEpisodes),
-		MediaKindOverride: (*generated.AnimeMetadataMediaKindOverride)(mapAnimeListString(value.MediaKindOverride)),
-		Year:              mapAnimeListInt(value.Year),
-		Season:            mapAnimeListInt(value.Season),
-		Version:           value.Version,
+		ManagedAnimeId: value.ManagedAnimeID,
+		TitleOverride:  mapAnimeListString(value.TitleOverride),
+		TotalEpisodes:  mapAnimeListInt(value.TotalEpisodes),
+		MediaKind:      (*generated.AnimeMetadataMediaKind)(mapAnimeListString(value.MediaKind)),
+		Year:           mapAnimeListInt(value.Year),
+		Season:         mapAnimeListInt(value.Season),
+		Version:        value.Version,
 	}
 	if value.BGM != nil {
 		result.Bgm = &generated.NullableBGMBinding{WorkId: value.BGM.WorkID}

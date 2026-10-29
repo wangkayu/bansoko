@@ -51,7 +51,7 @@ func TestMetadataPatchRequestsConfigScanByRenderRelevance(t *testing.T) {
 		var year, season, tmdbSeason, total sql.NullInt64
 		if err := db.QueryRowContext(ctx, `
 SELECT ma.title_override, md.bgm_work_id, md.tmdb_work_id, md.tmdb_media_kind, md.tmdb_season,
-       md.media_kind_override, md.total_episodes, md.year, md.season
+       md.media_kind, md.total_episodes, md.year, md.season
 FROM managed_anime ma JOIN anime_metadata md ON md.managed_anime_id = ma.id WHERE ma.id = $1`, animeID).Scan(
 			&title, &bgm, &tmdb, &tmdbKind, &tmdbSeason, &kind, &total, &year, &season); err != nil {
 			t.Fatal(err)
@@ -67,7 +67,7 @@ FROM managed_anime ma JOIN anime_metadata md ON md.managed_anime_id = ma.id WHER
 			in.TMDB = &TMDBBinding{WorkID: tmdb.String, MediaKind: tmdbKind.String, Season: int(tmdbSeason.Int64)}
 		}
 		if kind.Valid {
-			in.MediaKindOverride = &kind.String
+			in.MediaKind = &kind.String
 		}
 		if total.Valid {
 			n := int(total.Int64)

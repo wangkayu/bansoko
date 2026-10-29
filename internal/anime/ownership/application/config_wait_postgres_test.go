@@ -137,10 +137,10 @@ func TestMediaKindChangeBlockedWhileAcquisitionsHaveNotSettled(t *testing.T) {
 	changeKind := func() map[string]int64 {
 		t.Helper()
 		_, err := service.PatchAnimeMetadataApplication(ctx, animeID, MetadataPatchInput{
-			ExpectedVersion:   1,
-			BGM:               &BGMBinding{WorkID: "bgm-123"},
-			TMDB:              &TMDBBinding{WorkID: "tmdb-456", MediaKind: "tv", Season: 1},
-			MediaKindOverride: &movie,
+			ExpectedVersion: 1,
+			BGM:             &BGMBinding{WorkID: "bgm-123"},
+			TMDB:            &TMDBBinding{WorkID: "tmdb-456", MediaKind: "tv", Season: 1},
+			MediaKind:       &movie,
 		})
 		animetest.AssertBusinessCode(t, err, 409, animeapplication.IdentityKindChangeBlockedCode)
 		var business *apperrors.Business

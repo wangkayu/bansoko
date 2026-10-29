@@ -110,11 +110,11 @@ type offsetRekeyCandidate struct {
 	placementID string
 	currentKey  string
 	keyCount    int
-	// mediaKindOverride is the owner media kind (tv | movie; empty is tv),
+	// ownerMediaKind is the owner media kind (tv | movie; empty is tv),
 	// read only when the frozen identity carries no kind.
-	mediaKindOverride string
-	fileRef           string
-	effectiveFacts    []byte
+	ownerMediaKind string
+	fileRef        string
+	effectiveFacts []byte
 }
 
 // loadOffsetRekeyCandidates reads the link's active, verified, replacement-
@@ -125,7 +125,7 @@ func loadOffsetRekeyCandidates(ctx context.Context, tx *sql.Tx, animeID, rssSour
 SELECT p.id,
        COALESCE((SELECT min(c.observation_key) FROM placement_coverage c WHERE c.placement_id = p.id), ''),
        (SELECT count(*) FROM placement_coverage c WHERE c.placement_id = p.id),
-       COALESCE(meta.media_kind_override, ''),
+       COALESCE(meta.media_kind, ''),
        COALESCE(mf.file_ref, ''),
        COALESCE(mf.effective_facts, '{}'::jsonb)
 FROM placements p
@@ -154,7 +154,7 @@ FOR UPDATE OF p`, animeID, rssSourceID)
 	for rows.Next() {
 		var candidate offsetRekeyCandidate
 		if err := rows.Scan(&candidate.placementID, &candidate.currentKey, &candidate.keyCount,
-			&candidate.mediaKindOverride, &candidate.fileRef, &candidate.effectiveFacts); err != nil {
+			&candidate.ownerMediaKind, &candidate.fileRef, &candidate.effectiveFacts); err != nil {
 			return nil, fmt.Errorf("scan offset re-key candidate: %w", err)
 		}
 		out = append(out, candidate)
@@ -181,7 +181,7 @@ func offsetRekeyedKey(candidate offsetRekeyCandidate, newOffset int) (string, bo
 	// read only for an identity frozen before the kind existed.
 	mediaKind := frozenIdentityMediaKind(frozen.Kind)
 	if mediaKind == "" {
-		mediaKind = ownerMediaKind(candidate.mediaKindOverride)
+		mediaKind = ownerMediaKind(candidate.ownerMediaKind)
 	}
 	raw := *frozen.RawEpisode
 	identity := episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{

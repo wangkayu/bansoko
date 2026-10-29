@@ -60,7 +60,7 @@ func evaluateAdmission(ctx context.Context, c admissionCapture, intent acquisiti
 		selection.Kind, selection.PolicyVersion = c.material.parserKind, c.material.parserVersion
 		selection.RulesOwnerVersion = c.material.rulesOwnerVersion
 	}
-	selection.MediaKind, selection.Season, selection.SeasonBound = anime.FrozenMediaBinding(c.material.tmdb, c.material.mediaKindOverride)
+	selection.MediaKind, selection.Season, selection.SeasonBound = anime.FrozenMediaBinding(c.material.tmdb, c.material.ownerMediaKind)
 	var evidence target.ParserEvidence
 	if !mediaparser.IsRegistered(mediaparser.ParserKind(selection.Kind)) {
 		return admissionEvaluation{}, acceptError(422, "INPUT_SCHEMA_UNSUPPORTED", "parser_unavailable", nil)

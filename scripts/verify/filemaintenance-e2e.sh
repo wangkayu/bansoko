@@ -477,7 +477,7 @@ INSERT INTO managed_anime(id, title) VALUES ('anime-e2e-m', '进击的巨人');
 -- and the import gate needs both bindings. The instance title matches the
 -- fixture's frozen binding (the work title), like the TV instance; the 剧场版
 -- marker lives in the file name, as a real movie release would.
-INSERT INTO anime_metadata(managed_anime_id, bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season, media_kind_override)
+INSERT INTO anime_metadata(managed_anime_id, bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season, media_kind)
 VALUES ('anime-e2e-m', 'e2e-bgm-movie-work', 'e2e-movie-work', 'movie', 0, 'movie');
 INSERT INTO anime_business_configs(managed_anime_id) VALUES ('anime-e2e-m');
 $movie_config_overrides_sql
@@ -1958,7 +1958,7 @@ PY
 import json,sys
 m=json.load(sys.stdin)["metadata"]
 body={"expected_version":m["version"],"bgm":m.get("bgm"),"tmdb":m.get("tmdb"),
-      "media_kind_override":m.get("media_kind_override"),"total_episodes":m.get("total_episodes"),
+      "media_kind":m.get("media_kind"),"total_episodes":m.get("total_episodes"),
       "year":m.get("year"),"season":1}
 print(json.dumps(body,separators=(",",":")))')"
   s9_response="$(api_patch /anime/anime-e2e/metadata "$s9_patch")"

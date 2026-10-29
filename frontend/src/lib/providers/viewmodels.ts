@@ -45,8 +45,8 @@ export interface CatalogMetadataMatch {
   tmdbWorkId?: string;
   tmdbMediaKind?: "tv" | "movie";
   tmdbSeason?: number;
-  /** Subscribed entry: the owner-pinned media kind (metadata.media_kind_override); never rewrites the TMDB tuple. */
-  mediaKindOverride?: "tv" | "movie";
+  /** Subscribed entry: the owner-pinned media kind (metadata.media_kind); never rewrites the TMDB tuple. */
+  mediaKind?: "tv" | "movie";
 }
 
 /** CatalogEntryView — a single show card, provider-agnostic. */

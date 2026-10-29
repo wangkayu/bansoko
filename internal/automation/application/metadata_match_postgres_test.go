@@ -209,7 +209,7 @@ func TestMetadataBackfillFillsEmptyNeverOverwritesAndHonoursCAS(t *testing.T) {
 		var stored backfill.Stored
 		var bgm, tmdb, kind, ownerKind sql.NullString
 		var season, eps, year sql.NullInt64
-		if err := db.QueryRowContext(ctx, `SELECT bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season, total_episodes, year, media_kind_override FROM anime_metadata WHERE managed_anime_id='anime-meta-fill'`).Scan(&bgm, &tmdb, &kind, &season, &eps, &year, &ownerKind); err != nil {
+		if err := db.QueryRowContext(ctx, `SELECT bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season, total_episodes, year, media_kind FROM anime_metadata WHERE managed_anime_id='anime-meta-fill'`).Scan(&bgm, &tmdb, &kind, &season, &eps, &year, &ownerKind); err != nil {
 			t.Fatal(err)
 		}
 		if ownerKind.Valid {
@@ -260,7 +260,7 @@ func TestMetadataBackfillFillsEmptyNeverOverwritesAndHonoursCAS(t *testing.T) {
 	}
 	var eps, year, season int
 	var tmdb, ownerKind string
-	if err := db.QueryRowContext(ctx, `SELECT version, bgm_work_id, total_episodes, year, tmdb_work_id, tmdb_season, media_kind_override FROM anime_metadata WHERE managed_anime_id='anime-meta-fill'`).Scan(&version, &bgm, &eps, &year, &tmdb, &season, &ownerKind); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT version, bgm_work_id, total_episodes, year, tmdb_work_id, tmdb_season, media_kind FROM anime_metadata WHERE managed_anime_id='anime-meta-fill'`).Scan(&version, &bgm, &eps, &year, &tmdb, &season, &ownerKind); err != nil {
 		t.Fatal(err)
 	}
 	// Binding the TMDB tuple backfills the unset owner kind from the tuple kind.
@@ -272,7 +272,7 @@ func TestMetadataBackfillFillsEmptyNeverOverwritesAndHonoursCAS(t *testing.T) {
 	if apply(2) {
 		t.Fatal("full metadata must not be rewritten")
 	}
-	if err := db.QueryRowContext(ctx, `SELECT version, bgm_work_id, total_episodes, year, media_kind_override FROM anime_metadata WHERE managed_anime_id='anime-meta-fill'`).Scan(&version, &bgm, &eps, &year, &ownerKind); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT version, bgm_work_id, total_episodes, year, media_kind FROM anime_metadata WHERE managed_anime_id='anime-meta-fill'`).Scan(&version, &bgm, &eps, &year, &ownerKind); err != nil {
 		t.Fatal(err)
 	}
 	if version != 2 || bgm.String != "b1" || eps != 12 || year != 2024 || ownerKind != "tv" {
@@ -411,7 +411,7 @@ VALUES ('plc-kind-held', 'tv:e1', 0, 'facts-v1', 'plc-kind-held')`); err != nil 
 		var kind sql.NullString
 		var version int64
 		if err := db.QueryRowContext(ctx, `
-SELECT bgm_work_id, tmdb_media_kind, media_kind_override, version
+SELECT bgm_work_id, tmdb_media_kind, media_kind, version
 FROM anime_metadata WHERE managed_anime_id = $1`, want.anime).Scan(&bgm, &tupleKind, &kind, &version); err != nil {
 			t.Fatal(err)
 		}

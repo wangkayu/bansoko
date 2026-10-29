@@ -64,13 +64,13 @@ func mapMetadataMatchMetadata(metadata ownershipapplication.MetadataMatchMetadat
 		return generated.AnimeMetadata{}, fmt.Errorf("metadata match result has empty metadata managed anime id")
 	}
 	mapped := generated.AnimeMetadata{
-		ManagedAnimeId:    generated.ID(metadata.ManagedAnimeID),
-		TitleOverride:     cloneMetadataMatchString(metadata.TitleOverride),
-		TotalEpisodes:     cloneMetadataMatchInt(metadata.TotalEpisodes),
-		MediaKindOverride: (*generated.AnimeMetadataMediaKindOverride)(cloneMetadataMatchString(metadata.MediaKindOverride)),
-		Year:              cloneMetadataMatchInt(metadata.Year),
-		Season:            cloneMetadataMatchInt(metadata.Season),
-		Version:           generated.Version(metadata.Version),
+		ManagedAnimeId: generated.ID(metadata.ManagedAnimeID),
+		TitleOverride:  cloneMetadataMatchString(metadata.TitleOverride),
+		TotalEpisodes:  cloneMetadataMatchInt(metadata.TotalEpisodes),
+		MediaKind:      (*generated.AnimeMetadataMediaKind)(cloneMetadataMatchString(metadata.MediaKind)),
+		Year:           cloneMetadataMatchInt(metadata.Year),
+		Season:         cloneMetadataMatchInt(metadata.Season),
+		Version:        generated.Version(metadata.Version),
 	}
 	if metadata.BGM != nil {
 		mapped.Bgm = &generated.NullableBGMBinding{WorkId: metadata.BGM.WorkID}

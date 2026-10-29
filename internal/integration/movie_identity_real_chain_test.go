@@ -500,11 +500,11 @@ WHERE p.managed_anime_id = $1`, animeID).Scan(&placementCoverage, &placementFact
 	if !errors.As(err, &blocked) || blocked.Code != animeapplication.IdentityKindChangeBlockedCode {
 		t.Fatalf("rebinding to tv without the owner kind: err = %v, want %s", err, animeapplication.IdentityKindChangeBlockedCode)
 	}
-	keepMovie := generated.AnimeMetadataPatchMediaKindOverrideMovie
+	keepMovie := generated.AnimeMetadataPatchMediaKindMovie
 	if _, err := ownershipService.PatchAnimeMetadata(ctx, animeID, generated.AnimeMetadataPatch{
-		ExpectedVersion:   metadataVersion,
-		Tmdb:              &generated.NullableTMDBBinding{WorkId: "m1-movie-tmdb", MediaKind: generated.TMDBMediaKindTv, Season: 3},
-		MediaKindOverride: &keepMovie,
+		ExpectedVersion: metadataVersion,
+		Tmdb:            &generated.NullableTMDBBinding{WorkId: "m1-movie-tmdb", MediaKind: generated.TMDBMediaKindTv, Season: 3},
+		MediaKind:       &keepMovie,
 	}); err != nil {
 		t.Fatal(err)
 	}
