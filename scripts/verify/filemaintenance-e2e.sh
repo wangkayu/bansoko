@@ -38,7 +38,7 @@ if [[ -n "$scenario_selector" ]]; then
   # seven scenarios the negative-proof wrapper pins and reports on. Run the
   # recovery scenario explicitly with BANSOKO_FM_E2E_SCENARIOS=8.
   [[ "$scenario_selector" != all ]] || scenario_selector="1,2,3,4,5,6,7"
-  case ",$scenario_selector," in *,,*|*,*[!1-8,]*) echo "invalid BANSOKO_FM_E2E_SCENARIOS: $scenario_selector" >&2; exit 2 ;; esac
+  case ",$scenario_selector," in *,,*|*,*[!1-9,]*) echo "invalid BANSOKO_FM_E2E_SCENARIOS: $scenario_selector" >&2; exit 2 ;; esac
   requested_selector="$scenario_selector"
   if [[ ",$requested_selector," == *,5,* ]]; then requested_selector="$requested_selector,1,2,3,4"; fi
   if [[ ",$requested_selector," == *,3,* ]]; then requested_selector="$requested_selector,1,2"; fi
@@ -47,6 +47,12 @@ if [[ -n "$scenario_selector" ]]; then
   # 6 occupies the path the alignment planner will use, which it learns from the
   # same preview 5 pins, so 6 implies 5.
   if [[ ",$requested_selector," == *,6,* ]]; then requested_selector="$requested_selector,1,2,3,4,5"; fi
+  # Scenario 9 (season change moves the files) asserts the seeded naming rules'
+  # Season folder; scenarios 4/5/6 replace those rules and relocate files, so
+  # the two groups do not share a run.
+  if [[ ",$requested_selector," == *,9,* && ",$requested_selector," =~ ,[456], ]]; then
+    echo "filemaintenance-e2e: scenario 9 cannot run with scenarios 4, 5 or 6 (they rewrite the naming rules)" >&2; exit 2
+  fi
   scenario_selector="$(printf '%s' "$requested_selector" | tr ',' '\n' | sort -u | paste -sd, -)"
   export BANSOKO_FM_E2E_OFFSET_ALIGNMENT=1
 fi
@@ -1909,6 +1915,109 @@ print(json.dumps({
     "target_mount": {"fstype": fstype, "mount": mount, "statx_btime": btime, "has_btime": has_btime == "true"},
 }, ensure_ascii=False))
 PY
+  tail -n 1 "$scenario_json" | tee -a "$durable_evidence_dir/file022-scenarios.jsonl"
+  cat "$summary_dir/disk-observations.txt" | tee -a "$durable_evidence_dir/disk-observations.txt"
+  fi
+
+  if scenario_requested 9; then
+  # ---------------------------------------------------------------------
+  # 9. A season change on the imported anime moves its files to the new
+  #    season folder and nothing else. The metadata PATCH writes a config scan
+  #    request in its own transaction; the scan scheduler tick submits the scan
+  #    and the alignment consumer moves every active file_operation placement
+  #    to the path the CURRENT configuration renders. No download or
+  #    acquisition is created and retention deletes nothing.
+  # ---------------------------------------------------------------------
+  echo "== scenario 9: season change moves the imported files =="
+  # Auto-moving already-imported files is gated by the anime's
+  # alignment_enabled. Scenarios 1-3 do not need it (offset alignment bypasses
+  # it), so it is not guaranteed on here: set it explicitly on the anime scope,
+  # which outranks the global switch, and read it back.
+  s9_policy="$(api_get /file-maintenance/policy/anime/anime-e2e)"
+  s9_policy_version="$(printf '%s' "$s9_policy" | python3 -c 'import json,sys;print(json.load(sys.stdin)["version"])')"
+  api_put /file-maintenance/policy/anime/anime-e2e "{\"enabled\":true,\"alignment_enabled\":true,\"expected_version\":$s9_policy_version}" >"$summary_dir/scenario-9-anime-policy.json"
+  [[ "$(api_get /file-maintenance/policy/anime/anime-e2e | python3 -c 'import json,sys;print(json.load(sys.stdin)["alignment_enabled"])')" == "True" ]] || { echo 'scenario 9 failed to enable alignment_enabled for anime-e2e' >&2; exit 1; }
+
+  s9_placements_sql="SELECT id || '|' || physical_path FROM placements WHERE managed_anime_id='anime-e2e' AND state='active' AND source_evidence_type='file_operation' ORDER BY id"
+  s9_before="$summary_dir/scenario-9-before.txt"
+  $PSQL -tA -c "$s9_placements_sql" | tr -d '\r' >"$s9_before"
+  [[ -s "$s9_before" ]] || { echo 'scenario 9 found no active file_operation placement for anime-e2e' >&2; exit 1; }
+  : >"$summary_dir/scenario-9-hashes-before.txt"
+  while IFS='|' read -r s9_id s9_path; do
+    [[ "$s9_path" == */"Season 00"/* && -f "$s9_path" ]] || { echo "scenario 9 precondition: $s9_id is not an existing file under Season 00: $s9_path" >&2; exit 1; }
+    printf '%s|%s\n' "$s9_id" "$(fingerprint "$s9_path")" >>"$summary_dir/scenario-9-hashes-before.txt"
+    observe_disk "scenario-9-before-$s9_id" "$s9_path"
+  done <"$s9_before"
+  s9_count_sql="SELECT (SELECT count(*) FROM download_tasks) || '/' || (SELECT count(*) FROM acquisitions) || '/' || (SELECT count(*) FROM replacement_deletions)"
+  s9_counts_before="$($PSQL -tAc "$s9_count_sql" | tr -d '[:space:]')"
+
+  # The metadata PATCH replaces the whole owner value: send the stored one
+  # back with only the season changed.
+  s9_workspace="$(api_get /anime/anime-e2e/workspace)"
+  s9_patch="$(printf '%s' "$s9_workspace" | python3 -c '
+import json,sys
+m=json.load(sys.stdin)["metadata"]
+body={"expected_version":m["version"],"bgm":m.get("bgm"),"tmdb":m.get("tmdb"),
+      "media_kind_override":m.get("media_kind_override"),"total_episodes":m.get("total_episodes"),
+      "year":m.get("year"),"season":1}
+print(json.dumps(body,separators=(",",":")))')"
+  s9_response="$(api_patch /anime/anime-e2e/metadata "$s9_patch")"
+  printf '%s' "$s9_response" >"$summary_dir/scenario-9-patch.json"
+  s9_reevaluated="$(printf '%s' "$s9_response" | python3 -c 'import json,sys;v=json.load(sys.stdin).get("reevaluated_releases");print("absent" if v is None else v)')"
+  [[ "$s9_reevaluated" =~ ^[0-9]+$ ]] || { echo "scenario 9: the metadata PATCH response carries no reevaluated_releases ($s9_reevaluated)" >&2; exit 1; }
+
+  # The request is written in the PATCH transaction: it is either still
+  # pending or the tick has already dispatched it, in which case a scan
+  # newer than the PATCH exists.
+  s9_request="$($PSQL -tAc "SELECT count(*) FROM config_scan_requests WHERE managed_anime_id='anime-e2e'" | tr -d '[:space:]')"
+  s9_dispatched=false
+  if [[ "$s9_request" == 0 ]]; then
+    s9_dispatched="$($PSQL -tAc "SELECT count(*) > 0 FROM reconciliation_scans WHERE managed_anime_id='anime-e2e' AND started_at >= (SELECT updated_at FROM anime_metadata WHERE managed_anime_id='anime-e2e')" | tr -d '[:space:]')"
+    [[ "$s9_dispatched" == t ]] || { echo 'scenario 9: the season change left no config_scan_requests row and no newer scan' >&2; exit 1; }
+  fi
+
+  # The scheduler tick (once a minute) dispatches the request; wait for every
+  # placement to be at the Season 01 path with an S01Exx name.
+  s9_deadline=$(( $(date +%s) + 300 ))
+  s9_settled=false
+  while (( $(date +%s) < s9_deadline )); do
+    s9_pending="$($PSQL -tA -c "SELECT count(*) FROM placements WHERE managed_anime_id='anime-e2e' AND state='active' AND source_evidence_type='file_operation' AND (physical_path NOT LIKE '%/Season 01/%' OR physical_path !~ '/[^/]*S01E[0-9]+[^/]*$')" | tr -d '[:space:]')"
+    s9_open="$($PSQL -tAc "SELECT count(*) FROM config_scan_requests WHERE managed_anime_id='anime-e2e'" | tr -d '[:space:]')"
+    if [[ "$s9_pending" == 0 && "$s9_open" == 0 ]]; then s9_settled=true; break; fi
+    sleep 3
+  done
+  if [[ "$s9_settled" != true ]]; then
+    {
+      echo '== scenario 9: files did not move to Season 01 =='
+      $PSQL -c "SELECT id, physical_path, state, version FROM placements WHERE managed_anime_id='anime-e2e' ORDER BY id"
+      $PSQL -c "SELECT * FROM config_scan_requests"
+      $PSQL -c "SELECT generation, state, started_at FROM reconciliation_scans WHERE managed_anime_id='anime-e2e' ORDER BY generation DESC LIMIT 5"
+      $PSQL -c "SELECT id, source_path, target_path, state, failure_code, reason FROM alignment_operations WHERE managed_anime_id='anime-e2e' ORDER BY created_at"
+      $PSQL -c "SELECT id, outcome FROM alignment_requests"
+      api_get /anime/anime-e2e/files 2>&1 || true
+    } | tee -a "$durable_evidence_dir/scenario-9-diagnostics.txt" >&2
+    echo 'scenario 9: the files did not move to Season 01 within 300 seconds' >&2
+    exit 1
+  fi
+
+  s9_after="$summary_dir/scenario-9-after.txt"
+  $PSQL -tA -c "$s9_placements_sql" | tr -d '\r' >"$s9_after"
+  [[ "$(wc -l <"$s9_before")" == "$(wc -l <"$s9_after")" ]] || { echo 'scenario 9: the set of active placements changed' >&2; exit 1; }
+  s9_moves=""
+  while IFS='|' read -r s9_id s9_old; do
+    s9_new="$(awk -F'|' -v id="$s9_id" '$1==id{print substr($0, length(id)+2)}' "$s9_after")"
+    [[ -n "$s9_new" && "$s9_new" != "$s9_old" ]] || { echo "scenario 9: placement $s9_id did not move ($s9_old -> ${s9_new:-<gone>})" >&2; exit 1; }
+    [[ "$s9_new" == */"Season 01"/* && "$(basename "$s9_new")" =~ S01E[0-9]+ ]] || { echo "scenario 9: placement $s9_id is not at a Season 01 / S01Exx path: $s9_new" >&2; exit 1; }
+    [[ -f "$s9_new" && ! -e "$s9_old" ]] || { echo "scenario 9: placement $s9_id disk state wrong (new exists: $([[ -f "$s9_new" ]] && echo yes || echo no), old gone: $([[ ! -e "$s9_old" ]] && echo yes || echo no))" >&2; exit 1; }
+    s9_hash_before="$(awk -F'|' -v id="$s9_id" '$1==id{print $2}' "$summary_dir/scenario-9-hashes-before.txt")"
+    [[ "$(fingerprint "$s9_new")" == "$s9_hash_before" ]] || { echo "scenario 9: placement $s9_id fingerprint changed across the move" >&2; exit 1; }
+    observe_disk "scenario-9-after-$s9_id" "$s9_new"
+    s9_moves="$s9_moves{\"placement\":\"$s9_id\",\"before\":\"$s9_old\",\"after\":\"$s9_new\",\"sha256\":\"$s9_hash_before\"},"
+  done <"$s9_before"
+
+  s9_counts_after="$($PSQL -tAc "$s9_count_sql" | tr -d '[:space:]')"
+  [[ "$s9_counts_after" == "$s9_counts_before" ]] || { echo "scenario 9: download_tasks/acquisitions/replacement_deletions counts changed ($s9_counts_before -> $s9_counts_after)" >&2; exit 1; }
+  printf '{"scenario":9,"season":1,"reevaluated_releases":%s,"request_dispatched_before_check":%s,"alignment_enabled":true,"counts_before_after":"%s","moves":[%s]}\n' "$s9_reevaluated" "$s9_dispatched" "$s9_counts_after" "${s9_moves%,}" >>"$scenario_json"
   tail -n 1 "$scenario_json" | tee -a "$durable_evidence_dir/file022-scenarios.jsonl"
   cat "$summary_dir/disk-observations.txt" | tee -a "$durable_evidence_dir/disk-observations.txt"
   fi
