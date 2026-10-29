@@ -294,7 +294,8 @@
     "reason": "product owner DML from the listed application code",
     "direct_access": [
       "internal/anime/application/config_scan_request.go",
-      "internal/filemaintenance/config_scan_requests.go"
+      "internal/filemaintenance/config_scan_requests.go",
+      "internal/workitems/oneshot_reclaim.go (one-shot reclaim D-a leaf deletion)"
     ],
     "closure_slice": "retained product owner",
     "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"

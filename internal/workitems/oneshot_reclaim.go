@@ -96,6 +96,9 @@ var oneShotClassifiedOwnerTables = []string{
 	"replacement_decisions", "reconciliation_files", "reconciliation_scans",
 	"notification_admissions",
 	"routine_activities",
+	// A configuration write of the owner (metadata patch, backfill) can leave a
+	// pending config scan request; it goes with the owner.
+	"config_scan_requests",
 	"one_shot_acquisitions",
 }
 
@@ -1171,6 +1174,10 @@ func deleteTemporaryOwnerGraphTx(ctx context.Context, tx *sql.Tx, graph oneShotG
 		}},
 		{"routine_activities", func() error {
 			_, err := tx.ExecContext(ctx, `DELETE FROM routine_activities WHERE managed_anime_id = $1`, graph.animeID)
+			return err
+		}},
+		{"config_scan_requests", func() error {
+			_, err := tx.ExecContext(ctx, `DELETE FROM config_scan_requests WHERE managed_anime_id = $1`, graph.animeID)
 			return err
 		}},
 		{"managed_anime", func() error { return queries.DeleteOneShotManagedAnime(ctx, graph.animeID) }},
