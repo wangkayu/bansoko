@@ -82,6 +82,7 @@ var knownRelations = map[string]string{
 	"automation_schedules":             "r",
 	"catalog_suppressions":             "r",
 	"replacement_deletions":            "r",
+	"config_scan_requests":             "r",
 	"connections":                      "r",
 	"deployment_recovery_runs":         "r",
 	"diagnostic_episodes":              "r",

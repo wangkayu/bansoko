@@ -81,6 +81,18 @@ func (s *ScanScheduler) Tick(ctx context.Context) error {
 			ErrorClass: "scan_scheduler",
 		})
 	}
+	// A configuration write that can change rendered paths requested a scan;
+	// it is dispatched whatever the scan policy says.
+	if err := s.dispatchConfigScanRequests(ctx); err != nil {
+		s.logger.Warn(ctx, observabilityport.RuntimeEvent{
+			Message:    "config scan request dispatch failed",
+			Component:  "filemaintenance",
+			Operation:  "config_scan_dispatch",
+			Outcome:    "failure",
+			ReasonCode: "config_scan_dispatch_failed",
+			ErrorClass: "scan_scheduler",
+		})
+	}
 	// Enumerate explicit scopes (including disabled overrides) plus global
 	// candidates; use the policy owner's resolver for every decision.
 	rows, err := s.db.QueryContext(ctx, `SELECT scope_key, enabled FROM filemaintenance_policies WHERE scope_key = $1 OR scope_key LIKE 'anime:%'`, policy.GlobalScope)

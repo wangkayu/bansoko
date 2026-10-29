@@ -285,6 +285,21 @@
     "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
   },
   {
+    "table": "config_scan_requests",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/anime/application/config_scan_request.go",
+      "internal/filemaintenance/config_scan_requests.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
     "table": "connections",
     "privileges": [
       "DELETE",
