@@ -43,19 +43,35 @@ func TestMetadataPatchRequestsConfigScanByRenderRelevance(t *testing.T) {
 	subscribed := ownershipSubscribeTestDraft(t, service, "config-scan-meta-0001")
 	animeID := subscribed.ManagedAnime.Id
 
-	// The input is the complete owner value: start from the stored one.
+	// The input is the complete owner value: start from the stored one, so a
+	// field the test does not mean to change is sent back as it is.
 	current := func() MetadataPatchInput {
 		t.Helper()
-		var title sql.NullString
-		var year, season sql.NullInt64
+		var title, bgm, tmdb, tmdbKind, kind sql.NullString
+		var year, season, tmdbSeason, total sql.NullInt64
 		if err := db.QueryRowContext(ctx, `
-SELECT ma.title_override, md.year, md.season
-FROM managed_anime ma JOIN anime_metadata md ON md.managed_anime_id = ma.id WHERE ma.id = $1`, animeID).Scan(&title, &year, &season); err != nil {
+SELECT ma.title_override, md.bgm_work_id, md.tmdb_work_id, md.tmdb_media_kind, md.tmdb_season,
+       md.media_kind_override, md.total_episodes, md.year, md.season
+FROM managed_anime ma JOIN anime_metadata md ON md.managed_anime_id = ma.id WHERE ma.id = $1`, animeID).Scan(
+			&title, &bgm, &tmdb, &tmdbKind, &tmdbSeason, &kind, &total, &year, &season); err != nil {
 			t.Fatal(err)
 		}
 		in := MetadataPatchInput{}
 		if title.Valid {
 			in.TitleOverride = &title.String
+		}
+		if bgm.Valid {
+			in.BGM = &BGMBinding{WorkID: bgm.String}
+		}
+		if tmdb.Valid {
+			in.TMDB = &TMDBBinding{WorkID: tmdb.String, MediaKind: tmdbKind.String, Season: int(tmdbSeason.Int64)}
+		}
+		if kind.Valid {
+			in.MediaKindOverride = &kind.String
+		}
+		if total.Valid {
+			n := int(total.Int64)
+			in.TotalEpisodes = &n
 		}
 		if year.Valid {
 			y := int(year.Int64)

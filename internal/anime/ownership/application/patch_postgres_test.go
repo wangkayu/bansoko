@@ -177,13 +177,14 @@ VALUES ('rel-title', $1, 'key-title', '{}', '{}', 'waiting_metadata', 'metadata_
 		t.Fatalf("read metadata owner version: %v", err)
 	}
 
-	// Set a title override. A title-only change must not schedule release
+	// Set a title override with the stored bindings sent back (the patch is a
+	// whole-value replace). A title-only change must not schedule release
 	// evaluation or write a metadata_applied log.
 	override := "自定义标题"
 	patched, err := service.PatchAnimeMetadata(context.Background(), animeID, generated.AnimeMetadataPatch{
 		ExpectedVersion: metadataVersion,
-		Bgm:             nil,
-		Tmdb:            nil,
+		Bgm:             &generated.NullableBGMBinding{WorkId: "bgm-123"},
+		Tmdb:            &generated.NullableTMDBBinding{WorkId: "tmdb-456", MediaKind: generated.TMDBMediaKindTv, Season: 1},
 		TitleOverride:   &override,
 	})
 	if err != nil {
@@ -222,8 +223,8 @@ SELECT COUNT(*) FROM subscription_log_entries WHERE subscription_id = $1 AND kin
 	// A JSON null (nil *string) keeps the fixed title; it is never cleared.
 	cleared, err := service.PatchAnimeMetadata(context.Background(), animeID, generated.AnimeMetadataPatch{
 		ExpectedVersion: patched.Version,
-		Bgm:             nil,
-		Tmdb:            nil,
+		Bgm:             &generated.NullableBGMBinding{WorkId: "bgm-123"},
+		Tmdb:            &generated.NullableTMDBBinding{WorkId: "tmdb-456", MediaKind: generated.TMDBMediaKindTv, Season: 1},
 		TitleOverride:   nil,
 	})
 	if err != nil {
