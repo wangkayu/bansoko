@@ -2077,6 +2077,12 @@ h1, h2, h3, h4, h5, h6 {
   color: hsl(var(--foreground));
 }
 
+/* The suggestion badges under the editing input: kept clear of the input's
+   focus outline (2px wide, 2px offset), which the badges would otherwise cover. */
+.title-row-suggestions {
+  margin-top: 0.5rem;
+}
+
 .title-row-error {
   margin: 0;
   margin-top: 0.25rem;

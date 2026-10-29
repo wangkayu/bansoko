@@ -182,6 +182,7 @@ function TitleRow({
       </div>
       {editing && (
         <TitleSuggestionBadges
+          className="title-row-suggestions"
           suggestions={suggestions}
           current={value}
           onPick={(text) => {

@@ -1,5 +1,6 @@
 import type { TitleSuggestion } from "../../lib/api/client";
 import { t } from "../../lib/i18n";
+import { cn } from "@/lib/utils";
 import { Button } from "../../ui";
 
 /**
@@ -26,16 +27,19 @@ export function TitleSuggestionBadges({
   suggestions,
   current,
   onPick,
+  className,
 }: {
   suggestions: readonly TitleSuggestion[] | undefined;
   /** The title now in effect; a suggestion equal to it is not offered. */
   current: string;
   onPick: (text: string) => void;
+  /** Spacing from the host row; applied only when there are badges to show. */
+  className?: string;
 }) {
   const visible = visibleTitleSuggestions(suggestions, current);
   if (visible.length === 0) return null;
   return (
-    <div className="tw:flex tw:flex-wrap tw:gap-1.5" role="group" aria-label={t("tabs.metadata.suggestionsAria")}>
+    <div className={cn("tw:flex tw:flex-wrap tw:gap-1.5", className)} role="group" aria-label={t("tabs.metadata.suggestionsAria")}>
       {visible.map((suggestion) => (
         <Button key={suggestion.text} size="sm" variant="secondary" onClick={() => onPick(suggestion.text)}>
           <span className="tw:text-muted-foreground">{t(`tabs.metadata.suggestionSource.${suggestion.source}`)}</span>
