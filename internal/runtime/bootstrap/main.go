@@ -359,6 +359,12 @@ func planLaunch(kind, updatesRoot string) (out plan) {
 			out.maintenanceOp = record.OperationID
 			out.maintenanceStep = string(record.Step)
 			out.handoffReleaseID = record.TargetReleaseID
+			if record.Step == embeddedupdate.StepFenceClosurePending && record.FenceClosureTarget != embeddedupdate.StepSucceeded {
+				// Rollback and pre-migration abort remove the rejected target before
+				// their retryable fence closure. Continue from the verified fallback
+				// release instead of handing off to a tree that no longer exists.
+				out.handoffReleaseID = record.PreviousReleaseID
+			}
 			out.reason = "embedded-update handoff consumption (" + string(record.Step) + ")"
 			return out
 		}

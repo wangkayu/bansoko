@@ -387,6 +387,68 @@ func TestPlanLaunchPendingOperationParksMaintenance(t *testing.T) {
 	}
 }
 
+func TestPlanLaunchFenceClosureHandsOffToSurvivingRelease(t *testing.T) {
+	t.Setenv("BANSOKO_UPDATE_MODE", "embedded")
+	prefix := []embeddedupdate.Step{
+		embeddedupdate.StepFetched, embeddedupdate.StepStaged,
+		embeddedupdate.StepMaintenanceEntered, embeddedupdate.StepBackupVerified,
+		embeddedupdate.StepPendingMigration,
+	}
+	for _, test := range []struct {
+		name        string
+		middle      []embeddedupdate.Step
+		terminal    embeddedupdate.Step
+		previous    string
+		wantHandoff string
+	}{
+		{name: "success keeps target", middle: []embeddedupdate.Step{
+			embeddedupdate.StepMigrationSucceeded, embeddedupdate.StepPromoted,
+		}, terminal: embeddedupdate.StepSucceeded, previous: "release-a1", wantHandoff: "release-b2"},
+		{name: "rollback uses previous", middle: []embeddedupdate.Step{
+			embeddedupdate.StepMigrationSucceeded, embeddedupdate.StepPromoted,
+			embeddedupdate.StepReadinessFailed, embeddedupdate.StepRollbackStarted, embeddedupdate.StepDatabaseRestored,
+		}, terminal: embeddedupdate.StepRolledBack, previous: "release-a1", wantHandoff: "release-a1"},
+		{name: "rollback to base has no overlay handoff", middle: []embeddedupdate.Step{
+			embeddedupdate.StepMigrationSucceeded, embeddedupdate.StepPromoted,
+			embeddedupdate.StepReadinessFailed, embeddedupdate.StepRollbackStarted, embeddedupdate.StepDatabaseRestored,
+		}, terminal: embeddedupdate.StepRolledBack},
+		{name: "pre-migration abort uses previous", middle: []embeddedupdate.Step{embeddedupdate.StepFailed}, terminal: embeddedupdate.StepFailed, previous: "release-a1", wantHandoff: "release-a1"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			journal, err := embeddedupdate.Open(filepath.Join(root, journalFileName))
+			if err != nil {
+				t.Fatal(err)
+			}
+			record, err := journal.Create(embeddedupdate.Record{
+				OperationID: "op-fence-handoff", Channel: "embedded",
+				TargetReleaseID: "release-b2", PreviousReleaseID: test.previous,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			steps := append(append(append([]embeddedupdate.Step(nil), prefix...), test.middle...), embeddedupdate.StepFenceClosurePending)
+			for _, step := range steps {
+				record, err = journal.Advance(record.OperationID, record.Version, step, "", "", func(r *embeddedupdate.Record) {
+					if step == embeddedupdate.StepFenceClosurePending {
+						r.FenceClosureTarget = test.terminal
+					}
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := journal.Close(); err != nil {
+				t.Fatal(err)
+			}
+			chosen := planLaunch("server", root)
+			if chosen.mode != modeConsume || chosen.handoffReleaseID != test.wantHandoff {
+				t.Fatalf("plan = %+v, want handoff %q", chosen, test.wantHandoff)
+			}
+		})
+	}
+}
+
 func TestPlanLaunchAllowsNonEmbeddedUpdateModesWithoutActiveJournal(t *testing.T) {
 	for _, mode := range []string{"manual"} {
 		t.Run(mode, func(t *testing.T) {
