@@ -85,7 +85,7 @@ if [[ -z "$manifest" ]]; then
   # Build straight into the summary dir (reproducible-build.sh forces its own
   # tmp output dirs, which the lane cannot consume).
   BANSOKO_RELEASE_VERSION="lane-$(date +%s)" BANSOKO_RELEASE_ID="$run_id" BANSOKO_RELEASE_SEQUENCE="1" \
-    BANSOKO_RELEASE_BOOTSTRAP_MIN_VERSION="embedded-bootstrap-v3" \
+    BANSOKO_RELEASE_BOOTSTRAP_MIN_VERSION="embedded-bootstrap-unified" \
     BANSOKO_RELEASE_PRIVATE_KEY="$signing_dir/lane-private.key" BANSOKO_RELEASE_PUBLIC_KEY="$public_key" \
     BANSOKO_ALLOW_DIRTY_RELEASE=1 BANSOKO_RELEASE_SKIP_IMAGES=1 \
     BANSOKO_RELEASE_OUTPUT_DIR="$summary/bundle" \
@@ -103,7 +103,7 @@ fi
 log "phase 1: release integrity"
 if [[ "${BANSOKO_RELEASE_SKIP_BUILD:-0}" != "1" ]]; then
   BANSOKO_RELEASE_VERSION="lane-$(date +%s)" BANSOKO_RELEASE_ID="$run_id" BANSOKO_RELEASE_SEQUENCE="1" \
-    BANSOKO_RELEASE_BOOTSTRAP_MIN_VERSION="embedded-bootstrap-v3" \
+    BANSOKO_RELEASE_BOOTSTRAP_MIN_VERSION="embedded-bootstrap-unified" \
     BANSOKO_RELEASE_PRIVATE_KEY="${BANSOKO_RELEASE_PRIVATE_KEY:-}" BANSOKO_RELEASE_PUBLIC_KEY="$public_key" \
     BANSOKO_ALLOW_DIRTY_RELEASE=1 BANSOKO_RELEASE_SKIP_IMAGES=1 \
     "$root/scripts/maintainer/reproducible-build.sh" >"$summary/reproducible.log" 2>&1 \

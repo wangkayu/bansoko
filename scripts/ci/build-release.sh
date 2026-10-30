@@ -40,25 +40,34 @@ if ! [[ "$release_sequence" =~ ^[0-9]+$ ]] || (( release_sequence < 1 )); then
   echo "BANSOKO_RELEASE_SEQUENCE must be a positive integer (got: $release_sequence)" >&2
   exit 2
 fi
+bootstrap_capability_level() {
+  if [[ "$1" == "embedded-bootstrap-unified" ]]; then
+    printf '3\n'
+  elif [[ "$1" =~ ^embedded-bootstrap-v([0-9]+)$ ]]; then
+    printf '%d\n' "$((10#${BASH_REMATCH[1]}))"
+  else
+    return 1
+  fi
+}
+
 if [[ -z "$bootstrap_min_version" ]]; then
-  echo "BANSOKO_RELEASE_BOOTSTRAP_MIN_VERSION is required (e.g. embedded-bootstrap-v1)" >&2
+  echo "BANSOKO_RELEASE_BOOTSTRAP_MIN_VERSION is required (e.g. embedded-bootstrap-unified)" >&2
   exit 2
 fi
-# Bootstrap version IDs (UPDATE-029) are `embedded-bootstrap-v<N>` with integer
-# ordering on N. The value enters signed bytes and is compared as an integer at
-# admission, so a malformed ID must never be signed.
-if [[ ! "$bootstrap_min_version" =~ ^embedded-bootstrap-v([0-9]+)$ ]]; then
-  echo "ERROR: BANSOKO_RELEASE_BOOTSTRAP_MIN_VERSION must be embedded-bootstrap-v<N> with N a decimal integer (got: $bootstrap_min_version)" >&2
+# The signed bootstrap floor accepts the named unified-runtime capability and
+# legacy numeric IDs. Both map to the same ordering used at admission; unknown
+# capabilities must never be signed.
+if ! bootstrap_min_version_number="$(bootstrap_capability_level "$bootstrap_min_version")"; then
+  echo "ERROR: unknown BANSOKO_RELEASE_BOOTSTRAP_MIN_VERSION capability: $bootstrap_min_version" >&2
   exit 2
 fi
-bootstrap_min_version_number="${BASH_REMATCH[1]}"
-# Publisher declaration of the bootstrap version baked into the image this
+# Publisher declaration of the bootstrap capability baked into the image this
 # release targets. The CI image job derives it from the pushed image bytes; the
 # binding below is what makes a release whose minimum exceeds its image
 # impossible to sign, so it is required whenever an image is part of the bundle.
 declared_image_bootstrap_version="${BANSOKO_RELEASE_IMAGE_BOOTSTRAP_VERSION:-}"
-if [[ -n "$declared_image_bootstrap_version" && ! "$declared_image_bootstrap_version" =~ ^embedded-bootstrap-v([0-9]+)$ ]]; then
-  echo "ERROR: BANSOKO_RELEASE_IMAGE_BOOTSTRAP_VERSION must be embedded-bootstrap-v<N> with N a decimal integer (got: $declared_image_bootstrap_version)" >&2
+if [[ -n "$declared_image_bootstrap_version" ]] && ! bootstrap_capability_level "$declared_image_bootstrap_version" >/dev/null; then
+  echo "ERROR: unknown BANSOKO_RELEASE_IMAGE_BOOTSTRAP_VERSION capability: $declared_image_bootstrap_version" >&2
   exit 2
 fi
 if [[ -z "$base_image_min_version" ]]; then
@@ -94,13 +103,13 @@ sha256_file() {
   fi
 }
 
-# Reads the single `embedded-bootstrap-v<N>` literal out of /app/bansoko-server of a
+# Reads the single bootstrap capability literal out of /app/bansoko-server of a
 # locally built/loaded image (UPDATE-029). Empty or multi-line output means the
-# image's baked bootstrap version could not be established; the caller fails
-# closed. Docker is already required wherever this is called.
+# image's baked capability could not be established; the caller fails closed.
+# Docker is already required wherever this is called.
 baked_bootstrap_version() {
   docker run --rm --entrypoint sh "$1" -c \
-    "grep -a -o 'embedded-bootstrap-v[0-9][0-9]*' /app/bansoko-server | sort -u" 2>/dev/null || true
+    "grep -a -o -E 'embedded-bootstrap-(v[0-9]+|unified)' /app/bansoko-server | sort -u" 2>/dev/null || true
 }
 
 source_commit="$(git -C "$root" rev-parse HEAD)"
@@ -292,16 +301,16 @@ if [[ -n "$image_digest" ]]; then
   if [[ -n "${image_tag:-}" ]]; then
     derived_image_bootstrap_version="$(baked_bootstrap_version "$image_tag")"
     if [[ "$derived_image_bootstrap_version" == *$'\n'* ]]; then
-      echo "ERROR: the built image carries more than one embedded-bootstrap-v<N> literal; the baked bootstrap version is ambiguous:
+      echo "ERROR: the built image carries more than one bootstrap capability literal; the baked capability is ambiguous:
 $derived_image_bootstrap_version" >&2
       exit 1
     fi
     if [[ -z "$derived_image_bootstrap_version" ]]; then
-      echo "ERROR: no embedded-bootstrap-v<N> literal found in /app/bansoko-server of $image_tag; the built-image bootstrap version cannot be established" >&2
+      echo "ERROR: no bootstrap capability literal found in /app/bansoko-server of $image_tag; the built-image capability cannot be established" >&2
       exit 1
     fi
-    if [[ ! "$derived_image_bootstrap_version" =~ ^embedded-bootstrap-v[0-9]+$ ]]; then
-      echo "ERROR: /app/bansoko-server of $image_tag carries an invalid bootstrap version ID: $derived_image_bootstrap_version" >&2
+    if ! bootstrap_capability_level "$derived_image_bootstrap_version" >/dev/null; then
+      echo "ERROR: /app/bansoko-server of $image_tag carries an unknown bootstrap capability: $derived_image_bootstrap_version" >&2
       exit 1
     fi
     if [[ -n "$image_bootstrap_version" && "$image_bootstrap_version" != "$derived_image_bootstrap_version" ]]; then
@@ -314,13 +323,12 @@ $derived_image_bootstrap_version" >&2
     echo "ERROR: BANSOKO_RELEASE_IMAGE_BOOTSTRAP_VERSION is required when the release carries an image and this script did not build it: provide the bootstrap version baked into the image the manifest is bound to (the CI image job derives it from the pushed image)" >&2
     exit 1
   fi
-  bootstrap_min_version_number=$((10#$bootstrap_min_version_number))
-  image_bootstrap_version_number=$((10#${image_bootstrap_version#embedded-bootstrap-v}))
+  image_bootstrap_version_number="$(bootstrap_capability_level "$image_bootstrap_version")"
   if (( bootstrap_min_version_number > image_bootstrap_version_number )); then
-    echo "ERROR: BANSOKO_RELEASE_BOOTSTRAP_MIN_VERSION=$bootstrap_min_version exceeds the bootstrap version baked into the release image ($image_bootstrap_version)" >&2
+    echo "ERROR: BANSOKO_RELEASE_BOOTSTRAP_MIN_VERSION=$bootstrap_min_version exceeds the bootstrap capability baked into the release image ($image_bootstrap_version)" >&2
     exit 1
   fi
-  echo "Bootstrap version binding: manifest_min=$bootstrap_min_version image=$image_bootstrap_version"
+  echo "Bootstrap capability binding: manifest_min=$bootstrap_min_version image=$image_bootstrap_version"
 fi
 
 BANSOKO_RELEASE_VERSION="$version" BANSOKO_RELEASE_ID="$release_id" BANSOKO_RELEASE_CHANNEL="$channel" BANSOKO_RELEASE_PUBLISHED_AT="$published_at" BANSOKO_SOURCE_COMMIT="$source_commit" BANSOKO_RELEASE_API_VERSION="$api_version" BANSOKO_RELEASE_SCHEMA_VERSION="$schema_version" BANSOKO_RELEASE_GOOS="$goos" BANSOKO_RELEASE_GOARCH="$goarch" BANSOKO_RELEASE_ARTIFACT_DIGEST="$artifact_digest" BANSOKO_RELEASE_ARTIFACT_SIZE="$artifact_size" BANSOKO_RELEASE_ARTIFACT_SIGNATURE="$artifact_signature" BANSOKO_RELEASE_SBOM_DIGEST="$sbom_digest" BANSOKO_RELEASE_PROVENANCE_DIGEST="$provenance_digest" BANSOKO_RELEASE_IMAGE_DIGEST="$image_digest" BANSOKO_RELEASE_FRONTEND_REF="$frontend_ref" \

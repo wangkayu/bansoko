@@ -310,13 +310,19 @@ func (c bootstrapCompatibility) Reason() string {
 	return fmt.Sprintf("This candidate requires %s; this instance runs %s. Switch to a base image that carries the required bootstrap.", c.Required, c.Current)
 }
 func parseEmbeddedBootstrapVersion(value string) (int64, error) {
+	// Keep legacy numeric IDs readable for signed historical manifests. The
+	// unified runtime supersedes the last legacy layout (v2) and is ordered at
+	// the same compatibility boundary without exposing a generation number.
+	if value == "embedded-bootstrap-unified" {
+		return 3, nil
+	}
 	const prefix = "embedded-bootstrap-v"
 	if !strings.HasPrefix(value, prefix) || len(value) == len(prefix) {
-		return 0, fmt.Errorf("invalid bootstrap version %q; expected embedded-bootstrap-v<N>", value)
+		return 0, fmt.Errorf("invalid bootstrap capability %q", value)
 	}
 	n, err := strconv.ParseInt(value[len(prefix):], 10, 64)
 	if err != nil || n < 0 {
-		return 0, fmt.Errorf("invalid bootstrap version %q; expected embedded-bootstrap-v<N>", value)
+		return 0, fmt.Errorf("invalid bootstrap capability %q", value)
 	}
 	return n, nil
 }

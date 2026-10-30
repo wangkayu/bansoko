@@ -12,9 +12,9 @@
 #      non-empty for production, frontend_ref matches frontend/dist when
 #      present;
 #   5. embedded update segment: identity binding, payload digest/signature and
-#      the bootstrap version contract (UPDATE-029): `bootstrap_min_version` must
-#      be an `embedded-bootstrap-v<N>` ID and must not exceed the bootstrap
-#      version baked into the image the release was built with
+#      the bootstrap capability contract (UPDATE-029): `bootstrap_min_version`
+#      must name a supported capability and must not exceed the bootstrap
+#      capability baked into the image the release was built with
 #      (BANSOKO_RELEASE_IMAGE_BOOTSTRAP_VERSION, derived from the pushed image by the
 #      CI image job). A bundle that carries an image without that declaration
 #      fails closed; a binary-only rehearsal bundle has no image to bind to.
@@ -163,11 +163,12 @@ embedded_ok="$(ruby -rjson -e '
   abort "payload_digest must be bare 64-hex sha256" unless eu["payload_digest"] =~ /\A[a-f0-9]{64}\z/
   abort "payload_size must be positive" unless eu["payload_size"].is_a?(Integer) && eu["payload_size"] > 0
   abort "payload_signature must be non-empty" unless eu["payload_signature"].is_a?(String) && !eu["payload_signature"].strip.empty?
-  # The bootstrap minimum is an integer-ordered ID (UPDATE-029). A malformed ID
-  # can never be compared at admission, so it must not pass the bundle check;
-  # the runtime still refuses such a signed floor with its own typed error.
+  # The bootstrap minimum accepts the unified-runtime capability and legacy
+  # numeric IDs. A malformed ID can never be compared at admission, so it must
+  # not pass the bundle check; the runtime also refuses it with a typed error.
   bootstrap_min_version = eu["bootstrap_min_version"]
-  abort "bootstrap_min_version must be embedded-bootstrap-v<N> with N a decimal integer (got: #{bootstrap_min_version.inspect})" unless bootstrap_min_version.is_a?(String) && bootstrap_min_version =~ /\Aembedded-bootstrap-v[0-9]+\z/
+  bootstrap_level = ->(value) { value == "embedded-bootstrap-unified" ? 3 : value[/\Aembedded-bootstrap-v([0-9]+)\z/, 1]&.to_i }
+  abort "unknown bootstrap_min_version capability (got: #{bootstrap_min_version.inspect})" unless bootstrap_min_version.is_a?(String) && bootstrap_level.call(bootstrap_min_version)
   abort "embedded_update.base_image_min_version is not part of the manifest; use min_image_version" if eu.key?("base_image_min_version")
   min_image_version = eu["min_image_version"]
   abort "embedded update payload requires a non-empty min_image_version" unless min_image_version.is_a?(String) && !min_image_version.strip.empty?
@@ -201,10 +202,11 @@ if [[ -n "$bootstrap_image_version" ]]; then
   ruby -rjson -e '
     min = JSON.parse(File.read(ARGV.fetch(0))).dig("embedded_update", "bootstrap_min_version").to_s
     baked = ARGV.fetch(1)
-    abort "image bootstrap version #{baked.inspect} must be embedded-bootstrap-v<N> with N a decimal integer" unless baked =~ /\Aembedded-bootstrap-v[0-9]+\z/
-    min_number = min[/[0-9]+\z/].to_i
-    baked_number = baked[/[0-9]+\z/].to_i
-    abort "bootstrap_min_version #{min} exceeds the bootstrap version baked into the release image (#{baked})" if min_number > baked_number
+    bootstrap_level = ->(value) { value == "embedded-bootstrap-unified" ? 3 : value[/\Aembedded-bootstrap-v([0-9]+)\z/, 1]&.to_i }
+    min_number = bootstrap_level.call(min)
+    baked_number = bootstrap_level.call(baked)
+    abort "unknown image bootstrap capability #{baked.inspect}" unless baked_number
+    abort "bootstrap_min_version #{min} exceeds the bootstrap capability baked into the release image (#{baked})" if min_number > baked_number
   ' "$manifest" "$bootstrap_image_version" || fail "manifest bootstrap_min_version exceeds the release image bootstrap version"
   echo "bootstrap version binding ok (manifest <= image $bootstrap_image_version)"
 else

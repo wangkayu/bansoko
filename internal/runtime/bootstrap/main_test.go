@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -653,8 +652,8 @@ func TestDeploymentIdentityEnvCarriesTheOwnBootstrapVersion(t *testing.T) {
 	// must always publish its own constant: an inherited value would let a
 	// deployment environment claim a bootstrap the base image does not contain.
 	t.Setenv(deploymentidentity.EnvBootstrapVersion, "embedded-bootstrap-v99")
-	if !regexp.MustCompile(`^embedded-bootstrap-v[0-9]+$`).MatchString(embeddedBootstrapVersion) {
-		t.Fatalf("bootstrap version %q does not match the enforced embedded-bootstrap-v<N> grammar", embeddedBootstrapVersion)
+	if embeddedBootstrapVersion != "embedded-bootstrap-unified" {
+		t.Fatalf("bootstrap capability = %q, want the unified runtime identity", embeddedBootstrapVersion)
 	}
 	for _, env := range []map[string]string{
 		deploymentIdentityEnv(deploymentidentity.SourceBase, "", "", ""),

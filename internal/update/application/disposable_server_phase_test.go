@@ -639,8 +639,8 @@ func TestDisposableServerPhaseCheckUpdateRequiresBaseImageForBootstrapFloor(t *t
 	}
 }
 
-// TestDisposableServerPhaseParseEmbeddedBootstrapVersion covers the strict
-// embedded-bootstrap-v<N> syntax the bootstrap floor ordering depends on.
+// TestDisposableServerPhaseParseEmbeddedBootstrapVersion covers legacy numeric
+// IDs and the named unified-runtime capability used by the compatibility floor.
 func TestDisposableServerPhaseParseEmbeddedBootstrapVersion(t *testing.T) {
 	accepted := []struct {
 		value  string
@@ -650,6 +650,7 @@ func TestDisposableServerPhaseParseEmbeddedBootstrapVersion(t *testing.T) {
 		{value: "embedded-bootstrap-v1", number: 1},
 		{value: "embedded-bootstrap-v2", number: 2},
 		{value: "embedded-bootstrap-v10", number: 10},
+		{value: "embedded-bootstrap-unified", number: 3},
 	}
 	for _, tc := range accepted {
 		number, err := parseEmbeddedBootstrapVersion(tc.value)
@@ -692,6 +693,9 @@ func TestDisposableServerPhaseEvaluateBootstrapCompatibility(t *testing.T) {
 	}{
 		{name: "equal versions", current: "embedded-bootstrap-v1", required: "embedded-bootstrap-v1", satisfied: true},
 		{name: "newer running bootstrap", current: "embedded-bootstrap-v3", required: "embedded-bootstrap-v1", satisfied: true},
+		{name: "unified runtime satisfies its own floor", current: "embedded-bootstrap-unified", required: "embedded-bootstrap-unified", satisfied: true},
+		{name: "unified runtime accepts a legacy floor", current: "embedded-bootstrap-unified", required: "embedded-bootstrap-v2", satisfied: true},
+		{name: "legacy bootstrap cannot enter the unified runtime", current: "embedded-bootstrap-v2", required: "embedded-bootstrap-unified"},
 		{name: "numeric order beats lexical order", current: "embedded-bootstrap-v10", required: "embedded-bootstrap-v9", satisfied: true},
 		{name: "older running bootstrap", current: "embedded-bootstrap-v1", required: "embedded-bootstrap-v2"},
 		{name: "numeric order beats lexical order for the floor", current: "embedded-bootstrap-v9", required: "embedded-bootstrap-v10"},

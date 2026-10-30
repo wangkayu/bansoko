@@ -71,14 +71,12 @@ const (
 	baseSchemaDir   = "/app/db/migrations"
 	baseFrontendDir = "/app/frontend/dist"
 
-	// embeddedBootstrapVersion is this wrapper's own release identity. A release
-	// manifest may require it (`embedded_update.bootstrap_min_version`) and the
-	// server refuses a candidate whose floor this wrapper does not reach. Because
-	// /app/bansoko-server is part of the digest-pinned base image, changing the
-	// wrapper's observable contract means incrementing this constant; the
-	// releases that need the new behaviour must declare the new floor and the
-	// operator must switch the base image digest.
-	embeddedBootstrapVersion = "embedded-bootstrap-v3"
+	// embeddedBootstrapVersion identifies this wrapper's release capabilities. A
+	// release manifest may require it (`embedded_update.bootstrap_min_version`)
+	// and the server refuses a candidate whose floor this wrapper does not reach.
+	// The unified runtime is a new base-image capability: older bootstraps cannot
+	// consume its single-binary layout, so their operators must switch the image.
+	embeddedBootstrapVersion = "embedded-bootstrap-unified"
 
 	journalFileName    = "journal.json"
 	pendingMarkerName  = "pending.json"

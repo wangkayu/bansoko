@@ -454,13 +454,14 @@ def inspect_image(ref, ident, scratch):
     ).read_text().strip():
         fail("image signing trust differs")
     source = (ROOT / "internal/runtime/bootstrap/main.go").read_text()
-    versions = set(re.findall(r"embedded-bootstrap-v[0-9]+", source))
+    capability_pattern = r"embedded-bootstrap-(?:v[0-9]+|unified)"
+    versions = set(re.findall(capability_pattern, source))
     if len(versions) != 1:
-        fail("ambiguous bootstrap source version")
+        fail("ambiguous bootstrap source capability")
     bootstrap = versions.pop()
     server = (scratch / "bansoko-server").read_bytes()
     if bootstrap.encode() not in server or {
-        x.decode() for x in re.findall(rb"embedded-bootstrap-v[0-9]+", server)
+        x.decode() for x in re.findall(capability_pattern.encode(), server)
     } != {bootstrap}:
         fail("image bootstrap bytes differ")
     if ident["sha"].encode() not in server or ident["version"].encode() not in server:
