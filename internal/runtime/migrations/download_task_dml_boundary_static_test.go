@@ -33,6 +33,10 @@ func TestDownloadTaskDMLAndProviderQueryBoundaries(t *testing.T) {
 		// The data-deleting completion action lists the other qB tasks to prove
 		// none shares its content. A read, never submit recovery.
 		"downloadcompletion/service.go:Others": true,
+		// The periodic seed-limit reconciliation lists the live tasks to decide
+		// whether a tag frozen on a finished row is still referenced. A read,
+		// never submit recovery.
+		"downloadcompletion/service.go:List": true,
 	}
 	dml := regexp.MustCompile(`(?is)\b(?:insert\s+into|update|delete\s+from|truncate(?:\s+table)?)\s+(?:public\s*\.\s*)?download_tasks\b`)
 	residual := regexp.MustCompile(`(?is)^\s*(?:--[^\n]*\n\s*)*DELETE\s+FROM\s+download_tasks\s+WHERE\s+id\s*=\s*(?:\$1|sqlc\.arg\(download_task_id\))\s*$`)
