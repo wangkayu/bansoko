@@ -320,6 +320,14 @@ func discardPreMarkerWork(updatesRoot string) error {
 	if found && (record.Active() || record.Step == embeddedupdate.StepRollbackBlocked) {
 		return nil
 	}
+	if found && record.Step == embeddedupdate.StepSucceeded {
+		// A crash immediately after the durable success checkpoint may have
+		// interrupted the best-effort cleanup. Retry only that operation's
+		// artifacts; cleanup failure never changes the terminal outcome.
+		if err := cleanupSucceededOperation(updatesRoot, record); err != nil {
+			logf("update succeeded; startup operation cleanup deferred: %v", err)
+		}
+	}
 	return discardUnreferencedWork(updatesRoot)
 }
 func discardUnreferencedWork(updatesRoot string) error {
@@ -336,7 +344,7 @@ func discardUnreferencedWork(updatesRoot string) error {
 	previous := ""
 	if record, found, err := embeddedupdate.Snapshot(filepath.Join(updatesRoot, journalFileName)); err != nil {
 		return fmt.Errorf("read rollback source before workspace cleanup: %w", err)
-	} else if found {
+	} else if found && record.Step != embeddedupdate.StepSucceeded {
 		previous = record.PreviousReleaseID
 	}
 	root := filepath.Join(updatesRoot, releasesDirName)

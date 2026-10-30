@@ -79,6 +79,8 @@ type fxRecorder struct {
 	launches    []string // binaryPath of each launch, in order
 	promotes    []string
 	removed     []string
+	cleaned     int
+	cleanupErr  error
 	cleared     bool
 	settled     int
 	released    int
@@ -121,6 +123,11 @@ func (r *fxRecorder) fx() *consumeFX {
 			// Realistic effect: the rejected tree is actually gone, so a
 			// fallback that still needs it cannot pass by accident.
 			return os.RemoveAll(filepath.Join(currentFXRoot, releasesDirName, releaseID))
+		},
+		CleanupSucceeded: func(record embeddedupdate.Record) error {
+			r.calls = append(r.calls, "cleanup_succeeded:"+record.OperationID)
+			r.cleaned++
+			return r.cleanupErr
 		},
 		PromoteCurrent: func(token string) error {
 			r.calls = append(r.calls, "promote:"+token)
@@ -279,6 +286,75 @@ func drive(t *testing.T, root string, record embeddedupdate.Record, rec *fxRecor
 
 // --- state-machine branch tests ---------------------------------------------
 
+func TestCleanupSucceededOperationRemovesOnlyOperationWork(t *testing.T) {
+	root := t.TempDir()
+	record := embeddedupdate.Record{
+		OperationID: "op-clean", Step: embeddedupdate.StepSucceeded,
+		TargetReleaseID: testTargetRelease, CurrentReleaseID: testTargetRelease,
+		PreviousReleaseID: testPrevRelease, BackupID: "bk-clean",
+	}
+	for _, dir := range []string{
+		relDirOf(root, testTargetRelease), relDirOf(root, testPrevRelease),
+		relDirOf(root, "rel-unrelated"), filepath.Join(root, "downloads", record.OperationID),
+		filepath.Join(root, "downloads", "op-other"), filepath.Join(releaseRoot(root), ".tmp-"+record.OperationID),
+		filepath.Join(root, backupsDirName),
+	} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, path := range []string{
+		backupsDumpPath(root, record.BackupID), backupsDumpPath(root, record.BackupID) + ".sha256",
+		backupsDumpPath(root, "bk-other"), backupsDumpPath(root, "bk-other") + ".sha256",
+	} {
+		if err := os.WriteFile(path, []byte("artifact"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := cleanupSucceededOperation(root, record); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		relDirOf(root, testPrevRelease), filepath.Join(root, "downloads", record.OperationID),
+		filepath.Join(releaseRoot(root), ".tmp-"+record.OperationID),
+		backupsDumpPath(root, record.BackupID), backupsDumpPath(root, record.BackupID) + ".sha256",
+	} {
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("successful operation artifact remains at %s: %v", path, err)
+		}
+	}
+	for _, path := range []string{
+		relDirOf(root, testTargetRelease), relDirOf(root, "rel-unrelated"),
+		filepath.Join(root, "downloads", "op-other"),
+		backupsDumpPath(root, "bk-other"), backupsDumpPath(root, "bk-other") + ".sha256",
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("unrelated or current artifact removed at %s: %v", path, err)
+		}
+	}
+	if err := cleanupSucceededOperation(root, record); err != nil {
+		t.Fatalf("idempotent cleanup replay: %v", err)
+	}
+}
+
+func TestCleanupSucceededOperationWithoutPreviousOverlayKeepsTarget(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(relDirOf(root, testTargetRelease), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	record := embeddedupdate.Record{
+		OperationID: "op-base", Step: embeddedupdate.StepSucceeded,
+		TargetReleaseID: testTargetRelease, CurrentReleaseID: testTargetRelease, BackupID: "bk-base",
+	}
+	if err := cleanupSucceededOperation(root, record); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(relDirOf(root, testTargetRelease)); err != nil {
+		t.Fatalf("base update cleanup removed current target: %v", err)
+	}
+}
+
 // indexOfCall returns the first index whose entry starts with prefix, or -1.
 func indexOfCall(calls []string, prefix string) int {
 	for i, entry := range calls {
@@ -426,6 +502,9 @@ func TestConsumePendingMigrationHappyPathSucceedsAndSettles(t *testing.T) {
 	if recorder.settled != 1 || recorder.released != 0 {
 		t.Fatalf("settle/release counts %d/%d, want 1/0", recorder.settled, recorder.released)
 	}
+	if recorder.cleaned != 1 {
+		t.Fatalf("successful cleanup calls = %d, want 1", recorder.cleaned)
+	}
 	if got := mustCount(recorder.calls, "verify_backup:"); got != 1 {
 		t.Fatalf("verify_backup calls %d, want 1", got)
 	}
@@ -438,6 +517,31 @@ func TestConsumePendingMigrationHappyPathSucceedsAndSettles(t *testing.T) {
 		filepath.Dir(filepath.Dir(recorder.launches[0])) != filepath.Join(releaseRoot(root)) ||
 		filepath.Base(filepath.Dir(recorder.launches[0])) != testTargetRelease {
 		t.Fatalf("launches %v, want exactly one target-server launch under releases/rel-b", recorder.launches)
+	}
+}
+
+func TestConsumeSuccessCleanupFailureDoesNotReopenUpdate(t *testing.T) {
+	root := t.TempDir()
+	writeReleaseTree(t, root, testPrevRelease)
+	seedReleaseProvenance(t, root, testPrevRelease)
+	writeReleaseTree(t, root, testTargetRelease)
+	writePointer(t, root, testPrevRelease)
+	recorder := &fxRecorder{cleanupErr: errors.New("temporary cleanup failure")}
+	record := seedConsumeJournal(t, root, "op-cleanup-failure", nil,
+		embeddedupdate.StepAccepted, embeddedupdate.StepFetched, embeddedupdate.StepStaged,
+		embeddedupdate.StepMaintenanceEntered, embeddedupdate.StepBackupVerified,
+		embeddedupdate.StepPendingMigration)
+
+	outcome := drive(t, root, record, recorder)
+	if outcome.kind != outcomeExit || outcome.exitCode != 0 {
+		t.Fatalf("outcome = %+v, want successful update despite cleanup failure", outcome)
+	}
+	final := reloadRecordForTest(t, root)
+	if final.Step != embeddedupdate.StepSucceeded || final.FenceClosure != embeddedupdate.FenceClosureClosed {
+		t.Fatalf("cleanup failure changed terminal success: %+v", final)
+	}
+	if recorder.cleaned != 1 || recorder.released != 0 || mustCount(recorder.calls, "restore:") != 0 {
+		t.Fatalf("cleanup failure reopened rollback or fence: calls=%v", recorder.calls)
 	}
 }
 
@@ -475,6 +579,9 @@ func TestConsumeFenceClosureFailureStaysDurableAndReplays(t *testing.T) {
 	}
 	if recorder.settled != 2 {
 		t.Fatalf("settle calls = %d, want initial attempt plus replay", recorder.settled)
+	}
+	if recorder.cleaned != 1 {
+		t.Fatalf("successful replay cleanup calls = %d, want 1", recorder.cleaned)
 	}
 }
 

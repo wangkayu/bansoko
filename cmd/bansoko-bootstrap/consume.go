@@ -162,6 +162,7 @@ type consumeFX struct {
 	RunMigrate       func(releaseID string) error
 	RestoreDatabase  func(backupID string) error
 	RemoveRelease    func(releaseID string) error
+	CleanupSucceeded func(record embeddedupdate.Record) error
 	PromoteCurrent   func(token string) error
 	ClearCurrent     func() error
 	LaunchTarget     func(binaryPath, schemaDir, frontendDir string, env map[string]string) (*childProcess, error)
@@ -226,6 +227,51 @@ func backupsDumpPath(updatesRoot, backupID string) string {
 	return filepath.Join(updatesRoot, backupsDirName, backupID+".dump")
 }
 
+// cleanupSucceededOperation removes only artifacts owned by one operation whose
+// terminal success is already durable. Until that point the previous release
+// and backup are rollback inputs; afterwards the current release is the only
+// release this operation still needs. The cleanup is idempotent so a terminal
+// replay can safely finish an interrupted attempt.
+func cleanupSucceededOperation(updatesRoot string, record embeddedupdate.Record) error {
+	if record.Step != embeddedupdate.StepSucceeded {
+		return errors.New("refusing operation cleanup before durable success")
+	}
+	if !embeddedupdate.ValidID(record.OperationID) {
+		return errors.New("refusing operation cleanup with an invalid operation id")
+	}
+	var cleanupErrs []error
+	for _, path := range []string{
+		filepath.Join(updatesRoot, "downloads", record.OperationID),
+		filepath.Join(releaseRoot(updatesRoot), ".tmp-"+record.OperationID),
+	} {
+		if err := os.RemoveAll(path); err != nil {
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("remove successful update workspace: %w", err))
+		}
+	}
+	current := strings.TrimSpace(record.CurrentReleaseID)
+	if current == "" {
+		current = record.TargetReleaseID
+	}
+	if previous := strings.TrimSpace(record.PreviousReleaseID); previous != "" {
+		if !validReleaseToken(previous) || previous == current || previous == record.TargetReleaseID {
+			cleanupErrs = append(cleanupErrs, errors.New("refusing to remove an invalid or current previous release"))
+		} else if err := os.RemoveAll(relDirOf(updatesRoot, previous)); err != nil {
+			cleanupErrs = append(cleanupErrs, fmt.Errorf("remove previous release after success: %w", err))
+		}
+	}
+	if !embeddedupdate.ValidID(record.BackupID) {
+		cleanupErrs = append(cleanupErrs, errors.New("refusing backup cleanup with an invalid backup id"))
+	} else {
+		dumpPath := backupsDumpPath(updatesRoot, record.BackupID)
+		for _, path := range []string{dumpPath, dumpPath + ".sha256"} {
+			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+				cleanupErrs = append(cleanupErrs, fmt.Errorf("remove successful update backup artifact: %w", err))
+			}
+		}
+	}
+	return errors.Join(cleanupErrs...)
+}
+
 func trimProcessOutput(out []byte) string {
 	text := strings.TrimSpace(string(out))
 	const capLen = 400
@@ -278,6 +324,18 @@ func (f *consumeFlow) closeJournalOnce() {
 			return
 		}
 		f.jClosed = true
+	}
+}
+
+// cleanupSucceeded is deliberately outside the state transition: deleting
+// rollback inputs is safe only after success is durable, and a cleanup error
+// must never reopen the fence or turn that success into a rollback.
+func (f *consumeFlow) cleanupSucceeded() {
+	if f.fx.CleanupSucceeded == nil {
+		return
+	}
+	if err := f.fx.CleanupSucceeded(f.record); err != nil {
+		logf("update succeeded; operation cleanup deferred: %v", err)
 	}
 }
 
@@ -708,6 +766,7 @@ func (f *consumeFlow) phaseSupervisePromoted() consumeOutcome {
 			return f.parkActive(embeddedupdate.StepFenceClosurePending,
 				"fence closed but succeeded checkpoint could not be persisted")
 		}
+		f.cleanupSucceeded()
 		f.closeJournalOnce()
 		f.child = nil
 		if child == nil {
@@ -904,6 +963,9 @@ func (f *consumeFlow) phaseRetryFenceClosure() consumeOutcome {
 	if !f.advance(target, "", "owner-scoped fence closure verified",
 		func(r *embeddedupdate.Record) { r.FenceClosure = embeddedupdate.FenceClosureClosed }) {
 		return f.parkActive(embeddedupdate.StepFenceClosurePending, "fence closed but terminal checkpoint could not be persisted")
+	}
+	if target == embeddedupdate.StepSucceeded {
+		f.cleanupSucceeded()
 	}
 	f.closeJournalOnce()
 	if target == embeddedupdate.StepFailed {
@@ -1197,6 +1259,9 @@ func newRealConsumeFX(updatesRoot, databaseURL string, db *sql.DB, responder *re
 				return fmt.Errorf("remove rejected release tree %s: %w", releaseID, removeErr)
 			}
 			return nil
+		},
+		CleanupSucceeded: func(record embeddedupdate.Record) error {
+			return cleanupSucceededOperation(updatesRoot, record)
 		},
 		PromoteCurrent: func(token string) error {
 			return writeCurrentPointerAtomically(updatesRoot, token)

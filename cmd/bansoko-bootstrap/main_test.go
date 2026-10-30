@@ -823,6 +823,56 @@ func TestDiscardUnreferencedWorkPreservesOnlyCurrentAndPrevious(t *testing.T) {
 	}
 }
 
+func TestDiscardPreMarkerWorkRetriesSuccessfulOperationCleanup(t *testing.T) {
+	root := t.TempDir()
+	for _, dir := range []string{
+		filepath.Join(root, releasesDirName, "current-release"),
+		filepath.Join(root, releasesDirName, "previous-release"),
+		filepath.Join(root, "downloads", "successful-op"),
+		filepath.Join(root, backupsDirName),
+	} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writePointer(t, root, "current-release")
+	for _, path := range []string{
+		backupsDumpPath(root, "bk-success"), backupsDumpPath(root, "bk-success") + ".sha256",
+	} {
+		if err := os.WriteFile(path, []byte("artifact"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	j, err := embeddedupdate.Open(filepath.Join(root, journalFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := j.Create(embeddedupdate.Record{
+		OperationID: "successful-op", Channel: "embedded", Step: embeddedupdate.StepSucceeded,
+		TargetReleaseID: "current-release", CurrentReleaseID: "current-release",
+		PreviousReleaseID: "previous-release", BackupID: "bk-success",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_ = j.Close()
+
+	if err := discardPreMarkerWork(root); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		filepath.Join(root, releasesDirName, "previous-release"),
+		filepath.Join(root, "downloads"),
+		backupsDumpPath(root, "bk-success"), backupsDumpPath(root, "bk-success") + ".sha256",
+	} {
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("successful startup cleanup left %s: %v", path, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, releasesDirName, "current-release")); err != nil {
+		t.Fatalf("startup cleanup removed current release: %v", err)
+	}
+}
+
 func TestDiscardUnreferencedWorkFailsClosedOnCorruptPointer(t *testing.T) {
 	root := t.TempDir()
 	orphan := filepath.Join(root, releasesDirName, "orphan")
