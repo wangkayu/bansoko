@@ -27,6 +27,43 @@ var recordStates = map[string]bool{
 	RecordStateInfo:       true,
 }
 
+// Event views of the records read projection. all is the API default (nil
+// parameter); the events tab asks for primary explicitly.
+const (
+	RecordEventViewPrimary = "primary"
+	RecordEventViewAll     = "all"
+)
+
+var recordEventViews = map[string]bool{
+	RecordEventViewPrimary: true,
+	RecordEventViewAll:     true,
+}
+
+// primaryEventViewReasons are the release_processed info reasons the primary
+// view hides. Both repeat on every RSS cycle and neither is a badge record, so
+// hiding them never hides a failure the owner has to act on.
+var primaryEventViewReasons = []string{"awaiting_competition", "no_placeable_files"}
+
+// primaryEventViewPredicate excludes the repeated release filtering process
+// from the business source alone. COALESCE keeps older records without a
+// reason visible, and the outcome check keeps the same reason on a failure.
+func primaryEventViewPredicate() string {
+	return fmt.Sprintf("NOT (e.kind = '%s' AND e.outcome = 'info' AND COALESCE(e.reason_code, '') IN %s)",
+		string(observabilityport.ActivityKindReleaseProcessed), sqlList(primaryEventViewReasons))
+}
+
+// recordEventViewParam validates the event_view parameter; nil is the API
+// default, all.
+func recordEventViewParam(value *string) (string, error) {
+	if value == nil {
+		return RecordEventViewAll, nil
+	}
+	if !recordEventViews[*value] {
+		return "", &apperrors.BadRequest{Code: "INVALID_EVENT_VIEW", Message: fmt.Sprintf("Unknown event view %q.", *value)}
+	}
+	return *value, nil
+}
+
 // maxRecordSearchRunes bounds the q parameter (the contract's maxLength).
 const maxRecordSearchRunes = 100
 

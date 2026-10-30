@@ -30,6 +30,7 @@ func TestListRecordsRejectsInvalidFilters(t *testing.T) {
 		{"search not UTF-8", RecordQuery{Q: text("a\xffb")}, "INVALID_QUERY"},
 		{"unknown entry kind", RecordQuery{EntryKind: kinds("acquisition_settled", "bogus")}, "INVALID_ENTRY_KIND"},
 		{"retired entry kind", RecordQuery{EntryKind: kinds("rss_refresh_failed")}, "INVALID_ENTRY_KIND"},
+		{"unknown event view", RecordQuery{EventView: text("noise")}, "INVALID_EVENT_VIEW"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -42,6 +43,33 @@ func TestListRecordsRejectsInvalidFilters(t *testing.T) {
 				t.Fatalf("code: got %q, want %q", bad.Code, tc.code)
 			}
 		})
+	}
+}
+
+// TestRecordEventViewParam: nil is the API default (all); the closed set is
+// validated before any SQL is built.
+func TestRecordEventViewParam(t *testing.T) {
+	text := func(value string) *string { return &value }
+	if got, err := recordEventViewParam(nil); err != nil || got != RecordEventViewAll {
+		t.Fatalf("default view: got %q, %v", got, err)
+	}
+	for _, view := range []string{RecordEventViewPrimary, RecordEventViewAll} {
+		if got, err := recordEventViewParam(text(view)); err != nil || got != view {
+			t.Fatalf("view %q: got %q, %v", view, got, err)
+		}
+	}
+	if _, err := recordEventViewParam(text("primary-ish")); err == nil {
+		t.Fatal("an unknown view must not pass")
+	}
+}
+
+// TestPrimaryEventViewPredicateShape pins the exact exclusion: only
+// release_processed info entries with one of the two reasons, with COALESCE so
+// a record without a reason stays visible.
+func TestPrimaryEventViewPredicateShape(t *testing.T) {
+	want := "NOT (e.kind = 'release_processed' AND e.outcome = 'info' AND COALESCE(e.reason_code, '') IN ('awaiting_competition', 'no_placeable_files'))"
+	if got := primaryEventViewPredicate(); got != want {
+		t.Fatalf("primary view predicate:\n got %s\nwant %s", got, want)
 	}
 }
 

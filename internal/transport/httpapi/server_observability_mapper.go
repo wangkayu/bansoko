@@ -35,9 +35,14 @@ func mapObservabilityRecordQuery(value generated.ListObservabilityRecordsParams)
 		mapped := string(*value.ManagedAnimeId)
 		managedAnimeID = &mapped
 	}
+	var eventView *string
+	if value.EventView != nil {
+		mapped := string(*value.EventView)
+		eventView = &mapped
+	}
 	return observabilityapplication.RecordQuery{
 		Cursor: value.Cursor, Limit: value.Limit, Kind: kinds, EntryKind: entryKinds, State: state, Q: value.Q,
-		From: value.From, To: value.To, ManagedAnimeID: managedAnimeID,
+		EventView: eventView, From: value.From, To: value.To, ManagedAnimeID: managedAnimeID,
 	}
 }
 
