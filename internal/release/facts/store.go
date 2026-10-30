@@ -42,8 +42,8 @@ func NewStore(db *sql.DB) *Store {
 	return NewStoreWithRepository(persistence.NewRepository(db))
 }
 
-// CreateReleaseSnapshotTx persists one append-only Release-level snapshot in
-// the caller-owned transaction.
+// CreateReleaseSnapshotTx reuses the latest Release-level snapshot when its
+// complete frozen content is unchanged, and otherwise appends in the caller's transaction.
 func (s *Store) CreateReleaseSnapshotTx(ctx context.Context, scope txscope.Tx, snapshot Snapshot) error {
 	if s == nil || s.repository == nil {
 		return errors.New("media facts store is not configured")

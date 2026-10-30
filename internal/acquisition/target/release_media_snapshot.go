@@ -74,9 +74,9 @@ func BatchPlanTooLarge(plan batchplan.Plan) bool {
 	return err == nil && len(raw) > batchPlanRawLimit
 }
 
-// FreezeReleaseMediaSnapshotTx writes one append-only Release media fact
-// snapshot in the caller's admission transaction. It is the only writer of
-// that snapshot: artifact inspection resolves every file's own identity with
+// FreezeReleaseMediaSnapshotTx freezes one Release media fact snapshot in the
+// caller's admission transaction, reusing the latest row when every frozen fact
+// is unchanged. It is the only writer of that snapshot: artifact inspection resolves every file's own identity with
 // the parser, offset and metadata binding frozen here, and prepare refuses a
 // Release without it. The release-level identity is the title's evidence only;
 // it never becomes a file's identity. The batch plan, with the unknown-file

@@ -4,8 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
+	"sync"
 	"testing"
+	"time"
 
+	"bansoko/internal/batchplan"
 	"bansoko/internal/episodeidentity"
 	"bansoko/internal/persistence/txscope"
 	"bansoko/internal/release/facts/adapter/persistence/media"
@@ -39,6 +43,114 @@ INSERT INTO releases(id, rss_source_id, stable_item_key, raw_facts, source_facts
 VALUES ($1, 'src-facts', $2, '{"title":"Show - 12"}'::jsonb, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, 'discovered', 'accepted', 1)`,
 		id, "key-"+id); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func writeTestSnapshot(db *sql.DB, store *Store, snapshot Snapshot) error {
+	tx, err := db.BeginTx(context.Background(), nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := store.CreateReleaseSnapshotTx(context.Background(), txscope.Wrap(tx), snapshot); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func TestSnapshotWriteReusesOnlyIdenticalLatestContent(t *testing.T) {
+	db := openDB(t)
+	ctx := context.Background()
+	store := NewStoreWithRepository(persistence.NewRepository(db))
+	seedRelease(t, db, "rel-dedup")
+	createdAt := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	snapshot := Snapshot{
+		ID: "snap-original", ReleaseID: "rel-dedup", ResolverVersion: "episode-identity-v1",
+		ParserKind: "regex", ParserConfigFingerprint: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+		ParserConfig: json.RawMessage(`{"episode_patterns":["E(?P<episode>[0-9]+)"]}`), InputDigest: "digest-unchanged",
+		ReleaseIdentity: episodeidentity.EpisodeIdentity{State: episodeidentity.StateResolved, ResolverVersion: "episode-identity-v1"},
+		ReleaseFacts: ReleaseFacts{Title: "Show - 12", BatchPlan: &batchplan.Plan{
+			Version: batchplan.Version, UnclassifiedRoute: batchplan.RouteSkip, CoverageKeys: []string{"tv:e12"},
+		}},
+		CreatedAt: createdAt,
+	}
+	if err := writeTestSnapshot(db, store, snapshot); err != nil {
+		t.Fatal(err)
+	}
+	duplicate := snapshot
+	duplicate.ID = "snap-duplicate"
+	duplicate.CreatedAt = createdAt.Add(time.Hour)
+	if err := writeTestSnapshot(db, store, duplicate); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.ReadSnapshot(ctx, "rel-dedup")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.ID != "snap-original" || !loaded.CreatedAt.Equal(createdAt) {
+		t.Fatalf("unchanged write replaced the retained snapshot: %+v", loaded)
+	}
+
+	changed := duplicate
+	changed.ID = "snap-changed-plan"
+	changed.ReleaseFacts.BatchPlan = &batchplan.Plan{
+		Version: batchplan.Version, UnclassifiedRoute: batchplan.RouteSkip, CoverageKeys: []string{"tv:e13"},
+	}
+	if err := writeTestSnapshot(db, store, changed); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err = store.ReadSnapshot(ctx, "rel-dedup")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.ID != "snap-changed-plan" || loaded.InputDigest != snapshot.InputDigest {
+		t.Fatalf("changed batch plan did not append with the same input digest: %+v", loaded)
+	}
+	var count int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM media_fact_snapshots WHERE release_id = 'rel-dedup'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 {
+		t.Fatalf("snapshot count = %d, want one retained and one changed", count)
+	}
+}
+
+func TestConcurrentIdenticalSnapshotWritesConverge(t *testing.T) {
+	db := openDB(t)
+	ctx := context.Background()
+	store := NewStoreWithRepository(persistence.NewRepository(db))
+	seedRelease(t, db, "rel-concurrent")
+	const writers = 8
+	start := make(chan struct{})
+	errors := make(chan error, writers)
+	var group sync.WaitGroup
+	for index := 0; index < writers; index++ {
+		group.Add(1)
+		go func(index int) {
+			defer group.Done()
+			<-start
+			errors <- writeTestSnapshot(db, store, Snapshot{
+				ID: fmt.Sprintf("snap-concurrent-%d", index), ReleaseID: "rel-concurrent", ResolverVersion: "episode-identity-v1",
+				ParserKind: "regex", InputDigest: "digest-concurrent",
+				ReleaseIdentity: episodeidentity.EpisodeIdentity{State: episodeidentity.StateResolved, ResolverVersion: "episode-identity-v1"},
+				ReleaseFacts:    ReleaseFacts{Title: "Show - 12"},
+			})
+		}(index)
+	}
+	close(start)
+	group.Wait()
+	close(errors)
+	for err := range errors {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	var count int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM media_fact_snapshots WHERE release_id = 'rel-concurrent'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("concurrent identical writes left %d snapshots, want 1", count)
 	}
 }
 

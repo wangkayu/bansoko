@@ -16,11 +16,30 @@ import (
 )
 
 const createReleaseSnapshot = `-- name: CreateReleaseSnapshot :exec
-
+WITH latest AS (
+    SELECT schema_version, resolver_version, parser_kind, parser_config_fingerprint,
+           parser_config, input_digest, release_identity, release_facts
+    FROM media_fact_snapshots
+    WHERE release_id = $2
+    ORDER BY created_at DESC, id DESC
+    LIMIT 1
+)
 INSERT INTO media_fact_snapshots
 (id, release_id, schema_version, resolver_version, parser_kind, parser_config_fingerprint,
  parser_config, input_digest, release_identity, release_facts, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM latest
+    WHERE schema_version = $3
+      AND resolver_version = $4
+      AND parser_kind = $5
+      AND parser_config_fingerprint IS NOT DISTINCT FROM $6::text
+      AND parser_config IS NOT DISTINCT FROM $7::jsonb
+      AND input_digest = $8
+      AND release_identity = $9::jsonb
+      AND release_facts = $10::jsonb
+)
 `
 
 type CreateReleaseSnapshotParams struct {
@@ -37,12 +56,32 @@ type CreateReleaseSnapshotParams struct {
 	CreatedAt               time.Time
 }
 
-// Media facts persistence is owned by this adapter; the migration chain is authoritative.
+// CreateReleaseSnapshot
 //
+//	WITH latest AS (
+//	    SELECT schema_version, resolver_version, parser_kind, parser_config_fingerprint,
+//	           parser_config, input_digest, release_identity, release_facts
+//	    FROM media_fact_snapshots
+//	    WHERE release_id = $2
+//	    ORDER BY created_at DESC, id DESC
+//	    LIMIT 1
+//	)
 //	INSERT INTO media_fact_snapshots
 //	(id, release_id, schema_version, resolver_version, parser_kind, parser_config_fingerprint,
 //	 parser_config, input_digest, release_identity, release_facts, created_at)
-//	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+//	SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+//	WHERE NOT EXISTS (
+//	    SELECT 1
+//	    FROM latest
+//	    WHERE schema_version = $3
+//	      AND resolver_version = $4
+//	      AND parser_kind = $5
+//	      AND parser_config_fingerprint IS NOT DISTINCT FROM $6::text
+//	      AND parser_config IS NOT DISTINCT FROM $7::jsonb
+//	      AND input_digest = $8
+//	      AND release_identity = $9::jsonb
+//	      AND release_facts = $10::jsonb
+//	)
 func (q *Queries) CreateReleaseSnapshot(ctx context.Context, arg CreateReleaseSnapshotParams) error {
 	_, err := q.db.ExecContext(ctx, createReleaseSnapshot,
 		arg.ID,
@@ -148,6 +187,19 @@ func (q *Queries) ListFileRowsBySnapshots(ctx context.Context, dollar_1 []string
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockReleaseSnapshot = `-- name: LockReleaseSnapshot :exec
+
+SELECT pg_advisory_xact_lock(hashtext($1))
+`
+
+// Media facts persistence is owned by this adapter; the migration chain is authoritative.
+//
+//	SELECT pg_advisory_xact_lock(hashtext($1))
+func (q *Queries) LockReleaseSnapshot(ctx context.Context, hashtext string) error {
+	_, err := q.db.ExecContext(ctx, lockReleaseSnapshot, hashtext)
+	return err
 }
 
 const readLatestSnapshot = `-- name: ReadLatestSnapshot :one

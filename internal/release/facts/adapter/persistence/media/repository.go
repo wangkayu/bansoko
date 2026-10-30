@@ -119,8 +119,9 @@ func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db}
 }
 
-// CreateReleaseSnapshotTx persists one append-only Release-level snapshot in
-// the caller-owned transaction.
+// CreateReleaseSnapshotTx reuses the latest snapshot when every frozen fact is
+// unchanged. A changed snapshot remains append-only; only id and creation time
+// are excluded from equality. The per-release lock also covers concurrent writers.
 func (r *Repository) CreateReleaseSnapshotTx(ctx context.Context, scope txscope.Tx, snapshot Snapshot) error {
 	tx := scope.SQLTx()
 	if tx == nil {
@@ -138,7 +139,11 @@ func (r *Repository) CreateReleaseSnapshotTx(ctx context.Context, scope txscope.
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
-	if err := generated.New(tx).CreateReleaseSnapshot(ctx, generated.CreateReleaseSnapshotParams{
+	queries := generated.New(tx)
+	if err := queries.LockReleaseSnapshot(ctx, snapshot.ReleaseID); err != nil {
+		return err
+	}
+	if err := queries.CreateReleaseSnapshot(ctx, generated.CreateReleaseSnapshotParams{
 		ID:                      snapshot.ID,
 		ReleaseID:               snapshot.ReleaseID,
 		SchemaVersion:           firstNonEmpty(snapshot.SchemaVersion, "media-facts-v1"),
