@@ -32,6 +32,8 @@
 
 ## Fixed
 
+- The anime configuration saves again after a per-subtitle-group episode offset is set before a subscription starts, instead of reporting an internal error.
+
 - Upgrading with existing download and import records no longer fails and rolls back because of a database migration conflict.
 - Subtitles tagged JPSC or JPTC in their file names now get a language, so Simplified/Japanese and Traditional/Japanese subtitles no longer collide on one name.
 - Opening a seed's file list now fetches its torrent through the source's configured proxy instead of a direct connection.
