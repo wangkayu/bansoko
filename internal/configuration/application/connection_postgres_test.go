@@ -308,7 +308,7 @@ func TestConnectionEnabledAndRouteRoundTripPostgres(t *testing.T) {
 	service := NewService(db, newConnectionTestSecretStore(t, db))
 	httpService := newGeneratedHTTPService(NewHTTPService(service))
 	route, err := service.UpsertNetworkRoute(ctx, configurationdomain.NetworkRouteInput{
-		ID: "connection-test-route", Name: "Direct", Kind: configurationdomain.NetworkRouteDirect,
+		ID: "connection-test-route", Name: "Direct", Kind: configurationdomain.NetworkRouteDirect, Enabled: true,
 	}, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -597,7 +597,7 @@ func TestSeedDefaultConnectionsIsIdempotent(t *testing.T) {
 	// A user edit (custom base URL + proxy route) must survive a second seed.
 	const routeID = "connection-test-route"
 	if _, err := service.UpsertNetworkRoute(ctx, configurationdomain.NetworkRouteInput{
-		ID: routeID, Name: "seed-test-proxy", Kind: configurationdomain.NetworkRouteHTTPProxy, Endpoint: "http://proxy.local:8080",
+		ID: routeID, Name: "seed-test-proxy", Kind: configurationdomain.NetworkRouteHTTPProxy, Endpoint: "http://proxy.local:8080", Enabled: true,
 	}, 0); err != nil {
 		t.Fatalf("create test network route: %v", err)
 	}
@@ -700,7 +700,7 @@ func TestConnectionTestResolvesProxyRoutePostgres(t *testing.T) {
 	httpService := newGeneratedHTTPService(NewHTTPService(service))
 
 	if _, err := service.UpsertNetworkRoute(ctx, configurationdomain.NetworkRouteInput{
-		ID: "connection-test-route", Name: "假代理", Kind: configurationdomain.NetworkRouteHTTPProxy, Endpoint: proxy.URL,
+		ID: "connection-test-route", Name: "假代理", Kind: configurationdomain.NetworkRouteHTTPProxy, Endpoint: proxy.URL, Enabled: true,
 	}, 0); err != nil {
 		t.Fatal(err)
 	}
