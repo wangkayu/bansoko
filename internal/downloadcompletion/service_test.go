@@ -127,6 +127,58 @@ func TestActionNamesMatchTheFrozenPlan(t *testing.T) {
 	}
 }
 
+func TestCleanupSeedLimitHandoffsUsesSavedRefsAndRetriesFailures(t *testing.T) {
+	qb := &fakeQB{}
+	rows := []seedLimitProviderRef{
+		{ID: "completion-1", InfoHash: testHash, ProviderRef: "tag:bansoko-seed-1"},
+		{ID: "completion-2", InfoHash: testHash, ProviderRef: "tag:bansoko-seed-2"},
+	}
+	cleaned, err := cleanupSeedLimitHandoffs(context.Background(), qb, rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cleaned) != 2 || cleaned[0] != rows[0].ID || cleaned[1] != rows[1].ID {
+		t.Fatalf("converged post-handoff rows = %v", cleaned)
+	}
+	if len(qb.cleanupRefs) != 2 || qb.cleanupRefs[0] != rows[0].ProviderRef || qb.cleanupRefs[1] != rows[1].ProviderRef {
+		t.Fatalf("post-handoff cleanup refs = %v", qb.cleanupRefs)
+	}
+
+	qb.cleanupErr = errors.New("connection reset")
+	if _, err := cleanupSeedLimitHandoffs(context.Background(), qb, rows[:1]); err == nil {
+		t.Fatal("a failed post-handoff cleanup must surface for the next RunPass")
+	}
+	if _, err := cleanupSeedLimitHandoffs(context.Background(), nil, rows); err == nil {
+		t.Fatal("an unwired post-handoff cleanup must not be reported as converged")
+	}
+	if _, err := cleanupSeedLimitHandoffs(context.Background(), nil, nil); err != nil {
+		t.Fatalf("an empty handoff batch needs no qB client: %v", err)
+	}
+}
+
+func TestCleanupSeedLimitHandoffsWaitsForQBSeedLimitDelete(t *testing.T) {
+	qb := &fakeQB{listed: []Torrent{{Hash: testHash, State: "uploading"}}}
+	row := seedLimitProviderRef{ID: "completion-1", InfoHash: testHash, ProviderRef: "tag:bansoko-seed-1"}
+	cleaned, err := cleanupSeedLimitHandoffs(context.Background(), qb, []seedLimitProviderRef{row})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cleaned) != 0 || len(qb.cleanupRefs) != 0 {
+		t.Fatalf("an actively seeding task was marked converged: cleaned=%v refs=%v", cleaned, qb.cleanupRefs)
+	}
+
+	// qB can apply its at-limit delete long after the sync worker has exited.
+	// The same saved completion record must then clean the now-unreferenced tag.
+	qb.listed = nil
+	cleaned, err = cleanupSeedLimitHandoffs(context.Background(), qb, []seedLimitProviderRef{row})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cleaned) != 1 || cleaned[0] != row.ID || len(qb.cleanupRefs) != 1 || qb.cleanupRefs[0] != row.ProviderRef {
+		t.Fatalf("post-delete convergence: cleaned=%v refs=%v", cleaned, qb.cleanupRefs)
+	}
+}
+
 func TestBoundedReasonRedactsPathsAndURLs(t *testing.T) {
 	if boundedReason("").Valid {
 		t.Fatal("an empty detail must stay NULL")

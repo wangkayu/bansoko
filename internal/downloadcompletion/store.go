@@ -34,6 +34,7 @@ type Row struct {
 	AcquisitionID   string
 	Action          string
 	InfoHash        string
+	ProviderRef     string
 	RemoteRoot      string
 	ApplicationRoot string
 	SeedLimits      *batchplan.SeedLimits
@@ -43,7 +44,7 @@ type Row struct {
 }
 
 func (r Row) completion() Completion {
-	return Completion{ID: r.ID, AcquisitionID: r.AcquisitionID, Action: r.Action, InfoHash: r.InfoHash, RemoteRoot: r.RemoteRoot, ApplicationRoot: r.ApplicationRoot, SeedLimits: r.SeedLimits.Clone()}
+	return Completion{ID: r.ID, AcquisitionID: r.AcquisitionID, Action: r.Action, InfoHash: r.InfoHash, ProviderRef: r.ProviderRef, RemoteRoot: r.RemoteRoot, ApplicationRoot: r.ApplicationRoot, SeedLimits: r.SeedLimits.Clone()}
 }
 
 // Store owns every write of download_completions and the reads the
@@ -90,6 +91,42 @@ LIMIT $1`, limit)
 		}
 		c.Correlation, c.FrozenInput = []byte(correlation), []byte(frozen)
 		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// seedLimitProviderRef is a surviving, exact system-tag candidate from a
+// successful seed-limits handoff. qB may delete that torrent much later, after
+// the download sync worker has already finished, so RunPass revisits these
+// saved references instead of treating sync absent as the only recovery path.
+type seedLimitProviderRef struct {
+	ID          string
+	InfoHash    string
+	ProviderRef string
+}
+
+// seedLimitProviderRefs pages over known completion records only. The LIKE
+// predicate is merely a database-side narrowing of references already frozen by
+// bansoko; it never discovers arbitrary qB tags for a global cleanup.
+func (s *Store) seedLimitProviderRefs(ctx context.Context, afterID string, limit int) ([]seedLimitProviderRef, error) {
+	rows, err := s.DB.QueryContext(ctx, `
+SELECT id, info_hash, provider_ref
+FROM download_completions
+WHERE state = 'succeeded' AND action = 'seed' AND seed_limits IS NOT NULL
+  AND provider_ref LIKE 'tag:bansoko-%' AND id > $1
+ORDER BY id
+LIMIT $2`, afterID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list seed-limit tag cleanup candidates: %w", err)
+	}
+	defer rows.Close()
+	var out []seedLimitProviderRef
+	for rows.Next() {
+		var row seedLimitProviderRef
+		if err := rows.Scan(&row.ID, &row.InfoHash, &row.ProviderRef); err != nil {
+			return nil, fmt.Errorf("scan seed-limit tag cleanup candidate: %w", err)
+		}
+		out = append(out, row)
 	}
 	return out, rows.Err()
 }
@@ -204,17 +241,17 @@ func (s *Store) enqueue(ctx context.Context, tx *sql.Tx, id string, version int6
 // loadRow reads one completion by id; nil when it does not exist.
 func (s *Store) loadRow(ctx context.Context, where string, arg any) (*Row, error) {
 	var r Row
-	var hash, remote, app, result, limits sql.NullString
+	var hash, providerRef, remote, app, result, limits sql.NullString
 	err := s.DB.QueryRowContext(ctx, `
-SELECT id, acquisition_id, action, info_hash, remote_root, application_root, state, result_code, version, seed_limits::text
-FROM download_completions WHERE `+where, arg).Scan(&r.ID, &r.AcquisitionID, &r.Action, &hash, &remote, &app, &r.State, &result, &r.Version, &limits)
+SELECT id, acquisition_id, action, info_hash, provider_ref, remote_root, application_root, state, result_code, version, seed_limits::text
+FROM download_completions WHERE `+where, arg).Scan(&r.ID, &r.AcquisitionID, &r.Action, &hash, &providerRef, &remote, &app, &r.State, &result, &r.Version, &limits)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("load download completion: %w", err)
 	}
-	r.InfoHash, r.RemoteRoot, r.ApplicationRoot, r.ResultCode = hash.String, remote.String, app.String, result.String
+	r.InfoHash, r.ProviderRef, r.RemoteRoot, r.ApplicationRoot, r.ResultCode = hash.String, providerRef.String, remote.String, app.String, result.String
 	if limits.Valid {
 		var value batchplan.SeedLimits
 		if err := json.Unmarshal([]byte(limits.String), &value); err != nil {

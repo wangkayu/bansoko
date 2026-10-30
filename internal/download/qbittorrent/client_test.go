@@ -530,21 +530,30 @@ func TestDerivePathSnapshotMapsExplicitDownloaderRoot(t *testing.T) {
 }
 
 func TestClientCancelResolvesTagToHash(t *testing.T) {
-	var deletedHash string
+	var deletedHash, deletedTags string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v2/auth/login":
 			_, _ = w.Write([]byte("Ok."))
 		case "/api/v2/torrents/info":
-			if r.URL.Query().Get("tag") != "bansoko-cancel-key" {
-				t.Fatalf("unexpected tag lookup: %s", r.URL.RawQuery)
+			if r.URL.Query().Get("tag") != "" {
+				if r.URL.Query().Get("tag") != "bansoko-cancel-key" {
+					t.Fatalf("unexpected tag lookup: %s", r.URL.RawQuery)
+				}
+				_, _ = w.Write([]byte(`[{"added_on":2,"hash":"abc","name":"Show","progress":0.5,"state":"downloading"}]`))
+				return
 			}
-			_, _ = w.Write([]byte(`[{"added_on":2,"hash":"abc","name":"Show","progress":0.5,"state":"downloading"}]`))
+			_, _ = w.Write([]byte(`[]`))
 		case "/api/v2/torrents/delete":
 			if err := r.ParseForm(); err != nil {
 				t.Fatal(err)
 			}
 			deletedHash = r.Form.Get("hashes")
+		case "/api/v2/torrents/deleteTags":
+			if err := r.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+			deletedTags = r.Form.Get("tags")
 		default:
 			http.NotFound(w, r)
 		}
@@ -554,12 +563,93 @@ func TestClientCancelResolvesTagToHash(t *testing.T) {
 	if err := (Client{Endpoint: server.URL}).Cancel(context.Background(), "tag:bansoko-cancel-key"); err != nil {
 		t.Fatal(err)
 	}
-	if deletedHash != "abc" {
-		t.Fatalf("expected qB delete to receive resolved hash, got %q", deletedHash)
+	if deletedHash != "abc" || deletedTags != "bansoko-cancel-key" {
+		t.Fatalf("delete hash=%q cleanup tags=%q", deletedHash, deletedTags)
+	}
+}
+
+func TestClientCancelWaitsForAsynchronousDeleteBeforeCleaningTheTag(t *testing.T) {
+	var deletedTags string
+	plainReads, readsAtCleanup := 0, -1
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v2/auth/login":
+			_, _ = w.Write([]byte("Ok."))
+		case "/api/v2/torrents/info":
+			if r.URL.Query().Get("tag") != "" {
+				_, _ = w.Write([]byte(`[{"hash":"abc","name":"Show","state":"downloading","tags":"bansoko-cancel-async"}]`))
+				return
+			}
+			plainReads++
+			// qB applies the delete asynchronously: the first list right after the
+			// delete request still shows the task.
+			if plainReads == 1 {
+				_, _ = w.Write([]byte(`[{"hash":"abc","name":"Show","state":"downloading","tags":"bansoko-cancel-async"}]`))
+				return
+			}
+			_, _ = w.Write([]byte(`[]`))
+		case "/api/v2/torrents/delete":
+		case "/api/v2/torrents/deleteTags":
+			readsAtCleanup = plainReads
+			if err := r.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+			deletedTags = r.Form.Get("tags")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	if err := (Client{Endpoint: server.URL}).Cancel(context.Background(), "tag:bansoko-cancel-async"); err != nil {
+		t.Fatal(err)
+	}
+	if readsAtCleanup < 1 {
+		t.Fatalf("cleanup ran after %d list reads, want the delete confirmed first", readsAtCleanup)
+	}
+	if plainReads < 2 {
+		t.Fatalf("list reads = %d, want the delete confirmed by a second read", plainReads)
+	}
+	if deletedTags != "bansoko-cancel-async" {
+		t.Fatalf("cleanup tags = %q", deletedTags)
+	}
+}
+
+func TestClientCancelKeepsTheTagWhileTheDeletedTaskStaysListed(t *testing.T) {
+	previousWindow := deleteVerifyWindow
+	deleteVerifyWindow = 0
+	t.Cleanup(func() { deleteVerifyWindow = previousWindow })
+
+	var deletedTags string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v2/auth/login":
+			_, _ = w.Write([]byte("Ok."))
+		case "/api/v2/torrents/info":
+			_, _ = w.Write([]byte(`[{"hash":"abc","name":"Show","state":"downloading","tags":"bansoko-cancel-stuck"}]`))
+		case "/api/v2/torrents/delete":
+		case "/api/v2/torrents/deleteTags":
+			if err := r.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+			deletedTags = r.Form.Get("tags")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	err := (Client{Endpoint: server.URL}).Cancel(context.Background(), "tag:bansoko-cancel-stuck")
+	if err == nil || !strings.Contains(err.Error(), "still listed") {
+		t.Fatalf("a task still listed after delete must fail the cancel: %v", err)
+	}
+	if deletedTags != "" {
+		t.Fatalf("a still-listed task's tag was cleaned: %q", deletedTags)
 	}
 }
 
 func TestClientCancelMissingTaggedTaskIsAlreadyCanceled(t *testing.T) {
+	var deletedTags string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v2/auth/login":
@@ -568,6 +658,11 @@ func TestClientCancelMissingTaggedTaskIsAlreadyCanceled(t *testing.T) {
 			_, _ = w.Write([]byte(`[]`))
 		case "/api/v2/torrents/delete":
 			t.Fatal("qB delete must not run when the tagged task is already absent")
+		case "/api/v2/torrents/deleteTags":
+			if err := r.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+			deletedTags = r.Form.Get("tags")
 		default:
 			http.NotFound(w, r)
 		}
@@ -576,6 +671,9 @@ func TestClientCancelMissingTaggedTaskIsAlreadyCanceled(t *testing.T) {
 
 	if err := (Client{Endpoint: server.URL}).Cancel(context.Background(), "tag:bansoko-already-gone"); err != nil {
 		t.Fatalf("missing tagged task should be an idempotent cancellation: %v", err)
+	}
+	if deletedTags != "bansoko-already-gone" {
+		t.Fatalf("absent cancel cleanup tags = %q", deletedTags)
 	}
 }
 
@@ -884,7 +982,7 @@ func TestConfiguredClientResolvesTypedRuntimeConfigForEachOperation(t *testing.T
 			_, _ = w.Write([]byte("Ok."))
 		case "/api/v2/torrents/info":
 			infoCalls++
-			if infoCalls == 1 {
+			if infoCalls == 1 || infoCalls >= 4 {
 				_, _ = w.Write([]byte(`[]`))
 				return
 			}
@@ -909,6 +1007,10 @@ func TestConfiguredClientResolvesTypedRuntimeConfigForEachOperation(t *testing.T
 				t.Fatalf("unexpected qB delete form: %v", r.Form)
 			}
 			deleted++
+		case "/api/v2/torrents/deleteTags":
+			if err := r.ParseForm(); err != nil || r.Form.Get("tags") != "bansoko-runtime-key" {
+				t.Fatalf("unexpected qB delete-tags form: %v", r.Form)
+			}
 		default:
 			http.NotFound(w, r)
 		}

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"bansoko/internal/batchplan"
@@ -44,6 +45,9 @@ type Service struct {
 	executor Executor
 	hub      *events.Hub
 	batch    int
+
+	seedLimitMu      sync.Mutex
+	seedLimitCleaned map[string]struct{}
 }
 
 // NewService wires the service. qb may be nil in a deployment without one; the
@@ -56,7 +60,7 @@ func NewService(store *Store, snapshot SnapshotReader, qb QB) (*Service, error) 
 		return nil, errors.New("download completion requires a media fact snapshot reader")
 	}
 	return &Service{
-		store: store, snapshot: snapshot, batch: 50,
+		store: store, snapshot: snapshot, batch: 50, seedLimitCleaned: map[string]struct{}{},
 		executor: Executor{QB: qb, Library: libraryAdapter{store: store}, Sharing: store},
 	}, nil
 }
@@ -106,7 +110,91 @@ func (s *Service) RunPass(ctx context.Context) (PassResult, error) {
 	if result.Created > 0 && s.hub != nil {
 		s.hub.Publish(events.Event{Target: events.TargetRecords})
 	}
+	if err := s.reconcileSeedLimitTags(ctx); err != nil {
+		return result, err
+	}
 	return result, nil
+}
+
+// reconcileSeedLimitTags covers qB applying a seed-limit delete after the
+// acquisition and its sync worker have already finished. Only provider refs
+// frozen on successful seed-limits completion rows participate. Every client
+// cleanup re-reads all torrent references, so an actively seeding task and a
+// genuinely shared tag are retained while an absent task's tag converges.
+func (s *Service) reconcileSeedLimitTags(ctx context.Context) error {
+	if s.executor.QB == nil {
+		// Completion creation and unrelated actions still work without qB. Known
+		// seed-limit refs remain pending for a later pass after qB is wired.
+		return nil
+	}
+	s.seedLimitMu.Lock()
+	defer s.seedLimitMu.Unlock()
+	if s.seedLimitCleaned == nil {
+		s.seedLimitCleaned = map[string]struct{}{}
+	}
+	batch := s.batch
+	if batch <= 0 {
+		batch = 50
+	}
+	var pending []seedLimitProviderRef
+	for afterID := ""; ; {
+		rows, err := s.store.seedLimitProviderRefs(ctx, afterID, batch)
+		if err != nil {
+			return err
+		}
+		for _, row := range rows {
+			if _, done := s.seedLimitCleaned[row.ID]; !done {
+				pending = append(pending, row)
+			}
+		}
+		if len(rows) < batch {
+			break
+		}
+		afterID = rows[len(rows)-1].ID
+	}
+	cleaned, err := cleanupSeedLimitHandoffs(ctx, s.executor.QB, pending)
+	for _, id := range cleaned {
+		s.seedLimitCleaned[id] = struct{}{}
+	}
+	return err
+}
+
+// cleanupSeedLimitHandoffs reads the current torrent set once for the whole
+// reconciliation, then cleans all absent records' refs in one batch. The qB
+// client's batch cleanup performs its own second full reference check directly
+// before deleteTags. Still-seeding records remain pending for qB's later
+// at-limit delete; an unwired qB client simply leaves every record pending.
+func cleanupSeedLimitHandoffs(ctx context.Context, qb QB, rows []seedLimitProviderRef) ([]string, error) {
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	if qb == nil {
+		return nil, errors.New("post-handoff tag cleanup requires a qBittorrent client")
+	}
+	listed, err := qb.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list seed-limit tasks for tag cleanup: %w", err)
+	}
+	present := make(map[string]struct{}, len(listed))
+	for _, torrent := range listed {
+		present[strings.ToLower(strings.TrimSpace(torrent.Hash))] = struct{}{}
+	}
+	refs := make([]string, 0, len(rows))
+	absent := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if _, found := present[strings.ToLower(strings.TrimSpace(row.InfoHash))]; found {
+			continue
+		}
+		refs = append(refs, row.ProviderRef)
+		absent = append(absent, row.ID)
+	}
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	if err := qb.CleanupTaskTags(ctx, refs); err != nil {
+		return nil, fmt.Errorf("clean up seed-limit task tags: %w", err)
+	}
+	return absent, nil
 }
 
 // frozenAction is the action, with the seed action's limits, in the batch
@@ -183,6 +271,7 @@ type TorrentClient interface {
 	GetTorrentFiles(ctx context.Context, hash string) ([]qbittorrent.TorrentFile, error)
 	PauseTorrent(ctx context.Context, hash string) error
 	DeleteTorrent(ctx context.Context, hash string, deleteFiles bool) error
+	CleanupTaskTags(ctx context.Context, providerRefs []string) error
 	WebAPIVersion(ctx context.Context) (string, error)
 	SetShareLimits(ctx context.Context, hash string, limits qbittorrent.ShareLimits) error
 }
@@ -204,6 +293,19 @@ func (a TorrentAdapter) Torrent(ctx context.Context, hash string) (Torrent, bool
 		return Torrent{}, false, err
 	}
 	return Torrent{Hash: facts.Hash, Name: facts.Name, State: facts.State, SavePath: facts.SavePath, ContentPath: facts.ContentPath, FileNames: facts.FileNames}, true, nil
+}
+
+// List returns lightweight facts for every task without reading file lists.
+func (a TorrentAdapter) List(ctx context.Context) ([]Torrent, error) {
+	listed, err := a.Client.ListTorrents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	torrents := make([]Torrent, 0, len(listed))
+	for _, item := range listed {
+		torrents = append(torrents, Torrent{Hash: item.Hash, Name: item.Name, State: item.State, SavePath: item.SavePath, ContentPath: item.ContentPath})
+	}
+	return torrents, nil
 }
 
 // Others lists every task but the given one. Where a task's content path is its
@@ -244,6 +346,11 @@ func (a TorrentAdapter) Delete(ctx context.Context, hash string, deleteFiles boo
 	return a.Client.DeleteTorrent(ctx, hash, deleteFiles)
 }
 
+// CleanupTaskTags delegates exact provider-reference cleanup to one qB batch.
+func (a TorrentAdapter) CleanupTaskTags(ctx context.Context, providerRefs []string) error {
+	return a.Client.CleanupTaskTags(ctx, providerRefs)
+}
+
 // WebAPIVersion reads the qBittorrent WebAPI version.
 func (a TorrentAdapter) WebAPIVersion(ctx context.Context) (string, error) {
 	return a.Client.WebAPIVersion(ctx)
@@ -270,5 +377,5 @@ func (s *Service) RemoveCancelled(ctx context.Context, acquisitionID string, cor
 	}
 	f := factsOf(candidate{AcquisitionID: acquisitionID, Correlation: correlation, FrozenInput: frozenInput})
 	return s.executor.Run(ctx, Completion{AcquisitionID: acquisitionID, Action: ActionRemoveWithData,
-		InfoHash: f.InfoHash, RemoteRoot: f.RemoteRoot, ApplicationRoot: f.ApplicationRoot})
+		InfoHash: f.InfoHash, ProviderRef: f.ProviderRef, RemoteRoot: f.RemoteRoot, ApplicationRoot: f.ApplicationRoot})
 }

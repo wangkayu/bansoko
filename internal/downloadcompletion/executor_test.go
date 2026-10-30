@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +14,9 @@ import (
 
 type fakeQB struct {
 	torrent    *Torrent
+	listed     []Torrent
+	listErr    error
+	listCalls  int
 	others     []Torrent
 	othersErr  error
 	afterState string
@@ -27,9 +31,12 @@ type fakeQB struct {
 	changeNext bool
 	calls      []string
 	// webAPIVersion is what app/webapiVersion reports.
-	webAPIVersion string
-	versionErr    error
-	limits        []ShareLimitsRequest
+	webAPIVersion  string
+	versionErr     error
+	limits         []ShareLimitsRequest
+	cleanupErr     error
+	cleanupRefs    []string
+	cleanupBatches [][]string
 }
 
 func (f *fakeQB) Torrent(_ context.Context, hash string) (Torrent, bool, error) {
@@ -57,6 +64,12 @@ func (f *fakeQB) Torrent(_ context.Context, hash string) (Torrent, bool, error) 
 		defer func() { f.torrent.ContentPath = f.torrent.ContentPath + "-moved" }()
 	}
 	return value, true, nil
+}
+
+func (f *fakeQB) List(context.Context) ([]Torrent, error) {
+	f.calls = append(f.calls, "list")
+	f.listCalls++
+	return f.listed, f.listErr
 }
 
 func (f *fakeQB) Others(_ context.Context, hash string) ([]Torrent, error) {
@@ -116,6 +129,13 @@ func (f *fakeQB) SetShareLimits(_ context.Context, hash string, limits ShareLimi
 	return nil
 }
 
+func (f *fakeQB) CleanupTaskTags(_ context.Context, providerRefs []string) error {
+	f.calls = append(f.calls, "cleanup:"+strings.Join(providerRefs, ","))
+	f.cleanupRefs = append(f.cleanupRefs, providerRefs...)
+	f.cleanupBatches = append(f.cleanupBatches, append([]string(nil), providerRefs...))
+	return f.cleanupErr
+}
+
 type fakeLibrary struct {
 	paths []string
 	err   error
@@ -147,7 +167,7 @@ func executorFixture(t *testing.T) (Executor, *fakeQB, layout, Completion) {
 		FileNames: []string{"Show/ep1.mkv", "Show/ep2.mkv", "Show/extra/x.nfo"},
 	}}
 	executor := Executor{Sleep: func(context.Context, time.Duration) {}, QB: qb, Library: fakeLibrary{paths: []string{filepath.Join(l.library, "Show", "S01E01.mkv")}}, Sharing: fakeSharing{}}
-	completion := Completion{ID: "c1", AcquisitionID: "a1", Action: ActionRemoveWithData, InfoHash: testHash, RemoteRoot: l.save, ApplicationRoot: l.save}
+	completion := Completion{ID: "c1", AcquisitionID: "a1", Action: ActionRemoveWithData, InfoHash: testHash, ProviderRef: "tag:bansoko-operation-1", RemoteRoot: l.save, ApplicationRoot: l.save}
 	return executor, qb, l, completion
 }
 
@@ -341,6 +361,60 @@ func TestExecutorAbsentTaskIsDone(t *testing.T) {
 		if !got.Success || got.Code != ResultTaskAbsent {
 			t.Fatalf("%s on an absent task = %+v", action, got)
 		}
+		wantCleanups := 0
+		if action == ActionRemove || action == ActionRemoveWithData {
+			wantCleanups = 1
+		}
+		if len(qb.cleanupRefs) != wantCleanups {
+			t.Fatalf("%s absent cleanups = %v, want %d", action, qb.cleanupRefs, wantCleanups)
+		}
+	}
+}
+
+func TestExecutorRemoveWithDataRecheckAbsentCleansFrozenTag(t *testing.T) {
+	executor, qb, _, c := executorFixture(t)
+	vanishing := &vanishAfterFirstReadQB{fakeQB: qb}
+	executor.QB = vanishing
+	got := executor.Run(context.Background(), c)
+	if !got.Success || got.Code != ResultTaskAbsent || len(qb.cleanupRefs) != 1 || qb.cleanupRefs[0] != c.ProviderRef {
+		t.Fatalf("remove_with_data absent replay = %+v cleanups=%v", got, qb.cleanupRefs)
+	}
+	for _, call := range qb.calls {
+		if call == "delete+data:"+testHash {
+			t.Fatalf("an already absent recheck must not delete again: %v", qb.calls)
+		}
+	}
+}
+
+type vanishAfterFirstReadQB struct {
+	*fakeQB
+	reads int
+}
+
+func (v *vanishAfterFirstReadQB) Torrent(ctx context.Context, hash string) (Torrent, bool, error) {
+	v.reads++
+	if v.reads > 1 {
+		v.fakeQB.torrent = nil
+	}
+	return v.fakeQB.Torrent(ctx, hash)
+}
+
+func TestExecutorTagCleanupFailureRetriesAndAbsentReplayConverges(t *testing.T) {
+	executor, qb, _, c := executorFixture(t)
+	c.Action = ActionRemove
+	qb.cleanupErr = errors.New("connection reset")
+	if got := executor.Run(context.Background(), c); got.Success || !got.Retryable || got.Code != FailureQBUnavailable {
+		t.Fatalf("cleanup failure after delete = %+v", got)
+	}
+	if qb.torrent != nil {
+		t.Fatal("the fixture torrent should remain deleted while cleanup retries")
+	}
+	qb.cleanupErr = nil
+	if got := executor.Run(context.Background(), c); !got.Success || got.Code != ResultTaskAbsent {
+		t.Fatalf("absent cleanup replay = %+v", got)
+	}
+	if len(qb.cleanupRefs) != 2 || qb.cleanupRefs[0] != c.ProviderRef || qb.cleanupRefs[1] != c.ProviderRef {
+		t.Fatalf("cleanup refs = %v", qb.cleanupRefs)
 	}
 }
 
