@@ -50,7 +50,6 @@ func writeReleaseTree(t *testing.T, root, releaseID string) string {
 	releaseDir := filepath.Join(root, releasesDirName, releaseID)
 	files := map[string][]byte{
 		packagemaker.ServerEntryPath:                   []byte("#!/bin/elf-fake-server\n"),
-		packagemaker.MigrateEntryPath:                  []byte("#!/bin/elf-fake-migrate\n"),
 		packagemaker.MigrationsPrefix + "001_init.sql": []byte("CREATE TABLE noop();\n"),
 		packagemaker.FrontendPrefix + "index.html":     []byte("<html></html>\n"),
 		"deployment/defaults/attr-rules.yaml":          []byte("version: 1\nresolution:\n  - 1080p\n"),
@@ -63,7 +62,7 @@ func writeReleaseTree(t *testing.T, root, releaseID string) string {
 			t.Fatal(mkdirErr)
 		}
 		mode := os.FileMode(0o644)
-		if strings.HasSuffix(path, packagemaker.ServerEntryPath) || strings.HasSuffix(path, packagemaker.MigrateEntryPath) {
+		if strings.HasSuffix(path, packagemaker.ServerEntryPath) {
 			mode = 0o755
 		}
 		if writeErr := os.WriteFile(fullPath, content, mode); writeErr != nil {
@@ -82,8 +81,8 @@ func writeReleaseTree(t *testing.T, root, releaseID string) string {
 	}
 	payloadPath := filepath.Join(t.TempDir(), "embedded-update-v1.tar.gz")
 	result, buildErr := packagemaker.BuildEmbeddedPayload(packagemaker.Options{
-		ServerBinaryPath: filepath.Join(sourceRoot, packagemaker.ServerEntryPath), MigrateBinaryPath: filepath.Join(sourceRoot, packagemaker.MigrateEntryPath),
-		MigrationsDir: filepath.Join(sourceRoot, "db/migrations"), FrontendDistDir: filepath.Join(sourceRoot, "frontend/dist"),
+		ServerBinaryPath: filepath.Join(sourceRoot, packagemaker.ServerEntryPath),
+		MigrationsDir:    filepath.Join(sourceRoot, "db/migrations"), FrontendDistDir: filepath.Join(sourceRoot, "frontend/dist"),
 		DefaultsDir: filepath.Join(sourceRoot, "deployment/defaults"), Metadata: meta,
 		OutputPath: payloadPath, SourceDateEpoch: 1756000000,
 	})
@@ -197,7 +196,7 @@ func extractPayloadFixture(payloadPath, releaseDir string) error {
 			return err
 		}
 		mode := os.FileMode(0o644)
-		if header.Name == packagemaker.ServerEntryPath || header.Name == packagemaker.MigrateEntryPath {
+		if header.Name == packagemaker.ServerEntryPath {
 			mode = 0o755
 		}
 		if err := os.WriteFile(path, data, mode); err != nil {
@@ -288,12 +287,12 @@ func TestPlanLaunchWithoutUpdatesVolumeFallsBackToBase(t *testing.T) {
 
 	got := planLaunch("server", missingRoot)
 	if got.mode != modeBase || got.binaryPath != baseServerPath ||
-		got.schemaDir != baseSchemaDir || got.frontendDir != baseFrontendDir || got.migratePath != baseMigratePath {
+		got.schemaDir != baseSchemaDir || got.frontendDir != baseFrontendDir || got.migratePath != baseServerPath {
 		t.Fatalf("server plan = %+v, want base with base paths", got)
 	}
 
 	migrated := planLaunch("migrate", missingRoot)
-	if migrated.mode != modeBase || migrated.binaryPath != baseMigratePath ||
+	if migrated.mode != modeBase || migrated.binaryPath != baseServerPath ||
 		migrated.schemaDir != baseSchemaDir || migrated.frontendDir != "" {
 		t.Fatalf("migrate plan = %+v, want base migrate without frontend dir", migrated)
 	}
@@ -433,14 +432,14 @@ func TestPlanLaunchTerminalStateRunsVerifiedOverlay(t *testing.T) {
 			}
 			wantSchema := filepath.Join(root, releasesDirName, "release-b2", "db/migrations")
 			wantFrontend := filepath.Join(root, releasesDirName, "release-b2", "frontend/dist")
-			wantMigrate := filepath.Join(root, releasesDirName, "release-b2", packagemaker.MigrateEntryPath)
+			wantMigrate := filepath.Join(root, releasesDirName, "release-b2", packagemaker.ServerEntryPath)
 			if serverPlan.schemaDir != wantSchema || serverPlan.frontendDir != wantFrontend || serverPlan.migratePath != wantMigrate {
 				t.Fatalf("overlay env dirs wrong: %+v", serverPlan)
 			}
 
 			migratePlan := planLaunch("migrate", root)
 			if migratePlan.mode != modeOverlay ||
-				migratePlan.binaryPath != filepath.Join(root, releasesDirName, "release-b2", packagemaker.MigrateEntryPath) {
+				migratePlan.binaryPath != filepath.Join(root, releasesDirName, "release-b2", packagemaker.ServerEntryPath) {
 				t.Fatalf("migrate plan = %+v, want overlay migrate binary", migratePlan)
 			}
 		})

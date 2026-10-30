@@ -6,15 +6,15 @@ root="$(cd "$(dirname "$0")/../.." && pwd)"
 python3 "$root/scripts/ci/check-workitem-write-boundary.py"
 
 active_runtime=(
-  "$root/internal" "$root/cmd/bansoko-server" "$root/cmd/bansoko-migrate"
-  "$root/cmd/bansoko-reset" "$root/cmd/bansoko-bootstrap"
+  "$root/internal" "$root/cmd/bansoko-server"
+  "$root/cmd/bansoko-reset"
   "$root/cmd/bansoko-release" "$root/frontend/src" "$root/api" "$root/db/migrations"
 )
 # The optional recovery source remains a separately deployable/manual
 # artifact and is not part of the default application runtime inventory.
 implementation_runtime=(
-  "$root/internal" "$root/cmd/bansoko-server" "$root/cmd/bansoko-migrate"
-  "$root/cmd/bansoko-reset" "$root/cmd/bansoko-bootstrap" "$root/cmd/bansoko-release"
+  "$root/internal" "$root/cmd/bansoko-server"
+  "$root/cmd/bansoko-reset" "$root/cmd/bansoko-release"
 )
 
 anime_root="$root/internal/anime"
@@ -275,8 +275,8 @@ fi
 # schemas or replacement_scan. Forward-only migration history and migration
 # retirement tests legitimately reference the retired kind and are excluded.
 retired_vocab_runtime=(
-  "$root/api" "$root/internal" "$root/cmd/bansoko-server" "$root/cmd/bansoko-migrate"
-  "$root/cmd/bansoko-reset" "$root/cmd/bansoko-bootstrap"
+  "$root/api" "$root/internal" "$root/cmd/bansoko-server"
+  "$root/cmd/bansoko-reset"
   "$root/cmd/bansoko-release"
   "$root/frontend/src"
 )

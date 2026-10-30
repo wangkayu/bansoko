@@ -12,7 +12,7 @@
 #   BANSOKO_EMBEDDED_E2E=1 ... --scenario=normal --self-test
 #
 # --self-test is available for normal, migrate-failure, rollback-blocked and
-# min-image-version. The normal self-test runs the real cmd/bansoko-bootstrap success
+# min-image-version. The normal self-test runs the real unified bootstrap success
 # state-machine tests locally (non-Docker); it does not create Docker, WebUI,
 # or process-build evidence. Without --self-test, normal still requires a real
 # scenario hook and remains blocked when no hook is configured.

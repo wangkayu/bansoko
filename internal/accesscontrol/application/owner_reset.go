@@ -13,7 +13,7 @@ import (
 )
 
 // ResetOwnerCredentials is the operator password reset behind
-// `/app/bootstrap reset-password`. The command runs inside the container, so
+// `/app/bansoko-server bootstrap reset-password`. The command runs inside the container, so
 // the authority is physical access to the deployment; no network credential
 // gates it. One transaction:
 //

@@ -445,7 +445,7 @@ def inspect_image(ref, ident, scratch):
         fail("registry image identity/platform differs")
     cid = run("docker", "create", ref)
     try:
-        for file in ["bootstrap", "public.key", "bansoko-server"]:
+        for file in ["public.key", "bansoko-server"]:
             run("docker", "cp", cid + ":/app/" + file, str(scratch / file))
     finally:
         run("docker", "rm", cid)
@@ -458,12 +458,11 @@ def inspect_image(ref, ident, scratch):
     if len(versions) != 1:
         fail("ambiguous bootstrap source version")
     bootstrap = versions.pop()
-    binary = (scratch / "bootstrap").read_bytes()
-    if bootstrap.encode() not in binary or {
-        x.decode() for x in re.findall(rb"embedded-bootstrap-v[0-9]+", binary)
+    server = (scratch / "bansoko-server").read_bytes()
+    if bootstrap.encode() not in server or {
+        x.decode() for x in re.findall(rb"embedded-bootstrap-v[0-9]+", server)
     } != {bootstrap}:
         fail("image bootstrap bytes differ")
-    server = (scratch / "bansoko-server").read_bytes()
     if ident["sha"].encode() not in server or ident["version"].encode() not in server:
         fail("image server bytes lack frozen build identity")
     return bootstrap

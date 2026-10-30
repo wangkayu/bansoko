@@ -159,13 +159,13 @@ func installLaunchSeams(t *testing.T, rec *launchRecorder) {
 		rec.events = append(rec.events, "prepare")
 		return nil
 	}
-	runStartupMigration = func(binary string, env []string) error {
-		rec.events = append(rec.events, "migrate:"+binary)
+	runStartupMigration = func(command processCommand, env []string) error {
+		rec.events = append(rec.events, "migrate:"+strings.Join(command.argv(), " "))
 		rec.migrateEnv = env
 		return rec.migrateErr
 	}
-	execProcess = func(binary string, _ []string, env []string) error {
-		rec.events = append(rec.events, "exec:"+binary)
+	execProcess = func(binary string, args []string, env []string) error {
+		rec.events = append(rec.events, "exec:"+strings.Join(args, " "))
 		rec.execEnv = env
 		return nil
 	}
@@ -195,7 +195,7 @@ func TestRunServerMigratesSelectedTreeBeforeServing(t *testing.T) {
 	if code := run("server"); code != 0 {
 		t.Fatalf("run = %d", code)
 	}
-	want := []string{"prepare", "migrate:" + baseMigratePath, "exec:" + baseServerPath}
+	want := []string{"prepare", "migrate:" + baseServerPath + " migrate", "exec:" + baseServerPath + " serve"}
 	if strings.Join(rec.events, "|") != strings.Join(want, "|") {
 		t.Fatalf("events = %v, want %v", rec.events, want)
 	}
@@ -248,7 +248,7 @@ func TestLaunchPlanOverlayMigratesWithOverlayBinary(t *testing.T) {
 	if code := launchPlan(chosen, root); code != 0 {
 		t.Fatalf("launchPlan = %d", code)
 	}
-	if len(rec.events) != 2 || rec.events[0] != "migrate:"+chosen.migratePath || rec.events[1] != "exec:"+chosen.binaryPath {
+	if len(rec.events) != 2 || rec.events[0] != "migrate:"+chosen.migratePath+" migrate" || rec.events[1] != "exec:"+chosen.binaryPath+" serve" {
 		t.Fatalf("events = %v", rec.events)
 	}
 	if dir, _ := envValue(rec.migrateEnv, envSchemaDir); dir != chosen.schemaDir {
@@ -287,7 +287,7 @@ func TestLaunchPlanMigrateKindHasNoStartupMigration(t *testing.T) {
 	if code := launchPlan(basePlan(plan{kind: "migrate"}, "test"), ""); code != 0 {
 		t.Fatalf("launchPlan = %d", code)
 	}
-	if len(rec.events) != 1 || rec.events[0] != "exec:"+baseMigratePath {
+	if len(rec.events) != 1 || rec.events[0] != "exec:"+baseServerPath+" migrate" {
 		t.Fatalf("events = %v, want only the migrate exec", rec.events)
 	}
 }

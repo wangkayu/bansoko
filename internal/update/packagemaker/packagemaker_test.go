@@ -47,7 +47,6 @@ func buildFixture(t *testing.T) Options {
 		}
 	}
 	server := writeExecutable(t, binDir, "server-bin", "SERVER-BINARY-CONTENT")
-	migrate := writeExecutable(t, binDir, "migrate-bin", "MIGRATE-BINARY")
 	writePlain(t, distDir, "index.html", "<html></html>")
 	writePlain(t, distDir, "assets/app.js", "console.log(1)")
 	writePlain(t, migDir, "001_init.sql", "CREATE TABLE a();")
@@ -55,13 +54,12 @@ func buildFixture(t *testing.T) Options {
 	writePlain(t, defaultsDir, "attr-rules.yaml", "version: 1\nresolution: [1080p]\nquality: [web]\nlanguage: [ja]\nspecial_markers: [hdr]\ngroup_brackets: ['[', ']']\n")
 	writePlain(t, defaultsDir, "naming-vars.js", "vars.anime = {ep: '1'};\n")
 	return Options{
-		ServerBinaryPath:  server,
-		MigrateBinaryPath: migrate,
-		MigrationsDir:     migDir,
-		FrontendDistDir:   distDir,
-		DefaultsDir:       defaultsDir,
-		OutputPath:        filepath.Join(root, "payload.tar.gz"),
-		SourceDateEpoch:   1735689600,
+		ServerBinaryPath: server,
+		MigrationsDir:    migDir,
+		FrontendDistDir:  distDir,
+		DefaultsDir:      defaultsDir,
+		OutputPath:       filepath.Join(root, "payload.tar.gz"),
+		SourceDateEpoch:  1735689600,
 		Metadata: Metadata{
 			FormatVersion:       "embedded-update-v1",
 			ReleaseID:           "release-test",
@@ -147,7 +145,7 @@ func TestArchiveShapeAndMetadata(t *testing.T) {
 			t.Fatalf("%s mtime %d != epoch %d", header.Name, got, opts.SourceDateEpoch)
 		}
 		switch header.Name {
-		case ServerEntryPath, MigrateEntryPath:
+		case ServerEntryPath:
 			if header.Mode != execMode {
 				t.Fatalf("%s mode %#o", header.Name, header.Mode)
 			}
@@ -177,7 +175,7 @@ func TestArchiveShapeAndMetadata(t *testing.T) {
 	for _, record := range meta.Files {
 		fileSet[record.Path] = record
 	}
-	for _, want := range []string{ServerEntryPath, MigrateEntryPath,
+	for _, want := range []string{ServerEntryPath,
 		"db/migrations/001_init.sql", "db/migrations/010_more.sql",
 		"deployment/defaults/attr-rules.yaml", "deployment/defaults/naming-vars.js",
 		"frontend/dist/index.html", "frontend/dist/assets/app.js"} {
@@ -198,7 +196,7 @@ func TestRejections(t *testing.T) {
 	opts := buildFixture(t)
 
 	nonExec := opts
-	nonExec.MigrateBinaryPath = func() string {
+	nonExec.ServerBinaryPath = func() string {
 		path := filepath.Join(t.TempDir(), "not-exec")
 		if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
@@ -206,7 +204,7 @@ func TestRejections(t *testing.T) {
 		return path
 	}()
 	if _, err := BuildEmbeddedPayload(nonExec); err == nil {
-		t.Fatal("non-executable migrate binary accepted")
+		t.Fatal("non-executable server binary accepted")
 	}
 
 	noDist := opts

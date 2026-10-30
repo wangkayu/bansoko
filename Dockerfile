@@ -42,11 +42,6 @@ RUN schema_version="${SCHEMA_VERSION}"; \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -buildvcs=false \
     -ldflags="-s -w -buildid= -X bansoko/internal/runtime/buildinfo.Version=${VERSION} -X bansoko/internal/runtime/buildinfo.Commit=${SOURCE_COMMIT} -X bansoko/internal/runtime/buildinfo.BuildID=${BUILD_ID} -X bansoko/internal/runtime/buildinfo.BuildTime=${BUILD_TIME} -X bansoko/internal/runtime/buildinfo.BuildDirty=${BUILD_DIRTY} -X bansoko/internal/runtime/buildinfo.APIVersion=${API_VERSION} -X bansoko/internal/runtime/buildinfo.SchemaVersion=$schema_version -X bansoko/internal/runtime/buildinfo.BaseCompatibilityVersion=${BASE_COMPATIBILITY_VERSION}" \
     -o /out/bansoko-server ./cmd/bansoko-server
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -buildvcs=false -ldflags="-s -w -buildid=" -o /out/bansoko-migrate ./cmd/bansoko-migrate
-# Embedded-update PID1 wrapper: immutable base-image component that never
-# accepts overlay content over itself; overlay releases run from the updates
-# volume through pointer files verified at launch.
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -buildvcs=false -ldflags="-s -w -buildid=" -o /out/bansoko-bootstrap ./cmd/bansoko-bootstrap
 
 # Provenance the image carries. GPL-3.0-only section 6 asks a distributor who
 # conveys object code to offer the Corresponding Source of that exact binary,
@@ -175,8 +170,6 @@ RUN apk add --no-cache ca-certificates tzdata mediainfo
 WORKDIR /app
 
 COPY --from=go-builder /out/bansoko-server /app/bansoko-server
-COPY --from=go-builder /out/bansoko-migrate /app/bansoko-migrate
-COPY --from=go-builder /out/bansoko-bootstrap /app/bootstrap
 COPY --from=go-builder /src/db/migrations /app/db/migrations
 COPY --from=go-builder /src/deployment/defaults /app/deployment/defaults
 COPY --from=go-builder /src/frontend/dist /app/frontend/dist
@@ -241,7 +234,7 @@ RUN set -eux; \
     mediainfo --Version | grep -q "MediaInfoLib"; \
     apk list --installed mediainfo libmediainfo
 
-# The container starts as root: /app/bootstrap prepares /config and the
+# The container starts as root: the unified binary's bootstrap mode prepares
 # updates root for PUID:PGID (default 1000:1000) and then drops to that account
 # for good before migrating or serving. /app stays root-owned and read-only to
 # the app.
@@ -280,6 +273,8 @@ EXPOSE 8080
 # /livez proves process liveness only (readiness is /readyz).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:8080/api/v1/livez || exit 1
-# The ENTRYPOINT is the bootstrap wrapper: bare start migrates the selected
-# tree and then runs the server; the `migrate` subcommand only migrates.
-ENTRYPOINT ["/app/bootstrap"]
+# The unified binary starts in bootstrap mode by default: bare start migrates
+# the selected tree and then runs the server. Explicit serve and migrate modes
+# are used by bootstrap after it has selected and verified the runtime tree.
+ENTRYPOINT ["/app/bansoko-server"]
+CMD ["bootstrap"]

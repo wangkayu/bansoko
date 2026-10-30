@@ -18,7 +18,7 @@ import (
 	"strings"
 )
 
-// Environment variable names injected by cmd/bansoko-bootstrap before exec of the
+// Environment variable names injected by the unified binary's bootstrap mode before exec of the
 // target server. They are read once at process start.
 const (
 	EnvBaseImageDigest      = "BANSOKO_BASE_IMAGE_DIGEST"
@@ -29,7 +29,7 @@ const (
 	EnvUpdateOperationID    = "BANSOKO_DEPLOYMENT_OPERATION_ID"
 	EnvExpectedProcessBuild = "BANSOKO_DEPLOYMENT_EXPECTED_BUILD_ID"
 	// EnvBootstrapVersion carries the release identity of the bootstrap wrapper
-	// that launched this process. cmd/bansoko-bootstrap always writes it from its own
+	// that launched this process. the unified binary's bootstrap mode always writes it from its own
 	// source constant, so an inherited value can never claim a bootstrap the
 	// running base image does not contain. The value is not part of Identity:
 	// readiness must keep treating a dev process without bootstrap facts as

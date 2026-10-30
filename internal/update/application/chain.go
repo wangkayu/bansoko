@@ -185,7 +185,7 @@ func (s *Service) stagePayload(payloadPath, opID string, manifest hardeningdomai
 	} else if !errors.Is(statErr, os.ErrNotExist) {
 		return "", statErr
 	}
-	if err = publishReleaseTree(tempDir, releaseDir, []string{packagemaker.ServerEntryPath, packagemaker.MigrateEntryPath}); err != nil {
+	if err = publishReleaseTree(tempDir, releaseDir, []string{packagemaker.ServerEntryPath}); err != nil {
 		return "", err
 	}
 	cleanupTemp = false

@@ -366,7 +366,7 @@ func verifyInstalled(ctx context.Context, db queryer, migrations []migration) er
 		return fmt.Errorf("inspect installed schema: %w", err)
 	}
 	if len(relations) == 0 {
-		return errors.New("migration history is missing; run bansoko-migrate")
+		return errors.New("migration history is missing; run bansoko-server migrate")
 	}
 	if err := verifySchemaIdentity(ctx, db); err != nil {
 		return err

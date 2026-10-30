@@ -14,8 +14,8 @@
 #   1. refuses while the app runs, unless --stop-app;
 #   2. starts postgres only and waits for it to be healthy;
 #   3. in a one-off container of the app image (same env and /config), runs
-#      `bansoko-migrate rotate-secret-key` from the release the app runs (current
-#      embedded-update overlay, else the image). That command refuses while any
+#      `bansoko-server migrate rotate-secret-key` from the release the app runs
+#      (current embedded-update overlay, else the image). That command refuses while any
 #      other session is connected, checks that the current key opens every row
 #      before writing anything, re-encrypts every row, reads each back with the
 #      new key, and commits once; it then stores the new key in
@@ -99,16 +99,16 @@ dc up -d --wait postgres
 # shellcheck disable=SC2016 # expanded by the container shell, not here
 inner='
 set -eu
-bin=/app/bansoko-migrate
+bin=/app/bansoko-server
 updates_root="${BANSOKO_UPDATES_ROOT:-}"
 if [ -n "$updates_root" ] && [ -f "$updates_root/current" ]; then
   token="$(tr -d " \n\r\t" < "$updates_root/current")"
-  bin="$updates_root/releases/$token/bansoko-migrate"
-  [ -x "$bin" ] || { echo "rotate-secret-key: the current update pointer names a release without bansoko-migrate ($token)" >&2; exit 1; }
+  bin="$updates_root/releases/$token/bansoko-server"
+  [ -x "$bin" ] || { echo "rotate-secret-key: the current update pointer names a release without bansoko-server ($token)" >&2; exit 1; }
 fi
 grep -q rotate-secret-key "$bin" || { echo "rotate-secret-key: the running release does not have this command yet; update first" >&2; exit 1; }
 [ -n "${BANSOKO_DATABASE_URL:-}" ] || { echo "rotate-secret-key: the app environment has no BANSOKO_DATABASE_URL" >&2; exit 1; }
-exec "$bin" rotate-secret-key
+exec "$bin" migrate rotate-secret-key
 '
 
 log "re-encrypting"

@@ -43,7 +43,7 @@ func main() {
 
 	// Every relation and function in public belongs to the schema baseline and
 	// its forward migrations (the runner refuses any other relation), so the
-	// reset drops all of them; the next bansoko-migrate rebuilds from 001.
+	// reset drops all of them; the next bansoko-server migrate rebuilds from 001.
 	rows, err := db.QueryContext(ctx, `
 SELECT c.relname, c.relkind
 FROM pg_class AS c

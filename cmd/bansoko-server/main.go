@@ -1189,7 +1189,7 @@ func (q qbHealthProbe) Healthy(ctx context.Context) (bool, string) {
 
 // deploymentIdentityProvider adapts the bootstrap-injected environment
 // identity plus one live updates-volume pointer read into the readiness
-// evidence port (design §6). Values are injected once by bansoko-bootstrap before
+// evidence port (design §6). Values are injected once by bootstrap mode before
 // exec; the pointer is re-read on every report so a pointer drift after the
 // process started is observable as a consistency breach.
 type deploymentIdentityProvider struct {

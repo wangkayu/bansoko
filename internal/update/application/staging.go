@@ -49,7 +49,6 @@ func safeEntryName(name string) (string, error) {
 	}
 	switch {
 	case name == packagemaker.ServerEntryPath,
-		name == packagemaker.MigrateEntryPath,
 		name == packagemaker.MetaEntryPath,
 		name == "deployment/defaults/attr-rules.yaml",
 		name == "deployment/defaults/naming-vars.js",
@@ -252,7 +251,6 @@ func verifyStagedTree(releaseDir string) (packagemaker.Metadata, error) {
 	}
 	for _, required := range []string{
 		packagemaker.ServerEntryPath,
-		packagemaker.MigrateEntryPath,
 		"deployment/defaults/attr-rules.yaml",
 		"deployment/defaults/naming-vars.js",
 	} {

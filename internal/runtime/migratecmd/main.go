@@ -17,9 +17,18 @@ import (
 	"bansoko/internal/runtime/migrations"
 )
 
+// embeddedFixtureFailMigrate is set only by the embedded-update Docker fixture
+// when it builds a target that must fail before opening the database.
+var embeddedFixtureFailMigrate string
+
 // Main applies migrations for the tree selected by the command flags and
 // environment. Fatal startup errors preserve the existing process exit path.
 func Main(args []string) {
+	if embeddedFixtureFailMigrate == "1" {
+		fmt.Fprintln(os.Stderr, "embedded fixture: injected migrate failure")
+		exitProcess(73)
+		return
+	}
 	runtimeLogger := observabilityapplication.NewJSONRuntimeLogger(os.Stderr)
 	ctx := context.Background()
 	if len(args) > 0 && args[0] == "rotate-secret-key" {
@@ -46,7 +55,7 @@ func Main(args []string) {
 	defer db.Close()
 	runtimeRole, err := runtimeRoleFromEnv(os.Getenv, cfg.Environment)
 	if err != nil {
-		fatalStartup(runtimeLogger, "runtime database connection is not configured: start through /app/bootstrap, which derives it from BANSOKO_DATABASE_URL", "runtime_role_config_missing")
+		fatalStartup(runtimeLogger, "runtime database connection is not configured: start through /app/bansoko-server bootstrap, which derives it from BANSOKO_DATABASE_URL", "runtime_role_config_missing")
 	}
 	if runtimeRole != nil {
 		// The baseline creates the runtime group role and provisioning

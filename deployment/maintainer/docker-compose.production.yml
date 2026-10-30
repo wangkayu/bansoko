@@ -23,7 +23,7 @@
 #   - healthcheck uses /api/v1/livez (process liveness only); readiness is
 #     /readyz and must not be gated on DB-ping /system/health.
 #
-# Production uses the embedded updater only: `/app/bootstrap` consumes signed
+# Production uses the embedded updater only: bootstrap mode consumes signed
 # payloads into the updates workspace under the config mount and owns
 # migration, handoff, readiness, and rollback. Optional supervisor/recovery
 # source and protocol remain historical/manual and are outside this graph.
