@@ -15,7 +15,7 @@
 // branch — migrations replay (forward-only runner is idempotent), restores
 // replay (--clean --if-exists), pointer promotions and tree removals are
 // idempotent filesystem effects.
-package main
+package bootstrap
 
 import (
 	"context"

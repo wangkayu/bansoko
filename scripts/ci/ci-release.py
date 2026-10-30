@@ -453,7 +453,7 @@ def inspect_image(ref, ident, scratch):
         ROOT / "deployment/public.key"
     ).read_text().strip():
         fail("image signing trust differs")
-    source = (ROOT / "cmd/bansoko-bootstrap/main.go").read_text()
+    source = (ROOT / "internal/runtime/bootstrap/main.go").read_text()
     versions = set(re.findall(r"embedded-bootstrap-v[0-9]+", source))
     if len(versions) != 1:
         fail("ambiguous bootstrap source version")
