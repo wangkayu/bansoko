@@ -1485,12 +1485,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Streams a provider cover or candidate poster that the server registered
+        /** @description Serves a provider cover or candidate poster that the server registered
          *     when it emitted this path in a list, catalog or metadata-search view.
          *     The key is an opaque identifier; the upstream URL is resolved from the
          *     server's own registry (never from the request), limited to the
          *     provider's hosts, fetched through the provider connection's network
-         *     route and cached. An unregistered key is a 404.
+         *     route and cached. An unregistered key is a 404. The response carries an
+         *     ETag over its bytes, so a client that already has the image revalidates
+         *     instead of downloading it again.
          *      */
         get: operations["readImageCover"];
         put?: never;
@@ -10834,6 +10836,15 @@ export interface operations {
                     "image/*": string;
                 };
             };
+            /** @description The client's copy is current: its If-None-Match matched the image's
+             *     ETag, so no body follows.
+             *      */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };
@@ -10857,6 +10868,15 @@ export interface operations {
                 content: {
                     "image/*": string;
                 };
+            };
+            /** @description The client's copy is current: its If-None-Match matched the image's
+             *     ETag, so no body follows.
+             *      */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];

@@ -3811,6 +3811,10 @@ paths:
               schema:
                 type: string
                 format: binary
+        '304':
+          description: |
+            The client's copy is current: its If-None-Match matched the image's
+            ETag, so no body follows.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -3822,12 +3826,14 @@ paths:
       x-scope: read
       x-surface-keep: "frontend: cover_url and poster_url paths in list, catalog and metadata-candidate views are loaded through useAuthedImage as image requests, not through the typed client"
       description: |
-        Streams a provider cover or candidate poster that the server registered
+        Serves a provider cover or candidate poster that the server registered
         when it emitted this path in a list, catalog or metadata-search view.
         The key is an opaque identifier; the upstream URL is resolved from the
         server's own registry (never from the request), limited to the
         provider's hosts, fetched through the provider connection's network
-        route and cached. An unregistered key is a 404.
+        route and cached. An unregistered key is a 404. The response carries an
+        ETag over its bytes, so a client that already has the image revalidates
+        instead of downloading it again.
       parameters:
         - name: image_key
           in: path
@@ -3843,6 +3849,10 @@ paths:
               schema:
                 type: string
                 format: binary
+        '304':
+          description: |
+            The client's copy is current: its If-None-Match matched the image's
+            ETag, so no body follows.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':

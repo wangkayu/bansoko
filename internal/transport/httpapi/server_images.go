@@ -2,22 +2,26 @@ package httpapi
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
+	"strings"
 
 	identitymetadataadapter "bansoko/internal/identitymetadata/adapter"
 	"bansoko/internal/transport/httpapi/generated"
 )
 
-// ImagePosterService resolves and streams poster bytes for a Bangumi subject.
-// It is implemented by internal/identitymetadata/adapter.
+// ImagePosterService resolves poster bytes for a Bangumi subject. It is
+// implemented by internal/identitymetadata/adapter.
 type ImagePosterService interface {
 	FetchPoster(ctx context.Context, bgmID string) (io.ReadCloser, string, error)
 }
 
-// ImageCoverService registers provider image URLs and streams the proxied
+// ImageCoverService registers provider image URLs and serves the proxied
 // bytes. It is implemented by internal/identitymetadata/adapter. CoverPaths
 // returns the same-origin path for each URL the provider policy allows; a URL
 // it omits must not be emitted in any form.
@@ -26,10 +30,12 @@ type ImageCoverService interface {
 	FetchCover(ctx context.Context, key string) (io.ReadCloser, string, error)
 }
 
-// ReadImagePoster streams the proxied poster for one Bangumi subject id. The
+// ReadImagePoster serves the proxied poster for one Bangumi subject id. The
 // browser never talks to the image host directly: bytes flow through the
-// configured BGM connection's network route, and the immutable cache hint lets
-// the browser cache them locally.
+// configured BGM connection's network route, and the ETag lets the browser
+// revalidate instead of re-downloading. The URL is addressed by subject id, so
+// it cannot be immutable: a replaced poster keeps the same path and must be
+// revalidated at least once a day.
 func (s *Server) ReadImagePoster(w http.ResponseWriter, r *http.Request, bgmId string) {
 	posters := s.deps.ImagePosters
 	body, contentType, err := posters.FetchPoster(r.Context(), bgmId)
@@ -46,14 +52,12 @@ func (s *Server) ReadImagePoster(w http.ResponseWriter, r *http.Request, bgmId s
 		writeError(w, r, err)
 		return
 	}
-	defer body.Close()
-	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Cache-Control", "public, max-age=86400, immutable")
-	w.WriteHeader(http.StatusOK)
-	_, _ = io.Copy(w, body)
+	if err := serveProxiedImage(w, r, body, contentType, "private, max-age=86400"); err != nil {
+		writeError(w, r, err)
+	}
 }
 
-// ReadImageCover streams a provider cover or candidate poster registered under
+// ReadImageCover serves a provider cover or candidate poster registered under
 // an opaque key. The request carries no URL: the upstream address comes from
 // the server's registry, so this route cannot be steered to another host.
 func (s *Server) ReadImageCover(w http.ResponseWriter, r *http.Request, imageKey string) {
@@ -76,13 +80,66 @@ func (s *Server) ReadImageCover(w http.ResponseWriter, r *http.Request, imageKey
 		}
 		return
 	}
-	defer body.Close()
-	w.Header().Set("Content-Type", contentType)
 	// The key is content-addressed by source URL, so the bytes behind a key do
-	// not change within the TTL. private: the route is authenticated.
-	w.Header().Set("Cache-Control", "private, max-age=86400")
+	// not change within the TTL and the path may be called immutable. private:
+	// the route is authenticated.
+	if err := serveProxiedImage(w, r, body, contentType, "private, max-age=86400, immutable"); err != nil {
+		writeError(w, r, &APIError{Status: http.StatusBadGateway, Code: "COVER_UPSTREAM_FAILED", Message: "The provider did not return a usable image."})
+	}
+}
+
+// maxProxiedImageBytes bounds one buffered image body. Both image proxies
+// already refuse to serve more than this, so a longer body is a broken upstream
+// rather than a normal response.
+const maxProxiedImageBytes = 2 << 20
+
+// errProxiedImageUnreadable reports a body the image proxies should already
+// have bounded.
+var errProxiedImageUnreadable = errors.New("proxied image body is empty or exceeds its size limit")
+
+// serveProxiedImage answers an already-fetched image with a strong ETag over
+// the exact bytes it serves. The body is buffered because the validator has to
+// exist before the response starts; that is also what turns a reload, or a
+// browser that evicted the entry, into one conditional request instead of the
+// whole image. A matching If-None-Match answers 304 and no body.
+func serveProxiedImage(w http.ResponseWriter, r *http.Request, body io.ReadCloser, contentType, cacheControl string) error {
+	defer body.Close()
+	payload, err := io.ReadAll(io.LimitReader(body, maxProxiedImageBytes+1))
+	if err != nil {
+		return err
+	}
+	if len(payload) == 0 || len(payload) > maxProxiedImageBytes {
+		return errProxiedImageUnreadable
+	}
+	sum := sha256.Sum256(payload)
+	etag := `"` + hex.EncodeToString(sum[:]) + `"`
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", cacheControl)
+	if etagMatches(r.Header.Get("If-None-Match"), etag) {
+		w.WriteHeader(http.StatusNotModified)
+		return nil
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Length", strconv.Itoa(len(payload)))
 	w.WriteHeader(http.StatusOK)
-	_, _ = io.Copy(w, body)
+	_, err = w.Write(payload)
+	return err
+}
+
+// etagMatches reports whether an If-None-Match header names this validator. A
+// GET revalidation uses weak comparison, so a W/ prefix still matches; "*"
+// matches any existing representation.
+func etagMatches(header, etag string) bool {
+	for _, candidate := range strings.Split(header, ",") {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "*" {
+			return true
+		}
+		if candidate == etag || strings.TrimPrefix(candidate, "W/") == etag {
+			return true
+		}
+	}
+	return false
 }
 
 var imageCoverKeyPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)

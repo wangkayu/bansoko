@@ -77,7 +77,7 @@ func TestReadImageCoverStreamsWithPrivateCacheAndMapsErrors(t *testing.T) {
 			}
 			if tc.wantCode == "" {
 				if recorder.Body.String() != "png-bytes" || recorder.Header().Get("Content-Type") != "image/png" ||
-					recorder.Header().Get("Cache-Control") != "private, max-age=86400" {
+					recorder.Header().Get("Cache-Control") != "private, max-age=86400, immutable" {
 					t.Fatalf("image response headers/body = %v %q", recorder.Header(), recorder.Body.String())
 				}
 				return
