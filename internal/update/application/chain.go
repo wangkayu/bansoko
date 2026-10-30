@@ -60,10 +60,15 @@ func applyFixtureStopBeforeMarker() {
 	fixtureStopExit(FixtureStopExitCode)
 }
 
-func (s *Service) runChain(manifest hardeningdomain.ReleaseManifest, digest, manifestURL, operationID string) {
+func (s *Service) runChain(manifest hardeningdomain.ReleaseManifest, digest, manifestURL, operationID string, source *UpdateHTTPSource) {
 	defer s.finishChain()
 	ctx := context.Background()
-	source, err := s.packageSourceFor(manifestURL)
+	var err error
+	if source == nil {
+		// Only the admitted operation reaches the chain with its own source; a
+		// caller without one rebuilds the deployment policy as before.
+		source, err = s.packageSourceFor(manifestURL)
+	}
 	if err == nil && manifest.EmbeddedUpdate == nil {
 		err = errors.New("signed manifest has no embedded update segment")
 	}

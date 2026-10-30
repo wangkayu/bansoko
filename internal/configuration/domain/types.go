@@ -157,12 +157,16 @@ const (
 	NetworkRouteDirect    NetworkRouteKind = "direct"
 	NetworkRouteHTTPProxy NetworkRouteKind = "http_proxy"
 	NetworkRouteSOCKS5    NetworkRouteKind = "socks5"
+	// NetworkRouteGitHub is the update channel's own forward proxy. At most one
+	// row of this kind exists, and no ordinary connection may bind it.
+	NetworkRouteGitHub NetworkRouteKind = "github"
 )
 
 type NetworkRouteInput struct {
 	ID       string
 	Name     string
 	Kind     NetworkRouteKind
+	Enabled  bool
 	Endpoint string
 	Secret   SecretMutation
 }
@@ -191,6 +195,10 @@ func (input NetworkRouteInput) Normalize() (NetworkRouteInput, error) {
 			return NetworkRouteInput{}, errors.New("direct network route must not include an endpoint")
 		}
 	case NetworkRouteHTTPProxy:
+		if err := validateNetworkRouteEndpoint(input.Endpoint, "http", "https"); err != nil {
+			return NetworkRouteInput{}, err
+		}
+	case NetworkRouteGitHub:
 		if err := validateNetworkRouteEndpoint(input.Endpoint, "http", "https"); err != nil {
 			return NetworkRouteInput{}, err
 		}

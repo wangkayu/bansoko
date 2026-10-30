@@ -959,6 +959,16 @@ const (
 	FingerprintAlgorithmMetadata FingerprintAlgorithm = "metadata"
 )
 
+// Defines values for GitHubRouteKind.
+const (
+	GitHubRouteKindGithub GitHubRouteKind = "github"
+)
+
+// Defines values for GitHubRouteInputKind.
+const (
+	GitHubRouteInputKindGithub GitHubRouteInputKind = "github"
+)
+
 // Defines values for GlobalSectionName.
 const (
 	GlobalSectionNameDownloadCompletion GlobalSectionName = "download_completion"
@@ -1223,6 +1233,7 @@ const (
 // Defines values for NetworkRouteTestResultKind.
 const (
 	NetworkRouteTestResultKindDirect    NetworkRouteTestResultKind = "direct"
+	NetworkRouteTestResultKindGithub    NetworkRouteTestResultKind = "github"
 	NetworkRouteTestResultKindHttpProxy NetworkRouteTestResultKind = "http_proxy"
 	NetworkRouteTestResultKindSocks5    NetworkRouteTestResultKind = "socks5"
 )
@@ -5237,6 +5248,35 @@ type FrozenRenderSnapshot struct {
 	Filename        string `json:"filename"`
 	RendererVersion string `json:"renderer_version"`
 }
+
+// GitHubRoute The update channel's own forward proxy. At most one route of this kind exists, and no connection may bind it.
+type GitHubRoute struct {
+	CredentialConfigured bool            `json:"credential_configured"`
+	Enabled              bool            `json:"enabled"`
+	Id                   ID              `json:"id"`
+	Kind                 GitHubRouteKind `json:"kind"`
+	Name                 string          `json:"name"`
+	ProxyUrl             string          `json:"proxy_url"`
+	Version              Version         `json:"version"`
+}
+
+// GitHubRouteKind defines model for GitHubRoute.Kind.
+type GitHubRouteKind string
+
+// GitHubRouteInput The update channel's own forward proxy. At most one route of this kind exists, and no connection may bind it.
+type GitHubRouteInput struct {
+	Enabled  bool                 `json:"enabled"`
+	Kind     GitHubRouteInputKind `json:"kind"`
+	Name     string               `json:"name"`
+	ProxyUrl string               `json:"proxy_url"`
+	Secret   *ConnectionSecret    `json:"secret,omitempty"`
+
+	// Username Credential username, applied only when secret replaces the stored credential.
+	Username *string `json:"username,omitempty"`
+}
+
+// GitHubRouteInputKind defines model for GitHubRouteInput.Kind.
+type GitHubRouteInputKind string
 
 // GlobalSectionInput defines model for GlobalSectionInput.
 type GlobalSectionInput struct {
@@ -10885,6 +10925,34 @@ func (t *NetworkRoute) MergeSOCKS5Route(v SOCKS5Route) error {
 	return err
 }
 
+// AsGitHubRoute returns the union data inside the NetworkRoute as a GitHubRoute
+func (t NetworkRoute) AsGitHubRoute() (GitHubRoute, error) {
+	var body GitHubRoute
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromGitHubRoute overwrites any union data inside the NetworkRoute as the provided GitHubRoute
+func (t *NetworkRoute) FromGitHubRoute(v GitHubRoute) error {
+	v.Kind = "github"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeGitHubRoute performs a merge with any union data inside the NetworkRoute, using the provided GitHubRoute
+func (t *NetworkRoute) MergeGitHubRoute(v GitHubRoute) error {
+	v.Kind = "github"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 func (t NetworkRoute) Discriminator() (string, error) {
 	var discriminator struct {
 		Discriminator string `json:"kind"`
@@ -10901,6 +10969,8 @@ func (t NetworkRoute) ValueByDiscriminator() (interface{}, error) {
 	switch discriminator {
 	case "direct":
 		return t.AsDirectRoute()
+	case "github":
+		return t.AsGitHubRoute()
 	case "http_proxy":
 		return t.AsHTTPProxyRoute()
 	case "socks5":
@@ -11004,6 +11074,34 @@ func (t *NetworkRouteInput) MergeSOCKS5RouteInput(v SOCKS5RouteInput) error {
 	return err
 }
 
+// AsGitHubRouteInput returns the union data inside the NetworkRouteInput as a GitHubRouteInput
+func (t NetworkRouteInput) AsGitHubRouteInput() (GitHubRouteInput, error) {
+	var body GitHubRouteInput
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromGitHubRouteInput overwrites any union data inside the NetworkRouteInput as the provided GitHubRouteInput
+func (t *NetworkRouteInput) FromGitHubRouteInput(v GitHubRouteInput) error {
+	v.Kind = "github"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeGitHubRouteInput performs a merge with any union data inside the NetworkRouteInput, using the provided GitHubRouteInput
+func (t *NetworkRouteInput) MergeGitHubRouteInput(v GitHubRouteInput) error {
+	v.Kind = "github"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 func (t NetworkRouteInput) Discriminator() (string, error) {
 	var discriminator struct {
 		Discriminator string `json:"kind"`
@@ -11020,6 +11118,8 @@ func (t NetworkRouteInput) ValueByDiscriminator() (interface{}, error) {
 	switch discriminator {
 	case "direct":
 		return t.AsDirectRouteInput()
+	case "github":
+		return t.AsGitHubRouteInput()
 	case "http_proxy":
 		return t.AsHTTPProxyRouteInput()
 	case "socks5":

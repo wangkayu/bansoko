@@ -637,6 +637,7 @@ func runServe(args []string) {
 			DB: db, PublicKey: publicKey, UpdatesRoot: updatesRoot,
 			ManifestURL: os.Getenv(updateapplication.EnvManifestURL), ChannelURL: os.Getenv(updateapplication.EnvChannelURL), PackageRoot: os.Getenv(updateapplication.EnvPackageRoot),
 			Production:     cfg.Environment == "production",
+			GitHubRoute:    configService,
 			BuildReleaseID: buildinfo.Current().BuildID, BuildVersion: buildinfo.Current().Version,
 			BuildCompatibilityVersion: buildinfo.Current().BaseCompatibilityVersion, BuildBootstrapVersion: os.Getenv(deploymentidentity.EnvBootstrapVersion),
 			UpdateMode:  cfg.UpdateMode,

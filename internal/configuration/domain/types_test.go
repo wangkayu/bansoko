@@ -51,6 +51,16 @@ func TestNetworkRouteInputValidatesTypedEndpoints(t *testing.T) {
 	if _, err := (NetworkRouteInput{Name: "credentials", Kind: NetworkRouteHTTPProxy, Endpoint: "http://user:pass@127.0.0.1:7890"}).Normalize(); err == nil {
 		t.Fatal("route endpoint must not embed credentials")
 	}
+	github, err := (NetworkRouteInput{Name: "github", Kind: NetworkRouteGitHub, Endpoint: "http://127.0.0.1:7890"}).Normalize()
+	if err != nil || github.Kind != NetworkRouteGitHub || github.Endpoint == "" {
+		t.Fatalf("github route was rejected: %+v err=%v", github, err)
+	}
+	if _, err := (NetworkRouteInput{Name: "github", Kind: NetworkRouteGitHub, Endpoint: "socks5://127.0.0.1:1080"}).Normalize(); err == nil {
+		t.Fatal("github route must reject a SOCKS5 endpoint")
+	}
+	if _, err := (NetworkRouteInput{Name: "github", Kind: NetworkRouteGitHub}).Normalize(); err == nil {
+		t.Fatal("github route must require a proxy endpoint")
+	}
 }
 
 func TestQBittorrentConfigNormalizesAndProtectsSystemTags(t *testing.T) {

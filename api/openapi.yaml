@@ -9168,12 +9168,14 @@ components:
         - $ref: '#/components/schemas/DirectRouteInput'
         - $ref: '#/components/schemas/HTTPProxyRouteInput'
         - $ref: '#/components/schemas/SOCKS5RouteInput'
+        - $ref: '#/components/schemas/GitHubRouteInput'
       discriminator:
         propertyName: kind
         mapping:
           direct: '#/components/schemas/DirectRouteInput'
           http_proxy: '#/components/schemas/HTTPProxyRouteInput'
           socks5: '#/components/schemas/SOCKS5RouteInput'
+          github: '#/components/schemas/GitHubRouteInput'
     DirectRouteInput:
       type: object
       additionalProperties: false
@@ -9239,17 +9241,43 @@ components:
           description: Credential username, applied only when secret replaces the stored credential.
         secret:
           $ref: '#/components/schemas/ConnectionSecret'
+    GitHubRouteInput:
+      type: object
+      additionalProperties: false
+      description: The update channel's own forward proxy. At most one route of this kind exists, and no connection may bind it.
+      required: [kind, name, enabled, proxy_url]
+      properties:
+        kind:
+          type: string
+          enum: [github]
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        enabled:
+          type: boolean
+        proxy_url:
+          type: string
+          format: uri
+        username:
+          type: string
+          maxLength: 256
+          description: Credential username, applied only when secret replaces the stored credential.
+        secret:
+          $ref: '#/components/schemas/ConnectionSecret'
     NetworkRoute:
       oneOf:
         - $ref: '#/components/schemas/DirectRoute'
         - $ref: '#/components/schemas/HTTPProxyRoute'
         - $ref: '#/components/schemas/SOCKS5Route'
+        - $ref: '#/components/schemas/GitHubRoute'
       discriminator:
         propertyName: kind
         mapping:
           direct: '#/components/schemas/DirectRoute'
           http_proxy: '#/components/schemas/HTTPProxyRoute'
           socks5: '#/components/schemas/SOCKS5Route'
+          github: '#/components/schemas/GitHubRoute'
     DirectRoute:
       type: object
       additionalProperties: false
@@ -9312,6 +9340,28 @@ components:
           type: boolean
         version:
           $ref: '#/components/schemas/Version'
+    GitHubRoute:
+      type: object
+      additionalProperties: false
+      description: The update channel's own forward proxy. At most one route of this kind exists, and no connection may bind it.
+      required: [id, kind, name, enabled, proxy_url, credential_configured, version]
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        kind:
+          type: string
+          enum: [github]
+        name:
+          type: string
+        enabled:
+          type: boolean
+        proxy_url:
+          type: string
+          format: uri
+        credential_configured:
+          type: boolean
+        version:
+          $ref: '#/components/schemas/Version'
     NetworkRouteTestResult:
       type: object
       additionalProperties: false
@@ -9321,7 +9371,7 @@ components:
           $ref: '#/components/schemas/ID'
         kind:
           type: string
-          enum: [direct, http_proxy, socks5]
+          enum: [direct, http_proxy, socks5, github]
         health:
           type: string
           enum: [ready, degraded, failed]
