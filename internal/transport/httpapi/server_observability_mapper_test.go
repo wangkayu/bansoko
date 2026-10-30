@@ -7,7 +7,23 @@ import (
 	"time"
 
 	observabilityapplication "bansoko/internal/observability/application"
+	"bansoko/internal/transport/httpapi/generated"
 )
+
+// TestMapObservabilityRecordQueryCarriesEventView proves the optional view
+// parameter reaches the read query and that its absence stays nil (the API
+// default, all).
+func TestMapObservabilityRecordQueryCarriesEventView(t *testing.T) {
+	primary := generated.ListObservabilityRecordsParamsEventViewPrimary
+	mapped := mapObservabilityRecordQuery(generated.ListObservabilityRecordsParams{EventView: &primary})
+	if mapped.EventView == nil || *mapped.EventView != observabilityapplication.RecordEventViewPrimary {
+		t.Fatalf("event view not mapped: %+v", mapped.EventView)
+	}
+	absent := mapObservabilityRecordQuery(generated.ListObservabilityRecordsParams{})
+	if absent.EventView != nil {
+		t.Fatalf("an absent event view must stay nil: %+v", absent.EventView)
+	}
+}
 
 // TestMapDiagnosticEpisodeCarriesStructuredFactsOnly proves the wire episode
 // is built from the structured fields and never gains free text.

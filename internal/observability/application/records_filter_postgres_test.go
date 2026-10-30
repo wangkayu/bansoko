@@ -138,9 +138,16 @@ func (f filterFixture) list(t *testing.T, query RecordQuery) []filterRecord {
 	if page.NextCursor != nil {
 		t.Fatalf("fixture does not fit one page")
 	}
+	return recordsToFilterRecords(t, page.Records)
+}
+
+// recordsToFilterRecords decodes the read projection into the (record type,
+// id, source) shape the filter tests compare.
+func recordsToFilterRecords(t *testing.T, records []Record) []filterRecord {
+	t.Helper()
 	envelopes := map[string]string{"business": "entry", "plugin": "delivery", "automation": "run", "routine": "routine"}
 	out := []filterRecord{}
-	for _, record := range page.Records {
+	for _, record := range records {
 		var shape map[string]json.RawMessage
 		if err := json.Unmarshal(record.Raw, &shape); err != nil {
 			t.Fatalf("decode record: %v", err)

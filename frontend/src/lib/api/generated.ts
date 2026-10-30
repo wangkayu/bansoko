@@ -11517,6 +11517,8 @@ export interface operations {
                 kind?: ("routine" | "business" | "automation" | "plugin")[];
                 /** @description Narrows the business records to these journal entry kinds; the other record kinds are unaffected. */
                 entry_kind?: components["schemas"]["SubscriptionLogKind"][];
+                /** @description Read projection of the unified feed. primary hides the repeated release filtering process: business entries of kind release_processed with outcome info and reason awaiting_competition or no_placeable_files are excluded before pagination. all returns every record. Other record kinds are unaffected. */
+                event_view?: "primary" | "all";
                 /** @description Selects records in this state. A business record of a Release run (download, verification, import, placement and replacement entries closed by the run's acquisition result) takes the state of its run: the result's outcome, or in_progress while the run has no result. failure includes failed acquisitions, failed business records, failed and partial automation runs, and failed or unconfirmed (unknown) notification deliveries. */
                 state?: components["schemas"]["ObservabilityRecordState"];
                 /** @description Case-insensitive search text (trimmed; blank means no search). It matches the anime title, a business record's release title, file name or subgroup name, and a notification's target name; a business record of a Release run matches when any record of its run does. */

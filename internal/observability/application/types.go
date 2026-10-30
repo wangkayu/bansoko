@@ -17,7 +17,11 @@ type RecordQuery struct {
 	State *string
 	// Q is a case-insensitive search text; a business entry of a Release run
 	// matches when any entry of its run does.
-	Q              *string
+	Q *string
+	// EventView is the read projection of the business source: primary drops
+	// the repeated release filtering process before pagination, all (the
+	// default when nil) returns every record. Other sources are unaffected.
+	EventView      *string
 	From           *time.Time
 	To             *time.Time
 	ManagedAnimeID *string

@@ -69,6 +69,14 @@ export const logCopy = {
   title: "日志",
   tabRecords: "事件",
   tabDiagnostics: "诊断",
+  // 事件页的读取投影：主要事件省略重复的筛选过程；全部事件是完整历史。
+  view: {
+    aria: "事件视图",
+    primary: "主要事件",
+    all: "全部事件",
+    helpLabel: "关于事件视图",
+    help: "主要事件不显示等待比较和没有可入库文件的重复筛选过程，全部记录可在「全部事件」中查看",
+  },
   status: "状态",
   all: "全部",
   allStatus: "全部",
@@ -141,6 +149,8 @@ export const logCopy = {
   loadingRecords: "正在加载事件…",
   loadingDiagnostics: "正在加载诊断记录…",
   emptyRecords: "暂无事件",
+  emptyPrimary: "当前筛选下没有主要事件",
+  showAll: "查看全部事件",
   emptyDiagnostics: "暂无诊断记录",
   recordsAria: "事件列表",
   diagnosticsAria: "诊断列表",

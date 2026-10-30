@@ -3,8 +3,10 @@ import { ChevronRight, Clock, Search } from "lucide-react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { Button, Field, Input, Select } from "../ui/base/controls";
+import { HelpTip } from "../ui/base/HelpTip";
 import { StatePill, type StatePillTone } from "../ui/StatePill";
 import { Popover } from "../ui/base/overlays";
+import { SegmentedControl } from "../ui/SegmentedControl";
 import { StateBlock } from "../ui/StateBlock";
 import {
   listAnime,
@@ -47,6 +49,9 @@ const SEARCH_DEBOUNCE_MS = 300;
 
 export type StateFilter = "" | LogState;
 
+/** The events read projection: primary hides the repeated release filtering process; all is the full history. */
+type EventView = "primary" | "all";
+
 export type EventFilters = {
   state: StateFilter;
   animeId: string;
@@ -57,6 +62,11 @@ export type EventFilters = {
 };
 
 export const EMPTY_FILTERS: EventFilters = { state: "", animeId: "", q: "", fromLocal: "", toLocal: "" };
+
+const EVENT_VIEW_OPTIONS = (): { value: EventView; label: string }[] => [
+  { value: "primary", label: t("log.view.primary") },
+  { value: "all", label: t("log.view.all") },
+];
 
 const STATE_OPTIONS = (): { value: StateFilter; label: string }[] => [
   { value: "", label: t("log.allStatus") },
@@ -140,10 +150,16 @@ export function LogEvents({
   const to = localToIso(filters.toLocal);
   const unfiltered = filters.state === "" && filters.animeId === "" && q === "" && from === undefined && to === undefined && !presetAnime;
   const patch = (next: Partial<EventFilters>) => onFiltersChange({ ...filters, ...next });
+  // Every opening starts on the primary view (LogEvents remounts with the dialog); switching views keeps the filters.
+  const [eventView, setEventView] = useState<EventView>("primary");
 
   return (
     <div className="tw:grid tw:gap-3">
       <div className="tw:grid tw:gap-2">
+        <div className="tw:flex tw:items-center tw:gap-1.5">
+          <SegmentedControl<EventView> ariaLabel={t("log.view.aria")} value={eventView} options={EVENT_VIEW_OPTIONS()} onChange={setEventView} />
+          <HelpTip label={t("log.view.helpLabel")}>{t("log.view.help")}</HelpTip>
+        </div>
         <div className="tw:flex tw:items-center tw:gap-2">
           <div className="tw:w-28 tw:flex-none">
             <Select<StateFilter> label={t("log.status")} value={filters.state} options={STATE_OPTIONS()} onChange={(state) => patch({ state })} />
@@ -174,6 +190,9 @@ export function LogEvents({
         />
       </div>
       <EventsList
+        key={eventView}
+        eventView={eventView}
+        onShowAll={() => setEventView("all")}
         state={filters.state}
         animeId={filters.animeId}
         q={q}
@@ -231,6 +250,8 @@ function TimeRangePopover({ from, to, onChange }: { from: string; to: string; on
 }
 
 function EventsList({
+  eventView,
+  onShowAll,
   state,
   animeId,
   q,
@@ -242,6 +263,8 @@ function EventsList({
   onOpenDelivery,
   onOpenAnimeMetadata,
 }: {
+  eventView: EventView;
+  onShowAll: () => void;
   state: StateFilter;
   animeId: string;
   q: string;
@@ -254,10 +277,11 @@ function EventsList({
   onOpenAnimeMetadata?: (managedAnimeId: string) => void;
 }) {
   const query = useInfiniteQuery({
-    queryKey: observabilityKeys.businessLine(state, animeId, q, from, to),
+    queryKey: observabilityKeys.businessLine(eventView, state, animeId, q, from, to),
     queryFn: ({ pageParam }) =>
       listObservabilityRecords({
         kind: ["business", "plugin"],
+        event_view: eventView,
         state: state === "" ? undefined : state,
         q: q === "" ? undefined : q,
         managed_anime_id: animeId === "" ? undefined : animeId,
@@ -300,7 +324,24 @@ function EventsList({
     );
   }
   if (!query.data) return <StateBlock kind="busy" title={t("log.loadingRecords")} />;
-  if (items.length === 0) return <StateBlock kind="empty" title={t("log.emptyRecords")} />;
+  if (items.length === 0) {
+    // An empty primary view says no main event matches the filters and offers the
+    // full history; it never claims the instance has no logs at all.
+    if (eventView === "primary") {
+      return (
+        <StateBlock
+          kind="empty"
+          title={t("log.emptyPrimary")}
+          action={
+            <Button size="sm" variant="link" onClick={onShowAll}>
+              {t("log.showAll")}
+            </Button>
+          }
+        />
+      );
+    }
+    return <StateBlock kind="empty" title={t("log.emptyRecords")} />;
+  }
 
   return (
     <div className="tw:grid tw:gap-2">

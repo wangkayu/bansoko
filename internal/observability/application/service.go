@@ -150,6 +150,10 @@ func (s *Service) ListRecords(ctx context.Context, params RecordQuery) (RecordPa
 		return RecordPage{}, err
 	}
 	businessKinds := classifyBusinessKinds(entryKinds)
+	eventView, err := recordEventViewParam(params.EventView)
+	if err != nil {
+		return RecordPage{}, err
+	}
 
 	// time range
 	var fromTime, toTime *time.Time
@@ -302,6 +306,13 @@ func (s *Service) ListRecords(ctx context.Context, params RecordQuery) (RecordPa
 		// entry_kind narrows the business source alone.
 		if src.kind == "business" && entryKinds != nil {
 			where = append(where, "e.kind IN "+sqlList(entryKinds))
+		}
+		// The primary view hides the repeated release filtering process in the
+		// business source only. The predicate sits inside this source's WHERE,
+		// so it runs before the per-source LIMIT and the outer keyset page: a
+		// page is already 50 primary records, not 50 raw rows filtered later.
+		if src.kind == "business" && eventView == RecordEventViewPrimary {
+			where = append(where, primaryEventViewPredicate())
 		}
 		if stateFilter != "" {
 			where = append(where, src.state(stateFilter))

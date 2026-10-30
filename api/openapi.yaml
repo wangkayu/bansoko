@@ -4666,6 +4666,19 @@ paths:
             type: array
             items:
               $ref: '#/components/schemas/SubscriptionLogKind'
+        - name: event_view
+          in: query
+          required: false
+          description: >-
+            Read projection of the unified feed. primary hides the repeated
+            release filtering process: business entries of kind
+            release_processed with outcome info and reason awaiting_competition
+            or no_placeable_files are excluded before pagination. all returns
+            every record. Other record kinds are unaffected.
+          schema:
+            type: string
+            enum: [primary, all]
+            default: all
         - name: state
           in: query
           required: false
