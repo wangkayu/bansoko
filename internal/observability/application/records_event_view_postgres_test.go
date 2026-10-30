@@ -120,11 +120,10 @@ func TestListRecordsPrimaryEventViewExactExclusion(t *testing.T) {
 		t.Fatalf("primary records\n got %s\nwant %s", got, wantPrimary)
 	}
 
-	// entry_kind and the view intersect: narrowing to release_processed still
-	// hides the two rows, while a plugin-only query is unaffected.
+	// entry_kind narrows only business entries; plugin deliveries stay visible.
 	releaseKinds := []string{"release_processed"}
 	got := listEventViewIDs(t, fixture, RecordQuery{EventView: textParam(RecordEventViewPrimary), EntryKind: &releaseKinds})
-	want := expectIDs("business:other-reason", "business:no-reason", "business:failure-same-reason",
+	want := expectIDs("plugin:delivery-ev", "business:other-reason", "business:no-reason", "business:failure-same-reason",
 		"business:success-same-reason")
 	if got != want {
 		t.Fatalf("primary with entry_kind\n got %s\nwant %s", got, want)
