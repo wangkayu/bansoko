@@ -100,7 +100,7 @@ sha256_file() {
 # closed. Docker is already required wherever this is called.
 baked_bootstrap_version() {
   docker run --rm --entrypoint sh "$1" -c \
-    "tr -c '[:print:]' '\\n' < /app/bansoko-server | grep -o 'embedded-bootstrap-v[0-9][0-9]*' | sort -u" 2>/dev/null || true
+    "grep -a -o 'embedded-bootstrap-v[0-9][0-9]*' /app/bansoko-server | sort -u" 2>/dev/null || true
 }
 
 source_commit="$(git -C "$root" rev-parse HEAD)"
