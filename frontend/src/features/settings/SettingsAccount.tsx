@@ -1,19 +1,18 @@
 import { useState } from "react";
-import { KeyRound, UserRound } from "lucide-react";
+import { UserRound } from "lucide-react";
 import { useSessionStore } from "../../shell/sessionStore";
 import { toast } from "../../ui/toast";
 import { Alert, Button, Dialog, Input } from "../../ui/base";
 import { toUserMessage, updateAccount } from "../../lib/api/client";
 import { t } from "../../lib/i18n";
 
-// The account section: for the single owner, username and password are both changed here. Both
-//   actions need the current password, so each is an S-size small form dialog rather than a
-//   page-level draft. Changing the password signs out web sessions on other devices but keeps the
-//   current session and API tokens.
+// The single owner's username and password share one authenticated update. Blank
+// replacement fields stay unchanged; changing the password signs out web sessions
+// on other devices but keeps the current session and API tokens.
 
 export function SettingsAccount() {
   const username = useSessionStore((state) => state.username);
-  const [dialog, setDialog] = useState<"username" | "password">();
+  const [open, setOpen] = useState(false);
 
   return (
     <div className="settings-updates">
@@ -24,66 +23,66 @@ export function SettingsAccount() {
       <section className="settings-updates-card">
         <h3 className="settings-updates-card-title text-body">
           <UserRound className="tw:size-4" aria-hidden="true" />
-          {t("settings.account.usernameTitle")}
+          {t("settings.account.credentialsTitle")}
         </h3>
         <div className="settings-updates-card-row">
           <div className="tw:grid tw:min-w-0 tw:flex-1 tw:gap-1">
             <span className="text-body">{username ?? "—"}</span>
-            <span className="settings-updates-muted text-caption">{t("settings.account.usernameHint")}</span>
+            <span className="settings-updates-muted text-caption">{t("settings.account.credentialsHint")}</span>
           </div>
-          <Button variant="ghost" size="sm" onClick={() => setDialog("username")}>
-            {t("settings.account.changeUsername")}
+          <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
+            {t("settings.account.changeCredentials")}
           </Button>
         </div>
       </section>
 
-      <section className="settings-updates-card">
-        <h3 className="settings-updates-card-title text-body">
-          <KeyRound className="tw:size-4" aria-hidden="true" />
-          {t("settings.account.passwordTitle")}
-        </h3>
-        <div className="settings-updates-card-row">
-          <span className="settings-updates-muted tw:flex-1 text-caption">{t("settings.account.passwordHint")}</span>
-          <Button variant="ghost" size="sm" onClick={() => setDialog("password")}>
-            {t("settings.account.changePassword")}
-          </Button>
-        </div>
-      </section>
-
-      <UsernameDialog open={dialog === "username"} onOpenChange={(open) => setDialog(open ? "username" : undefined)} />
-      <PasswordDialog open={dialog === "password"} onOpenChange={(open) => setDialog(open ? "password" : undefined)} />
+      <AccountDialog open={open} onOpenChange={setOpen} />
     </div>
   );
 }
 
-function UsernameDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+function AccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const setUsername = useSessionStore((state) => state.setUsername);
   const [newUsername, setNewUsername] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
-  const formID = "account-username-form";
+  const formID = "account-credentials-form";
 
   function close() {
     setNewUsername("");
     setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
     setError(undefined);
     onOpenChange(false);
   }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    const trimmed = newUsername.trim();
-    if (!trimmed) {
-      setError(t("settings.account.newUsernameRequired"));
+    const username = newUsername.trim();
+    if (!username && !newPassword) {
+      setError(t("settings.account.changeRequired"));
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError(t("settings.account.passwordMismatch"));
       return;
     }
     setBusy(true);
     setError(undefined);
     try {
-      const result = await updateAccount({ current_password: currentPassword, username: trimmed });
+      const result = await updateAccount({
+        current_password: currentPassword,
+        ...(username ? { username } : {}),
+        ...(newPassword ? { new_password: newPassword } : {}),
+      });
       setUsername(result.owner.username);
-      toast.success(t("settings.account.savedUsername"));
+      toast.success(
+        t(newPassword && result.other_sessions_revoked ? "settings.account.savedAccountRevoked" : "settings.account.savedAccount"),
+      );
       close();
     } catch (cause) {
       setError(toUserMessage(cause, t("common.operationFailed")));
@@ -99,8 +98,8 @@ function UsernameDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
       onRequestClose={() => {
         if (!busy) close();
       }}
-      title={t("settings.account.usernameDialogTitle")}
-      description={t("settings.account.usernameDialogDescription")}
+      title={t("settings.account.credentialsDialogTitle")}
+      description={t("settings.account.credentialsDialogDescription")}
       footer={
         <>
           <Button variant="ghost" disabled={busy} onClick={close}>
@@ -121,7 +120,6 @@ function UsernameDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
             onChange={(event) => setNewUsername(event.target.value)}
             autoComplete="username"
             maxLength={128}
-            required
             autoFocus
           />
         </label>
@@ -133,81 +131,6 @@ function UsernameDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
             onChange={(event) => setCurrentPassword(event.target.value)}
             autoComplete="current-password"
             required
-          />
-        </label>
-      </form>
-    </Dialog>
-  );
-}
-
-function PasswordDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [error, setError] = useState<string>();
-  const [busy, setBusy] = useState(false);
-  const formID = "account-password-form";
-
-  function close() {
-    setCurrentPassword("");
-    setNewPassword("");
-    setConfirmPassword("");
-    setError(undefined);
-    onOpenChange(false);
-  }
-
-  async function submit(event: React.FormEvent) {
-    event.preventDefault();
-    if (newPassword !== confirmPassword) {
-      setError(t("settings.account.passwordMismatch"));
-      return;
-    }
-    setBusy(true);
-    setError(undefined);
-    try {
-      const result = await updateAccount({ current_password: currentPassword, new_password: newPassword });
-      toast.success(
-        t(result.other_sessions_revoked ? "settings.account.savedPasswordRevoked" : "settings.account.savedPassword"),
-      );
-      close();
-    } catch (cause) {
-      setError(toUserMessage(cause, t("common.operationFailed")));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Dialog
-      open={open}
-      tier="S"
-      onRequestClose={() => {
-        if (!busy) close();
-      }}
-      title={t("settings.account.passwordDialogTitle")}
-      description={t("settings.account.passwordDialogDescription")}
-      footer={
-        <>
-          <Button variant="ghost" disabled={busy} onClick={close}>
-            {t("act.cancel")}
-          </Button>
-          <Button variant="primary" type="submit" form={formID} disabled={busy} loading={busy}>
-            {t("settings.account.save")}
-          </Button>
-        </>
-      }
-    >
-      <form id={formID} onSubmit={submit} className="tw:grid tw:gap-3">
-        {error && <Alert tone="error" title={error} />}
-        <label className="tw:grid tw:gap-1 text-caption">
-          {t("settings.account.currentPassword")}
-          <Input
-            type="password"
-            value={currentPassword}
-            onChange={(event) => setCurrentPassword(event.target.value)}
-            autoComplete="current-password"
-            required
-            autoFocus
           />
         </label>
         <label className="tw:grid tw:gap-1 text-caption">
@@ -219,7 +142,6 @@ function PasswordDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
             autoComplete="new-password"
             minLength={12}
             maxLength={1024}
-            required
           />
         </label>
         <label className="tw:grid tw:gap-1 text-caption">
@@ -231,7 +153,6 @@ function PasswordDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
             autoComplete="new-password"
             minLength={12}
             maxLength={1024}
-            required
           />
         </label>
       </form>

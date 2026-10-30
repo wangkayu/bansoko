@@ -12,6 +12,7 @@
 
 ## Improved
 
+- Account settings update the username and password together; leave either replacement blank to keep its current value.
 - RSS access can be added directly in connection settings; built-in connections can only be edited.
 - The proxy and downloader dialogs check input before saving, with clearer layout and wording.
 - Required subtitle groups no longer take an automatic selection slot, and a group score is at most 100.
