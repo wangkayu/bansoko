@@ -6090,6 +6090,11 @@ export interface components {
             release_state?: "has_releases" | "no_releases";
             /** @description AniBT's RSS release count for the entry, present only when AniBT states it. */
             release_count?: number;
+            /**
+             * Format: double
+             * @description AniBT's own 0-10 catalog rating, from the season list or keyword search. Absent when the provider states no usable rating; never filled from Bangumi, TMDB or another provider.
+             */
+            score?: number;
             /** @description Mikan's raw update display string (the site's date text without the trailing 更新), present only when Mikan shows one. Display-only; not a parsed date. */
             update_text?: string;
             catalog_state: string;

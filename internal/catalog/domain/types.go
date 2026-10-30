@@ -139,6 +139,9 @@ type Item struct {
 	ReleaseState string
 	ReleaseCount *int
 	UpdateText   string
+	// Score is AniBT's own 0-10 catalog rating; nil when the provider did not
+	// state a usable number. It is never filled from metadata providers.
+	Score *float64
 }
 
 // Suppression hides a provider catalog entry from the workspace. It is not

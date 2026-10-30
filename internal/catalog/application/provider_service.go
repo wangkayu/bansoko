@@ -602,6 +602,7 @@ func (s *Service) WorkspaceProvider(ctx context.Context, provider, season string
 		item.BroadcastDay = BroadcastDayKey(provider, entry.SourceHint)
 		item.ReleaseFormat = ReleaseFormatKey(provider, entry.SourceHint)
 		ApplyReleaseAvailability(&item)
+		ApplyCatalogScore(&item)
 		applyInstanceOverlay(&item, overlays[entry.ProviderEntryRef])
 		items = append(items, item)
 	}
@@ -795,6 +796,20 @@ func ApplyReleaseAvailability(item *domain.Item) {
 	}
 }
 
+// ApplyCatalogScore copies AniBT's provider-stated 0-10 rating onto the card.
+// Season snapshots carry the raw JSON number; search hits may carry its pointer.
+// Anything else stays absent rather than becoming a synthetic zero.
+func ApplyCatalogScore(item *domain.Item) {
+	if item.Provider != ProviderAniBT {
+		return
+	}
+	score, ok := hintNumber(item.SourceHint, "rating")
+	if !ok || score < 0 || score > 10 {
+		return
+	}
+	item.Score = &score
+}
+
 func releaseStateFor(has bool) string {
 	if has {
 		return domain.ReleaseStateHasReleases
@@ -803,10 +818,23 @@ func releaseStateFor(has bool) string {
 }
 
 func hintNonNegativeInt(hint map[string]any, key string) (int, bool) {
+	value, ok := hintNumber(hint, key)
+	if !ok || value < 0 || value != math.Trunc(value) || value > math.MaxInt32 {
+		return 0, false
+	}
+	return int(value), true
+}
+
+func hintNumber(hint map[string]any, key string) (float64, bool) {
 	var value float64
 	switch typed := hint[key].(type) {
 	case float64:
 		value = typed
+	case *float64:
+		if typed == nil {
+			return 0, false
+		}
+		value = *typed
 	case int:
 		value = float64(typed)
 	case int64:
@@ -820,10 +848,10 @@ func hintNonNegativeInt(hint map[string]any, key string) (int, bool) {
 	default:
 		return 0, false
 	}
-	if value < 0 || value != math.Trunc(value) || value > math.MaxInt32 {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
 		return 0, false
 	}
-	return int(value), true
+	return value, true
 }
 
 // broadcastDayKeys maps the raw provider schedule fact onto the stable

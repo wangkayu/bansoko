@@ -4021,6 +4021,9 @@ type CatalogItem struct {
 	// ReleaseState Whether the provider itself lists any release for this entry, read from the stored catalog snapshot (AniBT hasRelease; Mikan's greyed-out "no works" entries). Absent means unknown (the provider did not state it, a search hit, or a snapshot taken before this fact was recorded); it is never inferred from titles.
 	ReleaseState *CatalogItemReleaseState `json:"release_state,omitempty"`
 
+	// Score AniBT's own 0-10 catalog rating, from the season list or keyword search. Absent when the provider states no usable rating; never filled from Bangumi, TMDB or another provider.
+	Score *float64 `json:"score,omitempty"`
+
 	// SubscriptionRef Compatibility summary of the Subscription belonging to the sole associated owner; it is not a replacement for managed_anime_ref.
 	SubscriptionRef   *string            `json:"subscription_ref"`
 	SubscriptionState *SubscriptionState `json:"subscription_state"`

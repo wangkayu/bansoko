@@ -16,6 +16,7 @@
 - Required subtitle groups no longer take an automatic selection slot, and a group score is at most 100.
 - When an anime is bound to a TMDB movie, the config title area shows Movie and links to the movie page.
 - The poster wall uses the full window width, and the browse page shows more titles per row as the window widens.
+- AniBT browse and search cards show the site's rating at the top-left of the poster.
 - In the default order for multiple versions of an episode, "reltitle Subtitle language" now ranks combined Simplified+Traditional/Japanese first, then Simplified/Japanese. The upgrade updates only this item of the global setting, and only if you never changed it; existing subscriptions keep their settings, so change a subscription yourself to use the new order.
 - Clicking an anime you already subscribe to in Browse or search opens that subscription instead of a new draft; for a second subscription, use "Duplicate as New Subscription" on the subscription card.
 - An anime's type (TV or movie) is now its own setting: it is filled once from the first TMDB match and is not changed when the match is replaced or cleared.

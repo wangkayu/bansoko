@@ -140,6 +140,7 @@ func mapSearchEntry(provider string, entry catalogdomain.Entry) generated.Catalo
 		item.PosterURL = "/api/v1/images/poster/" + entry.BGMID
 	}
 	catalogapplication.ApplyReleaseAvailability(&item)
+	catalogapplication.ApplyCatalogScore(&item)
 	item.ReleaseFormat = catalogapplication.ReleaseFormatKey(provider, entry.SourceHint)
 	return mapCatalogItem(item)
 }
@@ -341,6 +342,7 @@ func mapCatalogItem(item catalogdomain.Item) generated.CatalogItem {
 		count := *item.ReleaseCount
 		result.ReleaseCount = &count
 	}
+	result.Score = item.Score
 	result.UpdateText = stringToPtr(item.UpdateText)
 	// Search hits and any entry without a schedule fact read as none; the key
 	// vocabulary never carries an empty value.

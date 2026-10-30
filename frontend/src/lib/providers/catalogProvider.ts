@@ -235,6 +235,7 @@ export function mapCatalogItem(item: CatalogItem, provider: ProviderKey): Catalo
     // The release situation the site itself states; absent means unknown and stays unfilled.
     releaseState: item.release_state ?? undefined,
     releaseCount: item.release_count ?? undefined,
+    score: item.score ?? undefined,
     lastUpdated: item.update_text ?? undefined,
     // CatalogItem only carries the optional BGM fact. A complete match also
     // requires the atomic TMDB binding, which is not part of this read model.

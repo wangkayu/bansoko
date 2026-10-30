@@ -76,6 +76,7 @@ func TestHTTPReaderReadsOfficialSeasonListAndConditionalHeaders(t *testing.T) {
       "format": "TV",
       "kind": "TV",
       "episodes": 12,
+      "rating": 8.2,
       "scheduleStatus": "scheduled",
       "weekday": 5,
       "rssReleaseCount": 7,
@@ -103,8 +104,9 @@ func TestHTTPReaderReadsOfficialSeasonListAndConditionalHeaders(t *testing.T) {
 	// The stored hint carries AniBT's own release facts for the catalog card.
 	item := domain.Item{Provider: ProviderAniBT, SourceHint: result.Entries[0].SourceHint}
 	ApplyReleaseAvailability(&item)
-	if item.ReleaseState != domain.ReleaseStateHasReleases || item.ReleaseCount == nil || *item.ReleaseCount != 7 || item.UpdateText != "" {
-		t.Fatalf("AniBT release availability = %+v", item)
+	ApplyCatalogScore(&item)
+	if item.ReleaseState != domain.ReleaseStateHasReleases || item.ReleaseCount == nil || *item.ReleaseCount != 7 || item.UpdateText != "" || item.Score == nil || *item.Score != 8.2 {
+		t.Fatalf("AniBT catalog card facts = %+v", item)
 	}
 
 	unchanged, err := reader.ReadSeason(context.Background(), "2026-SUMMER", domain.ReadHints{ETag: result.ETag, LastModified: "Sat, 11 Jul 2026 04:10:08 GMT", Cursor: result.Cursor})

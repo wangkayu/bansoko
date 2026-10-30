@@ -116,6 +116,13 @@ describe("catalog mapping", () => {
     expect(unknown.lastUpdated).toBeUndefined();
   });
 
+  it("maps AniBT's provider rating and keeps an absent score undefined", () => {
+    const rated = mapCatalogItem(providerCatalogItem({ kind: "anibt_entry", provider: "anibt", score: 8.2 }), "anibt");
+    expect(rated.score).toBe(8.2);
+    const unrated = mapCatalogItem(providerCatalogItem({ kind: "anibt_entry", provider: "anibt" }), "anibt");
+    expect(unrated.score).toBeUndefined();
+  });
+
   it("maps typed provider catalog items", () => {
     const entry = mapCatalogItem(
       {

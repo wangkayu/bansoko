@@ -15321,6 +15321,12 @@ components:
           type: integer
           minimum: 0
           description: AniBT's RSS release count for the entry, present only when AniBT states it.
+        score:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 10
+          description: AniBT's own 0-10 catalog rating, from the season list or keyword search. Absent when the provider states no usable rating; never filled from Bangumi, TMDB or another provider.
         update_text:
           type: string
           minLength: 1

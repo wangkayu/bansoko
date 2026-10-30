@@ -228,7 +228,7 @@ func TestMapCatalogItemExposesReleaseAvailabilityOnlyWhenKnown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"release_state", "release_count", "update_text"} {
+	for _, key := range []string{"release_state", "release_count", "score", "update_text"} {
 		if strings.Contains(string(body), key) {
 			t.Fatalf("unknown %s must stay absent: %s", key, body)
 		}
@@ -237,6 +237,23 @@ func TestMapCatalogItemExposesReleaseAvailabilityOnlyWhenKnown(t *testing.T) {
 	hit := mapSearchEntry("anibt", catalogdomain.Entry{Title: "测试番", BGMID: "518900", SourceHint: map[string]any{"provider": "anibt"}, State: catalogdomain.EntryPresent})
 	if hit.ReleaseState != nil || hit.ReleaseCount != nil {
 		t.Fatalf("search hit fabricated release availability: %+v", hit)
+	}
+}
+
+func TestMapCatalogItemAndSearchEntryExposeAniBTScore(t *testing.T) {
+	score := 8.2
+	mapped := mapCatalogItem(catalogdomain.Item{Provider: "anibt", Kind: catalogdomain.ItemAniBTEntry, Score: &score})
+	if mapped.Score == nil || *mapped.Score != 8.2 {
+		t.Fatalf("catalog score was not mapped: %+v", mapped)
+	}
+
+	searchScore := 7.8
+	hit := mapSearchEntry("anibt", catalogdomain.Entry{
+		Title: "测试番", BGMID: "518900", State: catalogdomain.EntryPresent,
+		SourceHint: map[string]any{"rating": &searchScore},
+	})
+	if hit.Score == nil || *hit.Score != 7.8 {
+		t.Fatalf("search score was not mapped: %+v", hit)
 	}
 }
 

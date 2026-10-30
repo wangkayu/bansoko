@@ -1,6 +1,8 @@
 package application
 
 import (
+	"encoding/json"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -117,7 +119,44 @@ func TestApplyReleaseAvailabilityKeepsUnknownAbsent(t *testing.T) {
 	}
 }
 
+func TestApplyCatalogScoreUsesOnlyUsableAniBTRatings(t *testing.T) {
+	searchRating := 7.5
+	cases := []struct {
+		name     string
+		provider string
+		hint     map[string]any
+		want     *float64
+	}{
+		{"season number", ProviderAniBT, map[string]any{"rating": 8.25}, floatPtr(8.25)},
+		{"integer", ProviderAniBT, map[string]any{"rating": 8}, floatPtr(8)},
+		{"search pointer", ProviderAniBT, map[string]any{"rating": &searchRating}, floatPtr(7.5)},
+		{"json number", ProviderAniBT, map[string]any{"rating": json.Number("6.5")}, floatPtr(6.5)},
+		{"zero", ProviderAniBT, map[string]any{"rating": 0}, floatPtr(0)},
+		{"ten", ProviderAniBT, map[string]any{"rating": 10}, floatPtr(10)},
+		{"missing", ProviderAniBT, map[string]any{}, nil},
+		{"nil search pointer", ProviderAniBT, map[string]any{"rating": (*float64)(nil)}, nil},
+		{"mistyped", ProviderAniBT, map[string]any{"rating": "8.2"}, nil},
+		{"nan", ProviderAniBT, map[string]any{"rating": math.NaN()}, nil},
+		{"infinite", ProviderAniBT, map[string]any{"rating": math.Inf(1)}, nil},
+		{"negative", ProviderAniBT, map[string]any{"rating": -0.1}, nil},
+		{"above ten", ProviderAniBT, map[string]any{"rating": 10.1}, nil},
+		{"mikan ignores anibt rating", ProviderMikan, map[string]any{"rating": 8.2}, nil},
+		{"custom ignores anibt rating", "custom", map[string]any{"rating": 8.2}, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			item := domain.Item{Provider: tc.provider, SourceHint: tc.hint}
+			ApplyCatalogScore(&item)
+			if !reflect.DeepEqual(item.Score, tc.want) {
+				t.Fatalf("score = %v, want %v", item.Score, tc.want)
+			}
+		})
+	}
+}
+
 func intPtr(v int) *int { return &v }
+
+func floatPtr(v float64) *float64 { return &v }
 
 // TestApplyInstanceOverlayAssociatesDistinctOwnersForOneProviderEntry pins the
 // no-collapse rule without a database: one external provider entry carrying

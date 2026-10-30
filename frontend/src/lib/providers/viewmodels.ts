@@ -121,7 +121,7 @@ export interface CatalogEntryView {
    *  = the number of deduplicated episodes, compared against total; never aligned by episode
    *  number. `done` is derived by the backend at read time under the same count rule. */
   episodeProgress?: { episodes?: number[]; total?: number; done?: boolean };
-  /** The score (a combined BGM/TMDB rating, a browse fact). */
+  /** The provider-stated catalog score (AniBT's 0-10 rating); absent for providers without one. */
   score?: number;
   /** The custom candidate id; a stable reference to the candidate preset, not a Subscription ID. */
   candidateId?: string;
