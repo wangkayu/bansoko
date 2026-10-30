@@ -310,7 +310,7 @@ func validateExpansionScope(input EnsureSeedTorrentInput) error {
 			return &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "SEARCH_SNAPSHOT_SCOPE_INVALID", Message: safeProviderReason(err.Error())}
 		}
 		if err := validateSearchProvider(input.Provider); err != nil {
-			return &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "PROVIDER_KIND_INVALID", Message: "Provider must be anibt, mikan or nyaa."}
+			return &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "PROVIDER_KIND_INVALID", Message: "Provider must be anibt, mikan, nyaa or jackett."}
 		}
 		return nil
 	default:

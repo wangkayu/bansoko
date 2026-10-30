@@ -2112,8 +2112,9 @@ const (
 
 // Defines values for SeedSourceSiteType.
 const (
-	SeedSourceSiteTypePrivate SeedSourceSiteType = "private"
-	SeedSourceSiteTypePublic  SeedSourceSiteType = "public"
+	SeedSourceSiteTypePrivate     SeedSourceSiteType = "private"
+	SeedSourceSiteTypePublic      SeedSourceSiteType = "public"
+	SeedSourceSiteTypeSemiPrivate SeedSourceSiteType = "semi-private"
 )
 
 // Defines values for SelectionMode.

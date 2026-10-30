@@ -49,6 +49,11 @@ func TestHumanSearchSeedBindingAcceptsOnlyTheNarrowShape(t *testing.T) {
 	if err := validateHumanSearchSeedBinding(searchBindingDraft(), searchBindingSeed(), currentInput); err != nil {
 		t.Fatalf("the exact search one-shot shape was refused: %v", err)
 	}
+	jackett := searchBindingSeed()
+	jackett.Provider = animedomain.ProviderKindJackett
+	if err := validateHumanSearchSeedBinding(searchBindingDraft(), jackett, currentInput); err != nil {
+		t.Fatalf("the Jackett search one-shot shape was refused: %v", err)
+	}
 
 	cases := map[string]struct {
 		draft animedomain.AnimeDraft

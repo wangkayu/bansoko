@@ -1334,6 +1334,24 @@ describe("OneShotDialog 搜索快照来源", () => {
     });
   });
 
+  it("Jackett 搜索种子提交时保留 Jackett 来源，不回落为节目站点", async () => {
+    const view = searchGroupView();
+    view.groups[0]!.scope.provider = "jackett";
+    stubFetch({ view });
+    renderSearchDialog({
+      ...searchBrowse,
+      provider: "jackett",
+      snapshot: { ...searchBrowse.snapshot, provider: "jackett" },
+    });
+    await advanceToSettings([SEED_A]);
+    fireEvent.change(screen.getByRole("textbox", { name: t("field.title") }), { target: { value: "改名作品" } });
+    await waitFor(() => expect(button(t("oneshot.create", { n: 1 }))).toBeEnabled());
+    fireEvent.click(button(t("oneshot.create", { n: 1 })));
+    await waitFor(() => expect(screen.getByText(t("oneshot.resultOk"))).toBeInTheDocument());
+    const call = calls.find((entry) => entry.url.includes("/seeds/seed-a/download"))!;
+    expect(call.body).toMatchObject({ provider: "jackett", provider_entry_ref: SEARCH_SCOPE_REF, provider_group_ref: SEARCH_QUERY_REF });
+  });
+
   it("匹配检索词候选：取勾选种子的 title_hint，去重、按次数降序，检索词兜底；点击标签替换搜索词并搜索", async () => {
     stubFetch({ view: threeSeedView(), metadataCandidates: [tmdbCandidate] });
     renderSearchDialog();

@@ -35,7 +35,7 @@ ALTER TABLE provider_feed_snapshot_seeds ADD CONSTRAINT provider_feed_snapshot_s
         AND jsonb_typeof(source_site -> 'type') = 'string'
         AND octet_length(btrim(source_site ->> 'id')) BETWEEN 1 AND 256
         AND octet_length(btrim(source_site ->> 'name')) BETWEEN 1 AND 256
-        AND source_site ->> 'type' IN ('public', 'private')
+        AND source_site ->> 'type' IN ('public', 'private', 'semi-private')
     )
 );
 COMMENT ON COLUMN provider_feed_snapshot_seeds.source_site IS
@@ -169,7 +169,7 @@ BEGIN
                OR jsonb_typeof(s->'source_site'->'type') IS DISTINCT FROM 'string'
                OR octet_length(btrim(s->'source_site'->>'id')) NOT BETWEEN 1 AND 256
                OR octet_length(btrim(s->'source_site'->>'name')) NOT BETWEEN 1 AND 256
-               OR s->'source_site'->>'type' NOT IN ('public','private'))) THEN
+               OR s->'source_site'->>'type' NOT IN ('public','private','semi-private'))) THEN
         RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='FEED_SNAPSHOT_INVALID_SET';
     END IF;
     -- Recordset casts are not a closed decoder: reject kind coercions first.

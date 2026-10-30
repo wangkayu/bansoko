@@ -180,6 +180,12 @@ func TestValidateSelectedSeedAcceptsCompleteSeed(t *testing.T) {
 	if err := validateSelectedSeed(custom); err != nil {
 		t.Fatalf("custom seed rejected: %v", err)
 	}
+	jackett := validOneShotSeed()
+	jackett.Provider = animedomain.ProviderKindJackett
+	jackett.Locator = "http://192.168.1.20:9117/dl/example.torrent"
+	if err := validateSelectedSeed(jackett); err != nil {
+		t.Fatalf("self-hosted Jackett seed rejected: %v", err)
+	}
 }
 
 func TestValidateSelectedSeedRejectsStructuralViolations(t *testing.T) {

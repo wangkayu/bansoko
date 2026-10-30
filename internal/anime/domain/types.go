@@ -34,6 +34,9 @@ const (
 	// keyword search snapshot. Nyaa has no work catalog, so like custom it never
 	// becomes a discoverable provider, a subgroup or a subscribable origin.
 	ProviderKindNyaa ProviderKind = "nyaa"
+	// ProviderKindJackett is likewise search-only seed provenance. Jackett owns
+	// its tracker aggregation and never becomes a work catalog or subscription.
+	ProviderKindJackett ProviderKind = "jackett"
 	// ProviderKindCustom is a seed-provenance vocabulary member only: it names
 	// the frozen feed of a custom/oneshot draft source, so a custom seed keeps a
 	// provider-shaped identity without ever becoming a discoverable provider, a

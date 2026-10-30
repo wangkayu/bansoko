@@ -15,21 +15,33 @@ const AggregateTorznabPath = "/api/v2.0/indexers/all/results/torznab/api"
 // aggregate. The returned URL is request-only: callers must never put it in a
 // snapshot identity, a read model, an error or a log.
 func AggregateURL(rawEndpoint, apiKey string, parameters url.Values) (*url.URL, error) {
-	base, err := url.Parse(strings.TrimRight(strings.TrimSpace(rawEndpoint), "/"))
-	if err != nil || (base.Scheme != "http" && base.Scheme != "https") || base.Hostname() == "" || base.User != nil || base.RawQuery != "" || base.ForceQuery || base.Fragment != "" {
-		return nil, errors.New("Jackett endpoint must be an absolute HTTP URL without credentials, query or fragment")
+	base, err := parseEndpoint(rawEndpoint)
+	if err != nil {
+		return nil, err
 	}
 	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" {
 		return nil, errors.New("Jackett API key is not configured")
 	}
-	base.Path = strings.TrimRight(base.Path, "/") + AggregateTorznabPath
+	aggregatePath := strings.TrimRight(base.Path, "/")
+	if !strings.HasSuffix(aggregatePath, AggregateTorznabPath) {
+		aggregatePath += AggregateTorznabPath
+	}
+	base.Path = aggregatePath
 	values := make(url.Values, len(parameters)+1)
 	for key, entries := range parameters {
 		values[key] = append([]string(nil), entries...)
 	}
 	values.Set("apikey", apiKey)
 	base.RawQuery = values.Encode()
+	return base, nil
+}
+
+func parseEndpoint(rawEndpoint string) (*url.URL, error) {
+	base, err := url.Parse(strings.TrimRight(strings.TrimSpace(rawEndpoint), "/"))
+	if err != nil || (base.Scheme != "http" && base.Scheme != "https") || base.Hostname() == "" || base.User != nil || base.RawQuery != "" || base.ForceQuery || base.Fragment != "" {
+		return nil, errors.New("Jackett endpoint must be an absolute HTTP URL without credentials, query or fragment")
+	}
 	return base, nil
 }
 

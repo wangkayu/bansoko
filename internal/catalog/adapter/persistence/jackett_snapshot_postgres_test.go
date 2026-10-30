@@ -18,7 +18,7 @@ func TestJackettSearchSnapshotPersistsClosedSourceSite(t *testing.T) {
 	repository := NewRepository(db)
 	now := time.Now().UTC()
 	seeds := []catalogdomain.ProviderFeedSnapshotSeed{snapshotSeed("jackett-seed")}
-	seeds[0].SourceSite = &acquisitiondomain.SeedSourceSite{ID: "example-indexer", Name: "Example Tracker", Type: "private"}
+	seeds[0].SourceSite = &acquisitiondomain.SeedSourceSite{ID: "example-indexer", Name: "Example Tracker", Type: "semi-private"}
 	contentHash, err := catalogdomain.CanonicalFeedSnapshotContentHash(seeds)
 	if err != nil {
 		t.Fatal(err)
@@ -41,7 +41,7 @@ func TestJackettSearchSnapshotPersistsClosedSourceSite(t *testing.T) {
 		t.Fatalf("unexpected Jackett snapshot: %+v", read)
 	}
 	site := read.Seeds[0].SourceSite
-	if site == nil || site.ID != "example-indexer" || site.Name != "Example Tracker" || site.Type != "private" {
+	if site == nil || site.ID != "example-indexer" || site.Name != "Example Tracker" || site.Type != "semi-private" {
 		t.Fatalf("source site did not round trip: %+v", site)
 	}
 	if _, err := db.ExecContext(ctx, `UPDATE provider_feed_snapshot_seeds SET source_site = '{"id":"example","name":"Example","type":"unknown"}' WHERE snapshot_id = $1`, search.ID); err == nil {

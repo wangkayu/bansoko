@@ -596,8 +596,10 @@ export function OneShotDialog({
   }
 
   function requestFor(row: OneShotSeedRow, prepared: AnimeDraft): SnapshotSeedDownloadInput {
+    const provider = row.scope.provider;
+    if (provider === "oneshot") throw new TypeError("A one-shot origin is not a seed provider");
     return {
-      provider: row.scope.provider === "custom" ? "custom" : row.scope.provider === "mikan" ? "mikan" : row.scope.provider === "nyaa" ? "nyaa" : "anibt",
+      provider,
       provider_entry_ref: row.scope.provider_entry_ref,
       provider_group_ref: row.scope.provider_group_ref,
       snapshot_version: row.feed.snapshot_version ?? 0,

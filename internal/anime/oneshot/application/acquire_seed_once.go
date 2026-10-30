@@ -1678,9 +1678,9 @@ func optionalInt64Equal(left, right *int64) bool {
 // SEED_IDENTITY_REQUIRED code stays precise.
 func validateSelectedSeed(seed SelectedSeed) error {
 	switch seed.Provider {
-	case animedomain.ProviderKindAnibt, animedomain.ProviderKindMikan, animedomain.ProviderKindNyaa, animedomain.ProviderKindCustom:
+	case animedomain.ProviderKindAnibt, animedomain.ProviderKindMikan, animedomain.ProviderKindNyaa, animedomain.ProviderKindJackett, animedomain.ProviderKindCustom:
 	default:
-		return &apperrors.Business{Status: 422, Code: "SEED_INVALID", Message: "seed provider must be anibt, mikan, nyaa or custom."}
+		return &apperrors.Business{Status: 422, Code: "SEED_INVALID", Message: "seed provider must be anibt, mikan, nyaa, jackett or custom."}
 	}
 	if strings.TrimSpace(seed.ProviderEntryRef) == "" || len(seed.ProviderEntryRef) > 256 {
 		return &apperrors.Business{Status: 422, Code: "SEED_INVALID", Message: "seed provider_entry_ref is required and must be at most 256 characters."}
@@ -1697,7 +1697,11 @@ func validateSelectedSeed(seed SelectedSeed) error {
 	if seed.SizeBytes != nil && *seed.SizeBytes < 0 {
 		return &apperrors.Business{Status: 422, Code: "SEED_INVALID", Message: "seed size_bytes must be >= 0 when provided."}
 	}
-	if _, err := animedomain.LocatorURL(seed.Locator); err != nil {
+	validateLocator := animedomain.LocatorURL
+	if seed.Provider == animedomain.ProviderKindJackett {
+		validateLocator = animedomain.JackettSeedLocatorURL
+	}
+	if _, err := validateLocator(seed.Locator); err != nil {
 		return &apperrors.Business{Status: 422, Code: "SEED_LOCATOR_UNSAFE", Message: "seed locator must be a bounded absolute HTTP(S) URL passing transport safety."}
 	}
 	if seed.InfoHash != nil && validateCanonicalInfoHash(*seed.InfoHash) != nil {
@@ -2183,7 +2187,7 @@ func validateHumanSearchSeedBinding(draft animedomain.AnimeDraft, seed SelectedS
 	if !input.isCurrentInput() {
 		return &apperrors.Business{Status: 422, Code: "ONE_SHOT_CALLER_INVALID", Message: "A keyword search one-shot is a current_input admission; it cannot bind to a saved candidate revision."}
 	}
-	if seed.Provider != animedomain.ProviderKindAnibt && seed.Provider != animedomain.ProviderKindMikan && seed.Provider != animedomain.ProviderKindNyaa {
+	if seed.Provider != animedomain.ProviderKindAnibt && seed.Provider != animedomain.ProviderKindMikan && seed.Provider != animedomain.ProviderKindNyaa && seed.Provider != animedomain.ProviderKindJackett {
 		return &apperrors.Business{Status: 422, Code: "ONE_SHOT_CALLER_INVALID", Message: "A keyword search seed names a search provider."}
 	}
 	if !strings.HasPrefix(seed.ProviderEntryRef, animecatalogdomain.SearchSnapshotScopePrefix) ||

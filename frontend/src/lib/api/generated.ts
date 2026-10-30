@@ -2992,7 +2992,7 @@ export interface components {
             id: string;
             name: string;
             /** @enum {string} */
-            type: "public" | "private";
+            type: "public" | "private" | "semi-private";
         };
         RSSListSeedFacts: {
             title: string;

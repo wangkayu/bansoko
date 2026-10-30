@@ -36,7 +36,11 @@ func (f ConfiguredSeedTorrentFetcher) FetchPayload(ctx context.Context, provider
 	if err != nil {
 		return TorrentPayload{}, err
 	}
-	return (HTTPTorrentMetadataReader{Client: client, AllowPrivateHosts: f.AllowPrivateHosts, Resolver: f.Resolver}).FetchPayload(ctx, locator)
+	reader := HTTPTorrentMetadataReader{Client: client, AllowPrivateHosts: f.AllowPrivateHosts, Resolver: f.Resolver}
+	if strings.EqualFold(strings.TrimSpace(provider), string(configurationdomain.ConnectionJackett)) {
+		reader.AllowPrivateNetwork = true
+	}
+	return reader.FetchPayload(ctx, locator)
 }
 
 // routeClient resolves the http.Client that must carry one provider's request,

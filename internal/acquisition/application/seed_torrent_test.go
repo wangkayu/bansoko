@@ -97,9 +97,10 @@ func seedTorrentServer(t *testing.T, body []byte) *httptest.Server {
 // connection's route resolved.
 func TestConfiguredSeedTorrentFetcherUsesTheRouteOfTheSnapshotProvider(t *testing.T) {
 	for provider, wantKind := range map[string]configurationdomain.ConnectionKind{
-		"anibt": configurationdomain.ConnectionAniBT,
-		"mikan": configurationdomain.ConnectionMikan,
-		"nyaa":  configurationdomain.ConnectionNyaa,
+		"anibt":   configurationdomain.ConnectionAniBT,
+		"mikan":   configurationdomain.ConnectionMikan,
+		"nyaa":    configurationdomain.ConnectionNyaa,
+		"jackett": configurationdomain.ConnectionJackett,
 	} {
 		t.Run(provider, func(t *testing.T) {
 			server := seedTorrentServer(t, seedTorrentFixtureBody)
@@ -183,6 +184,20 @@ func TestConfiguredSeedTorrentFetcherDialsDirectlyWhenNoRouteApplies(t *testing.
 				t.Fatalf("route clients resolved = %+v, want none for a routeless fetch", asked)
 			}
 		})
+	}
+}
+
+func TestConfiguredSeedTorrentFetcherAllowsPrivateJackettTargets(t *testing.T) {
+	server := seedTorrentServer(t, seedTorrentFixtureBody)
+	fetcher := ConfiguredSeedTorrentFetcher{Connections: seedTorrentConnections{connections: []configurationdomain.Connection{
+		{ID: "jackett", Kind: configurationdomain.ConnectionJackett, State: configurationdomain.ConnectionConfigured, Endpoint: server.URL},
+	}}}
+	payload, err := fetcher.FetchPayload(context.Background(), "jackett", server.URL+"/release.torrent")
+	if err != nil {
+		t.Fatalf("private Jackett torrent fetch: %v", err)
+	}
+	if string(payload.Bytes) != string(seedTorrentFixtureBody) {
+		t.Fatalf("payload bytes = %q", payload.Bytes)
 	}
 }
 

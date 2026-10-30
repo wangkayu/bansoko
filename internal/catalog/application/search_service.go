@@ -363,18 +363,18 @@ func (a SeedSearchApplication) search(ctx context.Context, provider string, reso
 		reader.Endpoint = resolved.Endpoint
 		reader.APIKey = resolved.APIKey
 		reader.Client = resolved.Client
-		if err := a.attachSSRFTransport(&reader.Client); err != nil {
-			return SeedSearchResult{}, err
-		}
+		// Jackett is an explicitly configured, often self-hosted aggregate. Its
+		// searches and redirects may use private or public HTTP targets; the
+		// bounded Torznab reader and credential-safe redirect policy still apply.
 		return reader.SearchJackettSeeds(ctx, query)
 	default:
 		return SeedSearchResult{}, fmt.Errorf("%w: %s", ErrSearchNotSupported, provider)
 	}
 }
 
-// attachSSRFTransport wraps the resolved client with the shared SSRF-safe
-// provider transport, so a keyword search cannot dial an internal host whatever
-// endpoint resolution returned.
+// attachSSRFTransport wraps public provider searches with the shared SSRF-safe
+// transport. Jackett deliberately does not use it: that connection is the
+// operator's own aggregate and may live on a private HTTP network.
 func (a SeedSearchApplication) attachSSRFTransport(client **http.Client) error {
 	secured, err := acquisitionapplication.SSRFClientForProvider(*client, a.Resolver, a.AllowPrivateHosts, nil)
 	if err != nil {

@@ -6,6 +6,18 @@ import (
 	"testing"
 )
 
+func TestAggregateURLAcceptsBaseOrCompleteTorznabEndpoint(t *testing.T) {
+	for _, raw := range []string{"http://jackett:9117", "http://jackett:9117/", "http://jackett:9117" + AggregateTorznabPath} {
+		endpoint, err := AggregateURL(raw, "secret", url.Values{"t": {"search"}})
+		if err != nil {
+			t.Fatalf("endpoint %q: %v", raw, err)
+		}
+		if endpoint.Path != AggregateTorznabPath || endpoint.Query().Get("apikey") != "secret" || endpoint.Query().Get("t") != "search" {
+			t.Fatalf("endpoint %q produced %s", raw, endpoint.Redacted())
+		}
+	}
+}
+
 func TestValidateRedirectBoundsAndCredentialPolicy(t *testing.T) {
 	request := &http.Request{URL: &url.URL{Scheme: "https", Host: "tracker.example.test"}, Header: make(http.Header)}
 	request.Header.Set("Authorization", "Bearer inherited")

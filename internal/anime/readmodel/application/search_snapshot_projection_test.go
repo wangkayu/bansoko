@@ -99,6 +99,19 @@ func TestOneShotSearchBrowseRendersSnapshotThroughSharedMachinery(t *testing.T) 
 	}
 }
 
+func TestPreviewFeedRefAcceptsEverySearchProvider(t *testing.T) {
+	for _, provider := range []animedomain.ProviderKind{
+		animedomain.ProviderKindAnibt, animedomain.ProviderKindMikan,
+		animedomain.ProviderKindNyaa, animedomain.ProviderKindJackett,
+	} {
+		ref := searchPreviewRef()
+		ref.Provider = provider
+		if err := validatePreviewFeedRefShape(ref); err != nil {
+			t.Fatalf("%s search ref rejected: %v", provider, err)
+		}
+	}
+}
+
 // The refs decide the kind: an origin=one_shot browse that names a feed
 // snapshot is refused instead of answered from the feed row, and the projection
 // itself never binds a non-one-shot draft or more than one identity.

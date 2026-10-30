@@ -215,8 +215,8 @@ func expandedFeedItems(snapshot SeedPreviewSnapshot, manifests map[string]*anime
 }
 
 func validatePreviewFeedRefShape(ref PreviewFeedSnapshotRef) error {
-	if ref.Provider != animedomain.ProviderKindAnibt && ref.Provider != animedomain.ProviderKindMikan && ref.Provider != animedomain.ProviderKindNyaa {
-		return &apperrors.Business{Status: 422, Code: "FEED_SNAPSHOT_IDENTITY_INVALID", Message: "feed snapshot provider must be anibt, mikan or nyaa"}
+	if ref.Provider != animedomain.ProviderKindAnibt && ref.Provider != animedomain.ProviderKindMikan && ref.Provider != animedomain.ProviderKindNyaa && ref.Provider != animedomain.ProviderKindJackett {
+		return &apperrors.Business{Status: 422, Code: "FEED_SNAPSHOT_IDENTITY_INVALID", Message: "feed snapshot provider must be anibt, mikan, nyaa or jackett"}
 	}
 	if strings.TrimSpace(ref.ProviderEntryRef) == "" || len(ref.ProviderEntryRef) > 256 {
 		return &apperrors.Business{Status: 422, Code: "FEED_SNAPSHOT_IDENTITY_INVALID", Message: "feed snapshot provider_entry_ref is required and bounded"}

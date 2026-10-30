@@ -44,8 +44,12 @@ type TorrentPayloadReader interface {
 type HTTPTorrentMetadataReader struct {
 	Client            *http.Client
 	AllowPrivateHosts []string
-	Resolver          func(context.Context, string) ([]net.IP, error)
-	MaxSize           int64
+	// AllowPrivateNetwork is reserved for explicitly configured self-hosted
+	// aggregates such as Jackett. Their search, redirect and torrent targets may
+	// all be private or public HTTP addresses chosen by the operator.
+	AllowPrivateNetwork bool
+	Resolver            func(context.Context, string) ([]net.IP, error)
+	MaxSize             int64
 }
 
 func (f HTTPTorrentMetadataReader) Fetch(ctx context.Context, sourceURL string) (torrent.Metadata, error) {
@@ -82,11 +86,13 @@ func (f HTTPTorrentMetadataReader) FetchPayload(ctx context.Context, sourceURL s
 		client = &http.Client{Timeout: 20 * time.Second, Transport: hardeningtransport.DirectTransport()}
 	}
 	copyClient := *client
-	transport, err := (HTTPRSSFetcher{Client: &copyClient, Resolver: f.Resolver, AllowPrivateHosts: f.AllowPrivateHosts}).secureTransport(copyClient.Transport)
-	if err != nil {
-		return TorrentPayload{}, fmt.Errorf("%w: %v", ErrTorrentPayloadFetch, err)
+	if !f.AllowPrivateNetwork {
+		transport, err := (HTTPRSSFetcher{Client: &copyClient, Resolver: f.Resolver, AllowPrivateHosts: f.AllowPrivateHosts}).secureTransport(copyClient.Transport)
+		if err != nil {
+			return TorrentPayload{}, fmt.Errorf("%w: %v", ErrTorrentPayloadFetch, err)
+		}
+		copyClient.Transport = transport
 	}
-	copyClient.Transport = transport
 	copyClient.CheckRedirect = func(request *http.Request, via []*http.Request) error {
 		if len(via) >= 5 {
 			return errors.New("torrent source exceeded redirect limit")

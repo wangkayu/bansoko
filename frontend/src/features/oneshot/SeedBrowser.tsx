@@ -197,7 +197,7 @@ function SeedRow({
   const sourceSite = row.item.seed.source_site;
   const meta = metaLine([
     sourceSite?.name,
-    sourceSite ? t(sourceSite.type === "private" ? "oneshot.sourceSitePrivate" : "oneshot.sourceSitePublic") : undefined,
+    sourceSite ? t(sourceSite.type === "private" ? "oneshot.sourceSitePrivate" : sourceSite.type === "semi-private" ? "oneshot.sourceSiteSemiPrivate" : "oneshot.sourceSitePublic") : undefined,
     row.sizeBytes != null ? formatBytes(row.sizeBytes) : undefined,
     row.publishedAt ? formatDateTime(row.publishedAt) : undefined,
   ]);

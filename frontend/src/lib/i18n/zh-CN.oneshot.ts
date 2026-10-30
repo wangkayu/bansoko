@@ -110,5 +110,6 @@ export const oneshotCopy = {
   searchSourceLabel: "种子检索 · {query}",
   sourceSitePublic: "公开",
   sourceSitePrivate: "私有",
+  sourceSiteSemiPrivate: "半私有",
   titleEmptyPreview: "匹配作品或填写标题后显示目标路径",
 } as const;

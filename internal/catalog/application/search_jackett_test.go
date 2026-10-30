@@ -54,8 +54,7 @@ func TestFetchJackettSearchUsesFixedAggregateAndPersistsSourceAttribution(t *tes
 		Endpoints: CatalogSearchEndpointsFunc(func(context.Context, string) (CatalogSearchEndpoint, error) {
 			return CatalogSearchEndpoint{Endpoint: upstream.URL, Client: upstream.Client(), APIKey: jackettTestAPIKey}, nil
 		}),
-		Now:               func() time.Time { return time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC) },
-		AllowPrivateHosts: []string{"127.0.0.1"},
+		Now: func() time.Time { return time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC) },
 	}
 	preview, err := application.Fetch(context.Background(), FetchSearchSnapshotInput{Provider: ProviderJackett, Query: "  示例作品   03 "})
 	if err != nil {
@@ -89,6 +88,41 @@ func TestFetchJackettSearchUsesFixedAggregateAndPersistsSourceAttribution(t *tes
 	}
 	if store.written[0].NormalizedKind() != catalogdomain.FeedSnapshotKindSearch {
 		t.Fatal("Jackett was not stored as a search-only snapshot")
+	}
+}
+
+func TestJackettSearchAllowsPrivateRedirectTargets(t *testing.T) {
+	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, jackettTestBody())
+	}))
+	defer destination.Close()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, destination.URL+"/results", http.StatusFound)
+	}))
+	defer upstream.Close()
+	store := &searchTestStore{}
+	service := NewProviderService(nil, nil)
+	service.SetFeedSnapshotStore(store)
+	application := SeedSearchApplication{
+		Service: service,
+		Endpoints: CatalogSearchEndpointsFunc(func(context.Context, string) (CatalogSearchEndpoint, error) {
+			return CatalogSearchEndpoint{Endpoint: upstream.URL, Client: upstream.Client(), APIKey: jackettTestAPIKey}, nil
+		}),
+	}
+	preview, err := application.Fetch(context.Background(), FetchSearchSnapshotInput{Provider: ProviderJackett, Query: "示例作品"})
+	if err != nil || len(preview.Seeds) != 1 || len(store.written) != 1 {
+		t.Fatalf("private redirected search = %+v, %v", preview, err)
+	}
+}
+
+func TestParseJackettSearchKeepsSemiPrivateSourceType(t *testing.T) {
+	payload := []byte(strings.Replace(jackettTestBody(), "<type>private</type>", "<type>semi-private</type>", 1))
+	result, err := parseJackettSearch(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Items) != 1 || result.Items[0].SourceSite == nil || result.Items[0].SourceSite.Type != "semi-private" {
+		t.Fatalf("semi-private result = %+v", result.Items)
 	}
 }
 

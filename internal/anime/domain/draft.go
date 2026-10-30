@@ -342,6 +342,18 @@ func MetadataHoldFromBindings(bgm *NullableBGMBinding, tmdb *NullableTMDBBinding
 // boundary. The persisted locator itself remains the opaque value supplied by
 // the user and is not normalized during Subscribe.
 func LocatorURL(locator string) (string, error) {
+	return locatorURL(locator, false)
+}
+
+// JackettSeedLocatorURL checks the structure of a locator already resolved from
+// an immutable Jackett search snapshot. The configured Jackett host may be
+// private; expansion's transport separately admits only that host or a public
+// tracker, so this admission check must not reject the same self-hosted source.
+func JackettSeedLocatorURL(locator string) (string, error) {
+	return locatorURL(locator, true)
+}
+
+func locatorURL(locator string, allowPrivateHost bool) (string, error) {
 	raw := strings.TrimSpace(locator)
 	if raw == "" || len(raw) > 4096 {
 		return "", fmt.Errorf("locator is required and bounded")
@@ -360,7 +372,7 @@ func LocatorURL(locator string) (string, error) {
 	if parsed.User != nil || parsed.Fragment != "" || strings.ContainsAny(raw, "\r\n\x00") {
 		return "", fmt.Errorf("locator must not contain credentials, fragments, or control characters")
 	}
-	if isPrivateHost(parsed.Hostname()) {
+	if !allowPrivateHost && isPrivateHost(parsed.Hostname()) {
 		return "", fmt.Errorf("locator targets a private or local host")
 	}
 	return raw, nil

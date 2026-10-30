@@ -7850,7 +7850,7 @@ components:
           maxLength: 256
         type:
           type: string
-          enum: [public, private]
+          enum: [public, private, semi-private]
     RSSListSeedFacts:
       type: object
       additionalProperties: false
