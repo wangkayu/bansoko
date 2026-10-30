@@ -2940,10 +2940,10 @@ export interface components {
             torrent_parser: string;
         };
         /**
-         * @description The subscription origins plus nyaa, which only names a keyword search snapshot group. Never a subscribable source.
+         * @description The subscription origins plus nyaa and jackett, which only name keyword search snapshot groups. Neither search-only source is subscribable.
          * @enum {string}
          */
-        RSSListGroupScopeProvider: "anibt" | "mikan" | "nyaa" | "custom" | "oneshot";
+        RSSListGroupScopeProvider: "anibt" | "mikan" | "nyaa" | "jackett" | "custom" | "oneshot";
         /** @description The full identity of one subgroup. Display name, score and array position are never identity: two groups may share a name, and the same group appears in many responses. */
         RSSListGroupScope: {
             provider: components["schemas"]["RSSListGroupScopeProvider"];
@@ -2987,6 +2987,13 @@ export interface components {
             error_code?: string | null;
             error_reason?: string | null;
         };
+        /** @description Tracker attribution returned by a Jackett aggregate result. This is source-site evidence, never the subtitle group parsed from the title. */
+        SeedSourceSite: {
+            id: string;
+            name: string;
+            /** @enum {string} */
+            type: "public" | "private";
+        };
         RSSListSeedFacts: {
             title: string;
             /** Format: date-time */
@@ -2998,6 +3005,7 @@ export interface components {
             expected_payload_digest?: string;
             /** @description Redacted display form of the source location. The raw locator stays server-side so an ordinary read cannot leak credentials. Withheld from MCP tool results (x-mcp-omit): it is the item's torrent URL with the query removed, and a path can still embed a key. */
             locator_display: string;
+            source_site?: components["schemas"]["SeedSourceSite"];
             /** @description The frozen AniBT structured tags ("dimension:value"; customTag values use the TagFilterRules sub-dimensions). Present only for releases observed through an AniBT source; may be empty. */
             anibt_tags?: string[];
             /** @description The title-parse tags ("type:value") the title row of tag_filters evaluates: the frozen set of a persisted release, otherwise the pinned reltitle parser's reading of the seed title. May be empty. */
@@ -3281,7 +3289,7 @@ export interface components {
             /** Format: date-time */
             last_used_at?: string | null;
         };
-        ConnectionInput: components["schemas"]["QBittorrentConnectionInput"] | components["schemas"]["RSSHTTPConnectionInput"] | components["schemas"]["TMDBConnectionInput"] | components["schemas"]["AniBTConnectionInput"] | components["schemas"]["MikanConnectionInput"] | components["schemas"]["NyaaConnectionInput"] | components["schemas"]["BGMConnectionInput"];
+        ConnectionInput: components["schemas"]["QBittorrentConnectionInput"] | components["schemas"]["RSSHTTPConnectionInput"] | components["schemas"]["TMDBConnectionInput"] | components["schemas"]["JackettConnectionInput"] | components["schemas"]["AniBTConnectionInput"] | components["schemas"]["MikanConnectionInput"] | components["schemas"]["NyaaConnectionInput"] | components["schemas"]["BGMConnectionInput"];
         ConnectionSecretKeep: {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -3348,6 +3356,19 @@ export interface components {
             secret: components["schemas"]["ConnectionSecret"];
             route_id?: components["schemas"]["ID"];
         };
+        JackettConnectionInput: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "jackett";
+            name: string;
+            enabled: boolean;
+            /** Format: uri */
+            base_url: string;
+            secret: components["schemas"]["ConnectionSecret"];
+            route_id?: components["schemas"]["ID"];
+        };
         AniBTConnectionInput: {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -3396,7 +3417,7 @@ export interface components {
             base_url: string;
             route_id?: components["schemas"]["ID"];
         };
-        Connection: components["schemas"]["QBittorrentConnection"] | components["schemas"]["RSSHTTPConnection"] | components["schemas"]["TMDBConnection"] | components["schemas"]["AniBTConnection"] | components["schemas"]["MikanConnection"] | components["schemas"]["NyaaConnection"] | components["schemas"]["BGMConnection"];
+        Connection: components["schemas"]["QBittorrentConnection"] | components["schemas"]["RSSHTTPConnection"] | components["schemas"]["TMDBConnection"] | components["schemas"]["JackettConnection"] | components["schemas"]["AniBTConnection"] | components["schemas"]["MikanConnection"] | components["schemas"]["NyaaConnection"] | components["schemas"]["BGMConnection"];
         QBittorrentConnection: {
             id: components["schemas"]["ID"];
             /**
@@ -3438,6 +3459,21 @@ export interface components {
              * @enum {string}
              */
             kind: "tmdb";
+            name: string;
+            enabled: boolean;
+            /** Format: uri */
+            base_url: string;
+            credential_configured: boolean;
+            route_id?: components["schemas"]["ID"];
+            version: components["schemas"]["Version"];
+        };
+        JackettConnection: {
+            id: components["schemas"]["ID"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "jackett";
             name: string;
             enabled: boolean;
             /** Format: uri */
@@ -3505,7 +3541,7 @@ export interface components {
         ConnectionTestResult: {
             connection_id: components["schemas"]["ID"];
             /** @enum {string} */
-            kind: "qbittorrent" | "rss_http" | "tmdb" | "anibt" | "mikan" | "nyaa" | "bgm";
+            kind: "qbittorrent" | "rss_http" | "tmdb" | "jackett" | "anibt" | "mikan" | "nyaa" | "bgm";
             /** @enum {string} */
             health: "ready" | "degraded" | "failed";
             reason_code?: string;
@@ -3643,10 +3679,10 @@ export interface components {
         /** @enum {string} */
         ProviderKind: "anibt" | "mikan";
         /**
-         * @description Provenance provider of one selected one-shot seed. It repeats the two discovery provider kinds, adds nyaa for a seed read from a Nyaa keyword search snapshot (search-only: Nyaa is never a discovery provider), and adds custom for a seed read from a frozen custom/oneshot draft source's own feed snapshot. It is a seed-provenance vocabulary only: ProviderKind stays a two-value discovery enum, and a custom seed never becomes a discoverable provider, a subgroup, or a subscribable origin.
+         * @description Provenance provider of one selected one-shot seed. It repeats the two discovery provider kinds, adds nyaa and jackett for seeds read from keyword search snapshots (search-only: neither is ever a discovery provider), and adds custom for a seed read from a frozen custom/oneshot draft source's own feed snapshot. It is a seed-provenance vocabulary only: ProviderKind stays a two-value discovery enum, and a custom seed never becomes a discoverable provider, a subgroup, or a subscribable origin.
          * @enum {string}
          */
-        SnapshotSeedProvider: "anibt" | "mikan" | "nyaa" | "custom";
+        SnapshotSeedProvider: "anibt" | "mikan" | "nyaa" | "jackett" | "custom";
         /**
          * @description The unique four-value source-of-subscription enum: anibt | mikan are discovery providers, custom is a user-supplied manual source, agent is reserved for one-shot acquisition: an agent draft is a candidate snapshot for acquire-seed-once and the temporary one-shot mount carries it, but it can never be subscribed or activated (422 ORIGIN_NOT_SUBSCRIBABLE). This is the only four-value enum; ProviderKind stays a two-value discovery enum, SnapshotSeedProvider is the separate seed-provenance vocabulary (anibt | mikan | custom), and RSS SourceKind stays provider_group | custom_rss.
          * @enum {string}
@@ -4838,7 +4874,7 @@ export interface components {
         /** @description One independently identified provider feed snapshot. The identity is snapshot_id + snapshot_version + content_hash; a locator URL is never the identity. */
         PreviewFeedSnapshotRef: {
             /** @enum {string} */
-            provider: "anibt" | "mikan" | "nyaa" | "custom";
+            provider: "anibt" | "mikan" | "nyaa" | "jackett" | "custom";
             provider_entry_ref: string;
             provider_group_ref: string;
             snapshot_id: components["schemas"]["ID"];
@@ -5089,6 +5125,7 @@ export interface components {
             expected_payload_digest?: string | null;
             /** @enum {string} */
             torrent_state: "available" | "unavailable" | "not_applicable";
+            source_site?: components["schemas"]["SeedSourceSite"];
             /** @description Subtitle group name parsed from the release title for display only. It is never a provider group identity and never a subscription or download input. */
             group_name?: string | null;
             /** @description Resolution parsed from the release title for display only. */
@@ -5099,7 +5136,7 @@ export interface components {
         /** @description One immutable keyword search snapshot and its complete seed window. `total_seeds` counts the complete result set the snapshot identity covers, and `seeds` renders all of it. A search snapshot is short-lived (24 hours), is never a group or a subscription source, and is refreshed only by fetching the same query again. */
         SeedSearchSnapshotView: {
             /** @enum {string} */
-            provider: "anibt" | "mikan" | "nyaa";
+            provider: "anibt" | "mikan" | "nyaa" | "jackett";
             scope_ref: string;
             query_ref: string;
             /** @description The normalized query, echoed by the fetch that ran it. The query text itself is not persisted, only its digest. */
@@ -5162,7 +5199,7 @@ export interface components {
         };
         ProviderRSSPreviewResult: {
             /** @enum {string} */
-            provider: "anibt" | "mikan" | "nyaa" | "custom";
+            provider: "anibt" | "mikan" | "nyaa" | "jackett" | "custom";
             provider_entry_ref: string;
             group_ref: string;
             snapshot_id?: components["schemas"]["ID"];
@@ -8080,8 +8117,8 @@ export interface components {
         IdempotencyKey: string;
         /** @description Provider namespace for the catalog. */
         CatalogProvider: "anibt" | "mikan";
-        /** @description Source of a keyword torrent search. Nyaa has no work catalog, so it is a torrent-search source only: every catalog, discovery and subscription endpoint keeps the two-value CatalogProvider. */
-        SeedSearchProvider: "anibt" | "mikan" | "nyaa";
+        /** @description Source of a keyword torrent search. Nyaa and Jackett have no work catalog, so they are torrent-search sources only: every catalog, discovery and subscription endpoint keeps the two-value CatalogProvider. */
+        SeedSearchProvider: "anibt" | "mikan" | "nyaa" | "jackett";
         /** @description External provider-scoped catalog-entry reference. Unique only within its provider and never a formal ManagedAnime owner identity, so it is always paired with the provider path segment. */
         CatalogProviderEntryRef: string;
         /** @description Season identifier in canonical YYYY-term form (e.g. 2026-summer). Terms: winter, spring, summer, fall. */
@@ -10941,7 +10978,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Source of a keyword torrent search. Nyaa has no work catalog, so it is a torrent-search source only: every catalog, discovery and subscription endpoint keeps the two-value CatalogProvider. */
+                /** @description Source of a keyword torrent search. Nyaa and Jackett have no work catalog, so they are torrent-search sources only: every catalog, discovery and subscription endpoint keeps the two-value CatalogProvider. */
                 provider: components["parameters"]["SeedSearchProvider"];
             };
             cookie?: never;

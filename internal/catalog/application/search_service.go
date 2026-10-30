@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	acquisitionapplication "bansoko/internal/acquisition/application"
+	acquisitiondomain "bansoko/internal/acquisition/domain"
 	"bansoko/internal/apperrors"
 	catalogdomain "bansoko/internal/catalog/domain"
 	"bansoko/internal/events"
@@ -52,6 +53,7 @@ type SearchSeedPreviewSeed struct {
 	// editable title of a one-shot confirmation; it is not a work identity.
 	TitleHint  string
 	Resolution string
+	SourceSite *acquisitiondomain.SeedSourceSite
 }
 
 // SearchSeedPreview is the fetch result of one search snapshot: the snapshot
@@ -76,14 +78,22 @@ type SearchSeedPreview struct {
 // CatalogSearchEndpoints resolves the typed upstream endpoint and client for one
 // provider search. It is the single place that knows how a provider search is
 // addressed, so a request can never choose an endpoint.
+type CatalogSearchEndpoint struct {
+	Endpoint string
+	Client   *http.Client
+	// APIKey is request-only Jackett authentication. It never enters the search
+	// scope, a snapshot, a read model or an error.
+	APIKey string
+}
+
 type CatalogSearchEndpoints interface {
-	ResolveSearchEndpoint(ctx context.Context, provider string) (endpoint string, client *http.Client, err error)
+	ResolveSearchEndpoint(ctx context.Context, provider string) (CatalogSearchEndpoint, error)
 }
 
 // CatalogSearchEndpointsFunc adapts one function to the port.
-type CatalogSearchEndpointsFunc func(ctx context.Context, provider string) (string, *http.Client, error)
+type CatalogSearchEndpointsFunc func(ctx context.Context, provider string) (CatalogSearchEndpoint, error)
 
-func (f CatalogSearchEndpointsFunc) ResolveSearchEndpoint(ctx context.Context, provider string) (string, *http.Client, error) {
+func (f CatalogSearchEndpointsFunc) ResolveSearchEndpoint(ctx context.Context, provider string) (CatalogSearchEndpoint, error) {
 	return f(ctx, provider)
 }
 
@@ -96,9 +106,10 @@ type SeedSearchApplication struct {
 	Endpoints CatalogSearchEndpoints
 	// AniBT and Mikan are the readers. They are explicit fields instead of a
 	// factory so a test can inject one without a network.
-	AniBT HTTPAniBTTorznabSearcher
-	Mikan HTTPMikanSearcher
-	Nyaa  HTTPNyaaSearcher
+	AniBT   HTTPAniBTTorznabSearcher
+	Mikan   HTTPMikanSearcher
+	Nyaa    HTTPNyaaSearcher
+	Jackett HTTPJackettSearcher
 	// Now is the clock; nil is the wall clock in UTC.
 	Now func() time.Time
 	// Resolver and AllowPrivateHosts are the shared SSRF policy knobs the
@@ -146,7 +157,7 @@ func (a SeedSearchApplication) Fetch(ctx context.Context, input FetchSearchSnaps
 	}
 	provider := strings.ToLower(strings.TrimSpace(input.Provider))
 	if err := validateSearchProvider(provider); err != nil {
-		return SearchSeedPreview{}, &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "PROVIDER_KIND_INVALID", Message: "Provider must be anibt, mikan or nyaa."}
+		return SearchSeedPreview{}, &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "PROVIDER_KIND_INVALID", Message: "Provider must be anibt, mikan, nyaa or jackett."}
 	}
 	query := NormalizeSearchQuery(input.Query)
 	if query == "" || utf8.RuneCountInString(query) > 256 {
@@ -155,11 +166,11 @@ func (a SeedSearchApplication) Fetch(ctx context.Context, input FetchSearchSnaps
 	if a.Endpoints == nil {
 		return SearchSeedPreview{}, &apperrors.Business{Status: http.StatusServiceUnavailable, Code: "PROVIDER_SEARCH_NOT_CONFIGURED", Message: ErrSeedSearchNotConfigured.Error()}
 	}
-	endpoint, client, err := a.Endpoints.ResolveSearchEndpoint(ctx, provider)
+	resolved, err := a.Endpoints.ResolveSearchEndpoint(ctx, provider)
 	if err != nil {
 		return SearchSeedPreview{}, &apperrors.Business{Status: http.StatusServiceUnavailable, Code: "PROVIDER_SEARCH_ENDPOINT_UNAVAILABLE", Message: safeProviderReason(err.Error())}
 	}
-	search, err := a.search(ctx, provider, endpoint, client, query)
+	search, err := a.search(ctx, provider, resolved, query)
 	if err != nil {
 		return SearchSeedPreview{}, mapSeedSearchError(err)
 	}
@@ -172,7 +183,7 @@ func (a SeedSearchApplication) Fetch(ctx context.Context, input FetchSearchSnaps
 		return SearchSeedPreview{}, &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "FEED_SNAPSHOT_INVALID", Message: safeProviderReason(err.Error())}
 	}
 	now := a.now()
-	scopeRef, queryRef := SearchScopeRef(provider, endpoint, query), SearchQueryRef(query)
+	scopeRef, queryRef := SearchScopeRef(provider, resolved.Endpoint, query), SearchQueryRef(query)
 	snapshot, err := a.Service.feedSnapshots.PersistProviderFeedSnapshot(ctx, catalogdomain.ProviderFeedSnapshotWrite{
 		Provider: provider, ProviderEntryRef: scopeRef, ProviderGroupRef: queryRef,
 		SnapshotKind: catalogdomain.FeedSnapshotKindSearch, SearchParserVersion: search.ParserVersion,
@@ -200,7 +211,7 @@ func (a SeedSearchApplication) FetchSearchSnapshotByID(ctx context.Context, prov
 	}
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	if err := validateSearchProvider(provider); err != nil {
-		return catalogdomain.ProviderRSSPreviewResult{}, &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "PROVIDER_KIND_INVALID", Message: "Provider must be anibt, mikan or nyaa."}
+		return catalogdomain.ProviderRSSPreviewResult{}, &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "PROVIDER_KIND_INVALID", Message: "Provider must be anibt, mikan, nyaa or jackett."}
 	}
 	if err := catalogdomain.ValidateSearchSnapshotRef(scopeRef, catalogdomain.SearchSnapshotScopePrefix); err != nil {
 		return catalogdomain.ProviderRSSPreviewResult{}, fmt.Errorf("%w: %v", catalogdomain.ErrProviderFeedSnapshotIdentityMismatch, err)
@@ -269,7 +280,7 @@ func (a SeedSearchApplication) ReadSearchSeedPayload(ctx context.Context, provid
 		InfoHash: seed.InfoHash, TorrentFilename: filename,
 		TorrentState: catalogdomain.TorrentAcquisitionAvailable,
 		Payload:      entry.Payload, PayloadDigest: &digest, Manifest: fact.Manifest,
-		AniBTTags: seed.AniBTTags,
+		AniBTTags: seed.AniBTTags, SourceSite: seed.SourceSite,
 	}, nil
 }
 
@@ -321,32 +332,41 @@ func (a SeedSearchApplication) ReadSearchSeedTorrentManifests(ctx context.Contex
 	return manifests, nil
 }
 
-func (a SeedSearchApplication) search(ctx context.Context, provider, endpoint string, client *http.Client, query string) (SeedSearchResult, error) {
+func (a SeedSearchApplication) search(ctx context.Context, provider string, resolved CatalogSearchEndpoint, query string) (SeedSearchResult, error) {
 	switch provider {
 	case ProviderAniBT:
 		reader := a.AniBT
-		reader.Endpoint = endpoint
-		reader.Client = client
+		reader.Endpoint = resolved.Endpoint
+		reader.Client = resolved.Client
 		if err := a.attachSSRFTransport(&reader.Client); err != nil {
 			return SeedSearchResult{}, err
 		}
 		return reader.SearchAniBTKeywords(ctx, query)
 	case ProviderMikan:
 		reader := a.Mikan
-		reader.Endpoint = endpoint
-		reader.Client = client
+		reader.Endpoint = resolved.Endpoint
+		reader.Client = resolved.Client
 		if err := a.attachSSRFTransport(&reader.Client); err != nil {
 			return SeedSearchResult{}, err
 		}
 		return reader.SearchMikanSeeds(ctx, query)
 	case ProviderNyaa:
 		reader := a.Nyaa
-		reader.Endpoint = endpoint
-		reader.Client = client
+		reader.Endpoint = resolved.Endpoint
+		reader.Client = resolved.Client
 		if err := a.attachSSRFTransport(&reader.Client); err != nil {
 			return SeedSearchResult{}, err
 		}
 		return reader.SearchNyaaSeeds(ctx, query)
+	case ProviderJackett:
+		reader := a.Jackett
+		reader.Endpoint = resolved.Endpoint
+		reader.APIKey = resolved.APIKey
+		reader.Client = resolved.Client
+		if err := a.attachSSRFTransport(&reader.Client); err != nil {
+			return SeedSearchResult{}, err
+		}
+		return reader.SearchJackettSeeds(ctx, query)
 	default:
 		return SeedSearchResult{}, fmt.Errorf("%w: %s", ErrSearchNotSupported, provider)
 	}
@@ -394,6 +414,7 @@ func mapSearchSnapshot(snapshot catalogdomain.ProviderFeedSnapshot, query string
 			row.PublishedAt = *seed.PublishedAt
 		}
 		row.SizeBytes, row.InfoHash = seed.SizeBytes, seed.InfoHash
+		row.SourceSite = seed.SourceSite
 		// Display-only title facts. They are read from the release title, never
 		// used as identity and never persisted as a provider group.
 		tags := reltitletags.Extract(seed.Title)

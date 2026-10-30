@@ -113,6 +113,72 @@ func TestBGMConnectionRoundTripPostgres(t *testing.T) {
 	}
 }
 
+func TestJackettConnectionRoundTripPostgres(t *testing.T) {
+	db := openConnectionTestDB(t)
+	ctx := context.Background()
+	cleanupConnectionTestRows(t, ctx, db)
+	t.Cleanup(func() { cleanupConnectionTestRows(t, ctx, db) })
+
+	service := NewService(db, newConnectionTestSecretStore(t, db))
+	httpService := newGeneratedHTTPService(NewHTTPService(service))
+	put := func(expected int64, secret generated.ConnectionSecret) (generated.JackettConnection, error) {
+		t.Helper()
+		var input generated.ConnectionInput
+		if err := input.FromJackettConnectionInput(generated.JackettConnectionInput{
+			Kind: "jackett", Name: "Jackett", Enabled: true, BaseUrl: "http://jackett.local:9117", Secret: secret,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		connection, err := httpService.PutConnection(ctx, "connection-test-jackett", expected, input)
+		if err != nil {
+			return generated.JackettConnection{}, err
+		}
+		return connection.AsJackettConnection()
+	}
+	secretOf := func(mode string, value string) generated.ConnectionSecret {
+		t.Helper()
+		var secret generated.ConnectionSecret
+		var err error
+		switch mode {
+		case "replace":
+			err = secret.FromConnectionSecretReplace(generated.ConnectionSecretReplace{Mode: "replace", Value: value})
+		case "keep":
+			err = secret.FromConnectionSecretKeep(generated.ConnectionSecretKeep{Mode: "keep"})
+		default:
+			err = secret.FromConnectionSecretRemove(generated.ConnectionSecretRemove{Mode: "remove"})
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return secret
+	}
+
+	created, err := put(0, secretOf("replace", "jackett-secret"))
+	if err != nil {
+		t.Fatalf("Jackett connection must save end to end: %v", err)
+	}
+	if !created.CredentialConfigured || created.BaseUrl != "http://jackett.local:9117" {
+		t.Fatalf("unexpected Jackett create view: %+v", created)
+	}
+	kept, err := put(created.Version, secretOf("keep", ""))
+	if err != nil || !kept.CredentialConfigured {
+		t.Fatalf("Jackett keep must retain its credential: view=%+v err=%v", kept, err)
+	}
+	if _, err := put(kept.Version, secretOf("remove", "")); err == nil {
+		t.Fatal("Jackett accepted removal of its required credential")
+	}
+	loaded, err := service.GetConnection(ctx, "connection-test-jackett")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.SecretRef == "" {
+		t.Fatal("failed credential removal changed the saved Jackett secret")
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE connections SET config = '{"indexer":"example"}' WHERE id = 'connection-test-jackett'`); err == nil {
+		t.Fatal("Jackett connection accepted indexer configuration")
+	}
+}
+
 func TestRSSHTTPConnectionRoundTripPostgres(t *testing.T) {
 	db := openConnectionTestDB(t)
 	ctx := context.Background()

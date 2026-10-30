@@ -17,6 +17,7 @@ const (
 	ConnectionAniBT       ConnectionKind = "anibt"
 	ConnectionMikan       ConnectionKind = "mikan"
 	ConnectionNyaa        ConnectionKind = "nyaa"
+	ConnectionJackett     ConnectionKind = "jackett"
 	ConnectionBGM         ConnectionKind = "bgm"
 	ConnectionQBittorrent ConnectionKind = "qbittorrent"
 	ConnectionTMDB        ConnectionKind = "tmdb"

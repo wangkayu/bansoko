@@ -382,6 +382,9 @@ func mapRSSListSeedFacts(seed readmodelapplication.RSSListSeedFacts) generated.R
 		digest := seed.ExpectedPayloadDigest
 		mapped.ExpectedPayloadDigest = &digest
 	}
+	if seed.SourceSite != nil {
+		mapped.SourceSite = &generated.SeedSourceSite{Id: seed.SourceSite.ID, Name: seed.SourceSite.Name, Type: generated.SeedSourceSiteType(seed.SourceSite.Type)}
+	}
 	if seed.AniBTTags != nil {
 		tags := append([]string{}, (*seed.AniBTTags)...)
 		mapped.AnibtTags = &tags

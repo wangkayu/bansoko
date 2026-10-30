@@ -1,5 +1,6 @@
 ## New
 
+- Torrent search can use Jackett: configure only its address and API key under service connections to search the trackers already aggregated by Jackett, with each result's source site and public/private type shown.
 - Torrent search adds Nyaa as a source, with its own access settings under connections.
 - The update check shows the release notes of newer versions.
 - One-shot downloads can choose whether files without an episode number are skipped or organized as unknown content.

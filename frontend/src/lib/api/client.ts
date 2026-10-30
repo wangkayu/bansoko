@@ -1070,7 +1070,7 @@ export type SeedSearchSnapshotSeed = Schema<"SeedSearchSnapshotSeed">;
  * covers the complete result set, and the response renders that whole seed window.
  */
 export function fetchSeedSearchSnapshot(
-  provider: "anibt" | "mikan" | "nyaa",
+  provider: "anibt" | "mikan" | "nyaa" | "jackett",
   input: SeedSearchSnapshotInput,
 ): Promise<SeedSearchSnapshotView> {
   return request(`/catalog/providers/${encodePathSegment(provider)}/seed-search-snapshots:fetch`, {

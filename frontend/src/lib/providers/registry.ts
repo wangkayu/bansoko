@@ -40,7 +40,9 @@ export function providerLabel(source: ProviderKey): string {
   return providerLabelOf(source);
 }
 
-/** Display name of a keyword torrent search source (the discovery providers plus Nyaa). */
+/** Display name of a keyword torrent search source (the discovery providers plus search-only sources). */
 export function searchProviderLabel(source: ProviderKey | SearchProviderKey): string {
-  return source === "nyaa" ? "Nyaa" : providerLabelOf(source);
+  if (source === "nyaa") return "Nyaa";
+  if (source === "jackett") return "Jackett";
+  return providerLabelOf(source);
 }

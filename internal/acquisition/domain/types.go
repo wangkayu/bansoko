@@ -16,8 +16,27 @@ import (
 	"bansoko/internal/episodeidentity"
 )
 
+type SeedSourceSite struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+func (s SeedSourceSite) Validate() error {
+	if strings.TrimSpace(s.ID) == "" || len(s.ID) > 256 || strings.TrimSpace(s.Name) == "" || len(s.Name) > 256 {
+		return errors.New("seed source site id and name are required and bounded")
+	}
+	if s.Type != "public" && s.Type != "private" {
+		return errors.New("seed source site type must be public or private")
+	}
+	return nil
+}
+
 type FeedItem struct {
-	GUID              string
+	GUID string
+	// SourceSite attributes one result to the tracker that Jackett aggregated.
+	// It is independent of the subtitle group parsed from the release title.
+	SourceSite        *SeedSourceSite `json:"-"`
 	Title             string
 	Link              string
 	Description       string

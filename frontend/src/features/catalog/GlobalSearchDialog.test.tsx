@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within, act } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CatalogItem, RSSListItem, RSSListView, SeedSearchSnapshotSeed, SeedSearchSnapshotView } from "../../lib/api/client";
+import type { CatalogItem, Connection, RSSListItem, RSSListView, SeedSearchSnapshotSeed, SeedSearchSnapshotView } from "../../lib/api/client";
 import { GlobalSearchDialog } from "./GlobalSearchDialog";
 import { t } from "../../lib/i18n";
 import { preset as businessPreset } from "../../testing/businessPreset";
+import { configKeys } from "../../lib/queryKeys";
 
 // GlobalSearchDialog (the header's global search): two modes over both sites.
 //   番剧 mode — the query bar, the result state machine (idle/loading/empty/errors/populated
@@ -35,6 +36,7 @@ let seedFetchResult: { status?: number; body?: unknown };
 let seedFetchCalls: { url: string; body: unknown }[] = [];
 let rssViewResult: { status?: number; body?: unknown };
 let rssViewCalls: { url: string; body: unknown }[] = [];
+let connections: Connection[] = [];
 
 const anibtHit: CatalogItem = {
   kind: "anibt_entry",
@@ -54,6 +56,16 @@ const SCOPE_REF = "search-scope:0123456789abcdef";
 const QUERY_REF = "search-query:fedcba9876543210";
 const CONTENT_HASH = "sha256:00112233445566778899aabb";
 const SEARCH_SNAPSHOT_ID = "search-snap-1";
+
+const jackettConnection: Connection = {
+  id: "jackett-1",
+  kind: "jackett",
+  name: "Jackett",
+  enabled: true,
+  base_url: "https://jackett.example.invalid",
+  credential_configured: true,
+  version: 1,
+};
 
 const seedOne: SeedSearchSnapshotSeed = {
   stable_seed_key: "seed-key-1",
@@ -88,11 +100,16 @@ function seedSnapshotView(overrides: Partial<SeedSearchSnapshotView> = {}): Seed
 }
 
 /** The read model's projection of the search snapshot: one group named by the placeholder query_ref. */
-function searchRssView(): RSSListView {
+function searchRssView(provider: "anibt" | "jackett" = "anibt"): RSSListView {
   const item = (key: string, title: string): RSSListItem => ({
     snapshot_id: SEARCH_SNAPSHOT_ID,
     stable_seed_key: key,
-    seed: { title, locator_display: `https://example.invalid/${key}.torrent`, size_bytes: 1024 * 1024 * 700 },
+    seed: {
+      title,
+      locator_display: `https://example.invalid/${key}.torrent`,
+      size_bytes: 1024 * 1024 * 700,
+      ...(provider === "jackett" ? { source_site: { id: "tracker-example", name: "示例站点", type: "private" as const } } : {}),
+    },
     torrent: { state: "available" },
     evaluation: { state: "evaluated", verdict: "accepted_pending_download" },
     files: [
@@ -118,7 +135,7 @@ function searchRssView(): RSSListView {
     generated_at: "2026-10-24T12:00:00Z",
     groups: [
       {
-        scope: { provider: "anibt", provider_entry_ref: SCOPE_REF, provider_group_ref: QUERY_REF },
+        scope: { provider, provider_entry_ref: SCOPE_REF, provider_group_ref: QUERY_REF },
         display_name: QUERY_REF,
         selection: { source: "configured", effective_selected: true, selection_mode: "auto" },
         offset: { value: 0, editable: true, source: "link" },
@@ -177,6 +194,9 @@ function stubFetch() {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
+    }
+    if (url.endsWith("/config/connections")) {
+      return new Response(JSON.stringify(connections), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     if (url.endsWith("/config/business-preset")) {
       return new Response(JSON.stringify(businessPreset), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -237,6 +257,7 @@ function resetFixtures() {
   seedFetchCalls = [];
   rssViewResult = { status: 200 };
   rssViewCalls = [];
+  connections = [];
   stubFetch();
 }
 
@@ -555,6 +576,73 @@ describe("GlobalSearchDialog 种子检索模式", () => {
     await submitSeedSearch("示例作品");
 
     expect(seedFetchCalls[0]!.url).toContain("/api/v1/catalog/providers/nyaa/seed-search-snapshots:fetch");
+  });
+
+  it("只有启用且已配置凭据的 Jackett 连接才提供搜索来源", async () => {
+    connections = [
+      { ...jackettConnection, id: "disabled", enabled: false },
+      { ...jackettConnection, id: "without-key", credential_configured: false },
+    ];
+    const first = renderDialog();
+    switchToSeedMode();
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/config/connections"))).toBe(true));
+    expect(screen.queryByRole("radio", { name: "Jackett" })).toBeNull();
+    first.unmount();
+
+    connections = [jackettConnection];
+    renderDialog();
+    expect(screen.queryByRole("radio", { name: "Jackett" })).toBeNull();
+    switchToSeedMode();
+    expect(await screen.findByRole("radio", { name: "Jackett" })).toBeInTheDocument();
+  });
+
+  it("Jackett 搜索沿用一次性下载并展示独立来源站点，不把它当作字幕组", async () => {
+    connections = [jackettConnection];
+    seedFetchResult = { status: 200, body: seedSnapshotView({ provider: "jackett" }) };
+    rssViewResult = { status: 200, body: searchRssView("jackett") };
+    renderDialog();
+    switchToSeedMode();
+    fireEvent.click(await screen.findByRole("radio", { name: "Jackett" }));
+    await submitSeedSearch("示例作品");
+
+    expect(seedFetchCalls[0]!.url).toContain("/api/v1/catalog/providers/jackett/seed-search-snapshots:fetch");
+    const dialog = await screen.findByRole("dialog", { name: t("oneshot.title") });
+    expect(await within(dialog).findAllByText(/示例站点 · 私有/)).toHaveLength(2);
+    await waitFor(() => expect(rssViewCalls).toHaveLength(1));
+    const body = rssViewCalls[0]!.body as { feed: { provider: string }[] };
+    expect(body.feed[0]?.provider).toBe("jackett");
+    expect(within(dialog).queryByText("字幕组 · 示例站点")).toBeNull();
+  });
+
+  it("Jackett 连接失效时离开该来源并回落 AniBT", async () => {
+    connections = [jackettConnection];
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <GlobalSearchDialog open onOpenChange={() => {}} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    switchToSeedMode();
+    fireEvent.click(await screen.findByRole("radio", { name: "Jackett" }));
+    expect(screen.getByRole("radio", { name: "Jackett" })).toBeChecked();
+
+    act(() => client.setQueryData(configKeys.connections, [{ ...jackettConnection, enabled: false }]));
+    await waitFor(() => expect(screen.getByRole("radio", { name: "AniBT" })).toBeChecked());
+    expect(screen.queryByRole("radio", { name: "Jackett" })).toBeNull();
+  });
+
+  it("从种子检索的 Jackett 切回番剧检索：站点回落为 AniBT", async () => {
+    connections = [jackettConnection];
+    renderDialog();
+    switchToSeedMode();
+    fireEvent.click(await screen.findByRole("radio", { name: "Jackett" }));
+    fireEvent.click(screen.getByRole("radio", { name: t("globalSearch.modeProgram") }));
+
+    expect(screen.queryByRole("radio", { name: "Jackett" })).toBeNull();
+    await submitSearch("示例作品");
+    expect(new URL(searchCalls[0]!, "http://localhost").pathname).toBe("/api/v1/catalog/providers/anibt/search");
   });
 
   it("从种子检索的 Nyaa 切回番剧检索：站点回落为 AniBT，Nyaa 选项消失", async () => {

@@ -172,6 +172,11 @@ func (r *Repository) readProviderFeedSnapshot(ctx context.Context, queries *gene
 			return catalogdomain.ProviderFeedSnapshot{}, err
 		}
 		fact.AniBTTags = anibtTags
+		sourceSite, err := decodeFeedSeedSourceSite(seed.SourceSite.Valid, seed.SourceSite.RawMessage)
+		if err != nil {
+			return catalogdomain.ProviderFeedSnapshot{}, err
+		}
+		fact.SourceSite = sourceSite
 		if seed.ManifestTorrentParserVersion.Valid {
 			manifest := &catalogdomain.TorrentManifest{
 				PayloadDigest:    seed.PayloadDigest.String,
@@ -269,6 +274,20 @@ func decodeFeedSeedAniBTTags(valid bool, raw []byte) (*acquisitiondomain.StoredA
 	}
 	if stored.Tags == nil {
 		stored.Tags = []string{}
+	}
+	return &stored, nil
+}
+
+func decodeFeedSeedSourceSite(valid bool, raw []byte) (*acquisitiondomain.SeedSourceSite, error) {
+	if !valid || len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	var stored acquisitiondomain.SeedSourceSite
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		return nil, fmt.Errorf("decode provider feed snapshot source site: %w", err)
+	}
+	if err := stored.Validate(); err != nil {
+		return nil, fmt.Errorf("decode provider feed snapshot source site: %w", err)
 	}
 	return &stored, nil
 }

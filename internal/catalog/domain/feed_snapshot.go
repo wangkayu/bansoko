@@ -159,6 +159,9 @@ type ProviderFeedSnapshotSeed struct {
 	// "no tag set" (non-AniBT provider, or a row written before the column
 	// existed); a set observed with no tags is the non-nil block with no tags.
 	AniBTTags *acquisitiondomain.StoredAniBTTags
+	// SourceSite is the optional tracker attribution of an aggregated result.
+	// Like AniBTTags it stays outside the legacy content hash.
+	SourceSite *acquisitiondomain.SeedSourceSite
 }
 
 type ProviderFeedSnapshotWrite struct {
@@ -267,7 +270,7 @@ func validCustomSnapshotRef(value, prefix string) bool {
 }
 
 func (s ProviderFeedSnapshotWrite) Validate() error {
-	if s.Provider != "anibt" && s.Provider != "mikan" && s.Provider != "nyaa" && s.Provider != "custom" {
+	if s.Provider != "anibt" && s.Provider != "mikan" && s.Provider != "nyaa" && s.Provider != "jackett" && s.Provider != "custom" {
 		return fmt.Errorf("unsupported feed snapshot provider %q", s.Provider)
 	}
 	if strings.TrimSpace(s.ProviderEntryRef) == "" || len(s.ProviderEntryRef) > 256 {
@@ -308,7 +311,7 @@ func (s ProviderFeedSnapshotWrite) Validate() error {
 			return err
 		}
 	case FeedSnapshotKindProviderFeed:
-		if s.Provider == "custom" || s.Provider == "nyaa" {
+		if s.Provider == "custom" || s.Provider == "nyaa" || s.Provider == "jackett" {
 			return errors.New("a provider feed snapshot requires a discovery provider (anibt or mikan)")
 		}
 		// A published feed names a real catalog entry and group. A ref in the
@@ -391,6 +394,11 @@ func (s ProviderFeedSnapshotSeed) Validate() error {
 	}
 	if err := s.validateAniBTTags(); err != nil {
 		return err
+	}
+	if s.SourceSite != nil {
+		if err := s.SourceSite.Validate(); err != nil {
+			return fmt.Errorf("seed source site: %w", err)
+		}
 	}
 	return s.validateTorrentAcquisition()
 }

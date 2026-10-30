@@ -247,7 +247,8 @@ type RSSListSeedFacts struct {
 	ExpectedPayloadDigest string
 	LocatorDisplay        string
 	// AniBTTags is the frozen AniBT tag set; nil for non-AniBT releases.
-	AniBTTags *[]string
+	AniBTTags  *[]string
+	SourceSite *acquisitiondomain.SeedSourceSite
 	// TitleTags is the title-parse tag set the title row evaluates (frozen
 	// for a persisted release, otherwise read from the seed title).
 	TitleTags *[]string
@@ -1638,6 +1639,7 @@ func rssListSeedItem(snapshotID string, seed SeedPreviewFact, manifest *animecat
 			ExpectedPayloadDigest: seed.ExpectedPayloadDigest,
 			LocatorDisplay:        seed.LocatorDisplay,
 			AniBTTags:             seedAniBTTags(seed.AniBTTags),
+			SourceSite:            seed.SourceSite,
 			TitleTags:             seedTitleTags(seed.Title),
 		},
 		Torrent:        rssListTorrentState(seed, manifest),

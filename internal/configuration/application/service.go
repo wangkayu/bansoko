@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -23,6 +24,7 @@ import (
 	"bansoko/internal/download/qbittorrent"
 	"bansoko/internal/events"
 	hardeningtransport "bansoko/internal/hardening/transport"
+	"bansoko/internal/jackett"
 	"bansoko/internal/persistence/txscope"
 
 	"github.com/google/uuid"
@@ -199,6 +201,8 @@ func (t ProviderConnectionTester) Test(ctx context.Context, connection domain.Co
 		return t.testQBittorrent(ctx, connection)
 	case domain.ConnectionTMDB:
 		return t.testTMDB(ctx, connection)
+	case domain.ConnectionJackett:
+		return t.testJackett(ctx, connection)
 	default:
 		client, err := t.clientForConnection(ctx, connection)
 		if err != nil {
@@ -338,6 +342,73 @@ func (t ProviderConnectionTester) testTMDB(ctx context.Context, connection domai
 	snapshot.Code = fmt.Sprintf("http_%d", response.StatusCode)
 	snapshot.Message = "TMDB provider returned an error"
 	return snapshot
+}
+
+func (t ProviderConnectionTester) testJackett(ctx context.Context, connection domain.Connection) domain.HealthSnapshot {
+	snapshot := domain.HealthSnapshot{ConnectionID: connection.ID, Kind: connection.Kind, State: domain.ConnectionDegraded, Code: "unavailable", Message: "Jackett connection test failed", CheckedAt: time.Now().UTC()}
+	apiKey := ""
+	if t.ResolveSecret != nil && connection.SecretRef != "" {
+		apiKey, _ = t.ResolveSecret.Resolve(connection.SecretRef)
+	}
+	endpoint, err := jackett.AggregateURL(connection.Endpoint, apiKey, url.Values{"t": {"caps"}})
+	if err != nil {
+		snapshot.Code = "missing_credentials"
+		if strings.TrimSpace(apiKey) != "" {
+			snapshot.Code = "invalid_endpoint"
+		}
+		snapshot.Message = "Jackett endpoint or API key is not configured correctly"
+		return snapshot
+	}
+	client, err := t.clientForConnection(ctx, connection)
+	if err != nil {
+		snapshot.Code = "network_route_invalid"
+		snapshot.Message = "Jackett network route is not usable"
+		return snapshot
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		snapshot.Code = "invalid_endpoint"
+		snapshot.Message = "Jackett endpoint is invalid"
+		return snapshot
+	}
+	request.Header.Set("Accept", "application/xml")
+	clientCopy := *client
+	clientCopy.CheckRedirect = jackett.ValidateRedirect
+	response, err := clientCopy.Do(request)
+	if err != nil {
+		snapshot.Code = "network_error"
+		snapshot.Message = "Jackett is unreachable"
+		return snapshot
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		snapshot.Code = fmt.Sprintf("http_%d", response.StatusCode)
+		snapshot.Message = "Jackett rejected the connection request"
+		return snapshot
+	}
+	decoder := xml.NewDecoder(io.LimitReader(response.Body, 64<<10))
+	for {
+		token, decodeErr := decoder.Token()
+		if decodeErr != nil {
+			snapshot.Code = "invalid_response"
+			snapshot.Message = "Jackett returned an unusable response"
+			return snapshot
+		}
+		if root, ok := token.(xml.StartElement); ok {
+			if root.Name.Local == "caps" {
+				snapshot.State = domain.ConnectionConfigured
+				snapshot.Code = "ok"
+				snapshot.Message = "Jackett API key is accepted"
+				return snapshot
+			}
+			snapshot.Code = "authentication_failed"
+			if root.Name.Local != "error" {
+				snapshot.Code = "invalid_response"
+			}
+			snapshot.Message = "Jackett rejected the API key or returned an invalid response"
+			return snapshot
+		}
+	}
 }
 
 func NewService(db *sql.DB, secrets SecretStore) *Service {
@@ -555,6 +626,9 @@ FROM connections WHERE id = $1 FOR UPDATE`, id).Scan(&existingKind, &existingSec
 	secretRef, err := s.mutateSecretTx(ctx, tx, secretMutation, string(input.Kind)+":"+input.Name, existingSecretRef)
 	if err != nil {
 		return domain.Connection{}, fmt.Errorf("store connection secret: %w", err)
+	}
+	if input.Kind == domain.ConnectionJackett && secretRef == "" {
+		return domain.Connection{}, &apperrors.BadRequest{Code: "CONNECTION_SECRET_REQUIRED", Message: "A Jackett API key is required."}
 	}
 	var effectiveQBConfig *domain.QBittorrentConnectionConfig
 	if input.Kind == domain.ConnectionQBittorrent {
@@ -1263,7 +1337,7 @@ func validateConnectionInput(input domain.ConnectionInput) error {
 		return err
 	}
 	switch input.Kind {
-	case domain.ConnectionAniBT, domain.ConnectionMikan, domain.ConnectionNyaa, domain.ConnectionBGM, domain.ConnectionQBittorrent, domain.ConnectionTMDB, domain.ConnectionHTTPFeed:
+	case domain.ConnectionAniBT, domain.ConnectionMikan, domain.ConnectionNyaa, domain.ConnectionJackett, domain.ConnectionBGM, domain.ConnectionQBittorrent, domain.ConnectionTMDB, domain.ConnectionHTTPFeed:
 	default:
 		return fmt.Errorf("unsupported connection kind %q", input.Kind)
 	}

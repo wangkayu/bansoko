@@ -27,7 +27,7 @@ import { Chip, StatePill, ConflictBlock, SecretField, type SecretMode } from "..
 import { DialogFeedback, SettingsEditDialog } from "./SettingsEditDialog";
 import { t } from "../../lib/i18n";
 
-// Service connections: AniBT / Mikan / Nyaa / BGM / RSS HTTP / TMDB plus network routes.
+// Service connections: AniBT / Mikan / Nyaa / BGM / RSS HTTP / Jackett / TMDB plus network routes.
 //   The qBittorrent downloader has moved to the acquisition settings section (SettingsDownload) and
 //   is neither shown nor edited here. The list is read-only cards with editing in a fixed-size
 //   dialog. The connection secret (the tmdb API Key) and route credentials (the http_proxy / socks5
@@ -36,10 +36,8 @@ import { t } from "../../lib/i18n";
 //   it into one user:pass secret.
 //
 //   Built-in connections (mikan/anibt/nyaa/bgm/tmdb) are seeded by instance initialization, exactly one
-//   per kind: they cannot be deleted (the contract has no delete) or created (the create button
-//   only adds RSS access), while baseurl/routes are editable with a
-//   "restore defaults" (official address + direct connection). RSS HTTP is a transport-policy
-//   connection and may be created freely.
+//   per kind: they cannot be deleted (the contract has no delete) or created. RSS HTTP and Jackett
+//   may be created freely; Jackett needs only its endpoint and API key beyond the shared fields.
 //
 //   The route form takes a unified URL input: http_proxy fills http://host:port and socks5 fills
 //   socks5://host:port, aligned with the backend's Endpoint scheme validation (http/https and
@@ -105,7 +103,7 @@ function routeEndpointError(kind: "http_proxy" | "socks5", value: string): strin
 type ConnectionDraft = {
   id?: string;
   version: number;
-  kind: "rss_http" | "tmdb" | "anibt" | "mikan" | "nyaa" | "bgm";
+  kind: "rss_http" | "tmdb" | "anibt" | "mikan" | "nyaa" | "bgm" | "jackett";
   name: string;
   enabled: boolean;
   base_url: string;
@@ -116,7 +114,7 @@ type ConnectionDraft = {
 
 function connectionDraftFrom(item?: Connection): ConnectionDraft {
   if (!item) {
-    // Built-in connections are seeded and cannot be created; the only creatable kind is RSS access.
+    // Built-in connections are seeded; a new connection starts as RSS access and may switch to Jackett.
     return {
       version: 0,
       kind: "rss_http",
@@ -139,9 +137,9 @@ function connectionDraftFrom(item?: Connection): ConnectionDraft {
     secret_mode: "keep",
     route_id: item.route_id ?? "",
   };
-  if (item.kind === "tmdb" || item.kind === "anibt" || item.kind === "mikan" || item.kind === "nyaa" || item.kind === "bgm") {
+  if (item.kind === "tmdb" || item.kind === "anibt" || item.kind === "mikan" || item.kind === "nyaa" || item.kind === "bgm" || item.kind === "jackett") {
     base.base_url = item.base_url;
-    if (item.kind === "tmdb") {
+    if (item.kind === "tmdb" || item.kind === "jackett") {
       base.secret_mode = item.credential_configured ? "keep" : "replace";
     }
   }
@@ -371,9 +369,13 @@ function visibleConnections(items: Connection[]): Connection[] {
 
 // Secrets: credentials are required in the create and replace states; the edit keep/remove states require no input.
 function secretValueMissing(draft: ConnectionDraft): boolean {
-  if (draft.kind !== "tmdb") return false;
+  if (draft.kind !== "tmdb" && draft.kind !== "jackett") return false;
   if (draft.id && draft.secret_mode !== "replace") return false;
   return draft.api_key.trim() === "";
+}
+
+function connectionDraftInvalid(draft: ConnectionDraft): boolean {
+  return draft.name.trim() === "" || secretValueMissing(draft) || (draft.kind === "jackett" && draft.base_url.trim() === "");
 }
 
 function ConnectionsCard() {
@@ -401,6 +403,15 @@ function ConnectionsCard() {
           name: current.name.trim(),
           enabled: current.enabled,
           base_url: current.base_url.trim() || "https://api.themoviedb.org/3",
+          secret: connectionSecretFor(current, current.api_key),
+          route_id: routeID,
+        };
+      } else if (current.kind === "jackett") {
+        input = {
+          kind: "jackett",
+          name: current.name.trim(),
+          enabled: current.enabled,
+          base_url: current.base_url.trim(),
           secret: connectionSecretFor(current, current.api_key),
           route_id: routeID,
         };
@@ -493,7 +504,7 @@ function ConnectionsCard() {
 
       <ul className="settings-connections-list">
         {visibleConnections(connections.data ?? []).map((item) => {
-          const kindLabel = item.kind === "tmdb" ? "TMDB" : item.kind === "anibt" ? "AniBT" : item.kind === "mikan" ? "Mikan" : item.kind === "nyaa" ? "Nyaa" : item.kind === "bgm" ? "Bangumi" : t("settings.connections.rssKind");
+          const kindLabel = item.kind === "tmdb" ? "TMDB" : item.kind === "anibt" ? "AniBT" : item.kind === "mikan" ? "Mikan" : item.kind === "nyaa" ? "Nyaa" : item.kind === "bgm" ? "Bangumi" : item.kind === "jackett" ? "Jackett" : t("settings.connections.rssKind");
           return (
           <li key={item.id} className="settings-connections-item">
             <div className="settings-connections-item-row">
@@ -537,7 +548,7 @@ function ConnectionsCard() {
           footer={(requestClose) => (
             <>
               <Button variant="ghost" onClick={requestClose}>{t("settings.connections.cancel")}</Button>
-              <Button variant="primary" aria-label={t("settings.connections.save")} disabled={busy || draft.name.trim() === "" || secretValueMissing(draft)} onClick={() => void save()}>
+              <Button variant="primary" aria-label={t("settings.connections.save")} disabled={busy || connectionDraftInvalid(draft)} onClick={() => void save()}>
                 {busy ? t("settings.connections.saving") : t("settings.connections.save")}
               </Button>
             </>
@@ -549,18 +560,20 @@ function ConnectionsCard() {
             error && <Alert tone="error" title={error} />
           )}
           <div className="settings-connections-form settings-connections-form-responsive">
-            {draft.id && (
-              <Field label={t("settings.connections.typeLabel")}>
-                <Select label={t("settings.connections.typeLabel")} value={draft.kind} disabled options={[
-                  { value: "mikan", label: "Mikan" },
-                  { value: "anibt", label: "AniBT" },
-                  { value: "nyaa", label: "Nyaa" },
-                  { value: "bgm", label: "BGM" },
-                  { value: "rss_http", label: t("settings.connections.rssKind") },
-                  { value: "tmdb", label: "TMDB" },
-                ]} onChange={() => undefined} />
-              </Field>
-            )}
+            <Field label={t("settings.connections.typeLabel")}>
+              <Select label={t("settings.connections.typeLabel")} value={draft.kind} disabled={!!draft.id} options={draft.id ? [
+                { value: "mikan", label: "Mikan" },
+                { value: "anibt", label: "AniBT" },
+                { value: "nyaa", label: "Nyaa" },
+                { value: "bgm", label: "BGM" },
+                { value: "rss_http", label: t("settings.connections.rssKind") },
+                { value: "jackett", label: "Jackett" },
+                { value: "tmdb", label: "TMDB" },
+              ] : [
+                { value: "rss_http", label: t("settings.connections.rssKind") },
+                { value: "jackett", label: "Jackett" },
+              ]} onChange={(kind) => setDraft({ ...draft, kind: kind as ConnectionDraft["kind"] })} />
+            </Field>
             <Field label={t("settings.connections.nameLabel")}>
               <Input aria-label={t("settings.connections.nameLabel")} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
             </Field>
@@ -590,6 +603,26 @@ function ConnectionsCard() {
                 value={draft.api_key}
                 onChange={(next) => setDraft({ ...draft, api_key: next })}
               />
+            </div>
+          )}
+
+          {draft.kind === "jackett" && (
+            <div className="settings-connections-field-gap settings-connections-form">
+              <Field label={t("settings.connections.jackettAddress")}>
+                <Input aria-label={t("settings.connections.jackettAddress")} value={draft.base_url} placeholder="http://jackett:9117" onChange={(e) => setDraft({ ...draft, base_url: e.target.value })} />
+              </Field>
+              <SecretField
+                className="settings-connections-field-wide"
+                editing={!!draft.id}
+                mode={draft.secret_mode}
+                onModeChange={(mode) => setDraft({ ...draft, secret_mode: mode })}
+                allowRemove={false}
+                subject={t("settings.connections.jackettKey")}
+                inputLabel={t("settings.connections.jackettKey")}
+                value={draft.api_key}
+                onChange={(next) => setDraft({ ...draft, api_key: next })}
+              />
+              <p className="settings-connections-description text-caption">{t("settings.connections.jackettHint")}</p>
             </div>
           )}
 

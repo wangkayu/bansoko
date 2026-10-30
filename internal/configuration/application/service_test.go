@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"bansoko/internal/configuration/domain"
+	"bansoko/internal/jackett"
 	"bansoko/internal/persistence/txscope"
 )
 
@@ -105,6 +106,60 @@ func TestProviderConnectionTesterTMDB(t *testing.T) {
 	missing := tester.Test(context.Background(), domain.Connection{ID: "tmdb", Kind: domain.ConnectionTMDB, Endpoint: server.URL})
 	if missing.Code != "missing_credentials" {
 		t.Fatalf("missing TMDB secret should be explicit: %+v", missing)
+	}
+}
+
+func TestProviderConnectionTesterJackett(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != jackett.AggregateTorznabPath || r.URL.Query().Get("t") != "caps" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Query().Get("apikey") != "jackett-secret" {
+			_, _ = w.Write([]byte(`<error code="100" description="unauthorized"/>`))
+			return
+		}
+		_, _ = w.Write([]byte(`<caps><server title="Jackett"/></caps>`))
+	}))
+	defer server.Close()
+
+	tester := ProviderConnectionTester{ResolveSecret: testResolver{"jackett-ref": "jackett-secret"}}
+	snapshot := tester.Test(context.Background(), domain.Connection{ID: "jackett", Kind: domain.ConnectionJackett, Endpoint: server.URL, SecretRef: "jackett-ref"})
+	if snapshot.State != domain.ConnectionConfigured || snapshot.Code != "ok" {
+		t.Fatalf("unexpected Jackett health snapshot: %+v", snapshot)
+	}
+	missing := tester.Test(context.Background(), domain.Connection{ID: "jackett", Kind: domain.ConnectionJackett, Endpoint: server.URL})
+	if missing.Code != "missing_credentials" {
+		t.Fatalf("missing Jackett secret should be explicit: %+v", missing)
+	}
+	rejected := (ProviderConnectionTester{ResolveSecret: testResolver{"jackett-ref": "wrong-secret"}}).Test(
+		context.Background(), domain.Connection{ID: "jackett", Kind: domain.ConnectionJackett, Endpoint: server.URL, SecretRef: "jackett-ref"},
+	)
+	if rejected.Code != "authentication_failed" {
+		t.Fatalf("Jackett authentication failure should be explicit: %+v", rejected)
+	}
+}
+
+func TestProviderConnectionTesterJackettRedirectDoesNotLeakCredentialURL(t *testing.T) {
+	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if referer := r.Header.Get("Referer"); referer != "" {
+			t.Errorf("redirect forwarded Referer: %q", referer)
+		}
+		if r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != "" {
+			t.Error("redirect forwarded ambient credentials")
+		}
+		_, _ = w.Write([]byte(`<caps><server title="Jackett"/></caps>`))
+	}))
+	defer destination.Close()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, destination.URL+"/caps", http.StatusFound)
+	}))
+	defer upstream.Close()
+
+	tester := ProviderConnectionTester{ResolveSecret: testResolver{"jackett-ref": "jackett-secret"}}
+	snapshot := tester.Test(context.Background(), domain.Connection{ID: "jackett", Kind: domain.ConnectionJackett, Endpoint: upstream.URL, SecretRef: "jackett-ref"})
+	if snapshot.State != domain.ConnectionConfigured || snapshot.Code != "ok" {
+		t.Fatalf("unexpected redirected Jackett health snapshot: %+v", snapshot)
 	}
 }
 

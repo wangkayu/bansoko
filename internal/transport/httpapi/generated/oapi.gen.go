@@ -578,6 +578,7 @@ const (
 const (
 	ConnectionTestResultKindAnibt       ConnectionTestResultKind = "anibt"
 	ConnectionTestResultKindBgm         ConnectionTestResultKind = "bgm"
+	ConnectionTestResultKindJackett     ConnectionTestResultKind = "jackett"
 	ConnectionTestResultKindMikan       ConnectionTestResultKind = "mikan"
 	ConnectionTestResultKindNyaa        ConnectionTestResultKind = "nyaa"
 	ConnectionTestResultKindQbittorrent ConnectionTestResultKind = "qbittorrent"
@@ -987,6 +988,16 @@ const (
 // Defines values for HTTPProxyRouteInputKind.
 const (
 	HTTPProxyRouteInputKindHttpProxy HTTPProxyRouteInputKind = "http_proxy"
+)
+
+// Defines values for JackettConnectionKind.
+const (
+	JackettConnectionKindJackett JackettConnectionKind = "jackett"
+)
+
+// Defines values for JackettConnectionInputKind.
+const (
+	JackettConnectionInputKindJackett JackettConnectionInputKind = "jackett"
 )
 
 // Defines values for LibraryOverlapVerdict.
@@ -1576,10 +1587,11 @@ const (
 
 // Defines values for PreviewFeedSnapshotRefProvider.
 const (
-	PreviewFeedSnapshotRefProviderAnibt  PreviewFeedSnapshotRefProvider = "anibt"
-	PreviewFeedSnapshotRefProviderCustom PreviewFeedSnapshotRefProvider = "custom"
-	PreviewFeedSnapshotRefProviderMikan  PreviewFeedSnapshotRefProvider = "mikan"
-	PreviewFeedSnapshotRefProviderNyaa   PreviewFeedSnapshotRefProvider = "nyaa"
+	PreviewFeedSnapshotRefProviderAnibt   PreviewFeedSnapshotRefProvider = "anibt"
+	PreviewFeedSnapshotRefProviderCustom  PreviewFeedSnapshotRefProvider = "custom"
+	PreviewFeedSnapshotRefProviderJackett PreviewFeedSnapshotRefProvider = "jackett"
+	PreviewFeedSnapshotRefProviderMikan   PreviewFeedSnapshotRefProvider = "mikan"
+	PreviewFeedSnapshotRefProviderNyaa    PreviewFeedSnapshotRefProvider = "nyaa"
 )
 
 // Defines values for ProviderGroupDefaultMode.
@@ -1603,10 +1615,11 @@ const (
 
 // Defines values for ProviderRSSPreviewResultProvider.
 const (
-	ProviderRSSPreviewResultProviderAnibt  ProviderRSSPreviewResultProvider = "anibt"
-	ProviderRSSPreviewResultProviderCustom ProviderRSSPreviewResultProvider = "custom"
-	ProviderRSSPreviewResultProviderMikan  ProviderRSSPreviewResultProvider = "mikan"
-	ProviderRSSPreviewResultProviderNyaa   ProviderRSSPreviewResultProvider = "nyaa"
+	ProviderRSSPreviewResultProviderAnibt   ProviderRSSPreviewResultProvider = "anibt"
+	ProviderRSSPreviewResultProviderCustom  ProviderRSSPreviewResultProvider = "custom"
+	ProviderRSSPreviewResultProviderJackett ProviderRSSPreviewResultProvider = "jackett"
+	ProviderRSSPreviewResultProviderMikan   ProviderRSSPreviewResultProvider = "mikan"
+	ProviderRSSPreviewResultProviderNyaa    ProviderRSSPreviewResultProvider = "nyaa"
 )
 
 // Defines values for QBittorrentConnectionKind.
@@ -1725,6 +1738,7 @@ const (
 const (
 	RSSListGroupScopeProviderAnibt   RSSListGroupScopeProvider = "anibt"
 	RSSListGroupScopeProviderCustom  RSSListGroupScopeProvider = "custom"
+	RSSListGroupScopeProviderJackett RSSListGroupScopeProvider = "jackett"
 	RSSListGroupScopeProviderMikan   RSSListGroupScopeProvider = "mikan"
 	RSSListGroupScopeProviderNyaa    RSSListGroupScopeProvider = "nyaa"
 	RSSListGroupScopeProviderOneshot RSSListGroupScopeProvider = "oneshot"
@@ -2090,9 +2104,16 @@ const (
 
 // Defines values for SeedSearchSnapshotViewProvider.
 const (
-	SeedSearchSnapshotViewProviderAnibt SeedSearchSnapshotViewProvider = "anibt"
-	SeedSearchSnapshotViewProviderMikan SeedSearchSnapshotViewProvider = "mikan"
-	SeedSearchSnapshotViewProviderNyaa  SeedSearchSnapshotViewProvider = "nyaa"
+	SeedSearchSnapshotViewProviderAnibt   SeedSearchSnapshotViewProvider = "anibt"
+	SeedSearchSnapshotViewProviderJackett SeedSearchSnapshotViewProvider = "jackett"
+	SeedSearchSnapshotViewProviderMikan   SeedSearchSnapshotViewProvider = "mikan"
+	SeedSearchSnapshotViewProviderNyaa    SeedSearchSnapshotViewProvider = "nyaa"
+)
+
+// Defines values for SeedSourceSiteType.
+const (
+	SeedSourceSiteTypePrivate SeedSourceSiteType = "private"
+	SeedSourceSiteTypePublic  SeedSourceSiteType = "public"
 )
 
 // Defines values for SelectionMode.
@@ -2115,10 +2136,11 @@ const (
 
 // Defines values for SnapshotSeedProvider.
 const (
-	SnapshotSeedProviderAnibt  SnapshotSeedProvider = "anibt"
-	SnapshotSeedProviderCustom SnapshotSeedProvider = "custom"
-	SnapshotSeedProviderMikan  SnapshotSeedProvider = "mikan"
-	SnapshotSeedProviderNyaa   SnapshotSeedProvider = "nyaa"
+	SnapshotSeedProviderAnibt   SnapshotSeedProvider = "anibt"
+	SnapshotSeedProviderCustom  SnapshotSeedProvider = "custom"
+	SnapshotSeedProviderJackett SnapshotSeedProvider = "jackett"
+	SnapshotSeedProviderMikan   SnapshotSeedProvider = "mikan"
+	SnapshotSeedProviderNyaa    SnapshotSeedProvider = "nyaa"
 )
 
 // Defines values for SourceFactsIdentityKind.
@@ -2481,9 +2503,10 @@ const (
 
 // Defines values for SeedSearchProvider.
 const (
-	SeedSearchProviderAnibt SeedSearchProvider = "anibt"
-	SeedSearchProviderMikan SeedSearchProvider = "mikan"
-	SeedSearchProviderNyaa  SeedSearchProvider = "nyaa"
+	SeedSearchProviderAnibt   SeedSearchProvider = "anibt"
+	SeedSearchProviderJackett SeedSearchProvider = "jackett"
+	SeedSearchProviderMikan   SeedSearchProvider = "mikan"
+	SeedSearchProviderNyaa    SeedSearchProvider = "nyaa"
 )
 
 // Defines values for GetAgentGuideParamsFormat.
@@ -2548,9 +2571,10 @@ const (
 
 // Defines values for FetchSeedSearchSnapshotParamsProvider.
 const (
-	FetchSeedSearchSnapshotParamsProviderAnibt FetchSeedSearchSnapshotParamsProvider = "anibt"
-	FetchSeedSearchSnapshotParamsProviderMikan FetchSeedSearchSnapshotParamsProvider = "mikan"
-	FetchSeedSearchSnapshotParamsProviderNyaa  FetchSeedSearchSnapshotParamsProvider = "nyaa"
+	FetchSeedSearchSnapshotParamsProviderAnibt   FetchSeedSearchSnapshotParamsProvider = "anibt"
+	FetchSeedSearchSnapshotParamsProviderJackett FetchSeedSearchSnapshotParamsProvider = "jackett"
+	FetchSeedSearchSnapshotParamsProviderMikan   FetchSeedSearchSnapshotParamsProvider = "mikan"
+	FetchSeedSearchSnapshotParamsProviderNyaa    FetchSeedSearchSnapshotParamsProvider = "nyaa"
 )
 
 // Defines values for UnsuppressCatalogEntryParamsProvider.
@@ -5316,6 +5340,34 @@ type InstanceReplacementPolicyView struct {
 	Version              int            `json:"version"`
 }
 
+// JackettConnection defines model for JackettConnection.
+type JackettConnection struct {
+	BaseUrl              string                `json:"base_url"`
+	CredentialConfigured bool                  `json:"credential_configured"`
+	Enabled              bool                  `json:"enabled"`
+	Id                   ID                    `json:"id"`
+	Kind                 JackettConnectionKind `json:"kind"`
+	Name                 string                `json:"name"`
+	RouteId              *ID                   `json:"route_id,omitempty"`
+	Version              Version               `json:"version"`
+}
+
+// JackettConnectionKind defines model for JackettConnection.Kind.
+type JackettConnectionKind string
+
+// JackettConnectionInput defines model for JackettConnectionInput.
+type JackettConnectionInput struct {
+	BaseUrl string                     `json:"base_url"`
+	Enabled bool                       `json:"enabled"`
+	Kind    JackettConnectionInputKind `json:"kind"`
+	Name    string                     `json:"name"`
+	RouteId *ID                        `json:"route_id,omitempty"`
+	Secret  ConnectionSecret           `json:"secret"`
+}
+
+// JackettConnectionInputKind defines model for JackettConnectionInput.Kind.
+type JackettConnectionInputKind string
+
 // LibraryOverlap Read-only per-seed library overlap fact, computed by the server from the placements the library already holds. It only reads: it creates no placement, reserves no path and produces no WorkItem, and it is a fact rather than a plan, so pending_files counts files this seed would still have to write without promising that write. undetermined is a first-class answer and is never folded into absent: it means the overlap cannot be decided (no write set to compare, or a server with no library facts to read at all), and both counts and every per-file in_library value are then null.
 type LibraryOverlap struct {
 	// PendingFiles Number of write-set files the library does not hold yet. Null exactly when verdict is undetermined.
@@ -7297,7 +7349,7 @@ type RSSListGroup struct {
 
 // RSSListGroupScope The full identity of one subgroup. Display name, score and array position are never identity: two groups may share a name, and the same group appears in many responses.
 type RSSListGroupScope struct {
-	// Provider The subscription origins plus nyaa, which only names a keyword search snapshot group. Never a subscribable source.
+	// Provider The subscription origins plus nyaa and jackett, which only name keyword search snapshot groups. Neither search-only source is subscribable.
 	Provider RSSListGroupScopeProvider `json:"provider"`
 
 	// ProviderEntryRef Empty for materialized custom/oneshot RSS sources; provider entry reference for anibt/mikan groups.
@@ -7308,7 +7360,7 @@ type RSSListGroupScope struct {
 	RssSourceId *ID `json:"rss_source_id"`
 }
 
-// RSSListGroupScopeProvider The subscription origins plus nyaa, which only names a keyword search snapshot group. Never a subscribable source.
+// RSSListGroupScopeProvider The subscription origins plus nyaa and jackett, which only name keyword search snapshot groups. Neither search-only source is subscribable.
 type RSSListGroupScopeProvider string
 
 // RSSListGroupSelection Server-derived selection state. The browser never infers authorization from rank styling: an unselected group's items are readable but can never be downloaded.
@@ -7437,7 +7489,10 @@ type RSSListSeedFacts struct {
 	LocatorDisplay string     `json:"locator_display"`
 	PublishedAt    *time.Time `json:"published_at"`
 	SizeBytes      *int64     `json:"size_bytes,omitempty"`
-	Title          string     `json:"title"`
+
+	// SourceSite Tracker attribution returned by a Jackett aggregate result. This is source-site evidence, never the subtitle group parsed from the title.
+	SourceSite *SeedSourceSite `json:"source_site,omitempty"`
+	Title      string          `json:"title"`
 
 	// TitleTags The title-parse tags ("type:value") the title row of tag_filters evaluates: the frozen set of a persisted release, otherwise the pinned reltitle parser's reading of the seed title. May be empty.
 	TitleTags *[]string `json:"title_tags,omitempty"`
@@ -8232,6 +8287,9 @@ type SeedSearchSnapshotSeed struct {
 	Resolution *string `json:"resolution"`
 	SizeBytes  *int64  `json:"size_bytes"`
 
+	// SourceSite Tracker attribution returned by a Jackett aggregate result. This is source-site evidence, never the subtitle group parsed from the title.
+	SourceSite *SeedSourceSite `json:"source_site,omitempty"`
+
 	// StableSeedKey Stable identity within this search snapshot.
 	StableSeedKey string `json:"stable_seed_key"`
 	Title         string `json:"title"`
@@ -8276,6 +8334,16 @@ type SeedSearchSnapshotViewFreshness string
 // SeedSearchSnapshotViewProvider defines model for SeedSearchSnapshotView.Provider.
 type SeedSearchSnapshotViewProvider string
 
+// SeedSourceSite Tracker attribution returned by a Jackett aggregate result. This is source-site evidence, never the subtitle group parsed from the title.
+type SeedSourceSite struct {
+	Id   string             `json:"id"`
+	Name string             `json:"name"`
+	Type SeedSourceSiteType `json:"type"`
+}
+
+// SeedSourceSiteType defines model for SeedSourceSite.Type.
+type SeedSourceSiteType string
+
 // SelectedReleaseIdentity Public identity projection of the exact persisted release selected at admission; private execution facts remain only in the internal frozen owner snapshot.
 type SelectedReleaseIdentity struct {
 	ManagedAnimeId ID      `json:"managed_anime_id"`
@@ -8299,7 +8367,7 @@ type SelectedSeed struct {
 	// Locator Absolute HTTP(S) torrent URL aligned with ProviderRSSPreviewSeed.download_url. Withheld from MCP tool results (x-mcp-omit): it can embed a passkey.
 	Locator string `json:"locator"`
 
-	// Provider Provenance provider of one selected one-shot seed. It repeats the two discovery provider kinds, adds nyaa for a seed read from a Nyaa keyword search snapshot (search-only: Nyaa is never a discovery provider), and adds custom for a seed read from a frozen custom/oneshot draft source's own feed snapshot. It is a seed-provenance vocabulary only: ProviderKind stays a two-value discovery enum, and a custom seed never becomes a discoverable provider, a subgroup, or a subscribable origin.
+	// Provider Provenance provider of one selected one-shot seed. It repeats the two discovery provider kinds, adds nyaa and jackett for seeds read from keyword search snapshots (search-only: neither is ever a discovery provider), and adds custom for a seed read from a frozen custom/oneshot draft source's own feed snapshot. It is a seed-provenance vocabulary only: ProviderKind stays a two-value discovery enum, and a custom seed never becomes a discoverable provider, a subgroup, or a subscribable origin.
 	Provider         SnapshotSeedProvider `json:"provider"`
 	ProviderEntryRef string               `json:"provider_entry_ref"`
 	ProviderGroupRef string               `json:"provider_group_ref"`
@@ -8329,7 +8397,7 @@ type SelectedSeedInput struct {
 	// Locator Locator form only: absolute HTTP(S) torrent URL aligned with ProviderRSSPreviewSeed.download_url. Omit it to send a snapshot reference.
 	Locator *string `json:"locator,omitempty"`
 
-	// Provider Provenance provider of one selected one-shot seed. It repeats the two discovery provider kinds, adds nyaa for a seed read from a Nyaa keyword search snapshot (search-only: Nyaa is never a discovery provider), and adds custom for a seed read from a frozen custom/oneshot draft source's own feed snapshot. It is a seed-provenance vocabulary only: ProviderKind stays a two-value discovery enum, and a custom seed never becomes a discoverable provider, a subgroup, or a subscribable origin.
+	// Provider Provenance provider of one selected one-shot seed. It repeats the two discovery provider kinds, adds nyaa and jackett for seeds read from keyword search snapshots (search-only: neither is ever a discovery provider), and adds custom for a seed read from a frozen custom/oneshot draft source's own feed snapshot. It is a seed-provenance vocabulary only: ProviderKind stays a two-value discovery enum, and a custom seed never becomes a discoverable provider, a subgroup, or a subscribable origin.
 	Provider         SnapshotSeedProvider `json:"provider"`
 	ProviderEntryRef string               `json:"provider_entry_ref"`
 	ProviderGroupRef string               `json:"provider_group_ref"`
@@ -8368,7 +8436,7 @@ type SnapshotSeedDownloadInput struct {
 	FileSelection *[]string                            `json:"file_selection,omitempty"`
 	InputSource   SnapshotSeedDownloadInputInputSource `json:"input_source"`
 
-	// Provider Provenance provider of one selected one-shot seed. It repeats the two discovery provider kinds, adds nyaa for a seed read from a Nyaa keyword search snapshot (search-only: Nyaa is never a discovery provider), and adds custom for a seed read from a frozen custom/oneshot draft source's own feed snapshot. It is a seed-provenance vocabulary only: ProviderKind stays a two-value discovery enum, and a custom seed never becomes a discoverable provider, a subgroup, or a subscribable origin.
+	// Provider Provenance provider of one selected one-shot seed. It repeats the two discovery provider kinds, adds nyaa and jackett for seeds read from keyword search snapshots (search-only: neither is ever a discovery provider), and adds custom for a seed read from a frozen custom/oneshot draft source's own feed snapshot. It is a seed-provenance vocabulary only: ProviderKind stays a two-value discovery enum, and a custom seed never becomes a discoverable provider, a subgroup, or a subscribable origin.
 	Provider         SnapshotSeedProvider `json:"provider"`
 	ProviderEntryRef string               `json:"provider_entry_ref"`
 	ProviderGroupRef string               `json:"provider_group_ref"`
@@ -8383,7 +8451,7 @@ type SnapshotSeedDownloadInputInputSource string
 type SnapshotSeedExpandInput struct {
 	ContentHash string `json:"content_hash"`
 
-	// Provider Provenance provider of one selected one-shot seed. It repeats the two discovery provider kinds, adds nyaa for a seed read from a Nyaa keyword search snapshot (search-only: Nyaa is never a discovery provider), and adds custom for a seed read from a frozen custom/oneshot draft source's own feed snapshot. It is a seed-provenance vocabulary only: ProviderKind stays a two-value discovery enum, and a custom seed never becomes a discoverable provider, a subgroup, or a subscribable origin.
+	// Provider Provenance provider of one selected one-shot seed. It repeats the two discovery provider kinds, adds nyaa and jackett for seeds read from keyword search snapshots (search-only: neither is ever a discovery provider), and adds custom for a seed read from a frozen custom/oneshot draft source's own feed snapshot. It is a seed-provenance vocabulary only: ProviderKind stays a two-value discovery enum, and a custom seed never becomes a discoverable provider, a subgroup, or a subscribable origin.
 	Provider         SnapshotSeedProvider `json:"provider"`
 	ProviderEntryRef string               `json:"provider_entry_ref"`
 	ProviderGroupRef string               `json:"provider_group_ref"`
@@ -8407,7 +8475,7 @@ type SnapshotSeedExpandResult struct {
 // SnapshotSeedExpandResultState defines model for SnapshotSeedExpandResult.State.
 type SnapshotSeedExpandResultState string
 
-// SnapshotSeedProvider Provenance provider of one selected one-shot seed. It repeats the two discovery provider kinds, adds nyaa for a seed read from a Nyaa keyword search snapshot (search-only: Nyaa is never a discovery provider), and adds custom for a seed read from a frozen custom/oneshot draft source's own feed snapshot. It is a seed-provenance vocabulary only: ProviderKind stays a two-value discovery enum, and a custom seed never becomes a discoverable provider, a subgroup, or a subscribable origin.
+// SnapshotSeedProvider Provenance provider of one selected one-shot seed. It repeats the two discovery provider kinds, adds nyaa and jackett for seeds read from keyword search snapshots (search-only: neither is ever a discovery provider), and adds custom for a seed read from a frozen custom/oneshot draft source's own feed snapshot. It is a seed-provenance vocabulary only: ProviderKind stays a two-value discovery enum, and a custom seed never becomes a discoverable provider, a subgroup, or a subscribable origin.
 type SnapshotSeedProvider string
 
 // SourceFacts defines model for SourceFacts.
@@ -10039,6 +10107,34 @@ func (t *Connection) MergeTMDBConnection(v TMDBConnection) error {
 	return err
 }
 
+// AsJackettConnection returns the union data inside the Connection as a JackettConnection
+func (t Connection) AsJackettConnection() (JackettConnection, error) {
+	var body JackettConnection
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromJackettConnection overwrites any union data inside the Connection as the provided JackettConnection
+func (t *Connection) FromJackettConnection(v JackettConnection) error {
+	v.Kind = "jackett"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeJackettConnection performs a merge with any union data inside the Connection, using the provided JackettConnection
+func (t *Connection) MergeJackettConnection(v JackettConnection) error {
+	v.Kind = "jackett"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 // AsAniBTConnection returns the union data inside the Connection as a AniBTConnection
 func (t Connection) AsAniBTConnection() (AniBTConnection, error) {
 	var body AniBTConnection
@@ -10169,6 +10265,8 @@ func (t Connection) ValueByDiscriminator() (interface{}, error) {
 		return t.AsAniBTConnection()
 	case "bgm":
 		return t.AsBGMConnection()
+	case "jackett":
+		return t.AsJackettConnection()
 	case "mikan":
 		return t.AsMikanConnection()
 	case "nyaa":
@@ -10268,6 +10366,34 @@ func (t *ConnectionInput) FromTMDBConnectionInput(v TMDBConnectionInput) error {
 // MergeTMDBConnectionInput performs a merge with any union data inside the ConnectionInput, using the provided TMDBConnectionInput
 func (t *ConnectionInput) MergeTMDBConnectionInput(v TMDBConnectionInput) error {
 	v.Kind = "tmdb"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsJackettConnectionInput returns the union data inside the ConnectionInput as a JackettConnectionInput
+func (t ConnectionInput) AsJackettConnectionInput() (JackettConnectionInput, error) {
+	var body JackettConnectionInput
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromJackettConnectionInput overwrites any union data inside the ConnectionInput as the provided JackettConnectionInput
+func (t *ConnectionInput) FromJackettConnectionInput(v JackettConnectionInput) error {
+	v.Kind = "jackett"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeJackettConnectionInput performs a merge with any union data inside the ConnectionInput, using the provided JackettConnectionInput
+func (t *ConnectionInput) MergeJackettConnectionInput(v JackettConnectionInput) error {
+	v.Kind = "jackett"
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -10408,6 +10534,8 @@ func (t ConnectionInput) ValueByDiscriminator() (interface{}, error) {
 		return t.AsAniBTConnectionInput()
 	case "bgm":
 		return t.AsBGMConnectionInput()
+	case "jackett":
+		return t.AsJackettConnectionInput()
 	case "mikan":
 		return t.AsMikanConnectionInput()
 	case "nyaa":

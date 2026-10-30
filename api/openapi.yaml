@@ -7053,12 +7053,12 @@ components:
       in: path
       required: true
       description: >-
-        Source of a keyword torrent search. Nyaa has no work catalog, so it is
-        a torrent-search source only: every catalog, discovery and
-        subscription endpoint keeps the two-value CatalogProvider.
+        Source of a keyword torrent search. Nyaa and Jackett have no work
+        catalog, so they are torrent-search sources only: every catalog,
+        discovery and subscription endpoint keeps the two-value CatalogProvider.
       schema:
         type: string
-        enum: [anibt, mikan, nyaa]
+        enum: [anibt, mikan, nyaa, jackett]
     CatalogProviderEntryRef:
       name: provider_entry_ref
       in: path
@@ -7708,9 +7708,9 @@ components:
     RSSListGroupScopeProvider:
       type: string
       description: >-
-        The subscription origins plus nyaa, which only names a keyword search
-        snapshot group. Never a subscribable source.
-      enum: [anibt, mikan, nyaa, custom, oneshot]
+        The subscription origins plus nyaa and jackett, which only name keyword
+        search snapshot groups. Neither search-only source is subscribable.
+      enum: [anibt, mikan, nyaa, jackett, custom, oneshot]
     RSSListGroupScope:
       type: object
       additionalProperties: false
@@ -7832,6 +7832,25 @@ components:
         error_reason:
           type: string
           nullable: true
+    SeedSourceSite:
+      type: object
+      additionalProperties: false
+      required: [id, name, type]
+      description: >-
+        Tracker attribution returned by a Jackett aggregate result. This is
+        source-site evidence, never the subtitle group parsed from the title.
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        name:
+          type: string
+          minLength: 1
+          maxLength: 256
+        type:
+          type: string
+          enum: [public, private]
     RSSListSeedFacts:
       type: object
       additionalProperties: false
@@ -7871,6 +7890,8 @@ components:
             server-side so an ordinary read cannot leak credentials. Withheld
             from MCP tool results (x-mcp-omit): it is the item's torrent URL with
             the query removed, and a path can still embed a key.
+        source_site:
+          $ref: '#/components/schemas/SeedSourceSite'
         anibt_tags:
           type: array
           description: >-
@@ -8656,6 +8677,7 @@ components:
         - $ref: '#/components/schemas/QBittorrentConnectionInput'
         - $ref: '#/components/schemas/RSSHTTPConnectionInput'
         - $ref: '#/components/schemas/TMDBConnectionInput'
+        - $ref: '#/components/schemas/JackettConnectionInput'
         - $ref: '#/components/schemas/AniBTConnectionInput'
         - $ref: '#/components/schemas/MikanConnectionInput'
         - $ref: '#/components/schemas/NyaaConnectionInput'
@@ -8666,6 +8688,7 @@ components:
           qbittorrent: '#/components/schemas/QBittorrentConnectionInput'
           rss_http: '#/components/schemas/RSSHTTPConnectionInput'
           tmdb: '#/components/schemas/TMDBConnectionInput'
+          jackett: '#/components/schemas/JackettConnectionInput'
           anibt: '#/components/schemas/AniBTConnectionInput'
           mikan: '#/components/schemas/MikanConnectionInput'
           nyaa: '#/components/schemas/NyaaConnectionInput'
@@ -8794,6 +8817,27 @@ components:
           $ref: '#/components/schemas/ConnectionSecret'
         route_id:
           $ref: '#/components/schemas/ID'
+    JackettConnectionInput:
+      type: object
+      additionalProperties: false
+      required: [kind, name, enabled, base_url, secret]
+      properties:
+        kind:
+          type: string
+          enum: [jackett]
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        enabled:
+          type: boolean
+        base_url:
+          type: string
+          format: uri
+        secret:
+          $ref: '#/components/schemas/ConnectionSecret'
+        route_id:
+          $ref: '#/components/schemas/ID'
     AniBTConnectionInput:
       type: object
       additionalProperties: false
@@ -8875,6 +8919,7 @@ components:
         - $ref: '#/components/schemas/QBittorrentConnection'
         - $ref: '#/components/schemas/RSSHTTPConnection'
         - $ref: '#/components/schemas/TMDBConnection'
+        - $ref: '#/components/schemas/JackettConnection'
         - $ref: '#/components/schemas/AniBTConnection'
         - $ref: '#/components/schemas/MikanConnection'
         - $ref: '#/components/schemas/NyaaConnection'
@@ -8885,6 +8930,7 @@ components:
           qbittorrent: '#/components/schemas/QBittorrentConnection'
           rss_http: '#/components/schemas/RSSHTTPConnection'
           tmdb: '#/components/schemas/TMDBConnection'
+          jackett: '#/components/schemas/JackettConnection'
           anibt: '#/components/schemas/AniBTConnection'
           mikan: '#/components/schemas/MikanConnection'
           nyaa: '#/components/schemas/NyaaConnection'
@@ -8954,6 +9000,29 @@ components:
         kind:
           type: string
           enum: [tmdb]
+        name:
+          type: string
+        enabled:
+          type: boolean
+        base_url:
+          type: string
+          format: uri
+        credential_configured:
+          type: boolean
+        route_id:
+          $ref: '#/components/schemas/ID'
+        version:
+          $ref: '#/components/schemas/Version'
+    JackettConnection:
+      type: object
+      additionalProperties: false
+      required: [id, kind, name, enabled, base_url, credential_configured, version]
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        kind:
+          type: string
+          enum: [jackett]
         name:
           type: string
         enabled:
@@ -9060,7 +9129,7 @@ components:
           $ref: '#/components/schemas/ID'
         kind:
           type: string
-          enum: [qbittorrent, rss_http, tmdb, anibt, mikan, nyaa, bgm]
+          enum: [qbittorrent, rss_http, tmdb, jackett, anibt, mikan, nyaa, bgm]
         health:
           type: string
           enum: [ready, degraded, failed]
@@ -9330,14 +9399,14 @@ components:
       type: string
       description: >-
         Provenance provider of one selected one-shot seed. It repeats the
-        two discovery provider kinds, adds nyaa for a seed read from a Nyaa
-        keyword search snapshot (search-only: Nyaa is never a discovery
+        two discovery provider kinds, adds nyaa and jackett for seeds read from
+        keyword search snapshots (search-only: neither is ever a discovery
         provider), and adds custom for a seed read from a
         frozen custom/oneshot draft source's own feed snapshot. It is a
         seed-provenance vocabulary only: ProviderKind stays a two-value
         discovery enum, and a custom seed never becomes a discoverable
         provider, a subgroup, or a subscribable origin.
-      enum: [anibt, mikan, nyaa, custom]
+      enum: [anibt, mikan, nyaa, jackett, custom]
     SubscriptionOrigin:
       type: string
       description: >-
@@ -12346,7 +12415,7 @@ components:
       properties:
         provider:
           type: string
-          enum: [anibt, mikan, nyaa, custom]
+          enum: [anibt, mikan, nyaa, jackett, custom]
         provider_entry_ref:
           type: string
           minLength: 1
@@ -12960,6 +13029,8 @@ components:
         torrent_state:
           type: string
           enum: [available, unavailable, not_applicable]
+        source_site:
+          $ref: '#/components/schemas/SeedSourceSite'
         group_name:
           type: string
           maxLength: 256
@@ -12997,7 +13068,7 @@ components:
       properties:
         provider:
           type: string
-          enum: [anibt, mikan, nyaa]
+          enum: [anibt, mikan, nyaa, jackett]
         scope_ref:
           type: string
           pattern: '^search-scope:[0-9a-f]{64}$'
@@ -13155,7 +13226,7 @@ components:
       properties:
         provider:
           type: string
-          enum: [anibt, mikan, nyaa, custom]
+          enum: [anibt, mikan, nyaa, jackett, custom]
         provider_entry_ref:
           type: string
           minLength: 1

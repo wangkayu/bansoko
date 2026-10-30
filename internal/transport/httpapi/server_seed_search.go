@@ -60,6 +60,9 @@ func mapSeedSearchPreview(preview catalogapplication.SearchSeedPreview) generate
 		}
 		row.SizeBytes = seed.SizeBytes
 		row.InfoHash = seed.InfoHash
+		if seed.SourceSite != nil {
+			row.SourceSite = &generated.SeedSourceSite{Id: seed.SourceSite.ID, Name: seed.SourceSite.Name, Type: generated.SeedSourceSiteType(seed.SourceSite.Type)}
+		}
 		if seed.GroupName != "" {
 			group := seed.GroupName
 			row.GroupName = &group

@@ -37,7 +37,8 @@ type feedSeedDeclaration struct {
 	Files              []feedFileDeclaration    `json:"files"`
 	// AniBTTags is always present so the owner function's closed key set holds;
 	// a nil block marshals as JSON null and is persisted as SQL NULL.
-	AniBTTags *acquisitiondomain.StoredAniBTTags `json:"anibt_tags"`
+	AniBTTags  *acquisitiondomain.StoredAniBTTags `json:"anibt_tags"`
+	SourceSite *acquisitiondomain.SeedSourceSite  `json:"source_site"`
 }
 
 type feedManifestDeclaration struct {
@@ -87,7 +88,7 @@ func feedPublication(input catalogdomain.ProviderFeedSnapshotWrite, version int6
 		d := feedSeedDeclaration{ID: uuid.NewString(), StableSeedKey: seed.StableSeedKey, Locator: seed.Locator, LocatorDisplay: seed.LocatorDisplay,
 			Title: seed.Title, PublishedAt: seed.PublishedAt, SizeBytes: seed.SizeBytes, InfoHash: seed.InfoHash, PayloadDigest: seed.PayloadDigest,
 			TorrentFilename: seed.TorrentFilename, TorrentState: seed.NormalizedTorrentState(), TorrentErrorCode: seed.TorrentErrorCode, TorrentErrorReason: seed.TorrentErrorReason,
-			Files: make([]feedFileDeclaration, 0, fileCount), AniBTTags: seed.AniBTTags}
+			Files: make([]feedFileDeclaration, 0, fileCount), AniBTTags: seed.AniBTTags, SourceSite: seed.SourceSite}
 		if len(seed.Payload) > 0 {
 			params.Payloads = append(params.Payloads, seed.Payload)
 			index := len(params.Payloads)

@@ -134,7 +134,7 @@ function isSearchRefreshRequired(cause: unknown): boolean {
   return cause instanceof ApiError && cause.code === "FEED_SNAPSHOT_REFRESH_REQUIRED";
 }
 
-async function expandSeed(row: OneShotSeedRow, provider: "anibt" | "mikan" | "nyaa" | "custom", refreshRequiredCopy?: string) {
+async function expandSeed(row: OneShotSeedRow, provider: SearchProviderKey | "custom", refreshRequiredCopy?: string) {
   try {
     const result = await expandSnapshotSeed(row.snapshotID, row.stableSeedKey, {
       provider,

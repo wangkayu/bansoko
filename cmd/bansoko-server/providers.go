@@ -542,7 +542,7 @@ func provideApplicationGraph(
 	// public base, exactly like a catalog refresh.
 	seedSearch := catalogapplication.SeedSearchApplication{
 		Service:           catalogService,
-		Endpoints:         catalogSearchEndpoints{connections: catalogDBSource, clients: runtimeConfiguration},
+		Endpoints:         catalogSearchEndpoints{connections: catalogDBSource, clients: runtimeConfiguration, secrets: dbSecretStore},
 		Resolver:          fixtureResolver,
 		AllowPrivateHosts: fixtureAllowlist,
 	}
@@ -996,11 +996,12 @@ func provideFileMaintenanceService(
 type catalogSearchEndpoints struct {
 	connections catalogadapter.ConnectionSource
 	clients     catalogadapter.ConnectionHTTPClientResolver
+	secrets     configurationapplication.SecretResolver
 }
 
-func (r catalogSearchEndpoints) ResolveSearchEndpoint(ctx context.Context, provider string) (string, *http.Client, error) {
+func (r catalogSearchEndpoints) ResolveSearchEndpoint(ctx context.Context, provider string) (catalogapplication.CatalogSearchEndpoint, error) {
 	if r.connections == nil {
-		return "", nil, errors.New("catalog search connection source is not configured")
+		return catalogapplication.CatalogSearchEndpoint{}, errors.New("catalog search connection source is not configured")
 	}
 	var kind configurationdomain.ConnectionKind
 	switch provider {
@@ -1010,33 +1011,46 @@ func (r catalogSearchEndpoints) ResolveSearchEndpoint(ctx context.Context, provi
 		kind = configurationdomain.ConnectionMikan
 	case catalogapplication.ProviderNyaa:
 		kind = configurationdomain.ConnectionNyaa
+	case catalogapplication.ProviderJackett:
+		kind = configurationdomain.ConnectionJackett
 	default:
-		return "", nil, fmt.Errorf("unsupported catalog provider %q", provider)
+		return catalogapplication.CatalogSearchEndpoint{}, fmt.Errorf("unsupported catalog provider %q", provider)
 	}
 	connections, err := r.connections.ListConnections(ctx)
 	if err != nil {
-		return "", nil, fmt.Errorf("list %s connections: %w", provider, err)
+		return catalogapplication.CatalogSearchEndpoint{}, fmt.Errorf("list %s connections: %w", provider, err)
 	}
 	connection, err := configurationdomain.SelectSingleEnabledConnection(connections, kind)
 	if err != nil {
 		if !errors.Is(err, configurationdomain.ErrNoEnabledConnection) {
-			return "", nil, err
+			return catalogapplication.CatalogSearchEndpoint{}, err
 		}
 		fallback, ok := configurationdomain.DefaultConnectionForKind(kind)
 		if !ok {
-			return "", nil, err
+			return catalogapplication.CatalogSearchEndpoint{}, err
 		}
 		connection = fallback
 	}
 	var client *http.Client
 	if connection.NetworkRouteID != "" {
 		if r.clients == nil {
-			return "", nil, errors.New("catalog search network route client is not configured")
+			return catalogapplication.CatalogSearchEndpoint{}, errors.New("catalog search network route client is not configured")
 		}
 		client, err = r.clients.ClientForConnection(ctx, connection)
 		if err != nil {
-			return "", nil, fmt.Errorf("resolve catalog search network route: %w", err)
+			return catalogapplication.CatalogSearchEndpoint{}, fmt.Errorf("resolve catalog search network route: %w", err)
 		}
 	}
-	return connection.Endpoint, client, nil
+	resolved := catalogapplication.CatalogSearchEndpoint{Endpoint: connection.Endpoint, Client: client}
+	if kind == configurationdomain.ConnectionJackett {
+		if r.secrets == nil || connection.SecretRef == "" {
+			return catalogapplication.CatalogSearchEndpoint{}, errors.New("Jackett API key is not configured")
+		}
+		apiKey, ok := r.secrets.Resolve(connection.SecretRef)
+		if !ok {
+			return catalogapplication.CatalogSearchEndpoint{}, errors.New("Jackett API key is unavailable")
+		}
+		resolved.APIKey = apiKey
+	}
+	return resolved, nil
 }

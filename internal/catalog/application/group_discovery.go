@@ -474,6 +474,7 @@ func mapFeedItemsToSnapshotSeeds(items []acquisitiondomain.FeedItem) ([]catalogd
 		// once the item is mapped), so it is frozen into the seed here. A nil set
 		// means the provider has no tag block; an AniBT item is always non-nil.
 		seed.AniBTTags = acquisitiondomain.StoredAniBTTagsFromSet(item.AniBTTags)
+		seed.SourceSite = item.SourceSite
 		if len(item.TorrentPayload) > 0 {
 			payloadDigest := catalogdomain.DigestBytes(item.TorrentPayload)
 			seed.Payload = append([]byte(nil), item.TorrentPayload...)
@@ -604,6 +605,7 @@ func mapProviderFeedSnapshot(snapshot catalogdomain.ProviderFeedSnapshot) catalo
 		}
 		mapped.Manifest = seed.Manifest
 		mapped.AniBTTags = seed.AniBTTags
+		mapped.SourceSite = seed.SourceSite
 		seeds = append(seeds, mapped)
 	}
 	return catalogdomain.ProviderRSSPreviewResult{

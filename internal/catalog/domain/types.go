@@ -304,7 +304,8 @@ type ProviderRSSPreviewSeed struct {
 	// AniBTTags is the frozen AniBT structured tag set the snapshot recorded.
 	// nil means the snapshot carries no tag set (a non-AniBT provider, or a
 	// snapshot written before the column existed); a non-nil set may be empty.
-	AniBTTags *acquisitiondomain.StoredAniBTTags
+	AniBTTags  *acquisitiondomain.StoredAniBTTags
+	SourceSite *acquisitiondomain.SeedSourceSite
 }
 
 type ProviderRSSPreviewResult struct {

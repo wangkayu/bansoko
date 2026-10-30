@@ -24,12 +24,15 @@ const (
 	// seed search accepts it and nothing else does. Catalog reads, group
 	// discovery and suppression keep validating against validateCatalogProvider.
 	ProviderNyaa = "nyaa"
+	// ProviderJackett searches the user's configured Jackett `all` aggregate.
+	// Like Nyaa it has no work catalog, provider groups or subscription source.
+	ProviderJackett = "jackett"
 )
 
 // validateSearchProvider is the provider set keyword seed search accepts.
 func validateSearchProvider(provider string) error {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case ProviderAniBT, ProviderMikan, ProviderNyaa:
+	case ProviderAniBT, ProviderMikan, ProviderNyaa, ProviderJackett:
 		return nil
 	default:
 		return fmt.Errorf("unsupported search provider %q", provider)

@@ -160,6 +160,21 @@ func ConnectionInput(input generated.ConnectionInput, id string) (configurationd
 		if v.RouteId != nil {
 			result.NetworkRouteID = string(*v.RouteId)
 		}
+	case "jackett":
+		v, err := input.AsJackettConnectionInput()
+		if err != nil {
+			return result, err
+		}
+		result.Name, result.Endpoint = v.Name, v.BaseUrl
+		result.Enabled = v.Enabled
+		secret, err := ConnectionSecretMutation(v.Secret)
+		if err != nil {
+			return result, err
+		}
+		result.Secret = secret
+		if v.RouteId != nil {
+			result.NetworkRouteID = string(*v.RouteId)
+		}
 	case "anibt":
 		v, err := input.AsAniBTConnectionInput()
 		if err != nil {
@@ -270,6 +285,12 @@ func ConnectionView(item configurationdomain.Connection) (generated.Connection, 
 			v.RouteId = &item.NetworkRouteID
 		}
 		return result, result.FromTMDBConnection(v)
+	case configurationdomain.ConnectionJackett:
+		v := generated.JackettConnection{Id: item.ID, Kind: "jackett", Name: item.Name, BaseUrl: item.Endpoint, Enabled: item.State != configurationdomain.ConnectionDisabled, CredentialConfigured: item.SecretRef != "", Version: item.Version}
+		if item.NetworkRouteID != "" {
+			v.RouteId = &item.NetworkRouteID
+		}
+		return result, result.FromJackettConnection(v)
 	case configurationdomain.ConnectionAniBT:
 		v := generated.AniBTConnection{Id: item.ID, Kind: "anibt", Name: item.Name, BaseUrl: item.Endpoint, Enabled: item.State != configurationdomain.ConnectionDisabled, Version: item.Version}
 		if item.NetworkRouteID != "" {

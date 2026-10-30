@@ -58,6 +58,7 @@ export const enNavCopy = {
     qbittorrent: "qBittorrent",
     rss_http: "RSS access",
     tmdb: "TMDB",
+    jackett: "Jackett",
     anibt: "AniBT",
     mikan: "Mikan",
     nyaa: "Nyaa",

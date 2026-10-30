@@ -36,6 +36,7 @@ const CONNECTION_LABEL = (): Record<Connection["kind"], string> => ({
   qbittorrent: t("nav.connection.qbittorrent"),
   rss_http: t("nav.connection.rss_http"),
   tmdb: t("nav.connection.tmdb"),
+  jackett: t("nav.connection.jackett"),
   anibt: t("nav.connection.anibt"),
   mikan: t("nav.connection.mikan"),
   nyaa: t("nav.connection.nyaa"),
@@ -57,7 +58,7 @@ type MoreSheetProps = {
 
 // The downloader leads the system section.
 // RSS access is only the custom RSS network setting and does not enter the status.
-const STATUS_ORDER: Connection["kind"][] = ["qbittorrent", "anibt", "mikan", "nyaa", "bgm", "tmdb"];
+const STATUS_ORDER: Connection["kind"][] = ["qbittorrent", "anibt", "mikan", "nyaa", "bgm", "tmdb", "jackett"];
 
 export function MoreSheet({
   open,

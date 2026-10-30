@@ -275,16 +275,80 @@ describe("SettingsConnections 批次 3 契约", () => {
     expect(body).not.toHaveProperty("max_response_bytes");
   });
 
-  it("新建连接直接是 RSS 访问：没有类型选择，也没有内置站点的地址字段", async () => {
+  it("新建连接默认是 RSS 访问，可切换类型且不显示内置站点地址", async () => {
     stubFetch();
     renderSettings();
 
     fireEvent.click(await screen.findByRole("button", { name: t("settings.connections.new") }));
 
     expect(await screen.findByLabelText(t("settings.connections.nameLabel"))).toBeInTheDocument();
-    expect(screen.queryByRole("combobox", { name: t("settings.connections.typeLabel") })).not.toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: t("settings.connections.typeLabel") })).toBeEnabled();
     expect(screen.queryByLabelText(t("settings.connections.siteAddress"))).not.toBeInTheDocument();
     expect(screen.queryByLabelText(t("settings.connections.tmdbAddress"))).not.toBeInTheDocument();
+  });
+});
+
+describe("SettingsConnections Jackett 连接", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  it("新建只需地址和 API 密钥；缺少必填项不能保存", async () => {
+    stubFetch();
+    renderSettings();
+
+    fireEvent.click(await screen.findByRole("button", { name: t("settings.connections.new") }));
+    await selectOption(t("settings.connections.typeLabel"), "Jackett");
+    fireEvent.change(screen.getByLabelText(t("settings.connections.nameLabel")), { target: { value: "聚合检索" } });
+    expect(screen.getByRole("button", { name: t("settings.connections.save") })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(t("settings.connections.jackettAddress")), { target: { value: "http://jackett.internal:9117" } });
+    fireEvent.change(screen.getByLabelText(t("settings.connections.jackettKey")), { target: { value: "test-api-key" } });
+    expect(screen.getByText(t("settings.connections.jackettHint"))).toBeInTheDocument();
+    expect(screen.queryByLabelText(/indexer/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: t("settings.connections.save") }));
+
+    await waitFor(() => expect(connectionPutCalls()).toHaveLength(1));
+    expect(putBody(connectionPutCalls()[0]!)).toEqual({
+      kind: "jackett",
+      name: "聚合检索",
+      enabled: true,
+      base_url: "http://jackett.internal:9117",
+      secret: { mode: "replace", value: "test-api-key" },
+    });
+  });
+
+  it("编辑保留已存密钥且不提供移除；替换时写入新密钥", async () => {
+    stubFetch({
+      connections: [
+        {
+          id: "jackett-1",
+          kind: "jackett",
+          name: "聚合检索",
+          enabled: true,
+          base_url: "http://jackett.internal:9117",
+          credential_configured: true,
+          version: 4,
+        },
+      ],
+    });
+    renderSettings();
+
+    fireEvent.click(await screen.findByRole("button", { name: t("settings.connections.edit") }));
+    expect(screen.getByRole("combobox", { name: t("settings.connections.typeLabel") })).toBeDisabled();
+    expect(screen.queryByLabelText(t("settings.connections.jackettKey"))).toBeNull();
+    expect(screen.queryByLabelText(t("secret.remove"))).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: t("settings.connections.save") }));
+    await waitFor(() => expect(connectionPutCalls()).toHaveLength(1));
+    expect(putBody(connectionPutCalls()[0]!)).toMatchObject({ secret: { mode: "keep" } });
+
+    fireEvent.click(await screen.findByRole("button", { name: t("settings.connections.edit") }));
+    fireEvent.click(screen.getByLabelText(t("secret.replace")));
+    fireEvent.change(screen.getByLabelText(t("settings.connections.jackettKey")), { target: { value: "replacement-key" } });
+    fireEvent.click(screen.getByRole("button", { name: t("settings.connections.save") }));
+    await waitFor(() => expect(connectionPutCalls()).toHaveLength(2));
+    expect(putBody(connectionPutCalls()[1]!)).toMatchObject({ secret: { mode: "replace", value: "replacement-key" } });
   });
 });
 

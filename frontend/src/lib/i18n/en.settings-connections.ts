@@ -6,7 +6,7 @@ import type { settingsConnectionsCopy } from "./zh-CN.settings-connections";
 export const enSettingsConnectionsCopy = {
   connections: {
     title: "Connections",
-    new: "Add RSS Access",
+    new: "Add Connection",
     loading: "Loading connections…",
     loadFailed: "Couldn't load connections",
     empty: "No connections yet",
@@ -24,6 +24,9 @@ export const enSettingsConnectionsCopy = {
     restoreDefaults: "Restore Defaults (official URL, direct)",
     tmdbAddress: "API URL",
     tmdbKey: "API key",
+    jackettAddress: "Jackett URL",
+    jackettKey: "Jackett API key",
+    jackettHint: "Jackett manages trackers and aggregation. Only its URL and API key are needed here.",
     siteAddress: "Site URL",
     bgmAddress: "API URL",
     siteHint: "Public site, no credentials needed. Catalog and group lists are read from here.",

@@ -73,12 +73,16 @@ QB_FILES = re.compile(
 def keep_none(p, l, m): return False
 
 def keep_dir(p, l, m):
-    # qBittorrent WebUI paths (/api/v2/...) are qB's API, not a directory of ours.
+    # qBittorrent and Jackett paths are those services' APIs, not our directories.
+    if p == "internal/jackett/endpoint.go" and m == "api/v2" and "/api/v2.0/indexers/all/results/torznab/api" in l:
+        return True
     return m == "api/v2" and bool(re.search(r"/api/v2(/|\b)", l)) and (
         QB_FILES.match(p) or bool(re.search(r"/api/v2/(torrents|app|sync|transfer|auth)\b", l)))
 
 def keep_api(p, l, m):
     if re.match(r"/api/v2/(torrents|app|sync|transfer)(?:/|$)", m): return True       # qB WebUI API
+    if m == "/api/v2" and p == "internal/jackett/endpoint.go" and "/api/v2.0/indexers/all/results/torznab/api" in l:
+        return True  # Jackett's fixed external aggregate endpoint
     if m.startswith("/api/v2/auth/log") and (QB_FILES.match(p) or re.search(r"(?i)qb|qbit|8087", l)):
         return True
     return False

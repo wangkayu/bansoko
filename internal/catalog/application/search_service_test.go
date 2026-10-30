@@ -74,8 +74,8 @@ func newSearchTestApplication(t *testing.T, store *searchTestStore, upstream *ht
 	service.SetFeedSnapshotStore(store)
 	return SeedSearchApplication{
 		Service: service,
-		Endpoints: CatalogSearchEndpointsFunc(func(context.Context, string) (string, *http.Client, error) {
-			return upstream.URL, upstream.Client(), nil
+		Endpoints: CatalogSearchEndpointsFunc(func(context.Context, string) (CatalogSearchEndpoint, error) {
+			return CatalogSearchEndpoint{Endpoint: upstream.URL, Client: upstream.Client()}, nil
 		}),
 		Now: func() time.Time { return time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC) },
 		// The fixture upstream listens on the loopback interface; production keeps
@@ -242,8 +242,8 @@ func TestFetchSearchSnapshotAcceptsOnlyAQuery(t *testing.T) {
 	service.SetFeedSnapshotStore(store)
 	application := SeedSearchApplication{
 		Service: service,
-		Endpoints: CatalogSearchEndpointsFunc(func(context.Context, string) (string, *http.Client, error) {
-			return "", nil, errors.New("upstream must not be reached")
+		Endpoints: CatalogSearchEndpointsFunc(func(context.Context, string) (CatalogSearchEndpoint, error) {
+			return CatalogSearchEndpoint{}, errors.New("upstream must not be reached")
 		}),
 	}
 	for name, input := range map[string]FetchSearchSnapshotInput{

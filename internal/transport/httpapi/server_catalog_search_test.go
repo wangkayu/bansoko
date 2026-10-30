@@ -201,8 +201,8 @@ func newSeedSearchServer(t *testing.T, endpoint string) *Server {
 	service.SetFeedSnapshotStore(seedSearchTestStore{})
 	search := catalogapplication.SeedSearchApplication{
 		Service: service,
-		Endpoints: catalogapplication.CatalogSearchEndpointsFunc(func(context.Context, string) (string, *http.Client, error) {
-			return endpoint, http.DefaultClient, nil
+		Endpoints: catalogapplication.CatalogSearchEndpointsFunc(func(context.Context, string) (catalogapplication.CatalogSearchEndpoint, error) {
+			return catalogapplication.CatalogSearchEndpoint{Endpoint: endpoint, Client: http.DefaultClient}, nil
 		}),
 		AllowPrivateHosts: []string{"127.0.0.1"},
 	}

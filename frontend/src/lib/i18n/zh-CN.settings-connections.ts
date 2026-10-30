@@ -4,7 +4,7 @@
 export const settingsConnectionsCopy = {
   connections: {
     title: "服务连接",
-    new: "添加 RSS 访问",
+    new: "添加连接",
     loading: "正在读取连接…",
     loadFailed: "无法读取连接",
     empty: "还没有连接",
@@ -22,6 +22,9 @@ export const settingsConnectionsCopy = {
     restoreDefaults: "还原默认（官方地址、直连）",
     tmdbAddress: "API 地址",
     tmdbKey: "API 密钥",
+    jackettAddress: "Jackett 地址",
+    jackettKey: "Jackett API 密钥",
+    jackettHint: "站点和聚合由 Jackett 管理，这里只需地址和 API 密钥",
     siteAddress: "站点地址",
     bgmAddress: "API 地址",
     siteHint: "公开站点，无需凭据；目录和字幕组列表从这里读取",

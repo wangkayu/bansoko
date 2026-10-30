@@ -37,7 +37,8 @@ type SeedPreviewFact struct {
 	// in the persisted (public) block shape. nil means the snapshot carries no
 	// tag set; a preview that rebuilt the item without it would evaluate
 	// `anibt.*` against an empty set.
-	AniBTTags *acquisitiondomain.StoredAniBTTags
+	AniBTTags  *acquisitiondomain.StoredAniBTTags
+	SourceSite *acquisitiondomain.SeedSourceSite
 	// LocatorDisplay is the redacted display form of the seed's source
 	// location. The raw locator is deliberately not part of this fact set.
 	LocatorDisplay string

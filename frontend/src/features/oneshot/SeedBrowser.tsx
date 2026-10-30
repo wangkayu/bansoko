@@ -193,8 +193,11 @@ function SeedRow({
   onToggleExpanded: (row: OneShotSeedRow) => void;
 }) {
   const blocked = seedBlockedHint(row);
-  // Step one is browse only: raw title, size and time, with no parse results shown.
+  // Step one is browse only: raw title, tracker attribution, size and time, with no parse results shown.
+  const sourceSite = row.item.seed.source_site;
   const meta = metaLine([
+    sourceSite?.name,
+    sourceSite ? t(sourceSite.type === "private" ? "oneshot.sourceSitePrivate" : "oneshot.sourceSitePublic") : undefined,
     row.sizeBytes != null ? formatBytes(row.sizeBytes) : undefined,
     row.publishedAt ? formatDateTime(row.publishedAt) : undefined,
   ]);

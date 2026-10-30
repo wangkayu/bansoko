@@ -10,8 +10,8 @@ import type { ReleaseFormat } from "../api/client";
 
 export type ProviderKey = "anibt" | "mikan" | "custom";
 
-/** Sources of a keyword torrent search. Nyaa has no work catalog, so it is a search source only and never a ProviderKey. */
-export type SearchProviderKey = "anibt" | "mikan" | "nyaa";
+/** Sources of a keyword torrent search. Nyaa and Jackett have no work catalog, so they are search sources only and never ProviderKeys. */
+export type SearchProviderKey = "anibt" | "mikan" | "nyaa" | "jackett";
 
 export type SnapshotStatus = "fresh" | "stale" | "error" | "empty";
 

@@ -93,7 +93,7 @@ func (f ConfiguredSeedTorrentFetcher) routeClient(ctx context.Context, provider 
 func seedTorrentConnectionKind(provider string) (configurationdomain.ConnectionKind, bool) {
 	kind := configurationdomain.ConnectionKind(strings.ToLower(strings.TrimSpace(provider)))
 	switch kind {
-	case configurationdomain.ConnectionAniBT, configurationdomain.ConnectionMikan, configurationdomain.ConnectionNyaa:
+	case configurationdomain.ConnectionAniBT, configurationdomain.ConnectionMikan, configurationdomain.ConnectionNyaa, configurationdomain.ConnectionJackett:
 		return kind, true
 	default:
 		return "", false

@@ -105,5 +105,7 @@ export const enOneshotCopy = {
 
   searchStale: "The search results expired. Search again.",
   searchSourceLabel: "Torrent search · {query}",
+  sourceSitePublic: "Public",
+  sourceSitePrivate: "Private",
   titleEmptyPreview: "Match a title or enter one to see target paths",
 } as const satisfies CopyShape<typeof oneshotCopy>;

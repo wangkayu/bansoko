@@ -47,6 +47,7 @@ export const navCopy = {
     qbittorrent: "qBittorrent",
     rss_http: "RSS 访问",
     tmdb: "TMDB",
+    jackett: "Jackett",
     anibt: "AniBT",
     mikan: "Mikan",
     nyaa: "Nyaa",

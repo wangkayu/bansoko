@@ -197,7 +197,8 @@ type Querier interface {
 	//      seed.manifest_file_count,
 	//      seed.manifest_projection_digest,
 	//      seed.files,
-	//      seed.anibt_tags
+	//      seed.anibt_tags,
+	//      seed.source_site
 	//  FROM provider_feed_snapshot_seeds AS seed
 	//  WHERE seed.snapshot_id = $1
 	//  ORDER BY seed.published_at DESC NULLS LAST, seed.stable_seed_key, seed.id

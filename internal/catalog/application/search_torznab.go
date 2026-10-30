@@ -15,6 +15,7 @@ import (
 
 	"bansoko/internal/acquisition/domain"
 	hardeningtransport "bansoko/internal/hardening/transport"
+	"bansoko/internal/jackett"
 	"bansoko/internal/redact"
 	"bansoko/internal/runtime/buildinfo"
 )
@@ -192,19 +193,7 @@ func torznabSearchEndpoint(rawEndpoint, query string) (*url.URL, error) {
 }
 
 func validateTorznabRedirect(request *http.Request, via []*http.Request) error {
-	if len(via) >= 5 {
-		return errors.New("Torznab redirect limit exceeded")
-	}
-	redirect := request.URL
-	if (redirect.Scheme != "http" && redirect.Scheme != "https") || redirect.Hostname() == "" || redirect.User != nil || redirect.Fragment != "" {
-		return errors.New("Torznab redirect rejected")
-	}
-	if len(via) > 0 && strings.EqualFold(via[len(via)-1].URL.Scheme, "https") && strings.EqualFold(redirect.Scheme, "http") {
-		return errors.New("Torznab redirect rejected: HTTPS downgrade is not allowed")
-	}
-	request.Header.Del("Authorization")
-	request.Header.Del("Cookie")
-	return nil
+	return jackett.ValidateRedirect(request, via)
 }
 
 // torznabItem is one `<item>` of a Torznab RSS document. It is declared
@@ -225,6 +214,11 @@ type torznabItem struct {
 		Name  string `xml:"name,attr"`
 		Value string `xml:"value,attr"`
 	} `xml:"attr"`
+	JackettIndexer struct {
+		ID   string `xml:"id,attr"`
+		Name string `xml:",chardata"`
+	} `xml:"jackettindexer"`
+	Type string `xml:"type"`
 }
 
 type torznabFeed struct {

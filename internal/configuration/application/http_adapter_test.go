@@ -131,6 +131,43 @@ func TestConnectionInputMapsSecretThroughQBittorrentAndTMDB(t *testing.T) {
 	}
 }
 
+func TestConnectionInputAndViewMapJackettWithoutIndexerSelection(t *testing.T) {
+	routeID := generated.ID("route-jackett")
+	secret := mustSecret(t, func(value *generated.ConnectionSecret) error {
+		return value.FromConnectionSecretReplace(generated.ConnectionSecretReplace{Mode: "replace", Value: "jackett-secret"})
+	})
+	input := mustConnectionInput(t, func(value *generated.ConnectionInput) error {
+		return value.FromJackettConnectionInput(generated.JackettConnectionInput{
+			Kind: "jackett", Name: "Jackett", Enabled: true, BaseUrl: "http://jackett.local:9117", Secret: secret, RouteId: &routeID,
+		})
+	})
+	mapped, err := configurationtransport.ConnectionInput(input, "jackett-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mapped.Kind != domain.ConnectionJackett || mapped.Endpoint != "http://jackett.local:9117" || mapped.NetworkRouteID != "route-jackett" {
+		t.Fatalf("unexpected Jackett input: %+v", mapped)
+	}
+	if mapped.Secret.Action != domain.SecretReplace || mapped.Secret.Value != "jackett-secret" {
+		t.Fatalf("Jackett secret did not map: %+v", mapped.Secret)
+	}
+
+	view, err := configurationtransport.ConnectionView(domain.Connection{
+		ID: "jackett-1", Kind: domain.ConnectionJackett, Name: "Jackett", Endpoint: "http://jackett.local:9117",
+		NetworkRouteID: "route-jackett", State: domain.ConnectionConfigured, SecretRef: "jackett-ref", Version: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	jackett, err := view.AsJackettConnection()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !jackett.Enabled || !jackett.CredentialConfigured || jackett.RouteId == nil || *jackett.RouteId != routeID {
+		t.Fatalf("unexpected Jackett view: %+v", jackett)
+	}
+}
+
 func TestConnectionViewMapsQBittorrentTypedConfig(t *testing.T) {
 	view, err := configurationtransport.ConnectionView(domain.Connection{
 		ID: "qb-1", Kind: domain.ConnectionQBittorrent, Name: "QB", Endpoint: "http://qb.local:8080",

@@ -710,11 +710,11 @@ canonical_digest_pattern = '^sha256:[0-9a-f]{64}$'
   digest = schemas.fetch(name).fetch("properties").fetch("expected_payload_digest")
   abort "#{name}.expected_payload_digest must use the canonical sha256:<64 hex> wire form" unless digest["pattern"] == canonical_digest_pattern
 end
-# A custom/oneshot seed is provenance, never a discovery provider: the seed
-# vocabulary carries custom so the same admission command can submit a seed read
-# from the draft's own frozen custom feed, while ProviderKind (the discovery and
-# subscription vocabulary) stays two-valued.
-assert_enum.call("SnapshotSeedProvider", %w[anibt mikan nyaa custom])
+# Custom and search-only seed provenance never becomes a discovery provider:
+# the seed vocabulary carries custom, nyaa and Jackett so the same admission
+# command can submit seeds from frozen custom or keyword-search snapshots, while
+# ProviderKind (the discovery and subscription vocabulary) stays two-valued.
+assert_enum.call("SnapshotSeedProvider", %w[anibt mikan nyaa jackett custom])
 abort "ProviderKind must stay the discovery vocabulary" unless enum_values.call(schemas.fetch("ProviderKind")) == %w[anibt mikan]
 %w[SelectedSeed SelectedSeedInput SnapshotSeedDownloadInput].each do |name|
   provider = schemas.fetch(name).fetch("properties").fetch("provider")

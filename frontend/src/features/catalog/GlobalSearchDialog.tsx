@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
-import { fetchSeedSearchSnapshot, searchProviderCatalog, toUserMessage, type CatalogItem } from "../../lib/api/client";
+import { fetchSeedSearchSnapshot, listConnections, searchProviderCatalog, toUserMessage, type CatalogItem } from "../../lib/api/client";
 import { blacklistKey, useBlacklist } from "../../lib/blacklist";
 import { getCatalogProvider, providerLabel, searchProviderLabel } from "../../lib/providers/registry";
 import { BrowseCard } from "./card";
@@ -10,6 +10,7 @@ import { mapCatalogItem } from "../../lib/providers/catalogProvider";
 import type { CatalogProvider } from "../../lib/providers/port";
 import type { CatalogEntryView, ProviderKey, SearchProviderKey } from "../../lib/providers/viewmodels";
 import { catalogKeys } from "./queries";
+import { configKeys } from "../../lib/queryKeys";
 import { StateBlock } from "../../ui/StateBlock";
 import { Dialog, Input, Segmented } from "../../ui/base";
 import { Button } from "../../ui/base/controls";
@@ -43,7 +44,7 @@ type SearchMode = "program" | "seed";
 // Program search reads catalogs, which only AniBT and Mikan have; torrent search adds Nyaa.
 type SearchSite = SearchProviderKey;
 
-const PROGRAM_SEARCH_PROVIDERS: readonly SearchSite[] = ["anibt", "mikan"];
+const PROGRAM_SEARCH_PROVIDERS = ["anibt", "mikan"] as const;
 const SEED_SEARCH_PROVIDERS: readonly SearchSite[] = ["anibt", "mikan", "nyaa"];
 
 type CandidateTarget = {
@@ -72,6 +73,14 @@ export function GlobalSearchDialog({
   const [keyword, setKeyword] = useState("");
   const [mode, setMode] = useState<SearchMode>("program");
   const [site, setSite] = useState<SearchSite>("anibt");
+  const connections = useQuery({ queryKey: configKeys.connections, queryFn: listConnections });
+  const jackettAvailable = Boolean(
+    connections.data?.some((connection) => connection.kind === "jackett" && connection.enabled && connection.credential_configured),
+  );
+  const seedProviders = useMemo<readonly SearchSite[]>(
+    () => (jackettAvailable ? [...SEED_SEARCH_PROVIDERS, "jackett"] : SEED_SEARCH_PROVIDERS),
+    [jackettAvailable],
+  );
 
   // 番剧 mode: idle (never searched) and empty (searched, no results) are two distinct empty states.
   const [searching, setSearching] = useState(false);
@@ -123,6 +132,14 @@ export function GlobalSearchDialog({
     setSeedNoMatch(false);
   }
 
+  // Jackett is a configured source, not a built-in provider. If its last usable connection is
+  // disabled or loses its credential, leave it immediately instead of offering a dead search.
+  useEffect(() => {
+    if (site !== "jackett" || connections.data === undefined || jackettAvailable) return;
+    setSite("anibt");
+    resetResults();
+  }, [connections.data, jackettAvailable, site]);
+
   async function runSearch() {
     const q = keyword.trim();
     if (!q) return;
@@ -135,7 +152,7 @@ export function GlobalSearchDialog({
       setSearching(true);
       setError(undefined);
       try {
-        const result = await searchProviderCatalog(site === "nyaa" ? "anibt" : site, q);
+        const result = await searchProviderCatalog(site === "mikan" ? "mikan" : "anibt", q);
         if (seq !== requestSeq.current) return;
         setItems(result);
         setSearched(true);
@@ -231,8 +248,8 @@ export function GlobalSearchDialog({
             onValueChange={(next) => {
               if (next === mode) return;
               setMode(next);
-              // Nyaa only exists for torrent search: leaving it for program search falls back to AniBT.
-              if (next === "program" && site === "nyaa") setSite("anibt");
+              // Nyaa and Jackett only exist for torrent search: program search falls back to AniBT.
+              if (next === "program" && (site === "nyaa" || site === "jackett")) setSite("anibt");
               resetResults();
             }}
             options={[
@@ -249,7 +266,7 @@ export function GlobalSearchDialog({
               setSite(next);
               resetResults();
             }}
-            options={(mode === "seed" ? SEED_SEARCH_PROVIDERS : PROGRAM_SEARCH_PROVIDERS).map((key) => ({ value: key, label: searchProviderLabel(key) }))}
+            options={(mode === "seed" ? seedProviders : PROGRAM_SEARCH_PROVIDERS).map((key) => ({ value: key, label: searchProviderLabel(key) }))}
           />
         </div>
         <form
