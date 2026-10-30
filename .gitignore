@@ -174,3 +174,4 @@ frontend/scripts/snapshot-mutants-*/
 /.tmp/
 /.gotmp/
 .claude/worktrees/
+/.worktree/
