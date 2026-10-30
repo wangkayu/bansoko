@@ -53,3 +53,39 @@ func TestClassifySyncErrorSeparatesAbsenceFromLookupErrors(t *testing.T) {
 		}
 	}
 }
+
+type syncTagCleanupProvider struct {
+	*fakeProvider
+	cleanupKeys []string
+	cleanupErr  error
+}
+
+func (p *syncTagCleanupProvider) DeleteOperationTag(_ context.Context, operationKey string) error {
+	p.cleanupKeys = append(p.cleanupKeys, operationKey)
+	return p.cleanupErr
+}
+
+func TestTypedSyncAbsentCleansOperationTagBeforeRecordingAbsence(t *testing.T) {
+	absent := fmt.Errorf("qB task absent: %w", domain.ErrProviderTaskAbsent)
+	provider := &syncTagCleanupProvider{fakeProvider: &fakeProvider{}}
+	code, _, observationError, cause := classifyTypedSyncError(context.Background(), provider, "qb:release-1", absent)
+	if code != SyncCodeTaskAbsent || !observationError || !errors.Is(cause, domain.ErrProviderTaskAbsent) {
+		t.Fatalf("successful absent cleanup classification = %q %v %v", code, observationError, cause)
+	}
+	if len(provider.cleanupKeys) != 1 || provider.cleanupKeys[0] != "qb:release-1" {
+		t.Fatalf("cleanup operation keys = %v", provider.cleanupKeys)
+	}
+}
+
+func TestTypedSyncAbsentCleanupFailureStaysRetryable(t *testing.T) {
+	absent := fmt.Errorf("qB task absent: %w", domain.ErrProviderTaskAbsent)
+	cleanupErr := errors.New("connection reset")
+	provider := &syncTagCleanupProvider{fakeProvider: &fakeProvider{}, cleanupErr: cleanupErr}
+	code, _, observationError, cause := classifyTypedSyncError(context.Background(), provider, "qb:release-2", absent)
+	if code != "qb_sync_retryable" || !observationError || !errors.Is(cause, cleanupErr) {
+		t.Fatalf("failed absent cleanup classification = %q %v %v", code, observationError, cause)
+	}
+	if code == SyncCodeTaskAbsent {
+		t.Fatal("absence must not be recorded before cleanup succeeds")
+	}
+}

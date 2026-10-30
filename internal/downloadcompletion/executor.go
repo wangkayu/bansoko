@@ -41,6 +41,7 @@ type Completion struct {
 	AcquisitionID   string
 	Action          string
 	InfoHash        string
+	ProviderRef     string
 	RemoteRoot      string
 	ApplicationRoot string
 	// SeedLimits are the frozen share limits of the seed action; nil seeds
@@ -54,12 +55,17 @@ type QB interface {
 	// Torrent returns the task and its complete file list, or found=false when
 	// qBittorrent no longer has it.
 	Torrent(ctx context.Context, hash string) (Torrent, bool, error)
+	// List returns the lightweight identity facts of every current task.
+	List(ctx context.Context) ([]Torrent, error)
 	// Others lists every other task (all but hash). A task whose content path
 	// equals its save path carries its complete file list; the list failing to
 	// read is an error, never an empty list.
 	Others(ctx context.Context, hash string) ([]Torrent, error)
 	Pause(ctx context.Context, hash string) error
 	Delete(ctx context.Context, hash string, deleteFiles bool) error
+	// CleanupTaskTags cleans the exact system tags named by saved provider
+	// references after the corresponding torrents are confirmed absent.
+	CleanupTaskTags(ctx context.Context, providerRefs []string) error
 	// WebAPIVersion reads app/webapiVersion.
 	WebAPIVersion(ctx context.Context) (string, error)
 	// SetShareLimits writes the task's share limits.
@@ -166,7 +172,7 @@ func (e Executor) Run(ctx context.Context, c Completion) Outcome {
 		return retryable(FailureQBUnavailable, err.Error())
 	}
 	if !found {
-		return Outcome{Code: ResultTaskAbsent, Success: true}
+		return e.taskAbsent(ctx, c)
 	}
 	if !strings.EqualFold(strings.TrimSpace(torrent.Hash), hash) {
 		return failure(CodeQBTaskMismatch, "the qBittorrent task is not the recorded one")
@@ -188,10 +194,22 @@ func (e Executor) Run(ctx context.Context, c Completion) Outcome {
 		}
 		return Outcome{Code: ResultPaused, Success: true}
 	case ActionRemove:
-		return e.remove(ctx, hash, false, ResultRemoved)
+		return e.remove(ctx, c, hash, false, ResultRemoved)
 	default:
 		return e.removeWithData(ctx, c, hash, torrent)
 	}
+}
+
+// taskAbsent settles a non-delete action immediately. A delete action must
+// first clean its frozen provider tag so an absent replay also covers a crash
+// or failure after qB accepted the torrent deletion.
+func (e Executor) taskAbsent(ctx context.Context, c Completion) Outcome {
+	if c.Action == ActionRemove || c.Action == ActionRemoveWithData {
+		if err := e.QB.CleanupTaskTags(ctx, []string{c.ProviderRef}); err != nil {
+			return retryable(FailureQBUnavailable, err.Error())
+		}
+	}
+	return Outcome{Code: ResultTaskAbsent, Success: true}
 }
 
 // deletesData reports whether the completion may make qBittorrent delete the
@@ -231,15 +249,15 @@ func (e Executor) removeWithData(ctx context.Context, c Completion, hash string,
 		return retryable(FailureQBUnavailable, err.Error())
 	}
 	if !found {
-		return Outcome{Code: ResultTaskAbsent, Success: true}
+		return e.taskAbsent(ctx, c)
 	}
 	if !sameTorrent(torrent, again) {
 		return retryable(FailureTaskChanged, "the task changed while it was being checked")
 	}
-	return e.remove(ctx, hash, true, ResultRemovedData)
+	return e.remove(ctx, c, hash, true, ResultRemovedData)
 }
 
-func (e Executor) remove(ctx context.Context, hash string, withData bool, result string) Outcome {
+func (e Executor) remove(ctx context.Context, c Completion, hash string, withData bool, result string) Outcome {
 	if err := e.QB.Delete(ctx, hash, withData); err != nil {
 		return retryable(FailureQBUnavailable, err.Error())
 	}
@@ -249,6 +267,9 @@ func (e Executor) remove(ctx context.Context, hash string, withData bool, result
 	}
 	if found {
 		return retryable(FailureVerifyFailed, "the task is still in qBittorrent after delete")
+	}
+	if err := e.QB.CleanupTaskTags(ctx, []string{c.ProviderRef}); err != nil {
+		return retryable(FailureQBUnavailable, err.Error())
 	}
 	return Outcome{Code: result, Success: true}
 }

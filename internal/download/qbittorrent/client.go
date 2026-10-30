@@ -203,6 +203,12 @@ type SnapshotSyncer interface {
 	SyncWithSnapshot(context.Context, string, domain.PathSnapshot) (domain.ProviderTask, error)
 }
 
+// OperationTagCleaner is an optional provider capability used when a stable
+// WorkItem operation key is the surviving identity of an absent qB task.
+type OperationTagCleaner interface {
+	DeleteOperationTag(context.Context, string) error
+}
+
 // SnapshotProvider combines the optional frozen-snapshot capabilities. The
 // individual interfaces remain useful for narrow fakes and partial adapters.
 type SnapshotProvider interface {
@@ -511,6 +517,42 @@ func (c ConfiguredClient) SetShareLimits(ctx context.Context, hash string, limit
 	return client.SetShareLimits(ctx, hash, limits)
 }
 
+// DeleteOperationTag removes the exact system tag of one known operation when
+// no torrent references it. It never derives candidates from a torrent hash.
+func (c ConfiguredClient) DeleteOperationTag(ctx context.Context, operationKey string) error {
+	client, err := c.client(ctx)
+	if err != nil {
+		return err
+	}
+	return client.DeleteOperationTag(ctx, operationKey)
+}
+
+// CleanupTaskTag removes the exact system tag carried by a saved provider
+// reference. Hash-only references have no operation-tag candidate and are a
+// deliberate no-op.
+func (c ConfiguredClient) CleanupTaskTag(ctx context.Context, providerTaskID string) error {
+	return c.CleanupTaskTags(ctx, []string{providerTaskID})
+}
+
+// CleanupTaskTags removes the exact system tags carried by saved provider
+// references in one reference-check/delete batch.
+func (c ConfiguredClient) CleanupTaskTags(ctx context.Context, providerTaskIDs []string) error {
+	client, err := c.client(ctx)
+	if err != nil {
+		return err
+	}
+	return client.CleanupTaskTags(ctx, providerTaskIDs)
+}
+
+// CleanupTags removes only known, unreferenced bansoko system tags.
+func (c ConfiguredClient) CleanupTags(ctx context.Context, candidates []string) error {
+	client, err := c.client(ctx)
+	if err != nil {
+		return err
+	}
+	return client.CleanupTags(ctx, candidates)
+}
+
 func (c ConfiguredClient) Cancel(ctx context.Context, providerTaskID string) error {
 	client, err := c.client(ctx)
 	if err != nil {
@@ -753,7 +795,11 @@ func (c Client) Cancel(ctx context.Context, providerTaskID string) error {
 		if !found {
 			// A missing torrent is already in the requested terminal state. This
 			// makes replay after a provider accepted delete idempotent and does not
-			// infer a hash from the correlation tag.
+			// infer a hash from the correlation tag. The saved tag is still an exact
+			// cleanup candidate, covering a crash after delete but before cleanup.
+			if err := c.CleanupTaskTag(ctx, providerTaskID); err != nil {
+				return fmt.Errorf("clean up absent cancelled qB task tag: %w", err)
+			}
 			return nil
 		}
 		hash = item.Hash
@@ -775,7 +821,74 @@ func (c Client) Cancel(ctx context.Context, providerTaskID string) error {
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return fmt.Errorf("qB cancel failed with HTTP %d", response.StatusCode)
 	}
+	if err := c.confirmTorrentDeleted(ctx, client, hash); err != nil {
+		return err
+	}
+	if err := c.CleanupTaskTag(ctx, providerTaskID); err != nil {
+		return fmt.Errorf("clean up cancelled qB task tag: %w", err)
+	}
 	return nil
+}
+
+// A qBittorrent delete is applied asynchronously: the request succeeds while
+// the task is still listed for a moment. Cleaning a tag before the task leaves
+// the list would read the task as a live reference and keep the tag, so every
+// delete that is followed by a tag cleanup first confirms the task is gone. A
+// task that stays listed past the window fails the delete and lets the caller's
+// retry chain converge later.
+var (
+	deleteVerifyWindow   = 5 * time.Second
+	deleteVerifyInterval = 200 * time.Millisecond
+	deleteVerifySleep    = func(ctx context.Context, delay time.Duration) error {
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timer.C:
+			return nil
+		}
+	}
+)
+
+// ConfirmTorrentDeleted re-reads the torrent list until hash is absent, bounded
+// by the delete verify window.
+func (c Client) ConfirmTorrentDeleted(ctx context.Context, hash string) error {
+	client := c.client()
+	if err := c.login(ctx, client); err != nil {
+		return err
+	}
+	return c.confirmTorrentDeleted(ctx, client, hash)
+}
+
+func (c Client) confirmTorrentDeleted(ctx context.Context, client *http.Client, hash string) error {
+	hash = strings.TrimSpace(hash)
+	if hash == "" {
+		return errors.New("qB torrent hash is required to confirm a delete")
+	}
+	start := time.Now()
+	for {
+		torrents, err := c.listTorrents(ctx, client)
+		if err != nil {
+			return fmt.Errorf("confirm qB torrent delete: %w", err)
+		}
+		listed := false
+		for _, torrent := range torrents {
+			if strings.EqualFold(strings.TrimSpace(torrent.Hash), hash) {
+				listed = true
+				break
+			}
+		}
+		if !listed {
+			return nil
+		}
+		if deleteVerifyWindow <= 0 || time.Since(start)+deleteVerifyInterval > deleteVerifyWindow {
+			return fmt.Errorf("qB task %s is still listed after delete", hash)
+		}
+		if err := deleteVerifySleep(ctx, deleteVerifyInterval); err != nil {
+			return fmt.Errorf("confirm qB torrent delete: %w", err)
+		}
+	}
 }
 
 // ListTorrents returns every torrent known to the qBittorrent instance. It is
@@ -786,6 +899,10 @@ func (c Client) ListTorrents(ctx context.Context) ([]TorrentInfo, error) {
 	if err := c.login(ctx, client); err != nil {
 		return nil, err
 	}
+	return c.listTorrents(ctx, client)
+}
+
+func (c Client) listTorrents(ctx context.Context, client *http.Client) ([]TorrentInfo, error) {
 	endpoint := strings.TrimRight(c.Endpoint, "/") + "/api/v2/torrents/info"
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -804,6 +921,113 @@ func (c Client) ListTorrents(ctx context.Context) ([]TorrentInfo, error) {
 		return nil, fmt.Errorf("decode qB torrent list: %w", err)
 	}
 	return torrents, nil
+}
+
+const systemTagPrefix = "bansoko-"
+
+// DeleteOperationTag cleans the one exact tag generated from a stable
+// operation key. Empty or delimiter-containing keys are rejected rather than
+// being allowed to widen the deleteTags form into other tags.
+func (c Client) DeleteOperationTag(ctx context.Context, operationKey string) error {
+	operationKey = strings.TrimSpace(operationKey)
+	if operationKey == "" {
+		return errors.New("qB operation key is required for tag cleanup")
+	}
+	if strings.ContainsAny(operationKey, ",\r\n\x00") {
+		return errors.New("qB operation key contains a tag delimiter")
+	}
+	return c.CleanupTags(ctx, []string{systemTagPrefix + operationKey})
+}
+
+// CleanupTaskTag cleans only a tag: provider reference that names a concrete
+// bansoko system tag. Hash-only and foreign references carry no safe candidate.
+func (c Client) CleanupTaskTag(ctx context.Context, providerTaskID string) error {
+	return c.CleanupTaskTags(ctx, []string{providerTaskID})
+}
+
+// CleanupTaskTags cleans only exact tag: provider references in one batch.
+// Hash-only and foreign references carry no safe candidate.
+func (c Client) CleanupTaskTags(ctx context.Context, providerTaskIDs []string) error {
+	candidates := make([]string, 0, len(providerTaskIDs))
+	for _, providerTaskID := range providerTaskIDs {
+		providerTaskID = strings.TrimSpace(providerTaskID)
+		if !strings.HasPrefix(providerTaskID, "tag:") {
+			continue
+		}
+		tag := strings.TrimSpace(strings.TrimPrefix(providerTaskID, "tag:"))
+		if !strings.HasPrefix(tag, systemTagPrefix) || len(tag) == len(systemTagPrefix) {
+			continue
+		}
+		candidates = append(candidates, tag)
+	}
+	return c.CleanupTags(ctx, candidates)
+}
+
+// CleanupTags deletes only exact bansoko system-tag candidates supplied by an
+// owning workflow. It re-reads all torrents immediately before deleteTags and
+// retains every candidate still referenced by any torrent. Configured user tags
+// are excluded even for a manually constructed Client that bypassed config
+// validation. There is intentionally no scan for unknown historical tags.
+func (c Client) CleanupTags(ctx context.Context, candidates []string) error {
+	userTags := make(map[string]struct{}, len(c.UserTags))
+	for _, tag := range c.UserTags {
+		userTags[strings.TrimSpace(tag)] = struct{}{}
+	}
+	known := make(map[string]struct{}, len(candidates))
+	for _, raw := range candidates {
+		tag := strings.TrimSpace(raw)
+		if !strings.HasPrefix(tag, systemTagPrefix) || len(tag) == len(systemTagPrefix) {
+			continue
+		}
+		if strings.ContainsAny(tag, ",\r\n\x00") {
+			return fmt.Errorf("qB cleanup candidate contains a tag delimiter")
+		}
+		if _, configured := userTags[tag]; configured {
+			continue
+		}
+		known[tag] = struct{}{}
+	}
+	if len(known) == 0 {
+		return nil
+	}
+
+	client := c.client()
+	if err := c.login(ctx, client); err != nil {
+		return err
+	}
+	torrents, err := c.listTorrents(ctx, client)
+	if err != nil {
+		return fmt.Errorf("recheck qB system-tag references: %w", err)
+	}
+	for _, torrent := range torrents {
+		for _, raw := range strings.Split(torrent.Tags, ",") {
+			delete(known, strings.TrimSpace(raw))
+		}
+	}
+	if len(known) == 0 {
+		return nil
+	}
+	unreferenced := make([]string, 0, len(known))
+	for tag := range known {
+		unreferenced = append(unreferenced, tag)
+	}
+	sort.Strings(unreferenced)
+	form := url.Values{"tags": {strings.Join(unreferenced, ",")}}
+	endpoint := strings.TrimRight(c.Endpoint, "/") + "/api/v2/torrents/deleteTags"
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return fmt.Errorf("create qB delete-tags request: %w", err)
+	}
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response, err := doRequest(client, request)
+	if err != nil {
+		return fmt.Errorf("request qB delete-tags: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("qB delete-tags failed with HTTP %d", response.StatusCode)
+	}
+	return nil
 }
 
 // PauseTorrent pauses a single torrent by hash. qBittorrent 5 (WebAPI 2.11)

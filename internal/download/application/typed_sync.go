@@ -138,9 +138,9 @@ func (s *Service) typedSync(ctx context.Context, claim workitems.Claim) (worker.
 		observed, err = applyProviderSnapshot(observed, snapshot)
 	}
 	if err != nil {
-		code, reason, observationError := classifySyncError(s.provider, err)
+		code, reason, observationError, cause := classifyTypedSyncError(ctx, s.provider, claim.IdempotencyKey, err)
 		outcome, finishErr := s.finishTypedSync(ctx, claim, task, session, input.Ordinal, domain.ProviderTask{}, code, reason, observationError)
-		return s.withSyncDiagnostics(outcome, finishErr, code, task.id, err)
+		return s.withSyncDiagnostics(outcome, finishErr, code, task.id, cause)
 	}
 	outcome, finishErr := s.finishTypedSync(ctx, claim, task, session, input.Ordinal, observed, "qb_sync_succeeded", "", false)
 	return s.withSyncDiagnostics(outcome, finishErr, "qb_sync_succeeded", task.id, nil)
@@ -236,6 +236,23 @@ func classifySyncError(provider interface {
 		code = "qb_connection_unavailable"
 	}
 	return code, redactProviderError(err), true
+}
+
+// classifyTypedSyncError cleans the claim's exact operation tag after a
+// definitive absent observation, before finishTypedSync can record that
+// absence. Cleanup failure remains an ordinary retryable sync observation, so
+// the two-absent cancelled transition cannot commit until cleanup succeeds.
+// The capability is optional to keep narrow provider fakes source-compatible.
+func classifyTypedSyncError(ctx context.Context, provider Provider, operationKey string, err error) (code, reason string, observationError bool, cause error) {
+	if errors.Is(err, domain.ErrProviderTaskAbsent) {
+		if cleaner, ok := provider.(qbittorrent.OperationTagCleaner); ok {
+			if cleanupErr := cleaner.DeleteOperationTag(ctx, operationKey); cleanupErr != nil {
+				return "qb_sync_retryable", redactProviderError(fmt.Errorf("clean up absent qB task tag: %w", cleanupErr)), true, cleanupErr
+			}
+		}
+	}
+	code, reason, observationError = classifySyncError(provider, err)
+	return code, reason, observationError, err
 }
 
 func (s *Service) finishTypedSync(ctx context.Context, claim workitems.Claim, task taskSnapshot, session string, ordinal int, observed domain.ProviderTask, code, reason string, observationError bool) (worker.Outcome, error) {

@@ -268,15 +268,27 @@ func TestQBManagementDeleteProtectedWhileAcquisitionRunsPostgres(t *testing.T) {
 	const hash = "1111111111111111111111111111111111111111"
 
 	deletes := 0
+	deleted := map[string]bool{}
 	qbServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/v2/auth/login":
 			w.Write([]byte("Ok."))
 		case r.URL.Path == "/api/v2/torrents/info":
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`[{"hash":"` + hash + `","name":"Show EP01","state":"downloading","progress":0.5,"size":100},{"hash":"2222222222222222222222222222222222222222","name":"Other","state":"pausedUP","progress":1,"size":1}]`))
+			items := make([]string, 0, 2)
+			if !deleted[hash] {
+				items = append(items, `{"hash":"`+hash+`","name":"Show EP01","state":"downloading","progress":0.5,"size":100}`)
+			}
+			if !deleted["2222222222222222222222222222222222222222"] {
+				items = append(items, `{"hash":"2222222222222222222222222222222222222222","name":"Other","state":"pausedUP","progress":1,"size":1}`)
+			}
+			w.Write([]byte("[" + strings.Join(items, ",") + "]"))
 		case r.URL.Path == "/api/v2/torrents/delete":
 			deletes++
+			if err := r.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+			deleted[strings.ToLower(r.Form.Get("hashes"))] = true
 		default:
 			http.NotFound(w, r)
 		}
@@ -366,15 +378,28 @@ func TestQBManagementTagOwnedTorrentProtectedWhileSubmittedPostgres(t *testing.T
 	const tag = "bansoko-qb:release-qb-tag"
 
 	deletes := 0
+	deleted := map[string]bool{}
 	qbServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/v2/auth/login":
 			w.Write([]byte("Ok."))
 		case r.URL.Path == "/api/v2/torrents/info":
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`[{"hash":"` + hash + `","name":"Show EP02","state":"downloading","progress":0.3,"size":100,"tags":"other, ` + tag + `"},{"hash":"4444444444444444444444444444444444444444","name":"Other","state":"pausedUP","progress":1,"size":1,"tags":"bansoko-qb:release-other"}]`))
+			items := make([]string, 0, 2)
+			if !deleted[hash] {
+				items = append(items, `{"hash":"`+hash+`","name":"Show EP02","state":"downloading","progress":0.3,"size":100,"tags":"other, `+tag+`"}`)
+			}
+			if !deleted["4444444444444444444444444444444444444444"] {
+				items = append(items, `{"hash":"4444444444444444444444444444444444444444","name":"Other","state":"pausedUP","progress":1,"size":1,"tags":"bansoko-qb:release-other"}`)
+			}
+			w.Write([]byte("[" + strings.Join(items, ",") + "]"))
 		case r.URL.Path == "/api/v2/torrents/delete":
 			deletes++
+			if err := r.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+			deleted[strings.ToLower(r.Form.Get("hashes"))] = true
+		case r.URL.Path == "/api/v2/torrents/deleteTags":
 		default:
 			http.NotFound(w, r)
 		}

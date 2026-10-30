@@ -152,6 +152,46 @@ func TestPauseResumeNonNotFoundErrorDoesNotFallBack(t *testing.T) {
 	}
 }
 
+func TestCleanupTagsDeletesOnlyKnownUnreferencedSystemTags(t *testing.T) {
+	var deletedTags string
+	infoCalls := 0
+	server := qbTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v2/torrents/info":
+			infoCalls++
+			if r.URL.RawQuery != "" {
+				t.Fatalf("cleanup must re-read every torrent, got query %q", r.URL.RawQuery)
+			}
+			_, _ = w.Write([]byte(`[{"hash":"shared","tags":"bansoko-shared, user-tag"},{"hash":"configured","tags":"bansoko-configured"}]`))
+		case "/api/v2/torrents/deleteTags":
+			if err := r.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+			deletedTags = r.Form.Get("tags")
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	client := Client{Endpoint: server.URL, Username: "admin", Password: "secret", UserTags: []string{"bansoko-configured"}}
+	err := client.CleanupTags(context.Background(), []string{"bansoko-unique", "bansoko-shared", "bansoko-configured", "user-tag", "bansoko-unique"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if infoCalls != 1 || deletedTags != "bansoko-unique" {
+		t.Fatalf("info calls=%d deleted tags=%q", infoCalls, deletedTags)
+	}
+}
+
+func TestCleanupTagsWithoutKnownCandidatesHasNoQBEffect(t *testing.T) {
+	client := Client{Endpoint: "http://127.0.0.1:1"}
+	if err := client.CleanupTags(context.Background(), []string{"user-tag", "bansoko-"}); err != nil {
+		t.Fatalf("foreign candidates must be ignored before any qB call: %v", err)
+	}
+	if err := client.CleanupTaskTag(context.Background(), "hash:abcdef"); err != nil {
+		t.Fatalf("a hash must never be converted into a tag candidate: %v", err)
+	}
+}
+
 func TestDeleteTorrentPostsHashesAndDeleteFiles(t *testing.T) {
 	var (
 		deletedHash  string

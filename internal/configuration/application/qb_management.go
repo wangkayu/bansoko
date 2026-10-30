@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -176,6 +177,17 @@ func (o torrentOriginIndex) add(infoHash, externalID, stableTag, kind string) {
 type torrentRecordIndex struct {
 	inFlight torrentOwners
 	origins  torrentOriginIndex
+	records  []torrentRecord
+}
+
+// torrentRecord retains only the stable identities needed to derive exact
+// cleanup candidates for a management delete. The target must match the record
+// by infohash or by one of its recorded provider tags; arbitrary bansoko-* tags
+// observed on the torrent are never promoted to candidates.
+type torrentRecord struct {
+	infoHash   string
+	externalID string
+	stableTag  string
 }
 
 func newTorrentRecordIndex() torrentRecordIndex {
@@ -188,6 +200,68 @@ func newTorrentRecordIndex() torrentRecordIndex {
 // qbSystemTagPrefix is the correlation tag prefix every bansoko submit
 // attaches; user tags may not use it (QBittorrentConnectionConfig validation).
 const qbSystemTagPrefix = "bansoko-"
+
+func providerRefTag(providerRef string) string {
+	providerRef = strings.TrimSpace(providerRef)
+	if strings.HasPrefix(providerRef, "tag:") {
+		return strings.TrimSpace(strings.TrimPrefix(providerRef, "tag:"))
+	}
+	return ""
+}
+
+func knownSystemTag(tag string) (string, bool) {
+	tag = strings.TrimSpace(tag)
+	if !strings.HasPrefix(tag, qbSystemTagPrefix) || len(tag) == len(qbSystemTagPrefix) {
+		return "", false
+	}
+	return tag, true
+}
+
+func (r torrentRecord) matches(item qbittorrent.TorrentInfo) bool {
+	if r.infoHash != "" && strings.EqualFold(strings.TrimSpace(r.infoHash), strings.TrimSpace(item.Hash)) {
+		return true
+	}
+	if strings.HasPrefix(strings.TrimSpace(r.externalID), "hash:") &&
+		strings.EqualFold(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(r.externalID), "hash:")), strings.TrimSpace(item.Hash)) {
+		return true
+	}
+	tags := make(map[string]struct{})
+	for _, raw := range strings.Split(item.Tags, ",") {
+		tags[strings.TrimSpace(raw)] = struct{}{}
+	}
+	if tag := providerRefTag(r.externalID); tag != "" {
+		if _, found := tags[tag]; found {
+			return true
+		}
+	}
+	if tag := strings.TrimSpace(r.stableTag); tag != "" {
+		_, found := tags[tag]
+		return found
+	}
+	return false
+}
+
+// systemTags returns only stable tags from records whose identities match the
+// target. It deliberately does not enumerate the target's bansoko-* tags.
+func (r torrentRecordIndex) systemTags(item qbittorrent.TorrentInfo) []string {
+	known := make(map[string]struct{})
+	for _, record := range r.records {
+		if !record.matches(item) {
+			continue
+		}
+		for _, candidate := range []string{providerRefTag(record.externalID), record.stableTag} {
+			if tag, ok := knownSystemTag(candidate); ok {
+				known[tag] = struct{}{}
+			}
+		}
+	}
+	result := make([]string, 0, len(known))
+	for tag := range known {
+		result = append(result, tag)
+	}
+	sort.Strings(result)
+	return result
+}
 
 // origin decides who created one listed qB task:
 //   - the correlation tag is written by the submit that created the task, so a
@@ -275,6 +349,7 @@ WHERE t.qbittorrent_connection_id = $1 AND t.provider_correlation IS NOT NULL`, 
 			return torrentRecordIndex{}, fmt.Errorf("read torrent owners: acquisition entry kind %q has no owner kind", entryKind)
 		}
 		index.origins.add(infoHash, externalID, stableTag, kind)
+		index.records = append(index.records, torrentRecord{infoHash: strings.TrimSpace(infoHash), externalID: strings.TrimSpace(externalID), stableTag: strings.TrimSpace(stableTag)})
 		if running {
 			index.inFlight.add(infoHash, externalID, stableTag, kind)
 		}
@@ -367,6 +442,14 @@ func (s QBManagementService) DeleteTorrent(ctx context.Context, connectionID, ha
 		return &apperrors.Business{Status: http.StatusConflict, Code: "QB_TORRENT_IN_USE", Message: "the torrent belongs to a download that is still being processed"}
 	}
 	if err := client.DeleteTorrent(ctx, hash, deleteFiles); err != nil {
+		return mapQBError(err)
+	}
+	// qBittorrent applies the delete asynchronously. Cleaning while the task is
+	// still listed would read it as a live reference and keep its tag.
+	if err := client.ConfirmTorrentDeleted(ctx, hash); err != nil {
+		return mapQBError(err)
+	}
+	if err := client.CleanupTags(ctx, records.systemTags(target)); err != nil {
 		return mapQBError(err)
 	}
 	return nil
