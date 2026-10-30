@@ -10,6 +10,7 @@ import { rawLogText } from "./LogRawView";
 
 let fetchMock: ReturnType<typeof vi.fn>;
 let records: ObservabilityRecord[];
+let primaryRecords: ObservabilityRecord[] | null;
 let episodes: DiagnosticEpisode[];
 
 const delivery = {
@@ -70,8 +71,10 @@ function stubFetch() {
   fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = new URL(String(input), "http://localhost");
     let body: unknown = [];
-    if (url.pathname.endsWith("/observability/records")) body = { records, next_cursor: null };
-    else if (url.pathname.endsWith("/observability/diagnostics")) {
+    if (url.pathname.endsWith("/observability/records")) {
+      const primary = url.searchParams.get("event_view") === "primary";
+      body = { records: primary && primaryRecords !== null ? primaryRecords : records, next_cursor: null };
+    } else if (url.pathname.endsWith("/observability/diagnostics")) {
       body = { episodes, internal: { occurrence_count: 2, last_failed_at: "2026-10-21T09:30:00Z", last_request_id: "req-9" }, next_cursor: null };
     } else if (url.pathname.endsWith("/observability/runtime-log")) body = { lines: runtimeLines };
     return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -96,6 +99,7 @@ describe("LogDialog", () => {
   beforeEach(() => {
     localStorage.clear();
     records = [business("b1"), delivery];
+    primaryRecords = null;
     episodes = [episode];
     stubFetch();
     useLogDialogStore.getState().openDialog();
@@ -112,6 +116,8 @@ describe("LogDialog", () => {
     expect(await screen.findByText(t("log.delivery.unconfirmed"))).toBeInTheDocument();
     const query = urlsOf("/observability/records")[0]!.searchParams;
     expect(query.getAll("kind").sort()).toEqual(["business", "plugin"]);
+    // The events tab asks for the primary projection; it never loads all and filters locally.
+    expect(query.get("event_view")).toBe("primary");
   });
 
   it("sends the failure state to the server", async () => {
@@ -121,6 +127,41 @@ describe("LogDialog", () => {
     await user.click(screen.getByRole("combobox", { name: t("log.status") }));
     await user.click(await screen.findByRole("option", { name: t("log.failure") }));
     await waitFor(() => expect(urlsOf("/observability/records").some((url) => url.searchParams.get("state") === "failure")).toBe(true));
+  });
+
+  it("switches to all events while keeping the current filters", async () => {
+    renderLogDialog();
+    await screen.findByText(tryT("log.msg.subscription_created")!);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("combobox", { name: t("log.status") }));
+    await user.click(await screen.findByRole("option", { name: t("log.failure") }));
+    await waitFor(() =>
+      expect(
+        urlsOf("/observability/records").some((url) => url.searchParams.get("state") === "failure" && url.searchParams.get("event_view") === "primary"),
+      ).toBe(true),
+    );
+    await user.click(screen.getByRole("radio", { name: t("log.view.all") }));
+    await waitFor(() =>
+      expect(
+        urlsOf("/observability/records").some((url) => url.searchParams.get("state") === "failure" && url.searchParams.get("event_view") === "all"),
+      ).toBe(true),
+    );
+  });
+
+  it("an empty primary view offers the full history, which keeps grouping and expansion", async () => {
+    records = [
+      business("g1", { kind: "release_processed", outcome: "info", message_code: "release_awaiting_competition", occurred_at: "2026-10-21T08:00:00Z" }),
+      business("g2", { kind: "release_processed", outcome: "info", message_code: "release_awaiting_competition", occurred_at: "2026-10-21T08:01:00Z" }),
+    ];
+    primaryRecords = [];
+    renderLogDialog();
+    expect(await screen.findByText(t("log.emptyPrimary"))).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: t("log.showAll") }));
+    const group = await screen.findByRole("button", { name: new RegExp(t("log.groupReleases", { n: 2 })) });
+    await user.click(group);
+    expect((await screen.findAllByText(tryT("log.msg.release_awaiting_competition")!)).length).toBeGreaterThan(0);
+    expect(urlsOf("/observability/records").some((url) => url.searchParams.get("event_view") === "all")).toBe(true);
   });
 
   it("labels a one-shot acquisition", async () => {

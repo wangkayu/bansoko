@@ -66,8 +66,8 @@ export const observabilityKeys = {
   all: ["observability"] as const,
   records: ["observability", "records"] as const,
   diagnostics: ["observability", "diagnostics"] as const,
-  businessLine: (state: string, animeId: string, q: string, from?: string, to?: string) =>
-    ["observability", "records", "business-line", state, animeId, q, from, to] as const,
+  businessLine: (eventView: string, state: string, animeId: string, q: string, from?: string, to?: string) =>
+    ["observability", "records", "business-line", eventView, state, animeId, q, from, to] as const,
   diagnosticsFiltered: (state: string) => ["observability", "diagnostics", "list", state] as const,
   // The log-entry badge: hung under the records/diagnostics prefixes, following the same invalidation set.
   badgeRecords: ["observability", "records", "badge"] as const,
