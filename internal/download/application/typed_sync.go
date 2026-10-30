@@ -246,7 +246,7 @@ func classifySyncError(provider interface {
 func classifyTypedSyncError(ctx context.Context, provider Provider, operationKey string, err error) (code, reason string, observationError bool, cause error) {
 	if errors.Is(err, domain.ErrProviderTaskAbsent) {
 		if cleaner, ok := provider.(qbittorrent.OperationTagCleaner); ok {
-			if cleanupErr := cleaner.CleanupOperationTag(ctx, operationKey); cleanupErr != nil {
+			if cleanupErr := cleaner.DeleteOperationTag(ctx, operationKey); cleanupErr != nil {
 				return "qb_sync_retryable", redactProviderError(fmt.Errorf("clean up absent qB task tag: %w", cleanupErr)), true, cleanupErr
 			}
 		}

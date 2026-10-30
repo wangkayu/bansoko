@@ -60,7 +60,7 @@ type syncTagCleanupProvider struct {
 	cleanupErr  error
 }
 
-func (p *syncTagCleanupProvider) CleanupOperationTag(_ context.Context, operationKey string) error {
+func (p *syncTagCleanupProvider) DeleteOperationTag(_ context.Context, operationKey string) error {
 	p.cleanupKeys = append(p.cleanupKeys, operationKey)
 	return p.cleanupErr
 }

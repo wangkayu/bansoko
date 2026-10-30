@@ -206,7 +206,7 @@ type SnapshotSyncer interface {
 // OperationTagCleaner is an optional provider capability used when a stable
 // WorkItem operation key is the surviving identity of an absent qB task.
 type OperationTagCleaner interface {
-	CleanupOperationTag(context.Context, string) error
+	DeleteOperationTag(context.Context, string) error
 }
 
 // SnapshotProvider combines the optional frozen-snapshot capabilities. The
@@ -517,14 +517,14 @@ func (c ConfiguredClient) SetShareLimits(ctx context.Context, hash string, limit
 	return client.SetShareLimits(ctx, hash, limits)
 }
 
-// CleanupOperationTag removes the exact system tag of one known operation when
+// DeleteOperationTag removes the exact system tag of one known operation when
 // no torrent references it. It never derives candidates from a torrent hash.
-func (c ConfiguredClient) CleanupOperationTag(ctx context.Context, operationKey string) error {
+func (c ConfiguredClient) DeleteOperationTag(ctx context.Context, operationKey string) error {
 	client, err := c.client(ctx)
 	if err != nil {
 		return err
 	}
-	return client.CleanupOperationTag(ctx, operationKey)
+	return client.DeleteOperationTag(ctx, operationKey)
 }
 
 // CleanupTaskTag removes the exact system tag carried by a saved provider
@@ -925,10 +925,10 @@ func (c Client) listTorrents(ctx context.Context, client *http.Client) ([]Torren
 
 const systemTagPrefix = "bansoko-"
 
-// CleanupOperationTag cleans the one exact tag generated from a stable
+// DeleteOperationTag cleans the one exact tag generated from a stable
 // operation key. Empty or delimiter-containing keys are rejected rather than
 // being allowed to widen the deleteTags form into other tags.
-func (c Client) CleanupOperationTag(ctx context.Context, operationKey string) error {
+func (c Client) DeleteOperationTag(ctx context.Context, operationKey string) error {
 	operationKey = strings.TrimSpace(operationKey)
 	if operationKey == "" {
 		return errors.New("qB operation key is required for tag cleanup")
