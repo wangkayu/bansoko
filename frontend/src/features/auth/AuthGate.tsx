@@ -220,7 +220,7 @@ export function AuthGate() {
           {t("auth.forgot")}
           <HelpTip label={t("auth.forgotHelpLabel")}>
             <p className="tw:m-0">
-              {t("auth.recoveryPrefix")} <code>docker compose exec app /app/bootstrap reset-password</code> {t("auth.recoverySuffix")}
+              {t("auth.recoveryPrefix")} <code>docker compose exec app /app/bansoko-server bootstrap reset-password</code> {t("auth.recoverySuffix")}
             </p>
           </HelpTip>
         </p>

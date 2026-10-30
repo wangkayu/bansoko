@@ -94,13 +94,13 @@ sha256_file() {
   fi
 }
 
-# Reads the single `embedded-bootstrap-v<N>` literal out of /app/bootstrap of a
+# Reads the single `embedded-bootstrap-v<N>` literal out of /app/bansoko-server of a
 # locally built/loaded image (UPDATE-029). Empty or multi-line output means the
 # image's baked bootstrap version could not be established; the caller fails
 # closed. Docker is already required wherever this is called.
 baked_bootstrap_version() {
   docker run --rm --entrypoint sh "$1" -c \
-    "tr -c '[:print:]' '\\n' < /app/bootstrap | grep -o 'embedded-bootstrap-v[0-9][0-9]*' | sort -u" 2>/dev/null || true
+    "grep -a -o 'embedded-bootstrap-v[0-9][0-9]*' /app/bansoko-server | sort -u" 2>/dev/null || true
 }
 
 source_commit="$(git -C "$root" rev-parse HEAD)"
@@ -144,12 +144,8 @@ CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -C "$root" -trimpath -build
   -ldflags "-s -w -buildid= -X bansoko/internal/runtime/buildinfo.Version=$version -X bansoko/internal/runtime/buildinfo.Commit=$source_commit -X bansoko/internal/runtime/buildinfo.BuildID=$release_id -X bansoko/internal/runtime/buildinfo.BuildTime=$published_at -X bansoko/internal/runtime/buildinfo.APIVersion=$api_version -X bansoko/internal/runtime/buildinfo.SchemaVersion=$schema_version -X bansoko/internal/runtime/buildinfo.BaseCompatibilityVersion=$base_image_min_version -X bansoko/internal/runtime/buildinfo.BuildDirty=false" \
   -o "$artifact_path" ./cmd/bansoko-server
 
-# The embedded payload ships its own migration job so the container bootstrap
-# can migrate the database from overlay content before promoting the release.
-migrate_path="$tmp_dir/bansoko-migrate"
-CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -C "$root" -trimpath -buildvcs=false \
-  -ldflags "-s -w -buildid=" \
-  -o "$migrate_path" ./cmd/bansoko-migrate
+# The embedded payload ships the same unified binary that serves the release;
+# bootstrap invokes its migrate mode before promoting the release.
 
 artifact_digest="$(sha256_file "$artifact_path")"
 artifact_size="$(wc -c < "$artifact_path" | tr -d '[:space:]')"
@@ -162,7 +158,6 @@ artifact_signature="$(go -C "$root" run ./cmd/bansoko-release artifact-sign --di
 payload_path="$tmp_dir/$payload_name"
 pack_summary="$(go -C "$root" run ./cmd/bansoko-release pack-payload \
   --server-binary "$artifact_path" \
-  --migrate-binary "$migrate_path" \
   --migrations-dir "$root/db/migrations" \
   --frontend-dist "$frontend_dist" \
   --defaults-dir "$root/deployment/defaults" \
@@ -302,11 +297,11 @@ $derived_image_bootstrap_version" >&2
       exit 1
     fi
     if [[ -z "$derived_image_bootstrap_version" ]]; then
-      echo "ERROR: no embedded-bootstrap-v<N> literal found in /app/bootstrap of $image_tag; the built-image bootstrap version cannot be established" >&2
+      echo "ERROR: no embedded-bootstrap-v<N> literal found in /app/bansoko-server of $image_tag; the built-image bootstrap version cannot be established" >&2
       exit 1
     fi
     if [[ ! "$derived_image_bootstrap_version" =~ ^embedded-bootstrap-v[0-9]+$ ]]; then
-      echo "ERROR: /app/bootstrap of $image_tag carries an invalid bootstrap version ID: $derived_image_bootstrap_version" >&2
+      echo "ERROR: /app/bansoko-server of $image_tag carries an invalid bootstrap version ID: $derived_image_bootstrap_version" >&2
       exit 1
     fi
     if [[ -n "$image_bootstrap_version" && "$image_bootstrap_version" != "$derived_image_bootstrap_version" ]]; then

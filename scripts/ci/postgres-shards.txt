@@ -67,7 +67,7 @@
 3	./internal/update/application
 3	./internal/update/fence
 3	./internal/workitems
-3	./cmd/bansoko-bootstrap
+3	./internal/runtime/bootstrap
 3	./internal/anime/application
 3	./internal/anime/readmodel/application
 3	./internal/catalog/application

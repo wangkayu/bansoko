@@ -27,7 +27,6 @@ func buildFixturePayload(t *testing.T) (payloadPath string, meta packagemaker.Me
 		}
 	}
 	writeTree("server", 0o755)
-	writeTree("migrate", 0o755)
 	writeTree("sql/001_a.sql", 0o644)
 	writeTree("dist/index.html", 0o644)
 	writeTree("dist/assets/app.js", 0o644)
@@ -41,14 +40,13 @@ func buildFixturePayload(t *testing.T) (payloadPath string, meta packagemaker.Me
 	}
 	payloadPath = filepath.Join(t.TempDir(), "embedded-update-v1.tar.gz")
 	if _, err := packagemaker.BuildEmbeddedPayload(packagemaker.Options{
-		ServerBinaryPath:  filepath.Join(root, "server"),
-		MigrateBinaryPath: filepath.Join(root, "migrate"),
-		MigrationsDir:     filepath.Join(root, "sql"),
-		FrontendDistDir:   filepath.Join(root, "dist"),
-		DefaultsDir:       filepath.Join(root, "defaults"),
-		Metadata:          meta,
-		OutputPath:        payloadPath,
-		SourceDateEpoch:   1756000000,
+		ServerBinaryPath: filepath.Join(root, "server"),
+		MigrationsDir:    filepath.Join(root, "sql"),
+		FrontendDistDir:  filepath.Join(root, "dist"),
+		DefaultsDir:      filepath.Join(root, "defaults"),
+		Metadata:         meta,
+		OutputPath:       payloadPath,
+		SourceDateEpoch:  1756000000,
 	}); err != nil {
 		t.Fatalf("build payload fixture: %v", err)
 	}
@@ -71,7 +69,7 @@ func TestExtractVerifyPublishHappyPath(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(releaseDir), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := publishReleaseTree(tempDir, releaseDir, []string{packagemaker.ServerEntryPath, packagemaker.MigrateEntryPath}); err != nil {
+	if err := publishReleaseTree(tempDir, releaseDir, []string{packagemaker.ServerEntryPath}); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
 	info, statErr := os.Stat(filepath.Join(releaseDir, packagemaker.ServerEntryPath))
@@ -121,6 +119,7 @@ func TestExtractRejectsTraversalAndLinksAndForeignEntries(t *testing.T) {
 		{label: "absolute", name: "/etc/passwd", typeFlg: tar.TypeReg},
 		{label: "symlink", name: "bansoko-server", typeFlg: tar.TypeSymlink, link: "/bin/sh"},
 		{label: "hardlink", name: "bansoko-migrate", typeFlg: tar.TypeLink, link: "/bin/sh"},
+		{label: "retired migrate layout", name: packagemaker.MigrateEntryPath, typeFlg: tar.TypeReg},
 		{label: "foreign entry", name: "extra-tool", typeFlg: tar.TypeReg},
 	}
 	for _, item := range cases {
@@ -202,7 +201,7 @@ func TestVerifyStagedTreeDetectsTampering(t *testing.T) {
 }
 
 func TestSafeEntryNameAllowlist(t *testing.T) {
-	valid := []string{"bansoko-server", "bansoko-migrate", "release-metadata.json",
+	valid := []string{"bansoko-server", "release-metadata.json",
 		"deployment/defaults/attr-rules.yaml", "deployment/defaults/naming-vars.js",
 		"db/migrations/067_x.sql", "frontend/dist/index.html"}
 	for _, name := range valid {
@@ -210,7 +209,7 @@ func TestSafeEntryNameAllowlist(t *testing.T) {
 			t.Fatalf("%q should pass allowlist: %v", name, err)
 		}
 	}
-	invalid := []string{"../escape", "/abs", "back\\slash", "tools/extra",
+	invalid := []string{"../escape", "/abs", "back\\slash", "tools/extra", "bansoko-migrate",
 		"", ".", "..", "db/../db/x.sql"}
 	for _, name := range invalid {
 		if _, err := safeEntryName(name); err == nil {

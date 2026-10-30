@@ -15,7 +15,7 @@
 // branch — migrations replay (forward-only runner is idempotent), restores
 // replay (--clean --if-exists), pointer promotions and tree removals are
 // idempotent filesystem effects.
-package main
+package bootstrap
 
 import (
 	"context"
@@ -219,7 +219,6 @@ func relDirOf(updatesRoot, token string) string {
 	return filepath.Join(releaseRoot(updatesRoot), token)
 }
 func releaseServerBin(dir string) string   { return filepath.Join(dir, packagemaker.ServerEntryPath) }
-func releaseMigrateBin(dir string) string  { return filepath.Join(dir, packagemaker.MigrateEntryPath) }
 func releaseSchemaDir(dir string) string   { return filepath.Join(dir, "db/migrations") }
 func releaseFrontendDir(dir string) string { return filepath.Join(dir, "frontend/dist") }
 
@@ -655,7 +654,7 @@ func (f *consumeFlow) phasePendingMigration() consumeOutcome {
 		treeErr = migrateErr
 		if treeErr == nil {
 			if !f.advance(embeddedupdate.StepMigrationSucceeded, "",
-				"overlay bansoko-migrate completed against staging schema",
+				"overlay unified migration completed against staging schema",
 				func(r *embeddedupdate.Record) { r.Attempts.Migrate++ }) {
 				return f.parkActive(embeddedupdate.StepMigrationSucceeded,
 					"cannot persist migration_succeeded; replay will re-run the idempotent migration")
@@ -1227,9 +1226,13 @@ func newRealConsumeFX(updatesRoot, databaseURL string, db *sql.DB, responder *re
 		},
 		RunMigrate: func(releaseID string) error {
 			dir := relDirOf(updatesRoot, releaseID)
+			command, err := verifiedReleaseCommand(dir, "migrate")
+			if err != nil {
+				return fmt.Errorf("verify unified migration command: %w", err)
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), migrateTimeout)
 			defer cancel()
-			cmd := exec.CommandContext(ctx, releaseMigrateBin(dir))
+			cmd := exec.CommandContext(ctx, command.path, command.args...)
 			// Force the migrate child onto the owner DSN: the app container's
 			// BANSOKO_DATABASE_URL is the runtime role, which must not (and cannot)
 			// apply migrations or run DDL.
@@ -1239,7 +1242,7 @@ func newRealConsumeFX(updatesRoot, databaseURL string, db *sql.DB, responder *re
 			})
 			out, runErr := cmd.CombinedOutput()
 			if runErr != nil {
-				return fmt.Errorf("overlay bansoko-migrate failed: %w: %s", runErr, trimProcessOutput(out))
+				return fmt.Errorf("overlay unified migration failed: %w: %s", runErr, trimProcessOutput(out))
 			}
 			return nil
 		},
@@ -1277,7 +1280,15 @@ func newRealConsumeFX(updatesRoot, databaseURL string, db *sql.DB, responder *re
 			return nil
 		},
 		LaunchTarget: func(binaryPath, schemaDir, frontendDir string, env map[string]string) (*childProcess, error) {
-			cmd := exec.Command(binaryPath)
+			command := commandFor(binaryPath, "server")
+			if env[deploymentidentity.EnvSource] == deploymentidentity.SourceOverlay {
+				var err error
+				command, err = verifiedReleaseCommand(filepath.Dir(binaryPath), "server")
+				if err != nil {
+					return nil, fmt.Errorf("verify unified server command: %w", err)
+				}
+			}
+			cmd := exec.Command(command.path, command.args...)
 			overrides := map[string]string{
 				envSchemaDir:   schemaDir,
 				envFrontendDir: frontendDir,
@@ -1472,7 +1483,8 @@ func execSteadyServe(updatesRoot string, outcome consumeOutcome) int {
 	for key, value := range identity {
 		pairs[key] = value
 	}
-	if execErr := syscall.Exec(outcome.serveBinaryPath, []string{outcome.serveBinaryPath}, envWithOverrides(pairs)); execErr != nil {
+	launch := commandFor(outcome.serveBinaryPath, "server")
+	if execErr := syscall.Exec(launch.path, launch.argv(), envWithOverrides(pairs)); execErr != nil {
 		logf("exec of steady fallback %s failed: %v", outcome.serveBinaryPath, execErr)
 		return 1
 	}

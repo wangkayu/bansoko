@@ -1,4 +1,4 @@
-package main
+package bootstrap
 
 import (
 	"bufio"
@@ -18,7 +18,7 @@ import (
 )
 
 // reset-password is the out-of-band owner credential reset. It runs inside
-// the container (`docker compose exec app /app/bootstrap reset-password`), so
+// the container (`docker compose exec app /app/bansoko-server bootstrap reset-password`), so
 // the authority is physical access to the deployment; no network credential
 // gates it. The command applies the selected tree's schema first (the same
 // owner-DSN migrate path a server launch takes), then replaces the owner
@@ -132,7 +132,7 @@ func runResetPassword(ctx context.Context, args []string, stdin io.Reader, stdou
 		return 1
 	}
 	logf("applying the %s schema before the owner reset", chosen.mode)
-	if err := runStartupMigration(chosen.binaryPath, envWithOverrides(map[string]string{envSchemaDir: chosen.schemaDir})); err != nil {
+	if err := runStartupMigration(commandFor(chosen.binaryPath, "migrate"), envWithOverrides(map[string]string{envSchemaDir: chosen.schemaDir})); err != nil {
 		fmt.Fprintf(stderr, "[bootstrap] reset-password: migration failed, credentials unchanged: %v\n", err)
 		return 1
 	}

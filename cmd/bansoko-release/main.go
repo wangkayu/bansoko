@@ -70,7 +70,6 @@ func packPayload(args []string) error {
 	flags := flag.NewFlagSet("pack-payload", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	serverBinary := flags.String("server-binary", "", "compiled server binary")
-	migrateBinary := flags.String("migrate-binary", "", "compiled bansoko-migrate binary")
 	migrationsDir := flags.String("migrations-dir", "", "db/migrations directory with forward-only SQL")
 	frontendDist := flags.String("frontend-dist", "", "built frontend dist directory (index.html required)")
 	defaultsDir := flags.String("defaults-dir", "", "release defaults directory (attr-rules.yaml required)")
@@ -88,13 +87,12 @@ func packPayload(args []string) error {
 		return err
 	}
 	result, err := packagemaker.BuildEmbeddedPayload(packagemaker.Options{
-		ServerBinaryPath:  *serverBinary,
-		MigrateBinaryPath: *migrateBinary,
-		MigrationsDir:     *migrationsDir,
-		FrontendDistDir:   *frontendDist,
-		DefaultsDir:       *defaultsDir,
-		OutputPath:        *output,
-		SourceDateEpoch:   *sourceDateEpoch,
+		ServerBinaryPath: *serverBinary,
+		MigrationsDir:    *migrationsDir,
+		FrontendDistDir:  *frontendDist,
+		DefaultsDir:      *defaultsDir,
+		OutputPath:       *output,
+		SourceDateEpoch:  *sourceDateEpoch,
 		Metadata: packagemaker.Metadata{
 			FormatVersion:       *formatVersion,
 			ReleaseID:           *releaseID,

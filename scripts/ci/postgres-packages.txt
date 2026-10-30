@@ -1,4 +1,4 @@
-./cmd/bansoko-bootstrap
+./internal/runtime/bootstrap
 ./cmd/bansoko-server
 ./internal/accesscontrol/application
 ./internal/acquisition/target

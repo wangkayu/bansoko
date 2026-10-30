@@ -12,7 +12,7 @@
 #   BANSOKO_EMBEDDED_E2E=1 ... --scenario=normal --self-test
 #
 # --self-test is available for normal, migrate-failure, rollback-blocked and
-# min-image-version. The normal self-test runs the real cmd/bansoko-bootstrap success
+# min-image-version. The normal self-test runs the real unified bootstrap success
 # state-machine tests locally (non-Docker); it does not create Docker, WebUI,
 # or process-build evidence. Without --self-test, normal still requires a real
 # scenario hook and remains blocked when no hook is configured.
@@ -121,7 +121,7 @@ PY
     esac
 
     log="$self_test_workdir/$ac.log"
-    if BANSOKO_TEST_DB_DISPOSABLE=1 go test ./cmd/bansoko-bootstrap -run "^(${test_name})$" -count=1 >"$log" 2>&1; then
+    if BANSOKO_TEST_DB_DISPOSABLE=1 go test ./internal/runtime/bootstrap -run "^(${test_name})$" -count=1 >"$log" 2>&1; then
       python3 - "$self_test_workdir/$ac.json" "$ac" "$test_name" "$log" "$assertion_json" <<'PY'
 import json, pathlib, sys
 out = pathlib.Path(sys.argv[1])
@@ -129,9 +129,9 @@ acceptance, test_name, log, assertion_json = sys.argv[2:]
 data = {
     "acceptance": acceptance, "scope": "bootstrap-state-machine-real", "passed": True,
     "self_test": True, "runner": "embedded-update-e2e.sh",
-    "go_test": {"package": "./cmd/bansoko-bootstrap", "test_regex": "^(" + test_name + ")$", "exit_code": 0},
+    "go_test": {"package": "./internal/runtime/bootstrap", "test_regex": "^(" + test_name + ")$", "exit_code": 0},
     "e2e_mode": "non-docker",
-    "description": "Non-Docker E2E evidence from the real cmd/bansoko-bootstrap state-machine path.",
+    "description": "Non-Docker E2E evidence from the real internal/runtime/bootstrap state-machine path.",
     "assertions": json.loads(assertion_json), "log": str(log),
 }
 out.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")

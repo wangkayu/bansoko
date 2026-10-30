@@ -1,7 +1,8 @@
-// Command bansoko-bootstrap is the immutable PID1 wrapper baked into the base
-// image. Its contract (embedded self-update program, design §2):
+// Package bootstrap implements the unified binary's bootstrap mode. The image
+// anchor is the immutable PID1 entrypoint baked into the base image. Its contract
+// (embedded self-update program, design §2):
 //
-//   - /app is never overlaid: the wrapper and the base app binaries are part
+//   - /app is never overlaid: the anchor and base application are part of the
 //     of the digest-addressed base image and can never be replaced by update
 //     payload content;
 //   - overlay release trees live on the updates volume
@@ -14,7 +15,8 @@
 //
 //	bootstrap [server]       consume a pending update marker, or migrate the selected
 //	                         release's schema and then serve it
-//	bootstrap migrate        select and exec bansoko-migrate against the matching tree
+//	bootstrap migrate        select and exec the unified binary's migrate mode
+//	                         against the matching tree
 //	bootstrap recover status inspect read-only journal and rollback-blocked state
 //	bootstrap reset-password reset the owner credentials from inside the container
 //
@@ -33,7 +35,7 @@
 //   - the server-kind entry consumes pending_migration through rollback/success;
 //   - current-release pointer or signed-tree verification failures do not downgrade
 //     to an unverified overlay.
-package main
+package bootstrap
 
 import (
 	"context"
@@ -66,18 +68,17 @@ import (
 
 const (
 	baseServerPath  = "/app/bansoko-server"
-	baseMigratePath = "/app/bansoko-migrate"
 	baseSchemaDir   = "/app/db/migrations"
 	baseFrontendDir = "/app/frontend/dist"
 
 	// embeddedBootstrapVersion is this wrapper's own release identity. A release
 	// manifest may require it (`embedded_update.bootstrap_min_version`) and the
 	// server refuses a candidate whose floor this wrapper does not reach. Because
-	// /app/bootstrap is part of the digest-pinned base image, changing the
+	// /app/bansoko-server is part of the digest-pinned base image, changing the
 	// wrapper's observable contract means incrementing this constant; the
 	// releases that need the new behaviour must declare the new floor and the
 	// operator must switch the base image digest.
-	embeddedBootstrapVersion = "embedded-bootstrap-v2"
+	embeddedBootstrapVersion = "embedded-bootstrap-v3"
 
 	journalFileName    = "journal.json"
 	pendingMarkerName  = "pending.json"
@@ -97,7 +98,7 @@ const (
 // is the source of that layer).
 //
 // The bootstrap version is this binary's own constant, not an inherited value:
-// the running /app/bootstrap is the only authority for what the base image
+// the running /app/bansoko-server is the only authority for what the base image
 // contains, so the updater's comparison can never be satisfied by deployment
 // environment text alone.
 func deploymentIdentityEnv(source, releaseID, payloadDigest, operationID string) map[string]string {
@@ -148,6 +149,9 @@ func verifyOverlayIdentity(updatesRoot, releaseID string) (overlayIdentityProof,
 		return overlayIdentityProof{}, fmt.Errorf("read overlay deployment provenance: %w", err)
 	}
 	if err := provenance.Validate(releaseID, manifest.EmbeddedUpdate.PayloadDigest, meta.BuildID); err != nil {
+		return overlayIdentityProof{}, err
+	}
+	if err := validateUnifiedReleaseMetadata(meta); err != nil {
 		return overlayIdentityProof{}, err
 	}
 	return overlayIdentityProof{
@@ -228,16 +232,17 @@ func (m launchMode) String() string {
 // exec application binaries; server-kind exposes only the bootstrap health
 // responder, while migrate-kind parks without listening.
 type plan struct {
-	mode            launchMode
-	kind            string // "server" or "migrate"
-	binaryPath      string
-	migratePath     string // server plans: the same tree's bansoko-migrate, run before serving
-	schemaDir       string
-	frontendDir     string // empty for migrate jobs (they serve no assets)
-	releaseID       string
-	reason          string
-	maintenanceOp   string // operation id when parked on journal state
-	maintenanceStep string // journal step string when parked
+	mode             launchMode
+	kind             string // "server" or "migrate"
+	binaryPath       string
+	migratePath      string // server plans: the same tree's migration executable
+	schemaDir        string
+	frontendDir      string // empty for migrate jobs (they serve no assets)
+	releaseID        string
+	handoffReleaseID string
+	reason           string
+	maintenanceOp    string // operation id when parked on journal state
+	maintenanceStep  string // journal step string when parked
 }
 
 func logf(format string, args ...any) {
@@ -275,13 +280,6 @@ func envWithOverrides(overrides map[string]string) []string {
 		env = append(env, key+"="+value)
 	}
 	return env
-}
-
-func binaryNameFor(kind string) string {
-	if kind == "server" {
-		return packagemaker.ServerEntryPath
-	}
-	return packagemaker.MigrateEntryPath
 }
 
 func updateMode() string {
@@ -360,6 +358,13 @@ func planLaunch(kind, updatesRoot string) (out plan) {
 			out.mode = modeConsume
 			out.maintenanceOp = record.OperationID
 			out.maintenanceStep = string(record.Step)
+			out.handoffReleaseID = record.TargetReleaseID
+			if record.Step == embeddedupdate.StepFenceClosurePending && record.FenceClosureTarget != embeddedupdate.StepSucceeded {
+				// Rollback and pre-migration abort remove the rejected target before
+				// their retryable fence closure. Continue from the verified fallback
+				// release instead of handing off to a tree that no longer exists.
+				out.handoffReleaseID = record.PreviousReleaseID
+			}
 			out.reason = "embedded-update handoff consumption (" + string(record.Step) + ")"
 			return out
 		}
@@ -383,8 +388,7 @@ func planLaunch(kind, updatesRoot string) (out plan) {
 	} else if _, verifyErr := verifyOverlayIdentity(updatesRoot, target.releaseID); verifyErr != nil {
 		return maintenancePlan(out, "", "", fmt.Sprintf("current overlay release identity is not provable: %v", verifyErr))
 	} else {
-		return overlayPlan(out, target.releaseID, target.binaryPath,
-			filepath.Join(target.path, packagemaker.MigrateEntryPath),
+		return overlayPlan(out, target.releaseID, target.binaryPath, target.binaryPath,
 			filepath.Join(target.path, "db/migrations"),
 			filepath.Join(target.path, "frontend/dist"))
 	}
@@ -394,11 +398,11 @@ func planLaunch(kind, updatesRoot string) (out plan) {
 func basePlan(out plan, reason string) plan {
 	out.mode = modeBase
 	if out.kind == "migrate" {
-		out.binaryPath = baseMigratePath
+		out.binaryPath = baseServerPath
 		out.schemaDir = baseSchemaDir
 	} else {
 		out.binaryPath = baseServerPath
-		out.migratePath = baseMigratePath
+		out.migratePath = baseServerPath
 		out.schemaDir = baseSchemaDir
 		out.frontendDir = baseFrontendDir
 	}
@@ -436,7 +440,7 @@ type overlayTarget struct {
 // resolveCurrentRelease reads the `current` pointer file (one validated
 // release-id token written by promotion) and locates the corresponding tree
 // under releases/.
-func resolveCurrentRelease(kind, updatesRoot string) (overlayTarget, error) {
+func resolveCurrentRelease(_ string, updatesRoot string) (overlayTarget, error) {
 	raw, err := os.ReadFile(filepath.Join(updatesRoot, currentPointerName))
 	if err != nil {
 		return overlayTarget{}, fmt.Errorf("read current pointer: %w", err)
@@ -453,7 +457,7 @@ func resolveCurrentRelease(kind, updatesRoot string) (overlayTarget, error) {
 	return overlayTarget{
 		releaseID:  token,
 		path:       releaseDir,
-		binaryPath: filepath.Join(releaseDir, binaryNameFor(kind)),
+		binaryPath: releaseServerBin(releaseDir),
 	}, nil
 }
 
@@ -578,18 +582,18 @@ func prepareDeploymentEnvironment(getenv func(string) string, setenv func(string
 // runMigrationChild applies the selected tree's schema with the owner
 // connection and converges the runtime login role. Its structured output goes
 // to the container log.
-func runMigrationChild(binaryPath string, env []string) error {
+func runMigrationChild(command processCommand, env []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), migrateTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, binaryPath)
+	cmd := exec.CommandContext(ctx, command.path, command.args...)
 	cmd.Env = env
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
-			return fmt.Errorf("%s did not finish within %s", binaryPath, migrateTimeout)
+			return fmt.Errorf("%s did not finish within %s", command.path, migrateTimeout)
 		}
-		return fmt.Errorf("%s failed: %w", binaryPath, err)
+		return fmt.Errorf("%s failed: %w", command.path, err)
 	}
 	return nil
 }
@@ -603,6 +607,9 @@ func run(kind string) int {
 		return 124
 	}
 	chosen, updatesRoot := selectBootstrapPlan(kind, os.Getenv)
+	if code, handedOff := handoffUnifiedBootstrap(chosen, updatesRoot); handedOff {
+		return code
+	}
 	if kind == "server" && chosen.mode != modePendingMarker {
 		if err := discardPreMarkerWork(updatesRoot); err != nil {
 			logf("MAINTENANCE fail-closed: pre-marker workspace cleanup failed: %v", err)
@@ -678,12 +685,14 @@ func launchPlan(chosen plan, updatesRoot string) int {
 			return 1
 		}
 		logf("applying the %s schema before serving", chosen.mode)
-		if err := runStartupMigration(chosen.migratePath, envWithOverrides(pairs)); err != nil {
+		migrate := commandFor(chosen.migratePath, "migrate")
+		if err := runStartupMigration(migrate, envWithOverrides(pairs)); err != nil {
 			logf("MAINTENANCE fail-closed: startup migration failed, the server was not started: %v", err)
 			return 1
 		}
 	}
-	if execErr := execProcess(chosen.binaryPath, []string{chosen.binaryPath}, envWithOverrides(pairs)); execErr != nil {
+	launch := commandFor(chosen.binaryPath, chosen.kind)
+	if execErr := execProcess(launch.path, launch.argv(), envWithOverrides(pairs)); execErr != nil {
 		logf("exec %s failed: %v", chosen.binaryPath, execErr)
 		return 1
 	}
@@ -776,10 +785,12 @@ func establishProcessPrivileges(getenv func(string) string, setenv func(string, 
 	return setenv(bootprepare.EnvPGID, strconv.Itoa(sys.Getgid()))
 }
 
-func main() {
+// Main runs the bootstrap command after establishing the configured process
+// ownership. Successful launch paths replace the current process image.
+func Main(args []string) int {
 	if err := establishProcessPrivileges(os.Getenv, os.Setenv, bootprepare.OSPrivilegeSystem{}); err != nil {
 		logf("MAINTENANCE fail-closed: process ownership could not be established, nothing was started: %v", err)
-		os.Exit(1)
+		return 1
 	}
-	os.Exit(dispatch(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+	return dispatch(args, os.Stdin, os.Stdout, os.Stderr)
 }

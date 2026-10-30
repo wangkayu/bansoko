@@ -1,4 +1,4 @@
-package main
+package bootstrap
 
 import (
 	"archive/tar"
@@ -50,7 +50,6 @@ func writeReleaseTree(t *testing.T, root, releaseID string) string {
 	releaseDir := filepath.Join(root, releasesDirName, releaseID)
 	files := map[string][]byte{
 		packagemaker.ServerEntryPath:                   []byte("#!/bin/elf-fake-server\n"),
-		packagemaker.MigrateEntryPath:                  []byte("#!/bin/elf-fake-migrate\n"),
 		packagemaker.MigrationsPrefix + "001_init.sql": []byte("CREATE TABLE noop();\n"),
 		packagemaker.FrontendPrefix + "index.html":     []byte("<html></html>\n"),
 		"deployment/defaults/attr-rules.yaml":          []byte("version: 1\nresolution:\n  - 1080p\n"),
@@ -63,7 +62,7 @@ func writeReleaseTree(t *testing.T, root, releaseID string) string {
 			t.Fatal(mkdirErr)
 		}
 		mode := os.FileMode(0o644)
-		if strings.HasSuffix(path, packagemaker.ServerEntryPath) || strings.HasSuffix(path, packagemaker.MigrateEntryPath) {
+		if strings.HasSuffix(path, packagemaker.ServerEntryPath) {
 			mode = 0o755
 		}
 		if writeErr := os.WriteFile(fullPath, content, mode); writeErr != nil {
@@ -82,8 +81,8 @@ func writeReleaseTree(t *testing.T, root, releaseID string) string {
 	}
 	payloadPath := filepath.Join(t.TempDir(), "embedded-update-v1.tar.gz")
 	result, buildErr := packagemaker.BuildEmbeddedPayload(packagemaker.Options{
-		ServerBinaryPath: filepath.Join(sourceRoot, packagemaker.ServerEntryPath), MigrateBinaryPath: filepath.Join(sourceRoot, packagemaker.MigrateEntryPath),
-		MigrationsDir: filepath.Join(sourceRoot, "db/migrations"), FrontendDistDir: filepath.Join(sourceRoot, "frontend/dist"),
+		ServerBinaryPath: filepath.Join(sourceRoot, packagemaker.ServerEntryPath),
+		MigrationsDir:    filepath.Join(sourceRoot, "db/migrations"), FrontendDistDir: filepath.Join(sourceRoot, "frontend/dist"),
 		DefaultsDir: filepath.Join(sourceRoot, "deployment/defaults"), Metadata: meta,
 		OutputPath: payloadPath, SourceDateEpoch: 1756000000,
 	})
@@ -197,7 +196,7 @@ func extractPayloadFixture(payloadPath, releaseDir string) error {
 			return err
 		}
 		mode := os.FileMode(0o644)
-		if header.Name == packagemaker.ServerEntryPath || header.Name == packagemaker.MigrateEntryPath {
+		if header.Name == packagemaker.ServerEntryPath {
 			mode = 0o755
 		}
 		if err := os.WriteFile(path, data, mode); err != nil {
@@ -288,12 +287,12 @@ func TestPlanLaunchWithoutUpdatesVolumeFallsBackToBase(t *testing.T) {
 
 	got := planLaunch("server", missingRoot)
 	if got.mode != modeBase || got.binaryPath != baseServerPath ||
-		got.schemaDir != baseSchemaDir || got.frontendDir != baseFrontendDir || got.migratePath != baseMigratePath {
+		got.schemaDir != baseSchemaDir || got.frontendDir != baseFrontendDir || got.migratePath != baseServerPath {
 		t.Fatalf("server plan = %+v, want base with base paths", got)
 	}
 
 	migrated := planLaunch("migrate", missingRoot)
-	if migrated.mode != modeBase || migrated.binaryPath != baseMigratePath ||
+	if migrated.mode != modeBase || migrated.binaryPath != baseServerPath ||
 		migrated.schemaDir != baseSchemaDir || migrated.frontendDir != "" {
 		t.Fatalf("migrate plan = %+v, want base migrate without frontend dir", migrated)
 	}
@@ -388,6 +387,68 @@ func TestPlanLaunchPendingOperationParksMaintenance(t *testing.T) {
 	}
 }
 
+func TestPlanLaunchFenceClosureHandsOffToSurvivingRelease(t *testing.T) {
+	t.Setenv("BANSOKO_UPDATE_MODE", "embedded")
+	prefix := []embeddedupdate.Step{
+		embeddedupdate.StepFetched, embeddedupdate.StepStaged,
+		embeddedupdate.StepMaintenanceEntered, embeddedupdate.StepBackupVerified,
+		embeddedupdate.StepPendingMigration,
+	}
+	for _, test := range []struct {
+		name        string
+		middle      []embeddedupdate.Step
+		terminal    embeddedupdate.Step
+		previous    string
+		wantHandoff string
+	}{
+		{name: "success keeps target", middle: []embeddedupdate.Step{
+			embeddedupdate.StepMigrationSucceeded, embeddedupdate.StepPromoted,
+		}, terminal: embeddedupdate.StepSucceeded, previous: "release-a1", wantHandoff: "release-b2"},
+		{name: "rollback uses previous", middle: []embeddedupdate.Step{
+			embeddedupdate.StepMigrationSucceeded, embeddedupdate.StepPromoted,
+			embeddedupdate.StepReadinessFailed, embeddedupdate.StepRollbackStarted, embeddedupdate.StepDatabaseRestored,
+		}, terminal: embeddedupdate.StepRolledBack, previous: "release-a1", wantHandoff: "release-a1"},
+		{name: "rollback to base has no overlay handoff", middle: []embeddedupdate.Step{
+			embeddedupdate.StepMigrationSucceeded, embeddedupdate.StepPromoted,
+			embeddedupdate.StepReadinessFailed, embeddedupdate.StepRollbackStarted, embeddedupdate.StepDatabaseRestored,
+		}, terminal: embeddedupdate.StepRolledBack},
+		{name: "pre-migration abort uses previous", middle: []embeddedupdate.Step{embeddedupdate.StepFailed}, terminal: embeddedupdate.StepFailed, previous: "release-a1", wantHandoff: "release-a1"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			journal, err := embeddedupdate.Open(filepath.Join(root, journalFileName))
+			if err != nil {
+				t.Fatal(err)
+			}
+			record, err := journal.Create(embeddedupdate.Record{
+				OperationID: "op-fence-handoff", Channel: "embedded",
+				TargetReleaseID: "release-b2", PreviousReleaseID: test.previous,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			steps := append(append(append([]embeddedupdate.Step(nil), prefix...), test.middle...), embeddedupdate.StepFenceClosurePending)
+			for _, step := range steps {
+				record, err = journal.Advance(record.OperationID, record.Version, step, "", "", func(r *embeddedupdate.Record) {
+					if step == embeddedupdate.StepFenceClosurePending {
+						r.FenceClosureTarget = test.terminal
+					}
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := journal.Close(); err != nil {
+				t.Fatal(err)
+			}
+			chosen := planLaunch("server", root)
+			if chosen.mode != modeConsume || chosen.handoffReleaseID != test.wantHandoff {
+				t.Fatalf("plan = %+v, want handoff %q", chosen, test.wantHandoff)
+			}
+		})
+	}
+}
+
 func TestPlanLaunchAllowsNonEmbeddedUpdateModesWithoutActiveJournal(t *testing.T) {
 	for _, mode := range []string{"manual"} {
 		t.Run(mode, func(t *testing.T) {
@@ -433,14 +494,14 @@ func TestPlanLaunchTerminalStateRunsVerifiedOverlay(t *testing.T) {
 			}
 			wantSchema := filepath.Join(root, releasesDirName, "release-b2", "db/migrations")
 			wantFrontend := filepath.Join(root, releasesDirName, "release-b2", "frontend/dist")
-			wantMigrate := filepath.Join(root, releasesDirName, "release-b2", packagemaker.MigrateEntryPath)
+			wantMigrate := filepath.Join(root, releasesDirName, "release-b2", packagemaker.ServerEntryPath)
 			if serverPlan.schemaDir != wantSchema || serverPlan.frontendDir != wantFrontend || serverPlan.migratePath != wantMigrate {
 				t.Fatalf("overlay env dirs wrong: %+v", serverPlan)
 			}
 
 			migratePlan := planLaunch("migrate", root)
 			if migratePlan.mode != modeOverlay ||
-				migratePlan.binaryPath != filepath.Join(root, releasesDirName, "release-b2", packagemaker.MigrateEntryPath) {
+				migratePlan.binaryPath != filepath.Join(root, releasesDirName, "release-b2", packagemaker.ServerEntryPath) {
 				t.Fatalf("migrate plan = %+v, want overlay migrate binary", migratePlan)
 			}
 		})

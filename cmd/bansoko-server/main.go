@@ -47,6 +47,7 @@ import (
 	"bansoko/internal/parser"
 	plugintargetapplication "bansoko/internal/plugintarget/application"
 	retentionapplication "bansoko/internal/recordretention/application"
+	bootstrapcmd "bansoko/internal/runtime/bootstrap"
 	"bansoko/internal/runtime/buildinfo"
 	"bansoko/internal/runtime/config"
 	"bansoko/internal/runtime/database"
@@ -54,6 +55,7 @@ import (
 	"bansoko/internal/runtime/deploymentprovenance"
 	"bansoko/internal/runtime/identity"
 	maintenancepkg "bansoko/internal/runtime/maintenance"
+	"bansoko/internal/runtime/migratecmd"
 	"bansoko/internal/runtime/migrations"
 	"bansoko/internal/runtime/readiness"
 	"bansoko/internal/transport/httpapi"
@@ -86,8 +88,33 @@ func fatalStartupDetail(logger observabilityport.RuntimeLogger, message, reasonC
 }
 
 func main() {
+	mode, args := runtimeCommand(os.Args[1:])
+	switch mode {
+	case "bootstrap":
+		os.Exit(bootstrapcmd.Main(args))
+	case "migrate":
+		migratecmd.Main(args)
+		return
+	default:
+		runServe(args)
+	}
+}
+
+func runtimeCommand(args []string) (string, []string) {
+	if len(args) == 0 {
+		return "serve", args
+	}
+	switch args[0] {
+	case "bootstrap", "migrate", "serve":
+		return args[0], args[1:]
+	default:
+		return "serve", args
+	}
+}
+
+func runServe(args []string) {
 	runtimeLogger := observabilityapplication.NewTeedRuntimeLogger(os.Stderr)
-	cfg, err := config.FromFlags(os.Args[1:])
+	cfg, err := config.FromFlags(args)
 	if err != nil {
 		fatalStartup(runtimeLogger, "configuration parse failed", "config_parse_failed")
 	}
@@ -1162,7 +1189,7 @@ func (q qbHealthProbe) Healthy(ctx context.Context) (bool, string) {
 
 // deploymentIdentityProvider adapts the bootstrap-injected environment
 // identity plus one live updates-volume pointer read into the readiness
-// evidence port (design §6). Values are injected once by bansoko-bootstrap before
+// evidence port (design §6). Values are injected once by bootstrap mode before
 // exec; the pointer is re-read on every report so a pointer drift after the
 // process started is observable as a consistency breach.
 type deploymentIdentityProvider struct {

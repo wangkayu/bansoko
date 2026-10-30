@@ -2,7 +2,7 @@
 // archive consumed by the container-embedded self-update chain.
 //
 // Determinism contract:
-//   - entries are written in a fixed order: server binary, migrate binary,
+//   - entries are written in a fixed order: the unified server binary,
 //     migration SQL sorted by filename, frontend dist directories sorted
 //     lexicographically followed by frontend files sorted per directory walk,
 //     release-metadata.json last;
@@ -63,11 +63,10 @@ type Metadata struct {
 }
 
 type Options struct {
-	ServerBinaryPath  string
-	MigrateBinaryPath string
-	MigrationsDir     string
-	FrontendDistDir   string
-	DefaultsDir       string
+	ServerBinaryPath string
+	MigrationsDir    string
+	FrontendDistDir  string
+	DefaultsDir      string
 
 	Metadata Metadata // Files is filled in from the concrete inputs.
 
@@ -97,8 +96,8 @@ func BuildEmbeddedPayload(opts Options) (Result, error) {
 	if opts.SourceDateEpoch <= 0 {
 		return Result{}, fmt.Errorf("packagemaker: positive source date epoch is required")
 	}
-	if strings.TrimSpace(opts.ServerBinaryPath) == "" || strings.TrimSpace(opts.MigrateBinaryPath) == "" {
-		return Result{}, fmt.Errorf("packagemaker: server and migrate binaries are required")
+	if strings.TrimSpace(opts.ServerBinaryPath) == "" {
+		return Result{}, fmt.Errorf("packagemaker: server binary is required")
 	}
 	if strings.TrimSpace(opts.OutputPath) == "" {
 		return Result{}, fmt.Errorf("packagemaker: output path is required")
@@ -106,20 +105,15 @@ func BuildEmbeddedPayload(opts Options) (Result, error) {
 	if strings.TrimSpace(opts.Metadata.FormatVersion) == "" {
 		opts.Metadata.FormatVersion = "embedded-update-v1"
 	}
-	for _, binary := range []struct{ entryName, path string }{
-		{ServerEntryPath, opts.ServerBinaryPath},
-		{MigrateEntryPath, opts.MigrateBinaryPath},
-	} {
-		info, statErr := os.Stat(binary.path)
-		if statErr != nil {
-			return Result{}, fmt.Errorf("packagemaker: stat %s: %w", binary.entryName, statErr)
-		}
-		if !info.Mode().IsRegular() {
-			return Result{}, fmt.Errorf("packagemaker: %s is not a regular file", binary.entryName)
-		}
-		if info.Mode()&0o111 == 0 {
-			return Result{}, fmt.Errorf("packagemaker: %s must be executable", binary.entryName)
-		}
+	info, statErr := os.Stat(opts.ServerBinaryPath)
+	if statErr != nil {
+		return Result{}, fmt.Errorf("packagemaker: stat %s: %w", ServerEntryPath, statErr)
+	}
+	if !info.Mode().IsRegular() {
+		return Result{}, fmt.Errorf("packagemaker: %s is not a regular file", ServerEntryPath)
+	}
+	if info.Mode()&0o111 == 0 {
+		return Result{}, fmt.Errorf("packagemaker: %s must be executable", ServerEntryPath)
 	}
 
 	entries, err := planEntries(opts)
@@ -259,10 +253,6 @@ func planEntries(opts Options) ([]plannedEntry, error) {
 	if err := addFile(ServerEntryPath, opts.ServerBinaryPath, execMode); err != nil {
 		return nil, err
 	}
-	if err := addFile(MigrateEntryPath, opts.MigrateBinaryPath, execMode); err != nil {
-		return nil, err
-	}
-
 	sqlFiles, err := filepath.Glob(filepath.Join(opts.MigrationsDir, "*.sql"))
 	if err != nil {
 		return nil, fmt.Errorf("packagemaker: list migrations: %w", err)

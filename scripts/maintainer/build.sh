@@ -23,13 +23,12 @@ build_server() {
 build_support() {
   local goos="$1"
   local goarch="$2"
-  CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -buildvcs=false -ldflags='-s -w -buildid=' -o "$build_dir/bansoko-migrate-${goos}-${goarch}" ./cmd/bansoko-migrate
   # bansoko-recovery is built separately for host-owned recovery orchestration.
   CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -buildvcs=false -ldflags='-s -w -buildid=' -o "$build_dir/bansoko-recovery-${goos}-${goarch}" ./cmd/bansoko-recovery
 }
 
 clean() {
-  rm -f "$build_dir"/bansoko-* "$build_dir"/bansoko-migrate-* "$build_dir"/bansoko-recovery-*
+  rm -f "$build_dir"/bansoko-* "$build_dir"/bansoko-recovery-*
 }
 
 case "${1:-all}" in

@@ -294,7 +294,7 @@ up() {
   # migration's failure status authoritative. '#' is the sed delimiter, so the
   # replacement is '#***#' — a '/' here would stay part of the REGEX pattern
   # and make '***' an invalid repetition operator.
-  BANSOKO_DATABASE_URL="$db_url" go run ./cmd/bansoko-migrate 2>&1 | sed -e "s#${db_pass}#***#g"
+  BANSOKO_DATABASE_URL="$db_url" go run ./cmd/bansoko-server migrate 2>&1 | sed -e "s#${db_pass}#***#g"
 
   # Temp download/library roots on the host. qB's container-side /downloads is
   # the same tree the bansoko-server host sees at $download_root — the save_root /
