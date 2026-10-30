@@ -254,6 +254,16 @@ func (t updateSourceTransport) RoundTrip(req *http.Request) (*http.Response, err
 	return t.base.RoundTrip(request)
 }
 
+// OutboundVia lets diagnostics see the route of the underlying transport: an
+// update call tunnelled through the GitHub route reports a proxy route, while
+// the default transport keeps its environment-proxy decision.
+func (t updateSourceTransport) OutboundVia(req *http.Request) outbound.Via {
+	if t.base == nil {
+		return outbound.ViaDirect
+	}
+	return outbound.ViaOf(&http.Client{Transport: t.base}, req)
+}
+
 func parseUpdateURL(raw string) (*url.URL, error) {
 	if raw == "" {
 		return nil, fmt.Errorf("%w: manifest URL is empty", ErrUpdateSourceURL)

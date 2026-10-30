@@ -467,14 +467,34 @@ FROM network_routes WHERE id = $1 FOR UPDATE`, id).Scan(&currentVersion, &curren
 	if err != nil {
 		return domain.NetworkRoute{}, fmt.Errorf("store network route secret: %w", err)
 	}
+	if normalized.Kind == domain.NetworkRouteGitHub {
+		// One GitHub route at most: it is the update channel's single egress.
+		// The advisory lock serializes concurrent creates; an update of that same
+		// row is always allowed.
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('network_routes:github'))`); err != nil {
+			return domain.NetworkRoute{}, fmt.Errorf("lock github network route: %w", err)
+		}
+		var otherID string
+		otherErr := tx.QueryRowContext(ctx, `SELECT id FROM network_routes WHERE kind = 'github' AND id <> $1 LIMIT 1`, id).Scan(&otherID)
+		if otherErr == nil {
+			return domain.NetworkRoute{}, &apperrors.Business{Status: http.StatusConflict, Code: "GITHUB_ROUTE_ALREADY_CONFIGURED", Message: "A GitHub route is already configured; edit the existing one."}
+		}
+		if !errors.Is(otherErr, sql.ErrNoRows) {
+			return domain.NetworkRoute{}, fmt.Errorf("check existing github network route: %w", otherErr)
+		}
+	}
+	state := domain.ConnectionConfigured
+	if !normalized.Enabled {
+		state = domain.ConnectionDisabled
+	}
 	_, err = tx.ExecContext(ctx, `
 INSERT INTO network_routes(id, name, kind, endpoint, secret_ref, state)
-VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), 'configured')
+VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), $6)
 ON CONFLICT (id) DO UPDATE SET
   name = EXCLUDED.name, kind = EXCLUDED.kind, endpoint = EXCLUDED.endpoint,
   secret_ref = EXCLUDED.secret_ref, state = EXCLUDED.state,
   version = network_routes.version + 1, updated_at = NOW()`,
-		id, normalized.Name, string(normalized.Kind), normalized.Endpoint, secretRef)
+		id, normalized.Name, string(normalized.Kind), normalized.Endpoint, secretRef, string(state))
 	if err != nil {
 		return domain.NetworkRoute{}, fmt.Errorf("upsert network route: %w", err)
 	}
@@ -547,12 +567,17 @@ func (s *Service) UpsertConnection(ctx context.Context, input domain.ConnectionI
 		return domain.Connection{}, err
 	}
 	if routeID := strings.TrimSpace(input.NetworkRouteID); routeID != "" {
-		var routeState string
-		if err := s.db.QueryRowContext(ctx, `SELECT state FROM network_routes WHERE id = $1`, routeID).Scan(&routeState); err != nil {
+		var routeKind, routeState string
+		if err := s.db.QueryRowContext(ctx, `SELECT kind, state FROM network_routes WHERE id = $1`, routeID).Scan(&routeKind, &routeState); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return domain.Connection{}, fmt.Errorf("network route %q is not configured", routeID)
 			}
 			return domain.Connection{}, fmt.Errorf("read network route %q: %w", routeID, err)
+		}
+		if domain.NetworkRouteKind(routeKind) == domain.NetworkRouteGitHub {
+			// The GitHub route belongs to the update channel alone; a provider
+			// connection never sends its traffic through it.
+			return domain.Connection{}, &apperrors.BadRequest{Code: "ROUTE_NOT_BINDABLE", Message: "The GitHub update route cannot be bound to a connection."}
 		}
 		if routeState != string(domain.ConnectionConfigured) {
 			return domain.Connection{}, fmt.Errorf("network route %q is not configured", routeID)
@@ -865,6 +890,9 @@ SELECT kind, COALESCE(endpoint, ''), COALESCE(secret_ref, ''), state
 		if route.State != string(domain.ConnectionConfigured) {
 			return nil, fmt.Errorf("network route %q is not configured", routeID)
 		}
+		if domain.NetworkRouteKind(route.Kind) == domain.NetworkRouteGitHub {
+			return nil, fmt.Errorf("network route %q is not usable by a connection", routeID)
+		}
 		client, err = s.buildNetworkRouteClient(route)
 		if err != nil {
 			return nil, err
@@ -992,6 +1020,62 @@ func normalizedHTTPOrigin(target *url.URL) string {
 	return scheme + "://" + net.JoinHostPort(host, port)
 }
 
+// updateRouteTimeout is the update channel's own bound: an update download may
+// legitimately outlive a provider request, so it never inherits the 30 second
+// route timeout.
+const updateRouteTimeout = 5 * time.Minute
+
+// UpdateRouteClient returns the HTTP client of the single enabled GitHub update
+// route, or nil when no GitHub route is configured or it is disabled. A saved
+// route that cannot be turned into a client is an error: the update channel
+// fails closed rather than quietly going direct. The route is read on every
+// call, so saving a route affects the next update operation without a restart.
+func (s *Service) UpdateRouteClient(ctx context.Context) (*http.Client, error) {
+	if s == nil || s.db == nil {
+		return nil, errors.New("configuration database is nil")
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT kind, COALESCE(endpoint, ''), COALESCE(secret_ref, ''), state
+FROM network_routes WHERE kind = 'github' ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("read github update route: %w", err)
+	}
+	defer rows.Close()
+	var routes []networkRouteRecord
+	for rows.Next() {
+		var route networkRouteRecord
+		if err := rows.Scan(&route.Kind, &route.Endpoint, &route.SecretRef, &route.State); err != nil {
+			return nil, fmt.Errorf("scan github update route: %w", err)
+		}
+		routes = append(routes, route)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate github update routes: %w", err)
+	}
+	return s.updateRouteClient(routes)
+}
+
+// updateRouteClient is the selection rule for the stored GitHub routes: none or
+// a disabled one means the deployment default, more than one is a corrupt store
+// and fails closed, and a route that cannot build a client also fails closed.
+func (s *Service) updateRouteClient(routes []networkRouteRecord) (*http.Client, error) {
+	if len(routes) == 0 {
+		return nil, nil
+	}
+	if len(routes) > 1 {
+		return nil, errors.New("more than one GitHub update route is stored")
+	}
+	if routes[0].State != string(domain.ConnectionConfigured) {
+		return nil, nil
+	}
+	client, err := s.buildNetworkRouteClient(routes[0])
+	if err != nil {
+		return nil, fmt.Errorf("build github update route client: %w", err)
+	}
+	client.Timeout = updateRouteTimeout
+	return client, nil
+}
+
 func (s *Service) buildNetworkRouteClient(route networkRouteRecord) (*http.Client, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
@@ -1001,7 +1085,7 @@ func (s *Service) buildNetworkRouteClient(route networkRouteRecord) (*http.Clien
 	switch strings.ToLower(strings.TrimSpace(route.Kind)) {
 	case "direct":
 		return &http.Client{Transport: transport, Timeout: timeout}, nil
-	case "http_proxy":
+	case "http_proxy", "github":
 		proxyURL, err := s.parseNetworkRouteURL(route, "http", "https")
 		if err != nil {
 			return nil, err

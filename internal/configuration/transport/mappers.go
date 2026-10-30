@@ -350,13 +350,24 @@ func NetworkRouteInput(input generated.NetworkRouteInput, id string) (configurat
 		if e != nil {
 			return result, e
 		}
-		result.Name = v.Name
+		result.Name, result.Enabled = v.Name, v.Enabled
 	case "http_proxy":
 		v, e := input.AsHTTPProxyRouteInput()
 		if e != nil {
 			return result, e
 		}
-		result.Name, result.Endpoint = v.Name, v.ProxyUrl
+		result.Name, result.Enabled, result.Endpoint = v.Name, v.Enabled, v.ProxyUrl
+		secret, err := routeSecretMutation(v.Secret, v.Username)
+		if err != nil {
+			return result, err
+		}
+		result.Secret = secret
+	case "github":
+		v, e := input.AsGitHubRouteInput()
+		if e != nil {
+			return result, e
+		}
+		result.Name, result.Enabled, result.Endpoint = v.Name, v.Enabled, v.ProxyUrl
 		secret, err := routeSecretMutation(v.Secret, v.Username)
 		if err != nil {
 			return result, err
@@ -367,7 +378,7 @@ func NetworkRouteInput(input generated.NetworkRouteInput, id string) (configurat
 		if e != nil {
 			return result, e
 		}
-		result.Name, result.Endpoint = v.Name, "socks5://"+v.Host+":"+fmt.Sprint(v.Port)
+		result.Name, result.Enabled, result.Endpoint = v.Name, v.Enabled, "socks5://"+v.Host+":"+fmt.Sprint(v.Port)
 		secret, err := routeSecretMutation(v.Secret, v.Username)
 		if err != nil {
 			return result, err
@@ -419,6 +430,11 @@ func NetworkRouteView(item configurationdomain.NetworkRoute) (generated.NetworkR
 	case configurationdomain.NetworkRouteHTTPProxy:
 		return result, result.FromHTTPProxyRoute(generated.HTTPProxyRoute{
 			Id: item.ID, Kind: "http_proxy", Name: item.Name, Enabled: enabled,
+			ProxyUrl: item.Endpoint, CredentialConfigured: credentialConfigured, Version: item.Version,
+		})
+	case configurationdomain.NetworkRouteGitHub:
+		return result, result.FromGitHubRoute(generated.GitHubRoute{
+			Id: item.ID, Kind: "github", Name: item.Name, Enabled: enabled,
 			ProxyUrl: item.Endpoint, CredentialConfigured: credentialConfigured, Version: item.Version,
 		})
 	case configurationdomain.NetworkRouteSOCKS5:

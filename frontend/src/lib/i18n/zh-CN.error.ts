@@ -295,6 +295,7 @@ export const errorCopy = {
   UPDATE_CHANNEL_INVALID: "更新渠道无效，请联系管理员",
   UPDATE_CHANNEL_MISMATCH: "更新渠道不匹配，请重新检查更新",
   UPDATE_CHANNEL_UNAVAILABLE: "无法访问更新渠道，请稍后重试",
+  UPDATE_ROUTE_INVALID: "应用更新用的代理不可用，请检查代理设置后重试",
   UPDATE_INTENT_INVALID: "更新请求无效，请重新检查更新",
   UPDATE_MODE_REJECTED: "当前部署方式不支持在线更新",
   UPDATE_REQUIRES_IMAGE: "此更新需要先更换镜像，请先更新镜像渠道",

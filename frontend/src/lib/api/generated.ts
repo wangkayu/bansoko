@@ -3551,7 +3551,7 @@ export interface components {
             /** Format: date-time */
             checked_at: string;
         };
-        NetworkRouteInput: components["schemas"]["DirectRouteInput"] | components["schemas"]["HTTPProxyRouteInput"] | components["schemas"]["SOCKS5RouteInput"];
+        NetworkRouteInput: components["schemas"]["DirectRouteInput"] | components["schemas"]["HTTPProxyRouteInput"] | components["schemas"]["SOCKS5RouteInput"] | components["schemas"]["GitHubRouteInput"];
         DirectRouteInput: {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -3589,7 +3589,22 @@ export interface components {
             username?: string;
             secret?: components["schemas"]["ConnectionSecret"];
         };
-        NetworkRoute: components["schemas"]["DirectRoute"] | components["schemas"]["HTTPProxyRoute"] | components["schemas"]["SOCKS5Route"];
+        /** @description The update channel's own forward proxy. At most one route of this kind exists, and no connection may bind it. */
+        GitHubRouteInput: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "github";
+            name: string;
+            enabled: boolean;
+            /** Format: uri */
+            proxy_url: string;
+            /** @description Credential username, applied only when secret replaces the stored credential. */
+            username?: string;
+            secret?: components["schemas"]["ConnectionSecret"];
+        };
+        NetworkRoute: components["schemas"]["DirectRoute"] | components["schemas"]["HTTPProxyRoute"] | components["schemas"]["SOCKS5Route"] | components["schemas"]["GitHubRoute"];
         DirectRoute: {
             id: components["schemas"]["ID"];
             /**
@@ -3632,10 +3647,25 @@ export interface components {
             credential_configured: boolean;
             version: components["schemas"]["Version"];
         };
+        /** @description The update channel's own forward proxy. At most one route of this kind exists, and no connection may bind it. */
+        GitHubRoute: {
+            id: components["schemas"]["ID"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "github";
+            name: string;
+            enabled: boolean;
+            /** Format: uri */
+            proxy_url: string;
+            credential_configured: boolean;
+            version: components["schemas"]["Version"];
+        };
         NetworkRouteTestResult: {
             route_id: components["schemas"]["ID"];
             /** @enum {string} */
-            kind: "direct" | "http_proxy" | "socks5";
+            kind: "direct" | "http_proxy" | "socks5" | "github";
             /** @enum {string} */
             health: "ready" | "degraded" | "failed";
             reason_code?: string;

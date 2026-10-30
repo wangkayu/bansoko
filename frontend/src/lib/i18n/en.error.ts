@@ -296,6 +296,7 @@ export const enErrorCopy = {
   UPDATE_CHANNEL_INVALID: "Invalid update channel. Contact your administrator.",
   UPDATE_CHANNEL_MISMATCH: "Update channel mismatch. Check for updates again.",
   UPDATE_CHANNEL_UNAVAILABLE: "Cannot reach the update channel. Try again later.",
+  UPDATE_ROUTE_INVALID: "The proxy for app updates is unusable. Check the proxy settings and try again.",
   UPDATE_INTENT_INVALID: "Invalid update request. Check for updates again.",
   UPDATE_MODE_REJECTED: "This deployment does not support in-app updates",
   UPDATE_REQUIRES_IMAGE: "This update requires a new image. Update the image channel first.",

@@ -24,17 +24,21 @@ function stubFetch(options: { connections?: Connection[]; routes?: NetworkRoute[
   fetchMock = vi.fn<FetchStub>(async (input, init) => {
     const url = String(input);
     if (init?.method === "PUT" && url.includes("/config/network-routes/")) {
-      const requestBody = JSON.parse(String(init.body)) as { name: string; host?: string; port?: number };
-      const saved = {
+      const requestBody = JSON.parse(String(init.body)) as { kind?: string; name: string; host?: string; port?: number; proxy_url?: string };
+      const kind = requestBody.kind ?? "socks5";
+      const saved: Record<string, unknown> = {
         id: url.slice(url.lastIndexOf("/") + 1),
-        kind: "socks5",
+        kind,
         name: requestBody.name,
         enabled: true,
-        host: requestBody.host ?? "",
-        port: requestBody.port ?? 1080,
         credential_configured: true,
         version: 2,
       };
+      if (kind === "socks5") {
+        saved.host = requestBody.host ?? "";
+        saved.port = requestBody.port ?? 1080;
+      }
+      if (requestBody.proxy_url !== undefined) saved.proxy_url = requestBody.proxy_url;
       return new Response(JSON.stringify(saved), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -679,5 +683,73 @@ describe("SettingsConnections 代理对话框校验与提交", () => {
 
     expect(screen.getByLabelText(t("settings.connections.nameLabel"))).toHaveAttribute("maxlength", "128");
     expect(screen.getByLabelText(t("settings.proxy.passwordLabel"))).toHaveAttribute("maxlength", "1024");
+  });
+});
+
+// The GitHub update proxy is the update channel's own egress: at most one
+// exists, it never appears in a connection's route list, and its body is an
+// ordinary forward-proxy endpoint.
+describe("SettingsConnections GitHub 更新代理", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  const githubRoute: NetworkRoute = {
+    id: "route-gh",
+    kind: "github",
+    name: "更新出口",
+    enabled: true,
+    proxy_url: "http://proxy.local:7890",
+    credential_configured: false,
+    version: 1,
+  };
+
+  it("新建 GitHub 路由：保存 body 使用 github 类型与 proxy_url", async () => {
+    stubFetch();
+    renderSettings();
+
+    fireEvent.click(await screen.findByRole("button", { name: t("settings.proxy.new") }));
+    await selectOption(t("settings.connections.typeLabel"), t("settings.proxy.github"));
+    fireEvent.change(screen.getByLabelText(t("settings.connections.nameLabel")), { target: { value: "更新出口" } });
+    fireEvent.change(screen.getByLabelText(new RegExp(`^${t("settings.proxy.addressLabel")}`)), { target: { value: "http://proxy.local:7890" } });
+    fireEvent.change(screen.getByLabelText(t("settings.proxy.usernameLabel")), { target: { value: "alice" } });
+    fireEvent.change(screen.getByLabelText(t("settings.proxy.passwordLabel")), { target: { value: "pw" } });
+    fireEvent.submit(document.getElementById("route-form")!);
+
+    await waitFor(() => expect(routePutCalls()).toHaveLength(1));
+    expect(putBody(routePutCalls()[0]!)).toEqual({
+      kind: "github",
+      name: "更新出口",
+      enabled: true,
+      proxy_url: "http://proxy.local:7890",
+      username: "alice",
+      secret: { mode: "replace", value: "pw" },
+    });
+  });
+
+  it("已存在 GitHub 路由时，新建代理的类型里不再提供 GitHub", async () => {
+    stubFetch({ routes: [githubRoute] });
+    renderSettings();
+
+    fireEvent.click(await screen.findByRole("button", { name: t("settings.proxy.new") }));
+    await userEvent.click(screen.getByRole("combobox", { name: t("settings.connections.typeLabel") }));
+    expect(await screen.findByRole("option", { name: t("settings.proxy.http") })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: t("settings.proxy.github") })).not.toBeInTheDocument();
+  });
+
+  it("连接的代理下拉不列出 GitHub 路由", async () => {
+    stubFetch({
+      connections: [
+        { id: "mikan-1", kind: "mikan", name: "Mikan", enabled: true, base_url: "https://mikanani.me", version: 1 },
+      ],
+      routes: [githubRoute, { id: "route-1", kind: "http_proxy", name: "普通代理", enabled: true, proxy_url: "http://proxy.local:8080", credential_configured: false, version: 1 }],
+    });
+    renderSettings();
+
+    fireEvent.click(await screen.findByRole("button", { name: t("settings.connections.edit") }));
+    await userEvent.click(screen.getByRole("combobox", { name: t("settings.connections.proxyLabel") }));
+    expect(await screen.findByRole("option", { name: "普通代理" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: githubRoute.name })).not.toBeInTheDocument();
   });
 });
