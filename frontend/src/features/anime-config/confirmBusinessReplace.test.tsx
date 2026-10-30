@@ -1,9 +1,14 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { confirmBusinessReplace } from "./confirmBusinessReplace";
 import { t } from "../../lib/i18n";
 
 describe("confirmBusinessReplace", () => {
+  afterEach(async () => {
+    // The imperative root unmounts 300 ms after its promise resolves.
+    await new Promise((resolve) => setTimeout(resolve, 350));
+  });
+
   it("点击「继续」resolve(true)，并展示原文案", async () => {
     const result = confirmBusinessReplace("将替换全部业务配置。");
     const dialog = await screen.findByRole("alertdialog");
