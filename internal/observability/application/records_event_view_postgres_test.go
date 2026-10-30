@@ -103,7 +103,7 @@ func TestListRecordsPrimaryEventViewExactExclusion(t *testing.T) {
 	fixture.entry(t, "failure-same-reason", "release_processed", "failure", "release_filtered", "no_placeable_files", at(4))
 	fixture.entry(t, "other-kind", "subscription_created", "info", "subscription_created", "no_placeable_files", at(5))
 	fixture.entry(t, "success-same-reason", "release_processed", "success", "release_accepted", "awaiting_competition", at(6))
-	fixture.entry(t, "awaiting-other-code", "release_processed", "info", "release_accepted", "awaiting_competition", at(7))
+	fixture.entry(t, "noise-awaiting-other-code", "release_processed", "info", "release_accepted", "awaiting_competition", at(7))
 
 	// The API default (nil) and all return the same records.
 	defaultIDs := listEventViewIDs(t, fixture, RecordQuery{})
@@ -115,7 +115,6 @@ func TestListRecordsPrimaryEventViewExactExclusion(t *testing.T) {
 	wantPrimary := expectIDs(
 		"plugin:delivery-ev", "business:other-reason", "business:no-reason",
 		"business:failure-same-reason", "business:other-kind", "business:success-same-reason",
-		"business:awaiting-other-code",
 	)
 	if got := listEventViewIDs(t, fixture, RecordQuery{EventView: textParam(RecordEventViewPrimary)}); got != wantPrimary {
 		t.Fatalf("primary records\n got %s\nwant %s", got, wantPrimary)
@@ -126,7 +125,7 @@ func TestListRecordsPrimaryEventViewExactExclusion(t *testing.T) {
 	releaseKinds := []string{"release_processed"}
 	got := listEventViewIDs(t, fixture, RecordQuery{EventView: textParam(RecordEventViewPrimary), EntryKind: &releaseKinds})
 	want := expectIDs("business:other-reason", "business:no-reason", "business:failure-same-reason",
-		"business:success-same-reason", "business:awaiting-other-code")
+		"business:success-same-reason")
 	if got != want {
 		t.Fatalf("primary with entry_kind\n got %s\nwant %s", got, want)
 	}
