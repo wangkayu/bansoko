@@ -407,6 +407,7 @@ export const reasonCopy = {
   parser_selection_unavailable: "暂时无法选择标题解析方式",
   qualification_unavailable: "暂时无法判断",
   unknown_error: "出现未知错误",
+  panic_recovered: "服务内部错误，请求已中止",
   http_500: "服务内部出错",
   http_status: "请求失败（HTTP {status}）",
   dispatch_partial: "部分通知发送失败",

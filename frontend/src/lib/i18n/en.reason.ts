@@ -401,6 +401,7 @@ export const enReasonCopy = {
   parser_selection_unavailable: "Cannot choose a title parser right now",
   qualification_unavailable: "Cannot evaluate right now",
   unknown_error: "An unknown error occurred",
+  panic_recovered: "Internal error; the request was aborted",
   http_500: "Internal server error",
   http_status: "Request failed (HTTP {status})",
   dispatch_partial: "Some notifications failed to send",

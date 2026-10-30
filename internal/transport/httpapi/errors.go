@@ -190,7 +190,10 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	canceled := errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 
 	var apiErr *APIError
-	if errors.As(err, &apiErr) && apiErr != nil {
+	if errors.Is(err, errRequestPanicRecovered) {
+		recordPanicRecoveredRequestFailure(r)
+		apiErr = mapApplicationError(err)
+	} else if errors.As(err, &apiErr) && apiErr != nil {
 		// Expected dependency-unavailable responses are intentionally quiet. Any
 		// other typed 5xx still represents an unknown fault at this boundary and
 		// enters the fixed HTTP diagnostic bucket.
@@ -231,6 +234,18 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 func recordUnknownRequestFailure(r *http.Request, err error) {
+	recordRequestFault(r, "unknown_error", unknownFailureClass(err))
+}
+
+// recordPanicRecoveredRequestFailure marks a recovered handler panic. Panic
+// values never cross the log boundary, so the fixed class carries the fault
+// kind and the distinct reason keeps a panic from reading as an ordinary
+// untyped application error.
+func recordPanicRecoveredRequestFailure(r *http.Request) {
+	recordRequestFault(r, "panic_recovered", "request_panic_recovered")
+}
+
+func recordRequestFault(r *http.Request, reasonCode, errorClass string) {
 	var ctx context.Context = context.Background()
 	if r != nil && r.Context() != nil {
 		ctx = r.Context()
@@ -241,9 +256,9 @@ func recordUnknownRequestFailure(r *http.Request, err error) {
 		Component:  "httpapi",
 		Operation:  unknownFailureOperation(r),
 		Outcome:    "failure",
-		ReasonCode: "unknown_error",
+		ReasonCode: reasonCode,
 		RequestID:  RequestIDFrom(ctx),
-		ErrorClass: unknownFailureClass(err),
+		ErrorClass: errorClass,
 	})
 
 	recorder := diagnosticRecorderFrom(ctx)

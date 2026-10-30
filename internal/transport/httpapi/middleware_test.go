@@ -64,7 +64,7 @@ func TestPanicRecoveryReturnsGenericJSONWithExactRequestID(t *testing.T) {
 	if len(diagnostic.failures) != 1 || diagnostic.failures[0].TargetID != observabilityport.InternalHTTP5xx {
 		t.Fatalf("panic diagnostic = %+v, want one redacted failure", diagnostic.failures)
 	}
-	if len(logger.events) != 1 || logger.events[0].RequestID != requestID || logger.events[0].ReasonCode != "unknown_error" {
+	if len(logger.events) != 1 || logger.events[0].RequestID != requestID || logger.events[0].ReasonCode != "panic_recovered" || logger.events[0].ErrorClass != "request_panic_recovered" {
 		t.Fatalf("panic runtime events = %+v", logger.events)
 	}
 	encoded, err := json.Marshal(logger.events[0])

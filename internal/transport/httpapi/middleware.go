@@ -281,7 +281,7 @@ func (s *Server) withStreamingPanicRecovery(next http.Handler) http.Handler {
 						writeError(tracking, r, errRequestPanicRecovered)
 						return
 					}
-					recordUnknownRequestFailure(r, errRequestPanicRecovered)
+					recordPanicRecoveredRequestFailure(r)
 				}
 			}()
 			next.ServeHTTP(tracking, r)
@@ -297,7 +297,7 @@ func (s *Server) withStreamingPanicRecovery(next http.Handler) http.Handler {
 				// Once an SSE response has started, replacing it with JSON would
 				// corrupt the stream. The failure still uses the same diagnostic
 				// classification as an ordinary unknown HTTP error.
-				recordUnknownRequestFailure(r, errRequestPanicRecovered)
+				recordPanicRecoveredRequestFailure(r)
 			}
 		}()
 		next.ServeHTTP(streaming, r)
