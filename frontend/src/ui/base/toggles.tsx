@@ -275,7 +275,9 @@ export function Segmented<V extends string>({
           value={option.value}
           disabled={option.disabled}
           className={cn(
-            "tw:cursor-pointer tw:font-medium tw:text-muted-foreground tw:transition-colors tw:duration-150",
+            // Center the label in the option's box: the fixed-height `toolbar` size would
+            // otherwise park its line box at the top and read a few pixels high.
+            "tw:inline-flex tw:cursor-pointer tw:items-center tw:justify-center tw:text-center tw:font-medium tw:text-muted-foreground tw:transition-colors tw:duration-150",
             segmentedOption[size],
             "tw:hover:not-data-checked:bg-muted tw:hover:not-data-checked:text-foreground",
             segmentedChecked[option.tone ?? "solid"],

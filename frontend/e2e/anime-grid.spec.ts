@@ -1245,8 +1245,17 @@ test.describe("AnimeGrid", () => {
     ]);
     expect(new Set(fontSizes)).toEqual(new Set(["12px"]));
 
-    // 全部 is the reset option of the state group.
+    // 全部 is the reset option of the state group, and its label sits on the option's
+    // vertical center (the fixed-height toolbar option centers its line box).
     await expect(stateChips.locator('[role="radio"]').first()).toContainText(t("grid.manage.stateAll"));
+    const stateLabelOffset = await stateChips.locator('[role="radio"]').first().evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const text = range.getBoundingClientRect();
+      return Math.abs((text.top + text.bottom) / 2 - (box.top + box.bottom) / 2);
+    });
+    expect(stateLabelOffset).toBeLessThanOrEqual(1);
 
     const row = dialog.getByRole("row").filter({ hasText: longTitle }).first();
     const titleBox = await row.locator("td").nth(1).boundingBox();
