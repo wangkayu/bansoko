@@ -1366,10 +1366,10 @@ test.describe("AnimeGrid", () => {
     await selectSubscribed(page);
     const instance = page.locator("article").filter({ hasText: "星际邮差艾拉" }).first();
     await expect(instance).toBeVisible();
-    const chips = page.getByRole("group", { name: t("grid.statsAria") });
+    const chips = page.getByRole("radiogroup", { name: t("grid.statsAria") });
     const chip = (state: "pending" | "active" | "stopped") =>
-      chips.getByRole("button", { name: new RegExp(t(`anime.state.${state}`)) });
-    await expect(chips.getByRole("button")).toHaveCount(3);
+      chips.getByRole("radio", { name: new RegExp(t(`anime.state.${state}`)) });
+    await expect(chips.getByRole("radio")).toHaveCount(4);
     await expect(chip("pending")).toContainText("0");
     await expect(chip("active")).toContainText("1");
     await expect(chip("stopped")).toContainText("0");

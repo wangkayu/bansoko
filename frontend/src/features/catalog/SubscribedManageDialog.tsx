@@ -63,16 +63,6 @@ function sortFromValue(value: ManageSortValue): ManageSort {
 // (start / pause / remove) issue one API call per selected instance and then
 // refresh. Phones swap the table for two-line rows with a sticky select-all.
 
-/** A filter label with its count: the prototype's segments read "订阅中 2". */
-function countLabel(label: string, count: number) {
-  return (
-    <span className="tw:inline-flex tw:items-baseline tw:gap-1">
-      {label}
-      <span className="tw:tabular-nums">{count}</span>
-    </span>
-  );
-}
-
 const STATE_PILL_TONE: Record<ManageState, "online" | "info" | "muted"> = {
   active: "online",
   pending: "info",
@@ -277,10 +267,10 @@ export function SubscribedManageDialog({
             value={filters.state}
             onValueChange={(state) => setFilters((current) => ({ ...current, state }))}
             options={[
-              { value: "all", label: countLabel(t("grid.manage.stateAll"), rows.length), tone: "primary" },
-              { value: "active", label: countLabel(t("anime.state.active"), counts.active), tone: "primary" },
-              { value: "stopped", label: countLabel(t("anime.state.stopped"), counts.stopped), tone: "primary" },
-              { value: "pending", label: countLabel(t("anime.state.pending"), counts.pending), tone: "primary" },
+              { value: "all", label: t("grid.manage.stateAll"), count: rows.length, tone: "primary" },
+              { value: "active", label: t("anime.state.active"), count: counts.active, tone: "primary" },
+              { value: "stopped", label: t("anime.state.stopped"), count: counts.stopped, tone: "primary" },
+              { value: "pending", label: t("anime.state.pending"), count: counts.pending, tone: "primary" },
             ]}
           />
         </div>

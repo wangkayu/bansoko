@@ -114,6 +114,8 @@ export type ChoiceOption<V extends string> = {
   disabled?: boolean;
   /** RadioGroup only: one muted line under the label. */
   description?: React.ReactNode;
+  /** Segmented only: an inline count after the label ("订阅中 2"), in tabular digits. */
+  count?: number;
   /**
    * Segmented only: how the option looks while checked. `solid` (default) is
    * the primary fill; `quiet` is a plain raised chip for a default/no-op choice;
@@ -225,11 +227,14 @@ const segmentedFrame = {
   // 32px overall, the height the dense toolbar's other controls share. A soft, borderless
   // tinted block — the filter row's segments read as one group, not as boxed controls.
   toolbar: "tw:gap-0.5 tw:rounded-control tw:bg-muted tw:p-1",
+  // The same soft block at the main toolbar's 36px, so it sits with 36px buttons and inputs.
+  "toolbar-lg": "tw:gap-0.5 tw:rounded-control tw:bg-muted tw:p-1",
 } as const;
 const segmentedOption = {
   default: "tw:rounded-md tw:px-3 tw:py-1 tw:text-xs/[1.5]",
   compact: "tw:rounded-[0.25rem] tw:px-1.5 tw:py-0.5 tw:text-badge",
   toolbar: "tw:h-6 tw:rounded-lg tw:px-2 tw:text-xs/[1.5]",
+  "toolbar-lg": "tw:h-7 tw:rounded-lg tw:px-2.5 tw:text-sm",
 } as const;
 
 // Checked look per option tone; each tone owns its full checked class set.
@@ -254,8 +259,8 @@ export function Segmented<V extends string>({
   onValueChange: (next: V) => void;
   options: ReadonlyArray<ChoiceOption<V>>;
   disabled?: boolean;
-  /** `compact`: small, light-stroke variant for dense rows (one picker per list row). `toolbar`: 32px, matching the other dense-toolbar controls. */
-  size?: "default" | "compact" | "toolbar";
+  /** `compact`: small, light-stroke variant for dense rows (one picker per list row). `toolbar`: 32px, matching the other dense-toolbar controls. `toolbar-lg`: the same soft block at 36px. */
+  size?: "default" | "compact" | "toolbar" | "toolbar-lg";
   title?: string;
   "aria-label": string;
   className?: string;
@@ -277,7 +282,7 @@ export function Segmented<V extends string>({
           className={cn(
             // Center the label in the option's box: the fixed-height `toolbar` size would
             // otherwise park its line box at the top and read a few pixels high.
-            "tw:inline-flex tw:cursor-pointer tw:items-center tw:justify-center tw:text-center tw:font-medium tw:text-muted-foreground tw:transition-colors tw:duration-150",
+            "tw:inline-flex tw:cursor-pointer tw:items-center tw:justify-center tw:gap-1 tw:whitespace-nowrap tw:text-center tw:font-medium tw:text-muted-foreground tw:transition-colors tw:duration-150",
             segmentedOption[size],
             "tw:hover:not-data-checked:bg-muted tw:hover:not-data-checked:text-foreground",
             segmentedChecked[option.tone ?? "solid"],
@@ -286,6 +291,7 @@ export function Segmented<V extends string>({
           )}
         >
           {option.label}
+          {option.count === undefined ? null : <span className="tw:tabular-nums">{option.count}</span>}
         </BaseRadio.Root>
       ))}
     </BaseRadioGroup>

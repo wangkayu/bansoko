@@ -1608,7 +1608,7 @@ describe("AnimeGrid 已订阅计数 chip（G2b）", () => {
   };
 
   function chip(name: string) {
-    return screen.getByRole("button", { name: new RegExp(`^${name}\\s*\\d`) });
+    return screen.getByRole("radio", { name: new RegExp(`^${name}\\s*\\d`) });
   }
 
   it("计数 chip 只数订阅状态：缺关联的订阅中计入订阅中，卡片单独挂短形阻塞 chip", async () => {
@@ -1619,7 +1619,7 @@ describe("AnimeGrid 已订阅计数 chip（G2b）", () => {
     expect(chip(t("anime.state.pending"))).toHaveTextContent("1");
     expect(chip(t("anime.state.active"))).toHaveTextContent("2");
     expect(chip(t("anime.state.stopped"))).toHaveTextContent("0");
-    expect(within(screen.getByRole("group", { name: t("grid.statsAria") })).getAllByRole("button")).toHaveLength(3);
+    expect(within(screen.getByRole("radiogroup", { name: t("grid.statsAria") })).getAllByRole("radio")).toHaveLength(4);
     expect(screen.getAllByText(t("anime.metadata.missing", { names: "Bangumi、TMDB" })).length).toBeGreaterThan(0);
 
     // The inactive custom preset (customCandidateFixture) does not appear in the subscribed tab.
@@ -1636,14 +1636,14 @@ describe("AnimeGrid 已订阅计数 chip（G2b）", () => {
 
     // "Running" includes the anime missing its bindings and excludes not-yet-started ones
     fireEvent.click(chip(t("anime.state.active")));
-    expect(chip(t("anime.state.active"))).toHaveAttribute("aria-pressed", "true");
+    expect(chip(t("anime.state.active"))).toHaveAttribute("aria-checked", "true");
     expect(screen.getByText("完好番剧")).toBeInTheDocument();
     expect(screen.getByText("挂起番剧")).toBeInTheDocument();
     expect(screen.queryByText("未开始番剧")).not.toBeInTheDocument();
 
-    // Click cancel again: everything restored
-    fireEvent.click(chip(t("anime.state.active")));
-    expect(chip(t("anime.state.active"))).toHaveAttribute("aria-pressed", "false");
+    // 全部 is the explicit reset: everything restored.
+    fireEvent.click(chip(t("grid.statsAll")));
+    expect(chip(t("grid.statsAll"))).toHaveAttribute("aria-checked", "true");
     expect(screen.getByText("未开始番剧")).toBeInTheDocument();
   });
 
@@ -1653,7 +1653,7 @@ describe("AnimeGrid 已订阅计数 chip（G2b）", () => {
     await flush();
 
     fireEvent.click(chip(t("anime.state.pending")));
-    expect(chip(t("anime.state.pending"))).toHaveAttribute("aria-pressed", "true");
+    expect(chip(t("anime.state.pending"))).toHaveAttribute("aria-checked", "true");
     expect(screen.getByText("未开始番剧")).toBeInTheDocument();
     expect(screen.queryByText("完好番剧")).not.toBeInTheDocument();
     expect(screen.queryByText("挂起番剧")).not.toBeInTheDocument();
@@ -1739,7 +1739,7 @@ describe("AnimeGrid 已订阅计数 chip（G2b）", () => {
     await renderGrid("/?source=all");
     await flush();
 
-    expect(screen.queryByRole("group", { name: t("grid.statsAria") })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: t("grid.statsAria") })).not.toBeInTheDocument();
   });
 
   it("切走已订阅分栏时 chip 行不显示", async () => {
@@ -1747,7 +1747,7 @@ describe("AnimeGrid 已订阅计数 chip（G2b）", () => {
     await renderGrid("/?source=custom");
     await flush();
 
-    expect(screen.queryByRole("group", { name: t("grid.statsAria") })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: t("grid.statsAria") })).not.toBeInTheDocument();
   });
 });
 

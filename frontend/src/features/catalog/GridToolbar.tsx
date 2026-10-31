@@ -62,67 +62,6 @@ export function StatusLine({ text, tone, Icon }: { text: string; tone: StatusTon
   );
 }
 
-export interface StatsChip<K extends string> {
-  key: K;
-  label: string;
-  count: number;
-}
-
-/** The subscribed-count chip: a toggle filter button (aria-pressed); clicking again cancels. */
-export function StatsChips<K extends string>({
-  chips,
-  active,
-  onToggle,
-  ariaLabel,
-  scroll = false,
-  buttonSize = "md",
-}: {
-  chips: readonly StatsChip<K>[];
-  active: K | null;
-  onToggle: (key: K) => void;
-  ariaLabel: string;
-  /** Phone: one horizontally scrolling line, never folded. */
-  scroll?: boolean;
-  /** Chip height; `compact` (32px) matches a dense toolbar's other controls. */
-  buttonSize?: "compact" | "md";
-}) {
-  return (
-    <div
-      role="group"
-      aria-label={ariaLabel}
-      className={cn(
-        "tw:flex tw:min-w-0 tw:items-center tw:gap-2",
-        // The corner count sits 4px above the button, and `overflow-x-auto` clips at the
-        // padding edge: the scrolling line pads the badge's height and pulls it back with a
-        // negative margin, so the digits stay whole without changing the row's outer height.
-        scroll
-          ? "tw:pt-1.5 tw:-mt-1.5 tw:flex-1 tw:flex-nowrap tw:overflow-x-auto tw:[scrollbar-width:none]"
-          : "tw:flex-wrap",
-      )}
-    >
-      {chips.map((chip) => {
-        const pressed = active === chip.key;
-        return (
-          <Button key={chip.key} size={buttonSize} aria-pressed={pressed} className="tw:relative tw:flex-none" onClick={() => onToggle(chip.key)}>
-            {chip.label}
-            {/* The count rides at the top-right corner instead of taking a flex slot: the
-                label itself must sit at the button's center, like every other control's. */}
-            <span
-              className={cn(
-                "tw:pointer-events-none tw:absolute tw:-top-1 tw:-right-1 tw:text-badge tw:leading-none tw:tabular-nums",
-                pressed ? "tw:text-foreground" : "tw:text-muted-foreground",
-              )}
-            >
-              {chip.count}
-            </span>
-          </Button>
-        );
-      })}
-    </div>
-  );
-}
-
-/** A one-line toolbar; `end` is right-aligned. */
 export function ToolbarRow({ children, end }: { children?: ReactNode; end?: ReactNode }) {
   return (
     <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2">

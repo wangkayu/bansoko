@@ -33,7 +33,7 @@ import { ConfirmLines } from "./ConfirmLines";
 import { wallRowLabel, wallRows } from "./wallRows";
 import { WallDayRow } from "./WallDayRow";
 import { WALL_ROW_ITEM_CLASS, WALL_ROWS_CLASS } from "./wallRowClasses";
-import { FilterInput, FilterToggle, StatsChips, StatusLine, ToolbarRow, type StatusTone } from "./GridToolbar";
+import { FilterInput, FilterToggle, StatusLine, ToolbarRow, type StatusTone } from "./GridToolbar";
 import { useCollapseOnScroll } from "./useCollapseOnScroll";
 import { useOpenLiveSubscription } from "./useOpenLiveSubscription";
 
@@ -508,13 +508,10 @@ export function AnimeGrid() {
     }));
   }
 
-  function toggleStatsFilter(key: StatsFilter) {
+  function setStatsFilter(value: StatsFilter | "all") {
     setFiltersByTab((current) => ({
       ...current,
-      [tab]: {
-        ...current[tab],
-        statsFilter: current[tab].statsFilter === key ? null : key,
-      },
+      [tab]: { ...current[tab], statsFilter: value === "all" ? null : value },
     }));
   }
 
@@ -581,11 +578,6 @@ export function AnimeGrid() {
   // Phone: the browse column's toolbar collapses on scroll; the subscribed wall's toolbar does not stick and never covers the day separator.
   const collapsible = isPhone && tab !== "all";
   const { ref: toolbarRef, collapsed: toolbarCollapsed } = useCollapseOnScroll<HTMLDivElement>(collapsible);
-  const statsChips = [
-    { key: "pending" as const, label: t("anime.state.pending"), count: stats.pending },
-    { key: "active" as const, label: t("anime.state.active"), count: stats.active },
-    { key: "stopped" as const, label: t("anime.state.stopped"), count: stats.stopped },
-  ];
 
   // A single catalog row's card: a browse card in the browse areas, a poster card when subscribed.
   const renderCard = (row: GridRow) =>
@@ -647,8 +639,31 @@ export function AnimeGrid() {
     </Button>
   );
   const statusLine = snapshotStatus && <StatusLine {...snapshotStatus} />;
+  // The wall's state filter is the same soft segment group as the manager's, one size larger
+  // so it sits with the 36px buttons and inputs; 全部 is the explicit reset.
   const chips = tab === "all" && rows.length > 0 && (
-    <StatsChips chips={statsChips} active={statsFilter} onToggle={toggleStatsFilter} ariaLabel={t("grid.statsAria")} scroll={isPhone} />
+    <div
+      className={cn(
+        // Phone: the group takes its own line so every state stays visible; a narrower
+        // phone scrolls it instead of clipping. Desktop shares the row with the actions.
+        "tw:flex tw:min-w-0 tw:overflow-x-auto tw:[scrollbar-width:none]",
+        isPhone ? "tw:w-full tw:flex-none" : "tw:flex-1",
+      )}
+    >
+      <Segmented<StatsFilter | "all">
+        aria-label={t("grid.statsAria")}
+        size="toolbar-lg"
+        className="tw:flex-none"
+        value={statsFilter ?? "all"}
+        onValueChange={setStatsFilter}
+        options={[
+          { value: "all", label: t("grid.statsAll"), count: rows.length, tone: "primary" },
+          { value: "pending", label: t("anime.state.pending"), count: stats.pending, tone: "primary" },
+          { value: "active", label: t("anime.state.active"), count: stats.active, tone: "primary" },
+          { value: "stopped", label: t("anime.state.stopped"), count: stats.stopped, tone: "primary" },
+        ]}
+      />
+    </div>
   );
   // The subscribed wall's bulk-management entry (filters + batch start/pause/remove).
   const manageButton = tab === "all" && (
@@ -672,7 +687,7 @@ export function AnimeGrid() {
         />
       )}
       {(browsable || chips || showFilter || addPresetButton) && (
-        <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-2">
+        <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2">
           {browsable && <SeasonPicker value={season} onChange={setSeason} />}
           {chips}
           {addPresetButton}

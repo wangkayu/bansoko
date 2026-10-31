@@ -51,6 +51,7 @@ export const enGridCopy = {
   addPreset: "Add Preset",
   refreshSite: "Refresh {site}",
   search: "Search",
+  statsAll: "All",
   statsAria: "Filter by subscription status",
   retry: "Retry",
   siteRefreshFailed: "Site refresh failed",

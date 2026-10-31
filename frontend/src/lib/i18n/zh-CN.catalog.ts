@@ -50,6 +50,7 @@ export const gridCopy = {
   addPreset: "添加预设",
   refreshSite: "刷新 {site}",
   search: "搜索",
+  statsAll: "全部",
   statsAria: "按订阅状态筛选",
   retry: "重试",
   siteRefreshFailed: "站点刷新失败",
