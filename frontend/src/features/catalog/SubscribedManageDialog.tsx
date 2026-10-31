@@ -244,17 +244,19 @@ export function SubscribedManageDialog({
       {/* Filters: state (with counts) · progress · entry × season (two independent
           dimensions, combined by intersection) · created-time sort · search. */}
       <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2 tw:border-b tw:border-border tw:px-4 tw:py-2.5">
-        <StatsChips<ManageState>
-          ariaLabel={t("grid.manage.stateAria")}
-          scroll={isPhone}
-          chips={[
-            { key: "active", label: t("anime.state.active"), count: counts.active },
-            { key: "stopped", label: t("anime.state.stopped"), count: counts.stopped },
-            { key: "pending", label: t("anime.state.pending"), count: counts.pending },
-          ]}
-          active={filters.state === "all" ? null : filters.state}
-          onToggle={(key) => setFilters((current) => ({ ...current, state: current.state === key ? "all" : key }))}
-        />
+        <div className={isPhone ? "tw:min-w-0 tw:w-full" : "tw:min-w-0"}>
+          <StatsChips<ManageState>
+            ariaLabel={t("grid.manage.stateAria")}
+            scroll={isPhone}
+            chips={[
+              { key: "active", label: t("anime.state.active"), count: counts.active },
+              { key: "stopped", label: t("anime.state.stopped"), count: counts.stopped },
+              { key: "pending", label: t("anime.state.pending"), count: counts.pending },
+            ]}
+            active={filters.state === "all" ? null : filters.state}
+            onToggle={(key) => setFilters((current) => ({ ...current, state: current.state === key ? "all" : key }))}
+          />
+        </div>
         <Segmented<ManageProgressFilter>
           aria-label={t("grid.manage.progressAria")}
           size="compact"
@@ -267,30 +269,32 @@ export function SubscribedManageDialog({
             { value: "none", label: t("grid.manage.progressNone") },
           ]}
         />
-        <Select<ManageOriginFilter>
-          label={t("grid.manage.originAria")}
-          className="tw:w-32 tw:flex-none"
-          value={filters.origin}
-          onChange={(origin) => setFilters((current) => ({ ...current, origin }))}
-          options={[
-            { value: "all", label: t("grid.manage.originAll") },
-            ...originOptions.map((origin) => ({
-              value: origin,
-              label: origin === "custom" ? t("grid.manage.originCustom") : providerLabel(origin),
-            })),
-          ]}
-        />
-        <Select<ManageSeasonFilter>
-          label={t("grid.manage.seasonAria")}
-          className="tw:w-32 tw:flex-none"
-          value={filters.season}
-          onChange={(season) => setFilters((current) => ({ ...current, season }))}
-          options={[
-            { value: "all", label: t("grid.manage.seasonAll") },
-            ...seasonChoices.seasons.map((season) => ({ value: season, label: seasonLabel(season) })),
-            ...(seasonChoices.hasNone ? [{ value: "none", label: t("grid.manage.seasonNone") }] : []),
-          ]}
-        />
+        <div className="tw:w-32 tw:flex-none">
+          <Select<ManageOriginFilter>
+            label={t("grid.manage.originAria")}
+            value={filters.origin}
+            onChange={(origin) => setFilters((current) => ({ ...current, origin }))}
+            options={[
+              { value: "all", label: t("grid.manage.originAll") },
+              ...originOptions.map((origin) => ({
+                value: origin,
+                label: origin === "custom" ? t("grid.manage.originCustom") : providerLabel(origin),
+              })),
+            ]}
+          />
+        </div>
+        <div className="tw:w-32 tw:flex-none">
+          <Select<ManageSeasonFilter>
+            label={t("grid.manage.seasonAria")}
+            value={filters.season}
+            onChange={(season) => setFilters((current) => ({ ...current, season }))}
+            options={[
+              { value: "all", label: t("grid.manage.seasonAll") },
+              ...seasonChoices.seasons.map((season) => ({ value: season, label: seasonLabel(season) })),
+              ...(seasonChoices.hasNone ? [{ value: "none", label: t("grid.manage.seasonNone") }] : []),
+            ]}
+          />
+        </div>
         <Button
           size="sm"
           aria-label={t("grid.manage.sortAria")}
@@ -304,7 +308,8 @@ export function SubscribedManageDialog({
           aria-label={t("grid.manage.searchAria")}
           placeholder={t("grid.manage.searchPlaceholder")}
           controlSize="sm"
-          className={isPhone ? "tw:w-full" : "tw:ml-auto tw:w-48"}
+          fullWidth={isPhone}
+          className={isPhone ? undefined : "tw:ml-auto tw:w-48"}
           value={filters.query}
           onChange={(event) => setFilters((current) => ({ ...current, query: event.target.value }))}
         />
@@ -352,7 +357,18 @@ export function SubscribedManageDialog({
             ))}
           </ul>
         ) : (
-          <table className="tw:w-full tw:border-collapse tw:text-sm">
+          <table className="tw:w-full tw:min-w-[56rem] tw:table-fixed tw:border-collapse tw:text-sm">
+            <colgroup>
+              <col className="tw:w-9" />
+              <col />
+              <col className="tw:w-16" />
+              <col className="tw:w-[4.5rem]" />
+              <col className="tw:w-16" />
+              <col className="tw:w-[5.5rem]" />
+              <col className="tw:w-[4.5rem]" />
+              <col className="tw:w-40" />
+              <col className="tw:w-28" />
+            </colgroup>
             <thead className="tw:sticky tw:top-0 tw:z-[1] tw:bg-background">
               <tr className="tw:border-b tw:border-border tw:text-left tw:text-xs tw:font-medium tw:text-muted-foreground">
                 <th className="tw:w-9 tw:px-2 tw:py-2">
@@ -402,7 +418,7 @@ export function SubscribedManageDialog({
                     </td>
                     <td className="tw:max-w-0 tw:px-2">
                       <span className="tw:flex tw:min-w-0 tw:items-center tw:gap-1.5">
-                        <span className="tw:truncate" title={row.title}>
+                        <span className="tw:min-w-0 tw:truncate" title={row.title}>
                           {row.title}
                         </span>
                         {row.instanceLabel && (
@@ -531,7 +547,7 @@ function ManageMobileRow({
       />
       <div className="tw:min-w-0 tw:flex-1">
         <div className="tw:flex tw:items-center tw:gap-1.5">
-          <span className="tw:truncate tw:text-sm tw:font-medium" title={row.title}>
+          <span className="tw:min-w-0 tw:truncate tw:text-sm tw:font-medium" title={row.title}>
             {row.title}
           </span>
           {row.instanceLabel && (
@@ -542,7 +558,7 @@ function ManageMobileRow({
               {row.instanceLabel}
             </span>
           )}
-          <StatePill tone={STATE_PILL_TONE[row.state]} className="tw:ml-auto">
+          <StatePill tone={STATE_PILL_TONE[row.state]} className="tw:ml-auto tw:flex-none">
             {t(STATE_LABEL_KEY[row.state])}
           </StatePill>
         </div>

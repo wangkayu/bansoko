@@ -1066,6 +1066,82 @@ test.describe("AnimeGrid", () => {
     test.skip(!fixtureOnly, "fixture UI contract runs only with BANSOKO_E2E_FIXTURES=1");
   });
 
+  test("keeps subscribed-management filters and long titles inside their layout", async ({ page }) => {
+    const longTitle = "被放逐的作弊赋予魔术师享受随心所欲的第二人生。";
+    const state = fixtureStateFor(page);
+    addSubscription(state, {
+      managed_anime: { id: "manage-long-title", title: longTitle, title_override: null, version: 1 },
+      subscription: {
+        id: "manage-long-subscription",
+        managed_anime_id: "manage-long-title",
+        created_at: "2026-10-31T00:00:00Z",
+        entry_season: "2026-fall",
+        origin: "anibt",
+        origin_entry_ref: "anibt:manage-long-title",
+        instance_label: "收藏版",
+        state: "active",
+        lifecycle_state: "active",
+        lifecycle_epoch: 1,
+        version: 1,
+        new_releases_only: false,
+      },
+      metadata: {
+        managed_anime_id: "manage-long-title",
+        bgm: null,
+        tmdb: null,
+        title_override: null,
+        total_episodes: 12,
+        season: 1,
+        version: 1,
+      },
+      metadata_hold: { held: false, missing: [] },
+      broadcast_day: "none",
+      episode_progress: { episodes: [1, 2, 3, 4], total: 12, done: false },
+    });
+    await enterApp(page);
+    await selectSubscribed(page);
+    await page.getByRole("button", { name: t("grid.manage.entry"), exact: true }).first().click();
+    const dialog = page.getByRole("dialog", { name: t("grid.manage.title") });
+    await expect(dialog.getByText(longTitle, { exact: true })).toBeVisible();
+
+    const viewport = await page.evaluate(() => ({ width: window.innerWidth, scrollWidth: document.documentElement.scrollWidth }));
+    expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.width);
+    if (isPhoneLayout(page)) {
+      await expect(dialog.getByRole("table")).toHaveCount(0);
+      await expect(dialog.getByRole("list")).toBeVisible();
+      const stateBox = await dialog.getByText(t("anime.state.active"), { exact: true }).boundingBox();
+      expect(stateBox!.height).toBeLessThan(30);
+      expect(stateBox!.width).toBeGreaterThan(40);
+      const stateFilters = dialog.getByRole("group", { name: t("grid.manage.stateAria") });
+      const stateFiltersBox = await stateFilters.boundingBox();
+      expect(stateFiltersBox!.width).toBeGreaterThan(300);
+      return;
+    }
+
+    const origin = dialog.getByLabel(t("grid.manage.originAria"), { exact: true });
+    const season = dialog.getByLabel(t("grid.manage.seasonAria"), { exact: true });
+    const search = dialog.getByRole("searchbox", { name: t("grid.manage.searchAria") });
+    const [originBox, seasonBox, searchBox] = await Promise.all([
+      origin.boundingBox(),
+      season.boundingBox(),
+      search.boundingBox(),
+    ]);
+    expect(originBox).not.toBeNull();
+    expect(seasonBox).not.toBeNull();
+    expect(searchBox).not.toBeNull();
+    expect(originBox!.width).toBeLessThanOrEqual(140);
+    expect(seasonBox!.width).toBeLessThanOrEqual(140);
+    expect(searchBox!.width).toBeLessThanOrEqual(210);
+    expect(originBox!.y).toBe(seasonBox!.y);
+
+    const row = dialog.getByRole("row").filter({ hasText: longTitle });
+    const titleBox = await row.locator("td").nth(1).boundingBox();
+    const originCellBox = await row.locator("td").nth(2).boundingBox();
+    const titleTextBox = await row.locator("td").nth(1).locator("span").first().boundingBox();
+    expect(titleTextBox!.x + titleTextBox!.width).toBeLessThanOrEqual(originCellBox!.x);
+    expect(titleBox!.width).toBeGreaterThan(160);
+  });
+
   test("shows the four current catalog sections", async ({ page }) => {
     await enterApp(page);
     if (isPhoneLayout(page)) {
