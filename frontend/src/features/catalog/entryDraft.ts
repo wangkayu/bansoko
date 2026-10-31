@@ -19,7 +19,9 @@ export function draftFromEntry(entry: CatalogEntryView): AnimeDraft {
   draft.entry_season = origin === "anibt" || origin === "mikan" ? entry.season ?? null : null;
   draft.title = entry.title;
   draft.title_override = null;
-  draft.instance_label = entry.instanceLabel ?? entry.title;
+  // The subscription note distinguishes several subscriptions of one anime; it is empty
+  // until the owner writes one. Only custom and one-shot drafts require a label.
+  draft.instance_label = entry.instanceLabel ?? null;
   draft.metadata = {
     bgm: match.bgmId ? { work_id: match.bgmId } : null,
     tmdb:

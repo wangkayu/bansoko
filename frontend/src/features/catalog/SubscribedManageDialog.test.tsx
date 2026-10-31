@@ -59,7 +59,8 @@ function item(overrides: {
 
 const items: AnimeListItem[] = [
   item({ id: "a1", title: "药屋少女的呢喃 第三季", origin: "anibt", entrySeason: "2026-fall", episodes: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], total: 24, createdAt: "2026-10-05T00:00:00Z" }),
-  item({ id: "m1", title: "落语朱音", origin: "mikan", state: "pending", rssHealth: "failed", createdAt: "2026-10-26T00:00:00Z" }),
+  // 历史 provider 草稿把标题写进了备注：与标题相同，视作没有备注。
+  item({ id: "m1", title: "落语朱音", origin: "mikan", instanceLabel: "落语朱音", state: "pending", rssHealth: "failed", createdAt: "2026-10-26T00:00:00Z" }),
   item({ id: "c1", title: "铁旅！meet with 铁道少女", origin: "custom", instanceLabel: "铁道少女", createdAt: "2026-10-15T00:00:00Z" }),
 ];
 
@@ -119,6 +120,9 @@ describe("SubscribedManageDialog（已订阅批量管理）", () => {
     expect(within(table).getAllByText(t("anime.state.pending")).length).toBe(1);
     expect(within(table).getByText(t("grid.progress.summaryShort", { stored: 11, total: 24 }))).toBeInTheDocument();
     expect(within(table).getByText(t("grid.manage.rssFailed"))).toBeInTheDocument();
+    // 备注与标题相同时不重复渲染：标题各出现一次；真实备注照常显示。
+    expect(within(table).getAllByText("落语朱音")).toHaveLength(1);
+    expect(within(table).getByText("铁道少女")).toBeInTheDocument();
   });
 
   it("未选时批量按钮不可用；全选后可开始/暂停，暂停对纯未开始置灰说明", async () => {

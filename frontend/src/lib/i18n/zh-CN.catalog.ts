@@ -151,7 +151,6 @@ export const gridCopy = {
     selectAll: "全选",
     selectAllList: "全选本列表（{n}）",
     selectRow: "选择 {title}",
-    labelChip: "实例标签",
     groupedTitle: "同一作品的多个实例",
     showSeasonLabel: "S{n}",
     rssReady: "正常",

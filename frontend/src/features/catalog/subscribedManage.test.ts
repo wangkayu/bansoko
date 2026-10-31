@@ -98,7 +98,25 @@ describe("manageRowsFrom（列表项 → 管理行）", () => {
     expect(rows[1].instanceLabel).toBe("B 盘");
     expect(rows[3].entrySeason).toBeUndefined();
     expect(rows[4].origin).toBe("custom");
+    // 备注等于标题（历史 provider 草稿默认、custom 填了同名）视作没有备注。
+    expect(rows[4].instanceLabel).toBeUndefined();
     expect(rows[2].rssHealth).toBe("degraded");
+  });
+});
+
+describe("备注与标题区分", () => {
+  it("只有不同于标题的备注才保留", () => {
+    const rows = manageRowsFrom([
+      item({ id: "n1", title: "灌篮高手", origin: "anibt", instanceLabel: "灌篮高手", createdAt: "2026-10-01T00:00:00Z" }),
+      item({ id: "n2", title: "灌篮高手", origin: "anibt", instanceLabel: "收藏版", createdAt: "2026-10-02T00:00:00Z" }),
+      item({ id: "n3", title: "灌篮高手", origin: "anibt", createdAt: "2026-10-03T00:00:00Z" }),
+    ]);
+    expect(rows.map((row) => row.instanceLabel)).toEqual([undefined, "收藏版", undefined]);
+    // 搜索仍可用真实备注命中，且不会因为重复标题多出结果。
+    const byNote = filterManageRows(manageRowsFrom([
+      item({ id: "n2", title: "灌篮高手", origin: "anibt", instanceLabel: "收藏版", createdAt: "2026-10-02T00:00:00Z" }),
+    ]), { ...emptyManageFilters, query: "收藏版" });
+    expect(byNote.map((row) => row.key)).toEqual(["n2"]);
   });
 });
 

@@ -152,7 +152,6 @@ export const enGridCopy = {
     selectAll: "Select all",
     selectAllList: "Select this list ({n})",
     selectRow: "Select {title}",
-    labelChip: "Instance label",
     groupedTitle: "Several instances of the same show",
     showSeasonLabel: "S{n}",
     rssReady: "OK",

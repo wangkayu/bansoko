@@ -418,13 +418,13 @@ export function SubscribedManageDialog({
                     </td>
                     <td className="tw:max-w-0 tw:px-2">
                       <span className="tw:flex tw:min-w-0 tw:items-center tw:gap-1.5">
-                        <span className="tw:min-w-0 tw:truncate" title={row.title}>
+                        <span className="tw:min-w-0 tw:flex-1 tw:truncate" title={row.title}>
                           {row.title}
                         </span>
                         {row.instanceLabel && (
                           <span
-                            title={t("grid.manage.labelChip")}
-                            className="tw:flex-none tw:truncate tw:rounded tw:border tw:border-border tw:bg-muted tw:px-1.5 tw:text-xs tw:text-muted-foreground"
+                            title={row.instanceLabel}
+                            className="tw:min-w-0 tw:max-w-24 tw:truncate tw:rounded tw:border tw:border-border tw:bg-muted tw:px-1.5 tw:text-xs tw:text-muted-foreground"
                           >
                             {row.instanceLabel}
                           </span>
@@ -547,13 +547,13 @@ function ManageMobileRow({
       />
       <div className="tw:min-w-0 tw:flex-1">
         <div className="tw:flex tw:items-center tw:gap-1.5">
-          <span className="tw:min-w-0 tw:truncate tw:text-sm tw:font-medium" title={row.title}>
+          <span className="tw:min-w-0 tw:flex-1 tw:truncate tw:text-sm tw:font-medium" title={row.title}>
             {row.title}
           </span>
           {row.instanceLabel && (
             <span
-              title={t("grid.manage.labelChip")}
-              className="tw:flex-none tw:truncate tw:rounded tw:border tw:border-border tw:bg-muted tw:px-1.5 tw:text-xs tw:text-muted-foreground"
+              title={row.instanceLabel}
+              className="tw:min-w-0 tw:max-w-24 tw:truncate tw:rounded tw:border tw:border-border tw:bg-muted tw:px-1.5 tw:text-xs tw:text-muted-foreground"
             >
               {row.instanceLabel}
             </span>

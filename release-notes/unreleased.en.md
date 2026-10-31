@@ -13,6 +13,7 @@
 
 ## Improved
 
+- The note exists only to tell several subscriptions of one show apart: creating a subscription no longer copies the title into its note, a copy asks you for one, and a custom preset already requires one; a list shows only the title when there is no note, never the same text twice.
 - Account settings update the username and password together; leave either replacement blank to keep its current value.
 - RSS access can be added directly in connection settings; built-in connections can only be edited.
 - The proxy and downloader dialogs check input before saving, with clearer layout and wording.

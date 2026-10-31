@@ -50,7 +50,10 @@ export function manageRowsFrom(items: AnimeListItem[]): ManageRow[] {
   return items.map((item) => ({
     key: item.managed_anime.id,
     title: item.managed_anime.title,
-    instanceLabel: item.subscription.instance_label ?? undefined,
+    // The note distinguishes subscriptions of one anime. A note that only repeats the
+    // title (the old provider-draft default) is no note: show nothing rather than the
+    // title twice.
+    instanceLabel: instanceNote(item.subscription.instance_label, item.managed_anime.title),
     origin: originOf(item),
     originEntryRef: item.subscription.origin_entry_ref ?? undefined,
     entrySeason: item.subscription.entry_season ?? undefined,
@@ -62,6 +65,11 @@ export function manageRowsFrom(items: AnimeListItem[]): ManageRow[] {
     progress: item.episode_progress ?? undefined,
     createdAt: item.subscription.created_at,
   }));
+}
+
+function instanceNote(label: string | null | undefined, title: string): string | undefined {
+  if (!label || label === title) return undefined;
+  return label;
 }
 
 /** 已完成 (the filter): the total is known and more than one episode is imported and

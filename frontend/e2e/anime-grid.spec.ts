@@ -1098,18 +1098,51 @@ test.describe("AnimeGrid", () => {
       broadcast_day: "none",
       episode_progress: { episodes: [1, 2, 3, 4], total: 12, done: false },
     });
+    // 第二个实例的备注被写成了标题（历史 provider 草稿的默认）：与标题相同，视作没有备注。
+    addSubscription(state, {
+      managed_anime: { id: "manage-note-title", title: longTitle, title_override: null, version: 1 },
+      subscription: {
+        id: "manage-note-subscription",
+        managed_anime_id: "manage-note-title",
+        created_at: "2026-10-30T00:00:00Z",
+        entry_season: "2026-fall",
+        origin: "anibt",
+        origin_entry_ref: "anibt:manage-long-title",
+        instance_label: longTitle,
+        state: "active",
+        lifecycle_state: "active",
+        lifecycle_epoch: 1,
+        version: 1,
+        new_releases_only: false,
+      },
+      metadata: {
+        managed_anime_id: "manage-note-title",
+        bgm: null,
+        tmdb: null,
+        title_override: null,
+        total_episodes: 12,
+        season: 1,
+        version: 1,
+      },
+      metadata_hold: { held: false, missing: [] },
+      broadcast_day: "none",
+      episode_progress: { episodes: [1, 2], total: 12, done: false },
+    });
     await enterApp(page);
     await selectSubscribed(page);
     await page.getByRole("button", { name: t("grid.manage.entry"), exact: true }).first().click();
     const dialog = page.getByRole("dialog", { name: t("grid.manage.title") });
-    await expect(dialog.getByText(longTitle, { exact: true })).toBeVisible();
+    // 两个实例各一条标题；备注重复标题的第二条不再输出备注（否则是三条）。
+    await expect(dialog.getByText(longTitle, { exact: true })).toHaveCount(2);
+    const noteBox = await dialog.getByText("收藏版", { exact: true }).boundingBox();
+    expect(noteBox!.width).toBeLessThanOrEqual(100);
 
     const viewport = await page.evaluate(() => ({ width: window.innerWidth, scrollWidth: document.documentElement.scrollWidth }));
     expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.width);
     if (isPhoneLayout(page)) {
       await expect(dialog.getByRole("table")).toHaveCount(0);
       await expect(dialog.getByRole("list")).toBeVisible();
-      const stateBox = await dialog.getByText(t("anime.state.active"), { exact: true }).boundingBox();
+      const stateBox = await dialog.getByText(t("anime.state.active"), { exact: true }).first().boundingBox();
       expect(stateBox!.height).toBeLessThan(30);
       expect(stateBox!.width).toBeGreaterThan(40);
       const stateFilters = dialog.getByRole("group", { name: t("grid.manage.stateAria") });
@@ -1134,7 +1167,7 @@ test.describe("AnimeGrid", () => {
     expect(searchBox!.width).toBeLessThanOrEqual(210);
     expect(originBox!.y).toBe(seasonBox!.y);
 
-    const row = dialog.getByRole("row").filter({ hasText: longTitle });
+    const row = dialog.getByRole("row").filter({ hasText: longTitle }).first();
     const titleBox = await row.locator("td").nth(1).boundingBox();
     const originCellBox = await row.locator("td").nth(2).boundingBox();
     const titleTextBox = await row.locator("td").nth(1).locator("span").first().boundingBox();
