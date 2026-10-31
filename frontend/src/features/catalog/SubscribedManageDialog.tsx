@@ -37,8 +37,22 @@ import {
   type ManageProgressFilter,
   type ManageRow,
   type ManageSeasonFilter,
+  type ManageSort,
+  type ManageSortKey,
   type ManageState,
 } from "./subscribedManage";
+
+/** The sort picker's value: one option per key + direction. */
+type ManageSortValue = `${ManageSortKey}:asc` | `${ManageSortKey}:desc`;
+
+function sortValueOf(sort: ManageSort): ManageSortValue {
+  return `${sort.key}:${sort.desc ? "desc" : "asc"}`;
+}
+
+function sortFromValue(value: ManageSortValue): ManageSort {
+  const [key, direction] = value.split(":");
+  return { key: key as ManageSortKey, desc: direction === "desc" };
+}
 
 // SubscribedManageDialog — the subscribed wall's bulk-management surface (the
 // toolbar's 管理 button; lazy-loaded from AnimeGrid). One dense table of every
@@ -106,7 +120,7 @@ export function SubscribedManageDialog({
 
   const rows = useMemo(() => manageRowsFrom(list.data ?? []), [list.data]);
   const visible = useMemo(() => filterManageRows(rows, filters), [rows, filters]);
-  const ordered = useMemo(() => orderManageRows(visible, filters.sortDesc), [visible, filters.sortDesc]);
+  const ordered = useMemo(() => orderManageRows(visible, filters.sort), [visible, filters.sort]);
   const selectedRows = useMemo(() => rows.filter((row) => selected.has(row.key)), [rows, selected]);
 
   const counts = useMemo(() => {
@@ -298,14 +312,22 @@ export function SubscribedManageDialog({
             ]}
           />
         </div>
-        <Button
-          size="compact"
-          aria-label={t("grid.manage.sortAria")}
-          className="tw:flex-none"
-          onClick={() => setFilters((current) => ({ ...current, sortDesc: !current.sortDesc }))}
-        >
-          {filters.sortDesc ? t("grid.manage.sortDesc") : t("grid.manage.sortAsc")}
-        </Button>
+        <div className="tw:w-32 tw:flex-none">
+          <Select<ManageSortValue>
+            label={t("grid.manage.sortAria")}
+            size="xs"
+            value={sortValueOf(filters.sort)}
+            onChange={(value) => setFilters((current) => ({ ...current, sort: sortFromValue(value) }))}
+            options={[
+              { value: "name:asc", label: t("grid.manage.sortNameAsc") },
+              { value: "name:desc", label: t("grid.manage.sortNameDesc") },
+              { value: "created:desc", label: t("grid.manage.sortDesc") },
+              { value: "created:asc", label: t("grid.manage.sortAsc") },
+              { value: "season:desc", label: t("grid.manage.sortSeasonDesc") },
+              { value: "season:asc", label: t("grid.manage.sortSeasonAsc") },
+            ]}
+          />
+        </div>
         <Input
           type="search"
           aria-label={t("grid.manage.searchAria")}

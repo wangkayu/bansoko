@@ -1156,7 +1156,7 @@ test.describe("AnimeGrid", () => {
       const [originBox, seasonBox, sortBox, searchBox, progressBox] = await Promise.all([
         dialog.getByLabel(t("grid.manage.originAria"), { exact: true }).boundingBox(),
         dialog.getByLabel(t("grid.manage.seasonAria"), { exact: true }).boundingBox(),
-        dialog.getByRole("button", { name: t("grid.manage.sortAria") }).boundingBox(),
+        dialog.getByLabel(t("grid.manage.sortAria")).boundingBox(),
         dialog.getByRole("searchbox", { name: t("grid.manage.searchAria") }).boundingBox(),
         dialog.getByRole("radiogroup", { name: t("grid.manage.progressAria") }).boundingBox(),
       ]);
@@ -1168,10 +1168,18 @@ test.describe("AnimeGrid", () => {
         dialog.getByRole("radiogroup", { name: t("grid.manage.progressAria") }).locator('[role="radio"]').first().evaluate((el) => getComputedStyle(el).fontSize),
         dialog.getByLabel(t("grid.manage.originAria"), { exact: true }).evaluate((el) => getComputedStyle(el).fontSize),
         dialog.getByLabel(t("grid.manage.seasonAria"), { exact: true }).evaluate((el) => getComputedStyle(el).fontSize),
-        dialog.getByRole("button", { name: t("grid.manage.sortAria") }).evaluate((el) => getComputedStyle(el).fontSize),
+        dialog.getByLabel(t("grid.manage.sortAria")).evaluate((el) => getComputedStyle(el).fontSize),
         dialog.getByRole("searchbox", { name: t("grid.manage.searchAria") }).evaluate((el) => getComputedStyle(el).fontSize),
       ]);
       expect(new Set(fontSizes)).toEqual(new Set(["12px"]));
+      const chipCenterOffset = await stateFilters.locator("button").first().evaluate((el) => {
+        const button = el.getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(el.firstChild!);
+        const text = range.getBoundingClientRect();
+        return Math.abs(text.x + text.width / 2 - (button.x + button.width / 2));
+      });
+      expect(chipCenterOffset).toBeLessThanOrEqual(1);
       return;
     }
 
@@ -1193,7 +1201,8 @@ test.describe("AnimeGrid", () => {
 
     // Every toolbar control shares one height (32px): state chips, progress segment,
     // entry/season selects, sort and search.
-    const sort = dialog.getByRole("button", { name: t("grid.manage.sortAria") });
+    const sort = dialog.getByLabel(t("grid.manage.sortAria"));
+    await expect(sort).toContainText(t("grid.manage.sortNameAsc"));
     const progressFilters = dialog.getByRole("radiogroup", { name: t("grid.manage.progressAria") });
     const stateChips = dialog.getByRole("group", { name: t("grid.manage.stateAria") });
     const [sortBox, progressBox, chipsBox] = await Promise.all([
@@ -1214,6 +1223,17 @@ test.describe("AnimeGrid", () => {
       search.evaluate((el) => getComputedStyle(el).fontSize),
     ]);
     expect(new Set(fontSizes)).toEqual(new Set(["12px"]));
+
+    // The chip's label sits at the button center; the count rides at the corner instead of
+    // shifting the label left (the segmented control's text is centered the same way).
+    const chipCenterOffset = await stateChips.locator("button").first().evaluate((el) => {
+      const button = el.getBoundingClientRect();
+      const range = document.createRange();
+      range.selectNodeContents(el.firstChild!);
+      const text = range.getBoundingClientRect();
+      return Math.abs(text.x + text.width / 2 - (button.x + button.width / 2));
+    });
+    expect(chipCenterOffset).toBeLessThanOrEqual(1);
 
     const row = dialog.getByRole("row").filter({ hasText: longTitle }).first();
     const titleBox = await row.locator("td").nth(1).boundingBox();

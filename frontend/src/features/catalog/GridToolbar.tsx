@@ -98,9 +98,18 @@ export function StatsChips<K extends string>({
       {chips.map((chip) => {
         const pressed = active === chip.key;
         return (
-          <Button key={chip.key} size={buttonSize} aria-pressed={pressed} className="tw:flex-none" onClick={() => onToggle(chip.key)}>
+          <Button key={chip.key} size={buttonSize} aria-pressed={pressed} className="tw:relative tw:flex-none" onClick={() => onToggle(chip.key)}>
             {chip.label}
-            <span className={cn("tw:tabular-nums", pressed ? "tw:text-foreground" : "tw:text-muted-foreground")}>{chip.count}</span>
+            {/* The count rides at the top-right corner instead of taking a flex slot: the
+                label itself must sit at the button's center, like every other control's. */}
+            <span
+              className={cn(
+                "tw:pointer-events-none tw:absolute tw:-top-1 tw:-right-1 tw:text-badge tw:leading-none tw:tabular-nums",
+                pressed ? "tw:text-foreground" : "tw:text-muted-foreground",
+              )}
+            >
+              {chip.count}
+            </span>
           </Button>
         );
       })}

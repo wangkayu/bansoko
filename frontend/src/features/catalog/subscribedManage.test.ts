@@ -175,11 +175,39 @@ describe("入口 × 季度组合筛选", () => {
 describe("同作品相邻分组与排序", () => {
   it("同一作品的实例相邻（原件在前），组间按创建时间倒序", () => {
     const rows = manageRowsFrom(fixtures);
-    const ordered = orderManageRows(rows, true);
+    const ordered = orderManageRows(rows, { key: "created", desc: true });
     expect(ordered.map(({ row }) => row.key)).toEqual(["c1", "a1", "a1b", "a2", "m1", "m2"]);
     expect(ordered.map(({ grouped }) => grouped)).toEqual([false, true, true, false, false, false]);
-    const ascending = orderManageRows(rows, false);
+    const ascending = orderManageRows(rows, { key: "created", desc: false });
     expect(ascending.map(({ row }) => row.key)).toEqual(["m2", "m1", "a1", "a1b", "a2", "c1"]);
+  });
+
+  it("默认按名称（中文拼音）排序，同作品仍相邻", () => {
+    const ordered = orderManageRows(manageRowsFrom(fixtures), { key: "name", desc: false });
+    // 灌(g) → 落(l) → 药(y) → 致(zhi) → 转(zhuan)
+    expect(ordered.map(({ row }) => row.key)).toEqual(["m2", "c1", "a1", "a1b", "m1", "a2"]);
+    const descending = orderManageRows(manageRowsFrom(fixtures), { key: "name", desc: true });
+    expect(descending.map(({ row }) => row.key)).toEqual(["a2", "m1", "a1", "a1b", "c1", "m2"]);
+  });
+
+  it("按季度排序：新→旧 / 旧→新，无季度始终在最后", () => {
+    const rows = manageRowsFrom(fixtures);
+    expect(orderManageRows(rows, { key: "season", desc: true }).map(({ row }) => row.key)).toEqual([
+      "a1",
+      "a1b",
+      "m1",
+      "m2",
+      "a2",
+      "c1",
+    ]);
+    expect(orderManageRows(rows, { key: "season", desc: false }).map(({ row }) => row.key)).toEqual([
+      "m2",
+      "m1",
+      "a1",
+      "a1b",
+      "a2",
+      "c1",
+    ]);
   });
 });
 

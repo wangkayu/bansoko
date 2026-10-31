@@ -89,17 +89,27 @@ export interface ManageFilters {
   progress: ManageProgressFilter;
   origin: ManageOriginFilter;
   season: ManageSeasonFilter;
-  /** true = newest first. */
-  sortDesc: boolean;
+  sort: ManageSort;
   query: string;
 }
+
+/** The row order: the name (A→Z by default), the creation time, or the entry season. */
+export type ManageSortKey = "name" | "created" | "season";
+
+export interface ManageSort {
+  key: ManageSortKey;
+  /** Descending: Z→A, newest first, latest season first. */
+  desc: boolean;
+}
+
+export const defaultManageSort: ManageSort = { key: "name", desc: false };
 
 export const emptyManageFilters: ManageFilters = {
   state: "all",
   progress: "all",
   origin: "all",
   season: "all",
-  sortDesc: true,
+  sort: defaultManageSort,
   query: "",
 };
 
@@ -128,13 +138,18 @@ export function filterManageRows(rows: ManageRow[], filters: ManageFilters): Man
   });
 }
 
-/** Same-work instances (origin + origin_entry_ref) stay adjacent: groups sort between
- *  themselves by their newest (desc) or oldest (asc) member's creation, members within a
- *  group by creation ascending (the original precedes its duplicates). `grouped` marks the
- *  rows of a multi-instance work for the inset line. */
+// Name order follows the Chinese (pinyin) collation the rest of the product reads titles in;
+// numeric runs compare as numbers so 「第2季」 sits before 「第10季」.
+const nameCollator = new Intl.Collator("zh-Hans", { numeric: true, sensitivity: "base" });
+
+/** Same-work instances (origin + origin_entry_ref) stay adjacent. The sort orders the groups
+ *  between themselves by their edge value (name, the newest/oldest creation, the latest/earliest
+ *  entry season); members inside a group follow the same key, with creation ascending as the
+ *  stable fallback so the original precedes its duplicates. Rows without an entry season always
+ *  sort last, whatever the direction. `grouped` marks the rows of a multi-instance work. */
 export function orderManageRows(
   rows: ManageRow[],
-  sortDesc: boolean,
+  sort: ManageSort,
 ): Array<{ row: ManageRow; grouped: boolean }> {
   const groups = new Map<string, ManageRow[]>();
   for (const row of rows) {
@@ -143,17 +158,64 @@ export function orderManageRows(
     if (bucket) bucket.push(row);
     else groups.set(key, [row]);
   }
-  const ordered = [...groups.values()].map((members) =>
-    [...members].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.key.localeCompare(b.key)),
-  );
-  ordered.sort((a, b) => {
-    const edge = (members: ManageRow[]) =>
-      sortDesc ? members[members.length - 1].createdAt : members[0].createdAt;
-    return edge(b).localeCompare(edge(a)) * (sortDesc ? 1 : -1) || a[0].key.localeCompare(b[0].key);
-  });
+  const ordered = [...groups.values()].map((members) => [...members].sort(compareMembers(sort)));
+  ordered.sort((a, b) => compareGroups(a, b, sort) || a[0].key.localeCompare(b[0].key));
   return ordered.flatMap((members) =>
     members.map((row) => ({ row, grouped: members.length > 1 })),
   );
+}
+
+function compareMembers(sort: ManageSort): (a: ManageRow, b: ManageRow) => number {
+  return (a, b) => {
+    if (sort.key === "season") {
+      const bySeason = compareSeasons(a.entrySeason, b.entrySeason, sort.desc);
+      if (bySeason !== 0) return bySeason;
+    } else if (sort.key === "name") {
+      const byName = nameCollator.compare(a.title, b.title);
+      if (byName !== 0) return sort.desc ? -byName : byName;
+    }
+    return a.createdAt.localeCompare(b.createdAt) || a.key.localeCompare(b.key);
+  };
+}
+
+function compareGroups(a: ManageRow[], b: ManageRow[], sort: ManageSort): number {
+  if (sort.key === "season") {
+    return compareSeasons(groupSeason(a, sort.desc), groupSeason(b, sort.desc), sort.desc);
+  }
+  if (sort.key === "name") {
+    const byName = nameCollator.compare(groupTitle(a), groupTitle(b));
+    return sort.desc ? -byName : byName;
+  }
+  const byCreated = groupCreated(a, sort.desc).localeCompare(groupCreated(b, sort.desc));
+  return sort.desc ? -byCreated : byCreated;
+}
+
+function groupTitle(members: ManageRow[]): string {
+  return members[0].title;
+}
+
+function groupCreated(members: ManageRow[], desc: boolean): string {
+  const times = members.map((member) => member.createdAt).sort();
+  return desc ? times[times.length - 1] : times[0];
+}
+
+function groupSeason(members: ManageRow[], desc: boolean): string | undefined {
+  const seasons = members
+    .map((member) => member.entrySeason)
+    .filter((season): season is string => Boolean(season))
+    .sort((a, b) => (seasonIndex(a) ?? 0) - (seasonIndex(b) ?? 0));
+  if (seasons.length === 0) return undefined;
+  return desc ? seasons[seasons.length - 1] : seasons[0];
+}
+
+/** A missing season always sorts last, never flipped by the direction. */
+function compareSeasons(a: string | undefined, b: string | undefined, desc: boolean): number {
+  const ai = a ? seasonIndex(a) : undefined;
+  const bi = b ? seasonIndex(b) : undefined;
+  if (ai === undefined && bi === undefined) return 0;
+  if (ai === undefined) return 1;
+  if (bi === undefined) return -1;
+  return desc ? bi - ai : ai - bi;
 }
 
 /** The 入口 options actually present in the data, in the fixed order. */
