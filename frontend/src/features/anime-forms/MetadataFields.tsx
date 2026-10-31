@@ -44,6 +44,7 @@ export function MetadataFields({
   directEdit = false,
   matchQueryCandidates,
   onMatchTitle,
+  onMatchCandidate,
   titleOffer,
 }: {
   value: AnimeMetadataDraft;
@@ -104,6 +105,11 @@ export function MetadataFields({
   titleOffer?: { current: string; provider: string };
   /** 确认匹配时传出所选作品名（本地化名优先，退回原名）；手动输入 TMDB ID 没有作品名，不触发。 */
   onMatchTitle?: (title: string) => void;
+  /**
+   * 确认匹配时传出所选候选（含其作品名，手动输入 TMDB ID 也有一个占位候选）。宿主据它把候选自带的
+   * 标题作为标题候选显示，不必等下一次服务端读取。
+   */
+  onMatchCandidate?: (candidate: MetadataCandidate) => void;
 }) {
   const season = value.season ?? null;
   // The kind the server resolves with: the stored kind, else the bound TMDB kind it backfills, else tv.
@@ -222,6 +228,7 @@ export function MetadataFields({
           onSelectBGM={(candidate) => {
             onChange({ ...value, bgm: { work_id: candidate.workId } });
             reportMatchTitle(candidate);
+            onMatchCandidate?.(candidate);
             onMatchProviderChange(undefined);
           }}
           onSelectTMDB={(candidate, mediaKind, tmdbSeason, title) => {
@@ -252,6 +259,7 @@ export function MetadataFields({
             // anime resolves with now), else from the chosen work.
             changeTMDB(next, value.tmdb?.media_kind ?? mediaKind, title);
             reportMatchTitle(candidate);
+            onMatchCandidate?.(candidate);
             onMatchProviderChange(undefined);
           }}
         />

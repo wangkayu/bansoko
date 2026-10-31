@@ -9,6 +9,8 @@ import {
   type AnimeMetadataPreview,
   type TitleSuggestion,
 } from "../../lib/api/client";
+import type { MetadataCandidate } from "../../lib/metadata/types";
+import { boundTitleSuggestions, candidateTitleSuggestions } from "./candidateTitles";
 import { metadataDraftFromOwner, valuesEqual } from "../../lib/draft";
 import { useSavePart } from "../../lib/saveParts";
 import { MetadataFields } from "../anime-forms/MetadataFields";
@@ -201,6 +203,17 @@ function TitleRow({
   );
 }
 
+// --- Candidate titles -----------------------------------------------------------------
+
+function useMatchedTitleSuggestions() {
+  const [matched, setMatched] = useState<Record<string, TitleSuggestion[]>>({});
+  const recordMatch = useCallback((candidate: MetadataCandidate) => {
+    const titles = candidateTitleSuggestions(candidate);
+    setMatched((prev) => ({ ...prev, [`${candidate.provider}:${candidate.workId}`]: titles }));
+  }, []);
+  return { matched, recordMatch };
+}
+
 function MetadataTabView({
   idPrefix,
   title,
@@ -214,6 +227,7 @@ function MetadataTabView({
   searchTitle,
   matchProvider,
   onMatchProviderChange,
+  onMatchCandidate,
   blocked,
   busy = false,
 }: {
@@ -231,6 +245,8 @@ function MetadataTabView({
   searchTitle: string;
   matchProvider?: "bgm" | "tmdb";
   onMatchProviderChange: (provider: "bgm" | "tmdb" | undefined) => void;
+  /** A confirmed match hands its candidate to the caller, which offers the candidate's titles. */
+  onMatchCandidate?: (candidate: MetadataCandidate) => void;
   blocked?: ReactNode;
   busy?: boolean;
 }) {
@@ -260,6 +276,7 @@ function MetadataTabView({
         showYear
         matchProvider={readOnly ? undefined : matchProvider}
         onMatchProviderChange={readOnly ? undefined : onMatchProviderChange}
+        onMatchCandidate={readOnly ? undefined : onMatchCandidate}
       />
     </div>
   );
@@ -279,8 +296,10 @@ function DraftMetadataTab({
   onMatchProviderChange: (provider: "bgm" | "tmdb" | undefined) => void;
 }) {
   const { draft, onDraftChange } = host;
+  const { matched, recordMatch } = useMatchedTitleSuggestions();
   // A draft's title defaults to the site title; subscribing writes it as the fixed title (title_override wins).
   const draftTitle = draft.title_override?.trim() || draft.title;
+  const titleSuggestions = [...(suggestions ?? []), ...boundTitleSuggestions(matched, draft.metadata)];
   const setMetadata = (metadata: AnimeMetadataDraft) => onDraftChange({ ...draft, metadata });
   return (
     <MetadataTabView
@@ -289,7 +308,7 @@ function DraftMetadataTab({
         <TitleRow
           idPrefix="draft"
           value={draftTitle}
-          suggestions={suggestions}
+          suggestions={titleSuggestions}
           onChange={(title) => onDraftChange({ ...draft, title, title_override: null })}
         />
       }
@@ -306,6 +325,7 @@ function DraftMetadataTab({
       mediaKind={draft.metadata.media_kind}
       matchProvider={matchProvider}
       onMatchProviderChange={onMatchProviderChange}
+      onMatchCandidate={recordMatch}
     />
   );
 }
@@ -378,6 +398,7 @@ function OwnerMetadataTab({
   const baseTitle = workspace.managed_anime.title;
   const saved = useMemo(() => ownerEditFrom(workspace.metadata, baseTitle), [workspace.metadata, baseTitle]);
   const { edit, setEdit, baseline, markSaved } = useOwnerEdit<OwnerMetadataEdit>(saved, editEqual);
+  const { matched, recordMatch } = useMatchedTitleSuggestions();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [conflict, setConflict] = useState<number>();
@@ -436,6 +457,10 @@ function OwnerMetadataTab({
 
   if (!edit) return <StateBlock kind="busy" title={t("tabs.metadata.reading")} />;
   const effectiveTitle = normalizedTitle(edit.titleOverride) ?? baseTitle;
+  const titleSuggestions = [
+    ...(workspace.metadata.title_suggestions ?? []),
+    ...boundTitleSuggestions(matched, edit.metadata),
+  ];
   return (
     <MetadataTabView
       idPrefix="owner"
@@ -444,7 +469,7 @@ function OwnerMetadataTab({
           idPrefix="owner"
           value={readOnly ? (normalizedTitle(saved.titleOverride) ?? baseTitle) : effectiveTitle}
           readOnly={readOnly}
-          suggestions={workspace.metadata.title_suggestions}
+          suggestions={titleSuggestions}
           onChange={(titleOverride) => setEdit({ ...edit, titleOverride })}
         />
       }
@@ -469,6 +494,7 @@ function OwnerMetadataTab({
       mediaKind={edit.mediaKind}
       matchProvider={matchProvider}
       onMatchProviderChange={onMatchProviderChange}
+      onMatchCandidate={recordMatch}
       blocked={
         <>
           {conflict !== undefined && (

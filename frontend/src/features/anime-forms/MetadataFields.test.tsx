@@ -30,6 +30,7 @@ function Controlled({
   title = "沉默魔女的秘密",
   matchQueryCandidates,
   onMatchTitle,
+  onMatchCandidate,
 }: {
   searcher: MetadataSearcher;
   initial?: AnimeMetadataDraft;
@@ -37,6 +38,7 @@ function Controlled({
   title?: string;
   matchQueryCandidates?: string[];
   onMatchTitle?: (title: string) => void;
+  onMatchCandidate?: (candidate: MetadataCandidate) => void;
 }) {
   const [value, setValue] = useState<AnimeMetadataDraft>(initial);
   const [matchProvider, setMatchProvider] = useState<MetadataProvider>();
@@ -49,6 +51,7 @@ function Controlled({
         title={title}
         matchQueryCandidates={matchQueryCandidates}
         onMatchTitle={onMatchTitle}
+        onMatchCandidate={onMatchCandidate}
         value={value}
         onChange={(next) => {
           setValue(next);
@@ -143,6 +146,20 @@ describe("MetadataMatchDialog", () => {
     expect(onChange).toHaveBeenCalledWith({ bgm: { work_id: "486109" }, tmdb: null });
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(screen.getByRole("link", { name: /486109/ })).toBeInTheDocument();
+  });
+
+  it("确认匹配时把所选候选交给宿主", async () => {
+    const searcher = searcherReturning([bgmCandidate]);
+    const onMatchCandidate = vi.fn();
+    render(<Controlled searcher={searcher} onMatchCandidate={onMatchCandidate} />);
+
+    clickMatch("bgm");
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: t("forms.search") }));
+    fireEvent.click(await within(dialog).findByRole("option", { name: /沉默魔女的秘密/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: t("forms.confirmMatch") }));
+
+    expect(onMatchCandidate).toHaveBeenCalledWith(bgmCandidate);
   });
 
   describe("候选海报", () => {
