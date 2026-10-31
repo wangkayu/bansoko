@@ -6,7 +6,7 @@ import { seasonIndex } from "./season";
 // 入口 and 季度 are two independent dimensions (owner ruling): 入口 = the origin
 // (anibt / mikan / 自定义), 季度 = the provider season catalog page the instance
 // was created from, frozen at creation. Search-created and custom instances have
-// no season; mikan+2026-spring and anibt+2026-spring are different batches, so
+// no season; mikan 2026-spring and anibt 2026-spring are different batches, so
 // the two filters intersect instead of merging into one column value.
 
 export type ManageOrigin = "anibt" | "mikan" | "custom";

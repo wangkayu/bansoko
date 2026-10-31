@@ -269,7 +269,7 @@ th.check, td.check { width: 34px; text-align: center; }
   <p class="note">
     <button class="viewtoggle" id="viewToggle">查看入口位置</button>
     <button class="viewtoggle" id="phoneToggle">手机宽度预览</button>
-    <span><span class="k">筛选</span> 状态 · 进度（已完成 = 有总集数且已入库 &gt; 1）· 入口（anibt/mikan/自定义）× 季度（创建时所在的 provider 季目录页，创建时冻结；搜索/自定义创建的显示 —）两个独立维度按组合交集，mikan+26春 与 anibt+26春 是不同批次 · 创建时间排序 · 搜索</span>
+    <span><span class="k">筛选</span> 状态 · 进度（已完成 = 有总集数且已入库 &gt; 1）· 入口（anibt/mikan/自定义）× 季度（创建时所在的 provider 季目录页，创建时冻结；搜索/自定义创建的显示 —）两个独立维度按组合交集，mikan 26春 与 anibt 26春 是不同批次 · 创建时间排序 · 搜索</span>
     <span><span class="k">进度</span> 已入库/总集数；总数未知显示 n/—（无数条），无总数且未入库显示 —</span>
     <span><span class="k">批量</span> 开始 / 暂停（待开始不可暂停，置灰并提示）/ 移除（二次确认，不可逆）</span>
     <span><span class="k">实例</span> 左侧竖线 = 同一作品的多个实例，以实例标签区分（标签仅复制时必填）；不记录也不显示复制来源</span>
@@ -318,7 +318,7 @@ const state = { sel: new Set(), fState: "all", fProg: "all", fOrigin: "all", fSe
 const isDone = (r) => r.total != null && r.ep >= r.total;
 const isDoneFilter = (r) => r.total != null && r.ep > 1 && r.ep >= r.total; // owner 规则：已完成 = 有总集数且已入库 > 1
 // 入口与季度是两个独立维度（owner 定稿）：入口 = anibt/mikan/自定义；季度 = 季目录创建时所在季（创建时冻结），
-// 搜索与自定义创建的订阅没有季度（—）。筛选按组合交集：mikan+26春 与 anibt+26春 是不同批次。
+// 搜索与自定义创建的订阅没有季度（—）。筛选按组合交集：mikan 26春 与 anibt 26春 是不同批次。
 const ORIGIN_LABEL = { anibt: "anibt", mikan: "mikan", custom: "自定义" };
 
 function visible() {

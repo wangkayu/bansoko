@@ -124,7 +124,7 @@ describe("已完成与进度筛选", () => {
 });
 
 describe("入口 × 季度组合筛选", () => {
-  it("入口与季度独立取交集：mikan+26春 与 anibt+26春 是不同批次", () => {
+  it("入口与季度独立取交集：mikan 26春 与 anibt 26春 是不同批次", () => {
     const rows = manageRowsFrom([
       ...fixtures,
       item({ id: "m3", title: "魔法★探险家", origin: "mikan", originEntryRef: "mikan:mk", entrySeason: "2026-fall", state: "stopped", episodes: [1], total: 12, createdAt: "2026-10-04T00:00:00Z" }),
