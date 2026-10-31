@@ -36,6 +36,7 @@ import { workspaceCapability } from "../workspace/capability";
 import { animeKeys, catalogKeys, configKeys } from "../../lib/queryKeys";
 import { draftFromEntry } from "../catalog/entryDraft";
 import { announceSubscribed } from "../catalog/startSubscription";
+import { seasonLabel } from "../catalog/season";
 import { ExternalValue, MetadataBadges } from "../catalog/card";
 import { HeaderPoster } from "./HeaderPoster";
 import { formatDateTime, metadataHoldBlocking, subscriptionStateLabel, subscriptionStateTone, type BlockingPhrases } from "../../lib/labels";
@@ -359,7 +360,7 @@ function ConfigHeaderFacts({ entry, sourceLabel }: { entry: CatalogEntryView; so
     <span className="anime-config-head-facts">
       <span className="anime-config-head-line">
         <span>{sourceLabel}</span>
-        {entry.season && <span>· {entry.season}</span>}
+        {entry.season && <span>· {seasonLabel(entry.season)}</span>}
         {entry.groupName && <span>· {entry.groupName}</span>}
         {entry.sourceUrl && <ExternalValue href={entry.sourceUrl}>{t("grid.card.sourcePage")}</ExternalValue>}
       </span>

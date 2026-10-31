@@ -64,6 +64,9 @@ export interface CatalogEntryView {
    *  there is an image even without a BGM binding), falling back to posterUrl when loading
    *  fails. */
   coverUrl?: string;
+  /** The provider season page as canonical YYYY-term: on a browse card the season being
+   *  browsed (draftFromEntry freezes it onto the subscription at creation), on a subscribed
+   *  card the instance's frozen entry_season. Search-created and custom entries carry none. */
   season?: string;
   broadcastDay?: BroadcastDay;
   /** The release format the provider catalog states (a read-only fact: Mikan's home

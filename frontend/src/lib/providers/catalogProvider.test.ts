@@ -55,7 +55,7 @@ function listItem(
   origin: AnimeListItem["subscription"]["origin"],
   originEntryRef: string | null,
   state: AnimeListItem["subscription"]["state"] = "active",
-  overrides: { managedAnimeID?: string; subscriptionVersion?: number; title?: string } = {},
+  overrides: { managedAnimeID?: string; subscriptionVersion?: number; title?: string; entrySeason?: string | null } = {},
 ): AnimeListItem {
   const managedAnimeID = overrides.managedAnimeID ?? "anime-1";
   return {
@@ -66,6 +66,7 @@ function listItem(
       created_at: "2026-10-01T00:00:00Z",
       origin,
       origin_entry_ref: originEntryRef,
+      ...(overrides.entrySeason !== undefined ? { entry_season: overrides.entrySeason } : {}),
       instance_label: origin === "custom" ? "客厅版" : null,
       state,
       lifecycle_state: "active",
@@ -328,6 +329,20 @@ describe("catalog mapping", () => {
     const [entry] = mapCatalogEntries([providerCatalogItem()], "mikan");
     expect(entry?.subscribed).toBeUndefined();
     for (const key of subscriptionFields) expect(entry?.[key], key).toBeUndefined();
+  });
+
+  it("carries the browsed season onto browse entries; search-created entries keep none", () => {
+    const [browsed] = mapCatalogEntries([providerCatalogItem()], "mikan", "2026-fall");
+    expect(browsed?.season).toBe("2026-fall");
+    const searched = mapCatalogItem(providerCatalogItem(), "mikan");
+    expect(searched.season).toBeUndefined();
+  });
+
+  it("maps the frozen entry_season of a subscribed instance as its display season", () => {
+    const entry = mapAnimeListItem(listItem("mikan", "mikan:shared", "active", { entrySeason: "2026-summer" }));
+    expect(entry.season).toBe("2026-summer");
+    const legacy = mapAnimeListItem(listItem("mikan", "mikan:shared"));
+    expect(legacy.season).toBeUndefined();
   });
 });
 

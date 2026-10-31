@@ -1,0 +1,541 @@
+<title>已订阅管理原型</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+/* 原型用 bansoko 柔和主题令牌（src/index.css 的取值）：一处定义，双主题各表。
+   布局概念：上方是被遮罩压暗的「已订阅」页（含新「管理」入口），中央是 L 级管理对话框。 */
+:root {
+  --bg: #f4f1f7; --fg: #1f1a2b; --card: #ffffff; --muted: #ebe6f0; --muted-fg: #62597a;
+  --primary: #c2410c; --primary-fg: #ffffff; --accent: #fbe5d9; --accent-fg: #7c2d0a;
+  --destructive: #b4233f; --destructive-fg: #ffffff; --border: #ddd6e6;
+  --online: #17794a; --offline: #b4233f; --warning: #8a5a00;
+  --overlay: hsl(257 33.3% 4% / 0.55);
+  --radius: 12px; --radius-dialog: 22px;
+  --shadow-2: 0 30px 80px -20px hsl(258 24.6% 13.5% / 0.55);
+  --font: "Plus Jakarta Sans", "Noto Sans SC", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15121d; --fg: #f1ecf8; --card: #1e1a2a; --muted: #2a2438; --muted-fg: #a79fbb;
+    --primary: #ff9a62; --primary-fg: #2a1205; --accent: #3a2619; --accent-fg: #ffc9a8;
+    --destructive: #ff8fa3; --destructive-fg: #1e1a2a; --border: #342d45;
+    --online: #6fdc9d; --offline: #ff8fa3; --warning: #f2c25b;
+    --overlay: hsl(253 33.3% 5.3% / 0.6);
+    --shadow-2: 0 30px 80px -20px hsl(253 33.3% 5.3% / 0.85);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15121d; --fg: #f1ecf8; --card: #1e1a2a; --muted: #2a2438; --muted-fg: #a79fbb;
+  --primary: #ff9a62; --primary-fg: #2a1205; --accent: #3a2619; --accent-fg: #ffc9a8;
+  --destructive: #ff8fa3; --destructive-fg: #1e1a2a; --border: #342d45;
+  --online: #6fdc9d; --offline: #ff8fa3; --warning: #f2c25b;
+  --overlay: hsl(253 33.3% 5.3% / 0.6);
+  --shadow-2: 0 30px 80px -20px hsl(253 33.3% 5.3% / 0.85);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; font-family: var(--font); background: var(--bg); color: var(--fg);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 48px; font-size: 14px; line-height: 1.5;
+}
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
+button:disabled { cursor: not-allowed; }
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+[hidden] { display: none !important; }
+
+/* ---- 舞台：被压暗的已订阅页 + 遮罩 + 对话框 ---- */
+.stage { position: relative; border-radius: var(--radius-dialog); overflow: hidden; border: 1px solid var(--border); }
+.wall { padding: 14px 18px 22px; background: var(--bg); min-height: 560px; }
+.wallbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.brandmark { font-weight: 700; letter-spacing: .02em; margin-right: 4px; }
+.tab { padding: 6px 2px; color: var(--muted-fg); border-bottom: 2px solid transparent; }
+.tab.on { color: var(--fg); border-bottom-color: var(--primary); font-weight: 600; }
+.chipstat { font-size: 12px; color: var(--muted-fg); background: var(--muted); border-radius: 999px; padding: 3px 10px; }
+.wallsearch { margin-left: auto; font-size: 13px; color: var(--muted-fg); background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 12px; min-width: 180px; }
+.manage-entry { position: relative; display: inline-flex; align-items: center; gap: 6px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 14px; font-size: 13px; font-weight: 600; }
+.stage.entry .manage-entry { border-color: var(--primary); box-shadow: 0 0 0 4px hsl(17 88.3% 40.4% / .18); }
+.entrytip { position: absolute; top: calc(100% + 6px); right: 0; font-size: 11px; font-weight: 500; color: var(--accent-fg); background: var(--accent); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+.wallrow { margin-top: 16px; }
+.wallrow .day { font-size: 12px; color: var(--muted-fg); font-weight: 600; margin-bottom: 6px; }
+.wallcards { display: flex; gap: 10px; }
+.ghostcard { width: 96px; height: 138px; border-radius: 14px; background: var(--muted); border: 1px solid var(--border); position: relative; overflow: hidden; }
+.ghostcard::after { content: ""; position: absolute; inset: auto 0 0 0; height: 46%; background: linear-gradient(hsl(257 33.3% 8.2% / 0), hsl(257 33.3% 8.2% / .55)); }
+.overlay { position: absolute; inset: 0; background: var(--overlay); }
+.stage.entry .overlay, .stage.entry .dialog { display: none; }
+
+/* ---- 对话框（L 级：min(1080px) / 固定高） ---- */
+.dialog {
+  position: absolute; inset: 0; margin: auto; width: min(1080px, calc(100% - 24px));
+  height: min(700px, calc(100% - 24px));
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-dialog);
+  box-shadow: var(--shadow-2); display: flex; flex-direction: column; overflow: hidden;
+}
+.dlg-head { flex: none; display: flex; align-items: center; gap: 12px; padding: 20px 24px 16px; border-bottom: 1px solid var(--border); }
+.dlg-title { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; line-height: 24px; }
+.dlg-sub { font-size: 12px; color: var(--muted-fg); }
+.dlg-x { margin-left: auto; width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; color: var(--muted-fg); font-size: 16px; }
+.dlg-x:hover { background: var(--muted); color: var(--fg); }
+
+/* 筛选行 */
+.filters { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 24px; border-bottom: 1px solid var(--border); }
+.seg { display: inline-flex; background: var(--muted); border-radius: var(--radius); padding: 2px; gap: 2px; }
+.seg button { font-size: 12px; color: var(--muted-fg); border-radius: 9px; padding: 4px 10px; white-space: nowrap; }
+.seg button.on { background: var(--accent); color: var(--accent-fg); font-weight: 600; }
+select.ctl, input.ctl {
+  font: inherit; font-size: 12px; color: var(--fg); background: var(--muted);
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 10px; height: 30px;
+}
+input.ctl { flex: 1; min-width: 120px; max-width: 220px; margin-left: auto; }
+.sortbtn { font-size: 12px; color: var(--muted-fg); border: 1px solid var(--border); background: var(--muted); border-radius: var(--radius); padding: 5px 10px; height: 30px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.sortbtn.on { color: var(--accent-fg); border-color: transparent; background: var(--accent); font-weight: 600; }
+
+/* 表格：高密度 */
+.body { flex: 1; min-height: 0; overflow: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead th {
+  position: sticky; top: 0; z-index: 2; background: var(--card); text-align: left;
+  font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--muted-fg);
+  padding: 7px 10px; border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+tbody td { padding: 0 10px; height: 36px; border-bottom: 1px solid var(--border); white-space: nowrap; vertical-align: middle; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: color-mix(in oklab, var(--accent) 45%, var(--card)); }
+tbody tr.sel { background: color-mix(in oklab, var(--accent) 70%, var(--card)); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.t-title { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 360px; }
+.t-title .name { overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.t-label { font-size: 11px; color: var(--muted-fg); border: 1px solid var(--border); border-radius: 999px; padding: 0 8px; flex: none; }
+tr.grp td.check { box-shadow: inset 2px 0 0 color-mix(in oklab, var(--accent-fg) 45%, transparent); }
+.origin { font-size: 11px; color: var(--muted-fg); }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted-fg); }
+.dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.dot.online { background: var(--online); }
+.dot.muted { background: transparent; box-shadow: inset 0 0 0 1.5px var(--muted-fg); }
+.dot.info { background: var(--muted-fg); }
+.dot.warning { background: var(--warning); }
+.dot.offline { background: var(--offline); }
+.donepill { font-size: 12px; color: var(--online); font-weight: 500; }
+.prog { display: inline-flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.bar { width: 44px; height: 3px; border-radius: 2px; background: var(--muted); overflow: hidden; flex: none; }
+.bar > i { display: block; height: 100%; background: var(--primary); }
+.bar.done > i { background: var(--online); }
+.mut { color: var(--muted-fg); }
+input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--primary); cursor: pointer; }
+th.check, td.check { width: 34px; text-align: center; }
+
+/* 底部操作条 */
+.dlg-foot { flex: none; display: flex; align-items: center; gap: 10px; padding: 12px 24px; border-top: 1px solid var(--border); }
+.selinfo { font-size: 13px; color: var(--muted-fg); margin-right: auto; display: inline-flex; gap: 8px; align-items: center; }
+.selinfo b { color: var(--fg); font-variant-numeric: tabular-nums; }
+.btn { height: 30px; border-radius: var(--radius); padding: 0 14px; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: var(--card); }
+.btn:hover:not(:disabled) { background: var(--muted); }
+.btn.primary { background: var(--primary); color: var(--primary-fg); border-color: transparent; }
+.btn.primary:hover:not(:disabled) { background: color-mix(in oklab, var(--primary) 88%, white); }
+.btn.primary:disabled { background: var(--muted); color: var(--muted-fg); border-color: transparent; }
+.btn.danger { color: var(--destructive); border-color: color-mix(in oklab, var(--destructive) 45%, var(--border)); }
+.btn.danger:hover:not(:disabled) { background: color-mix(in oklab, var(--destructive) 10%, var(--card)); }
+.btn.ghost { border-color: transparent; color: var(--muted-fg); }
+.btn.ghost:hover:not(:disabled) { color: var(--fg); background: var(--muted); }
+
+/* 二次确认（S 级） */
+.confirm { position: absolute; inset: 0; background: var(--overlay); display: flex; align-items: center; justify-content: center; z-index: 5; }
+.confirm-card { width: min(440px, calc(100% - 32px)); background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-dialog); box-shadow: var(--shadow-2); padding: 20px 24px 16px; }
+.confirm-card h3 { margin: 0 0 8px; font-size: 16px; font-weight: 600; }
+.confirm-card p { margin: 0 0 10px; font-size: 13px; color: var(--fg); }
+.confirm-list { margin: 0 0 10px; padding-left: 20px; font-size: 12px; color: var(--muted-fg); max-height: 108px; overflow: auto; }
+.confirm-list li { margin: 2px 0; }
+.confirm-note { font-size: 12px; color: var(--muted-fg); margin: 0 0 12px; }
+.confirm-foot { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* 提示条 */
+.toast { position: absolute; left: 50%; bottom: 64px; transform: translateX(-50%); background: var(--fg); color: var(--bg); font-size: 13px; border-radius: 999px; padding: 8px 16px; opacity: 0; pointer-events: none; transition: opacity .18s ease-out; z-index: 6; white-space: nowrap; }
+.toast.show { opacity: 1; }
+
+/* 页面说明 */
+.pagewrap { max-width: 1128px; margin: 0 auto; }
+.note { max-width: 1128px; margin: 14px auto 0; font-size: 12px; color: var(--muted-fg); display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
+.note span.k { color: var(--fg); font-weight: 600; }
+.viewtoggle { font-size: 12px; font-weight: 600; color: var(--accent-fg); background: var(--accent); border-radius: 999px; padding: 4px 12px; }
+.legend { display: inline-flex; gap: 10px; align-items: center; }
+/* ---- 移动端（body.m：真实窄屏自动加，或预览开关手动加）----
+   表格换成双行紧凑条目：首行 = 标题+实例标签+状态；次行 = 入口·季度·节目季·RSS·进度·创建 */
+.mlist { display: none; }
+.m .mlist { display: block; }
+.m table { display: none; }
+.m .dialog { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; border-radius: 0; border: 0; }
+.m .stage { border-radius: 0; }
+.m .pagewrap { max-width: 412px; }
+.m .dlg-head { padding: 14px 16px 12px; }
+.m .dlg-title { font-size: 15px; }
+.m .filters { gap: 6px; padding: 8px 12px; }
+.m .seg button { padding: 4px 8px; }
+.m input.ctl { max-width: none; margin-left: 0; flex: 1 1 100%; }
+.m .dlg-foot { flex-wrap: wrap; padding: 10px 16px; gap: 8px; }
+.m .selinfo { flex: 1 1 100%; order: -1; }
+.m .btn { padding: 0 10px; }
+.m .confirm-card { border-radius: 16px; }
+.mrow { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.mrow:hover { background: color-mix(in oklab, var(--accent) 45%, var(--card)); }
+.mrow.sel { background: color-mix(in oklab, var(--accent) 70%, var(--card)); }
+.mrow.grp { box-shadow: inset 2px 0 0 color-mix(in oklab, var(--accent-fg) 45%, transparent); }
+.mmain { min-width: 0; flex: 1; }
+.ml1 { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.mtitle { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ml1 .pill { margin-left: auto; flex: none; }
+.ml2 { font-size: 12px; color: var(--muted-fg); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.mall { display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 12px; color: var(--muted-fg); border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--card); z-index: 2; }
+@media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+</style>
+
+<div class="pagewrap">
+  <div class="stage" id="stage">
+    <div class="wall">
+      <div class="wallbar">
+        <span class="brandmark">bansoko</span>
+        <button class="tab">发现</button><button class="tab on">已订阅</button><button class="tab">下载</button>
+        <span class="chipstat">进行中 13</span><span class="chipstat">已暂停 6</span><span class="chipstat">待开始 4</span>
+        <span class="wallsearch">筛选已订阅…</span>
+        <button class="manage-entry" id="manageEntry">管理
+          <span class="entrytip" id="entryTip" hidden>新增入口：打开批量管理</span>
+        </button>
+      </div>
+      <div class="wallrow"><div class="day">周一</div><div class="wallcards"><div class="ghostcard"></div><div class="ghostcard"></div><div class="ghostcard"></div><div class="ghostcard"></div><div class="ghostcard"></div></div></div>
+      <div class="wallrow"><div class="day">周三</div><div class="wallcards"><div class="ghostcard"></div><div class="ghostcard"></div><div class="ghostcard"></div></div></div>
+      <div class="wallrow"><div class="day">周六</div><div class="wallcards"><div class="ghostcard"></div><div class="ghostcard"></div><div class="ghostcard"></div><div class="ghostcard"></div></div></div>
+    </div>
+    <div class="overlay"></div>
+
+    <div class="dialog" role="dialog" aria-modal="true" aria-label="已订阅管理">
+      <div class="dlg-head">
+        <div>
+          <div class="dlg-title">已订阅管理</div>
+          <div class="dlg-sub" id="dlgSub">22 个实例 · 筛选与批量操作</div>
+        </div>
+        <button class="dlg-x" id="dlgClose" aria-label="关闭">✕</button>
+      </div>
+
+      <div class="filters">
+        <div class="seg" id="segState" role="group" aria-label="状态筛选"></div>
+        <div class="seg" id="segProg" role="group" aria-label="进度筛选"></div>
+        <select class="ctl" id="selOrigin" aria-label="入口筛选"></select>
+        <select class="ctl" id="selSeason" aria-label="季度筛选"></select>
+        <button class="sortbtn" id="sortBtn" aria-label="按创建时间排序"></button>
+        <input class="ctl" id="q" type="search" placeholder="搜索标题 / 来源" aria-label="搜索">
+      </div>
+
+      <div class="body">
+        <table>
+          <thead>
+            <tr>
+              <th class="check"><input type="checkbox" id="checkAll" aria-label="全选"></th>
+              <th>标题</th><th>入口</th><th class="num">季度</th><th class="num">节目季</th><th>状态</th><th>RSS</th>
+              <th class="num">进度</th><th class="num">创建于</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div class="mlist" id="mlist"></div>
+      </div>
+
+      <div class="dlg-foot">
+        <span class="selinfo" id="selInfo"></span>
+        <button class="btn ghost" id="clearSel" hidden>清除选择</button>
+        <button class="btn primary" id="actStart">开始</button>
+        <button class="btn" id="actPause">暂停</button>
+        <button class="btn danger" id="actRemove">移除…</button>
+      </div>
+
+      <div class="confirm" id="confirm" hidden>
+        <div class="confirm-card" role="alertdialog" aria-label="确认退订">
+          <h3 id="cfTitle">退订 3 个实例？</h3>
+          <p>退订不可逆。这些实例将停止获取新发布，配置与记录随之结束。</p>
+          <ul class="confirm-list" id="cfList"></ul>
+          <p class="confirm-note">已入库文件不会被删除，可在「本地数据清理」中处理。</p>
+          <div class="confirm-foot">
+            <button class="btn ghost" id="cfCancel">取消</button>
+            <button class="btn primary" id="cfOk" style="background: var(--destructive); color: var(--destructive-fg);">确认退订</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="toast" id="toast"></div>
+    </div>
+  </div>
+
+  <p class="note">
+    <button class="viewtoggle" id="viewToggle">查看入口位置</button>
+    <button class="viewtoggle" id="phoneToggle">手机宽度预览</button>
+    <span><span class="k">筛选</span> 状态 · 进度（已完成 = 有总集数且已入库 &gt; 1）· 入口（anibt/mikan/自定义）× 季度（创建时所在的 provider 季目录页，创建时冻结；搜索/自定义创建的显示 —）两个独立维度按组合交集，mikan+26春 与 anibt+26春 是不同批次 · 创建时间排序 · 搜索</span>
+    <span><span class="k">进度</span> 已入库/总集数；总数未知显示 n/—（无数条），无总数且未入库显示 —</span>
+    <span><span class="k">批量</span> 开始 / 暂停（待开始不可暂停，置灰并提示）/ 移除（二次确认，不可逆）</span>
+    <span><span class="k">实例</span> 左侧竖线 = 同一作品的多个实例，以实例标签区分（标签仅复制时必填）；不记录也不显示复制来源</span>
+    <span><span class="k">密度</span> 行高 36px，表头吸顶，数字等宽对齐</span>
+    <span>示例数据，非真实库</span>
+  </p>
+</div>
+
+<script>
+"use strict";
+// 示例数据：真实作品名 + 构造的进度/状态（不取自任何 RSS 采集结果）
+const H = [
+  { t: "药屋少女的呢喃 第三季", o: "anibt", q: "26秋", sn: 3, st: "active", ep: 11, total: 24, rss: "ready", c: "10-05", g: "kh" },
+  { t: "药屋少女的呢喃 第三季", lb: "B 盘", o: "anibt", q: "26秋", sn: 3, st: "pending", ep: 0, total: 24, rss: "ready", c: "10-20", g: "kh" },
+  { t: "黄金神威 最终章", lb: "第 2 部分", o: "anibt", q: "26春", sn: null, st: "active", ep: 12, total: 12, rss: "ready", c: "09-18" },
+  { t: "转生就是剑 第二季", o: "anibt", q: "26秋", sn: 2, st: "active", ep: 8, total: 12, rss: "ready", c: "10-02" },
+  { t: "致不灭的你 第三季", o: "mikan", q: "26夏", sn: 3, st: "stopped", ep: 6, total: 13, rss: "degraded", c: "09-12" },
+  { t: "佐佐木与文鸟小哔 第二季", o: "mikan", q: "26夏", sn: 2, st: "active", ep: 12, total: 12, rss: "ready", c: "09-30" },
+  { t: "飙马野郎 JOJO的奇妙冒险 第一赛段", o: "anibt", q: "26秋", sn: 1, st: "pending", ep: 0, total: 12, rss: "ready", c: "10-24" },
+  { t: "尖帽子的魔法工房", o: "anibt", q: "26秋", sn: null, st: "active", ep: 7, total: null, rss: "ready", c: "10-08" },
+  { t: "幼女战记", o: "mikan", q: "17冬", sn: 1, st: "stopped", ep: 12, total: 12, rss: "failed", c: "08-21" },
+  { t: "落语朱音", o: "custom", q: null, sn: null, st: "active", ep: 4, total: null, rss: null, c: "10-26" },
+  { t: "灌篮高手（剧场版）", o: "mikan", q: "22冬", sn: null, st: "active", ep: 1, total: 1, rss: "ready", c: "09-02" },
+  { t: "FX战士久留美", o: "anibt", q: "26秋", sn: null, st: "active", ep: 3, total: 12, rss: "degraded", c: "10-19" },
+  { t: "弱弱老师", o: "anibt", q: "26秋", sn: null, st: "pending", ep: 0, total: 10, rss: "ready", c: "10-27" },
+  { t: "学生会也有洞！", o: "anibt", q: "26秋", sn: null, st: "active", ep: 1, total: 12, rss: "ready", c: "10-19" },
+  { t: "转生哥布林有问题吗？", o: "anibt", q: null, sn: null, st: "active", ep: 5, total: null, rss: "ready", c: "10-11" },
+  { t: "魔法★探险家", o: "mikan", q: "26春", sn: 1, st: "stopped", ep: 9, total: 12, rss: "degraded", c: "09-05" },
+  { t: "铁旅！meet with 铁道少女", o: "custom", q: null, sn: null, st: "active", ep: 0, total: null, rss: null, c: "10-15" },
+  { t: "一觉醒来就有了最强装备跟太空船，决定以自家独栋建筑为目标当佣兵自由过活", o: "anibt", q: "26秋", sn: null, st: "active", ep: 6, total: 24, rss: "ready", c: "10-01" },
+  { t: "迦楠大人的白给是恶魔级", o: "anibt", q: "26夏", sn: null, st: "stopped", ep: 0, total: 12, rss: "ready", c: "09-08" },
+  { t: "装备我最强", o: "anibt", q: "26秋", sn: null, st: "pending", ep: 0, total: 12, rss: "ready", c: "10-28" },
+  { t: "关于虽然逃走的鱼很大、但钓上来的鱼却太大了这件事", o: "mikan", q: null, sn: null, st: "active", ep: 2, total: 12, rss: "ready", c: "10-13" },
+  { t: "被放逐的作弊赋予魔术师享受随心所欲的第二人生。", o: "anibt", q: "25冬", sn: null, st: "stopped", ep: 12, total: 12, rss: "failed", c: "08-30" },
+  { t: "恶女不才，请多关照 ～雏宫蝶鼠换身传～", o: "mikan", q: "26秋", sn: null, st: "active", ep: 7, total: 12, rss: "ready", c: "10-04" },
+];
+const STNAME = { active: "进行中", stopped: "已暂停", pending: "待开始" };
+const RSSNAME = { ready: ["正常", "online"], degraded: ["降级", "warning"], failed: ["失败", "offline"], null: ["—", "muted"] };
+// 播出季度（自然季）显示序：新→旧；未设排最后
+const QORDER = ["26秋", "26夏", "26春", "26冬", "25秋", "25冬", "24秋", "23冬", "22冬", "17冬"];
+const rows = H.map((r, i) => ({ id: i, ...r }));
+// 创建时间序号（列表顺序 = 创建顺序，c 显示 MM-DD）
+const ORDER = rows.map((r) => r.id);
+const state = { sel: new Set(), fState: "all", fProg: "all", fOrigin: "all", fSeason: "all", sortDesc: true, q: "" };
+
+const isDone = (r) => r.total != null && r.ep >= r.total;
+const isDoneFilter = (r) => r.total != null && r.ep > 1 && r.ep >= r.total; // owner 规则：已完成 = 有总集数且已入库 > 1
+// 入口与季度是两个独立维度（owner 定稿）：入口 = anibt/mikan/自定义；季度 = 季目录创建时所在季（创建时冻结），
+// 搜索与自定义创建的订阅没有季度（—）。筛选按组合交集：mikan+26春 与 anibt+26春 是不同批次。
+const ORIGIN_LABEL = { anibt: "anibt", mikan: "mikan", custom: "自定义" };
+
+function visible() {
+  let out = rows.filter((r) => {
+    if (state.fState !== "all" && r.st !== state.fState) return false;
+    if (state.fProg === "done" && !isDoneFilter(r)) return false;
+    if (state.fProg === "doing" && !(r.ep > 0 && !isDone(r))) return false;
+    if (state.fProg === "none" && r.ep > 0) return false;
+    if (state.fOrigin !== "all" && r.o !== state.fOrigin) return false;
+    if (state.fSeason !== "all" && (r.q ?? "none") !== state.fSeason) return false;
+    if (state.q) {
+      const q = state.q.toLowerCase();
+      if (!(r.t.toLowerCase().includes(q) || r.o.includes(q) || (r.lb || "").toLowerCase().includes(q))) return false;
+    }
+    return true;
+  });
+  // 排序：同一作品的多个实例（g 相同）始终相邻成组；组间按创建时间方向排，组内原件在前、副本按创建在后
+  const pos = (r) => ORDER.indexOf(r.id);
+  const groups = new Map();
+  for (const r of out) {
+    const k = r.g ?? `#${r.id}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  }
+  out = [...groups.values()]
+    .sort((a, b) => {
+      const pa = Math[state.sortDesc ? "max" : "min"](...a.map(pos));
+      const pb = Math[state.sortDesc ? "max" : "min"](...b.map(pos));
+      return state.sortDesc ? pb - pa : pa - pb;
+    })
+    .flatMap((g) => g.sort((x, y) => pos(x) - pos(y)));
+  return out;
+}
+
+const $ = (id) => document.getElementById(id);
+function toast(msg) {
+  const el = $("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toast.t);
+  toast.t = setTimeout(() => el.classList.remove("show"), 2400);
+}
+
+function seg(el, items, key, onPick) {
+  el.innerHTML = "";
+  for (const [v, label] of items) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    if (state[key] === v) b.className = "on";
+    b.onclick = () => { state[key] = v; onPick(); };
+    el.appendChild(b);
+  }
+}
+function originOptions() {
+  const present = new Set(rows.map((r) => r.o));
+  const opts = [["all", "全部入口"]];
+  for (const k of ["anibt", "mikan", "custom"]) if (present.has(k)) opts.push([k, ORIGIN_LABEL[k]]);
+  return opts;
+}
+function seasonOptions() {
+  const present = new Set(rows.map((r) => r.q));
+  const opts = [["all", "全部季度"]];
+  for (const q of QORDER) if (present.has(q)) opts.push([q, `20${q.slice(0, 2)} ${q.slice(2)}`]);
+  if (present.has(null)) opts.push(["none", "无季度"]);
+  return opts;
+}
+function renderFilters() {
+  const cnt = (st) => rows.filter((r) => r.st === st).length;
+  seg($("segState"), [["all", `全部 ${rows.length}`], ["active", `进行中 ${cnt("active")}`], ["stopped", `已暂停 ${cnt("stopped")}`], ["pending", `待开始 ${cnt("pending")}`]], "fState", render);
+  seg($("segProg"), [["all", "进度不限"], ["doing", "进行中"], ["done", "已完成"], ["none", "未入库"]], "fProg", render);
+  const so = $("selOrigin");
+  so.innerHTML = originOptions().map(([v, l]) => `<option value="${v}"${state.fOrigin === v ? " selected" : ""}>${l}</option>`).join("");
+  so.onchange = () => { state.fOrigin = so.value; render(); };
+  const sel = $("selSeason");
+  sel.innerHTML = seasonOptions().map(([v, l]) => `<option value="${v}"${state.fSeason === v ? " selected" : ""}>${l}</option>`).join("");
+  sel.onchange = () => { state.fSeason = sel.value; render(); };
+  const sb = $("sortBtn");
+  sb.textContent = state.sortDesc ? "创建 ↓ 最新" : "创建 ↑ 最早";
+  sb.classList.toggle("on", true);
+}
+
+function render() {
+  renderFilters();
+  const vis = visible();
+  const tb = $("rows");
+  tb.innerHTML = "";
+  const grpKeys = new Map();
+  for (const r of vis) {
+    const k = r.g ?? `#${r.id}`;
+    grpKeys.set(k, (grpKeys.get(k) ?? 0) + 1);
+  }
+  for (const r of vis) {
+    const tr = document.createElement("tr");
+    if (state.sel.has(r.id)) tr.className = "sel";
+    if (r.g && grpKeys.get(r.g) > 1) tr.classList.add("grp");
+    const done = isDone(r);
+    const pct = r.total != null ? Math.min(100, Math.round((r.ep / r.total) * 100)) : null;
+    // 进度形状恒为 已入库/总集数：总数未知 → n/—（无数条）；无总数且未入库 → —
+    const prog = r.total == null && r.ep === 0
+      ? `<span class="mut">—</span>`
+      : `<span class="prog"><span>${r.ep}/${r.total ?? "—"}</span>` +
+        (done ? `<span class="donepill">完成</span>` : pct != null ? `<span class="bar"><i style="width:${pct}%"></i></span>` : ``) + `</span>`;
+    const [rssName, rssTone] = RSSNAME[String(r.rss)];
+    tr.innerHTML =
+      `<td class="check"><input type="checkbox" data-id="${r.id}"${state.sel.has(r.id) ? " checked" : ""} aria-label="选择 ${r.t}"></td>` +
+      `<td><span class="t-title"><span class="name" title="${r.t}">${r.t}</span>${r.lb ? `<span class="t-label" title="实例标签">${r.lb}</span>` : ""}</span></td>` +
+      `<td class="origin">${ORIGIN_LABEL[r.o]}</td>` +
+      `<td class="num mut">${r.q ?? "—"}</td>` +
+      `<td class="num mut">${r.sn == null ? "—" : "S" + r.sn}</td>` +
+      `<td><span class="pill"><span class="dot ${r.st === "active" ? "online" : r.st === "pending" ? "info" : "muted"}"></span>${STNAME[r.st]}</span></td>` +
+      `<td><span class="pill"><span class="dot ${rssTone}"></span>${rssName}</span></td>` +
+      `<td class="num">${prog}</td>` +
+      `<td class="num mut">${r.c}</td>`;
+    tr.onclick = (e) => {
+      if (e.target.tagName === "INPUT") return;
+      toggle(r.id);
+    };
+    tr.querySelector("input").onclick = (e) => { e.stopPropagation(); toggle(r.id); };
+    tb.appendChild(tr);
+  }
+  // 副标题 / 全选 / 底部
+  const doneCnt = rows.filter(isDoneFilter).length;
+  $("dlgSub").textContent = `${rows.length} 个实例 · ${doneCnt} 个已完成 · 筛选后 ${vis.length} 个`;
+  const allSel = vis.length > 0 && vis.every((r) => state.sel.has(r.id));
+  const someSel = vis.some((r) => state.sel.has(r.id));
+  const ca = $("checkAll");
+  ca.checked = allSel;
+  ca.indeterminate = someSel && !allSel;
+  ca.onchange = () => {
+    for (const r of vis) (ca.checked ? state.sel.add(r.id) : state.sel.delete(r.id));
+    render();
+  };
+  // 移动端条目列表（与表格同数据同交互）
+  const ml = $("mlist");
+  ml.innerHTML = `<label class="mall"><input type="checkbox" id="mAll"${allSel ? " checked" : ""}> 全选本列表（${vis.length}）</label>`;
+  for (const r of vis) {
+    const d = document.createElement("div");
+    d.className = "mrow" + (state.sel.has(r.id) ? " sel" : "") + (r.g && grpKeys.get(r.g) > 1 ? " grp" : "");
+    const done = isDone(r);
+    const prog = r.total == null && r.ep === 0 ? "—" : `${r.ep}/${r.total ?? "—"}${done ? " 完成" : ""}`;
+    const [rssName] = RSSNAME[String(r.rss)];
+    d.innerHTML =
+      `<input type="checkbox"${state.sel.has(r.id) ? " checked" : ""} aria-label="选择 ${r.t}">` +
+      `<div class="mmain"><div class="ml1"><span class="mtitle">${r.t}</span>${r.lb ? `<span class="t-label">${r.lb}</span>` : ""}` +
+      `<span class="pill"><span class="dot ${r.st === "active" ? "online" : r.st === "pending" ? "info" : "muted"}"></span>${STNAME[r.st]}</span></div>` +
+      `<div class="ml2">${ORIGIN_LABEL[r.o]} · ${r.q ?? "—"} · ${r.sn == null ? "—" : "S" + r.sn} · RSS ${rssName} · ${prog} · ${r.c}</div></div>`;
+    d.onclick = (e) => { if (e.target.tagName === "INPUT") return; toggle(r.id); };
+    d.querySelector("input").onclick = (e) => { e.stopPropagation(); toggle(r.id); };
+    ml.appendChild(d);
+  }
+  $("mAll").onchange = (e) => {
+    for (const r of vis) (e.target.checked ? state.sel.add(r.id) : state.sel.delete(r.id));
+    render();
+  };
+  const selRows = rows.filter((r) => state.sel.has(r.id));
+  const n = selRows.length;
+  $("selInfo").innerHTML = n === 0
+    ? `已选 <b>0</b> · 点行或勾选进行批量操作`
+    : `已选 <b>${n}</b> · 进行中 ${selRows.filter((r) => r.st === "active").length} · 已暂停 ${selRows.filter((r) => r.st === "stopped").length} · 待开始 ${selRows.filter((r) => r.st === "pending").length}`;
+  $("clearSel").hidden = n === 0;
+  $("actStart").disabled = !(n > 0 && selRows.some((r) => r.st !== "active"));
+  $("actPause").disabled = !(n > 0 && selRows.some((r) => r.st === "active"));
+  $("actPause").title = n > 0 && selRows.some((r) => r.st === "pending") && !selRows.some((r) => r.st === "active")
+    ? "待开始的实例不能暂停（需先开始）"
+    : "";
+  $("actRemove").disabled = n === 0;
+}
+function toggle(id) {
+  if (state.sel.has(id)) state.sel.delete(id); else state.sel.add(id);
+  render();
+}
+
+$("clearSel").onclick = () => { state.sel.clear(); render(); };
+$("actStart").onclick = () => {
+  const n = rows.filter((r) => state.sel.has(r.id) && r.st !== "active").length;
+  for (const r of rows) if (state.sel.has(r.id)) r.st = "active";
+  toast(`已开始 ${n} 个实例（示例）`);
+  render();
+};
+$("actPause").onclick = () => {
+  const n = rows.filter((r) => state.sel.has(r.id) && r.st === "active").length;
+  for (const r of rows) if (state.sel.has(r.id) && r.st === "active") r.st = "stopped";
+  toast(`已暂停 ${n} 个实例（示例）`);
+  render();
+};
+$("actRemove").onclick = () => {
+  const sel = rows.filter((r) => state.sel.has(r.id));
+  $("cfTitle").textContent = `退订 ${sel.length} 个实例？`;
+  const names = sel.map((r) => r.t + (r.lb ? `（${r.lb}）` : ""));
+  $("cfList").innerHTML = names.slice(0, 5).map((t) => `<li>${t}</li>`).join("") +
+    (names.length > 5 ? `<li>…等共 ${names.length} 个</li>` : "");
+  $("confirm").hidden = false;
+};
+$("cfCancel").onclick = () => { $("confirm").hidden = true; };
+$("cfOk").onclick = () => {
+  const n = rows.filter((r) => state.sel.has(r.id)).length;
+  for (let i = rows.length - 1; i >= 0; i--) if (state.sel.has(rows[i].id)) { const oi = ORDER.indexOf(rows[i].id); rows.splice(i, 1); ORDER.splice(oi, 1); }
+  state.sel.clear();
+  $("confirm").hidden = true;
+  toast(`已退订 ${n} 个实例（示例）`);
+  render();
+};
+$("q").oninput = (e) => { state.q = e.target.value.trim(); render(); };
+$("sortBtn").onclick = () => { state.sortDesc = !state.sortDesc; render(); };
+$("dlgClose").onclick = () => { $("stage").classList.add("entry"); $("viewToggle").textContent = "打开管理对话框"; $("entryTip").hidden = false; };
+$("manageEntry").onclick = () => { $("stage").classList.remove("entry"); $("viewToggle").textContent = "查看入口位置"; $("entryTip").hidden = true; };
+// 移动端样式开关：真实窄屏自动生效，预览按钮可手动切换
+let phoneForce = false;
+const mq = matchMedia("(max-width: 640px)");
+const syncM = () => document.body.classList.toggle("m", phoneForce || mq.matches);
+mq.addEventListener("change", syncM);
+$("phoneToggle").onclick = () => {
+  phoneForce = !phoneForce;
+  $("phoneToggle").textContent = phoneForce ? "桌面宽度预览" : "手机宽度预览";
+  syncM();
+};
+syncM();
+render();
+</script>

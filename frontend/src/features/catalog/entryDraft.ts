@@ -14,6 +14,9 @@ export function draftFromEntry(entry: CatalogEntryView): AnimeDraft {
   draft.origin = origin;
   // A provider (anibt|mikan) keeps its providerEntryRef; custom must be null.
   draft.origin_entry_ref = origin === "anibt" || origin === "mikan" ? entry.providerEntryRef : null;
+  // The season page the draft was created from: frozen provenance carried onto the
+  // subscription at creation. Search-created provider entries and custom carry none.
+  draft.entry_season = origin === "anibt" || origin === "mikan" ? entry.season ?? null : null;
   draft.title = entry.title;
   draft.title_override = null;
   draft.instance_label = entry.instanceLabel ?? entry.title;

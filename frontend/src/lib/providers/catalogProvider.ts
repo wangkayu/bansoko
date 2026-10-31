@@ -154,6 +154,9 @@ export function mapAnimeListItem(item: AnimeListItem): CatalogEntryView {
     source,
     title: item.managed_anime.title,
     instanceLabel: item.subscription.instance_label ?? undefined,
+    // The frozen creation provenance (pre-108 instances and search/custom
+    // creations carry none): a display fact of the card, never re-derived.
+    season: item.subscription.entry_season ?? undefined,
     posterUrl: item.poster_url ?? undefined,
     coverUrl: item.cover_url ?? undefined,
     broadcastDay: item.broadcast_day ?? undefined,
@@ -208,7 +211,7 @@ export function mapSnapshotView(snap: CatalogSnapshot): CatalogSnapshotView {
   };
 }
 
-export function mapCatalogItem(item: CatalogItem, provider: ProviderKey): CatalogEntryView {
+export function mapCatalogItem(item: CatalogItem, provider: ProviderKey, season?: string): CatalogEntryView {
   // A browse/search card is a candidate, not a subscription: only whether this external
   // entry has a subscription matters, and no subscription's id/version/state is carried. An
   // ended subscription still counts as subscribed while the instance remains on the
@@ -223,6 +226,10 @@ export function mapCatalogItem(item: CatalogItem, provider: ProviderKey): Catalo
     providerEntryRef: item.provider_entry_ref,
     source: provider,
     title: item.title,
+    // The season page being browsed: display fact of the card, and the frozen
+    // provenance draftFromEntry carries onto the subscription at creation.
+    // Search-created entries pass no season.
+    ...(season ? { season } : {}),
     originalTitle: item.original_title ?? undefined,
     // The server's poster proxy path (present only with a BGM binding); the BGM image host
     // is unreachable from browsers, so it must go through the own proxy and the card falls
@@ -252,8 +259,8 @@ export function mapCatalogItem(item: CatalogItem, provider: ProviderKey): Catalo
  * Provider 浏览列表投影：每个外部条目一张候选卡（键是 provider ref）。条目有订阅时
  * 卡片只标「已订阅」；订阅自身（含复制出的订阅）的状态与操作只在已订阅墙上。
  */
-export function mapCatalogEntries(items: CatalogItem[], provider: ProviderKey): CatalogEntryView[] {
-  return items.map((item) => mapCatalogItem(item, provider));
+export function mapCatalogEntries(items: CatalogItem[], provider: ProviderKey, season?: string): CatalogEntryView[] {
+  return items.map((item) => mapCatalogItem(item, provider, season));
 }
 
 class ApiCatalogProvider implements CatalogProvider {
@@ -289,7 +296,7 @@ class ApiCatalogProvider implements CatalogProvider {
     }
     const workspace = await readCatalogWorkspace(this.key, season);
     return {
-      entries: mapCatalogEntries(workspace.items, this.key),
+      entries: mapCatalogEntries(workspace.items, this.key, season),
       snapshot: mapSnapshotView(workspace.snapshot),
     };
   }

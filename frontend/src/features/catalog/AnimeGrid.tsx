@@ -2,7 +2,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useLocation, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "../../ui/toast";
-import { AlertTriangle, CheckCircle2, CircleHelp, PackageCheck, Plus, RotateCw, type LucideIcon } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleHelp, ListChecks, PackageCheck, Plus, RotateCw, type LucideIcon } from "lucide-react";
 import { isVersionConflict, newUUID, toUserMessage, type SubscribeResult } from "../../lib/api/client";
 import { getCandidateStore } from "../../lib/candidate/serverCandidateStore";
 import { blacklistKey, useBlacklist, useBlacklistActions } from "../../lib/blacklist";
@@ -53,6 +53,10 @@ const AnimeFilesDialogEntry = lazyEntry(
 const LocalDataCleanupDialogEntry = lazyEntry(
   () => import("./LocalDataCleanupDialog"),
   (module) => module.LocalDataCleanupDialog,
+);
+const SubscribedManageDialogEntry = lazyEntry(
+  () => import("./SubscribedManageDialog"),
+  (module) => module.SubscribedManageDialog,
 );
 
 // AnimeGrid — the product's entry screen. Four columns:
@@ -178,6 +182,9 @@ export function AnimeGrid() {
   const [pendingDuplicate, setPendingDuplicate] = useState<CatalogEntryView | null>(null);
   // The card's files action: the per-anime files dialog (a standalone dialog, not route-carried; a retired subscription opens read-only).
   const [filesEntry, setFilesEntry] = useState<CatalogEntryView | null>(null);
+  // The subscribed wall's bulk-management dialog: opened from the toolbar, mounted
+  // only while open so the lazy chunk loads on first use.
+  const [manageOpen, setManageOpen] = useState(false);
 
   const queryClient = useQueryClient();
   const catalog = useCatalog(tab, season);
@@ -643,6 +650,13 @@ export function AnimeGrid() {
   const chips = tab === "all" && rows.length > 0 && (
     <StatsChips chips={statsChips} active={statsFilter} onToggle={toggleStatsFilter} ariaLabel={t("grid.statsAria")} scroll={isPhone} />
   );
+  // The subscribed wall's bulk-management entry (filters + batch start/pause/remove).
+  const manageButton = tab === "all" && (
+    <Button className="tw:flex-none" onClick={() => setManageOpen(true)}>
+      <ListChecks aria-hidden className="tw:size-4" />
+      {t("grid.manage.entry")}
+    </Button>
+  );
 
   // The toolbar: one line, no card chrome (from the top-bar review). Sticks on desktop; on phones the
 //   browse column collapses it while scrolling, and the subscribed wall never sticks.
@@ -666,6 +680,7 @@ export function AnimeGrid() {
             {showFilter && <FilterToggle open={filterFieldOpen} onToggle={togglePhoneFilter} />}
             {availableToggle}
             {refreshButton}
+            {manageButton}
           </div>
         </div>
       )}
@@ -673,7 +688,16 @@ export function AnimeGrid() {
       {statusLine}
     </>
   ) : tab === "all" ? (
-    <ToolbarRow end={showFilter && <FilterInput value={query} onChange={updateQuery} className="tw:w-56" />}>{chips}</ToolbarRow>
+    <ToolbarRow
+      end={
+        <>
+          {manageButton}
+          {showFilter && <FilterInput value={query} onChange={updateQuery} className="tw:w-56" />}
+        </>
+      }
+    >
+      {chips}
+    </ToolbarRow>
   ) : (
     <ToolbarRow
       end={
@@ -882,6 +906,11 @@ export function AnimeGrid() {
             onChanged={() => void invalidateCatalog()}
             onClose={() => setFilesEntry(null)}
           />
+        </Suspense>
+      )}
+      {manageOpen && (
+        <Suspense fallback={null}>
+          <SubscribedManageDialogEntry onClose={() => setManageOpen(false)} onMutated={() => void invalidateCatalog()} />
         </Suspense>
       )}
       {pendingLocalCleanup && (
