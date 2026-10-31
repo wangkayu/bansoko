@@ -103,7 +103,9 @@ export function mapCandidateToEntry(
     metadataMatch: subscription ? metadataMatchFromItem(subscription) : metadataMatchFromCandidateDraft(candidate),
     rssUrl: firstSource?.locator ?? "",
     groupName: firstSource?.group_name ?? "",
-    instanceLabel: candidate.instance_label ?? candidate.title,
+    // The preset's own note, never the title: a custom draft requires the owner to write one,
+    // and a note that only repeats the title is no note.
+    instanceLabel: candidate.instance_label ?? undefined,
     candidateId: candidate.id,
     // The preset's own BGM binding supplies the poster (a server proxy path); once
     // subscribed, the subscription's metadata poster below wins. An unsubscribed preset or

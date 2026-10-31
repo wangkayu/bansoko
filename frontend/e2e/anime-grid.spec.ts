@@ -1135,6 +1135,8 @@ test.describe("AnimeGrid", () => {
     // 两个实例各一条标题；备注重复标题的第二条不再输出备注（否则是三条）。
     await expect(dialog.getByText(longTitle, { exact: true })).toHaveCount(2);
     const noteBox = await dialog.getByText("收藏版", { exact: true }).boundingBox();
+    // 长标题只压缩自己；备注限宽但不被标题挤掉。
+    expect(noteBox!.width).toBeGreaterThan(20);
     expect(noteBox!.width).toBeLessThanOrEqual(100);
 
     const viewport = await page.evaluate(() => ({ width: window.innerWidth, scrollWidth: document.documentElement.scrollWidth }));
@@ -1142,6 +1144,8 @@ test.describe("AnimeGrid", () => {
     if (isPhoneLayout(page)) {
       await expect(dialog.getByRole("table")).toHaveCount(0);
       await expect(dialog.getByRole("list")).toBeVisible();
+      const titleBox = await dialog.getByText(longTitle, { exact: true }).first().boundingBox();
+      expect(titleBox!.width).toBeGreaterThan(60);
       const stateBox = await dialog.getByText(t("anime.state.active"), { exact: true }).first().boundingBox();
       expect(stateBox!.height).toBeLessThan(30);
       expect(stateBox!.width).toBeGreaterThan(40);
