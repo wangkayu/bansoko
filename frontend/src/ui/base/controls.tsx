@@ -13,23 +13,31 @@ import "./base.css";
 // Status and category labels are StatePill / Chip.
 
 const focusRing = "tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-ring";
-// Surface only: height and width are owned by each control (see controlBox) so
-// a caller-visible size option never emits two classes for one property.
+// Surface only: height, width and text size are owned by each control (see controlBox /
+// controlText) so a caller-visible size option never emits two classes for one property.
 // controlFrame has no inline padding so a variant with a leading icon can own it.
 const controlFrame =
-  "tw:rounded-control tw:border tw:border-border tw:bg-muted tw:text-sm tw:text-foreground " +
+  "tw:rounded-control tw:border tw:border-border tw:bg-muted tw:text-foreground " +
   "tw:transition-colors tw:hover:border-primary/60 tw:data-popup-open:border-primary tw:aria-invalid:border-destructive " + focusRing;
 const controlSurface = controlFrame + " tw:px-3";
-const controlBox = "tw:h-9 tw:w-full";
 
-type ControlSize = "sm" | "md";
+type ControlSize = "xs" | "sm" | "md";
+
+// Height only; width stays with the caller (Input owns fullWidth).
+const controlHeight: Record<ControlSize, string> = { xs: "tw:h-8", sm: "tw:h-8", md: "tw:h-9" };
+const controlText: Record<ControlSize, string> = { xs: "tw:text-xs", sm: "tw:text-sm", md: "tw:text-sm" };
+const controlBox: Record<ControlSize, string> = {
+  xs: controlHeight.xs + " tw:w-full",
+  sm: controlHeight.sm + " tw:w-full",
+  md: controlHeight.md + " tw:w-full",
+};
 
 export const Button = React.forwardRef<
   HTMLButtonElement,
   React.ButtonHTMLAttributes<HTMLButtonElement> & {
     variant?: ButtonVariant;
-    /** `icon`: 36px square for an icon-only button (pass aria-label); same height as `md`. */
-    size?: "sm" | "md" | "icon";
+    /** `sm`: 28px; `compact`: 32px, the dense-toolbar height shared with the `sm` controls; `icon`: 36px square. */
+    size?: "sm" | "compact" | "md" | "icon";
     /** Busy: keeps the variant look with a spinner and blocks clicks (aria-busy). */
     loading?: boolean;
   }
@@ -45,8 +53,8 @@ export const Button = React.forwardRef<
       // cn() is plain clsx (no tailwind-merge): two utilities for the same
       // property resolve by Tailwind's stylesheet order, not class order, so
       // variants must never emit competing padding/height classes.
-      size === "sm" ? "tw:h-7 tw:text-xs" : size === "icon" ? "tw:size-9 tw:text-sm" : "tw:h-9 tw:text-sm",
-      variant === "link" || size === "icon" ? "" : size === "sm" ? "tw:px-2.5" : "tw:px-3.5",
+      size === "sm" ? "tw:h-7 tw:text-xs" : size === "compact" ? "tw:h-8 tw:text-xs" : size === "icon" ? "tw:size-9 tw:text-sm" : "tw:h-9 tw:text-sm",
+      variant === "link" || size === "icon" ? "" : size === "sm" || size === "compact" ? "tw:px-2.5" : "tw:px-3.5",
       disabled && !loading ? buttonDisabled[variant] : buttonVariant[variant],
       focusRing,
       className,
@@ -85,8 +93,9 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           ref={ref}
           className={cn(
             controlFrame,
+            controlText[controlSize],
             "tw:pr-3 tw:pl-9",
-            controlSize === "sm" ? "tw:h-8" : "tw:h-9",
+            controlHeight[controlSize],
             "tw:w-full tw:min-w-0 tw:placeholder:text-muted-foreground tw:disabled:cursor-not-allowed tw:disabled:opacity-60",
           )}
           {...props}
@@ -97,7 +106,8 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
       ref={ref}
       className={cn(
         controlSurface,
-        controlSize === "sm" ? "tw:h-8" : "tw:h-9",
+        controlText[controlSize],
+        controlHeight[controlSize],
         fullWidth ? "tw:w-full" : "",
         "tw:min-w-0 tw:placeholder:text-muted-foreground tw:disabled:cursor-not-allowed tw:disabled:opacity-60",
         className,
@@ -110,7 +120,7 @@ Input.displayName = "Input";
 
 export const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttributes<HTMLTextAreaElement>>(
   ({ className, rows = 3, ...props }, ref) => (
-    <textarea ref={ref} rows={rows} className={cn(controlSurface, "tw:w-full tw:min-w-0 tw:py-2 tw:leading-5", className)} {...props} />
+    <textarea ref={ref} rows={rows} className={cn(controlSurface, "tw:w-full tw:min-w-0 tw:py-2 tw:text-sm tw:leading-5", className)} {...props} />
   ),
 );
 Textarea.displayName = "Textarea";
@@ -188,6 +198,7 @@ export function Select<V extends string>({
   options,
   onChange,
   disabled,
+  size = "md",
   className,
 }: {
   label: string;
@@ -195,6 +206,8 @@ export function Select<V extends string>({
   options: SelectOption<V>[];
   onChange: (next: V) => void;
   disabled?: boolean;
+  /** `xs`/`sm` (32px, `xs` also 12px text) for dense toolbars; default `md` (36px). */
+  size?: ControlSize;
   className?: string;
 }) {
   const zIndex = usePopupZIndex();
@@ -202,7 +215,7 @@ export function Select<V extends string>({
     <BaseSelect.Root items={options} value={value} disabled={disabled} onValueChange={(next) => onChange(next as V)}>
       <BaseSelect.Trigger
         aria-label={label}
-        className={cn(controlSurface, controlBox, "tw:flex tw:min-w-0 tw:items-center tw:justify-between tw:gap-2 tw:text-left tw:data-disabled:cursor-not-allowed tw:data-disabled:opacity-50", className)}
+        className={cn(controlSurface, controlText[size], controlBox[size], "tw:flex tw:min-w-0 tw:items-center tw:justify-between tw:gap-2 tw:text-left tw:data-disabled:cursor-not-allowed tw:data-disabled:opacity-50", className)}
       >
         {/* min-w-0 (here and on the trigger) lets a long value truncate instead of pushing past its column. */}
         <BaseSelect.Value className="tw:min-w-0 tw:truncate" />

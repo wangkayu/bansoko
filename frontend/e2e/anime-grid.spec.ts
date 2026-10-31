@@ -1152,6 +1152,26 @@ test.describe("AnimeGrid", () => {
       const stateFilters = dialog.getByRole("group", { name: t("grid.manage.stateAria") });
       const stateFiltersBox = await stateFilters.boundingBox();
       expect(stateFiltersBox!.width).toBeGreaterThan(300);
+      // One height across the row's controls, the same 32px as the desktop toolbar.
+      const [originBox, seasonBox, sortBox, searchBox, progressBox] = await Promise.all([
+        dialog.getByLabel(t("grid.manage.originAria"), { exact: true }).boundingBox(),
+        dialog.getByLabel(t("grid.manage.seasonAria"), { exact: true }).boundingBox(),
+        dialog.getByRole("button", { name: t("grid.manage.sortAria") }).boundingBox(),
+        dialog.getByRole("searchbox", { name: t("grid.manage.searchAria") }).boundingBox(),
+        dialog.getByRole("radiogroup", { name: t("grid.manage.progressAria") }).boundingBox(),
+      ]);
+      const toolbarHeights = [stateFiltersBox!, originBox!, seasonBox!, sortBox!, searchBox!, progressBox!].map((box) => Math.round(box.height));
+      expect(new Set(toolbarHeights).size).toBe(1);
+      expect(toolbarHeights[0]).toBe(32);
+      const fontSizes = await Promise.all([
+        stateFilters.locator("button").first().evaluate((el) => getComputedStyle(el).fontSize),
+        dialog.getByRole("radiogroup", { name: t("grid.manage.progressAria") }).locator('[role="radio"]').first().evaluate((el) => getComputedStyle(el).fontSize),
+        dialog.getByLabel(t("grid.manage.originAria"), { exact: true }).evaluate((el) => getComputedStyle(el).fontSize),
+        dialog.getByLabel(t("grid.manage.seasonAria"), { exact: true }).evaluate((el) => getComputedStyle(el).fontSize),
+        dialog.getByRole("button", { name: t("grid.manage.sortAria") }).evaluate((el) => getComputedStyle(el).fontSize),
+        dialog.getByRole("searchbox", { name: t("grid.manage.searchAria") }).evaluate((el) => getComputedStyle(el).fontSize),
+      ]);
+      expect(new Set(fontSizes)).toEqual(new Set(["12px"]));
       return;
     }
 
@@ -1170,6 +1190,30 @@ test.describe("AnimeGrid", () => {
     expect(seasonBox!.width).toBeLessThanOrEqual(140);
     expect(searchBox!.width).toBeLessThanOrEqual(210);
     expect(originBox!.y).toBe(seasonBox!.y);
+
+    // Every toolbar control shares one height (32px): state chips, progress segment,
+    // entry/season selects, sort and search.
+    const sort = dialog.getByRole("button", { name: t("grid.manage.sortAria") });
+    const progressFilters = dialog.getByRole("radiogroup", { name: t("grid.manage.progressAria") });
+    const stateChips = dialog.getByRole("group", { name: t("grid.manage.stateAria") });
+    const [sortBox, progressBox, chipsBox] = await Promise.all([
+      sort.boundingBox(),
+      progressFilters.boundingBox(),
+      stateChips.boundingBox(),
+    ]);
+    const toolbarHeights = [originBox!, seasonBox!, searchBox!, sortBox!, progressBox!, chipsBox!].map((box) => Math.round(box.height));
+    expect(new Set(toolbarHeights).size).toBe(1);
+    expect(toolbarHeights[0]).toBe(32);
+
+    const fontSizes = await Promise.all([
+      stateChips.locator("button").first().evaluate((el) => getComputedStyle(el).fontSize),
+      progressFilters.locator('[role="radio"]').first().evaluate((el) => getComputedStyle(el).fontSize),
+      origin.evaluate((el) => getComputedStyle(el).fontSize),
+      season.evaluate((el) => getComputedStyle(el).fontSize),
+      sort.evaluate((el) => getComputedStyle(el).fontSize),
+      search.evaluate((el) => getComputedStyle(el).fontSize),
+    ]);
+    expect(new Set(fontSizes)).toEqual(new Set(["12px"]));
 
     const row = dialog.getByRole("row").filter({ hasText: longTitle }).first();
     const titleBox = await row.locator("td").nth(1).boundingBox();

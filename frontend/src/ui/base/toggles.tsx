@@ -222,10 +222,13 @@ function RadioItem<V extends string>({ option, variant }: { option: ChoiceOption
 const segmentedFrame = {
   default: "tw:gap-0.5 tw:rounded-lg tw:border tw:border-border tw:bg-card/60 tw:p-1",
   compact: "tw:gap-0.5 tw:rounded-md tw:border tw:border-border/60 tw:bg-muted/30 tw:p-0.5",
+  // 32px overall, the height the dense toolbar's other controls share.
+  toolbar: "tw:gap-0.5 tw:rounded-md tw:border tw:border-border/60 tw:bg-muted/30 tw:p-[3px]",
 } as const;
 const segmentedOption = {
   default: "tw:rounded-md tw:px-3 tw:py-1 tw:text-xs/[1.5]",
   compact: "tw:rounded-[0.25rem] tw:px-1.5 tw:py-0.5 tw:text-badge",
+  toolbar: "tw:h-6 tw:rounded-[0.25rem] tw:px-2 tw:text-xs/[1.5]",
 } as const;
 
 // Checked look per option tone; each tone owns its full checked class set.
@@ -250,8 +253,8 @@ export function Segmented<V extends string>({
   onValueChange: (next: V) => void;
   options: ReadonlyArray<ChoiceOption<V>>;
   disabled?: boolean;
-  /** `compact`: small, light-stroke variant for dense rows (one picker per list row). */
-  size?: "default" | "compact";
+  /** `compact`: small, light-stroke variant for dense rows (one picker per list row). `toolbar`: 32px, matching the other dense-toolbar controls. */
+  size?: "default" | "compact" | "toolbar";
   title?: string;
   "aria-label": string;
   className?: string;

@@ -75,6 +75,7 @@ export function StatsChips<K extends string>({
   onToggle,
   ariaLabel,
   scroll = false,
+  buttonSize = "md",
 }: {
   chips: readonly StatsChip<K>[];
   active: K | null;
@@ -82,6 +83,8 @@ export function StatsChips<K extends string>({
   ariaLabel: string;
   /** Phone: one horizontally scrolling line, never folded. */
   scroll?: boolean;
+  /** Chip height; `compact` (32px) matches a dense toolbar's other controls. */
+  buttonSize?: "compact" | "md";
 }) {
   return (
     <div
@@ -95,7 +98,7 @@ export function StatsChips<K extends string>({
       {chips.map((chip) => {
         const pressed = active === chip.key;
         return (
-          <Button key={chip.key} aria-pressed={pressed} className="tw:flex-none" onClick={() => onToggle(chip.key)}>
+          <Button key={chip.key} size={buttonSize} aria-pressed={pressed} className="tw:flex-none" onClick={() => onToggle(chip.key)}>
             {chip.label}
             <span className={cn("tw:tabular-nums", pressed ? "tw:text-foreground" : "tw:text-muted-foreground")}>{chip.count}</span>
           </Button>

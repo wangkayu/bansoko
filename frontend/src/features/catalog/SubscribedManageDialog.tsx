@@ -248,6 +248,7 @@ export function SubscribedManageDialog({
           <StatsChips<ManageState>
             ariaLabel={t("grid.manage.stateAria")}
             scroll={isPhone}
+            buttonSize="compact"
             chips={[
               { key: "active", label: t("anime.state.active"), count: counts.active },
               { key: "stopped", label: t("anime.state.stopped"), count: counts.stopped },
@@ -259,7 +260,7 @@ export function SubscribedManageDialog({
         </div>
         <Segmented<ManageProgressFilter>
           aria-label={t("grid.manage.progressAria")}
-          size="compact"
+          size="toolbar"
           value={filters.progress}
           onValueChange={(progress) => setFilters((current) => ({ ...current, progress }))}
           options={[
@@ -272,6 +273,7 @@ export function SubscribedManageDialog({
         <div className="tw:w-32 tw:flex-none">
           <Select<ManageOriginFilter>
             label={t("grid.manage.originAria")}
+            size="xs"
             value={filters.origin}
             onChange={(origin) => setFilters((current) => ({ ...current, origin }))}
             options={[
@@ -286,6 +288,7 @@ export function SubscribedManageDialog({
         <div className="tw:w-32 tw:flex-none">
           <Select<ManageSeasonFilter>
             label={t("grid.manage.seasonAria")}
+            size="xs"
             value={filters.season}
             onChange={(season) => setFilters((current) => ({ ...current, season }))}
             options={[
@@ -296,7 +299,7 @@ export function SubscribedManageDialog({
           />
         </div>
         <Button
-          size="sm"
+          size="compact"
           aria-label={t("grid.manage.sortAria")}
           className="tw:flex-none"
           onClick={() => setFilters((current) => ({ ...current, sortDesc: !current.sortDesc }))}
@@ -307,7 +310,7 @@ export function SubscribedManageDialog({
           type="search"
           aria-label={t("grid.manage.searchAria")}
           placeholder={t("grid.manage.searchPlaceholder")}
-          controlSize="sm"
+          controlSize="xs"
           fullWidth={isPhone}
           className={isPhone ? undefined : "tw:ml-auto tw:w-48"}
           value={filters.query}
