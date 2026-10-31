@@ -131,6 +131,7 @@ export const gridCopy = {
     entry: "管理",
     title: "已订阅管理",
     subtitle: "{total} 个实例 · {done} 个已完成 · 筛选后 {filtered} 个",
+    stateAll: "全部",
     stateAria: "按状态筛选",
     progressAria: "按进度筛选",
     progressAll: "进度不限",

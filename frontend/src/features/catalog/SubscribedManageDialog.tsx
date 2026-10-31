@@ -20,7 +20,6 @@ import { StateBlock } from "../../ui/StateBlock";
 import { StatePill } from "../../ui/StatePill";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { ConfirmLines } from "./ConfirmLines";
-import { StatsChips } from "./GridToolbar";
 import { seasonLabel } from "./season";
 import {
   emptyManageFilters,
@@ -40,6 +39,7 @@ import {
   type ManageSort,
   type ManageSortKey,
   type ManageState,
+  type ManageStateFilter,
 } from "./subscribedManage";
 
 /** The sort picker's value: one option per key + direction. */
@@ -62,6 +62,16 @@ function sortFromValue(value: ManageSortValue): ManageSort {
 // instances stay adjacent with an inset line, and the footer's batch actions
 // (start / pause / remove) issue one API call per selected instance and then
 // refresh. Phones swap the table for two-line rows with a sticky select-all.
+
+/** A filter label with its count: the prototype's segments read "订阅中 2". */
+function countLabel(label: string, count: number) {
+  return (
+    <span className="tw:inline-flex tw:items-baseline tw:gap-1">
+      {label}
+      <span className="tw:tabular-nums">{count}</span>
+    </span>
+  );
+}
 
 const STATE_PILL_TONE: Record<ManageState, "online" | "info" | "muted"> = {
   active: "online",
@@ -261,17 +271,17 @@ export function SubscribedManageDialog({
           dimensions, combined by intersection) · created-time sort · search. */}
       <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2 tw:border-b tw:border-border tw:px-6 tw:py-2.5 tw:phone:px-4">
         <div className={isPhone ? "tw:min-w-0 tw:w-full" : "tw:min-w-0"}>
-          <StatsChips<ManageState>
-            ariaLabel={t("grid.manage.stateAria")}
-            scroll={isPhone}
-            buttonSize="compact"
-            chips={[
-              { key: "active", label: t("anime.state.active"), count: counts.active },
-              { key: "stopped", label: t("anime.state.stopped"), count: counts.stopped },
-              { key: "pending", label: t("anime.state.pending"), count: counts.pending },
+          <Segmented<ManageStateFilter>
+            aria-label={t("grid.manage.stateAria")}
+            size="toolbar"
+            value={filters.state}
+            onValueChange={(state) => setFilters((current) => ({ ...current, state }))}
+            options={[
+              { value: "all", label: countLabel(t("grid.manage.stateAll"), rows.length), tone: "primary" },
+              { value: "active", label: countLabel(t("anime.state.active"), counts.active), tone: "primary" },
+              { value: "stopped", label: countLabel(t("anime.state.stopped"), counts.stopped), tone: "primary" },
+              { value: "pending", label: countLabel(t("anime.state.pending"), counts.pending), tone: "primary" },
             ]}
-            active={filters.state === "all" ? null : filters.state}
-            onToggle={(key) => setFilters((current) => ({ ...current, state: current.state === key ? "all" : key }))}
           />
         </div>
         <Segmented<ManageProgressFilter>
@@ -280,10 +290,10 @@ export function SubscribedManageDialog({
           value={filters.progress}
           onValueChange={(progress) => setFilters((current) => ({ ...current, progress }))}
           options={[
-            { value: "all", label: t("grid.manage.progressAll") },
-            { value: "doing", label: t("grid.manage.progressDoing") },
-            { value: "done", label: t("grid.manage.progressDone") },
-            { value: "none", label: t("grid.manage.progressNone") },
+            { value: "all", label: t("grid.manage.progressAll"), tone: "primary" },
+            { value: "doing", label: t("grid.manage.progressDoing"), tone: "primary" },
+            { value: "done", label: t("grid.manage.progressDone"), tone: "primary" },
+            { value: "none", label: t("grid.manage.progressNone"), tone: "primary" },
           ]}
         />
         <div className="tw:w-28 tw:flex-none tw:phone:w-26">
@@ -336,7 +346,7 @@ export function SubscribedManageDialog({
           placeholder={t("grid.manage.searchPlaceholder")}
           controlSize="xs"
           fullWidth={isPhone}
-          className={isPhone ? undefined : "tw:ml-auto tw:w-48"}
+          className={isPhone ? undefined : "tw:ml-auto tw:flex-1 tw:max-w-48"}
           value={filters.query}
           onChange={(event) => setFilters((current) => ({ ...current, query: event.target.value }))}
         />

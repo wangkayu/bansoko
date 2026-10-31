@@ -11,6 +11,7 @@ import { seasonIndex } from "./season";
 
 export type ManageOrigin = "anibt" | "mikan" | "custom";
 export type ManageState = "pending" | "active" | "stopped";
+export type ManageStateFilter = "all" | ManageState;
 export type ManageProgressFilter = "all" | "doing" | "done" | "none";
 export type ManageOriginFilter = "all" | ManageOrigin;
 /** "all" | "none" (no season) | a canonical YYYY-term present in the rows. */
@@ -85,7 +86,7 @@ function manageAllDone(row: ManageRow): boolean {
 }
 
 export interface ManageFilters {
-  state: "all" | ManageState;
+  state: ManageStateFilter;
   progress: ManageProgressFilter;
   origin: ManageOriginFilter;
   season: ManageSeasonFilter;

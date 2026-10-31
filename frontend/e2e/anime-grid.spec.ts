@@ -1149,9 +1149,9 @@ test.describe("AnimeGrid", () => {
       const stateBox = await dialog.getByText(t("anime.state.active"), { exact: true }).first().boundingBox();
       expect(stateBox!.height).toBeLessThan(30);
       expect(stateBox!.width).toBeGreaterThan(40);
-      const stateFilters = dialog.getByRole("group", { name: t("grid.manage.stateAria") });
+      const stateFilters = dialog.getByRole("radiogroup", { name: t("grid.manage.stateAria") });
       const stateFiltersBox = await stateFilters.boundingBox();
-      expect(stateFiltersBox!.width).toBeGreaterThan(300);
+      expect(stateFiltersBox!.width).toBeGreaterThan(200);
       // One height across the row's controls, the same 32px as the desktop toolbar. The
       // scrolling chip line itself pads 6px above the buttons so the corner counts are not
       // clipped; its buttons are what line up with the other controls.
@@ -1161,13 +1161,13 @@ test.describe("AnimeGrid", () => {
         dialog.getByLabel(t("grid.manage.sortAria")).boundingBox(),
         dialog.getByRole("searchbox", { name: t("grid.manage.searchAria") }).boundingBox(),
         dialog.getByRole("radiogroup", { name: t("grid.manage.progressAria") }).boundingBox(),
-        stateFilters.locator("button").first().boundingBox(),
+        stateFilters.locator('[role="radio"]').first().boundingBox(),
       ]);
-      const toolbarHeights = [chipBox!, originBox!, seasonBox!, sortBox!, searchBox!, progressBox!].map((box) => Math.round(box.height));
+      const toolbarHeights = [stateFiltersBox!, originBox!, seasonBox!, sortBox!, searchBox!, progressBox!].map((box) => Math.round(box.height));
       expect(new Set(toolbarHeights).size).toBe(1);
       expect(toolbarHeights[0]).toBe(32);
       const fontSizes = await Promise.all([
-        stateFilters.locator("button").first().evaluate((el) => getComputedStyle(el).fontSize),
+        stateFilters.locator('[role="radio"]').first().evaluate((el) => getComputedStyle(el).fontSize),
         dialog.getByRole("radiogroup", { name: t("grid.manage.progressAria") }).locator('[role="radio"]').first().evaluate((el) => getComputedStyle(el).fontSize),
         dialog.getByLabel(t("grid.manage.originAria"), { exact: true }).evaluate((el) => getComputedStyle(el).fontSize),
         dialog.getByLabel(t("grid.manage.seasonAria"), { exact: true }).evaluate((el) => getComputedStyle(el).fontSize),
@@ -1175,19 +1175,9 @@ test.describe("AnimeGrid", () => {
         dialog.getByRole("searchbox", { name: t("grid.manage.searchAria") }).evaluate((el) => getComputedStyle(el).fontSize),
       ]);
       expect(new Set(fontSizes)).toEqual(new Set(["12px"]));
-      const chipCenterOffset = await stateFilters.locator("button").first().evaluate((el) => {
-        const button = el.getBoundingClientRect();
-        const range = document.createRange();
-        range.selectNodeContents(el.firstChild!);
-        const text = range.getBoundingClientRect();
-        return Math.abs(text.x + text.width / 2 - (button.x + button.width / 2));
-      });
-      expect(chipCenterOffset).toBeLessThanOrEqual(1);
-      // The count badge rides outside the chip: the scrolling line pads its height so the
-      // digits are whole instead of being clipped by `overflow-x-auto`.
-      const badge = stateFilters.locator("button").first().locator("span");
-      const badgeBox = await badge.boundingBox();
-      expect(badgeBox!.y).toBeGreaterThanOrEqual(stateFiltersBox!.y);
+      // The state filter is the prototype's soft segment group: an explicit 全部 option with
+      // the per-state counts inline, never a set of boxed chips.
+      await expect(stateFilters.locator('[role="radio"]').first()).toContainText(t("grid.manage.stateAll"));
       // The shrunken selects pack one row tighter: the sort never sits alone on its line,
       // so the filters end one row earlier than the fixed-width version.
       expect(sortBox!.y).toBe(seasonBox!.y);
@@ -1233,7 +1223,7 @@ test.describe("AnimeGrid", () => {
     const sort = dialog.getByLabel(t("grid.manage.sortAria"));
     await expect(sort).toContainText(t("grid.manage.sortNameAsc"));
     const progressFilters = dialog.getByRole("radiogroup", { name: t("grid.manage.progressAria") });
-    const stateChips = dialog.getByRole("group", { name: t("grid.manage.stateAria") });
+    const stateChips = dialog.getByRole("radiogroup", { name: t("grid.manage.stateAria") });
     const [sortBox, progressBox, chipsBox] = await Promise.all([
       sort.boundingBox(),
       progressFilters.boundingBox(),
@@ -1246,7 +1236,7 @@ test.describe("AnimeGrid", () => {
     expect(Math.abs(chipsBox!.x - (dialogBox!.x + 25))).toBeLessThanOrEqual(1);
 
     const fontSizes = await Promise.all([
-      stateChips.locator("button").first().evaluate((el) => getComputedStyle(el).fontSize),
+      stateChips.locator('[role="radio"]').first().evaluate((el) => getComputedStyle(el).fontSize),
       progressFilters.locator('[role="radio"]').first().evaluate((el) => getComputedStyle(el).fontSize),
       origin.evaluate((el) => getComputedStyle(el).fontSize),
       season.evaluate((el) => getComputedStyle(el).fontSize),
@@ -1255,16 +1245,8 @@ test.describe("AnimeGrid", () => {
     ]);
     expect(new Set(fontSizes)).toEqual(new Set(["12px"]));
 
-    // The chip's label sits at the button center; the count rides at the corner instead of
-    // shifting the label left (the segmented control's text is centered the same way).
-    const chipCenterOffset = await stateChips.locator("button").first().evaluate((el) => {
-      const button = el.getBoundingClientRect();
-      const range = document.createRange();
-      range.selectNodeContents(el.firstChild!);
-      const text = range.getBoundingClientRect();
-      return Math.abs(text.x + text.width / 2 - (button.x + button.width / 2));
-    });
-    expect(chipCenterOffset).toBeLessThanOrEqual(1);
+    // 全部 is the reset option of the state group.
+    await expect(stateChips.locator('[role="radio"]').first()).toContainText(t("grid.manage.stateAll"));
 
     const row = dialog.getByRole("row").filter({ hasText: longTitle }).first();
     const titleBox = await row.locator("td").nth(1).boundingBox();

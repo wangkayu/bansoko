@@ -222,20 +222,21 @@ function RadioItem<V extends string>({ option, variant }: { option: ChoiceOption
 const segmentedFrame = {
   default: "tw:gap-0.5 tw:rounded-lg tw:border tw:border-border tw:bg-card/60 tw:p-1",
   compact: "tw:gap-0.5 tw:rounded-md tw:border tw:border-border/60 tw:bg-muted/30 tw:p-0.5",
-  // 32px overall, the height the dense toolbar's other controls share.
-  toolbar: "tw:gap-0.5 tw:rounded-md tw:border tw:border-border/60 tw:bg-muted/30 tw:p-[3px]",
+  // 32px overall, the height the dense toolbar's other controls share. A soft, borderless
+  // tinted block — the filter row's segments read as one group, not as boxed controls.
+  toolbar: "tw:gap-0.5 tw:rounded-control tw:bg-muted tw:p-1",
 } as const;
 const segmentedOption = {
   default: "tw:rounded-md tw:px-3 tw:py-1 tw:text-xs/[1.5]",
   compact: "tw:rounded-[0.25rem] tw:px-1.5 tw:py-0.5 tw:text-badge",
-  toolbar: "tw:h-6 tw:rounded-[0.25rem] tw:px-2 tw:text-xs/[1.5]",
+  toolbar: "tw:h-6 tw:rounded-lg tw:px-2 tw:text-xs/[1.5]",
 } as const;
 
 // Checked look per option tone; each tone owns its full checked class set.
 const segmentedChecked: Record<SegmentedTone, string> = {
   solid: "tw:data-checked:bg-primary tw:data-checked:text-primary-foreground",
   quiet: "tw:data-checked:bg-card tw:data-checked:text-foreground tw:data-checked:shadow-sm",
-  primary: "tw:data-checked:bg-primary/15 tw:data-checked:text-foreground",
+  primary: "tw:data-checked:bg-primary/15 tw:data-checked:text-accent-foreground",
   danger: "tw:data-checked:bg-destructive/12 tw:data-checked:text-destructive",
 };
 

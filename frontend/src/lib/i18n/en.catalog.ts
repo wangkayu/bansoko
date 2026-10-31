@@ -132,6 +132,7 @@ export const enGridCopy = {
     entry: "Manage",
     title: "Manage Subscriptions",
     subtitle: "{total} instances · {done} completed · {filtered} after filters",
+    stateAll: "All",
     stateAria: "Filter by state",
     progressAria: "Filter by progress",
     progressAll: "Any progress",
