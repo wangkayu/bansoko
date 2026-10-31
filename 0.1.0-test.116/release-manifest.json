@@ -1,0 +1,599 @@
+{
+  "schema_version": "release-manifest-1",
+  "release_sequence": 116,
+  "release_id": "v0.1.0-test.116",
+  "version": "0.1.0-test.116",
+  "channel": "nightly",
+  "published_at": "2026-10-31T10:30:33Z",
+  "source_commit": "07c95057462ad6caa736d17bc6f142440dd7ac5e",
+  "api_contract_version": "v1",
+  "target_migration_version": "108_subscription_entry_season",
+  "required_downtime": true,
+  "backup_required": true,
+  "rollback_class": "restore_required",
+  "migrations": [
+    {
+      "id": "001_baseline.sql",
+      "checksum": "f0b2505e38f949c8e2ccda581a429a41fe6a08f86003f2e8f31d3e9a172722fb",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "002_receipt_reserve_version_object_closure.sql",
+      "checksum": "e8b0c7a807e139dd318d9b58c2e15e0f914a5bbc06bdb2a5c98f0f1ae573e4da",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "003_receipt_object_nested_closure.sql",
+      "checksum": "ed6e6bd29e557b1c88c293eda8289990181d591f587e0b460e645a4a5c642052",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "004_filefact_source_group_relation.sql",
+      "checksum": "9d81709a0063a6b34d02fb308cacef8ee0a12ff48bd57215205bbedf8676067c",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "005_anime_metadata_media_kind_override.sql",
+      "checksum": "4a6b1004f6af5117ac46a2f3fa101c68d5d19dbe1b7167c37c3f87f125e00532",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "006_group_dictionary.sql",
+      "checksum": "e46c7bfb7219b05bcd4bc3e82e8e48e4f70db63bed897a8eaf495a23079a3d32",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "007_metadata_work_titles_tmdb_title_cn.sql",
+      "checksum": "83fee8f4e17cc095580001d6941f9bad7ca69f5cbc5af8f16e3c6eadd93cd63f",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "008_managed_anime_provider_title.sql",
+      "checksum": "56cbbaeb02f44c61d6d79375f8d48a130918404279362267854ec53779bf78f2",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "009_file_manager_without_root.sql",
+      "checksum": "a387ba2bebf49dd19344c6616af768a3c13bfeec14393c109fdc8bfcbf6f12bf",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "010_no_configured_library_root.sql",
+      "checksum": "68ce18840184ebaac9e64d8f4a8734bd9f424aaa57140dcfbe52af99005d9633",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "011_metadata_work_titles_year.sql",
+      "checksum": "8c89cca96e59b357372286fedd7adfecb4ee360981ded6ee71d84aad7fd9371e",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "012_parser_policy_regex.sql",
+      "checksum": "5f214f02ba0e8a5cc0ed00d16aad0b2bbe034a0da0d58dfaacd5c3abde593d2c",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "013_seed_torrent_cache.sql",
+      "checksum": "05221f5bd9ac46aef22fd98189b15278de66b4f0a4a0a05ec60ad8a20596bd8f",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "014_seed_torrent_cache_least_privilege.sql",
+      "checksum": "a0520cf894d1a7a846cbdc0424b6eb6daa33d99c224f0e9038e228ed42d996b4",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "015_snapshot_seed_anibt_tags.sql",
+      "checksum": "17b4b9c6ef5bf0d6537ebd79989fdb5d480a1068b01c7d0fae109664a358b626",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "016_discovery_release_retention.sql",
+      "checksum": "f1c8fd4ffe2adcd47cb822f1f9a98e8fe6220e6cab251cc8f4616729c96c2263",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "017_placement_companions_reclaim_delete.sql",
+      "checksum": "13357ebe7459d5cd49118f71c4c27e0f09a968566eeb6b6b6920d938fc2d0837",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "018_tag_filters_additive.sql",
+      "checksum": "d870e8d41b286108674435082a752bd3d8d8a850f0ebe287ca30323dabc599df",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "019_maintenance_retention_resume_baseline.sql",
+      "checksum": "3f147c7caacde0125b88b025a7910fe73dbd8155ae2c367f829e79ac924290ed",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "020_parser_kind_value_checks.sql",
+      "checksum": "f0e3dfc5f9c75f1ce01c5743f846aba084c10d2c8332391598b3514795cbbccb",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "021_subscription_pending_state.sql",
+      "checksum": "e5c2df18bcdbc6cac86d9b8d23062c3be79468a061b83d81008897fd28757adc",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "022_unmanaged_overwrite.sql",
+      "checksum": "c97751160bb279aaf80166ef1235a859c416474f4217a5b35bb9374f2b1ca410",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "023_anime_metadata_year.sql",
+      "checksum": "8fc143c36c63da6da9050ca54b75f638fbc1f7a7e6d606352438d6f9b5a77890",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "024_placement_displaced.sql",
+      "checksum": "0a039efe64b89f83490c85317416a659f0a80bc43ee25965c97232083d7db24f",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "025_naming_execution_placeholders.sql",
+      "checksum": "6d8633bde4fe480d14f5025e7cdb306c3b3ccd0f3584a6df6f3643d3a169abc5",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "026_anime_metadata_release_format.sql",
+      "checksum": "cc8ea4fa16aee02b4eb931d0b593b45505ebea4999fa93d8198be44ee24b0df9",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "027_subtitle_suffix_default.sql",
+      "checksum": "cbdf5329a59c1d69708365e491c7b5fd080bbbaf059e971ee5be8e3e49c9cb27",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "028_drop_anime_metadata_release_format.sql",
+      "checksum": "3c1e62e230ebdc71e0de06ab84f8b9b3c2d9ca3099e7d86755fec931e5b364db",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "029_naming_template_library.sql",
+      "checksum": "9cca58d5a8e43f1981d4d9bb07bb3559ae9d00ccabf7518c44ffc9e96b6238b5",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "030_cleanup_group_scope_generations.sql",
+      "checksum": "6dbd9dd25661b637ac10c793d72914d6432a50d79d8d4f3bd091716b8f0003c9",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "034_download_completion_global.sql",
+      "checksum": "909b651e55f067a079a90945f8fec837fae3cbb276b14103660dcf61f9eaba74",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "035_downloader_deletion_cancels.sql",
+      "checksum": "26e7594ef590602fd47d23a185ff37584951bf6a970e2d37e8b48bb436ffd93f",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "036_managed_anime_fixed_title.sql",
+      "checksum": "6bf19f1eee403c06dad9fd42ea235dea514071aae5718875ec3bf38449d6e359",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "037_download_timeouts_global.sql",
+      "checksum": "2946f0b08c7c1a297e05d2df99202a89b09f2446e082ca7fc5944aec452f90bc",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "038_drop_backup_runs.sql",
+      "checksum": "ae8eb2d90a454ac2c1e11d62c5935e88dd58d884f2e68a548b1d40700e2752f2",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "039_path_level_publication.sql",
+      "checksum": "f71cd1700f746ab021515e13fb0767a1b96ab1cc606d90fb61fd269279d1a4ff",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "040_anibt_tag_subdimensions.sql",
+      "checksum": "3feaf2a0c9afd031d1faa263c49691dcfa099ac85b16cb1caff5dc9e8b821d8f",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "041_import_stage_retry.sql",
+      "checksum": "aeb3e0bfe86d1e265b998d86b612156e66edb0f77e837e19baeb454acc83b394",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "042_one_time_section_input.sql",
+      "checksum": "10c7b6d21d35cc5c9f23f236bedd3e9db5d5532f85a4233a104574fa7b240c60",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "043_new_releases_only.sql",
+      "checksum": "3bf7a2f6d82c121df89bf6197d97bef9a97857bf3411520e1789be7dfa844355",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "044_anime_metadata_season.sql",
+      "checksum": "634e5e3959fe9d2e662adef1aa3a268ff1105c79ebee992110466ab6aee0aec1",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "045_naming_template_body.sql",
+      "checksum": "4c069b68ccb648072fb86cda25c711264d7ad62eaef6bdaad8f607ecf6b2e785",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "046_episode_title_cache.sql",
+      "checksum": "fad2f46f5ec497923c113d190f24d6e5640801860430c4ae43ae8e09440456f7",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "047_tmdb_work_overview.sql",
+      "checksum": "d3010322dc67ba8d64afe46c68e52a11be9392934f9174b22ee4848785782231",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "048_file_success_notification_hdr.sql",
+      "checksum": "be50afaffe1341e1ed95fc7af64e71322e487cc06997f72b881491f13842e7b2",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "049_release_src_payload_key.sql",
+      "checksum": "a7843ed56e71214a6e5fde77fba375b3d1b9ee7bec79f795ae0a5d600aaf10bb",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "050_media_fact_payload_rename.sql",
+      "checksum": "b99c829674411451085222b6a2a317843aed8df5b60e59fbf4868c0192a4d0c6",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "051_release_sub_flag_payload_key.sql",
+      "checksum": "9bdd0a17eff97c64cb1688e5469f426ea109dde43b2ddcc7aad8a0d277c14777",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "052_metadata_refresh_global.sql",
+      "checksum": "8c5010d0fc2211146cee7e342e5ae86bb3d88d725dafa7e406f63470d943acd5",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "053_lang_tag_fact_rename.sql",
+      "checksum": "ad3ae5f146eea7a7980ac5fc8d6f6405b0b954ce918deb5caa990145a25fcb1e",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "054_notification_payload_unified_keys.sql",
+      "checksum": "1253de06fd28345a5735a4e120c9adaaff2865ef9d315a7cbef50fb0bcaf2e07",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "055_rt_version_payload_key.sql",
+      "checksum": "49e11218b0ede56a0d38e875c3a294dd5781cf686cc701c8b60cf1274b21a6ba",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "056_feed_snapshot_kind.sql",
+      "checksum": "11d1693248544d7d9828c095e67f2852e5219aed20686ff8862d456c14b34a51",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "057_placement_recovery_generation.sql",
+      "checksum": "1b986e672d6ba44ef7c1be31a6e1fdd2261b1e517344a03ac45a1ae064120b41",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "058_replacement_direct_delete.sql",
+      "checksum": "26b62d19c8b919fcc45f0294436b165394994b62357d0676b4d1c803e384ad66",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "059_nyaa_search_source.sql",
+      "checksum": "8de636364c7dfe4b99ae73da65581c5a616b3325eba5541e4d09373fd3ca02ff",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "060_replacement_group_identity.sql",
+      "checksum": "cacb5165bd870907b969b8eb855f549adae764dac31b2faf73d50374892d3eea",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "061_subgroup_score_rules.sql",
+      "checksum": "edd5a8d95d10356129fd178c868442a7f8383719de48b69b5558ef050afab2d2",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "062_replacement_fallback.sql",
+      "checksum": "8a2d70f39207ada2640c2acc02e6e52d882f8c227e72fadcf8b5c14f58019554",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "063_retention_renames.sql",
+      "checksum": "2d2147c9a2323a30311f461e8870286d8e8857a45f6822c860c030ba2414dcdf",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "064_language_compare_defaults.sql",
+      "checksum": "f681c5c7920a0d1964846617a6fe42974d3cf27267a1b23dba821a415ea30361",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "065_rt_sub_flag_compare_item.sql",
+      "checksum": "8e71a88558eb681084a044edd4bad92c04df309f4a0adc169de63838a630a3ec",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "066_rt_uncensored.sql",
+      "checksum": "dbd15945e4460bc5e98280b72135927aa0c7bc597a1fb76f26a6249d644dc696",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "067_compare_defaults_anibt_spelling.sql",
+      "checksum": "7765ded7038eabefd5a5d558f178155ed4af9b0ec6bf1d1bbe1d8df2968510cc",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "068_anibt_resolution_defaults.sql",
+      "checksum": "dbcdecb4819b50a73d07a45f5027fc9e18c966756253c130d3199182462e60d6",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "069_download_failure_occupied.sql",
+      "checksum": "05405c5a3a5c4dac26541562267ac2a581a947891e850be11096e49005526575",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "070_anibt_tag_notification_merge.sql",
+      "checksum": "741c63055636859b6d9092fa22fa3c3e4d53be32d288a8e7204584fcf226de74",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "080_file_execute_stranded_revival.sql",
+      "checksum": "903e1b2f77240929751384e01c4a283ccd12437fa2717698e8b25c22242a62fa",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "081_subscription_competition.sql",
+      "checksum": "9ca36e3690efaf419c0c2698c8adaee25f1d9d0679b6770eca6605c6aa0baacc",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "082_file_busy_requeue.sql",
+      "checksum": "e98959f7b8360a3fb04e53be8fd607fcd1fbd2904a51796613b8df30007e77b9",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "083_replacement_deletion_notification.sql",
+      "checksum": "83f42007ba79cfaa0914c688c6c191b7444c2222400b7607d267b30803fd5b61",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "084_cleanup_failed_activity.sql",
+      "checksum": "7cf3db1692de3c7663271da1bf48815997c27f4321035220cd34d3eaf6f2f957",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "090_replacement_above_collision_policy.sql",
+      "checksum": "08d411ad4ff266ae0248ec2b93b94df9202499dce621fc2986f3eedc36ddcb7b",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "091_acquisition_settle_liveness.sql",
+      "checksum": "dd70ef768cc9e5622077a43f77c2b0be050c65b10f694f96a0e326f253572d6f",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "092_activity_message_codes.sql",
+      "checksum": "7ac6512b62e3147619d0c4ea710a212b0428f4a0f27ee3b3a1a54c88ad18e656",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "093_diagnostic_conditions.sql",
+      "checksum": "f9fb58fb54b3dc1b13dd0a67e94ae11677f2a1aa6a74e06cf0f001349f1a9f41",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "094_rt_sub_lang_combined_defaults.sql",
+      "checksum": "05197e6cb6222a323a04196d153deeccbf46e7b8178529ee9d55b336d0ef0a26",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "095_seasonless_episode_identity.sql",
+      "checksum": "6211216d6629011647338cac0ac3715b6186a35ecd6363781e8b141171544563",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "096_seasonless_key_rewrite.sql",
+      "checksum": "0463a910461a49932f1f5548d4152bfb0c86abcad41774bb7517e28ee1071266",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "097_import_waiting_config.sql",
+      "checksum": "444fb79c0bea0c76b0b33cf7f295a3f189a5519c6e2429df6bb5ac85da71fdaf",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "098_offset_alignment_requests.sql",
+      "checksum": "b951c6070c20fb600b55f980949486b8c27adf765b536dfa1ddd3a10de8352f6",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "099_config_scan_requests.sql",
+      "checksum": "a38c4ea96aa857b6780b3972e258139cd8c3ad1fdca45745731c2f410a966168",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "100_media_kind_rename.sql",
+      "checksum": "df497e9066e6b4debf8ab4179c6208f23daf0d8b4dc4741d842be2ce9889a633",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "101_frozen_target_set_reference.sql",
+      "checksum": "f42e28a42250f31a3b967d4d0f98f0467a75745acc95af4a966d891d433af2ce",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "102_path_level_inspection.sql",
+      "checksum": "b3c7402452652574ba50f58882adcc7ac7bb8c71386f1ffe6a5f4e0ea172df1a",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "103_deselect_cancels_downloads.sql",
+      "checksum": "d01a87af6b399348b7cfac7810401184b22a5bedf84988a3cf26e0e6453314bb",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "104_one_shot_false_block_resume.sql",
+      "checksum": "f80967f92cbde8f94e2b4af986bfd184e14be6c9510e343e02d2e173d8320054",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "105_candidate_draft_group_offsets.sql",
+      "checksum": "282c1fa0c0355b695750c6623c14f67ec78177e0962930eb9fbc09c5c305c6cc",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "106_jackett_search_source.sql",
+      "checksum": "a37ccfd99a355f17c042d558fac49d09ffcf214f01e13fb3e4c05cd60997248b",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "107_github_update_route.sql",
+      "checksum": "2a06cbbc044735a5da3f0d830d5dba1615ddf77e7c08f6b5c8a6fca4caa28c42",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "108_subscription_entry_season.sql",
+      "checksum": "2bec0a6d594ee249fa118fb9cc3faadf4f27d03386f058f0cc0ea5b6163dec7a",
+      "reversible": false,
+      "compatibility": "forward-only"
+    }
+  ],
+  "images": [
+    {
+      "name": "bansoko",
+      "digest": "sha256:74dc2c1e0bbe41a2510c3e7d9aee6d1ee4d3b1293423c8abe587e0e092997ec2",
+      "platform": "linux/amd64"
+    }
+  ],
+  "compose_ref": "deployment/maintainer/docker-compose.production.yml",
+  "frontend_ref": "sha256:c1d9ab891cc8e8a15504fa0d7e740268fef29acd3603f16751000a6237e65a78",
+  "artifacts": [
+    {
+      "platform": "linux",
+      "architecture": "amd64",
+      "digest": "41671ad031b1fc8d6255598340c43816476ce4b36b195d60f755d3ad87820672",
+      "size": 39665790,
+      "signature": "fjh+y6TemHN2TtAhzb775NGc7opjjQppB4mejsA0CQfrGBAEWcSVCHda3waKIn7XL7quPOoxe6jmT3xnWwt2AA"
+    }
+  ],
+  "sbom_ref": "sha256:d05a6ff7acd36606b94b422d26fed5411b7400834274c01546291fa630935ed1",
+  "provenance_ref": "sha256:e84754485f1aa0e2a2a785639ae466d2076148365daebf3b027edb74a547cf11",
+  "artifact_digest": "41671ad031b1fc8d6255598340c43816476ce4b36b195d60f755d3ad87820672",
+  "signature": "VoOQEGPLLfumZX3Pq95CZvj2sF3yRv12w/hrIUKipGdNGI2mSv+HJr5cg1Y4WeCObHsEe1D7Rr4TzweTBQz/Bw",
+  "immutable": true,
+  "embedded_update": {
+    "format_version": "embedded-update-v1",
+    "platform": "linux",
+    "architecture": "amd64",
+    "payload_digest": "0c521cddb5f18e2cd4daa2b1f1411f781c2f5cd1c75bffc7a2c4e27cb597a014",
+    "payload_size": 19818531,
+    "payload_signature": "W9Cx+CBBkSHiCnYnxkS8o0yhXm/65LUDscqO+AmT4xuKKpbsYlOTIWfBtZLoS9xPG7FNhii2ENbVk15eEyTKDA",
+    "bootstrap_min_version": "embedded-bootstrap-unified",
+    "min_image_version": "base-v1",
+    "target_release_id": "v0.1.0-test.116",
+    "target_version": "0.1.0-test.116",
+    "target_schema_version": "108_subscription_entry_season",
+    "release_sequence": 116
+  }
+}
