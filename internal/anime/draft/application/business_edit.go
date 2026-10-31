@@ -49,7 +49,7 @@ func (s *Service) GetAnimeBusinessEdit(ctx context.Context, animeID string) (Bus
 	draft.Business = &business
 	draft.BusinessDigest = &digest
 	// Source/metadata/title are instance facts, not the old revision's edit values.
-	if err := tx.QueryRowContext(ctx, `SELECT m.title,m.title_override,sub.origin,sub.origin_entry_ref,sub.instance_label FROM managed_anime m JOIN subscriptions sub ON sub.managed_anime_id=m.id WHERE m.id=$1`, animeID).Scan(&draft.Title, &draft.TitleOverride, &draft.Origin, &draft.OriginEntryRef, &draft.InstanceLabel); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT m.title,m.title_override,sub.origin,sub.origin_entry_ref,sub.entry_season,sub.instance_label FROM managed_anime m JOIN subscriptions sub ON sub.managed_anime_id=m.id WHERE m.id=$1`, animeID).Scan(&draft.Title, &draft.TitleOverride, &draft.Origin, &draft.OriginEntryRef, &draft.EntrySeason, &draft.InstanceLabel); err != nil {
 		return result, err
 	}
 	// Application is prohibited from mutating these fields; baseline keeps their

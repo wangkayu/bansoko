@@ -9816,7 +9816,7 @@ components:
     Subscription:
       type: object
       additionalProperties: false
-      required: [id, managed_anime_id, origin, state, lifecycle_state, lifecycle_epoch, version, new_releases_only]
+      required: [id, managed_anime_id, origin, state, lifecycle_state, lifecycle_epoch, version, new_releases_only, created_at]
       description: >-
         The single subscription owned by one ManagedAnime. Its active/stopped
         state is reversible automation intent; lifecycle_state is the separate
@@ -9830,6 +9830,12 @@ components:
         managed_anime_id:
           $ref: '#/components/schemas/ID'
           description: Sole formal owner identity of the ManagedAnime owning this Subscription.
+        created_at:
+          type: string
+          format: date-time
+          description: >-
+            When the instance was created (the subscribe or duplicate that
+            made it, not its first start). Read-only.
         origin:
           $ref: '#/components/schemas/SubscriptionOrigin'
         origin_entry_ref:
@@ -9840,6 +9846,16 @@ components:
           description: >-
             External provider/candidate provenance. It is non-unique and is not
             the formal owner identity; separate owners may carry the same value.
+        entry_season:
+          type: string
+          nullable: true
+          pattern: '^\d{4}-(winter|spring|summer|fall)$'
+          description: >-
+            The provider season page the instance was created from, frozen at
+            creation (canonical YYYY-term, e.g. 2026-fall). Present only for
+            provider-origin instances created from a season catalog page;
+            search-created and custom instances carry none, and it is never
+            re-derived from a later snapshot or first-air date. Read-only.
         instance_label:
           type: string
           nullable: true
@@ -12378,6 +12394,15 @@ components:
           nullable: true
           minLength: 1
           maxLength: 256
+        entry_season:
+          type: string
+          nullable: true
+          pattern: '^\d{4}-(winter|spring|summer|fall)$'
+          description: >-
+            The provider season page this draft was created from (canonical
+            YYYY-term, e.g. 2026-fall), carried so subscribe freezes it onto
+            the instance. Only provider-origin drafts may carry it; a draft
+            created from keyword search or a custom preset leaves it out.
         title:
           type: string
           minLength: 1

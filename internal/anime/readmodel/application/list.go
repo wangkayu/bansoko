@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	catalogapplication "bansoko/internal/catalog/application"
 )
@@ -40,7 +41,7 @@ func parseEpisodeArray(raw string) ([]int, bool) {
 func (s *Service) ListAnimeApplication(ctx context.Context) ([]AnimeListItem, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT a.id, a.title, a.title_override, a.version,
-       sub.id, sub.origin, sub.origin_entry_ref, sub.instance_label, sub.state, sub.version,
+       sub.id, sub.origin, sub.origin_entry_ref, sub.instance_label, sub.entry_season, sub.created_at, sub.state, sub.version,
        sub.new_releases_only, sub.start_baseline_at,
        a.lifecycle_state, a.fence_epoch, a.retired_at,
        m.bgm_work_id, m.tmdb_work_id, m.tmdb_media_kind, m.tmdb_season, m.media_kind,
@@ -119,7 +120,8 @@ ORDER BY a.created_at, a.id`)
 	result := []AnimeListItem{}
 	for rows.Next() {
 		var item AnimeListItem
-		var titleOverride, originEntryRef, instanceLabel sql.NullString
+		var titleOverride, originEntryRef, instanceLabel, entrySeason sql.NullString
+		var createdAt time.Time
 		var origin, state string
 		var retiredAt sql.NullTime
 		var startBaselineAt sql.NullTime
@@ -134,7 +136,7 @@ ORDER BY a.created_at, a.id`)
 		var weekdayLabel, weekday, providerFormat sql.NullString
 		var coverURL sql.NullString
 		if err := rows.Scan(&item.ManagedAnime.ID, &item.ManagedAnime.Title, &titleOverride, &item.ManagedAnime.Version,
-			&item.Subscription.ID, &origin, &originEntryRef, &instanceLabel, &state, &item.Subscription.Version,
+			&item.Subscription.ID, &origin, &originEntryRef, &instanceLabel, &entrySeason, &createdAt, &state, &item.Subscription.Version,
 			&item.Subscription.NewReleasesOnly, &startBaselineAt,
 			&item.Subscription.LifecycleState, &item.Subscription.LifecycleEpoch, &retiredAt,
 			&bgmWorkID, &tmdbWorkID, &tmdbMediaKind, &tmdbSeason, &ownerMediaKind,
@@ -147,6 +149,8 @@ ORDER BY a.created_at, a.id`)
 		item.Subscription.Origin = origin
 		item.Subscription.OriginEntryRef = nullableStringPointer(originEntryRef)
 		item.Subscription.InstanceLabel = nullableStringPointer(instanceLabel)
+		item.Subscription.EntrySeason = nullableStringPointer(entrySeason)
+		item.Subscription.CreatedAt = createdAt
 		item.Subscription.State = subscriptionStateFromDB(state)
 		if startBaselineAt.Valid {
 			item.Subscription.StartBaselineAt = &startBaselineAt.Time

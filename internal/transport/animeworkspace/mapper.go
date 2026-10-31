@@ -767,8 +767,10 @@ func mapSubscription(value animeapplication.Subscription) generated.Subscription
 		RetiredAt:       cloneWorkspaceTime(value.RetiredAt),
 		NewReleasesOnly: value.NewReleasesOnly,
 		StartBaselineAt: cloneWorkspaceTime(value.StartBaselineAt),
+		CreatedAt:       value.CreatedAt,
 	}
 	result.OriginEntryRef = cloneWorkspaceString(value.OriginEntryRef)
+	result.EntrySeason = cloneWorkspaceString(value.EntrySeason)
 	result.InstanceLabel = cloneWorkspaceString(value.InstanceLabel)
 	return result
 }

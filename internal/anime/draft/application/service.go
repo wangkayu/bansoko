@@ -645,7 +645,7 @@ VALUES ($1, $2, $3, $4)`, animeID, title, fixedTitle, nullableOptionalText(provi
 		return SubscribeResult{}, fmt.Errorf("create managed anime: %w", err)
 	}
 	subscriptionID := uuid.NewString()
-	startBaselineAt, err := insertSubscriptionTx(ctx, tx, subscriptionID, animeID, string(draft.Origin), nullableOptionalText(draft.OriginEntryRef), nullableOptionalText(draft.InstanceLabel), string(initialState), draft.NewReleasesOnly)
+	startBaselineAt, createdAt, err := insertSubscriptionTx(ctx, tx, subscriptionID, animeID, string(draft.Origin), nullableOptionalText(draft.OriginEntryRef), nullableOptionalText(draft.EntrySeason), nullableOptionalText(draft.InstanceLabel), string(initialState), draft.NewReleasesOnly)
 	if err != nil {
 		return SubscribeResult{}, err
 	}
@@ -757,6 +757,7 @@ VALUES ($1, $2, $3, $4)`, animeID, title, fixedTitle, nullableOptionalText(provi
 			ManagedAnimeID:  animeID,
 			Origin:          string(draft.Origin),
 			OriginEntryRef:  cloneString(draft.OriginEntryRef),
+			EntrySeason:     cloneString(draft.EntrySeason),
 			InstanceLabel:   cloneString(draft.InstanceLabel),
 			State:           initialState,
 			LifecycleState:  "active",
@@ -764,6 +765,7 @@ VALUES ($1, $2, $3, $4)`, animeID, title, fixedTitle, nullableOptionalText(provi
 			Version:         1,
 			NewReleasesOnly: draft.NewReleasesOnly,
 			StartBaselineAt: startBaselineAt,
+			CreatedAt:       createdAt,
 		},
 		Metadata:                metadata,
 		RssSources:              sources,

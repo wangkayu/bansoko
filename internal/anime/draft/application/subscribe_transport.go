@@ -60,6 +60,7 @@ func subscribeResultForHTTP(value SubscribeResult) generated.SubscribeResult {
 			ManagedAnimeId:  generated.ID(value.Subscription.ManagedAnimeID),
 			Origin:          generated.SubscriptionOrigin(value.Subscription.Origin),
 			OriginEntryRef:  cloneString(value.Subscription.OriginEntryRef),
+			EntrySeason:     cloneString(value.Subscription.EntrySeason),
 			InstanceLabel:   cloneString(value.Subscription.InstanceLabel),
 			State:           generated.SubscriptionState(value.Subscription.State),
 			Version:         generated.Version(value.Subscription.Version),
@@ -68,6 +69,7 @@ func subscribeResultForHTTP(value SubscribeResult) generated.SubscribeResult {
 			RetiredAt:       cloneTime(value.Subscription.RetiredAt),
 			NewReleasesOnly: value.Subscription.NewReleasesOnly,
 			StartBaselineAt: cloneTime(value.Subscription.StartBaselineAt),
+			CreatedAt:       value.Subscription.CreatedAt,
 		},
 	}
 	result.RssSources = make([]generated.RSSSource, 0, len(value.RssSources))

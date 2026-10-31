@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	animeapplication "bansoko/internal/anime/application"
 	"bansoko/internal/apperrors"
@@ -44,15 +45,16 @@ func (s *Service) SetNewReleasesOnly(ctx context.Context, managedAnimeID string,
 	}
 	var result Subscription
 	var state, lifecycleState string
-	var originEntryRef, instanceLabel sql.NullString
+	var originEntryRef, instanceLabel, entrySeason sql.NullString
+	var createdAt time.Time
 	var retiredAt sql.NullTime
 	err = tx.QueryRowContext(ctx, `
-SELECT s.id, s.origin, s.origin_entry_ref, s.instance_label, s.state, s.version,
+SELECT s.id, s.origin, s.origin_entry_ref, s.instance_label, s.entry_season, s.created_at, s.state, s.version,
        ma.lifecycle_state, ma.fence_epoch, ma.retired_at
 FROM subscriptions s
 JOIN managed_anime ma ON ma.id = s.managed_anime_id
 WHERE s.managed_anime_id = $1
-FOR UPDATE OF s`, managedAnimeID).Scan(&result.ID, &result.Origin, &originEntryRef, &instanceLabel, &state, &result.Version,
+FOR UPDATE OF s`, managedAnimeID).Scan(&result.ID, &result.Origin, &originEntryRef, &instanceLabel, &entrySeason, &createdAt, &state, &result.Version,
 		&lifecycleState, &result.LifecycleEpoch, &retiredAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Subscription{}, &apperrors.NotFound{Resource: "subscription", ID: managedAnimeID}
@@ -98,5 +100,9 @@ RETURNING version, new_releases_only, start_baseline_at`, result.ID, input.Enabl
 	if instanceLabel.Valid {
 		result.InstanceLabel = &instanceLabel.String
 	}
+	if entrySeason.Valid {
+		result.EntrySeason = &entrySeason.String
+	}
+	result.CreatedAt = createdAt
 	return result, nil
 }

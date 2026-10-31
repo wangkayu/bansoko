@@ -175,6 +175,7 @@ function workspaceFixture(): AnimeWorkspace {
     subscription: {
       id: "subscription-1",
       managed_anime_id: "anime-1",
+      created_at: "2026-10-01T00:00:00Z",
       origin: "anibt",
       origin_entry_ref: "anime-1",
       instance_label: null,

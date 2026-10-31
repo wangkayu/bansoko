@@ -22,10 +22,14 @@ type ManagedAnime struct {
 
 // Subscription is the state/version projection of one anime subscription.
 type Subscription struct {
-	ID             string                               `json:"id"`
-	ManagedAnimeID string                               `json:"managed_anime_id"`
-	Origin         string                               `json:"origin"`
-	OriginEntryRef *string                              `json:"origin_entry_ref"`
+	ID             string  `json:"id"`
+	ManagedAnimeID string  `json:"managed_anime_id"`
+	Origin         string  `json:"origin"`
+	OriginEntryRef *string `json:"origin_entry_ref"`
+	// EntrySeason is the provider season page the instance was created from
+	// (canonical YYYY-term), frozen at creation; nil for search-created,
+	// custom and pre-108 instances.
+	EntrySeason    *string                              `json:"entry_season"`
 	InstanceLabel  *string                              `json:"instance_label"`
 	State          subscriptiondomain.SubscriptionState `json:"state"`
 	LifecycleState string                               `json:"lifecycle_state"`
@@ -37,6 +41,9 @@ type Subscription struct {
 	// option is on.
 	NewReleasesOnly bool       `json:"new_releases_only"`
 	StartBaselineAt *time.Time `json:"start_baseline_at"`
+	// CreatedAt is when the instance was created (subscribe or duplicate), not
+	// its first start.
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type AnimeMetadata struct {

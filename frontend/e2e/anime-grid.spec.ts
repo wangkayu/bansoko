@@ -83,6 +83,7 @@ function workspaceFixture(id: string, title: string, state?: FixtureState): Anim
     subscription: {
       id: `subscription-${id}`,
       managed_anime_id: id,
+      created_at: "2026-10-01T00:00:00Z",
       origin: "anibt",
       origin_entry_ref: "anibt:stellar-mail-ella",
       instance_label: title,
@@ -330,6 +331,7 @@ function subscriptionListItemFromCandidate(
     subscription: {
       id: subscriptionID,
       managed_anime_id: managedAnimeID,
+      created_at: "2026-10-01T00:00:00Z",
       origin: draft.origin,
       origin_entry_ref: draft.origin_entry_ref ?? null,
       instance_label: draft.instance_label ?? null,
@@ -898,6 +900,7 @@ async function mockCatalogAndAnime(page: Page) {
       subscription: {
         id: subscriptionID,
         managed_anime_id: id,
+        created_at: "2026-10-01T00:00:00Z",
         origin: body.draft.origin,
         origin_entry_ref: body.draft.origin_entry_ref ?? null,
         instance_label: body.draft.instance_label ?? null,

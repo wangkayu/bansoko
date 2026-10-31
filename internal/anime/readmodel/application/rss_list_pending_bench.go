@@ -156,6 +156,7 @@ func (s *Service) ownerBusinessSnapshot(ctx context.Context, managedAnimeID stri
 func pendingBenchDraft(workspace AnimeWorkspace, business *animedomain.BusinessSnapshot) animedomain.AnimeDraft {
 	draft := animedomain.AnimeDraft{
 		Business:       business,
+		EntrySeason:    workspace.Subscription.EntrySeason,
 		InstanceLabel:  workspace.Subscription.InstanceLabel,
 		Origin:         animedomain.SubscriptionOrigin(workspace.Subscription.Origin),
 		OriginEntryRef: workspace.Subscription.OriginEntryRef,

@@ -78,10 +78,12 @@ func mapAnimeListSubscription(value animeapplication.Subscription) generated.Sub
 		Id: value.ID, ManagedAnimeId: value.ManagedAnimeID,
 		Origin:         generated.SubscriptionOrigin(value.Origin),
 		OriginEntryRef: mapAnimeListString(value.OriginEntryRef),
+		EntrySeason:    mapAnimeListString(value.EntrySeason),
 		InstanceLabel:  mapAnimeListString(value.InstanceLabel),
 		State:          generated.SubscriptionState(value.State), LifecycleState: generated.SubscriptionLifecycleState(value.LifecycleState),
 		LifecycleEpoch: value.LifecycleEpoch, RetiredAt: value.RetiredAt, Version: value.Version,
 		NewReleasesOnly: value.NewReleasesOnly, StartBaselineAt: value.StartBaselineAt,
+		CreatedAt: value.CreatedAt,
 	}
 }
 

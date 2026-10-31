@@ -3225,7 +3225,10 @@ type AnimeConfigCandidateList struct {
 type AnimeDraft struct {
 	Business       *BusinessSnapshot `json:"business,omitempty"`
 	BusinessDigest *string           `json:"business_digest,omitempty"`
-	InstanceLabel  *string           `json:"instance_label"`
+
+	// EntrySeason The provider season page this draft was created from (canonical YYYY-term, e.g. 2026-fall), carried so subscribe freezes it onto the instance. Only provider-origin drafts may carry it; a draft created from keyword search or a custom preset leaves it out.
+	EntrySeason   *string `json:"entry_season"`
+	InstanceLabel *string `json:"instance_label"`
 
 	// Metadata The draft metadata bindings. bgm and tmdb carry the match bindings selected for this draft: the candidate write path stores them, and the stored binding is then the naming fact source (title/kind) of every render of that exact revision. A draft that selects no match keeps both null: no default binding is fabricated, and a template that reads bgm.* or tmdb.* fails as an undefined variable until one is selected.
 	Metadata AnimeMetadataDraft `json:"metadata"`
@@ -8713,6 +8716,11 @@ type SubscribeResult struct {
 
 // Subscription The single subscription owned by one ManagedAnime. Its active/stopped state is reversible automation intent; lifecycle_state is the separate irreversible active/retired owner boundary. Its external origin and origin_entry_ref are provenance attributes and are not formal owner identity; managed_anime_id points to the sole owner identity.
 type Subscription struct {
+	// CreatedAt When the instance was created (the subscribe or duplicate that made it, not its first start). Read-only.
+	CreatedAt time.Time `json:"created_at"`
+
+	// EntrySeason The provider season page the instance was created from, frozen at creation (canonical YYYY-term, e.g. 2026-fall). Present only for provider-origin instances created from a season catalog page; search-created and custom instances carry none, and it is never re-derived from a later snapshot or first-air date. Read-only.
+	EntrySeason    *string                    `json:"entry_season"`
 	Id             ID                         `json:"id"`
 	InstanceLabel  *string                    `json:"instance_label"`
 	LifecycleEpoch int64                      `json:"lifecycle_epoch"`

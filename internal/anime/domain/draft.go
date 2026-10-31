@@ -7,12 +7,17 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
 	"bansoko/internal/redact"
 	subscriptiondomain "bansoko/internal/subscription/domain"
 )
+
+// entrySeasonPattern is the canonical provider season identifier the catalog
+// browse pages use (CatalogSeason, e.g. 2026-fall).
+var entrySeasonPattern = regexp.MustCompile(`^\d{4}-(winter|spring|summer|fall)$`)
 
 // FieldViolation is one typed draft problem. Code values follow the shared
 // contract error matrix (DRAFT_INVALID, RSS_SOURCE_REQUIRED,
@@ -67,6 +72,17 @@ func ValidateDraft(draft AnimeDraft) []FieldViolation {
 	}
 	if draft.OriginEntryRef != nil && (strings.TrimSpace(*draft.OriginEntryRef) == "" || len(*draft.OriginEntryRef) > 256) {
 		violations = append(violations, FieldViolation{Field: "origin_entry_ref", Code: "DRAFT_INVALID", Message: "origin_entry_ref must be non-empty and at most 256 characters when provided"})
+	}
+	// entry_season is frozen creation provenance: the provider season catalog
+	// page the draft was created from. Search- and custom-created drafts carry
+	// none, and a non-provider draft may never claim one.
+	if draft.EntrySeason != nil {
+		if draft.Origin != SubscriptionOriginAnibt && draft.Origin != SubscriptionOriginMikan {
+			violations = append(violations, FieldViolation{Field: "entry_season", Code: "DRAFT_INVALID", Message: "entry_season is only valid for provider subscriptions"})
+		}
+		if !entrySeasonPattern.MatchString(*draft.EntrySeason) {
+			violations = append(violations, FieldViolation{Field: "entry_season", Code: "DRAFT_INVALID", Message: "entry_season must be a canonical YYYY-term season (winter, spring, summer, fall)"})
+		}
 	}
 	if (draft.Origin == SubscriptionOriginCustom || draft.Origin == SubscriptionOriginOneshot) && draft.OriginEntryRef != nil {
 		violations = append(violations, FieldViolation{Field: "origin_entry_ref", Code: "DRAFT_INVALID", Message: "custom and oneshot drafts must not carry an origin_entry_ref"})

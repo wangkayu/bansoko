@@ -33,6 +33,7 @@ func mapSubscription(value animeapplication.Subscription) generated.Subscription
 		Version:         generated.Version(value.Version),
 		NewReleasesOnly: value.NewReleasesOnly,
 		StartBaselineAt: value.StartBaselineAt,
+		CreatedAt:       value.CreatedAt,
 	}
 	if value.OriginEntryRef != nil {
 		originEntryRef := *value.OriginEntryRef
@@ -41,6 +42,10 @@ func mapSubscription(value animeapplication.Subscription) generated.Subscription
 	if value.InstanceLabel != nil {
 		instanceLabel := *value.InstanceLabel
 		result.InstanceLabel = &instanceLabel
+	}
+	if value.EntrySeason != nil {
+		entrySeason := *value.EntrySeason
+		result.EntrySeason = &entrySeason
 	}
 	return result
 }

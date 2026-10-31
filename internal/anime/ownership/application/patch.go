@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"time"
 
 	animedomain "bansoko/internal/anime/domain"
 	"bansoko/internal/apperrors"
@@ -382,18 +383,19 @@ func (s *Service) PatchAnimeSubscription(ctx context.Context, managedAnimeID str
 	var version int64
 	var currentState string
 	var origin string
-	var originEntryRef, instanceLabel sql.NullString
+	var originEntryRef, instanceLabel, entrySeason sql.NullString
+	var createdAt time.Time
 	var animeTitle, lifecycleState string
 	var lifecycleEpoch int64
 	var retiredAt, startBaselineAt sql.NullTime
 	var newReleasesOnly bool
 	err = tx.QueryRowContext(ctx, `
-SELECT s.id, s.origin, s.origin_entry_ref, s.instance_label, s.state, s.version, ma.title,
+SELECT s.id, s.origin, s.origin_entry_ref, s.instance_label, s.entry_season, s.created_at, s.state, s.version, ma.title,
        ma.lifecycle_state, ma.fence_epoch, ma.retired_at, s.new_releases_only, s.start_baseline_at
 FROM subscriptions s
 JOIN managed_anime ma ON ma.id = s.managed_anime_id
 WHERE s.managed_anime_id = $1
-FOR UPDATE OF s`, managedAnimeID).Scan(&subscriptionID, &origin, &originEntryRef, &instanceLabel, &currentState, &version, &animeTitle, &lifecycleState, &lifecycleEpoch, &retiredAt, &newReleasesOnly, &startBaselineAt)
+FOR UPDATE OF s`, managedAnimeID).Scan(&subscriptionID, &origin, &originEntryRef, &instanceLabel, &entrySeason, &createdAt, &currentState, &version, &animeTitle, &lifecycleState, &lifecycleEpoch, &retiredAt, &newReleasesOnly, &startBaselineAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Subscription{}, &apperrors.NotFound{Resource: "subscription", ID: managedAnimeID}
 	}
@@ -541,6 +543,10 @@ WHERE src.subscription_id = $1 AND src.source_kind = 'custom_rss'
 	if instanceLabel.Valid {
 		result.InstanceLabel = &instanceLabel.String
 	}
+	if entrySeason.Valid {
+		result.EntrySeason = &entrySeason.String
+	}
+	result.CreatedAt = createdAt
 	return result, nil
 }
 

@@ -63,6 +63,7 @@ function listItem(
     subscription: {
       id: `subscription:${managedAnimeID}`,
       managed_anime_id: managedAnimeID,
+      created_at: "2026-10-01T00:00:00Z",
       origin,
       origin_entry_ref: originEntryRef,
       instance_label: origin === "custom" ? "客厅版" : null,

@@ -3850,9 +3850,16 @@ export interface components {
             id: components["schemas"]["ID"];
             /** @description Sole formal owner identity of the ManagedAnime owning this Subscription. */
             managed_anime_id: components["schemas"]["ID"];
+            /**
+             * Format: date-time
+             * @description When the instance was created (the subscribe or duplicate that made it, not its first start). Read-only.
+             */
+            created_at: string;
             origin: components["schemas"]["SubscriptionOrigin"];
             /** @description External provider/candidate provenance. It is non-unique and is not the formal owner identity; separate owners may carry the same value. */
             origin_entry_ref?: string | null;
+            /** @description The provider season page the instance was created from, frozen at creation (canonical YYYY-term, e.g. 2026-fall). Present only for provider-origin instances created from a season catalog page; search-created and custom instances carry none, and it is never re-derived from a later snapshot or first-air date. Read-only. */
+            entry_season?: string | null;
             instance_label?: string | null;
             state: components["schemas"]["SubscriptionState"];
             /** @enum {string} */
@@ -4860,6 +4867,8 @@ export interface components {
             business_digest?: string;
             origin: components["schemas"]["SubscriptionOrigin"];
             origin_entry_ref?: string | null;
+            /** @description The provider season page this draft was created from (canonical YYYY-term, e.g. 2026-fall), carried so subscribe freezes it onto the instance. Only provider-origin drafts may carry it; a draft created from keyword search or a custom preset leaves it out. */
+            entry_season?: string | null;
             title: string;
             title_override?: string | null;
             instance_label?: string | null;

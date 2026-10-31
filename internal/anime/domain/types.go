@@ -97,10 +97,15 @@ type AnimeMetadataDraft struct {
 }
 
 type AnimeDraft struct {
-	Business       *BusinessSnapshot  `json:"business,omitempty"`
-	BusinessDigest *string            `json:"business_digest,omitempty"`
-	InstanceLabel  *string            `json:"instance_label"`
-	Metadata       AnimeMetadataDraft `json:"metadata"`
+	Business       *BusinessSnapshot `json:"business,omitempty"`
+	BusinessDigest *string           `json:"business_digest,omitempty"`
+	// EntrySeason is the provider season page the draft was created from
+	// (canonical YYYY-term). It is frozen provenance carried to the
+	// subscription at creation; search- and custom-created drafts carry none,
+	// and it is never re-derived from a snapshot or first-air date.
+	EntrySeason   *string            `json:"entry_season"`
+	InstanceLabel *string            `json:"instance_label"`
+	Metadata      AnimeMetadataDraft `json:"metadata"`
 	// NewReleasesOnly is the new-releases-only option the draft carries until
 	// subscribe freezes it onto the instance. Absent means off.
 	NewReleasesOnly bool               `json:"new_releases_only,omitempty"`

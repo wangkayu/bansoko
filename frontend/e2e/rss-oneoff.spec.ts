@@ -29,6 +29,7 @@ function ownerWorkspace(retried: boolean): AnimeWorkspace {
     subscription: {
       id: subscriptionID,
       managed_anime_id: ANIME_ID,
+      created_at: "2026-10-01T00:00:00Z",
       origin: "anibt",
       origin_entry_ref: "anibt:stellar-mail-ella",
       instance_label: TITLE,
