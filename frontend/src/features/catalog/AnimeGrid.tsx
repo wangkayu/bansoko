@@ -691,7 +691,15 @@ export function AnimeGrid() {
           {browsable && <SeasonPicker value={season} onChange={setSeason} />}
           {chips}
           {addPresetButton}
-          <div className="tw:ml-auto tw:flex tw:flex-none tw:items-center tw:gap-2">
+          <div
+            className={cn(
+              "tw:ml-auto tw:flex tw:flex-none tw:items-center tw:gap-2",
+              // The wall's state group owns the phone's first line; its actions take the
+              // second one end to end (title filter left, 管理 right) instead of floating as
+              // a pair in the corner.
+              chips && "tw:w-full tw:justify-between",
+            )}
+          >
             {showFilter && <FilterToggle open={filterFieldOpen} onToggle={togglePhoneFilter} />}
             {availableToggle}
             {refreshButton}
