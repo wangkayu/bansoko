@@ -144,9 +144,10 @@ const nameCollator = new Intl.Collator("zh-Hans", { numeric: true, sensitivity: 
 
 /** Same-work instances (origin + origin_entry_ref) stay adjacent. The sort orders the groups
  *  between themselves by their edge value (name, the newest/oldest creation, the latest/earliest
- *  entry season); members inside a group follow the same key, with creation ascending as the
- *  stable fallback so the original precedes its duplicates. Rows without an entry season always
- *  sort last, whatever the direction. `grouped` marks the rows of a multi-instance work. */
+ *  entry season). Members inside a group always follow creation ascending — the sort key is about
+ *  telling works apart, and inside one work the original must stay ahead of its duplicates even
+ *  when an owner-edited title or a different entry season would sort otherwise. `grouped` marks
+ *  the rows of a multi-instance work. */
 export function orderManageRows(
   rows: ManageRow[],
   sort: ManageSort,
@@ -158,24 +159,15 @@ export function orderManageRows(
     if (bucket) bucket.push(row);
     else groups.set(key, [row]);
   }
-  const ordered = [...groups.values()].map((members) => [...members].sort(compareMembers(sort)));
+  const ordered = [...groups.values()].map((members) => [...members].sort(compareMembers));
   ordered.sort((a, b) => compareGroups(a, b, sort) || a[0].key.localeCompare(b[0].key));
   return ordered.flatMap((members) =>
     members.map((row) => ({ row, grouped: members.length > 1 })),
   );
 }
 
-function compareMembers(sort: ManageSort): (a: ManageRow, b: ManageRow) => number {
-  return (a, b) => {
-    if (sort.key === "season") {
-      const bySeason = compareSeasons(a.entrySeason, b.entrySeason, sort.desc);
-      if (bySeason !== 0) return bySeason;
-    } else if (sort.key === "name") {
-      const byName = nameCollator.compare(a.title, b.title);
-      if (byName !== 0) return sort.desc ? -byName : byName;
-    }
-    return a.createdAt.localeCompare(b.createdAt) || a.key.localeCompare(b.key);
-  };
+function compareMembers(a: ManageRow, b: ManageRow): number {
+  return a.createdAt.localeCompare(b.createdAt) || a.key.localeCompare(b.key);
 }
 
 function compareGroups(a: ManageRow[], b: ManageRow[], sort: ManageSort): number {

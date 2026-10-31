@@ -92,7 +92,12 @@ export function StatsChips<K extends string>({
       aria-label={ariaLabel}
       className={cn(
         "tw:flex tw:min-w-0 tw:items-center tw:gap-2",
-        scroll ? "tw:flex-1 tw:flex-nowrap tw:overflow-x-auto tw:[scrollbar-width:none]" : "tw:flex-wrap",
+        // The corner count sits 4px above the button, and `overflow-x-auto` clips at the
+        // padding edge: the scrolling line pads the badge's height and pulls it back with a
+        // negative margin, so the digits stay whole without changing the row's outer height.
+        scroll
+          ? "tw:pt-1.5 tw:-mt-1.5 tw:flex-1 tw:flex-nowrap tw:overflow-x-auto tw:[scrollbar-width:none]"
+          : "tw:flex-wrap",
       )}
     >
       {chips.map((chip) => {

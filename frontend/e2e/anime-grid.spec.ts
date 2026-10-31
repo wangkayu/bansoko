@@ -1152,15 +1152,18 @@ test.describe("AnimeGrid", () => {
       const stateFilters = dialog.getByRole("group", { name: t("grid.manage.stateAria") });
       const stateFiltersBox = await stateFilters.boundingBox();
       expect(stateFiltersBox!.width).toBeGreaterThan(300);
-      // One height across the row's controls, the same 32px as the desktop toolbar.
-      const [originBox, seasonBox, sortBox, searchBox, progressBox] = await Promise.all([
+      // One height across the row's controls, the same 32px as the desktop toolbar. The
+      // scrolling chip line itself pads 6px above the buttons so the corner counts are not
+      // clipped; its buttons are what line up with the other controls.
+      const [originBox, seasonBox, sortBox, searchBox, progressBox, chipBox] = await Promise.all([
         dialog.getByLabel(t("grid.manage.originAria"), { exact: true }).boundingBox(),
         dialog.getByLabel(t("grid.manage.seasonAria"), { exact: true }).boundingBox(),
         dialog.getByLabel(t("grid.manage.sortAria")).boundingBox(),
         dialog.getByRole("searchbox", { name: t("grid.manage.searchAria") }).boundingBox(),
         dialog.getByRole("radiogroup", { name: t("grid.manage.progressAria") }).boundingBox(),
+        stateFilters.locator("button").first().boundingBox(),
       ]);
-      const toolbarHeights = [stateFiltersBox!, originBox!, seasonBox!, sortBox!, searchBox!, progressBox!].map((box) => Math.round(box.height));
+      const toolbarHeights = [chipBox!, originBox!, seasonBox!, sortBox!, searchBox!, progressBox!].map((box) => Math.round(box.height));
       expect(new Set(toolbarHeights).size).toBe(1);
       expect(toolbarHeights[0]).toBe(32);
       const fontSizes = await Promise.all([
@@ -1180,6 +1183,21 @@ test.describe("AnimeGrid", () => {
         return Math.abs(text.x + text.width / 2 - (button.x + button.width / 2));
       });
       expect(chipCenterOffset).toBeLessThanOrEqual(1);
+      // The count badge rides outside the chip: the scrolling line pads its height so the
+      // digits are whole instead of being clipped by `overflow-x-auto`.
+      const badge = stateFilters.locator("button").first().locator("span");
+      const badgeBox = await badge.boundingBox();
+      expect(badgeBox!.y).toBeGreaterThanOrEqual(stateFiltersBox!.y);
+      // The shrunken selects pack one row tighter: the sort never sits alone on its line,
+      // so the filters end one row earlier than the fixed-width version.
+      expect(sortBox!.y).toBe(seasonBox!.y);
+      expect(searchBox!.y - chipBox!.y).toBeLessThan(130);
+      // The selection summary takes its own line above the actions.
+      const [phoneSummaryBox, startBox] = await Promise.all([
+        dialog.getByText(t("grid.manage.selNone"), { exact: true }).boundingBox(),
+        dialog.getByRole("button", { name: t("grid.manage.start"), exact: true }).boundingBox(),
+      ]);
+      expect(phoneSummaryBox!.y + phoneSummaryBox!.height).toBeLessThanOrEqual(startBox!.y);
       return;
     }
 
@@ -1199,6 +1217,17 @@ test.describe("AnimeGrid", () => {
     expect(searchBox!.width).toBeLessThanOrEqual(210);
     expect(originBox!.y).toBe(seasonBox!.y);
 
+    // The sticky header paints the dialog surface (not the page background) in either theme.
+    const dialogBox = await dialog.boundingBox();
+    const [headerBackground, surfaceBackground] = await Promise.all([
+      dialog.locator("thead").evaluate((el) => getComputedStyle(el).backgroundColor),
+      dialog.evaluate((el) => getComputedStyle(el).backgroundColor),
+    ]);
+    expect(headerBackground).toBe(surfaceBackground);
+    // The selection summary sits at the content's left edge, the actions at the right.
+    const desktopSummaryBox = await dialog.getByText(t("grid.manage.selNone"), { exact: true }).boundingBox();
+    expect(Math.abs(desktopSummaryBox!.x - (dialogBox!.x + 25))).toBeLessThanOrEqual(1);
+
     // Every toolbar control shares one height (32px): state chips, progress segment,
     // entry/season selects, sort and search.
     const sort = dialog.getByLabel(t("grid.manage.sortAria"));
@@ -1213,6 +1242,8 @@ test.describe("AnimeGrid", () => {
     const toolbarHeights = [originBox!, seasonBox!, searchBox!, sortBox!, progressBox!, chipsBox!].map((box) => Math.round(box.height));
     expect(new Set(toolbarHeights).size).toBe(1);
     expect(toolbarHeights[0]).toBe(32);
+    // The first filter control shares the header/footer's 24px content line.
+    expect(Math.abs(chipsBox!.x - (dialogBox!.x + 25))).toBeLessThanOrEqual(1);
 
     const fontSizes = await Promise.all([
       stateChips.locator("button").first().evaluate((el) => getComputedStyle(el).fontSize),

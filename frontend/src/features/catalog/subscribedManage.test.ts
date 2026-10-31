@@ -209,6 +209,22 @@ describe("同作品相邻分组与排序", () => {
       "c1",
     ]);
   });
+
+  it("组内恒按创建排：标题或入口季不同也不重排，原件始终在前", () => {
+    const rows = manageRowsFrom([
+      item({ id: "d1", title: "药屋少女的呢喃 第三季", origin: "anibt", originEntryRef: "anibt:kh", entrySeason: "2026-fall", createdAt: "2026-10-05T00:00:00Z" }),
+      item({ id: "d2", title: "药屋少女的呢喃 第三季（收藏）", origin: "anibt", originEntryRef: "anibt:kh", entrySeason: "2026-summer", instanceLabel: "收藏版", createdAt: "2026-10-20T00:00:00Z" }),
+    ]);
+    // 名称与季度两个方向都不碰组内顺序；组间仍按所选维度。
+    for (const sort of [
+      { key: "name", desc: false },
+      { key: "name", desc: true },
+      { key: "season", desc: false },
+      { key: "season", desc: true },
+    ] as const) {
+      expect(orderManageRows(rows, sort).map(({ row }) => row.key)).toEqual(["d1", "d2"]);
+    }
+  });
 });
 
 describe("批量资格", () => {

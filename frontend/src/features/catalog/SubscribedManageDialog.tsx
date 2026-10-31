@@ -212,8 +212,10 @@ export function SubscribedManageDialog({
       })}
       bodyLayout="fill"
       footer={
-        <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2">
-          <span className="tw:min-w-0 tw:flex-1 tw:truncate tw:text-sm tw:text-muted-foreground">{batchSummary}</span>
+        <div className="tw:flex tw:w-full tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2">
+          <span className="tw:min-w-0 tw:flex-1 tw:truncate tw:text-sm tw:text-muted-foreground tw:phone:basis-full">
+            {batchSummary}
+          </span>
           {selectedRows.length > 0 && (
             <Button size="sm" onClick={() => setSelected(new Set())}>
               {t("grid.manage.clearSel")}
@@ -257,7 +259,7 @@ export function SubscribedManageDialog({
     >
       {/* Filters: state (with counts) · progress · entry × season (two independent
           dimensions, combined by intersection) · created-time sort · search. */}
-      <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2 tw:border-b tw:border-border tw:px-4 tw:py-2.5">
+      <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2 tw:border-b tw:border-border tw:px-6 tw:py-2.5 tw:phone:px-4">
         <div className={isPhone ? "tw:min-w-0 tw:w-full" : "tw:min-w-0"}>
           <StatsChips<ManageState>
             ariaLabel={t("grid.manage.stateAria")}
@@ -284,7 +286,7 @@ export function SubscribedManageDialog({
             { value: "none", label: t("grid.manage.progressNone") },
           ]}
         />
-        <div className="tw:w-32 tw:flex-none">
+        <div className="tw:w-28 tw:flex-none tw:phone:w-26">
           <Select<ManageOriginFilter>
             label={t("grid.manage.originAria")}
             size="xs"
@@ -299,7 +301,7 @@ export function SubscribedManageDialog({
             ]}
           />
         </div>
-        <div className="tw:w-32 tw:flex-none">
+        <div className="tw:w-28 tw:flex-none tw:phone:w-26">
           <Select<ManageSeasonFilter>
             label={t("grid.manage.seasonAria")}
             size="xs"
@@ -312,7 +314,7 @@ export function SubscribedManageDialog({
             ]}
           />
         </div>
-        <div className="tw:w-32 tw:flex-none">
+        <div className="tw:w-28 tw:flex-none tw:phone:w-26">
           <Select<ManageSortValue>
             label={t("grid.manage.sortAria")}
             size="xs"
@@ -361,7 +363,7 @@ export function SubscribedManageDialog({
           )
         ) : isPhone ? (
           <ul>
-            <li className="tw:sticky tw:top-0 tw:z-[1] tw:flex tw:items-center tw:gap-2 tw:border-b tw:border-border tw:bg-background tw:px-4 tw:py-2 tw:text-xs tw:text-muted-foreground">
+            <li className="tw:sticky tw:top-0 tw:z-[1] tw:flex tw:items-center tw:gap-2 tw:border-b tw:border-border tw:bg-popover tw:px-4 tw:py-2 tw:text-xs tw:text-muted-foreground">
               <Checkbox
                 size="sm"
                 checked={allSelected}
@@ -394,7 +396,7 @@ export function SubscribedManageDialog({
               <col className="tw:w-40" />
               <col className="tw:w-28" />
             </colgroup>
-            <thead className="tw:sticky tw:top-0 tw:z-[1] tw:bg-background">
+            <thead className="tw:sticky tw:top-0 tw:z-[1] tw:bg-popover">
               <tr className="tw:border-b tw:border-border tw:text-left tw:text-xs tw:font-medium tw:text-muted-foreground">
                 <th className="tw:w-9 tw:px-2 tw:py-2">
                   <Checkbox
@@ -477,11 +479,9 @@ export function SubscribedManageDialog({
                       <span className="tw:inline-flex tw:items-center tw:justify-end tw:gap-1.5">
                         <span className={progress.done ? "tw:text-online" : ""}>{progress.text}</span>
                         {progress.done ? (
-                          <span className="tw:rounded tw:bg-online/15 tw:px-1.5 tw:text-xs tw:text-online">
-                            {t("grid.manage.done")}
-                          </span>
+                          <span className="tw:text-xs tw:text-online">{t("grid.manage.done")}</span>
                         ) : progress.ratio !== undefined ? (
-                          <span className="tw:inline-block tw:h-1.5 tw:w-12 tw:overflow-hidden tw:rounded-full tw:bg-muted tw:align-middle">
+                          <span className="tw:inline-block tw:h-1 tw:w-11 tw:overflow-hidden tw:rounded-full tw:bg-muted tw:align-middle">
                             <span className="tw:block tw:h-full tw:rounded-full tw:bg-primary" style={{ width: `${progress.ratio}%` }} />
                           </span>
                         ) : null}
