@@ -1,4 +1,5 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { lazyEntry } from "../lib/lazyEntry";
 import { useQuery } from "@tanstack/react-query";
 import { NavLink, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -13,11 +14,10 @@ import {
   Search,
   Settings,
 } from "lucide-react";
-const AccountMenuEntry = lazy(() =>
-  import("./AccountMenuEntry").then((module) => ({ default: module.AccountMenuEntry })),
-);
-const QBManagerDialogEntry = lazy(() =>
-  import("../features/qb-manager/QBManagerDialogEntry").then((module) => ({ default: module.QBManagerDialogEntry })),
+const AccountMenuEntry = lazyEntry(() => import("./AccountMenuEntry"), (module) => module.AccountMenuEntry);
+const QBManagerDialogEntry = lazyEntry(
+  () => import("../features/qb-manager/QBManagerDialogEntry"),
+  (module) => module.QBManagerDialogEntry,
 );
 // The file manager is hidden in this version: the automatic mainline does not
 // need interactive file management. features/file-manager/* and its component
@@ -27,14 +27,14 @@ const QBManagerDialogEntry = lazy(() =>
 // 2. add "files" back to ROUTE_TOOLS in routeDialogs.ts;
 // 3. bring back the top-bar button, the MoreSheet file-manager row
 //    (onOpenFiles) and the OpenInFileManagerButton in FileEffectPolicySection.
-const LogDialogEntry = lazy(() =>
-  import("./LogDialogEntry").then((module) => ({ default: module.LogDialogEntry })),
+const LogDialogEntry = lazyEntry(() => import("./LogDialogEntry"), (module) => module.LogDialogEntry);
+const ExecutionRecordsDialogEntry = lazyEntry(
+  () => import("../features/records/ExecutionRecordsDialogEntry"),
+  (module) => module.ExecutionRecordsDialogEntry,
 );
-const ExecutionRecordsDialogEntry = lazy(() =>
-  import("../features/records/ExecutionRecordsDialogEntry").then((module) => ({ default: module.ExecutionRecordsDialogEntry })),
-);
-const GlobalSearchDialog = lazy(() =>
-  import("../features/catalog/GlobalSearchDialog").then((module) => ({ default: module.GlobalSearchDialog })),
+const GlobalSearchDialog = lazyEntry(
+  () => import("../features/catalog/GlobalSearchDialog"),
+  (module) => module.GlobalSearchDialog,
 );
 import {
   listConnections,

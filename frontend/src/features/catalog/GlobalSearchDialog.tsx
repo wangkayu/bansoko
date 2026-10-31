@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { fetchSeedSearchSnapshot, listConnections, searchProviderCatalog, toUserMessage, type CatalogItem } from "../../lib/api/client";
@@ -16,11 +16,12 @@ import { Dialog, Input, Segmented } from "../../ui/base";
 import { Button } from "../../ui/base/controls";
 import { loadAnimeConfigDialog } from "../anime-config/loadAnimeConfigDialog";
 import { loadOneShotDialog } from "../oneshot/loadOneShotDialog";
+import { lazyEntry } from "../../lib/lazyEntry";
 import type { SearchSeedBrowse } from "../oneshot/useOneShotSeeds";
 import { t } from "../../lib/i18n";
 
-const AnimeConfigDialogEntry = lazy(loadAnimeConfigDialog);
-const OneShotDialogEntry = lazy(loadOneShotDialog);
+const AnimeConfigDialogEntry = lazyEntry(loadAnimeConfigDialog, (module) => module.AnimeConfigDialogEntry);
+const OneShotDialogEntry = lazyEntry(loadOneShotDialog, (module) => module.OneShotDialogEntry);
 
 // GlobalSearchDialog — the app's single search entry (the top-bar review: the catalog toolbar
 //   no longer has search). One dialog, two modes, program search covers AniBT / Mikan, torrent search also Nyaa:

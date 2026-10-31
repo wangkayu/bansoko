@@ -1,4 +1,5 @@
-import { Suspense, lazy } from "react";
+import { Suspense } from "react";
+import { lazyEntry } from "../lib/lazyEntry";
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { isRouteDialogEntry, ROUTE_DIALOG_STATE } from "./routeDialogs";
 import { AuthGate } from "../features/auth/AuthGate";
@@ -18,11 +19,10 @@ import { t } from "../lib/i18n";
 // dialog → config dialog (features/anime-tabs' four tabs serve both before and
 // after subscribing). There is no standalone workspace page.
 
-const AnimeGrid = lazy(() =>
-  import("../features/catalog/AnimeGrid").then((m) => ({ default: m.AnimeGrid })),
-);
-const SettingsDialog = lazy(() =>
-  import("../features/settings/SettingsDialogEntry").then((m) => ({ default: m.SettingsDialogEntry })),
+const AnimeGrid = lazyEntry(() => import("../features/catalog/AnimeGrid"), (m) => m.AnimeGrid);
+const SettingsDialog = lazyEntry(
+  () => import("../features/settings/SettingsDialogEntry"),
+  (m) => m.SettingsDialogEntry,
 );
 
 // /settings shows the section list first (phones); it keeps the "opened from

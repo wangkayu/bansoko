@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ApiError,
@@ -15,6 +15,7 @@ import { useDirtyConfirm } from "../../ui";
 import { Alert, Button, Dialog, Input, SpinnerIcon, Tabs } from "../../ui/base";
 import { toast } from "../../ui/toast";
 import { t } from "../../lib/i18n";
+import { lazyEntry } from "../../lib/lazyEntry";
 import { configKeys } from "../../lib/queryKeys";
 import { FactCatalog } from "../templateFacts/FactCatalog";
 import type { CodeEditorHandle } from "./CodeEditor";
@@ -32,7 +33,7 @@ import {
 } from "./varsEditor";
 
 // CodeMirror loads only when the editor opens; it never adds to the settings page's main bundle.
-const CodeEditor = lazy(() => import("./CodeEditor"));
+const CodeEditor = lazyEntry(() => import("./CodeEditor"), (module) => module.default);
 
 const DRY_RUN_DEBOUNCE_MS = 400;
 

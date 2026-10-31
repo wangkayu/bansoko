@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "../../ui/toast";
@@ -27,6 +27,7 @@ import { CATALOG_FILTER_QUERY_KEY, rememberBaseSeason, useCatalogTab, type Catal
 import { StateBlock } from "../../ui/StateBlock";
 import { loadAnimeConfigDialog } from "../anime-config/loadAnimeConfigDialog";
 import { loadOneShotDialog } from "../oneshot/loadOneShotDialog";
+import { lazyEntry } from "../../lib/lazyEntry";
 import { t } from "../../lib/i18n";
 import { ConfirmLines } from "./ConfirmLines";
 import { wallRowLabel, wallRows } from "./wallRows";
@@ -36,23 +37,22 @@ import { FilterInput, FilterToggle, StatsChips, StatusLine, ToolbarRow, type Sta
 import { useCollapseOnScroll } from "./useCollapseOnScroll";
 import { useOpenLiveSubscription } from "./useOpenLiveSubscription";
 
-const AnimeConfigDialogEntry = lazy(loadAnimeConfigDialog);
-const OneShotDialogEntry = lazy(loadOneShotDialog);
+const AnimeConfigDialogEntry = lazyEntry(loadAnimeConfigDialog, (module) => module.AnimeConfigDialogEntry);
+const OneShotDialogEntry = lazyEntry(loadOneShotDialog, (module) => module.OneShotDialogEntry);
 
-const AddCandidateDialogEntry = lazy(() =>
-  import("./AddCandidateDialogEntry").then((module) => ({ default: module.AddCandidateDialogEntry })),
+const AddCandidateDialogEntry = lazyEntry(() => import("./AddCandidateDialogEntry"), (module) => module.AddCandidateDialogEntry);
+const ConfirmDialogEntry = lazyEntry(() => import("../../ui/ConfirmDialogEntry"), (module) => module.ConfirmDialogEntry);
+const DuplicateSubscriptionDialogEntry = lazyEntry(
+  () => import("./DuplicateSubscriptionDialog"),
+  (module) => module.DuplicateSubscriptionDialog,
 );
-const ConfirmDialogEntry = lazy(() =>
-  import("../../ui/ConfirmDialogEntry").then((module) => ({ default: module.ConfirmDialogEntry })),
+const AnimeFilesDialogEntry = lazyEntry(
+  () => import("../anime-files/AnimeFilesDialog"),
+  (module) => module.AnimeFilesDialog,
 );
-const DuplicateSubscriptionDialogEntry = lazy(() =>
-  import("./DuplicateSubscriptionDialog").then((module) => ({ default: module.DuplicateSubscriptionDialog })),
-);
-const AnimeFilesDialogEntry = lazy(() =>
-  import("../anime-files/AnimeFilesDialog").then((module) => ({ default: module.AnimeFilesDialog })),
-);
-const LocalDataCleanupDialogEntry = lazy(() =>
-  import("./LocalDataCleanupDialog").then((module) => ({ default: module.LocalDataCleanupDialog })),
+const LocalDataCleanupDialogEntry = lazyEntry(
+  () => import("./LocalDataCleanupDialog"),
+  (module) => module.LocalDataCleanupDialog,
 );
 
 // AnimeGrid — the product's entry screen. Four columns:
