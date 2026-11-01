@@ -639,8 +639,9 @@ export function AnimeGrid() {
     </Button>
   );
   const statusLine = snapshotStatus && <StatusLine {...snapshotStatus} />;
-  // The wall's state filter is the same soft segment group as the manager's, one size larger
-  // so it sits with the 36px buttons and inputs; 全部 is the explicit reset.
+  // The wall's state filter is the manager's segment group at the toolbar's 36px, wearing the
+  // secondary buttons' card surface — on desktop it shares their row, on phones it owns the
+  // first line. 全部 is the explicit reset.
   const chips = tab === "all" && rows.length > 0 && (
     <div
       className={cn(
@@ -653,6 +654,7 @@ export function AnimeGrid() {
       <Segmented<StatsFilter | "all">
         aria-label={t("grid.statsAria")}
         size="toolbar-lg"
+        frame="card"
         className="tw:flex-none"
         value={statsFilter ?? "all"}
         onValueChange={setStatsFilter}

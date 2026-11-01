@@ -1370,6 +1370,17 @@ test.describe("AnimeGrid", () => {
     const chip = (state: "pending" | "active" | "stopped") =>
       chips.getByRole("radio", { name: new RegExp(t(`anime.state.${state}`)) });
     await expect(chips.getByRole("radio")).toHaveCount(4);
+    // 两种布局都是「管理」按钮的卡面（1px 边框 + card 底），外高恒为 36px。断言直接对比
+    // 同一行那个按钮，谁的样式单独漂了都会红。
+    const chipsStyle = await chips.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { border: cs.borderTopWidth, bg: cs.backgroundColor, height: Math.round(el.getBoundingClientRect().height) };
+    });
+    expect(chipsStyle.height).toBe(36);
+    const manageStyle = await page
+      .getByRole("button", { name: t("grid.manage.entry"), exact: true })
+      .evaluate((el) => ({ border: getComputedStyle(el).borderTopWidth, bg: getComputedStyle(el).backgroundColor }));
+    expect({ border: chipsStyle.border, bg: chipsStyle.bg }).toEqual(manageStyle);
     await expect(chip("pending")).toContainText("0");
     await expect(chip("active")).toContainText("1");
     await expect(chip("stopped")).toContainText("0");

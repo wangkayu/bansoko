@@ -226,10 +226,24 @@ const segmentedFrame = {
   compact: "tw:gap-0.5 tw:rounded-md tw:border tw:border-border/60 tw:bg-muted/30 tw:p-0.5",
   // 32px overall, the height the dense toolbar's other controls share. A soft, borderless
   // tinted block — the filter row's segments read as one group, not as boxed controls.
-  toolbar: "tw:gap-0.5 tw:rounded-control tw:bg-muted tw:p-1",
+  toolbar: "tw:gap-0.5 tw:rounded-control",
   // The same soft block at the main toolbar's 36px, so it sits with 36px buttons and inputs.
-  "toolbar-lg": "tw:gap-0.5 tw:rounded-control tw:bg-muted tw:p-1",
+  "toolbar-lg": "tw:gap-0.5 tw:rounded-control",
 } as const;
+
+// The soft sizes' surface and inset travel together, so the outside height stays 32px / 36px
+// either way and only the look changes:
+// - `soft` (default): the tinted block, borderless, for a group that owns its row.
+// - `card`: the secondary button's surface (`border-border` + `bg-card`), for a group that
+//   shares a toolbar row with those buttons; the border takes its pixel out of the inset.
+const segmentedSoftFrame = {
+  soft: "tw:bg-muted tw:p-1",
+  card: "tw:border tw:border-border tw:bg-card tw:p-[3px]",
+} as const;
+
+function isSoftSize(size: SegmentedSize): size is "toolbar" | "toolbar-lg" {
+  return size === "toolbar" || size === "toolbar-lg";
+}
 const segmentedOption = {
   default: "tw:rounded-md tw:px-3 tw:py-1 tw:text-xs/[1.5]",
   compact: "tw:rounded-[0.25rem] tw:px-1.5 tw:py-0.5 tw:text-badge",
@@ -245,12 +259,15 @@ const segmentedChecked: Record<SegmentedTone, string> = {
   danger: "tw:data-checked:bg-destructive/12 tw:data-checked:text-destructive",
 };
 
+export type SegmentedSize = "default" | "compact" | "toolbar" | "toolbar-lg";
+
 export function Segmented<V extends string>({
   value,
   onValueChange,
   options,
   disabled,
   size = "default",
+  frame = "soft",
   title,
   "aria-label": ariaLabel,
   className,
@@ -260,7 +277,14 @@ export function Segmented<V extends string>({
   options: ReadonlyArray<ChoiceOption<V>>;
   disabled?: boolean;
   /** `compact`: small, light-stroke variant for dense rows (one picker per list row). `toolbar`: 32px, matching the other dense-toolbar controls. `toolbar-lg`: the same soft block at 36px. */
-  size?: "default" | "compact" | "toolbar" | "toolbar-lg";
+  size?: SegmentedSize;
+  /**
+   * Soft sizes only (`toolbar` / `toolbar-lg`). `soft` is the borderless tinted block for a
+   * group that owns its row; `card` is the secondary button's surface, for a group that
+   * shares a toolbar row with those buttons. The inset absorbs the border, so the outside
+   * height and the option boxes do not move.
+   */
+  frame?: "soft" | "card";
   title?: string;
   "aria-label": string;
   className?: string;
@@ -272,7 +296,12 @@ export function Segmented<V extends string>({
       disabled={disabled}
       aria-label={ariaLabel}
       title={title}
-      className={cn("tw:inline-flex tw:w-fit tw:items-center", segmentedFrame[size], className)}
+      className={cn(
+        "tw:inline-flex tw:w-fit tw:items-center",
+        segmentedFrame[size],
+        isSoftSize(size) && segmentedSoftFrame[frame],
+        className,
+      )}
     >
       {options.map((option) => (
         <BaseRadio.Root
