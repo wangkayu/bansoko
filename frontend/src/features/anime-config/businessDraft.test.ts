@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import type { AnimeDraft, BusinessPresetView } from "../../lib/api/client";
-import { freezeBusinessDraft, hasCustomSettings, loadBusinessPreset, modifiedRuleSections, presetRuleSections, resetToGlobal, rulesDifferFromPreset } from "./businessDraft";
+import { copySubscriptionDefault, freezeBusinessDraft, hasCustomSettings, loadBusinessPreset, modifiedRuleSections, presetRuleSections, resetToGlobal, rulesDifferFromPreset } from "./businessDraft";
 import { useState } from "react";
 import { createElement } from "react";
 import { fireEvent, screen } from "@testing-library/react";
@@ -22,6 +22,7 @@ const draft: AnimeDraft = {
 const preset: BusinessPresetView = {
  digest: `sha256:${"a".repeat(64)}`,
  tag_filters: { anibt: { require: ["resolution:1080p"], exclude: [] }, title: { require: [], exclude: [] } },
+ subscription_defaults: { ignore_multi_video_releases: false },
  snapshot: {
   schema_version: "business-snapshot-v1",
   sections: { subgroups: { max_rss: 7, entries: [] }, parser: { episode_patterns: ["global"] }, release_rules: { must_contain: "Global", not_in: "" }, file_rules: { must_contain: "main/", not_in: "extra" }, naming_rules: { language: "js-naming-1", unknown: {directory_template:"",video_filename_template:""}, tv: { directory_template: "tv", video_filename_template: "video" }, movie: { directory_template: "movie", video_filename_template: "movie" }, subtitle_suffix_template: "sub" }, file_effect: { operation: "move", collision_policy: "fail" } },
@@ -120,6 +121,33 @@ describe("atomic business load", () => {
   expect(hasCustomSettings(onlyRoute,preset)).toBe(true);
   expect(hasCustomSettings(onlyRoute)).toBe(false);
  });
+});
+
+// The Global subscription default is one-time input like the rules sections:
+// creation and reset-to-defaults copy it, a revision reload never overwrites it.
+describe("copySubscriptionDefault", () => {
+  it("true 默认在创建时复制为草稿的忽略多视频开关", () => {
+    const withDefault = { ...preset, subscription_defaults: { ignore_multi_video_releases: true } };
+    const seeded = copySubscriptionDefault(loadBusinessPreset(draft, withDefault), withDefault);
+    expect(seeded.ignore_multi_video_releases).toBe(true);
+    // false removes the field, matching a draft that never set it.
+    const seededOff = copySubscriptionDefault(loadBusinessPreset(draft, preset), preset);
+    expect("ignore_multi_video_releases" in seededOff).toBe(false);
+  });
+
+  it("规则重载不覆盖草稿自己的开关；「全部使用默认」重新复制", () => {
+    const edited = { ...loadBusinessPreset(draft, preset), ignore_multi_video_releases: true } as AnimeDraft;
+    const reloaded = loadBusinessPreset(edited, preset);
+    expect(reloaded.ignore_multi_video_releases).toBe(true);
+    // A differing subscription default is itself a customization, so the
+    // reset stays available and re-copies the current Global value.
+    expect(hasCustomSettings(reloaded, preset)).toBe(true);
+    const reset = resetToGlobal(edited, { ...preset, subscription_defaults: { ignore_multi_video_releases: true } });
+    expect(reset.ignore_multi_video_releases).toBe(true);
+    expect(hasCustomSettings(reset, { ...preset, subscription_defaults: { ignore_multi_video_releases: true } })).toBe(false);
+    const resetOff = resetToGlobal(edited, preset);
+    expect("ignore_multi_video_releases" in resetOff).toBe(false);
+  });
 });
 
 // The rules page's section cards' "modified": compared section by section against the copy of the current default settings (canonical JSON).

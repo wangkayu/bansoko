@@ -15,9 +15,10 @@ import (
 
 // businessPresetView validates both the internal frozen value and the exact
 // public typed shape. Never emit arbitrary JSON fields across the API boundary.
-// tagFilters is the Global tag_filters default a new draft copies; it is outside
-// the snapshot and its digest.
-func businessPresetView(value animeconfig.BusinessSnapshot, tagFilters json.RawMessage) (generated.BusinessPresetView, error) {
+// tagFilters is the Global tag_filters default a new draft copies, and
+// subscriptionDefaults the Global default of the per-subscription admission
+// toggles; both are outside the snapshot and its digest.
+func businessPresetView(value animeconfig.BusinessSnapshot, tagFilters json.RawMessage, subscriptionDefaults animedomain.SubscriptionDefaults) (generated.BusinessPresetView, error) {
 	frozen, err := value.Freeze()
 	if err != nil {
 		return generated.BusinessPresetView{}, err
@@ -42,7 +43,14 @@ func businessPresetView(value animeconfig.BusinessSnapshot, tagFilters json.RawM
 	if err := filterDecoder.Decode(&filters); err != nil {
 		return generated.BusinessPresetView{}, fmt.Errorf("business preset tag_filters public shape: %w", err)
 	}
-	return generated.BusinessPresetView{Snapshot: snapshot, Digest: digest, TagFilters: filters}, nil
+	return generated.BusinessPresetView{
+		Snapshot:   snapshot,
+		Digest:     digest,
+		TagFilters: filters,
+		SubscriptionDefaults: generated.GlobalSubscriptionDefaults{
+			IgnoreMultiVideoReleases: subscriptionDefaults.IgnoreMultiVideoReleases,
+		},
+	}, nil
 }
 
 func (s *Server) GetBusinessPreset(w http.ResponseWriter, r *http.Request) {
@@ -56,7 +64,12 @@ func (s *Server) GetBusinessPreset(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	view, err := businessPresetView(snapshot, tagFilters)
+	subscriptionDefaults, err := s.deps.GlobalSections.ReadGlobalSubscriptionDefaults(r.Context())
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	view, err := businessPresetView(snapshot, tagFilters, subscriptionDefaults)
 	if err != nil {
 		writeError(w, r, err)
 		return

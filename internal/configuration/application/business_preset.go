@@ -49,6 +49,26 @@ func (s *Service) ReadGlobalTagFilters(ctx context.Context) (json.RawMessage, er
 	return append(json.RawMessage(nil), raw...), nil
 }
 
+// ReadGlobalSubscriptionDefaults reads the current Global subscription_defaults
+// value, or the code default before it is first saved. It is the default a new
+// draft copies once (the same one-time input as tag_filters); evaluation never
+// reads it.
+func (s *Service) ReadGlobalSubscriptionDefaults(ctx context.Context) (animedomain.SubscriptionDefaults, error) {
+	var raw []byte
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM global_config_sections WHERE section_name = 'subscription_defaults'`).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return animedomain.DefaultSubscriptionDefaults(), nil
+	}
+	if err != nil {
+		return animedomain.SubscriptionDefaults{}, fmt.Errorf("read global subscription defaults: %w", err)
+	}
+	value, err := animedomain.DecodeSubscriptionDefaults(raw)
+	if err != nil {
+		return animedomain.SubscriptionDefaults{}, fmt.Errorf("decode global subscription defaults: %w", err)
+	}
+	return value, nil
+}
+
 // ReadBusinessPresetTx freezes the complete preset in the caller's transaction.
 func ReadBusinessPresetTx(ctx context.Context, tx *sql.Tx) (animeconfig.BusinessSnapshot, error) {
 	if tx == nil {
@@ -62,8 +82,9 @@ func readBusinessPresetTx(ctx context.Context, tx *sql.Tx) (animeconfig.Business
 	// The business snapshot carries exactly the six frozen sections; the
 	// live-only tag_filters and download_completion Global rows are not part of it.
 	// download_timeouts is Global-only and frozen into the acquisition limits;
-	// metadata_refresh only drives the background sweep.
-	rows, err := tx.QueryContext(ctx, `SELECT section_name, schema_version, value, version FROM global_config_sections WHERE section_name NOT IN ('tag_filters', 'download_completion', 'replacement', 'parser_policy', 'file_effect_policy', 'download_timeouts', 'metadata_refresh')`)
+	// metadata_refresh only drives the background sweep; subscription_defaults is
+	// a one-time-input default outside the snapshot and its digest.
+	rows, err := tx.QueryContext(ctx, `SELECT section_name, schema_version, value, version FROM global_config_sections WHERE section_name NOT IN ('tag_filters', 'download_completion', 'replacement', 'parser_policy', 'file_effect_policy', 'download_timeouts', 'metadata_refresh', 'subscription_defaults')`)
 	if err != nil {
 		return result, err
 	}

@@ -27,14 +27,18 @@ func TestBusinessPresetPublicShapePreservesFrozenEvidence(t *testing.T) {
 		value.SectionSchemas[name] = animedomain.SectionSchemaVersions[name]
 	}
 	tagFilters := json.RawMessage(`{"anibt":{"require":["resolution:1080p"],"exclude":[]},"title":{"require":[],"exclude":["source:cam"]}}`)
-	view, err := businessPresetView(value, tagFilters)
+	subscriptionDefaults := animedomain.SubscriptionDefaults{IgnoreMultiVideoReleases: true}
+	view, err := businessPresetView(value, tagFilters, subscriptionDefaults)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(view.TagFilters.Anibt.Require) != 1 || view.TagFilters.Anibt.Require[0] != "resolution:1080p" || len(view.TagFilters.Title.Exclude) != 1 {
 		t.Fatalf("lost tag_filters default: %+v", view.TagFilters)
 	}
-	if _, err := businessPresetView(value, json.RawMessage(`{"anibt":{"require":[],"exclude":[]},"title":{"require":[],"exclude":[]},"hidden":true}`)); err == nil {
+	if !view.SubscriptionDefaults.IgnoreMultiVideoReleases {
+		t.Fatalf("lost subscription_defaults default: %+v", view.SubscriptionDefaults)
+	}
+	if _, err := businessPresetView(value, json.RawMessage(`{"anibt":{"require":[],"exclude":[]},"title":{"require":[],"exclude":[]},"hidden":true}`), subscriptionDefaults); err == nil {
 		t.Fatal("hidden tag_filters field crossed public boundary")
 	}
 	if view.Snapshot.ReplacementVersion != 17 || view.Snapshot.FileEffectVersion != 19 || view.Snapshot.Parser.PolicyVersion != 12 || view.Snapshot.Programs.Vars.Digest != digest || len(view.Snapshot.Replacement.QualityProfile.Items) != 1 || view.Snapshot.Replacement.QualityProfile.Items[0].Ranks[0][0] != "1080p" {
@@ -44,7 +48,7 @@ func TestBusinessPresetPublicShapePreservesFrozenEvidence(t *testing.T) {
 		t.Fatal("missing digest")
 	}
 	value.Replacement.QualityProfile = json.RawMessage(`{"version":"profile-v1","items":[],"hidden":true}`)
-	if _, err := businessPresetView(value, tagFilters); err == nil {
+	if _, err := businessPresetView(value, tagFilters, subscriptionDefaults); err == nil {
 		t.Fatal("hidden retention field crossed public boundary")
 	}
 }

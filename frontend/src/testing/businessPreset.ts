@@ -1,7 +1,7 @@
 import type { BusinessPresetView } from "../lib/api/client";
 
 /** A complete, valid Global business preset for component tests. */
-export const preset: BusinessPresetView = { digest: `sha256:${"a".repeat(64)}`, tag_filters: { anibt: { require: [], exclude: [] }, title: { require: [], exclude: [] } }, snapshot: {
+export const preset: BusinessPresetView = { digest: `sha256:${"a".repeat(64)}`, tag_filters: { anibt: { require: [], exclude: [] }, title: { require: [], exclude: [] } }, subscription_defaults: { ignore_multi_video_releases: false }, snapshot: {
  schema_version: "business-snapshot-v1",
  sections: { subgroups:{max_rss:7,entries:[]},parser:{episode_patterns:[]},release_rules:{must_contain:"",not_in:""},file_rules:{must_contain:"",not_in:""},naming_rules:{language:"js-naming-1",unknown:{directory_template:"",video_filename_template:""},tv:{directory_template:"tv",video_filename_template:"video"},movie:{directory_template:"movie",video_filename_template:"movie"},subtitle_suffix_template:"sub"},file_effect:{operation:"move",collision_policy:"fail"} },
  section_versions:{subgroups:1,parser:2,release_rules:3,file_rules:4,naming_rules:5,file_effect:6},section_schemas:{subgroups:"subgroups-v1",parser:"parser-section-v1",release_rules:"release-rules-v1",file_rules:"file-rules-v1",naming_rules:"naming-v1",file_effect:"file-effect-v1"},

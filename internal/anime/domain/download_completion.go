@@ -132,5 +132,6 @@ func DefaultResolvedDownloadCompletion() ResolvedDownloadCompletion {
 }
 
 // GlobalSectionOrder is every section the generic Global settings API lists:
-// the rules-owner sections followed by the Global-only download_completion.
-var GlobalSectionOrder = append(append([]string(nil), RulesOwnerSectionOrder...), SectionDownloadCompletion)
+// the rules-owner sections followed by the Global-only download_completion and
+// the one-time-input subscription defaults.
+var GlobalSectionOrder = append(append([]string(nil), RulesOwnerSectionOrder...), SectionDownloadCompletion, SectionSubscriptionDefaults)

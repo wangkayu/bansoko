@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"bansoko/internal/anime/animeconfig"
+	animedomain "bansoko/internal/anime/domain"
 	configurationdomain "bansoko/internal/configuration/domain"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/transport/httpapi/generated"
@@ -45,6 +46,10 @@ func (r *recordingGlobalSections) ReadBusinessPreset(context.Context) (animeconf
 
 func (r *recordingGlobalSections) ReadGlobalTagFilters(context.Context) (json.RawMessage, error) {
 	return nil, nil
+}
+
+func (r *recordingGlobalSections) ReadGlobalSubscriptionDefaults(context.Context) (animedomain.SubscriptionDefaults, error) {
+	return animedomain.SubscriptionDefaults{}, nil
 }
 
 func (r *recordingGlobalSections) ListGlobalSections(context.Context) ([]configurationdomain.GlobalSectionView, error) {

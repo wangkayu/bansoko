@@ -1,4 +1,4 @@
-import { freezeBusinessDraft, hasCustomSettings, loadBusinessPreset, resetToGlobal } from "./businessDraft";
+import { copySubscriptionDefault, freezeBusinessDraft, hasCustomSettings, loadBusinessPreset, resetToGlobal } from "./businessDraft";
 import { confirmBusinessReplace } from "./confirmBusinessReplace";
 import { BusinessSnapshotFields } from "./BusinessSnapshotFields";
 import { IgnoreMultiVideoField, OwnerIgnoreMultiVideo } from "./IgnoreMultiVideoField";
@@ -111,7 +111,9 @@ async function newDraftFromGlobal(
   entry: Parameters<typeof draftFromEntry>[0],
   preset: Promise<Awaited<ReturnType<typeof getBusinessPreset>>> = getBusinessPreset(),
 ): Promise<AnimeDraft> {
-  return loadBusinessPreset(draftFromEntry(entry), await preset);
+  // Creation copies the Global subscription default (ignore multi-video) once,
+  // exactly like the rules sections; revision reloads never touch it again.
+  return copySubscriptionDefault(loadBusinessPreset(draftFromEntry(entry), await preset), await preset);
 }
 
 export function AnimeConfigDialog({

@@ -63,9 +63,22 @@ export function loadBusinessPreset(draft: AnimeDraft, preset: BusinessPresetView
 }
 
 /**
+ * Copy the Global subscription default into the draft's own
+ * ignore-multi-video toggle (one-time input, like the rules sections): true
+ * sets the field, false removes it as if the draft never set it. Creation and
+ * reset-to-defaults copy it; a later revision reload never overwrites it.
+ */
+export function copySubscriptionDefault(draft: AnimeDraft, preset: BusinessPresetView): AnimeDraft {
+  const { ignore_multi_video_releases: _previous, ...rest } = draft;
+  return preset.subscription_defaults.ignore_multi_video_releases
+    ? { ...rest, ignore_multi_video_releases: true }
+    : rest;
+}
+
+/**
  * 「全部使用默认」：规则各段与标签过滤重新复制当前默认设置，业务快照（解析器、未识别
- * 集数、同集多版本、程序引用）换成当前全局预设。字幕组、RSS 源、元数据与身份不动——
- * 它们不在规则页。
+ * 集数、同集多版本、程序引用）换成当前全局预设，订阅默认（忽略多视频）也重新复制。
+ * 字幕组、RSS 源、元数据与身份不动——它们不在规则页。
  */
 export function resetToGlobal(draft: AnimeDraft, preset: BusinessPresetView): AnimeDraft {
   const next = structuredClone(draft);
@@ -73,7 +86,7 @@ export function resetToGlobal(draft: AnimeDraft, preset: BusinessPresetView): An
   next.business.sections.subgroups = structuredClone(draft.subgroups);
   next.business_digest = preset.digest;
   next.rules.sections = presetRuleSections(preset);
-  return next;
+  return copySubscriptionDefault(next, preset);
 }
 
 /** Whether the rules sections and tag filter differ from the copy of the default settings (used by the post-subscription rules page's "use defaults everywhere"). */
@@ -107,8 +120,8 @@ export function modifiedRuleSections(
 
 /**
  * 草稿与当前默认设置是否不同：任一规则段或标签过滤的值不同、解析器是这份草稿自己换的，
- * 或未识别集数 / 同集多版本 / 解析器与默认不同。还没读到默认设置时只看解析器。
- * 「全部使用默认」在没有任何不同时不可用。
+ * 或未识别集数 / 同集多版本 / 解析器 / 订阅默认（忽略多视频）与默认不同。还没读到默认
+ * 设置时只看解析器。「全部使用默认」在没有任何不同时不可用。
  */
 export function hasCustomSettings(draft: AnimeDraft, preset?: BusinessPresetView): boolean {
   const business = draft.business;
@@ -116,6 +129,7 @@ export function hasCustomSettings(draft: AnimeDraft, preset?: BusinessPresetView
   if (!preset) return false;
   if (rulesDifferFromPreset(draft.rules.sections, preset)) return true;
   if (!business) return false;
+  if ((draft.ignore_multi_video_releases === true) !== preset.subscription_defaults.ignore_multi_video_releases) return true;
   return business.parser.kind !== preset.snapshot.parser.kind
     || business.unclassified_route !== preset.snapshot.unclassified_route
     || !valuesEqual(business.replacement, preset.snapshot.replacement);

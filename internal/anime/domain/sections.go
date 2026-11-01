@@ -53,6 +53,8 @@ var SectionSchemaVersions = map[string]string{
 	SectionDownloadTimeouts: DownloadTimeoutsSchemaVersion,
 
 	SectionMetadataRefresh: MetadataRefreshSchemaVersion,
+
+	SectionSubscriptionDefaults: SubscriptionDefaultsSchemaVersion,
 }
 
 // ComponentVersions identifies the versioned pure components. Preview and
@@ -107,6 +109,8 @@ func DefaultSectionValue(section string) (any, error) {
 		return DefaultDownloadTimeouts(), nil
 	case SectionMetadataRefresh:
 		return DefaultMetadataRefreshRules(), nil
+	case SectionSubscriptionDefaults:
+		return DefaultSubscriptionDefaults(), nil
 	default:
 		return nil, fmt.Errorf("unknown section %q", section)
 	}
@@ -448,6 +452,8 @@ func ValidateSectionValueWithVars(section string, raw json.RawMessage, vars map[
 		return ValidateDownloadTimeoutsJSON(raw)
 	case SectionMetadataRefresh:
 		return ValidateMetadataRefreshJSON(raw)
+	case SectionSubscriptionDefaults:
+		return ValidateSubscriptionDefaultsJSON(raw)
 	case SectionSubtitleRules:
 		return fmt.Errorf("subtitle_rules section has been retired")
 	case SectionNamingRules:

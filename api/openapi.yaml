@@ -784,8 +784,9 @@ paths:
           Read the current Global business preset: the defaults a new
           subscription copies once (complete business snapshot with sections,
           parser policy, retention, file-effect route and program references,
-          its digest, and the tag_filters default). Reading creates or applies
-          nothing. To put it into a draft with your own edits, use
+          its digest, the tag_filters default, and the subscription_defaults
+          default of the per-subscription admission toggles). Reading creates
+          or applies nothing. To put it into a draft with your own edits, use
           load_business_preset, which also computes the digest.
       responses:
         '200':
@@ -1087,11 +1088,11 @@ paths:
         description: >-
           List every Global rule section (subgroups, parser, release_rules,
           file_rules, naming_rules, file_effect, tag_filters, download_completion,
-          download_timeouts, metadata_refresh) with its value, schema version and
-          version. saved=false means the value is the built-in default. A new
-          subscription copies these once; later changes never reach existing
-          subscriptions, except that download_completion, download_timeouts and
-          metadata_refresh are Global-only.
+          download_timeouts, metadata_refresh, subscription_defaults) with its
+          value, schema version and version. saved=false means the value is the
+          built-in default. A new subscription copies these once; later changes
+          never reach existing subscriptions, except that download_completion,
+          download_timeouts and metadata_refresh are Global-only.
       responses:
         '200':
           description: Every global config section with its current effective value and version.
@@ -1117,7 +1118,8 @@ paths:
           guarded by expected_version from list_global_sections. Subscriptions
           created afterwards copy it; existing drafts and subscriptions keep their
           own copy (download_completion, download_timeouts and metadata_refresh are
-          Global-only and apply directly). Saving does not run anything.
+          Global-only and apply directly; subscription_defaults is copied once into
+          new drafts only). Saving does not run anything.
       parameters:
         - name: section_name
           in: path
@@ -9548,8 +9550,11 @@ components:
         download-timeouts-v1, value DownloadTimeouts) and metadata_refresh
         (schema metadata-refresh-v1, value MetadataRefresh) are Global-only:
         they have no per-anime override, no draft field and are not part of the
-        business snapshot.
-      enum: [subgroups, parser, release_rules, file_rules, naming_rules, file_effect, tag_filters, download_completion, download_timeouts, metadata_refresh]
+        business snapshot. subscription_defaults (schema
+        subscription-defaults-v1, value GlobalSubscriptionDefaults) is the
+        one-time-input default new drafts copy at creation; existing
+        subscriptions keep their own value.
+      enum: [subgroups, parser, release_rules, file_rules, naming_rules, file_effect, tag_filters, download_completion, download_timeouts, metadata_refresh, subscription_defaults]
     GlobalSectionView:
       type: object
       additionalProperties: false
@@ -9623,6 +9628,23 @@ components:
         re-pull is diagnosed once and retried by the next cycle.
       properties:
         enabled:
+          type: boolean
+    GlobalSubscriptionDefaults:
+      type: object
+      additionalProperties: false
+      required: [ignore_multi_video_releases]
+      description: >-
+        The Global subscription_defaults setting (schema
+        subscription-defaults-v1), edited only in the settings page. It is the
+        one-time-input default a new draft copies at creation and again on
+        reset-to-defaults; existing drafts and subscriptions keep their own
+        value, and evaluation never reads it. ignore_multi_video_releases is
+        the default of the per-subscription admission toggle: when true, a new
+        draft starts with releases holding more than two video files already
+        filtered out of automatic download. A missing row is the default
+        (false).
+      properties:
+        ignore_multi_video_releases:
           type: boolean
     ProviderKind:
       type: string
@@ -18616,10 +18638,12 @@ components:
     BusinessPresetView:
       type: object
       additionalProperties: false
-      required: [snapshot, digest, tag_filters]
+      required: [snapshot, digest, tag_filters, subscription_defaults]
       description: >-
         The Global defaults a new draft copies once. tag_filters is the Global
-        tag_filters default; it is outside the snapshot and its digest.
+        tag_filters default and subscription_defaults the Global default of the
+        per-subscription admission toggles; both are outside the snapshot and
+        its digest.
       properties:
         snapshot:
           $ref: '#/components/schemas/BusinessSnapshot'
@@ -18628,6 +18652,8 @@ components:
           pattern: '^sha256:[a-f0-9]{64}$'
         tag_filters:
           $ref: '#/components/schemas/TagFilterRules'
+        subscription_defaults:
+          $ref: '#/components/schemas/GlobalSubscriptionDefaults'
     BusinessSnapshot:
       type: object
       additionalProperties: false

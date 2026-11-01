@@ -971,16 +971,17 @@ const (
 
 // Defines values for GlobalSectionName.
 const (
-	GlobalSectionNameDownloadCompletion GlobalSectionName = "download_completion"
-	GlobalSectionNameDownloadTimeouts   GlobalSectionName = "download_timeouts"
-	GlobalSectionNameFileEffect         GlobalSectionName = "file_effect"
-	GlobalSectionNameFileRules          GlobalSectionName = "file_rules"
-	GlobalSectionNameMetadataRefresh    GlobalSectionName = "metadata_refresh"
-	GlobalSectionNameNamingRules        GlobalSectionName = "naming_rules"
-	GlobalSectionNameParser             GlobalSectionName = "parser"
-	GlobalSectionNameReleaseRules       GlobalSectionName = "release_rules"
-	GlobalSectionNameSubgroups          GlobalSectionName = "subgroups"
-	GlobalSectionNameTagFilters         GlobalSectionName = "tag_filters"
+	GlobalSectionNameDownloadCompletion   GlobalSectionName = "download_completion"
+	GlobalSectionNameDownloadTimeouts     GlobalSectionName = "download_timeouts"
+	GlobalSectionNameFileEffect           GlobalSectionName = "file_effect"
+	GlobalSectionNameFileRules            GlobalSectionName = "file_rules"
+	GlobalSectionNameMetadataRefresh      GlobalSectionName = "metadata_refresh"
+	GlobalSectionNameNamingRules          GlobalSectionName = "naming_rules"
+	GlobalSectionNameParser               GlobalSectionName = "parser"
+	GlobalSectionNameReleaseRules         GlobalSectionName = "release_rules"
+	GlobalSectionNameSubgroups            GlobalSectionName = "subgroups"
+	GlobalSectionNameSubscriptionDefaults GlobalSectionName = "subscription_defaults"
+	GlobalSectionNameTagFilters           GlobalSectionName = "tag_filters"
 )
 
 // Defines values for GroupActionAction.
@@ -3949,10 +3950,13 @@ type BusinessParserEnvelope struct {
 // BusinessParserEnvelopeSchemaVersion defines model for BusinessParserEnvelope.SchemaVersion.
 type BusinessParserEnvelopeSchemaVersion string
 
-// BusinessPresetView The Global defaults a new draft copies once. tag_filters is the Global tag_filters default; it is outside the snapshot and its digest.
+// BusinessPresetView The Global defaults a new draft copies once. tag_filters is the Global tag_filters default and subscription_defaults the Global default of the per-subscription admission toggles; both are outside the snapshot and its digest.
 type BusinessPresetView struct {
 	Digest   string           `json:"digest"`
 	Snapshot BusinessSnapshot `json:"snapshot"`
+
+	// SubscriptionDefaults The Global subscription_defaults setting (schema subscription-defaults-v1), edited only in the settings page. It is the one-time-input default a new draft copies at creation and again on reset-to-defaults; existing drafts and subscriptions keep their own value, and evaluation never reads it. ignore_multi_video_releases is the default of the per-subscription admission toggle: when true, a new draft starts with releases holding more than two video files already filtered out of automatic download. A missing row is the default (false).
+	SubscriptionDefaults GlobalSubscriptionDefaults `json:"subscription_defaults"`
 
 	// TagFilters The tag_filters rules section (schema tag-filters-v2). anibt applies to AniBT-source releases only; its dimensions are resolution, subtitle, language, format, then codec, bitdepth, audio, source, platform and subformat (AniBT customTag values split by the server's classification table) and tag (every other customTag value). A `tag:<value>` entry whose value the table lists is read, matched and returned as its sub-dimension. title is the title-parse row: it applies to every release, AniBT ones included, and matches the non-episode attributes the pinned reltitle parser reads from the release title (dimensions and values from getTitleTagVocabulary; a write outside that vocabulary is rejected). Both rows run at Release evaluation before release_filter, AniBT row first; every row must pass. Default: two empty rows.
 	TagFilters TagFilterRules `json:"tag_filters"`
@@ -5327,7 +5331,7 @@ type GlobalSectionInput struct {
 	Value map[string]interface{} `json:"value"`
 }
 
-// GlobalSectionName One typed global config section. download_timeouts (schema download-timeouts-v1, value DownloadTimeouts) and metadata_refresh (schema metadata-refresh-v1, value MetadataRefresh) are Global-only: they have no per-anime override, no draft field and are not part of the business snapshot.
+// GlobalSectionName One typed global config section. download_timeouts (schema download-timeouts-v1, value DownloadTimeouts) and metadata_refresh (schema metadata-refresh-v1, value MetadataRefresh) are Global-only: they have no per-anime override, no draft field and are not part of the business snapshot. subscription_defaults (schema subscription-defaults-v1, value GlobalSubscriptionDefaults) is the one-time-input default new drafts copy at creation; existing subscriptions keep their own value.
 type GlobalSectionName string
 
 // GlobalSectionView defines model for GlobalSectionView.
@@ -5336,12 +5340,17 @@ type GlobalSectionView struct {
 	Saved         bool   `json:"saved"`
 	SchemaVersion string `json:"schema_version"`
 
-	// SectionName One typed global config section. download_timeouts (schema download-timeouts-v1, value DownloadTimeouts) and metadata_refresh (schema metadata-refresh-v1, value MetadataRefresh) are Global-only: they have no per-anime override, no draft field and are not part of the business snapshot.
+	// SectionName One typed global config section. download_timeouts (schema download-timeouts-v1, value DownloadTimeouts) and metadata_refresh (schema metadata-refresh-v1, value MetadataRefresh) are Global-only: they have no per-anime override, no draft field and are not part of the business snapshot. subscription_defaults (schema subscription-defaults-v1, value GlobalSubscriptionDefaults) is the one-time-input default new drafts copy at creation; existing subscriptions keep their own value.
 	SectionName GlobalSectionName `json:"section_name"`
 
 	// Value The stored section object.
 	Value   map[string]interface{} `json:"value"`
 	Version int64                  `json:"version"`
+}
+
+// GlobalSubscriptionDefaults The Global subscription_defaults setting (schema subscription-defaults-v1), edited only in the settings page. It is the one-time-input default a new draft copies at creation and again on reset-to-defaults; existing drafts and subscriptions keep their own value, and evaluation never reads it. ignore_multi_video_releases is the default of the per-subscription admission toggle: when true, a new draft starts with releases holding more than two video files already filtered out of automatic download. A missing row is the default (false).
+type GlobalSubscriptionDefaults struct {
+	IgnoreMultiVideoReleases bool `json:"ignore_multi_video_releases"`
 }
 
 // GroupAction defines model for GroupAction.

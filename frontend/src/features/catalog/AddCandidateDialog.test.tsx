@@ -38,6 +38,9 @@ describe("Custom candidate explicit save boundary", () => {
   const { preset } = await import("../../testing/businessPreset");
   expect(saved.rules.sections).toEqual(presetRuleSections(preset));
   expect(saved.business?.sections.release_rules).toEqual((await import("../../testing/businessPreset")).preset.snapshot.sections.release_rules);
+  // The subscription default copies once at creation like the rules sections;
+  // the default fixture is false, so the draft carries no field.
+  expect("ignore_multi_video_releases" in saved).toBe(false);
   expect(fetch).not.toHaveBeenCalled();
  });
  it("retains the draft and exposes save failure without activation or implicit fetching", async () => {

@@ -932,6 +932,42 @@ describe("AnimeConfigDialog draft rules copied from the preset", () => {
     expect(screen.queryByDisplayValue("当前排除词")).not.toBeInTheDocument();
   });
 
+  // The subscription default (ignore multi-video) is one-time input like the
+  // rules sections: a new draft copies the Global value once at creation, and
+  // turning it off writes the draft back to "never set".
+  it("新草稿在创建时复制全局『忽略多视频』默认，关掉后草稿不再带该字段", async () => {
+    const { preset } = await import("../../testing/businessPreset");
+    const custom = structuredClone(preset);
+    custom.subscription_defaults = { ignore_multi_video_releases: true };
+    vi.mocked(getBusinessPreset).mockResolvedValueOnce(custom);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    })));
+    vi.mocked(getCandidateStore).mockReturnValue(candidateStoreMock(async () => []));
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <AnimeConfigDialog
+          open
+          onOpenChange={() => {}}
+          provider={provider}
+          entry={draftEntryWithoutCandidate}
+          sourceLabel={t("grid.tabCustom")}
+          onSubscribed={() => {}}
+          initialTab="rules"
+        />
+      </QueryClientProvider>,
+    );
+    await flushQuery();
+
+    const toggle = screen.getByRole("switch", { name: t("anime.ignoreMultiVideo.label") });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+  });
+
   it("读取 Global 业务预设与候选列表并行，而不是串行等待", async () => {
     // First open of an unsubscribed provider card needs both. The preset request
     // must already be in flight while the candidate list is still pending.

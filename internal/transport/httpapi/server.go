@@ -13,6 +13,7 @@ import (
 
 	accessapplication "bansoko/internal/accesscontrol/application"
 	"bansoko/internal/anime/animeconfig"
+	animedomain "bansoko/internal/anime/domain"
 	draftapplication "bansoko/internal/anime/draft/application"
 	oneshotapplication "bansoko/internal/anime/oneshot/application"
 	ownershipapplication "bansoko/internal/anime/ownership/application"
@@ -165,6 +166,7 @@ type AutomationService interface {
 type GlobalSectionService interface {
 	ReadBusinessPreset(ctx context.Context) (animeconfig.BusinessSnapshot, error)
 	ReadGlobalTagFilters(ctx context.Context) (json.RawMessage, error)
+	ReadGlobalSubscriptionDefaults(ctx context.Context) (animedomain.SubscriptionDefaults, error)
 	ListGlobalSections(ctx context.Context) ([]configurationdomain.GlobalSectionView, error)
 	PutGlobalSection(ctx context.Context, sectionName string, expectedVersion int64, input configurationdomain.GlobalSectionInput) (configurationdomain.GlobalSectionView, error)
 	GetNamingTemplateLibrary(ctx context.Context) (configurationdomain.NamingTemplateLibraryView, error)

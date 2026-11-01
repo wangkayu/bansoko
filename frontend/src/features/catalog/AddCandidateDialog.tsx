@@ -2,10 +2,10 @@ import { useState } from "react";
 import { toast } from "../../ui/toast";
 import type { AnimeDraft } from "../../lib/api/client";
 import { getCandidateStore } from "../../lib/candidate/serverCandidateStore";
-import { toUserMessage } from "../../lib/api/client";
+import { getBusinessPreset, toUserMessage } from "../../lib/api/client";
 import { Button, Input } from "../../ui";
 import { Dialog } from "../../ui/base";
-import { withGlobalBusiness } from "../anime-config/businessDraft";
+import { copySubscriptionDefault, withGlobalBusiness } from "../anime-config/businessDraft";
 import { t } from "../../lib/i18n";
 import { FeedSiteNote } from "./FeedSiteNote";
 
@@ -57,7 +57,10 @@ export function AddCandidateDialog({
         ],
       };
       const store = getCandidateStore();
-      const saved = await store.save(await withGlobalBusiness(draft));
+      // withGlobalBusiness copies the default settings into each rules section;
+      // copySubscriptionDefault seeds the ignore-multi-video default the same way.
+      const presetRequest = getBusinessPreset();
+      const saved = await store.save(copySubscriptionDefault(await withGlobalBusiness(draft, presetRequest), await presetRequest));
       // origin_entry_ref is already null in the draft (custom never self-references), so no second
 //       PATCH after saving is needed to write the id back.
       void saved;
