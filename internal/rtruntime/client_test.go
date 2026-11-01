@@ -416,6 +416,14 @@ func TestCompareVersionsOrdersReleaseVersions(t *testing.T) {
 		{"garbage", "1.0.0", -1},
 		{"1.0.0", "garbage", 1},
 		{"b", "a", 1},
+		// Prerelease ordering: a suffix is older than the release it leads to,
+		// numeric identifiers compare numerically, and a test build still
+		// advances past the previous release.
+		{"0.0.4-test.9", "0.0.3", 1},
+		{"0.0.4", "0.0.4-test.9", 1},
+		{"0.0.4-test.9", "0.0.4-test.10", -1},
+		{"0.0.4-test.9", "0.0.4-test.9", 0},
+		{"0.0.4-alpha", "0.0.4-beta", -1},
 	}
 	for _, testCase := range cases {
 		if got := compareVersions(testCase.a, testCase.b); got != testCase.want {

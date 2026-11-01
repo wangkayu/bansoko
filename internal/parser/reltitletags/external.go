@@ -33,6 +33,9 @@ var external atomic.Pointer[externalBackend]
 // externalBackend is one adopted binary plus the dictionary it reported, so
 // projections and descriptors describe the parser that actually ran.
 type externalBackend struct {
+	// mu lets a replacement wait for the parses already inside this backend
+	// before it stops the process underneath them.
+	mu           sync.RWMutex
 	client       *rtruntime.Client
 	version      string
 	line         string
@@ -68,14 +71,22 @@ func AdoptExternal(client *rtruntime.Client) error {
 		return err
 	}
 	info := client.Info()
-	external.Store(&externalBackend{
+	next := &externalBackend{
 		client:       client,
 		version:      strings.TrimPrefix(info.Version, "v"),
 		line:         info.Line,
 		configDigest: info.ConfigDigest,
 		vocabulary:   vocabulary,
 		known:        known,
-	})
+	}
+	// Installing a newer binary replaces the adopted one without a restart.
+	// The previous process is stopped only after the parses already using it
+	// have finished, so a replacement never fails a title mid-flight.
+	if previous := external.Swap(next); previous != nil {
+		previous.mu.Lock()
+		_ = previous.client.Close()
+		previous.mu.Unlock()
+	}
 	externalFailureMu.Lock()
 	externalFailure = ""
 	externalFailureMu.Unlock()
@@ -131,6 +142,8 @@ func ActiveDigest() string { return activeDigest() }
 func parseExternal(current *externalBackend, title string) (*reltitlemodel.ParseResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), externalParseTimeout)
 	defer cancel()
+	current.mu.RLock()
+	defer current.mu.RUnlock()
 	result, err := current.client.Parse(ctx, title)
 	if err != nil {
 		if errors.Is(err, rtruntime.ErrTransport) {

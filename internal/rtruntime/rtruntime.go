@@ -158,23 +158,25 @@ func versionNote(installed, builtin string) string {
 	return fmt.Sprintf("installed %s is older than the builtin %s", installed, builtin)
 }
 
-// compareVersions orders two versions the way the release channel does. A
-// version that does not parse compares as unknown, which never claims to be
-// newer than a real one.
+// compareVersions orders two versions the way the release channel does: three
+// numeric fields, then a prerelease suffix ordered by semantic versioning
+// ("0.0.4-test.9" is newer than "0.0.3", older than "0.0.4"). A version that
+// does not parse compares as unknown, which never claims to be newer than a
+// real one.
 func compareVersions(a, b string) int {
 	pa, oka := parseVersion(a)
 	pb, okb := parseVersion(b)
 	switch {
 	case oka && okb:
 		for index := 0; index < 3; index++ {
-			if pa[index] != pb[index] {
-				if pa[index] < pb[index] {
+			if pa.core[index] != pb.core[index] {
+				if pa.core[index] < pb.core[index] {
 					return -1
 				}
 				return 1
 			}
 		}
-		return 0
+		return comparePrerelease(pa.pre, pb.pre)
 	case oka && !okb:
 		return 1
 	case !oka && okb:
@@ -184,31 +186,95 @@ func compareVersions(a, b string) int {
 	}
 }
 
-func parseVersion(version string) ([3]int, bool) {
-	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
-	var out [3]int
-	parts := strings.SplitN(version, "-", 2)
-	if len(parts) != 1 {
-		return out, false
+// comparePrerelease orders the suffix after the dash: no suffix outranks any
+// suffix, numeric identifiers compare numerically and rank below alphanumeric
+// ones, and a shorter identifier list ranks first when it is a prefix.
+func comparePrerelease(a, b []prereleaseID) int {
+	switch {
+	case len(a) == 0 && len(b) == 0:
+		return 0
+	case len(a) == 0:
+		return 1
+	case len(b) == 0:
+		return -1
 	}
-	fields := strings.Split(parts[0], ".")
-	if len(fields) != 3 {
-		return out, false
-	}
-	for index, field := range fields {
-		if field == "" {
-			return out, false
-		}
-		value := 0
-		for _, char := range field {
-			if char < '0' || char > '9' {
-				return out, false
+	for index := 0; index < len(a) && index < len(b); index++ {
+		left, right := a[index], b[index]
+		if left.numeric && right.numeric {
+			if left.value != right.value {
+				if left.value < right.value {
+					return -1
+				}
+				return 1
 			}
-			value = value*10 + int(char-'0')
+			continue
 		}
-		out[index] = value
+		if left.numeric != right.numeric {
+			if left.numeric {
+				return -1
+			}
+			return 1
+		}
+		if left.text != right.text {
+			return strings.Compare(left.text, right.text)
+		}
 	}
-	return out, true
+	switch {
+	case len(a) < len(b):
+		return -1
+	case len(a) > len(b):
+		return 1
+	}
+	return 0
+}
+
+type prereleaseID struct {
+	text    string
+	value   int
+	numeric bool
+}
+
+type versionToken struct {
+	core [3]int
+	pre  []prereleaseID
+}
+
+func parseVersion(version string) (versionToken, bool) {
+	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
+	core := version
+	var suffix string
+	if index := strings.IndexByte(version, '-'); index >= 0 {
+		core, suffix = version[:index], version[index+1:]
+		if suffix == "" {
+			return versionToken{}, false
+		}
+	}
+	fields := strings.Split(core, ".")
+	if len(fields) != 3 {
+		return versionToken{}, false
+	}
+	var token versionToken
+	for index, field := range fields {
+		value, ok := parseDigits(field)
+		if !ok {
+			return versionToken{}, false
+		}
+		token.core[index] = value
+	}
+	if suffix == "" {
+		return token, true
+	}
+	for _, part := range strings.Split(suffix, ".") {
+		if part == "" {
+			return versionToken{}, false
+		}
+		if value, ok := parseDigits(part); ok {
+			token.pre = append(token.pre, prereleaseID{text: part, value: value, numeric: true})
+			continue
+		}
+		token.pre = append(token.pre, prereleaseID{text: part})
+	}
+	return token, true
 }
 
 // ArchSuffix is the platform key the release channel names an artifact by,
