@@ -8193,6 +8193,30 @@ components:
             library_path (pending alignment), relative to the same root. It is
             rendered server-side by the per-anime files list's renderer. Absent
             when the paths agree or the render has no result.
+        placement_end:
+          $ref: '#/components/schemas/RSSListPlacementEnd'
+    RSSListPlacementEnd:
+      type: object
+      additionalProperties: false
+      required: [state]
+      description: >-
+        Owner mode only. Present when the placement this file's operation
+        produced has ended, so the file's own outcome is stated instead of
+        reading "waiting to import": `superseded` (a better version replaced
+        it), `displaced` (another file took its path under the overwrite
+        setting, cause `overwrite`, or the episode was downloaded again, cause
+        `redownload`), or `released` (the file was released from management,
+        which frees the file and not the episode: the release stays a
+        candidate). It describes this file only and never points at whichever
+        file holds the episode now; a file an active placement still holds
+        carries no placement_end.
+      properties:
+        state:
+          type: string
+          enum: [superseded, displaced, released]
+        cause:
+          type: string
+          enum: [overwrite, redownload]
     RSSListDownloadAction:
       type: object
       additionalProperties: false

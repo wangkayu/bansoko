@@ -1801,6 +1801,19 @@ const (
 	RSSListOffsetSourcePreviewInput RSSListOffsetSource = "preview_input"
 )
 
+// Defines values for RSSListPlacementEndCause.
+const (
+	RSSListPlacementEndCauseOverwrite  RSSListPlacementEndCause = "overwrite"
+	RSSListPlacementEndCauseRedownload RSSListPlacementEndCause = "redownload"
+)
+
+// Defines values for RSSListPlacementEndState.
+const (
+	RSSListPlacementEndStateDisplaced  RSSListPlacementEndState = "displaced"
+	RSSListPlacementEndStateReleased   RSSListPlacementEndState = "released"
+	RSSListPlacementEndStateSuperseded RSSListPlacementEndState = "superseded"
+)
+
 // Defines values for RSSListTorrentStateState.
 const (
 	RSSListTorrentStateStateAvailable     RSSListTorrentStateState = "available"
@@ -7339,10 +7352,13 @@ type RSSListFile struct {
 	LibraryPath *string `json:"library_path,omitempty"`
 
 	// MediaKind Product classification of this file, taken from the seed's exact torrent manifest. Absent for a file the release never parsed, so an absent value is never reported as the "other" kind.
-	MediaKind   *RSSListFileMediaKind `json:"media_kind,omitempty"`
-	Ordinal     int                   `json:"ordinal"`
-	ReasonCode  *string               `json:"reason_code,omitempty"`
-	RenderError *string               `json:"render_error,omitempty"`
+	MediaKind *RSSListFileMediaKind `json:"media_kind,omitempty"`
+	Ordinal   int                   `json:"ordinal"`
+
+	// PlacementEnd Owner mode only. Present when the placement this file's operation produced has ended, so the file's own outcome is stated instead of reading "waiting to import": `superseded` (a better version replaced it), `displaced` (another file took its path under the overwrite setting, cause `overwrite`, or the episode was downloaded again, cause `redownload`), or `released` (the file was released from management, which frees the file and not the episode: the release stays a candidate). It describes this file only and never points at whichever file holds the episode now; a file an active placement still holds carries no placement_end.
+	PlacementEnd *RSSListPlacementEnd `json:"placement_end,omitempty"`
+	ReasonCode   *string              `json:"reason_code,omitempty"`
+	RenderError  *string              `json:"render_error,omitempty"`
 
 	// RenderedTarget The target this file would land on. A subtitle bound to a video of the same release follows that video: the target is the video's own directory and basename, the subtitle suffix the naming rules render for it, and the subtitle's own extension (the placement stage's companion rule, which the preview and the placement stage compose from one shared function), never a render of the subtitle naming template, so the preview cannot show a path the placement stage would not produce.
 	RenderedTarget *string           `json:"rendered_target,omitempty"`
@@ -7525,6 +7541,18 @@ type RSSListOffset struct {
 
 // RSSListOffsetSource Provenance of value. link: a persisted RSS link's stored offset. draft_source: the matching draft source's episode_offset. preview_input: the read input's preview-only episode_offset, used only because this group has no offset of its own. default: no offset anywhere, value 0.
 type RSSListOffsetSource string
+
+// RSSListPlacementEnd Owner mode only. Present when the placement this file's operation produced has ended, so the file's own outcome is stated instead of reading "waiting to import": `superseded` (a better version replaced it), `displaced` (another file took its path under the overwrite setting, cause `overwrite`, or the episode was downloaded again, cause `redownload`), or `released` (the file was released from management, which frees the file and not the episode: the release stays a candidate). It describes this file only and never points at whichever file holds the episode now; a file an active placement still holds carries no placement_end.
+type RSSListPlacementEnd struct {
+	Cause *RSSListPlacementEndCause `json:"cause,omitempty"`
+	State RSSListPlacementEndState  `json:"state"`
+}
+
+// RSSListPlacementEndCause defines model for RSSListPlacementEnd.Cause.
+type RSSListPlacementEndCause string
+
+// RSSListPlacementEndState defines model for RSSListPlacementEnd.State.
+type RSSListPlacementEndState string
 
 // RSSListSeedFacts defines model for RSSListSeedFacts.
 type RSSListSeedFacts struct {

@@ -20,9 +20,9 @@ type PlacementTargetRenderer interface {
 	RenderPlacementTargets(ctx context.Context, animeID string, placementIDs []string) (map[string]string, error)
 }
 
-// releaseLibraryFile is one imported file of an owner release: the file
-// operation that placed it and the placement (video) or companion
-// (subtitle) that holds it now.
+// releaseLibraryFile is one file of an owner release whose file operation
+// produced a placement: either the placement (video) or the companion
+// (subtitle) holding it now, or the placement it has since ended in.
 type releaseLibraryFile struct {
 	ReleaseID    string
 	SourcePath   string
@@ -32,6 +32,18 @@ type releaseLibraryFile struct {
 	PlacementID string
 	CompanionID string
 	CurrentPath string
+	// EndState and EndCause are the ended placement's state and cause; empty
+	// while the file is held, and empty on companion rows.
+	EndState string
+	EndCause string
+}
+
+// ended reports whether this row is a placement that has ended rather than a
+// holder of the file. A file operation has one placement
+// (placements_source_uq), so the state alone decides it; a companion still
+// holding the file keeps it held.
+func (f releaseLibraryFile) ended() bool {
+	return f.EndState != "" && f.CompanionID == ""
 }
 
 // applyLibraryLocations shows where each imported file of the owner view is
@@ -48,7 +60,10 @@ type releaseLibraryFile struct {
 // placement path at all) leaves behind, so the owner row would otherwise read
 // pending-import for a file it shows a library location for. The seed's
 // overlap counts
-// follow. It reads and writes nothing else.
+// follow. A file whose placement has ended since (superseded, displaced or
+// released) is in no library, so it keeps its rendered target and gains
+// PlacementEnd: the row states that one file's outcome and never points at
+// whichever file holds the episode now. It reads and writes nothing else.
 func (s *Service) applyLibraryLocations(ctx context.Context, animeID string, view *RSSListView) error {
 	if s == nil || s.db == nil || view == nil || strings.TrimSpace(animeID) == "" {
 		return nil
@@ -70,9 +85,16 @@ func (s *Service) applyLibraryLocations(ctx context.Context, animeID string, vie
 	}
 	bySource := map[string]releaseLibraryFile{}
 	byTarget := map[string]releaseLibraryFile{}
+	endedBySource := map[string]releaseLibraryFile{}
+	endedByTarget := map[string]releaseLibraryFile{}
 	placementIDs := []string{}
 	seenPlacement := map[string]bool{}
 	for _, file := range held {
+		if file.ended() {
+			endedBySource[file.ReleaseID+"\x00"+file.SourcePath] = file
+			endedByTarget[file.ReleaseID+"\x00"+filepath.Clean(file.FrozenTarget)] = file
+			continue
+		}
 		bySource[file.ReleaseID+"\x00"+file.SourcePath] = file
 		byTarget[file.ReleaseID+"\x00"+filepath.Clean(file.FrozenTarget)] = file
 		placementID := file.PlacementID
@@ -116,6 +138,16 @@ func (s *Service) applyLibraryLocations(ctx context.Context, animeID string, vie
 					found, ok = byTarget[releaseID+"\x00"+filepath.Clean(file.RenderedTarget)]
 				}
 				if !ok {
+					// The file is in no library: if the placement it produced
+					// has ended, the row states that file's own outcome instead
+					// of reading "waiting to import".
+					ended, endedOK := endedBySource[releaseID+"\x00"+file.SourcePath]
+					if !endedOK && strings.TrimSpace(file.RenderedTarget) != "" {
+						ended, endedOK = endedByTarget[releaseID+"\x00"+filepath.Clean(file.RenderedTarget)]
+					}
+					if endedOK {
+						file.PlacementEnd = &RSSListPlacementEnd{State: ended.EndState, Cause: ended.EndCause}
+					}
 					continue
 				}
 				key := found.PlacementID
@@ -168,18 +200,22 @@ func markHeldInLibrary(item *RSSListItem, file *RSSListFile) {
 	overlap.Verdict = RSSListLibraryOverlapPresent
 }
 
-// readReleaseLibraryFiles lists the files of these releases that an active
-// verified placement of the anime (video) or an active companion of one
-// (subtitle) holds now, through the file operation that placed them.
+// readReleaseLibraryFiles lists the files of these releases that a placement
+// produced by their file operation now holds (an active verified placement for
+// a video, an active companion of one for a subtitle), and the placements that
+// have ended since (superseded, displaced or released).
 func (s *Service) readReleaseLibraryFiles(ctx context.Context, animeID string, releaseIDs []string) ([]releaseLibraryFile, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT a.source_release_ref, mf.relative_path, fo.target_path,
-       COALESCE(p.id, c.placement_id), COALESCE(c.id, ''), COALESCE(p.physical_path, c.current_path)
+       COALESCE(p.id, c.placement_id), COALESCE(c.id, ''), COALESCE(p.physical_path, c.current_path),
+       COALESCE(p.state, ''), COALESCE(p.displaced_cause, '')
 FROM file_operations fo
 JOIN acquisitions a ON a.id = fo.acquisition_id
 JOIN acquisition_files mf ON mf.acquisition_id = fo.acquisition_id AND mf.file_ref = fo.file_ref
 LEFT JOIN placements p ON p.source_evidence_type = 'file_operation' AND p.source_owner_ref = fo.id
-    AND p.managed_anime_id = $2 AND p.state = 'active' AND p.verification_state = 'verified'
+    AND p.managed_anime_id = $2
+    AND ((p.state = 'active' AND p.verification_state = 'verified')
+        OR p.state IN ('superseded', 'displaced', 'released'))
 LEFT JOIN placement_companions c ON c.source_ref = fo.id AND c.managed_anime_id = $2 AND c.state = 'active'
     AND EXISTS (SELECT 1 FROM placements cp WHERE cp.id = c.placement_id AND cp.state = 'active' AND cp.verification_state = 'verified')
 WHERE a.source_release_ref = ANY($1::text[]) AND (p.id IS NOT NULL OR c.id IS NOT NULL)
@@ -191,7 +227,8 @@ ORDER BY fo.created_at, fo.id`, pq.Array(releaseIDs), animeID)
 	files := []releaseLibraryFile{}
 	for rows.Next() {
 		var file releaseLibraryFile
-		if err := rows.Scan(&file.ReleaseID, &file.SourcePath, &file.FrozenTarget, &file.PlacementID, &file.CompanionID, &file.CurrentPath); err != nil {
+		if err := rows.Scan(&file.ReleaseID, &file.SourcePath, &file.FrozenTarget, &file.PlacementID, &file.CompanionID, &file.CurrentPath,
+			&file.EndState, &file.EndCause); err != nil {
 			return nil, fmt.Errorf("scan release library file: %w", err)
 		}
 		files = append(files, file)

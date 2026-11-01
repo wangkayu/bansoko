@@ -3089,6 +3089,14 @@ export interface components {
             library_path?: string;
             /** @description Owner mode only, with library_path: the path the anime's current naming rules render for this file when it differs from library_path (pending alignment), relative to the same root. It is rendered server-side by the per-anime files list's renderer. Absent when the paths agree or the render has no result. */
             library_new_path?: string;
+            placement_end?: components["schemas"]["RSSListPlacementEnd"];
+        };
+        /** @description Owner mode only. Present when the placement this file's operation produced has ended, so the file's own outcome is stated instead of reading "waiting to import": `superseded` (a better version replaced it), `displaced` (another file took its path under the overwrite setting, cause `overwrite`, or the episode was downloaded again, cause `redownload`), or `released` (the file was released from management, which frees the file and not the episode: the release stays a candidate). It describes this file only and never points at whichever file holds the episode now; a file an active placement still holds carries no placement_end. */
+        RSSListPlacementEnd: {
+            /** @enum {string} */
+            state: "superseded" | "displaced" | "released";
+            /** @enum {string} */
+            cause?: "overwrite" | "redownload";
         };
         /** @description Server-derived download capability for one item. The browser explains this result; it never reproduces the admission policy itself. A missing qBittorrent connection blocks this object only and never the parsing, filtering or rendering above it. kind retry runs the owner's Release through normal acceptance again (retryRelease); when it is not allowed reason_code is one of owner_retired, already_present, download_in_progress, processing_in_progress, already_placed, post_download_failed, present_at_resume, not_started. A one_shot row that is not allowed instead names its own gate: group_not_selected, snapshot_refresh_required, seed_not_expanded (the seed exists in a fresh snapshot but was never expanded; expand it first, nothing is delivered by this action), torrent_payload_unavailable, seed_identity_mismatch (the expanded torrent's infohash or digest contradicts the identity the feed published), strong_identity_missing (no identity from the feed and none computable from the expanded torrent), evaluation_unavailable or published_at_missing. A seed's identity is the infohash its feed published, else the infohash of its expanded torrent; admission freezes that identity. Every row of a pending subscription's test bench is kind none with reason_code not_started, except that with new_releases_only a row published before the instance was created (or without a publish time) is kind none with reason_code start_baseline: started, it would take the start_baseline verdict. */
         RSSListDownloadAction: {

@@ -322,6 +322,35 @@ type RSSListFile struct {
 	// that file when it differs from LibraryPath (pending alignment), from
 	// the files dialog's renderer; nil otherwise.
 	LibraryNewPath *string
+	// PlacementEnd is this file's own outcome once the placement it produced
+	// ended. Nil while an active verified placement or an active companion
+	// holds the file, and for a file this release never placed.
+	PlacementEnd *RSSListPlacementEnd
+}
+
+// The states a placement ends in. Superseded is a quality replacement,
+// displaced another file taking over the path (see its cause), released the
+// user freeing the file from management.
+const (
+	RSSListPlacementEndSuperseded = "superseded"
+	RSSListPlacementEndDisplaced  = "displaced"
+	RSSListPlacementEndReleased   = "released"
+)
+
+// The causes of a displaced placement: the overwrite setting gave its path to
+// another file, or the episode was downloaded again.
+const (
+	RSSListPlacementEndCauseOverwrite  = "overwrite"
+	RSSListPlacementEndCauseRedownload = "redownload"
+)
+
+// RSSListPlacementEnd is the outcome of the placement one file produced, once
+// that placement is no longer active. It describes that file alone: it never
+// points at whichever file holds the episode now.
+type RSSListPlacementEnd struct {
+	State string
+	// Cause is set for displaced only.
+	Cause string
 }
 
 // RSSListDownloadAction is the server-derived download capability of one item.
