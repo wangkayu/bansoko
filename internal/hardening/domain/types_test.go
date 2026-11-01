@@ -8,7 +8,7 @@ import (
 )
 
 func TestUpdateRequiresBackupAndMaintenance(t *testing.T) {
-	plan := UpdatePlan{Manifest: ReleaseManifest{Version: "v2", ArtifactDigest: "0123456789abcdef", Signature: "sig", SchemaVersion: "011", Immutable: true}, Rollback: CodeOnly}
+	plan := UpdatePlan{Manifest: ReleaseManifest{Version: "v2", ArtifactDigest: "0123456789abcdef", SchemaVersion: "011", Immutable: true}, Rollback: CodeOnly}
 	if err := plan.Admit(); err == nil {
 		t.Fatal("unsafe update was admitted")
 	}
@@ -16,24 +16,6 @@ func TestUpdateRequiresBackupAndMaintenance(t *testing.T) {
 	plan.Maintenance = true
 	if err := plan.Admit(); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestArtifactDigestSignatureBindsDigest(t *testing.T) {
-	publicKey, privateKey, err := GenerateSigningKey()
-	if err != nil {
-		t.Fatal(err)
-	}
-	digest := HashArtifact([]byte("release-artifact"))
-	signature, err := SignArtifactDigest(privateKey, digest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := VerifyArtifactDigestSignature(publicKey, digest, signature); err != nil {
-		t.Fatal(err)
-	}
-	if err := VerifyArtifactDigestSignature(publicKey, HashArtifact([]byte("tampered")), signature); err == nil {
-		t.Fatal("artifact signature was not bound to the digest")
 	}
 }
 
@@ -72,9 +54,8 @@ func TestEmbeddedUpdateValidation(t *testing.T) {
 		Rollback:               RestoreRequired,
 		Immutable:              true,
 		Artifacts: []ArtifactRef{{Platform: "linux", Architecture: "amd64",
-			Digest:    strings.Repeat("ab", 32),
-			Size:      1,
-			Signature: "sig"}},
+			Digest: strings.Repeat("ab", 32),
+			Size:   1}},
 		SBOMRef:        "sha256:aa",
 		ProvenanceRef:  "sha256:bb",
 		ArtifactDigest: strings.Repeat("cd", 32),
@@ -87,7 +68,6 @@ func TestEmbeddedUpdateValidation(t *testing.T) {
 		Architecture:        "amd64",
 		PayloadDigest:       digest,
 		PayloadSize:         1234,
-		PayloadSignature:    "payload-sig",
 		BootstrapMinVersion: "embedded-bootstrap-v1",
 		MinImageVersion:     "2026-08",
 		TargetReleaseID:     base.ReleaseID,
@@ -106,34 +86,9 @@ func TestEmbeddedUpdateValidation(t *testing.T) {
 		t.Fatalf("consistent segment rejected: %v", err)
 	}
 
-	publicKey, privateKey, err := GenerateSigningKey()
-	if err != nil {
-		t.Fatal(err)
-	}
-	payloadSignature, err := SignArtifactDigest(privateKey, digest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	manifest.EmbeddedUpdate.PayloadSignature = payloadSignature
-	if err := manifest.VerifyEmbeddedPayloadSignature(publicKey); err != nil {
-		t.Fatalf("payload signature verification failed: %v", err)
-	}
-	otherDigest := strings.Repeat("01", 32)
-	tamperedSig, err := SignArtifactDigest(privateKey, otherDigest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wrongDigest := segment
-	wrongDigest.PayloadSignature = tamperedSig
-	broken := manifest
-	broken.EmbeddedUpdate = &wrongDigest
-	if err := broken.VerifyEmbeddedPayloadSignature(publicKey); err == nil {
-		t.Fatal("payload signature bound to another digest must be rejected")
-	}
-
 	tampered := segment
 	tampered.TargetVersion = "0.9.0-rc.9"
-	broken = manifest
+	broken := manifest
 	broken.EmbeddedUpdate = &tampered
 	if err := broken.ValidateForEmbeddedUpdate(); err == nil {
 		t.Fatal("target_version divergence from the outer manifest must be rejected")

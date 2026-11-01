@@ -28,7 +28,7 @@ func (s *Service) currentReleaseNotes() *hardeningdomain.ReleaseNotesEntry {
 		return nil
 	}
 	manifest, err := decodeManifestDocument(data)
-	if err != nil || manifest.VerifySignature(s.publicKey) != nil || manifest.ReleaseID != id {
+	if err != nil || manifest.ReleaseID != id {
 		return nil
 	}
 	for _, entry := range manifest.ReleaseNotes {

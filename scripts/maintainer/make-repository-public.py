@@ -151,13 +151,10 @@ def main():
         fail("cannot list Actions secrets (status %s)" % status)
     names = sorted(s.get("name") for s in (secrets or {}).get("secrets", []))
     # The single destination names its public values in the workflow itself;
-    # only the Hub push token and the signing key remain as secrets.
+    # only the Hub push token remains as a secret.
     missing = [
         name
-        for name in (
-            "DOCKERHUB_TOKEN",
-            "RELEASE_SIGNING_KEY",
-        )
+        for name in ("DOCKERHUB_TOKEN",)
         if name not in names
     ]
     if missing:

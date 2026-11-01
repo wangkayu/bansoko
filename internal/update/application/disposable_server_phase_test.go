@@ -11,7 +11,6 @@ package application
 
 import (
 	"context"
-	"crypto/ed25519"
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
@@ -28,12 +27,18 @@ import (
 
 	"bansoko/internal/apperrors"
 	hardeningdomain "bansoko/internal/hardening/domain"
+	"bansoko/internal/update/channel"
 	"bansoko/internal/update/journal"
 )
 
 // disposableManifestPath is the immutable manifest document the fixture serves;
 // the payload sibling is derived from its directory by the update source.
-const disposableManifestPath = "/release-manifest.json"
+const disposableManifestPath = "/update-channel/release-manifest.json"
+
+// disposableChannelDocumentPath is the version-free locator the fixture serves
+// for the stable lane; the manifest it names lives inside the package root, as
+// a real publication does.
+const disposableChannelDocumentPath = "/update-channel/channel-v1.json"
 
 // disposableClockInstant is the injected clock reading every test asserts on,
 // so no assertion depends on wall time.
@@ -41,30 +46,21 @@ var disposableClockInstant = time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC)
 
 func disposableClock() time.Time { return disposableClockInstant }
 
-// disposableSignedManifest builds one fully signed embedded-update release
-// manifest, mirroring what build-release.sh publishes: a signed outer manifest
-// whose embedded segment carries the payload signature, the bootstrap floor and
-// the image floor the deployment trusts.
-func disposableSignedManifest(t *testing.T, releaseID string, releaseSequence int64, bootstrapMinVersion, minImageVersion string) (hardeningdomain.ReleaseManifest, ed25519.PublicKey) {
+// disposableManifest builds one embedded-update release manifest, mirroring
+// what build-release.sh publishes: the embedded segment carries the payload
+// digest, the bootstrap floor and the image floor the deployment trusts.
+func disposableManifest(t *testing.T, releaseID string, releaseSequence int64, bootstrapMinVersion, minImageVersion string) hardeningdomain.ReleaseManifest {
 	t.Helper()
-	return disposableSignedManifestWith(t, releaseID, releaseSequence, bootstrapMinVersion, minImageVersion, nil)
+	return disposableManifestWith(t, releaseID, releaseSequence, bootstrapMinVersion, minImageVersion, nil)
 }
 
-// disposableSignedManifestWith is disposableSignedManifest with a mutation
-// applied before signing, for a test that needs another version, channel or
-// release notes on an otherwise identical signed manifest.
-func disposableSignedManifestWith(t *testing.T, releaseID string, releaseSequence int64, bootstrapMinVersion, minImageVersion string, mutate func(*hardeningdomain.ReleaseManifest)) (hardeningdomain.ReleaseManifest, ed25519.PublicKey) {
+// disposableManifestWith is disposableManifest with a mutation applied, for a
+// test that needs another version, channel or release notes on an otherwise
+// identical manifest.
+func disposableManifestWith(t *testing.T, releaseID string, releaseSequence int64, bootstrapMinVersion, minImageVersion string, mutate func(*hardeningdomain.ReleaseManifest)) hardeningdomain.ReleaseManifest {
 	t.Helper()
-	publicKey, privateKey, err := hardeningdomain.GenerateSigningKey()
-	if err != nil {
-		t.Fatal(err)
-	}
 	payload := []byte("disposable server phase payload")
 	payloadDigest := hardeningdomain.HashArtifact(payload)
-	payloadSignature, err := hardeningdomain.SignArtifactDigest(privateKey, payloadDigest)
-	if err != nil {
-		t.Fatal(err)
-	}
 	artifactDigest := hardeningdomain.HashArtifact([]byte("disposable server phase artifact"))
 	manifest := hardeningdomain.ReleaseManifest{
 		SchemaVersion:          "release-manifest-1",
@@ -79,7 +75,7 @@ func disposableSignedManifestWith(t *testing.T, releaseID string, releaseSequenc
 		BackupRequired:         true,
 		Rollback:               hardeningdomain.RestoreRequired,
 		Artifacts: []hardeningdomain.ArtifactRef{{
-			Platform: "linux", Architecture: "amd64", Digest: artifactDigest, Size: 1, Signature: "artifact-signature",
+			Platform: "linux", Architecture: "amd64", Digest: artifactDigest, Size: 1,
 		}},
 		SBOMRef:        "sbom",
 		ProvenanceRef:  "provenance",
@@ -91,7 +87,6 @@ func disposableSignedManifestWith(t *testing.T, releaseID string, releaseSequenc
 			Architecture:        "amd64",
 			PayloadDigest:       payloadDigest,
 			PayloadSize:         int64(len(payload)),
-			PayloadSignature:    payloadSignature,
 			BootstrapMinVersion: bootstrapMinVersion,
 			MinImageVersion:     minImageVersion,
 			TargetReleaseID:     releaseID,
@@ -103,10 +98,7 @@ func disposableSignedManifestWith(t *testing.T, releaseID string, releaseSequenc
 	if mutate != nil {
 		mutate(&manifest)
 	}
-	if err := manifest.Sign(privateKey); err != nil {
-		t.Fatal(err)
-	}
-	return manifest, publicKey
+	return manifest
 }
 
 func disposableManifestDigest(t *testing.T, manifest hardeningdomain.ReleaseManifest) string {
@@ -147,6 +139,28 @@ func newDisposableFixture(t *testing.T, manifest hardeningdomain.ReleaseManifest
 	}
 	fixture.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fixture.record(r.URL.Path)
+		if r.URL.Path == disposableChannelDocumentPath {
+			manifestDigest, err := fixture.manifest.CanonicalDigest()
+			if err != nil {
+				t.Errorf("canonical manifest digest: %v", err)
+				http.Error(w, "digest", http.StatusInternalServerError)
+				return
+			}
+			document := channel.Document{
+				SchemaVersion:   channel.SchemaVersion,
+				Channel:         "stable",
+				ReleaseID:       fixture.manifest.ReleaseID,
+				Version:         fixture.manifest.Version,
+				ReleaseSequence: fixture.manifest.ReleaseSequence,
+				ManifestURL:     fixture.server.URL + disposableManifestPath,
+				ManifestDigest:  manifestDigest,
+				SourceCommit:    fixture.manifest.SourceCommit,
+				PublishedAt:     disposableClockInstant,
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(document)
+			return
+		}
 		if r.URL.Path == disposableManifestPath {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(fixture.manifest)
@@ -166,6 +180,11 @@ func newDisposableFixture(t *testing.T, manifest hardeningdomain.ReleaseManifest
 }
 
 func (f *disposableFixture) manifestURL() string { return f.server.URL + disposableManifestPath }
+
+// channelBase is the development override that points the stable lane at this
+// fixture, so the service resolves the channel document exactly as a deployment
+// would.
+func (f *disposableFixture) channelBase() string { return f.server.URL }
 
 func (f *disposableFixture) client() *http.Client { return f.server.Client() }
 
@@ -316,7 +335,7 @@ func (r *disposableFloorRows) Next(dest []driver.Value) error {
 // UPDATE_CANDIDATE_STALE: the caller's selected candidate must still be the
 // candidate the signed manifest resolves to.
 func TestDisposableServerPhaseAdmitUpdateRefusesStaleCandidate(t *testing.T) {
-	manifest, publicKey := disposableSignedManifest(t, "release-disposable-target", 7, "embedded-bootstrap-v1", "base-v1")
+	manifest := disposableManifest(t, "release-disposable-target", 7, "embedded-bootstrap-v1", "base-v1")
 	fixture := newDisposableFixture(t, manifest, false)
 	digest := disposableManifestDigest(t, manifest)
 
@@ -337,7 +356,7 @@ func TestDisposableServerPhaseAdmitUpdateRefusesStaleCandidate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			updatesRoot := t.TempDir()
 			service := disposableService(t, Deps{
-				PublicKey: publicKey, UpdatesRoot: updatesRoot, ManifestURL: fixture.manifestURL(),
+				UpdatesRoot: updatesRoot, Lane: LaneStable, ChannelBase: fixture.channelBase(),
 				HTTPClient: fixture.client(), BuildReleaseID: "running-build", BuildVersion: "running-version",
 				BuildCompatibilityVersion: "base-v1", BuildBootstrapVersion: "embedded-bootstrap-v1",
 			})
@@ -359,13 +378,13 @@ func TestDisposableServerPhaseAdmitUpdateRefusesStaleCandidate(t *testing.T) {
 // UPDATE_SOURCE_MISMATCH: discovery is deployment configuration, so a
 // caller-supplied manifest URL can never redirect which release is installed.
 func TestDisposableServerPhaseAdmitRefusesCallerSuppliedSource(t *testing.T) {
-	manifest, publicKey := disposableSignedManifest(t, "release-disposable-target", 7, "embedded-bootstrap-v1", "base-v1")
+	manifest := disposableManifest(t, "release-disposable-target", 7, "embedded-bootstrap-v1", "base-v1")
 
 	t.Run("channel deployment refuses a caller-supplied manifest url", func(t *testing.T) {
 		updatesRoot := t.TempDir()
 		service := disposableService(t, Deps{
-			PublicKey: publicKey, UpdatesRoot: updatesRoot,
-			ChannelURL: "https://packages.test/channel/channel-v1.json", PackageRoot: "https://packages.test/packages",
+			UpdatesRoot: updatesRoot,
+			Lane:        LaneStable, ChannelBase: "https://packages.test",
 			BuildReleaseID: "running-build", BuildVersion: "running-version",
 			BuildCompatibilityVersion: "base-v1", BuildBootstrapVersion: "embedded-bootstrap-v1",
 		})
@@ -382,11 +401,11 @@ func TestDisposableServerPhaseAdmitRefusesCallerSuppliedSource(t *testing.T) {
 		requireNoDisposableEffect(t, service, updatesRoot)
 	})
 
-	t.Run("exact-manifest deployment refuses a different manifest url", func(t *testing.T) {
+	t.Run("channel deployment refuses a manifest url outside its package root", func(t *testing.T) {
 		fixture := newDisposableFixture(t, manifest, false)
 		updatesRoot := t.TempDir()
 		service := disposableService(t, Deps{
-			PublicKey: publicKey, UpdatesRoot: updatesRoot, ManifestURL: fixture.manifestURL(),
+			UpdatesRoot: updatesRoot, Lane: LaneStable, ChannelBase: fixture.channelBase(),
 			HTTPClient: fixture.client(), BuildReleaseID: "running-build", BuildVersion: "running-version",
 			BuildCompatibilityVersion: "base-v1", BuildBootstrapVersion: "embedded-bootstrap-v1",
 		})
@@ -410,11 +429,11 @@ func TestDisposableServerPhaseAdmitRefusesCallerSuppliedSource(t *testing.T) {
 // TestDisposableServerPhaseAdmitUpdateRefusesSelfReplay covers
 // UPDATE_TARGET_CURRENT: replaying the running release must never be admitted.
 func TestDisposableServerPhaseAdmitUpdateRefusesSelfReplay(t *testing.T) {
-	manifest, publicKey := disposableSignedManifest(t, "running-build", 7, "embedded-bootstrap-v1", "base-v1")
+	manifest := disposableManifest(t, "running-build", 7, "embedded-bootstrap-v1", "base-v1")
 	fixture := newDisposableFixture(t, manifest, false)
 	updatesRoot := t.TempDir()
 	service := disposableService(t, Deps{
-		PublicKey: publicKey, UpdatesRoot: updatesRoot, ManifestURL: fixture.manifestURL(),
+		UpdatesRoot: updatesRoot, Lane: LaneStable, ChannelBase: fixture.channelBase(),
 		HTTPClient: fixture.client(), BuildReleaseID: "running-build", BuildVersion: "running-version",
 		BuildCompatibilityVersion: "base-v1", BuildBootstrapVersion: "embedded-bootstrap-v1",
 	})
@@ -438,7 +457,7 @@ func TestDisposableServerPhaseAdmitUpdateRefusesSelfReplay(t *testing.T) {
 // is what decides, so a target that does not advance beyond it is refused while
 // a read failure is reported as itself.
 func TestDisposableServerPhaseAdmitUpdateRefusesNonAdvancingReleaseSequence(t *testing.T) {
-	manifest, publicKey := disposableSignedManifest(t, "release-disposable-target", 7, "embedded-bootstrap-v1", "base-v1")
+	manifest := disposableManifest(t, "release-disposable-target", 7, "embedded-bootstrap-v1", "base-v1")
 	fixture := newDisposableFixture(t, manifest, false)
 	digest := disposableManifestDigest(t, manifest)
 
@@ -453,8 +472,8 @@ func TestDisposableServerPhaseAdmitUpdateRefusesNonAdvancingReleaseSequence(t *t
 		t.Run(tc.name, func(t *testing.T) {
 			updatesRoot := t.TempDir()
 			service := disposableService(t, Deps{
-				DB:        disposableFloorDB(t, tc.floor, nil),
-				PublicKey: publicKey, UpdatesRoot: updatesRoot, ManifestURL: fixture.manifestURL(),
+				DB:          disposableFloorDB(t, tc.floor, nil),
+				UpdatesRoot: updatesRoot, Lane: LaneStable, ChannelBase: fixture.channelBase(),
 				HTTPClient: fixture.client(), BuildReleaseID: "running-build", BuildVersion: "running-version",
 				BuildCompatibilityVersion: "base-v1", BuildBootstrapVersion: "embedded-bootstrap-v1",
 			})
@@ -478,8 +497,8 @@ func TestDisposableServerPhaseAdmitUpdateRefusesNonAdvancingReleaseSequence(t *t
 		readFailure := errors.New("disposable floor read failed")
 		updatesRoot := t.TempDir()
 		service := disposableService(t, Deps{
-			DB:        disposableFloorDB(t, 0, readFailure),
-			PublicKey: publicKey, UpdatesRoot: updatesRoot, ManifestURL: fixture.manifestURL(),
+			DB:          disposableFloorDB(t, 0, readFailure),
+			UpdatesRoot: updatesRoot, Lane: LaneStable, ChannelBase: fixture.channelBase(),
 			HTTPClient: fixture.client(), BuildReleaseID: "running-build", BuildVersion: "running-version",
 			BuildCompatibilityVersion: "base-v1", BuildBootstrapVersion: "embedded-bootstrap-v1",
 		})
@@ -505,8 +524,8 @@ func TestDisposableServerPhaseAdmitUpdateRefusesNonAdvancingReleaseSequence(t *t
 		blocking := newDisposableFixture(t, manifest, true)
 		updatesRoot := t.TempDir()
 		service := disposableService(t, Deps{
-			DB:        disposableFloorDB(t, 6, nil),
-			PublicKey: publicKey, UpdatesRoot: updatesRoot, ManifestURL: blocking.manifestURL(),
+			DB:          disposableFloorDB(t, 6, nil),
+			UpdatesRoot: updatesRoot, Lane: LaneStable, ChannelBase: blocking.channelBase(),
 			HTTPClient: blocking.client(), BuildReleaseID: "running-build", BuildVersion: "running-version",
 			BuildCompatibilityVersion: "base-v1", BuildBootstrapVersion: "embedded-bootstrap-v1",
 		})
@@ -530,11 +549,11 @@ func TestDisposableServerPhaseAdmitUpdateRefusesNonAdvancingReleaseSequence(t *t
 // running bootstrap, and a signed floor no base image could ever satisfy.
 func TestDisposableServerPhaseAdmitUpdateRefusesUnmeetableBootstrapFloor(t *testing.T) {
 	t.Run("floor newer than the running bootstrap", func(t *testing.T) {
-		manifest, publicKey := disposableSignedManifest(t, "release-disposable-target", 7, "embedded-bootstrap-v2", "base-v1")
+		manifest := disposableManifest(t, "release-disposable-target", 7, "embedded-bootstrap-v2", "base-v1")
 		fixture := newDisposableFixture(t, manifest, false)
 		updatesRoot := t.TempDir()
 		service := disposableService(t, Deps{
-			PublicKey: publicKey, UpdatesRoot: updatesRoot, ManifestURL: fixture.manifestURL(),
+			UpdatesRoot: updatesRoot, Lane: LaneStable, ChannelBase: fixture.channelBase(),
 			HTTPClient: fixture.client(), BuildReleaseID: "running-build", BuildVersion: "running-version",
 			BuildCompatibilityVersion: "base-v1", BuildBootstrapVersion: "embedded-bootstrap-v1",
 		})
@@ -560,11 +579,11 @@ func TestDisposableServerPhaseAdmitUpdateRefusesUnmeetableBootstrapFloor(t *test
 	})
 
 	t.Run("floor that no base image can satisfy", func(t *testing.T) {
-		manifest, publicKey := disposableSignedManifest(t, "release-disposable-target", 7, "bootstrap-v2", "base-v1")
+		manifest := disposableManifest(t, "release-disposable-target", 7, "bootstrap-v2", "base-v1")
 		fixture := newDisposableFixture(t, manifest, false)
 		updatesRoot := t.TempDir()
 		service := disposableService(t, Deps{
-			PublicKey: publicKey, UpdatesRoot: updatesRoot, ManifestURL: fixture.manifestURL(),
+			UpdatesRoot: updatesRoot, Lane: LaneStable, ChannelBase: fixture.channelBase(),
 			HTTPClient: fixture.client(), BuildReleaseID: "running-build", BuildVersion: "running-version",
 			BuildCompatibilityVersion: "base-v1", BuildBootstrapVersion: "embedded-bootstrap-v1",
 		})
@@ -600,11 +619,11 @@ func TestDisposableServerPhaseCheckUpdateRequiresBaseImageForBootstrapFloor(t *t
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			manifest, publicKey := disposableSignedManifest(t, "release-disposable-target", 7, "embedded-bootstrap-v2", "base-v1")
+			manifest := disposableManifest(t, "release-disposable-target", 7, "embedded-bootstrap-v2", "base-v1")
 			fixture := newDisposableFixture(t, manifest, false)
 			updatesRoot := t.TempDir()
 			service := disposableService(t, Deps{
-				PublicKey: publicKey, UpdatesRoot: updatesRoot, ManifestURL: fixture.manifestURL(),
+				UpdatesRoot: updatesRoot, Lane: LaneStable, ChannelBase: fixture.channelBase(),
 				HTTPClient: fixture.client(), BuildReleaseID: "running-build", BuildVersion: "running-version",
 				BuildCompatibilityVersion: "base-v1", BuildBootstrapVersion: tc.runningBootstrap,
 			})
@@ -725,7 +744,7 @@ func TestDisposableServerPhaseEvaluateBootstrapCompatibility(t *testing.T) {
 // marker-authoritative read: once the handoff marker exists it is the answer,
 // and discovery is not consulted again.
 func TestDisposableServerPhaseCheckUpdateReportsPendingMarker(t *testing.T) {
-	manifest, publicKey := disposableSignedManifest(t, "release-disposable-target", 7, "embedded-bootstrap-v1", "base-v1")
+	manifest := disposableManifest(t, "release-disposable-target", 7, "embedded-bootstrap-v1", "base-v1")
 	fixture := newDisposableFixture(t, manifest, false)
 	updatesRoot := t.TempDir()
 	marker := PendingMarker{
@@ -739,7 +758,7 @@ func TestDisposableServerPhaseCheckUpdateReportsPendingMarker(t *testing.T) {
 		t.Fatalf("WritePendingMarker: %v", err)
 	}
 	service := disposableService(t, Deps{
-		PublicKey: publicKey, UpdatesRoot: updatesRoot, ManifestURL: fixture.manifestURL(),
+		UpdatesRoot: updatesRoot, Lane: LaneStable, ChannelBase: fixture.channelBase(),
 		HTTPClient: fixture.client(), BuildReleaseID: "running-build", BuildVersion: "running-version",
 		BuildCompatibilityVersion: "base-v1", BuildBootstrapVersion: "embedded-bootstrap-v1",
 	})
@@ -835,11 +854,11 @@ func TestDisposableServerPhaseStatusReadsTerminalJournalAfterRestart(t *testing.
 // UPDATE_LOCKED: the server phase installs exactly one release before it exits,
 // so a second admission while one is in flight is refused.
 func TestDisposableServerPhaseAdmitUpdateRefusesConcurrentOperation(t *testing.T) {
-	manifest, publicKey := disposableSignedManifest(t, "release-disposable-target", 7, "embedded-bootstrap-v1", "base-v1")
+	manifest := disposableManifest(t, "release-disposable-target", 7, "embedded-bootstrap-v1", "base-v1")
 	blocking := newDisposableFixture(t, manifest, true)
 	updatesRoot := t.TempDir()
 	service := disposableService(t, Deps{
-		PublicKey: publicKey, UpdatesRoot: updatesRoot, ManifestURL: blocking.manifestURL(),
+		UpdatesRoot: updatesRoot, Lane: LaneStable, ChannelBase: blocking.channelBase(),
 		HTTPClient: blocking.client(), BuildReleaseID: "running-build", BuildVersion: "running-version",
 		BuildCompatibilityVersion: "base-v1", BuildBootstrapVersion: "embedded-bootstrap-v1",
 	})

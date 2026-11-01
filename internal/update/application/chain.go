@@ -110,17 +110,17 @@ func (s *Service) runChain(manifest hardeningdomain.ReleaseManifest, digest, man
 
 func (s *Service) ensurePayload(ctx context.Context, source *UpdateHTTPSource, opID string, target *hardeningdomain.EmbeddedUpdateSegment) (string, error) {
 	outPath := filepath.Join(s.updatesRoot, "downloads", opID, PayloadFileName)
-	if err := verifyDownloadedPayload(outPath, target, s.publicKey); err == nil {
+	if err := verifyDownloadedPayload(outPath, target); err == nil {
 		return outPath, nil
 	}
 	return s.fetchPayload(ctx, source, opID, target)
 }
 
 // verifyDownloadedPayload proves an on-disk payload archive is exactly the
-// signed segment of one release: regular file, exact size, exact sha256 and a
-// valid payload signature over that digest. VerifyPayloadFile is the exported
-// form of this same check; the two must never delegate to each other.
-func verifyDownloadedPayload(path string, target *hardeningdomain.EmbeddedUpdateSegment, publicKey []byte) error {
+// published segment of one release: regular file, exact size and exact sha256.
+// VerifyPayloadFile is the exported form of this same check; the two must never
+// delegate to each other.
+func verifyDownloadedPayload(path string, target *hardeningdomain.EmbeddedUpdateSegment) error {
 	if target == nil {
 		return errors.New("signed manifest has no embedded update segment")
 	}
@@ -140,9 +140,6 @@ func verifyDownloadedPayload(path string, target *hardeningdomain.EmbeddedUpdate
 	}
 	if digest != target.PayloadDigest {
 		return errors.New("retained payload digest does not match the signed digest")
-	}
-	if err := hardeningdomain.VerifyArtifactDigestSignature(publicKey, digest, target.PayloadSignature); err != nil {
-		return fmt.Errorf("retained payload signature rejected: %w", err)
 	}
 	return nil
 }
@@ -175,7 +172,7 @@ func (s *Service) stagePayload(payloadPath, opID string, manifest hardeningdomai
 	if err = persistSignedManifest(tempDir, manifest); err != nil {
 		return "", fmt.Errorf("retain signed release descriptor: %w", err)
 	}
-	if err = VerifyStagedReleaseTree(tempDir, s.publicKey); err != nil {
+	if err = VerifyStagedReleaseTree(tempDir); err != nil {
 		return "", fmt.Errorf("verify retained release identity: %w", err)
 	}
 	releaseDir := filepath.Join(s.updatesRoot, "releases", manifest.ReleaseID)
@@ -183,7 +180,7 @@ func (s *Service) stagePayload(payloadPath, opID string, manifest hardeningdomai
 		if !info.IsDir() || !treeMatchesReleaseDir(releaseDir, hashes) {
 			return "", fmt.Errorf("releases/%s already holds different content; refusing to overlay", manifest.ReleaseID)
 		}
-		if err = VerifyReleaseTree(releaseDir, s.publicKey); err != nil {
+		if err = VerifyReleaseTree(releaseDir); err != nil {
 			return "", fmt.Errorf("existing releases/%s failed signed verification: %w", manifest.ReleaseID, err)
 		}
 		return releaseDir, nil
@@ -194,7 +191,7 @@ func (s *Service) stagePayload(payloadPath, opID string, manifest hardeningdomai
 		return "", err
 	}
 	cleanupTemp = false
-	if err = VerifyReleaseTree(releaseDir, s.publicKey); err != nil {
+	if err = VerifyReleaseTree(releaseDir); err != nil {
 		return "", fmt.Errorf("verify published release tree: %w", err)
 	}
 	return releaseDir, nil

@@ -22,18 +22,17 @@ root="$(cd "$(dirname "$0")/../.." && pwd)"
 run_id="release-restore-$(date +%Y%m%d-%H%M%S)"
 summary="$root/.local-artifacts/$run_id"
 mkdir -p "$summary"
-# Signing material never lives under the uploaded artifact root; this directory
-# is removed on every exit path.
-signing_dir="$(mktemp -d "${TMPDIR:-/tmp}/bansoko-release-restore-signing.XXXXXX")"
-cleanup_signing() { rm -rf "$signing_dir"; }
-trap cleanup_signing EXIT
+# Build scratch (lane bundle output) never lives under the uploaded artifact
+# root; this directory is removed on every exit path.
+scratch_dir="$(mktemp -d "${TMPDIR:-/tmp}/bansoko-release-restore-lane.XXXXXX")"
+cleanup_scratch() { rm -rf "$scratch_dir"; }
+trap cleanup_scratch EXIT
 
 log() { echo "[release-restore] $*"; }
 fail() { echo "{\"run_id\":\"$run_id\",\"ok\":false,\"phase\":\"${1:-unknown}\",\"reason\":\"$2\",\"rollout_capability\":\"unavailable\"}" >"$summary/summary.json"; echo "release-restore lane FAILED at ${1:-unknown}: $2" >&2; exit 1; }
 
 # --- Inputs ---------------------------------------------------------------
 manifest="${BANSOKO_RELEASE_MANIFEST:-}"
-public_key="${BANSOKO_RELEASE_PUBLIC_KEY:-}"
 artifact="${BANSOKO_RELEASE_ARTIFACT:-}"
 source_url="${BANSOKO_BACKUP_SOURCE_URL:-}"
 restore_url="${BANSOKO_RESTORE_TARGET_URL:-}"
@@ -41,8 +40,8 @@ owner_password="${BANSOKO_RESTORE_OWNER_PASSWORD:-}"
 session_secret="${BANSOKO_SESSION_SECRET:-}"
 encryption_key="${BANSOKO_SECRET_ENCRYPTION_KEY:-}"
 
-if [[ -z "$public_key" || -z "$source_url" || -z "$restore_url" || -z "$owner_password" || -z "$session_secret" ]]; then
-  echo "required: BANSOKO_RELEASE_PUBLIC_KEY, BANSOKO_BACKUP_SOURCE_URL, BANSOKO_RESTORE_TARGET_URL, BANSOKO_RESTORE_OWNER_PASSWORD, BANSOKO_SESSION_SECRET" >&2
+if [[ -z "$source_url" || -z "$restore_url" || -z "$owner_password" || -z "$session_secret" ]]; then
+  echo "required: BANSOKO_BACKUP_SOURCE_URL, BANSOKO_RESTORE_TARGET_URL, BANSOKO_RESTORE_OWNER_PASSWORD, BANSOKO_SESSION_SECRET" >&2
   exit 2
 fi
 
@@ -70,23 +69,13 @@ if [[ "${BANSOKO_RELEASE_ALLOW_REMOTE_SOURCE:-0}" != "1" ]]; then
   esac
 fi
 # CI consumes a bundle built in-lane: when no external manifest is provided,
-# build one with the lane signing key (test-only in CI) and consume it.
+# build one and consume it.
 if [[ -z "$manifest" ]]; then
   log "no external manifest; building lane bundle"
-  if [[ -z "${BANSOKO_RELEASE_LANE_PRIVATE_KEY:-}" ]]; then
-    fail "input" "BANSOKO_RELEASE_LANE_PRIVATE_KEY is required when BANSOKO_RELEASE_MANIFEST is not provided"
-  fi
-  printf '%s' "$BANSOKO_RELEASE_LANE_PRIVATE_KEY" >"$signing_dir/lane-private.key"
-  chmod 600 "$signing_dir/lane-private.key"
-  # build-release/check-release expect file paths, not hex values.
-  printf '%s' "$public_key" >"$signing_dir/lane-public.key"
-  chmod 644 "$signing_dir/lane-public.key"
-  public_key="$signing_dir/lane-public.key"
   # Build straight into the summary dir (reproducible-build.sh forces its own
   # tmp output dirs, which the lane cannot consume).
   BANSOKO_RELEASE_VERSION="lane-$(date +%s)" BANSOKO_RELEASE_ID="$run_id" BANSOKO_RELEASE_SEQUENCE="1" \
     BANSOKO_RELEASE_BOOTSTRAP_MIN_VERSION="embedded-bootstrap-unified" \
-    BANSOKO_RELEASE_PRIVATE_KEY="$signing_dir/lane-private.key" BANSOKO_RELEASE_PUBLIC_KEY="$public_key" \
     BANSOKO_ALLOW_DIRTY_RELEASE=1 BANSOKO_RELEASE_SKIP_IMAGES=1 \
     BANSOKO_RELEASE_OUTPUT_DIR="$summary/bundle" \
     "$root/scripts/ci/build-release.sh" >"$summary/release-build.log" 2>&1 \
@@ -104,14 +93,13 @@ log "phase 1: release integrity"
 if [[ "${BANSOKO_RELEASE_SKIP_BUILD:-0}" != "1" ]]; then
   BANSOKO_RELEASE_VERSION="lane-$(date +%s)" BANSOKO_RELEASE_ID="$run_id" BANSOKO_RELEASE_SEQUENCE="1" \
     BANSOKO_RELEASE_BOOTSTRAP_MIN_VERSION="embedded-bootstrap-unified" \
-    BANSOKO_RELEASE_PRIVATE_KEY="${BANSOKO_RELEASE_PRIVATE_KEY:-}" BANSOKO_RELEASE_PUBLIC_KEY="$public_key" \
     BANSOKO_ALLOW_DIRTY_RELEASE=1 BANSOKO_RELEASE_SKIP_IMAGES=1 \
     "$root/scripts/maintainer/reproducible-build.sh" >"$summary/reproducible.log" 2>&1 \
     || fail "release-integrity" "reproducible double-build check failed (see reproducible.log)"
 fi
 # The lane proves minimal rollback evidence with a binary-only bundle (no
 # docker in CI): declare the empty-images rehearsal form explicitly.
-BANSOKO_RELEASE_MANIFEST="$manifest" BANSOKO_RELEASE_PUBLIC_KEY="$public_key" BANSOKO_RELEASE_ARTIFACT="$artifact" \
+BANSOKO_RELEASE_MANIFEST="$manifest" BANSOKO_RELEASE_ARTIFACT="$artifact" \
 BANSOKO_REHEARSAL=1 BANSOKO_RELEASE_ALLOW_EMPTY_IMAGES=1 \
   "$root/scripts/ci/check-release.sh" >"$summary/check-release.log" 2>&1 \
   || fail "release-integrity" "check-release validator failed (see check-release.log)"

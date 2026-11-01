@@ -230,11 +230,6 @@ func TestRunServerEmbeddedBaseInjectsIdentity(t *testing.T) {
 }
 
 func TestLaunchPlanOverlayMigratesWithOverlayBinary(t *testing.T) {
-	publicKeyPath := filepath.Join(t.TempDir(), "public.key")
-	if err := os.WriteFile(publicKeyPath, []byte("dd06de8c251e7cda67ddb1a5f674867df6fbf1d8712585b0a4c0ee9a16e8cc11\n"), 0o444); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("BANSOKO_UPDATE_PUBLIC_KEY_PATH", publicKeyPath)
 	root := t.TempDir()
 	writeReleaseTree(t, root, "release-b2")
 	seedReleaseProvenance(t, root, "release-b2")

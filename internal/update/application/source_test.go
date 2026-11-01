@@ -2,7 +2,6 @@ package application
 
 import (
 	"context"
-	"crypto/ed25519"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -138,7 +137,6 @@ func TestUpdateHTTPSourceProductionRequiresHTTPS(t *testing.T) {
 }
 
 func TestManifestAndPayloadUseSameSource(t *testing.T) {
-	var publicKey ed25519.PublicKey
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "" {
 			t.Fatal("update source unexpectedly carried a credential")
@@ -163,5 +161,5 @@ func TestManifestAndPayloadUseSameSource(t *testing.T) {
 	if _, err := source.Do(context.Background(), http.MethodGet, payload); err != nil {
 		t.Fatal(err)
 	}
-	_, _, _ = fetchAndVerifyManifest(context.Background(), source, publicKey)
+	_, _, _ = fetchAndVerifyManifest(context.Background(), source)
 }

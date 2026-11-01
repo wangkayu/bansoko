@@ -173,8 +173,6 @@ COPY --from=go-builder /out/bansoko-server /app/bansoko-server
 COPY --from=go-builder /src/db/migrations /app/db/migrations
 COPY --from=go-builder /src/deployment/defaults /app/deployment/defaults
 COPY --from=go-builder /src/frontend/dist /app/frontend/dist
-# Deployment-owned public key baked into the image; immutable at runtime.
-COPY --chmod=0444 deployment/public.key /app/public.key
 # The image is the distribution: the licence and the third-party notices
 # travel with it so a recipient can read them without the source checkout
 # (GPL-3.0-only section 4 requires the licence to accompany the program), and
@@ -238,32 +236,22 @@ RUN set -eux; \
 # updates root for PUID:PGID (default 1000:1000) and then drops to that account
 # for good before migrating or serving. /app stays root-owned and read-only to
 # the app.
-RUN mkdir -p /var/lib/bansoko/updates /config && chmod 0444 /app/public.key
+RUN mkdir -p /var/lib/bansoko/updates /config
 
-# Image defaults users never set. Updates are on by default: the image carries
-# the formal channel URL and the baked /app/public.key verifies its signatures,
-# so an unconfigured deployment updates itself in place (the image ENV counts
+# Image defaults users never set. Updates are on by default: a deployment names
+# the lane it belongs to and the lane names this project's own channel branch
+# (stable = tagged releases, test = builds of main), so an unconfigured
+# deployment updates itself in place from the stable lane (the image ENV counts
 # as the explicit mode the production config requires). Set
-# BANSOKO_UPDATE_MODE=manual to pin a deployment to image pulls. The only
-# required input is BANSOKO_DATABASE_URL (schema owner); secrets are generated
-# into /config on first start. The channel and the package root are the public
-# GitHub names and belong together: a channel URL without a package root is a
-# configuration error that stops startup, so both are baked here. Until a
-# release is published there, a check reports itself unavailable.
-#
-# Both are raw.githubusercontent.com addresses on purpose. The equivalent
-# github.com/<owner>/<repo>/raw/... form answers 302 to this same host, and a
-# release asset answers 302 to release-assets.githubusercontent.com with a
-# signed query string; the update client refuses a cross-host redirect and a
-# URL carrying a query, so only the direct form can ever be used. The release
-# lane publishes the channel document and each version's files as ordinary
-# files on that branch, so the package root is the branch directory. A test
-# instance overrides both with the update-channel-test branch's two addresses.
+# BANSOKO_UPDATE_MODE=manual to pin a deployment to image pulls, or
+# BANSOKO_UPDATE_LANE=test on a test instance. The only required input is
+# BANSOKO_DATABASE_URL (schema owner); secrets are generated into /config on
+# first start. Until a release is published on the lane, a check reports itself
+# unavailable.
 ENV BANSOKO_ENVIRONMENT=production \
     BANSOKO_LISTEN_ADDRESS=0.0.0.0:8080 \
     BANSOKO_UPDATE_MODE=embedded \
-    BANSOKO_UPDATE_CHANNEL_URL=https://raw.githubusercontent.com/wangkayu/bansoko/update-channel/channel-v1.json \
-    BANSOKO_UPDATE_PACKAGE_ROOT=https://raw.githubusercontent.com/wangkayu/bansoko/update-channel/ \
+    BANSOKO_UPDATE_LANE=stable \
     BANSOKO_UPDATES_ROOT=/var/lib/bansoko/updates \
     BANSOKO_SCHEMA_DIR=/app/db/migrations \
     BANSOKO_FRONTEND_DIR=/app/frontend/dist

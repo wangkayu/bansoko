@@ -47,9 +47,9 @@ proxy="${BANSOKO_EMBEDDED_E2E_PROOF_HTTP_PROXY:-}"
 compose() { docker compose -p "$E2E_PROJECT" -f "$E2E_COMPOSE_FILE" "$@"; }
 api() { curl --noproxy '*' -sS "$@"; }
 
-# 1. Point the isolated copy at the baked channel: remove the compose-level
-#    update-source overrides (they would render as empty strings and shadow the
-#    image ENV) and bind the app port to loopback only.
+# 1. Point the isolated copy at the baked lane: drop any compose-level update
+#    override that would shadow the image ENV, and bind the app port to loopback
+#    only.
 python3 - "$E2E_COMPOSE_FILE" "$proxy" <<'PY'
 import pathlib, sys
 path, proxy = pathlib.Path(sys.argv[1]), sys.argv[2]
@@ -58,6 +58,8 @@ keep = [line for line in lines if not line.lstrip().startswith((
     "BANSOKO_UPDATE_MANIFEST_URL:",
     "BANSOKO_UPDATE_CHANNEL_URL:",
     "BANSOKO_UPDATE_PACKAGE_ROOT:",
+    "BANSOKO_UPDATE_LANE:",
+    "BANSOKO_UPDATE_CHANNEL_BASE:",
 ))]
 text = "".join(keep)
 old_port = '- "${BANSOKO_APP_PORT:-8000}:8080"'
@@ -101,16 +103,14 @@ compose up -d postgres app || fail "compose startup failed"
 app_container="$(compose ps -q app)"
 [ -n "$app_container" ] || fail "app container identity unavailable"
 
-# 4. Baked-channel proof: the running image must carry exactly the GitHub raw
-#    pair. Only these two variables are read, never the full environment.
-baked_channel="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$app_container" \
-  | grep '^BANSOKO_UPDATE_CHANNEL_URL=' | cut -d= -f2-)"
-baked_root="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$app_container" \
-  | grep '^BANSOKO_UPDATE_PACKAGE_ROOT=' | cut -d= -f2-)"
-[ "$baked_channel" = "https://raw.githubusercontent.com/wangkayu/bansoko/update-channel/channel-v1.json" ] \
-  || fail "baked channel URL is not the GitHub raw channel: $baked_channel"
-[ "$baked_root" = "https://raw.githubusercontent.com/wangkayu/bansoko/update-channel/" ] \
-  || fail "baked package root is not the GitHub raw prefix: $baked_root"
+# 4. Baked-lane proof: the running image must carry the stable lane and no
+#    retired source. Only these variables are read, never the full environment.
+baked_env="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$app_container")"
+baked_lane="$(printf '%s\n' "$baked_env" | grep '^BANSOKO_UPDATE_LANE=' | cut -d= -f2-)"
+[ "$baked_lane" = "stable" ] || fail "baked update lane is not stable: $baked_lane"
+if printf '%s\n' "$baked_env" | grep -Eq '^BANSOKO_UPDATE_(CHANNEL_URL|PACKAGE_ROOT|MANIFEST_URL|PUBLIC_KEY_PATH)='; then
+  fail "the image still bakes a retired update source"
+fi
 
 # 5. Wait out the first migrate, then create the owner through the real API.
 wait_url() {

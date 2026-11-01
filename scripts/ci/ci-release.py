@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Trusted signed publication to the two update channels.
+"""Trusted publication to the two update lanes.
 
-Two lanes share one publisher, one signing key and the workflow run counter,
-and never share a channel:
+Two lanes share one publisher and the workflow run counter, and never share a
+channel:
 
-  stable  a pushed vX.Y.Z tag on a commit already on main: signed release with
-          its release notes on the `update-channel` branch, then the GitHub
-          Release (modes preflight, image, publish, channel, github-release)
-  test    a main push: a signed prerelease `<X.Y.Z>-test.<run>` without notes
-          on the `update-channel-test` branch (modes test-preflight,
-          test-image, test-publish, test-channel)
+  stable  a pushed vX.Y.Z tag on a commit already on main: release with its
+          release notes on the `update-channel` branch, then the GitHub Release
+          (modes preflight, image, publish, channel, github-release)
+  test    a main push: a prerelease `<X.Y.Z>-test.<run>` without notes on the
+          `update-channel-test` branch (modes test-preflight, test-image,
+          test-publish, test-channel)
 
 Each lane runs only after every required gate of the same run succeeded, and
 each mode refuses an event that is not its lane's. Secrets remain outside the
@@ -203,7 +203,7 @@ def request(url, token, method="GET", data=None, hosts=None):
 RELEASE_TAG = re.compile(
     r"refs/tags/v((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))"
 )
-# The discovery channel the formal lane writes. The signed channel gate accepts
+# The discovery channel the formal lane writes. The channel gate accepts
 # exactly one rename, from the retired automatic "test" channel the formal
 # branch carried before the first tag, to this one.
 DISCOVERY_CHANNEL = "stable"
@@ -213,7 +213,7 @@ VERSION_FILE = ROOT / "VERSION"
 GITHUB_NOTES = "github-release-notes.md"
 
 # One entry per lane: where it publishes, the discovery channel its locator
-# names and the manifest channel its signed manifest names. The Go gates know
+# names and the manifest channel its manifest names. The Go gates know
 # the same lanes by name (`--lane`) and refuse the other lane's identity.
 LANES = {
     "stable": {"branch": BRANCH, "discovery": DISCOVERY_CHANNEL, "manifest": MANIFEST_CHANNEL},
@@ -299,7 +299,7 @@ def identity(lane="stable"):
         "run_id": run_id,
         # The run number is the workflow-wide monotonic counter shared by both
         # lanes, so every publication carries a larger sequence than every
-        # earlier one of either lane; the signed channel gate additionally
+        # earlier one of either lane; the channel gate additionally
         # requires the version to advance within the lane.
         "sequence": int(n),
         "version": version,
@@ -327,7 +327,7 @@ def release_notes(ident, mode, output):
 
 
 def published_channel(token, temp, branch=BRANCH):
-    """The currently published signed channel, read through the API.
+    """The currently published channel, read through the API.
 
     The API answers the committed bytes immediately, unlike the raw host's
     five-minute cache, so a just-advanced channel cannot be mistaken for the
@@ -367,8 +367,6 @@ def preflight(ident):
             str(ident["sequence"]),
             "--source-commit",
             ident["sha"],
-            "--public-key",
-            str(ROOT / "deployment/public.key"),
             "--lane",
             ident.get("lane", "stable"),
         )
@@ -445,14 +443,9 @@ def inspect_image(ref, ident, scratch):
         fail("registry image identity/platform differs")
     cid = run("docker", "create", ref)
     try:
-        for file in ["public.key", "bansoko-server"]:
-            run("docker", "cp", cid + ":/app/" + file, str(scratch / file))
+        run("docker", "cp", cid + ":/app/bansoko-server", str(scratch / "bansoko-server"))
     finally:
         run("docker", "rm", cid)
-    if (scratch / "public.key").read_text().strip() != (
-        ROOT / "deployment/public.key"
-    ).read_text().strip():
-        fail("image signing trust differs")
     source = (ROOT / "internal/runtime/bootstrap/main.go").read_text()
     capability_pattern = r"embedded-bootstrap-(?:v[0-9]+|unified)"
     versions = set(re.findall(capability_pattern, source))
@@ -591,9 +584,6 @@ def image(ident):
             image=IMAGE_REPOSITORY,
             digest=digest,
             bootstrap=bootstrap,
-            public_key_sha256=hashlib.sha256(
-                (ROOT / "deployment/public.key").read_bytes()
-            ).hexdigest(),
         )
         (OUTPUT / "image-handoff.json").write_text(json.dumps(handoff, sort_keys=True))
         print("verified image", digest, bootstrap)
@@ -630,17 +620,8 @@ def publish(ident):
         bootstrap = inspect_image(
             IMAGE_REPOSITORY + "@" + handoff["digest"], ident, temp
         )
-        if (
-            bootstrap != handoff["bootstrap"]
-            or handoff["public_key_sha256"]
-            != hashlib.sha256(
-                (ROOT / "deployment/public.key").read_bytes()
-            ).hexdigest()
-        ):
-            fail("handoff trust/bootstrap mismatch")
-        key = temp / "private.key"
-        key.write_text(required("BANSOKO_RELEASE_SIGNING_KEY"))
-        key.chmod(0o600)
+        if bootstrap != handoff["bootstrap"]:
+            fail("handoff bootstrap mismatch")
         subprocess.run(
             ["pnpm", "--dir", "frontend", "install", "--frozen-lockfile"],
             cwd=ROOT,
@@ -656,8 +637,6 @@ def publish(ident):
             BANSOKO_RELEASE_BOOTSTRAP_MIN_VERSION=bootstrap,
             BANSOKO_BASE_IMAGE_MIN_VERSION="base-v1",
             BANSOKO_RELEASE_IMAGE_BOOTSTRAP_VERSION=bootstrap,
-            BANSOKO_RELEASE_PRIVATE_KEY=str(key),
-            BANSOKO_RELEASE_PUBLIC_KEY=str(ROOT / "deployment/public.key"),
             BANSOKO_RELEASE_IMAGE_DIGEST=handoff["digest"],
             BANSOKO_RELEASE_OUTPUT_DIR=str(OUTPUT),
             SOURCE_DATE_EPOCH=run("git", "show", "-s", "--format=%ct", ident["sha"]),
@@ -723,8 +702,6 @@ def publish(ident):
                 str(readback / "release-manifest.json"),
                 "--payload",
                 str(readback / "embedded-update-v1.tar.gz"),
-                "--public-key",
-                str(ROOT / "deployment/public.key"),
             ],
             cwd=ROOT,
             check=True,
@@ -932,9 +909,6 @@ def channel(ident):
     with tempfile.TemporaryDirectory(prefix="bansoko-channel-") as temp:
         temp = Path(temp)
         channel_files(ident, temp)
-        key = temp / "private.key"
-        key.write_text(required("BANSOKO_RELEASE_SIGNING_KEY"))
-        key.chmod(0o600)
         manifest_url = github_file_url(
             ident["version"], "release-manifest.json", branch_of(ident)
         )
@@ -943,7 +917,7 @@ def channel(ident):
             "go",
             "run",
             "./cmd/bansoko-release",
-            "channel-sign",
+            "channel-write",
             "--manifest",
             str(temp / "release-manifest.json"),
             "--payload",
@@ -954,10 +928,6 @@ def channel(ident):
             lane_of(ident)["discovery"],
             "--expect-release-sequence",
             str(ident["sequence"]),
-            "--public-key",
-            str(ROOT / "deployment/public.key"),
-            "--private-key",
-            str(key),
             "--output",
             str(candidate),
         )
@@ -1000,7 +970,7 @@ def github_channel(candidate, ident, temp):
     options = {
         "branch": branch,
         "content": base64.b64encode(candidate.read_bytes()).decode(),
-        "message": "Advance signed channel to " + ident["release_id"],
+        "message": "Advance channel to " + ident["release_id"],
     }
     published = temp / "github-published.json"
     if status == 200:
@@ -1033,8 +1003,6 @@ def github_channel(candidate, ident, temp):
         str(published) if published.exists() else "",
         "--candidate",
         str(candidate),
-        "--public-key",
-        str(ROOT / "deployment/public.key"),
         "--lane",
         ident.get("lane", "stable"),
     )
@@ -1057,10 +1025,8 @@ def github_channel(candidate, ident, temp):
         "channel-verify",
         "--document",
         str(temp / "github-raw.json"),
-        "--public-key",
-        str(ROOT / "deployment/public.key"),
     )
-    print("github signed channel conditional write/readback verified", ident["release_id"])
+    print("github channel conditional write/readback verified", ident["release_id"])
 
 
 STABLE_MODES = {

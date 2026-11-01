@@ -4,7 +4,7 @@
   "title": "Bansoko release manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "release_sequence", "release_id", "version", "channel", "published_at", "source_commit", "api_contract_version", "target_migration_version", "required_downtime", "backup_required", "rollback_class", "migrations", "images", "compose_ref", "frontend_ref", "artifacts", "sbom_ref", "provenance_ref", "artifact_digest", "signature", "immutable", "embedded_update"],
+  "required": ["schema_version", "release_sequence", "release_id", "version", "channel", "published_at", "source_commit", "api_contract_version", "target_migration_version", "required_downtime", "backup_required", "rollback_class", "migrations", "images", "compose_ref", "frontend_ref", "artifacts", "sbom_ref", "provenance_ref", "artifact_digest", "immutable", "embedded_update"],
   "properties": {
     "schema_version": {"const": "release-manifest-1"},
     "release_sequence": {"type": "integer", "minimum": 1},
@@ -55,13 +55,13 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["platform", "architecture", "digest", "size", "signature"],
+        "required": ["platform", "architecture", "digest", "size"],
         "properties": {
           "platform": {"type": "string", "minLength": 1},
           "architecture": {"type": "string", "minLength": 1},
           "digest": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
           "size": {"type": "integer", "minimum": 0},
-          "signature": {"type": "string", "minLength": 1},
+          "signature": {"type": "string", "description": "retired (owner 2026-11-01); accepted on old manifests, never required"},
           "platforms": {"type": "array", "items": {"type": "string"}}
         }
       }
@@ -69,14 +69,14 @@
     "embedded_update": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["format_version", "platform", "architecture", "payload_digest", "payload_size", "payload_signature", "bootstrap_min_version", "min_image_version", "target_release_id", "target_version", "target_schema_version", "release_sequence"],
+      "required": ["format_version", "platform", "architecture", "payload_digest", "payload_size", "bootstrap_min_version", "min_image_version", "target_release_id", "target_version", "target_schema_version", "release_sequence"],
       "properties": {
         "format_version": {"const": "embedded-update-v1"},
         "platform": {"type": "string", "minLength": 1},
         "architecture": {"type": "string", "minLength": 1},
         "payload_digest": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
         "payload_size": {"type": "integer", "minimum": 1},
-        "payload_signature": {"type": "string", "minLength": 1},
+        "payload_signature": {"type": "string", "description": "retired (owner 2026-11-01); accepted on old manifests, never required"},
         "bootstrap_min_version": {"type": "string", "minLength": 1},
         "min_image_version": {"type": "string", "minLength": 1},
         "target_release_id": {"type": "string", "minLength": 1},
@@ -89,7 +89,7 @@
     "sbom_ref": {"type": "string", "minLength": 1},
     "provenance_ref": {"type": "string", "minLength": 1},
     "artifact_digest": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
-    "signature": {"type": "string", "minLength": 0},
+    "signature": {"type": "string", "description": "retired (owner 2026-11-01); accepted on old manifests, never required"},
     "immutable": {"const": true},
     "release_notes": {
       "type": "array",

@@ -257,7 +257,7 @@ class PublicationTests(unittest.TestCase):
     def test_handoff_naming_a_foreign_image_is_refused_before_effects(self):
         # The manifest may only ever name the Hub repository. A handoff left
         # over from the retired dual-destination arrangement — or any other
-        # registry — must stop the run before a byte is signed or written.
+        # registry — must stop the run before a byte is published.
         ident = {
             "sha": self.sha,
             "run_id": "71",
@@ -295,21 +295,22 @@ class PublicationTests(unittest.TestCase):
                     release.request(url, "sentinel")
                 opener.assert_not_called()
 
-    def test_the_baked_channel_url_names_the_same_branch_the_publisher_writes(self):
-        # The image fetches the channel from the URL baked at build time; the
-        # publisher signs manifest URLs onto its own branch. If those names
-        # drift, every published manifest lands outside the baked package root
-        # and the resolver refuses it: fail-closed, but updates quietly stop.
-        # (internal/update/application/image_defaults_test.go pins the baked
-        # half's shape; nothing else joins the two, so this does.)
+    def test_the_baked_lane_is_the_branch_the_publisher_writes(self):
+        # The image names a lane; the client turns that lane into this
+        # repository's channel branch (internal/update/application/lane.go,
+        # pinned by image_defaults_test.go). The publisher writes the stable
+        # branch from the same lane name, so the two must name one branch:
+        # drift would publish every release outside the branch instances read.
         dockerfile = (release.ROOT / "Dockerfile").read_text()
         baked = [
             line.split("=", 1)[1].rstrip("\\").strip()
             for line in dockerfile.splitlines()
-            if line.lstrip().startswith("BANSOKO_UPDATE_CHANNEL_URL=")
+            if line.lstrip().startswith("BANSOKO_UPDATE_LANE=")
         ]
-        self.assertEqual(len(baked), 1, "the image must bake exactly one channel URL")
-        self.assertIn("/" + release.BRANCH + "/", baked[0])
+        self.assertEqual(len(baked), 1, "the image must bake exactly one update lane")
+        self.assertEqual(baked[0], "stable")
+        self.assertEqual(release.lane_of({"lane": baked[0]})["branch"], release.BRANCH)
+        self.assertNotIn("BANSOKO_UPDATE_CHANNEL_URL", dockerfile)
 
     def test_github_addresses_avoid_the_redirect_and_query(self):
         # The image bakes github.com/<o>/<r>/raw/..., which is a cross-host 302,
@@ -689,7 +690,7 @@ class PublicationTests(unittest.TestCase):
         ).encode()
 
         def command(*args, **kwargs):
-            if "channel-sign" in args:
+            if "channel-write" in args:
                 Path(args[args.index("--output") + 1]).write_bytes(b'{"signed":true}')
             return ""
 
@@ -708,7 +709,6 @@ class PublicationTests(unittest.TestCase):
                 patch.dict(
                     os.environ,
                     {
-                        "BANSOKO_RELEASE_SIGNING_KEY": "fake",
                         "BANSOKO_RELEASE_GITHUB_TOKEN": "sentinel",
                     },
                 ),
@@ -718,13 +718,13 @@ class PublicationTests(unittest.TestCase):
             guard.assert_called_once()
             write.assert_not_called()
 
-    def test_the_channel_is_signed_as_the_formal_stable_channel(self):
+    def test_the_channel_names_the_formal_stable_channel(self):
         ident = {"sha": self.sha, "run_id": "71", "sequence": 53, "version": "0.1.0", "release_id": "v0.1.0"}
         seen = []
 
         def command(*args, **kwargs):
             seen.append(args)
-            if "channel-sign" in args:
+            if "channel-write" in args:
                 Path(args[args.index("--output") + 1]).write_bytes(b'{"signed":true}')
             return ""
 
@@ -733,16 +733,16 @@ class PublicationTests(unittest.TestCase):
             patch.object(release, "run", side_effect=command),
             patch.object(release, "require_public_github"),
             patch.object(release, "github_channel"),
-            patch.dict(os.environ, {"BANSOKO_RELEASE_SIGNING_KEY": "fake", "BANSOKO_RELEASE_GITHUB_TOKEN": "sentinel"}),
+            patch.dict(os.environ, {"BANSOKO_RELEASE_GITHUB_TOKEN": "sentinel"}),
         ):
             release.channel(ident)
-        sign = next(args for args in seen if "channel-sign" in args)
-        self.assertEqual(sign[sign.index("--channel") + 1], "stable")
-        self.assertEqual(sign[sign.index("--expect-release-sequence") + 1], "53")
+        write = next(args for args in seen if "channel-write" in args)
+        self.assertEqual(write[write.index("--channel") + 1], "stable")
+        self.assertEqual(write[write.index("--expect-release-sequence") + 1], "53")
 
 
 class TestLaneTests(unittest.TestCase):
-    """A main push publishes a signed prerelease to its own channel branch."""
+    """A main push publishes a prerelease to its own channel branch."""
 
     def setUp(self):
         self.sha = "a" * 40
@@ -944,12 +944,12 @@ class TestLaneTests(unittest.TestCase):
             else:
                 self.assertTrue(url.endswith("?ref=update-channel-test"), url)
 
-    def test_the_channel_is_signed_as_the_test_channel_and_gated_on_its_lane(self):
+    def test_the_channel_names_the_test_channel_and_is_gated_on_its_lane(self):
         seen = []
 
         def command(*args, **kwargs):
             seen.append(args)
-            if "channel-sign" in args:
+            if "channel-write" in args:
                 Path(args[args.index("--output") + 1]).write_bytes(b'{"signed":true}')
             return ""
 
@@ -957,17 +957,18 @@ class TestLaneTests(unittest.TestCase):
             patch.object(release, "channel_files"),
             patch.object(release, "run", side_effect=command),
             patch.object(release, "require_public_github"),
-            patch.object(release, "github_channel") as write,
-            patch.dict(os.environ, dict(self.env, BANSOKO_RELEASE_SIGNING_KEY="fake"), clear=True),
+            patch.object(release, "github_channel") as write_channel,
+            patch.dict(os.environ, dict(self.env), clear=True),
         ):
             release.channel(self.ident)
-        sign = next(args for args in seen if "channel-sign" in args)
-        self.assertEqual(sign[sign.index("--channel") + 1], "test")
-        self.assertEqual(sign[sign.index("--expect-release-sequence") + 1], "130")
+        candidate = next(args for args in seen if "channel-write" in args)
+        self.assertEqual(candidate[candidate.index("--channel") + 1], "test")
+        self.assertEqual(candidate[candidate.index("--expect-release-sequence") + 1], "130")
         self.assertIn(
-            "/update-channel-test/0.1.0-test.130/", sign[sign.index("--manifest-url") + 1]
+            "/update-channel-test/0.1.0-test.130/",
+            candidate[candidate.index("--manifest-url") + 1],
         )
-        write.assert_called_once()
+        write_channel.assert_called_once()
 
     def test_the_channel_swap_and_its_gate_stay_on_the_test_branch(self):
         with tempfile.TemporaryDirectory() as temp:

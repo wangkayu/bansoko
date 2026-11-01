@@ -3,7 +3,6 @@ package application
 import (
 	"bansoko/internal/observability/outbound"
 	"context"
-	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"io"
@@ -65,7 +64,6 @@ type resolution struct {
 type channelResolver struct {
 	documentURL    string
 	packageRoot    string
-	publicKey      ed25519.PublicKey
 	documentSource *UpdateHTTPSource
 	packageConfig  UpdateHTTPSourceConfig
 	rootScheme     string
@@ -78,7 +76,7 @@ type channelResolver struct {
 // when it lives on the package host, so a package token is never sent to a
 // different host) and the package source template for the manifest the document
 // names.
-func newChannelResolver(documentURL, packageRoot string, config UpdateHTTPSourceConfig, publicKey ed25519.PublicKey) (*channelResolver, error) {
+func newChannelResolver(documentURL, packageRoot string, config UpdateHTTPSourceConfig) (*channelResolver, error) {
 	documentURL = strings.TrimSpace(documentURL)
 	packageRoot = strings.TrimSpace(packageRoot)
 	if documentURL == "" {
@@ -114,7 +112,6 @@ func newChannelResolver(documentURL, packageRoot string, config UpdateHTTPSource
 	return &channelResolver{
 		documentURL:    documentURL,
 		packageRoot:    packageRoot,
-		publicKey:      publicKey,
 		documentSource: documentSource,
 		packageConfig:  packageConfig,
 		rootScheme:     strings.ToLower(root.Scheme),
@@ -171,7 +168,7 @@ func (r *channelResolver) resolve(ctx context.Context) (resolution, error) {
 			Message: "The update channel document is not usable.",
 		}
 	}
-	manifest, digest, raw, err := FetchAndVerifyManifestFromSourceRaw(ctx, source, r.publicKey)
+	manifest, digest, raw, err := FetchAndVerifyManifestFromSourceRaw(ctx, source)
 	if err != nil {
 		business := &apperrors.Business{
 			Status:  503,
@@ -231,7 +228,7 @@ func (r *channelResolver) fetchDocument(ctx context.Context) (channel.Document, 
 			Message: "The update channel document is not usable.",
 		}
 	}
-	if verifyErr := document.VerifySignature(r.publicKey); verifyErr != nil {
+	if verifyErr := document.Validate(); verifyErr != nil {
 		return channel.Document{}, &apperrors.Business{
 			Status:  503,
 			Code:    "UPDATE_CHANNEL_INVALID",

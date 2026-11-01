@@ -2,7 +2,6 @@ package application
 
 import (
 	"context"
-	"crypto/ed25519"
 	"net/http"
 	"net/url"
 	"testing"
@@ -14,25 +13,24 @@ import (
 // The test update lane publishes `X.Y.Z-test.<run>` builds, numbered by the
 // workflow run, on the update-channel-test branch; the formal lane publishes
 // `X.Y.Z` on update-channel. Both share the run counter as release sequence
-// and one signing key. The client compares no versions across lanes: it offers
-// the signed candidate of the channel it is configured for, and admission
+// and one release counter. The client compares no versions across lanes: it
+// offers the candidate of the channel it is configured for, and admission
 // refuses any candidate at or below the persisted sequence floor. These tests
 // pin what that means for an instance moving between the two lanes.
 
-// laneCandidate is one signed candidate served by its own fixture.
+// laneCandidate is one candidate served by its own fixture.
 type laneCandidate struct {
-	manifest  hardeningdomain.ReleaseManifest
-	publicKey ed25519.PublicKey
-	digest    string
+	manifest hardeningdomain.ReleaseManifest
+	digest   string
 }
 
 func newLaneCandidate(t *testing.T, version string, channel hardeningdomain.ReleaseChannel, sequence int64, notes []hardeningdomain.ReleaseNotesEntry) laneCandidate {
 	t.Helper()
-	manifest, publicKey := disposableSignedManifestWith(t, "v"+version, sequence, "embedded-bootstrap-v1", "base-v1", func(m *hardeningdomain.ReleaseManifest) {
+	manifest := disposableManifestWith(t, "v"+version, sequence, "embedded-bootstrap-v1", "base-v1", func(m *hardeningdomain.ReleaseManifest) {
 		m.Version, m.Channel, m.ReleaseNotes = version, channel, notes
 		m.EmbeddedUpdate.TargetVersion = version
 	})
-	return laneCandidate{manifest: manifest, publicKey: publicKey, digest: disposableManifestDigest(t, manifest)}
+	return laneCandidate{manifest: manifest, digest: disposableManifestDigest(t, manifest)}
 }
 
 // service returns an instance running runningVersion with the given persisted
@@ -42,8 +40,8 @@ func (c laneCandidate) service(t *testing.T, floor int64, runningVersion string,
 	t.Helper()
 	fixture := newDisposableFixture(t, c.manifest, admit)
 	return disposableService(t, Deps{
-		DB:        disposableFloorDB(t, floor, nil),
-		PublicKey: c.publicKey, UpdatesRoot: t.TempDir(), ManifestURL: fixture.manifestURL(),
+		DB:          disposableFloorDB(t, floor, nil),
+		UpdatesRoot: t.TempDir(), Lane: LaneStable, ChannelBase: fixture.channelBase(),
 		HTTPClient: fixture.client(), BuildReleaseID: "v" + runningVersion, BuildVersion: runningVersion,
 		BuildCompatibilityVersion: "base-v1", BuildBootstrapVersion: "embedded-bootstrap-v1",
 	}), fixture

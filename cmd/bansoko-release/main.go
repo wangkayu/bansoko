@@ -2,9 +2,6 @@ package main
 
 import (
 	"bytes"
-	"crypto/ed25519"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -28,27 +25,21 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: bansoko-release <keygen|sign|verify|validate-schema|verify-embedded|artifact-sign|artifact-verify|pack-payload|channel-sign|channel-verify|channel-gate|version-gate|test-version|release-notes> [flags]")
+		return errors.New("usage: bansoko-release <manifest-render|verify|validate-schema|verify-embedded|pack-payload|channel-write|channel-verify|channel-gate|version-gate|test-version|release-notes> [flags]")
 	}
 	switch args[0] {
-	case "keygen":
-		return keygen(args[1:])
-	case "artifact-sign":
-		return artifactSign(args[1:])
-	case "artifact-verify":
-		return artifactVerify(args[1:])
+	case "manifest-render":
+		return manifestRender(args[1:])
 	case "pack-payload":
 		return packPayload(args[1:])
-	case "sign":
-		return sign(args[1:])
 	case "verify":
 		return verify(args[1:])
 	case "validate-schema":
 		return validateSchema(args[1:])
 	case "verify-embedded":
 		return verifyEmbedded(args[1:])
-	case "channel-sign":
-		return channelSign(args[1:])
+	case "channel-write":
+		return channelWrite(args[1:])
 	case "channel-verify":
 		return channelVerify(args[1:])
 	case "channel-gate":
@@ -115,108 +106,32 @@ func packPayload(args []string) error {
 	return nil
 }
 
-func artifactSign(args []string) error {
-	flags := flag.NewFlagSet("artifact-sign", flag.ContinueOnError)
+// manifest-render re-encodes one release manifest into its canonical JSON and
+// prints the canonical digest. Releases are not signed (owner 2026-11-01): the
+// digest is the manifest's identity, the channel document carries it, and the
+// deployment proves the bytes it fetched are the bytes that were published.
+func manifestRender(args []string) error {
+	flags := flag.NewFlagSet("manifest-render", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
-	digest := flags.String("digest", "", "sha256 artifact digest")
-	privatePath := flags.String("private-key", "", "hex/base64 encoded Ed25519 private key")
+	inputPath := flags.String("input", "", "release manifest JSON")
+	outputPath := flags.String("output", "", "canonical manifest JSON")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	if strings.TrimSpace(*digest) == "" || strings.TrimSpace(*privatePath) == "" {
-		return errors.New("--digest and --private-key are required")
-	}
-	privateKey, err := readKey(*privatePath, ed25519.PrivateKeySize)
-	if err != nil {
-		return fmt.Errorf("read private key: %w", err)
-	}
-	signature, err := hardeningdomain.SignArtifactDigest(ed25519.PrivateKey(privateKey), *digest)
-	if err != nil {
-		return err
-	}
-	fmt.Println(signature)
-	return nil
-}
-
-func artifactVerify(args []string) error {
-	flags := flag.NewFlagSet("artifact-verify", flag.ContinueOnError)
-	flags.SetOutput(os.Stderr)
-	digest := flags.String("digest", "", "sha256 artifact digest")
-	signature := flags.String("signature", "", "base64 artifact signature")
-	publicPath := flags.String("public-key", "", "hex/base64 encoded Ed25519 public key")
-	if err := flags.Parse(args); err != nil {
-		return err
-	}
-	if strings.TrimSpace(*digest) == "" || strings.TrimSpace(*signature) == "" || strings.TrimSpace(*publicPath) == "" {
-		return errors.New("--digest, --signature and --public-key are required")
-	}
-	publicKey, err := readKey(*publicPath, ed25519.PublicKeySize)
-	if err != nil {
-		return fmt.Errorf("read public key: %w", err)
-	}
-	if err := hardeningdomain.VerifyArtifactDigestSignature(ed25519.PublicKey(publicKey), *digest, *signature); err != nil {
-		return err
-	}
-	fmt.Println("artifact signature verified")
-	return nil
-}
-
-func keygen(args []string) error {
-	flags := flag.NewFlagSet("keygen", flag.ContinueOnError)
-	flags.SetOutput(os.Stderr)
-	privatePath := flags.String("private-key", "", "output path for the private key")
-	publicPath := flags.String("public-key", "", "output path for the public key")
-	if err := flags.Parse(args); err != nil {
-		return err
-	}
-	if strings.TrimSpace(*privatePath) == "" || strings.TrimSpace(*publicPath) == "" {
-		return errors.New("--private-key and --public-key are required")
-	}
-	publicKey, privateKey, err := hardeningdomain.GenerateSigningKey()
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(*privatePath, []byte(hex.EncodeToString(privateKey)), 0o600); err != nil {
-		return fmt.Errorf("write private key: %w", err)
-	}
-	if err := os.WriteFile(*publicPath, []byte(hex.EncodeToString(publicKey)), 0o644); err != nil {
-		return fmt.Errorf("write public key: %w", err)
-	}
-	fingerprint := hardeningdomain.HashArtifact(publicKey)
-	fmt.Printf("public_key_fingerprint=%s\n", fingerprint)
-	return nil
-}
-
-func sign(args []string) error {
-	flags := flag.NewFlagSet("sign", flag.ContinueOnError)
-	flags.SetOutput(os.Stderr)
-	inputPath := flags.String("input", "", "unsigned manifest JSON")
-	outputPath := flags.String("output", "", "signed manifest JSON")
-	privatePath := flags.String("private-key", "", "hex/base64 encoded Ed25519 private key")
-	if err := flags.Parse(args); err != nil {
-		return err
-	}
-	if strings.TrimSpace(*inputPath) == "" || strings.TrimSpace(*outputPath) == "" || strings.TrimSpace(*privatePath) == "" {
-		return errors.New("--input, --output and --private-key are required")
+	if strings.TrimSpace(*inputPath) == "" || strings.TrimSpace(*outputPath) == "" {
+		return errors.New("--input and --output are required")
 	}
 	manifest, err := readManifest(*inputPath)
 	if err != nil {
 		return err
 	}
-	privateKey, err := readKey(*privatePath, ed25519.PrivateKeySize)
-	if err != nil {
-		return fmt.Errorf("read private key: %w", err)
-	}
-	if err := manifest.Sign(ed25519.PrivateKey(privateKey)); err != nil {
-		return fmt.Errorf("sign release manifest: %w", err)
-	}
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
-		return fmt.Errorf("encode signed release manifest: %w", err)
+		return fmt.Errorf("encode release manifest: %w", err)
 	}
 	data = append(data, '\n')
 	if err := os.WriteFile(*outputPath, data, 0o644); err != nil {
-		return fmt.Errorf("write signed release manifest: %w", err)
+		return fmt.Errorf("write release manifest: %w", err)
 	}
 	digest, err := manifest.CanonicalDigest()
 	if err != nil {
@@ -226,27 +141,22 @@ func sign(args []string) error {
 	return nil
 }
 
+// verify proves a release manifest is exactly the bytes a deployment would
+// accept under this build: strict schema (no unknown fields), and, when an
+// artifact is given, that the artifact hashes to the declared digest.
 func verify(args []string) error {
 	flags := flag.NewFlagSet("verify", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
-	manifestPath := flags.String("manifest", "", "signed manifest JSON")
-	publicPath := flags.String("public-key", "", "hex/base64 encoded Ed25519 public key")
+	manifestPath := flags.String("manifest", "", "release manifest JSON")
 	artifactPath := flags.String("artifact", "", "optional artifact file to digest")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	if strings.TrimSpace(*manifestPath) == "" || strings.TrimSpace(*publicPath) == "" {
-		return errors.New("--manifest and --public-key are required")
+	if strings.TrimSpace(*manifestPath) == "" {
+		return errors.New("--manifest is required")
 	}
 	manifest, err := readManifest(*manifestPath)
 	if err != nil {
-		return err
-	}
-	publicKey, err := readKey(*publicPath, ed25519.PublicKeySize)
-	if err != nil {
-		return fmt.Errorf("read public key: %w", err)
-	}
-	if err := manifest.VerifySignature(ed25519.PublicKey(publicKey)); err != nil {
 		return err
 	}
 	if strings.TrimSpace(*artifactPath) != "" {
@@ -288,30 +198,22 @@ func validateSchema(args []string) error {
 }
 
 // verify-embedded validates a bundle manifest that declares an embedded
-// update payload: manifest signature + embedded segment consistency +
-// optional payload archive digest.
+// update payload: embedded segment consistency + optional payload archive
+// digest.
 func verifyEmbedded(args []string) error {
 	flags := flag.NewFlagSet("verify-embedded", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
-	manifestPath := flags.String("manifest", "", "signed manifest JSON")
-	publicPath := flags.String("public-key", "", "hex/base64 encoded Ed25519 public key")
+	manifestPath := flags.String("manifest", "", "release manifest JSON")
 	payloadPath := flags.String("payload", "", "optional payload .tar.gz to digest against the declared payload_digest")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	if strings.TrimSpace(*manifestPath) == "" || strings.TrimSpace(*publicPath) == "" {
-		return errors.New("--manifest and --public-key are required")
+	if strings.TrimSpace(*manifestPath) == "" {
+		return errors.New("--manifest is required")
 	}
 	manifest, err := readManifest(*manifestPath)
 	if err != nil {
 		return err
-	}
-	publicKey, err := readKey(*publicPath, ed25519.PublicKeySize)
-	if err != nil {
-		return fmt.Errorf("read public key: %w", err)
-	}
-	if err := manifest.VerifySignature(ed25519.PublicKey(publicKey)); err != nil {
-		return fmt.Errorf("manifest signature: %w", err)
 	}
 	if err := manifest.ValidateForEmbeddedUpdate(); err != nil {
 		return err
@@ -344,58 +246,33 @@ func readManifest(path string) (hardeningdomain.ReleaseManifest, error) {
 	return manifest, nil
 }
 
-func readKey(path string, size int) ([]byte, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	value := strings.TrimSpace(string(data))
-	if decoded, err := hex.DecodeString(value); err == nil && len(decoded) == size {
-		return decoded, nil
-	}
-	if decoded, err := base64.RawStdEncoding.DecodeString(value); err == nil && len(decoded) == size {
-		return decoded, nil
-	}
-	if len(data) == size {
-		return data, nil
-	}
-	return nil, fmt.Errorf("key must decode to %d bytes", size)
-}
-
-// channelSign builds and signs one release-discovery document from the exact
-// published release bytes. Every identity field comes from the manifest that
-// was read back out of the package registry, never from the caller's
-// environment, so the channel can never name a release other than the one the
-// deployment will actually verify.
-func channelSign(args []string) error {
-	flags := flag.NewFlagSet("channel-sign", flag.ContinueOnError)
+// channel-write builds one release-discovery document from the exact published
+// release bytes. Every identity field comes from the manifest that was read
+// back out of the package registry, never from the caller's environment, so the
+// channel can never name a release other than the one the deployment will
+// actually fetch.
+func channelWrite(args []string) error {
+	flags := flag.NewFlagSet("channel-write", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
-	manifestPath := flags.String("manifest", "", "published signed release manifest JSON")
+	manifestPath := flags.String("manifest", "", "published release manifest JSON")
 	payloadPath := flags.String("payload", "", "published embedded update payload archive")
 	manifestURL := flags.String("manifest-url", "", "immutable manifest URL the channel points at")
 	channelName := flags.String("channel", "", "channel name (for example: test)")
 	expectSequence := flags.Int64("expect-release-sequence", 0, "required release sequence (CI pipeline identity); 0 disables the check")
-	publicPath := flags.String("public-key", "", "hex/base64 encoded Ed25519 public key")
-	privatePath := flags.String("private-key", "", "hex/base64 encoded Ed25519 private key")
-	outputPath := flags.String("output", "", "signed channel document output path")
+	outputPath := flags.String("output", "", "channel document output path")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if strings.TrimSpace(*manifestPath) == "" || strings.TrimSpace(*payloadPath) == "" ||
 		strings.TrimSpace(*manifestURL) == "" || strings.TrimSpace(*channelName) == "" ||
-		strings.TrimSpace(*publicPath) == "" || strings.TrimSpace(*privatePath) == "" ||
 		strings.TrimSpace(*outputPath) == "" {
-		return errors.New("--manifest, --payload, --manifest-url, --channel, --public-key, --private-key and --output are required")
-	}
-	publicKey, err := readKey(*publicPath, ed25519.PublicKeySize)
-	if err != nil {
-		return fmt.Errorf("read public key: %w", err)
+		return errors.New("--manifest, --payload, --manifest-url, --channel and --output are required")
 	}
 	manifestData, err := os.ReadFile(*manifestPath)
 	if err != nil {
 		return fmt.Errorf("read published manifest: %w", err)
 	}
-	manifest, digest, err := updateapplication.VerifyManifestDocument(manifestData, ed25519.PublicKey(publicKey))
+	manifest, digest, err := updateapplication.VerifyManifestDocument(manifestData)
 	if err != nil {
 		return fmt.Errorf("published release manifest rejected: %w", err)
 	}
@@ -405,7 +282,7 @@ func channelSign(args []string) error {
 	if expect := *expectSequence; expect > 0 && manifest.ReleaseSequence != expect {
 		return fmt.Errorf("published release sequence %d does not match the expected pipeline identity %d", manifest.ReleaseSequence, expect)
 	}
-	if err := updateapplication.VerifyPayloadFile(*payloadPath, manifest.EmbeddedUpdate, ed25519.PublicKey(publicKey)); err != nil {
+	if err := updateapplication.VerifyPayloadFile(*payloadPath, manifest.EmbeddedUpdate); err != nil {
 		return fmt.Errorf("published payload rejected: %w", err)
 	}
 	// The URL must be one the deployment's own source policy accepts, so a
@@ -424,20 +301,16 @@ func channelSign(args []string) error {
 		SourceCommit:    manifest.SourceCommit,
 		PublishedAt:     manifest.PublishedAt.UTC(),
 	}
-	privateKey, err := readKey(*privatePath, ed25519.PrivateKeySize)
-	if err != nil {
-		return fmt.Errorf("read private key: %w", err)
-	}
-	if err := document.Sign(ed25519.PrivateKey(privateKey)); err != nil {
-		return fmt.Errorf("sign channel document: %w", err)
+	if err := document.Validate(); err != nil {
+		return fmt.Errorf("channel document rejected: %w", err)
 	}
 	data, err := json.MarshalIndent(document, "", "  ")
 	if err != nil {
-		return fmt.Errorf("encode signed channel document: %w", err)
+		return fmt.Errorf("encode channel document: %w", err)
 	}
 	data = append(data, '\n')
 	if err := os.WriteFile(*outputPath, data, 0o644); err != nil {
-		return fmt.Errorf("write signed channel document: %w", err)
+		return fmt.Errorf("write channel document: %w", err)
 	}
 	identity, err := json.Marshal(channelIdentity(document))
 	if err != nil {
@@ -447,22 +320,17 @@ func channelSign(args []string) error {
 	return nil
 }
 
-// channelVerify proves a channel document against the deployment's trusted
-// public key and prints its identity for scripting.
+// channelVerify proves a channel document is one the deployment would accept
+// and prints its identity for scripting.
 func channelVerify(args []string) error {
 	flags := flag.NewFlagSet("channel-verify", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
-	documentPath := flags.String("document", "", "signed channel document JSON")
-	publicPath := flags.String("public-key", "", "hex/base64 encoded Ed25519 public key")
+	documentPath := flags.String("document", "", "channel document JSON")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	if strings.TrimSpace(*documentPath) == "" || strings.TrimSpace(*publicPath) == "" {
-		return errors.New("--document and --public-key are required")
-	}
-	publicKey, err := readKey(*publicPath, ed25519.PublicKeySize)
-	if err != nil {
-		return fmt.Errorf("read public key: %w", err)
+	if strings.TrimSpace(*documentPath) == "" {
+		return errors.New("--document is required")
 	}
 	data, err := os.ReadFile(*documentPath)
 	if err != nil {
@@ -472,7 +340,7 @@ func channelVerify(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := document.VerifySignature(ed25519.PublicKey(publicKey)); err != nil {
+	if err := document.Validate(); err != nil {
 		return err
 	}
 	identity, err := json.Marshal(channelIdentity(document))
@@ -500,7 +368,7 @@ func channelIdentity(document updatechannel.Document) map[string]any {
 // releaseLane is one of the two publication lanes. Each lane owns its own
 // channel branch, discovery-channel name and version shape, and the gates
 // refuse any document that names the other lane's identity: the lanes share
-// the signing key and the run counter, so the gate is where they stay apart.
+// the run counter, so the gate is where they stay apart.
 type releaseLane struct {
 	name    string
 	channel string
@@ -560,7 +428,6 @@ func channelGate(args []string) error {
 	flags.SetOutput(os.Stderr)
 	publishedPath := flags.String("published", "", "published channel document, if one exists")
 	candidatePath := flags.String("candidate", "", "candidate channel document")
-	publicPath := flags.String("public-key", "", "hex/base64 encoded Ed25519 public key")
 	laneName := flags.String("lane", "", "publication lane: stable (vX.Y.Z tags) or test (main builds)")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -569,12 +436,8 @@ func channelGate(args []string) error {
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(*candidatePath) == "" || strings.TrimSpace(*publicPath) == "" {
-		return errors.New("--candidate and --public-key are required")
-	}
-	publicKey, err := readKey(*publicPath, ed25519.PublicKeySize)
-	if err != nil {
-		return fmt.Errorf("read public key: %w", err)
+	if strings.TrimSpace(*candidatePath) == "" {
+		return errors.New("--candidate is required")
 	}
 	candidateData, err := os.ReadFile(*candidatePath)
 	if err != nil {
@@ -584,7 +447,7 @@ func channelGate(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := candidate.VerifySignature(ed25519.PublicKey(publicKey)); err != nil {
+	if err := candidate.Validate(); err != nil {
 		return fmt.Errorf("candidate channel rejected: %w", err)
 	}
 	if candidate.Channel != lane.channel {
@@ -606,7 +469,7 @@ func channelGate(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := published.VerifySignature(ed25519.PublicKey(publicKey)); err != nil {
+	if err := published.Validate(); err != nil {
 		return fmt.Errorf("published channel rejected: %w", err)
 	}
 	if !lane.acceptsPublished(published.Channel) {
@@ -660,14 +523,13 @@ func requireNewerVersion(published, candidate string) error {
 
 // versionGate is the pre-publication check of a release: before any image,
 // package or channel effect, the version being released must be newer than
-// the one its lane's signed channel names. An absent channel (first
-// publication) passes; a channel that does not verify fails closed.
+// the one its lane's channel names. An absent channel (first publication)
+// passes; a channel document that does not decode or validate fails closed.
 func versionGate(args []string) error {
 	flags := flag.NewFlagSet("version-gate", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	publishedPath := flags.String("published", "", "published channel document; empty when the channel does not exist yet")
 	version := flags.String("version", "", "version about to be released (X.Y.Z, or X.Y.Z-test.<run> on the test lane)")
-	publicPath := flags.String("public-key", "", "hex/base64 encoded Ed25519 public key")
 	sequence := flags.Int64("sequence", 0, "release sequence of this run (enables the idempotent rerun case; required on the test lane)")
 	sourceCommit := flags.String("source-commit", "", "source commit of this run (enables the idempotent rerun case)")
 	laneName := flags.String("lane", "", "publication lane: stable (vX.Y.Z tags) or test (main builds)")
@@ -684,13 +546,6 @@ func versionGate(args []string) error {
 	if err := lane.versionFits(*version, *sequence); err != nil {
 		return fmt.Errorf("--version: %w", err)
 	}
-	if strings.TrimSpace(*publicPath) == "" {
-		return errors.New("--public-key is required")
-	}
-	publicKey, err := readKey(*publicPath, ed25519.PublicKeySize)
-	if err != nil {
-		return fmt.Errorf("read public key: %w", err)
-	}
 	if strings.TrimSpace(*publishedPath) == "" {
 		fmt.Printf("no published channel document; %s is the first publication\n", *version)
 		return nil
@@ -703,7 +558,7 @@ func versionGate(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := published.VerifySignature(ed25519.PublicKey(publicKey)); err != nil {
+	if err := published.Validate(); err != nil {
 		return fmt.Errorf("published channel rejected: %w", err)
 	}
 	if !lane.acceptsPublished(published.Channel) {

@@ -39,9 +39,7 @@ package bootstrap
 
 import (
 	"context"
-	"crypto/ed25519"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -459,60 +457,20 @@ func resolveCurrentRelease(_ string, updatesRoot string) (overlayTarget, error) 
 	}, nil
 }
 
-// verifyReleaseTree proves the current release against the immutable public
-// key baked into the base image and the retained signed payload descriptor.
-// A writable metadata file by itself is never sufficient to launch overlay
-// code.
+// verifyReleaseTree proves the current release against its retained metadata:
+// the manifest's own digest and the payload descriptor. A writable metadata
+// file by itself is never sufficient to launch overlay code.
 func verifyReleaseTree(releaseDir string) error {
 	_, err := verifyReleaseTreeMetadata(releaseDir)
 	return err
 }
 
 func verifyReleaseTreeIdentity(releaseDir string) (packagemaker.Metadata, hardeningdomain.ReleaseManifest, error) {
-	publicKey, err := loadBootstrapPublicKey()
-	if err != nil {
-		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, err
-	}
-	return updateapplication.VerifyReleaseTreeIdentity(releaseDir, publicKey)
+	return updateapplication.VerifyReleaseTreeIdentity(releaseDir)
 }
 
 func verifyReleaseTreeMetadata(releaseDir string) (packagemaker.Metadata, error) {
-	publicKey, err := loadBootstrapPublicKey()
-	if err != nil {
-		return packagemaker.Metadata{}, err
-	}
-	return updateapplication.VerifyReleaseTreeMetadata(releaseDir, publicKey)
-}
-
-func loadBootstrapPublicKey() (ed25519.PublicKey, error) {
-	override := strings.TrimSpace(os.Getenv("BANSOKO_UPDATE_PUBLIC_KEY_PATH"))
-	if override != "" {
-		data, err := os.ReadFile(override)
-		if err != nil {
-			return nil, fmt.Errorf("read pinned release public key: %w", err)
-		}
-		return decodeBootstrapPublicKey(data)
-	}
-	var lastErr error
-	for _, path := range []string{"/app/public.key", "deployment/public.key"} {
-		data, err := os.ReadFile(path)
-		if err == nil {
-			return decodeBootstrapPublicKey(data)
-		}
-		lastErr = err
-	}
-	return nil, fmt.Errorf("read release public key: %w", lastErr)
-}
-
-func decodeBootstrapPublicKey(data []byte) (ed25519.PublicKey, error) {
-	value := strings.TrimSpace(string(data))
-	if decoded, decodeErr := hex.DecodeString(value); decodeErr == nil && len(decoded) == ed25519.PublicKeySize {
-		return ed25519.PublicKey(decoded), nil
-	}
-	if decoded, decodeErr := base64.RawStdEncoding.DecodeString(value); decodeErr == nil && len(decoded) == ed25519.PublicKeySize {
-		return ed25519.PublicKey(decoded), nil
-	}
-	return nil, errors.New("release public key is not a 32-byte hex or raw-base64 key")
+	return updateapplication.VerifyReleaseTreeMetadata(releaseDir)
 }
 
 func hashFileSHA256(path string) (string, error) {

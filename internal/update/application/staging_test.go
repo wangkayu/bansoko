@@ -3,12 +3,10 @@ package application
 import (
 	"archive/tar"
 	"compress/gzip"
-	"crypto/ed25519"
 	"os"
 	"path/filepath"
 	"testing"
 
-	hardeningdomain "bansoko/internal/hardening/domain"
 	"bansoko/internal/update/packagemaker"
 )
 
@@ -81,15 +79,10 @@ func TestExtractVerifyPublishHappyPath(t *testing.T) {
 	}
 }
 
-func TestVerifyReleaseTreeRequiresSignedRetainedPayload(t *testing.T) {
-	publicKey, privateKey, err := hardeningdomain.GenerateSigningKey()
-	if err != nil {
-		t.Fatal(err)
+func TestVerifyReleaseTreeRequiresRetainedPayload(t *testing.T) {
+	if err := VerifyReleaseTree(t.TempDir()); err == nil {
+		t.Fatal("a tree without its retained payload must be rejected")
 	}
-	if err := VerifyReleaseTree(t.TempDir(), ed25519.PublicKey(publicKey)); err == nil {
-		t.Fatal("missing signed descriptor must be rejected")
-	}
-	_ = privateKey
 }
 
 func TestExtractRejectsTraversalAndLinksAndForeignEntries(t *testing.T) {

@@ -6,12 +6,10 @@ tmp="$(mktemp -d "${TMPDIR:-/tmp}/bansoko-reproducible.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 
 : "${BANSOKO_RELEASE_VERSION:?BANSOKO_RELEASE_VERSION is required}"
-: "${BANSOKO_RELEASE_PRIVATE_KEY:?BANSOKO_RELEASE_PRIVATE_KEY is required}"
-: "${BANSOKO_RELEASE_PUBLIC_KEY:?BANSOKO_RELEASE_PUBLIC_KEY is required}"
 export BANSOKO_RELEASE_ID="${BANSOKO_RELEASE_ID:-reproducible-check}"
 export BANSOKO_RELEASE_OUTPUT_DIR="$tmp/first"
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$root" show -s --format=%ct HEAD)}"
-# Reproducibility of the signed content is proven on the binary + manifest +
+# Reproducibility of the published content is proven on the binary + manifest +
 # SBOM + provenance. Docker image layer digests include non-deterministic
 # timestamps, so the double-build check runs binary-only (BANSOKO_RELEASE_SKIP_IMAGES)
 # and the manifest's images↔artifact consistency is asserted separately.

@@ -5,14 +5,13 @@ root="$(cd "$(dirname "$0")/../.." && pwd)"
 version="${BANSOKO_RELEASE_VERSION:-}"
 release_id="${BANSOKO_RELEASE_ID:-}"
 channel="${BANSOKO_RELEASE_CHANNEL:-stable}"
-private_key="${BANSOKO_RELEASE_PRIVATE_KEY:-}"
-public_key="${BANSOKO_RELEASE_PUBLIC_KEY:-}"
 output_dir="${BANSOKO_RELEASE_OUTPUT_DIR:-$root/.local-artifacts/bansoko-release}"
 goos="${BANSOKO_RELEASE_GOOS:-linux}"
 goarch="${BANSOKO_RELEASE_GOARCH:-amd64}"
 
-# Embedded-update contract inputs (B1). All of them enter signed bytes, so
-# they are required and validated fail-closed instead of being defaulted.
+# Embedded-update contract inputs (B1). All of them enter the published
+# manifest, so they are required and validated fail-closed instead of being
+# defaulted.
 release_sequence="${BANSOKO_RELEASE_SEQUENCE:-}"
 bootstrap_min_version="${BANSOKO_RELEASE_BOOTSTRAP_MIN_VERSION:-}"
 base_image_min_version="${BANSOKO_BASE_IMAGE_MIN_VERSION:-}"
@@ -28,8 +27,8 @@ schema_version="$(ruby -e '
   puts versions.max_by { |version| version.split("_", 2).first.to_i }
 ' "$root")"
 
-if [[ -z "$version" || -z "$release_id" || -z "$private_key" || -z "$public_key" ]]; then
-  echo "BANSOKO_RELEASE_VERSION, BANSOKO_RELEASE_ID, BANSOKO_RELEASE_PRIVATE_KEY and BANSOKO_RELEASE_PUBLIC_KEY are required" >&2
+if [[ -z "$version" || -z "$release_id" ]]; then
+  echo "BANSOKO_RELEASE_VERSION and BANSOKO_RELEASE_ID are required" >&2
   exit 2
 fi
 if [[ -z "$release_sequence" ]]; then
@@ -54,9 +53,9 @@ if [[ -z "$bootstrap_min_version" ]]; then
   echo "BANSOKO_RELEASE_BOOTSTRAP_MIN_VERSION is required (e.g. embedded-bootstrap-unified)" >&2
   exit 2
 fi
-# The signed bootstrap floor accepts the named unified-runtime capability and
-# legacy numeric IDs. Both map to the same ordering used at admission; unknown
-# capabilities must never be signed.
+# The bootstrap floor accepts the named unified-runtime capability and legacy
+# numeric IDs. Both map to the same ordering used at admission; unknown
+# capabilities must never be published.
 if ! bootstrap_min_version_number="$(bootstrap_capability_level "$bootstrap_min_version")"; then
   echo "ERROR: unknown BANSOKO_RELEASE_BOOTSTRAP_MIN_VERSION capability: $bootstrap_min_version" >&2
   exit 2
@@ -64,7 +63,7 @@ fi
 # Publisher declaration of the bootstrap capability baked into the image this
 # release targets. The CI image job derives it from the pushed image bytes; the
 # binding below is what makes a release whose minimum exceeds its image
-# impossible to sign, so it is required whenever an image is part of the bundle.
+# impossible to publish, so it is required whenever an image is part of the bundle.
 declared_image_bootstrap_version="${BANSOKO_RELEASE_IMAGE_BOOTSTRAP_VERSION:-}"
 if [[ -n "$declared_image_bootstrap_version" ]] && ! bootstrap_capability_level "$declared_image_bootstrap_version" >/dev/null; then
   echo "ERROR: unknown BANSOKO_RELEASE_IMAGE_BOOTSTRAP_VERSION capability: $declared_image_bootstrap_version" >&2
@@ -88,10 +87,6 @@ case "$channel" in
 esac
 if [[ "$(git -C "$root" status --porcelain)" != "" && "${BANSOKO_ALLOW_DIRTY_RELEASE:-0}" != "1" ]]; then
   echo "release build requires a clean git worktree; set BANSOKO_ALLOW_DIRTY_RELEASE=1 only for local rehearsal" >&2
-  exit 2
-fi
-if [[ ! -f "$private_key" || ! -f "$public_key" ]]; then
-  echo "release signing key files are required" >&2
   exit 2
 fi
 
@@ -135,7 +130,7 @@ mkdir -p "$output_dir"
 
 # --- Release notes -----------------------------------------------------------
 # A formal X.Y.Z release carries its bilingual notes (and those of earlier
-# versions) inside the signed manifest. They come from release-notes/ in the
+# versions) inside the published manifest. They come from release-notes/ in the
 # frozen source; a missing, unlisted or invalid entry fails the build. Test and
 # rehearsal identities (anything with a prerelease part) carry none.
 notes_dir="${BANSOKO_RELEASE_NOTES_DIR:-$root/release-notes}"
@@ -158,12 +153,11 @@ CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -C "$root" -trimpath -build
 
 artifact_digest="$(sha256_file "$artifact_path")"
 artifact_size="$(wc -c < "$artifact_path" | tr -d '[:space:]')"
-artifact_signature="$(go -C "$root" run ./cmd/bansoko-release artifact-sign --digest "$artifact_digest" --private-key "$private_key")"
 
 # --- Embedded update payload -------------------------------------------------
 # A deterministic gzip tar built by internal/update/packagemaker. The
-# overall compressed byte digest is bare 64-hex sha256 and is signed through
-# the same artifact-digest surface as the server binary.
+# overall compressed byte digest is bare 64-hex sha256 and is bound to the
+# manifest like the server binary's digest.
 payload_path="$tmp_dir/$payload_name"
 pack_summary="$(go -C "$root" run ./cmd/bansoko-release pack-payload \
   --server-binary "$artifact_path" \
@@ -190,8 +184,6 @@ if [[ "$(sha256_file "$payload_path")" != "$payload_digest" ]]; then
   echo "embedded payload digest mismatch between packager output and on-disk archive" >&2
   exit 1
 fi
-payload_signature="$(go -C "$root" run ./cmd/bansoko-release artifact-sign --digest "$payload_digest" --private-key "$private_key")"
-go -C "$root" run ./cmd/bansoko-release artifact-verify --digest "$payload_digest" --signature "$payload_signature" --public-key "$public_key" >/dev/null
 echo "Embedded update payload: $payload_name digest=$payload_digest size=$payload_size files=$(tar -tzf "$payload_path" | grep -cv '/$')"
 
 go list -C "$root" -m -f '{{.Path}}@{{.Version}}' all | LC_ALL=C sort > "$tmp_dir/modules.txt"
@@ -295,7 +287,7 @@ frontend_ref="sha256:$(cd "$frontend_dist" && find . -type f -print | LC_ALL=C s
 # from those image bytes; otherwise the publisher declaration (the CI image job
 # reads it back from the pushed image) is required. It is never inferred from a
 # default: an image whose baked bootstrap version cannot be established fails
-# closed, and signing a manifest whose minimum exceeds it is impossible here.
+# closed, and publishing a manifest whose minimum exceeds it is impossible here.
 image_bootstrap_version="$declared_image_bootstrap_version"
 if [[ -n "$image_digest" ]]; then
   if [[ -n "${image_tag:-}" ]]; then
@@ -331,10 +323,10 @@ $derived_image_bootstrap_version" >&2
   echo "Bootstrap capability binding: manifest_min=$bootstrap_min_version image=$image_bootstrap_version"
 fi
 
-BANSOKO_RELEASE_VERSION="$version" BANSOKO_RELEASE_ID="$release_id" BANSOKO_RELEASE_CHANNEL="$channel" BANSOKO_RELEASE_PUBLISHED_AT="$published_at" BANSOKO_SOURCE_COMMIT="$source_commit" BANSOKO_RELEASE_API_VERSION="$api_version" BANSOKO_RELEASE_SCHEMA_VERSION="$schema_version" BANSOKO_RELEASE_GOOS="$goos" BANSOKO_RELEASE_GOARCH="$goarch" BANSOKO_RELEASE_ARTIFACT_DIGEST="$artifact_digest" BANSOKO_RELEASE_ARTIFACT_SIZE="$artifact_size" BANSOKO_RELEASE_ARTIFACT_SIGNATURE="$artifact_signature" BANSOKO_RELEASE_SBOM_DIGEST="$sbom_digest" BANSOKO_RELEASE_PROVENANCE_DIGEST="$provenance_digest" BANSOKO_RELEASE_IMAGE_DIGEST="$image_digest" BANSOKO_RELEASE_FRONTEND_REF="$frontend_ref" \
+BANSOKO_RELEASE_VERSION="$version" BANSOKO_RELEASE_ID="$release_id" BANSOKO_RELEASE_CHANNEL="$channel" BANSOKO_RELEASE_PUBLISHED_AT="$published_at" BANSOKO_SOURCE_COMMIT="$source_commit" BANSOKO_RELEASE_API_VERSION="$api_version" BANSOKO_RELEASE_SCHEMA_VERSION="$schema_version" BANSOKO_RELEASE_GOOS="$goos" BANSOKO_RELEASE_GOARCH="$goarch" BANSOKO_RELEASE_ARTIFACT_DIGEST="$artifact_digest" BANSOKO_RELEASE_ARTIFACT_SIZE="$artifact_size" BANSOKO_RELEASE_SBOM_DIGEST="$sbom_digest" BANSOKO_RELEASE_PROVENANCE_DIGEST="$provenance_digest" BANSOKO_RELEASE_IMAGE_DIGEST="$image_digest" BANSOKO_RELEASE_FRONTEND_REF="$frontend_ref" \
 BANSOKO_RELEASE_SEQUENCE="$release_sequence" \
 BANSOKO_RELEASE_EMBEDDED_FORMAT="embedded-update-v1" \
-BANSOKO_RELEASE_PAYLOAD_DIGEST="$payload_digest" BANSOKO_RELEASE_PAYLOAD_SIZE="$payload_size" BANSOKO_RELEASE_PAYLOAD_SIGNATURE="$payload_signature" \
+BANSOKO_RELEASE_PAYLOAD_DIGEST="$payload_digest" BANSOKO_RELEASE_PAYLOAD_SIZE="$payload_size" \
 BANSOKO_RELEASE_BOOTSTRAP_MIN_VERSION="$bootstrap_min_version" BANSOKO_BASE_IMAGE_MIN_VERSION="$base_image_min_version" \
 BANSOKO_RELEASE_NOTES_JSON="$release_notes_json" \
 ruby -rjson -rdigest -e '
@@ -348,8 +340,8 @@ ruby -rjson -rdigest -e '
   end
   # Digest representation note: images[].digest uses the conventional
   # registry "sha256:<64hex>" form; embedded_update.payload_digest is the
-  # bare 64-hex form that feeds SignArtifactDigest /
-  # VerifyArtifactDigestSignature directly. Both are sha256 of their bytes.
+  # bare 64-hex form the deployment hashes the payload against. Both are
+  # sha256 of their bytes.
   manifest = {
     "schema_version" => "release-manifest-1",
     "release_sequence" => Integer(ENV.fetch("BANSOKO_RELEASE_SEQUENCE")),
@@ -361,16 +353,15 @@ ruby -rjson -rdigest -e '
     "rollback_class" => "restore_required", "migrations" => migrations,
     "images" => images, "compose_ref" => "deployment/maintainer/docker-compose.production.yml",
     "frontend_ref" => ENV.fetch("BANSOKO_RELEASE_FRONTEND_REF", ""),
-    "artifacts" => [{"platform" => ENV.fetch("BANSOKO_RELEASE_GOOS"), "architecture" => ENV.fetch("BANSOKO_RELEASE_GOARCH"), "digest" => ENV.fetch("BANSOKO_RELEASE_ARTIFACT_DIGEST"), "size" => Integer(ENV.fetch("BANSOKO_RELEASE_ARTIFACT_SIZE")), "signature" => ENV.fetch("BANSOKO_RELEASE_ARTIFACT_SIGNATURE")}],
+    "artifacts" => [{"platform" => ENV.fetch("BANSOKO_RELEASE_GOOS"), "architecture" => ENV.fetch("BANSOKO_RELEASE_GOARCH"), "digest" => ENV.fetch("BANSOKO_RELEASE_ARTIFACT_DIGEST"), "size" => Integer(ENV.fetch("BANSOKO_RELEASE_ARTIFACT_SIZE"))}],
     "sbom_ref" => "sha256:#{ENV.fetch("BANSOKO_RELEASE_SBOM_DIGEST")}", "provenance_ref" => "sha256:#{ENV.fetch("BANSOKO_RELEASE_PROVENANCE_DIGEST")}",
-    "artifact_digest" => ENV.fetch("BANSOKO_RELEASE_ARTIFACT_DIGEST"), "signature" => "", "immutable" => true,
+    "artifact_digest" => ENV.fetch("BANSOKO_RELEASE_ARTIFACT_DIGEST"), "immutable" => true,
     "embedded_update" => {
       "format_version" => ENV.fetch("BANSOKO_RELEASE_EMBEDDED_FORMAT"),
       "platform" => ENV.fetch("BANSOKO_RELEASE_GOOS"),
       "architecture" => ENV.fetch("BANSOKO_RELEASE_GOARCH"),
       "payload_digest" => ENV.fetch("BANSOKO_RELEASE_PAYLOAD_DIGEST"),
       "payload_size" => Integer(ENV.fetch("BANSOKO_RELEASE_PAYLOAD_SIZE")),
-      "payload_signature" => ENV.fetch("BANSOKO_RELEASE_PAYLOAD_SIGNATURE"),
       "bootstrap_min_version" => ENV.fetch("BANSOKO_RELEASE_BOOTSTRAP_MIN_VERSION"),
       "min_image_version" => ENV.fetch("BANSOKO_BASE_IMAGE_MIN_VERSION"),
       "target_release_id" => ENV.fetch("BANSOKO_RELEASE_ID"),
@@ -384,14 +375,13 @@ ruby -rjson -rdigest -e '
   File.write(ARGV.fetch(1), JSON.generate(manifest) + "\n")
 ' "$root" "$tmp_dir/manifest.json"
 
-# Validate the unsigned current manifest before it enters the signed byte set.
+# Validate the manifest before it enters the published byte set.
 go -C "$root" run ./cmd/bansoko-release validate-schema --manifest "$tmp_dir/manifest.json" --allow-empty-images="$([[ "${BANSOKO_REHEARSAL:-0}" == "1" ]] && echo true || echo false)" >/dev/null
 
-signed_manifest="$output_dir/release-manifest.json"
-go -C "$root" run ./cmd/bansoko-release sign --input "$tmp_dir/manifest.json" --output "$signed_manifest" --private-key "$private_key" >/dev/null
-go -C "$root" run ./cmd/bansoko-release verify --manifest "$signed_manifest" --public-key "$public_key" --artifact "$artifact_path" >/dev/null
-go -C "$root" run ./cmd/bansoko-release artifact-verify --digest "$artifact_digest" --signature "$artifact_signature" --public-key "$public_key" >/dev/null
-go -C "$root" run ./cmd/bansoko-release verify-embedded --manifest "$signed_manifest" --public-key "$public_key" --payload "$payload_path" >/dev/null
+published_manifest="$output_dir/release-manifest.json"
+go -C "$root" run ./cmd/bansoko-release manifest-render --input "$tmp_dir/manifest.json" --output "$published_manifest" >/dev/null
+go -C "$root" run ./cmd/bansoko-release verify --manifest "$published_manifest" --artifact "$artifact_path" >/dev/null
+go -C "$root" run ./cmd/bansoko-release verify-embedded --manifest "$published_manifest" --payload "$payload_path" >/dev/null
 
 cp "$artifact_path" "$output_dir/$artifact_name"
 cp "$payload_path" "$output_dir/$payload_name"

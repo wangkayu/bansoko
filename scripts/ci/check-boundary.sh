@@ -327,7 +327,7 @@ echo "Boundary check passed"
 # P0.7: production compose must stay immutable — no build:, no mutable app
 # tags, no source mounts, no DB-ping healthcheck as admission signal.
 prod_compose="$root/deployment/maintainer/docker-compose.production.yml"
-if rg -n '^\s+build:|image: bansoko:[a-z0-9._-]+$|\./|/Users/|system/health' "$prod_compose" | grep -v 'deployment/public.key' | grep -v 'system/health\]' | grep -v 'not be gated on DB-ping /system/health'; then
+if rg -n '^\s+build:|image: bansoko:[a-z0-9._-]+$|\./|/Users/|system/health' "$prod_compose" | grep -v 'system/health\]' | grep -v 'not be gated on DB-ping /system/health'; then
   echo "Production compose violates immutable bundle constraints" >&2
   exit 1
 fi

@@ -1,8 +1,6 @@
 package domain
 
 import (
-	"crypto/ed25519"
-	"crypto/rand"
 	"strings"
 	"testing"
 	"time"
@@ -95,30 +93,17 @@ func TestReleaseNotesNewerThan(t *testing.T) {
 	}
 }
 
-func TestReleaseNotesAreSignedManifestBytes(t *testing.T) {
-	public, private, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestReleaseNotesStayInsideTheManifestContract(t *testing.T) {
 	manifest := validEmbeddedManifestForNotes()
 	manifest.Version = "0.2.0"
 	manifest.ReleaseNotes = []ReleaseNotesEntry{notesEntry("0.2.0")}
-	if err := manifest.Sign(private); err != nil {
-		t.Fatal(err)
-	}
-	if err := manifest.VerifySignature(public); err != nil {
-		t.Fatalf("signed notes rejected: %v", err)
-	}
-	tampered := manifest
-	tampered.ReleaseNotes = []ReleaseNotesEntry{notesEntry("0.2.0")}
-	tampered.ReleaseNotes[0].Notes.En = "## Fixed\n- Something else\n"
-	if err := tampered.VerifySignature(public); err == nil {
-		t.Fatal("altered notes kept a valid signature")
+	if err := manifest.ValidateForRelease(); err != nil {
+		t.Fatalf("valid notes rejected: %v", err)
 	}
 	invalid := manifest
 	invalid.ReleaseNotes = []ReleaseNotesEntry{notesEntry("0.1.0")}
-	if err := invalid.Sign(private); err == nil {
-		t.Fatal("notes that do not start with the manifest version were signed")
+	if err := invalid.ValidateForRelease(); err == nil {
+		t.Fatal("notes that do not start with the manifest version were accepted")
 	}
 }
 
@@ -128,6 +113,6 @@ func validEmbeddedManifestForNotes() ReleaseManifest {
 		SchemaVersion: "release-manifest-1", ReleaseSequence: 3, ReleaseID: "v0.2.0", Version: "0.2.0",
 		Channel: ReleaseChannelStable, SourceCommit: strings.Repeat("b", 40), APIContractVersion: "v1",
 		Rollback: RestoreRequired, Immutable: true, SBOMRef: "sha256:" + digest, ProvenanceRef: "sha256:" + digest,
-		ArtifactDigest: digest, Artifacts: []ArtifactRef{{Platform: "linux", Architecture: "amd64", Digest: digest, Signature: "sig"}},
+		ArtifactDigest: digest, Artifacts: []ArtifactRef{{Platform: "linux", Architecture: "amd64", Digest: digest, Size: 1}},
 	}
 }

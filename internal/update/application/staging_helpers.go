@@ -1,7 +1,6 @@
 package application
 
 import (
-	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -12,8 +11,8 @@ import (
 	hardeningdomain "bansoko/internal/hardening/domain"
 )
 
-func VerifyPayloadFile(path string, target *hardeningdomain.EmbeddedUpdateSegment, publicKey ed25519.PublicKey) error {
-	return verifyDownloadedPayload(path, target, publicKey)
+func VerifyPayloadFile(path string, target *hardeningdomain.EmbeddedUpdateSegment) error {
+	return verifyDownloadedPayload(path, target)
 }
 func hashFileForSidecar(path string) (string, error) {
 	file, err := os.Open(path)

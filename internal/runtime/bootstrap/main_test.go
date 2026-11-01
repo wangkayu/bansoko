@@ -3,15 +3,12 @@ package bootstrap
 import (
 	"archive/tar"
 	"compress/gzip"
-	"crypto/ed25519"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 
 	hardeningdomain "bansoko/internal/hardening/domain"
@@ -23,29 +20,11 @@ import (
 	"bansoko/internal/update/packagemaker"
 )
 
-var (
-	testReleaseKeyOnce sync.Once
-	testReleasePublic  ed25519.PublicKey
-	testReleasePrivate ed25519.PrivateKey
-)
-
 // writeReleaseTree materializes a minimal payload layout whose
 // release-metadata.json hashes match the written bytes exactly, mirroring the
 // deterministic packager output shape consumed by bootstrap verification.
 func writeReleaseTree(t *testing.T, root, releaseID string) string {
 	t.Helper()
-	testReleaseKeyOnce.Do(func() {
-		var err error
-		testReleasePublic, testReleasePrivate, err = hardeningdomain.GenerateSigningKey()
-		if err != nil {
-			t.Fatalf("generate release test key: %v", err)
-		}
-	})
-	keyPath := filepath.Join(root, "public.key")
-	if err := os.WriteFile(keyPath, []byte(hex.EncodeToString(testReleasePublic)+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("BANSOKO_UPDATE_PUBLIC_KEY_PATH", keyPath)
 	releaseDir := filepath.Join(root, releasesDirName, releaseID)
 	files := map[string][]byte{
 		packagemaker.ServerEntryPath:                   []byte("#!/bin/elf-fake-server\n"),
@@ -102,25 +81,18 @@ func writeReleaseTree(t *testing.T, root, releaseID string) string {
 	if err := json.Unmarshal(archiveMeta, &unpackedMeta); err != nil || len(unpackedMeta.Files) == 0 {
 		t.Fatalf("payload metadata was not materialized: err=%v raw=%q", err, archiveMeta)
 	}
-	payloadSignature, err := hardeningdomain.SignArtifactDigest(testReleasePrivate, result.Digest)
-	if err != nil {
-		t.Fatal(err)
-	}
 	manifest := hardeningdomain.ReleaseManifest{
 		SchemaVersion: "release-manifest-1", ReleaseSequence: 10, ReleaseID: releaseID, Version: meta.Version,
 		Channel: hardeningdomain.ReleaseChannelStable, SourceCommit: "test-source", APIContractVersion: "v2",
 		TargetMigrationVersion: meta.TargetSchemaVersion, RequiredDowntime: true, BackupRequired: true,
 		Rollback: hardeningdomain.RestoreRequired, ArtifactDigest: strings.Repeat("a", 64), Immutable: true,
-		Artifacts: []hardeningdomain.ArtifactRef{{Platform: "linux", Architecture: "amd64", Digest: strings.Repeat("b", 64), Size: 1, Signature: "test"}},
+		Artifacts: []hardeningdomain.ArtifactRef{{Platform: "linux", Architecture: "amd64", Digest: strings.Repeat("b", 64), Size: 1}},
 		SBOMRef:   "sha256:" + strings.Repeat("c", 64), ProvenanceRef: "sha256:" + strings.Repeat("d", 64),
 		EmbeddedUpdate: &hardeningdomain.EmbeddedUpdateSegment{
 			FormatVersion: hardeningdomain.EmbeddedUpdateFormatV1, Platform: "linux", Architecture: "amd64", PayloadDigest: result.Digest, PayloadSize: result.Size,
-			PayloadSignature: payloadSignature, BootstrapMinVersion: "embedded-bootstrap-v1", MinImageVersion: "b1", TargetReleaseID: releaseID, TargetVersion: meta.Version,
+			BootstrapMinVersion: "embedded-bootstrap-v1", MinImageVersion: "b1", TargetReleaseID: releaseID, TargetVersion: meta.Version,
 			TargetSchemaVersion: meta.TargetSchemaVersion, ReleaseSequence: 10,
 		},
-	}
-	if err := manifest.Sign(testReleasePrivate); err != nil {
-		t.Fatal(err)
 	}
 	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
@@ -461,11 +433,6 @@ func TestPlanLaunchAllowsNonEmbeddedUpdateModesWithoutActiveJournal(t *testing.T
 }
 
 func TestPlanLaunchTerminalStateRunsVerifiedOverlay(t *testing.T) {
-	publicKeyPath := filepath.Join(t.TempDir(), "public.key")
-	if err := os.WriteFile(publicKeyPath, []byte("dd06de8c251e7cda67ddb1a5f674867df6fbf1d8712585b0a4c0ee9a16e8cc11\n"), 0o444); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("BANSOKO_UPDATE_PUBLIC_KEY_PATH", publicKeyPath)
 	for _, tc := range []struct {
 		name  string
 		steps []embeddedupdate.Step
@@ -768,22 +735,6 @@ func TestPlanLaunchRequiresOverlayProvenance(t *testing.T) {
 	}
 	if _, err := os.Stat(releaseDir); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestBootstrapPublicKeyOverrideIsPinned(t *testing.T) {
-	missing := filepath.Join(t.TempDir(), "missing-public.key")
-	t.Setenv("BANSOKO_UPDATE_PUBLIC_KEY_PATH", missing)
-	if _, err := loadBootstrapPublicKey(); err == nil {
-		t.Fatal("an unreadable override fell back to the baked development key")
-	}
-	invalid := filepath.Join(t.TempDir(), "invalid-public.key")
-	if err := os.WriteFile(invalid, []byte("not-a-key"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("BANSOKO_UPDATE_PUBLIC_KEY_PATH", invalid)
-	if _, err := loadBootstrapPublicKey(); err == nil {
-		t.Fatal("an invalid override fell back to the baked development key")
 	}
 }
 

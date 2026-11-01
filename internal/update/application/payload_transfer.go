@@ -79,9 +79,6 @@ func (s *Service) fetchPayload(ctx context.Context, source *UpdateHTTPSource, op
 	if err := verifyPayloadSource(partial, out, written, target.PayloadSize, digest, target.PayloadDigest); err != nil {
 		return "", err
 	}
-	if sigErr := hardeningdomain.VerifyArtifactDigestSignature(s.publicKey, digest, target.PayloadSignature); sigErr != nil {
-		return "", fmt.Errorf("payload signature rejected after download: %w", sigErr)
-	}
 	beforePayloadPublish(partial)
 	if err := verifyPayloadSource(partial, out, written, target.PayloadSize, digest, target.PayloadDigest); err != nil {
 		return "", err

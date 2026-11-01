@@ -65,25 +65,25 @@ jobs.each do |id, job|
     abort 'secret in required gate' if !publishers.include?(id) && s.to_s.include?('secrets.')
   end
 end
-# Two signed lanes share one publisher. Each step holds only the credentials it
-# uses: the registry push token, the signing key, the workflow token for the
-# channel branch, and the workflow token again (as GH_TOKEN) for the GitHub
-# Release, which only the formal lane has. A widened step is drift, not
+# Two lanes share one publisher. Each step holds only the credentials it uses:
+# the registry push token, the workflow token for the channel branch, and the
+# workflow token again (as GH_TOKEN) for the GitHub Release, which only the
+# formal lane has. A widened step is drift, not
 # convenience; a lane running the other lane's mode would publish to the other
 # lane's channel branch, so the mode names are pinned per job.
 lanes = {
   'release' => [TAG_ONLY, {
     'release notes and version preflight' => ['preflight', %w[BANSOKO_RELEASE_GITHUB_TOKEN]],
     'build image' => ['image', %w[DOCKERHUB_TOKEN]],
-    'publish immutable package' => ['publish', %w[BANSOKO_RELEASE_SIGNING_KEY BANSOKO_RELEASE_GITHUB_TOKEN DOCKERHUB_TOKEN]],
-    'advance signed channel' => ['channel', %w[BANSOKO_RELEASE_SIGNING_KEY BANSOKO_RELEASE_GITHUB_TOKEN]],
+    'publish immutable package' => ['publish', %w[BANSOKO_RELEASE_GITHUB_TOKEN DOCKERHUB_TOKEN]],
+    'advance channel' => ['channel', %w[BANSOKO_RELEASE_GITHUB_TOKEN]],
     'create GitHub Release' => ['github-release', %w[GH_TOKEN]]
   }],
   'test-release' => [MAIN_ONLY, {
     'test version preflight' => ['test-preflight', %w[BANSOKO_RELEASE_GITHUB_TOKEN]],
     'build test image' => ['test-image', %w[DOCKERHUB_TOKEN]],
-    'publish immutable test package' => ['test-publish', %w[BANSOKO_RELEASE_SIGNING_KEY BANSOKO_RELEASE_GITHUB_TOKEN DOCKERHUB_TOKEN]],
-    'advance signed test channel' => ['test-channel', %w[BANSOKO_RELEASE_SIGNING_KEY BANSOKO_RELEASE_GITHUB_TOKEN]]
+    'publish immutable test package' => ['test-publish', %w[BANSOKO_RELEASE_GITHUB_TOKEN DOCKERHUB_TOKEN]],
+    'advance test channel' => ['test-channel', %w[BANSOKO_RELEASE_GITHUB_TOKEN]]
   }]
 }
 lanes.each do |id, (condition, expected)|
@@ -124,7 +124,7 @@ jobs.each do |id, job|
 end
 
 # Docker Hub: main publishes only the test image; a tag publishes `X.Y.Z` and
-# `:latest` only after the signed release of the same run succeeded.
+# `:latest` only after the release of the same run succeeded.
 { 'docker-hub' => [MAIN_ONLY, required, 'test'], 'docker-hub-release' => [TAG_ONLY, required + ['release'], 'release'] }.each do |id, (condition, needs, mode)|
   hub = jobs.fetch(id)
   abort "#{id}: condition unsafe" unless hub['if'] == condition

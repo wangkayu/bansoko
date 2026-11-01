@@ -1,10 +1,7 @@
 package domain
 
 import (
-	"crypto/ed25519"
-	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -37,12 +34,15 @@ type MigrationRef struct {
 }
 
 type ArtifactRef struct {
-	Platform     string   `json:"platform"`
-	Architecture string   `json:"architecture"`
-	Digest       string   `json:"digest"`
-	Size         int64    `json:"size"`
-	Signature    string   `json:"signature"`
-	Platforms    []string `json:"platforms,omitempty"`
+	Platform     string `json:"platform"`
+	Architecture string `json:"architecture"`
+	Digest       string `json:"digest"`
+	Size         int64  `json:"size"`
+	// Signature is retired (owner 2026-11-01): releases are no longer signed,
+	// and a published manifest omits the field. It stays in the struct so an
+	// old manifest still decodes.
+	Signature string   `json:"signature,omitempty"`
+	Platforms []string `json:"platforms,omitempty"`
 }
 
 // ImageRef is a digest-pinned container image in the production bundle.
@@ -64,12 +64,13 @@ const EmbeddedUpdateFormatV1 = "embedded-update-v1"
 // VerifyArtifactDigestSignature; registry image digests keep their
 // conventional "sha256:" prefix elsewhere in the manifest.
 type EmbeddedUpdateSegment struct {
-	FormatVersion       string `json:"format_version"`
-	Platform            string `json:"platform"`
-	Architecture        string `json:"architecture"`
-	PayloadDigest       string `json:"payload_digest"`
-	PayloadSize         int64  `json:"payload_size"`
-	PayloadSignature    string `json:"payload_signature"`
+	FormatVersion string `json:"format_version"`
+	Platform      string `json:"platform"`
+	Architecture  string `json:"architecture"`
+	PayloadDigest string `json:"payload_digest"`
+	PayloadSize   int64  `json:"payload_size"`
+	// PayloadSignature is retired with the outer signature; see ArtifactRef.
+	PayloadSignature    string `json:"payload_signature,omitempty"`
 	BootstrapMinVersion string `json:"bootstrap_min_version"`
 	MinImageVersion     string `json:"min_image_version,omitempty"`
 	TargetReleaseID     string `json:"target_release_id"`
@@ -100,8 +101,9 @@ type ReleaseManifest struct {
 	SBOMRef                string         `json:"sbom_ref,omitempty"`
 	ProvenanceRef          string         `json:"provenance_ref,omitempty"`
 	ArtifactDigest         string         `json:"artifact_digest,omitempty"`
-	Signature              string         `json:"signature"`
-	Immutable              bool           `json:"immutable"`
+	// Signature is retired (owner 2026-11-01): the manifest is not signed.
+	Signature string `json:"signature,omitempty"`
+	Immutable bool   `json:"immutable"`
 
 	// EmbeddedUpdate is optional for backward compatibility: historical
 	// bundles signed before the embedded self-update program have no such
@@ -118,7 +120,7 @@ type ReleaseManifest struct {
 }
 
 func (m ReleaseManifest) Verify() error {
-	if strings.TrimSpace(m.Version) == "" || strings.TrimSpace(m.ArtifactDigest) == "" || strings.TrimSpace(m.Signature) == "" || strings.TrimSpace(m.SchemaVersion) == "" {
+	if strings.TrimSpace(m.Version) == "" || strings.TrimSpace(m.ArtifactDigest) == "" || strings.TrimSpace(m.SchemaVersion) == "" {
 		return errors.New("release manifest fields are required")
 	}
 	if !m.Immutable {
@@ -154,7 +156,7 @@ func (m ReleaseManifest) ValidateForRelease() error {
 		return errors.New("release manifest must contain an artifact")
 	}
 	for _, artifact := range m.Artifacts {
-		if strings.TrimSpace(artifact.Platform) == "" || strings.TrimSpace(artifact.Architecture) == "" || !isSHA256(artifact.Digest) || strings.TrimSpace(artifact.Signature) == "" || artifact.Size < 0 {
+		if strings.TrimSpace(artifact.Platform) == "" || strings.TrimSpace(artifact.Architecture) == "" || !isSHA256(artifact.Digest) || artifact.Size < 0 {
 			return errors.New("release artifacts require platform, architecture, sha256 digest and non-negative size")
 		}
 	}
@@ -198,9 +200,6 @@ func (m ReleaseManifest) ValidateForEmbeddedUpdate() error {
 	if payload.PayloadSize <= 0 {
 		return errors.New("embedded update payload size must be positive")
 	}
-	if strings.TrimSpace(payload.PayloadSignature) == "" {
-		return errors.New("embedded update payload signature is required")
-	}
 	if strings.TrimSpace(payload.BootstrapMinVersion) == "" || strings.TrimSpace(payload.MinImageVersion) == "" {
 		return errors.New("embedded update payload requires bootstrap and image minimum versions")
 	}
@@ -214,15 +213,6 @@ func (m ReleaseManifest) ValidateForEmbeddedUpdate() error {
 		return errors.New("embedded update segment release sequence does not match the outer manifest")
 	}
 	return nil
-}
-
-// VerifyEmbeddedPayloadSignature checks the payload signature against the
-// declared digest using the standard artifact-digest signing surface.
-func (m ReleaseManifest) VerifyEmbeddedPayloadSignature(publicKey ed25519.PublicKey) error {
-	if err := m.ValidateForEmbeddedUpdate(); err != nil {
-		return err
-	}
-	return VerifyArtifactDigestSignature(publicKey, m.EmbeddedUpdate.PayloadDigest, m.EmbeddedUpdate.PayloadSignature)
 }
 
 // EffectiveBootstrapMinVersion returns the bootstrap floor the payload requires
@@ -252,13 +242,8 @@ func (m ReleaseManifest) EffectiveMinImageVersion() (string, error) {
 	return "", errors.New("embedded update payload requires an image minimum version")
 }
 
-func (m ReleaseManifest) signingCopy() ReleaseManifest {
-	m.Signature = ""
-	return m
-}
-
 func (m ReleaseManifest) CanonicalBytes() ([]byte, error) {
-	return json.Marshal(m.signingCopy())
+	return json.Marshal(m)
 }
 
 func (m ReleaseManifest) CanonicalDigest() (string, error) {
@@ -267,49 +252,6 @@ func (m ReleaseManifest) CanonicalDigest() (string, error) {
 		return "", err
 	}
 	return HashArtifact(data), nil
-}
-
-func (m *ReleaseManifest) Sign(privateKey ed25519.PrivateKey) error {
-	if m == nil || len(privateKey) != ed25519.PrivateKeySize {
-		return errors.New("ed25519 private key is required")
-	}
-	if err := m.ValidateForRelease(); err != nil {
-		return err
-	}
-	data, err := m.CanonicalBytes()
-	if err != nil {
-		return fmt.Errorf("canonicalize release manifest: %w", err)
-	}
-	m.Signature = base64.RawStdEncoding.EncodeToString(ed25519.Sign(privateKey, data))
-	return nil
-}
-
-func (m ReleaseManifest) VerifySignature(publicKey ed25519.PublicKey) error {
-	if len(publicKey) != ed25519.PublicKeySize {
-		return errors.New("ed25519 public key is required")
-	}
-	if err := m.ValidateForRelease(); err != nil {
-		return err
-	}
-	if strings.TrimSpace(m.Signature) == "" {
-		return errors.New("release manifest signature is required")
-	}
-	signature, err := base64.RawStdEncoding.DecodeString(m.Signature)
-	if err != nil || len(signature) != ed25519.SignatureSize {
-		return errors.New("release manifest signature is invalid")
-	}
-	data, err := m.CanonicalBytes()
-	if err != nil {
-		return fmt.Errorf("canonicalize release manifest: %w", err)
-	}
-	if !ed25519.Verify(publicKey, data, signature) {
-		return errors.New("release manifest signature verification failed")
-	}
-	return nil
-}
-
-func GenerateSigningKey() (ed25519.PublicKey, ed25519.PrivateKey, error) {
-	return ed25519.GenerateKey(rand.Reader)
 }
 
 func isSHA256(value string) bool {
@@ -347,31 +289,4 @@ func (p UpdatePlan) Admit() error {
 func HashArtifact(payload []byte) string {
 	digest := sha256.Sum256(payload)
 	return hex.EncodeToString(digest[:])
-}
-
-func SignArtifactDigest(privateKey ed25519.PrivateKey, digest string) (string, error) {
-	if len(privateKey) != ed25519.PrivateKeySize {
-		return "", errors.New("ed25519 private key is required")
-	}
-	if !isSHA256(digest) {
-		return "", errors.New("artifact digest must be a sha256 digest")
-	}
-	return base64.RawStdEncoding.EncodeToString(ed25519.Sign(privateKey, []byte("sha256:"+digest))), nil
-}
-
-func VerifyArtifactDigestSignature(publicKey ed25519.PublicKey, digest, signature string) error {
-	if len(publicKey) != ed25519.PublicKeySize {
-		return errors.New("ed25519 public key is required")
-	}
-	if !isSHA256(digest) {
-		return errors.New("artifact digest must be a sha256 digest")
-	}
-	decoded, err := base64.RawStdEncoding.DecodeString(signature)
-	if err != nil || len(decoded) != ed25519.SignatureSize {
-		return errors.New("artifact signature is invalid")
-	}
-	if !ed25519.Verify(publicKey, []byte("sha256:"+digest), decoded) {
-		return errors.New("artifact signature verification failed")
-	}
-	return nil
 }

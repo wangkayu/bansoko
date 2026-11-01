@@ -80,17 +80,12 @@ services:
       # Also the image default; kept explicit so the update fixtures can switch
       # this bundle to a test environment.
       BANSOKO_ENVIRONMENT: production
-      # Optional deployment-owned package source. Leave unset for a safe
-      # unconfigured instance or point at a signed public HTTPS manifest. The
-      # update client is always anonymous; there is no credential surface.
-      BANSOKO_UPDATE_MANIFEST_URL: ${BANSOKO_UPDATE_MANIFEST_URL:-}
-      # Optional release-discovery channel. Set this (with the package root)
-      # instead of BANSOKO_UPDATE_MANIFEST_URL to let the instance resolve the newest
-      # signed release CI published, without naming a version. The channel is a
-      # locator only: the named manifest, payload, signature and sequence floor
-      # stay authoritative. Setting both sources fails closed at startup.
-      BANSOKO_UPDATE_CHANNEL_URL: ${BANSOKO_UPDATE_CHANNEL_URL:-}
-      BANSOKO_UPDATE_PACKAGE_ROOT: ${BANSOKO_UPDATE_PACKAGE_ROOT:-}
+      # Which published lane this deployment follows — `stable` for tagged
+      # releases (the image default) or `test` for every main build. The lane
+      # names this project's own channel branch, so there is no source URL and
+      # no credential surface to configure; the update client is always
+      # anonymous.
+      BANSOKO_UPDATE_LANE: ${BANSOKO_UPDATE_LANE:-stable}
       # This must identify the exact immutable image digest running this
       # service. Derive it directly from the bundle image selector; a second
       # independently supplied base digest would let readiness describe a

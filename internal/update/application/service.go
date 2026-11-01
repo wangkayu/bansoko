@@ -1,10 +1,11 @@
-// Package application implements disposable signed-release staging and the
-// pending-marker handoff to the bootstrap.
+// Package application implements disposable release staging and the
+// pending-marker handoff to the bootstrap. Releases are not signed (owner
+// 2026-11-01): identity is the manifest digest, the release sequence and the
+// channel branch this deployment reads.
 package application
 
 import (
 	"context"
-	"crypto/ed25519"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -29,7 +30,6 @@ import (
 const (
 	Channel         = "embedded"
 	PayloadFileName = "embedded-update-v1.tar.gz"
-	publicKeySize   = ed25519.PublicKeySize
 )
 
 var ErrSelfReplay = errors.New("target release matches the running binary")
@@ -48,15 +48,18 @@ type GitHubRouteResolver interface {
 	UpdateRouteClient(context.Context) (*http.Client, error)
 }
 
-// Deps contains only inputs used to verify and stage a signed release. DB is
-// used for a read-only anti-replay floor lookup; the updater never owns writes.
+// Deps contains only inputs used to verify and stage a release. DB is used for
+// a read-only anti-replay floor lookup; the updater never owns writes.
 type Deps struct {
-	DB                        *sql.DB
-	PublicKey                 ed25519.PublicKey
-	UpdatesRoot               string
-	ManifestURL               string
-	ChannelURL                string
-	PackageRoot               string
+	DB          *sql.DB
+	UpdatesRoot string
+	// Lane selects the published channel this deployment follows: empty or
+	// "stable" for tagged releases, "test" for builds of main. The source URLs
+	// are constants (lane.go), not deployment input.
+	Lane string
+	// ChannelBase is the development/test override of the channel repository
+	// root; production refuses it.
+	ChannelBase               string
 	Production                bool
 	HTTPClient                *http.Client
 	GitHubRoute               GitHubRouteResolver
@@ -74,7 +77,6 @@ type Deps struct {
 
 type Service struct {
 	db                                                                 *sql.DB
-	publicKey                                                          ed25519.PublicKey
 	updatesRoot, manifestURL                                           string
 	source                                                             *UpdateHTTPSource
 	channel                                                            *channelResolver
@@ -96,9 +98,6 @@ func NewService(deps Deps) (*Service, error) {
 	if strings.TrimSpace(deps.UpdateMode) != "embedded" {
 		return nil, fmt.Errorf("embedded update service requires BANSOKO_UPDATE_MODE=embedded (current mode: %q)", deps.UpdateMode)
 	}
-	if len(deps.PublicKey) != publicKeySize {
-		return nil, errors.New("embedded update service requires a valid ed25519 public key")
-	}
 	if strings.TrimSpace(deps.UpdatesRoot) == "" {
 		return nil, errors.New("embedded update service requires the updates root")
 	}
@@ -107,42 +106,28 @@ func NewService(deps Deps) (*Service, error) {
 		client = &http.Client{Timeout: 5 * time.Minute}
 	}
 	config := UpdateHTTPSourceConfig{Production: deps.Production, HTTPClient: client}
-	manifestURL, channelURL, packageRoot := strings.TrimSpace(deps.ManifestURL), strings.TrimSpace(deps.ChannelURL), strings.TrimSpace(deps.PackageRoot)
-	if manifestURL != "" && channelURL != "" {
-		return nil, fmt.Errorf("%w: %s and %s are mutually exclusive", ErrUpdateSourceURL, EnvManifestURL, EnvChannelURL)
+	if deps.Production && strings.TrimSpace(deps.ChannelBase) != "" {
+		return nil, fmt.Errorf("%w: %s is not allowed in production", ErrUpdateSourceURL, EnvChannelBase)
 	}
-	var source *UpdateHTTPSource
-	if manifestURL != "" {
-		exact := config
-		exact.ManifestURL = manifestURL
-		var err error
-		source, err = NewUpdateHTTPSource(exact)
-		if err != nil {
-			return nil, err
-		}
+	documentURL, packageRoot, err := LaneSource(deps.Lane, deps.ChannelBase)
+	if err != nil {
+		return nil, err
 	}
-	var resolver *channelResolver
-	if channelURL != "" {
-		if packageRoot == "" {
-			return nil, fmt.Errorf("%w: %s is required when %s is configured", ErrChannelNotConfigured, EnvPackageRoot, EnvChannelURL)
-		}
-		var err error
-		resolver, err = newChannelResolver(channelURL, packageRoot, config, deps.PublicKey)
-		if err != nil {
-			return nil, err
-		}
+	resolver, err := newChannelResolver(documentURL, packageRoot, config)
+	if err != nil {
+		return nil, err
 	}
 	clock := deps.Clock
 	if clock == nil {
 		clock = func() time.Time { return time.Now().UTC() }
 	}
-	return &Service{db: deps.DB, publicKey: deps.PublicKey, updatesRoot: deps.UpdatesRoot, manifestURL: manifestURL, source: source, channel: resolver, routes: deps.GitHubRoute, packageRoot: packageRoot, packageConfig: config, buildID: strings.TrimSpace(deps.BuildReleaseID), buildVersion: strings.TrimSpace(deps.BuildVersion), buildCompatibilityVersion: strings.TrimSpace(deps.BuildCompatibilityVersion), bootstrapVersion: deps.BuildBootstrapVersion, clock: clock, done: make(chan struct{}), diagnostics: deps.Diagnostics, logger: deps.Logger}, nil
+	return &Service{db: deps.DB, updatesRoot: deps.UpdatesRoot, channel: resolver, routes: deps.GitHubRoute, packageRoot: packageRoot, packageConfig: config, buildID: strings.TrimSpace(deps.BuildReleaseID), buildVersion: strings.TrimSpace(deps.BuildVersion), buildCompatibilityVersion: strings.TrimSpace(deps.BuildCompatibilityVersion), bootstrapVersion: deps.BuildBootstrapVersion, clock: clock, done: make(chan struct{}), diagnostics: deps.Diagnostics, logger: deps.Logger}, nil
 }
 
 func (s *Service) ExitRequested() <-chan struct{} { return s.done }
 func (s *Service) requestExit()                   { s.doneOnce.Do(func() { close(s.done) }) }
 func (s *Service) Running() bool                  { s.mu.Lock(); defer s.mu.Unlock(); return s.chainRunning }
-func (s *Service) configured() bool               { return s != nil && (s.source != nil || s.channel != nil) }
+func (s *Service) configured() bool               { return s != nil && s.channel != nil }
 
 // operationClient snapshots the update route for one operation. The same client
 // carries that operation's channel document, signed manifest and payload
@@ -184,7 +169,7 @@ func (s *Service) resolve(ctx context.Context, client *http.Client) (resolution,
 	if err != nil {
 		return resolution{}, err
 	}
-	manifest, digest, raw, err := FetchAndVerifyManifestFromSourceRaw(ctx, source, s.publicKey)
+	manifest, digest, raw, err := FetchAndVerifyManifestFromSourceRaw(ctx, source)
 	if err != nil {
 		return resolution{}, err
 	}

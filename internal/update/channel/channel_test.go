@@ -1,21 +1,11 @@
 package channel
 
 import (
-	"crypto/ed25519"
 	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 )
-
-func testKey(t *testing.T) (ed25519.PublicKey, ed25519.PrivateKey) {
-	t.Helper()
-	publicKey, privateKey, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return publicKey, privateKey
-}
 
 func validDocument() Document {
 	return Document{
@@ -31,15 +21,8 @@ func validDocument() Document {
 	}
 }
 
-func TestSignAndVerifyRoundTrip(t *testing.T) {
-	publicKey, privateKey := testKey(t)
+func TestDocumentRoundTrip(t *testing.T) {
 	document := validDocument()
-	if err := document.Sign(privateKey); err != nil {
-		t.Fatalf("sign: %v", err)
-	}
-	if document.Signature == "" {
-		t.Fatal("signature was not written")
-	}
 	data, err := json.Marshal(document)
 	if err != nil {
 		t.Fatal(err)
@@ -48,34 +31,30 @@ func TestSignAndVerifyRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if err := decoded.VerifySignature(publicKey); err != nil {
-		t.Fatalf("verify: %v", err)
+	if err := decoded.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
 	}
 	if err := decoded.Matches(document.ReleaseID, document.Version, document.ManifestDigest, document.ReleaseSequence); err != nil {
 		t.Fatalf("match: %v", err)
 	}
 }
 
-// A verification key the deployment does not trust must never make a document
-// authoritative, and a tampered body must not verify with the right key.
-func TestVerifyRejectsForeignKeyAndTamperedBody(t *testing.T) {
-	publicKey, privateKey := testKey(t)
-	otherPublic, _ := testKey(t)
+// A document published before the signature retirement still decodes: the
+// retired field is carried and ignored, so the first release after the change
+// can still read the document it is replacing.
+func TestDecodeKeepsTheRetiredSignatureField(t *testing.T) {
 	document := validDocument()
-	if err := document.Sign(privateKey); err != nil {
+	document.Signature = "retired-signature"
+	data, err := json.Marshal(document)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := document.VerifySignature(otherPublic); err == nil {
-		t.Fatal("a foreign key verified the document")
+	decoded, err := Decode(data)
+	if err != nil {
+		t.Fatalf("a document carrying the retired signature did not decode: %v", err)
 	}
-	tampered := document
-	tampered.ReleaseSequence = document.ReleaseSequence + 1
-	if err := tampered.VerifySignature(publicKey); err == nil {
-		t.Fatal("a tampered sequence verified")
-	}
-	unsigned := validDocument()
-	if err := unsigned.VerifySignature(publicKey); err == nil {
-		t.Fatal("an unsigned document verified")
+	if err := decoded.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
 	}
 }
 

@@ -221,8 +221,6 @@ mkdir -p "$workdir/config"; chmod 0755 "$workdir"; chmod 0777 "$workdir/config"
 alpine_image="alpine:3.20"
 docker image inspect "$alpine_image" >/dev/null 2>&1 || fail_blocked "fixture alpine image unavailable" "$alpine_image"
 docker run --rm --user 0:0 --mount "type=bind,source=$workdir/config,target=/config" "$alpine_image" chown -R "$image_uid:$image_gid" /config || fail_blocked "fixture config ownership preparation failed"
-private_key="${BANSOKO_EMBEDDED_E2E_PRIVATE_KEY:-$root/.local-artifacts/release/private.key}"; public_key="$root/deployment/public.key"
-[[ -f "$private_key" && -f "$public_key" ]] || fail_blocked "fixture signing key unavailable"
 target_id="${BANSOKO_EMBEDDED_E2E_TARGET_RELEASE_ID:-embedded-e2e-rc10}"; target_version="${BANSOKO_EMBEDDED_E2E_TARGET_VERSION:-0.9.0-rc.10}"
 schema_version="$(python3 - "$root/db/migrations" <<'PY'
 import pathlib,re,sys
@@ -242,14 +240,14 @@ fi
 CGO_ENABLED=0 GOOS=linux GOARCH="${BANSOKO_EMBEDDED_E2E_GOARCH:-amd64}" go build -C "$root" -trimpath -buildvcs=false -ldflags "$target_ldflags" -o "$target_server" ./cmd/bansoko-server >>"$log" 2>&1 || fail_blocked "target server build failed" "$log"
 chmod 0755 "$target_server"
 payload="$workdir/embedded-update-v1.tar.gz"
-pack_json="$(go -C "$root" run ./cmd/bansoko-release pack-payload --server-binary "$target_server" --migrations-dir "$root/db/migrations" --defaults-dir "$root/deployment/defaults" --frontend-dist "$root/frontend/dist" --output "$payload" --source-date-epoch 1756000000 --format-version embedded-update-v1 --release-id "$target_id" --version "$target_version" --source-commit "$source_commit" --build-id "$target_id" --target-schema-version "$schema_version" --platform linux --architecture "${BANSOKO_EMBEDDED_E2E_GOARCH:-amd64}")" || fail_blocked "signed payload build failed" "$log"
+pack_json="$(go -C "$root" run ./cmd/bansoko-release pack-payload --server-binary "$target_server" --migrations-dir "$root/db/migrations" --defaults-dir "$root/deployment/defaults" --frontend-dist "$root/frontend/dist" --output "$payload" --source-date-epoch 1756000000 --format-version embedded-update-v1 --release-id "$target_id" --version "$target_version" --source-commit "$source_commit" --build-id "$target_id" --target-schema-version "$schema_version" --platform linux --architecture "${BANSOKO_EMBEDDED_E2E_GOARCH:-amd64}")" || fail_blocked "embedded payload build failed" "$log"
 payload_digest="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["digest"])' <<<"$pack_json")"; payload_size="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["size"])' <<<"$pack_json")"
-payload_signature="$(go -C "$root" run ./cmd/bansoko-release artifact-sign --digest "$payload_digest" --private-key "$private_key")"; artifact_digest="$(shasum -a 256 "$target_server" | awk '{print $1}')"; artifact_size="$(wc -c < "$target_server" | tr -d '[:space:]')"; artifact_signature="$(go -C "$root" run ./cmd/bansoko-release artifact-sign --digest "$artifact_digest" --private-key "$private_key")"
-python3 - "$workdir/manifest-unsigned.json" "$target_id" "$target_version" "$source_commit" "$schema_version" "$payload_digest" "$payload_size" "$payload_signature" "$artifact_digest" "$artifact_size" "$artifact_signature" "$root" "${BANSOKO_EMBEDDED_E2E_GOARCH:-amd64}" <<'PY'
+artifact_digest="$(shasum -a 256 "$target_server" | awk '{print $1}')"; artifact_size="$(wc -c < "$target_server" | tr -d '[:space:]')"
+python3 - "$workdir/manifest-unsigned.json" "$target_id" "$target_version" "$source_commit" "$schema_version" "$payload_digest" "$payload_size" "$artifact_digest" "$artifact_size" "$root" "${BANSOKO_EMBEDDED_E2E_GOARCH:-amd64}" <<'PY'
 import hashlib,json,pathlib,sys
-out,rid,version,commit,schema,pdigest,psize,psig,adigest,asize,asig,root,architecture=sys.argv[1:]
+out,rid,version,commit,schema,pdigest,psize,adigest,asize,root,architecture=sys.argv[1:]
 migrations=[{"id":p.name,"checksum":hashlib.sha256(p.read_bytes()).hexdigest(),"reversible":False,"compatibility":"forward-only"} for p in sorted((pathlib.Path(root)/"db/migrations").glob("*.sql"))]
-d={"schema_version":"release-manifest-1","release_sequence":2,"release_id":rid,"version":version,"channel":"stable","published_at":"2026-08-28T00:00:00Z","source_commit":commit,"api_contract_version":"v2","target_migration_version":schema,"compatible_from_versions":[],"required_downtime":True,"backup_required":True,"rollback_class":"restore_required","migrations":migrations,"images":[],"compose_ref":"deployment/maintainer/docker-compose.production.yml","frontend_ref":"","artifacts":[{"platform":"linux","architecture":architecture,"digest":adigest,"size":int(asize),"signature":asig}],"sbom_ref":"sha256:"+"0"*64,"provenance_ref":"sha256:"+"0"*64,"artifact_digest":adigest,"signature":"","immutable":True,"embedded_update":{"format_version":"embedded-update-v1","platform":"linux","architecture":architecture,"payload_digest":pdigest,"payload_size":int(psize),"payload_signature":psig,"bootstrap_min_version":"embedded-bootstrap-unified","min_image_version":"base-v1","target_release_id":rid,"target_version":version,"target_schema_version":schema,"release_sequence":2}}
+d={"schema_version":"release-manifest-1","release_sequence":2,"release_id":rid,"version":version,"channel":"stable","published_at":"2026-08-28T00:00:00Z","source_commit":commit,"api_contract_version":"v2","target_migration_version":schema,"compatible_from_versions":[],"required_downtime":True,"backup_required":True,"rollback_class":"restore_required","migrations":migrations,"images":[],"compose_ref":"deployment/maintainer/docker-compose.production.yml","frontend_ref":"","artifacts":[{"platform":"linux","architecture":architecture,"digest":adigest,"size":int(asize)}],"sbom_ref":"sha256:"+"0"*64,"provenance_ref":"sha256:"+"0"*64,"artifact_digest":adigest,"immutable":True,"embedded_update":{"format_version":"embedded-update-v1","platform":"linux","architecture":architecture,"payload_digest":pdigest,"payload_size":int(psize),"bootstrap_min_version":"embedded-bootstrap-unified","min_image_version":"base-v1","target_release_id":rid,"target_version":version,"target_schema_version":schema,"release_sequence":2}}
 pathlib.Path(out).write_text(json.dumps(d)+"\n")
 PY
 if [[ "$scenario" == min-image-version ]]; then
@@ -258,18 +256,31 @@ import json,pathlib,sys
 p=pathlib.Path(sys.argv[1]); d=json.loads(p.read_text()); d['embedded_update']['min_image_version']='base-v999'; p.write_text(json.dumps(d)+'\n')
 PY
 fi
-manifest="$workdir/release-manifest.json"
-go -C "$root" run ./cmd/bansoko-release sign --input "$workdir/manifest-unsigned.json" --output "$manifest" --private-key "$private_key" >>"$log" 2>&1 || fail_blocked "manifest signing failed" "$log"
-go -C "$root" run ./cmd/bansoko-release verify-embedded --manifest "$manifest" --public-key "$public_key" --payload "$payload" >>"$log" 2>&1 || fail_blocked "fixture artifact verification failed" "$log"
-channel_url=""; package_root=""
+# Publish the payload and its manifest into the stable lane's package
+# directory, then the channel document that names them: the deployment reads the
+# same channel → manifest → payload path a real lane serves.
+package_dir="$workdir/update-channel"
+mkdir -p "$package_dir"
+manifest="$package_dir/release-manifest.json"
+go -C "$root" run ./cmd/bansoko-release manifest-render --input "$workdir/manifest-unsigned.json" --output "$manifest" >>"$log" 2>&1 || fail_blocked "manifest render failed" "$log"
+go -C "$root" run ./cmd/bansoko-release verify-embedded --manifest "$manifest" --payload "$payload" >>"$log" 2>&1 || fail_blocked "fixture artifact verification failed" "$log"
+mv "$payload" "$package_dir/embedded-update-v1.tar.gz"
 python3 -m http.server "$artifact_port" --bind 0.0.0.0 --directory "$workdir" >"$workdir/artifact-http.log" 2>&1 & artifact_pid=$!
-manifest_url="http://host.docker.internal:${artifact_port}/release-manifest.json"
-for _ in $(seq 1 20); do curl -fsS "http://127.0.0.1:${artifact_port}/release-manifest.json" >/dev/null 2>&1 && break; sleep 1; done
-curl -fsS "http://127.0.0.1:${artifact_port}/release-manifest.json" >/dev/null 2>&1 || fail_blocked "artifact HTTP server did not become ready" "$workdir/artifact-http.log"
+manifest_url="http://host.docker.internal:${artifact_port}/update-channel/release-manifest.json"
+channel_base="http://host.docker.internal:${artifact_port}/"
+go -C "$root" run ./cmd/bansoko-release channel-write \
+  --manifest "$manifest" \
+  --payload "$package_dir/embedded-update-v1.tar.gz" \
+  --manifest-url "$manifest_url" \
+  --channel stable \
+  --expect-release-sequence 2 \
+  --output "$package_dir/channel-v1.json" >>"$log" 2>&1 || fail_blocked "fixture channel write failed" "$log"
+for _ in $(seq 1 20); do curl -fsS "http://127.0.0.1:${artifact_port}/update-channel/channel-v1.json" >/dev/null 2>&1 && break; sleep 1; done
+curl -fsS "http://127.0.0.1:${artifact_port}/update-channel/channel-v1.json" >/dev/null 2>&1 || fail_blocked "artifact HTTP server did not become ready" "$workdir/artifact-http.log"
 python3 "$root/scripts/ci/transform-embedded-compose.py" "$root/deployment/maintainer/docker-compose.production.yml" "$compose" "$volume" "$image"
-python3 - "$compose" "$manifest_url" "$scenario" "$crash_target_step" "${BANSOKO_EMBEDDED_E2E_RUN_ID:-standalone}" "$channel_url" "$package_root" "$volume" <<'PY'
+python3 - "$compose" "$channel_base" "$scenario" "$crash_target_step" "${BANSOKO_EMBEDDED_E2E_RUN_ID:-standalone}" "$volume" <<'PY'
 import pathlib,sys
-dst=pathlib.Path(sys.argv[1]); manifest_url,scenario,crash_target_step,run_id,channel_url,package_root,volume=sys.argv[2:]
+dst=pathlib.Path(sys.argv[1]); channel_base,scenario,crash_target_step,run_id,volume=sys.argv[2:]
 text=dst.read_text()
 def set_env(text,values):
     prefixes={key:f"      {key}:" for key in values}; found=set(); out=[]
@@ -295,7 +306,7 @@ for service in ("postgres","app"):
 anchor="  postgres_data:\n"
 if anchor not in text: raise SystemExit("postgres volume anchor missing")
 text=text.replace(anchor,anchor+f"    labels:\n      bansoko.update-e2e.run: {run_id}\n",1)
-text=set_env(text,{"BANSOKO_UPDATE_MANIFEST_URL":manifest_url,"BANSOKO_UPDATE_CHANNEL_URL":'""',"BANSOKO_UPDATE_PACKAGE_ROOT":'""'})
+text=set_env(text,{"BANSOKO_UPDATE_LANE":'"stable"',"BANSOKO_UPDATE_CHANNEL_BASE":channel_base})
 text=text.replace("    ports:\n      - \"${BANSOKO_APP_PORT:-8000}:8080\"","    extra_hosts:\n      - host.docker.internal:host-gateway\n    ports:\n      - \"${BANSOKO_APP_PORT:-8000}:8080\"").replace('      - "127.0.0.1:29000:29000"\n','')
 if f"  {volume}:\n" not in text: raise SystemExit("updates volume anchor missing")
 dst.write_text(text)

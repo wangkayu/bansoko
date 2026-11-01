@@ -4,7 +4,6 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
-	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -278,24 +277,24 @@ func verifyStagedTree(releaseDir string) (packagemaker.Metadata, error) {
 // manifest and the retained payload archive, then verifies that the extracted
 // files still match the exact archive contents. A metadata file alone is not a
 // trust root because an attacker could replace it together with the tree.
-func VerifyReleaseTree(releaseDir string, publicKey ed25519.PublicKey) error {
-	_, err := VerifyReleaseTreeMetadata(releaseDir, publicKey)
+func VerifyReleaseTree(releaseDir string) error {
+	_, err := VerifyReleaseTreeMetadata(releaseDir)
 	return err
 }
 
 // VerifyReleaseTreeIdentity returns the exact signed outer manifest alongside
 // the verified payload metadata. Callers that persist deployment provenance use
 // this single verification result rather than rereading writable evidence.
-func VerifyReleaseTreeIdentity(releaseDir string, publicKey ed25519.PublicKey) (packagemaker.Metadata, hardeningdomain.ReleaseManifest, error) {
-	metadata, manifest, err := verifyReleaseTree(releaseDir, publicKey, true)
+func VerifyReleaseTreeIdentity(releaseDir string) (packagemaker.Metadata, hardeningdomain.ReleaseManifest, error) {
+	metadata, manifest, err := verifyReleaseTree(releaseDir, true)
 	return metadata, manifest, err
 }
 
 // VerifyReleaseTreeMetadata proves a selected release and returns the metadata
 // that was verified as part of the same operation. Callers use the returned
 // value instead of reading a writable metadata file again after verification.
-func VerifyReleaseTreeMetadata(releaseDir string, publicKey ed25519.PublicKey) (packagemaker.Metadata, error) {
-	metadata, _, err := VerifyReleaseTreeIdentity(releaseDir, publicKey)
+func VerifyReleaseTreeMetadata(releaseDir string) (packagemaker.Metadata, error) {
+	metadata, _, err := VerifyReleaseTreeIdentity(releaseDir)
 	return metadata, err
 }
 
@@ -303,15 +302,12 @@ func VerifyReleaseTreeMetadata(releaseDir string, publicKey ed25519.PublicKey) (
 // into releases/<release-id>/. The temporary directory intentionally has an
 // operation-derived name, so path-to-release binding is checked after publish
 // by VerifyReleaseTree.
-func VerifyStagedReleaseTree(releaseDir string, publicKey ed25519.PublicKey) error {
-	_, _, err := verifyReleaseTree(releaseDir, publicKey, false)
+func VerifyStagedReleaseTree(releaseDir string) error {
+	_, _, err := verifyReleaseTree(releaseDir, false)
 	return err
 }
 
-func verifyReleaseTree(releaseDir string, publicKey ed25519.PublicKey, requireReleasePath bool) (packagemaker.Metadata, hardeningdomain.ReleaseManifest, error) {
-	if len(publicKey) != ed25519.PublicKeySize {
-		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("release tree verification requires an ed25519 public key")
-	}
+func verifyReleaseTree(releaseDir string, requireReleasePath bool) (packagemaker.Metadata, hardeningdomain.ReleaseManifest, error) {
 	manifestBytes, err := os.ReadFile(filepath.Join(releaseDir, SignedManifestEntryPath))
 	if err != nil {
 		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, fmt.Errorf("signed release manifest unreadable: %w", err)
@@ -328,12 +324,6 @@ func verifyReleaseTree(releaseDir string, publicKey ed25519.PublicKey, requireRe
 			return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("signed release manifest contains trailing JSON data")
 		}
 		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, fmt.Errorf("decode trailing signed release manifest data: %w", err)
-	}
-	if err := manifest.VerifySignature(publicKey); err != nil {
-		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, fmt.Errorf("signed release manifest rejected: %w", err)
-	}
-	if err := manifest.VerifyEmbeddedPayloadSignature(publicKey); err != nil {
-		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, fmt.Errorf("signed embedded payload rejected: %w", err)
 	}
 	if manifest.ReleaseID == "" || (requireReleasePath && filepath.Base(filepath.Clean(releaseDir)) != manifest.ReleaseID) {
 		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("signed release manifest does not match its release directory")

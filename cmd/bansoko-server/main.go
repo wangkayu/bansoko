@@ -628,14 +628,14 @@ func runServe(args []string) {
 		ExitRequested() <-chan struct{}
 	}
 	if cfg.UpdateMode == "embedded" {
-		publicKey, keyErr := loadEmbeddedUpdatePublicKey()
-		if keyErr != nil {
-			fatalStartup(runtimeLogger, "embedded update public key unavailable", "embedded_update_public_key_failed")
-		}
 		updatesRoot := deploymentidentity.UpdatesRoot(os.Getenv)
+		if err := updateapplication.CheckRetiredSourceEnv(os.Getenv); err != nil {
+			fatalStartup(runtimeLogger, err.Error(), "embedded_update_retired_env")
+		}
 		updateSvc, svcErr := updateapplication.NewService(updateapplication.Deps{
-			DB: db, PublicKey: publicKey, UpdatesRoot: updatesRoot,
-			ManifestURL: os.Getenv(updateapplication.EnvManifestURL), ChannelURL: os.Getenv(updateapplication.EnvChannelURL), PackageRoot: os.Getenv(updateapplication.EnvPackageRoot),
+			DB: db, UpdatesRoot: updatesRoot,
+			Lane:           os.Getenv(updateapplication.EnvLane),
+			ChannelBase:    os.Getenv(updateapplication.EnvChannelBase),
 			Production:     cfg.Environment == "production",
 			GitHubRoute:    configService,
 			BuildReleaseID: buildinfo.Current().BuildID, BuildVersion: buildinfo.Current().Version,
@@ -1229,15 +1229,11 @@ func validateRunningOverlay(updatesRoot string, identity deploymentidentity.Iden
 	if strings.TrimSpace(identity.SelectedReleaseID) == "" {
 		return errors.New("overlay identity has no selected release")
 	}
-	// Reuse the same signed-tree verifier as bootstrap. This rereads the
-	// descriptor, retained payload and extracted tree on every readiness call,
-	// so mutation after process start cannot leave the instance ready.
-	publicKey, err := loadEmbeddedUpdatePublicKey()
-	if err != nil {
-		return fmt.Errorf("read deployment identity public key: %w", err)
-	}
+	// Reuse the same tree verifier as bootstrap. This rereads the descriptor,
+	// retained payload and extracted tree on every readiness call, so mutation
+	// after process start cannot leave the instance ready.
 	releaseDir := filepath.Join(updatesRoot, "releases", identity.SelectedReleaseID)
-	metadata, manifest, err := updateapplication.VerifyReleaseTreeIdentity(releaseDir, publicKey)
+	metadata, manifest, err := updateapplication.VerifyReleaseTreeIdentity(releaseDir)
 	if err != nil {
 		return err
 	}

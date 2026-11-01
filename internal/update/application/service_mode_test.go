@@ -1,7 +1,6 @@
 package application
 
 import (
-	"crypto/ed25519"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -21,11 +20,7 @@ func TestNewServiceRequiresEmbeddedMode(t *testing.T) {
 }
 
 func TestNewServiceDoesNotRequireGateFenceJournalOrBackup(t *testing.T) {
-	_, private, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	service, err := NewService(Deps{UpdateMode: "embedded", PublicKey: private.Public().(ed25519.PublicKey), UpdatesRoot: t.TempDir()})
+	service, err := NewService(Deps{UpdateMode: "embedded", UpdatesRoot: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}

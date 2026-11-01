@@ -8,7 +8,7 @@
 # Two modes:
 #   test     (main push)   immutable `<VERSION>-<sha9>`, moving `:test`
 #   release  (vX.Y.Z tag)  immutable `X.Y.Z`, moving `:latest`; runs only after
-#                          the signed release job of the same run succeeded,
+#                          the release job of the same run succeeded,
 #                          so `:latest` never moves to a version the channel
 #                          refused
 #
@@ -106,7 +106,7 @@ printf '%s' "$DOCKERHUB_TOKEN" | docker login --username "$user" --password-stdi
 
 # A release version tag is written once. A rerun of the same run finds its own
 # commit there and rebuilds the same source; a different commit under the same
-# version is refused (the signed channel gate refuses it as well).
+# version is refused (the channel gate refuses it as well).
 if [[ "$mode" == "release" ]]; then
   existing="$(docker buildx imagetools inspect "$image:$immutable_tag" --format '{{json .Image}}' 2>/dev/null || true)"
   if [[ -n "$existing" ]]; then

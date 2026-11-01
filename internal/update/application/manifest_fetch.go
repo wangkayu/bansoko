@@ -3,7 +3,6 @@ package application
 import (
 	"bansoko/internal/observability/outbound"
 	"context"
-	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"io"
@@ -33,7 +32,7 @@ func payloadSource(manifestURL string) (string, error) {
 // bytes are returned alongside the decoded manifest and its canonical signing
 // digest: admission persists exactly those bytes, so the durable copy is the
 // document the deployment actually verified rather than a re-encoding of it.
-func fetchAndVerifyManifestRaw(ctx context.Context, source *UpdateHTTPSource, publicKey ed25519.PublicKey) (hardeningdomain.ReleaseManifest, string, []byte, error) {
+func fetchAndVerifyManifestRaw(ctx context.Context, source *UpdateHTTPSource) (hardeningdomain.ReleaseManifest, string, []byte, error) {
 	if source == nil {
 		return hardeningdomain.ReleaseManifest{}, "", nil, errors.New("release manifest HTTP source is not configured")
 	}
@@ -41,24 +40,24 @@ func fetchAndVerifyManifestRaw(ctx context.Context, source *UpdateHTTPSource, pu
 	if err != nil {
 		return hardeningdomain.ReleaseManifest{}, "", nil, fmt.Errorf("fetch release manifest: %w", err)
 	}
-	return decodeAndVerifyManifest(resp, publicKey)
+	return decodeAndVerifyManifest(resp)
 }
 
 // fetchAndVerifyManifest is the bytes-free form retained for callers that only
 // need the decoded identity.
-func fetchAndVerifyManifest(ctx context.Context, source *UpdateHTTPSource, publicKey ed25519.PublicKey) (hardeningdomain.ReleaseManifest, string, error) {
-	manifest, digest, _, err := fetchAndVerifyManifestRaw(ctx, source, publicKey)
+func fetchAndVerifyManifest(ctx context.Context, source *UpdateHTTPSource) (hardeningdomain.ReleaseManifest, string, error) {
+	manifest, digest, _, err := fetchAndVerifyManifestRaw(ctx, source)
 	return manifest, digest, err
 }
 
 // VerifyManifestDocument strictly decodes one bounded signed manifest document
 // and proves every surface the deployment trusts: strict schema, canonical
-// signing digest, manifest signature, embedded-update contract and payload
-// signature. It is the single manifest verification path shared by the HTTP
-// source, the durable copy and the release tooling, so a publisher can never
-// bless bytes the deployment would refuse, and the deployment can never accept
-// a document a signer would not have produced.
-func VerifyManifestDocument(data []byte, publicKey ed25519.PublicKey) (hardeningdomain.ReleaseManifest, string, error) {
+// digest and the embedded-update contract. It is the single manifest
+// verification path shared by the HTTP source, the durable copy and the
+// release tooling, so a publisher can never bless bytes the deployment would
+// refuse. Releases are not signed (owner 2026-11-01): the manifest's identity
+// is its digest, its release sequence and the repository the client reads.
+func VerifyManifestDocument(data []byte) (hardeningdomain.ReleaseManifest, string, error) {
 	if len(data) > maxManifestBytes {
 		return hardeningdomain.ReleaseManifest{}, "", errors.New("release manifest exceeds the bounded size")
 	}
@@ -70,14 +69,8 @@ func VerifyManifestDocument(data []byte, publicKey ed25519.PublicKey) (hardening
 	if err != nil {
 		return hardeningdomain.ReleaseManifest{}, "", fmt.Errorf("canonicalize release manifest: %w", err)
 	}
-	if err := manifest.VerifySignature(publicKey); err != nil {
-		return hardeningdomain.ReleaseManifest{}, "", fmt.Errorf("release manifest signature rejected: %w", err)
-	}
 	if err := manifest.ValidateForEmbeddedUpdate(); err != nil {
 		return hardeningdomain.ReleaseManifest{}, "", fmt.Errorf("embedded update segment rejected: %w", err)
-	}
-	if err := manifest.VerifyEmbeddedPayloadSignature(publicKey); err != nil {
-		return hardeningdomain.ReleaseManifest{}, "", fmt.Errorf("payload signature rejected: %w", err)
 	}
 	return manifest, digest, nil
 }
@@ -86,7 +79,7 @@ func VerifyManifestDocument(data []byte, publicKey ed25519.PublicKey) (hardening
 // it is also useful to ensure authentication failures never reach signature
 // or staging code. The returned bytes are the bounded response document that
 // was decoded and verified.
-func decodeAndVerifyManifest(resp *http.Response, publicKey ed25519.PublicKey) (hardeningdomain.ReleaseManifest, string, []byte, error) {
+func decodeAndVerifyManifest(resp *http.Response) (hardeningdomain.ReleaseManifest, string, []byte, error) {
 	if resp == nil {
 		return hardeningdomain.ReleaseManifest{}, "", nil, errors.New("release manifest response is empty")
 	}
@@ -99,7 +92,7 @@ func decodeAndVerifyManifest(resp *http.Response, publicKey ed25519.PublicKey) (
 	if err != nil {
 		return hardeningdomain.ReleaseManifest{}, "", nil, fmt.Errorf("read release manifest: %w", err)
 	}
-	manifest, digest, err := VerifyManifestDocument(body, publicKey)
+	manifest, digest, err := VerifyManifestDocument(body)
 	if err != nil {
 		return hardeningdomain.ReleaseManifest{}, "", nil, err
 	}
@@ -109,23 +102,23 @@ func decodeAndVerifyManifest(resp *http.Response, publicKey ed25519.PublicKey) (
 // FetchAndVerifyManifest retains the original URL-based helper for package
 // callers and tests. Production update flow uses the source-aware helper below
 // so manifest and payload share one authentication/redirect policy.
-func FetchAndVerifyManifest(ctx context.Context, client *http.Client, publicKey ed25519.PublicKey, manifestURL string) (hardeningdomain.ReleaseManifest, string, error) {
+func FetchAndVerifyManifest(ctx context.Context, client *http.Client, manifestURL string) (hardeningdomain.ReleaseManifest, string, error) {
 	source, err := NewUpdateHTTPSource(UpdateHTTPSourceConfig{ManifestURL: manifestURL, HTTPClient: client})
 	if err != nil {
 		return hardeningdomain.ReleaseManifest{}, "", err
 	}
-	return fetchAndVerifyManifest(ctx, source, publicKey)
+	return fetchAndVerifyManifest(ctx, source)
 }
 
 // FetchAndVerifyManifestFromSource is the source-aware public entry point for
 // replay checks and other callers that must reuse deployment authentication.
-func FetchAndVerifyManifestFromSource(ctx context.Context, source *UpdateHTTPSource, publicKey ed25519.PublicKey) (hardeningdomain.ReleaseManifest, string, error) {
-	return fetchAndVerifyManifest(ctx, source, publicKey)
+func FetchAndVerifyManifestFromSource(ctx context.Context, source *UpdateHTTPSource) (hardeningdomain.ReleaseManifest, string, error) {
+	return fetchAndVerifyManifest(ctx, source)
 }
 
 // FetchAndVerifyManifestFromSourceRaw is the same verification with the
 // received document bytes. The embedded updater uses it so the persisted
 // manifest copy is byte-identical to what the deployment verified.
-func FetchAndVerifyManifestFromSourceRaw(ctx context.Context, source *UpdateHTTPSource, publicKey ed25519.PublicKey) (hardeningdomain.ReleaseManifest, string, []byte, error) {
-	return fetchAndVerifyManifestRaw(ctx, source, publicKey)
+func FetchAndVerifyManifestFromSourceRaw(ctx context.Context, source *UpdateHTTPSource) (hardeningdomain.ReleaseManifest, string, []byte, error) {
+	return fetchAndVerifyManifestRaw(ctx, source)
 }

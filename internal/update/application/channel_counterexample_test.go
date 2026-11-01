@@ -2,7 +2,6 @@ package application
 
 import (
 	"context"
-	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -19,9 +18,10 @@ import (
 )
 
 const (
-	channelCounterexampleDocumentPath = "/packages/channel/channel-v1.json"
-	channelCounterexampleManifestPath = "/packages/v1/release-manifest.json"
-	channelCounterexamplePayloadPath  = "/packages/v1/" + PayloadFileName
+	channelCounterexamplePackageRoot  = "/update-channel"
+	channelCounterexampleDocumentPath = channelCounterexamplePackageRoot + "/channel-v1.json"
+	channelCounterexampleManifestPath = channelCounterexamplePackageRoot + "/v1/release-manifest.json"
+	channelCounterexamplePayloadPath  = channelCounterexamplePackageRoot + "/v1/" + PayloadFileName
 )
 
 // requestRecord is one request the mock source host observed, including the
@@ -149,13 +149,12 @@ func (r *channelCounterexampleRig) setDocumentBody(body []byte) {
 
 // newResolver builds a channel resolver whose package root and channel document
 // both live on this rig.
-func (r *channelCounterexampleRig) newResolver(t *testing.T, publicKey ed25519.PublicKey) *channelResolver {
+func (r *channelCounterexampleRig) newResolver(t *testing.T) *channelResolver {
 	t.Helper()
 	resolver, err := newChannelResolver(
 		r.recording.URL()+channelCounterexampleDocumentPath,
-		r.recording.URL()+"/packages",
+		r.recording.URL()+channelCounterexamplePackageRoot,
 		UpdateHTTPSourceConfig{},
-		publicKey,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -163,14 +162,13 @@ func (r *channelCounterexampleRig) newResolver(t *testing.T, publicKey ed25519.P
 	return resolver
 }
 
-func (r *channelCounterexampleRig) newService(t *testing.T, publicKey ed25519.PublicKey) *Service {
+func (r *channelCounterexampleRig) newService(t *testing.T) *Service {
 	t.Helper()
 	service, err := NewService(Deps{
 		UpdateMode:  "embedded",
-		PublicKey:   publicKey,
 		UpdatesRoot: t.TempDir(),
-		ChannelURL:  r.recording.URL() + channelCounterexampleDocumentPath,
-		PackageRoot: r.recording.URL() + "/packages",
+		Lane:        LaneStable,
+		ChannelBase: r.recording.URL(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -178,21 +176,14 @@ func (r *channelCounterexampleRig) newService(t *testing.T, publicKey ed25519.Pu
 	return service
 }
 
-// buildManifestBody signs one well-formed embedded release manifest with the
-// given key, so a forged manifest is a decode-valid document with an untrusted
-// signature rather than a broken body.
-func buildManifestBody(t *testing.T, signingKey ed25519.PrivateKey) (string, []byte) {
+// buildManifestBody renders one well-formed embedded release manifest; the
+// channel document binds it by digest, so any other body is a different
+// release rather than a forged one.
+func buildManifestBody(t *testing.T) (string, []byte) {
 	t.Helper()
 	payload := []byte("channel counterexample payload")
 	payloadDigest := hardeningdomain.HashArtifact(payload)
-	payloadSignature, err := hardeningdomain.SignArtifactDigest(signingKey, payloadDigest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	manifest := signedChannelManifestFixture(payloadDigest, payloadSignature)
-	if err := manifest.Sign(signingKey); err != nil {
-		t.Fatal(err)
-	}
+	manifest := embeddedManifestFixture(payloadDigest)
 	digest, err := manifest.CanonicalDigest()
 	if err != nil {
 		t.Fatal(err)
@@ -204,9 +195,9 @@ func buildManifestBody(t *testing.T, signingKey ed25519.PrivateKey) (string, []b
 	return digest, body
 }
 
-// channelDocumentFixture signs one discovery document. The signing key and the
-// named identity are parameters so a test can forge either surface.
-func channelDocumentFixture(t *testing.T, signingKey ed25519.PrivateKey, manifestURL, manifestDigest, releaseID string, mutate func(*channel.Document)) []byte {
+// channelDocumentFixture renders one discovery document. The named identity is a
+// parameter so a test can make the document point somewhere else.
+func channelDocumentFixture(t *testing.T, manifestURL, manifestDigest, releaseID string, mutate func(*channel.Document)) []byte {
 	t.Helper()
 	document := channel.Document{
 		SchemaVersion:   channel.SchemaVersion,
@@ -221,9 +212,6 @@ func channelDocumentFixture(t *testing.T, signingKey ed25519.PrivateKey, manifes
 	}
 	if mutate != nil {
 		mutate(&document)
-	}
-	if err := document.Sign(signingKey); err != nil {
-		t.Fatal(err)
 	}
 	body, err := json.Marshal(document)
 	if err != nil {
@@ -275,21 +263,25 @@ func assertRequestGraph(t *testing.T, rig *channelCounterexampleRig, wantDocumen
 // exactly where it should: a refused document never reaches the manifest, a
 // refused or forged manifest never reaches the payload, and every request went
 // out anonymous.
-func TestChannelRefusalsAndForgeriesFailClosed(t *testing.T) {
-	trustedPublic, trustedPrivate, err := ed25519.GenerateKey(nil)
+func TestChannelRefusalsFailClosed(t *testing.T) {
+	trustedDigest, trustedManifest := buildManifestBody(t)
+	// A second, well-formed release the channel does not name: it differs only
+	// in identity, so the only thing standing between it and admission is the
+	// channel's digest binding.
+	other := embeddedManifestFixture(hardeningdomain.HashArtifact([]byte("another channel counterexample payload")))
+	other.ReleaseID = "release-test-2000"
+	other.Version = "v2.1.0"
+	other.EmbeddedUpdate.TargetReleaseID = "release-test-2000"
+	other.EmbeddedUpdate.TargetVersion = "v2.1.0"
+	other.ReleaseSequence = 2000
+	other.EmbeddedUpdate.ReleaseSequence = 2000
+	otherManifest, err := json.Marshal(other)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, forgerPrivate, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	trustedDigest, trustedManifest := buildManifestBody(t, trustedPrivate)
-	_, forgedManifest := buildManifestBody(t, forgerPrivate)
 
 	cases := []struct {
 		name           string
-		documentSigner ed25519.PrivateKey
 		documentMutate func(*channel.Document)
 		manifestBody   []byte
 		statuses       map[string]int
@@ -298,60 +290,46 @@ func TestChannelRefusalsAndForgeriesFailClosed(t *testing.T) {
 		wantManifest   int
 	}{
 		{
-			name:           "document HTTP 401",
-			documentSigner: trustedPrivate,
-			manifestBody:   trustedManifest,
-			statuses:       map[string]int{channelCounterexampleDocumentPath: http.StatusUnauthorized},
-			wantCode:       "UPDATE_CHANNEL_UNAVAILABLE",
-			wantDocument:   1,
-			wantManifest:   0,
+			name:         "document HTTP 401",
+			manifestBody: trustedManifest,
+			statuses:     map[string]int{channelCounterexampleDocumentPath: http.StatusUnauthorized},
+			wantCode:     "UPDATE_CHANNEL_UNAVAILABLE",
+			wantDocument: 1,
+			wantManifest: 0,
 		},
 		{
-			name:           "document HTTP 403",
-			documentSigner: trustedPrivate,
-			manifestBody:   trustedManifest,
-			statuses:       map[string]int{channelCounterexampleDocumentPath: http.StatusForbidden},
-			wantCode:       "UPDATE_CHANNEL_UNAVAILABLE",
-			wantDocument:   1,
-			wantManifest:   0,
+			name:         "document HTTP 403",
+			manifestBody: trustedManifest,
+			statuses:     map[string]int{channelCounterexampleDocumentPath: http.StatusForbidden},
+			wantCode:     "UPDATE_CHANNEL_UNAVAILABLE",
+			wantDocument: 1,
+			wantManifest: 0,
 		},
 		{
-			name:           "manifest HTTP 401",
-			documentSigner: trustedPrivate,
-			manifestBody:   trustedManifest,
-			statuses:       map[string]int{channelCounterexampleManifestPath: http.StatusUnauthorized},
-			wantCode:       "UPDATE_CHANNEL_UNAVAILABLE",
-			wantDocument:   1,
-			wantManifest:   1,
+			name:         "manifest HTTP 401",
+			manifestBody: trustedManifest,
+			statuses:     map[string]int{channelCounterexampleManifestPath: http.StatusUnauthorized},
+			wantCode:     "UPDATE_CHANNEL_UNAVAILABLE",
+			wantDocument: 1,
+			wantManifest: 1,
 		},
 		{
-			name:           "manifest HTTP 403",
-			documentSigner: trustedPrivate,
-			manifestBody:   trustedManifest,
-			statuses:       map[string]int{channelCounterexampleManifestPath: http.StatusForbidden},
-			wantCode:       "UPDATE_CHANNEL_UNAVAILABLE",
-			wantDocument:   1,
-			wantManifest:   1,
+			name:         "manifest HTTP 403",
+			manifestBody: trustedManifest,
+			statuses:     map[string]int{channelCounterexampleManifestPath: http.StatusForbidden},
+			wantCode:     "UPDATE_CHANNEL_UNAVAILABLE",
+			wantDocument: 1,
+			wantManifest: 1,
 		},
 		{
-			name:           "document forged signature",
-			documentSigner: forgerPrivate,
-			manifestBody:   trustedManifest,
-			wantCode:       "UPDATE_CHANNEL_INVALID",
-			wantDocument:   1,
-			wantManifest:   0,
-		},
-		{
-			name:           "manifest forged signature",
-			documentSigner: trustedPrivate,
-			manifestBody:   forgedManifest,
-			wantCode:       "UPDATE_CHANNEL_UNAVAILABLE",
-			wantDocument:   1,
-			wantManifest:   1,
+			name:         "manifest is another release",
+			manifestBody: otherManifest,
+			wantCode:     "UPDATE_CHANNEL_MISMATCH",
+			wantDocument: 1,
+			wantManifest: 1,
 		},
 		{
 			name:           "document names another release",
-			documentSigner: trustedPrivate,
 			documentMutate: func(d *channel.Document) { d.ReleaseID = "release-not-published" },
 			manifestBody:   trustedManifest,
 			wantCode:       "UPDATE_CHANNEL_MISMATCH",
@@ -360,7 +338,6 @@ func TestChannelRefusalsAndForgeriesFailClosed(t *testing.T) {
 		},
 		{
 			name:           "document names another digest",
-			documentSigner: trustedPrivate,
 			documentMutate: func(d *channel.Document) { d.ManifestDigest = strings.Repeat("d", 64) },
 			manifestBody:   trustedManifest,
 			wantCode:       "UPDATE_CHANNEL_MISMATCH",
@@ -373,9 +350,9 @@ func TestChannelRefusalsAndForgeriesFailClosed(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			rig := newChannelCounterexampleRig(t, tc.manifestBody, tc.statuses)
 			documentURL := rig.recording.URL() + channelCounterexampleManifestPath
-			rig.setDocumentBody(channelDocumentFixture(t, tc.documentSigner, documentURL, trustedDigest, "release-test-1004", tc.documentMutate))
+			rig.setDocumentBody(channelDocumentFixture(t, documentURL, trustedDigest, "release-test-1004", tc.documentMutate))
 
-			resolver := rig.newResolver(t, trustedPublic)
+			resolver := rig.newResolver(t)
 			_, resolveErr := resolver.resolve(context.Background())
 			if resolveErr == nil {
 				t.Fatalf("%s: channel resolve unexpectedly succeeded", tc.name)
@@ -389,7 +366,7 @@ func TestChannelRefusalsAndForgeriesFailClosed(t *testing.T) {
 			}
 			assertRequestGraph(t, rig, tc.wantDocument, tc.wantManifest)
 
-			service := rig.newService(t, trustedPublic)
+			service := rig.newService(t)
 			check, checkErr := service.CheckUpdate(context.Background())
 			if checkErr == nil {
 				t.Fatalf("%s: CheckUpdate admitted the channel", tc.name)
@@ -411,11 +388,6 @@ func TestChannelRefusalsAndForgeriesFailClosed(t *testing.T) {
 // once: the mock host answers 401 to every document request, and the test
 // fails if the resolver resolves anyway, retries, or touches the manifest.
 func TestChannelDoesNotRetryARefusedDocument(t *testing.T) {
-	trustedPublic, _, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	recording := newRecordingServer(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 	})
@@ -423,9 +395,8 @@ func TestChannelDoesNotRetryARefusedDocument(t *testing.T) {
 
 	resolver, err := newChannelResolver(
 		recording.URL()+channelCounterexampleDocumentPath,
-		recording.URL()+"/packages",
+		recording.URL()+channelCounterexamplePackageRoot,
 		UpdateHTTPSourceConfig{},
-		trustedPublic,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -441,7 +412,7 @@ func TestChannelDoesNotRetryARefusedDocument(t *testing.T) {
 	}
 }
 
-func signedChannelManifestFixture(payloadDigest, payloadSignature string) hardeningdomain.ReleaseManifest {
+func embeddedManifestFixture(payloadDigest string) hardeningdomain.ReleaseManifest {
 	return hardeningdomain.ReleaseManifest{
 		SchemaVersion:          "release-manifest-1",
 		ReleaseSequence:        1004,
@@ -459,7 +430,6 @@ func signedChannelManifestFixture(payloadDigest, payloadSignature string) harden
 			Architecture: "amd64",
 			Digest:       strings.Repeat("b", 64),
 			Size:         1,
-			Signature:    "artifact-signature",
 		}},
 		SBOMRef:        "sbom.json",
 		ProvenanceRef:  "provenance.json",
@@ -471,7 +441,6 @@ func signedChannelManifestFixture(payloadDigest, payloadSignature string) harden
 			Architecture:        "amd64",
 			PayloadDigest:       payloadDigest,
 			PayloadSize:         22,
-			PayloadSignature:    payloadSignature,
 			BootstrapMinVersion: "embedded-bootstrap-v1",
 			MinImageVersion:     "base-v1",
 			TargetReleaseID:     "release-test-1004",

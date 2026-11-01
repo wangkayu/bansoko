@@ -1,26 +1,25 @@
 // Package channel defines the release-discovery document an already configured
-// deployment reads to learn which signed CI release is the newest one, without
-// the deployment naming a version itself.
+// deployment reads to learn which CI release is the newest one, without the
+// deployment naming a version itself.
 //
 // The document is a locator, never a release identity: it names one immutable
 // release (`release_id`, `version`, positive `release_sequence`) and the exact
 // immutable manifest URL that carries it. A deployment that resolves the
 // channel still fetches the named manifest through its own source policy and
-// re-verifies the signature, digest, payload signature, schema and release
-// sequence; the durable fence floor, not the channel, authorizes an admission.
-// The channel's own signature exists so an operator and the runtime can tell a
-// deliberate publication from tampered or truncated metadata; a document that
-// does not verify fails closed and is never silently replaced by another
-// candidate.
+// re-checks its digest, payload digest, schema and release sequence; the
+// durable fence floor, not the channel, authorizes an admission.
 //
-// The document is shared by the CI signer (`cmd/bansoko-release channel-sign`) and
-// the runtime verifier, so the canonical form exists exactly once.
+// The document is not signed (owner 2026-11-01): the update client only ever
+// reads this project's own channel branches over HTTPS, so the repository is
+// the trust anchor and a signature would only add a key to lose. A document
+// that does not decode or does not validate still fails closed.
+//
+// The document is shared by CI (`cmd/bansoko-release channel-write`) and the
+// runtime reader, so the canonical form exists exactly once.
 package channel
 
 import (
 	"bytes"
-	"crypto/ed25519"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -47,12 +46,12 @@ var (
 	// too large, not valid JSON, unknown fields, trailing data, or an identity
 	// that violates the contract. All of them fail closed.
 	ErrDocument = errors.New("update channel document rejected")
-	// ErrSignature reports a channel document whose signature does not verify.
-	ErrSignature = errors.New("update channel signature rejected")
 )
 
-// Document is one published channel pointer. Field order is the canonical
-// serialization order, so Signature must stay last.
+// Document is one published channel pointer. The document is not signed: a
+// deployment only ever reads this project's own channel branches over HTTPS,
+// and the manifest it names is bound by its digest and the durable release
+// sequence.
 type Document struct {
 	SchemaVersion   string    `json:"schema_version"`
 	Channel         string    `json:"channel"`
@@ -63,19 +62,15 @@ type Document struct {
 	ManifestDigest  string    `json:"manifest_digest"`
 	SourceCommit    string    `json:"source_commit"`
 	PublishedAt     time.Time `json:"published_at"`
-	Signature       string    `json:"signature"`
+	// Signature is the retired document signature (owner 2026-11-01). It stays
+	// in the struct only so a document published before the retirement still
+	// decodes; nothing reads or checks it.
+	Signature string `json:"signature,omitempty"`
 }
 
-// signingCopy returns the document without its signature: the exact byte set
-// both the signer and the verifier canonicalize.
-func (d Document) signingCopy() Document {
-	d.Signature = ""
-	return d
-}
-
-// CanonicalBytes returns the deterministic document bytes that are signed.
+// CanonicalBytes returns the deterministic document bytes.
 func (d Document) CanonicalBytes() ([]byte, error) {
-	return json.Marshal(d.signingCopy())
+	return json.Marshal(d)
 }
 
 // Decode strictly decodes one bounded channel document. Unknown fields,
@@ -135,53 +130,6 @@ func (d Document) Validate() error {
 	}
 	if d.PublishedAt.IsZero() {
 		return fmt.Errorf("%w: published_at is required", ErrDocument)
-	}
-	return nil
-}
-
-// Sign validates the document, then signs its canonical bytes with the release
-// key. The signature is base64 raw-std, matching the release manifest and
-// artifact signatures.
-func (d *Document) Sign(privateKey ed25519.PrivateKey) error {
-	if d == nil {
-		return errors.New("channel document is required")
-	}
-	if len(privateKey) != ed25519.PrivateKeySize {
-		return errors.New("ed25519 private key is required")
-	}
-	if err := d.Validate(); err != nil {
-		return err
-	}
-	data, err := d.CanonicalBytes()
-	if err != nil {
-		return fmt.Errorf("canonicalize channel document: %w", err)
-	}
-	d.Signature = base64.RawStdEncoding.EncodeToString(ed25519.Sign(privateKey, data))
-	return nil
-}
-
-// VerifySignature validates the document's contract and proves its signature
-// against the deployment's trusted public key.
-func (d Document) VerifySignature(publicKey ed25519.PublicKey) error {
-	if len(publicKey) != ed25519.PublicKeySize {
-		return errors.New("ed25519 public key is required")
-	}
-	if err := d.Validate(); err != nil {
-		return err
-	}
-	if strings.TrimSpace(d.Signature) == "" {
-		return fmt.Errorf("%w: signature is required", ErrSignature)
-	}
-	signature, err := base64.RawStdEncoding.DecodeString(d.Signature)
-	if err != nil || len(signature) != ed25519.SignatureSize {
-		return fmt.Errorf("%w: signature is invalid", ErrSignature)
-	}
-	data, err := d.CanonicalBytes()
-	if err != nil {
-		return fmt.Errorf("canonicalize channel document: %w", err)
-	}
-	if !ed25519.Verify(publicKey, data, signature) {
-		return fmt.Errorf("%w: verification failed", ErrSignature)
 	}
 	return nil
 }

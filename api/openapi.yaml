@@ -5043,9 +5043,9 @@ paths:
       operationId: admitUpdate
       x-scope: write
       description: |
-        Admits a container-embedded self-update operation. The server uses the
-        deployment-owned manifest source and verifies that target_release_id and
-        manifest_digest still identify the signed candidate.
+        Admits a container-embedded self-update operation. The server re-resolves
+        the release through the deployment's configured update lane and verifies
+        that target_release_id and manifest_digest still identify the candidate.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:

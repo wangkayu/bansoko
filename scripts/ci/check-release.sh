@@ -2,7 +2,8 @@
 # Release bundle validator (P0.7). Fail-closed component consistency check.
 #
 # Verifies:
-#   1. manifest signature (existing cmd/bansoko-release verify);
+#   1. manifest document (existing cmd/bansoko-release verify: strict decode and,
+#      when an artifact is given, its digest);
 #   2. manifest schema_version is the current bundle contract (release-manifest-1);
 #   3. production compose constraints: no build:, application images pinned
 #      by @sha256:, no source mounts, healthcheck uses /livez (not
@@ -11,7 +12,7 @@
 #      db/migrations, schema target is the newest migration, images is
 #      non-empty for production, frontend_ref matches frontend/dist when
 #      present;
-#   5. embedded update segment: identity binding, payload digest/signature and
+#   5. embedded update segment: identity binding, payload digest and
 #      the bootstrap capability contract (UPDATE-029): `bootstrap_min_version`
 #      must name a supported capability and must not exceed the bootstrap
 #      capability baked into the image the release was built with
@@ -25,11 +26,10 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 
 manifest="${BANSOKO_RELEASE_MANIFEST:-}"
-public_key="${BANSOKO_RELEASE_PUBLIC_KEY:-}"
 artifact="${BANSOKO_RELEASE_ARTIFACT:-}"
 compose="${BANSOKO_RELEASE_COMPOSE:-$root/deployment/maintainer/docker-compose.production.yml}"
-if [[ -z "$manifest" || -z "$public_key" ]]; then
-  echo '{"valid":false,"reason":"BANSOKO_RELEASE_MANIFEST and BANSOKO_RELEASE_PUBLIC_KEY are required"}' >&2
+if [[ -z "$manifest" ]]; then
+  echo '{"valid":false,"reason":"BANSOKO_RELEASE_MANIFEST is required"}' >&2
   exit 2
 fi
 
@@ -42,12 +42,12 @@ if [[ "${BANSOKO_RELEASE_ALLOW_EMPTY_IMAGES:-0}" == "1" && "${BANSOKO_REHEARSAL:
   fail "BANSOKO_RELEASE_ALLOW_EMPTY_IMAGES=1 is rehearsal-only and requires BANSOKO_REHEARSAL=1"
 fi
 
-# 1. Signature verification.
-args=(run ./cmd/bansoko-release verify --manifest "$manifest" --public-key "$public_key")
+# 1. Manifest document.
+args=(run ./cmd/bansoko-release verify --manifest "$manifest")
 if [[ -n "$artifact" ]]; then
   args+=(--artifact "$artifact")
 fi
-(cd "$root" && go "${args[@]}") >/dev/null 2>&1 || fail "manifest signature verification failed"
+(cd "$root" && go "${args[@]}") >/dev/null 2>&1 || fail "manifest verification failed"
 
 # 2. Schema validation. Only the embedded strict release-manifest-1 schema is
 # accepted. Empty images is rehearsal-only.
@@ -57,9 +57,9 @@ case "$schema" in
     if [[ -z "$artifact" ]]; then
       fail "BANSOKO_RELEASE_ARTIFACT is required for release-manifest-1 manifests"
     fi
-    # Re-run the signed verification with the artifact bound to the manifest;
-    # no manifest may pass without this digest check.
-    artifact_args=(run ./cmd/bansoko-release verify --manifest "$manifest" --public-key "$public_key" --artifact "$artifact")
+    # Re-run the verification with the artifact bound to the manifest; no
+    # manifest may pass without this digest check.
+    artifact_args=(run ./cmd/bansoko-release verify --manifest "$manifest" --artifact "$artifact")
     (cd "$root" && go "${artifact_args[@]}") >/dev/null 2>&1 || fail "manifest/artifact verification failed"
     schema_args=(run ./cmd/bansoko-release validate-schema --manifest "$manifest")
     if [[ "${BANSOKO_RELEASE_ALLOW_EMPTY_IMAGES:-0}" == "1" && "${BANSOKO_REHEARSAL:-0}" == "1" ]]; then schema_args+=(--allow-empty-images=true); fi
@@ -84,8 +84,7 @@ ruby -ryaml -e '
     end
     (svc.fetch("volumes", []) || []).each do |vol|
       raw = vol.is_a?(Hash) ? vol.fetch("source", "") : vol.to_s
-      if raw.start_with?(".", "/", "~", "${PWD}", "${BANSOKO_RELEASE_PUBLIC_KEY_FILE")
-        next if raw.include?("deployment/public.key") # deployment-owned read-only secret
+      if raw.start_with?(".", "/", "~", "${PWD}")
         abort "service #{name} volume looks like a source mount: #{raw}"
       end
     end
@@ -149,9 +148,9 @@ if [[ -d "$root/frontend/dist" ]]; then
 fi
 
 # 5. Embedded update segment contract (B1): presence, three-layer identity
-#    binding, bare-hex payload digest, monotonic sequence, payload signature,
-#    and — when the archive sits next to the manifest — a full unpack smoke
-#    check against release-metadata.json.
+#    binding, bare-hex payload digest, monotonic sequence, and — when the
+#    archive sits next to the manifest — a full unpack smoke check against
+#    release-metadata.json.
 embedded_ok="$(ruby -rjson -e '
   m = JSON.parse(File.read(ARGV.fetch(0)))
   eu = m["embedded_update"]
@@ -162,7 +161,6 @@ embedded_ok="$(ruby -rjson -e '
   abort "format_version must be embedded-update-v1" unless eu["format_version"] == "embedded-update-v1"
   abort "payload_digest must be bare 64-hex sha256" unless eu["payload_digest"] =~ /\A[a-f0-9]{64}\z/
   abort "payload_size must be positive" unless eu["payload_size"].is_a?(Integer) && eu["payload_size"] > 0
-  abort "payload_signature must be non-empty" unless eu["payload_signature"].is_a?(String) && !eu["payload_signature"].strip.empty?
   # The bootstrap minimum accepts the unified-runtime capability and legacy
   # numeric IDs. A malformed ID can never be compared at admission, so it must
   # not pass the bundle check; the runtime also refuses it with a typed error.
@@ -183,9 +181,6 @@ embedded_ok="$(ruby -rjson -e '
 ' "$manifest")" || fail "embedded update segment invalid"
 echo "embedded update segment ok"
 
-go -C "$root" run ./cmd/bansoko-release artifact-verify --digest "$embedded_ok" \
-  --signature "$(ruby -rjson -e 'puts JSON.parse(File.read(ARGV[0])).dig("embedded_update","payload_signature")' "$manifest")" \
-  --public-key "$public_key" >/dev/null || fail "embedded payload signature verification failed"
 
 # 5a. Bootstrap version binding (UPDATE-029). The manifest's floor must not
 #     exceed the bootstrap version baked into the image the release was built
@@ -215,8 +210,8 @@ fi
 
 # 5b. Release notes. A formal X.Y.Z release must carry bilingual notes whose
 #     first entry is its own version; a test or rehearsal identity carries none.
-#     Structure, bounds and order are re-proved by the signature verification
-#     above (ValidateReleaseNotes runs on every verify).
+#     Structure, bounds and order are re-proved by the verification above
+#     (ValidateReleaseNotes runs on every verify).
 ruby -rjson -e '
   m = JSON.parse(File.read(ARGV.fetch(0)))
   version = m.fetch("version")

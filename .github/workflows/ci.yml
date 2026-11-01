@@ -3,11 +3,11 @@
 #
 #   push main      every gate, then the multi-arch test image
 #                  (`<VERSION>-<sha9>` and `:test` on Docker Hub) and the test
-#                  update lane: a signed `<X.Y.Z>-test.<run>` package without
-#                  release notes on the update-channel-test branch. The formal
+#                  update lane: an `<X.Y.Z>-test.<run>` package without release
+#                  notes on the update-channel-test branch. The formal
 #                  update-channel branch is never touched.
 #   push vX.Y.Z    every gate again on the tagged commit, which must already be
-#                  on main; then the formal release: signed manifest with the
+#                  on main; then the formal release: manifest with the
 #                  version's release notes, update-channel branch advance,
 #                  GitHub Release, and the multi-arch `X.Y.Z` / `:latest` image.
 #
@@ -31,7 +31,7 @@ concurrency:
   # worth keeping, and leaving the previous run in place made every pushed fix
   # wait for up to an hour of superseded work on the host runner. A release
   # tag runs in its own group and is never cancelled, neither by a main push
-  # nor by another tag: releases are serialized, and the signed channel gate
+  # nor by another tag: releases are serialized, and the channel gate
   # (sequence and version must both advance) stays the authoritative defence.
   # The main run's test lane may be cancelled at any step: each write is one
   # contents-API commit into a per-run version directory, the locator is
@@ -499,21 +499,19 @@ jobs:
           BANSOKO_RELEASE_REF_PROTECTED: 'true'
           BANSOKO_REQUIRED_RESULTS: ${{ toJSON(needs) }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-          BANSOKO_RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
           BANSOKO_RELEASE_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 scripts/ci/ci-release.py test-publish
-      - name: advance signed test channel
+      - name: advance test channel
         env:
           BANSOKO_RELEASE_REF_PROTECTED: 'true'
           BANSOKO_REQUIRED_RESULTS: ${{ toJSON(needs) }}
-          BANSOKO_RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
           BANSOKO_RELEASE_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 scripts/ci/ci-release.py test-channel
 
   # push vX.Y.Z: the formal release. The trust step proves the tag names a
   # commit on main and that every gate of this run succeeded; preflight then
   # refuses missing release notes or a version that does not advance the
-  # signed channel before any image, package or channel effect.
+  # channel before any image, package or channel effect.
   release:
     name: formal release
     needs: [contract-boundary, go-unit-static, frontend-quality, postgres-integration-shard-1, postgres-integration-shard-2, postgres-integration-shard-3, qb-real-chain, fixture-browser]
@@ -554,14 +552,12 @@ jobs:
           BANSOKO_RELEASE_REF_PROTECTED: 'true'
           BANSOKO_REQUIRED_RESULTS: ${{ toJSON(needs) }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-          BANSOKO_RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
           BANSOKO_RELEASE_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 scripts/ci/ci-release.py publish
-      - name: advance signed channel
+      - name: advance channel
         env:
           BANSOKO_RELEASE_REF_PROTECTED: 'true'
           BANSOKO_REQUIRED_RESULTS: ${{ toJSON(needs) }}
-          BANSOKO_RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
           BANSOKO_RELEASE_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 scripts/ci/ci-release.py channel
       - name: create GitHub Release
@@ -572,7 +568,7 @@ jobs:
         run: python3 scripts/ci/ci-release.py github-release
 
   # push vX.Y.Z: the multi-arch `X.Y.Z` image and `:latest`, only after the
-  # signed release of the same run succeeded.
+  # release of the same run succeeded.
   docker-hub-release:
     name: Docker Hub release image
     needs: [contract-boundary, go-unit-static, frontend-quality, postgres-integration-shard-1, postgres-integration-shard-2, postgres-integration-shard-3, qb-real-chain, fixture-browser, release]

@@ -2,7 +2,6 @@ package application
 
 import (
 	"context"
-	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"io"
@@ -144,21 +143,15 @@ type routeSourceRig struct {
 	documentURL string
 	packageRoot string
 	manifestURL string
+	channelBase string
 }
 
-func newRouteSourceRig(t *testing.T, privateKey ed25519.PrivateKey, host string) *routeSourceRig {
+func newRouteSourceRig(t *testing.T, host string) *routeSourceRig {
 	t.Helper()
 	payloadBytes := []byte("channel payload fixture")
 	payloadDigest := hardeningdomain.HashArtifact(payloadBytes)
-	payloadSignature, err := hardeningdomain.SignArtifactDigest(privateKey, payloadDigest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	manifest := signedChannelManifestFixture(payloadDigest, payloadSignature)
+	manifest := embeddedManifestFixture(payloadDigest)
 	manifest.EmbeddedUpdate.PayloadSize = int64(len(payloadBytes))
-	if err := manifest.Sign(privateKey); err != nil {
-		t.Fatal(err)
-	}
 	digest, err := manifest.CanonicalDigest()
 	if err != nil {
 		t.Fatal(err)
@@ -175,10 +168,11 @@ func newRouteSourceRig(t *testing.T, privateKey ed25519.PrivateKey, host string)
 	source := &routeSourceRig{
 		rig:         rig,
 		documentURL: "http://" + host + channelCounterexampleDocumentPath,
-		packageRoot: "http://" + host + "/packages",
+		packageRoot: "http://" + host + channelCounterexamplePackageRoot,
 		manifestURL: "http://" + host + channelCounterexampleManifestPath,
+		channelBase: "http://" + host,
 	}
-	rig.setDocumentBody(channelDocumentFixture(t, privateKey, source.manifestURL, digest, manifest.ReleaseID, nil))
+	rig.setDocumentBody(channelDocumentFixture(t, source.manifestURL, digest, manifest.ReleaseID, nil))
 	return source
 }
 
@@ -187,14 +181,13 @@ func (r *routeSourceRig) originHost(t *testing.T) string {
 	return strings.TrimPrefix(r.rig.recording.URL(), "http://")
 }
 
-func (r *routeSourceRig) service(t *testing.T, publicKey ed25519.PublicKey, route GitHubRouteResolver) *Service {
+func (r *routeSourceRig) service(t *testing.T, route GitHubRouteResolver) *Service {
 	t.Helper()
 	service, err := NewService(Deps{
 		UpdateMode:            "embedded",
-		PublicKey:             publicKey,
 		UpdatesRoot:           t.TempDir(),
-		ChannelURL:            r.documentURL,
-		PackageRoot:           r.packageRoot,
+		Lane:                  LaneStable,
+		ChannelBase:           r.channelBase,
 		GitHubRoute:           route,
 		BuildReleaseID:        "release-running",
 		BuildVersion:          "v1.0.0",
@@ -210,15 +203,11 @@ func (r *routeSourceRig) service(t *testing.T, publicKey ed25519.PublicKey, rout
 // route once per operation and reaches the channel document and signed manifest
 // only through it: the origin host does not resolve, so a direct attempt fails.
 func TestUpdateCheckUsesTheEnabledGitHubRoute(t *testing.T) {
-	publicKey, privateKey, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
 	route := &stubGitHubRoute{}
-	source := newRouteSourceRig(t, privateKey, routeSourceHost)
+	source := newRouteSourceRig(t, routeSourceHost)
 	proxy := newRouteForwardProxy(t, source.originHost(t))
 	route.fallback = routeAnswer{client: proxy.client()}
-	service := source.service(t, publicKey, route)
+	service := source.service(t, route)
 
 	result, err := service.checkUpdate(context.Background())
 	if err != nil {
@@ -255,15 +244,11 @@ func TestUpdateCheckUsesTheEnabledGitHubRoute(t *testing.T) {
 // leg of an admission uses the source resolved once for that operation, so the
 // channel document, manifest and payload all travel through the same route.
 func TestAdmittedUpdateDownloadsThePayloadThroughTheSameRoute(t *testing.T) {
-	publicKey, privateKey, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
 	route := &stubGitHubRoute{}
-	source := newRouteSourceRig(t, privateKey, routeSourceHost)
+	source := newRouteSourceRig(t, routeSourceHost)
 	proxy := newRouteForwardProxy(t, source.originHost(t))
 	route.fallback = routeAnswer{client: proxy.client()}
-	service := source.service(t, publicKey, route)
+	service := source.service(t, route)
 
 	ctx := context.Background()
 	client, err := service.operationClient(ctx)
@@ -290,13 +275,9 @@ func TestAdmittedUpdateDownloadsThePayloadThroughTheSameRoute(t *testing.T) {
 // TestEnabledGitHubRouteFailureFailsClosed proves a route that cannot be built
 // stops the operation instead of silently going direct.
 func TestEnabledGitHubRouteFailureFailsClosed(t *testing.T) {
-	publicKey, privateKey, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := newRouteSourceRig(t, privateKey, routeSourceHost)
+	source := newRouteSourceRig(t, routeSourceHost)
 	route := &stubGitHubRoute{fallback: routeAnswer{err: errors.New("stored route is not usable")}}
-	service := source.service(t, publicKey, route)
+	service := source.service(t, route)
 
 	result, err := service.checkUpdate(context.Background())
 	var business *apperrors.Business
@@ -316,13 +297,9 @@ func TestEnabledGitHubRouteFailureFailsClosed(t *testing.T) {
 // succeeds over the deployment default, and the resolver reporting "no route"
 // is not turned into a hidden proxy decision.
 func TestUnconfiguredGitHubRouteKeepsTheDeploymentDefault(t *testing.T) {
-	publicKey, privateKey, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := newRouteSourceRig(t, privateKey, "")
+	source := newRouteSourceRig(t, "")
 	route := &stubGitHubRoute{}
-	service := source.service(t, publicKey, route)
+	service := source.service(t, route)
 
 	result, err := service.checkUpdate(context.Background())
 	if err != nil {
@@ -340,15 +317,11 @@ func TestUnconfiguredGitHubRouteKeepsTheDeploymentDefault(t *testing.T) {
 // operation: saving a new route takes effect on the next check without a
 // restart, and a new route never rewrites an operation already in flight.
 func TestRouteChangesApplyToTheNextOperation(t *testing.T) {
-	publicKey, privateKey, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := newRouteSourceRig(t, privateKey, routeSourceHost)
+	source := newRouteSourceRig(t, routeSourceHost)
 	first := newRouteForwardProxy(t, source.originHost(t))
 	second := newRouteForwardProxy(t, source.originHost(t))
 	route := &stubGitHubRoute{answers: []routeAnswer{{client: first.client()}, {client: second.client()}}}
-	service := source.service(t, publicKey, route)
+	service := source.service(t, route)
 
 	ctx := context.Background()
 	if _, err := service.checkUpdate(ctx); err != nil {
