@@ -7886,7 +7886,7 @@ export interface components {
              */
             collision_outcome?: "none" | "skipped" | "versioned" | "overwritten";
         };
-        /** @description Present when the placement this file's operation produced has ended: `superseded` (a better version replaced it) or `displaced` (another file took its path under the overwrite setting, cause `overwrite`, or the user downloaded the episode again, cause `redownload`). successor is the instance of the placement that displaced it, absent when that instance was deleted. */
+        /** @description Present when the placement this file's operation produced has ended: `superseded` (a better version replaced it) or `displaced` (another file took its path under the overwrite setting, cause `overwrite`, or the user downloaded the episode again, cause `redownload`). successor is the other instance the file was handed to, absent when that instance was deleted, and absent when this instance's own redownload took the file over — the taker is then this same record, which a self-link would only obscure. */
         AcquisitionFilePlacementEnd: {
             /** @enum {string} */
             state: "superseded" | "displaced";

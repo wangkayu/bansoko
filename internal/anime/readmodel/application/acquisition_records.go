@@ -532,7 +532,10 @@ LEFT JOIN placement_obligations pf ON pf.file_operation_id = op.id AND op.state 
 -- replacement (superseded) or another file took its path (displaced).
 LEFT JOIN placements pl ON pl.source_evidence_type = 'file_operation' AND pl.source_owner_ref = op.id
     AND pl.state IN ('superseded', 'displaced')
-LEFT JOIN managed_anime succ ON succ.id = pl.displaced_by_anime_id
+-- The successor is the other instance that took the file over: a same-instance
+-- takeover (a redownload of this very release) displaces the old placement too,
+-- but its "successor" is the record itself, so it is not reported.
+LEFT JOIN managed_anime succ ON succ.id = pl.displaced_by_anime_id AND succ.id <> pl.managed_anime_id
 WHERE mf.acquisition_id = $1 AND mf.ordinal > $2
 ORDER BY mf.ordinal
 LIMIT $3`, acquisitionID, after, limit+1)

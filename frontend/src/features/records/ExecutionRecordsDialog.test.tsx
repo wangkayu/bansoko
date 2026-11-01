@@ -492,7 +492,7 @@ describe("ExecutionRecordsDialog 详情", () => {
       items: [
         { ...files.items[0], file_ref: "f-1", operation: done, placement_end: { state: "superseded" } },
         { ...files.items[0], file_ref: "f-2", ordinal: 2, operation: done, placement_end: { state: "displaced", cause: "overwrite", successor: { managed_anime_id: "anime-2", title: "Other Show" } } },
-        { ...files.items[0], file_ref: "f-3", ordinal: 3, operation: done, placement_end: { state: "displaced", cause: "redownload", successor: { managed_anime_id: "anime-1", title: "Show" } } },
+        { ...files.items[0], file_ref: "f-3", ordinal: 3, operation: done, placement_end: { state: "displaced", cause: "redownload" } },
       ],
     };
     renderDialog({ record: "acq-failed" });

@@ -324,8 +324,9 @@ type AcquisitionFile struct {
 // AcquisitionFilePlacementEnd is set when the placement this file's
 // operation produced ended: superseded by a quality replacement, or displaced
 // by another file at its path (cause overwrite) or by a redownload (cause
-// redownload). Successor is the displacing placement's instance; nil when it
-// was deleted (or for superseded).
+// redownload). Successor is the *other* instance the file was handed to; nil
+// for superseded, when that instance was deleted, and when this instance's own
+// redownload took the file over (the record itself is the taker).
 type AcquisitionFilePlacementEnd struct {
 	State     string
 	Cause     *string

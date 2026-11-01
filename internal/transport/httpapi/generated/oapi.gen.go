@@ -2774,7 +2774,7 @@ type AcquisitionFile struct {
 	// PlacedPath Where the file was placed: the final object its successful delivery recorded (after any version suffix the collision setting added), shown relative to the library. The server has no configured library root, so the root is the deepest folder holding the anime's current files and this page's placed paths, raised so every path keeps its last three segments (anime folder / season folder / file). Credential, URL and other secret markers still redact the value whole. Absent until the delivery succeeded.
 	PlacedPath *AcquisitionDisplayValue `json:"placed_path,omitempty"`
 
-	// PlacementEnd Present when the placement this file's operation produced has ended: `superseded` (a better version replaced it) or `displaced` (another file took its path under the overwrite setting, cause `overwrite`, or the user downloaded the episode again, cause `redownload`). successor is the instance of the placement that displaced it, absent when that instance was deleted.
+	// PlacementEnd Present when the placement this file's operation produced has ended: `superseded` (a better version replaced it) or `displaced` (another file took its path under the overwrite setting, cause `overwrite`, or the user downloaded the episode again, cause `redownload`). successor is the other instance the file was handed to, absent when that instance was deleted, and absent when this instance's own redownload took the file over — the taker is then this same record, which a self-link would only obscure.
 	PlacementEnd *AcquisitionFilePlacementEnd `json:"placement_end,omitempty"`
 
 	// PlacementFailure Present when the file's completed operation has a terminally failed placement handoff. An import retry of the record reopens it. reason_code is the handoff's stable reason, when recorded.
@@ -2844,7 +2844,7 @@ type AcquisitionFilePage struct {
 	NextCursor    *string           `json:"next_cursor,omitempty"`
 }
 
-// AcquisitionFilePlacementEnd Present when the placement this file's operation produced has ended: `superseded` (a better version replaced it) or `displaced` (another file took its path under the overwrite setting, cause `overwrite`, or the user downloaded the episode again, cause `redownload`). successor is the instance of the placement that displaced it, absent when that instance was deleted.
+// AcquisitionFilePlacementEnd Present when the placement this file's operation produced has ended: `superseded` (a better version replaced it) or `displaced` (another file took its path under the overwrite setting, cause `overwrite`, or the user downloaded the episode again, cause `redownload`). successor is the other instance the file was handed to, absent when that instance was deleted, and absent when this instance's own redownload took the file over — the taker is then this same record, which a self-link would only obscure.
 type AcquisitionFilePlacementEnd struct {
 	Cause     *AcquisitionFilePlacementEndCause `json:"cause,omitempty"`
 	State     AcquisitionFilePlacementEndState  `json:"state"`
