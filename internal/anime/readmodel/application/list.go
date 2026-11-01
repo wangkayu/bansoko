@@ -42,7 +42,7 @@ func (s *Service) ListAnimeApplication(ctx context.Context) ([]AnimeListItem, er
 	rows, err := s.db.QueryContext(ctx, `
 SELECT a.id, a.title, a.title_override, a.version,
        sub.id, sub.origin, sub.origin_entry_ref, sub.instance_label, sub.entry_season, sub.created_at, sub.state, sub.version,
-       sub.new_releases_only, sub.start_baseline_at,
+       sub.new_releases_only, sub.start_baseline_at, sub.ignore_multi_video_releases,
        a.lifecycle_state, a.fence_epoch, a.retired_at,
        m.bgm_work_id, m.tmdb_work_id, m.tmdb_media_kind, m.tmdb_season, m.media_kind,
        m.total_episodes, m.year, m.season, m.version,
@@ -137,7 +137,7 @@ ORDER BY a.created_at, a.id`)
 		var coverURL sql.NullString
 		if err := rows.Scan(&item.ManagedAnime.ID, &item.ManagedAnime.Title, &titleOverride, &item.ManagedAnime.Version,
 			&item.Subscription.ID, &origin, &originEntryRef, &instanceLabel, &entrySeason, &createdAt, &state, &item.Subscription.Version,
-			&item.Subscription.NewReleasesOnly, &startBaselineAt,
+			&item.Subscription.NewReleasesOnly, &startBaselineAt, &item.Subscription.IgnoreMultiVideoReleases,
 			&item.Subscription.LifecycleState, &item.Subscription.LifecycleEpoch, &retiredAt,
 			&bgmWorkID, &tmdbWorkID, &tmdbMediaKind, &tmdbSeason, &ownerMediaKind,
 			&metadataTotalEpisodes, &metadataYear, &metadataSeason, &metadataVersion,

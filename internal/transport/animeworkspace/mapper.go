@@ -757,17 +757,18 @@ func mapProviderProvenance(value *animedomain.ProviderProvenance) *generated.Pro
 
 func mapSubscription(value animeapplication.Subscription) generated.Subscription {
 	result := generated.Subscription{
-		Id:              generated.ID(value.ID),
-		ManagedAnimeId:  generated.ID(value.ManagedAnimeID),
-		Origin:          generated.SubscriptionOrigin(value.Origin),
-		State:           generated.SubscriptionState(value.State),
-		Version:         generated.Version(value.Version),
-		LifecycleState:  generated.SubscriptionLifecycleState(value.LifecycleState),
-		LifecycleEpoch:  value.LifecycleEpoch,
-		RetiredAt:       cloneWorkspaceTime(value.RetiredAt),
-		NewReleasesOnly: value.NewReleasesOnly,
-		StartBaselineAt: cloneWorkspaceTime(value.StartBaselineAt),
-		CreatedAt:       value.CreatedAt,
+		Id:                       generated.ID(value.ID),
+		ManagedAnimeId:           generated.ID(value.ManagedAnimeID),
+		Origin:                   generated.SubscriptionOrigin(value.Origin),
+		State:                    generated.SubscriptionState(value.State),
+		Version:                  generated.Version(value.Version),
+		LifecycleState:           generated.SubscriptionLifecycleState(value.LifecycleState),
+		LifecycleEpoch:           value.LifecycleEpoch,
+		RetiredAt:                cloneWorkspaceTime(value.RetiredAt),
+		NewReleasesOnly:          value.NewReleasesOnly,
+		StartBaselineAt:          cloneWorkspaceTime(value.StartBaselineAt),
+		IgnoreMultiVideoReleases: value.IgnoreMultiVideoReleases,
+		CreatedAt:                value.CreatedAt,
 	}
 	result.OriginEntryRef = cloneWorkspaceString(value.OriginEntryRef)
 	result.EntrySeason = cloneWorkspaceString(value.EntrySeason)

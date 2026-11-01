@@ -83,7 +83,8 @@ func mapAnimeListSubscription(value animeapplication.Subscription) generated.Sub
 		State:          generated.SubscriptionState(value.State), LifecycleState: generated.SubscriptionLifecycleState(value.LifecycleState),
 		LifecycleEpoch: value.LifecycleEpoch, RetiredAt: value.RetiredAt, Version: value.Version,
 		NewReleasesOnly: value.NewReleasesOnly, StartBaselineAt: value.StartBaselineAt,
-		CreatedAt: value.CreatedAt,
+		IgnoreMultiVideoReleases: value.IgnoreMultiVideoReleases,
+		CreatedAt:                value.CreatedAt,
 	}
 }
 

@@ -24,24 +24,29 @@ type IgnoreMultiVideoInput struct {
 // turned on now ignores: awaiting competition without a download task, with a
 // stored manifest carrying more than two video files. The direct write mirrors
 // migration 103's deselect sweep (the evaluation writer is not rerun for
-// releases whose only change is this option).
+// releases whose only change is this option). The video count is a scalar
+// subquery: an UPDATE's FROM clause cannot reference the target alias, so the
+// count cannot be a lateral join here.
 const multiVideoAwaitingSweepSQL = `
 UPDATE releases r
 SET verdict = 'filtered', reason_code = 'multi_video_files',
-    reason_detail = 'video files: ' || v.video_count,
+    reason_detail = 'video files: ' || (
+        SELECT count(*)
+        FROM jsonb_array_elements(COALESCE(r.internal_facts -> 'release_files', '[]'::jsonb)) f
+        WHERE f ->> 'media_kind' = 'video'
+    ),
     discovery_notice_due = FALSE, competition_retry_key = NULL,
     version = r.version + 1, updated_at = CURRENT_TIMESTAMP
 FROM rss_sources src
 JOIN subscriptions sub ON sub.id = src.subscription_id
-CROSS JOIN LATERAL (
-    SELECT count(*)::int AS video_count
-    FROM jsonb_array_elements(COALESCE(r.internal_facts -> 'release_files', '[]'::jsonb)) f
-    WHERE f ->> 'media_kind' = 'video'
-) v
 WHERE sub.managed_anime_id = $1
   AND r.rss_source_id = src.id
   AND r.verdict = 'awaiting_competition' AND r.download_task_id IS NULL
-  AND v.video_count > 2`
+  AND (
+      SELECT count(*)
+      FROM jsonb_array_elements(COALESCE(r.internal_facts -> 'release_files', '[]'::jsonb)) f
+      WHERE f ->> 'media_kind' = 'video'
+  ) > 2`
 
 // multiVideoFilteredReleasesSQL re-enqueues the releases only this option
 // filtered when it is turned off, so the next evaluation writes the true
