@@ -89,15 +89,6 @@ type Installed struct {
 	InstalledAt time.Time `json:"installed_at"`
 }
 
-// ProbeResult is what Start learned about the installed file.
-type ProbeResult struct {
-	// Info is the adopted parser, or the builtin parser with a Note.
-	Info Info
-	// Manual records that the installed file was checked and refused, so a
-	// caller can surface the reason without re-running the chain.
-	Manual bool
-}
-
 // Probe runs the adoption chain over the installed file.
 //
 // The returned client is nil when the builtin parser should be used: the file
@@ -123,6 +114,11 @@ func Probe(ctx context.Context, configRoot, builtinVersion string) (*Client, Inf
 		return nil, info
 	} else if st.Mode()&0o111 == 0 {
 		info.Note = fmt.Sprintf("%s is not executable", path)
+		return nil, info
+	}
+
+	if _, err := VersionOf(ctx, path); err != nil {
+		info.Note = err.Error()
 		return nil, info
 	}
 

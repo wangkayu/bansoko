@@ -235,6 +235,9 @@ func (c *Client) call(ctx context.Context, op, title string) (json.RawMessage, e
 	if c.shutdown {
 		return nil, fmt.Errorf("%w: the client is closed", ErrTransport)
 	}
+	if c.stdin == nil || c.cmd == nil {
+		return nil, fmt.Errorf("%w: the process is gone", ErrTransport)
+	}
 	c.nextID++
 	id := c.nextID
 	request := map[string]any{"id": id, "op": op}
@@ -253,13 +256,16 @@ func (c *Client) call(ctx context.Context, op, title string) (json.RawMessage, e
 		_ = c.kill()
 		return nil, fmt.Errorf("%w: write: %v", ErrTransport, err)
 	}
+	process := c.cmd.Process
 	done := make(chan struct{})
 	defer close(done)
 	go func() {
 		select {
 		case <-done:
 		case <-time.After(time.Until(deadline)):
-			_ = c.cmd.Process.Kill()
+			if process != nil {
+				_ = process.Kill()
+			}
 		}
 	}()
 	raw, err := c.reader.ReadBytes('\n')
