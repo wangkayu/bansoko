@@ -36,7 +36,7 @@ func (h alignmentRecoveryHandler) ObserveRecovery(ctx context.Context, c workite
 		return recoveryCommitted("completed", lockedMaintenanceEvidence("alignment_operations", c, "completed", op.Version)), nil
 	}
 	if op.State == AlignmentReady && len(op.Attempt) == 0 {
-		return recoveryNoEffect(maintenanceNoAttemptWriter("alignment_operations", c, "ready", alignmentSettleWriter(h.service.activity, op, op.Version, AlignmentFailed, "WORKER_EXECUTION_STOPPED", "no attempt admitted", ""))), nil
+		return recoveryNoEffect(maintenanceNoAttemptWriter("alignment_operations", c, "ready", alignmentSettleWriter(h.service.displacedSinks(), op, op.Version, AlignmentFailed, "WORKER_EXECUTION_STOPPED", "no attempt admitted", ""))), nil
 	}
 	// An attempt/target match alone lacks executor quiescence proof. Preserve it.
 	return h.recoverReceipt(ctx, c, op)

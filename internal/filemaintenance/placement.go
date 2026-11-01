@@ -15,6 +15,7 @@ import (
 	"bansoko/internal/observability/businesslog"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
+	plugintargetport "bansoko/internal/plugintarget/port"
 	facts "bansoko/internal/release/facts"
 )
 
@@ -60,11 +61,12 @@ type SnapshotEvidenceReader interface {
 // proven facts and never decides admission policy (P3.5 owns all/per_group/
 // single_copy settlement).
 type PlacementService struct {
-	db       *sql.DB
-	fileOp   FileOperationEvidenceSource
-	snapshot SnapshotEvidenceReader
-	now      func() time.Time
-	activity observabilityport.ActivityWriter
+	db            *sql.DB
+	fileOp        FileOperationEvidenceSource
+	snapshot      SnapshotEvidenceReader
+	now           func() time.Time
+	activity      observabilityport.ActivityWriter
+	notifications plugintargetport.BusinessDeliveryEnqueuer
 }
 
 // NewPlacementService wires the placement owner.
@@ -77,6 +79,22 @@ func (s *PlacementService) SetActivityWriter(writer observabilityport.ActivityWr
 	if s != nil {
 		s.activity = writer
 	}
+}
+
+// SetBusinessDeliveryEnqueuer wires the file_displaced notice of a file that
+// lost its place. Unset (nil) admits none.
+func (s *PlacementService) SetBusinessDeliveryEnqueuer(enqueuer plugintargetport.BusinessDeliveryEnqueuer) {
+	if s != nil {
+		s.notifications = enqueuer
+	}
+}
+
+// displacedSinks groups the two sinks a displacement narrates to.
+func (s *PlacementService) displacedSinks() displacedSinks {
+	if s == nil {
+		return displacedSinks{}
+	}
+	return displacedSinks{activity: s.activity, notifications: s.notifications}
 }
 
 // FrozenFileCoverage resolves the frozen coverage key of one artifact file from
@@ -541,7 +559,7 @@ SELECT public.placement_displace($1, 'file_operation:'||$2, NOT EXISTS (
 		placementID, fileOperationID, path); err != nil {
 		return fmt.Errorf("displace placements replaced by %s: %w", placementID, err)
 	}
-	return appendDisplacedActivityTx(ctx, txscope.Wrap(tx), s.activity, placementID)
+	return appendDisplacedActivityTx(ctx, txscope.Wrap(tx), s.displacedSinks(), placementID)
 }
 
 // ListPlacements returns verified placements (side-effect free).

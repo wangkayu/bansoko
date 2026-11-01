@@ -168,12 +168,12 @@ func FormatFact(value any) string {
 	case bool:
 		return strconv.FormatBool(typed)
 	case []any:
-		// A list renders one entry per line; a file entry renders its
-		// library-relative path.
+		// A list renders one entry per line; an entry object renders as the
+		// line its own fields compose (see listEntryText).
 		lines := make([]string, 0, len(typed))
 		for _, item := range typed {
 			if entry, ok := item.(map[string]any); ok {
-				item = entry["path"]
+				item = listEntryText(entry)
 			}
 			if text := FormatFact(item); text != "" {
 				lines = append(lines, text)
@@ -183,6 +183,28 @@ func FormatFact(value any) string {
 	default:
 		return fmt.Sprint(typed)
 	}
+}
+
+// listEntryText renders one object entry of a list fact as a single line: its
+// path, followed in parentheses by the version identity the entry carries
+// (group and title, each only when present). An entry with no path but an
+// identity still renders the identity.
+func listEntryText(entry map[string]any) string {
+	text := FormatFact(entry["path"])
+	parts := make([]string, 0, 2)
+	for _, key := range []string{"group", "title"} {
+		if part := FormatFact(entry[key]); part != "" {
+			parts = append(parts, part)
+		}
+	}
+	if len(parts) == 0 {
+		return text
+	}
+	identity := strings.Join(parts, " · ")
+	if text == "" {
+		return identity
+	}
+	return text + " (" + identity + ")"
 }
 
 type renderResult struct {

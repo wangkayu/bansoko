@@ -1298,9 +1298,11 @@ const (
 const (
 	NotificationTriggerKindDownloadFailed            NotificationTriggerKind = "download_failed"
 	NotificationTriggerKindDownloadSubmitted         NotificationTriggerKind = "download_submitted"
+	NotificationTriggerKindFileDisplaced             NotificationTriggerKind = "file_displaced"
 	NotificationTriggerKindFileOperationCompleted    NotificationTriggerKind = "file_operation_completed"
 	NotificationTriggerKindFileOperationFailed       NotificationTriggerKind = "file_operation_failed"
 	NotificationTriggerKindReleaseDiscovered         NotificationTriggerKind = "release_discovered"
+	NotificationTriggerKindReplacementApplied        NotificationTriggerKind = "replacement_applied"
 	NotificationTriggerKindReplacementDeletionFailed NotificationTriggerKind = "replacement_deletion_failed"
 	NotificationTriggerKindSubscriptionChanged       NotificationTriggerKind = "subscription_changed"
 	NotificationTriggerKindUnknownFilesImported      NotificationTriggerKind = "unknown_files_imported"
@@ -6227,9 +6229,11 @@ type NotificationTemplateSet struct {
 	Events struct {
 		DownloadFailed            *NotificationEventTemplate `json:"download_failed,omitempty"`
 		DownloadSubmitted         NotificationEventTemplate  `json:"download_submitted"`
+		FileDisplaced             *NotificationEventTemplate `json:"file_displaced,omitempty"`
 		FileOperationCompleted    NotificationEventTemplate  `json:"file_operation_completed"`
 		FileOperationFailed       NotificationEventTemplate  `json:"file_operation_failed"`
 		ReleaseDiscovered         *NotificationEventTemplate `json:"release_discovered,omitempty"`
+		ReplacementApplied        *NotificationEventTemplate `json:"replacement_applied,omitempty"`
 		ReplacementDeletionFailed *NotificationEventTemplate `json:"replacement_deletion_failed,omitempty"`
 		SubscriptionChanged       *NotificationEventTemplate `json:"subscription_changed,omitempty"`
 		UnknownFilesImported      *NotificationEventTemplate `json:"unknown_files_imported,omitempty"`

@@ -383,7 +383,7 @@ end
   "DiagnosticSeverity" => %w[warning error],
   "DiagnosticRetryMode" => %w[auto resume settings manual],
   "PluginKind" => %w[notification],
-  "NotificationTriggerKind" => %w[download_submitted file_operation_completed file_operation_failed release_discovered download_failed subscription_changed unknown_files_imported replacement_deletion_failed],
+  "NotificationTriggerKind" => %w[download_submitted file_operation_completed file_operation_failed release_discovered download_failed subscription_changed unknown_files_imported replacement_deletion_failed replacement_applied file_displaced],
   "PluginAdapterKind" => %w[telegram feishu webhook],
   "PluginDeliveryKind" => %w[business test],
   "PluginDeliveryState" => %w[pending delivering waiting_retry delivered failed unknown],

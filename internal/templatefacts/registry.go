@@ -26,6 +26,11 @@ const (
 	// ScenarioDeletionFailed is an old managed file a replacement could not
 	// delete after the automatic retries ran out.
 	ScenarioDeletionFailed
+	// ScenarioReplacementApplied is a settled replace decision: the candidate
+	// took its place, and the versions it replaced are named beside it.
+	ScenarioReplacementApplied
+	// ScenarioFileDisplaced is one managed file another file took over.
+	ScenarioFileDisplaced
 )
 
 const (
@@ -34,16 +39,18 @@ const (
 	scenarioMedia = ScenarioDownloadSubmitted | scenarioFile
 	// scenarioWorkflow is the workflow triggers; they read only the facts
 	// that list them.
-	scenarioWorkflow = ScenarioReleaseDiscovered | ScenarioDownloadFailed | ScenarioSubscriptionChanged | ScenarioUnknownImported | ScenarioDeletionFailed
-	scenarioNotify   = scenarioMedia | scenarioWorkflow
-	scenarioAll      = ScenarioNaming | scenarioMedia
+	scenarioWorkflow = ScenarioReleaseDiscovered | ScenarioDownloadFailed | ScenarioSubscriptionChanged | ScenarioUnknownImported | ScenarioDeletionFailed |
+		ScenarioReplacementApplied | ScenarioFileDisplaced
+	scenarioNotify = scenarioMedia | scenarioWorkflow
+	scenarioAll    = ScenarioNaming | scenarioMedia
 	// scenarioRelease is the workflow triggers that concern one release.
-	scenarioRelease = ScenarioReleaseDiscovered | ScenarioDownloadFailed | ScenarioUnknownImported
+	scenarioRelease = ScenarioReleaseDiscovered | ScenarioDownloadFailed | ScenarioUnknownImported | ScenarioReplacementApplied
 )
 
 // Scenarios lists every scenario in registry order.
 var Scenarios = []Scenario{ScenarioNaming, ScenarioDownloadSubmitted, ScenarioFileCompleted, ScenarioFileFailed,
-	ScenarioReleaseDiscovered, ScenarioDownloadFailed, ScenarioSubscriptionChanged, ScenarioUnknownImported, ScenarioDeletionFailed}
+	ScenarioReleaseDiscovered, ScenarioDownloadFailed, ScenarioSubscriptionChanged, ScenarioUnknownImported, ScenarioDeletionFailed,
+	ScenarioReplacementApplied, ScenarioFileDisplaced}
 
 // Phase is when a fact becomes available.
 type Phase string
@@ -607,7 +614,7 @@ var systemFacts = []Fact{
 		"Show S01/   12.4 GiB · 24 files\nreadme.txt  4.0 KiB\n合计: 12.4 GiB · 25 files", func(f *FactSet) any { return f.Torrent.Tree }).derived(),
 
 	// file
-	fact("file.name", TypeString, PhaseRelease, ScenarioNaming|scenarioFile|ScenarioDeletionFailed, scenarioFile,
+	fact("file.name", TypeString, PhaseRelease, ScenarioNaming|scenarioFile|ScenarioDeletionFailed|ScenarioFileDisplaced, scenarioFile,
 		Text{"文件名", "File name"}, Text{"原始完整文件名。", "Original full file name."},
 		sampleFile, func(f *FactSet) any { return f.File.Name }),
 	fact("file.stem", TypeString, PhaseRelease, ScenarioNaming|scenarioFile, scenarioFile,
@@ -686,13 +693,17 @@ var systemFacts = []Fact{
 		with(ScenarioFileCompleted, "file_operation_completed").with(ScenarioFileFailed, "file_operation_failed").
 		with(ScenarioReleaseDiscovered, "release_discovered").with(ScenarioDownloadFailed, "download_failed").
 		with(ScenarioSubscriptionChanged, "subscription_changed").with(ScenarioUnknownImported, "unknown_files_imported").
-		with(ScenarioDeletionFailed, "replacement_deletion_failed"),
+		with(ScenarioDeletionFailed, "replacement_deletion_failed").
+		with(ScenarioReplacementApplied, "replacement_applied").with(ScenarioFileDisplaced, "file_displaced"),
 	fact("event.at", TypeTimestamp, PhaseExecution, scenarioNotify, 0,
 		Text{"发生时间", "Occurred at"}, Text{"事件发生时间，RFC 3339。", "When the event happened, RFC 3339."},
 		sampleOccurredAt, func(f *FactSet) any { return f.Event.At }).derived(),
 	fact("event.action", TypeString, PhaseExecution, ScenarioSubscriptionChanged, 0,
 		Text{"订阅变化", "Subscription change"}, Text{"started、stopped、resumed 或 retired。", "started, stopped, resumed or retired."},
 		"started", func(f *FactSet) any { return f.Event.Action }).derived(),
+	fact("event.cause", TypeString, PhaseExecution, ScenarioFileDisplaced, 0,
+		Text{"失去位置的原因", "Cause"}, Text{"overwrite（新文件写入同一位置）或 redownload（同一条发布重新下载）。", "overwrite (a new file took the path) or redownload (the same release was downloaded again)."},
+		"overwrite", func(f *FactSet) any { return f.Event.Cause }).derived(),
 	fact("event.link", TypeString, PhaseExecution, ScenarioUnknownImported, ScenarioUnknownImported,
 		Text{"应用内链接", "In-app link"}, Text{"应用内的 # 锚点：打开这次获取的执行记录，其中列出需要手动匹配的文件。", "In-app # anchor: opens this acquisition's execution record, which lists the files awaiting a manual match."},
 		"#/?record=acq_001", func(f *FactSet) any { return f.Event.Link }).derived(),
@@ -723,6 +734,23 @@ var systemFacts = []Fact{
 	fact("download.task", TypeString, PhaseExecution, ScenarioDownloadSubmitted, ScenarioDownloadSubmitted,
 		Text{"下载任务", "Download task"}, Text{"下载客户端确认的任务名称。", "Task name confirmed by the download client."},
 		sampleRelease, func(f *FactSet) any { return f.Download.Task }),
+
+	// replacement and displacement: who took over what
+	fact("replaced.count", TypeInteger, PhaseRelease, ScenarioReplacementApplied, 0,
+		Text{"被替换的版本数", "Replaced version count"}, Text{"这次替换顶掉的旧版本数量。", "How many old versions this replacement took over."},
+		int64(1), func(f *FactSet) any { return f.Replaced.Count }).derived(),
+	fact("replaced.targets", TypeList, PhaseRelease, ScenarioReplacementApplied, 0,
+		Text{"被替换的版本", "Replaced versions"}, Text{"被顶掉的旧版本，每行一个：文件名（path），以及记录了来源发布时才有字幕组（group）与发布标题（title）。", "The old versions that lost their place, one per line: the file name (path) plus, when the version records its source release, the group (group) and release title (title)."},
+		[]map[string]any{{"path": sampleFile, "group": "示例字幕组", "title": sampleRelease}}, func(f *FactSet) any { return f.Replaced.Targets }).derived(),
+	fact("taker.file", TypeString, PhaseRelease, ScenarioFileDisplaced, 0,
+		Text{"顶替的文件", "Taker file"}, Text{"顶掉这个位置的文件名，不含路径。", "File name of the file that took the place, without a path."},
+		sampleFile, func(f *FactSet) any { return f.Taker.File }),
+	fact("taker.group", TypeString, PhaseRelease, ScenarioFileDisplaced, ScenarioFileDisplaced,
+		Text{"顶替者字幕组", "Taker group"}, Text{"顶掉这个位置的文件所属发布的字幕组显示名；来源没有记录时为空。", "Display name of the fansub group behind the file that took the place; empty when the source recorded none."},
+		"示例字幕组", func(f *FactSet) any { return f.Taker.Group }),
+	fact("taker.title", TypeString, PhaseRelease, ScenarioFileDisplaced, ScenarioFileDisplaced,
+		Text{"顶替者发布标题", "Taker release title"}, Text{"顶掉这个位置的文件所属发布的原始标题；来源没有记录时为空。", "Original title of the release behind the file that took the place; empty when the source recorded none."},
+		sampleRelease, func(f *FactSet) any { return f.Taker.Title }),
 }
 
 // namespaceFacts registers the rt and anibt value namespaces, and the source

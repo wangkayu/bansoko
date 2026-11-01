@@ -6600,7 +6600,7 @@ export interface components {
          *
          * @enum {string}
          */
-        NotificationTriggerKind: "download_submitted" | "file_operation_completed" | "file_operation_failed" | "release_discovered" | "download_failed" | "subscription_changed" | "unknown_files_imported" | "replacement_deletion_failed";
+        NotificationTriggerKind: "download_submitted" | "file_operation_completed" | "file_operation_failed" | "release_discovered" | "download_failed" | "subscription_changed" | "unknown_files_imported" | "replacement_deletion_failed" | "replacement_applied" | "file_displaced";
         /** @description The published notification trigger vocabulary: every trigger kind of the closed registry, in catalog order. Served from the same registry the delivery admission and the template catalog validate against, so the list cannot drift from what the backend accepts. */
         NotificationTriggerKindVocabulary: {
             trigger_kinds: components["schemas"]["NotificationTriggerKind"][];
@@ -6762,6 +6762,8 @@ export interface components {
                 subscription_changed?: components["schemas"]["NotificationEventTemplate"];
                 unknown_files_imported?: components["schemas"]["NotificationEventTemplate"];
                 replacement_deletion_failed?: components["schemas"]["NotificationEventTemplate"];
+                replacement_applied?: components["schemas"]["NotificationEventTemplate"];
+                file_displaced?: components["schemas"]["NotificationEventTemplate"];
             };
         };
         PluginTargetConfig: {

@@ -18,6 +18,7 @@ import (
 	"bansoko/internal/observability/businesslog"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
+	plugintargetport "bansoko/internal/plugintarget/port"
 	"bansoko/internal/qualityprofile"
 	facts "bansoko/internal/release/facts"
 	"bansoko/internal/runtime/worker"
@@ -90,11 +91,12 @@ const unresolvedCoverageKey = "unresolved"
 // evidence and supersedes only the frozen losers, handing them to cleanup
 // with the frozen admission_mode.
 type ReplacementDecisionService struct {
-	db         *sql.DB
-	now        func() time.Time
-	cleanup    *CleanupService
-	mediaFacts facts.MediaRepository
-	activity   observabilityport.ActivityWriter
+	db            *sql.DB
+	now           func() time.Time
+	cleanup       *CleanupService
+	mediaFacts    facts.MediaRepository
+	activity      observabilityport.ActivityWriter
+	notifications plugintargetport.BusinessDeliveryEnqueuer
 }
 
 // NewReplacementDecisionService wires the decision owner.
@@ -115,6 +117,15 @@ func (s *ReplacementDecisionService) SetMediaFactsStore(store facts.MediaReposit
 func (s *ReplacementDecisionService) SetActivityWriter(writer observabilityport.ActivityWriter) {
 	if s != nil {
 		s.activity = writer
+	}
+}
+
+// SetCleanupHandoff wires the cleanup admission used by settlement.
+// SetBusinessDeliveryEnqueuer wires the replacement_applied notice of a settled
+// replace decision. Unset (nil) admits none.
+func (s *ReplacementDecisionService) SetBusinessDeliveryEnqueuer(enqueuer plugintargetport.BusinessDeliveryEnqueuer) {
+	if s != nil {
+		s.notifications = enqueuer
 	}
 }
 
@@ -1320,7 +1331,7 @@ const replacementSettledReason = "replaced"
 // this line is written only here, so a release whose import fails never
 // shows a replacement as done (it gets the not_replaced line instead).
 func (s *ReplacementDecisionService) appendSettledActivityTx(ctx context.Context, tx *sql.Tx, decision *decisionRow) error {
-	if s.activity == nil {
+	if s.activity == nil && s.notifications == nil {
 		return nil
 	}
 	var releaseID, key string
@@ -1332,6 +1343,9 @@ SELECT candidate_release_id, coverage_key, pools FROM replacement_decisions WHER
 	var pools []PoolEvidence
 	if err := json.Unmarshal(poolsRaw, &pools); err != nil {
 		return fmt.Errorf("decode settled replacement pools: %w", err)
+	}
+	if s.activity == nil {
+		return s.admitReplacementAppliedTx(ctx, tx, decision, releaseID, pools)
 	}
 	subscriptionID, err := subscriptionIDForAnime(ctx, tx, decision.AnimeID)
 	if err != nil {
@@ -1359,6 +1373,55 @@ SELECT candidate_release_id, coverage_key, pools FROM replacement_decisions WHER
 		CausationID:     decision.CandidatePlacementID,
 	}); err != nil {
 		return fmt.Errorf("append settled replacement activity: %w", err)
+	}
+	return s.admitReplacementAppliedTx(ctx, tx, decision, releaseID, pools)
+}
+
+// admitReplacementAppliedTx admits the replacement_applied notice of one
+// settled replace decision: the winning release plus the old versions it took
+// over. A decision that replaces nothing admits no notice; an anime record
+// that no longer exists has no one to notify.
+func (s *ReplacementDecisionService) admitReplacementAppliedTx(ctx context.Context, tx *sql.Tx, decision *decisionRow, releaseID string, pools []PoolEvidence) error {
+	if s.notifications == nil {
+		return nil
+	}
+	replacedIDs := replacementResultOf("replace", pools, decision.CandidatePlacementID).replaced
+	if len(replacedIDs) == 0 {
+		return nil
+	}
+	targets, err := placementTargetsTx(ctx, tx, replacedIDs)
+	if err != nil {
+		return err
+	}
+	replaced := make([]plugintargetport.DisplacedTarget, 0, len(targets))
+	for _, target := range targets {
+		file, _ := target["file_name"].(string)
+		group, _ := target["group_name"].(string)
+		title, _ := target["release_title"].(string)
+		if file == "" && group == "" && title == "" {
+			continue
+		}
+		replaced = append(replaced, plugintargetport.DisplacedTarget{File: file, Group: group, Title: title})
+	}
+	if len(replaced) == 0 {
+		return nil
+	}
+	winner, err := releaseRunContextTx(ctx, tx, releaseID)
+	if err != nil {
+		return err
+	}
+	group, _ := winner["group_name"].(string)
+	releaseTitle, _ := winner["release_title"].(string)
+	animeTitle, found, err := managedAnimeTitleTx(ctx, tx, decision.AnimeID)
+	if err != nil || !found {
+		return err
+	}
+	request, err := plugintargetport.ReplacementAppliedRequest(decision.ID, 1, decision.AnimeID, animeTitle, group, releaseTitle, replaced)
+	if err != nil {
+		return fmt.Errorf("encode replacement notice: %w", err)
+	}
+	if err := s.notifications.EnqueueBusinessDelivery(ctx, txscope.Wrap(tx), request); err != nil {
+		return fmt.Errorf("enqueue replacement notice: %w", err)
 	}
 	return nil
 }

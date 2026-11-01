@@ -86,6 +86,11 @@ func TestRenderReadsValueNamespacesOnEveryTrigger(t *testing.T) {
 			// A subscription transition or a failed deletion concerns no release.
 			continue
 		}
+		if trigger == TriggerFileDisplaced {
+			// A displaced file carries the taker's identity only, not a
+			// release whose rt/anibt tags the payload froze.
+			continue
+		}
 		message, ok := RenderMessage(trigger, "{{vars.info.tag}} {{rt.sub_lang}}", "{{defaultIfEmpty(anibt.tag, '-')}} {{vars.info.missing}}", facts)
 		if !ok || !message.Valid() || message.Title != "WEB chs+CHT" || message.Body != "- " {
 			t.Fatalf("%s: %+v", trigger, message)
@@ -126,5 +131,54 @@ func TestTitleFactsReadsFrozenOverview(t *testing.T) {
 	absent := TitleFacts([]byte(`{"schema_version":5,"media":{"tmdb_titles":{"state":"known","value":{"title_cn":"弧之谜语","year":2024}}}}`), identity)
 	if absent["tmdb.summary"] != nil {
 		t.Fatalf("absent member = %#v, want null", absent["tmdb.summary"])
+	}
+}
+
+// Every trigger's system default renders with its own sample facts in both
+// shipped languages: a default that cannot render is a preview the owner can
+// never open.
+func TestEveryDefaultRendersWithItsSampleFacts(t *testing.T) {
+	for _, trigger := range Triggers {
+		for _, locale := range []string{LocaleZH, LocaleEN} {
+			title, body := DefaultsFor(trigger, locale)
+			if title == "" || body == "" {
+				t.Fatalf("%s/%s has no system default", trigger, locale)
+			}
+			message, _ := RenderMessage(trigger, title, body, Sample(trigger))
+			if !message.Valid() {
+				t.Fatalf("%s/%s default does not render: %+v", trigger, locale, message.Errors)
+			}
+		}
+	}
+}
+
+// The replacement notice names the winning release and every replaced version
+// with the identity it recorded; the displacement notice words the cause and
+// names the file that took the place.
+func TestReplacementAndDisplacementDefaultsWordTheEvent(t *testing.T) {
+	title, body := DefaultsFor(TriggerReplacementApplied, LocaleZH)
+	message, _ := RenderMessage(TriggerReplacementApplied, title, body, Sample(TriggerReplacementApplied))
+	if !message.Valid() {
+		t.Fatalf("replacement default does not render: %+v", message.Errors)
+	}
+	if !strings.Contains(message.Title, "已替换旧版本：示例") && !strings.Contains(message.Title, "已替换旧版本") {
+		t.Fatalf("replacement title = %q", message.Title)
+	}
+	if !strings.Contains(message.Body, "替换了 1 个旧版本") || !strings.Contains(message.Body, " (示例字幕组 · ") {
+		t.Fatalf("replacement body = %q", message.Body)
+	}
+
+	overwrite, ok := RenderMessage(TriggerFileDisplaced, "{{if(eq(event.cause, 'redownload'), '重新下载覆盖了旧文件', '新文件覆盖了旧文件')}}", "{{file.name}}|{{defaultIfEmpty(taker.title, taker.file)}}|{{defaultIfEmpty(taker.group, '未知')}}", Sample(TriggerFileDisplaced))
+	if !ok || !overwrite.Valid() {
+		t.Fatalf("displacement render: %+v", overwrite.Errors)
+	}
+	if overwrite.Title != "新文件覆盖了旧文件" || !strings.Contains(overwrite.Body, "|示例字幕组") {
+		t.Fatalf("overwrite render = %q / %q", overwrite.Title, overwrite.Body)
+	}
+	redownloadFacts := Sample(TriggerFileDisplaced)
+	redownloadFacts["event.cause"] = "redownload"
+	redownload, ok := RenderMessage(TriggerFileDisplaced, "{{if(eq(event.cause, 'redownload'), '重新下载覆盖了旧文件', '新文件覆盖了旧文件')}}", "{{file.name}}", redownloadFacts)
+	if !ok || !redownload.Valid() || redownload.Title != "重新下载覆盖了旧文件" {
+		t.Fatalf("redownload render = %+v", redownload)
 	}
 }

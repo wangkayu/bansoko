@@ -26,6 +26,8 @@ type FactSet struct {
 	Event    EventFacts
 	Result   ResultFacts
 	Download DownloadFacts
+	Replaced ReplacedFacts
+	Taker    TakerFacts
 	// Rt, Anibt and Mikan are the value namespaces keyed by Field.Key; Vars
 	// the frozen user Vars output. Mikan carries only the origin RSS source's
 	// group identity (there is no Mikan tag namespace); the source's
@@ -206,6 +208,23 @@ type EventFacts struct {
 	// Action is a subscription transition: started, stopped, resumed or
 	// retired. Link is an in-app anchor (#/...) to act on the event.
 	Action, Link string
+	// Cause is why a managed file lost its place: overwrite (a new file took
+	// the path) or redownload (the same release was downloaded again).
+	Cause string
+}
+
+// ReplacedFacts names the old versions one settled replacement took over:
+// each target is {"path": file name, "group": subgroup, "title": release
+// title}, the last two only when the version records its source release.
+type ReplacedFacts struct {
+	Count   *int64
+	Targets []map[string]any
+}
+
+// TakerFacts is the file that displaced another one: its file name and, when
+// the release behind it is known, its subgroup and release title.
+type TakerFacts struct {
+	File, Group, Title string
 }
 
 type ResultFacts struct {

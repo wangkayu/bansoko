@@ -24,6 +24,8 @@ const (
 	TriggerSubscriptionChanged       TriggerKind = plugintargetport.TriggerSubscriptionChanged
 	TriggerUnknownFilesImported      TriggerKind = plugintargetport.TriggerUnknownFilesImported
 	TriggerReplacementDeletionFailed TriggerKind = plugintargetport.TriggerReplacementDeletionFailed
+	TriggerReplacementApplied        TriggerKind = plugintargetport.TriggerReplacementApplied
+	TriggerFileDisplaced             TriggerKind = plugintargetport.TriggerFileDisplaced
 )
 
 type PluginKind string

@@ -147,6 +147,10 @@ export const factsCopy = {
       label: "发生时间",
       description: "派生值：事件发生时间，RFC 3339。",
     },
+    cause: {
+      label: "失去位置的原因",
+      description: "派生值：overwrite（新文件写入同一位置）或 redownload（同一条发布重新下载）。",
+    },
     link: {
       label: "应用内链接",
       description: "派生值：应用内的 # 锚点：打开这次获取的执行记录，其中列出需要手动匹配的文件。",
@@ -310,6 +314,16 @@ export const factsCopy = {
       description: "采集值：RSS 中的原始标题。",
     },
   },
+  replaced: {
+    count: {
+      label: "被替换的版本数",
+      description: "派生值：这次替换顶掉的旧版本数量。",
+    },
+    targets: {
+      label: "被替换的版本",
+      description: "派生值：被顶掉的旧版本，每行一个：文件名（path），以及记录了来源发布时才有字幕组（group）与发布标题（title）。",
+    },
+  },
   result: {
     category: {
       label: "失败类别",
@@ -390,6 +404,20 @@ export const factsCopy = {
     langs: {
       label: "字幕语言集合",
       description: "派生值：sub.lang 的全部语言代码。",
+    },
+  },
+  taker: {
+    file: {
+      label: "顶替的文件",
+      description: "采集值：顶掉这个位置的文件名，不含路径。",
+    },
+    group: {
+      label: "顶替者字幕组",
+      description: "采集值：顶掉这个位置的文件所属发布的字幕组显示名；来源没有记录时为空。",
+    },
+    title: {
+      label: "顶替者发布标题",
+      description: "采集值：顶掉这个位置的文件所属发布的原始标题；来源没有记录时为空。",
     },
   },
   tmdb: {
@@ -594,6 +622,10 @@ export const enFactsCopy = {
       label: "Occurred at",
       description: "Derived: When the event happened, RFC 3339.",
     },
+    cause: {
+      label: "Cause",
+      description: "Derived: overwrite (a new file took the path) or redownload (the same release was downloaded again).",
+    },
     link: {
       label: "In-app link",
       description: "Derived: In-app # anchor: opens this acquisition's execution record, which lists the files awaiting a manual match.",
@@ -757,6 +789,16 @@ export const enFactsCopy = {
       description: "Collected: Original title from the feed.",
     },
   },
+  replaced: {
+    count: {
+      label: "Replaced version count",
+      description: "Derived: How many old versions this replacement took over.",
+    },
+    targets: {
+      label: "Replaced versions",
+      description: "Derived: The old versions that lost their place, one per line: the file name (path) plus, when the version records its source release, the group (group) and release title (title).",
+    },
+  },
   result: {
     category: {
       label: "Failure category",
@@ -837,6 +879,20 @@ export const enFactsCopy = {
     langs: {
       label: "Subtitle languages",
       description: "Derived: Every language code of sub.lang.",
+    },
+  },
+  taker: {
+    file: {
+      label: "Taker file",
+      description: "Collected: File name of the file that took the place, without a path.",
+    },
+    group: {
+      label: "Taker group",
+      description: "Collected: Display name of the fansub group behind the file that took the place; empty when the source recorded none.",
+    },
+    title: {
+      label: "Taker release title",
+      description: "Collected: Original title of the release behind the file that took the place; empty when the source recorded none.",
     },
   },
   tmdb: {

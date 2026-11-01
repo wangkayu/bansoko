@@ -342,7 +342,7 @@ WHERE c.id = $1`, op.CompanionID).Scan(&placementID, &currentPath, &state, &plac
 func (s *AlignmentService) companionSettle(op *AlignmentOperation, state AlignmentState, code, reason string) worker.Outcome {
 	itemState := workitems.StateFailed
 	ownerState := string(state)
-	writer := alignmentSettleWriter(s.activity, op, op.Version, state, code, reason, "")
+	writer := alignmentSettleWriter(s.displacedSinks(), op, op.Version, state, code, reason, "")
 	return worker.Finish(itemState, workitems.OwnerResult{State: ownerState, ReasonCode: code, Reason: reason}, writer)
 }
 

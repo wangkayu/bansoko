@@ -47,6 +47,8 @@ export const enSettingsNotificationsCopy = {
       subscription_changed: "Subscription changed",
       unknown_files_imported: "Unrecognized files imported",
       replacement_deletion_failed: "Old version not deleted",
+      replacement_applied: "Old version replaced",
+      file_displaced: "File overwritten",
     },
     adapter: {
       telegram: "Telegram",
