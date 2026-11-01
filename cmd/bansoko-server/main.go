@@ -360,7 +360,7 @@ func runServe(args []string) {
 	acquisitionActivity := &acquisitionactivity.Consumer{DB: db, Writer: observabilityService, Diagnostics: observabilityService}
 	oneShotService := applicationGraph.oneShotService
 
-	readmodelService, err := provideReadmodelService(db, ownershipService, animeService, draftService, catalogService, applicationGraph.seedPreviewSource, fileMaintenanceGraph.mediaFactsStore, fileMaintenanceGraph.namingRenderer)
+	readmodelService, err := provideReadmodelService(db, ownershipService, animeService, draftService, catalogService, applicationGraph.seedPreviewSource, fileMaintenanceGraph.mediaFactsStore)
 	if err != nil {
 		fatalStartup(runtimeLogger, "readmodel service build failed", "readmodel_service_build_failed")
 	}

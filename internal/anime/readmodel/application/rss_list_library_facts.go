@@ -7,18 +7,7 @@ import (
 	"strings"
 
 	"github.com/lib/pq"
-
-	"bansoko/internal/library/displaypath"
 )
-
-// PlacementTargetRenderer renders, with the anime's current naming rules, the
-// target each active placement (keyed by placement id) and each of its active
-// companions (keyed by companion id) would be aligned to. It is the file
-// maintenance renderer the per-anime files dialog uses; an entry it cannot
-// render is absent.
-type PlacementTargetRenderer interface {
-	RenderPlacementTargets(ctx context.Context, animeID string, placementIDs []string) (map[string]string, error)
-}
 
 // releaseLibraryFile is one file of an owner release whose file operation
 // produced a placement: either the placement (video) or the companion
@@ -31,7 +20,6 @@ type releaseLibraryFile struct {
 	// companion.
 	PlacementID string
 	CompanionID string
-	CurrentPath string
 	// State is the placement's state (active, superseded, displaced or
 	// released); empty on companion rows. Cause is a displaced placement's
 	// cause (overwrite or redownload).
@@ -54,25 +42,36 @@ func (f releaseLibraryFile) ended() bool {
 	return false
 }
 
-// applyLibraryLocations shows where each imported file of the owner view is
-// now. A file an active verified placement or
-// active companion holds gets LibraryPath, its current path relative to the
-// library (displaypath root of the anime's files); when the anime's current
-// naming rules render another path for it, LibraryNewPath is that path, from
-// the files dialog's renderer. Files not in the library keep their rendered
-// target only.
+// matchLibraryFile finds the row for one RSS file: by its source path, else by
+// the frozen target the plan compared. An empty rendered target matches
+// nothing.
+func matchLibraryFile(bySource, byTarget map[string]releaseLibraryFile, releaseID, sourcePath, renderedTarget string) (releaseLibraryFile, bool) {
+	if found, ok := bySource[releaseID+"\x00"+sourcePath]; ok {
+		return found, true
+	}
+	if strings.TrimSpace(renderedTarget) == "" {
+		return releaseLibraryFile{}, false
+	}
+	found, ok := byTarget[releaseID+"\x00"+filepath.Clean(renderedTarget)]
+	return found, ok
+}
+
+// applyLibraryFacts records which files of an owner release the library already
+// holds and how a placement that has ended ended.
 //
-// A file it places in the library also reads InLibrary true, wherever the
-// file sits now: the overlap compares the frozen rendered target with
-// placement paths, which an alignment move (or a companion, which is no
-// placement path at all) leaves behind, so the owner row would otherwise read
-// pending-import for a file it shows a library location for. The seed's
-// overlap counts
-// follow. A file whose placement has ended since (superseded, displaced or
-// released) is in no library, so it keeps its rendered target and gains
-// PlacementEnd: the row states that one file's outcome and never points at
-// whichever file holds the episode now. It reads and writes nothing else.
-func (s *Service) applyLibraryLocations(ctx context.Context, animeID string, view *RSSListView) error {
+// A file an active verified placement or an active companion holds reads
+// InLibrary true, wherever the file sits now: the overlap compares the frozen
+// rendered target with placement paths, which an alignment move (or a
+// companion, which is no placement path at all) leaves behind, so the owner row
+// would otherwise read pending-import for a file the library holds. The seed's
+// overlap counts follow. A file whose placement has ended since (superseded,
+// displaced or released) is in no library: it keeps its rendered target and
+// gains PlacementEnd, the outcome of that one file.
+//
+// The view reports the rendered result and each file's state and never a
+// location: where a file actually sits belongs to the anime's files. It reads
+// and writes nothing else.
+func (s *Service) applyLibraryFacts(ctx context.Context, animeID string, view *RSSListView) error {
 	if s == nil || s.db == nil || view == nil || strings.TrimSpace(animeID) == "" {
 		return nil
 	}
@@ -87,17 +86,15 @@ func (s *Service) applyLibraryLocations(ctx context.Context, animeID string, vie
 	if len(releaseIDs) == 0 {
 		return nil
 	}
-	held, err := s.readReleaseLibraryFiles(ctx, animeID, releaseIDs)
-	if err != nil || len(held) == 0 {
+	files, err := s.readReleaseLibraryFiles(ctx, animeID, releaseIDs)
+	if err != nil || len(files) == 0 {
 		return err
 	}
 	bySource := map[string]releaseLibraryFile{}
 	byTarget := map[string]releaseLibraryFile{}
 	endedBySource := map[string]releaseLibraryFile{}
 	endedByTarget := map[string]releaseLibraryFile{}
-	placementIDs := []string{}
-	seenPlacement := map[string]bool{}
-	for _, file := range held {
+	for _, file := range files {
 		if file.ended() {
 			endedBySource[file.ReleaseID+"\x00"+file.SourcePath] = file
 			endedByTarget[file.ReleaseID+"\x00"+filepath.Clean(file.FrozenTarget)] = file
@@ -105,32 +102,6 @@ func (s *Service) applyLibraryLocations(ctx context.Context, animeID string, vie
 		}
 		bySource[file.ReleaseID+"\x00"+file.SourcePath] = file
 		byTarget[file.ReleaseID+"\x00"+filepath.Clean(file.FrozenTarget)] = file
-		placementID := file.PlacementID
-		if placementID != "" && !seenPlacement[placementID] {
-			seenPlacement[placementID] = true
-			placementIDs = append(placementIDs, placementID)
-		}
-	}
-	var targets map[string]string
-	if s.placementTargets != nil && len(placementIDs) > 0 {
-		// A failed render only drops the new-path line; the current location
-		// is a recorded fact and stays.
-		if rendered, renderErr := s.placementTargets.RenderPlacementTargets(ctx, animeID, placementIDs); renderErr == nil {
-			targets = rendered
-		} else if ctxErr := ctx.Err(); ctxErr != nil {
-			return ctxErr
-		}
-	}
-	type match struct {
-		item   *RSSListItem
-		file   *RSSListFile
-		held   releaseLibraryFile
-		target string
-	}
-	matches := []match{}
-	libraryPaths, err := animeLibraryPaths(ctx, s.db, animeID)
-	if err != nil {
-		return err
 	}
 	for gi := range view.Groups {
 		for ii := range view.Groups[gi].Items {
@@ -141,46 +112,18 @@ func (s *Service) applyLibraryLocations(ctx context.Context, animeID string, vie
 			}
 			for fi := range item.Files {
 				file := &item.Files[fi]
-				found, ok := bySource[releaseID+"\x00"+file.SourcePath]
-				if !ok && strings.TrimSpace(file.RenderedTarget) != "" {
-					found, ok = byTarget[releaseID+"\x00"+filepath.Clean(file.RenderedTarget)]
-				}
-				if !ok {
-					// The file is in no library: if the placement it produced
-					// has ended, the row states that file's own outcome instead
-					// of reading "waiting to import".
-					ended, endedOK := endedBySource[releaseID+"\x00"+file.SourcePath]
-					if !endedOK && strings.TrimSpace(file.RenderedTarget) != "" {
-						ended, endedOK = endedByTarget[releaseID+"\x00"+filepath.Clean(file.RenderedTarget)]
-					}
-					if endedOK {
-						file.PlacementEnd = &RSSListPlacementEnd{State: ended.State, Cause: ended.Cause}
-					}
+				if _, held := matchLibraryFile(bySource, byTarget, releaseID, file.SourcePath, file.RenderedTarget); held {
+					markHeldInLibrary(item, file)
 					continue
 				}
-				key := found.PlacementID
-				if found.CompanionID != "" {
-					key = found.CompanionID
+				// The file is in no library: if the placement it produced has
+				// ended, the row states that file's own outcome instead of
+				// reading "waiting to import".
+				if ended, ok := matchLibraryFile(endedBySource, endedByTarget, releaseID, file.SourcePath, file.RenderedTarget); ok {
+					file.PlacementEnd = &RSSListPlacementEnd{State: ended.State, Cause: ended.Cause}
 				}
-				target := ""
-				if rendered, ok := targets[key]; ok && filepath.Clean(rendered) != filepath.Clean(found.CurrentPath) {
-					target = rendered
-					libraryPaths = append(libraryPaths, rendered)
-				}
-				libraryPaths = append(libraryPaths, found.CurrentPath)
-				matches = append(matches, match{item: item, file: file, held: found, target: target})
 			}
 		}
-	}
-	root := displaypath.Root(libraryPaths)
-	for _, m := range matches {
-		current := displaypath.Relative(root, m.held.CurrentPath)
-		m.file.LibraryPath = &current
-		if m.target != "" {
-			next := displaypath.Relative(root, m.target)
-			m.file.LibraryNewPath = &next
-		}
-		markHeldInLibrary(m.item, m.file)
 	}
 	return nil
 }
@@ -215,7 +158,7 @@ func markHeldInLibrary(item *RSSListItem, file *RSSListFile) {
 func (s *Service) readReleaseLibraryFiles(ctx context.Context, animeID string, releaseIDs []string) ([]releaseLibraryFile, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT a.source_release_ref, mf.relative_path, fo.target_path,
-       COALESCE(p.id, c.placement_id), COALESCE(c.id, ''), COALESCE(p.physical_path, c.current_path),
+       COALESCE(p.id, c.placement_id), COALESCE(c.id, ''),
        COALESCE(p.state, ''), COALESCE(p.displaced_cause, '')
 FROM file_operations fo
 JOIN acquisitions a ON a.id = fo.acquisition_id
@@ -235,7 +178,7 @@ ORDER BY fo.created_at, fo.id`, pq.Array(releaseIDs), animeID)
 	files := []releaseLibraryFile{}
 	for rows.Next() {
 		var file releaseLibraryFile
-		if err := rows.Scan(&file.ReleaseID, &file.SourcePath, &file.FrozenTarget, &file.PlacementID, &file.CompanionID, &file.CurrentPath,
+		if err := rows.Scan(&file.ReleaseID, &file.SourcePath, &file.FrozenTarget, &file.PlacementID, &file.CompanionID,
 			&file.State, &file.Cause); err != nil {
 			return nil, fmt.Errorf("scan release library file: %w", err)
 		}

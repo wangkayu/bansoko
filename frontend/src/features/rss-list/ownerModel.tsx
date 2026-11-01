@@ -240,19 +240,13 @@ function OwnerReleaseFileRow({ preview, parsed, target, observation, subtitles =
 //   goes through planDiff.
   const actualFailure = planned && targetPath !== undefined && !duplicateConflict ? diagnosticCode : undefined;
   const status = targetObservationPresentation(observation);
-  // An imported file: ② instead shows where it actually is now (a library-relative path the server
-//   gives); when the current naming template renders a different path, the new path awaiting
-//   alignment is added (also computed by the server with the files dialog's renderer).
-//   Non-imported files keep showing the target path.
-  const libraryPath = preview?.library_path ?? undefined;
-  const libraryNewPath = libraryPath !== undefined ? preview?.library_new_path ?? undefined : undefined;
   // ③'s imported state follows the server's in_library: it judges from placement records, so a file
 //   moved by alignment still counts as imported; an observation on the frozen target no longer
 //   matches after the move and can no longer stand for "awaiting import".
-  const inLibrary = preview?.in_library === true || libraryPath !== undefined;
+  const inLibrary = preview?.in_library === true;
   // A file whose placement has ended (superseded, displaced or released): ③ states that one file's
-//   outcome. It is in no library, so it shows no library location and keeps its target in ② — where
-//   the episode lives now is the anime's files' business, not this row's.
+//   own outcome. The row carries no location — this view renders the seed's result and the file's
+//   state, and where files sit belongs to the anime's files dialog.
   const placementEnd = preview?.placement_end ?? undefined;
   // On a size mismatch the ③ row says where the difference lies: the actual size in the library
 //   versus the file's expected size. When either side is unavailable only the state badge remains,
@@ -286,14 +280,7 @@ function OwnerReleaseFileRow({ preview, parsed, target, observation, subtitles =
           subtitle's own target. Only render-domain failures (isRenderDiagnostic) may stand in when
           there is no target; landing/probe failures never appear here — ② degrades into the neutral
           "target pending", leaving the verdict to ③. */}
-      {planned && (libraryPath !== undefined
-        ? <>
-            <span className="chain-file-path-pending text-caption" title={libraryPath}>{t("rss.target.libraryAt", { path: libraryPath })}</span>
-            {libraryNewPath !== undefined && (
-              <span className="text-caption text-muted break-anywhere" title={libraryNewPath}>{t("rss.target.libraryNewPath", { path: libraryNewPath })}</span>
-            )}
-          </>
-        : renderFailure !== undefined
+      {planned && (renderFailure !== undefined
         ? <span className="text-caption text-danger" role="alert"><ReasonText code={renderFailure} /></span>
         : targetPath
           ? <>
@@ -343,14 +330,8 @@ function ownerSubtitleItem({ path, preview, parsed }: OwnerFileEntry): BoundSubt
     languageSource: preview?.sub_lang_tag ? preview.sub_lang_source : undefined,
     included: !filtered && !duplicate,
     reasonCode,
-    // An imported subtitle shows where it actually is, adding the new path when awaiting alignment; a non-imported one keeps the target path.
-    target: preview?.library_path ?? parsed?.target_path ?? preview?.rendered_target ?? undefined,
-    targetNote: preview?.library_path
-      ? preview.library_new_path
-        ? t("rss.target.libraryNewPath", { path: preview.library_new_path })
-        : t("rss.target.libraryAtNote")
-      : undefined,
-    targetProblem: preview?.library_path ? undefined : pending ?? failure,
+    target: parsed?.target_path ?? preview?.rendered_target ?? undefined,
+    targetProblem: pending ?? failure,
   };
 }
 

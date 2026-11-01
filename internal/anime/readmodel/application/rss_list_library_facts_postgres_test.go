@@ -8,31 +8,19 @@ import (
 	"bansoko/internal/testutil/disposabledb"
 )
 
-type fakePlacementTargets map[string]string
-
-func (f fakePlacementTargets) RenderPlacementTargets(_ context.Context, _ string, ids []string) (map[string]string, error) {
-	out := map[string]string{}
-	for _, id := range ids {
-		if target, ok := f[id]; ok {
-			out[id] = target
-		}
-	}
-	return out, nil
-}
-
-// An imported file of an owner release shows where its placement is now,
-// relative to the library, and the current-rules path when that differs; a
-// file without a placement keeps only its rendered target.
-func TestRSSListOwnerRowShowsLibraryLocation(t *testing.T) {
+// An imported file of an owner release reads in_library wherever its placement
+// sits now; the row carries no location, because this view renders the seed's
+// result and the file's state. A file with no placement stays not held.
+func TestRSSListOwnerRowReadsHeldFile(t *testing.T) {
 	db := animetest.OpenTestDB(t)
 	ctx := context.Background()
-	seedFailedRecordRoot(t, db, "record-located")
+	seedFailedRecordRoot(t, db, "record-held")
 	// The fixture's file operation fo-failed placed file-a.mkv (frozen target
-	// /library/Failed Show/file-a.mkv); the file now sits elsewhere.
+	// /library/Failed Show/file-a.mkv); it now sits elsewhere.
 	if _, err := disposabledb.Owner(t).ExecContext(ctx, `
 INSERT INTO placements(id, physical_path, managed_anime_id, source_evidence_type, source_owner_ref,
  source_fingerprint, target_fingerprint, facts_version, verification_state, state)
-VALUES ('plc-located', '/library/Failed Show 2021/Season 01/file-a.mkv', 'anime-failed', 'file_operation', 'fo-failed',
+VALUES ('plc-held', '/library/Failed Show 2021/Season 01/file-a.mkv', 'anime-failed', 'file_operation', 'fo-failed',
  'sha256:a', 'sha256:a', 'parser-v1', 'verified', 'active')`); err != nil {
 		t.Fatal(err)
 	}
@@ -45,29 +33,18 @@ VALUES ('plc-located', '/library/Failed Show 2021/Season 01/file-a.mkv', 'anime-
 		},
 	}}}}}
 
-	if err := service.applyLibraryLocations(ctx, "anime-failed", &view); err != nil {
+	if err := service.applyLibraryFacts(ctx, "anime-failed", &view); err != nil {
 		t.Fatal(err)
 	}
 	files := view.Groups[0].Items[0].Files
-	if files[0].LibraryPath == nil || *files[0].LibraryPath != "Failed Show 2021/Season 01/file-a.mkv" || files[0].LibraryNewPath != nil {
-		t.Fatalf("located file = %+v", files[0])
+	if files[0].InLibrary == nil || !*files[0].InLibrary {
+		t.Fatalf("held file = %+v", files[0])
 	}
 	if files[0].PlacementEnd != nil {
 		t.Fatalf("a held file has no ended placement: %+v", files[0].PlacementEnd)
 	}
-	if files[1].LibraryPath != nil || files[1].LibraryNewPath != nil {
-		t.Fatalf("a file not in the library keeps its target only: %+v", files[1])
-	}
-
-	service.placementTargets = fakePlacementTargets{"plc-located": "/library/Failed Show （2021）/Season 01/Failed Show - S01E01.mkv"}
-	view.Groups[0].Items[0].Files[0].LibraryPath = nil
-	if err := service.applyLibraryLocations(ctx, "anime-failed", &view); err != nil {
-		t.Fatal(err)
-	}
-	located := view.Groups[0].Items[0].Files[0]
-	if located.LibraryPath == nil || *located.LibraryPath != "Failed Show 2021/Season 01/file-a.mkv" ||
-		located.LibraryNewPath == nil || *located.LibraryNewPath != "Failed Show （2021）/Season 01/Failed Show - S01E01.mkv" {
-		t.Fatalf("pending alignment = %+v", located)
+	if files[1].InLibrary != nil || files[1].PlacementEnd != nil {
+		t.Fatalf("a file with no placement stays not held: %+v", files[1])
 	}
 }
 
@@ -104,15 +81,15 @@ VALUES ('plc-moved', '/library/Failed Show （2021）/Season 01/Failed Show - S0
 	if item.LibraryOverlap.Verdict != RSSListLibraryOverlapAbsent || item.Files[0].InLibrary == nil || *item.Files[0].InLibrary {
 		t.Fatalf("frozen-target overlap of a moved file = %+v / %+v", item.LibraryOverlap, item.Files[0])
 	}
-	if err := service.applyLibraryLocations(ctx, "anime-failed", &view); err != nil {
+	if err := service.applyLibraryFacts(ctx, "anime-failed", &view); err != nil {
 		t.Fatal(err)
 	}
 	item = view.Groups[0].Items[0]
 	moved, other := item.Files[0], item.Files[1]
-	if moved.LibraryPath == nil || moved.InLibrary == nil || !*moved.InLibrary {
+	if moved.InLibrary == nil || !*moved.InLibrary {
 		t.Fatalf("a moved placement reads in the library: %+v", moved)
 	}
-	if other.InLibrary == nil || *other.InLibrary || other.LibraryPath != nil {
+	if other.InLibrary == nil || *other.InLibrary {
 		t.Fatalf("a file with no placement stays not held: %+v", other)
 	}
 	overlap := item.LibraryOverlap
@@ -184,14 +161,14 @@ WHERE id = 'plc-ended'`
 					{SourcePath: "file-b.mkv", RenderedTarget: "/library/Failed Show/file-b.mkv"},
 				},
 			}}}}}
-			if err := service.applyLibraryLocations(ctx, "anime-failed", &view); err != nil {
+			if err := service.applyLibraryFacts(ctx, "anime-failed", &view); err != nil {
 				t.Fatal(err)
 			}
 			file := view.Groups[0].Items[0].Files[0]
 			if file.PlacementEnd == nil || file.PlacementEnd.State != c.state || file.PlacementEnd.Cause != c.cause {
 				t.Fatalf("ended placement = %+v", file.PlacementEnd)
 			}
-			if file.LibraryPath != nil || file.InLibrary != nil {
+			if file.InLibrary != nil {
 				t.Fatalf("an ended file is in no library: %+v", file)
 			}
 			if other := view.Groups[0].Items[0].Files[1]; other.PlacementEnd != nil {

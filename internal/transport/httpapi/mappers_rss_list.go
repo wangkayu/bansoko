@@ -512,14 +512,6 @@ func mapRSSListFile(file readmodelapplication.RSSListFile) generated.RSSListFile
 		inLibrary := *file.InLibrary
 		mapped.InLibrary = &inLibrary
 	}
-	if file.LibraryPath != nil {
-		current := *file.LibraryPath
-		mapped.LibraryPath = &current
-		if file.LibraryNewPath != nil {
-			next := *file.LibraryNewPath
-			mapped.LibraryNewPath = &next
-		}
-	}
 	if file.PlacementEnd != nil {
 		end := generated.RSSListPlacementEnd{State: generated.RSSListPlacementEndState(file.PlacementEnd.State)}
 		if file.PlacementEnd.Cause != "" {

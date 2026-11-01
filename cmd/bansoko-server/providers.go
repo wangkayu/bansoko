@@ -192,7 +192,7 @@ func provideDraftService(db *sql.DB, workStore *workitems.Store, connections gro
 // the application graph hands the one-shot service, so an origin=one_shot list
 // read over a keyword-search snapshot reads the exact snapshot identity the
 // later expansion and submission prove.
-func provideReadmodelService(db *sql.DB, ownership *ownershipapplication.Service, anime *animeapplication.Service, draft *draftapplication.Service, catalog *catalogapplication.Service, seedPreviews animeapplication.SeedPreviewSource, mediaFacts *facts.Store, placementTargets *filemaintenance.NamingTargetRenderer) (*readmodelapplication.Service, error) {
+func provideReadmodelService(db *sql.DB, ownership *ownershipapplication.Service, anime *animeapplication.Service, draft *draftapplication.Service, catalog *catalogapplication.Service, seedPreviews animeapplication.SeedPreviewSource, mediaFacts *facts.Store) (*readmodelapplication.Service, error) {
 	return readmodelapplication.NewService(db, readmodelapplication.Dependencies{
 		Config:       anime,
 		Owners:       ownership,
@@ -207,9 +207,6 @@ func provideReadmodelService(db *sql.DB, ownership *ownershipapplication.Service
 			catalogapplication.SeedSearchApplication{Service: catalog}.ReadSearchSeedTorrentManifests,
 		),
 		MediaFacts: mediaFacts,
-		// The RSS row of an imported file shows the new path with the same
-		// renderer the per-anime files dialog uses.
-		PlacementTargets: placementTargets,
 	})
 }
 

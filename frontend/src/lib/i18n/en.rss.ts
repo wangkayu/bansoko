@@ -130,7 +130,7 @@ export const enRssCopy = {
     subtitle_binding_missing: "No matching video file",
     filtered: "Filtered",
   },
-  target: { satisfied: "Already in library", mismatch: "Size mismatch", mismatchSizes: "Size mismatch ({observed} in library, {expected} expected)", unreadable: "Unreadable", pending: "Waiting to import", inLibrary: "Imported", libraryAt: "In library: {path}", libraryAtNote: "In library", libraryNewPath: "→ New path (pending alignment): {path}" },
+  target: { satisfied: "Already in library", mismatch: "Size mismatch", mismatchSizes: "Size mismatch ({observed} in library, {expected} expected)", unreadable: "Unreadable", pending: "Waiting to import", inLibrary: "Imported", },
   // ③'s own outcome, once the placement this file produced has ended. Only this file is described: the
   // row never points at whichever file holds the episode now.
   placementEnd: {

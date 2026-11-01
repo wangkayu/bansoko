@@ -421,22 +421,23 @@ describe("ownerViewModel", () => {
     expect(within(row).queryByText("/library/Show/Show - 03.mkv")).toBeNull();
   });
 
-  it("已入库的文件 ② 显示实际入库位置；模板渲染出新路径时再给一行待对齐的新路径", () => {
+  // This view renders the seed's result and the file's state; where a file actually sits is the
+  // anime's files dialog's business, so an imported row keeps its rendered target in ②.
+  it("已入库的文件 ② 仍只显示渲染结果，不显示实际位置", () => {
     const workspace = releaseWith([
       { path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 100, media_kind: "video", target_path: "/library/Show 2021/Season 01/Show - 03.mkv", outcome: "planned" },
     ]);
+    workspace.releases[0].target_observations = [];
     renderOwnerFiles([
       {
         file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 100, media_kind: "video", included: true, safety: "valid",
-        library_path: "Show 2021/Season 01/Show - 03.mkv", library_new_path: "Show （2021）/Season 01/Show - 03.mkv",
+        in_library: true,
       },
     ], workspace);
 
     const row = fileRow("Show/old.mkv");
-    expect(within(row).getByText(t("rss.target.libraryAt", { path: "Show 2021/Season 01/Show - 03.mkv" }))).toBeVisible();
-    expect(within(row).getByText(t("rss.target.libraryNewPath", { path: "Show （2021）/Season 01/Show - 03.mkv" }))).toBeVisible();
-    // The frozen target no longer appears as ②.
-    expect(within(row).queryByText("→ /library/Show 2021/Season 01/Show - 03.mkv")).toBeNull();
+    expect(within(row).getByText("→ /library/Show 2021/Season 01/Show - 03.mkv")).toBeVisible();
+    expect(within(row).getByText(t("rss.target.inLibrary"))).toBeVisible();
   });
 
   // After an alignment move the observation on the frozen target no longer matches; ③ follows the server's in_library and never says "awaiting import" again.
@@ -448,14 +449,13 @@ describe("ownerViewModel", () => {
     renderOwnerFiles([
       {
         file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 100, media_kind: "video", included: true, safety: "valid",
-        in_library: true, library_path: "Show 2021/Season 01/Show - 03.mkv",
+        in_library: true,
       },
     ], workspace);
 
     const row = fileRow("Show/old.mkv");
     expect(within(row).getByText(t("rss.target.inLibrary"))).toBeVisible();
     expect(within(row).queryByText(t("rss.target.pending"))).toBeNull();
-    expect(within(row).getByText(t("rss.target.libraryAt", { path: "Show 2021/Season 01/Show - 03.mkv" }))).toBeVisible();
   });
 
   // A file whose placement has ended is in no library, yet it is not "waiting to import": ③ states
@@ -482,9 +482,6 @@ describe("ownerViewModel", () => {
     expect(within(row).getByText(label)).toBeVisible();
     expect(within(row).queryByText(t("rss.target.pending"))).toBeNull();
     expect(within(row).getByText("→ /library/Show/Show - 03.mkv")).toBeVisible();
-    // No library location: the file is gone, so this row has none to show.
-    const libraryAtPrefix = t("rss.target.libraryAt", { path: "" });
-    expect(within(row).queryByText((content) => content.startsWith(libraryAtPrefix))).toBeNull();
   });
 
   it("没入库的文件照旧显示目标路径", () => {
@@ -496,7 +493,6 @@ describe("ownerViewModel", () => {
     ], workspace);
     const row = fileRow("Show/old.mkv");
     expect(within(row).getByText("→ /library/Show/Show - 03.mkv")).toBeVisible();
-    expect(within(row).queryByText(t("rss.target.libraryAt", { path: "Show/Show - 03.mkv" }))).toBeNull();
   });
 
   // On a size mismatch the ③ row does not repeat ②'s target, it says where the difference lies:

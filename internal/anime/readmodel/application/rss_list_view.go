@@ -314,14 +314,6 @@ type RSSListFile struct {
 	// usable rendered target, and nil for every file while the seed's overlap
 	// verdict is undetermined, so an undecidable file is never reported false.
 	InLibrary *bool
-	// LibraryPath is where an imported file of an owner release is now: the
-	// current path of the placement (or companion) holding it, relative to
-	// the library. Nil for a file not in the library and outside owner mode.
-	LibraryPath *string
-	// LibraryNewPath is the path the anime's current naming rules render for
-	// that file when it differs from LibraryPath (pending alignment), from
-	// the files dialog's renderer; nil otherwise.
-	LibraryNewPath *string
 	// PlacementEnd is this file's own outcome once the placement it produced
 	// ended. Nil while an active verified placement or an active companion
 	// holds the file, and for a file this release never placed.
@@ -962,7 +954,7 @@ func (s *Service) composeOwnerRSSListView(ctx context.Context, mode string, work
 		return RSSListView{}, err
 	}
 	if mode == "owner" {
-		if err := s.applyLibraryLocations(ctx, workspace.ManagedAnime.ID, &view); err != nil {
+		if err := s.applyLibraryFacts(ctx, workspace.ManagedAnime.ID, &view); err != nil {
 			return RSSListView{}, err
 		}
 	}

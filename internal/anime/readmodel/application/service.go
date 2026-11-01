@@ -42,9 +42,6 @@ type Dependencies struct {
 	MediaFacts           facts.MediaRepository
 	// Observations is optional; nil reads provider group observations from the database.
 	Observations GroupObservationReader
-	// PlacementTargets is optional; nil shows an imported file's current
-	// location without the pending new path.
-	PlacementTargets PlacementTargetRenderer
 }
 
 type Service struct {
@@ -60,8 +57,6 @@ type Service struct {
 	// observations reads persisted provider group observations; nil reads the
 	// database directly.
 	observations GroupObservationReader
-	// placementTargets renders the current-rules target of imported files.
-	placementTargets PlacementTargetRenderer
 
 	// previewMaterials caches the immutable attr rules and Vars programs a preview
 	// evaluates with, so they are not re-read for every release.
@@ -79,7 +74,7 @@ func NewService(db *sql.DB, deps Dependencies) (*Service, error) {
 	if deps.Config == nil || deps.Owners == nil || deps.Revisions == nil {
 		return nil, errors.New("anime readmodel collaborators are required")
 	}
-	return &Service{db: db, config: deps.Config, owners: deps.Owners, revisions: deps.Revisions, seedPreviews: deps.SeedPreviews, seedTorrentManifests: deps.SeedTorrentManifests, mediaFacts: deps.MediaFacts, observations: deps.Observations, placementTargets: deps.PlacementTargets}, nil
+	return &Service{db: db, config: deps.Config, owners: deps.Owners, revisions: deps.Revisions, seedPreviews: deps.SeedPreviews, seedTorrentManifests: deps.SeedTorrentManifests, mediaFacts: deps.MediaFacts, observations: deps.Observations}, nil
 }
 
 type ManagedAnime = animeapplication.ManagedAnime

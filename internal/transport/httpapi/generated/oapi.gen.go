@@ -7340,16 +7340,10 @@ type RSSListFile struct {
 	FileRef  string `json:"file_ref"`
 	Filename string `json:"filename"`
 
-	// InLibrary Read-only library fact of this one file: true when the library already holds this file's rendered target under an active verified placement, false when the seed's write set was compared and this file's target is not held. Null when this file is outside the seed's write set (it is not included, or its safety verdict is not valid), and null for every file when the seed's library_overlap verdict is undetermined: a file the server did not compare is never reported as false. In owner mode a file that carries library_path is true wherever its placement now sits (an alignment move leaves the rendered target behind), and the seed's library_overlap counts it as present when it was compared.
+	// InLibrary Read-only library fact of this one file: true when the library already holds this file's rendered target under an active verified placement, false when the seed's write set was compared and this file's target is not held. Null when this file is outside the seed's write set (it is not included, or its safety verdict is not valid), and null for every file when the seed's library_overlap verdict is undetermined: a file the server did not compare is never reported as false. In owner mode a file an active verified placement holds is true wherever that placement now sits (an alignment move leaves the rendered target behind), and the seed's library_overlap counts it as present when it was compared. The row carries no location: this view reports the rendered result and the file's state, and where a file actually sits belongs to the anime's files.
 	InLibrary *bool   `json:"in_library"`
 	Included  bool    `json:"included"`
 	Language  *string `json:"language,omitempty"`
-
-	// LibraryNewPath Owner mode only, with library_path: the path the anime's current naming rules render for this file when it differs from library_path (pending alignment), relative to the same root. It is rendered server-side by the per-anime files list's renderer. Absent when the paths agree or the render has no result.
-	LibraryNewPath *string `json:"library_new_path,omitempty"`
-
-	// LibraryPath Owner mode only: where an imported file of this release is now, the current path of the active placement (video) or active companion (subtitle) its file operation produced, relative to the library (the same display root as the per-anime files list: the deepest folder of the anime's files, keeping anime folder / season folder / file). Absent for a file that is not in the library; such a file keeps rendered_target.
-	LibraryPath *string `json:"library_path,omitempty"`
 
 	// MediaKind Product classification of this file, taken from the seed's exact torrent manifest. Absent for a file the release never parsed, so an absent value is never reported as the "other" kind.
 	MediaKind *RSSListFileMediaKind `json:"media_kind,omitempty"`
