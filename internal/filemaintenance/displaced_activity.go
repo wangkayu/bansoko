@@ -161,7 +161,7 @@ SELECT physical_path, COALESCE(quality_facts_ref, '') FROM placements WHERE id =
 // false when the anime record no longer exists (nothing left to notify).
 func managedAnimeTitleTx(ctx context.Context, tx *sql.Tx, animeID string) (string, bool, error) {
 	var title string
-	err := tx.QueryRowContext(ctx, `SELECT COALESCE(btrim(title), '') FROM managed_animes WHERE id = $1`, animeID).Scan(&title)
+	err := tx.QueryRowContext(ctx, `SELECT COALESCE(btrim(title), '') FROM managed_anime WHERE id = $1`, animeID).Scan(&title)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}
