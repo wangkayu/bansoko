@@ -992,6 +992,7 @@ func rssListOwnerDownloadAction(workspace AnimeWorkspace, release Release) RSSLi
 		LifecycleState:    workspace.Subscription.LifecycleState,
 		SubscriptionState: string(workspace.Subscription.State),
 		PlacementMissing:  release.placementMissing,
+		PlacementReleased: release.placementReleased,
 	})
 	if !decision.Allowed {
 		return RSSListDownloadAction{Kind: RSSListDownloadNone, ReasonCode: decision.ReasonCode, Reason: releaseRetryDenials[decision.ReasonCode]}
@@ -1006,6 +1007,7 @@ var releaseRetryDenials = map[string]string{
 	rssapplication.RetryReasonDownloadInProgress:   "正在下载。",
 	rssapplication.RetryReasonProcessingInProgress: "下载完成，正在处理文件。",
 	rssapplication.RetryReasonAlreadyPlaced:        "文件已在库中。",
+	rssapplication.RetryReasonPlacementReleased:    "文件已解除管理。",
 	rssapplication.RetryReasonPresentAtResume:      "恢复订阅时已存在，不会下载。",
 	rssapplication.RetryReasonNotStarted:           "订阅未开始。",
 }

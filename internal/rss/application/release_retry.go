@@ -89,14 +89,15 @@ func loadReleaseRetryFactsTx(ctx context.Context, q queryer, releaseID string) (
 	if err := q.QueryRowContext(ctx, `
 SELECT r.verdict, COALESCE(task.state, ''), COALESCE(acq.state, ''), COALESCE(lifecycle.lifecycle_state, ''), sub.state,
        (SELECT count(*) FROM download_tasks owned WHERE owned.release_id = r.id),
-       `+ReleasePlacementIssueSQL("sub.managed_anime_id")+`
+       `+ReleasePlacementIssueSQL("sub.managed_anime_id")+`,
+       `+ReleasePlacementReleasedSQL("sub.managed_anime_id")+`
 FROM releases r
 JOIN rss_sources src ON src.id = r.rss_source_id
 JOIN subscriptions sub ON sub.id = src.subscription_id
 LEFT JOIN managed_anime lifecycle ON lifecycle.id = sub.managed_anime_id
 LEFT JOIN download_tasks task ON task.id = r.download_task_id
 LEFT JOIN acquisitions acq ON acq.id = task.acquisition_id
-WHERE r.id = $1`, releaseID).Scan(&facts.Verdict, &facts.DownloadTaskState, &facts.AcquisitionState, &facts.LifecycleState, &facts.SubscriptionState, &count, &facts.PlacementMissing); err != nil {
+WHERE r.id = $1`, releaseID).Scan(&facts.Verdict, &facts.DownloadTaskState, &facts.AcquisitionState, &facts.LifecycleState, &facts.SubscriptionState, &count, &facts.PlacementMissing, &facts.PlacementReleased); err != nil {
 		return ReleaseRetryFacts{}, 0, fmt.Errorf("read release retry facts: %w", err)
 	}
 	return facts, count, nil

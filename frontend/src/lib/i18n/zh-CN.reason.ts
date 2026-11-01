@@ -124,6 +124,7 @@ export const reasonCopy = {
   source_release_unavailable: "该文件没有可重新下载的种子",
   processing_in_progress: "下载完成，正在处理文件",
   already_placed: "文件已在库中",
+  placement_released: "文件已解除管理",
   present_at_resume: "恢复订阅时已存在，不会下载",
   not_started: "订阅未开始",
   start_baseline: "订阅前发布，不会自动下载",

@@ -81,6 +81,10 @@ type Release struct {
 	// latest library scan found a placed file of this Release missing or
 	// holding other content (read only while the current task is completed).
 	placementMissing bool
+	// placementReleased is the retry decision's PlacementReleased fact: every
+	// placement this Release produced was released from management and none is
+	// active (read only while the current task is completed).
+	placementReleased bool
 	// frozenPlan is the batch plan of the latest media fact snapshot; nil
 	// without one.
 	frozenPlan *batchplan.Plan

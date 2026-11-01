@@ -2,7 +2,8 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { AnimeWorkspace, ReleaseFile, RSSListGroup, RSSListItem, RSSListView, RSSListFile } from "../../lib/api/client";
 import { downloadTaskStateLabel, fileOperationKindLabel, fileOperationStateLabel, formatBytes } from "../../lib/labels";
-import { knownReasonLabel } from "../../lib/i18n/reasons";
+import { knownReasonLabel, reasonLabel } from "../../lib/i18n/reasons";
+import { labelValue } from "../../lib/i18n/format";
 import { RssListViewPanel } from "./RssListViewPanel";
 import { ownerViewModel, type OwnerViewHandlers } from "./ownerModel";
 import { t } from "../../lib/i18n";
@@ -728,6 +729,19 @@ describe("ownerViewModel", () => {
     expect(screen.queryByText("重新获取将在后续版本提供")).not.toBeInTheDocument();
     // RSS site refresh is unaffected: onRetry still fires only for rss_source_runtime, once.
     expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  // A greyed run-again button explains itself with the retry decision's own reason.
+  it("禁用的重新执行带出拒绝理由", () => {
+    renderOwner(
+      "owner",
+      { onRetryRelease: vi.fn() },
+      { downloadAction: { allowed: false, kind: "retry", reason_code: "placement_released", reason: null } },
+    );
+
+    const button = screen.getByRole("button", { name: labelValue(t("rss.retryRelease"), reasonLabel("placement_released") ?? "") });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("title", labelValue(t("rss.retryRelease"), reasonLabel("placement_released") ?? ""));
   });
 
   it("offers 查看处理过程 only for a release with an execution record", () => {

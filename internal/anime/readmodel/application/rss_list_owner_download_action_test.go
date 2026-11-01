@@ -22,6 +22,7 @@ func TestRSSListOwnerDownloadActionFollowsTheRetryDecision(t *testing.T) {
 		task        string
 		acquisition string
 		missing     bool
+		released    bool
 		reason      string // empty: retry allowed
 	}{
 		{name: "never downloaded", lifecycle: "active", state: subscriptiondomain.SubscriptionActive, verdict: "filtered"},
@@ -30,6 +31,7 @@ func TestRSSListOwnerDownloadActionFollowsTheRetryDecision(t *testing.T) {
 		{name: "downloading", lifecycle: "active", state: subscriptiondomain.SubscriptionActive, verdict: "accepted_pending_download", task: "downloading", acquisition: "running", reason: "download_in_progress"},
 		{name: "placed", lifecycle: "active", state: subscriptiondomain.SubscriptionActive, verdict: "accepted_pending_download", task: "completed", acquisition: "succeeded", reason: "already_placed"},
 		{name: "placed, file missing", lifecycle: "active", state: subscriptiondomain.SubscriptionActive, verdict: "accepted_pending_download", task: "completed", acquisition: "succeeded", missing: true},
+		{name: "released from management", lifecycle: "active", state: subscriptiondomain.SubscriptionActive, verdict: "accepted_pending_download", task: "completed", acquisition: "succeeded", released: true, reason: "placement_released"},
 		{name: "downloaded, processing failed", lifecycle: "active", state: subscriptiondomain.SubscriptionActive, verdict: "accepted_pending_download", task: "completed", acquisition: "failed"},
 		{name: "downloaded, processing", lifecycle: "active", state: subscriptiondomain.SubscriptionActive, verdict: "accepted_pending_download", task: "completed", acquisition: "running", reason: "processing_in_progress"},
 		{name: "pending subscription", lifecycle: "active", state: subscriptiondomain.SubscriptionPending, verdict: "filtered", reason: "not_started"},
@@ -38,7 +40,7 @@ func TestRSSListOwnerDownloadActionFollowsTheRetryDecision(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			workspace := AnimeWorkspace{Subscription: Subscription{State: tc.state, LifecycleState: tc.lifecycle}}
-			got := rssListOwnerDownloadAction(workspace, Release{Verdict: tc.verdict, currentTaskState: tc.task, currentAcquisitionState: tc.acquisition, placementMissing: tc.missing})
+			got := rssListOwnerDownloadAction(workspace, Release{Verdict: tc.verdict, currentTaskState: tc.task, currentAcquisitionState: tc.acquisition, placementMissing: tc.missing, placementReleased: tc.released})
 			if tc.reason == "" {
 				if !got.Allowed || got.Kind != RSSListDownloadRetry || got.ReasonCode != "" {
 					t.Fatalf("download action = %+v, want retry allowed", got)

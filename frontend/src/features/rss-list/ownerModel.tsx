@@ -55,10 +55,19 @@ function describeReason(code?: string | null, detail?: string | null): ReactNode
   return resolved ? <ReasonText code={resolved} /> : undefined;
 }
 
-function actionProps(preview: boolean, onClick?: () => void, disabled = false, label = t("rss.action")) {
-  return preview
-    ? { disabled: true, title: previewReason(), "aria-label": labelValue(label, previewReason()) }
-    : { disabled, title: label, "aria-label": label, onClick };
+// A disabled action explains itself: `note` is the server's reason for refusing it (the retry
+// decision's own words), carried beside the action's label so a greyed button never stands mute.
+function actionProps(preview: boolean, onClick?: () => void, disabled = false, label = t("rss.action"), note?: string) {
+  if (preview) {
+    return { disabled: true, title: previewReason(), "aria-label": labelValue(label, previewReason()) };
+  }
+  if (disabled && note) {
+    // Keep the action's own name and carry the reason beside it (the same label/value join the
+    // preview state uses), so assistive tech reads "重新执行：文件已解除管理".
+    const named = labelValue(label, note);
+    return { disabled, title: named, "aria-label": named, onClick };
+  }
+  return { disabled, title: label, "aria-label": label, onClick };
 }
 
 function groupIdentity(group: RSSListGroup): string {
@@ -410,11 +419,17 @@ function ownerItem(item: RSSListItem, release: Release | undefined, workspace: A
     ? workspace.download_tasks.find((entry) => entry.id === release.download_task_id)
     : undefined;
   const retries = terminalRows(release, workspace);
+  // Why the seed refuses to run again (the retry decision's stable reason), shown on the disabled
+  // button: a release whose files were released from management reads 文件已解除管理 instead of the
+  // bare label.
+  const retryDenied = item.download_action.allowed
+    ? undefined
+    : reasonLabel(item.download_action.reason_code) ?? undefined;
   const actions = (
     <>
       {((handlers.onOpenRecord && release?.acquisition_id) || preview) && <Button size="sm" variant="ghost" {...actionProps(preview, () => release?.acquisition_id && handlers.onOpenRecord?.(release.acquisition_id), false, t("records.openFromRelease"))}><FileText className="icon-sm-fixed" /></Button>}
       {((handlers.onOpenStructure && release) || preview) && <Button size="sm" variant="ghost" {...actionProps(preview, () => release && handlers.onOpenStructure?.(release), false, t("rss.structure.open"))}><ListTree className="icon-sm-fixed" /></Button>}
-      {(item.download_action.kind === "retry" || preview) && <Button size="sm" variant="secondary" {...actionProps(preview, () => release && handlers.onRetryRelease?.(release), !item.download_action.allowed || !handlers.onRetryRelease || (!!release && handlers.busyKey === `release:${release.id}`), t("rss.retryRelease"))}><RotateCcw className="icon-sm-fixed" aria-hidden />{t("rss.retryRelease")}</Button>}
+      {(item.download_action.kind === "retry" || preview) && <Button size="sm" variant="secondary" {...actionProps(preview, () => release && handlers.onRetryRelease?.(release), !item.download_action.allowed || !handlers.onRetryRelease || (!!release && handlers.busyKey === `release:${release.id}`), t("rss.retryRelease"), retryDenied)}><RotateCcw className="icon-sm-fixed" aria-hidden />{t("rss.retryRelease")}</Button>}
     </>
   );
   return {

@@ -126,6 +126,7 @@ export const enReasonCopy = {
   source_release_unavailable: "No torrent to download this file again",
   processing_in_progress: "Downloaded; files are being processed",
   already_placed: "The files are already in the library",
+  placement_released: "The file was released from management",
   present_at_resume: "Already in the feed at resume; not downloaded",
   not_started: "Subscription not started",
   start_baseline: "Published before subscribing; not downloaded automatically",

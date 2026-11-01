@@ -132,7 +132,7 @@ export const enPolicyCopy = {
     companionOther: "Sidecar file",
     releasePlacement: "Stop Managing",
     releaseConfirmTitle: "Stop Managing",
-    releaseConfirmBody: "The subscription stops managing this file and the episode counts as not imported. The file on disk is not deleted.",
+    releaseConfirmBody: "The subscription stops managing this file and the episode counts as not imported; it may still be downloaded again later. The file on disk is not deleted.",
     releaseConfirm: "Stop Managing",
     released: "No longer managed",
     exitBlocked: "Can't do this: {reason}",

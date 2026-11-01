@@ -19,8 +19,13 @@ const (
 	RetryReasonDownloadInProgress   = "download_in_progress"
 	RetryReasonProcessingInProgress = "processing_in_progress"
 	RetryReasonAlreadyPlaced        = "already_placed"
-	RetryReasonPresentAtResume      = "present_at_resume"
-	RetryReasonNotStarted           = "not_started"
+	// RetryReasonPlacementReleased: the Release's files were released from
+	// management and no active placement of it is left. The release itself may
+	// not run again — a redownload is the exit that reruns it — while its freed
+	// episodes stay open to other candidates.
+	RetryReasonPlacementReleased = "placement_released"
+	RetryReasonPresentAtResume   = "present_at_resume"
+	RetryReasonNotStarted        = "not_started"
 )
 
 // ReleaseRetryFacts are the read facts the decision needs: the Release verdict,
@@ -37,6 +42,11 @@ type ReleaseRetryFacts struct {
 	// missing or holding other content by the latest library scan
 	// (ReleasePlacementIssueSQL).
 	PlacementMissing bool
+	// PlacementReleased says this Release's placed files were released from
+	// management and no active placement of it is left
+	// (ReleasePlacementReleasedSQL): the same episodes may be acquired again
+	// by another candidate, but this release does not run again.
+	PlacementReleased bool
 }
 
 // ReleaseRetryDecision is the shared answer. ReasonCode is set only when the
@@ -82,6 +92,9 @@ func ReleaseRetryability(facts ReleaseRetryFacts) ReleaseRetryDecision {
 			if facts.PlacementMissing {
 				return allow
 			}
+			if facts.PlacementReleased {
+				return deny(RetryReasonPlacementReleased)
+			}
 			return deny(RetryReasonAlreadyPlaced)
 		default:
 			// Failed or cancelled post-processing runs again.
@@ -101,6 +114,19 @@ func ReleaseRetryability(facts ReleaseRetryFacts) ReleaseRetryDecision {
 func ReleasePlacementIssueSQL(managedAnimeExpr string) string {
 	return `EXISTS (SELECT 1 FROM placements p
         WHERE p.managed_anime_id = ` + managedAnimeExpr + ` AND p.quality_facts_ref = r.id AND ` + placementIssueCondition + `)`
+}
+
+// ReleasePlacementReleasedSQL is true for a releases row aliased r whose placed
+// files were released from management with no active verified placement of it
+// left. The release itself may then not run again; its freed episodes stay open
+// to other candidates (no "never again" marker). managedAnimeExpr names the
+// Release's anime id.
+func ReleasePlacementReleasedSQL(managedAnimeExpr string) string {
+	return `(EXISTS (SELECT 1 FROM placements p
+            WHERE p.managed_anime_id = ` + managedAnimeExpr + ` AND p.quality_facts_ref = r.id AND p.state = 'released')
+        AND NOT EXISTS (SELECT 1 FROM placements p
+            WHERE p.managed_anime_id = ` + managedAnimeExpr + ` AND p.quality_facts_ref = r.id
+                AND p.state = 'active' AND p.verification_state = 'verified'))`
 }
 
 // placementIssueCondition selects a placement aliased p whose latest scan

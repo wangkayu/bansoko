@@ -129,7 +129,7 @@ export const policyCopy = {
     companionOther: "附属文件",
     releasePlacement: "移出管理",
     releaseConfirmTitle: "移出管理",
-    releaseConfirmBody: "该文件不再由订阅管理，剧集记为未入库。磁盘上的文件不会被删除",
+    releaseConfirmBody: "该文件不再由订阅管理，剧集记为未入库，之后仍可能被重新下载。磁盘上的文件不会被删除",
     releaseConfirm: "移出",
     released: "已移出管理",
     exitBlocked: "无法操作：{reason}",

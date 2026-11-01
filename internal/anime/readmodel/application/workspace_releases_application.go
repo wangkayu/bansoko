@@ -138,6 +138,7 @@ SELECT r.id, r.rss_source_id, r.stable_item_key, r.raw_facts, r.source_facts, r.
        r.download_task_id, r.version, snap.id, snap.parser_kind, snap.parser_config, snap.batch_plan, acq.id,
        COALESCE(cur_task.state, ''), COALESCE(cur_acq.state, ''),
        CASE WHEN cur_task.state = 'completed' THEN `+rssapplication.ReleasePlacementIssueSQL("(SELECT owner_sub.managed_anime_id FROM subscriptions owner_sub WHERE owner_sub.id = src.subscription_id)")+` ELSE false END,
+       CASE WHEN cur_task.state = 'completed' THEN `+rssapplication.ReleasePlacementReleasedSQL("(SELECT owner_sub.managed_anime_id FROM subscriptions owner_sub WHERE owner_sub.id = src.subscription_id)")+` ELSE false END,
        `+digestColumn+`, `+hashColumns+from+hashJoin+`
 LEFT JOIN download_tasks cur_task ON cur_task.id = r.download_task_id
 LEFT JOIN acquisitions cur_acq ON cur_acq.id = cur_task.acquisition_id
@@ -169,7 +170,7 @@ WHERE src.subscription_id = $1
 		var snapshotParserKind, acquisitionID sql.NullString
 		if err := rows.Scan(&release.ID, &release.RSSSourceID, &release.StableItemKey, &rawFacts, &sourceFacts, &parsedFacts, &internalFacts,
 			&release.Verdict, &release.ReasonCode, &reasonDetail, &evaluationVersion, &evaluatedRulesVersion, &downloadTaskID, &release.Version, &item.snapshotID, &snapshotParserKind, &item.parserConfig, &item.batchPlanRaw, &acquisitionID,
-			&release.currentTaskState, &release.currentAcquisitionState, &release.placementMissing, &release.payloadDigest, &release.inputHashV1, &release.inputHashV2); err != nil {
+			&release.currentTaskState, &release.currentAcquisitionState, &release.placementMissing, &release.placementReleased, &release.payloadDigest, &release.inputHashV1, &release.inputHashV2); err != nil {
 			return nil, fmt.Errorf("scan release: %w", err)
 		}
 		if options.vars {

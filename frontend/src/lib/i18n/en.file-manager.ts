@@ -159,7 +159,7 @@ export const enFileManagerCopy = {
       rename: "File contents don't change; existing files are never overwritten",
       copy: "The copy is not managed; existing files are never overwritten",
       delete: "This can't be undone",
-      release: "Its subtitles are unlocked with it, and the file then leaves scans, alignment, replacement and cleanup. This can't be undone",
+      release: "Its subtitles are unlocked with it, and the file then leaves scans, alignment, replacement and cleanup. The episode may still be downloaded again later. This can't be undone",
       align: "Only locations and names change; file contents don't",
     },
     submit: {
