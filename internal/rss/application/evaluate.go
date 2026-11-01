@@ -16,6 +16,7 @@ import (
 	draft "bansoko/internal/anime/draft/application"
 	"bansoko/internal/attrrules"
 	"bansoko/internal/batchplan"
+	"bansoko/internal/filekinds"
 	"bansoko/internal/observability/businesslog"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/parser"
@@ -182,6 +183,10 @@ func (s *Service) evaluateRelease(ctx context.Context, claim workitems.Claim, sn
 	if len(item.ReleaseFiles) == 0 {
 		markTorrentUnavailable(&result, item)
 	}
+	// The subscription's ignore-multi-video gate: with the manifest known, a
+	// release carrying more than two video files is recorded filtered instead
+	// of waiting for the competition. The manual retry entry skips it.
+	applyMultiVideoIgnore(&result, item, snapshot.ignoreMultiVideoReleases, snapshot.manualRetry)
 	// Plan stage: with the competition wired, an active subscription's
 	// downloadable release stops here. Its plain batch plan is frozen and it
 	// waits for the instance's competition, which decides every admission.
@@ -249,7 +254,7 @@ func (s *Service) loadReleaseSnapshot(ctx context.Context, releaseID string) (re
        pp.parser_kind, pp.parser_version,
        COALESCE(lifecycle.lifecycle_state, ''), COALESCE(task.state, ''), COALESCE(acq.state, ''),
        (SELECT count(*) FROM download_tasks owned WHERE owned.release_id = r.id),
-       sub.new_releases_only, sub.start_baseline_at, `+ReleasePlacementIssueSQL("sub.managed_anime_id")+`,
+       sub.new_releases_only, sub.start_baseline_at, sub.ignore_multi_video_releases, `+ReleasePlacementIssueSQL("sub.managed_anime_id")+`,
        CASE WHEN r.verdict IN ('awaiting_competition', 'subscription_stopped') THEN COALESCE(r.competition_retry_key, '') ELSE '' END
 	FROM releases r
 	JOIN rss_sources src ON src.id = r.rss_source_id
@@ -273,7 +278,7 @@ WHERE r.id = $1`, releaseID).Scan(
 		&snapshot.metadataVersion, &snapshot.rulesVersion,
 		&policyKind, &policyVersion,
 		&snapshot.lifecycleState, &snapshot.taskState, &snapshot.acquisitionState, &snapshot.taskCount,
-		&snapshot.newReleasesOnly, &snapshot.startBaselineAt, &snapshot.placementMissing, &snapshot.retryKey); err != nil {
+		&snapshot.newReleasesOnly, &snapshot.startBaselineAt, &snapshot.ignoreMultiVideoReleases, &snapshot.placementMissing, &snapshot.retryKey); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return releaseSnapshot{}, fmt.Errorf("release %q not found: %w", releaseID, err)
 		}
@@ -340,6 +345,10 @@ type currentReleaseEvaluationInputs struct {
 	parserKind       string
 	parserVersion    int64
 	profileVersion   int64
+	// ignoreMultiVideoReleases is compared against the snapshot so a toggle
+	// that landed while the evaluation ran aborts the owner write instead of
+	// deciding with the stale option.
+	ignoreMultiVideoReleases bool
 }
 
 func loadCurrentReleaseEvaluationInputs(ctx context.Context, q queryer, snapshot releaseSnapshot) (currentReleaseEvaluationInputs, error) {
@@ -352,7 +361,8 @@ func loadCurrentReleaseEvaluationInputs(ctx context.Context, q queryer, snapshot
 SELECT src.group_name, COALESCE(src.provider, ''), COALESCE(src.provider_group_ref, ''), src.episode_offset,
        m.bgm_work_id, m.tmdb_work_id, m.tmdb_media_kind, m.tmdb_season, m.media_kind,
        m.version, COALESCE(rules.rules_version, 1),
-       pp.parser_kind, pp.parser_version
+       pp.parser_kind, pp.parser_version,
+       sub.ignore_multi_video_releases
 FROM rss_sources src
 JOIN subscriptions sub ON sub.id = src.subscription_id
 JOIN anime_metadata m ON m.managed_anime_id = sub.managed_anime_id
@@ -364,7 +374,8 @@ WHERE src.id = $1 AND sub.managed_anime_id = $2`, snapshot.sourceID, snapshot.ma
 		&inputs.groupName, &inputs.sourceProvider, &inputs.sourceGroupRef, &inputs.episodeOffset,
 		&bgmWorkID, &tmdbWorkID, &tmdbMediaKind, &tmdbSeason, &ownerMediaKind,
 		&inputs.metadataVersion, &inputs.rulesVersion,
-		&policyKind, &policyVersion); err != nil {
+		&policyKind, &policyVersion,
+		&inputs.ignoreMultiVideoReleases); err != nil {
 		return currentReleaseEvaluationInputs{}, fmt.Errorf("read current release evaluation inputs: %w", err)
 	}
 	policy, err := instanceParserPolicyFromColumns(snapshot.managedAnimeID, policyKind, policyVersion)
@@ -516,6 +527,7 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 			// so a changed resolved action must not be written under the old
 			// value.
 			configChanged = configChanged || !currentInputs.effective.DownloadCompletion.Rules.Equal(snapshot.effective.DownloadCompletion.Rules)
+			configChanged = configChanged || currentInputs.ignoreMultiVideoReleases != snapshot.ignoreMultiVideoReleases
 			inputsChanged := configChanged || currentInputs.metadataVersion != snapshot.metadataVersion ||
 				currentInputs.rulesVersion != snapshot.rulesVersion ||
 				currentInputs.parserKind != snapshot.parserKind ||
@@ -575,6 +587,7 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 				}, currentInputs.effective, currentInputs.metadataHold, currentRules, resolved.Identity)
 			}
 			markTorrentUnavailable(&result, item)
+			applyMultiVideoIgnore(&result, item, snapshot.ignoreMultiVideoReleases, snapshot.manualRetry)
 			if awaitNow && result.Verdict == animedomain.ReleaseVerdict("accepted_pending_download") {
 				markAwaitingCompetition(&result)
 			}
@@ -594,6 +607,7 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 			}
 			configChanged = configChanged || currentInputs.effective.TagFilters.Digest != snapshot.effective.TagFilters.Digest
 			configChanged = configChanged || !currentInputs.effective.DownloadCompletion.Rules.Equal(snapshot.effective.DownloadCompletion.Rules)
+			configChanged = configChanged || currentInputs.ignoreMultiVideoReleases != snapshot.ignoreMultiVideoReleases
 			if configChanged || currentInputs.metadataVersion != snapshot.metadataVersion || currentInputs.rulesVersion != snapshot.rulesVersion ||
 				currentInputs.parserKind != snapshot.parserKind || currentInputs.parserVersion != snapshot.parserVersion || currentInputs.profileVersion != snapshot.profileVersion ||
 				currentInputs.groupName != snapshot.groupName || currentInputs.episodeOffset != snapshot.episodeOffset {
@@ -1179,6 +1193,43 @@ func releaseMediaSnapshotInput(snapshot releaseSnapshot, title string, evidence 
 		ReleaseID: snapshot.releaseID, Title: title,
 		BGMWorkID: snapshot.bgmWorkID, TMDBWorkID: snapshot.tmdbWorkID, AniBTMode: snapshot.anibtMode,
 		Evidence: evidence.ParserEvidence, Plan: plan,
+	}
+}
+
+// maxAutoVideoFiles is the ignore-multi-video threshold: a manifest with more
+// video files than this is the packs-and-discs shape the option skips.
+const maxAutoVideoFiles = 2
+
+// ReasonMultiVideoFiles is the filtered verdict reason of the
+// ignore-multi-video option (reason_detail "video files: <n>").
+const ReasonMultiVideoFiles = "multi_video_files"
+
+// countVideoReleaseFiles counts every video file of a manifest, whatever its
+// depth: the option's caliber is the whole torrent, not the planned subset.
+func countVideoReleaseFiles(files []acquisitiondomain.ReleaseFile) int {
+	count := 0
+	for _, file := range files {
+		if file.MediaKind == filekinds.KindVideo {
+			count++
+		}
+	}
+	return count
+}
+
+// applyMultiVideoIgnore is the subscription's ignore-multi-video gate. It runs
+// where the manifest is known and only stops an admission that was about to
+// wait for the competition: earlier filter reasons keep their verdict, an
+// explicit retry (the manual entry, which also skips the start baseline)
+// passes, and the option off changes nothing.
+func applyMultiVideoIgnore(result *animedomain.PreviewReleaseResult, item acquisitiondomain.FeedItem, enabled, manualRetry bool) {
+	if !enabled || manualRetry || result.Verdict != animedomain.ReleaseVerdict("accepted_pending_download") {
+		return
+	}
+	if videos := countVideoReleaseFiles(item.ReleaseFiles); videos > maxAutoVideoFiles {
+		result.Verdict = animedomain.ReleaseVerdict("filtered")
+		result.ReasonCode = ReasonMultiVideoFiles
+		detail := fmt.Sprintf("video files: %d", videos)
+		result.ReasonDetail = &detail
 	}
 }
 

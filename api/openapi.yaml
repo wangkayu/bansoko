@@ -2079,6 +2079,55 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/Unprocessable'
+  /anime/{managed_anime_id}/subscription/ignore-multi-video-releases:
+    put:
+      tags: [Anime]
+      operationId: setAnimeIgnoreMultiVideoReleases
+      x-scope: write
+      x-mcp:
+        tool: set_ignore_multi_video_releases
+        group: subscription
+        write: true
+        description: >-
+          Turn ignore multi-video releases (忽略多视频文件种子) on or off for
+          a subscription of any state, with expected-version CAS. While on, a
+          Release whose torrent carries more than two video files is recorded
+          filtered with reason_code multi_video_files and is never
+          auto-downloaded; retry_release still evaluates it through every
+          rule, and replacement is unaffected. Turning it on settles the
+          instance's waiting multi-video releases as filtered; turning it off
+          schedules their re-evaluation. Call get_workspace first for the
+          expected_version.
+      description: >-
+        Sets Subscription.ignore_multi_video_releases. Changeable in any
+        subscription state; a stale version answers 409 version conflict.
+        The same transaction settles the undecided releases of the instance:
+        on marks waiting multi-video releases filtered/multi_video_files, off
+        schedules their re-evaluation.
+      parameters:
+        - $ref: '#/components/parameters/ManagedAnimeID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IgnoreMultiVideoInput'
+      responses:
+        '200':
+          description: The Subscription with the saved option.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+
   /anime/{managed_anime_id}/duplicate:
     post:
       tags: [Anime]
@@ -8127,7 +8176,9 @@ components:
             anibt_tag_blacklisted (reason_detail "blacklisted: <tags>");
             title_tag_missing, title_tag_whitelist_unmet and
             title_tag_blacklisted are the same three outcomes of the
-            title-parse row.
+            title-parse row. multi_video_files (reason_detail "video files:
+            <n>") is the subscription's ignore-multi-video gate: the torrent
+            manifest carries more than two video files.
         reason_detail:
           type: string
           nullable: true
@@ -9925,7 +9976,7 @@ components:
     Subscription:
       type: object
       additionalProperties: false
-      required: [id, managed_anime_id, origin, state, lifecycle_state, lifecycle_epoch, version, new_releases_only, created_at]
+      required: [id, managed_anime_id, origin, state, lifecycle_state, lifecycle_epoch, version, new_releases_only, ignore_multi_video_releases, created_at]
       description: >-
         The single subscription owned by one ManagedAnime. Its active/stopped
         state is reversible automation intent; lifecycle_state is the separate
@@ -10002,6 +10053,16 @@ components:
             Baseline of new_releases_only: the instance creation time (the
             subscribe that created it, not the first start). Present exactly
             when new_releases_only is true.
+        ignore_multi_video_releases:
+          type: boolean
+          description: >-
+            Ignore multi-video releases (忽略多视频文件种子). When true, a
+            Release whose torrent manifest carries more than two video files
+            takes the verdict filtered with reason_code multi_video_files
+            instead of waiting for the subscription competition, so it is
+            never auto-downloaded. An explicit retryRelease skips this gate
+            and evaluates the release through every rule. Changeable in any
+            subscription state; one-shot acquisition is unaffected.
     BGMBinding:
       type: object
       additionalProperties: false
@@ -12693,6 +12754,13 @@ components:
             releases published before that, or without a publish time, take
             the terminal verdict start_baseline. Releases published while the
             instance is pending count as new.
+        ignore_multi_video_releases:
+          type: boolean
+          description: >-
+            Ignore multi-video releases (忽略多视频文件种子), default false
+            (absent). Subscribe freezes it onto the instance: while it is on,
+            automatic admission records filtered/multi_video_files for a
+            Release whose torrent manifest carries more than two video files.
         metadata:
           $ref: '#/components/schemas/AnimeMetadataDraft'
         subgroups:
@@ -13691,6 +13759,15 @@ components:
           type: string
           enum: [active, stopped]
     NewReleasesOnlyInput:
+      type: object
+      additionalProperties: false
+      required: [expected_version, enabled]
+      properties:
+        expected_version:
+          $ref: '#/components/schemas/Version'
+        enabled:
+          type: boolean
+    IgnoreMultiVideoInput:
       type: object
       additionalProperties: false
       required: [expected_version, enabled]

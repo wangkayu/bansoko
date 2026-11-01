@@ -308,6 +308,30 @@ func (s *Server) SetAnimeNewReleasesOnly(w http.ResponseWriter, r *http.Request,
 	writeJSON(w, r.Context(), http.StatusOK, mapSubscription(subscription))
 }
 
+// SetAnimeIgnoreMultiVideoReleases saves the ignore-multi-video option of a
+// subscription of any state; the same transaction settles the instance's
+// undecided releases (on: filtered/multi_video_files, off: re-evaluation).
+func (s *Server) SetAnimeIgnoreMultiVideoReleases(w http.ResponseWriter, r *http.Request, managedAnimeID generated.ManagedAnimeID) {
+	ownership := s.ownershipService(w, r)
+	if ownership == nil {
+		return
+	}
+	var input generated.IgnoreMultiVideoInput
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	subscription, err := ownership.SetIgnoreMultiVideoReleases(r.Context(), string(managedAnimeID), ownershipapplication.IgnoreMultiVideoInput{
+		ExpectedVersion: int64(input.ExpectedVersion),
+		Enabled:         input.Enabled,
+	})
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, r.Context(), http.StatusOK, mapSubscription(subscription))
+}
+
 // DeleteAnimeSubscription is the reviewed compatibility command for irreversible
 // ManagedAnime retirement. It preserves the local graph and advances its fence.
 func (s *Server) DeleteAnimeSubscription(w http.ResponseWriter, r *http.Request, managedAnimeID generated.ManagedAnimeID) {

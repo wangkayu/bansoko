@@ -41,6 +41,7 @@ function item(overrides: {
       lifecycle_epoch: 1,
       version: 7,
       new_releases_only: false,
+      ignore_multi_video_releases: false,
     },
     metadata: { managed_anime_id: overrides.id, bgm: null, tmdb: null, title_override: null, total_episodes: null, media_kind: null, year: null, season: null, version: 1 },
     metadata_hold: { held: false, missing: [] },

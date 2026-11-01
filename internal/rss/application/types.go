@@ -456,6 +456,11 @@ type releaseSnapshot struct {
 	// option and its baseline (the instance creation time).
 	newReleasesOnly bool
 	startBaselineAt sql.NullTime
+	// ignoreMultiVideoReleases is the instance's ignore-multi-video option: an
+	// automatic admission of a Release whose manifest carries more than two
+	// video files is recorded filtered/multi_video_files instead of waiting
+	// for the competition. An explicit retry (manualRetry) skips the gate.
+	ignoreMultiVideoReleases bool
 	// redownload marks a manual retry run for a placement redownload: a
 	// Release that already placed its files may run again.
 	redownload bool

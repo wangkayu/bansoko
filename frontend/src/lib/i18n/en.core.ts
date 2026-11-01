@@ -57,6 +57,13 @@ export const enAnimeCopy = {
     help: "The cutoff is when the subscription was created. Releases published earlier, or without a publish time, show as Published before subscribing: they are not downloaded automatically and rule changes don't re-check them. Releases published while the subscription is not started are handled normally. To get one of them, select Retry on it in the RSS tab; the rules still apply.",
     saveFailed: "Failed to save New releases only",
   },
+  ignoreMultiVideo: {
+    label: "Ignore multi-video releases",
+    description: "Releases with more than 2 video files are not downloaded automatically",
+    helpLabel: "Help: ignore multi-video releases",
+    help: "Only the torrent's video files count (at any depth): more than 2 (a season pack or a disc collection) is never downloaded automatically and never enters a version comparison. To get one, select Retry on it in the RSS tab; the rules still apply. Replacement is unaffected.",
+    saveFailed: "Failed to save Ignore multi-video releases",
+  },
   start: "Start subscription",
   starting: "Starting…",
   started: "Subscription started",

@@ -108,9 +108,12 @@ type AnimeDraft struct {
 	Metadata      AnimeMetadataDraft `json:"metadata"`
 	// NewReleasesOnly is the new-releases-only option the draft carries until
 	// subscribe freezes it onto the instance. Absent means off.
-	NewReleasesOnly bool               `json:"new_releases_only,omitempty"`
-	Origin          SubscriptionOrigin `json:"origin"`
-	OriginEntryRef  *string            `json:"origin_entry_ref"`
+	NewReleasesOnly bool `json:"new_releases_only,omitempty"`
+	// IgnoreMultiVideoReleases is the ignore-multi-video option the draft
+	// carries until subscribe freezes it onto the instance. Absent means off.
+	IgnoreMultiVideoReleases bool               `json:"ignore_multi_video_releases,omitempty"`
+	Origin                   SubscriptionOrigin `json:"origin"`
+	OriginEntryRef           *string            `json:"origin_entry_ref"`
 	// ProviderGroupOffsets seeds the link rows subscribe creates for a provider
 	// origin's groups; the link row stays the only offset authority.
 	ProviderGroupOffsets []ProviderGroupOffsetDraft `json:"provider_group_offsets,omitempty"`

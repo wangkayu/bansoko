@@ -48,7 +48,8 @@ SELECT a.id, a.title, a.title_override, a.provider_title, a.version,
        sub.id, sub.origin, sub.origin_entry_ref, sub.instance_label, sub.entry_season, sub.created_at, sub.state, sub.version,
        a.lifecycle_state, a.fence_epoch, a.retired_at,
        m.bgm_work_id, m.tmdb_work_id, m.tmdb_media_kind, m.tmdb_season, m.media_kind,
-       m.total_episodes, m.year, m.season, m.version, sub.new_releases_only, sub.start_baseline_at
+       m.total_episodes, m.year, m.season, m.version, sub.new_releases_only, sub.start_baseline_at,
+       sub.ignore_multi_video_releases
 FROM managed_anime a
 JOIN subscriptions sub ON sub.managed_anime_id = a.id
 JOIN anime_metadata m ON m.managed_anime_id = a.id
@@ -56,7 +57,7 @@ WHERE a.id = $1`, managedAnimeID).Scan(
 		&managedAnime.ID, &managedAnime.Title, &titleOverride, &providerTitle, &managedAnime.Version,
 		&subscription.ID, &origin, &originEntryRef, &instanceLabel, &entrySeason, &createdAt, &state, &subscription.Version,
 		&subscription.LifecycleState, &subscription.LifecycleEpoch, &retiredAt,
-		&bgmWorkID, &tmdbWorkID, &tmdbMediaKind, &tmdbSeason, &ownerMediaKind, &totalEpisodes, &year, &ownerSeason, &metadata.Version, &subscription.NewReleasesOnly, &startBaselineAt)
+		&bgmWorkID, &tmdbWorkID, &tmdbMediaKind, &tmdbSeason, &ownerMediaKind, &totalEpisodes, &year, &ownerSeason, &metadata.Version, &subscription.NewReleasesOnly, &startBaselineAt, &subscription.IgnoreMultiVideoReleases)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AnimeWorkspace{}, &apperrors.NotFound{Resource: "managed_anime", ID: managedAnimeID}
 	}

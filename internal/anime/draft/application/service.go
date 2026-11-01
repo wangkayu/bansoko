@@ -645,7 +645,7 @@ VALUES ($1, $2, $3, $4)`, animeID, title, fixedTitle, nullableOptionalText(provi
 		return SubscribeResult{}, fmt.Errorf("create managed anime: %w", err)
 	}
 	subscriptionID := uuid.NewString()
-	startBaselineAt, createdAt, err := insertSubscriptionTx(ctx, tx, subscriptionID, animeID, string(draft.Origin), nullableOptionalText(draft.OriginEntryRef), nullableOptionalText(draft.EntrySeason), nullableOptionalText(draft.InstanceLabel), string(initialState), draft.NewReleasesOnly)
+	startBaselineAt, createdAt, err := insertSubscriptionTx(ctx, tx, subscriptionID, animeID, string(draft.Origin), nullableOptionalText(draft.OriginEntryRef), nullableOptionalText(draft.EntrySeason), nullableOptionalText(draft.InstanceLabel), string(initialState), draft.NewReleasesOnly, draft.IgnoreMultiVideoReleases)
 	if err != nil {
 		return SubscribeResult{}, err
 	}
@@ -753,19 +753,20 @@ VALUES ($1, $2, $3, $4)`, animeID, title, fixedTitle, nullableOptionalText(provi
 	result := SubscribeResult{
 		ManagedAnime: ManagedAnime{ID: animeID, Title: title, TitleOverride: cloneString(fixedTitle), Version: 1},
 		Subscription: Subscription{
-			ID:              subscriptionID,
-			ManagedAnimeID:  animeID,
-			Origin:          string(draft.Origin),
-			OriginEntryRef:  cloneString(draft.OriginEntryRef),
-			EntrySeason:     cloneString(draft.EntrySeason),
-			InstanceLabel:   cloneString(draft.InstanceLabel),
-			State:           initialState,
-			LifecycleState:  "active",
-			LifecycleEpoch:  1,
-			Version:         1,
-			NewReleasesOnly: draft.NewReleasesOnly,
-			StartBaselineAt: startBaselineAt,
-			CreatedAt:       createdAt,
+			ID:                       subscriptionID,
+			ManagedAnimeID:           animeID,
+			Origin:                   string(draft.Origin),
+			OriginEntryRef:           cloneString(draft.OriginEntryRef),
+			EntrySeason:              cloneString(draft.EntrySeason),
+			InstanceLabel:            cloneString(draft.InstanceLabel),
+			State:                    initialState,
+			LifecycleState:           "active",
+			LifecycleEpoch:           1,
+			Version:                  1,
+			NewReleasesOnly:          draft.NewReleasesOnly,
+			IgnoreMultiVideoReleases: draft.IgnoreMultiVideoReleases,
+			StartBaselineAt:          startBaselineAt,
+			CreatedAt:                createdAt,
 		},
 		Metadata:                metadata,
 		RssSources:              sources,

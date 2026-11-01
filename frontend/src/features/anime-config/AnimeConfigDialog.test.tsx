@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, getBusinessPreset, type AnimeConfigCandidate, type AnimeDraft, type AnimeWorkspace, type SubscribeResult } from "../../lib/api/client";
 import { CandidateVersionConflict, type CandidateStore } from "../../lib/candidate/port";
@@ -74,6 +74,7 @@ function workspaceFixture(): AnimeWorkspace {
       lifecycle_epoch: 1,
       version: 1,
       new_releases_only: false,
+      ignore_multi_video_releases: false,
     },
     metadata: {
       managed_anime_id: "anime-1",
@@ -504,6 +505,58 @@ describe("AnimeConfigDialog 已订阅的订阅设置", () => {
     expect(screen.getByRole("group", { name: t("qualityCompare.title") })).toBeInTheDocument();
 
     // The footer has one save: disabled while the rules tab has no changes.
+    expect(screen.getByRole("button", { name: t("act.save") })).toBeDisabled();
+  });
+
+  // Ignore multi-video releases rides the rules tab's immediate-save area: unlike new
+  // releases only it stays changeable after the subscription started, so the switch is
+  // enabled and saves through its own endpoint instead of the footer save.
+  it("已订阅的规则 tab 提供忽略多视频开关：开启即保存到自己的端点", async () => {
+    const puts: Array<{ url: string; body: unknown }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/subscription/ignore-multi-video-releases") && init?.method === "PUT") {
+        puts.push({ url, body: JSON.parse(String(init.body)) });
+        return new Response(JSON.stringify({ ...workspaceFixture().subscription, ignore_multi_video_releases: true, version: 2 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/anime/anime-1/workspace")) {
+        return new Response(JSON.stringify(workspaceFixture()), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+    }));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <AnimeConfigDialog
+          open
+          onOpenChange={() => {}}
+          provider={provider}
+          entry={entry}
+          sourceLabel={t("grid.tabCustom")}
+          onSubscribed={() => {}}
+          initialTab="rules"
+        />
+      </QueryClientProvider>,
+    );
+    await flushQuery();
+    await flushQuery();
+
+    const toggle = screen.getByRole("switch", { name: t("anime.ignoreMultiVideo.label") });
+    expect(toggle).toBeEnabled();
+    fireEvent.click(toggle);
+    for (let index = 0; index < 10 && puts.length === 0; index += 1) {
+      await flushQuery();
+    }
+    expect(puts).toHaveLength(1);
+    expect(puts[0].url).toContain("/anime/anime-1/subscription/ignore-multi-video-releases");
+    expect(puts[0].body).toEqual({ expected_version: 1, enabled: true });
+    // The immediate save never dirties the footer's single save.
     expect(screen.getByRole("button", { name: t("act.save") })).toBeDisabled();
   });
 });

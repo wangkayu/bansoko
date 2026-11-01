@@ -388,14 +388,15 @@ func (s *Service) PatchAnimeSubscription(ctx context.Context, managedAnimeID str
 	var animeTitle, lifecycleState string
 	var lifecycleEpoch int64
 	var retiredAt, startBaselineAt sql.NullTime
-	var newReleasesOnly bool
+	var newReleasesOnly, ignoreMultiVideo bool
 	err = tx.QueryRowContext(ctx, `
 SELECT s.id, s.origin, s.origin_entry_ref, s.instance_label, s.entry_season, s.created_at, s.state, s.version, ma.title,
-       ma.lifecycle_state, ma.fence_epoch, ma.retired_at, s.new_releases_only, s.start_baseline_at
+       ma.lifecycle_state, ma.fence_epoch, ma.retired_at, s.new_releases_only, s.start_baseline_at,
+       s.ignore_multi_video_releases
 FROM subscriptions s
 JOIN managed_anime ma ON ma.id = s.managed_anime_id
 WHERE s.managed_anime_id = $1
-FOR UPDATE OF s`, managedAnimeID).Scan(&subscriptionID, &origin, &originEntryRef, &instanceLabel, &entrySeason, &createdAt, &currentState, &version, &animeTitle, &lifecycleState, &lifecycleEpoch, &retiredAt, &newReleasesOnly, &startBaselineAt)
+FOR UPDATE OF s`, managedAnimeID).Scan(&subscriptionID, &origin, &originEntryRef, &instanceLabel, &entrySeason, &createdAt, &currentState, &version, &animeTitle, &lifecycleState, &lifecycleEpoch, &retiredAt, &newReleasesOnly, &startBaselineAt, &ignoreMultiVideo)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Subscription{}, &apperrors.NotFound{Resource: "subscription", ID: managedAnimeID}
 	}
@@ -530,6 +531,8 @@ WHERE src.subscription_id = $1 AND src.source_kind = 'custom_rss'
 		Version:        version + 1,
 		// The option is frozen from here on; the start never changes it.
 		NewReleasesOnly: newReleasesOnly,
+		// The ignore-multi-video option survives every state change.
+		IgnoreMultiVideoReleases: ignoreMultiVideo,
 	}
 	if startBaselineAt.Valid {
 		result.StartBaselineAt = &startBaselineAt.Time

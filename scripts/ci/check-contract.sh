@@ -105,6 +105,7 @@ required_paths = {
   "/anime/{managed_anime_id}/rules" => ["patch"],
   "/anime/{managed_anime_id}/subscription" => ["patch", "delete"],
   "/anime/{managed_anime_id}/subscription/new-releases-only" => ["put"],
+  "/anime/{managed_anime_id}/subscription/ignore-multi-video-releases" => ["put"],
   "/anime/{managed_anime_id}/local-data" => ["delete"],
   "/anime/{managed_anime_id}/duplicate" => ["post"],
   "/anime/{managed_anime_id}/files" => ["get"],

@@ -25,6 +25,7 @@ function workspaceFixture(): AnimeWorkspace {
       lifecycle_epoch: 1,
       version: 1,
       new_releases_only: false,
+      ignore_multi_video_releases: false,
     },
     metadata: { managed_anime_id: "a1", bgm: null, tmdb: null, version: 1 },
     metadata_hold: { held: true, missing: ["bgm", "tmdb"] },

@@ -130,7 +130,7 @@ var pinnedTools = []string{
 	"refresh_metadata", "refresh_rss", "retry_release", "retry_import", "cancel_download", "get_workspace", "poll_workspace",
 	"acquire_seed_once", "get_one_shot_acquisition", "list_one_shot_attempts",
 	"expand_seed", "download_snapshot_seed", "search_metadata",
-	"reevaluate_releases", "match_metadata", "discover_subgroups", "patch_subscription", "set_new_releases_only", "set_provider_group_offset", "automation_run",
+	"reevaluate_releases", "match_metadata", "discover_subgroups", "patch_subscription", "set_new_releases_only", "set_ignore_multi_video_releases", "set_provider_group_offset", "automation_run",
 	"patch_anime_metadata", "patch_anime_rules", "delete_candidate", "delete_subscription", "duplicate_subscription",
 	"list_execution_records", "get_execution_record", "list_execution_record_files",
 	"list_tmdb_seasons", "list_tmdb_season_episodes", "preview_file_match", "match_file", "release_file_entry",

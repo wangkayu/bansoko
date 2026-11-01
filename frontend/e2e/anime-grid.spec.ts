@@ -93,6 +93,7 @@ function workspaceFixture(id: string, title: string, state?: FixtureState): Anim
       lifecycle_epoch: 1,
       version: workspaceSubscriptionVersion,
       new_releases_only: false,
+      ignore_multi_video_releases: false,
     },
     metadata: {
       managed_anime_id: id,
@@ -341,6 +342,7 @@ function subscriptionListItemFromCandidate(
       lifecycle_state: "active",
       lifecycle_epoch: 1,
       new_releases_only: draft.new_releases_only === true,
+      ignore_multi_video_releases: draft.ignore_multi_video_releases === true,
     },
     metadata: {
       managed_anime_id: managedAnimeID,
@@ -909,6 +911,7 @@ async function mockCatalogAndAnime(page: Page) {
         lifecycle_epoch: 1,
         version: 1,
         new_releases_only: false,
+        ignore_multi_video_releases: false,
       },
       metadata: { managed_anime_id: id, bgm: body.draft.metadata.bgm ?? null, tmdb: body.draft.metadata.tmdb ?? null, version: 1 },
       metadata_hold: { held: true, missing: ["bgm", "tmdb"] },
@@ -1084,6 +1087,7 @@ test.describe("AnimeGrid", () => {
         lifecycle_epoch: 1,
         version: 1,
         new_releases_only: false,
+        ignore_multi_video_releases: false,
       },
       metadata: {
         managed_anime_id: "manage-long-title",
@@ -1114,6 +1118,7 @@ test.describe("AnimeGrid", () => {
         lifecycle_epoch: 1,
         version: 1,
         new_releases_only: false,
+        ignore_multi_video_releases: false,
       },
       metadata: {
         managed_anime_id: "manage-note-title",

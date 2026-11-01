@@ -152,6 +152,7 @@ export type SubscribeResult = Schema<"SubscribeResult">;
 export type AnimeConfigCandidate = Schema<"AnimeConfigCandidate">;
 export type SubscriptionPatch = Schema<"SubscriptionPatch">;
 export type NewReleasesOnlyInput = Schema<"NewReleasesOnlyInput">;
+export type IgnoreMultiVideoInput = Schema<"IgnoreMultiVideoInput">;
 export type SubscriptionDelete = Schema<"SubscriptionDelete">;
 export type SubscriptionDuplicateInput = Schema<"SubscriptionDuplicateInput">;
 export type LocalDataCleanup = Schema<"LocalDataCleanup">;
@@ -787,6 +788,17 @@ export function setAnimeNewReleasesOnly(
   input: NewReleasesOnlyInput,
 ): Promise<Subscription> {
   return request(`/anime/${encodePathSegment(managedAnimeID)}/subscription/new-releases-only`, {
+    method: "PUT",
+    body: input,
+  });
+}
+
+/** Ignore multi-video releases: changeable in any subscription state; the same request settles the undecided seeds of the instance. */
+export function setAnimeIgnoreMultiVideoReleases(
+  managedAnimeID: string,
+  input: IgnoreMultiVideoInput,
+): Promise<Subscription> {
+  return request(`/anime/${encodePathSegment(managedAnimeID)}/subscription/ignore-multi-video-releases`, {
     method: "PUT",
     body: input,
   });

@@ -23,17 +23,18 @@ func mapLocalDataCleanupInput(value generated.LocalDataCleanup) ownershipapplica
 
 func mapSubscription(value animeapplication.Subscription) generated.Subscription {
 	result := generated.Subscription{
-		Id:              generated.ID(value.ID),
-		ManagedAnimeId:  generated.ID(value.ManagedAnimeID),
-		Origin:          generated.SubscriptionOrigin(value.Origin),
-		State:           generated.SubscriptionState(value.State),
-		LifecycleState:  generated.SubscriptionLifecycleState(value.LifecycleState),
-		LifecycleEpoch:  value.LifecycleEpoch,
-		RetiredAt:       value.RetiredAt,
-		Version:         generated.Version(value.Version),
-		NewReleasesOnly: value.NewReleasesOnly,
-		StartBaselineAt: value.StartBaselineAt,
-		CreatedAt:       value.CreatedAt,
+		Id:                       generated.ID(value.ID),
+		ManagedAnimeId:           generated.ID(value.ManagedAnimeID),
+		Origin:                   generated.SubscriptionOrigin(value.Origin),
+		State:                    generated.SubscriptionState(value.State),
+		LifecycleState:           generated.SubscriptionLifecycleState(value.LifecycleState),
+		LifecycleEpoch:           value.LifecycleEpoch,
+		RetiredAt:                value.RetiredAt,
+		Version:                  generated.Version(value.Version),
+		NewReleasesOnly:          value.NewReleasesOnly,
+		StartBaselineAt:          value.StartBaselineAt,
+		IgnoreMultiVideoReleases: value.IgnoreMultiVideoReleases,
+		CreatedAt:                value.CreatedAt,
 	}
 	if value.OriginEntryRef != nil {
 		originEntryRef := *value.OriginEntryRef

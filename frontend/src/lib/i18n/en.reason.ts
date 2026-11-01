@@ -19,6 +19,7 @@ const MISSING_DATA = "Required information is missing. Refresh and try again.";
 export const enReasonCopy = {
   // --- Torrent evaluation ---
   filtered_by_rules: "Excluded by filter rules",
+  multi_video_files: "Multi-video release; not downloaded automatically",
   anibt_tag_missing: "AniBT tags: torrent has no tags",
   anibt_tag_whitelist_unmet: "AniBT tags: a required type is not matched",
   anibt_tag_blacklisted: "AniBT tags: includes excluded tags",

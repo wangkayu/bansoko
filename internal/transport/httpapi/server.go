@@ -77,6 +77,7 @@ type OwnershipService interface {
 	PatchAnimeRules(ctx context.Context, managedAnimeID string, patch ownershipapplication.RulesPatchInput) (ownershipapplication.RulesPatchResult, error)
 	PatchAnimeSubscription(ctx context.Context, managedAnimeID string, patch ownershipapplication.SubscriptionPatchInput) (ownershipapplication.Subscription, error)
 	SetNewReleasesOnly(ctx context.Context, managedAnimeID string, input ownershipapplication.NewReleasesOnlyInput) (ownershipapplication.Subscription, error)
+	SetIgnoreMultiVideoReleases(ctx context.Context, managedAnimeID string, input ownershipapplication.IgnoreMultiVideoInput) (ownershipapplication.Subscription, error)
 	DeleteAnimeSubscription(ctx context.Context, managedAnimeID string, input ownershipapplication.SubscriptionDeleteInput) error
 	CleanupAnimeLocalData(ctx context.Context, managedAnimeID string, input ownershipapplication.LocalDataCleanupInput, idempotencyKey string) error
 	PatchRSSSourceOffset(ctx context.Context, managedAnimeID, rssSourceID string, patch ownershipapplication.RSSSourceOffsetPatchInput) (ownershipapplication.RSSSource, error)

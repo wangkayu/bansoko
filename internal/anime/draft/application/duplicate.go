@@ -119,9 +119,9 @@ FROM managed_anime WHERE id = $1 FOR SHARE`, sourceAnimeID).Scan(&sourceTitle, &
 	}
 	var sourceSubscriptionID, origin string
 	var originEntryRef, sourceEntrySeason sql.NullString
-	var newReleasesOnly bool
+	var newReleasesOnly, ignoreMultiVideo bool
 	err = tx.QueryRowContext(ctx, `
-SELECT id, origin, origin_entry_ref, entry_season, new_releases_only FROM subscriptions WHERE managed_anime_id = $1`, sourceAnimeID).Scan(&sourceSubscriptionID, &origin, &originEntryRef, &sourceEntrySeason, &newReleasesOnly)
+SELECT id, origin, origin_entry_ref, entry_season, new_releases_only, ignore_multi_video_releases FROM subscriptions WHERE managed_anime_id = $1`, sourceAnimeID).Scan(&sourceSubscriptionID, &origin, &originEntryRef, &sourceEntrySeason, &newReleasesOnly, &ignoreMultiVideo)
 	if errors.Is(err, sql.ErrNoRows) {
 		return SubscribeResult{}, &apperrors.NotFound{Resource: "subscription", ID: sourceAnimeID}
 	}
@@ -155,7 +155,7 @@ VALUES ($1, $2, $3, $4)`, animeID, sourceTitle, nullString(titleOverride), nullS
 	}
 	// The copy is a new instance: it keeps the new-releases-only option, and its
 	// baseline is its own creation time.
-	startBaselineAt, createdAt, err := insertSubscriptionTx(ctx, tx, subscriptionID, animeID, origin, nullString(originEntryRef), nullString(sourceEntrySeason), label, string(subscriptiondomain.SubscriptionPending), newReleasesOnly)
+	startBaselineAt, createdAt, err := insertSubscriptionTx(ctx, tx, subscriptionID, animeID, origin, nullString(originEntryRef), nullString(sourceEntrySeason), label, string(subscriptiondomain.SubscriptionPending), newReleasesOnly, ignoreMultiVideo)
 	if err != nil {
 		return SubscribeResult{}, err
 	}
@@ -236,19 +236,20 @@ FROM filemaintenance_policies WHERE scope_key = 'anime:' || $2`, animeID, source
 	result := SubscribeResult{
 		ManagedAnime: ManagedAnime{ID: animeID, Title: sourceTitle, TitleOverride: stringPtr(titleOverride), Version: 1},
 		Subscription: Subscription{
-			ID:              subscriptionID,
-			ManagedAnimeID:  animeID,
-			Origin:          origin,
-			OriginEntryRef:  stringPtr(originEntryRef),
-			EntrySeason:     stringPtr(sourceEntrySeason),
-			InstanceLabel:   &label,
-			State:           subscriptiondomain.SubscriptionPending,
-			LifecycleState:  "active",
-			LifecycleEpoch:  1,
-			Version:         1,
-			NewReleasesOnly: newReleasesOnly,
-			StartBaselineAt: startBaselineAt,
-			CreatedAt:       createdAt,
+			ID:                       subscriptionID,
+			ManagedAnimeID:           animeID,
+			Origin:                   origin,
+			OriginEntryRef:           stringPtr(originEntryRef),
+			EntrySeason:              stringPtr(sourceEntrySeason),
+			InstanceLabel:            &label,
+			State:                    subscriptiondomain.SubscriptionPending,
+			LifecycleState:           "active",
+			LifecycleEpoch:           1,
+			Version:                  1,
+			NewReleasesOnly:          newReleasesOnly,
+			IgnoreMultiVideoReleases: ignoreMultiVideo,
+			StartBaselineAt:          startBaselineAt,
+			CreatedAt:                createdAt,
 		},
 		Metadata:                metadata,
 		RssSources:              copied,

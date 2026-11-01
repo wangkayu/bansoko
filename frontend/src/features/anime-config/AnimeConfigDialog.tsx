@@ -1,8 +1,10 @@
 import { freezeBusinessDraft, hasCustomSettings, loadBusinessPreset, resetToGlobal } from "./businessDraft";
 import { confirmBusinessReplace } from "./confirmBusinessReplace";
 import { BusinessSnapshotFields } from "./BusinessSnapshotFields";
+import { IgnoreMultiVideoField, OwnerIgnoreMultiVideo } from "./IgnoreMultiVideoField";
 import { NewReleasesOnlyField, OwnerNewReleasesOnly } from "./NewReleasesOnlyField";
 import { setDraftNewReleasesOnly } from "./newReleasesOnly";
+import { setDraftIgnoreMultiVideo } from "./ignoreMultiVideo";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "../../ui/toast";
@@ -525,7 +527,10 @@ function SubscribedBody({
               onChanged: handleChanged,
               // Fetch new seeds only: changeable while not started (saved immediately), read-only afterwards.
               rulesExtra: (
-                <OwnerNewReleasesOnly animeID={managedAnimeRef} workspace={workspace.data} capability={capability} onChanged={handleChanged} />
+                <>
+                  <OwnerNewReleasesOnly animeID={managedAnimeRef} workspace={workspace.data} capability={capability} onChanged={handleChanged} />
+                  <OwnerIgnoreMultiVideo animeID={managedAnimeRef} workspace={workspace.data} capability={capability} onChanged={handleChanged} />
+                </>
               ),
               // The subscribed episode-versions editor (ReplacementPolicySection) lives in the
               // rules tab itself as a save part of the single footer save; the draft edits its
@@ -1016,6 +1021,11 @@ function DraftBody({
           checked={draft.new_releases_only === true}
           disabled={candidateResolutionBlocked}
           onChange={(next) => setDraft(setDraftNewReleasesOnly(draft, next))}
+        />
+        <IgnoreMultiVideoField
+          checked={draft.ignore_multi_video_releases === true}
+          disabled={candidateResolutionBlocked}
+          onChange={(next) => setDraft(setDraftIgnoreMultiVideo(draft, next))}
         />
       </>
     ),

@@ -3262,8 +3262,11 @@ type AnimeDraft struct {
 	BusinessDigest *string           `json:"business_digest,omitempty"`
 
 	// EntrySeason The provider season page this draft was created from (canonical YYYY-term, e.g. 2026-fall), carried so subscribe freezes it onto the instance. Only provider-origin drafts may carry it; a draft created from keyword search or a custom preset leaves it out.
-	EntrySeason   *string `json:"entry_season"`
-	InstanceLabel *string `json:"instance_label"`
+	EntrySeason *string `json:"entry_season"`
+
+	// IgnoreMultiVideoReleases Ignore multi-video releases (忽略多视频文件种子), default false (absent). Subscribe freezes it onto the instance: while it is on, automatic admission records filtered/multi_video_files for a Release whose torrent manifest carries more than two video files.
+	IgnoreMultiVideoReleases *bool   `json:"ignore_multi_video_releases,omitempty"`
+	InstanceLabel            *string `json:"instance_label"`
 
 	// Metadata The draft metadata bindings. bgm and tmdb carry the match bindings selected for this draft: the candidate write path stores them, and the stored binding is then the naming fact source (title/kind) of every render of that exact revision. A draft that selects no match keeps both null: no default binding is fabricated, and a template that reads bgm.* or tmdb.* fails as an undefined variable until one is selected.
 	Metadata AnimeMetadataDraft `json:"metadata"`
@@ -5385,6 +5388,12 @@ type HTTPProxyRouteInputKind string
 // ID defines model for ID.
 type ID = string
 
+// IgnoreMultiVideoInput defines model for IgnoreMultiVideoInput.
+type IgnoreMultiVideoInput struct {
+	Enabled         bool    `json:"enabled"`
+	ExpectedVersion Version `json:"expected_version"`
+}
+
 // InstanceFileEffectPolicyInput defines model for InstanceFileEffectPolicyInput.
 type InstanceFileEffectPolicyInput struct {
 	ExpectedVersion   int                          `json:"expected_version"`
@@ -7341,7 +7350,7 @@ type RSSListDownloadActionKind string
 type RSSListEvaluation struct {
 	ParsedFacts *ParsedReleaseFacts `json:"parsed_facts"`
 
-	// ReasonCode Typed verdict reason. Tag filter reasons (verdict filtered): anibt_tag_missing (non-empty AniBT require list, release has no tag), anibt_tag_whitelist_unmet (reason_detail "missing: <tags>"), anibt_tag_blacklisted (reason_detail "blacklisted: <tags>"); title_tag_missing, title_tag_whitelist_unmet and title_tag_blacklisted are the same three outcomes of the title-parse row.
+	// ReasonCode Typed verdict reason. Tag filter reasons (verdict filtered): anibt_tag_missing (non-empty AniBT require list, release has no tag), anibt_tag_whitelist_unmet (reason_detail "missing: <tags>"), anibt_tag_blacklisted (reason_detail "blacklisted: <tags>"); title_tag_missing, title_tag_whitelist_unmet and title_tag_blacklisted are the same three outcomes of the title-parse row. multi_video_files (reason_detail "video files: <n>") is the subscription's ignore-multi-video gate: the torrent manifest carries more than two video files.
 	ReasonCode   *string                `json:"reason_code"`
 	ReasonDetail *string                `json:"reason_detail"`
 	State        RSSListEvaluationState `json:"state"`
@@ -8778,12 +8787,15 @@ type Subscription struct {
 	CreatedAt time.Time `json:"created_at"`
 
 	// EntrySeason The provider season page the instance was created from, frozen at creation (canonical YYYY-term, e.g. 2026-fall). Present only for provider-origin instances created from a season catalog page; search-created and custom instances carry none, and it is never re-derived from a later snapshot or first-air date. Read-only.
-	EntrySeason    *string                    `json:"entry_season"`
-	Id             ID                         `json:"id"`
-	InstanceLabel  *string                    `json:"instance_label"`
-	LifecycleEpoch int64                      `json:"lifecycle_epoch"`
-	LifecycleState SubscriptionLifecycleState `json:"lifecycle_state"`
-	ManagedAnimeId ID                         `json:"managed_anime_id"`
+	EntrySeason *string `json:"entry_season"`
+	Id          ID      `json:"id"`
+
+	// IgnoreMultiVideoReleases Ignore multi-video releases (忽略多视频文件种子). When true, a Release whose torrent manifest carries more than two video files takes the verdict filtered with reason_code multi_video_files instead of waiting for the subscription competition, so it is never auto-downloaded. An explicit retryRelease skips this gate and evaluates the release through every rule. Changeable in any subscription state; one-shot acquisition is unaffected.
+	IgnoreMultiVideoReleases bool                       `json:"ignore_multi_video_releases"`
+	InstanceLabel            *string                    `json:"instance_label"`
+	LifecycleEpoch           int64                      `json:"lifecycle_epoch"`
+	LifecycleState           SubscriptionLifecycleState `json:"lifecycle_state"`
+	ManagedAnimeId           ID                         `json:"managed_anime_id"`
 
 	// NewReleasesOnly New releases only (只获取新种子). When true, a Release published before start_baseline_at, or without a publish time, takes the terminal verdict start_baseline instead of being evaluated; an explicit retryRelease still evaluates it through every rule. Changeable only while the subscription is pending (setAnimeNewReleasesOnly); frozen once started.
 	NewReleasesOnly bool `json:"new_releases_only"`
@@ -10070,6 +10082,9 @@ type DeleteAnimeSubscriptionJSONRequestBody = SubscriptionDelete
 
 // PatchAnimeSubscriptionJSONRequestBody defines body for PatchAnimeSubscription for application/json ContentType.
 type PatchAnimeSubscriptionJSONRequestBody = SubscriptionPatch
+
+// SetAnimeIgnoreMultiVideoReleasesJSONRequestBody defines body for SetAnimeIgnoreMultiVideoReleases for application/json ContentType.
+type SetAnimeIgnoreMultiVideoReleasesJSONRequestBody = IgnoreMultiVideoInput
 
 // SetAnimeNewReleasesOnlyJSONRequestBody defines body for SetAnimeNewReleasesOnly for application/json ContentType.
 type SetAnimeNewReleasesOnlyJSONRequestBody = NewReleasesOnlyInput
@@ -12193,6 +12208,9 @@ type ServerInterface interface {
 	// (PATCH /anime/{managed_anime_id}/subscription)
 	PatchAnimeSubscription(w http.ResponseWriter, r *http.Request, managedAnimeId ManagedAnimeID)
 
+	// (PUT /anime/{managed_anime_id}/subscription/ignore-multi-video-releases)
+	SetAnimeIgnoreMultiVideoReleases(w http.ResponseWriter, r *http.Request, managedAnimeId ManagedAnimeID)
+
 	// (PUT /anime/{managed_anime_id}/subscription/new-releases-only)
 	SetAnimeNewReleasesOnly(w http.ResponseWriter, r *http.Request, managedAnimeId ManagedAnimeID)
 
@@ -14162,6 +14180,37 @@ func (siw *ServerInterfaceWrapper) PatchAnimeSubscription(w http.ResponseWriter,
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PatchAnimeSubscription(w, r, managedAnimeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetAnimeIgnoreMultiVideoReleases operation middleware
+func (siw *ServerInterfaceWrapper) SetAnimeIgnoreMultiVideoReleases(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "managed_anime_id" -------------
+	var managedAnimeId ManagedAnimeID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "managed_anime_id", r.PathValue("managed_anime_id"), &managedAnimeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "managed_anime_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetAnimeIgnoreMultiVideoReleases(w, r, managedAnimeId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -19647,6 +19696,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("POST "+options.BaseURL+"/anime/{managed_anime_id}/subgroups/discover", wrapper.DiscoverAnimeSubgroups)
 	m.HandleFunc("DELETE "+options.BaseURL+"/anime/{managed_anime_id}/subscription", wrapper.DeleteAnimeSubscription)
 	m.HandleFunc("PATCH "+options.BaseURL+"/anime/{managed_anime_id}/subscription", wrapper.PatchAnimeSubscription)
+	m.HandleFunc("PUT "+options.BaseURL+"/anime/{managed_anime_id}/subscription/ignore-multi-video-releases", wrapper.SetAnimeIgnoreMultiVideoReleases)
 	m.HandleFunc("PUT "+options.BaseURL+"/anime/{managed_anime_id}/subscription/new-releases-only", wrapper.SetAnimeNewReleasesOnly)
 	m.HandleFunc("GET "+options.BaseURL+"/anime/{managed_anime_id}/tmdb/seasons", wrapper.ListAnimeTMDBSeasons)
 	m.HandleFunc("GET "+options.BaseURL+"/anime/{managed_anime_id}/tmdb/seasons/{season}/episodes", wrapper.ListAnimeTMDBSeasonEpisodes)

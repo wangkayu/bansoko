@@ -73,6 +73,7 @@ function listItem(
       lifecycle_epoch: 1,
       version: overrides.subscriptionVersion ?? 3,
       new_releases_only: false,
+      ignore_multi_video_releases: false,
     },
     metadata: {
       managed_anime_id: managedAnimeID,

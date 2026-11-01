@@ -17,6 +17,7 @@ const MISSING_DATA = "缺少必要信息，请刷新后重试";
 export const reasonCopy = {
   // --- 种子判定（Release）---
   filtered_by_rules: "被过滤规则排除",
+  multi_video_files: "多视频文件种子，不会自动下载",
   anibt_tag_missing: "AniBT 标签：种子没有标签",
   anibt_tag_whitelist_unmet: "AniBT 标签：有一种类型不满足必须的标签",
   anibt_tag_blacklisted: "AniBT 标签：包含排除的标签",

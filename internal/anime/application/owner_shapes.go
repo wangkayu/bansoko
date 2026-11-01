@@ -41,6 +41,11 @@ type Subscription struct {
 	// option is on.
 	NewReleasesOnly bool       `json:"new_releases_only"`
 	StartBaselineAt *time.Time `json:"start_baseline_at"`
+	// IgnoreMultiVideoReleases is the ignore-multi-video option: automatic
+	// admission records filtered/multi_video_files for a release whose
+	// manifest carries more than two video files; an explicit retry still
+	// evaluates it. Changeable in any subscription state.
+	IgnoreMultiVideoReleases bool `json:"ignore_multi_video_releases"`
 	// CreatedAt is when the instance was created (subscribe or duplicate), not
 	// its first start.
 	CreatedAt time.Time `json:"created_at"`

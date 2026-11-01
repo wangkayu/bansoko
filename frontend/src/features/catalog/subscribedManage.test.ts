@@ -45,6 +45,7 @@ function item(overrides: {
       lifecycle_epoch: 1,
       version: 7,
       new_releases_only: false,
+      ignore_multi_video_releases: false,
     },
     metadata: {
       managed_anime_id: overrides.id,

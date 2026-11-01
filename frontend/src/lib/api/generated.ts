@@ -912,6 +912,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/anime/{managed_anime_id}/subscription/ignore-multi-video-releases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Sets Subscription.ignore_multi_video_releases. Changeable in any subscription state; a stale version answers 409 version conflict. The same transaction settles the undecided releases of the instance: on marks waiting multi-video releases filtered/multi_video_files, off schedules their re-evaluation. */
+        put: operations["setAnimeIgnoreMultiVideoReleases"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/anime/{managed_anime_id}/duplicate": {
         parameters: {
             query?: never;
@@ -3091,7 +3108,7 @@ export interface components {
             /** @enum {string} */
             state: "evaluated" | "not_selected" | "unavailable" | "reevaluating" | "pending";
             verdict?: components["schemas"]["ReleaseVerdict"] | null;
-            /** @description Typed verdict reason. Tag filter reasons (verdict filtered): anibt_tag_missing (non-empty AniBT require list, release has no tag), anibt_tag_whitelist_unmet (reason_detail "missing: <tags>"), anibt_tag_blacklisted (reason_detail "blacklisted: <tags>"); title_tag_missing, title_tag_whitelist_unmet and title_tag_blacklisted are the same three outcomes of the title-parse row. */
+            /** @description Typed verdict reason. Tag filter reasons (verdict filtered): anibt_tag_missing (non-empty AniBT require list, release has no tag), anibt_tag_whitelist_unmet (reason_detail "missing: <tags>"), anibt_tag_blacklisted (reason_detail "blacklisted: <tags>"); title_tag_missing, title_tag_whitelist_unmet and title_tag_blacklisted are the same three outcomes of the title-parse row. multi_video_files (reason_detail "video files: <n>") is the subscription's ignore-multi-video gate: the torrent manifest carries more than two video files. */
             reason_code?: string | null;
             reason_detail?: string | null;
             parsed_facts?: components["schemas"]["ParsedReleaseFacts"] | null;
@@ -3931,6 +3948,8 @@ export interface components {
              * @description Baseline of new_releases_only: the instance creation time (the subscribe that created it, not the first start). Present exactly when new_releases_only is true.
              */
             start_baseline_at?: string | null;
+            /** @description Ignore multi-video releases (忽略多视频文件种子). When true, a Release whose torrent manifest carries more than two video files takes the verdict filtered with reason_code multi_video_files instead of waiting for the subscription competition, so it is never auto-downloaded. An explicit retryRelease skips this gate and evaluates the release through every rule. Changeable in any subscription state; one-shot acquisition is unaffected. */
+            ignore_multi_video_releases: boolean;
         };
         BGMBinding: {
             work_id: string;
@@ -4999,6 +5018,8 @@ export interface components {
             instance_label?: string | null;
             /** @description New releases only (只获取新种子), default false (absent). Subscribe freezes it onto the instance with the creation time as baseline: releases published before that, or without a publish time, take the terminal verdict start_baseline. Releases published while the instance is pending count as new. */
             new_releases_only?: boolean;
+            /** @description Ignore multi-video releases (忽略多视频文件种子), default false (absent). Subscribe freezes it onto the instance: while it is on, automatic admission records filtered/multi_video_files for a Release whose torrent manifest carries more than two video files. */
+            ignore_multi_video_releases?: boolean;
             metadata: components["schemas"]["AnimeMetadataDraft"];
             subgroups: components["schemas"]["SubgroupsSection"];
             rules: components["schemas"]["RulesDraft"];
@@ -5410,6 +5431,10 @@ export interface components {
             state: "active" | "stopped";
         };
         NewReleasesOnlyInput: {
+            expected_version: components["schemas"]["Version"];
+            enabled: boolean;
+        };
+        IgnoreMultiVideoInput: {
             expected_version: components["schemas"]["Version"];
             enabled: boolean;
         };
@@ -9835,6 +9860,36 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["NewReleasesOnlyInput"];
+            };
+        };
+        responses: {
+            /** @description The Subscription with the saved option. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Subscription"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    setAnimeIgnoreMultiVideoReleases: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                managed_anime_id: components["parameters"]["ManagedAnimeID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IgnoreMultiVideoInput"];
             };
         };
         responses: {
