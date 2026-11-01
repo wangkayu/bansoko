@@ -24,7 +24,7 @@ const CATEGORY_GROUPS: { group: string; labels: string[] }[] = [
   { group: "服务", labels: ["服务连接", "下载与入库"] },
   { group: "订阅策略", labels: ["默认规则", "同集多版本", "未识别集数", "订阅数量与对齐"] },
   { group: "站点", labels: ["AniBT 配置", "Mikan 配置", "隐藏的番剧"] },
-  { group: "系统", labels: ["账户", "自动任务", "通知", "版本与升级", "数据备份", "API 令牌"] },
+  { group: "系统", labels: ["账户", "自动任务", "通知", "版本与升级", "解析组件", "数据备份", "API 令牌"] },
 ];
 const CATEGORIES = CATEGORY_GROUPS.flatMap((group) => group.labels);
 
@@ -165,6 +165,26 @@ async function mockSettingsReads(page: Page) {
       }),
     ),
   );
+  // 解析组件面板：内置解析器、未检查通道的默认读模型。
+  await page.route("**/api/v1/title-parser", (route) =>
+    getOnly(route, () =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          source: "builtin",
+          version: "reltitle@v0.0.3",
+          line: "0.0",
+          config_digest: "lexicon:sha256:e2e",
+          binary_path: "/config/rt/reltitle",
+          note: "",
+          external_failure: "",
+          lane: "stable",
+          message: "",
+        }),
+      }),
+    ),
+  );
   await page.route("**/api/v1/api-tokens", (route) =>
     getOnly(route, () => route.fulfill({ status: 200, contentType: "application/json", body: "[]" })),
   );
@@ -200,7 +220,7 @@ test.describe("settings dialog", () => {
     await expect(page.locator("main")).toBeAttached();
   });
 
-  test("桌面端展示 section sidebar，十四个分区齐全", async ({ page }) => {
+  test("桌面端展示 section sidebar，十五个分区齐全", async ({ page }) => {
     test.skip(isMobile(page), "手机是两级导航，另有用例覆盖");
     const nav = page.getByRole("navigation", { name: "设置分类" });
     await expect(nav).toBeVisible({ timeout: 10000 });
@@ -378,5 +398,16 @@ test.describe("settings fixture coverage", () => {
     await expect(page).toHaveURL(/\/settings\/ai$/);
     await expect(dialog.getByRole("heading", { name: "创建令牌" })).toBeVisible();
     await expect(dialog.getByText("还没有 API 令牌", { exact: true })).toBeVisible();
+  });
+
+  test("解析组件分区展示当前解析器与未检查空态", async ({ page }) => {
+    await openSettings(page, "/#/settings/titleParser");
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible({ timeout: 10000 });
+    await expect(dialog.getByText("当前解析器", { exact: true })).toBeVisible();
+    await expect(dialog.getByText("内置版本", { exact: true })).toBeVisible();
+    await expect(dialog.getByText("reltitle@v0.0.3")).toBeVisible();
+    await expect(dialog.getByText("尚未检查过更新", { exact: true })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "检查更新" })).toBeVisible();
   });
 });
