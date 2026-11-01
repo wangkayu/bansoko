@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
-	animedomain "bansoko/internal/anime/domain"
 	"bansoko/internal/workitems"
 )
 
@@ -14,8 +13,15 @@ import (
 // one filtered item with the filter reason that rejected it.
 func TestDiscoveryEntryCountsFeedOutcomes(t *testing.T) {
 	db := openRSSDatabase(t)
-	sourceID, subscriptionID := seedRSSOwnerReleaseFilter(t, db, false, true,
-		&animedomain.RegexFilter{NotIn: "Banner"})
+	sourceID, subscriptionID := seedRSSOwner(t, db, false, true)
+	// Reject titles carrying Banner, so one of the two feed items is filtered
+	// at the feed pass and the other is handed to evaluation.
+	if _, err := db.Exec(`
+UPDATE anime_config_overrides SET value = $1::jsonb, updated_at = NOW()
+WHERE managed_anime_id = 'anime-rss-test' AND section_name = 'release_rules'`,
+		`{"must_contain":"","not_in":"Banner"}`); err != nil {
+		t.Fatal(err)
+	}
 	accepted := discoveryFeedItem(t, 1)
 	blocked := discoveryFeedItem(t, 2)
 	blocked.Title = "[Group] Test Show - 02 Banner 1080p"
@@ -56,7 +62,7 @@ WHERE subscription_id = $1 AND kind = 'rss_new_content'`, subscriptionID).Scan(&
 			t.Fatalf("outcome_counts[%s] = %d, want %d (details %s)", verdict, details.OutcomeCounts[verdict], want, raw)
 		}
 	}
-	if details.FilteredReason["release_not_in_matched"] != 1 {
-		t.Fatalf("filtered_reasons = %v, want release_not_in_matched: 1 (details %s)", details.FilteredReason, raw)
+	if details.FilteredReason["filtered_by_rules"] != 1 {
+		t.Fatalf("filtered_reasons = %v, want filtered_by_rules: 1 (details %s)", details.FilteredReason, raw)
 	}
 }
