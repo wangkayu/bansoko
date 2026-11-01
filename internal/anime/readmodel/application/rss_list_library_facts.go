@@ -16,10 +16,7 @@ type releaseLibraryFile struct {
 	ReleaseID    string
 	SourcePath   string
 	FrozenTarget string
-	// PlacementID is the video placement, or the placement owning the
-	// companion.
-	PlacementID string
-	CompanionID string
+	CompanionID  string
 	// State is the placement's state (active, superseded, displaced or
 	// released); empty on companion rows. Cause is a displaced placement's
 	// cause (overwrite or redownload).
@@ -158,7 +155,7 @@ func markHeldInLibrary(item *RSSListItem, file *RSSListFile) {
 func (s *Service) readReleaseLibraryFiles(ctx context.Context, animeID string, releaseIDs []string) ([]releaseLibraryFile, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT a.source_release_ref, mf.relative_path, fo.target_path,
-       COALESCE(p.id, c.placement_id), COALESCE(c.id, ''),
+       COALESCE(c.id, ''),
        COALESCE(p.state, ''), COALESCE(p.displaced_cause, '')
 FROM file_operations fo
 JOIN acquisitions a ON a.id = fo.acquisition_id
@@ -178,7 +175,7 @@ ORDER BY fo.created_at, fo.id`, pq.Array(releaseIDs), animeID)
 	files := []releaseLibraryFile{}
 	for rows.Next() {
 		var file releaseLibraryFile
-		if err := rows.Scan(&file.ReleaseID, &file.SourcePath, &file.FrozenTarget, &file.PlacementID, &file.CompanionID,
+		if err := rows.Scan(&file.ReleaseID, &file.SourcePath, &file.FrozenTarget, &file.CompanionID,
 			&file.State, &file.Cause); err != nil {
 			return nil, fmt.Errorf("scan release library file: %w", err)
 		}
