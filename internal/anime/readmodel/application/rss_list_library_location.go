@@ -32,18 +32,26 @@ type releaseLibraryFile struct {
 	PlacementID string
 	CompanionID string
 	CurrentPath string
-	// EndState and EndCause are the ended placement's state and cause; empty
-	// while the file is held, and empty on companion rows.
-	EndState string
-	EndCause string
+	// State is the placement's state (active, superseded, displaced or
+	// released); empty on companion rows. Cause is a displaced placement's
+	// cause (overwrite or redownload).
+	State string
+	Cause string
 }
 
 // ended reports whether this row is a placement that has ended rather than a
 // holder of the file. A file operation has one placement
-// (placements_source_uq), so the state alone decides it; a companion still
+// (placements_source_uq), so its state alone decides it; a companion still
 // holding the file keeps it held.
 func (f releaseLibraryFile) ended() bool {
-	return f.EndState != "" && f.CompanionID == ""
+	if f.CompanionID != "" {
+		return false
+	}
+	switch f.State {
+	case RSSListPlacementEndSuperseded, RSSListPlacementEndDisplaced, RSSListPlacementEndReleased:
+		return true
+	}
+	return false
 }
 
 // applyLibraryLocations shows where each imported file of the owner view is
@@ -146,7 +154,7 @@ func (s *Service) applyLibraryLocations(ctx context.Context, animeID string, vie
 						ended, endedOK = endedByTarget[releaseID+"\x00"+filepath.Clean(file.RenderedTarget)]
 					}
 					if endedOK {
-						file.PlacementEnd = &RSSListPlacementEnd{State: ended.EndState, Cause: ended.EndCause}
+						file.PlacementEnd = &RSSListPlacementEnd{State: ended.State, Cause: ended.Cause}
 					}
 					continue
 				}
@@ -228,7 +236,7 @@ ORDER BY fo.created_at, fo.id`, pq.Array(releaseIDs), animeID)
 	for rows.Next() {
 		var file releaseLibraryFile
 		if err := rows.Scan(&file.ReleaseID, &file.SourcePath, &file.FrozenTarget, &file.PlacementID, &file.CompanionID, &file.CurrentPath,
-			&file.EndState, &file.EndCause); err != nil {
+			&file.State, &file.Cause); err != nil {
 			return nil, fmt.Errorf("scan release library file: %w", err)
 		}
 		files = append(files, file)

@@ -146,19 +146,35 @@ func TestRSSListOwnerRowStatesEndedPlacement(t *testing.T) {
 			if _, err := disposabledb.Owner(t).ExecContext(ctx, `DELETE FROM placements WHERE managed_anime_id = 'anime-failed'`); err != nil {
 				t.Fatal(err)
 			}
-			// A displaced placement records all five displaced columns; the
-			// other ended states record none.
-			var displacedAt, cause, successor, successorAnime, ref any
-			if c.state == RSSListPlacementEndDisplaced {
-				displacedAt, cause, successor, successorAnime, ref = "2026-01-02T00:00:00Z", c.cause, "plc-successor", "anime-failed", "fixture"
-			}
+			// A terminal state is entered from active only (placements_release_terminal
+			// rejects an insert in any of them), so seed the holder and then take the exit.
 			if _, err := disposabledb.Owner(t).ExecContext(ctx, `
 INSERT INTO placements(id, physical_path, managed_anime_id, source_evidence_type, source_owner_ref,
- source_fingerprint, target_fingerprint, facts_version, verification_state, state,
- displaced_at, displaced_cause, displaced_by_placement_id, displaced_by_anime_id, displaced_by_ref)
+ source_fingerprint, target_fingerprint, facts_version, verification_state, state)
 VALUES ('plc-ended', '/library/Failed Show/file-a.mkv', 'anime-failed', 'file_operation', 'fo-failed',
- 'sha256:a', 'sha256:a', 'parser-v1', 'verified', $1,
- $2::timestamptz, $3, $4, $5, $6)`, c.state, displacedAt, cause, successor, successorAnime, ref); err != nil {
+ 'sha256:a', 'sha256:a', 'parser-v1', 'verified', 'active')`); err != nil {
+				t.Fatal(err)
+			}
+			var exit string
+			switch c.state {
+			case RSSListPlacementEndDisplaced:
+				exit = `
+UPDATE placements SET state = 'displaced', displaced_at = CURRENT_TIMESTAMP, displaced_cause = $1,
+ displaced_by_placement_id = 'plc-successor', displaced_by_anime_id = 'anime-failed', displaced_by_ref = 'fixture'
+WHERE id = 'plc-ended'`
+			case RSSListPlacementEndReleased:
+				exit = `
+UPDATE placements SET state = 'released', released_at = CURRENT_TIMESTAMP, released_by = 'user:placement_issue',
+ release_request_key = 'fixture-release-ended'
+WHERE id = 'plc-ended'`
+			default:
+				exit = `UPDATE placements SET state = 'superseded' WHERE id = 'plc-ended'`
+			}
+			args := []any{}
+			if c.state == RSSListPlacementEndDisplaced {
+				args = append(args, c.cause)
+			}
+			if _, err := disposabledb.Owner(t).ExecContext(ctx, exit, args...); err != nil {
 				t.Fatal(err)
 			}
 			view := RSSListView{Groups: []RSSListGroup{{Items: []RSSListItem{{
