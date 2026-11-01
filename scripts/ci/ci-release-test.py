@@ -73,6 +73,32 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(release.HUB_USER, "wangkayu")
         self.assertEqual(release.HUB_TOKEN_ENV, "DOCKERHUB_TOKEN")
 
+    def test_refused_names_the_servers_own_reason(self):
+        # A refusal quotes the server's message when the body carries one, and
+        # a body that is not JSON contributes nothing instead of hiding the
+        # status behind a parse error.
+        with self.assertRaises(RuntimeError) as caught:
+            release.refused("github blob read", 403, json.dumps(
+                {"message": "Resource not accessible by integration"}
+            ).encode())
+        self.assertEqual(
+            str(caught.exception),
+            "github blob read refused: HTTP 403: "
+            "Resource not accessible by integration",
+        )
+        with self.assertRaises(RuntimeError) as caught:
+            release.refused("github blob read", 502, b"<html>Bad Gateway</html>")
+        self.assertEqual(str(caught.exception), "github blob read refused: HTTP 502")
+        with self.assertRaises(RuntimeError) as caught:
+            release.refused("registry read", 500, None)
+        self.assertEqual(str(caught.exception), "registry read refused: HTTP 500")
+        with self.assertRaises(RuntimeError) as caught:
+            release.refused("github blob read", 403, json.dumps(
+                {"message": "x" * 400}
+            ).encode())
+        self.assertTrue(str(caught.exception).endswith("x" * 200))
+        self.assertFalse(str(caught.exception).endswith("x" * 201))
+
     def test_github_repository_is_validated(self):
         # The channel is addressed with the repository the workflow runs in; a
         # malformed value must be refused, never guessed around.

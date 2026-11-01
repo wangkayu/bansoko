@@ -65,6 +65,23 @@ def fail(message) -> "NoReturn":
     raise RuntimeError(message)
 
 
+def refused(action, status, body=None):
+    """fail() for one refused HTTP call, naming the server's own reason.
+
+    GitHub answers a JSON `message`; a proxy page or truncated body contributes
+    nothing rather than hiding the status behind a parse error, and the excerpt
+    stays bounded so a verbose error cannot flood the log.
+    """
+    detail = ""
+    try:
+        message = json.loads(body).get("message")
+        if isinstance(message, str) and message.strip():
+            detail = ": " + message.strip()[:200]
+    except (ValueError, TypeError, AttributeError):
+        pass
+    fail(action + " refused: HTTP " + str(status) + detail)
+
+
 def required(name):
     value = os.environ.get(name, "")
     if not value:
@@ -148,7 +165,7 @@ def hub_token():
         with urllib.request.build_opener(NoRedirect()).open(req, timeout=120) as response:
             token = decode_json(response.read()).get("token", "")
     except urllib.error.HTTPError as error:
-        fail("registry auth refused: HTTP " + str(error.code))
+        refused("registry auth", error.code, error.read())
     except (urllib.error.URLError, TimeoutError):
         fail("registry auth network failure")
     if not token:
@@ -338,7 +355,7 @@ def published_channel(token, temp, branch=BRANCH):
     if status == 404:
         return None
     if status != 200:
-        fail("published channel read refused: HTTP " + str(status))
+        refused("published channel read", status, body)
     path = temp / "published-channel.json"
     path.write_bytes(github_content_bytes(decode_json(body), token))
     return path
@@ -494,7 +511,7 @@ def registry_digest(tag, jwt):
     except urllib.error.HTTPError as error:
         if error.code == 404:
             return None
-        fail("registry read refused: HTTP " + str(error.code))
+        refused("registry read", error.code, error.read())
     except (urllib.error.URLError, TimeoutError):
         fail("registry read network failure")
 
@@ -792,10 +809,10 @@ def github_put_file(version, name, content, token, branch=BRANCH):
             fail("immutable release file conflict: " + version + "/" + name)
         return
     if status != 404:
-        fail("immutable release file read refused: HTTP " + str(status))
-    status, _ = request(url, token, "PUT", options, hosts=hosts)
+        refused("immutable release file read", status, body)
+    status, body = request(url, token, "PUT", options, hosts=hosts)
     if status not in (200, 201, 409):
-        fail("immutable release file upload refused: HTTP " + str(status))
+        refused("immutable release file upload", status, body)
     status, body = request(url + "?ref=" + branch, token, hosts=hosts)
     if status != 200 or decode_json(body).get("sha") != git_blob_sha(content):
         fail("immutable release file readback mismatch: " + version + "/" + name)
@@ -818,7 +835,7 @@ def require_public_github(token):
         hosts=(urllib.parse.urlsplit(github_api_base()).netloc,),
     )
     if status != 200:
-        fail("github repository read refused: HTTP " + str(status))
+        refused("github repository read", status, body)
     if decode_json(body).get("private") is not False:
         fail(
             "github destination unavailable: the repository is not public, and "
@@ -837,11 +854,11 @@ def github_ensure_branch(token, branch=BRANCH):
     """
     hosts = (urllib.parse.urlsplit(github_api_base()).netloc,)
     repository_url = github_api_base() + "/repos/" + github_repository()
-    status, _ = request(repository_url + "/branches/" + branch, token, hosts=hosts)
+    status, body = request(repository_url + "/branches/" + branch, token, hosts=hosts)
     if status == 200:
         return
     if status != 404:
-        fail("channel branch read refused: HTTP " + str(status))
+        refused("channel branch read", status, body)
     status, body = request(
         repository_url + "/git/ref/heads/" + GITHUB_BASE_BRANCH, token, hosts=hosts
     )
@@ -850,7 +867,7 @@ def github_ensure_branch(token, branch=BRANCH):
     sha = decode_json(body).get("object", {}).get("sha", "")
     if not re.fullmatch(r"[a-f0-9]{40}", sha):
         fail("channel base branch ref names no commit")
-    status, _ = request(
+    status, body = request(
         repository_url + "/git/refs",
         token,
         "POST",
@@ -860,7 +877,7 @@ def github_ensure_branch(token, branch=BRANCH):
     if status not in (201, 422):
         # 422 is a concurrent creation of the same branch, which is the state
         # this call wanted; anything else leaves the branch absent.
-        fail("channel branch create refused: HTTP " + str(status))
+        refused("channel branch create", status, body)
 
 
 def github_publish(ident, files):
@@ -951,7 +968,7 @@ def github_content_bytes(info, token):
         hosts=(urllib.parse.urlsplit(github_api_base()).netloc,),
     )
     if status != 200:
-        fail("github blob read refused: HTTP " + str(status))
+        refused("github blob read", status, body)
     return base64.b64decode(decode_json(body)["content"])
 
 
@@ -985,15 +1002,15 @@ def github_channel(candidate, ident, temp):
             print("github channel already identical and raw readback verified")
             return
     elif status == 404:
-        branch_status, _ = request(
+        branch_status, branch_body = request(
             github_api_base() + "/repos/" + github_repository() + "/branches/" + branch,
             token,
             hosts=hosts,
         )
         if branch_status != 200:
-            fail("github channel branch not accessible")
+            refused("github channel branch read", branch_status, branch_body)
     else:
-        fail("github channel read refused: HTTP " + str(status))
+        refused("github channel read", status, body)
     run(
         "go",
         "run",
@@ -1010,9 +1027,9 @@ def github_channel(candidate, ident, temp):
     # blob that was just read; the contents API has no POST form (a POST there
     # answers 404), so the method is always PUT and `sha` carries the
     # compare-and-swap.
-    status, _ = request(url, token, "PUT", options, hosts=hosts)
+    status, body = request(url, token, "PUT", options, hosts=hosts)
     if status not in (200, 201):
-        fail("github channel conditional write rejected: HTTP " + str(status))
+        refused("github channel conditional write", status, body)
     expected = candidate.read_bytes()
     code, raw = public_readback(github_raw_url("channel-v1.json", branch), expected)
     if code != 200 or raw != expected:
