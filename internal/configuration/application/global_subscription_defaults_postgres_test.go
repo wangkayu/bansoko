@@ -20,6 +20,8 @@ func TestGlobalSubscriptionDefaultsSection(t *testing.T) {
 		_, _ = db.ExecContext(ctx, `DELETE FROM global_config_sections WHERE section_name = $1`, animedomain.SectionSubscriptionDefaults)
 	})
 	svc := NewService(db, newConnectionTestSecretStore(t, db))
+	// The business snapshot references the active Vars and attrrules programs.
+	seedActivePrograms(t, ctx, svc)
 
 	find := func() configurationdomain.GlobalSectionView {
 		t.Helper()
