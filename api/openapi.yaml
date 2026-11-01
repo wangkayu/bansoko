@@ -5204,7 +5204,6 @@ paths:
       tags: [Parser]
       operationId: updateTitleParser
       x-scope: write
-      x-surface-keep: "frontend: the parser component panel is the only caller; installing a component is a human action, so this stays off the agent surface even though the app update channel is readable to agents"
       description: >-
         Read the published reltitle channel and install a strictly newer build
         at the one parser path, then re-run the adoption chain and switch the
