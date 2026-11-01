@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	identitymetadataadapter "bansoko/internal/identitymetadata/adapter"
+	"bansoko/internal/observability/outbound"
+	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/transport/httpapi/generated"
 )
 
@@ -76,6 +78,24 @@ func (s *Server) ReadImageCover(w http.ResponseWriter, r *http.Request, imageKey
 		case errors.Is(err, identitymetadataadapter.ErrCoverUnavailable):
 			writeError(w, r, &APIError{Status: http.StatusBadGateway, Code: "COVER_UPSTREAM_FAILED", Message: "The provider did not return a usable image."})
 		default:
+			// The registry read is the only untyped exit, and its fault can be
+			// invisible everywhere else (the 2026-10-30 A4 inspection saw 500s
+			// with no matching postgres error). Name the class of the fault in a
+			// warning; writeError still answers the request and records the 5xx.
+			// Fixed strings and closed vocabularies only, never the error text.
+			class := unknownFailureClass(err)
+			if class == "unknown_application_error" {
+				class = string(outbound.Classify(err))
+			}
+			runtimeLoggerFrom(r.Context()).Warn(r.Context(), observabilityport.RuntimeEvent{
+				Message:    "cover read failed",
+				Component:  "httpapi",
+				Operation:  "readImageCover",
+				Outcome:    "failure",
+				ReasonCode: "cover_read_failed",
+				RequestID:  RequestIDFrom(r.Context()),
+				ErrorClass: class,
+			})
 			writeError(w, r, err)
 		}
 		return

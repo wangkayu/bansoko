@@ -4,10 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
+	"syscall"
 	"testing"
 
 	accessapplication "bansoko/internal/accesscontrol/application"
@@ -15,6 +19,8 @@ import (
 	identitymetadatadomain "bansoko/internal/identitymetadata/domain"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/transport/httpapi/generated"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 const testCoverKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -83,6 +89,55 @@ func TestReadImageCoverStreamsWithPrivateCacheAndMapsErrors(t *testing.T) {
 				return
 			}
 			assertErrorResponseCode(t, recorder.Body.Bytes(), tc.wantCode)
+		})
+	}
+}
+
+// captureWarnings records runtime events by level; the diagnostic warning of
+// an untyped cover-read failure is asserted without touching the shared sink.
+type captureWarnings struct {
+	warns []observabilityport.RuntimeEvent
+}
+
+func (l *captureWarnings) Debug(context.Context, observabilityport.RuntimeEvent) {}
+func (l *captureWarnings) Info(context.Context, observabilityport.RuntimeEvent)  {}
+func (l *captureWarnings) Warn(_ context.Context, event observabilityport.RuntimeEvent) {
+	l.warns = append(l.warns, event)
+}
+func (l *captureWarnings) Error(context.Context, observabilityport.RuntimeEvent) {}
+
+// An untyped cover-read failure (the registry read) logs one warning that
+// names the class of the fault — a database refusal by SQLSTATE, any other
+// fault by the shared outbound network vocabulary — while the response keeps
+// its existing unknown-500 shape.
+func TestReadImageCoverWarnsWithErrorClassOnUntypedFailure(t *testing.T) {
+	cases := []struct {
+		name      string
+		err       error
+		wantClass string
+	}{
+		{name: "network refusal", err: &net.OpError{Op: "dial", Err: &os.SyscallError{Syscall: "connect", Err: syscall.ECONNREFUSED}}, wantClass: "connection_refused"},
+		{name: "database refusal", err: &pgconn.PgError{Code: "55P03"}, wantClass: "postgres_55P03"},
+		{name: "unrecognized", err: errors.New("registry read exploded"), wantClass: "unknown"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			logger := &captureWarnings{}
+			server := &Server{deps: Dependencies{SkipAuth: true, RuntimeLogger: logger, ImageCovers: &fakeCoverService{fetchErr: tc.err}}}
+			request := httptest.NewRequest(http.MethodGet, "/api/v1/images/cover/"+testCoverKey, nil)
+			recorder := httptest.NewRecorder()
+			server.Handler().ServeHTTP(recorder, request)
+
+			if recorder.Code != http.StatusInternalServerError {
+				t.Fatalf("status = %d, want 500; body=%s", recorder.Code, recorder.Body.String())
+			}
+			if len(logger.warns) != 1 {
+				t.Fatalf("warnings = %+v, want exactly one", logger.warns)
+			}
+			event := logger.warns[0]
+			if event.ReasonCode != "cover_read_failed" || event.Operation != "readImageCover" || event.ErrorClass != tc.wantClass {
+				t.Fatalf("warning = reason %q operation %q class %q, want cover_read_failed / readImageCover / %q", event.ReasonCode, event.Operation, event.ErrorClass, tc.wantClass)
+			}
 		})
 	}
 }
