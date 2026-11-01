@@ -267,53 +267,33 @@ func validateArtifact(artifact rawArtifact) error {
 	return nil
 }
 
-// decodeNotes accepts both published shapes: the aligned markdown form
-// ({"zh-CN": "...", "en": "..."}) that reltitle emits from v0.0.4 on, and the
-// earlier bullet list ({"zh_cn": ["..."], "en": ["..."]}). A test build carries
-// no notes at all.
+// decodeNotes reads the aligned notes shape reltitle publishes from v0.0.4 on
+// ({"zh-CN": "<markdown>", "en": "<markdown>"}). Releases published before that
+// contract carry a different shape; they are read as no notes rather than as an
+// error, because a manifest older than the contract still describes an
+// installable build.
 func decodeNotes(raw json.RawMessage) (ChannelNotes, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return ChannelNotes{}, nil
 	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil {
-		return ChannelNotes{}, fmt.Errorf("%w: notes is not an object: %v", ErrChannel, err)
+		return ChannelNotes{}, nil
 	}
-	notes := ChannelNotes{}
-	var err error
-	if notes.ZhCN, err = decodeNote(fields["zh-CN"]); err != nil {
-		return ChannelNotes{}, err
-	}
-	if notes.ZhCN == "" {
-		if notes.ZhCN, err = decodeNote(fields["zh_cn"]); err != nil {
-			return ChannelNotes{}, err
-		}
-	}
-	if notes.EN, err = decodeNote(fields["en"]); err != nil {
-		return ChannelNotes{}, err
-	}
-	return notes, nil
+	return ChannelNotes{ZhCN: noteText(fields["zh-CN"]), EN: noteText(fields["en"])}, nil
 }
 
-func decodeNote(raw json.RawMessage) (string, error) {
-	if len(raw) == 0 || string(raw) == "null" {
-		return "", nil
+// noteText keeps a string note and drops anything else, so a shape this build
+// does not know costs the reader a note and nothing more.
+func noteText(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
 	}
 	var text string
-	if err := json.Unmarshal(raw, &text); err == nil {
-		return strings.TrimSpace(text), nil
+	if err := json.Unmarshal(raw, &text); err != nil {
+		return ""
 	}
-	var bullets []string
-	if err := json.Unmarshal(raw, &bullets); err != nil {
-		return "", fmt.Errorf("%w: a note is neither text nor a list of text", ErrChannel)
-	}
-	kept := make([]string, 0, len(bullets))
-	for _, bullet := range bullets {
-		if trimmed := strings.TrimSpace(bullet); trimmed != "" {
-			kept = append(kept, "- "+trimmed)
-		}
-	}
-	return strings.Join(kept, "\n"), nil
+	return strings.TrimSpace(text)
 }
 
 // ArtifactFor returns this platform's artifact, or an error naming the gap.

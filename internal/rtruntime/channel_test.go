@@ -49,7 +49,10 @@ const alignedNotes = `{
   }
 }`
 
-func TestDecodeChannelJoinsLegacyBullets(t *testing.T) {
+// TestDecodeChannelReadsAPreContractReleaseAsNoNotes proves a release published
+// before the aligned notes shape stays installable: its identity is read and its
+// notes are simply absent.
+func TestDecodeChannelReadsAPreContractReleaseAsNoNotes(t *testing.T) {
 	channel, err := DecodeChannel([]byte(publishedStable), "0.0")
 	if err != nil {
 		t.Fatalf("decode: %v", err)
@@ -57,11 +60,8 @@ func TestDecodeChannelJoinsLegacyBullets(t *testing.T) {
 	if channel.Version != "0.0.3" || channel.Sequence != 1 {
 		t.Fatalf("identity = %q seq %d", channel.Version, channel.Sequence)
 	}
-	if channel.Notes.ZhCN != "- 第一条\n- 第二条" {
-		t.Fatalf("zh notes = %q", channel.Notes.ZhCN)
-	}
-	if channel.Notes.EN != "- first\n- second" {
-		t.Fatalf("en notes = %q", channel.Notes.EN)
+	if channel.Notes != (ChannelNotes{}) {
+		t.Fatalf("a pre-contract release has no readable notes, got %+v", channel.Notes)
 	}
 	if _, err := channel.ArtifactFor("linux/amd64"); err != nil {
 		t.Fatalf("amd64 artifact: %v", err)
