@@ -29,6 +29,7 @@ tags:
   - name: Metadata
   - name: Reconciliation
   - name: FileManager
+  - name: Parser
   - name: Agent
 x-mcp-composites:
   - tool: poll_workspace
@@ -5133,6 +5134,104 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /title-parser:
+    get:
+      tags: [Parser]
+      operationId: getTitleParser
+      x-scope: read
+      x-mcp:
+        tool: get_title_parser
+        group: configuration
+        write: false
+        description: >-
+          Read the reltitle parser component: the build answering parses, its
+          dictionary digest, the installed binary path, the startup probe note
+          and the last published-channel answer. Reads only.
+      description: >-
+        The parser component read model. It answers from process state and the
+        last cached channel pass; it never contacts the network. A channel
+        object appears after the first check or install and keeps its last
+        successful version when a later check fails, with `error` carrying the
+        reason.
+      responses:
+        '200':
+          description: The parser component status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TitleParserStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /title-parser/check:
+    post:
+      tags: [Parser]
+      operationId: checkTitleParser
+      x-scope: read
+      x-mcp:
+        tool: check_title_parser
+        group: configuration
+        write: false
+        description: >-
+          Read the published reltitle channel for the running major.minor line
+          and report whether it offers a newer build. Reads only and installs
+          nothing.
+      description: >-
+        Fetch and decode the published reltitle channel for the running
+        parser's major.minor line. The answer is cached for GET /title-parser.
+        A channel that cannot be read leaves the previous answer visible and
+        the failure in `channel.error`, and the request answers 502 rather
+        than a silent success.
+      responses:
+        '200':
+          description: The channel answer, with `newer` computed against the running parser.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TitleParserStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /title-parser/update:
+    post:
+      tags: [Parser]
+      operationId: updateTitleParser
+      x-scope: write
+      x-mcp:
+        tool: update_title_parser
+        group: configuration
+        write: true
+        description: >-
+          Read the published reltitle channel and install a strictly newer
+          build, then switch the running parser. The previous parser keeps
+          answering until the downloaded binary passes the adoption chain, and
+          a refused binary leaves it in place. Changes the installed parser;
+          ask the human before running it.
+      description: >-
+        Read the published reltitle channel and install a strictly newer build
+        at the one parser path, then re-run the adoption chain and switch the
+        running backend. The download is proven by size and digest before the
+        live file is replaced. When the channel offers nothing newer, nothing
+        is written and `message` carries the reason. A build that cannot be
+        adopted leaves the previous backend running; the reason appears in
+        `note` and `channel.error`.
+      responses:
+        '200':
+          description: The resulting parser component status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TitleParserStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /backup:
     get:
       tags: [System]
@@ -7190,6 +7289,12 @@ components:
             $ref: '#/components/schemas/ErrorResponse'
     Unavailable:
       description: A required adapter or service is unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    BadGateway:
+      description: An upstream channel or service did not answer with a usable result.
       content:
         application/json:
           schema:
@@ -11489,6 +11594,79 @@ components:
         target_release_id:
           type: string
         manifest_digest:
+          type: string
+    TitleParserStatus:
+      type: object
+      description: >-
+        The reltitle parser component as this process sees it. `channel` is
+        absent until the first check or install.
+      additionalProperties: false
+      required: [source, version, line, config_digest, binary_path, note, external_failure, lane, message]
+      properties:
+        source:
+          type: string
+          enum: [builtin, manual, channel]
+        version:
+          type: string
+          description: The running parser identity, e.g. `reltitle@v0.0.3` for the compiled-in library.
+        line:
+          type: string
+          description: The running parser's major.minor line (e.g. `0.0`); empty when it cannot be derived.
+        config_digest:
+          type: string
+          description: The dictionary digest the running parser reported (`lexicon:sha256:...`).
+        binary_path:
+          type: string
+          description: The one path a channel install and a manually placed build both use.
+        note:
+          type: string
+          description: The startup probe's explanation (a refused manual build, an older-than-builtin build, ...).
+        external_failure:
+          type: string
+          description: Why a previously adopted binary was dropped mid-flight; empty while it answers.
+        lane:
+          type: string
+          enum: [stable, test]
+        message:
+          type: string
+          description: >-
+            The last install attempt's outcome: why nothing was installed when
+            the channel offered no newer build, or what was installed. Empty
+            before the first install.
+        channel:
+          $ref: '#/components/schemas/TitleParserChannel'
+    TitleParserChannel:
+      type: object
+      description: >-
+        The last answer from the published reltitle channel. A failed check
+        updates checked_at and error and keeps the previous successful version,
+        notes and release_url.
+      additionalProperties: false
+      required: [checked_at, version, notes, release_url, newer, error]
+      properties:
+        checked_at:
+          type: string
+          format: date-time
+        version:
+          type: string
+        notes:
+          $ref: '#/components/schemas/TitleParserChannelNotes'
+        release_url:
+          type: string
+        newer:
+          type: boolean
+          description: Whether the channel version is strictly newer than the parser running now.
+        error:
+          type: string
+          description: Why the last check or install could not read the channel; empty on success.
+    TitleParserChannelNotes:
+      type: object
+      additionalProperties: false
+      required: [zh_cn, en]
+      properties:
+        zh_cn:
+          type: string
+        en:
           type: string
     UpdateCheck:
       type: object

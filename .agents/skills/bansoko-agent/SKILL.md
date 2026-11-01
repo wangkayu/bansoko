@@ -308,6 +308,14 @@ System and schedules:
 | Read the update status | `get_update_status` | `getUpdateStatus` | - |
 | Ask the update channel whether a newer version exists (changes nothing; applying updates is not an agent operation) | `check_update` | `checkUpdate` | - |
 
+Parser component. The release-title parser (`reltitle`) has its own channel, separate from the Bansoko application update:
+
+| Step | MCP tool | operationId | CLI |
+|---|---|---|---|
+| Read the running parser build, its dictionary digest, the installed binary path and the last channel answer (never contacts the network) | `get_title_parser` | `getTitleParser` | - |
+| Ask the published reltitle channel whether a newer parser build exists on the running major.minor line (installs nothing) | `check_title_parser` | `checkTitleParser` | - |
+| Install a newer parser build and switch the running parser; the old parser keeps answering until the new binary passes the adoption chain (needs a write token, ask the human first) | `update_title_parser` | `updateTitleParser` | - |
+
 Global sections, naming and vocabularies:
 
 | Step | MCP tool | operationId | CLI |

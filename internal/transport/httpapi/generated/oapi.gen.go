@@ -2467,6 +2467,19 @@ const (
 	TemplateVariableTypeTimestamp TemplateVariableType = "timestamp"
 )
 
+// Defines values for TitleParserStatusLane.
+const (
+	TitleParserStatusLaneStable TitleParserStatusLane = "stable"
+	TitleParserStatusLaneTest   TitleParserStatusLane = "test"
+)
+
+// Defines values for TitleParserStatusSource.
+const (
+	TitleParserStatusSourceBuiltin TitleParserStatusSource = "builtin"
+	TitleParserStatusSourceChannel TitleParserStatusSource = "channel"
+	TitleParserStatusSourceManual  TitleParserStatusSource = "manual"
+)
+
 // Defines values for TitleSuggestionSource.
 const (
 	TitleSuggestionSourceBgm          TitleSuggestionSource = "bgm"
@@ -9159,6 +9172,61 @@ type TemplateWarning struct {
 	Variable *string `json:"variable,omitempty"`
 }
 
+// TitleParserChannel The last answer from the published reltitle channel. A failed check updates checked_at and error and keeps the previous successful version, notes and release_url.
+type TitleParserChannel struct {
+	CheckedAt time.Time `json:"checked_at"`
+
+	// Error Why the last check or install could not read the channel; empty on success.
+	Error string `json:"error"`
+
+	// Newer Whether the channel version is strictly newer than the parser running now.
+	Newer      bool                    `json:"newer"`
+	Notes      TitleParserChannelNotes `json:"notes"`
+	ReleaseUrl string                  `json:"release_url"`
+	Version    string                  `json:"version"`
+}
+
+// TitleParserChannelNotes defines model for TitleParserChannelNotes.
+type TitleParserChannelNotes struct {
+	En   string `json:"en"`
+	ZhCn string `json:"zh_cn"`
+}
+
+// TitleParserStatus The reltitle parser component as this process sees it. `channel` is absent until the first check or install.
+type TitleParserStatus struct {
+	// BinaryPath The one path a channel install and a manually placed build both use.
+	BinaryPath string `json:"binary_path"`
+
+	// Channel The last answer from the published reltitle channel. A failed check updates checked_at and error and keeps the previous successful version, notes and release_url.
+	Channel *TitleParserChannel `json:"channel,omitempty"`
+
+	// ConfigDigest The dictionary digest the running parser reported (`lexicon:sha256:...`).
+	ConfigDigest string `json:"config_digest"`
+
+	// ExternalFailure Why a previously adopted binary was dropped mid-flight; empty while it answers.
+	ExternalFailure string                `json:"external_failure"`
+	Lane            TitleParserStatusLane `json:"lane"`
+
+	// Line The running parser's major.minor line (e.g. `0.0`); empty when it cannot be derived.
+	Line string `json:"line"`
+
+	// Message The last install attempt's outcome: why nothing was installed when the channel offered no newer build, or what was installed. Empty before the first install.
+	Message string `json:"message"`
+
+	// Note The startup probe's explanation (a refused manual build, an older-than-builtin build, ...).
+	Note   string                  `json:"note"`
+	Source TitleParserStatusSource `json:"source"`
+
+	// Version The running parser identity, e.g. `reltitle@v0.0.3` for the compiled-in library.
+	Version string `json:"version"`
+}
+
+// TitleParserStatusLane defines model for TitleParserStatus.Lane.
+type TitleParserStatusLane string
+
+// TitleParserStatusSource defines model for TitleParserStatus.Source.
+type TitleParserStatusSource string
+
 // TitleSuggestion One candidate for the anime's fixed title (title_override). Using one is the owner's choice; no automatic path writes the title.
 type TitleSuggestion struct {
 	// Source tmdb_cn: the bound TMDB work's Chinese title. tmdb_original: its original title. bgm_cn: the bound Bangumi subject's Chinese title. bgm: its original title. provider: the title the subscription's source (catalog entry) gave.
@@ -9388,6 +9456,9 @@ type ToTime = time.Time
 
 // TriggerKindPath Closed notification trigger registry.
 type TriggerKindPath = NotificationTriggerKind
+
+// BadGateway defines model for BadGateway.
+type BadGateway = ErrorResponse
 
 // BadRequest defines model for BadRequest.
 type BadRequest = ErrorResponse
@@ -12512,6 +12583,15 @@ type ServerInterface interface {
 
 	// (POST /template-previews/notification)
 	PreviewNotificationTemplate(w http.ResponseWriter, r *http.Request)
+
+	// (GET /title-parser)
+	GetTitleParser(w http.ResponseWriter, r *http.Request)
+
+	// (POST /title-parser/check)
+	CheckTitleParser(w http.ResponseWriter, r *http.Request)
+
+	// (POST /title-parser/update)
+	UpdateTitleParser(w http.ResponseWriter, r *http.Request)
 
 	// (POST /update/admit)
 	AdmitUpdate(w http.ResponseWriter, r *http.Request, params AdmitUpdateParams)
@@ -19211,6 +19291,66 @@ func (siw *ServerInterfaceWrapper) PreviewNotificationTemplate(w http.ResponseWr
 	handler.ServeHTTP(w, r)
 }
 
+// GetTitleParser operation middleware
+func (siw *ServerInterfaceWrapper) GetTitleParser(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTitleParser(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CheckTitleParser operation middleware
+func (siw *ServerInterfaceWrapper) CheckTitleParser(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CheckTitleParser(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateTitleParser operation middleware
+func (siw *ServerInterfaceWrapper) UpdateTitleParser(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateTitleParser(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // AdmitUpdate operation middleware
 func (siw *ServerInterfaceWrapper) AdmitUpdate(w http.ResponseWriter, r *http.Request) {
 
@@ -19604,6 +19744,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("GET "+options.BaseURL+"/template-catalogs/notification/{trigger_kind}", wrapper.GetNotificationTemplateCatalog)
 	m.HandleFunc("POST "+options.BaseURL+"/template-previews/naming", wrapper.PreviewNamingTemplate)
 	m.HandleFunc("POST "+options.BaseURL+"/template-previews/notification", wrapper.PreviewNotificationTemplate)
+	m.HandleFunc("GET "+options.BaseURL+"/title-parser", wrapper.GetTitleParser)
+	m.HandleFunc("POST "+options.BaseURL+"/title-parser/check", wrapper.CheckTitleParser)
+	m.HandleFunc("POST "+options.BaseURL+"/title-parser/update", wrapper.UpdateTitleParser)
 	m.HandleFunc("POST "+options.BaseURL+"/update/admit", wrapper.AdmitUpdate)
 	m.HandleFunc("GET "+options.BaseURL+"/update/check", wrapper.CheckUpdate)
 	m.HandleFunc("GET "+options.BaseURL+"/update/status", wrapper.GetUpdateStatus)

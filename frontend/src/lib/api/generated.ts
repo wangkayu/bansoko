@@ -2004,6 +2004,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/title-parser": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The parser component read model. It answers from process state and the last cached channel pass; it never contacts the network. A channel object appears after the first check or install and keeps its last successful version when a later check fails, with `error` carrying the reason. */
+        get: operations["getTitleParser"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/title-parser/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Fetch and decode the published reltitle channel for the running parser's major.minor line. The answer is cached for GET /title-parser. A channel that cannot be read leaves the previous answer visible and the failure in `channel.error`, and the request answers 502 rather than a silent success. */
+        post: operations["checkTitleParser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/title-parser/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Read the published reltitle channel and install a strictly newer build at the one parser path, then re-run the adoption chain and switch the running backend. The download is proven by size and digest before the live file is replaced. When the channel offers nothing newer, nothing is written and `message` carries the reason. A build that cannot be adopted leaves the previous backend running; the reason appears in `note` and `channel.error`. */
+        post: operations["updateTitleParser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/backup": {
         parameters: {
             query?: never;
@@ -4512,6 +4563,44 @@ export interface components {
         UpdateAdmitInput: {
             target_release_id: string;
             manifest_digest: string;
+        };
+        /** @description The reltitle parser component as this process sees it. `channel` is absent until the first check or install. */
+        TitleParserStatus: {
+            /** @enum {string} */
+            source: "builtin" | "manual" | "channel";
+            /** @description The running parser identity, e.g. `reltitle@v0.0.3` for the compiled-in library. */
+            version: string;
+            /** @description The running parser's major.minor line (e.g. `0.0`); empty when it cannot be derived. */
+            line: string;
+            /** @description The dictionary digest the running parser reported (`lexicon:sha256:...`). */
+            config_digest: string;
+            /** @description The one path a channel install and a manually placed build both use. */
+            binary_path: string;
+            /** @description The startup probe's explanation (a refused manual build, an older-than-builtin build, ...). */
+            note: string;
+            /** @description Why a previously adopted binary was dropped mid-flight; empty while it answers. */
+            external_failure: string;
+            /** @enum {string} */
+            lane: "stable" | "test";
+            /** @description The last install attempt's outcome: why nothing was installed when the channel offered no newer build, or what was installed. Empty before the first install. */
+            message: string;
+            channel?: components["schemas"]["TitleParserChannel"];
+        };
+        /** @description The last answer from the published reltitle channel. A failed check updates checked_at and error and keeps the previous successful version, notes and release_url. */
+        TitleParserChannel: {
+            /** Format: date-time */
+            checked_at: string;
+            version: string;
+            notes: components["schemas"]["TitleParserChannelNotes"];
+            release_url: string;
+            /** @description Whether the channel version is strictly newer than the parser running now. */
+            newer: boolean;
+            /** @description Why the last check or install could not read the channel; empty on success. */
+            error: string;
+        };
+        TitleParserChannelNotes: {
+            zh_cn: string;
+            en: string;
         };
         /** @description A successful check result. Fetch or validation failures are returned as the standard error response, not as a partial 200 result. */
         UpdateCheck: {
@@ -8111,6 +8200,15 @@ export interface components {
         };
         /** @description A required adapter or service is unavailable. */
         Unavailable: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
+        /** @description An upstream channel or service did not answer with a usable result. */
+        BadGateway: {
             headers: {
                 [name: string]: unknown;
             };
@@ -11915,6 +12013,74 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getTitleParser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The parser component status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TitleParserStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    checkTitleParser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The channel answer, with `newer` computed against the running parser. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TitleParserStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            502: components["responses"]["BadGateway"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    updateTitleParser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The resulting parser component status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TitleParserStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            502: components["responses"]["BadGateway"];
             503: components["responses"]["Unavailable"];
         };
     };

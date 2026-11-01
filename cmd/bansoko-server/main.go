@@ -46,6 +46,7 @@ import (
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/parser"
 	"bansoko/internal/parser/reltitletags"
+	"bansoko/internal/parser/titleparser"
 	plugintargetapplication "bansoko/internal/plugintarget/application"
 	retentionapplication "bansoko/internal/recordretention/application"
 	"bansoko/internal/rtruntime"
@@ -738,6 +739,15 @@ func runServe(args []string) {
 	downloadCancel.SetEventHub(eventHub)
 	apiServer.SetDownloadCancel(downloadCancel)
 	apiServer.SetBackup(backupService)
+	// The reltitle parser component has its own channel, independent of the
+	// Bansoko application update. The startup probe's note and source are
+	// passed through so the read model explains a refused manual build.
+	apiServer.SetTitleParser(titleparser.New(titleparser.Options{
+		ConfigRoot: cfg.ConfigDir,
+		HTTPClient: &http.Client{Timeout: 30 * time.Second, Transport: hardeningtransport.DirectTransport()},
+		Note:       rtInfo.Note,
+		Source:     rtInfo.Source,
+	}))
 
 	server := &http.Server{
 		Addr:              cfg.ListenAddress,

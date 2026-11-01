@@ -144,6 +144,7 @@ var pinnedTools = []string{
 	"submit_reconciliation_scan", "get_one_shot_attempt", "list_observability_records", "list_observability_diagnostics", "get_automation_run", "list_automation_schedules",
 	"get_title_tag_vocabulary", "get_replacement_compare_vocabulary", "list_parser_catalog", "list_notification_trigger_kinds",
 	"get_notification_template_catalog", "get_naming_template_catalog", "get_update_status", "check_update",
+	"get_title_parser", "check_title_parser", "update_title_parser",
 	"get_anime_business_edit", "read_catalog_workspace", "get_catalog_preference", "list_catalog_suppressions",
 	"list_subgroup_groups", "list_qbittorrent_torrents", "get_qbittorrent_torrent_files", "get_qbittorrent_status",
 	"pause_qbittorrent_torrent", "resume_qbittorrent_torrent", "delete_qbittorrent_torrent", "retry_download_task",

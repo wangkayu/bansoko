@@ -158,6 +158,11 @@ func versionNote(installed, builtin string) string {
 	return fmt.Sprintf("installed %s is older than the builtin %s", installed, builtin)
 }
 
+// Newer reports whether a is strictly newer than b under the same ordering the
+// release channel uses. It is the read model's comparison; the updater keeps
+// its own call.
+func Newer(a, b string) bool { return compareVersions(a, b) > 0 }
+
 // compareVersions orders two versions the way the release channel does: three
 // numeric fields, then a prerelease suffix ordered by semantic versioning
 // ("0.0.4-test.9" is newer than "0.0.3", older than "0.0.4"). A version that
