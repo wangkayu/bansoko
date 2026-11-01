@@ -140,6 +140,11 @@ export const updateKeys = {
   status: ["update", "status"] as const,
 };
 
+/** The reltitle parser component status (GET /title-parser; manual refetch only). */
+export const parserKeys = {
+  status: ["title-parser", "status"] as const,
+};
+
 export const backupKeys = {
   info: ["backup", "info"] as const,
 };

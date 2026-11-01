@@ -158,6 +158,7 @@ export const settingsCopy = {
     automation: "自动任务",
     notifications: "通知",
     updates: "版本与升级",
+    titleParser: "解析组件",
     backup: "数据备份",
     token: "API 令牌",
     groupService: "服务",

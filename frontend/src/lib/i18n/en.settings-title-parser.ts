@@ -1,0 +1,57 @@
+// C3: Settings · Title parser (reltitle component status and channel updates).
+
+import type { CopyShape } from "./types";
+import type { settingsTitleParserCopy } from "./zh-CN.settings-title-parser";
+
+export const enSettingsTitleParserCopy = {
+  titleParser: {
+    title: "Title Parser",
+    intro: "Title parsing comes from a separate reltitle component; this shows the running build and what the channel offers.",
+    loading: "Reading parser component…",
+    statusFailed: "Could not read the parser component",
+    statusFailedFallback: "Try again later",
+    reread: "Read again",
+    currentTitle: "Running parser",
+    sourceLabel: "Source",
+    source: {
+      builtin: "Built-in",
+      manual: "Manually placed",
+      channel: "Installed from channel",
+    },
+    versionLabel: "Version",
+    lineLabel: "Version line",
+    digestLabel: "Dictionary digest",
+    laneLabel: "Update channel",
+    lane: {
+      stable: "Stable",
+      test: "Test",
+    },
+    pathLabel: "File path",
+    noteLabel: "Startup note",
+    externalFailureTitle: "The external parser failed and the built-in parser took over",
+    messageLabel: "Last install result",
+    channelTitle: "Update channel",
+    channelEmptyTitle: "No check has run yet",
+    channelEmptyHint: "Checking downloads nothing and does not change the running parser",
+    check: "Check for updates",
+    checking: "Checking…",
+    checkFailed: "Check failed",
+    checkFailedFallback: "The channel cannot be read right now",
+    checkedAt: "Checked at",
+    channelVersionLabel: "Channel version",
+    hasUpdate: "Update available",
+    upToDate: "Up to date",
+    channelErrorTitle: "Channel could not be read",
+    releaseUrlLabel: "Release page",
+    notesTitle: "Release notes",
+    notesEmpty: "This version has no release notes",
+    install: "Install update",
+    installing: "Installing…",
+    installConfirmTitle: "Install the parser component update?",
+    installConfirmHint: "Downloads and enables {version}; the running parser is kept if the install fails",
+    installConfirmAction: "Install update",
+    installedToast: "Parser component updated to {version}",
+    installFailed: "Install failed; the running parser is unchanged",
+    installNoNewer: "The channel has no newer version",
+  },
+} as const satisfies CopyShape<typeof settingsTitleParserCopy>;

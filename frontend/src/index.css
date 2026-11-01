@@ -876,6 +876,18 @@ h1, h2, h3, h4, h5, h6 {
 .settings-updates-status-warning { margin: 0; color: hsl(var(--status-warning)); }
 .settings-updates-last-error { margin: 0; overflow-wrap: anywhere; border: 1px solid hsl(var(--status-offline) / 0.4); border-radius: var(--radius); background: hsl(var(--status-offline) / 0.1); padding: 0.375rem 0.625rem; color: hsl(var(--status-offline)); }
 
+
+.settings-title-parser { display: grid; gap: 0.75rem; }
+.settings-title-parser-header { display: flex; align-items: center; gap: 0.5rem; }
+.settings-title-parser-title { margin: 0; }
+.settings-title-parser-intro { margin: 0; color: hsl(var(--muted-foreground)); }
+.settings-title-parser-card { display: grid; gap: 0.5rem; border: 1px solid hsl(var(--border)); border-radius: var(--radius); background: hsl(var(--card)); padding: 0.75rem; }
+.settings-title-parser-card-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.settings-title-parser-card-title { color: hsl(var(--foreground)); font-weight: 500; }
+.settings-title-parser-spacer { flex: 1 1 0%; }
+.settings-title-parser-notes { display: grid; gap: 0.5rem; }
+.settings-title-parser-muted { margin: 0; color: hsl(var(--muted-foreground)); }
+
 .secret-field { display: grid; gap: 0.5rem; border: 1px solid hsl(var(--border)); border-radius: var(--radius); background: hsl(var(--muted) / 0.3); padding: 0.75rem; }
 .secret-field-title { color: hsl(var(--foreground)); font-weight: 500; }
 .secret-field-hint { margin: 0; color: hsl(var(--muted-foreground)); }

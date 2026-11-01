@@ -7,6 +7,7 @@ import { settingsNotificationsCopy } from "./zh-CN.settings-notifications";
 import { varsEditorCopy } from "./zh-CN.vars-editor";
 import { settingsTokenCopy } from "./zh-CN.settings-token";
 import { settingsBackupCopy } from "./zh-CN.settings-backup";
+import { settingsTitleParserCopy } from "./zh-CN.settings-title-parser";
 import { gridCopy, actCopy, addPresetCopy, feedSiteCopy, globalSearchCopy } from "./zh-CN.catalog";
 import { configCopy } from "./zh-CN.anime-config";
 import { tabsCopy, maintCopy, policyCopy, formsCopy } from "./zh-CN.anime-tabs";
@@ -159,7 +160,7 @@ export const zhCN = {
   qualityCompare: qualityCompareCopy,
   // 设置区域：c2 的 settingsCopy 打底；四个分文件各自持有的命名空间覆盖同名键。
   varsEditor: varsEditorCopy,
-  settings: { ...settingsCopy, ...settingsConnectionsCopy, ...settingsProviderCopy, ...settingsNotificationsCopy, ...settingsTokenCopy, ...settingsBackupCopy },
+  settings: { ...settingsCopy, ...settingsConnectionsCopy, ...settingsProviderCopy, ...settingsNotificationsCopy, ...settingsTokenCopy, ...settingsBackupCopy, ...settingsTitleParserCopy },
   grid: gridCopy,
   act: actCopy,
   addPreset: addPresetCopy,

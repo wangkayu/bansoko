@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NavLink, useBlocker, useLocation, useNavigate, useParams, type BlockerFunction } from "react-router-dom";
-import { Bell, Bot, ChevronLeft, Clock, DatabaseBackup, EyeOff, FileQuestion, HardDrive, Layers, Plug, Rocket, SlidersHorizontal, UserRound, Users, Wand2 } from "lucide-react";
+import { Bell, Bot, ChevronLeft, Clock, DatabaseBackup, EyeOff, FileQuestion, HardDrive, Layers, Plug, Rocket, ScanText, SlidersHorizontal, UserRound, Users, Wand2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDirtyConfirm } from "../../ui";
 import { Button, Dialog } from "../../ui/base";
@@ -16,6 +16,7 @@ import { SettingsDownload } from "./SettingsDownload";
 import { SettingsAutomation } from "./SettingsAutomation";
 import { SettingsNotifications } from "./SettingsNotifications";
 import { SettingsUpdates } from "./SettingsUpdates";
+import { SettingsTitleParser } from "./SettingsTitleParser";
 import { SettingsBackup } from "./SettingsBackup";
 import { SettingsAILab } from "./SettingsAILab";
 import { SettingsAccount } from "./SettingsAccount";
@@ -56,6 +57,7 @@ const categories = [
   { key: "automation", labelKey: "settings.nav.automation", icon: Clock },
   { key: "notifications", labelKey: "settings.nav.notifications", icon: Bell },
   { key: "updates", labelKey: "settings.nav.updates", icon: Rocket },
+  { key: "titleParser", labelKey: "settings.nav.titleParser", icon: ScanText },
   { key: "backup", labelKey: "settings.nav.backup", icon: DatabaseBackup },
   { key: "ai", labelKey: "settings.nav.token", icon: Bot },
 ] as const satisfies ReadonlyArray<{ key: string; labelKey: CopyKey; icon: unknown }>;
@@ -72,7 +74,7 @@ const categoryGroups: { groupKey: CopyKey; keys: CategoryKey[] }[] = [
   // On restore, naming variables goes back after "rules".
   { groupKey: "settings.nav.groupDefaults", keys: ["rules", "replacement", "unclassified", "policy"] },
   { groupKey: "settings.nav.groupSite", keys: ["anibt", "mikan", "hidden"] },
-  { groupKey: "settings.nav.groupSystem", keys: ["account", "automation", "notifications", "updates", "backup", "ai"] },
+  { groupKey: "settings.nav.groupSystem", keys: ["account", "automation", "notifications", "updates", "titleParser", "backup", "ai"] },
 ];
 
 export function SettingsDialog() {
@@ -316,6 +318,8 @@ function renderActive(active: CategoryKey) {
       return <SettingsNotifications />;
     case "updates":
       return <SettingsUpdates />;
+    case "titleParser":
+      return <SettingsTitleParser />;
     case "backup":
       return <SettingsBackup />;
     case "ai":

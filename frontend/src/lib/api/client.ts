@@ -1269,6 +1269,29 @@ export async function getUpdateStatus(): Promise<EmbeddedUpdateStatus | null> {
   }
 }
 
+// --- Title parser component ---------------------------------------------------
+
+// The reltitle parser read model: what is running, why, and the last cached
+// channel answer. GET never contacts the network; the channel fields come
+// from the latest check.
+export type TitleParserStatus = Schema<"TitleParserStatus">;
+
+export function getTitleParserStatus(): Promise<TitleParserStatus> {
+  return request("/title-parser", { method: "GET" });
+}
+
+// Reads the published channel once. A channel that cannot be read answers
+// 502; the previous cached answer stays visible via getTitleParserStatus.
+export function checkTitleParser(): Promise<TitleParserStatus> {
+  return request("/title-parser/check", { method: "POST" });
+}
+
+// Installs a strictly newer channel build at the one parser path and switches
+// the running backend. Nothing newer is a success with the reason in message.
+export function updateTitleParser(): Promise<TitleParserStatus> {
+  return request("/title-parser/update", { method: "POST" });
+}
+
 /** The declared feed-site support list (fixed server code). */
 export function listFeedSites(): Promise<FeedSiteList> {
   return request("/catalog/feed-sites", { method: "GET" });

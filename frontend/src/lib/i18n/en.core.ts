@@ -160,6 +160,7 @@ export const enSettingsCopy = {
     automation: "Scheduled Tasks",
     notifications: "Notifications",
     updates: "Updates",
+    titleParser: "Title Parser",
     backup: "Backups",
     token: "API Tokens",
     groupService: "Services",

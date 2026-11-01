@@ -9,6 +9,7 @@ import { enSettingsNotificationsCopy } from "./en.settings-notifications";
 import { enVarsEditorCopy } from "./en.vars-editor";
 import { enSettingsTokenCopy } from "./en.settings-token";
 import { enSettingsBackupCopy } from "./en.settings-backup";
+import { enSettingsTitleParserCopy } from "./en.settings-title-parser";
 import { enActCopy, enAddPresetCopy, enFeedSiteCopy, enGlobalSearchCopy, enGridCopy } from "./en.catalog";
 import { enConfigCopy } from "./en.anime-config";
 import { enFormsCopy, enMaintCopy, enPolicyCopy, enTabsCopy } from "./en.anime-tabs";
@@ -156,7 +157,7 @@ export const en = {
   replacement: enReplacementCopy,
   qualityCompare: enQualityCompareCopy,
   varsEditor: enVarsEditorCopy,
-  settings: { ...enSettingsCopy, ...enSettingsConnectionsCopy, ...enSettingsProviderCopy, ...enSettingsNotificationsCopy, ...enSettingsTokenCopy, ...enSettingsBackupCopy },
+  settings: { ...enSettingsCopy, ...enSettingsConnectionsCopy, ...enSettingsProviderCopy, ...enSettingsNotificationsCopy, ...enSettingsTokenCopy, ...enSettingsBackupCopy, ...enSettingsTitleParserCopy },
   grid: enGridCopy,
   act: enActCopy,
   addPreset: enAddPresetCopy,
