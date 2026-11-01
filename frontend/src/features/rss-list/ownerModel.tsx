@@ -113,7 +113,9 @@ function targetObservationPresentation(observation?: TargetObservation) {
     case "present_matched": return { label: t("rss.target.satisfied"), tone: "online" as const };
     case "present_mismatched": return { label: t("rss.target.mismatch"), tone: "warning" as const };
     case "unreadable": return { label: t("rss.target.unreadable"), tone: "offline" as const };
-    default: return { label: t("rss.target.pending"), tone: "warning" as const };
+    // Not in the library yet is a plain state, not a problem: the seed row carries the download
+    // stage, and only a real mismatch or a read failure takes an attention tone.
+    default: return { label: t("rss.target.pending"), tone: "muted" as const };
   }
 }
 

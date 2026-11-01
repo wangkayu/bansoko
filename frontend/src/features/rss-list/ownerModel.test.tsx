@@ -441,7 +441,7 @@ describe("ownerViewModel", () => {
   });
 
   // After an alignment move the observation on the frozen target no longer matches; ③ follows the server's in_library and never says "awaiting import" again.
-  it("对齐移动后的已入库文件 ③ 显示已入库，不显示待入库", () => {
+  it("对齐移动后的已入库文件 ③ 显示已入库，不显示未入库", () => {
     const workspace = releaseWith([
       { path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 100, media_kind: "video", target_path: "/library/Show/Show - 03.mkv", outcome: "planned" },
     ]);

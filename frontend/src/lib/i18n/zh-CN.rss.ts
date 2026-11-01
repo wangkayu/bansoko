@@ -127,7 +127,7 @@ export const rssCopy = {
     subtitle_binding_missing: "没有匹配的主体文件",
     filtered: "已过滤",
   },
-  target: { satisfied: "已满足", mismatch: "尺寸不符", mismatchSizes: "尺寸不符（库中 {observed}，期望 {expected}）", unreadable: "不可读", pending: "待入库", inLibrary: "已入库", },
+  target: { satisfied: "已满足", mismatch: "尺寸不符", mismatchSizes: "尺寸不符（库中 {observed}，期望 {expected}）", unreadable: "不可读", pending: "未入库", inLibrary: "已入库", },
   // ③'s own outcome, once the placement this file produced has ended. Only this file is described: the
   // row never points at whichever file holds the episode now.
   placementEnd: {
