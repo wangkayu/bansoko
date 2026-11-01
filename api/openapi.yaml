@@ -5201,16 +5201,7 @@ paths:
       tags: [Parser]
       operationId: updateTitleParser
       x-scope: write
-      x-mcp:
-        tool: update_title_parser
-        group: configuration
-        write: true
-        description: >-
-          Read the published reltitle channel and install a strictly newer
-          build, then switch the running parser. The previous parser keeps
-          answering until the downloaded binary passes the adoption chain, and
-          a refused binary leaves it in place. Changes the installed parser;
-          ask the human before running it.
+      x-surface-keep: "frontend: the parser component panel is the only caller; installing a component is a human action, so this stays off the agent surface even though the app update channel is readable to agents"
       description: >-
         Read the published reltitle channel and install a strictly newer build
         at the one parser path, then re-run the adoption chain and switch the

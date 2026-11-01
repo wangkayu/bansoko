@@ -12,8 +12,12 @@ package rtruntime
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -143,10 +147,59 @@ func Probe(ctx context.Context, configRoot, builtinVersion string) (*Client, Inf
 		return nil, info
 	}
 	info = reported
-	info.Source = SourceManual
+	info.Source = installedSource(configRoot, path, reported)
 	info.Path = path
 	info.Note = versionNote(reported.Version, builtinVersion)
 	return client, info
+}
+
+// installedSource names where the installed file came from. The probe never
+// trusts installed.json for what the binary is: version, line and digest come
+// from running it. A channel record that matches the file exactly is the one
+// fact the binary cannot report, so only that match labels the file a channel
+// install; anything else is the running manual build.
+func installedSource(configRoot, path string, reported Info) string {
+	record, err := readInstalled(configRoot)
+	if err != nil || record.Source != SourceChannel {
+		return SourceManual
+	}
+	if !strings.EqualFold(strings.TrimPrefix(record.Version, "v"), strings.TrimPrefix(reported.Version, "v")) {
+		return SourceManual
+	}
+	digest, err := fileDigest(path)
+	if err != nil || !strings.EqualFold(digest, record.SHA256) {
+		return SourceManual
+	}
+	return SourceChannel
+}
+
+// readInstalled reads the record the updater writes. A missing or malformed
+// record is not an error: it just means nothing is known about the file.
+func readInstalled(configRoot string) (Installed, error) {
+	payload, err := os.ReadFile(MetadataPath(configRoot))
+	if err != nil {
+		return Installed{}, err
+	}
+	var record Installed
+	if err := json.Unmarshal(payload, &record); err != nil {
+		return Installed{}, err
+	}
+	return record, nil
+}
+
+// fileDigest is the sha256 of the installed file, the value a channel record
+// must match before it may label the install.
+func fileDigest(path string) (string, error) {
+	handle, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer handle.Close()
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, handle); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
 // versionNote flags a hand-placed build that is older than the compiled-in

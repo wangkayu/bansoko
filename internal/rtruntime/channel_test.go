@@ -371,3 +371,48 @@ func TestUpdateRefusesAPlatformWithoutAnArtifact(t *testing.T) {
 		t.Fatalf("error = %v, want a note about the missing platform", err)
 	}
 }
+
+// TestProbeLabelsACorroboratedChannelInstall proves a file the updater wrote is
+// reported as a channel install after a restart, but only while the record and
+// the file agree.
+func TestProbeLabelsACorroboratedChannelInstall(t *testing.T) {
+	root, path := installFake(t)
+	digest, err := fileDigest(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeRecord := func(record Installed) {
+		t.Helper()
+		payload, err := json.Marshal(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(MetadataPath(root), payload, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	probe := func() Info {
+		t.Helper()
+		client, info := Probe(testContext(t), root, fakeVersion)
+		if client == nil {
+			t.Fatalf("the probe refused the fake: %s", info.Note)
+		}
+		_ = client.Close()
+		return info
+	}
+
+	writeRecord(Installed{Version: fakeVersion, SHA256: digest, Source: SourceChannel})
+	if info := probe(); info.Source != SourceChannel {
+		t.Fatalf("source = %q, want %q for a corroborated channel install", info.Source, SourceChannel)
+	}
+
+	writeRecord(Installed{Version: fakeVersion, SHA256: strings.Repeat("0", 64), Source: SourceChannel})
+	if info := probe(); info.Source != SourceManual {
+		t.Fatalf("source = %q, want %q when the recorded digest differs", info.Source, SourceManual)
+	}
+
+	writeRecord(Installed{Version: fakeVersion, SHA256: digest, Source: SourceManual})
+	if info := probe(); info.Source != SourceManual {
+		t.Fatalf("source = %q, want %q for a manual record", info.Source, SourceManual)
+	}
+}
