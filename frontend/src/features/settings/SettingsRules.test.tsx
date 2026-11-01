@@ -425,3 +425,41 @@ describe("SettingsRules 正则列表摘要", () => {
     expect(within(card).getByText(t("settings.rules.unlimited"))).toBeInTheDocument();
   });
 });
+
+// The subscription defaults: a one-time input a new draft copies; edited in a card dialog like
+// every other default-rule section.
+describe("SettingsRules 订阅默认", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  it("卡片显示新订阅默认状态，编辑后按当前版本保存", async () => {
+    const fetchMock = stubFetch([{
+      section_name: "subscription_defaults",
+      schema_version: "subscription-defaults-v1",
+      value: { ignore_multi_video_releases: false },
+      version: 1,
+      saved: false,
+    }]);
+    renderRules();
+
+    expect(await screen.findByText(t("subscriptionDefaults.title"))).toBeInTheDocument();
+    expect(screen.getByText(t("subscriptionDefaults.off"))).toBeInTheDocument();
+
+    fireEvent.click(await editButtonFor(t("subscriptionDefaults.title")));
+    fireEvent.click(screen.getByRole("switch", { name: t("anime.ignoreMultiVideo.description") }));
+    fireEvent.click(screen.getByRole("button", { name: t("settings.rules.save") }));
+
+    const puts = fetchMock.mock.calls.filter(
+      ([input, init]) => String(input).includes("/config/global-sections/subscription_defaults") && init?.method === "PUT",
+    );
+    await waitFor(() => expect(puts).toHaveLength(1));
+    const [, init] = puts[0]!;
+    expect((init?.headers as Headers).get("If-Match")).toBe("1");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      schema_version: "subscription-defaults-v1",
+      value: { ignore_multi_video_releases: true },
+    });
+  });
+});

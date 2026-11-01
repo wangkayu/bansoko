@@ -24,7 +24,6 @@ import { Chip, DescriptionList, StatePill, ConflictBlock, SecretField, TagInput,
 import { sectionSourceLabel } from "./sectionBadge";
 import { DialogFeedback, SettingsEditDialog } from "./SettingsEditDialog";
 import { DownloadCompletionSettings } from "./DownloadCompletionSettings";
-import { SubscriptionDefaultsSettings } from "./SubscriptionDefaultsSettings";
 import { t } from "../../lib/i18n";
 
 // Acquisition: the qBittorrent connection plus the global file-effect defaults
@@ -151,7 +150,6 @@ export function SettingsDownload() {
           </div>
         )}
         {fileEffect && <DownloadCompletionSettings importMethod={String(fileEffect.value.operation)} />}
-        <SubscriptionDefaultsSettings />
       </section>
 
       {editing && (

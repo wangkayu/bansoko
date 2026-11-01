@@ -25,6 +25,7 @@ import { DEFAULT_TAG_FILTER_RULES, tagRowSummary } from "../../lib/anibtTags";
 import { titleTagLabel } from "../../lib/titleTags";
 import { getTitleTagVocabulary, type TagFilterRow, type TagFilterRules } from "../../lib/api/client";
 import { Select, type SelectOption, StateBlock } from "../../ui/base";
+import { SwitchRow } from "../../ui/SaveFooter";
 import { SettingsEditDialog } from "./SettingsEditDialog";
 import { t } from "../../lib/i18n";
 import { joinSentences } from "../../lib/i18n/format";
@@ -32,8 +33,9 @@ import { parserKindOptions, parserKindUsesPatterns, type ParserKindOption } from
 import { valuesEqual } from "../../lib/draft";
 import { ParserKindChoice } from "../anime-forms/ParserKindChoice";
 
-// Default rules: the global default sections (parser / release_rules / tag_filters / file_rules).
-//   "After download completes" is a global value only, edited in the acquisition section.
+// Default rules: the global default sections (parser / release_rules / tag_filters / file_rules /
+//   subscription_defaults). "After download completes" is a global value only, edited in the
+//   acquisition section.
 //   These values write into global_config_sections and take effect immediately on save for every
 //   anime without its own override.
 //   Naming rules are the template library (NamingTemplatesCard): the default template is the global
@@ -73,6 +75,16 @@ const ruleSections = (): {
     summary: (v) => [
       { label: t("settings.rules.fileMust"), value: <RegexListSummary value={v.must_contain} emptyLabel={t("settings.rules.unlimited")} /> },
       { label: t("settings.rules.fileNot"), value: <RegexListSummary value={v.not_in} emptyLabel={t("settings.rules.unlimited")} /> },
+    ],
+  },
+  {
+    name: "subscription_defaults",
+    title: t("subscriptionDefaults.title"),
+    summary: (v) => [
+      {
+        label: t("subscriptionDefaults.summaryLabel"),
+        value: v.ignore_multi_video_releases === true ? t("subscriptionDefaults.on") : t("subscriptionDefaults.off"),
+      },
     ],
   },
 ];
@@ -267,6 +279,7 @@ function SectionEditDialog({
         {view.section_name === "release_rules" && <ReleaseRulesForm value={view.value} busy={busy} onSave={onSave} />}
         {view.section_name === "file_rules" && <FileRulesForm value={view.value} busy={busy} onSave={onSave} />}
         {view.section_name === "tag_filters" && <TagFiltersForm value={view.value} busy={busy} onSave={onSave} onDirty={() => setDirty(true)} />}
+        {view.section_name === "subscription_defaults" && <SubscriptionDefaultsForm value={view.value} busy={busy} onSave={onSave} />}
       </div>
     </SettingsEditDialog>
   );
@@ -417,6 +430,24 @@ function tagFilterRules(value: Record<string, unknown>): TagFilterRules {
     anibt: rules.anibt ?? DEFAULT_TAG_FILTER_RULES.anibt,
     title: rules.title ?? DEFAULT_TAG_FILTER_RULES.title,
   };
+}
+
+// --- Subscription defaults (a one-time input copied into each new draft) ---
+
+function SubscriptionDefaultsForm({ value, busy, onSave }: FormProps) {
+  const [enabled, setEnabled] = useState(value.ignore_multi_video_releases === true);
+  return (
+    <form id="section-edit-form" onSubmit={(e) => { e.preventDefault(); onSave({ ignore_multi_video_releases: enabled }); }} className="settings-shared-grid">
+      <SwitchRow
+        label={t("anime.ignoreMultiVideo.description")}
+        description={t("subscriptionDefaults.description")}
+        checked={enabled}
+        disabled={busy}
+        onCheckedChange={setEnabled}
+      />
+      <p className="tw:text-xs tw:text-muted-foreground">{t("anime.ignoreMultiVideo.help")}</p>
+    </form>
+  );
 }
 
 // --- Shared ---

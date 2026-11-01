@@ -10,8 +10,7 @@ import { useSaveParts } from "../../lib/saveParts";
 // - metadata-refresh: the Global metadata sweep toggle
 // - catalog: the site catalog's auto-refresh preference
 // - unclassified: the default handling of files with unrecognized episodes
-// - subscription-defaults: the Global defaults a new draft copies (download & import page)
-export const SETTINGS_SAVE_ORDER = ["section", "alignment", "metadata-refresh", "catalog", "unclassified", "subscription-defaults"] as const;
+export const SETTINGS_SAVE_ORDER = ["section", "alignment", "metadata-refresh", "catalog", "unclassified"] as const;
 
 export function useSettingsSaveParts() {
   return useSaveParts(SETTINGS_SAVE_ORDER);
