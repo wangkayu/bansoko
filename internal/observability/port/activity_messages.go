@@ -109,6 +109,11 @@ const (
 	MessageUnknownFileReleased    MessageCode = "unknown_file_released"
 	MessagePlacementRecorded      MessageCode = "placement_recorded"
 	MessageFileRecovered          MessageCode = "file_recovered"
+	// MessagePlacementDisplaced is written once per managed file another file
+	// took over (the overwrite collision policy, or a requested redownload).
+	// It lands on the losing instance's stream: details.replaced_by_* names
+	// the file that took the place, details.cause says why.
+	MessagePlacementDisplaced MessageCode = "placement_displaced"
 	// MessagePlacementsExcluded is written once per instance by the seasonless
 	// key rewrite (migration 096): count files of another season stay on disk
 	// and listed but no longer take part in replacement or coverage.
@@ -229,6 +234,7 @@ var (
 		{Code: MessageUnknownFileReleased, Kind: ActivityKindPlacementChanged},
 		{Code: MessagePlacementRecorded, Kind: ActivityKindPlacementChanged},
 		{Code: MessageFileRecovered, Kind: ActivityKindPlacementChanged},
+		{Code: MessagePlacementDisplaced, Kind: ActivityKindPlacementChanged},
 		{Code: MessagePlacementsExcluded, Kind: ActivityKindPlacementChanged, Params: []MessageParam{{Name: ParamCount, Type: MessageParamInteger, Required: true}}},
 		{Code: MessageOffsetAligned, Kind: ActivityKindPlacementChanged, Params: []MessageParam{
 			{Name: ParamGroupName, Type: MessageParamString, Required: true},

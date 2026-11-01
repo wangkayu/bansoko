@@ -118,3 +118,54 @@ describe("dedupeReplacements", () => {
     expect(kept.map((item) => (item.record_type === "business" ? item.entry.id : ""))).toEqual([newer.id, other.id]);
   });
 });
+
+describe("覆盖与替换的身份", () => {
+  it("a displaced file names what took its place", () => {
+    const displaced = entry({
+      kind: "placement_changed",
+      message_code: "placement_displaced",
+      details: {
+        file_name: "EP01.mkv",
+        cause: "overwrite",
+        replaced_by_file: "EP01 [new].mkv",
+        replaced_by_group: "GroupNew",
+        replaced_by_title: "[GroupNew] Show - 01 [1080p]",
+      },
+    });
+    expect(stepText(displaced)).toBe(
+      "原文件已被覆盖 · EP01.mkv · 同一位置被新文件覆盖 · 被 EP01 [new].mkv（GroupNew · [GroupNew] Show - 01 [1080p]） 顶替",
+    );
+  });
+
+  it("names a redownload as the cause", () => {
+    const displaced = entry({
+      kind: "placement_changed",
+      message_code: "placement_displaced",
+      details: { file_name: "EP02 [old].mkv", cause: "redownload", replaced_by_file: "EP02.mkv" },
+    });
+    expect(stepText(displaced)).toBe("原文件已被覆盖 · EP02 [old].mkv · 被重新下载的文件替换 · 被 EP02.mkv 顶替");
+  });
+
+  it("a replacement names the version it replaced, with its subgroup and title", () => {
+    const replaced = entry({
+      kind: "replacement_decided",
+      message_code: "replacement_replaced",
+      subject_id: "s1",
+      details: {
+        replaced_files: ["EP03.mkv"],
+        replaced_targets: [{ file_name: "EP03.mkv", group_name: "OldGroup", release_title: "[OldGroup] Show - 03 [720p]" }],
+      },
+    });
+    expect(stepText(replaced)).toBe("替换版本：已替换旧版本（EP03.mkv（OldGroup · [OldGroup] Show - 03 [720p]））");
+  });
+
+  it("falls back to the plain file name for entries written before the identity existed", () => {
+    const replaced = entry({
+      kind: "replacement_decided",
+      message_code: "replacement_replaced",
+      subject_id: "s2",
+      details: { replaced_files: ["EP04.mkv"] },
+    });
+    expect(stepText(replaced)).toBe("替换版本：已替换旧版本（EP04.mkv）");
+  });
+});

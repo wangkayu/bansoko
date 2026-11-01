@@ -286,7 +286,7 @@ func (s *PlacementService) AdmitUnknownFromFileOperation(ctx context.Context, fi
 	}
 	// An unknown file can still replace a managed file under the overwrite
 	// setting: that placement is displaced before this one is released.
-	if err := displaceForFileOperationTx(ctx, tx, id, fileOperationID, evidence.TargetPath); err != nil {
+	if err := s.displaceForFileOperationTx(ctx, tx, id, fileOperationID, evidence.TargetPath); err != nil {
 		return "", err
 	}
 	var version int64
@@ -515,7 +515,7 @@ ON CONFLICT (placement_id, observation_key) DO NOTHING`,
 		}
 	}
 	if input.SourceEvidenceType == "file_operation" {
-		if err := displaceForFileOperationTx(ctx, tx, placementID, input.SourceOwnerRef, input.PhysicalPath); err != nil {
+		if err := s.displaceForFileOperationTx(ctx, tx, placementID, input.SourceOwnerRef, input.PhysicalPath); err != nil {
 			return "", err
 		}
 	}
@@ -529,8 +529,9 @@ ON CONFLICT (placement_id, observation_key) DO NOTHING`,
 // the delivery's approved quality replacement names the path: that loser is
 // superseded by its decision instead. A placement of the same instance with a
 // pending redownload request that shares a covered episode is displaced
-// wherever the new file landed. A replay is a no-op.
-func displaceForFileOperationTx(ctx context.Context, tx *sql.Tx, placementID, fileOperationID, path string) error {
+// wherever the new file landed. A replay is a no-op. Each file it took over
+// gets its own displaced entry, written here in the same transaction.
+func (s *PlacementService) displaceForFileOperationTx(ctx context.Context, tx *sql.Tx, placementID, fileOperationID, path string) error {
 	if _, err := tx.ExecContext(ctx, `
 SELECT public.placement_displace($1, 'file_operation:'||$2, NOT EXISTS (
     SELECT 1 FROM file_operations o
@@ -540,7 +541,7 @@ SELECT public.placement_displace($1, 'file_operation:'||$2, NOT EXISTS (
 		placementID, fileOperationID, path); err != nil {
 		return fmt.Errorf("displace placements replaced by %s: %w", placementID, err)
 	}
-	return nil
+	return appendDisplacedActivityTx(ctx, txscope.Wrap(tx), s.activity, placementID)
 }
 
 // ListPlacements returns verified placements (side-effect free).

@@ -9825,6 +9825,7 @@ components:
         - unknown_file_released
         - placement_recorded
         - file_recovered
+        - placement_displaced
         - placements_excluded
         - offset_aligned
         - old_version_deleted
@@ -11919,6 +11920,48 @@ components:
           minLength: 1
           maxLength: 1024
           description: Replacement result, verdict keep/retain - base name of the existing version kept.
+        replaced_targets:
+          type: array
+          maxItems: 64
+          description: >-
+            Replacement result, verdict replace - the versions the candidate
+            replaces, each with the file name and, when the placement records
+            the Release it came from, that Release's subgroup and title.
+          items:
+            $ref: '#/components/schemas/LogTargetIdentity'
+        kept_target:
+          allOf:
+            - $ref: '#/components/schemas/LogTargetIdentity'
+          description: >-
+            Replacement result, verdict keep/retain - the existing version that
+            beat the candidate, with its file name and, when known, its
+            subgroup and title.
+        cause:
+          type: string
+          enum: [overwrite, redownload]
+          description: >-
+            Displaced entry - why the managed file lost its place: another file
+            took its path under the overwrite setting, or a requested
+            redownload of the same episode replaced it.
+        replaced_by_file:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          description: Displaced entry - base name of the file that took the place.
+        replaced_by_group:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: >-
+            Displaced entry - subgroup of the file that took the place, when its
+            Release records one.
+        replaced_by_title:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          description: >-
+            Displaced entry - torrent title of the file that took the place,
+            when its Release records one.
         changed_sections:
           type: array
           uniqueItems: true
@@ -11928,6 +11971,28 @@ components:
           items:
             type: string
             enum: [parser, release_rules, file_rules, naming_rules, file_effect, tag_filters]
+    LogTargetIdentity:
+      type: object
+      additionalProperties: false
+      required: [file_name]
+      description: One named version an entry is about, read from its placement.
+      properties:
+        file_name:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          description: Base name of the version's file.
+        group_name:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Subgroup of the Release the version came from, when recorded.
+        release_title:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          description: Torrent title of the Release the version came from, when recorded.
+
     SubscriptionLogEntry:
       type: object
       additionalProperties: false

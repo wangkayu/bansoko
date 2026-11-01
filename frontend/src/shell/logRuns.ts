@@ -349,8 +349,19 @@ export function stepText(entry: BusinessEntry): string {
     case "file_alignment_completed":
     case "file_alignment_failed":
       return joinMeta(messageText(entry), details?.library_folder, sizeText(details?.size_bytes));
-    case "placement_changed":
-      return joinMeta(messageText(entry), details?.library_folder && details.file_name ? `${details.library_folder}/${details.file_name}` : details?.file_name);
+    case "placement_changed": {
+      const base = joinMeta(messageText(entry), details?.library_folder && details.file_name ? `${details.library_folder}/${details.file_name}` : details?.file_name);
+      if (entry.message_code !== "placement_displaced") return base;
+      const why = tryT(`log.reason.displaced.${details?.cause ?? ""}`);
+      const taker = details?.replaced_by_file
+        ? targetLabel({
+            file_name: details.replaced_by_file,
+            group_name: details.replaced_by_group,
+            release_title: details.replaced_by_title,
+          })
+        : undefined;
+      return joinMeta(base, why, taker ? t("log.step.displacedBy", { by: taker }) : undefined);
+    }
     case "replacement_decided":
       return replacementText(entry);
     case "acquisition_settled": {
@@ -366,6 +377,10 @@ export function stepText(entry: BusinessEntry): string {
 
 function replacementText(entry: BusinessEntry): string {
   const text = messageText(entry);
+  const targets = entry.details?.replaced_targets;
+  if (targets && targets.length > 0) return t("log.step.replacementNames", { text, names: joinList(targets.map(targetLabel)) });
+  const keptTarget = entry.details?.kept_target;
+  if (keptTarget) return t("log.step.replacementNames", { text, names: targetLabel(keptTarget) });
   const names = entry.details?.replaced_files;
   if (names && names.length > 0) return t("log.step.replacementNames", { text, names: joinList(names) });
   if (entry.details?.kept_file) return t("log.step.replacementNames", { text, names: entry.details.kept_file });
@@ -374,6 +389,12 @@ function replacementText(entry: BusinessEntry): string {
     if (why) return t("log.step.replacementWhy", { text, why });
   }
   return t("log.step.replacement", { text });
+}
+
+/** One version a replacement names: the file, then the subgroup/title it came from when recorded. */
+function targetLabel(target: { file_name: string; group_name?: string; release_title?: string }): string {
+  const origin = joinMeta(target.group_name, target.release_title);
+  return origin ? t("log.step.targetOrigin", { file: target.file_name, origin }) : target.file_name;
 }
 
 /** A settings change writes which rule sections changed (rules: title filtering, naming). */

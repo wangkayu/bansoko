@@ -3842,7 +3842,7 @@ export interface components {
          * @description The message of a business journal entry in the closed catalog the server registers per entry kind (published to the frontend as a generated artifact). The client renders the text from the code and message_params; entries carry no display text.
          * @enum {string}
          */
-        SubscriptionLogMessageCode: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "rules_changed" | "episode_offset_changed" | "rss_new_content" | "release_discovered" | "release_waiting_metadata" | "release_subscription_stopped" | "release_source_unavailable" | "release_parse_failed" | "release_accepted" | "release_filtered" | "release_adopted_existing" | "release_acquisition_failed" | "release_submitted" | "release_awaiting_competition" | "release_resume_baseline" | "release_start_baseline" | "download_submitted" | "download_completed" | "download_removed" | "download_group_not_allowed" | "download_cancelled" | "download_failed" | "artifact_verified" | "import_waiting_binding_bgm" | "import_waiting_binding_tmdb" | "import_waiting_template_variable" | "import_config_resumed" | "file_imported" | "file_adopted" | "file_retained" | "file_import_failed" | "acquisition_succeeded" | "acquisition_failed" | "acquisition_cancelled" | "replacement_kept_existing" | "replacement_kept_all" | "replacement_blocked" | "replacement_replaced" | "replacement_not_replaced" | "placement_released" | "unknown_file_released" | "placement_recorded" | "file_recovered" | "placements_excluded" | "offset_aligned" | "old_version_deleted" | "old_version_kept" | "old_version_delete_failed";
+        SubscriptionLogMessageCode: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "rules_changed" | "episode_offset_changed" | "rss_new_content" | "release_discovered" | "release_waiting_metadata" | "release_subscription_stopped" | "release_source_unavailable" | "release_parse_failed" | "release_accepted" | "release_filtered" | "release_adopted_existing" | "release_acquisition_failed" | "release_submitted" | "release_awaiting_competition" | "release_resume_baseline" | "release_start_baseline" | "download_submitted" | "download_completed" | "download_removed" | "download_group_not_allowed" | "download_cancelled" | "download_failed" | "artifact_verified" | "import_waiting_binding_bgm" | "import_waiting_binding_tmdb" | "import_waiting_template_variable" | "import_config_resumed" | "file_imported" | "file_adopted" | "file_retained" | "file_import_failed" | "acquisition_succeeded" | "acquisition_failed" | "acquisition_cancelled" | "replacement_kept_existing" | "replacement_kept_all" | "replacement_blocked" | "replacement_replaced" | "replacement_not_replaced" | "placement_released" | "unknown_file_released" | "placement_recorded" | "file_recovered" | "placement_displaced" | "placements_excluded" | "offset_aligned" | "old_version_deleted" | "old_version_kept" | "old_version_delete_failed";
         /** @description Scalar values the message interpolates. Each message declares its params; an optional param is absent rather than empty. */
         SubscriptionLogMessageParams: {
             /** @description Torrent name the downloader reports. */
@@ -4721,8 +4721,32 @@ export interface components {
             replaced_files?: string[];
             /** @description Replacement result, verdict keep/retain - base name of the existing version kept. */
             kept_file?: string;
+            /** @description Replacement result, verdict replace - the versions the candidate replaces, each with the file name and, when the placement records the Release it came from, that Release's subgroup and title. */
+            replaced_targets?: components["schemas"]["LogTargetIdentity"][];
+            /** @description Replacement result, verdict keep/retain - the existing version that beat the candidate, with its file name and, when known, its subgroup and title. */
+            kept_target?: components["schemas"]["LogTargetIdentity"];
+            /**
+             * @description Displaced entry - why the managed file lost its place: another file took its path under the overwrite setting, or a requested redownload of the same episode replaced it.
+             * @enum {string}
+             */
+            cause?: "overwrite" | "redownload";
+            /** @description Displaced entry - base name of the file that took the place. */
+            replaced_by_file?: string;
+            /** @description Displaced entry - subgroup of the file that took the place, when its Release records one. */
+            replaced_by_group?: string;
+            /** @description Displaced entry - torrent title of the file that took the place, when its Release records one. */
+            replaced_by_title?: string;
             /** @description Settings change: which rules sections the save actually changed, compared with the stored values in the same transaction. */
             changed_sections?: ("parser" | "release_rules" | "file_rules" | "naming_rules" | "file_effect" | "tag_filters")[];
+        };
+        /** @description One named version an entry is about, read from its placement. */
+        LogTargetIdentity: {
+            /** @description Base name of the version's file. */
+            file_name: string;
+            /** @description Subgroup of the Release the version came from, when recorded. */
+            group_name?: string;
+            /** @description Torrent title of the Release the version came from, when recorded. */
+            release_title?: string;
         };
         SubscriptionLogEntry: {
             id: components["schemas"]["ID"];

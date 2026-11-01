@@ -11,6 +11,7 @@ import (
 	"bansoko/internal/deployment"
 	executorpkg "bansoko/internal/filemaintenance/executor"
 	"bansoko/internal/library/domain"
+	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/persistence/txscope"
 	"bansoko/internal/redact"
 	"bansoko/internal/runtime/worker"
@@ -81,6 +82,7 @@ type AlignmentService struct {
 	observer  executorpkg.FileObserver
 	workItems *workitems.Store
 	retention AlignmentRetention
+	activity  observabilityport.ActivityWriter
 }
 
 // NewAlignmentService wires the operations owner.
@@ -100,6 +102,15 @@ func (s *AlignmentService) SetFilePorts(executor executorpkg.FileExecutor, obser
 func (s *AlignmentService) SetWorkItems(store *workitems.Store) {
 	if s != nil {
 		s.workItems = store
+	}
+}
+
+// SetActivityWriter wires the central transaction-local business history
+// writer. An alignment that moves a file onto another managed file's path
+// displaces it and records the result here.
+func (s *AlignmentService) SetActivityWriter(writer observabilityport.ActivityWriter) {
+	if s != nil {
+		s.activity = writer
 	}
 }
 
@@ -447,7 +458,7 @@ func (s *AlignmentService) alignmentBusinessHandler() worker.Handler {
 			nextVersion, err = s.PersistAttempt(ctx, op.ID, op.Version, attempt)
 		}
 		if errors.Is(err, errAlignmentPlacementInactive) {
-			writer := alignmentSettleWriter(op, op.Version, AlignmentBlocked, "placement_not_active", "the placement is no longer managed", "")
+			writer := alignmentSettleWriter(s.activity, op, op.Version, AlignmentBlocked, "placement_not_active", "the placement is no longer managed", "")
 			return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "blocked", ReasonCode: "placement_not_active", Reason: "the placement is no longer managed"}, writer), nil
 		}
 		if err != nil {
@@ -455,12 +466,12 @@ func (s *AlignmentService) alignmentBusinessHandler() worker.Handler {
 		}
 		sourceFingerprint, err := frozenFingerprintValue(op.SourceFingerprint)
 		if err != nil {
-			writer := alignmentSettleWriter(op, nextVersion, AlignmentFailed, "alignment_fingerprint_invalid", safeReason(err), "")
+			writer := alignmentSettleWriter(s.activity, op, nextVersion, AlignmentFailed, "alignment_fingerprint_invalid", safeReason(err), "")
 			return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "failed", ReasonCode: "alignment_fingerprint_invalid", Reason: safeReason(err)}, writer), nil
 		}
 
 		if s.executor == nil || s.observer == nil {
-			writer := alignmentSettleWriter(op, nextVersion, AlignmentBlocked, "alignment_executor_unavailable", "alignment filesystem executor is not wired", "")
+			writer := alignmentSettleWriter(s.activity, op, nextVersion, AlignmentBlocked, "alignment_executor_unavailable", "alignment filesystem executor is not wired", "")
 			return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "blocked", ReasonCode: "alignment_executor_unavailable", Reason: "alignment filesystem executor is not wired"}, writer), nil
 		}
 		// with the frozen fingerprint, the effect already landed (crash between
@@ -469,15 +480,15 @@ func (s *AlignmentService) alignmentBusinessHandler() worker.Handler {
 		// without a second file effect.
 		if op.State == AlignmentRunning {
 			if observed, err := executorpkg.ObserveLike(ctx, s.observer, op.TargetPath, sourceFingerprint); err == nil && observed != "" && fingerprintsEqual(observed, sourceFingerprint) {
-				writer := alignmentSettleWriter(op, nextVersion, AlignmentCompleted, "recovered_aligned", "target already verified after restart", op.TargetPath)
+				writer := alignmentSettleWriter(s.activity, op, nextVersion, AlignmentCompleted, "recovered_aligned", "target already verified after restart", op.TargetPath)
 				return worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: "completed", ReasonCode: "recovered_aligned", Reason: "target verified after restart"}, writer), nil
 			}
 			if observed, err := executorpkg.ObserveLike(ctx, s.observer, op.SourcePath, sourceFingerprint); err != nil || !fingerprintsEqual(observed, sourceFingerprint) {
-				writer := alignmentSettleWriter(op, nextVersion, AlignmentBlocked, "target_conflict", "neither frozen source nor target matches after restart", "")
+				writer := alignmentSettleWriter(s.activity, op, nextVersion, AlignmentBlocked, "target_conflict", "neither frozen source nor target matches after restart", "")
 				return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "blocked", ReasonCode: "target_conflict", Reason: "neither frozen source nor target matches after restart"}, writer), nil
 			}
 		} else if observed, err := executorpkg.ObserveLike(ctx, s.observer, op.TargetPath, sourceFingerprint); err == nil && observed != "" && fingerprintsEqual(observed, sourceFingerprint) {
-			writer := alignmentSettleWriter(op, nextVersion, AlignmentCompleted, "recovered_aligned", "target already verified", op.TargetPath)
+			writer := alignmentSettleWriter(s.activity, op, nextVersion, AlignmentCompleted, "recovered_aligned", "target already verified", op.TargetPath)
 			return worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: "completed", ReasonCode: "recovered_aligned", Reason: "target already verified"}, writer), nil
 		}
 		// A naming change can rename the anime or season folder, so the target
@@ -485,7 +496,7 @@ func (s *AlignmentService) alignmentBusinessHandler() worker.Handler {
 		// created directory stays even when the move then fails.
 		if ensurer, ok := s.executor.(parentEnsurer); ok {
 			if err := ensurer.EnsurePublicationParent("", op.TargetPath); err != nil {
-				writer := alignmentSettleWriter(op, nextVersion, AlignmentFailed, "alignment_execute_failed", safeReason(err), "")
+				writer := alignmentSettleWriter(s.activity, op, nextVersion, AlignmentFailed, "alignment_execute_failed", safeReason(err), "")
 				return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "failed", ReasonCode: "alignment_execute_failed", Reason: safeReason(err)}, writer), nil
 			}
 		}
@@ -503,7 +514,7 @@ func (s *AlignmentService) alignmentBusinessHandler() worker.Handler {
 		if collision == domain.CollisionOverwrite {
 			overwriteExecutor, ok := s.executor.(executorpkg.MaintenanceOverwriteExecutor)
 			if !ok {
-				writer := alignmentSettleWriter(op, nextVersion, AlignmentBlocked, "alignment_executor_unavailable", "alignment overwrite executor is not wired", "")
+				writer := alignmentSettleWriter(s.activity, op, nextVersion, AlignmentBlocked, "alignment_executor_unavailable", "alignment overwrite executor is not wired", "")
 				return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "blocked", ReasonCode: "alignment_executor_unavailable", Reason: "alignment overwrite executor is not wired"}, writer), nil
 			}
 			persisted := false
@@ -515,7 +526,7 @@ func (s *AlignmentService) alignmentBusinessHandler() worker.Handler {
 				return worker.Outcome{}, workitems.ErrPublicationUnresolved
 			}
 			if err != nil && alignmentErrorCode(err, "TARGET_COLLISION_RACE") {
-				writer := alignmentSettleWriter(op, nextVersion, AlignmentBlocked, "target_conflict", safeReason(err), "")
+				writer := alignmentSettleWriter(s.activity, op, nextVersion, AlignmentBlocked, "target_conflict", safeReason(err), "")
 				return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "blocked", ReasonCode: "target_conflict", Reason: safeReason(err)}, writer), nil
 			}
 		} else if receiptExecutor, ok := s.executor.(executorpkg.MaintenanceFileExecutor); ok {
@@ -526,10 +537,10 @@ func (s *AlignmentService) alignmentBusinessHandler() worker.Handler {
 		if err != nil {
 			var operationError executorpkg.ErrorCoder
 			if errors.As(err, &operationError) && operationError.ErrorCode() == domain.FileErrorCodeTargetOccupied {
-				writer := alignmentSettleWriter(op, nextVersion, AlignmentBlocked, "target_occupied", safeReason(err), "")
+				writer := alignmentSettleWriter(s.activity, op, nextVersion, AlignmentBlocked, "target_occupied", safeReason(err), "")
 				return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "blocked", ReasonCode: "target_occupied", Reason: safeReason(err)}, writer), nil
 			}
-			writer := alignmentSettleWriter(op, nextVersion, AlignmentFailed, "alignment_execute_failed", safeReason(err), "")
+			writer := alignmentSettleWriter(s.activity, op, nextVersion, AlignmentFailed, "alignment_execute_failed", safeReason(err), "")
 			return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "failed", ReasonCode: "alignment_execute_failed", Reason: safeReason(err)}, writer), nil
 		}
 		observed, err := executorpkg.ObserveLike(ctx, s.observer, executed.TargetPath, sourceFingerprint)
@@ -538,10 +549,10 @@ func (s *AlignmentService) alignmentBusinessHandler() worker.Handler {
 			if err != nil {
 				reason = fmt.Sprintf("target reread failed: %v", err)
 			}
-			writer := alignmentSettleWriter(op, nextVersion, AlignmentFailed, "alignment_target_mismatch", reason, "")
+			writer := alignmentSettleWriter(s.activity, op, nextVersion, AlignmentFailed, "alignment_target_mismatch", reason, "")
 			return worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "failed", ReasonCode: "alignment_target_mismatch", Reason: reason}, writer), nil
 		}
-		writer := alignmentSettleWriter(op, nextVersion, AlignmentCompleted, "", "", executed.TargetPath)
+		writer := alignmentSettleWriter(s.activity, op, nextVersion, AlignmentCompleted, "", "", executed.TargetPath)
 		return worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: "completed", ReasonCode: "alignment_completed", Reason: "aligned file verified"}, writer), nil
 	})
 }
@@ -562,7 +573,7 @@ WHERE managed_anime_id = $2 AND physical_path = $3
 	return nil
 }
 
-func alignmentSettleWriter(op *AlignmentOperation, expectedVersion int64, state AlignmentState, code, reason, target string) workitems.OwnerWriter {
+func alignmentSettleWriter(activity observabilityport.ActivityWriter, op *AlignmentOperation, expectedVersion int64, state AlignmentState, code, reason, target string) workitems.OwnerWriter {
 	return func(ctx context.Context, scope txscope.Tx, _ workitems.OwnerResult) (int64, error) {
 		tx := scope.SQLTx()
 		if tx == nil {
@@ -631,6 +642,9 @@ func alignmentSettleWriter(op *AlignmentOperation, expectedVersion int64, state 
 			// is displaced in this commit with the moved placement as its
 			// successor.
 			if _, err := tx.ExecContext(ctx, `SELECT public.placement_displace($1,$2,true,$3)`, successor, "alignment_operation:"+op.ID, moved); err != nil {
+				return 0, err
+			}
+			if err := appendDisplacedActivityTx(ctx, scope, activity, successor); err != nil {
 				return 0, err
 			}
 		}

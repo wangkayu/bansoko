@@ -69,6 +69,11 @@ func replacementActivityDetailsTx(ctx context.Context, tx *sql.Tx, animeID, rele
 			return nil, "", err
 		}
 		step["replaced_files"] = names
+		targets, err := placementTargetsTx(ctx, tx, result.replaced)
+		if err != nil {
+			return nil, "", err
+		}
+		step["replaced_targets"] = targets
 	}
 	if result.kept != "" {
 		names, err := placementFileNamesTx(ctx, tx, []string{result.kept})
@@ -77,6 +82,13 @@ func replacementActivityDetailsTx(ctx context.Context, tx *sql.Tx, animeID, rele
 		}
 		if len(names) == 1 {
 			step["kept_file"] = names[0]
+		}
+		targets, err := placementTargetsTx(ctx, tx, []string{result.kept})
+		if err != nil {
+			return nil, "", err
+		}
+		if len(targets) == 1 {
+			step["kept_target"] = targets[0]
 		}
 	}
 	if result.countVersions && key != unresolvedCoverageKey {
@@ -168,4 +180,35 @@ func placementFileNamesTx(ctx context.Context, tx *sql.Tx, ids []string) ([]stri
 		}
 	}
 	return names, nil
+}
+
+// placementTargetsTx names the versions behind the given placements, in the
+// given order: the file name plus, when the placement records the Release it
+// came from, that Release's subgroup and title. A placement without a Release
+// (an index projection, a recovered file) still yields its file name, so the
+// entry never loses the target it is about.
+func placementTargetsTx(ctx context.Context, tx *sql.Tx, ids []string) ([]map[string]any, error) {
+	targets := make([]map[string]any, 0, len(ids))
+	for _, id := range ids {
+		var path, releaseID string
+		err := tx.QueryRowContext(ctx, `SELECT physical_path, COALESCE(quality_facts_ref, '') FROM placements WHERE id = $1`, id).Scan(&path, &releaseID)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read placement target: %w", err)
+		}
+		target := map[string]any{"file_name": businesslog.FileName(path)}
+		context, err := releaseRunContextTx(ctx, tx, releaseID)
+		if err != nil {
+			return nil, err
+		}
+		for _, key := range []string{"group_name", "release_title"} {
+			if value, ok := context[key]; ok {
+				target[key] = value
+			}
+		}
+		targets = append(targets, target)
+	}
+	return targets, nil
 }

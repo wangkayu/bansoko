@@ -57,7 +57,7 @@ func (h alignmentRecoveryHandler) resolveAttempt(ctx context.Context, c workitem
 		}
 		return worker.AwaitRecovery(""), false, nil
 	}
-	writer := alignmentSettleWriter(op, op.Version, AlignmentCompleted, "maintenance_receipt_recovered", "exact invocation final receipt", op.TargetPath)
+	writer := alignmentSettleWriter(h.service.activity, op, op.Version, AlignmentCompleted, "maintenance_receipt_recovered", "exact invocation final receipt", op.TargetPath)
 	return recoveryCommitted("completed", maintenanceAttemptWriter("alignment_operations", c, string(op.State), op.Attempt, writer)), false, nil
 }
 
@@ -73,14 +73,14 @@ func (h alignmentRecoveryHandler) resumeOverwrite(ctx context.Context, c workite
 	executed, err := e.ExecuteMaintenanceOverwrite(ctx, operation, i, h.service.overwriteCheckpoint(op.ID, nil))
 	if err != nil {
 		if alignmentErrorCode(err, "TARGET_COLLISION_RACE") {
-			writer := alignmentSettleWriter(op, op.Version, AlignmentBlocked, "target_conflict", safeReason(err), "")
+			writer := alignmentSettleWriter(h.service.activity, op, op.Version, AlignmentBlocked, "target_conflict", safeReason(err), "")
 			o := worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "blocked", ReasonCode: "target_conflict", Reason: safeReason(err)}, maintenanceAttemptWriter("alignment_operations", c, string(op.State), op.Attempt, writer))
 			o.Disposition = workitems.DispositionConfirmed
 			return o, false, nil
 		}
 		return worker.AwaitRecovery(""), false, nil
 	}
-	writer := alignmentSettleWriter(op, op.Version, AlignmentCompleted, "overwrite_recovered", "exchange finished from its persisted record", executed.TargetPath)
+	writer := alignmentSettleWriter(h.service.activity, op, op.Version, AlignmentCompleted, "overwrite_recovered", "exchange finished from its persisted record", executed.TargetPath)
 	return recoveryCommitted("completed", maintenanceAttemptWriter("alignment_operations", c, string(op.State), op.Attempt, writer)), false, nil
 }
 

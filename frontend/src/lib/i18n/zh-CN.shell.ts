@@ -139,6 +139,8 @@ export const logCopy = {
     replacement: "替换版本：{text}",
     replacementNames: "替换版本：{text}（{names}）",
     replacementWhy: "替换版本：{text}（{why}）",
+    displacedBy: "被 {by} 顶替",
+    targetOrigin: "{file}（{origin}）",
   },
   rulesChanged: "规则：{sections}",
   tagDelivery: "通知发送",
@@ -163,6 +165,10 @@ export const logCopy = {
       import_failed: "入库失败",
       cancelled: "获取已取消",
       superseded: "已有更新的版本",
+    },
+    displaced: {
+      overwrite: "同一位置被新文件覆盖",
+      redownload: "被重新下载的文件替换",
     },
   },
   // 事件文案：每个 message_code 一条；带可选参数的另有 msgBare（无参数形式）。
@@ -216,6 +222,7 @@ export const logCopy = {
     unknown_file_released: "以未知文件导入，已解绑",
     placement_recorded: "已记录入库位置",
     file_recovered: "已找回文件",
+    placement_displaced: "原文件已被覆盖",
     placements_excluded: "已保留 {count} 个其他季的文件，不参与替换版本",
     offset_aligned: "已按新的集数偏移整理 {group_name}：{rekeyed} 个文件换到其他集，删除 {deleted} 个，加版本号 {versioned} 个，覆盖 {overwritten} 个，跳过 {skipped} 个",
     old_version_deleted: "已删除旧版本",

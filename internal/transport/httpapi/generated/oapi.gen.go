@@ -2227,6 +2227,12 @@ const (
 	SubscriptionLifecycleStateRetired SubscriptionLifecycleState = "retired"
 )
 
+// Defines values for SubscriptionLogDetailsCause.
+const (
+	SubscriptionLogDetailsCauseOverwrite  SubscriptionLogDetailsCause = "overwrite"
+	SubscriptionLogDetailsCauseRedownload SubscriptionLogDetailsCause = "redownload"
+)
+
 // Defines values for SubscriptionLogDetailsChangedSections.
 const (
 	SubscriptionLogDetailsChangedSectionsFileEffect   SubscriptionLogDetailsChangedSections = "file_effect"
@@ -2313,6 +2319,7 @@ const (
 	SubscriptionLogMessageCodeOldVersionDeleteFailed        SubscriptionLogMessageCode = "old_version_delete_failed"
 	SubscriptionLogMessageCodeOldVersionDeleted             SubscriptionLogMessageCode = "old_version_deleted"
 	SubscriptionLogMessageCodeOldVersionKept                SubscriptionLogMessageCode = "old_version_kept"
+	SubscriptionLogMessageCodePlacementDisplaced            SubscriptionLogMessageCode = "placement_displaced"
 	SubscriptionLogMessageCodePlacementRecorded             SubscriptionLogMessageCode = "placement_recorded"
 	SubscriptionLogMessageCodePlacementReleased             SubscriptionLogMessageCode = "placement_released"
 	SubscriptionLogMessageCodePlacementsExcluded            SubscriptionLogMessageCode = "placements_excluded"
@@ -5483,6 +5490,18 @@ type LocalDataCleanup struct {
 
 // LocalDataCleanupConfirmation defines model for LocalDataCleanup.Confirmation.
 type LocalDataCleanupConfirmation string
+
+// LogTargetIdentity One named version an entry is about, read from its placement.
+type LogTargetIdentity struct {
+	// FileName Base name of the version's file.
+	FileName string `json:"file_name"`
+
+	// GroupName Subgroup of the Release the version came from, when recorded.
+	GroupName *string `json:"group_name,omitempty"`
+
+	// ReleaseTitle Torrent title of the Release the version came from, when recorded.
+	ReleaseTitle *string `json:"release_title,omitempty"`
+}
 
 // LoginInput defines model for LoginInput.
 type LoginInput struct {
@@ -8795,6 +8814,9 @@ type SubscriptionDuplicateInput struct {
 
 // SubscriptionLogDetails defines model for SubscriptionLogDetails.
 type SubscriptionLogDetails struct {
+	// Cause Displaced entry - why the managed file lost its place: another file took its path under the overwrite setting, or a requested redownload of the same episode replaced it.
+	Cause *SubscriptionLogDetailsCause `json:"cause,omitempty"`
+
 	// ChangedSections Settings change: which rules sections the save actually changed, compared with the stored values in the same transaction.
 	ChangedSections *[]SubscriptionLogDetailsChangedSections `json:"changed_sections,omitempty"`
 	EpisodeShape    *SubscriptionLogDetailsEpisodeShape      `json:"episode_shape,omitempty"`
@@ -8815,6 +8837,9 @@ type SubscriptionLogDetails struct {
 	// KeptFile Replacement result, verdict keep/retain - base name of the existing version kept.
 	KeptFile *string `json:"kept_file,omitempty"`
 
+	// KeptTarget Replacement result, verdict keep/retain - the existing version that beat the candidate, with its file name and, when known, its subgroup and title.
+	KeptTarget *LogTargetIdentity `json:"kept_target,omitempty"`
+
 	// LibraryFolder The last two directory levels of the library target of a file result or placement (for example "Title/Season 2"), without the private root.
 	LibraryFolder *string `json:"library_folder,omitempty"`
 
@@ -8829,8 +8854,20 @@ type SubscriptionLogDetails struct {
 	// ReleaseTitle The torrent title of a download run step's release.
 	ReleaseTitle *string `json:"release_title,omitempty"`
 
+	// ReplacedByFile Displaced entry - base name of the file that took the place.
+	ReplacedByFile *string `json:"replaced_by_file,omitempty"`
+
+	// ReplacedByGroup Displaced entry - subgroup of the file that took the place, when its Release records one.
+	ReplacedByGroup *string `json:"replaced_by_group,omitempty"`
+
+	// ReplacedByTitle Displaced entry - torrent title of the file that took the place, when its Release records one.
+	ReplacedByTitle *string `json:"replaced_by_title,omitempty"`
+
 	// ReplacedFiles Replacement result, verdict replace - base names of the versions the candidate replaces.
 	ReplacedFiles *[]string `json:"replaced_files,omitempty"`
+
+	// ReplacedTargets Replacement result, verdict replace - the versions the candidate replaces, each with the file name and, when the placement records the Release it came from, that Release's subgroup and title.
+	ReplacedTargets *[]LogTargetIdentity `json:"replaced_targets,omitempty"`
 
 	// SizeBytes Byte size of the step's subject: the torrent's file list total for download and verification steps, the file for a file result.
 	SizeBytes *int64  `json:"size_bytes,omitempty"`
@@ -8839,6 +8876,9 @@ type SubscriptionLogDetails struct {
 	// VersionCount Replacement result: the number of versions of the episode kept after the decision, written only when the candidate is already placed and no version was replaced.
 	VersionCount *int `json:"version_count,omitempty"`
 }
+
+// SubscriptionLogDetailsCause Displaced entry - why the managed file lost its place: another file took its path under the overwrite setting, or a requested redownload of the same episode replaced it.
+type SubscriptionLogDetailsCause string
 
 // SubscriptionLogDetailsChangedSections defines model for SubscriptionLogDetails.ChangedSections.
 type SubscriptionLogDetailsChangedSections string

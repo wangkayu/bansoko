@@ -481,6 +481,8 @@ func provideApplicationGraph(
 	replacementDecisions.SetActivityWriter(observabilityService)
 	cleanupService.SetActivityWriter(observabilityService)
 	placementService.SetActivityWriter(observabilityService)
+	alignmentOperations := fileMaintenanceGraph.alignmentOperations
+	alignmentOperations.SetActivityWriter(observabilityService)
 	replacementTrigger.SetDiagnostics(observabilityService, logger)
 	// The file-operation owner's after-commit diagnostics are the visible
 	// channel for the independent placement/index and replacement-trigger

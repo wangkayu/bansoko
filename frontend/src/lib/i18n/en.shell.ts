@@ -148,6 +148,8 @@ export const enLogCopy = {
     replacement: "Version replacement: {text}",
     replacementNames: "Version replacement: {text} ({names})",
     replacementWhy: "Version replacement: {text} ({why})",
+    displacedBy: "taken over by {by}",
+    targetOrigin: "{file} ({origin})",
   },
   rulesChanged: "Rules: {sections}",
   tagDelivery: "Notification delivery",
@@ -172,6 +174,10 @@ export const enLogCopy = {
       import_failed: "import failed",
       cancelled: "acquisition cancelled",
       superseded: "a newer version exists",
+    },
+    displaced: {
+      overwrite: "another file took its path",
+      redownload: "replaced by a redownload",
     },
   },
   msg: {
@@ -224,6 +230,7 @@ export const enLogCopy = {
     unknown_file_released: "Imported as an unknown file and unlinked",
     placement_recorded: "Library location recorded",
     file_recovered: "File recovered",
+    placement_displaced: "The original file was overwritten",
     placements_excluded: "Kept {count} files from other seasons; they're excluded from version replacement",
     offset_aligned:
       "Episode offset applied to {group_name}: {rekeyed} files changed episode; {deleted} deleted, {versioned} given a version number, {overwritten} overwrote a file, {skipped} skipped",
