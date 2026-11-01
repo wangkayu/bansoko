@@ -32,6 +32,17 @@ func isTerminalReleaseVerdict(verdict string) bool {
 	return verdict == "adopted_existing" || verdict == "acquisition_failed" || verdict == ReleaseVerdictResumeBaseline || verdict == ReleaseVerdictStartBaseline
 }
 
+// releaseProcessedDedupeKey names one release_processed entry by the decision
+// it records: which verdict the Release held, which one this evaluation
+// reached, and why. Deriving the same decision again (a second RSS cycle, a
+// re-selection, a parser policy sweep) is the same entry, so the unique
+// (subscription, dedupe key) keeps one row for it instead of one per
+// derivation. A genuine later transition carries a different previous verdict
+// and records normally.
+func releaseProcessedDedupeKey(releaseID, previousVerdict, verdict, reasonCode string) string {
+	return rssLogKindReleaseProcessed + ":release:" + releaseID + ":" + previousVerdict + ">" + verdict + ":" + evaluationVersionString() + ":" + reasonCode
+}
+
 // ReleaseVerdictResumeBaseline marks a Release first stored by the baseline
 // refresh after a resume. It was present in the feed
 // when the subscription resumed, so it is history: never discovered, never
@@ -852,21 +863,21 @@ RETURNING version`, snapshot.releaseID, nullableJSON(parsedFacts), nullableJSON(
 			return 0, err
 		}
 		if err := appendActivity(ctx, tx, s.activityWriter, observabilityport.ActivityRecord{
-			SubscriptionID:  snapshot.subscriptionID,
-			ManagedAnimeID:  snapshot.managedAnimeID,
-			Kind:            rssLogKindReleaseProcessed,
-			Outcome:         rssLogOutcomeInfo,
-			ReasonCode:      reasonCode,
-			SubjectType:     "release",
-			SubjectID:       snapshot.releaseID,
-			SubjectVersion:  updatedVersion,
-			StableResultKey: evaluationVersionString() + ":" + reasonCode,
-			RSSSourceID:     snapshot.sourceID,
-			ReleaseID:       snapshot.releaseID,
-			GroupRef:        snapshot.groupName,
-			MessageCode:     message,
-			Details:         details,
-			CorrelationID:   correlationID,
+			SubscriptionID: snapshot.subscriptionID,
+			ManagedAnimeID: snapshot.managedAnimeID,
+			Kind:           rssLogKindReleaseProcessed,
+			Outcome:        rssLogOutcomeInfo,
+			ReasonCode:     reasonCode,
+			SubjectType:    "release",
+			SubjectID:      snapshot.releaseID,
+			SubjectVersion: updatedVersion,
+			DedupeKey:      releaseProcessedDedupeKey(snapshot.releaseID, currentVerdict, verdict, reasonCode),
+			RSSSourceID:    snapshot.sourceID,
+			ReleaseID:      snapshot.releaseID,
+			GroupRef:       snapshot.groupName,
+			MessageCode:    message,
+			Details:        details,
+			CorrelationID:  correlationID,
 		}); err != nil {
 			return 0, err
 		}
@@ -965,20 +976,20 @@ WHERE id = $1 AND version = $5 AND download_task_id IS NULL
 			return 0, err
 		}
 		if err := appendActivity(ctx, tx, s.activityWriter, observabilityport.ActivityRecord{
-			SubscriptionID:  snapshot.subscriptionID,
-			ManagedAnimeID:  snapshot.managedAnimeID,
-			Kind:            rssLogKindReleaseProcessed,
-			Outcome:         rssLogOutcomeFailure,
-			ReasonCode:      reasonCode,
-			SubjectType:     "release",
-			SubjectID:       snapshot.releaseID,
-			SubjectVersion:  version,
-			StableResultKey: evaluationVersionString() + ":" + reasonCode,
-			RSSSourceID:     snapshot.sourceID,
-			ReleaseID:       snapshot.releaseID,
-			GroupRef:        snapshot.groupName,
-			MessageCode:     observabilityport.MessageReleaseParseFailed,
-			Details:         details,
+			SubscriptionID: snapshot.subscriptionID,
+			ManagedAnimeID: snapshot.managedAnimeID,
+			Kind:           rssLogKindReleaseProcessed,
+			Outcome:        rssLogOutcomeFailure,
+			ReasonCode:     reasonCode,
+			SubjectType:    "release",
+			SubjectID:      snapshot.releaseID,
+			SubjectVersion: version,
+			DedupeKey:      releaseProcessedDedupeKey(snapshot.releaseID, currentVerdict, "parse_failed", reasonCode),
+			RSSSourceID:    snapshot.sourceID,
+			ReleaseID:      snapshot.releaseID,
+			GroupRef:       snapshot.groupName,
+			MessageCode:    observabilityport.MessageReleaseParseFailed,
+			Details:        details,
 		}); err != nil {
 			return 0, err
 		}

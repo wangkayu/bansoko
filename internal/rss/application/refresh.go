@@ -423,9 +423,9 @@ func upsertRelease(ctx context.Context, tx *sql.Tx, snapshot sourceSnapshot, eva
 	insertErr := tx.QueryRowContext(ctx, `
 INSERT INTO releases(
     id, rss_source_id, stable_item_key, raw_facts, source_facts, parsed_facts,
-    internal_facts, verdict, reason_code, reason_detail, evaluation_version
+    internal_facts, verdict, reason_code, reason_detail, feed_verdict, evaluation_version
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, ''), $11)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, ''), $8, $11)
 ON CONFLICT (rss_source_id, stable_item_key) DO NOTHING
 RETURNING id, version`, candidateID, snapshot.sourceID, evaluation.stableKey,
 		evaluation.rawFacts, evaluation.sourceFacts, parsed, evaluation.internalFacts,
@@ -490,22 +490,33 @@ FOR UPDATE`, existingID).Scan(&releaseID, &version, &existingTask, &existingVerd
 	}
 
 	var updatedVersion int64
+	// The feed's own verdict is not the Release's decision. accepted_pending_
+	// download is a pending state — the evaluation and the competition decide
+	// it — so writing it over a decided verdict made every poll look like a
+	// change and re-ran the whole chain on every cycle. The refresh records its
+	// own verdict in feed_verdict, which is what a change is measured against;
+	// verdict, reason_code and reason_detail stay with the evaluation stage
+	// except for the feed verdicts that are already an answer (filtered by the
+	// feed rules, waiting for metadata, an unreadable torrent), which no later
+	// stage can turn into anything else.
 	updateErr := tx.QueryRowContext(ctx, `
 UPDATE releases
 SET raw_facts = $2, source_facts = $3, parsed_facts = $4, internal_facts = $5,
-    verdict = $6, reason_code = $7, reason_detail = NULLIF($8, ''),
-    evaluation_version = $9, version = version + 1, updated_at = CURRENT_TIMESTAMP
+    feed_verdict = $6, evaluation_version = $8,
+    verdict = CASE WHEN $7 THEN $9 ELSE verdict END,
+    reason_code = CASE WHEN $7 THEN $10 ELSE reason_code END,
+    reason_detail = CASE WHEN $7 THEN NULLIF($11, '') ELSE reason_detail END,
+    version = version + 1, updated_at = CURRENT_TIMESTAMP
 WHERE id = $1 AND download_task_id IS NULL
   AND (raw_facts IS DISTINCT FROM CAST($2 AS jsonb)
     OR source_facts IS DISTINCT FROM CAST($3 AS jsonb)
     OR parsed_facts IS DISTINCT FROM CAST($4 AS jsonb)
     OR internal_facts IS DISTINCT FROM CAST($5 AS jsonb)
-    OR verdict IS DISTINCT FROM $6
-    OR reason_code IS DISTINCT FROM $7
-    OR reason_detail IS DISTINCT FROM NULLIF($8, '')
-    OR evaluation_version IS DISTINCT FROM $9)
+    OR feed_verdict IS DISTINCT FROM $6
+    OR evaluation_version IS DISTINCT FROM $8)
 RETURNING version`, releaseID, evaluation.rawFacts, evaluation.sourceFacts, parsed, evaluation.internalFacts,
-		string(evaluation.result.Verdict), evaluation.result.ReasonCode, reasonDetail, evaluationVersionString()).Scan(&updatedVersion)
+		string(evaluation.result.Verdict), feedVerdictIsFinal(evaluation.result.Verdict),
+		evaluationVersionString(), string(evaluation.result.Verdict), evaluation.result.ReasonCode, reasonDetail).Scan(&updatedVersion)
 	inputMutable = evaluation.item.TorrentErrorCode == "" && len(evaluation.item.TorrentPayload) > 0
 	if errors.Is(updateErr, sql.ErrNoRows) {
 		if liveFound && liveState == workitems.StateAvailable && liveID != "" {
@@ -524,6 +535,16 @@ RETURNING version`, releaseID, evaluation.rawFacts, evaluation.sourceFacts, pars
 		}
 	}
 	return releaseID, updatedVersion, false, true, inputMutable, nil
+}
+
+// feedVerdictIsFinal reports whether the refresh's own verdict is already the
+// Release's answer: a feed-rule filter, a metadata hold or an unreadable
+// torrent cannot be turned around by a later stage, so recording it keeps the
+// row honest. accepted_pending_download is the one feed verdict that only says
+// "an evaluation still decides this" — writing it would take the decision back
+// from the evaluation and the competition on every poll.
+func feedVerdictIsFinal(verdict animedomain.ReleaseVerdict) bool {
+	return verdict != animedomain.ReleaseVerdict("accepted_pending_download")
 }
 
 func lockLiveReleaseEvaluation(ctx context.Context, tx *sql.Tx, releaseID string) (id, state string, expectedVersion int64, found bool, err error) {

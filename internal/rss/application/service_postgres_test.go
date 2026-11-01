@@ -281,7 +281,7 @@ WHERE subscription_id = $1 AND kind = 'release_processed'`, subscriptionID).Scan
 	if activityCount != 1 || activityKind != "release_processed" || activityReason != "accepted" || activityMessage != "release_accepted" ||
 		activitySubjectType != "release" || activitySubjectID != releaseID || activityVersion < 1 ||
 		activitySourceID != sourceID || activityReleaseID != releaseID || activityGroupRef != "Test Group" ||
-		!strings.HasPrefix(activityDedupe, "release_processed:release:"+releaseID+":v") ||
+		!strings.HasPrefix(activityDedupe, "release_processed:release:"+releaseID+":accepted_pending_download>") ||
 		strings.Contains(string(activityDetails), "downloads.example.test") || strings.Contains(string(activityDetails), "magnet:") ||
 		strings.Contains(string(activityDetails), "source_url") || strings.Contains(string(activityDetails), "torrent") {
 		t.Fatalf("unexpected release Activity: count=%d kind=%q reason=%q subject=%s/%s/v%d source=%q release=%q group=%q dedupe=%q details=%s",
