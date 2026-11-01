@@ -12,7 +12,7 @@ import type {
   Subscription,
   SubscriptionLogEntry,
 } from "./api/client";
-import { t, tryT, type CopyKey } from "./i18n";
+import { getLocale, t, tryT, type CopyKey } from "./i18n";
 import { knownReasonLabel } from "./i18n/reasons";
 import { formatLocaleDateTime, formatLocaleShortDateTime, joinList } from "./i18n/format";
 import { ROUTINE_KINDS } from "./observabilityCatalog.generated";
@@ -405,6 +405,19 @@ export function formatShortDateTime(value: string | undefined): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return formatLocaleShortDateTime(date);
+}
+
+/** Day-level timestamp ("Today 15:42"); older values fall back to the compact month-day + time. */
+export function formatDayDateTime(value: string | undefined, now: number = Date.now()): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const time = date.toLocaleString(getLocale(), { hour: "2-digit", minute: "2-digit", hour12: false });
+  const startOfDay = (input: Date) => new Date(input.getFullYear(), input.getMonth(), input.getDate()).getTime();
+  const days = Math.round((startOfDay(new Date(now)) - startOfDay(date)) / 86_400_000);
+  if (days === 0) return t("common.dayDateTime.today", { time });
+  if (days === 1) return t("common.dayDateTime.yesterday", { time });
+  return formatShortDateTime(value);
 }
 
 /** Relative time ("3 hours ago"); an invalid or missing time returns undefined and the caller omits it. */

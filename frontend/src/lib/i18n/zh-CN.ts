@@ -48,6 +48,10 @@ export const zhCN = {
       hours: "{n} 小时前",
       days: "{n} 天前",
     },
+    dayDateTime: {
+      today: "今天 {time}",
+      yesterday: "昨天 {time}",
+    },
     // 代码里拼接文字用的标点（`lib/i18n/format.ts`）。
     format: {
       labelValue: "{label}：{value}",

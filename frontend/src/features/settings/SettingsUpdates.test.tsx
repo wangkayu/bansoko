@@ -334,6 +334,11 @@ describe("SettingsUpdates", () => {
     await user.click(await screen.findByRole("button", { name: t("settings.updates.check") }));
     expect(await screen.findByText(t("settings.updates.currentTitle"))).toBeInTheDocument();
     expect(screen.queryByText("发布编号")).not.toBeInTheDocument();
+    // The cost lands as one summary line first; the full table opens on demand.
+    const summary = t("settings.updates.factRollback", { action: t("settings.updates.rollbackRestore") });
+    expect(screen.getByText([t("settings.updates.factMigration"), t("settings.updates.factDowntime"), t("settings.updates.factBackup"), summary].join(" · "))).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: t("settings.updates.factsShow") }));
     expect(screen.getByText(t("settings.updates.publishedAt"))).toBeInTheDocument();
     expect(screen.getByText(t("settings.updates.migration"))).toBeInTheDocument();
     expect(screen.getByText(t("settings.updates.downtimeYes"))).toBeInTheDocument();

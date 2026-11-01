@@ -13,7 +13,7 @@ import {
   type EmbeddedUpdateStatus,
   type UpdateCheck,
 } from "../../lib/api/client";
-import { formatDateTime } from "../../lib/labels";
+import { formatDayDateTime } from "../../lib/labels";
 import { getLocale, t, tryT, useLocale } from "../../lib/i18n";
 import { updateKeys } from "../../lib/queryKeys";
 import { Chip, DescriptionList, StateBlock, StatePill, ConfirmDialog } from "../../ui";
@@ -496,7 +496,7 @@ function ReleaseNotesList({ entries }: { entries: ReleaseNotesEntry[] | undefine
         <div key={entry.version} className="tw:grid tw:gap-1">
           <div className="settings-updates-card-row">
             <Chip>{entry.version}</Chip>
-            <span className="settings-updates-muted text-caption">{formatDateTime(entry.published_at)}</span>
+            <span className="settings-updates-muted text-caption">{formatDayDateTime(entry.published_at)}</span>
           </div>
           <RestrictedMarkdown source={entry.notes[lang]} />
         </div>
@@ -516,7 +516,7 @@ function CurrentVersionCard({ check }: { check: UpdateCheck }) {
       </div>
       <DescriptionList
         items={[
-          { label: t("settings.updates.checkedAt"), value: formatDateTime(check.checked_at) },
+          { label: t("settings.updates.checkedAt"), value: formatDayDateTime(check.checked_at) },
         ]}
       />
       <div>
@@ -538,6 +538,7 @@ function CandidateCard({
   onUpdate: (candidate: UpdateCandidate) => void;
   submitError?: string;
 }) {
+  const [factsOpen, setFactsOpen] = useState(false);
   const candidate = check.candidate;
   if (!candidate) return null;
 
@@ -559,12 +560,22 @@ function CandidateCard({
         )}
       </div>
 
-      <DescriptionList
-        items={[
-          { label: t("settings.updates.publishedAt"), value: formatDateTime(candidate.published_at) },
-          ...candidateFacts(candidate),
-        ]}
-      />
+      <p className="settings-updates-copy settings-updates-muted text-caption">
+        {candidateSummary(candidate)}
+      </p>
+      <div>
+        <Button variant="link" size="sm" aria-expanded={factsOpen} onClick={() => setFactsOpen((open) => !open)}>
+          {factsOpen ? t("settings.updates.factsHide") : t("settings.updates.factsShow")}
+        </Button>
+      </div>
+      {factsOpen && (
+        <DescriptionList
+          items={[
+            { label: t("settings.updates.publishedAt"), value: formatDayDateTime(candidate.published_at) },
+            ...candidateFacts(candidate),
+          ]}
+        />
+      )}
 
       <div className="tw:grid tw:gap-2">
         <span className="text-body">{t("settings.updates.notesTitle")}</span>
@@ -603,6 +614,16 @@ function rollbackLabel(value: string): string {
   return value === "restore_required" ? t("settings.updates.rollbackRestore") : t("settings.updates.rollbackPlain");
 }
 
+// The candidate's cost at a glance; the full table stays one click away.
+function candidateSummary(candidate: UpdateCandidate): string {
+  const parts: string[] = [];
+  if (candidate.target_migration_version) parts.push(t("settings.updates.factMigration"));
+  parts.push(candidate.required_downtime ? t("settings.updates.factDowntime") : t("settings.updates.factDowntimeNone"));
+  if (candidate.backup_required) parts.push(t("settings.updates.factBackup"));
+  parts.push(t("settings.updates.factRollback", { action: rollbackLabel(candidate.rollback_class) }));
+  return parts.join(" · ");
+}
+
 function candidateFacts(candidate: UpdateCandidate): { label: string; value: string }[] {
   return [
     { label: t("settings.updates.migration"), value: candidate.target_migration_version ? t("settings.updates.migrationYes") : t("settings.updates.migrationNo") },
@@ -630,7 +651,7 @@ function UpdateStatusCard({ status, historical = false }: { status: EmbeddedUpda
       </div>
       <div className="settings-updates-status-line text-caption">
         {t("settings.updates.targetVersion", { version: status.target_version ?? status.target_release_id })}
-        {status.updated_at && ` · ${t("settings.updates.updatedAt", { time: formatDateTime(status.updated_at) })}`}
+        {status.updated_at && ` · ${t("settings.updates.updatedAt", { time: formatDayDateTime(status.updated_at) })}`}
       </div>
 
       {status.step === "rolled_back" && (

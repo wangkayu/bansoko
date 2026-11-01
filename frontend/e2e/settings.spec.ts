@@ -404,9 +404,9 @@ test.describe("settings fixture coverage", () => {
     await openSettings(page, "/#/settings/titleParser");
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible({ timeout: 10000 });
-    await expect(dialog.getByText("当前解析器", { exact: true })).toBeVisible();
-    await expect(dialog.getByText("内置版本", { exact: true })).toBeVisible();
-    await expect(dialog.getByText("reltitle@v0.0.3")).toBeVisible();
+    await expect(dialog.getByText("标题解析 reltitle", { exact: true })).toBeVisible();
+    await expect(dialog.getByText("内置", { exact: true })).toBeVisible();
+    await expect(dialog.getByText("0.0.3")).toBeVisible();
     await expect(dialog.getByText("尚未检查过更新", { exact: true })).toBeVisible();
     await expect(dialog.getByRole("button", { name: "检查更新" })).toBeVisible();
   });

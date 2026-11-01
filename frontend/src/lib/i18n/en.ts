@@ -51,6 +51,10 @@ export const en = {
       hours: "{n} h ago",
       days: "{n} d ago",
     },
+    dayDateTime: {
+      today: "Today {time}",
+      yesterday: "Yesterday {time}",
+    },
     format: {
       labelValue: "{label}: {value}",
       withNote: "{text} ({note})",
