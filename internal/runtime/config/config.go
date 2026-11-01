@@ -48,6 +48,11 @@ type Config struct {
 	SessionSecret       string
 	SecretEncryptionKey string
 	FrontendDir         string
+	// ConfigDir is the deployment's configuration workspace (BANSOKO_CONFIG_DIR).
+	// It holds the operator copies of the attr rules and naming vars, and the
+	// one writable location for a separately installed reltitle binary
+	// (<ConfigDir>/rt/reltitle).
+	ConfigDir string
 	// Attr rules and the naming Vars seed live at fixed locations: the
 	// deployment config workspace (BANSOKO_CONFIG_DIR) holds the operator
 	// copies, and the image ships the defaults under deployment/defaults
@@ -83,6 +88,7 @@ func FromFlags(args []string) (Config, error) {
 		SessionSecret:          os.Getenv("BANSOKO_SESSION_SECRET"),
 		SecretEncryptionKey:    os.Getenv("BANSOKO_SECRET_ENCRYPTION_KEY"),
 		FrontendDir:            envOr("BANSOKO_FRONTEND_DIR", "frontend/dist"),
+		ConfigDir:              envOr("BANSOKO_CONFIG_DIR", "/config"),
 		AttrRulesConfigPath:    envOr("BANSOKO_CONFIG_DIR", "/config") + "/attr-rules.yaml",
 		AttrRulesDefaultsPath:  "deployment/defaults/attr-rules.yaml",
 		NamingVarsConfigPath:   envOr("BANSOKO_CONFIG_DIR", "/config") + "/naming-vars.js",

@@ -45,8 +45,10 @@ import (
 	observabilityapplication "bansoko/internal/observability/application"
 	observabilityport "bansoko/internal/observability/port"
 	"bansoko/internal/parser"
+	"bansoko/internal/parser/reltitletags"
 	plugintargetapplication "bansoko/internal/plugintarget/application"
 	retentionapplication "bansoko/internal/recordretention/application"
+	"bansoko/internal/rtruntime"
 	bootstrapcmd "bansoko/internal/runtime/bootstrap"
 	"bansoko/internal/runtime/buildinfo"
 	"bansoko/internal/runtime/config"
@@ -167,6 +169,38 @@ func runServe(args []string) {
 			ReasonCode: "naming_vars_file_diverged",
 		})
 	}
+	// Adopted reltitle binary (owner 2026-11-01): a file at
+	// <config>/rt/reltitle overrides the compiled-in parser when it passes the
+	// adoption chain (regular executable, -version, an rt-serve-1 hello and one
+	// smoke parse). A refused file is a state to report, never a startup
+	// failure: the builtin parser keeps working, and a hand-placed build is
+	// accepted at any version.
+	rtClient, rtInfo := rtruntime.Probe(ctx, cfg.ConfigDir, reltitletags.BuiltinVersion())
+	switch {
+	case rtClient != nil:
+		if adoptErr := reltitletags.AdoptExternal(rtClient); adoptErr != nil {
+			_ = rtClient.Close()
+			runtimeLogger.Warn(ctx, observabilityport.RuntimeEvent{
+				Message:   "the installed reltitle binary was refused: " + adoptErr.Error(),
+				Component: "runtime", Operation: "reltitle_adopt", Outcome: "warning",
+				ReasonCode: "reltitle_external_refused",
+			})
+		} else {
+			defer func() { _ = rtClient.Close() }()
+			runtimeLogger.Info(ctx, observabilityport.RuntimeEvent{
+				Message:   "using the installed reltitle " + rtInfo.Version,
+				Component: "runtime", Operation: "reltitle_adopt", Outcome: "success",
+				ReasonCode: "reltitle_external_adopted",
+			})
+		}
+	case rtInfo.Note != "":
+		runtimeLogger.Warn(ctx, observabilityport.RuntimeEvent{
+			Message:   rtInfo.Note,
+			Component: "runtime", Operation: "reltitle_adopt", Outcome: "warning",
+			ReasonCode: "reltitle_external_refused",
+		})
+	}
+
 	installID, err := identity.EnsureInstallID(ctx, db)
 	if err != nil {
 		fatalStartup(runtimeLogger, "install id failed", "install_id_failed")

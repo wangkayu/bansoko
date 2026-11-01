@@ -22,7 +22,7 @@ type ReltitleAdapter struct{}
 
 func (ReltitleAdapter) Descriptor() ParserDescriptor {
 	return ParserDescriptor{
-		ID: ParserReltitle, ImplementationVersion: reltitletags.ImplementationVersion,
+		ID: ParserReltitle, ImplementationVersion: reltitletags.ActiveVersion(),
 		OutputContractVersion: "episode-evidence-v1", DisplayName: "reltitle",
 		Capabilities:  []string{"release_title", "file_name", "decimal"},
 		ConfigVersion: reltitletags.ConfigDigest(),

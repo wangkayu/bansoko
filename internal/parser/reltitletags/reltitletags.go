@@ -198,22 +198,33 @@ func canonicalVocabulary(canonical map[string]any, lexicon reltitleconfig.Lexico
 	return vocabulary, known, nil
 }
 
-// Ready reports whether the embedded parser and dictionary loaded.
-func Ready() error { return load().err }
+// Ready reports whether a parser is available: the adopted binary while one is
+// in use, else the embedded parser and dictionary.
+func Ready() error {
+	if external.Load() != nil {
+		return nil
+	}
+	return load().err
+}
 
-// ConfigDigest is the digest of the embedded dictionary bundle ("" when the
-// bundle failed to load).
-func ConfigDigest() string { return load().configDigest }
+// ConfigDigest is the digest of the dictionary in use: the adopted binary's
+// bundle, else the embedded one ("" when the bundle failed to load).
+func ConfigDigest() string { return activeDigest() }
 
 // Vocabulary returns the canonical values per dimension. It is nil when the
 // bundle failed to load.
 func Vocabulary() []DimensionVocabulary {
-	current := load()
-	if current.err != nil {
+	var source []DimensionVocabulary
+	if adopted := external.Load(); adopted != nil {
+		source = adopted.vocabulary
+	} else if current := load(); current.err == nil {
+		source = current.vocabulary
+	}
+	if source == nil {
 		return nil
 	}
-	out := make([]DimensionVocabulary, len(current.vocabulary))
-	for index, entry := range current.vocabulary {
+	out := make([]DimensionVocabulary, len(source))
+	for index, entry := range source {
 		out[index] = DimensionVocabulary{Dimension: entry.Dimension, Values: append([]string(nil), entry.Values...)}
 	}
 	return out
@@ -232,12 +243,24 @@ func IsDimension(dimension string) bool {
 // CanonicalValue returns the dictionary spelling of value in dimension
 // (case-insensitive lookup) and whether it is in the vocabulary.
 func CanonicalValue(dimension, value string) (string, bool) {
-	current := load()
-	if current.err != nil {
+	known := activeKnown()
+	if known == nil {
 		return "", false
 	}
-	canonical, ok := current.known[dimension][strings.ToLower(strings.TrimSpace(value))]
+	canonical, ok := known[dimension][strings.ToLower(strings.TrimSpace(value))]
 	return canonical, ok
+}
+
+// activeKnown is the projection dictionary of whichever parser answers now.
+func activeKnown() map[string]map[string]string {
+	if adopted := external.Load(); adopted != nil {
+		return adopted.known
+	}
+	current := load()
+	if current.err != nil {
+		return nil
+	}
+	return current.known
 }
 
 // Extract parses title with the pinned parser and returns its non-episode
@@ -245,12 +268,17 @@ func CanonicalValue(dimension, value string) (string, bool) {
 // parser, an oversized title or a parser failure yields an empty set with a
 // diagnostic.
 func Extract(title string) acquisitiondomain.TitleTagSet {
-	current := load()
-	set := acquisitiondomain.TitleTagSet{Schema: Schema, Implementation: ImplementationVersion, ConfigDigest: current.configDigest, Tags: []string{}, ValueTags: []string{}}
-	if current.err != nil {
+	set := acquisitiondomain.TitleTagSet{Schema: Schema, Tags: []string{}, ValueTags: []string{}}
+	known := activeKnown()
+	if known == nil {
+		set.Implementation, set.ConfigDigest = activeVersion(), activeDigest()
 		set.Diagnostic = acquisitiondomain.TitleTagDiagnosticParserUnavailable
 		return set
 	}
+	result, err := parseActive(strings.TrimSpace(title))
+	// The identity is read after the parse so a fallback mid-call is recorded
+	// against the parser that actually answered.
+	set.Implementation, set.ConfigDigest = activeVersion(), activeDigest()
 	trimmed := strings.TrimSpace(title)
 	if trimmed == "" {
 		return set
@@ -259,14 +287,28 @@ func Extract(title string) acquisitiondomain.TitleTagSet {
 		set.Diagnostic = acquisitiondomain.TitleTagDiagnosticParseFailed
 		return set
 	}
-	result, err := parseSafely(current.parser, trimmed)
 	if err != nil || result == nil {
 		set.Diagnostic = acquisitiondomain.TitleTagDiagnosticParseFailed
 		return set
 	}
-	set.Tags = project(result.Attributes, current.known)
+	set.Tags = project(result.Attributes, known)
 	set.ValueTags = projectValues(result.Attributes)
 	return set
+}
+
+// parseActive parses with the adopted binary, falling back to the embedded
+// parser once it has stopped answering.
+func parseActive(title string) (*reltitlemodel.ParseResult, error) {
+	if adopted := external.Load(); adopted != nil {
+		if result, err := parseExternal(adopted, title); err == nil {
+			return result, nil
+		}
+	}
+	current := load()
+	if current.err != nil {
+		return nil, current.err
+	}
+	return parseSafely(current.parser, title)
 }
 
 func parseSafely(parser *reltitleparser.Parser, title string) (result *reltitlemodel.ParseResult, err error) {
@@ -405,15 +447,11 @@ func SubtitleLanguages(tag string) []string {
 // consumers run one loaded parser and one lexicon; this package's own Extract
 // still projects non-episode attributes only.
 func Parse(title string) (*reltitlemodel.ParseResult, error) {
-	current := load()
-	if current.err != nil {
-		return nil, current.err
-	}
 	trimmed := strings.TrimSpace(title)
 	if len(trimmed) > MaxTitleBytes {
 		return nil, fmt.Errorf("title exceeds %d bytes", MaxTitleBytes)
 	}
-	result, err := parseSafely(current.parser, trimmed)
+	result, err := parseActive(trimmed)
 	if err != nil {
 		return nil, err
 	}
