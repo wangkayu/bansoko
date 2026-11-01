@@ -123,7 +123,7 @@ ALLOWED_SKIPS = {
     ("anime-grid.spec.ts", "keeps the season picked from the dropdown on the browse toolbar", "desktop"),
     # settings: breakpoint-specific layout forms are asserted per project;
     # the other project skips them by design.
-    ("settings.spec.ts", "桌面端展示 section sidebar，十四个分区齐全", "mobile"),
+    ("settings.spec.ts", "桌面端展示 section sidebar，十五个分区齐全", "mobile"),
     ("settings.spec.ts", "手机：先看到分区列表，进入分区后内容页带返回", "desktop"),
     ("settings.spec.ts", "手机：深链直接进入分区内容", "desktop"),
     ("settings.spec.ts", "桌面端网格几何：导航列 11rem，内容区不被挤压", "mobile"),
