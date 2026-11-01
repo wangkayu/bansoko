@@ -128,6 +128,14 @@ export const rssCopy = {
     filtered: "已过滤",
   },
   target: { satisfied: "已满足", mismatch: "尺寸不符", mismatchSizes: "尺寸不符（库中 {observed}，期望 {expected}）", unreadable: "不可读", pending: "待入库", inLibrary: "已入库", libraryAt: "入库位置：{path}", libraryAtNote: "入库位置", libraryNewPath: "→ 新路径（待对齐）：{path}" },
+  // ③'s own outcome, once the placement this file produced has ended. Only this file is described: the
+  // row never points at whichever file holds the episode now.
+  placementEnd: {
+    superseded: "已被更好的版本替换",
+    overwrite: "已被其他文件覆盖",
+    redownload: "已被新下载的文件替换",
+    released: "文件已解除管理",
+  },
   targetPending: "（目标路径待生成）",
   retryRelease: "重新执行",
   structure: {

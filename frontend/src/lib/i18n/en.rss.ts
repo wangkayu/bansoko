@@ -131,6 +131,14 @@ export const enRssCopy = {
     filtered: "Filtered",
   },
   target: { satisfied: "Already in library", mismatch: "Size mismatch", mismatchSizes: "Size mismatch ({observed} in library, {expected} expected)", unreadable: "Unreadable", pending: "Waiting to import", inLibrary: "Imported", libraryAt: "In library: {path}", libraryAtNote: "In library", libraryNewPath: "→ New path (pending alignment): {path}" },
+  // ③'s own outcome, once the placement this file produced has ended. Only this file is described: the
+  // row never points at whichever file holds the episode now.
+  placementEnd: {
+    superseded: "Replaced by a better version",
+    overwrite: "Overwritten by another file",
+    redownload: "Replaced by a new download",
+    released: "File released from management",
+  },
   targetPending: "(Target path pending)",
   retryRelease: "Run again",
   structure: {

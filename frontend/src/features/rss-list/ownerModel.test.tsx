@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { AnimeWorkspace, ReleaseFile, RSSListGroup, RSSListItem, RSSListView } from "../../lib/api/client";
+import type { AnimeWorkspace, ReleaseFile, RSSListGroup, RSSListItem, RSSListView, RSSListFile } from "../../lib/api/client";
 import { downloadTaskStateLabel, fileOperationKindLabel, fileOperationStateLabel, formatBytes } from "../../lib/labels";
 import { knownReasonLabel } from "../../lib/i18n/reasons";
 import { RssListViewPanel } from "./RssListViewPanel";
@@ -455,6 +455,35 @@ describe("ownerViewModel", () => {
     expect(within(row).getByText(t("rss.target.inLibrary"))).toBeVisible();
     expect(within(row).queryByText(t("rss.target.pending"))).toBeNull();
     expect(within(row).getByText(t("rss.target.libraryAt", { path: "Show 2021/Season 01/Show - 03.mkv" }))).toBeVisible();
+  });
+
+  // A file whose placement has ended is in no library, yet it is not "waiting to import": ③ states
+  // that one file's own outcome, ② keeps the target this seed rendered, and the row never points at
+  // whichever file holds the episode now.
+  it.each<[NonNullable<RSSListFile["placement_end"]>, string]>([
+    [{ state: "superseded" }, t("rss.placementEnd.superseded")],
+    [{ state: "displaced", cause: "overwrite" }, t("rss.placementEnd.overwrite")],
+    [{ state: "displaced", cause: "redownload" }, t("rss.placementEnd.redownload")],
+    [{ state: "released" }, t("rss.placementEnd.released")],
+  ])("落点已结束的文件说自己的结局（%o）", (placementEnd, label) => {
+    const workspace = releaseWith([
+      { path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 100, media_kind: "video", target_path: "/library/Show/Show - 03.mkv", outcome: "planned" },
+    ]);
+    workspace.releases[0].target_observations = [];
+    renderOwnerFiles([
+      {
+        file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 100, media_kind: "video", included: true, safety: "valid",
+        placement_end: placementEnd,
+      },
+    ], workspace);
+
+    const row = fileRow("Show/old.mkv");
+    expect(within(row).getByText(label)).toBeVisible();
+    expect(within(row).queryByText(t("rss.target.pending"))).toBeNull();
+    expect(within(row).getByText("→ /library/Show/Show - 03.mkv")).toBeVisible();
+    // No library location: the file is gone, so this row has none to show.
+    const libraryAtPrefix = t("rss.target.libraryAt", { path: "" });
+    expect(within(row).queryByText((content) => content.startsWith(libraryAtPrefix))).toBeNull();
   });
 
   it("没入库的文件照旧显示目标路径", () => {

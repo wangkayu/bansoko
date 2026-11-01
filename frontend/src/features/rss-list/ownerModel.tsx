@@ -108,6 +108,17 @@ function targetObservationPresentation(observation?: TargetObservation) {
   }
 }
 
+/** ③'s label for a file whose placement has ended: the row says what became of this one file, so a
+ *  superseded file never reads "waiting to import" and never points at the file now holding the
+ *  episode (that belongs to the anime's files). */
+function placementEndLabel(end: NonNullable<RSSListFile["placement_end"]>) {
+  switch (end.state) {
+    case "released": return t("rss.placementEnd.released");
+    case "displaced": return t(end.cause === "redownload" ? "rss.placementEnd.redownload" : "rss.placementEnd.overwrite");
+    default: return t("rss.placementEnd.superseded");
+  }
+}
+
 // Verdicts of "never eligible" in the plan: excluded at the filter/identify stage, producing no expected target.
 const FILTERED_OUTCOMES: ReadonlySet<string> = new Set(["excluded_by_rule", "episode_unrecognized", "subtitle_unbound"]);
 // Library-comparison verdicts that already existed at plan time: an expected target exists, but the target is already owned.
@@ -230,6 +241,10 @@ function OwnerReleaseFileRow({ preview, parsed, target, observation, subtitles =
 //   moved by alignment still counts as imported; an observation on the frozen target no longer
 //   matches after the move and can no longer stand for "awaiting import".
   const inLibrary = preview?.in_library === true || libraryPath !== undefined;
+  // A file whose placement has ended (superseded, displaced or released): ③ states that one file's
+//   outcome. It is in no library, so it shows no library location and keeps its target in ② — where
+//   the episode lives now is the anime's files' business, not this row's.
+  const placementEnd = preview?.placement_end ?? undefined;
   // On a size mismatch the ③ row says where the difference lies: the actual size in the library
 //   versus the file's expected size. When either side is unavailable only the state badge remains,
 //   never a half sentence. The target is not repeated here — it is the same string as row ②.
@@ -280,9 +295,11 @@ function OwnerReleaseFileRow({ preview, parsed, target, observation, subtitles =
       {/* External subtitles bound to this video: format badges right below the video's target path, details collapsed by default; when the video is excluded the subtitles follow it. */}
       <BoundSubtitles videoName={sourcePath} subtitles={subtitles.map(ownerSubtitleItem)} videoExcluded={filtered} />
       {/* ③ The actual output */}
-      {(planDiff || (planned && (targetPath !== undefined || inLibrary))) && (
+      {(placementEnd !== undefined || planDiff || (planned && (targetPath !== undefined || inLibrary))) && (
         <div className="chain-file-row">
-          {planDiff
+          {placementEnd !== undefined
+            ? <StatePill tone="muted">{placementEndLabel(placementEnd)}</StatePill>
+            : planDiff
             ? <span className="text-caption text-muted"><ReasonText code={planDiffCode} /></span>
             : inLibrary
               ? <StatePill tone="online">{t("rss.target.inLibrary")}</StatePill>
