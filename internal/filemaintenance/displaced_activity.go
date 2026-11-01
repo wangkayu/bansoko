@@ -76,9 +76,9 @@ SELECT physical_path, COALESCE(quality_facts_ref, '') FROM placements WHERE id =
 		return err
 	}
 	replacedBy := map[string]any{"replaced_by_file": businesslog.FileName(successorPath)}
-	for _, key := range []string{"group_name", "release_title"} {
-		if value, ok := taker[key]; ok {
-			replacedBy["replaced_by_"+key] = value
+	for _, key := range []struct{ source, suffix string }{{"group_name", "group"}, {"release_title", "title"}} {
+		if value, ok := taker[key.source]; ok {
+			replacedBy["replaced_by_"+key.suffix] = value
 		}
 	}
 	for _, victim := range victims {
