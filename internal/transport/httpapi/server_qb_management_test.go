@@ -16,12 +16,13 @@ import (
 // qbManagementFake is a controllable QBManagementService for the passthrough
 // handlers. Each method routes to a single error/result hook.
 type qbManagementFake struct {
-	listTorrents    func(ctx context.Context, connectionID string) ([]configurationdomain.QBittorrentTorrentView, error)
-	pauseTorrent    func(ctx context.Context, connectionID, hash string) error
-	resumeTorrent   func(ctx context.Context, connectionID, hash string) error
-	deleteTorrent   func(ctx context.Context, connectionID, hash string, deleteFiles bool) error
-	getTorrentFiles func(ctx context.Context, connectionID, hash string) ([]configurationdomain.QBittorrentTorrentFileView, error)
-	getServerStatus func(ctx context.Context, connectionID string) (configurationdomain.QBittorrentServerStatusView, error)
+	listTorrents      func(ctx context.Context, connectionID string) ([]configurationdomain.QBittorrentTorrentView, error)
+	pauseTorrent      func(ctx context.Context, connectionID, hash string) error
+	resumeTorrent     func(ctx context.Context, connectionID, hash string) error
+	deleteTorrent     func(ctx context.Context, connectionID, hash string, deleteFiles bool) error
+	sweepResidualTags func(ctx context.Context, connectionID string) ([]string, error)
+	getTorrentFiles   func(ctx context.Context, connectionID, hash string) ([]configurationdomain.QBittorrentTorrentFileView, error)
+	getServerStatus   func(ctx context.Context, connectionID string) (configurationdomain.QBittorrentServerStatusView, error)
 }
 
 func (f *qbManagementFake) ListTorrents(ctx context.Context, connectionID string) ([]configurationdomain.QBittorrentTorrentView, error) {
@@ -38,6 +39,10 @@ func (f *qbManagementFake) ResumeTorrent(ctx context.Context, connectionID, hash
 
 func (f *qbManagementFake) DeleteTorrent(ctx context.Context, connectionID, hash string, deleteFiles bool) error {
 	return f.deleteTorrent(ctx, connectionID, hash, deleteFiles)
+}
+
+func (f *qbManagementFake) SweepResidualTags(ctx context.Context, connectionID string) ([]string, error) {
+	return f.sweepResidualTags(ctx, connectionID)
 }
 
 func (f *qbManagementFake) GetTorrentFiles(ctx context.Context, connectionID, hash string) ([]configurationdomain.QBittorrentTorrentFileView, error) {
@@ -116,6 +121,62 @@ func TestListQBittorrentTorrentsUnreachableKeepsStatusMapping(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/config/connections/qb1/qbittorrent/torrents", nil)
 	server.ListQBittorrentTorrents(recorder, request, "qb1")
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("unreachable status must keep its existing mapping: %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var response generated.ErrorResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != "QB_UNREACHABLE" {
+		t.Fatalf("upstream error code changed: %s", response.Code)
+	}
+}
+
+// The sweep reports exactly what it removed; an empty result is a 200 with an
+// empty list, and upstream failure codes keep their existing status mapping.
+func TestSweepQBittorrentTagsReportsRemoved(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		removed []string
+	}{
+		{name: "residue removed", removed: []string{"bansoko-abc", "bansoko-def"}},
+		{name: "nothing to remove", removed: []string{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := &Server{deps: Dependencies{QBManagement: &qbManagementFake{
+				sweepResidualTags: func(ctx context.Context, connectionID string) ([]string, error) {
+					return tc.removed, nil
+				},
+			}}}
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/config/connections/c/qbittorrent/tags/cleanup", nil)
+			server.SweepQBittorrentTags(recorder, request, "c")
+
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status: %d body=%s", recorder.Code, recorder.Body.String())
+			}
+			var response generated.QBittorrentTagCleanupResult
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if len(response.Removed) != len(tc.removed) {
+				t.Fatalf("removed mismatch: %+v", response.Removed)
+			}
+		})
+	}
+}
+
+func TestSweepQBittorrentTagsUnreachableKeepsStatusMapping(t *testing.T) {
+	server := &Server{deps: Dependencies{QBManagement: &qbManagementFake{
+		sweepResidualTags: func(ctx context.Context, connectionID string) ([]string, error) {
+			return nil, &apperrors.BadRequest{Code: "QB_UNREACHABLE", Message: "qBittorrent instance is unreachable"}
+		},
+	}}}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/config/connections/c/qbittorrent/tags/cleanup", nil)
+	server.SweepQBittorrentTags(recorder, request, "c")
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("unreachable status must keep its existing mapping: %d body=%s", recorder.Code, recorder.Body.String())

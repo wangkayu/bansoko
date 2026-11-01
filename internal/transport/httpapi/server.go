@@ -287,6 +287,7 @@ type QBManagementService interface {
 	PauseTorrent(ctx context.Context, connectionID, hash string) error
 	ResumeTorrent(ctx context.Context, connectionID, hash string) error
 	DeleteTorrent(ctx context.Context, connectionID, hash string, deleteFiles bool) error
+	SweepResidualTags(ctx context.Context, connectionID string) ([]string, error)
 	GetTorrentFiles(ctx context.Context, connectionID, hash string) ([]configurationdomain.QBittorrentTorrentFileView, error)
 	GetServerStatus(ctx context.Context, connectionID string) (configurationdomain.QBittorrentServerStatusView, error)
 }

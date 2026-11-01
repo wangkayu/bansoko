@@ -492,4 +492,8 @@ export const qbCopy = {
   loadFilesFailed: "无法读取文件列表",
   filesAria: "文件列表",
   noFileInfo: "无文件信息",
+  sweepTags: "清理残留标签",
+  sweepTagsDone: "已清理 {count} 个残留标签",
+  sweepTagsNone: "没有残留标签",
+  sweepTagsFailed: "清理残留标签失败",
 } as const;

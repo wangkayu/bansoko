@@ -501,4 +501,8 @@ export const enQbCopy = {
   loadFilesFailed: "Couldn't load the file list",
   filesAria: "File list",
   noFileInfo: "No file information",
+  sweepTags: "Sweep residual tags",
+  sweepTagsDone: "Removed {count} residual tags",
+  sweepTagsNone: "No residual tags",
+  sweepTagsFailed: "Couldn't sweep the residual tags",
 } as const satisfies CopyShape<typeof qbCopy>;

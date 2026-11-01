@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronRight,
   Download,
+  Eraser,
   FileText,
   Pause,
   PlayCircle,
@@ -30,6 +31,7 @@ import {
   listQBittorrentTorrents,
   pauseQBittorrentTorrent,
   resumeQBittorrentTorrent,
+  sweepQBittorrentTags,
   toUserMessage,
 } from "../../lib/api/client";
 import { configKeys, qbManagementKeys } from "../../lib/queryKeys";
@@ -272,6 +274,19 @@ export function QBManagerDialog({
     },
   });
 
+  // 清理残留标签 is an owner-triggered, safe-to-repeat action: the server
+  // rechecks references, so a repeat while a torrent lands keeps its tag.
+  const sweepMutation = useMutation({
+    mutationFn: () => sweepQBittorrentTags(connectionId!),
+    onSuccess: (result) => {
+      toast.success(
+        result.removed.length > 0 ? t("qb.sweepTagsDone", { count: result.removed.length }) : t("qb.sweepTagsNone"),
+      );
+      invalidateAll();
+    },
+    onError: (cause) => toast.error(toUserMessage(cause, t("qb.sweepTagsFailed"))),
+  });
+
   const torrents = useMemo(() => [...(torrentsQuery.data ?? [])].sort(byNewest), [torrentsQuery.data]);
   // The downloader returns the full list (unpaginated); segments are split and counted by the server-provided origin, updating with the 3s polling.
   const segmentCounts = useMemo(() => {
@@ -376,6 +391,18 @@ export function QBManagerDialog({
             ) : !statusQuery.error && status ? (
               <ServerStatusBar status={status} />
             ) : null}
+
+            <span className="tw:ml-auto" />
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={sweepMutation.isPending}
+              onClick={() => sweepMutation.mutate()}
+              title={t("qb.sweepTags")}
+            >
+              <Eraser size={14} />
+              {t("qb.sweepTags")}
+            </Button>
           </div>
         )}
 

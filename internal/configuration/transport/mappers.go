@@ -113,6 +113,10 @@ func QBittorrentServerStatus(value configurationdomain.QBittorrentServerStatusVi
 	}
 }
 
+func QBittorrentTagCleanupResult(removed []string) generated.QBittorrentTagCleanupResult {
+	return generated.QBittorrentTagCleanupResult{Removed: removed}
+}
+
 func ConnectionInput(input generated.ConnectionInput, id string) (configurationdomain.ConnectionInput, error) {
 	kind, err := input.Discriminator()
 	if err != nil {

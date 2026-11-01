@@ -365,6 +365,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/config/connections/{connection_id}/qbittorrent/tags/cleanup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Operational passthrough that sweeps residual bansoko system tags from qBittorrent: tags left behind by records that no longer exist. Safe to repeat; still-referenced tags are kept. */
+        post: operations["sweepQBittorrentTags"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/config/connections/{connection_id}/qbittorrent/status": {
         parameters: {
             query?: never;
@@ -8163,6 +8180,11 @@ export interface components {
             progress: number;
             priority?: number;
         };
+        /** @description The result of a residual system-tag sweep. */
+        QBittorrentTagCleanupResult: {
+            /** @description The bansoko system tags the sweep deleted, sorted; empty when there was no residue. */
+            removed: string[];
+        };
         /** @description Operational view of qBittorrent server status. */
         QBittorrentServerStatus: {
             version: string;
@@ -8900,6 +8922,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QBittorrentTorrentFile"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    sweepQBittorrentTags: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: components["parameters"]["ConnectionID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The tags that were removed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QBittorrentTagCleanupResult"];
                 };
             };
             401: components["responses"]["Unauthorized"];

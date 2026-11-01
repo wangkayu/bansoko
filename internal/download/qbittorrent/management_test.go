@@ -192,6 +192,59 @@ func TestCleanupTagsWithoutKnownCandidatesHasNoQBEffect(t *testing.T) {
 	}
 }
 
+func TestSweepSystemTagsDeletesResidueFromTheTagListItself(t *testing.T) {
+	var deletedTags string
+	server := qbTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v2/torrents/tags":
+			_, _ = w.Write([]byte(`["bansoko-residue","bansoko-live"," user-tag ","bansoko-configured","bansoko-"]`))
+		case "/api/v2/torrents/info":
+			_, _ = w.Write([]byte(`[{"hash":"live","tags":"bansoko-live, user-tag"}]`))
+		case "/api/v2/torrents/deleteTags":
+			if err := r.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+			deletedTags = r.Form.Get("tags")
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	client := Client{Endpoint: server.URL, Username: "admin", Password: "secret", UserTags: []string{"bansoko-configured"}}
+	removed, err := client.SweepSystemTags(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The live-referenced tag, the configured user tag, the foreign tag and the
+	// bare prefix are all kept; only the unreferenced residue is deleted.
+	if len(removed) != 1 || removed[0] != "bansoko-residue" || deletedTags != "bansoko-residue" {
+		t.Fatalf("removed=%v deleted tags=%q", removed, deletedTags)
+	}
+}
+
+func TestSweepSystemTagsWithoutResidueHasNoQBEffect(t *testing.T) {
+	deleteCalls := 0
+	server := qbTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v2/torrents/tags":
+			_, _ = w.Write([]byte(`["user-tag","bansoko-live"]`))
+		case "/api/v2/torrents/info":
+			_, _ = w.Write([]byte(`[{"hash":"live","tags":"bansoko-live"}]`))
+		case "/api/v2/torrents/deleteTags":
+			deleteCalls++
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	client := Client{Endpoint: server.URL, Username: "admin", Password: "secret"}
+	removed, err := client.SweepSystemTags(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(removed) != 0 || deleteCalls != 0 {
+		t.Fatalf("removed=%v delete calls=%d", removed, deleteCalls)
+	}
+}
+
 func TestDeleteTorrentPostsHashesAndDeleteFiles(t *testing.T) {
 	var (
 		deletedHash  string

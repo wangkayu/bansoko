@@ -218,6 +218,8 @@ test.describe("qb-manager dialog", () => {
     // 服务器状态条：版本 + 连接状态 Tag。
     await expect(dialog.getByText("v4.6.5", { exact: true })).toBeVisible();
     await expect(dialog.getByText("已连接", { exact: true })).toBeVisible();
+    // 状态条右侧的标签清理动作始终可达。
+    await expect(dialog.getByRole("button", { name: "清理残留标签" })).toBeVisible();
 
     // 任务列表渲染两行（下载中 / 已暂停）。
     const list = dialog.getByRole("list", { name: "下载任务列表" });

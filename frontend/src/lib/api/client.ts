@@ -628,6 +628,12 @@ export function getQBittorrentServerStatus(connectionID: string): Promise<QBitto
   return request(`/config/connections/${encodePathSegment(connectionID)}/qbittorrent/status`, { method: "GET" });
 }
 
+export type QBittorrentTagCleanupResult = Schema<"QBittorrentTagCleanupResult">;
+
+export function sweepQBittorrentTags(connectionID: string): Promise<QBittorrentTagCleanupResult> {
+  return request(`/config/connections/${encodePathSegment(connectionID)}/qbittorrent/tags/cleanup`, { method: "POST" });
+}
+
 // --- Anime catalog / draft / subscribe ---------------------------------------
 
 export function listAnime(): Promise<AnimeListItem[]> {

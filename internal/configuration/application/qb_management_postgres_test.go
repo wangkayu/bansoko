@@ -379,11 +379,15 @@ func TestQBManagementTagOwnedTorrentProtectedWhileSubmittedPostgres(t *testing.T
 
 	deletes := 0
 	deleted := map[string]bool{}
+	sweptTags := []string{}
 	qbServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/v2/auth/login":
 			w.Write([]byte("Ok."))
 		case r.URL.Path == "/api/v2/torrents/info":
+			if r.URL.RawQuery != "" {
+				t.Fatalf("tag reads must re-read every torrent, got query %q", r.URL.RawQuery)
+			}
 			w.Header().Set("Content-Type", "application/json")
 			items := make([]string, 0, 2)
 			if !deleted[hash] {
@@ -400,6 +404,10 @@ func TestQBManagementTagOwnedTorrentProtectedWhileSubmittedPostgres(t *testing.T
 			}
 			deleted[strings.ToLower(r.Form.Get("hashes"))] = true
 		case r.URL.Path == "/api/v2/torrents/deleteTags":
+			if err := r.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+			sweptTags = append(sweptTags, r.Form.Get("tags"))
 		default:
 			http.NotFound(w, r)
 		}

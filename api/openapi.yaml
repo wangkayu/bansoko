@@ -627,6 +627,41 @@ paths:
           $ref: '#/components/responses/Unprocessable'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /config/connections/{connection_id}/qbittorrent/tags/cleanup:
+    post:
+      tags: [Configuration]
+      operationId: sweepQBittorrentTags
+      x-scope: write
+      x-mcp:
+        tool: sweep_qbittorrent_tags
+        group: downloads
+        write: true
+        description: >-
+          Delete the connection's bansoko-* tags that no torrent references
+          anymore. Guards: only the system prefix, never configured user tags,
+          and references are rechecked immediately before the delete. Returns
+          the removed tags; an empty list means there was no residue.
+      description: >-
+        Operational passthrough that sweeps residual bansoko system tags from
+        qBittorrent: tags left behind by records that no longer exist. Safe to
+        repeat; still-referenced tags are kept.
+      parameters:
+        - $ref: '#/components/parameters/ConnectionID'
+      responses:
+        '200':
+          description: The tags that were removed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QBittorrentTagCleanupResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /config/connections/{connection_id}/qbittorrent/status:
     get:
       tags: [Configuration]
@@ -19890,6 +19925,17 @@ components:
           maximum: 1
         priority:
           type: integer
+    QBittorrentTagCleanupResult:
+      type: object
+      additionalProperties: false
+      required: [removed]
+      description: The result of a residual system-tag sweep.
+      properties:
+        removed:
+          type: array
+          items:
+            type: string
+          description: The bansoko system tags the sweep deleted, sorted; empty when there was no residue.
     QBittorrentServerStatus:
       type: object
       additionalProperties: false

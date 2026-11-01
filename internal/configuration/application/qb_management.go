@@ -449,10 +449,34 @@ func (s QBManagementService) DeleteTorrent(ctx context.Context, connectionID, ha
 	if err := client.ConfirmTorrentDeleted(ctx, hash); err != nil {
 		return mapQBError(err)
 	}
-	if err := client.CleanupTags(ctx, records.systemTags(target)); err != nil {
+	// The deleted target's own system tags go into the same guarded cleanup:
+	// an unknown-origin torrent (record reclaimed or reset away) would
+	// otherwise leave its bansoko-* tag behind in qB's tag list forever.
+	carried := make([]string, 0, 2)
+	for _, raw := range strings.Split(target.Tags, ",") {
+		if tag, ok := knownSystemTag(raw); ok {
+			carried = append(carried, tag)
+		}
+	}
+	if err := client.CleanupTags(ctx, append(records.systemTags(target), carried...)); err != nil {
 		return mapQBError(err)
 	}
 	return nil
+}
+
+// SweepResidualTags removes the connection's bansoko-* tags that no torrent
+// references anymore (records reset away, or written before the workflow-owned
+// cleanups existed). Owner-triggered from the qB management surface.
+func (s QBManagementService) SweepResidualTags(ctx context.Context, connectionID string) ([]string, error) {
+	client, err := s.client(ctx, connectionID)
+	if err != nil {
+		return nil, err
+	}
+	removed, err := client.SweepSystemTags(ctx)
+	if err != nil {
+		return nil, mapQBError(err)
+	}
+	return removed, nil
 }
 
 func (s QBManagementService) GetTorrentFiles(ctx context.Context, connectionID, hash string) ([]domain.QBittorrentTorrentFileView, error) {

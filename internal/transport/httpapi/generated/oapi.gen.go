@@ -7243,6 +7243,12 @@ type QBittorrentServerStatus struct {
 	Version          string `json:"version"`
 }
 
+// QBittorrentTagCleanupResult The result of a residual system-tag sweep.
+type QBittorrentTagCleanupResult struct {
+	// Removed The bansoko system tags the sweep deleted, sorted; empty when there was no residue.
+	Removed []string `json:"removed"`
+}
+
 // QBittorrentTorrent Operational view of a qBittorrent torrent. Passthrough from the qB WebUI; does not represent DownloadTask owner truth.
 type QBittorrentTorrent struct {
 	// AcquisitionOwner Present while a running subscription or one-shot acquisition owns this torrent (post-processing not yet terminal). Absent otherwise.
@@ -12352,6 +12358,9 @@ type ServerInterface interface {
 	// (GET /config/connections/{connection_id}/qbittorrent/status)
 	GetQBittorrentServerStatus(w http.ResponseWriter, r *http.Request, connectionId ConnectionID)
 
+	// (POST /config/connections/{connection_id}/qbittorrent/tags/cleanup)
+	SweepQBittorrentTags(w http.ResponseWriter, r *http.Request, connectionId ConnectionID)
+
 	// (GET /config/connections/{connection_id}/qbittorrent/torrents)
 	ListQBittorrentTorrents(w http.ResponseWriter, r *http.Request, connectionId ConnectionID)
 
@@ -15598,6 +15607,37 @@ func (siw *ServerInterfaceWrapper) GetQBittorrentServerStatus(w http.ResponseWri
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetQBittorrentServerStatus(w, r, connectionId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SweepQBittorrentTags operation middleware
+func (siw *ServerInterfaceWrapper) SweepQBittorrentTags(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "connection_id" -------------
+	var connectionId ConnectionID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "connection_id", r.PathValue("connection_id"), &connectionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "connection_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SweepQBittorrentTags(w, r, connectionId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -19750,6 +19790,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("GET "+options.BaseURL+"/config/connections", wrapper.ListConnections)
 	m.HandleFunc("PUT "+options.BaseURL+"/config/connections/{connection_id}", wrapper.PutConnection)
 	m.HandleFunc("GET "+options.BaseURL+"/config/connections/{connection_id}/qbittorrent/status", wrapper.GetQBittorrentServerStatus)
+	m.HandleFunc("POST "+options.BaseURL+"/config/connections/{connection_id}/qbittorrent/tags/cleanup", wrapper.SweepQBittorrentTags)
 	m.HandleFunc("GET "+options.BaseURL+"/config/connections/{connection_id}/qbittorrent/torrents", wrapper.ListQBittorrentTorrents)
 	m.HandleFunc("DELETE "+options.BaseURL+"/config/connections/{connection_id}/qbittorrent/torrents/{hash}", wrapper.DeleteQBittorrentTorrent)
 	m.HandleFunc("GET "+options.BaseURL+"/config/connections/{connection_id}/qbittorrent/torrents/{hash}/files", wrapper.GetQBittorrentTorrentFiles)

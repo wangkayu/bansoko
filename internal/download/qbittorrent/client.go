@@ -945,6 +945,52 @@ func (c Client) CleanupTaskTag(ctx context.Context, providerTaskID string) error
 	return c.CleanupTaskTags(ctx, []string{providerTaskID})
 }
 
+// ListTags reads the connection's full tag list. qBittorrent keeps tags whose
+// torrents are gone, which is exactly where residual system tags accumulate.
+func (c Client) ListTags(ctx context.Context) ([]string, error) {
+	client := c.client()
+	if err := c.login(ctx, client); err != nil {
+		return nil, err
+	}
+	endpoint := strings.TrimRight(c.Endpoint, "/") + "/api/v2/torrents/tags"
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create qB tag list request: %w", err)
+	}
+	response, err := doRequest(client, request)
+	if err != nil {
+		return nil, fmt.Errorf("request qB tag list: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, fmt.Errorf("qB tag list failed with HTTP %d", response.StatusCode)
+	}
+	var tags []string
+	if err := json.NewDecoder(response.Body).Decode(&tags); err != nil {
+		return nil, fmt.Errorf("decode qB tag list: %w", err)
+	}
+	return tags, nil
+}
+
+// SweepSystemTags deletes every bansoko-* tag on the connection that no
+// torrent references. Unlike the workflow-owned cleanups, candidates come from
+// the tag list itself, so historical residue whose records no longer exist is
+// cleared too; the shared guards (prefix, configured user tags, reference
+// recheck right before deleteTags) stay in force. It returns the removed tags.
+func (c Client) SweepSystemTags(ctx context.Context) ([]string, error) {
+	tags, err := c.ListTags(ctx)
+	if err != nil {
+		return nil, err
+	}
+	candidates := make([]string, 0, len(tags))
+	for _, raw := range tags {
+		if tag := strings.TrimSpace(raw); strings.HasPrefix(tag, systemTagPrefix) && len(tag) > len(systemTagPrefix) {
+			candidates = append(candidates, tag)
+		}
+	}
+	return c.cleanupTags(ctx, candidates)
+}
+
 // CleanupTaskTags cleans only exact tag: provider references in one batch.
 // Hash-only and foreign references carry no safe candidate.
 func (c Client) CleanupTaskTags(ctx context.Context, providerTaskIDs []string) error {
@@ -967,8 +1013,16 @@ func (c Client) CleanupTaskTags(ctx context.Context, providerTaskIDs []string) e
 // owning workflow. It re-reads all torrents immediately before deleteTags and
 // retains every candidate still referenced by any torrent. Configured user tags
 // are excluded even for a manually constructed Client that bypassed config
-// validation. There is intentionally no scan for unknown historical tags.
+// validation. It does not scan for unknown historical tags; the owner-triggered
+// SweepSystemTags is the explicit exit for that residue.
 func (c Client) CleanupTags(ctx context.Context, candidates []string) error {
+	_, err := c.cleanupTags(ctx, candidates)
+	return err
+}
+
+// cleanupTags is the shared guarded delete: it returns the tags it actually
+// removed so the sweep can report them.
+func (c Client) cleanupTags(ctx context.Context, candidates []string) ([]string, error) {
 	userTags := make(map[string]struct{}, len(c.UserTags))
 	for _, tag := range c.UserTags {
 		userTags[strings.TrimSpace(tag)] = struct{}{}
@@ -980,7 +1034,7 @@ func (c Client) CleanupTags(ctx context.Context, candidates []string) error {
 			continue
 		}
 		if strings.ContainsAny(tag, ",\r\n\x00") {
-			return fmt.Errorf("qB cleanup candidate contains a tag delimiter")
+			return nil, fmt.Errorf("qB cleanup candidate contains a tag delimiter")
 		}
 		if _, configured := userTags[tag]; configured {
 			continue
@@ -988,16 +1042,16 @@ func (c Client) CleanupTags(ctx context.Context, candidates []string) error {
 		known[tag] = struct{}{}
 	}
 	if len(known) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	client := c.client()
 	if err := c.login(ctx, client); err != nil {
-		return err
+		return nil, err
 	}
 	torrents, err := c.listTorrents(ctx, client)
 	if err != nil {
-		return fmt.Errorf("recheck qB system-tag references: %w", err)
+		return nil, fmt.Errorf("recheck qB system-tag references: %w", err)
 	}
 	for _, torrent := range torrents {
 		for _, raw := range strings.Split(torrent.Tags, ",") {
@@ -1005,7 +1059,7 @@ func (c Client) CleanupTags(ctx context.Context, candidates []string) error {
 		}
 	}
 	if len(known) == 0 {
-		return nil
+		return nil, nil
 	}
 	unreferenced := make([]string, 0, len(known))
 	for tag := range known {
@@ -1016,18 +1070,18 @@ func (c Client) CleanupTags(ctx context.Context, candidates []string) error {
 	endpoint := strings.TrimRight(c.Endpoint, "/") + "/api/v2/torrents/deleteTags"
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
-		return fmt.Errorf("create qB delete-tags request: %w", err)
+		return nil, fmt.Errorf("create qB delete-tags request: %w", err)
 	}
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	response, err := doRequest(client, request)
 	if err != nil {
-		return fmt.Errorf("request qB delete-tags: %w", err)
+		return nil, fmt.Errorf("request qB delete-tags: %w", err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("qB delete-tags failed with HTTP %d", response.StatusCode)
+		return nil, fmt.Errorf("qB delete-tags failed with HTTP %d", response.StatusCode)
 	}
-	return nil
+	return unreferenced, nil
 }
 
 // PauseTorrent pauses a single torrent by hash. qBittorrent 5 (WebAPI 2.11)

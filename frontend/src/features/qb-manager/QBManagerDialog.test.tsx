@@ -95,6 +95,8 @@ function stubFetch(options: {
   connectionError?: boolean;
   status?: unknown;
   statusError?: boolean;
+  sweep?: { removed: string[] };
+  sweepError?: { status: number; code: string };
 } = {}) {
   const connections = options.connections ?? [qbConnection];
   const torrentList = () => {
@@ -116,6 +118,18 @@ function stubFetch(options: {
       return new Response(JSON.stringify([
         { name: "file.mkv", size: 1024, progress: 1.0, priority: 7 },
       ]), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.includes("/qbittorrent/tags/cleanup")) {
+      if (options.sweepError) {
+        return new Response(JSON.stringify({ code: options.sweepError.code, message: "sweep failed" }), {
+          status: options.sweepError.status,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify(options.sweep ?? { removed: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
     }
     if (url.includes("/qbittorrent/status")) {
       if (options.statusError) {
@@ -461,6 +475,41 @@ describe("QBManagerDialog", () => {
     });
     expect(screen.queryByText(t("qb.deleteTitle", { name: "番剧 A - 01" }))).not.toBeInTheDocument();
   });
+  it("清理残留标签：报告删除数并刷新；无残留与失败各有明确反馈", async () => {
+    stubFetch({ sweep: { removed: ["bansoko-a", "bansoko-b"] } });
+    renderDialog();
+
+    await screen.findByText("番剧 A - 01");
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(t("qb.sweepTags")) }));
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(t("qb.sweepTagsDone", { count: 2 })),
+    );
+    expect(
+      fetchMock.mock.calls.some(
+        ([input, init]) => String(input).includes("/qbittorrent/tags/cleanup") && init?.method === "POST",
+      ),
+    ).toBe(true);
+  });
+
+  it("清理残留标签：没有残留时反馈零清理", async () => {
+    stubFetch({ sweep: { removed: [] } });
+    renderDialog();
+
+    await screen.findByText("番剧 A - 01");
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(t("qb.sweepTags")) }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(t("qb.sweepTagsNone")));
+  });
+
+  it("清理残留标签：失败时透出服务端错误", async () => {
+    stubFetch({ sweepError: { status: 400, code: "QB_UNREACHABLE" } });
+    renderDialog();
+
+    await screen.findByText("番剧 A - 01");
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(t("qb.sweepTags")) }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(String(vi.mocked(toast.error).mock.calls[0][0])).toBe(t("error.QB_UNREACHABLE"));
+  });
+
   it("版本号已带 v 前缀时不重复，free_space 未知时不显示可用空间", async () => {
     stubFetch({
       status: {

@@ -388,6 +388,7 @@ The downloader is run by the human; these tools read it and control the torrents
 | Pause a torrent | `pause_qbittorrent_torrent` | `pauseQBittorrentTorrent` | - |
 | Resume a torrent | `resume_qbittorrent_torrent` | `resumeQBittorrentTorrent` | - |
 | Delete a torrent from qBittorrent (irreversible; pass `delete_files` to also remove its data) | `delete_qbittorrent_torrent` | `deleteQBittorrentTorrent` | - |
+| Sweep bansoko-* tags that no torrent references anymore (safe to repeat) | `sweep_qbittorrent_tags` | `sweepQBittorrentTags` | - |
 | Run a failed download task again | `retry_download_task` | `retryDownloadTask` | `bansoko retry --owner download` |
 | Run a failed artifact verification again | `retry_artifact` | `retryArtifact` | `bansoko retry --owner artifact` |
 | Run a failed RSS source runtime again | `retry_rss_source_runtime` | `retryRSSSourceRuntime` | `bansoko retry --owner rss` |

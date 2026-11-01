@@ -74,6 +74,7 @@ required_paths = {
   "/config/connections/{connection_id}/qbittorrent/torrents/{hash}/resume" => ["post"],
   "/config/connections/{connection_id}/qbittorrent/torrents/{hash}" => ["delete"],
   "/config/connections/{connection_id}/qbittorrent/torrents/{hash}/files" => ["get"],
+  "/config/connections/{connection_id}/qbittorrent/tags/cleanup" => ["post"],
   "/config/connections/{connection_id}/qbittorrent/status" => ["get"],
   "/config/network-routes" => ["get"],
   "/config/network-routes/{route_id}" => ["put"],

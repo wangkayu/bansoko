@@ -58,6 +58,18 @@ func (s *Server) GetQBittorrentTorrentFiles(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, r.Context(), http.StatusOK, configurationtransport.QBittorrentTorrentFiles(files))
 }
 
+// SweepQBittorrentTags deletes the connection's bansoko-* tags that no
+// torrent references anymore. Guarded passthrough: the sweep never touches
+// user-configured tags and rechecks references immediately before deleting.
+func (s *Server) SweepQBittorrentTags(w http.ResponseWriter, r *http.Request, connectionId generated.ConnectionID) {
+	removed, err := s.deps.QBManagement.SweepResidualTags(r.Context(), connectionId)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, r.Context(), http.StatusOK, configurationtransport.QBittorrentTagCleanupResult(removed))
+}
+
 // GetQBittorrentServerStatus returns the qBittorrent server status (version,
 // connection state, transfer speeds, disk space).
 func (s *Server) GetQBittorrentServerStatus(w http.ResponseWriter, r *http.Request, connectionId generated.ConnectionID) {
