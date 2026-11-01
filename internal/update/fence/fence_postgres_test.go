@@ -90,6 +90,37 @@ func TestStoreOwnsOpenStateTransitions(t *testing.T) {
 	}
 }
 
+// TestStoreAdmitsARetryOfAFailedSequence covers the retry an operator needs:
+// an attempt that ended failed never installed anything, so its release
+// sequence must stay admissible — otherwise a failed update strands the
+// instance on the old release until the publisher ships a newer one. The
+// sequence fences again once an attempt actually settles.
+func TestStoreAdmitsARetryOfAFailedSequence(t *testing.T) {
+	db := disposabledb.ResetDisposableSchema(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	store := New(db)
+	if err := store.Acquire(ctx, "retry-first", AdmittedByEmbedded, 127, "digest-127"); err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	if err := store.ReconcileExactCurrentState(ctx, "retry-first", AdmittedByEmbedded, "digest-127", 127, "failed"); err != nil {
+		t.Fatalf("close the failed attempt: %v", err)
+	}
+	if err := store.Acquire(ctx, "retry-second", AdmittedByEmbedded, 127, "digest-127"); err != nil {
+		t.Fatalf("retry of a failed sequence = %v, want it admitted", err)
+	}
+	if err := store.ReconcileExactCurrentState(ctx, "retry-second", AdmittedByEmbedded, "digest-127", 127, "succeeded"); err != nil {
+		t.Fatalf("settle the retry: %v", err)
+	}
+	if err := store.Acquire(ctx, "retry-settled", AdmittedByEmbedded, 127, "digest-127"); !errors.Is(err, ErrTargetStale) {
+		t.Fatalf("Acquire after the sequence settled = %v, want ErrTargetStale", err)
+	}
+	if err := store.Acquire(ctx, "retry-higher", AdmittedByEmbedded, 128, "digest-128"); err != nil {
+		t.Fatalf("Acquire of a higher sequence: %v", err)
+	}
+}
+
 func TestStoreConcurrentAcquireKeepsOneOpenRow(t *testing.T) {
 	rootDB := disposabledb.ResetDisposableSchema(t)
 	defer rootDB.Close()

@@ -121,7 +121,7 @@ func (s *Service) fetchPayload(ctx context.Context, source *UpdateHTTPSource, op
 	privateDigest := hex.EncodeToString(privateHash.Sum(nil))
 	if privateBytes != target.PayloadSize || privateDigest != target.PayloadDigest {
 		_ = private.Close()
-		return "", errors.New("private payload publication differs from signed payload")
+		return "", errors.New("private payload publication differs from the published payload")
 	}
 	if err := verifyRegularUnaliasedFile(private); err != nil {
 		_ = private.Close()
@@ -371,7 +371,7 @@ func verifyPayloadSource(path string, file *os.File, written, expectedSize int64
 		return fmt.Errorf("payload size mismatch (want %d got %d)", expectedSize, written)
 	}
 	if digest != expectedDigest {
-		return errors.New("payload digest mismatch: downloaded bytes do not match the signed segment")
+		return errors.New("payload digest mismatch: downloaded bytes do not match the published segment")
 	}
 	info, err := file.Stat()
 	if err != nil {

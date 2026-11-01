@@ -28,9 +28,9 @@ const (
 	maxSingleFileBytes  = 1 << 30 // 1 GiB
 	// PayloadArchiveEntryPath and SignedManifestEntryPath are deployment-local
 	// trust evidence added beside an extracted release. They are intentionally
-	// outside the payload allowlist: the archive itself is the signed source,
+	// outside the payload allowlist: the archive itself is the published source,
 	// while these entries let a later bootstrap prove that the selected tree is
-	// still the tree produced by that signed archive.
+	// still the tree produced by that archive.
 	PayloadArchiveEntryPath = ".embedded-payload.tar.gz"
 	SignedManifestEntryPath = ".release-manifest.json"
 )
@@ -62,7 +62,7 @@ func safeEntryName(name string) (string, error) {
 // extractPayloadToTemp unpacks a verified gzip tar into tempDir while
 // enforcing path traversal, symlink/device/hardlink and allowlist rules.
 // Every regular file entry's sha256 is computed and returned keyed by archive
-// path so the caller can bind the tree to the signed per-file manifest.
+// path so the caller can bind the tree to the recorded per-file manifest.
 func extractPayloadToTemp(payloadPath, tempDir string) (map[string]string, error) {
 	file, err := os.Open(payloadPath)
 	if err != nil {
@@ -150,7 +150,7 @@ func extractPayloadToTemp(payloadPath, tempDir string) (map[string]string, error
 	return hashes, nil
 }
 
-// verifyStagedTree binds the extracted tree on disk to the signed per-file
+// verifyStagedTree binds the extracted tree on disk to the recorded per-file
 // manifest: every listed file must exist as a regular file with the exact
 // recorded size and sha256 (re-hashed from disk, never trusted from memory),
 // and every disk file must be accounted for by the manifest or be the release
@@ -207,7 +207,7 @@ func verifyStagedTree(releaseDir string) (packagemaker.Metadata, error) {
 		absolutePath := filepath.Join(releaseDir, filepath.FromSlash(record.Path))
 		info, statErr := os.Lstat(absolutePath)
 		if statErr != nil {
-			return packagemaker.Metadata{}, fmt.Errorf("signed manifest lists file %s missing from the staged tree", record.Path)
+			return packagemaker.Metadata{}, fmt.Errorf("release manifest lists file %s missing from the staged tree", record.Path)
 		}
 		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
 			return packagemaker.Metadata{}, fmt.Errorf("staged entry %s is not a regular file", record.Path)
@@ -220,7 +220,7 @@ func verifyStagedTree(releaseDir string) (packagemaker.Metadata, error) {
 			return packagemaker.Metadata{}, fmt.Errorf("hash staged file %s: %w", record.Path, hashErr)
 		}
 		if digest != record.SHA256 {
-			return packagemaker.Metadata{}, fmt.Errorf("staged file %s does not match its signed digest", record.Path)
+			return packagemaker.Metadata{}, fmt.Errorf("staged file %s does not match its manifest digest", record.Path)
 		}
 	}
 	expected[packagemaker.MetaEntryPath] = struct{}{}
@@ -245,7 +245,7 @@ func verifyStagedTree(releaseDir string) (packagemaker.Metadata, error) {
 	}
 	for path := range onDisk {
 		if _, ok := expected[path]; !ok && path != PayloadArchiveEntryPath && path != SignedManifestEntryPath {
-			return packagemaker.Metadata{}, fmt.Errorf("staged tree contains file %s absent from the signed manifest", path)
+			return packagemaker.Metadata{}, fmt.Errorf("staged tree contains file %s absent from the release manifest", path)
 		}
 	}
 	for _, required := range []string{
@@ -273,7 +273,7 @@ func verifyStagedTree(releaseDir string) (packagemaker.Metadata, error) {
 	return meta, nil
 }
 
-// VerifyReleaseTree proves the selected release against the signed outer
+// VerifyReleaseTree proves the selected release against the outer
 // manifest and the retained payload archive, then verifies that the extracted
 // files still match the exact archive contents. A metadata file alone is not a
 // trust root because an attacker could replace it together with the tree.
@@ -282,7 +282,7 @@ func VerifyReleaseTree(releaseDir string) error {
 	return err
 }
 
-// VerifyReleaseTreeIdentity returns the exact signed outer manifest alongside
+// VerifyReleaseTreeIdentity returns the exact outer manifest alongside
 // the verified payload metadata. Callers that persist deployment provenance use
 // this single verification result rather than rereading writable evidence.
 func VerifyReleaseTreeIdentity(releaseDir string) (packagemaker.Metadata, hardeningdomain.ReleaseManifest, error) {
@@ -310,23 +310,23 @@ func VerifyStagedReleaseTree(releaseDir string) error {
 func verifyReleaseTree(releaseDir string, requireReleasePath bool) (packagemaker.Metadata, hardeningdomain.ReleaseManifest, error) {
 	manifestBytes, err := os.ReadFile(filepath.Join(releaseDir, SignedManifestEntryPath))
 	if err != nil {
-		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, fmt.Errorf("signed release manifest unreadable: %w", err)
+		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, fmt.Errorf("release manifest unreadable: %w", err)
 	}
 	var manifest hardeningdomain.ReleaseManifest
 	decoder := json.NewDecoder(bytes.NewReader(manifestBytes))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&manifest); err != nil {
-		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, fmt.Errorf("signed release manifest invalid: %w", err)
+		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, fmt.Errorf("release manifest invalid: %w", err)
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		if err == nil {
-			return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("signed release manifest contains trailing JSON data")
+			return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("release manifest contains trailing JSON data")
 		}
-		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, fmt.Errorf("decode trailing signed release manifest data: %w", err)
+		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, fmt.Errorf("decode trailing release manifest data: %w", err)
 	}
 	if manifest.ReleaseID == "" || (requireReleasePath && filepath.Base(filepath.Clean(releaseDir)) != manifest.ReleaseID) {
-		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("signed release manifest does not match its release directory")
+		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("release manifest does not match its release directory")
 	}
 	if releaseInfo, statErr := os.Lstat(releaseDir); statErr != nil || !releaseInfo.IsDir() {
 		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("release path is not a directory")
@@ -345,11 +345,11 @@ func verifyReleaseTree(releaseDir string, requireReleasePath bool) (packagemaker
 		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, fmt.Errorf("retained payload archive unreadable: %w", err)
 	}
 	if int64(len(payloadBytes)) != manifest.EmbeddedUpdate.PayloadSize {
-		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("retained payload archive size does not match the signed manifest")
+		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("retained payload archive size does not match the release manifest")
 	}
 	payloadSum := sha256.Sum256(payloadBytes)
 	if digest := hex.EncodeToString(payloadSum[:]); digest != manifest.EmbeddedUpdate.PayloadDigest {
-		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("retained payload archive digest does not match the signed manifest")
+		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("retained payload archive digest does not match the release manifest")
 	}
 
 	tempDir, err := os.MkdirTemp("", "bansoko-release-verify-")
@@ -369,17 +369,17 @@ func verifyReleaseTree(releaseDir string, requireReleasePath bool) (packagemaker
 		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, fmt.Errorf("verify selected release tree: %w", err)
 	}
 	if !sameReleaseMetadata(archiveMeta, currentMeta) {
-		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("selected release metadata differs from the signed payload")
+		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("selected release metadata differs from the published payload")
 	}
 	if archiveMeta.ReleaseID != manifest.ReleaseID || archiveMeta.Version != manifest.Version ||
 		strings.TrimSpace(archiveMeta.BuildID) == "" || archiveMeta.TargetSchemaVersion != manifest.TargetMigrationVersion {
-		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("selected release metadata does not match the signed release identity")
+		return packagemaker.Metadata{}, hardeningdomain.ReleaseManifest{}, errors.New("selected release metadata does not match the release identity")
 	}
 	return currentMeta, manifest, nil
 }
 
 func sameReleaseMetadata(left, right packagemaker.Metadata) bool {
-	// Both values were decoded from the signed archive and the selected tree.
+	// Both values were decoded from the published archive and the selected tree.
 	// Deep equality intentionally covers every metadata field, including fields
 	// added in the future, instead of allowing a new identity field to be
 	// accidentally omitted from this security comparison.

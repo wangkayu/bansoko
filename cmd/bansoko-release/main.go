@@ -600,7 +600,7 @@ func testVersion(args []string) error {
 }
 
 // releaseNotes validates the repository's release notes and extracts one
-// version's notes for the signed manifest or the GitHub Release text.
+// version's notes for the release manifest or the GitHub Release text.
 func releaseNotes(args []string) error {
 	if len(args) == 0 {
 		return errors.New("usage: bansoko-release release-notes <check|manifest|github> --dir <release-notes> [--version X.Y.Z --output <file>]")

@@ -25,7 +25,7 @@ func decodeManifestDocument(data []byte) (hardeningdomain.ReleaseManifest, error
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); err != io.EOF {
-		return hardeningdomain.ReleaseManifest{}, errors.New("signed manifest contains trailing data")
+		return hardeningdomain.ReleaseManifest{}, errors.New("release manifest contains trailing data")
 	}
 	return manifest, nil
 }

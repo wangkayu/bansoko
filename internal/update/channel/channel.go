@@ -140,13 +140,13 @@ func (d Document) Validate() error {
 func (d Document) Matches(releaseID, version, manifestDigest string, releaseSequence int64) error {
 	switch {
 	case strings.TrimSpace(d.ReleaseID) != strings.TrimSpace(releaseID):
-		return fmt.Errorf("%w: channel release id does not match the signed manifest", ErrDocument)
+		return fmt.Errorf("%w: channel release id does not match the release manifest", ErrDocument)
 	case strings.TrimSpace(d.Version) != strings.TrimSpace(version):
-		return fmt.Errorf("%w: channel version does not match the signed manifest", ErrDocument)
+		return fmt.Errorf("%w: channel version does not match the release manifest", ErrDocument)
 	case d.ReleaseSequence != releaseSequence:
-		return fmt.Errorf("%w: channel release sequence does not match the signed manifest", ErrDocument)
+		return fmt.Errorf("%w: channel release sequence does not match the release manifest", ErrDocument)
 	case strings.TrimSpace(d.ManifestDigest) != strings.TrimSpace(manifestDigest):
-		return fmt.Errorf("%w: channel manifest digest does not match the signed manifest", ErrDocument)
+		return fmt.Errorf("%w: channel manifest digest does not match the release manifest", ErrDocument)
 	}
 	return nil
 }

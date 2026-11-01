@@ -70,7 +70,7 @@ func (s *Service) runChain(manifest hardeningdomain.ReleaseManifest, digest, man
 		source, err = s.packageSourceFor(manifestURL)
 	}
 	if err == nil && manifest.EmbeddedUpdate == nil {
-		err = errors.New("signed manifest has no embedded update segment")
+		err = errors.New("release manifest has no embedded update segment")
 	}
 	var payload string
 	if err == nil {
@@ -122,7 +122,7 @@ func (s *Service) ensurePayload(ctx context.Context, source *UpdateHTTPSource, o
 // delegate to each other.
 func verifyDownloadedPayload(path string, target *hardeningdomain.EmbeddedUpdateSegment) error {
 	if target == nil {
-		return errors.New("signed manifest has no embedded update segment")
+		return errors.New("release manifest has no embedded update segment")
 	}
 	info, err := os.Lstat(path)
 	if err != nil {
@@ -132,14 +132,14 @@ func verifyDownloadedPayload(path string, target *hardeningdomain.EmbeddedUpdate
 		return errors.New("retained payload is not a regular file")
 	}
 	if info.Size() != target.PayloadSize {
-		return fmt.Errorf("retained payload size %d does not match the signed size %d", info.Size(), target.PayloadSize)
+		return fmt.Errorf("retained payload size %d does not match the manifest size %d", info.Size(), target.PayloadSize)
 	}
 	digest, err := hashFileForSidecar(path)
 	if err != nil {
 		return fmt.Errorf("hash retained payload: %w", err)
 	}
 	if digest != target.PayloadDigest {
-		return errors.New("retained payload digest does not match the signed digest")
+		return errors.New("retained payload digest does not match the manifest digest")
 	}
 	return nil
 }
@@ -170,7 +170,7 @@ func (s *Service) stagePayload(payloadPath, opID string, manifest hardeningdomai
 		return "", fmt.Errorf("retain verified payload archive: %w", err)
 	}
 	if err = persistSignedManifest(tempDir, manifest); err != nil {
-		return "", fmt.Errorf("retain signed release descriptor: %w", err)
+		return "", fmt.Errorf("retain release descriptor: %w", err)
 	}
 	if err = VerifyStagedReleaseTree(tempDir); err != nil {
 		return "", fmt.Errorf("verify retained release identity: %w", err)
@@ -181,7 +181,7 @@ func (s *Service) stagePayload(payloadPath, opID string, manifest hardeningdomai
 			return "", fmt.Errorf("releases/%s already holds different content; refusing to overlay", manifest.ReleaseID)
 		}
 		if err = VerifyReleaseTree(releaseDir); err != nil {
-			return "", fmt.Errorf("existing releases/%s failed signed verification: %w", manifest.ReleaseID, err)
+			return "", fmt.Errorf("existing releases/%s failed verification: %w", manifest.ReleaseID, err)
 		}
 		return releaseDir, nil
 	} else if !errors.Is(statErr, os.ErrNotExist) {

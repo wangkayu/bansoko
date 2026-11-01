@@ -477,17 +477,16 @@ func proveMarkerBackup(ctx context.Context, executor *pgexec.Executor, env []str
 	}
 	createCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	quoted := `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
-	if _, err := db.ExecContext(createCtx, "DROP DATABASE IF EXISTS "+quoted); err != nil {
+	if err := clearScratchDatabase(createCtx, db, name); err != nil {
 		return fmt.Errorf("clear scratch restore database: %w", err)
 	}
-	if _, err := db.ExecContext(createCtx, "CREATE DATABASE "+quoted); err != nil {
+	if _, err := db.ExecContext(createCtx, "CREATE DATABASE "+quoteIdentifier(name)); err != nil {
 		return fmt.Errorf("create scratch restore database: %w", err)
 	}
 	restoreErr := executor.Restore(ctx, env, dumpPath, name)
 	dropCtx, cancelDrop := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancelDrop()
-	_, dropErr := db.ExecContext(dropCtx, "DROP DATABASE IF EXISTS "+quoted)
+	dropErr := clearScratchDatabase(dropCtx, db, name)
 	if restoreErr != nil {
 		return fmt.Errorf("backup restore verification failed: %w", restoreErr)
 	}
@@ -495,6 +494,38 @@ func proveMarkerBackup(ctx context.Context, executor *pgexec.Executor, env []str
 		return fmt.Errorf("drop scratch restore database: %w", dropErr)
 	}
 	return nil
+}
+
+// clearScratchDatabase removes a scratch database left by an earlier attempt.
+// A container killed mid-restore can leave its backend attached to that
+// database, and PostgreSQL refuses to drop a database in use, so its backends
+// are terminated first; otherwise the retry could never clear the name and
+// every later handoff would fail the same way.
+func clearScratchDatabase(ctx context.Context, db *sql.DB, name string) error {
+	if _, err := db.ExecContext(ctx,
+		`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1`, name); err != nil {
+		return err
+	}
+	// A terminated backend exits asynchronously, so the first drop can still
+	// see it attached; a few short attempts cover that window.
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(500 * time.Millisecond):
+			}
+		}
+		if _, err = db.ExecContext(ctx, "DROP DATABASE IF EXISTS "+quoteIdentifier(name)); err == nil {
+			return nil
+		}
+	}
+	return err
+}
+
+func quoteIdentifier(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
 func writeAtomicFile(dir, path string, data []byte, mode os.FileMode) error {

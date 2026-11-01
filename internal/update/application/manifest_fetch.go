@@ -11,12 +11,12 @@ import (
 	hardeningdomain "bansoko/internal/hardening/domain"
 )
 
-// maxManifestBytes bounds the signed manifest document; release manifests are
+// maxManifestBytes bounds the release manifest document; release manifests are
 // small JSON files and anything larger is hostile input.
 const maxManifestBytes = 1 << 20
 
-// payloadSource resolves the payload archive URL as a sibling of the signed
-// manifest document: <manifest dir>/<PayloadFileName>. This is the layout
+// payloadSource resolves the payload archive URL as a sibling of the
+// release manifest document: <manifest dir>/<PayloadFileName>. This is the layout
 // build-release.sh publishes.
 func payloadSource(manifestURL string) (string, error) {
 	source, err := NewUpdateHTTPSource(UpdateHTTPSourceConfig{ManifestURL: manifestURL})
@@ -50,7 +50,7 @@ func fetchAndVerifyManifest(ctx context.Context, source *UpdateHTTPSource) (hard
 	return manifest, digest, err
 }
 
-// VerifyManifestDocument strictly decodes one bounded signed manifest document
+// VerifyManifestDocument strictly decodes one bounded release manifest document
 // and proves every surface the deployment trusts: strict schema, canonical
 // digest and the embedded-update contract. It is the single manifest
 // verification path shared by the HTTP source, the durable copy and the

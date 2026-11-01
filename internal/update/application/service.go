@@ -130,7 +130,7 @@ func (s *Service) Running() bool                  { s.mu.Lock(); defer s.mu.Unlo
 func (s *Service) configured() bool               { return s != nil && s.channel != nil }
 
 // operationClient snapshots the update route for one operation. The same client
-// carries that operation's channel document, signed manifest and payload
+// carries that operation's channel document, release manifest and payload
 // download, so a route change mid-operation cannot split them. A nil route
 // resolver or an unconfigured/disabled route keeps the deployment default.
 func (s *Service) operationClient(ctx context.Context) (*http.Client, error) {
@@ -218,7 +218,7 @@ func (s *Service) admit(ctx context.Context, idempotencyKey, targetReleaseID, ta
 	}
 	manifest, digest, manifestURL := resolved.manifest, resolved.digest, resolved.manifestURL
 	if (targetReleaseID != "" || targetDigest != "") && (targetReleaseID != manifest.ReleaseID || targetDigest != digest) {
-		return fail(&apperrors.Business{Status: 409, Code: "UPDATE_CANDIDATE_STALE", Message: "The checked update candidate is no longer the signed manifest target."})
+		return fail(&apperrors.Business{Status: 409, Code: "UPDATE_CANDIDATE_STALE", Message: "The checked update candidate is no longer the release the channel points to."})
 	}
 	if s.buildID != "" && manifest.ReleaseID == s.buildID {
 		return fail(&apperrors.Business{Status: 422, Code: "UPDATE_TARGET_CURRENT", Message: ErrSelfReplay.Error()})
@@ -246,18 +246,20 @@ func (s *Service) admit(ctx context.Context, idempotencyKey, targetReleaseID, ta
 		return fail(&apperrors.BootstrapTooOldError{Required: bootstrap.Required, Current: bootstrap.Current})
 	}
 	if manifest.EmbeddedUpdate == nil {
-		return fail(errors.New("signed manifest has no embedded update segment"))
+		return fail(errors.New("release manifest has no embedded update segment"))
 	}
 	if manifest.ReleaseSequence < 1 {
-		return fail(errors.New("signed update target has no positive release sequence"))
+		return fail(errors.New("update target has no positive release sequence"))
 	}
 	if s.db != nil {
+		// Mirrors the fence's own floor: an attempt that failed does not fence
+		// its sequence, so the release it targeted can be retried.
 		var floor int64
-		if e = s.db.QueryRowContext(ctx, "SELECT COALESCE(MAX(sequence), 0) FROM embedded_update_locks").Scan(&floor); e != nil {
+		if e = s.db.QueryRowContext(ctx, "SELECT COALESCE(MAX(sequence), 0) FROM embedded_update_locks WHERE state IN ('active', 'settled')").Scan(&floor); e != nil {
 			return fail(fmt.Errorf("read update release sequence floor: %w", e))
 		}
 		if manifest.ReleaseSequence <= floor {
-			return fail(&apperrors.Business{Status: 422, Code: "UPDATE_TARGET_STALE", Message: "The signed update target does not advance beyond an already accepted release."})
+			return fail(&apperrors.Business{Status: 422, Code: "UPDATE_TARGET_STALE", Message: "The update target does not advance beyond a release this instance already installed."})
 		}
 	}
 	opID := "embedded-" + strings.ReplaceAll(uuid.NewString(), "-", "")
@@ -342,7 +344,7 @@ func (c bootstrapCompatibility) Reason() string {
 	return fmt.Sprintf("This candidate requires %s; this instance runs %s. Switch to a base image that carries the required bootstrap.", c.Required, c.Current)
 }
 func parseEmbeddedBootstrapVersion(value string) (int64, error) {
-	// Keep legacy numeric IDs readable for signed historical manifests. The
+	// Keep legacy numeric IDs readable for historical manifests. The
 	// unified runtime supersedes the last legacy layout (v2) and is ordered at
 	// the same compatibility boundary without exposing a generation number.
 	if value == "embedded-bootstrap-unified" {

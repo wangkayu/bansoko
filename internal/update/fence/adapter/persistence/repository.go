@@ -68,8 +68,9 @@ func (r *Repository) requireDB() error {
 }
 
 // Acquire checks the persisted sequence floor and inserts the active singleton
-// row in one transaction. The partial unique index remains the concurrent
-// cross-channel mutex.
+// row in one transaction. The floor skips failed attempts, so a release whose
+// previous attempt failed stays admissible; the partial unique index remains
+// the concurrent cross-channel mutex.
 func (r *Repository) Acquire(ctx context.Context, operationID, admittedBy string, sequence int64, manifestDigest string) error {
 	if err := r.requireDB(); err != nil {
 		return err
@@ -102,10 +103,10 @@ func (r *Repository) Acquire(ctx context.Context, operationID, admittedBy string
 	return tx.Commit()
 }
 
-// ErrTargetStale is returned by Acquire when the signed sequence does not
-// advance the durable floor. It is declared here to avoid importing the parent
-// fence package and creating an adapter cycle.
-var ErrTargetStale = errors.New("update target does not advance beyond accepted releases")
+// ErrTargetStale is returned by Acquire when the release sequence does not
+// advance the durable floor of settled releases. It is declared here to avoid
+// importing the parent fence package and creating an adapter cycle.
+var ErrTargetStale = errors.New("update target does not advance beyond installed releases")
 
 // ListOpen returns unreleased rows for one owner.
 func (r *Repository) ListOpen(ctx context.Context, admittedBy string) ([]OpenFenceRow, error) {

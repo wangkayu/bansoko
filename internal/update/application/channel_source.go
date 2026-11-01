@@ -17,8 +17,8 @@ import (
 
 // Release discovery. A deployment may configure a stable, version-free channel
 // document (`BANSOKO_UPDATE_CHANNEL_URL`) instead of naming one release in
-// `BANSOKO_UPDATE_MANIFEST_URL`. The document only selects which immutable signed
-// manifest to fetch; every authority decision stays with the manifest, the
+// `BANSOKO_UPDATE_MANIFEST_URL`. The document only selects which immutable
+// release manifest to fetch; every authority decision stays with the manifest, the
 // package namespace and the durable fence.
 //
 // The two modes are mutually exclusive by configuration: a deployment that sets
@@ -44,7 +44,7 @@ var (
 	ErrChannelNotConfigured = errors.New("update channel discovery requires the package root")
 )
 
-// resolution is one resolved candidate: the verified signed manifest, its
+// resolution is one resolved candidate: the verified release manifest, its
 // canonical digest, the exact immutable bytes that were verified, the immutable
 // manifest URL they came from, and the package source that proved them. Both
 // check and admit answer from a resolution; the chain and the operator recovery
@@ -184,7 +184,7 @@ func (r *channelResolver) resolve(ctx context.Context) (resolution, error) {
 		return resolution{}, &apperrors.Business{
 			Status:  503,
 			Code:    "UPDATE_CHANNEL_MISMATCH",
-			Message: "The update channel and its signed release manifest disagree.",
+			Message: "The update channel and its release manifest disagree.",
 		}
 	}
 	return resolution{manifest: manifest, digest: digest, raw: raw, manifestURL: source.ManifestURL(), source: source, fromChannel: true}, nil

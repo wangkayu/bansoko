@@ -1,8 +1,14 @@
 -- Embedded update fence persistence is owned by this adapter; the migration chain is authoritative.
 
 -- name: ReadSequenceFloor :one
+-- A failed attempt never installed anything, so it does not fence its own
+-- sequence: refusing a retry of it would strand the instance on the old
+-- release until the publisher ships a newer one. An in-flight (active) or
+-- settled sequence still fences, which is what keeps a replayed or
+-- lower-sequence target out.
 SELECT sequence AS floor
 FROM embedded_update_locks
+WHERE state IN ('active', 'settled')
 ORDER BY sequence DESC
 LIMIT 1;
 

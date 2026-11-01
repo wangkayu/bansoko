@@ -344,13 +344,13 @@ type Record struct {
 	PayloadDigest         string `json:"payload_digest,omitempty"`
 	ManifestDigest        string `json:"manifest_digest,omitempty"`
 	// ManifestPath and ManifestSize locate the admission-time copy of the
-	// verified signed manifest on the updates volume: a path relative to the
+	// verified release manifest on the updates volume: a path relative to the
 	// updates root inside the operation-owned copy area, plus the exact byte
 	// size that bounds the read. ManifestCopyDigest is the sha256 of those
 	// persisted bytes, so the copy on disk is bound byte-for-byte and does not
 	// depend on re-encoding. ManifestDigest stays the canonical signing digest
 	// the admission verified and the database fence carries. Recovery
-	// re-verifies the copy against both digests and the signed identity before
+	// re-verifies the copy against both digests and the recorded identity before
 	// the resumed chain takes any further effect, so these fields are part of
 	// the durable operation truth. Records written before this contract existed
 	// carry none of them and must fail closed instead of falling back to the
@@ -360,7 +360,7 @@ type Record struct {
 	ManifestCopyDigest string `json:"manifest_copy_digest,omitempty"`
 	// IdempotencyKeyHash and RequestFingerprint are admission evidence. The raw
 	// key is never persisted; the fingerprint binds a replay to the exact
-	// signed manifest accepted by this operation.
+	// release manifest accepted by this operation.
 	IdempotencyKeyHash string `json:"idempotency_key_hash,omitempty"`
 	RequestFingerprint string `json:"request_fingerprint,omitempty"`
 	// ManifestURL is the immutable manifest URL admission actually verified and

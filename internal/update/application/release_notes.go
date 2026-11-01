@@ -8,10 +8,10 @@ import (
 	hardeningdomain "bansoko/internal/hardening/domain"
 )
 
-// currentReleaseNotes reads the running version's own notes from the signed
+// currentReleaseNotes reads the running version's own notes from the
 // manifest of the installed release (updates/releases/<build id>). A base
-// image has no installed release, and an unreadable, unsigned or mismatched
-// manifest yields no notes: they are informational and never gate the check.
+// image has no installed release, and an unreadable or mismatched manifest
+// yields no notes: they are informational and never gate the check.
 func (s *Service) currentReleaseNotes() *hardeningdomain.ReleaseNotesEntry {
 	id := strings.TrimSpace(s.buildID)
 	if strings.TrimSpace(s.updatesRoot) == "" || id == "" || id != s.buildID ||

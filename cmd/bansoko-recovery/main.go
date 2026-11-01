@@ -78,7 +78,7 @@ func run(args []string) error {
 	recoverFence := flag.NewFlagSet("recover-fence", flag.ExitOnError)
 	recoverOperation := recoverFence.String("operation", "", "exact fence operation id")
 	recoverOwner := recoverFence.String("owner", "", "exact fence owner: embedded")
-	recoverDigest := recoverFence.String("manifest-digest", "", "exact signed manifest digest")
+	recoverDigest := recoverFence.String("manifest-digest", "", "exact release manifest digest")
 	recoverState := recoverFence.String("expected-state", "", "exact open fence state (active)")
 	recoverTerminal := recoverFence.String("terminal-state", "", "recovery outcome: succeeded, failed or rolled_back")
 	recoverEvidence := recoverFence.String("evidence", "", "human/operator evidence, such as a ticket reference")

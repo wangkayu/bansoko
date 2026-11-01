@@ -6,7 +6,7 @@ import (
 	hardeningdomain "bansoko/internal/hardening/domain"
 )
 
-// AdmitInput identifies the signed release candidate selected by the caller.
+// AdmitInput identifies the release candidate selected by the caller.
 type AdmitInput struct {
 	TargetReleaseID string
 	ManifestDigest  string
@@ -38,7 +38,7 @@ type Check struct {
 // CheckStatus describes the outcome of checking the published candidate.
 type CheckStatus string
 
-// Candidate is the signed release candidate exposed by an update check.
+// Candidate is the release candidate exposed by an update check.
 type Candidate struct {
 	ReleaseID              string
 	Version                string
@@ -50,7 +50,7 @@ type Candidate struct {
 	RollbackClass          string
 	ManifestDigest         string
 	PayloadSize            int64
-	// ReleaseNotes are the signed notes of the versions newer than the
+	// ReleaseNotes are the release notes of the versions newer than the
 	// running one, newest first; empty when the candidate carries none.
 	ReleaseNotes []hardeningdomain.ReleaseNotesEntry
 }
@@ -70,7 +70,7 @@ type Current struct {
 	ReleaseID          string
 	Version            string
 	ImageCompatibility string
-	// ReleaseNotes are the running version's own notes, read from the signed
+	// ReleaseNotes are the running version's own notes, read from the
 	// manifest of the installed release; nil for a base image or a release
 	// without notes.
 	ReleaseNotes *hardeningdomain.ReleaseNotesEntry

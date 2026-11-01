@@ -15,6 +15,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -306,9 +307,16 @@ func (c *disposableFloorConn) Begin() (driver.Tx, error) {
 	return nil, errors.New("disposable floor connection does not open transactions")
 }
 
-func (c *disposableFloorConn) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
+// settledFloorPredicate is the part of the anti-replay read this build owns:
+// a failed attempt must not fence its own release sequence.
+const settledFloorPredicate = "state IN ('active', 'settled')"
+
+func (c *disposableFloorConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
 	if c.failure != nil {
 		return nil, c.failure
+	}
+	if !strings.Contains(query, settledFloorPredicate) {
+		return nil, fmt.Errorf("disposable floor driver only answers the retryable floor read: %s", query)
 	}
 	return &disposableFloorRows{floor: c.floor}, nil
 }
