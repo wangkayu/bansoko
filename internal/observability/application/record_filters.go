@@ -40,9 +40,13 @@ var recordEventViews = map[string]bool{
 }
 
 // primaryEventViewReasons are the release_processed info reasons the primary
-// view hides. Both repeat on every RSS cycle and neither is a badge record, so
-// hiding them never hides a failure the owner has to act on.
-var primaryEventViewReasons = []string{"awaiting_competition", "no_placeable_files"}
+// view hides: awaiting_competition is a passing state (the competition's
+// winner later gets its own admission rows) that appears once per candidate,
+// so showing every wait would bury the outcomes. no_placeable_files is a
+// terminal verdict and stays visible since the re-evaluation loop fix — one
+// row per release is the batch's outcome, and hiding it left the discovery
+// entry with no follow-up.
+var primaryEventViewReasons = []string{"awaiting_competition"}
 
 // primaryEventViewPredicate excludes the repeated release filtering process
 // from the business source alone. COALESCE keeps older records without a

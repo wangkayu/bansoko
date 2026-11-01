@@ -87,6 +87,13 @@ func newRSSService(t *testing.T, db *sql.DB, store *workitems.Store, sourceFetch
 
 func seedRSSOwner(t *testing.T, db *sql.DB, stopped bool, metadataComplete bool) (string, string) {
 	t.Helper()
+	return seedRSSOwnerReleaseFilter(t, db, stopped, metadataComplete, nil)
+}
+
+// seedRSSOwnerReleaseFilter seeds the same owner with one release filter pinned
+// into the frozen rules, for fixtures whose feed carries filtered items.
+func seedRSSOwnerReleaseFilter(t *testing.T, db *sql.DB, stopped bool, metadataComplete bool, releaseFilter *animedomain.RegexFilter) (string, string) {
+	t.Helper()
 	state := "active"
 	if stopped {
 		state = "stopped"
@@ -130,7 +137,7 @@ VALUES ('source-rss-test', 'sub-rss-test', 'custom_rss', 'https://feeds.example.
 	if _, err := db.ExecContext(ctx, `INSERT INTO rss_source_runtime(rss_source_id) VALUES ('source-rss-test')`); err != nil {
 		t.Fatal(err)
 	}
-	seedRSSBusiness(t, db, "anime-rss-test")
+	seedRSSBusinessReleaseFilter(t, db, "anime-rss-test", releaseFilter)
 	return "source-rss-test", "sub-rss-test"
 }
 

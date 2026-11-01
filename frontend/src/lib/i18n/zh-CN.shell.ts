@@ -142,6 +142,14 @@ export const logCopy = {
     displacedBy: "被 {by} 顶替",
     targetOrigin: "{file}（{origin}）",
   },
+  // 发现行第二行：这批新内容在 feed 层各自的结局。
+  discovery: {
+    accepted: "待评价 {n}",
+    waiting: "待元数据 {n}",
+    filtered: "被过滤 {n}",
+    filteredWithReasons: "被过滤 {n}（{reasons}）",
+    parseFailed: "标题无法解析 {n}",
+  },
   rulesChanged: "规则：{sections}",
   tagDelivery: "通知发送",
   openDelivery: "打开发送详情：{kind}",

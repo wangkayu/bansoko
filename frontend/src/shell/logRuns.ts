@@ -405,6 +405,37 @@ export function policyChangeText(entry: BusinessEntry): string | undefined {
   return t("log.rulesChanged", { sections: joinList(sections.map((section) => tryT(`tabs.sectionName.${section}`) ?? section)) });
 }
 
+/** One feed verdict of a discovery batch, in a fixed order so batches read alike. */
+const DISCOVERY_ORDER = [
+  { key: "accepted_pending_download", label: "log.discovery.accepted" },
+  { key: "waiting_metadata", label: "log.discovery.waiting" },
+  { key: "filtered", label: "log.discovery.filtered" },
+  { key: "parse_failed", label: "log.discovery.parseFailed" },
+] as const;
+
+/** A discovery batch writes what became of its items at feed level: handed to
+ * evaluation, waiting on metadata, or filtered with why. Older records without
+ * the counts keep the single-line form. */
+export function discoveryOutcomeText(entry: BusinessEntry): string | undefined {
+  if (entry.kind !== "rss_new_content") return undefined;
+  const counts = entry.details?.outcome_counts;
+  if (!counts) return undefined;
+  const reasons = Object.entries(entry.details?.filtered_reasons ?? {})
+    .filter(([, count]) => count > 0)
+    .map(([code, count]) => `${knownReasonLabel(code) ?? code} ${count}`);
+  const parts: string[] = [];
+  for (const { key, label } of DISCOVERY_ORDER) {
+    const count = counts[key] ?? 0;
+    if (count <= 0) continue;
+    if (key === "filtered" && reasons.length > 0) {
+      parts.push(t("log.discovery.filteredWithReasons", { n: count, reasons: joinList(reasons) }));
+    } else {
+      parts.push(t(label, { n: count }));
+    }
+  }
+  return parts.length > 0 ? joinList(parts) : undefined;
+}
+
 /** The concrete subject of a one-line event (subgroup): settings changes and RSS records write the subgroup name. */
 export function entryGroupName(entry: BusinessEntry): string | undefined {
   if (entry.details?.group_name) return entry.details.group_name;
@@ -441,7 +472,7 @@ export function entryView(entry: BusinessEntry, anime: string | undefined): Entr
     state,
     title,
     result,
-    meta: policyChangeText(entry),
+    meta: policyChangeText(entry) ?? discoveryOutcomeText(entry),
     reason,
     technical: state === "failure" ? (entry.details?.reason_detail ?? undefined) : undefined,
   };

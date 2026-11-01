@@ -4671,11 +4671,14 @@ paths:
           in: query
           required: false
           description: >-
-            Read projection of the unified feed. primary hides the repeated
-            release filtering process: business entries of kind
-            release_processed with outcome info and reason awaiting_competition
-            or no_placeable_files are excluded before pagination. all returns
-            every record. Other record kinds are unaffected.
+            Read projection of the unified feed. primary hides the release
+            filtering still in passing: business entries of kind
+            release_processed with outcome info and reason
+            awaiting_competition are excluded before pagination (the
+            competition's winner later gets its own admission rows); terminal
+            verdicts such as no_placeable_files stay visible, one row per
+            release. all returns every record. Other record kinds are
+            unaffected.
           schema:
             type: string
             enum: [primary, all]
@@ -11817,6 +11820,28 @@ components:
         item_count:
           type: integer
           minimum: 0
+        outcome_counts:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+          description: >-
+            How the feed-level verdicts of one rss_new_content batch split:
+            a ReleaseVerdict name (accepted_pending_download,
+            waiting_metadata, filtered, parse_failed) to the number of newly
+            discovered items carrying it at discovery time. This is the
+            discovery outcome, not the later evaluation verdict: an accepted
+            count means the items were handed to evaluation. Absent on records
+            written before it was introduced.
+        filtered_reasons:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+          description: >-
+            The reason_code breakdown of the filtered part of one
+            rss_new_content batch (a filter reason code to its item count).
+            Absent when nothing in the batch was filtered.
         error_count:
           type: integer
           minimum: 0

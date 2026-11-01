@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ObservabilityRecord } from "../lib/api/client";
-import { dedupeReplacements, groupEvents, runView, stepText, type BusinessEntry } from "./logRuns";
+import { dedupeReplacements, entryView, groupEvents, runView, stepText, type BusinessEntry } from "./logRuns";
 
 let seq = 0;
 function entry(overrides: Partial<BusinessEntry>): BusinessEntry {
@@ -167,5 +167,28 @@ describe("覆盖与替换的身份", () => {
       details: { replaced_files: ["EP04.mkv"] },
     });
     expect(stepText(replaced)).toBe("替换版本：已替换旧版本（EP04.mkv）");
+  });
+});
+
+describe("discoveryOutcomeText", () => {
+  it("renders the feed outcome split of a discovery batch", () => {
+    const line = entry({
+      kind: "rss_new_content",
+      message_code: "rss_new_content",
+      message_params: { count: 3 },
+      details: {
+        item_count: 3,
+        outcome_counts: { accepted_pending_download: 2, filtered: 1 },
+        filtered_reasons: { release_not_in_matched: 1 },
+      },
+    });
+    expect(entryView(line, undefined).meta).toBe(
+      "待评价 2、被过滤 1（标题包含排除词 1）",
+    );
+  });
+
+  it("keeps the single-line form for records written before the counts", () => {
+    const line = entry({ kind: "rss_new_content", message_code: "rss_new_content", message_params: { count: 2 }, details: { item_count: 2 } });
+    expect(entryView(line, undefined).meta).toBeUndefined();
   });
 });

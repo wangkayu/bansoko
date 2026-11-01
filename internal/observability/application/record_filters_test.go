@@ -64,10 +64,11 @@ func TestRecordEventViewParam(t *testing.T) {
 }
 
 // TestPrimaryEventViewPredicateShape pins the exact exclusion: only
-// release_processed info entries with one of the two reasons, with COALESCE so
-// a record without a reason stays visible.
+// release_processed info entries still waiting on a competition, with COALESCE
+// so a record without a reason stays visible. The terminal
+// no_placeable_files verdict stays visible on purpose.
 func TestPrimaryEventViewPredicateShape(t *testing.T) {
-	want := "NOT (e.kind = 'release_processed' AND e.outcome = 'info' AND COALESCE(e.reason_code, '') IN ('awaiting_competition', 'no_placeable_files'))"
+	want := "NOT (e.kind = 'release_processed' AND e.outcome = 'info' AND COALESCE(e.reason_code, '') IN ('awaiting_competition'))"
 	if got := primaryEventViewPredicate(); got != want {
 		t.Fatalf("primary view predicate:\n got %s\nwant %s", got, want)
 	}

@@ -88,16 +88,17 @@ func listEventViewIDs(t *testing.T, fixture eventViewFixture, query RecordQuery)
 }
 
 // TestListRecordsPrimaryEventViewExactExclusion proves only the exact set is
-// hidden: the two reasons on release_processed info rows. Another reason, a
-// NULL reason, a failure carrying the same reason, another kind, another
-// outcome and the plugin source all stay visible.
+// hidden: release_processed info rows still awaiting a competition. Another
+// reason, a NULL reason, the terminal no_placeable_files verdict, a failure
+// carrying the same reason, another kind, another outcome and the plugin
+// source all stay visible.
 func TestListRecordsPrimaryEventViewExactExclusion(t *testing.T) {
 	fixture := seedEventViewFixture(t)
 	base := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
 	at := func(minutes int) time.Time { return base.Add(time.Duration(minutes) * time.Minute) }
 
 	fixture.entry(t, "noise-awaiting", "release_processed", "info", "release_awaiting_competition", "awaiting_competition", at(0))
-	fixture.entry(t, "noise-no-placeable", "release_processed", "info", "release_filtered", "no_placeable_files", at(1))
+	fixture.entry(t, "terminal-no-placeable", "release_processed", "info", "release_filtered", "no_placeable_files", at(1))
 	fixture.entry(t, "other-reason", "release_processed", "info", "release_parse_failed", "parse_failed", at(2))
 	fixture.entry(t, "no-reason", "release_processed", "info", "release_accepted", "", at(3))
 	fixture.entry(t, "failure-same-reason", "release_processed", "failure", "release_filtered", "no_placeable_files", at(4))
@@ -113,7 +114,7 @@ func TestListRecordsPrimaryEventViewExactExclusion(t *testing.T) {
 	}
 
 	wantPrimary := expectIDs(
-		"plugin:delivery-ev", "business:other-reason", "business:no-reason",
+		"plugin:delivery-ev", "business:terminal-no-placeable", "business:other-reason", "business:no-reason",
 		"business:failure-same-reason", "business:other-kind", "business:success-same-reason",
 	)
 	if got := listEventViewIDs(t, fixture, RecordQuery{EventView: textParam(RecordEventViewPrimary)}); got != wantPrimary {
@@ -123,8 +124,8 @@ func TestListRecordsPrimaryEventViewExactExclusion(t *testing.T) {
 	// entry_kind narrows only business entries; plugin deliveries stay visible.
 	releaseKinds := []string{"release_processed"}
 	got := listEventViewIDs(t, fixture, RecordQuery{EventView: textParam(RecordEventViewPrimary), EntryKind: &releaseKinds})
-	want := expectIDs("plugin:delivery-ev", "business:other-reason", "business:no-reason", "business:failure-same-reason",
-		"business:success-same-reason")
+	want := expectIDs("plugin:delivery-ev", "business:terminal-no-placeable", "business:other-reason", "business:no-reason",
+		"business:failure-same-reason", "business:success-same-reason")
 	if got != want {
 		t.Fatalf("primary with entry_kind\n got %s\nwant %s", got, want)
 	}
@@ -149,11 +150,7 @@ func TestListRecordsPrimaryEventViewPaginatesAfterFilter(t *testing.T) {
 		fixture.entry(t, fmt.Sprintf("main-%02d", i), "subscription_created", "info", "subscription_created", "", at(i))
 	}
 	for i := 0; i < 60; i++ {
-		reason := "awaiting_competition"
-		if i%2 == 0 {
-			reason = "no_placeable_files"
-		}
-		fixture.entry(t, fmt.Sprintf("noise-%02d", i), "release_processed", "info", "release_filtered", reason, at(100+i))
+		fixture.entry(t, fmt.Sprintf("noise-%02d", i), "release_processed", "info", "release_awaiting_competition", "awaiting_competition", at(100+i))
 	}
 
 	limit := 20

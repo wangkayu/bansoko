@@ -4689,6 +4689,14 @@ export interface components {
             reason_code?: string;
             reason_detail?: string;
             item_count?: number;
+            /** @description How the feed-level verdicts of one rss_new_content batch split: a ReleaseVerdict name (accepted_pending_download, waiting_metadata, filtered, parse_failed) to the number of newly discovered items carrying it at discovery time. This is the discovery outcome, not the later evaluation verdict: an accepted count means the items were handed to evaluation. Absent on records written before it was introduced. */
+            outcome_counts?: {
+                [key: string]: number;
+            };
+            /** @description The reason_code breakdown of the filtered part of one rss_new_content batch (a filter reason code to its item count). Absent when nothing in the batch was filtered. */
+            filtered_reasons?: {
+                [key: string]: number;
+            };
             error_count?: number;
             verdict?: string;
             /** @description Which metadata bindings held a release evaluation (verdict waiting_metadata): the same missing set as MetadataHold at the time of the evaluation. Absent on every other record and on records written before it was introduced. */
@@ -11682,7 +11690,7 @@ export interface operations {
                 kind?: ("routine" | "business" | "automation" | "plugin")[];
                 /** @description Narrows the business records to these journal entry kinds; the other record kinds are unaffected. */
                 entry_kind?: components["schemas"]["SubscriptionLogKind"][];
-                /** @description Read projection of the unified feed. primary hides the repeated release filtering process: business entries of kind release_processed with outcome info and reason awaiting_competition or no_placeable_files are excluded before pagination. all returns every record. Other record kinds are unaffected. */
+                /** @description Read projection of the unified feed. primary hides the release filtering still in passing: business entries of kind release_processed with outcome info and reason awaiting_competition are excluded before pagination (the competition's winner later gets its own admission rows); terminal verdicts such as no_placeable_files stay visible, one row per release. all returns every record. Other record kinds are unaffected. */
                 event_view?: "primary" | "all";
                 /** @description Selects records in this state. A business record of a Release run (download, verification, import, placement and replacement entries closed by the run's acquisition result) takes the state of its run: the result's outcome, or in_progress while the run has no result. failure includes failed acquisitions, failed business records, failed and partial automation runs, and failed or unconfirmed (unknown) notification deliveries. */
                 state?: components["schemas"]["ObservabilityRecordState"];

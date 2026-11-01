@@ -151,6 +151,14 @@ export const enLogCopy = {
     displacedBy: "taken over by {by}",
     targetOrigin: "{file} ({origin})",
   },
+  // A discovery row's second line: how this batch's items ended at feed level.
+  discovery: {
+    accepted: "{n} to evaluate",
+    waiting: "{n} waiting on metadata",
+    filtered: "{n} filtered",
+    filteredWithReasons: "{n} filtered ({reasons})",
+    parseFailed: "{n} unreadable titles",
+  },
   rulesChanged: "Rules: {sections}",
   tagDelivery: "Notification delivery",
   openDelivery: "Open delivery details: {kind}",

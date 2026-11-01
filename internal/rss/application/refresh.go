@@ -255,6 +255,7 @@ func (s *Service) refreshSuccessWriter(claim workitems.Claim, snapshot sourceSna
 			}
 		}
 		newKeys := make([]string, 0)
+		outcomeCounts, filteredReasons := map[string]int{}, map[string]int{}
 		for index := range feed {
 			evaluation := &feed[index]
 			releaseID, releaseVersion, created, changed, inputMutable, err := upsertRelease(ctx, tx, snapshot, evaluation)
@@ -271,6 +272,16 @@ UPDATE releases SET verdict = $2, reason_code = $2, reason_detail = NULL WHERE i
 			}
 			if created {
 				newKeys = append(newKeys, evaluation.stableKey)
+				// The discovery entry tells the owner what became of this
+				// batch, so the feed verdicts it narrates are only the ones
+				// that count: a resume-baseline round stores history and
+				// writes no entry at all.
+				if !resumeBaseline {
+					outcomeCounts[string(evaluation.result.Verdict)]++
+					if evaluation.result.Verdict == animedomain.ReleaseVerdictFiltered && evaluation.result.ReasonCode != "" {
+						filteredReasons[evaluation.result.ReasonCode]++
+					}
+				}
 				if discoveries {
 					if err := markReleaseDiscoveryTx(ctx, tx, releaseID); err != nil {
 						return 0, err
@@ -322,7 +333,14 @@ RETURNING version`, snapshot.sourceID, cursorJSON, lastGoodJSON, claim.ExpectedO
 		}
 		if len(newKeys) > 0 && !resumeBaseline {
 			count := len(newKeys)
-			details, err := marshalActivityDetails(map[string]any{"item_count": count})
+			discoveryValues := map[string]any{"item_count": count}
+			if len(outcomeCounts) > 0 {
+				discoveryValues["outcome_counts"] = outcomeCounts
+			}
+			if len(filteredReasons) > 0 {
+				discoveryValues["filtered_reasons"] = filteredReasons
+			}
+			details, err := marshalActivityDetails(discoveryValues)
 			if err != nil {
 				return 0, err
 			}

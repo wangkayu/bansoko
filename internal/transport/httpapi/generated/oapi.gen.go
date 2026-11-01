@@ -8830,6 +8830,9 @@ type SubscriptionLogDetails struct {
 	// FileName Base name of the file a file result or placement step is about.
 	FileName *string `json:"file_name,omitempty"`
 
+	// FilteredReasons The reason_code breakdown of the filtered part of one rss_new_content batch (a filter reason code to its item count). Absent when nothing in the batch was filtered.
+	FilteredReasons *map[string]int `json:"filtered_reasons,omitempty"`
+
 	// GroupName Display name of the subgroup the record is about, frozen at write time: the RSS source group of a download run step (download, verification, file result, placement, replacement, settlement) or of an RSS source policy change. Absent on records written before it was introduced.
 	GroupName *string `json:"group_name,omitempty"`
 	ItemCount *int    `json:"item_count,omitempty"`
@@ -8845,6 +8848,9 @@ type SubscriptionLogDetails struct {
 
 	// MetadataMissing Which metadata bindings held a release evaluation (verdict waiting_metadata): the same missing set as MetadataHold at the time of the evaluation. Absent on every other record and on records written before it was introduced.
 	MetadataMissing *[]SubscriptionLogDetailsMetadataMissing `json:"metadata_missing,omitempty"`
+
+	// OutcomeCounts How the feed-level verdicts of one rss_new_content batch split: a ReleaseVerdict name (accepted_pending_download, waiting_metadata, filtered, parse_failed) to the number of newly discovered items carrying it at discovery time. This is the discovery outcome, not the later evaluation verdict: an accepted count means the items were handed to evaluation. Absent on records written before it was introduced.
+	OutcomeCounts *map[string]int `json:"outcome_counts,omitempty"`
 
 	// Parser The frozen selected-parser evidence of a release evaluation. It is the same value frozen into the media facts, the download policy, and the FileOperation config snapshot; ordinary read models show the parser name/result status only, never a raw internal row id.
 	Parser       *ParserProvenance `json:"parser"`
@@ -9850,7 +9856,7 @@ type ListObservabilityRecordsParams struct {
 	// EntryKind Narrows the business records to these journal entry kinds; the other record kinds are unaffected.
 	EntryKind *[]SubscriptionLogKind `form:"entry_kind,omitempty" json:"entry_kind,omitempty"`
 
-	// EventView Read projection of the unified feed. primary hides the repeated release filtering process: business entries of kind release_processed with outcome info and reason awaiting_competition or no_placeable_files are excluded before pagination. all returns every record. Other record kinds are unaffected.
+	// EventView Read projection of the unified feed. primary hides the release filtering still in passing: business entries of kind release_processed with outcome info and reason awaiting_competition are excluded before pagination (the competition's winner later gets its own admission rows); terminal verdicts such as no_placeable_files stay visible, one row per release. all returns every record. Other record kinds are unaffected.
 	EventView *ListObservabilityRecordsParamsEventView `form:"event_view,omitempty" json:"event_view,omitempty"`
 
 	// State Selects records in this state. A business record of a Release run (download, verification, import, placement and replacement entries closed by the run's acquisition result) takes the state of its run: the result's outcome, or in_progress while the run has no result. failure includes failed acquisitions, failed business records, failed and partial automation runs, and failed or unconfirmed (unknown) notification deliveries.

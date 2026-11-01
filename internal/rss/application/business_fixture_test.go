@@ -13,10 +13,29 @@ import (
 
 func seedRSSBusiness(t *testing.T, db *sql.DB, animeID string) {
 	t.Helper()
+	seedRSSBusinessReleaseFilter(t, db, animeID, nil)
+}
+
+// seedRSSBusinessReleaseFilter also pins one release filter into the frozen
+// rules section, so a fixture feed can carry items the seed filter rejects.
+// The section is rewritten before the digest is taken, so the stored snapshot
+// and digest stay the same pair production writes.
+func seedRSSBusinessReleaseFilter(t *testing.T, db *sql.DB, animeID string, releaseFilter *domain.RegexFilter) {
+	t.Helper()
 	ctx := context.Background()
 	b, err := frozenpolicy.SeedBusiness(ctx, db, `vars.actual = {title: input.release_title};`)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if releaseFilter != nil {
+		var rules domain.EffectiveRules
+		if err := json.Unmarshal(b.Sections[domain.SectionReleaseRules], &rules); err != nil {
+			t.Fatal(err)
+		}
+		rules.ReleaseFilter = *releaseFilter
+		if b.Sections[domain.SectionReleaseRules], err = json.Marshal(rules); err != nil {
+			t.Fatal(err)
+		}
 	}
 	digest, err := b.Digest()
 	if err != nil {
