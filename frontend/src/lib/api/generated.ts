@@ -1959,9 +1959,9 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Admits a container-embedded self-update operation. The server uses the
-         *     deployment-owned manifest source and verifies that target_release_id and
-         *     manifest_digest still identify the signed candidate.
+        /** @description Admits a container-embedded self-update operation. The server re-resolves
+         *     the release through the deployment's configured update lane and verifies
+         *     that target_release_id and manifest_digest still identify the candidate.
          *      */
         post: operations["admitUpdate"];
         delete?: never;
