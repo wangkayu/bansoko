@@ -9,6 +9,10 @@ const mocks = vi.hoisted(() => ({ save: vi.fn(), error: vi.fn() }));
 vi.mock("../../lib/candidate/serverCandidateStore", () => ({ getCandidateStore: () => ({ save: mocks.save }) }));
 vi.mock("sonner", () => ({ toast: { error: mocks.error } }));
 vi.mock("../../lib/api/client", async (importOriginal) => ({ ...(await importOriginal<typeof import("../../lib/api/client")>()), getBusinessPreset: vi.fn(async () => (await import("../../testing/businessPreset")).preset),
+  loadBusinessPresetIntoDraft: vi.fn(async (draft: import("../../lib/api/client").AnimeDraft, reset?: boolean) => {
+    const { loadDraftFromBusinessPreset, preset } = await import("../../testing/businessPreset");
+    return loadDraftFromBusinessPreset(draft, preset, reset);
+  }),
   // The declared site list is a static read, not a feed fetch; the feed itself is never fetched here.
   listFeedSites: vi.fn(async () => ({ sites: [] })) }));
 

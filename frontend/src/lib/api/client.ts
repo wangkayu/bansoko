@@ -1554,6 +1554,13 @@ export function getBusinessPreset(): Promise<BusinessPresetView> {
   return request("/config/business-preset", { method: "GET" });
 }
 
+export function loadBusinessPresetIntoDraft(draft: AnimeDraft, resetToGlobal = false): Promise<AnimeDraft> {
+  return request("/config/business-preset/load", {
+    method: "POST",
+    body: { draft, reset_to_global: resetToGlobal },
+  });
+}
+
 export function getTitleTagVocabulary(): Promise<TitleTagVocabulary> {
   return request("/config/tag-filters/title-vocabulary", { method: "GET" });
 }

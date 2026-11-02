@@ -105,7 +105,16 @@ func (s *Server) LoadBusinessPresetIntoDraft(w http.ResponseWriter, r *http.Requ
 		writeError(w, r, err)
 		return
 	}
-	loaded, err := animedomain.LoadBusinessIntoDraft(draft, preset, tagFilters)
+	subscriptionDefaults, err := s.deps.GlobalSections.ReadGlobalSubscriptionDefaults(r.Context())
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	load := animedomain.LoadBusinessIntoDraft
+	if input.ResetToGlobal != nil && *input.ResetToGlobal {
+		load = animedomain.ResetBusinessIntoDraft
+	}
+	loaded, err := load(draft, preset, tagFilters, subscriptionDefaults)
 	if err != nil {
 		writeError(w, r, &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "DRAFT_INVALID", Message: err.Error()})
 		return

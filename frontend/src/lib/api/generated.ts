@@ -489,7 +489,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Pure transformation, the server form of the frontend's load + freeze: reads the Global business preset in one snapshot and returns the submitted draft carrying a complete business snapshot built from it with the draft's own subgroups and explicit rules sections frozen in, plus the canonical business_digest. Subgroups: the draft's section with the preset's name keywords and provider defaults when absent, the preset's entries for groups the draft does not name, and effective selections normalized. Rules: a present section keeps the draft value and is frozen into the snapshot; an absent section (tag_filters included) is filled with the preset value as a complete replace. Creates, saves and applies nothing. */
+        /** @description Pure transformation, the server form of the frontend's load + freeze: reads the Global business preset in one snapshot and returns the submitted draft carrying a complete business snapshot built from it with the draft's own subgroups and explicit rules sections frozen in, plus the canonical business_digest. Subgroups: the draft's section with the preset's name keywords and provider defaults when absent, the preset's entries for groups the draft does not name, and effective selections normalized. Rules: a present section keeps the draft value and is frozen into the snapshot; an absent section (tag_filters included) is filled with the preset value as a complete replace. Subscription defaults seed a new draft's admission toggles and survive later reloads; reset_to_global copies them again and replaces every rules section while retaining identity and subgroup choices. Creates, saves and applies nothing. */
         post: operations["loadBusinessPresetIntoDraft"];
         delete?: never;
         options?: never;
@@ -7642,6 +7642,11 @@ export interface components {
         };
         LoadBusinessPresetInput: {
             draft: components["schemas"]["AnimeDraft"];
+            /**
+             * @description When true, apply "use defaults everywhere": replace the business and every rules section (tag_filters included) with the current Global values and copy subscription_defaults again, while retaining the draft's identity and its subgroup choices without adding new Global entries. When false or absent, explicit sections and admission toggles are retained; subscription_defaults is copied only into a new draft that has no business snapshot.
+             * @default false
+             */
+            reset_to_global: boolean;
         };
         /** @description The Global defaults a new draft copies once. tag_filters is the Global tag_filters default and subscription_defaults the Global default of the per-subscription admission toggles; both are outside the snapshot and its digest. */
         BusinessPresetView: {

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import type { AnimeDraft, BusinessPresetView } from "../../lib/api/client";
-import { copySubscriptionDefault, freezeBusinessDraft, hasCustomSettings, loadBusinessPreset, modifiedRuleSections, presetRuleSections, resetToGlobal, rulesDifferFromPreset } from "./businessDraft";
+import { freezeBusinessDraft, hasCustomSettings, loadBusinessPreset, modifiedRuleSections, presetRuleSections, rulesDifferFromPreset } from "./businessDraft";
 import { useState } from "react";
 import { createElement } from "react";
 import { fireEvent, screen } from "@testing-library/react";
@@ -100,7 +100,7 @@ describe("atomic business load", () => {
   const unloaded={...loaded,rules:{sections:{}}};
   await expect(freezeBusinessDraft(unloaded)).rejects.toThrow(t("config.validation.configInvalid"));
  });
- it("「全部使用默认」 resets rules and business fields, keeps subgroups and sources", () => {
+ it("detects edited rules and business fields against the current preset", () => {
   const loaded=loadBusinessPreset(draft,preset);
   expect(hasCustomSettings(loaded,preset)).toBe(false);
   // A section holding the Global value again is not a difference.
@@ -111,42 +111,22 @@ describe("atomic business load", () => {
   loaded.business!.unclassified_route="skip";
   loaded.subgroups.max_rss=2;
   expect(hasCustomSettings(loaded,preset)).toBe(true);
-  const reset=resetToGlobal(loaded,preset);
-  expect(reset.rules.sections).toEqual(presetRuleSections(preset));
-  expect(reset.business?.unclassified_route).toBe("route");
-  expect(reset.subgroups.max_rss).toBe(2);
-  expect(reset.rss_sources).toEqual(draft.rss_sources);
-  expect(hasCustomSettings(reset,preset)).toBe(false);
+  expect(loaded.rss_sources).toEqual(draft.rss_sources);
   const onlyRoute=loadBusinessPreset(draft,preset);onlyRoute.business!.unclassified_route="skip";
   expect(hasCustomSettings(onlyRoute,preset)).toBe(true);
   expect(hasCustomSettings(onlyRoute)).toBe(false);
  });
 });
 
-// The Global subscription default is one-time input like the rules sections:
-// creation and reset-to-defaults copy it, a revision reload never overwrites it.
-describe("copySubscriptionDefault", () => {
-  it("true 默认在创建时复制为草稿的忽略多视频开关", () => {
-    const withDefault = { ...preset, subscription_defaults: { ignore_multi_video_releases: true } };
-    const seeded = copySubscriptionDefault(loadBusinessPreset(draft, withDefault), withDefault);
-    expect(seeded.ignore_multi_video_releases).toBe(true);
-    // false removes the field, matching a draft that never set it.
-    const seededOff = copySubscriptionDefault(loadBusinessPreset(draft, preset), preset);
-    expect("ignore_multi_video_releases" in seededOff).toBe(false);
-  });
-
-  it("规则重载不覆盖草稿自己的开关；「全部使用默认」重新复制", () => {
+// The server owns creation and reset-to-defaults copying. A local revision
+// reload only compares the subscription default to mark the reset available.
+describe("subscription default customization", () => {
+  it("草稿自己的开关与全局默认不同也算定制", () => {
     const edited = { ...loadBusinessPreset(draft, preset), ignore_multi_video_releases: true } as AnimeDraft;
     const reloaded = loadBusinessPreset(edited, preset);
     expect(reloaded.ignore_multi_video_releases).toBe(true);
-    // A differing subscription default is itself a customization, so the
-    // reset stays available and re-copies the current Global value.
     expect(hasCustomSettings(reloaded, preset)).toBe(true);
-    const reset = resetToGlobal(edited, { ...preset, subscription_defaults: { ignore_multi_video_releases: true } });
-    expect(reset.ignore_multi_video_releases).toBe(true);
-    expect(hasCustomSettings(reset, { ...preset, subscription_defaults: { ignore_multi_video_releases: true } })).toBe(false);
-    const resetOff = resetToGlobal(edited, preset);
-    expect("ignore_multi_video_releases" in resetOff).toBe(false);
+    expect(hasCustomSettings(reloaded, { ...preset, subscription_defaults: { ignore_multi_video_releases: true } })).toBe(false);
   });
 });
 

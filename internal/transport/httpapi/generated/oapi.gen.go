@@ -5503,6 +5503,9 @@ type LivezReportStatus string
 // LoadBusinessPresetInput defines model for LoadBusinessPresetInput.
 type LoadBusinessPresetInput struct {
 	Draft AnimeDraft `json:"draft"`
+
+	// ResetToGlobal When true, apply "use defaults everywhere": replace the business and every rules section (tag_filters included) with the current Global values and copy subscription_defaults again, while retaining the draft's identity and its subgroup choices without adding new Global entries. When false or absent, explicit sections and admission toggles are retained; subscription_defaults is copied only into a new draft that has no business snapshot.
+	ResetToGlobal *bool `json:"reset_to_global,omitempty"`
 }
 
 // LocalDataCleanup Explicit, separately authorized physical local cleanup of one RETIRED ManagedAnime's local records. The fixed confirmation string prevents an accidental destructive call; expected_lifecycle_epoch is the CAS guard against a stale retired generation.

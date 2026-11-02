@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import {
   ApiError,
   discoverProviderEntryGroups,
   expandSnapshotSeed,
   fetchCustomSnapshot,
   getAnimeConfigCandidate,
-  getBusinessPreset,
   previewProviderEntryRSS,
   readAnimeRSSListView,
   readProviderEntryRSS,
@@ -22,7 +20,6 @@ import {
   type TitleSuggestion,
 } from "../../lib/api/client";
 import { createEmptyDraft } from "../../lib/draft";
-import { configKeys } from "../../lib/queryKeys";
 import type { CatalogEntryView, SearchProviderKey } from "../../lib/providers/viewmodels";
 import type { CustomSnapshotRequest } from "../catalog/CustomSnapshotFetchButton";
 import { draftFromEntry } from "../catalog/entryDraft";
@@ -187,7 +184,6 @@ type DiscoveredGroup = { key: string; groupRef: string; name: string };
 function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | undefined; enabled: boolean }): OneShotSeedSource {
   const provider: "anibt" | "mikan" = entry?.source === "mikan" ? "mikan" : "anibt";
   const providerEntryRef = entry?.providerEntryRef ?? "";
-  const queryClient = useQueryClient();
   // The task draft is taken once: a one-shot task loads the global config directly (it inherits no subscription configuration).
   const seededRef = useRef<AnimeDraft>(entry ? draftFromEntry(entry) : createEmptyDraft());
   const [draft, setDraft] = useState<AnimeDraft>(seededRef.current);
@@ -201,17 +197,14 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
   // Re-runs only the initial draft load (a new seed set starts the form over) without re-discovering.
   const [draftAttempt, setDraftAttempt] = useState(0);
 
-  // The Global business snapshot goes through the shared query cache: once read in this session no further request is sent.
+  // The server assembles one complete draft from the current Global defaults.
   useEffect(() => {
     if (!enabled) return;
     let active = true;
     setBusinessReady(false);
     setDiscoveryError(undefined);
     // The rules section assembled into a full copy of the default settings.
-    void withGlobalBusiness(
-      seededRef.current,
-      queryClient.fetchQuery({ queryKey: configKeys.businessPreset, queryFn: getBusinessPreset }),
-    )
+    void withGlobalBusiness(seededRef.current)
       .then((loaded) => {
         if (!active) return;
         setDraft(loaded);
@@ -223,7 +216,7 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
     return () => {
       active = false;
     };
-  }, [attempt, draftAttempt, enabled, queryClient]);
+  }, [attempt, draftAttempt, enabled]);
 
   // Entering discovers the subgroups at once: step one lists the groups and fetches no group's seeds.
   useEffect(() => {
@@ -457,7 +450,6 @@ async function fetchExactCustomSnapshot(request: CustomSnapshotRequest): Promise
 
 function useCustomSeedSource({ entry, enabled }: { entry: CatalogEntryView | undefined; enabled: boolean }): OneShotSeedSource {
   const candidateId = entry?.candidateId;
-  const queryClient = useQueryClient();
   const [candidate, setCandidate] = useState<AnimeConfigCandidate>();
   const [draft, setDraft] = useState<AnimeDraft>();
   const [candidateError, setCandidateError] = useState<string>();
@@ -478,10 +470,7 @@ function useCustomSeedSource({ entry, enabled }: { entry: CatalogEntryView | und
       .then(async (value) => {
         const loaded = value.draft.business
           ? value.draft
-          : await withGlobalBusiness(
-              value.draft,
-              queryClient.fetchQuery({ queryKey: configKeys.businessPreset, queryFn: getBusinessPreset }),
-            );
+          : await withGlobalBusiness(value.draft);
         if (!active) return;
         setCandidate(value);
         setDraft(loaded);
@@ -492,7 +481,7 @@ function useCustomSeedSource({ entry, enabled }: { entry: CatalogEntryView | und
     return () => {
       active = false;
     };
-  }, [attempt, candidateId, draftAttempt, enabled, queryClient]);
+  }, [attempt, candidateId, draftAttempt, enabled]);
 
   const request = useMemo<CustomSnapshotRequest | undefined>(
     () =>
@@ -628,7 +617,6 @@ export type SearchSeedBrowse = {
 
 function useSearchSeedSource({ search, enabled }: { search: SearchSeedBrowse | undefined; enabled: boolean }): OneShotSeedSource {
   const provider = search?.provider ?? "anibt";
-  const queryClient = useQueryClient();
   const [draft, setDraft] = useState<AnimeDraft>();
   const [loadError, setLoadError] = useState<string>();
   const [attempt, setAttempt] = useState(0);
@@ -653,7 +641,7 @@ function useSearchSeedSource({ search, enabled }: { search: SearchSeedBrowse | u
       title: "",
       instance_label: "",
     };
-    void withGlobalBusiness(seeded, queryClient.fetchQuery({ queryKey: configKeys.businessPreset, queryFn: getBusinessPreset }))
+    void withGlobalBusiness(seeded)
       .then((loaded) => {
         if (active) setDraft(loaded);
       })
@@ -663,7 +651,7 @@ function useSearchSeedSource({ search, enabled }: { search: SearchSeedBrowse | u
     return () => {
       active = false;
     };
-  }, [attempt, draftAttempt, enabled, queryClient, search]);
+  }, [attempt, draftAttempt, enabled, search]);
 
   const feedRef = useMemo<PreviewFeedSnapshotRef | undefined>(
     () =>
