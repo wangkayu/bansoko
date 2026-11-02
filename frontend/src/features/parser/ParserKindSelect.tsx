@@ -3,10 +3,12 @@ import { Select } from "../../ui/base";
 import { t } from "../../lib/i18n";
 
 /**
- * 这次任务的解析器选择：与实例「集数解析器」同一组选项。改动只进这次任务的草稿，
- * 由调用方重读预览；不写回订阅、预设或全局。
+ * The episode parser choice for one operation: the same option set as the
+ * instance's episode parser. A one-shot download keeps the change in its task
+ * draft; file-manager recognition keeps it in the recognition request. Neither
+ * writes back to the subscription, a preset or the global settings.
  */
-export function OneShotParserSelect({
+export function ParserKindSelect({
   value,
   options,
   onChange,

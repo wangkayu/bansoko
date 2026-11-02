@@ -1,23 +1,28 @@
-import type { ReactElement } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { FileManagerEntryDetail, FileManagerListing, FileManagerMountList } from "../../lib/api/client";
+import type { FileManagerEntryDetail, FileManagerListing, FileManagerRoot, FileManagerRootList } from "../../lib/api/client";
 import { t } from "../../lib/i18n";
-import { EntryDetailView, FileManagerDialog } from "./FileManagerDialog";
+import { FileManagerDialog } from "./FileManagerDialog";
 
-const mounts: FileManagerMountList = {
-  mounts: [
-    { key: "root", kind: "root", label: "/", path: "/", available: true },
-    { key: "download:qb-1", kind: "download", connection_id: "qb-1", label: "Home", path: "/downloads", available: false, unavailable_reason: "missing" },
-    { key: "anime:anime-1", kind: "anime", managed_anime_id: "anime-1", label: "Show A", path: "/media/anime", available: true },
-  ],
-};
+vi.mock("sonner", () => ({
+  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() }),
+}));
 
-const rootPage: FileManagerListing = {
-  path: "/",
+// The browse layer: browsing happens in absolute paths inside the owner-added
+// library directories (roots), while the rows themselves are read-only — files
+// pick up a checkbox, locked files open their managed detail, and every write
+// is a dialog asked for from the selection bar.
+
+const downloadRoot: FileManagerRoot = { id: "root-download", label: "Home", path: "/downloads", available: false, unavailable_reason: "missing" };
+const mediaRoot: FileManagerRoot = { id: "root-media", label: "media", path: "/media", available: true };
+const showARoot: FileManagerRoot = { id: "root-anime", label: "Show A", path: "/media/anime", available: true };
+
+const mediaPage: FileManagerListing = {
+  path: "/media",
   truncated: false,
-  entries: [{ name: "media", path: "/media", kind: "directory", state: "detached", locked: false }],
+  entries: [{ name: "anime", path: "/media/anime", kind: "directory", state: "detached", locked: false }],
 };
 
 const firstPage: FileManagerListing = {
@@ -27,14 +32,19 @@ const firstPage: FileManagerListing = {
   entries: [
     { name: "Season 01", path: "/media/anime/Season 01", kind: "directory", state: "in_progress", locked: true, modified_at: "2026-10-11T08:00:00Z" },
     { name: "ep01.mkv", path: "/media/anime/ep01.mkv", kind: "file", state: "managed", role: "video", size_bytes: 2048, locked: true, managed_anime_id: "anime-1" },
-    { name: "ep01.zh.ass", path: "/media/anime/ep01.zh.ass", kind: "file", state: "managed", role: "subtitle", companion_of: "/media/anime/ep01.mkv", not_aligned: true, locked: true, managed_anime_id: "anime-1" },
+    { name: "ep01.zh.ass", path: "/media/anime/ep01.zh.ass", kind: "file", state: "managed", role: "subtitle", companion_of: "/media/anime/ep01.mkv", locked: true, managed_anime_id: "anime-1" },
   ],
 };
 
 const secondPage: FileManagerListing = {
   path: "/media/anime",
   truncated: false,
-  entries: [{ name: "notes.txt", path: "/media/anime/notes.txt", kind: "file", state: "detached", size_bytes: 10, locked: false }],
+  entries: [
+    { name: "notes.txt", path: "/media/anime/notes.txt", kind: "file", state: "detached", size_bytes: 10, locked: false },
+    { name: "poster.jpg", path: "/media/anime/poster.jpg", kind: "file", state: "detached", size_bytes: 30, locked: false },
+    // A plain file is classified by its extension, not by owner records.
+    { name: "raw-02.mkv", path: "/media/anime/raw-02.mkv", kind: "file", file_kind: "video", state: "detached", size_bytes: 40, locked: false },
+  ],
 };
 
 const managedDetail: FileManagerEntryDetail = {
@@ -43,36 +53,67 @@ const managedDetail: FileManagerEntryDetail = {
   acquisition_id: "acq-1",
   revision: "rev-1",
   in_progress: [],
-  companions: [{ role: "subtitle", path: "/media/anime/ep01.zh.ass", present: true, not_aligned: true }],
+  companions: [{ role: "subtitle", path: "/media/anime/ep01.zh.ass", present: true }],
   operations: [
-    { operation: "scan", allowed: true },
-    { operation: "align", allowed: true },
-    { operation: "copy", allowed: true },
-    { operation: "move", allowed: false, blocked_reason: "managed" },
-    { operation: "rename", allowed: false, blocked_reason: "managed" },
-    { operation: "delete", allowed: false, blocked_reason: "managed" },
     { operation: "release", allowed: true },
+    { operation: "copy", allowed: true },
   ],
 };
 
+const notesDetail: FileManagerEntryDetail = {
+  entry: { name: "notes.txt", path: "/media/anime/notes.txt", kind: "file", state: "detached", size_bytes: 10, locked: false },
+  revision: "rev-notes",
+  in_progress: [],
+  companions: [],
+  operations: [],
+};
+
 let fetchMock: ReturnType<typeof vi.fn>;
-let entriesStatus: number;
+let rootsBody: FileManagerRootList;
+let entriesFailure: { status: number; code: string } | null;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
 
 beforeEach(() => {
-  entriesStatus = 200;
-  fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+  rootsBody = { roots: [downloadRoot, mediaRoot, showARoot] };
+  entriesFailure = null;
+  fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input), "http://localhost");
-    if (url.pathname === "/api/v1/file-manager/mounts") return json(mounts);
-    if (url.pathname === "/api/v1/file-manager/entries") {
-      if (entriesStatus !== 200) return json({ code: "FILE_MANAGER_PATH_DENIED", message: "denied" }, entriesStatus);
-      if (url.searchParams.get("cursor") === "cursor-2") return json(secondPage);
-      return json(url.searchParams.get("path") === "/" ? rootPage : firstPage);
+    if (url.pathname === "/api/v1/file-manager/roots") {
+      if (init?.method === "POST") {
+        const request = JSON.parse(String(init?.body)) as { path: string };
+        const root: FileManagerRoot = {
+          id: `root-${request.path}`,
+          label: request.path.slice(request.path.lastIndexOf("/") + 1),
+          path: request.path,
+          available: true,
+        };
+        rootsBody = { roots: [...rootsBody.roots, root] };
+        return json(root, 201);
+      }
+      return json(rootsBody);
     }
-    if (url.pathname === "/api/v1/file-manager/entry" && url.searchParams.get("path") === "/media/anime/ep01.mkv") return json(managedDetail);
+    if (url.pathname.startsWith("/api/v1/file-manager/roots/") && init?.method === "DELETE") {
+      const id = decodeURIComponent(url.pathname.slice("/api/v1/file-manager/roots/".length));
+      const removed = rootsBody.roots.some((root) => root.id === id);
+      rootsBody = { roots: rootsBody.roots.filter((root) => root.id !== id) };
+      return removed ? new Response(null, { status: 204 }) : json({ code: "FILE_MANAGER_ROOT_NOT_FOUND", message: "missing" }, 404);
+    }
+    if (url.pathname === "/api/v1/file-manager/entries") {
+      if (entriesFailure) return json({ code: entriesFailure.code, message: "denied" }, entriesFailure.status);
+      if (url.searchParams.get("cursor") === "cursor-2") return json(secondPage);
+      return json(url.searchParams.get("path") === "/media" ? mediaPage : firstPage);
+    }
+    if (url.pathname === "/api/v1/file-manager/entry") {
+      const path = url.searchParams.get("path");
+      if (path === "/media/anime/ep01.mkv") return json(managedDetail);
+      if (path === "/media/anime/notes.txt") return json(notesDetail);
+    }
+    if (url.pathname === "/api/v1/file-manager/operations" && init?.method === "POST") {
+      return json({ id: "op-1", operation: "delete", state: "ready", path: "/media/anime/notes.txt" });
+    }
     return json({ code: "FILE_MANAGER_PATH_NOT_FOUND", message: "missing" }, 404);
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -93,220 +134,235 @@ function renderDialog(props: Partial<Parameters<typeof FileManagerDialog>[0]> = 
   return handlers;
 }
 
-function renderWithClient(node: ReactElement) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={client}>{node}</QueryClientProvider>);
-}
-
 function requested(): URL[] {
   return fetchMock.mock.calls.map(([input]) => new URL(String(input), "http://localhost"));
 }
 
-function quickEntries() {
-  return within(screen.getByRole("region", { name: t("fileManager.locationsAria") }));
+async function loadFolder(props: Partial<Parameters<typeof FileManagerDialog>[0]> = { path: "/media/anime" }) {
+  const handlers = renderDialog(props);
+  const list = await screen.findByRole("list", { name: t("fileManager.listAria") });
+  fireEvent.click(screen.getByRole("button", { name: t("fileManager.loadMore") }));
+  await waitFor(() => expect(list.textContent).toContain("notes.txt"));
+  return { list, handlers };
+}
+
+function fileCheckbox(name: string) {
+  return screen.getByRole("checkbox", { name: t("fileManager.browse.selectFile", { name }) });
 }
 
 describe("FileManagerDialog", () => {
-  it("opens at the filesystem root, lists the quick entries and jumps to one", async () => {
+  it("opens at the first available library directory and jumps from the root selector", async () => {
     const handlers = renderDialog();
-    expect(await screen.findByText("media")).toBeInTheDocument();
-    expect(requested().some((url) => url.pathname.endsWith("/entries") && url.searchParams.get("path") === "/")).toBe(true);
+    expect(await screen.findByText("anime")).toBeInTheDocument();
+    // The first available root is the opener; unavailable ones never get a folder read.
+    expect(requested().some((url) => url.pathname.endsWith("/entries") && url.searchParams.get("path") === "/media")).toBe(true);
+    expect(requested().some((url) => url.pathname.endsWith("/entries") && url.searchParams.get("path") === "/downloads")).toBe(false);
 
-    // Unavailable quick entries are not clickable and state the reason.
-    const download = quickEntries().getByRole("button", { name: new RegExp(t("fileManager.mount.downloadNamed", { name: "Home" })) });
-    expect(download).toBeDisabled();
-    expect(download.closest("li")!.textContent).toContain(t("fileManager.mountUnavailable.missing"));
+    fireEvent.click(screen.getByText("anime").closest("button")!);
+    expect(handlers.onNavigate).toHaveBeenLastCalledWith("/media/anime");
 
-    fireEvent.click(quickEntries().getByRole("button", { name: new RegExp(t("fileManager.mount.download")) }));
-    expect(handlers.onNavigate).not.toHaveBeenCalled();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: t("fileManager.roots.selector") }));
+    const menu = await screen.findByRole("menu");
+    // An unavailable root is disabled in place and states the reason.
+    const download = within(menu).getByRole("menuitem", { name: /Home/ });
+    expect(download).toHaveAttribute("aria-disabled", "true");
+    expect(download.textContent).toContain(t("fileManager.roots.unavailable.missing"));
 
-    fireEvent.click(screen.getByText("media").closest("button")!);
-    expect(handlers.onNavigate).toHaveBeenLastCalledWith({ path: "/media", file: undefined });
-
-    fireEvent.click(quickEntries().getByRole("button", { name: "Show A" }));
-    expect(handlers.onNavigate).toHaveBeenLastCalledWith({ path: "/media/anime", file: undefined });
+    await user.click(within(menu).getByRole("menuitem", { name: /Show A/ }));
+    expect(handlers.onNavigate).toHaveBeenLastCalledWith("/media/anime");
   });
 
   it("goes to an absolute path from the path bar and refuses a relative one", async () => {
     const handlers = renderDialog();
-    await screen.findByText("media");
+    await screen.findByText("anime");
+    // The path field stays behind its button; the root selector and breadcrumb carry navigation.
+    fireEvent.click(screen.getByRole("button", { name: t("fileManager.pathBar.toggle") }));
     const input = screen.getByLabelText(t("fileManager.pathBar.label"));
 
     fireEvent.change(input, { target: { value: "/media//anime/" } });
     fireEvent.click(screen.getByRole("button", { name: t("fileManager.pathBar.go") }));
-    // Normalization removes repeated and trailing "/".
-    expect(handlers.onNavigate).toHaveBeenLastCalledWith({ path: "/media/anime", file: undefined });
+    // Normalization removes repeated and trailing "/"; the path itself is navigated, not guessed.
+    expect(handlers.onNavigate).toHaveBeenLastCalledWith("/media/anime");
 
-    fireEvent.change(input, { target: { value: "media/anime" } });
+    fireEvent.click(screen.getByRole("button", { name: t("fileManager.pathBar.toggle") }));
+    fireEvent.change(screen.getByLabelText(t("fileManager.pathBar.label")), { target: { value: "media/anime" } });
     fireEvent.click(screen.getByRole("button", { name: t("fileManager.pathBar.go") }));
     expect(await screen.findByText(t("fileManager.pathBar.absolute"))).toBeInTheDocument();
     expect(handlers.onNavigate).toHaveBeenCalledTimes(1);
   });
 
-  it("pages a folder, nests a subtitle under its video and navigates", async () => {
-    const handlers = renderDialog({ path: "/media/anime" });
-    const list = await screen.findByRole("list", { name: t("fileManager.listAria") });
+  it("lists flat rows with folders first, pages, and navigates up the breadcrumb", async () => {
+    const { list, handlers } = await loadFolder();
+    const items = within(list).getAllByRole("listitem");
+    // Folders come first; a subtitle is a sibling row of its video, not nested under it.
+    const flat = items.map((item) => item.textContent ?? "");
+    expect(flat.findIndex((text) => text.includes("Season 01"))).toBe(0);
+    expect(flat.findIndex((text) => text.includes("notes.txt"))).toBeGreaterThan(0);
     const videoItem = within(list).getByText("ep01.mkv").closest("li")!;
-    // The subtitle renders inside the video entry it follows, flagged as not aligned.
-    expect(within(videoItem).getByText("ep01.zh.ass")).toBeInTheDocument();
-    expect(within(videoItem).getByText(t("fileManager.notAligned"))).toBeInTheDocument();
-    expect(within(list).getByText("Season 01").closest("div")!.textContent).toContain(t("fileManager.state.in_progress"));
-    expect(videoItem.textContent).toContain(t("fileManager.state.managed"));
+    expect(within(videoItem).queryByText("ep01.zh.ass")).not.toBeInTheDocument();
+    expect(within(list).getByText("ep01.zh.ass").closest("li")).not.toBe(videoItem);
 
-    fireEvent.click(screen.getByRole("button", { name: t("fileManager.loadMore") }));
-    await waitFor(() => expect(list.textContent).toContain("notes.txt"));
-    expect(list.textContent).toContain(t("fileManager.state.detached"));
     expect(requested().some((url) => url.pathname.endsWith("/entries") && url.searchParams.get("cursor") === "cursor-2" && url.searchParams.get("path") === "/media/anime")).toBe(true);
     expect(screen.queryByRole("button", { name: t("fileManager.loadMore") })).not.toBeInTheDocument();
 
     fireEvent.click(within(list).getByText("Season 01"));
-    expect(handlers.onNavigate).toHaveBeenLastCalledWith({ path: "/media/anime/Season 01", file: undefined });
-    fireEvent.click(within(list).getByText("ep01.mkv"));
-    expect(handlers.onNavigate).toHaveBeenLastCalledWith({ path: "/media/anime", file: "/media/anime/ep01.mkv" });
+    expect(handlers.onNavigate).toHaveBeenLastCalledWith("/media/anime/Season 01");
 
-    // The breadcrumb assembles the absolute path level by level from the root: go back to the root first.
+    // A library directory has nothing above it inside the breadcrumb, so its only crumb is the root itself.
     const breadcrumb = screen.getByRole("navigation", { name: t("fileManager.breadcrumbAria") });
-    fireEvent.click(within(breadcrumb).getByRole("button", { name: t("fileManager.mount.root") }));
-    expect(handlers.onNavigate).toHaveBeenLastCalledWith({ path: undefined, file: undefined });
+    expect(within(breadcrumb).getByText("Show A")).toHaveAttribute("aria-current", "location");
+    expect(within(breadcrumb).queryByRole("button")).not.toBeInTheDocument();
   });
 
-  it("marks locked entries and opens the work that manages them", async () => {
+  it("walks up the breadcrumb from a subfolder to its library directory", async () => {
+    const handlers = renderDialog({ path: "/media/anime/Season 01" });
+    await screen.findByRole("list", { name: t("fileManager.listAria") });
+    const breadcrumb = screen.getByRole("navigation", { name: t("fileManager.breadcrumbAria") });
+    expect(within(breadcrumb).getByText("Season 01")).toHaveAttribute("aria-current", "location");
+    fireEvent.click(within(breadcrumb).getByRole("button", { name: "Show A" }));
+    expect(handlers.onNavigate).toHaveBeenLastCalledWith("/media/anime");
+  });
+
+  it("opens the read-only managed detail for a locked file and its anime", async () => {
     const handlers = renderDialog({ path: "/media/anime" });
     const list = await screen.findByRole("list", { name: t("fileManager.listAria") });
-
-    // The video and its subtitle are both managed by the same anime, each badge on its own row.
-    const videoRow = within(list).getByText("ep01.mkv").closest("div")!;
-    const locked = within(videoRow).getByRole("button", { name: t("fileManager.lockedBy", { title: "Show A" }) });
-    fireEvent.click(locked);
-    expect(handlers.onOpenAnime).toHaveBeenCalledWith("anime-1");
-    expect(handlers.onNavigate).not.toHaveBeenCalled();
-
-    // A folder only knows it is locked within the subtree and carries no anime name: show the lock only, no jump.
-    const folderItem = within(list).getByText("Season 01").closest("li")!;
-    expect(within(folderItem).getByText(t("fileManager.locked"))).toBeInTheDocument();
-    expect(within(folderItem).queryByRole("button", { name: t("fileManager.locked") })).not.toBeInTheDocument();
-  });
-
-  it("shows the selected file's details, links and the allowed actions", async () => {
-    const handlers = renderDialog({ path: "/media/anime", file: "/media/anime/ep01.mkv" });
-    const detail = await screen.findByRole("region", { name: t("fileManager.detail.aria") });
-    await within(detail).findByText("Show A");
+    // Locked files carry no checkbox: clicking the grayed row opens the detail.
+    expect(within(within(list).getByText("ep01.mkv").closest("li")!).queryByRole("checkbox")).not.toBeInTheDocument();
+    fireEvent.click(within(list).getByText("ep01.mkv"));
+    const detail = await screen.findByRole("dialog", { name: "ep01.mkv" });
+    expect(within(detail).getByText(t("fileManager.managedDialog.unbind"))).toBeInTheDocument();
     fireEvent.click(within(detail).getByRole("button", { name: "Show A" }));
     expect(handlers.onOpenAnime).toHaveBeenCalledWith("anime-1");
-    fireEvent.click(within(detail).getByRole("button", { name: t("fileManager.detail.openRecord") }));
-    expect(handlers.onOpenRecord).toHaveBeenCalledWith("acq-1");
+  });
 
-    expect(within(detail).getByRole("button", { name: t("fileManager.operation.copy") })).toBeEnabled();
-    expect(within(detail).getByRole("button", { name: t("fileManager.operation.move") })).toBeDisabled();
+  it("selects files, gates rename to a single file, and opens the rename dialog", async () => {
+    await loadFolder();
+    fireEvent.click(fileCheckbox("notes.txt"));
+    fireEvent.click(fileCheckbox("poster.jpg"));
+    expect(screen.getByText(t("fileManager.selection.count", { n: 2 }))).toBeInTheDocument();
 
-    fireEvent.click(within(detail).getByRole("button", { name: "ep01.zh.ass" }));
-    expect(handlers.onNavigate).toHaveBeenLastCalledWith({ path: "/media/anime", file: "/media/anime/ep01.zh.ass" });
+    const rename = screen.getByRole("button", { name: t("fileManager.selection.rename") });
+    expect(rename).toBeDisabled();
+    expect(rename.closest("span")!.title).toBe(t("fileManager.selection.renameSingleHint"));
+
+    fireEvent.click(fileCheckbox("poster.jpg"));
+    expect(screen.getByText(t("fileManager.selection.count", { n: 1 }))).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: t("fileManager.selection.rename") })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: t("fileManager.selection.rename") }));
+    // Blocking short forms open as alertdialog (the base Dialog's blocking role).
+    const dialog = await screen.findByRole("alertdialog", { name: t("fileManager.renameDialog.title") });
+    expect(within(dialog).getByText("notes.txt")).toBeInTheDocument();
+    const input = within(dialog).getByLabelText(t("fileManager.renameDialog.newName"));
+    expect(input).toHaveValue("notes.txt");
+    // The field opens on the current name; that is not a validation error until the owner edits it.
+    expect(within(dialog).queryByText(t("fileManager.renameDialog.nameSame"))).not.toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "poster.jpg" } });
+    expect(within(dialog).getByText(t("fileManager.renameDialog.nameTaken"))).toBeInTheDocument();
+  });
+
+  it("switching the filter empties the selection; hide-managed drops locked rows", async () => {
+    await loadFolder();
+    fireEvent.click(fileCheckbox("notes.txt"));
+    expect(screen.getByText(t("fileManager.selection.count", { n: 1 }))).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("radio", { name: t("fileManager.browse.filter.video") }));
+    await waitFor(() => expect(screen.queryByText(t("fileManager.selection.count", { n: 1 }))).not.toBeInTheDocument());
+    expect(screen.queryByRole("checkbox", { name: t("fileManager.browse.selectFile", { name: "notes.txt" }) })).not.toBeInTheDocument();
+    // A detached video is filtered as a video by its extension, not left in "other".
+    expect(screen.getByText("raw-02.mkv")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("radio", { name: t("fileManager.browse.filter.all") }));
+    fireEvent.click(screen.getByRole("switch", { name: t("fileManager.browse.hideManaged") }));
+    await waitFor(() => expect(screen.queryByText("ep01.mkv")).not.toBeInTheDocument());
+    expect(screen.getByText("notes.txt")).toBeInTheDocument();
+    expect(screen.getByText("poster.jpg")).toBeInTheDocument();
+
+    // Images are a browse-only bucket: a plain .jpg is reachable, other files are not.
+    fireEvent.click(screen.getByRole("radio", { name: t("fileManager.browse.filter.image") }));
+    expect(screen.getByText("poster.jpg")).toBeInTheDocument();
+    expect(screen.queryByText("notes.txt")).not.toBeInTheDocument();
+  });
+
+  it("deletes a selection per file: revision read, submitted with it, toast and clear", async () => {
+    await loadFolder();
+    fireEvent.click(fileCheckbox("notes.txt"));
+    fireEvent.click(screen.getByRole("button", { name: t("fileManager.selection.delete") }));
+    const dialog = await screen.findByRole("alertdialog", { name: t("fileManager.deleteDialog.title") });
+    expect(within(dialog).getByText("notes.txt")).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: t("fileManager.deleteDialog.submit") }));
+    const { toast } = await import("sonner");
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(t("fileManager.batch.done", { n: 1 })));
+    const posts = fetchMock.mock.calls.filter(([, init]) => init?.method === "POST");
+    expect(posts).toHaveLength(1);
+    const body = JSON.parse(String(posts[0][1].body));
+    expect(body).toMatchObject({ operation: "delete", path: "/media/anime/notes.txt", expected_revision: "rev-notes" });
+    // The finished batch closes the dialog and empties the selection.
+    await waitFor(() => expect(screen.queryByRole("alertdialog", { name: t("fileManager.deleteDialog.title") })).not.toBeInTheDocument());
+    expect(screen.queryByText(t("fileManager.selection.count", { n: 1 }))).not.toBeInTheDocument();
   });
 
   it("shows a typed error for a path the browser refuses", async () => {
-    entriesStatus = 400;
+    entriesFailure = { status: 400, code: "FILE_MANAGER_PATH_DENIED" };
     renderDialog({ path: "/etc" });
     expect(await screen.findByText(t("error.FILE_MANAGER_PATH_DENIED"))).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: t("fileManager.retry") }).length).toBeGreaterThan(0);
   });
-});
 
-describe("EntryDetailView", () => {
-  it("explains a detached one-shot file and an in-progress owner", () => {
-    const onOpenRecord = vi.fn();
-    renderWithClient(
-      <EntryDetailView
-        detail={{
-          entry: { name: "movie.zh.ass", path: "/media/Movie/movie.zh.ass", kind: "file", state: "detached", role: "subtitle", locked: false },
-          detached_reason: "one_shot",
-          revision: "rev-os",
-          acquisition_id: "acq-os",
-          in_progress: [],
-          video: { role: "video", path: "/media/Movie/movie.mkv", present: false },
-          companions: [],
-          operations: [
-            { operation: "copy", allowed: true },
-            { operation: "move", allowed: true },
-          ],
-        }}
-        onOpenAnime={vi.fn()}
-        onOpenRecord={onOpenRecord}
-        onSelect={vi.fn()}
-      />,
-    );
-    expect(screen.getByText(t("fileManager.state.detached"))).toBeInTheDocument();
-    expect(screen.getByText(t("fileManager.detachedReason.one_shot"))).toBeInTheDocument();
-    expect(screen.getByText(t("fileManager.role.subtitle"))).toBeInTheDocument();
-    // The video is no longer at its recorded path: show the name without a link.
-    expect(screen.getByText("movie.mkv")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "movie.mkv" })).not.toBeInTheDocument();
-    expect(screen.getByText(t("fileManager.detail.missing"))).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: t("fileManager.detail.openRecord") }));
-    expect(onOpenRecord).toHaveBeenCalledWith("acq-os");
+  it("shows the empty state while no library directory exists, and adds one from there", async () => {
+    rootsBody = { roots: [] };
+    renderDialog();
+    expect(await screen.findByText(t("fileManager.noRoots.title"))).toBeInTheDocument();
+    expect(screen.getByText(t("fileManager.noRoots.body"))).toBeInTheDocument();
+    // Nothing is browsed yet: there is no authorized directory to list.
+    expect(requested().some((url) => url.pathname.endsWith("/entries"))).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: t("fileManager.noRoots.add") }));
+    const dialog = await screen.findByRole("dialog", { name: t("fileManager.roots.title") });
+    fireEvent.change(within(dialog).getByLabelText(t("fileManager.roots.pathLabel")), { target: { value: "/srv/library" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("fileManager.roots.add") }));
+    const { toast } = await import("sonner");
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(t("fileManager.roots.added", { path: "/srv/library" })));
+    const posts = fetchMock.mock.calls.filter(([input, init]) => new URL(String(input), "http://localhost").pathname === "/api/v1/file-manager/roots" && init?.method === "POST");
+    expect(posts).toHaveLength(1);
+    expect(JSON.parse(String(posts[0][1].body))).toEqual({ path: "/srv/library" });
   });
 
-  it("shows the frozen episode evidence as status text", () => {
-    renderWithClient(
-      <EntryDetailView
-        detail={{
-          entry: { name: "x.mkv", path: "/media/x.mkv", kind: "file", state: "detached", role: "video", locked: false },
-          revision: "r",
-          in_progress: [],
-          companions: [],
-          operations: [],
-          episode: { state: "invalid", failure_code: "episode_fractional", raw_value: "12.5", shape: "single" },
-        }}
-        onOpenAnime={vi.fn()}
-        onOpenRecord={vi.fn()}
-        onSelect={vi.fn()}
-      />,
-    );
-    expect(screen.getByText(t("fileManager.detail.episode"))).toBeInTheDocument();
-    expect(screen.getByText(`${t("reason.episode_fractional")} · 12.5`)).toBeInTheDocument();
-    expect(screen.queryByText(/episode_fractional/)).not.toBeInTheDocument();
-    expect(screen.queryByText(t("fileManager.episodeState.invalid"))).not.toBeInTheDocument();
+  it("offers to add the parent directory when the path lies outside every library directory", async () => {
+    entriesFailure = { status: 403, code: "FILE_MANAGER_PATH_OUTSIDE_ROOTS" };
+    renderDialog({ path: "/srv/library" });
+    expect(await screen.findByText(t("fileManager.outside.title"))).toBeInTheDocument();
+    // Outside-roots is a state, not a load failure: the retry button stays away.
+    expect(screen.queryByRole("button", { name: t("fileManager.retry") })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: t("fileManager.outside.add") }));
+    const dialog = await screen.findByRole("dialog", { name: t("fileManager.roots.title") });
+    expect(within(dialog).getByLabelText(t("fileManager.roots.pathLabel"))).toHaveValue("/srv");
   });
 
-  it("shows a resolved episode without a reason", () => {
-    renderWithClient(
-      <EntryDetailView
-        detail={{
-          entry: { name: "y.mkv", path: "/media/y.mkv", kind: "file", state: "managed", role: "video", locked: true },
-          revision: "r",
-          in_progress: [],
-          companions: [],
-          operations: [],
-          episode: { state: "resolved", raw_value: "05", shape: "single" },
-        }}
-        onOpenAnime={vi.fn()}
-        onOpenRecord={vi.fn()}
-        onSelect={vi.fn()}
-      />,
-    );
-    expect(screen.getByText(`${t("fileManager.episodeState.resolved")} · 05`)).toBeInTheDocument();
-  });
+  it("manages library directories: removing the browsed one switches to the next", async () => {
+    const handlers = renderDialog({ path: "/media/anime" });
+    await screen.findByRole("list", { name: t("fileManager.listAria") });
 
-  it("lists unfinished processing", () => {
-    renderWithClient(
-      <EntryDetailView
-        detail={{
-          entry: { name: "ep02.mkv", path: "/media/anime/ep02.mkv", kind: "file", state: "in_progress", role: "video", locked: true },
-          revision: "rev-2",
-          in_progress: [{ kind: "alignment" }, { kind: "file_operation", acquisition_id: "acq-2" }, { kind: "user_operation" }],
-          companions: [],
-          operations: [
-            { operation: "align", allowed: false, blocked_reason: "in_progress" },
-            { operation: "copy", allowed: false, blocked_reason: "in_progress" },
-          ],
-        }}
-        onOpenAnime={vi.fn()}
-        onOpenRecord={vi.fn()}
-        onSelect={vi.fn()}
-      />,
-    );
-    const processing = screen.getByText(t("fileManager.detail.processing")).closest("div")!;
-    expect(within(processing).getByText(t("fileManager.inProgressKind.alignment"))).toBeInTheDocument();
-    expect(within(processing).getByText(t("fileManager.inProgressKind.file_operation"))).toBeInTheDocument();
-    expect(within(processing).getByText(t("fileManager.inProgressKind.user_operation"))).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: t("fileManager.roots.selector") }));
+    const menu = await screen.findByRole("menu");
+    await user.click(within(menu).getByRole("menuitem", { name: t("fileManager.roots.manage") }));
+
+    const dialog = await screen.findByRole("dialog", { name: t("fileManager.roots.title") });
+    // Only the root being browsed carries the current badge — not a nested parent also holding the path.
+    const showARow = within(dialog).getByText("Show A").closest("li")!;
+    expect(within(showARow).getByText(t("fileManager.roots.current"))).toBeInTheDocument();
+    const mediaRow = within(dialog).getByText("media", { exact: true }).closest("li")!;
+    expect(within(mediaRow).queryByText(t("fileManager.roots.current"))).not.toBeInTheDocument();
+
+    fireEvent.click(within(showARow).getByRole("button", { name: t("fileManager.roots.remove") }));
+    const { toast } = await import("sonner");
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(t("fileManager.roots.removed", { path: "/media/anime" })));
+    expect(fetchMock.mock.calls.some(([input, init]) => init?.method === "DELETE" && new URL(String(input), "http://localhost").pathname === "/api/v1/file-manager/roots/root-anime")).toBe(true);
+    // Removing the browsed root lands on the next usable one.
+    expect(handlers.onNavigate).toHaveBeenCalledWith("/media");
   });
 });

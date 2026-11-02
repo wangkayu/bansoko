@@ -26,6 +26,8 @@ type fakeFileManager struct {
 	align          filemanager.AlignRequest
 	matchPreview   filemanager.MatchRequest
 	match          filemanager.SubmitMatchRequest
+	recognition    filemanager.RecognitionRequest
+	recognitionSub filemanager.SubmitRecognitionRequest
 	seasonsFor     string
 	episodesFor    string
 	episodesSeason int
@@ -114,15 +116,63 @@ func (f *fakeFileManager) Align(_ context.Context, request filemanager.AlignRequ
 	return filemanager.AlignOutcome{ManagedAnimeID: "anime-1"}, nil
 }
 
-func (f *fakeFileManager) Mounts(context.Context) ([]filemanager.Mount, error) {
+func (f *fakeFileManager) PreviewRecognition(_ context.Context, request filemanager.RecognitionRequest) (filemanager.RecognitionPreview, error) {
+	f.recognition = request
+	if f.err != nil {
+		return filemanager.RecognitionPreview{}, f.err
+	}
+	return filemanager.RecognitionPreview{
+		Directory: "/srv/library/Show", UnknownRoute: "skip", PlanDigest: "plan-1",
+		Conflicts: []string{"/srv/library/Show/01.mkv"},
+		Rows: []filemanager.RecognitionRow{
+			{Path: "/srv/library/Show/Show - 01.mkv", Name: "Show - 01.mkv", Kind: "video", Group: "Show - 01", Revision: "rev-1",
+				Episode:    &filemanager.RecognitionEpisode{Raw: "01", Number: "1", Offset: 0, Source: "file_parser"},
+				TargetPath: "/srv/library/Show/01.mkv", TargetName: "01.mkv", Disposition: filemanager.RecognitionRename,
+				Conflict: &filemanager.RecognitionConflict{OccupiedBy: filemanager.OccupantFile, VersionPath: "/srv/library/Show/01 (2).mkv"}},
+			{Path: "/srv/library/Show/mystery.mkv", Name: "mystery.mkv", Kind: "video", Group: "mystery", Revision: "rev-2",
+				Disposition: filemanager.RecognitionError,
+				Blockers:    []filemanager.RecognitionBlocker{{Code: filemanager.RecognitionBlockerFactsMissing, Facts: []string{"anime.title"}}}},
+		},
+	}, nil
+}
+
+func (f *fakeFileManager) SubmitRecognition(_ context.Context, request filemanager.SubmitRecognitionRequest) (filemanager.RecognitionOutcome, error) {
+	f.recognitionSub = request
+	if f.err != nil {
+		return filemanager.RecognitionOutcome{}, f.err
+	}
+	return filemanager.RecognitionOutcome{
+		Renamed: 1, Moved: 1,
+		Operations: []filemanager.UserOperation{
+			{ID: "op-r", Operation: filemanager.UserRename, State: filemanager.UserOperationReady,
+				SourcePath: "/srv/library/Show/Show - 01.mkv", TargetPath: "/srv/library/Show/01.mkv"},
+			{ID: "op-mv", Operation: filemanager.UserMove, State: filemanager.UserOperationReady,
+				SourcePath: "/srv/library/Show/mystery.mkv", TargetPath: "/srv/library/Show/Extras/mystery.mkv"},
+		},
+	}, nil
+}
+
+func (f *fakeFileManager) Roots(context.Context) ([]filemanager.Root, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
-	return []filemanager.Mount{
-		{MountConfig: filemanager.MountConfig{Key: filemanager.RootMountKey, Kind: filemanager.MountRoot, Path: filemanager.RootMountPath}, Available: true},
-		{MountConfig: filemanager.MountConfig{Key: "download:qb-main", Kind: filemanager.MountDownload, ConnectionID: "qb-main", Label: "Main", Path: "/srv/downloads"},
-			Unavailable: filemanager.MountNotConfigured},
+	return []filemanager.Root{
+		{ID: "root-1", Label: "library", Path: "/srv/library", Available: true},
+		{ID: "root-2", Label: "downloads", Path: "/srv/downloads", Unavailable: filemanager.RootMissing},
 	}, nil
+}
+
+func (f *fakeFileManager) AddRoot(_ context.Context, request filemanager.AddRootRequest) (filemanager.Root, error) {
+	f.path = request.Path
+	if f.err != nil {
+		return filemanager.Root{}, f.err
+	}
+	return filemanager.Root{ID: "root-1", Label: "library", Path: request.Path, Available: true}, nil
+}
+
+func (f *fakeFileManager) RemoveRoot(_ context.Context, id string) error {
+	f.located = id
+	return f.err
 }
 
 func (f *fakeFileManager) List(_ context.Context, path, cursor string, limit int) (filemanager.Listing, error) {
@@ -180,19 +230,18 @@ func TestFileManagerHandlersShapeResponses(t *testing.T) {
 		},
 	}}
 
-	recorder, body := serveFileManager(t, service, "/api/v1/file-manager/mounts")
+	recorder, body := serveFileManager(t, service, "/api/v1/file-manager/roots")
 	if recorder.Code != http.StatusOK || recorder.Header().Get("Cache-Control") != "no-store" {
-		t.Fatalf("mounts: %d %v", recorder.Code, recorder.Header())
+		t.Fatalf("roots: %d %v", recorder.Code, recorder.Header())
 	}
-	mounts := body["mounts"].([]any)
-	root := mounts[0].(map[string]any)
-	download := mounts[1].(map[string]any)
-	if len(mounts) != 2 || root["key"] != "root" || root["kind"] != "root" || root["path"] != "/" ||
-		root["available"] != true || root["unavailable_reason"] != nil ||
-		download["key"] != "download:qb-main" || download["kind"] != "download" || download["path"] != "/srv/downloads" ||
-		download["connection_id"] != "qb-main" || download["label"] != "Main" ||
-		download["available"] != false || download["unavailable_reason"] != "not_configured" {
-		t.Fatalf("mounts body = %v", body)
+	roots := body["roots"].([]any)
+	library := roots[0].(map[string]any)
+	downloads := roots[1].(map[string]any)
+	if len(roots) != 2 || library["id"] != "root-1" || library["label"] != "library" || library["path"] != "/srv/library" ||
+		library["available"] != true || library["unavailable_reason"] != nil ||
+		downloads["id"] != "root-2" || downloads["path"] != "/srv/downloads" ||
+		downloads["available"] != false || downloads["unavailable_reason"] != "missing" {
+		t.Fatalf("roots body = %v", body)
 	}
 
 	recorder, body = serveFileManager(t, service, "/api/v1/file-manager/entries?path=%2Fsrv%2Flibrary%2FShow&cursor=abc&limit=50")
@@ -396,5 +445,70 @@ func TestMatchPreviewStaysAvailableDuringMaintenance(t *testing.T) {
 		if isReadOnlyPath(http.MethodPost, path) {
 			t.Fatalf("%s is a write", path)
 		}
+	}
+}
+
+func TestFileManagerRecognitionHandlers(t *testing.T) {
+	service := &fakeFileManager{}
+	recorder, body := postFileManager(t, service, "/api/v1/file-manager/recognition/preview", "",
+		`{"paths":["/srv/library/Show/Show - 01.mkv","/srv/library/Show/Show - 01.zh.ass"],"parser":{"id":"regex","config":{"episode_patterns":["S(\\d+)"]}},`+
+			`"video_template":"${ep.number}.${file.ext}","subtitle_template":"sub","match":{"managed_anime_id":"anime-1","season":1,"offset":2}}`)
+	if recorder.Code != http.StatusOK || recorder.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("preview: %d %v", recorder.Code, body)
+	}
+	request := service.recognition
+	if len(request.Paths) != 2 || request.Parser.ID != "regex" || string(request.Parser.Config) != `{"episode_patterns":["S(\\d+)"]}` ||
+		request.VideoTemplate != "${ep.number}.${file.ext}" || request.SubtitleTemplate != "sub" ||
+		request.Match == nil || request.Match.ManagedAnimeID != "anime-1" || request.Match.Season == nil || *request.Match.Season != 1 ||
+		request.Match.Episode != nil || request.Match.Offset != 2 {
+		t.Fatalf("preview request: %+v", request)
+	}
+	rows := body["rows"].([]any)
+	first := rows[0].(map[string]any)
+	episode := first["episode"].(map[string]any)
+	conflict := first["conflict"].(map[string]any)
+	blocker := rows[1].(map[string]any)["blockers"].([]any)[0].(map[string]any)
+	if body["directory"] != "/srv/library/Show" || body["unknown_route"] != "skip" || body["plan_digest"] != "plan-1" ||
+		body["conflicts"].([]any)[0] != "/srv/library/Show/01.mkv" ||
+		first["target_name"] != "01.mkv" || first["disposition"] != "rename" || first["group"] != "Show - 01" ||
+		first["revision"] != "rev-1" || episode["number"] != "1" || episode["source"] != "file_parser" || episode["offset"] != float64(0) ||
+		conflict["occupied_by"] != "file" || conflict["version_path"] != "/srv/library/Show/01 (2).mkv" ||
+		rows[1].(map[string]any)["disposition"] != "error" || blocker["code"] != "facts_missing" ||
+		blocker["facts"].([]any)[0] != "anime.title" {
+		t.Fatalf("preview body: %v", body)
+	}
+
+	recorder, body = postFileManager(t, service, "/api/v1/file-manager/recognition", "rec-1",
+		`{"paths":["/srv/library/Show/Show - 01.mkv"],"video_template":"${ep.number}.${file.ext}",`+
+			`"expected_plan_digest":"plan-1","conflict":"version"}`)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("submit: %d %v", recorder.Code, body)
+	}
+	submit := service.recognitionSub
+	if submit.IdempotencyKey != "rec-1" || submit.Actor != "web" || submit.ExpectedPlanDigest != "plan-1" ||
+		submit.Conflict != filemanager.RecognitionConflictVersion || submit.VideoTemplate != "${ep.number}.${file.ext}" ||
+		submit.SubtitleTemplate != "" || submit.Match != nil ||
+		submit.Parser.ID != "" || len(submit.Parser.Config) != 0 {
+		t.Fatalf("submit request: %+v", submit)
+	}
+	operations := body["operations"].([]any)
+	if body["renamed"] != float64(1) || body["moved"] != float64(1) || len(operations) != 2 ||
+		operations[0].(map[string]any)["operation"] != "rename" ||
+		operations[1].(map[string]any)["target_path"] != "/srv/library/Show/Extras/mystery.mkv" {
+		t.Fatalf("submit body: %v", body)
+	}
+
+	recorder, body = postFileManager(t, &fakeFileManager{err: &filemanager.Error{Kind: filemanager.ErrorConflict,
+		Code: filemanager.CodeRecognitionPlanChanged, Message: "changed"}}, "/api/v1/file-manager/recognition", "rec-2",
+		`{"paths":["/srv/library/Show/Show - 01.mkv"],"video_template":"x","expected_plan_digest":"stale","conflict":"block"}`)
+	if recorder.Code != http.StatusConflict || body["code"] != filemanager.CodeRecognitionPlanChanged {
+		t.Fatalf("stale plan: %d %v", recorder.Code, body)
+	}
+
+	if !isReadOnlyPath(http.MethodPost, "/api/v1/file-manager/recognition/preview") {
+		t.Fatal("the recognition preview is a read")
+	}
+	if isReadOnlyPath(http.MethodPost, "/api/v1/file-manager/recognition") {
+		t.Fatal("the recognition submit is a write")
 	}
 }

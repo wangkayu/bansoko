@@ -109,7 +109,7 @@ function SubtitleBadge({ subtitle, state }: { subtitle: BoundSubtitleItem; state
 
 const DETAIL_META = "text-caption tw:m-0 tw:text-muted-foreground";
 
-function SubtitleDetail({ subtitle, state }: { subtitle: BoundSubtitleItem; state: BadgeState }) {
+function SubtitleDetail({ subtitle, state, showLanguage }: { subtitle: BoundSubtitleItem; state: BadgeState; showLanguage: boolean }) {
   const size = subtitle.sizeBytes !== undefined && subtitle.sizeBytes !== null && subtitle.sizeBytes > 0 ? formatBytes(subtitle.sizeBytes) : undefined;
   return (
     <li className="tw:grid tw:min-w-0 tw:gap-0.5">
@@ -120,12 +120,14 @@ function SubtitleDetail({ subtitle, state }: { subtitle: BoundSubtitleItem; stat
           {size && <span className="tw:text-muted-foreground"> · {size}</span>}
         </span>
       </p>
-      <p className={DETAIL_META}>
-        {subtitle.language ? labelValue(t("ui.subtitles.language"), subtitle.language) : t("ui.subtitles.noLanguage")}
-        {subtitle.language && subtitle.languageSource && (
-          <> · {t(subtitle.languageSource === "file" ? "ui.subtitles.languageFromFile" : "ui.subtitles.languageFromRelease")}</>
-        )}
-      </p>
+      {showLanguage && (
+        <p className={DETAIL_META}>
+          {subtitle.language ? labelValue(t("ui.subtitles.language"), subtitle.language) : t("ui.subtitles.noLanguage")}
+          {subtitle.language && subtitle.languageSource && (
+            <> · {t(subtitle.languageSource === "file" ? "ui.subtitles.languageFromFile" : "ui.subtitles.languageFromRelease")}</>
+          )}
+        </p>
+      )}
       {state === "placed" && (
         <>
           <p className="text-caption break-anywhere tw:m-0" title={subtitle.target ?? undefined}>→ {subtitle.target}</p>
@@ -155,11 +157,14 @@ export function BoundSubtitles({
   videoName,
   subtitles,
   videoExcluded = false,
+  showLanguage = true,
 }: {
   videoName: string;
   subtitles: readonly BoundSubtitleItem[];
   /** Owning video is excluded: the subtitles follow it and are not shown as filtered on their own. */
   videoExcluded?: boolean;
+  /** Show the language line; a page without language facts turns it off rather than claim the language is unknown. */
+  showLanguage?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const panelID = useId();
@@ -185,7 +190,7 @@ export function BoundSubtitles({
       </div>
       {open && (
         <ul id={panelID} className="tw:m-0 tw:ml-1.5 tw:grid tw:min-w-0 tw:list-none tw:gap-1.5 tw:border-l tw:border-border tw:py-0.5 tw:pl-3 tw:pr-0">
-          {subtitles.map((subtitle, index) => <SubtitleDetail key={subtitle.key} subtitle={subtitle} state={states[index]!} />)}
+          {subtitles.map((subtitle, index) => <SubtitleDetail key={subtitle.key} subtitle={subtitle} state={states[index]!} showLanguage={showLanguage} />)}
         </ul>
       )}
     </div>

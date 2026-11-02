@@ -9,27 +9,61 @@ import (
 )
 
 // File manager (browse here; commands in server_file_manager_commands.go):
-// browse of any absolute path the container user can read, with the derived
+// browse inside the library directories the owner added, with the derived
 // ownership state and the lock of every entry. Every response is no-store so a
 // re-read after an owner settles shows the new state.
 
-// ListFileManagerMounts lists the quick entries the file manager offers.
-func (s *Server) ListFileManagerMounts(w http.ResponseWriter, r *http.Request) {
+// ListFileManagerRoots lists the library directories the file manager browses.
+func (s *Server) ListFileManagerRoots(w http.ResponseWriter, r *http.Request) {
 	if s.deps.FileManager == nil {
 		writeError(w, r, errors.New("file manager service is not configured"))
 		return
 	}
-	mounts, err := s.deps.FileManager.Mounts(r.Context())
+	roots, err := s.deps.FileManager.Roots(r.Context())
 	if err != nil {
 		writeFileManagerError(w, r, err)
 		return
 	}
-	result := generated.FileManagerMountList{Mounts: make([]generated.FileManagerMount, 0, len(mounts))}
-	for _, mount := range mounts {
-		result.Mounts = append(result.Mounts, mapFileManagerMount(mount))
+	result := generated.FileManagerRootList{Roots: make([]generated.FileManagerRoot, 0, len(roots))}
+	for _, root := range roots {
+		result.Roots = append(result.Roots, mapFileManagerRoot(root))
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, r.Context(), http.StatusOK, result)
+}
+
+// AddFileManagerRoot authorizes one library directory.
+func (s *Server) AddFileManagerRoot(w http.ResponseWriter, r *http.Request) {
+	if s.deps.FileManager == nil {
+		writeError(w, r, errors.New("file manager service is not configured"))
+		return
+	}
+	var request generated.FileManagerRootAddRequest
+	if err := decodeJSON(w, r, &request); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	root, err := s.deps.FileManager.AddRoot(r.Context(), filemanager.AddRootRequest{Path: request.Path})
+	if err != nil {
+		writeFileManagerError(w, r, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, r.Context(), http.StatusCreated, mapFileManagerRoot(root))
+}
+
+// RemoveFileManagerRoot stops authorizing one library directory.
+func (s *Server) RemoveFileManagerRoot(w http.ResponseWriter, r *http.Request, rootID generated.ID) {
+	if s.deps.FileManager == nil {
+		writeError(w, r, errors.New("file manager service is not configured"))
+		return
+	}
+	if err := s.deps.FileManager.RemoveRoot(r.Context(), rootID); err != nil {
+		writeFileManagerError(w, r, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ListFileManagerEntries returns one sorted page of a directory.
@@ -96,6 +130,8 @@ func writeFileManagerError(w http.ResponseWriter, r *http.Request, err error) {
 	}
 	status := http.StatusBadRequest
 	switch typed.Kind {
+	case filemanager.ErrorForbidden:
+		status = http.StatusForbidden
 	case filemanager.ErrorNotFound:
 		status = http.StatusNotFound
 	case filemanager.ErrorConflict:
@@ -111,24 +147,12 @@ func writeFileManagerError(w http.ResponseWriter, r *http.Request, err error) {
 	writeError(w, r, apiErr)
 }
 
-func mapFileManagerMount(mount filemanager.Mount) generated.FileManagerMount {
-	mapped := generated.FileManagerMount{
-		Key: mount.Key, Kind: generated.FileManagerMountKind(mount.Kind), Path: mount.Path, Available: mount.Available,
+func mapFileManagerRoot(root filemanager.Root) generated.FileManagerRoot {
+	mapped := generated.FileManagerRoot{
+		Id: root.ID, Label: root.Label, Path: root.Path, Available: root.Available,
 	}
-	if mount.ConnectionID != "" {
-		id := mount.ConnectionID
-		mapped.ConnectionId = &id
-	}
-	if mount.Label != "" {
-		label := mount.Label
-		mapped.Label = &label
-	}
-	if mount.ManagedAnimeID != "" {
-		id := mount.ManagedAnimeID
-		mapped.ManagedAnimeId = &id
-	}
-	if mount.Unavailable != "" {
-		reason := generated.FileManagerMountUnavailable(mount.Unavailable)
+	if root.Unavailable != "" {
+		reason := generated.FileManagerRootUnavailable(root.Unavailable)
 		mapped.UnavailableReason = &reason
 	}
 	return mapped
@@ -147,6 +171,10 @@ func mapFileManagerEntry(entry filemanager.Entry) generated.FileManagerEntry {
 	if entry.Role != filemanager.RoleNone {
 		role := generated.FileManagerEntryRole(entry.Role)
 		mapped.Role = &role
+	}
+	if entry.FileKind != "" {
+		fileKind := generated.FileManagerEntryFileKind(entry.FileKind)
+		mapped.FileKind = &fileKind
 	}
 	if entry.CompanionOf != "" {
 		companionOf := entry.CompanionOf

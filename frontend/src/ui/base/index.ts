@@ -19,6 +19,7 @@ export {
 } from "./controls";
 export { Checkbox, RadioGroup, Segmented, Switch, type ChoiceOption, type SegmentedTone } from "./toggles";
 export { HelpTip } from "./HelpTip";
+export { Reveal, REVEAL_MS } from "./Reveal";
 export { DropdownMenu, Popconfirm, Popover, Tooltip, type MenuEntry } from "./overlays";
 export { Alert, Progress, type AlertTone } from "./feedback";
 export { LAYER, LayerContext, POPUP_OFFSET, usePopupZIndex } from "./layers";

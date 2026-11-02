@@ -253,7 +253,7 @@ func (executor OSFileExecutor) Execute(ctx context.Context, operation domain.Fil
 		sourceForMutation.Identity = domain.FileIdentity{}
 	}
 
-	target, noop, targetObservation, err := chooseTarget(operation)
+	target, match, targetObservation, err := chooseTarget(operation, sourceForMutation)
 	if err != nil {
 		return operation, err
 	}
@@ -261,7 +261,8 @@ func (executor OSFileExecutor) Execute(ctx context.Context, operation domain.Fil
 	if err := reauthorize(root, &operation); err != nil {
 		return operation, err
 	}
-	if noop {
+	switch match {
+	case targetSameObject:
 		if operation.Operation == domain.OperationMove || operation.Operation == domain.OperationHardlink {
 			currentTarget, err := observeFileAs(target, operation.SourceFingerprint)
 			matches := err == nil && sameMutationFileObservation(currentTarget, sourceForMutation)
@@ -286,6 +287,19 @@ func (executor OSFileExecutor) Execute(ctx context.Context, operation domain.Fil
 			return completeOperation(operation, currentTarget, false), nil
 		}
 		return completeOperation(operation, targetObservation, true), nil
+	case targetSameContent:
+		// The target holds the same content but is a different object. A copy
+		// is already done; a move still has to replace it, which only the
+		// overwrite policy asked for. Anything else is a verification refusal,
+		// not a collision: dropping the source here would discard the object
+		// the operation was checking.
+		if operation.Operation == domain.OperationCopy {
+			return completeOperation(operation, targetObservation, true), nil
+		}
+		if operation.Operation == domain.OperationMove && operation.CollisionPolicy == domain.CollisionOverwrite {
+			return executor.executeOverwrite(ctx, operation, root, source, targetObservation)
+		}
+		return operation, &OperationError{Code: CodeTargetVerification, Err: errors.New("existing placement target changed or has a different identity")}
 	}
 	if operation.CollisionPolicy == domain.CollisionOverwrite && targetObservation.Fingerprint != "" {
 		return executor.executeOverwrite(ctx, operation, root, source, targetObservation)
@@ -2190,44 +2204,74 @@ func (remover OSFileRemover) RemoveFile(ctx context.Context, anchor, targetPath 
 	return nil
 }
 
-func chooseTarget(operation domain.FileOperation) (string, bool, domain.FileObservation, error) {
+// targetMatch says what the placement target already holds. It is what decides
+// whether an operation is done, refused, or still has to replace the target;
+// a bare "content matches" boolean could not tell those apart.
+type targetMatch uint8
+
+const (
+	// targetAbsent: the target does not exist.
+	targetAbsent targetMatch = iota
+	// targetSameObject: the target already holds the operation's content and
+	// is the source object itself (for a copy, the content is the contract).
+	targetSameObject
+	// targetSameContent: a distinct file already holds the same content.
+	targetSameContent
+	// targetOccupied: a distinct file holds different content.
+	targetOccupied
+)
+
+// chooseTarget resolves the placement target. Same content is decided before
+// the collision policy because it says something about the target itself, not
+// about how a collision is resolved.
+func chooseTarget(operation domain.FileOperation, source domain.FileObservation) (string, targetMatch, domain.FileObservation, error) {
 	base := filepath.Clean(operation.TargetPath)
 	for index := 0; ; index++ {
 		candidate := base
 		if index > 0 {
 			if operation.CollisionPolicy != domain.CollisionVersion {
-				return "", false, domain.FileObservation{}, &OperationError{Code: CodeTargetOccupied, Err: errors.New("placement target already exists with a different fingerprint or size")}
+				return "", targetAbsent, domain.FileObservation{}, &OperationError{Code: CodeTargetOccupied, Err: errors.New("placement target already exists with a different fingerprint or size")}
 			}
 			candidate = versionedPath(base, index+1)
 		}
 		info, err := os.Lstat(candidate)
 		if errors.Is(err, os.ErrNotExist) {
-			return candidate, false, domain.FileObservation{}, nil
+			return candidate, targetAbsent, domain.FileObservation{}, nil
 		}
 		if err != nil {
-			return "", false, domain.FileObservation{}, fmt.Errorf("inspect placement target: %w", err)
+			return "", targetAbsent, domain.FileObservation{}, fmt.Errorf("inspect placement target: %w", err)
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
-			return "", false, domain.FileObservation{}, errors.New("refusing to use a symlink placement target")
+			return "", targetAbsent, domain.FileObservation{}, errors.New("refusing to use a symlink placement target")
 		}
 		if !info.Mode().IsRegular() {
-			return "", false, domain.FileObservation{}, errors.New("placement target must be a regular file")
+			return "", targetAbsent, domain.FileObservation{}, errors.New("placement target must be a regular file")
 		}
 		observation, err := observeFileAs(candidate, operation.SourceFingerprint)
 		if err != nil {
-			return "", false, domain.FileObservation{}, fmt.Errorf("inspect existing placement target: %w", err)
+			return "", targetAbsent, domain.FileObservation{}, fmt.Errorf("inspect existing placement target: %w", err)
 		}
 		if sameFileObservation(observation, sourceObservation(operation)) {
-			return candidate, true, observation, nil
+			if operation.Operation != domain.OperationMove && operation.Operation != domain.OperationHardlink {
+				return candidate, targetSameObject, observation, nil
+			}
+			// A move or a hardlink is placed only when the target is the
+			// source object itself. A filesystem without a usable identity
+			// cannot prove that, so it classifies as same content and Execute
+			// refuses closed rather than dropping the source.
+			if sameFrozenFileObservation(observation, source) {
+				return candidate, targetSameObject, observation, nil
+			}
+			return candidate, targetSameContent, observation, nil
 		}
 		if operation.CollisionPolicy == domain.CollisionOverwrite {
-			return candidate, false, observation, nil
+			return candidate, targetOccupied, observation, nil
 		}
 		if operation.CollisionPolicy != domain.CollisionVersion {
-			return "", false, domain.FileObservation{}, &OperationError{Code: CodeTargetOccupied, Err: errors.New("placement target already exists with a different fingerprint or size")}
+			return "", targetAbsent, domain.FileObservation{}, &OperationError{Code: CodeTargetOccupied, Err: errors.New("placement target already exists with a different fingerprint or size")}
 		}
 		if index >= 1000 {
-			return "", false, domain.FileObservation{}, errors.New("unable to resolve placement collision within the version limit")
+			return "", targetAbsent, domain.FileObservation{}, errors.New("unable to resolve placement collision within the version limit")
 		}
 	}
 }

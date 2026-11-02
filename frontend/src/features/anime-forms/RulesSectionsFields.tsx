@@ -96,6 +96,8 @@ export function RulesSectionsFields({
   only,
   parserChoice,
   parserKind,
+  namingVariant,
+  hints,
   afterReleaseFilter,
   afterFileEffect,
   modified,
@@ -116,6 +118,18 @@ export function RulesSectionsFields({
    * 但不改动已保存的规则。未知（undefined）按 regex 显示。
    */
   parserKind?: string;
+  /**
+   * The naming editor's shape. `filename` keeps the file in its folder and edits
+   * only a video's whole filename and a subtitle's suffix (file-manager
+   * recognition, which names within one directory).
+   */
+  namingVariant?: "full" | "filename";
+  /**
+   * Per-section one-line hints replacing the defaults, for a caller whose
+   * input is not the anime's own: file-manager recognition parses file names
+   * and names within one folder.
+   */
+  hints?: Partial<Record<SectionKey, string>>;
   /** Extra cards after the title-filter card (tag filtering). */
   afterReleaseFilter?: ReactNode;
   /** Extra cards after the import settings (the subscribed "after download completes" card). */
@@ -142,11 +156,16 @@ export function RulesSectionsFields({
   const fileEffect = sectionProps("file_effect");
   const shown = (section: SectionKey) => only === undefined || only.includes(section);
   const usesPatterns = parserKindUsesPatterns(parserKind);
+  const meta = (section: SectionKey): SectionMeta => {
+    const base = sectionTitles()[section];
+    const hint = hints?.[section];
+    return hint === undefined ? base : { ...base, hint };
+  };
 
   return (
     <div className="rules-stack">
       {shown("parser") && (
-        <SectionCard meta={sectionTitles().parser} modified={modified?.has("parser")}>
+        <SectionCard meta={meta("parser")} modified={modified?.has("parser")}>
           <div className="tw:grid tw:min-w-0 tw:gap-3">
             {parserChoice}
             {usesPatterns ? (
@@ -167,25 +186,25 @@ export function RulesSectionsFields({
       )}
 
       {shown("release_filter") && (
-        <SectionCard meta={sectionTitles().release_filter} modified={modified?.has("release_filter")}>
+        <SectionCard meta={meta("release_filter")} modified={modified?.has("release_filter")}>
           <RegexFields mustLabel={t("settings.rules.titleMust")} notLabel={t("settings.rules.titleNot")} value={releaseFilter.value as ReleaseFilterRules} onChange={releaseFilter.setValue} />
         </SectionCard>
       )}
       {shown("release_filter") && afterReleaseFilter}
       {shown("file_filter") && (
-        <SectionCard meta={sectionTitles().file_filter} modified={modified?.has("file_filter")}>
+        <SectionCard meta={meta("file_filter")} modified={modified?.has("file_filter")}>
           <RegexFields mustLabel={t("settings.rules.fileMust")} notLabel={t("settings.rules.fileNot")} value={fileFilter.value as FileFilterRules} onChange={fileFilter.setValue} />
         </SectionCard>
       )}
 
       {shown("naming") && (
-        <SectionCard meta={sectionTitles().naming} modified={modified?.has("naming")}>
-          <AnimeNamingFields value={naming.value as NamingRules} onChange={(next) => naming.setValue(next)} />
+        <SectionCard meta={meta("naming")} modified={modified?.has("naming")}>
+          <AnimeNamingFields value={naming.value as NamingRules} onChange={(next) => naming.setValue(next)} variant={namingVariant} />
         </SectionCard>
       )}
 
       {shown("file_effect") && (
-        <SectionCard meta={sectionTitles().file_effect} modified={modified?.has("file_effect")}>
+        <SectionCard meta={meta("file_effect")} modified={modified?.has("file_effect")}>
           <div className="rules-responsive">
             <Field label={t("file.operationTitle")}>
               <Select<FileEffectRules["operation"]>
@@ -270,10 +289,10 @@ function TagRow({
 }
 
 // Per-anime naming: "choose template" copies a global library template's content into this anime's field; there is no sample selection.
-function AnimeNamingFields({ value, onChange }: { value: NamingRules; onChange: (next: NamingRules) => void }) {
+function AnimeNamingFields({ value, onChange, variant }: { value: NamingRules; onChange: (next: NamingRules) => void; variant?: "full" | "filename" }) {
   const library = useQuery({
     queryKey: configKeys.namingTemplates,
     queryFn: getNamingTemplateLibrary,
   });
-  return <NamingTemplateFields value={value} onChange={onChange} templates={library.data?.templates} />;
+  return <NamingTemplateFields value={value} onChange={onChange} templates={library.data?.templates} variant={variant} />;
 }

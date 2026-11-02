@@ -210,13 +210,16 @@ required_paths = {
   "/parse/torrent-files" => ["post"],
   "/catalog/providers/{provider}/search" => ["get"],
   "/catalog/providers/{provider}/seed-search-snapshots:fetch" => ["post"],
-  "/file-manager/mounts" => ["get"],
+  "/file-manager/roots" => ["get", "post"],
+  "/file-manager/roots/{root_id}" => ["delete"],
   "/file-manager/entries" => ["get"],
   "/file-manager/entry" => ["get"],
   "/file-manager/entry/release" => ["post"],
   "/file-manager/entry/align" => ["post"],
   "/file-manager/entry/match/preview" => ["post"],
   "/file-manager/entry/match" => ["post"],
+  "/file-manager/recognition/preview" => ["post"],
+  "/file-manager/recognition" => ["post"],
   "/anime/{managed_anime_id}/tmdb/seasons" => ["get"],
   "/anime/{managed_anime_id}/tmdb/seasons/{season}/episodes" => ["get"],
   "/file-manager/operations" => ["post"],
@@ -409,7 +412,8 @@ assert_enum.call("FileManagerUserOperation", %w[move rename copy delete match])
 assert_enum.call("FileManagerOperationRequestKind", %w[move rename copy delete])
 assert_enum.call("FileManagerMatchMediaKind", %w[tv])
 assert_enum.call("FileManagerMatchBlockerCode", %w[facts_missing template_invalid target_invalid target_is_source])
-assert_enum.call("FileManagerConflictChoice", %w[block version])
+assert_enum.call("FileManagerConflictChoice", %w[block version overwrite])
+assert_enum.call("FileManagerRecognitionConflictChoice", %w[block skip version overwrite])
 assert_enum.call("FileManagerOperationState", %w[ready running completed blocked failed])
 assert_enum.call("FileManagerOperationFailure", %w[target_occupied source_changed source_missing source_managed execute_failed anime_unavailable])
 %w[submitFileManagerOperation releaseFileManagerEntry alignFileManagerEntry matchFileManagerEntry].each do |operation_id|

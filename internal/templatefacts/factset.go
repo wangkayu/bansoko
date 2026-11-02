@@ -61,6 +61,11 @@ type AnimeFacts struct {
 	SeasonPath string
 	// Year is the owner-edited year as a decimal string; empty when unset.
 	Year string
+	// Absent marks a render with no anime at all: the file manager's
+	// recognition of a file the user did not match. Every anime.* fact is
+	// then undefined (a template reading one names it) instead of an empty
+	// value of a bound work.
+	Absent bool
 }
 
 type BgmFacts struct {

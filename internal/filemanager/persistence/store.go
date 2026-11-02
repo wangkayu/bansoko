@@ -12,12 +12,14 @@ import (
 	"fmt"
 	"strings"
 
-	"bansoko/internal/download/qbittorrent"
 	"bansoko/internal/episodeidentity"
 	"bansoko/internal/filemanager"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// Store reads the mounts and the owner facts for the file manager.
+// Store reads the roots and the owner facts for the file manager, and keeps
+// the roots the owner adds.
 type Store struct {
 	db *sql.DB
 }
@@ -32,73 +34,56 @@ func NewStore(db *sql.DB) (*Store, error) {
 
 var _ filemanager.Store = (*Store)(nil)
 
-// Mounts returns the application-side root of every qBittorrent connection
-// that has one. The filesystem-root mount and the works' tree-top mounts are
-// composed by the service, so they are not read here.
-func (s *Store) Mounts(ctx context.Context) ([]filemanager.MountConfig, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, config FROM connections WHERE kind = 'qbittorrent' ORDER BY name, id`)
+// Roots lists the library directories the owner added, oldest first.
+func (s *Store) Roots(ctx context.Context) ([]filemanager.RootRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, label, path FROM file_manager_roots ORDER BY created_at, id`)
 	if err != nil {
-		return nil, fmt.Errorf("list download mounts: %w", err)
+		return nil, fmt.Errorf("list library roots: %w", err)
 	}
 	defer rows.Close()
-	var mounts []filemanager.MountConfig
+	var roots []filemanager.RootRecord
 	for rows.Next() {
-		var id, name string
-		var config []byte
-		if err := rows.Scan(&id, &name, &config); err != nil {
-			return nil, fmt.Errorf("scan download mount: %w", err)
+		var record filemanager.RootRecord
+		if err := rows.Scan(&record.ID, &record.Label, &record.Path); err != nil {
+			return nil, fmt.Errorf("scan library root: %w", err)
 		}
-		var typed struct {
-			SaveRoot       string `json:"save_root"`
-			DownloaderRoot string `json:"downloader_root"`
-		}
-		if err := json.Unmarshal(config, &typed); err != nil {
-			continue
-		}
-		paths, err := qbittorrent.DerivePathSnapshot(qbittorrent.RuntimeConfig{SaveRoot: typed.SaveRoot, ApplicationRoot: typed.DownloaderRoot})
-		if err != nil || paths.ApplicationRoot == "" {
-			continue
-		}
-		mounts = append(mounts, filemanager.MountConfig{
-			Key: filemanager.DownloadMountPrefix + id, Kind: filemanager.MountDownload,
-			ConnectionID: id, Label: name, Path: paths.ApplicationRoot,
-		})
+		roots = append(roots, record)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list download mounts: %w", err)
+		return nil, fmt.Errorf("list library roots: %w", err)
 	}
-	return mounts, nil
+	return roots, nil
 }
 
-// AnimePlacementIndex lists every work that owns at least one active placement,
-// with the paths those placements put on disk. The service derives each work's
-// tree top from them.
-func (s *Store) AnimePlacementIndex(ctx context.Context) ([]filemanager.AnimePlacements, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT p.managed_anime_id, COALESCE(ma.title_override, ma.title, ''), p.physical_path
-FROM placements p JOIN managed_anime ma ON ma.id = p.managed_anime_id
-WHERE p.state = 'active' AND p.managed_anime_id IS NOT NULL AND p.managed_anime_id <> ''
-ORDER BY p.managed_anime_id, p.physical_path LIMIT 20000`)
+// InsertRoot stores one root. A path that is already a root is ErrRootExists;
+// the unique pair is the path, not the id.
+func (s *Store) InsertRoot(ctx context.Context, record filemanager.RootRecord) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO file_manager_roots (id, label, path) VALUES ($1, $2, $3)`,
+		record.ID, record.Label, record.Path)
+	if err == nil {
+		return nil
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return filemanager.ErrRootExists
+	}
+	return fmt.Errorf("insert library root: %w", err)
+}
+
+// RemoveRoot deletes one root. The directory itself is never touched.
+func (s *Store) RemoveRoot(ctx context.Context, id string) error {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM file_manager_roots WHERE id = $1`, id)
 	if err != nil {
-		return nil, fmt.Errorf("read anime placement index: %w", err)
+		return fmt.Errorf("remove library root: %w", err)
 	}
-	defer rows.Close()
-	var index []filemanager.AnimePlacements
-	for rows.Next() {
-		var id, title, path string
-		if err := rows.Scan(&id, &title, &path); err != nil {
-			return nil, fmt.Errorf("scan anime placement index: %w", err)
-		}
-		if len(index) > 0 && index[len(index)-1].ManagedAnimeID == id {
-			last := &index[len(index)-1]
-			last.Paths = append(last.Paths, path)
-			continue
-		}
-		index = append(index, filemanager.AnimePlacements{ManagedAnimeID: id, Title: title, Paths: []string{path}})
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("remove library root: %w", err)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("read anime placement index: %w", err)
+	if affected == 0 {
+		return filemanager.ErrRootNotFound
 	}
-	return index, nil
+	return nil
 }
 
 // placementColumns projects one placement row with the owner facts its state

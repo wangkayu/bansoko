@@ -80,6 +80,10 @@ func newReadSet(t *testing.T) *readSet {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
+	// The file manager browses only inside owner-added library roots.
+	if err := store.InsertRoot(ctx, filemanager.RootRecord{ID: "soak-root", Label: "library", Path: libraryRootPath()}); err != nil {
+		t.Fatal(err)
+	}
 	if err := owner.QueryRowContext(ctx, `SELECT origin_managed_anime_ref FROM acquisitions WHERE id LIKE 'acq-%' GROUP BY 1 ORDER BY count(*) DESC, 1 LIMIT 1`).Scan(&rs.recOwner); err != nil {
 		t.Fatalf("records owner: %v", err)
 	}

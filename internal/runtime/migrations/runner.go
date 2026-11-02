@@ -92,6 +92,7 @@ var knownRelations = map[string]string{
 	"embedded_update_locks":            "r",
 	"episode_title_cache":              "r",
 	"file_manager_operations":          "r",
+	"file_manager_roots":               "r",
 	"file_operations":                  "r",
 	"filemaintenance_policies":         "r",
 	"global_config_sections":           "r",

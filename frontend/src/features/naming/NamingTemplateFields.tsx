@@ -93,6 +93,7 @@ export function NamingTemplateFields({
   disabled = false,
   samplePicker = false,
   templates,
+  variant = "full",
 }: {
   value: NamingTemplateValue;
   onChange: (next: NamingTemplateValue) => void;
@@ -101,6 +102,14 @@ export function NamingTemplateFields({
   samplePicker?: boolean;
   /** The template library: when passed, shows "choose template". */
   templates?: NamingTemplate[];
+  /**
+   * `filename` edits only a video's whole filename and a subtitle's suffix, for
+   * callers that keep the file in its folder (file-manager recognition), so
+   * the directory and the movie/unknown variants are not shown. The value is
+   * still a complete naming rules object; only the tv variant's filename and
+   * the subtitle suffix are read.
+   */
+  variant?: "full" | "filename";
 }) {
   const catalog = useQuery({
     queryKey: templateCatalogKeys.naming(value.language),
@@ -108,7 +117,10 @@ export function NamingTemplateFields({
     staleTime: Infinity,
   });
 
-  const [tab, setTab] = useState<NamingTab>("tv");
+  const filenameOnly = variant === "filename";
+  const [tabState, setTab] = useState<NamingTab>("tv");
+  // The filename variant has no tabs: both fields are always shown.
+  const tab: NamingTab = filenameOnly ? "tv" : tabState;
   // The last focused input decides where a variable inserts; by default it goes to the current tab's directory template.
   const [activeField, setActiveField] = useState<ActiveField>({ tab: "tv", kind: "directory" });
   // Per-tab user choice of preview sample; with no choice, auto-matched from catalog samples by tab keywords.
@@ -130,8 +142,13 @@ export function NamingTemplateFields({
   function insertToken(token: string) {
     // The insert target follows the last focused input first; if that box is not in the current tab
     //   (unmounted), fall back to the current tab's first input.
-    const target: ActiveField =
-      activeField.tab === tab ? activeField : { tab, kind: tab === "subtitle" ? "subtitle_suffix" : "directory" };
+    const target: ActiveField = filenameOnly
+      ? activeField.tab === "subtitle"
+        ? activeField
+        : { tab: "tv", kind: "video_filename" }
+      : activeField.tab === tab
+        ? activeField
+        : { tab, kind: tab === "subtitle" ? "subtitle_suffix" : "directory" };
     const ref = target.kind === "directory" ? directoryRef : target.kind === "video_filename" ? videoRef : subtitleRef;
     const input = ref.current;
     const current = fieldValue(target, value);
@@ -173,9 +190,11 @@ export function NamingTemplateFields({
         </Field>
       )}
 
-      <SegmentedControl options={tabOptions()} value={tab} onChange={setTab} ariaLabel={t("naming.tabsAria")} />
+      {!filenameOnly && (
+        <SegmentedControl options={tabOptions()} value={tab} onChange={setTab} ariaLabel={t("naming.tabsAria")} />
+      )}
 
-      {tab !== "subtitle" && (
+      {!filenameOnly && tab !== "subtitle" && (
         <>
           <Field label={t("naming.directory")}>
             <Input
@@ -206,7 +225,21 @@ export function NamingTemplateFields({
         </>
       )}
 
-      {tab === "subtitle" && (
+      {filenameOnly && (
+        <Field label={t("naming.filename")}>
+          <Input
+            ref={videoRef}
+            value={value.tv.video_filename_template}
+            readOnly={disabled}
+            disabled={disabled}
+            placeholder={t("naming.placeholder")}
+            onFocus={() => focusField({ tab: "tv", kind: "video_filename" })}
+            onChange={(e) => onChange({ ...value, tv: { ...value.tv, video_filename_template: e.target.value } })}
+          />
+        </Field>
+      )}
+
+      {(filenameOnly || tab === "subtitle") && (
         <>
           <Field label={t("naming.subtitleSuffix")}>
             <Input
@@ -259,7 +292,25 @@ export function NamingTemplateFields({
               </button>
             </div>
           )}
-          {catalog.data && tab !== "subtitle" && (
+          {catalog.data && filenameOnly && (
+            <div className="naming-section">
+              <TemplatePreview
+                kind="video_filename"
+                label={t("naming.previewFile")}
+                source={value.tv.video_filename_template}
+                sampleRef={defaultSampleRef("tv", samples)}
+                language={value.language}
+              />
+              <TemplatePreview
+                kind="subtitle_suffix"
+                label={t("naming.previewSuffix")}
+                source={value.subtitle_suffix_template}
+                sampleRef={defaultSampleRef("subtitle", samples)}
+                language={value.language}
+              />
+            </div>
+          )}
+          {catalog.data && !filenameOnly && tab !== "subtitle" && (
             <div className="naming-section">
               <TemplatePreview
                 kind="directory"
@@ -277,7 +328,7 @@ export function NamingTemplateFields({
               />
             </div>
           )}
-          {catalog.data && tab === "subtitle" && (
+          {catalog.data && !filenameOnly && tab === "subtitle" && (
             <TemplatePreview
               kind="subtitle_suffix"
               label={t("naming.previewSuffix")}

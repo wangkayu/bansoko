@@ -206,8 +206,9 @@ export type AcquisitionFilePlacementFailure = Schema<"AcquisitionFilePlacementFa
 export type AcquisitionImportRetryResult = Schema<"AcquisitionImportRetryResult">;
 export type AcquisitionDownloadCancelResult = Schema<"AcquisitionDownloadCancelResult">;
 export type AcquisitionFilePage = Schema<"AcquisitionFilePage">;
-export type FileManagerMount = Schema<"FileManagerMount">;
-export type FileManagerMountList = Schema<"FileManagerMountList">;
+export type FileManagerRoot = Schema<"FileManagerRoot">;
+export type FileManagerRootList = Schema<"FileManagerRootList">;
+export type FileManagerRootAddRequest = Schema<"FileManagerRootAddRequest">;
 export type FileManagerEntry = Schema<"FileManagerEntry">;
 export type FileManagerEntryState = Schema<"FileManagerEntryState">;
 export type FileManagerEntryRole = Schema<"FileManagerEntryRole">;
@@ -235,6 +236,21 @@ export type FileManagerMatchPreviewRequest = Schema<"FileManagerMatchPreviewRequ
 export type FileManagerMatchPreview = Schema<"FileManagerMatchPreview">;
 export type FileManagerMatchBlocker = Schema<"FileManagerMatchBlocker">;
 export type FileManagerMatchRequest = Schema<"FileManagerMatchRequest">;
+export type FileManagerRecognitionParserKind = Schema<"FileManagerRecognitionParserKind">;
+export type FileManagerRecognitionParser = Schema<"FileManagerRecognitionParser">;
+export type FileManagerRecognitionMatch = Schema<"FileManagerRecognitionMatch">;
+export type FileManagerRecognitionRequest = Schema<"FileManagerRecognitionRequest">;
+export type FileManagerRecognitionSubmitRequest = Schema<"FileManagerRecognitionSubmitRequest">;
+export type FileManagerRecognitionPreview = Schema<"FileManagerRecognitionPreview">;
+export type FileManagerRecognitionRow = Schema<"FileManagerRecognitionRow">;
+export type FileManagerRecognitionEpisode = Schema<"FileManagerRecognitionEpisode">;
+export type FileManagerRecognitionDisposition = Schema<"FileManagerRecognitionDisposition">;
+export type FileManagerRecognitionBlockerCode = Schema<"FileManagerRecognitionBlockerCode">;
+export type FileManagerRecognitionBlocker = Schema<"FileManagerRecognitionBlocker">;
+export type FileManagerRecognitionConflict = Schema<"FileManagerRecognitionConflict">;
+export type FileManagerRecognitionUnknownRoute = Schema<"FileManagerRecognitionUnknownRoute">;
+export type FileManagerRecognitionConflictChoice = Schema<"FileManagerRecognitionConflictChoice">;
+export type FileManagerRecognitionResult = Schema<"FileManagerRecognitionResult">;
 export type TMDBSeason = Schema<"TMDBSeason">;
 export type TMDBSeasonList = Schema<"TMDBSeasonList">;
 export type TMDBEpisode = Schema<"TMDBEpisode">;
@@ -1477,13 +1493,22 @@ export function listAcquisitionRecordFiles(acquisitionID: string, query: Acquisi
   return request(`/acquisitions/${encodePathSegment(acquisitionID)}/files${queryString(query)}`, { method: "GET" });
 }
 
-// The file manager (read-only): absolute-path browsing, the ownership state derived per
-// entry, and shortcut entries (mounts). A shortcut is only a navigation aid and never
-// limits the readable/writable scope; GET never writes.
+// The file manager: the owner-added library directories (roots) are the whole
+// browsing surface — every browse, detail and target must lie inside one of them.
+// GET never writes.
 export type FileManagerEntriesQuery = NonNullable<operations["listFileManagerEntries"]["parameters"]["query"]>;
 
-export function listFileManagerMounts(): Promise<FileManagerMountList> {
-  return request(`/file-manager/mounts`, { method: "GET" });
+export function listFileManagerRoots(): Promise<FileManagerRootList> {
+  return request(`/file-manager/roots`, { method: "GET" });
+}
+
+/** Adds one library directory; adding never touches files on disk. */
+export function addFileManagerRoot(path: string): Promise<FileManagerRoot> {
+  return request(`/file-manager/roots`, { method: "POST", body: { path } });
+}
+
+export function removeFileManagerRoot(rootID: string): Promise<void> {
+  return request(`/file-manager/roots/${encodePathSegment(rootID)}`, { method: "DELETE" });
 }
 
 export function listFileManagerEntries(query: FileManagerEntriesQuery): Promise<FileManagerListing> {
@@ -1520,6 +1545,21 @@ export function previewFileManagerMatch(input: FileManagerMatchPreviewRequest): 
 /** Submits one match: moves unmanaged videos to the location the anime's naming rules render; the result stays unmanaged; 202 returns the operation view. */
 export function matchFileManagerEntry(input: FileManagerMatchRequest, idempotencyKey: string): Promise<FileManagerOperationView> {
   return request(`/file-manager/entry/match`, { method: "POST", body: input, idempotencyKey });
+}
+
+/** Recognition preview: renders each selected file's target from its own name through the naming
+ *  core; writes nothing. `expected_plan_digest` on submit is this preview's `plan_digest`. */
+export function previewFileManagerRecognition(input: FileManagerRecognitionRequest): Promise<FileManagerRecognitionPreview> {
+  return request(`/file-manager/recognition/preview`, { method: "POST", body: input });
+}
+
+/** Applies one previewed recognition as ordinary rename and move operations; the files stay
+ *  unmanaged and no record is written. `conflict` settles occupied targets. */
+export function submitFileManagerRecognition(
+  input: FileManagerRecognitionSubmitRequest,
+  idempotencyKey: string,
+): Promise<FileManagerRecognitionResult> {
+  return request(`/file-manager/recognition`, { method: "POST", body: input, idempotencyKey });
 }
 
 /** Season list (including season 0) of the TMDB work the anime is bound to; 409 TMDB_BINDING_REQUIRED when no TMDB binding exists. */

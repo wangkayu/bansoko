@@ -25,17 +25,18 @@ export function parserKindUsesPatterns(kind: string | undefined): boolean {
 
 export type ParserKindOption = { value: string; label: string; description?: string };
 
-// Keeps only parsers that can recognize an episode number from an RSS title (the
-// release_title capability), in catalog order; a current value absent from the catalog still
-// shows as an option so a saved value never displays as an empty selection.
+// Keeps only the parsers with the given capability (release titles by default),
+// in catalog order; a current value absent from the catalog still shows as an
+// option so a saved value never displays as an empty selection.
 export function parserKindOptions(
   catalog: ReadonlyArray<{ id: string; display_name: string; capabilities: string[] }> | undefined,
   current: string | undefined,
+  capability = "release_title",
 ): ParserKindOption[] {
   const options: ParserKindOption[] = [];
   const seen = new Set<string>();
   for (const entry of Array.isArray(catalog) ? catalog : []) {
-    if (!entry.capabilities.includes("release_title") || seen.has(entry.id)) continue;
+    if (!entry.capabilities.includes(capability) || seen.has(entry.id)) continue;
     seen.add(entry.id);
     options.push({ value: entry.id, label: parserKindLabel(entry.id, entry.display_name), description: parserKindDescription(entry.id) });
   }

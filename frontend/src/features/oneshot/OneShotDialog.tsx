@@ -1,5 +1,4 @@
-import { Fragment, useEffect, useId, useMemo, useRef, useState } from "react";
-import { ChevronRight } from "lucide-react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "../../ui/toast";
 import {
   ApiError,
@@ -18,11 +17,12 @@ import { formatBytes } from "../../lib/labels";
 import { namingFactLabel, namingFailureDetail, namingPendingLabel, reasonLabel } from "../../lib/i18n/reasons";
 import { joinList } from "../../lib/i18n/format";
 import { RulesSectionsFields, type SectionKey } from "../anime-forms/RulesSectionsFields";
+import { TaskConfigPanel } from "../anime-forms/TaskConfigPanel";
 import { MetadataFields } from "../anime-forms/MetadataFields";
 import { TitleSuggestionBadges } from "../anime-forms/TitleSuggestionBadges";
 import { draftParserKind, freezeBusinessDraft, withDraftParserKind } from "../anime-config/businessDraft";
 import { Button, Field, Input, StateBlock, StatePill } from "../../ui";
-import { Dialog, HelpTip, SpinnerIcon } from "../../ui/base";
+import { Dialog, HelpTip, REVEAL_MS, SpinnerIcon } from "../../ui/base";
 import { ReasonText } from "../../ui/ReasonText";
 import { BoundSubtitles, type BoundSubtitleItem } from "../../ui/BoundSubtitles";
 import { fileUnitsSummary, groupBoundSubtitles } from "../../lib/boundSubtitles";
@@ -39,10 +39,10 @@ import {
   type OneShotSeedGroup,
   type OneShotSeedRow,
 } from "./seedRows";
-import { REVEAL_MS, Reveal, SeedBrowser } from "./SeedBrowser";
+import { SeedBrowser } from "./SeedBrowser";
 import { UnclassifiedRouteField } from "../anime-config/UnclassifiedRouteField";
-import { OneShotParserSelect } from "./OneShotParserSelect";
-import { useOneShotParserOptions } from "./parserOptions";
+import { ParserKindSelect } from "../parser/ParserKindSelect";
+import { useParserKindOptions } from "../parser/useParserKindOptions";
 import { useOneShotSeedSource, type SearchSeedBrowse } from "./useOneShotSeeds";
 import { FilePickerDialog } from "./FilePicker";
 import { effectiveFileSelection, sanitizeFileSelection, selectedVideoCount } from "./fileSelection";
@@ -426,7 +426,7 @@ export function OneShotDialog({
 //   and only in step two (config + render). Edits go only into this task's draft (frozen and
 //   committed with it); step two's preview re-reads under it.
   const parserKind = draftParserKind(draft);
-  const parserOptions = useOneShotParserOptions(open, parserKind);
+  const parserOptions = useParserKindOptions(open, parserKind);
   const multipleParsers = parserOptions.length > 1;
   const configSections = useMemo<readonly SectionKey[]>(
     () => (multipleParsers ? ["parser", "file_filter"] : ["file_filter"]),
@@ -679,7 +679,6 @@ export function OneShotDialog({
   }
 
   // --- step two: advanced fold, phone summary, jump-to-input -------------------------
-  const advancedId = useId();
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const settingsRef = useRef<HTMLElement>(null);
   const previewRef = useRef<HTMLElement>(null);
@@ -1006,22 +1005,65 @@ export function OneShotDialog({
             )}
           </section>
 
-          <section
-            ref={settingsRef}
-            aria-label={t("oneshot.configTitle")}
-            className="tw:grid tw:min-h-0 tw:grid-cols-1 tw:content-start tw:gap-3 tw:overflow-y-auto tw:border-l tw:border-border tw:px-5 tw:pt-3 tw:pb-4 tw:phone:overflow-visible tw:phone:border-l-0 tw:phone:border-t tw:phone:px-4 tw:phone:pt-4"
+          <TaskConfigPanel
+            sectionRef={settingsRef}
+            ariaLabel={t("oneshot.configTitle")}
+            title={t("oneshot.configTitle")}
+            className="tw:min-h-0 tw:overflow-y-auto tw:border-l tw:border-border tw:px-5 tw:pt-3 tw:pb-4 tw:phone:overflow-visible tw:phone:border-l-0 tw:phone:border-t tw:phone:px-4 tw:phone:pt-4"
+            note={source.kind === "custom" ? t("oneshot.customConfigNote") : t("oneshot.configLocalNote")}
+            actions={
+              <>
+                <HelpTip label={t("oneshot.restoreDefaultsHelpLabel")}>{t("oneshot.restoreDefaultsHint")}</HelpTip>
+                <Button size="sm" variant="secondary" disabled={!draft} onClick={restoreDefaults}>
+                  {t("oneshot.restoreDefaults")}
+                </Button>
+              </>
+            }
+            advanced={
+              draft
+                ? {
+                    open: advancedOpen,
+                    onToggle: () => setAdvancedOpen((value) => !value),
+                    label: t("oneshot.advanced"),
+                    summary: advancedSummary,
+                    changed: advancedChanged,
+                    changedLabel: t("oneshot.advancedChanged"),
+                    children: (
+                      <>
+                        <RulesSectionsFields
+                          sections={draft.rules.sections}
+                          onChange={(sections) => source.setDraft({ ...draft, rules: { sections } })}
+                          only={configSections}
+                          parserKind={parserKind}
+                          parserChoice={
+                            multipleParsers && parserKind ? (
+                              <Field label={t("policy.parser.kindLabel")}>
+                                <ParserKindSelect value={parserKind} options={parserOptions} onChange={changeParser} />
+                              </Field>
+                            ) : undefined
+                          }
+                        />
+                        {draft.business && (
+                          <UnclassifiedRouteField
+                            value={draft.business.unclassified_route}
+                            onChange={changeUnclassifiedRoute}
+                            hint={t("oneshot.unclassifiedHint")}
+                          />
+                        )}
+                        {/* Naming is its own block: the empty-facts "jump to naming" lands here. */}
+                        <div ref={namingRef} className="tw:rounded-control">
+                          <RulesSectionsFields
+                            sections={draft.rules.sections}
+                            onChange={(sections) => source.setDraft({ ...draft, rules: { sections } })}
+                            only={NAMING_ONLY}
+                          />
+                        </div>
+                      </>
+                    ),
+                  }
+                : undefined
+            }
           >
-            <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
-              <h3 className="text-body tw:m-0 tw:flex-1">{t("oneshot.configTitle")}</h3>
-              <HelpTip label={t("oneshot.restoreDefaultsHelpLabel")}>{t("oneshot.restoreDefaultsHint")}</HelpTip>
-              <Button size="sm" variant="secondary" disabled={!draft} onClick={restoreDefaults}>
-                {t("oneshot.restoreDefaults")}
-              </Button>
-            </div>
-            <p className="text-caption tw:m-0 tw:text-muted-foreground">
-              {source.kind === "custom" ? t("oneshot.customConfigNote") : t("oneshot.configLocalNote")}
-            </p>
-
             {draft && (
               <div className="tw:grid tw:grid-cols-1 tw:gap-2">
                 <Field label={t("field.title")}>
@@ -1085,62 +1127,7 @@ export function OneShotDialog({
               </Field>
               {!offsetValid && <p className="text-danger text-caption">{t("rss.offsetInvalid")}</p>}
             </div>
-
-            {draft && (
-              <div className="tw:grid tw:gap-2 tw:border-t tw:border-border tw:pt-3">
-                <button
-                  type="button"
-                  aria-expanded={advancedOpen}
-                  aria-controls={advancedId}
-                  onClick={() => setAdvancedOpen((value) => !value)}
-                  className="tw:flex tw:w-full tw:min-w-0 tw:cursor-pointer tw:items-center tw:gap-2 tw:rounded-sm tw:border-0 tw:bg-transparent tw:p-0 tw:py-1 tw:text-left tw:text-foreground tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-ring"
-                >
-                  <ChevronRight
-                    aria-hidden="true"
-                    className={cn(
-                      "icon-sm tw:flex-none tw:text-muted-foreground tw:transition-transform tw:duration-200 tw:ease-out tw:motion-reduce:transition-none",
-                      advancedOpen && "tw:rotate-90",
-                    )}
-                  />
-                  <span className="text-body tw:flex-none">{t("oneshot.advanced")}</span>
-                  <span className="tw:min-w-0 tw:flex-1 tw:truncate tw:text-xs tw:text-muted-foreground">{advancedSummary}</span>
-                  {advancedChanged && <StatePill tone="warning">{t("oneshot.advancedChanged")}</StatePill>}
-                </button>
-                <Reveal open={advancedOpen}>
-                  <div id={advancedId} className="tw:grid tw:gap-3 tw:pt-1">
-                    <RulesSectionsFields
-                      sections={draft.rules.sections}
-                      onChange={(sections) => source.setDraft({ ...draft, rules: { sections } })}
-                      only={configSections}
-                      parserKind={parserKind}
-                      parserChoice={
-                        multipleParsers && parserKind ? (
-                          <Field label={t("policy.parser.kindLabel")}>
-                            <OneShotParserSelect value={parserKind} options={parserOptions} onChange={changeParser} />
-                          </Field>
-                        ) : undefined
-                      }
-                    />
-                    {draft.business && (
-                      <UnclassifiedRouteField
-                        value={draft.business.unclassified_route}
-                        onChange={changeUnclassifiedRoute}
-                        hint={t("oneshot.unclassifiedHint")}
-                      />
-                    )}
-                    {/* Naming is its own block: the empty-facts "jump to naming" lands here. */}
-                    <div ref={namingRef} className="tw:rounded-control">
-                      <RulesSectionsFields
-                        sections={draft.rules.sections}
-                        onChange={(sections) => source.setDraft({ ...draft, rules: { sections } })}
-                        only={NAMING_ONLY}
-                      />
-                    </div>
-                  </div>
-                </Reveal>
-              </div>
-            )}
-          </section>
+          </TaskConfigPanel>
         </div>
       )}
     </Dialog>

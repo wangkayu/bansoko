@@ -125,6 +125,13 @@ VALUES ($1, $2, 'anime-a', 'reconciliation', 'obs-'||$1, 'fp', 'fp', 'parser-v1'
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The match browses files in the work's tree and in the downloader's
+	// directory; `outside` stays deliberately unauthorized.
+	for _, root := range []string{tree, downloads} {
+		if _, err := service.AddRoot(ctx, filemanager.AddRootRequest{Path: root}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	workStore, err := workitems.NewStore(db, 0, nil)
 	if err != nil {
 		t.Fatal(err)

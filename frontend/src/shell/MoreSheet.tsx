@@ -3,6 +3,7 @@ import {
   ArrowUpRight,
   CalendarDays,
   ClipboardList,
+  FolderOpen,
   History,
   LogOut,
   Search,
@@ -50,6 +51,7 @@ type MoreSheetProps = {
   connections: Connection[];
   failedCount: number;
   onOpenSearch: () => void;
+  onOpenFiles: () => void;
   onOpenRecords: () => void;
   onOpenLog: () => void;
   onOpenSettings: () => void;
@@ -67,6 +69,7 @@ export function MoreSheet({
   connections,
   failedCount,
   onOpenSearch,
+  onOpenFiles,
   onOpenRecords,
   onOpenLog,
   onOpenSettings,
@@ -88,7 +91,7 @@ export function MoreSheet({
       <div className="tw:grid tw:gap-0.5">
         <p className="more-sheet-section">{t("nav.tools")}</p>
         <MoreRow icon={<Search width={18} height={18} />} label={t("nav.search")} onSelect={launch(onOpenSearch)} />
-        {/* The file-manager row is hidden in this version; on restore bring back onOpenFiles and this row, see the note at the top of TopNav.tsx. */}
+        <MoreRow icon={<FolderOpen width={18} height={18} />} label={t("nav.fileManager")} onSelect={launch(onOpenFiles)} />
         <MoreRow icon={<History width={18} height={18} />} label={t("nav.records")} onSelect={launch(onOpenRecords)} />
         <MoreRow
           icon={<ClipboardList width={18} height={18} />}

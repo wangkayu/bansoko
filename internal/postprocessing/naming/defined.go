@@ -56,6 +56,10 @@ func factDefined(path string, facts *templatefacts.FactSet) bool {
 	root, _, _ := strings.Cut(path, ".")
 	release := strings.TrimSpace(facts.Release.Title) != "" || strings.TrimSpace(facts.Release.ID) != ""
 	switch root {
+	case "anime":
+		// A render without an anime (file manager recognition the user did
+		// not match) has no anime namespace at all.
+		return !facts.Anime.Absent
 	case "bgm":
 		return strings.TrimSpace(facts.Bgm.ID) != ""
 	case "tmdb":

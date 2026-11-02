@@ -12,8 +12,7 @@ import (
 // fakeStore answers owner facts from in-memory rows, matching paths exactly
 // and directories by prefix, like the PostgreSQL store.
 type fakeStore struct {
-	mounts     []MountConfig
-	workTops   []AnimePlacements
+	roots      []RootRecord
 	placements []PlacementFact
 	companions []CompanionFact
 	inProgress []InProgressFact
@@ -26,10 +25,26 @@ type fakeStore struct {
 	pathCalls int
 }
 
-func (f *fakeStore) Mounts(context.Context) ([]MountConfig, error) { return f.mounts, nil }
+func (f *fakeStore) Roots(context.Context) ([]RootRecord, error) { return f.roots, nil }
 
-func (f *fakeStore) AnimePlacementIndex(context.Context) ([]AnimePlacements, error) {
-	return f.workTops, nil
+func (f *fakeStore) InsertRoot(_ context.Context, record RootRecord) error {
+	for _, existing := range f.roots {
+		if existing.Path == record.Path {
+			return ErrRootExists
+		}
+	}
+	f.roots = append(f.roots, record)
+	return nil
+}
+
+func (f *fakeStore) RemoveRoot(_ context.Context, id string) error {
+	for index, existing := range f.roots {
+		if existing.ID == id {
+			f.roots = append(f.roots[:index], f.roots[index+1:]...)
+			return nil
+		}
+	}
+	return ErrRootNotFound
 }
 
 func (f *fakeStore) PathFacts(_ context.Context, paths []string) (PathFacts, error) {
@@ -155,8 +170,13 @@ func canonicalTemp(t *testing.T) string {
 	return dir
 }
 
-func newTestService(t *testing.T, store *fakeStore, zone DenialZone) *Service {
+// newTestService builds a service whose owner already added each given
+// directory as a library root, the way AddRoot would.
+func newTestService(t *testing.T, store *fakeStore, zone DenialZone, roots ...string) *Service {
 	t.Helper()
+	for _, root := range roots {
+		store.roots = append(store.roots, RootRecord{ID: "root-" + root, Label: filepath.Base(root), Path: root})
+	}
 	service, err := NewService(store, zone)
 	if err != nil {
 		t.Fatal(err)
@@ -198,7 +218,7 @@ func TestListNeverFollowsASymlinkComponent(t *testing.T) {
 	if err := os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(library, "Show", "link.txt")); err != nil {
 		t.Fatal(err)
 	}
-	service := newTestService(t, &fakeStore{}, NewDenialZone(filepath.Join(base, "appdata")))
+	service := newTestService(t, &fakeStore{}, NewDenialZone(filepath.Join(base, "appdata")), library)
 	ctx := context.Background()
 
 	listing, err := service.List(ctx, library, "", 0)
@@ -226,10 +246,10 @@ func TestListNeverFollowsASymlinkComponent(t *testing.T) {
 	mustCode(t, err, CodePathNotFound)
 	_, err = service.List(ctx, filepath.Join(library, "Show", "ep01.mkv"), "", 0)
 	mustCode(t, err, CodeNotADirectory)
+	// The filesystem root is not a library directory: nothing outside the
+	// owner-added roots is browsable.
 	_, err = service.List(ctx, "/", "", 0)
-	if err != nil {
-		t.Fatalf("the filesystem root is browsable: %v", err)
-	}
+	mustCode(t, err, CodePathOutsideRoots)
 
 	// A symlink entry is described, never followed: its detail is the link.
 	detail, err := service.Detail(ctx, filepath.Join(library, "Show", "link.txt"))
@@ -242,7 +262,7 @@ func TestListNeverFollowsASymlinkComponent(t *testing.T) {
 	_, err = service.Detail(ctx, filepath.Join(library, "escape", "secret.txt"))
 	mustCode(t, err, CodeSymlinkNotFollowed)
 	_, err = service.Detail(ctx, "/")
-	mustCode(t, err, CodePathInvalid)
+	mustCode(t, err, CodePathOutsideRoots)
 }
 
 func TestBrowsingRefusesTheDenialZone(t *testing.T) {
@@ -255,7 +275,7 @@ func TestBrowsingRefusesTheDenialZone(t *testing.T) {
 	if err := os.Symlink(appdata, filepath.Join(library, "shadow")); err != nil {
 		t.Fatal(err)
 	}
-	service := newTestService(t, &fakeStore{}, NewDenialZone(appdata))
+	service := newTestService(t, &fakeStore{}, NewDenialZone(appdata), library)
 	ctx := context.Background()
 
 	for _, path := range []string{appdata, filepath.Join(appdata, "bansoko.db"), appdata + "/nested/deeper", "/proc", "/sys/kernel", "/dev/null"} {
@@ -275,11 +295,13 @@ func TestBrowsingRefusesTheDenialZone(t *testing.T) {
 	}
 }
 
-func TestMountsResolveAvailabilityAndWorkTops(t *testing.T) {
+func TestRootsAuthorizeBrowsing(t *testing.T) {
 	base := canonicalTemp(t)
 	library := filepath.Join(base, "library")
+	other := filepath.Join(base, "other")
 	plain := filepath.Join(base, "plain.txt")
 	writeFile(t, filepath.Join(library, "Show", "a.mkv"), 1)
+	writeFile(t, filepath.Join(other, "b.mkv"), 1)
 	writeFile(t, plain, 1)
 	linked := filepath.Join(base, "linked")
 	if err := os.Symlink(library, linked); err != nil {
@@ -287,51 +309,110 @@ func TestMountsResolveAvailabilityAndWorkTops(t *testing.T) {
 	}
 	denied := filepath.Join(base, "appdata")
 	writeFile(t, filepath.Join(denied, "Show", "b.mkv"), 1)
-	store := &fakeStore{
-		mounts: []MountConfig{
-			{Key: DownloadMountPrefix + "qb-missing", Kind: MountDownload, ConnectionID: "qb-missing", Path: filepath.Join(base, "nope")},
-			{Key: DownloadMountPrefix + "qb-file", Kind: MountDownload, ConnectionID: "qb-file", Path: plain},
-			{Key: DownloadMountPrefix + "qb-linked", Kind: MountDownload, ConnectionID: "qb-linked", Path: linked},
-			{Key: DownloadMountPrefix + "qb-broken", Kind: MountDownload, ConnectionID: "qb-broken", Path: "relative"},
-		},
-		workTops: []AnimePlacements{
-			{ManagedAnimeID: "anime-1", Title: "Show 1", Paths: []string{filepath.Join(library, "Show", "a.mkv")}},
-			{ManagedAnimeID: "anime-2", Title: "Gone 2", Paths: []string{filepath.Join(base, "gone", "b.mkv")}},
-			{ManagedAnimeID: "anime-3", Title: "Denied 3", Paths: []string{filepath.Join(denied, "Show", "b.mkv")}},
-			{ManagedAnimeID: "anime-4", Title: "Nowhere 4", Paths: []string{"relative.mkv"}},
-		},
-	}
+	store := &fakeStore{}
 	service := newTestService(t, store, NewDenialZone(denied))
 	ctx := context.Background()
 
-	mounts, err := service.Mounts(ctx)
+	// Nothing is browsable before the owner adds a root, whatever exists.
+	_, err := service.List(ctx, library, "", 0)
+	mustCode(t, err, CodePathOutsideRoots)
+
+	// AddRoot refuses what cannot be a library directory.
+	for _, path := range []string{
+		"", " ", "relative", "/", filepath.Join(library, "Show", "a.mkv"), plain,
+		filepath.Join(library, "nope"), linked, denied, filepath.Join(denied, "deeper"), "/proc", "/proc/1",
+	} {
+		_, err := service.AddRoot(ctx, AddRootRequest{Path: path})
+		mustCode(t, err, CodeRootInvalid)
+	}
+
+	added, err := service.AddRoot(ctx, AddRootRequest{Path: library + string(filepath.Separator)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(mounts) != 6 {
-		t.Fatalf("mounts = %+v", mounts)
+	if added.Label != "library" || added.Path != library || !added.Available || added.Unavailable != "" || added.ID == "" {
+		t.Fatalf("added root = %+v", added)
 	}
-	root := mounts[0]
-	if root.Key != RootMountKey || root.Kind != MountRoot || root.Path != RootMountPath || !root.Available || root.Unavailable != "" {
-		t.Fatalf("the filesystem root is the browser's fixed entry: %+v", root)
+	_, err = service.AddRoot(ctx, AddRootRequest{Path: library})
+	mustCode(t, err, CodeRootExists)
+
+	roots, err := service.Roots(ctx)
+	if err != nil || len(roots) != 1 || roots[0].Path != library || roots[0].ID != added.ID {
+		t.Fatalf("roots = %+v, %v", roots, err)
 	}
-	want := []MountUnavailable{MountMissing, MountNotDirectory, "", MountNotConfigured}
-	for index, mount := range mounts[1:5] {
-		if mount.Unavailable != want[index] || mount.Available != (want[index] == "") {
-			t.Fatalf("mount %s: available=%v reason=%q, want %q", mount.Key, mount.Available, mount.Unavailable, want[index])
+
+	// Inside the root browsing works (a file is reached through Detail),
+	// outside it nothing is read.
+	if _, err := service.List(ctx, library, "", 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Detail(ctx, filepath.Join(library, "Show", "a.mkv")); err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.List(ctx, other, "", 0)
+	mustCode(t, err, CodePathOutsideRoots)
+	_, err = service.Detail(ctx, filepath.Join(other, "b.mkv"))
+	mustCode(t, err, CodePathOutsideRoots)
+
+	// A second name for the authorized directory (a symlink to it) passes the
+	// roots check — it fails later on the never-follow-a-link walk rule, not on
+	// authorization — and a root below an authorized root works as well.
+	if _, err := service.AddRoot(ctx, AddRootRequest{Path: filepath.Join(library, "Show")}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.List(ctx, linked, "", 0)
+	mustCode(t, err, CodeSymlinkNotFollowed)
+	if _, err := service.Detail(ctx, linked); err != nil {
+		t.Fatal(err)
+	}
+
+	// Removing a root stops authorizing it; the deeper root still holds.
+	if err := service.RemoveRoot(ctx, added.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.List(ctx, library, "", 0)
+	mustCode(t, err, CodePathOutsideRoots)
+	if _, err := service.List(ctx, filepath.Join(library, "Show"), "", 0); err != nil {
+		t.Fatal(err)
+	}
+	err = service.RemoveRoot(ctx, "gone")
+	mustCode(t, err, CodeRootNotFound)
+}
+
+func TestRootsResolveAvailability(t *testing.T) {
+	base := canonicalTemp(t)
+	gone, stale := filepath.Join(base, "gone"), filepath.Join(base, "stale")
+	for _, dir := range []string{gone, stale} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
 		}
 	}
-	// A mount configured through a symlink is browsed at its target; a work
-	// mount is the tree top of its placements, and a work whose tree top is
-	// missing, denied or unevidenced has no mount at all.
-	work := mounts[5]
-	if work.Key != AnimeMountPrefix+"anime-1" || work.Kind != MountAnime || work.Path != filepath.Join(library, "Show") ||
-		work.Label != "Show 1" || work.ManagedAnimeID != "anime-1" || !work.Available {
-		t.Fatalf("work mount = %+v", work)
+	store := &fakeStore{}
+	service := newTestService(t, store, NewDenialZone(filepath.Join(base, "appdata")))
+	ctx := context.Background()
+	for _, dir := range []string{gone, stale} {
+		if _, err := service.AddRoot(ctx, AddRootRequest{Path: dir}); err != nil {
+			t.Fatal(err)
+		}
 	}
-	listing, err := service.List(ctx, mounts[3].canonical, "", 0)
-	if err != nil || len(listing.Entries) != 1 || listing.Entries[0].Name != "Show" {
-		t.Fatalf("linked mount listing = %+v, %v", listing.Entries, err)
+	// The stored paths go stale on disk; Roots re-derives what they are now,
+	// and a root that became something other than a directory says so.
+	if err := os.Remove(gone); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(stale); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, stale, 1)
+	roots, err := service.Roots(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]RootUnavailable{gone: RootMissing, stale: RootNotDirectory}
+	for _, root := range roots {
+		if root.Available || root.Unavailable != want[root.Path] {
+			t.Fatalf("root %s: available=%v reason=%q, want %q", root.Path, root.Available, root.Unavailable, want[root.Path])
+		}
 	}
 }
 
@@ -345,7 +426,7 @@ func TestListPagesInStableOrderWithBoundCursor(t *testing.T) {
 	for _, name := range []string{"e.mkv", "c.mkv", "d.mkv", "B.mkv", "a.mkv"} {
 		writeFile(t, filepath.Join(library, name), 2)
 	}
-	service := newTestService(t, &fakeStore{}, NewDenialZone(filepath.Join(library, "appdata")))
+	service := newTestService(t, &fakeStore{}, NewDenialZone(filepath.Join(library, "appdata")), library)
 	ctx := context.Background()
 	var names []string
 	cursor := ""
@@ -444,7 +525,7 @@ func newStateFixture(t *testing.T) stateFixture {
 			"Loose": {},
 		},
 	}
-	return stateFixture{service: newTestService(t, store, NewDenialZone(filepath.Join(library, "appdata"))), store: store, library: library}
+	return stateFixture{service: newTestService(t, store, NewDenialZone(filepath.Join(library, "appdata")), library), store: store, library: library}
 }
 
 func (f stateFixture) abs(rel string) string {
@@ -501,6 +582,11 @@ func TestListDerivesOwnershipStatesAndLocks(t *testing.T) {
 	if loose["external.mkv"].State != StateDetached || loose["external.mkv"].Role != RoleNone || loose["external.mkv"].Locked {
 		t.Fatalf("a file without records is detached: %+v", loose["external.mkv"])
 	}
+	// A plain file is classified by its extension even though no owner record
+	// names it, so the browse filter works on unmanaged files too.
+	if loose["external.mkv"].FileKind != "video" || loose["old.zh.ass"].FileKind != "subtitle" {
+		t.Fatalf("a plain file carries its extension kind: %+v", loose)
+	}
 	// A directory is judged by its subtree, so one holding a managed file is
 	// locked exactly like the file itself.
 	root := fixture.entries(t, "")
@@ -513,6 +599,9 @@ func TestListDerivesOwnershipStatesAndLocks(t *testing.T) {
 		if got := root[name].Locked; got != want {
 			t.Fatalf("directory %s: locked=%v, want %v", name, got, want)
 		}
+	}
+	if root["Loose"].FileKind != "" {
+		t.Fatalf("a directory has no file kind: %+v", root["Loose"])
 	}
 }
 
@@ -623,9 +712,9 @@ func TestDetailReportsOwnersAndOperationMatrix(t *testing.T) {
 	if err != nil || directory.Entry.State != StateInProgress || !directory.Entry.Locked || directory.Operations != nil {
 		t.Fatalf("directory detail: %+v, %v", directory, err)
 	}
-	// The filesystem root is a browse root, never an entry of its own.
+	// The filesystem root is not an authorized entry of its own.
 	_, err = fixture.service.Detail(ctx, "/")
-	mustCode(t, err, CodePathInvalid)
+	mustCode(t, err, CodePathOutsideRoots)
 }
 
 func TestDetailReportsTheFrozenEpisodeEvidence(t *testing.T) {
@@ -689,7 +778,7 @@ func TestOwnerFactsMatchTheResolvedSpelling(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := &fakeStore{placements: []PlacementFact{activePlacement("p-alias", filepath.Join(library, "al.mkv"), "anime-1")}}
-	service := newTestService(t, store, NewDenialZone(filepath.Join(library, "appdata")))
+	service := newTestService(t, store, NewDenialZone(filepath.Join(library, "appdata")), library)
 
 	detail, err := service.Detail(context.Background(), filepath.Join(library, "link.mkv"))
 	if err != nil {

@@ -428,7 +428,7 @@ func TestOSFileExecutorReplaysMoveAfterEffectBeforeCommit(t *testing.T) {
 	}
 }
 
-func TestOSFileExecutorMoveReplayRemovesExistingSourceAndKeepsMatchingTarget(t *testing.T) {
+func TestOSFileExecutorMoveReplayRejectsSameContentDifferentInodeTarget(t *testing.T) {
 	root := canonicalTemp(t)
 	source := filepath.Join(root, "old-name.mkv")
 	target := filepath.Join(root, "library", "episode.mkv")
@@ -458,7 +458,6 @@ func TestOSFileExecutorMoveReplayRemovesExistingSourceAndKeepsMatchingTarget(t *
 	if got, err := os.ReadFile(target); err != nil || string(got) != string(content) {
 		t.Fatalf("rejected move replay changed target: %q err=%v", got, err)
 	}
-	return
 }
 
 func TestOSFileExecutorRejectsSourceSizeMismatch(t *testing.T) {
@@ -870,6 +869,43 @@ func TestOSFileExecutorOverwriteExactOperations(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestOSFileExecutorOverwriteMoveReplacesIdenticalContentTarget(t *testing.T) {
+	root := canonicalTemp(t)
+	source := filepath.Join(root, "source.mkv")
+	target := filepath.Join(root, "library", "episode.mkv")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := []byte("same episode")
+	if err := os.WriteFile(source, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	operation := domain.FileOperation{
+		ID: "overwrite-identical", Operation: domain.OperationMove,
+		SourcePath: source, TargetPath: target,
+		SourceFingerprint: digest(string(content)), CollisionPolicy: domain.CollisionOverwrite,
+	}
+	executor := (OSFileExecutor{}).BindCheckpoint(func(_ context.Context, operation domain.FileOperation, _ domain.OverwriteRecovery) (domain.FileOperation, error) {
+		return operation, nil
+	})
+	completed, err := executor.Execute(context.Background(), operation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.State != domain.OperationSucceeded || completed.TargetFingerprint != digest(string(content)) {
+		t.Fatalf("unexpected completion: %+v", completed)
+	}
+	if got, err := os.ReadFile(target); err != nil || string(got) != string(content) {
+		t.Fatalf("unexpected target: %q err=%v", got, err)
+	}
+	if _, err := os.Stat(source); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("move source remains after overwrite: %v", err)
 	}
 }
 

@@ -2710,18 +2710,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/file-manager/mounts": {
+    "/file-manager/roots": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** @description The browser's quick entries: the filesystem root, each download connection's application-side root, and each work's tree top (the directory holding the files that work's own placements put on disk). A mount is a navigation shortcut only: it never bounds what may be read or written, and every read and write names an absolute path. Read-only; availability is resolved at read time. */
-        get: operations["listFileManagerMounts"];
+        /** @description The library directories the owner added. They are the file manager's whole browsing surface: every browse, detail, target and match must name a path inside one of them, and a path outside all of them is refused with 403 FILE_MANAGER_PATH_OUTSIDE_ROOTS. A path that is application data or a system directory is still refused inside a root. Read-only; availability is resolved at read time. */
+        get: operations["listFileManagerRoots"];
+        put?: never;
+        /** @description Authorizes one library directory. The path must be absolute, must name an existing directory reached without passing a symbolic link, must not be the filesystem root, and must not hold an application-data directory; otherwise 400 FILE_MANAGER_ROOT_INVALID. A path that is already a library directory is 409 FILE_MANAGER_ROOT_EXISTS. Adding a root touches no file on disk. */
+        post: operations["addFileManagerRoot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/file-manager/roots/{root_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /** @description Stops authorizing one library directory. Files are never deleted and an operation already admitted keeps its frozen paths; only new reads and writes outside the remaining roots are refused. 404 FILE_MANAGER_ROOT_NOT_FOUND when the root is already gone. */
+        delete: operations["removeFileManagerRoot"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2734,7 +2752,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description One sorted page of one absolute directory (directories first, then byte-wise name order), each entry with its derived ownership state and whether the product manages it. The path is absolute; it is refused when it names an application-data or system directory the browser never reads, and a relative path or any symlink component is refused. A symlink entry is listed but never followed. Only metadata is read (no hashing); one listing reads at most 10000 entries and reports `truncated` beyond that. The read writes nothing and observes nothing for scans. */
+        /** @description One sorted page of one absolute directory (directories first, then byte-wise name order), each entry with its derived ownership state and whether the product manages it. The path is absolute and must lie inside a library directory the owner added; it is also refused when it names an application-data or system directory the browser never reads, and a relative path or any symlink component is refused. A symlink entry is listed but never followed. Only metadata is read (no hashing); one listing reads at most 10000 entries and reports `truncated` beyond that. The read writes nothing and observes nothing for scans. */
         get: operations["listFileManagerEntries"];
         put?: never;
         post?: never;
@@ -2812,6 +2830,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/file-manager/recognition/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Shows what renaming and moving a manually selected set of files in one directory would do, and writes nothing. Every file renders the operation's own video template over the facts parsed from its own name; the subtitles bound to a video (the one subtitle rule) render the subtitle suffix template onto the video's rendered name. A match is optional and supplies only anime facts: a template that reads a fact the render does not have is a row blocker, never an error. A video without a recognized episode is not rendered: it follows the instance unclassified-route policy (`route` moves it and its subtitles under their own names into the folder's Extras, `skip` leaves them). Every rendered target is one member of the file's own folder: an empty value or one carrying a separator is a row blocker. The answer names each row's target, disposition, episode and blockers, the occupied or internally duplicated targets, and the plan digest the submit must confirm. */
+        post: operations["previewFileManagerRecognition"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/file-manager/recognition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Admits the confirmed recognition plan as one batch of ordinary move/rename user file operations: the files stay detached, no placement or record is created, and a refusal anywhere admits nothing. The request passes back the preview's plan digest and its conflict choice: `block` cancels the whole request, `skip` leaves the conflicting files (and a conflicting video's subtitles) where they are, and `version` gives each file the first free ` (N)` sibling (a versioned video's subtitles follow its new name). Nothing is ever overwritten. Unrendered rows are refused (FILE_MANAGER_RECOGNITION_NOT_RENDERABLE) and a changed plan (FILE_MANAGER_RECOGNITION_PLAN_CHANGED). A replay with the same Idempotency-Key and request returns the original batch. */
+        post: operations["submitFileManagerRecognition"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/file-manager/operations": {
         parameters: {
             query?: never;
@@ -2821,7 +2873,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Admits one user file operation (move, rename, copy or delete) on a file. Move, rename and delete apply only to detached files; copy also to managed files (the copy is detached). The server re-derives the entry state and compares the revision, then freezes the operation and its WorkItem in one transaction; the worker freezes the source fingerprint durably before the effect. A user operation never overwrites: an occupied target is cancelled (`block`) or the new file gets a version suffix (`version`); naming another target is a new request. A target must be an absolute path other than the file itself, outside the browsable refusal zone and the executors' own namespaces, and its parent directory must exist without passing a symlink; a rename keeps the source directory. Delete captures the file and then removes that exact object. A replay with the same Idempotency-Key and request returns the original operation. */
+        /** @description Admits one user file operation (move, rename, copy or delete) on a file. Move, rename and delete apply only to detached files; copy also to managed files (the copy is detached). The server re-derives the entry state and compares the revision, then freezes the operation and its WorkItem in one transaction; the worker freezes the source fingerprint durably before the effect. An occupied target is cancelled (`block`), gives the new file a version suffix (`version`), or — `overwrite` — replaces the plain file that is there through the atomic exchange; a target a subscription manages or an operation holds is never replaced, and naming another target is a new request. A target must be an absolute path other than the file itself, inside a library directory the owner added, outside the browsable refusal zone and the executors' own namespaces, and its parent directory must exist without passing a symlink; a rename keeps the source directory. Delete captures the file and then removes that exact object. A replay with the same Idempotency-Key and request returns the original operation. */
         post: operations["submitFileManagerOperation"];
         delete?: never;
         options?: never;
@@ -4552,7 +4604,7 @@ export interface components {
             failed_work_item_id?: components["schemas"]["ID"];
         };
         /**
-         * @description What an import or an alignment does when its target path already holds a file: `fail` skips that file, `versioned` adds a version number, `overwrite` replaces the existing file and permanently deletes it. A video and its subtitles are handled as one unit. This includes a file the library already manages: its placement becomes `displaced` (the episode leaves that instance's coverage, its subtitles become unmanaged files) unless an approved version replacement names it, which supersedes it instead. File manager operations never overwrite.
+         * @description What an import or an alignment does when its target path already holds a file: `fail` skips that file, `versioned` adds a version number, `overwrite` replaces the existing file and permanently deletes it. A video and its subtitles are handled as one unit. This includes a file the library already manages: its placement becomes `displaced` (the episode leaves that instance's coverage, its subtitles become unmanaged files) unless an approved version replacement names it, which supersedes it instead. A file manager operation replaces a file only on the owner's explicit `overwrite` choice, and then only a plain file that no subscription manages.
          * @enum {string}
          */
         CollisionPolicy: "fail" | "versioned" | "overwrite";
@@ -6003,31 +6055,25 @@ export interface components {
             source: string;
         };
         /**
-         * @description What a quick entry points at: the filesystem root, one download connection's application-side root, or one work's tree top.
+         * @description Why a library directory cannot be browsed right now: it vanished, or it stopped being a directory (or became a symbolic link, which is never followed).
          * @enum {string}
          */
-        FileManagerMountKind: "root" | "download" | "anime";
-        /**
-         * @description Why a mount cannot be browsed.
-         * @enum {string}
-         */
-        FileManagerMountUnavailable: "not_configured" | "missing" | "not_directory";
-        FileManagerMount: {
-            key: string;
-            kind: components["schemas"]["FileManagerMountKind"];
-            /** @description Download connection of a download mount. */
-            connection_id?: components["schemas"]["ID"];
-            /** @description Connection name of a download mount, or the work's title for a work mount. */
-            label?: string;
-            /** @description Absolute path the mount points at. */
+        FileManagerRootUnavailable: "missing" | "not_directory";
+        FileManagerRoot: {
+            id: components["schemas"]["ID"];
+            /** @description The directory's own name, shown as the root's title. */
+            label: string;
+            /** @description The absolute path the owner added. */
             path: string;
-            /** @description The work a work mount belongs to. */
-            managed_anime_id?: components["schemas"]["ID"];
             available: boolean;
-            unavailable_reason?: components["schemas"]["FileManagerMountUnavailable"];
+            unavailable_reason?: components["schemas"]["FileManagerRootUnavailable"];
         };
-        FileManagerMountList: {
-            mounts: components["schemas"]["FileManagerMount"][];
+        FileManagerRootList: {
+            roots: components["schemas"]["FileManagerRoot"][];
+        };
+        FileManagerRootAddRequest: {
+            /** @description Absolute path of an existing directory to authorize. */
+            path: string;
         };
         /**
          * @description Lstat type; a symlink is described, never followed.
@@ -6044,6 +6090,11 @@ export interface components {
          * @enum {string}
          */
         FileManagerEntryRole: "video" | "subtitle" | "sidecar";
+        /**
+         * @description What the entry's extension says it is, independent of owner records, so a plain file is classified like a managed one. Absent for directories.
+         * @enum {string}
+         */
+        FileManagerEntryFileKind: "video" | "subtitle" | "other";
         FileManagerEntry: {
             name: string;
             /** @description Absolute path of the entry. */
@@ -6055,6 +6106,7 @@ export interface components {
             modified_at?: string;
             state: components["schemas"]["FileManagerEntryState"];
             role?: components["schemas"]["FileManagerEntryRole"];
+            file_kind?: components["schemas"]["FileManagerEntryFileKind"];
             /** @description Absolute path of the video a bound sidecar follows. */
             companion_of?: string;
             /** @description A bound sidecar whose path no longer matches its video. */
@@ -6144,10 +6196,10 @@ export interface components {
             episode?: components["schemas"]["FileManagerEpisodeEvidence"];
         };
         /**
-         * @description What happens when the target is occupied. `block` cancels the operation and changes nothing; `version` gives the new file a version suffix and keeps the existing one. A user operation never overwrites.
+         * @description What happens when the target is occupied. `block` cancels the operation and changes nothing; `version` gives the new file a version suffix and keeps the existing one; `overwrite` replaces a plain file at the target (never one a subscription manages or an operation holds).
          * @enum {string}
          */
-        FileManagerConflictChoice: "block" | "version";
+        FileManagerConflictChoice: "block" | "version" | "overwrite";
         FileManagerTarget: {
             /** @description Absolute target file path. */
             path: string;
@@ -6260,6 +6312,136 @@ export interface components {
             /** @description The `target_path` the preview showed. */
             expected_target: string;
             conflict: components["schemas"]["FileManagerConflictChoice"];
+        };
+        /**
+         * @description The parser that reads each file's own name; omitted reads `reltitle`.
+         * @enum {string}
+         */
+        FileManagerRecognitionParserKind: "reltitle" | "regex";
+        FileManagerRecognitionParser: {
+            id?: components["schemas"]["FileManagerRecognitionParserKind"];
+            /** @description Parser configuration (the `regex` parser's `episode_patterns`). */
+            config?: {
+                [key: string]: unknown;
+            };
+        };
+        FileManagerRecognitionMatch: {
+            managed_anime_id: components["schemas"]["ID"];
+            /** @description Season this operation names files with; omitted reads the anime's owner-edited season. */
+            season?: number;
+            /** @description The episode when the file's own name carries none; it applies to exactly one video, and `ep.source` reads `manual`. */
+            episode?: number;
+            /**
+             * @description Offset applied to every recognized episode of the request.
+             * @default 0
+             */
+            offset: number;
+            anime?: components["schemas"]["FileManagerRecognitionAnimeDraft"];
+        };
+        /** @description The anime facts this recognition names files with, for this operation only: the settings column's temporary draft, initialized from the matched anime. Nothing here is written back; a value the caller leaves as the anime stores it is still sent, so the render never mixes the draft with a re-read of the anime. */
+        FileManagerRecognitionAnimeDraft: {
+            /** @description Effective title for this render (anime.title): it outranks every other title source, as an edited title does in a subscription draft. */
+            title: string;
+            /**
+             * @description The kind this render resolves with (anime.kind).
+             * @enum {string}
+             */
+            media_kind: "tv" | "movie";
+            /** @description The year this render reads as anime.year; null renders it empty. */
+            year?: number | null;
+            bgm?: components["schemas"]["NullableBGMBinding"];
+            tmdb?: components["schemas"]["NullableTMDBBinding"];
+        };
+        FileManagerRecognitionRequest: {
+            /** @description Absolute paths of the selected files, all in one directory. */
+            paths: string[];
+            parser?: components["schemas"]["FileManagerRecognitionParser"];
+            /** @description Template of each video's (and other file's) whole target name, rendered over the facts of the file's own name. */
+            video_template: string;
+            /** @description Template of a subtitle's suffix; empty leaves the subtitle name without a suffix. The target composes the video's rendered name. */
+            subtitle_template?: string;
+            match?: components["schemas"]["FileManagerRecognitionMatch"];
+        };
+        /**
+         * @description What recognition does with one file: rename or move it, leave it because its rendered name is its own name (`unchanged`), leave it because the unclassified route is `skip`, or refuse it (`error`, with a blocker).
+         * @enum {string}
+         */
+        FileManagerRecognitionDisposition: "rename" | "move" | "unchanged" | "skip" | "error";
+        /**
+         * @description Why a row cannot be rendered: the template reads facts this render lacks (`facts_missing`, with their paths), does not compile (`template_invalid`), renders an unusable target (`target_invalid`), or the subtitle's video is not selected (`video_missing`) or failed (`video_failed`).
+         * @enum {string}
+         */
+        FileManagerRecognitionBlockerCode: "facts_missing" | "template_invalid" | "target_invalid" | "video_missing" | "video_failed";
+        FileManagerRecognitionBlocker: {
+            code: components["schemas"]["FileManagerRecognitionBlockerCode"];
+            facts?: string[];
+        };
+        FileManagerRecognitionConflict: {
+            /** @enum {string} */
+            occupied_by: "file" | "managed" | "in_progress" | "duplicate";
+            /** @description Absolute path this row would take under the `version` choice (advisory; the submit takes the first free suffix). */
+            version_path?: string;
+        };
+        FileManagerRecognitionEpisode: {
+            /** @description The captured text before the offset. */
+            raw?: string;
+            /** @description The canonical final episode number. */
+            number: string;
+            /** @description The last episode of a multi-episode file; empty for one episode. */
+            number_end?: string;
+            offset: number;
+            /** @description The episode evidence source (`file_parser` or `manual`). */
+            source: string;
+        };
+        FileManagerRecognitionRow: {
+            path: string;
+            name: string;
+            /** @enum {string} */
+            kind: "video" | "subtitle" | "other";
+            /** @description The group's stem (a video and its bound subtitles share one). */
+            group: string;
+            revision: string;
+            episode?: components["schemas"]["FileManagerRecognitionEpisode"];
+            /** @description Rendered absolute target; absent when no target is written. */
+            target_path?: string;
+            target_name?: string;
+            disposition: components["schemas"]["FileManagerRecognitionDisposition"];
+            blockers?: components["schemas"]["FileManagerRecognitionBlocker"][];
+            conflict?: components["schemas"]["FileManagerRecognitionConflict"];
+        };
+        /**
+         * @description The instance unclassified-route policy the plan read.
+         * @enum {string}
+         */
+        FileManagerRecognitionUnknownRoute: "skip" | "route";
+        FileManagerRecognitionPreview: {
+            directory: string;
+            rows: components["schemas"]["FileManagerRecognitionRow"][];
+            unknown_route: components["schemas"]["FileManagerRecognitionUnknownRoute"];
+            /** @description The plan the submit must confirm. */
+            plan_digest: string;
+            /** @description Absolute targets another row or a file already holds. */
+            conflicts: string[];
+        };
+        /**
+         * @description How the submit settles occupied or duplicated targets: `block` cancels the whole request, `skip` leaves the conflicting files (and a conflicting video's subtitles), `version` gives each file a free ` (N)` sibling, `overwrite` replaces each plain file at its target and refuses the request when any target is managed, in progress or duplicated.
+         * @enum {string}
+         */
+        FileManagerRecognitionConflictChoice: "block" | "skip" | "version" | "overwrite";
+        FileManagerRecognitionSubmitRequest: {
+            paths: string[];
+            parser?: components["schemas"]["FileManagerRecognitionParser"];
+            video_template: string;
+            subtitle_template?: string;
+            match?: components["schemas"]["FileManagerRecognitionMatch"];
+            /** @description The `plan_digest` the preview returned. */
+            expected_plan_digest: string;
+            conflict: components["schemas"]["FileManagerRecognitionConflictChoice"];
+        };
+        FileManagerRecognitionResult: {
+            renamed: number;
+            moved: number;
+            operations: components["schemas"]["FileManagerOperationView"][];
         };
         TMDBSeason: {
             season: number;
@@ -8264,6 +8446,15 @@ export interface components {
                 "application/json": components["schemas"]["ErrorResponse"];
             };
         };
+        /** @description The path lies outside every library directory the owner added (FILE_MANAGER_PATH_OUTSIDE_ROOTS; add the directory first). */
+        FileManagerOutsideRoots: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
         /** @description The request could not be decoded. */
         BadRequest: {
             headers: {
@@ -8347,7 +8538,7 @@ export interface components {
         };
     };
     parameters: {
-        /** @description Absolute directory path; `/` is the filesystem root. A path inside the refusal set is 400 FILE_MANAGER_PATH_DENIED. */
+        /** @description Absolute directory path inside a library directory the owner added. Outside every root it is 403 FILE_MANAGER_PATH_OUTSIDE_ROOTS; inside the refusal set it is 400 FILE_MANAGER_PATH_DENIED. */
         FileManagerPath: string;
         ManagedAnimeID: components["schemas"]["ID"];
         CandidateID: components["schemas"]["ID"];
@@ -13292,7 +13483,7 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
-    listFileManagerMounts: {
+    listFileManagerRoots: {
         parameters: {
             query?: never;
             header?: never;
@@ -13301,22 +13492,71 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The quick entries. */
+            /** @description The library directories. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FileManagerMountList"];
+                    "application/json": components["schemas"]["FileManagerRootList"];
                 };
             };
             401: components["responses"]["Unauthorized"];
         };
     };
+    addFileManagerRoot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FileManagerRootAddRequest"];
+            };
+        };
+        responses: {
+            /** @description The library directory was added. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileManagerRoot"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    removeFileManagerRoot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                root_id: components["schemas"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The library directory was removed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     listFileManagerEntries: {
         parameters: {
             query: {
-                /** @description Absolute directory path; `/` is the filesystem root. A path inside the refusal set is 400 FILE_MANAGER_PATH_DENIED. */
+                /** @description Absolute directory path inside a library directory the owner added. Outside every root it is 403 FILE_MANAGER_PATH_OUTSIDE_ROOTS; inside the refusal set it is 400 FILE_MANAGER_PATH_DENIED. */
                 path: components["parameters"]["FileManagerPath"];
                 /** @description Opaque keyset pagination cursor. */
                 cursor?: components["parameters"]["Cursor"];
@@ -13339,6 +13579,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["FileManagerOutsideRoots"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
         };
@@ -13366,6 +13607,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["FileManagerOutsideRoots"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
         };
@@ -13396,6 +13638,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["FileManagerOutsideRoots"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
         };
@@ -13424,6 +13667,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["FileManagerOutsideRoots"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
         };
@@ -13454,6 +13698,67 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["FileManagerOutsideRoots"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    previewFileManagerRecognition: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FileManagerRecognitionRequest"];
+            };
+        };
+        responses: {
+            /** @description The preview. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileManagerRecognitionPreview"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["FileManagerOutsideRoots"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    submitFileManagerRecognition: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FileManagerRecognitionSubmitRequest"];
+            };
+        };
+        responses: {
+            /** @description The batch was admitted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileManagerRecognitionResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["FileManagerOutsideRoots"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
         };
@@ -13484,6 +13789,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["FileManagerOutsideRoots"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
         };
@@ -13509,6 +13815,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["FileManagerOutsideRoots"];
             404: components["responses"]["NotFound"];
         };
     };
@@ -13538,6 +13845,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["FileManagerOutsideRoots"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
         };
@@ -13563,6 +13871,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["FileManagerOutsideRoots"];
             404: components["responses"]["NotFound"];
         };
     };

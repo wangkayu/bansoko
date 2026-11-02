@@ -17,6 +17,7 @@ import { StatePill } from "../../ui";
 import { Button, Dialog, HelpTip, Select, type SelectOption } from "../../ui/base";
 import { fileMaintenanceKeys, reconciliationKeys } from "../../lib/queryKeys";
 import { t } from "../../lib/i18n";
+import { OpenInFileManagerButton } from "../file-manager/OpenInFileManagerButton";
 
 const routeOptions = (): SelectOption<UnclassifiedRoutePolicyValue>[] => [
   { value: "skip", label: t("file.unclassified.skip") },
@@ -122,7 +123,10 @@ export function FileEffectPolicySection(props: { animeID: string; onChanged?: ()
   const data = policy.data;
   return (
     <section className="policy-card">
-      <h3 className="policy-card-title text-body">{t("file.unclassifiedTitle")}</h3>
+      <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2">
+        <h3 className="policy-card-title text-body">{t("file.unclassifiedTitle")}</h3>
+        <OpenInFileManagerButton animeID={animeID} />
+      </div>
       {policy.isLoading && <StatePill busy>{t("act.reading")}</StatePill>}
       {policy.error && <StatePill tone="offline">{toUserMessage(policy.error, t("anime.fileEffect.loadFailed"))}</StatePill>}
       {data && (

@@ -7,6 +7,7 @@ import {
   CalendarDays,
   ClipboardList,
   Compass,
+  FolderOpen,
   History,
   Layers,
   Menu,
@@ -19,14 +20,10 @@ const QBManagerDialogEntry = lazyEntry(
   () => import("../features/qb-manager/QBManagerDialogEntry"),
   (module) => module.QBManagerDialogEntry,
 );
-// The file manager is hidden in this version: the automatic mainline does not
-// need interactive file management. features/file-manager/* and its component
-// tests are kept. To restore it:
-// 1. bring back the lazy FileManagerDialogEntry here plus the
-//    fileManagerOpen / path-param / mount block below;
-// 2. add "files" back to ROUTE_TOOLS in routeDialogs.ts;
-// 3. bring back the top-bar button, the MoreSheet file-manager row
-//    (onOpenFiles) and the OpenInFileManagerButton in FileEffectPolicySection.
+const FileManagerDialogEntry = lazyEntry(
+  () => import("../features/file-manager/FileManagerDialogEntry"),
+  (module) => module.FileManagerDialogEntry,
+);
 const LogDialogEntry = lazyEntry(() => import("./LogDialogEntry"), (module) => module.LogDialogEntry);
 const ExecutionRecordsDialogEntry = lazyEntry(
   () => import("../features/records/ExecutionRecordsDialogEntry"),
@@ -109,12 +106,11 @@ export function TopNav({
   const logParam = routeDialogs.get("log");
   const globalSearchOpen = toolParam === "search";
   const qbManagerOpen = toolParam === "qbittorrent";
-  // The file manager is hidden (see the note at the top of this file):
-  // `?tool=files` is not in ROUTE_TOOLS and falls back as an unknown tool; its
-  // `&path=` / `&file=` / `&op=` params are dropped too. On restore they become
-  // valid only under tool=files again.
-  const fileRouteParamPresent =
-    routeDialogs.get("path") !== null || routeDialogs.get("file") !== null || routeDialogs.get("op") !== null;
+  const fileManagerOpen = toolParam === "files";
+  // `&path=` belongs to the file manager; the old `&file=` / `&op=` entry params
+  // are retired and make the link fall back.
+  const pathParam = routeDialogs.get("path");
+  const fileRouteParamPresent = routeDialogs.get("file") !== null || routeDialogs.get("op") !== null;
   const logDialogOpen = isOneOf(ROUTE_LOG_VIEWS, logParam);
   // Execution records: `?record=list` is the list, any other value is one record's id.
   const recordParam = routeDialogs.get("record");
@@ -135,6 +131,7 @@ export function TopNav({
     (recordParam === "" || (recordAnimeParam !== undefined && !recordParam)) ||
     (recordSegmentParam !== null && (!recordParam || !isOneOf(ROUTE_RECORD_SEGMENTS, recordSegmentParam))) ||
     (qbSegmentParam !== null && (!qbManagerOpen || !isOneOf(ROUTE_QB_SEGMENTS, qbSegmentParam))) ||
+    (pathParam !== null && !fileManagerOpen) ||
     fileRouteParamPresent;
   useEffect(() => {
     if (invalidRouteDialog) dismissRouteDialog();
@@ -142,10 +139,12 @@ export function TopNav({
 
   // Lazy chunks mount on first open and then stay mounted so closing animates.
   const [qbManagerRequested, setQBManagerRequested] = useState(false);
+  const [fileManagerRequested, setFileManagerRequested] = useState(false);
   const [globalSearchRequested, setGlobalSearchRequested] = useState(false);
   const [logDialogRequested, setLogDialogRequested] = useState(false);
   const [recordsRequested, setRecordsRequested] = useState(false);
   if (qbManagerOpen && !qbManagerRequested) setQBManagerRequested(true);
+  if (fileManagerOpen && !fileManagerRequested) setFileManagerRequested(true);
   if (globalSearchOpen && !globalSearchRequested) setGlobalSearchRequested(true);
   if (logDialogOpen && !logDialogRequested) setLogDialogRequested(true);
   if (recordsOpen && !recordsRequested) setRecordsRequested(true);
@@ -168,6 +167,7 @@ export function TopNav({
 
   const openSearch = () => routeDialogs.open({ tool: "search" });
   const openQBManager = () => routeDialogs.open({ tool: "qbittorrent" });
+  const openFileManager = () => routeDialogs.open({ tool: "files" });
   const openLog = () => routeDialogs.open({ log: "records" });
   const openRecords = () => routeDialogs.open({ record: ROUTE_RECORD_LIST });
   const openSettings = () => navigate("/settings", { state: ROUTE_DIALOG_STATE });
@@ -259,6 +259,15 @@ export function TopNav({
               >
                 <MonitorPlay width={18} height={18} />
               </button>
+              <button
+                type="button"
+                aria-label={t("nav.fileManager")}
+                title={t("nav.fileManager")}
+                onClick={openFileManager}
+                className="top-nav-icon-btn"
+              >
+                <FolderOpen width={18} height={18} />
+              </button>
               {/* The log and execution records keep their text when the desktop is wide enough, icons only when narrow. */}
               <button
                 type="button"
@@ -273,7 +282,6 @@ export function TopNav({
                 </span>
                 {failedCount > 0 && <span className="top-nav-badge">{badgeText(failedCount)}</span>}
               </button>
-              {/* The file-manager entry is hidden; restore steps are in the note at the top of this file. */}
               <button
                 type="button"
                 aria-label={t("nav.records")}
@@ -351,6 +359,7 @@ export function TopNav({
           connections={connections}
           failedCount={failedCount}
           onOpenSearch={openSearch}
+          onOpenFiles={openFileManager}
           onOpenRecords={openRecords}
           onOpenLog={openLog}
           onOpenSettings={openSettings}
@@ -376,6 +385,19 @@ export function TopNav({
             onOpenSettings={openDownloaderSettings}
             segment={isOneOf(ROUTE_QB_SEGMENTS, qbSegmentParam) ? qbSegmentParam : undefined}
             onSegmentChange={(segment) => routeDialogs.update({ qb_segment: segment })}
+          />
+        </Suspense>
+      )}
+
+      {fileManagerRequested && (
+        <Suspense fallback={null}>
+          <FileManagerDialogEntry
+            open={fileManagerOpen}
+            path={pathParam ?? undefined}
+            onNavigate={(path) => routeDialogs.update({ path })}
+            onOpenAnime={(id) => routeDialogs.open({ anime: id, tab: "rss" })}
+            onOpenRecord={(id) => routeDialogs.open({ record: id })}
+            onClose={() => routeDialogs.close()}
           />
         </Suspense>
       )}

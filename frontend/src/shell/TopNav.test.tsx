@@ -19,6 +19,29 @@ vi.mock("../features/qb-manager/QBManagerDialogEntry", () => ({
     ) : null,
 }));
 
+vi.mock("../features/file-manager/FileManagerDialogEntry", () => ({
+  FileManagerDialogEntry: ({
+    open,
+    path,
+    onClose,
+  }: {
+    open: boolean;
+    path?: string;
+    onClose: () => void;
+  }) => (
+    <div data-testid="mock-files-entry" data-open={String(open)} data-path={path}>
+      {open ? (
+        <div role="dialog">
+          <span>顶栏文件管理</span>
+          <button type="button" aria-label="关闭文件管理" onClick={onClose}>
+            关闭
+          </button>
+        </div>
+      ) : null}
+    </div>
+  ),
+}));
+
 vi.mock("./LogDialogEntry", () => ({
   LogDialogEntry: ({
     open,
@@ -167,15 +190,15 @@ describe("TopNav 术语（R10）", () => {
     vi.unstubAllGlobals();
   });
 
-  it("执行记录在顶栏平铺；文件管理与隐藏的番剧没有顶栏按钮", async () => {
+  it("执行记录与文件管理在顶栏平铺；隐藏的番剧只有设置入口", async () => {
     stubFetch();
     renderTopNav();
 
-    // Flat on the top bar: execution records is a direct button; the former
-    // "tools" menu no longer exists, the file manager is hidden in this
-    // version and hidden anime live in Settings — none takes a top-bar button.
+    // Flat on the top bar: execution records and the file manager are direct
+    // buttons; the former "tools" menu no longer exists and hidden anime live
+    // in Settings.
     expect(screen.queryByRole("button", { name: t("nav.tools") })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: t("nav.fileManager") })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: t("nav.fileManager") })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: t("nav.records") })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: t("settings.nav.hidden") })).not.toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "回收站" })).not.toBeInTheDocument();
@@ -331,9 +354,16 @@ describe("顶栏弹窗由路由承载", () => {
     expect(noQb.router.state.location.search).toBe("?tool=qbittorrent");
     noQb.unmount();
 
-    // The file manager is hidden in this version: its deep links (with path/file/op) fall back as an unknown tool.
-    const files = renderTopNav(["/?source=mikan&tool=files&path=%2Fmedia&file=%2Fmedia%2Fa.mkv&op=match"]);
-    await waitFor(() => expect(files.router.state.location.search).toBe("?source=mikan"));
+    // The file manager deep-links to a folder; its retired per-file links (&file= / &op=) still fall back.
+    const files = renderTopNav(["/?source=mikan&tool=files&path=%2Fmedia"]);
+    const filesEntry = await screen.findByTestId("mock-files-entry");
+    expect(filesEntry).toHaveAttribute("data-open", "true");
+    expect(filesEntry).toHaveAttribute("data-path", "/media");
+    expect(files.router.state.location.search).toBe("?source=mikan&tool=files&path=%2Fmedia");
+    files.unmount();
+
+    const retiredFiles = renderTopNav(["/?source=mikan&tool=files&path=%2Fmedia&file=%2Fmedia%2Fa.mkv&op=match"]);
+    await waitFor(() => expect(retiredFiles.router.state.location.search).toBe("?source=mikan"));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 

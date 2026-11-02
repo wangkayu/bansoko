@@ -12,8 +12,11 @@ import (
 	"sort"
 	"strings"
 
+	"bansoko/internal/filekinds"
 	"bansoko/internal/filemaintenance"
 	"bansoko/internal/worktree"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -32,6 +35,9 @@ type Service struct {
 	matchRenderer MatchRenderer
 	matchAnimes   MatchAnimeReader
 	seasons       SeasonCatalog
+
+	recognition       RecognitionRenderer
+	recognitionPolicy RecognitionPolicy
 }
 
 // AlignmentPolicy reports whether the effective file maintenance policy of
@@ -59,40 +65,101 @@ func NewService(store Store, zone DenialZone) (*Service, error) {
 	return &Service{store: store, zone: zone}, nil
 }
 
-// Mounts lists the quick-entry mounts with their availability. A mount is a
-// navigation shortcut only: it never bounds what may be read or written.
-//
-// The work mounts are the works' tree tops — the deepest directory common to a
-// work's own active placements, which is the directory the product last put
-// that work's files in. A work with no placement evidence has no tree top and
-// is left out rather than given an invented path.
-func (s *Service) Mounts(ctx context.Context) ([]Mount, error) {
-	configs, err := s.store.Mounts(ctx)
+// Roots lists the library directories the owner added, with the availability
+// resolved now. Every read and write must name a path inside one of them.
+func (s *Service) Roots(ctx context.Context) ([]Root, error) {
+	records, err := s.store.Roots(ctx)
 	if err != nil {
 		return nil, err
 	}
-	placed, err := s.store.AnimePlacementIndex(ctx)
+	roots := make([]Root, 0, len(records))
+	for _, record := range records {
+		roots = append(roots, resolveRoot(record))
+	}
+	return roots, nil
+}
+
+// AddRootRequest is one directory the owner authorizes as a library root.
+type AddRootRequest struct {
+	Path string
+}
+
+// AddRoot authorizes one directory. It must be an existing directory reached
+// without passing a symbolic link, must not be the filesystem root, and must
+// not hold an application-data directory (a root containing one would hand it
+// out even though reads inside it are refused). The label is the directory's
+// own name.
+func (s *Service) AddRoot(ctx context.Context, request AddRootRequest) (Root, error) {
+	cleaned, ok := cleanAbsolute(strings.TrimSpace(request.Path))
+	if !ok || cleaned == string(filepath.Separator) {
+		return Root{}, invalid(CodeRootInvalid, "path must name a directory below the filesystem root")
+	}
+	if err := refuseDenied(s.zone, cleaned); err != nil {
+		return Root{}, invalid(CodeRootInvalid, "path is not a usable library directory")
+	}
+	if s.zone.Contains(cleaned) {
+		return Root{}, invalid(CodeRootInvalid, "path holds an application-data directory")
+	}
+	_, info, err := walkAbsolute(cleaned, false)
 	if err != nil {
-		return nil, err
+		return Root{}, invalid(CodeRootInvalid, "path must be an existing directory")
 	}
-	mounts := make([]Mount, 0, len(configs)+len(placed)+1)
-	mounts = append(mounts, resolveMount(MountConfig{Key: RootMountKey, Kind: MountRoot, Label: RootMountPath, Path: RootMountPath}))
-	for _, config := range configs {
-		mounts = append(mounts, resolveMount(config))
+	if !info.IsDir() {
+		return Root{}, invalid(CodeRootInvalid, "path must be a directory")
 	}
-	seen := map[string]bool{}
-	for _, anime := range placed {
-		top, ok := worktree.Top(anime.Paths)
-		if !ok || seen[top] || s.zone.Denies(top) || !directoryExists(top) {
-			continue
+	record := RootRecord{ID: uuid.NewString(), Label: filepath.Base(cleaned), Path: cleaned}
+	if err := s.store.InsertRoot(ctx, record); err != nil {
+		if errors.Is(err, ErrRootExists) {
+			return Root{}, conflict(CodeRootExists, "path is already a library directory")
 		}
-		seen[top] = true
-		mounts = append(mounts, resolveMount(MountConfig{
-			Key: AnimeMountPrefix + anime.ManagedAnimeID, Kind: MountAnime, Label: anime.Title,
-			Path: top, ManagedAnimeID: anime.ManagedAnimeID,
-		}))
+		return Root{}, err
 	}
-	return mounts, nil
+	return resolveRoot(record), nil
+}
+
+// RemoveRoot deletes one root. It never touches the files on disk: the
+// directory simply stops being authorized.
+func (s *Service) RemoveRoot(ctx context.Context, id string) error {
+	if strings.TrimSpace(id) == "" {
+		return invalid(CodeRootNotFound, "root does not exist")
+	}
+	if err := s.store.RemoveRoot(ctx, id); err != nil {
+		if errors.Is(err, ErrRootNotFound) {
+			return notFound(CodeRootNotFound, "root does not exist")
+		}
+		return err
+	}
+	return nil
+}
+
+// authorize refuses a path outside the authorized roots, after the denial zone
+// has refused the application's own data. Both the browsed spelling and, when
+// it resolves, the symlink-resolved spelling are compared to each root's
+// spellings, so a second name for the same directory is authorized too.
+func (s *Service) authorize(ctx context.Context, absolute string) error {
+	if err := refuseDenied(s.zone, absolute); err != nil {
+		return err
+	}
+	cleaned, ok := cleanAbsolute(absolute)
+	if !ok {
+		return invalid(CodePathInvalid, "path must be an absolute path")
+	}
+	roots, err := s.store.Roots(ctx)
+	if err != nil {
+		return err
+	}
+	spellings := absoluteSpellings(cleaned)
+	for _, record := range roots {
+		rootSpellings := absoluteSpellings(record.Path)
+		for _, spelling := range spellings {
+			for _, root := range rootSpellings {
+				if containsPath(root, spelling) {
+					return nil
+				}
+			}
+		}
+	}
+	return forbidden(CodePathOutsideRoots, "path is outside the library directories")
 }
 
 // cursorKey is the stable sort position of an entry: directories first, then
@@ -143,9 +210,10 @@ func decodeCursor(value, scope string) (cursorKey, error) {
 }
 
 // List reads one sorted, bounded page of an absolute directory and derives
-// every entry's state. It never writes.
+// every entry's state. It never writes, and it reads only inside the
+// authorized roots.
 func (s *Service) List(ctx context.Context, absolutePath, cursor string, limit int) (Listing, error) {
-	if err := refuseDenied(s.zone, absolutePath); err != nil {
+	if err := s.authorize(ctx, absolutePath); err != nil {
 		return Listing{}, err
 	}
 	directory, walked, err := walkAbsolute(absolutePath, false)
@@ -231,6 +299,9 @@ func (s *Service) derivePage(ctx context.Context, directory string, page []rawEn
 			derived := deriveFile(facts, spellings, videoInProgress)
 			applyDerivation(&entry, derived)
 			applyLock(&entry)
+			if entry.Kind == KindFile {
+				entry.FileKind = filekinds.ClassifyCurrent(raw.name)
+			}
 			if entry.Locked && derived.placement != nil {
 				entry.ManagedAnimeID = derived.placement.ManagedAnimeID
 			}
@@ -322,7 +393,7 @@ type inspection struct {
 }
 
 func (s *Service) inspect(ctx context.Context, absolutePath string) (inspection, error) {
-	if err := refuseDenied(s.zone, absolutePath); err != nil {
+	if err := s.authorize(ctx, absolutePath); err != nil {
 		return inspection{}, err
 	}
 	cleaned, ok := cleanAbsolute(absolutePath)
@@ -339,6 +410,9 @@ func (s *Service) inspect(ctx context.Context, absolutePath string) (inspection,
 	spellings := absoluteSpellings(absolute)
 	raw := describe(filepath.Base(absolute), info)
 	entry := Entry{Name: raw.name, Path: absolute, Kind: raw.kind, SizeBytes: raw.size, ModifiedAt: raw.modTime}
+	if raw.kind == KindFile {
+		entry.FileKind = filekinds.ClassifyCurrent(raw.name)
+	}
 	result := inspection{absolute: absolute, spellings: spellings, info: info}
 	detail := Detail{}
 	if raw.kind == KindDirectory {
@@ -492,6 +566,10 @@ func absoluteFromSegments(segments []string) string {
 // PathSpellings returns the browsed absolute path and every spelling owner
 // rows may use for it. A writer re-reads the entry through this so its
 // revision is computed over the same facts the read used.
+//
+// It deliberately does not consult the roots: it normalizes the frozen path of
+// an operation that was authorized when it was admitted, and a root removed
+// afterwards must not strand work already in flight.
 func (s *Service) PathSpellings(absolute string) (string, []string, error) {
 	cleaned, ok := cleanAbsolute(absolute)
 	if !ok {

@@ -15,7 +15,7 @@ vi.mock("next-themes", () => ({ useTheme: () => ({ theme: "light", setTheme: () 
 const qbConnection = { id: "c-qb", kind: "qbittorrent", name: "qB", enabled: true, version: 1 } as unknown as Connection;
 const mikanConnection = { id: "c-mikan", kind: "mikan", name: "Mikan", enabled: true, version: 1 } as unknown as Connection;
 
-function renderSheet(connections: Connection[], handlers: Partial<Record<"onOpenDownloaderSettings", () => void>> = {}) {
+function renderSheet(connections: Connection[], handlers: Partial<Record<"onOpenDownloaderSettings" | "onOpenFiles", () => void>> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
@@ -30,6 +30,7 @@ function renderSheet(connections: Connection[], handlers: Partial<Record<"onOpen
         onOpenLog={() => {}}
         onOpenSettings={() => {}}
         onOpenDownloaderSettings={handlers.onOpenDownloaderSettings ?? (() => {})}
+        onOpenFiles={handlers.onOpenFiles ?? (() => {})}
       />
     </QueryClientProvider>,
   );
@@ -64,6 +65,13 @@ describe("MoreSheet", () => {
     expect(screen.queryByText(t("nav.statusNoDownloader"))).not.toBeInTheDocument();
     const items = document.querySelectorAll(".more-sheet-status-item");
     expect(items[0]).toHaveTextContent(t("nav.connection.qbittorrent"));
+  });
+
+  it("工具区有文件管理入口，点击打开文件管理", () => {
+    const onOpenFiles = vi.fn();
+    renderSheet([qbConnection], { onOpenFiles });
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(t("nav.fileManager")) }));
+    expect(onOpenFiles).toHaveBeenCalledTimes(1);
   });
 
   it("系统区状态列表包含 Nyaa，排在 AniBT 与 Mikan 之后", () => {

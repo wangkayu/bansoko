@@ -6702,27 +6702,80 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
-  /file-manager/mounts:
+  /file-manager/roots:
     get:
       tags: [FileManager]
-      operationId: listFileManagerMounts
+      operationId: listFileManagerRoots
       x-scope: read
       description: >-
-        The browser's quick entries: the filesystem root, each download
-        connection's application-side root, and each work's tree top (the
-        directory holding the files that work's own placements put on disk). A
-        mount is a navigation shortcut only: it never bounds what may be read
-        or written, and every read and write names an absolute path. Read-only;
-        availability is resolved at read time.
+        The library directories the owner added. They are the file manager's
+        whole browsing surface: every browse, detail, target and match must
+        name a path inside one of them, and a path outside all of them is
+        refused with 403 FILE_MANAGER_PATH_OUTSIDE_ROOTS. A path that is
+        application data or a system directory is still refused inside a root.
+        Read-only; availability is resolved at read time.
       responses:
         '200':
-          description: The quick entries.
+          description: The library directories.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FileManagerMountList'
+                $ref: '#/components/schemas/FileManagerRootList'
         '401':
           $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [FileManager]
+      operationId: addFileManagerRoot
+      x-scope: write
+      description: >-
+        Authorizes one library directory. The path must be absolute, must name
+        an existing directory reached without passing a symbolic link, must not
+        be the filesystem root, and must not hold an application-data directory;
+        otherwise 400 FILE_MANAGER_ROOT_INVALID. A path that is already a
+        library directory is 409 FILE_MANAGER_ROOT_EXISTS. Adding a root touches
+        no file on disk.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FileManagerRootAddRequest'
+      responses:
+        '201':
+          description: The library directory was added.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileManagerRoot'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /file-manager/roots/{root_id}:
+    delete:
+      tags: [FileManager]
+      operationId: removeFileManagerRoot
+      x-scope: write
+      description: >-
+        Stops authorizing one library directory. Files are never deleted and an
+        operation already admitted keeps its frozen paths; only new reads and
+        writes outside the remaining roots are refused. 404
+        FILE_MANAGER_ROOT_NOT_FOUND when the root is already gone.
+      parameters:
+        - name: root_id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/ID'
+      responses:
+        '204':
+          description: The library directory was removed.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /file-manager/entries:
     get:
       tags: [FileManager]
@@ -6731,9 +6784,10 @@ paths:
       description: >-
         One sorted page of one absolute directory (directories first, then
         byte-wise name order), each entry with its derived ownership state and
-        whether the product manages it. The path is absolute; it is refused
-        when it names an application-data or system directory the browser never
-        reads, and a relative path or any symlink component is refused. A
+        whether the product manages it. The path is absolute and must lie
+        inside a library directory the owner added; it is also refused when it
+        names an application-data or system directory the browser never reads,
+        and a relative path or any symlink component is refused. A
         symlink entry is listed but never followed. Only metadata is read (no
         hashing); one listing reads at most 10000 entries and reports
         `truncated` beyond that. The read writes nothing and observes nothing
@@ -6760,6 +6814,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/FileManagerOutsideRoots'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -6796,6 +6852,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/FileManagerOutsideRoots'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -6847,6 +6905,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/FileManagerOutsideRoots'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -6902,6 +6962,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/FileManagerOutsideRoots'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -6961,6 +7023,94 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/FileManagerOutsideRoots'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /file-manager/recognition/preview:
+    post:
+      tags: [FileManager]
+      operationId: previewFileManagerRecognition
+      x-scope: read
+      description: >-
+        Shows what renaming and moving a manually selected set of files in one
+        directory would do, and writes nothing. Every file renders the
+        operation's own video template over the facts parsed from its own name;
+        the subtitles bound to a video (the one subtitle rule) render the
+        subtitle suffix template onto the video's rendered name. A match is
+        optional and supplies only anime facts: a template that reads a fact
+        the render does not have is a row blocker, never an error. A video
+        without a recognized episode is not rendered: it follows the instance
+        unclassified-route policy (`route` moves it and its subtitles under
+        their own names into the folder's Extras, `skip` leaves them). Every
+        rendered target is one member of the file's own folder: an empty value
+        or one carrying a separator is a row blocker. The answer names each
+        row's target, disposition, episode and blockers, the occupied or
+        internally duplicated targets, and the plan digest the submit must
+        confirm.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FileManagerRecognitionRequest'
+      responses:
+        '200':
+          description: The preview.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileManagerRecognitionPreview'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/FileManagerOutsideRoots'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /file-manager/recognition:
+    post:
+      tags: [FileManager]
+      operationId: submitFileManagerRecognition
+      x-scope: write
+      description: >-
+        Admits the confirmed recognition plan as one batch of ordinary
+        move/rename user file operations: the files stay detached, no placement
+        or record is created, and a refusal anywhere admits nothing. The request
+        passes back the preview's plan digest and its conflict choice: `block`
+        cancels the whole request, `skip` leaves the conflicting files (and a
+        conflicting video's subtitles) where they are, and `version` gives each
+        file the first free ` (N)` sibling (a versioned video's subtitles follow
+        its new name). Nothing is ever overwritten. Unrendered rows are refused
+        (FILE_MANAGER_RECOGNITION_NOT_RENDERABLE) and a changed plan
+        (FILE_MANAGER_RECOGNITION_PLAN_CHANGED). A replay with the same
+        Idempotency-Key and request returns the original batch.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FileManagerRecognitionSubmitRequest'
+      responses:
+        '202':
+          description: The batch was admitted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileManagerRecognitionResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/FileManagerOutsideRoots'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -6976,13 +7126,16 @@ paths:
         to managed files (the copy is detached). The server
         re-derives the entry state and compares the revision, then freezes the
         operation and its WorkItem in one transaction; the worker freezes the
-        source fingerprint durably before the effect. A user
-        operation never overwrites: an occupied target is cancelled (`block`)
-        or the new file gets a version suffix (`version`); naming another
-        target is a new request. A target must be an absolute path other than
-        the file itself, outside the browsable refusal zone and the executors'
-        own namespaces, and its parent directory must exist without passing a
-        symlink; a rename keeps the source directory.
+        source fingerprint durably before the effect. An occupied target is
+        cancelled (`block`), gives the new file a version suffix (`version`),
+        or — `overwrite` — replaces the plain file that is there through the
+        atomic exchange; a target a subscription manages or an operation holds
+        is never replaced, and naming another target is a new request. A
+        target must be an absolute path other than
+        the file itself, inside a library directory the owner added, outside
+        the browsable refusal zone and the executors' own namespaces, and its
+        parent directory must exist without passing a symlink; a rename keeps
+        the source directory.
         Delete captures the file and then removes that exact object. A replay
         with the same Idempotency-Key and request returns the original
         operation.
@@ -7005,6 +7158,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/FileManagerOutsideRoots'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -7014,6 +7169,7 @@ paths:
       tags: [FileManager]
       operationId: getFileManagerOperation
       x-scope: read
+      x-surface-keep: "api: the WebUI treats an admitted operation as submitted and reads the outcome from the folder and execution records; this per-operation read stays for API-token scripts tracking a submitted id"
       description: One user file operation and its outcome. Read-only.
       parameters:
         - name: operation_id
@@ -7030,6 +7186,8 @@ paths:
                 $ref: '#/components/schemas/FileManagerOperationView'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/FileManagerOutsideRoots'
         '404':
           $ref: '#/components/responses/NotFound'
   /file-manager/entry/align:
@@ -7037,6 +7195,7 @@ paths:
       tags: [FileManager]
       operationId: alignFileManagerEntry
       x-scope: write
+      x-surface-keep: "api: manual alignment of a managed video; managed files are read-only in the redesigned file manager (release only), so no WebUI surface opens it and it stays for API-token scripts"
       description: >-
         Aligns a managed video file with its naming rules through the existing
         alignment chain: it submits a manual reconciliation scan of the file's
@@ -7062,6 +7221,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/FileManagerOutsideRoots'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -7087,6 +7248,8 @@ paths:
                 $ref: '#/components/schemas/FileManagerLocation'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/FileManagerOutsideRoots'
         '404':
           $ref: '#/components/responses/NotFound'
 components:
@@ -7111,8 +7274,9 @@ components:
       in: query
       required: true
       description: >-
-        Absolute directory path; `/` is the filesystem root. A path inside the
-        refusal set is 400 FILE_MANAGER_PATH_DENIED.
+        Absolute directory path inside a library directory the owner added.
+        Outside every root it is 403 FILE_MANAGER_PATH_OUTSIDE_ROOTS; inside
+        the refusal set it is 400 FILE_MANAGER_PATH_DENIED.
       schema:
         type: string
         minLength: 1
@@ -7359,6 +7523,14 @@ components:
       description: >-
         The bearer is an API token without the scope this operation needs
         (TOKEN_SCOPE_INSUFFICIENT; required_scope names it).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    FileManagerOutsideRoots:
+      description: >-
+        The path lies outside every library directory the owner added
+        (FILE_MANAGER_PATH_OUTSIDE_ROOTS; add the directory first).
       content:
         application/json:
           schema:
@@ -11591,8 +11763,9 @@ components:
         includes a file the library already manages: its placement becomes
         `displaced` (the episode leaves that instance's coverage, its
         subtitles become unmanaged files) unless an approved version
-        replacement names it, which supersedes it instead. File manager
-        operations never overwrite.
+        replacement names it, which supersedes it instead. A file manager
+        operation replaces a file only on the owner's explicit `overwrite`
+        choice, and then only a plain file that no subscription manages.
     FrozenRenderSnapshot:
       type: object
       additionalProperties: false
@@ -15137,57 +15310,52 @@ components:
           format: date-time
         source:
           type: string
-    FileManagerMountKind:
+    FileManagerRootUnavailable:
       type: string
       description: >-
-        What a quick entry points at: the filesystem root, one download
-        connection's application-side root, or one work's tree top.
-      enum: [root, download, anime]
-    FileManagerMountUnavailable:
-      type: string
-      description: Why a mount cannot be browsed.
-      enum: [not_configured, missing, not_directory]
-    FileManagerMount:
+        Why a library directory cannot be browsed right now: it vanished, or it
+        stopped being a directory (or became a symbolic link, which is never
+        followed).
+      enum: [missing, not_directory]
+    FileManagerRoot:
       type: object
       additionalProperties: false
-      required: [key, kind, path, available]
+      required: [id, label, path, available]
       properties:
-        key:
-          type: string
-          minLength: 1
-          maxLength: 160
-        kind:
-          $ref: '#/components/schemas/FileManagerMountKind'
-        connection_id:
-          description: Download connection of a download mount.
-          allOf:
-            - $ref: '#/components/schemas/ID'
+        id:
+          $ref: '#/components/schemas/ID'
         label:
           type: string
-          description: Connection name of a download mount, or the work's title for a work mount.
+          description: The directory's own name, shown as the root's title.
           maxLength: 256
         path:
           type: string
-          description: Absolute path the mount points at.
+          description: The absolute path the owner added.
           maxLength: 4096
-        managed_anime_id:
-          description: The work a work mount belongs to.
-          allOf:
-            - $ref: '#/components/schemas/ID'
         available:
           type: boolean
         unavailable_reason:
-          $ref: '#/components/schemas/FileManagerMountUnavailable'
-    FileManagerMountList:
+          $ref: '#/components/schemas/FileManagerRootUnavailable'
+    FileManagerRootList:
       type: object
       additionalProperties: false
-      required: [mounts]
+      required: [roots]
       properties:
-        mounts:
+        roots:
           type: array
           maxItems: 512
           items:
-            $ref: '#/components/schemas/FileManagerMount'
+            $ref: '#/components/schemas/FileManagerRoot'
+    FileManagerRootAddRequest:
+      type: object
+      additionalProperties: false
+      required: [path]
+      properties:
+        path:
+          type: string
+          description: Absolute path of an existing directory to authorize.
+          minLength: 1
+          maxLength: 4096
     FileManagerEntryKind:
       type: string
       description: Lstat type; a symlink is described, never followed.
@@ -15206,6 +15374,12 @@ components:
       type: string
       description: What owner records say a file is.
       enum: [video, subtitle, sidecar]
+    FileManagerEntryFileKind:
+      type: string
+      description: >-
+        What the entry's extension says it is, independent of owner records, so
+        a plain file is classified like a managed one. Absent for directories.
+      enum: [video, subtitle, other]
     FileManagerEntry:
       type: object
       additionalProperties: false
@@ -15233,6 +15407,8 @@ components:
           $ref: '#/components/schemas/FileManagerEntryState'
         role:
           $ref: '#/components/schemas/FileManagerEntryRole'
+        file_kind:
+          $ref: '#/components/schemas/FileManagerEntryFileKind'
         companion_of:
           type: string
           description: Absolute path of the video a bound sidecar follows.
@@ -15441,8 +15617,9 @@ components:
       description: >-
         What happens when the target is occupied. `block` cancels the
         operation and changes nothing; `version` gives the new file a version
-        suffix and keeps the existing one. A user operation never overwrites.
-      enum: [block, version]
+        suffix and keeps the existing one; `overwrite` replaces a plain file at
+        the target (never one a subscription manages or an operation holds).
+      enum: [block, version, overwrite]
     FileManagerTarget:
       type: object
       additionalProperties: false
@@ -15700,6 +15877,302 @@ components:
           maxLength: 4096
         conflict:
           $ref: '#/components/schemas/FileManagerConflictChoice'
+    FileManagerRecognitionParserKind:
+      type: string
+      description: The parser that reads each file's own name; omitted reads `reltitle`.
+      enum: [reltitle, regex]
+    FileManagerRecognitionParser:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          $ref: '#/components/schemas/FileManagerRecognitionParserKind'
+        config:
+          type: object
+          description: Parser configuration (the `regex` parser's `episode_patterns`).
+          additionalProperties: true
+    FileManagerRecognitionMatch:
+      type: object
+      additionalProperties: false
+      required: [managed_anime_id]
+      properties:
+        managed_anime_id:
+          $ref: '#/components/schemas/ID'
+        season:
+          type: integer
+          description: Season this operation names files with; omitted reads the anime's owner-edited season.
+          minimum: 0
+          maximum: 9999
+        episode:
+          type: integer
+          description: >-
+            The episode when the file's own name carries none; it applies to
+            exactly one video, and `ep.source` reads `manual`.
+          minimum: 1
+          maximum: 99999
+        offset:
+          type: integer
+          description: Offset applied to every recognized episode of the request.
+          minimum: -99999
+          maximum: 99999
+          default: 0
+        anime:
+          $ref: '#/components/schemas/FileManagerRecognitionAnimeDraft'
+    FileManagerRecognitionAnimeDraft:
+      type: object
+      additionalProperties: false
+      required: [title, media_kind]
+      description: >-
+        The anime facts this recognition names files with, for this operation
+        only: the settings column's temporary draft, initialized from the
+        matched anime. Nothing here is written back; a value the caller leaves
+        as the anime stores it is still sent, so the render never mixes the
+        draft with a re-read of the anime.
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 512
+          description: >-
+            Effective title for this render (anime.title): it outranks every
+            other title source, as an edited title does in a subscription
+            draft.
+        media_kind:
+          type: string
+          enum: [tv, movie]
+          description: The kind this render resolves with (anime.kind).
+        year:
+          type: integer
+          nullable: true
+          minimum: 1900
+          maximum: 2100
+          description: The year this render reads as anime.year; null renders it empty.
+        bgm:
+          $ref: '#/components/schemas/NullableBGMBinding'
+        tmdb:
+          $ref: '#/components/schemas/NullableTMDBBinding'
+    FileManagerRecognitionRequest:
+      type: object
+      additionalProperties: false
+      required: [paths, video_template]
+      properties:
+        paths:
+          type: array
+          description: Absolute paths of the selected files, all in one directory.
+          minItems: 1
+          maxItems: 256
+          items:
+            type: string
+            minLength: 1
+            maxLength: 4096
+        parser:
+          $ref: '#/components/schemas/FileManagerRecognitionParser'
+        video_template:
+          type: string
+          description: >-
+            Template of each video's (and other file's) whole target name,
+            rendered over the facts of the file's own name.
+          maxLength: 4096
+        subtitle_template:
+          type: string
+          description: >-
+            Template of a subtitle's suffix; empty leaves the subtitle name
+            without a suffix. The target composes the video's rendered name.
+          maxLength: 4096
+        match:
+          $ref: '#/components/schemas/FileManagerRecognitionMatch'
+    FileManagerRecognitionDisposition:
+      type: string
+      description: >-
+        What recognition does with one file: rename or move it, leave it because
+        its rendered name is its own name (`unchanged`), leave it because the
+        unclassified route is `skip`, or refuse it (`error`, with a blocker).
+      enum: [rename, move, unchanged, skip, error]
+    FileManagerRecognitionBlockerCode:
+      type: string
+      description: >-
+        Why a row cannot be rendered: the template reads facts this render lacks
+        (`facts_missing`, with their paths), does not compile
+        (`template_invalid`), renders an unusable target (`target_invalid`), or
+        the subtitle's video is not selected (`video_missing`) or failed
+        (`video_failed`).
+      enum: [facts_missing, template_invalid, target_invalid, video_missing, video_failed]
+    FileManagerRecognitionBlocker:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code:
+          $ref: '#/components/schemas/FileManagerRecognitionBlockerCode'
+        facts:
+          type: array
+          maxItems: 64
+          items:
+            type: string
+            maxLength: 128
+    FileManagerRecognitionConflict:
+      type: object
+      additionalProperties: false
+      required: [occupied_by]
+      properties:
+        occupied_by:
+          type: string
+          enum: [file, managed, in_progress, duplicate]
+        version_path:
+          type: string
+          description: >-
+            Absolute path this row would take under the `version` choice
+            (advisory; the submit takes the first free suffix).
+          maxLength: 4096
+    FileManagerRecognitionEpisode:
+      type: object
+      additionalProperties: false
+      required: [number, offset, source]
+      properties:
+        raw:
+          type: string
+          description: The captured text before the offset.
+          maxLength: 64
+        number:
+          type: string
+          description: The canonical final episode number.
+          maxLength: 32
+        number_end:
+          type: string
+          description: The last episode of a multi-episode file; empty for one episode.
+          maxLength: 32
+        offset:
+          type: integer
+        source:
+          type: string
+          description: The episode evidence source (`file_parser` or `manual`).
+          maxLength: 32
+    FileManagerRecognitionRow:
+      type: object
+      additionalProperties: false
+      required: [path, name, kind, group, revision, disposition]
+      properties:
+        path:
+          type: string
+          maxLength: 4096
+        name:
+          type: string
+          maxLength: 1024
+        kind:
+          type: string
+          enum: [video, subtitle, other]
+        group:
+          type: string
+          description: The group's stem (a video and its bound subtitles share one).
+          maxLength: 1024
+        revision:
+          type: string
+          maxLength: 128
+        episode:
+          $ref: '#/components/schemas/FileManagerRecognitionEpisode'
+        target_path:
+          type: string
+          description: Rendered absolute target; absent when no target is written.
+          maxLength: 4096
+        target_name:
+          type: string
+          maxLength: 1024
+        disposition:
+          $ref: '#/components/schemas/FileManagerRecognitionDisposition'
+        blockers:
+          type: array
+          maxItems: 8
+          items:
+            $ref: '#/components/schemas/FileManagerRecognitionBlocker'
+        conflict:
+          $ref: '#/components/schemas/FileManagerRecognitionConflict'
+    FileManagerRecognitionUnknownRoute:
+      type: string
+      description: The instance unclassified-route policy the plan read.
+      enum: [skip, route]
+    FileManagerRecognitionPreview:
+      type: object
+      additionalProperties: false
+      required: [directory, rows, unknown_route, plan_digest, conflicts]
+      properties:
+        directory:
+          type: string
+          maxLength: 4096
+        rows:
+          type: array
+          maxItems: 256
+          items:
+            $ref: '#/components/schemas/FileManagerRecognitionRow'
+        unknown_route:
+          $ref: '#/components/schemas/FileManagerRecognitionUnknownRoute'
+        plan_digest:
+          type: string
+          description: The plan the submit must confirm.
+          minLength: 1
+          maxLength: 128
+        conflicts:
+          type: array
+          description: Absolute targets another row or a file already holds.
+          maxItems: 256
+          items:
+            type: string
+            maxLength: 4096
+    FileManagerRecognitionConflictChoice:
+      type: string
+      description: >-
+        How the submit settles occupied or duplicated targets: `block` cancels
+        the whole request, `skip` leaves the conflicting files (and a
+        conflicting video's subtitles), `version` gives each file a free
+        ` (N)` sibling, `overwrite` replaces each plain file at its target and
+        refuses the request when any target is managed, in progress or
+        duplicated.
+      enum: [block, skip, version, overwrite]
+    FileManagerRecognitionSubmitRequest:
+      type: object
+      additionalProperties: false
+      required: [paths, video_template, expected_plan_digest, conflict]
+      properties:
+        paths:
+          type: array
+          minItems: 1
+          maxItems: 256
+          items:
+            type: string
+            minLength: 1
+            maxLength: 4096
+        parser:
+          $ref: '#/components/schemas/FileManagerRecognitionParser'
+        video_template:
+          type: string
+          maxLength: 4096
+        subtitle_template:
+          type: string
+          maxLength: 4096
+        match:
+          $ref: '#/components/schemas/FileManagerRecognitionMatch'
+        expected_plan_digest:
+          type: string
+          description: The `plan_digest` the preview returned.
+          minLength: 1
+          maxLength: 128
+        conflict:
+          $ref: '#/components/schemas/FileManagerRecognitionConflictChoice'
+    FileManagerRecognitionResult:
+      type: object
+      additionalProperties: false
+      required: [renamed, moved, operations]
+      properties:
+        renamed:
+          type: integer
+          minimum: 0
+        moved:
+          type: integer
+          minimum: 0
+        operations:
+          type: array
+          maxItems: 256
+          items:
+            $ref: '#/components/schemas/FileManagerOperationView'
     TMDBSeason:
       type: object
       additionalProperties: false
