@@ -88,7 +88,7 @@ type Status struct {
 // service at an httptest channel without touching rtruntime's production root.
 type FetchFunc func(ctx context.Context, client *http.Client, lane, line string) (*rtruntime.Channel, error)
 
-// UpdateFunc performs one channel pass (read, download, verify, replace).
+// UpdateFunc performs one channel pass (read, download, verify, probe, replace).
 type UpdateFunc func(ctx context.Context, options rtruntime.UpdateOptions) (rtruntime.UpdateResult, error)
 
 // Parser is the process-wide reltitle adapter the service reads and hot-swaps.
@@ -248,13 +248,20 @@ func (s *Service) Install(ctx context.Context) (Status, error) {
 		Lane:           s.lane,
 		Client:         s.client,
 		CurrentVersion: current,
+		BuiltinVersion: reltitletags.BuiltinVersion(),
 		Now:            s.now,
 	})
 	if result.Channel.Version != "" {
 		s.recordChannel(checkedAt, &result.Channel)
 	}
 	if err != nil {
+		if errors.Is(err, rtruntime.ErrAdoption) {
+			err = fmt.Errorf("%w: %v", ErrUpdate, err)
+		}
 		s.recordFailure(checkedAt, err)
+		if errors.Is(err, ErrUpdate) {
+			return s.statusLocked(), err
+		}
 		return s.statusLocked(), channelError(err)
 	}
 	if !result.Installed {

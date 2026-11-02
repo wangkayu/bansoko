@@ -2,12 +2,17 @@ package rtruntime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 )
+
+// ErrAdoption reports a downloaded binary that failed the execution probe. The
+// live file has not been replaced when this error is returned.
+var ErrAdoption = errors.New("reltitle binary adoption")
 
 // UpdateOptions describes one channel pass.
 type UpdateOptions struct {
@@ -21,6 +26,11 @@ type UpdateOptions struct {
 	// CurrentVersion is the version the deployment is actually running, which
 	// decides the line to read and whether the channel is an advance.
 	CurrentVersion string
+	// BuiltinVersion lets the default probe note an older-than-builtin binary.
+	BuiltinVersion string
+	// Probe runs the adoption chain over the temporary download. Nil selects
+	// ProbeBinary; tests replace it to avoid executing a fixture binary.
+	Probe func(ctx context.Context, path string) error
 	// Now stamps installed.json; tests replace it.
 	Now func() time.Time
 }
@@ -39,9 +49,9 @@ type UpdateResult struct {
 
 // Update reads the channel and, when it offers a strictly newer build, installs
 // it at BinaryPath. Nothing touches the live file until the download has proven
-// its size and digest, and a failed pass leaves the previous binary in place.
-// Adoption of the new file is the caller's next step: the file being correct is
-// not the same as the binary being able to answer.
+// its size and digest and the temporary file has passed the execution probe.
+// Adoption into the running process is the caller's next step; a failed pass
+// leaves the previous binary in place either way.
 func Update(ctx context.Context, options UpdateOptions) (UpdateResult, error) {
 	line := LineOf(options.CurrentVersion)
 	if line == "" {
@@ -71,6 +81,20 @@ func Update(ctx context.Context, options UpdateOptions) (UpdateResult, error) {
 	temp, err := downloadToTemp(ctx, options.Client, url, artifact, dir)
 	if err != nil {
 		return result, err
+	}
+	if err := os.Chmod(temp, 0o755); err != nil {
+		_ = os.Remove(temp)
+		return result, fmt.Errorf("%w: make the downloaded binary executable: %v", ErrAdoption, err)
+	}
+	probe := options.Probe
+	if probe == nil {
+		probe = func(ctx context.Context, path string) error {
+			return ProbeBinary(ctx, path, options.BuiltinVersion)
+		}
+	}
+	if err := probe(ctx, temp); err != nil {
+		_ = os.Remove(temp)
+		return result, fmt.Errorf("%w: %v", ErrAdoption, err)
 	}
 	target := BinaryPath(options.ConfigRoot)
 	if err := replaceBinary(temp, target); err != nil {

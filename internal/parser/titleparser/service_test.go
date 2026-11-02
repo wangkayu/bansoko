@@ -337,3 +337,23 @@ func TestInstallKeepsTheOldBackendWhenAdoptionFails(t *testing.T) {
 		t.Fatalf("channel = %+v", status.Channel)
 	}
 }
+
+func TestInstallClassifiesARefusedDownloadAsAnUpdateFailure(t *testing.T) {
+	parser := newFakeParser()
+	update := func(context.Context, rtruntime.UpdateOptions) (rtruntime.UpdateResult, error) {
+		result := rtruntime.UpdateResult{Channel: rtruntime.Channel{Version: "0.0.4"}, Version: "0.0.3"}
+		return result, errors.Join(rtruntime.ErrAdoption, errors.New("the temporary binary failed its self-check"))
+	}
+	service := newService(t, parser, nil, update, SourceBuiltin)
+
+	status, err := service.Install(context.Background())
+	if !errors.Is(err, ErrUpdate) || errors.Is(err, ErrChannel) {
+		t.Fatalf("install error = %v, want ErrUpdate without ErrChannel", err)
+	}
+	if status.Source != SourceBuiltin || status.Version != reltitletags.ImplementationVersion {
+		t.Fatalf("the old backend was not kept: %+v", status)
+	}
+	if status.Channel == nil || !strings.Contains(status.Channel.Error, "temporary binary") {
+		t.Fatalf("channel = %+v", status.Channel)
+	}
+}

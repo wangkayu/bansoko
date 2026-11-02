@@ -25,6 +25,12 @@ func (s *Server) AdmitUpdate(w http.ResponseWriter, r *http.Request, params gene
 		writeError(w, r, serviceNotConfigured("embedded update service"))
 		return
 	}
+	// Admitting a release replaces the running application. An API token (and
+	// so MCP or any agent) is refused whatever its scopes.
+	if account, ok := AccountFrom(r.Context()); !ok || !account.WebSession {
+		writeError(w, r, webSessionRequired())
+		return
+	}
 	var input generated.UpdateAdmitInput
 	body, readErr := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if readErr != nil {

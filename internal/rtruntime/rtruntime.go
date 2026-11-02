@@ -100,7 +100,27 @@ type Installed struct {
 // fails; a broken installation is a state to show, not an error to abort
 // startup with.
 func Probe(ctx context.Context, configRoot, builtinVersion string) (*Client, Info) {
-	path := BinaryPath(configRoot)
+	return probe(ctx, configRoot, BinaryPath(configRoot), builtinVersion)
+}
+
+// ProbeBinary runs the same adoption chain over an arbitrary file without
+// making it the process-wide parser. The updater uses it on the temporary
+// download, before anything can replace the live binary.
+func ProbeBinary(ctx context.Context, path, builtinVersion string) error {
+	client, info := probe(ctx, "", path, builtinVersion)
+	if client == nil {
+		if info.Note == "" {
+			return fmt.Errorf("%s was not adopted", path)
+		}
+		return errors.New(info.Note)
+	}
+	if err := client.Close(); err != nil {
+		return fmt.Errorf("close probed binary %s: %w", path, err)
+	}
+	return nil
+}
+
+func probe(ctx context.Context, configRoot, path, builtinVersion string) (*Client, Info) {
 	info := Info{Source: SourceBuiltin, Path: path}
 	if st, err := os.Lstat(path); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
@@ -147,7 +167,10 @@ func Probe(ctx context.Context, configRoot, builtinVersion string) (*Client, Inf
 		return nil, info
 	}
 	info = reported
-	info.Source = installedSource(configRoot, path, reported)
+	info.Source = SourceManual
+	if configRoot != "" {
+		info.Source = installedSource(configRoot, path, reported)
+	}
 	info.Path = path
 	info.Note = versionNote(reported.Version, builtinVersion)
 	return client, info

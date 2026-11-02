@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -260,7 +261,16 @@ func TestUpdateInstallsANewerBuild(t *testing.T) {
 		Lane:           "test",
 		Client:         server.Client(),
 		CurrentVersion: "0.0.3",
-		Now:            func() time.Time { return time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC) },
+		Probe: func(ctx context.Context, path string) error {
+			if path == BinaryPath(root) {
+				t.Fatal("the probe ran on the live path instead of the temporary download")
+			}
+			if _, err := os.Stat(BinaryPath(root)); !os.IsNotExist(err) {
+				t.Fatalf("the live path was written before the probe: %v", err)
+			}
+			return nil
+		},
+		Now: func() time.Time { return time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC) },
 	})
 	if err != nil {
 		t.Fatalf("update: %v", err)
@@ -350,6 +360,40 @@ func TestUpdateKeepsTheLiveBinaryWhenTheDigestFails(t *testing.T) {
 	}
 	if leftover, _ := filepath.Glob(filepath.Join(filepath.Dir(BinaryPath(root)), ".reltitle-download-*")); len(leftover) != 0 {
 		t.Fatalf("temporary downloads left behind: %v", leftover)
+	}
+}
+
+func TestUpdateKeepsTheLiveBinaryWhenTheProbeFails(t *testing.T) {
+	artifact := []byte("#!/bin/sh\necho not-reltitle\n")
+	server := channelServer(t, "0.0.4", artifact, nil)
+	withChannelRoot(t, server)
+	root := t.TempDir()
+	target := BinaryPath(root)
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("previous build"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Update(context.Background(), UpdateOptions{
+		ConfigRoot: root, Lane: "stable", Client: server.Client(), CurrentVersion: "0.0.3",
+	})
+	if !errors.Is(err, ErrAdoption) {
+		t.Fatalf("update error = %v, want ErrAdoption", err)
+	}
+	current, readErr := os.ReadFile(target)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(current) != "previous build" {
+		t.Fatalf("the live binary changed: %q", current)
+	}
+	if leftover, _ := filepath.Glob(filepath.Join(filepath.Dir(target), ".reltitle-download-*")); len(leftover) != 0 {
+		t.Fatalf("temporary downloads left behind: %v", leftover)
+	}
+	if _, statErr := os.Stat(MetadataPath(root)); !os.IsNotExist(statErr) {
+		t.Fatalf("a refused binary left channel metadata: %v", statErr)
 	}
 }
 
