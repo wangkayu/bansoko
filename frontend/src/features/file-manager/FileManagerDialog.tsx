@@ -492,7 +492,7 @@ function BrowserBar({
   );
 
   const go = () => {
-    const next = normalizePath(draft);
+    const next = normalizePath(draft ?? "");
     if (next === undefined) {
       setInvalid(true);
       return;
