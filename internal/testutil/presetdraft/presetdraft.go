@@ -107,11 +107,16 @@ func LoadDomain(t testing.TB, db *sql.DB, draft animedomain.AnimeDraft) animedom
 	if err != nil {
 		t.Fatalf("read business preset: %v", err)
 	}
-	tagFilters, err := configuration.NewService(db, nil).ReadGlobalTagFilters(ctx)
+	service := configuration.NewService(db, nil)
+	tagFilters, err := service.ReadGlobalTagFilters(ctx)
 	if err != nil {
 		t.Fatalf("read global tag_filters: %v", err)
 	}
-	loaded, err := animedomain.LoadBusinessIntoDraft(draft, preset, tagFilters)
+	subscriptionDefaults, err := service.ReadGlobalSubscriptionDefaults(ctx)
+	if err != nil {
+		t.Fatalf("read global subscription defaults: %v", err)
+	}
+	loaded, err := animedomain.LoadBusinessIntoDraft(draft, preset, tagFilters, subscriptionDefaults)
 	if err != nil {
 		t.Fatalf("load business preset into draft: %v", err)
 	}

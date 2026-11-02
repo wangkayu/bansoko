@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { preset as businessPreset } from "../../testing/businessPreset";
+import { preset as businessPreset, loadDraftFromBusinessPreset } from "../../testing/businessPreset";
 import { t } from "../../lib/i18n";
 
 // AnimeGrid integration surface: the two-area grid breakpoints (browse-area poster wall vs
@@ -332,6 +332,10 @@ function stubFetch() {
   fetchMock = vi.fn<FetchStub>(async (input, init) => {
     const url = String(input);
     const searchURL = new URL(url, "http://localhost");
+    if (searchURL.pathname.endsWith("/config/business-preset/load")) {
+      const body = JSON.parse(String(init?.body)) as { draft: import("../../lib/api/client").AnimeDraft; reset_to_global?: boolean };
+      return new Response(JSON.stringify(loadDraftFromBusinessPreset(body.draft, businessPreset, body.reset_to_global)), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
     if (searchURL.pathname.endsWith("/config/business-preset")) {
       return new Response(JSON.stringify(businessPreset), { status: 200, headers: { "Content-Type": "application/json" } });
     }

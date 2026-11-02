@@ -1,4 +1,5 @@
-import type { BusinessPresetView } from "../lib/api/client";
+import type { AnimeDraft, BusinessPresetView } from "../lib/api/client";
+import { loadBusinessPreset } from "../features/anime-config/businessDraft";
 
 /** A complete, valid Global business preset for component tests. */
 export const preset: BusinessPresetView = { digest: `sha256:${"a".repeat(64)}`, tag_filters: { anibt: { require: [], exclude: [] }, title: { require: [], exclude: [] } }, subscription_defaults: { ignore_multi_video_releases: false }, snapshot: {
@@ -9,3 +10,15 @@ export const preset: BusinessPresetView = { digest: `sha256:${"a".repeat(64)}`, 
  replacement:{admission_mode:"single_copy",quality_profile:{version:"profile-v1",items:[{key:"subgroup.score",ranks:[]},{key:"release.resolution",ranks:[["1080p"],["720p"]]}]}},replacement_version:9,unclassified_route:"route",file_effect_version:10,
  programs:{vars:{digest:`sha256:${"b".repeat(64)}`,version:`naming-vars-v1@sha256:${"b".repeat(64)}`},attrrules:{digest:`sha256:${"c".repeat(64)}`,version:`release-facts-v1@sha256:${"c".repeat(64)}`}}
 } };
+
+/** Test-double form of the server's pure draft transformation. */
+export function loadDraftFromBusinessPreset(draft: AnimeDraft, value: BusinessPresetView, reset = false): AnimeDraft {
+ const loaded = loadBusinessPreset(draft, value);
+ if (reset) {
+  loaded.subgroups = structuredClone(draft.subgroups);
+  loaded.business!.sections.subgroups = structuredClone(draft.subgroups);
+ }
+ if (value.subscription_defaults.ignore_multi_video_releases) loaded.ignore_multi_video_releases = true;
+ else delete loaded.ignore_multi_video_releases;
+ return loaded;
+}

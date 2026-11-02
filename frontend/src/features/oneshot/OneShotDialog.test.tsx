@@ -2,12 +2,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RSSListFile, RSSListItem, RSSListGroup, RSSListView, SeedSearchSnapshotSeed } from "../../lib/api/client";
+import type { AnimeDraft, RSSListFile, RSSListItem, RSSListGroup, RSSListView, SeedSearchSnapshotSeed } from "../../lib/api/client";
 import { createEmptyDraft, createEmptySourceDraft } from "../../lib/draft";
 import { t } from "../../lib/i18n";
 import { namingFactLabel, reasonLabel } from "../../lib/i18n/reasons";
 import type { CatalogEntryView } from "../../lib/providers/viewmodels";
-import { preset as businessPreset } from "../../testing/businessPreset";
+import { preset as businessPreset, loadDraftFromBusinessPreset } from "../../testing/businessPreset";
 import { OneShotDialog } from "./OneShotDialog";
 import type { SearchSeedBrowse } from "./useOneShotSeeds";
 const toastMock = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() }));
@@ -154,6 +154,12 @@ function stubFetch(scenario: Scenario) {
       return Response.json(
         scenario.parsers ?? [{ id: "regex", display_name: "Regex", capabilities: ["release_title"] }],
       );
+    }
+
+    if (url.endsWith("/config/business-preset/load")) {
+      const body = JSON.parse(String(init?.body)) as { draft: AnimeDraft; reset_to_global?: boolean };
+      record(body);
+      return Response.json(loadDraftFromBusinessPreset(body.draft, businessPreset, body.reset_to_global));
     }
 
     // A one-shot draft must first carry the Global business snapshot: the server fails closed for a
@@ -413,7 +419,7 @@ describe("OneShotDialog 第一步：种子目录", () => {
       expect(calls.map((call) => call.url).sort()).toEqual(
         [
           "/api/v1/catalog/providers/anibt/entries/entry-1/groups:discover",
-          "/api/v1/config/business-preset",
+          "/api/v1/config/business-preset/load",
           "/api/v1/parser-catalog",
         ].sort(),
       );

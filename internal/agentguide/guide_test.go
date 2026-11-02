@@ -326,7 +326,7 @@ func TestAppendixDraftIsAValidAnimeDraft(t *testing.T) {
 	if !strings.Contains(appendix, "`load_business_preset`") {
 		t.Fatal("the appendix must say the draft goes through load_business_preset before preview and save")
 	}
-	loaded, err := animedomain.LoadBusinessIntoDraft(mapped, guideBusinessPreset(t), json.RawMessage(`{"anibt":{"require":[],"exclude":[]},"title":{"require":[],"exclude":[]}}`))
+	loaded, err := animedomain.LoadBusinessIntoDraft(mapped, guideBusinessPreset(t), json.RawMessage(`{"anibt":{"require":[],"exclude":[]},"title":{"require":[],"exclude":[]}}`), animedomain.SubscriptionDefaults{})
 	if err != nil {
 		t.Fatalf("load_business_preset refuses the appendix draft: %v", err)
 	}

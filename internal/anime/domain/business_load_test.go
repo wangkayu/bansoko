@@ -88,7 +88,7 @@ func TestLoadBusinessIntoDraftFreezesTheDraftEdits(t *testing.T) {
 	preset := businessPresetForLoadTest(t)
 	draft := providerDraftForLoadTest(t)
 	globalTagFilters := json.RawMessage(`{"anibt":{"require":["language:CHS"],"exclude":[]},"title":{"require":[],"exclude":[]}}`)
-	loaded, err := LoadBusinessIntoDraft(draft, preset, globalTagFilters)
+	loaded, err := LoadBusinessIntoDraft(draft, preset, globalTagFilters, SubscriptionDefaults{})
 	if err != nil {
 		t.Fatalf("LoadBusinessIntoDraft: %v", err)
 	}
@@ -161,9 +161,65 @@ func TestLoadBusinessIntoDraftFreezesTheDraftEdits(t *testing.T) {
 	}
 
 	// Loading the loaded draft again changes nothing.
-	again, err := LoadBusinessIntoDraft(loaded, preset, globalTagFilters)
+	again, err := LoadBusinessIntoDraft(loaded, preset, globalTagFilters, SubscriptionDefaults{})
 	if err != nil || *again.BusinessDigest != *loaded.BusinessDigest {
 		t.Fatalf("reloading changed the snapshot: %v", err)
+	}
+}
+
+func TestBusinessLoadCopiesSubscriptionDefaultsOnlyAtCreationAndReset(t *testing.T) {
+	preset := businessPresetForLoadTest(t)
+	globalTagFilters := json.RawMessage(`{"anibt":{"require":["language:CHS"],"exclude":[]},"title":{"require":[],"exclude":[]}}`)
+	defaults := SubscriptionDefaults{IgnoreMultiVideoReleases: true}
+
+	created, err := LoadBusinessIntoDraft(providerDraftForLoadTest(t), preset, globalTagFilters, defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created.IgnoreMultiVideoReleases {
+		t.Fatal("a new draft did not copy the Global subscription default")
+	}
+
+	created.IgnoreMultiVideoReleases = false
+	created.Rules.Sections.ReleaseFilter = json.RawMessage(`{"mode":"replace","value":{"must_contain":"custom","not_in":""}}`)
+	created.Rules.Sections.TagFilters = json.RawMessage(`{"mode":"replace","value":{"anibt":{"require":[],"exclude":[]},"title":{"require":[],"exclude":[]}}}`)
+	reloaded, err := LoadBusinessIntoDraft(created, preset, globalTagFilters, defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.IgnoreMultiVideoReleases {
+		t.Fatal("an ordinary reload overwrote the draft's own admission toggle")
+	}
+
+	// The earlier ordinary reload added the Global entry. Removing that choice
+	// is a draft edit; reset must not add it back from Global.
+	ownGroups := reloaded.Subgroups.Entries[:0]
+	for _, entry := range reloaded.Subgroups.Entries {
+		if entry.GroupRef == "678" {
+			ownGroups = append(ownGroups, entry)
+		}
+	}
+	reloaded.Subgroups.Entries = ownGroups
+	reset, err := ResetBusinessIntoDraft(reloaded, preset, globalTagFilters, defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reset.IgnoreMultiVideoReleases {
+		t.Fatal("reset did not copy the Global subscription default again")
+	}
+	releaseFilter, err := decodeOverride(reset.Rules.Sections.ReleaseFilter)
+	if err != nil || !jsonEqual(t, releaseFilter.Value, preset.Sections[SectionReleaseRules]) {
+		t.Fatalf("reset kept the edited release filter: %s (%v)", reset.Rules.Sections.ReleaseFilter, err)
+	}
+	tagFilters, err := decodeOverride(reset.Rules.Sections.TagFilters)
+	if err != nil || !jsonEqual(t, tagFilters.Value, globalTagFilters) {
+		t.Fatalf("reset kept the edited tag filters: %s (%v)", reset.Rules.Sections.TagFilters, err)
+	}
+	if len(reset.Subgroups.Entries) != 1 || reset.Subgroups.Entries[0].GroupRef != "678" {
+		t.Fatalf("reset changed the draft's subgroup choices: %+v", reset.Subgroups.Entries)
+	}
+	if reset.Title != created.Title || len(reset.RssSources) != len(created.RssSources) {
+		t.Fatal("reset changed the draft identity or sources")
 	}
 }
 
@@ -171,15 +227,15 @@ func TestLoadBusinessIntoDraftRejectsAnInvalidRulesSection(t *testing.T) {
 	draft := providerDraftForLoadTest(t)
 	draft.Rules.Sections.Naming = json.RawMessage(`{"mode":"patch"}`)
 	tagFilters := json.RawMessage(`{"anibt":{"require":[],"exclude":[]},"title":{"require":[],"exclude":[]}}`)
-	if _, err := LoadBusinessIntoDraft(draft, businessPresetForLoadTest(t), tagFilters); err == nil {
+	if _, err := LoadBusinessIntoDraft(draft, businessPresetForLoadTest(t), tagFilters, SubscriptionDefaults{}); err == nil {
 		t.Fatal("an unknown override mode must be refused")
 	}
 	draft = providerDraftForLoadTest(t)
 	draft.Rules.Sections.Naming = json.RawMessage(`{"mode":"inherit"}`)
-	if _, err := LoadBusinessIntoDraft(draft, businessPresetForLoadTest(t), tagFilters); err == nil {
+	if _, err := LoadBusinessIntoDraft(draft, businessPresetForLoadTest(t), tagFilters, SubscriptionDefaults{}); err == nil {
 		t.Fatal("the retired inherit mode must be refused")
 	}
-	if _, err := LoadBusinessIntoDraft(providerDraftForLoadTest(t), BusinessSnapshot{}, tagFilters); err == nil {
+	if _, err := LoadBusinessIntoDraft(providerDraftForLoadTest(t), BusinessSnapshot{}, tagFilters, SubscriptionDefaults{}); err == nil {
 		t.Fatal("an incomplete preset must be refused")
 	}
 }

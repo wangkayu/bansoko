@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, getBusinessPreset, type AnimeConfigCandidate, type AnimeDraft, type AnimeWorkspace, type SubscribeResult } from "../../lib/api/client";
+import { ApiError, getBusinessPreset, loadBusinessPresetIntoDraft, type AnimeConfigCandidate, type AnimeDraft, type AnimeWorkspace, type SubscribeResult } from "../../lib/api/client";
 import { CandidateVersionConflict, type CandidateStore } from "../../lib/candidate/port";
 import { getCandidateStore } from "../../lib/candidate/serverCandidateStore";
 import type { CatalogProvider } from "../../lib/providers/port";
@@ -26,6 +26,10 @@ function footerCloseButton(): HTMLElement {
 vi.mock("../../lib/api/client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/api/client")>()),
   getBusinessPreset: vi.fn(async () => (await import("../../testing/businessPreset")).preset),
+  loadBusinessPresetIntoDraft: vi.fn(async (draft: AnimeDraft, reset?: boolean) => {
+    const { loadDraftFromBusinessPreset, preset } = await import("../../testing/businessPreset");
+    return loadDraftFromBusinessPreset(draft, preset, reset);
+  }),
 }));
 
 vi.mock("../../lib/candidate/serverCandidateStore", () => ({
@@ -879,6 +883,10 @@ describe("AnimeConfigDialog draft rules copied from the preset", () => {
       tv: { directory_template: "/全局目录", video_filename_template: "{title} 全局" },
     };
     vi.mocked(getBusinessPreset).mockResolvedValueOnce(custom);
+    vi.mocked(loadBusinessPresetIntoDraft).mockImplementationOnce(async (draft) => {
+      const { loadDraftFromBusinessPreset } = await import("../../testing/businessPreset");
+      return loadDraftFromBusinessPreset(draft, custom);
+    });
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/template-catalogs/naming") || url.includes("/template-previews/naming")) {
@@ -940,6 +948,10 @@ describe("AnimeConfigDialog draft rules copied from the preset", () => {
     const custom = structuredClone(preset);
     custom.subscription_defaults = { ignore_multi_video_releases: true };
     vi.mocked(getBusinessPreset).mockResolvedValueOnce(custom);
+    vi.mocked(loadBusinessPresetIntoDraft).mockImplementationOnce(async (draft) => {
+      const { loadDraftFromBusinessPreset } = await import("../../testing/businessPreset");
+      return loadDraftFromBusinessPreset(draft, custom);
+    });
     vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -968,9 +980,9 @@ describe("AnimeConfigDialog draft rules copied from the preset", () => {
     expect(toggle).toHaveAttribute("aria-checked", "false");
   });
 
-  it("读取 Global 业务预设与候选列表并行，而不是串行等待", async () => {
-    // First open of an unsubscribed provider card needs both. The preset request
-    // must already be in flight while the candidate list is still pending.
+  it("候选列表返回前不初始化新草稿，避免覆盖服务端已有草稿", async () => {
+    // The candidate read is fail-closed. Only an empty result permits the
+    // server-side Global draft transformation.
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(
       String(input).includes("/config/global-sections") ? "[]" : "{}",
       { status: 200, headers: { "Content-Type": "application/json" } },
@@ -978,6 +990,7 @@ describe("AnimeConfigDialog draft rules copied from the preset", () => {
     let releaseList: (value: AnimeConfigCandidate[]) => void = () => {};
     const list = vi.fn(() => new Promise<AnimeConfigCandidate[]>((resolve) => { releaseList = resolve; }));
     vi.mocked(getBusinessPreset).mockClear();
+    vi.mocked(loadBusinessPresetIntoDraft).mockClear();
     vi.mocked(getCandidateStore).mockReturnValue(candidateStoreMock(list));
     const providerEntry: CatalogEntryView = {
       providerEntryRef: "mikan:entry-1",
@@ -1004,10 +1017,12 @@ describe("AnimeConfigDialog draft rules copied from the preset", () => {
 
     expect(list).toHaveBeenCalledTimes(1);
     expect(getBusinessPreset).toHaveBeenCalledTimes(1);
+    expect(loadBusinessPresetIntoDraft).not.toHaveBeenCalled();
 
     releaseList([]);
     await flushQuery();
     expect(getBusinessPreset).toHaveBeenCalledTimes(1);
+    expect(loadBusinessPresetIntoDraft).toHaveBeenCalledTimes(1);
   });
 
   it("规则 tab 的订阅设置显示同集多版本与未识别集数", async () => {

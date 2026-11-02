@@ -2,10 +2,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within, act } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CatalogItem, Connection, RSSListItem, RSSListView, SeedSearchSnapshotSeed, SeedSearchSnapshotView } from "../../lib/api/client";
+import type { AnimeDraft, CatalogItem, Connection, RSSListItem, RSSListView, SeedSearchSnapshotSeed, SeedSearchSnapshotView } from "../../lib/api/client";
 import { GlobalSearchDialog } from "./GlobalSearchDialog";
 import { t } from "../../lib/i18n";
-import { preset as businessPreset } from "../../testing/businessPreset";
+import { preset as businessPreset, loadDraftFromBusinessPreset } from "../../testing/businessPreset";
 import { configKeys } from "../../lib/queryKeys";
 
 // GlobalSearchDialog (the header's global search): two modes over both sites.
@@ -197,6 +197,10 @@ function stubFetch() {
     }
     if (url.endsWith("/config/connections")) {
       return new Response(JSON.stringify(connections), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (url.endsWith("/config/business-preset/load")) {
+      const body = JSON.parse(String(init?.body)) as { draft: AnimeDraft; reset_to_global?: boolean };
+      return new Response(JSON.stringify(loadDraftFromBusinessPreset(body.draft, businessPreset, body.reset_to_global)), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     if (url.endsWith("/config/business-preset")) {
       return new Response(JSON.stringify(businessPreset), { status: 200, headers: { "Content-Type": "application/json" } });

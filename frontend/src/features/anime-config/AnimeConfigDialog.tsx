@@ -1,4 +1,4 @@
-import { copySubscriptionDefault, freezeBusinessDraft, hasCustomSettings, loadBusinessPreset, resetToGlobal } from "./businessDraft";
+import { freezeBusinessDraft, hasCustomSettings, withGlobalBusiness } from "./businessDraft";
 import { confirmBusinessReplace } from "./confirmBusinessReplace";
 import { BusinessSnapshotFields } from "./BusinessSnapshotFields";
 import { IgnoreMultiVideoField, OwnerIgnoreMultiVideo } from "./IgnoreMultiVideoField";
@@ -15,6 +15,7 @@ import {
   isVersionConflict,
   patchAnimeSubscription,
   getBusinessPreset,
+  loadBusinessPresetIntoDraft,
   newUUID,
   toUserMessage,
   type AnimeConfigCandidate,
@@ -107,13 +108,10 @@ function workspaceHeaderMetadata(workspace: AnimeWorkspace): HeaderMetadata {
   };
 }
 
-async function newDraftFromGlobal(
-  entry: Parameters<typeof draftFromEntry>[0],
-  preset: Promise<Awaited<ReturnType<typeof getBusinessPreset>>> = getBusinessPreset(),
-): Promise<AnimeDraft> {
-  // Creation copies the Global subscription default (ignore multi-video) once,
-  // exactly like the rules sections; revision reloads never touch it again.
-  return copySubscriptionDefault(loadBusinessPreset(draftFromEntry(entry), await preset), await preset);
+async function newDraftFromGlobal(entry: Parameters<typeof draftFromEntry>[0]): Promise<AnimeDraft> {
+  // Creation copies Global rules and subscription defaults through the domain
+  // operation; revision reloads never touch the draft's own admission toggle.
+  return withGlobalBusiness(draftFromEntry(entry));
 }
 
 export function AnimeConfigDialog({
@@ -629,11 +627,6 @@ function DraftBody({
 
   // The current default settings: decides whether "use defaults everywhere" is available. A read failure does not block editing.
   const businessPreset = useQuery({ queryKey: configKeys.businessPreset, queryFn: getBusinessPreset });
-  // A new draft shares the same read as the query above (one Global, not one fetch each).
-  const cachedPreset = useCallback(
-    () => queryClient.fetchQuery({ queryKey: configKeys.businessPreset, queryFn: getBusinessPreset, staleTime: 30_000 }),
-    [queryClient],
-  );
   const candidateQuery = useMemo(() => {
     const origin = entry.source as "anibt" | "mikan" | "custom";
     return {
@@ -782,7 +775,7 @@ function DraftBody({
         } else if (entry.source === "custom") {
           // A newly composed custom draft has no candidate identity yet. It may
           // be explicitly saved, but it must never resolve another custom row.
-          const initial = await newDraftFromGlobal(entry, cachedPreset());
+          const initial = await newDraftFromGlobal(entry);
           if (cancelled) return;
           setCandidateId(null);
           setCandidateVersion(0);
@@ -791,12 +784,6 @@ function DraftBody({
           setDraft(initial);
           setSavedDraft(initial);
         } else {
-          // The Global preset is read while the candidate list is in flight: the
-          // common first open has no working candidate and needs both, so the
-          // two round trips overlap instead of queueing. A rejection is only
-          // surfaced when the preset is actually consumed below.
-          const presetRequest = cachedPreset();
-          presetRequest.catch(() => undefined);
           const candidates = await candidateStore.list(candidateQuery);
           if (cancelled) return;
           const latest = candidates.find((item) => item.status === "working" && candidateMatchesEntry(item));
@@ -804,7 +791,7 @@ function DraftBody({
             applyCandidate(latest);
           } else {
             // The provider has no working candidate: initialize from the entry; the candidate is created only after an explicit save.
-            const initial = await newDraftFromGlobal(entry, presetRequest);
+            const initial = await newDraftFromGlobal(entry);
             if (cancelled) return;
             setCandidateId(null);
             setCandidateVersion(0);
@@ -827,7 +814,7 @@ function DraftBody({
       }
     })();
     return () => { cancelled = true; };
-  }, [cachedPreset, candidateMatchesEntry, candidateQuery, candidateStore, entry, entry.candidateId]);
+  }, [candidateMatchesEntry, candidateQuery, candidateStore, entry, entry.candidateId]);
 
   const dirty = useMemo(() => !valuesEqual(draft, savedDraft), [draft, savedDraft]);
   const [resettingDefaults, setResettingDefaults] = useState(false);
@@ -842,8 +829,8 @@ function DraftBody({
     })) return;
     setResettingDefaults(true);
     try {
-      const preset = await queryClient.fetchQuery({ queryKey: configKeys.businessPreset, queryFn: getBusinessPreset, staleTime: 0 });
-      setDraft((current) => resetToGlobal(current, preset));
+      const reset = await loadBusinessPresetIntoDraft(draft, true);
+      setDraft(reset);
       toast.success(t("config.useDefaultsDone"));
     } catch (cause) { setError(toUserMessage(cause, t("config.defaultsFailed"))); }
     finally { setResettingDefaults(false); }

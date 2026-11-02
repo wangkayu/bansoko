@@ -1,4 +1,4 @@
-import { getBusinessPreset, type AnimeDraft, type BusinessPresetView, type BusinessSnapshot, type RulesSections } from "../../lib/api/client";
+import { loadBusinessPresetIntoDraft, type AnimeDraft, type BusinessPresetView, type BusinessSnapshot, type RulesSections } from "../../lib/api/client";
 import { canonicalJSON, valuesEqual } from "../../lib/draft";
 import { sha256Hex } from "../../lib/sha256";
 import { t } from "../../lib/i18n";
@@ -16,19 +16,12 @@ type RuleKey = (typeof RULE_SECTIONS)[number][0];
 type SnapshotSection = (typeof RULE_SECTIONS)[number][1];
 
 /**
- * Every newly created candidate starts from one complete Global business
- * snapshot. The server never fills a missing business in, and an instance
- * activated from a business-less revision has no frozen Vars program, so it
- * can never acquire a release.
- *
- * `preset` 允许调用方改走共享查询缓存（同一会话里新建草稿与一次性任务读到的是
- * 同一份 Global，不各自再领一次）；缺省仍是一次直接读取。
+ * A new draft is assembled by the server's domain operation: the complete
+ * Global business snapshot, rules sections, tag filters and subscription
+ * defaults are copied together. Later edits belong to this draft alone.
  */
-export async function withGlobalBusiness(
-  draft: AnimeDraft,
-  preset: Promise<BusinessPresetView> = getBusinessPreset(),
-): Promise<AnimeDraft> {
-  return freezeBusinessDraft(loadBusinessPreset(draft, await preset));
+export function withGlobalBusiness(draft: AnimeDraft): Promise<AnimeDraft> {
+  return loadBusinessPresetIntoDraft(draft);
 }
 
 /** A full copy of the global preset's rules sections and tag filter (one-time input: afterwards independent of Global). */
@@ -60,33 +53,6 @@ export function loadBusinessPreset(draft: AnimeDraft, preset: BusinessPresetView
   next.subgroups.entries.push(...structuredClone(manual));
   next.rules.sections = presetRuleSections(preset);
   return next;
-}
-
-/**
- * Copy the Global subscription default into the draft's own
- * ignore-multi-video toggle (one-time input, like the rules sections): true
- * sets the field, false removes it as if the draft never set it. Creation and
- * reset-to-defaults copy it; a later revision reload never overwrites it.
- */
-export function copySubscriptionDefault(draft: AnimeDraft, preset: BusinessPresetView): AnimeDraft {
-  const { ignore_multi_video_releases: _previous, ...rest } = draft;
-  return preset.subscription_defaults.ignore_multi_video_releases
-    ? { ...rest, ignore_multi_video_releases: true }
-    : rest;
-}
-
-/**
- * 「全部使用默认」：规则各段与标签过滤重新复制当前默认设置，业务快照（解析器、未识别
- * 集数、同集多版本、程序引用）换成当前全局预设，订阅默认（忽略多视频）也重新复制。
- * 字幕组、RSS 源、元数据与身份不动——它们不在规则页。
- */
-export function resetToGlobal(draft: AnimeDraft, preset: BusinessPresetView): AnimeDraft {
-  const next = structuredClone(draft);
-  next.business = structuredClone(preset.snapshot);
-  next.business.sections.subgroups = structuredClone(draft.subgroups);
-  next.business_digest = preset.digest;
-  next.rules.sections = presetRuleSections(preset);
-  return copySubscriptionDefault(next, preset);
 }
 
 /** Whether the rules sections and tag filter differ from the copy of the default settings (used by the post-subscription rules page's "use defaults everywhere"). */

@@ -20,13 +20,31 @@ import (
 //   - tag_filters: the draft's value is kept; an absent section takes a copy
 //     of globalTagFilters (the current Global tag_filters value);
 //   - every other preset field (parser policy, retention, file-effect route,
-//     program references, section provenance) is the preset's.
+//     program references, section provenance) is the preset's;
+//   - subscription defaults: copied into a new draft (one without a business
+//     snapshot); a later reload keeps the draft's own admission toggles.
 //
 // Every per-anime section is one-time input: the
 // result carries complete values, and saving, previewing or admitting it
 // resolves exactly the configuration the draft shows. Later Global changes
 // never reach it.
-func LoadBusinessIntoDraft(draft AnimeDraft, preset BusinessSnapshot, globalTagFilters json.RawMessage) (AnimeDraft, error) {
+func LoadBusinessIntoDraft(draft AnimeDraft, preset BusinessSnapshot, globalTagFilters json.RawMessage, subscriptionDefaults SubscriptionDefaults) (AnimeDraft, error) {
+	return loadBusinessIntoDraft(draft, preset, globalTagFilters, subscriptionDefaults, false)
+}
+
+// ResetBusinessIntoDraft is the "use defaults everywhere" form: business and
+// every rules section (tag_filters included) come from the current Global, the
+// subscription defaults are copied again, and the draft's subgroup choices and
+// identity stay its own. Unlike an ordinary reload, Global entries are not
+// added to those subgroup choices.
+func ResetBusinessIntoDraft(draft AnimeDraft, preset BusinessSnapshot, globalTagFilters json.RawMessage, subscriptionDefaults SubscriptionDefaults) (AnimeDraft, error) {
+	return loadBusinessIntoDraft(draft, preset, globalTagFilters, subscriptionDefaults, true)
+}
+
+func loadBusinessIntoDraft(draft AnimeDraft, preset BusinessSnapshot, globalTagFilters json.RawMessage, subscriptionDefaults SubscriptionDefaults, reset bool) (AnimeDraft, error) {
+	if reset || draft.Business == nil {
+		draft.IgnoreMultiVideoReleases = subscriptionDefaults.IgnoreMultiVideoReleases
+	}
 	business, err := preset.Freeze()
 	if err != nil {
 		return AnimeDraft{}, fmt.Errorf("business preset: %w", err)
@@ -43,9 +61,11 @@ func LoadBusinessIntoDraft(draft AnimeDraft, preset BusinessSnapshot, globalTagF
 		subgroups.ProviderDefaults = base.ProviderDefaults
 	}
 	entries := make([]SubgroupScoreEntry, 0, len(base.Entries)+len(subgroups.Entries))
-	for _, entry := range base.Entries {
-		if !draftNamesGroup(subgroups.Entries, entry) {
-			entries = append(entries, entry)
+	if !reset {
+		for _, entry := range base.Entries {
+			if !draftNamesGroup(subgroups.Entries, entry) {
+				entries = append(entries, entry)
+			}
 		}
 	}
 	subgroups.Entries = append(entries, subgroups.Entries...)
@@ -75,9 +95,10 @@ func LoadBusinessIntoDraft(draft AnimeDraft, preset BusinessSnapshot, globalTagF
 		{&draft.Rules.Sections.FileEffect, SectionFileEffect, "file_effect"},
 	}
 	for _, rule := range rules {
-		// An absent section takes a copy of the preset value.
+		// An absent section takes a copy of the preset value; reset does so for
+		// present sections too.
 		value := business.Sections[rule.section]
-		if !SectionAbsent(*rule.field) {
+		if !reset && !SectionAbsent(*rule.field) {
 			decoded, err := decodeOverride(*rule.field)
 			if err != nil {
 				return AnimeDraft{}, fmt.Errorf("rules.%s: %w", rule.name, err)
@@ -91,7 +112,7 @@ func LoadBusinessIntoDraft(draft AnimeDraft, preset BusinessSnapshot, globalTagF
 		}
 		*rule.field = wrapped
 	}
-	if SectionAbsent(draft.Rules.Sections.TagFilters) {
+	if reset || SectionAbsent(draft.Rules.Sections.TagFilters) {
 		if _, err := decodeTagFilterRules(globalTagFilters); err != nil {
 			return AnimeDraft{}, fmt.Errorf("global tag_filters: %w", err)
 		}

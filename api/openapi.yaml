@@ -848,11 +848,15 @@ paths:
           preset's (pin a group with selection_mode manual), a rules section
           you set keeps your value, and every section you leave absent
           (tag_filters included) is copied from the preset as a complete
-          replace value. The copy is one-time: a later Global save never
-          changes the draft or the subscription made from it. Call it after every
-          edit, before rss_list_view, create_candidate, patch_candidate or
-          acquire_seed_once; preview and one-shot refuse a draft without its
-          business snapshot (BUSINESS_SNAPSHOT_REQUIRED). Writes nothing.
+          replace value. A new draft (one without business) also copies the
+          Global subscription_defaults admission toggles; a reload keeps the
+          draft's own values. Set reset_to_global to copy every default again
+          while retaining identity and subgroup choices. The copy is one-time:
+          a later Global save never changes the draft or the subscription made
+          from it. Call it after every edit, before rss_list_view,
+          create_candidate, patch_candidate or acquire_seed_once; preview and
+          one-shot refuse a draft without its business snapshot
+          (BUSINESS_SNAPSHOT_REQUIRED). Writes nothing.
       description: >-
         Pure transformation, the server form of the frontend's load + freeze:
         reads the Global business preset in one snapshot and returns the
@@ -864,6 +868,9 @@ paths:
         selections normalized. Rules: a present section keeps the draft value
         and is frozen into the snapshot; an absent section (tag_filters
         included) is filled with the preset value as a complete replace.
+        Subscription defaults seed a new draft's admission toggles and survive
+        later reloads; reset_to_global copies them again and replaces every
+        rules section while retaining identity and subgroup choices.
         Creates, saves and applies nothing.
       requestBody:
         required: true
@@ -19231,6 +19238,17 @@ components:
       properties:
         draft:
           $ref: '#/components/schemas/AnimeDraft'
+        reset_to_global:
+          type: boolean
+          default: false
+          description: >-
+            When true, apply "use defaults everywhere": replace the business and
+            every rules section (tag_filters included) with the current Global
+            values and copy subscription_defaults again, while retaining the
+            draft's identity and its subgroup choices without adding new Global
+            entries. When false or absent, explicit sections and admission
+            toggles are retained; subscription_defaults is copied only into a
+            new draft that has no business snapshot.
     BusinessPresetView:
       type: object
       additionalProperties: false
