@@ -119,3 +119,109 @@ WHERE owner_type = 'release' AND owner_id = $1 AND kind = 'release_evaluate' AND
 		t.Fatalf("the re-enqueued evaluation targets version %d, want %d", evaluationVersion, version)
 	}
 }
+
+// TestRefreshConvergesWhenEvaluationRewritesReusedTorrentFacts covers the
+// metadata-outage variant of the churn regression. Evaluation owns a different
+// parsed spelling and adds target facts to the stored file list. Reusing those
+// facts may require one convergence write, but the next identical outage poll
+// must leave the Release version and its evaluation untouched.
+func TestRefreshConvergesWhenEvaluationRewritesReusedTorrentFacts(t *testing.T) {
+	db := openRSSDatabase(t)
+	sourceID, _ := seedRSSOwner(t, db, false, true)
+	store, err := workitems.NewStore(db, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	complete := decidedRefreshItem(t)
+	fake := &rssFakeSourceFetcher{items: []acquisitiondomain.FeedItem{complete}}
+	service, err := newRSSService(t, db, store, fake)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refresh := func(version int64) {
+		t.Helper()
+		claim := createRSSClaim(t, db, store, workitems.OwnerRef{Type: workitems.OwnerRSSSourceRuntime, ID: sourceID}, workitems.KindRSSRefresh, version)
+		outcome, err := service.Handle(context.Background(), claim)
+		if err != nil || outcome.Kind != worker.OutcomeFinish {
+			t.Fatalf("refresh outcome=%+v err=%v", outcome, err)
+		}
+		if err := store.FinishWithResult(context.Background(), claim, outcome.TerminalState, outcome.OwnerResult, outcome.WriteOwner); err != nil {
+			t.Fatal(err)
+		}
+	}
+	refresh(1)
+
+	ctx := context.Background()
+	var releaseID string
+	if err := db.QueryRowContext(ctx, `SELECT id FROM releases WHERE rss_source_id = $1`, sourceID).Scan(&releaseID); err != nil {
+		t.Fatal(err)
+	}
+
+	decision := complete
+	decision.ReleaseFiles = append([]acquisitiondomain.ReleaseFile(nil), complete.ReleaseFiles...)
+	targetPath := "Test Show/Season 01/show-01.mkv"
+	decision.ReleaseFiles[0].TargetPath = &targetPath
+	decisionInternal, err := encodeInternalFeedFacts(decision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decidedVersion int64
+	if err := db.QueryRowContext(ctx, `
+UPDATE releases
+SET verdict = 'filtered', reason_code = 'no_placeable_files',
+    parsed_facts = '{"special": false, "group_name": "Test Group"}'::jsonb,
+    internal_facts = $2::jsonb, version = version + 1
+WHERE id = $1
+RETURNING version`, releaseID, decisionInternal).Scan(&decidedVersion); err != nil {
+		t.Fatal(err)
+	}
+
+	unavailable := complete
+	unavailable.TorrentPayload = nil
+	unavailable.TorrentInfoHash = ""
+	unavailable.TorrentInfoHashV1 = ""
+	unavailable.TorrentInfoHashV2 = ""
+	unavailable.TorrentVersion = ""
+	unavailable.TorrentFilename = ""
+	unavailable.TorrentSizeBytes = 0
+	unavailable.ReleaseFiles = nil
+	unavailable.TorrentErrorCode = "torrent_metadata_unavailable"
+	unavailable.TorrentErrorReason = "temporary metadata outage"
+	fake.items = []acquisitiondomain.FeedItem{unavailable}
+	refresh(2)
+
+	var reusedVersion int64
+	var reusedTarget, reusedDigest string
+	if err := db.QueryRowContext(ctx, `
+SELECT version, COALESCE(internal_facts #>> '{release_files,0,target_path}', ''), feed_facts_digest
+FROM releases WHERE id = $1`, releaseID).Scan(&reusedVersion, &reusedTarget, &reusedDigest); err != nil {
+		t.Fatal(err)
+	}
+	if reusedVersion <= decidedVersion || reusedTarget != targetPath {
+		t.Fatalf("metadata reuse did not persist the evaluated facts: version=%d target=%q", reusedVersion, reusedTarget)
+	}
+
+	refresh(3)
+	var version int64
+	var targetAfter, digestAfter string
+	if err := db.QueryRowContext(ctx, `
+SELECT version, COALESCE(internal_facts #>> '{release_files,0,target_path}', ''), feed_facts_digest
+FROM releases WHERE id = $1`, releaseID).Scan(&version, &targetAfter, &digestAfter); err != nil {
+		t.Fatal(err)
+	}
+	if version != reusedVersion {
+		t.Fatalf("an unchanged metadata-reuse poll advanced the release: version=%d want %d", version, reusedVersion)
+	}
+	if targetAfter != targetPath || digestAfter != reusedDigest {
+		t.Fatalf("an unchanged metadata-reuse poll rewrote the converged facts: target=%q digest=%q", targetAfter, digestAfter)
+	}
+	var evaluationVersion int64
+	if err := db.QueryRowContext(ctx, `
+SELECT expected_owner_version FROM work_items
+WHERE owner_type = 'release' AND owner_id = $1 AND kind = 'release_evaluate' AND state IN ('available', 'leased')`, releaseID).Scan(&evaluationVersion); err != nil {
+		t.Fatal(err)
+	}
+	if evaluationVersion != reusedVersion {
+		t.Fatalf("an unchanged metadata-reuse poll touched the evaluation: version=%d want %d", evaluationVersion, reusedVersion)
+	}
+}

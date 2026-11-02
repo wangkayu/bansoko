@@ -265,11 +265,7 @@ func (executor OSFileExecutor) Execute(ctx context.Context, operation domain.Fil
 	case targetSameObject:
 		if operation.Operation == domain.OperationMove || operation.Operation == domain.OperationHardlink {
 			currentTarget, err := observeFileAs(target, operation.SourceFingerprint)
-			matches := err == nil && sameMutationFileObservation(currentTarget, sourceForMutation)
-			if fileidentity.IsPresent(sourceForMutation.Identity) {
-				matches = err == nil && sameFrozenFileObservation(currentTarget, sourceForMutation)
-			}
-			if !matches {
+			if err != nil || !samePlacementMutationObservation(currentTarget, sourceForMutation) {
 				return operation, &OperationError{Code: CodeTargetVerification, Err: errors.New("existing placement target changed or has a different identity")}
 			}
 			if operation.Operation == domain.OperationHardlink {
@@ -2255,11 +2251,10 @@ func chooseTarget(operation domain.FileOperation, source domain.FileObservation)
 			if operation.Operation != domain.OperationMove && operation.Operation != domain.OperationHardlink {
 				return candidate, targetSameObject, observation, nil
 			}
-			// A move or a hardlink is placed only when the target is the
-			// source object itself. A filesystem without a usable identity
-			// cannot prove that, so it classifies as same content and Execute
-			// refuses closed rather than dropping the source.
-			if sameFrozenFileObservation(observation, source) {
+			// Classification uses the exact predicate Execute will apply after
+			// reauthorization; without either frozen identity or mutation evidence,
+			// same content remains a different object and the mutation fails closed.
+			if samePlacementMutationObservation(observation, source) {
 				return candidate, targetSameObject, observation, nil
 			}
 			return candidate, targetSameContent, observation, nil
@@ -2737,6 +2732,17 @@ func sameFileIdentity(left, right domain.FileObservation) bool {
 		return false
 	}
 	return fileidentity.Matches(left.Identity, right.Identity)
+}
+
+// samePlacementMutationObservation is the single object test used to classify
+// and then verify an existing move/hardlink target. Frozen identity remains the
+// normal contract; the mutation-evidence fallback is only for legacy or
+// path-level operations whose frozen source identity is unavailable.
+func samePlacementMutationObservation(left, right domain.FileObservation) bool {
+	if fileidentity.IsPresent(right.Identity) {
+		return sameFrozenFileObservation(left, right)
+	}
+	return sameMutationFileObservation(left, right)
 }
 
 func sameMutationFileObservation(left, right domain.FileObservation) bool {
