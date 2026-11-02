@@ -27,11 +27,10 @@ func payloadSource(manifestURL string) (string, error) {
 }
 
 // fetchAndVerifyManifestRaw downloads the release manifest through the shared
-// source builder, enforces the full embedded contract, and verifies both
-// signature surfaces against the built-in public key. The received document
-// bytes are returned alongside the decoded manifest and its canonical signing
-// digest: admission persists exactly those bytes, so the durable copy is the
-// document the deployment actually verified rather than a re-encoding of it.
+// source builder and enforces the full embedded contract. The received document
+// bytes are returned alongside the decoded manifest and its canonical digest:
+// admission persists exactly those bytes, so the durable copy is the document
+// the deployment actually verified rather than a re-encoding of it.
 func fetchAndVerifyManifestRaw(ctx context.Context, source *UpdateHTTPSource) (hardeningdomain.ReleaseManifest, string, []byte, error) {
 	if source == nil {
 		return hardeningdomain.ReleaseManifest{}, "", nil, errors.New("release manifest HTTP source is not configured")
@@ -76,7 +75,7 @@ func VerifyManifestDocument(data []byte) (hardeningdomain.ReleaseManifest, strin
 }
 
 // decodeAndVerifyManifest keeps response parsing separate from source policy;
-// it is also useful to ensure authentication failures never reach signature
+// it is also useful to ensure authentication failures never reach verification
 // or staging code. The returned bytes are the bounded response document that
 // was decoded and verified.
 func decodeAndVerifyManifest(resp *http.Response) (hardeningdomain.ReleaseManifest, string, []byte, error) {

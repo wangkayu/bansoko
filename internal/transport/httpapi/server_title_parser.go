@@ -57,10 +57,15 @@ func (s *Server) CheckTitleParser(w http.ResponseWriter, r *http.Request) {
 }
 
 // UpdateTitleParser installs a strictly newer channel build and switches the
-// running parser when the adoption chain accepts it.
+// running parser when the adoption chain accepts it. Replacing executable code
+// is for the owner at the keyboard only, not an API token or an agent.
 func (s *Server) UpdateTitleParser(w http.ResponseWriter, r *http.Request) {
 	if s.deps.TitleParser == nil {
 		writeError(w, r, serviceNotConfigured("title parser"))
+		return
+	}
+	if account, ok := AccountFrom(r.Context()); !ok || !account.WebSession {
+		writeError(w, r, webSessionRequired())
 		return
 	}
 	status, err := s.deps.TitleParser.Install(r.Context())

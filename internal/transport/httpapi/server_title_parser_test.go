@@ -7,19 +7,22 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	accessapplication "bansoko/internal/accesscontrol/application"
+	accessdomain "bansoko/internal/accesscontrol/domain"
 	"bansoko/internal/parser/titleparser"
 	"bansoko/internal/transport/httpapi/generated"
 )
 
 type fakeParserComponent struct {
-	status     titleparser.Status
-	statusErr  error
-	checkErr   error
-	installErr error
+	status       titleparser.Status
+	statusErr    error
+	checkErr     error
+	installErr   error
+	installCalls int
 }
 
 func (f *fakeParserComponent) Status(ctx context.Context) (titleparser.Status, error) {
@@ -31,6 +34,7 @@ func (f *fakeParserComponent) Check(ctx context.Context) (titleparser.Status, er
 }
 
 func (f *fakeParserComponent) Install(ctx context.Context) (titleparser.Status, error) {
+	f.installCalls++
 	return f.status, f.installErr
 }
 
@@ -164,6 +168,31 @@ func TestUpdateTitleParserMapsAnAdoptionFailureTo502(t *testing.T) {
 	}
 	if body.Code != "TITLE_PARSER_UPDATE_FAILED" {
 		t.Fatalf("code = %q", body.Code)
+	}
+}
+
+func TestUpdateTitleParserIsOnlyForTheWebSession(t *testing.T) {
+	service := &fakeParserComponent{}
+	server := &Server{deps: Dependencies{TitleParser: service}}
+	account := accessdomain.Account{ID: "a", Role: "owner", Scopes: append([]string(nil), accessdomain.AllScopes...)}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/title-parser/update", nil)
+	request = request.WithContext(context.WithValue(request.Context(), accountKey, account))
+	response := httptest.NewRecorder()
+	server.UpdateTitleParser(response, request)
+	if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), "WEB_SESSION_REQUIRED") {
+		t.Fatalf("token update = %d %s, want 403 WEB_SESSION_REQUIRED", response.Code, response.Body.String())
+	}
+	if service.installCalls != 0 {
+		t.Fatal("a token reached the parser install service")
+	}
+
+	account.WebSession = true
+	request = httptest.NewRequest(http.MethodPost, "/api/v1/title-parser/update", nil)
+	request = request.WithContext(context.WithValue(request.Context(), accountKey, account))
+	response = httptest.NewRecorder()
+	server.UpdateTitleParser(response, request)
+	if response.Code != http.StatusOK || service.installCalls != 1 {
+		t.Fatalf("web session update = %d %s, calls = %d", response.Code, response.Body.String(), service.installCalls)
 	}
 }
 
