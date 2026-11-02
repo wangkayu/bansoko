@@ -39,7 +39,6 @@ const (
 	rssCursorStrategyLink        = "link"
 
 	rssLogKindReleaseProcessed = "release_processed"
-	rssLogKindReleaseBatch     = "release_batch_processed"
 	rssLogKindNewContent       = "rss_new_content"
 	rssLogOutcomeFailure       = "failure"
 	rssLogOutcomeInfo          = "info"

@@ -267,6 +267,55 @@ func (e *cancelE2E) setAlphaSelected(selected bool) {
 	}
 }
 
+// releaseBatchHead is one release_batch_processed entry of the fixture
+// subscription, as the read projection consumes it.
+type releaseBatchHead struct {
+	subjectID, messageCode, reasonCode, trigger, count, changed string
+	isHead                                                      bool
+}
+
+func (e *cancelE2E) releaseBatchHeads() []releaseBatchHead {
+	e.t.Helper()
+	rows, err := e.db.Query(`SELECT subject_id, message_code, reason_code, details->>'trigger',
+    message_params->>'count', details->>'changed', batch_key IS NULL
+FROM subscription_log_entries
+WHERE subscription_id = 'sub-rss-test' AND kind = 'release_batch_processed'
+ORDER BY occurred_at, id`)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	defer rows.Close()
+	var heads []releaseBatchHead
+	for rows.Next() {
+		var head releaseBatchHead
+		if err := rows.Scan(&head.subjectID, &head.messageCode, &head.reasonCode, &head.trigger, &head.count, &head.changed, &head.isHead); err != nil {
+			e.t.Fatal(err)
+		}
+		heads = append(heads, head)
+	}
+	if err := rows.Err(); err != nil {
+		e.t.Fatal(err)
+	}
+	return heads
+}
+
+// requireNoReleaseBatch requires the reopen to have stayed below the batch
+// threshold: no head was written and no scheduled evaluation carries a key.
+func (e *cancelE2E) requireNoReleaseBatch() {
+	e.t.Helper()
+	if heads := e.releaseBatchHeads(); len(heads) != 0 {
+		e.t.Fatalf("a reopen below the threshold wrote %+v", heads)
+	}
+	var stamped int
+	if err := e.db.QueryRow(`SELECT count(*) FROM work_items WHERE kind = 'release_evaluate'
+    AND input_snapshot->>'batch_key' IS NOT NULL`).Scan(&stamped); err != nil {
+		e.t.Fatal(err)
+	}
+	if stamped != 0 {
+		e.t.Fatalf("%d standalone evaluations carry a batch key", stamped)
+	}
+}
+
 // deselectAlphaBySitePolicy is the site-policy writer's transaction: the
 // anime row first, the recomputed selection, then the competition enqueue.
 func (e *cancelE2E) deselectAlphaBySitePolicy() {
@@ -473,6 +522,7 @@ func TestReselectReopensTheGroupReleasesWithoutARefreshPostgres(t *testing.T) {
 	if len(items) != 2 || items["a-01"] != "group_selected" || items["a-02"] != "group_selected" {
 		t.Fatalf("reselect evaluations = %v, want a-01 and a-02 by group_selected", items)
 	}
+	e.requireNoReleaseBatch()
 	var refreshes int
 	if err := e.db.QueryRow(`SELECT count(*) FROM work_items WHERE kind = 'rss_refresh'`).Scan(&refreshes); err != nil || refreshes != 0 {
 		t.Fatalf("refresh items = %d %v", refreshes, err)
@@ -499,6 +549,64 @@ func TestReselectReopensTheGroupReleasesWithoutARefreshPostgres(t *testing.T) {
 	var tasks int
 	if err := e.db.QueryRow(`SELECT count(*) FROM download_tasks WHERE release_id = 'a-01'`).Scan(&tasks); err != nil || tasks != 2 {
 		t.Fatalf("a-01 tasks = %d %v, want the cancelled one kept and a new one", tasks, err)
+	}
+}
+
+// A group selected again reopens its whole filtered backlog as one batch: at
+// the refresh path's threshold the reopen writes one release_batch_processed
+// head, and every scheduled evaluation carries the batch key, so the timeline
+// keeps a single row and the per-release details stay behind it.
+func TestReselectReopensABatchAboveTheThresholdPostgres(t *testing.T) {
+	e := newCancelE2E(t)
+	ids := []string{"a-01", "a-02", "a-03"}
+	titles := []string{"[Alpha] Test Show - 01 [1080p]", "[Alpha] Test Show - 02 [1080p]", "[Alpha] Test Show - 03 [1080p]"}
+	for index, id := range ids {
+		e.addRelease(id, "source-rss-test", titles[index], index+1)
+		e.evaluate(id)
+		e.requireAwaiting(id)
+	}
+	e.setAlphaSelected(false)
+	for _, id := range ids {
+		assertReleaseState(t, e.db, id, "filtered", "provider_group_not_selected", false)
+	}
+	e.drainCompetition()
+
+	e.setAlphaSelected(true)
+	if items := e.reopenEvaluations(); len(items) != 3 {
+		t.Fatalf("reselect evaluations = %v, want the three filtered releases", items)
+	}
+	heads := e.releaseBatchHeads()
+	if len(heads) != 1 {
+		t.Fatalf("reopen heads = %+v, want exactly one", heads)
+	}
+	head := heads[0]
+	if !head.isHead || head.messageCode != "release_batch_reevaluated" || head.reasonCode != "release_batch_processed" ||
+		head.trigger != "group_selected" || head.count != "3" || head.changed != "3" {
+		t.Fatalf("head = %+v, want one reevaluated group_selected batch of three", head)
+	}
+	for _, id := range ids {
+		var key string
+		if err := e.db.QueryRow(`SELECT coalesce(input_snapshot->>'batch_key', '') FROM work_items
+    WHERE owner_type = 'release' AND owner_id = $1 AND kind = 'release_evaluate'`, id).Scan(&key); err != nil {
+			t.Fatal(err)
+		}
+		if key != head.subjectID {
+			t.Fatalf("release %s carries batch key %q, want the head's %q", id, key, head.subjectID)
+		}
+	}
+	// The details stay behind the head in the primary timeline: the read
+	// projection excludes every release_processed entry that carries this
+	// head's key.
+	if ran := e.runEvaluations(); len(ran) != 3 {
+		t.Fatalf("evaluated = %v, want all three", ran)
+	}
+	var details int
+	if err := e.db.QueryRow(`SELECT count(*) FROM subscription_log_entries
+WHERE kind = 'release_processed' AND batch_key = $1`, head.subjectID).Scan(&details); err != nil {
+		t.Fatal(err)
+	}
+	if details != 3 {
+		t.Fatalf("detail entries behind the head = %d, want three", details)
 	}
 }
 
@@ -545,6 +653,7 @@ func TestResumeReopensAGroupSelectedWhileStoppedPostgres(t *testing.T) {
 	if len(items) != 2 || items["a-01"] != "group_selected" || items["a-02"] != "group_selected" {
 		t.Fatalf("resume evaluations = %v, want a-01 and a-02 by group_selected", items)
 	}
+	e.requireNoReleaseBatch()
 	var refreshes int
 	if err := e.db.QueryRow(`SELECT count(*) FROM work_items WHERE kind = 'rss_refresh'`).Scan(&refreshes); err != nil || refreshes != 0 {
 		t.Fatalf("refresh items = %d %v", refreshes, err)
