@@ -29,8 +29,26 @@ func main() {
 		codes = append(codes, string(spec.Code))
 	}
 	writeCatalog("ACTIVITY_KINDS", kinds)
+	writeAcquisitionRunCatalog(observabilityport.AcquisitionRunCatalog())
 	writeCatalog("MESSAGE_CODES", codes)
 	writeMessageSpecs(observabilityport.MessageSpecs())
+}
+
+// writeAcquisitionRunCatalog publishes the same run grouping the record query
+// uses; the frontend does not keep a second kind list or rank table.
+func writeAcquisitionRunCatalog(entries []observabilityport.AcquisitionRunEntry) {
+	if _, err := fmt.Fprintln(os.Stdout, "\nexport const ACQUISITION_RUN_ENTRIES = ["); err != nil {
+		panic(err)
+	}
+	for _, entry := range entries {
+		if _, err := fmt.Fprintf(os.Stdout, "  { kind: %q, rank: %d, core: %t, settlement: %t },\n",
+			string(entry.Kind), entry.Rank, entry.Core, entry.Settlement); err != nil {
+			panic(err)
+		}
+	}
+	if _, err := fmt.Fprintln(os.Stdout, "] as const;"); err != nil {
+		panic(err)
+	}
 }
 
 // writeMessageSpecs publishes the business journal message catalog: per

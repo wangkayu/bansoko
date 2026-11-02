@@ -40,6 +40,35 @@ const (
 	ActivityKindAcquisitionSettled     ActivityKind = "acquisition_settled"
 )
 
+// AcquisitionRunEntry describes one kind in the acquisition timeline. Rank
+// orders entries sharing a timestamp; Core marks an entry that makes the
+// sequence an acquisition rather than a later file scan or replacement. The
+// settlement closes a run and is a core entry in the display, while the query
+// layer handles it separately from the open steps.
+type AcquisitionRunEntry struct {
+	Kind       ActivityKind
+	Rank       int
+	Core       bool
+	Settlement bool
+}
+
+var acquisitionRunEntries = []AcquisitionRunEntry{
+	{Kind: ActivityKindDownloadChanged, Rank: 1, Core: true},
+	{Kind: ActivityKindArtifactVerified, Rank: 2, Core: true},
+	{Kind: ActivityKindImportWaitingConfig, Rank: 3, Core: true},
+	{Kind: ActivityKindFileAlignmentCompleted, Rank: 4, Core: true},
+	{Kind: ActivityKindFileAlignmentFailed, Rank: 4, Core: true},
+	{Kind: ActivityKindPlacementChanged, Rank: 5},
+	{Kind: ActivityKindReplacementDecided, Rank: 6},
+	{Kind: ActivityKindAcquisitionSettled, Rank: 7, Core: true, Settlement: true},
+}
+
+// AcquisitionRunCatalog is the single run-grouping definition consumed by the
+// record query and published to the frontend by the catalog generator.
+func AcquisitionRunCatalog() []AcquisitionRunEntry {
+	return append([]AcquisitionRunEntry(nil), acquisitionRunEntries...)
+}
+
 // MessageCode is one message of the closed business journal catalog. Codes
 // are unique across kinds, so the frontend keys its text by code alone.
 type MessageCode string

@@ -52,6 +52,17 @@ export const ACTIVITY_KINDS = [
   "subscription_stopped",
 ] as const;
 
+export const ACQUISITION_RUN_ENTRIES = [
+  { kind: "download_changed", rank: 1, core: true, settlement: false },
+  { kind: "artifact_verified", rank: 2, core: true, settlement: false },
+  { kind: "import_waiting_config", rank: 3, core: true, settlement: false },
+  { kind: "file_alignment_completed", rank: 4, core: true, settlement: false },
+  { kind: "file_alignment_failed", rank: 4, core: true, settlement: false },
+  { kind: "placement_changed", rank: 5, core: false, settlement: false },
+  { kind: "replacement_decided", rank: 6, core: false, settlement: false },
+  { kind: "acquisition_settled", rank: 7, core: true, settlement: true },
+] as const;
+
 export const MESSAGE_CODES = [
   "subscription_created",
   "subscription_started",

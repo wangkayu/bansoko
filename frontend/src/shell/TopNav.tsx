@@ -53,7 +53,7 @@ import { isOneOf, ROUTE_DIALOG_STATE, ROUTE_LOG_VIEWS, ROUTE_QB_SEGMENTS, ROUTE_
 import { CATALOG_TABS, readRememberedBrowseTab, useCatalogTab } from "./catalogTabs";
 import { MoreSheet } from "./MoreSheet";
 import { BrandMark, BrandWordmark } from "./BrandMark";
-import { badgeText, useLogFailureBadge } from "./logSeen";
+import { badgeText, useLogFailureBadge, type LogFailureBadge } from "./logSeen";
 import { loadAnimeConfigDialog } from "../features/anime-config/loadAnimeConfigDialog";
 import { Popover } from "../ui/base";
 import { t } from "../lib/i18n";
@@ -161,7 +161,7 @@ export function TopNav({
   };
 
   // The badge = new failures since the log was last seen (events + unrecovered diagnostic errors), kept only in this browser.
-  const failedCount = useLogFailureBadge();
+  const failureBadge = useLogFailureBadge();
 
   const { tab, setTab } = useCatalogTab();
   const navigate = useNavigate();
@@ -271,7 +271,7 @@ export function TopNav({
                 <span className="top-nav-btn-label" aria-hidden>
                   {t("nav.log")}
                 </span>
-                {failedCount > 0 && <span className="top-nav-badge">{badgeText(failedCount)}</span>}
+                {failureBadge.count > 0 && <span className="top-nav-badge">{badgeText(failureBadge)}</span>}
               </button>
               {/* The file-manager entry is hidden; restore steps are in the note at the top of this file. */}
               <button
@@ -337,7 +337,7 @@ export function TopNav({
         <PhoneTabBar
           tab={tab}
           onSelectTab={setTab}
-          failedCount={failedCount}
+          failureBadge={failureBadge}
           onOpenQBManager={openQBManager}
           onOpenMore={() => setMoreSheetOpen(true)}
         />
@@ -349,7 +349,7 @@ export function TopNav({
           onClose={() => setMoreSheetOpen(false)}
           onLogout={onLogout}
           connections={connections}
-          failedCount={failedCount}
+          failureBadge={failureBadge}
           onOpenSearch={openSearch}
           onOpenRecords={openRecords}
           onOpenLog={openLog}
@@ -436,13 +436,13 @@ function avatarInitial(username: string | null): string {
 function PhoneTabBar({
   tab,
   onSelectTab,
-  failedCount,
+  failureBadge,
   onOpenQBManager,
   onOpenMore,
 }: {
   tab: string;
   onSelectTab: (tab: "all" | "mikan" | "anibt" | "custom") => void;
-  failedCount: number;
+  failureBadge: LogFailureBadge;
   onOpenQBManager: () => void;
   onOpenMore: () => void;
 }) {
@@ -474,7 +474,7 @@ function PhoneTabBar({
       <button type="button" className="tabbar-item" onClick={onOpenMore}>
         <Menu width={20} height={20} aria-hidden />
         <span>{t("nav.more")}</span>
-        {failedCount > 0 && <span className="tabbar-badge">{badgeText(failedCount)}</span>}
+        {failureBadge.count > 0 && <span className="tabbar-badge">{badgeText(failureBadge)}</span>}
       </button>
     </nav>
   );

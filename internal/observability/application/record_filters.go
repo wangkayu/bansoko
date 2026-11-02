@@ -114,22 +114,22 @@ func (s sourceStates) predicate(state string) string {
 // the core steps are the ones that make such a group a run (a group of only
 // placement or replacement entries renders as single rows).
 var (
-	runStepKinds = []string{
-		string(observabilityport.ActivityKindArtifactVerified),
-		string(observabilityport.ActivityKindDownloadChanged),
-		string(observabilityport.ActivityKindFileAlignmentCompleted),
-		string(observabilityport.ActivityKindFileAlignmentFailed),
-		string(observabilityport.ActivityKindPlacementChanged),
-		string(observabilityport.ActivityKindReplacementDecided),
-	}
-	runCoreStepKinds = []string{
-		string(observabilityport.ActivityKindArtifactVerified),
-		string(observabilityport.ActivityKindDownloadChanged),
-		string(observabilityport.ActivityKindFileAlignmentCompleted),
-		string(observabilityport.ActivityKindFileAlignmentFailed),
-	}
-	settledKind = string(observabilityport.ActivityKindAcquisitionSettled)
+	runStepKinds, runCoreStepKinds, settledKind = acquisitionRunKindLists()
 )
+
+func acquisitionRunKindLists() (steps, core []string, settlement string) {
+	for _, entry := range observabilityport.AcquisitionRunCatalog() {
+		if entry.Settlement {
+			settlement = string(entry.Kind)
+			continue
+		}
+		steps = append(steps, string(entry.Kind))
+		if entry.Core {
+			core = append(core, string(entry.Kind))
+		}
+	}
+	return steps, core, settlement
+}
 
 // businessOutcomeStates: a business entry outside a run carries its own
 // outcome as its state; no stored outcome is in progress.

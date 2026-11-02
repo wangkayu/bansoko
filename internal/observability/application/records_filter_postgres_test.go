@@ -209,6 +209,23 @@ func TestListRecordsStateSelectsWholeRuns(t *testing.T) {
 	}
 }
 
+func TestListRecordsStateIncludesImportWaitingConfig(t *testing.T) {
+	fixture := seedRecordFilterFixture(t)
+	_, err := fixture.db.ExecContext(context.Background(), `INSERT INTO subscription_log_entries(
+		id, subscription_id, managed_anime_id, kind, outcome, occurred_at, message_code, message_params,
+		release_id, dedupe_key, retention_until
+	) VALUES ('r2-import-waiting', 'sub-beta', 'anime-beta', 'import_waiting_config', 'info',
+		CURRENT_TIMESTAMP, 'import_config_resumed', '{}'::jsonb, 'rel-2', 'r2-import-waiting',
+		CURRENT_TIMESTAMP + INTERVAL '30 days')`)
+	if err != nil {
+		t.Fatalf("seed import waiting step: %v", err)
+	}
+	got := recordIDs(fixture.list(t, RecordQuery{State: textParam(RecordStateInProgress)}))
+	if want := expectIDs("business:r2-download", "business:r2-import-waiting"); got != want {
+		t.Fatalf("the configuration wait must stay visible with its filtered run\n got %s\nwant %s", got, want)
+	}
+}
+
 func TestListRecordsSearchSelectsWholeRuns(t *testing.T) {
 	fixture := seedRecordFilterFixture(t)
 	failedRun := expectIDs("business:r1-download", "business:r1-import-failed", "business:r1-not-replaced", "business:r1-settled")
