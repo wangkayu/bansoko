@@ -101,6 +101,12 @@ export type OneShotSeedSource = {
   fetchSeeds?: () => void;
   /** Restarts the whole read path after a failure. */
   reload: () => void;
+  /**
+   * 换了所选种子集合再进入第二步时把任务表单收回初始装载：草稿走与首次打开相同的装载路径
+   * （provider=全局业务快照、custom=预设候选、search=origin=oneshot 空表单+全局业务快照），
+   * 上一次读取的标题候选一并清空；行的重读由调用方随后带新草稿发起。
+   */
+  resetDraft: () => void;
 };
 
 /**
@@ -171,6 +177,11 @@ function feedRefOf(result: ProviderRSSPreviewResult): PreviewFeedSnapshotRef {
   };
 }
 
+/** A new seed set starts the form over: the last read's title candidates must not survive into it. */
+function withoutTitleSuggestions(view: RSSListView | undefined): RSSListView | undefined {
+  return view?.title_suggestions?.length ? { ...view, title_suggestions: undefined } : view;
+}
+
 type DiscoveredGroup = { key: string; groupRef: string; name: string };
 
 function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | undefined; enabled: boolean }): OneShotSeedSource {
@@ -187,6 +198,8 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
   const [discovering, setDiscovering] = useState(false);
   const [discoveryError, setDiscoveryError] = useState<string>();
   const [attempt, setAttempt] = useState(0);
+  // Re-runs only the initial draft load (a new seed set starts the form over) without re-discovering.
+  const [draftAttempt, setDraftAttempt] = useState(0);
 
   // The Global business snapshot goes through the shared query cache: once read in this session no further request is sent.
   useEffect(() => {
@@ -210,7 +223,7 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
     return () => {
       active = false;
     };
-  }, [attempt, enabled, queryClient]);
+  }, [attempt, draftAttempt, enabled, queryClient]);
 
   // Entering discovers the subgroups at once: step one lists the groups and fetches no group's seeds.
   useEffect(() => {
@@ -379,6 +392,10 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
   );
 
   const expand = useCallback((row: OneShotSeedRow) => expandSeed(row, provider), [provider]);
+  const resetDraft = useCallback(() => {
+    setView((current) => withoutTitleSuggestions(current));
+    setDraftAttempt((value) => value + 1);
+  }, []);
   return {
     kind: "provider",
     draft: businessReady ? draft : undefined,
@@ -402,6 +419,7 @@ function useProviderSeedSource({ entry, enabled }: { entry: CatalogEntryView | u
     fetchRequired: false,
     fetchBusy: false,
     reload: () => setAttempt((value) => value + 1),
+    resetDraft,
   };
 }
 
@@ -444,6 +462,8 @@ function useCustomSeedSource({ entry, enabled }: { entry: CatalogEntryView | und
   const [draft, setDraft] = useState<AnimeDraft>();
   const [candidateError, setCandidateError] = useState<string>();
   const [attempt, setAttempt] = useState(0);
+  // Re-runs only the preset's initial draft load (a new seed set starts the form over); the fetched seed-list snapshot stays.
+  const [draftAttempt, setDraftAttempt] = useState(0);
 
   // The preset draft is the task's starting point; when it carries no business snapshot the global
 //   config is loaded (the server fails closed on drafts without one). Later edits belong to this
@@ -472,7 +492,7 @@ function useCustomSeedSource({ entry, enabled }: { entry: CatalogEntryView | und
     return () => {
       active = false;
     };
-  }, [attempt, candidateId, enabled, queryClient]);
+  }, [attempt, candidateId, draftAttempt, enabled, queryClient]);
 
   const request = useMemo<CustomSnapshotRequest | undefined>(
     () =>
@@ -557,6 +577,10 @@ function useCustomSeedSource({ entry, enabled }: { entry: CatalogEntryView | und
   }, [enabled, feedRef, initialOffset, readView]);
 
   const expand = useCallback((row: OneShotSeedRow) => expandSeed(row, "custom"), []);
+  const resetDraft = useCallback(() => {
+    setView((current) => withoutTitleSuggestions(current));
+    setDraftAttempt((value) => value + 1);
+  }, []);
   const groups = useMemo(() => seedGroupsOf(view), [view]);
   return {
     kind: "custom",
@@ -582,6 +606,7 @@ function useCustomSeedSource({ entry, enabled }: { entry: CatalogEntryView | und
     fetchBusy,
     fetchSeeds: () => void fetchSeeds(),
     reload: () => setAttempt((value) => value + 1),
+    resetDraft,
   };
 }
 
@@ -607,6 +632,9 @@ function useSearchSeedSource({ search, enabled }: { search: SearchSeedBrowse | u
   const [draft, setDraft] = useState<AnimeDraft>();
   const [loadError, setLoadError] = useState<string>();
   const [attempt, setAttempt] = useState(0);
+  // Re-runs only the origin=oneshot initial draft load (a new seed set starts the form over); the
+  // search identity and the read rows stay, so step one's list never blanks out.
+  const [draftAttempt, setDraftAttempt] = useState(0);
 
   // The task draft is the origin=oneshot form the admission path defines: no entry, no RSS source,
   // an empty title (the user matches a work or types one), instance_label following the title. The
@@ -635,7 +663,7 @@ function useSearchSeedSource({ search, enabled }: { search: SearchSeedBrowse | u
     return () => {
       active = false;
     };
-  }, [attempt, enabled, queryClient, search]);
+  }, [attempt, draftAttempt, enabled, queryClient, search]);
 
   const feedRef = useMemo<PreviewFeedSnapshotRef | undefined>(
     () =>
@@ -716,6 +744,10 @@ function useSearchSeedSource({ search, enabled }: { search: SearchSeedBrowse | u
   }, [enabled, draft, readView]);
 
   const expand = useCallback((row: OneShotSeedRow) => expandSeed(row, provider, t("oneshot.searchStale")), [provider]);
+  const resetDraft = useCallback(() => {
+    setView((current) => withoutTitleSuggestions(current));
+    setDraftAttempt((value) => value + 1);
+  }, []);
   const groups = useMemo(() => seedGroupsOf(view), [view]);
   return {
     kind: "search",
@@ -736,5 +768,6 @@ function useSearchSeedSource({ search, enabled }: { search: SearchSeedBrowse | u
     fetchRequired: false,
     fetchBusy: false,
     reload: () => setAttempt((value) => value + 1),
+    resetDraft,
   };
 }

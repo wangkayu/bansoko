@@ -405,6 +405,23 @@ export function OneShotDialog({
     if (!baselineRoute.current && draft?.business) baselineRoute.current = draft.business.unclassified_route;
   }, [draft]);
 
+  /** Entering step two scopes the task form to the chosen seed set: the same set keeps every in-progress edit (pure round trips included), while a different set starts the form over — the draft returns to the task's initial load, match info and title candidates clear with it, and the form re-reads under the fresh draft. */
+  const scopedSeeds = useRef<string>();
+  function gotoStepTwo() {
+    const scope = selectedRows.map((row) => row.key).sort().join(SPLIT);
+    if (scopedSeeds.current === undefined) scopedSeeds.current = scope;
+    else if (scopedSeeds.current !== scope) {
+      scopedSeeds.current = scope;
+      source.resetDraft();
+      // What first arrival seeded from the initial load re-seeds the same way: the offset input and the restore-defaults baselines.
+      offsetSeeded.current = false;
+      baseline.current = undefined;
+      baselineParser.current = undefined;
+      baselineRoute.current = undefined;
+    }
+    setStep(2);
+  }
+
   // Parser: the same option set as the instance's episode parser, shown only with multiple options
 //   and only in step two (config + render). Edits go only into this task's draft (frozen and
 //   committed with it); step two's preview re-reads under it.
@@ -797,7 +814,7 @@ export function OneShotDialog({
             )}
             <Button
               variant="primary"
-              onClick={() => setStep(2)}
+              onClick={gotoStepTwo}
               disabled={source.loading || selectedRows.length === 0}
             >
               {t("oneshot.nextWithCount", { n: selectedRows.length })}

@@ -900,6 +900,29 @@ describe("OneShotDialog 第二步：配置、渲染与提交", () => {
     expect(screen.getByText(t("settings.rules.fileMust"))).toBeInTheDocument();
   });
 
+  it("任务表单按进入第二步的种子集合作用域：换了集合回到入口装载的标题，同一次进入的多颗种子不受影响", async () => {
+    stubFetch({ view: twoSeedView() });
+    await renderAndEnter();
+    const discoversBefore = calls.filter((call) => call.url.includes("groups:discover")).length;
+    await advanceToSettings([SEED_A]);
+    fireEvent.change(screen.getByRole("textbox", { name: t("field.title") }), { target: { value: "手动改名" } });
+    await waitFor(() => expect(reads().at(-1)!.body).toMatchObject({ draft: { title: "手动改名" } }));
+
+    // Swap seed A for seed B: the form returns to the entry's initial load (entry title and binding).
+    fireEvent.click(button(t("oneshot.back")));
+    fireEvent.click(await findSeed(SEED_A));
+    fireEvent.click(await findSeed(SEED_B));
+    fireEvent.click(button(t("oneshot.nextWithCount", { n: 1 })));
+    await screen.findByRole("heading", { name: t("oneshot.configTitle") });
+    await waitFor(() => expect(screen.getByRole("textbox", { name: t("field.title") })).toHaveValue("测试番剧"));
+    await waitFor(() =>
+      expect(reads().at(-1)!.body).toMatchObject({ draft: { title: "测试番剧", metadata: { bgm: { work_id: "bgm-42" } } } }),
+    );
+    // Starting the form over reloads the draft only: no re-discovery, no refetched seed lists.
+    expect(calls.filter((call) => call.url.includes("groups:discover"))).toHaveLength(discoversBefore);
+    expect(calls.filter((call) => call.url.includes("group_ref=g-1"))).toHaveLength(1);
+  });
+
   it("空值：摘要写出目标与缺的值，预览里的空值是警告色，点它跳到对应的输入", async () => {
     stubFetch({
       view: viewOf([
@@ -1422,6 +1445,78 @@ describe("OneShotDialog 搜索快照来源", () => {
     expect(original).toBeInTheDocument();
     fireEvent.click(original);
     expect(title).toHaveValue("Matched Original");
+  });
+
+  it("换了所选种子再进第二步：任务表单回到初始装载，标题与匹配信息清空、候选徽章清除，按新草稿重新读取", async () => {
+    stubFetch({
+      viewFor: (body) => ({
+        ...searchGroupView(),
+        title_suggestions:
+          body.draft?.metadata?.tmdb?.work_id === "777" ? [{ source: "tmdb_cn", text: "匹配作品名" }, { source: "tmdb_original", text: "Matched Original" }] : [],
+      }),
+      metadataCandidates: [tmdbCandidate],
+    });
+    renderSearchDialog();
+    await advanceToSettings([SEED_A]);
+
+    // Configure the first task: a quick match fills the title, the binding and the candidate badges.
+    fireEvent.click(button(t("forms.matchProvider", { provider: t("forms.providerTmdb") })));
+    const match = await screen.findByRole("dialog", { name: t("forms.matchTitle", { provider: "TMDB" }) });
+    fireEvent.click(within(match).getByRole("button", { name: t("forms.search") }));
+    fireEvent.click(await within(match).findByRole("option", { name: /匹配作品名/ }));
+    fireEvent.click(within(match).getByRole("button", { name: t("forms.confirmMatch") }));
+    const title = screen.getByRole("textbox", { name: t("field.title") });
+    await waitFor(() => expect(title).toHaveValue("匹配作品名"));
+    expect(await screen.findByRole("group", { name: t("tabs.metadata.suggestionsAria") })).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: t("forms.year") })).getByRole("textbox")).toHaveValue("2024");
+
+    // Back to step one, swap seed A for seed B: entering step two starts the form over.
+    fireEvent.click(button(t("oneshot.back")));
+    fireEvent.click(await findSeed(SEED_A));
+    fireEvent.click(await findSeed(SEED_B));
+    fireEvent.click(button(t("oneshot.nextWithCount", { n: 1 })));
+    await screen.findByRole("heading", { name: t("oneshot.configTitle") });
+
+    await waitFor(() => expect(screen.getByRole("textbox", { name: t("field.title") })).toHaveValue(""));
+    expect(screen.queryByRole("group", { name: t("tabs.metadata.suggestionsAria") })).not.toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: t("forms.year") })).getByRole("textbox")).toHaveValue("");
+    // The initial form again: no preview until a title is supplied, and nothing may be read under the previous task's title.
+    expect(screen.getByText(t("oneshot.titleEmptyPreview"))).toBeInTheDocument();
+    expect(button(t("oneshot.create", { n: 1 }))).toBeDisabled();
+    const readsAtSwap = reads().length;
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(reads().length).toBe(readsAtSwap);
+
+    // A newly typed title reads under the fresh origin=oneshot empty form: no carried-over binding.
+    fireEvent.change(screen.getByRole("textbox", { name: t("field.title") }), { target: { value: "作品乙标题" } });
+    await waitFor(() =>
+      expect(reads().at(-1)!.body).toMatchObject({
+        draft: { title: "作品乙标题", instance_label: "作品乙标题", metadata: { bgm: null, tmdb: null }, rss_sources: [] },
+      }),
+    );
+  });
+
+  it("同一种子集合往返第一步：标题、偏移与候选徽章都保留（一次勾选多颗种子仍是同一份表单）", async () => {
+    stubFetch({
+      viewFor: () => ({ ...searchGroupView(), title_suggestions: [{ source: "tmdb_cn", text: "候选作品名" }] }),
+    });
+    renderSearchDialog();
+    await advanceToSettings([SEED_A, SEED_B]);
+
+    fireEvent.change(screen.getByRole("textbox", { name: t("field.title") }), { target: { value: "作品甲标题" } });
+    fireEvent.change(screen.getByRole("spinbutton", { name: t("oneshot.offset") }), { target: { value: "3" } });
+    await waitFor(() => expect(reads().at(-1)!.body).toMatchObject({ draft: { title: "作品甲标题" }, episode_offset: 3 }));
+    expect(await screen.findByRole("group", { name: t("tabs.metadata.suggestionsAria") })).toBeInTheDocument();
+
+    // A pure round trip over the same seed set keeps every edit.
+    fireEvent.click(button(t("oneshot.back")));
+    fireEvent.click(button(t("oneshot.nextWithCount", { n: 2 })));
+    await screen.findByRole("heading", { name: t("oneshot.configTitle") });
+
+    expect(screen.getByRole("textbox", { name: t("field.title") })).toHaveValue("作品甲标题");
+    expect(screen.getByRole("spinbutton", { name: t("oneshot.offset") })).toHaveValue(3);
+    expect(screen.getByRole("group", { name: t("tabs.metadata.suggestionsAria") })).toBeInTheDocument();
+    expect(button(t("oneshot.create", { n: 2 }))).toBeEnabled();
   });
 
   it("读取返回 409：提示重新搜索，不提供重试，也不静默重发", async () => {
