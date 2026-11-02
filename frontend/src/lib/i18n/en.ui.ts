@@ -86,6 +86,7 @@ export const enStatusCopy = {
     policy_changed: "Settings changed",
     rss_new_content: "New content",
     release_processed: "Torrent processed",
+    release_batch_processed: "Batch evaluation",
     download_changed: "Download status",
     artifact_verified: "File verification",
     import_waiting_config: "Import waiting for configuration",

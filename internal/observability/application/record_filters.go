@@ -51,8 +51,11 @@ var primaryEventViewReasons = []string{"awaiting_competition"}
 // primaryEventViewPredicate excludes the repeated release filtering process
 // from the business source alone. COALESCE keeps older records without a
 // reason visible, and the outcome check keeps the same reason on a failure.
+// Detail entries of a release_batch_processed batch are hidden too: their head
+// row is the batch's one timeline row, and the details live behind it (the
+// batch feed and the all view).
 func primaryEventViewPredicate() string {
-	return fmt.Sprintf("NOT (e.kind = '%s' AND e.outcome = 'info' AND COALESCE(e.reason_code, '') IN %s)",
+	return fmt.Sprintf("(NOT (e.kind = '%s' AND e.outcome = 'info' AND COALESCE(e.reason_code, '') IN %s)) AND e.batch_key IS NULL",
 		string(observabilityport.ActivityKindReleaseProcessed), sqlList(primaryEventViewReasons))
 }
 

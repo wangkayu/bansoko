@@ -83,6 +83,7 @@ export const statusCopy = {
     policy_changed: "设置变化",
     rss_new_content: "发现新内容",
     release_processed: "处理种子",
+    release_batch_processed: "批次评价",
     download_changed: "下载状态变化",
     artifact_verified: "媒体文件校验",
     import_waiting_config: "入库等待配置",

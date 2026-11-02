@@ -12,6 +12,7 @@ let fetchMock: ReturnType<typeof vi.fn>;
 let records: ObservabilityRecord[];
 let primaryRecords: ObservabilityRecord[] | null;
 let episodes: DiagnosticEpisode[];
+let batchDetails: ObservabilityRecord[];
 
 const delivery = {
   record_type: "plugin",
@@ -74,6 +75,9 @@ function stubFetch() {
     if (url.pathname.endsWith("/observability/records")) {
       const primary = url.searchParams.get("event_view") === "primary";
       body = { records: primary && primaryRecords !== null ? primaryRecords : records, next_cursor: null };
+    } else if (url.pathname.includes("/observability/release-batches/")) {
+      const limit = Number(url.searchParams.get("limit") ?? "50");
+      body = { records: batchDetails.slice(0, limit), next_cursor: batchDetails.length > limit ? "c1" : null };
     } else if (url.pathname.endsWith("/observability/diagnostics")) {
       body = { episodes, internal: { occurrence_count: 2, last_failed_at: "2026-10-21T09:30:00Z", last_request_id: "req-9" }, next_cursor: null };
     } else if (url.pathname.endsWith("/observability/runtime-log")) body = { lines: runtimeLines };
@@ -101,6 +105,7 @@ describe("LogDialog", () => {
     records = [business("b1"), delivery];
     primaryRecords = null;
     episodes = [episode];
+    batchDetails = [];
     stubFetch();
     useLogDialogStore.getState().openDialog();
   });
@@ -170,6 +175,40 @@ describe("LogDialog", () => {
     ];
     renderLogDialog();
     expect(await screen.findByText(t("log.oneShot"))).toBeInTheDocument();
+  });
+
+  it("a release batch row expands to its first details and opens the full list", async () => {
+    records = [
+      business("bh1", {
+        kind: "release_batch_processed",
+        outcome: "info",
+        message_code: "release_batch_first",
+        message_params: { count: 25 },
+        subject_id: "bk-1",
+        batch_counts: { total: 25, by_verdict: { filtered: 25 }, by_reason: { release_not_in_matched: 25 } },
+      }),
+    ];
+    batchDetails = Array.from({ length: 25 }, (_, index) =>
+      business(`d${index}`, {
+        kind: "release_processed",
+        outcome: "info",
+        message_code: "release_filtered",
+        occurred_at: `2026-10-21T07:${String(59 - index).padStart(2, "0")}:00Z`,
+        details: { release_title: `[Group] Example - ${String(index + 1).padStart(2, "0")} [1080p]` },
+      }),
+    );
+    renderLogDialog();
+    const row = await screen.findByRole("button", { name: new RegExp(t("log.msg.release_batch_first", { count: 25 })) });
+    const user = userEvent.setup();
+    await user.click(row);
+    // The preview stops at 6 so the head, its details and the link share one
+    // screen; the rest are behind the dialog.
+    expect(await screen.findByText(/Example - 01 \[1080p\]/)).toBeInTheDocument();
+    expect(screen.queryByText(/Example - 07 \[1080p\]/)).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: new RegExp(t("log.batch.viewAll", { n: 25 })) }));
+    expect(await screen.findByText(new RegExp(t("log.batch.detailsTitle")))).toBeInTheDocument();
+    expect(await screen.findByText(/Example - 07 \[1080p\]/)).toBeInTheDocument();
+    expect(await screen.findByText(/Example - 21 \[1080p\]/)).toBeInTheDocument();
   });
 
   it("diagnostics: one row per condition, worded from the catalog without paths, plus the internal row", async () => {

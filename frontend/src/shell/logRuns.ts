@@ -26,6 +26,7 @@ export type { BusinessEntry } from "./logState";
 export type EventItem =
   | { type: "record"; key: string; record: ObservabilityRecord }
   | { type: "group"; key: string; entries: BusinessEntry[] }
+  | { type: "batch"; key: string; entry: BusinessEntry }
   | { type: "run"; key: string; steps: BusinessEntry[] };
 
 /** Record kinds that belong to one download, in their order within one acquisition (used to order records sharing a timestamp). */
@@ -125,6 +126,7 @@ function recordId(record: ObservabilityRecord): string {
 export function itemTime(item: EventItem): number {
   if (item.type === "run") return Date.parse(item.steps[item.steps.length - 1]!.occurred_at);
   if (item.type === "group") return Date.parse(item.entries[0]!.occurred_at);
+  if (item.type === "batch") return Date.parse(item.entry.occurred_at);
   const record = item.record;
   if (record.record_type === "business") return Date.parse(record.entry.occurred_at);
   if (record.record_type === "plugin") return Date.parse(record.delivery.updated_at ?? record.delivery.created_at);
@@ -162,6 +164,13 @@ export function groupEvents(allRecords: readonly ObservabilityRecord[]): EventIt
         emittedRuns.add(steps);
         items.push({ type: "run", key: `run:${steps[0]!.id}`, steps });
       }
+      continue;
+    }
+    // A batch head is the timeline row of its detail entries; it never joins
+    // the adjacent-signature groups.
+    if (entry.kind === "release_batch_processed") {
+      flush();
+      items.push({ type: "batch", key: `batch:${entry.id}`, entry });
       continue;
     }
     const signature = [entry.kind, entry.outcome, entry.managed_anime_id, entry.message_code, JSON.stringify(entry.message_params ?? {})].join("\u0000");
@@ -415,7 +424,9 @@ const DISCOVERY_ORDER = [
 
 /** A discovery batch writes what became of its items at feed level: handed to
  * evaluation, waiting on metadata, or filtered with why. Older records without
- * the counts keep the single-line form. */
+ * the counts keep the single-line form. When the feed window held other
+ * releases whose outcome did not change, the line says so — the counts beside
+ * it are new items only, never a comparison. */
 export function discoveryOutcomeText(entry: BusinessEntry): string | undefined {
   if (entry.kind !== "rss_new_content") return undefined;
   const counts = entry.details?.outcome_counts;
@@ -433,13 +444,57 @@ export function discoveryOutcomeText(entry: BusinessEntry): string | undefined {
       parts.push(t(label, { n: count }));
     }
   }
+  const discovered = typeof entry.message_params.count === "number" ? entry.message_params.count : undefined;
+  const windowTotal = entry.details?.window_total;
+  const others = typeof windowTotal === "number" && discovered !== undefined ? windowTotal - discovered : 0;
+  if (others > 0) parts.push(t("log.discovery.othersUnchanged", { n: others }));
   return parts.length > 0 ? joinList(parts) : undefined;
+}
+
+/** One verdict of a release evaluation batch, in a fixed order so batches read
+ * alike: the pre-subscription bulk first, then the interesting outcomes. */
+const BATCH_VERDICT_ORDER = [
+  { key: "start_baseline", label: "log.batch.startBaseline" },
+  { key: "resume_baseline", label: "log.batch.resumeBaseline" },
+  { key: "filtered", label: "log.discovery.filtered" },
+  { key: "awaiting_competition", label: "log.batch.awaiting" },
+  { key: "accepted_pending_download", label: "log.discovery.accepted" },
+  { key: "waiting_metadata", label: "log.discovery.waiting" },
+  { key: "parse_failed", label: "log.discovery.parseFailed" },
+  { key: "submitted", label: "log.batch.submitted" },
+  { key: "adopted_existing", label: "log.batch.adopted" },
+  { key: "acquisition_failed", label: "log.batch.acquireFailed" },
+  { key: "subscription_stopped", label: "log.batch.stopped" },
+  { key: "source_unavailable", label: "log.batch.sourceUnavailable" },
+] as const;
+
+/** A release_batch_processed head carries live counts of its detail entries
+ * (evaluations may still be running, so the counts only grow). The filtered
+ * verdict names its reasons, the same way a discovery line does. */
+export function batchCountsText(entry: BusinessEntry): string | undefined {
+  if (entry.kind !== "release_batch_processed") return undefined;
+  const counts = entry.batch_counts;
+  if (!counts || counts.total <= 0) return undefined;
+  const reasons = Object.entries(counts.by_reason ?? {})
+    .filter(([, count]) => count > 0)
+    .map(([code, count]) => `${knownReasonLabel(code) ?? code} ${count}`);
+  const parts: string[] = [];
+  for (const { key, label } of BATCH_VERDICT_ORDER) {
+    const count = counts.by_verdict[key] ?? 0;
+    if (count <= 0) continue;
+    if (key === "filtered" && reasons.length > 0) {
+      parts.push(t("log.discovery.filteredWithReasons", { n: count, reasons: joinList(reasons) }));
+    } else {
+      parts.push(t(label, { n: count }));
+    }
+  }
+  return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
 /** The concrete subject of a one-line event (subgroup): settings changes and RSS records write the subgroup name. */
 export function entryGroupName(entry: BusinessEntry): string | undefined {
   if (entry.details?.group_name) return entry.details.group_name;
-  if (entry.kind === "rss_new_content") return entry.group_ref ?? undefined;
+  if (entry.kind === "rss_new_content" || entry.kind === "release_batch_processed") return entry.group_ref ?? undefined;
   return undefined;
 }
 
@@ -462,7 +517,9 @@ export function entryView(entry: BusinessEntry, anime: string | undefined): Entr
   const title =
     entry.kind === "release_processed"
       ? joinMeta(anime, entry.details?.release_title ?? entryGroupName(entry) ?? label)
-      : joinMeta(anime, entryGroupName(entry), label);
+      : entry.kind === "release_batch_processed"
+        ? joinMeta(anime, entryGroupName(entry) ?? label)
+        : joinMeta(anime, entryGroupName(entry), label);
   const state = entryState(entry);
   let reason: string | undefined;
   if (state === "failure") reason = reasonView(entry.reason_code)?.text;
@@ -472,7 +529,7 @@ export function entryView(entry: BusinessEntry, anime: string | undefined): Entr
     state,
     title,
     result,
-    meta: policyChangeText(entry) ?? discoveryOutcomeText(entry),
+    meta: policyChangeText(entry) ?? discoveryOutcomeText(entry) ?? batchCountsText(entry),
     reason,
     technical: state === "failure" ? (entry.details?.reason_detail ?? undefined) : undefined,
   };

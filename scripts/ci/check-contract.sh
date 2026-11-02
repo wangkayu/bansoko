@@ -169,6 +169,7 @@ required_paths = {
   "/automation/{kind}/run" => ["post"],
   "/automation/runs/{run_id}" => ["get"],
   "/observability/records" => ["get"],
+  "/observability/release-batches/{batch_key}" => ["get"],
   "/observability/diagnostics" => ["get"],
   "/observability/runtime-log" => ["get"],
   "/plugin-targets" => ["get", "post"],
@@ -236,6 +237,7 @@ required_paths.each do |path, methods|
 end
 {
   "/observability/records" => %w[Cursor Limit FromTime ToTime],
+  "/observability/release-batches/{batch_key}" => %w[Cursor Limit],
   "/observability/diagnostics" => %w[Cursor Limit]
 }.each do |path, names|
   refs = paths.fetch(path).fetch("get").fetch("parameters").map { |parameter| parameter["$ref"] }.compact
@@ -433,7 +435,7 @@ abort "instance replacement view must not ask the client to merge a default" if 
 end
 assert_enum.call("SubscriptionLogKind", %w[
   subscription_created subscription_started subscription_stopped subscription_resumed metadata_applied
-  group_changed policy_changed rss_new_content release_processed
+  group_changed policy_changed rss_new_content release_processed release_batch_processed
   download_changed artifact_verified import_waiting_config placement_changed replacement_decided cleanup_completed cleanup_failed
   file_alignment_completed file_alignment_failed acquisition_settled
 ])

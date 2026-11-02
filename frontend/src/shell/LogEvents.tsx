@@ -11,9 +11,11 @@ import { StateBlock } from "../ui/StateBlock";
 import {
   listAnime,
   listObservabilityRecords,
+  listReleaseBatchEntries,
   toUserMessage,
   type ObservabilityRecord,
 } from "../lib/api/client";
+import { Dialog } from "../ui/base/Dialog";
 import {
   formatDateTime,
   formatShortDateTime,
@@ -370,6 +372,17 @@ function EventsList({
               />
             );
           }
+          if (item.type === "batch") {
+            return (
+              <BatchItem
+                key={item.key}
+                entry={item.entry}
+                anime={animeOf(item.entry)}
+                expanded={expanded.has(item.key)}
+                onToggle={() => toggle(item.key)}
+              />
+            );
+          }
           const record = item.record;
           if (record.record_type === "business") {
             return (
@@ -597,11 +610,18 @@ function GroupItem({
 }) {
   const first = entries[0]!;
   const view = entryView(first, anime);
-  const count = first.kind === "release_processed" ? t("log.groupReleases", { n: entries.length }) : t("log.groupEvents", { n: entries.length });
+  // Release groups put the count in the right column beside the message
+  // ("已被过滤 8 个种子"): a count in the title reads like a comparison with
+  // the discovery row beside it.
+  const releaseGroup = first.kind === "release_processed";
+  const title = releaseGroup
+    ? joinMeta(anime, entryGroupName(first) ?? subscriptionLogKindLabel(first.kind))
+    : joinMeta(anime, t("log.groupEvents", { n: entries.length }));
+  const result = releaseGroup ? `${view.result} ${t("log.groupReleases", { n: entries.length })}` : view.result;
   return (
     <Row
-      title={joinMeta(anime, count)}
-      result={view.result}
+      title={title}
+      result={result}
       tone={stateTone(view.state)}
       time={first.occurred_at}
       expanded={expanded}
@@ -620,6 +640,118 @@ function GroupItem({
         ))}
       </ul>
     </Row>
+  );
+}
+
+/** One release evaluation batch: the head row of many detail entries the
+ * primary view hides. Expanding fetches the first page of details; the rest
+ * live behind the "view all" dialog. */
+function BatchItem({
+  entry,
+  anime,
+  expanded,
+  onToggle,
+}: {
+  entry: BusinessEntry;
+  anime?: string;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const view = entryView(entry, anime);
+  const batchKey = entry.subject_id ?? "";
+  const total = entry.batch_counts?.total ?? 0;
+  const details = useQuery({
+    queryKey: observabilityKeys.releaseBatch(`${batchKey}:preview`),
+    // The inline preview stays short so the batch head, its preview and the
+    // "view all" link fit one dialog screen; everything past it lives in the
+    // nested details dialog.
+    queryFn: () => listReleaseBatchEntries(batchKey, { limit: 6 }),
+    enabled: expanded && batchKey !== "",
+    staleTime: 30_000,
+  });
+  const [showAll, setShowAll] = useState(false);
+  const entries = (details.data?.records ?? []).flatMap((record) => (record.record_type === "business" ? [record.entry] : []));
+  const shown = entries.length;
+  return (
+    <Row
+      title={view.title}
+      result={view.result}
+      tone={stateTone(view.state)}
+      time={entry.occurred_at}
+      meta={view.meta}
+      expanded={expanded}
+      onToggle={onToggle}
+    >
+      {details.isLoading ? (
+        <p className={cn(META, "tw:pl-[30px]")}>{t("log.loadingRecords")}</p>
+      ) : details.isError ? (
+        <p className={cn(META, "tw:pl-[30px]")}>{toUserMessage(details.error, t("log.loadRecordsFailed"))}</p>
+      ) : (
+        <>
+          <ul className={cn(EXPANDED, SUB_LIST)}>
+            {entries.map((detail) => (
+              <li key={detail.id} className="tw:flex tw:flex-wrap tw:gap-x-2">
+                <time className="tw:tabular-nums tw:text-muted-foreground" dateTime={detail.occurred_at} title={formatDateTime(detail.occurred_at)}>
+                  {formatShortDateTime(detail.occurred_at)}
+                </time>
+                <span className="tw:min-w-0 tw:break-words">
+                  {joinMeta(detail.details?.release_title ?? entryGroupName(detail), messageText(detail)) || subscriptionLogKindLabel(detail.kind)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {total > shown || details.data?.next_cursor ? (
+            <div className="tw:pl-[30px]">
+              <Button size="sm" variant="link" onClick={() => setShowAll(true)}>
+                {t("log.batch.viewAll", { n: Math.max(total, shown) })}
+              </Button>
+            </div>
+          ) : null}
+        </>
+      )}
+      {showAll ? <BatchDialog batchKey={batchKey} anime={anime} onRequestClose={() => setShowAll(false)} /> : null}
+    </Row>
+  );
+}
+
+/** The full paginated detail list of one batch, newest first. */
+function BatchDialog({
+  batchKey,
+  anime,
+  onRequestClose,
+}: {
+  batchKey: string;
+  anime?: string;
+  onRequestClose: () => void;
+}) {
+  const query = useInfiniteQuery({
+    queryKey: observabilityKeys.releaseBatch(`${batchKey}:all`),
+    queryFn: ({ pageParam }) => listReleaseBatchEntries(batchKey, { limit: 50, cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+  });
+  const entries = (query.data?.pages ?? []).flatMap((page) => page.records).flatMap((record) => (record.record_type === "business" ? [record.entry] : []));
+  return (
+    <Dialog open tier="M" fixedHeight onRequestClose={onRequestClose} title={joinMeta(anime, t("log.batch.detailsTitle")) ?? t("log.batch.detailsTitle")}>
+      <ul className={SUB_LIST}>
+        {entries.map((detail) => (
+          <li key={detail.id} className="tw:flex tw:flex-wrap tw:gap-x-2">
+            <time className="tw:tabular-nums tw:text-muted-foreground" dateTime={detail.occurred_at} title={formatDateTime(detail.occurred_at)}>
+              {formatShortDateTime(detail.occurred_at)}
+            </time>
+            <span className="tw:min-w-0 tw:break-words">
+              {joinMeta(detail.details?.release_title ?? entryGroupName(detail), messageText(detail)) || subscriptionLogKindLabel(detail.kind)}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {query.hasNextPage ? (
+        <Button size="sm" className="tw:mt-2" loading={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>
+          {query.isFetchingNextPage ? t("log.loadingMore") : t("log.loadMore")}
+        </Button>
+      ) : null}
+      {entries.length === 0 && !query.isLoading ? <p className={META}>{t("log.batch.empty")}</p> : null}
+    </Dialog>
   );
 }
 

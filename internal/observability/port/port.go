@@ -188,7 +188,11 @@ type ActivityRecord struct {
 	// the params the code declares (string or integer). Strings are redacted
 	// and cut to MaxMessageParamBytes; an empty string is omitted.
 	MessageParams map[string]any
-	Details       json.RawMessage
+	// BatchKey ties a release_processed detail entry to the
+	// release_batch_processed head written by the same bulk enqueue; empty is
+	// a standalone timeline entry.
+	BatchKey string
+	Details  json.RawMessage
 	// OccurredAt is the time of the business fact when it differs from the
 	// write time (the independent acquisition consumer writes after commit);
 	// zero means "now".

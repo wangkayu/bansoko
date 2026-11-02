@@ -22,6 +22,9 @@ FROM subscription_log_entries l
 JOIN subscriptions s ON s.id = l.subscription_id
 LEFT JOIN managed_anime ma ON ma.id = l.managed_anime_id
 WHERE l.subscription_id = $1 AND l.managed_anime_id = $2
+  -- Batch detail entries stay behind their release_batch_processed head; the
+  -- embedded list has no batch expansion.
+  AND l.batch_key IS NULL
 ORDER BY l.occurred_at DESC, l.id DESC
 LIMIT 100`, subscriptionID, managedAnimeID)
 	if err != nil {

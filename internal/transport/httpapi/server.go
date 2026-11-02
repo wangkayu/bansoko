@@ -184,6 +184,7 @@ type MetadataSearchService interface {
 // It is implemented by internal/observability/application.
 type ObservabilityService interface {
 	ListRecords(ctx context.Context, params observabilityapplication.RecordQuery) (observabilityapplication.RecordPage, error)
+	ListReleaseBatch(ctx context.Context, batchKey string, params observabilityapplication.RecordQuery) (observabilityapplication.RecordPage, error)
 	ListDiagnostics(ctx context.Context, params observabilityapplication.DiagnosticQuery) (observabilityapplication.DiagnosticPage, error)
 }
 

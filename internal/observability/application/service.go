@@ -82,6 +82,134 @@ func validRecordSourceRank(rank int) bool {
 // and search filters select whole Release runs: a business entry of a run is
 // in the state of its run and matches a search when any entry of its run
 // does.
+// businessRecordColumns is the read allowlist of the business entry contract:
+// the union record feed and the release-batch detail feed project the same
+// members, so the two reads cannot drift apart.
+var businessRecordColumns = []string{"id", "subscription_id", "managed_anime_id", "kind", "outcome", "occurred_at",
+	"message_code", "message_params", "rss_source_id", "release_id", "group_ref", "details", "reason_code",
+	"subject_type", "subject_id", "subject_version", "correlation_id", "causation_type",
+	"causation_id", "dedupe_key", "retention_until", "batch_key"}
+
+// businessComputedMembers are the derived members of the business entry
+// contract, evaluated over the row aliased "src".
+var businessComputedMembers = [][2]string{
+	{"anime_title", `COALESCE((SELECT left(COALESCE(NULLIF(btrim(ma.title_override), ''), ma.title), 512) FROM managed_anime ma WHERE ma.id = src.managed_anime_id), '')`},
+	{"source", `COALESCE((SELECT CASE WHEN sub.origin = 'oneshot' THEN 'one_shot' ELSE 'subscription' END FROM subscriptions sub WHERE sub.id = src.subscription_id), 'subscription')`},
+	// A release_batch_processed head carries live outcome counts of its detail
+	// entries; evaluations may still be running, so the counts only grow. The
+	// reason breakdown narrows to the filtered verdict, whose reasons are the
+	// ones a reader wants named.
+	{"batch_counts", `CASE WHEN src.kind = 'release_batch_processed' THEN (
+		SELECT jsonb_build_object(
+			'total', COALESCE(sum(d.n), 0),
+			'by_verdict', COALESCE(jsonb_object_agg(COALESCE(d.verdict, ''), d.n), '{}'::jsonb),
+			'by_reason', COALESCE((SELECT jsonb_object_agg(k, rn) FROM (
+				SELECT d2.reason_code AS k, count(*) AS rn FROM subscription_log_entries d2
+				WHERE d2.batch_key = src.subject_id AND d2.reason_code IS NOT NULL AND d2.details->>'verdict' = 'filtered'
+				GROUP BY d2.reason_code) reasons), '{}'::jsonb))
+		FROM (SELECT d.details->>'verdict' AS verdict, count(*) AS n FROM subscription_log_entries d
+		      WHERE d.batch_key = src.subject_id GROUP BY d.details->>'verdict') d
+	) END`},
+}
+
+// ListReleaseBatch pages the detail entries of one release evaluation batch,
+// newest first, in the same business record shape as the union feed.
+func (s *Service) ListReleaseBatch(ctx context.Context, batchKey string, params RecordQuery) (RecordPage, error) {
+	batchKey = strings.TrimSpace(batchKey)
+	if batchKey == "" || len(batchKey) > maxIdentityLength {
+		return RecordPage{}, &apperrors.BadRequest{Code: "INVALID_BATCH_KEY", Message: "The release batch key is missing or malformed."}
+	}
+	limit := defaultRecordLimit
+	if params.Limit != nil {
+		limit = int(*params.Limit)
+	}
+	if limit < 1 {
+		limit = 1
+	}
+	if limit > maxRecordLimit {
+		limit = maxRecordLimit
+	}
+	var cursorTime time.Time
+	var cursorID string
+	if params.Cursor != nil && *params.Cursor != "" {
+		t, rank, id, err := decodeCursor(string(*params.Cursor))
+		if err != nil || rank != recordSourceRanks["business"] {
+			return RecordPage{}, invalidCursorError()
+		}
+		cursorTime, cursorID = t, id
+	}
+	var args []interface{}
+	argIdx := 1
+	args = append(args, batchKey)
+	batchIdx := argIdx
+	argIdx++
+	where := fmt.Sprintf("e.batch_key = $%d", batchIdx)
+	if cursorID != "" {
+		where += fmt.Sprintf(" AND (e.occurred_at, e.id) < ($%d, $%d)", argIdx, argIdx+1)
+		args = append(args, cursorTime, cursorID)
+		argIdx += 2
+	}
+	limitIdx := argIdx
+	args = append(args, limit+1)
+
+	var b strings.Builder
+	for i, column := range businessRecordColumns {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		fmt.Fprintf(&b, "'%s', src.%s", column, column)
+	}
+	for _, member := range businessComputedMembers {
+		fmt.Fprintf(&b, ", '%s', %s", member[0], member[1])
+	}
+
+	query := fmt.Sprintf(
+		"WITH page AS (SELECT e.occurred_at AS record_time, e.id FROM subscription_log_entries e WHERE %s ORDER BY e.occurred_at DESC, e.id DESC LIMIT $%d) "+
+			"SELECT p.record_time, jsonb_build_object(%s) FROM page p JOIN subscription_log_entries src ON src.id = p.id ORDER BY p.record_time DESC, p.id DESC",
+		where, limitIdx, b.String())
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return RecordPage{}, fmt.Errorf("query release batch entries: %w", err)
+	}
+	defer rows.Close()
+	type rowPos struct {
+		rec  Record
+		time time.Time
+		id   string
+	}
+	var records []rowPos
+	for rows.Next() {
+		var recordTime time.Time
+		var id string
+		var rowData []byte
+		if err := rows.Scan(&recordTime, &id, &rowData); err != nil {
+			return RecordPage{}, fmt.Errorf("scan release batch entry: %w", err)
+		}
+		rec, err := recordFromRow("business", rowData)
+		if err != nil {
+			return RecordPage{}, err
+		}
+		records = append(records, rowPos{rec: rec, time: recordTime, id: id})
+	}
+	if err := rows.Err(); err != nil {
+		return RecordPage{}, fmt.Errorf("iterate release batch entries: %w", err)
+	}
+	var nextCursor *string
+	pageRecords := make([]Record, 0, limit)
+	for i, rp := range records {
+		if i >= limit {
+			break
+		}
+		pageRecords = append(pageRecords, rp.rec)
+	}
+	if len(records) > limit {
+		lastPos := records[limit-1]
+		c := encodeCursor(lastPos.time, recordSourceRanks["business"], lastPos.id)
+		nextCursor = &c
+	}
+	return RecordPage{Records: pageRecords, NextCursor: nextCursor}, nil
+}
+
 func (s *Service) ListRecords(ctx context.Context, params RecordQuery) (RecordPage, error) {
 	limit := defaultRecordLimit
 	if params.Limit != nil {
@@ -201,17 +329,11 @@ func (s *Service) ListRecords(ctx context.Context, params RecordQuery) (RecordPa
 		},
 		{
 			kind: "business", table: "subscription_log_entries", timeCol: "occurred_at",
-			state:   func(state string) string { return businessStatePredicate(businessKinds, state) },
-			search:  businessSearchPredicate,
-			managed: "managed_anime_id",
-			columns: []string{"id", "subscription_id", "managed_anime_id", "kind", "outcome", "occurred_at",
-				"message_code", "message_params", "rss_source_id", "release_id", "group_ref", "details", "reason_code",
-				"subject_type", "subject_id", "subject_version", "correlation_id", "causation_type",
-				"causation_id", "dedupe_key", "retention_until"},
-			computed: [][2]string{
-				{"anime_title", `COALESCE((SELECT left(COALESCE(NULLIF(btrim(ma.title_override), ''), ma.title), 512) FROM managed_anime ma WHERE ma.id = src.managed_anime_id), '')`},
-				{"source", `COALESCE((SELECT CASE WHEN sub.origin = 'oneshot' THEN 'one_shot' ELSE 'subscription' END FROM subscriptions sub WHERE sub.id = src.subscription_id), 'subscription')`},
-			},
+			state:    func(state string) string { return businessStatePredicate(businessKinds, state) },
+			search:   businessSearchPredicate,
+			managed:  "managed_anime_id",
+			columns:  businessRecordColumns,
+			computed: businessComputedMembers,
 		},
 		{
 			kind: "automation", table: "automation_dispatch_runs", timeCol: "created_at",

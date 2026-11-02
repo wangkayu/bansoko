@@ -1407,6 +1407,18 @@ export function listObservabilityRecords(
   return request(`/observability/records${queryString(query)}`, { method: "GET" });
 }
 
+export type ReleaseBatchEntriesQuery = NonNullable<
+  operations["listReleaseBatchEntries"]["parameters"]["query"]
+>;
+
+/** Detail entries behind one release_batch_processed head, newest first. */
+export function listReleaseBatchEntries(
+  batchKey: string,
+  query: ReleaseBatchEntriesQuery = {},
+): Promise<ObservabilityRecordPage> {
+  return request(`/observability/release-batches/${encodeURIComponent(batchKey)}${queryString(query)}`, { method: "GET" });
+}
+
 export function listObservabilityDiagnostics(
   query: ObservabilityDiagnosticsQuery = {},
 ): Promise<DiagnosticEpisodePage> {

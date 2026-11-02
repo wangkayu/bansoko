@@ -256,6 +256,7 @@ func (s *Service) refreshSuccessWriter(claim workitems.Claim, snapshot sourceSna
 		}
 		newKeys := make([]string, 0)
 		outcomeCounts, filteredReasons := map[string]int{}, map[string]int{}
+		pendingEvaluations := make([]pendingReleaseEvaluation, 0, len(feed))
 		for index := range feed {
 			evaluation := &feed[index]
 			releaseID, releaseVersion, created, changed, inputMutable, err := upsertRelease(ctx, tx, snapshot, evaluation)
@@ -299,10 +300,11 @@ UPDATE releases SET verdict = $2, reason_code = $2, reason_detail = NULL WHERE i
 				return 0, fmt.Errorf("read release version after torrent input: %w", err)
 			}
 			if !resumeBaseline && (created || changed) && (evaluation.item.TorrentErrorCode == "" || evaluation.torrentMetadataReused) {
-				if err := CreateOrMergeReleaseEvaluation(ctx, txscope.Wrap(tx), s.workItems, releaseID, releaseVersion, "rss_refresh"); err != nil {
-					return 0, fmt.Errorf("schedule release evaluation: %w", err)
-				}
+				pendingEvaluations = append(pendingEvaluations, pendingReleaseEvaluation{releaseID: releaseID, version: releaseVersion, created: created})
 			}
+		}
+		if err := s.enqueueReleaseEvaluations(ctx, tx, snapshot, pendingEvaluations); err != nil {
+			return 0, err
 		}
 		cursor, lastGood := refreshFacts(feed, snapshot)
 		cursorJSON, err := json.Marshal(cursor)
@@ -333,7 +335,10 @@ RETURNING version`, snapshot.sourceID, cursorJSON, lastGoodJSON, claim.ExpectedO
 		}
 		if len(newKeys) > 0 && !resumeBaseline {
 			count := len(newKeys)
-			discoveryValues := map[string]any{"item_count": count}
+			// window_total names the whole window the refresh judged, so a
+			// reader can tell "1 new of 300" from "1 new of 1" without
+			// comparing counts against rows elsewhere in the timeline.
+			discoveryValues := map[string]any{"item_count": count, "window_total": len(feed)}
 			if len(outcomeCounts) > 0 {
 				discoveryValues["outcome_counts"] = outcomeCounts
 			}
@@ -583,21 +588,10 @@ func syncReleaseEvaluationVersion(ctx context.Context, tx *sql.Tx, workItemID st
 	return nil
 }
 
-// CreateOrMergeReleaseEvaluation enqueues a release_evaluate WorkItem for a
-// release if no live (available/leased) one exists. trigger is recorded in the
-// input snapshot for observability (for example "rss_refresh"). Its SQL twin
-// is release_reopen_selected_group (migration 103, trigger "group_selected"):
-// the same work_item_merge spec, run when a provider group enters the
-// selection at commit.
-func CreateOrMergeReleaseEvaluation(ctx context.Context, scope txscope.Tx, store *workitems.Store, releaseID string, releaseVersion int64, trigger string) error {
-	tx := scope.SQLTx()
-	if tx == nil {
-		return errors.New("release evaluation transaction is nil")
-	}
-	return createOrMergeReleaseEvaluationRaw(ctx, tx, store, releaseID, releaseVersion, trigger)
-}
+// CreateOrMergeReleaseEvaluation now lives in release_batch.go beside the
+// bulk-enqueue batching it shares the merge spec with.
 
-func createOrMergeReleaseEvaluationRaw(ctx context.Context, tx *sql.Tx, store *workitems.Store, releaseID string, releaseVersion int64, trigger string) error {
+func createOrMergeReleaseEvaluationRaw(ctx context.Context, tx *sql.Tx, store *workitems.Store, releaseID string, releaseVersion int64, trigger, batchKey string) error {
 	if store == nil {
 		return errors.New("work item store is nil")
 	}
@@ -608,12 +602,11 @@ func createOrMergeReleaseEvaluationRaw(ctx context.Context, tx *sql.Tx, store *w
 	if isTerminalReleaseVerdict(verdict) {
 		return nil
 	}
-	snapshot := json.RawMessage(`{"trigger":"` + trigger + `"}`)
 	_, _, err := store.CreateOrMerge(ctx, tx, workitems.WorkItemSpec{
 		Owner:                workitems.OwnerRef{Type: workitems.OwnerRelease, ID: releaseID},
 		Kind:                 workitems.KindReleaseEvaluate,
 		IdempotencyKey:       "release_evaluate:" + releaseID,
-		InputSnapshot:        snapshot,
+		InputSnapshot:        evaluationSnapshot(trigger, batchKey),
 		MaxAttempts:          defaultMaxAttempts,
 		ExpectedOwnerVersion: releaseVersion,
 	})

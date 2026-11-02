@@ -24,6 +24,10 @@ func (f fakeObservabilityService) ListRecords(context.Context, observabilityappl
 	return f.records, f.err
 }
 
+func (f fakeObservabilityService) ListReleaseBatch(_ context.Context, _ string, _ observabilityapplication.RecordQuery) (observabilityapplication.RecordPage, error) {
+	return f.records, f.err
+}
+
 func (f fakeObservabilityService) ListDiagnostics(context.Context, observabilityapplication.DiagnosticQuery) (observabilityapplication.DiagnosticPage, error) {
 	return f.diagnostics, f.err
 }

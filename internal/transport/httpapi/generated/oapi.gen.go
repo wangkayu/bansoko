@@ -2285,6 +2285,7 @@ const (
 	SubscriptionLogKindMetadataApplied        SubscriptionLogKind = "metadata_applied"
 	SubscriptionLogKindPlacementChanged       SubscriptionLogKind = "placement_changed"
 	SubscriptionLogKindPolicyChanged          SubscriptionLogKind = "policy_changed"
+	SubscriptionLogKindReleaseBatchProcessed  SubscriptionLogKind = "release_batch_processed"
 	SubscriptionLogKindReleaseProcessed       SubscriptionLogKind = "release_processed"
 	SubscriptionLogKindReplacementDecided     SubscriptionLogKind = "replacement_decided"
 	SubscriptionLogKindRssNewContent          SubscriptionLogKind = "rss_new_content"
@@ -2330,6 +2331,8 @@ const (
 	SubscriptionLogMessageCodeReleaseAcquisitionFailed      SubscriptionLogMessageCode = "release_acquisition_failed"
 	SubscriptionLogMessageCodeReleaseAdoptedExisting        SubscriptionLogMessageCode = "release_adopted_existing"
 	SubscriptionLogMessageCodeReleaseAwaitingCompetition    SubscriptionLogMessageCode = "release_awaiting_competition"
+	SubscriptionLogMessageCodeReleaseBatchFirst             SubscriptionLogMessageCode = "release_batch_first"
+	SubscriptionLogMessageCodeReleaseBatchReevaluated       SubscriptionLogMessageCode = "release_batch_reevaluated"
 	SubscriptionLogMessageCodeReleaseDiscovered             SubscriptionLogMessageCode = "release_discovered"
 	SubscriptionLogMessageCodeReleaseFiltered               SubscriptionLogMessageCode = "release_filtered"
 	SubscriptionLogMessageCodeReleaseParseFailed            SubscriptionLogMessageCode = "release_parse_failed"
@@ -7988,6 +7991,16 @@ type Release struct {
 	Version Version        `json:"version"`
 }
 
+// ReleaseBatchCounts defines model for ReleaseBatchCounts.
+type ReleaseBatchCounts struct {
+	// ByReason Filtered detail entries per reason code.
+	ByReason map[string]int `json:"by_reason"`
+
+	// ByVerdict Evaluated releases per verdict; grows as the batch's evaluations finish.
+	ByVerdict map[string]int `json:"by_verdict"`
+	Total     int            `json:"total"`
+}
+
 // ReleaseCandidateFactsView defines model for ReleaseCandidateFactsView.
 type ReleaseCandidateFactsView struct {
 	CoverageKeys     []string                `json:"coverage_keys"`
@@ -8912,6 +8925,9 @@ type SubscriptionLogDetails struct {
 
 	// VersionCount Replacement result: the number of versions of the episode kept after the decision, written only when the candidate is already placed and no version was replaced.
 	VersionCount *int `json:"version_count,omitempty"`
+
+	// WindowTotal How many releases the rss_new_content batch's feed window held in total. The difference to item_count is the releases whose outcome did not change. Absent on records written before it was introduced.
+	WindowTotal *int `json:"window_total,omitempty"`
 }
 
 // SubscriptionLogDetailsCause Displaced entry - why the managed file lost its place: another file took its path under the overwrite setting, or a requested redownload of the same episode replaced it.
@@ -8932,7 +8948,13 @@ type SubscriptionLogDetailsMetadataMissing string
 // SubscriptionLogEntry defines model for SubscriptionLogEntry.
 type SubscriptionLogEntry struct {
 	// AnimeTitle The anime's current display title, read with the entry (empty when the anime is gone).
-	AnimeTitle     string                  `json:"anime_title"`
+	AnimeTitle string `json:"anime_title"`
+
+	// BatchCounts Live outcome counts of a release_batch_processed head's detail entries; null on every other kind.
+	BatchCounts *ReleaseBatchCounts `json:"batch_counts"`
+
+	// BatchKey The release_batch_processed head this detail entry belongs to; null is a standalone timeline entry.
+	BatchKey       *string                 `json:"batch_key"`
 	CausationId    *string                 `json:"causation_id"`
 	CausationType  *string                 `json:"causation_type"`
 	CorrelationId  *string                 `json:"correlation_id"`
@@ -9887,7 +9909,7 @@ type ListObservabilityRecordsParams struct {
 	// EntryKind Narrows the business records to these journal entry kinds; the other record kinds are unaffected.
 	EntryKind *[]SubscriptionLogKind `form:"entry_kind,omitempty" json:"entry_kind,omitempty"`
 
-	// EventView Read projection of the unified feed. primary hides the release filtering still in passing: business entries of kind release_processed with outcome info and reason awaiting_competition are excluded before pagination (the competition's winner later gets its own admission rows); terminal verdicts such as no_placeable_files stay visible, one row per release. all returns every record. Other record kinds are unaffected.
+	// EventView Read projection of the unified feed. primary hides the release filtering still in passing: business entries of kind release_processed with outcome info and reason awaiting_competition are excluded before pagination (the competition's winner later gets its own admission rows), and so are the detail entries of a release_batch_processed batch, whose head row is the batch's one timeline row; terminal verdicts such as no_placeable_files stay visible, one row per release. all returns every record. Other record kinds are unaffected.
 	EventView *ListObservabilityRecordsParamsEventView `form:"event_view,omitempty" json:"event_view,omitempty"`
 
 	// State Selects records in this state. A business record of a Release run (download, verification, import, placement and replacement entries closed by the run's acquisition result) takes the state of its run: the result's outcome, or in_progress while the run has no result. failure includes failed acquisitions, failed business records, failed and partial automation runs, and failed or unconfirmed (unknown) notification deliveries.
@@ -9905,6 +9927,13 @@ type ListObservabilityRecordsParamsKind string
 
 // ListObservabilityRecordsParamsEventView defines parameters for ListObservabilityRecords.
 type ListObservabilityRecordsParamsEventView string
+
+// ListReleaseBatchEntriesParams defines parameters for ListReleaseBatchEntries.
+type ListReleaseBatchEntriesParams struct {
+	// Cursor Opaque keyset pagination cursor.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+}
 
 // GetRuntimeLogParams defines parameters for GetRuntimeLog.
 type GetRuntimeLogParams struct {
@@ -12564,6 +12593,9 @@ type ServerInterface interface {
 
 	// (GET /observability/records)
 	ListObservabilityRecords(w http.ResponseWriter, r *http.Request, params ListObservabilityRecordsParams)
+
+	// (GET /observability/release-batches/{batch_key})
+	ListReleaseBatchEntries(w http.ResponseWriter, r *http.Request, batchKey string, params ListReleaseBatchEntriesParams)
 
 	// (GET /observability/runtime-log)
 	GetRuntimeLog(w http.ResponseWriter, r *http.Request, params GetRuntimeLogParams)
@@ -18011,6 +18043,56 @@ func (siw *ServerInterfaceWrapper) ListObservabilityRecords(w http.ResponseWrite
 	handler.ServeHTTP(w, r)
 }
 
+// ListReleaseBatchEntries operation middleware
+func (siw *ServerInterfaceWrapper) ListReleaseBatchEntries(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "batch_key" -------------
+	var batchKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "batch_key", r.PathValue("batch_key"), &batchKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "batch_key", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListReleaseBatchEntriesParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "cursor", r.URL.Query(), &params.Cursor)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "limit", r.URL.Query(), &params.Limit)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListReleaseBatchEntries(w, r, batchKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetRuntimeLog operation middleware
 func (siw *ServerInterfaceWrapper) GetRuntimeLog(w http.ResponseWriter, r *http.Request) {
 
@@ -19859,6 +19941,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("GET "+options.BaseURL+"/naming-vars/versions/{revision}", wrapper.GetNamingVarsVersion)
 	m.HandleFunc("GET "+options.BaseURL+"/observability/diagnostics", wrapper.ListObservabilityDiagnostics)
 	m.HandleFunc("GET "+options.BaseURL+"/observability/records", wrapper.ListObservabilityRecords)
+	m.HandleFunc("GET "+options.BaseURL+"/observability/release-batches/{batch_key}", wrapper.ListReleaseBatchEntries)
 	m.HandleFunc("GET "+options.BaseURL+"/observability/runtime-log", wrapper.GetRuntimeLog)
 	m.HandleFunc("POST "+options.BaseURL+"/one-shot-acquisitions", wrapper.AcquireSeedOnce)
 	m.HandleFunc("GET "+options.BaseURL+"/one-shot-acquisitions/{one_shot_id}", wrapper.GetOneShotAcquisition)

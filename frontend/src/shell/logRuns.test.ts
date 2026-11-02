@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ObservabilityRecord } from "../lib/api/client";
-import { dedupeReplacements, entryView, groupEvents, runView, stepText, type BusinessEntry } from "./logRuns";
+import { batchCountsText, dedupeReplacements, entryView, groupEvents, runView, stepText, type BusinessEntry } from "./logRuns";
 
 let seq = 0;
 function entry(overrides: Partial<BusinessEntry>): BusinessEntry {
@@ -190,5 +190,46 @@ describe("discoveryOutcomeText", () => {
   it("keeps the single-line form for records written before the counts", () => {
     const line = entry({ kind: "rss_new_content", message_code: "rss_new_content", message_params: { count: 2 }, details: { item_count: 2 } });
     expect(entryView(line, undefined).meta).toBeUndefined();
+  });
+
+  it("says how many window releases keep their verdict", () => {
+    const line = entry({
+      kind: "rss_new_content",
+      message_code: "rss_new_content",
+      message_params: { count: 3 },
+      details: { item_count: 3, window_total: 30, outcome_counts: { accepted_pending_download: 3 } },
+    });
+    expect(entryView(line, undefined).meta).toBe("待评价 3、其余 27 个种子结局不变");
+  });
+});
+
+describe("release evaluation batches", () => {
+  it("a batch head is its own row and never joins the adjacent-signature groups", () => {
+    const head = entry({ kind: "release_batch_processed", message_code: "release_batch_first", message_params: { count: 4 }, subject_id: "bk-1", occurred_at: at(11) });
+    const singles = [entry({ occurred_at: at(10) }), entry({ occurred_at: at(9) })];
+    const items = groupEvents([...singles.map(record), record(head)]);
+    expect(items.map((item) => item.type)).toEqual(["batch", "group"]);
+  });
+
+  it("renders the verdict distribution in a fixed order, filtered with its reasons", () => {
+    const head = entry({
+      kind: "release_batch_processed",
+      message_code: "release_batch_reevaluated",
+      message_params: { count: 9 },
+      batch_counts: {
+        total: 9,
+        by_verdict: { start_baseline: 3, filtered: 4, awaiting_competition: 1, submitted: 1 },
+        by_reason: { release_not_in_matched: 2, release_must_contain_not_matched: 2 },
+      },
+    });
+    expect(batchCountsText(head)).toBe(
+      "订阅前发布 3 · 被过滤 4（标题包含排除词 2、标题缺少必需词 2） · 等待比较 1 · 已提交下载 1",
+    );
+  });
+
+  it("hides the distribution line while no detail has settled yet", () => {
+    const head = entry({ kind: "release_batch_processed", message_code: "release_batch_first", message_params: { count: 3 }, batch_counts: { total: 0, by_verdict: {}, by_reason: {} } });
+    expect(batchCountsText(head)).toBeUndefined();
+    expect(entryView(head, undefined).meta).toBeUndefined();
   });
 });

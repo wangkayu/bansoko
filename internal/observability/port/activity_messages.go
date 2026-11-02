@@ -27,6 +27,7 @@ const (
 	ActivityKindPolicyChanged          ActivityKind = "policy_changed"
 	ActivityKindRSSNewContent          ActivityKind = "rss_new_content"
 	ActivityKindReleaseProcessed       ActivityKind = "release_processed"
+	ActivityKindReleaseBatchProcessed  ActivityKind = "release_batch_processed"
 	ActivityKindDownloadChanged        ActivityKind = "download_changed"
 	ActivityKindArtifactVerified       ActivityKind = "artifact_verified"
 	ActivityKindImportWaitingConfig    ActivityKind = "import_waiting_config"
@@ -51,24 +52,30 @@ const (
 	MessageMetadataApplied     MessageCode = "metadata_applied"
 	MessageGroupChanged        MessageCode = "group_changed"
 	// MessageRulesChanged lists the changed sections in details.changed_sections.
-	MessageRulesChanged          MessageCode = "rules_changed"
-	MessageEpisodeOffsetChanged  MessageCode = "episode_offset_changed"
-	MessageRSSNewContent         MessageCode = "rss_new_content"
-	MessageReleaseDiscovered     MessageCode = "release_discovered"
-	MessageReleaseWaitingMeta    MessageCode = "release_waiting_metadata"
-	MessageReleaseSubStopped     MessageCode = "release_subscription_stopped"
-	MessageReleaseSourceDown     MessageCode = "release_source_unavailable"
-	MessageReleaseParseFailed    MessageCode = "release_parse_failed"
-	MessageReleaseAccepted       MessageCode = "release_accepted"
-	MessageReleaseFiltered       MessageCode = "release_filtered"
-	MessageReleaseAdopted        MessageCode = "release_adopted_existing"
-	MessageReleaseAcquireFailed  MessageCode = "release_acquisition_failed"
-	MessageReleaseSubmitted      MessageCode = "release_submitted"
-	MessageReleaseAwaitingCompet MessageCode = "release_awaiting_competition"
-	MessageReleaseResumeBaseline MessageCode = "release_resume_baseline"
-	MessageReleaseStartBaseline  MessageCode = "release_start_baseline"
-	MessageDownloadSubmitted     MessageCode = "download_submitted"
-	MessageDownloadCompleted     MessageCode = "download_completed"
+	MessageRulesChanged         MessageCode = "rules_changed"
+	MessageEpisodeOffsetChanged MessageCode = "episode_offset_changed"
+	MessageRSSNewContent        MessageCode = "rss_new_content"
+	// MessageReleaseBatchFirst is the head row of a bulk first evaluation: one
+	// trigger enqueued several never-evaluated releases at once.
+	MessageReleaseBatchFirst MessageCode = "release_batch_first"
+	// MessageReleaseBatchReevaluated is the head row of a bulk re-evaluation:
+	// one trigger re-enqueued several already-evaluated releases at once.
+	MessageReleaseBatchReevaluated MessageCode = "release_batch_reevaluated"
+	MessageReleaseDiscovered       MessageCode = "release_discovered"
+	MessageReleaseWaitingMeta      MessageCode = "release_waiting_metadata"
+	MessageReleaseSubStopped       MessageCode = "release_subscription_stopped"
+	MessageReleaseSourceDown       MessageCode = "release_source_unavailable"
+	MessageReleaseParseFailed      MessageCode = "release_parse_failed"
+	MessageReleaseAccepted         MessageCode = "release_accepted"
+	MessageReleaseFiltered         MessageCode = "release_filtered"
+	MessageReleaseAdopted          MessageCode = "release_adopted_existing"
+	MessageReleaseAcquireFailed    MessageCode = "release_acquisition_failed"
+	MessageReleaseSubmitted        MessageCode = "release_submitted"
+	MessageReleaseAwaitingCompet   MessageCode = "release_awaiting_competition"
+	MessageReleaseResumeBaseline   MessageCode = "release_resume_baseline"
+	MessageReleaseStartBaseline    MessageCode = "release_start_baseline"
+	MessageDownloadSubmitted       MessageCode = "download_submitted"
+	MessageDownloadCompleted       MessageCode = "download_completed"
 	// MessageDownloadRemoved is a task deleted in the downloader (cancelled,
 	// not a failure).
 	MessageDownloadRemoved MessageCode = "download_removed"
@@ -194,6 +201,8 @@ var (
 		{Code: MessageRulesChanged, Kind: ActivityKindPolicyChanged},
 		{Code: MessageEpisodeOffsetChanged, Kind: ActivityKindPolicyChanged, Params: []MessageParam{{Name: ParamGroupName, Type: MessageParamString}}},
 		{Code: MessageRSSNewContent, Kind: ActivityKindRSSNewContent, Params: []MessageParam{{Name: ParamCount, Type: MessageParamInteger, Required: true}}},
+		{Code: MessageReleaseBatchFirst, Kind: ActivityKindReleaseBatchProcessed, Params: requiredCount},
+		{Code: MessageReleaseBatchReevaluated, Kind: ActivityKindReleaseBatchProcessed, Params: requiredCount},
 		{Code: MessageReleaseDiscovered, Kind: ActivityKindReleaseProcessed},
 		{Code: MessageReleaseWaitingMeta, Kind: ActivityKindReleaseProcessed},
 		{Code: MessageReleaseSubStopped, Kind: ActivityKindReleaseProcessed},

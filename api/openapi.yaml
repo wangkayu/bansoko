@@ -4761,7 +4761,9 @@ paths:
             filtering still in passing: business entries of kind
             release_processed with outcome info and reason
             awaiting_competition are excluded before pagination (the
-            competition's winner later gets its own admission rows); terminal
+            competition's winner later gets its own admission rows), and so
+            are the detail entries of a release_batch_processed batch, whose
+            head row is the batch's one timeline row; terminal
             verdicts such as no_placeable_files stay visible, one row per
             release. all returns every record. Other record kinds are
             unaffected.
@@ -4813,6 +4815,37 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '422':
           $ref: '#/components/responses/Unprocessable'
+  /observability/release-batches/{batch_key}:
+    get:
+      tags: [Observability]
+      operationId: listReleaseBatchEntries
+      x-scope: read
+      description: >-
+        Pages the release_processed detail entries of one release evaluation
+        batch (the entries the primary event view hides behind their
+        release_batch_processed head), newest first, in the same business
+        record shape as the unified feed.
+      parameters:
+        - name: batch_key
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The batch's detail entries as business records.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObservabilityRecordPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /observability/diagnostics:
     get:
       tags: [Observability]
@@ -9865,6 +9898,7 @@ components:
         - policy_changed
         - rss_new_content
         - release_processed
+        - release_batch_processed
         - download_changed
         - artifact_verified
         - import_waiting_config
@@ -9908,6 +9942,8 @@ components:
         - release_awaiting_competition
         - release_resume_baseline
         - release_start_baseline
+        - release_batch_first
+        - release_batch_reevaluated
         - download_submitted
         - download_completed
         - download_removed
@@ -11937,6 +11973,14 @@ components:
         item_count:
           type: integer
           minimum: 0
+        window_total:
+          type: integer
+          minimum: 0
+          description: >-
+            How many releases the rss_new_content batch's feed window held in
+            total. The difference to item_count is the releases whose outcome
+            did not change. Absent on records written before it was
+            introduced.
         outcome_counts:
           type: object
           additionalProperties:
@@ -12222,9 +12266,44 @@ components:
           type: string
           minLength: 1
           maxLength: 512
+        batch_key:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 128
+          description: >-
+            The release_batch_processed head this detail entry belongs to; null
+            is a standalone timeline entry.
+        batch_counts:
+          allOf:
+            - $ref: '#/components/schemas/ReleaseBatchCounts'
+          nullable: true
+          description: >-
+            Live outcome counts of a release_batch_processed head's detail
+            entries; null on every other kind.
         retention_until:
           type: string
           format: date-time
+    ReleaseBatchCounts:
+      type: object
+      additionalProperties: false
+      required: [total, by_verdict, by_reason]
+      properties:
+        total:
+          type: integer
+          minimum: 0
+        by_verdict:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+          description: Evaluated releases per verdict; grows as the batch's evaluations finish.
+        by_reason:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+          description: Filtered detail entries per reason code.
     SubgroupScoreEntry:
       type: object
       additionalProperties: false

@@ -63,6 +63,32 @@ func (s *Server) ListObservabilityRecords(w http.ResponseWriter, r *http.Request
 	writeJSON(w, r.Context(), http.StatusOK, mapped)
 }
 
+// ListReleaseBatchEntries pages the detail entries behind one
+// release_batch_processed head, in the same record shape as the union feed.
+func (s *Server) ListReleaseBatchEntries(w http.ResponseWriter, r *http.Request, batchKey string, params generated.ListReleaseBatchEntriesParams) {
+	var cursor *string
+	if params.Cursor != nil {
+		mapped := string(*params.Cursor)
+		cursor = &mapped
+	}
+	var limit *int
+	if params.Limit != nil {
+		mapped := int(*params.Limit)
+		limit = &mapped
+	}
+	result, err := s.deps.Observability.ListReleaseBatch(r.Context(), batchKey, observabilityapplication.RecordQuery{Cursor: cursor, Limit: limit})
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	mapped, err := mapObservabilityRecordPage(result)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, r.Context(), http.StatusOK, mapped)
+}
+
 // ListPluginDeliveries returns the bounded read-only delivery list.
 func (s *Server) ListPluginDeliveries(w http.ResponseWriter, r *http.Request, params generated.ListPluginDeliveriesParams) {
 	result, err := s.deps.PluginTargets.ListDeliveries(r.Context(), mapPluginDeliveryQuery(params))

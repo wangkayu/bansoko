@@ -57,20 +57,20 @@ INSERT INTO subscription_log_entries(
     id, subscription_id, managed_anime_id, kind, outcome, message_code, message_params,
     rss_source_id, release_id, group_ref, details, dedupe_key, reason_code,
     subject_type, subject_id, subject_version, correlation_id, causation_type, causation_id,
-    occurred_at, retention_until
+    batch_key, occurred_at, retention_until
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, ''), NULLIF($9, ''), NULLIF($10, ''), $11, $12, $13,
-        $14, $15, $16, NULLIF($17, ''), NULLIF($18, ''), NULLIF($19, ''),
-        COALESCE($20::timestamptz, CURRENT_TIMESTAMP),
+        $14, $15, $16, NULLIF($17, ''), NULLIF($18, ''), NULLIF($19, ''), NULLIF($20, ''),
+        COALESCE($21::timestamptz, CURRENT_TIMESTAMP),
         -- Replacement counts from the fact time (the table caps it there), so a
         -- late-derived entry is kept no longer than one written in-stage.
-        COALESCE($20::timestamptz, CURRENT_TIMESTAMP) + INTERVAL '30 days')
+        COALESCE($21::timestamptz, CURRENT_TIMESTAMP) + INTERVAL '30 days')
 ON CONFLICT (subscription_id, dedupe_key) DO NOTHING`,
 		uuid.NewString(), record.SubscriptionID, record.ManagedAnimeID, record.Kind,
 		record.Outcome, string(record.MessageCode), params, record.RSSSourceID, record.ReleaseID,
 		record.GroupRef, details, dedupeKey, record.ReasonCode, record.SubjectType,
 		record.SubjectID, record.SubjectVersion, record.CorrelationID, record.CausationType,
-		record.CausationID, occurredAt)
+		record.CausationID, record.BatchKey, occurredAt)
 	if err != nil {
 		return fmt.Errorf("append activity: %w", err)
 	}
@@ -232,6 +232,9 @@ func validateActivity(record observabilityport.ActivityRecord) error {
 		return err
 	}
 	if err := validateOptionalActivityField("group ref", record.GroupRef, maxGroupRefLength); err != nil {
+		return err
+	}
+	if err := validateOptionalActivityField("batch key", record.BatchKey, maxIdentityLength); err != nil {
 		return err
 	}
 	if record.DedupeKey != "" {

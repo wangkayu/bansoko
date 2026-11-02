@@ -889,6 +889,7 @@ RETURNING version`, snapshot.releaseID, nullableJSON(parsedFacts), nullableJSON(
 			RSSSourceID:    snapshot.sourceID,
 			ReleaseID:      snapshot.releaseID,
 			GroupRef:       snapshot.groupName,
+			BatchKey:       releaseEvaluationBatchKey(claim.InputSnapshot),
 			MessageCode:    message,
 			Details:        details,
 			CorrelationID:  correlationID,
@@ -1002,6 +1003,7 @@ WHERE id = $1 AND version = $5 AND download_task_id IS NULL
 			RSSSourceID:    snapshot.sourceID,
 			ReleaseID:      snapshot.releaseID,
 			GroupRef:       snapshot.groupName,
+			BatchKey:       releaseEvaluationBatchKey(claim.InputSnapshot),
 			MessageCode:    observabilityport.MessageReleaseParseFailed,
 			Details:        details,
 		}); err != nil {

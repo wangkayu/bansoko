@@ -69,6 +69,7 @@ export const observabilityKeys = {
   businessLine: (eventView: string, state: string, animeId: string, q: string, from?: string, to?: string) =>
     ["observability", "records", "business-line", eventView, state, animeId, q, from, to] as const,
   diagnosticsFiltered: (state: string) => ["observability", "diagnostics", "list", state] as const,
+  releaseBatch: (batchKey: string) => ["observability", "release-batch", batchKey] as const,
   // The log-entry badge: hung under the records/diagnostics prefixes, following the same invalidation set.
   badgeRecords: ["observability", "records", "badge"] as const,
   badgeDiagnostics: ["observability", "diagnostics", "badge"] as const,

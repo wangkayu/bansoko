@@ -1870,6 +1870,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/observability/release-batches/{batch_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Pages the release_processed detail entries of one release evaluation batch (the entries the primary event view hides behind their release_batch_processed head), newest first, in the same business record shape as the unified feed. */
+        get: operations["listReleaseBatchEntries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/observability/diagnostics": {
         parameters: {
             query?: never;
@@ -3873,14 +3890,14 @@ export interface components {
         /** @enum {string} */
         AutomationState: "queued" | "running" | "completed" | "partial" | "failed";
         /** @enum {string} */
-        SubscriptionLogKind: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "policy_changed" | "rss_new_content" | "release_processed" | "download_changed" | "artifact_verified" | "import_waiting_config" | "placement_changed" | "replacement_decided" | "cleanup_completed" | "cleanup_failed" | "file_alignment_completed" | "file_alignment_failed" | "acquisition_settled";
+        SubscriptionLogKind: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "policy_changed" | "rss_new_content" | "release_processed" | "release_batch_processed" | "download_changed" | "artifact_verified" | "import_waiting_config" | "placement_changed" | "replacement_decided" | "cleanup_completed" | "cleanup_failed" | "file_alignment_completed" | "file_alignment_failed" | "acquisition_settled";
         /** @enum {string} */
         SubscriptionLogOutcome: "info" | "success" | "failure";
         /**
          * @description The message of a business journal entry in the closed catalog the server registers per entry kind (published to the frontend as a generated artifact). The client renders the text from the code and message_params; entries carry no display text.
          * @enum {string}
          */
-        SubscriptionLogMessageCode: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "rules_changed" | "episode_offset_changed" | "rss_new_content" | "release_discovered" | "release_waiting_metadata" | "release_subscription_stopped" | "release_source_unavailable" | "release_parse_failed" | "release_accepted" | "release_filtered" | "release_adopted_existing" | "release_acquisition_failed" | "release_submitted" | "release_awaiting_competition" | "release_resume_baseline" | "release_start_baseline" | "download_submitted" | "download_completed" | "download_removed" | "download_group_not_allowed" | "download_cancelled" | "download_failed" | "artifact_verified" | "import_waiting_binding_bgm" | "import_waiting_binding_tmdb" | "import_waiting_template_variable" | "import_config_resumed" | "file_imported" | "file_adopted" | "file_retained" | "file_import_failed" | "acquisition_succeeded" | "acquisition_failed" | "acquisition_cancelled" | "replacement_kept_existing" | "replacement_kept_all" | "replacement_blocked" | "replacement_replaced" | "replacement_not_replaced" | "placement_released" | "unknown_file_released" | "placement_recorded" | "file_recovered" | "placement_displaced" | "placements_excluded" | "offset_aligned" | "old_version_deleted" | "old_version_kept" | "old_version_delete_failed";
+        SubscriptionLogMessageCode: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "rules_changed" | "episode_offset_changed" | "rss_new_content" | "release_discovered" | "release_waiting_metadata" | "release_subscription_stopped" | "release_source_unavailable" | "release_parse_failed" | "release_accepted" | "release_filtered" | "release_adopted_existing" | "release_acquisition_failed" | "release_submitted" | "release_awaiting_competition" | "release_resume_baseline" | "release_start_baseline" | "release_batch_first" | "release_batch_reevaluated" | "download_submitted" | "download_completed" | "download_removed" | "download_group_not_allowed" | "download_cancelled" | "download_failed" | "artifact_verified" | "import_waiting_binding_bgm" | "import_waiting_binding_tmdb" | "import_waiting_template_variable" | "import_config_resumed" | "file_imported" | "file_adopted" | "file_retained" | "file_import_failed" | "acquisition_succeeded" | "acquisition_failed" | "acquisition_cancelled" | "replacement_kept_existing" | "replacement_kept_all" | "replacement_blocked" | "replacement_replaced" | "replacement_not_replaced" | "placement_released" | "unknown_file_released" | "placement_recorded" | "file_recovered" | "placement_displaced" | "placements_excluded" | "offset_aligned" | "old_version_deleted" | "old_version_kept" | "old_version_delete_failed";
         /** @description Scalar values the message interpolates. Each message declares its params; an optional param is absent rather than empty. */
         SubscriptionLogMessageParams: {
             /** @description Torrent name the downloader reports. */
@@ -4729,6 +4746,8 @@ export interface components {
             reason_code?: string;
             reason_detail?: string;
             item_count?: number;
+            /** @description How many releases the rss_new_content batch's feed window held in total. The difference to item_count is the releases whose outcome did not change. Absent on records written before it was introduced. */
+            window_total?: number;
             /** @description How the feed-level verdicts of one rss_new_content batch split: a ReleaseVerdict name (accepted_pending_download, waiting_metadata, filtered, parse_failed) to the number of newly discovered items carrying it at discovery time. This is the discovery outcome, not the later evaluation verdict: an accepted count means the items were handed to evaluation. Absent on records written before it was introduced. */
             outcome_counts?: {
                 [key: string]: number;
@@ -4823,8 +4842,23 @@ export interface components {
             causation_type?: string | null;
             causation_id?: string | null;
             dedupe_key: string;
+            /** @description The release_batch_processed head this detail entry belongs to; null is a standalone timeline entry. */
+            batch_key?: string | null;
+            /** @description Live outcome counts of a release_batch_processed head's detail entries; null on every other kind. */
+            batch_counts?: components["schemas"]["ReleaseBatchCounts"] | null;
             /** Format: date-time */
             retention_until: string;
+        };
+        ReleaseBatchCounts: {
+            total: number;
+            /** @description Evaluated releases per verdict; grows as the batch's evaluations finish. */
+            by_verdict: {
+                [key: string]: number;
+            };
+            /** @description Filtered detail entries per reason code. */
+            by_reason: {
+                [key: string]: number;
+            };
         };
         SubgroupScoreEntry: {
             provider: components["schemas"]["ProviderKind"];
@@ -11800,7 +11834,7 @@ export interface operations {
                 kind?: ("routine" | "business" | "automation" | "plugin")[];
                 /** @description Narrows the business records to these journal entry kinds; the other record kinds are unaffected. */
                 entry_kind?: components["schemas"]["SubscriptionLogKind"][];
-                /** @description Read projection of the unified feed. primary hides the release filtering still in passing: business entries of kind release_processed with outcome info and reason awaiting_competition are excluded before pagination (the competition's winner later gets its own admission rows); terminal verdicts such as no_placeable_files stay visible, one row per release. all returns every record. Other record kinds are unaffected. */
+                /** @description Read projection of the unified feed. primary hides the release filtering still in passing: business entries of kind release_processed with outcome info and reason awaiting_competition are excluded before pagination (the competition's winner later gets its own admission rows), and so are the detail entries of a release_batch_processed batch, whose head row is the batch's one timeline row; terminal verdicts such as no_placeable_files stay visible, one row per release. all returns every record. Other record kinds are unaffected. */
                 event_view?: "primary" | "all";
                 /** @description Selects records in this state. A business record of a Release run (download, verification, import, placement and replacement entries closed by the run's acquisition result) takes the state of its run: the result's outcome, or in_progress while the run has no result. failure includes failed acquisitions, failed business records, failed and partial automation runs, and failed or unconfirmed (unknown) notification deliveries. */
                 state?: components["schemas"]["ObservabilityRecordState"];
@@ -11828,6 +11862,34 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             422: components["responses"]["Unprocessable"];
+        };
+    };
+    listReleaseBatchEntries: {
+        parameters: {
+            query?: {
+                /** @description Opaque keyset pagination cursor. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path: {
+                batch_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The batch's detail entries as business records. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObservabilityRecordPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
         };
     };
     listObservabilityDiagnostics: {
