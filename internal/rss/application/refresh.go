@@ -2,7 +2,10 @@ package application
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -443,16 +446,24 @@ func upsertRelease(ctx context.Context, tx *sql.Tx, snapshot sourceSnapshot, eva
 	parsed := nullableJSON(evaluation.parsedFacts)
 	reasonDetail := safeReason(pointerString(evaluation.result.ReasonDetail))
 	candidateID := newID()
+	// The digest is the refresh's own fingerprint of the facts it observed,
+	// computed at each write because the torrent-metadata reuse below replaces
+	// the internal facts with the stored ones.
+	factsDigest := func() string {
+		return feedFactsDigest(evaluation.rawFacts, evaluation.sourceFacts, evaluation.parsedFacts, evaluation.internalFacts)
+	}
 	insertErr := tx.QueryRowContext(ctx, `
 INSERT INTO releases(
     id, rss_source_id, stable_item_key, raw_facts, source_facts, parsed_facts,
-    internal_facts, verdict, reason_code, reason_detail, feed_verdict, evaluation_version
+    internal_facts, verdict, reason_code, reason_detail, feed_verdict, evaluation_version,
+    feed_facts_digest
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, ''), $8, $11)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, ''), $8, $11, $12)
 ON CONFLICT (rss_source_id, stable_item_key) DO NOTHING
 RETURNING id, version`, candidateID, snapshot.sourceID, evaluation.stableKey,
 		evaluation.rawFacts, evaluation.sourceFacts, parsed, evaluation.internalFacts,
-		string(evaluation.result.Verdict), evaluation.result.ReasonCode, reasonDetail, evaluationVersionString()).Scan(&releaseID, &version)
+		string(evaluation.result.Verdict), evaluation.result.ReasonCode, reasonDetail, evaluationVersionString(),
+		factsDigest()).Scan(&releaseID, &version)
 	if insertErr == nil {
 		inputMutable := evaluation.item.TorrentErrorCode == "" && len(evaluation.item.TorrentPayload) > 0
 		return releaseID, version, true, true, inputMutable, nil
@@ -522,24 +533,29 @@ FOR UPDATE`, existingID).Scan(&releaseID, &version, &existingTask, &existingVerd
 	// except for the feed verdicts that are already an answer (filtered by the
 	// feed rules, waiting for metadata, an unreadable torrent), which no later
 	// stage can turn into anything else.
+	//
+	// The facts are measured the same way: the evaluation stage rewrites
+	// parsed_facts and internal_facts with its decision-time spelling (a batch
+	// plan that places nothing clears the parsed episode, target planning adds
+	// release files), so comparing the columns themselves made every poll after
+	// a decision look changed. feed_facts_digest is this stage's own
+	// fingerprint of what it observed; the evaluation never writes it.
 	updateErr := tx.QueryRowContext(ctx, `
 UPDATE releases
 SET raw_facts = $2, source_facts = $3, parsed_facts = $4, internal_facts = $5,
-    feed_verdict = $6, evaluation_version = $8,
+    feed_verdict = $6, evaluation_version = $8, feed_facts_digest = $12,
     verdict = CASE WHEN $7 THEN $9 ELSE verdict END,
     reason_code = CASE WHEN $7 THEN $10 ELSE reason_code END,
     reason_detail = CASE WHEN $7 THEN NULLIF($11, '') ELSE reason_detail END,
     version = version + 1, updated_at = CURRENT_TIMESTAMP
 WHERE id = $1 AND download_task_id IS NULL
-  AND (raw_facts IS DISTINCT FROM CAST($2 AS jsonb)
-    OR source_facts IS DISTINCT FROM CAST($3 AS jsonb)
-    OR parsed_facts IS DISTINCT FROM CAST($4 AS jsonb)
-    OR internal_facts IS DISTINCT FROM CAST($5 AS jsonb)
+  AND (feed_facts_digest IS DISTINCT FROM $12
     OR feed_verdict IS DISTINCT FROM $6
     OR evaluation_version IS DISTINCT FROM $8)
 RETURNING version`, releaseID, evaluation.rawFacts, evaluation.sourceFacts, parsed, evaluation.internalFacts,
 		string(evaluation.result.Verdict), feedVerdictIsFinal(evaluation.result.Verdict),
-		evaluationVersionString(), string(evaluation.result.Verdict), evaluation.result.ReasonCode, reasonDetail).Scan(&updatedVersion)
+		evaluationVersionString(), string(evaluation.result.Verdict), evaluation.result.ReasonCode, reasonDetail,
+		factsDigest()).Scan(&updatedVersion)
 	inputMutable = evaluation.item.TorrentErrorCode == "" && len(evaluation.item.TorrentPayload) > 0
 	if errors.Is(updateErr, sql.ErrNoRows) {
 		if liveFound && liveState == workitems.StateAvailable && liveID != "" {
@@ -626,4 +642,19 @@ func evaluationVersionString() string {
 
 func newID() string {
 	return uuid.NewString()
+}
+
+// feedFactsDigest fingerprints the facts a refresh observed, so a later poll
+// can tell whether anything actually changed without comparing columns the
+// evaluation stage rewrites. Each blob is length-prefixed so two different
+// splits of the same bytes cannot collide.
+func feedFactsDigest(raw, source, parsed, internal []byte) string {
+	hash := sha256.New()
+	var length [8]byte
+	for _, blob := range [][]byte{raw, source, parsed, internal} {
+		binary.BigEndian.PutUint64(length[:], uint64(len(blob)))
+		hash.Write(length[:])
+		hash.Write(blob)
+	}
+	return hex.EncodeToString(hash.Sum(nil))
 }
