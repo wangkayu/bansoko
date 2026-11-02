@@ -165,7 +165,7 @@ func (s *Service) ListReleaseBatch(ctx context.Context, batchKey string, params 
 
 	query := fmt.Sprintf(
 		"WITH page AS (SELECT e.occurred_at AS record_time, e.id FROM subscription_log_entries e WHERE %s ORDER BY e.occurred_at DESC, e.id DESC LIMIT $%d) "+
-			"SELECT p.record_time, jsonb_build_object(%s) FROM page p JOIN subscription_log_entries src ON src.id = p.id ORDER BY p.record_time DESC, p.id DESC",
+			"SELECT p.record_time, p.id, jsonb_build_object(%s) FROM page p JOIN subscription_log_entries src ON src.id = p.id ORDER BY p.record_time DESC, p.id DESC",
 		where, limitIdx, b.String())
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
