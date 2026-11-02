@@ -773,8 +773,9 @@ const (
 
 // Defines values for FileManagerConflictChoice.
 const (
-	FileManagerConflictChoiceBlock   FileManagerConflictChoice = "block"
-	FileManagerConflictChoiceVersion FileManagerConflictChoice = "version"
+	FileManagerConflictChoiceBlock     FileManagerConflictChoice = "block"
+	FileManagerConflictChoiceOverwrite FileManagerConflictChoice = "overwrite"
+	FileManagerConflictChoiceVersion   FileManagerConflictChoice = "version"
 )
 
 // Defines values for FileManagerDetachedReason.
@@ -788,6 +789,13 @@ const (
 	FileManagerDetachedReasonReleased          FileManagerDetachedReason = "released"
 	FileManagerDetachedReasonReplaced          FileManagerDetachedReason = "replaced"
 	FileManagerDetachedReasonSubscriptionEnded FileManagerDetachedReason = "subscription_ended"
+)
+
+// Defines values for FileManagerEntryFileKind.
+const (
+	FileManagerEntryFileKindOther    FileManagerEntryFileKind = "other"
+	FileManagerEntryFileKindSubtitle FileManagerEntryFileKind = "subtitle"
+	FileManagerEntryFileKindVideo    FileManagerEntryFileKind = "video"
 )
 
 // Defines values for FileManagerEntryKind.
@@ -861,20 +869,6 @@ const (
 	FileManagerMatchMediaKindTv FileManagerMatchMediaKind = "tv"
 )
 
-// Defines values for FileManagerMountKind.
-const (
-	FileManagerMountKindAnime    FileManagerMountKind = "anime"
-	FileManagerMountKindDownload FileManagerMountKind = "download"
-	FileManagerMountKindRoot     FileManagerMountKind = "root"
-)
-
-// Defines values for FileManagerMountUnavailable.
-const (
-	FileManagerMountUnavailableMissing       FileManagerMountUnavailable = "missing"
-	FileManagerMountUnavailableNotConfigured FileManagerMountUnavailable = "not_configured"
-	FileManagerMountUnavailableNotDirectory  FileManagerMountUnavailable = "not_directory"
-)
-
 // Defines values for FileManagerOperation.
 const (
 	FileManagerOperationAlign   FileManagerOperation = "align"
@@ -920,6 +914,71 @@ const (
 	FileManagerOperationStateFailed    FileManagerOperationState = "failed"
 	FileManagerOperationStateReady     FileManagerOperationState = "ready"
 	FileManagerOperationStateRunning   FileManagerOperationState = "running"
+)
+
+// Defines values for FileManagerRecognitionAnimeDraftMediaKind.
+const (
+	FileManagerRecognitionAnimeDraftMediaKindMovie FileManagerRecognitionAnimeDraftMediaKind = "movie"
+	FileManagerRecognitionAnimeDraftMediaKindTv    FileManagerRecognitionAnimeDraftMediaKind = "tv"
+)
+
+// Defines values for FileManagerRecognitionBlockerCode.
+const (
+	FileManagerRecognitionBlockerCodeFactsMissing    FileManagerRecognitionBlockerCode = "facts_missing"
+	FileManagerRecognitionBlockerCodeTargetInvalid   FileManagerRecognitionBlockerCode = "target_invalid"
+	FileManagerRecognitionBlockerCodeTemplateInvalid FileManagerRecognitionBlockerCode = "template_invalid"
+	FileManagerRecognitionBlockerCodeVideoFailed     FileManagerRecognitionBlockerCode = "video_failed"
+	FileManagerRecognitionBlockerCodeVideoMissing    FileManagerRecognitionBlockerCode = "video_missing"
+)
+
+// Defines values for FileManagerRecognitionConflictOccupiedBy.
+const (
+	FileManagerRecognitionConflictOccupiedByDuplicate  FileManagerRecognitionConflictOccupiedBy = "duplicate"
+	FileManagerRecognitionConflictOccupiedByFile       FileManagerRecognitionConflictOccupiedBy = "file"
+	FileManagerRecognitionConflictOccupiedByInProgress FileManagerRecognitionConflictOccupiedBy = "in_progress"
+	FileManagerRecognitionConflictOccupiedByManaged    FileManagerRecognitionConflictOccupiedBy = "managed"
+)
+
+// Defines values for FileManagerRecognitionConflictChoice.
+const (
+	FileManagerRecognitionConflictChoiceBlock     FileManagerRecognitionConflictChoice = "block"
+	FileManagerRecognitionConflictChoiceOverwrite FileManagerRecognitionConflictChoice = "overwrite"
+	FileManagerRecognitionConflictChoiceSkip      FileManagerRecognitionConflictChoice = "skip"
+	FileManagerRecognitionConflictChoiceVersion   FileManagerRecognitionConflictChoice = "version"
+)
+
+// Defines values for FileManagerRecognitionDisposition.
+const (
+	FileManagerRecognitionDispositionError     FileManagerRecognitionDisposition = "error"
+	FileManagerRecognitionDispositionMove      FileManagerRecognitionDisposition = "move"
+	FileManagerRecognitionDispositionRename    FileManagerRecognitionDisposition = "rename"
+	FileManagerRecognitionDispositionSkip      FileManagerRecognitionDisposition = "skip"
+	FileManagerRecognitionDispositionUnchanged FileManagerRecognitionDisposition = "unchanged"
+)
+
+// Defines values for FileManagerRecognitionParserKind.
+const (
+	FileManagerRecognitionParserKindRegex    FileManagerRecognitionParserKind = "regex"
+	FileManagerRecognitionParserKindReltitle FileManagerRecognitionParserKind = "reltitle"
+)
+
+// Defines values for FileManagerRecognitionRowKind.
+const (
+	FileManagerRecognitionRowKindOther    FileManagerRecognitionRowKind = "other"
+	FileManagerRecognitionRowKindSubtitle FileManagerRecognitionRowKind = "subtitle"
+	FileManagerRecognitionRowKindVideo    FileManagerRecognitionRowKind = "video"
+)
+
+// Defines values for FileManagerRecognitionUnknownRoute.
+const (
+	FileManagerRecognitionUnknownRouteRoute FileManagerRecognitionUnknownRoute = "route"
+	FileManagerRecognitionUnknownRouteSkip  FileManagerRecognitionUnknownRoute = "skip"
+)
+
+// Defines values for FileManagerRootUnavailable.
+const (
+	FileManagerRootUnavailableMissing      FileManagerRootUnavailable = "missing"
+	FileManagerRootUnavailableNotDirectory FileManagerRootUnavailable = "not_directory"
 )
 
 // Defines values for FileManagerUserOperation.
@@ -4232,7 +4291,7 @@ type CatalogWorkspace struct {
 	Snapshot CatalogSnapshot `json:"snapshot"`
 }
 
-// CollisionPolicy What an import or an alignment does when its target path already holds a file: `fail` skips that file, `versioned` adds a version number, `overwrite` replaces the existing file and permanently deletes it. A video and its subtitles are handled as one unit. This includes a file the library already manages: its placement becomes `displaced` (the episode leaves that instance's coverage, its subtitles become unmanaged files) unless an approved version replacement names it, which supersedes it instead. File manager operations never overwrite.
+// CollisionPolicy What an import or an alignment does when its target path already holds a file: `fail` skips that file, `versioned` adds a version number, `overwrite` replaces the existing file and permanently deletes it. A video and its subtitles are handled as one unit. This includes a file the library already manages: its placement becomes `displaced` (the episode leaves that instance's coverage, its subtitles become unmanaged files) unless an approved version replacement names it, which supersedes it instead. A file manager operation replaces a file only on the owner's explicit `overwrite` choice, and then only a plain file that no subscription manages.
 type CollisionPolicy string
 
 // CompanionIssueView defines model for CompanionIssueView.
@@ -4704,7 +4763,7 @@ type FileEffectPolicyDefaultView struct {
 
 // FileEffectRules defines model for FileEffectRules.
 type FileEffectRules struct {
-	// CollisionPolicy What an import or an alignment does when its target path already holds a file: `fail` skips that file, `versioned` adds a version number, `overwrite` replaces the existing file and permanently deletes it. A video and its subtitles are handled as one unit. This includes a file the library already manages: its placement becomes `displaced` (the episode leaves that instance's coverage, its subtitles become unmanaged files) unless an approved version replacement names it, which supersedes it instead. File manager operations never overwrite.
+	// CollisionPolicy What an import or an alignment does when its target path already holds a file: `fail` skips that file, `versioned` adds a version number, `overwrite` replaces the existing file and permanently deletes it. A video and its subtitles are handled as one unit. This includes a file the library already manages: its placement becomes `displaced` (the episode leaves that instance's coverage, its subtitles become unmanaged files) unless an approved version replacement names it, which supersedes it instead. A file manager operation replaces a file only on the owner's explicit `overwrite` choice, and then only a plain file that no subscription manages.
 	CollisionPolicy CollisionPolicy          `json:"collision_policy"`
 	Operation       FileEffectRulesOperation `json:"operation"`
 }
@@ -4839,7 +4898,7 @@ type FileManagerAnimeRef struct {
 	Title             string             `json:"title"`
 }
 
-// FileManagerConflictChoice What happens when the target is occupied. `block` cancels the operation and changes nothing; `version` gives the new file a version suffix and keeps the existing one. A user operation never overwrites.
+// FileManagerConflictChoice What happens when the target is occupied. `block` cancels the operation and changes nothing; `version` gives the new file a version suffix and keeps the existing one; `overwrite` replaces a plain file at the target (never one a subscription manages or an operation holds).
 type FileManagerConflictChoice string
 
 // FileManagerDetachedReason Why a file is detached. `released` is a placement whose management a user ended (design §5); its bound sidecars follow it. `displaced` is a placement another file replaced at its path; `redownloaded` one whose episode a user downloaded again, the new file elsewhere.
@@ -4849,6 +4908,9 @@ type FileManagerDetachedReason string
 type FileManagerEntry struct {
 	// CompanionOf Absolute path of the video a bound sidecar follows.
 	CompanionOf *string `json:"companion_of,omitempty"`
+
+	// FileKind What the entry's extension says it is, independent of owner records, so a plain file is classified like a managed one. Absent for directories.
+	FileKind *FileManagerEntryFileKind `json:"file_kind,omitempty"`
 
 	// Kind Lstat type; a symlink is described, never followed.
 	Kind FileManagerEntryKind `json:"kind"`
@@ -4900,6 +4962,9 @@ type FileManagerEntryDetail struct {
 	Revision string                 `json:"revision"`
 	Video    *FileManagerLinkedFile `json:"video,omitempty"`
 }
+
+// FileManagerEntryFileKind What the entry's extension says it is, independent of owner records, so a plain file is classified like a managed one. Absent for directories.
+type FileManagerEntryFileKind string
 
 // FileManagerEntryKind Lstat type; a symlink is described, never followed.
 type FileManagerEntryKind string
@@ -5046,7 +5111,7 @@ type FileManagerMatchPreviewRequest struct {
 
 // FileManagerMatchRequest defines model for FileManagerMatchRequest.
 type FileManagerMatchRequest struct {
-	// Conflict What happens when the target is occupied. `block` cancels the operation and changes nothing; `version` gives the new file a version suffix and keeps the existing one. A user operation never overwrites.
+	// Conflict What happens when the target is occupied. `block` cancels the operation and changes nothing; `version` gives the new file a version suffix and keeps the existing one; `overwrite` replaces a plain file at the target (never one a subscription manages or an operation holds).
 	Conflict         FileManagerConflictChoice `json:"conflict"`
 	Episode          int                       `json:"episode"`
 	ExpectedRevision string                    `json:"expected_revision"`
@@ -5062,41 +5127,6 @@ type FileManagerMatchRequest struct {
 	Path   string `json:"path"`
 	Season int    `json:"season"`
 }
-
-// FileManagerMount defines model for FileManagerMount.
-type FileManagerMount struct {
-	Available bool `json:"available"`
-
-	// ConnectionId Download connection of a download mount.
-	ConnectionId *ID    `json:"connection_id,omitempty"`
-	Key          string `json:"key"`
-
-	// Kind What a quick entry points at: the filesystem root, one download connection's application-side root, or one work's tree top.
-	Kind FileManagerMountKind `json:"kind"`
-
-	// Label Connection name of a download mount, or the work's title for a work mount.
-	Label *string `json:"label,omitempty"`
-
-	// ManagedAnimeId The work a work mount belongs to.
-	ManagedAnimeId *ID `json:"managed_anime_id,omitempty"`
-
-	// Path Absolute path the mount points at.
-	Path string `json:"path"`
-
-	// UnavailableReason Why a mount cannot be browsed.
-	UnavailableReason *FileManagerMountUnavailable `json:"unavailable_reason,omitempty"`
-}
-
-// FileManagerMountKind What a quick entry points at: the filesystem root, one download connection's application-side root, or one work's tree top.
-type FileManagerMountKind string
-
-// FileManagerMountList defines model for FileManagerMountList.
-type FileManagerMountList struct {
-	Mounts []FileManagerMount `json:"mounts"`
-}
-
-// FileManagerMountUnavailable Why a mount cannot be browsed.
-type FileManagerMountUnavailable string
 
 // FileManagerOperation defines model for FileManagerOperation.
 type FileManagerOperation string
@@ -5163,6 +5193,172 @@ type FileManagerOperationView struct {
 	TargetPath *string `json:"target_path,omitempty"`
 }
 
+// FileManagerRecognitionAnimeDraft The anime facts this recognition names files with, for this operation only: the settings column's temporary draft, initialized from the matched anime. Nothing here is written back; a value the caller leaves as the anime stores it is still sent, so the render never mixes the draft with a re-read of the anime.
+type FileManagerRecognitionAnimeDraft struct {
+	Bgm *NullableBGMBinding `json:"bgm"`
+
+	// MediaKind The kind this render resolves with (anime.kind).
+	MediaKind FileManagerRecognitionAnimeDraftMediaKind `json:"media_kind"`
+
+	// Title Effective title for this render (anime.title): it outranks every other title source, as an edited title does in a subscription draft.
+	Title string               `json:"title"`
+	Tmdb  *NullableTMDBBinding `json:"tmdb"`
+
+	// Year The year this render reads as anime.year; null renders it empty.
+	Year *int `json:"year"`
+}
+
+// FileManagerRecognitionAnimeDraftMediaKind The kind this render resolves with (anime.kind).
+type FileManagerRecognitionAnimeDraftMediaKind string
+
+// FileManagerRecognitionBlocker defines model for FileManagerRecognitionBlocker.
+type FileManagerRecognitionBlocker struct {
+	// Code Why a row cannot be rendered: the template reads facts this render lacks (`facts_missing`, with their paths), does not compile (`template_invalid`), renders an unusable target (`target_invalid`), or the subtitle's video is not selected (`video_missing`) or failed (`video_failed`).
+	Code  FileManagerRecognitionBlockerCode `json:"code"`
+	Facts *[]string                         `json:"facts,omitempty"`
+}
+
+// FileManagerRecognitionBlockerCode Why a row cannot be rendered: the template reads facts this render lacks (`facts_missing`, with their paths), does not compile (`template_invalid`), renders an unusable target (`target_invalid`), or the subtitle's video is not selected (`video_missing`) or failed (`video_failed`).
+type FileManagerRecognitionBlockerCode string
+
+// FileManagerRecognitionConflict defines model for FileManagerRecognitionConflict.
+type FileManagerRecognitionConflict struct {
+	OccupiedBy FileManagerRecognitionConflictOccupiedBy `json:"occupied_by"`
+
+	// VersionPath Absolute path this row would take under the `version` choice (advisory; the submit takes the first free suffix).
+	VersionPath *string `json:"version_path,omitempty"`
+}
+
+// FileManagerRecognitionConflictOccupiedBy defines model for FileManagerRecognitionConflict.OccupiedBy.
+type FileManagerRecognitionConflictOccupiedBy string
+
+// FileManagerRecognitionConflictChoice How the submit settles occupied or duplicated targets: `block` cancels the whole request, `skip` leaves the conflicting files (and a conflicting video's subtitles), `version` gives each file a free ` (N)` sibling, `overwrite` replaces each plain file at its target and refuses the request when any target is managed, in progress or duplicated.
+type FileManagerRecognitionConflictChoice string
+
+// FileManagerRecognitionDisposition What recognition does with one file: rename or move it, leave it because its rendered name is its own name (`unchanged`), leave it because the unclassified route is `skip`, or refuse it (`error`, with a blocker).
+type FileManagerRecognitionDisposition string
+
+// FileManagerRecognitionEpisode defines model for FileManagerRecognitionEpisode.
+type FileManagerRecognitionEpisode struct {
+	// Number The canonical final episode number.
+	Number string `json:"number"`
+
+	// NumberEnd The last episode of a multi-episode file; empty for one episode.
+	NumberEnd *string `json:"number_end,omitempty"`
+	Offset    int     `json:"offset"`
+
+	// Raw The captured text before the offset.
+	Raw *string `json:"raw,omitempty"`
+
+	// Source The episode evidence source (`file_parser` or `manual`).
+	Source string `json:"source"`
+}
+
+// FileManagerRecognitionMatch defines model for FileManagerRecognitionMatch.
+type FileManagerRecognitionMatch struct {
+	// Anime The anime facts this recognition names files with, for this operation only: the settings column's temporary draft, initialized from the matched anime. Nothing here is written back; a value the caller leaves as the anime stores it is still sent, so the render never mixes the draft with a re-read of the anime.
+	Anime *FileManagerRecognitionAnimeDraft `json:"anime,omitempty"`
+
+	// Episode The episode when the file's own name carries none; it applies to exactly one video, and `ep.source` reads `manual`.
+	Episode        *int `json:"episode,omitempty"`
+	ManagedAnimeId ID   `json:"managed_anime_id"`
+
+	// Offset Offset applied to every recognized episode of the request.
+	Offset *int `json:"offset,omitempty"`
+
+	// Season Season this operation names files with; omitted reads the anime's owner-edited season.
+	Season *int `json:"season,omitempty"`
+}
+
+// FileManagerRecognitionParser defines model for FileManagerRecognitionParser.
+type FileManagerRecognitionParser struct {
+	// Config Parser configuration (the `regex` parser's `episode_patterns`).
+	Config *map[string]interface{} `json:"config,omitempty"`
+
+	// Id The parser that reads each file's own name; omitted reads `reltitle`.
+	Id *FileManagerRecognitionParserKind `json:"id,omitempty"`
+}
+
+// FileManagerRecognitionParserKind The parser that reads each file's own name; omitted reads `reltitle`.
+type FileManagerRecognitionParserKind string
+
+// FileManagerRecognitionPreview defines model for FileManagerRecognitionPreview.
+type FileManagerRecognitionPreview struct {
+	// Conflicts Absolute targets another row or a file already holds.
+	Conflicts []string `json:"conflicts"`
+	Directory string   `json:"directory"`
+
+	// PlanDigest The plan the submit must confirm.
+	PlanDigest string                      `json:"plan_digest"`
+	Rows       []FileManagerRecognitionRow `json:"rows"`
+
+	// UnknownRoute The instance unclassified-route policy the plan read.
+	UnknownRoute FileManagerRecognitionUnknownRoute `json:"unknown_route"`
+}
+
+// FileManagerRecognitionRequest defines model for FileManagerRecognitionRequest.
+type FileManagerRecognitionRequest struct {
+	Match  *FileManagerRecognitionMatch  `json:"match,omitempty"`
+	Parser *FileManagerRecognitionParser `json:"parser,omitempty"`
+
+	// Paths Absolute paths of the selected files, all in one directory.
+	Paths []string `json:"paths"`
+
+	// SubtitleTemplate Template of a subtitle's suffix; empty leaves the subtitle name without a suffix. The target composes the video's rendered name.
+	SubtitleTemplate *string `json:"subtitle_template,omitempty"`
+
+	// VideoTemplate Template of each video's (and other file's) whole target name, rendered over the facts of the file's own name.
+	VideoTemplate string `json:"video_template"`
+}
+
+// FileManagerRecognitionResult defines model for FileManagerRecognitionResult.
+type FileManagerRecognitionResult struct {
+	Moved      int                        `json:"moved"`
+	Operations []FileManagerOperationView `json:"operations"`
+	Renamed    int                        `json:"renamed"`
+}
+
+// FileManagerRecognitionRow defines model for FileManagerRecognitionRow.
+type FileManagerRecognitionRow struct {
+	Blockers *[]FileManagerRecognitionBlocker `json:"blockers,omitempty"`
+	Conflict *FileManagerRecognitionConflict  `json:"conflict,omitempty"`
+
+	// Disposition What recognition does with one file: rename or move it, leave it because its rendered name is its own name (`unchanged`), leave it because the unclassified route is `skip`, or refuse it (`error`, with a blocker).
+	Disposition FileManagerRecognitionDisposition `json:"disposition"`
+	Episode     *FileManagerRecognitionEpisode    `json:"episode,omitempty"`
+
+	// Group The group's stem (a video and its bound subtitles share one).
+	Group      string                        `json:"group"`
+	Kind       FileManagerRecognitionRowKind `json:"kind"`
+	Name       string                        `json:"name"`
+	Path       string                        `json:"path"`
+	Revision   string                        `json:"revision"`
+	TargetName *string                       `json:"target_name,omitempty"`
+
+	// TargetPath Rendered absolute target; absent when no target is written.
+	TargetPath *string `json:"target_path,omitempty"`
+}
+
+// FileManagerRecognitionRowKind defines model for FileManagerRecognitionRow.Kind.
+type FileManagerRecognitionRowKind string
+
+// FileManagerRecognitionSubmitRequest defines model for FileManagerRecognitionSubmitRequest.
+type FileManagerRecognitionSubmitRequest struct {
+	// Conflict How the submit settles occupied or duplicated targets: `block` cancels the whole request, `skip` leaves the conflicting files (and a conflicting video's subtitles), `version` gives each file a free ` (N)` sibling, `overwrite` replaces each plain file at its target and refuses the request when any target is managed, in progress or duplicated.
+	Conflict FileManagerRecognitionConflictChoice `json:"conflict"`
+
+	// ExpectedPlanDigest The `plan_digest` the preview returned.
+	ExpectedPlanDigest string                        `json:"expected_plan_digest"`
+	Match              *FileManagerRecognitionMatch  `json:"match,omitempty"`
+	Parser             *FileManagerRecognitionParser `json:"parser,omitempty"`
+	Paths              []string                      `json:"paths"`
+	SubtitleTemplate   *string                       `json:"subtitle_template,omitempty"`
+	VideoTemplate      string                        `json:"video_template"`
+}
+
+// FileManagerRecognitionUnknownRoute The instance unclassified-route policy the plan read.
+type FileManagerRecognitionUnknownRoute string
+
 // FileManagerReleaseRequest defines model for FileManagerReleaseRequest.
 type FileManagerReleaseRequest struct {
 	ExpectedRevision string `json:"expected_revision"`
@@ -5181,9 +5377,38 @@ type FileManagerReleaseResult struct {
 	ReleasedPlacements int                       `json:"released_placements"`
 }
 
+// FileManagerRoot defines model for FileManagerRoot.
+type FileManagerRoot struct {
+	Available bool `json:"available"`
+	Id        ID   `json:"id"`
+
+	// Label The directory's own name, shown as the root's title.
+	Label string `json:"label"`
+
+	// Path The absolute path the owner added.
+	Path string `json:"path"`
+
+	// UnavailableReason Why a library directory cannot be browsed right now: it vanished, or it stopped being a directory (or became a symbolic link, which is never followed).
+	UnavailableReason *FileManagerRootUnavailable `json:"unavailable_reason,omitempty"`
+}
+
+// FileManagerRootAddRequest defines model for FileManagerRootAddRequest.
+type FileManagerRootAddRequest struct {
+	// Path Absolute path of an existing directory to authorize.
+	Path string `json:"path"`
+}
+
+// FileManagerRootList defines model for FileManagerRootList.
+type FileManagerRootList struct {
+	Roots []FileManagerRoot `json:"roots"`
+}
+
+// FileManagerRootUnavailable Why a library directory cannot be browsed right now: it vanished, or it stopped being a directory (or became a symbolic link, which is never followed).
+type FileManagerRootUnavailable string
+
 // FileManagerTarget defines model for FileManagerTarget.
 type FileManagerTarget struct {
-	// Conflict What happens when the target is occupied. `block` cancels the operation and changes nothing; `version` gives the new file a version suffix and keeps the existing one. A user operation never overwrites.
+	// Conflict What happens when the target is occupied. `block` cancels the operation and changes nothing; `version` gives the new file a version suffix and keeps the existing one; `overwrite` replaces a plain file at the target (never one a subscription manages or an operation holds).
 	Conflict FileManagerConflictChoice `json:"conflict"`
 
 	// Path Absolute target file path.
@@ -5198,7 +5423,7 @@ type FileOperation struct {
 	ArtifactFileRef string `json:"artifact_file_ref"`
 	ArtifactId      ID     `json:"artifact_id"`
 
-	// CollisionPolicy What an import or an alignment does when its target path already holds a file: `fail` skips that file, `versioned` adds a version number, `overwrite` replaces the existing file and permanently deletes it. A video and its subtitles are handled as one unit. This includes a file the library already manages: its placement becomes `displaced` (the episode leaves that instance's coverage, its subtitles become unmanaged files) unless an approved version replacement names it, which supersedes it instead. File manager operations never overwrite.
+	// CollisionPolicy What an import or an alignment does when its target path already holds a file: `fail` skips that file, `versioned` adds a version number, `overwrite` replaces the existing file and permanently deletes it. A video and its subtitles are handled as one unit. This includes a file the library already manages: its placement becomes `displaced` (the episode leaves that instance's coverage, its subtitles become unmanaged files) unless an approved version replacement names it, which supersedes it instead. A file manager operation replaces a file only on the owner's explicit `overwrite` choice, and then only a plain file that no subscription manages.
 	CollisionPolicy         CollisionPolicy          `json:"collision_policy"`
 	ExpectedSizeBytes       *int64                   `json:"expected_size_bytes"`
 	FailedWorkItemId        *ID                      `json:"failed_work_item_id,omitempty"`
@@ -9565,6 +9790,9 @@ type BadRequest = ErrorResponse
 // Conflict defines model for Conflict.
 type Conflict = ErrorResponse
 
+// FileManagerOutsideRoots defines model for FileManagerOutsideRoots.
+type FileManagerOutsideRoots = ErrorResponse
+
 // Forbidden defines model for Forbidden.
 type Forbidden = ErrorResponse
 
@@ -9826,7 +10054,7 @@ type GetReplacementCompareVocabularyParams struct {
 
 // ListFileManagerEntriesParams defines parameters for ListFileManagerEntries.
 type ListFileManagerEntriesParams struct {
-	// Path Absolute directory path; `/` is the filesystem root. A path inside the refusal set is 400 FILE_MANAGER_PATH_DENIED.
+	// Path Absolute directory path inside a library directory the owner added. Outside every root it is 403 FILE_MANAGER_PATH_OUTSIDE_ROOTS; inside the refusal set it is 400 FILE_MANAGER_PATH_DENIED.
 	Path FileManagerPath `form:"path" json:"path"`
 
 	// Cursor Opaque keyset pagination cursor.
@@ -9857,6 +10085,11 @@ type ReleaseFileManagerEntryParams struct {
 
 // SubmitFileManagerOperationParams defines parameters for SubmitFileManagerOperation.
 type SubmitFileManagerOperationParams struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// SubmitFileManagerRecognitionParams defines parameters for SubmitFileManagerRecognition.
+type SubmitFileManagerRecognitionParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
@@ -10231,6 +10464,15 @@ type ReleaseFileManagerEntryJSONRequestBody = FileManagerReleaseRequest
 
 // SubmitFileManagerOperationJSONRequestBody defines body for SubmitFileManagerOperation for application/json ContentType.
 type SubmitFileManagerOperationJSONRequestBody = FileManagerOperationRequest
+
+// SubmitFileManagerRecognitionJSONRequestBody defines body for SubmitFileManagerRecognition for application/json ContentType.
+type SubmitFileManagerRecognitionJSONRequestBody = FileManagerRecognitionSubmitRequest
+
+// PreviewFileManagerRecognitionJSONRequestBody defines body for PreviewFileManagerRecognition for application/json ContentType.
+type PreviewFileManagerRecognitionJSONRequestBody = FileManagerRecognitionRequest
+
+// AddFileManagerRootJSONRequestBody defines body for AddFileManagerRoot for application/json ContentType.
+type AddFileManagerRootJSONRequestBody = FileManagerRootAddRequest
 
 // PreviewMediaRecognitionJSONRequestBody defines body for PreviewMediaRecognition for application/json ContentType.
 type PreviewMediaRecognitionJSONRequestBody = MediaRecognitionPreviewInput
@@ -12540,14 +12782,26 @@ type ServerInterface interface {
 	// (POST /file-manager/entry/release)
 	ReleaseFileManagerEntry(w http.ResponseWriter, r *http.Request, params ReleaseFileManagerEntryParams)
 
-	// (GET /file-manager/mounts)
-	ListFileManagerMounts(w http.ResponseWriter, r *http.Request)
-
 	// (POST /file-manager/operations)
 	SubmitFileManagerOperation(w http.ResponseWriter, r *http.Request, params SubmitFileManagerOperationParams)
 
 	// (GET /file-manager/operations/{operation_id})
 	GetFileManagerOperation(w http.ResponseWriter, r *http.Request, operationId ID)
+
+	// (POST /file-manager/recognition)
+	SubmitFileManagerRecognition(w http.ResponseWriter, r *http.Request, params SubmitFileManagerRecognitionParams)
+
+	// (POST /file-manager/recognition/preview)
+	PreviewFileManagerRecognition(w http.ResponseWriter, r *http.Request)
+
+	// (GET /file-manager/roots)
+	ListFileManagerRoots(w http.ResponseWriter, r *http.Request)
+
+	// (POST /file-manager/roots)
+	AddFileManagerRoot(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /file-manager/roots/{root_id})
+	RemoveFileManagerRoot(w http.ResponseWriter, r *http.Request, rootId ID)
 
 	// (GET /images/cover/{image_key})
 	ReadImageCover(w http.ResponseWriter, r *http.Request, imageKey string)
@@ -17368,26 +17622,6 @@ func (siw *ServerInterfaceWrapper) ReleaseFileManagerEntry(w http.ResponseWriter
 	handler.ServeHTTP(w, r)
 }
 
-// ListFileManagerMounts operation middleware
-func (siw *ServerInterfaceWrapper) ListFileManagerMounts(w http.ResponseWriter, r *http.Request) {
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListFileManagerMounts(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 // SubmitFileManagerOperation operation middleware
 func (siw *ServerInterfaceWrapper) SubmitFileManagerOperation(w http.ResponseWriter, r *http.Request) {
 
@@ -17460,6 +17694,147 @@ func (siw *ServerInterfaceWrapper) GetFileManagerOperation(w http.ResponseWriter
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetFileManagerOperation(w, r, operationId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SubmitFileManagerRecognition operation middleware
+func (siw *ServerInterfaceWrapper) SubmitFileManagerRecognition(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SubmitFileManagerRecognitionParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SubmitFileManagerRecognition(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PreviewFileManagerRecognition operation middleware
+func (siw *ServerInterfaceWrapper) PreviewFileManagerRecognition(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PreviewFileManagerRecognition(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListFileManagerRoots operation middleware
+func (siw *ServerInterfaceWrapper) ListFileManagerRoots(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListFileManagerRoots(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AddFileManagerRoot operation middleware
+func (siw *ServerInterfaceWrapper) AddFileManagerRoot(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AddFileManagerRoot(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RemoveFileManagerRoot operation middleware
+func (siw *ServerInterfaceWrapper) RemoveFileManagerRoot(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "root_id" -------------
+	var rootId ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "root_id", r.PathValue("root_id"), &rootId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "root_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RemoveFileManagerRoot(w, r, rootId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -19923,9 +20298,13 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("POST "+options.BaseURL+"/file-manager/entry/match", wrapper.MatchFileManagerEntry)
 	m.HandleFunc("POST "+options.BaseURL+"/file-manager/entry/match/preview", wrapper.PreviewFileManagerMatch)
 	m.HandleFunc("POST "+options.BaseURL+"/file-manager/entry/release", wrapper.ReleaseFileManagerEntry)
-	m.HandleFunc("GET "+options.BaseURL+"/file-manager/mounts", wrapper.ListFileManagerMounts)
 	m.HandleFunc("POST "+options.BaseURL+"/file-manager/operations", wrapper.SubmitFileManagerOperation)
 	m.HandleFunc("GET "+options.BaseURL+"/file-manager/operations/{operation_id}", wrapper.GetFileManagerOperation)
+	m.HandleFunc("POST "+options.BaseURL+"/file-manager/recognition", wrapper.SubmitFileManagerRecognition)
+	m.HandleFunc("POST "+options.BaseURL+"/file-manager/recognition/preview", wrapper.PreviewFileManagerRecognition)
+	m.HandleFunc("GET "+options.BaseURL+"/file-manager/roots", wrapper.ListFileManagerRoots)
+	m.HandleFunc("POST "+options.BaseURL+"/file-manager/roots", wrapper.AddFileManagerRoot)
+	m.HandleFunc("DELETE "+options.BaseURL+"/file-manager/roots/{root_id}", wrapper.RemoveFileManagerRoot)
 	m.HandleFunc("GET "+options.BaseURL+"/images/cover/{image_key}", wrapper.ReadImageCover)
 	m.HandleFunc("GET "+options.BaseURL+"/images/poster/{bgm_id}", wrapper.ReadImagePoster)
 	m.HandleFunc("GET "+options.BaseURL+"/livez", wrapper.GetLivez)

@@ -1,13 +1,14 @@
 // Package filemanager is the file manager: a container file browser over the
-// absolute paths the process can reach, plus the lock that keeps the product's
+// library directories the owner added, plus the lock that keeps the product's
 // own managed files from being changed behind its back.
 //
-// It browses any absolute path the container user can read except the denial
-// zone (the application's own data directories and the kernel's pseudo
-// filesystems), never follows a symlink component, reads metadata only (no
-// hashing), and derives one ownership state per entry from existing owner
-// facts: placements, companion relations, and non-terminal owners. Browsing
-// never writes and observes nothing for scans.
+// It browses absolute paths inside the authorized roots (the owner's library
+// directories) and nowhere else, except the denial zone (the application's own
+// data directories and the kernel's pseudo filesystems), never follows a
+// symlink component, reads metadata only (no hashing), and derives one
+// ownership state per entry from existing owner facts: placements, companion
+// relations, and non-terminal owners. Browsing never writes and observes
+// nothing for scans.
 //
 // P1 commands (commands.go) re-derive that state on every write: release one
 // managed video (placement state `released`), admit a user file operation on a
@@ -23,56 +24,33 @@ import (
 	"time"
 )
 
-// MountKind is what a quick-entry mount points at.
-type MountKind string
-
-const (
-	// MountRoot is the filesystem root; it is the browser's only boundary
-	// entry, the container user's own OS permissions decide everything else.
-	MountRoot MountKind = "root"
-	// MountDownload is one download connection's application-side root.
-	MountDownload MountKind = "download"
-	// MountAnime is one work's tree top (the directory holding its own files).
-	MountAnime MountKind = "anime"
-)
-
-// Mount keys: the filesystem root, a download connection's root, a work's
-// tree top. They name navigation shortcuts only; every read and write is an
-// absolute path.
-const (
-	RootMountKey        = "root"
-	RootMountPath       = "/"
-	DownloadMountPrefix = "download:"
-	AnimeMountPrefix    = "anime:"
-)
-
-// MountUnavailable explains why a mount cannot be browsed.
-type MountUnavailable string
-
-const (
-	MountNotConfigured MountUnavailable = "not_configured"
-	MountMissing       MountUnavailable = "missing"
-	MountNotDirectory  MountUnavailable = "not_directory"
-)
-
-// MountConfig is one quick-entry mount as configured. Path is absolute.
-type MountConfig struct {
-	Key          string
-	Kind         MountKind
-	ConnectionID string
-	Label        string
-	Path         string
-	// ManagedAnimeID is set on an anime mount only.
-	ManagedAnimeID string
+// Root is one library directory the owner added: the file manager reads and
+// writes only inside these, and a path outside all of them is neither listed
+// nor accepted as a target.
+type Root struct {
+	ID    string
+	Label string
+	Path  string
+	// Available reports that the directory is still a real directory reached
+	// without passing a symbolic link.
+	Available   bool
+	Unavailable RootUnavailable
 }
 
-// Mount is one quick-entry mount with its availability resolved at read time.
-type Mount struct {
-	MountConfig
-	Available   bool
-	Unavailable MountUnavailable
-	// canonical is the symlink-resolved directory the mount points at.
-	canonical string
+// RootUnavailable explains why a root cannot be browsed right now.
+type RootUnavailable string
+
+const (
+	RootMissing      RootUnavailable = "missing"
+	RootNotDirectory RootUnavailable = "not_directory"
+)
+
+// RootRecord is one root as stored: an absolute container path and the label
+// the owner sees.
+type RootRecord struct {
+	ID    string
+	Label string
+	Path  string
 }
 
 // DenialZone is the set of absolute directory prefixes the browser refuses to
@@ -120,6 +98,22 @@ func (z DenialZone) Denies(absolute string) bool {
 	}
 	for _, prefix := range z.prefixes {
 		if cleaned == prefix || strings.HasPrefix(cleaned, prefix+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
+}
+
+// Contains reports whether a directory holds (or is) a refusal prefix. A root
+// that contains one would hand out a directory whose own reads are refused, so
+// it is not a usable root either.
+func (z DenialZone) Contains(absolute string) bool {
+	cleaned, ok := cleanAbsolute(absolute)
+	if !ok {
+		return true
+	}
+	for _, prefix := range z.prefixes {
+		if containsPath(cleaned, prefix) {
 			return true
 		}
 	}
@@ -202,6 +196,10 @@ type Entry struct {
 	ModifiedAt *time.Time
 	State      State
 	Role       Role
+	// FileKind is what the entry's extension says it is (video, subtitle or
+	// other). Unlike Role it does not come from owner records, so a plain file
+	// is classified the same way as a managed one; empty for directories.
+	FileKind string
 	// Locked marks a file the product manages (managed or in-progress): its
 	// move, rename and delete are refused until a user unlocks it, and a
 	// directory whose subtree holds one is refused the same way.
@@ -386,24 +384,16 @@ type SubtreeFact struct {
 	Managed    bool
 }
 
-// AnimePlacements is one work's active placement paths, with the title the
-// mount is labelled with.
-type AnimePlacements struct {
-	ManagedAnimeID string
-	Title          string
-	Paths          []string
-}
-
-// Store reads owner facts. Implementations are read-only.
+// Store reads and maintains the owner facts the file manager is built on.
 type Store interface {
-	// Mounts lists the download-connection mounts. The filesystem-root mount
-	// is the browser's fixed entry and the work mounts are composed by the
-	// service from AnimePlacementIndex, because only the service reads the
-	// filesystem those tree tops must exist on.
-	Mounts(ctx context.Context) ([]MountConfig, error)
-	// AnimePlacementIndex lists every work that owns at least one active
-	// placement, with those placement paths.
-	AnimePlacementIndex(ctx context.Context) ([]AnimePlacements, error)
+	// Roots lists the owner-added library directories, oldest first.
+	Roots(ctx context.Context) ([]RootRecord, error)
+	// InsertRoot stores one root. ErrRootExists is returned when the path is
+	// already a root.
+	InsertRoot(ctx context.Context, record RootRecord) error
+	// RemoveRoot deletes one root. ErrRootNotFound is returned when no root
+	// has that id.
+	RemoveRoot(ctx context.Context, id string) error
 	PathFacts(ctx context.Context, paths []string) (PathFacts, error)
 	SubtreeFacts(ctx context.Context, dirs []string) (map[string]SubtreeFact, error)
 	// SubtreeLockedPaths lists the managed or in-progress paths strictly below

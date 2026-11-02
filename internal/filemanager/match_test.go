@@ -68,11 +68,11 @@ func newMatchFixture(t *testing.T) matchFixture {
 	released := activePlacement("p-orig", filepath.Join(f.library, "Show", "extras", "orig.mkv"), "anime-1")
 	released.State = "released"
 	f.store.placements = append(f.store.placements, released)
-	// A download connection's root is a second browsable tree: a match may
-	// take its source from any path the container can read.
+	// A second library directory is a second browsable tree: a match may take
+	// its source from any directory the owner added.
 	download := canonicalTemp(t)
 	writeFile(t, filepath.Join(download, "ep.mkv"), 4)
-	f.store.mounts = append(f.store.mounts, MountConfig{Key: DownloadMountPrefix + "c1", Kind: MountDownload, ConnectionID: "c1", Path: download})
+	f.store.roots = append(f.store.roots, RootRecord{ID: "root-download", Label: filepath.Base(download), Path: download})
 	renderer := &fakeMatchRenderer{render: filemaintenance.MatchRender{Path: filepath.Join(f.library, "Show", "Season 01", "Show - E03.mkv"), Lineage: true}}
 	animes := fakeMatchAnimes{
 		"anime-1": {ID: "anime-1", Title: "Show", SubscriptionState: "active", TMDBWorkID: "42", TMDBMediaKind: "tv"},
@@ -426,9 +426,26 @@ func TestSubmitMatchChecksRevisionTargetAndConflict(t *testing.T) {
 	mustCode(t, err, CodeAnimeRetired)
 
 	request = f.submit(t, "k-conflict-choice")
-	request.Conflict = "overwrite"
+	request.Conflict = "replace"
 	_, err = f.service.SubmitMatch(ctx, request)
 	mustCode(t, err, CodeTargetInvalid)
+
+	// Overwrite replaces a plain file at the target and is refused for a
+	// managed one.
+	f.renderer.render.Path = f.abs("Show/Season 02/taken.mkv")
+	request = f.submit(t, "k-overwrite")
+	request.ExpectedTarget = f.abs("Show/Season 02/taken.mkv")
+	request.Conflict = ConflictOverwrite
+	op, err = f.service.SubmitMatch(ctx, request)
+	if err != nil || op.ID == "" || f.commands.admitted[len(f.commands.admitted)-1].Collision != ConflictOverwrite {
+		t.Fatalf("the overwrite choice admits a plain occupied target: %+v %v", op, err)
+	}
+	f.renderer.render.Path = f.abs("Show/managed.mkv")
+	request = f.submit(t, "k-overwrite-managed")
+	request.ExpectedTarget = f.abs("Show/managed.mkv")
+	request.Conflict = ConflictOverwrite
+	_, err = f.service.SubmitMatch(ctx, request)
+	mustCode(t, err, CodeTargetExists)
 }
 
 func TestSubmitMatchIsIdempotent(t *testing.T) {

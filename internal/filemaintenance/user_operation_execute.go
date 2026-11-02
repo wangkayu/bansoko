@@ -28,8 +28,11 @@ import (
 // every pre-effect fact is re-checked in the transaction that writes the
 // durable attempt checkpoint, the effect runs through the receipt-bearing
 // maintenance executors, and the owner settles in the WorkItem finish
-// transaction. A user operation never overwrites: the target is resolved to
-// a free path before the checkpoint and executed with the block policy.
+// transaction. A blocked or versioned target is resolved to a free path before
+// the checkpoint and executed with the block policy. An overwrite confirmed by
+// the user is executed by the atomic exchange: each exchange stage is frozen on
+// the owner row, so an interrupted exchange is finished or restored from that
+// record rather than repeated.
 const (
 	userOperationTable          = "file_manager_operations"
 	userOperationQuarantineKind = "file_manager_quarantine"
@@ -124,8 +127,10 @@ type userOperation struct {
 	ExpectedSize int64
 	Collision    string
 	Attempt      json.RawMessage
-	ResultPath   string
-	Version      int64
+	// OverwriteRecovery is the frozen exchange stage of a confirmed overwrite.
+	OverwriteRecovery json.RawMessage
+	ResultPath        string
+	Version           int64
 	// MatchAnimeID is the anime a match operation moves into.
 	MatchAnimeID string
 }
@@ -148,11 +153,11 @@ type userOperationAttempt struct {
 
 func (s *UserOperationService) load(ctx context.Context, id string) (*userOperation, error) {
 	var op userOperation
-	var attempt sql.NullString
+	var attempt, recovery sql.NullString
 	err := s.db.QueryRowContext(ctx, `SELECT id, operation, state, source_path, COALESCE(target_path,''), expected_size_bytes,
- collision, attempt::text, COALESCE(result_path,''), version, COALESCE(match_anime_id,'')
+ collision, attempt::text, COALESCE(overwrite_recovery::text,''), COALESCE(result_path,''), version, COALESCE(match_anime_id,'')
 FROM file_manager_operations WHERE id=$1`, id).Scan(&op.ID, &op.Operation, &op.State, &op.SourcePath, &op.TargetPath,
-		&op.ExpectedSize, &op.Collision, &attempt, &op.ResultPath, &op.Version, &op.MatchAnimeID)
+		&op.ExpectedSize, &op.Collision, &attempt, &recovery, &op.ResultPath, &op.Version, &op.MatchAnimeID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -161,6 +166,9 @@ FROM file_manager_operations WHERE id=$1`, id).Scan(&op.ID, &op.Operation, &op.S
 	}
 	if attempt.Valid {
 		op.Attempt = json.RawMessage(attempt.String)
+	}
+	if recovery.Valid {
+		op.OverwriteRecovery = json.RawMessage(recovery.String)
 	}
 	return &op, nil
 }
@@ -350,9 +358,29 @@ func (h userOperationRecoveryHandler) start(ctx context.Context, claim workitems
 
 // resolveTarget picks the concrete target: the requested path when it is
 // free, otherwise (version) the first free " (N)" sibling. Free means absent
-// on disk and named by no owner.
+// on disk and named by no owner. An overwrite keeps the requested path: the
+// exchange replaces what is there, and an owner-held path still refuses it.
 func (h userOperationRecoveryHandler) resolveTarget(ctx context.Context, op *userOperation) (string, []string, string, string, error) {
 	s := h.service
+	if op.Collision == "overwrite" {
+		_, spellings, err := s.guard.Spellings(ctx, op.TargetPath)
+		if err != nil {
+			return "", nil, userFailureExecuteFailed, "the target path cannot be read", nil
+		}
+		tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+		if err != nil {
+			return "", nil, "", "", err
+		}
+		_, occupied, err := s.guard.CheckTx(ctx, tx, UserOperationCheck{OperationID: op.ID, TargetSpellings: spellings})
+		_ = tx.Rollback()
+		if err != nil {
+			return "", nil, "", "", err
+		}
+		if occupied {
+			return "", nil, userFailureTargetOccupied, "the target is held by another owner", nil
+		}
+		return op.TargetPath, spellings, "", "", nil
+	}
 	for index := 1; index <= maxUserOperationVersions; index++ {
 		candidate := op.TargetPath
 		if index > 1 {
@@ -385,6 +413,31 @@ func (h userOperationRecoveryHandler) resolveTarget(ctx context.Context, op *use
 		}
 	}
 	return "", nil, userFailureTargetOccupied, "the target is occupied", nil
+}
+
+// overwriteCheckpoint persists each exchange stage on the operation before
+// the executor continues; persisted reports that a record exists. The owner
+// row versions every write, so the checkpoint advances the version it cas
+// against and the settle commits against the advanced one.
+func (s *UserOperationService) overwriteCheckpoint(op *userOperation, persisted *bool) domain.FileOperationCheckpoint {
+	return func(ctx context.Context, current domain.FileOperation, recovery domain.OverwriteRecovery) (domain.FileOperation, error) {
+		raw, err := json.Marshal(recovery)
+		if err != nil {
+			return current, err
+		}
+		result, err := s.db.ExecContext(context.WithoutCancel(ctx), `UPDATE file_manager_operations SET overwrite_recovery=$2,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND version=$3 AND state='running'`, op.ID, raw, op.Version)
+		if err != nil {
+			return current, err
+		}
+		if affected, err := result.RowsAffected(); err != nil || affected != 1 {
+			return current, fmt.Errorf("user operation %s is not running; exchange record not persisted", op.ID)
+		}
+		op.Version++
+		if persisted != nil {
+			*persisted = true
+		}
+		return current, nil
+	}
 }
 
 type cleanupObserver interface {
@@ -441,23 +494,43 @@ func (h userOperationRecoveryHandler) effect(ctx context.Context, claim workitem
 		}
 	}
 	operation := domain.FileOperation{
-		Operation: kind, SourcePath: attempt.SourcePath, TargetPath: attempt.TargetPath,
+		ID: op.ID, Operation: kind, SourcePath: attempt.SourcePath, TargetPath: attempt.TargetPath,
 		SourceFingerprint: attempt.SourceFingerprint, CollisionPolicy: domain.CollisionBlock,
 		ExpectedSizeBytes: op.ExpectedSize, ExpectedSizeKnown: true,
 	}
-	executed, err := receipts.ExecuteMaintenance(ctx, operation, userInvocation(claim, op.Attempt, "", attempt.SourcePath, attempt.TargetPath, attempt.SourceFingerprint))
+	invocation := userInvocation(claim, op.Attempt, "", attempt.SourcePath, attempt.TargetPath, attempt.SourceFingerprint)
+	var executed domain.FileOperation
+	var err error
+	if op.Collision == "overwrite" {
+		overwriteExecutor, ok := s.executor.(executorpkg.MaintenanceOverwriteExecutor)
+		if !ok {
+			return h.fail(op, op.Version, "blocked", userFailureExecuteFailed, "file manager executor cannot replace a file"), nil
+		}
+		operation.CollisionPolicy = domain.CollisionOverwrite
+		persisted := false
+		executed, err = overwriteExecutor.ExecuteMaintenanceOverwrite(ctx, operation, invocation, s.overwriteCheckpoint(op, &persisted))
+		if err != nil && persisted && !alignmentErrorCode(err, "TARGET_COLLISION_RACE") && !alignmentErrorCode(err, domain.FileErrorCodeTargetOccupied) {
+			// The exchange record is durable: recovery finishes or restores the
+			// exchange from it, never a guess here.
+			return worker.Outcome{}, workitems.ErrPublicationUnresolved
+		}
+	} else {
+		executed, err = receipts.ExecuteMaintenance(ctx, operation, invocation)
+	}
 	if err != nil {
 		var coded executorpkg.ErrorCoder
-		if errors.As(err, &coded) && coded.ErrorCode() == domain.FileErrorCodeTargetOccupied {
+		switch {
+		case errors.As(err, &coded) && coded.ErrorCode() == "TARGET_COLLISION_RACE":
 			return h.fail(op, op.Version, "blocked", userFailureTargetOccupied, safeReason(err)), nil
-		}
-		if errors.As(err, &coded) && coded.ErrorCode() == "SOURCE_CHANGED" {
+		case errors.As(err, &coded) && coded.ErrorCode() == domain.FileErrorCodeTargetOccupied:
+			return h.fail(op, op.Version, "blocked", userFailureTargetOccupied, safeReason(err)), nil
+		case errors.As(err, &coded) && coded.ErrorCode() == "SOURCE_CHANGED":
 			return h.fail(op, op.Version, "blocked", userFailureSourceChanged, safeReason(err)), nil
 		}
 		return h.fail(op, op.Version, "failed", userFailureExecuteFailed, safeReason(err)), nil
 	}
-	observed, err := s.observer.Observe(ctx, executed.TargetPath)
-	if err != nil || !fingerprintsEqual(observed, attempt.SourceFingerprint) {
+	observed, observeErr := s.observer.Observe(ctx, executed.TargetPath)
+	if observeErr != nil || !fingerprintsEqual(observed, attempt.SourceFingerprint) {
 		return h.fail(op, op.Version, "failed", userFailureExecuteFailed, "the result does not match the file"), nil
 	}
 	return h.complete(op, op.Version, executed.TargetPath), nil
@@ -582,6 +655,9 @@ func (h userOperationRecoveryHandler) resolveAttempt(ctx context.Context, c work
 	}
 	switch attempt.Stage {
 	case "effect":
+		if op.Collision == "overwrite" && len(op.OverwriteRecovery) > 0 {
+			return h.resumeOverwrite(ctx, op, attempt)
+		}
 		receipts, ok := s.executor.(executorpkg.MaintenanceFileExecutor)
 		if !ok {
 			return ambiguous, false, nil
@@ -635,6 +711,38 @@ func (h userOperationRecoveryHandler) resolveAttempt(ctx context.Context, c work
 		return recoveryCommitted("completed", maintenanceAttemptWriter(userOperationTable, c, op.State, op.Attempt, writer)), false, nil
 	}
 	return ambiguous, false, nil
+}
+
+// resumeOverwrite finishes or restores an interrupted exchange from the
+// operation's persisted record. A restored exchange (the occupant raced back)
+// settles blocked; anything else stays unresolved for review.
+func (h userOperationRecoveryHandler) resumeOverwrite(ctx context.Context, op *userOperation, attempt userOperationAttempt) (worker.Outcome, bool, error) {
+	s := h.service
+	resumer, ok := s.executor.(executorpkg.MaintenanceOverwriteExecutor)
+	if !ok {
+		return worker.AwaitRecovery(""), false, nil
+	}
+	var recovery domain.OverwriteRecovery
+	if json.Unmarshal(op.OverwriteRecovery, &recovery) != nil {
+		return worker.AwaitRecovery(""), false, nil
+	}
+	kind := domain.OperationMove
+	if op.Operation == "copy" {
+		kind = domain.OperationCopy
+	}
+	operation := domain.FileOperation{
+		ID: op.ID, Operation: kind, SourcePath: attempt.SourcePath, TargetPath: attempt.TargetPath,
+		SourceFingerprint: attempt.SourceFingerprint, CollisionPolicy: domain.CollisionOverwrite,
+		OverwriteRecovery: &recovery, ExpectedSizeBytes: op.ExpectedSize, ExpectedSizeKnown: true,
+	}
+	executed, err := resumer.ResumeOverwrite(ctx, operation, s.overwriteCheckpoint(op, nil))
+	if err != nil {
+		if alignmentErrorCode(err, "TARGET_COLLISION_RACE") {
+			return h.fail(op, op.Version, "blocked", userFailureTargetOccupied, safeReason(err)), false, nil
+		}
+		return worker.AwaitRecovery(""), false, nil
+	}
+	return h.complete(op, op.Version, executed.TargetPath), false, nil
 }
 
 // markCaptured rewrites the in-memory attempt so a resumed handler runs the

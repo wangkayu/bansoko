@@ -5,8 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -48,14 +46,16 @@ const (
 	UserMatch UserOperationKind = "match"
 )
 
-// ConflictChoice is what the user chose for an occupied target. A user
-// operation never overwrites: it cancels (block) or adds a suffix (version);
-// renaming to another target is a new request.
+// ConflictChoice is what the user chose for an occupied target: cancel
+// (block), add a suffix (version), or replace the existing file (overwrite).
+// Overwrite never replaces a managed or in-progress file; renaming to another
+// target is a new request.
 type ConflictChoice string
 
 const (
-	ConflictBlock   ConflictChoice = "block"
-	ConflictVersion ConflictChoice = "version"
+	ConflictBlock     ConflictChoice = "block"
+	ConflictVersion   ConflictChoice = "version"
+	ConflictOverwrite ConflictChoice = "overwrite"
 )
 
 // UserOperationState is the owner state of a user file operation.
@@ -87,8 +87,9 @@ const (
 )
 
 // UserOperation is one admitted user file operation. Paths are absolute and
-// frozen at admission: the browser has no root layer, so a path is simply the
-// path.
+// frozen at admission after the source and any target pass the authorized-root
+// checks; later execution follows this frozen request rather than reauthorizing
+// a different path.
 type UserOperation struct {
 	ID          string
 	Operation   UserOperationKind
@@ -215,6 +216,14 @@ type CommandStore interface {
 	OperationByKey(ctx context.Context, key string) (*UserOperation, string, error)
 	Operation(ctx context.Context, id string) (*UserOperation, error)
 	AdmitOperation(ctx context.Context, admission OperationAdmission) (UserOperation, error)
+	// AdmitOperations admits a batch of operations in one transaction: either
+	// every operation is admitted or none is. A replayed batch returns the
+	// operations already admitted under the same keys.
+	AdmitOperations(ctx context.Context, admissions []OperationAdmission) ([]UserOperation, error)
+	// OperationBatch returns the operations admitted under a batch key (the
+	// key itself, or one of its "key:digest" per-file keys) and their request
+	// digest (empty when none).
+	OperationBatch(ctx context.Context, key string) ([]UserOperation, string, error)
 	// ReleasedByKey returns a release already performed under a key, with the
 	// paths it released (nil when none).
 	ReleasedByKey(ctx context.Context, key string) (*ReleaseOutcome, []string, error)
@@ -336,11 +345,11 @@ type resolvedTarget struct {
 }
 
 // resolveTarget checks a move, rename or copy target: the destination
-// must be absolute, outside the denial zone and outside the executors' own
+// must be absolute, inside an authorized root and outside the executors' own
 // namespaces, and its parent directory must exist without passing a symlink.
-// A rename keeps the source directory. An occupied target — a file on disk, a
-// path an owner manages or a path an unfinished owner holds — is refused
-// under block. Overwrite is never offered.
+// A rename keeps the source directory. An occupied target is refused under
+// block; overwrite replaces a plain file on disk but is refused for a managed
+// or in-progress file.
 func (s *Service) resolveTarget(ctx context.Context, source inspection, kind UserOperationKind, target *Target) (resolvedTarget, error) {
 	if target == nil {
 		return resolvedTarget{}, invalid(CodeTargetInvalid, "operation needs a target")
@@ -349,10 +358,10 @@ func (s *Service) resolveTarget(ctx context.Context, source inspection, kind Use
 	if choice == "" {
 		choice = ConflictBlock
 	}
-	if choice != ConflictBlock && choice != ConflictVersion {
+	if choice != ConflictBlock && choice != ConflictVersion && choice != ConflictOverwrite {
 		return resolvedTarget{}, invalid(CodeTargetInvalid, "conflict choice is not valid")
 	}
-	if err := refuseDenied(s.zone, target.Path); err != nil {
+	if err := s.authorize(ctx, target.Path); err != nil {
 		return resolvedTarget{}, invalid(CodeTargetInvalid, "target is not a valid path")
 	}
 	absolute, ok := cleanAbsolute(target.Path)
@@ -377,44 +386,17 @@ func (s *Service) resolveTarget(ctx context.Context, source inspection, kind Use
 		spellings: absoluteSpellings(joinAbsolute(parent, filepath.Base(absolute))),
 		conflict:  choice,
 	}
-	occupied, err := s.occupied(ctx, resolved)
+	occupant, err := s.occupant(ctx, resolved)
 	if err != nil {
 		return resolvedTarget{}, err
 	}
-	if occupied && choice == ConflictBlock {
+	if occupant != "" && choice != ConflictVersion {
+		if choice == ConflictOverwrite && occupant == OccupantFile {
+			return resolved, nil
+		}
 		return resolvedTarget{}, conflict(CodeTargetExists, "target is occupied")
 	}
 	return resolved, nil
-}
-
-// occupied reports a target that exists on disk, or that an owner manages or
-// holds even when its file is missing.
-func (s *Service) occupied(ctx context.Context, target resolvedTarget) (bool, error) {
-	if _, err := os.Lstat(target.absolute); err == nil {
-		return true, nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return false, fsError(err, target.absolute)
-	}
-	facts, err := s.store.PathFacts(ctx, target.spellings)
-	if err != nil {
-		return false, err
-	}
-	for _, spelling := range target.spellings {
-		if len(facts.InProgress[spelling]) > 0 {
-			return true, nil
-		}
-		for _, placement := range facts.Placements[spelling] {
-			if placement.State == placementActive {
-				return true, nil
-			}
-		}
-		for _, companion := range facts.Companions[spelling] {
-			if companion.State == companionActive {
-				return true, nil
-			}
-		}
-	}
-	return false, nil
 }
 
 func (s *Service) operationAdmission(ctx context.Context, request OperationRequest, source inspection, digest string) (OperationAdmission, error) {

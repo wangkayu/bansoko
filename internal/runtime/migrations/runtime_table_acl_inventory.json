@@ -431,6 +431,19 @@
     "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
   },
   {
+    "table": "file_manager_roots",
+    "privileges": [
+      "INSERT",
+      "DELETE"
+    ],
+    "reason": "library-root registry: the runtime adds and removes the directories the owner chose; rows are immutable, so no UPDATE",
+    "direct_access": [
+      "internal/filemanager/persistence/store.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while the owner manages library roots through the file manager; update inventory before changing privileges"
+  },
+  {
     "table": "file_operations",
     "privileges": [
       "DELETE"

@@ -300,7 +300,11 @@ type QBManagementService interface {
 // release from management, and align. It is implemented by
 // internal/filemanager.
 type FileManagerService interface {
-	Mounts(ctx context.Context) ([]filemanager.Mount, error)
+	// Roots are the library directories the owner added; they bound every read
+	// and write the file manager admits.
+	Roots(ctx context.Context) ([]filemanager.Root, error)
+	AddRoot(ctx context.Context, request filemanager.AddRootRequest) (filemanager.Root, error)
+	RemoveRoot(ctx context.Context, id string) error
 	List(ctx context.Context, path, cursor string, limit int) (filemanager.Listing, error)
 	Detail(ctx context.Context, path string) (filemanager.Detail, error)
 	Locate(ctx context.Context, managedAnimeID string) (filemanager.Location, error)
@@ -313,6 +317,10 @@ type FileManagerService interface {
 	// season lists the match chooses from.
 	PreviewMatch(ctx context.Context, request filemanager.MatchRequest) (filemanager.MatchPreview, error)
 	SubmitMatch(ctx context.Context, request filemanager.SubmitMatchRequest) (filemanager.UserOperation, error)
+	// Recognition renders the selected files' names through the naming core
+	// and admits the confirmed plan as ordinary rename and move operations.
+	PreviewRecognition(ctx context.Context, request filemanager.RecognitionRequest) (filemanager.RecognitionPreview, error)
+	SubmitRecognition(ctx context.Context, request filemanager.SubmitRecognitionRequest) (filemanager.RecognitionOutcome, error)
 	TMDBSeasons(ctx context.Context, managedAnimeID string) ([]filemanager.TMDBSeason, error)
 	TMDBSeasonEpisodes(ctx context.Context, managedAnimeID string, season int) ([]filemanager.TMDBEpisode, error)
 }

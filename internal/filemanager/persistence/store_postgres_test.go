@@ -110,21 +110,23 @@ WHERE id = 'anime-r'`)
 		t.Fatal(err)
 	}
 
-	// The quick entries: the filesystem root, the download connection's
-	// application root, and one tree top per work that owns an active
-	// placement. A work with no placement evidence has no tree top.
-	mounts, err := service.Mounts(ctx)
+	// Browsing is bounded by the owner-added roots: nothing is read before one
+	// is stored, and one stored root authorizes everything below it.
+	if _, err := service.List(ctx, base, "", 200); err == nil {
+		t.Fatal("browsing before a root exists must be refused")
+	}
+	if err := store.InsertRoot(ctx, filemanager.RootRecord{ID: "root-main", Label: "main", Path: base}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.InsertRoot(ctx, filemanager.RootRecord{ID: "root-main", Label: "main", Path: base}); err == nil {
+		t.Fatal("inserting the same path twice must conflict")
+	}
+	roots, err := service.Roots(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(mounts) != 5 || !mounts[0].Available || mounts[0].Key != filemanager.RootMountKey ||
-		mounts[0].Kind != filemanager.MountRoot || mounts[0].Path != "/" ||
-		!mounts[1].Available || mounts[1].Key != "download:qb-main" || mounts[1].Kind != filemanager.MountDownload ||
-		mounts[1].ConnectionID != "qb-main" || mounts[1].Path != downloads || mounts[1].Label != "Main" ||
-		!mounts[2].Available || mounts[2].Key != "anime:anime-a" || mounts[2].Path != abs("Show") || mounts[2].Label != "Show A" ||
-		!mounts[3].Available || mounts[3].Key != "anime:anime-o" || mounts[3].Path != abs("Movie") || mounts[3].Label != "Movie O" ||
-		!mounts[4].Available || mounts[4].Key != "anime:anime-r" || mounts[4].Path != abs("Ended") || mounts[4].Label != "Show R" {
-		t.Fatalf("mounts = %+v", mounts)
+	if len(roots) != 1 || !roots[0].Available || roots[0].ID != "root-main" || roots[0].Path != base || roots[0].Label != "main" {
+		t.Fatalf("roots = %+v", roots)
 	}
 
 	states := func(directory string) map[string]filemanager.Entry {

@@ -33,35 +33,32 @@ func cleanAbsolute(value string) (string, bool) {
 	return filepath.Clean(value), true
 }
 
-// resolveMount resolves a configured mount to the symlink-resolved directory
-// it points at. The mount's own path is trusted (it is either the filesystem
-// root, a download connection's validated application root, or a work's
-// persisted target directory); everything below it is checked component by
-// component.
-func resolveMount(config MountConfig) Mount {
-	mount := Mount{MountConfig: config}
-	cleaned, ok := cleanAbsolute(strings.TrimSpace(config.Path))
-	if !ok {
-		mount.Unavailable = MountNotConfigured
-		return mount
+// resolveRoot resolves one stored root to the directory it names, without
+// following a symbolic link: a root that became a link is unusable, exactly as
+// a browse of it would be.
+func resolveRoot(record RootRecord) Root {
+	root := Root{ID: record.ID, Label: record.Label, Path: record.Path}
+	cleaned, ok := cleanAbsolute(strings.TrimSpace(record.Path))
+	if !ok || cleaned == string(filepath.Separator) {
+		root.Unavailable = RootMissing
+		return root
 	}
-	canonical, err := filepath.EvalSymlinks(cleaned)
+	_, info, err := walkAbsolute(cleaned, false)
 	if err != nil {
-		mount.Unavailable = MountMissing
-		return mount
-	}
-	info, err := os.Stat(canonical)
-	if err != nil {
-		mount.Unavailable = MountMissing
-		return mount
+		var typed *Error
+		if errors.As(err, &typed) && typed.Code == CodeSymlinkNotFollowed {
+			root.Unavailable = RootNotDirectory
+		} else {
+			root.Unavailable = RootMissing
+		}
+		return root
 	}
 	if !info.IsDir() {
-		mount.Unavailable = MountNotDirectory
-		return mount
+		root.Unavailable = RootNotDirectory
+		return root
 	}
-	mount.Available = true
-	mount.canonical = canonical
-	return mount
+	root.Available = true
+	return root
 }
 
 // splitAbsolute splits a Clean'ed absolute path into its segment names.

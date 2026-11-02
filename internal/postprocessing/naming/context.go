@@ -43,6 +43,11 @@ type NamingContext struct {
 	// and both facts read empty there. Projections like ReplayFactValues
 	// never mangle these, they are JSON-ignored like the other roots.
 	EpisodeTitles EpisodeTitleFacts `json:"-"`
+	// AnimeAbsent marks a render with no anime at all, the file manager's
+	// recognition of a file the user did not match. Every anime.* fact is
+	// then undefined rather than empty, so a template that reads one names
+	// it instead of silently rendering an empty title.
+	AnimeAbsent bool `json:"-"`
 }
 
 // EpisodeTitleFacts are the queried provider episode titles of one render.

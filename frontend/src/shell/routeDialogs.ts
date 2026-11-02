@@ -8,14 +8,14 @@ import { useLocation, useNavigate } from "react-router-dom";
 //
 //   ?anime=<catalog row key>&tab=<metadata|subgroups|rules|rss>   anime config
 //   ?log=<records|diagnostics>                                     global log
-//   ?tool=<qbittorrent|search>[&qb_segment=<subscription|one_shot|other>]
+//   ?tool=<qbittorrent|search|files>[&qb_segment=<subscription|one_shot|other>]
 //                                                                  topbar tools; the downloader
 //                                                                  manager's segment
+//   ?tool=files[&path=]                                            the file manager and its
+//                                                                  folder
 //   (?tool=blacklist is retired: hidden anime live in Settings, /settings/hidden;
-//   old links fall back to the base address.)
-//   (?tool=files[&path=][&file=][&op=match] opened the file manager; it is
-//   hidden in this version, so those links fall back to the base address.
-//   Restore steps: see the comment at the top of TopNav.tsx.)
+//   old links fall back to the base address. The file manager's old &file= /
+//   &op= entry dialogs are retired too: those links fall back.)
 //   ?record=<list|acquisition id>[&record_anime=<managed anime id>]
 //     [&record_segment=<subscription|one_shot>]                    execution records and the
 //                                                                  list's segment
@@ -38,13 +38,8 @@ export const ROUTE_DIALOG_PARAMS = [
 ] as const;
 export type RouteDialogParam = (typeof ROUTE_DIALOG_PARAMS)[number];
 
-// "files" (file manager) is hidden in this version; add it back to restore.
-export const ROUTE_TOOLS = ["qbittorrent", "search"] as const;
+export const ROUTE_TOOLS = ["qbittorrent", "search", "files"] as const;
 export type RouteTool = (typeof ROUTE_TOOLS)[number];
-
-/** File manager entry dialogs a link may open (`&op=`). Unused while the file manager is hidden. */
-export const ROUTE_FILE_OPS = ["match"] as const;
-export type RouteFileOp = (typeof ROUTE_FILE_OPS)[number];
 
 export const ROUTE_LOG_VIEWS = ["records", "diagnostics"] as const;
 export type RouteLogView = (typeof ROUTE_LOG_VIEWS)[number];

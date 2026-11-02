@@ -10,8 +10,9 @@ import (
 )
 
 // File manager commands. Every write names the revision of the entry
-// it was confirmed on; the service re-derives the entry, refuses a changed
-// one with 409 FILE_MANAGER_ENTRY_CHANGED and never overwrites a file.
+// it was confirmed on; the service re-derives the entry and refuses a changed
+// one with 409 FILE_MANAGER_ENTRY_CHANGED. A collision is blocked, versioned or
+// replaced; a managed or in-progress target is never replaced.
 
 const fileManagerActor = "web"
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -161,6 +162,84 @@ func (c *Commands) AdmitOperation(ctx context.Context, admission filemanager.Ope
 	return op, nil
 }
 
+// AdmitOperations admits a batch of user file operations in one transaction:
+// a refusal anywhere admits nothing. The batch's paths are locked in one
+// sorted pass first, so concurrent batches cannot deadlock on each other.
+func (c *Commands) AdmitOperations(ctx context.Context, admissions []filemanager.OperationAdmission) ([]filemanager.UserOperation, error) {
+	if len(admissions) == 0 {
+		return nil, nil
+	}
+	tx, err := c.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	lockSet := map[string]bool{}
+	var lockPaths []string
+	for _, admission := range admissions {
+		for _, path := range append(append([]string{}, admission.SourcePath), admission.TargetPath) {
+			if path == "" || lockSet[path] {
+				continue
+			}
+			lockSet[path] = true
+			lockPaths = append(lockPaths, path)
+		}
+	}
+	sort.Strings(lockPaths)
+	for _, path := range lockPaths {
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('file_manager:' || $1, 0))`, path); err != nil {
+			return nil, err
+		}
+	}
+	operations := make([]filemanager.UserOperation, 0, len(admissions))
+	for _, admission := range admissions {
+		op, replay, err := c.admitTx(ctx, tx, admission)
+		if err != nil {
+			return nil, err
+		}
+		if replay != nil {
+			operations = append(operations, *replay)
+			continue
+		}
+		operations = append(operations, op)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	c.hub.Publish(events.Event{Target: events.TargetRecords})
+	return operations, nil
+}
+
+// OperationBatch returns the operations admitted under a batch key and their
+// request digest. The batch's per-file keys are the batch key plus ":" plus a
+// digest, so both forms are read.
+func (c *Commands) OperationBatch(ctx context.Context, key string) ([]filemanager.UserOperation, string, error) {
+	rows, err := c.db.QueryContext(ctx, `SELECT `+operationColumns+`, request_digest FROM file_manager_operations
+WHERE idempotency_key = $1 OR starts_with(idempotency_key, $1 || ':')
+ORDER BY created_at, id`, key)
+	if err != nil {
+		return nil, "", fmt.Errorf("read user operation batch: %w", err)
+	}
+	defer rows.Close()
+	var operations []filemanager.UserOperation
+	digest := ""
+	for rows.Next() {
+		var stored string
+		op, err := scanOperation(rows, &stored)
+		if err != nil {
+			return nil, "", fmt.Errorf("read user operation batch: %w", err)
+		}
+		if stored != "" {
+			digest = stored
+		}
+		operations = append(operations, *op)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", fmt.Errorf("read user operation batch: %w", err)
+	}
+	return operations, digest, nil
+}
+
 func (c *Commands) admitTx(ctx context.Context, tx *sql.Tx, a filemanager.OperationAdmission) (filemanager.UserOperation, *filemanager.UserOperation, error) {
 	// Serialize admissions of the same paths so two concurrent requests
 	// cannot both pass the held check.
@@ -188,7 +267,9 @@ func (c *Commands) admitTx(ctx context.Context, tx *sql.Tx, a filemanager.Operat
 			return filemanager.UserOperation{}, nil, filemanager.NewConflict(filemanager.CodeEntryChanged, "file is managed")
 		}
 	}
-	if a.TargetPath != "" && a.Collision == filemanager.ConflictBlock {
+	// A managed target is never written over: block refuses any occupant, and
+	// overwrite refuses one that is managed or held (the held check above).
+	if a.TargetPath != "" && a.Collision != filemanager.ConflictVersion {
 		managed, err := managedPaths(ctx, tx, a.TargetSpellings)
 		if err != nil {
 			return filemanager.UserOperation{}, nil, fmt.Errorf("check target owners: %w", err)

@@ -83,6 +83,11 @@ VALUES ('c-ep01', 'p-ep01', 'anime-a', 'src-c', 'intake', 'subtitle', 'zh', 'ass
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Every browse and write below stays inside the tree, so the test
+	// authorizes it the way an owner would.
+	if _, err := service.AddRoot(ctx, filemanager.AddRootRequest{Path: tree}); err != nil {
+		t.Fatal(err)
+	}
 	workStore, err := workitems.NewStore(db, 0, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -265,6 +270,28 @@ VALUES ('c-ep01', 'p-ep01', 'anime-a', 'src-c', 'intake', 'subtitle', 'zh', 'ass
 	}
 	if again, err := users.ReconcileUnknownEffect(ctx, deployment.ReconcileRequest{OperationID: "dep-2", WindowID: "w-1"}); err != nil || again.State != deployment.StateCompleted || again.Effect != deployment.EffectNone {
 		t.Fatalf("second reconcile = %+v, %v", again, err)
+	}
+
+	// Overwrite replaces the plain file at the target; a managed target is
+	// never replaced.
+	if _, err := service.SubmitOperation(ctx, filemanager.OperationRequest{IdempotencyKey: "overwrite-managed", Actor: "web", Operation: filemanager.UserMove,
+		Path: abs("Loose/d.mkv"), ExpectedRevision: revision("Loose/d.mkv"),
+		Target: &filemanager.Target{Path: abs("Show/ghost.mkv"), Conflict: filemanager.ConflictOverwrite}}); code(err) != filemanager.CodeTargetExists {
+		t.Fatalf("overwrite of a managed path: %v", err)
+	}
+	if _, err := service.SubmitOperation(ctx, filemanager.OperationRequest{IdempotencyKey: "overwrite", Actor: "web", Operation: filemanager.UserMove,
+		Path: abs("Loose/d.mkv"), ExpectedRevision: revision("Loose/d.mkv"),
+		Target: &filemanager.Target{Path: abs("Loose/ep01.mkv"), Conflict: filemanager.ConflictOverwrite}}); err != nil {
+		t.Fatal(err)
+	}
+	if op := run(); op.State != filemanager.UserOperationCompleted || op.ResultPath != abs("Loose/ep01.mkv") {
+		t.Fatalf("overwrite = %+v", op)
+	}
+	if _, err := os.Lstat(abs("Loose/d.mkv")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("overwritten move left its source: %v", err)
+	}
+	if info, err := os.Lstat(abs("Loose/ep01.mkv")); err != nil || !info.Mode().IsRegular() {
+		t.Fatalf("overwritten target = %+v, %v", info, err)
 	}
 
 	// Delete captures the exact file and removes it (the capture executor is

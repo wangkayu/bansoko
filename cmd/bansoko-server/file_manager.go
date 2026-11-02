@@ -5,6 +5,7 @@ import (
 	"database/sql"
 
 	"bansoko/internal/events"
+	"bansoko/internal/filemaintenance"
 	filemaintenancepolicy "bansoko/internal/filemaintenance/policy"
 	"bansoko/internal/filemanager"
 	filemanagerpersistence "bansoko/internal/filemanager/persistence"
@@ -74,7 +75,30 @@ func wireFileManagerCommands(
 	// B13 P2: a match renders through the same naming renderer; the season
 	// lists share the lookup and its cache.
 	graph.fileManager.SetMatch(graph.namingRenderer, reader, seasons)
+	// Recognition reuses the same naming renderer; an unrecognized video
+	// follows the instance unclassified-route policy.
+	graph.fileManager.SetRecognition(graph.namingRenderer, reader, fileManagerRecognitionPolicy{policies: graph.fileEffectPolicies})
 	graph.userOperations.SetRecorder(recorder)
 	graph.userOperations.SetEventHub(hub)
 	return nil
+}
+
+// fileManagerRecognitionPolicy reads the instance unclassified-route policy
+// recognition's unknown files follow (nil reads the documented default).
+type fileManagerRecognitionPolicy struct {
+	policies *filemaintenance.FileEffectPolicyService
+}
+
+func (p fileManagerRecognitionPolicy) UnclassifiedRoute(ctx context.Context) (string, error) {
+	if p.policies == nil {
+		return string(filemaintenance.DefaultFileEffectPolicy()), nil
+	}
+	view, err := p.policies.GetDefault(ctx)
+	if err != nil {
+		return "", err
+	}
+	if view == nil {
+		return string(filemaintenance.DefaultFileEffectPolicy()), nil
+	}
+	return string(view.UnclassifiedRoute), nil
 }

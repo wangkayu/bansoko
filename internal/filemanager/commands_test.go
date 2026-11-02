@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 )
 
@@ -42,6 +44,31 @@ func (f *fakeCommands) AdmitOperation(_ context.Context, admission OperationAdmi
 	}
 	f.byKey[admission.IdempotencyKey], f.digests[admission.IdempotencyKey] = op, admission.Digest
 	return op, nil
+}
+
+func (f *fakeCommands) AdmitOperations(ctx context.Context, admissions []OperationAdmission) ([]UserOperation, error) {
+	operations := make([]UserOperation, 0, len(admissions))
+	for _, admission := range admissions {
+		op, err := f.AdmitOperation(ctx, admission)
+		if err != nil {
+			return nil, err
+		}
+		operations = append(operations, op)
+	}
+	return operations, nil
+}
+
+func (f *fakeCommands) OperationBatch(_ context.Context, key string) ([]UserOperation, string, error) {
+	var operations []UserOperation
+	digest := ""
+	for candidate, op := range f.byKey {
+		if candidate == key || strings.HasPrefix(candidate, key+":") {
+			operations = append(operations, op)
+			digest = f.digests[candidate]
+		}
+	}
+	sort.Slice(operations, func(i, j int) bool { return operations[i].TargetPath < operations[j].TargetPath })
+	return operations, digest, nil
 }
 
 func (f *fakeCommands) ReleasedByKey(_ context.Context, key string) (*ReleaseOutcome, []string, error) {
@@ -96,7 +123,7 @@ func newCommandFixture(t *testing.T) commandFixture {
 			},
 		},
 	}
-	service := newTestService(t, store, NewDenialZone(appdata))
+	service := newTestService(t, store, NewDenialZone(appdata), library)
 	commands, aligner := &fakeCommands{}, &fakeAligner{}
 	service.SetCommands(commands, aligner)
 	return commandFixture{service: service, store: store, commands: commands, aligner: aligner, library: library, appdata: appdata}
@@ -199,13 +226,13 @@ func TestSubmitOperationTargetRules(t *testing.T) {
 	mustCode(t, submit("t4", UserRename, &Target{Path: f.abs("Loose/Sub/a.mkv")}), CodeTargetInvalid)
 	mustCode(t, submit("t5", UserMove, &Target{Path: f.abs("Missing/a.mkv")}), CodeTargetInvalid)
 	mustCode(t, submit("t6", UserMove, &Target{Path: f.abs(".bansoko-cleanup-x/a.mkv")}), CodeTargetInvalid)
-	mustCode(t, submit("t7", UserMove, &Target{Path: f.abs("Loose/x.mkv"), Conflict: "overwrite"}), CodeTargetInvalid)
+	mustCode(t, submit("t7", UserMove, &Target{Path: f.abs("Loose/x.mkv"), Conflict: "replace"}), CodeTargetInvalid)
 	// A target the browser refuses to read is refused to write as well.
 	mustCode(t, submit("t8", UserMove, &Target{Path: filepath.Join(f.appdata, "x.mkv")}), CodeTargetInvalid)
 	mustCode(t, submit("t8b", UserMove, &Target{Path: "/"}), CodeTargetInvalid)
 
 	// An occupied target: on disk, or a path an owner manages, is refused
-	// under block, whatever the target's own state (Q9: no overwrite at all).
+	// under block.
 	mustCode(t, submit("t9", UserMove, &Target{Path: f.abs("Loose/b.mkv")}), CodeTargetExists)
 	mustCode(t, submit("t10", UserRename, &Target{Path: f.abs("Loose/b.mkv")}), CodeTargetExists)
 	f.store.placements = append(f.store.placements, activePlacement("p-ghost", f.abs("Loose/ghost.mkv"), "anime-2"))
@@ -214,6 +241,17 @@ func TestSubmitOperationTargetRules(t *testing.T) {
 	f.store.inProgress = append(f.store.inProgress, InProgressFact{Path: f.abs("Loose/held.mkv"), Kind: InProgressUserOperation})
 	rev = f.revision(t, "Loose/a.mkv")
 	mustCode(t, submit("t12", UserMove, &Target{Path: f.abs("Loose/held.mkv")}), CodeTargetExists)
+
+	// Overwrite replaces a plain file at the target and is refused for a path
+	// an owner holds.
+	if err := submit("t12b", UserMove, &Target{Path: f.abs("Loose/b.mkv"), Conflict: ConflictOverwrite}); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.commands.admitted[len(f.commands.admitted)-1]; got.Collision != ConflictOverwrite || got.TargetPath != f.abs("Loose/b.mkv") {
+		t.Fatalf("overwrite admission = %+v", got)
+	}
+	mustCode(t, submit("t12c", UserMove, &Target{Path: f.abs("Loose/ghost.mkv"), Conflict: ConflictOverwrite}), CodeTargetExists)
+	mustCode(t, submit("t12d", UserMove, &Target{Path: f.abs("Loose/held.mkv"), Conflict: ConflictOverwrite}), CodeTargetExists)
 
 	// version admits the request; the worker picks the free suffix.
 	if err := submit("t13", UserMove, &Target{Path: f.abs("Loose/b.mkv"), Conflict: ConflictVersion}); err != nil {

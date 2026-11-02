@@ -99,6 +99,7 @@ var readOnlyWritePathPatterns = []struct {
 	{`^/api/v1/template-previews/naming$`, "pure render"},
 	{`^/api/v1/naming-vars/dry-runs$`, "pure evaluation, nothing stored"},
 	{`^/api/v1/file-manager/entry/match/preview$`, "file match preview: renders and reads only"},
+	{`^/api/v1/file-manager/recognition/preview$`, "file recognition preview: renders and reads only"},
 	{`^/api/v1/title-parser/check$`, "reltitle channel check: caches one published manifest, stores nothing"},
 }
 

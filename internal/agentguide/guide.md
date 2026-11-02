@@ -221,7 +221,7 @@ Notes:
 
 ### 5.3 File management (group `files`)
 
-Match a detached video in the media library to a season and episode of an anime. You supply the anime, season and episode only; the server renders the target path with the anime's naming template and never overwrites a file. A managed video is refused: its episode follows the subscription's parse result. `getFileManagerEntry` shows the frozen `episode` the acquisition recorded, which explains why a file was not recognized.
+Match a detached video in the media library to a season and episode of an anime. You supply the anime, season and episode only; the server renders the target path with the anime's naming template. An occupied target is cancelled (`block`), versioned (`version`), or replaced (`overwrite`, a plain file only; never a managed or in-progress one). A managed video is refused: its episode follows the subscription's parse result. `getFileManagerEntry` shows the frozen `episode` the acquisition recorded, which explains why a file was not recognized.
 
 | Step | MCP tool | operationId | CLI |
 |---|---|---|---|
@@ -229,7 +229,7 @@ Match a detached video in the media library to a season and episode of an anime.
 | List the TMDB seasons of the anime's TMDB binding | `list_tmdb_seasons` | `listAnimeTMDBSeasons` | - |
 | List the episodes of one season | `list_tmdb_season_episodes` | `listAnimeTMDBSeasonEpisodes` | - |
 | Preview the match (writes nothing; returns `revision` and `target_path`) | `preview_file_match` | `previewFileManagerMatch` | - |
-| Apply it, passing back `expected_revision`, `expected_target` and `conflict` (`block` or `version`) | `match_file` | `matchFileManagerEntry` | - |
+| Apply it, passing back `expected_revision`, `expected_target` and `conflict` (`block`, `version` or `overwrite`) | `match_file` | `matchFileManagerEntry` | - |
 
 **Missing or changed files.** A scan that no longer finds a managed file (`missing`) or finds other content at its path (`fingerprint_conflict`) records an observation only: the placement stays active and recovers by itself when the file comes back. Nothing is redownloaded or released automatically. Two manual, per-file exits exist; use one only when the human asks:
 
@@ -258,7 +258,7 @@ Both need an `Idempotency-Key` and answer `PLACEMENT_EXIT_UNAVAILABLE` (409) wit
 | Evaluate what the replacement policy would decide now (a dry evaluation; nothing is replaced) | `evaluate_replacement` | `evaluateReplacement` | - |
 | Recompute the file-maintenance plan after a policy or setting change | `replan_file_maintenance` | `replanFileMaintenance` | - |
 
-Browsing is HTTP only and goes by absolute path: `listFileManagerMounts` returns the quick entries (the filesystem root, each downloader's application-side root, each anime's directory), and `listFileManagerEntries` lists one directory by `path`, paged with `cursor`. A mount is a navigation shortcut only and never bounds a read or a write, so every path you send must be absolute; a relative path, a path through a symbolic link, and a path inside an application-data or system directory are all refused. `getFileManagerEntry` reads one entry, and the other file operations and alignment are HTTP only too (`submitFileManagerOperation`, `getFileManagerOperation`, `alignFileManagerEntry`). A changed file or target is refused with `FILE_MANAGER_ENTRY_CHANGED` or `FILE_MANAGER_MATCH_TARGET_CHANGED` and nothing is written: preview again. Writing to a directory that holds files the product manages is refused with `FILE_MANAGER_ENTRY_LOCKED`, whose `details` names the locked paths.
+Browsing is HTTP only and goes by absolute path: `listFileManagerRoots` returns the library directories the owner added, and `listFileManagerEntries` lists one directory by `path`, paged with `cursor`. The roots are the whole browsing surface: every path you send must be absolute and lie inside one of them, and a path outside all of them is refused with `FILE_MANAGER_PATH_OUTSIDE_ROOTS`; a relative path, a path through a symbolic link, and a path inside an application-data or system directory are all refused too. Roots themselves are owner configuration, not agent work: `addFileManagerRoot` and `removeFileManagerRoot` exist for the WebUI. `getFileManagerEntry` reads one entry, and the other file operations and alignment are HTTP only too (`submitFileManagerOperation`, `getFileManagerOperation`, `alignFileManagerEntry`). A changed file or target is refused with `FILE_MANAGER_ENTRY_CHANGED` or `FILE_MANAGER_MATCH_TARGET_CHANGED` and nothing is written: preview again. Writing to a directory that holds files the product manages is refused with `FILE_MANAGER_ENTRY_LOCKED`, whose `details` names the locked paths.
 
 ### 5.4 Execution records (group `records`)
 

@@ -330,13 +330,13 @@ type matchTarget struct {
 	occupant MatchOccupant
 }
 
-// planMatchTarget checks a rendered absolute target: a path outside the denial
-// zone that is not an executor namespace, whose existing directories are real
-// directories (never a symlink), plus the directories still to be created. An
-// occupied target is reported in occupant.
+// planMatchTarget checks a rendered absolute target: a path inside an
+// authorized root, outside the denial zone and not an executor namespace, whose
+// existing directories are real directories (never a symlink), plus the
+// directories still to be created. An occupied target is reported in occupant.
 func (s *Service) planMatchTarget(ctx context.Context, source inspection, rendered string) (matchTarget, *MatchBlocker, error) {
 	badTarget := &MatchBlocker{Code: MatchBlockedTargetInvalid}
-	if refuseDenied(s.zone, rendered) != nil {
+	if s.authorize(ctx, rendered) != nil {
 		return matchTarget{}, badTarget, nil
 	}
 	absolute, ok := cleanAbsolute(rendered)
@@ -535,7 +535,7 @@ func (s *Service) SubmitMatch(ctx context.Context, request SubmitMatchRequest) (
 	if choice == "" {
 		choice = ConflictBlock
 	}
-	if choice != ConflictBlock && choice != ConflictVersion {
+	if choice != ConflictBlock && choice != ConflictVersion && choice != ConflictOverwrite {
 		return UserOperation{}, invalid(CodeTargetInvalid, "conflict choice is not valid")
 	}
 	digest := requestDigest(struct {
@@ -580,7 +580,7 @@ func (s *Service) SubmitMatch(ctx context.Context, request SubmitMatchRequest) (
 	if target.absolute != request.ExpectedTarget {
 		return UserOperation{}, conflict(CodeMatchTargetChanged, "the target changed since the preview")
 	}
-	if target.occupant != "" && choice == ConflictBlock {
+	if target.occupant != "" && choice != ConflictVersion && (choice != ConflictOverwrite || target.occupant != OccupantFile) {
 		return UserOperation{}, conflict(CodeTargetExists, "target is occupied")
 	}
 	admission := OperationAdmission{

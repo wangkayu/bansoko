@@ -1,24 +1,16 @@
-import type { FileManagerMount, FileManagerMountList, FileManagerOperationView } from "../../lib/api/client";
-import { t } from "../../lib/i18n";
+import type { FileManagerOperationView, FileManagerRoot } from "../../lib/api/client";
 
 export function operationInFlight(view: FileManagerOperationView | undefined): boolean {
   return view?.state === "ready" || view?.state === "running";
 }
 
-/** Display names of the quick entries: the filesystem root, the download directory (with connection name), and the anime (with its title). */
-export function mountLabel(mount: FileManagerMount): string {
-  if (mount.kind === "anime") return mount.label ?? mount.path;
-  if (mount.kind === "download") {
-    return mount.label ? t("fileManager.mount.downloadNamed", { name: mount.label }) : t("fileManager.mount.download");
-  }
-  return t("fileManager.mount.root");
+/** True when an absolute path is the root itself or lies inside it. */
+export function insideRoot(root: Pick<FileManagerRoot, "path">, path: string): boolean {
+  return path === root.path || path.startsWith(`${root.path}/`);
 }
 
-/** The anime name on the lock badge: the anime quick entry is already loaded, so this never re-requests the anime title. */
-export function animeTitleIndex(mounts: FileManagerMountList | undefined): Map<string, string> {
-  const index = new Map<string, string>();
-  for (const mount of mounts?.mounts ?? []) {
-    if (mount.kind === "anime" && mount.managed_anime_id && mount.label) index.set(mount.managed_anime_id, mount.label);
-  }
-  return index;
+/** The deepest available root that contains the path: the browsing location's root. */
+export function activeRootOf(roots: readonly FileManagerRoot[], path: string | undefined): FileManagerRoot | undefined {
+  if (path === undefined) return undefined;
+  return roots.filter((root) => root.available && insideRoot(root, path)).sort((a, b) => b.path.length - a.path.length)[0];
 }
