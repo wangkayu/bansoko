@@ -1,4 +1,5 @@
 import type { ObservabilityRecord } from "../lib/api/client";
+import { ACQUISITION_RUN_ENTRIES } from "../lib/observabilityCatalog.generated";
 import { t, tryT } from "../lib/i18n";
 import { formatBytes, subscriptionLogKindLabel } from "../lib/labels";
 import { joinList } from "../lib/i18n/format";
@@ -29,27 +30,15 @@ export type EventItem =
   | { type: "batch"; key: string; entry: BusinessEntry }
   | { type: "run"; key: string; steps: BusinessEntry[] };
 
-/** Record kinds that belong to one download, in their order within one acquisition (used to order records sharing a timestamp). */
-const RUN_KIND_ORDER: Partial<Record<BusinessEntry["kind"], number>> = {
-  download_changed: 1,
-  artifact_verified: 2,
-  import_waiting_config: 3,
-  file_alignment_completed: 4,
-  file_alignment_failed: 4,
-  placement_changed: 5,
-  replacement_decided: 6,
-  acquisition_settled: 7,
-};
+/** The generated catalog is also the record query's run classification; no second kind list lives here. */
+const RUN_KIND_ORDER: Partial<Record<BusinessEntry["kind"], number>> = Object.fromEntries(
+  ACQUISITION_RUN_ENTRIES.map((entry) => [entry.kind, entry.rank]),
+);
 
 /** A download needs at least one record of the acquisition itself; a sequence with only an import location or a replacement (file scan, a later re-decision) renders as single rows. */
-const CORE_RUN_KINDS = new Set<BusinessEntry["kind"]>([
-  "download_changed",
-  "artifact_verified",
-  "import_waiting_config",
-  "file_alignment_completed",
-  "file_alignment_failed",
-  "acquisition_settled",
-]);
+const CORE_RUN_KINDS = new Set<BusinessEntry["kind"]>(
+  ACQUISITION_RUN_ENTRIES.filter((entry) => entry.core).map((entry) => entry.kind),
+);
 
 function compareAscending(a: BusinessEntry, b: BusinessEntry): number {
   const time = Date.parse(a.occurred_at) - Date.parse(b.occurred_at);

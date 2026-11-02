@@ -92,18 +92,22 @@ describe("badge predicates", () => {
 describe("useLogFailureBadge", () => {
   let records: ObservabilityRecord[];
   let episodes: DiagnosticEpisode[];
+  let recordsCursor: string | null;
+  let episodesCursor: string | null;
 
   beforeEach(() => {
     localStorage.clear();
     records = [settled("f1", "failure", "2026-10-20T08:00:00Z")];
     episodes = [episode("d1", "2026-10-20T08:30:00Z"), episode("d2", "2026-10-20T06:00:00Z", "2026-10-20T06:00:00Z", "2026-10-20T06:30:00Z")];
+    recordsCursor = null;
+    episodesCursor = null;
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = new URL(String(input), "http://localhost");
         const body = url.pathname.endsWith("/observability/records")
-          ? { records, next_cursor: null }
-          : { episodes, internal: { occurrence_count: 4, last_failed_at: "2026-10-20T09:00:00Z" }, next_cursor: null };
+          ? { records, next_cursor: recordsCursor }
+          : { episodes, internal: { occurrence_count: 4, last_failed_at: "2026-10-20T09:00:00Z" }, next_cursor: episodesCursor };
         return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
       }),
     );
@@ -121,20 +125,28 @@ describe("useLogFailureBadge", () => {
 
   it("counts failures and open conditions, never recovered ones or the internal row", async () => {
     const { result } = setup();
-    await waitFor(() => expect(result.current).toBe(2));
+    await waitFor(() => expect(result.current).toEqual({ count: 2, truncated: false }));
   });
 
   it("clears once both tabs were seen", async () => {
     markLogSeen("records", "2026-10-20T08:00:00Z");
     markLogSeen("diagnostics", "2026-10-20T08:30:00Z");
     const { result } = setup();
-    await waitFor(() => expect(result.current).toBe(0));
+    await waitFor(() => expect(result.current).toEqual({ count: 0, truncated: false }));
+  });
+
+  it("marks a count as truncated when either bounded query has another page", async () => {
+    recordsCursor = "more-records";
+    const { result } = setup();
+    await waitFor(() => expect(result.current).toEqual({ count: 2, truncated: true }));
   });
 });
 
 describe("badgeText", () => {
-  it("caps at 99+", () => {
-    expect(badgeText(7)).toBe("7");
-    expect(badgeText(120)).toBe("99+");
+  it("shows an exact small count and marks a bounded or display-capped count", () => {
+    expect(badgeText({ count: 7, truncated: false })).toBe("7");
+    expect(badgeText({ count: 49, truncated: true })).toBe("49+");
+    expect(badgeText({ count: 120, truncated: false })).toBe("50+");
+    expect(badgeText({ count: 0, truncated: true })).toBe("0");
   });
 });

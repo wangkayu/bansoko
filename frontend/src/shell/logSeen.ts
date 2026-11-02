@@ -27,6 +27,11 @@ const STORAGE_KEYS: Record<LogSeenTab, string> = {
 
 const BADGE_LIMIT = 50;
 
+export type LogFailureBadge = {
+  count: number;
+  truncated: boolean;
+};
+
 const listeners = new Set<() => void>();
 
 function notify() {
@@ -110,7 +115,7 @@ export function latestTime(times: Array<string | undefined>): string | undefined
  * The count behind the log entry badge (rule a, see the header). Shared by the top bar, the
  * phone bottom bar and the More sheet.
  */
-export function useLogFailureBadge(): number {
+export function useLogFailureBadge(): LogFailureBadge {
   const recordsSeen = useLogSeen("records");
   const diagnosticsSeen = useLogSeen("diagnostics");
   const failures = useQuery({
@@ -122,9 +127,15 @@ export function useLogFailureBadge(): number {
     queryKey: observabilityKeys.badgeDiagnostics,
     queryFn: () => listObservabilityDiagnostics({ state: "open", limit: BADGE_LIMIT }),
   });
-  return newBadgeRecords(failures.data?.records ?? [], recordsSeen).length + newOpenEpisodes(open.data?.episodes ?? [], diagnosticsSeen).length;
+  const count = newBadgeRecords(failures.data?.records ?? [], recordsSeen).length + newOpenEpisodes(open.data?.episodes ?? [], diagnosticsSeen).length;
+  return {
+    count,
+    truncated: Boolean(failures.data?.next_cursor || open.data?.next_cursor) || count >= BADGE_LIMIT,
+  };
 }
 
-export function badgeText(count: number): string {
-  return count > 99 ? "99+" : String(count);
+export function badgeText(badge: LogFailureBadge): string {
+  if (badge.count === 0) return "0";
+  if (badge.truncated || badge.count >= BADGE_LIMIT) return `${Math.min(badge.count, BADGE_LIMIT)}+`;
+  return String(badge.count);
 }
