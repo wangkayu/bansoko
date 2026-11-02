@@ -9929,6 +9929,8 @@ components:
         - rules_changed
         - episode_offset_changed
         - rss_new_content
+        - release_batch_first
+        - release_batch_reevaluated
         - release_discovered
         - release_waiting_metadata
         - release_subscription_stopped
@@ -9942,8 +9944,6 @@ components:
         - release_awaiting_competition
         - release_resume_baseline
         - release_start_baseline
-        - release_batch_first
-        - release_batch_reevaluated
         - download_submitted
         - download_completed
         - download_removed
