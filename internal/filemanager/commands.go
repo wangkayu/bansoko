@@ -87,8 +87,9 @@ const (
 )
 
 // UserOperation is one admitted user file operation. Paths are absolute and
-// frozen at admission: the browser has no root layer, so a path is simply the
-// path.
+// frozen at admission after the source and any target pass the authorized-root
+// checks; later execution follows this frozen request rather than reauthorizing
+// a different path.
 type UserOperation struct {
 	ID          string
 	Operation   UserOperationKind

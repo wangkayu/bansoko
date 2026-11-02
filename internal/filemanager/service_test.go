@@ -764,6 +764,13 @@ func TestLocateFindsTheWorkTreeTop(t *testing.T) {
 	if err != nil || location.Path != fixture.library {
 		t.Fatalf("locate of a vanished tree top = %+v, %v", location, err)
 	}
+	// Locate is a read entry point too: a recorded placement outside every
+	// owner-authorized root must not send the UI to a path browsing will refuse.
+	outside := canonicalTemp(t)
+	writeFile(t, filepath.Join(outside, "Show", "a.mkv"), 1)
+	fixture.store.anime["anime-outside"] = []string{filepath.Join(outside, "Show", "a.mkv")}
+	_, err = fixture.service.Locate(context.Background(), "anime-outside")
+	mustCode(t, err, CodePathOutsideRoots)
 }
 
 // TestOwnerFactsMatchTheResolvedSpelling pins the comparison rule: the browsed

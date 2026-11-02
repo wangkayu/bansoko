@@ -545,7 +545,10 @@ func (s *Service) Locate(ctx context.Context, managedAnimeID string) (Location, 
 		return Location{}, notFound(CodeLocationUnknown, "no browsable directory holds this anime's files")
 	}
 	for {
-		if !s.zone.Denies(candidate) && directoryExists(candidate) {
+		if directoryExists(candidate) {
+			if err := s.authorize(ctx, candidate); err != nil {
+				return Location{}, err
+			}
 			return Location{Path: candidate}, nil
 		}
 		if candidate == string(filepath.Separator) || candidate == "" {
