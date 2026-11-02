@@ -546,6 +546,11 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 			snapshot.mediaSeason = currentInputs.mediaSeason
 			snapshot.mediaSeasonBound = currentInputs.mediaSeasonBound
 			snapshot.effective = currentInputs.effective
+			// The ignore-multi-video gate reads the snapshot below, so the
+			// current option has to be copied with the rest of the inputs:
+			// otherwise a toggle mid-evaluation writes the verdict under the
+			// old option, after the sweep that already ran for the new one.
+			snapshot.ignoreMultiVideoReleases = currentInputs.ignoreMultiVideoReleases
 			snapshot.resolved = currentInputs.resolved
 			snapshot.metadataVersion = currentInputs.metadataVersion
 			snapshot.rulesVersion = currentInputs.rulesVersion
