@@ -11,7 +11,7 @@ import type {
   MetadataHold,
   SubscribeResult,
 } from "../src/lib/api/client";
-import { preset as businessPreset } from "../src/testing/businessPreset";
+import { preset as businessPreset, loadDraftFromBusinessPreset } from "../src/testing/businessPreset";
 import { ownerRSSView } from "./fixtures/ownerRSSView";
 import { isPhoneLayout, selectBrowseSection, selectSubscribed } from "./catalog-nav";
 import { joinList, t } from "./copy";
@@ -614,6 +614,15 @@ async function mockCandidates(page: Page) {
 }
 
 async function mockShellReads(page: Page) {
+  await page.route("**/api/v1/config/business-preset/load", async (route) => {
+    if (route.request().method() !== "POST") return fulfillMethodNotAllowed(route, "POST");
+    const body = route.request().postDataJSON() as { draft: AnimeDraft; reset_to_global?: boolean };
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(loadDraftFromBusinessPreset(body.draft, businessPreset, body.reset_to_global)),
+    });
+  });
   await page.route("**/api/v1/config/business-preset", async (route) => {
     if (route.request().method() !== "GET") return fulfillMethodNotAllowed(route, "GET");
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(businessPreset) });

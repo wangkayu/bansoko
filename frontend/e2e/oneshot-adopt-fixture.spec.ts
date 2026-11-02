@@ -13,7 +13,7 @@ import type {
   ProviderRSSPreviewResult,
   RSSListView,
 } from "../src/lib/api/client";
-import { preset as businessPreset } from "../src/testing/businessPreset";
+import { preset as businessPreset, loadDraftFromBusinessPreset } from "../src/testing/businessPreset";
 import { mockSignedIn } from "./session";
 
 // Fixture-only browser evidence for the one-shot download dialog: a persisted
@@ -39,6 +39,11 @@ function ok(route: Route, status: number, body: unknown) {
 }
 
 async function mockShellReads(page: Page) {
+  await page.route("**/api/v1/config/business-preset/load", async (route) => {
+    if (route.request().method() !== "POST") return ok(route, 405, { code: "METHOD_NOT_ALLOWED" });
+    const body = route.request().postDataJSON() as { draft: AnimeDraft; reset_to_global?: boolean };
+    return ok(route, 200, loadDraftFromBusinessPreset(body.draft, businessPreset, body.reset_to_global));
+  });
   await page.route("**/api/v1/config/business-preset", async (route) => {
     if (route.request().method() !== "GET") return ok(route, 405, { code: "METHOD_NOT_ALLOWED" });
     return ok(route, 200, businessPreset);
