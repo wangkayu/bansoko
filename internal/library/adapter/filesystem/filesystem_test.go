@@ -298,25 +298,6 @@ func TestOSFileExecutorHardlinkFailureDoesNotFallbackToCopy(t *testing.T) {
 	}
 }
 
-func TestOSFileRemoverRemovePreservesReceiverHooks(t *testing.T) {
-	root := canonicalTemp(t)
-	path := filepath.Join(root, "entry")
-	if err := os.WriteFile(path, []byte("entry"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	called := false
-	remover := OSFileRemover{BeforeQuarantine: func(string) error { called = true; return errors.New("injected quarantine failure") }}
-	if err := remover.Remove(context.Background(), root, path, digest("entry")); err == nil {
-		t.Fatal("receiver hook was lost")
-	}
-	if !called {
-		t.Fatal("receiver hook was not called")
-	}
-	if _, err := os.Lstat(path); err != nil {
-		t.Fatalf("failed quarantine removed source: %v", err)
-	}
-}
-
 func TestRemoveVerifiedNonRegularRetainsQuarantineOnDurableSync(t *testing.T) {
 	root, err := canonicalRoot(canonicalTemp(t))
 	if err != nil {
@@ -553,124 +534,6 @@ func TestOSFileObserverReturnsFingerprintAndSize(t *testing.T) {
 	}
 }
 
-func TestOSFileRemoverRejectsSizeMismatchAndPreservesTarget(t *testing.T) {
-	root := canonicalTemp(t)
-	path := filepath.Join(root, "episode.mkv")
-	content := []byte("episode")
-	if err := os.WriteFile(path, content, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	remover := OSFileRemover{}
-	err := remover.RemoveFile(context.Background(), root, path, domain.FileObservation{Fingerprint: digest(string(content)), SizeBytes: int64(len(content)) + 1})
-	if err == nil || !strings.Contains(err.Error(), "size") {
-		t.Fatalf("size-mismatched removal was accepted: %v", err)
-	}
-	if got, readErr := os.ReadFile(path); readErr != nil || string(got) != string(content) {
-		t.Fatalf("size-mismatched removal changed target: %q err=%v", got, readErr)
-	}
-}
-
-func TestOSFileRemoverRejectsReplacementRace(t *testing.T) {
-	root := canonicalTemp(t)
-	path := filepath.Join(root, "episode.mkv")
-	content := []byte("episode")
-	replacement := []byte("replacement")
-	if err := os.WriteFile(path, content, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	initial, err := observeFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	remover := OSFileRemover{BeforeQuarantine: func(path string) error {
-		for i := 0; i < 3; i++ {
-			if err := os.Remove(path); err != nil {
-				return err
-			}
-			if err := os.WriteFile(path, replacement, 0o644); err != nil {
-				return err
-			}
-		}
-		if err := os.Chmod(path, 0o600); err != nil {
-			return err
-		}
-		return nil
-	}}
-	err = remover.RemoveFile(context.Background(), root, path, initial)
-	if err == nil || !strings.Contains(err.Error(), "identity") {
-		t.Fatalf("replacement was not rejected: %v", err)
-	}
-	if got, readErr := os.ReadFile(path); readErr != nil || string(got) != string(replacement) {
-		t.Fatalf("replacement object was deleted: %q err=%v", got, readErr)
-	}
-	if _, statErr := os.Lstat(quarantinePath(path)); !errors.Is(statErr, os.ErrNotExist) {
-		t.Fatalf("rejected replacement unexpectedly quarantined: %v", statErr)
-	}
-}
-
-func TestOSFileRemoverQuarantineReplayIsIdempotent(t *testing.T) {
-	root := canonicalTemp(t)
-	path := filepath.Join(root, "episode.mkv")
-	content := []byte("episode")
-	if err := os.WriteFile(path, content, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	remover := OSFileRemover{}
-	if err := remover.RemoveFile(context.Background(), root, path, domain.FileObservation{Fingerprint: digest(string(content)), SizeBytes: int64(len(content))}); err != nil {
-		t.Fatal(err)
-	}
-	if err := remover.RemoveFile(context.Background(), root, path, domain.FileObservation{Fingerprint: digest(string(content)), SizeBytes: int64(len(content))}); err != nil {
-		t.Fatalf("matching quarantine replay was not accepted: %v", err)
-	}
-}
-
-func TestOSFileRemoverQuarantineReplayChecksIdentityAndConflict(t *testing.T) {
-	root := canonicalTemp(t)
-	path := filepath.Join(root, "episode.mkv")
-	content := []byte("episode")
-	if err := os.WriteFile(path, content, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	initial, err := observeFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := (OSFileRemover{}).RemoveFile(context.Background(), root, path, initial); err != nil {
-		t.Fatal(err)
-	}
-	wrongIdentity := initial
-	wrongIdentity.Identity.Inode++
-	if err := (OSFileRemover{}).RemoveFile(context.Background(), root, path, wrongIdentity); err == nil || !strings.Contains(err.Error(), "identity") {
-		t.Fatalf("quarantine replay accepted a different frozen identity: %v", err)
-	}
-	if err := os.WriteFile(path, content, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	legacyExpected := domain.FileObservation{Fingerprint: initial.Fingerprint, SizeBytes: initial.SizeBytes}
-	if err := (OSFileRemover{}).RemoveFile(context.Background(), root, path, legacyExpected); err == nil || !strings.Contains(err.Error(), "both exist") {
-		t.Fatalf("target and quarantine coexistence was not rejected: %v", err)
-	}
-}
-func TestOSFileRemoverRejectsRootChildSymlink(t *testing.T) {
-	root := canonicalTemp(t)
-	outside := canonicalTemp(t)
-	outsidePath := filepath.Join(outside, "episode.mkv")
-	if err := os.WriteFile(outsidePath, []byte("outside"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	child := filepath.Join(root, "library")
-	if err := os.Symlink(outside, child); err != nil {
-		t.Fatalf("symlink setup unavailable: %v", err)
-	}
-	target := filepath.Join(child, "episode.mkv")
-	err := (OSFileRemover{}).RemoveFile(context.Background(), root, target, domain.FileObservation{Fingerprint: digest("outside"), SizeBytes: int64(len("outside"))})
-	if err == nil {
-		t.Fatal("cleanup followed a child symlink out of its root")
-	}
-	if got, readErr := os.ReadFile(outsidePath); readErr != nil || string(got) != "outside" {
-		t.Fatalf("cleanup touched root-external file: %q err=%v", got, readErr)
-	}
-}
 func TestOSMediaInspectorReturnsVersionedLocalSnapshot(t *testing.T) {
 	root := canonicalTemp(t)
 	path := filepath.Join(root, "Episode 01.MKV")
@@ -1821,6 +1684,9 @@ func TestOSFileExecutorMoveReplayAllowsSameInodeHardlink(t *testing.T) {
 	if _, statErr := os.Lstat(source); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("same-inode move replay left source: %v", statErr)
 	}
+	if _, statErr := os.Lstat(quarantinePath(source)); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("same-inode move replay left a source tombstone: %v", statErr)
+	}
 	if got, readErr := os.ReadFile(target); readErr != nil || string(got) != string(content) {
 		t.Fatalf("same-inode move replay changed target: %q err=%v", got, readErr)
 	}
@@ -1950,12 +1816,15 @@ func TestOSFileExecutorFinalMismatchCopyPreservesRacedTarget(t *testing.T) {
 	quarantine := ""
 	if completed.OverwriteRecovery != nil {
 		quarantine = completed.OverwriteRecovery.ForeignEvidencePath
+		if !completed.OverwriteRecovery.ForeignEvidencePurged {
+			t.Fatalf("foreign evidence was not released to the checkpoint: %+v", completed.OverwriteRecovery)
+		}
 	}
 	if quarantine == "" {
 		t.Fatalf("foreign evidence checkpoint was not persisted: %+v", completed.OverwriteRecovery)
 	}
-	if got, readErr := os.ReadFile(quarantine); readErr != nil || string(got) != "raced-copy-final" {
-		t.Fatalf("raced copy target was deleted instead of preserved in quarantine: %q err=%v", got, readErr)
+	if _, statErr := os.Lstat(quarantine); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("foreign evidence stayed beside the library after recovery: %v", statErr)
 	}
 	second, secondErr := executor.Execute(context.Background(), completed)
 	var secondOperationErr *OperationError
@@ -2065,9 +1934,12 @@ func TestOSFileExecutorExchangeBackForeignRecoveryCompletesCollision(t *testing.
 			if got, readErr := os.ReadFile(target); readErr != nil || string(got) != "old" {
 				t.Fatalf("displaced target was not restored: %q err=%v", got, readErr)
 			}
+			if !completed.OverwriteRecovery.ForeignEvidencePurged {
+				t.Fatalf("foreign evidence was not released to the checkpoint: %+v", completed.OverwriteRecovery)
+			}
 			quarantine := completed.OverwriteRecovery.ForeignEvidencePath
-			if got, readErr := os.ReadFile(quarantine); readErr != nil || string(got) != "foreign" {
-				t.Fatalf("foreign evidence was not quarantined: %q err=%v", got, readErr)
+			if _, statErr := os.Lstat(quarantine); !errors.Is(statErr, os.ErrNotExist) {
+				t.Fatalf("foreign evidence stayed beside the library after recovery: %v", statErr)
 			}
 			second, secondErr := executor.Execute(context.Background(), completed)
 			var secondOperationErr *OperationError

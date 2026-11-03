@@ -36,3 +36,7 @@ func atomicUnlinkVerified(_ verifiedEntry) error {
 func openEntryNoFollow(_ verifiedEntry) (*os.File, error) {
 	return nil, errors.New("identity-bound entry opening is unsupported on this platform")
 }
+
+func purgeQuarantineDirectory(_ *verifiedDirectory, _ string) error {
+	return errors.New("directory purge is unsupported on this platform")
+}

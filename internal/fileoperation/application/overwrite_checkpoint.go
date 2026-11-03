@@ -264,6 +264,11 @@ func validateOverwriteRecovery(recovery domain.OverwriteRecovery) error {
 		} else if recovery.ForeignEvidenceType != "" || !fileidentity.IsEmpty(recovery.ForeignEvidenceIdentity) {
 			return errors.New("overwrite checkpoint regular foreign evidence is malformed")
 		}
+		if recovery.ForeignEvidencePurged && recovery.Stage != domain.OverwriteStageRestored && recovery.Stage != domain.OverwriteStageBlocked {
+			return errors.New("overwrite checkpoint purged foreign evidence requires a terminal stage")
+		}
+	} else if recovery.ForeignEvidencePurged {
+		return errors.New("overwrite checkpoint purged foreign evidence requires captured evidence")
 	} else if recovery.ForeignEvidence != (domain.FileObservation{}) || recovery.ForeignNonRegularEvidence || recovery.ForeignEvidenceType != "" || !fileidentity.IsEmpty(recovery.ForeignEvidenceIdentity) {
 		return errors.New("overwrite checkpoint foreign evidence path is required")
 	}

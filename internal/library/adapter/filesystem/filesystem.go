@@ -486,6 +486,88 @@ func quarantinePath(path string) string {
 	return filepath.Join(filepath.Dir(path), ".bansoko-quarantine-"+hex.EncodeToString(sum[:12]))
 }
 
+// purgeQuarantinedEntry removes the operation-private quarantine entry that
+// quarantinePath names for path. The entry exists only inside the action that
+// renamed it there: once the caller's checkpoint (or the completed placement)
+// has frozen its identity, deleting it leaves the library with no long-lived
+// tombstone. A missing entry is already purged. The entry is re-observed under
+// its frozen fingerprint before removal; a directory goes down as a no-follow
+// walk inside its verified parent.
+func purgeQuarantinedEntry(root, path string, expected domain.FileObservation) error {
+	quarantine := quarantinePath(path)
+	parent, err := openVerifiedDirectory(root, filepath.Dir(quarantine), false)
+	if err != nil {
+		return fmt.Errorf("open quarantine parent for purge: %w", err)
+	}
+	defer parent.Close()
+	actual, err := observeFileAs(quarantine, expected.Fingerprint)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("observe quarantined entry before purge: %w", err)
+	}
+	if !sameMutationFileObservation(actual, expected) {
+		return errors.New("quarantined entry changed before purge")
+	}
+	entry := verifiedEntry{parent: parent, name: filepath.Base(quarantine), canonical: quarantine}
+	if err := purgeQuarantineEntry(parent, entry, expected.Fingerprint); err != nil {
+		return err
+	}
+	if err := parent.Sync(); err != nil {
+		return fmt.Errorf("sync quarantine parent after purge: %w", err)
+	}
+	return nil
+}
+
+// purgeQuarantinedNonRegular removes a quarantined entry that is not a regular
+// file. Its type and identity came from the frozen recovery checkpoint, so a
+// replaced entry is refused rather than unlinked.
+func purgeQuarantinedNonRegular(root, path, expectedType string, expectedIdentity domain.FileIdentity) error {
+	quarantine := quarantinePath(path)
+	parent, err := openVerifiedDirectory(root, filepath.Dir(quarantine), false)
+	if err != nil {
+		return fmt.Errorf("open quarantine parent for purge: %w", err)
+	}
+	defer parent.Close()
+	info, err := os.Lstat(quarantine)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("observe quarantined entry before purge: %w", err)
+	}
+	identity, identityErr := fileidentity.FromPath(quarantine)
+	if identityErr != nil || displacedEntryType(info) != expectedType || !fileidentity.Matches(identity, expectedIdentity) {
+		return errors.New("quarantined non-regular entry changed before purge")
+	}
+	entry := verifiedEntry{parent: parent, name: filepath.Base(quarantine), canonical: quarantine}
+	if info.IsDir() {
+		if err := purgeQuarantineDirectory(parent, entry.name); err != nil {
+			return fmt.Errorf("purge quarantined directory: %w", err)
+		}
+	} else if err := atomicUnlinkVerified(entry); err != nil {
+		return fmt.Errorf("purge quarantined non-regular entry: %w", err)
+	}
+	if err := parent.Sync(); err != nil {
+		return fmt.Errorf("sync quarantine parent after purge: %w", err)
+	}
+	return nil
+}
+
+func purgeQuarantineEntry(parent *verifiedDirectory, entry verifiedEntry, fingerprint string) error {
+	if facts, ok := domain.ParseMetadataFingerprint(fingerprint); ok && facts.Directory {
+		if err := purgeQuarantineDirectory(parent, entry.name); err != nil {
+			return fmt.Errorf("purge quarantined directory: %w", err)
+		}
+		return nil
+	}
+	if err := atomicUnlinkVerified(entry); err != nil {
+		return fmt.Errorf("purge quarantined entry: %w", err)
+	}
+	return nil
+}
+
 func quarantineVerifiedEntry(sourceRoot, targetRoot string, path string, expected domain.FileObservation, beforeRename func(string) error, expectedParent domain.FileIdentity) error {
 	if !fileidentity.IsPresent(expectedParent) {
 		return errors.New("cleanup parent identity was not authorized")
@@ -682,6 +764,15 @@ func (executor OSFileExecutor) quarantineForeignEntry(root string, operation dom
 	return removeVerifiedNonRegular(root, path, entry.entryType, entry.observation.Identity, nil, operation.TargetParentIdentity)
 }
 
+// purgeForeignEvidence removes the quarantined foreign copy once the checkpoint
+// has frozen its identity. A missing copy is already purged.
+func (executor OSFileExecutor) purgeForeignEvidence(root string, recovery domain.OverwriteRecovery) error {
+	if recovery.ForeignNonRegularEvidence {
+		return purgeQuarantinedNonRegular(root, recovery.StagingPath, recovery.ForeignEvidenceType, recovery.ForeignEvidenceIdentity)
+	}
+	return purgeQuarantinedEntry(root, recovery.StagingPath, recovery.ForeignEvidence)
+}
+
 func (executor OSFileExecutor) verifyForeignEvidence(recovery domain.OverwriteRecovery) error {
 	if recovery.ForeignEvidencePath == "" {
 		return errors.New("foreign evidence path is missing")
@@ -734,9 +825,17 @@ func (executor OSFileExecutor) finalizeRecoveredForeign(ctx context.Context, ope
 	} else {
 		recovery.Stage = domain.OverwriteStageRestored
 	}
+	// The checkpoint now freezes the foreign evidence identity, so the
+	// operation-private copy exists only to finish this action. Record that
+	// before removing it: a purge that fails is retried by recovery from the
+	// recorded state, and an absent copy is no longer an unproven effect.
+	recovery.ForeignEvidencePurged = true
 	updated, err := executor.checkpoint(ctx, operation, recovery)
 	if err != nil {
 		return updated, err
+	}
+	if purgeErr := executor.purgeForeignEvidence(root, recovery); purgeErr != nil {
+		return updated, &OperationError{Code: CodeRecoveryUnsafe, Err: fmt.Errorf("purge foreign evidence: %w", purgeErr)}
 	}
 	updated.OverwriteRecovery = &recovery
 	if operation.Operation == domain.OperationMove {
@@ -747,7 +846,13 @@ func (executor OSFileExecutor) finalizeRecoveredForeign(ctx context.Context, ope
 func (executor OSFileExecutor) recoverExchangedForeignLayouts(ctx context.Context, operation domain.FileOperation, root string, recovery domain.OverwriteRecovery, target recoveryEntryObservation, targetPresent bool, staged recoveryEntryObservation, stagedPresent bool, placementExpected domain.FileObservation) (domain.FileOperation, bool, error) {
 	if recovery.ForeignEvidencePath != "" {
 		if recovery.ForeignEvidencePath == quarantinePath(recovery.StagingPath) {
-			if err := executor.verifyForeignEvidence(recovery); err != nil {
+			if recovery.ForeignEvidencePurged {
+				// The checkpoint already froze the evidence identity; only a
+				// purge interrupted by a crash can leave the copy behind.
+				if err := executor.purgeForeignEvidence(root, recovery); err != nil {
+					return operation, true, &OperationError{Code: CodeRecoveryUnsafe, Err: fmt.Errorf("purge recovered foreign evidence: %w", err)}
+				}
+			} else if err := executor.verifyForeignEvidence(recovery); err != nil {
 				return operation, true, &OperationError{Code: CodeRecoveryUnsafe, Err: fmt.Errorf("verify quarantined foreign evidence: %w", err)}
 			}
 			updated, err := executor.completeForeignRecovery(ctx, operation, recovery)
@@ -825,8 +930,10 @@ func (executor OSFileExecutor) completeForeignRecovery(ctx context.Context, oper
 	if recovery.ForeignEvidencePath == "" || recovery.ForeignEvidencePath == recovery.StagingPath {
 		return operation, &OperationError{Code: CodeRecoveryUnsafe, Err: errors.New("foreign evidence is not quarantined")}
 	}
-	if err := executor.verifyForeignEvidence(recovery); err != nil {
-		return operation, &OperationError{Code: CodeRecoveryUnsafe, Err: fmt.Errorf("verify foreign quarantine: %w", err)}
+	if !recovery.ForeignEvidencePurged {
+		if err := executor.verifyForeignEvidence(recovery); err != nil {
+			return operation, &OperationError{Code: CodeRecoveryUnsafe, Err: fmt.Errorf("verify foreign quarantine: %w", err)}
+		}
 	}
 	if _, err := os.Lstat(recovery.StagingPath); !errors.Is(err, os.ErrNotExist) {
 		return operation, &OperationError{Code: CodeRecoveryUnsafe, Err: errors.New("quarantined foreign recovery still has staging evidence")}
@@ -899,9 +1006,15 @@ func (executor OSFileExecutor) restoreFinalMismatch(ctx context.Context, operati
 	} else {
 		recovery.Stage = domain.OverwriteStageRestored
 	}
+	// The checkpoint now freezes the foreign evidence identity, so the
+	// operation-private copy is removable; record that before removing it.
+	recovery.ForeignEvidencePurged = true
 	updated, checkpointErr := executor.checkpoint(ctx, operation, recovery)
 	if checkpointErr != nil {
 		return updated, checkpointErr
+	}
+	if purgeErr := executor.purgeForeignEvidence(root, recovery); purgeErr != nil {
+		return updated, &OperationError{Code: CodeRecoveryUnsafe, Err: fmt.Errorf("purge foreign evidence: %w", purgeErr)}
 	}
 	updated.OverwriteRecovery = &recovery
 	if operation.Operation == domain.OperationMove {
@@ -1092,7 +1205,11 @@ func (executor OSFileExecutor) recoverOverwrite(ctx context.Context, operation d
 			return operation, true, &OperationError{Code: CodeRecoveryUnsafe, Err: errors.New("recovered overwrite terminal evidence changed")}
 		}
 		if recovery.ForeignEvidencePath != "" {
-			if err := executor.verifyForeignEvidence(recovery); err != nil {
+			if recovery.ForeignEvidencePurged {
+				if err := executor.purgeForeignEvidence(root, recovery); err != nil {
+					return operation, true, &OperationError{Code: CodeRecoveryUnsafe, Err: fmt.Errorf("purge recovered foreign evidence: %w", err)}
+				}
+			} else if err := executor.verifyForeignEvidence(recovery); err != nil {
 				return operation, true, &OperationError{Code: CodeRecoveryUnsafe, Err: fmt.Errorf("verify recovered foreign evidence: %w", err)}
 			}
 		}
@@ -2141,93 +2258,6 @@ func sourceSizeKnown(operation domain.FileOperation) bool {
 	return operation.SourceSizeKnown || operation.SourceSizeBytes > 0
 }
 
-// OSFileRemover is the destructive half of the Library filesystem port. It
-// verifies the expected fingerprint, size, and (when supplied) identity before
-// moving a regular file under the chain anchor into quarantine.
-type OSFileRemover struct {
-	// BeforeQuarantine is test-only fault injection for the observe-to-rename
-	// race. Production removers leave it nil.
-	BeforeQuarantine func(string) error
-}
-
-// Remove preserves the original filesystem port while delegating to the
-// size-aware implementation. The legacy port has no persisted size fact, so
-// it validates the fingerprint while still obtaining the live size from the
-// same descriptor read.
-func (remover OSFileRemover) Remove(ctx context.Context, anchor, targetPath, expectedFingerprint string) error {
-	return remover.RemoveFile(ctx, anchor, targetPath, domain.FileObservation{Fingerprint: expectedFingerprint, SizeBytes: -1})
-}
-
-func (remover OSFileRemover) RemoveFile(ctx context.Context, anchor, targetPath string, expected domain.FileObservation) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	root, err := canonicalRoot(anchor)
-	if err != nil {
-		return err
-	}
-	targetPath, err = rebaseTarget(anchor, root, targetPath)
-	if err != nil {
-		return err
-	}
-	if err := targetUnderRoot(root, targetPath); err != nil {
-		return err
-	}
-	if _, err := verifiedDirectoryChain(root, filepath.Dir(targetPath), false); err != nil {
-		return fmt.Errorf("verify cleanup directory chain: %w", err)
-	}
-	if _, err := os.Lstat(targetPath); errors.Is(err, os.ErrNotExist) {
-		quarantine := quarantinePath(targetPath)
-		if _, quarantineErr := os.Lstat(quarantine); errors.Is(quarantineErr, os.ErrNotExist) {
-			return nil
-		} else if quarantineErr != nil {
-			return fmt.Errorf("inspect completed cleanup quarantine: %w", quarantineErr)
-		}
-		actual, observeErr := observeFileAs(quarantine, expected.Fingerprint)
-		if observeErr != nil {
-			return errors.New("completed cleanup quarantine could not be observed")
-		}
-		if fileidentity.IsPresent(expected.Identity) && !fileidentity.Matches(actual.Identity, expected.Identity) {
-			return errors.New("completed cleanup quarantine does not match expected identity")
-		}
-		if !quarantineReplayMatchesExpected(actual, expected) {
-			return errors.New("completed cleanup quarantine does not match expected fingerprint or size")
-		}
-		return nil
-	} else if err != nil {
-		return fmt.Errorf("inspect cleanup target: %w", err)
-	}
-	if _, quarantineErr := os.Lstat(quarantinePath(targetPath)); quarantineErr == nil {
-		return errors.New("operation-private cleanup quarantine and source both exist")
-	} else if !errors.Is(quarantineErr, os.ErrNotExist) {
-		return fmt.Errorf("inspect cleanup quarantine: %w", quarantineErr)
-	}
-	actual, err := observeFileAs(targetPath, expected.Fingerprint)
-	if err != nil {
-		return fmt.Errorf("verify cleanup target: %w", err)
-	}
-	if !observationMatchesExpected(actual, expected) {
-		return errors.New("cleanup target fingerprint, size, or identity changed")
-	}
-	frozen := actual
-	if fileidentity.IsPresent(expected.Identity) && !fileidentity.Matches(actual.Identity, expected.Identity) {
-		return errors.New("cleanup target identity changed")
-	}
-	parentIdentity, err := verifiedParentIdentityWithinRoot(root, targetPath, false)
-	if err != nil {
-		return fmt.Errorf("authorize cleanup target parent: %w", err)
-	}
-	if remover.BeforeQuarantine != nil {
-		if err := remover.BeforeQuarantine(targetPath); err != nil {
-			return err
-		}
-	}
-	if err := quarantineVerifiedEntry(root, root, targetPath, frozen, nil, parentIdentity); err != nil {
-		return fmt.Errorf("quarantine cleanup target: %w", err)
-	}
-	return nil
-}
-
 // targetMatch says what the placement target already holds. It is what decides
 // whether an operation is done, refused, or still has to replace the target;
 // a bare "content matches" boolean could not tell those apart.
@@ -2414,16 +2444,6 @@ func copyNoOverwrite(ctx context.Context, sourceRoot, targetRoot, source, target
 	return nil
 }
 
-func quarantineReplayMatchesExpected(actual, expected domain.FileObservation) bool {
-	if fileidentity.IsPresent(expected.Identity) {
-		return sameFrozenFileObservation(actual, expected)
-	}
-	// Legacy remove operations froze no inode. The fixed operation-private path
-	// plus the observed fingerprint and size are the complete evidence available
-	// for replay; never compare a zero identity as if it matched another inode.
-	return sameFileObservation(actual, expected)
-}
-
 func observationMatchesExpected(actual, expected domain.FileObservation) bool {
 	if fileidentity.IsPresent(expected.Identity) {
 		return sameFrozenFileObservation(actual, expected)
@@ -2443,6 +2463,12 @@ func removeVerifiedSource(sourceRoot, targetRoot, path string, expected domain.F
 		return errors.New("source fingerprint or size changed before move removal")
 	}
 	if err := quarantineVerifiedEntry(sourceRoot, targetRoot, path, actual, nil, expectedParent); err != nil {
+		return &OperationError{Code: CodeRecoveryUnsafe, Err: err}
+	}
+	// The rename is the deletion boundary and the quarantined entry is only
+	// this action's staging evidence; purge it so a completed move leaves no
+	// tombstone beside the media file.
+	if err := purgeQuarantinedEntry(targetRoot, path, actual); err != nil {
 		return &OperationError{Code: CodeRecoveryUnsafe, Err: err}
 	}
 	return nil

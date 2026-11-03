@@ -83,3 +83,10 @@ func purgeDirectoryChild(parentFD int, name string, depth int) error {
 	}
 	return nil
 }
+
+// purgeQuarantineDirectory removes a quarantined directory tree below its
+// verified parent. The walk is the same no-follow, typed removal used for
+// captured cleanup objects.
+func purgeQuarantineDirectory(parent *verifiedDirectory, name string) error {
+	return purgeDirectoryObject(parent, name)
+}

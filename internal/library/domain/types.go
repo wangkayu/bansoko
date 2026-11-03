@@ -213,11 +213,16 @@ type OverwriteRecovery struct {
 	DisplacedIdentity    FileIdentity `json:"displaced_identity,omitempty"`
 	BlockedReason        string       `json:"blocked_reason,omitempty"`
 	// ForeignEvidence records a regular external object observed during final
-	// verification. It is retained in an operation-private quarantine so a
-	// later recovery can return a deterministic collision instead of retrying
-	// the same unresolved staging path forever.
+	// verification. It is retained in an operation-private quarantine until the
+	// checkpoint has frozen its identity; a later recovery then returns a
+	// deterministic collision instead of retrying the same unresolved staging
+	// path forever.
 	ForeignEvidencePath string          `json:"foreign_evidence_path,omitempty"`
 	ForeignEvidence     FileObservation `json:"foreign_evidence,omitempty"`
+	// ForeignEvidencePurged says the checkpoint already froze the foreign
+	// evidence identity, so the operation-private copy is removable and its
+	// absence is not a lost effect. Recovery finishes without re-reading it.
+	ForeignEvidencePurged bool `json:"foreign_evidence_purged,omitempty"`
 	// ForeignNonRegularEvidence is Lstat-only evidence. Unknown non-regular
 	// objects are never hashed, followed, or deleted by recovery.
 	ForeignNonRegularEvidence bool         `json:"foreign_non_regular_evidence,omitempty"`
