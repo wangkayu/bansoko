@@ -37,6 +37,7 @@
 - A download that has not been imported yet can be cancelled in the execution record dialog (also through the API, MCP and CLI), and its record shows Cancelled; a subscription release can be downloaded again with Retry, while a cancelled one-shot download cannot be retried.
 - A disabled Apply button in the recognition dialog shows why on hover: the template is empty, an episode number is invalid, the preview is rendering, the preview failed, files cannot be processed (with the count), or there is nothing to change.
 - Failure rows on the RSS page name the skip: when the target location is occupied and the same-name policy is Skip, the row says the Skip policy left it untouched; a target blocked at planning time is explained the same way instead of only naming the existing file.
+- When matching TMDB, the selected work's type and season pickers stay above the candidate list, so a long list never scrolls them out of view.
 
 ## Fixed
 

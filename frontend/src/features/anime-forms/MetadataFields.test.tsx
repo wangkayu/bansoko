@@ -212,6 +212,23 @@ describe("MetadataMatchDialog", () => {
     expect(screen.getAllByText(t("grid.tabCustom")).length).toBeGreaterThanOrEqual(2);
   });
 
+  it("TMDB：类型与季度编辑器固定在候选列表上方", async () => {
+    const second: MetadataCandidate = { ...tmdbCandidate, workId: "265011", title: "另一部作品" };
+    render(<Controlled searcher={searcherReturning([tmdbCandidate, second])} />);
+
+    clickMatch("tmdb");
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: t("forms.search") }));
+    fireEvent.click(await within(dialog).findByRole("option", { name: /星际邮差艾拉/ }));
+
+    const editors = within(dialog).getByRole("radiogroup", { name: t("forms.mediaKindAria") });
+    const list = within(dialog).getByRole("listbox", { name: t("forms.candidatesAria") });
+    // The candidate list is the only scroll region, so an editor before it in the document
+    // never scrolls out of view as the list grows.
+    expect(editors.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(list.contains(editors)).toBe(false);
+  });
+
   it("TMDB：候选推荐季度带入 season 编辑器，确认写入完整绑定", async () => {
     const searcher = searcherReturning([tmdbCandidate]);
     const onChange = vi.fn();

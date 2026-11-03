@@ -919,6 +919,8 @@ function YearRow({
 // while unset, see above). TMDB also supports "enter by ID": after a local positive-integer
 // check it is selected as a candidate that is never verified online; pick the media type and the
 // TMDB season the same way, then confirm — saving works even with no configured TMDB key.
+// The chosen work's editors sit above the candidate list, which is the dialog's only scroll
+// region: a long result list can never scroll the type and season pickers out of view.
 
 /** A TMDB work ID: a positive integer (local format check, never verified online). */
 const TMDB_ID_PATTERN = /^[1-9]\d{0,11}$/;
@@ -1173,44 +1175,6 @@ function MetadataMatchDialog({
           </p>
         )}
 
-        {candidates.length > 0 && (
-          <div className="metadata-match-candidates" role="listbox" aria-label={t("forms.candidatesAria")}>
-            {candidates.map((candidate) => {
-              const active = selected?.workId === candidate.workId;
-              return (
-                <button
-                  key={`${candidate.provider}:${candidate.workId}`}
-                  type="button"
-                  role="option"
-                  aria-selected={active}
-                  onClick={() => pick(candidate)}
-                  className={active ? "metadata-match-option metadata-match-option-active" : "metadata-match-option"}
-                >
-                  <CandidatePoster url={candidate.posterUrl} />
-                  <span className="metadata-match-option-content">
-                    <span className="metadata-match-title">
-                      {candidate.title}
-                    </span>
-                    {candidate.originalTitle && (
-                      <span className="metadata-match-original-title">
-                        {candidate.originalTitle}
-                      </span>
-                    )}
-                    <span className="metadata-match-meta">
-                      {candidate.year || t("forms.yearUnknown")}
-                      {candidate.mediaKind ? ` · ${candidate.mediaKind === "movie" ? t("forms.movie") : t("forms.tv")}` : ""}
-                      {provider === "tmdb" && candidate.mediaKind !== "movie" && candidate.suggestedSeason !== undefined
-                        ? ` · ${t("forms.suggestedSeason", { n: candidate.suggestedSeason })}`
-                        : ""}
-                    </span>
-                  </span>
-                  {active && <Check className="metadata-match-selected-icon" />}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
         {provider === "tmdb" && selected && (
           <div className="metadata-match-selected">
             <span className="metadata-match-selected-summary">
@@ -1277,6 +1241,44 @@ function MetadataMatchDialog({
                 {t("forms.alsoSetTitle", { title: offeredTitle })}
               </Checkbox>
             )}
+          </div>
+        )}
+
+        {candidates.length > 0 && (
+          <div className="metadata-match-candidates" role="listbox" aria-label={t("forms.candidatesAria")}>
+            {candidates.map((candidate) => {
+              const active = selected?.workId === candidate.workId;
+              return (
+                <button
+                  key={`${candidate.provider}:${candidate.workId}`}
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  onClick={() => pick(candidate)}
+                  className={active ? "metadata-match-option metadata-match-option-active" : "metadata-match-option"}
+                >
+                  <CandidatePoster url={candidate.posterUrl} />
+                  <span className="metadata-match-option-content">
+                    <span className="metadata-match-title">
+                      {candidate.title}
+                    </span>
+                    {candidate.originalTitle && (
+                      <span className="metadata-match-original-title">
+                        {candidate.originalTitle}
+                      </span>
+                    )}
+                    <span className="metadata-match-meta">
+                      {candidate.year || t("forms.yearUnknown")}
+                      {candidate.mediaKind ? ` · ${candidate.mediaKind === "movie" ? t("forms.movie") : t("forms.tv")}` : ""}
+                      {provider === "tmdb" && candidate.mediaKind !== "movie" && candidate.suggestedSeason !== undefined
+                        ? ` · ${t("forms.suggestedSeason", { n: candidate.suggestedSeason })}`
+                        : ""}
+                    </span>
+                  </span>
+                  {active && <Check className="metadata-match-selected-icon" />}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
