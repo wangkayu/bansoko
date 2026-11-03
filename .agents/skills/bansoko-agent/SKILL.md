@@ -111,6 +111,7 @@ Look around:
 | Read one anime's whole pipeline | `get_workspace` | `getAnimeWorkspace` | `bansoko status` |
 | Wait until the pipeline settles (stable = every task completed or failed) | `poll_workspace` | `getAnimeWorkspace` | `bansoko wait` |
 | Search a provider catalog for programs (AniBT and Mikan) | `search_anime` | `searchProviderCatalog` | `bansoko search` |
+| Read a provider show's synopsis and the facts its own page states (AniBT and Mikan) | `get_anime_synopsis` | `readProviderEntrySynopsis` | - |
 | Search Bangumi or TMDB for a metadata binding | `search_metadata` | `searchMetadata` | `bansoko metadata search` |
 | Parse a release title | `parse_title` | `parseReleaseTitle` | `bansoko parse-title` |
 | Parse a torrent's file list | `parse_torrent` | `parseTorrentFiles` | `bansoko parse-torrent` |
