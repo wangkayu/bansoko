@@ -389,20 +389,14 @@ func (s *Service) occupant(ctx context.Context, target resolvedTarget) (MatchOcc
 	if err != nil {
 		return "", err
 	}
-	for _, variant := range target.spellings {
-		if len(facts.InProgress[variant]) > 0 {
-			return OccupantInProgress, nil
-		}
-		for _, placement := range facts.Placements[variant] {
-			if placement.State == placementActive {
-				return OccupantManaged, nil
-			}
-		}
-		for _, companion := range facts.Companions[variant] {
-			if companion.State == companionActive {
-				return OccupantManaged, nil
-			}
-		}
+	// The listing's own derivation decides ownership, so a path it shows as
+	// detached (a retired anime, a one-shot, a replaced placement) reads as a
+	// plain file here too; the admission refuses only what the listing locks.
+	switch deriveFile(facts, target.spellings, nil).state {
+	case StateInProgress:
+		return OccupantInProgress, nil
+	case StateManaged:
+		return OccupantManaged, nil
 	}
 	if _, err := os.Lstat(target.absolute); err == nil {
 		return OccupantFile, nil

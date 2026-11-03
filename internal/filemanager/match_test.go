@@ -341,7 +341,23 @@ func TestPreviewMatchReportsAnOccupiedTarget(t *testing.T) {
 	}
 	f.store.placements = f.store.placements[:len(f.store.placements)-1]
 
+	// A one-shot's file and a retired anime's file are detached in the
+	// listing, so a target on them is a plain file, not a managed one.
+	oneShot := activePlacement("p-oneshot", f.abs("Show/Season 02/taken.mkv"), "oneshot")
+	oneShot.OneShotID = "os-1"
+	retired := activePlacement("p-retired", f.abs("Show/Season 02/taken.mkv"), "retired")
+	retired.Retired = true
+	for name, detached := range map[string]PlacementFact{"one-shot": oneShot, "retired": retired} {
+		f.store.placements = append(f.store.placements, detached)
+		f.renderer.render.Path = f.abs("Show/Season 02/taken.mkv")
+		if preview, _ = f.service.PreviewMatch(ctx, request); preview.Conflict == nil || preview.Conflict.OccupiedBy != OccupantFile {
+			t.Fatalf("a %s file is a detached plain file: %+v", name, preview.Conflict)
+		}
+		f.store.placements = f.store.placements[:len(f.store.placements)-1]
+	}
+
 	f.store.inProgress = append(f.store.inProgress, InProgressFact{Path: f.abs("Show/Season 03/Show - E01.mkv"), Kind: InProgressFileOperation})
+	f.renderer.render.Path = f.abs("Show/Season 03/Show - E01.mkv")
 	if preview, _ = f.service.PreviewMatch(ctx, request); preview.Conflict == nil || preview.Conflict.OccupiedBy != OccupantInProgress {
 		t.Fatalf("an unfinished owner holds the target: %+v", preview.Conflict)
 	}

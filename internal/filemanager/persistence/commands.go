@@ -130,7 +130,8 @@ func heldPaths(ctx context.Context, tx *sql.Tx, paths []string) (bool, error) {
 }
 
 // managedPaths reports whether an active placement or an active companion of
-// an active placement names any of the paths.
+// an active placement of a live (existing, not retired, not one-shot) anime
+// names any of the paths: the same rule the listing derives its lock from.
 func managedPaths(ctx context.Context, tx *sql.Tx, paths []string) (bool, error) {
 	return filemaintenance.ManagedPaths(ctx, tx, paths)
 }

@@ -73,16 +73,30 @@ func OwnerPathsHeld(ctx context.Context, tx *sql.Tx, paths []string) (bool, erro
 	return held, err
 }
 
-// ManagedPaths reports whether an active placement or an active companion of
-// an active placement names any of the paths.
+// ManagedPaths reports whether any of the paths is a file the product still
+// manages: an active placement, or an active companion of an active placement,
+// of an anime that exists, is not retired (unsubscribed) and is not a one-shot
+// temporary anime. The file manager's read model derives the same rule
+// (placementState / deriveFile): a retired anime, a one-shot, or a placement
+// whose anime row is gone reads as detached, so the admission must not refuse
+// it as managed.
 func ManagedPaths(ctx context.Context, tx *sql.Tx, paths []string) (bool, error) {
 	if len(paths) == 0 {
 		return false, nil
 	}
 	var managed bool
-	err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM placements WHERE state = 'active' AND physical_path COLLATE "C" = ANY($1::text[]))
- OR EXISTS (SELECT 1 FROM placement_companions c JOIN placements p ON p.id = c.placement_id
-   WHERE c.state = 'active' AND p.state = 'active' AND c.current_path = ANY($1::text[]))`, paths).Scan(&managed)
+	err := tx.QueryRowContext(ctx, `SELECT EXISTS (
+  SELECT 1 FROM placements p JOIN managed_anime ma ON ma.id = p.managed_anime_id
+  WHERE p.state = 'active' AND p.physical_path COLLATE "C" = ANY($1::text[])
+    AND COALESCE(ma.lifecycle_state, 'active') <> 'retired'
+    AND NOT EXISTS (SELECT 1 FROM one_shot_acquisitions os WHERE os.managed_anime_id = p.managed_anime_id))
+ OR EXISTS (
+  SELECT 1 FROM placement_companions c
+  JOIN placements p ON p.id = c.placement_id
+  JOIN managed_anime ma ON ma.id = p.managed_anime_id
+  WHERE c.state = 'active' AND p.state = 'active' AND c.current_path COLLATE "C" = ANY($1::text[])
+    AND COALESCE(ma.lifecycle_state, 'active') <> 'retired'
+    AND NOT EXISTS (SELECT 1 FROM one_shot_acquisitions os WHERE os.managed_anime_id = p.managed_anime_id))`, paths).Scan(&managed)
 	return managed, err
 }
 

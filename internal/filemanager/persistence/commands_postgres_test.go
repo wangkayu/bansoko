@@ -42,7 +42,7 @@ func TestCommandsReleaseAndUserOperationsOverRealRows(t *testing.T) {
 	}
 	tree := filepath.Join(base, "anime")
 	abs := func(rel string) string { return filepath.Join(tree, filepath.FromSlash(rel)) }
-	for _, rel := range []string{"Show/ep01.mkv", "Show/ep01.zh.ass", "Show/ep02.mkv", "Loose/a.mkv", "Loose/b.mkv"} {
+	for _, rel := range []string{"Show/ep01.mkv", "Show/ep01.zh.ass", "Show/ep02.mkv", "Loose/a.mkv", "Loose/b.mkv", "Loose/oneshot.mkv", "Loose/retired.mkv"} {
 		writeTestFile(t, abs(rel))
 	}
 	exec := func(query string, args ...any) error {
@@ -175,6 +175,41 @@ VALUES ('c-ep01', 'p-ep01', 'anime-a', 'src-c', 'intake', 'subtitle', 'zh', 'ass
 		Target: &filemanager.Target{Path: abs("Loose/ep02.mkv")}})
 	if code(err) != filemanager.CodeOperationNotAllowed {
 		t.Fatalf("move of a managed file: %v", err)
+	}
+
+	// A one-shot's temporary anime and a retired anime keep their placement
+	// rows active, but the listing derives their files as detached: the
+	// admission must judge them by the same rule and admit the move.
+	must(`INSERT INTO managed_anime(id, title) VALUES ('anime-oneshot', 'One-shot')`)
+	must(`INSERT INTO one_shot_acquisitions
+(id, managed_anime_id, subscription_id, rss_source_id, release_id, download_task_id, correlation_id,
+ request_idempotency_key, request_hash, result_snapshot, state)
+VALUES ('os-1', 'anime-oneshot', 'sub-x', 'rss-x', 'rel-x', 'dl-x', 'corr-oneshot', 'oneshot-test-key',
+ 'sha256:` + strings.Repeat("0", 64) + `', '{}'::jsonb, 'running')`)
+	must(`INSERT INTO managed_anime(id, title, lifecycle_state, retired_at, retired_subscription_version)
+VALUES ('anime-retired', 'Retired', 'retired', CURRENT_TIMESTAMP, 1)`)
+	for id, rel := range map[string]string{"p-oneshot": "Loose/oneshot.mkv", "p-retired": "Loose/retired.mkv"} {
+		must(`INSERT INTO placements
+(id, physical_path, managed_anime_id, source_evidence_type, source_owner_ref, source_fingerprint,
+ target_fingerprint, facts_version, state, replacement_eligible)
+VALUES ($1, $2, $3, 'reconciliation', 'obs-'||$1, 'fp', 'fp', 'parser-v1', 'active', true)`,
+			id, abs(rel), map[string]string{"p-oneshot": "anime-oneshot", "p-retired": "anime-retired"}[id])
+	}
+	for _, rel := range []string{"Loose/oneshot.mkv", "Loose/retired.mkv"} {
+		detail, err := service.Detail(ctx, abs(rel))
+		if err != nil || detail.Entry.State != filemanager.StateDetached || detail.Entry.Locked {
+			t.Fatalf("%s is detached and unlocked: %+v, %v", rel, detail.Entry, err)
+		}
+	}
+	for key, rel := range map[string]string{"move-oneshot": "Loose/oneshot.mkv", "move-retired": "Loose/retired.mkv"} {
+		target := abs(strings.TrimSuffix(rel, ".mkv") + "-moved.mkv")
+		if _, err := service.SubmitOperation(ctx, filemanager.OperationRequest{IdempotencyKey: key, Actor: "web", Operation: filemanager.UserMove,
+			Path: abs(rel), ExpectedRevision: revision(rel), Target: &filemanager.Target{Path: target}}); err != nil {
+			t.Fatalf("move of a detached %s: %v", rel, err)
+		}
+		if op := run(); op.State != filemanager.UserOperationCompleted || op.ResultPath != target {
+			t.Fatalf("move of a detached %s = %+v", rel, op)
+		}
 	}
 
 	// Release and move: the placement turns released, its subtitle relation
