@@ -3,7 +3,6 @@ package filesystem
 import (
 	"bansoko/internal/library/domain"
 	"context"
-	"encoding/json"
 	"errors"
 	"path/filepath"
 )
@@ -31,14 +30,6 @@ func (e OSFileExecutor) ExecuteWithPublication(ctx context.Context, op domain.Fi
 			return err
 		}
 		token, err = callbacks.Begin(ctx, op, evidence)
-		if err != nil {
-			return err
-		}
-		raw, err := json.Marshal(map[string]any{"token": token, "operation_id": op.ID, "source_path": source, "target_path": target, "source_observation": evidence, "fencing_token": op.FencingToken, "executor_final": false})
-		if err != nil {
-			return err
-		}
-		_, err = WritePublicationMarker(target, token, raw)
 		return err
 	}
 	oldPublish := e.Hooks.BeforePublish

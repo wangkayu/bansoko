@@ -51,7 +51,7 @@ func TestPublicationBarrierDenialHasNoFinalEffect(t *testing.T) {
 	}
 }
 
-func TestPublicationMarkerAndReceiptCarryRealIdentity(t *testing.T) {
+func TestPublicationReceiptCarriesRealIdentity(t *testing.T) {
 	root := canonicalTemp(t)
 	root, err := filepath.EvalSymlinks(root)
 	if err != nil {
@@ -78,8 +78,5 @@ func TestPublicationMarkerAndReceiptCarryRealIdentity(t *testing.T) {
 	}})
 	if err != nil || receipts != 1 {
 		t.Fatalf("err=%v receipts=%d", err, receipts)
-	}
-	if _, err := os.Stat(filepath.Join(root, ".bansoko-publication-test-permit.json")); err != nil {
-		t.Fatal(err)
 	}
 }
