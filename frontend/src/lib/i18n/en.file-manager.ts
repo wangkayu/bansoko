@@ -192,7 +192,7 @@ export const enFileManagerCopy = {
     sub: "Rename or file {n} files by the naming templates; nothing is written to subscription records",
     intro: "Applies to this recognition only; the subscription, template library and global settings are untouched",
     parserHint: "Parse episode numbers from file names",
-    namingHint: "File name and subtitle suffix; files stay in their folder",
+    namingHint: "File name and subtitle suffix; the filename may carry subfolder levels inside the selected folder",
     configAria: "Recognition settings",
     configTitle: "Settings",
     restoreDefaults: "Restore defaults",
@@ -210,6 +210,10 @@ export const enFileManagerCopy = {
     invalidNumber: "Episode and offset must be whole numbers",
     willProcess: "{n} to process",
     apply: "Apply",
+    applyDisabled: {
+      blockers: "{n} files can't be processed; resolve them first",
+      nothing: "Every file is already at its target; nothing to process",
+    },
     match: {
       offset: "Episode offset",
       episode: "Episode",
@@ -217,6 +221,7 @@ export const enFileManagerCopy = {
     preview: {
       heading: "Plan",
       sub: "Adjust the settings until you submit",
+      folder: "Selected folder: {path}",
       emptyTemplate: "Fill in the video filename template first",
       loading: "Rendering the plan…",
       failed: "Couldn't render the plan",
@@ -242,7 +247,7 @@ export const enFileManagerCopy = {
         facts_missing: "The template needs missing facts: {facts}",
         facts_missing_unnamed: "The template needs missing facts",
         template_invalid: "The template cannot render a name",
-        target_invalid: "The rendered target must be a direct member of its folder",
+        target_invalid: "The rendered target must be a valid path inside the selected folder",
         video_missing: "The subtitle's video is not in the selection",
         video_failed: "The subtitle's video cannot be processed",
       },

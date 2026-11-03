@@ -105,9 +105,11 @@ export function NamingTemplateFields({
   /**
    * `filename` edits only a video's whole filename and a subtitle's suffix, for
    * callers that keep the file in its folder (file-manager recognition), so
-   * the directory and the movie/unknown variants are not shown. The value is
-   * still a complete naming rules object; only the tv variant's filename and
-   * the subtitle suffix are read.
+   * the directory and the movie/unknown variants are not shown. The filename
+   * may carry `/`-separated levels below the file's folder, so the preview
+   * renders as a relative filename. The value is still a complete naming
+   * rules object; only the tv variant's filename and the subtitle suffix are
+   * read.
    */
   variant?: "full" | "filename";
 }) {
@@ -295,7 +297,7 @@ export function NamingTemplateFields({
           {catalog.data && filenameOnly && (
             <div className="naming-section">
               <TemplatePreview
-                kind="video_filename"
+                kind="relative_filename"
                 label={t("naming.previewFile")}
                 source={value.tv.video_filename_template}
                 sampleRef={defaultSampleRef("tv", samples)}

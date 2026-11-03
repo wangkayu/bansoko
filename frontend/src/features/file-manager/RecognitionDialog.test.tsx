@@ -282,6 +282,21 @@ describe("RecognitionDialog", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(t("fileManager.recognize.unknownNote", { n: 1 }))).toBeInTheDocument();
     expect(screen.getByText(t("fileManager.recognize.unknownSkipText"))).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: t("fileManager.recognize.apply") })).toBeDisabled();
+    // A blocked 应用 names why it cannot run instead of disabling silently.
+    const apply = screen.getByRole("button", { name: t("fileManager.recognize.apply") });
+    expect(apply).toBeDisabled();
+    expect(apply).toHaveAttribute("title", t("fileManager.recognize.applyDisabled.blockers", { n: 1 }));
+  });
+
+  it("names an empty plan as the reason nothing can be applied, and shows the selected folder", async () => {
+    previewBody = {
+      ...previewBody,
+      rows: [{ ...renamed[0], target_path: "/media/anime/ep01.mkv", target_name: "ep01.mkv", disposition: "unchanged" }],
+    };
+    renderDialog(["/media/anime/ep01.mkv"]);
+    expect(await screen.findByText(t("fileManager.recognize.preview.folder", { path: "/media/anime" }), undefined, { timeout: 3000 })).toBeInTheDocument();
+    const apply = screen.getByRole("button", { name: t("fileManager.recognize.apply") });
+    expect(apply).toBeDisabled();
+    expect(apply).toHaveAttribute("title", t("fileManager.recognize.applyDisabled.nothing"));
   });
 });

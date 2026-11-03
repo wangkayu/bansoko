@@ -190,7 +190,7 @@ export const fileManagerCopy = {
     sub: "对 {n} 个文件按命名模板重命名或归档，不写入订阅记录",
     intro: "只作用于这次识别；不写入订阅，也不改变模板库或全局配置",
     parserHint: "从文件名中解析集数",
-    namingHint: "文件名与字幕后缀，文件留在所在文件夹",
+    namingHint: "文件名与字幕后缀；文件名可含子目录层级，归入所选文件夹内",
     configAria: "识别设置",
     configTitle: "配置",
     restoreDefaults: "恢复默认",
@@ -208,6 +208,10 @@ export const fileManagerCopy = {
     invalidNumber: "集数或偏移需要填写完整的整数",
     willProcess: "将处理 {n} 项",
     apply: "应用",
+    applyDisabled: {
+      blockers: "{n} 个文件无法处理，需先解决",
+      nothing: "所有文件都已是目标状态，无需处理",
+    },
     match: {
       offset: "集数偏移",
       episode: "集数",
@@ -215,6 +219,7 @@ export const fileManagerCopy = {
     preview: {
       heading: "执行预览",
       sub: "提交前可继续调整设置",
+      folder: "所选文件夹：{path}",
       emptyTemplate: "请先填写视频文件名模板",
       loading: "正在生成预览…",
       failed: "预览读取失败",
@@ -240,7 +245,7 @@ export const fileManagerCopy = {
         facts_missing: "模板需要的信息缺失：{facts}",
         facts_missing_unnamed: "模板需要的信息缺失",
         template_invalid: "模板无法生成名称",
-        target_invalid: "生成的目标必须是所在文件夹的直接成员",
+        target_invalid: "生成的目标必须是所选文件夹内的合法路径",
         video_missing: "字幕对应的视频不在所选文件中",
         video_failed: "字幕对应的视频无法处理",
       },

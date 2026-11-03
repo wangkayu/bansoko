@@ -4,6 +4,7 @@ package naming
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"unicode"
@@ -130,6 +131,43 @@ func validateRenderedTarget(value string, directory bool) error {
 	}
 	if !directory && strings.ContainsAny(value, `/\\`) {
 		return errors.New("filename must not contain a directory separator")
+	}
+	return nil
+}
+
+// maxRelativeFilenameSegments bounds how deep a relative filename may nest —
+// a runaway render cannot spell out an unreasonable tree in one value.
+const maxRelativeFilenameSegments = 16
+
+// validateRelativeFilename enforces target hygiene on a rendered relative
+// filename: a `/`-separated path whose every segment is a legal filename
+// segment, with no traversal, no backslash, no empty level and a bounded
+// depth. Unlike a plain filename it may carry directory parts; unlike a
+// directory it is never absolute.
+func validateRelativeFilename(value string) error {
+	if strings.IndexByte(value, 0) >= 0 {
+		return errors.New("path contains NUL")
+	}
+	if strings.HasPrefix(value, "~") {
+		return errors.New("path must not use a home-directory prefix")
+	}
+	if strings.ContainsRune(value, '\\') {
+		return errors.New("relative filename must not use a backslash separator")
+	}
+	segments := strings.Split(value, "/")
+	if len(segments) > maxRelativeFilenameSegments {
+		return fmt.Errorf("relative filename exceeds %d path segments", maxRelativeFilenameSegments)
+	}
+	for _, segment := range segments {
+		if segment == "" {
+			return errors.New("path contains an empty segment")
+		}
+		if segment == "." || segment == ".." {
+			return errors.New("path contains traversal segments")
+		}
+		if len(segment) > maxSegmentBytes {
+			return errSegmentTooLong
+		}
 	}
 	return nil
 }

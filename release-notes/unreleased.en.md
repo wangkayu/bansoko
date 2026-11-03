@@ -10,6 +10,7 @@
 - Episode offsets can be set per subtitle group before a subscription starts: drafts and not-yet-started subscriptions offer the offset on every group in the RSS tab, and the test run re-numbers immediately. The offset dialog shows a conversion example such as "Episode 53 → Episode 5".
 - While editing an anime title (including the one-shot settings step), the localized and original TMDB and BGM names and the source title appear as suggestions you can click to fill in; confirming a TMDB match can also set the title to the matched name.
 - When a TMDB/BGM match is missing or the template uses a variable that does not exist, finished downloads wait for configuration: the files stay in the download folder, the import continues by itself once the settings are complete, and it does not count as a failure.
+- The file manager recognition template accepts subfolders: the filename template may carry `/`-separated levels (such as `${anime.title}/Season ${anime.season}/...`) and the files are organized into the matching subfolders inside the selected folder, subtitles following their videos; the rendered path is still validated, and one that leaves the selected folder or is malformed reports the reason. The recognition preview shows the selected folder.
 
 ## Improved
 
@@ -34,6 +35,7 @@
 - Deselecting a subgroup cancels its unfinished downloads in the subscription and deletes them from qBittorrent together with their downloaded data, and other subgroups' releases download the episode instead; finished downloads and imports in progress are not touched, and no failure notification is sent.
 - After a subgroup is selected again, the releases skipped while it was deselected are evaluated again right away, without waiting for an RSS refresh or a new release; when it is selected while the subscription is stopped, they are evaluated when the subscription resumes.
 - A download that has not been imported yet can be cancelled in the execution record dialog (also through the API, MCP and CLI), and its record shows Cancelled; a subscription release can be downloaded again with Retry, while a cancelled one-shot download cannot be retried.
+- A disabled Apply button in the recognition dialog shows why on hover: the template is empty, an episode number is invalid, the preview is rendering, the preview failed, files cannot be processed (with the count), or there is nothing to change.
 
 ## Fixed
 

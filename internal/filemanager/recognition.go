@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -39,9 +40,12 @@ import (
 // (the default) keeps it and its subtitles where they are, route moves them
 // under their original names into the directory's Extras folder.
 //
-// A target is legal only as a member of the file's own folder: the naming
-// engine refuses a rendered value that is empty, carries a separator or leaves
-// the folder, and this package repeats the check when it composes the path.
+// A target is legal as a relative path under the file's own folder: the
+// naming engine refuses a rendered value that is empty, absolute, or leaves
+// the folder, and allows `/`-separated directory parts the template spells
+// out (fact values are sanitized, so a title can never inject a level); this
+// package repeats the check when it composes the path. A target in a deeper
+// directory is a move; the submit creates the missing levels first.
 // Conflicts are detected again at submit and settled by this operation's own
 // choice: block (admit nothing), skip (leave the conflicting files) or version
 // (take the first free " (N)" sibling).
@@ -838,7 +842,9 @@ func (s *Service) recognitionRenderRow(ctx context.Context, plan *recognitionPla
 		Revision: file.inspection.detail.Revision,
 		Episode:  episode, Disposition: disposition,
 	}
-	rendered, blocker, err := s.renderRecognition(ctx, recognitionRenderInput(file, naming.KindVideoFilename, plan.request.VideoTemplate, episode, plan.request.Match))
+	// The rename renders the path-bearing filename kind: a target may stay a
+	// plain name or spell out subdirectories under the file's own folder.
+	rendered, blocker, err := s.renderRecognition(ctx, recognitionRenderInput(file, naming.KindRelativeFilename, plan.request.VideoTemplate, episode, plan.request.Match))
 	if err != nil {
 		row.Disposition = RecognitionError
 		row.Blockers = []RecognitionBlocker{{Code: RecognitionBlockerTemplateInvalid}}
@@ -856,6 +862,11 @@ func (s *Service) recognitionRenderRow(ctx context.Context, plan *recognitionPla
 	}
 	row.TargetName = rendered
 	row.TargetPath = joinAbsolute(plan.directory, rendered)
+	// A deeper directory in the target is a move; the same absolute path the
+	// file already has still reads as unchanged.
+	if filepath.Dir(row.TargetPath) != plan.directory {
+		row.Disposition = RecognitionMove
+	}
 	if row.TargetPath == file.inspection.absolute {
 		row.Disposition = RecognitionUnchanged
 	}
@@ -887,9 +898,16 @@ func (s *Service) recognitionSubtitleRow(ctx context.Context, plan *recognitionP
 		}
 		suffix = rendered
 	}
-	stem := strings.TrimSuffix(videoRendered, path.Ext(videoRendered))
+	// The subtitle follows its video, directory parts included: the sidecar
+	// name composes onto the video's basename inside the video's own target
+	// directory.
+	videoDirectory := path.Dir(videoRendered)
+	stem := strings.TrimSuffix(path.Base(videoRendered), path.Ext(videoRendered))
 	extension := strings.TrimPrefix(filepath.Ext(file.inspection.detail.Entry.Name), ".")
 	name := naming.CompanionSidecarFilename(stem, suffix, extension)
+	if videoDirectory != "." {
+		name = videoDirectory + "/" + name
+	}
 	if problem := s.recognitionTargetProblem(plan.directory, name); problem != nil {
 		row.Disposition = RecognitionError
 		row.Blockers = []RecognitionBlocker{*problem}
@@ -899,21 +917,36 @@ func (s *Service) recognitionSubtitleRow(ctx context.Context, plan *recognitionP
 	row.TargetPath = joinAbsolute(plan.directory, name)
 	row.subtitleSuffix = suffix
 	row.subtitleExtension = extension
+	if filepath.Dir(row.TargetPath) != plan.directory {
+		row.Disposition = RecognitionMove
+	}
 	if row.TargetPath == file.inspection.absolute {
 		row.Disposition = RecognitionUnchanged
 	}
 	return row
 }
 
+// maxRecognitionDepth bounds how many directory levels one rendered target
+// may descend under the file's folder.
+const maxRecognitionDepth = 16
+
 // recognitionTargetProblem repeats the target legality the naming engine
-// enforces: one non-empty segment inside the file's folder, outside the denial
-// zone and the executor namespaces.
+// enforces: a relative path of legal segments inside the file's folder,
+// outside the denial zone and the executor namespaces. The segments may
+// descend into subdirectories; traversal, empty levels and absolute escapes
+// are refused.
 func (s *Service) recognitionTargetProblem(directory, name string) *RecognitionBlocker {
-	if name == "" || strings.ContainsAny(name, `/\`) || name == "." || name == ".." {
+	if name == "" || strings.IndexByte(name, 0) >= 0 || strings.ContainsRune(name, '\\') {
 		return &RecognitionBlocker{Code: RecognitionBlockerTargetInvalid}
 	}
-	if len([]byte(name)) > maxPathSegmentBytes {
+	segments := strings.Split(name, "/")
+	if len(segments) > maxRecognitionDepth+1 {
 		return &RecognitionBlocker{Code: RecognitionBlockerTargetInvalid}
+	}
+	for _, segment := range segments {
+		if segment == "" || segment == "." || segment == ".." || len([]byte(segment)) > maxPathSegmentBytes {
+			return &RecognitionBlocker{Code: RecognitionBlockerTargetInvalid}
+		}
 	}
 	absolute := joinAbsolute(directory, name)
 	if refuseDenied(s.zone, absolute) != nil || internalNamespace(absolute) {
@@ -1163,7 +1196,7 @@ func (s *Service) SubmitRecognition(ctx context.Context, request SubmitRecogniti
 			return RecognitionOutcome{}, conflict(CodeRecognitionNotRenderable, "a file cannot be rendered: "+row.Name)
 		}
 	}
-	admissions, createdExtras, err := s.recognitionAdmissions(ctx, plan, request, digest, choice)
+	admissions, createdDirs, err := s.recognitionAdmissions(ctx, plan, request, digest, choice)
 	if err != nil {
 		return RecognitionOutcome{}, err
 	}
@@ -1172,9 +1205,7 @@ func (s *Service) SubmitRecognition(ctx context.Context, request SubmitRecogniti
 	}
 	operations, err := s.commands.AdmitOperations(ctx, admissions)
 	if err != nil {
-		if createdExtras != "" {
-			_ = os.Remove(createdExtras)
-		}
+		removeCreatedDirectories(createdDirs)
 		return RecognitionOutcome{}, err
 	}
 	return recognitionOutcome(operations), nil
@@ -1199,7 +1230,7 @@ func recognitionOutcome(operations []UserOperation) RecognitionOutcome {
 // Under overwrite, only rows conflicting with a plain file are admitted, each
 // with the overwrite policy; a managed, in-progress or duplicated target
 // refuses the whole submit.
-func (s *Service) recognitionAdmissions(ctx context.Context, plan recognitionPlan, request SubmitRecognitionRequest, digest string, choice RecognitionConflictChoice) ([]OperationAdmission, string, error) {
+func (s *Service) recognitionAdmissions(ctx context.Context, plan recognitionPlan, request SubmitRecognitionRequest, digest string, choice RecognitionConflictChoice) ([]OperationAdmission, []string, error) {
 	drop := map[int]bool{}
 	switch choice {
 	case RecognitionConflictSkip:
@@ -1226,7 +1257,7 @@ func (s *Service) recognitionAdmissions(ctx context.Context, plan recognitionPla
 			}
 			refusal := conflict(CodeTargetExists, "a target is occupied")
 			refusal.Paths = paths
-			return nil, "", refusal
+			return nil, nil, refusal
 		}
 	case RecognitionConflictOverwrite:
 		var paths []string
@@ -1241,30 +1272,32 @@ func (s *Service) recognitionAdmissions(ctx context.Context, plan recognitionPla
 			}
 			refusal := conflict(CodeTargetExists, "a managed, in-progress or duplicated target is never overwritten")
 			refusal.Paths = paths
-			return nil, "", refusal
+			return nil, nil, refusal
 		}
 	}
-	// A move into the route's Extras folder names a directory the executor
-	// never creates, so the operation creates it first.
-	extrasDirectory := ""
+	// A move into a deeper directory names directories the executor never
+	// creates, so the operation creates every missing level first.
+	targetDirectories := []string{}
+	seenDirectory := map[string]bool{}
 	for _, operation := range plan.operations {
 		if drop[operation.row] {
 			continue
 		}
-		if filepath.Dir(operation.target) != plan.directory {
-			extrasDirectory = filepath.Dir(operation.target)
-			break
+		directory := filepath.Dir(operation.target)
+		if directory != plan.directory && !seenDirectory[directory] {
+			seenDirectory[directory] = true
+			targetDirectories = append(targetDirectories, directory)
 		}
 	}
-	createdExtras := ""
-	if extrasDirectory != "" {
-		created, err := s.ensureRecognitionDirectory(extrasDirectory, plan.directory)
+	sort.Strings(targetDirectories)
+	createdDirs := []string{}
+	for _, directory := range targetDirectories {
+		created, err := s.ensureRecognitionDirectory(directory, plan.directory)
 		if err != nil {
-			return nil, "", err
+			removeCreatedDirectories(createdDirs)
+			return nil, nil, err
 		}
-		if created {
-			createdExtras = extrasDirectory
-		}
+		createdDirs = append(createdDirs, created...)
 	}
 	claimed := map[string]bool{}
 	final := map[int]string{}
@@ -1291,10 +1324,8 @@ func (s *Service) recognitionAdmissions(ctx context.Context, plan recognitionPla
 			target = joinAbsolute(directory, name)
 		}
 		if err != nil {
-			if createdExtras != "" {
-				_ = os.Remove(createdExtras)
-			}
-			return nil, "", err
+			removeCreatedDirectories(createdDirs)
+			return nil, nil, err
 		}
 		claimed[target] = true
 		if operation.role == filekinds.KindVideo {
@@ -1323,32 +1354,48 @@ func (s *Service) recognitionAdmissions(ctx context.Context, plan recognitionPla
 		}
 		admissions = append(admissions, admission)
 	}
-	return admissions, createdExtras, nil
+	return admissions, createdDirs, nil
 }
 
-// ensureRecognitionDirectory creates the route's Extras directory when it is
-// missing and verifies it is a real directory, never a symlink.
-func (s *Service) ensureRecognitionDirectory(directory, parent string) (bool, error) {
-	if filepath.Dir(directory) != parent {
-		return false, invalid(CodeTargetInvalid, "target directory does not exist")
+// ensureRecognitionDirectory makes directory exist under base, creating every
+// missing level (deepest last in the returned list) and verifying each level
+// is a real directory, never a symlink.
+func (s *Service) ensureRecognitionDirectory(directory, base string) ([]string, error) {
+	if directory == base || !strings.HasPrefix(directory, base+string(filepath.Separator)) {
+		return nil, invalid(CodeTargetInvalid, "target directory is not inside the folder")
 	}
-	if refuseDenied(s.zone, directory) != nil || internalNamespace(directory) {
-		return false, invalid(CodeTargetInvalid, "target directory is not usable")
-	}
-	info, err := os.Lstat(directory)
-	if errors.Is(err, os.ErrNotExist) {
-		if err := os.Mkdir(directory, 0o755); err != nil {
-			return false, fsError(err, directory)
+	created := []string{}
+	current := base
+	relative := strings.TrimPrefix(directory, base+string(filepath.Separator))
+	for _, segment := range strings.Split(relative, string(filepath.Separator)) {
+		current = joinAbsolute(current, segment)
+		if refuseDenied(s.zone, current) != nil || internalNamespace(current) {
+			return nil, invalid(CodeTargetInvalid, "target directory is not usable")
 		}
-		return true, nil
+		info, err := os.Lstat(current)
+		if errors.Is(err, os.ErrNotExist) {
+			if err := os.Mkdir(current, 0o755); err != nil {
+				return nil, fsError(err, current)
+			}
+			created = append(created, current)
+			continue
+		}
+		if err != nil {
+			return nil, fsError(err, current)
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return nil, invalid(CodeTargetInvalid, "target directory is not usable")
+		}
 	}
-	if err != nil {
-		return false, fsError(err, directory)
+	return created, nil
+}
+
+// removeCreatedDirectories removes directories a submit created when a later
+// step refused, deepest first; a level that took a file in the meantime stays.
+func removeCreatedDirectories(created []string) {
+	for index := len(created) - 1; index >= 0; index-- {
+		_ = os.Remove(created[index])
 	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return false, invalid(CodeTargetInvalid, "target directory is not usable")
-	}
-	return false, nil
 }
 
 // freeRecognitionTarget returns the first free sibling of one rendered name.

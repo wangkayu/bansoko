@@ -166,22 +166,70 @@ func TestRecognitionRefusesUntouchedSelections(t *testing.T) {
 	}
 }
 
-func TestRecognitionRefusesAnIllegalRenderedTarget(t *testing.T) {
+// A filename template that renders `/`-separated levels moves the file into
+// those levels under the selection's folder; the subtitle follows its video.
+func TestRecognitionRendersASubdirectoryTarget(t *testing.T) {
 	f := newRecognitionFixture(t, fakeRecognitionPolicy{})
 	ctx := context.Background()
 	writeFile(t, f.abs("Loose/Show - 01.mkv"), 4)
-	request := recognitionRequest(f.abs("Loose/Show - 01.mkv"))
-	request.VideoTemplate = "${ep.number}/${file.ext}"
+	writeFile(t, f.abs("Loose/Show - 01.zh.ass"), 4)
+	request := recognitionRequest(f.abs("Loose/Show - 01.mkv"), f.abs("Loose/Show - 01.zh.ass"))
+	request.VideoTemplate = "${ep.number}/Show - 01.${file.ext}"
+	request.SubtitleTemplate = "zh"
 	preview, err := f.service.PreviewRecognition(ctx, request)
 	if err != nil {
 		t.Fatalf("preview: %v", err)
 	}
-	row := recognitionRow(t, preview, "Show - 01.mkv")
-	if row.Disposition != RecognitionError || len(row.Blockers) != 1 || row.Blockers[0].Code != RecognitionBlockerTargetInvalid {
-		t.Fatalf("row = %+v", row)
+	video := recognitionRow(t, preview, "Show - 01.mkv")
+	if video.Disposition != RecognitionMove || video.TargetName != "1/Show - 01.mkv" || filepath.Dir(video.TargetPath) != f.abs("Loose/1") {
+		t.Fatalf("video row = %+v", video)
 	}
-	_, err = f.service.SubmitRecognition(ctx, SubmitRecognitionRequest{IdempotencyKey: "illegal", ExpectedPlanDigest: preview.PlanDigest, RecognitionRequest: request})
-	mustCode(t, err, CodeRecognitionNotRenderable)
+	subtitle := recognitionRow(t, preview, "Show - 01.zh.ass")
+	if subtitle.Disposition != RecognitionMove || subtitle.TargetName != "1/Show - 01.zh.ass" || filepath.Dir(subtitle.TargetPath) != f.abs("Loose/1") {
+		t.Fatalf("subtitle row = %+v", subtitle)
+	}
+	outcome, err := f.service.SubmitRecognition(ctx, SubmitRecognitionRequest{IdempotencyKey: "subdir", ExpectedPlanDigest: preview.PlanDigest, RecognitionRequest: request})
+	if err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	if outcome.Moved != 2 {
+		t.Fatalf("outcome = %+v", outcome)
+	}
+	for _, op := range outcome.Operations {
+		if op.TargetPath != video.TargetPath && op.TargetPath != subtitle.TargetPath {
+			t.Fatalf("operation target = %s", op.TargetPath)
+		}
+	}
+	// The rendered directory levels exist once the submit is admitted; the
+	// moves themselves are the executor's, like every recognition operation.
+	if info, err := os.Stat(f.abs("Loose/1")); err != nil || !info.IsDir() {
+		t.Fatalf("rendered directory was not created: %v", err)
+	}
+}
+
+func TestRecognitionRefusesAnIllegalRenderedTarget(t *testing.T) {
+	f := newRecognitionFixture(t, fakeRecognitionPolicy{})
+	ctx := context.Background()
+	writeFile(t, f.abs("Loose/Show - 01.mkv"), 4)
+	for _, template := range []string{
+		"${ep.number}/../Show - 01.${file.ext}",                               // traversal
+		"/${file.stem}.${file.ext}",                                           // escapes upward to an absolute
+		"${ep.number}//Show - 01.${file.ext}",                                 // empty level
+		strings.Repeat("a/", maxRecognitionDepth+1) + "Show - 01.${file.ext}", // too deep
+	} {
+		request := recognitionRequest(f.abs("Loose/Show - 01.mkv"))
+		request.VideoTemplate = template
+		preview, err := f.service.PreviewRecognition(ctx, request)
+		if err != nil {
+			t.Fatalf("preview %q: %v", template, err)
+		}
+		row := recognitionRow(t, preview, "Show - 01.mkv")
+		if row.Disposition != RecognitionError || len(row.Blockers) != 1 || row.Blockers[0].Code != RecognitionBlockerTargetInvalid {
+			t.Fatalf("template %q row = %+v", template, row)
+		}
+		_, err = f.service.SubmitRecognition(ctx, SubmitRecognitionRequest{IdempotencyKey: "illegal", ExpectedPlanDigest: preview.PlanDigest, RecognitionRequest: request})
+		mustCode(t, err, CodeRecognitionNotRenderable)
+	}
 }
 
 func TestRecognitionMissingAnimeFactsIsABlocker(t *testing.T) {

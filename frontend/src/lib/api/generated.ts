@@ -7301,8 +7301,11 @@ export interface components {
             variables: components["schemas"]["TemplateVariable"][];
         };
         NamingTemplatePreviewInput: {
-            /** @enum {string} */
-            template_kind: "directory" | "video_filename" | "subtitle_suffix";
+            /**
+             * @description Rendered shape of template_source: a directory (absolute path), a video filename (one segment), a path-bearing filename (`/`-separated levels below the file's own folder), or a subtitle suffix.
+             * @enum {string}
+             */
+            template_kind: "directory" | "video_filename" | "relative_filename" | "subtitle_suffix";
             /** @description The template body to preview, written like a stored value: the text between the backticks with `${...}` interpolations, no outer backticks. A value wrapped in its own backticks is refused. */
             template_source: string;
             /** @description Optional fixed redacted sample selector from the naming template catalog; omitted uses the default sample. */

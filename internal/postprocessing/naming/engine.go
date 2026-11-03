@@ -42,9 +42,10 @@ const (
 type TemplateKind string
 
 const (
-	KindDirectory      TemplateKind = "directory"
-	KindVideoFilename  TemplateKind = "video_filename"
-	KindSubtitleSuffix TemplateKind = "subtitle_suffix"
+	KindDirectory        TemplateKind = "directory"
+	KindVideoFilename    TemplateKind = "video_filename"
+	KindRelativeFilename TemplateKind = "relative_filename"
+	KindSubtitleSuffix   TemplateKind = "subtitle_suffix"
 )
 
 type Error struct {
@@ -518,6 +519,12 @@ func normalizeRendered(kind TemplateKind, value, verbatimRoot string, render2 bo
 			return "", &Error{Code: ErrCodeNamingTargetInvalid, Field: string(kind), Message: err.Error()}
 		}
 		return normalized, nil
+	case KindRelativeFilename:
+		normalized, err := normalizeRelativeFilename(value, render2)
+		if err != nil {
+			return "", &Error{Code: ErrCodeNamingTargetInvalid, Field: string(kind), Message: err.Error()}
+		}
+		return normalized, nil
 	}
 	// A subtitle suffix is not normalized: it may legitimately render empty, and
 	// a dot or separator left by an empty value is refused by its validation.
@@ -541,6 +548,13 @@ func validateRendered(kind TemplateKind, value string) error {
 			return &Error{Code: ErrCodeNamingTargetInvalid, Field: string(kind), Message: "rendered filename is empty"}
 		}
 		if err := validateRenderedTarget(value, false); err != nil {
+			return &Error{Code: ErrCodeNamingTargetInvalid, Field: string(kind), Message: err.Error()}
+		}
+	case KindRelativeFilename:
+		if strings.TrimSpace(value) == "" {
+			return &Error{Code: ErrCodeNamingTargetInvalid, Field: string(kind), Message: "rendered filename is empty"}
+		}
+		if err := validateRelativeFilename(value); err != nil {
 			return &Error{Code: ErrCodeNamingTargetInvalid, Field: string(kind), Message: err.Error()}
 		}
 	case KindSubtitleSuffix:

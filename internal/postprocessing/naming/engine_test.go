@@ -554,3 +554,49 @@ func TestPreviewRendersExecutionFactsAsPlaceholders(t *testing.T) {
 		t.Fatalf("preview without media facts = %+v, %v", preview, err)
 	}
 }
+
+// A relative filename names one file below its own folder: `/`-separated
+// levels, each a legal segment with the same normalization a plain filename
+// gets. Everything else — an escape upward, an empty level, a too-deep or
+// too-long level — is a target error.
+func TestRenderRelativeFilename(t *testing.T) {
+	engine := NewEngine()
+	ctx := sampleContext(t, "sample-tv")
+	for source, want := range map[string]string{
+		"${ep.number}/Show - ${ep.number}.${file.ext}": "7/Show - 7.mkv",
+		"Show./${ep.number}.${file.ext}":               "Show/7.mkv",
+		"Show.${file.ext}":                             "Show.mkv",
+	} {
+		rendered, err := engine.Render(compileOrFail(t, engine, KindRelativeFilename, source), ctx)
+		if err != nil || rendered != want {
+			t.Fatalf("%q rendered %q, %v; want %q", source, rendered, err, want)
+		}
+	}
+	for _, source := range []string{
+		"/Show.mkv",
+		"../Show.mkv",
+		"a//b.mkv",
+		"a/../b.mkv",
+		strings.Repeat("a/", maxRelativeFilenameSegments) + "b.mkv",
+		strings.Repeat("x", maxSegmentBytes+1) + ".${file.ext}",
+	} {
+		_, err := engine.Render(compileOrFail(t, engine, KindRelativeFilename, source), ctx)
+		assertErrorCode(t, err, ErrCodeNamingTargetInvalid)
+	}
+}
+
+// validateRelativeFilename is the defense-in-depth layer under the rendered
+// value: a separator or control character that survives a fact value, or a
+// home-directory prefix, never becomes a directory level.
+func TestValidateRelativeFilename(t *testing.T) {
+	for _, value := range []string{
+		"a\\b.mkv", "a\x00b.mkv", "~root/Show.mkv", "./Show.mkv",
+	} {
+		if err := validateRelativeFilename(value); err == nil {
+			t.Fatalf("%q passed validation", value)
+		}
+	}
+	if err := validateRelativeFilename("Season 1/Show.mkv"); err != nil {
+		t.Fatalf("plain value rejected: %v", err)
+	}
+}

@@ -18102,7 +18102,12 @@ components:
       properties:
         template_kind:
           type: string
-          enum: [directory, video_filename, subtitle_suffix]
+          enum: [directory, video_filename, relative_filename, subtitle_suffix]
+          description: >-
+            Rendered shape of template_source: a directory (absolute path), a
+            video filename (one segment), a path-bearing filename
+            (`/`-separated levels below the file's own folder), or a subtitle
+            suffix.
         template_source:
           type: string
           maxLength: 4096

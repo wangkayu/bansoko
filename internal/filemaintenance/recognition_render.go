@@ -117,18 +117,20 @@ type RecognitionAnimeDraft struct {
 }
 
 // RenderRecognition renders one supplied template over the input's facts and
-// returns the rendered value. For KindVideoFilename the value is the target
-// file name; for KindSubtitleSuffix it is the suffix the caller composes onto
-// the rendered video basename.
+// returns the rendered value. For KindVideoFilename and the path-bearing
+// KindRelativeFilename the value is the target file name (the latter may
+// carry `/`-separated directory parts under the file's own folder); for
+// KindSubtitleSuffix it is the suffix the caller composes onto the rendered
+// video basename.
 func (r *NamingTargetRenderer) RenderRecognition(ctx context.Context, in RecognitionRenderInput) (string, error) {
 	fileName := path.Base(strings.ReplaceAll(strings.TrimSpace(in.FileName), "\\", "/"))
 	if fileName == "" || fileName == "." || fileName == ".." || fileName == "/" {
 		return "", errors.New("recognition render requires a file name")
 	}
-	if in.Kind != naming.KindVideoFilename && in.Kind != naming.KindSubtitleSuffix {
-		return "", errors.New("recognition render kind is not video_filename or subtitle_suffix")
+	if in.Kind != naming.KindVideoFilename && in.Kind != naming.KindRelativeFilename && in.Kind != naming.KindSubtitleSuffix {
+		return "", errors.New("recognition render kind is not video_filename, relative_filename or subtitle_suffix")
 	}
-	if strings.TrimSpace(in.Template) == "" && in.Kind == naming.KindVideoFilename {
+	if strings.TrimSpace(in.Template) == "" && (in.Kind == naming.KindVideoFilename || in.Kind == naming.KindRelativeFilename) {
 		return "", &RecognitionRenderError{Code: RecognitionRenderTemplateInvalid, cause: errors.New("video filename template is empty")}
 	}
 

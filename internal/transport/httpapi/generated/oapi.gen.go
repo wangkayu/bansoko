@@ -1207,9 +1207,10 @@ const (
 
 // Defines values for NamingTemplatePreviewInputTemplateKind.
 const (
-	NamingTemplatePreviewInputTemplateKindDirectory      NamingTemplatePreviewInputTemplateKind = "directory"
-	NamingTemplatePreviewInputTemplateKindSubtitleSuffix NamingTemplatePreviewInputTemplateKind = "subtitle_suffix"
-	NamingTemplatePreviewInputTemplateKindVideoFilename  NamingTemplatePreviewInputTemplateKind = "video_filename"
+	NamingTemplatePreviewInputTemplateKindDirectory        NamingTemplatePreviewInputTemplateKind = "directory"
+	NamingTemplatePreviewInputTemplateKindRelativeFilename NamingTemplatePreviewInputTemplateKind = "relative_filename"
+	NamingTemplatePreviewInputTemplateKindSubtitleSuffix   NamingTemplatePreviewInputTemplateKind = "subtitle_suffix"
+	NamingTemplatePreviewInputTemplateKindVideoFilename    NamingTemplatePreviewInputTemplateKind = "video_filename"
 )
 
 // Defines values for NamingVarsDiagnosticCode.
@@ -6163,7 +6164,9 @@ type NamingTemplatePreviewInput struct {
 	Language *NamingTemplatePreviewInputLanguage `json:"language,omitempty"`
 
 	// SampleRef Optional fixed redacted sample selector from the naming template catalog; omitted uses the default sample.
-	SampleRef    *string                                `json:"sample_ref,omitempty"`
+	SampleRef *string `json:"sample_ref,omitempty"`
+
+	// TemplateKind Rendered shape of template_source: a directory (absolute path), a video filename (one segment), a path-bearing filename (`/`-separated levels below the file's own folder), or a subtitle suffix.
 	TemplateKind NamingTemplatePreviewInputTemplateKind `json:"template_kind"`
 
 	// TemplateSource The template body to preview, written like a stored value: the text between the backticks with `${...}` interpolations, no outer backticks. A value wrapped in its own backticks is refused.
@@ -6173,7 +6176,7 @@ type NamingTemplatePreviewInput struct {
 // NamingTemplatePreviewInputLanguage Language of template_source; omitted is js-naming-1.
 type NamingTemplatePreviewInputLanguage string
 
-// NamingTemplatePreviewInputTemplateKind defines model for NamingTemplatePreviewInput.TemplateKind.
+// NamingTemplatePreviewInputTemplateKind Rendered shape of template_source: a directory (absolute path), a video filename (one segment), a path-bearing filename (`/`-separated levels below the file's own folder), or a subtitle suffix.
 type NamingTemplatePreviewInputTemplateKind string
 
 // NamingVariant defines model for NamingVariant.

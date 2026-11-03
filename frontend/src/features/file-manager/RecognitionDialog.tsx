@@ -38,11 +38,13 @@ import { useIdempotencyKeys } from "./batch";
 // RecognitionDialog — the complex window behind 识别…: the naming core one-shot
 // step two renders with, fed by the manual selection instead of a seed
 // manifest. The right side is the same editors one-shot uses (parser, then the
-// naming templates, restricted to what stays inside the selection's directory)
-// plus this operation's optional match; the left side is the server's rendered
-// plan, refreshed as the configuration changes. Nothing is written until 应用:
-// conflicts are settled by the skip / version / replace / cancel choice, and
-// the submit confirms the plan digest the preview returned.
+// naming templates; the filename may carry subdirectory levels, which land
+// inside the selection's folder shown above the plan) plus this operation's
+// optional match; the left side is the server's rendered plan, refreshed as
+// the configuration changes. Nothing is written until 应用: conflicts are
+// settled by the skip / version / replace / cancel choice, and the submit
+// confirms the plan digest the preview returned. A disabled 应用 carries the
+// reason as its tooltip.
 const DEBOUNCE_MS = 400;
 
 const EMPTY_NAMING: NamingRules = {
@@ -236,6 +238,7 @@ export function RecognitionDialog({
   const data = preview.data;
   const rows = data?.rows ?? [];
   const hasBlockers = rows.some((row) => row.disposition === "error");
+  const blockedCount = rows.filter((row) => row.disposition === "error").length;
   const actionable = rows.filter((row) => row.disposition === "rename" || row.disposition === "move").length;
   const unknownCount = rows.filter((row) => row.disposition === "skip").length;
   const unknownRoute = data?.unknown_route;
@@ -252,6 +255,19 @@ export function RecognitionDialog({
     !hasBlockers &&
     actionable > 0 &&
     !busy;
+  // Why 应用 cannot be clicked right now: the first failed gate of canApply,
+  // shown as the button's tooltip so a blocked submit is observable instead of
+  // silently disabled. busy shows the spinner, so it stays untipped.
+  let applyDisabledReason: string | undefined;
+  if (!busy) {
+    if (videoTemplate.trim() === "") applyDisabledReason = t("fileManager.recognize.preview.emptyTemplate");
+    else if (numberInvalid) applyDisabledReason = t("fileManager.recognize.invalidNumber");
+    else if (!data) applyDisabledReason = t("fileManager.recognize.preview.loading");
+    else if (preview.isError) applyDisabledReason = t("fileManager.recognize.preview.failed");
+    else if (!settled || preview.isFetching) applyDisabledReason = t("fileManager.recognize.preview.loading");
+    else if (hasBlockers) applyDisabledReason = t("fileManager.recognize.applyDisabled.blockers", { n: blockedCount });
+    else if (actionable === 0) applyDisabledReason = t("fileManager.recognize.applyDisabled.nothing");
+  }
 
   // The title candidate a search one-shot reads from its seeds' parsed titles,
   // here from the parser's read of the first file's own name: a badge by the
@@ -304,6 +320,7 @@ export function RecognitionDialog({
               variant="primary"
               loading={busy}
               disabled={!canApply}
+              title={applyDisabledReason}
               onClick={() => (conflicts.length > 0 ? setConflictOpen(true) : void apply("block"))}
             >
               {t("fileManager.recognize.apply")}
@@ -322,6 +339,13 @@ export function RecognitionDialog({
               {t("fileManager.recognize.preview.heading")}
               <span className="tw:ml-2 tw:text-xs tw:font-normal tw:text-muted-foreground">{t("fileManager.recognize.preview.sub")}</span>
             </h3>
+            {/* The folder every rendered target resolves against — subdirectory
+                levels in the filename template land inside it. */}
+            {data ? (
+              <p className="text-caption break-anywhere tw:m-0 tw:text-muted-foreground" title={data.directory}>
+                {t("fileManager.recognize.preview.folder", { path: data.directory })}
+              </p>
+            ) : null}
             {videoTemplate.trim() === "" ? (
               <Alert tone="warning" title={t("fileManager.recognize.preview.emptyTemplate")} />
             ) : numberInvalid ? (

@@ -231,9 +231,10 @@ type NamingTemplatePreview struct {
 type NamingTemplatePreviewInputTemplateKind string
 
 const (
-	NamingTemplatePreviewInputTemplateKindDirectory      NamingTemplatePreviewInputTemplateKind = "directory"
-	NamingTemplatePreviewInputTemplateKindSubtitleSuffix NamingTemplatePreviewInputTemplateKind = "subtitle_suffix"
-	NamingTemplatePreviewInputTemplateKindVideoFilename  NamingTemplatePreviewInputTemplateKind = "video_filename"
+	NamingTemplatePreviewInputTemplateKindDirectory        NamingTemplatePreviewInputTemplateKind = "directory"
+	NamingTemplatePreviewInputTemplateKindSubtitleSuffix   NamingTemplatePreviewInputTemplateKind = "subtitle_suffix"
+	NamingTemplatePreviewInputTemplateKindVideoFilename    NamingTemplatePreviewInputTemplateKind = "video_filename"
+	NamingTemplatePreviewInputTemplateKindRelativeFilename NamingTemplatePreviewInputTemplateKind = "relative_filename"
 )
 
 type NamingTemplatePreviewInput struct {
