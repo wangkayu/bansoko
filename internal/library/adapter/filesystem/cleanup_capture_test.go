@@ -47,6 +47,9 @@ func TestMaintenanceActualQuarantinePurgeFinalReceipts(t *testing.T) {
 	if _, err := os.Stat(target); !os.IsNotExist(err) {
 		t.Fatalf("purge did not delete captured object: %v", err)
 	}
+	if _, err := os.Lstat(filepath.Dir(target)); !os.IsNotExist(err) {
+		t.Fatalf("purge left the emptied namespace directory: %v", err)
+	}
 }
 func TestMaintenanceCaptureParentRenameRejectsWithoutReceipt(t *testing.T) {
 	root, err := filepath.EvalSymlinks(t.TempDir())

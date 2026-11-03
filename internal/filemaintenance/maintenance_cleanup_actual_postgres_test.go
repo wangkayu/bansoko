@@ -64,6 +64,7 @@ func TestPGCleanupDeleteFinalReceiptCrashBeforeOwnerCommitRecovery(t *testing.T)
 	}
 	assertFileAbsent(t, f.source)
 	assertFileAbsent(t, filepath.Join(filepath.Dir(f.source), ".bansoko-cleanup-"+op.ID, "object"))
+	assertFileAbsent(t, filepath.Join(filepath.Dir(f.source), ".bansoko-cleanup-"+op.ID))
 }
 
 // panicBeforeMoveCleanupExecutor crashes after the capture attempt is

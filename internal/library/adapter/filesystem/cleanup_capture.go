@@ -171,6 +171,9 @@ func restoreCleanupObject(root, capture, source string, expected domain.FileObse
 	if err != nil || !sameMutationFileObservation(restored, expected) {
 		return &OperationError{Code: CodeRecoveryUnsafe, Err: errors.New("the restored object does not match the captured one")}
 	}
+	// The captured object is back at its public path; the namespace shell is
+	// residue the action is done with.
+	removeEmptyCleanupNamespace(root, capture)
 	return nil
 }
 

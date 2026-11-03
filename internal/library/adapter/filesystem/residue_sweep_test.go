@@ -53,6 +53,34 @@ func TestSweepTransientResidueRemovesOnlyAbandonedTransients(t *testing.T) {
 	if err := os.Symlink(filepath.Join(root, "Show - E01.mkv"), filepath.Join(root, symlinkName)); err != nil {
 		t.Fatal(err)
 	}
+	// A delete namespace is removed only when it is empty, old, and the
+	// service's own private directory.
+	abandonedNamespace := cleanupNamespacePrefix + "5b0d4bdd-8d21-4c2b-9a1d-6f3e9c0d1a2b"
+	abandonedNamespacePath := filepath.Join(root, abandonedNamespace)
+	if err := os.Mkdir(abandonedNamespacePath, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(abandonedNamespacePath, old, old); err != nil {
+		t.Fatal(err)
+	}
+	freshNamespace := cleanupNamespacePrefix + "6c1e5cee-9e32-4d3c-8b2e-7a4f0d1e2b3c"
+	if err := os.Mkdir(filepath.Join(root, freshNamespace), 0700); err != nil {
+		t.Fatal(err)
+	}
+	openNamespace := cleanupNamespacePrefix + "7d2f6dff-af43-4e4d-9c3f-8b5a1e2f3c4d"
+	openNamespacePath := filepath.Join(root, openNamespace)
+	if err := os.Mkdir(openNamespacePath, 0700); err != nil {
+		t.Fatal(err)
+	}
+	writeSweepFile(t, filepath.Join(openNamespacePath, "object"), old)
+	publicNamespace := cleanupNamespacePrefix + "8e3a7e00-b054-4f5e-ad40-9c6b2f3a4d5e"
+	if err := os.Mkdir(filepath.Join(root, publicNamespace), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(filepath.Join(root, publicNamespace), old, old); err != nil {
+		t.Fatal(err)
+	}
+	keep = append(keep, freshNamespace, openNamespace, publicNamespace)
 	// Residue one level down is out of scope.
 	nested := filepath.Join(root, "nested")
 	if err := os.Mkdir(nested, 0700); err != nil {
@@ -73,8 +101,11 @@ func TestSweepTransientResidueRemovesOnlyAbandonedTransients(t *testing.T) {
 	if report.Directories != 1 || report.Failed != 0 || report.Truncated {
 		t.Fatalf("unexpected report: %+v", report)
 	}
-	if report.Removed != len(residue) {
-		t.Fatalf("removed=%d want %d: %+v", report.Removed, len(residue), report)
+	if report.Removed != len(residue)+1 {
+		t.Fatalf("removed=%d want %d: %+v", report.Removed, len(residue)+1, report)
+	}
+	if _, err := os.Lstat(abandonedNamespacePath); !os.IsNotExist(err) {
+		t.Fatalf("abandoned delete namespace remains: %v", err)
 	}
 	for _, name := range residue {
 		if _, err := os.Lstat(filepath.Join(root, name)); !os.IsNotExist(err) {

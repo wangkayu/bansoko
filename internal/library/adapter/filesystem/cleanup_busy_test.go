@@ -369,6 +369,9 @@ func TestCleanupRestoreCaptured(t *testing.T) {
 	if _, err := os.Lstat(f.target); !os.IsNotExist(err) {
 		t.Fatalf("captured object still present: %v", err)
 	}
+	if _, err := os.Lstat(filepath.Dir(f.target)); !os.IsNotExist(err) {
+		t.Fatalf("restore left the emptied namespace directory: %v", err)
+	}
 	if _, err := f.executor.MoveMaintenance(context.Background(), f.source, f.target, f.expected, f.capture("work-c2")); err != nil {
 		t.Fatal(err)
 	}

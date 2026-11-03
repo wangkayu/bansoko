@@ -67,6 +67,9 @@ func TestMaintenanceDirectoryQuarantinePurge(t *testing.T) {
 	if _, err := os.Lstat(target); !os.IsNotExist(err) {
 		t.Fatalf("purge did not delete captured directory: %v", err)
 	}
+	if _, err := os.Lstat(filepath.Dir(target)); !os.IsNotExist(err) {
+		t.Fatalf("purge left the emptied namespace directory: %v", err)
+	}
 	if raw, err := os.ReadFile(outside); err != nil || string(raw) != "outside" {
 		t.Fatalf("the purge followed a symlink out of the namespace: %q %v", raw, err)
 	}

@@ -13,14 +13,17 @@ import (
 // Transient names bansoko creates beside a target and removes before the action
 // ends. They carry no durable registration, so one left behind by an
 // interrupted process is residue nobody will revisit. Staging and quarantine
-// names (".bansoko-overwrite-", ".bansoko-quarantine-", ".bansoko-cleanup-")
-// are deliberately absent: the database checkpoint that created them owns their
-// removal.
+// names (".bansoko-overwrite-", ".bansoko-quarantine-") are deliberately absent:
+// the database checkpoint that created them owns their removal. A cleanup
+// namespace (".bansoko-cleanup-<owner>") is revisited only when it is empty: its
+// captured object is the database's, but the directory itself has no other
+// remover once the object is gone.
 const (
 	transientCopyPrefix      = ".bansoko-copy-"
 	transientPlacementPrefix = ".bansoko-placement-"
 	transientPermitPrefix    = ".bansoko-permit-"
 	transientLinkProbePrefix = ".bansoko-link-probe-"
+	cleanupNamespacePrefix   = ".bansoko-cleanup-"
 )
 
 // TransientResidueSweepOptions bounds one sweep of already-known directories.
@@ -44,11 +47,13 @@ type TransientResidueSweep struct {
 	Truncated   bool
 }
 
-// SweepTransientResidue removes abandoned transient files from the given
-// directories, one level deep. Only regular files whose whole name matches a
-// transient shape are removed; directories, symlinks, unknown names, and
-// entries touched at or after the cutoff are left in place. A missing
-// directory is not an error. The returned error reports only cancellation.
+// SweepTransientResidue removes abandoned transient files and empty delete
+// namespaces from the given directories, one level deep. Only regular files
+// whose whole name matches a transient shape, and empty service-owned 0700
+// cleanup namespace directories, are removed; other directories, symlinks,
+// unknown names, and entries touched at or after the cutoff are left in place.
+// A missing directory is not an error. The returned error reports only
+// cancellation.
 func SweepTransientResidue(ctx context.Context, dirs []string, opts TransientResidueSweepOptions) (TransientResidueSweep, error) {
 	var report TransientResidueSweep
 	if opts.ModifiedBefore.IsZero() {
@@ -110,6 +115,15 @@ func sweepTransientResidueDir(ctx context.Context, dir string, opts TransientRes
 			}
 			scanned++
 			report.Entries++
+			if strings.HasPrefix(entry.Name(), cleanupNamespacePrefix) {
+				removed, sweepErr := sweepAbandonedCleanupNamespace(dir, entry.Name(), opts.ModifiedBefore)
+				if removed {
+					report.Removed++
+				} else if sweepErr != nil {
+					report.Failed++
+				}
+				continue
+			}
 			if !isTransientResidueName(entry.Name()) {
 				continue
 			}

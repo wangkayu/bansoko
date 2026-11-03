@@ -348,6 +348,15 @@ VALUES ($1, $2, $3, 'reconciliation', 'obs-'||$1, 'fp', 'fp', 'parser-v1', 'acti
 		if _, err := os.Lstat(abs("Loose/c.mkv")); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("deleted file still present: %v", err)
 		}
+		entries, err := os.ReadDir(abs("Loose"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), ".bansoko-cleanup-") {
+				t.Fatalf("delete left its private namespace %q", entry.Name())
+			}
+		}
 	default:
 		if op.State == filemanager.UserOperationCompleted {
 			t.Fatalf("delete must fail closed without a capture executor: %+v", op)

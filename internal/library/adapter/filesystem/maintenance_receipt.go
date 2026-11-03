@@ -334,5 +334,13 @@ func (e OSCleanupExecutor) PurgeMaintenance(ctx context.Context, path string, ex
 	if err := e.PurgeCaptured(ctx, path, expected); err != nil {
 		return err
 	}
-	return writeMaintenanceFinal(ctx, store, i, expected)
+	if err := writeMaintenanceFinal(ctx, store, i, expected); err != nil {
+		return err
+	}
+	// The object is gone and its purge receipt final: the namespace directory
+	// now holds nothing and no later stage revisits it.
+	if root, canonical, err := e.rootAndPath(path); err == nil && canonical == path {
+		removeEmptyCleanupNamespace(root, path)
+	}
+	return nil
 }
