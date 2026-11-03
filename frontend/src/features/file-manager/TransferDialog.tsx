@@ -26,6 +26,7 @@ export function TransferDialog({
   mode,
   sourceDir,
   paths,
+  hasDirectory,
   roots,
   onClose,
   onFinished,
@@ -34,6 +35,8 @@ export function TransferDialog({
   /** The folder the selection lives in (targets must leave it). */
   sourceDir: string;
   paths: string[];
+  /** A folder in the selection never overwrites an occupied target. */
+  hasDirectory: boolean;
   /** The library directories; every target must land inside one of them. */
   roots: readonly FileManagerRoot[];
   onClose: () => void;
@@ -229,7 +232,7 @@ export function TransferDialog({
           onCancel={() => setPending(null)}
           onSkip={() => void run(pending.targets, pending.occupied, "skip")}
           onVersion={() => void run(pending.targets, pending.occupied, "version")}
-          onOverwrite={pending.overwritable ? () => void run(pending.targets, pending.occupied, "overwrite") : undefined}
+          onOverwrite={pending.overwritable && !hasDirectory ? () => void run(pending.targets, pending.occupied, "overwrite") : undefined}
         />
       ) : null}
     </>

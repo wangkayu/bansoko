@@ -151,6 +151,29 @@ func fsError(err error, path string) error {
 	}
 }
 
+// directChildCount counts the entries directly inside a directory for the
+// delete confirmation. A directory that cannot be read answers nil: the
+// dialog then names the folder without a count rather than inventing one.
+func directChildCount(directory string) *int64 {
+	handle, err := os.Open(directory)
+	if err != nil {
+		return nil
+	}
+	defer handle.Close()
+	var count int64
+	for {
+		names, readErr := handle.Readdirnames(4096)
+		count += int64(len(names))
+		if errors.Is(readErr, io.EOF) {
+			break
+		}
+		if readErr != nil {
+			return nil
+		}
+	}
+	return &count
+}
+
 // rawEntry is one Lstat'ed directory entry.
 type rawEntry struct {
 	name    string

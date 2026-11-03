@@ -26,8 +26,10 @@ type FileObserver interface {
 
 // MetadataFileObserver reads a path's path-level metadata fingerprint
 // (domain.MetadataFingerprint: size plus device/inode) without reading its
-// content. Owners whose frozen fingerprint is a metadata fingerprint (a
-// scan-derived alignment source) compare with it; see ObserveLike.
+// content. A directory is observed by identity only and answers the directory
+// form (domain.DirectoryMetadataFingerprint). Owners whose frozen fingerprint
+// is a metadata fingerprint (a scan-derived alignment source, a file-manager
+// directory operation) compare with it; see ObserveLike.
 type MetadataFileObserver interface {
 	ObserveMetadata(context.Context, string) (string, error)
 }

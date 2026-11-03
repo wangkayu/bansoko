@@ -4906,6 +4906,9 @@ type FileManagerDetachedReason string
 
 // FileManagerEntry defines model for FileManagerEntry.
 type FileManagerEntry struct {
+	// ChildCount Entries directly inside a directory, for the delete confirmation. Absent for files and for a directory that cannot be read.
+	ChildCount *int64 `json:"child_count,omitempty"`
+
 	// CompanionOf Absolute path of the video a bound sidecar follows.
 	CompanionOf *string `json:"companion_of,omitempty"`
 

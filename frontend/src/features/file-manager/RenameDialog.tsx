@@ -19,6 +19,7 @@ export function RenameDialog({
   path,
   directory,
   name,
+  isDirectory,
   siblingNames,
   onClose,
   onFinished,
@@ -26,6 +27,8 @@ export function RenameDialog({
   path: string;
   directory: string;
   name: string;
+  /** A folder never overwrites an occupied target. */
+  isDirectory?: boolean;
   /** Names already in the folder, so an equal-but-different target is caught before the server. */
   siblingNames: readonly string[];
   onClose: () => void;
@@ -110,7 +113,7 @@ export function RenameDialog({
       const occupancy = target === path ? "free" : await targetOccupancy(target);
       setBusy(false);
       if (occupancy === "free") await run("block");
-      else setConflict({ path: target, overwritable: occupancy === "file" });
+      else setConflict({ path: target, overwritable: occupancy === "file" && !isDirectory });
     } catch (cause) {
       setBusy(false);
       setError(toUserMessage(cause, t("common.operationFailed")));

@@ -184,6 +184,7 @@ func mapFileManagerEntry(entry filemanager.Entry) generated.FileManagerEntry {
 		notAligned := true
 		mapped.NotAligned = &notAligned
 	}
+	mapped.ChildCount = entry.ChildCount
 	return mapped
 }
 

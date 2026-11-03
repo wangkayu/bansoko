@@ -40,6 +40,8 @@ const secondPage: FileManagerListing = {
   path: "/media/anime",
   truncated: false,
   entries: [
+    // An unlocked folder is selectable for move, rename and delete.
+    { name: "Extras", path: "/media/anime/Extras", kind: "directory", state: "detached", locked: false, child_count: 3 },
     { name: "notes.txt", path: "/media/anime/notes.txt", kind: "file", state: "detached", size_bytes: 10, locked: false },
     { name: "poster.jpg", path: "/media/anime/poster.jpg", kind: "file", state: "detached", size_bytes: 30, locked: false },
     // A plain file is classified by its extension, not by owner records.
@@ -283,6 +285,28 @@ describe("FileManagerDialog", () => {
     fireEvent.click(screen.getByRole("radio", { name: t("fileManager.browse.filter.image") }));
     expect(screen.getByText("poster.jpg")).toBeInTheDocument();
     expect(screen.queryByText("notes.txt")).not.toBeInTheDocument();
+  });
+
+  it("selects a folder: copy and recognize stay file-only, delete lists its contents count", async () => {
+    await loadFolder();
+    // The locked folder keeps navigation but offers no checkbox.
+    expect(screen.queryByRole("checkbox", { name: t("fileManager.browse.selectFile", { name: "Season 01" }) })).not.toBeInTheDocument();
+    fireEvent.click(fileCheckbox("Extras"));
+    expect(screen.getByText(t("fileManager.selection.count", { n: 1 }))).toBeInTheDocument();
+
+    const copy = screen.getByRole("button", { name: t("fileManager.selection.copy") });
+    expect(copy).toBeDisabled();
+    expect(copy.closest("span")!.title).toBe(t("fileManager.selection.copyFolderHint"));
+    const recognize = screen.getByRole("button", { name: t("fileManager.selection.recognize") });
+    expect(recognize).toBeDisabled();
+    expect(recognize.closest("span")!.title).toBe(t("fileManager.selection.recognizeFolderHint"));
+    expect(screen.getByRole("button", { name: t("fileManager.selection.move") })).toBeEnabled();
+    expect(screen.getByRole("button", { name: t("fileManager.selection.rename") })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: t("fileManager.selection.delete") }));
+    const dialog = await screen.findByRole("alertdialog", { name: t("fileManager.deleteDialog.title") });
+    expect(within(dialog).getByText(t("fileManager.deleteDialog.lineEntries", { n: 1 }))).toBeInTheDocument();
+    expect(within(dialog).getByText(t("fileManager.deleteDialog.folderItems", { n: 3 }))).toBeInTheDocument();
   });
 
   it("deletes a selection per file: revision read, submitted with it, toast and clear", async () => {

@@ -15443,6 +15443,13 @@ components:
           description: The work that manages a locked file, when owner facts name one.
           allOf:
             - $ref: '#/components/schemas/ID'
+        child_count:
+          type: integer
+          format: int64
+          minimum: 0
+          description: >-
+            Entries directly inside a directory, for the delete confirmation.
+            Absent for files and for a directory that cannot be read.
     FileManagerListing:
       type: object
       additionalProperties: false

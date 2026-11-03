@@ -39,6 +39,14 @@ func atomicRenameNoReplaceVerified(source, target verifiedEntry) error {
 	if !errors.Is(err, unix.EINVAL) && !errors.Is(err, unix.EOPNOTSUPP) && !errors.Is(err, unix.ENOSYS) {
 		return err
 	}
+	// A directory cannot take the link-then-unlink fallback below (linkat
+	// refuses directories), so a filesystem without RENAME_NOREPLACE cannot
+	// move it no-replace; fail with the rename's own answer.
+	var stat unix.Stat_t
+	if statErr := unix.Fstatat(sourceFD, source.name, &stat, unix.AT_SYMLINK_NOFOLLOW); statErr == nil &&
+		stat.Mode&unix.S_IFMT == unix.S_IFDIR {
+		return err
+	}
 	// NFS and some FUSE/SMB mounts refuse RENAME_NOREPLACE. link(2) never
 	// replaces an existing name (EEXIST), so link-then-unlink keeps the
 	// no-replace guarantee and the inode.

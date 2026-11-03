@@ -361,6 +361,11 @@ func (s *Service) resolveTarget(ctx context.Context, source inspection, kind Use
 	if choice != ConflictBlock && choice != ConflictVersion && choice != ConflictOverwrite {
 		return resolvedTarget{}, invalid(CodeTargetInvalid, "conflict choice is not valid")
 	}
+	if choice == ConflictOverwrite && source.info != nil && source.info.IsDir() {
+		// The overwrite exchange replaces a file; a directory only moves onto
+		// a free or versioned path.
+		return resolvedTarget{}, invalid(CodeTargetInvalid, "overwrite does not apply to a directory")
+	}
 	if err := s.authorize(ctx, target.Path); err != nil {
 		return resolvedTarget{}, invalid(CodeTargetInvalid, "target is not a valid path")
 	}
@@ -405,7 +410,10 @@ func (s *Service) operationAdmission(ctx context.Context, request OperationReque
 		Operation: request.Operation, SourcePath: source.absolute, SourceSpellings: source.spellings,
 		Collision: ConflictBlock, RequireDetachedSource: request.Operation != UserCopy,
 	}
-	if source.info != nil {
+	if source.info != nil && !source.info.IsDir() {
+		// A directory's size is a filesystem detail, not a content fact: its
+		// admission freezes ExpectedSize zero and execution verifies identity
+		// only.
 		admission.ExpectedSize = source.info.Size()
 	}
 	if request.Operation == UserDelete {

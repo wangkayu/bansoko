@@ -603,6 +603,17 @@ func TestListDerivesOwnershipStatesAndLocks(t *testing.T) {
 	if root["Loose"].FileKind != "" {
 		t.Fatalf("a directory has no file kind: %+v", root["Loose"])
 	}
+	// A directory carries the count of its direct entries, for the delete
+	// confirmation; a file never does.
+	if got := root["Loose"].ChildCount; got == nil || *got != 2 {
+		t.Fatalf("Loose child count = %v, want 2", root["Loose"].ChildCount)
+	}
+	if got := root["Show"].ChildCount; got == nil || *got != 9 {
+		t.Fatalf("Show child count = %v, want 9", root["Show"].ChildCount)
+	}
+	if loose["external.mkv"].ChildCount != nil {
+		t.Fatalf("a file has no child count: %+v", loose["external.mkv"])
+	}
 }
 
 func TestOneShotFilesAreDetachedEvenWithActivePlacement(t *testing.T) {

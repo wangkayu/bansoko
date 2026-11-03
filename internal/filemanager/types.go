@@ -212,6 +212,10 @@ type Entry struct {
 	// NotAligned marks a companion whose path differs from the one derived
 	// from its video, or whose last alignment failed.
 	NotAligned bool
+	// ChildCount is the number of entries directly inside a directory, for the
+	// delete confirmation; nil for files and for a directory that cannot be
+	// read.
+	ChildCount *int64
 }
 
 // Listing is one page of a directory.

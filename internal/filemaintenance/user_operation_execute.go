@@ -262,7 +262,16 @@ func (h userOperationRecoveryHandler) start(ctx context.Context, claim workitems
 	if errors.Is(err, os.ErrNotExist) {
 		return h.fail(op, op.Version, "failed", userFailureSourceMissing, "the file no longer exists"), nil
 	}
-	if err != nil || !info.Mode().IsRegular() || info.Size() != op.ExpectedSize {
+	if err != nil {
+		return h.fail(op, op.Version, "blocked", userFailureSourceChanged, "the file changed since the operation was confirmed"), nil
+	}
+	// A directory carries no size fact: its admission froze ExpectedSize zero,
+	// and the identity-only observation below is its whole verification.
+	if info.Mode().IsDir() {
+		if op.ExpectedSize != 0 {
+			return h.fail(op, op.Version, "blocked", userFailureSourceChanged, "the file changed since the operation was confirmed"), nil
+		}
+	} else if !info.Mode().IsRegular() || info.Size() != op.ExpectedSize {
 		return h.fail(op, op.Version, "blocked", userFailureSourceChanged, "the file changed since the operation was confirmed"), nil
 	}
 	// The frozen identity is path-level metadata (size + device/inode), never a

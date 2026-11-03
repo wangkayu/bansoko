@@ -239,6 +239,14 @@ func (executor OSFileExecutor) Execute(ctx context.Context, operation domain.Fil
 	if !fileObservationMatches(source, operation.SourceFingerprint, expectedSourceSize(operation)) {
 		return operation, &OperationError{Code: CodeSourceChanged, Err: errors.New("source fingerprint or size changed before placement")}
 	}
+	if facts, ok := domain.ParseMetadataFingerprint(source.Fingerprint); ok && facts.Directory {
+		// A directory (the file manager's directory move) has no content to
+		// copy or exchange and no no-replace fallback on filesystems without
+		// one: only a plain move under block or version is defined.
+		if operation.Operation != domain.OperationMove || operation.CollisionPolicy == domain.CollisionOverwrite {
+			return operation, &OperationError{Code: CodeSourceChanged, Err: errors.New("a directory only moves, without replacing its target")}
+		}
+	}
 	legacyHashOnlyMove := operation.Operation == domain.OperationMove && !sourceSizeKnown(operation)
 	operation.SourceSizeBytes = source.SizeBytes
 	operation.SourceSizeKnown = true
@@ -1334,7 +1342,12 @@ func canonicalSource(path string) (string, error) {
 		return clean, err
 	}
 	info, err := os.Lstat(resolved)
-	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+	if err != nil || info.Mode()&os.ModeSymlink != 0 {
+		return "", errors.New("source must not be a symlink")
+	}
+	// A directory source is the file manager's directory move; anything else
+	// that is not a regular file is refused.
+	if !info.Mode().IsRegular() && !info.Mode().IsDir() {
 		return "", errors.New("source must be a regular non-symlink file")
 	}
 	return filepath.Clean(resolved), nil
@@ -1955,7 +1968,12 @@ func authorizeExistingSourceMutation(source string) error {
 		return err
 	}
 	info, err := os.Lstat(clean)
-	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+	if err != nil || info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("move source must remain a regular non-symlink file")
+	}
+	// A directory move is the file manager's directory operation; other
+	// non-regular kinds stay refused.
+	if !info.Mode().IsRegular() && !info.Mode().IsDir() {
 		return errors.New("move source must remain a regular non-symlink file")
 	}
 	resolved, err := filepath.EvalSymlinks(clean)
@@ -2227,6 +2245,10 @@ const (
 // about how a collision is resolved.
 func chooseTarget(operation domain.FileOperation, source domain.FileObservation) (string, targetMatch, domain.FileObservation, error) {
 	base := filepath.Clean(operation.TargetPath)
+	sourceIsDirectory := false
+	if facts, ok := domain.ParseMetadataFingerprint(source.Fingerprint); ok && facts.Directory {
+		sourceIsDirectory = true
+	}
 	for index := 0; ; index++ {
 		candidate := base
 		if index > 0 {
@@ -2246,7 +2268,11 @@ func chooseTarget(operation domain.FileOperation, source domain.FileObservation)
 			return "", targetAbsent, domain.FileObservation{}, errors.New("refusing to use a symlink placement target")
 		}
 		if !info.Mode().IsRegular() {
-			return "", targetAbsent, domain.FileObservation{}, errors.New("placement target must be a regular file")
+			// A directory move may classify an existing directory at its
+			// target; any other non-regular occupant is unusable.
+			if !sourceIsDirectory || !info.Mode().IsDir() {
+				return "", targetAbsent, domain.FileObservation{}, errors.New("placement target must be a regular file")
+			}
 		}
 		observation, err := observeFileAs(candidate, operation.SourceFingerprint)
 		if err != nil {
@@ -2502,9 +2528,72 @@ func observeFile(path string) (domain.FileObservation, error) {
 // regular-file, descriptor-identity and stability checks as observeFile, but
 // the content is never read. Its Fingerprint is the deterministic metadata
 // identity (domain.MetadataFingerprint), so NFS/SMB libraries cost one stat
-// and one open per file instead of a full read.
+// and one open per file instead of a full read. A directory is observed by
+// identity only (observeDirectoryMetadata); a symlink or another non-regular,
+// non-directory entry is refused.
 func observeFileMetadata(path string) (domain.FileObservation, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return domain.FileObservation{}, fmt.Errorf("stat file: %w", err)
+	}
+	if info.Mode().IsDir() {
+		return observeDirectoryMetadata(path)
+	}
 	return observeFileMode(path, nil, false)
+}
+
+// observeDirectoryMetadata is the path-level observation of a directory: a
+// directory has no content to hash and its size is not a content fact, so the
+// fingerprint is the directory's device/inode identity only
+// (domain.DirectoryMetadataFingerprint). The descriptor identity check proves
+// the opened directory is the path entry; there is no content read whose
+// before/after stability a file observation proves, so the identity is
+// re-read after the open.
+func observeDirectoryMetadata(path string) (domain.FileObservation, error) {
+	pathIdentity, err := fileidentity.FromPath(path)
+	if err != nil {
+		return domain.FileObservation{}, fmt.Errorf("stat directory identity: %w", err)
+	}
+	if !fileidentity.IsPresent(pathIdentity) {
+		return domain.FileObservation{}, errors.New("directory identity is unavailable")
+	}
+	change, err := fileidentity.ChangeNanosFromPath(path)
+	if err != nil {
+		return domain.FileObservation{}, fmt.Errorf("stat directory change marker: %w", err)
+	}
+	dir, err := os.Open(path)
+	if err != nil {
+		return domain.FileObservation{}, err
+	}
+	defer dir.Close()
+	info, err := dir.Stat()
+	if err != nil {
+		return domain.FileObservation{}, fmt.Errorf("stat opened directory: %w", err)
+	}
+	if !info.IsDir() {
+		return domain.FileObservation{}, domain.ErrNotRegularFile
+	}
+	openedIdentity, err := fileidentity.FromFile(dir)
+	if err != nil {
+		return domain.FileObservation{}, fmt.Errorf("stat opened directory identity: %w", err)
+	}
+	if !fileidentity.Matches(pathIdentity, openedIdentity) {
+		return domain.FileObservation{}, errors.New("directory path changed while opening descriptor")
+	}
+	openedIdentity = carryIdentityGeneration(openedIdentity, pathIdentity)
+	finalIdentity, err := fileidentity.FromPath(path)
+	if err != nil {
+		return domain.FileObservation{}, fmt.Errorf("stat directory identity after open: %w", err)
+	}
+	if !fileidentity.Matches(openedIdentity, finalIdentity) {
+		return domain.FileObservation{}, errors.New("directory identity changed while observing")
+	}
+	return domain.FileObservation{
+		Fingerprint: domain.DirectoryMetadataFingerprint(finalIdentity),
+		SizeBytes:   0,
+		Identity:    carryIdentityGeneration(finalIdentity, openedIdentity),
+		ChangeNanos: change,
+	}, nil
 }
 
 // observeFileAs observes path in the fingerprint mode of reference: a

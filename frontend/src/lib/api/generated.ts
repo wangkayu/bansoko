@@ -6117,6 +6117,11 @@ export interface components {
             locked: boolean;
             /** @description The work that manages a locked file, when owner facts name one. */
             managed_anime_id?: components["schemas"]["ID"];
+            /**
+             * Format: int64
+             * @description Entries directly inside a directory, for the delete confirmation. Absent for files and for a directory that cannot be read.
+             */
+            child_count?: number;
         };
         FileManagerListing: {
             /** @description Absolute path of the listed directory. */

@@ -271,6 +271,37 @@ func TestSubmitOperationTargetRules(t *testing.T) {
 	mustCode(t, submit("t16", UserCopy, &Target{Path: f.abs("Loose/a.mkv"), Conflict: ConflictVersion}), CodeTargetInvalid)
 }
 
+// TestSubmitOperationDirectoryRules pins the directory matrix: move, rename and
+// delete only; no copy, no overwrite; a delete freezes ExpectedSize zero, since
+// a directory's size is a filesystem detail, not a content fact.
+func TestSubmitOperationDirectoryRules(t *testing.T) {
+	f := newCommandFixture(t)
+	ctx := context.Background()
+	rev := f.revision(t, "Loose/Sub")
+
+	_, err := f.service.SubmitOperation(ctx, OperationRequest{IdempotencyKey: "dc", Operation: UserCopy, Path: f.abs("Loose/Sub"), ExpectedRevision: rev, Target: &Target{Path: f.abs("Loose/SubCopy")}})
+	mustCode(t, err, CodeOperationNotAllowed)
+
+	op, err := f.service.SubmitOperation(ctx, OperationRequest{IdempotencyKey: "dd", Operation: UserDelete, Path: f.abs("Loose/Sub"), ExpectedRevision: rev})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.commands.admitted[len(f.commands.admitted)-1]; !got.RequireDetachedSource || got.TargetPath != "" || got.ExpectedSize != 0 {
+		t.Fatalf("directory delete admission = %+v", got)
+	}
+	_ = op
+
+	_, err = f.service.SubmitOperation(ctx, OperationRequest{IdempotencyKey: "do", Operation: UserMove, Path: f.abs("Loose/Sub"), ExpectedRevision: rev, Target: &Target{Path: f.abs("Loose/b.mkv"), Conflict: ConflictOverwrite}})
+	mustCode(t, err, CodeTargetInvalid)
+
+	// A move onto an existing directory is refused under block, like a file.
+	_, err = f.service.SubmitOperation(ctx, OperationRequest{IdempotencyKey: "dm", Operation: UserMove, Path: f.abs("Loose/Sub"), ExpectedRevision: rev, Target: &Target{Path: f.abs("Show")}})
+	mustCode(t, err, CodeTargetExists)
+	if _, err := f.service.SubmitOperation(ctx, OperationRequest{IdempotencyKey: "dmv", Operation: UserMove, Path: f.abs("Loose/Sub"), ExpectedRevision: rev, Target: &Target{Path: f.abs("Show"), Conflict: ConflictVersion}}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSubmitOperationIdempotency(t *testing.T) {
 	f := newCommandFixture(t)
 	ctx := context.Background()

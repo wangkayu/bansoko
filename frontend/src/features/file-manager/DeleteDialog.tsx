@@ -8,15 +8,16 @@ import { Button, Dialog } from "../../ui/base";
 import { readSource, useIdempotencyKeys } from "./batch";
 import type { BatchOutcome } from "./TransferDialog";
 
-// DeleteDialog — physically deletes the selection, no recycle bin. The files
-// and their sizes are listed and confirmed once; each file is deleted on its
-// own, and one file's refusal is a row in the summary, not a rollback.
+// DeleteDialog — physically deletes the selection, no recycle bin. The entries
+// and their sizes are listed and confirmed once; a folder row names how many
+// items it holds instead of a size. Each entry is deleted on its own, and one
+// entry's refusal is a row in the summary, not a rollback.
 export function DeleteDialog({
   files,
   onClose,
   onFinished,
 }: {
-  files: readonly { path: string; name: string; sizeBytes?: number }[];
+  files: readonly { path: string; name: string; sizeBytes?: number; directory?: boolean; childCount?: number }[];
   onClose: () => void;
   onFinished: (outcome: BatchOutcome) => void;
 }) {
@@ -24,7 +25,8 @@ export function DeleteDialog({
   const idempotency = useIdempotencyKeys();
   const [busy, setBusy] = useState(false);
 
-  const total = files.reduce((sum, file) => sum + (file.sizeBytes ?? 0), 0);
+  const total = files.reduce((sum, file) => sum + (file.directory ? 0 : (file.sizeBytes ?? 0)), 0);
+  const hasDirectory = files.some((file) => file.directory);
 
   async function run() {
     if (busy) return;
@@ -71,7 +73,7 @@ export function DeleteDialog({
     >
       <div className="tw:grid tw:gap-3">
         <p className="tw:m-0 tw:text-sm">
-          {t("fileManager.deleteDialog.line", { n: files.length })}
+          {t(hasDirectory ? "fileManager.deleteDialog.lineEntries" : "fileManager.deleteDialog.line", { n: files.length })}
           {total > 0 ? ` · ${formatBytes(total)}` : ""}
         </p>
         <ul className="tw:m-0 tw:grid tw:gap-1 tw:pl-4 tw:text-sm">
@@ -79,7 +81,13 @@ export function DeleteDialog({
             <li key={file.path} className="tw:flex tw:items-baseline tw:gap-2">
               <span className="tw:min-w-0 tw:flex-1 tw:break-all">{file.name}</span>
               <span className="tw:flex-none tw:text-xs tw:text-muted-foreground">
-                {file.sizeBytes !== undefined ? formatBytes(file.sizeBytes) : ""}
+                {file.directory
+                  ? file.childCount !== undefined
+                    ? t("fileManager.deleteDialog.folderItems", { n: file.childCount })
+                    : ""
+                  : file.sizeBytes !== undefined
+                    ? formatBytes(file.sizeBytes)
+                    : ""}
               </span>
             </li>
           ))}

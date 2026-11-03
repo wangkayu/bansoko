@@ -217,7 +217,13 @@ func purgeCleanupObject(root, path string, expected domain.FileObservation, prob
 	if err := cleanupProbe(probes, "before_object_purge"); err != nil {
 		return busyEffectError(err)
 	}
-	if err := cleanupEffects.unlink(entry); err != nil {
+	if facts, ok := domain.ParseMetadataFingerprint(expected.Fingerprint); ok && facts.Directory {
+		// A captured directory goes down as a no-follow tree walk inside the
+		// private namespace; the typed unlink of a file cannot remove it.
+		if err := purgeDirectoryObject(private, "object"); err != nil {
+			return busyEffectError(err)
+		}
+	} else if err := cleanupEffects.unlink(entry); err != nil {
 		return busyEffectError(err)
 	}
 	if err := cleanupProbe(probes, "object_purged"); err != nil {

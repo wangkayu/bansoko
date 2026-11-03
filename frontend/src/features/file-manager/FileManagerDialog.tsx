@@ -18,7 +18,7 @@ import { fileManagerKeys } from "../../lib/queryKeys";
 import { t, tryT } from "../../lib/i18n";
 import { Button, Checkbox, Dialog, DropdownMenu, Input, Segmented, StateBlock, Switch, type ChoiceOption, type MenuEntry } from "../../ui/base";
 import { activeRootOf } from "./operations";
-import { baseName, normalizePath, parentOf, segmentsOf } from "./paths";
+import { normalizePath, parentOf, segmentsOf } from "./paths";
 import { TransferDialog, type BatchOutcome } from "./TransferDialog";
 import { RenameDialog } from "./RenameDialog";
 import { DeleteDialog } from "./DeleteDialog";
@@ -50,10 +50,10 @@ const STICKY_BAR =
 type TypeFilter = "all" | "video" | "subtitle" | "image";
 
 type Overlay =
-  | { kind: "transfer"; mode: "copy" | "move"; paths: string[] }
-  | { kind: "rename"; path: string; name: string }
+  | { kind: "transfer"; mode: "copy" | "move"; paths: string[]; hasDirectory: boolean }
+  | { kind: "rename"; path: string; name: string; directory: boolean }
   | { kind: "recognize"; paths: string[]; singleVideo: boolean }
-  | { kind: "delete"; files: { path: string; name: string; sizeBytes?: number }[] }
+  | { kind: "delete"; files: { path: string; name: string; sizeBytes?: number; directory?: boolean; childCount?: number }[] }
   | { kind: "managed"; path: string }
   | { kind: "roots"; prefill?: string };
 
@@ -139,8 +139,13 @@ export function FileManagerDialog({ open, path, onNavigate, onOpenAnime, onOpenR
     }
   }
 
-  const selectedPaths = visibleFiles.filter((entry) => selection.has(entry.path)).map((entry) => entry.path);
-  const singleRename = selectedPaths.length === 1 ? visibleFiles.find((entry) => entry.path === selectedPaths[0]) : undefined;
+  const selectedPaths = useMemo(() => {
+    const visibleFilePaths = new Set(visibleFiles.map((entry) => entry.path));
+    return entries.filter((entry) => selection.has(entry.path) && !entry.locked && (entry.kind === "directory" || visibleFilePaths.has(entry.path)));
+  }, [entries, visibleFiles, selection]);
+  const selectedPathsList = selectedPaths.map((entry) => entry.path);
+  const hasFolderSelection = selectedPaths.some((entry) => entry.kind === "directory");
+  const singleRename = selectedPaths.length === 1 ? selectedPaths[0] : undefined;
 
   function reportBatch(outcome: BatchOutcome) {
     if (outcome.failed > 0) {
@@ -217,6 +222,7 @@ export function FileManagerDialog({ open, path, onNavigate, onOpenAnime, onOpenR
                 onFilter={setFilter}
                 hideManaged={hideManaged}
                 onHideManaged={setHideManaged}
+                folders={folders}
                 visibleFiles={visibleFiles}
                 selection={selection}
                 onSelectAll={setAll}
@@ -241,7 +247,7 @@ export function FileManagerDialog({ open, path, onNavigate, onOpenAnime, onOpenR
                   <ul aria-label={t("fileManager.listAria")} className={LIST}>
                     {folders.map((entry) => (
                       <li key={entry.path}>
-                        <FolderRow entry={entry} onOpenFolder={openFolder} />
+                        <FolderRow entry={entry} selected={selection.has(entry.path)} onToggle={toggle} onOpenFolder={openFolder} />
                       </li>
                     ))}
                     {visibleFiles.map((entry) => (
@@ -266,10 +272,21 @@ export function FileManagerDialog({ open, path, onNavigate, onOpenAnime, onOpenR
                 <span className="tw:col-span-5 tw:order-1 tw:mr-auto tw:text-xs tw:font-medium tw:sm:order-none">
                   {t("fileManager.selection.count", { n: selectedPaths.length })}
                 </span>
-                <Button size="sm" variant="secondary" className="tw:col-span-2 tw:order-3 tw:w-full tw:sm:order-none tw:sm:w-auto" onClick={() => setOverlay({ kind: "transfer", mode: "copy", paths: selectedPaths })}>
-                  {t("fileManager.selection.copy")}
-                </Button>
-                <Button size="sm" variant="secondary" className="tw:col-span-2 tw:order-3 tw:w-full tw:sm:order-none tw:sm:w-auto" onClick={() => setOverlay({ kind: "transfer", mode: "move", paths: selectedPaths })}>
+                <span
+                  className="tw:col-span-2 tw:order-3 tw:flex tw:sm:order-none"
+                  title={hasFolderSelection ? t("fileManager.selection.copyFolderHint") : undefined}
+                >
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="tw:w-full tw:sm:w-auto"
+                    disabled={hasFolderSelection}
+                    onClick={() => setOverlay({ kind: "transfer", mode: "copy", paths: selectedPathsList, hasDirectory: false })}
+                  >
+                    {t("fileManager.selection.copy")}
+                  </Button>
+                </span>
+                <Button size="sm" variant="secondary" className="tw:col-span-2 tw:order-3 tw:w-full tw:sm:order-none tw:sm:w-auto" onClick={() => setOverlay({ kind: "transfer", mode: "move", paths: selectedPathsList, hasDirectory: hasFolderSelection })}>
                   {t("fileManager.selection.move")}
                 </Button>
                 <span
@@ -281,30 +298,39 @@ export function FileManagerDialog({ open, path, onNavigate, onOpenAnime, onOpenR
                     variant="secondary"
                     className="tw:w-full tw:sm:w-auto"
                     disabled={!singleRename}
-                    onClick={() => singleRename && setOverlay({ kind: "rename", path: singleRename.path, name: singleRename.name })}
+                    onClick={() =>
+                      singleRename &&
+                      setOverlay({ kind: "rename", path: singleRename.path, name: singleRename.name, directory: singleRename.kind === "directory" })
+                    }
                   >
                     {t("fileManager.selection.rename")}
                   </Button>
                 </span>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="tw:col-span-3 tw:order-4 tw:w-full tw:sm:order-none tw:sm:w-auto"
-                  onClick={() =>
-                    setOverlay({
-                      kind: "recognize",
-                      paths: selectedPaths,
-                      singleVideo: visibleFiles.filter((entry) => selection.has(entry.path) && bucketOf(entry) === "video").length === 1,
-                    })
-                  }
+                <span
+                  className="tw:col-span-3 tw:order-4 tw:flex tw:sm:order-none"
+                  title={hasFolderSelection ? t("fileManager.selection.recognizeFolderHint") : undefined}
                 >
-                  {t("fileManager.selection.recognize")}
-                </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="tw:w-full tw:sm:w-auto"
+                    disabled={hasFolderSelection}
+                    onClick={() =>
+                      setOverlay({
+                        kind: "recognize",
+                        paths: selectedPathsList,
+                        singleVideo: visibleFiles.filter((entry) => selection.has(entry.path) && bucketOf(entry) === "video").length === 1,
+                      })
+                    }
+                  >
+                    {t("fileManager.selection.recognize")}
+                  </Button>
+                </span>
                 <Button
                   size="sm"
                   variant="danger"
                   className="tw:col-span-3 tw:order-4 tw:w-full tw:sm:order-none tw:sm:w-auto"
-                  onClick={() => setOverlay({ kind: "delete", files: selectedPaths.map((path) => snapshotOf(entries, path)) })}
+                  onClick={() => setOverlay({ kind: "delete", files: selectedPaths.map((entry) => snapshotOf(entry)) })}
                 >
                   {t("fileManager.selection.delete")}
                 </Button>
@@ -328,6 +354,7 @@ export function FileManagerDialog({ open, path, onNavigate, onOpenAnime, onOpenR
           mode={overlay.mode}
           sourceDir={current ?? ""}
           paths={overlay.paths}
+          hasDirectory={overlay.hasDirectory}
           roots={rootList}
           onClose={() => setOverlay(null)}
           onFinished={reportBatch}
@@ -338,7 +365,8 @@ export function FileManagerDialog({ open, path, onNavigate, onOpenAnime, onOpenR
           path={overlay.path}
           name={overlay.name}
           directory={current ?? ""}
-          siblingNames={entries.filter((entry) => entry.kind !== "directory").map((entry) => entry.name)}
+          isDirectory={overlay.directory}
+          siblingNames={entries.map((entry) => entry.name)}
           onClose={() => setOverlay(null)}
           onFinished={reportBatch}
         />
@@ -377,10 +405,15 @@ function nearestDirectory(path: string | undefined): string | undefined {
   return path === undefined || path === "/" ? path : parentOf(path);
 }
 
-/** Name and size for a path in the loaded listing; the delete dialog lists what it will remove. */
-function snapshotOf(entries: readonly FileManagerEntry[], path: string): { path: string; name: string; sizeBytes?: number } {
-  const entry = entries.find((candidate) => candidate.path === path);
-  return { path, name: entry?.name ?? baseName(path), sizeBytes: entry?.size_bytes };
+/** Name, size and folder fact of a selected entry; the delete dialog lists what it will remove. */
+function snapshotOf(entry: FileManagerEntry): { path: string; name: string; sizeBytes?: number; directory?: boolean; childCount?: number } {
+  return {
+    path: entry.path,
+    name: entry.name,
+    sizeBytes: entry.size_bytes,
+    directory: entry.kind === "directory",
+    childCount: entry.child_count,
+  };
 }
 
 function Toolbar({
@@ -388,6 +421,7 @@ function Toolbar({
   onFilter,
   hideManaged,
   onHideManaged,
+  folders,
   visibleFiles,
   selection,
   onSelectAll,
@@ -396,6 +430,7 @@ function Toolbar({
   onFilter: (next: TypeFilter) => void;
   hideManaged: boolean;
   onHideManaged: (next: boolean) => void;
+  folders: readonly FileManagerEntry[];
   visibleFiles: readonly FileManagerEntry[];
   selection: ReadonlySet<string>;
   onSelectAll: (paths: string[], on: boolean) => void;
@@ -406,7 +441,9 @@ function Toolbar({
     { value: "subtitle", label: t("fileManager.browse.filter.subtitle") },
     { value: "image", label: t("fileManager.browse.filter.image") },
   ];
-  const selectable = visibleFiles.filter((entry) => !entry.locked);
+  // Select-all takes every unlocked row, folders included; locked rows (a managed
+  // file, or a folder whose subtree holds one) stay out.
+  const selectable = [...folders, ...visibleFiles].filter((entry) => !entry.locked);
   const selectedHere = selectable.filter((entry) => selection.has(entry.path)).length;
   const allHere = selectable.length > 0 && selectedHere === selectable.length;
   return (
@@ -436,7 +473,9 @@ function Toolbar({
         <Switch aria-label={t("fileManager.browse.hideManaged")} checked={hideManaged} onCheckedChange={onHideManaged} />
         <span className="tw:text-xs tw:text-muted-foreground">{t("fileManager.browse.hideManaged")}</span>
       </div>
-      <span className={cn(META, "tw:order-2 tw:ml-auto tw:justify-self-end tw:sm:order-none")}>{t("fileManager.browse.count", { n: visibleFiles.length })}</span>
+      <span className={cn(META, "tw:order-2 tw:ml-auto tw:justify-self-end tw:sm:order-none")}>
+        {t("fileManager.browse.count", { n: folders.length + visibleFiles.length })}
+      </span>
     </div>
   );
 }
@@ -662,15 +701,52 @@ function rowMeta(entry: FileManagerEntry): string {
   return meta.join(" · ");
 }
 
-function FolderRow({ entry, onOpenFolder }: { entry: FileManagerEntry; onOpenFolder: (path: string) => void }) {
+// A folder row opens on its body; the checkbox selects it for move, rename and
+// delete (copy and recognize stay file-only). A locked folder — its subtree
+// holds a managed file — keeps navigation but has no selection.
+function FolderRow({
+  entry,
+  selected,
+  onToggle,
+  onOpenFolder,
+}: {
+  entry: FileManagerEntry;
+  selected: boolean;
+  onToggle: (path: string) => void;
+  onOpenFolder: (path: string) => void;
+}) {
+  if (entry.locked) {
+    return (
+      <button type="button" className={cn(ROW, "tw:opacity-60")} title={t("fileManager.locked")} onClick={() => onOpenFolder(entry.path)}>
+        <EntryIcon entry={entry} />
+        <span className="tw:grid tw:min-w-0 tw:flex-1 tw:gap-0.5">
+          <span className="tw:break-words">{entry.name}</span>
+        </span>
+        <Lock className="tw:size-4 tw:flex-none tw:text-warning" aria-label={t("fileManager.locked")} />
+        <ChevronRight className="tw:size-4 tw:flex-none tw:text-muted-foreground" aria-hidden="true" />
+      </button>
+    );
+  }
   return (
-    <button type="button" className={ROW} onClick={() => onOpenFolder(entry.path)}>
-      <EntryIcon entry={entry} />
-      <span className="tw:grid tw:min-w-0 tw:flex-1 tw:gap-0.5">
-        <span className="tw:break-words">{entry.name}</span>
-      </span>
-      <ChevronRight className="tw:size-4 tw:flex-none tw:text-muted-foreground" aria-hidden="true" />
-    </button>
+    <div className={cn(ROW, selected && ROW_ACTIVE)}>
+      <Checkbox
+        checked={selected}
+        onCheckedChange={() => onToggle(entry.path)}
+        size="sm"
+        aria-label={t("fileManager.browse.selectFile", { name: entry.name })}
+      />
+      <button
+        type="button"
+        className="tw:flex tw:min-w-0 tw:flex-1 tw:cursor-pointer tw:items-center tw:gap-2.5 tw:py-1.5 tw:text-left tw:text-sm tw:focus-visible:outline-2 tw:focus-visible:outline-ring"
+        onClick={() => onOpenFolder(entry.path)}
+      >
+        <EntryIcon entry={entry} />
+        <span className="tw:grid tw:min-w-0 tw:flex-1 tw:gap-0.5">
+          <span className="tw:break-words">{entry.name}</span>
+        </span>
+        <ChevronRight className="tw:size-4 tw:flex-none tw:text-muted-foreground" aria-hidden="true" />
+      </button>
+    </div>
   );
 }
 

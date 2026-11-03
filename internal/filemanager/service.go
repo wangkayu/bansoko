@@ -292,6 +292,7 @@ func (s *Service) derivePage(ctx context.Context, directory string, page []rawEn
 				merged.Managed = merged.Managed || fact.Managed
 			}
 			entry.State = deriveDirectory(merged)
+			entry.ChildCount = directChildCount(spellings[0])
 			// A directory is locked like the file that holds it: an
 			// operation on the directory would touch that file.
 			applyLock(&entry)
