@@ -105,6 +105,15 @@ beforeEach(() => {
     }
     if (url.pathname === "/api/v1/file-manager/entries") {
       if (entriesFailure) return json({ code: entriesFailure.code, message: "denied" }, entriesFailure.status);
+      // A flagged listing marks a purely managed folder; the others stay undecided.
+      if (url.searchParams.get("managed_only") === "true") {
+        const flag = (page: FileManagerListing): FileManagerListing => ({
+          ...page,
+          entries: page.entries.map((entry) => (entry.name === "Season 01" ? { ...entry, managed_only: true } : entry)),
+        });
+        if (url.searchParams.get("cursor") === "cursor-2") return json(flag(secondPage));
+        return json(flag(firstPage));
+      }
       if (url.searchParams.get("cursor") === "cursor-2") return json(secondPage);
       return json(url.searchParams.get("path") === "/media" ? mediaPage : firstPage);
     }
@@ -277,7 +286,16 @@ describe("FileManagerDialog", () => {
 
     fireEvent.click(screen.getByRole("radio", { name: t("fileManager.browse.filter.all") }));
     fireEvent.click(screen.getByRole("switch", { name: t("fileManager.browse.hideManaged") }));
-    await waitFor(() => expect(screen.queryByText("ep01.mkv")).not.toBeInTheDocument());
+    // The listing asks the server for the folder flag, and a purely managed
+    // folder has nothing left to show, so it goes with the managed rows: this
+    // page is then empty.
+    await screen.findByRole("list", { name: t("fileManager.listAria") });
+    expect(requested().some((url) => url.pathname.endsWith("/entries") && url.searchParams.get("managed_only") === "true")).toBe(true);
+    expect(screen.queryByText("Season 01")).not.toBeInTheDocument();
+    expect(screen.queryByText("ep01.mkv")).not.toBeInTheDocument();
+    // A folder holding unmanaged files keeps showing once its page is read.
+    fireEvent.click(screen.getByRole("button", { name: t("fileManager.loadMore") }));
+    await waitFor(() => expect(screen.getByText("Extras")).toBeInTheDocument());
     expect(screen.getByText("notes.txt")).toBeInTheDocument();
     expect(screen.getByText("poster.jpg")).toBeInTheDocument();
 

@@ -6122,6 +6122,8 @@ export interface components {
              * @description Entries directly inside a directory, for the delete confirmation. Absent for files and for a directory that cannot be read.
              */
             child_count?: number;
+            /** @description A directory whose every file below, at any depth, is managed or in progress: a browse that hides managed entries has nothing to show inside it, so the folder itself can be hidden too. Present only on directory entries of a listing that asked for it, and absent when the answer cannot be decided: the subtree holds no file, cannot be read, or holds more files than the scan reads. */
+            managed_only?: boolean;
         };
         FileManagerListing: {
             /** @description Absolute path of the listed directory. */
@@ -13578,6 +13580,8 @@ export interface operations {
                 /** @description Opaque keyset pagination cursor. */
                 cursor?: components["parameters"]["Cursor"];
                 limit?: number;
+                /** @description Compute managed_only on the directory entries: whether every file below a directory, at any depth, is managed or in progress, so a browse that hides managed entries can hide the folder itself. The scan reads at most 10000 files per directory and leaves the flag absent beyond that. */
+                managed_only?: boolean;
             };
             header?: never;
             path?: never;

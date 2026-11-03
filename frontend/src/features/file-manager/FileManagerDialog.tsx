@@ -80,8 +80,9 @@ export function FileManagerDialog({ open, path, onNavigate, onOpenAnime, onOpenR
   const [overlay, setOverlay] = useState<Overlay | null>(null);
 
   const listing = useInfiniteQuery({
-    queryKey: fileManagerKeys.entries(current ?? ""),
-    queryFn: ({ pageParam }) => listFileManagerEntries({ path: current ?? "", cursor: pageParam, limit: PAGE_LIMIT }),
+    queryKey: fileManagerKeys.entries(current ?? "", hideManaged),
+    queryFn: ({ pageParam }) =>
+      listFileManagerEntries({ path: current ?? "", cursor: pageParam, limit: PAGE_LIMIT, managed_only: hideManaged }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     enabled: open && current !== undefined,
@@ -104,7 +105,9 @@ export function FileManagerDialog({ open, path, onNavigate, onOpenAnime, onOpenR
     });
   }, [entryPaths]);
 
-  const folders = entries.filter((entry) => entry.kind === "directory");
+  // A folder whose every file is managed has nothing to show while managed
+  // entries are hidden, so it is hidden with them.
+  const folders = entries.filter((entry) => entry.kind === "directory" && (!hideManaged || !entry.managed_only));
   const visibleFiles = entries.filter(
     (entry) =>
       entry.kind !== "directory" &&

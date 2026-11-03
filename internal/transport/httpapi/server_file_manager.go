@@ -79,7 +79,8 @@ func (s *Server) ListFileManagerEntries(w http.ResponseWriter, r *http.Request, 
 	if params.Limit != nil {
 		limit = *params.Limit
 	}
-	listing, err := s.deps.FileManager.List(r.Context(), params.Path, cursor, limit)
+	managedOnly := params.ManagedOnly != nil && *params.ManagedOnly
+	listing, err := s.deps.FileManager.List(r.Context(), params.Path, cursor, limit, managedOnly)
 	if err != nil {
 		writeFileManagerError(w, r, err)
 		return
@@ -185,6 +186,7 @@ func mapFileManagerEntry(entry filemanager.Entry) generated.FileManagerEntry {
 		mapped.NotAligned = &notAligned
 	}
 	mapped.ChildCount = entry.ChildCount
+	mapped.ManagedOnly = entry.ManagedOnly
 	return mapped
 }
 

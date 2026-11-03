@@ -87,7 +87,7 @@ export const acquisitionRecordKeys = {
 export const fileManagerKeys = {
   all: ["file-manager"] as const,
   roots: ["file-manager", "roots"] as const,
-  entries: (path: string) => ["file-manager", "entries", path] as const,
+  entries: (path: string, managedOnly = false) => ["file-manager", "entries", path, managedOnly] as const,
   /** One folder read for a picker; separate from the browse layer's infinite listing, whose data is a paged envelope. */
   folders: (path: string) => ["file-manager", "folders", path] as const,
   entry: (path: string) => ["file-manager", "entry", path] as const,

@@ -313,8 +313,8 @@ func TestScaleReads(t *testing.T) {
 	}, 50, 0)
 
 	// file manager
-	record(tFMDirs, func(ctx context.Context) (any, error) { return rs.fm.List(ctx, libraryRootPath(), "", 200) }, 50, 0)
-	record(tFMFiles, func(ctx context.Context) (any, error) { return rs.fm.List(ctx, rs.fmDir, "", 200) }, 50, 0)
+	record(tFMDirs, func(ctx context.Context) (any, error) { return rs.fm.List(ctx, libraryRootPath(), "", 200, false) }, 50, 0)
+	record(tFMFiles, func(ctx context.Context) (any, error) { return rs.fm.List(ctx, rs.fmDir, "", 200, false) }, 50, 0)
 
 	// small tables
 	dl := 20

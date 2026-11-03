@@ -216,6 +216,12 @@ type Entry struct {
 	// delete confirmation; nil for files and for a directory that cannot be
 	// read.
 	ChildCount *int64
+	// ManagedOnly marks a directory whose every file below, at any depth, is
+	// managed or in progress: a browse that hides managed entries has nothing
+	// to show inside it, so the folder itself can be hidden too. Set only on
+	// directory entries of a listing that asked for it; nil means the answer
+	// could not be decided (no file below, unreadable, or over the scan cap).
+	ManagedOnly *bool
 }
 
 // Listing is one page of a directory.

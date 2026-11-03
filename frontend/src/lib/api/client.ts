@@ -1403,7 +1403,7 @@ export type ObservabilityDiagnosticsQuery = NonNullable<
 // Scalars use set (a later same key overwrites the earlier), array values append repeatedly
 // per form explode (kind=business&kind=plugin), matching the contract's repeatable query
 // parameters.
-function queryString(params: Record<string, string | number | readonly string[] | undefined>): string {
+function queryString(params: Record<string, string | number | boolean | readonly string[] | undefined>): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (value === undefined) continue;

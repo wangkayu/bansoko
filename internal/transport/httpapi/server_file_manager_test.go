@@ -19,6 +19,7 @@ type fakeFileManager struct {
 	err            error
 	path, cursor   string
 	limit          int
+	managedOnly    bool
 	detail         filemanager.Detail
 	located        string
 	operation      filemanager.OperationRequest
@@ -175,17 +176,22 @@ func (f *fakeFileManager) RemoveRoot(_ context.Context, id string) error {
 	return f.err
 }
 
-func (f *fakeFileManager) List(_ context.Context, path, cursor string, limit int) (filemanager.Listing, error) {
-	f.path, f.cursor, f.limit = path, cursor, limit
+func (f *fakeFileManager) List(_ context.Context, path, cursor string, limit int, managedOnly bool) (filemanager.Listing, error) {
+	f.path, f.cursor, f.limit, f.managedOnly = path, cursor, limit, managedOnly
 	if f.err != nil {
 		return filemanager.Listing{}, f.err
 	}
 	size := int64(4)
+	managedOnlyDir := true
 	return filemanager.Listing{
 		Path: path, NextCursor: "next",
-		Entries: []filemanager.Entry{{Name: "ep01.zh.ass", Path: "/srv/library/Show/ep01.zh.ass", Kind: filemanager.KindFile, SizeBytes: &size,
-			State: filemanager.StateManaged, Locked: true, ManagedAnimeID: "anime-1",
-			Role: filemanager.RoleSubtitle, CompanionOf: "/srv/library/Show/ep01.mkv", NotAligned: true}},
+		Entries: []filemanager.Entry{
+			{Name: "ep01.zh.ass", Path: "/srv/library/Show/ep01.zh.ass", Kind: filemanager.KindFile, SizeBytes: &size,
+				State: filemanager.StateManaged, Locked: true, ManagedAnimeID: "anime-1",
+				Role: filemanager.RoleSubtitle, CompanionOf: "/srv/library/Show/ep01.mkv", NotAligned: true},
+			{Name: "Season", Path: "/srv/library/Show/Season", Kind: filemanager.KindDirectory,
+				State: filemanager.StateManaged, Locked: true, ManagedOnly: &managedOnlyDir},
+		},
 	}, nil
 }
 
@@ -244,8 +250,8 @@ func TestFileManagerHandlersShapeResponses(t *testing.T) {
 		t.Fatalf("roots body = %v", body)
 	}
 
-	recorder, body = serveFileManager(t, service, "/api/v1/file-manager/entries?path=%2Fsrv%2Flibrary%2FShow&cursor=abc&limit=50")
-	if recorder.Code != http.StatusOK || service.path != "/srv/library/Show" || service.cursor != "abc" || service.limit != 50 {
+	recorder, body = serveFileManager(t, service, "/api/v1/file-manager/entries?path=%2Fsrv%2Flibrary%2FShow&cursor=abc&limit=50&managed_only=true")
+	if recorder.Code != http.StatusOK || service.path != "/srv/library/Show" || service.cursor != "abc" || service.limit != 50 || !service.managedOnly {
 		t.Fatalf("entries: %d, called with %+v", recorder.Code, service)
 	}
 	if body["path"] != "/srv/library/Show" {
@@ -256,6 +262,10 @@ func TestFileManagerHandlersShapeResponses(t *testing.T) {
 		entry["locked"] != true || entry["managed_anime_id"] != "anime-1" || entry["role"] != "subtitle" ||
 		entry["companion_of"] != "/srv/library/Show/ep01.mkv" || entry["not_aligned"] != true || entry["size_bytes"] != float64(4) {
 		t.Fatalf("entries body = %v", body)
+	}
+	// A directory's managed-only answer is carried through as asked.
+	if directory := body["entries"].([]any)[1].(map[string]any); directory["managed_only"] != true || entry["managed_only"] != nil {
+		t.Fatalf("directory managed_only = %v, file flag = %v", directory["managed_only"], entry["managed_only"])
 	}
 
 	recorder, body = serveFileManager(t, service, "/api/v1/file-manager/entry?path=%2Fsrv%2Flibrary%2FShow%2Fep01.mkv")

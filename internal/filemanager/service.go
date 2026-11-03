@@ -32,6 +32,10 @@ type Service struct {
 	commands  CommandStore
 	aligner   Aligner
 
+	// subtreeScanLimit bounds one managed-only scan; overridable so the cap
+	// itself stays testable without a fixture of ten thousand files.
+	subtreeScanLimit int
+
 	matchRenderer MatchRenderer
 	matchAnimes   MatchAnimeReader
 	seasons       SeasonCatalog
@@ -62,7 +66,7 @@ func NewService(store Store, zone DenialZone) (*Service, error) {
 	if store == nil {
 		return nil, errors.New("file manager store is nil")
 	}
-	return &Service{store: store, zone: zone}, nil
+	return &Service{store: store, zone: zone, subtreeScanLimit: maxSubtreeManagedFiles}, nil
 }
 
 // Roots lists the library directories the owner added, with the availability
@@ -211,8 +215,9 @@ func decodeCursor(value, scope string) (cursorKey, error) {
 
 // List reads one sorted, bounded page of an absolute directory and derives
 // every entry's state. It never writes, and it reads only inside the
-// authorized roots.
-func (s *Service) List(ctx context.Context, absolutePath, cursor string, limit int) (Listing, error) {
+// authorized roots. With managedOnly set, directory entries additionally
+// carry whether every file below them is managed or in progress.
+func (s *Service) List(ctx context.Context, absolutePath, cursor string, limit int, managedOnly bool) (Listing, error) {
 	if err := s.authorize(ctx, absolutePath); err != nil {
 		return Listing{}, err
 	}
@@ -250,14 +255,14 @@ func (s *Service) List(ctx context.Context, absolutePath, cursor string, limit i
 		last := page[len(page)-1]
 		listing.NextCursor = encodeCursor(cursorKey{Directory: last.kind == KindDirectory, Name: last.name, Scope: scope})
 	}
-	listing.Entries, err = s.derivePage(ctx, directory, page)
+	listing.Entries, err = s.derivePage(ctx, directory, page, managedOnly)
 	if err != nil {
 		return Listing{}, err
 	}
 	return listing, nil
 }
 
-func (s *Service) derivePage(ctx context.Context, directory string, page []rawEntry) ([]Entry, error) {
+func (s *Service) derivePage(ctx context.Context, directory string, page []rawEntry, managedOnly bool) ([]Entry, error) {
 	var filePaths, dirPaths []string
 	entryPaths := make([][]string, len(page))
 	for index, entry := range page {
@@ -308,6 +313,11 @@ func (s *Service) derivePage(ctx context.Context, directory string, page []rawEn
 			}
 		}
 		entries = append(entries, entry)
+	}
+	if managedOnly {
+		if err := s.markManagedOnly(ctx, entries); err != nil {
+			return nil, err
+		}
 	}
 	return entries, nil
 }

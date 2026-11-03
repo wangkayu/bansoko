@@ -112,7 +112,7 @@ WHERE id = 'anime-r'`)
 
 	// Browsing is bounded by the owner-added roots: nothing is read before one
 	// is stored, and one stored root authorizes everything below it.
-	if _, err := service.List(ctx, base, "", 200); err == nil {
+	if _, err := service.List(ctx, base, "", 200, false); err == nil {
 		t.Fatal("browsing before a root exists must be refused")
 	}
 	if err := store.InsertRoot(ctx, filemanager.RootRecord{ID: "root-main", Label: "main", Path: base}); err != nil {
@@ -131,7 +131,7 @@ WHERE id = 'anime-r'`)
 
 	states := func(directory string) map[string]filemanager.Entry {
 		t.Helper()
-		listing, err := service.List(ctx, abs(directory), "", 200)
+		listing, err := service.List(ctx, abs(directory), "", 200, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -201,7 +201,7 @@ WHERE id = 'anime-r'`)
 	if err != nil || location.Path != abs("Show") {
 		t.Fatalf("locate = %+v, %v", location, err)
 	}
-	listing, err := service.List(ctx, filepath.Join(downloads, "Show"), "", 0)
+	listing, err := service.List(ctx, filepath.Join(downloads, "Show"), "", 0, false)
 	if err != nil || len(listing.Entries) != 1 || listing.Entries[0].State != filemanager.StateDetached {
 		t.Fatalf("download root listing = %+v, %v", listing.Entries, err)
 	}

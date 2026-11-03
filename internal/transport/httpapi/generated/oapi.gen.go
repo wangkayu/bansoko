@@ -4923,9 +4923,12 @@ type FileManagerEntry struct {
 	Locked bool `json:"locked"`
 
 	// ManagedAnimeId The work that manages a locked file, when owner facts name one.
-	ManagedAnimeId *ID        `json:"managed_anime_id,omitempty"`
-	ModifiedAt     *time.Time `json:"modified_at,omitempty"`
-	Name           string     `json:"name"`
+	ManagedAnimeId *ID `json:"managed_anime_id,omitempty"`
+
+	// ManagedOnly A directory whose every file below, at any depth, is managed or in progress: a browse that hides managed entries has nothing to show inside it, so the folder itself can be hidden too. Present only on directory entries of a listing that asked for it, and absent when the answer cannot be decided: the subtree holds no file, cannot be read, or holds more files than the scan reads.
+	ManagedOnly *bool      `json:"managed_only,omitempty"`
+	ModifiedAt  *time.Time `json:"modified_at,omitempty"`
+	Name        string     `json:"name"`
 
 	// NotAligned A bound sidecar whose path no longer matches its video.
 	NotAligned *bool `json:"not_aligned,omitempty"`
@@ -10071,6 +10074,9 @@ type ListFileManagerEntriesParams struct {
 	// Cursor Opaque keyset pagination cursor.
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// ManagedOnly Compute managed_only on the directory entries: whether every file below a directory, at any depth, is managed or in progress, so a browse that hides managed entries can hide the folder itself. The scan reads at most 10000 files per directory and leaves the flag absent beyond that.
+	ManagedOnly *bool `form:"managed_only,omitempty" json:"managed_only,omitempty"`
 }
 
 // GetFileManagerEntryParams defines parameters for GetFileManagerEntry.
@@ -17409,6 +17415,14 @@ func (siw *ServerInterfaceWrapper) ListFileManagerEntries(w http.ResponseWriter,
 	err = runtime.BindQueryParameter("form", true, false, "limit", r.URL.Query(), &params.Limit)
 	if err != nil {
 		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "managed_only" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "managed_only", r.URL.Query(), &params.ManagedOnly)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "managed_only", Err: err})
 		return
 	}
 

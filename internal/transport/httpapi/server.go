@@ -305,7 +305,7 @@ type FileManagerService interface {
 	Roots(ctx context.Context) ([]filemanager.Root, error)
 	AddRoot(ctx context.Context, request filemanager.AddRootRequest) (filemanager.Root, error)
 	RemoveRoot(ctx context.Context, id string) error
-	List(ctx context.Context, path, cursor string, limit int) (filemanager.Listing, error)
+	List(ctx context.Context, path, cursor string, limit int, managedOnly bool) (filemanager.Listing, error)
 	Detail(ctx context.Context, path string) (filemanager.Detail, error)
 	Locate(ctx context.Context, managedAnimeID string) (filemanager.Location, error)
 	// File-manager writes; each re-derives the entry and checks its revision.

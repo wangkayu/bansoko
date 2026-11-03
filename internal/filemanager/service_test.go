@@ -221,7 +221,7 @@ func TestListNeverFollowsASymlinkComponent(t *testing.T) {
 	service := newTestService(t, &fakeStore{}, NewDenialZone(filepath.Join(base, "appdata")), library)
 	ctx := context.Background()
 
-	listing, err := service.List(ctx, library, "", 0)
+	listing, err := service.List(ctx, library, "", 0, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,22 +233,22 @@ func TestListNeverFollowsASymlinkComponent(t *testing.T) {
 		t.Fatalf("symlinks must be listed as symlinks, never followed: %v", kinds)
 	}
 	for _, path := range []string{"escape", "alias", "escape/x", "alias/ep01.mkv"} {
-		_, err := service.List(ctx, filepath.Join(library, path), "", 0)
+		_, err := service.List(ctx, filepath.Join(library, path), "", 0, false)
 		mustCode(t, err, CodeSymlinkNotFollowed)
 	}
 	for _, path := range []string{"relative", "/a\x00b", strings.Repeat("a", 4097)} {
-		_, err := service.List(ctx, path, "", 0)
+		_, err := service.List(ctx, path, "", 0, false)
 		mustCode(t, err, CodePathInvalid)
 		_, err = service.Detail(ctx, path)
 		mustCode(t, err, CodePathInvalid)
 	}
-	_, err = service.List(ctx, filepath.Join(library, "missing"), "", 0)
+	_, err = service.List(ctx, filepath.Join(library, "missing"), "", 0, false)
 	mustCode(t, err, CodePathNotFound)
-	_, err = service.List(ctx, filepath.Join(library, "Show", "ep01.mkv"), "", 0)
+	_, err = service.List(ctx, filepath.Join(library, "Show", "ep01.mkv"), "", 0, false)
 	mustCode(t, err, CodeNotADirectory)
 	// The filesystem root is not a library directory: nothing outside the
 	// owner-added roots is browsable.
-	_, err = service.List(ctx, "/", "", 0)
+	_, err = service.List(ctx, "/", "", 0, false)
 	mustCode(t, err, CodePathOutsideRoots)
 
 	// A symlink entry is described, never followed: its detail is the link.
@@ -279,14 +279,14 @@ func TestBrowsingRefusesTheDenialZone(t *testing.T) {
 	ctx := context.Background()
 
 	for _, path := range []string{appdata, filepath.Join(appdata, "bansoko.db"), appdata + "/nested/deeper", "/proc", "/sys/kernel", "/dev/null"} {
-		_, err := service.List(ctx, path, "", 0)
+		_, err := service.List(ctx, path, "", 0, false)
 		mustCode(t, err, CodePathDenied)
 		_, err = service.Detail(ctx, path)
 		mustCode(t, err, CodePathDenied)
 	}
 	// The denied directory is listed (it is a name in a browsable directory)
 	// but its content is not readable.
-	listing, err := service.List(ctx, library, "", 0)
+	listing, err := service.List(ctx, library, "", 0, false)
 	if err != nil || len(listing.Entries) != 2 {
 		t.Fatalf("listing = %+v, %v", listing.Entries, err)
 	}
@@ -314,7 +314,7 @@ func TestRootsAuthorizeBrowsing(t *testing.T) {
 	ctx := context.Background()
 
 	// Nothing is browsable before the owner adds a root, whatever exists.
-	_, err := service.List(ctx, library, "", 0)
+	_, err := service.List(ctx, library, "", 0, false)
 	mustCode(t, err, CodePathOutsideRoots)
 
 	// AddRoot refuses what cannot be a library directory.
@@ -343,13 +343,13 @@ func TestRootsAuthorizeBrowsing(t *testing.T) {
 
 	// Inside the root browsing works (a file is reached through Detail),
 	// outside it nothing is read.
-	if _, err := service.List(ctx, library, "", 0); err != nil {
+	if _, err := service.List(ctx, library, "", 0, false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := service.Detail(ctx, filepath.Join(library, "Show", "a.mkv")); err != nil {
 		t.Fatal(err)
 	}
-	_, err = service.List(ctx, other, "", 0)
+	_, err = service.List(ctx, other, "", 0, false)
 	mustCode(t, err, CodePathOutsideRoots)
 	_, err = service.Detail(ctx, filepath.Join(other, "b.mkv"))
 	mustCode(t, err, CodePathOutsideRoots)
@@ -360,7 +360,7 @@ func TestRootsAuthorizeBrowsing(t *testing.T) {
 	if _, err := service.AddRoot(ctx, AddRootRequest{Path: filepath.Join(library, "Show")}); err != nil {
 		t.Fatal(err)
 	}
-	_, err = service.List(ctx, linked, "", 0)
+	_, err = service.List(ctx, linked, "", 0, false)
 	mustCode(t, err, CodeSymlinkNotFollowed)
 	if _, err := service.Detail(ctx, linked); err != nil {
 		t.Fatal(err)
@@ -370,9 +370,9 @@ func TestRootsAuthorizeBrowsing(t *testing.T) {
 	if err := service.RemoveRoot(ctx, added.ID); err != nil {
 		t.Fatal(err)
 	}
-	_, err = service.List(ctx, library, "", 0)
+	_, err = service.List(ctx, library, "", 0, false)
 	mustCode(t, err, CodePathOutsideRoots)
-	if _, err := service.List(ctx, filepath.Join(library, "Show"), "", 0); err != nil {
+	if _, err := service.List(ctx, filepath.Join(library, "Show"), "", 0, false); err != nil {
 		t.Fatal(err)
 	}
 	err = service.RemoveRoot(ctx, "gone")
@@ -432,7 +432,7 @@ func TestListPagesInStableOrderWithBoundCursor(t *testing.T) {
 	cursor := ""
 	pages := 0
 	for {
-		listing, err := service.List(ctx, library, cursor, 3)
+		listing, err := service.List(ctx, library, cursor, 3, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -452,15 +452,15 @@ func TestListPagesInStableOrderWithBoundCursor(t *testing.T) {
 	if got := strings.Join(names, ","); got != want || pages != 3 {
 		t.Fatalf("paged order = %s over %d pages, want %s over 3", got, pages, want)
 	}
-	first, err := service.List(ctx, library, "", 3)
+	first, err := service.List(ctx, library, "", 3, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = service.List(ctx, filepath.Join(library, "a-dir"), first.NextCursor, 3)
+	_, err = service.List(ctx, filepath.Join(library, "a-dir"), first.NextCursor, 3, false)
 	mustCode(t, err, CodeCursorInvalid)
-	_, err = service.List(ctx, library, "not-a-cursor!", 3)
+	_, err = service.List(ctx, library, "not-a-cursor!", 3, false)
 	mustCode(t, err, CodeCursorInvalid)
-	listing, err := service.List(ctx, library, "", 1000)
+	listing, err := service.List(ctx, library, "", 1000, false)
 	if err != nil || len(listing.Entries) != 7 {
 		t.Fatalf("limit must clamp, not fail: %d, %v", len(listing.Entries), err)
 	}
@@ -486,9 +486,14 @@ func newStateFixture(t *testing.T) stateFixture {
 		"Show/managed.mkv", "Show/managed.zh.ass", "Show/stopped.mkv", "Show/ended.mkv", "Show/replaced.mkv",
 		"Show/extras/unknown.mkv", "Show/busy.mkv", "Show/busy.zh.ass", "Show/moved.zh.ass",
 		"OneShot/movie.mkv", "OneShot/movie.zh.ass", "Loose/external.mkv", "Loose/old.zh.ass",
-		"Busy/inside/x.mkv",
+		"Busy/inside/x.mkv", "Season/ep01.mkv",
 	} {
 		writeFile(t, abs(rel), 4)
+	}
+	// An empty directory: nothing below it is managed, so a hide-managed browse
+	// keeps showing it.
+	if err := os.Mkdir(abs("Empty"), 0o755); err != nil {
+		t.Fatal(err)
 	}
 	managed := activePlacement("p-managed", abs("Show/managed.mkv"), "anime-1")
 	stopped := activePlacement("p-stopped", abs("Show/stopped.mkv"), "anime-1")
@@ -504,8 +509,9 @@ func newStateFixture(t *testing.T) stateFixture {
 	oneShot := activePlacement("p-oneshot", abs("OneShot/movie.mkv"), "anime-temp")
 	oneShot.OneShotID = "os-1"
 	oneShot.SubscriptionState = "stopped"
+	season := activePlacement("p-season", abs("Season/ep01.mkv"), "anime-1")
 	store := &fakeStore{
-		placements: []PlacementFact{managed, stopped, ended, replaced, unknown, busy, oneShot},
+		placements: []PlacementFact{managed, stopped, ended, replaced, unknown, busy, oneShot, season},
 		companions: []CompanionFact{
 			{ID: "c-managed", Path: abs("Show/managed.zh.ass"), State: "active", MediaKind: "subtitle", Suffix: "zh", Extension: "ass", Placement: managed},
 			{ID: "c-busy", Path: abs("Show/busy.zh.ass"), State: "active", MediaKind: "subtitle", Suffix: "zh", Extension: "ass", Placement: busy},
@@ -534,7 +540,22 @@ func (f stateFixture) abs(rel string) string {
 
 func (f stateFixture) entries(t *testing.T, directory string) map[string]Entry {
 	t.Helper()
-	listing, err := f.service.List(context.Background(), f.abs(directory), "", 200)
+	listing, err := f.service.List(context.Background(), f.abs(directory), "", 200, false)
+	if err != nil {
+		t.Fatalf("list %s: %v", directory, err)
+	}
+	result := map[string]Entry{}
+	for _, entry := range listing.Entries {
+		result[entry.Name] = entry
+	}
+	return result
+}
+
+// entriesManaged lists with the managed-only flag requested, the way the
+// browse that hides managed entries does.
+func (f stateFixture) entriesManaged(t *testing.T, directory string) map[string]Entry {
+	t.Helper()
+	listing, err := f.service.List(context.Background(), f.abs(directory), "", 200, true)
 	if err != nil {
 		t.Fatalf("list %s: %v", directory, err)
 	}
@@ -812,7 +833,7 @@ func TestOwnerFactsMatchTheResolvedSpelling(t *testing.T) {
 		t.Fatalf("a matched entry carries a revision and no companion: %+v", detail.Entry)
 	}
 	entries := map[string]Entry{}
-	listing, err := service.List(context.Background(), library, "", 0)
+	listing, err := service.List(context.Background(), library, "", 0, false)
 	if err != nil {
 		t.Fatal(err)
 	}
