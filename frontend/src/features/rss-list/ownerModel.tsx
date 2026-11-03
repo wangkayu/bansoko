@@ -86,10 +86,11 @@ function terminalRows(release: Release | undefined, workspace: AnimeWorkspace): 
   const operations = artifacts.flatMap((artifact) => workspace.file_operations.filter((operation) => operation.artifact_id === artifact.id));
   const rows: ReactNode[] = [];
   // The three stage owners' retry buttons are retired: only state and reason remain on the row.
-  const row = (key: string, tone: StatePillTone, state: string, detail: string | undefined) => (
+  const row = (key: string, tone: StatePillTone, state: string, detail: string | undefined, note?: string) => (
     <div key={key} className="chain-failure-row">
       <StatePill tone={tone}>{state}</StatePill>
       {detail && <span className="text-caption text-muted">{detail}</span>}
+      {note && <span className="text-caption text-muted">{note}</span>}
     </div>
   );
   if (task?.state === "failed") {
@@ -102,8 +103,13 @@ function terminalRows(release: Release | undefined, workspace: AnimeWorkspace): 
   }
   for (const operation of operations) {
     if (operation.state !== "failed" && operation.state !== "waiting_retry") continue;
+    // TARGET_OCCUPIED under the block policy is a deliberate skip, not a fault to diagnose: the
+    // row names the policy (never the raw syscall text) so the stage — still retryable — never
+    // reads as an unexplained refusal; the episode may well be held by the copy at the target.
+    const skippedOccupied = operation.failure_code === "TARGET_OCCUPIED" && operation.collision_policy === "fail";
     rows.push(row(`file_operation:${operation.id}`, fileOperationStateTone(operation.state), fileOperationStateLabel(operation.state),
-      `${fileOperationKindLabel(operation.operation)} · ${operation.target_path.replace(/\/+$/, "").split("/").pop() ?? operation.target_path}`));
+      `${fileOperationKindLabel(operation.operation)} · ${operation.target_path.replace(/\/+$/, "").split("/").pop() ?? operation.target_path}`,
+      skippedOccupied ? t("rss.failureOccupiedSkipped") : undefined));
   }
   return rows;
 }
@@ -298,7 +304,11 @@ function OwnerReleaseFileRow({ preview, parsed, target, observation, subtitles =
           {placementEnd !== undefined
             ? <StatePill tone="muted">{placementEndLabel(placementEnd)}</StatePill>
             : planDiff
-            ? <span className="text-caption text-muted"><ReasonText code={planDiffCode} /></span>
+            ? <span className="text-caption text-muted">{planDiffCode === "target_collision_blocked"
+                // A plan-time refusal only happens under the block policy, so the verdict names the
+                // policy instead of leaving the occupied target to read like an unexplained skip.
+                ? t("rss.planOccupiedSkipped")
+                : <ReasonText code={planDiffCode} />}</span>
             : inLibrary
               ? <StatePill tone="online">{t("rss.target.inLibrary")}</StatePill>
             : actualFailure !== undefined

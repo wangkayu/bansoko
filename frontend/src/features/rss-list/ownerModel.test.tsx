@@ -557,6 +557,50 @@ describe("ownerViewModel", () => {
     expect(screen.queryByText(/^→ /)).toBeNull();
   });
 
+  it("规划期被跳过策略挡下的占用目标点名策略，不再只说同名", () => {
+    const workspace = releaseWith([
+      { path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 100, media_kind: "video", outcome: "target_collision", outcome_reason: "target_collision_blocked" },
+    ]);
+    workspace.releases[0].acquisition_targets = [];
+    workspace.releases[0].target_observations = [];
+    renderOwnerFiles([
+      { file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 100, media_kind: "video", included: false, reason_code: "target_collision_blocked", safety: "valid" },
+    ], workspace);
+
+    const row = fileRow("Show/old.mkv");
+    expect(within(row).getByText(t("rss.planOccupiedSkipped"))).toBeVisible();
+    // The full sentence replaces the bare occupied verdict, so the reason is named once.
+    expect(within(row).queryByText(t("reason.target_collision_blocked"))).toBeNull();
+    expect(screen.queryByText(/^→ /)).toBeNull();
+  });
+
+  it("失败行在跳过策略放过占用目标时点名策略，阶段与文件名不变", () => {
+    const workspace = structuredClone(WORKSPACE) as typeof WORKSPACE;
+    workspace.file_operations[0].failure_code = "TARGET_OCCUPIED";
+    workspace.file_operations[0].collision_policy = "fail";
+    const owner = view("owner");
+    render(<RssListViewPanel model={ownerViewModel(owner, workspace, {})} showFiltered />);
+    fireEvent.click(screen.getByRole("button", { name: t("rss.expandGroup", { name: "Group" }) }));
+
+    expect(screen.getByText(t("rss.failureOccupiedSkipped"))).toBeVisible();
+    expect(screen.getByText(/复制 · EP01.mkv/)).toBeTruthy();
+    expect(screen.getByText(fileOperationStateLabel("failed"))).toBeTruthy();
+  });
+
+  it.each([
+    { policy: "versioned" as const, code: "TARGET_OCCUPIED" },
+    { policy: "fail" as const, code: "TARGET_PERMISSION_DENIED" },
+  ])("其他策略或原因的失败行不点名跳过（%s / %s）", ({ policy, code }) => {
+    const workspace = structuredClone(WORKSPACE) as typeof WORKSPACE;
+    workspace.file_operations[0].failure_code = code;
+    workspace.file_operations[0].collision_policy = policy;
+    const owner = view("owner");
+    render(<RssListViewPanel model={ownerViewModel(owner, workspace, {})} showFiltered />);
+    fireEvent.click(screen.getByRole("button", { name: t("rss.expandGroup", { name: "Group" }) }));
+
+    expect(screen.queryByText(t("rss.failureOccupiedSkipped"))).toBeNull();
+  });
+
   it("未知尺寸与类型不渲染 0 B 与「其他」，退化为文件名扩展名", () => {
     const workspace = releaseWith([]);
     workspace.releases[0].acquisition_targets = [];

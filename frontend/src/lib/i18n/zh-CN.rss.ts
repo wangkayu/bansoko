@@ -137,6 +137,10 @@ export const rssCopy = {
     released: "文件已解除管理",
   },
   targetPending: "（目标路径待生成）",
+  // 占用目标被「跳过」策略放过时的说明：阶段仍是可重试的失败，但行上点名策略，
+  // 不再让一次有意的跳过读起来像无解释的拒绝（这一集可能已由占用目标的文件满足）。
+  failureOccupiedSkipped: "目标位置已被占用，按「跳过」策略未覆盖",
+  planOccupiedSkipped: "目标位置已有同名文件，按「跳过」策略未覆盖",
   retryRelease: "重新执行",
   structure: {
     title: "种子结构",

@@ -140,6 +140,11 @@ export const enRssCopy = {
     released: "File released from management",
   },
   targetPending: "(Target path pending)",
+  // The note for an occupied target the Skip policy left untouched: the stage stays a retryable
+  // failure, but the row names the policy instead of reading like an unexplained refusal (the
+  // episode may already be held by the copy at the target).
+  failureOccupiedSkipped: "Target location is occupied; the Skip policy left it untouched",
+  planOccupiedSkipped: "A file with the same name exists at the target; the Skip policy left it untouched",
   retryRelease: "Run again",
   structure: {
     title: "Torrent structure",
