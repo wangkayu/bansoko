@@ -14,8 +14,10 @@ import (
 
 	"bansoko/internal/deployment"
 	"bansoko/internal/filemaintenance"
+	executorpkg "bansoko/internal/filemaintenance/executor"
 	"bansoko/internal/filemanager"
 	filesystem "bansoko/internal/library/adapter/filesystem"
+	"bansoko/internal/library/domain"
 	observabilityapplication "bansoko/internal/observability/application"
 	"bansoko/internal/runtime/worker"
 	"bansoko/internal/testutil/disposabledb"
@@ -101,9 +103,11 @@ VALUES ('c-ep01', 'p-ep01', 'anime-a', 'src-c', 'intake', 'subtitle', 'zh', 'ass
 		t.Fatal(err)
 	}
 	service.SetCommands(commands, nil)
-	users := filemaintenance.NewUserOperationService(db, workStore, filesystem.OSFileExecutor{}, filesystem.OSFileObserver{},
+	observer := &noContentObserver{}
+	cleanup := &noContentCleanup{inner: filesystem.NewOSCleanupExecutor(filemaintenance.CleanupAnchor)}
+	users := filemaintenance.NewUserOperationService(db, workStore, filesystem.OSFileExecutor{}, observer,
 		func() filemaintenance.CleanupFileExecutor {
-			return filesystem.NewOSCleanupExecutor(filemaintenance.CleanupAnchor)
+			return cleanup
 		}, UserOperationGuard{Service: service})
 	users.SetRecorder(observability)
 
@@ -318,6 +322,49 @@ VALUES ('c-ep01', 'p-ep01', 'anime-a', 'src-c', 'intake', 'subtitle', 'zh', 'ass
 	if err := db.QueryRowContext(ctx, `SELECT last_result_code FROM routine_activities WHERE scope_id = 'file_manager'`).Scan(&routine); err != nil || routine == "" {
 		t.Fatalf("routine row = %q, %v", routine, err)
 	}
+}
+
+// noContentObserver and noContentCleanup pin the path-level verification
+// ruling on the user operation lane: freezing and verifying files never reads
+// content, so any call into the hashing Observe fails the operation loudly.
+type noContentObserver struct{}
+
+func (*noContentObserver) Observe(context.Context, string) (string, error) {
+	return "", errors.New("user operation read file content")
+}
+
+func (*noContentObserver) ObserveMetadata(ctx context.Context, path string) (string, error) {
+	return (filesystem.OSFileObserver{}).ObserveMetadata(ctx, path)
+}
+
+type noContentCleanup struct{ inner filesystem.OSCleanupExecutor }
+
+func (c *noContentCleanup) Observe(context.Context, string) (domain.FileObservation, error) {
+	return domain.FileObservation{}, errors.New("user operation read file content")
+}
+
+func (c *noContentCleanup) ObserveMetadataFile(ctx context.Context, path string) (domain.FileObservation, error) {
+	return c.inner.ObserveMetadataFile(ctx, path)
+}
+
+func (c *noContentCleanup) CaptureForDelete(ctx context.Context, source, quarantine string, expected domain.FileObservation) (string, error) {
+	return c.inner.CaptureForDelete(ctx, source, quarantine, expected)
+}
+
+func (c *noContentCleanup) PurgeCaptured(ctx context.Context, quarantine string, expected domain.FileObservation) error {
+	return c.inner.PurgeCaptured(ctx, quarantine, expected)
+}
+
+func (c *noContentCleanup) MoveMaintenance(ctx context.Context, source, target string, expected domain.FileObservation, invocation executorpkg.MaintenanceInvocation) (string, error) {
+	return c.inner.MoveMaintenance(ctx, source, target, expected, invocation)
+}
+
+func (c *noContentCleanup) PurgeMaintenance(ctx context.Context, path string, expected domain.FileObservation, invocation executorpkg.MaintenanceInvocation) error {
+	return c.inner.PurgeMaintenance(ctx, path, expected, invocation)
+}
+
+func (c *noContentCleanup) ReadMaintenanceReceipt(ctx context.Context, invocation executorpkg.MaintenanceInvocation) (executorpkg.MaintenanceReceipt, error) {
+	return c.inner.ReadMaintenanceReceipt(ctx, invocation)
 }
 
 func expectCheck(t *testing.T, err error, message string) {

@@ -305,6 +305,11 @@ func (executor OSFileExecutor) Execute(ctx context.Context, operation domain.Fil
 	}
 	final, err := observeFileAs(target, operation.SourceFingerprint)
 	matchesFinal := err == nil && sameFileObservation(final, source)
+	if operation.Operation == domain.OperationCopy {
+		// A copy's target is a new object: a metadata-frozen source
+		// contributes only its size (verified in-stream during the copy).
+		matchesFinal = err == nil && sameCopiedFileObservation(final, source)
+	}
 	if operation.Operation == domain.OperationHardlink {
 		matchesFinal = err == nil && sameFrozenFileObservation(final, source)
 	}
@@ -986,7 +991,7 @@ func (executor OSFileExecutor) recoverOverwrite(ctx context.Context, operation d
 			return operation, false, nil
 		}
 		if !stagedEntry.regular || !sameFrozenFileObservation(stagedEntry.observation, recovery.SourceObservation) ||
-			(operation.Operation == domain.OperationCopy && !sameFileObservation(stagedEntry.observation, recovery.SourceObservation)) {
+			(operation.Operation == domain.OperationCopy && !sameCopiedFileObservation(stagedEntry.observation, recovery.SourceObservation)) {
 			return operation, true, &OperationError{Code: CodeRecoveryUnsafe, Err: errors.New("prepared overwrite staging does not match frozen source")}
 		}
 		recovery.Stage = domain.OverwriteStageStaged
@@ -1393,7 +1398,7 @@ func (executor OSFileExecutor) executeOverwrite(ctx context.Context, operation d
 	}
 	if existing, statErr := observeFileAs(recovery.StagingPath, operation.SourceFingerprint); statErr == nil {
 		if operation.Operation == domain.OperationCopy {
-			if !sameFileObservation(existing, source) {
+			if !sameCopiedFileObservation(existing, source) {
 				return operation, &OperationError{Code: CodeRecoveryUnsafe, Err: errors.New("operation staging path contains unexpected data")}
 			}
 		} else if !sameFrozenFileObservation(existing, source) {
@@ -1406,7 +1411,7 @@ func (executor OSFileExecutor) executeOverwrite(ctx context.Context, operation d
 		return operation, err
 	}
 	staged, err := observeFileAs(recovery.StagingPath, operation.SourceFingerprint)
-	stagedMatchesSource := sameFileObservation(staged, source)
+	stagedMatchesSource := sameCopiedFileObservation(staged, source)
 	if operation.Operation != domain.OperationCopy {
 		stagedMatchesSource = sameMutationFileObservation(staged, source)
 	}
@@ -2718,6 +2723,21 @@ func sameFileObservation(left, right domain.FileObservation) bool {
 		return metadataFactsCompatible(observationMetadataFacts(left), observationMetadataFacts(right))
 	}
 	return left.Fingerprint == right.Fingerprint
+}
+
+// sameCopiedFileObservation verifies a freshly written copy against the
+// frozen source observation. The copy is a new object with a new inode, so a
+// metadata (path-level) source contributes only its size — the byte count was
+// verified in-stream by the copy itself; a digest source still compares by
+// digest.
+func sameCopiedFileObservation(actual, expected domain.FileObservation) bool {
+	if !sizeMatches(actual.SizeBytes, expected.SizeBytes) {
+		return false
+	}
+	if domain.IsMetadataFingerprint(actual.Fingerprint) || domain.IsMetadataFingerprint(expected.Fingerprint) {
+		return true
+	}
+	return actual.Fingerprint == expected.Fingerprint
 }
 
 func sameFrozenFileObservation(left, right domain.FileObservation) bool {

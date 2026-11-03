@@ -151,7 +151,16 @@ func (e OSFileExecutor) executeMaintenanceStarted(ctx context.Context, op domain
 	if err != nil {
 		return result, err
 	}
-	if !fileObservationMatches(observed, i.Fingerprint, -1) {
+	matched := fileObservationMatches(observed, i.Fingerprint, -1)
+	if op.Operation == domain.OperationCopy {
+		if expected, ok := domain.ParseMetadataFingerprint(i.Fingerprint); ok {
+			// A copy creates a new object with a new inode: the frozen
+			// path-level identity contributes only its size; the byte count
+			// was verified in-stream by the copy itself.
+			matched = observed.SizeBytes == expected.SizeBytes
+		}
+	}
+	if !matched {
 		return result, errors.New("maintenance final fingerprint mismatch")
 	}
 	if err := writeMaintenanceFinal(i, observed); err != nil {

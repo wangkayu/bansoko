@@ -265,7 +265,14 @@ func (h userOperationRecoveryHandler) start(ctx context.Context, claim workitems
 	if err != nil || !info.Mode().IsRegular() || info.Size() != op.ExpectedSize {
 		return h.fail(op, op.Version, "blocked", userFailureSourceChanged, "the file changed since the operation was confirmed"), nil
 	}
-	fingerprint, err := s.observer.Observe(ctx, op.SourcePath)
+	// The frozen identity is path-level metadata (size + device/inode), never a
+	// content read: the path-level verification ruling applies to manual
+	// operations too, so a multi-GB file costs one stat, not a full hash.
+	metadata, ok := s.observer.(executorpkg.MetadataFileObserver)
+	if !ok {
+		return h.fail(op, op.Version, "blocked", userFailureExecuteFailed, "file manager metadata observer is not wired"), nil
+	}
+	fingerprint, err := metadata.ObserveMetadata(ctx, op.SourcePath)
 	if err != nil || fingerprint == "" {
 		return h.fail(op, op.Version, "blocked", userFailureSourceChanged, "the file cannot be read"), nil
 	}
@@ -279,8 +286,8 @@ func (h userOperationRecoveryHandler) start(ctx context.Context, claim workitems
 		if !ok {
 			return h.fail(op, op.Version, "blocked", userFailureExecuteFailed, "file manager delete executor is not wired"), nil
 		}
-		observed, err := capture.Observe(ctx, op.SourcePath)
-		if err != nil || observed.Fingerprint != fingerprint || observed.SizeBytes != op.ExpectedSize {
+		observed, err := observeCleanupFile(ctx, capture, op.SourcePath, fingerprint)
+		if err != nil || !fingerprintsEqual(observed.Fingerprint, fingerprint) || observed.SizeBytes != op.ExpectedSize {
 			return h.fail(op, op.Version, "blocked", userFailureSourceChanged, "the file changed while it was read"), nil
 		}
 		attempt.Stage = "quarantine"
@@ -440,20 +447,16 @@ func (s *UserOperationService) overwriteCheckpoint(op *userOperation, persisted 
 	}
 }
 
-type cleanupObserver interface {
-	Observe(context.Context, string) (domain.FileObservation, error)
-}
-
 func (s *UserOperationService) captureExecutor() (interface {
 	executorpkg.MaintenanceCleanupExecutor
-	cleanupObserver
+	executorpkg.CleanupFileExecutor
 }, bool) {
 	if s.cleanup == nil {
 		return nil, false
 	}
 	capture, ok := s.cleanup().(interface {
 		executorpkg.MaintenanceCleanupExecutor
-		cleanupObserver
+		executorpkg.CleanupFileExecutor
 	})
 	return capture, ok
 }
@@ -529,8 +532,17 @@ func (h userOperationRecoveryHandler) effect(ctx context.Context, claim workitem
 		}
 		return h.fail(op, op.Version, "failed", userFailureExecuteFailed, safeReason(err)), nil
 	}
-	observed, observeErr := s.observer.Observe(ctx, executed.TargetPath)
-	if observeErr != nil || !fingerprintsEqual(observed, attempt.SourceFingerprint) {
+	observed, observeErr := executorpkg.ObserveLike(ctx, s.observer, executed.TargetPath, attempt.SourceFingerprint)
+	matched := fingerprintsEqual(observed, attempt.SourceFingerprint)
+	if op.Operation == "copy" {
+		if expected, ok := domain.ParseMetadataFingerprint(attempt.SourceFingerprint); ok {
+			// A copy's target is a new object: the frozen metadata identity
+			// contributes only its size.
+			actual, ok := domain.ParseMetadataFingerprint(observed)
+			matched = ok && actual.SizeBytes == expected.SizeBytes
+		}
+	}
+	if observeErr != nil || !matched {
 		return h.fail(op, op.Version, "failed", userFailureExecuteFailed, "the result does not match the file"), nil
 	}
 	return h.complete(op, op.Version, executed.TargetPath), nil
@@ -555,7 +567,7 @@ func (h userOperationRecoveryHandler) capture(ctx context.Context, claim workite
 	if err != nil {
 		return h.fail(op, op.Version, "failed", userFailureExecuteFailed, safeReason(err)), nil
 	}
-	observed, err := capture.Observe(ctx, moved)
+	observed, err := observeCleanupFile(ctx, capture, moved, expected.Fingerprint)
 	if err != nil || !sameFrozenCleanupObservation(observed, expected) {
 		return h.fail(op, op.Version, "failed", userFailureExecuteFailed, "the captured file does not match the file"), nil
 	}
@@ -602,7 +614,7 @@ func (h userOperationRecoveryHandler) purge(ctx context.Context, claim workitems
 		userInvocation(claim, op.Attempt, userOperationPurgeKind, attempt.QuarantinePath, attempt.QuarantinePath, observed.Fingerprint)); err != nil {
 		return h.fail(op, op.Version, "failed", userFailureExecuteFailed, safeReason(err)), nil
 	}
-	if _, err := capture.Observe(ctx, attempt.QuarantinePath); err == nil || !isMissingCleanupError(err) {
+	if _, err := observeCleanupFile(ctx, capture, attempt.QuarantinePath, observed.Fingerprint); err == nil || !isMissingCleanupError(err) {
 		return h.fail(op, op.Version, "failed", userFailureExecuteFailed, "the captured file is still present"), nil
 	}
 	return h.complete(op, op.Version, ""), nil
@@ -684,8 +696,8 @@ func (h userOperationRecoveryHandler) resolveAttempt(ctx context.Context, c work
 		receipt, err := capture.ReadMaintenanceReceipt(ctx, invocation)
 		if err != nil || receipt.Validate(invocation) != nil || !sameFrozenCleanupObservation(receipt.Observation, expected) {
 			if errors.Is(err, executorpkg.ErrMaintenanceNotStarted) {
-				observed, observeErr := capture.Observe(ctx, attempt.SourcePath)
-				_, targetErr := capture.Observe(ctx, attempt.QuarantinePath)
+				observed, observeErr := observeCleanupFile(ctx, capture, attempt.SourcePath, expected.Fingerprint)
+				_, targetErr := observeCleanupFile(ctx, capture, attempt.QuarantinePath, expected.Fingerprint)
 				if observeErr == nil && sameFrozenCleanupObservation(observed, expected) && isMissingCleanupError(targetErr) {
 					return worker.Outcome{}, true, nil
 				}
