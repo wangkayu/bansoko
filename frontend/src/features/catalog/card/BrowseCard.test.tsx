@@ -141,11 +141,13 @@ describe("BrowseCard 操作", () => {
     expect(block.querySelector("svg.lucide-trash-2")).toBeNull();
   });
 
-  it("键盘：卡片、浏览、⋯ 是三个独立的 Tab 停靠点", async () => {
+  it("键盘：卡片、简介、浏览、⋯ 是独立的 Tab 停靠点", async () => {
     const user = userEvent.setup();
     renderCard(base, { onBrowseSeeds: () => {} });
     await user.tab();
     expect(screen.getByRole("button", { name: t("grid.card.openConfig", { title: "测试番剧" }) })).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole("button", { name: t("grid.card.viewSynopsisFor", { title: "测试番剧" }) })).toHaveFocus();
     await user.tab();
     expect(screen.getByRole("button", { name: t("grid.card.moreFor", { title: "测试番剧" }) })).toHaveFocus();
     await user.tab();

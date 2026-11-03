@@ -161,7 +161,7 @@ const phoneFullScreen =
 // that changes while open (filters, search results) does not make the dialog
 // jump; on phones M is full screen either way. L, R and F are always fixed.
 // (Class strings stay literal so Tailwind's scanner can see them.)
-function popupTier(tier: DialogTier, fixedHeight: boolean): string {
+function popupTier(tier: DialogTier, fixedHeight: boolean, reader: boolean): string {
   switch (tier) {
     case "S":
       return cn(
@@ -171,6 +171,14 @@ function popupTier(tier: DialogTier, fixedHeight: boolean): string {
         "tw:phone:rounded-t-dialog tw:phone:rounded-b-none tw:phone:border-x-0 tw:phone:border-b-0 tw:phone:pb-[env(safe-area-inset-bottom)]",
       );
     case "M":
+      if (reader) {
+        return cn(
+          centered,
+          "tw:w-[min(680px,calc(100vw-2rem))]",
+          fixedHeight ? "tw:h-[min(600px,calc(100dvh-2rem))]" : "tw:max-h-[min(600px,calc(100dvh-2rem))] tw:phone:max-h-none",
+          phoneFullScreen,
+        );
+      }
       return cn(
         centered,
         "tw:w-[min(760px,calc(100vw-2rem))]",
@@ -215,6 +223,7 @@ export function Dialog({
   dismissOnOverlay,
   fixedHeight = false,
   closeDisabled = false,
+  reader = false,
 }: {
   open: boolean;
   onRequestClose: () => void;
@@ -260,6 +269,11 @@ export function Dialog({
   fixedHeight?: boolean;
   /** Disable the title-bar close button (a save is in flight). */
   closeDisabled?: boolean;
+  /**
+   * M tier only: the synopsis reader's narrower reading surface
+   * (min(680px,100%) × min(600px,100%)) instead of the standard 760×640.
+   */
+  reader?: boolean;
 }) {
   const parentLayer = useLayerZIndex();
   const popupRef = useRef<HTMLDivElement>(null);
@@ -312,7 +326,7 @@ export function Dialog({
           className={cn(
             "tw:fixed tw:flex tw:flex-col tw:overflow-hidden tw:bg-popover tw:text-popover-foreground tw:shadow-2 tw:outline-none",
             "tw:transition-[opacity,scale,translate] tw:duration-200 tw:ease-out tw:data-starting-style:opacity-0 tw:data-ending-style:opacity-0",
-            popupTier(tier, fixedHeight),
+            popupTier(tier, fixedHeight, reader),
           )}
           data-tier={tier}
         >

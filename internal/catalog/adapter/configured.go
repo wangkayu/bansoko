@@ -36,9 +36,11 @@ type ConfiguredReader struct {
 	Resolver          func(context.Context, string) ([]net.IP, error)
 }
 
-func (r ConfiguredReader) ReadSeason(ctx context.Context, season string, hints domain.ReadHints) (domain.ReadResult, error) {
+// configure resolves the saved connection and its optional network route once
+// for every provider surface (season read, keyword search, entry synopsis).
+func (r ConfiguredReader) configure(ctx context.Context) (configurationdomain.Connection, *http.Client, error) {
 	if r.Connections == nil {
-		return domain.ReadResult{}, errors.New("catalog connection source is not configured")
+		return configurationdomain.Connection{}, nil, errors.New("catalog connection source is not configured")
 	}
 	provider := r.Provider
 	var kind configurationdomain.ConnectionKind
@@ -48,11 +50,11 @@ func (r ConfiguredReader) ReadSeason(ctx context.Context, season string, hints d
 	case application.ProviderMikan:
 		kind = configurationdomain.ConnectionMikan
 	default:
-		return domain.ReadResult{}, fmt.Errorf("unsupported catalog provider %q", provider)
+		return configurationdomain.Connection{}, nil, fmt.Errorf("unsupported catalog provider %q", provider)
 	}
 	connections, err := r.Connections.ListConnections(ctx)
 	if err != nil {
-		return domain.ReadResult{}, fmt.Errorf("list %s catalog connections: %w", provider, err)
+		return configurationdomain.Connection{}, nil, fmt.Errorf("list %s catalog connections: %w", provider, err)
 	}
 	connection, err := configurationdomain.SelectSingleEnabledConnection(connections, kind)
 	if err != nil {
@@ -61,31 +63,39 @@ func (r ConfiguredReader) ReadSeason(ctx context.Context, season string, hints d
 		// "multiple enabled connections" conflict is a real configuration
 		// error and is never swallowed here.
 		if !errors.Is(err, configurationdomain.ErrNoEnabledConnection) {
-			return domain.ReadResult{}, err
+			return configurationdomain.Connection{}, nil, err
 		}
 		fallback, ok := configurationdomain.DefaultConnectionForKind(kind)
 		if !ok {
-			return domain.ReadResult{}, err
+			return configurationdomain.Connection{}, nil, err
 		}
 		connection = fallback
 	}
 	var client *http.Client
 	if connection.NetworkRouteID != "" {
 		if r.ClientResolver == nil {
-			return domain.ReadResult{}, errors.New("catalog network route client is not configured")
+			return configurationdomain.Connection{}, nil, errors.New("catalog network route client is not configured")
 		}
 		client, err = r.ClientResolver.ClientForConnection(ctx, connection)
 		if err != nil {
-			return domain.ReadResult{}, fmt.Errorf("resolve catalog network route: %w", err)
+			return configurationdomain.Connection{}, nil, fmt.Errorf("resolve catalog network route: %w", err)
 		}
 	}
-	switch provider {
+	return connection, client, nil
+}
+
+func (r ConfiguredReader) ReadSeason(ctx context.Context, season string, hints domain.ReadHints) (domain.ReadResult, error) {
+	connection, client, err := r.configure(ctx)
+	if err != nil {
+		return domain.ReadResult{}, err
+	}
+	switch r.Provider {
 	case application.ProviderAniBT:
 		return (application.HTTPReader{Endpoint: connection.Endpoint, Client: client}).ReadSeason(ctx, season, hints)
 	case application.ProviderMikan:
 		return (application.MikanHTTPReader{Endpoint: connection.Endpoint, Client: client, Recorder: r.Recorder}).ReadSeason(ctx, season, hints)
 	default:
-		return domain.ReadResult{}, fmt.Errorf("unsupported catalog provider %q", provider)
+		return domain.ReadResult{}, fmt.Errorf("unsupported catalog provider %q", r.Provider)
 	}
 }
 
@@ -94,43 +104,9 @@ func (r ConfiguredReader) ReadSeason(ctx context.Context, season string, hints d
 // not-supported error. The shared SSRF-safe transport is applied here as well as
 // on seed search, so a saved endpoint or redirect cannot reach a private host.
 func (r ConfiguredReader) Search(ctx context.Context, query string, hints domain.ReadHints) (domain.ReadResult, error) {
-	if r.Connections == nil {
-		return domain.ReadResult{}, errors.New("catalog connection source is not configured")
-	}
-	provider := r.Provider
-	var kind configurationdomain.ConnectionKind
-	switch provider {
-	case application.ProviderAniBT:
-		kind = configurationdomain.ConnectionAniBT
-	case application.ProviderMikan:
-		kind = configurationdomain.ConnectionMikan
-	default:
-		return domain.ReadResult{}, fmt.Errorf("unsupported catalog provider %q", provider)
-	}
-	connections, err := r.Connections.ListConnections(ctx)
+	connection, client, err := r.configure(ctx)
 	if err != nil {
-		return domain.ReadResult{}, fmt.Errorf("list %s catalog connections: %w", provider, err)
-	}
-	connection, err := configurationdomain.SelectSingleEnabledConnection(connections, kind)
-	if err != nil {
-		if !errors.Is(err, configurationdomain.ErrNoEnabledConnection) {
-			return domain.ReadResult{}, err
-		}
-		fallback, ok := configurationdomain.DefaultConnectionForKind(kind)
-		if !ok {
-			return domain.ReadResult{}, err
-		}
-		connection = fallback
-	}
-	var client *http.Client
-	if connection.NetworkRouteID != "" {
-		if r.ClientResolver == nil {
-			return domain.ReadResult{}, errors.New("catalog network route client is not configured")
-		}
-		client, err = r.ClientResolver.ClientForConnection(ctx, connection)
-		if err != nil {
-			return domain.ReadResult{}, fmt.Errorf("resolve catalog network route: %w", err)
-		}
+		return domain.ReadResult{}, err
 	}
 	client, err = acquisitionapplication.SSRFClientForProvider(client, r.Resolver, r.AllowPrivateHosts, nil)
 	if err != nil {
@@ -139,12 +115,34 @@ func (r ConfiguredReader) Search(ctx context.Context, query string, hints domain
 	// Both sites now expose a keyword search: AniBT through its BGM search API and
 	// Mikan through the Home/Search recommendation block. A provider without one
 	// still answers ErrSearchNotSupported, which the transport maps to 422.
-	switch provider {
+	switch r.Provider {
 	case application.ProviderAniBT:
 		return (application.HTTPReader{Endpoint: connection.Endpoint, Client: client}).Search(ctx, query, hints)
 	case application.ProviderMikan:
 		return (application.MikanHTTPReader{Endpoint: connection.Endpoint, Client: client, Recorder: r.Recorder}).Search(ctx, query, hints)
 	default:
-		return domain.ReadResult{}, fmt.Errorf("unsupported catalog provider %q", provider)
+		return domain.ReadResult{}, fmt.Errorf("unsupported catalog provider %q", r.Provider)
+	}
+}
+
+// ReadSynopsis reads the synopsis and source-stated facts from the same saved
+// provider connection the season and search reads use, behind the same
+// SSRF-safe transport.
+func (r ConfiguredReader) ReadSynopsis(ctx context.Context, providerEntryRef string) (domain.EntrySynopsis, error) {
+	connection, client, err := r.configure(ctx)
+	if err != nil {
+		return domain.EntrySynopsis{}, err
+	}
+	client, err = acquisitionapplication.SSRFClientForProvider(client, r.Resolver, r.AllowPrivateHosts, nil)
+	if err != nil {
+		return domain.EntrySynopsis{}, fmt.Errorf("%w: configure catalog synopsis transport: %v", application.ErrProviderUpstream, err)
+	}
+	switch r.Provider {
+	case application.ProviderAniBT:
+		return (application.HTTPReader{Endpoint: connection.Endpoint, Client: client}).ReadSynopsis(ctx, providerEntryRef)
+	case application.ProviderMikan:
+		return (application.MikanHTTPReader{Endpoint: connection.Endpoint, Client: client, Recorder: r.Recorder}).ReadSynopsis(ctx, providerEntryRef)
+	default:
+		return domain.EntrySynopsis{}, fmt.Errorf("unsupported catalog provider %q", r.Provider)
 	}
 }

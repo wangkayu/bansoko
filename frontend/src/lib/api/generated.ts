@@ -1724,6 +1724,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/catalog/providers/{provider}/entries/{provider_entry_ref}/synopsis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Side-effect-free read of one provider catalog entry's synopsis and source-stated facts. The text is returned whole (bgm-derived, not split by language). A page without a synopsis is a normal empty result, not an error. */
+        get: operations["readProviderEntrySynopsis"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/anime/{managed_anime_id}/rss-sources/{rss_source_id}/offset": {
         parameters: {
             query?: never;
@@ -6584,6 +6601,29 @@ export interface components {
             allowed_actions: string[];
             /** @description Lossless association projection from this one external catalog entry to zero or more existing formal owners, active first then creation order. An element does not create or identify an owner by its provider ref or locator: managed_anime_ref is the referenced managed_anime.id and the sole formal owner identity. The singular managed_anime_ref/subscription_ref/subscription_state fields are a compatibility summary populated ONLY when exactly one association exists; with several associations this array is authoritative and the singular fields stay null. Consumers must act on a specific owner by managed_anime_ref, never on an arbitrary first row, and each element carries that owner's subscription_version for CAS. */
             instances: components["schemas"]["CatalogItemInstance"][];
+        };
+        /** @description The synopsis and source-stated facts of one provider catalog entry, read from the provider's own anime page. The synopsis is one whole bgm-derived text block, never split by language; null means the source page states none. Nothing here is borrowed from another provider. */
+        CatalogEntrySynopsis: {
+            /** @enum {string} */
+            provider: "anibt" | "mikan";
+            /** @description External catalog-entry key, paired with provider. */
+            provider_entry_ref: string;
+            /** @description The provider anime page this result was read from. */
+            source_url: string;
+            /** @description The whole synopsis text as the source page states it. It may embed a [简介原文] marker; splitting into reading tabs is a display concern. Null when the page has no synopsis or it could not be parsed, which is a normal empty state. */
+            synopsis: string | null;
+            /** @description Total episode count stated by the source page. */
+            episodes: number | null;
+            /** @description Broadcast weekday stated by the source page; null when the page states none. */
+            weekday: components["schemas"]["BroadcastDay"] | null;
+            /** @description Season in canonical YYYY-term form when the source page states one (AniBT's detail sticker); null otherwise. A source fact, not the season being browsed. */
+            season: string | null;
+            /** @description Genre tags the source page states, in source order; empty when it states none. */
+            tags: string[];
+            /** @description Official site link stated by the source page. */
+            official_site: string | null;
+            /** @description Bangumi subject link stated by or derived from the entry's bgm id. */
+            bgm_url: string | null;
         };
         /** @description One association between an external catalog entry and an existing formal owner. It is not an owner-creation identity; managed_anime_ref is the sole owner identity used for actions. */
         CatalogItemInstance: {
@@ -11798,6 +11838,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProviderRSSPreviewResult"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            422: components["responses"]["Unprocessable"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    readProviderEntrySynopsis: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Provider namespace for the catalog. */
+                provider: components["parameters"]["CatalogProvider"];
+                /** @description External provider-scoped catalog-entry reference. Unique only within its provider and never a formal ManagedAnime owner identity, so it is always paired with the provider path segment. */
+                provider_entry_ref: components["parameters"]["CatalogProviderEntryRef"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The entry's synopsis and source-stated facts. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogEntrySynopsis"];
                 };
             };
             401: components["responses"]["Unauthorized"];

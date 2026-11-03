@@ -125,6 +125,29 @@ export const enGridCopy = {
     // The poster card's top-right menu (item capabilities are in the InstanceCard / BrowseCard headers).
     more: "More actions",
     moreFor: "More actions for {title}",
+    // The browse/search poster card's top-right synopsis entry and its reader dialog. The
+    // synopsis is one whole text block from the source page; tabs appear only when it contains
+    // a [简介原文] marker with content on both sides.
+    viewSynopsis: "View Synopsis",
+    viewSynopsisFor: "View the synopsis for {title}",
+    synopsis: {
+      loading: "Loading synopsis…",
+      empty: "No synopsis",
+      emptyHint: "The source page provides no synopsis.",
+      failed: "Could not load the synopsis",
+      retry: "Retry",
+      summary: "Synopsis",
+      original: "Original Text",
+      episodes: "{n} episodes",
+      score: "Score {score}",
+      formatTv: "TV Anime",
+      formatMovie: "Movie",
+      formatOva: "OVA",
+      formatOna: "ONA",
+      officialSite: "Official Site",
+      bangumi: "Bangumi",
+      sourceLink: "View on {site}",
+    },
   },
   // The subscribed bulk-management dialog (entered from the subscribed toolbar). Entry and
   // season are two independent dimensions: the season is the provider season catalog page

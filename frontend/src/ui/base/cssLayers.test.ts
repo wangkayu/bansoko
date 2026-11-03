@@ -72,6 +72,7 @@ const UNLAYERED_FAMILIES = [
   ".sr",
   ".stage",
   ".subgroups",
+  ".synopsis",
   ".system",
   // The phone floating tab bar.
   ".tabbar",

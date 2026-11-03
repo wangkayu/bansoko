@@ -10,6 +10,9 @@ export const catalogKeys = {
   preference: (provider: "anibt" | "mikan", season: string) => ["catalog", "preference", provider, season] as const,
   suppressions: ["catalog", "suppressions"] as const,
   feedSites: ["catalog", "feed-sites"] as const,
+  /** One catalog entry's reader-dialog synopsis, fetched only when that dialog opens. */
+  synopsis: (provider: "anibt" | "mikan", providerEntryRef: string) =>
+    ["catalog", "synopsis", provider, providerEntryRef] as const,
 };
 
 export const animeKeys = {

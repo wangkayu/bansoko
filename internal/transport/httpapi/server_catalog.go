@@ -31,6 +31,7 @@ type CatalogService interface {
 	SuppressEntry(ctx context.Context, provider, providerEntryRef, titleSnapshot string) (catalogdomain.Suppression, error)
 	UnsuppressEntry(ctx context.Context, provider, providerEntryRef string) error
 	DiscoverProviderEntryGroups(ctx context.Context, provider, catalogEntryRef string) (catalogdomain.ProviderGroupDiscoveryResult, error)
+	ProviderEntrySynopsis(ctx context.Context, provider, providerEntryRef string) (catalogdomain.EntrySynopsis, error)
 	ReadProviderEntryRSS(ctx context.Context, provider, catalogEntryRef, groupRef string) (catalogdomain.ProviderRSSPreviewResult, error)
 	PreviewProviderEntryRSS(ctx context.Context, provider, catalogEntryRef, groupRef string) (catalogdomain.ProviderRSSPreviewResult, error)
 	ListGroupDictionary(ctx context.Context, listing catalogapplication.GroupDictionaryListing) (catalogapplication.GroupDictionaryPage, error)

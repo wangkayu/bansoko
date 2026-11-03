@@ -125,6 +125,28 @@ export const gridCopy = {
     // 海报卡右上 ⋯ 菜单（菜单项能力见 InstanceCard / BrowseCard 头注）。
     more: "更多操作",
     moreFor: "更多操作 {title}",
+    // 浏览/搜索海报卡右上的「查看简介」入口与阅读器弹窗。简介是来源页给出的整段文本，
+    // 只有含「[简介原文]」且两侧都有内容时才分页。
+    viewSynopsis: "查看简介",
+    viewSynopsisFor: "查看 {title} 的简介",
+    synopsis: {
+      loading: "正在读取简介…",
+      empty: "暂无简介",
+      emptyHint: "来源页面没有提供简介",
+      failed: "简介读取失败",
+      retry: "重试",
+      summary: "简介",
+      original: "简介原文",
+      episodes: "共 {n} 集",
+      score: "评分 {score}",
+      formatTv: "TV 动画",
+      formatMovie: "剧场版",
+      formatOva: "OVA",
+      formatOna: "ONA",
+      officialSite: "官方网站",
+      bangumi: "Bangumi 番组",
+      sourceLink: "在 {site} 查看",
+    },
   },
   // 已订阅批量管理对话框（入口在已订阅页工具条）。入口与季度是两个独立维度：季度是创建时
   // 所在的 provider 季目录页（冻结），搜索与自定义创建的没有季度。

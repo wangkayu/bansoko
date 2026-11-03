@@ -320,3 +320,20 @@ type ProviderRSSPreviewResult struct {
 	SnapshotVersion  int64
 	Seeds            []ProviderRSSPreviewSeed
 }
+
+// EntrySynopsis is the whole synopsis and the source-stated facts of one
+// provider catalog entry, read from the provider's own anime page. Synopsis is
+// one bgm-derived text block and may embed a [简介原文] marker; nil means the
+// page states none (a normal empty state, never a parse failure to surface).
+type EntrySynopsis struct {
+	Provider         string
+	ProviderEntryRef string
+	SourceURL        string
+	Synopsis         *string
+	Episodes         *int
+	Weekday          string
+	Season           string
+	Tags             []string
+	OfficialSite     string
+	BGMURL           string
+}

@@ -1061,6 +1061,7 @@ export type CatalogWorkspace = Schema<"CatalogWorkspace">;
 export type CatalogPreference = Schema<"CatalogPreference">;
 export type CatalogPreferenceInput = Schema<"CatalogPreferenceInput">;
 export type CatalogSuppression = Schema<"CatalogSuppression">;
+export type CatalogEntrySynopsis = Schema<"CatalogEntrySynopsis">;
 export type ProviderGroupDiscoveryResult = Schema<"ProviderGroupDiscoveryResult">;
 export type ProviderGroupDiscoveryGroup = Schema<"ProviderGroupDiscoveryGroup">;
 export type ProviderRSSPreviewInput = Schema<"ProviderRSSPreviewInput">;
@@ -1090,6 +1091,17 @@ export function searchProviderCatalog(
   return request(`/catalog/providers/${encodePathSegment(provider)}/search?${params.toString()}`, {
     method: "GET",
   });
+}
+
+/** One catalog entry's whole synopsis and source-stated facts; read only when the reader opens. */
+export function readProviderEntrySynopsis(
+  provider: "anibt" | "mikan",
+  providerEntryRef: string,
+): Promise<CatalogEntrySynopsis> {
+  return request(
+    `/catalog/providers/${encodePathSegment(provider)}/entries/${encodePathSegment(providerEntryRef)}/synopsis`,
+    { method: "GET" },
+  );
 }
 
 export type SeedSearchSnapshotInput = Schema<"SeedSearchSnapshotInput">;

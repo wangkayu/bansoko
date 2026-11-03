@@ -471,6 +471,12 @@ const (
 	BusinessSnapshotSchemaVersionBusinessSnapshotV1 BusinessSnapshotSchemaVersion = "business-snapshot-v1"
 )
 
+// Defines values for CatalogEntrySynopsisProvider.
+const (
+	CatalogEntrySynopsisProviderAnibt CatalogEntrySynopsisProvider = "anibt"
+	CatalogEntrySynopsisProviderMikan CatalogEntrySynopsisProvider = "mikan"
+)
+
 // Defines values for CatalogItemKind.
 const (
 	CatalogItemKindAnibtEntry CatalogItemKind = "anibt_entry"
@@ -2650,6 +2656,12 @@ const (
 	PreviewProviderEntryRSSParamsProviderMikan PreviewProviderEntryRSSParamsProvider = "mikan"
 )
 
+// Defines values for ReadProviderEntrySynopsisParamsProvider.
+const (
+	ReadProviderEntrySynopsisParamsProviderAnibt ReadProviderEntrySynopsisParamsProvider = "anibt"
+	ReadProviderEntrySynopsisParamsProviderMikan ReadProviderEntrySynopsisParamsProvider = "mikan"
+)
+
 // Defines values for SearchProviderCatalogParamsProvider.
 const (
 	SearchProviderCatalogParamsProviderAnibt SearchProviderCatalogParamsProvider = "anibt"
@@ -4131,6 +4143,40 @@ type CandidateSubscribeInput struct {
 	// Start Start the subscription at once (state active). Omitted or false creates it pending (not started).
 	Start *bool `json:"start,omitempty"`
 }
+
+// CatalogEntrySynopsis The synopsis and source-stated facts of one provider catalog entry, read from the provider's own anime page. The synopsis is one whole bgm-derived text block, never split by language; null means the source page states none. Nothing here is borrowed from another provider.
+type CatalogEntrySynopsis struct {
+	// BgmUrl Bangumi subject link stated by or derived from the entry's bgm id.
+	BgmUrl *string `json:"bgm_url"`
+
+	// Episodes Total episode count stated by the source page.
+	Episodes *int `json:"episodes"`
+
+	// OfficialSite Official site link stated by the source page.
+	OfficialSite *string                      `json:"official_site"`
+	Provider     CatalogEntrySynopsisProvider `json:"provider"`
+
+	// ProviderEntryRef External catalog-entry key, paired with provider.
+	ProviderEntryRef string `json:"provider_entry_ref"`
+
+	// Season Season in canonical YYYY-term form when the source page states one (AniBT's detail sticker); null otherwise. A source fact, not the season being browsed.
+	Season *string `json:"season"`
+
+	// SourceUrl The provider anime page this result was read from.
+	SourceUrl string `json:"source_url"`
+
+	// Synopsis The whole synopsis text as the source page states it. It may embed a [简介原文] marker; splitting into reading tabs is a display concern. Null when the page has no synopsis or it could not be parsed, which is a normal empty state.
+	Synopsis *string `json:"synopsis"`
+
+	// Tags Genre tags the source page states, in source order; empty when it states none.
+	Tags []string `json:"tags"`
+
+	// Weekday Broadcast weekday stated by the source page; null when the page states none.
+	Weekday *BroadcastDay `json:"weekday"`
+}
+
+// CatalogEntrySynopsisProvider defines model for CatalogEntrySynopsis.Provider.
+type CatalogEntrySynopsisProvider string
 
 // CatalogItem One external provider catalog entry. It may be associated with zero or more existing formal ManagedAnime owners; provider_entry_ref is only the external browse key. Formal owner identity is managed_anime.id, exposed in each instances element as managed_anime_ref.
 type CatalogItem struct {
@@ -9956,6 +10002,9 @@ type ReadProviderEntryRSSParamsProvider string
 // PreviewProviderEntryRSSParamsProvider defines parameters for PreviewProviderEntryRSS.
 type PreviewProviderEntryRSSParamsProvider string
 
+// ReadProviderEntrySynopsisParamsProvider defines parameters for ReadProviderEntrySynopsis.
+type ReadProviderEntrySynopsisParamsProvider string
+
 // SearchProviderCatalogParams defines parameters for SearchProviderCatalog.
 type SearchProviderCatalogParams struct {
 	Q string `form:"q" json:"q"`
@@ -12603,6 +12652,9 @@ type ServerInterface interface {
 
 	// (POST /catalog/providers/{provider}/entries/{provider_entry_ref}/rss)
 	PreviewProviderEntryRSS(w http.ResponseWriter, r *http.Request, provider PreviewProviderEntryRSSParamsProvider, providerEntryRef CatalogProviderEntryRef)
+
+	// (GET /catalog/providers/{provider}/entries/{provider_entry_ref}/synopsis)
+	ReadProviderEntrySynopsis(w http.ResponseWriter, r *http.Request, provider ReadProviderEntrySynopsisParamsProvider, providerEntryRef CatalogProviderEntryRef)
 
 	// (GET /catalog/providers/{provider}/search)
 	SearchProviderCatalog(w http.ResponseWriter, r *http.Request, provider SearchProviderCatalogParamsProvider, params SearchProviderCatalogParams)
@@ -15392,6 +15444,46 @@ func (siw *ServerInterfaceWrapper) PreviewProviderEntryRSS(w http.ResponseWriter
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PreviewProviderEntryRSS(w, r, provider, providerEntryRef)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReadProviderEntrySynopsis operation middleware
+func (siw *ServerInterfaceWrapper) ReadProviderEntrySynopsis(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "provider" -------------
+	var provider ReadProviderEntrySynopsisParamsProvider
+
+	err = runtime.BindStyledParameterWithOptions("simple", "provider", r.PathValue("provider"), &provider, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "provider", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "provider_entry_ref" -------------
+	var providerEntryRef CatalogProviderEntryRef
+
+	err = runtime.BindStyledParameterWithOptions("simple", "provider_entry_ref", r.PathValue("provider_entry_ref"), &providerEntryRef, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "provider_entry_ref", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReadProviderEntrySynopsis(w, r, provider, providerEntryRef)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -20258,6 +20350,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("POST "+options.BaseURL+"/catalog/providers/{provider}/entries/{provider_entry_ref}/groups:discover", wrapper.DiscoverProviderEntryGroups)
 	m.HandleFunc("GET "+options.BaseURL+"/catalog/providers/{provider}/entries/{provider_entry_ref}/rss", wrapper.ReadProviderEntryRSS)
 	m.HandleFunc("POST "+options.BaseURL+"/catalog/providers/{provider}/entries/{provider_entry_ref}/rss", wrapper.PreviewProviderEntryRSS)
+	m.HandleFunc("GET "+options.BaseURL+"/catalog/providers/{provider}/entries/{provider_entry_ref}/synopsis", wrapper.ReadProviderEntrySynopsis)
 	m.HandleFunc("GET "+options.BaseURL+"/catalog/providers/{provider}/search", wrapper.SearchProviderCatalog)
 	m.HandleFunc("GET "+options.BaseURL+"/catalog/providers/{provider}/seasons/{season}", wrapper.ReadCatalogWorkspace)
 	m.HandleFunc("GET "+options.BaseURL+"/catalog/providers/{provider}/seasons/{season}/preference", wrapper.ReadCatalogPreference)

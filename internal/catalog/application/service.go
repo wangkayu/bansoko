@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"bansoko/internal/catalog/domain"
@@ -290,6 +291,13 @@ type Service struct {
 	// provider request. It is per-Service so two instances (and two tests) never
 	// share an in-flight fetch.
 	seedFlights singleflight.Group
+	// synopsisFlights collapses concurrent page reads of one catalog entry, and
+	// synopsisCache keeps the last answer briefly: a synopsis is a display-only
+	// page fact that changes rarely, and every open of the reader dialog must not
+	// hit the provider again.
+	synopsisMu      sync.Mutex
+	synopsisCache   map[string]synopsisCacheEntry
+	synopsisFlights singleflight.Group
 }
 
 func NewService(db *sql.DB, reader Reader, itemReaders ...ProviderItemReader) *Service {

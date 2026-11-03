@@ -125,6 +125,7 @@ required_paths = {
   "/catalog/suppressions/{provider}/{provider_entry_ref}" => ["put", "delete"],
   "/catalog/providers/{provider}/entries/{provider_entry_ref}/groups:discover" => ["post"],
   "/catalog/providers/{provider}/entries/{provider_entry_ref}/rss" => ["get", "post"],
+  "/catalog/providers/{provider}/entries/{provider_entry_ref}/synopsis" => ["get"],
   "/catalog/custom/feed-snapshots:fetch" => ["post"],
   "/catalog/feed-sites" => ["get"],
   "/anime/{managed_anime_id}/rss-sources/{rss_source_id}/offset" => ["patch"],

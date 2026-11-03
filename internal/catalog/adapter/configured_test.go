@@ -123,3 +123,53 @@ func TestConfiguredReaderProgramSearchRefusesPrivateEndpoint(t *testing.T) {
 		t.Fatalf("private endpoint received %d requests", calls)
 	}
 }
+
+// The synopsis read shares the saved provider connection, including its base URL.
+func TestConfiguredReaderReadsMikanSynopsisOverTheSavedConnection(t *testing.T) {
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		_, _ = w.Write([]byte(`<p class="header2-desc">一段简介</p>`))
+	}))
+	defer server.Close()
+	reader := ConfiguredReader{
+		Provider:          application.ProviderMikan,
+		AllowPrivateHosts: []string{"127.0.0.1"},
+		Connections: staticCatalogConnectionSource{
+			{ID: "saved", Kind: configurationdomain.ConnectionMikan, Endpoint: server.URL, State: configurationdomain.ConnectionConfigured},
+		},
+	}
+	result, err := reader.ReadSynopsis(context.Background(), "301")
+	if err != nil {
+		t.Fatalf("saved connection synopsis: %v", err)
+	}
+	if gotPath != "/Home/Bangumi/301" {
+		t.Fatalf("upstream path = %s", gotPath)
+	}
+	if result.Synopsis == nil || *result.Synopsis != "一段简介" {
+		t.Fatalf("synopsis = %v", result.Synopsis)
+	}
+}
+
+// A private saved endpoint is refused by the same SSRF policy as search, before
+// any request leaves the process.
+func TestConfiguredReaderSynopsisRefusesPrivateEndpoint(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		_, _ = w.Write([]byte(`<p class="header2-desc">一段简介</p>`))
+	}))
+	defer server.Close()
+	reader := ConfiguredReader{
+		Provider: application.ProviderMikan,
+		Connections: staticCatalogConnectionSource{
+			{ID: "saved", Kind: configurationdomain.ConnectionMikan, Endpoint: server.URL, State: configurationdomain.ConnectionConfigured},
+		},
+	}
+	if _, err := reader.ReadSynopsis(context.Background(), "301"); !errors.Is(err, application.ErrProviderUpstream) {
+		t.Fatalf("private synopsis endpoint: %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("private endpoint received %d requests", calls)
+	}
+}

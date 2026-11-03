@@ -4443,6 +4443,42 @@ paths:
           $ref: '#/components/responses/Unprocessable'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /catalog/providers/{provider}/entries/{provider_entry_ref}/synopsis:
+    get:
+      tags: [Catalog]
+      operationId: readProviderEntrySynopsis
+      x-scope: read
+      x-mcp:
+        tool: get_anime_synopsis
+        group: subscription
+        write: false
+        description: >-
+          Read the synopsis and source-stated facts of one AniBT or Mikan
+          catalog entry from its provider page. Returns the whole synopsis text
+          (null when the source page has none), episode count, broadcast
+          weekday, tags, season, official site and Bangumi link. It never
+          writes a row; cached briefly per entry.
+      description: >-
+        Side-effect-free read of one provider catalog entry's synopsis and
+        source-stated facts. The text is returned whole (bgm-derived, not split
+        by language). A page without a synopsis is a normal empty result, not
+        an error.
+      parameters:
+        - $ref: '#/components/parameters/CatalogProvider'
+        - $ref: '#/components/parameters/CatalogProviderEntryRef'
+      responses:
+        '200':
+          description: The entry's synopsis and source-stated facts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogEntrySynopsis'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /anime/{managed_anime_id}/rss-sources/{rss_source_id}/offset:
     patch:
       tags: [Anime]
@@ -16550,6 +16586,63 @@ components:
             each element carries that owner's subscription_version for CAS.
           items:
             $ref: '#/components/schemas/CatalogItemInstance'
+    CatalogEntrySynopsis:
+      type: object
+      additionalProperties: false
+      required: [provider, provider_entry_ref, source_url, synopsis, episodes, weekday, season, tags, official_site, bgm_url]
+      description: >-
+        The synopsis and source-stated facts of one provider catalog entry,
+        read from the provider's own anime page. The synopsis is one whole
+        bgm-derived text block, never split by language; null means the source
+        page states none. Nothing here is borrowed from another provider.
+      properties:
+        provider:
+          type: string
+          enum: [anibt, mikan]
+        provider_entry_ref:
+          type: string
+          description: External catalog-entry key, paired with provider.
+        source_url:
+          type: string
+          description: The provider anime page this result was read from.
+        synopsis:
+          type: string
+          nullable: true
+          description: >-
+            The whole synopsis text as the source page states it. It may embed
+            a [简介原文] marker; splitting into reading tabs is a display
+            concern. Null when the page has no synopsis or it could not be
+            parsed, which is a normal empty state.
+        episodes:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: Total episode count stated by the source page.
+        weekday:
+          allOf:
+            - $ref: '#/components/schemas/BroadcastDay'
+          nullable: true
+          description: Broadcast weekday stated by the source page; null when the page states none.
+        season:
+          type: string
+          nullable: true
+          description: >-
+            Season in canonical YYYY-term form when the source page states one
+            (AniBT's detail sticker); null otherwise. A source fact, not the
+            season being browsed.
+        tags:
+          type: array
+          items:
+            type: string
+          description: Genre tags the source page states, in source order; empty when it states none.
+        official_site:
+          type: string
+          nullable: true
+          description: Official site link stated by the source page.
+        bgm_url:
+          type: string
+          nullable: true
+          description: Bangumi subject link stated by or derived from the entry's bgm id.
     CatalogItemInstance:
       type: object
       additionalProperties: false

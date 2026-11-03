@@ -1,8 +1,10 @@
-import { EyeOff, MoreHorizontal, ScanSearch, X } from "lucide-react";
+import { useState } from "react";
+import { BookOpen, EyeOff, MoreHorizontal, ScanSearch, X } from "lucide-react";
 import type { CatalogEntryView } from "../../../lib/providers/viewmodels";
 import { DropdownMenu, Tooltip, type MenuEntry } from "../../../ui/base";
 import { Poster } from "./Poster";
 import { CornerBadges } from "./CornerBadges";
+import { SynopsisDialog } from "../SynopsisDialog";
 import { t } from "../../../lib/i18n";
 import { lifecycleStateLabel } from "../../../lib/labels";
 
@@ -17,6 +19,8 @@ import { lifecycleStateLabel } from "../../../lib/labels";
 //   Browse (the one-shot download's browse-seeds entry) is a persistent low-contrast small icon
 //   button at the strip's right end, a hit area of its own, never opening the config; hiding and
 //   deleting a preset live in the top-right menu.
+//   The top-right book entry (provider entries only) opens the source-page synopsis reader and
+//   likewise never opens the config; the subscribed wall has no such entry.
 //   Hidden anime enter no list at all, so the card carries no hidden state and no unhide entry
 //   (those live only in settings' hidden-anime section).
 //   Subscribed-or-not is a boolean, never the subscription's state: with a subscription the card
@@ -57,6 +61,10 @@ export function BrowseCard({
 }) {
   const retired = entry.lifecycleState === "retired";
   const isCustom = entry.source === "custom";
+  const [synopsisOpen, setSynopsisOpen] = useState(false);
+  // Only provider entries have an anime page to read; custom presets and the subscribed wall
+  // have none.
+  const synopsisProvider = entry.source === "anibt" || entry.source === "mikan" ? entry.source : undefined;
   // Only subscribed custom presets carry a lifecycle: a retired preset still hangs onto its retired
 //   owner, and re-subscribing would replay the consumed candidate — so it has no openable target and
 //   the explicit path is deleting the preset. Provider candidate cards carry no subscription fields
@@ -131,6 +139,21 @@ export function BrowseCard({
         {statusPill}
       </CornerBadges>
 
+      {/* The book entry opens only the synopsis reader; it is a hit area of its own, left of ⋯. */}
+      {synopsisProvider ? (
+        <Tooltip content={t("grid.card.viewSynopsis")}>
+          <button
+            type="button"
+            aria-label={t("grid.card.viewSynopsisFor", { title: entry.title })}
+            aria-haspopup="dialog"
+            onClick={() => setSynopsisOpen(true)}
+            className={"browse-card-synopsis" + (menuItems.length === 0 ? " browse-card-synopsis-alone" : "")}
+          >
+            <BookOpen aria-hidden className="browse-card-synopsis-icon" />
+          </button>
+        </Tooltip>
+      ) : null}
+
       {menuItems.length > 0 && (
         <DropdownMenu
           items={menuItems}
@@ -168,6 +191,10 @@ export function BrowseCard({
           </Tooltip>
         )}
       </div>
+
+      {synopsisOpen && synopsisProvider ? (
+        <SynopsisDialog entry={entry} provider={synopsisProvider} onRequestClose={() => setSynopsisOpen(false)} />
+      ) : null}
     </article>
   );
 }

@@ -19,6 +19,9 @@ type catalogCallSpy struct {
 	refreshCalls   int
 	searchCalls    int
 	searchErr      error
+	synopsisCalls  int
+	synopsisErr    error
+	synopsis       catalogdomain.EntrySynopsis
 }
 
 func (s *catalogCallSpy) WorkspaceProvider(context.Context, string, string) (catalogdomain.Workspace, error) {
@@ -29,6 +32,11 @@ func (s *catalogCallSpy) WorkspaceProvider(context.Context, string, string) (cat
 func (s *catalogCallSpy) SearchProvider(context.Context, string, string) (catalogdomain.ReadResult, error) {
 	s.searchCalls++
 	return catalogdomain.ReadResult{}, s.searchErr
+}
+
+func (s *catalogCallSpy) ProviderEntrySynopsis(context.Context, string, string) (catalogdomain.EntrySynopsis, error) {
+	s.synopsisCalls++
+	return s.synopsis, s.synopsisErr
 }
 
 func (s *catalogCallSpy) RefreshProviderSeason(context.Context, string, string) (catalogdomain.Snapshot, error) {
