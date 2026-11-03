@@ -465,6 +465,12 @@ func (r *cleanupRun) start(ctx context.Context) (worker.Outcome, error) {
 		return worker.Retry("cleanup_source_observation_failed", safeCleanupReason(err), 30*time.Second, s.retryOwner(r.claim)), nil
 	}
 	actual, ok := domain.ParseMetadataFingerprint(observed.Fingerprint)
+	if ok && actual.Directory {
+		// The replacement loser is always a file. A directory at its path is
+		// observable now, so classify it here: it is the metadata-era form of
+		// "the path no longer holds a regular file".
+		return r.skip(CleanupSkipLoserNotRegular, "the path no longer holds a regular file"), nil
+	}
 	if !ok || observed.SizeBytes < 0 || !fileidentity.IsPresent(observed.Identity) || !domain.MetadataFactsMatch(actual, recorded) {
 		return r.skip(CleanupSkipLoserIdentityChanged, "the file at the path is not the replaced file"), nil
 	}
