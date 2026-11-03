@@ -465,7 +465,7 @@ func (s publicationSyscalls) probeHardlinks(dir *verifiedDirectory) (bool, error
 	if _, err := rand.Read(raw[:]); err != nil {
 		return false, err
 	}
-	name := ".bansoko-link-probe-" + hex.EncodeToString(raw[:])
+	name := transientLinkProbePrefix + hex.EncodeToString(raw[:])
 	first := verifiedEntry{parent: dir, name: name, canonical: filepath.Join(dir.canonical, name)}
 	second := verifiedEntry{parent: dir, name: name + ".link", canonical: filepath.Join(dir.canonical, name+".link")}
 	file, err := s.create(first)

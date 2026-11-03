@@ -1815,7 +1815,8 @@ func copyToExactPath(ctx context.Context, sourceRoot, targetRoot, source, target
 		return &OperationError{Code: CodeRecoveryUnsafe, Err: err}
 	}
 	parent := filepath.Dir(target)
-	name := fmt.Sprintf(".bansoko-copy-%x", sha256.Sum256([]byte(target+strconv.FormatInt(time.Now().UnixNano(), 10))))
+	sum := sha256.Sum256([]byte(target + strconv.FormatInt(time.Now().UnixNano(), 10)))
+	name := transientCopyPrefix + hex.EncodeToString(sum[:])
 	var output *os.File
 	var temporaryEntry verifiedEntry
 	output, temporaryEntry, err = createNoReplaceTempHandle(targetRoot, parent, expectedTargetParent, name)
@@ -2368,7 +2369,8 @@ func copyNoOverwrite(ctx context.Context, sourceRoot, targetRoot, source, target
 		return errors.New("source size changed before copying placement file")
 	}
 
-	name := fmt.Sprintf(".bansoko-placement-%x", sha256.Sum256([]byte(target+strconv.FormatInt(time.Now().UnixNano(), 10))))
+	sum := sha256.Sum256([]byte(target + strconv.FormatInt(time.Now().UnixNano(), 10)))
+	name := transientPlacementPrefix + hex.EncodeToString(sum[:])
 	var output *os.File
 	var temporaryEntry verifiedEntry
 	output, temporaryEntry, err = createNoReplaceTempHandle(targetRoot, filepath.Dir(target), expectedTargetParent, name)

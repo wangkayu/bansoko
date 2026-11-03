@@ -43,7 +43,7 @@ func (executor OSFileExecutor) PreparePublication(ctx context.Context, op domain
 		return result, publicationErr(domain.CodeSourceChanged, errors.New("publication source size differs from the frozen size"))
 	}
 	sum := sha256.Sum256([]byte(permit))
-	temp := filepath.Join(filepath.Dir(op.TargetPath), ".bansoko-permit-"+hex.EncodeToString(sum[:]))
+	temp := filepath.Join(filepath.Dir(op.TargetPath), transientPermitPrefix+hex.EncodeToString(sum[:]))
 	absent, err := entryAbsent(verifiedEntry{parent: targetParent, name: filepath.Base(temp), canonical: temp})
 	if err != nil || !absent {
 		return result, errors.New("publication temp locator already exists or is unavailable")

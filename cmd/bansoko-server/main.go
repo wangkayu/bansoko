@@ -585,6 +585,9 @@ func runServe(args []string) {
 	// runtime and every producer. Booting in maintenance (recovery run)
 	// keeps it stopped; the runtime owns lifecycle transitions.
 	producers := []func(context.Context){
+		// One bounded pass removes transient files an interrupted action left
+		// beside a library target; nothing else ever revisits their names.
+		func(ctx context.Context) { runTransientResidueSweep(ctx, db, runtimeLogger) },
 		func(ctx context.Context) { go admissionResolver.Run(ctx) },
 		func(ctx context.Context) { runQBSyncDispatcher(ctx, downloadService, runtimeLogger) },
 		func(ctx context.Context) { runRecordRetentionMaintenance(ctx, retentionJanitor, runtimeLogger) },
