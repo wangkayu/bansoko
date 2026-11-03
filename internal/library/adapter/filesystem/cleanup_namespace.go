@@ -13,12 +13,14 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// removeEmptyCleanupNamespace removes the namespace directory a settled capture
-// leaves behind once its object is gone. Only the directory itself is removed:
-// a directory that still holds an entry, or a symlink swapped into its place,
-// is left for the startup sweep, and a settled action is never failed by this
-// cleanup. It is called after the stage's final receipt, so a crash here costs
-// an empty directory the sweep revisits, never an unproven effect.
+// removeEmptyCleanupNamespace removes the namespace directory of a settled
+// delete once its object is gone. It runs only after the stage's final purge
+// receipt: before that, the namespace directory is a frozen anchor of the
+// invocation's start proof, so a refused or restored capture keeps it and
+// leaves the empty shell to the startup sweep. Only the directory itself is
+// removed: a directory that still holds an entry, or a symlink swapped into
+// its place, stays untouched, and a settled action is never failed by this
+// cleanup.
 func removeEmptyCleanupNamespace(root, capture string) {
 	directory := filepath.Dir(capture)
 	if filepath.Base(capture) != "object" || !strings.HasPrefix(filepath.Base(directory), cleanupNamespacePrefix) {
