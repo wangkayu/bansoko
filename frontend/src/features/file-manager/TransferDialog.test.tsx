@@ -82,6 +82,7 @@ function renderDialog(mode: "copy" | "move" = "copy") {
         mode={mode}
         sourceDir="/media/anime"
         paths={["/media/anime/notes.txt", "/media/anime/poster.jpg"]}
+        hasDirectory={false}
         roots={roots}
         onClose={onClose}
         onFinished={onFinished}
