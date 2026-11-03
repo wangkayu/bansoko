@@ -181,16 +181,25 @@ func New(options Options) *Service {
 	}
 }
 
-// normalizeLane maps a configured value onto a lane; unknown values are the
-// stable lane so the read model always reports one of the two.
+// normalizeLane maps a configured value onto a lane; an unknown value is the
+// stable lane so the read model always reports one of the two. NormalizeLane
+// is the same mapping made public: the composition site warns when the value
+// was unknown instead of letting the fallback pass silently.
 func normalizeLane(lane string) string {
+	normalized, _ := NormalizeLane(lane)
+	return normalized
+}
+
+// NormalizeLane reports the lane a configured value selects and whether the
+// value was one of the two lanes at all.
+func NormalizeLane(lane string) (string, bool) {
 	switch strings.ToLower(strings.TrimSpace(lane)) {
 	case "", LaneStable:
-		return LaneStable
+		return LaneStable, true
 	case LaneTest:
-		return LaneTest
+		return LaneTest, true
 	default:
-		return LaneStable
+		return LaneStable, false
 	}
 }
 

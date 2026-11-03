@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -747,12 +748,23 @@ func runServe(args []string) {
 	apiServer.SetBackup(backupService)
 	// The reltitle parser component has its own channel, independent of the
 	// Bansoko application update. The startup probe's note and source are
-	// passed through so the read model explains a refused manual build.
+	// passed through so the read model explains a refused manual build. An
+	// unknown lane value falls back to stable; the warning keeps that from
+	// passing silently while the deployment reads the other branch.
+	rtLane, rtLaneKnown := titleparser.NormalizeLane(os.Getenv(titleparser.EnvLane))
+	if !rtLaneKnown {
+		runtimeLogger.Warn(ctx, observabilityport.RuntimeEvent{
+			Message:   "unknown " + titleparser.EnvLane + " value " + strconv.Quote(os.Getenv(titleparser.EnvLane)) + "; the reltitle channel uses the stable lane",
+			Component: "runtime", Operation: "reltitle_lane", Outcome: "warning",
+			ReasonCode: "reltitle_lane_unknown",
+		})
+	}
 	apiServer.SetTitleParser(titleparser.New(titleparser.Options{
 		ConfigRoot: cfg.ConfigDir,
 		HTTPClient: &http.Client{Timeout: 30 * time.Second, Transport: hardeningtransport.DirectTransport()},
 		Note:       rtInfo.Note,
 		Source:     rtInfo.Source,
+		Lane:       rtLane,
 	}))
 
 	server := &http.Server{

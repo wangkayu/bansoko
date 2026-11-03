@@ -119,6 +119,57 @@ func TestExtractFallsBackWhenTheAdoptedBinaryDies(t *testing.T) {
 	}
 }
 
+// TestDropExternalKeepsANewerAdoption proves the drop is bound to the backend
+// that failed: a stale failure from an already-replaced process neither clears
+// the healthy replacement nor overwrites its failure note, while the real
+// failure of the current backend removes and closes it.
+func TestDropExternalKeepsANewerAdoption(t *testing.T) {
+	probe := func() (*rtruntime.Client, rtruntime.Info) {
+		root := t.TempDir()
+		installBinary(t, root, buildRealReltitle(t))
+		client, info := rtruntime.Probe(context.Background(), root, BuiltinVersion())
+		if client == nil {
+			t.Fatalf("the installed binary was refused: %s", info.Note)
+		}
+		return client, info
+	}
+	clientA, _ := probe()
+	if err := AdoptExternal(clientA); err != nil {
+		t.Fatal(err)
+	}
+	stale := external.Load()
+	clientB, _ := probe()
+	if err := AdoptExternal(clientB); err != nil {
+		t.Fatal(err)
+	}
+	defer UseBuiltin()
+	current := external.Load()
+	if current == stale {
+		t.Fatal("the second adoption did not replace the first")
+	}
+
+	// A failure belonging to the replaced backend changes nothing.
+	dropExternal(stale, "stale failure")
+	if got := external.Load(); got != current {
+		t.Fatal("a stale failure dropped the newer adoption")
+	}
+	if failure := ExternalFailure(); failure != "" {
+		t.Fatalf("a stale failure overwrote the failure note: %q", failure)
+	}
+
+	// The current backend's failure removes it and closes its process.
+	dropExternal(current, "current failure")
+	if got := external.Load(); got != nil {
+		t.Fatal("the current backend survived its own failure")
+	}
+	if failure := ExternalFailure(); failure != "current failure" {
+		t.Fatalf("external failure = %q", failure)
+	}
+	if _, err := clientB.Parse(context.Background(), "[Group] Some Show - 01"); err == nil || !strings.Contains(err.Error(), "closed") {
+		t.Fatalf("the dropped backend's process was not closed: %v", err)
+	}
+}
+
 // TestVocabularyComesFromTheAdoptedDictionary proves the projection dictionary
 // follows the parser: a value the compiled-in dictionary does not know is
 // still canonical when the adopted binary's dictionary defines it.

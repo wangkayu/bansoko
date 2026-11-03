@@ -83,9 +83,7 @@ func AdoptExternal(client *rtruntime.Client) error {
 	// The previous process is stopped only after the parses already using it
 	// have finished, so a replacement never fails a title mid-flight.
 	if previous := external.Swap(next); previous != nil {
-		previous.mu.Lock()
-		_ = previous.client.Close()
-		previous.mu.Unlock()
+		closeBackend(previous)
 	}
 	externalFailureMu.Lock()
 	externalFailure = ""
@@ -96,7 +94,17 @@ func AdoptExternal(client *rtruntime.Client) error {
 // UseBuiltin drops the adopted binary and parses with the compiled-in module
 // again. It is also what runs after an adopted binary fails mid-flight.
 func UseBuiltin() {
-	external.Store(nil)
+	if previous := external.Swap(nil); previous != nil {
+		closeBackend(previous)
+	}
+}
+
+// closeBackend stops one abandoned backend's process, waiting for the parses
+// still holding its read lock so a replacement never fails a title mid-flight.
+func closeBackend(backend *externalBackend) {
+	backend.mu.Lock()
+	_ = backend.client.Close()
+	backend.mu.Unlock()
 }
 
 // ExternalFailure reports why the last adopted binary was dropped, or "".
@@ -106,11 +114,18 @@ func ExternalFailure() string {
 	return externalFailure
 }
 
-func dropExternal(reason string) {
-	external.Store(nil)
+// dropExternal removes one failing backend. Only the backend that actually
+// failed is removed: when a newer adoption already replaced it, the failure
+// belongs to the old process and must not clear the healthy replacement. The
+// caller must not hold failed.mu.
+func dropExternal(failed *externalBackend, reason string) {
+	if !external.CompareAndSwap(failed, nil) {
+		return
+	}
 	externalFailureMu.Lock()
 	externalFailure = reason
 	externalFailureMu.Unlock()
+	closeBackend(failed)
 }
 
 // activeVersion is the implementation identity of whichever parser answers a
@@ -138,16 +153,17 @@ func ActiveDigest() string { return activeDigest() }
 
 // parseExternal runs one title through the adopted binary. A transport failure
 // drops the adoption so later calls use the builtin parser, and the error is
-// returned for this call.
+// returned for this call. The read lock is released before the drop so the
+// backend's own close can take the write lock.
 func parseExternal(current *externalBackend, title string) (*reltitlemodel.ParseResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), externalParseTimeout)
 	defer cancel()
 	current.mu.RLock()
-	defer current.mu.RUnlock()
 	result, err := current.client.Parse(ctx, title)
+	current.mu.RUnlock()
 	if err != nil {
 		if errors.Is(err, rtruntime.ErrTransport) {
-			dropExternal(fmt.Sprintf("adopted reltitle %s stopped answering: %v", current.version, err))
+			dropExternal(current, fmt.Sprintf("adopted reltitle %s stopped answering: %v", current.version, err))
 		}
 		return nil, err
 	}

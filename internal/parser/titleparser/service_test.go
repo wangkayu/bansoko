@@ -357,3 +357,27 @@ func TestInstallClassifiesARefusedDownloadAsAnUpdateFailure(t *testing.T) {
 		t.Fatalf("channel = %+v", status.Channel)
 	}
 }
+
+// TestNormalizeLaneReportsUnknownValues pins the composition contract: every
+// value maps onto a lane the read model can report, and the boolean says
+// whether the configured value was one of the two lanes at all — the
+// composition site turns a false into a startup warning instead of letting the
+// stable fallback pass silently.
+func TestNormalizeLaneReportsUnknownValues(t *testing.T) {
+	for _, entry := range []struct {
+		raw   string
+		want  string
+		known bool
+	}{
+		{"", LaneStable, true},
+		{"stable", LaneStable, true},
+		{" Test ", LaneTest, true},
+		{"tests", LaneStable, false},
+		{"garbage", LaneStable, false},
+	} {
+		got, known := NormalizeLane(entry.raw)
+		if got != entry.want || known != entry.known {
+			t.Fatalf("NormalizeLane(%q) = (%q, %v), want (%q, %v)", entry.raw, got, known, entry.want, entry.known)
+		}
+	}
+}

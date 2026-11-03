@@ -38,6 +38,10 @@ const (
 // protocol. The caller may restart once and retry.
 var ErrTransport = errors.New("reltitle process transport failed")
 
+// errResponseTooLong reports an answer line that passed the response cap while
+// it was still being read.
+var errResponseTooLong = errors.New("response line exceeds the cap")
+
 // Client is one running `reltitle serve` process. Calls are serialized: one
 // title at a time is the protocol's shape, and parsing is not this program's
 // hot path. The client owns the process and reaps it on Close.
@@ -186,7 +190,15 @@ type response struct {
 }
 
 func (c *Client) hello(ctx context.Context) (helloResult, error) {
-	raw, err := c.call(ctx, "hello", "")
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.helloLocked(ctx)
+}
+
+// helloLocked runs the handshake with c.mu already held, so a restart can
+// re-prove the protocol before the retried call is written.
+func (c *Client) helloLocked(ctx context.Context) (helloResult, error) {
+	raw, err := c.callLocked(ctx, "hello", "")
 	if err != nil {
 		return helloResult{}, err
 	}
@@ -224,7 +236,22 @@ func (c *Client) restartLocked() error {
 		return errors.New("client is closed")
 	}
 	_ = c.kill()
-	return c.start()
+	if err := c.start(); err != nil {
+		return err
+	}
+	// The file at c.path may have been replaced since the first start. The
+	// handshake re-proves the protocol of whatever binary just spawned, so a
+	// silent protocol change cannot reach the retried call.
+	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+	defer cancel()
+	hello, err := c.helloLocked(ctx)
+	if err != nil {
+		return err
+	}
+	if hello.Protocol != Protocol {
+		return fmt.Errorf("restarted binary speaks %q; this build speaks %q", hello.Protocol, Protocol)
+	}
+	return nil
 }
 
 // call writes one request and reads its answer. The request id ties the answer
@@ -232,6 +259,10 @@ func (c *Client) restartLocked() error {
 func (c *Client) call(ctx context.Context, op, title string) (json.RawMessage, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.callLocked(ctx, op, title)
+}
+
+func (c *Client) callLocked(ctx context.Context, op, title string) (json.RawMessage, error) {
 	if c.shutdown {
 		return nil, fmt.Errorf("%w: the client is closed", ErrTransport)
 	}
@@ -268,16 +299,16 @@ func (c *Client) call(ctx context.Context, op, title string) (json.RawMessage, e
 			}
 		}
 	}()
-	raw, err := c.reader.ReadBytes('\n')
+	raw, err := readLineCapped(c.reader, maxResponseBytes)
 	if err != nil {
 		_ = c.kill()
+		if errors.Is(err, errResponseTooLong) {
+			return nil, fmt.Errorf("%w: response exceeds %d bytes", ErrTransport, maxResponseBytes)
+		}
 		if tail := c.stderrTail.String(); tail != "" {
 			return nil, fmt.Errorf("%w: read: %v (%s)", ErrTransport, err, strings.TrimSpace(tail))
 		}
 		return nil, fmt.Errorf("%w: read: %v", ErrTransport, err)
-	}
-	if len(raw) > maxResponseBytes {
-		return nil, fmt.Errorf("%w: response exceeds %d bytes", ErrTransport, maxResponseBytes)
 	}
 	var answer response
 	if err := json.Unmarshal(bytes.TrimSpace(raw), &answer); err != nil {
@@ -298,6 +329,26 @@ func (c *Client) call(ctx context.Context, op, title string) (json.RawMessage, e
 		return nil, fmt.Errorf("%w: %s: %s", ErrTransport, answer.Error.Code, answer.Error.Message)
 	}
 	return answer.Result, nil
+}
+
+// readLineCapped reads one newline-terminated answer while enforcing the cap
+// on the way in: a binary that streams an endless line is cut at the cap, not
+// buffered whole and rejected afterwards.
+func readLineCapped(reader *bufio.Reader, limit int) ([]byte, error) {
+	var line []byte
+	for {
+		frag, err := reader.ReadSlice('\n')
+		if len(line)+len(frag) > limit {
+			return nil, errResponseTooLong
+		}
+		line = append(line, frag...)
+		if err == nil {
+			return line, nil
+		}
+		if !errors.Is(err, bufio.ErrBufferFull) {
+			return nil, err
+		}
+	}
 }
 
 // tailBuffer keeps the last n bytes written, for a crash note.

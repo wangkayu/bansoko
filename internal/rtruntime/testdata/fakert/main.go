@@ -6,6 +6,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -71,6 +72,12 @@ func serve(version string) {
 		fmt.Fprintln(os.Stderr, "fakert: refusing to start")
 		os.Exit(1)
 	}
+	protocol := valueOr("FAKERT_PROTOCOL", defaultProtocol)
+	if path := os.Getenv("FAKERT_HELLO_COUNTER_FILE"); path != "" && bumpInstanceCount(path) > 1 {
+		// A later process of the same binary speaks another protocol, the way
+		// a replaced file does after a client restart.
+		protocol = valueOr("FAKERT_LATER_PROTOCOL", "rt-serve-0")
+	}
 	encoder := json.NewEncoder(os.Stdout)
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 0, 4096), 8<<10)
@@ -87,8 +94,27 @@ func serve(version string) {
 			_ = encoder.Encode(serveResponse{Error: &serveError{Code: "bad_request", Message: "the request is not a JSON object"}})
 			continue
 		}
-		_ = encoder.Encode(answer(request, version))
+		if request.Op == "parse" && os.Getenv("FAKERT_OVERSIZED_ON_PARSE") == "1" {
+			// An answer with no newline and no end: the read must be cut by
+			// the client's cap, not by a deadline.
+			_, _ = os.Stdout.Write(bytes.Repeat([]byte("x"), 4<<20))
+			select {}
+		}
+		_ = encoder.Encode(answer(request, version, protocol))
 	}
+}
+
+// bumpInstanceCount counts the processes this binary has started, so a test
+// can make the second process behave differently from the first.
+func bumpInstanceCount(path string) int {
+	count := 1
+	if data, err := os.ReadFile(path); err == nil {
+		if value, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil {
+			count = value + 1
+		}
+	}
+	_ = os.WriteFile(path, []byte(strconv.Itoa(count)), 0o644)
+	return count
 }
 
 func sleepBeforeAnswer() time.Duration {
@@ -102,11 +128,11 @@ func sleepBeforeAnswer() time.Duration {
 // answer keeps the parse result fixed instead of deriving it from the title:
 // the tests assert exact values, and a canned answer cannot drift with the
 // title they happen to send.
-func answer(request serveRequest, version string) serveResponse {
+func answer(request serveRequest, version, protocol string) serveResponse {
 	switch request.Op {
 	case "hello":
 		return serveResponse{ID: request.ID, OK: true, Result: map[string]string{
-			"protocol":      valueOr("FAKERT_PROTOCOL", defaultProtocol),
+			"protocol":      protocol,
 			"version":       version,
 			"line":          "9.9",
 			"config_digest": fakeDigest,

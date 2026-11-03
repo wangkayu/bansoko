@@ -772,6 +772,55 @@ func TestOSFileExecutorOverwriteMoveReplacesIdenticalContentTarget(t *testing.T)
 	}
 }
 
+// TestOSFileExecutorOverwriteHardlinkReplacesIdenticalContentTarget mirrors
+// the move case for a hardlink: an overwrite policy replaces a target that
+// holds the same content under a different inode instead of refusing it, and
+// the placed target is the source's own inode.
+func TestOSFileExecutorOverwriteHardlinkReplacesIdenticalContentTarget(t *testing.T) {
+	root := canonicalTemp(t)
+	source := filepath.Join(root, "source.mkv")
+	target := filepath.Join(root, "library", "episode.mkv")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := []byte("same episode")
+	if err := os.WriteFile(source, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	operation := domain.FileOperation{
+		ID: "overwrite-identical-link", Operation: domain.OperationHardlink,
+		SourcePath: source, TargetPath: target,
+		SourceFingerprint: digest(string(content)), CollisionPolicy: domain.CollisionOverwrite,
+	}
+	executor := (OSFileExecutor{}).BindCheckpoint(func(_ context.Context, operation domain.FileOperation, _ domain.OverwriteRecovery) (domain.FileOperation, error) {
+		return operation, nil
+	})
+	completed, err := executor.Execute(context.Background(), operation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.State != domain.OperationSucceeded || completed.TargetFingerprint != digest(string(content)) {
+		t.Fatalf("unexpected completion: %+v", completed)
+	}
+	sourceInfo, err := os.Stat(source)
+	if err != nil {
+		t.Fatalf("hardlink source did not survive: %v", err)
+	}
+	targetInfo, err := os.Stat(target)
+	if err != nil {
+		t.Fatalf("target missing after overwrite: %v", err)
+	}
+	if got, err := os.ReadFile(target); err != nil || string(got) != string(content) {
+		t.Fatalf("unexpected target: %q err=%v", got, err)
+	}
+	if !os.SameFile(sourceInfo, targetInfo) {
+		t.Fatal("the overwritten target is not the source's inode")
+	}
+}
+
 func TestOSFileExecutorAllowsSourceOutsideRootForAllPlacementPaths(t *testing.T) {
 	base := canonicalTemp(t)
 	root := filepath.Join(base, "library")

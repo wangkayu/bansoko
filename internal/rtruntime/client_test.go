@@ -2,6 +2,7 @@ package rtruntime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -377,6 +378,55 @@ func TestClientParseHonoursTheDeadline(t *testing.T) {
 	// expired context rather than wait for the fake again.
 	if elapsed := time.Since(started); elapsed > 2*time.Second {
 		t.Fatalf("the deadline did not bound the wait: took %s", elapsed)
+	}
+}
+
+func TestClientCutsAnUnboundedResponseLineAtTheCap(t *testing.T) {
+	// The fake streams four megabytes with no newline, past the one-megabyte
+	// response cap. The read is cut at the cap, not at the request deadline.
+	t.Setenv("FAKERT_OVERSIZED_ON_PARSE", "1")
+	client, err := Start(testContext(t), fakeBinary(t))
+	if err != nil {
+		t.Fatalf("start the fake binary: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+
+	started := time.Now()
+	_, err = client.Parse(testContext(t), "[Test] Endless answer - 01")
+	if err == nil || !errors.Is(err, ErrTransport) {
+		t.Fatalf("an unbounded answer was accepted: %v", err)
+	}
+	if !strings.Contains(err.Error(), "response exceeds") {
+		t.Fatalf("the refusal does not name the cap: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > 2*time.Second {
+		t.Fatalf("the cap did not cut the read short: took %s", elapsed)
+	}
+}
+
+func TestClientRestartReHandshakesAndRefusesAProtocolChange(t *testing.T) {
+	// The first process speaks the real protocol; every later process of the
+	// same binary speaks another one, the way a replaced file does.
+	t.Setenv("FAKERT_HELLO_COUNTER_FILE", filepath.Join(t.TempDir(), "instances"))
+	client, err := Start(testContext(t), fakeBinary(t))
+	if err != nil {
+		t.Fatalf("start the fake binary: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+
+	client.mu.Lock()
+	process := client.cmd.Process
+	client.mu.Unlock()
+	if process == nil || process.Kill() != nil {
+		t.Fatal("the test could not kill the parser process")
+	}
+
+	_, err = client.Parse(testContext(t), "[Test] After the swap - 02")
+	if err == nil || !errors.Is(err, ErrTransport) {
+		t.Fatalf("a protocol change after restart was answered: %v", err)
+	}
+	if !strings.Contains(err.Error(), "speaks") {
+		t.Fatalf("the refusal does not name the protocol mismatch: %v", err)
 	}
 }
 

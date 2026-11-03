@@ -298,14 +298,14 @@ func (executor OSFileExecutor) Execute(ctx context.Context, operation domain.Fil
 		return completeOperation(operation, targetObservation, true), nil
 	case targetSameContent:
 		// The target holds the same content but is a different object. A copy
-		// is already done; a move still has to replace it, which only the
-		// overwrite policy asked for. Anything else is a verification refusal,
-		// not a collision: dropping the source here would discard the object
-		// the operation was checking.
+		// is already done; a move or hardlink still has to replace it, which
+		// only the overwrite policy asked for. Anything else is a verification
+		// refusal, not a collision: dropping the source here would discard the
+		// object the operation was checking.
 		if operation.Operation == domain.OperationCopy {
 			return completeOperation(operation, targetObservation, true), nil
 		}
-		if operation.Operation == domain.OperationMove && operation.CollisionPolicy == domain.CollisionOverwrite {
+		if (operation.Operation == domain.OperationMove || operation.Operation == domain.OperationHardlink) && operation.CollisionPolicy == domain.CollisionOverwrite {
 			return executor.executeOverwrite(ctx, operation, root, source, targetObservation)
 		}
 		return operation, &OperationError{Code: CodeTargetVerification, Err: errors.New("existing placement target changed or has a different identity")}
