@@ -10,7 +10,7 @@
 - Episode offsets can be set per subtitle group before a subscription starts: drafts and not-yet-started subscriptions offer the offset on every group in the RSS tab, and the test run re-numbers immediately. The offset dialog shows a conversion example such as "Episode 53 → Episode 5".
 - While editing an anime title (including the one-shot settings step), the localized and original TMDB and BGM names and the source title appear as suggestions you can click to fill in; confirming a TMDB match can also set the title to the matched name.
 - When a TMDB/BGM match is missing or the template uses a variable that does not exist, finished downloads wait for configuration: the files stay in the download folder, the import continues by itself once the settings are complete, and it does not count as a failure.
-- The file manager recognition template accepts subfolders: the filename template may carry `/`-separated levels (such as `${anime.title}/Season ${anime.season}/...`) and the files are organized into the matching subfolders inside the selected folder, subtitles following their videos; the rendered path is still validated, and one that leaves the selected folder or is malformed reports the reason. The recognition preview shows the selected folder.
+- The file manager recognition template accepts subfolders: the filename template may carry slash-separated levels (such as ${anime.title}/Season ${anime.season}/...) and the files are organized into the matching subfolders inside the selected folder, subtitles following their videos; the rendered path is still validated, and one that leaves the selected folder or is malformed reports the reason. The recognition preview shows the selected folder.
 
 ## Improved
 
