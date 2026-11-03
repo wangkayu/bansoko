@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"bansoko/internal/episodeidentity"
+	"bansoko/internal/filemaintenance"
 	"bansoko/internal/filemanager"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -110,56 +111,12 @@ func scanPlacement(scan func(...any) error, extra ...any) (filemanager.Placement
 	return fact, scan(targets...)
 }
 
-// inProgressOwners is every non-terminal owner path:
-// unfinished file operations (source and target), pending or retrying
-// placement handoffs, admitted alignments, admitted deletions (source and
-// quarantine), admitted or queued replacement decisions (candidate and
-// frozen losers), and unfinished user file operations (source, requested target, resolved result
-// and delete capture).
-const automaticOwners = `
-SELECT fo.source_path AS path, 'file_operation' AS kind, COALESCE(fo.acquisition_id, '') AS acquisition_id
-  FROM file_operations fo WHERE fo.state IN ('pending', 'running', 'waiting_retry')
-UNION ALL
-SELECT fo.target_path, 'file_operation', COALESCE(fo.acquisition_id, '')
-  FROM file_operations fo WHERE fo.state IN ('pending', 'running', 'waiting_retry')
-UNION ALL
-SELECT fo.target_path, 'placement_handoff', COALESCE(fo.acquisition_id, '')
-  FROM placement_obligations po JOIN file_operations fo ON fo.id = po.file_operation_id
-  WHERE po.state IN ('pending', 'waiting_retry')
-UNION ALL
-SELECT a.source_path, 'alignment', '' FROM alignment_operations a WHERE a.state IN ('planned', 'ready', 'running')
-UNION ALL
-SELECT a.target_path, 'alignment', '' FROM alignment_operations a WHERE a.state IN ('planned', 'ready', 'running')
-UNION ALL
-SELECT c.source_path, 'cleanup', '' FROM replacement_deletions c
-  WHERE c.state = 'admitted' OR (c.state = 'blocked' AND c.attempt IS NOT NULL)
-UNION ALL
-SELECT c.attempt->>'capture_path', 'cleanup', '' FROM replacement_deletions c
-  WHERE (c.state = 'admitted' OR c.state = 'blocked') AND c.attempt ? 'capture_path'
-UNION ALL
-SELECT p.physical_path, 'replacement', '' FROM replacement_decisions d JOIN placements p ON p.id = d.candidate_placement_id
-  WHERE d.state IN ('admitted', 'queued')
-UNION ALL
-SELECT p.physical_path, 'replacement', '' FROM replacement_decisions d
-  CROSS JOIN LATERAL jsonb_array_elements(d.pools) pool
-  CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(pool->'losers') = 'array' THEN pool->'losers' ELSE '[]'::jsonb END) loser
-  JOIN placements p ON p.id = loser->>'placement_id'
-  WHERE d.state IN ('admitted', 'queued')`
+// The non-terminal owner surface (automatic owners plus unfinished user file
+// operations) is defined once in filemaintenance, which owns the write side
+// of file_manager_operations; the read model aliases it here.
+const automaticOwners = filemaintenance.AutomaticOwnerPaths
 
-// inProgressOwners adds the unfinished user file operations to the automatic
-// owners.
-const inProgressOwners = automaticOwners + `
-UNION ALL
-SELECT u.source_path, 'user_operation', '' FROM file_manager_operations u WHERE u.state IN ('ready', 'running')
-UNION ALL
-SELECT u.target_path, 'user_operation', '' FROM file_manager_operations u
-  WHERE u.state IN ('ready', 'running') AND u.target_path IS NOT NULL
-UNION ALL
-SELECT u.result_path, 'user_operation', '' FROM file_manager_operations u
-  WHERE u.state IN ('ready', 'running') AND u.result_path IS NOT NULL
-UNION ALL
-SELECT u.attempt->>'quarantine_path', 'user_operation', '' FROM file_manager_operations u
-  WHERE u.state IN ('ready', 'running') AND u.attempt ? 'quarantine_path'`
+const inProgressOwners = filemaintenance.UnfinishedOwnerPaths
 
 // PathFacts reads the placements, companion relations and non-terminal owners
 // at exactly the given paths, in one read-only snapshot.

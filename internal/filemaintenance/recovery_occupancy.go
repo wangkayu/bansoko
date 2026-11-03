@@ -48,11 +48,11 @@ func (o *RecoveryOccupancy) RecoveryTargetsOccupied(ctx context.Context, paths [
 // recovery probe and the confirm's own re-verification: a path is taken when
 // another ACTIVE placement or companion relation owns it, or when any
 // non-terminal owner still holds it (the same surface the file manager
-// refuses new operations on), or when the candidate placement's OWN handoff
-// obligation is pending, waiting_retry or failed (a failed handoff can be
-// manually re-opened and would admit companions against the operation's
-// original target path). Sharing the text keeps the two decisions from
-// drifting apart.
+// refuses new operations on, defined once in UnfinishedOwnerPaths), or when
+// the candidate placement's OWN handoff obligation is pending, waiting_retry
+// or failed (a failed handoff can be manually re-opened and would admit
+// companions against the operation's original target path). Sharing the text
+// keeps the two decisions from drifting apart.
 const recoveryPathOccupancyQuery = `
 SELECT EXISTS(
   SELECT 1 FROM placements p
@@ -67,7 +67,7 @@ SELECT EXISTS(
   JOIN placement_obligations po ON po.file_operation_id = p.source_owner_ref
    WHERE p.id = $2 AND p.source_evidence_type = 'file_operation'
      AND po.state IN ('pending', 'waiting_retry', 'failed')
-) OR EXISTS(SELECT 1 FROM (` + recoveryUnfinishedOwners + `) h
+) OR EXISTS(SELECT 1 FROM (` + UnfinishedOwnerPaths + `) h
             WHERE h.path COLLATE "C" = ANY($1::text[]))`
 
 // recoveryPathsOccupied runs the shared occupancy read. An empty path list is
@@ -83,36 +83,3 @@ func recoveryPathsOccupied(ctx context.Context, q queryer, paths []string, excep
 	}
 	return occupied, nil
 }
-
-// recoveryUnfinishedOwners is the non-terminal owner surface the file manager
-// holds checks refuse on: unfinished file operations (source and target),
-// pending/retrying placement handoffs, live alignments, admitted deletions
-// (source and quarantine), admitted/queued replacement decisions and
-// unfinished user file operations. The reconciliation
-// package cannot import the filemanager store (layering), so the read lives
-// here verbatim; a drift is a boundary-check finding.
-const recoveryUnfinishedOwners = `
-SELECT fo.source_path AS path FROM file_operations fo WHERE fo.state IN ('pending', 'running', 'waiting_retry')
-UNION ALL SELECT fo.target_path FROM file_operations fo WHERE fo.state IN ('pending', 'running', 'waiting_retry')
-UNION ALL SELECT fo.target_path FROM placement_obligations po JOIN file_operations fo ON fo.id = po.file_operation_id
-  WHERE po.state IN ('pending', 'waiting_retry')
-UNION ALL SELECT a.source_path FROM alignment_operations a WHERE a.state IN ('planned', 'ready', 'running')
-UNION ALL SELECT a.target_path FROM alignment_operations a WHERE a.state IN ('planned', 'ready', 'running')
-UNION ALL SELECT c.source_path FROM replacement_deletions c
-  WHERE c.state = 'admitted' OR (c.state = 'blocked' AND c.attempt IS NOT NULL)
-UNION ALL SELECT c.attempt->>'capture_path' FROM replacement_deletions c
-  WHERE (c.state = 'admitted' OR c.state = 'blocked') AND c.attempt ? 'capture_path'
-UNION ALL SELECT p.physical_path FROM replacement_decisions d JOIN placements p ON p.id = d.candidate_placement_id
-  WHERE d.state IN ('admitted', 'queued')
-UNION ALL SELECT p.physical_path FROM replacement_decisions d
-  CROSS JOIN LATERAL jsonb_array_elements(d.pools) pool
-  CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(pool->'losers') = 'array' THEN pool->'losers' ELSE '[]'::jsonb END) loser
-  JOIN placements p ON p.id = loser->>'placement_id'
-  WHERE d.state IN ('admitted', 'queued')
-UNION ALL SELECT u.source_path FROM file_manager_operations u WHERE u.state IN ('ready', 'running')
-UNION ALL SELECT u.target_path FROM file_manager_operations u
-  WHERE u.state IN ('ready', 'running') AND u.target_path IS NOT NULL
-UNION ALL SELECT u.result_path FROM file_manager_operations u
-  WHERE u.state IN ('ready', 'running') AND u.result_path IS NOT NULL
-UNION ALL SELECT u.attempt->>'quarantine_path' FROM file_manager_operations u
-  WHERE u.state IN ('ready', 'running') AND u.attempt ? 'quarantine_path'`

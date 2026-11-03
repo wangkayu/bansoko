@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -24,13 +23,16 @@ import (
 // Commands is the transactional write side of the file manager.
 // Every write re-checks, inside its own transaction, the owner facts the
 // service admitted it on, so a concurrent owner change refuses the write
-// instead of racing it.
+// instead of racing it. The admission write itself (owner row plus its
+// execute work item) lives in filemaintenance, which owns the write side of
+// file_manager_operations; this type translates the file manager's vocabulary
+// and keeps the read model.
 type Commands struct {
-	db        *sql.DB
-	workItems *workitems.Store
-	activity  observabilityport.ActivityWriter
-	hub       *events.Hub
-	now       func() time.Time
+	db       *sql.DB
+	intake   *filemaintenance.UserOperationIntake
+	activity observabilityport.ActivityWriter
+	hub      *events.Hub
+	now      func() time.Time
 }
 
 // NewCommands wires the write side.
@@ -38,7 +40,11 @@ func NewCommands(db *sql.DB, workItems *workitems.Store, activity observabilityp
 	if db == nil || workItems == nil {
 		return nil, errors.New("file manager commands need a database and the work item store")
 	}
-	return &Commands{db: db, workItems: workItems, activity: activity, hub: hub, now: time.Now}, nil
+	intake, err := filemaintenance.NewUserOperationIntake(workItems)
+	if err != nil {
+		return nil, err
+	}
+	return &Commands{db: db, intake: intake, activity: activity, hub: hub, now: time.Now}, nil
 }
 
 var _ filemanager.CommandStore = (*Commands)(nil)
@@ -120,25 +126,13 @@ func (c *Commands) Operation(ctx context.Context, id string) (*filemanager.UserO
 
 // heldPaths reports whether an unfinished owner holds any of the paths.
 func heldPaths(ctx context.Context, tx *sql.Tx, paths []string) (bool, error) {
-	if len(paths) == 0 {
-		return false, nil
-	}
-	var held bool
-	err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM (`+inProgressOwners+`) o WHERE o.path = ANY($1::text[]))`, paths).Scan(&held)
-	return held, err
+	return filemaintenance.OwnerPathsHeld(ctx, tx, paths)
 }
 
 // managedPaths reports whether an active placement or an active companion of
 // an active placement names any of the paths.
 func managedPaths(ctx context.Context, tx *sql.Tx, paths []string) (bool, error) {
-	if len(paths) == 0 {
-		return false, nil
-	}
-	var managed bool
-	err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM placements WHERE state = 'active' AND physical_path COLLATE "C" = ANY($1::text[]))
- OR EXISTS (SELECT 1 FROM placement_companions c JOIN placements p ON p.id = c.placement_id
-   WHERE c.state = 'active' AND p.state = 'active' AND c.current_path = ANY($1::text[]))`, paths).Scan(&managed)
-	return managed, err
+	return filemaintenance.ManagedPaths(ctx, tx, paths)
 }
 
 // AdmitOperation re-checks and admits one user file operation.
@@ -148,7 +142,7 @@ func (c *Commands) AdmitOperation(ctx context.Context, admission filemanager.Ope
 		return filemanager.UserOperation{}, err
 	}
 	defer tx.Rollback()
-	op, replay, err := c.admitTx(ctx, tx, admission)
+	op, replay, err := c.admitTx(ctx, tx, admission, toIntakeAdmission(admission))
 	if err != nil {
 		return filemanager.UserOperation{}, err
 	}
@@ -174,26 +168,16 @@ func (c *Commands) AdmitOperations(ctx context.Context, admissions []filemanager
 		return nil, err
 	}
 	defer tx.Rollback()
-	lockSet := map[string]bool{}
-	var lockPaths []string
+	intakeAdmissions := make([]filemaintenance.UserOperationAdmission, 0, len(admissions))
 	for _, admission := range admissions {
-		for _, path := range append(append([]string{}, admission.SourcePath), admission.TargetPath) {
-			if path == "" || lockSet[path] {
-				continue
-			}
-			lockSet[path] = true
-			lockPaths = append(lockPaths, path)
-		}
+		intakeAdmissions = append(intakeAdmissions, toIntakeAdmission(admission))
 	}
-	sort.Strings(lockPaths)
-	for _, path := range lockPaths {
-		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('file_manager:' || $1, 0))`, path); err != nil {
-			return nil, err
-		}
+	if err := filemaintenance.LockOperationBatchTx(ctx, tx, intakeAdmissions); err != nil {
+		return nil, err
 	}
 	operations := make([]filemanager.UserOperation, 0, len(admissions))
-	for _, admission := range admissions {
-		op, replay, err := c.admitTx(ctx, tx, admission)
+	for i, admission := range admissions {
+		op, replay, err := c.admitTx(ctx, tx, admission, intakeAdmissions[i])
 		if err != nil {
 			return nil, err
 		}
@@ -240,71 +224,50 @@ ORDER BY created_at, id`, key)
 	return operations, digest, nil
 }
 
-func (c *Commands) admitTx(ctx context.Context, tx *sql.Tx, a filemanager.OperationAdmission) (filemanager.UserOperation, *filemanager.UserOperation, error) {
-	// Serialize admissions of the same paths so two concurrent requests
-	// cannot both pass the held check.
-	for _, path := range append(append([]string{}, a.SourcePath), a.TargetPath) {
-		if path == "" {
-			continue
-		}
-		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('file_manager:' || $1, 0))`, path); err != nil {
-			return filemanager.UserOperation{}, nil, err
-		}
+// toIntakeAdmission translates the file manager's admission to the intake's
+// vocabulary.
+func toIntakeAdmission(a filemanager.OperationAdmission) filemaintenance.UserOperationAdmission {
+	admission := filemaintenance.UserOperationAdmission{
+		ID: a.ID, IdempotencyKey: a.IdempotencyKey, Digest: a.Digest, Actor: a.Actor,
+		Operation: string(a.Operation), SourcePath: a.SourcePath, SourceSpellings: a.SourceSpellings,
+		TargetPath: a.TargetPath, TargetSpellings: a.TargetSpellings, ExpectedSize: a.ExpectedSize,
+		Collision: string(a.Collision), RequireDetachedSource: a.RequireDetachedSource,
+		ReleasePlacementID: a.ReleasePlacementID,
 	}
-	held, err := heldPaths(ctx, tx, append(append([]string{}, a.SourceSpellings...), a.TargetSpellings...))
-	if err != nil {
-		return filemanager.UserOperation{}, nil, fmt.Errorf("check unfinished owners: %w", err)
-	}
-	if held {
-		return filemanager.UserOperation{}, nil, filemanager.NewConflict(filemanager.CodeEntryChanged, "another operation holds the file or its target")
-	}
-	if a.RequireDetachedSource {
-		managed, err := managedPaths(ctx, tx, a.SourceSpellings)
-		if err != nil {
-			return filemanager.UserOperation{}, nil, fmt.Errorf("check source owners: %w", err)
-		}
-		if managed {
-			return filemanager.UserOperation{}, nil, filemanager.NewConflict(filemanager.CodeEntryChanged, "file is managed")
-		}
-	}
-	// A managed target is never written over: block refuses any occupant, and
-	// overwrite refuses one that is managed or held (the held check above).
-	if a.TargetPath != "" && a.Collision != filemanager.ConflictVersion {
-		managed, err := managedPaths(ctx, tx, a.TargetSpellings)
-		if err != nil {
-			return filemanager.UserOperation{}, nil, fmt.Errorf("check target owners: %w", err)
-		}
-		if managed {
-			return filemanager.UserOperation{}, nil, filemanager.NewConflict(filemanager.CodeTargetExists, "target is occupied")
-		}
-	}
-	nullable := func(value string) any {
-		if value == "" {
-			return nil
-		}
-		return value
-	}
-	var matchAnime, matchSeason, matchEpisode any
 	if a.Match != nil {
-		if err := checkMatchAnimeTx(ctx, tx, a.Match.ManagedAnimeID); err != nil {
-			return filemanager.UserOperation{}, nil, err
+		admission.Match = &filemaintenance.UserOperationMatch{
+			ManagedAnimeID: a.Match.ManagedAnimeID, Season: a.Match.Season, Episode: a.Match.Episode,
 		}
-		matchAnime, matchSeason, matchEpisode = a.Match.ManagedAnimeID, a.Match.Season, a.Match.Episode
 	}
-	result, err := tx.ExecContext(ctx, `INSERT INTO file_manager_operations
- (id, idempotency_key, request_digest, actor, operation, source_path, target_path, expected_size_bytes,
-  collision, release_placement_id, match_anime_id, match_season, match_episode)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-ON CONFLICT (idempotency_key) DO NOTHING`,
-		a.ID, a.IdempotencyKey, a.Digest, a.Actor, string(a.Operation), a.SourcePath, nullable(a.TargetPath),
-		a.ExpectedSize, string(a.Collision), nullable(a.ReleasePlacementID),
-		matchAnime, matchSeason, matchEpisode)
+	return admission
+}
+
+// mapAdmissionError maps the intake's typed refusals to the file manager's
+// typed conflicts.
+func mapAdmissionError(err error) error {
+	var refusal *filemaintenance.AdmissionRefusal
+	if !errors.As(err, &refusal) {
+		return err
+	}
+	switch refusal.Reason {
+	case filemaintenance.AdmissionHeld, filemaintenance.AdmissionSourceManaged:
+		return filemanager.NewConflict(filemanager.CodeEntryChanged, refusal.Message)
+	case filemaintenance.AdmissionTargetOccupied:
+		return filemanager.NewConflict(filemanager.CodeTargetExists, refusal.Message)
+	case filemaintenance.AdmissionAnimeRetired:
+		return filemanager.NewConflict(filemanager.CodeAnimeRetired, refusal.Message)
+	case filemaintenance.AdmissionAnimeUnavailable:
+		return filemanager.NewConflict(filemanager.CodeMatchAnimeUnavailable, refusal.Message)
+	}
+	return err
+}
+
+func (c *Commands) admitTx(ctx context.Context, tx *sql.Tx, a filemanager.OperationAdmission, ia filemaintenance.UserOperationAdmission) (filemanager.UserOperation, *filemanager.UserOperation, error) {
+	admitted, err := c.intake.AdmitTx(ctx, tx, ia)
 	if err != nil {
-		return filemanager.UserOperation{}, nil, fmt.Errorf("admit user operation: %w", err)
+		return filemanager.UserOperation{}, nil, mapAdmissionError(err)
 	}
-	if affected, err := result.RowsAffected(); err != nil {
-		return filemanager.UserOperation{}, nil, err
-	} else if affected == 0 {
+	if !admitted {
 		// A concurrent request with the same key won.
 		existing, digest, err := c.OperationByKey(ctx, a.IdempotencyKey)
 		if err != nil {
@@ -315,62 +278,11 @@ ON CONFLICT (idempotency_key) DO NOTHING`,
 		}
 		return filemanager.UserOperation{}, existing, nil
 	}
-	snapshot, _ := json.Marshal(map[string]any{"file_manager_operation_id": a.ID, "operation": a.Operation})
-	if _, err := c.workItems.Create(ctx, tx, workitems.WorkItemSpec{
-		Owner:                workitems.OwnerRef{Type: workitems.OwnerFileManagerOperation, ID: a.ID},
-		Kind:                 workitems.KindFileManagerExecute,
-		IdempotencyKey:       "fm:execute:" + a.ID,
-		InputSnapshot:        snapshot,
-		MaxAttempts:          3,
-		ExpectedOwnerVersion: 1,
-	}); err != nil {
-		return filemanager.UserOperation{}, nil, fmt.Errorf("enqueue user operation: %w", err)
-	}
 	op, err := scanOperation(tx.QueryRowContext(ctx, `SELECT `+operationColumns+` FROM file_manager_operations WHERE id = $1`, a.ID))
 	if err != nil {
 		return filemanager.UserOperation{}, nil, fmt.Errorf("read admitted user operation: %w", err)
 	}
 	return *op, nil, nil
-}
-
-// matchAnimeTakesFilesTx reports whether an anime still takes matched files:
-// its lifecycle is not retired, its subscription is active or stopped, and it
-// is no one-shot's temporary anime. lock holds the lifecycle row against a
-// concurrent retirement until the transaction ends.
-func matchAnimeTakesFilesTx(ctx context.Context, tx *sql.Tx, managedAnimeID string, lock bool) (retired, takes bool, err error) {
-	query := `SELECT lifecycle_state FROM managed_anime WHERE id = $1`
-	if lock {
-		query += ` FOR SHARE`
-	}
-	var lifecycle string
-	if err := tx.QueryRowContext(ctx, query, managedAnimeID).Scan(&lifecycle); errors.Is(err, sql.ErrNoRows) {
-		return true, false, nil
-	} else if err != nil {
-		return false, false, fmt.Errorf("read anime lifecycle: %w", err)
-	}
-	if lifecycle != "active" {
-		return true, false, nil
-	}
-	err = tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM subscriptions WHERE managed_anime_id = $1 AND state IN ('active', 'stopped'))
- AND NOT EXISTS (SELECT 1 FROM one_shot_acquisitions WHERE managed_anime_id = $1)`, managedAnimeID).Scan(&takes)
-	if err != nil {
-		return false, false, fmt.Errorf("read anime subscription: %w", err)
-	}
-	return false, takes, nil
-}
-
-func checkMatchAnimeTx(ctx context.Context, tx *sql.Tx, managedAnimeID string) error {
-	retired, takes, err := matchAnimeTakesFilesTx(ctx, tx, managedAnimeID, true)
-	if err != nil {
-		return err
-	}
-	if retired {
-		return filemanager.NewConflict(filemanager.CodeAnimeRetired, "the anime no longer admits changes")
-	}
-	if !takes {
-		return filemanager.NewConflict(filemanager.CodeMatchAnimeUnavailable, "the anime does not take matched files")
-	}
-	return nil
 }
 
 // ReleasedByKey returns a release already performed under a key.
@@ -495,7 +407,7 @@ WHERE placement_id = ANY($1::text[]) AND state = 'active'`, released); err != ni
 	}
 	outcome := filemanager.ReleaseOutcome{ManagedAnimeID: a.ManagedAnimeID, Released: len(released)}
 	if a.Move != nil {
-		op, replay, err := c.admitTx(ctx, tx, *a.Move)
+		op, replay, err := c.admitTx(ctx, tx, *a.Move, toIntakeAdmission(*a.Move))
 		if err != nil {
 			return filemanager.ReleaseOutcome{}, err
 		}
@@ -583,7 +495,7 @@ func CheckUserOperationTx(ctx context.Context, tx *sql.Tx, check filemaintenance
 		}
 	}
 	if check.MatchAnimeID != "" {
-		retired, takes, err := matchAnimeTakesFilesTx(ctx, tx, check.MatchAnimeID, false)
+		retired, takes, err := filemaintenance.MatchAnimeTakesFilesTx(ctx, tx, check.MatchAnimeID, false)
 		if err != nil {
 			return "", false, err
 		}
