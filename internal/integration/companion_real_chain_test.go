@@ -518,7 +518,7 @@ func TestCompanionAlignmentUnitRealChain(t *testing.T) {
 			t.Fatal(err)
 		}
 		crashed := false
-		svc.alignment.SetFilePorts(stoppingOverwriteExecutor{at: domain.OverwriteStageExchanged, crashed: &crashed}, filesystem.OSFileObserver{})
+		svc.alignment.SetFilePorts(stoppingOverwriteExecutor{OSFileExecutor: filesystem.OSFileExecutor{Receipts: svc.receipts}, at: domain.OverwriteStageExchanged, crashed: &crashed}, filesystem.OSFileObserver{})
 		submitScanTolerating(t, ctx, svc, animeID)
 		if !crashed {
 			t.Fatal("the overwrite exchange did not run")
@@ -532,7 +532,7 @@ func TestCompanionAlignmentUnitRealChain(t *testing.T) {
 			t.Fatalf("the stopped exchange must stay running with its record: state=%s recorded=%v", state, recorded)
 		}
 		// Restart: a fresh executor, then the deployment reconcile.
-		svc.alignment.SetFilePorts(filesystem.OSFileExecutor{}, filesystem.OSFileObserver{})
+		svc.alignment.SetFilePorts(filesystem.OSFileExecutor{Receipts: svc.receipts}, filesystem.OSFileObserver{})
 		if _, err := svc.alignment.ReconcileUnknownEffect(ctx, deployment.ReconcileRequest{OperationID: "align-restart"}); err != nil {
 			t.Fatal(err)
 		}

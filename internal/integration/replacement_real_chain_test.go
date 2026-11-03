@@ -35,6 +35,7 @@ import (
 	downloadapplication "bansoko/internal/download/application"
 	"bansoko/internal/download/qbittorrent"
 	"bansoko/internal/filemaintenance"
+	receiptsadapter "bansoko/internal/filemaintenance/adapter/receipts"
 	fileoperationapplication "bansoko/internal/fileoperation/application"
 	"bansoko/internal/library/adapter/filesystem"
 	matcher "bansoko/internal/metadata/matcher"
@@ -218,24 +219,28 @@ func startRevisionFixture(t *testing.T, items map[string]rssItem, files map[stri
 // ---------------------------------------------------------------------------
 
 type realChainServices struct {
-	db               *sql.DB
-	httpHandler      http.Handler
-	draft            *draftapplication.Service
-	ownership        *ownershipapplication.Service
-	oneShot          *oneshotapplication.Service
-	download         *downloadapplication.Service
-	file             *fileoperationapplication.Service
-	runtime          *runtimeworker.Worker
-	replacement      *filemaintenance.ReplacementDecisionService
-	trigger          *filemaintenance.ReplacementTriggerService
-	cleanup          *filemaintenance.CleanupService
-	store            *workitems.Store
-	placements       *filemaintenance.PlacementService
-	recon            *reconciliationapplication.Service
-	calibration      *filemaintenance.CalibrationService
-	alignment        *filemaintenance.AlignmentService
-	policies         *filemaintenance.PolicyService
-	namingRenderer   *filemaintenance.NamingTargetRenderer
+	db             *sql.DB
+	httpHandler    http.Handler
+	draft          *draftapplication.Service
+	ownership      *ownershipapplication.Service
+	oneShot        *oneshotapplication.Service
+	download       *downloadapplication.Service
+	file           *fileoperationapplication.Service
+	runtime        *runtimeworker.Worker
+	replacement    *filemaintenance.ReplacementDecisionService
+	trigger        *filemaintenance.ReplacementTriggerService
+	cleanup        *filemaintenance.CleanupService
+	store          *workitems.Store
+	placements     *filemaintenance.PlacementService
+	recon          *reconciliationapplication.Service
+	calibration    *filemaintenance.CalibrationService
+	alignment      *filemaintenance.AlignmentService
+	policies       *filemaintenance.PolicyService
+	namingRenderer *filemaintenance.NamingTargetRenderer
+	// receipts is the harness's maintenance receipt store, shared by every
+	// executor the chain builds exactly as the production composition root
+	// shares one store across its file ports.
+	receipts         *receiptsadapter.Store
 	hostDownloadRoot string
 	targetRoot       string
 }
@@ -250,6 +255,7 @@ func newRealChainServices(t *testing.T, client *http.Client) *realChainServices 
 	}
 	db := disposabledb.ResetDisposableSchema(t)
 	ctx := context.Background()
+	receiptStore := receiptsadapter.NewStore(db)
 
 	hostDownloadRoot := filepath.Join("..", "..", ".local-artifacts", "repl-qb", "downloads")
 	if harnessRoot := strings.TrimSpace(os.Getenv("BANSOKO_HARNESS_DOWNLOAD_ROOT")); harnessRoot != "" {
@@ -349,7 +355,7 @@ func newRealChainServices(t *testing.T, client *http.Client) *realChainServices 
 	if err != nil {
 		t.Fatal(err)
 	}
-	fileService, err := fileoperationapplication.NewService(db, filesystem.OSFileExecutor{}, filesystem.OSFileObserver{})
+	fileService, err := fileoperationapplication.NewService(db, filesystem.OSFileExecutor{Receipts: receiptStore}, filesystem.OSFileObserver{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -406,7 +412,9 @@ func newRealChainServices(t *testing.T, client *http.Client) *realChainServices 
 		t.Fatal(err)
 	}
 	cleanupService := filemaintenance.NewCleanupService(db)
-	cleanupService.SetFileExecutor(filesystem.NewOSCleanupExecutor(targetRoot))
+	cleanupExecutor := filesystem.NewOSCleanupExecutor(targetRoot)
+	cleanupExecutor.Receipts = receiptStore
+	cleanupService.SetFileExecutor(cleanupExecutor)
 	cleanupService.SetWorkItems(store)
 	replacementDecisions.SetCleanupHandoff(cleanupService)
 	replacementDecisions.SetActivityWriter(observability)
@@ -425,7 +433,7 @@ func newRealChainServices(t *testing.T, client *http.Client) *realChainServices 
 	policyService := filemaintenance.NewPolicyService(db)
 	calibrationService := filemaintenance.NewCalibrationService(db, placementService, policyService, reconPlanner, store)
 	alignmentOps := filemaintenance.NewAlignmentService(db)
-	alignmentOps.SetFilePorts(filesystem.OSFileExecutor{}, filesystem.OSFileObserver{})
+	alignmentOps.SetFilePorts(filesystem.OSFileExecutor{Receipts: receiptStore}, filesystem.OSFileObserver{})
 	calibrationService.SetAlignmentConsumer(alignmentOps)
 	calibrationService.SetCompanionCollisionSource(ownershipService)
 	reconService.SetEventHub(nil)
@@ -460,7 +468,7 @@ func newRealChainServices(t *testing.T, client *http.Client) *realChainServices 
 		replacement: replacementDecisions, trigger: replacementTrigger, cleanup: cleanupService,
 		store: store, placements: placementService, recon: reconService,
 		calibration: calibrationService, alignment: alignmentOps, policies: policyService,
-		namingRenderer: namingRenderer, hostDownloadRoot: hostDownloadRoot, targetRoot: targetRoot,
+		namingRenderer: namingRenderer, receipts: receiptStore, hostDownloadRoot: hostDownloadRoot, targetRoot: targetRoot,
 	}
 }
 
