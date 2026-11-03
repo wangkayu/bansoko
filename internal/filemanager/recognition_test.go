@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"bansoko/internal/filemaintenance"
+	"bansoko/internal/postprocessing/naming"
 )
 
 type fakeRecognitionPolicy struct{ route string }
@@ -21,15 +22,37 @@ func (p fakeRecognitionPolicy) UnclassifiedRoute(context.Context) (string, error
 // a matched render (the real one reads the anime from the database).
 type fakeRecognitionRenderer struct {
 	inputs []filemaintenance.RecognitionRenderInput
-	render func(filemaintenance.RecognitionRenderInput) (string, error)
+	render func(filemaintenance.RecognitionRenderInput) (filemaintenance.RecognitionRendered, error)
 }
 
-func (f *fakeRecognitionRenderer) RenderRecognition(_ context.Context, input filemaintenance.RecognitionRenderInput) (string, error) {
+func (f *fakeRecognitionRenderer) RenderRecognition(_ context.Context, input filemaintenance.RecognitionRenderInput) (filemaintenance.RecognitionRendered, error) {
 	f.inputs = append(f.inputs, input)
 	return f.render(input)
 }
 
-const recognitionVideoTemplate = "${ep.number}.${file.ext}"
+func (f *fakeRecognitionRenderer) RenderRecognitionSuffix(_ context.Context, input filemaintenance.RecognitionRenderInput) (string, error) {
+	f.inputs = append(f.inputs, input)
+	return "sub", nil
+}
+
+// recognitionRules names files with the given absolute directory: a video keeps
+// its episode number as the name and a subtitle carries the "sub" suffix. The
+// unknown variant parks an unclassified file in the directory's Extras folder.
+func recognitionRules(directory string) naming.NamingRules {
+	variant := naming.NamingVariant{
+		DirectoryTemplate:     directory,
+		VideoFilenameTemplate: "${ep.number}.${file.ext}",
+	}
+	return naming.NamingRules{
+		TV: variant, Movie: variant,
+		Unknown: naming.NamingVariant{
+			DirectoryTemplate:     filepath.Join(directory, "Extras"),
+			VideoFilenameTemplate: "${fn}",
+		},
+		SubtitleSuffixTemplate: "sub",
+		Language:               "js-naming-1",
+	}
+}
 
 func newRecognitionFixture(t *testing.T, policy RecognitionPolicy) commandFixture {
 	t.Helper()
@@ -38,12 +61,12 @@ func newRecognitionFixture(t *testing.T, policy RecognitionPolicy) commandFixtur
 	return f
 }
 
+// recognitionRequest renders into the folder the selected files live in.
 func recognitionRequest(paths ...string) RecognitionRequest {
 	return RecognitionRequest{
-		Paths:            paths,
-		Parser:           RecognitionParser{ID: "regex"},
-		VideoTemplate:    recognitionVideoTemplate,
-		SubtitleTemplate: "sub",
+		Paths:  paths,
+		Parser: RecognitionParser{ID: "regex"},
+		Naming: recognitionRules(filepath.Dir(paths[0])),
 	}
 }
 
@@ -72,14 +95,14 @@ func TestRecognitionPreviewGroupsVideoAndBoundSubtitles(t *testing.T) {
 		t.Fatalf("preview = %+v", preview)
 	}
 	video := recognitionRow(t, preview, "Show - 01.mkv")
-	if video.Disposition != RecognitionRename || video.TargetName != "1.mkv" || video.Episode == nil || video.Episode.Number != "1" {
+	if video.Disposition != RecognitionRename || video.TargetName != "1.mkv" || video.TargetPath != f.abs("Loose/1.mkv") || video.Episode == nil || video.Episode.Number != "1" {
 		t.Fatalf("video row = %+v", video)
 	}
 	if video.Group != "Show - 01" {
 		t.Fatalf("video group = %q", video.Group)
 	}
 	subtitle := recognitionRow(t, preview, "Show - 01.zh.ass")
-	if subtitle.Disposition != RecognitionRename || subtitle.TargetName != "1.sub.ass" || subtitle.Kind != "subtitle" {
+	if subtitle.Disposition != RecognitionRename || subtitle.TargetName != "1.sub.ass" || subtitle.TargetPath != f.abs("Loose/1.sub.ass") || subtitle.Kind != "subtitle" {
 		t.Fatalf("subtitle row = %+v", subtitle)
 	}
 	if len(preview.Conflicts) != 0 {
@@ -106,7 +129,8 @@ func TestRecognitionUnclassifiedFollowsTheRoutePolicy(t *testing.T) {
 		t.Fatalf("skip submit = %v", err)
 	}
 
-	// Route moves them under their own names into Extras.
+	// Route organizes them with the rules' unknown variant; the subtitle
+	// follows its video.
 	route := newRecognitionFixture(t, fakeRecognitionPolicy{route: "route"})
 	writeFile(t, route.abs("Loose/mystery.mkv"), 4)
 	writeFile(t, route.abs("Loose/mystery.zh.ass"), 4)
@@ -114,10 +138,13 @@ func TestRecognitionUnclassifiedFollowsTheRoutePolicy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("preview: %v", err)
 	}
-	for _, row := range preview.Rows {
-		if row.Disposition != RecognitionMove || filepath.Dir(row.TargetPath) != route.abs("Loose/Extras") || row.TargetName != row.Name {
-			t.Fatalf("route row = %+v", row)
-		}
+	video := recognitionRow(t, preview, "mystery.mkv")
+	if video.Disposition != RecognitionMove || video.TargetPath != route.abs("Loose/Extras/mystery.mkv") {
+		t.Fatalf("route video row = %+v", video)
+	}
+	subtitle := recognitionRow(t, preview, "mystery.zh.ass")
+	if subtitle.Disposition != RecognitionMove || subtitle.TargetPath != route.abs("Loose/Extras/mystery.sub.ass") {
+		t.Fatalf("route subtitle row = %+v", subtitle)
 	}
 	outcome, err := route.service.SubmitRecognition(ctx, SubmitRecognitionRequest{IdempotencyKey: "routed", ExpectedPlanDigest: preview.PlanDigest, RecognitionRequest: recognitionRequest(route.abs("Loose/mystery.mkv"), route.abs("Loose/mystery.zh.ass"))})
 	if err != nil {
@@ -154,10 +181,7 @@ func TestRecognitionRefusesUntouchedSelections(t *testing.T) {
 
 	// A subtitle without its video cannot be named.
 	writeFile(t, f.abs("Loose/orphan.zh.ass"), 4)
-	preview, err := f.service.PreviewRecognition(ctx, RecognitionRequest{
-		Paths: []string{f.abs("Loose/orphan.zh.ass")}, Parser: RecognitionParser{ID: "regex"},
-		VideoTemplate: recognitionVideoTemplate, SubtitleTemplate: "sub",
-	})
+	preview, err := f.service.PreviewRecognition(ctx, recognitionRequest(f.abs("Loose/orphan.zh.ass")))
 	if err != nil {
 		t.Fatalf("preview: %v", err)
 	}
@@ -166,26 +190,25 @@ func TestRecognitionRefusesUntouchedSelections(t *testing.T) {
 	}
 }
 
-// A filename template that renders `/`-separated levels moves the file into
-// those levels under the selection's folder; the subtitle follows its video.
-func TestRecognitionRendersASubdirectoryTarget(t *testing.T) {
+// The rules render an absolute target directory away from the selection; the
+// subtitle follows its video into that directory.
+func TestRecognitionRendersTheRulesDirectory(t *testing.T) {
 	f := newRecognitionFixture(t, fakeRecognitionPolicy{})
 	ctx := context.Background()
 	writeFile(t, f.abs("Loose/Show - 01.mkv"), 4)
 	writeFile(t, f.abs("Loose/Show - 01.zh.ass"), 4)
 	request := recognitionRequest(f.abs("Loose/Show - 01.mkv"), f.abs("Loose/Show - 01.zh.ass"))
-	request.VideoTemplate = "${ep.number}/Show - 01.${file.ext}"
-	request.SubtitleTemplate = "zh"
+	request.Naming.TV.DirectoryTemplate = f.abs("Library/Show")
 	preview, err := f.service.PreviewRecognition(ctx, request)
 	if err != nil {
 		t.Fatalf("preview: %v", err)
 	}
 	video := recognitionRow(t, preview, "Show - 01.mkv")
-	if video.Disposition != RecognitionMove || video.TargetName != "1/Show - 01.mkv" || filepath.Dir(video.TargetPath) != f.abs("Loose/1") {
+	if video.Disposition != RecognitionMove || video.TargetName != "1.mkv" || filepath.Dir(video.TargetPath) != f.abs("Library/Show") {
 		t.Fatalf("video row = %+v", video)
 	}
 	subtitle := recognitionRow(t, preview, "Show - 01.zh.ass")
-	if subtitle.Disposition != RecognitionMove || subtitle.TargetName != "1/Show - 01.zh.ass" || filepath.Dir(subtitle.TargetPath) != f.abs("Loose/1") {
+	if subtitle.Disposition != RecognitionMove || subtitle.TargetPath != f.abs("Library/Show/1.sub.ass") {
 		t.Fatalf("subtitle row = %+v", subtitle)
 	}
 	outcome, err := f.service.SubmitRecognition(ctx, SubmitRecognitionRequest{IdempotencyKey: "subdir", ExpectedPlanDigest: preview.PlanDigest, RecognitionRequest: request})
@@ -195,14 +218,9 @@ func TestRecognitionRendersASubdirectoryTarget(t *testing.T) {
 	if outcome.Moved != 2 {
 		t.Fatalf("outcome = %+v", outcome)
 	}
-	for _, op := range outcome.Operations {
-		if op.TargetPath != video.TargetPath && op.TargetPath != subtitle.TargetPath {
-			t.Fatalf("operation target = %s", op.TargetPath)
-		}
-	}
 	// The rendered directory levels exist once the submit is admitted; the
 	// moves themselves are the executor's, like every recognition operation.
-	if info, err := os.Stat(f.abs("Loose/1")); err != nil || !info.IsDir() {
+	if info, err := os.Stat(f.abs("Library/Show")); err != nil || !info.IsDir() {
 		t.Fatalf("rendered directory was not created: %v", err)
 	}
 }
@@ -211,24 +229,49 @@ func TestRecognitionRefusesAnIllegalRenderedTarget(t *testing.T) {
 	f := newRecognitionFixture(t, fakeRecognitionPolicy{})
 	ctx := context.Background()
 	writeFile(t, f.abs("Loose/Show - 01.mkv"), 4)
-	for _, template := range []string{
-		"${ep.number}/../Show - 01.${file.ext}",                               // traversal
-		"/${file.stem}.${file.ext}",                                           // escapes upward to an absolute
-		"${ep.number}//Show - 01.${file.ext}",                                 // empty level
-		strings.Repeat("a/", maxRecognitionDepth+1) + "Show - 01.${file.ext}", // too deep
+	for _, rules := range []func(naming.NamingRules) naming.NamingRules{
+		func(rules naming.NamingRules) naming.NamingRules {
+			rules.TV.DirectoryTemplate = "relative/folder"
+			return rules
+		},
+		func(rules naming.NamingRules) naming.NamingRules {
+			rules.TV.VideoFilenameTemplate = "${ep.number}/Show - 01.${file.ext}"
+			return rules
+		},
+		func(rules naming.NamingRules) naming.NamingRules {
+			rules.TV.VideoFilenameTemplate = "${ep.number}/../Show - 01.${file.ext}"
+			return rules
+		},
 	} {
 		request := recognitionRequest(f.abs("Loose/Show - 01.mkv"))
-		request.VideoTemplate = template
+		request.Naming = rules(request.Naming)
 		preview, err := f.service.PreviewRecognition(ctx, request)
 		if err != nil {
-			t.Fatalf("preview %q: %v", template, err)
+			t.Fatalf("preview %+v: %v", request.Naming.TV, err)
 		}
 		row := recognitionRow(t, preview, "Show - 01.mkv")
 		if row.Disposition != RecognitionError || len(row.Blockers) != 1 || row.Blockers[0].Code != RecognitionBlockerTargetInvalid {
-			t.Fatalf("template %q row = %+v", template, row)
+			t.Fatalf("rules %+v row = %+v", request.Naming.TV, row)
 		}
 		_, err = f.service.SubmitRecognition(ctx, SubmitRecognitionRequest{IdempotencyKey: "illegal", ExpectedPlanDigest: preview.PlanDigest, RecognitionRequest: request})
 		mustCode(t, err, CodeRecognitionNotRenderable)
+	}
+}
+
+// A target outside every authorized root is the row's own blocker.
+func TestRecognitionRefusesATargetOutsideTheRoots(t *testing.T) {
+	f := newRecognitionFixture(t, fakeRecognitionPolicy{})
+	ctx := context.Background()
+	writeFile(t, f.abs("Loose/Show - 01.mkv"), 4)
+	request := recognitionRequest(f.abs("Loose/Show - 01.mkv"))
+	request.Naming.TV.DirectoryTemplate = "/media/library"
+	preview, err := f.service.PreviewRecognition(ctx, request)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	row := recognitionRow(t, preview, "Show - 01.mkv")
+	if row.Disposition != RecognitionError || len(row.Blockers) != 1 || row.Blockers[0].Code != RecognitionBlockerOutsideRoots {
+		t.Fatalf("row = %+v", row)
 	}
 }
 
@@ -237,7 +280,7 @@ func TestRecognitionMissingAnimeFactsIsABlocker(t *testing.T) {
 	ctx := context.Background()
 	writeFile(t, f.abs("Loose/Show - 01.mkv"), 4)
 	request := recognitionRequest(f.abs("Loose/Show - 01.mkv"))
-	request.VideoTemplate = "${anime.title}.${file.ext}"
+	request.Naming.TV.VideoFilenameTemplate = "${anime.title}.${file.ext}"
 	preview, err := f.service.PreviewRecognition(ctx, request)
 	if err != nil {
 		t.Fatalf("preview: %v", err)
@@ -363,7 +406,7 @@ func TestRecognitionSubmitIsIdempotentAndGuardsThePlan(t *testing.T) {
 
 	// The same key with another request is a conflict.
 	other := submit
-	other.VideoTemplate = "${file.stem}.${file.ext}"
+	other.Naming.TV.VideoFilenameTemplate = "${file.stem}.${file.ext}"
 	_, err = f.service.SubmitRecognition(ctx, other)
 	mustCode(t, err, CodeIdempotencyConflict)
 
@@ -384,19 +427,19 @@ func TestRecognitionSubmitIsIdempotentAndGuardsThePlan(t *testing.T) {
 
 func TestRecognitionManualEpisodeReachesTheRender(t *testing.T) {
 	f := newCommandFixture(t)
-	renderer := &fakeRecognitionRenderer{render: func(input filemaintenance.RecognitionRenderInput) (string, error) {
-		if input.Kind != "video_filename" {
-			return "sub", nil
-		}
-		return "ep-" + input.Episode + "." + input.EpisodeSource + "." + input.FileName, nil
+	renderer := &fakeRecognitionRenderer{render: func(input filemaintenance.RecognitionRenderInput) (filemaintenance.RecognitionRendered, error) {
+		return filemaintenance.RecognitionRendered{
+			Directory: input.Rules.TV.DirectoryTemplate,
+			Filename:  "ep-" + input.Episode + "." + input.EpisodeSource + "." + input.FileName,
+		}, nil
 	}}
 	f.service.SetRecognition(renderer, fakeMatchAnimes{"anime-1": {ID: "anime-1", Title: "Show"}}, fakeRecognitionPolicy{})
 	ctx := context.Background()
 	writeFile(t, f.abs("Loose/mystery.mkv"), 4)
 	request := RecognitionRequest{
 		Paths: []string{f.abs("Loose/mystery.mkv")}, Parser: RecognitionParser{ID: "regex"},
-		VideoTemplate: "x", SubtitleTemplate: "sub",
-		Match: &RecognitionMatch{ManagedAnimeID: "anime-1", Season: intPointer(3), Episode: intPointer(7), Offset: 1},
+		Naming: recognitionRules(f.abs("Loose")),
+		Match:  &RecognitionMatch{ManagedAnimeID: "anime-1", Season: intPointer(3), Episode: intPointer(7), Offset: 1},
 	}
 	preview, err := f.service.PreviewRecognition(ctx, request)
 	if err != nil {
@@ -423,11 +466,11 @@ func intPointer(value int) *int { return &value }
 
 func TestRecognitionAnimeDraftReachesTheRender(t *testing.T) {
 	f := newCommandFixture(t)
-	renderer := &fakeRecognitionRenderer{render: func(input filemaintenance.RecognitionRenderInput) (string, error) {
-		if input.Kind != "video_filename" {
-			return "sub", nil
-		}
-		return "renamed." + input.FileName, nil
+	renderer := &fakeRecognitionRenderer{render: func(input filemaintenance.RecognitionRenderInput) (filemaintenance.RecognitionRendered, error) {
+		return filemaintenance.RecognitionRendered{
+			Directory: input.Rules.TV.DirectoryTemplate,
+			Filename:  "renamed." + input.FileName,
+		}, nil
 	}}
 	f.service.SetRecognition(renderer, fakeMatchAnimes{"anime-1": {ID: "anime-1", Title: "Show"}}, fakeRecognitionPolicy{})
 	ctx := context.Background()
@@ -435,7 +478,7 @@ func TestRecognitionAnimeDraftReachesTheRender(t *testing.T) {
 	year := 2024
 	request := RecognitionRequest{
 		Paths: []string{f.abs("Loose/Show - 01.mkv")}, Parser: RecognitionParser{ID: "regex"},
-		VideoTemplate: "x", SubtitleTemplate: "sub",
+		Naming: recognitionRules(f.abs("Loose")),
 		Match: &RecognitionMatch{
 			ManagedAnimeID: "anime-1", Season: intPointer(2),
 			Anime: &RecognitionAnimeDraft{
@@ -509,11 +552,11 @@ func TestRecognitionMatchFormsAreValidated(t *testing.T) {
 
 func TestRecognitionDraftOnlyMatchReadsNoAnime(t *testing.T) {
 	f := newCommandFixture(t)
-	renderer := &fakeRecognitionRenderer{render: func(input filemaintenance.RecognitionRenderInput) (string, error) {
-		if input.Kind != "video_filename" {
-			return "sub", nil
-		}
-		return "renamed." + input.FileName, nil
+	renderer := &fakeRecognitionRenderer{render: func(input filemaintenance.RecognitionRenderInput) (filemaintenance.RecognitionRendered, error) {
+		return filemaintenance.RecognitionRendered{
+			Directory: input.Rules.TV.DirectoryTemplate,
+			Filename:  "renamed." + input.FileName,
+		}, nil
 	}}
 	// No matchAnimes at all: a draft-only match must not read one.
 	f.service.SetRecognition(renderer, nil, fakeRecognitionPolicy{})

@@ -141,9 +141,11 @@ describe("RecognitionDialog", () => {
     expect(request).toMatchObject({
       paths: ["/media/anime/ep01.mkv", "/media/anime/ep01.zh.ass"],
       parser: { id: "reltitle" },
-      video_template: "${file.stem}",
-      subtitle_template: "",
+      // The operation renders the same complete naming rules one-shot renders.
+      naming: library.templates[0].rules,
     });
+    expect(request).not.toHaveProperty("video_template");
+    expect(request).not.toHaveProperty("subtitle_template");
 
     fireEvent.click(screen.getByRole("button", { name: t("fileManager.recognize.apply") }));
     expect(posts("/api/v1/file-manager/recognition")[0]).toMatchObject({

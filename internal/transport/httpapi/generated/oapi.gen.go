@@ -925,6 +925,7 @@ const (
 // Defines values for FileManagerRecognitionBlockerCode.
 const (
 	FileManagerRecognitionBlockerCodeFactsMissing    FileManagerRecognitionBlockerCode = "facts_missing"
+	FileManagerRecognitionBlockerCodeOutsideRoots    FileManagerRecognitionBlockerCode = "outside_roots"
 	FileManagerRecognitionBlockerCodeTargetInvalid   FileManagerRecognitionBlockerCode = "target_invalid"
 	FileManagerRecognitionBlockerCodeTemplateInvalid FileManagerRecognitionBlockerCode = "template_invalid"
 	FileManagerRecognitionBlockerCodeVideoFailed     FileManagerRecognitionBlockerCode = "video_failed"
@@ -1207,10 +1208,9 @@ const (
 
 // Defines values for NamingTemplatePreviewInputTemplateKind.
 const (
-	NamingTemplatePreviewInputTemplateKindDirectory        NamingTemplatePreviewInputTemplateKind = "directory"
-	NamingTemplatePreviewInputTemplateKindRelativeFilename NamingTemplatePreviewInputTemplateKind = "relative_filename"
-	NamingTemplatePreviewInputTemplateKindSubtitleSuffix   NamingTemplatePreviewInputTemplateKind = "subtitle_suffix"
-	NamingTemplatePreviewInputTemplateKindVideoFilename    NamingTemplatePreviewInputTemplateKind = "video_filename"
+	NamingTemplatePreviewInputTemplateKindDirectory      NamingTemplatePreviewInputTemplateKind = "directory"
+	NamingTemplatePreviewInputTemplateKindSubtitleSuffix NamingTemplatePreviewInputTemplateKind = "subtitle_suffix"
+	NamingTemplatePreviewInputTemplateKindVideoFilename  NamingTemplatePreviewInputTemplateKind = "video_filename"
 )
 
 // Defines values for NamingVarsDiagnosticCode.
@@ -5217,12 +5217,12 @@ type FileManagerRecognitionAnimeDraftMediaKind string
 
 // FileManagerRecognitionBlocker defines model for FileManagerRecognitionBlocker.
 type FileManagerRecognitionBlocker struct {
-	// Code Why a row cannot be rendered: the template reads facts this render lacks (`facts_missing`, with their paths), does not compile (`template_invalid`), renders an unusable target (`target_invalid`), or the subtitle's video is not selected (`video_missing`) or failed (`video_failed`).
+	// Code Why a row cannot be rendered: the template reads facts this render lacks (`facts_missing`, with their paths), does not compile (`template_invalid`), renders an unusable target (`target_invalid`), renders a target outside the file manager's authorized roots (`outside_roots`), or the subtitle's video is not selected (`video_missing`) or failed (`video_failed`).
 	Code  FileManagerRecognitionBlockerCode `json:"code"`
 	Facts *[]string                         `json:"facts,omitempty"`
 }
 
-// FileManagerRecognitionBlockerCode Why a row cannot be rendered: the template reads facts this render lacks (`facts_missing`, with their paths), does not compile (`template_invalid`), renders an unusable target (`target_invalid`), or the subtitle's video is not selected (`video_missing`) or failed (`video_failed`).
+// FileManagerRecognitionBlockerCode Why a row cannot be rendered: the template reads facts this render lacks (`facts_missing`, with their paths), does not compile (`template_invalid`), renders an unusable target (`target_invalid`), renders a target outside the file manager's authorized roots (`outside_roots`), or the subtitle's video is not selected (`video_missing`) or failed (`video_failed`).
 type FileManagerRecognitionBlockerCode string
 
 // FileManagerRecognitionConflict defines model for FileManagerRecognitionConflict.
@@ -5290,7 +5290,9 @@ type FileManagerRecognitionParserKind string
 type FileManagerRecognitionPreview struct {
 	// Conflicts Absolute targets another row or a file already holds.
 	Conflicts []string `json:"conflicts"`
-	Directory string   `json:"directory"`
+
+	// Directory The folder the selected files were read from.
+	Directory string `json:"directory"`
 
 	// PlanDigest The plan the submit must confirm.
 	PlanDigest string                      `json:"plan_digest"`
@@ -5307,16 +5309,11 @@ type FileManagerRecognitionPreview struct {
 type FileManagerRecognitionRequest struct {
 	// Match The optional anime facts source of the render. Three forms: a managed anime (`managed_anime_id`, optionally overlaid with `anime` as the operation's temporary draft), a draft alone (`anime` without `managed_anime_id`) for naming with facts the user typed or matched from a metadata provider, exactly as one-shot's task draft, or a bare episode adjustment (`episode` and/or a non-zero `offset`) over a pure parse of the file names. A match carrying none of these is refused.
 	Match  *FileManagerRecognitionMatch  `json:"match,omitempty"`
+	Naming NamingRules                   `json:"naming"`
 	Parser *FileManagerRecognitionParser `json:"parser,omitempty"`
 
 	// Paths Absolute paths of the selected files, all in one directory.
 	Paths []string `json:"paths"`
-
-	// SubtitleTemplate Template of a subtitle's suffix; empty leaves the subtitle name without a suffix. The target composes the video's rendered name.
-	SubtitleTemplate *string `json:"subtitle_template,omitempty"`
-
-	// VideoTemplate Template of each video's (and other file's) whole target name, rendered over the facts of the file's own name.
-	VideoTemplate string `json:"video_template"`
 }
 
 // FileManagerRecognitionResult defines model for FileManagerRecognitionResult.
@@ -5359,11 +5356,10 @@ type FileManagerRecognitionSubmitRequest struct {
 	ExpectedPlanDigest string `json:"expected_plan_digest"`
 
 	// Match The optional anime facts source of the render. Three forms: a managed anime (`managed_anime_id`, optionally overlaid with `anime` as the operation's temporary draft), a draft alone (`anime` without `managed_anime_id`) for naming with facts the user typed or matched from a metadata provider, exactly as one-shot's task draft, or a bare episode adjustment (`episode` and/or a non-zero `offset`) over a pure parse of the file names. A match carrying none of these is refused.
-	Match            *FileManagerRecognitionMatch  `json:"match,omitempty"`
-	Parser           *FileManagerRecognitionParser `json:"parser,omitempty"`
-	Paths            []string                      `json:"paths"`
-	SubtitleTemplate *string                       `json:"subtitle_template,omitempty"`
-	VideoTemplate    string                        `json:"video_template"`
+	Match  *FileManagerRecognitionMatch  `json:"match,omitempty"`
+	Naming NamingRules                   `json:"naming"`
+	Parser *FileManagerRecognitionParser `json:"parser,omitempty"`
+	Paths  []string                      `json:"paths"`
 }
 
 // FileManagerRecognitionUnknownRoute The instance unclassified-route policy the plan read.
@@ -6166,7 +6162,7 @@ type NamingTemplatePreviewInput struct {
 	// SampleRef Optional fixed redacted sample selector from the naming template catalog; omitted uses the default sample.
 	SampleRef *string `json:"sample_ref,omitempty"`
 
-	// TemplateKind Rendered shape of template_source: a directory (absolute path), a video filename (one segment), a path-bearing filename (`/`-separated levels below the file's own folder), or a subtitle suffix.
+	// TemplateKind Rendered shape of template_source: a directory (absolute path), a video filename (one segment), or a subtitle suffix.
 	TemplateKind NamingTemplatePreviewInputTemplateKind `json:"template_kind"`
 
 	// TemplateSource The template body to preview, written like a stored value: the text between the backticks with `${...}` interpolations, no outer backticks. A value wrapped in its own backticks is refused.
@@ -6176,7 +6172,7 @@ type NamingTemplatePreviewInput struct {
 // NamingTemplatePreviewInputLanguage Language of template_source; omitted is js-naming-1.
 type NamingTemplatePreviewInputLanguage string
 
-// NamingTemplatePreviewInputTemplateKind Rendered shape of template_source: a directory (absolute path), a video filename (one segment), a path-bearing filename (`/`-separated levels below the file's own folder), or a subtitle suffix.
+// NamingTemplatePreviewInputTemplateKind Rendered shape of template_source: a directory (absolute path), a video filename (one segment), or a subtitle suffix.
 type NamingTemplatePreviewInputTemplateKind string
 
 // NamingVariant defines model for NamingVariant.

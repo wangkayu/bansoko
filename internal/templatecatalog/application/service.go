@@ -179,8 +179,6 @@ func (s *Service) PreviewNaming(_ context.Context, input NamingTemplatePreviewIn
 		kind = naming.KindDirectory
 	case NamingTemplatePreviewInputTemplateKindVideoFilename:
 		kind = naming.KindVideoFilename
-	case NamingTemplatePreviewInputTemplateKindRelativeFilename:
-		kind = naming.KindRelativeFilename
 	case NamingTemplatePreviewInputTemplateKindSubtitleSuffix:
 		kind = naming.KindSubtitleSuffix
 	default:

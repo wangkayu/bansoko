@@ -23,32 +23,28 @@ import (
 	"bansoko/internal/templatefacts"
 )
 
-// Recognition: rename and move a manually selected set of files in one
-// directory by rendering a naming template over each file's own facts. It uses
-// the naming core one-shot step two renders with, under a different input
-// adapter: the file list comes from the user's selection instead of a seed
-// manifest, and the episode comes from parsing the file's own name instead of
-// the release structure. The shared boundary stops at the plan — the rendered
-// target of every file.
+// Recognition: rename and move a manually selected set of files by rendering
+// the naming rules one-shot step two renders with over each file's own facts.
+// It uses the naming core under a different input adapter: the file list comes
+// from the user's selection instead of a seed manifest, and the episode comes
+// from parsing the file's own name instead of the release structure. The shared
+// boundary stops at the plan — the rendered target of every file.
 //
 // The operation writes no identity: it admits ordinary move/rename user file
 // operations (unmanaged, no placement, no companion relation, no record). A
 // video and the subtitles bound to it by the one subtitle rule form one group;
-// the video renders from the file template and each subtitle from the suffix
-// template of the same group. A video with no recognized episode is not
-// rendered at all: it follows the instance unclassified-route policy — skip
-// (the default) keeps it and its subtitles where they are, route moves them
-// under their original names into the directory's Extras folder.
+// the video renders from the rules' video variant and each subtitle from the
+// same rules' subtitle suffix. A file with no recognized episode follows the
+// instance unclassified-route policy: skip (the default) leaves it and its
+// subtitles where they are, route organizes it with the rules' unknown variant.
 //
-// A target is legal as a relative path under the file's own folder: the
-// naming engine refuses a rendered value that is empty, absolute, or leaves
-// the folder, and allows `/`-separated directory parts the template spells
-// out (fact values are sanitized, so a title can never inject a level); this
-// package repeats the check when it composes the path. A target in a deeper
-// directory is a move; the submit creates the missing levels first.
-// Conflicts are detected again at submit and settled by this operation's own
-// choice: block (admit nothing), skip (leave the conflicting files) or version
-// (take the first free " (N)" sibling).
+// The rendered directory is absolute, exactly as one-shot renders it: the
+// folder the files were selected in only says where they come from. A target
+// must lie inside one of the file manager's authorized roots; a target in
+// another directory is a move, and the submit creates the missing levels
+// first. Conflicts are detected again at submit and settled by this operation's
+// own choice: block (admit nothing), skip (leave the conflicting files) or
+// version (take the first free " (N)" sibling).
 
 // Recognition error codes (each stable; none carries a private path).
 const (
@@ -65,17 +61,13 @@ const (
 // maxRecognitionFiles bounds one recognition request.
 const maxRecognitionFiles = 256
 
-// recognitionExtrasDirectoryName is the folder the unclassified route moves
-// unrecognized videos into, named the way the library's own route names it.
-const recognitionExtrasDirectoryName = "Extras"
-
 // RecognitionDisposition is what recognition does with one selected file.
 type RecognitionDisposition string
 
 const (
 	// RecognitionRename renames the file inside its directory.
 	RecognitionRename RecognitionDisposition = "rename"
-	// RecognitionMove moves the file (the unclassified route into Extras).
+	// RecognitionMove moves the file to a rendered directory of its own.
 	RecognitionMove RecognitionDisposition = "move"
 	// RecognitionUnchanged renders the file's own name; nothing is moved.
 	RecognitionUnchanged RecognitionDisposition = "unchanged"
@@ -92,6 +84,7 @@ const (
 	RecognitionBlockerFactsMissing    = "facts_missing"
 	RecognitionBlockerTemplateInvalid = "template_invalid"
 	RecognitionBlockerTargetInvalid   = "target_invalid"
+	RecognitionBlockerOutsideRoots    = "outside_roots"
 	RecognitionBlockerVideoMissing    = "video_missing"
 	RecognitionBlockerVideoFailed     = "video_failed"
 )
@@ -112,10 +105,11 @@ const (
 // OccupantDuplicate marks a target another row of the same request renders.
 const OccupantDuplicate MatchOccupant = "duplicate"
 
-// RecognitionRenderer renders one recognition value
-// (filemaintenance.RenderRecognition).
+// RecognitionRenderer renders one file's target and a subtitle's suffix with
+// the operation's naming rules (filemaintenance.RenderRecognition).
 type RecognitionRenderer interface {
-	RenderRecognition(ctx context.Context, input filemaintenance.RecognitionRenderInput) (string, error)
+	RenderRecognition(ctx context.Context, input filemaintenance.RecognitionRenderInput) (filemaintenance.RecognitionRendered, error)
+	RenderRecognitionSuffix(ctx context.Context, input filemaintenance.RecognitionRenderInput) (string, error)
 }
 
 // RecognitionPolicy reads the instance unclassified-route policy. Unwired, the
@@ -189,14 +183,15 @@ type RecognitionTMDBBinding struct {
 }
 
 // RecognitionRequest is one preview or submit request: the selected absolute
-// file paths (all in one directory), the parser, the two templates and the
-// optional match.
+// file paths (all in one directory — the folder they come from, not their
+// target), the parser, the operation's naming rules and the optional match.
+// The rules render absolute targets exactly as one-shot renders them; the
+// selected folder only says where the files come from.
 type RecognitionRequest struct {
-	Paths            []string
-	Parser           RecognitionParser
-	VideoTemplate    string
-	SubtitleTemplate string
-	Match            *RecognitionMatch
+	Paths  []string
+	Parser RecognitionParser
+	Naming naming.NamingRules
+	Match  *RecognitionMatch
 }
 
 // RecognitionEpisode is the episode identity recognition gave one file.
@@ -246,6 +241,8 @@ type RecognitionRow struct {
 // RecognitionPreview is the side-effect-free outcome of one recognition
 // request. PlanDigest identifies the rendered plan the submit must confirm.
 type RecognitionPreview struct {
+	// Directory is the folder the selected files were read from; every row's
+	// TargetPath is rendered absolute by the naming rules.
 	Directory    string
 	Rows         []RecognitionRow
 	UnknownRoute string
@@ -600,9 +597,11 @@ func recognitionAnimeDraft(match *RecognitionMatch) *filemaintenance.Recognition
 	return draft
 }
 
-func recognitionRenderInput(file recognitionFile, kind naming.TemplateKind, template string, episode *RecognitionEpisode, match *RecognitionMatch) filemaintenance.RecognitionRenderInput {
+func recognitionRenderInput(plan *recognitionPlan, file recognitionFile, episode *RecognitionEpisode) filemaintenance.RecognitionRenderInput {
+	match := plan.request.Match
 	input := filemaintenance.RecognitionRenderInput{
-		Kind: kind, Template: template,
+		Rules:          plan.request.Naming,
+		UnknownRoute:   plan.unknownRoute == string(filemaintenance.UnclassifiedRoutePolicyValueRoute),
 		FileName:       file.inspection.detail.Entry.Name,
 		FileKind:       file.kind,
 		ManagedAnimeID: recognitionMatchID(match),
@@ -624,25 +623,43 @@ func recognitionRenderInput(file recognitionFile, kind naming.TemplateKind, temp
 	return input
 }
 
-// renderRecognition renders one supplied template and maps a render refusal to
-// its row blocker.
-func (s *Service) renderRecognition(ctx context.Context, input filemaintenance.RecognitionRenderInput) (string, *RecognitionBlocker, error) {
-	value, err := s.recognition.RenderRecognition(ctx, input)
+// renderRecognition renders one file's target and maps a render refusal to its
+// row blocker.
+func (s *Service) renderRecognition(ctx context.Context, input filemaintenance.RecognitionRenderInput) (filemaintenance.RecognitionRendered, *RecognitionBlocker, error) {
+	rendered, err := s.recognition.RenderRecognition(ctx, input)
+	if err == nil {
+		return rendered, nil, nil
+	}
+	blocker, err := recognitionRenderBlocker(err)
+	return filemaintenance.RecognitionRendered{}, blocker, err
+}
+
+// renderRecognitionSuffix renders a subtitle's suffix and maps a render refusal
+// to its row blocker.
+func (s *Service) renderRecognitionSuffix(ctx context.Context, input filemaintenance.RecognitionRenderInput) (string, *RecognitionBlocker, error) {
+	value, err := s.recognition.RenderRecognitionSuffix(ctx, input)
 	if err == nil {
 		return value, nil, nil
 	}
+	blocker, err := recognitionRenderBlocker(err)
+	return "", blocker, err
+}
+
+// recognitionRenderBlocker maps a typed render refusal to its row blocker; any
+// other error stays an error.
+func recognitionRenderBlocker(err error) (*RecognitionBlocker, error) {
 	var renderErr *filemaintenance.RecognitionRenderError
-	if errors.As(err, &renderErr) {
-		code := RecognitionBlockerTemplateInvalid
-		switch renderErr.Code {
-		case filemaintenance.RecognitionRenderFactsMissing:
-			code = RecognitionBlockerFactsMissing
-		case filemaintenance.RecognitionRenderTargetInvalid:
-			code = RecognitionBlockerTargetInvalid
-		}
-		return "", &RecognitionBlocker{Code: code, Facts: renderErr.Facts}, nil
+	if !errors.As(err, &renderErr) {
+		return nil, err
 	}
-	return "", nil, err
+	code := RecognitionBlockerTemplateInvalid
+	switch renderErr.Code {
+	case filemaintenance.RecognitionRenderFactsMissing:
+		code = RecognitionBlockerFactsMissing
+	case filemaintenance.RecognitionRenderTargetInvalid:
+		code = RecognitionBlockerTargetInvalid
+	}
+	return &RecognitionBlocker{Code: code, Facts: renderErr.Facts}, nil
 }
 
 // recognitionPlan renders one request. It reads the filesystem and owner facts
@@ -694,7 +711,7 @@ func (s *Service) recognitionPlan(ctx context.Context, request RecognitionReques
 		return recognitionPlan{}, err
 	}
 	plan := recognitionPlan{request: request, directory: directory, files: files, groups: recognitionGroups(files), unknownRoute: route}
-	s.buildRecognitionRows(ctx, &plan, request)
+	s.buildRecognitionRows(ctx, &plan)
 	if err := s.markRecognitionConflicts(ctx, &plan); err != nil {
 		return recognitionPlan{}, err
 	}
@@ -703,40 +720,45 @@ func (s *Service) recognitionPlan(ctx context.Context, request RecognitionReques
 }
 
 // buildRecognitionRows renders every group into rows and records the
-// operations a submit would admit.
-func (s *Service) buildRecognitionRows(ctx context.Context, plan *recognitionPlan, request RecognitionRequest) {
-	route := plan.unknownRoute
+// operations a submit would admit. A file with no episode identity is the
+// renderer's call — the unknown variant under the route, otherwise left alone
+// — because whether it is a movie is a naming-fact decision.
+func (s *Service) buildRecognitionRows(ctx context.Context, plan *recognitionPlan) {
 	for groupIndex, group := range plan.groups {
 		switch {
 		case group.video >= 0:
-			episode := recognitionEpisode(plan.files[group.video].identity, request.Match)
-			if episode == nil {
-				s.recognitionUnknownRows(ctx, plan, groupIndex, route == string(filemaintenance.UnclassifiedRoutePolicyValueRoute))
-				continue
-			}
+			episode := recognitionEpisode(plan.files[group.video].identity, plan.request.Match)
 			videoRowIndex := len(plan.rows)
-			videoRow := s.recognitionRenderRow(ctx, plan, groupIndex, group.video, episode, RecognitionRename)
+			videoRow := s.recognitionRenderRow(ctx, plan, groupIndex, group.video, episode)
 			plan.rows = append(plan.rows, videoRow)
-			videoRendered := videoRow.TargetName
-			if videoRow.Disposition == RecognitionRename || videoRow.Disposition == RecognitionMove {
+			if recognitionActionable(videoRow) {
 				s.recordRecognitionOperation(plan, videoRowIndex, groupIndex, videoRowIndex, filekinds.KindVideo, group.video, videoRow.TargetPath, "", "")
 			}
 			for _, index := range group.subtitles {
 				subtitleRowIndex := len(plan.rows)
 				var row RecognitionRow
-				if videoRendered == "" {
+				switch {
+				case videoRow.Disposition == RecognitionSkip:
+					// The subtitle follows its video: it is left alone too.
+					file := plan.files[index]
 					row = RecognitionRow{
-						Path: plan.files[index].inspection.absolute, Name: plan.files[index].inspection.detail.Entry.Name,
+						Path: file.inspection.absolute, Name: file.inspection.detail.Entry.Name,
 						Kind: filekinds.KindSubtitle, Group: group.stem,
-						Revision:    plan.files[index].inspection.detail.Revision,
-						Disposition: RecognitionError,
-						Blockers:    []RecognitionBlocker{{Code: RecognitionBlockerVideoFailed}},
+						Revision: file.inspection.detail.Revision, Disposition: RecognitionSkip,
 					}
-				} else {
-					row = s.recognitionSubtitleRow(ctx, plan, request, groupIndex, index, episode, videoRendered)
+				case videoRow.TargetPath == "":
+					file := plan.files[index]
+					row = RecognitionRow{
+						Path: file.inspection.absolute, Name: file.inspection.detail.Entry.Name,
+						Kind: filekinds.KindSubtitle, Group: group.stem,
+						Revision: file.inspection.detail.Revision, Disposition: RecognitionError,
+						Blockers: []RecognitionBlocker{{Code: RecognitionBlockerVideoFailed}},
+					}
+				default:
+					row = s.recognitionSubtitleRow(ctx, plan, groupIndex, index, episode, videoRow.TargetPath)
 				}
 				plan.rows = append(plan.rows, row)
-				if row.Disposition == RecognitionRename || row.Disposition == RecognitionMove {
+				if recognitionActionable(row) {
 					s.recordRecognitionOperation(plan, subtitleRowIndex, groupIndex, videoRowIndex, filekinds.KindSubtitle, index, row.TargetPath, row.subtitleSuffix, row.subtitleExtension)
 				}
 			}
@@ -755,14 +777,19 @@ func (s *Service) buildRecognitionRows(ctx context.Context, plan *recognitionPla
 		default:
 			for _, index := range group.others {
 				rowIndex := len(plan.rows)
-				row := s.recognitionRenderRow(ctx, plan, groupIndex, index, nil, RecognitionRename)
+				row := s.recognitionRenderRow(ctx, plan, groupIndex, index, nil)
 				plan.rows = append(plan.rows, row)
-				if row.Disposition == RecognitionRename || row.Disposition == RecognitionMove {
+				if recognitionActionable(row) {
 					s.recordRecognitionOperation(plan, rowIndex, groupIndex, -1, filekinds.KindOther, index, row.TargetPath, "", "")
 				}
 			}
 		}
 	}
+}
+
+// recognitionActionable reports a row this plan would move or rename.
+func recognitionActionable(row RecognitionRow) bool {
+	return row.Disposition == RecognitionRename || row.Disposition == RecognitionMove
 }
 
 // recordRecognitionOperation remembers one file a submit would move.
@@ -775,76 +802,17 @@ func (s *Service) recordRecognitionOperation(plan *recognitionPlan, row, group, 
 	})
 }
 
-// recognitionUnknownRows leaves an episode-less video and its subtitles where
-// they are, or, under the route policy, moves them under their own names into
-// the directory's Extras folder.
-func (s *Service) recognitionUnknownRows(ctx context.Context, plan *recognitionPlan, groupIndex int, route bool) {
-	group := plan.groups[groupIndex]
-	extras := ""
-	var extrasBlocker *RecognitionBlocker
-	if route {
-		extras, extrasBlocker, _ = s.recognitionExtrasDirectory(plan.directory)
-	}
-	add := func(fileIndex, videoRow int, role string) int {
-		file := plan.files[fileIndex]
-		row := RecognitionRow{
-			Path: file.inspection.absolute, Name: file.inspection.detail.Entry.Name,
-			Kind: file.kind, Group: group.stem,
-			Revision: file.inspection.detail.Revision, Disposition: RecognitionSkip,
-		}
-		rowIndex := len(plan.rows)
-		if extrasBlocker != nil {
-			row.Disposition = RecognitionError
-			row.Blockers = []RecognitionBlocker{*extrasBlocker}
-		} else if extras != "" {
-			name := file.inspection.detail.Entry.Name
-			row.TargetName = name
-			row.TargetPath = joinAbsolute(extras, name)
-			row.Disposition = RecognitionMove
-			s.recordRecognitionOperation(plan, rowIndex, groupIndex, videoRow, role, fileIndex, row.TargetPath, "", "")
-		}
-		plan.rows = append(plan.rows, row)
-		return rowIndex
-	}
-	videoRow := add(group.video, -1, filekinds.KindVideo)
-	for _, index := range group.subtitles {
-		add(index, videoRow, filekinds.KindSubtitle)
-	}
-}
-
-// recognitionExtrasDirectory resolves the directory's Extras folder, which the
-// unclassified route creates when it is missing. A path that exists but is not
-// a real directory is an unusable target.
-func (s *Service) recognitionExtrasDirectory(directory string) (string, *RecognitionBlocker, error) {
-	extras := joinAbsolute(directory, recognitionExtrasDirectoryName)
-	if refuseDenied(s.zone, extras) != nil || internalNamespace(extras) {
-		return "", &RecognitionBlocker{Code: RecognitionBlockerTargetInvalid}, nil
-	}
-	info, err := os.Lstat(extras)
-	if errors.Is(err, os.ErrNotExist) {
-		return extras, nil, nil
-	}
-	if err != nil {
-		return "", nil, fsError(err, extras)
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return "", &RecognitionBlocker{Code: RecognitionBlockerTargetInvalid}, nil
-	}
-	return extras, nil, nil
-}
-
-// recognitionRenderRow renders one file's own name and resolves its target.
-func (s *Service) recognitionRenderRow(ctx context.Context, plan *recognitionPlan, groupIndex, fileIndex int, episode *RecognitionEpisode, disposition RecognitionDisposition) RecognitionRow {
+// recognitionRenderRow renders one file's target with the operation's own
+// naming rules and resolves it against the instance's writable space.
+func (s *Service) recognitionRenderRow(ctx context.Context, plan *recognitionPlan, groupIndex, fileIndex int, episode *RecognitionEpisode) RecognitionRow {
 	file := plan.files[fileIndex]
 	row := RecognitionRow{
 		Path: file.inspection.absolute, Name: file.inspection.detail.Entry.Name,
 		Kind: file.kind, Group: plan.groups[groupIndex].stem,
 		Revision: file.inspection.detail.Revision,
-		Episode:  episode, Disposition: disposition,
+		Episode:  episode, Disposition: RecognitionRename,
 	}
-	// The rename renders the path-bearing filename kind: a target may stay a
-	// plain name or spell out subdirectories under the file's own folder.
-	rendered, blocker, err := s.renderRecognition(ctx, recognitionRenderInput(file, naming.KindRelativeFilename, plan.request.VideoTemplate, episode, plan.request.Match))
+	rendered, blocker, err := s.renderRecognition(ctx, recognitionRenderInput(plan, file, episode))
 	if err != nil {
 		row.Disposition = RecognitionError
 		row.Blockers = []RecognitionBlocker{{Code: RecognitionBlockerTemplateInvalid}}
@@ -855,16 +823,27 @@ func (s *Service) recognitionRenderRow(ctx context.Context, plan *recognitionPla
 		row.Blockers = []RecognitionBlocker{*blocker}
 		return row
 	}
-	if problem := s.recognitionTargetProblem(plan.directory, rendered); problem != nil {
+	if rendered.Skipped {
+		row.Disposition = RecognitionSkip
+		return row
+	}
+	target := joinAbsolute(rendered.Directory, rendered.Filename)
+	problem, err := s.recognitionTargetProblem(ctx, target)
+	if err != nil {
+		row.Disposition = RecognitionError
+		row.Blockers = []RecognitionBlocker{{Code: RecognitionBlockerTemplateInvalid}}
+		return row
+	}
+	if problem != nil {
 		row.Disposition = RecognitionError
 		row.Blockers = []RecognitionBlocker{*problem}
 		return row
 	}
-	row.TargetName = rendered
-	row.TargetPath = joinAbsolute(plan.directory, rendered)
-	// A deeper directory in the target is a move; the same absolute path the
-	// file already has still reads as unchanged.
-	if filepath.Dir(row.TargetPath) != plan.directory {
+	row.TargetName = rendered.Filename
+	row.TargetPath = target
+	// A target in another directory is a move; the same absolute path the file
+	// already has still reads as unchanged.
+	if filepath.Dir(row.TargetPath) != filepath.Dir(file.inspection.absolute) {
 		row.Disposition = RecognitionMove
 	}
 	if row.TargetPath == file.inspection.absolute {
@@ -874,8 +853,8 @@ func (s *Service) recognitionRenderRow(ctx context.Context, plan *recognitionPla
 }
 
 // recognitionSubtitleRow renders a subtitle's suffix over the same facts as its
-// video and composes the target from the video's rendered name.
-func (s *Service) recognitionSubtitleRow(ctx context.Context, plan *recognitionPlan, request RecognitionRequest, groupIndex, fileIndex int, episode *RecognitionEpisode, videoRendered string) RecognitionRow {
+// video and composes the target from the video's rendered path.
+func (s *Service) recognitionSubtitleRow(ctx context.Context, plan *recognitionPlan, groupIndex, fileIndex int, episode *RecognitionEpisode, videoTarget string) RecognitionRow {
 	file := plan.files[fileIndex]
 	row := RecognitionRow{
 		Path: file.inspection.absolute, Name: file.inspection.detail.Entry.Name,
@@ -883,41 +862,37 @@ func (s *Service) recognitionSubtitleRow(ctx context.Context, plan *recognitionP
 		Revision: file.inspection.detail.Revision, Episode: episode,
 		Disposition: RecognitionRename,
 	}
-	suffix := ""
-	if strings.TrimSpace(request.SubtitleTemplate) != "" {
-		rendered, blocker, err := s.renderRecognition(ctx, recognitionRenderInput(file, naming.KindSubtitleSuffix, request.SubtitleTemplate, episode, request.Match))
-		if err != nil {
-			row.Disposition = RecognitionError
-			row.Blockers = []RecognitionBlocker{{Code: RecognitionBlockerTemplateInvalid}}
-			return row
-		}
-		if blocker != nil {
-			row.Disposition = RecognitionError
-			row.Blockers = []RecognitionBlocker{*blocker}
-			return row
-		}
-		suffix = rendered
+	suffix, blocker, err := s.renderRecognitionSuffix(ctx, recognitionRenderInput(plan, file, episode))
+	if err != nil {
+		row.Disposition = RecognitionError
+		row.Blockers = []RecognitionBlocker{{Code: RecognitionBlockerTemplateInvalid}}
+		return row
 	}
-	// The subtitle follows its video, directory parts included: the sidecar
-	// name composes onto the video's basename inside the video's own target
-	// directory.
-	videoDirectory := path.Dir(videoRendered)
-	stem := strings.TrimSuffix(path.Base(videoRendered), path.Ext(videoRendered))
+	if blocker != nil {
+		row.Disposition = RecognitionError
+		row.Blockers = []RecognitionBlocker{*blocker}
+		return row
+	}
+	// The subtitle follows its video: the sidecar name composes onto the
+	// video's basename inside the video's own target directory.
+	stem := strings.TrimSuffix(path.Base(videoTarget), path.Ext(videoTarget))
 	extension := strings.TrimPrefix(filepath.Ext(file.inspection.detail.Entry.Name), ".")
 	name := naming.CompanionSidecarFilename(stem, suffix, extension)
-	if videoDirectory != "." {
-		name = videoDirectory + "/" + name
-	}
-	if problem := s.recognitionTargetProblem(plan.directory, name); problem != nil {
+	target := joinAbsolute(filepath.Dir(videoTarget), name)
+	if problem, err := s.recognitionTargetProblem(ctx, target); err != nil {
+		row.Disposition = RecognitionError
+		row.Blockers = []RecognitionBlocker{{Code: RecognitionBlockerTemplateInvalid}}
+		return row
+	} else if problem != nil {
 		row.Disposition = RecognitionError
 		row.Blockers = []RecognitionBlocker{*problem}
 		return row
 	}
 	row.TargetName = name
-	row.TargetPath = joinAbsolute(plan.directory, name)
+	row.TargetPath = target
 	row.subtitleSuffix = suffix
 	row.subtitleExtension = extension
-	if filepath.Dir(row.TargetPath) != plan.directory {
+	if filepath.Dir(row.TargetPath) != filepath.Dir(file.inspection.absolute) {
 		row.Disposition = RecognitionMove
 	}
 	if row.TargetPath == file.inspection.absolute {
@@ -926,33 +901,30 @@ func (s *Service) recognitionSubtitleRow(ctx context.Context, plan *recognitionP
 	return row
 }
 
-// maxRecognitionDepth bounds how many directory levels one rendered target
-// may descend under the file's folder.
-const maxRecognitionDepth = 16
-
-// recognitionTargetProblem repeats the target legality the naming engine
-// enforces: a relative path of legal segments inside the file's folder,
-// outside the denial zone and the executor namespaces. The segments may
-// descend into subdirectories; traversal, empty levels and absolute escapes
-// are refused.
-func (s *Service) recognitionTargetProblem(directory, name string) *RecognitionBlocker {
-	if name == "" || strings.IndexByte(name, 0) >= 0 || strings.ContainsRune(name, '\\') {
-		return &RecognitionBlocker{Code: RecognitionBlockerTargetInvalid}
+// recognitionTargetProblem checks that a rendered target is a destination this
+// instance may write: an absolute path outside the denial zone and the
+// executor namespaces, inside one of the file manager's authorized roots. A
+// path outside the roots is the row's own blocker; any other refusal is a
+// system fault.
+func (s *Service) recognitionTargetProblem(ctx context.Context, target string) (*RecognitionBlocker, error) {
+	if target == "" || strings.IndexByte(target, 0) >= 0 || strings.ContainsRune(target, '\\') {
+		return &RecognitionBlocker{Code: RecognitionBlockerTargetInvalid}, nil
 	}
-	segments := strings.Split(name, "/")
-	if len(segments) > maxRecognitionDepth+1 {
-		return &RecognitionBlocker{Code: RecognitionBlockerTargetInvalid}
+	if !filepath.IsAbs(target) || path.Base(target) == "." || path.Base(target) == "/" {
+		return &RecognitionBlocker{Code: RecognitionBlockerTargetInvalid}, nil
 	}
-	for _, segment := range segments {
-		if segment == "" || segment == "." || segment == ".." || len([]byte(segment)) > maxPathSegmentBytes {
-			return &RecognitionBlocker{Code: RecognitionBlockerTargetInvalid}
-		}
+	if refuseDenied(s.zone, target) != nil || internalNamespace(target) {
+		return &RecognitionBlocker{Code: RecognitionBlockerTargetInvalid}, nil
 	}
-	absolute := joinAbsolute(directory, name)
-	if refuseDenied(s.zone, absolute) != nil || internalNamespace(absolute) {
-		return &RecognitionBlocker{Code: RecognitionBlockerTargetInvalid}
+	err := s.authorize(ctx, target)
+	if err == nil {
+		return nil, nil
 	}
-	return nil
+	var refused *Error
+	if errors.As(err, &refused) && refused.Code == CodePathOutsideRoots {
+		return &RecognitionBlocker{Code: RecognitionBlockerOutsideRoots}, nil
+	}
+	return nil, err
 }
 
 // markRecognitionConflicts checks every target this request would write: an
@@ -1050,15 +1022,14 @@ func recognitionPlanDigest(plan recognitionPlan, selection parser.ParserSelectio
 		rows = append(rows, rowDigest{Path: row.Path, Revision: row.Revision, Target: row.TargetPath, Disposition: string(row.Disposition), Blockers: blockers})
 	}
 	return requestDigest(struct {
-		Directory        string
-		ParserID         string
-		ParserConfig     string
-		VideoTemplate    string
-		SubtitleTemplate string
-		UnknownRoute     string
-		Match            recognitionMatchDigest
-		Rows             []rowDigest
-	}{plan.directory, selection.ID, string(selection.Config), request.VideoTemplate, request.SubtitleTemplate, plan.unknownRoute, digestRecognitionMatch(request.Match), rows})
+		Directory    string
+		ParserID     string
+		ParserConfig string
+		Naming       naming.NamingRules
+		UnknownRoute string
+		Match        recognitionMatchDigest
+		Rows         []rowDigest
+	}{plan.directory, selection.ID, string(selection.Config), request.Naming, plan.unknownRoute, digestRecognitionMatch(request.Match), rows})
 }
 
 type recognitionMatchDigest struct {
@@ -1105,14 +1076,13 @@ func digestRecognitionMatch(match *RecognitionMatch) recognitionMatchDigest {
 // request; it does not depend on what the filesystem looked like when it ran.
 func recognitionRequestDigest(request SubmitRecognitionRequest) string {
 	return requestDigest(struct {
-		Paths            []string
-		ParserID         string
-		ParserConfig     string
-		VideoTemplate    string
-		SubtitleTemplate string
-		Match            recognitionMatchDigest
-		Conflict         RecognitionConflictChoice
-	}{request.Paths, request.Parser.ID, string(request.Parser.Config), request.VideoTemplate, request.SubtitleTemplate, digestRecognitionMatch(request.Match), request.Conflict})
+		Paths        []string
+		ParserID     string
+		ParserConfig string
+		Naming       naming.NamingRules
+		Match        recognitionMatchDigest
+		Conflict     RecognitionConflictChoice
+	}{request.Paths, request.Parser.ID, string(request.Parser.Config), request.Naming, digestRecognitionMatch(request.Match), request.Conflict})
 }
 
 // PreviewRecognition renders the plan of one recognition request and writes
@@ -1284,7 +1254,7 @@ func (s *Service) recognitionAdmissions(ctx context.Context, plan recognitionPla
 			continue
 		}
 		directory := filepath.Dir(operation.target)
-		if directory != plan.directory && !seenDirectory[directory] {
+		if directory != filepath.Dir(operation.source) && !seenDirectory[directory] {
 			seenDirectory[directory] = true
 			targetDirectories = append(targetDirectories, directory)
 		}
@@ -1292,7 +1262,7 @@ func (s *Service) recognitionAdmissions(ctx context.Context, plan recognitionPla
 	sort.Strings(targetDirectories)
 	createdDirs := []string{}
 	for _, directory := range targetDirectories {
-		created, err := s.ensureRecognitionDirectory(directory, plan.directory)
+		created, err := s.ensureRecognitionDirectory(directory)
 		if err != nil {
 			removeCreatedDirectories(createdDirs)
 			return nil, nil, err
@@ -1332,7 +1302,7 @@ func (s *Service) recognitionAdmissions(ctx context.Context, plan recognitionPla
 			final[operation.group] = target
 		}
 		kind := UserRename
-		if filepath.Dir(target) != plan.directory {
+		if filepath.Dir(target) != filepath.Dir(operation.source) {
 			kind = UserMove
 		}
 		collision := ConflictBlock
@@ -1357,17 +1327,20 @@ func (s *Service) recognitionAdmissions(ctx context.Context, plan recognitionPla
 	return admissions, createdDirs, nil
 }
 
-// ensureRecognitionDirectory makes directory exist under base, creating every
-// missing level (deepest last in the returned list) and verifying each level
-// is a real directory, never a symlink.
-func (s *Service) ensureRecognitionDirectory(directory, base string) ([]string, error) {
-	if directory == base || !strings.HasPrefix(directory, base+string(filepath.Separator)) {
-		return nil, invalid(CodeTargetInvalid, "target directory is not inside the folder")
+// ensureRecognitionDirectory makes directory exist, creating every missing
+// level (deepest last in the returned list) and verifying each level is a real
+// directory, never a symlink. The target's authorization was decided when the
+// plan rendered it; the walk only repeats the denial-zone and namespace refusal.
+func (s *Service) ensureRecognitionDirectory(directory string) ([]string, error) {
+	if !filepath.IsAbs(directory) || path.Clean(directory) == "/" || path.Clean(directory) == "." {
+		return nil, invalid(CodeTargetInvalid, "target directory is not usable")
 	}
 	created := []string{}
-	current := base
-	relative := strings.TrimPrefix(directory, base+string(filepath.Separator))
-	for _, segment := range strings.Split(relative, string(filepath.Separator)) {
+	current := string(filepath.Separator)
+	for _, segment := range strings.Split(strings.TrimPrefix(path.Clean(directory), "/"), "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return nil, invalid(CodeTargetInvalid, "target directory is not usable")
+		}
 		current = joinAbsolute(current, segment)
 		if refuseDenied(s.zone, current) != nil || internalNamespace(current) {
 			return nil, invalid(CodeTargetInvalid, "target directory is not usable")

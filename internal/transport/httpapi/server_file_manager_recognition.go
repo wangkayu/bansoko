@@ -7,13 +7,14 @@ import (
 	"net/http"
 
 	"bansoko/internal/filemanager"
+	"bansoko/internal/postprocessing/naming"
 	"bansoko/internal/transport/httpapi/generated"
 )
 
 // File manager recognition: the preview renders the selected files' targets
 // side-effect-free, and the submit confirms that plan. Both read the same
-// templates and optional match; the submit additionally names the digest the
-// preview returned and how it settles occupied targets.
+// naming rules and optional match; the submit additionally names the digest
+// the preview returned and how it settles occupied targets.
 
 // PreviewFileManagerRecognition renders what recognizing the selected files
 // would name them.
@@ -37,7 +38,7 @@ func (s *Server) PreviewFileManagerRecognition(w http.ResponseWriter, r *http.Re
 }
 
 func (s *Server) previewFileManagerRecognition(ctx context.Context, input generated.FileManagerRecognitionRequest) (generated.FileManagerRecognitionPreview, error) {
-	request, err := mapFileManagerRecognitionRequest(input.Paths, input.VideoTemplate, input.SubtitleTemplate, input.Parser, input.Match)
+	request, err := mapFileManagerRecognitionRequest(input.Paths, input.Naming, input.Parser, input.Match)
 	if err != nil {
 		return generated.FileManagerRecognitionPreview{}, err
 	}
@@ -70,7 +71,7 @@ func (s *Server) SubmitFileManagerRecognition(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) submitFileManagerRecognition(ctx context.Context, idempotencyKey string, input generated.FileManagerRecognitionSubmitRequest) (generated.FileManagerRecognitionResult, error) {
-	request, err := mapFileManagerRecognitionRequest(input.Paths, input.VideoTemplate, input.SubtitleTemplate, input.Parser, input.Match)
+	request, err := mapFileManagerRecognitionRequest(input.Paths, input.Naming, input.Parser, input.Match)
 	if err != nil {
 		return generated.FileManagerRecognitionResult{}, err
 	}
@@ -92,14 +93,13 @@ func (s *Server) submitFileManagerRecognition(ctx context.Context, idempotencyKe
 }
 
 // mapFileManagerRecognitionRequest maps the shared request fields of the
-// preview and the submit. A parser config that is not an object is refused.
-func mapFileManagerRecognitionRequest(paths []string, videoTemplate string, subtitleTemplate *string, parser *generated.FileManagerRecognitionParser, match *generated.FileManagerRecognitionMatch) (filemanager.RecognitionRequest, error) {
+// preview and the submit. The naming rules are the operation's own, exactly the
+// value one-shot renders with. A parser config that is not an object is
+// refused.
+func mapFileManagerRecognitionRequest(paths []string, rules generated.NamingRules, parser *generated.FileManagerRecognitionParser, match *generated.FileManagerRecognitionMatch) (filemanager.RecognitionRequest, error) {
 	request := filemanager.RecognitionRequest{
-		Paths:         append([]string{}, paths...),
-		VideoTemplate: videoTemplate,
-	}
-	if subtitleTemplate != nil {
-		request.SubtitleTemplate = *subtitleTemplate
+		Paths:  append([]string{}, paths...),
+		Naming: mapFileManagerNamingRules(rules),
 	}
 	if parser != nil {
 		if parser.Id != nil {
@@ -126,6 +126,31 @@ func mapFileManagerRecognitionRequest(paths []string, videoTemplate string, subt
 		}
 	}
 	return request, nil
+}
+
+// mapFileManagerNamingRules maps the API's naming rules to the naming core's
+// own value.
+func mapFileManagerNamingRules(rules generated.NamingRules) naming.NamingRules {
+	mapped := naming.NamingRules{
+		TV: naming.NamingVariant{
+			DirectoryTemplate:     rules.Tv.DirectoryTemplate,
+			VideoFilenameTemplate: rules.Tv.VideoFilenameTemplate,
+		},
+		Movie: naming.NamingVariant{
+			DirectoryTemplate:     rules.Movie.DirectoryTemplate,
+			VideoFilenameTemplate: rules.Movie.VideoFilenameTemplate,
+		},
+		Unknown: naming.NamingVariant{
+			DirectoryTemplate:     rules.Unknown.DirectoryTemplate,
+			VideoFilenameTemplate: rules.Unknown.VideoFilenameTemplate,
+		},
+		SubtitleSuffixTemplate: rules.SubtitleSuffixTemplate,
+		Language:               string(rules.Language),
+	}
+	if rules.Preset != nil {
+		mapped.Preset = *rules.Preset
+	}
+	return mapped
 }
 
 // mapFileManagerRecognitionAnimeDraft maps the operation's temporary draft.

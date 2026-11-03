@@ -14,30 +14,32 @@ import (
 	"bansoko/internal/templatefacts"
 )
 
-// File manager recognition: a supplied video filename template (or subtitle
-// suffix template) rendered over the facts of one local file. It is the naming
-// core one-shot step two renders with, under a different input adapter: the
-// episode comes from the caller's own parser evidence over the file name, and
-// the release-level rt.* values come from parsing that same name. Nothing here
-// reads a placement, an artifact or a stored naming rule: the template is the
-// operation's own, and the match (when the user chose one) supplies only the
-// anime facts the template asks for.
+// File manager recognition: the naming rules one-shot step two renders with,
+// over the facts of one local file. It is the naming core under a different
+// input adapter: the episode comes from the caller's own parser evidence over
+// the file name, and the release-level rt.* values come from parsing that same
+// name. Nothing here reads a placement, an artifact or a stored naming rule:
+// the rules are the operation's own, and the match (when the user chose one)
+// supplies only the anime facts the rules ask for.
 //
-// The naming engine stays the only authority for what a target may be: a
-// rendered filename must be one non-empty path segment (the file's own folder
-// member), and a subtitle suffix must not escape the video's basename. A
-// template that reads a fact this render does not have is a typed diagnostic,
-// never a guessed value.
+// The rendered directory is absolute, exactly as one-shot renders it: the
+// selected folder only says where the files come from. Whether that directory
+// is a target this instance may write is the caller's decision. The naming
+// engine stays the only authority for the shape: the directory must render
+// absolute and the filename must be one non-empty path segment. A template
+// that reads a fact this render does not have is a typed diagnostic, never a
+// guessed value.
 
 // Recognition render failure codes (RecognitionRenderError.Code).
 const (
 	// RecognitionRenderFactsMissing: the template reads a fact this render
 	// does not carry (no match for an anime fact, an unknown Vars name).
 	RecognitionRenderFactsMissing = "facts_missing"
-	// RecognitionRenderTemplateInvalid: the template does not compile.
+	// RecognitionRenderTemplateInvalid: the rules do not compile.
 	RecognitionRenderTemplateInvalid = "template_invalid"
-	// RecognitionRenderTargetInvalid: the rendered value is not a usable
-	// member of the file's folder (empty, contains a separator, traversal).
+	// RecognitionRenderTargetInvalid: the rendered output is not a usable
+	// destination (a relative or empty directory, a filename that is not one
+	// path segment, traversal).
 	RecognitionRenderTargetInvalid = "target_invalid"
 )
 
@@ -59,12 +61,17 @@ func (e *RecognitionRenderError) Error() string {
 
 func (e *RecognitionRenderError) Unwrap() error { return e.cause }
 
-// RecognitionRenderInput is one file's render input. Kind selects the
-// template kind: naming.KindVideoFilename for a file's own name (video or
-// other) or naming.KindSubtitleSuffix for a subtitle's suffix.
+// RecognitionRenderInput is one file's render input.
 type RecognitionRenderInput struct {
-	Kind     naming.TemplateKind
-	Template string
+	// Rules are this operation's own naming rules, exactly the value one-shot
+	// renders with: the directory and video filename of the variant this
+	// render picks, and the subtitle suffix.
+	Rules naming.NamingRules
+	// UnknownRoute organizes a file with no episode identity with the rules'
+	// unknown variant. Without it such a file is left where it is (Skipped):
+	// the same two outcomes one-shot's unclassified route decides between. A
+	// movie names with the movie variant, as its main video does in one-shot.
+	UnknownRoute bool
 
 	// FileName is the current base name, extension included.
 	FileName  string
@@ -116,22 +123,65 @@ type RecognitionAnimeDraft struct {
 	TMDBSeason    int
 }
 
-// RenderRecognition renders one supplied template over the input's facts and
-// returns the rendered value. For KindVideoFilename and the path-bearing
-// KindRelativeFilename the value is the target file name (the latter may
-// carry `/`-separated directory parts under the file's own folder); for
-// KindSubtitleSuffix it is the suffix the caller composes onto the rendered
-// video basename.
-func (r *NamingTargetRenderer) RenderRecognition(ctx context.Context, in RecognitionRenderInput) (string, error) {
+// RecognitionRendered is one rendered target: the absolute directory the rules
+// render and the filename inside it. EmptyFacts are the catalog facts that
+// rendered empty (sorted), the same list a template preview reports. Skipped
+// reports that the file is left where it is: it has no episode identity and
+// the unclassified route leaves such files alone.
+type RecognitionRendered struct {
+	Directory  string
+	Filename   string
+	Skipped    bool
+	EmptyFacts []string
+}
+
+// RenderRecognition renders the rules over the input's facts and returns the
+// directory and filename of the file's target. The TV or movie variant is
+// chosen by the effective media kind; a file with no episode identity that is
+// not a movie is organized with the unknown variant under the route, otherwise
+// skipped — one-shot's own choice for its unclassified files.
+func (r *NamingTargetRenderer) RenderRecognition(ctx context.Context, in RecognitionRenderInput) (RecognitionRendered, error) {
+	compiled, engine, namingContext, err := r.compileRecognition(ctx, in)
+	if err != nil {
+		return RecognitionRendered{}, err
+	}
+	resolved := r.resolveRecognition(in, namingContext)
+	render := compiled.RenderVideoDetailed
+	if strings.TrimSpace(in.Episode) == "" && naming.MediaKind(resolved.Derived.EffectiveMediaKind) != naming.MediaKindMovie {
+		// An unclassified file never borrows an episode: it follows the
+		// unclassified route to the unknown variant, or stays put.
+		if !in.UnknownRoute {
+			return RecognitionRendered{Skipped: true}, nil
+		}
+		render = compiled.RenderUnknownDetailed
+	}
+	rendered, err := render(engine, resolved)
+	if err != nil {
+		return RecognitionRendered{}, classifyRecognitionRender(err)
+	}
+	return RecognitionRendered{Directory: rendered.Directory, Filename: rendered.Filename, EmptyFacts: rendered.EmptyFacts}, nil
+}
+
+// RenderRecognitionSuffix renders the rules' subtitle suffix over the same
+// facts: the suffix the caller composes onto the rendered video basename.
+func (r *NamingTargetRenderer) RenderRecognitionSuffix(ctx context.Context, in RecognitionRenderInput) (string, error) {
+	compiled, engine, namingContext, err := r.compileRecognition(ctx, in)
+	if err != nil {
+		return "", err
+	}
+	rendered, err := compiled.RenderSubtitleSuffixDetailed(engine, r.resolveRecognition(in, namingContext))
+	if err != nil {
+		return "", classifyRecognitionRender(err)
+	}
+	return rendered.Value, nil
+}
+
+// compileRecognition assembles the file's naming context and compiles the
+// operation's rules over the current Vars snapshot.
+func (r *NamingTargetRenderer) compileRecognition(ctx context.Context, in RecognitionRenderInput) (naming.CompiledNamingRules, *naming.Engine, naming.NamingContext, error) {
 	fileName := path.Base(strings.ReplaceAll(strings.TrimSpace(in.FileName), "\\", "/"))
 	if fileName == "" || fileName == "." || fileName == ".." || fileName == "/" {
-		return "", errors.New("recognition render requires a file name")
-	}
-	if in.Kind != naming.KindVideoFilename && in.Kind != naming.KindRelativeFilename && in.Kind != naming.KindSubtitleSuffix {
-		return "", errors.New("recognition render kind is not video_filename, relative_filename or subtitle_suffix")
-	}
-	if strings.TrimSpace(in.Template) == "" && (in.Kind == naming.KindVideoFilename || in.Kind == naming.KindRelativeFilename) {
-		return "", &RecognitionRenderError{Code: RecognitionRenderTemplateInvalid, cause: errors.New("video filename template is empty")}
+		return naming.CompiledNamingRules{}, nil, naming.NamingContext{}, errors.New("recognition render requires a file name")
 	}
 
 	// Presentation Vars belong to the deployment, not to the file: a
@@ -142,31 +192,31 @@ func (r *NamingTargetRenderer) RenderRecognition(ctx context.Context, in Recogni
 	if current, _, err := namingvars.Current(); err == nil {
 		vars = current
 	}
-	engine := naming.NewEngine()
-	compiled, err := engine.CompileWithVars(in.Kind, in.Template, vars)
-	if err != nil {
-		return "", classifyRecognitionRender(err)
-	}
-
 	namingContext, err := r.recognitionContext(ctx, in, fileName)
 	if err != nil {
-		return "", err
+		return naming.CompiledNamingRules{}, nil, naming.NamingContext{}, err
 	}
 	namingContext, err = naming.WithVars(namingContext, vars)
 	if err != nil {
-		return "", &RecognitionRenderError{Code: RecognitionRenderFactsMissing, cause: err}
+		return naming.CompiledNamingRules{}, nil, naming.NamingContext{}, &RecognitionRenderError{Code: RecognitionRenderFactsMissing, cause: err}
 	}
+	engine := naming.NewEngine()
+	compiled, err := engine.CompileRulesWithVars(in.Rules, vars)
+	if err != nil {
+		return naming.CompiledNamingRules{}, nil, naming.NamingContext{}, classifyRecognitionRender(err)
+	}
+	return compiled, engine, namingContext, nil
+}
+
+// resolveRecognition fills the resolved facts one render reads.
+func (r *NamingTargetRenderer) resolveRecognition(in RecognitionRenderInput, namingContext naming.NamingContext) naming.NamingContext {
 	resolved := naming.DefaultRegistry().ResolveAll(naming.ResolverInput{Facts: namingContext})
 	// The special classification is the resolver's reading of the file's own
 	// name; a caller with its own parser evidence may state it instead.
 	if in.EpisodeSpecial != "" {
 		resolved.Context.Parsed.Episode.SpecialKind = in.EpisodeSpecial
 	}
-	value, err := engine.Render(compiled, resolved.Context)
-	if err != nil {
-		return "", classifyRecognitionRender(err)
-	}
-	return value, nil
+	return resolved.Context
 }
 
 // recognitionContext assembles the naming context of one file. Only the

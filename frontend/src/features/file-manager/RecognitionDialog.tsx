@@ -38,13 +38,14 @@ import { useIdempotencyKeys } from "./batch";
 // RecognitionDialog — the complex window behind 识别…: the naming core one-shot
 // step two renders with, fed by the manual selection instead of a seed
 // manifest. The right side is the same editors one-shot uses (parser, then the
-// naming templates; the filename may carry subdirectory levels, which land
-// inside the selection's folder shown above the plan) plus this operation's
-// optional match; the left side is the server's rendered plan, refreshed as
-// the configuration changes. Nothing is written until 应用: conflicts are
-// settled by the skip / version / replace / cancel choice, and the submit
-// confirms the plan digest the preview returned. A disabled 应用 carries the
-// reason as its tooltip.
+// naming templates: an absolute target folder and a filename, with the unknown
+// and subtitle variants) plus this operation's optional match; the left side is
+// the server's rendered plan, refreshed as the configuration changes. The folder
+// the files were selected in only says where they come from; every target is
+// rendered by the rules and must land inside the file manager's roots. Nothing
+// is written until 应用: conflicts are settled by the skip / version / replace /
+// cancel choice, and the submit confirms the plan digest the preview returned. A
+// disabled 应用 carries the reason as its tooltip.
 const DEBOUNCE_MS = 400;
 
 const EMPTY_NAMING: NamingRules = {
@@ -121,7 +122,11 @@ export function RecognitionDialog({
   const parserRules = rules.parser?.mode === "replace" ? rules.parser.value : { episode_patterns: [] };
   const patterns = parserRules.episode_patterns;
   const naming = rules.naming?.mode === "replace" ? rules.naming.value : EMPTY_NAMING;
-  const videoTemplate = naming.tv.video_filename_template;
+  // Every media kind has its own variant, and the one the matched file resolves
+  // to decides which renders. An empty variant renders no filename, so the
+  // preview is only requested once at least one variant can name a file; a
+  // variant left empty simply cannot name that kind of file.
+  const namingEmpty = [naming.tv, naming.movie, naming.unknown].every((variant) => variant.video_filename_template.trim() === "");
   // The shared section cards, with hints for this operation's input: file names
   // in one folder, not an RSS title and a folder tree.
   const hints = { parser: t("fileManager.recognize.parserHint"), naming: t("fileManager.recognize.namingHint") };
@@ -164,8 +169,7 @@ export function RecognitionDialog({
   const inputs = {
     parserKind,
     patterns,
-    videoTemplate,
-    subtitleTemplate: naming.subtitle_suffix_template,
+    naming,
     title,
     metadata,
     episodeText,
@@ -175,7 +179,7 @@ export function RecognitionDialog({
   const settled = Object.keys(debounced).every((key) => debounced[key as keyof typeof debounced] === inputs[key as keyof typeof inputs]);
 
   const request = useMemo<FileManagerRecognitionRequest | null>(() => {
-    if (videoTemplate.trim() === "") return null;
+    if (namingEmpty) return null;
     const d = debounced;
     const dEpisode = wholeNumber(d.episodeText, 1, 99999);
     const dOffset = wholeNumber(d.offsetText, -99999, 99999);
@@ -196,8 +200,7 @@ export function RecognitionDialog({
         d.parserKind === "regex"
           ? { id: "regex", ...(d.patterns.length > 0 ? { config: { episode_patterns: d.patterns } } : {}) }
           : { id: "reltitle" },
-      video_template: d.videoTemplate,
-      subtitle_template: d.subtitleTemplate,
+      naming: d.naming,
       ...(hasMatch
         ? {
             match: {
@@ -260,7 +263,7 @@ export function RecognitionDialog({
   // silently disabled. busy shows the spinner, so it stays untipped.
   let applyDisabledReason: string | undefined;
   if (!busy) {
-    if (videoTemplate.trim() === "") applyDisabledReason = t("fileManager.recognize.preview.emptyTemplate");
+    if (namingEmpty) applyDisabledReason = t("fileManager.recognize.preview.emptyTemplate");
     else if (numberInvalid) applyDisabledReason = t("fileManager.recognize.invalidNumber");
     else if (!data) applyDisabledReason = t("fileManager.recognize.preview.loading");
     else if (preview.isError) applyDisabledReason = t("fileManager.recognize.preview.failed");
@@ -339,14 +342,14 @@ export function RecognitionDialog({
               {t("fileManager.recognize.preview.heading")}
               <span className="tw:ml-2 tw:text-xs tw:font-normal tw:text-muted-foreground">{t("fileManager.recognize.preview.sub")}</span>
             </h3>
-            {/* The folder every rendered target resolves against — subdirectory
-                levels in the filename template land inside it. */}
+            {/* Where the selected files were read from. Targets are rendered by
+                the naming rules and are shown absolute on each row. */}
             {data ? (
               <p className="text-caption break-anywhere tw:m-0 tw:text-muted-foreground" title={data.directory}>
                 {t("fileManager.recognize.preview.folder", { path: data.directory })}
               </p>
             ) : null}
-            {videoTemplate.trim() === "" ? (
+            {namingEmpty ? (
               <Alert tone="warning" title={t("fileManager.recognize.preview.emptyTemplate")} />
             ) : numberInvalid ? (
               <Alert tone="warning" title={t("fileManager.recognize.invalidNumber")} />
@@ -408,7 +411,7 @@ export function RecognitionDialog({
                       ) : undefined
                     }
                   />
-                  <RulesSectionsFields sections={rules} onChange={(next) => update({ rules: next })} only={NAMING_ONLY} namingVariant="filename" />
+                  <RulesSectionsFields sections={rules} onChange={(next) => update({ rules: next })} only={NAMING_ONLY} />
                 </>
               ),
             }}

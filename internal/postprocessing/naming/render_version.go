@@ -355,28 +355,6 @@ func normalizeFilename(value string, render2 bool) (string, error) {
 	return name, nil
 }
 
-// normalizeRelativeFilename normalizes a rendered relative filename — one
-// filename per `/`-separated level, joined back with single slashes. The
-// separator structure itself is validated by target validation; here every
-// level runs the same normalization a plain filename does.
-func normalizeRelativeFilename(value string, render2 bool) (string, error) {
-	if value == "" {
-		return "", errEmptyStem
-	}
-	segments := strings.Split(value, "/")
-	for index, segment := range segments {
-		normalized, err := normalizeFilename(segment, render2)
-		if err != nil {
-			return "", err
-		}
-		if normalized == "" {
-			return "", errEmptySegment
-		}
-		segments[index] = normalized
-	}
-	return strings.Join(segments, "/"), nil
-}
-
 // interpolationShape classifies the required facts of an analysed template
 // expression. A fact whose every occurrence is a whole interpolation
 // (`${anime.year}`) renders "" when empty; any other read is strict (see

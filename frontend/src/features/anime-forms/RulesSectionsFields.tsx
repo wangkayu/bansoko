@@ -96,7 +96,6 @@ export function RulesSectionsFields({
   only,
   parserChoice,
   parserKind,
-  namingVariant,
   hints,
   afterReleaseFilter,
   afterFileEffect,
@@ -118,12 +117,6 @@ export function RulesSectionsFields({
    * 但不改动已保存的规则。未知（undefined）按 regex 显示。
    */
   parserKind?: string;
-  /**
-   * The naming editor's shape. `filename` keeps the file in its folder and edits
-   * only a video's whole filename and a subtitle's suffix (file-manager
-   * recognition, which names within one directory).
-   */
-  namingVariant?: "full" | "filename";
   /**
    * Per-section one-line hints replacing the defaults, for a caller whose
    * input is not the anime's own: file-manager recognition parses file names
@@ -199,7 +192,7 @@ export function RulesSectionsFields({
 
       {shown("naming") && (
         <SectionCard meta={meta("naming")} modified={modified?.has("naming")}>
-          <AnimeNamingFields value={naming.value as NamingRules} onChange={(next) => naming.setValue(next)} variant={namingVariant} />
+          <AnimeNamingFields value={naming.value as NamingRules} onChange={(next) => naming.setValue(next)} />
         </SectionCard>
       )}
 
@@ -289,10 +282,10 @@ function TagRow({
 }
 
 // Per-anime naming: "choose template" copies a global library template's content into this anime's field; there is no sample selection.
-function AnimeNamingFields({ value, onChange, variant }: { value: NamingRules; onChange: (next: NamingRules) => void; variant?: "full" | "filename" }) {
+function AnimeNamingFields({ value, onChange }: { value: NamingRules; onChange: (next: NamingRules) => void }) {
   const library = useQuery({
     queryKey: configKeys.namingTemplates,
     queryFn: getNamingTemplateLibrary,
   });
-  return <NamingTemplateFields value={value} onChange={onChange} templates={library.data?.templates} variant={variant} />;
+  return <NamingTemplateFields value={value} onChange={onChange} templates={library.data?.templates} />;
 }

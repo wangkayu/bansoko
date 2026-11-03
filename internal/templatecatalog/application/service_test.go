@@ -628,35 +628,3 @@ func strOrEmpty(value *string) string {
 	}
 	return *value
 }
-
-// A relative filename preview renders the levels below the sample folder and
-// refuses a traversal the same way the plain filename preview does.
-func TestPreviewNamingRelativeFilename(t *testing.T) {
-	service := NewService()
-	preview, err := service.PreviewNaming(context.Background(), namingPreviewInput(
-		NamingTemplatePreviewInputTemplateKindRelativeFilename,
-		"${pad(ep.number, 2)}/${sanitize(anime.title)} - ${pad(ep.number, 2)}.${file.ext}",
-	))
-	if err != nil {
-		t.Fatalf("PreviewNaming returned error: %v", err)
-	}
-	if !preview.Valid {
-		t.Fatalf("expected valid preview, got errors: %+v", preview.Errors)
-	}
-	if want := "07/进击的巨人 - 07.mkv"; preview.Rendered != want {
-		t.Errorf("rendered = %q, want %q", preview.Rendered, want)
-	}
-
-	preview, err = service.PreviewNaming(context.Background(), namingPreviewInput(
-		NamingTemplatePreviewInputTemplateKindRelativeFilename, `../escape.mkv`,
-	))
-	if err != nil {
-		t.Fatalf("PreviewNaming returned error: %v", err)
-	}
-	if preview.Valid {
-		t.Fatal("expected invalid preview for a traversal")
-	}
-	if len(preview.Errors) != 1 || preview.Errors[0].Code != "NAMING_TARGET_INVALID" {
-		t.Fatalf("expected NAMING_TARGET_INVALID, got %+v", preview.Errors)
-	}
-}

@@ -2841,7 +2841,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Shows what renaming and moving a manually selected set of files in one directory would do, and writes nothing. Every file renders the operation's own video template over the facts parsed from its own name; the subtitles bound to a video (the one subtitle rule) render the subtitle suffix template onto the video's rendered name. A match is optional and supplies only anime facts: a template that reads a fact the render does not have is a row blocker, never an error. A video without a recognized episode is not rendered: it follows the instance unclassified-route policy (`route` moves it and its subtitles under their own names into the folder's Extras, `skip` leaves them). Every rendered target is one member of the file's own folder: an empty value or one carrying a separator is a row blocker. The answer names each row's target, disposition, episode and blockers, the occupied or internally duplicated targets, and the plan digest the submit must confirm. */
+        /** @description Shows what renaming and moving a manually selected set of files would do, and writes nothing. Every file renders the operation's own naming rules — the same rules one-shot step two renders with — over the facts parsed from its own name; the subtitles bound to a video (the one subtitle rule) render the same rules' subtitle suffix onto the video's rendered name. The rules render an absolute target directory and a filename, exactly as one-shot does: the folder the files were selected in only says where they come from. A match is optional and supplies only anime facts: a template that reads a fact the render does not have is a row blocker, never an error. A file without a recognized episode follows the instance unclassified-route policy (`route` organizes it with the rules' unknown variant, `skip` leaves it and its subtitles where they are). A rendered target outside the file manager's authorized roots is a row blocker (`outside_roots`). The answer names each row's target, disposition, episode and blockers, the occupied or internally duplicated targets, and the plan digest the submit must confirm. */
         post: operations["previewFileManagerRecognition"];
         delete?: never;
         options?: never;
@@ -6364,10 +6364,7 @@ export interface components {
             /** @description Absolute paths of the selected files, all in one directory. */
             paths: string[];
             parser?: components["schemas"]["FileManagerRecognitionParser"];
-            /** @description Template of each video's (and other file's) whole target name, rendered over the facts of the file's own name. */
-            video_template: string;
-            /** @description Template of a subtitle's suffix; empty leaves the subtitle name without a suffix. The target composes the video's rendered name. */
-            subtitle_template?: string;
+            naming: components["schemas"]["NamingRules"];
             match?: components["schemas"]["FileManagerRecognitionMatch"];
         };
         /**
@@ -6376,10 +6373,10 @@ export interface components {
          */
         FileManagerRecognitionDisposition: "rename" | "move" | "unchanged" | "skip" | "error";
         /**
-         * @description Why a row cannot be rendered: the template reads facts this render lacks (`facts_missing`, with their paths), does not compile (`template_invalid`), renders an unusable target (`target_invalid`), or the subtitle's video is not selected (`video_missing`) or failed (`video_failed`).
+         * @description Why a row cannot be rendered: the template reads facts this render lacks (`facts_missing`, with their paths), does not compile (`template_invalid`), renders an unusable target (`target_invalid`), renders a target outside the file manager's authorized roots (`outside_roots`), or the subtitle's video is not selected (`video_missing`) or failed (`video_failed`).
          * @enum {string}
          */
-        FileManagerRecognitionBlockerCode: "facts_missing" | "template_invalid" | "target_invalid" | "video_missing" | "video_failed";
+        FileManagerRecognitionBlockerCode: "facts_missing" | "template_invalid" | "target_invalid" | "outside_roots" | "video_missing" | "video_failed";
         FileManagerRecognitionBlocker: {
             code: components["schemas"]["FileManagerRecognitionBlockerCode"];
             facts?: string[];
@@ -6423,6 +6420,7 @@ export interface components {
          */
         FileManagerRecognitionUnknownRoute: "skip" | "route";
         FileManagerRecognitionPreview: {
+            /** @description The folder the selected files were read from. */
             directory: string;
             rows: components["schemas"]["FileManagerRecognitionRow"][];
             unknown_route: components["schemas"]["FileManagerRecognitionUnknownRoute"];
@@ -6441,8 +6439,7 @@ export interface components {
         FileManagerRecognitionSubmitRequest: {
             paths: string[];
             parser?: components["schemas"]["FileManagerRecognitionParser"];
-            video_template: string;
-            subtitle_template?: string;
+            naming: components["schemas"]["NamingRules"];
             match?: components["schemas"]["FileManagerRecognitionMatch"];
             /** @description The `plan_digest` the preview returned. */
             expected_plan_digest: string;
@@ -7302,10 +7299,10 @@ export interface components {
         };
         NamingTemplatePreviewInput: {
             /**
-             * @description Rendered shape of template_source: a directory (absolute path), a video filename (one segment), a path-bearing filename (`/`-separated levels below the file's own folder), or a subtitle suffix.
+             * @description Rendered shape of template_source: a directory (absolute path), a video filename (one segment), or a subtitle suffix.
              * @enum {string}
              */
-            template_kind: "directory" | "video_filename" | "relative_filename" | "subtitle_suffix";
+            template_kind: "directory" | "video_filename" | "subtitle_suffix";
             /** @description The template body to preview, written like a stored value: the text between the backticks with `${...}` interpolations, no outer backticks. A value wrapped in its own backticks is refused. */
             template_source: string;
             /** @description Optional fixed redacted sample selector from the naming template catalog; omitted uses the default sample. */
