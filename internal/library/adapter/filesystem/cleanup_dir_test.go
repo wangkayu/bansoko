@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	maintenance "bansoko/internal/filemaintenance/executor"
+	"bansoko/internal/testutil/maintenancestore"
 )
 
 // A captured directory is purged recursively: the two-phase delete captures the
@@ -39,6 +40,7 @@ func TestMaintenanceDirectoryQuarantinePurge(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := NewOSCleanupExecutor(root)
+	e.Receipts = maintenancestore.New()
 	expected, err := e.ObserveMetadataFile(context.Background(), source)
 	if err != nil {
 		t.Fatal(err)
@@ -84,6 +86,7 @@ func TestMaintenanceDirectoryPurgeRejectsReplacedObject(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := NewOSCleanupExecutor(root)
+	e.Receipts = maintenancestore.New()
 	expected, err := e.ObserveMetadataFile(context.Background(), source)
 	if err != nil {
 		t.Fatal(err)

@@ -1,13 +1,15 @@
 package filesystem
 
 import (
-	maintenance "bansoko/internal/filemaintenance/executor"
-	"bansoko/internal/library/domain"
 	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	maintenance "bansoko/internal/filemaintenance/executor"
+	"bansoko/internal/library/domain"
+	"bansoko/internal/testutil/maintenancestore"
 )
 
 func TestMaintenanceActualMoveFinalReceiptAndCrashGap(t *testing.T) {
@@ -24,11 +26,12 @@ func TestMaintenanceActualMoveFinalReceiptAndCrashGap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	store := maintenancestore.New()
+	executor := OSFileExecutor{Receipts: store}
 	i := maintenance.MaintenanceInvocation{OwnerType: "alignment_operation", OwnerID: "owner", Kind: "alignment_execute", WorkItemID: "work", OwnerVersion: 2, Attempt: []byte(`{"fencing_token":1}`), Source: source, Target: target, Fingerprint: observed.Fingerprint}
-	executor := OSFileExecutor{}
 	// A target/source observation before a final receipt is never proof.
 	if _, err := executor.ReadMaintenanceReceipt(context.Background(), i); !errors.Is(err, maintenance.ErrMaintenanceNotStarted) {
-		t.Fatalf("absent start marker must report not-started, got %v", err)
+		t.Fatalf("absent start proof must report not-started, got %v", err)
 	}
 	_, err = executor.ExecuteMaintenance(context.Background(), domain.FileOperation{Operation: domain.OperationMove, SourcePath: source, TargetPath: target, SourceFingerprint: observed.Fingerprint, CollisionPolicy: domain.CollisionBlock}, i)
 	if err != nil {
@@ -48,38 +51,43 @@ func TestMaintenanceActualMoveFinalReceiptAndCrashGap(t *testing.T) {
 	if _, err := executor.ReadMaintenanceReceipt(context.Background(), wrong); err == nil {
 		t.Fatal("foreign invocation accepted")
 	}
-	token, err := i.Token()
+	// Simulate the unavoidable process-crash gap after the OS effect and before
+	// the final receipt: a fresh invocation whose start proof was written and
+	// whose move then landed without a final is adopted from the observation.
+	crashSource := filepath.Join(root, "crash-source")
+	crashTarget := filepath.Join(root, "crash-target")
+	if err := os.WriteFile(crashSource, []byte("maintenance"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	crashObserved, err := observeFile(crashSource)
 	if err != nil {
 		t.Fatal(err)
 	}
-	marker, err := PublicationMarkerPath(target, token+"-final")
-	if err != nil {
+	crashed := maintenance.MaintenanceInvocation{OwnerType: "alignment_operation", OwnerID: "owner", Kind: "alignment_execute", WorkItemID: "work-crash", OwnerVersion: 2, Attempt: []byte(`{"fencing_token":1}`), Source: crashSource, Target: crashTarget, Fingerprint: crashObserved.Fingerprint}
+	if err := writeMaintenanceStarted(context.Background(), store, crashed); err != nil {
 		t.Fatal(err)
 	}
-	// Simulate the unavoidable process-crash gap after OS effect before fsync
-	// receipt: target presence cannot fabricate executor-final proof.
-	if err := os.Remove(marker); err != nil {
+	if err := os.Rename(crashSource, crashTarget); err != nil {
 		t.Fatal(err)
 	}
-	if r, err := executor.ReadMaintenanceReceipt(context.Background(), i); err != nil || r.Validate(i) != nil {
+	if r, err := executor.ReadMaintenanceReceipt(context.Background(), crashed); err != nil || r.Validate(crashed) != nil {
 		t.Fatalf("quiesced started move not adopted: %+v %v", r, err)
 	}
-	started, err := PublicationMarkerPath(target, token+"-started")
+	// A started invocation is never reported as not started, even when its
+	// effect cannot be adopted (its source is still in place).
+	stuckSource := filepath.Join(root, "stuck-source")
+	if err := os.WriteFile(stuckSource, []byte("maintenance"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	stuckObserved, err := observeFile(stuckSource)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A started invocation is never reported as not started, even when its
-	// effect cannot be adopted.
-	if err := os.WriteFile(source, []byte("maintenance"), 0600); err != nil {
+	stuck := maintenance.MaintenanceInvocation{OwnerType: "alignment_operation", OwnerID: "owner", Kind: "alignment_execute", WorkItemID: "work-stuck", OwnerVersion: 2, Attempt: []byte(`{"fencing_token":1}`), Source: stuckSource, Target: filepath.Join(root, "stuck-target"), Fingerprint: stuckObserved.Fingerprint}
+	if err := writeMaintenanceStarted(context.Background(), store, stuck); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(started); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(marker); err != nil && !os.IsNotExist(err) {
-		t.Fatal(err)
-	}
-	if _, err := executor.ReadMaintenanceReceipt(context.Background(), i); err == nil || errors.Is(err, maintenance.ErrMaintenanceNotStarted) {
+	if _, err := executor.ReadMaintenanceReceipt(context.Background(), stuck); err == nil || errors.Is(err, maintenance.ErrMaintenanceNotStarted) {
 		t.Fatalf("started invocation must stay unresolved, got %v", err)
 	}
 }
@@ -96,8 +104,9 @@ func TestMaintenanceGapSameHashForeignInodeRejected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	store := maintenancestore.New()
 	i := maintenance.MaintenanceInvocation{OwnerType: "alignment_operation", OwnerID: "owner", Kind: "alignment_execute", WorkItemID: "work", OwnerVersion: 2, Attempt: []byte(`{"fencing_token":1}`), Source: source, Target: target, Fingerprint: o.Fingerprint}
-	if err := writeMaintenanceStarted(i); err != nil {
+	if err := writeMaintenanceStarted(context.Background(), store, i); err != nil {
 		t.Fatal(err)
 	}
 	// Different inode with identical bytes must not satisfy rename proof.
@@ -107,7 +116,7 @@ func TestMaintenanceGapSameHashForeignInodeRejected(t *testing.T) {
 	if err := os.Remove(source); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := (OSFileExecutor{}).ReadMaintenanceReceipt(context.Background(), i); err == nil {
+	if _, err := (OSFileExecutor{Receipts: store}).ReadMaintenanceReceipt(context.Background(), i); err == nil {
 		t.Fatal("same hash foreign inode adopted")
 	}
 }
@@ -118,20 +127,25 @@ func TestMaintenanceLiveInvocationBlocksReceiptReaderAndDuplicate(t *testing.T) 
 		t.Fatal(err)
 	}
 	i := maintenance.MaintenanceInvocation{OwnerType: "alignment_operation", OwnerID: "live-owner", Kind: "alignment_execute", WorkItemID: "work", OwnerVersion: 2, Attempt: []byte(`{"fencing_token":1}`), Source: filepath.Join(root, "source"), Target: filepath.Join(root, "target"), Fingerprint: "fp"}
-	unlock, err := lockMaintenanceInvocation(i)
+	token, err := i.Token()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := lockMaintenanceInvocation(i); err == nil {
-		unlock()
-		t.Fatal("duplicate invocation acquired live lock")
+	store := maintenancestore.New()
+	unlock, err := store.Lock(context.Background(), token)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := (OSFileExecutor{}).ReadMaintenanceReceipt(context.Background(), i); err == nil {
+	if _, err := store.Lock(context.Background(), token); !errors.Is(err, maintenance.ErrMaintenanceLocked) {
 		unlock()
-		t.Fatal("reader ignored live executor")
+		t.Fatalf("duplicate invocation acquired live lock: %v", err)
+	}
+	if _, err := (OSFileExecutor{Receipts: store}).ReadMaintenanceReceipt(context.Background(), i); !errors.Is(err, maintenance.ErrMaintenanceLocked) {
+		unlock()
+		t.Fatalf("reader ignored live executor: %v", err)
 	}
 	unlock()
-	second, err := lockMaintenanceInvocation(i)
+	second, err := store.Lock(context.Background(), token)
 	if err != nil {
 		t.Fatal("released executor lock remained live", err)
 	}
@@ -139,10 +153,14 @@ func TestMaintenanceLiveInvocationBlocksReceiptReaderAndDuplicate(t *testing.T) 
 }
 
 func TestMaintenancePurgeAbsenceCannotCreateReceipt(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "missing")
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, ".bansoko-cleanup-purge-owner", "object")
 	i := maintenance.MaintenanceInvocation{OwnerType: "replacement_deletion", OwnerID: "purge-owner", Kind: "cleanup_purge", WorkItemID: "work", OwnerVersion: 2, Attempt: []byte(`{"stage":"purge"}`), Source: path, Target: path, Fingerprint: "fingerprint"}
-	e := OSCleanupExecutor{}
+	e := NewOSCleanupExecutor(root)
+	e.Receipts = maintenancestore.New()
 	if err := e.PurgeMaintenance(context.Background(), path, domain.FileObservation{Fingerprint: "fingerprint"}, i); err == nil {
 		t.Fatal("missing quarantine treated as successful purge")
 	}
@@ -175,6 +193,7 @@ func TestMaintenanceOverwriteResumesFromPersistedRecord(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			store := maintenancestore.New()
 			i := maintenance.MaintenanceInvocation{OwnerType: "alignment_operation", OwnerID: "owner", Kind: "alignment_execute", WorkItemID: "work", OwnerVersion: 2, Attempt: []byte(`{"fencing_token":1}`), Source: source, Target: target, Fingerprint: observed.Fingerprint}
 			op := domain.FileOperation{ID: "alignment-1", Operation: domain.OperationMove, SourcePath: source, TargetPath: target, SourceFingerprint: observed.Fingerprint, CollisionPolicy: domain.CollisionOverwrite}
 			var persisted *domain.OverwriteRecovery
@@ -189,7 +208,7 @@ func TestMaintenanceOverwriteResumesFromPersistedRecord(t *testing.T) {
 				return current, nil
 			}
 			name := string(crashAt) + map[bool]string{true: "/occupied", false: "/free"}[occupied]
-			_, err = (OSFileExecutor{}).ExecuteMaintenanceOverwrite(context.Background(), op, i, checkpoint)
+			_, err = (OSFileExecutor{Receipts: store}).ExecuteMaintenanceOverwrite(context.Background(), op, i, checkpoint)
 			if crashed {
 				if err == nil {
 					t.Fatalf("%s: the interrupted call must not report success", name)
@@ -199,7 +218,7 @@ func TestMaintenanceOverwriteResumesFromPersistedRecord(t *testing.T) {
 				}
 				resumed := op
 				resumed.OverwriteRecovery = persisted
-				_, err = (OSFileExecutor{}).ExecuteMaintenanceOverwrite(context.Background(), resumed, i, checkpoint)
+				_, err = (OSFileExecutor{Receipts: store}).ExecuteMaintenanceOverwrite(context.Background(), resumed, i, checkpoint)
 			}
 			if err != nil {
 				t.Fatalf("%s: %v", name, err)
@@ -213,7 +232,7 @@ func TestMaintenanceOverwriteResumesFromPersistedRecord(t *testing.T) {
 			if entries, _ := filepath.Glob(filepath.Join(root, ".bansoko-overwrite-*")); len(entries) != 0 {
 				t.Fatalf("%s: staging left behind: %v", name, entries)
 			}
-			if r, err := (OSFileExecutor{}).ReadMaintenanceReceipt(context.Background(), i); err != nil || r.Validate(i) != nil {
+			if r, err := (OSFileExecutor{Receipts: store}).ReadMaintenanceReceipt(context.Background(), i); err != nil || r.Validate(i) != nil {
 				t.Fatalf("%s: final receipt: %+v %v", name, r, err)
 			}
 		}

@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"bansoko/internal/apperrors"
-	"bansoko/internal/library/adapter/filesystem"
 	"bansoko/internal/qualityprofile"
 	"bansoko/internal/runtime/worker"
 	"bansoko/internal/testutil/disposabledb"
@@ -1365,7 +1364,7 @@ func TestSettleDeletesLoserAndReplayIsIdempotent(t *testing.T) {
 	if err := os.WriteFile(loserPath, []byte("loser-file"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	executor := filesystem.NewOSCleanupExecutor(dir)
+	executor := maintenanceTestCleanupExecutor(dir)
 	loserObservation, err := executor.ObserveMetadataFile(ctx, loserPath)
 	if err != nil {
 		t.Fatal(err)
@@ -1470,7 +1469,7 @@ func TestSettleStaleLeavesPhysicalFilesUntouched(t *testing.T) {
 	}
 
 	cleanup := NewCleanupService(db)
-	cleanup.SetFileExecutor(filesystem.NewOSCleanupExecutor(dir))
+	cleanup.SetFileExecutor(maintenanceTestCleanupExecutor(dir))
 	service := NewReplacementDecisionService(db)
 	service.SetCleanupHandoff(cleanup)
 	if err := service.SettleDecision(ctx, "dec-frozen"); err != nil {

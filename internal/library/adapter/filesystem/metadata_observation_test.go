@@ -9,6 +9,7 @@ import (
 
 	maintenance "bansoko/internal/filemaintenance/executor"
 	"bansoko/internal/library/domain"
+	"bansoko/internal/testutil/maintenancestore"
 )
 
 // A scan-derived alignment carries a metadata fingerprint. The maintenance
@@ -32,7 +33,8 @@ func TestMaintenanceMoveWithMetadataFingerprint(t *testing.T) {
 		t.Fatalf("metadata observation fingerprint = %q", observed.Fingerprint)
 	}
 	i := maintenance.MaintenanceInvocation{OwnerType: "alignment_operation", OwnerID: "owner", Kind: "alignment_execute", WorkItemID: "work", OwnerVersion: 2, Attempt: []byte(`{"fencing_token":1}`), Source: source, Target: target, Fingerprint: observed.Fingerprint}
-	executor := OSFileExecutor{}
+	store := maintenancestore.New()
+	executor := OSFileExecutor{Receipts: store}
 	executed, err := executor.ExecuteMaintenance(context.Background(), domain.FileOperation{Operation: domain.OperationMove, SourcePath: source, TargetPath: target, SourceFingerprint: observed.Fingerprint, CollisionPolicy: domain.CollisionBlock}, i)
 	if err != nil {
 		t.Fatal(err)
@@ -47,20 +49,26 @@ func TestMaintenanceMoveWithMetadataFingerprint(t *testing.T) {
 	if err != nil || r.Validate(i) != nil {
 		t.Fatalf("final receipt: %+v %v", r, err)
 	}
-	// Crash gap: the final receipt is lost; the started proof plus the
+	// Crash gap: the final receipt never lands; the started proof plus the
 	// metadata identity at the target still adopt the applied move.
-	token, err := i.Token()
+	if err := os.WriteFile(source, []byte("crash gap"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	crashObserved, err := observeFileMetadata(source)
 	if err != nil {
 		t.Fatal(err)
 	}
-	marker, err := PublicationMarkerPath(target, token+"-final")
-	if err != nil {
+	crashed := maintenance.MaintenanceInvocation{OwnerType: "alignment_operation", OwnerID: "owner", Kind: "alignment_execute", WorkItemID: "work-crash", OwnerVersion: 2, Attempt: []byte(`{"fencing_token":2}`), Source: source, Target: target, Fingerprint: crashObserved.Fingerprint}
+	if err := os.Remove(target); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(marker); err != nil {
+	if err := writeMaintenanceStarted(context.Background(), store, crashed); err != nil {
 		t.Fatal(err)
 	}
-	if r, err := executor.ReadMaintenanceReceipt(context.Background(), i); err != nil || r.Validate(i) != nil {
+	if err := os.Rename(source, target); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := executor.ReadMaintenanceReceipt(context.Background(), crashed); err != nil || r.Validate(crashed) != nil {
 		t.Fatalf("quiesced metadata move not adopted: %+v %v", r, err)
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"bansoko/internal/fileidentity"
+	maintenance "bansoko/internal/filemaintenance/executor"
 	"bansoko/internal/library/domain"
 )
 
@@ -116,6 +117,10 @@ type ExecutorHooks struct {
 type OSFileExecutor struct {
 	Checkpoint domain.FileOperationCheckpoint
 	Hooks      ExecutorHooks
+	// Receipts is the durable home of maintenance start proofs and final
+	// receipts. Maintenance entry points refuse to run without it: a
+	// maintenance effect with no durable proof is worse than no effect.
+	Receipts maintenance.ReceiptStore
 	// publicationSys replaces publication syscalls in unit tests (errno
 	// seam). Nil uses the real descriptor-relative syscalls.
 	publicationSys *publicationSyscalls

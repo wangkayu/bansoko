@@ -7,6 +7,7 @@ import (
 	"bansoko/internal/library/domain"
 	"bansoko/internal/persistence/txscope"
 	"bansoko/internal/runtime/worker"
+	"bansoko/internal/testutil/maintenancestore"
 	"bansoko/internal/workitems"
 	"context"
 	"database/sql"
@@ -83,7 +84,7 @@ func newAlignmentUnitFixtureIn(t *testing.T, collision domain.CollisionPolicy, o
 	u.op = op
 	u.store, u.claim = alignmentWorkItemClaim(t, ctx, f.db, op.ID, version)
 	f.svc.SetWorkItems(u.store)
-	f.svc.SetFilePorts(filesystem.OSFileExecutor{}, filesystem.OSFileObserver{})
+	f.svc.SetFilePorts(maintenanceTestFileExecutor(), filesystem.OSFileObserver{})
 	return u
 }
 
@@ -269,7 +270,10 @@ func TestPGAlignmentOverwriteRecoversFromPersistedRecord(t *testing.T) {
 		t.Run(string(tc.stage)+map[bool]string{true: "_reconcile", false: ""}[tc.reconcile], func(t *testing.T) {
 			u := newAlignmentUnitFixture(t, domain.CollisionOverwrite, true, false)
 			crashed := false
-			u.f.svc.SetFilePorts(crashingOverwriteExecutor{at: tc.stage, crashed: &crashed}, filesystem.OSFileObserver{})
+			// One receipt store spans the crash: receipts survive the executor
+			// process like the production PostgreSQL store does.
+			receipts := maintenancestore.New()
+			u.f.svc.SetFilePorts(crashingOverwriteExecutor{OSFileExecutor: filesystem.OSFileExecutor{Receipts: receipts}, at: tc.stage, crashed: &crashed}, filesystem.OSFileObserver{})
 			if _, err := u.f.svc.ExecuteHandler().Handle(ctx, u.claim); !errors.Is(err, workitems.ErrPublicationUnresolved) || !crashed {
 				t.Fatalf("the interrupted exchange must stay unresolved: err=%v crashed=%v", err, crashed)
 			}
@@ -277,8 +281,8 @@ func TestPGAlignmentOverwriteRecoversFromPersistedRecord(t *testing.T) {
 			if err := u.f.db.QueryRow(`SELECT overwrite_recovery::text FROM alignment_operations WHERE id=$1`, u.op.ID).Scan(&record); err != nil || !record.Valid {
 				t.Fatalf("no persisted exchange record: %v", err)
 			}
-			// Restart: a fresh executor with no in-process state.
-			u.f.svc.SetFilePorts(filesystem.OSFileExecutor{}, filesystem.OSFileObserver{})
+			// Restart: a fresh executor whose receipts come from the same store.
+			u.f.svc.SetFilePorts(filesystem.OSFileExecutor{Receipts: receipts}, filesystem.OSFileObserver{})
 			if tc.reconcile {
 				if _, err := u.f.svc.ReconcileUnknownEffect(ctx, deployment.ReconcileRequest{OperationID: "align-overwrite"}); err != nil {
 					t.Fatal(err)

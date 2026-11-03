@@ -94,3 +94,33 @@ type MaintenanceCleanupExecutor interface {
 	PurgeMaintenance(context.Context, string, domain.FileObservation, MaintenanceInvocation) error
 	ReadMaintenanceReceipt(context.Context, MaintenanceInvocation) (MaintenanceReceipt, error)
 }
+
+// ErrMaintenanceFinalAbsent is returned by a ReceiptStore read of the final
+// receipt when the invocation started but no final row exists yet. The reader
+// then proves the effect from the filesystem (the adopt/not-applied path).
+var ErrMaintenanceFinalAbsent = errors.New("maintenance invocation has no final receipt")
+
+// ErrMaintenanceLocked is returned by ReceiptStore.Lock when another executor
+// holds the invocation. Like the file lock it replaces, acquisition never
+// waits: the caller retries the stage later.
+var ErrMaintenanceLocked = errors.New("maintenance invocation is already locked")
+
+// ReceiptStore is the durable home of one invocation's start proof and final
+// receipt. It replaces the marker files the executor used to leave next to
+// the operation's target: the rows, not the library, carry the proof, and the
+// lock rows nothing at all — Lock is the database's advisory lock, so two
+// executors of one invocation exclude each other only while they share this
+// database.
+//
+// WriteStarted refuses an existing token (a retried stage runs under a new
+// invocation). WriteFinal completes the started row exactly once.
+// DiscardStarted removes the start proof of an invocation whose effect
+// provably never applied, and never a row with a final receipt.
+type ReceiptStore interface {
+	Lock(ctx context.Context, token string) (unlock func(), err error)
+	WriteStarted(ctx context.Context, token string, proof []byte) error
+	ReadStarted(ctx context.Context, token string) ([]byte, error)
+	WriteFinal(ctx context.Context, token string, receipt []byte) error
+	ReadFinal(ctx context.Context, token string) ([]byte, error)
+	DiscardStarted(ctx context.Context, token string) error
+}

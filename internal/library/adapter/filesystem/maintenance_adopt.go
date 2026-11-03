@@ -10,9 +10,9 @@ import (
 	"os"
 )
 
-// Called only while the executor's exclusive lock is held by recovery. A
-// started marker identifies this attempt, but cannot prove irreversible purge.
-func adoptQuiescedMaintenance(ctx context.Context, i maintenance.MaintenanceInvocation) (maintenance.MaintenanceReceipt, error) {
+// Called only while the invocation's store lock is held by recovery. A start
+// proof identifies this attempt, but cannot prove irreversible purge.
+func adoptQuiescedMaintenance(ctx context.Context, store maintenance.ReceiptStore, i maintenance.MaintenanceInvocation) (maintenance.MaintenanceReceipt, error) {
 	if isPurgeInvocation(i) {
 		if err := purgeProvablyNotApplied(ctx, i); err != nil {
 			return maintenance.MaintenanceReceipt{}, err
@@ -26,7 +26,7 @@ func adoptQuiescedMaintenance(ctx context.Context, i maintenance.MaintenanceInvo
 	if err != nil {
 		return maintenance.MaintenanceReceipt{}, err
 	}
-	raw, _, err := ReadPublicationMarker(i.Target, token+"-started")
+	raw, err := store.ReadStarted(ctx, token)
 	if err != nil {
 		return maintenance.MaintenanceReceipt{}, err
 	}
@@ -59,7 +59,7 @@ func adoptQuiescedMaintenance(ctx context.Context, i maintenance.MaintenanceInvo
 			return maintenance.MaintenanceReceipt{}, errors.New("captured quarantine identity mismatch")
 		}
 	}
-	if err := writeMaintenanceFinal(i, observed); err != nil {
+	if err := writeMaintenanceFinal(ctx, store, i, observed); err != nil {
 		return maintenance.MaintenanceReceipt{}, err
 	}
 	return maintenance.MaintenanceReceipt{Invocation: i, ExecutorFinal: true, Applied: true, Observation: observed}, nil

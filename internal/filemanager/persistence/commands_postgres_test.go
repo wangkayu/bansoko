@@ -104,8 +104,8 @@ VALUES ('c-ep01', 'p-ep01', 'anime-a', 'src-c', 'intake', 'subtitle', 'zh', 'ass
 	}
 	service.SetCommands(commands, nil)
 	observer := &noContentObserver{}
-	cleanup := &noContentCleanup{inner: filesystem.NewOSCleanupExecutor(filemaintenance.CleanupAnchor)}
-	users := filemaintenance.NewUserOperationService(db, workStore, filesystem.OSFileExecutor{}, observer,
+	cleanup := &noContentCleanup{inner: maintenanceTestCleanupExecutor(filemaintenance.CleanupAnchor)}
+	users := filemaintenance.NewUserOperationService(db, workStore, maintenanceTestFileExecutor(), observer,
 		func() filemaintenance.CleanupFileExecutor {
 			return cleanup
 		}, UserOperationGuard{Service: service})

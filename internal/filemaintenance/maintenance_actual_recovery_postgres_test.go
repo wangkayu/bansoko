@@ -41,7 +41,7 @@ func TestPGAlignmentActualHandlerReceiptCrashBeforeSettlementRecovery(t *testing
 	}
 	store, c := alignmentWorkItemClaim(t, ctx, f.db, op.ID, v)
 	f.svc.SetWorkItems(store)
-	f.svc.SetFilePorts(filesystem.OSFileExecutor{}, filesystem.OSFileObserver{})
+	f.svc.SetFilePorts(maintenanceTestFileExecutor(), filesystem.OSFileObserver{})
 	outcome, err := f.svc.ExecuteHandler().Handle(ctx, c)
 	if err != nil {
 		t.Fatal(err)

@@ -99,6 +99,7 @@ var knownRelations = map[string]string{
 	"idempotency_records":              "r",
 	"instance_bootstrap":               "r",
 	"local_accounts":                   "r",
+	"maintenance_receipts":             "r",
 	"managed_anime":                    "r",
 	"media_fact_files":                 "r",
 	"media_fact_snapshots":             "r",
@@ -160,6 +161,7 @@ var knownRelations = map[string]string{
 var requiredColumns = map[string][]string{
 	"schema_identity":                  {"singleton_id", "identity", "baseline_version", "installed_at"},
 	"schema_migrations":                {"version", "checksum", "applied_at"},
+	"maintenance_receipts":             {"token", "started", "final", "created_at", "finalized_at"},
 	"connections":                      {"id", "kind", "name", "endpoint", "secret_ref", "secret_present", "network_route_id", "state", "health_version", "version", "created_at", "updated_at", "config"},
 	"instance_bootstrap":               {"singleton_id", "state", "install_id", "version", "completed_at", "created_at", "updated_at"},
 	"auth_sessions":                    {"id", "account_id", "token_hash", "expires_at", "created_at", "revoked_at"},

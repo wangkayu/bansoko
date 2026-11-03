@@ -910,7 +910,7 @@ func TestAlignmentDuplicatePlannerTargetsRouteTheSecondByPolicy(t *testing.T) {
 			seedPlacement(t, fixture.db, "plc-dupe-a", "anime-dupes", first, "fp-a", []string{"tv:e1"}, "2026-01-01T00:00:00Z")
 			seedPlacement(t, fixture.db, "plc-dupe-b", "anime-dupes", second, "fp-b", []string{"tv:e1"}, "2026-01-02T00:00:00Z")
 			service := NewAlignmentService(fixture.db)
-			service.SetFilePorts(filesystem.OSFileExecutor{}, filesystem.OSFileObserver{})
+			service.SetFilePorts(maintenanceTestFileExecutor(), filesystem.OSFileObserver{})
 			fixture.calibration.SetAlignmentConsumer(service)
 			fixture.calibration.SetCompanionCollisionSource(fixedCollision(tc.policy))
 			plan := &planner.PlanResult{AnimeID: "anime-dupes", Generation: 1, PolicyVersion: 1, Candidates: []planner.PlanCandidate{

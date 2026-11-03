@@ -64,7 +64,7 @@ func newCleanupFixture(t *testing.T) *cleanupFixture {
 	if err := os.WriteFile(source, []byte("replaced episode"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	executor := &trackingCleanupExecutor{OSCleanupExecutor: filesystem.NewOSCleanupExecutor(root)}
+	executor := &trackingCleanupExecutor{OSCleanupExecutor: maintenanceTestCleanupExecutor(root)}
 	observation, err := executor.ObserveMetadataFile(context.Background(), source)
 	if err != nil {
 		t.Fatal(err)

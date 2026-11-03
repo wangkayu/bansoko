@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"bansoko/internal/library/adapter/filesystem"
 	"bansoko/internal/qualityprofile"
 	"bansoko/internal/runtime/worker"
 	"bansoko/internal/transport/httpapi/generated"
@@ -148,7 +147,7 @@ func TestPGUnclaimedScanManagedFileIsReplacedAndDeleted(t *testing.T) {
 			if err := os.WriteFile(scanPath, []byte("scanned-file"), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			executor := filesystem.NewOSCleanupExecutor(dir)
+			executor := maintenanceTestCleanupExecutor(dir)
 			observed, err := executor.ObserveMetadataFile(ctx, scanPath)
 			if err != nil {
 				t.Fatal(err)

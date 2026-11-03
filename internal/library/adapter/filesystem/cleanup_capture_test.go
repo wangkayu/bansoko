@@ -2,6 +2,7 @@ package filesystem
 
 import (
 	maintenance "bansoko/internal/filemaintenance/executor"
+	"bansoko/internal/testutil/maintenancestore"
 	"context"
 	"os"
 	"path/filepath"
@@ -19,6 +20,7 @@ func TestMaintenanceActualQuarantinePurgeFinalReceipts(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := NewOSCleanupExecutor(root)
+	e.Receipts = maintenancestore.New()
 	expected, err := e.Observe(context.Background(), source)
 	if err != nil {
 		t.Fatal(err)

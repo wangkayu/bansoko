@@ -12,6 +12,7 @@ import (
 
 	maintenance "bansoko/internal/filemaintenance/executor"
 	"bansoko/internal/library/domain"
+	"bansoko/internal/testutil/maintenancestore"
 	"golang.org/x/sys/unix"
 )
 
@@ -50,6 +51,7 @@ func newBusyCleanupFixture(t *testing.T) busyCleanupFixture {
 		t.Fatal(err)
 	}
 	e := NewOSCleanupExecutor(root)
+	e.Receipts = maintenancestore.New()
 	expected, err := e.Observe(context.Background(), source)
 	if err != nil {
 		t.Fatal(err)
@@ -288,8 +290,9 @@ func namespaceEntries(t *testing.T, f busyCleanupFixture) []string {
 }
 
 // The fault hook answers in place of the capture rename with the real
-// receipts written around it, and a refused, unapplied invocation's markers
-// are removed by DiscardRefusedMaintenance: the namespace keeps none of them.
+// receipts written around it, and a refused, unapplied invocation's start
+// proof is removed by DiscardRefusedMaintenance: the store keeps no row for
+// it and the namespace keeps nothing but the directory.
 func TestCleanupDiscardRefusedRemovesItsMarkers(t *testing.T) {
 	f := newBusyCleanupFixture(t)
 	f.executor.Hooks.Effect = func(stage string) error {
@@ -302,8 +305,8 @@ func TestCleanupDiscardRefusedRemovesItsMarkers(t *testing.T) {
 	if _, err := f.executor.MoveMaintenance(context.Background(), f.source, f.target, f.expected, first); !domain.FileBusy(err) {
 		t.Fatalf("hooked capture = %v, want busy", err)
 	}
-	if got := namespaceEntries(t, f); len(got) != 2 {
-		t.Fatalf("refused capture left %v, want its lock and start marker", got)
+	if got := namespaceEntries(t, f); len(got) != 0 {
+		t.Fatalf("refused capture left %v, want an empty namespace", got)
 	}
 	if _, err := f.executor.ReadMaintenanceReceipt(context.Background(), first); !errors.Is(err, maintenance.ErrMaintenanceNotApplied) {
 		t.Fatalf("receipt = %v, want not applied", err)
@@ -311,8 +314,8 @@ func TestCleanupDiscardRefusedRemovesItsMarkers(t *testing.T) {
 	if err := f.executor.DiscardRefusedMaintenance(context.Background(), first); err != nil {
 		t.Fatal(err)
 	}
-	if got := namespaceEntries(t, f); len(got) != 0 {
-		t.Fatalf("discard left %v", got)
+	if _, err := f.executor.ReadMaintenanceReceipt(context.Background(), first); !errors.Is(err, maintenance.ErrMaintenanceNotStarted) {
+		t.Fatalf("discarded receipt = %v, want not started", err)
 	}
 	f.executor.Hooks.Effect = nil
 	second := f.capture("work-2")

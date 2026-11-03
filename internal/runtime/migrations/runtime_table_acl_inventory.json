@@ -558,6 +558,21 @@
     "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
   },
   {
+    "table": "maintenance_receipts",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "SELECT",
+      "UPDATE"
+    ],
+    "reason": "maintenance start proofs and final receipts live here instead of marker files; the receipts store owns every statement and rows are discarded only for refused, unapplied invocations",
+    "direct_access": [
+      "internal/filemaintenance/adapter/receipts/store.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while maintenance invocations keep receipts in the database; update inventory before changing privileges"
+  },
+  {
     "table": "managed_anime",
     "privileges": [
       "DELETE",

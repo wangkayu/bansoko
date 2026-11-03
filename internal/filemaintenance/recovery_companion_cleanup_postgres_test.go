@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"bansoko/internal/library/adapter/filesystem"
 	"bansoko/internal/library/domain"
 )
 
@@ -65,7 +64,7 @@ func TestRecoveredCompanionCleanupMatchesRegistrationIdentity(t *testing.T) {
 	service := NewCleanupService(db)
 	store := cleanupWorkItemStore(t, db)
 	service.SetWorkItems(store)
-	service.SetFileExecutor(filesystem.NewOSCleanupExecutor(root))
+	service.SetFileExecutor(maintenanceTestCleanupExecutor(root))
 	id := companionCleanupID(companion.ID)
 	op, err := service.Admit(ctx, CleanupInput{
 		ID:                id,

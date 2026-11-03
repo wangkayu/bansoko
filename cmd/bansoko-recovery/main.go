@@ -41,6 +41,7 @@ import (
 	downloadapplication "bansoko/internal/download/application"
 	"bansoko/internal/download/qbittorrent"
 	"bansoko/internal/filemaintenance"
+	"bansoko/internal/filemaintenance/adapter/receipts"
 	"bansoko/internal/filemanager"
 	filemanagerpersistence "bansoko/internal/filemanager/persistence"
 	fileoperationapplication "bansoko/internal/fileoperation/application"
@@ -275,14 +276,14 @@ func wireRegistry(db *sql.DB) (*deployment.Registry, error) {
 	if err != nil {
 		return nil, err
 	}
-	fileService, err := fileoperationapplication.NewService(db, filesystem.OSFileExecutor{}, filesystem.OSFileObserver{})
+	fileService, err := fileoperationapplication.NewService(db, filesystem.OSFileExecutor{Receipts: receipts.NewStore(db)}, filesystem.OSFileObserver{})
 	if err != nil {
 		return nil, err
 	}
 	// A resumed execute claim is the primary restart path; this typed reconciler
 	// additionally covers abandoned attempts when claims are not reclaimed.
 	alignmentOperations := filemaintenance.NewAlignmentService(db)
-	alignmentOperations.SetFilePorts(filesystem.OSFileExecutor{}, filesystem.OSFileObserver{})
+	alignmentOperations.SetFilePorts(filesystem.OSFileExecutor{Receipts: receipts.NewStore(db)}, filesystem.OSFileObserver{})
 	alignmentRegistration := deployment.Registration{
 		Key:     "alignment_operation",
 		Effect:  deployment.EffectIdentity{Owner: "alignment_operation", Effect: "filesystem_unknown_effect"},
@@ -293,7 +294,9 @@ func wireRegistry(db *sql.DB) (*deployment.Registry, error) {
 	replacementDeletions := filemaintenance.NewCleanupService(db)
 	// User file operations have no root layer: the cleanup anchor is the
 	// deployment's own boundary, injected here as the constant it is.
-	replacementDeletions.SetFileExecutor(filesystem.NewOSCleanupExecutor(filemaintenance.CleanupAnchor))
+	replacementCleanupExecutor := filesystem.NewOSCleanupExecutor(filemaintenance.CleanupAnchor)
+	replacementCleanupExecutor.Receipts = receipts.NewStore(db)
+	replacementDeletions.SetFileExecutor(replacementCleanupExecutor)
 	replacementDeletions.SetWorkItems(workStore)
 	cleanupRegistration := deployment.Registration{
 		Key:     "replacement_deletion",
@@ -314,9 +317,11 @@ func wireRegistry(db *sql.DB) (*deployment.Registry, error) {
 		return nil, err
 	}
 	userOperations := filemaintenance.NewUserOperationService(db, workStore,
-		filesystem.OSFileExecutor{}, filesystem.OSFileObserver{},
+		filesystem.OSFileExecutor{Receipts: receipts.NewStore(db)}, filesystem.OSFileObserver{},
 		func() filemaintenance.CleanupFileExecutor {
-			return filesystem.NewOSCleanupExecutor(filemaintenance.CleanupAnchor)
+			executor := filesystem.NewOSCleanupExecutor(filemaintenance.CleanupAnchor)
+			executor.Receipts = receipts.NewStore(db)
+			return executor
 		},
 		filemanagerpersistence.UserOperationGuard{Service: fileManager})
 	userOperationRegistration := deployment.Registration{

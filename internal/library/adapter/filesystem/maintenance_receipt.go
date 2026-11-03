@@ -7,12 +7,23 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 )
 
-// Separate maintenance token namespace; the existing placement marker envelope
-// and exact permit proof are unchanged. Final marker is immutable and synced.
-func writeMaintenanceStarted(i maintenance.MaintenanceInvocation) error {
+// The invocation's start proof and final receipt live in the receipt store
+// (PostgreSQL in production), never in the owner's library. The store's
+// advisory lock replaces the filesystem lock inode: two executors of one
+// invocation exclude each other while they share the database.
+func maintenanceReceipts(store maintenance.ReceiptStore) (maintenance.ReceiptStore, error) {
+	if store == nil {
+		return nil, errors.New("maintenance receipt store is not wired")
+	}
+	return store, nil
+}
+
+// The start proof binds the source observation and both parent identities
+// before any mutation; the final receipt is written exactly once and never
+// updated. Both payloads keep the marker envelopes' JSON shape.
+func writeMaintenanceStarted(ctx context.Context, store maintenance.ReceiptStore, i maintenance.MaintenanceInvocation) error {
 	token, err := i.Token()
 	if err != nil {
 		return err
@@ -21,11 +32,10 @@ func writeMaintenanceStarted(i maintenance.MaintenanceInvocation) error {
 	if err != nil {
 		return err
 	}
-	_, err = WritePublicationMarker(i.Target, token+"-started", raw)
-	return err
+	return store.WriteStarted(ctx, token, raw)
 }
 
-func writeMaintenanceFinal(i maintenance.MaintenanceInvocation, o domain.FileObservation) error {
+func writeMaintenanceFinal(ctx context.Context, store maintenance.ReceiptStore, i maintenance.MaintenanceInvocation, o domain.FileObservation) error {
 	token, err := i.Token()
 	if err != nil {
 		return err
@@ -34,43 +44,42 @@ func writeMaintenanceFinal(i maintenance.MaintenanceInvocation, o domain.FileObs
 	if err != nil {
 		return err
 	}
-	_, err = WritePublicationMarker(i.Target, token+"-final", raw)
-	return err
+	return store.WriteFinal(ctx, token, raw)
 }
-func readMaintenanceFinal(ctx context.Context, i maintenance.MaintenanceInvocation) (maintenance.MaintenanceReceipt, error) {
+func readMaintenanceFinal(ctx context.Context, store maintenance.ReceiptStore, i maintenance.MaintenanceInvocation) (maintenance.MaintenanceReceipt, error) {
 	if err := validateMaintenanceNamespace(i); err != nil {
-		return maintenance.MaintenanceReceipt{}, err
-	}
-	unlock, lockErr := lockMaintenanceInvocation(i)
-	if lockErr != nil {
-		return maintenance.MaintenanceReceipt{}, lockErr
-	}
-	defer unlock()
-	if err := ctx.Err(); err != nil {
 		return maintenance.MaintenanceReceipt{}, err
 	}
 	token, err := i.Token()
 	if err != nil {
 		return maintenance.MaintenanceReceipt{}, err
 	}
-	started, _, err := ReadPublicationMarker(i.Target, token+"-started")
-	if errors.Is(err, os.ErrNotExist) {
-		return maintenance.MaintenanceReceipt{}, fmt.Errorf("%w: %w", maintenance.ErrMaintenanceNotStarted, err)
+	unlock, err := store.Lock(ctx, token)
+	if err != nil {
+		return maintenance.MaintenanceReceipt{}, err
+	}
+	defer unlock()
+	if err := ctx.Err(); err != nil {
+		return maintenance.MaintenanceReceipt{}, err
+	}
+	started, err := store.ReadStarted(ctx, token)
+	if errors.Is(err, maintenance.ErrMaintenanceNotStarted) {
+		return maintenance.MaintenanceReceipt{}, err
 	}
 	if err != nil {
 		return maintenance.MaintenanceReceipt{}, err
 	}
 	var original maintenance.MaintenanceInvocation
 	if json.Unmarshal(started, &original) != nil {
-		return maintenance.MaintenanceReceipt{}, errors.New("invalid maintenance start marker")
+		return maintenance.MaintenanceReceipt{}, errors.New("invalid maintenance start proof")
 	}
 	originalToken, err := original.Token()
 	if err != nil || originalToken != token {
 		return maintenance.MaintenanceReceipt{}, errors.New("maintenance start identity mismatch")
 	}
-	raw, _, err := ReadPublicationMarker(i.Target, token+"-final")
-	if errors.Is(err, os.ErrNotExist) {
-		return adoptQuiescedMaintenance(ctx, i)
+	raw, err := store.ReadFinal(ctx, token)
+	if errors.Is(err, maintenance.ErrMaintenanceFinalAbsent) {
+		return adoptQuiescedMaintenance(ctx, store, i)
 	}
 	if err != nil {
 		return maintenance.MaintenanceReceipt{}, err
@@ -81,8 +90,12 @@ func readMaintenanceFinal(ctx context.Context, i maintenance.MaintenanceInvocati
 	}
 	return r, r.Validate(i)
 }
-func (OSFileExecutor) ReadMaintenanceReceipt(ctx context.Context, i maintenance.MaintenanceInvocation) (maintenance.MaintenanceReceipt, error) {
-	return readMaintenanceFinal(ctx, i)
+func (e OSFileExecutor) ReadMaintenanceReceipt(ctx context.Context, i maintenance.MaintenanceInvocation) (maintenance.MaintenanceReceipt, error) {
+	store, err := maintenanceReceipts(e.Receipts)
+	if err != nil {
+		return maintenance.MaintenanceReceipt{}, err
+	}
+	return readMaintenanceFinal(ctx, store, i)
 }
 func (e OSCleanupExecutor) ReadMaintenanceReceipt(ctx context.Context, i maintenance.MaintenanceInvocation) (maintenance.MaintenanceReceipt, error) {
 	if err := ctx.Err(); err != nil {
@@ -98,51 +111,45 @@ func (e OSCleanupExecutor) ReadMaintenanceReceipt(ctx context.Context, i mainten
 		if _, err := i.Token(); err != nil {
 			return maintenance.MaintenanceReceipt{}, err
 		}
-		// A checkpoint can precede creation of the capture directory. Create
-		// only the rooted, owner-bound 0700 namespace (never the object), so
-		// the reader and executor use the same durable invocation lock even
-		// in that window. A missing parent alone is not no-start proof.
-		root, canonical, err := e.rootAndPath(i.Target)
-		if err != nil {
+		// The receipt no longer lives in the capture namespace, so a read
+		// never creates it: an absent namespace with no start row is simply
+		// an invocation that never started.
+		if _, canonical, err := e.rootAndPath(i.Target); err != nil {
 			return maintenance.MaintenanceReceipt{}, err
-		}
-		if canonical != i.Target {
+		} else if canonical != i.Target {
 			return maintenance.MaintenanceReceipt{}, errors.New("quarantine receipt requires canonical path")
 		}
-		private, err := cleanupCaptureDirectory(root, i.Target, true)
-		if err != nil {
-			// The namespace holds every start marker; one that does not exist
-			// and cannot be created holds none, so the stage never started.
-			if namespaceAbsentAfterRefusal(i.Target, err) {
-				return maintenance.MaintenanceReceipt{}, fmt.Errorf("%w: the capture namespace does not exist and cannot be created: %w", maintenance.ErrMaintenanceNotStarted, err)
-			}
-			return maintenance.MaintenanceReceipt{}, err
-		}
-		if err := private.Close(); err != nil {
-			return maintenance.MaintenanceReceipt{}, err
-		}
 	}
-	return readMaintenanceFinal(ctx, i)
+	store, err := maintenanceReceipts(e.Receipts)
+	if err != nil {
+		return maintenance.MaintenanceReceipt{}, err
+	}
+	return readMaintenanceFinal(ctx, store, i)
 }
 func (e OSFileExecutor) ExecuteMaintenance(ctx context.Context, op domain.FileOperation, i maintenance.MaintenanceInvocation) (domain.FileOperation, error) {
-	unlock, lockErr := lockMaintenanceInvocation(i)
-	if lockErr != nil {
-		return op, lockErr
+	store, err := maintenanceReceipts(e.Receipts)
+	if err != nil {
+		return op, err
+	}
+	token, err := i.Token()
+	if err != nil {
+		return op, err
+	}
+	unlock, err := store.Lock(ctx, token)
+	if err != nil {
+		return op, err
 	}
 	defer unlock()
 	if op.SourcePath != i.Source || op.TargetPath != i.Target || op.SourceFingerprint != i.Fingerprint {
 		return op, errors.New("maintenance operation identity mismatch")
 	}
-	if _, err := i.Token(); err != nil {
+	if err := writeMaintenanceStarted(ctx, store, i); err != nil {
 		return op, err
 	}
-	if err := writeMaintenanceStarted(i); err != nil {
-		return op, err
-	}
-	return e.executeMaintenanceStarted(ctx, op, i)
+	return e.executeMaintenanceStarted(ctx, store, op, i)
 }
 
-func (e OSFileExecutor) executeMaintenanceStarted(ctx context.Context, op domain.FileOperation, i maintenance.MaintenanceInvocation) (domain.FileOperation, error) {
+func (e OSFileExecutor) executeMaintenanceStarted(ctx context.Context, store maintenance.ReceiptStore, op domain.FileOperation, i maintenance.MaintenanceInvocation) (domain.FileOperation, error) {
 	result, err := e.Execute(ctx, op)
 	if err != nil {
 		return result, err
@@ -163,7 +170,7 @@ func (e OSFileExecutor) executeMaintenanceStarted(ctx context.Context, op domain
 	if !matched {
 		return result, errors.New("maintenance final fingerprint mismatch")
 	}
-	if err := writeMaintenanceFinal(i, observed); err != nil {
+	if err := writeMaintenanceFinal(ctx, store, i, observed); err != nil {
 		return result, fmt.Errorf("maintenance effect returned; final receipt failed: %w", err)
 	}
 	return result, nil
@@ -178,27 +185,32 @@ func (e OSFileExecutor) ExecuteMaintenanceOverwrite(ctx context.Context, op doma
 	if checkpoint == nil || op.CollisionPolicy != domain.CollisionOverwrite {
 		return op, errors.New("maintenance overwrite requires the overwrite policy and a durable checkpoint")
 	}
-	unlock, lockErr := lockMaintenanceInvocation(i)
-	if lockErr != nil {
-		return op, lockErr
+	store, err := maintenanceReceipts(e.Receipts)
+	if err != nil {
+		return op, err
+	}
+	token, err := i.Token()
+	if err != nil {
+		return op, err
+	}
+	unlock, err := store.Lock(ctx, token)
+	if err != nil {
+		return op, err
 	}
 	defer unlock()
 	if op.SourcePath != i.Source || op.TargetPath != i.Target || op.SourceFingerprint != i.Fingerprint {
 		return op, errors.New("maintenance operation identity mismatch")
 	}
-	if _, err := i.Token(); err != nil {
-		return op, err
-	}
 	e.Checkpoint = checkpoint
 	if op.OverwriteRecovery == nil {
-		if err := writeMaintenanceStarted(i); err != nil {
+		if err := writeMaintenanceStarted(ctx, store, i); err != nil {
 			return op, err
 		}
 	} else {
 		op.SourceParentIdentity = op.OverwriteRecovery.SourceParentIdentity
 		op.TargetParentIdentity = op.OverwriteRecovery.TargetParentIdentity
 	}
-	return e.executeMaintenanceStarted(ctx, op, i)
+	return e.executeMaintenanceStarted(ctx, store, op, i)
 }
 
 // ResumeOverwrite finishes or restores an interrupted maintenance exchange
@@ -230,18 +242,23 @@ func (e OSCleanupExecutor) MoveMaintenance(ctx context.Context, source, target s
 	if err := private.Close(); err != nil {
 		return "", err
 	}
-	unlock, lockErr := lockMaintenanceInvocation(i)
-	if lockErr != nil {
-		return "", lockErr
+	store, err := maintenanceReceipts(e.Receipts)
+	if err != nil {
+		return "", err
+	}
+	token, err := i.Token()
+	if err != nil {
+		return "", err
+	}
+	unlock, err := store.Lock(ctx, token)
+	if err != nil {
+		return "", err
 	}
 	defer unlock()
 	if source != i.Source || target != i.Target || expected.Fingerprint != i.Fingerprint {
 		return "", errors.New("maintenance quarantine identity mismatch")
 	}
-	if _, err := i.Token(); err != nil {
-		return "", err
-	}
-	if err := writeMaintenanceStarted(i); err != nil {
+	if err := writeMaintenanceStarted(ctx, store, i); err != nil {
 		return "", err
 	}
 	result, err := e.CaptureForDelete(ctx, source, target, expected)
@@ -257,13 +274,12 @@ func (e OSCleanupExecutor) MoveMaintenance(ctx context.Context, source, target s
 	if err != nil || !sameMutationFileObservation(observed, expected) {
 		return result, errors.New("maintenance quarantine final identity mismatch")
 	}
-	return result, writeMaintenanceFinal(i, observed)
+	return result, writeMaintenanceFinal(ctx, store, i, observed)
 }
 
-// DiscardRefusedMaintenance removes the start marker and lock of a deletion
-// stage whose rename or unlink its caller saw refused and proved unapplied;
-// the caller retries under a new invocation. A final receipt is never
-// removed.
+// DiscardRefusedMaintenance removes the start proof of a deletion stage whose
+// rename or unlink its caller saw refused and proved unapplied; the caller
+// retries under a new invocation. A final receipt is never removed.
 func (e OSCleanupExecutor) DiscardRefusedMaintenance(ctx context.Context, i maintenance.MaintenanceInvocation) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -274,31 +290,49 @@ func (e OSCleanupExecutor) DiscardRefusedMaintenance(ctx context.Context, i main
 	if i.Kind != cleanupCaptureKind && i.Kind != cleanupPurgeKind {
 		return errors.New("only a deletion stage is discarded")
 	}
-	return discardRefusedMaintenance(i)
+	store, err := maintenanceReceipts(e.Receipts)
+	if err != nil {
+		return err
+	}
+	token, err := i.Token()
+	if err != nil {
+		return err
+	}
+	unlock, err := store.Lock(ctx, token)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return store.DiscardStarted(ctx, token)
 }
 
 func (e OSCleanupExecutor) PurgeMaintenance(ctx context.Context, path string, expected domain.FileObservation, i maintenance.MaintenanceInvocation) error {
 	if err := validateMaintenanceNamespace(i); err != nil {
 		return err
 	}
-	unlock, lockErr := lockMaintenanceInvocation(i)
-	if lockErr != nil {
-		return lockErr
+	store, err := maintenanceReceipts(e.Receipts)
+	if err != nil {
+		return err
+	}
+	token, err := i.Token()
+	if err != nil {
+		return err
+	}
+	unlock, err := store.Lock(ctx, token)
+	if err != nil {
+		return err
 	}
 	defer unlock()
 	if path != i.Source || path != i.Target || expected.Fingerprint != i.Fingerprint {
 		return errors.New("maintenance purge identity mismatch")
 	}
-	if _, err := i.Token(); err != nil {
-		return err
-	}
 	// The receipt records this exact-object PurgeCaptured invocation's nil
 	// return, NOT a later absence observation. Crash before receipt stays unknown.
-	if err := writeMaintenanceStarted(i); err != nil {
+	if err := writeMaintenanceStarted(ctx, store, i); err != nil {
 		return err
 	}
 	if err := e.PurgeCaptured(ctx, path, expected); err != nil {
 		return err
 	}
-	return writeMaintenanceFinal(i, expected)
+	return writeMaintenanceFinal(ctx, store, i, expected)
 }

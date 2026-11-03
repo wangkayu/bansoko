@@ -21,6 +21,7 @@
 ./internal/episodetitle
 ./internal/episodetitle/namingfacts
 ./internal/filemaintenance
+./internal/filemaintenance/adapter/receipts
 ./internal/filemanager/persistence
 ./internal/fileoperation/application
 ./internal/identitymetadata/adapter/persistence

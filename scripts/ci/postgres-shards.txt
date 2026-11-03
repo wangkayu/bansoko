@@ -55,6 +55,7 @@
 3	./internal/episodetitle
 3	./internal/episodetitle/namingfacts
 3	./internal/filemaintenance
+3	./internal/filemaintenance/adapter/receipts
 3	./internal/filemanager/persistence
 3	./internal/parserpolicy
 3	./internal/plugintarget/application

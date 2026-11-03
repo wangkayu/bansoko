@@ -147,9 +147,9 @@ VALUES ($1, $2, 'anime-a', 'reconciliation', 'obs-'||$1, 'fp', 'fp', 'parser-v1'
 	renderer := &pathRenderer{root: tree}
 	service.SetCommands(commands, nil)
 	service.SetMatch(renderer, store, nil)
-	users := filemaintenance.NewUserOperationService(db, workStore, filesystem.OSFileExecutor{}, filesystem.OSFileObserver{},
+	users := filemaintenance.NewUserOperationService(db, workStore, maintenanceTestFileExecutor(), filesystem.OSFileObserver{},
 		func() filemaintenance.CleanupFileExecutor {
-			return filesystem.NewOSCleanupExecutor(filemaintenance.CleanupAnchor)
+			return maintenanceTestCleanupExecutor(filemaintenance.CleanupAnchor)
 		}, UserOperationGuard{Service: service})
 	users.SetRecorder(observability)
 

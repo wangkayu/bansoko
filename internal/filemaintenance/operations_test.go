@@ -237,7 +237,7 @@ func TestAlignmentMovesRealFileAndCommitsExecutedTarget(t *testing.T) {
 	if _, err := fixture.db.Exec(`INSERT INTO placements(id,physical_path,managed_anime_id,source_evidence_type,source_owner_ref,source_fingerprint,target_fingerprint,facts_version,version,created_at,updated_at) VALUES ('plc-align-1',$1,'anime-align','reconciliation','obs-align-1',$2,$2,'parser-v1',1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`, source, fingerprint); err != nil {
 		t.Fatal(err)
 	}
-	fixture.svc.SetFilePorts(filesystem.OSFileExecutor{}, filesystem.OSFileObserver{})
+	fixture.svc.SetFilePorts(maintenanceTestFileExecutor(), filesystem.OSFileObserver{})
 	op := testOperation()
 	op.SourcePath, op.TargetPath, op.SourceFingerprint = source, target, `{"algorithm":"sha256","value":"`+fingerprint+`"}`
 	created, err := fixture.svc.CreateOperation(ctx, op)
@@ -573,7 +573,7 @@ func TestAlignmentReclaimedAttemptConverges(t *testing.T) {
 			if err = tx.Commit(); err != nil {
 				t.Fatal(err)
 			}
-			executor := panicAfterAlignmentExecutor{before: !moved}
+			executor := panicAfterAlignmentExecutor{inner: maintenanceTestFileExecutor(), before: !moved}
 			fixture.svc.SetFilePorts(executor, filesystem.OSFileObserver{})
 			claim, err := store.ClaimDue(ctx, "crash-worker", []string{workitems.KindAlignmentExecute}, time.Second)
 			if err != nil {
@@ -619,7 +619,7 @@ func TestAlignmentReclaimedAttemptConverges(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			fixture.svc.SetFilePorts(filesystem.OSFileExecutor{}, filesystem.OSFileObserver{})
+			fixture.svc.SetFilePorts(maintenanceTestFileExecutor(), filesystem.OSFileObserver{})
 			outcome, err := fixture.svc.ExecuteHandler().Handle(ctx, reclaimed)
 			if !tc.converges {
 				if !errors.Is(err, workitems.ErrPublicationUnresolved) {

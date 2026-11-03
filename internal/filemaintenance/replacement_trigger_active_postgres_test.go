@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"bansoko/internal/library/adapter/filesystem"
 	"bansoko/internal/persistence/txscope"
 	"bansoko/internal/runtime/worker"
 	"bansoko/internal/workitems"
@@ -32,7 +31,7 @@ func triggerScanDuplicate(t *testing.T, db *sql.DB, store *workitems.Store) (str
 	if err := os.WriteFile(scanPath, []byte("scanned-duplicate"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	executor := filesystem.NewOSCleanupExecutor(dir)
+	executor := maintenanceTestCleanupExecutor(dir)
 	observed, err := executor.ObserveMetadataFile(context.Background(), scanPath)
 	if err != nil {
 		t.Fatal(err)

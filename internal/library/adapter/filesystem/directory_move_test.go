@@ -10,6 +10,7 @@ import (
 	"bansoko/internal/fileidentity"
 	maintenance "bansoko/internal/filemaintenance/executor"
 	"bansoko/internal/library/domain"
+	"bansoko/internal/testutil/maintenancestore"
 )
 
 // A directory is observed at path level: identity only, no size, and the
@@ -111,7 +112,7 @@ func TestExecuteDirectoryRejectsCopyAndOverwrite(t *testing.T) {
 	// The overwrite path runs with its durable checkpoint; the directory guard
 	// still refuses it after the source is verified.
 	i := maintenance.MaintenanceInvocation{OwnerType: "file_manager_operation", OwnerID: "owner", Kind: "file_manager_execute", WorkItemID: "work", OwnerVersion: 2, Attempt: []byte(`{"fencing_token":1}`), Source: source, Target: filepath.Join(root, "moved"), Fingerprint: observed.Fingerprint}
-	_, err = (OSFileExecutor{}).ExecuteMaintenanceOverwrite(context.Background(), domain.FileOperation{
+	_, err = (OSFileExecutor{Receipts: maintenancestore.New()}).ExecuteMaintenanceOverwrite(context.Background(), domain.FileOperation{
 		Operation: domain.OperationMove, SourcePath: source, TargetPath: filepath.Join(root, "moved"),
 		SourceFingerprint: observed.Fingerprint, CollisionPolicy: domain.CollisionOverwrite,
 	}, i, func(context.Context, domain.FileOperation, domain.OverwriteRecovery) (domain.FileOperation, error) {

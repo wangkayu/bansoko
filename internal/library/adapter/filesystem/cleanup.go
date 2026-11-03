@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"bansoko/internal/fileidentity"
+	maintenance "bansoko/internal/filemaintenance/executor"
 	"bansoko/internal/library/domain"
 )
 
@@ -20,6 +21,9 @@ type OSCleanupExecutor struct {
 	anchor string
 	// Hooks are the instance-bound test and fault hooks; zero in production.
 	Hooks CleanupHooks
+	// Receipts is the durable home of the capture/purge invocation proofs.
+	// Deletion stages refuse to run without it.
+	Receipts maintenance.ReceiptStore
 }
 
 // CleanupHooks lets a test answer the effect syscalls of a deletion the way a

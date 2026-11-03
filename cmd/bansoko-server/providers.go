@@ -37,6 +37,7 @@ import (
 	namingfacts "bansoko/internal/episodetitle/namingfacts"
 	"bansoko/internal/events"
 	"bansoko/internal/filemaintenance"
+	"bansoko/internal/filemaintenance/adapter/receipts"
 	filemaintenanceplanner "bansoko/internal/filemaintenance/planner"
 	filemaintenancepolicy "bansoko/internal/filemaintenance/policy"
 	"bansoko/internal/filemanager"
@@ -313,10 +314,12 @@ func provideFileManager(db *sql.DB, workStore *workitems.Store, denialZone filem
 		return nil, nil, err
 	}
 	userOperations := filemaintenance.NewUserOperationService(db, workStore,
-		filesystem.OSFileExecutor{}, filesystem.OSFileObserver{},
+		filesystem.OSFileExecutor{Receipts: receipts.NewStore(db)}, filesystem.OSFileObserver{},
 		func() filemaintenance.CleanupFileExecutor {
 			// A delete captures inside the directory that holds the file.
-			return filesystem.NewOSCleanupExecutor(filemaintenance.CleanupAnchor)
+			executor := filesystem.NewOSCleanupExecutor(filemaintenance.CleanupAnchor)
+			executor.Receipts = receipts.NewStore(db)
+			return executor
 		},
 		filemanagerpersistence.UserOperationGuard{Service: service})
 	return service, userOperations, nil
@@ -374,7 +377,9 @@ func provideFileMaintenanceGraph(
 	// A cleanup capture is bounded by the anchor its composition root injects;
 	// the file manager has no root layer, so that anchor is the deployment's
 	// filesystem root.
-	cleanupService.SetFileExecutor(filesystem.NewOSCleanupExecutor(filemaintenance.CleanupAnchor))
+	cleanupExecutor := filesystem.NewOSCleanupExecutor(filemaintenance.CleanupAnchor)
+	cleanupExecutor.Receipts = receipts.NewStore(db)
+	cleanupService.SetFileExecutor(cleanupExecutor)
 	cleanupService.SetWorkItems(workStore)
 	replacementDecisions.SetCleanupHandoff(cleanupService)
 
@@ -389,7 +394,7 @@ func provideFileMaintenanceGraph(
 	candidateFactsRepo := facts.NewPGRepository(db)
 	placementService := filemaintenance.NewPlacementService(db, filemaintenance.NewFileOperationEvidenceReader(db), fileMaintenanceSnapshot)
 	alignmentOperations := filemaintenance.NewAlignmentService(db)
-	alignmentOperations.SetFilePorts(filesystem.OSFileExecutor{}, filesystem.OSFileObserver{})
+	alignmentOperations.SetFilePorts(filesystem.OSFileExecutor{Receipts: receipts.NewStore(db)}, filesystem.OSFileObserver{})
 	alignmentOperations.SetWorkItems(workStore)
 	alignmentOperations.SetRetention(replacementDecisions)
 	calibrationService := filemaintenance.NewCalibrationService(
@@ -687,7 +692,7 @@ func provideCoreApplicationGraph(
 	// this shared target store and the same filesystem admission boundary.
 	fileOperationService, err := fileoperationapplication.NewService(
 		db,
-		filesystem.OSFileExecutor{},
+		filesystem.OSFileExecutor{Receipts: receipts.NewStore(db)},
 		filesystem.OSFileObserver{},
 	)
 	if err != nil {

@@ -118,10 +118,11 @@ func (f busyFixture) failureNotices(t *testing.T, id string) int {
 }
 
 // A capture refused by an error that proves nothing blocks with the real
-// receipts the refused invocation wrote: a start marker without a final one.
-// A scan release reads them as not applied (the source is intact, nothing
-// was captured) and re-admits the deletion, whose next claim runs the
-// capture again and deletes the file.
+// receipt the refused invocation wrote: a start proof without a final one,
+// held in the receipt store. A scan release reads it as not applied (the
+// source is intact, nothing was captured) and re-admits the deletion, whose
+// next claim runs the capture again and deletes the file; the capture
+// namespace itself stays empty.
 func TestCleanupRefusedCaptureStartedWithoutFinalReruns(t *testing.T) {
 	f := newBusyFixture(t)
 	op := f.admit(t, f.input())
@@ -130,8 +131,8 @@ func TestCleanupRefusedCaptureStartedWithoutFinalReruns(t *testing.T) {
 	if state, code := f.state(t, op.ID); state != CleanupBlocked || code != "cleanup_capture_failed" {
 		t.Fatalf("state=%s code=%s, want blocked/cleanup_capture_failed", state, code)
 	}
-	if got := f.namespaceEntries(t, op.ID); len(got) != 2 {
-		t.Fatalf("refused capture left %v, want its lock and start marker", got)
+	if got := f.namespaceEntries(t, op.ID); len(got) != 0 {
+		t.Fatalf("refused capture left %v, want an empty namespace", got)
 	}
 	assertFilePresent(t, f.source)
 	if n, err := f.service.ReleaseBlockedDeletions(context.Background(), "anime-1"); err != nil || n != 1 {
