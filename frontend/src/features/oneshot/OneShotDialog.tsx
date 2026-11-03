@@ -18,6 +18,7 @@ import { namingFactLabel, namingFailureDetail, namingPendingLabel, reasonLabel }
 import { joinList } from "../../lib/i18n/format";
 import { RulesSectionsFields, type SectionKey } from "../anime-forms/RulesSectionsFields";
 import { TaskConfigPanel } from "../anime-forms/TaskConfigPanel";
+import { TaskSplitLayout, taskPanelColumnClass, taskPreviewColumnClass } from "../anime-forms/TaskSplitLayout";
 import { MetadataFields } from "../anime-forms/MetadataFields";
 import { TitleSuggestionBadges } from "../anime-forms/TitleSuggestionBadges";
 import { draftParserKind, freezeBusinessDraft, withDraftParserKind } from "../anime-config/businessDraft";
@@ -930,12 +931,10 @@ export function OneShotDialog({
       )}
 
       {step === 2 && (
-        // Desktop: a step-position line on top, then the wide preview column left and the narrow
-//         config column right, each scrolling. Phone: one column, scrolled by this container with a
-//         sticky summary bar. auto-rows-max keeps min-h-0 columns from being crushed into equal
-//         fixed row heights and overwriting each other.
-        <div className="tw:grid tw:min-h-0 tw:flex-1 tw:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] tw:grid-rows-[auto_minmax(0,1fr)] tw:phone:grid-cols-1 tw:phone:grid-rows-none tw:phone:auto-rows-max tw:phone:overflow-y-auto tw:phone:overscroll-contain">
-          <div className="tw:col-span-2 tw:px-6 tw:pt-3 tw:phone:col-span-1 tw:phone:px-4">{stepIntro}</div>
+        // The shared split shell (see TaskSplitLayout): the step-position line on top,
+        // the wide preview column left and the narrow config column right, each
+        // scrolling. Phone: one column, scrolled by the shell, with a sticky summary bar.
+        <TaskSplitLayout intro={stepIntro}>
 
           {summary && (
             <div
@@ -964,7 +963,7 @@ export function OneShotDialog({
           <section
             ref={previewRef}
             aria-label={t("oneshot.previewTitle")}
-            className="tw:grid tw:min-h-0 tw:scroll-mt-12 tw:content-start tw:gap-2 tw:overflow-y-auto tw:px-6 tw:pt-3 tw:pb-4 tw:phone:overflow-visible tw:phone:px-4"
+            className={taskPreviewColumnClass}
           >
             <div className="tw:flex tw:items-center tw:gap-2">
               <h3 className="text-body tw:m-0">{t("oneshot.previewTitle")}</h3>
@@ -1009,7 +1008,7 @@ export function OneShotDialog({
             sectionRef={settingsRef}
             ariaLabel={t("oneshot.configTitle")}
             title={t("oneshot.configTitle")}
-            className="tw:min-h-0 tw:overflow-y-auto tw:border-l tw:border-border tw:px-5 tw:pt-3 tw:pb-4 tw:phone:overflow-visible tw:phone:border-l-0 tw:phone:border-t tw:phone:px-4 tw:phone:pt-4"
+            className={taskPanelColumnClass}
             note={source.kind === "custom" ? t("oneshot.customConfigNote") : t("oneshot.configLocalNote")}
             actions={
               <>
@@ -1128,7 +1127,7 @@ export function OneShotDialog({
               {!offsetValid && <p className="text-danger text-caption">{t("rss.offsetInvalid")}</p>}
             </div>
           </TaskConfigPanel>
-        </div>
+        </TaskSplitLayout>
       )}
     </Dialog>
   );

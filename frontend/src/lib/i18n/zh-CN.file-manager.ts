@@ -211,15 +211,9 @@ export const fileManagerCopy = {
     apply: "应用",
     match: {
       none: "未匹配",
-      matched: "《{title}》",
-      clear: "清除",
-      open: "选择番剧",
-      reopen: "更改",
       anime: "番剧",
-      animePlaceholder: "选择番剧",
       offset: "集数偏移",
       episode: "集数",
-      done: "完成",
     },
     preview: {
       heading: "执行预览",

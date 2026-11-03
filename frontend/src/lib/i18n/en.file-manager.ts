@@ -213,15 +213,9 @@ export const enFileManagerCopy = {
     apply: "Apply",
     match: {
       none: "Not matched",
-      matched: "{title}",
-      clear: "Clear",
-      open: "Pick anime",
-      reopen: "Change",
       anime: "Anime",
-      animePlaceholder: "Pick an anime",
       offset: "Episode offset",
       episode: "Episode",
-      done: "Done",
     },
     preview: {
       heading: "Plan",

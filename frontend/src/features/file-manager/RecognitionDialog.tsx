@@ -27,6 +27,7 @@ import { BoundSubtitles, type BoundSubtitleItem } from "../../ui/BoundSubtitles"
 import { MetadataFields } from "../anime-forms/MetadataFields";
 import { RulesSectionsFields, type SectionKey } from "../anime-forms/RulesSectionsFields";
 import { TaskConfigPanel } from "../anime-forms/TaskConfigPanel";
+import { TaskSplitLayout, taskPanelColumnClass, taskPreviewColumnClass } from "../anime-forms/TaskSplitLayout";
 import type { MetadataProvider } from "../../lib/metadata/types";
 import { ParserKindSelect } from "../parser/ParserKindSelect";
 import { useParserKindOptions } from "../parser/useParserKindOptions";
@@ -123,7 +124,6 @@ export function RecognitionDialog({
   // The shared section cards, with hints for this operation's input: file names
   // in one folder, not an RSS title and a folder tree.
   const hints = { parser: t("fileManager.recognize.parserHint"), naming: t("fileManager.recognize.namingHint") };
-  const [matchOpen, setMatchOpen] = useState(false);
   const [matchProvider, setMatchProvider] = useState<MetadataProvider | undefined>();
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -149,7 +149,6 @@ export function RecognitionDialog({
     JSON.stringify([rules.parser, rules.naming]) !== JSON.stringify([baseline.current.parser, baseline.current.naming]);
   function restoreDefaults() {
     setDraft({ ...INITIAL_DRAFT, rules: baseline.current });
-    setMatchOpen(false);
   }
 
   const episode = wholeNumber(episodeText, 1, 99999);
@@ -254,14 +253,14 @@ export function RecognitionDialog({
     !busy;
 
   const animeList = useQuery({ queryKey: animeKeys.list, queryFn: listAnime });
+  // The empty choice is the unmatched state: picking it clears the match, so the
+  // match field works like one-shot's plain form fields with no extra chrome.
   const animeOptions: SelectOption<string>[] = [
-    { value: "", label: t("fileManager.recognize.match.animePlaceholder"), disabled: true },
+    { value: "", label: t("fileManager.recognize.match.none") },
     ...(animeList.data ?? [])
       .filter((item) => item.subscription.state === "active" || item.subscription.state === "stopped")
       .map((item) => ({ value: item.managed_anime.id, label: item.managed_anime.title_override ?? item.managed_anime.title })),
   ];
-  const matchedAnime = (animeList.data ?? []).find((item) => item.managed_anime.id === matchAnimeID)?.managed_anime;
-  const matchedTitle = matchedAnime ? effectiveTitle(matchedAnime) : undefined;
   // Matching seeds the operation's draft from the anime's stored facts: every
   // value the render reads is copied here and never written back.
   function selectMatch(animeID: string) {
@@ -318,7 +317,6 @@ export function RecognitionDialog({
         onRequestClose={busy ? () => {} : onClose}
         closeDisabled={busy}
         bodyLayout="fill"
-        bodyClassName="tw:min-h-0"
         footer={
           <>
             <span className="tw:mr-auto tw:min-w-0 tw:text-xs tw:text-muted-foreground">
@@ -339,17 +337,17 @@ export function RecognitionDialog({
           </>
         }
       >
-        {/* Both columns scroll on their own, like one-shot step two: the plan
-            stays in place while the settings column is read and edited. */}
-        <div className="tw:grid tw:min-h-0 tw:flex-1 tw:grid-cols-1 tw:lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] tw:phone:auto-rows-max tw:phone:overflow-y-auto tw:phone:overscroll-contain">
+        {/* The shared split shell one-shot step two uses: the plan stays in
+            place while the settings column is read and edited. */}
+        <TaskSplitLayout>
           <section
             aria-label={t("fileManager.recognize.preview.heading")}
-            className="tw:grid tw:min-h-0 tw:min-w-0 tw:content-start tw:gap-2 tw:overflow-y-auto tw:px-6 tw:pt-4 tw:pb-4 tw:phone:overflow-visible tw:phone:px-4"
+            className={taskPreviewColumnClass}
           >
-            <h4 className="tw:m-0 tw:text-sm tw:font-semibold">
+            <h3 className="text-body tw:m-0">
               {t("fileManager.recognize.preview.heading")}
               <span className="tw:ml-2 tw:text-xs tw:font-normal tw:text-muted-foreground">{t("fileManager.recognize.preview.sub")}</span>
-            </h4>
+            </h3>
             {videoTemplate.trim() === "" ? (
               <Alert tone="warning" title={t("fileManager.recognize.preview.emptyTemplate")} />
             ) : numberInvalid ? (
@@ -380,7 +378,7 @@ export function RecognitionDialog({
             ariaLabel={t("fileManager.recognize.configAria")}
             title={t("fileManager.recognize.configTitle")}
             note={t("fileManager.recognize.intro")}
-            className="tw:min-h-0 tw:min-w-0 tw:overflow-y-auto tw:border-l tw:border-border tw:px-5 tw:pt-3 tw:pb-4 tw:phone:overflow-visible tw:phone:border-l-0 tw:phone:border-t tw:phone:px-4 tw:phone:pt-4"
+            className={taskPanelColumnClass}
             actions={
               <>
                 <HelpTip label={t("fileManager.recognize.restoreDefaultsHelpLabel")}>{t("fileManager.recognize.restoreDefaultsHint")}</HelpTip>
@@ -417,61 +415,31 @@ export function RecognitionDialog({
               ),
             }}
           >
-            {/* One row of the same fact-card column one-shot renders: the anime is the
-                only fact this operation has to pick instead of inherit. */}
-            <section className="metadata-card" aria-labelledby="recognize-match-label">
-              <div className="metadata-header">
-                <span id="recognize-match-label" className="metadata-title text-body">
-                  {t("fileManager.recognize.match.anime")}
-                </span>
-                {matchAnimeID !== "" && matchedTitle ? (
-                  <span className="metadata-row-value text-caption tw:min-w-0 tw:truncate">
-                    {t("fileManager.recognize.match.matched", { title: matchedTitle })}
-                  </span>
-                ) : (
-                  <span className="metadata-muted text-caption">{t("fileManager.recognize.match.none")}</span>
-                )}
-                <div className="metadata-actions">
-                  {matchAnimeID !== "" ? (
-                    <Button size="sm" variant="ghost" disabled={busy} onClick={() => selectMatch("")}>
-                      {t("fileManager.recognize.match.clear")}
-                    </Button>
-                  ) : null}
-                  <Button size="sm" disabled={busy} onClick={() => setMatchOpen(!matchOpen)}>
-                    {matchAnimeID !== "" ? t("fileManager.recognize.match.reopen") : t("fileManager.recognize.match.open")}
-                  </Button>
-                </div>
-              </div>
-              {matchOpen ? (
-                <div className="tw:mt-2 tw:grid tw:gap-2">
-                  <Select
-                    label={t("fileManager.recognize.match.anime")}
-                    value={matchAnimeID}
-                    options={animeOptions}
-                    onChange={selectMatch}
+            {/* The same flat field column one-shot renders: the anime match is
+                this operation's first field; the matched facts — title, metadata,
+                offset — follow in one-shot's order once a match exists. */}
+            <div className="tw:grid tw:gap-1.5">
+              <Select
+                label={t("fileManager.recognize.match.anime")}
+                value={matchAnimeID}
+                options={animeOptions}
+                onChange={selectMatch}
+                disabled={busy}
+              />
+              {matchAnimeID !== "" && singleVideo ? (
+                <Field label={t("fileManager.recognize.match.episode")}>
+                  <Input
+                    inputMode="numeric"
+                    aria-label={t("fileManager.recognize.match.episode")}
+                    value={episodeText}
+                    onChange={(event) => update({ episodeText: event.target.value })}
+                    aria-invalid={episodeText !== "" && episode === null ? true : undefined}
+                    autoComplete="off"
                     disabled={busy}
                   />
-                  {singleVideo ? (
-                    <Field label={t("fileManager.recognize.match.episode")}>
-                      <Input
-                        inputMode="numeric"
-                        aria-label={t("fileManager.recognize.match.episode")}
-                        value={episodeText}
-                        onChange={(event) => update({ episodeText: event.target.value })}
-                        aria-invalid={episodeText !== "" && episode === null ? true : undefined}
-                        autoComplete="off"
-                        disabled={busy}
-                      />
-                    </Field>
-                  ) : null}
-                  <div className="tw:flex tw:justify-end">
-                    <Button size="sm" onClick={() => setMatchOpen(false)}>
-                      {t("fileManager.recognize.match.done")}
-                    </Button>
-                  </div>
-                </div>
+                </Field>
               ) : null}
-            </section>
+            </div>
             {matchAnimeID !== "" ? (
               <>
                 <div className="tw:grid tw:grid-cols-1 tw:gap-2">
@@ -516,22 +484,24 @@ export function RecognitionDialog({
                     mediaKind={metadata.media_kind ?? null}
                   />
                 </div>
-                <Field label={t("fileManager.recognize.match.offset")}>
-                  <Input
-                    inputMode="numeric"
-                    aria-label={t("fileManager.recognize.match.offset")}
-                    value={offsetText}
-                    onChange={(event) => update({ offsetText: event.target.value })}
-                    aria-invalid={offset !== null ? undefined : true}
-                    autoComplete="off"
-                    disabled={busy}
-                  />
-                </Field>
+                <div className="tw:grid tw:gap-1.5">
+                  <Field label={t("fileManager.recognize.match.offset")}>
+                    <Input
+                      inputMode="numeric"
+                      aria-label={t("fileManager.recognize.match.offset")}
+                      value={offsetText}
+                      onChange={(event) => update({ offsetText: event.target.value })}
+                      aria-invalid={offset !== null ? undefined : true}
+                      autoComplete="off"
+                      disabled={busy}
+                    />
+                  </Field>
+                </div>
               </>
             ) : null}
             <p className="tw:m-0 tw:text-xs tw:text-muted-foreground">{t("fileManager.recognize.applyHint")}</p>
           </TaskConfigPanel>
-        </div>
+        </TaskSplitLayout>
       </Dialog>
       {conflictOpen && data ? (
         <ConflictDialog

@@ -224,7 +224,7 @@ describe("RecognitionDialog", () => {
     await screen.findByText("/media/anime/Show - 01.mkv", undefined, { timeout: 3000 });
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: t("fileManager.recognize.match.open") }));
+    // The match is a plain field of the settings column: no expand step.
     await user.click(screen.getByRole("combobox", { name: t("fileManager.recognize.match.anime") }));
     await user.click(await screen.findByRole("option", { name: "作品甲" }));
 
