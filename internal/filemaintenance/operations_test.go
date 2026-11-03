@@ -6,6 +6,7 @@ import (
 	"bansoko/internal/library/adapter/filesystem"
 	"bansoko/internal/library/domain"
 	"bansoko/internal/testutil/disposabledb"
+	"bansoko/internal/testutil/maintenancestore"
 	"bansoko/internal/workitems"
 	"bytes"
 	"context"
@@ -573,7 +574,11 @@ func TestAlignmentReclaimedAttemptConverges(t *testing.T) {
 			if err = tx.Commit(); err != nil {
 				t.Fatal(err)
 			}
-			executor := panicAfterAlignmentExecutor{inner: maintenanceTestFileExecutor(), before: !moved}
+			// The receipt store stands in for the PostgreSQL one: it must
+			// outlive the crashed executor exactly as the durable store does,
+			// or the reclaimed attempt reads as never started.
+			receipts := maintenancestore.New()
+			executor := panicAfterAlignmentExecutor{inner: filesystem.OSFileExecutor{Receipts: receipts}, before: !moved}
 			fixture.svc.SetFilePorts(executor, filesystem.OSFileObserver{})
 			claim, err := store.ClaimDue(ctx, "crash-worker", []string{workitems.KindAlignmentExecute}, time.Second)
 			if err != nil {
@@ -619,7 +624,7 @@ func TestAlignmentReclaimedAttemptConverges(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			fixture.svc.SetFilePorts(maintenanceTestFileExecutor(), filesystem.OSFileObserver{})
+			fixture.svc.SetFilePorts(filesystem.OSFileExecutor{Receipts: receipts}, filesystem.OSFileObserver{})
 			outcome, err := fixture.svc.ExecuteHandler().Handle(ctx, reclaimed)
 			if !tc.converges {
 				if !errors.Is(err, workitems.ErrPublicationUnresolved) {
