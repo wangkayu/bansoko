@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+
+	"bansoko/internal/workitems"
 )
 
 // TransientResidueDirectories lists the distinct directories bansoko has
@@ -58,4 +60,38 @@ LIMIT $1`, limit)
 		return nil, err
 	}
 	return dirs, nil
+}
+
+// TransientResidueProtectedOwners lists the delete owners whose work item is
+// still available or leased. A delete stage's start proof freezes the identity
+// of its private namespace directory, so the startup sweep must not remove one
+// while its owner may still read that receipt.
+func TransientResidueProtectedOwners(ctx context.Context, db *sql.DB, limit int) (map[string]struct{}, error) {
+	if db == nil {
+		return nil, errors.New("transient residue protected owners require a database")
+	}
+	if limit <= 0 {
+		return nil, errors.New("transient residue protected owner limit must be positive")
+	}
+	rows, err := db.QueryContext(ctx, `
+SELECT DISTINCT owner_id FROM work_items
+WHERE state IN ('available','leased')
+  AND owner_type IN ($1,$2)
+LIMIT $3`, workitems.OwnerReplacementDeletion, workitems.OwnerFileManagerOperation, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	protected := make(map[string]struct{})
+	for rows.Next() {
+		var owner string
+		if err := rows.Scan(&owner); err != nil {
+			return nil, err
+		}
+		protected[owner] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return protected, nil
 }

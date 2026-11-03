@@ -80,7 +80,16 @@ func TestSweepTransientResidueRemovesOnlyAbandonedTransients(t *testing.T) {
 	if err := os.Chtimes(filepath.Join(root, publicNamespace), old, old); err != nil {
 		t.Fatal(err)
 	}
-	keep = append(keep, freshNamespace, openNamespace, publicNamespace)
+	// A live delete owner's namespace anchors its start proof.
+	liveOwner := "9f4b8f11-c165-4a6f-be51-ad7c3a4b5e6f"
+	liveNamespace := cleanupNamespacePrefix + liveOwner
+	if err := os.Mkdir(filepath.Join(root, liveNamespace), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(filepath.Join(root, liveNamespace), old, old); err != nil {
+		t.Fatal(err)
+	}
+	keep = append(keep, freshNamespace, openNamespace, publicNamespace, liveNamespace)
 	// Residue one level down is out of scope.
 	nested := filepath.Join(root, "nested")
 	if err := os.Mkdir(nested, 0700); err != nil {
@@ -94,6 +103,7 @@ func TestSweepTransientResidueRemovesOnlyAbandonedTransients(t *testing.T) {
 		ModifiedBefore:         time.Now().Add(-time.Hour),
 		MaxDirectories:         10,
 		MaxEntriesPerDirectory: 1000,
+		ProtectedCleanupOwners: map[string]struct{}{liveOwner: {}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -124,6 +134,40 @@ func TestSweepTransientResidueRemovesOnlyAbandonedTransients(t *testing.T) {
 	}
 	if _, err := os.Lstat(nestedResidue); err != nil {
 		t.Fatalf("nested residue must not be swept: %v", err)
+	}
+}
+
+// Without a live-owner set the caller cannot tell whose namespace is still an
+// anchor, so no namespace is removed while transient files still are.
+func TestSweepTransientResidueWithoutOwnerSetKeepsNamespaces(t *testing.T) {
+	root := t.TempDir()
+	old := time.Now().Add(-2 * time.Hour)
+	namespace := cleanupNamespacePrefix + "5b0d4bdd-8d21-4c2b-9a1d-6f3e9c0d1a2b"
+	if err := os.Mkdir(filepath.Join(root, namespace), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(filepath.Join(root, namespace), old, old); err != nil {
+		t.Fatal(err)
+	}
+	residue := transientCopyPrefix + strings.Repeat("a", 64)
+	writeSweepFile(t, filepath.Join(root, residue), old)
+
+	report, err := SweepTransientResidue(context.Background(), []string{root}, TransientResidueSweepOptions{
+		ModifiedBefore:         time.Now().Add(-time.Hour),
+		MaxDirectories:         10,
+		MaxEntriesPerDirectory: 100,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Removed != 1 || report.Failed != 0 {
+		t.Fatalf("unexpected report without an owner set: %+v", report)
+	}
+	if _, err := os.Lstat(filepath.Join(root, namespace)); err != nil {
+		t.Fatalf("a namespace was removed without knowing its owner: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(root, residue)); !os.IsNotExist(err) {
+		t.Fatalf("transient file remains: %v", err)
 	}
 }
 

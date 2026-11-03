@@ -49,10 +49,28 @@ func runTransientResidueSweep(ctx context.Context, db *sql.DB, logger observabil
 		}
 		return
 	}
+	// A live owner's namespace directory anchors its delete start proof, so a
+	// set that cannot be read disables namespace removal for this pass; the
+	// transient files are swept either way.
+	protected, err := filemaintenance.TransientResidueProtectedOwners(sweepCtx, db, transientResidueMaxRecordedPaths)
+	if err != nil {
+		if ctx.Err() == nil {
+			logger.Warn(ctx, observabilityport.RuntimeEvent{
+				Message:    "live delete owners could not be read; empty delete namespaces are left in place",
+				Component:  transientResidueSweepComponentName,
+				Operation:  "transient_residue_sweep",
+				Outcome:    "failure",
+				ReasonCode: "transient_residue_protected_owners_failed",
+				ErrorClass: "database",
+			})
+		}
+		protected = nil
+	}
 	report, err := filesystem.SweepTransientResidue(sweepCtx, dirs, filesystem.TransientResidueSweepOptions{
 		ModifiedBefore:         started.Add(-transientResidueSafetyMargin),
 		MaxDirectories:         transientResidueMaxDirectories,
 		MaxEntriesPerDirectory: transientResidueMaxEntriesPerDir,
+		ProtectedCleanupOwners: protected,
 	})
 	if err != nil {
 		if ctx.Err() == nil {

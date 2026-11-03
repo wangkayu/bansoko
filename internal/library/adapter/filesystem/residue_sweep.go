@@ -36,6 +36,12 @@ type TransientResidueSweepOptions struct {
 	// large library.
 	MaxDirectories         int
 	MaxEntriesPerDirectory int
+	// ProtectedCleanupOwners names delete owners whose work item is still live:
+	// their namespace directory is a frozen anchor of the invocation's start
+	// proof, so it is never removed. A nil set refuses cleanup-namespace
+	// removal altogether, which is what a caller that cannot read the live
+	// owners must pass.
+	ProtectedCleanupOwners map[string]struct{}
 }
 
 // TransientResidueSweep reports what one bounded pass saw and removed.
@@ -50,10 +56,10 @@ type TransientResidueSweep struct {
 // SweepTransientResidue removes abandoned transient files and empty delete
 // namespaces from the given directories, one level deep. Only regular files
 // whose whole name matches a transient shape, and empty service-owned 0700
-// cleanup namespace directories, are removed; other directories, symlinks,
-// unknown names, and entries touched at or after the cutoff are left in place.
-// A missing directory is not an error. The returned error reports only
-// cancellation.
+// cleanup namespace directories whose owner has no live action, are removed;
+// other directories, symlinks, unknown names, and entries touched at or after
+// the cutoff are left in place. A missing directory is not an error. The
+// returned error reports only cancellation.
 func SweepTransientResidue(ctx context.Context, dirs []string, opts TransientResidueSweepOptions) (TransientResidueSweep, error) {
 	var report TransientResidueSweep
 	if opts.ModifiedBefore.IsZero() {
@@ -93,6 +99,18 @@ func SweepTransientResidue(ctx context.Context, dirs []string, opts TransientRes
 	return report, nil
 }
 
+// protectsCleanupNamespace reports whether the namespace with this name must be
+// left in place: a live owner's namespace is a frozen anchor of its start
+// proof, and a nil protection set means the caller could not read the live
+// owners, so no namespace is removed at all.
+func (opts TransientResidueSweepOptions) protectsCleanupNamespace(name string) bool {
+	if opts.ProtectedCleanupOwners == nil {
+		return true
+	}
+	_, protected := opts.ProtectedCleanupOwners[strings.TrimPrefix(name, cleanupNamespacePrefix)]
+	return protected
+}
+
 func sweepTransientResidueDir(ctx context.Context, dir string, opts TransientResidueSweepOptions, report *TransientResidueSweep) (bool, error) {
 	handle, err := os.Open(dir)
 	if err != nil {
@@ -116,6 +134,9 @@ func sweepTransientResidueDir(ctx context.Context, dir string, opts TransientRes
 			scanned++
 			report.Entries++
 			if strings.HasPrefix(entry.Name(), cleanupNamespacePrefix) {
+				if opts.protectsCleanupNamespace(entry.Name()) {
+					continue
+				}
 				removed, sweepErr := sweepAbandonedCleanupNamespace(dir, entry.Name(), opts.ModifiedBefore)
 				if removed {
 					report.Removed++
