@@ -130,7 +130,12 @@ describe("Poster 暂时失败重试", () => {
     const container = renderPoster({ entry: entry({ coverUrl: COVER }) });
     await waitFor(() => expect(screen.getByText("测")).toBeInTheDocument());
 
-    window.dispatchEvent(new Event("focus"));
+    // The listener exists only once the failure has settled into the retry state; dispatch until
+    // that round has started rather than racing the first response.
+    await waitFor(() => {
+      window.dispatchEvent(new Event("focus"));
+      expect(callsFor(COVER)).toBe(2);
+    });
     await waitFor(() => expect(container.querySelector("img")?.getAttribute("src")).toBe("blob:cover"));
     expect(callsFor(COVER)).toBe(2);
   });
