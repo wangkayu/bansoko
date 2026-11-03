@@ -205,13 +205,10 @@ export const fileManagerCopy = {
     unknownRouteText: "按全局未知文件策略，这些文件将移动到 Extras 文件夹",
     unknownSkipText: "按全局未知文件策略，这些文件保持原样",
     unknownShort: "{n} 项无法识别集数",
-    invalidTitle: "标题不能为空",
     invalidNumber: "集数或偏移需要填写完整的整数",
     willProcess: "将处理 {n} 项",
     apply: "应用",
     match: {
-      none: "未匹配",
-      anime: "番剧",
       offset: "集数偏移",
       episode: "集数",
     },

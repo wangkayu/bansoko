@@ -207,13 +207,10 @@ export const enFileManagerCopy = {
     unknownRouteText: "Per the global unknown-files policy these files move to the Extras folder",
     unknownSkipText: "Per the global unknown-files policy these files stay as they are",
     unknownShort: "{n} without an episode",
-    invalidTitle: "The title can't be empty",
     invalidNumber: "Episode and offset must be whole numbers",
     willProcess: "{n} to process",
     apply: "Apply",
     match: {
-      none: "Not matched",
-      anime: "Anime",
       offset: "Episode offset",
       episode: "Episode",
     },

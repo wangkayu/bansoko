@@ -6332,8 +6332,9 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** @description The optional anime facts source of the render. Three forms: a managed anime (`managed_anime_id`, optionally overlaid with `anime` as the operation's temporary draft), a draft alone (`anime` without `managed_anime_id`) for naming with facts the user typed or matched from a metadata provider, exactly as one-shot's task draft, or a bare episode adjustment (`episode` and/or a non-zero `offset`) over a pure parse of the file names. A match carrying none of these is refused. */
         FileManagerRecognitionMatch: {
-            managed_anime_id: components["schemas"]["ID"];
+            managed_anime_id?: components["schemas"]["ID"];
             /** @description Season this operation names files with; omitted reads the anime's owner-edited season. */
             season?: number;
             /** @description The episode when the file's own name carries none; it applies to exactly one video, and `ep.source` reads `manual`. */
@@ -6425,6 +6426,8 @@ export interface components {
             directory: string;
             rows: components["schemas"]["FileManagerRecognitionRow"][];
             unknown_route: components["schemas"]["FileManagerRecognitionUnknownRoute"];
+            /** @description The title the parser read from the first recognized file's own name, offered as the match's title candidate — the same read the seed search exposes per seed as `title_hint`; absent when no name parses a title. */
+            title_hint?: string;
             /** @description The plan the submit must confirm. */
             plan_digest: string;
             /** @description Absolute targets another row or a file already holds. */

@@ -245,8 +245,13 @@ type RecognitionPreview struct {
 	Directory    string
 	Rows         []RecognitionRow
 	UnknownRoute string
-	PlanDigest   string
-	Conflicts    []string
+	// TitleHint is the title the parser read from the first recognized file's
+	// own name, offered as the match's title candidate — the same read the
+	// seed search exposes per seed as TitleHint; empty when no name parses a
+	// title.
+	TitleHint  string
+	PlanDigest string
+	Conflicts  []string
 }
 
 // SubmitRecognitionRequest confirms one previewed recognition. Conflict is how
@@ -328,8 +333,12 @@ func validateRecognitionMatch(match *RecognitionMatch) error {
 	if match == nil {
 		return nil
 	}
-	if strings.TrimSpace(match.ManagedAnimeID) == "" {
-		return invalid(CodeRecognitionInvalid, "a match needs an anime")
+	// Three forms: a managed anime (optionally overlaid with the draft), the
+	// draft alone naming with facts the user typed or matched from a metadata
+	// provider — the same facts one-shot's task draft carries — or a bare
+	// episode adjustment over a pure parse of the file names.
+	if strings.TrimSpace(match.ManagedAnimeID) == "" && match.Anime == nil && match.Episode == nil && match.Offset == 0 {
+		return invalid(CodeRecognitionInvalid, "a match needs an anime, a draft or an episode adjustment")
 	}
 	if match.Season != nil && (*match.Season < 0 || *match.Season > maxMatchSeason) {
 		return invalid(CodeRecognitionInvalid, "season is out of range")
@@ -642,7 +651,9 @@ func (s *Service) recognitionPlan(ctx context.Context, request RecognitionReques
 	if err != nil {
 		return recognitionPlan{}, err
 	}
-	if request.Match != nil {
+	// A managed-anime match re-reads the anime; a draft-only match names with
+	// the draft alone and touches nothing stored.
+	if request.Match != nil && strings.TrimSpace(request.Match.ManagedAnimeID) != "" {
 		if s.matchAnimes == nil {
 			return recognitionPlan{}, conflict(CodeRecognitionUnavailable, "file manager match is not available")
 		}
@@ -1082,6 +1093,17 @@ func (s *Service) PreviewRecognition(ctx context.Context, request RecognitionReq
 		return RecognitionPreview{}, err
 	}
 	preview := RecognitionPreview{Directory: plan.directory, Rows: plan.rows, UnknownRoute: plan.unknownRoute, PlanDigest: plan.digest}
+	// The match's title candidate: the title the parser read from the first
+	// video's own name, the same read a search seed's title hint carries.
+	for _, file := range plan.files {
+		if file.kind != filekinds.KindVideo {
+			continue
+		}
+		if title, ok := file.rt.Get("Title"); ok && title != "" {
+			preview.TitleHint = title
+			break
+		}
+	}
 	for _, row := range plan.rows {
 		if row.Conflict != nil {
 			preview.Conflicts = append(preview.Conflicts, row.TargetPath)

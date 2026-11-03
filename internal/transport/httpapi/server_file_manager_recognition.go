@@ -115,8 +115,11 @@ func mapFileManagerRecognitionRequest(paths []string, videoTemplate string, subt
 	}
 	if match != nil {
 		request.Match = &filemanager.RecognitionMatch{
-			ManagedAnimeID: match.ManagedAnimeId, Season: match.Season, Episode: match.Episode,
+			Season: match.Season, Episode: match.Episode,
 			Anime: mapFileManagerRecognitionAnimeDraft(match.Anime),
+		}
+		if match.ManagedAnimeId != nil {
+			request.Match.ManagedAnimeID = string(*match.ManagedAnimeId)
 		}
 		if match.Offset != nil {
 			request.Match.Offset = *match.Offset
@@ -150,6 +153,10 @@ func mapFileManagerRecognitionPreview(preview filemanager.RecognitionPreview) ge
 		Directory: preview.Directory, UnknownRoute: generated.FileManagerRecognitionUnknownRoute(preview.UnknownRoute),
 		PlanDigest: preview.PlanDigest, Conflicts: append([]string{}, preview.Conflicts...),
 		Rows: make([]generated.FileManagerRecognitionRow, 0, len(preview.Rows)),
+	}
+	if preview.TitleHint != "" {
+		hint := preview.TitleHint
+		mapped.TitleHint = &hint
 	}
 	for _, row := range preview.Rows {
 		mapped.Rows = append(mapped.Rows, mapFileManagerRecognitionRow(row))

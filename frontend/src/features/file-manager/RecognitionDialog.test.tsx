@@ -3,7 +3,6 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
-  AnimeListItem,
   FileManagerRecognitionPreview,
   FileManagerRecognitionResult,
   FileManagerRecognitionRow,
@@ -66,20 +65,6 @@ const renamed: FileManagerRecognitionRow[] = [
 
 const result: FileManagerRecognitionResult = { renamed: 2, moved: 0, operations: [] };
 
-const animeItem = {
-  managed_anime: { id: "anime-1", title: "作品甲", title_override: null },
-  subscription: { state: "active" },
-  metadata: {
-    bgm: { work_id: "100" },
-    tmdb: { work_id: "200", media_kind: "tv", season: 2 },
-    media_kind: "tv",
-    total_episodes: 12,
-    year: 2021,
-    season: 2,
-  },
-} as unknown as AnimeListItem;
-
-let animeList: AnimeListItem[];
 let previewBody: FileManagerRecognitionPreview;
 let submitStatus: number;
 let submitBody: unknown;
@@ -97,9 +82,10 @@ function posts(pathname: string): unknown[] {
 
 beforeEach(() => {
   submitStatus = 202;
-  animeList = [];
   submitBody = result;
-  previewBody = { directory: "/media/anime", rows: renamed, unknown_route: "skip", plan_digest: "digest-1", conflicts: [] };
+  // The parser's read of the first file's name rides on the preview as the
+  // title candidate the badges offer.
+  previewBody = { directory: "/media/anime", rows: renamed, unknown_route: "skip", plan_digest: "digest-1", conflicts: [], title_hint: "测试番剧" };
   fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input), "http://localhost");
     if (url.pathname === "/api/v1/config/naming-templates") return json(library);
@@ -107,7 +93,6 @@ beforeEach(() => {
       return json({ language: "js-naming-1", fields: [], functions: [], shorthands: [], samples: [], vars_keys: [], vars_loaded_at: null });
     }
     if (url.pathname === "/api/v1/parser-catalog") return json(parsers);
-    if (url.pathname === "/api/v1/anime") return json(animeList);
     if (url.pathname === "/api/v1/file-manager/recognition/preview" && init?.method === "POST") return json(previewBody);
     if (url.pathname === "/api/v1/file-manager/recognition" && init?.method === "POST") {
       if (submitStatus !== 202) return json({ code: "FILE_MANAGER_RECOGNITION_PLAN_CHANGED", message: "changed" }, submitStatus);
@@ -218,36 +203,29 @@ describe("RecognitionDialog", () => {
     expect(within(choice).queryByText(t("fileManager.conflictChoice.overwriteWarning"))).not.toBeInTheDocument();
   });
 
-  it("seeds the temporary draft from the matched anime and sends it with the request", async () => {
-    animeList = [animeItem];
+  it("names with the typed title draft and offers the parser's candidate as a badge", async () => {
     renderDialog();
     await screen.findByText("/media/anime/Show - 01.mkv", undefined, { timeout: 3000 });
 
-    const user = userEvent.setup();
-    // The match is a plain field of the settings column: no expand step.
-    await user.click(screen.getByRole("combobox", { name: t("fileManager.recognize.match.anime") }));
-    await user.click(await screen.findByRole("option", { name: "作品甲" }));
+    // No match while the title is empty: the render is a pure parse of the names.
+    const [first] = posts("/api/v1/file-manager/recognition/preview") as Record<string, unknown>[];
+    expect(first).not.toHaveProperty("match");
+    // Total episodes play no part in a rename, so the row is not offered here.
+    expect(screen.queryByText(t("forms.totalEpisodes"))).not.toBeInTheDocument();
 
-    // The matched anime's facts are this operation's draft: the title row and
-    // the metadata cards show the stored values, and the anime is not written to.
-    const title = await screen.findByRole("textbox", { name: t("field.title") });
-    expect(title).toHaveValue("作品甲");
-    expect(screen.getByText("100")).toBeInTheDocument();
-    expect(screen.getByText(/200/)).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: t("forms.seasonAria") })).toHaveValue("2");
-    expect(screen.getByRole("textbox", { name: t("forms.year") })).toHaveValue("2021");
-    expect(screen.getByRole("textbox", { name: t("forms.totalEpisodes") })).toHaveValue("12");
+    // The parser's read of the first file's name is offered like one-shot's work names.
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /测试番剧/ }));
+    const title = screen.getByRole("textbox", { name: t("field.title") });
+    expect(title).toHaveValue("测试番剧");
 
     await waitFor(
       () => {
-        const requests = posts("/api/v1/file-manager/recognition/preview") as { match?: { anime?: unknown } }[];
-        expect(requests.at(-1)?.match?.anime).toEqual({
-          title: "作品甲",
-          media_kind: "tv",
-          year: 2021,
-          bgm: { work_id: "100" },
-          tmdb: { work_id: "200", media_kind: "tv", season: 2 },
-        });
+        const requests = posts("/api/v1/file-manager/recognition/preview") as {
+          match?: { anime?: { title?: string }; managed_anime_id?: string };
+        }[];
+        expect(requests.at(-1)?.match?.anime?.title).toBe("测试番剧");
+        expect(requests.at(-1)?.match?.managed_anime_id).toBeUndefined();
       },
       { timeout: 3000 },
     );
@@ -258,6 +236,25 @@ describe("RecognitionDialog", () => {
       () => {
         const requests = posts("/api/v1/file-manager/recognition/preview") as { match?: { anime?: { title?: string } } }[];
         expect(requests.at(-1)?.match?.anime?.title).toBe("作品乙");
+      },
+      { timeout: 3000 },
+    );
+  });
+
+  it("sends a bare episode adjustment without any title", async () => {
+    renderDialog();
+    await screen.findByText("/media/anime/Show - 01.mkv", undefined, { timeout: 3000 });
+
+    // Episode and offset are plain fields of the settings column, no match needed.
+    fireEvent.change(screen.getByRole("spinbutton", { name: t("fileManager.recognize.match.episode") }), { target: { value: "3" } });
+    fireEvent.change(screen.getByRole("spinbutton", { name: t("fileManager.recognize.match.offset") }), { target: { value: "1" } });
+    await waitFor(
+      () => {
+        const requests = posts("/api/v1/file-manager/recognition/preview") as {
+          match?: { episode?: number; offset?: number; anime?: unknown };
+        }[];
+        expect(requests.at(-1)?.match).toMatchObject({ episode: 3, offset: 1 });
+        expect(requests.at(-1)?.match?.anime).toBeUndefined();
       },
       { timeout: 3000 },
     );

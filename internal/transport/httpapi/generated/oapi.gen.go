@@ -5257,14 +5257,14 @@ type FileManagerRecognitionEpisode struct {
 	Source string `json:"source"`
 }
 
-// FileManagerRecognitionMatch defines model for FileManagerRecognitionMatch.
+// FileManagerRecognitionMatch The optional anime facts source of the render. Three forms: a managed anime (`managed_anime_id`, optionally overlaid with `anime` as the operation's temporary draft), a draft alone (`anime` without `managed_anime_id`) for naming with facts the user typed or matched from a metadata provider, exactly as one-shot's task draft, or a bare episode adjustment (`episode` and/or a non-zero `offset`) over a pure parse of the file names. A match carrying none of these is refused.
 type FileManagerRecognitionMatch struct {
 	// Anime The anime facts this recognition names files with, for this operation only: the settings column's temporary draft, initialized from the matched anime. Nothing here is written back; a value the caller leaves as the anime stores it is still sent, so the render never mixes the draft with a re-read of the anime.
 	Anime *FileManagerRecognitionAnimeDraft `json:"anime,omitempty"`
 
 	// Episode The episode when the file's own name carries none; it applies to exactly one video, and `ep.source` reads `manual`.
 	Episode        *int `json:"episode,omitempty"`
-	ManagedAnimeId ID   `json:"managed_anime_id"`
+	ManagedAnimeId *ID  `json:"managed_anime_id,omitempty"`
 
 	// Offset Offset applied to every recognized episode of the request.
 	Offset *int `json:"offset,omitempty"`
@@ -5295,12 +5295,16 @@ type FileManagerRecognitionPreview struct {
 	PlanDigest string                      `json:"plan_digest"`
 	Rows       []FileManagerRecognitionRow `json:"rows"`
 
+	// TitleHint The title the parser read from the first recognized file's own name, offered as the match's title candidate — the same read the seed search exposes per seed as `title_hint`; absent when no name parses a title.
+	TitleHint *string `json:"title_hint,omitempty"`
+
 	// UnknownRoute The instance unclassified-route policy the plan read.
 	UnknownRoute FileManagerRecognitionUnknownRoute `json:"unknown_route"`
 }
 
 // FileManagerRecognitionRequest defines model for FileManagerRecognitionRequest.
 type FileManagerRecognitionRequest struct {
+	// Match The optional anime facts source of the render. Three forms: a managed anime (`managed_anime_id`, optionally overlaid with `anime` as the operation's temporary draft), a draft alone (`anime` without `managed_anime_id`) for naming with facts the user typed or matched from a metadata provider, exactly as one-shot's task draft, or a bare episode adjustment (`episode` and/or a non-zero `offset`) over a pure parse of the file names. A match carrying none of these is refused.
 	Match  *FileManagerRecognitionMatch  `json:"match,omitempty"`
 	Parser *FileManagerRecognitionParser `json:"parser,omitempty"`
 
@@ -5351,12 +5355,14 @@ type FileManagerRecognitionSubmitRequest struct {
 	Conflict FileManagerRecognitionConflictChoice `json:"conflict"`
 
 	// ExpectedPlanDigest The `plan_digest` the preview returned.
-	ExpectedPlanDigest string                        `json:"expected_plan_digest"`
-	Match              *FileManagerRecognitionMatch  `json:"match,omitempty"`
-	Parser             *FileManagerRecognitionParser `json:"parser,omitempty"`
-	Paths              []string                      `json:"paths"`
-	SubtitleTemplate   *string                       `json:"subtitle_template,omitempty"`
-	VideoTemplate      string                        `json:"video_template"`
+	ExpectedPlanDigest string `json:"expected_plan_digest"`
+
+	// Match The optional anime facts source of the render. Three forms: a managed anime (`managed_anime_id`, optionally overlaid with `anime` as the operation's temporary draft), a draft alone (`anime` without `managed_anime_id`) for naming with facts the user typed or matched from a metadata provider, exactly as one-shot's task draft, or a bare episode adjustment (`episode` and/or a non-zero `offset`) over a pure parse of the file names. A match carrying none of these is refused.
+	Match            *FileManagerRecognitionMatch  `json:"match,omitempty"`
+	Parser           *FileManagerRecognitionParser `json:"parser,omitempty"`
+	Paths            []string                      `json:"paths"`
+	SubtitleTemplate *string                       `json:"subtitle_template,omitempty"`
+	VideoTemplate    string                        `json:"video_template"`
 }
 
 // FileManagerRecognitionUnknownRoute The instance unclassified-route policy the plan read.

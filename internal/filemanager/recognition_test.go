@@ -431,3 +431,68 @@ func TestRecognitionAnimeDraftIsValidated(t *testing.T) {
 		mustCode(t, err, CodeRecognitionInvalid)
 	}
 }
+
+func TestRecognitionMatchFormsAreValidated(t *testing.T) {
+	f := newRecognitionFixture(t, fakeRecognitionPolicy{})
+	writeFile(t, f.abs("Loose/Show - 01.mkv"), 4)
+
+	// A match carrying nothing is meaningless.
+	empty := recognitionRequest(f.abs("Loose/Show - 01.mkv"))
+	empty.Match = &RecognitionMatch{}
+	_, err := f.service.PreviewRecognition(context.Background(), empty)
+	mustCode(t, err, CodeRecognitionInvalid)
+
+	// A bare episode adjustment over a pure parse is legal.
+	offsetOnly := recognitionRequest(f.abs("Loose/Show - 01.mkv"))
+	offsetOnly.Match = &RecognitionMatch{Offset: -1}
+	preview, err := f.service.PreviewRecognition(context.Background(), offsetOnly)
+	if err != nil {
+		t.Fatalf("offset-only match: %v", err)
+	}
+	if row := recognitionRow(t, preview, "Show - 01.mkv"); row.Episode == nil || row.Episode.Offset != -1 {
+		t.Fatalf("offset-only row = %+v", row)
+	}
+	episodeOnly := recognitionRequest(f.abs("Loose/Show - 01.mkv"))
+	episodeOnly.Match = &RecognitionMatch{Episode: intPointer(5)}
+	if _, err := f.service.PreviewRecognition(context.Background(), episodeOnly); err != nil {
+		t.Fatalf("episode-only match: %v", err)
+	}
+}
+
+func TestRecognitionDraftOnlyMatchReadsNoAnime(t *testing.T) {
+	f := newCommandFixture(t)
+	renderer := &fakeRecognitionRenderer{render: func(input filemaintenance.RecognitionRenderInput) (string, error) {
+		if input.Kind != "video_filename" {
+			return "sub", nil
+		}
+		return "renamed." + input.FileName, nil
+	}}
+	// No matchAnimes at all: a draft-only match must not read one.
+	f.service.SetRecognition(renderer, nil, fakeRecognitionPolicy{})
+	ctx := context.Background()
+	writeFile(t, f.abs("Loose/Show - 01.mkv"), 4)
+	request := recognitionRequest(f.abs("Loose/Show - 01.mkv"))
+	request.Match = &RecognitionMatch{Anime: &RecognitionAnimeDraft{Title: "Edited", MediaKind: "tv"}}
+	if _, err := f.service.PreviewRecognition(ctx, request); err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	if len(renderer.inputs) == 0 || renderer.inputs[0].ManagedAnimeID != "" {
+		t.Fatalf("render input = %+v", renderer.inputs)
+	}
+	draft := renderer.inputs[0].AnimeDraft
+	if draft == nil || draft.Title != "Edited" || draft.MediaKind != "tv" {
+		t.Fatalf("draft = %+v", draft)
+	}
+}
+
+func TestRecognitionTitleHintReadsTheFirstParsedTitle(t *testing.T) {
+	f := newRecognitionFixture(t, fakeRecognitionPolicy{})
+	writeFile(t, f.abs("Loose/[组A] 测试番剧 - 01 [1080p].mkv"), 4)
+	preview, err := f.service.PreviewRecognition(context.Background(), recognitionRequest(f.abs("Loose/[组A] 测试番剧 - 01 [1080p].mkv")))
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	if preview.TitleHint != "测试番剧" {
+		t.Fatalf("title hint = %q", preview.TitleHint)
+	}
+}

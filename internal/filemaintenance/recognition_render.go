@@ -185,7 +185,7 @@ func (r *NamingTargetRenderer) recognitionContext(ctx context.Context, in Recogn
 			// rt.* values from.
 			OriginalTitle: strings.TrimSuffix(fileName, filepath.Ext(fileName)),
 		},
-		AnimeAbsent: in.ManagedAnimeID == "",
+		AnimeAbsent: in.ManagedAnimeID == "" && in.AnimeDraft == nil,
 	}
 	if episode := strings.TrimSpace(in.Episode); episode != "" {
 		display := strings.TrimSpace(in.EpisodeDisplay)
@@ -214,8 +214,51 @@ func (r *NamingTargetRenderer) recognitionContext(ctx context.Context, in Recogn
 			return naming.NamingContext{}, err
 		}
 		namingContext.Anime = anime
+	} else if in.AnimeDraft != nil {
+		// A draft-only match names with the draft alone: no stored anime is
+		// read, exactly as one-shot's task draft names its files.
+		anime, err := r.recognitionDraftFacts(ctx, in.AnimeDraft, in.Season)
+		if err != nil {
+			return naming.NamingContext{}, err
+		}
+		namingContext.Anime = anime
 	}
 	return namingContext, nil
+}
+
+// recognitionDraftFacts builds the anime facts of a draft-only match: the
+// draft stands on its own, with the bound works' titles filled from the
+// metadata cache when one is wired. No anime row is read or written.
+func (r *NamingTargetRenderer) recognitionDraftFacts(ctx context.Context, draft *RecognitionAnimeDraft, season *int) (naming.AnimeNamingFacts, error) {
+	var evidence namingvars.AnimeEvidence
+	applyRecognitionAnimeDraft(&evidence, draft)
+	if r != nil && r.db != nil {
+		if err := namingvarspersistence.FillWorkTitles(ctx, r.db, &evidence); err != nil {
+			return naming.AnimeNamingFacts{}, err
+		}
+	}
+	facts := naming.AnimeNamingFacts{
+		Title:         evidence.AnimeTitle,
+		TitleOverride: evidence.AnimeTitleOverride,
+		Year:          ownerYearValue(evidence.AnimeYear),
+		BGM: naming.BGMNamingFacts{
+			WorkID: evidence.BgmID, Title: evidence.BgmTitle, TitleCN: evidence.BgmTitleCN,
+			Year: providerYear(evidence.BgmYear),
+		},
+		TMDB: naming.TMDBNamingFacts{
+			WorkID: evidence.TmdbID, MediaKind: draft.MediaKind,
+			TitleCN: evidence.TmdbTitleCN, OriginalTitle: evidence.TmdbOriginalTitle,
+			Year: providerYear(evidence.TmdbYear),
+		},
+	}
+	if season != nil {
+		chosen := *season
+		facts.Season = &chosen
+	}
+	if draft.TMDB {
+		facts.TMDB.Season, facts.TMDB.SeasonPresent = draft.TMDBSeason, true
+	}
+	return facts, nil
 }
 
 // recognitionAnimeFacts reads the anime facts a matched render exposes. It is

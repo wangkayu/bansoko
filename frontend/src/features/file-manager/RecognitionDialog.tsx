@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ApiError,
   getNamingTemplateLibrary,
-  listAnime,
   previewFileManagerRecognition,
   submitFileManagerRecognition,
   toUserMessage,
@@ -17,14 +16,16 @@ import {
   type AnimeMetadataDraft,
   type NamingRules,
   type RulesSections,
+  type TitleSuggestion,
 } from "../../lib/api/client";
 import { joinList } from "../../lib/i18n/format";
 import { t, tryT } from "../../lib/i18n";
 import { cn } from "../../lib/utils";
-import { animeKeys, configKeys } from "../../lib/queryKeys";
-import { Alert, Button, Dialog, Field, HelpTip, Input, Select, type SelectOption } from "../../ui/base";
+import { configKeys } from "../../lib/queryKeys";
+import { Alert, Button, Dialog, Field, HelpTip, Input } from "../../ui/base";
 import { BoundSubtitles, type BoundSubtitleItem } from "../../ui/BoundSubtitles";
 import { MetadataFields } from "../anime-forms/MetadataFields";
+import { TitleSuggestionBadges } from "../anime-forms/TitleSuggestionBadges";
 import { RulesSectionsFields, type SectionKey } from "../anime-forms/RulesSectionsFields";
 import { TaskConfigPanel } from "../anime-forms/TaskConfigPanel";
 import { TaskSplitLayout, taskPanelColumnClass, taskPreviewColumnClass } from "../anime-forms/TaskSplitLayout";
@@ -67,10 +68,9 @@ const EMPTY_METADATA: AnimeMetadataDraft = {
 type RecognitionDraft = {
   parserKind: string;
   rules: RulesSections;
-  matchAnimeID: string;
   /** The effective title this render names with (anime.title). */
   title: string;
-  /** The operation's copy of the matched anime's metadata facts. */
+  /** The operation's own anime facts: typed or matched from a metadata provider. */
   metadata: AnimeMetadataDraft;
   episodeText: string;
   offsetText: string;
@@ -78,7 +78,6 @@ type RecognitionDraft = {
 const INITIAL_DRAFT: RecognitionDraft = {
   parserKind: "reltitle",
   rules: DEFAULT_RULES,
-  matchAnimeID: "",
   title: "",
   metadata: EMPTY_METADATA,
   episodeText: "",
@@ -116,7 +115,7 @@ export function RecognitionDialog({
   const update = (patch: Partial<RecognitionDraft>) => setDraft((current) => ({ ...current, ...patch }));
   const updateMetadata = (patch: Partial<AnimeMetadataDraft>) =>
     setDraft((current) => ({ ...current, metadata: { ...current.metadata, ...patch } }));
-  const { parserKind, rules, matchAnimeID, title, metadata, episodeText, offsetText } = draft;
+  const { parserKind, rules, title, metadata, episodeText, offsetText } = draft;
   const parserRules = rules.parser?.mode === "replace" ? rules.parser.value : { episode_patterns: [] };
   const patterns = parserRules.episode_patterns;
   const naming = rules.naming?.mode === "replace" ? rules.naming.value : EMPTY_NAMING;
@@ -156,16 +155,15 @@ export function RecognitionDialog({
   // A number the user started typing must be whole before it is rendered, so a
   // half-typed value never silently becomes zero or drops a field.
   const numberInvalid = (episodeText.trim() !== "" && episode === null) || (offsetText.trim() !== "" && offset === null);
-  // The draft title is the title the render names with: an empty one is not a
-  // usable anime fact, so the panel asks for it instead of sending a blank.
-  const titleInvalid = matchAnimeID !== "" && title.trim() === "";
+  // An empty title is not an error: without one the request carries no match and
+  // the render is a pure parse of the file names, exactly like one-shot's fields
+  // left untouched.
 
   const inputs = {
     parserKind,
     patterns,
     videoTemplate,
     subtitleTemplate: naming.subtitle_suffix_template,
-    matchAnimeID,
     title,
     metadata,
     episodeText,
@@ -184,6 +182,12 @@ export function RecognitionDialog({
     }
     const dTitle = d.title.trim();
     const dMediaKind = d.metadata.media_kind ?? d.metadata.tmdb?.media_kind ?? "tv";
+    const dEpisodeWanted = singleVideo && dEpisode !== null;
+    const dOffsetValue = dOffset ?? 0;
+    // A match is sent once it carries anything: the draft (which needs a title),
+    // a chosen episode or a non-zero offset; with none of them the render is a
+    // pure parse of the file names.
+    const hasMatch = dTitle !== "" || dEpisodeWanted || dOffsetValue !== 0;
     return {
       paths,
       parser:
@@ -192,15 +196,13 @@ export function RecognitionDialog({
           : { id: "reltitle" },
       video_template: d.videoTemplate,
       subtitle_template: d.subtitleTemplate,
-      ...(d.matchAnimeID !== ""
+      ...(hasMatch
         ? {
             match: {
-              managed_anime_id: d.matchAnimeID,
-              ...(d.metadata.season != null ? { season: d.metadata.season } : {}),
-              ...(singleVideo && dEpisode !== null ? { episode: dEpisode } : {}),
-              offset: dOffset ?? 0,
-              // The render reads these facts, never a re-read of the anime; an
-              // empty title is refused by the panel, so it never gets here.
+              ...(dTitle !== "" && d.metadata.season != null ? { season: d.metadata.season } : {}),
+              ...(dEpisodeWanted ? { episode: dEpisode } : {}),
+              offset: dOffsetValue,
+              // The render reads these facts, never a re-read of a stored anime.
               ...(dTitle !== ""
                 ? {
                     anime: {
@@ -247,44 +249,16 @@ export function RecognitionDialog({
     !preview.isFetching &&
     !preview.isError &&
     !numberInvalid &&
-    !titleInvalid &&
     !hasBlockers &&
     actionable > 0 &&
     !busy;
 
-  const animeList = useQuery({ queryKey: animeKeys.list, queryFn: listAnime });
-  // The empty choice is the unmatched state: picking it clears the match, so the
-  // match field works like one-shot's plain form fields with no extra chrome.
-  const animeOptions: SelectOption<string>[] = [
-    { value: "", label: t("fileManager.recognize.match.none") },
-    ...(animeList.data ?? [])
-      .filter((item) => item.subscription.state === "active" || item.subscription.state === "stopped")
-      .map((item) => ({ value: item.managed_anime.id, label: item.managed_anime.title_override ?? item.managed_anime.title })),
-  ];
-  // Matching seeds the operation's draft from the anime's stored facts: every
-  // value the render reads is copied here and never written back.
-  function selectMatch(animeID: string) {
-    if (animeID === "") {
-      update({ matchAnimeID: "", title: "", metadata: EMPTY_METADATA });
-      return;
-    }
-    const item = (animeList.data ?? []).find((entry) => entry.managed_anime.id === animeID);
-    const stored = item?.metadata;
-    update({
-      matchAnimeID: animeID,
-      title: item ? effectiveTitle(item.managed_anime) : "",
-      metadata: stored
-        ? {
-            bgm: stored.bgm ?? null,
-            tmdb: stored.tmdb ?? null,
-            media_kind: stored.media_kind ?? null,
-            total_episodes: stored.total_episodes ?? null,
-            year: stored.year ?? null,
-            season: stored.season ?? null,
-          }
-        : EMPTY_METADATA,
-    });
-  }
+  // The title candidate a search one-shot reads from its seeds' parsed titles,
+  // here from the parser's read of the first file's own name: a badge by the
+  // title input and the metadata search's first query.
+  const titleHint = data?.title_hint?.trim() ?? "";
+  const titleSuggestions: TitleSuggestion[] = titleHint !== "" ? [{ source: "provider", text: titleHint }] : [];
+  const matchQueryCandidates = titleHint !== "" ? [titleHint] : undefined;
 
   async function apply(choice: FileManagerRecognitionConflictChoice) {
     if (!data || !request || busy) return;
@@ -415,21 +389,59 @@ export function RecognitionDialog({
               ),
             }}
           >
-            {/* The same flat field column one-shot renders: the anime match is
-                this operation's first field; the matched facts — title, metadata,
-                offset — follow in one-shot's order once a match exists. */}
-            <div className="tw:grid tw:gap-1.5">
-              <Select
-                label={t("fileManager.recognize.match.anime")}
-                value={matchAnimeID}
-                options={animeOptions}
-                onChange={selectMatch}
-                disabled={busy}
+            {/* The same flat field column one-shot renders: the title with the
+                parser's candidate as a badge, the metadata rows in one-shot's
+                read/edit style, then the episode inputs. Total episodes play no
+                part in a rename, so the row is not offered here. */}
+            <div className="tw:grid tw:grid-cols-1 tw:gap-2">
+              <Field label={t("field.title")}>
+                <Input
+                  id="recognize-title"
+                  aria-label={t("field.title")}
+                  value={title}
+                  onChange={(event) => update({ title: event.target.value })}
+                  autoComplete="off"
+                  disabled={busy}
+                />
+              </Field>
+              {/* The parser's read of the first file's name is the candidate, the
+                  way a search one-shot's seeds carry their parsed titles. */}
+              <TitleSuggestionBadges suggestions={titleSuggestions} current={title} onPick={(next) => update({ title: next })} />
+              <MetadataFields
+                idPrefix="recognize"
+                showYear
+                showSeason
+                title={title}
+                matchQueryCandidates={matchQueryCandidates}
+                onMatchTitle={(matched) =>
+                  // Only fills an empty title; a title the user already has is never overwritten.
+                  setDraft((current) => (current.title.trim() === "" ? { ...current, title: matched } : current))
+                }
+                value={metadata}
+                onChange={(next, kind) =>
+                  setDraft((current) => ({
+                    ...current,
+                    metadata: kind ? { ...next, media_kind: kind } : next,
+                  }))
+                }
+                matchProvider={matchProvider}
+                onMatchProviderChange={setMatchProvider}
+                onSaveMediaKind={async (next) => {
+                  updateMetadata({ media_kind: next });
+                  return true;
+                }}
+                mediaKind={metadata.media_kind ?? null}
               />
-              {matchAnimeID !== "" && singleVideo ? (
+            </div>
+            {singleVideo ? (
+              <div className="tw:grid tw:gap-1.5">
                 <Field label={t("fileManager.recognize.match.episode")}>
                   <Input
                     inputMode="numeric"
+                    type="number"
+                    min={1}
+                    max={99999}
+                    step="1"
                     aria-label={t("fileManager.recognize.match.episode")}
                     value={episodeText}
                     onChange={(event) => update({ episodeText: event.target.value })}
@@ -438,67 +450,25 @@ export function RecognitionDialog({
                     disabled={busy}
                   />
                 </Field>
-              ) : null}
-            </div>
-            {matchAnimeID !== "" ? (
-              <>
-                <div className="tw:grid tw:grid-cols-1 tw:gap-2">
-                  <Field label={t("field.title")}>
-                    <Input
-                      aria-label={t("field.title")}
-                      value={title}
-                      onChange={(event) => update({ title: event.target.value })}
-                      aria-invalid={titleInvalid ? true : undefined}
-                      autoComplete="off"
-                      disabled={busy}
-                    />
-                  </Field>
-                  {titleInvalid ? <p className="tw:m-0 tw:text-xs tw:text-destructive">{t("fileManager.recognize.invalidTitle")}</p> : null}
-                  <MetadataFields
-                    idPrefix="recognize"
-                    directEdit
-                    showYear
-                    showSeason
-                    title={title}
-                    value={metadata}
-                    onChange={(next, kind, matchedTitle) =>
-                      setDraft((current) => ({
-                        ...current,
-                        metadata: kind ? { ...next, media_kind: kind } : next,
-                        ...(matchedTitle ? { title: matchedTitle } : {}),
-                      }))
-                    }
-                    matchProvider={matchProvider}
-                    onMatchProviderChange={setMatchProvider}
-                    onSaveTotalEpisodes={async (total) => {
-                      updateMetadata({ total_episodes: total });
-                      return true;
-                    }}
-                    onSaveMediaKind={async (next) => {
-                      updateMetadata({ media_kind: next });
-                      return true;
-                    }}
-                    onMatchTitle={(matched) =>
-                      setDraft((current) => (current.title.trim() === "" ? { ...current, title: matched } : current))
-                    }
-                    mediaKind={metadata.media_kind ?? null}
-                  />
-                </div>
-                <div className="tw:grid tw:gap-1.5">
-                  <Field label={t("fileManager.recognize.match.offset")}>
-                    <Input
-                      inputMode="numeric"
-                      aria-label={t("fileManager.recognize.match.offset")}
-                      value={offsetText}
-                      onChange={(event) => update({ offsetText: event.target.value })}
-                      aria-invalid={offset !== null ? undefined : true}
-                      autoComplete="off"
-                      disabled={busy}
-                    />
-                  </Field>
-                </div>
-              </>
+              </div>
             ) : null}
+            <div className="tw:grid tw:gap-1.5">
+              <Field label={t("fileManager.recognize.match.offset")}>
+                <Input
+                  inputMode="numeric"
+                  type="number"
+                  min={-99999}
+                  max={99999}
+                  step="1"
+                  aria-label={t("fileManager.recognize.match.offset")}
+                  value={offsetText}
+                  onChange={(event) => update({ offsetText: event.target.value })}
+                  aria-invalid={offset !== null ? undefined : true}
+                  autoComplete="off"
+                  disabled={busy}
+                />
+              </Field>
+            </div>
             <p className="tw:m-0 tw:text-xs tw:text-muted-foreground">{t("fileManager.recognize.applyHint")}</p>
           </TaskConfigPanel>
         </TaskSplitLayout>
@@ -708,11 +678,6 @@ function skippedByConflicts(rows: readonly FileManagerRecognitionRow[], conflict
       .map((row) => row.path),
   );
   return dropped.size;
-}
-
-/** The effective title of a subscription: its edited title, else its base title. */
-function effectiveTitle(anime: { title: string; title_override?: string | null }): string {
-  return anime.title_override?.trim() || anime.title;
 }
 
 function wholeNumber(text: string, min: number, max: number): number | null {

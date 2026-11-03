@@ -15917,7 +15917,14 @@ components:
     FileManagerRecognitionMatch:
       type: object
       additionalProperties: false
-      required: [managed_anime_id]
+      description: >-
+        The optional anime facts source of the render. Three forms: a managed
+        anime (`managed_anime_id`, optionally overlaid with `anime` as the
+        operation's temporary draft), a draft alone (`anime` without
+        `managed_anime_id`) for naming with facts the user typed or matched
+        from a metadata provider, exactly as one-shot's task draft, or a bare
+        episode adjustment (`episode` and/or a non-zero `offset`) over a pure
+        parse of the file names. A match carrying none of these is refused.
       properties:
         managed_anime_id:
           $ref: '#/components/schemas/ID'
@@ -16128,6 +16135,14 @@ components:
             $ref: '#/components/schemas/FileManagerRecognitionRow'
         unknown_route:
           $ref: '#/components/schemas/FileManagerRecognitionUnknownRoute'
+        title_hint:
+          type: string
+          maxLength: 512
+          description: >-
+            The title the parser read from the first recognized file's own
+            name, offered as the match's title candidate — the same read the
+            seed search exposes per seed as `title_hint`; absent when no name
+            parses a title.
         plan_digest:
           type: string
           description: The plan the submit must confirm.
