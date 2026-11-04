@@ -45,6 +45,7 @@
 
 ## Fixed
 
+- Cleaning qB tags with nothing left to remove now reports zero removals instead of failing on the empty result.
 - The anime configuration saves again after a per-subtitle-group episode offset is set before a subscription starts, instead of reporting an internal error.
 
 - In the file manager, files left by one-shot downloads or unsubscribed anime can be moved, renamed and deleted again, instead of being refused with "The file has changed" and left where they are.

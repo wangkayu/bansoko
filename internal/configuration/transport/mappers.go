@@ -114,6 +114,9 @@ func QBittorrentServerStatus(value configurationdomain.QBittorrentServerStatusVi
 }
 
 func QBittorrentTagCleanupResult(removed []string) generated.QBittorrentTagCleanupResult {
+	if removed == nil {
+		removed = []string{}
+	}
 	return generated.QBittorrentTagCleanupResult{Removed: removed}
 }
 

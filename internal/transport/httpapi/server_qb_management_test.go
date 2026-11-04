@@ -142,7 +142,7 @@ func TestSweepQBittorrentTagsReportsRemoved(t *testing.T) {
 		removed []string
 	}{
 		{name: "residue removed", removed: []string{"bansoko-abc", "bansoko-def"}},
-		{name: "nothing to remove", removed: []string{}},
+		{name: "nothing to remove", removed: nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := &Server{deps: Dependencies{QBManagement: &qbManagementFake{
@@ -160,6 +160,9 @@ func TestSweepQBittorrentTagsReportsRemoved(t *testing.T) {
 			var response generated.QBittorrentTagCleanupResult
 			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 				t.Fatal(err)
+			}
+			if response.Removed == nil {
+				t.Fatalf("empty result must encode as [] instead of null: %s", recorder.Body.String())
 			}
 			if len(response.Removed) != len(tc.removed) {
 				t.Fatalf("removed mismatch: %+v", response.Removed)
