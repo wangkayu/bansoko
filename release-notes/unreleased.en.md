@@ -46,6 +46,7 @@
 ## Fixed
 
 - Cleaning qB tags with nothing left to remove now reports zero removals instead of failing on the empty result.
+- Dragging the two large language cards in multiple-version settings now keeps the drag preview at the card's original size instead of showing an oversized image; other comparison items keep their existing drag behavior.
 - The anime configuration saves again after a per-subtitle-group episode offset is set before a subscription starts, instead of reporting an internal error.
 
 - In the file manager, files left by one-shot downloads or unsubscribed anime can be moved, renamed and deleted again, instead of being refused with "The file has changed" and left where they are.

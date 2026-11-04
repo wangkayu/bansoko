@@ -72,6 +72,44 @@ describe("QualityCompareEditor", () => {
     expect(latest.items.map((item) => item.key)).toEqual(["anibt.language", "subgroup.score"]);
   });
 
+  it("bounds only the large language card preview and cleans it up after dragging", () => {
+    renderWithQuery(<Harness />);
+    const language = screen.getByRole("button", {
+      name: t("qualityCompare.moveUp", { item: compareItemName("anibt.language") }),
+    }).closest("li");
+    if (!language) throw new Error("language card not found");
+    const dataTransfer = { effectAllowed: "", setDragImage: vi.fn() };
+
+    fireEvent.dragStart(language, { dataTransfer, clientX: 0, clientY: 0 });
+    const preview = document.body.querySelector<HTMLElement>("[data-quality-compare-drag-preview]");
+    expect(preview).toHaveAttribute("inert");
+    expect(preview).toHaveAttribute("aria-hidden", "true");
+    expect(dataTransfer.setDragImage).toHaveBeenCalledTimes(1);
+    const [image, offsetX, offsetY] = dataTransfer.setDragImage.mock.calls[0];
+    expect(image).toBe(preview);
+    expect(offsetX).toBe(0);
+    expect(offsetY).toBe(0);
+    fireEvent.dragEnd(language, { dataTransfer });
+    expect(preview).not.toBeInTheDocument();
+
+    const ordinaryDataTransfer = { effectAllowed: "", setDragImage: vi.fn() };
+    const ordinary = screen.getByRole("button", {
+      name: t("qualityCompare.moveUp", { item: compareItemName("rt.codec") }),
+    }).closest("li");
+    if (!ordinary) throw new Error("ordinary card not found");
+    fireEvent.dragStart(ordinary, { dataTransfer: ordinaryDataTransfer });
+    expect(ordinaryDataTransfer.setDragImage).not.toHaveBeenCalled();
+    expect(document.querySelector("[data-quality-compare-drag-preview]")).toBeNull();
+    fireEvent.dragEnd(ordinary, { dataTransfer: ordinaryDataTransfer });
+
+    const entryDataTransfer = { effectAllowed: "", setDragImage: vi.fn() };
+    const entry = language.querySelector("[data-entry]");
+    if (!entry) throw new Error("language rank entry not found");
+    fireEvent.dragStart(entry, { dataTransfer: entryDataTransfer });
+    expect(entryDataTransfer.setDragImage).not.toHaveBeenCalled();
+    expect(document.querySelector("[data-quality-compare-drag-preview]")).toBeNull();
+  });
+
   it("marks rt items as reltitle values and offers new items grouped by source", async () => {
     renderWithQuery(<Harness />);
     const rtItem = itemOrder().find((text) => text.includes(t("qualityCompare.item.rt_codec")));

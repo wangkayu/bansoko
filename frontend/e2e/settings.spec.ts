@@ -1,5 +1,5 @@
 import { test, expect, type Page, type Route } from "@playwright/test";
-import type { AutomationSchedule, CatalogPreference, DiagnosticEpisodePage, GlobalSectionView, NamingTemplateCatalog, NamingTemplateLibraryView, ObservabilityRecordPage } from "../src/lib/api/client";
+import type { AutomationSchedule, CatalogPreference, DiagnosticEpisodePage, GlobalSectionView, NamingTemplateCatalog, NamingTemplateLibraryView, ObservabilityRecordPage, ReplacementCompareVocabulary, ReplacementPolicyDefaultView } from "../src/lib/api/client";
 import { shouldSkipAuthTests } from "./skip-auth-helper";
 import { mockSignedIn } from "./session";
 
@@ -95,6 +95,40 @@ async function mockSettingsReads(page: Page) {
           { section_name: "file_effect", schema_version: "v1", value: { operation: "hardlink", collision_policy: "versioned" }, version: 1, saved: false },
           { section_name: "download_completion", schema_version: "download-completion-v2", value: { action: "seed" }, version: 1, saved: false },
         ] satisfies GlobalSectionView[]),
+      }),
+    ),
+  );
+  await page.route("**/api/v1/file-maintenance/replacement/default", (route) =>
+    getOnly(route, () =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          admission_mode: "single_copy",
+          quality_profile: {
+            version: "profile-v1",
+            items: [
+              { key: "anibt.language", ranks: [["CHS", "CHT"], ["CHS"], ["JP"], ["EN"]] },
+              { key: "rt.sub_lang", ranks: [["jpsc"], ["sc"], ["tc"], ["eng"]] },
+              { key: "release.resolution", ranks: [["2160p"], ["1080p"]] },
+            ],
+          },
+          version: 1,
+        } satisfies ReplacementPolicyDefaultView),
+      }),
+    ),
+  );
+  await page.route("**/api/v1/file-maintenance/replacement/compare-vocabulary**", (route) =>
+    getOnly(route, () =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: [
+            { key: "anibt.language", values: ["CHS", "CHT", "JP", "EN"] },
+            { key: "rt.sub_lang", values: ["jpsc", "jptc", "sc", "tc", "eng", "jpn"] },
+          ],
+        } satisfies ReplacementCompareVocabulary),
       }),
     ),
   );
@@ -384,6 +418,61 @@ test.describe("settings fixture coverage", () => {
     // sr-only 分区标题与页面 h2 同名，取第一个；解析规则卡来自 mock parser section。
     await expect(dialog.getByRole("heading", { name: "默认规则" }).first()).toBeVisible();
     await expect(dialog.getByRole("heading", { name: "解析规则" })).toBeVisible();
+  });
+
+  test("语言大卡拖动预览保持原卡片尺寸", async ({ page }, testInfo) => {
+    test.skip(isMobile(page), "原生 HTML5 卡片拖动在桌面项目验证");
+    await openSettings(page, "/#/settings/replacement");
+    const list = page.getByRole("list", { name: "比较顺序", exact: true });
+    const preview = page.locator("[data-quality-compare-drag-preview]");
+
+    for (const [label, screenshot] of [
+      ["AniBT 标签", "anibt-language-drag-preview.png"],
+      ["reltitle", "rt-sub-language-drag-preview.png"],
+    ] as const) {
+      const card = list.locator(":scope > li").filter({ hasText: label });
+      await expect(card).toBeVisible();
+      await card.scrollIntoViewIfNeeded();
+      const box = await card.boundingBox();
+      if (!box) throw new Error(`${label} card has no box`);
+      await page.mouse.move(box.x + 14, box.y + 20);
+      await page.mouse.down();
+      await page.mouse.move(box.x + 80, box.y + 48, { steps: 12 });
+
+      await expect(preview).toBeAttached();
+      const previewBox = await preview.boundingBox();
+      if (!previewBox) throw new Error(`${label} drag preview has no box`);
+      expect(Math.abs(previewBox.width - box.width)).toBeLessThanOrEqual(1);
+      expect(Math.abs(previewBox.height - box.height)).toBeLessThanOrEqual(1);
+      const overflow = await preview.evaluate((element) => ({
+        horizontal: element.scrollWidth - element.clientWidth,
+        vertical: element.scrollHeight - element.clientHeight,
+      }));
+      expect(overflow.horizontal).toBeLessThanOrEqual(1);
+      expect(overflow.vertical).toBeLessThanOrEqual(1);
+
+      // 原生 ghost 不进入 page.screenshot；把同一份 setDragImage 节点临时移入视口，
+      // 直接截取浏览器实际用于拖动预览的 DOM，并不断言页面截图里存在原生 ghost。
+      await preview.evaluate((element) => {
+        const style = (element as HTMLElement).style;
+        style.left = "16px";
+        style.top = "16px";
+        style.zIndex = "10000";
+      });
+      await preview.screenshot({ path: testInfo.outputPath(screenshot) });
+      await page.mouse.up();
+      await expect(preview).toHaveCount(0);
+    }
+
+    // 修复只覆盖两张大语言卡，普通比较项仍使用浏览器默认拖动预览。
+    const ordinary = list.locator(":scope > li").filter({ hasText: "内置规则" });
+    const ordinaryBox = await ordinary.boundingBox();
+    if (!ordinaryBox) throw new Error("ordinary comparison card has no box");
+    await page.mouse.move(ordinaryBox.x + 14, ordinaryBox.y + 20);
+    await page.mouse.down();
+    await page.mouse.move(ordinaryBox.x + 80, ordinaryBox.y + 48, { steps: 12 });
+    await expect(preview).toHaveCount(0);
+    await page.mouse.up();
   });
 
   test("版本与升级默认空态与 AI Lab 可达", async ({ page }) => {

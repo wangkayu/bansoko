@@ -1,4 +1,4 @@
-import { useId, useState, type DragEvent } from "react";
+import { useEffect, useId, useRef, useState, type DragEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, GripVertical, Plus, X } from "lucide-react";
 import { getReplacementCompareVocabulary, type QualityCompareKey, type QualityProfile } from "../../lib/api/client";
@@ -32,6 +32,45 @@ import { ITEM_COPY, NAMESPACE_COPY, PROBLEM_COPY, compareItemName } from "./comp
 //   Terms are compared from top to bottom, item by item; sort values run from best to worst.
 
 const iconButton = "tw:size-7 tw:px-0";
+const boundedDragPreviewKeys = new Set<QualityCompareKey>(["anibt.language", "rt.sub_lang"]);
+
+// Keep the native ghost bounded to the two large language cards. Other comparison
+// items and the nested rank entries retain their existing browser drag previews.
+function createBoundedDragPreview(event: DragEvent<HTMLLIElement>): HTMLElement {
+  const card = event.currentTarget;
+  const bounds = card.getBoundingClientRect();
+  const preview = card.cloneNode(true) as HTMLElement;
+  preview.setAttribute("data-quality-compare-drag-preview", "");
+  preview.setAttribute("aria-hidden", "true");
+  preview.setAttribute("inert", "");
+  preview.removeAttribute("draggable");
+  for (const element of preview.querySelectorAll("[id]")) element.removeAttribute("id");
+  for (const element of preview.querySelectorAll("[list], [for]")) {
+    element.removeAttribute("list");
+    element.removeAttribute("for");
+  }
+  for (const element of preview.querySelectorAll("[draggable]")) element.removeAttribute("draggable");
+  Object.assign(preview.style, {
+    position: "fixed",
+    left: `${-Math.ceil(bounds.width + 100)}px`,
+    top: "0",
+    width: `${bounds.width}px`,
+    height: `${bounds.height}px`,
+    maxWidth: "none",
+    maxHeight: "none",
+    margin: "0",
+    boxSizing: "border-box",
+    overflow: "hidden",
+    pointerEvents: "none",
+  });
+  document.body.append(preview);
+  const clientX = Number.isFinite(event.clientX) ? event.clientX : bounds.left;
+  const clientY = Number.isFinite(event.clientY) ? event.clientY : bounds.top;
+  const offsetX = Math.max(0, Math.min(bounds.width, clientX - bounds.left));
+  const offsetY = Math.max(0, Math.min(bounds.height, clientY - bounds.top));
+  event.dataTransfer.setDragImage(preview, offsetX, offsetY);
+  return preview;
+}
 
 export function QualityCompareEditor({
   value,
@@ -56,8 +95,18 @@ export function QualityCompareEditor({
   });
   const vocabulary = new Map((vocabularyQuery.data?.items ?? []).map((item) => [item.key, item.values]));
   const [dragFrom, setDragFrom] = useState<number>();
+  const dragPreviewRef = useRef<HTMLElement | null>(null);
   const count = value.items.length;
   const unused = unusedItems(value);
+
+  useEffect(() => () => {
+    dragPreviewRef.current?.remove();
+  }, []);
+
+  function clearDragPreview() {
+    dragPreviewRef.current?.remove();
+    dragPreviewRef.current = null;
+  }
 
   const addMenu: MenuEntry[] = [];
   for (const namespace of COMPARE_NAMESPACES) {
@@ -104,8 +153,15 @@ export function QualityCompareEditor({
                 if ((event.target as HTMLElement).closest("[data-entry]")) return;
                 setDragFrom(index);
                 event.dataTransfer.effectAllowed = "move";
+                clearDragPreview();
+                if (boundedDragPreviewKeys.has(item.key)) {
+                  dragPreviewRef.current = createBoundedDragPreview(event);
+                }
               }}
-              onDragEnd={() => setDragFrom(undefined)}
+              onDragEnd={() => {
+                setDragFrom(undefined);
+                clearDragPreview();
+              }}
               onDragOver={(event) => { if (dragFrom !== undefined) event.preventDefault(); }}
               onDrop={(event) => dropOn(index, event)}
               className="tw:rounded-control tw:border tw:border-border tw:bg-card"
