@@ -458,6 +458,59 @@ describe("ownerViewModel", () => {
     expect(within(row).queryByText(t("rss.target.pending"))).toBeNull();
   });
 
+  it("当前渲染优先于冻结目标，对齐移动后仍按 placement 显示已入库", () => {
+    const frozen = "/library/Show Second Season (2022)/Season 02/Show Second Season S02E05.mkv";
+    const current = "/library/Show (2022)/Season 02/Show S02E05.mkv";
+    const workspace = releaseWith([
+      { path: "Show/old.mkv", filename: "Show - 05.mkv", size_bytes: 100, media_kind: "video", target_path: frozen, outcome: "planned" },
+    ]);
+    workspace.releases[0].target_observations = [];
+    renderOwnerFiles([
+      { file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 05.mkv", size_bytes: 100, media_kind: "video", included: true, safety: "valid", rendered_target: current, in_library: true },
+    ], workspace);
+
+    const row = fileRow("Show/old.mkv");
+    expect(within(row).getByText(`→ ${current}`)).toBeVisible();
+    expect(within(row).queryByText(`→ ${frozen}`)).toBeNull();
+    expect(within(row).getByText(t("rss.target.inLibrary"))).toBeVisible();
+  });
+
+  it("当前渲染失败不被冻结旧目标掩盖，已入库状态保持独立", () => {
+    const frozen = "/library/Show Second Season (2022)/Season 02/Show Second Season S02E05.mkv";
+    const workspace = releaseWith([
+      { path: "Show/old.mkv", filename: "Show - 05.mkv", size_bytes: 100, media_kind: "video", target_path: frozen, outcome: "planned" },
+    ]);
+    workspace.releases[0].target_observations = [];
+    renderOwnerFiles([
+      { file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 05.mkv", size_bytes: 100, media_kind: "video", included: true, safety: "valid", render_error: "当前命名事实不足", reason_code: "naming_fact_missing_anime_tmdb_workid", in_library: true },
+    ], workspace);
+
+    const row = fileRow("Show/old.mkv");
+    expect(within(row).getByText(knownReasonLabel("naming_fact_missing_anime_tmdb_workid") ?? "")).toBeVisible();
+    expect(within(row).queryByText(`→ ${frozen}`)).toBeNull();
+    expect(within(row).getByText(t("rss.target.inLibrary"))).toBeVisible();
+  });
+
+  it("视频和绑定字幕都使用当前渲染而不是各自的冻结目标", () => {
+    const workspace = releaseWith([
+      { path: "Show/old.mkv", filename: "Show - 05.mkv", size_bytes: 100, media_kind: "video", target_path: "/library/Show Second Season/Show Second Season S02E05.mkv", outcome: "planned" },
+      { path: "Show/old.ass", filename: "Show - 05.ass", size_bytes: 20, media_kind: "subtitle", target_path: "/library/Show Second Season/Show Second Season S02E05.ass", outcome: "subtitle_follows" },
+    ]);
+    workspace.releases[0].acquisition_targets = [];
+    workspace.releases[0].target_observations = [];
+    renderOwnerFiles([
+      { file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 05.mkv", size_bytes: 100, media_kind: "video", included: true, safety: "valid", rendered_target: "/library/Show/Show S02E05.mkv" },
+      { file_ref: "file-2", ordinal: 1, source_path: "Show/old.ass", filename: "Show - 05.ass", size_bytes: 20, media_kind: "subtitle", included: true, safety: "valid", rendered_target: "/library/Show/Show S02E05.ass", bound_video_source_path: "Show/old.mkv" },
+    ], workspace);
+
+    const row = fileRow("Show/old.mkv");
+    expect(within(row).getByText("→ /library/Show/Show S02E05.mkv")).toBeVisible();
+    fireEvent.click(within(row).getByRole("button", { name: t("ui.subtitles.expand", { name: "Show/old.mkv", n: 1 }) }));
+    const subtitle = within(row).getByText("Show/old.ass").closest("li") as HTMLElement;
+    expect(within(subtitle).getByText("→ /library/Show/Show S02E05.ass")).toBeVisible();
+    expect(within(row).queryByText(/Show Second Season/)).toBeNull();
+  });
+
   // A file whose placement has ended is in no library, yet it is not "waiting to import": ③ states
   // that one file's own outcome, ② keeps the target this seed rendered, and the row never points at
   // whichever file holds the episode now.
@@ -484,7 +537,7 @@ describe("ownerViewModel", () => {
     expect(within(row).getByText("→ /library/Show/Show - 03.mkv")).toBeVisible();
   });
 
-  it("没入库的文件照旧显示目标路径", () => {
+  it("没有当前投影的旧记录回退到冻结目标", () => {
     const workspace = releaseWith([
       { path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 100, media_kind: "video", target_path: "/library/Show/Show - 03.mkv", outcome: "planned" },
     ]);

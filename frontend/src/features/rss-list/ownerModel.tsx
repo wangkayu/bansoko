@@ -173,8 +173,9 @@ function isRenderDiagnostic(code: string): boolean {
 //
 //	① The original file: home of filter (screening/identification) — the file-facts badge, plus a
 //	  fate badge when excluded.
-//	② The expected output: home of rendering/naming — the target path; a failure reason only when
-//	  rendering itself produced no target.
+//	② The expected output under the current configuration: home of rendering/naming — the current
+//	  target path; a current failure reason only when rendering itself produced no target.
+//	  Frozen admission targets are a compatibility fallback only when no current projection exists.
 //	③ The actual output: home of landing/comparison — the observation badge, or the plan/landing
 //	  failure's verdict.
 //
@@ -208,14 +209,13 @@ function OwnerReleaseFileRow({ preview, parsed, target, observation, subtitles =
   const size = knownSize(parsed?.size_bytes ?? preview?.size_bytes);
   const extension = fileExtension(filename);
   const language = parsed?.language ?? preview?.language;
-  // ②'s target prefers the frozen target (the admission fact, also ③'s comparison baseline); only
-//   when an admission failure left no frozen target does it fall back to the server's projection
-//   rendered from the current configuration. Execution-domain failures take no part in this
-//   choice.
+  // ② shows the server's projection under the current configuration. Frozen admission facts stay
+  // available for execution history, but cannot overwrite a current target or hide a current render
+  // failure. Only an old row with no current projection and no current render error falls back to
+  // its frozen target.
   const frozenTargetPath = parsed?.target_path ?? target?.target_path ?? undefined;
-  const targetPath = frozenTargetPath ?? preview?.rendered_target ?? undefined;
-  // The empty-facts note belongs to the projection only: a frozen target was not rendered this time and does not know what was empty then.
-  const targetNote = frozenTargetPath === undefined && preview?.rendered_target ? emptyFactsNote(preview.empty_facts) : undefined;
+  const targetPath = preview?.rendered_target ?? (preview?.render_error ? undefined : frozenTargetPath);
+  const targetNote = preview?.rendered_target ? emptyFactsNote(preview.empty_facts) : undefined;
   const outcome = parsed?.outcome ?? undefined;
   const diagnosticCode = parsed?.target_diagnostic?.code;
   // A duplicate target arrives as target_diagnostic but its semantics are a conflict (③), not a render failure (②).
@@ -237,7 +237,7 @@ function OwnerReleaseFileRow({ preview, parsed, target, observation, subtitles =
 //   target at all. Placeholder codes are limited to the render domain (isRenderDiagnostic): a
 //   render failure is not a landing failure, and non-render diagnostics degrade into the neutral
 //   "target pending" when there is no target, leaving the verdict to ③ / the seed row.
-  const pendingDiagnostic = diagnosticCode ?? (preview?.render_error ? preview.reason_code : undefined);
+  const pendingDiagnostic = preview?.render_error ? preview.reason_code ?? "target_render_failed" : diagnosticCode;
   const renderFailure = planned && targetPath === undefined && pendingDiagnostic !== undefined && isRenderDiagnostic(pendingDiagnostic)
     ? pendingDiagnostic
     : undefined;
@@ -283,11 +283,11 @@ function OwnerReleaseFileRow({ preview, parsed, target, observation, subtitles =
           )}
         </span>
       </div>
-      {/* ② The expected output: the video's own target (the frozen target winning; without one, the
-          server's projection rendered from the current naming configuration), plus each following
-          subtitle's own target. Only render-domain failures (isRenderDiagnostic) may stand in when
-          there is no target; landing/probe failures never appear here — ② degrades into the neutral
-          "target pending", leaving the verdict to ③. */}
+      {/* ② The expected output under the current configuration: the server's current projection,
+          plus each following subtitle's own current target. A current render failure must not be
+          hidden by a frozen target; only old rows without a current projection fall back to their
+          frozen admission target. Landing/probe failures never appear here — ② degrades into the
+          neutral "target pending", leaving the verdict to ③. */}
       {planned && (renderFailure !== undefined
         ? <span className="text-caption text-danger" role="alert"><ReasonText code={renderFailure} /></span>
         : targetPath
@@ -320,12 +320,11 @@ function OwnerReleaseFileRow({ preview, parsed, target, observation, subtitles =
   );
 }
 
-// A subtitle's output is the target the server rendered under the placement stage's same rule (the
-// video's directory + the video's base name + the rendered suffix + its own extension). The frozen
-// target wins; without one the preview layer's projection is used, and any difference is the
-// server's frozen target's responsibility — the frontend never recomputes or corrects here.
-// Passing and filtering match the video row: the admission layer's verdict wins, falling back to
-// the browse layer only when absent.
+// A subtitle's output is the target the server renders under the current configuration and the
+// placement stage's same rule (the video's directory + the video's base name + the rendered suffix
+// + its own extension). A current render error suppresses the frozen target; only a row without a
+// current projection falls back to that historical admission fact. Passing and filtering match the
+// video row: the admission layer's verdict wins, falling back to the browse layer only when absent.
 function ownerSubtitleItem({ path, preview, parsed }: OwnerFileEntry): BoundSubtitleItem {
   const outcome = parsed?.outcome ?? undefined;
   const filtered = outcome === undefined ? preview !== undefined && !preview.included : FILTERED_OUTCOMES.has(outcome);
@@ -342,7 +341,7 @@ function ownerSubtitleItem({ path, preview, parsed }: OwnerFileEntry): BoundSubt
     languageSource: preview?.sub_lang_tag ? preview.sub_lang_source : undefined,
     included: !filtered && !duplicate,
     reasonCode,
-    target: parsed?.target_path ?? preview?.rendered_target ?? undefined,
+    target: preview?.rendered_target ?? (preview?.render_error ? undefined : parsed?.target_path ?? undefined),
     targetProblem: pending ?? failure,
   };
 }
