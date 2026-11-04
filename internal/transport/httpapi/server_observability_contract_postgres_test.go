@@ -181,6 +181,11 @@ WHERE kind = 'internal' AND target_id = 'http.5xx'`).Scan(&episodeCount, &occurr
 		Internal *struct {
 			OccurrenceCount int     `json:"occurrence_count"`
 			LastRequestID   *string `json:"last_request_id"`
+			HTTPOperations  []struct {
+				Operation       string  `json:"operation"`
+				OccurrenceCount int     `json:"occurrence_count"`
+				LastRequestID   *string `json:"last_request_id"`
+			} `json:"http_operations"`
 		} `json:"internal"`
 	}
 	if err := json.Unmarshal(diagnosticsBody, &page); err != nil {
@@ -191,6 +196,11 @@ WHERE kind = 'internal' AND target_id = 'http.5xx'`).Scan(&episodeCount, &occurr
 	}
 	if page.Internal == nil || page.Internal.OccurrenceCount != 2 || page.Internal.LastRequestID == nil || *page.Internal.LastRequestID != secondID {
 		t.Fatalf("internal summary = %+v, want two occurrences and the latest request id: %s", page.Internal, diagnosticsBody)
+	}
+	if len(page.Internal.HTTPOperations) != 1 || page.Internal.HTTPOperations[0].Operation != "request" ||
+		page.Internal.HTTPOperations[0].OccurrenceCount != 2 || page.Internal.HTTPOperations[0].LastRequestID == nil ||
+		*page.Internal.HTTPOperations[0].LastRequestID != secondID {
+		t.Fatalf("HTTP operation summary = %+v, want the legacy request bucket with two occurrences", page.Internal.HTTPOperations)
 	}
 	for _, forbidden := range []string{firstID, secretValue, privatePath, dsnValue, "db-password"} {
 		if bytes.Contains(diagnosticsBody, []byte(forbidden)) {

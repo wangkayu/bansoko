@@ -84,6 +84,11 @@ type APIError struct {
 	Message        string
 	Details        []generated.ErrorDetail
 	CurrentVersion *int64
+	// ExpectedDependencyFailure keeps a deliberately mapped upstream 5xx out of
+	// the internal-fault diagnostics. The zero value stays fail closed: every
+	// other typed 5xx is internal unless it is an expected 503. This changes
+	// observability only, never the HTTP response.
+	ExpectedDependencyFailure bool
 	// RequiredScope names the missing bearer scope of a 403
 	// TOKEN_SCOPE_INSUFFICIENT.
 	RequiredScope string
@@ -194,10 +199,11 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		recordPanicRecoveredRequestFailure(r)
 		apiErr = mapApplicationError(err)
 	} else if errors.As(err, &apiErr) && apiErr != nil {
-		// Expected dependency-unavailable responses are intentionally quiet. Any
-		// other typed 5xx still represents an unknown fault at this boundary and
-		// enters the fixed HTTP diagnostic bucket.
-		if apiErr.Status >= http.StatusInternalServerError && apiErr.Status != http.StatusServiceUnavailable && !canceled {
+		// Expected dependency-unavailable responses are intentionally quiet. A
+		// deliberately classified upstream 5xx is quiet here too and records its
+		// own safe runtime warning at the handler. Every other typed 5xx
+		// remains an internal fault at this boundary.
+		if apiErr.Status >= http.StatusInternalServerError && apiErr.Status != http.StatusServiceUnavailable && !apiErr.ExpectedDependencyFailure && !canceled {
 			recordUnknownRequestFailure(r, err)
 		}
 	} else {
@@ -265,10 +271,13 @@ func recordRequestFault(r *http.Request, reasonCode, errorClass string) {
 	if recorder == nil {
 		return
 	}
-	// This fixed identity is a cumulative unknown-fault bucket, not an endpoint
-	// health signal. Never report success here: an arbitrary successful request
-	// must not close an episode for a later or concurrent unknown failure.
-	failure := observabilityport.InternalFailure(observabilityport.InternalHTTP5xx, RequestIDFrom(ctx))
+	// These identities are cumulative unknown-fault buckets, not endpoint health
+	// signals. A routed request gets its fixed operationId as the source suffix;
+	// an unrouted request keeps the legacy base bucket. Never report success
+	// here: an arbitrary successful request must not close an episode for a later
+	// or concurrent unknown failure.
+	operationID := requestOperationID(r)
+	failure := observabilityport.InternalFailure(observabilityport.InternalHTTP5xxForOperation(operationID), RequestIDFrom(ctx))
 	recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
 	if diagnosticRecorderFailed(recordCtx, recorder, failure) {
@@ -284,26 +293,35 @@ func recordRequestFault(r *http.Request, reasonCode, errorClass string) {
 	}
 }
 
-// unknownFailureOperation names the contract operation (its OpenAPI
-// operationId) the request matched, so an unknown failure can be traced to
-// its endpoint from the runtime log alone. The operationId is a fixed
-// identifier: it never carries request content (the concrete URL, its seed
-// keys, query strings or credential-bearing parameters), and unlike a path
-// template it holds no "/" the runtime redaction would mask. A request that
-// matches no operation keeps the fixed "request".
-func unknownFailureOperation(r *http.Request) string {
+// requestOperationID returns the contract operation (its OpenAPI operationId)
+// the request matched. It is a fixed identifier: it never carries request
+// content (the concrete URL, its seed keys, query strings or credential-bearing
+// parameters), and unlike a path template it holds no "/" the runtime redaction
+// would mask. An unmatched or malformed route returns an empty string.
+func requestOperationID(r *http.Request) string {
 	if r == nil || r.URL == nil {
-		return "request"
+		return ""
 	}
 	table, err := scopeTable()
 	if err != nil {
-		return "request"
+		return ""
 	}
 	route, ok := table.Match(r.Method, r.URL.EscapedPath())
 	if !ok || !operationIDPattern.MatchString(route.OperationID) {
+		return ""
+	}
+	return route.OperationID
+}
+
+// unknownFailureOperation names the matched operation in the runtime log, so an
+// unknown failure can be traced to its endpoint from the log alone. A request
+// that matches no operation keeps the fixed "request".
+func unknownFailureOperation(r *http.Request) string {
+	operationID := requestOperationID(r)
+	if operationID == "" {
 		return "request"
 	}
-	return "request " + route.OperationID
+	return "request " + operationID
 }
 
 var (

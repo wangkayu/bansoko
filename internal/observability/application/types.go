@@ -96,11 +96,23 @@ type DiagnosticEpisode struct {
 	RetentionUntil   time.Time
 }
 
+// DiagnosticInternalOperation is the cumulative HTTP failure count for one
+// fixed OpenAPI operationId. "request" is the legacy or unrouted bucket.
+type DiagnosticInternalOperation struct {
+	Operation       string
+	OccurrenceCount int
+	LastFailedAt    time.Time
+	LastRequestID   *string
+}
+
 // DiagnosticInternal folds every open internal episode into one summary.
+// HTTPOperations breaks out only the HTTP request faults; the total also
+// includes internal worker and maintenance sources.
 type DiagnosticInternal struct {
 	OccurrenceCount int
 	LastFailedAt    time.Time
 	LastRequestID   *string
+	HTTPOperations  []DiagnosticInternalOperation
 }
 
 type DiagnosticPage struct {

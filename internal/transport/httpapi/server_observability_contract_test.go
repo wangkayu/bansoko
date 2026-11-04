@@ -113,7 +113,12 @@ func TestObservabilityDiagnosticsEndpointSatisfiesContract(t *testing.T) {
 					RetentionUntil: occurredAt.Add(14 * 24 * time.Hour),
 				},
 			},
-			Internal: &observabilityapplication.DiagnosticInternal{OccurrenceCount: 2, LastFailedAt: occurredAt, LastRequestID: &requestID},
+			Internal: &observabilityapplication.DiagnosticInternal{
+				OccurrenceCount: 2, LastFailedAt: occurredAt, LastRequestID: &requestID,
+				HTTPOperations: []observabilityapplication.DiagnosticInternalOperation{{
+					Operation: "listReleaseBatchEntries", OccurrenceCount: 2, LastFailedAt: occurredAt, LastRequestID: &requestID,
+				}},
+			},
 		},
 	}}}
 	recorder := httptest.NewRecorder()

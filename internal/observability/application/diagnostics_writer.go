@@ -337,12 +337,20 @@ func (s *Service) RecordDiagnosticSuccessTx(ctx context.Context, scope txscope.T
 	if err := validateDiagnosticSuccess(req); err != nil {
 		return err
 	}
+	// Closing the base HTTP source also closes its per-operation children. HTTP
+	// request successes never call this automatically; this preserves the explicit
+	// administrative/maintenance semantics of the existing base-source success.
+	targetPredicate := "target_id = $2"
+	args := []any{string(req.Kind), req.TargetID}
+	if req.Kind == observabilityport.KindInternal && req.TargetID == observabilityport.InternalHTTP5xx {
+		targetPredicate = "(target_id = $2 OR target_id LIKE $3)"
+		args = append(args, observabilityport.InternalHTTP5xxOperationPrefix+"%")
+	}
 	_, err := tx.ExecContext(ctx, `
 UPDATE diagnostic_episodes
 SET succeeded_after_at = CURRENT_TIMESTAMP,
     retention_until = CURRENT_TIMESTAMP + INTERVAL '14 days'
-WHERE kind = $1 AND target_id = $2 AND succeeded_after_at IS NULL`,
-		string(req.Kind), req.TargetID)
+WHERE kind = $1 AND `+targetPredicate+` AND succeeded_after_at IS NULL`, args...)
 	if err != nil {
 		return fmt.Errorf("record diagnostic success: %w", err)
 	}

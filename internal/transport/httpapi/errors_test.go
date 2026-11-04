@@ -191,13 +191,44 @@ func TestWriteErrorUnknownWithoutRouteKeepsFixedOperation(t *testing.T) {
 	}
 }
 
+func TestWriteErrorDependencyClassificationControlsOnlyDiagnostics(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		expected   bool
+		wantFaults int
+	}{
+		{name: "ordinary typed 502 remains internal", wantFaults: 1},
+		{name: "explicit upstream 502 stays out", expected: true, wantFaults: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logger := &captureRuntimeLogger{}
+			diagnostic := &captureDiagnosticRecorder{}
+			r := requestWithDependencies("request-cover-502", logger, diagnostic)
+			recorder := httptest.NewRecorder()
+
+			writeError(recorder, r, &APIError{
+				Status: http.StatusBadGateway, Code: "COVER_UPSTREAM_FAILED", Message: "The provider did not return a usable image.",
+				ExpectedDependencyFailure: tc.expected,
+			})
+
+			if recorder.Code != http.StatusBadGateway || !bytes.Contains(recorder.Body.Bytes(), []byte(`"code":"COVER_UPSTREAM_FAILED"`)) {
+				t.Fatalf("response = %d %q, want the same typed 502", recorder.Code, recorder.Body.String())
+			}
+			if len(diagnostic.failures) != tc.wantFaults {
+				t.Fatalf("diagnostic failures = %+v, want %d", diagnostic.failures, tc.wantFaults)
+			}
+		})
+	}
+}
+
 // The unknown-failure log must name the contract operation the request
 // matched, so a 500 can be traced to its endpoint from the log alone. The
 // operationId carries no request content and survives the runtime redaction
 // that masks any value holding a "/".
 func TestWriteErrorUnknownLogsTheMatchedOperation(t *testing.T) {
 	logger := &captureRuntimeLogger{}
-	base := requestWithRuntimeLogger("request-unknown-route", logger)
+	diagnostic := &captureDiagnosticRecorder{}
+	base := requestWithDependencies("request-unknown-route", logger, diagnostic)
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/provider-feed-snapshots/{snapshot_id}/seeds/{stable_seed_key}/expand", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, errors.New("boom"))
@@ -219,6 +250,10 @@ func TestWriteErrorUnknownLogsTheMatchedOperation(t *testing.T) {
 	}
 	if strings.Contains(logger.events[0].Operation, "snap-1") || strings.Contains(logger.events[0].Operation, "seed-1") {
 		t.Fatalf("operation leaks the concrete request path: %q", logger.events[0].Operation)
+	}
+	if len(diagnostic.failures) != 1 || diagnostic.failures[0].TargetID != observabilityport.InternalHTTP5xxOperationPrefix+"expandSnapshotSeed" ||
+		diagnostic.failures[0].RequestID != "request-unknown-route" {
+		t.Fatalf("diagnostic = %+v, want one expandSnapshotSeed fault with the request ID", diagnostic.failures)
 	}
 }
 

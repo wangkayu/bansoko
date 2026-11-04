@@ -106,6 +106,32 @@ func (l *captureWarnings) Warn(_ context.Context, event observabilityport.Runtim
 }
 func (l *captureWarnings) Error(context.Context, observabilityport.RuntimeEvent) {}
 
+func TestReadImageCoverUpstreamFailureWarnsWithoutInternalDiagnostic(t *testing.T) {
+	logger := &captureWarnings{}
+	diagnostic := &captureDiagnosticRecorder{}
+	server := &Server{deps: Dependencies{
+		SkipAuth: true, RuntimeLogger: logger, DiagnosticRecorder: diagnostic,
+		ImageCovers: &fakeCoverService{fetchErr: identitymetadataadapter.ErrCoverUnavailable},
+	}}
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/images/cover/"+testCoverKey, nil)
+	request.Header.Set("X-Request-ID", "cover-upstream-request")
+	recorder := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502; body=%s", recorder.Code, recorder.Body.String())
+	}
+	assertErrorResponseCode(t, recorder.Body.Bytes(), "COVER_UPSTREAM_FAILED")
+	if len(logger.warns) != 1 || logger.warns[0].ReasonCode != "cover_upstream_unavailable" ||
+		logger.warns[0].Operation != "readImageCover" || logger.warns[0].RequestID != "cover-upstream-request" {
+		t.Fatalf("warnings = %+v, want one correlated upstream warning", logger.warns)
+	}
+	if len(diagnostic.failures) != 0 {
+		t.Fatalf("upstream cover failure entered internal diagnostics: %+v", diagnostic.failures)
+	}
+}
+
 // An untyped cover-read failure (the registry read) logs one warning that
 // names the class of the fault — a database refusal by SQLSTATE, any other
 // fault by the shared outbound network vocabulary — while the response keeps

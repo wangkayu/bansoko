@@ -4526,16 +4526,25 @@ type DiagnosticEpisodePage struct {
 	// Episodes Open episodes first, then recovered ones, each group newest first.
 	Episodes []DiagnosticEpisode `json:"episodes"`
 
-	// Internal Open internal product faults folded into one entry for bug reports. last_request_id correlates with the runtime log.
+	// Internal Retained internal product faults folded into one cumulative entry for bug reports. last_request_id correlates with the runtime log; http_operations breaks out request faults by fixed operationId.
 	Internal   *DiagnosticInternalSummary `json:"internal,omitempty"`
 	NextCursor *string                    `json:"next_cursor"`
 }
 
-// DiagnosticInternalSummary Open internal product faults folded into one entry for bug reports. last_request_id correlates with the runtime log.
-type DiagnosticInternalSummary struct {
+// DiagnosticInternalOperation Cumulative internal HTTP failures for one fixed OpenAPI operationId. The operation value request is the legacy or unrouted bucket.
+type DiagnosticInternalOperation struct {
 	LastFailedAt    time.Time `json:"last_failed_at"`
 	LastRequestId   *string   `json:"last_request_id,omitempty"`
 	OccurrenceCount int       `json:"occurrence_count"`
+	Operation       string    `json:"operation"`
+}
+
+// DiagnosticInternalSummary Retained internal product faults folded into one cumulative entry for bug reports. last_request_id correlates with the runtime log; http_operations breaks out request faults by fixed operationId.
+type DiagnosticInternalSummary struct {
+	HttpOperations  *[]DiagnosticInternalOperation `json:"http_operations,omitempty"`
+	LastFailedAt    time.Time                      `json:"last_failed_at"`
+	LastRequestId   *string                        `json:"last_request_id,omitempty"`
+	OccurrenceCount int                            `json:"occurrence_count"`
 }
 
 // DiagnosticOccurrence defines model for DiagnosticOccurrence.

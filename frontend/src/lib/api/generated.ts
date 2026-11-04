@@ -6857,12 +6857,21 @@ export interface components {
         RuntimeLogPage: {
             lines: components["schemas"]["RuntimeLogLine"][];
         };
-        /** @description Open internal product faults folded into one entry for bug reports. last_request_id correlates with the runtime log. */
+        /** @description Cumulative internal HTTP failures for one fixed OpenAPI operationId. The operation value request is the legacy or unrouted bucket. */
+        DiagnosticInternalOperation: {
+            operation: string;
+            occurrence_count: number;
+            /** Format: date-time */
+            last_failed_at: string;
+            last_request_id?: string;
+        };
+        /** @description Retained internal product faults folded into one cumulative entry for bug reports. last_request_id correlates with the runtime log; http_operations breaks out request faults by fixed operationId. */
         DiagnosticInternalSummary: {
             occurrence_count: number;
             /** Format: date-time */
             last_failed_at: string;
             last_request_id?: string;
+            http_operations?: components["schemas"]["DiagnosticInternalOperation"][];
         };
         /** @description Explicit per-contract projection of the four observability record sources. Each member is an allowlisted field set: storage-only columns such as plugin secret references are never selected, and the transport re-projects the stored payload through the typed member so a column added later cannot reach a client on its own. */
         ObservabilityRecord: components["schemas"]["RoutineRecord"] | components["schemas"]["BusinessRecord"] | components["schemas"]["AutomationRecord"] | components["schemas"]["PluginRecord"];

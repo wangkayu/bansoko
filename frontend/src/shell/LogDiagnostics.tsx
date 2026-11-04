@@ -124,20 +124,7 @@ export function LogDiagnostics({
         )}
         {showInternal && internal && (
           <ul className={LIST}>
-            <li className={cn(ITEM, "tw:text-muted-foreground")}>
-              <strong className="tw:font-medium">{t("log.diag.internal", { n: internal.occurrence_count })}</strong>
-              <p className={META}>
-                {t("log.diag.internalLast", { time: diagTime(internal.last_failed_at) })}
-                {internal.last_request_id ? (
-                  <>
-                    {" · "}
-                    {t("log.diag.requestId")} <code className="tw:font-mono">{internal.last_request_id}</code>
-                  </>
-                ) : null}
-                {" · "}
-                {t("log.diag.internalLog")}
-              </p>
-            </li>
+            <InternalRow internal={internal} />
           </ul>
         )}
         {query.hasNextPage && (
@@ -164,6 +151,76 @@ export function LogDiagnostics({
         {t("log.rawlog.link")}
       </Button>
     </div>
+  );
+}
+
+type InternalSummary = NonNullable<DiagnosticEpisodePage["internal"]>;
+
+function InternalRow({ internal }: { internal: InternalSummary }) {
+  const [expanded, setExpanded] = useState(false);
+  const operations = internal.http_operations ?? [];
+  const summary = (
+    <>
+      <span className="tw:flex tw:items-start tw:gap-1">
+        {operations.length > 0 && (
+          <ChevronRight aria-hidden className={cn("tw:mt-0.5 tw:size-3.5 tw:flex-none tw:transition-transform", expanded && "tw:rotate-90")} />
+        )}
+        <strong className="tw:font-medium">{t("log.diag.internal", { n: internal.occurrence_count })}</strong>
+      </span>
+      <span className={cn(META, "tw:block")}>
+        {t("log.diag.internalLast", { time: diagTime(internal.last_failed_at) })}
+        {internal.last_request_id ? (
+          <>
+            {" · "}
+            {t("log.diag.requestId")} <code className="tw:font-mono">{internal.last_request_id}</code>
+          </>
+        ) : null}
+        {" · "}
+        {t("log.diag.internalLog")}
+      </span>
+    </>
+  );
+  return (
+    <li className={cn(ITEM, "tw:text-muted-foreground")}>
+      {operations.length > 0 ? (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+          className="tw:grid tw:gap-1 tw:rounded-sm tw:text-left tw:focus-visible:outline-2 tw:focus-visible:outline-ring"
+        >
+          {summary}
+        </button>
+      ) : (
+        summary
+      )}
+      {expanded && operations.length > 0 && (
+        <div className="tw:grid tw:min-w-0 tw:gap-1 tw:border-t tw:border-border tw:pt-2">
+          <p className={HEADING}>{t("log.diag.internalOperations")}</p>
+          <ul className="tw:m-0 tw:grid tw:list-none tw:gap-2 tw:p-0">
+            {operations.map((operation) => (
+              <li key={operation.operation} className="tw:grid tw:min-w-0 tw:gap-0.5">
+                <span className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-baseline tw:gap-x-2">
+                  <code className="tw:min-w-0 tw:break-all tw:font-mono tw:text-xs tw:text-foreground">
+                    {operation.operation === "request" ? t("log.diag.internalUnmatchedOperation") : operation.operation}
+                  </code>
+                  <span className="tw:text-xs">{t("log.diag.internalOperationTimes", { n: operation.occurrence_count })}</span>
+                </span>
+                <span className={META}>
+                  {t("log.diag.internalLast", { time: diagTime(operation.last_failed_at) })}
+                  {operation.last_request_id ? (
+                    <>
+                      {" · "}
+                      {t("log.diag.requestId")} <code className="tw:break-all tw:font-mono">{operation.last_request_id}</code>
+                    </>
+                  ) : null}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </li>
   );
 }
 

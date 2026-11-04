@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/lib/pq"
@@ -117,23 +118,53 @@ LIMIT $%d`, where, group, len(args)), args...)
 }
 
 func (s *Service) readInternalSummary(ctx context.Context) (*DiagnosticInternal, error) {
-	var (
-		count     int
-		lastAt    sql.NullTime
-		requestID sql.NullString
-	)
-	err := s.db.QueryRowContext(ctx, `
-SELECT COALESCE(SUM(occurrence_count), 0)::int, MAX(last_failed_at),
-       (array_agg(last_request_id ORDER BY last_failed_at DESC) FILTER (WHERE last_request_id IS NOT NULL))[1]
+	rows, err := s.db.QueryContext(ctx, `
+SELECT target_id, occurrence_count, last_failed_at, last_request_id
 FROM diagnostic_episodes
-WHERE kind = 'internal' AND succeeded_after_at IS NULL`).Scan(&count, &lastAt, &requestID)
+WHERE kind = 'internal' AND succeeded_after_at IS NULL
+ORDER BY last_failed_at DESC, target_id`)
 	if err != nil {
 		return nil, fmt.Errorf("query internal diagnostic summary: %w", err)
 	}
-	if count == 0 || !lastAt.Valid {
+	defer rows.Close()
+
+	summary := &DiagnosticInternal{}
+	for rows.Next() {
+		var target string
+		var count int
+		var lastAt time.Time
+		var requestID sql.NullString
+		if err := rows.Scan(&target, &count, &lastAt, &requestID); err != nil {
+			return nil, fmt.Errorf("scan internal diagnostic summary: %w", err)
+		}
+		summary.OccurrenceCount += count
+		if summary.LastFailedAt.IsZero() {
+			summary.LastFailedAt = lastAt
+		}
+		if summary.LastRequestID == nil && requestID.Valid {
+			summary.LastRequestID = nullableStringPointer(requestID)
+		}
+		operation := ""
+		switch {
+		case target == observabilityport.InternalHTTP5xx:
+			operation = "request"
+		case strings.HasPrefix(target, observabilityport.InternalHTTP5xxOperationPrefix):
+			operation = strings.TrimPrefix(target, observabilityport.InternalHTTP5xxOperationPrefix)
+		}
+		if operation != "" {
+			summary.HTTPOperations = append(summary.HTTPOperations, DiagnosticInternalOperation{
+				Operation: operation, OccurrenceCount: count, LastFailedAt: lastAt,
+				LastRequestID: nullableStringPointer(requestID),
+			})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate internal diagnostic summary: %w", err)
+	}
+	if summary.OccurrenceCount == 0 {
 		return nil, nil
 	}
-	return &DiagnosticInternal{OccurrenceCount: count, LastFailedAt: lastAt.Time, LastRequestID: nullableStringPointer(requestID)}, nil
+	return summary, nil
 }
 
 type rowScanner interface{ Scan(...any) error }

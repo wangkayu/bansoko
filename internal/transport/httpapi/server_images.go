@@ -76,7 +76,7 @@ func (s *Server) ReadImageCover(w http.ResponseWriter, r *http.Request, imageKey
 		case errors.Is(err, identitymetadataadapter.ErrCoverNotFound):
 			writeError(w, r, notFound("COVER_NOT_FOUND", "The image is not available."))
 		case errors.Is(err, identitymetadataadapter.ErrCoverUnavailable):
-			writeError(w, r, &APIError{Status: http.StatusBadGateway, Code: "COVER_UPSTREAM_FAILED", Message: "The provider did not return a usable image."})
+			writeCoverUpstreamError(w, r)
 		default:
 			// The registry read is the only untyped exit, and its fault can be
 			// invisible everywhere else (the 2026-10-30 A4 inspection saw 500s
@@ -104,8 +104,27 @@ func (s *Server) ReadImageCover(w http.ResponseWriter, r *http.Request, imageKey
 	// not change within the TTL and the path may be called immutable. private:
 	// the route is authenticated.
 	if err := serveProxiedImage(w, r, body, contentType, "private, max-age=86400, immutable"); err != nil {
-		writeError(w, r, &APIError{Status: http.StatusBadGateway, Code: "COVER_UPSTREAM_FAILED", Message: "The provider did not return a usable image."})
+		writeCoverUpstreamError(w, r)
 	}
+}
+
+// writeCoverUpstreamError keeps an expected image-host failure visible in the
+// runtime log without calling it an unknown application fault. The request ID
+// is the only correlation; upstream URLs and error text never cross this line.
+func writeCoverUpstreamError(w http.ResponseWriter, r *http.Request) {
+	runtimeLoggerFrom(r.Context()).Warn(r.Context(), observabilityport.RuntimeEvent{
+		Message:    "cover upstream unavailable",
+		Component:  "httpapi",
+		Operation:  "readImageCover",
+		Outcome:    "failure",
+		ReasonCode: "cover_upstream_unavailable",
+		RequestID:  RequestIDFrom(r.Context()),
+		ErrorClass: "upstream_image_unavailable",
+	})
+	writeError(w, r, &APIError{
+		Status: http.StatusBadGateway, Code: "COVER_UPSTREAM_FAILED", Message: "The provider did not return a usable image.",
+		ExpectedDependencyFailure: true,
+	})
 }
 
 // maxProxiedImageBytes bounds one buffered image body. Both image proxies

@@ -133,47 +133,22 @@ async function tableExists(pgID: string, databaseName: string, tableName: string
   return result === "t";
 }
 
-type DiagnosticEpisode = {
-  id: string;
-  severity: string;
-  component: string;
+type InternalOperation = {
   operation: string;
-  error_code: string;
-  scope_kind: string;
-  scope_id: string;
   occurrence_count: number;
-  last_error: string;
+  last_failed_at: string;
+  last_request_id?: string;
 };
 
-function parseDiagnosticEpisodes(payload: unknown): DiagnosticEpisode[] {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new Error("diagnostic API returned an invalid page");
-  }
-  const rawEpisodes = (payload as Record<string, unknown>).episodes;
-  if (!Array.isArray(rawEpisodes)) throw new Error("diagnostic API returned no episode list");
+type InternalSummary = {
+  occurrence_count: number;
+  last_failed_at: string;
+  last_request_id?: string;
+  http_operations?: InternalOperation[];
+};
 
-  return rawEpisodes.flatMap((rawEpisode) => {
-    if (!rawEpisode || typeof rawEpisode !== "object" || Array.isArray(rawEpisode)) return [];
-    const episode = rawEpisode as Record<string, unknown>;
-    if (
-      typeof episode.id !== "string" ||
-      typeof episode.severity !== "string" ||
-      typeof episode.component !== "string" ||
-      typeof episode.operation !== "string" ||
-      typeof episode.error_code !== "string" ||
-      typeof episode.scope_kind !== "string" ||
-      typeof episode.scope_id !== "string" ||
-      typeof episode.occurrence_count !== "number" ||
-      typeof episode.last_error !== "string"
-    ) {
-      return [];
-    }
-    return [episode as unknown as DiagnosticEpisode];
-  });
-}
-
-async function readDiagnosticEpisodes(page: Page): Promise<DiagnosticEpisode[]> {
-  const response = await page.request.get("/api/v1/observability/diagnostics?component=httpapi&limit=100");
+async function readInternalSummary(page: Page): Promise<InternalSummary | undefined> {
+  const response = await page.request.get("/api/v1/observability/diagnostics?limit=100");
   if (response.status() !== 200) throw new Error("diagnostic API did not return 200");
   let payload: unknown;
   try {
@@ -181,35 +156,32 @@ async function readDiagnosticEpisodes(page: Page): Promise<DiagnosticEpisode[]> 
   } catch {
     throw new Error("diagnostic API returned invalid JSON");
   }
-  return parseDiagnosticEpisodes(payload);
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("diagnostic API returned an invalid page");
+  }
+  const internal = (payload as Record<string, unknown>).internal;
+  if (internal === undefined) return undefined;
+  if (!internal || typeof internal !== "object" || Array.isArray(internal)) {
+    throw new Error("diagnostic API returned an invalid internal summary");
+  }
+  return internal as InternalSummary;
 }
 
-async function waitForDiagnosticEpisode(
-  page: Page,
-  baselineEpisodeID: string | undefined,
-  baselineOccurrence: number,
-): Promise<DiagnosticEpisode> {
+async function waitForInternalOperation(page: Page, baselineOccurrence: number): Promise<InternalOperation> {
   const deadline = Date.now() + 60000;
   while (Date.now() < deadline) {
     try {
-      const episodes = await readDiagnosticEpisodes(page);
-      const episode = episodes.find(
-        (candidate) =>
-          candidate.severity === "error" &&
-          candidate.component === "httpapi" &&
-          candidate.operation === "request" &&
-          candidate.error_code === "http_500" &&
-          candidate.scope_kind === "global" &&
-          candidate.scope_id === "global" &&
-          (candidate.id !== baselineEpisodeID || candidate.occurrence_count > baselineOccurrence),
+      const summary = await readInternalSummary(page);
+      const operation = summary?.http_operations?.find(
+        (candidate) => candidate.operation === "listAnime" && candidate.occurrence_count > baselineOccurrence,
       );
-      if (episode) return episode;
+      if (operation) return operation;
     } catch {
       // The recorder/API may still be committing after the HTTP response.
     }
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  throw new Error("diagnostic API did not expose the new global http_500 episode");
+  throw new Error("diagnostic API did not expose the new listAnime internal-fault operation");
 }
 
 type RuntimeEvent = Record<string, unknown>;
@@ -243,7 +215,7 @@ async function waitForRuntimeEvent(requestID: string): Promise<RuntimeEvent> {
       (candidate) =>
         candidate.request_id === requestID &&
         candidate.component === "httpapi" &&
-        candidate.operation === "request" &&
+        candidate.operation === "request listAnime" &&
         candidate.reason_code === "unknown_error",
     );
     if (event) return event;
@@ -291,51 +263,46 @@ function assertGenericUnknownResponse(responseText: string, payload: Record<stri
   assertNoDatabaseErrorMaterial(responseText, "generic INTERNAL response");
 }
 
-async function inspectLogDialog(page: Page, testInfo: { project: { name: string } }, episode: DiagnosticEpisode, marker: string): Promise<void> {
-  await page.goto("/");
-  await expect(page.getByRole("navigation", { name: "主导航" })).toBeVisible({ timeout: 30000 });
+async function expectShellReady(page: Page, projectName: string): Promise<void> {
+  const name = projectName === "mobile" ? "底部导航" : "主导航";
+  await expect(page.getByRole("navigation", { name })).toBeVisible({ timeout: 30000 });
+}
+
+async function openLogDialog(page: Page, projectName: string): Promise<void> {
+  if (projectName === "mobile") {
+    await page.getByRole("navigation", { name: "底部导航" }).getByRole("button", { name: "更多", exact: true }).click();
+    const sheet = page.getByRole("dialog", { name: "更多" });
+    await expect(sheet).toBeVisible();
+    await sheet.getByRole("button", { name: "日志", exact: true }).click();
+    return;
+  }
   await page.getByRole("button", { name: "日志", exact: true }).click();
+}
+
+async function inspectLogDialog(page: Page, testInfo: { project: { name: string } }, operation: InternalOperation, marker: string): Promise<void> {
+  await page.goto("/");
+  await expectShellReady(page, testInfo.project.name);
+  await openLogDialog(page, testInfo.project.name);
 
   const logDialog = page.getByRole("dialog").last();
   await expect(logDialog).toBeVisible({ timeout: 15000 });
   await expect(logDialog.getByText("日志", { exact: true })).toBeVisible();
   await logDialog.getByRole("tab", { name: "诊断", exact: true }).click();
 
-  const componentSelect = logDialog.getByRole("combobox", { name: "类型", exact: true });
-  await expect(componentSelect).toBeVisible({ timeout: 15000 });
-  const filteredDiagnostics = page.waitForResponse(
-    (response) => {
-      const url = new URL(response.url());
-      return (
-        url.pathname.endsWith("/api/v1/observability/diagnostics") &&
-        response.request().method() === "GET" &&
-        url.searchParams.get("component") === "httpapi"
-      );
-    },
-    { timeout: 30000 },
-  );
-  await componentSelect.click();
-  await page.getByRole("option", { name: "接口请求", exact: true }).click();
-  const filteredResponse = await filteredDiagnostics;
-  if (filteredResponse.status() !== 200) throw new Error("diagnostic component filter did not return 200");
-
-  const episodeItem = logDialog
-    .getByRole("list", { name: "诊断列表" }).getByRole("listitem")
-    .filter({ hasText: "接口请求 · 请求" })
-    .filter({ hasText: "服务内部出错" })
+  const internalItem = logDialog
+    .getByRole("tabpanel", { name: "诊断", exact: true })
+    .getByRole("list").getByRole("listitem")
+    .filter({ hasText: "内部错误累计" })
     .first();
-  await expect(episodeItem).toBeVisible({ timeout: 30000 });
-  const uiText = (await episodeItem.textContent()) ?? "";
-  // The migrated UI shows the localized component/operation and the mapped
-  // http_500 message instead of the raw codes and the redacted last_error.
-  if (!uiText.includes("接口请求 · 请求") || !uiText.includes("服务内部出错") || !/重复 \d+ 次/.test(uiText)) {
-    throw new Error("diagnostic UI did not show the HTTP 500 episode");
-  }
+  await expect(internalItem).toBeVisible({ timeout: 30000 });
+  await internalItem.getByRole("button", { name: /内部错误累计/ }).click();
+  await expect(internalItem.getByText("请求错误（按操作）", { exact: true })).toBeVisible();
+  const operationItem = internalItem.getByRole("listitem").filter({ hasText: "listAnime" });
+  await expect(operationItem).toBeVisible();
+  await expect(operationItem.getByText(`累计 ${operation.occurrence_count} 次`, { exact: true })).toBeVisible();
+  const uiText = (await internalItem.textContent()) ?? "";
   assertNoSensitiveMaterial(uiText, "diagnostic UI", marker);
   assertNoDatabaseErrorMaterial(uiText, "diagnostic UI");
-  if (!uiText.includes(`重复 ${episode.occurrence_count} 次`)) {
-    throw new Error("diagnostic UI occurrence count does not match the diagnostic API");
-  }
 
   const viewport = page.viewportSize();
   if (!viewport) throw new Error("Playwright viewport is unavailable");
@@ -411,18 +378,9 @@ test.describe("OBS-016 unknown HTTP error diagnostic episode", () => {
     const requestID = `unknown-error-${testInfo.project.name}-${Date.now().toString(36)}-${uniqueSuffix}`;
 
     await page.goto("/");
-    await expect(page.getByRole("navigation", { name: "主导航" })).toBeVisible({ timeout: 30000 });
-    const existingEpisodes = await readDiagnosticEpisodes(page);
-    const baselineEpisode = existingEpisodes.find(
-      (episode) =>
-        episode.severity === "error" &&
-        episode.component === "httpapi" &&
-        episode.operation === "request" &&
-        episode.error_code === "http_500" &&
-        episode.scope_kind === "global" &&
-        episode.scope_id === "global",
-    );
-    const baselineOccurrence = baselineEpisode?.occurrence_count ?? 0;
+    await expectShellReady(page, testInfo.project.name);
+    const baselineSummary = await readInternalSummary(page);
+    const baselineOccurrence = baselineSummary?.http_operations?.find((operation) => operation.operation === "listAnime")?.occurrence_count ?? 0;
 
     try {
       await execPsql(
@@ -466,14 +424,16 @@ test.describe("OBS-016 unknown HTTP error diagnostic episode", () => {
       assertNoSensitiveMaterial(responseText, "generic INTERNAL response", sensitiveMarker);
 
       const runtimeEvent = await waitForRuntimeEvent(responseRequestID);
+      // The renamed table produces PostgreSQL undefined_table. The structured log
+      // keeps only that safe SQLSTATE class, never the relation name or error text.
       if (
         runtimeEvent.level !== "error" ||
         runtimeEvent.request_id !== responseRequestID ||
         runtimeEvent.component !== "httpapi" ||
-        runtimeEvent.operation !== "request" ||
+        runtimeEvent.operation !== "request listAnime" ||
         runtimeEvent.outcome !== "failure" ||
         runtimeEvent.reason_code !== "unknown_error" ||
-        runtimeEvent.error_class !== "unknown_application_error" ||
+        runtimeEvent.error_class !== "postgres_42P01" ||
         runtimeEvent.message !== "request failed with unknown application error"
       ) {
         throw new Error("server.log contained no matching structured unknown-error event");
@@ -492,24 +452,13 @@ test.describe("OBS-016 unknown HTTP error diagnostic episode", () => {
     const recoveredResponse = await page.request.get("/api/v1/anime");
     if (recoveredResponse.status() !== 200) throw new Error("authenticated anime API did not recover after table restoration");
 
-    const episode = await waitForDiagnosticEpisode(page, baselineEpisode?.id, baselineOccurrence);
-    if (
-      episode.severity !== "error" ||
-      episode.component !== "httpapi" ||
-      episode.operation !== "request" ||
-      episode.error_code !== "http_500" ||
-      episode.scope_kind !== "global" ||
-      episode.scope_id !== "global" ||
-      episode.occurrence_count <= baselineOccurrence
-    ) {
-      throw new Error("diagnostic API returned the wrong episode identity");
+    const operation = await waitForInternalOperation(page, baselineOccurrence);
+    if (operation.occurrence_count <= baselineOccurrence || operation.last_request_id !== requestID) {
+      throw new Error("diagnostic API returned the wrong listAnime operation or request ID");
     }
-    if (episode.last_error !== "<redacted>") {
-      throw new Error("diagnostic episode last_error was not fixed redaction");
-    }
-    assertNoSensitiveMaterial(episode.last_error, "diagnostic episode", sensitiveMarker);
-    assertNoDatabaseErrorMaterial(episode.last_error, "diagnostic episode");
+    assertNoSensitiveMaterial(JSON.stringify(operation), "diagnostic operation", sensitiveMarker);
+    assertNoDatabaseErrorMaterial(JSON.stringify(operation), "diagnostic operation");
 
-    await inspectLogDialog(page, testInfo, episode, sensitiveMarker);
+    await inspectLogDialog(page, testInfo, operation, sensitiveMarker);
   });
 });

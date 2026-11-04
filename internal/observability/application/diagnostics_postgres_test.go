@@ -157,8 +157,9 @@ func TestListDiagnosticsStateFilterOrderingAndCursor(t *testing.T) {
 	}
 }
 
-// Internal errors are never listed as episodes; they fold into one summary on
-// the first page that carries the latest opaque request id.
+// Internal errors are never listed as episodes; they fold into one cumulative
+// summary with a per-operation HTTP breakdown. The legacy base bucket remains
+// part of both views, and closing it also closes all operation children.
 func TestInternalEpisodesFoldIntoSummary(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
@@ -166,9 +167,13 @@ func TestInternalEpisodesFoldIntoSummary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	listSource := observabilityport.InternalHTTP5xxForOperation("listReleaseBatchEntries")
+	searchSource := observabilityport.InternalHTTP5xxForOperation("searchProviderCatalog")
 	for _, req := range []observabilityport.DiagnosticFailureRequest{
-		observabilityport.InternalFailure(observabilityport.InternalHTTP5xx, "request-a"),
-		observabilityport.InternalFailure(observabilityport.InternalHTTP5xx, "request-b"),
+		observabilityport.InternalFailure(listSource, "request-a"),
+		observabilityport.InternalFailure(listSource, "request-a2"),
+		observabilityport.InternalFailure(searchSource, "request-b"),
+		observabilityport.InternalFailure(observabilityport.InternalHTTP5xx, ""),
 		observabilityport.InternalFailure(observabilityport.InternalPlacementSink, ""),
 	} {
 		if err := service.RecordDiagnosticFailure(ctx, req); err != nil {
@@ -179,14 +184,34 @@ func TestInternalEpisodesFoldIntoSummary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Episodes) != 0 || page.Internal == nil || page.Internal.OccurrenceCount != 3 {
+	if len(page.Episodes) != 0 || page.Internal == nil || page.Internal.OccurrenceCount != 5 {
 		t.Fatalf("page = %+v internal=%+v", page.Episodes, page.Internal)
 	}
-	if page.Internal.LastRequestID == nil || *page.Internal.LastRequestID != "request-b" {
-		t.Fatalf("last request id = %v", page.Internal.LastRequestID)
+	if page.Internal.LastRequestID == nil {
+		t.Fatal("summary lost the latest available request id")
+	}
+	if len(page.Internal.HTTPOperations) != 3 {
+		t.Fatalf("HTTP operations = %+v, want list, search and legacy request", page.Internal.HTTPOperations)
+	}
+	operations := map[string]DiagnosticInternalOperation{}
+	for _, operation := range page.Internal.HTTPOperations {
+		operations[operation.Operation] = operation
+	}
+	if got := operations["listReleaseBatchEntries"]; got.OccurrenceCount != 2 || got.LastRequestID == nil || *got.LastRequestID != "request-a2" {
+		t.Fatalf("list operation = %+v", got)
+	}
+	if got := operations["searchProviderCatalog"]; got.OccurrenceCount != 1 || got.LastRequestID == nil || *got.LastRequestID != "request-b" {
+		t.Fatalf("search operation = %+v", got)
+	}
+	if got := operations["request"]; got.OccurrenceCount != 1 || got.LastRequestID != nil {
+		t.Fatalf("legacy operation = %+v", got)
 	}
 	if err := service.RecordDiagnosticSuccess(ctx, observabilityport.InternalSuccess(observabilityport.InternalHTTP5xx)); err != nil {
 		t.Fatal(err)
+	}
+	page, err = service.ListDiagnostics(ctx, DiagnosticQuery{})
+	if err != nil || page.Internal == nil || page.Internal.OccurrenceCount != 1 || len(page.Internal.HTTPOperations) != 0 {
+		t.Fatalf("closing the base source must close every HTTP child: %+v err=%v", page.Internal, err)
 	}
 	if err := service.RecordDiagnosticSuccess(ctx, observabilityport.InternalSuccess(observabilityport.InternalPlacementSink)); err != nil {
 		t.Fatal(err)

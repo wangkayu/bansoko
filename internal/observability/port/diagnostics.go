@@ -1,6 +1,7 @@
 package port
 
 import (
+	"regexp"
 	"sort"
 	"strings"
 
@@ -82,7 +83,9 @@ type ConditionSpec struct {
 }
 
 // Internal condition sources: the closed set of identities outside the
-// owner-facing catalog. Each keeps one episode keyed by the source label.
+// owner-facing catalog. Each keeps one episode keyed by the source label. HTTP
+// failures additionally use a validated OpenAPI operationId suffix so distinct
+// request faults do not collapse into one undiagnosable total.
 const (
 	InternalAutomationDispatch = "automation.dispatch"
 	InternalReplacementTrigger = "replacement.trigger"
@@ -93,6 +96,8 @@ const (
 	InternalDownloadSubmit     = "download.submit"
 	InternalFileOperation      = "fileoperation.execute"
 	InternalRSSRefresh         = "rss.refresh"
+
+	InternalHTTP5xxOperationPrefix = InternalHTTP5xx + ":"
 )
 
 var internalSources = map[string]struct{}{
@@ -101,10 +106,26 @@ var internalSources = map[string]struct{}{
 	InternalDownloadSubmit: {}, InternalFileOperation: {}, InternalRSSRefresh: {},
 }
 
-// IsInternalSource reports whether source is a catalogued internal label.
+var internalHTTPOperationIDPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,118}$`)
+
+// InternalHTTP5xxForOperation returns the per-operation cumulative HTTP fault
+// source. Invalid or overlong identifiers fail closed to the legacy base
+// bucket, so observability never turns request data into a target identity.
+func InternalHTTP5xxForOperation(operationID string) string {
+	if !internalHTTPOperationIDPattern.MatchString(operationID) {
+		return InternalHTTP5xx
+	}
+	return InternalHTTP5xxOperationPrefix + operationID
+}
+
+// IsInternalSource reports whether source is a catalogued internal label or a
+// validated per-operation HTTP source.
 func IsInternalSource(source string) bool {
-	_, ok := internalSources[source]
-	return ok
+	if _, ok := internalSources[source]; ok {
+		return true
+	}
+	operationID, ok := strings.CutPrefix(source, InternalHTTP5xxOperationPrefix)
+	return ok && internalHTTPOperationIDPattern.MatchString(operationID)
 }
 
 // InternalSources returns the internal source labels in stable order.

@@ -158,7 +158,7 @@ func TestPanicRecoveryDoesNotBufferSSEResponse(t *testing.T) {
 	if response.Header().Get("X-Request-ID") != "sse-panic-request" {
 		t.Fatalf("SSE request ID = %q, want exact request ID", response.Header().Get("X-Request-ID"))
 	}
-	if len(diagnostic.failures) != 1 || diagnostic.failures[0].TargetID != observabilityport.InternalHTTP5xx {
+	if len(diagnostic.failures) != 1 || diagnostic.failures[0].TargetID != observabilityport.InternalHTTP5xxOperationPrefix+"streamEvents" {
 		t.Fatalf("SSE panic diagnostic = %+v", diagnostic.failures)
 	}
 }

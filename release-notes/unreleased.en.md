@@ -17,6 +17,7 @@
 
 ## Improved
 
+- Internal errors in Logs now show their cumulative count and can expand into per-request-operation details; a temporarily unavailable cover host still returns a failure and writes a log entry, but no longer counts as an internal server fault.
 - The note exists only to tell several subscriptions of one show apart: creating a subscription no longer copies the title into its note, a copy asks you for one, and a custom preset already requires one; a list shows only the title when there is no note, never the same text twice.
 - Account settings update the username and password together; leave either replacement blank to keep its current value.
 - RSS access can be added directly in connection settings; built-in connections can only be edited.

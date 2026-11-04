@@ -17149,13 +17149,34 @@ components:
           maxItems: 500
           items:
             $ref: '#/components/schemas/RuntimeLogLine'
+    DiagnosticInternalOperation:
+      type: object
+      additionalProperties: false
+      required: [operation, occurrence_count, last_failed_at]
+      description: >-
+        Cumulative internal HTTP failures for one fixed OpenAPI operationId.
+        The operation value request is the legacy or unrouted bucket.
+      properties:
+        operation:
+          type: string
+          pattern: '^[A-Za-z][A-Za-z0-9_]{0,118}$'
+        occurrence_count:
+          type: integer
+          minimum: 1
+        last_failed_at:
+          type: string
+          format: date-time
+        last_request_id:
+          type: string
+          maxLength: 128
     DiagnosticInternalSummary:
       type: object
       additionalProperties: false
       required: [occurrence_count, last_failed_at]
       description: >-
-        Open internal product faults folded into one entry for bug reports.
-        last_request_id correlates with the runtime log.
+        Retained internal product faults folded into one cumulative entry for
+        bug reports. last_request_id correlates with the runtime log;
+        http_operations breaks out request faults by fixed operationId.
       properties:
         occurrence_count:
           type: integer
@@ -17166,6 +17187,11 @@ components:
         last_request_id:
           type: string
           maxLength: 128
+        http_operations:
+          type: array
+          maxItems: 256
+          items:
+            $ref: '#/components/schemas/DiagnosticInternalOperation'
     ObservabilityRecord:
       description: >-
         Explicit per-contract projection of the four observability record

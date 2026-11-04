@@ -79,7 +79,19 @@ function stubFetch() {
       const limit = Number(url.searchParams.get("limit") ?? "50");
       body = { records: batchDetails.slice(0, limit), next_cursor: batchDetails.length > limit ? "c1" : null };
     } else if (url.pathname.endsWith("/observability/diagnostics")) {
-      body = { episodes, internal: { occurrence_count: 2, last_failed_at: "2026-10-21T09:30:00Z", last_request_id: "req-9" }, next_cursor: null };
+      body = {
+        episodes,
+        internal: {
+          occurrence_count: 2,
+          last_failed_at: "2026-10-21T09:30:00Z",
+          last_request_id: "req-9",
+          http_operations: [
+            { operation: "listReleaseBatchEntries", occurrence_count: 1, last_failed_at: "2026-10-21T09:30:00Z", last_request_id: "req-9" },
+            { operation: "searchProviderCatalog", occurrence_count: 1, last_failed_at: "2026-10-21T09:20:00Z", last_request_id: "req-8" },
+          ],
+        },
+        next_cursor: null,
+      };
     } else if (url.pathname.endsWith("/observability/runtime-log")) body = { lines: runtimeLines };
     return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
   });
@@ -216,6 +228,13 @@ describe("LogDialog", () => {
     fireEvent.click(await screen.findByRole("tab", { name: t("log.tabDiagnostics") }));
     expect(await screen.findByText(tryT("log.diag.downloader.unreachable", { name: "qB Main", n: 1 })!)).toBeInTheDocument();
     expect(screen.getByText(t("log.diag.internal", { n: 2 }))).toBeInTheDocument();
+    expect(screen.queryByText("listReleaseBatchEntries")).not.toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: new RegExp(t("log.diag.internal", { n: 2 })) }));
+    expect(screen.getByText(t("log.diag.internalOperations"))).toBeInTheDocument();
+    expect(screen.getByText("listReleaseBatchEntries")).toBeInTheDocument();
+    expect(screen.getByText("searchProviderCatalog")).toBeInTheDocument();
+    expect(screen.getAllByText(t("log.diag.internalOperationTimes", { n: 1 }))).toHaveLength(2);
     expect(document.body.textContent).not.toMatch(/\/(config|media|data)\b/);
     expect(urlsOf("/observability/diagnostics").length).toBeGreaterThan(0);
   });

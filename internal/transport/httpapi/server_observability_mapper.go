@@ -175,10 +175,21 @@ func mapDiagnosticPage(value observabilityapplication.DiagnosticPage) generated.
 	}
 	page := generated.DiagnosticEpisodePage{Episodes: episodes, NextCursor: value.NextCursor}
 	if value.Internal != nil {
-		page.Internal = &generated.DiagnosticInternalSummary{
+		internal := &generated.DiagnosticInternalSummary{
 			OccurrenceCount: value.Internal.OccurrenceCount, LastFailedAt: value.Internal.LastFailedAt,
 			LastRequestId: value.Internal.LastRequestID,
 		}
+		if len(value.Internal.HTTPOperations) > 0 {
+			operations := make([]generated.DiagnosticInternalOperation, 0, len(value.Internal.HTTPOperations))
+			for _, operation := range value.Internal.HTTPOperations {
+				operations = append(operations, generated.DiagnosticInternalOperation{
+					Operation: operation.Operation, OccurrenceCount: operation.OccurrenceCount,
+					LastFailedAt: operation.LastFailedAt, LastRequestId: operation.LastRequestID,
+				})
+			}
+			internal.HttpOperations = &operations
+		}
+		page.Internal = internal
 	}
 	return page
 }
