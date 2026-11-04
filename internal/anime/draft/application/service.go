@@ -825,9 +825,10 @@ VALUES ('subscribe', $1, $2, $3, $4)`, key, requestHash, animeID, snapshot); err
 
 // createProviderGroupOffsetSourcesTx turns the draft's per-group offsets into
 // link rows through the same upsert discovery uses, so the first discovery
-// refreshes them and keeps the offsets. Only groups the draft lists get a row,
-// and a zero offset is the absence of a link. Nothing is fetched and no work is
-// scheduled here; discovery owns that.
+// refreshes them and keeps the offsets. The RSS workspace can save an offset for
+// an observed group before that group enters the subgroup settings, so every
+// non-zero offset gets a row; discovery later replaces the ref fallback with the
+// observed display name. Nothing is fetched and no work is scheduled here.
 func (s *Service) createProviderGroupOffsetSourcesTx(ctx context.Context, tx *sql.Tx, subscriptionID, title string, draft animedomain.AnimeDraft) error {
 	if len(draft.ProviderGroupOffsets) == 0 || draft.OriginEntryRef == nil {
 		return nil
@@ -838,15 +839,12 @@ func (s *Service) createProviderGroupOffsetSourcesTx(ctx context.Context, tx *sq
 		if offset.EpisodeOffset == 0 {
 			continue
 		}
-		displayName, listed := "", false
+		displayName := offset.ProviderGroupRef
 		for _, entry := range draft.Subgroups.Entries {
 			if string(entry.Provider) == provider && entry.GroupRef == offset.ProviderGroupRef {
-				displayName, listed = entry.DisplayName, true
+				displayName = entry.DisplayName
 				break
 			}
-		}
-		if !listed {
-			continue
 		}
 		rssURL, err := providerdomain.BuildProviderRSSURL(providerdomain.Kind(provider), endpoint, *draft.OriginEntryRef, offset.ProviderGroupRef)
 		if err != nil {
