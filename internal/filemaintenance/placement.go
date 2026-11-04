@@ -479,6 +479,19 @@ func (s *PlacementService) admit(ctx context.Context, input placementInput) (str
 // calibration facts.
 func (s *PlacementService) admitTx(ctx context.Context, tx *sql.Tx, input placementInput) (string, error) {
 	placementID := PlacementIDFor(input.SourceEvidenceType, input.SourceOwnerRef)
+	if input.SourceEvidenceType == "file_operation" && input.ReplacementEligible {
+		var exists bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM placements WHERE id = $1)`, placementID).Scan(&exists); err != nil {
+			return "", err
+		}
+		if !exists {
+			coverage, err := applyLatestOffsetForAdmissionTx(ctx, tx, input)
+			if err != nil {
+				return "", err
+			}
+			input.Coverage = coverage
+		}
+	}
 	var generation any
 	if input.SnapshotGeneration > 0 {
 		generation = input.SnapshotGeneration

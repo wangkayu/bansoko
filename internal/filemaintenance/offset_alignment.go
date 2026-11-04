@@ -77,6 +77,11 @@ ON CONFLICT (rss_source_id, source_version) DO NOTHING`, changeID, rssSourceID, 
 		if !ok || key == candidate.currentKey {
 			continue
 		}
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO offset_alignment_change_keys (change_id, placement_id, old_observation_key, new_observation_key)
+VALUES ($1, $2, $3, $4)`, changeID, candidate.placementID, candidate.currentKey, key); err != nil {
+			return "", false, fmt.Errorf("record offset re-key %s: %w", candidate.placementID, err)
+		}
 		if _, err := tx.ExecContext(ctx, `UPDATE placement_coverage SET observation_key = $2 WHERE placement_id = $1`, candidate.placementID, key); err != nil {
 			return "", false, fmt.Errorf("re-key placement %s: %w", candidate.placementID, err)
 		}
@@ -104,8 +109,61 @@ func offsetAlignmentChangeID(rssSourceID string, sourceVersion int64) string {
 	return "offset:" + hex.EncodeToString(digest[:16])
 }
 
-// offsetRekeyCandidate is one active single-key placement of the link with
-// its frozen media facts.
+// applyLatestOffsetForAdmissionTx closes the in-flight offset race. The source
+// row is locked before the new placement is inserted, the same lock order as an
+// offset edit: admission first is visible to the edit after commit; an edit
+// first makes admission wait and then resolves against its new offset.
+func applyLatestOffsetForAdmissionTx(ctx context.Context, tx *sql.Tx, input placementInput) ([]string, error) {
+	canonical := episodeidentity.CanonicalCoverageKeys(input.Coverage)
+	if len(canonical) != 1 {
+		return input.Coverage, nil
+	}
+	var (
+		sourceOffset int
+		mediaKind    string
+		fileRef      string
+		effective    []byte
+	)
+	err := tx.QueryRowContext(ctx, `
+SELECT src.episode_offset, COALESCE(meta.media_kind, ''), af.file_ref, mf.effective_facts
+FROM releases rel
+JOIN rss_sources src ON src.id = rel.rss_source_id
+JOIN subscriptions sub ON sub.id = src.subscription_id
+JOIN file_operations fo ON fo.id = $2
+JOIN artifact_files af ON af.id = fo.artifact_file_id
+LEFT JOIN anime_metadata meta ON meta.managed_anime_id = sub.managed_anime_id
+LEFT JOIN LATERAL (
+    SELECT snap.id FROM media_fact_snapshots snap
+    WHERE snap.release_id = rel.id
+    ORDER BY snap.created_at DESC, snap.id DESC
+    LIMIT 1
+) snap ON true
+LEFT JOIN media_fact_files mf ON mf.snapshot_id = snap.id AND mf.file_ref = af.file_ref
+WHERE rel.id = $1 AND sub.managed_anime_id = $3
+FOR UPDATE OF src`, input.QualityFactsRef, input.SourceOwnerRef, input.ManagedAnimeID).Scan(&sourceOffset, &mediaKind, &fileRef, &effective)
+	if errors.Is(err, sql.ErrNoRows) {
+		// A file operation without a linked RSS Release has no offset to apply.
+		// Keep its frozen coverage; absence of optional re-key evidence is not a
+		// reason to reject an otherwise valid placement.
+		return input.Coverage, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("lock RSS source for placement admission: %w", err)
+	}
+	if fileRef == "" || len(effective) == 0 {
+		return input.Coverage, nil
+	}
+	candidate := offsetRekeyCandidate{
+		currentKey: canonical[0], keyCount: 1, ownerMediaKind: mediaKind,
+		fileRef: fileRef, effectiveFacts: effective,
+	}
+	key, ok := offsetRekeyedKey(candidate, sourceOffset)
+	if !ok || key == canonical[0] {
+		return input.Coverage, nil
+	}
+	return []string{key}, nil
+}
+
 type offsetRekeyCandidate struct {
 	placementID string
 	currentKey  string

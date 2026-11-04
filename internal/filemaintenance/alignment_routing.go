@@ -48,6 +48,7 @@ const (
 type AlignmentRetention interface {
 	SameRetentionPool(ctx context.Context, animeID, left, right string) (AdmissionMode, bool, error)
 	RecheckPlacements(ctx context.Context, animeID string, placementIDs []string) (RetentionContest, error)
+	RecheckCoverageKeys(ctx context.Context, animeID string, coverageKeys []string) (RetentionContest, error)
 }
 
 // SetRetention wires the retention port (composition root). Unwired, a

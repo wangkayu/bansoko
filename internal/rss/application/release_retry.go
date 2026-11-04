@@ -151,10 +151,24 @@ func (s *Service) RetryRelease(ctx context.Context, releaseID, idempotencyKey st
 	if releaseID == "" {
 		return ReleaseRetryResult{}, &apperrors.NotFound{Resource: "release", ID: releaseID}
 	}
-	if key := strings.TrimSpace(idempotencyKey); len(key) < 8 || len(key) > 128 {
-		return ReleaseRetryResult{}, &apperrors.BadRequest{Code: "IDEMPOTENCY_KEY_REQUIRED", Message: "Idempotency-Key must be between 8 and 128 characters."}
+	if err := validateManualRetryKey(idempotencyKey); err != nil {
+		return ReleaseRetryResult{}, err
 	}
 	return s.retryRelease(ctx, releaseID, idempotencyKey, releaseRetryRequestHash(releaseID), false)
+}
+
+// Manual retry keys share the persisted retry column with internal offset
+// qualifications. Reserve that prefix so a later evaluation cannot change the
+// meaning of an explicit request.
+func validateManualRetryKey(idempotencyKey string) error {
+	key := strings.TrimSpace(idempotencyKey)
+	if len(key) < 8 || len(key) > 128 {
+		return &apperrors.BadRequest{Code: "IDEMPOTENCY_KEY_REQUIRED", Message: "Idempotency-Key must be between 8 and 128 characters."}
+	}
+	if strings.HasPrefix(key, offsetRetryKeyPrefix) {
+		return &apperrors.BadRequest{Code: "IDEMPOTENCY_KEY_RESERVED", Message: "Idempotency-Key uses a reserved prefix."}
+	}
+	return nil
 }
 
 // retryRelease runs the retry evaluation. redownload applies the placement
@@ -192,6 +206,7 @@ func (s *Service) retryRelease(ctx context.Context, releaseID, idempotencyKey, r
 		}
 	}
 	snapshot.manualRetry = true
+	snapshot.offsetRetry = false
 	snapshot.retryKey = strings.TrimSpace(idempotencyKey)
 	// A run again of a Release whose placed file the latest scan found missing
 	// or changed requests a redownload of those placements first (the

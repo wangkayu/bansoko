@@ -154,6 +154,13 @@ func (s *ScanScheduler) SetAlignmentRequests(retention AlignmentRetention, activ
 	}
 }
 
+// SetOffsetCandidateScheduler wires the final subscription-batch barrier.
+func (s *ScanScheduler) SetOffsetCandidateScheduler(scheduler OffsetCandidateScheduler) {
+	if s != nil {
+		s.offsetCandidates = scheduler
+	}
+}
+
 // dispatchAlignmentRequests is the request half of a tick. Only active
 // instances take part: a stopped subscription neither compares nor scans, and
 // its requests wait for the resume.
@@ -164,7 +171,10 @@ func (s *ScanScheduler) dispatchAlignmentRequests(ctx context.Context) error {
 	if err := s.submitRequestedScans(ctx); err != nil {
 		return err
 	}
-	return s.recordOffsetChanges(ctx)
+	if err := s.recordOffsetChanges(ctx); err != nil {
+		return err
+	}
+	return s.scheduleOffsetBatches(ctx)
 }
 
 // compareOffsetChanges puts every comparing change's re-keyed placements
@@ -200,12 +210,12 @@ LIMIT 50`)
 		return err
 	}
 	for _, item := range changes {
-		placements, err := changePlacements(ctx, s.db, item.id)
+		keys, err := changeCoverageKeys(ctx, s.db, item.id)
 		if err != nil {
 			return err
 		}
-		if len(placements) > 0 {
-			if _, err := s.retention.RecheckPlacements(ctx, item.animeID, placements); err != nil {
+		if len(keys) > 0 {
+			if _, err := s.retention.RecheckCoverageKeys(ctx, item.animeID, keys); err != nil {
 				s.logger.Warn(ctx, observabilityport.RuntimeEvent{
 					Message: "offset change retention comparison failed", Component: "filemaintenance",
 					Operation: "offset_compare", Outcome: "failure", ReasonCode: "offset_compare_failed",
@@ -221,21 +231,26 @@ LIMIT 50`)
 	return nil
 }
 
-func changePlacements(ctx context.Context, db *sql.DB, changeID string) ([]string, error) {
-	rows, err := db.QueryContext(ctx, `SELECT placement_id FROM alignment_requests WHERE offset_change_id = $1 AND outcome IS NULL ORDER BY placement_id`, changeID)
+func changeCoverageKeys(ctx context.Context, db *sql.DB, changeID string) ([]string, error) {
+	rows, err := db.QueryContext(ctx, `
+SELECT DISTINCT key FROM (
+    SELECT old_observation_key AS key FROM offset_alignment_change_keys WHERE change_id = $1
+    UNION
+    SELECT new_observation_key AS key FROM offset_alignment_change_keys WHERE change_id = $1
+) keys ORDER BY key`, changeID)
 	if err != nil {
-		return nil, fmt.Errorf("read offset change placements: %w", err)
+		return nil, fmt.Errorf("read offset change coverage keys: %w", err)
 	}
 	defer rows.Close()
-	var ids []string
+	var keys []string
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var key string
+		if err := rows.Scan(&key); err != nil {
 			return nil, err
 		}
-		ids = append(ids, id)
+		keys = append(keys, key)
 	}
-	return ids, rows.Err()
+	return keys, rows.Err()
 }
 
 // submitRequestedScans submits a scan for every active instance with ready

@@ -68,7 +68,7 @@ SELECT src.version, src.episode_offset
 FROM rss_sources src
 JOIN subscriptions sub ON sub.id = src.subscription_id
 WHERE src.id = $1 AND sub.managed_anime_id = $2
-FOR UPDATE OF src`, rssSourceID, managedAnimeID).Scan(&version, &oldOffset)
+FOR UPDATE OF src, sub`, rssSourceID, managedAnimeID).Scan(&version, &oldOffset)
 	if errors.Is(err, sql.ErrNoRows) {
 		return RSSSource{}, &apperrors.NotFound{Resource: "rss_source", ID: rssSourceID}
 	}
@@ -92,12 +92,14 @@ WHERE id = $1`, rssSourceID, patch.EpisodeOffset); err != nil {
 				return RSSSource{}, fmt.Errorf("re-key rss source files: %w", err)
 			}
 		}
-		if err := s.scheduleUnsubmittedReleaseEvaluation(ctx, tx, `
+		if oldOffset == patch.EpisodeOffset {
+			if err := s.scheduleUnsubmittedReleaseEvaluation(ctx, tx, `
 SELECT r.id, r.version
 FROM releases r
 WHERE r.rss_source_id = $1 AND `+animeapplication.ReleaseReevaluationScopeSQL+`
 FOR UPDATE OF r`, rssSourceID, "offset_patch"); err != nil {
-			return RSSSource{}, err
+				return RSSSource{}, err
+			}
 		}
 	}
 

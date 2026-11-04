@@ -78,8 +78,8 @@ func (s *Service) RedownloadPlacement(ctx context.Context, placementID, idempote
 	}
 	placementID = strings.TrimSpace(placementID)
 	key := strings.TrimSpace(idempotencyKey)
-	if len(key) < 8 || len(key) > 128 {
-		return ReleaseRetryResult{}, &apperrors.BadRequest{Code: "IDEMPOTENCY_KEY_REQUIRED", Message: "Idempotency-Key must be between 8 and 128 characters."}
+	if err := validateManualRetryKey(key); err != nil {
+		return ReleaseRetryResult{}, err
 	}
 	var state, animeID, releaseID, disposition string
 	var pendingKey sql.NullString

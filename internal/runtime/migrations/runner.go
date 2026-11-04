@@ -111,6 +111,7 @@ var knownRelations = map[string]string{
 	"network_routes":                   "r",
 	"notification_admissions":          "r",
 	"offset_alignment_changes":         "r",
+	"offset_alignment_change_keys":     "r",
 	"offset_migration_generations":     "r",
 	"offset_migration_plans":           "r",
 	"one_shot_acquisitions":            "r",

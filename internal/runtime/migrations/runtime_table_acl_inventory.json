@@ -734,6 +734,22 @@
     "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
   },
   {
+    "table": "offset_alignment_change_keys",
+    "privileges": [
+      "DELETE",
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/filemaintenance/alignment_requests.go",
+      "internal/filemaintenance/offset_alignment.go",
+      "internal/rss/application/offset_reconcile.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
     "table": "offset_migration_generations",
     "privileges": [],
     "reason": "retired by migration 098 (empty, no runtime DML); kept because the SECURITY DEFINER local cleanup function still deletes from it",

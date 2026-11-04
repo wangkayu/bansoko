@@ -451,6 +451,10 @@ type releaseSnapshot struct {
 	// (retryKey from releases.competition_retry_key): every later evaluation
 	// of it, the competition's decided stage included, runs as that retry.
 	manualRetry bool
+	// offsetRetry is an internal automatic qualification persisted as an
+	// offset: competition retry key. It detaches only a settled superseded
+	// candidate and still uses automatic acceptance and automatic filters.
+	offsetRetry bool
 	// retryKey is the explicit retry's idempotency key: the key of the
 	// placement redownload requests it recorded, stored with a waiting
 	// release.

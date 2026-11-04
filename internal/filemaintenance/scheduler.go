@@ -10,6 +10,7 @@ import (
 
 	"bansoko/internal/filemaintenance/policy"
 	observabilityport "bansoko/internal/observability/port"
+	"bansoko/internal/persistence/txscope"
 	"bansoko/internal/worktree"
 )
 
@@ -30,6 +31,14 @@ type AnimeLister interface {
 	ListAnimeIDs(ctx context.Context) ([]string, error)
 }
 
+// OffsetCandidateScheduler dispatches one fully recorded subscription batch in
+// the scheduler's transaction. The RSS owner reuses ordinary Release
+// evaluation/competition/acceptance; filemaintenance never creates downloads.
+type OffsetCandidateScheduler interface {
+	ScheduleOffsetReconciliationTx(ctx context.Context, scope txscope.Tx, animeID, subscriptionID string, changeIDs []string) error
+	ScheduleOffsetRetryRecoveryTx(ctx context.Context, scope txscope.Tx, subscriptionID string) error
+}
+
 // ScanScheduler drives the FileMaintenance periodic scan: it reads the
 // effective policy (global + anime overrides), and for every anime whose
 // policy enables scanning and whose interval is due, submits an idempotent
@@ -45,6 +54,9 @@ type ScanScheduler struct {
 	// (alignment_requests.go).
 	retention AlignmentRetention
 	activity  observabilityport.ActivityWriter
+	// offsetCandidates runs only after every change in the subscription batch
+	// has recorded; nil leaves candidate dispatch unwired in isolated tests.
+	offsetCandidates OffsetCandidateScheduler
 
 	mu         sync.Mutex
 	lastSubmit map[string]time.Time

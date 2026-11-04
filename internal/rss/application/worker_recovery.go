@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 )
 
 // ObserveRecovery performs no feed fetch, release admission or file planning.
@@ -30,9 +31,9 @@ func (h ReleaseEvaluateHandler) ObserveRecovery(ctx context.Context, c workitems
 		return worker.Outcome{}, workitems.ErrInvalidSpec
 	}
 	var version int64
-	var verdict string
+	var verdict, retryKey string
 	var task sql.NullString
-	if err := h.service.db.QueryRowContext(ctx, `SELECT version,verdict,download_task_id FROM releases WHERE id=$1`, c.Owner.ID).Scan(&version, &verdict, &task); err != nil {
+	if err := h.service.db.QueryRowContext(ctx, `SELECT version,verdict,download_task_id,COALESCE(competition_retry_key, '') FROM releases WHERE id=$1`, c.Owner.ID).Scan(&version, &verdict, &task, &retryKey); err != nil {
 		return worker.Outcome{}, err
 	}
 	// Acquisition committed in the previous generation must never be replaced
@@ -56,6 +57,16 @@ func (h ReleaseEvaluateHandler) ObserveRecovery(ctx context.Context, c workitems
 	}
 	if version != c.ExpectedOwnerVersion {
 		return worker.Outcome{}, workitems.ErrStaleClaim
+	}
+	if strings.HasPrefix(retryKey, offsetRetryKeyPrefix) {
+		// A worker stop before acquisition commit is transient for an automatic
+		// offset qualification. Keep the Release and its key untouched; the
+		// periodic recovery fills a fresh evaluation after this item settles.
+		o := worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "acquisition_failed", ReasonCode: "WORKER_EXECUTION_STOPPED"}, func(context.Context, txscope.Tx, workitems.OwnerResult) (int64, error) {
+			return version, nil
+		})
+		o.Disposition = workitems.DispositionNoExternalEffect
+		return o, nil
 	}
 	o := worker.Finish(workitems.StateFailed, workitems.OwnerResult{State: "acquisition_failed", ReasonCode: "WORKER_EXECUTION_STOPPED"}, func(ctx context.Context, scope txscope.Tx, _ workitems.OwnerResult) (int64, error) {
 		var next int64

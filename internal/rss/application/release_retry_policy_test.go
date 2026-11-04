@@ -43,6 +43,15 @@ func TestReleaseRetryability(t *testing.T) {
 	}
 }
 
+func TestManualRetryKeyCannotUseOffsetNamespace(t *testing.T) {
+	if err := validateManualRetryKey("offset:explicit-request"); err == nil {
+		t.Fatal("a manual retry key used the internal offset namespace")
+	}
+	if err := validateManualRetryKey("explicit-request"); err != nil {
+		t.Fatalf("ordinary manual retry key rejected: %v", err)
+	}
+}
+
 func TestReleaseRetryResultOutcome(t *testing.T) {
 	for _, tc := range []struct {
 		verdict, reason, task, outcome string

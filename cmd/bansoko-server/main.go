@@ -603,7 +603,7 @@ func runServe(args []string) {
 		func(ctx context.Context) { runAcquisitionActivity(ctx, acquisitionActivity, eventHub, runtimeLogger) },
 		func(ctx context.Context) { runDownloadCompletion(ctx, completionService, runtimeLogger) },
 		func(ctx context.Context) {
-			startFileMaintenanceScheduler(ctx, db, fileMaintenanceGraph.policyService, reconciliationService, readmodelService, replacementDecisions, observabilityService, runtimeLogger)
+			startFileMaintenanceScheduler(ctx, db, fileMaintenanceGraph.policyService, reconciliationService, readmodelService, replacementDecisions, observabilityService, rssService, runtimeLogger)
 		},
 		func(ctx context.Context) { runAutomationDispatcher(ctx, dispatcher, runtimeLogger) },
 		func(ctx context.Context) {

@@ -66,13 +66,17 @@ func (s *Service) handleReleaseEvaluate(ctx context.Context, claim workitems.Cla
 		return worker.Outcome{}, err
 	}
 	if isTerminalReleaseVerdict(snapshot.verdict) {
+		var writer workitems.OwnerWriter
+		if snapshot.offsetRetry {
+			writer = abandonOffsetRetryWriter(snapshot)
+		}
 		return worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{
 			State:      snapshot.verdict,
 			ReasonCode: "release_terminal",
 			Reason:     "release has a terminal acquisition verdict",
-		}, nil), nil
+		}, writer), nil
 	}
-	if snapshot.downloadTaskID.Valid {
+	if snapshot.downloadTaskID.Valid && !snapshot.offsetRetry {
 		return worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: "submitted", ReasonCode: "release_already_submitted"}, nil), nil
 	}
 	// A pending (never started) subscription does no work: the item ends
@@ -106,14 +110,22 @@ func (s *Service) evaluateRelease(ctx context.Context, claim workitems.Claim, sn
 		return worker.Outcome{}, err
 	}
 	if !selected {
-		return worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: "not_selected", ReasonCode: "provider_group_not_selected"}, nil), nil
+		var writer workitems.OwnerWriter
+		if snapshot.offsetRetry {
+			writer = abandonOffsetRetryWriter(snapshot)
+		}
+		return worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: "not_selected", ReasonCode: "provider_group_not_selected"}, writer), nil
 	}
 	if snapshot.parserPolicyError != nil {
+		var writer workitems.OwnerWriter
+		if snapshot.offsetRetry {
+			writer = abandonOffsetRetryWriter(snapshot)
+		}
 		return worker.Finish(workitems.StateFailed, workitems.OwnerResult{
 			State:      workitems.StateFailed,
 			ReasonCode: "parser_policy_required",
 			Reason:     safeReason(snapshot.parserPolicyError.Error()),
-		}, nil), nil
+		}, writer), nil
 	}
 	item, err := decodeFeedItemWithInternal(snapshot.rawFacts, snapshot.internalFacts, snapshot.sourceFacts, snapshot.parsedFacts, snapshot.stableItemKey)
 	if err != nil {
@@ -124,11 +136,15 @@ func (s *Service) evaluateRelease(ctx context.Context, claim workitems.Claim, sn
 	// runs. An explicit retry skips only this gate and evaluates normally.
 	gated, gateErr := startBaselineApplies(snapshot, item.Published)
 	if gateErr != nil {
+		var writer workitems.OwnerWriter
+		if snapshot.offsetRetry {
+			writer = abandonOffsetRetryWriter(snapshot)
+		}
 		return worker.Finish(workitems.StateFailed, workitems.OwnerResult{
 			State:      workitems.StateFailed,
 			ReasonCode: "start_baseline_missing",
 			Reason:     safeReason(gateErr.Error()),
-		}, nil), nil
+		}, writer), nil
 	}
 	if gated {
 		return worker.Finish(workitems.StateSucceeded, workitems.OwnerResult{State: ReleaseVerdictStartBaseline, ReasonCode: ReleaseVerdictStartBaseline}, s.startBaselineWriter(claim, snapshot)), nil
@@ -255,7 +271,7 @@ func (s *Service) loadReleaseSnapshot(ctx context.Context, releaseID string) (re
        COALESCE(lifecycle.lifecycle_state, ''), COALESCE(task.state, ''), COALESCE(acq.state, ''),
        (SELECT count(*) FROM download_tasks owned WHERE owned.release_id = r.id),
        sub.new_releases_only, sub.start_baseline_at, sub.ignore_multi_video_releases, `+ReleasePlacementIssueSQL("sub.managed_anime_id")+`,
-       CASE WHEN r.verdict IN ('awaiting_competition', 'subscription_stopped') THEN COALESCE(r.competition_retry_key, '') ELSE '' END
+       CASE WHEN r.verdict IN ('awaiting_competition', 'subscription_stopped') OR r.competition_retry_key LIKE 'offset:%' THEN COALESCE(r.competition_retry_key, '') ELSE '' END
 	FROM releases r
 	JOIN rss_sources src ON src.id = r.rss_source_id
 	JOIN subscriptions sub ON sub.id = src.subscription_id
@@ -305,7 +321,8 @@ WHERE r.id = $1`, releaseID).Scan(
 	// subscription's re-evaluation keeps the key with the release
 	// (subscription_stopped), so the evaluation after the resume is that
 	// retry again.
-	snapshot.manualRetry = snapshot.retryKey != "" && subscriptionState == "active"
+	snapshot.offsetRetry = strings.HasPrefix(snapshot.retryKey, offsetRetryKeyPrefix) && subscriptionState == "active"
+	snapshot.manualRetry = snapshot.retryKey != "" && !strings.HasPrefix(snapshot.retryKey, offsetRetryKeyPrefix) && subscriptionState == "active"
 	snapshot.anibtMode = anibtMode.String
 	bgm, tmdb, err := metadataBindingsFromColumns(bgmWorkID, tmdbWorkID, tmdbMediaKind, tmdbSeason, snapshot.managedAnimeID)
 	if err != nil {
@@ -463,6 +480,17 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 			}
 			if err := detachRetriedTaskTx(ctx, tx, snapshot, currentVersion, claim.ExpectedOwnerVersion, currentTask); err != nil {
 				return 0, err
+			}
+		} else if snapshot.offsetRetry {
+			if !selected {
+				return clearOffsetRetryTx(ctx, tx, snapshot.releaseID, snapshot.retryKey, storedRetryKey, currentVersion)
+			}
+			eligible, version, err := detachOffsetRetriedTaskTx(ctx, tx, snapshot, claim.ExpectedOwnerVersion, currentVersion, currentTask, currentVerdict, storedRetryKey, currentSubscriptionState)
+			if err != nil {
+				return 0, err
+			}
+			if !eligible {
+				return version, nil
 			}
 		} else {
 			if currentTask.Valid || isTerminalReleaseVerdict(currentVerdict) {
@@ -762,7 +790,7 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 		// when it downloads nothing its retry's placement redownload requests
 		// are withdrawn: the placements hold their episodes again.
 		retryKey := ""
-		if verdict == competition.VerdictAwaiting && snapshot.manualRetry {
+		if verdict == competition.VerdictAwaiting && (snapshot.manualRetry || snapshot.offsetRetry) {
 			retryKey = strings.TrimSpace(snapshot.retryKey)
 		}
 		if retryKey == "" && storedRetryKey != "" && verdict == "subscription_stopped" && currentSubscriptionState != "active" && taskID == "" {
@@ -937,19 +965,35 @@ func (s *Service) releaseAdmissionRetryWriter(claim workitems.Claim, snapshot re
 		}
 		var currentVersion int64
 		var currentTask sql.NullString
-		var currentVerdict string
+		var currentVerdict, storedRetryKey string
+		currentSubscriptionState := snapshot.subscriptionState
+		if snapshot.offsetRetry {
+			if err := tx.QueryRowContext(ctx, `SELECT state FROM subscriptions WHERE id = $1 FOR UPDATE`, snapshot.subscriptionID).Scan(&currentSubscriptionState); err != nil {
+				return 0, fmt.Errorf("lock subscription for admission retry: %w", err)
+			}
+		}
 		if err := tx.QueryRowContext(ctx, `
-SELECT version, download_task_id, verdict
+SELECT version, download_task_id, verdict, COALESCE(competition_retry_key, '')
 FROM releases
 WHERE id = $1
-FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVerdict); err != nil {
+FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVerdict, &storedRetryKey); err != nil {
 			return 0, fmt.Errorf("lock release for admission retry: %w", err)
 		}
-		if currentTask.Valid || isTerminalReleaseVerdict(currentVerdict) {
-			return currentVersion, nil
-		}
-		if currentVersion != claim.ExpectedOwnerVersion {
-			return 0, fmt.Errorf("%w: expected %d, got %d", errReleaseVersionConflict, claim.ExpectedOwnerVersion, currentVersion)
+		if snapshot.offsetRetry {
+			eligible, version, err := detachOffsetRetriedTaskTx(ctx, tx, snapshot, claim.ExpectedOwnerVersion, currentVersion, currentTask, currentVerdict, storedRetryKey, currentSubscriptionState)
+			if err != nil {
+				return 0, err
+			}
+			if !eligible {
+				return version, nil
+			}
+		} else {
+			if currentTask.Valid || isTerminalReleaseVerdict(currentVerdict) {
+				return currentVersion, nil
+			}
+			if currentVersion != claim.ExpectedOwnerVersion {
+				return 0, fmt.Errorf("%w: expected %d, got %d", errReleaseVersionConflict, claim.ExpectedOwnerVersion, currentVersion)
+			}
 		}
 		verdict := currentVerdict
 		if result.State == workitems.StateFailed {
@@ -960,6 +1004,7 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 UPDATE releases
 SET verdict = $2, reason_code = $3, reason_detail = NULLIF($4, ''),
     evaluation_version = $5, evaluated_rules_version = $6,
+    competition_retry_key = CASE WHEN $2 = 'acquisition_failed' AND competition_retry_key LIKE 'offset:%' THEN NULL ELSE competition_retry_key END,
     version = version + 1, updated_at = CURRENT_TIMESTAMP
 WHERE id = $1 AND version = $7 AND download_task_id IS NULL
 			RETURNING version`, snapshot.releaseID, verdict, result.ReasonCode, safeReason(result.Reason), evaluationVersionString(), snapshot.rulesVersion, claim.ExpectedOwnerVersion).Scan(&version); err != nil {
@@ -977,17 +1022,31 @@ func (s *Service) releaseFailureWriter(claim workitems.Claim, snapshot releaseSn
 		}
 		var currentVersion int64
 		var currentTask sql.NullString
-		var currentVerdict string
+		var currentVerdict, storedRetryKey string
+		currentSubscriptionState := snapshot.subscriptionState
+		if snapshot.offsetRetry {
+			if err := tx.QueryRowContext(ctx, `SELECT state FROM subscriptions WHERE id = $1 FOR UPDATE`, snapshot.subscriptionID).Scan(&currentSubscriptionState); err != nil {
+				return 0, fmt.Errorf("lock subscription for evaluation failure: %w", err)
+			}
+		}
 		if err := tx.QueryRowContext(ctx, `
-SELECT version, download_task_id, verdict
+SELECT version, download_task_id, verdict, COALESCE(competition_retry_key, '')
 FROM releases
 WHERE id = $1
-FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVerdict); err != nil {
+FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVerdict, &storedRetryKey); err != nil {
 			return 0, fmt.Errorf("lock release for evaluation failure: %w", err)
 		}
 		if snapshot.manualRetry {
 			if err := detachRetriedTaskTx(ctx, tx, snapshot, currentVersion, claim.ExpectedOwnerVersion, currentTask); err != nil {
 				return 0, err
+			}
+		} else if snapshot.offsetRetry {
+			eligible, version, err := detachOffsetRetriedTaskTx(ctx, tx, snapshot, claim.ExpectedOwnerVersion, currentVersion, currentTask, currentVerdict, storedRetryKey, currentSubscriptionState)
+			if err != nil {
+				return 0, err
+			}
+			if !eligible {
+				return version, nil
 			}
 		} else {
 			if currentTask.Valid || isTerminalReleaseVerdict(currentVerdict) {
@@ -1002,7 +1061,7 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 		if err := tx.QueryRowContext(ctx, `
 UPDATE releases
 SET verdict = 'parse_failed', reason_code = $2, reason_detail = $3,
-    evaluation_version = $4, version = version + 1, updated_at = CURRENT_TIMESTAMP
+    evaluation_version = $4, competition_retry_key = NULL, version = version + 1, updated_at = CURRENT_TIMESTAMP
 WHERE id = $1 AND version = $5 AND download_task_id IS NULL
 			RETURNING version`, snapshot.releaseID, reasonCode, safeReason(reason), evaluationVersionString(), claim.ExpectedOwnerVersion).Scan(&version); err != nil {
 			return 0, fmt.Errorf("persist release evaluation failure: %w", err)

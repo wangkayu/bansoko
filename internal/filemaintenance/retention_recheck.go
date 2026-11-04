@@ -44,10 +44,6 @@ func (s *ReplacementDecisionService) RecheckPlacements(ctx context.Context, anim
 	if err != nil {
 		return RetentionContest{}, err
 	}
-	contest := RetentionContest{Mode: snapshot.mode}
-	if snapshot.mode == ModeAll || len(placementIDs) == 0 {
-		return contest, nil
-	}
 	wanted := map[string]bool{}
 	for _, id := range placementIDs {
 		wanted[id] = true
@@ -59,6 +55,30 @@ func (s *ReplacementDecisionService) RecheckPlacements(ctx context.Context, anim
 				keys[key] = true
 			}
 		}
+	}
+	return s.recheckRetentionKeys(ctx, animeID, snapshot, keys)
+}
+
+// RecheckCoverageKeys is the offset reconciliation seam: the old key may have
+// been vacated by the re-key, so it must be evaluated even when no current
+// placement can supply it. A vacant key has no retention contender; candidate
+// revival belongs to the later Release re-evaluation, not to invented deletion.
+func (s *ReplacementDecisionService) RecheckCoverageKeys(ctx context.Context, animeID string, coverageKeys []string) (RetentionContest, error) {
+	snapshot, err := s.retentionSnapshot(ctx, animeID)
+	if err != nil {
+		return RetentionContest{}, err
+	}
+	keys := make(map[string]bool, len(coverageKeys))
+	for _, key := range coverageKeys {
+		keys[key] = true
+	}
+	return s.recheckRetentionKeys(ctx, animeID, snapshot, keys)
+}
+
+func (s *ReplacementDecisionService) recheckRetentionKeys(ctx context.Context, animeID string, snapshot retentionSnapshotFacts, keys map[string]bool) (RetentionContest, error) {
+	contest := RetentionContest{Mode: snapshot.mode}
+	if snapshot.mode == ModeAll || len(keys) == 0 {
+		return contest, nil
 	}
 	contenders := retentionContenders(snapshot.mode, snapshot.profile, snapshot.placements, keys)
 	members := map[string]bool{}
