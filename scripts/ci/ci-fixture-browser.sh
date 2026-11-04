@@ -127,6 +127,7 @@ ALLOWED_SKIPS = {
     ("settings.spec.ts", "手机：先看到分区列表，进入分区后内容页带返回", "desktop"),
     ("settings.spec.ts", "手机：深链直接进入分区内容", "desktop"),
     ("settings.spec.ts", "桌面端网格几何：导航列 11rem，内容区不被挤压", "mobile"),
+    ("settings.spec.ts", "语言大卡拖动预览保持原卡片尺寸", "mobile"),
     ("settings.spec.ts", "provider 配置页可达：AniBT 与 Mikan", "mobile"),
     ("settings.spec.ts", "下载与入库 / 订阅数量与对齐 / 默认规则 可达并渲染 mock 数据", "mobile"),
     ("settings.spec.ts", "版本与升级默认空态与 AI Lab 可达", "mobile"),
