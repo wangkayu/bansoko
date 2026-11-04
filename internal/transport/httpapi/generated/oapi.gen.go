@@ -7693,11 +7693,14 @@ type RSSListFeedStatusState string
 
 // RSSListFile One projected file of a seed's exact torrent manifest with its own filter verdict and rendered target. An excluded or unrenderable file stays in the list so the reader can see what was filtered and why. A file that failed one of the two hard gates (below the torrent's first level, or neither video nor subtitle) is not a candidate and takes no row at all: the plan and the download cleanup still classify it, but it is never published as an RSS file row. Under a one-shot read's manual file selection the selection replaces the first-level gate: the selected files take rows at any depth and every unselected video or subtitle (ignored_unselected) takes none. Size and media kind are read from that exact manifest: a file the release never parsed keeps them absent, so an unknown file is never published as a 0-byte file of kind "other", and a seed whose structure was never acquired lists no file row at all.
 type RSSListFile struct {
-	// BoundVideoSourcePath Source path, inside this same torrent, of the video a bound subtitle follows under the plan's own strict-prefix binding. It is the server's decision, so the reader lists the subtitle under that video instead of binding it again itself. Present only for a subtitle bound to a video of the same release; absent for a video and for a subtitle bound to no video.
+	// BoundVideoSourcePath Source path, inside this same torrent, of the video a bound subtitle follows under the current projection's strict-prefix binding. It is the server's decision, so the reader lists the subtitle under that video instead of binding it again itself. Present only for a subtitle bound to a video of the same release; absent for a video and for a subtitle bound to no video.
 	BoundVideoSourcePath *string `json:"bound_video_source_path,omitempty"`
 
 	// EmptyFacts Naming facts (catalog paths such as anime.year) that are defined for this file but have no value, so they rendered empty. An empty value renders as an empty string and the path is normalized; only an invalid result fails. With rendered_target these facts rendered empty in it. On a failure they are the facts the failure names: reason_code naming_fact_missing_<first fact> when empty values left the path invalid, naming_fact_undefined_<first fact> when the template reads a variable that is not defined for this file (for example bgm.* without a Bangumi binding). Absent when nothing rendered empty or when rendered_target is a frozen target.
 	EmptyFacts *[]string `json:"empty_facts,omitempty"`
+
+	// Episode This file's current display episode after the configured source offset. A bound subtitle inherits its video's identity. Absent when the current configuration cannot resolve an episode; the reader must not substitute the release's frozen execution episode.
+	Episode *string `json:"episode,omitempty"`
 
 	// FileRef Stable identity of this file inside its payload. It is derived from the payload digest and the canonical source path, so it survives a re-parse and cannot be confused with a same-named file elsewhere.
 	FileRef  string `json:"file_ref"`

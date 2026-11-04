@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	animedomain "bansoko/internal/anime/domain"
-	"bansoko/internal/batchplan"
 	"bansoko/internal/filekinds"
 	subscriptiondomain "bansoko/internal/subscription/domain"
 )
@@ -78,44 +77,6 @@ func TestRSSListReleaseReevaluatingFollowsTheSchedulerScope(t *testing.T) {
 	}
 }
 
-// File rows agree with the frozen plan: a file the plan does not place is
-// never shown included and carries the plan's reason or outcome; a placed file
-// keeps its classification row.
-func TestApplyFrozenPlanToFiles(t *testing.T) {
-	plan := &batchplan.Plan{Version: batchplan.Version, UnclassifiedRoute: batchplan.RouteSkip, Files: []batchplan.File{
-		{SourcePath: "Show/Show - 01.mkv", Kind: "video", Outcome: batchplan.OutcomeCoveredExisting, ReasonCode: batchplan.ReasonCoveredExisting},
-		{SourcePath: "Show/Show - 02.mkv", Kind: "video", Outcome: batchplan.OutcomePlanned, CoverageKey: "tv:e2"},
-		{SourcePath: "Show/Show - 02.chs.ass", Kind: "subtitle", BoundVideo: "Show/Show - 02.mkv", Outcome: batchplan.OutcomeSubtitleFollows},
-		{SourcePath: "Show/cover.jpg", Kind: "other", Outcome: batchplan.OutcomeIgnoredKind},
-	}}
-	files := []RSSListFile{
-		{SourcePath: "Show/Show - 01.mkv", Included: true},
-		{SourcePath: "Show/Show - 02.mkv", Included: true, RenderedTarget: "/lib/Show/S01E02.mkv"},
-		{SourcePath: "Show/Show - 02.chs.ass", Included: true},
-		{SourcePath: "Show/cover.jpg", Included: true},
-		{SourcePath: "Show/extra.txt", Included: false, ReasonCode: "ignored_kind"},
-	}
-	applyFrozenPlanToFiles(files, plan)
-	if files[0].Included || files[0].ReasonCode != batchplan.ReasonCoveredExisting {
-		t.Fatalf("covered file = %+v", files[0])
-	}
-	if !files[1].Included || files[1].ReasonCode != "" || files[1].RenderedTarget == "" {
-		t.Fatalf("planned file = %+v", files[1])
-	}
-	// The plan's own binding travels with the subtitle row, so a reader can list
-	// its output under that video instead of binding it again.
-	if files[2].BoundVideoSourcePath != "Show/Show - 02.mkv" || !files[2].Included {
-		t.Fatalf("a bound subtitle row = %+v, want the plan's binding", files[2])
-	}
-	if files[3].Included || files[3].ReasonCode != string(batchplan.OutcomeIgnoredKind) {
-		t.Fatalf("ignored file = %+v", files[3])
-	}
-	if files[4].ReasonCode != "ignored_kind" || files[4].BoundVideoSourcePath != "" {
-		t.Fatalf("a file the plan does not name keeps its row: %+v", files[4])
-	}
-	applyFrozenPlanToFiles(files, nil)
-}
-
 // The row list starts after the two hard gates: a file below the torrent's
 // first level or of a kind the product does not handle was never a candidate
 // and takes no row, while a file that passed them keeps its row whatever the
@@ -151,47 +112,36 @@ func TestRSSListFileRowDropsHardGateFiles(t *testing.T) {
 	}
 }
 
-// The owner file row reports the release's own parsed facts, matched by exact
-// source path: the live defect showed a parsed .mkv as "0 B / other" while the
-// target row of the same release showed 713.6 MB / mkv. A file the release
-// never parsed stays unknown (nil, withheld from the wire) rather than zero,
-// and the frozen target is taken only in the persisted owner mode.
+// The owner file row reports the release's own parsed size and kind, matched
+// by exact source path. A file the release never parsed stays unknown (nil,
+// withheld from the wire) rather than zero. The current rendered target is not
+// an intrinsic file fact and is never overwritten by the frozen target.
 func TestApplyParsedReleaseFiles(t *testing.T) {
 	size := int64(748_486_656) // 713.6 MiB
-	target := "/library/FX Senshi Kurumi-chan/Season 01/FX Senshi Kurumi-chan - 03.mkv"
+	target := "/library/Example Show/Season 01/Example Show - 03.mkv"
 	releaseFiles := []ReleaseFile{
-		{Path: "FX/[示例字幕组] FX Senshi Kurumi-chan - 03.mkv", Filename: "FX Senshi Kurumi-chan - 03.mkv", MediaKind: "video", SizeBytes: &size, TargetPath: &target},
-		{Path: "FX/readme.txt", Filename: "readme.txt"},
+		{Path: "Example/[Example Group] Example Show - 03.mkv", Filename: "Example Show - 03.mkv", MediaKind: "video", SizeBytes: &size, TargetPath: &target},
+		{Path: "Example/readme.txt", Filename: "readme.txt"},
 	}
 	files := []RSSListFile{
-		{SourcePath: "FX/[示例字幕组] FX Senshi Kurumi-chan - 03.mkv", Included: true},
-		{SourcePath: "FX/sub.ass", Included: true},
-		{SourcePath: "FX/readme.txt", Included: false, ReasonCode: "ignored_kind"},
+		{SourcePath: "Example/[Example Group] Example Show - 03.mkv", Included: true, RenderedTarget: "/current/target.mkv"},
+		{SourcePath: "Example/sub.ass", Included: true},
+		{SourcePath: "Example/readme.txt", Included: false, ReasonCode: "ignored_kind"},
 	}
-	applyParsedReleaseFiles(files, releaseFiles, true)
+	applyParsedReleaseFiles(files, releaseFiles)
 	if files[0].SizeBytes == nil || *files[0].SizeBytes != size {
 		t.Fatalf("a parsed file must carry its real size: %+v", files[0].SizeBytes)
 	}
 	if files[0].MediaKind == nil || *files[0].MediaKind != "video" {
 		t.Fatalf("a parsed file must carry its real kind: %+v", files[0].MediaKind)
 	}
-	if files[0].RenderedTarget != target {
-		t.Fatalf("the owner row takes the frozen target: %+v", files[0].RenderedTarget)
+	if files[0].RenderedTarget != "/current/target.mkv" {
+		t.Fatalf("the current target must survive parsed facts: %+v", files[0].RenderedTarget)
 	}
 	if files[1].SizeBytes != nil || files[1].MediaKind != nil {
 		t.Fatalf("a file the release never parsed stays unknown: %+v", files[1])
 	}
 	if files[2].SizeBytes != nil || files[2].MediaKind != nil {
 		t.Fatalf("a parsed file without a size or kind stays unknown: %+v", files[2])
-	}
-	// The unsaved-rules owner mode shows its own rendered target, but the size
-	// and kind are measured facts and stay with the file.
-	draft := []RSSListFile{{SourcePath: "FX/[示例字幕组] FX Senshi Kurumi-chan - 03.mkv", Included: true, RenderedTarget: "/draft/target.mkv"}}
-	applyParsedReleaseFiles(draft, releaseFiles, false)
-	if draft[0].MediaKind == nil || *draft[0].MediaKind != "video" || draft[0].SizeBytes == nil {
-		t.Fatalf("the draft row keeps the parsed file facts: %+v", draft[0])
-	}
-	if draft[0].RenderedTarget != "/draft/target.mkv" {
-		t.Fatalf("the draft row keeps its own rendered target: %+v", draft[0].RenderedTarget)
 	}
 }

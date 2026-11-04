@@ -18,7 +18,6 @@ import (
 	animedomain "bansoko/internal/anime/domain"
 	"bansoko/internal/apperrors"
 	"bansoko/internal/attrrules"
-	"bansoko/internal/batchplan"
 	catalogapplication "bansoko/internal/catalog/application"
 	animecatalogdomain "bansoko/internal/catalog/domain"
 	"bansoko/internal/filekinds"
@@ -283,12 +282,15 @@ type RSSListEvaluation struct {
 // from its parsed release carries them directly): an unknown file is reported
 // as unknown rather than as a 0-byte file of kind "other".
 type RSSListFile struct {
-	FileRef        string
-	Ordinal        int
-	SourcePath     string
-	Filename       string
-	SizeBytes      *int64
-	MediaKind      *string
+	FileRef    string
+	Ordinal    int
+	SourcePath string
+	Filename   string
+	SizeBytes  *int64
+	MediaKind  *string
+	// Episode is this file's current display identity after the source offset.
+	// Empty when the current configuration cannot resolve one.
+	Episode        string
 	Language       string
 	Included       bool
 	ReasonCode     string
@@ -298,10 +300,9 @@ type RSSListFile struct {
 	RenderError string
 	Safety      string
 	// BoundVideoSourcePath is the source path of the video a bound subtitle
-	// follows. It is the server's own decision (the frozen plan's, or the
-	// manifest projection's), empty for a video and for a subtitle bound to no
-	// video, so a reader lists the subtitle under that video instead of binding
-	// it again itself.
+	// follows. It is the current manifest projection's decision, empty for a
+	// video and for a subtitle bound to no video, so a reader lists the subtitle
+	// under that video instead of binding it again itself.
 	BoundVideoSourcePath string
 	// SubLang, SubLangTag and SubLangSource are a subtitle's resolved
 	// language (sub.lang code, its one BCP 47 tag, and file | release); empty
@@ -876,26 +877,18 @@ func (s *Service) composeOwnerRSSListView(ctx context.Context, mode string, work
 		// in preview mode, so both modes derive the same file_ref for the same
 		// file.
 		manifest := rssListOwnerManifest(release.payloadDigest, release.ReleaseFiles)
-		// The acceptance rule is the batch plan: a draft preview classifies the
-		// manifest exactly like admission (no deduplication, it never reads
-		// the library), so it cannot show accepted what admission filters.
-		if mode == "owner_draft" {
-			if err := previewBatchPlan(ctx, &evaluated, item, manifest, evidence, effective, unknownRoute, nil); err != nil {
-				return RSSListView{}, fmt.Errorf("plan release files %s: %w", release.ID, err)
-			}
+		// Both owner modes project the batch coverage from the current rules and
+		// source offset. The persisted release verdict below remains the execution
+		// record, but it must not freeze the RSS tab's rendering preview.
+		if err := previewBatchPlan(ctx, &evaluated, item, manifest, evidence, effective, unknownRoute, nil); err != nil {
+			return RSSListView{}, fmt.Errorf("plan release files %s: %w", release.ID, err)
 		}
 		if mode == "owner" {
-			// The persisted evaluation is the owner's result: the verdict,
-			// reason and parsed facts (with the frozen plan's coverage) the
-			// release detail shows.
 			evaluated.Verdict = animedomain.ReleaseVerdict(release.Verdict)
 			evaluated.ReasonCode = release.ReasonCode
 			if release.ReasonDetail != nil {
 				detail := *release.ReasonDetail
 				evaluated.ReasonDetail = &detail
-			}
-			if release.ParsedFacts != nil {
-				evaluated.ParsedFacts = persistedParsedFacts(*release.ParsedFacts)
 			}
 		}
 		// The owner row's seed identity is the release itself. The release's
@@ -934,15 +927,11 @@ func (s *Service) composeOwnerRSSListView(ctx context.Context, mode string, work
 				viewItem.Files = append(viewItem.Files, mapped)
 			}
 		}
-		if mode == "owner" {
-			applyFrozenPlanToFiles(viewItem.Files, release.frozenPlan)
-		}
 		// The owner row lists the files of the release we already parsed, so
 		// each row reports that release's real size and media kind instead of
-		// the zero value of an unknown file. The frozen target is an owner-only
-		// decision, applyParsedReleaseFiles takes it only there.
+		// the zero value of an unknown file. Rendering stays a current preview.
 		if release.ReleaseFiles != nil {
-			applyParsedReleaseFiles(viewItem.Files, *release.ReleaseFiles, mode == "owner")
+			applyParsedReleaseFiles(viewItem.Files, *release.ReleaseFiles)
 		}
 		if mode == "owner_draft" {
 			viewItem.DownloadAction = RSSListDownloadAction{Kind: RSSListDownloadNone, ReasonCode: "preview_mode", Reason: "Unsaved rules preview is read-only."}
@@ -1008,47 +997,14 @@ var releaseRetryDenials = map[string]string{
 	rssapplication.RetryReasonNotStarted:           "订阅未开始。",
 }
 
-// applyFrozenPlanToFiles makes each file row agree with the batch plan the
-// owner's release was last evaluated with: a file the plan does not place is
-// never shown included, and carries the plan's reason (or its outcome when the
-// plan names none, e.g. ignored_kind). A file the plan places keeps its
-// classification row. The plan's own binding is the authority for which video a
-// subtitle follows and is backfilled the same way the frozen target is, so the
-// row can be listed under that video without the reader binding it again.
-func applyFrozenPlanToFiles(files []RSSListFile, plan *batchplan.Plan) {
-	if plan == nil {
-		return
-	}
-	for index := range files {
-		file := &files[index]
-		entry, ok := plan.File(file.SourcePath)
-		if !ok {
-			continue
-		}
-		if entry.BoundVideo != "" {
-			file.BoundVideoSourcePath = entry.BoundVideo
-		}
-		if entry.Outcome == "" || plan.Required(file.SourcePath) {
-			continue
-		}
-		file.Included = false
-		file.ReasonCode = entry.ReasonCode
-		if file.ReasonCode == "" {
-			file.ReasonCode = string(entry.Outcome)
-		}
-	}
-}
-
 // applyParsedReleaseFiles fills each file row from the release's parsed files,
-// matched by exact source path. The owner row lists the files of a release
-// whose torrent metadata was already parsed, so a row with a parsed file must
-// report that file's real size and media kind; they are intrinsic facts and
-// hold in both owner read modes. The frozen target is an owner-only decision
-// and is taken only when frozenTargets is true.
+// matched by exact source path. Size and media kind are intrinsic facts of the
+// exact payload. Frozen inclusion, binding and targets stay in the execution
+// record; the RSS tab keeps the current manifest projection for those fields.
 //
 // An unparsed file keeps nil size and kind: the read model reports it as
 // unknown rather than as 0 bytes of the "other" kind.
-func applyParsedReleaseFiles(files []RSSListFile, releaseFiles []ReleaseFile, frozenTargets bool) {
+func applyParsedReleaseFiles(files []RSSListFile, releaseFiles []ReleaseFile) {
 	for _, parsed := range releaseFiles {
 		for index := range files {
 			if files[index].SourcePath != parsed.Path {
@@ -1062,22 +1018,8 @@ func applyParsedReleaseFiles(files []RSSListFile, releaseFiles []ReleaseFile, fr
 				kind := parsed.MediaKind
 				files[index].MediaKind = &kind
 			}
-			if frozenTargets && parsed.TargetPath != nil {
-				files[index].RenderedTarget = *parsed.TargetPath
-				// The frozen target is not this render: its empty facts are unknown.
-				files[index].EmptyFacts = nil
-			}
 		}
 	}
-}
-
-// persistedParsedFacts converts the stored evaluation facts to the view shape.
-func persistedParsedFacts(stored ReleaseParsedFacts) *animedomain.ParsedReleaseFacts {
-	facts := &animedomain.ParsedReleaseFacts{Episode: stored.Episode, GroupName: stored.GroupName, Languages: stored.Languages, Quality: stored.Quality, Special: stored.Special}
-	if stored.Coverage != nil {
-		facts.Coverage = &animedomain.ReleaseCoverage{Episodes: append([]int(nil), stored.Coverage.Episodes...)}
-	}
-	return facts
 }
 
 // composeRSSListView evaluates the configuration once per selected provider
@@ -1810,6 +1752,7 @@ func isHardGateFileReason(reasonCode string) bool {
 func rssListFile(file animedomain.PreviewFileResult, manifest *animecatalogdomain.TorrentManifest) RSSListFile {
 	mapped := RSSListFile{
 		SourcePath:           file.SourcePath,
+		Episode:              file.Episode,
 		Included:             file.Included,
 		Safety:               string(file.Safety),
 		BoundVideoSourcePath: file.BoundVideo,

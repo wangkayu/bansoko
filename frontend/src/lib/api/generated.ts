@@ -3235,8 +3235,10 @@ export interface components {
              * @enum {string}
              */
             media_kind?: "video" | "subtitle" | "other";
+            /** @description This file's current display episode after the configured source offset. A bound subtitle inherits its video's identity. Absent when the current configuration cannot resolve an episode; the reader must not substitute the release's frozen execution episode. */
+            episode?: string;
             language?: string;
-            /** @description Source path, inside this same torrent, of the video a bound subtitle follows under the plan's own strict-prefix binding. It is the server's decision, so the reader lists the subtitle under that video instead of binding it again itself. Present only for a subtitle bound to a video of the same release; absent for a video and for a subtitle bound to no video. */
+            /** @description Source path, inside this same torrent, of the video a bound subtitle follows under the current projection's strict-prefix binding. It is the server's decision, so the reader lists the subtitle under that video instead of binding it again itself. Present only for a subtitle bound to a video of the same release; absent for a video and for a subtitle bound to no video. */
             bound_video_source_path?: string;
             /** @description A subtitle's resolved language codes (the sub.lang naming fact, e.g. JPN+SC): read from the subtitle's own filename tag first, otherwise from the release title. Read-only evidence. Absent for a video and for a subtitle with no language. */
             sub_lang?: string;

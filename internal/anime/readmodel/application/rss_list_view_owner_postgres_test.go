@@ -220,8 +220,8 @@ func TestRSSListOwnerMatchesPersistedReleaseEvaluationAndFiles(t *testing.T) {
 			}
 		}
 		if file.SourcePath == "Test Show/01.chs.ass" {
-			// The frozen plan's binding travels with the subtitle row, so the
-			// reader lists its output under that video instead of binding it
+			// The current projection's binding travels with the subtitle row, so
+			// the reader lists its output under that video instead of binding it
 			// again.
 			if file.BoundVideoSourcePath != "Test Show/01.mkv" {
 				t.Fatalf("a bound subtitle must carry the video it follows: %+v", file)
@@ -231,6 +231,75 @@ func TestRSSListOwnerMatchesPersistedReleaseEvaluationAndFiles(t *testing.T) {
 	}
 	if !excluded || !bound {
 		t.Fatalf("owner file rows = %+v", files)
+	}
+
+	// The RSS tab is a current preview, not another rendering of the frozen
+	// admission record. Changing only the source offset must therefore give the
+	// persisted owner row the same episode and targets as the live draft preview.
+	if _, err := db.ExecContext(ctx, `UPDATE rss_sources SET episode_offset=25 WHERE id=$1`, sourceID); err != nil {
+		t.Fatal(err)
+	}
+	rulesPreview := rulesPreviewWithExclude(t, "02")
+	draft, err := service.ReadAnimeRSSListView(ctx, ReadRSSListViewInput{InputSource: "owner_draft", ManagedAnimeID: animeID, RulesPreview: &rulesPreview})
+	if err != nil {
+		t.Fatalf("shifted owner_draft read: %v", err)
+	}
+	shifted, err := service.ReadAnimeRSSListView(ctx, ReadRSSListViewInput{InputSource: "owner", ManagedAnimeID: animeID})
+	if err != nil {
+		t.Fatalf("shifted owner read: %v", err)
+	}
+	shiftedFacts := shifted.Groups[0].Items[0].Evaluation.ParsedFacts
+	if shiftedFacts == nil || shiftedFacts.Episode == nil || *shiftedFacts.Episode != 26 {
+		t.Fatalf("owner episode must use the current offset: %+v", shiftedFacts)
+	}
+	draftTargets := make(map[string]string, len(draft.Groups[0].Items[0].Files))
+	draftEpisodes := make(map[string]string, len(draft.Groups[0].Items[0].Files))
+	for _, file := range draft.Groups[0].Items[0].Files {
+		draftTargets[file.SourcePath] = file.RenderedTarget
+		draftEpisodes[file.SourcePath] = file.Episode
+	}
+	for _, file := range shifted.Groups[0].Items[0].Files {
+		if file.RenderedTarget != draftTargets[file.SourcePath] {
+			t.Fatalf("owner target for %q = %q, current preview = %q", file.SourcePath, file.RenderedTarget, draftTargets[file.SourcePath])
+		}
+		if file.Episode != draftEpisodes[file.SourcePath] {
+			t.Fatalf("owner episode for %q = %q, current preview = %q", file.SourcePath, file.Episode, draftEpisodes[file.SourcePath])
+		}
+		switch file.SourcePath {
+		case "Test Show/01.mkv", "Test Show/01.chs.ass":
+			if file.Episode != "26" {
+				t.Fatalf("shifted video and bound subtitle must display E26: %+v", file)
+			}
+		case "Test Show/02.mkv":
+			if file.Episode != "27" {
+				t.Fatalf("shifted second file must display E27 even when filtered: %+v", file)
+			}
+		}
+	}
+
+	// With both videos placeable this is a batch. Its coverage is previewed
+	// from the current offset too; the frozen admission record is not rewritten.
+	if _, err := db.ExecContext(ctx, `UPDATE anime_config_overrides SET value='{"must_contain":"","not_in":""}'::jsonb WHERE managed_anime_id=$1 AND section_name='file_rules'`, animeID); err != nil {
+		t.Fatal(err)
+	}
+	batch, err := service.ReadAnimeRSSListView(ctx, ReadRSSListViewInput{InputSource: "owner", ManagedAnimeID: animeID})
+	if err != nil {
+		t.Fatalf("shifted batch owner read: %v", err)
+	}
+	batchFacts := batch.Groups[0].Items[0].Evaluation.ParsedFacts
+	if batchFacts == nil || batchFacts.Episode != nil || batchFacts.Coverage == nil || !reflect.DeepEqual(batchFacts.Coverage.Episodes, []int{26, 27}) {
+		t.Fatalf("owner batch coverage must use the current offset: %+v", batchFacts)
+	}
+	var storedJSON []byte
+	if err := db.QueryRowContext(ctx, `SELECT parsed_facts FROM releases WHERE id='rss-owner-release'`).Scan(&storedJSON); err != nil {
+		t.Fatal(err)
+	}
+	var stored ReleaseParsedFacts
+	if err := json.Unmarshal(storedJSON, &stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored.Episode == nil || *stored.Episode != 1 || stored.Coverage != nil {
+		t.Fatalf("current preview must not rewrite frozen admission facts: %+v", stored)
 	}
 }
 

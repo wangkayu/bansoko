@@ -175,12 +175,25 @@ func previewFilesForItem(
 		return nil, err
 	}
 	projected := animedomain.PreviewFilesForManifestIn(item, release, manifestFiles, effective, animeTitle, evalInput, rules, unknownRoute, selection)
+	episodes := make(map[string]string, len(manifestFiles))
+	for _, file := range manifestFiles {
+		episode := animedomain.PreviewFileEpisode(release, file)
+		if episode == nil {
+			continue
+		}
+		display := episode.Display
+		if display == "" {
+			display = episode.Number
+		}
+		episodes[file.SourcePath] = display
+	}
 	results := make([]animedomain.PreviewFileResult, 0, len(projected))
 	for _, file := range projected {
 		results = append(results, animedomain.PreviewFileResult{
 			SourceIndex:    evalInput.Index,
 			StableItemKey:  stableKey,
 			SourcePath:     file.SourcePath,
+			Episode:        episodes[file.SourcePath],
 			Included:       file.Included,
 			ReasonCode:     file.ReasonCode,
 			RenderedTarget: file.RenderedTarget,

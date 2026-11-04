@@ -59,7 +59,7 @@ func rssListViewFixture() readmodelapplication.RSSListView {
 					{
 						FileRef: "sha256:" + repeatHex("e", 64), Ordinal: 0,
 						SourcePath: "Preview Show S1/ep1.mkv", Filename: "ep1.mkv", SizeBytes: &videoSize,
-						MediaKind: &videoKind, Included: true, Safety: "valid", RenderedTarget: "Preview Show/Season 01/Preview Show - E01.mkv",
+						MediaKind: &videoKind, Episode: "26", Included: true, Safety: "valid", RenderedTarget: "Preview Show/Season 01/Preview Show - E01.mkv",
 					},
 					{
 						FileRef: "sha256:" + repeatHex("f", 64), Ordinal: 1,
@@ -161,6 +161,9 @@ func TestMapRSSListViewSerializesTheCompleteHierarchy(t *testing.T) {
 	}
 	if len(item.Files) != 3 {
 		t.Fatalf("files did not survive the wire: %+v", item.Files)
+	}
+	if item.Files[0].Episode == nil || *item.Files[0].Episode != "26" {
+		t.Fatalf("current file episode = %+v, want 26", item.Files[0].Episode)
 	}
 	if item.Files[0].RenderedTarget == nil || *item.Files[0].RenderedTarget == "" {
 		t.Fatalf("rendered target was dropped: %+v", item.Files[0])

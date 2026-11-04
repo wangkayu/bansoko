@@ -609,11 +609,22 @@ func renderManifestFile(item acquisitiondomain.FeedItem, release PreviewReleaseR
 			return previewFileOutcome{ReasonCode: &reason, Safety: PreviewFileResultSafety("valid")}
 		}
 	}
-	episode := release.FrozenEpisode
-	if file.PerFileEpisode {
-		episode = file.FrozenEpisode
-	}
+	episode := PreviewFileEpisode(release, file)
 	return renderPreviewFileForName(item, release, effective, animeTitle, source, rules, filename, file.MediaKind, file.SizeBytes, episode, false, preview)
+}
+
+// PreviewFileEpisode returns the identity the current manifest projection uses
+// to render this file. Per-file TV episodes include the current source offset;
+// bound subtitles inherit their video's identity. Unknown videos have no
+// episode to borrow from the release title.
+func PreviewFileEpisode(release PreviewReleaseResult, file ManifestFileInput) *naming.FrozenEpisodeNamingFacts {
+	if unknownVideo(file) {
+		return nil
+	}
+	if file.PerFileEpisode {
+		return file.FrozenEpisode
+	}
+	return release.FrozenEpisode
 }
 
 // renderPreviewFileForName is the one file-effect decision shared by the

@@ -198,7 +198,7 @@ describe("ownerViewModel", () => {
     expect(row.querySelectorAll(".file-render-line")).toHaveLength(0);
   });
 
-  it("被 filter 排除的文件只有 ① 行，命运徽章取受理层的处置词", () => {
+  it("被 filter 排除的文件只有 ① 行，命运徽章取当前预览的处置词", () => {
     const workspace = releaseWith([
       { path: "Show/excluded.mkv", filename: "excluded.mkv", size_bytes: 12, media_kind: "video", outcome: "excluded_by_rule", outcome_reason: "file_not_in_matched" },
     ]);
@@ -208,9 +208,9 @@ describe("ownerViewModel", () => {
       { file_ref: "file-2", ordinal: 0, source_path: "Show/excluded.mkv", filename: "excluded.mkv", size_bytes: 12, media_kind: "video", included: false, reason_code: "file_must_contain_not_matched", safety: "valid" },
     ], workspace);
 
-    // When both layers carry a code the admission one wins, and only one badge renders.
+    // The current preview code wins; the frozen admission reason stays in the execution record.
     const badge = screen.getByText(t("rss.fileExcluded.excluded_by_rule"));
-    expect(badge).toHaveAttribute("title", t("reason.file_not_in_matched"));
+    expect(badge).toHaveAttribute("title", t("reason.file_must_contain_not_matched"));
     expect(screen.queryByText(t("rss.fileExcluded.filtered"))).toBeNull();
     // Without an expected path there is no ② or ③: this record has a single row.
     const row = fileRow("Show/excluded.mkv");
@@ -318,11 +318,11 @@ describe("ownerViewModel", () => {
     const workspace = releaseWith([
       { path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 100, media_kind: "video", target_diagnostic: { code: "NAMING_TARGET_NOT_ABSOLUTE", message: "命名模板的输出目录不合法：必须渲染绝对路径" } },
     ]);
-    // The render itself produced no target: neither a frozen target nor a browse-layer projection.
+    // The current render itself produced no target and reports the naming failure.
     workspace.releases[0].acquisition_targets = [];
     workspace.releases[0].target_observations = [];
     renderOwnerFiles([
-      { file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 100, media_kind: "video", included: true, safety: "valid" },
+      { file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 100, media_kind: "video", included: true, safety: "valid", render_error: "命名模板的输出目录不合法：必须渲染绝对路径", reason_code: "NAMING_TARGET_NOT_ABSOLUTE" },
     ], workspace);
 
     // Row ②: where render/naming verdicts live.
@@ -412,7 +412,7 @@ describe("ownerViewModel", () => {
       { path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 100, media_kind: "video", target_path: "/library/Show/Show - 03.mkv", outcome: "planned" },
     ]);
     renderOwnerFiles([
-      { file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 100, media_kind: "video", included: true, safety: "valid" },
+      { file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 100, media_kind: "video", included: true, safety: "valid", rendered_target: "/library/Show/Show - 03.mkv" },
     ], workspace);
 
     const row = fileRow("Show/old.mkv");
@@ -431,7 +431,7 @@ describe("ownerViewModel", () => {
     renderOwnerFiles([
       {
         file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 100, media_kind: "video", included: true, safety: "valid",
-        in_library: true,
+        rendered_target: "/library/Show 2021/Season 01/Show - 03.mkv", in_library: true,
       },
     ], workspace);
 
@@ -449,7 +449,7 @@ describe("ownerViewModel", () => {
     renderOwnerFiles([
       {
         file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 100, media_kind: "video", included: true, safety: "valid",
-        in_library: true,
+        rendered_target: "/library/Show 2021/Season 01/Show - 03.mkv", in_library: true,
       },
     ], workspace);
 
@@ -462,23 +462,25 @@ describe("ownerViewModel", () => {
     const frozen = "/library/Show Second Season (2022)/Season 02/Show Second Season S02E05.mkv";
     const current = "/library/Show (2022)/Season 02/Show S02E05.mkv";
     const workspace = releaseWith([
-      { path: "Show/old.mkv", filename: "Show - 05.mkv", size_bytes: 100, media_kind: "video", target_path: frozen, outcome: "planned" },
+      { path: "Show/old.mkv", filename: "Show - 05.mkv", size_bytes: 100, media_kind: "video", target_path: frozen, episode: "5", outcome: "planned" },
     ]);
     workspace.releases[0].target_observations = [];
     renderOwnerFiles([
-      { file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 05.mkv", size_bytes: 100, media_kind: "video", included: true, safety: "valid", rendered_target: current, in_library: true },
+      { file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 05.mkv", size_bytes: 100, media_kind: "video", episode: "29", included: true, safety: "valid", rendered_target: current, in_library: true },
     ], workspace);
 
     const row = fileRow("Show/old.mkv");
     expect(within(row).getByText(`→ ${current}`)).toBeVisible();
     expect(within(row).queryByText(`→ ${frozen}`)).toBeNull();
+    expect(within(row).getByText(t("rss.episode", { n: "29" }))).toBeVisible();
+    expect(within(row).queryByText(t("rss.episode", { n: "5" }))).toBeNull();
     expect(within(row).getByText(t("rss.target.inLibrary"))).toBeVisible();
   });
 
   it("当前渲染失败不被冻结旧目标掩盖，已入库状态保持独立", () => {
     const frozen = "/library/Show Second Season (2022)/Season 02/Show Second Season S02E05.mkv";
     const workspace = releaseWith([
-      { path: "Show/old.mkv", filename: "Show - 05.mkv", size_bytes: 100, media_kind: "video", target_path: frozen, outcome: "planned" },
+      { path: "Show/old.mkv", filename: "Show - 05.mkv", size_bytes: 100, media_kind: "video", target_path: frozen, episode: "5", outcome: "planned" },
     ]);
     workspace.releases[0].target_observations = [];
     renderOwnerFiles([
@@ -488,7 +490,42 @@ describe("ownerViewModel", () => {
     const row = fileRow("Show/old.mkv");
     expect(within(row).getByText(knownReasonLabel("naming_fact_missing_anime_tmdb_workid") ?? "")).toBeVisible();
     expect(within(row).queryByText(`→ ${frozen}`)).toBeNull();
+    expect(within(row).queryByText(t("rss.episode", { n: "5" }))).toBeNull();
     expect(within(row).getByText(t("rss.target.inLibrary"))).toBeVisible();
+  });
+
+  it("当前过滤不抹掉已有入库状态，也不回退冻结目标", () => {
+    const frozen = "/library/Show/Show - 03.mkv";
+    const workspace = releaseWith([
+      { path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 100, media_kind: "video", target_path: frozen, outcome: "planned" },
+    ]);
+    renderOwnerFiles([
+      { file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 100, media_kind: "video", included: false, reason_code: "file_must_contain_not_matched", safety: "valid", in_library: true },
+    ], workspace);
+
+    const row = fileRow("Show/old.mkv");
+    expect(within(row).getByText(t("rss.fileExcluded.excluded_by_rule"))).toBeVisible();
+    expect(within(row).getByText(t("rss.target.inLibrary"))).toBeVisible();
+    expect(within(row).queryByText(`→ ${frozen}`)).toBeNull();
+  });
+
+  it("绑定字幕的当前渲染失败也不回退冻结目标", () => {
+    const workspace = releaseWith([
+      { path: "Show/old.mkv", filename: "Show - 05.mkv", size_bytes: 100, media_kind: "video", target_path: "/library/Old/Show S02E05.mkv", outcome: "planned" },
+      { path: "Show/old.ass", filename: "Show - 05.ass", size_bytes: 20, media_kind: "subtitle", target_path: "/library/Old/Show S02E05.ass", outcome: "subtitle_follows" },
+    ]);
+    workspace.releases[0].acquisition_targets = [];
+    workspace.releases[0].target_observations = [];
+    renderOwnerFiles([
+      { file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 05.mkv", size_bytes: 100, media_kind: "video", included: true, safety: "valid", rendered_target: "/library/Show/Show S02E05.mkv" },
+      { file_ref: "file-2", ordinal: 1, source_path: "Show/old.ass", filename: "Show - 05.ass", size_bytes: 20, media_kind: "subtitle", included: true, safety: "valid", render_error: "当前字幕模板无效", bound_video_source_path: "Show/old.mkv" },
+    ], workspace);
+
+    const row = fileRow("Show/old.mkv");
+    fireEvent.click(within(row).getByRole("button", { name: t("ui.subtitles.expand", { name: "Show/old.mkv", n: 1 }) }));
+    const subtitle = within(row).getByText("Show/old.ass").closest("li") as HTMLElement;
+    expect(within(subtitle).getByText("当前字幕模板无效")).toBeVisible();
+    expect(within(subtitle).queryByText("→ /library/Old/Show S02E05.ass")).toBeNull();
   });
 
   it("视频和绑定字幕都使用当前渲染而不是各自的冻结目标", () => {
@@ -527,7 +564,7 @@ describe("ownerViewModel", () => {
     renderOwnerFiles([
       {
         file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 100, media_kind: "video", included: true, safety: "valid",
-        placement_end: placementEnd,
+        rendered_target: "/library/Show/Show - 03.mkv", placement_end: placementEnd,
       },
     ], workspace);
 
@@ -539,13 +576,12 @@ describe("ownerViewModel", () => {
 
   it("没有当前投影的旧记录回退到冻结目标", () => {
     const workspace = releaseWith([
-      { path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 100, media_kind: "video", target_path: "/library/Show/Show - 03.mkv", outcome: "planned" },
+      { path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 100, media_kind: "video", target_path: "/library/Show/Show - 03.mkv", episode: "3", outcome: "planned" },
     ]);
-    renderOwnerFiles([
-      { file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 100, media_kind: "video", included: true, safety: "valid" },
-    ], workspace);
+    renderOwnerFiles([], workspace);
     const row = fileRow("Show/old.mkv");
     expect(within(row).getByText("→ /library/Show/Show - 03.mkv")).toBeVisible();
+    expect(within(row).getByText(t("rss.episode", { n: "3" }))).toBeVisible();
   });
 
   // On a size mismatch the ③ row does not repeat ②'s target, it says where the difference lies:
@@ -556,7 +592,7 @@ describe("ownerViewModel", () => {
       { path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 200, media_kind: "video", target_path: "/library/Show/Show - 03.mkv", outcome: "planned" },
     ], "present_mismatched");
     renderOwnerFiles([
-      { file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 200, media_kind: "video", included: true, safety: "valid" },
+      { file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 200, media_kind: "video", included: true, safety: "valid", rendered_target: "/library/Show/Show - 03.mkv" },
     ], workspace);
 
     const row = fileRow("Show/old.mkv");
@@ -571,7 +607,7 @@ describe("ownerViewModel", () => {
       { path: "Show/old.mkv", filename: "Show - 03.mkv", media_kind: "video", target_path: "/library/Show/Show - 03.mkv", outcome: "planned" },
     ], "present_mismatched");
     renderOwnerFiles([
-      { file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 03.mkv", media_kind: "video", included: true, safety: "valid" },
+      { file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 03.mkv", media_kind: "video", included: true, safety: "valid", rendered_target: "/library/Show/Show - 03.mkv" },
     ], workspace);
 
     const row = fileRow("Show/old.mkv");
@@ -579,19 +615,19 @@ describe("ownerViewModel", () => {
     expect(within(row).queryByText(/尺寸不符（/)).toBeNull();
   });
 
-  it("计划时就有的库比对结论归 ③，不出 ②", () => {
+  it("计划时就有的库比对结论归 ③，当前渲染目标仍归 ②", () => {
     const workspace = releaseWith([
       { path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 100, media_kind: "video", outcome: "covered_existing", outcome_reason: "covered_existing" },
     ]);
     workspace.releases[0].acquisition_targets = [];
     workspace.releases[0].target_observations = [];
     renderOwnerFiles([
-      { file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 100, media_kind: "video", included: false, reason_code: "covered_existing", safety: "valid" },
+      { file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: 100, media_kind: "video", included: true, rendered_target: "/library/Show/Show - 03.mkv", safety: "valid" },
     ], workspace);
 
     const row = fileRow("Show/old.mkv");
     expect(within(row).getByText(t("reason.covered_existing"))).toBeVisible();
-    expect(screen.queryByText(/^→ /)).toBeNull();
+    expect(within(row).getByText("→ /library/Show/Show - 03.mkv")).toBeVisible();
     expect(screen.queryByText(t("rss.fileExcluded.filtered"))).toBeNull();
   });
 
@@ -675,7 +711,7 @@ describe("ownerViewModel", () => {
     workspace.releases[0].acquisition_targets = [];
     workspace.releases[0].target_observations = [];
     renderOwnerFiles([
-      { file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: size, media_kind: "video", included: true, safety: "valid", rendered_target: "/library/Show/Show - 03.mkv" },
+      { file_ref: "file-1", ordinal: 0, source_path: "Show/old.mkv", filename: "Show - 03.mkv", size_bytes: size, media_kind: "video", episode: "3", included: true, safety: "valid", rendered_target: "/library/Show/Show - 03.mkv" },
     ], workspace);
 
     const row = fileRow("Show/old.mkv");

@@ -8546,15 +8546,22 @@ components:
             Product classification of this file, taken from the seed's exact
             torrent manifest. Absent for a file the release never parsed, so an
             absent value is never reported as the "other" kind.
+        episode:
+          type: string
+          description: >-
+            This file's current display episode after the configured source
+            offset. A bound subtitle inherits its video's identity. Absent when
+            the current configuration cannot resolve an episode; the reader
+            must not substitute the release's frozen execution episode.
         language:
           type: string
         bound_video_source_path:
           type: string
           description: >-
             Source path, inside this same torrent, of the video a bound
-            subtitle follows under the plan's own strict-prefix binding. It is
-            the server's decision, so the reader lists the subtitle under that
-            video instead of binding it again itself. Present only for a
+            subtitle follows under the current projection's strict-prefix
+            binding. It is the server's decision, so the reader lists the
+            subtitle under that video instead of binding it again itself. Present only for a
             subtitle bound to a video of the same release; absent for a video
             and for a subtitle bound to no video.
         sub_lang:

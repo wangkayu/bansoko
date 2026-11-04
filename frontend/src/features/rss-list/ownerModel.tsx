@@ -211,33 +211,32 @@ function OwnerReleaseFileRow({ preview, parsed, target, observation, subtitles =
   const language = parsed?.language ?? preview?.language;
   // ② shows the server's projection under the current configuration. Frozen admission facts stay
   // available for execution history, but cannot overwrite a current target or hide a current render
-  // failure. Only an old row with no current projection and no current render error falls back to
-  // its frozen target.
+  // failure. Only an old row with no current projection falls back to its frozen target.
   const frozenTargetPath = parsed?.target_path ?? target?.target_path ?? undefined;
-  const targetPath = preview?.rendered_target ?? (preview?.render_error ? undefined : frozenTargetPath);
+  const targetPath = preview ? preview.rendered_target : frozenTargetPath;
   const targetNote = preview?.rendered_target ? emptyFactsNote(preview.empty_facts) : undefined;
   const outcome = parsed?.outcome ?? undefined;
   const diagnosticCode = parsed?.target_diagnostic?.code;
   // A duplicate target arrives as target_diagnostic but its semantics are a conflict (③), not a render failure (②).
   const duplicateConflict = diagnosticCode === "target_duplicate" || diagnosticCode === "target_replaced_in_release";
-  // The admission layer (the accepted plan) is authoritative; only without a plan does it fall
-//   back to the browse layer's per-file verdict, and only when that is absent too does it look for
-//   an already-rendered target.
-  const planned = outcome === undefined
-    ? preview ? preview.included : targetPath !== undefined
-    : outcome === "planned" || outcome === "subtitle_follows";
-  const filtered = outcome === undefined ? preview !== undefined && !preview.included : FILTERED_OUTCOMES.has(outcome);
+  // A current projection decides inclusion and filtering. The frozen outcome is
+  // the execution record and is consulted only for old rows with no projection.
+  const planned = preview
+    ? preview.included
+    : outcome === undefined ? targetPath !== undefined : outcome === "planned" || outcome === "subtitle_follows";
+  const filtered = preview ? !preview.included : FILTERED_OUTCOMES.has(outcome ?? "");
   const planDiff = duplicateConflict || (outcome !== undefined && PLAN_DIFF_OUTCOMES.has(outcome));
-  // One judgment renders one badge: the admission layer's code wins, falling back to the browse
-//   layer only when absent; both the badge word and the hover use this most specific code
-//   (file_* under `excluded_by_rule`, the no-video-binding code under `subtitle_unbound`).
-  const filterDetailCode = filtered ? (outcome === undefined ? preview?.reason_code : parsed?.outcome_reason ?? outcome) : undefined;
+  // One judgment renders one badge: the current projection's code wins, falling back to the frozen
+//   admission code only for an old row without a projection.
+  const filterDetailCode = filtered ? (preview ? preview.reason_code : parsed?.outcome_reason ?? outcome) : undefined;
   const planDiffCode = duplicateConflict ? diagnosticCode : parsed?.outcome_reason ?? outcome;
   // ② carries only the expected output: a reason stands in here only when rendering produced no
 //   target at all. Placeholder codes are limited to the render domain (isRenderDiagnostic): a
 //   render failure is not a landing failure, and non-render diagnostics degrade into the neutral
 //   "target pending" when there is no target, leaving the verdict to ③ / the seed row.
-  const pendingDiagnostic = preview?.render_error ? preview.reason_code ?? "target_render_failed" : diagnosticCode;
+  const pendingDiagnostic = preview
+    ? preview.render_error ? preview.reason_code ?? "target_render_failed" : undefined
+    : diagnosticCode;
   const renderFailure = planned && targetPath === undefined && pendingDiagnostic !== undefined && isRenderDiagnostic(pendingDiagnostic)
     ? pendingDiagnostic
     : undefined;
@@ -246,8 +245,11 @@ function OwnerReleaseFileRow({ preview, parsed, target, observation, subtitles =
 //   left no target, ③ stops repeating the error — with no landable target there is no "actual
 //   output" to speak of. A duplicate target is likewise the landing side's conflict verdict and
 //   goes through planDiff.
-  const actualFailure = planned && targetPath !== undefined && !duplicateConflict ? diagnosticCode : undefined;
+  const executionPlanned = outcome === undefined ? planned : outcome === "planned" || outcome === "subtitle_follows";
+  const hasLandableTarget = frozenTargetPath !== undefined || targetPath !== undefined;
+  const actualFailure = executionPlanned && hasLandableTarget && !duplicateConflict ? diagnosticCode : undefined;
   const status = targetObservationPresentation(observation);
+  const episode = preview ? preview.episode : parsed?.episode;
   // ③'s imported state follows the server's in_library: it judges from placement records, so a file
 //   moved by alignment still counts as imported; an observation on the frozen target no longer
 //   matches after the move and can no longer stand for "awaiting import".
@@ -270,7 +272,7 @@ function OwnerReleaseFileRow({ preview, parsed, target, observation, subtitles =
         {mediaIcon(kind)}
         <span className="chain-file-name text-caption">{sourcePath}</span>
         <span className="chain-file-badges">
-          {parsed?.episode && <span className="chain-file-badge chain-file-badge-strong text-badge">{t("rss.episode", { n: parsed.episode })}</span>}
+          {episode && <span className="chain-file-badge chain-file-badge-strong text-badge">{t("rss.episode", { n: episode })}</span>}
           {parsed?.resolution && <span className="chain-file-badge text-badge">{parsed.resolution}</span>}
           {parsed?.revision && <span className="chain-file-badge text-badge">{parsed.revision}</span>}
           {language && <span className="chain-file-badge text-badge">{language}</span>}
@@ -299,7 +301,7 @@ function OwnerReleaseFileRow({ preview, parsed, target, observation, subtitles =
       {/* External subtitles bound to this video: format badges right below the video's target path, details collapsed by default; when the video is excluded the subtitles follow it. */}
       <BoundSubtitles videoName={sourcePath} subtitles={subtitles.map(ownerSubtitleItem)} videoExcluded={filtered} />
       {/* ③ The actual output */}
-      {(placementEnd !== undefined || planDiff || (planned && (targetPath !== undefined || inLibrary))) && (
+      {(placementEnd !== undefined || planDiff || inLibrary || (executionPlanned && hasLandableTarget) || (planned && targetPath !== undefined)) && (
         <div className="chain-file-row">
           {placementEnd !== undefined
             ? <StatePill tone="muted">{placementEndLabel(placementEnd)}</StatePill>
@@ -322,15 +324,15 @@ function OwnerReleaseFileRow({ preview, parsed, target, observation, subtitles =
 
 // A subtitle's output is the target the server renders under the current configuration and the
 // placement stage's same rule (the video's directory + the video's base name + the rendered suffix
-// + its own extension). A current render error suppresses the frozen target; only a row without a
-// current projection falls back to that historical admission fact. Passing and filtering match the
-// video row: the admission layer's verdict wins, falling back to the browse layer only when absent.
+// + its own extension). A current projection suppresses the frozen target even when it cannot
+// render; only a row without a current projection falls back to that historical admission fact.
+// Filtering likewise follows the current projection, independently of the execution outcome.
 function ownerSubtitleItem({ path, preview, parsed }: OwnerFileEntry): BoundSubtitleItem {
   const outcome = parsed?.outcome ?? undefined;
-  const filtered = outcome === undefined ? preview !== undefined && !preview.included : FILTERED_OUTCOMES.has(outcome);
+  const filtered = preview ? !preview.included : FILTERED_OUTCOMES.has(outcome ?? "");
   // Same-name-not-kept arrives as target_diagnostic (the same source as the video row's duplicateConflict).
   const duplicate = parsed?.target_diagnostic?.code === "target_duplicate";
-  const reasonCode = duplicate ? "target_duplicate" : filtered ? (outcome === undefined ? preview?.reason_code : parsed?.outcome_reason ?? outcome) : undefined;
+  const reasonCode = duplicate ? "target_duplicate" : filtered ? (preview ? preview.reason_code : parsed?.outcome_reason ?? outcome) : undefined;
   const pending = preview?.render_error ? namingPendingLabel(preview.reason_code) : undefined;
   const failure = preview?.render_error && !pending ? namingFailureDetail(preview.reason_code, preview.empty_facts) ?? preview.render_error : undefined;
   return {
@@ -341,7 +343,7 @@ function ownerSubtitleItem({ path, preview, parsed }: OwnerFileEntry): BoundSubt
     languageSource: preview?.sub_lang_tag ? preview.sub_lang_source : undefined,
     included: !filtered && !duplicate,
     reasonCode,
-    target: preview?.rendered_target ?? (preview?.render_error ? undefined : parsed?.target_path ?? undefined),
+    target: preview ? preview.rendered_target : parsed?.target_path ?? undefined,
     targetProblem: pending ?? failure,
   };
 }

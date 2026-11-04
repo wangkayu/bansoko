@@ -471,6 +471,10 @@ func mapRSSListFile(file readmodelapplication.RSSListFile) generated.RSSListFile
 		kind := generated.RSSListFileMediaKind(*file.MediaKind)
 		mapped.MediaKind = &kind
 	}
+	if file.Episode != "" {
+		episode := file.Episode
+		mapped.Episode = &episode
+	}
 	if file.Language != "" {
 		language := file.Language
 		mapped.Language = &language

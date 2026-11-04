@@ -339,6 +339,9 @@ type PreviewReleaseResult struct {
 type PreviewFileResultSafety string
 
 type PreviewFileResult struct {
+	// Episode is the current display identity used to render this file. Empty
+	// means the file has no resolved episode under the current configuration.
+	Episode        string
 	Included       bool                    `json:"included"`
 	ReasonCode     *string                 `json:"reason_code,omitempty"`
 	RenderedTarget *string                 `json:"rendered_target,omitempty"`

@@ -50,6 +50,7 @@
 - Dragging the two large language cards in multiple-version settings now keeps the drag preview at the card's original size instead of showing an oversized image; other comparison items keep their existing drag behavior.
 - The anime configuration saves again after a per-subtitle-group episode offset is set before a subscription starts, instead of reporting an internal error.
 - Subtitle-group offsets saved in a draft now carry into the subscription, including groups observed only in RSS; later discovery keeps the saved offset.
+- The subscribed RSS tab now previews release episodes, batch coverage and every file's target from the current subtitle-group offsets and naming settings. A current rendering failure shows its real reason instead of being hidden by an episode or path from the old admission record; download and execution records still retain their original facts.
 
 - In the file manager, files left by one-shot downloads or unsubscribed anime can be moved, renamed and deleted again, instead of being refused with "The file has changed" and left where they are.
 - Upgrading with existing download and import records no longer fails and rolls back because of a database migration conflict.
