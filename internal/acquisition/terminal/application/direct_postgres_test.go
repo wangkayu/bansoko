@@ -68,7 +68,7 @@ func checkDirectReleasePostgres(t *testing.T, ctx context.Context, owner, runtim
 	}
 	intent := serviceIntentFixture(t, c)
 	intent.capture = req
-	e, err := evaluateAdmission(ctx, c, intent)
+	e, err := evaluateAdmission(ctx, c, intent, false)
 	if err != nil {
 		t.Fatal(err)
 	}

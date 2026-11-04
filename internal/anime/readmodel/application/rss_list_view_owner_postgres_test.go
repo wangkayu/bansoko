@@ -657,3 +657,57 @@ func parityShowTorrentPayload() []byte {
 	builder.WriteString("eee") // close the file list, the info dictionary, the root dictionary
 	return []byte(builder.String())
 }
+
+// The Global release-without-metadata switch is live for readers too: the hold
+// is released (held=false) while the read models keep naming the absent links,
+// so the UI shows "未关联" without claiming a block that no longer exists.
+func TestRSSListOwnerReportsTheReleasedHold(t *testing.T) {
+	db := animetest.OpenTestDB(t)
+	service, root := readmodelNewTestServices(t, db, &readmodelFakeFetcher{})
+	draft := readmodelTestDraft(t)
+	draft.Metadata = generated.AnimeMetadataDraft{}
+	subscribed, err := root.SubscribeAnime(context.Background(), generated.SubscribeAnimeInput{Draft: draft, Start: new(true)}, "rss-owner-release-key-0001")
+	if err != nil {
+		t.Fatalf("subscribe with incomplete metadata: %v", err)
+	}
+	managedAnimeID := string(subscribed.ManagedAnime.Id)
+	before, err := service.ReadAnimeRSSListView(context.Background(), ReadRSSListViewInput{InputSource: "owner", ManagedAnimeID: managedAnimeID})
+	if err != nil {
+		t.Fatalf("owner read: %v", err)
+	}
+	if !before.MetadataHold.Held {
+		t.Fatalf("switch off must hold the read model: %+v", before.MetadataHold)
+	}
+	if _, err := db.ExecContext(context.Background(), `
+INSERT INTO global_config_sections(section_name, schema_version, value, version)
+VALUES ('metadata_hold', 'metadata-hold-v1', '{"allow_missing_linkage":true}'::jsonb, 1)`); err != nil {
+		t.Fatal(err)
+	}
+
+	view, err := service.ReadAnimeRSSListView(context.Background(), ReadRSSListViewInput{InputSource: "owner", ManagedAnimeID: managedAnimeID})
+	if err != nil {
+		t.Fatalf("owner read: %v", err)
+	}
+	if view.MetadataHold.Held {
+		t.Fatalf("the switch releases the read model's hold: %+v", view.MetadataHold)
+	}
+	if len(view.MetadataHold.Missing) != 2 {
+		t.Fatalf("the released hold still names the missing links: %+v", view.MetadataHold.Missing)
+	}
+	list, err := service.ListAnimeApplication(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed *AnimeListItem
+	for index := range list {
+		if list[index].ManagedAnime.ID == managedAnimeID {
+			listed = &list[index]
+		}
+	}
+	if listed == nil {
+		t.Fatal("subscribed anime missing from the list")
+	}
+	if listed.MetadataHold.Held || len(listed.MetadataHold.Missing) != 2 {
+		t.Fatalf("list hold = %+v, want released with both links still named", listed.MetadataHold)
+	}
+}

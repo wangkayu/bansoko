@@ -57,7 +57,7 @@ func TestMetadataHoldEntryAndBindingMatrix(t *testing.T) {
 							t.Fatal(err)
 						}
 					}
-					_, err = evaluateAdmission(context.Background(), c, intent)
+					_, err = evaluateAdmission(context.Background(), c, intent, false)
 					if binding != "complete" && (mode == "automatic_source" || mode == "subscription_direct") {
 						assertAcceptanceClass(t, err, 422, "ADMISSION_REJECTED")
 					} else if err != nil {
@@ -66,5 +66,38 @@ func TestMetadataHoldEntryAndBindingMatrix(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+// The Global release-without-metadata switch releases the admission gate for an
+// unlinked subscription: the automatic entry and the manual retry are admitted,
+// and the missing bindings remain in the captured material the frozen input and
+// the record name.
+func TestMetadataHoldIsReleasedByTheGlobalSwitch(t *testing.T) {
+	for _, mode := range []string{"automatic_source", "subscription_direct"} {
+		t.Run(mode, func(t *testing.T) {
+			m := qualificationFixture(t, mode)
+			m.programs.varsSource = "vars.actual = {title: input.release_title};"
+			m.catalog.feed.Seeds[0].Title = "[Group] Show - 01 [1080p]"
+			m.bgm = nil
+			m.tmdb = nil
+			var err error
+			m.catalog.feed.ContentHash, err = catalog.CanonicalFeedSnapshotContentHash(m.catalog.feed.Seeds)
+			if err != nil {
+				t.Fatal(err)
+			}
+			c, err := constructQualification(m)
+			if err != nil {
+				t.Fatal(err)
+			}
+			i := serviceIntentFixture(t, c)
+			i.entryMode = mode
+			if _, err := evaluateAdmission(context.Background(), c, i, true); err != nil {
+				t.Fatalf("the released hold admits the %s entry: %v", mode, err)
+			}
+			if _, err := evaluateAdmission(context.Background(), c, i, false); err == nil {
+				t.Fatalf("the switch off keeps holding the %s entry", mode)
+			}
+		})
 	}
 }

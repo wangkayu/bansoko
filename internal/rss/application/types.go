@@ -423,6 +423,9 @@ type releaseSnapshot struct {
 	// it is frozen provenance evidence.
 	sourceVersion int64
 	metadataHold  animedomain.MetadataHold
+	// metadataHoldAllow is the Global release-without-metadata switch the hold
+	// above was folded with; the owner write re-reads it and compares.
+	metadataHoldAllow bool
 	// mediaKind/mediaSeason/mediaSeasonBound are the frozen metadata binding
 	// (TMDB media kind + bound season) one release identity resolves with;
 	// mediaKind "movie" short-circuits the resolver to the canonical movie:0

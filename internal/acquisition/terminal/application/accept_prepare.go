@@ -40,7 +40,7 @@ func frozenValue(state string, value any) map[string]any {
 	return map[string]any{"state": state, "value": value, "reason_code": nil}
 }
 
-func evaluateAdmission(ctx context.Context, c admissionCapture, intent acquisitionIntent, supplied ...target.ParserEvidence) (admissionEvaluation, error) {
+func evaluateAdmission(ctx context.Context, c admissionCapture, intent acquisitionIntent, allowMissingLinkage bool, supplied ...target.ParserEvidence) (admissionEvaluation, error) {
 	seed, err := admissionSeed(c)
 	if err != nil {
 		return admissionEvaluation{}, err
@@ -78,7 +78,7 @@ func evaluateAdmission(ctx context.Context, c admissionCapture, intent acquisiti
 		return admissionEvaluation{}, acceptError(422, "INPUT_SCHEMA_UNSUPPORTED", "parser_unavailable", err)
 	}
 	item := acq.FeedItem{Title: seed.Title}
-	hold := admissionMetadataHold(c)
+	hold := admissionMetadataHold(c, allowMissingLinkage)
 	release := anime.EvaluateFeedItemWithIdentity(item, anime.SourceEvaluationInput{}, effective, hold, c.material.programs.attr, evidence.Identity)
 	if string(release.Verdict) == "waiting_metadata" {
 		if !bypassMetadataHold(intent.entryMode) {

@@ -250,6 +250,7 @@ func runServe(args []string) {
 	}
 	configService := configurationapplication.NewService(db, dbSecretStore)
 	configService.SetEventHub(eventHub)
+	configService.SetWorkItems(workStore)
 	httpConfigService := configurationapplication.NewHTTPService(configService)
 	runtimeConfiguration := configService
 	// Seed the built-in provider/metadata connections (mikan/anibt/bgm/tmdb)

@@ -26,6 +26,7 @@ import (
 	hardeningtransport "bansoko/internal/hardening/transport"
 	"bansoko/internal/jackett"
 	"bansoko/internal/persistence/txscope"
+	"bansoko/internal/workitems"
 
 	"github.com/google/uuid"
 	"golang.org/x/net/proxy"
@@ -103,10 +104,11 @@ func (s *MemorySecretStore) DeleteTx(_ context.Context, _ txscope.Tx, ref string
 }
 
 type Service struct {
-	db       *sql.DB
-	secrets  SecretStore
-	now      func() time.Time
-	eventHub *events.Hub
+	db        *sql.DB
+	secrets   SecretStore
+	now       func() time.Time
+	eventHub  *events.Hub
+	workItems *workitems.Store
 }
 
 // QBittorrentRuntimeConfig is the provider-facing projection of the single
@@ -419,6 +421,14 @@ func NewService(db *sql.DB, secrets SecretStore) *Service {
 func (s *Service) SetEventHub(hub *events.Hub) {
 	if s != nil {
 		s.eventHub = hub
+	}
+}
+
+// SetWorkItems wires the one work item store the release-without-metadata
+// switch uses to re-enqueue releases already waiting for their metadata.
+func (s *Service) SetWorkItems(store *workitems.Store) {
+	if s != nil {
+		s.workItems = store
 	}
 }
 

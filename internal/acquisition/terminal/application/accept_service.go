@@ -141,7 +141,11 @@ func (s *Service) PrepareNativeTx(ctx context.Context, scope txscope.Tx, a accep
 	if i.evidence != nil {
 		evidence = append(evidence, *i.evidence)
 	}
-	e, err := evaluateAdmission(ctx, c, i, evidence...)
+	allowMissingLinkage, err := readMetadataHoldAllow(ctx, tx)
+	if err != nil {
+		return preparedOrReplay{}, mapAcceptanceError(err)
+	}
+	e, err := evaluateAdmission(ctx, c, i, allowMissingLinkage, evidence...)
 	if err != nil {
 		return preparedOrReplay{}, mapAcceptanceError(err)
 	}

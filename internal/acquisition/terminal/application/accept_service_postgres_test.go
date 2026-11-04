@@ -103,7 +103,7 @@ func checkAcceptServicePostgres(t *testing.T, ctx context.Context, owner, runtim
 		}
 		assertNoAcceptGraph(t, owner)
 	}
-	evaluation, err := evaluateAdmission(ctx, capture, intent)
+	evaluation, err := evaluateAdmission(ctx, capture, intent, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func checkAcceptServicePostgres(t *testing.T, ctx context.Context, owner, runtim
 	}
 	intent = serviceIntentFixture(t, capture)
 	intent.capture = req
-	evaluation, err = evaluateAdmission(ctx, capture, intent)
+	evaluation, err = evaluateAdmission(ctx, capture, intent, false)
 	if err != nil {
 		t.Fatal(err)
 	}

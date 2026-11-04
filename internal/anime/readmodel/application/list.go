@@ -117,6 +117,10 @@ ORDER BY a.created_at, a.id`)
 		return nil, fmt.Errorf("list anime: %w", err)
 	}
 	defer rows.Close()
+	allowMissingLinkage, err := s.readMetadataHoldAllow(ctx)
+	if err != nil {
+		return nil, err
+	}
 	result := []AnimeListItem{}
 	for rows.Next() {
 		var item AnimeListItem
@@ -164,7 +168,7 @@ ORDER BY a.created_at, a.id`)
 		item.Metadata.TotalEpisodes = nullableIntPointer(metadataTotalEpisodes)
 		item.Metadata.Year = nullableIntPointer(metadataYear)
 		item.Metadata.Season = nullableIntPointer(metadataSeason)
-		item.MetadataHold = metadataHoldFromApplication(bgm, tmdb)
+		item.MetadataHold = metadataHoldFromApplication(bgm, tmdb, allowMissingLinkage)
 		if coverURL.Valid {
 			cover := strings.TrimSpace(coverURL.String)
 			if cover != "" {

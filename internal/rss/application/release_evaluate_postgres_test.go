@@ -284,3 +284,35 @@ WHERE wi.owner_type = 'download_task' AND task.release_id = $1`, releaseID).Scan
 		t.Fatalf("release %s task count=%d work item count=%d, want task=%v", releaseID, taskCount, workItemCount, hasTask)
 	}
 }
+
+// The Global release-without-metadata switch is read live by the evaluation:
+// with it on, the same unlinked release no longer stops at waiting_metadata.
+func TestReleaseEvaluateAdmitsMissingMetadataWhenTheSwitchIsOn(t *testing.T) {
+	db := openRSSDatabase(t)
+	sourceID, _ := seedRSSOwner(t, db, false, false)
+	insertReleaseForEvaluation(t, db, sourceID, "release-released", "[Group] Test Show - 01 1080p", "https://downloads.example.test/show-01.torrent")
+	if _, err := db.ExecContext(context.Background(), `
+INSERT INTO global_config_sections(section_name, schema_version, value, version)
+VALUES ('metadata_hold', 'metadata-hold-v1', '{"allow_missing_linkage":true}'::jsonb, 1)`); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := workitems.NewStore(db, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := newRSSService(t, db, store, &rssFakeSourceFetcher{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim := createRSSClaim(t, db, store, workitems.OwnerRef{Type: workitems.OwnerRelease, ID: "release-released"}, workitems.KindReleaseEvaluate, 1)
+	finishReleaseClaim(t, store, service, claim)
+
+	var verdict, reasonCode string
+	if err := db.QueryRowContext(context.Background(), `SELECT verdict, reason_code FROM releases WHERE id = $1`, "release-released").Scan(&verdict, &reasonCode); err != nil {
+		t.Fatal(err)
+	}
+	if verdict == "waiting_metadata" || reasonCode == "metadata_incomplete" {
+		t.Fatalf("release state=%q/%q, want the released hold not to wait for metadata", verdict, reasonCode)
+	}
+}

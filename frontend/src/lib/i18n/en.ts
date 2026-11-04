@@ -23,6 +23,7 @@ import { enTagFiltersCopy, enTitleTagsCopy } from "./en.title-tags";
 import { enDownloadCompletionCopy } from "./en.download-completion";
 import { enDownloadTimeoutsCopy } from "./en.download-timeouts";
 import { enMetadataRefreshCopy } from "./en.metadata-refresh";
+import { enMetadataHoldCopy } from "./en.metadata-hold";
 import { enSubscriptionDefaultsCopy } from "./en.subscription-defaults";
 import { enRecordsCopy } from "./en.records";
 import { enFileManagerCopy } from "./en.file-manager";
@@ -183,6 +184,7 @@ export const en = {
   downloadCompletion: enDownloadCompletionCopy,
   downloadTimeouts: enDownloadTimeoutsCopy,
   metadataRefresh: enMetadataRefreshCopy,
+  metadataHold: enMetadataHoldCopy,
   subscriptionDefaults: enSubscriptionDefaultsCopy,
 
   nav: enNavCopy,

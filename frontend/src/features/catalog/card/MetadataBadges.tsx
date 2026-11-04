@@ -5,12 +5,16 @@ import { metadataMissingLabel } from "../../../lib/labels";
 /** Metadata bindings: connected Bangumi / TMDB render external links to the id; missing links merge
  *  into one phrase, using the same wording as the card chip (the copy guide's automation-blocking
  *  reasons). For a subscribed entry what is missing follows the server's metadata_hold.missing; an
- *  unsubscribed entry follows the bindings themselves. Used in the config dialog's title area. */
+ *  unsubscribed entry follows the bindings themselves. A missing link whose hold was released
+ *  (held=false with the Global release-without-metadata switch on) keeps the same phrase, in the
+ *  neutral tone: the link is still absent, it just does not stop downloads. Used in the config
+ *  dialog's title area. */
 export function MetadataBadges({ entry }: { entry: CatalogEntryView }) {
   const subscribed = entry.subscriptionState !== undefined;
   const { bgmId, tmdbWorkId, tmdbMediaKind, tmdbSeason } = entry.metadataMatch;
   const tmdbMovie = tmdbMediaKind === "movie";
-  const holdMissing = entry.metadataHold?.held ? entry.metadataHold.missing : [];
+  const held = entry.metadataHold?.held ?? false;
+  const holdMissing = entry.metadataHold?.missing ?? [];
   const bgmMissing = holdMissing.includes("bgm") || (!subscribed && !bgmId);
   const tmdbMissing = holdMissing.includes("tmdb") || (!subscribed && !tmdbWorkId);
   const missing = [...(bgmMissing ? ["bgm"] : []), ...(tmdbMissing ? ["tmdb"] : [])];
@@ -44,7 +48,7 @@ export function MetadataBadges({ entry }: { entry: CatalogEntryView }) {
       ) : null}
       {missing.length > 0 && (
         <span className="catalog-metadata-group">
-          <span className="catalog-metadata-missing">{metadataMissingLabel(missing)}</span>
+          <span className={held || !subscribed ? "catalog-metadata-missing" : "catalog-metadata-empty"}>{metadataMissingLabel(missing)}</span>
         </span>
       )}
     </span>

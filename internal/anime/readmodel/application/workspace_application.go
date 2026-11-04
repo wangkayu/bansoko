@@ -73,6 +73,10 @@ WHERE a.id = $1`, managedAnimeID).Scan(
 	metadata.TotalEpisodes = nullableIntPointer(totalEpisodes)
 	metadata.Year = nullableIntPointer(year)
 	metadata.Season = nullableIntPointer(ownerSeason)
+	allowMissingLinkage, err := s.readMetadataHoldAllow(ctx)
+	if err != nil {
+		return AnimeWorkspace{}, err
+	}
 	var bgmID, tmdbID, tmdbKind string
 	if metadata.BGM != nil {
 		bgmID = metadata.BGM.WorkID
@@ -129,7 +133,7 @@ WHERE a.id = $1`, managedAnimeID).Scan(
 	if options.releasesOnly {
 		return AnimeWorkspace{
 			ManagedAnime: managedAnime, Metadata: metadata,
-			MetadataHold: metadataHoldFromApplication(metadata.BGM, metadata.TMDB), Subscription: subscription,
+			MetadataHold: metadataHoldFromApplication(metadata.BGM, metadata.TMDB, allowMissingLinkage), Subscription: subscription,
 			Subgroups: subgroups, Rules: rules, RSSSources: sources, RSSSourceRuntimes: runtimes,
 			Releases: releases,
 		}, nil
@@ -185,7 +189,7 @@ WHERE p.state = 'waiting_config' AND EXISTS (
 	}
 	return AnimeWorkspace{
 		ManagedAnime: managedAnime, Metadata: metadata,
-		MetadataHold: metadataHoldFromApplication(metadata.BGM, metadata.TMDB), Subscription: subscription,
+		MetadataHold: metadataHoldFromApplication(metadata.BGM, metadata.TMDB, allowMissingLinkage), Subscription: subscription,
 		Subgroups: subgroups, Rules: rules, RSSSources: sources, RSSSourceRuntimes: runtimes,
 		Releases: releases, DownloadTasks: tasks, Artifacts: artifacts, FileOperations: operations,
 		PlacementHandoffs:  placementHandoffs,

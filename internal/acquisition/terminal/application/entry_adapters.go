@@ -204,7 +204,11 @@ func (a *entryAcceptor) prepare(ctx context.Context, scope txscope.Tx, input Ent
 	if input.ParserEvidence != nil {
 		parsed = append(parsed, *input.ParserEvidence)
 	}
-	e, err := evaluateAdmission(ctx, c, intent, parsed...)
+	allowMissingLinkage, err := readMetadataHoldAllow(ctx, tx)
+	if err != nil {
+		return PreparedHandle{}, mapAcceptanceError(err)
+	}
+	e, err := evaluateAdmission(ctx, c, intent, allowMissingLinkage, parsed...)
 	if err != nil {
 		return PreparedHandle{}, mapAcceptanceError(err)
 	}

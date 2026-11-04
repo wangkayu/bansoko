@@ -728,7 +728,11 @@ func (s *Service) composeOwnerRSSListView(ctx context.Context, mode string, work
 		identity = fmt.Sprintf("owner_draft:%s@%d#%s", workspace.ManagedAnime.ID, rulesVersion, digest)
 	}
 	bgm, tmdb := metadataPatchBindingsForDomain(workspace.Metadata.BGM, workspace.Metadata.TMDB)
-	domainHold := animedomain.MetadataHoldFromBindings(bgm, tmdb)
+	allowMissingLinkage, err := s.readMetadataHoldAllow(ctx)
+	if err != nil {
+		return RSSListView{}, err
+	}
+	domainHold := animedomain.AdmittedMetadataHold(animedomain.MetadataHoldFromBindings(bgm, tmdb), allowMissingLinkage)
 	view := RSSListView{Mode: mode, ConfigIdentity: identity, MetadataHold: domainHold, GeneratedAt: time.Now().UTC(), Groups: []RSSListGroup{}, UnusedFeedIdentities: []PreviewFeedSnapshotRef{}, LimitPerGroup: limit,
 		Versions: rssListVersions()}
 	rules, _, err := attrrules.Current()
@@ -1127,7 +1131,6 @@ func (s *Service) composeRSSListViewFor(
 	oneShot bool,
 	fileSelections rssListFileSelections,
 ) (RSSListView, error) {
-	hold := animedomain.MetadataHoldFromBindings(draft.Metadata.Bgm, draft.Metadata.Tmdb)
 	varsAnime, err := s.draftVarsAnimeEvidence(ctx, draft)
 	if err != nil {
 		return RSSListView{}, err
@@ -1147,7 +1150,6 @@ func (s *Service) composeRSSListViewFor(
 	view := RSSListView{
 		Mode:             mode,
 		ConfigIdentity:   configIdentity,
-		MetadataHold:     hold,
 		TitleSuggestions: titleSuggestions,
 		Versions:         baseline,
 		GeneratedAt:      time.Now().UTC(),
@@ -1182,6 +1184,15 @@ func (s *Service) composeRSSListViewFor(
 	if err != nil {
 		return RSSListView{}, err
 	}
+	// Read the switch after the snapshot identities are validated: a malformed
+	// request is refused as such without consulting live policy, and the hold is
+	// never what decides whether the read itself is well-formed.
+	allowMissingLinkage, err := s.readMetadataHoldAllow(ctx)
+	if err != nil {
+		return RSSListView{}, err
+	}
+	view.MetadataHold = animedomain.AdmittedMetadataHold(animedomain.MetadataHoldFromBindings(draft.Metadata.Bgm, draft.Metadata.Tmdb), allowMissingLinkage)
+	hold := view.MetadataHold
 	previewsByGroup := make(map[string]providerGroupPreview, len(previews))
 	for _, preview := range previews {
 		previewsByGroup[preview.Ref.ProviderGroupRef] = preview

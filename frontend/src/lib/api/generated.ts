@@ -3851,10 +3851,10 @@ export interface components {
             checked_at: string;
         };
         /**
-         * @description One typed global config section. download_timeouts (schema download-timeouts-v1, value DownloadTimeouts) and metadata_refresh (schema metadata-refresh-v1, value MetadataRefresh) are Global-only: they have no per-anime override, no draft field and are not part of the business snapshot. subscription_defaults (schema subscription-defaults-v1, value GlobalSubscriptionDefaults) is the one-time-input default new drafts copy at creation; existing subscriptions keep their own value.
+         * @description One typed global config section. download_timeouts (schema download-timeouts-v1, value DownloadTimeouts), metadata_refresh (schema metadata-refresh-v1, value MetadataRefresh) and metadata_hold (schema metadata-hold-v1, value MetadataHoldRules) are Global-only: they have no per-anime override, no draft field and are not part of the business snapshot. subscription_defaults (schema subscription-defaults-v1, value GlobalSubscriptionDefaults) is the one-time-input default new drafts copy at creation; existing subscriptions keep their own value.
          * @enum {string}
          */
-        GlobalSectionName: "subgroups" | "parser" | "release_rules" | "file_rules" | "naming_rules" | "file_effect" | "tag_filters" | "download_completion" | "download_timeouts" | "metadata_refresh" | "subscription_defaults";
+        GlobalSectionName: "subgroups" | "parser" | "release_rules" | "file_rules" | "naming_rules" | "file_effect" | "tag_filters" | "download_completion" | "download_timeouts" | "metadata_refresh" | "metadata_hold" | "subscription_defaults";
         GlobalSectionView: {
             section_name: components["schemas"]["GlobalSectionName"];
             schema_version: string;
@@ -3884,6 +3884,10 @@ export interface components {
         /** @description The Global metadata_refresh setting (schema metadata-refresh-v1), edited only in the settings page. enabled turns on the background sweep that re-pulls the bound Bangumi and TMDB works (titles and episode titles) of active subscriptions every 24 hours; stopped subscriptions are never refreshed. A missing row is the default (false). The sweep only updates cache rows, never bindings or owner records, and a failed re-pull is diagnosed once and retried by the next cycle. */
         MetadataRefresh: {
             enabled: boolean;
+        };
+        /** @description The Global metadata_hold setting (schema metadata-hold-v1), edited only in the settings page. allow_missing_linkage releases a subscription whose Bangumi or TMDB binding is missing: its releases are evaluated and admitted against its manual values, while the missing bindings stay a fact in readers. A missing row is the default (false). The setting is live: every evaluation, admission and read uses the current value; turning it on re-enqueues the releases already waiting for metadata, and turning it off never touches them, only later evaluations hold again. */
+        MetadataHoldRules: {
+            allow_missing_linkage: boolean;
         };
         /** @description The Global subscription_defaults setting (schema subscription-defaults-v1), edited only in the settings page. It is the one-time-input default a new draft copies at creation and again on reset-to-defaults; existing drafts and subscriptions keep their own value, and evaluation never reads it. ignore_multi_video_releases is the default of the per-subscription admission toggle: when true, a new draft starts with releases holding more than two video files already filtered out of automatic download. A missing row is the default (false). */
         GlobalSubscriptionDefaults: {

@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"bansoko/internal/anime/animeconfig"
@@ -87,7 +88,11 @@ WHERE src.id = $1`, sourceID).Scan(
 	if err != nil {
 		return sourceSnapshot{}, err
 	}
-	snapshot.metadataHold, err = metadataHoldFromBindings(bgm, tmdb)
+	allowMissingLinkage, err := readMetadataHoldAllow(ctx, s.db)
+	if err != nil {
+		return sourceSnapshot{}, err
+	}
+	snapshot.metadataHold, err = metadataHoldFromBindings(bgm, tmdb, allowMissingLinkage)
 	if err != nil {
 		return sourceSnapshot{}, fmt.Errorf("map metadata hold: %w", err)
 	}
@@ -118,8 +123,33 @@ func metadataBindingsFromColumns(bgmWorkID, tmdbWorkID, tmdbMediaKind sql.NullSt
 	return metadatabinding.BindingsFromColumns(bgmWorkID, tmdbWorkID, tmdbMediaKind, tmdbSeason, managedAnimeID)
 }
 
-func metadataHoldFromBindings(bgm *animedomain.BGMBinding, tmdb *animedomain.TMDBBinding) (animedomain.MetadataHold, error) {
-	return animedomain.MetadataHoldFromBindings(bgm, tmdb), nil
+func metadataHoldFromBindings(bgm *animedomain.BGMBinding, tmdb *animedomain.TMDBBinding, allowMissingLinkage bool) (animedomain.MetadataHold, error) {
+	return animedomain.AdmittedMetadataHold(animedomain.MetadataHoldFromBindings(bgm, tmdb), allowMissingLinkage), nil
+}
+
+// readMetadataHoldAllow reads the Global release-without-metadata switch in the
+// caller's query scope, so an evaluation's owner transaction sees the same
+// value it decides with. A missing row is the code default (off); an
+// unreadable or unversioned saved row fails closed instead of guessing whether
+// a release may be admitted without metadata.
+func readMetadataHoldAllow(ctx context.Context, q queryer) (bool, error) {
+	var schema string
+	var raw []byte
+	err := q.QueryRowContext(ctx, `SELECT schema_version, value FROM global_config_sections WHERE section_name = $1`, animedomain.SectionMetadataHold).Scan(&schema, &raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return animedomain.DefaultMetadataHoldRules().AllowMissingLinkage, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read metadata_hold setting: %w", err)
+	}
+	if schema != animedomain.MetadataHoldSchemaVersion {
+		return false, fmt.Errorf("metadata_hold: unsupported schema version %q", schema)
+	}
+	rules, err := animedomain.DecodeMetadataHold(raw)
+	if err != nil {
+		return false, fmt.Errorf("metadata_hold: %w", err)
+	}
+	return rules.AllowMissingLinkage, nil
 }
 
 // frozenMediaBinding projects the owner media kind and the TMDB metadata

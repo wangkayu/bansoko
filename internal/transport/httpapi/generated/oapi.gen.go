@@ -1041,6 +1041,7 @@ const (
 	GlobalSectionNameDownloadTimeouts     GlobalSectionName = "download_timeouts"
 	GlobalSectionNameFileEffect           GlobalSectionName = "file_effect"
 	GlobalSectionNameFileRules            GlobalSectionName = "file_rules"
+	GlobalSectionNameMetadataHold         GlobalSectionName = "metadata_hold"
 	GlobalSectionNameMetadataRefresh      GlobalSectionName = "metadata_refresh"
 	GlobalSectionNameNamingRules          GlobalSectionName = "naming_rules"
 	GlobalSectionNameParser               GlobalSectionName = "parser"
@@ -5614,7 +5615,7 @@ type GlobalSectionInput struct {
 	Value map[string]interface{} `json:"value"`
 }
 
-// GlobalSectionName One typed global config section. download_timeouts (schema download-timeouts-v1, value DownloadTimeouts) and metadata_refresh (schema metadata-refresh-v1, value MetadataRefresh) are Global-only: they have no per-anime override, no draft field and are not part of the business snapshot. subscription_defaults (schema subscription-defaults-v1, value GlobalSubscriptionDefaults) is the one-time-input default new drafts copy at creation; existing subscriptions keep their own value.
+// GlobalSectionName One typed global config section. download_timeouts (schema download-timeouts-v1, value DownloadTimeouts), metadata_refresh (schema metadata-refresh-v1, value MetadataRefresh) and metadata_hold (schema metadata-hold-v1, value MetadataHoldRules) are Global-only: they have no per-anime override, no draft field and are not part of the business snapshot. subscription_defaults (schema subscription-defaults-v1, value GlobalSubscriptionDefaults) is the one-time-input default new drafts copy at creation; existing subscriptions keep their own value.
 type GlobalSectionName string
 
 // GlobalSectionView defines model for GlobalSectionView.
@@ -5623,7 +5624,7 @@ type GlobalSectionView struct {
 	Saved         bool   `json:"saved"`
 	SchemaVersion string `json:"schema_version"`
 
-	// SectionName One typed global config section. download_timeouts (schema download-timeouts-v1, value DownloadTimeouts) and metadata_refresh (schema metadata-refresh-v1, value MetadataRefresh) are Global-only: they have no per-anime override, no draft field and are not part of the business snapshot. subscription_defaults (schema subscription-defaults-v1, value GlobalSubscriptionDefaults) is the one-time-input default new drafts copy at creation; existing subscriptions keep their own value.
+	// SectionName One typed global config section. download_timeouts (schema download-timeouts-v1, value DownloadTimeouts), metadata_refresh (schema metadata-refresh-v1, value MetadataRefresh) and metadata_hold (schema metadata-hold-v1, value MetadataHoldRules) are Global-only: they have no per-anime override, no draft field and are not part of the business snapshot. subscription_defaults (schema subscription-defaults-v1, value GlobalSubscriptionDefaults) is the one-time-input default new drafts copy at creation; existing subscriptions keep their own value.
 	SectionName GlobalSectionName `json:"section_name"`
 
 	// Value The stored section object.
@@ -5922,6 +5923,11 @@ type MetadataHold struct {
 
 // MetadataHoldMissing defines model for MetadataHold.Missing.
 type MetadataHoldMissing string
+
+// MetadataHoldRules The Global metadata_hold setting (schema metadata-hold-v1), edited only in the settings page. allow_missing_linkage releases a subscription whose Bangumi or TMDB binding is missing: its releases are evaluated and admitted against its manual values, while the missing bindings stay a fact in readers. A missing row is the default (false). The setting is live: every evaluation, admission and read uses the current value; turning it on re-enqueues the releases already waiting for metadata, and turning it off never touches them, only later evaluations hold again.
+type MetadataHoldRules struct {
+	AllowMissingLinkage bool `json:"allow_missing_linkage"`
+}
 
 // MetadataMatch defines model for MetadataMatch.
 type MetadataMatch struct {

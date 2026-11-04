@@ -54,6 +54,8 @@ var SectionSchemaVersions = map[string]string{
 
 	SectionMetadataRefresh: MetadataRefreshSchemaVersion,
 
+	SectionMetadataHold: MetadataHoldSchemaVersion,
+
 	SectionSubscriptionDefaults: SubscriptionDefaultsSchemaVersion,
 }
 
@@ -109,6 +111,8 @@ func DefaultSectionValue(section string) (any, error) {
 		return DefaultDownloadTimeouts(), nil
 	case SectionMetadataRefresh:
 		return DefaultMetadataRefreshRules(), nil
+	case SectionMetadataHold:
+		return DefaultMetadataHoldRules(), nil
 	case SectionSubscriptionDefaults:
 		return DefaultSubscriptionDefaults(), nil
 	default:
@@ -452,6 +456,8 @@ func ValidateSectionValueWithVars(section string, raw json.RawMessage, vars map[
 		return ValidateDownloadTimeoutsJSON(raw)
 	case SectionMetadataRefresh:
 		return ValidateMetadataRefreshJSON(raw)
+	case SectionMetadataHold:
+		return ValidateMetadataHoldJSON(raw)
 	case SectionSubscriptionDefaults:
 		return ValidateSubscriptionDefaultsJSON(raw)
 	case SectionSubtitleRules:

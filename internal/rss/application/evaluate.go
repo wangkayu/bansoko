@@ -311,7 +311,12 @@ WHERE r.id = $1`, releaseID).Scan(
 	if err != nil {
 		return releaseSnapshot{}, err
 	}
-	snapshot.metadataHold, err = metadataHoldFromBindings(bgm, tmdb)
+	allowMissingLinkage, err := readMetadataHoldAllow(ctx, s.db)
+	if err != nil {
+		return releaseSnapshot{}, err
+	}
+	snapshot.metadataHoldAllow = allowMissingLinkage
+	snapshot.metadataHold, err = metadataHoldFromBindings(bgm, tmdb, allowMissingLinkage)
 	if err != nil {
 		return releaseSnapshot{}, fmt.Errorf("map metadata hold: %w", err)
 	}
@@ -328,23 +333,28 @@ WHERE r.id = $1`, releaseID).Scan(
 }
 
 type currentReleaseEvaluationInputs struct {
-	groupName        string
-	sourceProvider   providerdomain.Kind
-	sourceGroupRef   string
-	episodeOffset    int
-	metadataHold     animedomain.MetadataHold
-	mediaKind        string
-	mediaSeason      int
-	mediaSeasonBound bool
-	bgmWorkID        string
-	tmdbWorkID       string
-	effective        animedomain.EffectiveConfig
-	resolved         animedomain.ResolvedSections
-	metadataVersion  int64
-	rulesVersion     int64
-	parserKind       string
-	parserVersion    int64
-	profileVersion   int64
+	groupName      string
+	sourceProvider providerdomain.Kind
+	sourceGroupRef string
+	episodeOffset  int
+	metadataHold   animedomain.MetadataHold
+	// metadataHoldAllow is the Global release-without-metadata switch folded
+	// into metadataHold; the owner write compares it with the snapshot so a
+	// flip that landed mid-evaluation re-evaluates instead of writing under
+	// the old switch.
+	metadataHoldAllow bool
+	mediaKind         string
+	mediaSeason       int
+	mediaSeasonBound  bool
+	bgmWorkID         string
+	tmdbWorkID        string
+	effective         animedomain.EffectiveConfig
+	resolved          animedomain.ResolvedSections
+	metadataVersion   int64
+	rulesVersion      int64
+	parserKind        string
+	parserVersion     int64
+	profileVersion    int64
 	// ignoreMultiVideoReleases is compared against the snapshot so a toggle
 	// that landed while the evaluation ran aborts the owner write instead of
 	// deciding with the stale option.
@@ -388,7 +398,12 @@ WHERE src.id = $1 AND sub.managed_anime_id = $2`, snapshot.sourceID, snapshot.ma
 	if err != nil {
 		return currentReleaseEvaluationInputs{}, err
 	}
-	inputs.metadataHold, err = metadataHoldFromBindings(bgm, tmdb)
+	allowMissingLinkage, err := readMetadataHoldAllow(ctx, q)
+	if err != nil {
+		return currentReleaseEvaluationInputs{}, err
+	}
+	inputs.metadataHoldAllow = allowMissingLinkage
+	inputs.metadataHold, err = metadataHoldFromBindings(bgm, tmdb, allowMissingLinkage)
 	if err != nil {
 		return currentReleaseEvaluationInputs{}, fmt.Errorf("map metadata hold: %w", err)
 	}
@@ -528,6 +543,10 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 			// value.
 			configChanged = configChanged || !currentInputs.effective.DownloadCompletion.Rules.Equal(snapshot.effective.DownloadCompletion.Rules)
 			configChanged = configChanged || currentInputs.ignoreMultiVideoReleases != snapshot.ignoreMultiVideoReleases
+			// The release-without-metadata switch decides this verdict too, so a
+			// flip that landed while the evaluation ran re-evaluates instead of
+			// writing a waiting_metadata verdict under the old switch.
+			configChanged = configChanged || currentInputs.metadataHoldAllow != snapshot.metadataHoldAllow
 			inputsChanged := configChanged || currentInputs.metadataVersion != snapshot.metadataVersion ||
 				currentInputs.rulesVersion != snapshot.rulesVersion ||
 				currentInputs.parserKind != snapshot.parserKind ||
@@ -540,6 +559,7 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 			snapshot.groupName = currentInputs.groupName
 			snapshot.episodeOffset = currentInputs.episodeOffset
 			snapshot.metadataHold = currentInputs.metadataHold
+			snapshot.metadataHoldAllow = currentInputs.metadataHoldAllow
 			snapshot.mediaKind = currentInputs.mediaKind
 			snapshot.bgmWorkID = currentInputs.bgmWorkID
 			snapshot.tmdbWorkID = currentInputs.tmdbWorkID
@@ -613,6 +633,7 @@ FOR UPDATE`, snapshot.releaseID).Scan(&currentVersion, &currentTask, &currentVer
 			configChanged = configChanged || currentInputs.effective.TagFilters.Digest != snapshot.effective.TagFilters.Digest
 			configChanged = configChanged || !currentInputs.effective.DownloadCompletion.Rules.Equal(snapshot.effective.DownloadCompletion.Rules)
 			configChanged = configChanged || currentInputs.ignoreMultiVideoReleases != snapshot.ignoreMultiVideoReleases
+			configChanged = configChanged || currentInputs.metadataHoldAllow != snapshot.metadataHoldAllow
 			if configChanged || currentInputs.metadataVersion != snapshot.metadataVersion || currentInputs.rulesVersion != snapshot.rulesVersion ||
 				currentInputs.parserKind != snapshot.parserKind || currentInputs.parserVersion != snapshot.parserVersion || currentInputs.profileVersion != snapshot.profileVersion ||
 				currentInputs.groupName != snapshot.groupName || currentInputs.episodeOffset != snapshot.episodeOffset {

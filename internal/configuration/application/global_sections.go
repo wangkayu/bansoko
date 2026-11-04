@@ -176,6 +176,21 @@ func (s *Service) PutGlobalSection(ctx context.Context, name string, expected in
 	if _, err := tx.ExecContext(ctx, `INSERT INTO global_config_sections(section_name, schema_version, value, version) VALUES ($1, $2, $3, 1) ON CONFLICT (section_name) DO UPDATE SET schema_version = EXCLUDED.schema_version, value = EXCLUDED.value, version = global_config_sections.version + 1, updated_at = NOW()`, name, input.SchemaVersion, raw); err != nil {
 		return configurationdomain.GlobalSectionView{}, err
 	}
+	// The release-without-metadata switch is live admission policy: turning it
+	// on admits the releases already waiting for their metadata, so they are
+	// re-enqueued in this save transaction. Saving it on again is idempotent,
+	// and a save with the switch off never touches a release.
+	if name == animedomain.SectionMetadataHold {
+		rules, err := animedomain.DecodeMetadataHold(raw)
+		if err != nil {
+			return configurationdomain.GlobalSectionView{}, err
+		}
+		if rules.AllowMissingLinkage {
+			if err := s.scheduleWaitingMetadataReleasesTx(ctx, tx); err != nil {
+				return configurationdomain.GlobalSectionView{}, fmt.Errorf("schedule releases for metadata_hold: %w", err)
+			}
+		}
+	}
 	// The global naming is the default naming template's body, so this save
 	// changed the template library too: bump its version so a library CAS
 	// read before this save is refused.

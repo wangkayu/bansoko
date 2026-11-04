@@ -21,6 +21,7 @@ import { tagFiltersCopy, titleTagsCopy } from "./zh-CN.title-tags";
 import { downloadCompletionCopy } from "./zh-CN.download-completion";
 import { downloadTimeoutsCopy } from "./zh-CN.download-timeouts";
 import { metadataRefreshCopy } from "./zh-CN.metadata-refresh";
+import { metadataHoldCopy } from "./zh-CN.metadata-hold";
 import { subscriptionDefaultsCopy } from "./zh-CN.subscription-defaults";
 import { recordsCopy } from "./zh-CN.records";
 import { fileManagerCopy } from "./zh-CN.file-manager";
@@ -186,6 +187,7 @@ export const zhCN = {
   downloadCompletion: downloadCompletionCopy,
   downloadTimeouts: downloadTimeoutsCopy,
   metadataRefresh: metadataRefreshCopy,
+  metadataHold: metadataHoldCopy,
   subscriptionDefaults: subscriptionDefaultsCopy,
 
   nav: navCopy,

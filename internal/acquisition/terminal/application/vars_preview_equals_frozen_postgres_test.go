@@ -55,7 +55,7 @@ func checkVarsPreviewEqualsFrozenPostgres(t *testing.T, ctx context.Context, own
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := evaluateAdmission(ctx, capture, serviceIntentFixture(t, capture))
+	result, err := evaluateAdmission(ctx, capture, serviceIntentFixture(t, capture), false)
 	if err != nil {
 		t.Fatal(err)
 	}

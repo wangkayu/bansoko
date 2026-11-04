@@ -32,10 +32,10 @@ func TestDirectReleaseFilterEntryPolicy(t *testing.T) {
 	}
 	intent := serviceIntentFixture(t, c)
 	intent.entryMode = "subscription_direct"
-	_, err = evaluateAdmission(context.Background(), c, intent)
+	_, err = evaluateAdmission(context.Background(), c, intent, false)
 	assertAcceptanceClass(t, err, 422, "ADMISSION_REJECTED")
 	intent.entryMode = "automatic_source"
-	if _, err := evaluateAdmission(context.Background(), c, intent); err == nil {
+	if _, err := evaluateAdmission(context.Background(), c, intent, false); err == nil {
 		t.Fatal("automatic filter bypassed")
 	}
 }

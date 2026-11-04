@@ -57,7 +57,7 @@ func TestAcceptPrepareCompleteInputAndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	intent := serviceIntentFixture(t, c)
-	result, err := evaluateAdmission(context.Background(), c, intent)
+	result, err := evaluateAdmission(context.Background(), c, intent, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestAcceptEvaluateDoesNotBypassMetadataHold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := evaluateAdmission(context.Background(), c, intent); err == nil {
+	if _, err := evaluateAdmission(context.Background(), c, intent, false); err == nil {
 		t.Fatal("unknown metadata bypassed admission hold")
 	}
 }

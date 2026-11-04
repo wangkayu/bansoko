@@ -15,6 +15,7 @@ import { useSavePart } from "../../lib/saveParts";
 import { SwitchRow } from "../../ui/SaveFooter";
 import { fileMaintenanceKeys } from "../../lib/queryKeys";
 import { ConflictBlock } from "../../ui";
+import { MetadataHoldSettings } from "./MetadataHoldSettings";
 import { MetadataRefreshSettings } from "./MetadataRefreshSettings";
 import { t } from "../../lib/i18n";
 
@@ -88,6 +89,7 @@ export function SettingsPolicy({ onDirtyChange }: { onDirtyChange?: (dirty: bool
         <MaxRssCard value={draft.max_rss} disabled={saving} onChange={(value) => updateDraft((current) => ({ ...current, max_rss: value }))} />
         <GlobalAlignmentPolicy />
         <MetadataRefreshSettings />
+        <MetadataHoldSettings />
       </section>
     </div>
   );

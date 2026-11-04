@@ -354,6 +354,18 @@ func MetadataHoldFromBindings(bgm *NullableBGMBinding, tmdb *NullableTMDBBinding
 	return hold
 }
 
+// AdmittedMetadataHold is the hold as admission sees it. The missing list stays
+// a fact — a reader still says which link is absent, and the frozen input keeps
+// naming it — while Held is the decision: with the Global allow-missing-linkage
+// release on, an unlinked subscription is admitted and named from its manual
+// values only.
+func AdmittedMetadataHold(hold MetadataHold, allowMissingLinkage bool) MetadataHold {
+	if allowMissingLinkage {
+		hold.Held = false
+	}
+	return hold
+}
+
 // LocatorURL validates a custom_rss locator at the current transport safety
 // boundary. The persisted locator itself remains the opaque value supplied by
 // the user and is not normalized during Subscribe.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	animeapplication "bansoko/internal/anime/application"
 	animedomain "bansoko/internal/anime/domain"
@@ -131,7 +132,7 @@ func applicationBindingsFromRow(bgm, tmdb, mediaKind sql.NullString, season sql.
 	}
 	return b, t
 }
-func metadataHoldFromApplication(bgm *BGMBinding, tmdb *TMDBBinding) MetadataHold {
+func metadataHoldFromApplication(bgm *BGMBinding, tmdb *TMDBBinding, allowMissingLinkage bool) MetadataHold {
 	var bDomain *animedomain.NullableBGMBinding
 	if bgm != nil {
 		bDomain = &animedomain.NullableBGMBinding{WorkId: bgm.WorkID}
@@ -140,8 +141,38 @@ func metadataHoldFromApplication(bgm *BGMBinding, tmdb *TMDBBinding) MetadataHol
 	if tmdb != nil {
 		tDomain = &animedomain.NullableTMDBBinding{WorkId: tmdb.WorkID, MediaKind: animedomain.TMDBMediaKind(tmdb.MediaKind), Season: tmdb.Season}
 	}
-	h := animedomain.MetadataHoldFromBindings(bDomain, tDomain)
+	h := animedomain.AdmittedMetadataHold(animedomain.MetadataHoldFromBindings(bDomain, tDomain), allowMissingLinkage)
 	return MetadataHold{Held: h.Held, Missing: metadataHoldMissingStrings(h.Missing)}
+}
+
+// readMetadataHoldAllow reads the Global release-without-metadata switch for
+// the read models, so a view says what the evaluation would decide: the
+// missing list stays a fact while Held follows the switch. A missing row is the
+// code default (off); an unreadable or unversioned saved row fails the read
+// closed instead of claiming a hold the evaluation may not apply. A service
+// without a database is the pure preview composition, which has no saved
+// section and therefore only the code default.
+func (s *Service) readMetadataHoldAllow(ctx context.Context) (bool, error) {
+	if s.db == nil {
+		return animedomain.DefaultMetadataHoldRules().AllowMissingLinkage, nil
+	}
+	var schema string
+	var raw []byte
+	err := s.db.QueryRowContext(ctx, `SELECT schema_version, value FROM global_config_sections WHERE section_name = $1`, animedomain.SectionMetadataHold).Scan(&schema, &raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return animedomain.DefaultMetadataHoldRules().AllowMissingLinkage, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read metadata_hold setting: %w", err)
+	}
+	if schema != animedomain.MetadataHoldSchemaVersion {
+		return false, fmt.Errorf("metadata_hold: unsupported schema version %q", schema)
+	}
+	rules, err := animedomain.DecodeMetadataHold(raw)
+	if err != nil {
+		return false, fmt.Errorf("metadata_hold: %w", err)
+	}
+	return rules.AllowMissingLinkage, nil
 }
 
 func metadataHoldMissingStrings(values []animedomain.MetadataHoldMissing) []string {

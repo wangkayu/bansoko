@@ -8,9 +8,10 @@ import { useSaveParts } from "../../lib/saveParts";
 // - section: the global sections (subscription policy / site configuration share the subgroups section)
 // - alignment: global automatic file alignment
 // - metadata-refresh: the Global metadata sweep toggle
+// - metadata-hold: the Global release-without-metadata toggle
 // - catalog: the site catalog's auto-refresh preference
 // - unclassified: the default handling of files with unrecognized episodes
-export const SETTINGS_SAVE_ORDER = ["section", "alignment", "metadata-refresh", "catalog", "unclassified"] as const;
+export const SETTINGS_SAVE_ORDER = ["section", "alignment", "metadata-refresh", "metadata-hold", "catalog", "unclassified"] as const;
 
 export function useSettingsSaveParts() {
   return useSaveParts(SETTINGS_SAVE_ORDER);
