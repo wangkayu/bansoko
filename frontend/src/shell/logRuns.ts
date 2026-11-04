@@ -501,7 +501,9 @@ export type EntryView = {
 
 /** A single (non-download) business record. `anime` is omitted when the list is filtered to one anime. */
 export function entryView(entry: BusinessEntry, anime: string | undefined): EntryView {
-  const result = messageText(entry);
+  const message = messageText(entry);
+  const offsetAligned = entry.message_code === "offset_aligned";
+  const result = offsetAligned ? t("log.entryResult.offsetAligned") : message;
   const label = subscriptionLogKindLabel(entry.kind);
   const title =
     entry.kind === "release_processed"
@@ -518,7 +520,7 @@ export function entryView(entry: BusinessEntry, anime: string | undefined): Entr
     state,
     title,
     result,
-    meta: policyChangeText(entry) ?? discoveryOutcomeText(entry) ?? batchCountsText(entry),
+    meta: offsetAligned ? message : (policyChangeText(entry) ?? discoveryOutcomeText(entry) ?? batchCountsText(entry)),
     reason,
     technical: state === "failure" ? (entry.details?.reason_detail ?? undefined) : undefined,
   };

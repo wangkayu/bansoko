@@ -129,6 +129,9 @@ export const enLogCopy = {
       waitingConfig: "Import waiting for configuration",
     },
   },
+  entryResult: {
+    offsetAligned: "Episode offset applied",
+  },
   delivery: {
     delivered: "Delivered",
     failed: "Failed to send",

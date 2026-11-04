@@ -82,10 +82,10 @@ const LIST = "tw:m-0 tw:list-none tw:p-0 tw:rounded-[10px] tw:border tw:border-b
 const ITEM = "tw:border-b tw:border-border tw:last:border-b-0";
 const HEAD = "tw:grid tw:w-full tw:min-w-0 tw:gap-0.5 tw:px-3 tw:pt-2 tw:text-left tw:text-sm";
 const TITLE_LINE = "tw:flex tw:min-w-0 tw:flex-wrap tw:items-baseline tw:gap-x-2.5 tw:gap-y-0.5";
-const TITLE = "tw:min-w-0 tw:flex-1 tw:font-medium tw:phone:basis-full";
-const RESULT = "tw:flex-none tw:whitespace-nowrap tw:text-xs";
+const TITLE = "tw:min-w-48 tw:flex-1 tw:wrap-anywhere tw:font-medium tw:phone:min-w-0 tw:phone:basis-full";
+const RESULT = "tw:min-w-0 tw:max-w-full tw:flex-none tw:whitespace-normal tw:text-xs";
 const TIME = "tw:flex-none tw:tabular-nums tw:text-xs tw:text-muted-foreground";
-const META = "tw:m-0 tw:text-xs tw:text-muted-foreground";
+const META = "tw:m-0 tw:min-w-0 tw:max-w-full tw:wrap-anywhere tw:text-xs tw:text-muted-foreground";
 const EXPANDED = "tw:grid tw:gap-2 tw:border-t tw:border-border tw:bg-muted/30 tw:px-3 tw:py-2.5";
 const SECTION_TITLE = "tw:m-0 tw:text-xs tw:font-medium tw:text-muted-foreground";
 const SUB_LIST = "tw:m-0 tw:grid tw:list-none tw:gap-1 tw:p-0 tw:text-xs";
@@ -624,6 +624,7 @@ function GroupItem({
       result={result}
       tone={stateTone(view.state)}
       time={first.occurred_at}
+      meta={first.message_code === "offset_aligned" ? view.meta : undefined}
       expanded={expanded}
       onToggle={onToggle}
     >

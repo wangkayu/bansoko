@@ -170,6 +170,23 @@ describe("覆盖与替换的身份", () => {
   });
 });
 
+describe("entryView offset alignment", () => {
+  it("keeps the result short and preserves the complete statistics in the detail line", () => {
+    const line = entry({
+      kind: "placement_changed",
+      outcome: "success",
+      message_code: "offset_aligned",
+      details: { group_name: "Example Group" },
+      message_params: { group_name: "Example Group", rekeyed: 2, deleted: 3, versioned: 4, overwritten: 5, skipped: 6 },
+    });
+    const view = entryView(line, undefined);
+    expect(view.result).toBe("已按新偏移整理");
+    expect(view.meta).toBe(
+      "已按新的集数偏移整理 Example Group：2 个文件换到其他集，删除 3 个，加版本号 4 个，覆盖 5 个，跳过 6 个",
+    );
+  });
+});
+
 describe("discoveryOutcomeText", () => {
   it("renders the feed outcome split of a discovery batch", () => {
     const line = entry({

@@ -120,6 +120,9 @@ export const logCopy = {
       waitingConfig: "入库等待配置",
     },
   },
+  entryResult: {
+    offsetAligned: "已按新偏移整理",
+  },
   delivery: {
     delivered: "已送达",
     failed: "发送失败",
