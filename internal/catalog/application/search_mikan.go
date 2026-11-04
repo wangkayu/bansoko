@@ -245,16 +245,25 @@ func readBoundedBody(body io.Reader, maxSize int64) ([]byte, error) {
 // on the search page; it anchors the parser to that block.
 const mikanRecommendLabel = "相关推荐"
 
+// mikanSearchNoResultLabel is the site's own copy for a keyword with no program
+// hit: the search page then carries no recommendation block at all, only its
+// empty-state answer.
+const mikanSearchNoResultLabel = "找不到对应结果"
+
 // mikanProgramEntries reads the page's related-program recommendation block:
 // the central container whose header2 text carries the site's own label. The
 // block the site labels as related programs is read: the page's torrent rows
 // are never consulted here, and a page whose block lost its shape is a schema
-// mismatch instead of an empty program list.
+// mismatch instead of an empty program list — except the site's own no-hit
+// answer, which is a normal empty result.
 func mikanProgramEntries(document *goquery.Document, assetBase url.URL) ([]catalogdomain.Entry, error) {
 	block := document.Find("div.central-container").FilterFunction(func(_ int, container *goquery.Selection) bool {
 		return strings.Contains(container.Find("span.header2-text").First().Text(), mikanRecommendLabel)
 	}).First()
 	if block.Length() == 0 {
+		if mikanSearchReportsNoResult(document) {
+			return nil, nil
+		}
 		return nil, errors.New("Mikan program search recommendation block is missing")
 	}
 	candidates := block.Find("a[href*='/Home/Bangumi/']")
@@ -305,6 +314,16 @@ func mikanProgramEntries(document *goquery.Document, assetBase url.URL) ([]catal
 		return true
 	})
 	return entries, nil
+}
+
+// mikanSearchReportsNoResult says the site itself answered "no hit": the
+// desktop (div.no-subscribe-bangumi) and mobile (.m-search-akarin) empty-state
+// blocks carry the same copy. A page showing neither that answer nor the
+// recommendation block stays a schema mismatch.
+func mikanSearchReportsNoResult(document *goquery.Document) bool {
+	return document.Find("div.no-subscribe-bangumi, .m-search-akarin").FilterFunction(func(_ int, block *goquery.Selection) bool {
+		return strings.Contains(block.Text(), mikanSearchNoResultLabel)
+	}).Length() > 0
 }
 
 // mikanBangumiRef extracts the numeric bangumi id from /Home/Bangumi/<id>.

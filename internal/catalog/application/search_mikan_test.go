@@ -145,6 +145,47 @@ func TestMikanProgramSearchStructureChangeFailsClosed(t *testing.T) {
 	}
 }
 
+// A keyword with no hit gets the site's own empty-state answer (desktop and
+// mobile blocks carry the same copy) instead of a recommendation block: that is
+// a normal empty result, not a schema mismatch.
+func TestMikanProgramSearchNoHitIsEmptyResult(t *testing.T) {
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `<html><body>
+<div class="no-subscribe-bangumi hidden-sm hidden-xs" style="margin-top: 200px;"> "示例关键词" 找不到对应结果 &gt;_&lt; 试试别的关键词吧。</div>
+<div id="sk-mobile-container" class="m-home hidden-lg hidden-md">
+	<div class="m-search-akarin"><div class="text"> "示例关键词" 找不到对应结果 &gt;_&lt; 你为什么不问问神奇海螺呢？</div></div>
+</div>
+</body></html>`)
+	}))
+	defer mock.Close()
+
+	result, err := (HTTPMikanSearcher{Endpoint: mock.URL, Client: mock.Client()}).SearchMikanPrograms(context.Background(), "示例关键词")
+	if err != nil {
+		t.Fatalf("no-hit search must not fail: %v", err)
+	}
+	if len(result.Entries) != 0 {
+		t.Fatalf("entries = %+v, want none", result.Entries)
+	}
+	if result.ContractVersion != mikanSearchContractVersion {
+		t.Fatalf("contract version = %s", result.ContractVersion)
+	}
+}
+
+// The empty-state classes without the site's no-hit copy are not a no-result
+// answer: only the page's own wording turns a missing block into an empty
+// result, anything else stays fail-closed.
+func TestMikanProgramSearchEmptyStateClassesWithoutCopyFailClosed(t *testing.T) {
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `<html><body><div class="no-subscribe-bangumi">别的空态</div></body></html>`)
+	}))
+	defer mock.Close()
+	_, err := (HTTPMikanSearcher{Endpoint: mock.URL, Client: mock.Client()}).SearchMikanPrograms(context.Background(), "示例关键词")
+	var readError *catalogdomain.ReadError
+	if !errors.As(err, &readError) || readError.Code != catalogdomain.ReadFailureSchemaMismatch {
+		t.Fatalf("error = %v, want a provider schema mismatch", err)
+	}
+}
+
 func TestMikanSeedSearchNormalizesRSSItems(t *testing.T) {
 	var gotPath, gotQuery string
 	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

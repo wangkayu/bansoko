@@ -35,6 +35,24 @@ func TestMikanRealProgramSearch(t *testing.T) {
 	}
 }
 
+// A keyword with no hit must come back as an empty result from the live site,
+// not as a schema mismatch: the live page then carries only its no-result
+// empty state, so this pins that answer's shape.
+func TestMikanRealProgramSearchNoHitIsEmptyResult(t *testing.T) {
+	if os.Getenv("BANSOKO_PROVIDER_OPTIN") != "1" {
+		t.Skip("opt-in provider test: set BANSOKO_PROVIDER_OPTIN=1 to hit the public Mikan endpoint")
+	}
+
+	searcher := HTTPMikanSearcher{Endpoint: "https://mikanani.me", Client: &http.Client{Timeout: 30 * time.Second}}
+	result, err := searcher.SearchMikanPrograms(context.Background(), "bansoko-no-hit-probe")
+	if err != nil {
+		t.Fatalf("SearchMikanPrograms on a no-hit keyword failed: %v", err)
+	}
+	if len(result.Entries) != 0 {
+		t.Fatalf("a no-hit keyword returned %d entries", len(result.Entries))
+	}
+}
+
 func TestMikanRealSeedSearch(t *testing.T) {
 	if os.Getenv("BANSOKO_PROVIDER_OPTIN") != "1" {
 		t.Skip("opt-in provider test: set BANSOKO_PROVIDER_OPTIN=1 to hit the public Mikan endpoint")
