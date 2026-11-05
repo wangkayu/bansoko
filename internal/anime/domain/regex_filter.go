@@ -153,7 +153,7 @@ func NormalizeFilterRelativePath(raw string) (string, error) {
 		return "", fmt.Errorf("absolute relative path")
 	}
 	for _, segment := range strings.Split(normalized, "/") {
-		if segment == "" || segment == "." || segment == ".." || strings.Contains(segment, ":") {
+		if segment == "" || segment == "." || segment == ".." {
 			return "", fmt.Errorf("unsafe relative path segment")
 		}
 	}

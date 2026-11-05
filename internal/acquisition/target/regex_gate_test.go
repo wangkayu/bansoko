@@ -22,6 +22,7 @@ func TestFilterGatePrecedesUnavailableProbe(t *testing.T) {
 		{"unknown only under skip", animedomain.RegexFilter{}, animedomain.RegexFilter{}, []string{"Show/SP.mkv"}, "no_placeable_files"},
 		{"title excluded", animedomain.RegexFilter{NotIn: "Show"}, animedomain.RegexFilter{}, []string{"Show/main/01.mkv"}, "release_not_in_matched"},
 		{"invalid path", animedomain.RegexFilter{}, animedomain.RegexFilter{}, []string{"../01.mkv"}, "file_filter_path_invalid"},
+		{"colon in reported release filename", animedomain.RegexFilter{}, animedomain.RegexFilter{}, []string{"[Example] Girls & Panzer: Motto Love Love Sakusen desu! - 04 (ABEMA 1920x1080 AVC AAC MKV) [0123ABCD].mkv"}, "target_probe_unavailable"},
 		{"partial by filename", animedomain.RegexFilter{}, animedomain.RegexFilter{MustContain: "^01"}, []string{"Show/01.mkv", "Show/02.mkv"}, "target_probe_unavailable"},
 	} {
 		t.Run(c.name, func(t *testing.T) {

@@ -81,10 +81,40 @@ func TestRegexFilterMatchesFilenameOnly(t *testing.T) {
 			t.Errorf("%q: %+v", c.input, d)
 		}
 	}
-	for _, input := range []string{"", "/a.mkv", `C:\a.mkv`, `C:a.mkv`, `\\host\a.mkv`, "../a.mkv", "a/../b.mkv", `a\..\b.mkv`, "a/./b.mkv", "a//b.mkv", "a/b/", "a\x00b", "a\nb", string([]byte{0xff}), strings.Repeat("a", 4097)} {
+	for _, input := range []string{"", "/a.mkv", `\\host\a.mkv`, "../a.mkv", "a/../b.mkv", `a\..\b.mkv`, "a/./b.mkv", "a//b.mkv", "a/b/", "a\x00b", "a\nb", string([]byte{0xff}), strings.Repeat("a", 4097)} {
 		if d := f.MatchFilename(input); d.Allowed || d.Reason != "filter_path_invalid" {
 			t.Errorf("unsafe path %q: %+v", input, d)
 		}
+	}
+}
+
+func TestNormalizeFilterRelativePathAllowsColons(t *testing.T) {
+	const reportedRelease = "[Example] Girls & Panzer: Motto Love Love Sakusen desu! - 04 (ABEMA 1920x1080 AVC AAC MKV) [0123ABCD].mkv"
+	f, err := CompileRegexFilter(RegexFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name, raw, normalized string
+	}{
+		{"reported release", reportedRelease, reportedRelease},
+		{"colon in directory", "Season: One/" + reportedRelease, "Season: One/" + reportedRelease},
+		{"drive-like directory", `C:\01.mkv`, "C:/01.mkv"},
+		{"drive-like single file", "C:01.mkv", "C:01.mkv"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			normalized, err := NormalizeFilterRelativePath(c.raw)
+			if err != nil || normalized != c.normalized {
+				t.Fatalf("NormalizeFilterRelativePath() = %q, %v; want %q", normalized, err, c.normalized)
+			}
+			if d := f.MatchFilename(c.raw); !d.Allowed {
+				t.Fatalf("colon path rejected by file filter: %+v", d)
+			}
+			selection, err := f.SelectOrganizationFiles(filekinds.Version, []string{c.raw})
+			if err != nil || !selection.DownloadAllowed {
+				t.Fatalf("colon path not selected: %+v, %v", selection, err)
+			}
+		})
 	}
 }
 
