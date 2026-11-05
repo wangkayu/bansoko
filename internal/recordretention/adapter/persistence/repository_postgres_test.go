@@ -233,7 +233,7 @@ VALUES ('placement-placed', '/library/Discovery Show/Placed Show - 01.mkv', 'ani
 INSERT INTO acquisitions(id, execution_branch, entry_kind, access_scope, request_namespace, request_key, request_hash,
     canonical_request, admission_kind, admission_http_status, admission_receipt, input_schema_version, admission_digest,
     origin_managed_anime_ref, source_release_ref, display_title, accepted_at, retention_anchor_at,
-    detail_retention_seconds, receipt_after_accept_seconds, receipt_after_terminal_seconds, receipt_until,
+    detail_retention_seconds, receipt_after_accept_seconds, receipt_after_terminal_seconds,
     state, record_state, preparation_mode, input_canonical_utf8, payload_digest, manifest_digest,
     manifest_item_count, manifest_sealed_at)
 SELECT 'root-acquired', 'download', 'subscription_add', 'owner', 'manual_acquire_v1', 'request-acquired',
@@ -241,7 +241,7 @@ SELECT 'root-acquired', 'download', 'subscription_add', 'owner', 'manual_acquire
     '{}', 1,
     'sha256:' || encode(sha256(convert_to('acquisition-input:v1', 'UTF8') || decode('00', 'hex') || convert_to(q.input, 'UTF8')), 'hex'),
     'anime-acquired', 'release-acquired', '{"state":"known","value":"Discovery Show 02","reason_code":null}',
-    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 2592000, 2592000, 5184000, CURRENT_TIMESTAMP + INTERVAL '60 days',
+    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 2592000, 2592000, 5184000,
     'running', 'full', 'none', q.input,
     'sha256:3333333333333333333333333333333333333333333333333333333333333333',
     'sha256:4444444444444444444444444444444444444444444444444444444444444444', 0, CURRENT_TIMESTAMP

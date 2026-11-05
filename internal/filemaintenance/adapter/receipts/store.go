@@ -54,9 +54,13 @@ func (s *Store) Lock(ctx context.Context, token string) (func(), error) {
 
 // WriteStarted records the start proof. An existing token — even one of an
 // interrupted invocation — is an error: the recovery path reads that row, and
-// a stage that may run again does so under a fresh invocation.
+// a stage that may run again does so under a fresh invocation. The lifecycle
+// columns are extracted from the proof's inline invocation, the same source
+// migration 126 backfilled existing rows from.
 func (s *Store) WriteStarted(ctx context.Context, token string, proof []byte) error {
-	res, err := s.db.ExecContext(ctx, `INSERT INTO maintenance_receipts (token, started) VALUES ($1, $2) ON CONFLICT (token) DO NOTHING`, token, proof)
+	res, err := s.db.ExecContext(ctx, `INSERT INTO maintenance_receipts (token, started, owner_type, owner_id, work_item_id)
+VALUES ($1, $2, $2::jsonb->>'owner_type', $2::jsonb->>'owner_id', $2::jsonb->>'work_item_id')
+ON CONFLICT (token) DO NOTHING`, token, proof)
 	if err != nil {
 		return fmt.Errorf("write maintenance start proof: %w", err)
 	}

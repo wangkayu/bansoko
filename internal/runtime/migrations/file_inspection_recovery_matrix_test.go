@@ -84,18 +84,18 @@ func TestFileInspectionRecoveryTerminalAndStaleMatrix(t *testing.T) {
 			if err := json.Unmarshal(raw, &reply); err != nil {
 				t.Fatal(err)
 			}
-			var artifactState, workState, code, requirement string
+			var artifactState, workState, code string
 			var blocked, cancelled bool
 			var version, expected int64
-			if err := db.QueryRowContext(ctx, `SELECT a.state,w.state,a.failure_code,a.inspection_requirements_status,w.recovery_blocked,w.cancel_requested,a.version,w.expected_owner_version FROM artifacts a JOIN work_item_history w ON w.owner_type='artifact' AND w.owner_id=a.id WHERE w.id=$1`, claim.ID).Scan(&artifactState, &workState, &code, &requirement, &blocked, &cancelled, &version, &expected); err != nil {
+			if err := db.QueryRowContext(ctx, `SELECT a.state,w.state,a.failure_code,w.recovery_blocked,w.cancel_requested,a.version,w.expected_owner_version FROM artifacts a JOIN work_item_history w ON w.owner_type='artifact' AND w.owner_id=a.id WHERE w.id=$1`, claim.ID).Scan(&artifactState, &workState, &code, &blocked, &cancelled, &version, &expected); err != nil {
 				t.Fatal(err)
 			}
 			wanted := "ARTIFACT_INSPECT_INTERRUPTED"
 			if scenario == "cancelled" {
 				wanted = "ARTIFACT_INSPECT_CANCELLED"
 			}
-			if artifactState != "failed" || workState != "failed" || code != wanted || requirement != "not_reached" || !blocked || version != 2 || expected != version || cancelled != (scenario == "cancelled") {
-				t.Fatalf("terminal state=%s/%s code=%s requirements=%s blocked=%t cancel=%t versions=%d/%d", artifactState, workState, code, requirement, blocked, cancelled, version, expected)
+			if artifactState != "failed" || workState != "failed" || code != wanted || !blocked || version != 2 || expected != version || cancelled != (scenario == "cancelled") {
+				t.Fatalf("terminal state=%s/%s code=%s blocked=%t cancel=%t versions=%d/%d", artifactState, workState, code, blocked, cancelled, version, expected)
 			}
 		})
 		if t.Failed() {

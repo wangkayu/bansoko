@@ -493,7 +493,6 @@ func TestAcquisitionQueuedReplaySkipsCurrentEligibility(t *testing.T) {
 UPDATE acquisitions
 SET state = 'failed', terminal_at = accepted_at, terminal_schema = 'native_terminal_v1',
     terminal_receipt = $2::jsonb,
-    receipt_until = accepted_at + receipt_after_terminal_seconds * INTERVAL '1 second',
     detail_until = accepted_at + detail_retention_seconds * INTERVAL '1 second'
 WHERE id = $1`, params.AcquisitionID, terminal); err != nil {
 		t.Fatal(err)

@@ -51,7 +51,7 @@ VALUES ($1,$1,$2,$3,1,'profile-v1','release:1',$4,jsonb_build_array($4::text),'s
 			t.Fatal(err)
 		}
 	}
-	if _, err := owner.ExecContext(ctx, `UPDATE acquisitions SET state='failed',terminal_at=statement_timestamp(),terminal_schema='acquisition-terminal:v1',terminal_receipt='{}',detail_until=statement_timestamp()+detail_retention_seconds*INTERVAL '1 second',receipt_until=greatest(receipt_until,statement_timestamp()+receipt_after_terminal_seconds*INTERVAL '1 second') WHERE id=$1`, p.AcquisitionID); err != nil {
+	if _, err := owner.ExecContext(ctx, `UPDATE acquisitions SET state='failed',terminal_at=statement_timestamp(),terminal_schema='acquisition-terminal:v1',terminal_receipt='{}',detail_until=statement_timestamp()+detail_retention_seconds*INTERVAL '1 second' WHERE id=$1`, p.AcquisitionID); err != nil {
 		t.Fatal(err)
 	}
 	for id, want := range map[string]string{"decision-e1": "admitted/", "decision-e2": "stale/candidate_acquisition_failed"} {

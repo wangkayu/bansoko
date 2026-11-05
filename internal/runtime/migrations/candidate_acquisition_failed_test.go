@@ -41,7 +41,7 @@ VALUES ($1,$1,$2,$3,1,'profile-v1','release:1','tv:s1:e1','["tv:s1:e1"]','single
 		t.Fatal(err)
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `UPDATE acquisitions SET state='failed',terminal_at=statement_timestamp(),terminal_schema='acquisition-terminal:v1',terminal_receipt='{}',detail_until=statement_timestamp()+detail_retention_seconds*INTERVAL '1 second',receipt_until=greatest(receipt_until,statement_timestamp()+receipt_after_terminal_seconds*INTERVAL '1 second') WHERE id=$1`, p.AcquisitionID); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE acquisitions SET state='failed',terminal_at=statement_timestamp(),terminal_schema='acquisition-terminal:v1',terminal_receipt='{}',detail_until=statement_timestamp()+detail_retention_seconds*INTERVAL '1 second' WHERE id=$1`, p.AcquisitionID); err != nil {
 		t.Fatal(err)
 	}
 	for id, want := range map[string]string{"decision-cand": "stale/candidate_acquisition_failed/2", "decision-other": "admitted//1"} {

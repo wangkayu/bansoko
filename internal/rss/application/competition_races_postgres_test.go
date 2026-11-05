@@ -871,7 +871,7 @@ func TestCompetitionCommitAndSettleTriggerConcurrentlyPostgres(t *testing.T) {
 				settled <- err
 				return
 			}
-			_, err := ownerDB.Exec(`UPDATE acquisitions SET state='failed',terminal_at=statement_timestamp(),terminal_schema='acquisition-terminal:v1',terminal_receipt='{}',detail_until=statement_timestamp()+detail_retention_seconds*INTERVAL '1 second',receipt_until=greatest(receipt_until,statement_timestamp()+receipt_after_terminal_seconds*INTERVAL '1 second') WHERE id=$1`, acquisitionID)
+			_, err := ownerDB.Exec(`UPDATE acquisitions SET state='failed',terminal_at=statement_timestamp(),terminal_schema='acquisition-terminal:v1',terminal_receipt='{}',detail_until=statement_timestamp()+detail_retention_seconds*INTERVAL '1 second' WHERE id=$1`, acquisitionID)
 			settled <- err
 		}()
 		select {

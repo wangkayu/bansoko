@@ -61,7 +61,7 @@ VALUES ($1, $2, $3, '{"title":"[Group] Completion Show - 01"}', '{}', '{}', 'acc
 	acquisitionfixture.SeedObservedDownloadManifest(t, tx, root, "task-"+name, release, "download:"+name, `{}`, `{}`, "completed", correlation,
 		`[{"file_ref":"primary","ordinal":0,"relative_path":"Completion Show - 01.mkv","exact_size":7,"media_kind":"video","identity_evidence":{}}]`)
 	if state != "running" {
-		if _, err := tx.ExecContext(ctx, `UPDATE acquisitions SET state=$2,completion_open=($2='succeeded'),terminal_at=statement_timestamp(),terminal_schema='acquisition-terminal:v1',terminal_receipt='{}',detail_until=statement_timestamp()+detail_retention_seconds*INTERVAL '1 second',receipt_until=greatest(receipt_until,statement_timestamp()+receipt_after_terminal_seconds*INTERVAL '1 second') WHERE id=$1`, root, state); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE acquisitions SET state=$2,completion_open=($2='succeeded'),terminal_at=statement_timestamp(),terminal_schema='acquisition-terminal:v1',terminal_receipt='{}',detail_until=statement_timestamp()+detail_retention_seconds*INTERVAL '1 second' WHERE id=$1`, root, state); err != nil {
 			t.Fatal(err)
 		}
 	}

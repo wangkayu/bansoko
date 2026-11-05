@@ -56,7 +56,7 @@ WHERE r.id = $1`, releaseID).Scan(&taskID, &acquisitionID); err != nil {
 	if _, err := owner.ExecContext(ctx, `UPDATE download_tasks SET state='failed',failure_code='download_stalled',failure_reason='fixture',version=version+1 WHERE id=$1`, taskID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := owner.ExecContext(ctx, `UPDATE acquisitions SET state='failed',terminal_at=statement_timestamp(),terminal_schema='acquisition-terminal:v1',terminal_receipt='{}',detail_until=statement_timestamp()+detail_retention_seconds*INTERVAL '1 second',receipt_until=greatest(receipt_until,statement_timestamp()+receipt_after_terminal_seconds*INTERVAL '1 second') WHERE id=$1`, acquisitionID); err != nil {
+	if _, err := owner.ExecContext(ctx, `UPDATE acquisitions SET state='failed',terminal_at=statement_timestamp(),terminal_schema='acquisition-terminal:v1',terminal_receipt='{}',detail_until=statement_timestamp()+detail_retention_seconds*INTERVAL '1 second' WHERE id=$1`, acquisitionID); err != nil {
 		t.Fatal(err)
 	}
 	return taskID
@@ -147,7 +147,7 @@ WHERE r.id = $1`, "release-retry-removed").Scan(&removedTask, &acquisitionID); e
 	if _, err := owner.ExecContext(ctx, `UPDATE download_tasks SET state='failed',failure_code='DOWNLOADER_TASK_REMOVED',failure_reason='fixture',consecutive_absent=2,version=version+1 WHERE id=$1`, removedTask); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := owner.ExecContext(ctx, `UPDATE acquisitions SET state='cancelled',terminal_at=statement_timestamp(),terminal_schema='acquisition-terminal:v1',terminal_receipt='{}',detail_until=statement_timestamp()+detail_retention_seconds*INTERVAL '1 second',receipt_until=greatest(receipt_until,statement_timestamp()+receipt_after_terminal_seconds*INTERVAL '1 second') WHERE id=$1`, acquisitionID); err != nil {
+	if _, err := owner.ExecContext(ctx, `UPDATE acquisitions SET state='cancelled',terminal_at=statement_timestamp(),terminal_schema='acquisition-terminal:v1',terminal_receipt='{}',detail_until=statement_timestamp()+detail_retention_seconds*INTERVAL '1 second' WHERE id=$1`, acquisitionID); err != nil {
 		t.Fatal(err)
 	}
 	result, err := service.RetryRelease(ctx, "release-retry-removed", "retry-key-removed")
@@ -275,7 +275,7 @@ WHERE r.id = $1`, releaseID).Scan(&taskID, &acquisitionID); err != nil {
 	if _, err := owner.ExecContext(ctx, `UPDATE download_tasks SET state='completed',version=version+1 WHERE id=$1`, taskID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := owner.ExecContext(ctx, `UPDATE acquisitions SET state=$2,terminal_at=statement_timestamp(),terminal_schema='acquisition-terminal:v1',terminal_receipt='{}',detail_until=statement_timestamp()+detail_retention_seconds*INTERVAL '1 second',receipt_until=greatest(receipt_until,statement_timestamp()+receipt_after_terminal_seconds*INTERVAL '1 second') WHERE id=$1`, acquisitionID, acquisitionState); err != nil {
+	if _, err := owner.ExecContext(ctx, `UPDATE acquisitions SET state=$2,terminal_at=statement_timestamp(),terminal_schema='acquisition-terminal:v1',terminal_receipt='{}',detail_until=statement_timestamp()+detail_retention_seconds*INTERVAL '1 second' WHERE id=$1`, acquisitionID, acquisitionState); err != nil {
 		t.Fatal(err)
 	}
 	return taskID

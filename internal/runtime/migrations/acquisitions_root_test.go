@@ -27,7 +27,7 @@ var acqColumns = []acqColumn{
 	{"admission_kind", "text"}, {"admission_http_status", "integer"}, {"admission_receipt", "jsonb"},
 	{"input_schema_version", "integer"}, {"admission_digest", "text"}, {"display_title", "jsonb"},
 	{"accepted_at", "timestamptz"}, {"retention_anchor_at", "timestamptz"}, {"detail_retention_seconds", "integer"},
-	{"receipt_after_accept_seconds", "integer"}, {"receipt_after_terminal_seconds", "integer"}, {"receipt_until", "timestamptz"},
+	{"receipt_after_accept_seconds", "integer"}, {"receipt_after_terminal_seconds", "integer"},
 	{"detail_until", "timestamptz"}, {"state", "text"}, {"terminal_at", "timestamptz"}, {"terminal_schema", "text"},
 	{"terminal_receipt", "jsonb"}, {"record_state", "text"},
 	{"preparation_mode", "text"}, {"preparation_digest", "text"}, {"facts_revision", "bigint"}, {"checked_revision", "bigint"},
@@ -56,8 +56,8 @@ func validAcq(id, key string, accepted time.Time) map[string]any {
 		"display_title": `{"state":"known","value":"t","reason_code":null}`,
 		"accepted_at":   accepted, "retention_anchor_at": accepted,
 		"detail_retention_seconds": thirtyDays, "receipt_after_accept_seconds": thirtyDays, "receipt_after_terminal_seconds": 2 * thirtyDays,
-		"receipt_until": accepted.Add(thirtyDays * time.Second), "detail_until": nil,
-		"state": "running", "terminal_at": nil, "terminal_schema": nil, "terminal_receipt": nil,
+		"detail_until": nil,
+		"state":        "running", "terminal_at": nil, "terminal_schema": nil, "terminal_receipt": nil,
 		"record_state":     "full",
 		"preparation_mode": "none", "preparation_digest": nil, "facts_revision": 0, "checked_revision": 0,
 		"settlement_error_count": 0,
@@ -252,7 +252,7 @@ func TestAcquisitionsRootShape(t *testing.T) {
 	terminal := func(state string) map[string]any {
 		return map[string]any{
 			"state": state, "terminal_at": now.Add(time.Hour), "terminal_schema": "native_terminal_v1", "terminal_receipt": `{}`,
-			"detail_until": now.Add(time.Hour + thirtyDays*time.Second), "receipt_until": now.Add(time.Hour + 2*thirtyDays*time.Second),
+			"detail_until": now.Add(time.Hour + thirtyDays*time.Second),
 		}
 	}
 
@@ -284,8 +284,6 @@ func TestAcquisitionsRootShape(t *testing.T) {
 	reject("a terminal root with no terminal fields", map[string]any{"state": "succeeded"})
 	reject("a terminal root ending before it was accepted", with2(terminal("failed"), map[string]any{"terminal_at": now.Add(-time.Hour)}))
 	reject("a terminal root whose detail window is wrong", with2(terminal("failed"), map[string]any{"detail_until": now.Add(time.Hour)}))
-	reject("a receipt window shorter than the accepted-receipt promise", map[string]any{"receipt_until": now.Add(time.Hour)})
-	reject("a terminal receipt window shorter than its promise", with2(terminal("succeeded"), map[string]any{"receipt_until": now.Add(2 * time.Hour)}))
 	reject("a compact running root", map[string]any{"record_state": "compact"})
 	reject("a compact root without its compact record", with2(terminal("succeeded"), map[string]any{"record_state": "compact"}))
 	reject("a full root with a compact record", with2(terminal("succeeded"), map[string]any{"compacted_at": now.Add(2 * time.Hour), "compact_trigger": "owner_cleanup"}))

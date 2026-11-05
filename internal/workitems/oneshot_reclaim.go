@@ -117,8 +117,9 @@ var oneShotClassifiedOwnerTables = []string{
 // every public table with that exact column to appear in exactly one of this
 // list, oneShotClassifiedOwnerTables, or oneShotKnownBlockingTables.
 //
-// The retired offset migration tables keep the column but hold no rows since
-// migration 098, and the runtime role can no longer write them. Two
+// No table sits in this bucket since migration 122 dropped the retired offset
+// migration tables; it stays empty so a future owner-shaped table gets an
+// explicit disposition instead of silently blocking reclaims. Two
 // owner-shaped tables are outside the closed set because their column is not
 // named managed_anime_id:
 // managed_anime is the owner row itself (deleted last), and
@@ -126,7 +127,7 @@ var oneShotClassifiedOwnerTables = []string{
 // non-NULL only while a durable (subscribable) owner is activated — a oneshot
 // draft can never be subscribed or activated (422 ORIGIN_NOT_SUBSCRIBABLE),
 // so it never points at a temporary owner.
-var oneShotNeverOwnerTables = []string{"offset_migration_generations", "offset_migration_plans"}
+var oneShotNeverOwnerTables = []string{}
 
 // oneShotKnownBlockingTables are tables that can hold a row of a temporary
 // one-shot owner but are deliberately NOT deleted by reclaim, so the marker

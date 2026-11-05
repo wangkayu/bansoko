@@ -34,7 +34,7 @@ func TestReleaseOwnsTasksOverTime(t *testing.T) {
 	if _, err := callQueuedAccept(t, owner, first); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := owner.ExecContext(ctx, `UPDATE acquisitions SET state='failed',terminal_at=statement_timestamp(),terminal_schema='acquisition-terminal:v1',terminal_receipt='{}',detail_until=statement_timestamp()+detail_retention_seconds*INTERVAL '1 second',receipt_until=greatest(receipt_until,statement_timestamp()+receipt_after_terminal_seconds*INTERVAL '1 second') WHERE id=$1`, first.AcquisitionID); err != nil {
+	if _, err := owner.ExecContext(ctx, `UPDATE acquisitions SET state='failed',terminal_at=statement_timestamp(),terminal_schema='acquisition-terminal:v1',terminal_receipt='{}',detail_until=statement_timestamp()+detail_retention_seconds*INTERVAL '1 second' WHERE id=$1`, first.AcquisitionID); err != nil {
 		t.Fatal(err)
 	}
 

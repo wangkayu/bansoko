@@ -8,7 +8,7 @@ import (
 // 098 retires the offset executor: an offset plan that never applied, of a
 // generation still current, carries forward as a re-key of the placement's
 // coverage plus an alignment request; every plan and generation row is then
-// removed and the runtime keeps no write privilege on the two tables.
+// removed. Migration 122 later drops the two retired tables outright.
 func TestOffsetAlignmentRequestsCarryUnappliedPlansForward(t *testing.T) {
 	ctx := context.Background()
 	db := openDisposableDB(t)
@@ -52,14 +52,12 @@ func TestOffsetAlignmentRequestsCarryUnappliedPlansForward(t *testing.T) {
 		`SELECT array_agg(placement_id ORDER BY placement_id) = ARRAY['o1-occupied', 'o1-open']
 		        AND bool_and(offset_change_id IS NULL AND outcome IS NULL)
 		 FROM alignment_requests`)
-	rewriteExpect(t, db, "upgrade", "every plan and generation is removed",
-		`SELECT (SELECT count(*) FROM offset_migration_plans) = 0 AND (SELECT count(*) FROM offset_migration_generations) = 0
+	rewriteExpect(t, db, "upgrade", "the retired executor tables are dropped after 122",
+		`SELECT to_regclass('public.offset_migration_plans') IS NULL
+		        AND to_regclass('public.offset_migration_generations') IS NULL
 		        AND (SELECT count(*) FROM offset_alignment_changes) = 0`)
-	rewriteExpect(t, db, "upgrade", "the runtime cannot write the retired tables and writes the new ones",
-		`SELECT NOT has_table_privilege('bansoko_runtime', 'offset_migration_plans', 'INSERT')
-		        AND NOT has_table_privilege('bansoko_runtime', 'offset_migration_generations', 'UPDATE')
-		        AND has_table_privilege('bansoko_runtime', 'offset_migration_plans', 'SELECT')
-		        AND has_table_privilege('bansoko_runtime', 'alignment_requests', 'INSERT')
+	rewriteExpect(t, db, "upgrade", "the runtime writes the replacement tables",
+		`SELECT has_table_privilege('bansoko_runtime', 'alignment_requests', 'INSERT')
 		        AND has_table_privilege('bansoko_runtime', 'offset_alignment_changes', 'UPDATE')`)
 	rewriteExpect(t, db, "upgrade", "the work item kind is gone from the owner/kind constraint",
 		`SELECT pg_get_constraintdef(oid) NOT LIKE '%offset_migration%'

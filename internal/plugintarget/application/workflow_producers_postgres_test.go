@@ -258,7 +258,7 @@ VALUES ($1, $2, $3, 'file_operation', $4, '{}', '{}', 'v1', 'verified', 'active'
 
 func settleAcquisition(t *testing.T, owner *sql.DB, root, state string) {
 	t.Helper()
-	if _, err := owner.ExecContext(context.Background(), `UPDATE acquisitions SET state=$2,terminal_at=statement_timestamp(),terminal_schema='acquisition-terminal:v1',terminal_receipt='{}',detail_until=statement_timestamp()+detail_retention_seconds*INTERVAL '1 second',receipt_until=greatest(receipt_until,statement_timestamp()+receipt_after_terminal_seconds*INTERVAL '1 second') WHERE id=$1`, root, state); err != nil {
+	if _, err := owner.ExecContext(context.Background(), `UPDATE acquisitions SET state=$2,terminal_at=statement_timestamp(),terminal_schema='acquisition-terminal:v1',terminal_receipt='{}',detail_until=statement_timestamp()+detail_retention_seconds*INTERVAL '1 second' WHERE id=$1`, root, state); err != nil {
 		t.Fatal(err)
 	}
 }

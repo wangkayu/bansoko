@@ -65,7 +65,7 @@ func TestDownloadSyncErrorBudgetExhaustion(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err = rootTx.ExecContext(ctx, `UPDATE acquisitions SET state=$2,terminal_at=statement_timestamp(),terminal_schema='acquisition-terminal:v1',terminal_receipt='{}',detail_until=statement_timestamp()+detail_retention_seconds*INTERVAL '1 second',receipt_until=greatest(receipt_until,statement_timestamp()+receipt_after_terminal_seconds*INTERVAL '1 second') WHERE id=$1`, p.AcquisitionID, rootState); err != nil {
+		if _, err = rootTx.ExecContext(ctx, `UPDATE acquisitions SET state=$2,terminal_at=statement_timestamp(),terminal_schema='acquisition-terminal:v1',terminal_receipt='{}',detail_until=statement_timestamp()+detail_retention_seconds*INTERVAL '1 second' WHERE id=$1`, p.AcquisitionID, rootState); err != nil {
 			rootTx.Rollback()
 			t.Fatal(err)
 		}

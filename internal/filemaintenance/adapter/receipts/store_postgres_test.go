@@ -51,15 +51,25 @@ func TestStoreReceiptLifecycle(t *testing.T) {
 	}
 
 	// The start proof exists once; a second write is refused even before any
-	// effect ran, because the recovery path reads that row.
-	if err := store.WriteStarted(ctx, "maintenance-rcpt-run", []byte(`{"kind":"start"}`)); err != nil {
+	// effect ran, because the recovery path reads that row. The proof embeds
+	// the invocation's owner and WorkItem identity at the top level, which the
+	// row's lifecycle columns are extracted from.
+	const runProof = `{"kind":"start","owner_type":"placement","owner_id":"pl-run","work_item_id":"wi-run"}`
+	if err := store.WriteStarted(ctx, "maintenance-rcpt-run", []byte(runProof)); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.WriteStarted(ctx, "maintenance-rcpt-run", []byte(`{"kind":"start"}`)); err == nil {
+	if err := store.WriteStarted(ctx, "maintenance-rcpt-run", []byte(runProof)); err == nil {
 		t.Fatal("a second start proof must be refused")
 	}
-	if proof, err := store.ReadStarted(ctx, "maintenance-rcpt-run"); err != nil || !sameJSON(t, proof, `{"kind":"start"}`) {
+	if proof, err := store.ReadStarted(ctx, "maintenance-rcpt-run"); err != nil || !sameJSON(t, proof, runProof) {
 		t.Fatalf("read started = %s %v", proof, err)
+	}
+	var ownerType, ownerID, workItemID string
+	if err := db.QueryRowContext(ctx, `SELECT owner_type, owner_id, work_item_id FROM maintenance_receipts WHERE token = 'maintenance-rcpt-run'`).Scan(&ownerType, &ownerID, &workItemID); err != nil {
+		t.Fatal(err)
+	}
+	if ownerType != "placement" || ownerID != "pl-run" || workItemID != "wi-run" {
+		t.Fatalf("lifecycle columns = %s/%s/%s, want placement/pl-run/wi-run", ownerType, ownerID, workItemID)
 	}
 	if _, err := store.ReadFinal(ctx, "maintenance-rcpt-run"); !errors.Is(err, maintenance.ErrMaintenanceFinalAbsent) {
 		t.Fatalf("final before completion = %v", err)
@@ -84,7 +94,7 @@ func TestStoreReceiptLifecycle(t *testing.T) {
 
 	// A refused invocation's start proof is removed; an unknown token is a
 	// no-op, not an error.
-	if err := store.WriteStarted(ctx, "maintenance-rcpt-refused", []byte(`{"kind":"start"}`)); err != nil {
+	if err := store.WriteStarted(ctx, "maintenance-rcpt-refused", []byte(`{"kind":"start","owner_type":"placement","owner_id":"pl-refused","work_item_id":"wi-refused"}`)); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.DiscardStarted(ctx, "maintenance-rcpt-refused"); err != nil {
