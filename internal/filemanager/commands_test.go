@@ -73,7 +73,12 @@ func (f *fakeCommands) OperationBatch(_ context.Context, key string) ([]UserOper
 
 func (f *fakeCommands) ReleasedByKey(_ context.Context, key string) (*ReleaseOutcome, []string, error) {
 	if paths, ok := f.releaseKey[key]; ok {
-		return &ReleaseOutcome{ManagedAnimeID: "anime-1", Released: 1}, paths, nil
+		outcome := &ReleaseOutcome{ManagedAnimeID: "anime-1", Released: 1}
+		if op, exists := f.byKey[key]; exists {
+			outcome.Operation = &op
+			outcome.RequestDigest = f.digests[key]
+		}
+		return outcome, paths, nil
 	}
 	return nil, nil, nil
 }
@@ -84,7 +89,16 @@ func (f *fakeCommands) Release(_ context.Context, admission ReleaseAdmission) (R
 		f.releaseKey = map[string][]string{}
 	}
 	f.releaseKey[admission.IdempotencyKey] = admission.Spellings
-	return ReleaseOutcome{ManagedAnimeID: admission.ManagedAnimeID, Released: 1}, nil
+	outcome := ReleaseOutcome{ManagedAnimeID: admission.ManagedAnimeID, Released: 1}
+	if admission.Delete != nil {
+		if f.byKey == nil {
+			f.byKey, f.digests = map[string]UserOperation{}, map[string]string{}
+		}
+		op := UserOperation{ID: admission.Delete.Video.ID, Operation: UserDelete, State: UserOperationReady, SourcePath: admission.Delete.Video.SourcePath}
+		f.byKey[admission.IdempotencyKey], f.digests[admission.IdempotencyKey] = op, admission.Delete.Video.Digest
+		outcome.Operation, outcome.RequestDigest = &op, admission.Delete.Video.Digest
+	}
+	return outcome, nil
 }
 
 type fakeAligner struct{ admitted []AlignAdmission }
@@ -374,6 +388,58 @@ func TestReleaseFreezesPlacementVersionAndMove(t *testing.T) {
 	}
 	_, err = f.service.Release(ctx, ReleaseRequest{IdempotencyKey: "r3", Path: f.abs("Loose/a.mkv"), ExpectedRevision: looseRev})
 	mustCode(t, err, CodeIdempotencyConflict)
+}
+
+func TestDeletePlacementFreezesWholeUnitAndReplays(t *testing.T) {
+	f := newCommandFixture(t)
+	ctx := context.Background()
+	request := DeletePlacementRequest{
+		IdempotencyKey: "delete-managed", Actor: "web", PlacementID: "p-managed", PlacementVersion: 3,
+		Path: f.abs("Show/managed.mkv"),
+	}
+	outcome, err := f.service.DeletePlacement(ctx, request)
+	if err != nil || outcome.Operation == nil || outcome.Operation.Operation != UserDelete {
+		t.Fatalf("delete placement = %+v, %v", outcome, err)
+	}
+	if len(f.commands.released) != 1 {
+		t.Fatalf("release admissions = %d", len(f.commands.released))
+	}
+	admission := f.commands.released[0]
+	if admission.Delete == nil || admission.Delete.Video.SourcePath != request.Path ||
+		admission.Delete.Video.ExpectedSize != 4 || !admission.Delete.Video.RequireDetachedSource {
+		t.Fatalf("video delete = %+v", admission.Delete)
+	}
+	if len(admission.Delete.Companions) != 1 {
+		t.Fatalf("companion deletes = %+v", admission.Delete.Companions)
+	}
+	companion := admission.Delete.Companions[0]
+	if companion.Companion.ID != "c-managed" || companion.Operation.SourcePath != f.abs("Show/managed.zh.ass") ||
+		companion.Operation.ExpectedSize != 4 || companion.Operation.IdempotencyKey == request.IdempotencyKey {
+		t.Fatalf("companion delete = %+v", companion)
+	}
+	replayed, err := f.service.DeletePlacement(ctx, request)
+	if err != nil || replayed.Operation == nil || replayed.Operation.ID != outcome.Operation.ID || len(f.commands.released) != 1 {
+		t.Fatalf("delete replay = %+v, %v, admissions=%d", replayed, err, len(f.commands.released))
+	}
+	changed := request
+	changed.PlacementVersion++
+	if _, err := f.service.DeletePlacement(ctx, changed); err == nil {
+		t.Fatal("same key with another placement version must conflict")
+	}
+}
+
+func TestDeletePlacementRejectsStaleOrNonVideo(t *testing.T) {
+	f := newCommandFixture(t)
+	ctx := context.Background()
+	request := DeletePlacementRequest{IdempotencyKey: "delete-stale", PlacementID: "p-managed", PlacementVersion: 2, Path: f.abs("Show/managed.mkv")}
+	_, err := f.service.DeletePlacement(ctx, request)
+	mustCode(t, err, CodeEntryChanged)
+	request = DeletePlacementRequest{IdempotencyKey: "delete-subtitle", PlacementID: "p-managed", PlacementVersion: 3, Path: f.abs("Show/managed.zh.ass")}
+	_, err = f.service.DeletePlacement(ctx, request)
+	mustCode(t, err, CodeOperationNotAllowed)
+	if len(f.commands.released) != 0 {
+		t.Fatalf("refused delete wrote %+v", f.commands.released)
+	}
 }
 
 func TestAlignOnlyManagedVideoAndPolicyGated(t *testing.T) {

@@ -97,6 +97,34 @@ func (s *Server) ReleaseFileManagerEntry(w http.ResponseWriter, r *http.Request,
 	writeJSON(w, r.Context(), http.StatusOK, result)
 }
 
+// DeletePlacement releases one deselected-group placement and admits deletion
+// of its video and complete bound companion unit as one owner command.
+func (s *Server) DeletePlacement(w http.ResponseWriter, r *http.Request, placementID generated.ID, params generated.DeletePlacementParams) {
+	if s.deps.FileManager == nil {
+		writeError(w, r, errors.New("file manager service is not configured"))
+		return
+	}
+	var input generated.DeletePlacementRequest
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	outcome, err := s.deps.FileManager.DeletePlacement(r.Context(), filemanager.DeletePlacementRequest{
+		IdempotencyKey: string(params.IdempotencyKey), Actor: fileManagerActor,
+		PlacementID: string(placementID), PlacementVersion: input.PlacementVersion, Path: input.Path,
+	})
+	if err != nil {
+		writeFileManagerError(w, r, err)
+		return
+	}
+	if outcome.Operation == nil {
+		writeError(w, r, errors.New("delete placement admitted no operation"))
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, r.Context(), http.StatusAccepted, mapFileManagerOperation(*outcome.Operation))
+}
+
 // AlignFileManagerEntry aligns one managed video through the alignment chain.
 func (s *Server) AlignFileManagerEntry(w http.ResponseWriter, r *http.Request, params generated.AlignFileManagerEntryParams) {
 	if s.deps.FileManager == nil {

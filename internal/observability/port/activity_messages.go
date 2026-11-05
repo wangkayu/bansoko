@@ -144,7 +144,6 @@ const (
 	MessagePlacementReleased      MessageCode = "placement_released"
 	MessageUnknownFileReleased    MessageCode = "unknown_file_released"
 	MessagePlacementRecorded      MessageCode = "placement_recorded"
-	MessageFileRecovered          MessageCode = "file_recovered"
 	// MessagePlacementDisplaced is written once per managed file another file
 	// took over (the overwrite collision policy, or a requested redownload).
 	// It lands on the losing instance's stream: details.replaced_by_* names
@@ -271,7 +270,6 @@ var (
 		{Code: MessagePlacementReleased, Kind: ActivityKindPlacementChanged},
 		{Code: MessageUnknownFileReleased, Kind: ActivityKindPlacementChanged},
 		{Code: MessagePlacementRecorded, Kind: ActivityKindPlacementChanged},
-		{Code: MessageFileRecovered, Kind: ActivityKindPlacementChanged},
 		{Code: MessagePlacementDisplaced, Kind: ActivityKindPlacementChanged},
 		{Code: MessagePlacementsExcluded, Kind: ActivityKindPlacementChanged, Params: []MessageParam{{Name: ParamCount, Type: MessageParamInteger, Required: true}}},
 		{Code: MessageOffsetAligned, Kind: ActivityKindPlacementChanged, Params: []MessageParam{

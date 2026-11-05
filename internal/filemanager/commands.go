@@ -25,6 +25,7 @@ const (
 	CodeAlignmentDisabled     = "FILE_MANAGER_ALIGNMENT_DISABLED"
 	CodeOperationNotFound     = "FILE_MANAGER_OPERATION_NOT_FOUND"
 	CodeCommandsUnavailable   = "FILE_MANAGER_COMMANDS_UNAVAILABLE"
+	CodeGroupSelected         = "FILE_MANAGER_GROUP_SELECTED"
 )
 
 // maxLockedPaths bounds the managed files a refused directory reports.
@@ -130,6 +131,17 @@ type OperationRequest struct {
 	Target           *Target
 }
 
+// DeletePlacementRequest deletes one managed video and its bound companions.
+// Only a placement from a currently unselected provider group is eligible;
+// the command store re-checks that stable identity in its transaction.
+type DeletePlacementRequest struct {
+	IdempotencyKey   string
+	Actor            string
+	PlacementID      string
+	PlacementVersion int64
+	Path             string
+}
+
 // ReleaseRequest releases one managed video, optionally moving it afterwards.
 type ReleaseRequest struct {
 	IdempotencyKey   string
@@ -144,6 +156,9 @@ type ReleaseOutcome struct {
 	ManagedAnimeID string
 	Released       int
 	Operation      *UserOperation
+	// RequestDigest lets a composite command distinguish exact replay from a
+	// different request that happens to name the same released path.
+	RequestDigest string
 }
 
 // AlignRequest aligns one managed video through the existing chain.
@@ -189,6 +204,23 @@ type VersionRef struct {
 	Version int64
 }
 
+// ReleaseCompanionDelete freezes one bound companion's ownership version and
+// its safe-delete admission. The transaction compares the complete active set
+// before ending any relation.
+type ReleaseCompanionDelete struct {
+	Companion VersionRef
+	Path      string
+	Operation OperationAdmission
+}
+
+// ReleaseDeleteAdmission is the one-action release-and-delete form. Video is
+// also the operation returned to the caller; each companion has its own fenced
+// execute item so the existing path-level identity checks still apply.
+type ReleaseDeleteAdmission struct {
+	Video      OperationAdmission
+	Companions []ReleaseCompanionDelete
+}
+
 // ReleaseAdmission is what the command store re-checks and writes for a
 // release in one transaction.
 type ReleaseAdmission struct {
@@ -199,6 +231,7 @@ type ReleaseAdmission struct {
 	Placement      VersionRef
 	Spellings      []string
 	Move           *OperationAdmission
+	Delete         *ReleaseDeleteAdmission
 }
 
 // AlignAdmission is one admitted align of a managed video.
@@ -502,6 +535,93 @@ func (s *Service) Operation(ctx context.Context, id string) (UserOperation, erro
 		return UserOperation{}, notFound(CodeOperationNotFound, "operation does not exist")
 	}
 	return *op, nil
+}
+
+// DeletePlacement releases one eligible placement and atomically admits safe
+// deletion of its video and every bound companion. Group eligibility and all
+// ownership versions are re-checked by the command store in the same transaction.
+func (s *Service) DeletePlacement(ctx context.Context, request DeletePlacementRequest) (ReleaseOutcome, error) {
+	if err := s.requireCommands(); err != nil {
+		return ReleaseOutcome{}, err
+	}
+	if err := validKey(request.IdempotencyKey); err != nil {
+		return ReleaseOutcome{}, err
+	}
+	absolute, spellings, err := s.PathSpellings(request.Path)
+	if err != nil {
+		return ReleaseOutcome{}, err
+	}
+	digest := requestDigest(struct {
+		PlacementID      string
+		PlacementVersion int64
+		Path             string
+	}{request.PlacementID, request.PlacementVersion, absolute})
+	if done, paths, err := s.commands.ReleasedByKey(ctx, request.IdempotencyKey); err != nil {
+		return ReleaseOutcome{}, err
+	} else if done != nil {
+		matches := false
+		for _, released := range paths {
+			for _, spelling := range spellings {
+				matches = matches || spelling == released
+			}
+		}
+		if !matches || done.Operation == nil || done.Operation.Operation != UserDelete || done.RequestDigest != digest {
+			return ReleaseOutcome{}, conflict(CodeIdempotencyConflict, "idempotency key was used for another request")
+		}
+		return *done, nil
+	}
+	source, err := s.inspect(ctx, absolute)
+	if err != nil {
+		return ReleaseOutcome{}, err
+	}
+	placement := source.derived.placement
+	if source.detail.Entry.Kind != KindFile || internalNamespace(source.absolute) || source.derived.role != RoleVideo ||
+		placement == nil || placement.State != placementActive {
+		return ReleaseOutcome{}, conflict(CodeOperationNotAllowed, "only a managed video can be deleted")
+	}
+	if placement.ID != request.PlacementID || placement.Version != request.PlacementVersion {
+		return ReleaseOutcome{}, conflict(CodeEntryChanged, "placement changed since it was read")
+	}
+	video := OperationAdmission{
+		ID: uuid.NewString(), IdempotencyKey: request.IdempotencyKey, Digest: digest, Actor: request.Actor,
+		Operation: UserDelete, SourcePath: source.absolute, SourceSpellings: source.spellings,
+		ExpectedSize: source.info.Size(), Collision: ConflictBlock, RequireDetachedSource: true,
+		ReleasePlacementID: placement.ID,
+	}
+	admission := ReleaseAdmission{
+		IdempotencyKey: request.IdempotencyKey, Actor: request.Actor,
+		ManagedAnimeID: placement.ManagedAnimeID, AnimeTitle: placement.AnimeTitle,
+		Placement: VersionRef{ID: placement.ID, Version: placement.Version}, Spellings: source.spellings,
+		Delete: &ReleaseDeleteAdmission{Video: video},
+	}
+	companions, err := s.store.PlacementCompanions(ctx, placement.ID)
+	if err != nil {
+		return ReleaseOutcome{}, err
+	}
+	for _, companion := range companions {
+		if companion.State != companionActive {
+			continue
+		}
+		inspected, err := s.inspect(ctx, companion.Path)
+		if err != nil {
+			return ReleaseOutcome{}, err
+		}
+		if inspected.detail.Entry.Kind != KindFile || internalNamespace(inspected.absolute) || inspected.derived.companion == nil ||
+			inspected.derived.companion.ID != companion.ID || inspected.derived.companion.Placement.ID != placement.ID {
+			return ReleaseOutcome{}, conflict(CodeEntryChanged, "companion changed since it was read")
+		}
+		key := "placement-delete-companion:" + requestDigest(struct{ Key, CompanionID string }{request.IdempotencyKey, companion.ID})
+		operation := OperationAdmission{
+			ID: uuid.NewString(), IdempotencyKey: key, Digest: digest, Actor: request.Actor,
+			Operation: UserDelete, SourcePath: inspected.absolute, SourceSpellings: inspected.spellings,
+			ExpectedSize: inspected.info.Size(), Collision: ConflictBlock, RequireDetachedSource: true,
+			ReleasePlacementID: placement.ID,
+		}
+		admission.Delete.Companions = append(admission.Delete.Companions, ReleaseCompanionDelete{
+			Companion: VersionRef{ID: companion.ID, Version: companion.Version}, Path: inspected.absolute, Operation: operation,
+		})
+	}
+	return s.commands.Release(ctx, admission)
 }
 
 // Release unlocks one managed video: its placement turns released

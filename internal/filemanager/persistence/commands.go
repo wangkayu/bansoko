@@ -312,11 +312,12 @@ func (c *Commands) ReleasedByKey(ctx context.Context, key string) (*filemanager.
 	if outcome == nil {
 		return nil, nil, nil
 	}
-	op, _, err := c.OperationByKey(ctx, key)
+	op, digest, err := c.OperationByKey(ctx, key)
 	if err != nil {
 		return nil, nil, err
 	}
 	outcome.Operation = op
+	outcome.RequestDigest = digest
 	return outcome, paths, nil
 }
 
@@ -360,6 +361,14 @@ func (c *Commands) releaseTx(ctx context.Context, tx *sql.Tx, a filemanager.Rele
 	}
 	if state != "active" || version != a.Placement.Version {
 		return filemanager.ReleaseOutcome{}, filemanager.NewConflict(filemanager.CodeEntryChanged, "entry changed since it was read")
+	}
+	if a.Delete != nil {
+		if err := checkDeletePlacementEligibleTx(ctx, tx, a); err != nil {
+			return filemanager.ReleaseOutcome{}, err
+		}
+		if err := checkDeleteCompanionsTx(ctx, tx, a.Delete); err != nil {
+			return filemanager.ReleaseOutcome{}, err
+		}
 	}
 	held, err := heldPaths(ctx, tx, a.Spellings)
 	if err != nil {
@@ -417,7 +426,110 @@ WHERE placement_id = ANY($1::text[]) AND state = 'active'`, released); err != ni
 		}
 		outcome.Operation = &op
 	}
+	if a.Delete != nil {
+		op, err := c.admitReleaseDeleteTx(ctx, tx, *a.Delete)
+		if err != nil {
+			return filemanager.ReleaseOutcome{}, err
+		}
+		outcome.Operation = &op
+		outcome.RequestDigest = a.Delete.Video.Digest
+	}
 	return outcome, nil
+}
+
+// checkDeletePlacementEligibleTx re-checks the stable release-group identity
+// and rejects a physical file shared by another active placement. Display names
+// never participate in this authorization decision.
+func checkDeletePlacementEligibleTx(ctx context.Context, tx *sql.Tx, a filemanager.ReleaseAdmission) error {
+	var selected bool
+	err := tx.QueryRowContext(ctx, `SELECT sel.effective_selected
+FROM placements p
+JOIN releases rel ON rel.id = p.quality_facts_ref
+JOIN rss_sources src ON src.id = rel.rss_source_id
+JOIN subscriptions sub ON sub.id = src.subscription_id AND sub.managed_anime_id = p.managed_anime_id
+JOIN provider_group_selections sel ON sel.subscription_id = sub.id
+ AND sel.provider = src.provider AND sel.group_ref = src.provider_group_ref
+WHERE p.id = $1 AND p.managed_anime_id = $2
+FOR SHARE OF sel`, a.Placement.ID, a.ManagedAnimeID).Scan(&selected)
+	if errors.Is(err, sql.ErrNoRows) || err == nil && selected {
+		return filemanager.NewConflict(filemanager.CodeGroupSelected, "the file's provider group is not currently unselected")
+	}
+	if err != nil {
+		return fmt.Errorf("check placement group selection: %w", err)
+	}
+	var shared bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM placements
+WHERE physical_path = ANY($1::text[]) AND state = 'active' AND id <> $2)`, a.Spellings, a.Placement.ID).Scan(&shared); err != nil {
+		return fmt.Errorf("check shared placement path: %w", err)
+	}
+	if shared {
+		return filemanager.NewConflict(filemanager.CodeEntryChanged, "another placement manages the same file")
+	}
+	return nil
+}
+
+// checkDeleteCompanionsTx locks and compares the complete active companion set.
+// A relation added, moved or ended after the service read refuses the whole unit.
+func checkDeleteCompanionsTx(ctx context.Context, tx *sql.Tx, deletion *filemanager.ReleaseDeleteAdmission) error {
+	rows, err := tx.QueryContext(ctx, `SELECT id, current_path, version FROM placement_companions
+WHERE placement_id = $1 AND state = 'active' ORDER BY id FOR UPDATE`, deletion.Video.ReleasePlacementID)
+	if err != nil {
+		return fmt.Errorf("lock delete companions: %w", err)
+	}
+	defer rows.Close()
+	current := map[string]struct {
+		path    string
+		version int64
+	}{}
+	for rows.Next() {
+		var id, path string
+		var version int64
+		if err := rows.Scan(&id, &path, &version); err != nil {
+			return err
+		}
+		current[id] = struct {
+			path    string
+			version int64
+		}{path, version}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(current) != len(deletion.Companions) {
+		return filemanager.NewConflict(filemanager.CodeEntryChanged, "companion set changed since it was read")
+	}
+	for _, companion := range deletion.Companions {
+		existing, ok := current[companion.Companion.ID]
+		if !ok || existing.version != companion.Companion.Version {
+			return filemanager.NewConflict(filemanager.CodeEntryChanged, "companion changed since it was read")
+		}
+		matches := false
+		for _, spelling := range companion.Operation.SourceSpellings {
+			matches = matches || spelling == existing.path
+		}
+		if !matches {
+			return filemanager.NewConflict(filemanager.CodeEntryChanged, "companion path changed since it was read")
+		}
+	}
+	return nil
+}
+
+// admitReleaseDeleteTx admits the video and each companion after the release
+// above has detached them. Any refusal rolls back the release and every operation.
+func (c *Commands) admitReleaseDeleteTx(ctx context.Context, tx *sql.Tx, deletion filemanager.ReleaseDeleteAdmission) (filemanager.UserOperation, error) {
+	video, replay, err := c.admitTx(ctx, tx, deletion.Video, toIntakeAdmission(deletion.Video))
+	if err != nil {
+		return filemanager.UserOperation{}, err
+	}
+	if replay != nil {
+		video = *replay
+	}
+	for _, companion := range deletion.Companions {
+		if _, _, err := c.admitTx(ctx, tx, companion.Operation, toIntakeAdmission(companion.Operation)); err != nil {
+			return filemanager.UserOperation{}, err
+		}
+	}
+	return video, nil
 }
 
 func (c *Commands) appendReleaseActivity(ctx context.Context, tx *sql.Tx, a filemanager.ReleaseAdmission, version int64) error {

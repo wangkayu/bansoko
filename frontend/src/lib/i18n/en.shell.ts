@@ -258,7 +258,6 @@ export const enLogCopy = {
     placement_released: "Library location unlinked",
     unknown_file_released: "Imported as an unknown file and unlinked",
     placement_recorded: "Library location recorded",
-    file_recovered: "File recovered",
     placement_displaced: "The original file was overwritten",
     placements_excluded: "Kept {count} files from other seasons; they're excluded from version replacement",
     offset_aligned:

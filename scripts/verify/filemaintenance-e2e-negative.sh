@@ -69,18 +69,6 @@ static_checks() {
       failed=1
     fi
   done
-  # Scenario 8 is the scan-alignment recovery acceptance case. It must exist as
-  # its own guarded block, be driven only by the explicit selector, and must
-  # assert the ownership invariant the recovery confirm exists to protect.
-  # Without these, a future edit could drop the scenario silently and the lane
-  # would still print PASSED.
-  for pattern in 'if scenario_requested 8; then' 's8_candidate_target' \
-    'ANIME_FILES_RECOVER_REFUSED' 'source_evidence_type' 's8_replay_flag'; do
-    if ! grep -qF -- "$pattern" "$lane"; then
-      echo "self-test: $lane no longer contains the scenario 8 assertion $pattern" >&2
-      failed=1
-    fi
-  done
   # The default run must not destroy anything: the switch has to gate the call.
   # shellcheck disable=SC2016 # the single quotes are the searched literal
   if ! grep -qF 'if [[ "$negative_mode" == old-source-missing ]]' "$lane"; then
@@ -99,11 +87,9 @@ static_checks() {
     echo "self-test: $lane no longer reads the terminal skipped cleanup state, so old-source-missing can only time out" >&2
     failed=1
   fi
-  # Scenario 8 (scan-alignment recovery) must stay reachable AND stay out of
-  # the default set. The selector's own guard lines are lifted out of the lane
-  # and evaluated, so the check measures the shipped code rather than a copy:
-  # the validation must accept "8", and the `all` alias must still expand to
-  # the seven lanes the default green claim is made of.
+  # The selector's own guard lines are lifted out of the lane and evaluated, so
+  # the check measures the shipped code rather than a copy: the `all` alias
+  # expands to the seven default scenarios, and scenario 9 stays reachable.
   local selector_source
   # The block runs from the selector assignment through the `fi` that closes
   # its own `if`; the lane's remaining selector lines are not part of this
@@ -117,7 +103,7 @@ static_checks() {
     echo "self-test: cannot locate the scenario selector guard block in $lane" >&2
     failed=1
   else
-    for probe in 'all:1,2,3,4,5,6,7' '8:8'; do
+    for probe in 'all:1,2,3,4,5,6,7' '9:9'; do
       local want="${probe#*:}" got
       got="$(BANSOKO_FM_E2E_SCENARIOS="${probe%%:*}" bash -c "$selector_source"$'\nprintf %s "$scenario_selector"')"
       if [[ "$got" != "$want" ]]; then

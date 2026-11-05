@@ -88,6 +88,38 @@ func TestDeriveAnimeFilesMissingOffersRerunAndRelease(t *testing.T) {
 	}
 }
 
+func TestDeriveAnimeFilesDeleteRequiresUnselectedGroupAndPresentUnit(t *testing.T) {
+	facts := animeFilesBase()
+	facts.Placements[0].Version = 4
+	facts.Placements[0].DeleteEligible = true
+	row := deriveAnimeFiles(facts).Files[0]
+	if row.PlacementVersion != 4 || !row.Actions.Delete.Available {
+		t.Fatalf("unselected group on a stopped subscription must allow deletion: %+v", row)
+	}
+
+	facts.Placements[0].DeleteEligible = false
+	row = deriveAnimeFiles(facts).Files[0]
+	if row.Actions.Delete.Available || row.Actions.Delete.ReasonCode != AnimeFilesReasonGroupSelected {
+		t.Fatalf("selected or unknown group delete = %+v", row.Actions.Delete)
+	}
+
+	facts.Placements[0].DeleteEligible = true
+	facts.Diffs = []PathDiffView{{PlacementID: "p1", FilePath: "/lib/Show/raw ep1.mkv", Disposition: DispositionMissing}}
+	row = deriveAnimeFiles(facts).Files[0]
+	if row.Actions.Delete.Available || row.Actions.Delete.ReasonCode != AnimeFilesReasonFileUnavailable {
+		t.Fatalf("missing video delete = %+v", row.Actions.Delete)
+	}
+
+	facts.Diffs = []PathDiffView{{
+		PlacementID: "p1", FilePath: "/lib/Show/raw ep1.mkv", Disposition: DispositionPresent,
+		Companions: []CompanionPathDiffView{{ID: "c1", FilePath: "/lib/Show/raw ep1.zh.ass", State: "missing"}},
+	}}
+	row = deriveAnimeFiles(facts).Files[0]
+	if row.Actions.Delete.Available || row.Actions.Delete.ReasonCode != AnimeFilesReasonFileUnavailable {
+		t.Fatalf("missing companion delete = %+v", row.Actions.Delete)
+	}
+}
+
 func TestDeriveAnimeFilesChangedAndNoTarget(t *testing.T) {
 	facts := animeFilesBase()
 	facts.Diffs = []PathDiffView{{PlacementID: "p1", FilePath: "/lib/Show/raw ep1.mkv", Disposition: DispositionFingerprintConflict}}

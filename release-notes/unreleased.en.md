@@ -14,6 +14,7 @@
 - Browse and search poster cards gain a synopsis reader at the top-right: it shows the whole text the source page gives, plus the broadcast weekday, episode count, tags, release format and season that page states; a synopsis containing a [简介原文] marker with content on both sides splits into two tabs, and every other shape stays one block.
 - Subscription policy adds "Release without metadata", off by default: when enabled, subscription releases without a TMDB/BGM match can proceed to download and import, and releases already waiting for metadata are evaluated again immediately; naming still uses only manually entered information.
 - A hardlink that lands on a same-named, same-content file now replaces the target following the overwrite policy, same as a move, instead of being refused; the title parser subprocess's oversized answer is cut off at the cap while it is being read, a restarted parser re-handshakes and checks the protocol, a failing exit closes the leftover process, and an old process's failure no longer brings down a newly adopted parser; a wrong lane value for the parser update channel warns at startup instead of silently using the stable lane.
+- An anime's file menu can now delete imported files from deselected subtitle groups: one confirmation permanently deletes the video and its bound subtitles, while selected groups and custom sources do not offer the action. The former file-recovery workflow has been removed.
 
 ## Improved
 

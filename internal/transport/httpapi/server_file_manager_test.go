@@ -16,22 +16,24 @@ import (
 // fixed result or a typed error. Every path it carries is absolute, the way
 // the real service reads and writes.
 type fakeFileManager struct {
-	err            error
-	path, cursor   string
-	limit          int
-	managedOnly    bool
-	detail         filemanager.Detail
-	located        string
-	operation      filemanager.OperationRequest
-	release        filemanager.ReleaseRequest
-	align          filemanager.AlignRequest
-	matchPreview   filemanager.MatchRequest
-	match          filemanager.SubmitMatchRequest
-	recognition    filemanager.RecognitionRequest
-	recognitionSub filemanager.SubmitRecognitionRequest
-	seasonsFor     string
-	episodesFor    string
-	episodesSeason int
+	err             error
+	path, cursor    string
+	limit           int
+	managedOnly     bool
+	detail          filemanager.Detail
+	located         string
+	operation       filemanager.OperationRequest
+	release         filemanager.ReleaseRequest
+	deletePlacement filemanager.DeletePlacementRequest
+	emptyDelete     bool
+	align           filemanager.AlignRequest
+	matchPreview    filemanager.MatchRequest
+	match           filemanager.SubmitMatchRequest
+	recognition     filemanager.RecognitionRequest
+	recognitionSub  filemanager.SubmitRecognitionRequest
+	seasonsFor      string
+	episodesFor     string
+	episodesSeason  int
 }
 
 func (f *fakeFileManager) PreviewMatch(_ context.Context, request filemanager.MatchRequest) (filemanager.MatchPreview, error) {
@@ -107,6 +109,19 @@ func (f *fakeFileManager) Release(_ context.Context, request filemanager.Release
 		return filemanager.ReleaseOutcome{}, f.err
 	}
 	return filemanager.ReleaseOutcome{ManagedAnimeID: "anime-1", Released: 2}, nil
+}
+
+func (f *fakeFileManager) DeletePlacement(_ context.Context, request filemanager.DeletePlacementRequest) (filemanager.ReleaseOutcome, error) {
+	f.deletePlacement = request
+	if f.err != nil {
+		return filemanager.ReleaseOutcome{}, f.err
+	}
+	if f.emptyDelete {
+		return filemanager.ReleaseOutcome{}, nil
+	}
+	return filemanager.ReleaseOutcome{ManagedAnimeID: "anime-1", Released: 1, Operation: &filemanager.UserOperation{
+		ID: "op-delete", Operation: filemanager.UserDelete, State: filemanager.UserOperationReady, SourcePath: request.Path,
+	}}, nil
 }
 
 func (f *fakeFileManager) Align(_ context.Context, request filemanager.AlignRequest) (filemanager.AlignOutcome, error) {
@@ -360,6 +375,28 @@ func TestFileManagerCommandHandlers(t *testing.T) {
 		`{"path":"/srv/library/a/ep01.mkv","expected_revision":"rev"}`)
 	if recorder.Code != http.StatusOK || body["released_placements"] != float64(2) || service.release.Actor != "web" || service.release.MoveTo != nil {
 		t.Fatalf("release: %d %v", recorder.Code, body)
+	}
+
+	recorder, body = postFileManager(t, service, "/api/v1/placements/placement-1/delete", "key-delete",
+		`{"placement_version":4,"path":"/srv/library/a/ep01.mkv"}`)
+	if recorder.Code != http.StatusAccepted || recorder.Header().Get("Cache-Control") != "no-store" ||
+		service.deletePlacement.IdempotencyKey != "key-delete" || service.deletePlacement.Actor != "web" ||
+		service.deletePlacement.PlacementID != "placement-1" || service.deletePlacement.PlacementVersion != 4 ||
+		service.deletePlacement.Path != "/srv/library/a/ep01.mkv" || body["id"] != "op-delete" || body["operation"] != "delete" {
+		t.Fatalf("delete placement: %d %v %+v", recorder.Code, body, service.deletePlacement)
+	}
+
+	groupSelected := &fakeFileManager{err: &filemanager.Error{Kind: filemanager.ErrorConflict, Code: filemanager.CodeGroupSelected, Message: "selected"}}
+	recorder, body = postFileManager(t, groupSelected, "/api/v1/placements/placement-1/delete", "key-selected",
+		`{"placement_version":4,"path":"/srv/library/a/ep01.mkv"}`)
+	if recorder.Code != http.StatusConflict || body["code"] != filemanager.CodeGroupSelected {
+		t.Fatalf("selected group refusal: %d %v", recorder.Code, body)
+	}
+
+	recorder, body = postFileManager(t, &fakeFileManager{emptyDelete: true}, "/api/v1/placements/placement-1/delete", "key-empty",
+		`{"placement_version":4,"path":"/srv/library/a/ep01.mkv"}`)
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("delete placement without operation: %d %v", recorder.Code, body)
 	}
 
 	recorder, body = postFileManager(t, service, "/api/v1/file-manager/entry/align", "key-3",

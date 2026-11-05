@@ -252,11 +252,6 @@ type FileMaintenanceService interface {
 	// positive-cache re-pull before the alignment is admitted (the adapter
 	// shares the ownership application's re-pull).
 	AlignAnimeFilesWithRefreshApplication(ctx context.Context, animeID string, generation int64, placementIDs []string) (filemaintenance.AnimeFilesAlignResult, error)
-	// RecoverAnimeFileApplication is the explicit recovery confirm: it
-	// re-attaches the user-adopted file at a frozen scan candidate to the
-	// placement that rendered it (with its complete companion unit), after
-	// re-verifying every frozen fact including the caller's token.
-	RecoverAnimeFileApplication(ctx context.Context, animeID string, command filemaintenance.AnimeFileRecoverCommand) (filemaintenance.AnimeFilesRecoverResult, error)
 }
 
 // CandidateFactsService serves the versioned release candidate facts.
@@ -312,6 +307,7 @@ type FileManagerService interface {
 	SubmitOperation(ctx context.Context, request filemanager.OperationRequest) (filemanager.UserOperation, error)
 	Operation(ctx context.Context, id string) (filemanager.UserOperation, error)
 	Release(ctx context.Context, request filemanager.ReleaseRequest) (filemanager.ReleaseOutcome, error)
+	DeletePlacement(ctx context.Context, request filemanager.DeletePlacementRequest) (filemanager.ReleaseOutcome, error)
 	Align(ctx context.Context, request filemanager.AlignRequest) (filemanager.AlignOutcome, error)
 	// Match a detached video to a season and episode, and the TMDB
 	// season lists the match chooses from.

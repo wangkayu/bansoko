@@ -2378,7 +2378,6 @@ const (
 	SubscriptionLogMessageCodeFileAdopted                   SubscriptionLogMessageCode = "file_adopted"
 	SubscriptionLogMessageCodeFileImportFailed              SubscriptionLogMessageCode = "file_import_failed"
 	SubscriptionLogMessageCodeFileImported                  SubscriptionLogMessageCode = "file_imported"
-	SubscriptionLogMessageCodeFileRecovered                 SubscriptionLogMessageCode = "file_recovered"
 	SubscriptionLogMessageCodeFileRetained                  SubscriptionLogMessageCode = "file_retained"
 	SubscriptionLogMessageCodeGroupChanged                  SubscriptionLogMessageCode = "group_changed"
 	SubscriptionLogMessageCodeImportConfigResumed           SubscriptionLogMessageCode = "import_config_resumed"
@@ -3374,13 +3373,15 @@ type AnimeFile struct {
 	Episodes   []string             `json:"episodes"`
 
 	// GroupName Subtitle group of the placement's release: the display name its rss_sources row records, the same value anime.group renders. Empty when the placement names no release. Never derived from the release title.
-	GroupName    *string            `json:"group_name,omitempty"`
-	MediaKind    AnimeFileMediaKind `json:"media_kind"`
-	Path         string             `json:"path"`
-	PlacementId  ID                 `json:"placement_id"`
-	Recovery     *AnimeFileRecovery `json:"recovery,omitempty"`
-	RelativePath string             `json:"relative_path"`
-	ReleaseId    *ID                `json:"release_id,omitempty"`
+	GroupName   *string            `json:"group_name,omitempty"`
+	MediaKind   AnimeFileMediaKind `json:"media_kind"`
+	Path        string             `json:"path"`
+	PlacementId ID                 `json:"placement_id"`
+
+	// PlacementVersion The current placement version; pass it to delete_placement.
+	PlacementVersion int64  `json:"placement_version"`
+	RelativePath     string `json:"relative_path"`
+	ReleaseId        *ID    `json:"release_id,omitempty"`
 
 	// ReleaseTitle Feed title of the placement's release; absent when unknown.
 	ReleaseTitle *string         `json:"release_title,omitempty"`
@@ -3410,7 +3411,7 @@ type AnimeFileAction struct {
 // AnimeFileActions defines model for AnimeFileActions.
 type AnimeFileActions struct {
 	Align   AnimeFileAction `json:"align"`
-	Recover AnimeFileAction `json:"recover"`
+	Delete  AnimeFileAction `json:"delete"`
 	Release AnimeFileAction `json:"release"`
 	Rerun   AnimeFileAction `json:"rerun"`
 }
@@ -3443,61 +3444,6 @@ type AnimeFileCompanionMediaKind string
 
 // AnimeFileCompanionStatus defines model for AnimeFileCompanion.Status.
 type AnimeFileCompanionStatus string
-
-// AnimeFileRecoverInput defines model for AnimeFileRecoverInput.
-type AnimeFileRecoverInput struct {
-	// Fingerprint The metadata fingerprint the caller read (AnimeFile.recovery.fingerprint); a mismatch answers target_changed.
-	Fingerprint string `json:"fingerprint"`
-
-	// Generation The scan generation the caller read (AnimeFile.recovery.generation); a newer generation answers scan_changed.
-	Generation  int64 `json:"generation"`
-	PlacementId ID    `json:"placement_id"`
-
-	// PlacementVersion The placement row version the caller read (AnimeFile.recovery.placement_version); a mismatch answers placement_changed.
-	PlacementVersion int64 `json:"placement_version"`
-
-	// TargetPath The rendered target the caller read (AnimeFile.recovery.target_path); a mismatch answers target_changed.
-	TargetPath string `json:"target_path"`
-}
-
-// AnimeFileRecoverResult defines model for AnimeFileRecoverResult.
-type AnimeFileRecoverResult struct {
-	// Companions Companion files re-attached with the video (a missing companion would have refused the confirm).
-	Companions int `json:"companions"`
-
-	// Generation The confirmed candidate's scan generation.
-	Generation  int64      `json:"generation"`
-	PlacementId ID         `json:"placement_id"`
-	RecoveredAt *time.Time `json:"recovered_at,omitempty"`
-
-	// Replay True when this confirm had already committed; the same result replays.
-	Replay bool `json:"replay"`
-
-	// TargetPath The path the file now owns (the candidate's rendered target).
-	TargetPath string `json:"target_path"`
-}
-
-// AnimeFileRecovery defines model for AnimeFileRecovery.
-type AnimeFileRecovery struct {
-	// Companions Companion files frozen with the candidate. The confirm succeeds only when every companion still sits at its frozen path; if one is missing or changed, nothing is recovered.
-	Companions int `json:"companions"`
-
-	// Fingerprint Metadata fingerprint the scan observed at the target; pass it to the recover endpoint.
-	Fingerprint string `json:"fingerprint"`
-
-	// Generation The scan generation that froze the candidate; pass it to the recover endpoint.
-	Generation int64 `json:"generation"`
-
-	// PlacementVersion The placement row version frozen with the candidate; pass it to the recover endpoint.
-	PlacementVersion int64 `json:"placement_version"`
-	SizeBytes        int64 `json:"size_bytes"`
-
-	// TargetPath The rendered target where the scan found the complete file group.
-	TargetPath string `json:"target_path"`
-
-	// TargetRelativePath target_path relative to the view root; display this instead of composing a path on the client.
-	TargetRelativePath string `json:"target_relative_path"`
-}
 
 // AnimeFilesAlignInput defines model for AnimeFilesAlignInput.
 type AnimeFilesAlignInput struct {
@@ -4442,6 +4388,15 @@ type CustomSnapshotFetchInput struct {
 	CandidateId     ID      `json:"candidate_id"`
 	ExpectedVersion Version `json:"expected_version"`
 	Revision        Version `json:"revision"`
+}
+
+// DeletePlacementRequest defines model for DeletePlacementRequest.
+type DeletePlacementRequest struct {
+	// Path The video's current absolute path read from AnimeFile.path.
+	Path string `json:"path"`
+
+	// PlacementVersion The placement row version read from AnimeFile.placement_version.
+	PlacementVersion int64 `json:"placement_version"`
 }
 
 // DeploymentIdentity defines model for DeploymentIdentity.
@@ -10280,6 +10235,11 @@ type ListPlacementIssuesParams struct {
 	ManagedAnimeId ID `form:"managed_anime_id" json:"managed_anime_id"`
 }
 
+// DeletePlacementParams defines parameters for DeletePlacement.
+type DeletePlacementParams struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
 // RedownloadPlacementParams defines parameters for RedownloadPlacement.
 type RedownloadPlacementParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
@@ -10407,9 +10367,6 @@ type DuplicateAnimeSubscriptionJSONRequestBody = SubscriptionDuplicateInput
 
 // AlignAnimeFilesJSONRequestBody defines body for AlignAnimeFiles for application/json ContentType.
 type AlignAnimeFilesJSONRequestBody = AnimeFilesAlignInput
-
-// RecoverAnimeFileJSONRequestBody defines body for RecoverAnimeFile for application/json ContentType.
-type RecoverAnimeFileJSONRequestBody = AnimeFileRecoverInput
 
 // CleanupAnimeLocalDataJSONRequestBody defines body for CleanupAnimeLocalData for application/json ContentType.
 type CleanupAnimeLocalDataJSONRequestBody = LocalDataCleanup
@@ -10581,6 +10538,9 @@ type ParseReleaseTitleJSONRequestBody = ParseReleaseTitleInput
 
 // ParseTorrentFilesJSONRequestBody defines body for ParseTorrentFiles for application/json ContentType.
 type ParseTorrentFilesJSONRequestBody = ParseTorrentFilesInput
+
+// DeletePlacementJSONRequestBody defines body for DeletePlacement for application/json ContentType.
+type DeletePlacementJSONRequestBody = DeletePlacementRequest
 
 // CreatePluginTargetJSONRequestBody defines body for CreatePluginTarget for application/json ContentType.
 type CreatePluginTargetJSONRequestBody = PluginTargetCreate
@@ -12536,9 +12496,6 @@ type ServerInterface interface {
 	// (POST /anime/{managed_anime_id}/files/align)
 	AlignAnimeFiles(w http.ResponseWriter, r *http.Request, managedAnimeId ManagedAnimeID)
 
-	// (POST /anime/{managed_anime_id}/files/recover)
-	RecoverAnimeFile(w http.ResponseWriter, r *http.Request, managedAnimeId ManagedAnimeID)
-
 	// (DELETE /anime/{managed_anime_id}/local-data)
 	CleanupAnimeLocalData(w http.ResponseWriter, r *http.Request, managedAnimeId ManagedAnimeID, params CleanupAnimeLocalDataParams)
 
@@ -12964,6 +12921,9 @@ type ServerInterface interface {
 
 	// (GET /placements/issues)
 	ListPlacementIssues(w http.ResponseWriter, r *http.Request, params ListPlacementIssuesParams)
+
+	// (POST /placements/{placement_id}/delete)
+	DeletePlacement(w http.ResponseWriter, r *http.Request, placementId ID, params DeletePlacementParams)
 
 	// (POST /placements/{placement_id}/redownload)
 	RedownloadPlacement(w http.ResponseWriter, r *http.Request, placementId ID, params RedownloadPlacementParams)
@@ -14045,37 +14005,6 @@ func (siw *ServerInterfaceWrapper) AlignAnimeFiles(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AlignAnimeFiles(w, r, managedAnimeId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// RecoverAnimeFile operation middleware
-func (siw *ServerInterfaceWrapper) RecoverAnimeFile(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-
-	// ------------- Path parameter "managed_anime_id" -------------
-	var managedAnimeId ManagedAnimeID
-
-	err = runtime.BindStyledParameterWithOptions("simple", "managed_anime_id", r.PathValue("managed_anime_id"), &managedAnimeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "managed_anime_id", Err: err})
-		return
-	}
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
-
-	r = r.WithContext(ctx)
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.RecoverAnimeFile(w, r, managedAnimeId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -18915,6 +18844,65 @@ func (siw *ServerInterfaceWrapper) ListPlacementIssues(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// DeletePlacement operation middleware
+func (siw *ServerInterfaceWrapper) DeletePlacement(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "placement_id" -------------
+	var placementId ID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "placement_id", r.PathValue("placement_id"), &placementId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "placement_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeletePlacementParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeletePlacement(w, r, placementId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // RedownloadPlacement operation middleware
 func (siw *ServerInterfaceWrapper) RedownloadPlacement(w http.ResponseWriter, r *http.Request) {
 
@@ -20323,7 +20311,6 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("POST "+options.BaseURL+"/anime/{managed_anime_id}/duplicate", wrapper.DuplicateAnimeSubscription)
 	m.HandleFunc("GET "+options.BaseURL+"/anime/{managed_anime_id}/files", wrapper.ListAnimeFiles)
 	m.HandleFunc("POST "+options.BaseURL+"/anime/{managed_anime_id}/files/align", wrapper.AlignAnimeFiles)
-	m.HandleFunc("POST "+options.BaseURL+"/anime/{managed_anime_id}/files/recover", wrapper.RecoverAnimeFile)
 	m.HandleFunc("DELETE "+options.BaseURL+"/anime/{managed_anime_id}/local-data", wrapper.CleanupAnimeLocalData)
 	m.HandleFunc("PATCH "+options.BaseURL+"/anime/{managed_anime_id}/metadata", wrapper.PatchAnimeMetadata)
 	m.HandleFunc("POST "+options.BaseURL+"/anime/{managed_anime_id}/metadata/match", wrapper.MatchAnimeMetadata)
@@ -20466,6 +20453,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("POST "+options.BaseURL+"/parse/torrent-files", wrapper.ParseTorrentFiles)
 	m.HandleFunc("GET "+options.BaseURL+"/parser-catalog", wrapper.ListParserCatalog)
 	m.HandleFunc("GET "+options.BaseURL+"/placements/issues", wrapper.ListPlacementIssues)
+	m.HandleFunc("POST "+options.BaseURL+"/placements/{placement_id}/delete", wrapper.DeletePlacement)
 	m.HandleFunc("POST "+options.BaseURL+"/placements/{placement_id}/redownload", wrapper.RedownloadPlacement)
 	m.HandleFunc("POST "+options.BaseURL+"/placements/{placement_id}/release", wrapper.ReleasePlacement)
 	m.HandleFunc("GET "+options.BaseURL+"/plugin-deliveries", wrapper.ListPluginDeliveries)

@@ -15,6 +15,7 @@ const available = { available: true };
 function fileRow(overrides: Partial<AnimeFile>): AnimeFile {
   return {
     placement_id: "p-1",
+    placement_version: 7,
     release_id: "r-1",
     media_kind: "tv",
     episodes: ["1"],
@@ -22,7 +23,7 @@ function fileRow(overrides: Partial<AnimeFile>): AnimeFile {
     relative_path: "Show/EP 01.mkv",
     size_bytes: 1024,
     status: "aligned",
-    actions: { align: notApplicable("nothing_to_align"), rerun: notApplicable("file_not_missing"), release: notApplicable("file_not_missing"), recover: notApplicable("nothing_to_recover") },
+    actions: { align: notApplicable("nothing_to_align"), rerun: notApplicable("file_not_missing"), release: notApplicable("file_not_missing"), delete: notApplicable("group_selected") },
     companions: [],
     ...overrides,
   };
@@ -134,7 +135,7 @@ describe("AnimeFilesDialog", () => {
       relative_path: "Show/EP 02.mkv",
       status: "misaligned",
       target_relative_path: "Show/Season 01/Show - E02.mkv",
-      actions: { align: available, rerun: notApplicable("file_not_missing"), release: notApplicable("file_not_missing"), recover: notApplicable("nothing_to_recover") },
+      actions: { align: available, rerun: notApplicable("file_not_missing"), release: notApplicable("file_not_missing"), delete: notApplicable("group_selected") },
       companions: [{ id: "c-1", media_kind: "subtitle", path: "/library/Show/EP 02.ass", relative_path: "Show/EP 02.ass", size_bytes: 10, status: "misaligned", target_relative_path: "Show/Season 01/Show - E02.ass" }],
     });
     const missing = fileRow({ placement_id: "p-3", group_name: "GroupA", relative_path: "Show/EP 03.mkv", status: "missing" });
@@ -202,7 +203,7 @@ describe("AnimeFilesDialog", () => {
   it("aligns one row with the read generation, and reports a refusal through the reason catalog", async () => {
     const posts: { url: string; body: unknown }[] = [];
     let denied = false;
-    const misaligned = fileRow({ status: "misaligned", target_relative_path: "Show/Season 01/Show - E01.mkv", actions: { align: available, rerun: notApplicable("file_not_missing"), release: notApplicable("file_not_missing"), recover: notApplicable("nothing_to_recover") } });
+    const misaligned = fileRow({ status: "misaligned", target_relative_path: "Show/Season 01/Show - E01.mkv", actions: { align: available, rerun: notApplicable("file_not_missing"), release: notApplicable("file_not_missing"), delete: notApplicable("group_selected") } });
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith("/files/align") && init?.method === "POST") {
@@ -228,7 +229,7 @@ describe("AnimeFilesDialog", () => {
   });
 
   it("re-runs a missing file through release retry and shows the denial reason", async () => {
-    const missing = fileRow({ status: "missing", actions: { align: notApplicable("nothing_to_align"), rerun: available, release: available, recover: notApplicable("nothing_to_recover") } });
+    const missing = fileRow({ status: "missing", actions: { align: notApplicable("nothing_to_align"), rerun: available, release: available, delete: notApplicable("group_selected") } });
     const posts: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -250,7 +251,7 @@ describe("AnimeFilesDialog", () => {
   });
 
   it("disables an unavailable action with its reason and hides actions when read-only", async () => {
-    const missing = fileRow({ status: "changed", actions: { align: notApplicable("nothing_to_align"), rerun: notApplicable("owner_retired"), release: notApplicable("owner_retired"), recover: notApplicable("nothing_to_recover") } });
+    const missing = fileRow({ status: "changed", actions: { align: notApplicable("nothing_to_align"), rerun: notApplicable("owner_retired"), release: notApplicable("owner_retired"), delete: notApplicable("group_selected") } });
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(filesView([missing]))));
     const first = renderFiles();
     const rerun = await screen.findByRole("button", { name: t("tabs.files.rerun") });
@@ -264,174 +265,80 @@ describe("AnimeFilesDialog", () => {
     expect(screen.queryByRole("button", { name: t("tabs.files.scan") })).toBeNull();
   });
 
-  it("shows the recovered target inline as a library-relative hint", async () => {
-    const missing = fileRow({
-      status: "missing",
-      recovery: { generation: 3, target_path: "/library/Show/Season 01/Show - E01.mkv", target_relative_path: "Show/Season 01/Show - E01.mkv", size_bytes: 4096, placement_version: 7, fingerprint: "meta:size=4096", companions: 0 },
-      actions: { align: notApplicable("nothing_to_align"), rerun: available, release: available, recover: available },
-    });
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(filesView([missing]))));
-    renderFiles();
-
-    const list = await screen.findByRole("list", { name: t("tabs.files.title") });
-    // The row says what the scan found and where, using the relative path the
-    // server computed: the browser never assembles an absolute path itself.
-    expect(
-      within(list).getByText(t("policy.fileEffect.recoverFound", { path: "Show/Season 01/Show - E01.mkv" })),
-    ).toBeInTheDocument();
-    expect(within(list).queryByText(/\/library\//)).toBeNull();
-  });
-
-  it("recovers with the full frozen token, closes only on success and rescans", async () => {
-    const recoverPosts: { url: string; body: unknown }[] = [];
-    const scanPosts: unknown[] = [];
-    const missing = fileRow({
-      status: "missing",
-      recovery: { generation: 3, target_path: "/library/Show/Season 01/Show - E01.mkv", target_relative_path: "Show/Season 01/Show - E01.mkv", size_bytes: 4096, placement_version: 7, fingerprint: "meta:size=4096", companions: 1 },
-      actions: { align: notApplicable("nothing_to_align"), rerun: available, release: available, recover: available },
+  it("deletes the whole bound unit with one confirmed placement command", async () => {
+    const deletePosts: { url: string; body: unknown; key?: string }[] = [];
+    const onChanged = vi.fn();
+    const imported = fileRow({
+      actions: { align: notApplicable("nothing_to_align"), rerun: notApplicable("file_not_missing"), release: notApplicable("file_not_missing"), delete: available },
+      companions: [{ id: "c-1", media_kind: "subtitle", path: "/library/Show/EP 01.zh.ass", relative_path: "Show/EP 01.zh.ass", size_bytes: 10, status: "aligned" }],
     });
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.endsWith("/files/recover") && init?.method === "POST") {
-        recoverPosts.push({ url, body: JSON.parse(String(init.body)) });
-        return jsonResponse({ placement_id: "p-1", generation: 3, target_path: "/library/Show/Season 01/Show - E01.mkv", replay: false, companions: 1 }, 200);
+      if (url.endsWith("/placements/p-1/delete") && init?.method === "POST") {
+        deletePosts.push({ url, body: JSON.parse(String(init.body)), key: init.headers && new Headers(init.headers).get("Idempotency-Key") || undefined });
+        return jsonResponse({ id: "op-delete", operation: "delete", state: "ready", version: 1 }, 202);
       }
-      // The real client POSTs /reconciliation/scans (no per-anime path suffix).
-      if (url.endsWith("/reconciliation/scans") && init?.method === "POST") {
-        scanPosts.push(JSON.parse(String(init.body)));
-        return jsonResponse({ state: "running", generation: 4 }, 202);
-      }
-      return jsonResponse(filesView([missing]));
+      return jsonResponse(filesView([imported]));
     }));
-    renderFiles();
+    renderFiles({ onChanged });
 
     const list = await screen.findByRole("list", { name: t("tabs.files.title") });
-    fireEvent.click(within(list).getByRole("button", { name: t("policy.fileEffect.recover") }));
-    await screen.findByRole("dialog");
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: t("policy.fileEffect.recover") }));
-    await waitFor(() => expect(recoverPosts).toHaveLength(1));
-    expect(recoverPosts[0]!.body).toEqual({
-      placement_id: "p-1",
-      generation: 3,
-      target_path: "/library/Show/Season 01/Show - E01.mkv",
-      fingerprint: "meta:size=4096",
-      placement_version: 7,
+    fireEvent.click(within(list).getByRole("button", { name: t("policy.fileEffect.delete") }));
+    const confirm = await screen.findByRole("dialog", { name: t("policy.fileEffect.deleteConfirmTitle") });
+    expect(confirm).toHaveTextContent(t("policy.fileEffect.deleteConfirmBody"));
+    expect(confirm).toHaveTextContent("/library/Show/EP 01.mkv");
+    expect(confirm).toHaveTextContent(t("policy.fileEffect.deleteCompanions", { n: 1 }));
+    fireEvent.click(within(confirm).getByRole("button", { name: t("policy.fileEffect.deleteConfirm") }));
+
+    await waitFor(() => expect(deletePosts).toHaveLength(1));
+    expect(deletePosts[0]).toMatchObject({
+      url: expect.stringContaining("/placements/p-1/delete"),
+      body: { placement_version: 7, path: "/library/Show/EP 01.mkv" },
     });
-    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith(t("policy.fileEffect.recovered")));
-    // The confirm dialog (recovery target line) closes after the success;
-    // only the outer files dialog remains.
-    await waitFor(() => expect(screen.queryByText(t("policy.fileEffect.recoverTarget", { path: "/library/Show/Season 01/Show - E01.mkv" }))).toBeNull());
-    // The success path triggers exactly one full rescan for the anime, and the
-    // row is released (no stuck recover busy).
-    await waitFor(() => expect(scanPosts).toHaveLength(1));
-    expect(scanPosts[0]).toMatchObject({ managed_anime_id: "anime-1", trigger: "manual" });
-    expect(within(list).getByRole("button", { name: t("policy.fileEffect.recover") })).toBeEnabled();
+    expect(deletePosts[0]!.key).toBeTruthy();
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith(t("policy.fileEffect.deleteSubmitted")));
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: t("policy.fileEffect.deleteConfirmTitle") })).toBeNull());
   });
 
-  it("keeps the recover dialog open with the typed reason on a refusal", async () => {
-    const recoverPosts: number[] = [];
-    const scanPosts: unknown[] = [];
-    const missing = fileRow({
-      status: "missing",
-      recovery: { generation: 3, target_path: "/library/Show/Season 01/Show - E01.mkv", target_relative_path: "Show/Season 01/Show - E01.mkv", size_bytes: 4096, placement_version: 7, fingerprint: "meta:size=4096", companions: 0 },
-      actions: { align: notApplicable("nothing_to_align"), rerun: available, release: available, recover: available },
+  it("offers deletion only for an eligible group and disables an incomplete unit", async () => {
+    const selected = fileRow({});
+    const missingSubtitle = fileRow({
+      placement_id: "p-2",
+      actions: { align: notApplicable("nothing_to_align"), rerun: notApplicable("file_not_missing"), release: notApplicable("file_not_missing"), delete: notApplicable("file_unavailable") },
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(filesView([selected]))));
+    const first = renderFiles();
+    const list = await screen.findByRole("list", { name: t("tabs.files.title") });
+    expect(within(list).queryByRole("button", { name: t("policy.fileEffect.delete") })).toBeNull();
+    first.unmount();
+
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(filesView([missingSubtitle]))));
+    renderFiles();
+    const unavailable = await screen.findByRole("button", { name: t("policy.fileEffect.delete") });
+    expect(unavailable).toBeDisabled();
+    expect(unavailable).toHaveAttribute("title", reasonLabel("file_unavailable"));
+  });
+
+  it("keeps deletion open when the group was selected again after the menu read", async () => {
+    const onChanged = vi.fn();
+    const imported = fileRow({
+      actions: { align: notApplicable("nothing_to_align"), rerun: notApplicable("file_not_missing"), release: notApplicable("file_not_missing"), delete: available },
     });
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.endsWith("/files/recover") && init?.method === "POST") {
-        recoverPosts.push(1);
-        return jsonResponse({ code: "ANIME_FILES_RECOVER_REFUSED", message: "x", details: [{ code: "target_changed", message: "x" }] }, 409);
+      if (String(input).endsWith("/placements/p-1/delete") && init?.method === "POST") {
+        return jsonResponse({ code: "FILE_MANAGER_GROUP_SELECTED", message: "selected" }, 409);
       }
-      if (url.endsWith("/reconciliation/scans") && init?.method === "POST") {
-        scanPosts.push(JSON.parse(String(init.body)));
-        return jsonResponse({ state: "running", generation: 4 }, 202);
-      }
-      return jsonResponse(filesView([missing]));
+      return jsonResponse(filesView([imported]));
     }));
-    renderFiles();
+    renderFiles({ onChanged });
 
     const list = await screen.findByRole("list", { name: t("tabs.files.title") });
-    fireEvent.click(within(list).getByRole("button", { name: t("policy.fileEffect.recover") }));
-    await screen.findByRole("dialog");
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: t("policy.fileEffect.recover") }));
-    await waitFor(() => expect(recoverPosts).toHaveLength(1));
-    expect(await screen.findByRole("dialog")).toHaveTextContent(reasonLabel("target_changed") ?? "");
+    fireEvent.click(within(list).getByRole("button", { name: t("policy.fileEffect.delete") }));
+    const confirm = await screen.findByRole("dialog", { name: t("policy.fileEffect.deleteConfirmTitle") });
+    fireEvent.click(within(confirm).getByRole("button", { name: t("policy.fileEffect.deleteConfirm") }));
+    expect(await within(confirm).findByRole("alert")).toHaveTextContent(reasonLabel("group_selected") ?? "");
     expect(toastMock.success).not.toHaveBeenCalled();
-    // A refusal never triggers the follow-up scan.
-    expect(scanPosts).toHaveLength(0);
-  });
-
-  it("shows the server-projected relative target in the recover dialog", async () => {
-    const missing = fileRow({
-      status: "missing",
-      recovery: { generation: 3, target_path: "/library/Show/Season 01/Show - E01.mkv", target_relative_path: "Show/Season 01/Show - E01.mkv", size_bytes: 4096, placement_version: 7, fingerprint: "meta:size=4096", companions: 0 },
-      actions: { align: notApplicable("nothing_to_align"), rerun: available, release: available, recover: available },
-    });
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(filesView([missing]))));
-    renderFiles();
-
-    const list = await screen.findByRole("list", { name: t("tabs.files.title") });
-    fireEvent.click(within(list).getByRole("button", { name: t("policy.fileEffect.recover") }));
-    const dialog = await screen.findByRole("dialog");
-    // The contract projects the target relative to the library root; the
-    // dialog must render that projection and never compose/reveal an absolute
-    // path of its own.
-    expect(within(dialog).getByText(t("policy.fileEffect.recoverTarget", { path: "Show/Season 01/Show - E01.mkv" }))).toBeTruthy();
-    expect(within(dialog).queryByText(/\/library\//)).toBeNull();
-  });
-
-  it("clears a previous refusal reason when the dialog is reopened", async () => {
-    const recoverPosts: number[] = [];
-    let refused = true;
-    const missing = fileRow({
-      status: "missing",
-      recovery: { generation: 3, target_path: "/library/Show/Season 01/Show - E01.mkv", target_relative_path: "Show/Season 01/Show - E01.mkv", size_bytes: 4096, placement_version: 7, fingerprint: "meta:size=4096", companions: 0 },
-      actions: { align: notApplicable("nothing_to_align"), rerun: available, release: available, recover: available },
-    });
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.endsWith("/files/recover") && init?.method === "POST") {
-        recoverPosts.push(1);
-        if (refused) {
-          return jsonResponse({ code: "ANIME_FILES_RECOVER_REFUSED", message: "x", details: [{ code: "target_changed", message: "x" }] }, 409);
-        }
-        return jsonResponse({ placement_id: "p-1", generation: 3, target_path: "/library/Show/Season 01/Show - E01.mkv", replay: false, companions: 0 }, 200);
-      }
-      if (url.endsWith("/reconciliation/scans") && init?.method === "POST") {
-        return jsonResponse({ state: "running", generation: 4 }, 202);
-      }
-      return jsonResponse(filesView([missing]));
-    }));
-    renderFiles();
-
-    const list = await screen.findByRole("list", { name: t("tabs.files.title") });
-    // First attempt: refused, the reason stays inline.
-    fireEvent.click(within(list).getByRole("button", { name: t("policy.fileEffect.recover") }));
-    await screen.findByRole("dialog");
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: t("policy.fileEffect.recover") }));
-    await waitFor(() => expect(recoverPosts).toHaveLength(1));
-    expect(await screen.findByRole("dialog")).toHaveTextContent(reasonLabel("target_changed") ?? "");
-
-    // Close and reopen: the stale refusal must not greet the user again. The
-    // files dialog stays mounted, so the recover confirm is the innermost one.
-    const recoverDialog = () => {
-      const dialogs = screen.getAllByRole("dialog");
-      return dialogs[dialogs.length - 1]!;
-    };
-    fireEvent.click(within(recoverDialog()).getByRole("button", { name: t("act.cancel") }));
-    await waitFor(() =>
-      expect(screen.queryByText(t("policy.fileEffect.recoverConfirmBody"))).toBeNull(),
-    );
-    fireEvent.click(within(list).getByRole("button", { name: t("policy.fileEffect.recover") }));
-    await waitFor(() =>
-      expect(screen.queryByText(t("policy.fileEffect.recoverConfirmBody"))).not.toBeNull(),
-    );
-    expect(recoverDialog()).not.toHaveTextContent(reasonLabel("target_changed") ?? "");
-
-    // And a subsequent success works from a clean slate.
-    refused = false;
-    fireEvent.click(within(recoverDialog()).getByRole("button", { name: t("policy.fileEffect.recover") }));
-    await waitFor(() => expect(recoverPosts).toHaveLength(2));
-    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith(t("policy.fileEffect.recovered")));
+    expect(onChanged).not.toHaveBeenCalled();
   });
 });

@@ -1086,24 +1086,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/anime/{managed_anime_id}/files/recover": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** @description The explicit recovery confirm of a scan alignment recovery candidate. The scan froze the candidate (the placement's current and provenance locators were all missing, while the COMPLETE file group — video and every companion — was found at the paths the current naming rules render, free of other owners); this confirm re-verifies every frozen fact inside one transaction — the file still sits at the target with the observed size and identity, EVERY companion still sits at its frozen path with its frozen identity, and no other file owns any unit path — and then re-attaches the placement AND its companions to those paths together. A single missing or changed companion refuses the whole confirm (companion_missing / companion_occupied) and nothing is re-attached. No byte is moved, copied, overwritten or deleted; only ownership rows re-point. Replaying the same confirm returns the same result without a second journal entry. A refusal is 409 ANIME_FILES_RECOVER_REFUSED with details[0].code one of `owner_retired`, `not_started`, `candidate_gone`, `scan_changed`, `scan_running`, `placement_changed`, `target_missing`, `target_changed`, `target_occupied`, `companion_missing`, `companion_occupied` or `placement_handoff_pending`.
-         *      */
-        post: operations["recoverAnimeFile"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/file-maintenance/decisions": {
         parameters: {
             query?: never;
@@ -1184,6 +1166,23 @@ export interface paths {
         put?: never;
         /** @description Releases one active placement whose latest scan observation is `missing` or `fingerprint_conflict` (the `released` terminal): every active placement row of the instance at its path is released, their companion relations end, files stay where they are, and the episode is no longer covered. A placement that is not active or whose file is not missing or mismatched answers 409 PLACEMENT_EXIT_UNAVAILABLE with the reason in details[0].code. Replaying the same Idempotency-Key returns the first result. */
         post: operations["releasePlacement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/placements/{placement_id}/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description A single owner command that releases one eligible placement and admits deletion of its video and every active bound companion in one transaction. Eligibility uses the release's stable provider/group identity and requires effective_selected=false; the display name is never authorization evidence. A changed placement, path, companion set, selected group, or another active placement at the same path refuses the whole command. Replaying the same Idempotency-Key returns the video's original delete operation even after the files are gone. */
+        post: operations["deletePlacement"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3974,7 +3973,7 @@ export interface components {
          * @description The message of a business journal entry in the closed catalog the server registers per entry kind (published to the frontend as a generated artifact). The client renders the text from the code and message_params; entries carry no display text.
          * @enum {string}
          */
-        SubscriptionLogMessageCode: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "rules_changed" | "episode_offset_changed" | "rss_new_content" | "release_batch_first" | "release_batch_reevaluated" | "release_discovered" | "release_waiting_metadata" | "release_subscription_stopped" | "release_source_unavailable" | "release_parse_failed" | "release_accepted" | "release_filtered" | "release_adopted_existing" | "release_acquisition_failed" | "release_submitted" | "release_awaiting_competition" | "release_resume_baseline" | "release_start_baseline" | "download_submitted" | "download_completed" | "download_removed" | "download_group_not_allowed" | "download_cancelled" | "download_failed" | "artifact_verified" | "import_waiting_binding_bgm" | "import_waiting_binding_tmdb" | "import_waiting_template_variable" | "import_config_resumed" | "file_imported" | "file_adopted" | "file_retained" | "file_import_failed" | "acquisition_succeeded" | "acquisition_failed" | "acquisition_cancelled" | "replacement_kept_existing" | "replacement_kept_all" | "replacement_blocked" | "replacement_replaced" | "replacement_not_replaced" | "placement_released" | "unknown_file_released" | "placement_recorded" | "file_recovered" | "placement_displaced" | "placements_excluded" | "offset_aligned" | "old_version_deleted" | "old_version_kept" | "old_version_delete_failed";
+        SubscriptionLogMessageCode: "subscription_created" | "subscription_started" | "subscription_stopped" | "subscription_resumed" | "metadata_applied" | "group_changed" | "rules_changed" | "episode_offset_changed" | "rss_new_content" | "release_batch_first" | "release_batch_reevaluated" | "release_discovered" | "release_waiting_metadata" | "release_subscription_stopped" | "release_source_unavailable" | "release_parse_failed" | "release_accepted" | "release_filtered" | "release_adopted_existing" | "release_acquisition_failed" | "release_submitted" | "release_awaiting_competition" | "release_resume_baseline" | "release_start_baseline" | "download_submitted" | "download_completed" | "download_removed" | "download_group_not_allowed" | "download_cancelled" | "download_failed" | "artifact_verified" | "import_waiting_binding_bgm" | "import_waiting_binding_tmdb" | "import_waiting_template_variable" | "import_config_resumed" | "file_imported" | "file_adopted" | "file_retained" | "file_import_failed" | "acquisition_succeeded" | "acquisition_failed" | "acquisition_cancelled" | "replacement_kept_existing" | "replacement_kept_all" | "replacement_blocked" | "replacement_replaced" | "replacement_not_replaced" | "placement_released" | "unknown_file_released" | "placement_recorded" | "placement_displaced" | "placements_excluded" | "offset_aligned" | "old_version_deleted" | "old_version_kept" | "old_version_delete_failed";
         /** @description Scalar values the message interpolates. Each message declares its params; an optional param is absent rather than empty. */
         SubscriptionLogMessageParams: {
             /** @description Torrent name the downloader reports. */
@@ -7503,6 +7502,15 @@ export interface components {
             /** @description Placement rows released at the path (the owner row and its scan projections). */
             released: number;
         };
+        DeletePlacementRequest: {
+            /**
+             * Format: int64
+             * @description The placement row version read from AnimeFile.placement_version.
+             */
+            placement_version: number;
+            /** @description The video's current absolute path read from AnimeFile.path. */
+            path: string;
+        };
         AnimeFileAction: {
             available: boolean;
             /** @description Why the action is unavailable (a reason code, shown through the copy catalog). */
@@ -7532,11 +7540,16 @@ export interface components {
             align: components["schemas"]["AnimeFileAction"];
             rerun: components["schemas"]["AnimeFileAction"];
             release: components["schemas"]["AnimeFileAction"];
-            /** @description Confirm the recovery of the file the scan found at the rendered target (row has `recovery`). Unavailable with nothing_to_recover when the scan froze no candidate for the row. */
-            recover: components["schemas"]["AnimeFileAction"];
+            /** @description Delete the video and its bound subtitles when its release's stable subtitle group is no longer selected. Unavailable with group_selected or file_unavailable. */
+            delete: components["schemas"]["AnimeFileAction"];
         };
         AnimeFile: {
             placement_id: components["schemas"]["ID"];
+            /**
+             * Format: int64
+             * @description The current placement version; pass it to delete_placement.
+             */
+            placement_version: number;
             release_id?: components["schemas"]["ID"];
             /** @description Subtitle group of the placement's release: the display name its rss_sources row records, the same value anime.group renders. Empty when the placement names no release. Never derived from the release title. */
             group_name?: string;
@@ -7556,32 +7569,8 @@ export interface components {
             target_path?: string;
             target_relative_path?: string;
             alignment?: components["schemas"]["AnimeFileAlignment"];
-            /** @description The frozen recovery candidate when the latest scan found the file's rendered target missing and observed a file exactly there. Present only then; the confirm action acts on it. */
-            recovery?: components["schemas"]["AnimeFileRecovery"];
             actions: components["schemas"]["AnimeFileActions"];
             companions: components["schemas"]["AnimeFileCompanion"][];
-        };
-        AnimeFileRecovery: {
-            /**
-             * Format: int64
-             * @description The scan generation that froze the candidate; pass it to the recover endpoint.
-             */
-            generation: number;
-            /** @description The rendered target where the scan found the complete file group. */
-            target_path: string;
-            /** @description target_path relative to the view root; display this instead of composing a path on the client. */
-            target_relative_path: string;
-            /** Format: int64 */
-            size_bytes: number;
-            /**
-             * Format: int64
-             * @description The placement row version frozen with the candidate; pass it to the recover endpoint.
-             */
-            placement_version: number;
-            /** @description Metadata fingerprint the scan observed at the target; pass it to the recover endpoint. */
-            fingerprint: string;
-            /** @description Companion files frozen with the candidate. The confirm succeeds only when every companion still sits at its frozen path; if one is missing or changed, nothing is recovered. */
-            companions: number;
         };
         AnimeFilesScan: {
             /** @enum {string} */
@@ -7626,40 +7615,6 @@ export interface components {
             generation: number;
             /** @description Alignment operations newly admitted (files and bound subtitles). */
             admitted: number;
-        };
-        AnimeFileRecoverInput: {
-            /** @description The file row whose frozen recovery candidate is confirmed (AnimeFile.placement_id). */
-            placement_id: components["schemas"]["ID"];
-            /**
-             * Format: int64
-             * @description The scan generation the caller read (AnimeFile.recovery.generation); a newer generation answers scan_changed.
-             */
-            generation: number;
-            /** @description The rendered target the caller read (AnimeFile.recovery.target_path); a mismatch answers target_changed. */
-            target_path: string;
-            /** @description The metadata fingerprint the caller read (AnimeFile.recovery.fingerprint); a mismatch answers target_changed. */
-            fingerprint: string;
-            /**
-             * Format: int64
-             * @description The placement row version the caller read (AnimeFile.recovery.placement_version); a mismatch answers placement_changed.
-             */
-            placement_version: number;
-        };
-        AnimeFileRecoverResult: {
-            placement_id: components["schemas"]["ID"];
-            /**
-             * Format: int64
-             * @description The confirmed candidate's scan generation.
-             */
-            generation: number;
-            /** @description The path the file now owns (the candidate's rendered target). */
-            target_path: string;
-            /** Format: date-time */
-            recovered_at?: string;
-            /** @description True when this confirm had already committed; the same result replays. */
-            replay: boolean;
-            /** @description Companion files re-attached with the video (a missing companion would have refused the confirm). */
-            companions: number;
         };
         CompanionIssueView: {
             video_path: string;
@@ -10568,36 +10523,6 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
-    recoverAnimeFile: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                managed_anime_id: components["parameters"]["ManagedAnimeID"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AnimeFileRecoverInput"];
-            };
-        };
-        responses: {
-            /** @description The recovery was confirmed (or had already been). */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AnimeFileRecoverResult"];
-                };
-            };
-            400: components["responses"]["BadRequest"];
-            401: components["responses"]["Unauthorized"];
-            404: components["responses"]["NotFound"];
-            409: components["responses"]["Conflict"];
-        };
-    };
     listReplacementDecisions: {
         parameters: {
             query?: {
@@ -10751,6 +10676,39 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    deletePlacement: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                placement_id: components["schemas"]["ID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeletePlacementRequest"];
+            };
+        };
+        responses: {
+            /** @description The video and bound subtitle deletions were admitted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileManagerOperationView"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
         };

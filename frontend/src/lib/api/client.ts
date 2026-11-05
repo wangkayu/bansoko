@@ -949,6 +949,21 @@ export function releasePlacement(placementID: string, idempotencyKey: string): P
   });
 }
 
+/** One owner command for a deselected-group imported video: the server rechecks
+ *  the stable group selection, releases management and queues safe deletion of
+ *  the video and its complete bound companion unit. */
+export function deletePlacement(
+  placementID: string,
+  input: DeletePlacementRequest,
+  idempotencyKey: string,
+): Promise<FileManagerOperationView> {
+  return request(`/placements/${encodePathSegment(placementID)}/delete`, {
+    method: "POST",
+    body: input,
+    idempotencyKey,
+  });
+}
+
 export function retryRSSSourceRuntime(
   rssSourceID: string,
   input: ManualRetryInput,
@@ -1957,6 +1972,7 @@ export type InstanceReplacementPolicyInput = Schema<"InstanceReplacementPolicyIn
 export type ReconciliationScanView = Schema<"ReconciliationScanView">;
 export type ReconciliationPathDiffView = Schema<"ReconciliationPathDiffView">;
 export type PlacementReleaseResult = Schema<"PlacementReleaseResult">;
+export type DeletePlacementRequest = Schema<"DeletePlacementRequest">;
 
 /** Manual neutral scan submission. The directory of the last scan scope is
  *  reused (its tree top); the request identity makes every click an independent
@@ -1974,9 +1990,6 @@ export type AnimeFile = Schema<"AnimeFile">;
 export type AnimeFileCompanion = Schema<"AnimeFileCompanion">;
 export type AnimeFileAction = Schema<"AnimeFileAction">;
 export type AnimeFilesAlignResult = Schema<"AnimeFilesAlignResult">;
-export type AnimeFileRecovery = Schema<"AnimeFileRecovery">;
-export type AnimeFileRecoverInput = Schema<"AnimeFileRecoverInput">;
-export type AnimeFileRecoverResult = Schema<"AnimeFileRecoverResult">;
 
 /** One anime's files dialog: imported files, the latest scan result and the per-row available actions (judged by the server). */
 export function listAnimeFiles(managedAnimeID: string): Promise<AnimeFilesView> {
@@ -1995,21 +2008,6 @@ export function alignAnimeFiles(
   return request(`/anime/${encodePathSegment(managedAnimeID)}/files/align`, {
     method: "POST",
     body: placementIDs ? { generation, placement_ids: placementIDs } : { generation },
-  });
-}
-
-/** The explicit recovery confirm: re-attach the file the user adopted (with its complete
- *  companion unit) at a frozen scan candidate to the placement that rendered it. The
- *  request echoes every frozen token the read model showed; a refusal is 409
- *  ANIME_FILES_RECOVER_REFUSED with the reason code in details[0].code; the same
- *  confirm replays as the same result. */
-export function recoverAnimeFile(
-  managedAnimeID: string,
-  input: AnimeFileRecoverInput,
-): Promise<AnimeFileRecoverResult> {
-  return request(`/anime/${encodePathSegment(managedAnimeID)}/files/recover`, {
-    method: "POST",
-    body: input,
   });
 }
 

@@ -1,19 +1,26 @@
 package filemaintenance
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"bansoko/internal/library/domain"
 )
 
-// A recovered placement's target fingerprint is the typed metadata envelope
-// the recovery writer produces (recoveryTargetFingerprintEnvelope). Calibration
-// must read the inode inside it, not just its size_bytes: a same-size
-// replacement with a different inode is a fingerprint_conflict.
-func TestPlacementIdentityRecordUnwrapsRecoveryEnvelope(t *testing.T) {
+func metadataFingerprintEnvelope(fingerprint string, sizeBytes int64) (string, error) {
+	encoded, err := json.Marshal(map[string]any{
+		"algorithm": "metadata", "value": fingerprint, "size_bytes": sizeBytes,
+	})
+	return string(encoded), err
+}
+
+// A placement target fingerprint may use the typed metadata envelope.
+// Calibration must read the inode inside it, not just its size_bytes: a
+// same-size replacement with a different inode is a fingerprint_conflict.
+func TestPlacementIdentityRecordUnwrapsMetadataEnvelope(t *testing.T) {
 	observed := domain.MetadataFingerprint(4096, domain.FileIdentity{Device: 2, Inode: 11})
-	envelope, err := recoveryTargetFingerprintEnvelope(observed, 4096)
+	envelope, err := metadataFingerprintEnvelope(observed, 4096)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +55,7 @@ func TestPlacementIdentityRecordUnwrapsRecoveryEnvelope(t *testing.T) {
 func TestPlacementIdentityRecordAcceptsTheCopySourceObject(t *testing.T) {
 	envelope := func(size int64, inode uint64) string {
 		value := domain.MetadataFingerprint(size, domain.FileIdentity{Device: 3, Inode: inode})
-		raw, err := recoveryTargetFingerprintEnvelope(value, size)
+		raw, err := metadataFingerprintEnvelope(value, size)
 		if err != nil {
 			t.Fatal(err)
 		}

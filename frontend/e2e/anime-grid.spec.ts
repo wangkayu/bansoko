@@ -13,6 +13,7 @@ import type {
 } from "../src/lib/api/client";
 import { preset as businessPreset, loadDraftFromBusinessPreset } from "../src/testing/businessPreset";
 import { ownerRSSView } from "./fixtures/ownerRSSView";
+import { animeFilesView } from "./fixtures/animeFilesView";
 import { isPhoneLayout, selectBrowseSection, selectSubscribed } from "./catalog-nav";
 import { joinList, t } from "./copy";
 import { mockSignedIn } from "./session";
@@ -1069,6 +1070,50 @@ async function openConfigFromCard(page: Page, card: ReturnType<Page["locator"]>)
   return pageDialog(page).last();
 }
 
+async function openFixtureFiles(page: Page) {
+  const title = "Fixture Library Show";
+  addSubscription(fixtureStateFor(page), {
+    managed_anime: { id: "fixture-files", title, title_override: null, version: 1 },
+    subscription: {
+      id: "fixture-files-subscription",
+      managed_anime_id: "fixture-files",
+      created_at: "2026-11-05T00:00:00Z",
+      entry_season: "2026-fall",
+      origin: "anibt",
+      origin_entry_ref: "anibt:fixture-files",
+      instance_label: title,
+      state: "active",
+      lifecycle_state: "active",
+      lifecycle_epoch: 1,
+      version: 1,
+      new_releases_only: false,
+      ignore_multi_video_releases: false,
+    },
+    metadata: {
+      managed_anime_id: "fixture-files",
+      bgm: null,
+      tmdb: null,
+      title_override: null,
+      total_episodes: 4,
+      season: 1,
+      version: 1,
+    },
+    metadata_hold: { held: false, missing: [] },
+    broadcast_day: "none",
+    episode_progress: { episodes: [1, 2, 3, 4], total: 4, done: true },
+  });
+  await enterApp(page);
+  await selectSubscribed(page);
+  const card = page.locator("article").filter({ hasText: title }).first();
+  await expect(card).toBeVisible();
+  await card.getByRole("button", { name: t("grid.card.moreFor", { title }), exact: true }).click();
+  await page.getByRole("menuitem", { name: t("grid.card.files"), exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: t("tabs.files.dialogTitle", { title }), exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator('[data-placement-id="fixture-delete"]')).toBeVisible();
+  return dialog;
+}
+
 function pageDialog(page: Page) {
   return page.getByRole("dialog");
 }
@@ -1076,6 +1121,82 @@ function pageDialog(page: Page) {
 test.describe("AnimeGrid", () => {
   test.beforeEach(() => {
     test.skip(!fixtureOnly, "fixture UI contract runs only with BANSOKO_E2E_FIXTURES=1");
+  });
+
+  test("deletes an unselected group's complete file unit within desktop and phone viewports", async ({ page }, testInfo) => {
+    const deleteRequests: { body: unknown; key: string | undefined }[] = [];
+    await page.route("**/api/v1/anime/fixture-files/files", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(animeFilesView("fixture-files")) }),
+    );
+    await page.route("**/api/v1/placements/fixture-delete/delete", async (route) => {
+      const request = route.request();
+      if (request.method() !== "POST") return fulfillMethodNotAllowed(route, "POST");
+      deleteRequests.push({ body: request.postDataJSON(), key: request.headers()["idempotency-key"] });
+      await route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: "fixture-delete-operation",
+          operation: "delete",
+          state: "ready",
+          path: animeFilesView("fixture-files").files[0].path,
+          created_at: "2026-11-05T00:00:00Z",
+        }),
+      });
+    });
+    const dialog = await openFixtureFiles(page);
+
+    await expect(dialog.locator('[data-placement-id="fixture-selected"]').getByRole("button", { name: "删除文件", exact: true })).toHaveCount(0);
+    await expect(dialog.locator('[data-placement-id="fixture-custom"]').getByRole("button", { name: "删除文件", exact: true })).toHaveCount(0);
+    const unavailable = dialog.locator('[data-placement-id="fixture-unavailable"]').getByRole("button", { name: "删除文件", exact: true });
+    await expect(unavailable).toBeDisabled();
+    await expect(unavailable).toHaveAttribute("title", t("reason.file_unavailable"));
+
+    await dialog.locator('[data-placement-id="fixture-delete"]').getByRole("button", { name: "删除文件", exact: true }).click();
+    const confirm = page.getByRole("dialog", { name: t("policy.fileEffect.deleteConfirmTitle"), exact: true });
+    await expect(confirm).toBeVisible();
+    await expect(confirm.getByText(t("policy.fileEffect.deleteCompanions", { n: 1 }), { exact: true })).toBeVisible();
+    const path = confirm.locator("p").filter({ hasText: "Fixture Show - 01" });
+    const pathGeometry = await path.evaluate((element) => ({ client: element.clientWidth, scroll: element.scrollWidth }));
+    expect(pathGeometry.scroll).toBeLessThanOrEqual(pathGeometry.client + 1);
+    const viewport = page.viewportSize()!;
+    const box = (await confirm.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1);
+    expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+    await page.screenshot({ path: testInfo.outputPath("delete-confirmation.png"), fullPage: true, animations: "disabled" });
+
+    await confirm.getByRole("button", { name: t("policy.fileEffect.deleteConfirm"), exact: true }).click();
+    await expect(confirm).toHaveCount(0);
+    await expect(page.getByText(t("policy.fileEffect.deleteSubmitted"), { exact: true })).toBeVisible();
+    expect(deleteRequests).toHaveLength(1);
+    expect(deleteRequests[0].body).toEqual({
+      placement_version: 7,
+      path: animeFilesView("fixture-files").files[0].path,
+    });
+    expect(deleteRequests[0].key).toBeTruthy();
+  });
+
+  test("keeps the deletion confirmation open when the group becomes selected", async ({ page }) => {
+    await page.route("**/api/v1/anime/fixture-files/files", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(animeFilesView("fixture-files")) }),
+    );
+    await page.route("**/api/v1/placements/fixture-delete/delete", (route) =>
+      route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({ code: "FILE_MANAGER_GROUP_SELECTED", message: "group selected" }),
+      }),
+    );
+    const dialog = await openFixtureFiles(page);
+    await dialog.locator('[data-placement-id="fixture-delete"]').getByRole("button", { name: "删除文件", exact: true }).click();
+    const confirm = page.getByRole("dialog", { name: t("policy.fileEffect.deleteConfirmTitle"), exact: true });
+    await confirm.getByRole("button", { name: t("policy.fileEffect.deleteConfirm"), exact: true }).click();
+    await expect(confirm.getByRole("alert")).toHaveText(t("reason.group_selected"));
+    await expect(confirm).toBeVisible();
+    await expect(page.getByText(t("policy.fileEffect.deleteSubmitted"), { exact: true })).toHaveCount(0);
   });
 
   test("keeps subscribed-management filters and long titles inside their layout", async ({ page }) => {

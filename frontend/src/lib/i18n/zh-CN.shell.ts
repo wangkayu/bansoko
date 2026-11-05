@@ -249,7 +249,6 @@ export const logCopy = {
     placement_released: "入库位置已解除",
     unknown_file_released: "以未知文件导入，已解绑",
     placement_recorded: "已记录入库位置",
-    file_recovered: "已找回文件",
     placement_displaced: "原文件已被覆盖",
     placements_excluded: "已保留 {count} 个其他季的文件，不参与替换版本",
     offset_aligned: "已按新的集数偏移整理 {group_name}：{rekeyed} 个文件换到其他集，删除 {deleted} 个，加版本号 {versioned} 个，覆盖 {overwritten} 个，跳过 {skipped} 个",

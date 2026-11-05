@@ -724,23 +724,6 @@ func provideCoreApplicationGraph(
 	// A completed scan re-releases the anime's blocked replacement deletions
 	// whose receipts prove their state (deployment recovery's resolution).
 	reconciliationService.SetBlockedDeletionReleaser(fileMaintenanceGraph.cleanupService, logger)
-	// Scan-alignment recovery probe: the composition root injects the
-	// filemaintenance renderer (dependency direction filemaintenance ->
-	// reconciliation), the library's no-follow file observer and the SQL
-	// occupancy read, so a scan may record recovery CANDIDATE facts for
-	// missing placements whose COMPLETE rendered unit is free of other
-	// owners. The probe only stats exact rendered paths; recovery itself
-	// stays behind the user's explicit confirm command.
-	reconciliationService.SetRecoveryProbe(
-		fileMaintenanceGraph.namingRenderer,
-		// METADATA observation, never ObserveFile: the probe freezes a
-		// metadata fingerprint into the candidate, and the confirm compares
-		// with domain.MetadataFingerprintsMatch. A content digest here would
-		// be rejected by ParseMetadataFingerprint and turn every confirm into
-		// target_changed.
-		filesystem.OSFileObserver{},
-		filemaintenance.NewRecoveryOccupancy(db),
-	)
 	rssService.SetCandidateFactsRepository(fileMaintenanceGraph.candidateFactsRepo)
 	rssService.SetMediaFactsStore(fileMaintenanceGraph.mediaFactsStore)
 	rssService.SetReplacementAdmission(fileMaintenanceGraph.replacementDecisions)
@@ -974,15 +957,6 @@ func provideFileMaintenanceService(
 	// (test graphs) keeps the variant typed-unavailable while plain alignment
 	// stays cache-first unaffected.
 	service.SetMetadataWorkRefresher(fileMaintenanceGraph.metadataRefresher)
-	// The recovery confirm re-stats the candidate's frozen target and each
-	// present companion through the library's no-follow METADATA observer and
-	// records the confirm in the business journal; an unwired port fails
-	// closed. The port is ObserveMetadataFile (stat + identity), not
-	// ObserveFile (SHA-256 of the content): the confirm compares metadata
-	// fingerprints, and a content digest would never match the frozen
-	// candidate.
-	service.SetRecoveryObserver(filesystem.OSFileObserver{})
-	service.SetRecoveryActivityWriter(observabilityService)
 	pathDiffService := filemaintenance.NewPathDiffService(
 		db,
 		fileMaintenanceGraph.namingRenderer,

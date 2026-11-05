@@ -12,8 +12,8 @@ import (
 // (source and quarantine) and admitted or queued replacement decisions
 // (candidate and frozen losers). Each row names the owning subsystem's kind
 // and, for the intake chain, the acquisition. The file manager's read model,
-// its admission checks and the reconciliation recovery probe all consume this
-// one text so the occupancy decision cannot drift between them.
+// its admission checks and reconciliation calibration all consume this one
+// text so the occupancy decision cannot drift between them.
 const AutomaticOwnerPaths = `
 SELECT fo.source_path AS path, 'file_operation' AS kind, COALESCE(fo.acquisition_id, '') AS acquisition_id
   FROM file_operations fo WHERE fo.state IN ('pending', 'running', 'waiting_retry')

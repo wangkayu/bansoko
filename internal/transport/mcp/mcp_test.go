@@ -135,7 +135,7 @@ var pinnedTools = []string{
 	"list_execution_records", "get_execution_record", "list_execution_record_files",
 	"list_tmdb_seasons", "list_tmdb_season_episodes", "preview_file_match", "match_file", "release_file_entry",
 	"list_placement_issues", "redownload_placement", "release_placement",
-	"list_anime_files", "align_anime_files", "recover_anime_file",
+	"list_anime_files", "align_anime_files", "delete_placement",
 	"list_feed_sites",
 	// Owner-delegated coverage (2026-10-27): diagnostics, downloads, configuration, catalog.
 	"get_system_health", "get_release_candidate_facts", "get_release_torrent_structure", "list_replacement_decisions",
