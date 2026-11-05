@@ -38,10 +38,11 @@ type NamingContext struct {
 	// EpisodeTitles carries the provider episode titles (bgm.ep_title and
 	// tmdb.ep_title) the caller of a whitelisted render resolved before
 	// rendering, from the persistent lookup cache. Only the whitelist leaves
-	// (the rename render, the anime-files alignment render and the file
-	// manager match render) fills them; every other path leaves this empty,
-	// and both facts read empty there. Projections like ReplayFactValues
-	// never mangle these, they are JSON-ignored like the other roots.
+	// (the rename render, the anime-files alignment render, the file manager
+	// match render and explicitly requested recognition renders) fills them;
+	// every other path leaves this empty, and both facts read empty there.
+	// Projections like ReplayFactValues never mangle these, they are
+	// JSON-ignored like the other roots.
 	EpisodeTitles EpisodeTitleFacts `json:"-"`
 	// AnimeAbsent marks a render with no anime at all, the file manager's
 	// recognition of a file the user did not match. Every anime.* fact is

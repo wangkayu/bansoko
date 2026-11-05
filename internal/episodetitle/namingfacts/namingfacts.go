@@ -2,7 +2,8 @@
 // (bgm.ep_title, tmdb.ep_title) for the naming renders on the network-query
 // whitelist. The whitelist is thin, by owner decree 2026-10-22: the library
 // rename render (fileoperation prepare) and the anime-files renders of
-// filemaintenance (the alignment target render and the match render) — the
+// filemaintenance (the alignment target render and the match render), and the
+// file manager recognition render when its explicit runtime-facts switch is on —
 // lanes that also freeze the states into the render snapshot's
 // episode_titles block. Every other render, preview or target-admission path
 // never calls this package, and callers keep that property asserted in their

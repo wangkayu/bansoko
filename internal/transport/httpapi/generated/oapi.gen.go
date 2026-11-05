@@ -930,12 +930,13 @@ const (
 
 // Defines values for FileManagerRecognitionBlockerCode.
 const (
-	FileManagerRecognitionBlockerCodeFactsMissing    FileManagerRecognitionBlockerCode = "facts_missing"
-	FileManagerRecognitionBlockerCodeOutsideRoots    FileManagerRecognitionBlockerCode = "outside_roots"
-	FileManagerRecognitionBlockerCodeTargetInvalid   FileManagerRecognitionBlockerCode = "target_invalid"
-	FileManagerRecognitionBlockerCodeTemplateInvalid FileManagerRecognitionBlockerCode = "template_invalid"
-	FileManagerRecognitionBlockerCodeVideoFailed     FileManagerRecognitionBlockerCode = "video_failed"
-	FileManagerRecognitionBlockerCodeVideoMissing    FileManagerRecognitionBlockerCode = "video_missing"
+	FileManagerRecognitionBlockerCodeFactsMissing            FileManagerRecognitionBlockerCode = "facts_missing"
+	FileManagerRecognitionBlockerCodeOutsideRoots            FileManagerRecognitionBlockerCode = "outside_roots"
+	FileManagerRecognitionBlockerCodeRuntimeFactsUnavailable FileManagerRecognitionBlockerCode = "runtime_facts_unavailable"
+	FileManagerRecognitionBlockerCodeTargetInvalid           FileManagerRecognitionBlockerCode = "target_invalid"
+	FileManagerRecognitionBlockerCodeTemplateInvalid         FileManagerRecognitionBlockerCode = "template_invalid"
+	FileManagerRecognitionBlockerCodeVideoFailed             FileManagerRecognitionBlockerCode = "video_failed"
+	FileManagerRecognitionBlockerCodeVideoMissing            FileManagerRecognitionBlockerCode = "video_missing"
 )
 
 // Defines values for FileManagerRecognitionConflictOccupiedBy.
@@ -5231,12 +5232,12 @@ type FileManagerRecognitionAnimeDraftMediaKind string
 
 // FileManagerRecognitionBlocker defines model for FileManagerRecognitionBlocker.
 type FileManagerRecognitionBlocker struct {
-	// Code Why a row cannot be rendered: the template reads facts this render lacks (`facts_missing`, with their paths), does not compile (`template_invalid`), renders an unusable target (`target_invalid`), renders a target outside the file manager's authorized roots (`outside_roots`), or the subtitle's video is not selected (`video_missing`) or failed (`video_failed`).
+	// Code Why a row cannot be rendered: the template reads facts this render lacks (`facts_missing`, with their paths), does not compile (`template_invalid`), renders an unusable target (`target_invalid`), renders a target outside the file manager's authorized roots (`outside_roots`), runtime facts could not be read (`runtime_facts_unavailable`), or the subtitle's video is not selected (`video_missing`) or failed (`video_failed`).
 	Code  FileManagerRecognitionBlockerCode `json:"code"`
 	Facts *[]string                         `json:"facts,omitempty"`
 }
 
-// FileManagerRecognitionBlockerCode Why a row cannot be rendered: the template reads facts this render lacks (`facts_missing`, with their paths), does not compile (`template_invalid`), renders an unusable target (`target_invalid`), renders a target outside the file manager's authorized roots (`outside_roots`), or the subtitle's video is not selected (`video_missing`) or failed (`video_failed`).
+// FileManagerRecognitionBlockerCode Why a row cannot be rendered: the template reads facts this render lacks (`facts_missing`, with their paths), does not compile (`template_invalid`), renders an unusable target (`target_invalid`), renders a target outside the file manager's authorized roots (`outside_roots`), runtime facts could not be read (`runtime_facts_unavailable`), or the subtitle's video is not selected (`video_missing`) or failed (`video_failed`).
 type FileManagerRecognitionBlockerCode string
 
 // FileManagerRecognitionConflict defines model for FileManagerRecognitionConflict.
@@ -5321,6 +5322,9 @@ type FileManagerRecognitionPreview struct {
 
 // FileManagerRecognitionRequest defines model for FileManagerRecognitionRequest.
 type FileManagerRecognitionRequest struct {
+	// LoadRuntimeFacts Explicitly read each selected video's current MediaInfo facts and resolve referenced provider episode titles through the persistent cache before rendering. Preview and submit must use the same value; submit reads the facts again and confirms the resulting plan digest.
+	LoadRuntimeFacts *bool `json:"load_runtime_facts,omitempty"`
+
 	// Match The optional anime facts source of the render. Three forms: a managed anime (`managed_anime_id`, optionally overlaid with `anime` as the operation's temporary draft), a draft alone (`anime` without `managed_anime_id`) for naming with facts the user typed or matched from a metadata provider, exactly as one-shot's task draft, or a bare episode adjustment (`episode` and/or a non-zero `offset`) over a pure parse of the file names. A match carrying none of these is refused.
 	Match  *FileManagerRecognitionMatch  `json:"match,omitempty"`
 	Naming NamingRules                   `json:"naming"`
@@ -5344,7 +5348,10 @@ type FileManagerRecognitionRow struct {
 
 	// Disposition What recognition does with one file: rename or move it, leave it because its rendered name is its own name (`unchanged`), leave it because the unclassified route is `skip`, or refuse it (`error`, with a blocker).
 	Disposition FileManagerRecognitionDisposition `json:"disposition"`
-	Episode     *FileManagerRecognitionEpisode    `json:"episode,omitempty"`
+
+	// EmptyFacts Referenced facts that are available but empty in this render. These are shown as empty values; unlike blockers they do not fail the row.
+	EmptyFacts *[]string                      `json:"empty_facts,omitempty"`
+	Episode    *FileManagerRecognitionEpisode `json:"episode,omitempty"`
 
 	// Group The group's stem (a video and its bound subtitles share one).
 	Group      string                        `json:"group"`
@@ -5368,6 +5375,9 @@ type FileManagerRecognitionSubmitRequest struct {
 
 	// ExpectedPlanDigest The `plan_digest` the preview returned.
 	ExpectedPlanDigest string `json:"expected_plan_digest"`
+
+	// LoadRuntimeFacts Must match the confirmed preview. Reads current MediaInfo facts and referenced provider episode titles again before checking the digest.
+	LoadRuntimeFacts *bool `json:"load_runtime_facts,omitempty"`
 
 	// Match The optional anime facts source of the render. Three forms: a managed anime (`managed_anime_id`, optionally overlaid with `anime` as the operation's temporary draft), a draft alone (`anime` without `managed_anime_id`) for naming with facts the user typed or matched from a metadata provider, exactly as one-shot's task draft, or a bare episode adjustment (`episode` and/or a non-zero `offset`) over a pure parse of the file names. A match carrying none of these is refused.
 	Match  *FileManagerRecognitionMatch  `json:"match,omitempty"`

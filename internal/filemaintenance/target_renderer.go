@@ -29,9 +29,9 @@ type NamingRulesSource interface {
 // the frozen file name, and template errors fail the candidate (never guessed).
 // The one provider lookup the owner decree of 2026-10-22 whitelists here is
 // the provider episode title read (bgm.ep_title / tmdb.ep_title) in
-// RenderTarget (the alignment candidate render) and RenderMatch — both
-// user-initiated renders; every other entry point (path diff previews, the
-// readmodel placement targets) never queries.
+// RenderTarget (the alignment candidate render), RenderMatch and the explicit
+// runtime-facts recognition render — all user-initiated renders; every other
+// entry point (path diff previews, the readmodel placement targets) never queries.
 type NamingTargetRenderer struct {
 	db          *sql.DB
 	rulesSource NamingRulesSource
@@ -46,8 +46,8 @@ func NewNamingTargetRenderer(db *sql.DB, rulesSource NamingRulesSource) *NamingT
 }
 
 // SetEpisodeTitleQueries wires the persistent provider episode title Querier
-// (migration 046) for the two whitelisted renders. The composition root
-// shares one Querier with the library rename render.
+// (migration 046) for the whitelisted renders. The composition root shares
+// one Querier with the library rename render.
 func (r *NamingTargetRenderer) SetEpisodeTitleQueries(queries *namingfacts.Querier) {
 	if r != nil {
 		r.episodeTitles = queries

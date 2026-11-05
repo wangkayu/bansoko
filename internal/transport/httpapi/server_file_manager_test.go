@@ -144,7 +144,8 @@ func (f *fakeFileManager) PreviewRecognition(_ context.Context, request filemana
 			{Path: "/srv/library/Show/Show - 01.mkv", Name: "Show - 01.mkv", Kind: "video", Group: "Show - 01", Revision: "rev-1",
 				Episode:    &filemanager.RecognitionEpisode{Raw: "01", Number: "1", Offset: 0, Source: "file_parser"},
 				TargetPath: "/srv/library/Show/01.mkv", TargetName: "01.mkv", Disposition: filemanager.RecognitionRename,
-				Conflict: &filemanager.RecognitionConflict{OccupiedBy: filemanager.OccupantFile, VersionPath: "/srv/library/Show/01 (2).mkv"}},
+				EmptyFacts: []string{"media.hdr"},
+				Conflict:   &filemanager.RecognitionConflict{OccupiedBy: filemanager.OccupantFile, VersionPath: "/srv/library/Show/01 (2).mkv"}},
 			{Path: "/srv/library/Show/mystery.mkv", Name: "mystery.mkv", Kind: "video", Group: "mystery", Revision: "rev-2",
 				Disposition: filemanager.RecognitionError,
 				Blockers:    []filemanager.RecognitionBlocker{{Code: filemanager.RecognitionBlockerFactsMissing, Facts: []string{"anime.title"}}}},
@@ -504,12 +505,12 @@ func TestFileManagerRecognitionHandlers(t *testing.T) {
 		`"subtitle_suffix_template":"sub"}`
 	recorder, body := postFileManager(t, service, "/api/v1/file-manager/recognition/preview", "",
 		`{"paths":["/srv/library/Show/Show - 01.mkv","/srv/library/Show/Show - 01.zh.ass"],"parser":{"id":"regex","config":{"episode_patterns":["S(\\d+)"]}},`+
-			namingJSON+`,"match":{"managed_anime_id":"anime-1","season":1,"offset":2}}`)
+			namingJSON+`,"load_runtime_facts":true,"match":{"managed_anime_id":"anime-1","season":1,"offset":2}}`)
 	if recorder.Code != http.StatusOK || recorder.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("preview: %d %v", recorder.Code, body)
 	}
 	request := service.recognition
-	if len(request.Paths) != 2 || request.Parser.ID != "regex" || string(request.Parser.Config) != `{"episode_patterns":["S(\\d+)"]}` ||
+	if len(request.Paths) != 2 || !request.LoadRuntimeFacts || request.Parser.ID != "regex" || string(request.Parser.Config) != `{"episode_patterns":["S(\\d+)"]}` ||
 		request.Naming.TV.DirectoryTemplate != "/srv/library/Show" || request.Naming.TV.VideoFilenameTemplate != "${ep.number}.${file.ext}" ||
 		request.Naming.Unknown.DirectoryTemplate != "/srv/library/Show/Extras" || request.Naming.SubtitleSuffixTemplate != "sub" ||
 		request.Naming.Language != "js-naming-1" ||
@@ -524,7 +525,7 @@ func TestFileManagerRecognitionHandlers(t *testing.T) {
 	blocker := rows[1].(map[string]any)["blockers"].([]any)[0].(map[string]any)
 	if body["directory"] != "/srv/library/Show" || body["unknown_route"] != "skip" || body["plan_digest"] != "plan-1" ||
 		body["conflicts"].([]any)[0] != "/srv/library/Show/01.mkv" ||
-		first["target_name"] != "01.mkv" || first["disposition"] != "rename" || first["group"] != "Show - 01" ||
+		first["target_name"] != "01.mkv" || first["empty_facts"].([]any)[0] != "media.hdr" || first["disposition"] != "rename" || first["group"] != "Show - 01" ||
 		first["revision"] != "rev-1" || episode["number"] != "1" || episode["source"] != "file_parser" || episode["offset"] != float64(0) ||
 		conflict["occupied_by"] != "file" || conflict["version_path"] != "/srv/library/Show/01 (2).mkv" ||
 		rows[1].(map[string]any)["disposition"] != "error" || blocker["code"] != "facts_missing" ||
@@ -534,13 +535,13 @@ func TestFileManagerRecognitionHandlers(t *testing.T) {
 
 	recorder, body = postFileManager(t, service, "/api/v1/file-manager/recognition", "rec-1",
 		`{"paths":["/srv/library/Show/Show - 01.mkv"],`+namingJSON+
-			`,"expected_plan_digest":"plan-1","conflict":"version"}`)
+			`,"load_runtime_facts":true,"expected_plan_digest":"plan-1","conflict":"version"}`)
 	if recorder.Code != http.StatusAccepted {
 		t.Fatalf("submit: %d %v", recorder.Code, body)
 	}
 	submit := service.recognitionSub
 	if submit.IdempotencyKey != "rec-1" || submit.Actor != "web" || submit.ExpectedPlanDigest != "plan-1" ||
-		submit.Conflict != filemanager.RecognitionConflictVersion ||
+		!submit.LoadRuntimeFacts || submit.Conflict != filemanager.RecognitionConflictVersion ||
 		submit.Naming.TV.VideoFilenameTemplate != "${ep.number}.${file.ext}" ||
 		submit.Naming.SubtitleSuffixTemplate != "sub" || submit.Match != nil ||
 		submit.Parser.ID != "" || len(submit.Parser.Config) != 0 {

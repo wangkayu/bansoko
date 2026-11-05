@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 
+	artifactadapter "bansoko/internal/artifact/adapter"
 	"bansoko/internal/events"
 	"bansoko/internal/filemaintenance"
 	filemaintenancepolicy "bansoko/internal/filemaintenance/policy"
@@ -78,6 +79,7 @@ func wireFileManagerCommands(
 	// Recognition reuses the same naming renderer; an unrecognized video
 	// follows the instance unclassified-route policy.
 	graph.fileManager.SetRecognition(graph.namingRenderer, reader, fileManagerRecognitionPolicy{policies: graph.fileEffectPolicies})
+	graph.fileManager.SetRecognitionMediaProber(artifactadapter.OSMediaProber{})
 	graph.userOperations.SetRecorder(recorder)
 	graph.userOperations.SetEventHub(hub)
 	return nil

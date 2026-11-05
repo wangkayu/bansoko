@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"bansoko/internal/download/domain"
 	"bansoko/internal/episodeidentity"
 	"bansoko/internal/filekinds"
 	"bansoko/internal/filemaintenance"
@@ -85,6 +86,7 @@ const (
 	RecognitionBlockerTemplateInvalid = "template_invalid"
 	RecognitionBlockerTargetInvalid   = "target_invalid"
 	RecognitionBlockerOutsideRoots    = "outside_roots"
+	RecognitionBlockerRuntimeFacts    = "runtime_facts_unavailable"
 	RecognitionBlockerVideoMissing    = "video_missing"
 	RecognitionBlockerVideoFailed     = "video_failed"
 )
@@ -116,6 +118,20 @@ type RecognitionRenderer interface {
 // default (skip) applies.
 type RecognitionPolicy interface {
 	UnclassifiedRoute(ctx context.Context) (string, error)
+}
+
+// RecognitionMediaProber reads one selected video's current media facts.
+type RecognitionMediaProber interface {
+	Probe(ctx context.Context, path string) (domain.MediaFacts, error)
+}
+
+// SetRecognitionMediaProber wires the explicit runtime-facts probe. Recognition
+// without it keeps working; only a request that asks for runtime facts reports
+// the missing probe on each video row.
+func (s *Service) SetRecognitionMediaProber(prober RecognitionMediaProber) {
+	if s != nil {
+		s.recognitionMedia = prober
+	}
 }
 
 // SetRecognition wires the recognition ports. Unwired, recognition is
@@ -192,6 +208,9 @@ type RecognitionRequest struct {
 	Parser RecognitionParser
 	Naming naming.NamingRules
 	Match  *RecognitionMatch
+	// LoadRuntimeFacts explicitly reads current video media facts and resolves
+	// referenced provider episode titles. Preview and submit share this switch.
+	LoadRuntimeFacts bool
 }
 
 // RecognitionEpisode is the episode identity recognition gave one file.
@@ -220,14 +239,17 @@ type RecognitionConflict struct {
 
 // RecognitionRow is one selected file and what recognition does with it.
 type RecognitionRow struct {
-	Path        string
-	Name        string
-	Kind        string
-	Group       string
-	Revision    string
-	Episode     *RecognitionEpisode
-	TargetPath  string
-	TargetName  string
+	Path       string
+	Name       string
+	Kind       string
+	Group      string
+	Revision   string
+	Episode    *RecognitionEpisode
+	TargetPath string
+	TargetName string
+	// EmptyFacts are referenced facts that rendered empty after runtime loading.
+	// They are informational, not blockers, and stay hidden in the default mode.
+	EmptyFacts  []string
 	Disposition RecognitionDisposition
 	Blockers    []RecognitionBlocker
 	Conflict    *RecognitionConflict
@@ -279,6 +301,10 @@ type recognitionFile struct {
 	kind       string
 	rt         templatefacts.Values
 	identity   episodeidentity.EpisodeIdentity
+	media      naming.MediaNamingFacts
+	// runtimeFactsErr blocks only this video and its bound subtitles. The raw
+	// tool error stays server-side; the row exposes a stable blocker code.
+	runtimeFactsErr error
 }
 
 // recognitionGroup is one video with its bound subtitles, one video-less
@@ -483,6 +509,34 @@ func recognitionEvidence(ctx context.Context, files []recognitionFile, selection
 	return nil
 }
 
+// loadRecognitionRuntimeFacts probes every selected video separately. A failed
+// probe is a row blocker, not an empty media fact; a missing prober follows the
+// same fail-closed path. Subtitles inherit their video's facts while rendering.
+func (s *Service) loadRecognitionRuntimeFacts(ctx context.Context, files []recognitionFile) error {
+	for index := range files {
+		if files[index].kind != filekinds.KindVideo {
+			continue
+		}
+		if s.recognitionMedia == nil {
+			files[index].runtimeFactsErr = errors.New("recognition media prober is not wired")
+			continue
+		}
+		facts, err := s.recognitionMedia.Probe(ctx, files[index].inspection.absolute)
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			files[index].runtimeFactsErr = err
+			continue
+		}
+		files[index].media = naming.MediaNamingFacts{
+			Resolution: facts.Resolution, VideoCodec: facts.VideoCodec,
+			AudioCodec: facts.AudioCodec, Container: facts.Container, HDR: facts.HDR,
+		}
+	}
+	return nil
+}
+
 // recognitionGroups binds each subtitle to the video whose name it starts
 // with (the one subtitle rule), keeps every video as its own group and every
 // other file as a standalone group. Two videos with one stem cannot both own
@@ -600,14 +654,16 @@ func recognitionAnimeDraft(match *RecognitionMatch) *filemaintenance.Recognition
 func recognitionRenderInput(plan *recognitionPlan, file recognitionFile, episode *RecognitionEpisode) filemaintenance.RecognitionRenderInput {
 	match := plan.request.Match
 	input := filemaintenance.RecognitionRenderInput{
-		Rules:          plan.request.Naming,
-		UnknownRoute:   plan.unknownRoute == string(filemaintenance.UnclassifiedRoutePolicyValueRoute),
-		FileName:       file.inspection.detail.Entry.Name,
-		FileKind:       file.kind,
-		ManagedAnimeID: recognitionMatchID(match),
-		Season:         recognitionMatchSeason(match),
-		AnimeDraft:     recognitionAnimeDraft(match),
-		Rt:             file.rt,
+		Rules:            plan.request.Naming,
+		UnknownRoute:     plan.unknownRoute == string(filemaintenance.UnclassifiedRoutePolicyValueRoute),
+		FileName:         file.inspection.detail.Entry.Name,
+		FileKind:         file.kind,
+		ManagedAnimeID:   recognitionMatchID(match),
+		Season:           recognitionMatchSeason(match),
+		AnimeDraft:       recognitionAnimeDraft(match),
+		Rt:               file.rt,
+		Media:            file.media,
+		LoadRuntimeFacts: plan.request.LoadRuntimeFacts,
 	}
 	if file.inspection.info != nil {
 		input.SizeBytes = file.inspection.info.Size()
@@ -658,6 +714,8 @@ func recognitionRenderBlocker(err error) (*RecognitionBlocker, error) {
 		code = RecognitionBlockerFactsMissing
 	case filemaintenance.RecognitionRenderTargetInvalid:
 		code = RecognitionBlockerTargetInvalid
+	case filemaintenance.RecognitionRenderRuntimeFacts:
+		code = RecognitionBlockerRuntimeFacts
 	}
 	return &RecognitionBlocker{Code: code, Facts: renderErr.Facts}, nil
 }
@@ -696,6 +754,11 @@ func (s *Service) recognitionPlan(ctx context.Context, request RecognitionReques
 	}
 	if err := recognitionEvidence(ctx, files, selection, offset); err != nil {
 		return recognitionPlan{}, err
+	}
+	if request.LoadRuntimeFacts {
+		if err := s.loadRecognitionRuntimeFacts(ctx, files); err != nil {
+			return recognitionPlan{}, err
+		}
 	}
 	videos := 0
 	for _, file := range files {
@@ -812,6 +875,11 @@ func (s *Service) recognitionRenderRow(ctx context.Context, plan *recognitionPla
 		Revision: file.inspection.detail.Revision,
 		Episode:  episode, Disposition: RecognitionRename,
 	}
+	if file.runtimeFactsErr != nil {
+		row.Disposition = RecognitionError
+		row.Blockers = []RecognitionBlocker{{Code: RecognitionBlockerRuntimeFacts}}
+		return row
+	}
 	rendered, blocker, err := s.renderRecognition(ctx, recognitionRenderInput(plan, file, episode))
 	if err != nil {
 		row.Disposition = RecognitionError
@@ -826,6 +894,9 @@ func (s *Service) recognitionRenderRow(ctx context.Context, plan *recognitionPla
 	if rendered.Skipped {
 		row.Disposition = RecognitionSkip
 		return row
+	}
+	if plan.request.LoadRuntimeFacts {
+		row.EmptyFacts = append([]string(nil), rendered.EmptyFacts...)
 	}
 	target := joinAbsolute(rendered.Directory, rendered.Filename)
 	problem, err := s.recognitionTargetProblem(ctx, target)
@@ -862,7 +933,11 @@ func (s *Service) recognitionSubtitleRow(ctx context.Context, plan *recognitionP
 		Revision: file.inspection.detail.Revision, Episode: episode,
 		Disposition: RecognitionRename,
 	}
-	suffix, blocker, err := s.renderRecognitionSuffix(ctx, recognitionRenderInput(plan, file, episode))
+	input := recognitionRenderInput(plan, file, episode)
+	// The suffix follows the video's execution-time media facts; a subtitle is
+	// never probed as if it were a video of its own.
+	input.Media = plan.files[plan.groups[groupIndex].video].media
+	suffix, blocker, err := s.renderRecognitionSuffix(ctx, input)
 	if err != nil {
 		row.Disposition = RecognitionError
 		row.Blockers = []RecognitionBlocker{{Code: RecognitionBlockerTemplateInvalid}}
@@ -1011,6 +1086,7 @@ func recognitionPlanDigest(plan recognitionPlan, selection parser.ParserSelectio
 		Revision    string
 		Target      string
 		Disposition string
+		EmptyFacts  []string
 		Blockers    []blockerDigest
 	}
 	rows := make([]rowDigest, 0, len(plan.rows))
@@ -1019,17 +1095,18 @@ func recognitionPlanDigest(plan recognitionPlan, selection parser.ParserSelectio
 		for _, blocker := range row.Blockers {
 			blockers = append(blockers, blockerDigest{Code: blocker.Code, Facts: blocker.Facts})
 		}
-		rows = append(rows, rowDigest{Path: row.Path, Revision: row.Revision, Target: row.TargetPath, Disposition: string(row.Disposition), Blockers: blockers})
+		rows = append(rows, rowDigest{Path: row.Path, Revision: row.Revision, Target: row.TargetPath, Disposition: string(row.Disposition), EmptyFacts: row.EmptyFacts, Blockers: blockers})
 	}
 	return requestDigest(struct {
-		Directory    string
-		ParserID     string
-		ParserConfig string
-		Naming       naming.NamingRules
-		UnknownRoute string
-		Match        recognitionMatchDigest
-		Rows         []rowDigest
-	}{plan.directory, selection.ID, string(selection.Config), request.Naming, plan.unknownRoute, digestRecognitionMatch(request.Match), rows})
+		Directory        string
+		ParserID         string
+		ParserConfig     string
+		Naming           naming.NamingRules
+		UnknownRoute     string
+		LoadRuntimeFacts bool
+		Match            recognitionMatchDigest
+		Rows             []rowDigest
+	}{plan.directory, selection.ID, string(selection.Config), request.Naming, plan.unknownRoute, request.LoadRuntimeFacts, digestRecognitionMatch(request.Match), rows})
 }
 
 type recognitionMatchDigest struct {
@@ -1076,13 +1153,14 @@ func digestRecognitionMatch(match *RecognitionMatch) recognitionMatchDigest {
 // request; it does not depend on what the filesystem looked like when it ran.
 func recognitionRequestDigest(request SubmitRecognitionRequest) string {
 	return requestDigest(struct {
-		Paths        []string
-		ParserID     string
-		ParserConfig string
-		Naming       naming.NamingRules
-		Match        recognitionMatchDigest
-		Conflict     RecognitionConflictChoice
-	}{request.Paths, request.Parser.ID, string(request.Parser.Config), request.Naming, digestRecognitionMatch(request.Match), request.Conflict})
+		Paths            []string
+		ParserID         string
+		ParserConfig     string
+		Naming           naming.NamingRules
+		LoadRuntimeFacts bool
+		Match            recognitionMatchDigest
+		Conflict         RecognitionConflictChoice
+	}{request.Paths, request.Parser.ID, string(request.Parser.Config), request.Naming, request.LoadRuntimeFacts, digestRecognitionMatch(request.Match), request.Conflict})
 }
 
 // PreviewRecognition renders the plan of one recognition request and writes

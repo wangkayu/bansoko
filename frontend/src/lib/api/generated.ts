@@ -6390,6 +6390,8 @@ export interface components {
             parser?: components["schemas"]["FileManagerRecognitionParser"];
             naming: components["schemas"]["NamingRules"];
             match?: components["schemas"]["FileManagerRecognitionMatch"];
+            /** @description Explicitly read each selected video's current MediaInfo facts and resolve referenced provider episode titles through the persistent cache before rendering. Preview and submit must use the same value; submit reads the facts again and confirms the resulting plan digest. */
+            load_runtime_facts?: boolean;
         };
         /**
          * @description What recognition does with one file: rename or move it, leave it because its rendered name is its own name (`unchanged`), leave it because the unclassified route is `skip`, or refuse it (`error`, with a blocker).
@@ -6397,10 +6399,10 @@ export interface components {
          */
         FileManagerRecognitionDisposition: "rename" | "move" | "unchanged" | "skip" | "error";
         /**
-         * @description Why a row cannot be rendered: the template reads facts this render lacks (`facts_missing`, with their paths), does not compile (`template_invalid`), renders an unusable target (`target_invalid`), renders a target outside the file manager's authorized roots (`outside_roots`), or the subtitle's video is not selected (`video_missing`) or failed (`video_failed`).
+         * @description Why a row cannot be rendered: the template reads facts this render lacks (`facts_missing`, with their paths), does not compile (`template_invalid`), renders an unusable target (`target_invalid`), renders a target outside the file manager's authorized roots (`outside_roots`), runtime facts could not be read (`runtime_facts_unavailable`), or the subtitle's video is not selected (`video_missing`) or failed (`video_failed`).
          * @enum {string}
          */
-        FileManagerRecognitionBlockerCode: "facts_missing" | "template_invalid" | "target_invalid" | "outside_roots" | "video_missing" | "video_failed";
+        FileManagerRecognitionBlockerCode: "facts_missing" | "template_invalid" | "target_invalid" | "outside_roots" | "runtime_facts_unavailable" | "video_missing" | "video_failed";
         FileManagerRecognitionBlocker: {
             code: components["schemas"]["FileManagerRecognitionBlockerCode"];
             facts?: string[];
@@ -6434,6 +6436,8 @@ export interface components {
             /** @description Rendered absolute target; absent when no target is written. */
             target_path?: string;
             target_name?: string;
+            /** @description Referenced facts that are available but empty in this render. These are shown as empty values; unlike blockers they do not fail the row. */
+            empty_facts?: string[];
             disposition: components["schemas"]["FileManagerRecognitionDisposition"];
             blockers?: components["schemas"]["FileManagerRecognitionBlocker"][];
             conflict?: components["schemas"]["FileManagerRecognitionConflict"];
@@ -6465,6 +6469,8 @@ export interface components {
             parser?: components["schemas"]["FileManagerRecognitionParser"];
             naming: components["schemas"]["NamingRules"];
             match?: components["schemas"]["FileManagerRecognitionMatch"];
+            /** @description Must match the confirmed preview. Reads current MediaInfo facts and referenced provider episode titles again before checking the digest. */
+            load_runtime_facts?: boolean;
             /** @description The `plan_digest` the preview returned. */
             expected_plan_digest: string;
             conflict: components["schemas"]["FileManagerRecognitionConflictChoice"];

@@ -41,6 +41,7 @@ type Service struct {
 	seasons       SeasonCatalog
 
 	recognition       RecognitionRenderer
+	recognitionMedia  RecognitionMediaProber
 	recognitionPolicy RecognitionPolicy
 }
 

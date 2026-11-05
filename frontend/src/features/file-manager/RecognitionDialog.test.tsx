@@ -67,6 +67,7 @@ const result: FileManagerRecognitionResult = { renamed: 2, moved: 0, operations:
 
 let previewBody: FileManagerRecognitionPreview;
 let submitStatus: number;
+let runtimePreviewStatus: number;
 let submitBody: unknown;
 let fetchMock: ReturnType<typeof vi.fn>;
 
@@ -82,6 +83,7 @@ function posts(pathname: string): unknown[] {
 
 beforeEach(() => {
   submitStatus = 202;
+  runtimePreviewStatus = 200;
   submitBody = result;
   // The parser's read of the first file's name rides on the preview as the
   // title candidate the badges offer.
@@ -93,7 +95,13 @@ beforeEach(() => {
       return json({ language: "js-naming-1", fields: [], functions: [], shorthands: [], samples: [], vars_keys: [], vars_loaded_at: null });
     }
     if (url.pathname === "/api/v1/parser-catalog") return json(parsers);
-    if (url.pathname === "/api/v1/file-manager/recognition/preview" && init?.method === "POST") return json(previewBody);
+    if (url.pathname === "/api/v1/file-manager/recognition/preview" && init?.method === "POST") {
+      const request = JSON.parse(String(init.body));
+      if (request.load_runtime_facts && runtimePreviewStatus !== 200) {
+        return json({ code: "SERVICE_UNAVAILABLE", message: "unavailable" }, runtimePreviewStatus);
+      }
+      return json(previewBody);
+    }
     if (url.pathname === "/api/v1/file-manager/recognition" && init?.method === "POST") {
       if (submitStatus !== 202) return json({ code: "FILE_MANAGER_RECOGNITION_PLAN_CHANGED", message: "changed" }, submitStatus);
       return json(submitBody, 202);
@@ -300,5 +308,31 @@ describe("RecognitionDialog", () => {
     const apply = screen.getByRole("button", { name: t("fileManager.recognize.apply") });
     expect(apply).toBeDisabled();
     expect(apply).toHaveAttribute("title", t("fileManager.recognize.applyDisabled.nothing"));
+  });
+
+  it("loads runtime facts only on demand and submits with the same setting", async () => {
+    const onFinished = renderDialog();
+    await screen.findByText("/media/anime/Show - 01.mkv", undefined, { timeout: 3000 });
+    const initial = posts("/api/v1/file-manager/recognition/preview") as Record<string, unknown>[];
+    expect(initial[0]).not.toHaveProperty("load_runtime_facts");
+
+    fireEvent.click(screen.getByRole("button", { name: t("fileManager.recognize.runtimeFacts.load") }));
+    expect(await screen.findByText(t("fileManager.recognize.runtimeFacts.loaded"), undefined, { timeout: 3000 })).toBeInTheDocument();
+    const requests = posts("/api/v1/file-manager/recognition/preview") as Record<string, unknown>[];
+    expect(requests.at(-1)?.load_runtime_facts).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: t("fileManager.recognize.apply") }));
+    expect(posts("/api/v1/file-manager/recognition")[0]).toMatchObject({ load_runtime_facts: true, expected_plan_digest: "digest-1" });
+    await waitFor(() => expect(onFinished).toHaveBeenCalledWith(result, 0));
+  });
+
+  it("keeps apply closed when runtime metadata loading fails", async () => {
+    runtimePreviewStatus = 503;
+    renderDialog();
+    await screen.findByText("/media/anime/Show - 01.mkv", undefined, { timeout: 3000 });
+    fireEvent.click(screen.getByRole("button", { name: t("fileManager.recognize.runtimeFacts.load") }));
+    expect(await screen.findByRole("alert", undefined, { timeout: 3000 })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: t("fileManager.recognize.apply") })).toBeDisabled();
+    expect(posts("/api/v1/file-manager/recognition")).toHaveLength(0);
   });
 });

@@ -37,6 +37,9 @@ const (
 	RecognitionRenderFactsMissing = "facts_missing"
 	// RecognitionRenderTemplateInvalid: the rules do not compile.
 	RecognitionRenderTemplateInvalid = "template_invalid"
+	// RecognitionRenderRuntimeFacts: an explicitly requested runtime fact lookup
+	// failed. A definite absent fact renders empty instead.
+	RecognitionRenderRuntimeFacts = "runtime_facts_unavailable"
 	// RecognitionRenderTargetInvalid: the rendered output is not a usable
 	// destination (a relative or empty directory, a filename that is not one
 	// path segment, traversal).
@@ -106,6 +109,12 @@ type RecognitionRenderInput struct {
 
 	// Rt is the release-level namespace parsed from the file's own name.
 	Rt templatefacts.Values
+	// Media is the selected video's current MediaInfo result. Bound subtitles
+	// receive their video's value; the zero value is used before explicit loading.
+	Media naming.MediaNamingFacts
+	// LoadRuntimeFacts enables the whitelisted episode-title lookup for the
+	// templates this file actually renders. It never changes media facts itself.
+	LoadRuntimeFacts bool
 }
 
 // RecognitionAnimeDraft is the anime facts one recognition render names with.
@@ -147,6 +156,11 @@ func (r *NamingTargetRenderer) RenderRecognition(ctx context.Context, in Recogni
 	}
 	resolved := r.resolveRecognition(in, namingContext)
 	render := compiled.RenderVideoDetailed
+	variant := compiled.TV
+	if naming.MediaKind(resolved.Derived.EffectiveMediaKind) == naming.MediaKindMovie {
+		variant = compiled.Movie
+	}
+	titleTemplates := []naming.CompiledTemplate{variant.Directory, variant.VideoFilename}
 	if strings.TrimSpace(in.Episode) == "" && naming.MediaKind(resolved.Derived.EffectiveMediaKind) != naming.MediaKindMovie {
 		// An unclassified file never borrows an episode: it follows the
 		// unclassified route to the unknown variant, or stays put.
@@ -154,6 +168,12 @@ func (r *NamingTargetRenderer) RenderRecognition(ctx context.Context, in Recogni
 			return RecognitionRendered{Skipped: true}, nil
 		}
 		render = compiled.RenderUnknownDetailed
+		titleTemplates = []naming.CompiledTemplate{compiled.Unknown.Directory, compiled.Unknown.VideoFilename}
+	}
+	if in.LoadRuntimeFacts {
+		if err := r.resolveEpisodeTitlesInto(ctx, titleTemplates, &resolved); err != nil {
+			return RecognitionRendered{}, &RecognitionRenderError{Code: RecognitionRenderRuntimeFacts, cause: err}
+		}
 	}
 	rendered, err := render(engine, resolved)
 	if err != nil {
@@ -169,7 +189,17 @@ func (r *NamingTargetRenderer) RenderRecognitionSuffix(ctx context.Context, in R
 	if err != nil {
 		return "", err
 	}
-	rendered, err := compiled.RenderSubtitleSuffixDetailed(engine, r.resolveRecognition(in, namingContext))
+	resolved := r.resolveRecognition(in, namingContext)
+	if in.LoadRuntimeFacts {
+		var templates []naming.CompiledTemplate
+		if compiled.SubtitleSuffix != nil {
+			templates = []naming.CompiledTemplate{*compiled.SubtitleSuffix}
+		}
+		if err := r.resolveEpisodeTitlesInto(ctx, templates, &resolved); err != nil {
+			return "", &RecognitionRenderError{Code: RecognitionRenderRuntimeFacts, cause: err}
+		}
+	}
+	rendered, err := compiled.RenderSubtitleSuffixDetailed(engine, resolved)
 	if err != nil {
 		return "", classifyRecognitionRender(err)
 	}
@@ -230,6 +260,7 @@ func (r *NamingTargetRenderer) recognitionContext(ctx context.Context, in Recogn
 			Extension:    extension,
 			SizeBytes:    in.SizeBytes,
 			Kind:         in.FileKind,
+			Media:        in.Media,
 		},
 		Release: naming.ReleaseNamingFacts{
 			// The file's own name is the only release-level evidence this

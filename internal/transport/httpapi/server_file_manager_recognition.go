@@ -42,6 +42,7 @@ func (s *Server) previewFileManagerRecognition(ctx context.Context, input genera
 	if err != nil {
 		return generated.FileManagerRecognitionPreview{}, err
 	}
+	request.LoadRuntimeFacts = input.LoadRuntimeFacts != nil && *input.LoadRuntimeFacts
 	preview, err := s.deps.FileManager.PreviewRecognition(ctx, request)
 	if err != nil {
 		return generated.FileManagerRecognitionPreview{}, err
@@ -75,6 +76,7 @@ func (s *Server) submitFileManagerRecognition(ctx context.Context, idempotencyKe
 	if err != nil {
 		return generated.FileManagerRecognitionResult{}, err
 	}
+	request.LoadRuntimeFacts = input.LoadRuntimeFacts != nil && *input.LoadRuntimeFacts
 	outcome, err := s.deps.FileManager.SubmitRecognition(ctx, filemanager.SubmitRecognitionRequest{
 		IdempotencyKey: idempotencyKey, Actor: fileManagerActor, RecognitionRequest: request,
 		ExpectedPlanDigest: input.ExpectedPlanDigest, Conflict: filemanager.RecognitionConflictChoice(input.Conflict),
@@ -205,6 +207,10 @@ func mapFileManagerRecognitionRow(row filemanager.RecognitionRow) generated.File
 			episode.NumberEnd = &end
 		}
 		mapped.Episode = &episode
+	}
+	if len(row.EmptyFacts) > 0 {
+		facts := append([]string{}, row.EmptyFacts...)
+		mapped.EmptyFacts = &facts
 	}
 	if row.TargetPath != "" {
 		target := row.TargetPath

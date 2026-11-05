@@ -133,6 +133,7 @@ export function RecognitionDialog({
   const [matchProvider, setMatchProvider] = useState<MetadataProvider | undefined>();
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [loadRuntimeFacts, setLoadRuntimeFacts] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [planChanged, setPlanChanged] = useState(false);
   const [conflictOpen, setConflictOpen] = useState(false);
@@ -201,6 +202,7 @@ export function RecognitionDialog({
           ? { id: "regex", ...(d.patterns.length > 0 ? { config: { episode_patterns: d.patterns } } : {}) }
           : { id: "reltitle" },
       naming: d.naming,
+      ...(loadRuntimeFacts ? { load_runtime_facts: true } : {}),
       ...(hasMatch
         ? {
             match: {
@@ -225,7 +227,7 @@ export function RecognitionDialog({
     };
     // The paths are fixed for this dialog; the debounced inputs are the request.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debounced, paths, singleVideo]);
+  }, [debounced, loadRuntimeFacts, paths, singleVideo]);
 
   const preview = useQuery({
     queryKey: ["file-manager", "recognition-preview", JSON.stringify(request)],
@@ -239,6 +241,11 @@ export function RecognitionDialog({
   // The previous plan stays visible while the debounced inputs are updating;
   // 应用 stays closed until the preview for the current inputs has landed.
   const data = preview.data;
+  const runtimeFactsLoading = loadRuntimeFacts && preview.isFetching;
+  function loadFacts() {
+    if (loadRuntimeFacts) void preview.refetch();
+    else setLoadRuntimeFacts(true);
+  }
   const rows = data?.rows ?? [];
   const hasBlockers = rows.some((row) => row.disposition === "error");
   const blockedCount = rows.filter((row) => row.disposition === "error").length;
@@ -359,7 +366,13 @@ export function RecognitionDialog({
               <RecognitionPreview rows={rows} />
             )}
             {preview.isError && settled ? (
-              <Alert tone="error" title={toUserMessage(preview.error, t("fileManager.recognize.preview.failed"))} />
+              <Alert
+                tone="error"
+                title={toUserMessage(
+                  preview.error,
+                  t(loadRuntimeFacts ? "fileManager.recognize.runtimeFacts.failed" : "fileManager.recognize.preview.failed"),
+                )}
+              />
             ) : null}
             {data && unknownCount > 0 ? (
               <Alert
@@ -459,6 +472,23 @@ export function RecognitionDialog({
                 }}
                 mediaKind={metadata.media_kind ?? null}
               />
+            </div>
+            <div className="tw:grid tw:justify-items-start tw:gap-1.5">
+              <Button
+                variant="secondary"
+                loading={runtimeFactsLoading}
+                disabled={busy || namingEmpty || numberInvalid || runtimeFactsLoading}
+                onClick={loadFacts}
+              >
+                {t(loadRuntimeFacts ? "fileManager.recognize.runtimeFacts.reload" : "fileManager.recognize.runtimeFacts.load")}
+              </Button>
+              <p className="tw:m-0 tw:text-xs tw:text-muted-foreground">
+                {t(
+                  loadRuntimeFacts && data && settled && !preview.isFetching && !preview.isError
+                    ? "fileManager.recognize.runtimeFacts.loaded"
+                    : "fileManager.recognize.runtimeFacts.hint",
+                )}
+              </p>
             </div>
             {singleVideo ? (
               <div className="tw:grid tw:gap-1.5">
@@ -628,7 +658,8 @@ function TargetLine({ row }: { row: FileManagerRecognitionRow }) {
 
 function RecognitionMeta({ row }: { row: FileManagerRecognitionRow }) {
   const episode = row.episode;
-  if (!episode && !row.conflict) return null;
+  const emptyFacts = row.empty_facts ?? [];
+  if (!episode && !row.conflict && emptyFacts.length === 0) return null;
   return (
     <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-x-3 tw:gap-y-1 tw:text-xs tw:text-muted-foreground">
       {episode ? (
@@ -640,6 +671,11 @@ function RecognitionMeta({ row }: { row: FileManagerRecognitionRow }) {
         </span>
       ) : null}
       {row.conflict ? <span className="tw:text-warning">{conflictText(row.conflict)}</span> : null}
+      {emptyFacts.length > 0 ? (
+        <span className="tw:text-warning">
+          {t("fileManager.recognize.preview.emptyFacts", { facts: joinList(emptyFacts.map(factLabel)) })}
+        </span>
+      ) : null}
     </div>
   );
 }

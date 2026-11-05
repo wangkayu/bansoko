@@ -210,6 +210,13 @@ export const enFileManagerCopy = {
     invalidNumber: "Episode and offset must be whole numbers",
     willProcess: "{n} to process",
     apply: "Apply",
+    runtimeFacts: {
+      load: "Load metadata",
+      reload: "Reload metadata",
+      hint: "Reads media information from the files and episode titles referenced by the templates",
+      loaded: "Loaded; unavailable values are marked beside their files",
+      failed: "Couldn't load metadata; try again",
+    },
     applyDisabled: {
       blockers: "{n} files can't be processed; resolve them first",
       nothing: "Every file is already at its target; nothing to process",
@@ -229,6 +236,7 @@ export const enFileManagerCopy = {
       episodeRaw: "Read as {raw} from the filename",
       episodeOffset: "offset {n}",
       episodeManual: "manual episode",
+      emptyFacts: "Empty values: {facts}",
       disposition: {
         rename: "Rename",
         move: "Move",
@@ -249,6 +257,7 @@ export const enFileManagerCopy = {
         template_invalid: "The template cannot render a name",
         target_invalid: "The rendered target must be an absolute path",
         outside_roots: "The target is outside the file manager's authorized roots",
+        runtime_facts_unavailable: "The file's media information or episode title could not be read",
         video_missing: "The subtitle's video is not in the selection",
         video_failed: "The subtitle's video cannot be processed",
       },
