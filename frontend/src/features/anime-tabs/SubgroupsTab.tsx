@@ -176,7 +176,7 @@ function OwnerSubgroupsTab({ host }: { host: OwnerTabHost }) {
       });
       setSubgroupsVersion(result.version);
       setPendingActions([]);
-      markSaved(edit);
+      markSaved(subgroupsEditFromWorkspace(result));
       onChanged();
       return { ok: true as const, message: t("tabs.subgroups.saved") };
     } catch (cause) {

@@ -542,7 +542,18 @@ describe("AnimeTabs Subgroups group_actions", () => {
         );
       }
       if (init?.method === "PATCH" && url.includes("/anime/anime-1/subgroups")) {
-        return new Response(JSON.stringify({ accepted: true }), {
+        const body = JSON.parse(String(init.body)) as { subgroups: AnimeWorkspace["subgroups"]["subgroups"] };
+        body.subgroups.entries = body.subgroups.entries.map((entry) => ({
+          ...entry,
+          effective_selected: entry.selection_mode === "manual" ? entry.manual_selected === true : entry.effective_selected,
+        }));
+        return new Response(JSON.stringify({
+          managed_anime_id: "anime-1",
+          subgroups: body.subgroups,
+          effective_selection: [],
+          rss_sources: [],
+          version: 2,
+        }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
@@ -1871,9 +1882,14 @@ describe("AnimeTabs Subgroups discover 刷新", () => {
         );
       }
       if (init?.method === "PATCH" && url.includes("/anime/anime-1/subgroups")) {
+        const body = JSON.parse(String(init.body)) as { subgroups: AnimeWorkspace["subgroups"]["subgroups"] };
+        body.subgroups.entries = body.subgroups.entries.map((entry) => ({
+          ...entry,
+          effective_selected: entry.selection_mode === "manual" ? entry.manual_selected === true : entry.effective_selected,
+        }));
         return new Response(JSON.stringify({
           managed_anime_id: "anime-1",
-          subgroups: { max_rss: 3, entries: [] },
+          subgroups: body.subgroups,
           effective_selection: [],
           rss_sources: [],
           version: 3,
@@ -1950,7 +1966,7 @@ describe("AnimeTabs Subgroups discover 刷新", () => {
           display_name: "新组一号",
           selection_mode: "manual",
           manual_selected: false,
-          effective_selected: true,
+          effective_selected: false,
           score: 90,
         },
       ],
