@@ -209,6 +209,8 @@ export type AcquisitionFilePage = Schema<"AcquisitionFilePage">;
 export type FileManagerRoot = Schema<"FileManagerRoot">;
 export type FileManagerRootList = Schema<"FileManagerRootList">;
 export type FileManagerRootAddRequest = Schema<"FileManagerRootAddRequest">;
+export type FileManagerRootPickerEntry = Schema<"FileManagerRootPickerEntry">;
+export type FileManagerRootPickerListing = Schema<"FileManagerRootPickerListing">;
 export type FileManagerEntry = Schema<"FileManagerEntry">;
 export type FileManagerEntryState = Schema<"FileManagerEntryState">;
 export type FileManagerEntryRole = Schema<"FileManagerEntryRole">;
@@ -1536,6 +1538,21 @@ export function addFileManagerRoot(path: string): Promise<FileManagerRoot> {
 
 export function removeFileManagerRoot(rootID: string): Promise<void> {
   return request(`/file-manager/roots/${encodePathSegment(rootID)}`, { method: "DELETE" });
+}
+
+export type FileManagerRootPickerQuery = NonNullable<operations["listFileManagerRootPickerEntries"]["parameters"]["query"]>;
+
+/** Subdirectories of one absolute path, for choosing a library directory to add. Reads
+ *  outside the added roots; only directory names come back. */
+export function listFileManagerRootPickerEntries(
+  path: string,
+  cursor?: string,
+  limit?: number,
+): Promise<FileManagerRootPickerListing> {
+  const query: FileManagerRootPickerQuery = { path };
+  if (cursor) query.cursor = cursor;
+  if (limit !== undefined) query.limit = limit;
+  return request(`/file-manager/root-picker/entries${queryString(query)}`, { method: "GET" });
 }
 
 export function listFileManagerEntries(query: FileManagerEntriesQuery): Promise<FileManagerListing> {

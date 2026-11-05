@@ -234,6 +234,26 @@ type Listing struct {
 	Truncated bool
 }
 
+// RootPickerEntry is one subdirectory offered while choosing a library
+// directory to add. Only its name and path are read: the picker never derives
+// ownership state and never looks inside it.
+type RootPickerEntry struct {
+	Name string
+	Path string
+}
+
+// RootPickerListing is one page of the subdirectories of one directory, read
+// outside the library roots the owner added (the picker walks from the
+// filesystem root to the folder to authorize).
+type RootPickerListing struct {
+	Path       string
+	Entries    []RootPickerEntry
+	NextCursor string
+	// Truncated reports that the directory holds more entries than one read
+	// observes; only its first subdirectories are listed.
+	Truncated bool
+}
+
 // AnimeRef is the anime that owns (or owned) an entry.
 type AnimeRef struct {
 	ID                string

@@ -192,6 +192,17 @@ func (f *fakeFileManager) RemoveRoot(_ context.Context, id string) error {
 	return f.err
 }
 
+func (f *fakeFileManager) RootPicker(_ context.Context, path, cursor string, limit int) (filemanager.RootPickerListing, error) {
+	f.path, f.cursor, f.limit = path, cursor, limit
+	if f.err != nil {
+		return filemanager.RootPickerListing{}, f.err
+	}
+	return filemanager.RootPickerListing{
+		Path: path, NextCursor: "next", Truncated: true,
+		Entries: []filemanager.RootPickerEntry{{Name: "library", Path: "/srv/library"}},
+	}, nil
+}
+
 func (f *fakeFileManager) List(_ context.Context, path, cursor string, limit int, managedOnly bool) (filemanager.Listing, error) {
 	f.path, f.cursor, f.limit, f.managedOnly = path, cursor, limit, managedOnly
 	if f.err != nil {
@@ -300,6 +311,33 @@ func TestFileManagerHandlersShapeResponses(t *testing.T) {
 	recorder, body = serveFileManager(t, service, "/api/v1/file-manager/anime/anime-1/location")
 	if recorder.Code != http.StatusOK || service.located != "anime-1" || body["path"] != "/srv/library/Show" {
 		t.Fatalf("location: %d %v", recorder.Code, body)
+	}
+}
+
+func TestFileManagerRootPickerListsDirectories(t *testing.T) {
+	service := &fakeFileManager{}
+	recorder, body := serveFileManager(t, service, "/api/v1/file-manager/root-picker/entries?path=%2Fsrv&cursor=abc&limit=2")
+	if recorder.Code != http.StatusOK || service.path != "/srv" || service.cursor != "abc" || service.limit != 2 {
+		t.Fatalf("root picker: %d, called with %+v", recorder.Code, *service)
+	}
+	entries := body["entries"].([]any)
+	entry := entries[0].(map[string]any)
+	if body["path"] != "/srv" || body["next_cursor"] != "next" || body["truncated"] != true ||
+		len(entries) != 1 || entry["name"] != "library" || entry["path"] != "/srv/library" {
+		t.Fatalf("root picker body = %v", body)
+	}
+
+	// A refused path keeps the browse error codes.
+	refused := &filemanager.Error{Kind: filemanager.ErrorInvalid, Code: filemanager.CodePathDenied, Message: "denied"}
+	recorder, body = serveFileManager(t, &fakeFileManager{err: refused}, "/api/v1/file-manager/root-picker/entries?path=%2Fsrv%2Fappdata")
+	if recorder.Code != http.StatusBadRequest || body["code"] != filemanager.CodePathDenied {
+		t.Fatalf("refused picker path: %d %v", recorder.Code, body)
+	}
+
+	// The path is required, like the browse endpoint's.
+	recorder, body = serveFileManager(t, &fakeFileManager{}, "/api/v1/file-manager/root-picker/entries")
+	if recorder.Code != http.StatusBadRequest || body["code"] != "REQUEST_INVALID" {
+		t.Fatalf("a missing required path is a request error: %d %v", recorder.Code, body)
 	}
 }
 

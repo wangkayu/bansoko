@@ -2763,6 +2763,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/file-manager/root-picker/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description One page of the directories directly inside an absolute path, for choosing a library directory to add. Unlike the browse endpoints this read is not bounded by the library directories already added: it starts at the filesystem root and walks to the folder to authorize. Only directory names are read; files, symlinks and ownership state are not returned, symlinks are never followed, and a path inside the refusal set is still refused. A directory that cannot be read is an error, never an empty answer. Read-only: nothing on disk is written. */
+        get: operations["listFileManagerRootPickerEntries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/file-manager/entries": {
         parameters: {
             query?: never;
@@ -6098,6 +6115,19 @@ export interface components {
         FileManagerRootAddRequest: {
             /** @description Absolute path of an existing directory to authorize. */
             path: string;
+        };
+        FileManagerRootPickerEntry: {
+            name: string;
+            /** @description Absolute path of the subdirectory. */
+            path: string;
+        };
+        FileManagerRootPickerListing: {
+            /** @description Absolute path of the listed directory. */
+            path: string;
+            entries: components["schemas"]["FileManagerRootPickerEntry"][];
+            next_cursor?: string;
+            /** @description The directory holds more entries than one read observes; only its first subdirectories are listed, and descending into it still works. */
+            truncated: boolean;
         };
         /**
          * @description Lstat type; a symlink is described, never followed.
@@ -13617,6 +13647,36 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    listFileManagerRootPickerEntries: {
+        parameters: {
+            query: {
+                /** @description Absolute directory path to list, starting at "/". Inside the refusal set it is 400 FILE_MANAGER_PATH_DENIED. */
+                path: string;
+                /** @description Opaque keyset pagination cursor. */
+                cursor?: components["parameters"]["Cursor"];
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of the directory's subdirectories. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileManagerRootPickerListing"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     listFileManagerEntries: {

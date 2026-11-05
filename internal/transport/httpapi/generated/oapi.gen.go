@@ -5433,6 +5433,26 @@ type FileManagerRootList struct {
 	Roots []FileManagerRoot `json:"roots"`
 }
 
+// FileManagerRootPickerEntry defines model for FileManagerRootPickerEntry.
+type FileManagerRootPickerEntry struct {
+	Name string `json:"name"`
+
+	// Path Absolute path of the subdirectory.
+	Path string `json:"path"`
+}
+
+// FileManagerRootPickerListing defines model for FileManagerRootPickerListing.
+type FileManagerRootPickerListing struct {
+	Entries    []FileManagerRootPickerEntry `json:"entries"`
+	NextCursor *string                      `json:"next_cursor,omitempty"`
+
+	// Path Absolute path of the listed directory.
+	Path string `json:"path"`
+
+	// Truncated The directory holds more entries than one read observes; only its first subdirectories are listed, and descending into it still works.
+	Truncated bool `json:"truncated"`
+}
+
 // FileManagerRootUnavailable Why a library directory cannot be browsed right now: it vanished, or it stopped being a directory (or became a symbolic link, which is never followed).
 type FileManagerRootUnavailable string
 
@@ -10142,6 +10162,16 @@ type SubmitFileManagerRecognitionParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// ListFileManagerRootPickerEntriesParams defines parameters for ListFileManagerRootPickerEntries.
+type ListFileManagerRootPickerEntriesParams struct {
+	// Path Absolute directory path to list, starting at "/". Inside the refusal set it is 400 FILE_MANAGER_PATH_DENIED.
+	Path string `form:"path" json:"path"`
+
+	// Cursor Opaque keyset pagination cursor.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // SearchMetadataParams defines parameters for SearchMetadata.
 type SearchMetadataParams struct {
 	Provider SearchMetadataParamsProvider `form:"provider" json:"provider"`
@@ -12847,6 +12877,9 @@ type ServerInterface interface {
 
 	// (POST /file-manager/recognition/preview)
 	PreviewFileManagerRecognition(w http.ResponseWriter, r *http.Request)
+
+	// (GET /file-manager/root-picker/entries)
+	ListFileManagerRootPickerEntries(w http.ResponseWriter, r *http.Request, params ListFileManagerRootPickerEntriesParams)
 
 	// (GET /file-manager/roots)
 	ListFileManagerRoots(w http.ResponseWriter, r *http.Request)
@@ -17847,6 +17880,62 @@ func (siw *ServerInterfaceWrapper) PreviewFileManagerRecognition(w http.Response
 	handler.ServeHTTP(w, r)
 }
 
+// ListFileManagerRootPickerEntries operation middleware
+func (siw *ServerInterfaceWrapper) ListFileManagerRootPickerEntries(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListFileManagerRootPickerEntriesParams
+
+	// ------------- Required query parameter "path" -------------
+
+	if paramValue := r.URL.Query().Get("path"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "path"})
+		return
+	}
+
+	err = runtime.BindQueryParameter("form", true, true, "path", r.URL.Query(), &params.Path)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "path", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "cursor", r.URL.Query(), &params.Cursor)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "limit", r.URL.Query(), &params.Limit)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListFileManagerRootPickerEntries(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListFileManagerRoots operation middleware
 func (siw *ServerInterfaceWrapper) ListFileManagerRoots(w http.ResponseWriter, r *http.Request) {
 
@@ -20435,6 +20524,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("GET "+options.BaseURL+"/file-manager/operations/{operation_id}", wrapper.GetFileManagerOperation)
 	m.HandleFunc("POST "+options.BaseURL+"/file-manager/recognition", wrapper.SubmitFileManagerRecognition)
 	m.HandleFunc("POST "+options.BaseURL+"/file-manager/recognition/preview", wrapper.PreviewFileManagerRecognition)
+	m.HandleFunc("GET "+options.BaseURL+"/file-manager/root-picker/entries", wrapper.ListFileManagerRootPickerEntries)
 	m.HandleFunc("GET "+options.BaseURL+"/file-manager/roots", wrapper.ListFileManagerRoots)
 	m.HandleFunc("POST "+options.BaseURL+"/file-manager/roots", wrapper.AddFileManagerRoot)
 	m.HandleFunc("DELETE "+options.BaseURL+"/file-manager/roots/{root_id}", wrapper.RemoveFileManagerRoot)

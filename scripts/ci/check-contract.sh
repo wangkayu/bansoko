@@ -213,6 +213,7 @@ required_paths = {
   "/catalog/providers/{provider}/seed-search-snapshots:fetch" => ["post"],
   "/file-manager/roots" => ["get", "post"],
   "/file-manager/roots/{root_id}" => ["delete"],
+  "/file-manager/root-picker/entries" => ["get"],
   "/file-manager/entries" => ["get"],
   "/file-manager/entry" => ["get"],
   "/file-manager/entry/release" => ["post"],

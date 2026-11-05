@@ -6822,6 +6822,55 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+  /file-manager/root-picker/entries:
+    get:
+      tags: [FileManager]
+      operationId: listFileManagerRootPickerEntries
+      x-scope: read
+      description: >-
+        One page of the directories directly inside an absolute path, for
+        choosing a library directory to add. Unlike the browse endpoints this
+        read is not bounded by the library directories already added: it starts
+        at the filesystem root and walks to the folder to authorize. Only
+        directory names are read; files, symlinks and ownership state are not
+        returned, symlinks are never followed, and a path inside the refusal
+        set is still refused. A directory that cannot be read is an error, never
+        an empty answer. Read-only: nothing on disk is written.
+      parameters:
+        - name: path
+          in: query
+          required: true
+          description: >-
+            Absolute directory path to list, starting at "/". Inside the
+            refusal set it is 400 FILE_MANAGER_PATH_DENIED.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 4096
+        - $ref: '#/components/parameters/Cursor'
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 100
+      responses:
+        '200':
+          description: One page of the directory's subdirectories.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileManagerRootPickerListing'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /file-manager/entries:
     get:
       tags: [FileManager]
@@ -15441,6 +15490,43 @@ components:
           description: Absolute path of an existing directory to authorize.
           minLength: 1
           maxLength: 4096
+    FileManagerRootPickerEntry:
+      type: object
+      additionalProperties: false
+      required: [name, path]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        path:
+          type: string
+          description: Absolute path of the subdirectory.
+          minLength: 1
+          maxLength: 4096
+    FileManagerRootPickerListing:
+      type: object
+      additionalProperties: false
+      required: [path, entries, truncated]
+      properties:
+        path:
+          type: string
+          description: Absolute path of the listed directory.
+          maxLength: 4096
+        entries:
+          type: array
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/FileManagerRootPickerEntry'
+        next_cursor:
+          type: string
+          minLength: 1
+          maxLength: 512
+        truncated:
+          type: boolean
+          description: >-
+            The directory holds more entries than one read observes; only its
+            first subdirectories are listed, and descending into it still works.
     FileManagerEntryKind:
       type: string
       description: Lstat type; a symlink is described, never followed.

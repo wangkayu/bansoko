@@ -66,6 +66,29 @@ func (s *Server) RemoveFileManagerRoot(w http.ResponseWriter, r *http.Request, r
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// ListFileManagerRootPickerEntries returns the subdirectories of one absolute
+// path for choosing a library directory to add.
+func (s *Server) ListFileManagerRootPickerEntries(w http.ResponseWriter, r *http.Request, params generated.ListFileManagerRootPickerEntriesParams) {
+	if s.deps.FileManager == nil {
+		writeError(w, r, errors.New("file manager service is not configured"))
+		return
+	}
+	cursor, limit := "", 0
+	if params.Cursor != nil {
+		cursor = *params.Cursor
+	}
+	if params.Limit != nil {
+		limit = *params.Limit
+	}
+	listing, err := s.deps.FileManager.RootPicker(r.Context(), params.Path, cursor, limit)
+	if err != nil {
+		writeFileManagerError(w, r, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, r.Context(), http.StatusOK, mapFileManagerRootPickerListing(listing))
+}
+
 // ListFileManagerEntries returns one sorted page of a directory.
 func (s *Server) ListFileManagerEntries(w http.ResponseWriter, r *http.Request, params generated.ListFileManagerEntriesParams) {
 	if s.deps.FileManager == nil {
@@ -155,6 +178,21 @@ func mapFileManagerRoot(root filemanager.Root) generated.FileManagerRoot {
 	if root.Unavailable != "" {
 		reason := generated.FileManagerRootUnavailable(root.Unavailable)
 		mapped.UnavailableReason = &reason
+	}
+	return mapped
+}
+
+func mapFileManagerRootPickerListing(listing filemanager.RootPickerListing) generated.FileManagerRootPickerListing {
+	mapped := generated.FileManagerRootPickerListing{
+		Path: listing.Path, Truncated: listing.Truncated,
+		Entries: make([]generated.FileManagerRootPickerEntry, 0, len(listing.Entries)),
+	}
+	for _, entry := range listing.Entries {
+		mapped.Entries = append(mapped.Entries, generated.FileManagerRootPickerEntry{Name: entry.Name, Path: entry.Path})
+	}
+	if listing.NextCursor != "" {
+		cursor := listing.NextCursor
+		mapped.NextCursor = &cursor
 	}
 	return mapped
 }

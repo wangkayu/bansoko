@@ -45,6 +45,7 @@
 - Failure rows on the RSS page name the skip: when the target location is occupied and the same-name policy is Skip, the row says the Skip policy left it untouched; a target blocked at planning time is explained the same way instead of only naming the existing file.
 - When matching TMDB, the selected work's type and season pickers stay above the candidate list, so a long list never scrolls them out of view.
 - The file manager's hide-managed switch also hides purely managed folders: a directory whose every file below it, subfolders included, is managed or in progress no longer shows; an empty folder and a folder holding an unmanaged file still show.
+- A library directory can be chosen by browsing folders: walk down from the filesystem root and pick the folder, which fills the path to add. Typing an absolute path still works, a duplicate or unusable path still reports its real error, and removing a directory never deletes files.
 
 ## Fixed
 

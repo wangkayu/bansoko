@@ -300,6 +300,9 @@ type FileManagerService interface {
 	Roots(ctx context.Context) ([]filemanager.Root, error)
 	AddRoot(ctx context.Context, request filemanager.AddRootRequest) (filemanager.Root, error)
 	RemoveRoot(ctx context.Context, id string) error
+	// RootPicker lists subdirectories outside the library roots so the owner
+	// can walk to the folder to authorize; it only ever offers directories.
+	RootPicker(ctx context.Context, path, cursor string, limit int) (filemanager.RootPickerListing, error)
 	List(ctx context.Context, path, cursor string, limit int, managedOnly bool) (filemanager.Listing, error)
 	Detail(ctx context.Context, path string) (filemanager.Detail, error)
 	Locate(ctx context.Context, managedAnimeID string) (filemanager.Location, error)

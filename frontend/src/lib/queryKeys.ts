@@ -93,6 +93,8 @@ export const fileManagerKeys = {
   entries: (path: string, managedOnly = false) => ["file-manager", "entries", path, managedOnly] as const,
   /** One folder read for a picker; separate from the browse layer's infinite listing, whose data is a paged envelope. */
   folders: (path: string) => ["file-manager", "folders", path] as const,
+  /** One root-picker page: directories outside the added roots, for choosing a new one. */
+  rootPicker: (path: string) => ["file-manager", "root-picker", path] as const,
   entry: (path: string) => ["file-manager", "entry", path] as const,
   operation: (operationID: string) => ["file-manager", "operation", operationID] as const,
   location: (managedAnimeID: string) => ["file-manager", "location", managedAnimeID] as const,
