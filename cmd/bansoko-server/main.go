@@ -680,7 +680,7 @@ func runServe(args []string) {
 			Lane:           os.Getenv(updateapplication.EnvLane),
 			ChannelBase:    os.Getenv(updateapplication.EnvChannelBase),
 			Production:     cfg.Environment == "production",
-			GitHubRoute:    configService,
+			UpdateRoute:    configService,
 			BuildReleaseID: buildinfo.Current().BuildID, BuildVersion: buildinfo.Current().Version,
 			BuildCompatibilityVersion: buildinfo.Current().BaseCompatibilityVersion, BuildBootstrapVersion: os.Getenv(deploymentidentity.EnvBootstrapVersion),
 			UpdateMode:  cfg.UpdateMode,

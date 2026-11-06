@@ -447,6 +447,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/config/update-egress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read which existing network route the update channel sends its GitHub requests through. A null network_route_id means the deployment default egress. */
+        get: operations["getUpdateEgress"];
+        /** @description Select the existing network route the update channel uses, guarded by expected_version. A null network_route_id restores the deployment default. A disabled route may be selected: the updater follows the deployment default until it is enabled again. */
+        put: operations["putUpdateEgress"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/anime/{managed_anime_id}/business-edit": {
         parameters: {
             query?: never;
@@ -3746,7 +3764,7 @@ export interface components {
             /** Format: date-time */
             checked_at: string;
         };
-        NetworkRouteInput: components["schemas"]["DirectRouteInput"] | components["schemas"]["HTTPProxyRouteInput"] | components["schemas"]["SOCKS5RouteInput"] | components["schemas"]["GitHubRouteInput"];
+        NetworkRouteInput: components["schemas"]["DirectRouteInput"] | components["schemas"]["HTTPProxyRouteInput"] | components["schemas"]["SOCKS5RouteInput"];
         DirectRouteInput: {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -3784,22 +3802,7 @@ export interface components {
             username?: string;
             secret?: components["schemas"]["ConnectionSecret"];
         };
-        /** @description The update channel's own forward proxy. At most one route of this kind exists, and no connection may bind it. */
-        GitHubRouteInput: {
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            kind: "github";
-            name: string;
-            enabled: boolean;
-            /** Format: uri */
-            proxy_url: string;
-            /** @description Credential username, applied only when secret replaces the stored credential. */
-            username?: string;
-            secret?: components["schemas"]["ConnectionSecret"];
-        };
-        NetworkRoute: components["schemas"]["DirectRoute"] | components["schemas"]["HTTPProxyRoute"] | components["schemas"]["SOCKS5Route"] | components["schemas"]["GitHubRoute"];
+        NetworkRoute: components["schemas"]["DirectRoute"] | components["schemas"]["HTTPProxyRoute"] | components["schemas"]["SOCKS5Route"];
         DirectRoute: {
             id: components["schemas"]["ID"];
             /**
@@ -3842,31 +3845,27 @@ export interface components {
             credential_configured: boolean;
             version: components["schemas"]["Version"];
         };
-        /** @description The update channel's own forward proxy. At most one route of this kind exists, and no connection may bind it. */
-        GitHubRoute: {
-            id: components["schemas"]["ID"];
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            kind: "github";
-            name: string;
-            enabled: boolean;
-            /** Format: uri */
-            proxy_url: string;
-            credential_configured: boolean;
-            version: components["schemas"]["Version"];
-        };
         NetworkRouteTestResult: {
             route_id: components["schemas"]["ID"];
             /** @enum {string} */
-            kind: "direct" | "http_proxy" | "socks5" | "github";
+            kind: "direct" | "http_proxy" | "socks5";
             /** @enum {string} */
             health: "ready" | "degraded" | "failed";
             reason_code?: string;
             reason_detail?: string;
             /** Format: date-time */
             checked_at: string;
+        };
+        /** @description The network route the update channel uses; null network_route_id means the deployment default egress. */
+        UpdateEgress: {
+            /** @description The selected network route, or null for the deployment default. */
+            network_route_id: string | null;
+            version: components["schemas"]["Version"];
+        };
+        UpdateEgressInput: {
+            /** @description The existing network route to use, or null for the deployment default. */
+            network_route_id: string | null;
+            expected_version: components["schemas"]["Version"];
         };
         /**
          * @description One typed global config section. download_timeouts (schema download-timeouts-v1, value DownloadTimeouts), metadata_refresh (schema metadata-refresh-v1, value MetadataRefresh) and metadata_hold (schema metadata-hold-v1, value MetadataHoldRules) are Global-only: they have no per-anime override, no draft field and are not part of the business snapshot. subscription_defaults (schema subscription-defaults-v1, value GlobalSubscriptionDefaults) is the one-time-input default new drafts copy at creation; existing subscriptions keep their own value.
@@ -9345,6 +9344,54 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    getUpdateEgress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The selected update route. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateEgress"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    putUpdateEgress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateEgressInput"];
+            };
+        };
+        responses: {
+            /** @description The saved update route selection. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateEgress"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
         };
     };

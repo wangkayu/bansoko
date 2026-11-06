@@ -18,10 +18,10 @@ import (
 )
 
 // routeSourceHost is a host name the test process cannot resolve. Every update
-// request that does not travel through the GitHub route fails at DNS, so a
+// request that does not travel through the selected route fails at DNS, so a
 // successful operation is evidence the proxy carried it and the test never has
 // to trust a "no direct connection" claim.
-const routeSourceHost = "github-route.invalid"
+const routeSourceHost = "update-route.invalid"
 
 // proxyRequest is one request a forward proxy actually carried.
 type proxyRequest struct {
@@ -101,10 +101,10 @@ func (p *routeForwardProxy) requestedPaths() []string {
 	return paths
 }
 
-// stubGitHubRoute is the configuration service as the update channel sees it:
+// stubUpdateRoute is the configuration service as the update channel sees it:
 // one resolution per operation, answered from a queue so a test can change the
-// route between operations exactly as saving settings would.
-type stubGitHubRoute struct {
+// selection between operations exactly as saving settings would.
+type stubUpdateRoute struct {
 	mu       sync.Mutex
 	calls    int
 	answers  []routeAnswer
@@ -116,7 +116,7 @@ type routeAnswer struct {
 	err    error
 }
 
-func (s *stubGitHubRoute) UpdateRouteClient(context.Context) (*http.Client, error) {
+func (s *stubUpdateRoute) UpdateRouteClient(context.Context) (*http.Client, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.calls++
@@ -128,7 +128,7 @@ func (s *stubGitHubRoute) UpdateRouteClient(context.Context) (*http.Client, erro
 	return answer.client, answer.err
 }
 
-func (s *stubGitHubRoute) callCount() int {
+func (s *stubUpdateRoute) callCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.calls
@@ -181,14 +181,14 @@ func (r *routeSourceRig) originHost(t *testing.T) string {
 	return strings.TrimPrefix(r.rig.recording.URL(), "http://")
 }
 
-func (r *routeSourceRig) service(t *testing.T, route GitHubRouteResolver) *Service {
+func (r *routeSourceRig) service(t *testing.T, route UpdateRouteResolver) *Service {
 	t.Helper()
 	service, err := NewService(Deps{
 		UpdateMode:            "embedded",
 		UpdatesRoot:           t.TempDir(),
 		Lane:                  LaneStable,
 		ChannelBase:           r.channelBase,
-		GitHubRoute:           route,
+		UpdateRoute:           route,
 		BuildReleaseID:        "release-running",
 		BuildVersion:          "v1.0.0",
 		BuildBootstrapVersion: "embedded-bootstrap-v1",
@@ -199,11 +199,11 @@ func (r *routeSourceRig) service(t *testing.T, route GitHubRouteResolver) *Servi
 	return service
 }
 
-// TestUpdateCheckUsesTheEnabledGitHubRoute proves the check path resolves the
+// TestUpdateCheckUsesTheSelectedRoute proves the check path resolves the
 // route once per operation and reaches the channel document and signed manifest
 // only through it: the origin host does not resolve, so a direct attempt fails.
-func TestUpdateCheckUsesTheEnabledGitHubRoute(t *testing.T) {
-	route := &stubGitHubRoute{}
+func TestUpdateCheckUsesTheSelectedRoute(t *testing.T) {
+	route := &stubUpdateRoute{}
 	source := newRouteSourceRig(t, routeSourceHost)
 	proxy := newRouteForwardProxy(t, source.originHost(t))
 	route.fallback = routeAnswer{client: proxy.client()}
@@ -244,7 +244,7 @@ func TestUpdateCheckUsesTheEnabledGitHubRoute(t *testing.T) {
 // leg of an admission uses the source resolved once for that operation, so the
 // channel document, manifest and payload all travel through the same route.
 func TestAdmittedUpdateDownloadsThePayloadThroughTheSameRoute(t *testing.T) {
-	route := &stubGitHubRoute{}
+	route := &stubUpdateRoute{}
 	source := newRouteSourceRig(t, routeSourceHost)
 	proxy := newRouteForwardProxy(t, source.originHost(t))
 	route.fallback = routeAnswer{client: proxy.client()}
@@ -272,11 +272,11 @@ func TestAdmittedUpdateDownloadsThePayloadThroughTheSameRoute(t *testing.T) {
 	}
 }
 
-// TestEnabledGitHubRouteFailureFailsClosed proves a route that cannot be built
+// TestSelectedRouteFailureFailsClosed proves a route that cannot be built
 // stops the operation instead of silently going direct.
-func TestEnabledGitHubRouteFailureFailsClosed(t *testing.T) {
+func TestSelectedRouteFailureFailsClosed(t *testing.T) {
 	source := newRouteSourceRig(t, routeSourceHost)
-	route := &stubGitHubRoute{fallback: routeAnswer{err: errors.New("stored route is not usable")}}
+	route := &stubUpdateRoute{fallback: routeAnswer{err: errors.New("stored route is not usable")}}
 	service := source.service(t, route)
 
 	result, err := service.checkUpdate(context.Background())
@@ -292,13 +292,13 @@ func TestEnabledGitHubRouteFailureFailsClosed(t *testing.T) {
 	}
 }
 
-// TestUnconfiguredGitHubRouteKeepsTheDeploymentDefault proves an absent route
+// TestNoSelectedRouteKeepsTheDeploymentDefault proves an absent selection
 // leaves the update channel on its existing configuration: the same check
-// succeeds over the deployment default, and the resolver reporting "no route"
-// is not turned into a hidden proxy decision.
-func TestUnconfiguredGitHubRouteKeepsTheDeploymentDefault(t *testing.T) {
+// succeeds over the deployment default, and the resolver reporting "no route
+// selected" is not turned into a hidden proxy decision.
+func TestNoSelectedRouteKeepsTheDeploymentDefault(t *testing.T) {
 	source := newRouteSourceRig(t, "")
-	route := &stubGitHubRoute{}
+	route := &stubUpdateRoute{}
 	service := source.service(t, route)
 
 	result, err := service.checkUpdate(context.Background())
@@ -320,7 +320,7 @@ func TestRouteChangesApplyToTheNextOperation(t *testing.T) {
 	source := newRouteSourceRig(t, routeSourceHost)
 	first := newRouteForwardProxy(t, source.originHost(t))
 	second := newRouteForwardProxy(t, source.originHost(t))
-	route := &stubGitHubRoute{answers: []routeAnswer{{client: first.client()}, {client: second.client()}}}
+	route := &stubUpdateRoute{answers: []routeAnswer{{client: first.client()}, {client: second.client()}}}
 	service := source.service(t, route)
 
 	ctx := context.Background()

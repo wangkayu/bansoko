@@ -7,11 +7,13 @@ import { Pencil, Plus, RotateCcw } from "lucide-react";
 import { toast } from "../../ui/toast";
 import {
   isVersionConflict,
+  getUpdateEgress,
   listConnections,
   listNetworkRoutes,
   newUUID,
   putConnection,
   putNetworkRoute,
+  putUpdateEgress,
   testConnection,
   testNetworkRoute,
   toUserMessage,
@@ -89,18 +91,18 @@ function parseSocks5URL(input: string): { host: string; port: number } | null {
 }
 
 // Validates the uniform proxy endpoint URL against the backend scheme rules:
-// http_proxy and github accept http/https, socks5 accepts socks5/socks5h.
-function routeEndpointError(kind: "http_proxy" | "github" | "socks5", value: string): string | undefined {
+// http_proxy accepts http/https, socks5 accepts socks5/socks5h.
+function routeEndpointError(kind: "http_proxy" | "socks5", value: string): string | undefined {
   const trimmed = value.trim();
   if (trimmed === "") return t("settings.proxy.addressRequired");
-  if (kind === "http_proxy" || kind === "github") {
+  if (kind === "http_proxy") {
     if (!/^https?:\/\/.+/i.test(trimmed)) return t("settings.proxy.httpInvalid");
     return undefined;
   }
   return parseSocks5URL(trimmed) ? undefined : t("settings.proxy.socksInvalid");
 }
 
-function routeKindLabel(kind: "direct" | "http_proxy" | "socks5" | "github"): string {
+function routeKindLabel(kind: "direct" | "http_proxy" | "socks5"): string {
   switch (kind) {
     case "direct":
       return t("settings.proxy.direct");
@@ -108,8 +110,6 @@ function routeKindLabel(kind: "direct" | "http_proxy" | "socks5" | "github"): st
       return t("settings.proxy.http");
     case "socks5":
       return t("settings.proxy.socks5");
-    case "github":
-      return t("settings.proxy.github");
   }
 }
 
@@ -162,11 +162,11 @@ function connectionDraftFrom(item?: Connection): ConnectionDraft {
 type RouteDraft = {
   id?: string;
   version: number;
-  kind: "direct" | "http_proxy" | "socks5" | "github";
+  kind: "direct" | "http_proxy" | "socks5";
   name: string;
   enabled: boolean;
-  // Uniform proxy endpoint URL for http_proxy, github (http://host:port) and
-  // socks5 (socks5://host:port); split into contract fields on save.
+  // Uniform proxy endpoint URL for http_proxy (http://host:port) and socks5
+  // (socks5://host:port); split into contract fields on save.
   endpoint: string;
   username: string;
   password: string;
@@ -201,7 +201,7 @@ function routeDraftFrom(item?: NetworkRoute): RouteDraft {
     secret_mode: "replace",
     credential_configured: false,
   };
-  if (item.kind === "http_proxy" || item.kind === "github") {
+  if (item.kind === "http_proxy") {
     base.endpoint = item.proxy_url;
     // Configured credentials are kept by default; an unconfigured route is edited like a new one (no keep/remove choice).
     base.credential_configured = item.credential_configured;
@@ -370,6 +370,7 @@ export function SettingsConnections() {
   return (
     <div className="settings-connections">
       <ConnectionsCard />
+      <UpdateEgressCard />
       <RoutesCard />
     </div>
   );
@@ -658,8 +659,7 @@ function ConnectionsCard() {
             <Field label={t("settings.connections.proxyLabel")}>
               <Select label={t("settings.connections.proxyLabel")} value={draft.route_id} options={[
                   { value: "", label: t("settings.connections.proxyDirect") },
-                  // The GitHub route belongs to the update channel alone.
-                  ...(routes.data ?? []).filter((route) => route.kind !== "github").map((route) => ({ value: route.id, label: route.name })),
+                  ...(routes.data ?? []).map((route) => ({ value: route.id, label: route.name })),
                 ]} onChange={(routeID) => setDraft({ ...draft, route_id: routeID })} />
             </Field>
             <Checkbox className="tw:mt-5" checked={draft.enabled} onCheckedChange={(checked) => setDraft({ ...draft, enabled: checked })}>
@@ -667,6 +667,63 @@ function ConnectionsCard() {
             </Checkbox>
           </div>
         </SettingsEditDialog>
+      )}
+    </section>
+  );
+}
+
+// The update channel reuses an existing network proxy: this card only selects
+// one of the routes defined below (or the deployment default), so the proxy is
+// defined and edited in exactly one place. A single dropdown saves on change;
+// the card has no footer save of its own.
+function UpdateEgressCard() {
+  const queryClient = useQueryClient();
+  const egress = useQuery({ queryKey: configKeys.updateEgress, queryFn: getUpdateEgress });
+  const routes = useQuery({ queryKey: configKeys.networkRoutes, queryFn: listNetworkRoutes });
+  const [selection, setSelection] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+
+  const stored = egress.data?.network_route_id ?? "";
+  const value = selection ?? stored;
+
+  async function change(next: string) {
+    if (!egress.data || busy || next === stored) return;
+    setSelection(next);
+    setBusy(true);
+    setError(undefined);
+    try {
+      await putUpdateEgress({ network_route_id: next === "" ? null : next, expected_version: egress.data.version });
+      toast.success(t("settings.updateEgress.saved"));
+    } catch (cause) {
+      setError(toUserMessage(cause, t("settings.updateEgress.saveFailed")));
+    } finally {
+      setSelection(undefined);
+      setBusy(false);
+      // On success this reads the saved value; after a conflict it also picks
+      // up the current version, so the next change carries the right one.
+      await queryClient.invalidateQueries({ queryKey: configKeys.updateEgress });
+    }
+  }
+
+  return (
+    <section className="settings-connections-section">
+      <h2 className="settings-connections-title text-title">{t("settings.updateEgress.title")}</h2>
+      <p className="settings-connections-description text-caption">{t("settings.updateEgress.hint")}</p>
+      {egress.isLoading && <StateBlock kind="busy" title={t("settings.updateEgress.loading")} />}
+      {egress.error && <Alert tone="error" title={toUserMessage(egress.error, t("settings.updateEgress.loadFailed"))} />}
+      {error && <Alert tone="error" title={error} />}
+      {egress.data && (
+        <div className="settings-connections-field text-caption">
+          <span>{t("settings.updateEgress.routeLabel")}</span>
+          <Select label={t("settings.updateEgress.routeLabel")} value={value} disabled={busy} options={[
+            { value: "", label: t("settings.updateEgress.followDeployment") },
+            ...(routes.data ?? []).map((route) => ({
+              value: route.id,
+              label: route.enabled ? route.name : t("settings.updateEgress.disabledOption", { name: route.name }),
+            })),
+          ]} onChange={(next) => void change(next)} />
+        </div>
       )}
     </section>
   );
@@ -696,15 +753,6 @@ function RoutesCard() {
       } else if (current.kind === "http_proxy") {
         input = {
           kind: "http_proxy",
-          name: current.name.trim(),
-          enabled: current.enabled,
-          proxy_url: current.endpoint.trim(),
-          username,
-          secret,
-        };
-      } else if (current.kind === "github") {
-        input = {
-          kind: "github",
           name: current.name.trim(),
           enabled: current.enabled,
           proxy_url: current.endpoint.trim(),
@@ -767,9 +815,6 @@ function RoutesCard() {
   }
 
   const credentialCheck = draft ? routeCredentialCheck(draft) : { incomplete: false };
-  // At most one GitHub route exists; offering a second one would only earn a
-  // server refusal.
-  const githubRouteExists = (routes.data ?? []).some((route) => route.kind === "github");
 
   return (
     <section className="settings-connections-section">
@@ -858,14 +903,13 @@ function RoutesCard() {
                   { value: "direct", label: t("settings.proxy.direct") },
                   { value: "http_proxy", label: t("settings.proxy.http") },
                   { value: "socks5", label: t("settings.proxy.socks5") },
-                  ...(!githubRouteExists || draft.kind === "github" ? [{ value: "github", label: t("settings.proxy.github") }] : []),
                 ]} onChange={(kind) => setDraft({ ...draft, kind: kind as RouteDraft["kind"] })} />
             </Field>
             <Field label={t("settings.connections.nameLabel")}>
               <Input aria-label={t("settings.connections.nameLabel")} maxLength={NAME_MAX} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
             </Field>
 
-            {(draft.kind === "http_proxy" || draft.kind === "socks5" || draft.kind === "github") && (
+            {(draft.kind === "http_proxy" || draft.kind === "socks5") && (
               <>
                 <Field
                   label={t("settings.proxy.addressLabel")}
@@ -875,8 +919,6 @@ function RoutesCard() {
                       <span className="settings-connections-error">{routeEndpointError(draft.kind, draft.endpoint)}</span>
                     ) : draft.kind === "socks5" ? (
                       t("settings.proxy.socksHint")
-                    ) : draft.kind === "github" ? (
-                      t("settings.proxy.githubHint")
                     ) : (
                       t("settings.proxy.httpHint")
                     )

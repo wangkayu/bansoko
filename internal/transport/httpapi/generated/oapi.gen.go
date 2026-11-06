@@ -1026,16 +1026,6 @@ const (
 	FingerprintAlgorithmMetadata FingerprintAlgorithm = "metadata"
 )
 
-// Defines values for GitHubRouteKind.
-const (
-	GitHubRouteKindGithub GitHubRouteKind = "github"
-)
-
-// Defines values for GitHubRouteInputKind.
-const (
-	GitHubRouteInputKindGithub GitHubRouteInputKind = "github"
-)
-
 // Defines values for GlobalSectionName.
 const (
 	GlobalSectionNameDownloadCompletion   GlobalSectionName = "download_completion"
@@ -1302,7 +1292,6 @@ const (
 // Defines values for NetworkRouteTestResultKind.
 const (
 	NetworkRouteTestResultKindDirect    NetworkRouteTestResultKind = "direct"
-	NetworkRouteTestResultKindGithub    NetworkRouteTestResultKind = "github"
 	NetworkRouteTestResultKindHttpProxy NetworkRouteTestResultKind = "http_proxy"
 	NetworkRouteTestResultKindSocks5    NetworkRouteTestResultKind = "socks5"
 )
@@ -5572,35 +5561,6 @@ type FrozenRenderSnapshot struct {
 	RendererVersion string `json:"renderer_version"`
 }
 
-// GitHubRoute The update channel's own forward proxy. At most one route of this kind exists, and no connection may bind it.
-type GitHubRoute struct {
-	CredentialConfigured bool            `json:"credential_configured"`
-	Enabled              bool            `json:"enabled"`
-	Id                   ID              `json:"id"`
-	Kind                 GitHubRouteKind `json:"kind"`
-	Name                 string          `json:"name"`
-	ProxyUrl             string          `json:"proxy_url"`
-	Version              Version         `json:"version"`
-}
-
-// GitHubRouteKind defines model for GitHubRoute.Kind.
-type GitHubRouteKind string
-
-// GitHubRouteInput The update channel's own forward proxy. At most one route of this kind exists, and no connection may bind it.
-type GitHubRouteInput struct {
-	Enabled  bool                 `json:"enabled"`
-	Kind     GitHubRouteInputKind `json:"kind"`
-	Name     string               `json:"name"`
-	ProxyUrl string               `json:"proxy_url"`
-	Secret   *ConnectionSecret    `json:"secret,omitempty"`
-
-	// Username Credential username, applied only when secret replaces the stored credential.
-	Username *string `json:"username,omitempty"`
-}
-
-// GitHubRouteInputKind defines model for GitHubRouteInput.Kind.
-type GitHubRouteInputKind string
-
 // GlobalSectionInput defines model for GlobalSectionInput.
 type GlobalSectionInput struct {
 	SchemaVersion string `json:"schema_version"`
@@ -9726,6 +9686,21 @@ type UpdateCurrent struct {
 	Version      string             `json:"version"`
 }
 
+// UpdateEgress The network route the update channel uses; null network_route_id means the deployment default egress.
+type UpdateEgress struct {
+	// NetworkRouteId The selected network route, or null for the deployment default.
+	NetworkRouteId *string `json:"network_route_id"`
+	Version        Version `json:"version"`
+}
+
+// UpdateEgressInput defines model for UpdateEgressInput.
+type UpdateEgressInput struct {
+	ExpectedVersion Version `json:"expected_version"`
+
+	// NetworkRouteId The existing network route to use, or null for the deployment default.
+	NetworkRouteId *string `json:"network_route_id"`
+}
+
 // Version defines model for Version.
 type Version = int64
 
@@ -10497,6 +10472,9 @@ type PutNetworkRouteJSONRequestBody = NetworkRouteInput
 
 // RetrieveSubgroupGroupCandidateJSONRequestBody defines body for RetrieveSubgroupGroupCandidate for application/json ContentType.
 type RetrieveSubgroupGroupCandidateJSONRequestBody = SubgroupGroupRetrievalInput
+
+// PutUpdateEgressJSONRequestBody defines body for PutUpdateEgress for application/json ContentType.
+type PutUpdateEgressJSONRequestBody = UpdateEgressInput
 
 // RetryDownloadTaskJSONRequestBody defines body for RetryDownloadTask for application/json ContentType.
 type RetryDownloadTaskJSONRequestBody = ManualRetryInput
@@ -11461,34 +11439,6 @@ func (t *NetworkRoute) MergeSOCKS5Route(v SOCKS5Route) error {
 	return err
 }
 
-// AsGitHubRoute returns the union data inside the NetworkRoute as a GitHubRoute
-func (t NetworkRoute) AsGitHubRoute() (GitHubRoute, error) {
-	var body GitHubRoute
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromGitHubRoute overwrites any union data inside the NetworkRoute as the provided GitHubRoute
-func (t *NetworkRoute) FromGitHubRoute(v GitHubRoute) error {
-	v.Kind = "github"
-	b, err := json.Marshal(v)
-	t.union = b
-	return err
-}
-
-// MergeGitHubRoute performs a merge with any union data inside the NetworkRoute, using the provided GitHubRoute
-func (t *NetworkRoute) MergeGitHubRoute(v GitHubRoute) error {
-	v.Kind = "github"
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
-}
-
 func (t NetworkRoute) Discriminator() (string, error) {
 	var discriminator struct {
 		Discriminator string `json:"kind"`
@@ -11505,8 +11455,6 @@ func (t NetworkRoute) ValueByDiscriminator() (interface{}, error) {
 	switch discriminator {
 	case "direct":
 		return t.AsDirectRoute()
-	case "github":
-		return t.AsGitHubRoute()
 	case "http_proxy":
 		return t.AsHTTPProxyRoute()
 	case "socks5":
@@ -11610,34 +11558,6 @@ func (t *NetworkRouteInput) MergeSOCKS5RouteInput(v SOCKS5RouteInput) error {
 	return err
 }
 
-// AsGitHubRouteInput returns the union data inside the NetworkRouteInput as a GitHubRouteInput
-func (t NetworkRouteInput) AsGitHubRouteInput() (GitHubRouteInput, error) {
-	var body GitHubRouteInput
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromGitHubRouteInput overwrites any union data inside the NetworkRouteInput as the provided GitHubRouteInput
-func (t *NetworkRouteInput) FromGitHubRouteInput(v GitHubRouteInput) error {
-	v.Kind = "github"
-	b, err := json.Marshal(v)
-	t.union = b
-	return err
-}
-
-// MergeGitHubRouteInput performs a merge with any union data inside the NetworkRouteInput, using the provided GitHubRouteInput
-func (t *NetworkRouteInput) MergeGitHubRouteInput(v GitHubRouteInput) error {
-	v.Kind = "github"
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
-}
-
 func (t NetworkRouteInput) Discriminator() (string, error) {
 	var discriminator struct {
 		Discriminator string `json:"kind"`
@@ -11654,8 +11574,6 @@ func (t NetworkRouteInput) ValueByDiscriminator() (interface{}, error) {
 	switch discriminator {
 	case "direct":
 		return t.AsDirectRouteInput()
-	case "github":
-		return t.AsGitHubRouteInput()
 	case "http_proxy":
 		return t.AsHTTPProxyRouteInput()
 	case "socks5":
@@ -12769,6 +12687,12 @@ type ServerInterface interface {
 
 	// (GET /config/tag-filters/title-vocabulary)
 	GetTitleTagVocabulary(w http.ResponseWriter, r *http.Request)
+
+	// (GET /config/update-egress)
+	GetUpdateEgress(w http.ResponseWriter, r *http.Request)
+
+	// (PUT /config/update-egress)
+	PutUpdateEgress(w http.ResponseWriter, r *http.Request)
 
 	// (POST /download-tasks/{download_task_id}/retry)
 	RetryDownloadTask(w http.ResponseWriter, r *http.Request, downloadTaskId DownloadTaskID, params RetryDownloadTaskParams)
@@ -16704,6 +16628,46 @@ func (siw *ServerInterfaceWrapper) GetTitleTagVocabulary(w http.ResponseWriter, 
 	handler.ServeHTTP(w, r)
 }
 
+// GetUpdateEgress operation middleware
+func (siw *ServerInterfaceWrapper) GetUpdateEgress(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUpdateEgress(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutUpdateEgress operation middleware
+func (siw *ServerInterfaceWrapper) PutUpdateEgress(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutUpdateEgress(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // RetryDownloadTask operation middleware
 func (siw *ServerInterfaceWrapper) RetryDownloadTask(w http.ResponseWriter, r *http.Request) {
 
@@ -20488,6 +20452,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("POST "+options.BaseURL+"/config/subgroups/groups", wrapper.RetrieveSubgroupGroupCandidate)
 	m.HandleFunc("DELETE "+options.BaseURL+"/config/subgroups/groups/{provider}/{group_ref}", wrapper.DeleteSubgroupGroupDictionaryEntry)
 	m.HandleFunc("GET "+options.BaseURL+"/config/tag-filters/title-vocabulary", wrapper.GetTitleTagVocabulary)
+	m.HandleFunc("GET "+options.BaseURL+"/config/update-egress", wrapper.GetUpdateEgress)
+	m.HandleFunc("PUT "+options.BaseURL+"/config/update-egress", wrapper.PutUpdateEgress)
 	m.HandleFunc("POST "+options.BaseURL+"/download-tasks/{download_task_id}/retry", wrapper.RetryDownloadTask)
 	m.HandleFunc("GET "+options.BaseURL+"/events/stream", wrapper.StreamEvents)
 	m.HandleFunc("GET "+options.BaseURL+"/file-maintenance/decisions", wrapper.ListReplacementDecisions)

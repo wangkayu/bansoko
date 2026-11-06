@@ -62,6 +62,15 @@ async function mockSettingsReads(page: Page) {
   await page.route("**/api/v1/config/network-routes", (route) =>
     getOnly(route, () => route.fulfill({ status: 200, contentType: "application/json", body: "[]" })),
   );
+  await page.route("**/api/v1/config/update-egress", (route) =>
+    getOnly(route, () =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ network_route_id: null, version: 1 }),
+      }),
+    ),
+  );
   // 当前契约的八个全局 section 全量返回：下载与入库/规则/订阅策略读各自的 section，
   // AniBT/Mikan provider 页读 subgroups。
   await page.route("**/api/v1/config/global-sections", (route) =>
@@ -341,6 +350,35 @@ test.describe("settings dialog", () => {
     await expect(dialog).toBeVisible({ timeout: 10000 });
     await expect(dialog.getByRole("heading", { name: "服务连接" }).last()).toBeVisible({ timeout: 10000 });
     await expect(dialog.getByRole("heading", { name: "命名变量" })).toHaveCount(0);
+  });
+
+  // 应用更新只选用已有网络代理：卡片本身没有地址/凭据输入，只有一个下拉，
+  // 不选时显示「跟随部署默认」。
+  test("应用更新卡片只提供一个代理选择", async ({ page }) => {
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible({ timeout: 10000 });
+    if (isMobile(page)) {
+      // 手机是两级导航：先停在分类列表，点进「服务连接」才渲染内容。
+      await dialog.getByRole("navigation", { name: "设置分类" }).getByRole("link", { name: "服务连接" }).click();
+    }
+    await expect(dialog.getByRole("heading", { name: "应用更新" })).toBeVisible();
+    const select = dialog.getByRole("combobox", { name: "网络代理" });
+    await expect(select).toBeVisible();
+    await expect(select).toContainText("跟随部署默认");
+    // 卡片不重复保存代理地址或凭据。
+    await expect(dialog.getByLabel("代理地址")).toHaveCount(0);
+    // 新增的这一行不得把设置内容撑出横向滚动。
+    const section = dialog.getByRole("heading", { name: "应用更新" }).locator("xpath=..");
+    const sectionBox = await section.boundingBox();
+    const contentBox = await dialog.getByTestId("settings-content").boundingBox();
+    expect(sectionBox).not.toBeNull();
+    expect(contentBox).not.toBeNull();
+    expect(sectionBox!.width).toBeLessThanOrEqual(contentBox!.width + 1);
+    const pageOverflow = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(pageOverflow.scrollWidth).toBeLessThanOrEqual(pageOverflow.clientWidth + 1);
   });
 
   test("关闭设置回到目录", async ({ page }) => {

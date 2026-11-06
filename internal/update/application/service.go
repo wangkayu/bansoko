@@ -40,11 +40,12 @@ type BackupExecutor interface {
 	Restore(ctx context.Context, env []string, dumpPath, targetDatabase string) error
 }
 
-// GitHubRouteResolver resolves the enabled GitHub update route into an HTTP
-// client. A nil client with a nil error means no GitHub route is configured or
-// enabled, so the deployment's default egress applies. An error means a saved
-// route cannot be used: the update channel fails closed instead of going direct.
-type GitHubRouteResolver interface {
+// UpdateRouteResolver resolves the selected update network route into an HTTP
+// client. A nil client with a nil error means no route is selected or the
+// selected one is disabled, so the deployment's default egress applies. An
+// error means the selected route cannot be used: the update channel fails
+// closed instead of going direct.
+type UpdateRouteResolver interface {
 	UpdateRouteClient(context.Context) (*http.Client, error)
 }
 
@@ -62,7 +63,7 @@ type Deps struct {
 	ChannelBase               string
 	Production                bool
 	HTTPClient                *http.Client
-	GitHubRoute               GitHubRouteResolver
+	UpdateRoute               UpdateRouteResolver
 	BuildReleaseID            string
 	BuildVersion              string
 	BuildCompatibilityVersion string
@@ -80,7 +81,7 @@ type Service struct {
 	updatesRoot, manifestURL                                           string
 	source                                                             *UpdateHTTPSource
 	channel                                                            *channelResolver
-	routes                                                             GitHubRouteResolver
+	routes                                                             UpdateRouteResolver
 	packageRoot                                                        string
 	packageConfig                                                      UpdateHTTPSourceConfig
 	buildID, buildVersion, buildCompatibilityVersion, bootstrapVersion string
@@ -121,7 +122,7 @@ func NewService(deps Deps) (*Service, error) {
 	if clock == nil {
 		clock = func() time.Time { return time.Now().UTC() }
 	}
-	return &Service{db: deps.DB, updatesRoot: deps.UpdatesRoot, channel: resolver, routes: deps.GitHubRoute, packageRoot: packageRoot, packageConfig: config, buildID: strings.TrimSpace(deps.BuildReleaseID), buildVersion: strings.TrimSpace(deps.BuildVersion), buildCompatibilityVersion: strings.TrimSpace(deps.BuildCompatibilityVersion), bootstrapVersion: deps.BuildBootstrapVersion, clock: clock, done: make(chan struct{}), diagnostics: deps.Diagnostics, logger: deps.Logger}, nil
+	return &Service{db: deps.DB, updatesRoot: deps.UpdatesRoot, channel: resolver, routes: deps.UpdateRoute, packageRoot: packageRoot, packageConfig: config, buildID: strings.TrimSpace(deps.BuildReleaseID), buildVersion: strings.TrimSpace(deps.BuildVersion), buildCompatibilityVersion: strings.TrimSpace(deps.BuildCompatibilityVersion), bootstrapVersion: deps.BuildBootstrapVersion, clock: clock, done: make(chan struct{}), diagnostics: deps.Diagnostics, logger: deps.Logger}, nil
 }
 
 func (s *Service) ExitRequested() <-chan struct{} { return s.done }
@@ -132,14 +133,15 @@ func (s *Service) configured() bool               { return s != nil && s.channel
 // operationClient snapshots the update route for one operation. The same client
 // carries that operation's channel document, release manifest and payload
 // download, so a route change mid-operation cannot split them. A nil route
-// resolver or an unconfigured/disabled route keeps the deployment default.
+// resolver, no selected route or a disabled selected route keeps the
+// deployment default.
 func (s *Service) operationClient(ctx context.Context) (*http.Client, error) {
 	if s.routes == nil {
 		return s.packageConfig.HTTPClient, nil
 	}
 	client, err := s.routes.UpdateRouteClient(ctx)
 	if err != nil {
-		return nil, &apperrors.Business{Status: 503, Code: "UPDATE_ROUTE_INVALID", Message: "The GitHub update route is not usable."}
+		return nil, &apperrors.Business{Status: 503, Code: "UPDATE_ROUTE_INVALID", Message: "The selected update network route is not usable."}
 	}
 	if client == nil {
 		return s.packageConfig.HTTPClient, nil

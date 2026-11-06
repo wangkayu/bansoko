@@ -477,22 +477,6 @@ FROM network_routes WHERE id = $1 FOR UPDATE`, id).Scan(&currentVersion, &curren
 	if err != nil {
 		return domain.NetworkRoute{}, fmt.Errorf("store network route secret: %w", err)
 	}
-	if normalized.Kind == domain.NetworkRouteGitHub {
-		// One GitHub route at most: it is the update channel's single egress.
-		// The advisory lock serializes concurrent creates; an update of that same
-		// row is always allowed.
-		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('network_routes:github'))`); err != nil {
-			return domain.NetworkRoute{}, fmt.Errorf("lock github network route: %w", err)
-		}
-		var otherID string
-		otherErr := tx.QueryRowContext(ctx, `SELECT id FROM network_routes WHERE kind = 'github' AND id <> $1 LIMIT 1`, id).Scan(&otherID)
-		if otherErr == nil {
-			return domain.NetworkRoute{}, &apperrors.Business{Status: http.StatusConflict, Code: "GITHUB_ROUTE_ALREADY_CONFIGURED", Message: "A GitHub route is already configured; edit the existing one."}
-		}
-		if !errors.Is(otherErr, sql.ErrNoRows) {
-			return domain.NetworkRoute{}, fmt.Errorf("check existing github network route: %w", otherErr)
-		}
-	}
 	state := domain.ConnectionConfigured
 	if !normalized.Enabled {
 		state = domain.ConnectionDisabled
@@ -569,6 +553,70 @@ FROM network_routes ORDER BY name, id`)
 	return result, nil
 }
 
+// updateEgressRowID is the singleton row of update_egress. The migration seeds
+// it; nothing creates or deletes it.
+const updateEgressRowID = "default"
+
+// GetUpdateEgress reads the network route the update channel uses. An empty
+// NetworkRouteID means the deployment default egress.
+func (s *Service) GetUpdateEgress(ctx context.Context) (domain.UpdateEgress, error) {
+	if s == nil || s.db == nil {
+		return domain.UpdateEgress{}, errors.New("configuration database is nil")
+	}
+	var result domain.UpdateEgress
+	var routeID sql.NullString
+	if err := s.db.QueryRowContext(ctx, `
+SELECT network_route_id, version, updated_at FROM update_egress WHERE id = $1`, updateEgressRowID).Scan(
+		&routeID, &result.Version, &result.UpdatedAt); err != nil {
+		return domain.UpdateEgress{}, fmt.Errorf("read update egress: %w", err)
+	}
+	result.NetworkRouteID = routeID.String
+	return result, nil
+}
+
+// PutUpdateEgress selects an existing network route for the update channel. An
+// empty route ID restores the deployment default. A disabled route may be
+// selected: the updater then follows the deployment default until it is
+// enabled again, and the choice survives that.
+func (s *Service) PutUpdateEgress(ctx context.Context, input domain.UpdateEgressInput) (domain.UpdateEgress, error) {
+	if s == nil || s.db == nil {
+		return domain.UpdateEgress{}, errors.New("configuration database is nil")
+	}
+	routeID := strings.TrimSpace(input.NetworkRouteID)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.UpdateEgress{}, fmt.Errorf("begin update egress save: %w", err)
+	}
+	defer tx.Rollback()
+	var currentVersion int64
+	if err := tx.QueryRowContext(ctx, `
+SELECT version FROM update_egress WHERE id = $1 FOR UPDATE`, updateEgressRowID).Scan(&currentVersion); err != nil {
+		return domain.UpdateEgress{}, fmt.Errorf("read update egress version: %w", err)
+	}
+	if currentVersion != input.ExpectedVersion {
+		return domain.UpdateEgress{}, &apperrors.VersionConflict{Owner: "update_egress", CurrentVersion: currentVersion}
+	}
+	if routeID != "" {
+		var stored string
+		if err := tx.QueryRowContext(ctx, `SELECT id FROM network_routes WHERE id = $1`, routeID).Scan(&stored); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return domain.UpdateEgress{}, &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "UPDATE_EGRESS_ROUTE_UNKNOWN", Message: "The selected network route does not exist."}
+			}
+			return domain.UpdateEgress{}, fmt.Errorf("read update egress route %q: %w", routeID, err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `
+UPDATE update_egress
+SET network_route_id = NULLIF($2, ''), version = version + 1, updated_at = NOW()
+WHERE id = $1`, updateEgressRowID, routeID); err != nil {
+		return domain.UpdateEgress{}, fmt.Errorf("save update egress: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.UpdateEgress{}, fmt.Errorf("commit update egress: %w", err)
+	}
+	return s.GetUpdateEgress(ctx)
+}
+
 func (s *Service) UpsertConnection(ctx context.Context, input domain.ConnectionInput) (domain.Connection, error) {
 	if s.db == nil {
 		return domain.Connection{}, errors.New("configuration database is nil")
@@ -577,17 +625,12 @@ func (s *Service) UpsertConnection(ctx context.Context, input domain.ConnectionI
 		return domain.Connection{}, err
 	}
 	if routeID := strings.TrimSpace(input.NetworkRouteID); routeID != "" {
-		var routeKind, routeState string
-		if err := s.db.QueryRowContext(ctx, `SELECT kind, state FROM network_routes WHERE id = $1`, routeID).Scan(&routeKind, &routeState); err != nil {
+		var routeState string
+		if err := s.db.QueryRowContext(ctx, `SELECT state FROM network_routes WHERE id = $1`, routeID).Scan(&routeState); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return domain.Connection{}, fmt.Errorf("network route %q is not configured", routeID)
 			}
 			return domain.Connection{}, fmt.Errorf("read network route %q: %w", routeID, err)
-		}
-		if domain.NetworkRouteKind(routeKind) == domain.NetworkRouteGitHub {
-			// The GitHub route belongs to the update channel alone; a provider
-			// connection never sends its traffic through it.
-			return domain.Connection{}, &apperrors.BadRequest{Code: "ROUTE_NOT_BINDABLE", Message: "The GitHub update route cannot be bound to a connection."}
 		}
 		if routeState != string(domain.ConnectionConfigured) {
 			return domain.Connection{}, fmt.Errorf("network route %q is not configured", routeID)
@@ -900,9 +943,6 @@ SELECT kind, COALESCE(endpoint, ''), COALESCE(secret_ref, ''), state
 		if route.State != string(domain.ConnectionConfigured) {
 			return nil, fmt.Errorf("network route %q is not configured", routeID)
 		}
-		if domain.NetworkRouteKind(route.Kind) == domain.NetworkRouteGitHub {
-			return nil, fmt.Errorf("network route %q is not usable by a connection", routeID)
-		}
 		client, err = s.buildNetworkRouteClient(route)
 		if err != nil {
 			return nil, err
@@ -1035,52 +1075,40 @@ func normalizedHTTPOrigin(target *url.URL) string {
 // route timeout.
 const updateRouteTimeout = 5 * time.Minute
 
-// UpdateRouteClient returns the HTTP client of the single enabled GitHub update
-// route, or nil when no GitHub route is configured or it is disabled. A saved
-// route that cannot be turned into a client is an error: the update channel
-// fails closed rather than quietly going direct. The route is read on every
-// call, so saving a route affects the next update operation without a restart.
+// UpdateRouteClient returns the HTTP client of the network route the update
+// channel selects, or nil when no route is selected or the selected one is
+// disabled. nil tells the update channel to use the deployment default egress.
+// A selected route that cannot be turned into a client is an error: the update
+// channel fails closed rather than quietly going direct. The selection is read
+// on every call, so saving it affects the next update operation without a
+// restart.
 func (s *Service) UpdateRouteClient(ctx context.Context) (*http.Client, error) {
 	if s == nil || s.db == nil {
 		return nil, errors.New("configuration database is nil")
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	var routeID sql.NullString
+	if err := s.db.QueryRowContext(ctx, `
+SELECT network_route_id FROM update_egress WHERE id = $1`, updateEgressRowID).Scan(&routeID); err != nil {
+		return nil, fmt.Errorf("read update egress: %w", err)
+	}
+	if !routeID.Valid || strings.TrimSpace(routeID.String) == "" {
+		return nil, nil
+	}
+	var route networkRouteRecord
+	if err := s.db.QueryRowContext(ctx, `
 SELECT kind, COALESCE(endpoint, ''), COALESCE(secret_ref, ''), state
-FROM network_routes WHERE kind = 'github' ORDER BY id`)
-	if err != nil {
-		return nil, fmt.Errorf("read github update route: %w", err)
-	}
-	defer rows.Close()
-	var routes []networkRouteRecord
-	for rows.Next() {
-		var route networkRouteRecord
-		if err := rows.Scan(&route.Kind, &route.Endpoint, &route.SecretRef, &route.State); err != nil {
-			return nil, fmt.Errorf("scan github update route: %w", err)
+FROM network_routes WHERE id = $1`, routeID.String).Scan(&route.Kind, &route.Endpoint, &route.SecretRef, &route.State); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("update route %q is not configured", routeID.String)
 		}
-		routes = append(routes, route)
+		return nil, fmt.Errorf("read update route %q: %w", routeID.String, err)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate github update routes: %w", err)
-	}
-	return s.updateRouteClient(routes)
-}
-
-// updateRouteClient is the selection rule for the stored GitHub routes: none or
-// a disabled one means the deployment default, more than one is a corrupt store
-// and fails closed, and a route that cannot build a client also fails closed.
-func (s *Service) updateRouteClient(routes []networkRouteRecord) (*http.Client, error) {
-	if len(routes) == 0 {
+	if route.State != string(domain.ConnectionConfigured) {
 		return nil, nil
 	}
-	if len(routes) > 1 {
-		return nil, errors.New("more than one GitHub update route is stored")
-	}
-	if routes[0].State != string(domain.ConnectionConfigured) {
-		return nil, nil
-	}
-	client, err := s.buildNetworkRouteClient(routes[0])
+	client, err := s.buildNetworkRouteClient(route)
 	if err != nil {
-		return nil, fmt.Errorf("build github update route client: %w", err)
+		return nil, fmt.Errorf("build update route client: %w", err)
 	}
 	client.Timeout = updateRouteTimeout
 	return client, nil
@@ -1095,7 +1123,7 @@ func (s *Service) buildNetworkRouteClient(route networkRouteRecord) (*http.Clien
 	switch strings.ToLower(strings.TrimSpace(route.Kind)) {
 	case "direct":
 		return &http.Client{Transport: transport, Timeout: timeout}, nil
-	case "http_proxy", "github":
+	case "http_proxy":
 		proxyURL, err := s.parseNetworkRouteURL(route, "http", "https")
 		if err != nil {
 			return nil, err

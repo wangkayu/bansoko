@@ -1309,5 +1309,17 @@
     ],
     "closure_slice": "retained product owner",
     "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
+  },
+  {
+    "table": "update_egress",
+    "privileges": [
+      "UPDATE"
+    ],
+    "reason": "product owner DML from the listed application code",
+    "direct_access": [
+      "internal/configuration/application/service.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
   }
 ]

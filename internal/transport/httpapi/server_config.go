@@ -106,3 +106,28 @@ func (s *Server) TestNetworkRoute(w http.ResponseWriter, r *http.Request, routeI
 	}
 	writeJSON(w, r.Context(), http.StatusOK, configurationtransport.NetworkRouteTestResult(result))
 }
+
+// GetUpdateEgress returns the network route the update channel uses.
+func (s *Server) GetUpdateEgress(w http.ResponseWriter, r *http.Request) {
+	item, err := s.deps.Connections.GetUpdateEgress(r.Context())
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, r.Context(), http.StatusOK, configurationtransport.UpdateEgressView(item))
+}
+
+// PutUpdateEgress selects the network route the update channel uses.
+func (s *Server) PutUpdateEgress(w http.ResponseWriter, r *http.Request) {
+	var input generated.UpdateEgressInput
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	item, err := s.deps.Connections.PutUpdateEgress(r.Context(), configurationtransport.UpdateEgressInput(input))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, r.Context(), http.StatusOK, configurationtransport.UpdateEgressView(item))
+}

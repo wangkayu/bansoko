@@ -369,17 +369,6 @@ func NetworkRouteInput(input generated.NetworkRouteInput, id string) (configurat
 			return result, err
 		}
 		result.Secret = secret
-	case "github":
-		v, e := input.AsGitHubRouteInput()
-		if e != nil {
-			return result, e
-		}
-		result.Name, result.Enabled, result.Endpoint = v.Name, v.Enabled, v.ProxyUrl
-		secret, err := routeSecretMutation(v.Secret, v.Username)
-		if err != nil {
-			return result, err
-		}
-		result.Secret = secret
 	case "socks5":
 		v, e := input.AsSOCKS5RouteInput()
 		if e != nil {
@@ -437,11 +426,6 @@ func NetworkRouteView(item configurationdomain.NetworkRoute) (generated.NetworkR
 	case configurationdomain.NetworkRouteHTTPProxy:
 		return result, result.FromHTTPProxyRoute(generated.HTTPProxyRoute{
 			Id: item.ID, Kind: "http_proxy", Name: item.Name, Enabled: enabled,
-			ProxyUrl: item.Endpoint, CredentialConfigured: credentialConfigured, Version: item.Version,
-		})
-	case configurationdomain.NetworkRouteGitHub:
-		return result, result.FromGitHubRoute(generated.GitHubRoute{
-			Id: item.ID, Kind: "github", Name: item.Name, Enabled: enabled,
 			ProxyUrl: item.Endpoint, CredentialConfigured: credentialConfigured, Version: item.Version,
 		})
 	case configurationdomain.NetworkRouteSOCKS5:
@@ -532,4 +516,25 @@ func NamingTemplateLibraryView(value configurationdomain.NamingTemplateLibraryVi
 		result.Templates = append(result.Templates, generated.NamingTemplate{Key: item.Key, Name: item.Name, Rules: rules})
 	}
 	return result, nil
+}
+
+// UpdateEgressView projects the selected update route; a nil network route is
+// the deployment default and travels as JSON null.
+func UpdateEgressView(item configurationdomain.UpdateEgress) generated.UpdateEgress {
+	result := generated.UpdateEgress{Version: item.Version}
+	if item.NetworkRouteID != "" {
+		routeID := item.NetworkRouteID
+		result.NetworkRouteId = &routeID
+	}
+	return result
+}
+
+// UpdateEgressInput maps the selection request; an absent or null route ID
+// restores the deployment default.
+func UpdateEgressInput(input generated.UpdateEgressInput) configurationdomain.UpdateEgressInput {
+	result := configurationdomain.UpdateEgressInput{ExpectedVersion: int64(input.ExpectedVersion)}
+	if input.NetworkRouteId != nil {
+		result.NetworkRouteID = strings.TrimSpace(*input.NetworkRouteId)
+	}
+	return result
 }

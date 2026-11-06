@@ -3,7 +3,7 @@ import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Connection, NetworkRoute } from "../../lib/api/client";
+import type { Connection, NetworkRoute, UpdateEgress } from "../../lib/api/client";
 import { t } from "../../lib/i18n";
 import { SettingsConnections } from "./SettingsConnections";
 
@@ -20,9 +20,22 @@ type FetchStub = (input: RequestInfo | URL, init?: RequestInit) => Promise<Respo
 
 let fetchMock: ReturnType<typeof vi.fn<FetchStub>>;
 
-function stubFetch(options: { connections?: Connection[]; routes?: NetworkRoute[] } = {}) {
+function stubFetch(options: { connections?: Connection[]; routes?: NetworkRoute[]; updateEgress?: UpdateEgress } = {}) {
   fetchMock = vi.fn<FetchStub>(async (input, init) => {
     const url = String(input);
+    if (url.includes("/config/update-egress")) {
+      if (init?.method === "PUT") {
+        const requestBody = JSON.parse(String(init.body)) as { network_route_id: string | null; expected_version: number };
+        return new Response(JSON.stringify({ network_route_id: requestBody.network_route_id, version: requestBody.expected_version + 1 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify(options.updateEgress ?? { network_route_id: null, version: 1 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     if (init?.method === "PUT" && url.includes("/config/network-routes/")) {
       const requestBody = JSON.parse(String(init.body)) as { kind?: string; name: string; host?: string; port?: number; proxy_url?: string };
       const kind = requestBody.kind ?? "socks5";
@@ -86,6 +99,12 @@ function renderSettings(initialEntries: string[] = ["/settings/connections"]) {
 function routePutCalls() {
   return fetchMock.mock.calls.filter(
     ([input, init]) => String(input).includes("/config/network-routes/") && init?.method === "PUT",
+  );
+}
+
+function updateEgressPutCalls() {
+  return fetchMock.mock.calls.filter(
+    ([input, init]) => String(input).includes("/config/update-egress") && init?.method === "PUT",
   );
 }
 
@@ -686,70 +705,75 @@ describe("SettingsConnections 代理对话框校验与提交", () => {
   });
 });
 
-// The GitHub update proxy is the update channel's own egress: at most one
-// exists, it never appears in a connection's route list, and its body is an
-// ordinary forward-proxy endpoint.
-describe("SettingsConnections GitHub 更新代理", () => {
+// The update channel selects one of the existing network proxies: the card
+// saves only that reference, so the proxy address and credentials are defined
+// once under 网络代理.
+describe("SettingsConnections 应用更新出口", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
   });
 
-  const githubRoute: NetworkRoute = {
-    id: "route-gh",
-    kind: "github",
-    name: "更新出口",
+  const proxyRoute: NetworkRoute = {
+    id: "route-1",
+    kind: "http_proxy",
+    name: "公司代理",
     enabled: true,
-    proxy_url: "http://proxy.local:7890",
+    proxy_url: "http://proxy.local:8080",
     credential_configured: false,
     version: 1,
   };
 
-  it("新建 GitHub 路由：保存 body 使用 github 类型与 proxy_url", async () => {
-    stubFetch();
+  it("选择一个已有代理：选择即保存，body 引用该代理与当前版本", async () => {
+    stubFetch({ routes: [proxyRoute] });
     renderSettings();
 
-    fireEvent.click(await screen.findByRole("button", { name: t("settings.proxy.new") }));
-    await selectOption(t("settings.connections.typeLabel"), t("settings.proxy.github"));
-    fireEvent.change(screen.getByLabelText(t("settings.connections.nameLabel")), { target: { value: "更新出口" } });
-    fireEvent.change(screen.getByLabelText(new RegExp(`^${t("settings.proxy.addressLabel")}`)), { target: { value: "http://proxy.local:7890" } });
-    fireEvent.change(screen.getByLabelText(t("settings.proxy.usernameLabel")), { target: { value: "alice" } });
-    fireEvent.change(screen.getByLabelText(t("settings.proxy.passwordLabel")), { target: { value: "pw" } });
-    fireEvent.submit(document.getElementById("route-form")!);
+    await userEvent.click(await screen.findByRole("combobox", { name: t("settings.updateEgress.routeLabel") }));
+    await userEvent.click(await screen.findByRole("option", { name: proxyRoute.name }));
 
-    await waitFor(() => expect(routePutCalls()).toHaveLength(1));
-    expect(putBody(routePutCalls()[0]!)).toEqual({
-      kind: "github",
-      name: "更新出口",
-      enabled: true,
-      proxy_url: "http://proxy.local:7890",
-      username: "alice",
-      secret: { mode: "replace", value: "pw" },
+    await waitFor(() => expect(updateEgressPutCalls()).toHaveLength(1));
+    expect(putBody(updateEgressPutCalls()[0]!)).toEqual({
+      network_route_id: "route-1",
+      expected_version: 1,
     });
   });
 
-  it("已存在 GitHub 路由时，新建代理的类型里不再提供 GitHub", async () => {
-    stubFetch({ routes: [githubRoute] });
+  it("选择跟随部署默认保存 null", async () => {
+    stubFetch({ routes: [proxyRoute], updateEgress: { network_route_id: "route-1", version: 3 } });
     renderSettings();
 
-    fireEvent.click(await screen.findByRole("button", { name: t("settings.proxy.new") }));
-    await userEvent.click(screen.getByRole("combobox", { name: t("settings.connections.typeLabel") }));
-    expect(await screen.findByRole("option", { name: t("settings.proxy.http") })).toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: t("settings.proxy.github") })).not.toBeInTheDocument();
+    await userEvent.click(await screen.findByRole("combobox", { name: t("settings.updateEgress.routeLabel") }));
+    await userEvent.click(await screen.findByRole("option", { name: t("settings.updateEgress.followDeployment") }));
+
+    await waitFor(() => expect(updateEgressPutCalls()).toHaveLength(1));
+    expect(putBody(updateEgressPutCalls()[0]!)).toEqual({
+      network_route_id: null,
+      expected_version: 3,
+    });
   });
 
-  it("连接的代理下拉不列出 GitHub 路由", async () => {
+  it("停用的代理仍可选中，并标注暂时按部署默认", async () => {
+    const disabled: NetworkRoute = { ...proxyRoute, id: "route-off", name: "备用代理", enabled: false };
+    stubFetch({ routes: [disabled], updateEgress: { network_route_id: "route-off", version: 1 } });
+    renderSettings();
+
+    await userEvent.click(await screen.findByRole("combobox", { name: t("settings.updateEgress.routeLabel") }));
+    expect(await screen.findByRole("option", {
+      name: t("settings.updateEgress.disabledOption", { name: disabled.name }),
+    })).toBeInTheDocument();
+  });
+
+  it("连接的代理下拉列出全部网络代理", async () => {
     stubFetch({
       connections: [
         { id: "mikan-1", kind: "mikan", name: "Mikan", enabled: true, base_url: "https://mikanani.me", version: 1 },
       ],
-      routes: [githubRoute, { id: "route-1", kind: "http_proxy", name: "普通代理", enabled: true, proxy_url: "http://proxy.local:8080", credential_configured: false, version: 1 }],
+      routes: [proxyRoute],
     });
     renderSettings();
 
     fireEvent.click(await screen.findByRole("button", { name: t("settings.connections.edit") }));
     await userEvent.click(screen.getByRole("combobox", { name: t("settings.connections.proxyLabel") }));
-    expect(await screen.findByRole("option", { name: "普通代理" })).toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: githubRoute.name })).not.toBeInTheDocument();
+    expect(await screen.findByRole("option", { name: proxyRoute.name })).toBeInTheDocument();
   });
 });

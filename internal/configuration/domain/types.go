@@ -157,9 +157,6 @@ const (
 	NetworkRouteDirect    NetworkRouteKind = "direct"
 	NetworkRouteHTTPProxy NetworkRouteKind = "http_proxy"
 	NetworkRouteSOCKS5    NetworkRouteKind = "socks5"
-	// NetworkRouteGitHub is the update channel's own forward proxy. At most one
-	// row of this kind exists, and no ordinary connection may bind it.
-	NetworkRouteGitHub NetworkRouteKind = "github"
 )
 
 type NetworkRouteInput struct {
@@ -182,6 +179,21 @@ type NetworkRoute struct {
 	UpdatedAt time.Time
 }
 
+// UpdateEgress names the one existing network route the update channel sends
+// its GitHub requests through. An empty NetworkRouteID is the deployment
+// default egress. The route itself is defined once in the route list; this
+// owner only selects it.
+type UpdateEgress struct {
+	NetworkRouteID string
+	Version        int64
+	UpdatedAt      time.Time
+}
+
+type UpdateEgressInput struct {
+	NetworkRouteID  string
+	ExpectedVersion int64
+}
+
 func (input NetworkRouteInput) Normalize() (NetworkRouteInput, error) {
 	input.ID = strings.TrimSpace(input.ID)
 	input.Name = strings.TrimSpace(input.Name)
@@ -195,10 +207,6 @@ func (input NetworkRouteInput) Normalize() (NetworkRouteInput, error) {
 			return NetworkRouteInput{}, errors.New("direct network route must not include an endpoint")
 		}
 	case NetworkRouteHTTPProxy:
-		if err := validateNetworkRouteEndpoint(input.Endpoint, "http", "https"); err != nil {
-			return NetworkRouteInput{}, err
-		}
-	case NetworkRouteGitHub:
 		if err := validateNetworkRouteEndpoint(input.Endpoint, "http", "https"); err != nil {
 			return NetworkRouteInput{}, err
 		}
