@@ -349,7 +349,10 @@ export function OneShotDialog({
   }, [source.draft, source.initialOffset]);
 
   const allRows = useMemo(() => source.groups.flatMap((group) => group.rows), [source.groups]);
-  // Selection survives filters, groups and re-reads: a filter is only a view, and a re-read changes row content, never identity.
+  // Selection survives filters and re-reads (a filter is only a view, and a re-read changes row
+  //   content, never identity), but it belongs to the group being browsed: the subgroup list and
+  //   every group start empty, so a seed picked in one group never stays selected — nor counts
+  //   towards 已选/下一步 — after moving on to another page.
   const selectedRows = useMemo(() => allRows.filter((row) => selected.has(row.key)), [allRows, selected]);
 
   // Step one's navigation: the subgroup list first, then a group's seeds. A custom preset and a
@@ -502,6 +505,7 @@ export function OneShotDialog({
     setDirection("forward");
     setActiveGroupKey(key);
     setFilter("");
+    setSelected(new Set());
     const { draft: current, offset } = previewInput.current;
     void source.openGroup(key, current, offset);
   }
@@ -510,6 +514,7 @@ export function OneShotDialog({
     setDirection("back");
     setActiveGroupKey(undefined);
     setFilter("");
+    setSelected(new Set());
   }
 
   function toggleSelection(row: OneShotSeedRow) {

@@ -454,7 +454,7 @@ describe("OneShotDialog 第一步：种子目录", () => {
     expect(reads().at(-1)!.body).toMatchObject({ feed: [{ snapshot_id: "snap-2", snapshot_version: 9 }] });
   });
 
-  it("返回字幕组列表与切换组：已进入过的组不重复取，选择跨组保留", async () => {
+  it("返回字幕组列表与切换组：已进入过的组不重复取，选择只在当前组内有效", async () => {
     stubFetch({
       view: viewOf([
         seedGroup(),
@@ -471,13 +471,18 @@ describe("OneShotDialog 第一步：种子目录", () => {
     fireEvent.click(await findSeed(SEED_A));
     expect(screen.queryByRole("checkbox", { name: "[组B] 测试番剧 - 01 [720p]" })).not.toBeInTheDocument();
     expect(calls.filter((call) => call.url.includes("group_ref=g-2"))).toHaveLength(0);
+    expect(screen.getByText(t("oneshot.selectedCount", { n: 1 }))).toBeInTheDocument();
 
     fireEvent.click(button(t("oneshot.backToGroups")));
     // Entered groups show their seed count in the list.
     expect(await screen.findByText(t("oneshot.groupSeedCount", { n: 1 }))).toBeInTheDocument();
     await enterGroup("组B");
-    fireEvent.click(await findSeed("[组B] 测试番剧 - 01 [720p]"));
-    expect(screen.getByText(t("oneshot.selectedCount", { n: 2 }))).toBeInTheDocument();
+    // Leaving a group ends its selection: the other group starts empty and counts nothing.
+    expect(screen.getByText(t("oneshot.selectedCount", { n: 0 }))).toBeInTheDocument();
+    const seedB = await findSeed("[组B] 测试番剧 - 01 [720p]");
+    expect(seedB).not.toBeChecked();
+    fireEvent.click(seedB);
+    expect(screen.getByText(t("oneshot.selectedCount", { n: 1 }))).toBeInTheDocument();
     expect(reads().at(-1)!.body).toMatchObject({
       feed: [{ provider_group_ref: "g-1" }, { provider_group_ref: "g-2" }],
     });
@@ -485,7 +490,8 @@ describe("OneShotDialog 第一步：种子目录", () => {
     const readsBefore = reads().length;
     fireEvent.click(button(t("oneshot.backToGroups")));
     await enterGroup("组A");
-    expect(await findSeed(SEED_A)).toBeChecked();
+    expect(await findSeed(SEED_A)).not.toBeChecked();
+    expect(screen.getByText(t("oneshot.selectedCount", { n: 0 }))).toBeInTheDocument();
     expect(calls.filter((call) => call.url.includes("group_ref=g-1"))).toHaveLength(1);
     expect(reads().length).toBe(readsBefore);
   });
