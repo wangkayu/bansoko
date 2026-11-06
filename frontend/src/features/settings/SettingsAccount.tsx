@@ -140,7 +140,7 @@ function AccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
             value={newPassword}
             onChange={(event) => setNewPassword(event.target.value)}
             autoComplete="new-password"
-            minLength={12}
+            minLength={8}
             maxLength={1024}
           />
         </label>
@@ -151,7 +151,7 @@ function AccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
             value={confirmPassword}
             onChange={(event) => setConfirmPassword(event.target.value)}
             autoComplete="new-password"
-            minLength={12}
+            minLength={8}
             maxLength={1024}
           />
         </label>

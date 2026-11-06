@@ -185,7 +185,7 @@ export const enSettingsCopy = {
     credentialsDialogDescription: "Leave the username or new password blank to keep it unchanged. Changing the password signs out other devices; API tokens stay valid.",
     newUsername: "New username (leave blank to keep unchanged)",
     currentPassword: "Current password",
-    newPassword: "New password (leave blank to keep unchanged, 12–1024 characters)",
+    newPassword: "New password (leave blank to keep unchanged, 8–1024 characters)",
     confirmPassword: "Confirm new password",
     save: "Save",
     savedAccount: "Sign-in details updated",

@@ -140,7 +140,7 @@ func (s *Server) UpdateAccount(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, accessdomain.ErrCurrentPasswordInvalid):
 			writeError(w, r, unprocessable("CURRENT_PASSWORD_INVALID", "The current password is incorrect.", nil))
 		case errors.Is(err, accessdomain.ErrOwnerInputInvalid):
-			writeError(w, r, unprocessable("ACCOUNT_INPUT_INVALID", "Provide a username or a new password; the username must be 1-128 characters and the password 12-1024 characters.", nil))
+			writeError(w, r, unprocessable("ACCOUNT_INPUT_INVALID", "Provide a username or a new password; the username must be 1-128 characters and the password 8-1024 characters.", nil))
 		case errors.Is(err, accessdomain.ErrInvalidCredentials):
 			writeError(w, r, unauthorized("SESSION_INVALID", "The session is missing, expired, or revoked."))
 		default:

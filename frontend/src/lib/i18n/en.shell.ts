@@ -403,7 +403,7 @@ export const enAuthCopy = {
   creating: "Creating…",
   username: "Username",
   usernameHint: "Up to 128 characters",
-  passwordNew: "Password (at least 12 characters)",
+  passwordNew: "Password (at least 8 characters)",
   password: "Password",
   loginTitle: "Sign In",
   loginSubtitle: "Enter your username and password",

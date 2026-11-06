@@ -393,7 +393,7 @@ export const authCopy = {
   creating: "创建中…",
   username: "用户名",
   usernameHint: "最多 128 个字符",
-  passwordNew: "密码（至少 12 位）",
+  passwordNew: "密码（至少 8 位）",
   password: "密码",
   loginTitle: "登录",
   loginSubtitle: "请输入用户名和密码",

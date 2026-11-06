@@ -201,7 +201,7 @@ export function AuthGate() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            minLength={12}
+            minLength={8}
             maxLength={1024}
           />
           <SubmitButton busy={busy} busyLabel={t("auth.creating")} label={t("auth.createOwner")} />

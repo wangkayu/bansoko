@@ -37,7 +37,7 @@ func (s *Server) CreateBootstrapOwner(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, accessdomain.ErrSetupComplete), errors.Is(err, accessdomain.ErrOwnerExists):
 			writeError(w, r, conflict("OWNER_ALREADY_EXISTS", "The instance owner already exists.", nil))
 		case errors.Is(err, accessdomain.ErrOwnerInputInvalid):
-			writeError(w, r, unprocessable("OWNER_INPUT_INVALID", "The owner input is invalid.", []generated.ErrorDetail{{Code: "OWNER_INPUT_INVALID", Message: "Username must be 1-128 characters; password must be 12-1024 characters."}}))
+			writeError(w, r, unprocessable("OWNER_INPUT_INVALID", "The owner input is invalid.", []generated.ErrorDetail{{Code: "OWNER_INPUT_INVALID", Message: "Username must be 1-128 characters; password must be 8-1024 characters."}}))
 		default:
 			writeError(w, r, err)
 		}

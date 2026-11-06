@@ -36,7 +36,7 @@ func (s *Service) ResetOwnerCredentials(ctx context.Context, username, password 
 		return domain.Account{}, 0, fmt.Errorf("%w: username must be at most 128 characters", domain.ErrOwnerInputInvalid)
 	}
 	if !validPassword(password) {
-		return domain.Account{}, 0, fmt.Errorf("%w: password must be between 12 and 1024 characters", domain.ErrOwnerInputInvalid)
+		return domain.Account{}, 0, fmt.Errorf("%w: password must be between 8 and 1024 characters", domain.ErrOwnerInputInvalid)
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)

@@ -183,7 +183,7 @@ export const settingsCopy = {
     credentialsDialogDescription: "用户名或新密码留空则不修改；修改密码后其他设备上的登录会退出，API 令牌不受影响",
     newUsername: "新用户名（留空不修改）",
     currentPassword: "当前密码",
-    newPassword: "新密码（留空不修改，12–1024 位）",
+    newPassword: "新密码（留空不修改，8–1024 位）",
     confirmPassword: "确认新密码",
     save: "保存",
     savedAccount: "登录信息已更新",

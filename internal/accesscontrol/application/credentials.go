@@ -48,7 +48,7 @@ func (s *Service) UpdateOwnerCredentials(
 		nextUsername = &trimmed
 	}
 	if newPassword != nil && !validPassword(*newPassword) {
-		return domain.Account{}, false, fmt.Errorf("%w: password must be between 12 and 1024 characters", domain.ErrOwnerInputInvalid)
+		return domain.Account{}, false, fmt.Errorf("%w: password must be between 8 and 1024 characters", domain.ErrOwnerInputInvalid)
 	}
 	if nextUsername == nil && newPassword == nil {
 		return domain.Account{}, false, fmt.Errorf("%w: a username or a new password is required", domain.ErrOwnerInputInvalid)

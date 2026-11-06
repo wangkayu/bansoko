@@ -48,10 +48,10 @@ func TestLegacyBcryptHashStillVerifies(t *testing.T) {
 
 func TestPasswordAndUsernameLimitsCountRunes(t *testing.T) {
 	if validPassword(strings.Repeat("a", passwordMinRunes-1)) {
-		t.Fatal("11 characters must be rejected")
+		t.Fatal("7 characters must be rejected")
 	}
 	if !validPassword(strings.Repeat("a", passwordMinRunes)) {
-		t.Fatal("12 characters must be accepted")
+		t.Fatal("8 characters must be accepted")
 	}
 	if validPassword(strings.Repeat("a", passwordMaxRunes+1)) {
 		t.Fatal("1025 characters must be rejected")

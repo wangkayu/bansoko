@@ -29,7 +29,7 @@ func TestGenerateResetPasswordMeetsThePasswordContract(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if n := utf8.RuneCountInString(password); n < 12 || n > 1024 {
+		if n := utf8.RuneCountInString(password); n < 8 || n > 1024 {
 			t.Fatalf("generated password length %d is outside the contract", n)
 		}
 		if seen[password] {

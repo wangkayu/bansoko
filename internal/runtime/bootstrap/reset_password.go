@@ -89,7 +89,7 @@ func collectResetCredentials(opts resetPasswordOptions, stdin io.Reader, stderr 
 		}
 		username = strings.TrimSpace(username)
 	}
-	password, err = promptResetLine(reader, stderr, "New owner password (12-1024 characters): ")
+	password, err = promptResetLine(reader, stderr, "New owner password (8-1024 characters): ")
 	if err != nil {
 		return "", "", err
 	}
