@@ -9,7 +9,7 @@ import tempfile
 root = pathlib.Path(__file__).resolve().parents[2]
 entry = root / "scripts/ci/transform-embedded-compose.py"
 source = (root / "deployment/maintainer/docker-compose.production.yml").read_text()
-image_template = "${BANSOKO_BUNDLE_IMAGE_REPOSITORY:-wangkayu/bansoko}@${BANSOKO_BUNDLE_IMAGE_DIGEST:?BANSOKO_BUNDLE_IMAGE_DIGEST (sha256:...) must be injected by the builder}"
+image_template = "${BANSOKO_BUNDLE_IMAGE_REPOSITORY:-wangkayu/bansoko-builds}@${BANSOKO_BUNDLE_IMAGE_DIGEST:?BANSOKO_BUNDLE_IMAGE_DIGEST (sha256:...) must be injected by the builder}"
 sentinel = "# sentinel: registry.example.test/acme/app@must-not-change"
 for broken in [source.replace("  app:\n", "  app:\n" + sentinel + "\n", 1), source.replace(image_template, image_template, 1)]:
     with tempfile.TemporaryDirectory() as td:

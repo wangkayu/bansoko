@@ -50,8 +50,15 @@ OUTPUT = ROOT / ".local-artifacts/release-ci"
 # The registry speaks OCI with a Bearer token minted by its auth realm; the
 # docker CLI does the same exchange from a static login entry.
 GITHUB_TOKEN_ENV = "BANSOKO_RELEASE_GITHUB_TOKEN"
-IMAGE_REPOSITORY = "docker.io/wangkayu/bansoko"
-IMAGE_PATH = "wangkayu/bansoko"
+# Two Docker Hub repositories, one job each: the release repository
+# (`wangkayu/bansoko`, published by ci-dockerhub-publish.sh) carries what a
+# user pulls (`X.Y.Z`, `latest`, `test`, and the short-lived test builds behind
+# it), while the single-arch build this publisher pushes, inspects and records
+# in the manifest goes to the build repository. Keeping them apart is what lets
+# the release repository's tag list stay user-facing without deleting anything
+# a published manifest points at.
+BUILD_IMAGE_PATH = "wangkayu/bansoko-builds"
+BUILD_IMAGE_REPOSITORY = "docker.io/" + BUILD_IMAGE_PATH
 HUB_REGISTRY_HOST = "index.docker.io"
 HUB_AUTH_URL = "https://auth.docker.io/token"
 # The key `docker login` writes for Docker Hub; the docker CLI exchanges it
@@ -149,11 +156,11 @@ def hub_token():
     """One registry Bearer token, minted from the static Hub credential.
 
     index.docker.io answers only tokens issued by its auth realm, so every
-    registry call starts here. The scope is exactly this image repository: the
-    token cannot read or write any other namespace even if it leaks.
+    registry call starts here. The scope is exactly the build image repository:
+    the token cannot read or write any other repository even if it leaks.
     """
     query = urllib.parse.urlencode(
-        {"service": "registry.docker.io", "scope": "repository:" + IMAGE_PATH + ":pull,push"}
+        {"service": "registry.docker.io", "scope": "repository:" + BUILD_IMAGE_PATH + ":pull,push"}
     )
     auth = base64.b64encode(
         (HUB_USER + ":" + required(HUB_TOKEN_ENV)).encode()
@@ -487,7 +494,7 @@ def registry_digest(tag, jwt):
     the Docker-Content-Digest header, so a lying proxy cannot split the two.
     """
     url = (
-        "https://" + HUB_REGISTRY_HOST + "/v2/" + IMAGE_PATH + "/manifests/" + tag
+        "https://" + HUB_REGISTRY_HOST + "/v2/" + BUILD_IMAGE_PATH + "/manifests/" + tag
     )
     req = urllib.request.Request(
         url,
@@ -540,7 +547,7 @@ def image(ident):
         p.write_text(json.dumps({"auths": {HUB_DOCKER_AUTH_KEY: {"auth": auth}}}))
         p.chmod(0o600)
         env = dict(os.environ, DOCKER_CONFIG=str(config))
-        tag = IMAGE_REPOSITORY + ":" + ident["release_id"]
+        tag = BUILD_IMAGE_REPOSITORY + ":" + ident["release_id"]
         epoch = run("git", "show", "-s", "--format=%ct", ident["sha"])
         from datetime import datetime, timezone
 
@@ -589,7 +596,7 @@ def image(ident):
         old_config = os.environ.get("DOCKER_CONFIG")
         os.environ["DOCKER_CONFIG"] = str(config)
         try:
-            bootstrap = inspect_image(IMAGE_REPOSITORY + "@" + digest, ident, temp)
+            bootstrap = inspect_image(BUILD_IMAGE_REPOSITORY + "@" + digest, ident, temp)
         finally:
             if old_config is None:
                 os.environ.pop("DOCKER_CONFIG", None)
@@ -598,7 +605,7 @@ def image(ident):
         OUTPUT.mkdir(parents=True, exist_ok=True)
         handoff = dict(
             ident,
-            image=IMAGE_REPOSITORY,
+            image=BUILD_IMAGE_REPOSITORY,
             digest=digest,
             bootstrap=bootstrap,
         )
@@ -610,7 +617,7 @@ def publish(ident):
     handoff = decode_json((OUTPUT / "image-handoff.json").read_text())
     if (
         any(handoff.get(k) != v for k, v in ident.items())
-        or handoff.get("image") != IMAGE_REPOSITORY
+        or handoff.get("image") != BUILD_IMAGE_REPOSITORY
     ):
         fail("cross-run/source image handoff rejected")
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", handoff.get("digest", "")):
@@ -635,7 +642,7 @@ def publish(ident):
         config.chmod(0o600)
         os.environ["DOCKER_CONFIG"] = str(temp)
         bootstrap = inspect_image(
-            IMAGE_REPOSITORY + "@" + handoff["digest"], ident, temp
+            BUILD_IMAGE_REPOSITORY + "@" + handoff["digest"], ident, temp
         )
         if bootstrap != handoff["bootstrap"]:
             fail("handoff bootstrap mismatch")

@@ -59,12 +59,19 @@ class PublicationTests(unittest.TestCase):
         # One destination (GitHub) and one registry (Docker Hub), named in the
         # open: the repository and image path are public values, and carrying
         # them as secrets would only mask them in the log for no gain. The
-        # published manifest names IMAGE_REPOSITORY, so drift here breaks the
-        # pull on every deployed instance at once — the pin is the contract.
+        # published manifest names the image path the digest was pulled from, so
+        # drift here breaks the pull on every deployed instance at once — the
+        # pin is the contract.
         self.assertEqual(release.GITHUB_TOKEN_ENV, "BANSOKO_RELEASE_GITHUB_TOKEN")
-        self.assertEqual(release.IMAGE_REPOSITORY, "docker.io/wangkayu/bansoko")
-        self.assertEqual(release.IMAGE_PATH, "wangkayu/bansoko")
-        self.assertTrue(release.IMAGE_REPOSITORY.endswith("/" + release.IMAGE_PATH))
+        # The build repository is where this publisher pushes, inspects and
+        # records the single-arch image; the release repository stays the one
+        # users pull from. A manifest digest that names the wrong repository
+        # cannot be pulled by any deployment.
+        self.assertEqual(release.BUILD_IMAGE_REPOSITORY, "docker.io/wangkayu/bansoko-builds")
+        self.assertEqual(release.BUILD_IMAGE_PATH, "wangkayu/bansoko-builds")
+        self.assertTrue(
+            release.BUILD_IMAGE_REPOSITORY.endswith("/" + release.BUILD_IMAGE_PATH)
+        )
         self.assertEqual(release.HUB_REGISTRY_HOST, "index.docker.io")
         self.assertEqual(release.HUB_AUTH_URL, "https://auth.docker.io/token")
         # The docker CLI exchanges this static-login key for a registry token
@@ -208,7 +215,7 @@ class PublicationTests(unittest.TestCase):
             self.assertTrue(req.full_url.startswith(release.HUB_AUTH_URL + "?"))
             self.assertIn("service=registry.docker.io", req.full_url)
             self.assertIn(
-                "scope=repository%3Awangkayu%2Fbansoko%3Apull%2Cpush",
+                "scope=repository%3Awangkayu%2Fbansoko-builds%3Apull%2Cpush",
                 req.full_url,
             )
             self.assertEqual(
@@ -254,7 +261,7 @@ class PublicationTests(unittest.TestCase):
             self.assertEqual(
                 req.full_url,
                 "https://" + release.HUB_REGISTRY_HOST
-                + "/v2/" + release.IMAGE_PATH + "/manifests/v0.1.0",
+                + "/v2/" + release.BUILD_IMAGE_PATH + "/manifests/v0.1.0",
             )
             self.assertEqual(req.get_header("Authorization"), "Bearer sentinel")
             self.assertIn(

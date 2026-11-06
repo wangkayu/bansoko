@@ -54,7 +54,7 @@ fi
 # Application images must be digest-pinned to the current immutable registry repo.
 source "$root/scripts/ci/check-production-image-refs.sh"
 if ! check_application_image_refs "$compose"; then
-  fail 'application image references must use the configurable lowercase repository ${BANSOKO_BUNDLE_IMAGE_REPOSITORY:-wangkayu/bansoko} and the injected immutable digest'
+  fail 'application image references must use the configurable lowercase repository ${BANSOKO_BUNDLE_IMAGE_REPOSITORY:-wangkayu/bansoko-builds} and the injected immutable digest'
 fi
 
 compose_json="$(mktemp)"

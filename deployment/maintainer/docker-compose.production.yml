@@ -65,7 +65,7 @@ services:
         max-file: "3"
 
   app:
-    image: ${BANSOKO_BUNDLE_IMAGE_REPOSITORY:-wangkayu/bansoko}@${BANSOKO_BUNDLE_IMAGE_DIGEST:?BANSOKO_BUNDLE_IMAGE_DIGEST (sha256:...) must be injected by the builder}
+    image: ${BANSOKO_BUNDLE_IMAGE_REPOSITORY:-wangkayu/bansoko-builds}@${BANSOKO_BUNDLE_IMAGE_DIGEST:?BANSOKO_BUNDLE_IMAGE_DIGEST (sha256:...) must be injected by the builder}
     container_name: bansoko-app
     environment:
       # The only database input: the schema owner (POSTGRES_USER of the bundled

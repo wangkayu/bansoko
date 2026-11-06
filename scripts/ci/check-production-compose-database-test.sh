@@ -20,7 +20,7 @@ owner = '      BANSOKO_DATABASE_URL: postgres://${BANSOKO_DB_USER:-bansoko}:'
 assert text.count(owner) == 1
 if mutant == 'migrate-service':
     service = ('  migrate:\n'
-               '    image: ${BANSOKO_BUNDLE_IMAGE_REPOSITORY:-wangkayu/bansoko}@${BANSOKO_BUNDLE_IMAGE_DIGEST:?x}\n'
+               '    image: ${BANSOKO_BUNDLE_IMAGE_REPOSITORY:-wangkayu/bansoko-builds}@${BANSOKO_BUNDLE_IMAGE_DIGEST:?x}\n'
                '    entrypoint: ["/app/bootstrap", "migrate"]\n')
     text = text.replace('  app:\n', service + '  app:\n', 1)
 elif mutant == 'entrypoint':

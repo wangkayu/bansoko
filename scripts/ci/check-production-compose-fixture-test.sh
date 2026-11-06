@@ -32,23 +32,28 @@ expect_reject() {
   [[ "$output" == *"$expected_reason"* ]] || { echo "negative fixture failed for wrong reason ($label): $output" >&2; exit 1; }
 }
 digest='@${BANSOKO_BUNDLE_IMAGE_DIGEST:?BANSOKO_BUNDLE_IMAGE_DIGEST (sha256:...) must be injected by the builder}'
-expected='${BANSOKO_BUNDLE_IMAGE_REPOSITORY:-wangkayu/bansoko}'"$digest"
+expected='${BANSOKO_BUNDLE_IMAGE_REPOSITORY:-wangkayu/bansoko-builds}'"$digest"
 for service in app; do
   # The repository is a variable with a public default, so every mutation has
   # to stay inside that form: a literal repository is as wrong as a bad one.
   make_variant "$service" '${BANSOKO_BUNDLE_IMAGE_REPOSITORY:-wrong-org/bansoko}'"$digest" __keep__ "$tmp/wrong-org-$service.yml"
   expect_reject "wrong org only on $service" "$tmp/wrong-org-$service.yml"
-  make_variant "$service" '${BANSOKO_BUNDLE_IMAGE_REPOSITORY:-wangkayu/bansoko-other}'"$digest" __keep__ "$tmp/similar-$service.yml"
+  make_variant "$service" '${BANSOKO_BUNDLE_IMAGE_REPOSITORY:-wangkayu/bansoko-build}'"$digest" __keep__ "$tmp/similar-$service.yml"
   expect_reject "similar repo only on $service" "$tmp/similar-$service.yml"
+  # The release repository is not the build repository: its images are
+  # multi-arch publishes, and a bundle pinned to it by digest would name a
+  # manifest that was never built for that bundle.
+  make_variant "$service" '${BANSOKO_BUNDLE_IMAGE_REPOSITORY:-wangkayu/bansoko}'"$digest" __keep__ "$tmp/release-repo-$service.yml"
+  expect_reject "release repository only on $service" "$tmp/release-repo-$service.yml"
   make_variant "$service" '${BANSOKO_BUNDLE_IMAGE_REPOSITORY:-wangkayu/Bansoko}'"$digest" __keep__ "$tmp/uppercase-$service.yml"
   expect_reject "non-lowercase repository only on $service" "$tmp/uppercase-$service.yml"
   make_variant "$service" 'registry.example.test/acme/app@sha256:'"$(printf 'a%.0s' {1..64})" __keep__ "$tmp/old-prefix-$service.yml"
   expect_reject "old prefix only on $service" "$tmp/old-prefix-$service.yml"
-  make_variant "$service" '${BANSOKO_BUNDLE_IMAGE_REPOSITORY:-wangkayu/bansoko}:latest' __keep__ "$tmp/latest-$service.yml"
+  make_variant "$service" '${BANSOKO_BUNDLE_IMAGE_REPOSITORY:-wangkayu/bansoko-builds}:latest' __keep__ "$tmp/latest-$service.yml"
   expect_reject "legal latest tag only on $service" "$tmp/latest-$service.yml"
-  make_variant "$service" '${BANSOKO_BUNDLE_IMAGE_REPOSITORY:-wangkayu/bansoko}:v1.2.3' __keep__ "$tmp/tag-$service.yml"
+  make_variant "$service" '${BANSOKO_BUNDLE_IMAGE_REPOSITORY:-wangkayu/bansoko-builds}:v1.2.3' __keep__ "$tmp/tag-$service.yml"
   expect_reject "plain tag instead of injected digest only on $service" "$tmp/tag-$service.yml"
-  make_variant "$service" 'wangkayu/bansoko'"$digest" __keep__ "$tmp/fixed-repo-$service.yml"
+  make_variant "$service" 'wangkayu/bansoko-builds'"$digest" __keep__ "$tmp/fixed-repo-$service.yml"
   expect_reject "fixed repository instead of the variable only on $service" "$tmp/fixed-repo-$service.yml"
   make_variant "$service" "$expected" "${service}-typo" "$tmp/selector-$service.yml"
 expect_reject "missing required selector $service" "$tmp/selector-$service.yml" "missing required service"
@@ -70,4 +75,4 @@ fi
 grep -q 'checker accepted negative fixture: wrong org only on app' "$tmp/mutant.out" || { cat "$tmp/mutant.out" >&2; echo 'mutant failed for an unexpected reason' >&2; exit 1; }
 printf '%s\n' 'image matcher mutant was rejected by the wrong-org image assertion'
 fi
-printf '%s\n' 'production compose image fixture tests passed: exact app selector/repo-variable/digest required; single-sided wrong org, old prefix, similar repo, uppercase, latest, plain tag, fixed repository, and selector mutations rejected'
+printf '%s\n' 'production compose image fixture tests passed: exact app selector/repo-variable/digest required; single-sided wrong org, old prefix, similar repo, release repository, uppercase, latest, plain tag, fixed repository, and selector mutations rejected'

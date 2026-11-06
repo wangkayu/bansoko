@@ -14,7 +14,7 @@ for line in lines:
     if line.startswith("  ") and not line.startswith("    ") and line.rstrip().endswith(":"):
         service = line.strip()[:-1]
     if service == "app" and line.startswith("    image:"):
-        expected_image = "${BANSOKO_BUNDLE_IMAGE_REPOSITORY:-wangkayu/bansoko}@${BANSOKO_BUNDLE_IMAGE_DIGEST:?BANSOKO_BUNDLE_IMAGE_DIGEST (sha256:...) must be injected by the builder}"
+        expected_image = "${BANSOKO_BUNDLE_IMAGE_REPOSITORY:-wangkayu/bansoko-builds}@${BANSOKO_BUNDLE_IMAGE_DIGEST:?BANSOKO_BUNDLE_IMAGE_DIGEST (sha256:...) must be injected by the builder}"
         if line.rstrip("\n") != f"    image: {expected_image}":
             raise SystemExit(f"unexpected {service}.image template: {line.rstrip()}")
         out.append(f"    image: {image}\n")
