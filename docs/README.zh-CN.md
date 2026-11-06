@@ -6,7 +6,7 @@
 
 ## 快速开始
 
-测试镜像发布在 Docker Hub：`wangkayu/bansoko`（linux/amd64、linux/arm64）。只需要 Docker 和 Compose。
+正式镜像发布在 Docker Hub：`wangkayu/bansoko`（linux/amd64、linux/arm64）。只需要 Docker 和 Compose。
 
 ```bash
 git clone https://github.com/wangkayu/bansoko.git
@@ -15,7 +15,7 @@ docker compose up -d
 ```
 
 打开 `http://<主机>:8000`，首次访问时创建管理员账号。之后的起步步骤：在设置里连接
-qBittorrent，添加订阅源，订阅一部番剧。测试阶段的数据可能在版本之间被重置。
+qBittorrent，添加订阅源，订阅一部番剧。升级前请备份数据库和 `config/secrets.json`。
 
 ## 免责声明
 

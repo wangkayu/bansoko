@@ -8,7 +8,7 @@ finished files into your library with a naming template.
 
 ## Quick start
 
-The test image is published on Docker Hub as `wangkayu/bansoko`
+The stable image is published on Docker Hub as `wangkayu/bansoko`
 (linux/amd64, linux/arm64). All you need is Docker and Compose.
 
 ```bash
@@ -19,7 +19,8 @@ docker compose up -d
 
 Open `http://<host>:8000` and create the administrator account on the first
 visit. First steps after that: connect qBittorrent in Settings, add a feed
-source, subscribe to a title. Test-stage data may be reset between versions.
+source, subscribe to a title. Back up the database and `config/secrets.json`
+before upgrading.
 
 ## Disclaimer
 
