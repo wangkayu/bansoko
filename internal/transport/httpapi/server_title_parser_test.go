@@ -81,7 +81,7 @@ func TestGetTitleParserReportsTheStatusShape(t *testing.T) {
 	checkedAt := time.Date(2026, 11, 1, 13, 0, 0, 0, time.UTC)
 	service := &fakeParserComponent{status: titleparser.Status{
 		Source:          titleparser.SourceBuiltin,
-		Version:         "reltitle@v0.0.3",
+		Version:         "reltitle@v0.0.4",
 		Line:            "0.0",
 		ConfigDigest:    "lexicon:sha256:abc",
 		BinaryPath:      "/config/rt/reltitle",
@@ -91,9 +91,9 @@ func TestGetTitleParserReportsTheStatusShape(t *testing.T) {
 		Message:         "",
 		Channel: &titleparser.ChannelStatus{
 			CheckedAt:  checkedAt,
-			Version:    "0.0.4",
+			Version:    "0.0.5",
 			Notes:      titleparser.Notes{ZhCN: "- 新版本", EN: "- new build"},
-			ReleaseURL: "https://example.test/reltitle/v0.0.4",
+			ReleaseURL: "https://example.test/reltitle/v0.0.5",
 			Newer:      true,
 			Error:      "",
 		},
@@ -112,13 +112,13 @@ func TestGetTitleParserReportsTheStatusShape(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Source != generated.TitleParserStatusSourceBuiltin || body.Version != "reltitle@v0.0.3" || body.Line != "0.0" {
+	if body.Source != generated.TitleParserStatusSourceBuiltin || body.Version != "reltitle@v0.0.4" || body.Line != "0.0" {
 		t.Fatalf("body = %+v", body)
 	}
 	if body.BinaryPath != "/config/rt/reltitle" || body.Lane != generated.TitleParserStatusLaneStable {
 		t.Fatalf("path/lane = %+v", body)
 	}
-	if body.Channel == nil || body.Channel.Version != "0.0.4" || !body.Channel.Newer {
+	if body.Channel == nil || body.Channel.Version != "0.0.5" || !body.Channel.Newer {
 		t.Fatalf("channel = %+v", body.Channel)
 	}
 	if body.Channel.Notes.ZhCn != "- 新版本" || body.Channel.Notes.En != "- new build" {

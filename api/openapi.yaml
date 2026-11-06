@@ -12063,7 +12063,7 @@ components:
           enum: [builtin, manual, channel]
         version:
           type: string
-          description: The running parser identity, e.g. `reltitle@v0.0.3` for the compiled-in library.
+          description: The running parser identity, e.g. `reltitle@v0.0.4` for the compiled-in library.
         line:
           type: string
           description: The running parser's major.minor line (e.g. `0.0`); empty when it cannot be derived.

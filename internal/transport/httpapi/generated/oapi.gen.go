@@ -9604,7 +9604,7 @@ type TitleParserStatus struct {
 	Note   string                  `json:"note"`
 	Source TitleParserStatusSource `json:"source"`
 
-	// Version The running parser identity, e.g. `reltitle@v0.0.3` for the compiled-in library.
+	// Version The running parser identity, e.g. `reltitle@v0.0.4` for the compiled-in library.
 	Version string `json:"version"`
 }
 

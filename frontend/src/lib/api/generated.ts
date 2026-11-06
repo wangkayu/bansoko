@@ -4718,7 +4718,7 @@ export interface components {
         TitleParserStatus: {
             /** @enum {string} */
             source: "builtin" | "manual" | "channel";
-            /** @description The running parser identity, e.g. `reltitle@v0.0.3` for the compiled-in library. */
+            /** @description The running parser identity, e.g. `reltitle@v0.0.4` for the compiled-in library. */
             version: string;
             /** @description The running parser's major.minor line (e.g. `0.0`); empty when it cannot be derived. */
             line: string;

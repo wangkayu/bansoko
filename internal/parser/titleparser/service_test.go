@@ -6,11 +6,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -46,6 +48,23 @@ func (f *fakeParser) ProbeAndAdopt(ctx context.Context, configRoot, builtinVersi
 
 func newFakeParser() *fakeParser {
 	return &fakeParser{version: reltitletags.ImplementationVersion, digest: "lexicon:sha256:builtin"}
+}
+
+// channelVersionAbove raises the bundled reltitle's patch number by one, so
+// fixtures that need "a build newer than the built-in parser" keep that meaning
+// when the dependency moves.
+func channelVersionAbove(t *testing.T) string {
+	t.Helper()
+	version := strings.TrimPrefix(strings.TrimPrefix(reltitletags.ImplementationVersion, "reltitle@"), "v")
+	parts := strings.Split(version, ".")
+	if len(parts) != 3 {
+		t.Fatalf("%q is not X.Y.Z", version)
+	}
+	patch, err := strconv.Atoi(parts[2])
+	if err != nil {
+		t.Fatalf("patch number of %q: %v", version, err)
+	}
+	return fmt.Sprintf("%s.%s.%d", parts[0], parts[1], patch+1)
 }
 
 // channelFixture serves one manifest and its artifact, and returns the injected
@@ -181,7 +200,7 @@ func TestStatusOfTheBuiltinParser(t *testing.T) {
 
 func TestCheckReportsTheChannelAndNewer(t *testing.T) {
 	parser := newFakeParser()
-	server, channel, fetch, update := channelFixture(t, "0.0.4", []byte("#!/bin/sh\necho reltitle\n"))
+	server, channel, fetch, update := channelFixture(t, channelVersionAbove(t), []byte("#!/bin/sh\necho reltitle\n"))
 	_ = server
 	service := newService(t, parser, fetch, update, SourceBuiltin)
 
@@ -265,9 +284,10 @@ func TestFirstCheckFailureStillReportsAChannel(t *testing.T) {
 }
 
 func TestInstallAdoptsANewerBuild(t *testing.T) {
+	above := channelVersionAbove(t)
 	parser := newFakeParser()
-	parser.adoptedVersion = "0.0.4"
-	_, _, fetch, update := channelFixture(t, "0.0.4", []byte("#!/bin/sh\necho reltitle\n"))
+	parser.adoptedVersion = above
+	_, _, fetch, update := channelFixture(t, above, []byte("#!/bin/sh\necho reltitle\n"))
 	service := newService(t, parser, fetch, update, SourceBuiltin)
 
 	status, err := service.Install(context.Background())
@@ -277,16 +297,16 @@ func TestInstallAdoptsANewerBuild(t *testing.T) {
 	if status.Source != SourceChannel {
 		t.Fatalf("source = %q, want channel", status.Source)
 	}
-	if status.Version != "reltitle@0.0.4" || status.Line != "0.0" {
+	if status.Version != "reltitle@"+above || status.Line != "0.0" {
 		t.Fatalf("version/line = %+v", status)
 	}
 	if status.Note != "" {
 		t.Fatalf("a successful adoption kept the startup note: %q", status.Note)
 	}
-	if !strings.Contains(status.Message, "installed reltitle 0.0.4") {
+	if !strings.Contains(status.Message, "installed reltitle "+above) {
 		t.Fatalf("message = %q", status.Message)
 	}
-	if status.Channel == nil || status.Channel.Version != "0.0.4" || status.Channel.Newer {
+	if status.Channel == nil || status.Channel.Version != above || status.Channel.Newer {
 		t.Fatalf("channel after install = %+v", status.Channel)
 	}
 	if _, err := os.Stat(rtruntime.BinaryPath(service.configRoot)); err != nil {
@@ -320,7 +340,7 @@ func TestInstallWithoutANewerBuildStatesTheReason(t *testing.T) {
 func TestInstallKeepsTheOldBackendWhenAdoptionFails(t *testing.T) {
 	parser := newFakeParser()
 	parser.adoptErr = errors.New("the binary failed its self-check")
-	_, _, fetch, update := channelFixture(t, "0.0.4", []byte("artifact"))
+	_, _, fetch, update := channelFixture(t, channelVersionAbove(t), []byte("artifact"))
 	service := newService(t, parser, fetch, update, SourceBuiltin)
 
 	status, err := service.Install(context.Background())
