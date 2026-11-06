@@ -1,11 +1,11 @@
 {
   "schema_version": "update-channel-1",
   "channel": "test",
-  "release_id": "v0.1.1-test.190",
-  "version": "0.1.1-test.190",
-  "release_sequence": 190,
-  "manifest_url": "https://raw.githubusercontent.com/wangkayu/bansoko/update-channel-test/0.1.1-test.190/release-manifest.json",
-  "manifest_digest": "bf1fab460afcc27b71cc38e97c9141c7ba581a4bfc3c020cb35f241d64f800e5",
-  "source_commit": "8dc9b05529aa1557fdb1e70724f68195c3f8c5be",
-  "published_at": "2026-11-06T08:43:37Z"
+  "release_id": "v0.1.1-test.191",
+  "version": "0.1.1-test.191",
+  "release_sequence": 191,
+  "manifest_url": "https://raw.githubusercontent.com/wangkayu/bansoko/update-channel-test/0.1.1-test.191/release-manifest.json",
+  "manifest_digest": "22e965ef4033f48d47ee4a74f6806d708079948ce1822e8cca8f9fcd057b170c",
+  "source_commit": "99fd8ffead9575c116ebab91acc33946029ae0d4",
+  "published_at": "2026-11-06T11:45:46Z"
 }
