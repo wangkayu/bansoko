@@ -37,10 +37,41 @@ func TestSeasonEpisodeComposite(t *testing.T) {
 		season *int64
 		want   string
 	}{
-		{"tv", one, "/Season 01"}, {"tv", zero, "/Season 00"}, {"tv", nil, ""}, {"movie", one, ""},
+		{"tv", one, "/Season 01"}, {"tv", zero, "/Specials"}, {"tv", nil, ""}, {"movie", one, ""},
 	} {
 		if got := SeasonPath(tc.kind, tc.season); got != tc.want {
 			t.Errorf("SeasonPath(%s, %v) = %q, want %q", tc.kind, tc.season, got, tc.want)
+		}
+	}
+	for _, tc := range []struct {
+		kind   string
+		season *int64
+		want   string
+	}{
+		{"tv", one, "/Season 01"}, {"tv", zero, "/Season 00"}, {"tv", nil, ""}, {"movie", one, ""},
+	} {
+		if got := LegacySeasonPath(tc.kind, tc.season); got != tc.want {
+			t.Errorf("LegacySeasonPath(%s, %v) = %q, want %q", tc.kind, tc.season, got, tc.want)
+		}
+	}
+}
+
+// A replayed season folder keeps the kind gate: a movie renders no folder at
+// all, whatever owner season it carries.
+func TestLegacySeasonFolderFactGatesOnKind(t *testing.T) {
+	two := templatefacts.Int64(2)
+	for _, tc := range []struct {
+		kind   string
+		season *int64
+		want   string
+	}{
+		{"tv", templatefacts.Int64(0), "Season 00"},
+		{"tv", two, "Season 02"},
+		{"tv", nil, ""},
+		{"movie", two, ""},
+	} {
+		if got := LegacySeasonFolderFact(tc.kind, tc.season); got != tc.want {
+			t.Errorf("LegacySeasonFolderFact(%s, %v) = %q, want %q", tc.kind, tc.season, got, tc.want)
 		}
 	}
 }

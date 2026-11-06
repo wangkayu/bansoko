@@ -290,8 +290,8 @@ FROM work_item_history;
 -- renders with the anime's CURRENT managed_anime title, and the scenario
 -- asserts the move stays inside the same directory. Both bindings are what
 -- the import gate needs; without them the import waits for configuration.
--- The owner season is the one the fixtures' frozen render named (Season 00),
--- so the current render keeps the imported files' directory.
+-- The owner season is the one the fixtures' frozen render named (Specials,
+-- the season 0 folder), so the current render keeps the imported files' directory.
 INSERT INTO managed_anime(id, title) VALUES ('anime-e2e', '进击的巨人');
 INSERT INTO anime_metadata(managed_anime_id, bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season, season)
 VALUES ('anime-e2e', 'e2e-bgm-work', 'e2e-tv-work', 'tv', 1, 0);
@@ -1289,7 +1289,7 @@ PY
   [[ -s "$s9_before" ]] || { echo 'scenario 9 found no active file_operation placement for anime-e2e' >&2; exit 1; }
   : >"$summary_dir/scenario-9-hashes-before.txt"
   while IFS='|' read -r s9_id s9_path; do
-    [[ "$s9_path" == */"Season 00"/* && -f "$s9_path" ]] || { echo "scenario 9 precondition: $s9_id is not an existing file under Season 00: $s9_path" >&2; exit 1; }
+    [[ "$s9_path" == */"Specials"/* && -f "$s9_path" ]] || { echo "scenario 9 precondition: $s9_id is not an existing file under Specials: $s9_path" >&2; exit 1; }
     printf '%s|%s\n' "$s9_id" "$(fingerprint "$s9_path")" >>"$summary_dir/scenario-9-hashes-before.txt"
     observe_disk "scenario-9-before-$s9_id" "$s9_path"
   done <"$s9_before"

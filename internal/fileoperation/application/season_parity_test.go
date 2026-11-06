@@ -43,10 +43,10 @@ func TestOwnerSeasonPreviewAndPlannerRenderTheSameTarget(t *testing.T) {
 	}{
 		{name: "unset, no TMDB binding"},
 		{name: "unset despite a bound TMDB season", tmdb: true, season: 2},
-		{name: "owner specials season", owner: owner(0), wantSeason: "/Season 00/"},
+		{name: "owner specials season", owner: owner(0), wantSeason: "/Specials/"},
 		{name: "owner season wins over the TMDB season", owner: owner(2), tmdb: true, season: 3, wantSeason: "/Season 02/"},
 		{name: "legacy input names its TMDB season", tmdb: true, season: 2, legacyInput: true, wantSeason: "/Season 02/"},
-		{name: "legacy input, preserved season 0", tmdb: true, season: 0, seasonBound: true, legacyInput: true, wantSeason: "/Season 00/"},
+		{name: "legacy input, preserved season 0", tmdb: true, season: 0, seasonBound: true, legacyInput: true, wantSeason: "/Specials/"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			evidence := namingvars.ReleaseEvidence{AnimeEvidence: namingvars.AnimeEvidence{AnimeYear: &year, AnimeSeason: tc.owner}, ReleaseTitle: title}

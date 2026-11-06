@@ -102,12 +102,12 @@ func TestDefaultTemplatesRenderWithMissingYearSeasonAndIDs(t *testing.T) {
 	if err != nil || tv.Directory != "/media/TV/Show/Season 02" || tv.Filename != "Show S02E05-E06.mkv" {
 		t.Fatalf("bound tv = %+v, %v", tv, err)
 	}
-	// Season 0 kept for continuous specials.
+	// Season 0 kept for continuous specials; the filename keeps S00E01.
 	specials := goldenContext("tv", "1")
 	zero := 0
 	specials.Anime.Season = &zero
 	tv, err = compiled.RenderVideoDetailed(engine, specials)
-	if err != nil || tv.Directory != "/media/TV/Show/Season 00" || tv.Filename != "Show S00E01.mkv" {
+	if err != nil || tv.Directory != "/media/TV/Show/Specials" || tv.Filename != "Show S00E01.mkv" {
 		t.Fatalf("specials tv = %+v, %v", tv, err)
 	}
 	movie, err := compiled.RenderVideoDetailed(engine, goldenContext("movie", ""))

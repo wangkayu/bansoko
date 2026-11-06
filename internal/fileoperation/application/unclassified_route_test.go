@@ -91,7 +91,7 @@ func TestUnclassifiedRouteSkipFiltersByDefault(t *testing.T) {
 	}
 }
 
-// Unknown route uses only explicit user templates; no SP/Season00 identity.
+// Unknown route uses only explicit user templates; no specials-season identity.
 func TestUnclassifiedRouteUsesExplicitUserTemplatesWithoutCoverage(t *testing.T) {
 	db, fixture := openFileOperationDBWithPolicy(t, func(policy map[string]any) {
 		sections := policy["effective_sections"].(map[string]any)
@@ -113,7 +113,7 @@ func TestUnclassifiedRouteUsesExplicitUserTemplatesWithoutCoverage(t *testing.T)
 	)
 	if err := db.QueryRow(`SELECT state, target_path FROM file_operations WHERE artifact_id = $1`, fixture.artifactID).
 		Scan(&state, &targetPath); err != nil {
-		t.Fatalf("expected one Season 00 operation: %v", err)
+		t.Fatalf("expected one unknown-route operation: %v", err)
 	}
 	if state != ownerStatePending {
 		t.Fatalf("state=%s, want pending", state)

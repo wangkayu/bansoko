@@ -38,7 +38,7 @@ func TestMovieTiePlansOnlyStableMainVideo(t *testing.T) {
 
 // The shipped default TV template names the season folder through `${sf}` as
 // its own folder level: a present season 0 is a real season and renders
-// Season 00, while a TV item with no owner season has no implicit default
+// Specials, while a TV item with no owner season has no implicit default
 // (naming-render-4): the empty `${sf}` segment refuses the render and the
 // import fails naming the season folder (fail-closed; the repair is setting
 // the season).
@@ -57,8 +57,8 @@ func TestPrepareSeasonZeroPresenceAndMissingProduceDistinctOutcomes(t *testing.T
 		if err := db.QueryRowContext(ctx, `SELECT target_path FROM file_operations WHERE artifact_id=$1`, fixture.artifactID).Scan(&target); err != nil {
 			t.Fatal(err)
 		}
-		if filepath.Base(filepath.Dir(target)) != "Season 00" || !strings.HasPrefix(filepath.Base(target), "Fixture Anime S00E") {
-			t.Fatalf("target=%s want folder=Season 00 and a Fixture Anime S00E… filename", target)
+		if filepath.Base(filepath.Dir(target)) != "Specials" || !strings.HasPrefix(filepath.Base(target), "Fixture Anime S00E") {
+			t.Fatalf("target=%s want folder=Specials and a Fixture Anime S00E… filename", target)
 		}
 	})
 

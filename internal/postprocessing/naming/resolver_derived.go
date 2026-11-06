@@ -82,8 +82,10 @@ func effectiveTitleInputPath(source string) string {
 	}
 }
 
-// seasonFolderResolver renders the TMDB season folder; season 0/unknown stays
-// null so templates can apply their own default.
+// seasonFolderResolver renders the TMDB season folder of the naming-render-1
+// replay (Season 0n, so season 0 reads Season 00); it is not the current
+// anime.season_folder, which UnifiedFacts builds from the owner season. An
+// absent season stays null so templates can apply their own default.
 type seasonFolderResolver struct{}
 
 func (seasonFolderResolver) Definition() ResolverDefinition {

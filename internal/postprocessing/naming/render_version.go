@@ -48,11 +48,19 @@ import (
 //     and helper catalogs every render at this floor reads. Frozen snapshots
 //     of naming-render-5 and earlier replay the retired token scan
 //     (legacyRenderSubtitleMode) so an older target re-renders unchanged.
-const RendererVersion = "naming-render-6"
+//   - naming-render-7: as naming-render-6 for the engine semantics; the
+//     specials season folder is the render change: season 0 reads "Specials"
+//     for anime.season_folder and "/Specials" for anime.season_path, where
+//     naming-render-6 and earlier read "Season 00" / "/Season 00". Frozen
+//     snapshots of every earlier version replay the old folder name so an
+//     older target re-renders unchanged; ep.s00e00 keeps S00E07.
+const RendererVersion = "naming-render-7"
 
-// renderer5Version, renderer4Version, renderer3Version and renderer2Version
-// are previous semantics, replayed for snapshots that recorded them.
+// renderer6Version, renderer5Version, renderer4Version, renderer3Version and
+// renderer2Version are previous semantics, replayed for snapshots that
+// recorded them.
 const (
+	renderer6Version = "naming-render-6"
 	renderer5Version = "naming-render-5"
 	renderer4Version = "naming-render-4"
 	renderer3Version = "naming-render-3"
@@ -66,15 +74,18 @@ const LegacyRendererVersion = "naming-render-1"
 // ForRenderer returns an engine that renders with the recorded semantics of
 // version. An empty version is a snapshot written before the field existed,
 // which is LegacyRendererVersion. An unknown version is an error: a frozen
-// target is never replayed with guessed semantics. naming-render-6's only
-// render change is the subtitle-mode derivation, so every pre-6 version
-// replays at its own replay level (see renderFacts); renderer versions 4
-// through 1 keep their season semantics through the same levels.
+// target is never replayed with guessed semantics. naming-render-7's only
+// render change is the specials folder name, so its replay levels are its own:
+// naming-render-6 keeps the subtitle-mode swap but replays the old season
+// folder, naming-render-5 and earlier replay their own season semantics and
+// the retired token scan.
 func (e *Engine) ForRenderer(version string) (*Engine, error) {
 	replay := *e
 	switch strings.TrimSpace(version) {
 	case RendererVersion:
 		replay.replay = 0
+	case renderer6Version:
+		replay.replay = 6
 	case renderer5Version, renderer4Version:
 		replay.replay = 4
 	case renderer3Version:
@@ -94,10 +105,10 @@ func (e *Engine) ForRenderer(version string) (*Engine, error) {
 // season and year are always read now, so the pre-owner-season semantics
 // (naming-render-1 to 3, which name the TMDB binding's season) have no replay
 // there; they render with naming-render-4, the first owner-season version.
-// naming-render-4 to 6 keep their own subtitle-mode derivation.
+// naming-render-4 to 7 keep their own season and subtitle-mode derivation.
 func CurrentConfigRenderer(recorded string) string {
 	switch version := strings.TrimSpace(recorded); version {
-	case RendererVersion, renderer5Version, renderer4Version:
+	case RendererVersion, renderer6Version, renderer5Version, renderer4Version:
 		return version
 	}
 	return renderer4Version
@@ -121,10 +132,11 @@ func (e *Engine) MissingRequiredFacts(required []string, ctx NamingContext) []st
 // current renderer anime.season and anime.season_folder are the owner-edited
 // season (UnifiedFacts). naming-render-2 and naming-render-3 replay the
 // season of the TMDB binding through AnimeSeason; naming-render-1 replays
-// the raw binding projection it read; naming-render-4/5 keep the current
-// season semantics. tmdb.season stays the raw binding in every version. The
-// composites (anime.season_path, ep.s00e00) derive from the same season.
-// release.subtitle_mode keeps the retired token-scan semantics for every
+// the raw binding projection it read; naming-render-4/5/6 keep the current
+// season semantics but replay the season folder of their era. tmdb.season
+// stays the raw binding in every version. The composites (anime.season_path,
+// ep.s00e00) derive from the same season, the path using its version's folder
+// name. release.subtitle_mode keeps the retired token-scan semantics for every
 // pre-6 replay, so an older snapshot re-renders its recorded value.
 func renderFacts(ctx NamingContext, replay int) templatefacts.FactSet {
 	facts := UnifiedFacts(ctx)
@@ -140,12 +152,18 @@ func renderFacts(ctx NamingContext, replay int) templatefacts.FactSet {
 		facts.Anime.SeasonFolder = ctx.Derived.SeasonFolder
 	case 2, 3:
 		facts.Anime.Season = AnimeSeason(facts.Anime.Kind, ctx.Anime.TMDB, replay == 2)
-		facts.Anime.SeasonFolder = templatefacts.SeasonFolder(facts.Anime.Season)
+		facts.Anime.SeasonFolder = templatefacts.LegacySeasonFolder(facts.Anime.Season)
+	case 4, 5, 6:
+		// naming-render-4 to -6 name the owner season as the current one
+		// does; only the specials folder differs (season 0 read Season 00).
+		facts.Anime.SeasonFolder = LegacySeasonFolderFact(facts.Anime.Kind, facts.Anime.Season)
 	}
 	if replay != 0 {
 		facts.Release.SubtitleMode = legacyRenderSubtitleMode(ctx.Release.OriginalTitle)
+		facts.Anime.SeasonPath = LegacySeasonPath(facts.Anime.Kind, facts.Anime.Season)
+	} else {
+		facts.Anime.SeasonPath = SeasonPath(facts.Anime.Kind, facts.Anime.Season)
 	}
-	facts.Anime.SeasonPath = SeasonPath(facts.Anime.Kind, facts.Anime.Season)
 	facts.Ep.S00E00 = SeasonEpisode(facts.Anime.Kind, facts.Anime.Season, facts.Ep.Number, facts.Ep.NumberEnd)
 	return facts
 }

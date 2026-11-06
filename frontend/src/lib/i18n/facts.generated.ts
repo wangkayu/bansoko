@@ -53,11 +53,11 @@ export const factsCopy = {
     },
     season_folder: {
       label: "季目录",
-      description: "派生值：季目录名，如 Season 01；第 0 季为 Season 00。未填写季或电影时为空。默认模板把这一目录作为季的一级目录，未填写季的剧集会因它为空而命名失败；修复是填写季。",
+      description: "派生值：季目录名，如 Season 01；第 0 季为 Specials。未填写季或电影时为空。默认模板把这一目录作为季的一级目录，未填写季的剧集会因它为空而命名失败；修复是填写季。",
     },
     season_path: {
       label: "季目录（含斜杠）",
-      description: "派生值：带前导斜杠的季目录，如 /Season 01；第 0 季（特别篇）为 /Season 00。未填写季或电影时为空，接在作品目录后面也不会留下空目录。",
+      description: "派生值：带前导斜杠的季目录，如 /Season 01；第 0 季（特别篇）为 /Specials。未填写季或电影时为空，接在作品目录后面也不会留下空目录。",
     },
     title: {
       label: "标题",
@@ -528,11 +528,11 @@ export const enFactsCopy = {
     },
     season_folder: {
       label: "Season folder",
-      description: "Derived: Season folder name, such as Season 01; season 0 reads Season 00. Empty when the season is not set or for a movie. The default template keeps it as the season's folder level, so a TV episode with no season fails naming on it; the repair is setting the season.",
+      description: "Derived: Season folder name, such as Season 01; season 0 reads Specials. Empty when the season is not set or for a movie. The default template keeps it as the season's folder level, so a TV episode with no season fails naming on it; the repair is setting the season.",
     },
     season_path: {
       label: "Season folder path",
-      description: "Derived: The season folder with its leading slash, such as /Season 01; season 0 (specials) reads /Season 00. Empty when the season is not set or for a movie, so appended to the work folder it never leaves an empty folder level.",
+      description: "Derived: The season folder with its leading slash, such as /Season 01; season 0 (specials) reads /Specials. Empty when the season is not set or for a movie, so appended to the work folder it never leaves an empty folder level.",
     },
     title: {
       label: "Title",

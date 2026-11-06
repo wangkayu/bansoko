@@ -39,7 +39,7 @@ func TestSeasonIsTheOwnerValue(t *testing.T) {
 	}{
 		{"owner season without TMDB", seasonPtr(2), TMDBNamingFacts{}, int64(2), "Season 02", "/Season 02", "S02E07"},
 		{"owner season wins over a different TMDB season", seasonPtr(2), bound, int64(2), "Season 02", "/Season 02", "S02E07"},
-		{"owner specials season", seasonPtr(0), bound, int64(0), "Season 00", "/Season 00", "S00E07"},
+		{"owner specials season", seasonPtr(0), bound, int64(0), "Specials", "/Specials", "S00E07"},
 		{"unset is empty despite a TMDB season", nil, bound, nil, "", "", "E07"},
 		{"unset without TMDB", nil, TMDBNamingFacts{}, nil, "", "", "E07"},
 		// A movie keeps no season folder at all, even with a set owner
@@ -83,6 +83,33 @@ func TestDefaultTemplatesNameTheOwnerSeason(t *testing.T) {
 	var namingErr *Error
 	if _, err := compiled.RenderVideoDetailed(engine, seasonContext(nil, bound)); !errors.As(err, &namingErr) || namingErr.Code != ErrCodeNamingFactMissing || strings.Join(namingErr.Missing, ",") != "anime.season_folder" {
 		t.Fatalf("unset season = %v, want %s naming anime.season_folder", err, ErrCodeNamingFactMissing)
+	}
+}
+
+// TestReplayedSpecialsFolderKeepsSeason00 proves the naming-render-7 specials
+// folder change is versioned: a frozen snapshot of an earlier version
+// re-renders the Season 00 folder it was placed under, while a current render
+// names Specials. ep.s00e00 keeps S00E07 in both.
+func TestReplayedSpecialsFolderKeepsSeason00(t *testing.T) {
+	engine := NewEngine()
+	compiled, err := engine.CompileRules(DefaultNamingRules())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := seasonContext(seasonPtr(0), TMDBNamingFacts{})
+	current, err := compiled.RenderVideoDetailed(engine, ctx)
+	if err != nil || current.Directory != "/media/TV/Show/Specials" || current.Filename != "Show S00E07.mkv" {
+		t.Fatalf("current = %+v, %v", current, err)
+	}
+	for _, version := range []string{"naming-render-6", "naming-render-4"} {
+		replay, err := engine.ForRenderer(version)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := compiled.RenderVideoDetailed(replay, ctx)
+		if err != nil || got.Directory != "/media/TV/Show/Season 00" || got.Filename != "Show S00E07.mkv" {
+			t.Fatalf("%s = %+v, %v", version, got, err)
+		}
 	}
 }
 

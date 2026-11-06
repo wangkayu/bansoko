@@ -148,7 +148,8 @@ func TestExclusionReasonCodes(t *testing.T) {
 func TestCurrentConfigRendererKeepsOwnerSeasonVersions(t *testing.T) {
 	for recorded, want := range map[string]string{
 		"": "naming-render-4", "naming-render-1": "naming-render-4", "naming-render-3": "naming-render-4",
-		"naming-render-4": "naming-render-4", "naming-render-5": "naming-render-5", naming.RendererVersion: naming.RendererVersion,
+		"naming-render-4": "naming-render-4", "naming-render-5": "naming-render-5",
+		"naming-render-6": "naming-render-6", naming.RendererVersion: naming.RendererVersion,
 	} {
 		if got := naming.CurrentConfigRenderer(recorded); got != want {
 			t.Fatalf("CurrentConfigRenderer(%q) = %q, want %q", recorded, got, want)

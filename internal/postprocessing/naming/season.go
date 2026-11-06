@@ -57,7 +57,7 @@ func legacyTMDBSeason(tmdb TMDBNamingFacts) *int64 {
 }
 
 // SeasonPath is the anime.season_path composite: "/" plus the season folder of
-// a TV item with a season ("/Season 01", "/Season 00" for season 0), and ""
+// a TV item with a season ("/Season 01", "/Specials" for season 0), and ""
 // for a movie or an unbound season. A template appends it to the work folder,
 // so an unbound season leaves no empty folder level behind.
 func SeasonPath(kind string, season *int64) string {
@@ -67,9 +67,30 @@ func SeasonPath(kind string, season *int64) string {
 	return "/" + templatefacts.SeasonFolder(season)
 }
 
+// LegacySeasonPath is the anime.season_path composite of naming-render-6 and
+// earlier, where season 0 read "/Season 00". A frozen target replays it so
+// that an older placement re-renders unchanged.
+func LegacySeasonPath(kind string, season *int64) string {
+	if kind != string(MediaKindTV) || season == nil {
+		return ""
+	}
+	return "/" + templatefacts.LegacySeasonFolder(season)
+}
+
+// LegacySeasonFolderFact is anime.season_folder as naming-render-6 and earlier
+// named it: the season folder of a TV item with a season ("Season 00" for
+// season 0), and "" for a movie or an unbound season. A frozen target replays
+// it so that an older placement re-renders unchanged.
+func LegacySeasonFolderFact(kind string, season *int64) string {
+	if kind != string(MediaKindTV) || season == nil {
+		return ""
+	}
+	return templatefacts.LegacySeasonFolder(season)
+}
+
 // SeasonFolderFact is the anime.season_folder value of the current naming
-// render: the season folder of a TV item with a season ("/Season 00"
-// specials without the slash), and "" for a movie or an unbound season. The
+// render: the season folder of a TV item with a season ("Specials" for season
+// 0, without the slash), and "" for a movie or an unbound season. The
 // normative row (naming-module.md §Fact catalog rows) and the registry copy
 // both record movie → empty, and the season_path composite has always
 // enforced it; the leaf now agrees.

@@ -51,7 +51,7 @@ func TestRenderMatchOverRealRows(t *testing.T) {
 	if err != nil || got.Path != "/library/测试番组/Season 02/测试番组 - E07 [manual] Group.mkv" || !got.Lineage {
 		t.Fatalf("with lineage = %+v, %v", got, err)
 	}
-	// Season 0 is the specials folder.
+	// Season 0 is the specials folder; this template spells the folder itself.
 	specials := input
 	specials.Season = 0
 	if got, err = render(grouped, specials); err != nil || got.Path != "/library/测试番组/Season 00/测试番组 - E07 [manual] Group.mkv" {

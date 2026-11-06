@@ -302,8 +302,23 @@ func EffectiveYear(tmdb, bgm *int) (year int, source string) {
 	return 0, ""
 }
 
-// SeasonFolder is the season directory name for a season number.
+// SeasonFolder is the season directory name for a season number under the
+// current renderer (naming-render-7): season 0 is the specials season and
+// reads "Specials"; any other season reads "Season 0n".
 func SeasonFolder(season *int64) string {
+	if season == nil {
+		return ""
+	}
+	if *season == 0 {
+		return "Specials"
+	}
+	return fmt.Sprintf("Season %02d", *season)
+}
+
+// LegacySeasonFolder is the season directory name of naming-render-6 and
+// earlier, where season 0 read "Season 00". A frozen target replays it so
+// that an older placement re-renders unchanged.
+func LegacySeasonFolder(season *int64) string {
 	if season == nil {
 		return ""
 	}
