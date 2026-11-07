@@ -208,6 +208,21 @@ async function mockSettingsReads(page: Page) {
       }),
     ),
   );
+  // 应用更新行的连通性测试复用检查更新：返回已是最新版本。
+  await page.route("**/api/v1/update/check", (route) =>
+    getOnly(route, () =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          status: "up_to_date",
+          current: { version: "0.1.0", release_id: "rel-1", image_compatibility: "v1" },
+          compatibility: { kind: "overlay", min_image_version: "v1", reason: "" },
+          checked_at: "2026-11-07T00:00:00Z",
+        }),
+      }),
+    ),
+  );
   // 解析组件面板：内置解析器、未检查通道的默认读模型。
   await page.route("**/api/v1/title-parser", (route) =>
     getOnly(route, () =>
@@ -364,7 +379,7 @@ test.describe("settings dialog", () => {
     const section = dialog.getByRole("heading", { name: "服务连接" }).locator("xpath=..");
     const row = section.getByRole("listitem").filter({ hasText: "GitHub 更新" });
     await expect(row).toBeVisible();
-    await expect(row.getByText("跟随部署默认", { exact: true })).toBeVisible();
+    await expect(row.getByText("直连（不使用代理）", { exact: true })).toBeVisible();
     // 同一列表的最后一行，不再单独成组。
     await expect(section.getByRole("listitem").last()).toContainText("GitHub 更新");
     // 行内没有下拉、地址或凭据输入；这些都在编辑弹窗/网络代理分区里。
@@ -384,12 +399,17 @@ test.describe("settings dialog", () => {
     }));
     expect(pageOverflow.scrollWidth).toBeLessThanOrEqual(pageOverflow.clientWidth + 1);
 
+    // 连通性测试复用检查更新，结果与连接行同形（状态徽章 + 行内补充说明）。
+    await row.getByRole("button", { name: "测试" }).click();
+    await expect(row.getByText("正常", { exact: true })).toBeVisible();
+    await expect(row).toContainText("已是最新版本");
+
     await row.getByRole("button", { name: "编辑应用更新出口" }).click();
     const editor = page.getByRole("dialog", { name: "应用更新" });
     await expect(editor).toBeVisible();
-    const select = editor.getByRole("combobox", { name: "网络代理" });
+    const select = editor.getByRole("combobox", { name: "网络代理（可选）" });
     await expect(select).toBeVisible();
-    await expect(select).toContainText("跟随部署默认");
+    await expect(select).toContainText("直连（不使用代理）");
   });
 
   test("关闭设置回到目录", async ({ page }) => {

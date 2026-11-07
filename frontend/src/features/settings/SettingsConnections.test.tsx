@@ -3,7 +3,7 @@ import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Connection, NetworkRoute, UpdateEgress } from "../../lib/api/client";
+import type { Connection, NetworkRoute, UpdateCheck, UpdateEgress } from "../../lib/api/client";
 import { t } from "../../lib/i18n";
 import { SettingsConnections } from "./SettingsConnections";
 
@@ -20,9 +20,15 @@ type FetchStub = (input: RequestInfo | URL, init?: RequestInit) => Promise<Respo
 
 let fetchMock: ReturnType<typeof vi.fn<FetchStub>>;
 
-function stubFetch(options: { connections?: Connection[]; routes?: NetworkRoute[]; updateEgress?: UpdateEgress } = {}) {
+function stubFetch(options: { connections?: Connection[]; routes?: NetworkRoute[]; updateEgress?: UpdateEgress; updateCheck?: UpdateCheck } = {}) {
   fetchMock = vi.fn<FetchStub>(async (input, init) => {
     const url = String(input);
+    if (url.endsWith("/update/check")) {
+      return new Response(JSON.stringify(options.updateCheck ?? {}), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     if (url.includes("/config/update-egress")) {
       if (init?.method === "PUT") {
         const requestBody = JSON.parse(String(init.body)) as { network_route_id: string | null; expected_version: number };
@@ -406,7 +412,8 @@ describe("SettingsConnections 批次 4 交互", () => {
     expect(screen.getByText(t("settings.connections.rssRowNote"))).toBeInTheDocument();
     // qB belongs to the acquisition settings section; neither the connection list nor the test button shows it anymore.
     expect(screen.queryByText("QB")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: t("settings.connections.test") })).not.toBeInTheDocument();
+    const rssRow = screen.getByText(t("settings.connections.rssRowNote")).closest("li")!;
+    expect(within(rssRow).queryByRole("button", { name: t("settings.connections.test") })).not.toBeInTheDocument();
   });
 });
 
@@ -733,9 +740,9 @@ describe("SettingsConnections 应用更新出口", () => {
     stubFetch({ routes: [proxyRoute] });
     renderSettings();
 
-    expect(await screen.findByText(t("settings.updateEgress.followDeployment"))).toBeInTheDocument();
+    expect(await screen.findByText(t("settings.updateEgress.direct"))).toBeInTheDocument();
     // 与连接同一个列表，排在最后一行。
-    const list = screen.getByText(t("settings.updateEgress.followDeployment")).closest("ul")!;
+    const list = screen.getByText(t("settings.updateEgress.direct")).closest("ul")!;
     expect(within(list).getAllByRole("listitem").at(-1)).toHaveTextContent(t("settings.updateEgress.rowTitle"));
 
     await openEgressEditor();
@@ -752,7 +759,7 @@ describe("SettingsConnections 应用更新出口", () => {
     });
   });
 
-  it("选择跟随部署默认保存 null", async () => {
+  it("选择直连保存 null", async () => {
     stubFetch({ routes: [proxyRoute], updateEgress: { network_route_id: "route-1", version: 3 } });
     renderSettings();
 
@@ -760,7 +767,7 @@ describe("SettingsConnections 应用更新出口", () => {
 
     await openEgressEditor();
     await userEvent.click(await screen.findByRole("combobox", { name: t("settings.updateEgress.routeLabel") }));
-    await userEvent.click(await screen.findByRole("option", { name: t("settings.updateEgress.followDeployment") }));
+    await userEvent.click(await screen.findByRole("option", { name: t("settings.updateEgress.direct") }));
     await userEvent.click(screen.getByRole("button", { name: t("settings.connections.save") }));
 
     await waitFor(() => expect(updateEgressPutCalls()).toHaveLength(1));
@@ -770,16 +777,47 @@ describe("SettingsConnections 应用更新出口", () => {
     });
   });
 
-  it("停用的代理仍可选中，并标注暂时按部署默认", async () => {
+  it("停用的代理仍可选中，行内标注暂时直连", async () => {
     const disabled: NetworkRoute = { ...proxyRoute, id: "route-off", name: "备用代理", enabled: false };
     stubFetch({ routes: [disabled], updateEgress: { network_route_id: "route-off", version: 1 } });
     renderSettings();
 
+    expect(await screen.findByText(t("settings.updateEgress.currentRouteDisabled", { name: disabled.name }))).toBeInTheDocument();
+
     await openEgressEditor();
     await userEvent.click(await screen.findByRole("combobox", { name: t("settings.updateEgress.routeLabel") }));
-    expect(await screen.findByRole("option", {
-      name: t("settings.updateEgress.disabledOption", { name: disabled.name }),
-    })).toBeInTheDocument();
+    expect(await screen.findByRole("option", { name: disabled.name })).toBeInTheDocument();
+  });
+
+  it("测试按钮复用检查更新，并显示检查结果", async () => {
+    stubFetch({
+      routes: [proxyRoute],
+      updateCheck: {
+        status: "update_available",
+        current: { version: "0.1.0", release_id: "rel-1", image_compatibility: "v1" },
+        candidate: {
+          release_id: "rel-2",
+          version: "0.2.0",
+          release_sequence: 2,
+          published_at: "2026-11-01T00:00:00Z",
+          target_migration_version: "1",
+          required_downtime: false,
+          backup_required: false,
+          rollback_class: "compatible",
+          manifest_digest: "sha256:0",
+          payload_size: 1,
+        },
+        compatibility: { kind: "overlay", min_image_version: "v1", reason: "" },
+        checked_at: "2026-11-07T00:00:00Z",
+      },
+    });
+    renderSettings();
+
+    await userEvent.click(await screen.findByRole("button", { name: t("settings.connections.test") }));
+
+    expect(await screen.findByText(t("status.health.ready"))).toBeInTheDocument();
+    expect(await screen.findByText(new RegExp(t("settings.updateEgress.updateAvailable", { version: "0.2.0" })))).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/update/check"))).toBe(true);
   });
 
   it("连接的代理下拉列出全部网络代理", async () => {

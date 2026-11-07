@@ -6,6 +6,7 @@ import { useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { Pencil, Plus, RotateCcw } from "lucide-react";
 import { toast } from "../../ui/toast";
 import {
+  checkUpdate,
   isVersionConflict,
   getUpdateEgress,
   listConnections,
@@ -705,8 +706,33 @@ function UpdateEgressItem() {
     invalidateQueryKey: configKeys.updateEgress,
   });
   const stored = egress.data?.network_route_id ?? "";
-  const storedName = stored ? routes.data?.find((route) => route.id === stored)?.name : undefined;
+  const storedRoute = stored ? routes.data?.find((route) => route.id === stored) : undefined;
   const egressVersion = egress.data?.version;
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ health: "ready" | "failed"; text?: string }>();
+
+  // Reuse the update check as the connectivity test: it runs through the same
+  // egress the row configures, so a success also tells whether a newer version
+  // is published.
+  async function test() {
+    setTesting(true);
+    setTestResult(undefined);
+    try {
+      const result = await checkUpdate();
+      setTestResult({
+        health: "ready",
+        text: result.status === "up_to_date"
+          ? t("settings.updateEgress.upToDate")
+          : result.candidate
+            ? t("settings.updateEgress.updateAvailable", { version: result.candidate.version })
+            : undefined,
+      });
+    } catch (cause) {
+      setTestResult({ health: "failed", text: toUserMessage(cause, t("settings.updateEgress.testFailed")) });
+    } finally {
+      setTesting(false);
+    }
+  }
 
   return (
     <>
@@ -714,6 +740,11 @@ function UpdateEgressItem() {
         <div className="settings-connections-item-row">
           <span className="settings-connections-item-title text-body">{t("settings.updateEgress.rowTitle")}</span>
           <Chip>{t("settings.updateEgress.title")}</Chip>
+          {testResult && (
+            <StatePill tone={testHealthTone(testResult.health)}>
+              {testHealthLabel(testResult.health)}
+            </StatePill>
+          )}
           <span className="settings-connections-spacer" />
           <Button
             variant="ghost"
@@ -725,6 +756,15 @@ function UpdateEgressItem() {
             <Pencil size={14} />
             {t("settings.connections.edit")}
           </Button>
+          <Button
+            aria-label={testing ? t("settings.connections.testing") : t("settings.connections.test")}
+            size="sm"
+            loading={testing}
+            disabled={testing}
+            onClick={() => void test()}
+          >
+            {testing ? t("settings.connections.testing") : t("settings.connections.test")}
+          </Button>
         </div>
         <p
           className={`settings-connections-description text-caption${egress.error ? " settings-connections-error" : ""}`}
@@ -735,8 +775,11 @@ function UpdateEgressItem() {
             : egressVersion === undefined
               ? t("settings.updateEgress.loading")
               : stored
-                ? t("settings.updateEgress.currentRoute", { name: storedName ?? stored })
-                : t("settings.updateEgress.followDeployment")}
+                ? storedRoute && !storedRoute.enabled
+                  ? t("settings.updateEgress.currentRouteDisabled", { name: storedRoute.name })
+                  : t("settings.updateEgress.currentRoute", { name: storedRoute?.name ?? stored })
+                : t("settings.updateEgress.direct")}
+          {!egress.error && testResult?.text && ` · ${testResult.text}`}
         </p>
       </li>
 
@@ -772,11 +815,8 @@ function UpdateEgressItem() {
           <div className="settings-connections-form">
             <Field label={t("settings.updateEgress.routeLabel")}>
               <Select label={t("settings.updateEgress.routeLabel")} value={draft.routeId} options={[
-                { value: "", label: t("settings.updateEgress.followDeployment") },
-                ...(routes.data ?? []).map((route) => ({
-                  value: route.id,
-                  label: route.enabled ? route.name : t("settings.updateEgress.disabledOption", { name: route.name }),
-                })),
+                { value: "", label: t("settings.updateEgress.direct") },
+                ...(routes.data ?? []).map((route) => ({ value: route.id, label: route.name })),
               ]} onChange={(routeId) => setDraft({ ...draft, routeId })} />
             </Field>
           </div>
