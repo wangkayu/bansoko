@@ -42,6 +42,7 @@ const CONNECTION_LABEL = (): Record<Connection["kind"], string> => ({
   mikan: t("nav.connection.mikan"),
   nyaa: t("nav.connection.nyaa"),
   bgm: t("nav.connection.bgm"),
+  github: t("nav.connection.github"),
 });
 
 type MoreSheetProps = {

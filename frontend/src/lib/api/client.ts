@@ -60,8 +60,6 @@ export type QBittorrentServerStatus = Schema<"QBittorrentServerStatus">;
 export type NetworkRoute = Schema<"NetworkRoute">;
 export type NetworkRouteInput = Schema<"NetworkRouteInput">;
 export type NetworkRouteTestResult = Schema<"NetworkRouteTestResult">;
-export type UpdateEgress = Schema<"UpdateEgress">;
-export type UpdateEgressInput = Schema<"UpdateEgressInput">;
 export type ManagedAnime = Schema<"ManagedAnime">;
 export type Subscription = Schema<"Subscription">;
 export type SubscriptionOrigin = Schema<"SubscriptionOrigin">;
@@ -619,14 +617,6 @@ export function putNetworkRoute(
 
 export function testNetworkRoute(routeID: string): Promise<NetworkRouteTestResult> {
   return request(`/config/network-routes/${encodePathSegment(routeID)}/test`, { method: "POST" });
-}
-
-export function getUpdateEgress(): Promise<UpdateEgress> {
-  return request("/config/update-egress", { method: "GET" });
-}
-
-export function putUpdateEgress(input: UpdateEgressInput): Promise<UpdateEgress> {
-  return request("/config/update-egress", { method: "PUT", body: input });
 }
 
 // --- qBittorrent management (operational passthrough) ------------------------

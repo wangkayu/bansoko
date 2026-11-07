@@ -52,6 +52,7 @@ export const navCopy = {
     mikan: "Mikan",
     nyaa: "Nyaa",
     bgm: "Bangumi",
+    github: "GitHub",
   },
 } as const;
 

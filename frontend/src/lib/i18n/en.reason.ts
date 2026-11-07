@@ -166,6 +166,8 @@ export const enReasonCopy = {
   network_error: "Cannot connect",
   missing_credentials: "Missing username or key",
   network_route_invalid: "Proxy unavailable",
+  update_channel_unavailable: "Cannot read the update channel",
+  test_unavailable: "Cannot test yet",
   ok: "OK",
 
   // --- Download client and torrents ---

@@ -63,6 +63,7 @@ export const enNavCopy = {
     mikan: "Mikan",
     nyaa: "Nyaa",
     bgm: "Bangumi",
+    github: "GitHub",
   },
 } as const satisfies CopyShape<typeof navCopy>;
 

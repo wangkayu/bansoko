@@ -104,11 +104,12 @@ func (s *MemorySecretStore) DeleteTx(_ context.Context, _ txscope.Tx, ref string
 }
 
 type Service struct {
-	db        *sql.DB
-	secrets   SecretStore
-	now       func() time.Time
-	eventHub  *events.Hub
-	workItems *workitems.Store
+	db                *sql.DB
+	secrets           SecretStore
+	now               func() time.Time
+	eventHub          *events.Hub
+	workItems         *workitems.Store
+	updateSourceProbe UpdateSourceProber
 }
 
 // QBittorrentRuntimeConfig is the provider-facing projection of the single
@@ -553,68 +554,114 @@ FROM network_routes ORDER BY name, id`)
 	return result, nil
 }
 
-// updateEgressRowID is the singleton row of update_egress. The migration seeds
-// it; nothing creates or deletes it.
-const updateEgressRowID = "default"
-
-// GetUpdateEgress reads the network route the update channel uses. An empty
-// NetworkRouteID means the deployment default egress.
-func (s *Service) GetUpdateEgress(ctx context.Context) (domain.UpdateEgress, error) {
-	if s == nil || s.db == nil {
-		return domain.UpdateEgress{}, errors.New("configuration database is nil")
-	}
-	var result domain.UpdateEgress
-	var routeID sql.NullString
-	if err := s.db.QueryRowContext(ctx, `
-SELECT network_route_id, version, updated_at FROM update_egress WHERE id = $1`, updateEgressRowID).Scan(
-		&routeID, &result.Version, &result.UpdatedAt); err != nil {
-		return domain.UpdateEgress{}, fmt.Errorf("read update egress: %w", err)
-	}
-	result.NetworkRouteID = routeID.String
-	return result, nil
+// UpdateSourceProber is the update service's channel probe, injected by the
+// composition root because only the update service knows the channel layout.
+// It receives the client and base URL the runtime would use for one operation;
+// a nil client means the deployment default egress.
+type UpdateSourceProber interface {
+	ProbeUpdateSource(ctx context.Context, client *http.Client, gateway string) error
 }
 
-// PutUpdateEgress selects an existing network route for the update channel. An
-// empty route ID restores the deployment default. A disabled route may be
-// selected: the updater then follows the deployment default until it is
-// enabled again, and the choice survives that.
-func (s *Service) PutUpdateEgress(ctx context.Context, input domain.UpdateEgressInput) (domain.UpdateEgress, error) {
+// SetUpdateSourceProbe injects the update service's channel probe so the
+// GitHub connection's test exercises the real channel instead of guessing a
+// path. It is called once at startup, before requests are served.
+func (s *Service) SetUpdateSourceProbe(probe UpdateSourceProber) {
+	s.updateSourceProbe = probe
+}
+
+// UpdateConnection resolves the GitHub update connection into the client and
+// base URL the update channel uses for one operation. A missing or disabled
+// connection keeps the deployment default source and egress, so an instance
+// that never touched the row keeps updating directly. The whole resolution is
+// read per call, so saving the connection affects the next operation without a
+// restart. A selected route that cannot be turned into a client is an error:
+// the update channel fails closed rather than quietly going direct.
+func (s *Service) UpdateConnection(ctx context.Context) (*http.Client, string, error) {
 	if s == nil || s.db == nil {
-		return domain.UpdateEgress{}, errors.New("configuration database is nil")
+		return nil, "", errors.New("configuration database is nil")
 	}
-	routeID := strings.TrimSpace(input.NetworkRouteID)
-	tx, err := s.db.BeginTx(ctx, nil)
+	var connection domain.Connection
+	var kind, state, routeID sql.NullString
+	err := s.db.QueryRowContext(ctx, `
+SELECT id, kind, name, endpoint, network_route_id, state
+FROM connections WHERE kind = $1 ORDER BY id LIMIT 1`, string(domain.ConnectionGitHub)).Scan(
+		&connection.ID, &kind, &connection.Name, &connection.Endpoint, &routeID, &state)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, "", nil
+	}
 	if err != nil {
-		return domain.UpdateEgress{}, fmt.Errorf("begin update egress save: %w", err)
+		return nil, "", fmt.Errorf("read GitHub update connection: %w", err)
 	}
-	defer tx.Rollback()
-	var currentVersion int64
-	if err := tx.QueryRowContext(ctx, `
-SELECT version FROM update_egress WHERE id = $1 FOR UPDATE`, updateEgressRowID).Scan(&currentVersion); err != nil {
-		return domain.UpdateEgress{}, fmt.Errorf("read update egress version: %w", err)
+	connection.Kind = domain.ConnectionKind(kind.String)
+	connection.NetworkRouteID = routeID.String
+	connection.State = domain.ConnectionState(state.String)
+	if connection.State == domain.ConnectionDisabled {
+		return nil, "", nil
 	}
-	if currentVersion != input.ExpectedVersion {
-		return domain.UpdateEgress{}, &apperrors.VersionConflict{Owner: "update_egress", CurrentVersion: currentVersion}
+	gateway, err := domain.NormalizeGitHubEndpoint(connection.Endpoint)
+	if err != nil {
+		return nil, "", fmt.Errorf("GitHub update connection base URL is not usable: %w", err)
 	}
-	if routeID != "" {
-		var stored string
-		if err := tx.QueryRowContext(ctx, `SELECT id FROM network_routes WHERE id = $1`, routeID).Scan(&stored); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return domain.UpdateEgress{}, &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "UPDATE_EGRESS_ROUTE_UNKNOWN", Message: "The selected network route does not exist."}
-			}
-			return domain.UpdateEgress{}, fmt.Errorf("read update egress route %q: %w", routeID, err)
+	client, err := s.updateRouteClient(ctx, connection.NetworkRouteID)
+	if err != nil {
+		return nil, "", err
+	}
+	return client, gateway, nil
+}
+
+// updateRouteClient resolves the connection's optional network route into the
+// update channel's client. Unlike ClientForConnection it treats a missing,
+// disabled or direct route as the deployment default (nil), and it inherits
+// the update channel's own five-minute bound.
+func (s *Service) updateRouteClient(ctx context.Context, routeID string) (*http.Client, error) {
+	routeID = strings.TrimSpace(routeID)
+	if routeID == "" {
+		return nil, nil
+	}
+	var route networkRouteRecord
+	if err := s.db.QueryRowContext(ctx, `
+SELECT kind, COALESCE(endpoint, ''), COALESCE(secret_ref, ''), state
+FROM network_routes WHERE id = $1`, routeID).Scan(&route.Kind, &route.Endpoint, &route.SecretRef, &route.State); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("update route %q is not configured", routeID)
 		}
+		return nil, fmt.Errorf("read update route %q: %w", routeID, err)
 	}
-	if _, err := tx.ExecContext(ctx, `
-UPDATE update_egress
-SET network_route_id = NULLIF($2, ''), version = version + 1, updated_at = NOW()
-WHERE id = $1`, updateEgressRowID, routeID); err != nil {
-		return domain.UpdateEgress{}, fmt.Errorf("save update egress: %w", err)
+	if route.State != string(domain.ConnectionConfigured) {
+		return nil, nil
 	}
-	if err := tx.Commit(); err != nil {
-		return domain.UpdateEgress{}, fmt.Errorf("commit update egress: %w", err)
+	client, err := s.buildNetworkRouteClient(route)
+	if err != nil {
+		return nil, fmt.Errorf("build update route client: %w", err)
 	}
-	return s.GetUpdateEgress(ctx)
+	client.Timeout = updateRouteTimeout
+	return client, nil
+}
+
+// testUpdateConnection runs the GitHub connection's test through the same
+// resolution the updater uses, then reads the channel document with it.
+func (s *Service) testUpdateConnection(ctx context.Context, connection domain.Connection) domain.HealthSnapshot {
+	snapshot := connectionHealthFailure(connection, "unavailable", "update channel test failed")
+	if s.updateSourceProbe == nil {
+		snapshot.Code = "test_unavailable"
+		snapshot.Message = "update channel probe is not configured"
+		return snapshot
+	}
+	client, gateway, err := s.UpdateConnection(ctx)
+	if err != nil {
+		snapshot.Code = "network_route_invalid"
+		snapshot.Message = "update network route is not usable"
+		return snapshot
+	}
+	if err := s.updateSourceProbe.ProbeUpdateSource(ctx, client, gateway); err != nil {
+		snapshot.Code = "update_channel_unavailable"
+		snapshot.Message = "the update channel could not be read"
+		return snapshot
+	}
+	snapshot.State = domain.ConnectionConfigured
+	snapshot.Code = "ok"
+	snapshot.Message = "update channel is reachable"
+	return snapshot
 }
 
 func (s *Service) UpsertConnection(ctx context.Context, input domain.ConnectionInput) (domain.Connection, error) {
@@ -623,6 +670,13 @@ func (s *Service) UpsertConnection(ctx context.Context, input domain.ConnectionI
 	}
 	if err := validateConnectionInput(input); err != nil {
 		return domain.Connection{}, err
+	}
+	if input.Kind == domain.ConnectionGitHub {
+		normalized, err := domain.NormalizeGitHubEndpoint(input.Endpoint)
+		if err != nil {
+			return domain.Connection{}, &apperrors.Business{Status: http.StatusUnprocessableEntity, Code: "CONNECTION_ENDPOINT_INVALID", Message: "The GitHub update base URL is not usable."}
+		}
+		input.Endpoint = normalized
 	}
 	if routeID := strings.TrimSpace(input.NetworkRouteID); routeID != "" {
 		var routeState string
@@ -699,6 +753,21 @@ FROM connections WHERE id = $1 FOR UPDATE`, id).Scan(&existingKind, &existingSec
 		}
 		if !errors.Is(otherErr, sql.ErrNoRows) {
 			return domain.Connection{}, fmt.Errorf("read existing qBittorrent connection: %w", otherErr)
+		}
+	}
+	if input.Kind == domain.ConnectionGitHub {
+		// The update channel reads exactly one GitHub connection, so a second
+		// row is refused. Updating that row (same id) is always allowed.
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('connections:github'))`); err != nil {
+			return domain.Connection{}, fmt.Errorf("lock GitHub connection: %w", err)
+		}
+		var otherID string
+		otherErr := tx.QueryRowContext(ctx, `SELECT id FROM connections WHERE kind = 'github' AND id <> $1 LIMIT 1`, id).Scan(&otherID)
+		if otherErr == nil {
+			return domain.Connection{}, &apperrors.Business{Status: http.StatusConflict, Code: "UPDATE_CONNECTION_ALREADY_CONFIGURED", Message: "The GitHub update connection is already configured; edit the existing one."}
+		}
+		if !errors.Is(otherErr, sql.ErrNoRows) {
+			return domain.Connection{}, fmt.Errorf("read existing GitHub connection: %w", otherErr)
 		}
 	}
 	secretRef, err := s.mutateSecretTx(ctx, tx, secretMutation, string(input.Kind)+":"+input.Name, existingSecretRef)
@@ -1075,45 +1144,6 @@ func normalizedHTTPOrigin(target *url.URL) string {
 // route timeout.
 const updateRouteTimeout = 5 * time.Minute
 
-// UpdateRouteClient returns the HTTP client of the network route the update
-// channel selects, or nil when no route is selected or the selected one is
-// disabled. nil tells the update channel to use the deployment default egress.
-// A selected route that cannot be turned into a client is an error: the update
-// channel fails closed rather than quietly going direct. The selection is read
-// on every call, so saving it affects the next update operation without a
-// restart.
-func (s *Service) UpdateRouteClient(ctx context.Context) (*http.Client, error) {
-	if s == nil || s.db == nil {
-		return nil, errors.New("configuration database is nil")
-	}
-	var routeID sql.NullString
-	if err := s.db.QueryRowContext(ctx, `
-SELECT network_route_id FROM update_egress WHERE id = $1`, updateEgressRowID).Scan(&routeID); err != nil {
-		return nil, fmt.Errorf("read update egress: %w", err)
-	}
-	if !routeID.Valid || strings.TrimSpace(routeID.String) == "" {
-		return nil, nil
-	}
-	var route networkRouteRecord
-	if err := s.db.QueryRowContext(ctx, `
-SELECT kind, COALESCE(endpoint, ''), COALESCE(secret_ref, ''), state
-FROM network_routes WHERE id = $1`, routeID.String).Scan(&route.Kind, &route.Endpoint, &route.SecretRef, &route.State); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("update route %q is not configured", routeID.String)
-		}
-		return nil, fmt.Errorf("read update route %q: %w", routeID.String, err)
-	}
-	if route.State != string(domain.ConnectionConfigured) {
-		return nil, nil
-	}
-	client, err := s.buildNetworkRouteClient(route)
-	if err != nil {
-		return nil, fmt.Errorf("build update route client: %w", err)
-	}
-	client.Timeout = updateRouteTimeout
-	return client, nil
-}
-
 func (s *Service) buildNetworkRouteClient(route networkRouteRecord) (*http.Client, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
@@ -1459,7 +1489,7 @@ func validateConnectionInput(input domain.ConnectionInput) error {
 		return err
 	}
 	switch input.Kind {
-	case domain.ConnectionAniBT, domain.ConnectionMikan, domain.ConnectionNyaa, domain.ConnectionJackett, domain.ConnectionBGM, domain.ConnectionQBittorrent, domain.ConnectionTMDB, domain.ConnectionHTTPFeed:
+	case domain.ConnectionAniBT, domain.ConnectionMikan, domain.ConnectionNyaa, domain.ConnectionJackett, domain.ConnectionBGM, domain.ConnectionQBittorrent, domain.ConnectionTMDB, domain.ConnectionHTTPFeed, domain.ConnectionGitHub:
 	default:
 		return fmt.Errorf("unsupported connection kind %q", input.Kind)
 	}

@@ -447,24 +447,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/config/update-egress": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Read which existing network route the update channel sends its GitHub requests through. A null network_route_id means the deployment default egress. */
-        get: operations["getUpdateEgress"];
-        /** @description Select the existing network route the update channel uses, guarded by expected_version. A null network_route_id restores the deployment default. A disabled route may be selected: the updater follows the deployment default until it is enabled again. */
-        put: operations["putUpdateEgress"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/anime/{managed_anime_id}/business-edit": {
         parameters: {
             query?: never;
@@ -3504,7 +3486,7 @@ export interface components {
             /** Format: date-time */
             last_used_at?: string | null;
         };
-        ConnectionInput: components["schemas"]["QBittorrentConnectionInput"] | components["schemas"]["RSSHTTPConnectionInput"] | components["schemas"]["TMDBConnectionInput"] | components["schemas"]["JackettConnectionInput"] | components["schemas"]["AniBTConnectionInput"] | components["schemas"]["MikanConnectionInput"] | components["schemas"]["NyaaConnectionInput"] | components["schemas"]["BGMConnectionInput"];
+        ConnectionInput: components["schemas"]["QBittorrentConnectionInput"] | components["schemas"]["RSSHTTPConnectionInput"] | components["schemas"]["TMDBConnectionInput"] | components["schemas"]["JackettConnectionInput"] | components["schemas"]["AniBTConnectionInput"] | components["schemas"]["MikanConnectionInput"] | components["schemas"]["NyaaConnectionInput"] | components["schemas"]["BGMConnectionInput"] | components["schemas"]["GitHubConnectionInput"];
         ConnectionSecretKeep: {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -3632,7 +3614,20 @@ export interface components {
             base_url: string;
             route_id?: components["schemas"]["ID"];
         };
-        Connection: components["schemas"]["QBittorrentConnection"] | components["schemas"]["RSSHTTPConnection"] | components["schemas"]["TMDBConnection"] | components["schemas"]["JackettConnection"] | components["schemas"]["AniBTConnection"] | components["schemas"]["MikanConnection"] | components["schemas"]["NyaaConnection"] | components["schemas"]["BGMConnection"];
+        /** @description The app update connection. base_url replaces the canonical GitHub raw root as the prefix every update request is sent to, so a reverse proxy is configured here; route_id picks the network egress and enabled turns the configured base and route on. Disabling it keeps the canonical source and the deployment default egress. */
+        GitHubConnectionInput: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "github";
+            name: string;
+            enabled: boolean;
+            /** Format: uri */
+            base_url: string;
+            route_id?: components["schemas"]["ID"];
+        };
+        Connection: components["schemas"]["QBittorrentConnection"] | components["schemas"]["RSSHTTPConnection"] | components["schemas"]["TMDBConnection"] | components["schemas"]["JackettConnection"] | components["schemas"]["AniBTConnection"] | components["schemas"]["MikanConnection"] | components["schemas"]["NyaaConnection"] | components["schemas"]["BGMConnection"] | components["schemas"]["GitHubConnection"];
         QBittorrentConnection: {
             id: components["schemas"]["ID"];
             /**
@@ -3753,10 +3748,24 @@ export interface components {
             route_id?: components["schemas"]["ID"];
             version: components["schemas"]["Version"];
         };
+        GitHubConnection: {
+            id: components["schemas"]["ID"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "github";
+            name: string;
+            enabled: boolean;
+            /** Format: uri */
+            base_url: string;
+            route_id?: components["schemas"]["ID"];
+            version: components["schemas"]["Version"];
+        };
         ConnectionTestResult: {
             connection_id: components["schemas"]["ID"];
             /** @enum {string} */
-            kind: "qbittorrent" | "rss_http" | "tmdb" | "jackett" | "anibt" | "mikan" | "nyaa" | "bgm";
+            kind: "qbittorrent" | "rss_http" | "tmdb" | "jackett" | "anibt" | "mikan" | "nyaa" | "bgm" | "github";
             /** @enum {string} */
             health: "ready" | "degraded" | "failed";
             reason_code?: string;
@@ -3855,17 +3864,6 @@ export interface components {
             reason_detail?: string;
             /** Format: date-time */
             checked_at: string;
-        };
-        /** @description The network route the update channel uses; null network_route_id means the deployment default egress. */
-        UpdateEgress: {
-            /** @description The selected network route, or null for the deployment default. */
-            network_route_id: string | null;
-            version: components["schemas"]["Version"];
-        };
-        UpdateEgressInput: {
-            /** @description The existing network route to use, or null for the deployment default. */
-            network_route_id: string | null;
-            expected_version: components["schemas"]["Version"];
         };
         /**
          * @description One typed global config section. download_timeouts (schema download-timeouts-v1, value DownloadTimeouts), metadata_refresh (schema metadata-refresh-v1, value MetadataRefresh) and metadata_hold (schema metadata-hold-v1, value MetadataHoldRules) are Global-only: they have no per-anime override, no draft field and are not part of the business snapshot. subscription_defaults (schema subscription-defaults-v1, value GlobalSubscriptionDefaults) is the one-time-input default new drafts copy at creation; existing subscriptions keep their own value.
@@ -9344,54 +9342,6 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
-            422: components["responses"]["Unprocessable"];
-        };
-    };
-    getUpdateEgress: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The selected update route. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UpdateEgress"];
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-        };
-    };
-    putUpdateEgress: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateEgressInput"];
-            };
-        };
-        responses: {
-            /** @description The saved update route selection. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UpdateEgress"];
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
         };
     };

@@ -677,11 +677,11 @@ func runServe(args []string) {
 		}
 		updateSvc, svcErr := updateapplication.NewService(updateapplication.Deps{
 			DB: db, UpdatesRoot: updatesRoot,
-			Lane:           os.Getenv(updateapplication.EnvLane),
-			ChannelBase:    os.Getenv(updateapplication.EnvChannelBase),
-			Production:     cfg.Environment == "production",
-			UpdateRoute:    configService,
-			BuildReleaseID: buildinfo.Current().BuildID, BuildVersion: buildinfo.Current().Version,
+			Lane:             os.Getenv(updateapplication.EnvLane),
+			ChannelBase:      os.Getenv(updateapplication.EnvChannelBase),
+			Production:       cfg.Environment == "production",
+			UpdateConnection: configService,
+			BuildReleaseID:   buildinfo.Current().BuildID, BuildVersion: buildinfo.Current().Version,
 			BuildCompatibilityVersion: buildinfo.Current().BaseCompatibilityVersion, BuildBootstrapVersion: os.Getenv(deploymentidentity.EnvBootstrapVersion),
 			UpdateMode:  cfg.UpdateMode,
 			Diagnostics: observabilityService, Logger: runtimeLogger,
@@ -690,6 +690,7 @@ func runServe(args []string) {
 			fatalStartup(runtimeLogger, "embedded update service failed", "embedded_update_service_failed")
 		}
 		embeddedUpdateService = updateSvc
+		configService.SetUpdateSourceProbe(updateSvc)
 	}
 	// The draft service remains the candidate/subscribe mutation API; owner
 	// mutations are the ownership service's and one-shot seed admission has its

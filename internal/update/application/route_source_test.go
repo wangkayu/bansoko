@@ -101,34 +101,36 @@ func (p *routeForwardProxy) requestedPaths() []string {
 	return paths
 }
 
-// stubUpdateRoute is the configuration service as the update channel sees it:
-// one resolution per operation, answered from a queue so a test can change the
-// selection between operations exactly as saving settings would.
-type stubUpdateRoute struct {
+// stubUpdateConnection is the configuration service as the update channel sees
+// it: one connection snapshot per operation, answered from a queue so a test can
+// change the saved connection between operations exactly as editing settings
+// would.
+type stubUpdateConnection struct {
 	mu       sync.Mutex
 	calls    int
-	answers  []routeAnswer
-	fallback routeAnswer
+	answers  []connectionAnswer
+	fallback connectionAnswer
 }
 
-type routeAnswer struct {
-	client *http.Client
-	err    error
+type connectionAnswer struct {
+	client  *http.Client
+	gateway string
+	err     error
 }
 
-func (s *stubUpdateRoute) UpdateRouteClient(context.Context) (*http.Client, error) {
+func (s *stubUpdateConnection) UpdateConnection(context.Context) (*http.Client, string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.calls++
 	if len(s.answers) == 0 {
-		return s.fallback.client, s.fallback.err
+		return s.fallback.client, s.fallback.gateway, s.fallback.err
 	}
 	answer := s.answers[0]
 	s.answers = s.answers[1:]
-	return answer.client, answer.err
+	return answer.client, answer.gateway, answer.err
 }
 
-func (s *stubUpdateRoute) callCount() int {
+func (s *stubUpdateConnection) callCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.calls
@@ -181,14 +183,14 @@ func (r *routeSourceRig) originHost(t *testing.T) string {
 	return strings.TrimPrefix(r.rig.recording.URL(), "http://")
 }
 
-func (r *routeSourceRig) service(t *testing.T, route UpdateRouteResolver) *Service {
+func (r *routeSourceRig) service(t *testing.T, connection UpdateConnectionResolver) *Service {
 	t.Helper()
 	service, err := NewService(Deps{
 		UpdateMode:            "embedded",
 		UpdatesRoot:           t.TempDir(),
 		Lane:                  LaneStable,
 		ChannelBase:           r.channelBase,
-		UpdateRoute:           route,
+		UpdateConnection:      connection,
 		BuildReleaseID:        "release-running",
 		BuildVersion:          "v1.0.0",
 		BuildBootstrapVersion: "embedded-bootstrap-v1",
@@ -203,10 +205,10 @@ func (r *routeSourceRig) service(t *testing.T, route UpdateRouteResolver) *Servi
 // route once per operation and reaches the channel document and signed manifest
 // only through it: the origin host does not resolve, so a direct attempt fails.
 func TestUpdateCheckUsesTheSelectedRoute(t *testing.T) {
-	route := &stubUpdateRoute{}
+	route := &stubUpdateConnection{}
 	source := newRouteSourceRig(t, routeSourceHost)
 	proxy := newRouteForwardProxy(t, source.originHost(t))
-	route.fallback = routeAnswer{client: proxy.client()}
+	route.fallback = connectionAnswer{client: proxy.client()}
 	service := source.service(t, route)
 
 	result, err := service.checkUpdate(context.Background())
@@ -244,18 +246,18 @@ func TestUpdateCheckUsesTheSelectedRoute(t *testing.T) {
 // leg of an admission uses the source resolved once for that operation, so the
 // channel document, manifest and payload all travel through the same route.
 func TestAdmittedUpdateDownloadsThePayloadThroughTheSameRoute(t *testing.T) {
-	route := &stubUpdateRoute{}
+	route := &stubUpdateConnection{}
 	source := newRouteSourceRig(t, routeSourceHost)
 	proxy := newRouteForwardProxy(t, source.originHost(t))
-	route.fallback = routeAnswer{client: proxy.client()}
+	route.fallback = connectionAnswer{client: proxy.client()}
 	service := source.service(t, route)
 
 	ctx := context.Background()
-	client, err := service.operationClient(ctx)
+	client, gateway, err := service.operationClient(ctx)
 	if err != nil {
 		t.Fatalf("operationClient error = %v", err)
 	}
-	resolved, err := service.resolve(ctx, client)
+	resolved, err := service.resolve(ctx, client, gateway)
 	if err != nil {
 		t.Fatalf("resolve error = %v", err)
 	}
@@ -276,13 +278,13 @@ func TestAdmittedUpdateDownloadsThePayloadThroughTheSameRoute(t *testing.T) {
 // stops the operation instead of silently going direct.
 func TestSelectedRouteFailureFailsClosed(t *testing.T) {
 	source := newRouteSourceRig(t, routeSourceHost)
-	route := &stubUpdateRoute{fallback: routeAnswer{err: errors.New("stored route is not usable")}}
+	route := &stubUpdateConnection{fallback: connectionAnswer{err: errors.New("stored route is not usable")}}
 	service := source.service(t, route)
 
 	result, err := service.checkUpdate(context.Background())
 	var business *apperrors.Business
-	if !errors.As(err, &business) || business.Code != "UPDATE_ROUTE_INVALID" {
-		t.Fatalf("checkUpdate error = %v, want UPDATE_ROUTE_INVALID", err)
+	if !errors.As(err, &business) || business.Code != "UPDATE_CONNECTION_INVALID" {
+		t.Fatalf("checkUpdate error = %v, want UPDATE_CONNECTION_INVALID", err)
 	}
 	if result.Status != "check_failed" {
 		t.Fatalf("check status = %q, want check_failed", result.Status)
@@ -298,7 +300,7 @@ func TestSelectedRouteFailureFailsClosed(t *testing.T) {
 // selected" is not turned into a hidden proxy decision.
 func TestNoSelectedRouteKeepsTheDeploymentDefault(t *testing.T) {
 	source := newRouteSourceRig(t, "")
-	route := &stubUpdateRoute{}
+	route := &stubUpdateConnection{}
 	service := source.service(t, route)
 
 	result, err := service.checkUpdate(context.Background())
@@ -320,7 +322,7 @@ func TestRouteChangesApplyToTheNextOperation(t *testing.T) {
 	source := newRouteSourceRig(t, routeSourceHost)
 	first := newRouteForwardProxy(t, source.originHost(t))
 	second := newRouteForwardProxy(t, source.originHost(t))
-	route := &stubUpdateRoute{answers: []routeAnswer{{client: first.client()}, {client: second.client()}}}
+	route := &stubUpdateConnection{answers: []connectionAnswer{{client: first.client()}, {client: second.client()}}}
 	service := source.service(t, route)
 
 	ctx := context.Background()

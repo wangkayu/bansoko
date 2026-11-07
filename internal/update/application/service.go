@@ -40,13 +40,14 @@ type BackupExecutor interface {
 	Restore(ctx context.Context, env []string, dumpPath, targetDatabase string) error
 }
 
-// UpdateRouteResolver resolves the selected update network route into an HTTP
-// client. A nil client with a nil error means no route is selected or the
-// selected one is disabled, so the deployment's default egress applies. An
-// error means the selected route cannot be used: the update channel fails
-// closed instead of going direct.
-type UpdateRouteResolver interface {
-	UpdateRouteClient(context.Context) (*http.Client, error)
+// UpdateConnectionResolver resolves the GitHub update connection into the HTTP
+// client and base URL that one operation uses. A nil client with a nil error
+// means the deployment's default egress applies. An empty base URL keeps the
+// canonical GitHub source; any other absolute base is the reverse proxy the
+// requests are sent to. An error means the connection cannot be used: the
+// update channel fails closed instead of going direct.
+type UpdateConnectionResolver interface {
+	UpdateConnection(context.Context) (*http.Client, string, error)
 }
 
 // Deps contains only inputs used to verify and stage a release. DB is used for
@@ -63,7 +64,7 @@ type Deps struct {
 	ChannelBase               string
 	Production                bool
 	HTTPClient                *http.Client
-	UpdateRoute               UpdateRouteResolver
+	UpdateConnection          UpdateConnectionResolver
 	BuildReleaseID            string
 	BuildVersion              string
 	BuildCompatibilityVersion string
@@ -81,7 +82,7 @@ type Service struct {
 	updatesRoot, manifestURL                                           string
 	source                                                             *UpdateHTTPSource
 	channel                                                            *channelResolver
-	routes                                                             UpdateRouteResolver
+	connections                                                        UpdateConnectionResolver
 	packageRoot                                                        string
 	packageConfig                                                      UpdateHTTPSourceConfig
 	buildID, buildVersion, buildCompatibilityVersion, bootstrapVersion string
@@ -122,7 +123,7 @@ func NewService(deps Deps) (*Service, error) {
 	if clock == nil {
 		clock = func() time.Time { return time.Now().UTC() }
 	}
-	return &Service{db: deps.DB, updatesRoot: deps.UpdatesRoot, channel: resolver, routes: deps.UpdateRoute, packageRoot: packageRoot, packageConfig: config, buildID: strings.TrimSpace(deps.BuildReleaseID), buildVersion: strings.TrimSpace(deps.BuildVersion), buildCompatibilityVersion: strings.TrimSpace(deps.BuildCompatibilityVersion), bootstrapVersion: deps.BuildBootstrapVersion, clock: clock, done: make(chan struct{}), diagnostics: deps.Diagnostics, logger: deps.Logger}, nil
+	return &Service{db: deps.DB, updatesRoot: deps.UpdatesRoot, channel: resolver, connections: deps.UpdateConnection, packageRoot: packageRoot, packageConfig: config, buildID: strings.TrimSpace(deps.BuildReleaseID), buildVersion: strings.TrimSpace(deps.BuildVersion), buildCompatibilityVersion: strings.TrimSpace(deps.BuildCompatibilityVersion), bootstrapVersion: deps.BuildBootstrapVersion, clock: clock, done: make(chan struct{}), diagnostics: deps.Diagnostics, logger: deps.Logger}, nil
 }
 
 func (s *Service) ExitRequested() <-chan struct{} { return s.done }
@@ -130,32 +131,48 @@ func (s *Service) requestExit()                   { s.doneOnce.Do(func() { close
 func (s *Service) Running() bool                  { s.mu.Lock(); defer s.mu.Unlock(); return s.chainRunning }
 func (s *Service) configured() bool               { return s != nil && s.channel != nil }
 
-// operationClient snapshots the update route for one operation. The same client
-// carries that operation's channel document, release manifest and payload
-// download, so a route change mid-operation cannot split them. A nil route
-// resolver, no selected route or a disabled selected route keeps the
-// deployment default.
-func (s *Service) operationClient(ctx context.Context) (*http.Client, error) {
-	if s.routes == nil {
-		return s.packageConfig.HTTPClient, nil
+// operationClient snapshots the GitHub update connection for one operation.
+// The same client and base URL carry that operation's channel document,
+// release manifest and payload download, so a connection change mid-operation
+// cannot split them. A nil resolver, a missing or disabled connection keeps
+// the deployment default.
+func (s *Service) operationClient(ctx context.Context) (*http.Client, string, error) {
+	if s.connections == nil {
+		return s.packageConfig.HTTPClient, "", nil
 	}
-	client, err := s.routes.UpdateRouteClient(ctx)
+	client, gateway, err := s.connections.UpdateConnection(ctx)
 	if err != nil {
-		return nil, &apperrors.Business{Status: 503, Code: "UPDATE_ROUTE_INVALID", Message: "The selected update network route is not usable."}
+		return nil, "", &apperrors.Business{Status: 503, Code: "UPDATE_CONNECTION_INVALID", Message: "The GitHub update connection is not usable."}
 	}
 	if client == nil {
-		return s.packageConfig.HTTPClient, nil
+		client = s.packageConfig.HTTPClient
 	}
 	// The update channel keeps its own bound; a route client never narrows it to
 	// the generic provider timeout.
 	cloned := *client
 	cloned.Timeout = 5 * time.Minute
-	return &cloned, nil
+	return &cloned, gateway, nil
 }
 
-func (s *Service) resolve(ctx context.Context, client *http.Client) (resolution, error) {
+// ProbeUpdateSource reads and validates the channel document through one
+// connection configuration without admitting anything or recording status. It
+// is the GitHub connection test's probe: a saved reverse proxy and route are
+// exercised exactly as an update operation would use them.
+func (s *Service) ProbeUpdateSource(ctx context.Context, client *http.Client, gateway string) error {
+	if s == nil || s.channel == nil {
+		return ErrChannelNotConfigured
+	}
+	resolver, err := s.channel.withClient(client, gateway)
+	if err != nil {
+		return err
+	}
+	_, err = resolver.fetchDocument(ctx)
+	return err
+}
+
+func (s *Service) resolve(ctx context.Context, client *http.Client, gateway string) (resolution, error) {
 	if s.channel != nil {
-		resolver, err := s.channel.withClient(client)
+		resolver, err := s.channel.withClient(client, gateway)
 		if err != nil {
 			return resolution{}, err
 		}
@@ -167,6 +184,7 @@ func (s *Service) resolve(ctx context.Context, client *http.Client) (resolution,
 	config := s.packageConfig
 	config.ManifestURL = s.manifestURL
 	config.HTTPClient = client
+	config.Gateway = gateway
 	source, err := NewUpdateHTTPSource(config)
 	if err != nil {
 		return resolution{}, err
@@ -210,11 +228,11 @@ func (s *Service) admit(ctx context.Context, idempotencyKey, targetReleaseID, ta
 		s.mu.Unlock()
 		return Status{}, false, err
 	}
-	client, err := s.operationClient(ctx)
+	client, gateway, err := s.operationClient(ctx)
 	if err != nil {
 		return fail(err)
 	}
-	resolved, err := s.resolve(ctx, client)
+	resolved, err := s.resolve(ctx, client, gateway)
 	if err != nil {
 		return fail(err)
 	}
@@ -421,12 +439,12 @@ func (s *Service) checkUpdate(ctx context.Context) (Check, error) {
 	if !s.configured() {
 		return result, &apperrors.Business{Status: 503, Code: "SERVICE_NOT_CONFIGURED", Message: "update manifest source is not configured."}
 	}
-	client, err := s.operationClient(ctx)
+	client, gateway, err := s.operationClient(ctx)
 	if err != nil {
 		result.Status = "check_failed"
 		return result, err
 	}
-	resolved, err := s.resolve(ctx, client)
+	resolved, err := s.resolve(ctx, client, gateway)
 	if err != nil {
 		result.Status = "check_failed"
 		return result, err

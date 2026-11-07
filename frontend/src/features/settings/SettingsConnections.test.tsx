@@ -3,7 +3,7 @@ import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Connection, NetworkRoute, UpdateCheck, UpdateEgress } from "../../lib/api/client";
+import type { Connection, NetworkRoute } from "../../lib/api/client";
 import { t } from "../../lib/i18n";
 import { SettingsConnections } from "./SettingsConnections";
 
@@ -20,24 +20,16 @@ type FetchStub = (input: RequestInfo | URL, init?: RequestInit) => Promise<Respo
 
 let fetchMock: ReturnType<typeof vi.fn<FetchStub>>;
 
-function stubFetch(options: { connections?: Connection[]; routes?: NetworkRoute[]; updateEgress?: UpdateEgress; updateCheck?: UpdateCheck } = {}) {
+function stubFetch(options: { connections?: Connection[]; routes?: NetworkRoute[] } = {}) {
   fetchMock = vi.fn<FetchStub>(async (input, init) => {
     const url = String(input);
-    if (url.endsWith("/update/check")) {
-      return new Response(JSON.stringify(options.updateCheck ?? {}), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    if (url.includes("/config/update-egress")) {
-      if (init?.method === "PUT") {
-        const requestBody = JSON.parse(String(init.body)) as { network_route_id: string | null; expected_version: number };
-        return new Response(JSON.stringify({ network_route_id: requestBody.network_route_id, version: requestBody.expected_version + 1 }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      return new Response(JSON.stringify(options.updateEgress ?? { network_route_id: null, version: 1 }), {
+    if (init?.method === "POST" && url.endsWith("/test")) {
+      return new Response(JSON.stringify({
+        connection_id: "builtin-github",
+        kind: "github",
+        health: "ready",
+        checked_at: "2026-11-07T00:00:00Z",
+      }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -105,12 +97,6 @@ function renderSettings(initialEntries: string[] = ["/settings/connections"]) {
 function routePutCalls() {
   return fetchMock.mock.calls.filter(
     ([input, init]) => String(input).includes("/config/network-routes/") && init?.method === "PUT",
-  );
-}
-
-function updateEgressPutCalls() {
-  return fetchMock.mock.calls.filter(
-    ([input, init]) => String(input).includes("/config/update-egress") && init?.method === "PUT",
   );
 }
 
@@ -713,10 +699,11 @@ describe("SettingsConnections 代理对话框校验与提交", () => {
   });
 });
 
-// The update channel selects one of the existing network proxies: the row
-// saves only that reference, so the proxy address and credentials are defined
-// once under 网络代理. Editing opens the same dialog the connection rows use.
-describe("SettingsConnections 应用更新出口", () => {
+// The app update channel is an ordinary GitHub connection: its address is the
+// base update requests are sent to (so a reverse proxy is configured here) and
+// its proxy is the egress. It appears in the same list as the other connections
+// and is edited through the same dialog.
+describe("SettingsConnections 应用更新连接", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
@@ -732,92 +719,83 @@ describe("SettingsConnections 应用更新出口", () => {
     version: 1,
   };
 
-  async function openEgressEditor() {
-    await userEvent.click(await screen.findByRole("button", { name: t("settings.updateEgress.editAria") }));
-  }
+  const github: Connection = {
+    id: "builtin-github",
+    kind: "github",
+    name: "GitHub",
+    base_url: "https://raw.githubusercontent.com",
+    enabled: true,
+    version: 1,
+  };
 
-  it("行内展示当前出口；选择后确认才保存，body 引用该代理与当前版本", async () => {
-    stubFetch({ routes: [proxyRoute] });
+  it("行内展示更新地址与内置标记", async () => {
+    stubFetch({ connections: [github] });
     renderSettings();
 
-    expect(await screen.findByText(t("settings.updateEgress.direct"))).toBeInTheDocument();
-    // 与连接同一个列表，排在最后一行。
-    const list = screen.getByText(t("settings.updateEgress.direct")).closest("ul")!;
-    expect(within(list).getAllByRole("listitem").at(-1)).toHaveTextContent(t("settings.updateEgress.rowTitle"));
+    const row = (await screen.findByText("GitHub")).closest("li")!;
+    expect(within(row).getByText(t("settings.connections.builtin"))).toBeInTheDocument();
+    expect(within(row).getByText("https://raw.githubusercontent.com")).toBeInTheDocument();
+  });
 
-    await openEgressEditor();
-    await userEvent.click(await screen.findByRole("combobox", { name: t("settings.updateEgress.routeLabel") }));
-    await userEvent.click(await screen.findByRole("option", { name: proxyRoute.name }));
-    expect(updateEgressPutCalls()).toHaveLength(0);
+  it("修改更新地址并选择代理后一次保存", async () => {
+    stubFetch({ connections: [github], routes: [proxyRoute] });
+    renderSettings();
+
+    const row = (await screen.findByText("GitHub")).closest("li")!;
+    fireEvent.click(within(row).getByRole("button", { name: t("settings.connections.edit") }));
+
+    const address = await screen.findByLabelText(t("settings.connections.githubAddress"));
+    await userEvent.clear(address);
+    await userEvent.type(address, "https://ghproxy.example/raw");
+    await selectOption(t("settings.connections.proxyLabel"), proxyRoute.name);
+    expect(connectionPutCalls()).toHaveLength(0);
 
     await userEvent.click(screen.getByRole("button", { name: t("settings.connections.save") }));
 
-    await waitFor(() => expect(updateEgressPutCalls()).toHaveLength(1));
-    expect(putBody(updateEgressPutCalls()[0]!)).toEqual({
-      network_route_id: "route-1",
-      expected_version: 1,
+    await waitFor(() => expect(connectionPutCalls()).toHaveLength(1));
+    expect(String(connectionPutCalls()[0]![0])).toContain("/config/connections/builtin-github");
+    expect(putBody(connectionPutCalls()[0]!)).toEqual({
+      kind: "github",
+      name: "GitHub",
+      enabled: true,
+      base_url: "https://ghproxy.example/raw",
+      route_id: "route-1",
     });
   });
 
-  it("选择直连保存 null", async () => {
-    stubFetch({ routes: [proxyRoute], updateEgress: { network_route_id: "route-1", version: 3 } });
-    renderSettings();
-
-    expect(await screen.findByText(t("settings.updateEgress.currentRoute", { name: proxyRoute.name }))).toBeInTheDocument();
-
-    await openEgressEditor();
-    await userEvent.click(await screen.findByRole("combobox", { name: t("settings.updateEgress.routeLabel") }));
-    await userEvent.click(await screen.findByRole("option", { name: t("settings.updateEgress.direct") }));
-    await userEvent.click(screen.getByRole("button", { name: t("settings.connections.save") }));
-
-    await waitFor(() => expect(updateEgressPutCalls()).toHaveLength(1));
-    expect(putBody(updateEgressPutCalls()[0]!)).toEqual({
-      network_route_id: null,
-      expected_version: 3,
-    });
-  });
-
-  it("停用的代理仍可选中，行内标注暂时直连", async () => {
-    const disabled: NetworkRoute = { ...proxyRoute, id: "route-off", name: "备用代理", enabled: false };
-    stubFetch({ routes: [disabled], updateEgress: { network_route_id: "route-off", version: 1 } });
-    renderSettings();
-
-    expect(await screen.findByText(t("settings.updateEgress.currentRouteDisabled", { name: disabled.name }))).toBeInTheDocument();
-
-    await openEgressEditor();
-    await userEvent.click(await screen.findByRole("combobox", { name: t("settings.updateEgress.routeLabel") }));
-    expect(await screen.findByRole("option", { name: disabled.name })).toBeInTheDocument();
-  });
-
-  it("测试按钮复用检查更新，并显示检查结果", async () => {
+  it("还原默认回到官方地址与直连", async () => {
     stubFetch({
+      connections: [{ ...github, base_url: "https://ghproxy.example/raw", route_id: "route-1" }],
       routes: [proxyRoute],
-      updateCheck: {
-        status: "update_available",
-        current: { version: "0.1.0", release_id: "rel-1", image_compatibility: "v1" },
-        candidate: {
-          release_id: "rel-2",
-          version: "0.2.0",
-          release_sequence: 2,
-          published_at: "2026-11-01T00:00:00Z",
-          target_migration_version: "1",
-          required_downtime: false,
-          backup_required: false,
-          rollback_class: "compatible",
-          manifest_digest: "sha256:0",
-          payload_size: 1,
-        },
-        compatibility: { kind: "overlay", min_image_version: "v1", reason: "" },
-        checked_at: "2026-11-07T00:00:00Z",
-      },
     });
     renderSettings();
 
-    await userEvent.click(await screen.findByRole("button", { name: t("settings.connections.test") }));
+    const row = (await screen.findByText("GitHub")).closest("li")!;
+    fireEvent.click(within(row).getByRole("button", { name: t("settings.connections.edit") }));
+    await userEvent.click(await screen.findByRole("button", { name: t("settings.connections.restoreDefaults") }));
+    expect(screen.getByLabelText(t("settings.connections.githubAddress"))).toHaveValue("https://raw.githubusercontent.com");
+
+    await userEvent.click(screen.getByRole("button", { name: t("settings.connections.save") }));
+
+    await waitFor(() => expect(connectionPutCalls()).toHaveLength(1));
+    expect(putBody(connectionPutCalls()[0]!)).toEqual({
+      kind: "github",
+      name: "GitHub",
+      enabled: true,
+      base_url: "https://raw.githubusercontent.com",
+      route_id: undefined,
+    });
+  });
+
+  it("测试按钮走连接测试", async () => {
+    stubFetch({ connections: [github] });
+    renderSettings();
+
+    const row = (await screen.findByText("GitHub")).closest("li")!;
+    await userEvent.click(within(row).getByRole("button", { name: t("settings.connections.test") }));
 
     expect(await screen.findByText(t("status.health.ready"))).toBeInTheDocument();
-    expect(await screen.findByText(new RegExp(t("settings.updateEgress.updateAvailable", { version: "0.2.0" })))).toBeInTheDocument();
-    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/update/check"))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/config/connections/builtin-github/test") && init?.method === "POST")).toBe(true);
   });
 
   it("连接的代理下拉列出全部网络代理", async () => {

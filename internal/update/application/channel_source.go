@@ -120,16 +120,18 @@ func newChannelResolver(documentURL, packageRoot string, config UpdateHTTPSource
 	}, nil
 }
 
-// withClient binds the same discovery configuration to one operation's route
-// snapshot. The channel URL and package namespace stay fixed; only the egress
-// client changes.
-func (r *channelResolver) withClient(client *http.Client) (*channelResolver, error) {
+// withClient binds the same discovery configuration to one operation's
+// connection snapshot. The channel URL and package namespace stay fixed; the
+// egress client and the request-target base change together, so a reverse
+// proxy and its route are always used as one configuration.
+func (r *channelResolver) withClient(client *http.Client, gateway string) (*channelResolver, error) {
 	if r == nil {
 		return nil, ErrChannelNotConfigured
 	}
 	cloned := *r
 	config := r.packageConfig
 	config.HTTPClient = client
+	config.Gateway = gateway
 	cloned.packageConfig = config
 	documentConfig := config
 	documentConfig.ManifestURL = r.documentURL

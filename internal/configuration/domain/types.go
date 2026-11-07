@@ -21,6 +21,11 @@ const (
 	ConnectionBGM         ConnectionKind = "bgm"
 	ConnectionQBittorrent ConnectionKind = "qbittorrent"
 	ConnectionTMDB        ConnectionKind = "tmdb"
+	// ConnectionGitHub anchors the app update channel: its endpoint is the base
+	// the channel's canonical raw.githubusercontent.com requests are sent to,
+	// so a reverse proxy is configured in exactly one place. Its optional
+	// network route is the egress the requests travel through.
+	ConnectionGitHub ConnectionKind = "github"
 	// ConnectionHTTPFeed matches the persisted HTTP/API kind "rss_http". The
 	// connections CHECK constraint has always stored that spelling, so the
 	// domain constant uses it too; "http_feed" only survives in subtype table
@@ -179,21 +184,6 @@ type NetworkRoute struct {
 	UpdatedAt time.Time
 }
 
-// UpdateEgress names the one existing network route the update channel sends
-// its GitHub requests through. An empty NetworkRouteID is the deployment
-// default egress. The route itself is defined once in the route list; this
-// owner only selects it.
-type UpdateEgress struct {
-	NetworkRouteID string
-	Version        int64
-	UpdatedAt      time.Time
-}
-
-type UpdateEgressInput struct {
-	NetworkRouteID  string
-	ExpectedVersion int64
-}
-
 func (input NetworkRouteInput) Normalize() (NetworkRouteInput, error) {
 	input.ID = strings.TrimSpace(input.ID)
 	input.Name = strings.TrimSpace(input.Name)
@@ -289,6 +279,8 @@ func DefaultEndpointForKind(kind ConnectionKind) string {
 		return "https://api.bgm.tv"
 	case ConnectionTMDB:
 		return "https://api.themoviedb.org/3"
+	case ConnectionGitHub:
+		return DefaultGitHubEndpoint
 	default:
 		return ""
 	}
@@ -312,10 +304,50 @@ func DefaultConnectionForKind(kind ConnectionKind) (Connection, bool) {
 	}, true
 }
 
-// DefaultConnectionSeed is the set of provider/metadata connections a fresh
-// instance is seeded with. Each uses the official endpoint, a direct route
-// (empty NetworkRouteID) and an enabled state. qBittorrent and rss_http are
-// not seeded: they always require explicit user configuration.
+// DefaultGitHubEndpoint is the base of this project's own update channel. The
+// GitHub connection stores a base URL that replaces it as the request-target
+// prefix, so an empty or default value means requests go to GitHub directly
+// and any other absolute http(s) base sends them through a reverse proxy.
+const DefaultGitHubEndpoint = "https://raw.githubusercontent.com"
+
+// NormalizeGitHubEndpoint validates and canonicalizes the base URL of the
+// GitHub update connection. Only the origin and an optional path prefix are
+// kept: credentials, a query and a fragment are refused, as is a relative or
+// non-HTTP(S) URL, a backslash or a parent segment. A trailing slash is
+// dropped so the canonical channel path can be appended unchanged.
+func NormalizeGitHubEndpoint(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", errors.New("GitHub update base URL is required")
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil || !parsed.IsAbs() || parsed.Opaque != "" || parsed.Hostname() == "" {
+		return "", errors.New("GitHub update base URL must be an absolute http(s) address")
+	}
+	if !strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https") {
+		return "", errors.New("GitHub update base URL must use http or https")
+	}
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || parsed.RawFragment != "" {
+		return "", errors.New("GitHub update base URL must not contain credentials, a query or a fragment")
+	}
+	if strings.Contains(parsed.Path, "\\") || strings.Contains(parsed.RawPath, "\\") {
+		return "", errors.New("GitHub update base URL must not contain a backslash")
+	}
+	for _, segment := range strings.Split(parsed.Path, "/") {
+		if segment == ".." {
+			return "", errors.New("GitHub update base URL must not contain a parent segment")
+		}
+	}
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	parsed.Path = strings.TrimRight(parsed.Path, "/")
+	parsed.RawPath = ""
+	return parsed.String(), nil
+}
+
+// DefaultConnectionSeed is the set of provider/metadata/update connections a
+// fresh instance is seeded with. Each uses the official endpoint, a direct
+// route (empty NetworkRouteID) and an enabled state. qBittorrent and rss_http
+// are not seeded: they always require explicit user configuration.
 type DefaultConnectionSeed struct {
 	ID       string
 	Kind     ConnectionKind
@@ -333,6 +365,7 @@ func DefaultConnectionSeeds() []DefaultConnectionSeed {
 		{ID: "builtin-nyaa", Kind: ConnectionNyaa, Name: "Nyaa", Endpoint: "https://nyaa.si"},
 		{ID: "builtin-bgm", Kind: ConnectionBGM, Name: "Bangumi", Endpoint: "https://api.bgm.tv"},
 		{ID: "builtin-tmdb", Kind: ConnectionTMDB, Name: "TMDB", Endpoint: "https://api.themoviedb.org/3"},
+		{ID: "builtin-github", Kind: ConnectionGitHub, Name: "GitHub", Endpoint: DefaultGitHubEndpoint},
 	}
 }
 

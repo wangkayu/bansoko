@@ -21,8 +21,6 @@ var _ interface {
 	ListNetworkRoutes(context.Context) ([]domain.NetworkRoute, error)
 	PutNetworkRoute(context.Context, string, int64, domain.NetworkRouteInput) (domain.NetworkRoute, error)
 	TestNetworkRoute(context.Context, string) (domain.NetworkRouteTestResult, error)
-	GetUpdateEgress(context.Context) (domain.UpdateEgress, error)
-	PutUpdateEgress(context.Context, domain.UpdateEgressInput) (domain.UpdateEgress, error)
 } = (*HTTPService)(nil)
 
 func (s *HTTPService) ListConnections(ctx context.Context) ([]domain.Connection, error) {
@@ -42,7 +40,15 @@ func (s *HTTPService) TestConnection(ctx context.Context, id string) (domain.Con
 	}
 	// ClientResolver must be the same resolution path the runtime uses
 	// (s.owner), so a route resolved here is the route the matcher resolves.
-	snapshot := (ProviderConnectionTester{ResolveSecret: s.owner.secretResolver(), ClientResolver: s.owner}).Test(ctx, item)
+	var snapshot domain.HealthSnapshot
+	if item.Kind == domain.ConnectionGitHub {
+		// The update channel's layout lives in the update service, so its own
+		// probe reads the channel through this connection instead of a generic
+		// GET on the base URL.
+		snapshot = s.owner.testUpdateConnection(ctx, item)
+	} else {
+		snapshot = (ProviderConnectionTester{ResolveSecret: s.owner.secretResolver(), ClientResolver: s.owner}).Test(ctx, item)
+	}
 	if err := s.owner.RecordHealth(ctx, snapshot); err != nil {
 		return domain.ConnectionTestResult{}, err
 	}
@@ -72,14 +78,6 @@ func (s *HTTPService) TestNetworkRoute(ctx context.Context, id string) (domain.N
 		return domain.NetworkRouteTestResult{}, err
 	}
 	return domain.NetworkRouteTestResult{RouteID: item.ID, Kind: item.Kind, Health: "ready", CheckedAt: timeNow()}, nil
-}
-
-func (s *HTTPService) GetUpdateEgress(ctx context.Context) (domain.UpdateEgress, error) {
-	return s.owner.GetUpdateEgress(ctx)
-}
-
-func (s *HTTPService) PutUpdateEgress(ctx context.Context, input domain.UpdateEgressInput) (domain.UpdateEgress, error) {
-	return s.owner.PutUpdateEgress(ctx, input)
 }
 
 func (s *HTTPService) GetQBittorrentRuntimeConfig(ctx context.Context) (qbittorrent.RuntimeConfig, error) {

@@ -6,15 +6,12 @@ import { useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { Pencil, Plus, RotateCcw } from "lucide-react";
 import { toast } from "../../ui/toast";
 import {
-  checkUpdate,
   isVersionConflict,
-  getUpdateEgress,
   listConnections,
   listNetworkRoutes,
   newUUID,
   putConnection,
   putNetworkRoute,
-  putUpdateEgress,
   testConnection,
   testNetworkRoute,
   toUserMessage,
@@ -63,10 +60,11 @@ const PROVIDER_DEFAULT_URL: Partial<Record<ConnectionDraft["kind"], string>> = {
   nyaa: "https://nyaa.si",
   bgm: "https://api.bgm.tv",
   tmdb: "https://api.themoviedb.org/3",
+  github: "https://raw.githubusercontent.com",
 };
 
 // Built-in provider/metadata connections: seeded at fresh-instance initialization, one per kind.
-const BUILTIN_CONNECTION_KINDS = ["mikan", "anibt", "nyaa", "bgm", "tmdb"] as const;
+const BUILTIN_CONNECTION_KINDS = ["mikan", "anibt", "nyaa", "bgm", "tmdb", "github"] as const;
 type BuiltinConnectionKind = (typeof BUILTIN_CONNECTION_KINDS)[number];
 
 function isBuiltinConnection(item: Connection): boolean {
@@ -117,7 +115,7 @@ function routeKindLabel(kind: "direct" | "http_proxy" | "socks5"): string {
 type ConnectionDraft = {
   id?: string;
   version: number;
-  kind: "rss_http" | "tmdb" | "anibt" | "mikan" | "nyaa" | "bgm" | "jackett";
+  kind: "rss_http" | "tmdb" | "anibt" | "mikan" | "nyaa" | "bgm" | "jackett" | "github";
   name: string;
   enabled: boolean;
   base_url: string;
@@ -151,7 +149,7 @@ function connectionDraftFrom(item?: Connection): ConnectionDraft {
     secret_mode: "keep",
     route_id: item.route_id ?? "",
   };
-  if (item.kind === "tmdb" || item.kind === "anibt" || item.kind === "mikan" || item.kind === "nyaa" || item.kind === "bgm" || item.kind === "jackett") {
+  if (item.kind === "tmdb" || item.kind === "anibt" || item.kind === "mikan" || item.kind === "nyaa" || item.kind === "bgm" || item.kind === "jackett" || item.kind === "github") {
     base.base_url = item.base_url;
     if (item.kind === "tmdb" || item.kind === "jackett") {
       base.secret_mode = item.credential_configured ? "keep" : "replace";
@@ -429,6 +427,14 @@ function ConnectionsCard() {
           secret: connectionSecretFor(current, current.api_key),
           route_id: routeID,
         };
+      } else if (current.kind === "github") {
+        input = {
+          kind: "github",
+          name: current.name.trim(),
+          enabled: current.enabled,
+          base_url: current.base_url.trim() || "https://raw.githubusercontent.com",
+          route_id: routeID,
+        };
       } else if (current.kind === "anibt" || current.kind === "mikan" || current.kind === "nyaa" || current.kind === "bgm") {
         input = {
           kind: current.kind,
@@ -518,7 +524,7 @@ function ConnectionsCard() {
 
       <ul className="settings-connections-list">
         {visibleConnections(connections.data ?? []).map((item) => {
-          const kindLabel = item.kind === "tmdb" ? "TMDB" : item.kind === "anibt" ? "AniBT" : item.kind === "mikan" ? "Mikan" : item.kind === "nyaa" ? "Nyaa" : item.kind === "bgm" ? "Bangumi" : item.kind === "jackett" ? "Jackett" : t("settings.connections.rssKind");
+          const kindLabel = item.kind === "tmdb" ? "TMDB" : item.kind === "anibt" ? "AniBT" : item.kind === "mikan" ? "Mikan" : item.kind === "nyaa" ? "Nyaa" : item.kind === "bgm" ? "Bangumi" : item.kind === "jackett" ? "Jackett" : item.kind === "github" ? "GitHub" : t("settings.connections.rssKind");
           return (
           <li key={item.id} className="settings-connections-item">
             <div className="settings-connections-item-row">
@@ -550,7 +556,6 @@ function ConnectionsCard() {
           </li>
           );
         })}
-        <UpdateEgressItem />
       </ul>
 
       {draft && (
@@ -584,6 +589,7 @@ function ConnectionsCard() {
                 { value: "rss_http", label: t("settings.connections.rssKind") },
                 { value: "jackett", label: "Jackett" },
                 { value: "tmdb", label: "TMDB" },
+                { value: "github", label: "GitHub" },
               ] : [
                 { value: "rss_http", label: t("settings.connections.rssKind") },
                 { value: "jackett", label: "Jackett" },
@@ -652,6 +658,15 @@ function ConnectionsCard() {
             </div>
           )}
 
+          {draft.kind === "github" && (
+            <div className="settings-connections-field-gap settings-connections-form">
+              <Field label={t("settings.connections.githubAddress")}>
+                <Input aria-label={t("settings.connections.githubAddress")} value={draft.base_url} placeholder="https://raw.githubusercontent.com" onChange={(e) => setDraft({ ...draft, base_url: e.target.value })} />
+              </Field>
+              <p className="settings-connections-description text-caption">{t("settings.connections.githubHint")}</p>
+            </div>
+          )}
+
           {draft.kind === "rss_http" && (
             <p className="settings-connections-field-gap-description text-caption">{t("settings.connections.rssFormNote")}</p>
           )}
@@ -670,159 +685,6 @@ function ConnectionsCard() {
         </SettingsEditDialog>
       )}
     </section>
-  );
-}
-
-// The update channel reuses an existing network proxy: its row closes the
-// connections list and only selects one of the routes defined below (or the
-// deployment default), so the proxy is defined and edited in exactly one
-// place. It wears the same row anatomy and M-size edit dialog as the
-// connection rows; the save carries the egress version so a concurrent change
-// surfaces as a conflict.
-type UpdateEgressDraft = { version: number; routeId: string };
-
-function UpdateEgressItem() {
-  const egress = useQuery({ queryKey: configKeys.updateEgress, queryFn: getUpdateEgress });
-  const routes = useQuery({ queryKey: configKeys.networkRoutes, queryFn: listNetworkRoutes });
-  const {
-    draft,
-    setDraft,
-    savedDraft,
-    busy,
-    error,
-    conflict,
-    openEditor,
-    closeEditor,
-    save,
-    refreshAfterConflict,
-  } = useEntityDraftEditor<UpdateEgressDraft, unknown>({
-    submit: (current) =>
-      putUpdateEgress({
-        network_route_id: current.routeId === "" ? null : current.routeId,
-        expected_version: current.version,
-      }),
-    successMessage: t("settings.updateEgress.saved"),
-    failureFallback: t("settings.updateEgress.saveFailed"),
-    invalidateQueryKey: configKeys.updateEgress,
-  });
-  const stored = egress.data?.network_route_id ?? "";
-  const storedRoute = stored ? routes.data?.find((route) => route.id === stored) : undefined;
-  const egressVersion = egress.data?.version;
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ health: "ready" | "failed"; text?: string }>();
-
-  // Reuse the update check as the connectivity test: it runs through the same
-  // egress the row configures, so a success also tells whether a newer version
-  // is published.
-  async function test() {
-    setTesting(true);
-    setTestResult(undefined);
-    try {
-      const result = await checkUpdate();
-      setTestResult({
-        health: "ready",
-        text: result.status === "up_to_date"
-          ? t("settings.updateEgress.upToDate")
-          : result.candidate
-            ? t("settings.updateEgress.updateAvailable", { version: result.candidate.version })
-            : undefined,
-      });
-    } catch (cause) {
-      setTestResult({ health: "failed", text: toUserMessage(cause, t("settings.updateEgress.testFailed")) });
-    } finally {
-      setTesting(false);
-    }
-  }
-
-  return (
-    <>
-      <li className="settings-connections-item">
-        <div className="settings-connections-item-row">
-          <span className="settings-connections-item-title text-body">{t("settings.updateEgress.rowTitle")}</span>
-          <Chip>{t("settings.updateEgress.title")}</Chip>
-          {testResult && (
-            <StatePill tone={testHealthTone(testResult.health)}>
-              {testHealthLabel(testResult.health)}
-            </StatePill>
-          )}
-          <span className="settings-connections-spacer" />
-          <Button
-            variant="ghost"
-            aria-label={t("settings.updateEgress.editAria")}
-            size="sm"
-            disabled={egressVersion === undefined}
-            onClick={() => egressVersion !== undefined && openEditor({ version: egressVersion, routeId: stored })}
-          >
-            <Pencil size={14} />
-            {t("settings.connections.edit")}
-          </Button>
-          <Button
-            aria-label={testing ? t("settings.connections.testing") : t("settings.connections.test")}
-            size="sm"
-            loading={testing}
-            disabled={testing}
-            onClick={() => void test()}
-          >
-            {testing ? t("settings.connections.testing") : t("settings.connections.test")}
-          </Button>
-        </div>
-        <p
-          className={`settings-connections-description text-caption${egress.error ? " settings-connections-error" : ""}`}
-          role={egress.error ? "alert" : undefined}
-        >
-          {egress.error
-            ? toUserMessage(egress.error, t("settings.updateEgress.loadFailed"))
-            : egressVersion === undefined
-              ? t("settings.updateEgress.loading")
-              : stored
-                ? storedRoute && !storedRoute.enabled
-                  ? t("settings.updateEgress.currentRouteDisabled", { name: storedRoute.name })
-                  : t("settings.updateEgress.currentRoute", { name: storedRoute?.name ?? stored })
-                : t("settings.updateEgress.direct")}
-          {!egress.error && testResult?.text && ` · ${testResult.text}`}
-        </p>
-      </li>
-
-      {draft && (
-        <SettingsEditDialog
-          open
-          onOpenChange={(open) => { if (!open) closeEditor(); }}
-          busy={busy}
-          title={t("settings.updateEgress.title")}
-          description={t("settings.updateEgress.hint")}
-          dirty={() => !!draft && !valuesEqual(draft, savedDraft)}
-          footer={(requestClose) => (
-            <>
-              <Button variant="ghost" disabled={busy} onClick={requestClose}>{t("settings.connections.cancel")}</Button>
-              <Button
-                variant="primary"
-                aria-label={t("settings.connections.save")}
-                disabled={busy || !savedDraft || draft.routeId === savedDraft.routeId}
-                onClick={() => void save()}
-              >
-                {busy ? t("settings.connections.saving") : t("settings.connections.save")}
-              </Button>
-            </>
-          )}
-        >
-          {conflict !== undefined ? (
-            <DialogFeedback>
-              <ConflictBlock currentVersion={conflict} message={error} onRefresh={refreshAfterConflict} />
-            </DialogFeedback>
-          ) : error ? (
-            <DialogFeedback><Alert tone="error" title={error} /></DialogFeedback>
-          ) : null}
-          <div className="settings-connections-form">
-            <Field label={t("settings.updateEgress.routeLabel")}>
-              <Select label={t("settings.updateEgress.routeLabel")} value={draft.routeId} options={[
-                { value: "", label: t("settings.updateEgress.direct") },
-                ...(routes.data ?? []).map((route) => ({ value: route.id, label: route.name })),
-              ]} onChange={(routeId) => setDraft({ ...draft, routeId })} />
-            </Field>
-          </div>
-        </SettingsEditDialog>
-      )}
-    </>
   );
 }
 

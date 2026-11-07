@@ -45,7 +45,6 @@ export const configKeys = {
   notificationTriggerKinds: ["config", "notification-trigger-kinds"] as const,
   parserCatalog: ["config", "parser-catalog"] as const,
   networkRoutes: ["config", "network-routes"] as const,
-  updateEgress: ["config", "update-egress"] as const,
   pluginTargets: ["config", "plugin-targets"] as const,
   namingVars: ["config", "naming-vars"] as const,
 };

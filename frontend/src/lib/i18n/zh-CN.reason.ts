@@ -163,6 +163,8 @@ export const reasonCopy = {
   network_error: "无法连接",
   missing_credentials: "缺少账号或密钥",
   network_route_invalid: "网络代理不可用",
+  update_channel_unavailable: "无法读取更新频道",
+  test_unavailable: "无法测试",
   ok: "正常",
 
   // --- 下载器与种子 ---

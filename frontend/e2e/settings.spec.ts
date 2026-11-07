@@ -57,19 +57,27 @@ async function mockSettingsReads(page: Page) {
     ),
   );
   await page.route("**/api/v1/config/connections", (route) =>
-    getOnly(route, () => route.fulfill({ status: 200, contentType: "application/json", body: "[]" })),
-  );
-  await page.route("**/api/v1/config/network-routes", (route) =>
-    getOnly(route, () => route.fulfill({ status: 200, contentType: "application/json", body: "[]" })),
-  );
-  await page.route("**/api/v1/config/update-egress", (route) =>
     getOnly(route, () =>
       route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ network_route_id: null, version: 1 }),
+        body: JSON.stringify([
+          { id: "builtin-github", kind: "github", name: "GitHub", base_url: "https://raw.githubusercontent.com", enabled: true, version: 1 },
+        ]),
       }),
     ),
+  );
+  await page.route("**/api/v1/config/connections/*/test", (route) =>
+    route.request().method() === "POST"
+      ? route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ connection_id: "builtin-github", kind: "github", health: "ready", checked_at: "2026-11-07T00:00:00Z" }),
+        })
+      : route.fulfill({ status: 405, contentType: "application/json", body: JSON.stringify({ error: "method_not_allowed", allowed: ["POST"] }) }),
+  );
+  await page.route("**/api/v1/config/network-routes", (route) =>
+    getOnly(route, () => route.fulfill({ status: 200, contentType: "application/json", body: "[]" })),
   );
   // 当前契约的八个全局 section 全量返回：下载与入库/规则/订阅策略读各自的 section，
   // AniBT/Mikan provider 页读 subgroups。
@@ -367,9 +375,9 @@ test.describe("settings dialog", () => {
     await expect(dialog.getByRole("heading", { name: "命名变量" })).toHaveCount(0);
   });
 
-  // 应用更新只选用已有网络代理：它作为服务连接的最后一行（标题 + 当前值 + 编辑），
-  // 编辑在 M 尺寸弹窗里完成，行内没有地址/凭据输入。
-  test("应用更新是服务连接的最后一行，编辑弹窗只提供一个代理选择", async ({ page }) => {
+  // 应用更新是普通 GitHub 连接：地址（可填反向代理）与网络代理都在连接行里
+  // 编辑，连通性测试走连接测试，与其他连接行同形。
+  test("GitHub 更新连接是普通连接行，地址与代理在编辑弹窗里", async ({ page }) => {
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible({ timeout: 10000 });
     if (isMobile(page)) {
@@ -377,14 +385,13 @@ test.describe("settings dialog", () => {
       await dialog.getByRole("navigation", { name: "设置分类" }).getByRole("link", { name: "服务连接" }).click();
     }
     const section = dialog.getByRole("heading", { name: "服务连接" }).locator("xpath=..");
-    const row = section.getByRole("listitem").filter({ hasText: "GitHub 更新" });
+    const row = section.getByRole("listitem").filter({ hasText: "GitHub" });
     await expect(row).toBeVisible();
-    await expect(row.getByText("直连（不使用代理）", { exact: true })).toBeVisible();
-    // 同一列表的最后一行，不再单独成组。
-    await expect(section.getByRole("listitem").last()).toContainText("GitHub 更新");
-    // 行内没有下拉、地址或凭据输入；这些都在编辑弹窗/网络代理分区里。
-    await expect(row.getByRole("combobox")).toHaveCount(0);
-    await expect(row.getByLabel("代理地址")).toHaveCount(0);
+    await expect(row.getByText("https://raw.githubusercontent.com")).toBeVisible();
+    await expect(row.getByText("内置", { exact: true })).toBeVisible();
+    // 不再有单独的「GitHub 更新」行，也不会重复出现两条更新行。
+    await expect(section.getByRole("listitem").filter({ hasText: "GitHub 更新" })).toHaveCount(0);
+    await expect(section.getByRole("listitem")).toHaveCount(1);
 
     // 新行不得把设置内容撑出横向滚动，行右缘必须落在内容区内。
     const rowBox = await row.boundingBox();
@@ -399,17 +406,14 @@ test.describe("settings dialog", () => {
     }));
     expect(pageOverflow.scrollWidth).toBeLessThanOrEqual(pageOverflow.clientWidth + 1);
 
-    // 连通性测试复用检查更新，结果与连接行同形（状态徽章 + 行内补充说明）。
     await row.getByRole("button", { name: "测试" }).click();
     await expect(row.getByText("正常", { exact: true })).toBeVisible();
-    await expect(row).toContainText("已是最新版本");
 
-    await row.getByRole("button", { name: "编辑应用更新出口" }).click();
-    const editor = page.getByRole("dialog", { name: "应用更新" });
+    await row.getByRole("button", { name: "编辑" }).click();
+    const editor = page.getByRole("dialog", { name: "编辑连接" });
     await expect(editor).toBeVisible();
-    const select = editor.getByRole("combobox", { name: "网络代理（可选）" });
-    await expect(select).toBeVisible();
-    await expect(select).toContainText("直连（不使用代理）");
+    await expect(editor.getByLabel("更新地址")).toHaveValue("https://raw.githubusercontent.com");
+    await expect(editor.getByRole("combobox", { name: "网络代理（可选）" })).toContainText("直连（不使用代理）");
   });
 
   test("关闭设置回到目录", async ({ page }) => {

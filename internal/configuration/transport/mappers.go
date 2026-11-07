@@ -222,6 +222,16 @@ func ConnectionInput(input generated.ConnectionInput, id string) (configurationd
 		if v.RouteId != nil {
 			result.NetworkRouteID = string(*v.RouteId)
 		}
+	case "github":
+		v, err := input.AsGitHubConnectionInput()
+		if err != nil {
+			return result, err
+		}
+		result.Name, result.Endpoint = v.Name, v.BaseUrl
+		result.Enabled = v.Enabled
+		if v.RouteId != nil {
+			result.NetworkRouteID = string(*v.RouteId)
+		}
 	case "rss_http":
 		v, err := input.AsRSSHTTPConnectionInput()
 		if err != nil {
@@ -322,6 +332,12 @@ func ConnectionView(item configurationdomain.Connection) (generated.Connection, 
 			v.RouteId = &item.NetworkRouteID
 		}
 		return result, result.FromBGMConnection(v)
+	case configurationdomain.ConnectionGitHub:
+		v := generated.GitHubConnection{Id: item.ID, Kind: "github", Name: item.Name, BaseUrl: item.Endpoint, Enabled: item.State != configurationdomain.ConnectionDisabled, Version: item.Version}
+		if item.NetworkRouteID != "" {
+			v.RouteId = &item.NetworkRouteID
+		}
+		return result, result.FromGitHubConnection(v)
 	case configurationdomain.ConnectionHTTPFeed:
 		v := generated.RSSHTTPConnection{Id: item.ID, Kind: "rss_http", Name: item.Name, Enabled: item.State != configurationdomain.ConnectionDisabled, Version: item.Version}
 		if item.NetworkRouteID != "" {
@@ -516,25 +532,4 @@ func NamingTemplateLibraryView(value configurationdomain.NamingTemplateLibraryVi
 		result.Templates = append(result.Templates, generated.NamingTemplate{Key: item.Key, Name: item.Name, Rules: rules})
 	}
 	return result, nil
-}
-
-// UpdateEgressView projects the selected update route; a nil network route is
-// the deployment default and travels as JSON null.
-func UpdateEgressView(item configurationdomain.UpdateEgress) generated.UpdateEgress {
-	result := generated.UpdateEgress{Version: item.Version}
-	if item.NetworkRouteID != "" {
-		routeID := item.NetworkRouteID
-		result.NetworkRouteId = &routeID
-	}
-	return result
-}
-
-// UpdateEgressInput maps the selection request; an absent or null route ID
-// restores the deployment default.
-func UpdateEgressInput(input generated.UpdateEgressInput) configurationdomain.UpdateEgressInput {
-	result := configurationdomain.UpdateEgressInput{ExpectedVersion: int64(input.ExpectedVersion)}
-	if input.NetworkRouteId != nil {
-		result.NetworkRouteID = strings.TrimSpace(*input.NetworkRouteId)
-	}
-	return result
 }

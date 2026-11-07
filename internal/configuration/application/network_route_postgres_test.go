@@ -77,54 +77,61 @@ func TestNetworkRouteRoundTripPostgres(t *testing.T) {
 	}
 }
 
-// The update channel selects an existing route rather than owning one: the
-// selection is one singleton row, versioned like every other owner, and the
-// updater resolves it into the same client a connection would get.
-func TestUpdateEgressSelectsAnExistingRoutePostgres(t *testing.T) {
+// The app update channel is an ordinary GitHub connection: its endpoint is the
+// base every update request is sent to (so a reverse proxy lives here) and its
+// network route is the egress those requests travel through. Both are read per
+// operation, so a saved edit applies to the next update without a restart.
+func TestGitHubUpdateConnectionPostgres(t *testing.T) {
 	db := disposabledb.ResetDisposableSchema(t)
 	defer db.Close()
 	ctx := context.Background()
-	_, _ = db.ExecContext(ctx, `DELETE FROM network_routes WHERE id LIKE 'update-egress-test-%'; DELETE FROM secret_values WHERE purpose LIKE 'network-route:%'`)
+	_, _ = db.ExecContext(ctx, `DELETE FROM network_routes WHERE id LIKE 'github-connection-test-%'; DELETE FROM secret_values WHERE purpose LIKE 'network-route:%'`)
 	defer func() {
-		_, _ = db.ExecContext(ctx, `DELETE FROM network_routes WHERE id LIKE 'update-egress-test-%'; DELETE FROM secret_values WHERE purpose LIKE 'network-route:%'`)
+		_, _ = db.ExecContext(ctx, `DELETE FROM network_routes WHERE id LIKE 'github-connection-test-%'; DELETE FROM secret_values WHERE purpose LIKE 'network-route:%'`)
+		_, _ = db.ExecContext(ctx, `UPDATE connections SET network_route_id = NULL, endpoint = 'https://raw.githubusercontent.com', state = 'configured', version = version + 1 WHERE kind = 'github'`)
 	}()
 	service := NewService(db, newConnectionTestSecretStore(t, db))
+	// The seeded row already exists, so every save carries the version it read.
+	save := func(input configurationdomain.ConnectionInput) (configurationdomain.Connection, error) {
+		if current, err := service.GetConnection(ctx, input.ID); err == nil {
+			input.ExpectedVersion = current.Version
+		}
+		return service.UpsertConnection(ctx, input)
+	}
 
-	initial, err := service.GetUpdateEgress(ctx)
-	if err != nil || initial.NetworkRouteID != "" || initial.Version != 1 {
-		t.Fatalf("seeded update egress = %+v, %v", initial, err)
+	client, gateway, err := service.UpdateConnection(ctx)
+	if err != nil || client != nil || gateway != configurationdomain.DefaultGitHubEndpoint {
+		t.Fatalf("seeded update connection = %v, %q, %v; want the canonical base on the deployment default", client, gateway, err)
 	}
 	proxyRoute, err := service.UpsertNetworkRoute(ctx, configurationdomain.NetworkRouteInput{
-		ID: "update-egress-test-proxy", Name: "Update proxy", Kind: configurationdomain.NetworkRouteHTTPProxy,
+		ID: "github-connection-test-proxy", Name: "Update proxy", Kind: configurationdomain.NetworkRouteHTTPProxy,
 		Enabled: true, Endpoint: "http://127.0.0.1:7890",
 	}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// An unknown route is refused before anything is stored.
-	if _, err := service.PutUpdateEgress(ctx, configurationdomain.UpdateEgressInput{
-		NetworkRouteID: "update-egress-test-missing", ExpectedVersion: initial.Version,
-	}); err == nil {
-		t.Fatal("an unknown route must be refused")
-	}
-	if current, err := service.GetUpdateEgress(ctx); err != nil || current.NetworkRouteID != "" || current.Version != initial.Version {
-		t.Fatalf("refused selection changed the row: %+v, %v", current, err)
-	}
-	// The expected version is the CAS; a stale one changes nothing.
-	if _, err := service.PutUpdateEgress(ctx, configurationdomain.UpdateEgressInput{
-		NetworkRouteID: proxyRoute.ID, ExpectedVersion: initial.Version + 1,
-	}); err == nil {
-		t.Fatal("a stale expected version must conflict")
-	}
-	saved, err := service.PutUpdateEgress(ctx, configurationdomain.UpdateEgressInput{
-		NetworkRouteID: proxyRoute.ID, ExpectedVersion: initial.Version,
+	// The endpoint is the request-target base: a reverse proxy is configured in
+	// exactly one place and comes back normalized.
+	saved, err := save(configurationdomain.ConnectionInput{
+		ID: "builtin-github", Kind: configurationdomain.ConnectionGitHub, Name: "GitHub",
+		Endpoint: " HTTPS://ghproxy.example/raw/ ", Enabled: true, NetworkRouteID: proxyRoute.ID,
 	})
-	if err != nil || saved.NetworkRouteID != proxyRoute.ID || saved.Version != initial.Version+1 {
-		t.Fatalf("saved update egress = %+v, %v", saved, err)
-	}
-	client, err := service.UpdateRouteClient(ctx)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("save GitHub update connection: %v", err)
+	}
+	if saved.Endpoint != "https://ghproxy.example/raw" || saved.NetworkRouteID != proxyRoute.ID || saved.State != configurationdomain.ConnectionConfigured {
+		t.Fatalf("saved update connection = %+v", saved)
+	}
+	// Exactly one GitHub connection anchors the channel.
+	if _, err := service.UpsertConnection(ctx, configurationdomain.ConnectionInput{
+		ID: "github-connection-test-second", Kind: configurationdomain.ConnectionGitHub, Name: "Other",
+		Endpoint: "https://mirror.example", Enabled: true,
+	}); err == nil {
+		t.Fatal("a second GitHub update connection must be refused")
+	}
+	client, gateway, err = service.UpdateConnection(ctx)
+	if err != nil || gateway != "https://ghproxy.example/raw" {
+		t.Fatalf("update connection = %v, %q, %v", client, gateway, err)
 	}
 	transport, ok := client.Transport.(*http.Transport)
 	if !ok || transport.Proxy == nil {
@@ -137,31 +144,27 @@ func TestUpdateEgressSelectsAnExistingRoutePostgres(t *testing.T) {
 	if proxyURL, err := transport.Proxy(request); err != nil || proxyURL == nil || proxyURL.Host != "127.0.0.1:7890" {
 		t.Fatalf("update proxy = %v, %v", proxyURL, err)
 	}
-	// A disabled route may be selected; the updater follows the deployment
-	// default until it is enabled again.
-	disabled, err := service.UpsertNetworkRoute(ctx, configurationdomain.NetworkRouteInput{
-		ID: "update-egress-test-disabled", Name: "Disabled", Kind: configurationdomain.NetworkRouteHTTPProxy,
-		Endpoint: "http://127.0.0.1:7891",
-	}, 0)
-	if err != nil {
+	// A route that is switched off after the fact keeps the configured base in
+	// use but returns the channel to the deployment default egress. Disabled
+	// routes are not selectable, exactly as for every other connection.
+	if _, err := service.UpsertNetworkRoute(ctx, configurationdomain.NetworkRouteInput{
+		ID: proxyRoute.ID, Name: proxyRoute.Name, Kind: configurationdomain.NetworkRouteHTTPProxy,
+		Endpoint: proxyRoute.Endpoint, Enabled: false,
+	}, proxyRoute.Version); err != nil {
+		t.Fatalf("switch the update route off: %v", err)
+	}
+	if client, gateway, err := service.UpdateConnection(ctx); err != nil || client != nil || gateway != "https://ghproxy.example/raw" {
+		t.Fatalf("disabled route = %v, %q, %v; want the deployment default egress", client, gateway, err)
+	}
+	// Disabling the connection returns the whole channel to the canonical source
+	// and the deployment default, including its base URL.
+	if _, err := save(configurationdomain.ConnectionInput{
+		ID: "builtin-github", Kind: configurationdomain.ConnectionGitHub, Name: "GitHub",
+		Endpoint: "https://ghproxy.example/raw", Enabled: false,
+	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.PutUpdateEgress(ctx, configurationdomain.UpdateEgressInput{
-		NetworkRouteID: disabled.ID, ExpectedVersion: saved.Version,
-	}); err != nil {
-		t.Fatalf("a disabled route must be selectable: %v", err)
-	}
-	if client, err := service.UpdateRouteClient(ctx); err != nil || client != nil {
-		t.Fatalf("disabled selection = %v, %v; want the deployment default", client, err)
-	}
-	// Null restores the deployment default.
-	reset, err := service.PutUpdateEgress(ctx, configurationdomain.UpdateEgressInput{
-		ExpectedVersion: saved.Version + 1,
-	})
-	if err != nil || reset.NetworkRouteID != "" {
-		t.Fatalf("reset update egress = %+v, %v", reset, err)
-	}
-	if client, err := service.UpdateRouteClient(ctx); err != nil || client != nil {
-		t.Fatalf("no selection = %v, %v; want the deployment default", client, err)
+	if client, gateway, err := service.UpdateConnection(ctx); err != nil || client != nil || gateway != "" {
+		t.Fatalf("disabled connection = %v, %q, %v; want nil", client, gateway, err)
 	}
 }

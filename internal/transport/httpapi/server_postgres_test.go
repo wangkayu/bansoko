@@ -1126,10 +1126,18 @@ func TestPutAndListConnectionsOverHTTP(t *testing.T) {
 	if err := json.Unmarshal(body, &connections); err != nil {
 		t.Fatal(err)
 	}
-	if len(connections) != 1 || connections[0]["credential_configured"] != true {
+	// The migration seeds the GitHub update connection; the qBittorrent row this
+	// test created is the one that must come back redacted.
+	var stored map[string]any
+	for _, item := range connections {
+		if item["id"] == "qb-1" {
+			stored = item
+		}
+	}
+	if stored == nil || stored["credential_configured"] != true {
 		t.Fatalf("connection must be redacted with credential flag: %s", string(body))
 	}
-	if _, leaked := connections[0]["password"]; leaked {
+	if _, leaked := stored["password"]; leaked {
 		t.Fatal("connection response must never include the password")
 	}
 	// Stale If-Match conflicts with the current version.

@@ -71,7 +71,7 @@ func TestDefaultConnectionSeedsListsEveryProviderMetadataKind(t *testing.T) {
 		}
 		seen[seed.Kind] = true
 	}
-	for _, kind := range []ConnectionKind{ConnectionMikan, ConnectionAniBT, ConnectionNyaa, ConnectionBGM, ConnectionTMDB} {
+	for _, kind := range []ConnectionKind{ConnectionMikan, ConnectionAniBT, ConnectionNyaa, ConnectionBGM, ConnectionTMDB, ConnectionGitHub} {
 		if !seen[kind] {
 			t.Fatalf("default connection seed list is missing kind %s", kind)
 		}

@@ -144,8 +144,6 @@ type ConnectionConfigService interface {
 	ListNetworkRoutes(ctx context.Context) ([]configurationdomain.NetworkRoute, error)
 	PutNetworkRoute(ctx context.Context, routeID string, expectedVersion int64, input configurationdomain.NetworkRouteInput) (configurationdomain.NetworkRoute, error)
 	TestNetworkRoute(ctx context.Context, routeID string) (configurationdomain.NetworkRouteTestResult, error)
-	GetUpdateEgress(ctx context.Context) (configurationdomain.UpdateEgress, error)
-	PutUpdateEgress(ctx context.Context, input configurationdomain.UpdateEgressInput) (configurationdomain.UpdateEgress, error)
 }
 
 // ManualRetryService creates a new owner-specific WorkItem from a terminal

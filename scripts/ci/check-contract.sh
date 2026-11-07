@@ -79,7 +79,6 @@ required_paths = {
   "/config/network-routes" => ["get"],
   "/config/network-routes/{route_id}" => ["put"],
   "/config/network-routes/{route_id}/test" => ["post"],
-  "/config/update-egress" => ["get", "put"],
   "/config/business-preset" => ["get"],
   "/config/business-preset/load" => ["post"],
   "/anime/{managed_anime_id}/business-edit" => ["get"],

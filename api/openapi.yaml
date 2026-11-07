@@ -781,52 +781,6 @@ paths:
           $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/Unprocessable'
-  /config/update-egress:
-    get:
-      tags: [Configuration]
-      operationId: getUpdateEgress
-      x-scope: read
-      description: >-
-        Read which existing network route the update channel sends its GitHub
-        requests through. A null network_route_id means the deployment default
-        egress.
-      responses:
-        '200':
-          description: The selected update route.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UpdateEgress'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-    put:
-      tags: [Configuration]
-      operationId: putUpdateEgress
-      x-scope: write
-      description: >-
-        Select the existing network route the update channel uses, guarded by
-        expected_version. A null network_route_id restores the deployment
-        default. A disabled route may be selected: the updater follows the
-        deployment default until it is enabled again.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateEgressInput'
-      responses:
-        '200':
-          description: The saved update route selection.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UpdateEgress'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '422':
-          $ref: '#/components/responses/Unprocessable'
   /anime/{managed_anime_id}/business-edit:
     get:
       tags: [Anime]
@@ -9268,6 +9222,7 @@ components:
         - $ref: '#/components/schemas/MikanConnectionInput'
         - $ref: '#/components/schemas/NyaaConnectionInput'
         - $ref: '#/components/schemas/BGMConnectionInput'
+        - $ref: '#/components/schemas/GitHubConnectionInput'
       discriminator:
         propertyName: kind
         mapping:
@@ -9279,6 +9234,7 @@ components:
           mikan: '#/components/schemas/MikanConnectionInput'
           nyaa: '#/components/schemas/NyaaConnectionInput'
           bgm: '#/components/schemas/BGMConnectionInput'
+          github: '#/components/schemas/GitHubConnectionInput'
     ConnectionSecretKeep:
       type: object
       additionalProperties: false
@@ -9500,6 +9456,31 @@ components:
           format: uri
         route_id:
           $ref: '#/components/schemas/ID'
+    GitHubConnectionInput:
+      type: object
+      additionalProperties: false
+      required: [kind, name, enabled, base_url]
+      description: >-
+        The app update connection. base_url replaces the canonical GitHub raw
+        root as the prefix every update request is sent to, so a reverse proxy
+        is configured here; route_id picks the network egress and enabled turns
+        the configured base and route on. Disabling it keeps the canonical
+        source and the deployment default egress.
+      properties:
+        kind:
+          type: string
+          enum: [github]
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        enabled:
+          type: boolean
+        base_url:
+          type: string
+          format: uri
+        route_id:
+          $ref: '#/components/schemas/ID'
     Connection:
       oneOf:
         - $ref: '#/components/schemas/QBittorrentConnection'
@@ -9510,6 +9491,7 @@ components:
         - $ref: '#/components/schemas/MikanConnection'
         - $ref: '#/components/schemas/NyaaConnection'
         - $ref: '#/components/schemas/BGMConnection'
+        - $ref: '#/components/schemas/GitHubConnection'
       discriminator:
         propertyName: kind
         mapping:
@@ -9521,6 +9503,7 @@ components:
           mikan: '#/components/schemas/MikanConnection'
           nyaa: '#/components/schemas/NyaaConnection'
           bgm: '#/components/schemas/BGMConnection'
+          github: '#/components/schemas/GitHubConnection'
     QBittorrentConnection:
       type: object
       additionalProperties: false
@@ -9706,6 +9689,27 @@ components:
           $ref: '#/components/schemas/ID'
         version:
           $ref: '#/components/schemas/Version'
+    GitHubConnection:
+      type: object
+      additionalProperties: false
+      required: [id, kind, name, enabled, base_url, version]
+      properties:
+        id:
+          $ref: '#/components/schemas/ID'
+        kind:
+          type: string
+          enum: [github]
+        name:
+          type: string
+        enabled:
+          type: boolean
+        base_url:
+          type: string
+          format: uri
+        route_id:
+          $ref: '#/components/schemas/ID'
+        version:
+          $ref: '#/components/schemas/Version'
     ConnectionTestResult:
       type: object
       additionalProperties: false
@@ -9715,7 +9719,7 @@ components:
           $ref: '#/components/schemas/ID'
         kind:
           type: string
-          enum: [qbittorrent, rss_http, tmdb, jackett, anibt, mikan, nyaa, bgm]
+          enum: [qbittorrent, rss_http, tmdb, jackett, anibt, mikan, nyaa, bgm, github]
         health:
           type: string
           enum: [ready, degraded, failed]
@@ -9895,29 +9899,6 @@ components:
         checked_at:
           type: string
           format: date-time
-    UpdateEgress:
-      type: object
-      additionalProperties: false
-      description: The network route the update channel uses; null network_route_id means the deployment default egress.
-      required: [network_route_id, version]
-      properties:
-        network_route_id:
-          type: string
-          nullable: true
-          description: The selected network route, or null for the deployment default.
-        version:
-          $ref: '#/components/schemas/Version'
-    UpdateEgressInput:
-      type: object
-      additionalProperties: false
-      required: [network_route_id, expected_version]
-      properties:
-        network_route_id:
-          type: string
-          nullable: true
-          description: The existing network route to use, or null for the deployment default.
-        expected_version:
-          $ref: '#/components/schemas/Version'
     GlobalSectionName:
       type: string
       description: >-

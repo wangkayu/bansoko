@@ -25,11 +25,15 @@ var (
 // update source is always public and anonymous: there is no credential
 // surface, so nothing a deployment sets can make the updater authenticate.
 // Production controls the HTTPS requirement; development/test fixtures may
-// use HTTP explicitly.
+// use HTTP explicitly. Gateway is the runtime base URL of the GitHub update
+// connection: when set, it replaces the canonical origin as the prefix every
+// request target is built from, while identity and package checks keep running
+// against the canonical GitHub URL.
 type UpdateHTTPSourceConfig struct {
 	ManifestURL string
 	Production  bool
 	HTTPClient  *http.Client
+	Gateway     string
 }
 
 // UpdateSourceConfig is a descriptive alias for the HTTP source settings.
@@ -37,12 +41,17 @@ type UpdateSourceConfig = UpdateHTTPSourceConfig
 
 // UpdateHTTPSource is the sole request builder for an embedded update source.
 // It fixes the scheme, host, and package directory at construction time and
-// strips every credential header from its requests.
+// strips every credential header from its requests. When a gateway base is
+// configured, the canonical URL stays the identity that is validated and the
+// only thing rewritten is the outgoing request target.
 type UpdateHTTPSource struct {
 	manifestURL string
 	scheme      string
 	host        string
 	packagePath string
+	originHost  string
+	gateway     *url.URL
+	gatewayPath string
 	client      *http.Client
 }
 
@@ -65,11 +74,19 @@ func NewUpdateHTTPSource(config UpdateHTTPSourceConfig) (*UpdateHTTPSource, erro
 		return nil, fmt.Errorf("%w: production update sources require HTTPS", ErrUpdateSourceURL)
 	}
 
+	gateway, gatewayPath, err := parseUpdateGateway(config.Gateway, config.Production)
+	if err != nil {
+		return nil, err
+	}
+
 	source := &UpdateHTTPSource{
 		manifestURL: parsed.String(),
 		scheme:      strings.ToLower(parsed.Scheme),
 		host:        updateHostIdentity(parsed),
 		packagePath: updatePackageDirectory(parsed.Path),
+		originHost:  parsed.Host,
+		gateway:     gateway,
+		gatewayPath: gatewayPath,
 	}
 
 	baseClient := config.HTTPClient
@@ -89,6 +106,11 @@ func NewUpdateHTTPSource(config UpdateHTTPSourceConfig) (*UpdateHTTPSource, erro
 			return err
 		}
 		source.stripCredentials(req)
+		if source.gateway != nil && !source.isGatewayURL(req.URL) {
+			// The gateway redirected to the canonical source. Follow that
+			// target directly instead of sending it back through the gateway.
+			*req = *req.WithContext(context.WithValue(req.Context(), updateDirectRedirectKey{}, true))
+		}
 		return nil
 	}
 	source.client = &client
@@ -198,25 +220,78 @@ func (s *UpdateHTTPSource) validateTarget(target *url.URL, redirect bool) error 
 	if target == nil {
 		return fmt.Errorf("%w: missing redirect target", ErrUpdateRedirect)
 	}
-	if err := validateURLParts(target); err != nil {
+	canonical := s.canonicalTarget(target)
+	if err := validateURLParts(canonical); err != nil {
 		if redirect {
 			return fmt.Errorf("%w: unsafe redirect", ErrUpdateRedirect)
 		}
 		return err
 	}
-	if strings.ToLower(target.Scheme) != s.scheme || updateHostIdentity(target) != s.host {
+	if strings.ToLower(canonical.Scheme) != s.scheme || updateHostIdentity(canonical) != s.host {
 		if redirect {
 			return fmt.Errorf("%w: redirect changes source identity", ErrUpdateRedirect)
 		}
 		return fmt.Errorf("%w: URL is outside the configured source", ErrUpdateSourceURL)
 	}
-	if !pathWithinDirectory(target.Path, s.packagePath) {
+	if !pathWithinDirectory(canonical.Path, s.packagePath) {
 		if redirect {
 			return fmt.Errorf("%w: redirect leaves the package path", ErrUpdateRedirect)
 		}
 		return fmt.Errorf("%w: URL is outside the configured package path", ErrUpdateSourceURL)
 	}
 	return nil
+}
+
+// canonicalTarget maps a request target that points at the configured gateway
+// back to the canonical source URL it names. Every check then runs against the
+// canonical identity, so a mirror can never widen the host or package the
+// updater is allowed to read.
+func (s *UpdateHTTPSource) canonicalTarget(target *url.URL) *url.URL {
+	if s == nil || s.gateway == nil || target == nil {
+		return target
+	}
+	if !strings.EqualFold(target.Scheme, s.gateway.Scheme) || !strings.EqualFold(target.Host, s.gateway.Host) {
+		return target
+	}
+	if !pathWithinPrefix(target.Path, s.gatewayPath) {
+		return target
+	}
+	canonical := *target
+	canonical.Scheme = s.scheme
+	canonical.Host = s.originHost
+	canonical.Path = strings.TrimPrefix(target.Path, s.gatewayPath)
+	if canonical.Path == "" {
+		canonical.Path = "/"
+	}
+	canonical.RawPath = ""
+	return &canonical
+}
+
+// isGatewayURL reports whether a target already points at the configured
+// gateway prefix. Such a target is never rewritten a second time.
+func (s *UpdateHTTPSource) isGatewayURL(target *url.URL) bool {
+	if s == nil || s.gateway == nil || target == nil {
+		return false
+	}
+	if !strings.EqualFold(target.Scheme, s.gateway.Scheme) || !strings.EqualFold(target.Host, s.gateway.Host) {
+		return false
+	}
+	return pathWithinPrefix(target.Path, s.gatewayPath)
+}
+
+// outboundURL is the gateway form of a validated canonical target: the gateway
+// base replaces the canonical origin and the canonical path is appended
+// unchanged.
+func (s *UpdateHTTPSource) outboundURL(target *url.URL) *url.URL {
+	if s == nil || s.gateway == nil || s.isGatewayURL(target) {
+		return target
+	}
+	rewritten := *target
+	rewritten.Scheme = s.gateway.Scheme
+	rewritten.Host = s.gateway.Host
+	rewritten.Path = s.gatewayPath + target.Path
+	rewritten.RawPath = ""
+	return &rewritten
 }
 
 // stripCredentials removes every credential header from one source-local
@@ -240,6 +315,10 @@ type updateSourceTransport struct {
 	base   http.RoundTripper
 }
 
+// updateDirectRedirectKey marks a request that a gateway redirected to the
+// canonical source; it is followed directly rather than rewritten back.
+type updateDirectRedirectKey struct{}
+
 func (t updateSourceTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if t.source == nil {
 		return nil, errors.New("update HTTP source is not configured")
@@ -251,7 +330,15 @@ func (t updateSourceTransport) RoundTrip(req *http.Request) (*http.Response, err
 	// cannot observe mutations on a request it still owns.
 	request := req.Clone(req.Context())
 	t.source.stripCredentials(request)
+	if t.source.gateway != nil && !t.source.isGatewayURL(request.URL) && !directRedirect(request.Context()) {
+		request.URL = t.source.outboundURL(request.URL)
+	}
 	return t.base.RoundTrip(request)
+}
+
+func directRedirect(ctx context.Context) bool {
+	value, _ := ctx.Value(updateDirectRedirectKey{}).(bool)
+	return value
 }
 
 // OutboundVia lets diagnostics see the route of the underlying transport: an
@@ -262,6 +349,53 @@ func (t updateSourceTransport) OutboundVia(req *http.Request) outbound.Via {
 		return outbound.ViaDirect
 	}
 	return outbound.ViaOf(&http.Client{Transport: t.base}, req)
+}
+
+// parseUpdateGateway validates the optional reverse-proxy base of the GitHub
+// update connection. The base only changes where a request is sent; the
+// canonical source URL stays the identity every other check uses. A trailing
+// slash is dropped so the canonical path appends unchanged, and production
+// requires HTTPS for the same reason the canonical source does.
+func parseUpdateGateway(raw string, production bool) (*url.URL, string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, "", nil
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return nil, "", fmt.Errorf("%w: gateway URL is invalid", ErrUpdateSourceURL)
+	}
+	if err := validateURLParts(parsed); err != nil {
+		return nil, "", fmt.Errorf("%w: gateway URL is not usable", ErrUpdateSourceURL)
+	}
+	if production && !strings.EqualFold(parsed.Scheme, "https") {
+		return nil, "", fmt.Errorf("%w: production update gateways require HTTPS", ErrUpdateSourceURL)
+	}
+	if strings.Contains(parsed.Path, "\\") || strings.Contains(parsed.RawPath, "\\") {
+		return nil, "", fmt.Errorf("%w: gateway path contains a backslash", ErrUpdateSourceURL)
+	}
+	for _, segment := range strings.Split(parsed.Path, "/") {
+		if segment == ".." {
+			return nil, "", fmt.Errorf("%w: gateway path contains a parent segment", ErrUpdateSourceURL)
+		}
+	}
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	gatewayPath := strings.TrimRight(parsed.Path, "/")
+	if gatewayPath == "." {
+		gatewayPath = ""
+	}
+	parsed.Path = gatewayPath
+	parsed.RawPath = ""
+	return parsed, gatewayPath, nil
+}
+
+// pathWithinPrefix reports whether a request path sits under a gateway prefix;
+// an empty prefix covers every path.
+func pathWithinPrefix(targetPath, prefix string) bool {
+	if prefix == "" {
+		return strings.HasPrefix(targetPath, "/")
+	}
+	return targetPath == prefix || strings.HasPrefix(targetPath, prefix+"/")
 }
 
 func parseUpdateURL(raw string) (*url.URL, error) {
