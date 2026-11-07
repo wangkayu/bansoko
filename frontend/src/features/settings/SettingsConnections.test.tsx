@@ -705,9 +705,9 @@ describe("SettingsConnections 代理对话框校验与提交", () => {
   });
 });
 
-// The update channel selects one of the existing network proxies: the card
+// The update channel selects one of the existing network proxies: the row
 // saves only that reference, so the proxy address and credentials are defined
-// once under 网络代理.
+// once under 网络代理. Editing opens the same dialog the connection rows use.
 describe("SettingsConnections 应用更新出口", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -724,12 +724,22 @@ describe("SettingsConnections 应用更新出口", () => {
     version: 1,
   };
 
-  it("选择一个已有代理：选择即保存，body 引用该代理与当前版本", async () => {
+  async function openEgressEditor() {
+    await userEvent.click(await screen.findByRole("button", { name: t("settings.updateEgress.editAria") }));
+  }
+
+  it("行内展示当前出口；选择后确认才保存，body 引用该代理与当前版本", async () => {
     stubFetch({ routes: [proxyRoute] });
     renderSettings();
 
+    expect(await screen.findByText(t("settings.updateEgress.followDeployment"))).toBeInTheDocument();
+
+    await openEgressEditor();
     await userEvent.click(await screen.findByRole("combobox", { name: t("settings.updateEgress.routeLabel") }));
     await userEvent.click(await screen.findByRole("option", { name: proxyRoute.name }));
+    expect(updateEgressPutCalls()).toHaveLength(0);
+
+    await userEvent.click(screen.getByRole("button", { name: t("settings.connections.save") }));
 
     await waitFor(() => expect(updateEgressPutCalls()).toHaveLength(1));
     expect(putBody(updateEgressPutCalls()[0]!)).toEqual({
@@ -742,8 +752,12 @@ describe("SettingsConnections 应用更新出口", () => {
     stubFetch({ routes: [proxyRoute], updateEgress: { network_route_id: "route-1", version: 3 } });
     renderSettings();
 
+    expect(await screen.findByText(t("settings.updateEgress.currentRoute", { name: proxyRoute.name }))).toBeInTheDocument();
+
+    await openEgressEditor();
     await userEvent.click(await screen.findByRole("combobox", { name: t("settings.updateEgress.routeLabel") }));
     await userEvent.click(await screen.findByRole("option", { name: t("settings.updateEgress.followDeployment") }));
+    await userEvent.click(screen.getByRole("button", { name: t("settings.connections.save") }));
 
     await waitFor(() => expect(updateEgressPutCalls()).toHaveLength(1));
     expect(putBody(updateEgressPutCalls()[0]!)).toEqual({
@@ -757,6 +771,7 @@ describe("SettingsConnections 应用更新出口", () => {
     stubFetch({ routes: [disabled], updateEgress: { network_route_id: "route-off", version: 1 } });
     renderSettings();
 
+    await openEgressEditor();
     await userEvent.click(await screen.findByRole("combobox", { name: t("settings.updateEgress.routeLabel") }));
     expect(await screen.findByRole("option", {
       name: t("settings.updateEgress.disabledOption", { name: disabled.name }),

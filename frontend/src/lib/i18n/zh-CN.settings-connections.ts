@@ -70,6 +70,9 @@ export const settingsConnectionsCopy = {
   updateEgress: {
     title: "应用更新",
     hint: "应用更新通过哪个网络代理访问 GitHub。不选则跟随部署默认；代理在下方「网络代理」中管理。",
+    rowTitle: "GitHub 更新",
+    editAria: "编辑应用更新出口",
+    currentRoute: "当前：{name}",
     routeLabel: "网络代理",
     followDeployment: "跟随部署默认",
     disabledOption: "{name}（已停用，暂时按部署默认）",

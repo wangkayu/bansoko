@@ -72,6 +72,9 @@ export const enSettingsConnectionsCopy = {
   updateEgress: {
     title: "App updates",
     hint: "Which network proxy app updates use to reach GitHub. Leave unset to follow the deployment default; proxies are managed under \"Proxy\" below.",
+    rowTitle: "GitHub updates",
+    editAria: "Edit the app update egress",
+    currentRoute: "Current: {name}",
     routeLabel: "Network proxy",
     followDeployment: "Follow deployment default",
     disabledOption: "{name} (disabled; deployment default applies for now)",

@@ -672,39 +672,40 @@ function ConnectionsCard() {
   );
 }
 
-// The update channel reuses an existing network proxy: this card only selects
+// The update channel reuses an existing network proxy: this row only selects
 // one of the routes defined below (or the deployment default), so the proxy is
-// defined and edited in exactly one place. A single dropdown saves on change;
-// the card has no footer save of its own.
+// defined and edited in exactly one place. It wears the same row anatomy and
+// M-size edit dialog as the connection rows; the save carries the egress
+// version so a concurrent change surfaces as a conflict.
+type UpdateEgressDraft = { version: number; routeId: string };
+
 function UpdateEgressCard() {
-  const queryClient = useQueryClient();
   const egress = useQuery({ queryKey: configKeys.updateEgress, queryFn: getUpdateEgress });
   const routes = useQuery({ queryKey: configKeys.networkRoutes, queryFn: listNetworkRoutes });
-  const [selection, setSelection] = useState<string>();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
-
+  const {
+    draft,
+    setDraft,
+    savedDraft,
+    busy,
+    error,
+    conflict,
+    openEditor,
+    closeEditor,
+    save,
+    refreshAfterConflict,
+  } = useEntityDraftEditor<UpdateEgressDraft, unknown>({
+    submit: (current) =>
+      putUpdateEgress({
+        network_route_id: current.routeId === "" ? null : current.routeId,
+        expected_version: current.version,
+      }),
+    successMessage: t("settings.updateEgress.saved"),
+    failureFallback: t("settings.updateEgress.saveFailed"),
+    invalidateQueryKey: configKeys.updateEgress,
+  });
   const stored = egress.data?.network_route_id ?? "";
-  const value = selection ?? stored;
-
-  async function change(next: string) {
-    if (!egress.data || busy || next === stored) return;
-    setSelection(next);
-    setBusy(true);
-    setError(undefined);
-    try {
-      await putUpdateEgress({ network_route_id: next === "" ? null : next, expected_version: egress.data.version });
-      toast.success(t("settings.updateEgress.saved"));
-    } catch (cause) {
-      setError(toUserMessage(cause, t("settings.updateEgress.saveFailed")));
-    } finally {
-      setSelection(undefined);
-      setBusy(false);
-      // On success this reads the saved value; after a conflict it also picks
-      // up the current version, so the next change carries the right one.
-      await queryClient.invalidateQueries({ queryKey: configKeys.updateEgress });
-    }
-  }
+  const storedName = stored ? routes.data?.find((route) => route.id === stored)?.name : undefined;
+  const egressVersion = egress.data?.version;
 
   return (
     <section className="settings-connections-section">
@@ -712,18 +713,72 @@ function UpdateEgressCard() {
       <p className="settings-connections-description text-caption">{t("settings.updateEgress.hint")}</p>
       {egress.isLoading && <StateBlock kind="busy" title={t("settings.updateEgress.loading")} />}
       {egress.error && <Alert tone="error" title={toUserMessage(egress.error, t("settings.updateEgress.loadFailed"))} />}
-      {error && <Alert tone="error" title={error} />}
-      {egress.data && (
-        <div className="settings-connections-field text-caption">
-          <span>{t("settings.updateEgress.routeLabel")}</span>
-          <Select label={t("settings.updateEgress.routeLabel")} value={value} disabled={busy} options={[
-            { value: "", label: t("settings.updateEgress.followDeployment") },
-            ...(routes.data ?? []).map((route) => ({
-              value: route.id,
-              label: route.enabled ? route.name : t("settings.updateEgress.disabledOption", { name: route.name }),
-            })),
-          ]} onChange={(next) => void change(next)} />
-        </div>
+      {egress.data && egressVersion !== undefined && (
+        <ul className="settings-connections-list">
+          <li className="settings-connections-item">
+            <div className="settings-connections-item-row">
+              <span className="settings-connections-item-title text-body">{t("settings.updateEgress.rowTitle")}</span>
+              <span className="settings-connections-spacer" />
+              <Button
+                variant="ghost"
+                aria-label={t("settings.updateEgress.editAria")}
+                size="sm"
+                onClick={() => openEditor({ version: egressVersion, routeId: stored })}
+              >
+                <Pencil size={14} />
+                {t("settings.connections.edit")}
+              </Button>
+            </div>
+            <p className="settings-connections-description text-caption">
+              {stored
+                ? t("settings.updateEgress.currentRoute", { name: storedName ?? stored })
+                : t("settings.updateEgress.followDeployment")}
+            </p>
+          </li>
+        </ul>
+      )}
+
+      {draft && (
+        <SettingsEditDialog
+          open
+          onOpenChange={(open) => { if (!open) closeEditor(); }}
+          busy={busy}
+          title={t("settings.updateEgress.title")}
+          description={t("settings.updateEgress.hint")}
+          dirty={() => !!draft && !valuesEqual(draft, savedDraft)}
+          footer={(requestClose) => (
+            <>
+              <Button variant="ghost" disabled={busy} onClick={requestClose}>{t("settings.connections.cancel")}</Button>
+              <Button
+                variant="primary"
+                aria-label={t("settings.connections.save")}
+                disabled={busy || !savedDraft || draft.routeId === savedDraft.routeId}
+                onClick={() => void save()}
+              >
+                {busy ? t("settings.connections.saving") : t("settings.connections.save")}
+              </Button>
+            </>
+          )}
+        >
+          {conflict !== undefined ? (
+            <DialogFeedback>
+              <ConflictBlock currentVersion={conflict} message={error} onRefresh={refreshAfterConflict} />
+            </DialogFeedback>
+          ) : error ? (
+            <DialogFeedback><Alert tone="error" title={error} /></DialogFeedback>
+          ) : null}
+          <div className="settings-connections-form">
+            <Field label={t("settings.updateEgress.routeLabel")}>
+              <Select label={t("settings.updateEgress.routeLabel")} value={draft.routeId} options={[
+                { value: "", label: t("settings.updateEgress.followDeployment") },
+                ...(routes.data ?? []).map((route) => ({
+                  value: route.id,
+                  label: route.enabled ? route.name : t("settings.updateEgress.disabledOption", { name: route.name }),
+                })),
+              ]} onChange={(routeId) => setDraft({ ...draft, routeId })} />
+            </Field>
+          </div>
+        </SettingsEditDialog>
       )}
     </section>
   );
