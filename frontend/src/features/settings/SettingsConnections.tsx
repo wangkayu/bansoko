@@ -370,7 +370,6 @@ export function SettingsConnections() {
   return (
     <div className="settings-connections">
       <ConnectionsCard />
-      <UpdateEgressCard />
       <RoutesCard />
     </div>
   );
@@ -550,6 +549,7 @@ function ConnectionsCard() {
           </li>
           );
         })}
+        <UpdateEgressItem />
       </ul>
 
       {draft && (
@@ -672,14 +672,15 @@ function ConnectionsCard() {
   );
 }
 
-// The update channel reuses an existing network proxy: this row only selects
-// one of the routes defined below (or the deployment default), so the proxy is
-// defined and edited in exactly one place. It wears the same row anatomy and
-// M-size edit dialog as the connection rows; the save carries the egress
-// version so a concurrent change surfaces as a conflict.
+// The update channel reuses an existing network proxy: its row closes the
+// connections list and only selects one of the routes defined below (or the
+// deployment default), so the proxy is defined and edited in exactly one
+// place. It wears the same row anatomy and M-size edit dialog as the
+// connection rows; the save carries the egress version so a concurrent change
+// surfaces as a conflict.
 type UpdateEgressDraft = { version: number; routeId: string };
 
-function UpdateEgressCard() {
+function UpdateEgressItem() {
   const egress = useQuery({ queryKey: configKeys.updateEgress, queryFn: getUpdateEgress });
   const routes = useQuery({ queryKey: configKeys.networkRoutes, queryFn: listNetworkRoutes });
   const {
@@ -708,35 +709,36 @@ function UpdateEgressCard() {
   const egressVersion = egress.data?.version;
 
   return (
-    <section className="settings-connections-section">
-      <h2 className="settings-connections-title text-title">{t("settings.updateEgress.title")}</h2>
-      <p className="settings-connections-description text-caption">{t("settings.updateEgress.hint")}</p>
-      {egress.isLoading && <StateBlock kind="busy" title={t("settings.updateEgress.loading")} />}
-      {egress.error && <Alert tone="error" title={toUserMessage(egress.error, t("settings.updateEgress.loadFailed"))} />}
-      {egress.data && egressVersion !== undefined && (
-        <ul className="settings-connections-list">
-          <li className="settings-connections-item">
-            <div className="settings-connections-item-row">
-              <span className="settings-connections-item-title text-body">{t("settings.updateEgress.rowTitle")}</span>
-              <span className="settings-connections-spacer" />
-              <Button
-                variant="ghost"
-                aria-label={t("settings.updateEgress.editAria")}
-                size="sm"
-                onClick={() => openEditor({ version: egressVersion, routeId: stored })}
-              >
-                <Pencil size={14} />
-                {t("settings.connections.edit")}
-              </Button>
-            </div>
-            <p className="settings-connections-description text-caption">
-              {stored
+    <>
+      <li className="settings-connections-item">
+        <div className="settings-connections-item-row">
+          <span className="settings-connections-item-title text-body">{t("settings.updateEgress.rowTitle")}</span>
+          <Chip>{t("settings.updateEgress.title")}</Chip>
+          <span className="settings-connections-spacer" />
+          <Button
+            variant="ghost"
+            aria-label={t("settings.updateEgress.editAria")}
+            size="sm"
+            disabled={egressVersion === undefined}
+            onClick={() => egressVersion !== undefined && openEditor({ version: egressVersion, routeId: stored })}
+          >
+            <Pencil size={14} />
+            {t("settings.connections.edit")}
+          </Button>
+        </div>
+        <p
+          className={`settings-connections-description text-caption${egress.error ? " settings-connections-error" : ""}`}
+          role={egress.error ? "alert" : undefined}
+        >
+          {egress.error
+            ? toUserMessage(egress.error, t("settings.updateEgress.loadFailed"))
+            : egressVersion === undefined
+              ? t("settings.updateEgress.loading")
+              : stored
                 ? t("settings.updateEgress.currentRoute", { name: storedName ?? stored })
                 : t("settings.updateEgress.followDeployment")}
-            </p>
-          </li>
-        </ul>
-      )}
+        </p>
+      </li>
 
       {draft && (
         <SettingsEditDialog
@@ -780,7 +782,7 @@ function UpdateEgressCard() {
           </div>
         </SettingsEditDialog>
       )}
-    </section>
+    </>
   );
 }
 

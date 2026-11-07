@@ -452,7 +452,8 @@ describe("SettingsConnections 内置连接", () => {
     });
     renderSettings();
 
-    fireEvent.click(await screen.findByRole("button", { name: t("settings.connections.edit") }));
+    const row = (await screen.findByText("Mikan 反代")).closest("li")!;
+    fireEvent.click(within(row).getByRole("button", { name: t("settings.connections.edit") }));
     expect(screen.getByLabelText(t("settings.connections.siteAddress"))).toHaveValue("https://proxy.internal/mikan");
     await userEvent.click(screen.getByRole("combobox", { name: t("settings.connections.proxyLabel") }));
     expect(await screen.findByRole("option", { name: "家宽出口" })).toHaveAttribute("aria-selected", "true");
@@ -733,6 +734,9 @@ describe("SettingsConnections 应用更新出口", () => {
     renderSettings();
 
     expect(await screen.findByText(t("settings.updateEgress.followDeployment"))).toBeInTheDocument();
+    // 与连接同一个列表，排在最后一行。
+    const list = screen.getByText(t("settings.updateEgress.followDeployment")).closest("ul")!;
+    expect(within(list).getAllByRole("listitem").at(-1)).toHaveTextContent(t("settings.updateEgress.rowTitle"));
 
     await openEgressEditor();
     await userEvent.click(await screen.findByRole("combobox", { name: t("settings.updateEgress.routeLabel") }));
@@ -787,7 +791,8 @@ describe("SettingsConnections 应用更新出口", () => {
     });
     renderSettings();
 
-    fireEvent.click(await screen.findByRole("button", { name: t("settings.connections.edit") }));
+    const row = (await screen.findByText("Mikan")).closest("li")!;
+    fireEvent.click(within(row).getByRole("button", { name: t("settings.connections.edit") }));
     await userEvent.click(screen.getByRole("combobox", { name: t("settings.connections.proxyLabel") }));
     expect(await screen.findByRole("option", { name: proxyRoute.name })).toBeInTheDocument();
   });

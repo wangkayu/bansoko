@@ -352,24 +352,27 @@ test.describe("settings dialog", () => {
     await expect(dialog.getByRole("heading", { name: "命名变量" })).toHaveCount(0);
   });
 
-  // 应用更新只选用已有网络代理：与连接行同一形态（标题 + 当前值 + 编辑），
-  // 编辑在 M 尺寸弹窗里完成，卡片本身没有地址/凭据输入。
-  test("应用更新出口与连接行同一形态，编辑弹窗只提供一个代理选择", async ({ page }) => {
+  // 应用更新只选用已有网络代理：它作为服务连接的最后一行（标题 + 当前值 + 编辑），
+  // 编辑在 M 尺寸弹窗里完成，行内没有地址/凭据输入。
+  test("应用更新是服务连接的最后一行，编辑弹窗只提供一个代理选择", async ({ page }) => {
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible({ timeout: 10000 });
     if (isMobile(page)) {
       // 手机是两级导航：先停在分类列表，点进「服务连接」才渲染内容。
       await dialog.getByRole("navigation", { name: "设置分类" }).getByRole("link", { name: "服务连接" }).click();
     }
-    const section = dialog.getByRole("heading", { name: "应用更新" }).locator("xpath=..");
-    await expect(section.getByText("GitHub 更新")).toBeVisible();
-    await expect(section.getByText("跟随部署默认", { exact: true })).toBeVisible();
+    const section = dialog.getByRole("heading", { name: "服务连接" }).locator("xpath=..");
+    const row = section.getByRole("listitem").filter({ hasText: "GitHub 更新" });
+    await expect(row).toBeVisible();
+    await expect(row.getByText("跟随部署默认", { exact: true })).toBeVisible();
+    // 同一列表的最后一行，不再单独成组。
+    await expect(section.getByRole("listitem").last()).toContainText("GitHub 更新");
     // 行内没有下拉、地址或凭据输入；这些都在编辑弹窗/网络代理分区里。
-    await expect(section.getByRole("combobox")).toHaveCount(0);
-    await expect(section.getByLabel("代理地址")).toHaveCount(0);
+    await expect(row.getByRole("combobox")).toHaveCount(0);
+    await expect(row.getByLabel("代理地址")).toHaveCount(0);
 
     // 新行不得把设置内容撑出横向滚动，行右缘必须落在内容区内。
-    const rowBox = await section.locator("li").boundingBox();
+    const rowBox = await row.boundingBox();
     const contentBox = await dialog.getByTestId("settings-content").boundingBox();
     expect(rowBox).not.toBeNull();
     expect(contentBox).not.toBeNull();
@@ -381,7 +384,7 @@ test.describe("settings dialog", () => {
     }));
     expect(pageOverflow.scrollWidth).toBeLessThanOrEqual(pageOverflow.clientWidth + 1);
 
-    await section.getByRole("button", { name: "编辑应用更新出口" }).click();
+    await row.getByRole("button", { name: "编辑应用更新出口" }).click();
     const editor = page.getByRole("dialog", { name: "应用更新" });
     await expect(editor).toBeVisible();
     const select = editor.getByRole("combobox", { name: "网络代理" });
