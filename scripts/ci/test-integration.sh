@@ -87,8 +87,12 @@ if [[ -n "${BANSOKO_TEST_PG_SHARD:-}" ]]; then
   echo "shard ${BANSOKO_TEST_PG_SHARD}: ${#shard_packages[@]} package(s)"
 fi
 
+# runtime/migrations alone measured 766-900s on GitHub runners over three runs
+# (467s on the test VM), so the 900s watchdog that used to bound it sat right on
+# the measured time and any added migration tipped it over. The package lane
+# gets an 1800s per-binary budget instead.
 if [[ "$shard_migrations" == 1 ]]; then
-  "$run_gate" pg-migrations -p 1 ./internal/runtime/migrations -count=1 -timeout 900s
+  "$run_gate" pg-migrations -p 1 ./internal/runtime/migrations -count=1 -timeout 1800s
 fi
 
 # fileoperation/application alone measured 830-900s on a shared VM (B12), so
