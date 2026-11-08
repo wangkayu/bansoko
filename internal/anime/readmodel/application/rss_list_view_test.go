@@ -108,17 +108,16 @@ func TestComposeRSSListViewJoinsGroupSeedAndFiles(t *testing.T) {
 	}
 	// The subtitle lands beside its video under the video's basename: it keeps
 	// the video's target up to the extension, gains the suffix the rules
-	// rendered for it (sub.lang_tag: "zh-Hans" is no reltitle tag, so the
-	// release title's SC stands, whose tag is zh-Hans) and its own extension
-	// (MF design 4a).
+	// rendered for it (sub.lang_tag: the file's own "zh-Hans" tag reads SC,
+	// whose tag is zh-Hans) and its own extension (MF design 4a).
 	video, subtitle := item.Files[0].RenderedTarget, item.Files[1].RenderedTarget
 	if want := strings.TrimSuffix(video, path.Ext(video)) + ".zh-Hans.ass"; subtitle != want {
 		t.Fatalf("subtitle target = %q, want the video's basename with the rendered suffix %q", subtitle, want)
 	}
 	// The subtitle row carries the language that suffix came from; the video
 	// row carries none.
-	if got := item.Files[1]; got.SubLang != "SC" || got.SubLangTag != "zh-Hans" || got.SubLangSource != "release" {
-		t.Fatalf("subtitle language facts = %q/%q/%q, want SC/zh-Hans/release", got.SubLang, got.SubLangTag, got.SubLangSource)
+	if got := item.Files[1]; got.SubLang != "SC" || got.SubLangTag != "zh-Hans" || got.SubLangSource != "file" {
+		t.Fatalf("subtitle language facts = %q/%q/%q, want SC/zh-Hans/file", got.SubLang, got.SubLangTag, got.SubLangSource)
 	}
 	if got := item.Files[0]; got.SubLang != "" || got.SubLangTag != "" || got.SubLangSource != "" {
 		t.Fatalf("a video row carries no subtitle language: %+v", got)

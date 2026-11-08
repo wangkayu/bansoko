@@ -202,10 +202,12 @@ func TestManifestSubtitleFactsReachNamingContext(t *testing.T) {
 	if ctx.RenderedTarget == nil {
 		t.Fatalf("subtitle naming context did not render: %+v", ctx)
 	}
-	// The real manifest projection reaches the naming template with its exact file kind and size, and the resolver fills subtitle format/language.
+	// The real manifest projection reaches the naming template with its exact
+	// file kind and size, and the resolver normalizes the manifest language
+	// with the reltitle vocabulary (zh-Hans stays zh-Hans, not und).
 	effective.Rules.Naming.Tv.VideoFilenameTemplate = "${file.kind}|${file.size}|${file.sub.format}|${file.sub.lang}|${file.ext}"
 	ctx = renderPreviewFileForName(item, release, effective, "Preview Show", SourceEvaluationInput{GroupName: "RealGroup"}, testRules(), files[1].Filename, files[1].MediaKind, files[1].SizeBytes, release.FrozenEpisode, false, false)
-	if ctx.RenderedTarget == nil || *ctx.RenderedTarget != "/media/TV/Preview Show (2025)/Season 01/subtitle|20|ass|und|ass" {
+	if ctx.RenderedTarget == nil || *ctx.RenderedTarget != "/media/TV/Preview Show (2025)/Season 01/subtitle|20|ass|zh-Hans|ass" {
 		t.Fatalf("manifest subtitle facts did not reach naming render: target=%v result=%+v", ctx.RenderedTarget, ctx)
 	}
 }
@@ -290,9 +292,9 @@ func TestPreviewFilesForManifestUnknownVideoFollowsTheRoute(t *testing.T) {
 	}
 	// The subtitle follows the video: it lands beside it under the video's
 	// basename, with the subtitle suffix and its own extension (MF design 4a),
-	// not under its own name. The default suffix is sub.lang_tag: "zh" is not
-	// a reltitle tag, so the release's SC (zh-Hans) stands.
-	if !routed[1].Included || routed[1].RenderedTarget == nil || *routed[1].RenderedTarget != "/media/TV/Preview Show (2025)/Extras/special.zh-Hans.ass" {
+	// not under its own name. The default suffix is sub.lang_tag: the file's
+	// "zh" tag reads ZH, whose tag is zh.
+	if !routed[1].Included || routed[1].RenderedTarget == nil || *routed[1].RenderedTarget != "/media/TV/Preview Show (2025)/Extras/special.zh.ass" {
 		t.Fatalf("its subtitle follows it as an unknown file: %+v", routed[1])
 	}
 
@@ -435,8 +437,8 @@ func TestPreviewManifestBindsSubtitleBesideItsVideo(t *testing.T) {
 	}
 	videoTarget := *results[0].RenderedTarget
 	// The video's basename plus the subtitle suffix the default rules render
-	// (sub.lang_tag: the release's SC, as "zh-Hans" is no reltitle tag) plus
-	// the subtitle's own extension.
+	// (sub.lang_tag: the file's own "zh-Hans" tag reads SC, whose tag is
+	// zh-Hans) plus the subtitle's own extension.
 	want := strings.TrimSuffix(videoTarget, path.Ext(videoTarget)) + ".zh-Hans.ass"
 	got := ""
 	if results[1].RenderedTarget != nil {
