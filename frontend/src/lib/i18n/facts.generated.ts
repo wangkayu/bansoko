@@ -173,6 +173,44 @@ export const factsCopy = {
       label: "文件名",
       description: "采集值：原始完整文件名。",
     },
+    rt: {
+      codec: {
+        label: "文件 reltitle 编码",
+        description: "解析值：reltitle 从文件名读出的视频编码。",
+      },
+      resolution: {
+        label: "文件 reltitle 分辨率",
+        description: "解析值：reltitle 从文件名读出的分辨率。",
+      },
+      source: {
+        label: "文件 reltitle 片源",
+        description: "解析值：reltitle 从文件名读出的片源类型。",
+      },
+      sub_flag: {
+        label: "文件 reltitle 字幕方式标志",
+        description: "解析值：reltitle 从文件名读出的字幕方式标志（soft、hard、ex），多个用 + 连接；文件名没有明确的字幕方式时为空。",
+      },
+      sub_lang: {
+        label: "文件 reltitle 字幕语言",
+        description: "解析值：reltitle 从文件名读出的字幕语言，多个用 + 连接。",
+      },
+      subgroup: {
+        label: "文件 reltitle 字幕组",
+        description: "解析值：reltitle 从文件名读出的字幕组。",
+      },
+      title: {
+        label: "文件 reltitle 标题",
+        description: "解析值：reltitle 从文件名读出的作品标题。",
+      },
+      uncensored: {
+        label: "文件 reltitle 无修正",
+        description: "解析值：文件名标有无修正（UNCENSORED）时为是。",
+      },
+      version: {
+        label: "文件 reltitle Rev",
+        description: "解析值：reltitle 从文件名读出的 Rev，例如 v2；文件名没有时为空。",
+      },
+    },
     size: {
       label: "文件大小",
       description: "采集值：文件字节数。",
@@ -647,6 +685,44 @@ export const enFactsCopy = {
     name: {
       label: "File name",
       description: "Collected: Original full file name.",
+    },
+    rt: {
+      codec: {
+        label: "File reltitle Codec",
+        description: "Parsed: Video codec reltitle read from the file name.",
+      },
+      resolution: {
+        label: "File reltitle Resolution",
+        description: "Parsed: Resolution reltitle read from the file name.",
+      },
+      source: {
+        label: "File reltitle Source",
+        description: "Parsed: Source type reltitle read from the file name.",
+      },
+      sub_flag: {
+        label: "File reltitle Subtitle flag",
+        description: "Parsed: Subtitle mode flag reltitle read from the file name (soft, hard, ex); several join with +. Empty when the file name names none explicitly.",
+      },
+      sub_lang: {
+        label: "File reltitle Subtitle language",
+        description: "Parsed: Subtitle language reltitle read from the file name; several join with +.",
+      },
+      subgroup: {
+        label: "File reltitle Group",
+        description: "Parsed: Group reltitle read from the file name.",
+      },
+      title: {
+        label: "File reltitle Title",
+        description: "Parsed: Title reltitle read from the file name.",
+      },
+      uncensored: {
+        label: "File reltitle Uncensored",
+        description: "Parsed: Yes when the file name is marked uncensored (UNCENSORED).",
+      },
+      version: {
+        label: "File reltitle Rev",
+        description: "Parsed: The Rev reltitle read from the file name, such as v2. Empty when the file name has none.",
+      },
     },
     size: {
       label: "File size",

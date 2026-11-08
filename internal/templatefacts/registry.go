@@ -753,33 +753,56 @@ var systemFacts = []Fact{
 		sampleRelease, func(f *FactSet) any { return f.Taker.Title }),
 }
 
+// fileReltitleCopy is the file.rt catalog copy, keyed by field name. The fields
+// are rt.*'s own, read from the file name instead of the release title, and the
+// description says which source the value came from.
+var fileReltitleCopy = map[string]Text{
+	"title":      {"reltitle 从文件名读出的作品标题。", "Title reltitle read from the file name."},
+	"subgroup":   {"reltitle 从文件名读出的字幕组。", "Group reltitle read from the file name."},
+	"version":    {"reltitle 从文件名读出的 Rev，例如 v2；文件名没有时为空。", "The Rev reltitle read from the file name, such as v2. Empty when the file name has none."},
+	"resolution": {"reltitle 从文件名读出的分辨率。", "Resolution reltitle read from the file name."},
+	"source":     {"reltitle 从文件名读出的片源类型。", "Source type reltitle read from the file name."},
+	"codec":      {"reltitle 从文件名读出的视频编码。", "Video codec reltitle read from the file name."},
+	"sub_lang":   {"reltitle 从文件名读出的字幕语言，多个用 + 连接。", "Subtitle language reltitle read from the file name; several join with +."},
+	"sub_flag":   {"reltitle 从文件名读出的字幕方式标志（soft、hard、ex），多个用 + 连接；文件名没有明确的字幕方式时为空。", "Subtitle mode flag reltitle read from the file name (soft, hard, ex); several join with +. Empty when the file name names none explicitly."},
+	"uncensored": {"文件名标有无修正（UNCENSORED）时为是。", "Yes when the file name is marked uncensored (UNCENSORED)."},
+}
+
 // namespaceFacts registers the rt and anibt value namespaces, and the source
 // group identity namespaces, from the templatefacts field lists. Every field is
 // a nullable string (boolean rt fields: a nullable boolean): rt and anibt are nullable in every scenario that concerns
 // a release, and the source group identity fields are nullable in naming (the
 // scenario that reads them today). A reltitle field's value is the parser's
 // output; the tag dimensions and the group identity are stored values.
+//
+// The file root carries the file's own reltitle parse under file.rt.*: the same
+// fields as rt.*, read from the file name instead of the release title. The two
+// parses stay in separate namespaces so a template always names its source.
 func namespaceFacts() []Fact {
 	facts := []Fact{}
 	allRelease := scenarioAll | scenarioRelease
 	for _, namespace := range []struct {
-		root      string
-		label     Text
-		fields    []Field
+		root   string
+		label  Text
+		fields []Field
+		// texts overrides the fields' catalog copy by field name, for a
+		// namespace that reuses a field list under another root.
+		texts     map[string]Text
 		values    func(*FactSet) Values
 		scenarios Scenario
 		parsed    bool
 	}{
-		{RootRt, Text{"reltitle", "reltitle"}, ReltitleFields, func(f *FactSet) Values { return f.Rt }, allRelease, true},
-		{RootAnibt, Text{"AniBT", "AniBT"}, AniBTTagFields, func(f *FactSet) Values { return f.Anibt }, allRelease, false},
+		{RootRt, Text{"reltitle", "reltitle"}, ReltitleFields, nil, func(f *FactSet) Values { return f.Rt }, allRelease, true},
+		{"file.rt", Text{"文件 reltitle", "File reltitle"}, ReltitleFields, fileReltitleCopy, func(f *FactSet) Values { return f.FileRt }, allRelease, true},
+		{RootAnibt, Text{"AniBT", "AniBT"}, AniBTTagFields, nil, func(f *FactSet) Values { return f.Anibt }, allRelease, false},
 		// The source group identity is the subscription source's own identity,
 		// not a tag value: it shares the anibt root with the AniBT tag fields
 		// but each root's fields read null when the source kind does not match.
-		{RootAnibt, Text{"AniBT", "AniBT"}, AniBTSourceGroupFields, func(f *FactSet) Values { return f.Anibt }, ScenarioNaming, false},
-		{RootMikan, Text{"Mikan", "Mikan"}, MikanSourceGroupFields, func(f *FactSet) Values { return f.Mikan }, ScenarioNaming, false},
+		{RootAnibt, Text{"AniBT", "AniBT"}, AniBTSourceGroupFields, nil, func(f *FactSet) Values { return f.Anibt }, ScenarioNaming, false},
+		{RootMikan, Text{"Mikan", "Mikan"}, MikanSourceGroupFields, nil, func(f *FactSet) Values { return f.Mikan }, ScenarioNaming, false},
 	} {
 		for _, field := range namespace.fields {
-			field, values, scenarios := field, namespace.values, namespace.scenarios
+			field, values, scenarios, texts := field, namespace.values, namespace.scenarios, namespace.texts
 			kind, sample := TypeString, any(field.SampleValue)
 			get := func(f *FactSet) any { return values(f)[field.Key] }
 			if field.Type == TypeBoolean {
@@ -795,8 +818,12 @@ func namespaceFacts() []Fact {
 					return nil
 				}
 			}
+			description := field.Text
+			if texts != nil {
+				description = texts[field.Name]
+			}
 			r := fact(namespace.root+"."+field.Name, kind, PhaseRelease, scenarios, scenarios,
-				Text{namespace.label.ZH + " " + field.Label.ZH, namespace.label.EN + " " + field.Label.EN}, field.Text,
+				Text{namespace.label.ZH + " " + field.Label.ZH, namespace.label.EN + " " + field.Label.EN}, description,
 				sample, get)
 			if namespace.parsed {
 				r = r.parsed()

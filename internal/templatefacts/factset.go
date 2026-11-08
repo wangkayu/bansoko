@@ -32,10 +32,13 @@ type FactSet struct {
 	// the frozen user Vars output. Mikan carries only the origin RSS source's
 	// group identity (there is no Mikan tag namespace); the source's
 	// configured display group name is anime.group, not a namespace field.
-	Rt    Values
-	Anibt Values
-	Mikan Values
-	Vars  map[string]map[string]string
+	// Rt is the reltitle parse of the release title; FileRt is the separate
+	// reltitle parse of the file's own name. The two are never merged.
+	Rt     Values
+	FileRt Values
+	Anibt  Values
+	Mikan  Values
+	Vars   map[string]map[string]string
 }
 
 type AnimeFacts struct {

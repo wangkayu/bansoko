@@ -299,9 +299,12 @@ type RecognitionOutcome struct {
 type recognitionFile struct {
 	inspection inspection
 	kind       string
-	rt         templatefacts.Values
-	identity   episodeidentity.EpisodeIdentity
-	media      naming.MediaNamingFacts
+	// fileRt is the reltitle parse of the file's own name (the file.rt
+	// namespace). It is not the release parse: recognition has no release
+	// title, and rt.* stays empty in its renders.
+	fileRt   templatefacts.Values
+	identity episodeidentity.EpisodeIdentity
+	media    naming.MediaNamingFacts
 	// runtimeFactsErr blocks only this video and its bound subtitles. The raw
 	// tool error stays server-side; the row exposes a stable blocker code.
 	runtimeFactsErr error
@@ -484,16 +487,16 @@ func (s *Service) recognitionEntries(ctx context.Context, paths []string) ([]rec
 }
 
 // recognitionEvidence parses each file's own name: the episode identity of
-// every non-subtitle file, and the rt.* values of every file. A subtitle's
-// episode comes from its group's video; its own name supplies its rt values
-// (its sub_lang tag) and the subtitle facts the resolver derives from it.
+// every non-subtitle file, and the file.rt.* values of every file. A subtitle's
+// episode comes from its group's video; its own name supplies its file.rt
+// values (its sub_lang tag) and the subtitle facts the resolver derives from it.
 func recognitionEvidence(ctx context.Context, files []recognitionFile, selection parser.ParserSelection, offset int) error {
 	resolver := episodeidentity.NewResolver()
 	for index := range files {
 		name := files[index].inspection.detail.Entry.Name
 		stem := strings.TrimSuffix(name, filepath.Ext(name))
 		tags := reltitletags.Extract(stem)
-		files[index].rt = templatefacts.ReltitleValues(&tags)
+		files[index].fileRt = templatefacts.ReltitleValues(&tags)
 		if files[index].kind == filekinds.KindSubtitle {
 			continue
 		}
@@ -661,7 +664,6 @@ func recognitionRenderInput(plan *recognitionPlan, file recognitionFile, episode
 		ManagedAnimeID:   recognitionMatchID(match),
 		Season:           recognitionMatchSeason(match),
 		AnimeDraft:       recognitionAnimeDraft(match),
-		Rt:               file.rt,
 		Media:            file.media,
 		LoadRuntimeFacts: plan.request.LoadRuntimeFacts,
 	}
@@ -1180,7 +1182,7 @@ func (s *Service) PreviewRecognition(ctx context.Context, request RecognitionReq
 		if file.kind != filekinds.KindVideo {
 			continue
 		}
-		if title, ok := file.rt.Get("Title"); ok && title != "" {
+		if title, ok := file.fileRt.Get("Title"); ok && title != "" {
 			preview.TitleHint = title
 			break
 		}

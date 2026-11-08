@@ -1,11 +1,31 @@
 package naming
 
 import (
+	"path/filepath"
 	"strconv"
 	"strings"
 
+	"bansoko/internal/parser/reltitletags"
 	"bansoko/internal/templatefacts"
 )
+
+// FileReltitleValues is the reltitle parse of the file's own name, projected
+// onto the file.rt namespace. It reads only the file stem, never the release
+// title; a render without a file name has no file.rt values. The projection is
+// deliberately separate from rt.*: the release parse is never copied into the
+// file namespace and the file parse never into rt.*, so a template always
+// names the source it wants.
+func FileReltitleValues(file FileNamingFacts) templatefacts.Values {
+	stem := strings.TrimSpace(file.Basename)
+	if stem == "" {
+		stem = strings.TrimSpace(strings.TrimSuffix(file.OriginalName, filepath.Ext(file.OriginalName)))
+	}
+	if stem == "" {
+		return nil
+	}
+	tags := reltitletags.Extract(stem)
+	return templatefacts.ReltitleValues(&tags)
+}
 
 // UnifiedFacts projects a resolved naming context onto the unified fact set
 // the naming language renders. It reads only values the context already
@@ -84,11 +104,12 @@ func UnifiedFacts(ctx NamingContext) templatefacts.FactSet {
 				Forced: subtitle.Flags.Forced, SDH: subtitle.Flags.SDH, Commentary: subtitle.Flags.Commentary, Default: subtitle.Flags.Default,
 			},
 		},
-		Info:  templatefacts.InfoFacts{HDR: ctx.File.Media.HDR},
-		Rt:    ctx.Rt,
-		Anibt: anibt,
-		Mikan: mikanGroup,
-		Vars:  ctx.Vars,
+		Info:   templatefacts.InfoFacts{HDR: ctx.File.Media.HDR},
+		Rt:     ctx.Rt,
+		FileRt: FileReltitleValues(ctx.File),
+		Anibt:  anibt,
+		Mikan:  mikanGroup,
+		Vars:   ctx.Vars,
 	}
 }
 

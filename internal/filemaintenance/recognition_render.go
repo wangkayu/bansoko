@@ -11,16 +11,17 @@ import (
 	"bansoko/internal/namingvars"
 	namingvarspersistence "bansoko/internal/namingvars/adapter/persistence"
 	"bansoko/internal/postprocessing/naming"
-	"bansoko/internal/templatefacts"
 )
 
 // File manager recognition: the naming rules one-shot step two renders with,
 // over the facts of one local file. It is the naming core under a different
 // input adapter: the episode comes from the caller's own parser evidence over
-// the file name, and the release-level rt.* values come from parsing that same
-// name. Nothing here reads a placement, an artifact or a stored naming rule:
-// the rules are the operation's own, and the match (when the user chose one)
-// supplies only the anime facts the rules ask for.
+// the file name, and the file.rt.* values come from parsing that same name.
+// There is no release title here, so rt.* stays empty: the file's own parse has
+// its own namespace and never stands in for the release parse. Nothing here
+// reads a placement, an artifact or a stored naming rule: the rules are the
+// operation's own, and the match (when the user chose one) supplies only the
+// anime facts the rules ask for.
 //
 // The rendered directory is absolute, exactly as one-shot renders it: the
 // selected folder only says where the files come from. Whether that directory
@@ -107,8 +108,6 @@ type RecognitionRenderInput struct {
 	// "manual".
 	EpisodeSource string
 
-	// Rt is the release-level namespace parsed from the file's own name.
-	Rt templatefacts.Values
 	// Media is the selected video's current MediaInfo result. Bound subtitles
 	// receive their video's value; the zero value is used before explicit loading.
 	Media naming.MediaNamingFacts
@@ -287,9 +286,6 @@ func (r *NamingTargetRenderer) recognitionContext(ctx context.Context, in Recogn
 			NumberEnd: in.EpisodeEnd,
 			Source:    source,
 		}
-	}
-	if in.Rt != nil {
-		namingContext = naming.WithTemplateFacts(namingContext, templatefacts.Facts{Reltitle: in.Rt.Clone()})
 	}
 	if in.ManagedAnimeID != "" {
 		anime, err := r.recognitionAnimeFacts(ctx, in.ManagedAnimeID, in.Season, in.AnimeDraft)
