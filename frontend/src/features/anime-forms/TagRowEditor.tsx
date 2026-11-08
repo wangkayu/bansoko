@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowLeftRight, Ban, Check, X, type LucideIcon } from "lucide-react";
+import { ArrowLeftRight, Ban, Check, ChevronDown, X, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { TagFilterRow } from "../../lib/api/client";
 import { Button, Input, Segmented, Select, type SelectOption } from "../../ui/base";
@@ -77,6 +77,7 @@ export function TagRowEditor({
   const [addDimension, setAddDimension] = useState<string>(vocabulary.defaultAddDimension);
   const [addValue, setAddValue] = useState("");
   const [addError, setAddError] = useState<string>();
+  const [candidatesOpen, setCandidatesOpen] = useState(true);
   const disabled = readOnly || !onChange;
   const dimension = vocabulary.dimensions.includes(addDimension) ? addDimension : vocabulary.defaultAddDimension;
   const selected = rowTags(value);
@@ -184,7 +185,19 @@ export function TagRowEditor({
             <span className="tw:text-xs tw:text-muted-foreground">{t("anibtTags.roleHint")}</span>
           </div>
 
-          {groups.map(({ group, tags }) => (
+          {groups.length > 0 && (
+            <button
+              type="button"
+              aria-expanded={candidatesOpen}
+              onClick={() => setCandidatesOpen((open) => !open)}
+              className="tw:inline-flex tw:w-fit tw:items-center tw:gap-1 tw:text-xs tw:text-muted-foreground tw:transition-colors tw:hover:text-foreground"
+            >
+              <ChevronDown className={cn("tw:size-3 tw:transition-transform", !candidatesOpen && "tw:-rotate-90")} aria-hidden="true" />
+              {candidatesOpen ? t("anibtTags.hideCandidates") : t("anibtTags.showCandidates")}
+            </button>
+          )}
+
+          {candidatesOpen && groups.map(({ group, tags }) => (
             <div key={group} className={ROW_GRID}>
               <span className="tw:pt-0.5 tw:text-xs tw:text-muted-foreground">{vocabulary.dimensionLabel(group)}</span>
               <div role="group" aria-label={vocabulary.groupAria(vocabulary.dimensionLabel(group))} className="tw:flex tw:flex-wrap tw:gap-1.5">

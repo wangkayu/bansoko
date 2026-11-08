@@ -140,8 +140,9 @@ func TestDefaultRulesRenderSampleTV(t *testing.T) {
 		{"[FLsnow][Precure][36][TVer_1080p].chs&jpn.ass", "zh-Hans", "JPN+SC|JPN,SC|zh-Hans|file"},
 		{"[FLsnow][Precure][36][TVer_1080p].cht&jpn.ass", "zh-Hant", "JPN+TC|JPN,TC|zh-Hant|file"},
 		{"Show - 07.eng.ass", "en", "ENG|ENG|en|file"},
-		// zh-Hans is not in the reltitle vocabulary: the release value stands.
-		{"Show - 07.zh-Hans.ass", "zh-Hans", "SC|SC|zh-Hans|release"},
+		// zh-Hans is read from the subtitle's own tag, so the file value
+		// wins over the release's rt.sub_lang.
+		{"Show - 07.zh-Hans.ass", "zh-Hans", "SC|SC|zh-Hans|file"},
 		{"Show - 07.ass", "zh-Hans", "SC|SC|zh-Hans|release"},
 	} {
 		subtitle := ctx

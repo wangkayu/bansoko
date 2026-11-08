@@ -23,6 +23,8 @@ export const anibtTagsCopy = {
   addDimension: "标签类型",
   addValue: "标签值",
   addValuePlaceholder: "例如 HEVC",
+  showCandidates: "展开候选",
+  hideCandidates: "收起候选",
   add: "添加",
   valueEmpty: "标签值不能为空",
   valueTooLong: "标签值过长",

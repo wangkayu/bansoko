@@ -88,59 +88,6 @@ var compiledLanguageDefinitions = func() []struct {
 	return compiled
 }()
 
-// languageTokenRule maps one subtitle suffix token to a language code via a
-// case-insensitive full-match pattern; the code's BCP 47 tag comes from the
-// shared table (templatefacts.LanguageTag). Unknown tokens resolve to "und"
-// (there is no UNK-to-zh-CN default).
-type languageTokenRule struct {
-	Pattern string
-	Code    string
-}
-
-var languageTokenRules = []languageTokenRule{
-	{Pattern: `(?i)^(chst|简繁|简繁内封)$`, Code: "sc"},
-	{Pattern: `(?i)^(jpchst|简繁日|简繁日内封)$`, Code: "jpsc"},
-	{Pattern: `(?i)^(jpsc|简日|简日双语)$`, Code: "jpsc"},
-	{Pattern: `(?i)^(jptc|繁日|繁日双语)$`, Code: "jptc"},
-	{Pattern: `(?i)^(chs|gb|sc|zh[-_.]?(cn|hans)|简中|简体|簡中|简体中文)$`, Code: "sc"},
-	{Pattern: `(?i)^(cht|big5|tc|zh[-_.]?(tw|hant|hk)|繁中|繁体|繁體|繁體中文)$`, Code: "tc"},
-	{Pattern: `(?i)^(jpn|ja|jp|日语|日語)$`, Code: "jpn"},
-	{Pattern: `(?i)^(eng|en|english|en[-_.]?us)$`, Code: "eng"},
-}
-
-var compiledLanguageTokenRules = func() []struct {
-	rule    languageTokenRule
-	pattern *regexp.Regexp
-} {
-	compiled := make([]struct {
-		rule    languageTokenRule
-		pattern *regexp.Regexp
-	}, 0, len(languageTokenRules))
-	for _, rule := range languageTokenRules {
-		compiled = append(compiled, struct {
-			rule    languageTokenRule
-			pattern *regexp.Regexp
-		}{rule: rule, pattern: regexp.MustCompile(rule.Pattern)})
-	}
-	return compiled
-}()
-
-// matchLanguageToken resolves one subtitle suffix token to a BCP47 tag. The
-// second return value reports the matched rule index, or -1 for und.
-func matchLanguageToken(token string) (string, int) {
-	token = strings.TrimSpace(token)
-	if token == "" {
-		return "", -1
-	}
-	for index, entry := range compiledLanguageTokenRules {
-		if entry.pattern.MatchString(token) {
-			tag, _ := templatefacts.LanguageTag(entry.rule.Code)
-			return tag, index
-		}
-	}
-	return "und", -1
-}
-
 // languageValue is the parsed.language output. Languages carries the complete
 // structured language set (title-parser JSON shape: combined embedded sets are
 // several codes, never a synthesized name); Code is the normalized primary

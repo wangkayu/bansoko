@@ -115,6 +115,24 @@ async function mockSettingsReads(page: Page) {
       }),
     ),
   );
+  // 标题解析行的候选值来自这份固定词表；默认值两行为空时也照常展示。
+  await page.route("**/api/v1/config/tag-filters/title-vocabulary", (route) =>
+    getOnly(route, () =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          implementation: "reltitle@fixture",
+          config_digest: "lexicon:sha256:fixture",
+          dimensions: [
+            { dimension: "resolution", values: ["2160p", "1080p", "720p", "480p"] },
+            { dimension: "source_type", values: ["WEB-DL", "WEBRip", "BDRip"] },
+            { dimension: "sub_lang", values: ["SC", "TC", "JPSC", "ENG"] },
+          ],
+        }),
+      }),
+    ),
+  );
   await page.route("**/api/v1/file-maintenance/replacement/default", (route) =>
     getOnly(route, () =>
       route.fulfill({
@@ -472,7 +490,7 @@ test.describe("settings fixture coverage", () => {
     await expect(dialog.getByText("字幕组名单", { exact: true })).toBeVisible();
   });
 
-  test("下载与入库 / 订阅数量与对齐 / 默认规则 可达并渲染 mock 数据", async ({ page }) => {
+  test("下载与入库 / 订阅数量与对齐 / 默认规则 可达并渲染 mock 数据", async ({ page }, testInfo) => {
     test.skip(isMobile(page), "sidebar 链接交互是桌面形态，手机另有两级导航用例");
     await openSettings(page, "/#/settings/download");
     const dialog = page.getByRole("dialog");
@@ -491,6 +509,28 @@ test.describe("settings fixture coverage", () => {
     // sr-only 分区标题与页面 h2 同名，取第一个；解析规则卡来自 mock parser section。
     await expect(dialog.getByRole("heading", { name: "默认规则" }).first()).toBeVisible();
     await expect(dialog.getByRole("heading", { name: "解析规则" })).toBeVisible();
+
+    // 标签过滤卡的分区编辑弹窗里，标题解析行展示词表的固定候选，与是否采集到标签无关。
+    const tagCard = dialog
+      .locator("li.settings-shared-card")
+      .filter({ has: page.getByRole("heading", { name: "标签过滤", exact: true }) });
+    await expect(tagCard).toBeVisible();
+    await tagCard.getByRole("button", { name: "编辑" }).click();
+    const editDialog = page.getByRole("dialog", { name: "编辑 · 标签过滤" });
+    await expect(editDialog).toBeVisible();
+    const titleRow = editDialog.locator('section[aria-label="标题解析"]');
+    await expect(titleRow).toBeVisible();
+    for (const candidate of ["2160p", "720p", "WEBRip", "JPSC"]) {
+      await expect(titleRow.getByRole("button", { name: candidate })).toBeVisible();
+    }
+    // 候选增多不改变弹窗宽度：行不越出弹窗，也没有横向溢出。
+    const [dialogBox, rowBox] = await Promise.all([editDialog.boundingBox(), titleRow.boundingBox()]);
+    if (!dialogBox || !rowBox) throw new Error("tag filter row has no box");
+    expect(rowBox.x).toBeGreaterThanOrEqual(dialogBox.x);
+    expect(rowBox.x + rowBox.width).toBeLessThanOrEqual(dialogBox.x + dialogBox.width + 1);
+    expect(await titleRow.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+    await titleRow.scrollIntoViewIfNeeded();
+    await editDialog.screenshot({ path: testInfo.outputPath("rules-tag-filter-candidates.png") });
   });
 
   test("语言大卡拖动预览保持原卡片尺寸", async ({ page }, testInfo) => {

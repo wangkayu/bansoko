@@ -42,6 +42,19 @@ describe("TagRowEditor（添加型）", () => {
     expect(screen.queryByRole("button", { name: "HEVC" })).not.toBeInTheDocument();
   });
 
+  it("候选默认展开，可以收起再展开", () => {
+    render(<Harness initial={{ require: [], exclude: [] }} onRow={vi.fn()} />);
+    const collapse = screen.getByRole("button", { name: t("anibtTags.hideCandidates") });
+    expect(collapse).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "CHS" })).toBeInTheDocument();
+    fireEvent.click(collapse);
+    expect(screen.queryByRole("button", { name: "CHS" })).not.toBeInTheDocument();
+    const expand = screen.getByRole("button", { name: t("anibtTags.showCandidates") });
+    expect(expand).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(expand);
+    expect(screen.getByRole("button", { name: "CHS" })).toBeInTheDocument();
+  });
+
   it("已添加的标签可以切换角色和移除，同一标签不会同时在两个列表里", () => {
     const onRow = vi.fn();
     render(<Harness initial={{ require: ["language:CHS"], exclude: ["codec:HEVC"] }} onRow={onRow} />);
@@ -89,6 +102,9 @@ describe("TagRowEditor（添加型）", () => {
     const onChange = vi.fn();
     render(<TagRowEditor vocabulary={vocabulary} value={{ require: ["resolution:1080p"], exclude: [] }} onChange={onChange} />);
     expect(screen.queryByRole("textbox", { name: t("anibtTags.addValue") })).not.toBeInTheDocument();
+    // The vocabulary's fixed values are the candidates; the selected one is no longer offered.
+    expect(screen.getByRole("button", { name: "2160p" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "1080p" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("radio", { name: t("anibtTags.role.exclude") }));
     fireEvent.click(screen.getByRole("button", { name: t("anibtTags.add") }));
     expect(onChange).toHaveBeenLastCalledWith({ require: ["resolution:1080p"], exclude: ["resolution:2160p"] });

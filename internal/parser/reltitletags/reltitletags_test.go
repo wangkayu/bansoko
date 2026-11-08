@@ -51,7 +51,7 @@ func TestExtractNeverCarriesEpisodeIdentity(t *testing.T) {
 			t.Fatalf("episode/identity attribute leaked: %v", got.Tags)
 		}
 	}
-	if want := []string{"title:Show", "group:Group", "version:v2"}; !reflect.DeepEqual(got.ValueTags, want) {
+	if want := []string{"title:Show", "group:Group", "version:V2"}; !reflect.DeepEqual(got.ValueTags, want) {
 		t.Fatalf("value tags = %v, want %v", got.ValueTags, want)
 	}
 }

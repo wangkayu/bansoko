@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"bansoko/internal/parser/reltitletags"
+	"bansoko/internal/templatefacts"
 )
 
 const subtitleResolverKey = "parsed.subtitle"
@@ -29,8 +30,62 @@ func (v subtitleValue) String() string {
 // subtitleFormats are the normalized standalone subtitle extensions.
 var subtitleFormats = map[string]bool{"ass": true, "ssa": true, "srt": true, "vtt": true}
 
-// subtitleTokenSplitter splits one original suffix into qualifier tokens.
-var subtitleTokenSplitter = regexp.MustCompile(`[_\-&+．.]`)
+// subtitleLanguageTags maps one subtitle suffix token to its BCP 47 tags
+// through reltitle's sub_lang vocabulary — the same dictionary the release
+// title is parsed with. A token may carry several languages (`简繁` is SC and
+// TC), and a code without a BCP 47 tag is left out; a spelling the dictionary
+// does not read has no language.
+func subtitleLanguageTags(token string) []string {
+	var tags []string
+	for _, code := range reltitletags.SubtitleLanguages(token) {
+		if tag, ok := templatefacts.LanguageTag(code); ok {
+			tags = append(tags, tag)
+		}
+	}
+	return tags
+}
+
+// subtitleTokenSplitter splits one original suffix into chunks at the
+// separators that always delimit qualifiers. A hyphen stays inside a chunk:
+// it may join a BCP 47 tag, and subtitleTokens decides whether it separates
+// languages instead.
+var subtitleTokenSplitter = regexp.MustCompile(`[_&+．.]`)
+
+// subtitleTokens splits one original suffix into qualifier tokens. A
+// hyphenated chunk stays one token when reltitle reads the whole as a
+// language and at least one half is not a language on its own — the shape of
+// a BCP 47 tag (`zh-Hans`, `zh-CN`, `en-US`). When every half is a language
+// itself (`chs-jpn`, `sc-tc`) the hyphen lists languages, so the halves stay
+// separate tokens in their original order.
+func subtitleTokens(suffix string) []string {
+	var tokens []string
+	for _, chunk := range subtitleTokenSplitter.Split(suffix, -1) {
+		chunk = strings.TrimSpace(chunk)
+		if chunk == "" {
+			continue
+		}
+		parts := strings.Split(chunk, "-")
+		if len(parts) > 1 && len(reltitletags.SubtitleLanguages(chunk)) > 0 {
+			allPartsRead := true
+			for _, part := range parts {
+				if len(reltitletags.SubtitleLanguages(strings.TrimSpace(part))) == 0 {
+					allPartsRead = false
+					break
+				}
+			}
+			if !allPartsRead {
+				tokens = append(tokens, chunk)
+				continue
+			}
+		}
+		for _, part := range parts {
+			if part = strings.TrimSpace(part); part != "" {
+				tokens = append(tokens, part)
+			}
+		}
+	}
+	return tokens
+}
 
 // subtitleFlagTokens maps flag tokens (case-insensitive contains) to flags.
 var subtitleFlagTokens = []struct {
@@ -89,11 +144,7 @@ func (subtitleResolver) Resolve(input ResolverInput) ResolverResult {
 			Captures:    map[string]string{"suffix": suffix},
 		})
 		seen := map[string]bool{}
-		for tokenIndex, token := range subtitleTokenSplitter.Split(suffix, -1) {
-			token = strings.TrimSpace(token)
-			if token == "" {
-				continue
-			}
+		for tokenIndex, token := range subtitleTokens(suffix) {
 			lower := strings.ToLower(token)
 			isFlag := false
 			for _, flag := range subtitleFlagTokens {
@@ -112,13 +163,19 @@ func (subtitleResolver) Resolve(input ResolverInput) ResolverResult {
 				})
 				continue
 			}
-			bcp47, ruleIndex := matchLanguageToken(token)
-			if !seen[bcp47] {
-				seen[bcp47] = true
-				value.Languages = append(value.Languages, bcp47)
+			tags := subtitleLanguageTags(token)
+			unknown := len(tags) == 0
+			if unknown {
+				tags = []string{"und"}
+			}
+			for _, tag := range tags {
+				if !seen[tag] {
+					seen[tag] = true
+					value.Languages = append(value.Languages, tag)
+				}
 			}
 			ruleID := fmt.Sprintf("subtitle_language_token_%d", tokenIndex)
-			if ruleIndex < 0 {
+			if unknown {
 				ruleID = fmt.Sprintf("subtitle_language_token_%d_und", tokenIndex)
 			}
 			result.Evidence = append(result.Evidence, ResolverEvidence{
@@ -126,7 +183,7 @@ func (subtitleResolver) Resolve(input ResolverInput) ResolverResult {
 				RuleID:      ruleID,
 				RuleIndex:   tokenIndex,
 				InputPath:   "File.OriginalName",
-				Captures:    map[string]string{"token": token, "bcp47": bcp47},
+				Captures:    map[string]string{"token": token, "bcp47": strings.Join(tags, "+")},
 			})
 		}
 	}

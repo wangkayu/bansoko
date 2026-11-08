@@ -8,8 +8,10 @@ import { canonicalTitleTag, titleDimensionLabel, titleTagFullLabel, titleTagValu
 // (features/anime-forms/TagRowEditor):
 // - AniBT row: candidates = preset values + selected / observed values the presets lack
 //   (marked "new"), with manual input allowed;
-// - title-parsing row: candidates = selected + values observed for this anime; adding picks
-//   from the reltitle vocabulary, values outside it cannot be entered.
+// - title-parsing row: candidates = the fixed values of the reltitle vocabulary for every
+//   dimension, so the same rows show in the default settings and in every anime; an anime's
+//   observed tags only add their occurrence counts (they are a subset of the vocabulary), and
+//   values outside it cannot be entered.
 
 export type TagRowVocabulary = {
   dimensions: readonly string[];
@@ -54,12 +56,12 @@ export const ANIBT_ROW_VOCABULARY: TagRowVocabulary = {
   groupAria: (dimension) => t("anibtTags.groupAria", { dimension }),
 };
 
-/** The title-parsing row's vocabulary: both the kinds and the selectable values come from the server's reltitle vocabulary. */
+/** The title-parsing row's vocabulary: both the kinds and the candidate values come from the server's reltitle vocabulary, so the row shows the same fixed candidates everywhere. */
 export function titleRowVocabulary(vocabulary: TitleTagVocabulary | undefined): TagRowVocabulary {
   const dimensions = Array.isArray(vocabulary?.dimensions) ? vocabulary.dimensions : [];
   return {
     dimensions: dimensions.map((entry) => entry.dimension),
-    presets: () => [],
+    presets: (dimension) => titleVocabularyValues(vocabulary, dimension),
     dimensionLabel: titleDimensionLabel,
     valueLabel: titleTagValueLabel,
     fullLabel: titleTagFullLabel,

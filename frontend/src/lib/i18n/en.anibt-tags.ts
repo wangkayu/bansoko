@@ -25,6 +25,8 @@ export const enAnibtTagsCopy = {
   addDimension: "Tag type",
   addValue: "Tag value",
   addValuePlaceholder: "e.g. HEVC",
+  showCandidates: "Show candidates",
+  hideCandidates: "Hide candidates",
   add: "Add",
   valueEmpty: "Tag value cannot be empty",
   valueTooLong: "Tag value is too long",

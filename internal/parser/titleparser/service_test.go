@@ -75,7 +75,7 @@ func channelFixture(t *testing.T, version string, artifact []byte) (*httptest.Se
 	digest := sha256.Sum256(artifact)
 	document := map[string]any{
 		"schema_version": rtruntime.ChannelSchema,
-		"line":           "0.0",
+		"line":           rtruntime.LineOf(version),
 		"protocol":       rtruntime.Protocol,
 		"version":        version,
 		"sequence":       9,
@@ -105,7 +105,7 @@ func channelFixture(t *testing.T, version string, artifact []byte) (*httptest.Se
 		}
 	}))
 	t.Cleanup(server.Close)
-	channel, err := rtruntime.DecodeChannel(body, "0.0")
+	channel, err := rtruntime.DecodeChannel(body, rtruntime.LineOf(version))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestStatusOfTheBuiltinParser(t *testing.T) {
 	if status.Source != SourceBuiltin || status.Version != reltitletags.ImplementationVersion {
 		t.Fatalf("identity = %+v", status)
 	}
-	if status.Line != "0.0" || status.ConfigDigest != "lexicon:sha256:builtin" {
+	if status.Line != "0.1" || status.ConfigDigest != "lexicon:sha256:builtin" {
 		t.Fatalf("line/digest = %+v", status)
 	}
 	if status.BinaryPath != filepath.Join(service.configRoot, "rt", "reltitle") {
@@ -227,7 +227,7 @@ func TestCheckReportsTheChannelAndNewer(t *testing.T) {
 
 func TestCheckFailureKeepsTheLastSuccessfulAnswer(t *testing.T) {
 	parser := newFakeParser()
-	_, _, fetch, update := channelFixture(t, "0.0.4", []byte("artifact"))
+	_, _, fetch, update := channelFixture(t, "0.1.0", []byte("artifact"))
 	service := newService(t, parser, fetch, update, SourceBuiltin)
 	if _, err := service.Check(context.Background()); err != nil {
 		t.Fatalf("first check: %v", err)
@@ -241,7 +241,7 @@ func TestCheckFailureKeepsTheLastSuccessfulAnswer(t *testing.T) {
 	if !errors.Is(err, ErrChannel) {
 		t.Fatalf("check error = %v, want ErrChannel", err)
 	}
-	if status.Channel == nil || status.Channel.Version != "0.0.4" || status.Channel.ReleaseURL == "" {
+	if status.Channel == nil || status.Channel.Version != "0.1.0" || status.Channel.ReleaseURL == "" {
 		t.Fatalf("the last successful answer was discarded: %+v", status.Channel)
 	}
 	if status.Channel.Error != "channel is down" {
@@ -253,7 +253,7 @@ func TestCheckFailureKeepsTheLastSuccessfulAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("status: %v", err)
 	}
-	if read.Channel == nil || read.Channel.Version != "0.0.4" || read.Channel.Error != "channel is down" {
+	if read.Channel == nil || read.Channel.Version != "0.1.0" || read.Channel.Error != "channel is down" {
 		t.Fatalf("status = %+v", read.Channel)
 	}
 }
@@ -297,7 +297,7 @@ func TestInstallAdoptsANewerBuild(t *testing.T) {
 	if status.Source != SourceChannel {
 		t.Fatalf("source = %q, want channel", status.Source)
 	}
-	if status.Version != "reltitle@"+above || status.Line != "0.0" {
+	if status.Version != "reltitle@"+above || status.Line != "0.1" {
 		t.Fatalf("version/line = %+v", status)
 	}
 	if status.Note != "" {
@@ -316,7 +316,7 @@ func TestInstallAdoptsANewerBuild(t *testing.T) {
 
 func TestInstallWithoutANewerBuildStatesTheReason(t *testing.T) {
 	parser := newFakeParser()
-	_, _, fetch, update := channelFixture(t, "0.0.3", []byte("artifact"))
+	_, _, fetch, update := channelFixture(t, "0.1.0", []byte("artifact"))
 	service := newService(t, parser, fetch, update, SourceBuiltin)
 
 	status, err := service.Install(context.Background())
@@ -329,7 +329,7 @@ func TestInstallWithoutANewerBuildStatesTheReason(t *testing.T) {
 	if status.Message == "" || !strings.Contains(status.Message, "not newer") {
 		t.Fatalf("message = %q", status.Message)
 	}
-	if status.Channel == nil || status.Channel.Version != "0.0.3" || status.Channel.Newer {
+	if status.Channel == nil || status.Channel.Version != "0.1.0" || status.Channel.Newer {
 		t.Fatalf("channel = %+v", status.Channel)
 	}
 	if _, err := os.Stat(rtruntime.BinaryPath(service.configRoot)); !os.IsNotExist(err) {

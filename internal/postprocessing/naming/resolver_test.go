@@ -1,6 +1,7 @@
 package naming
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -361,6 +362,44 @@ func TestSubtitleResolverMultiLanguageDedup(t *testing.T) {
 	value := result.Value.(subtitleValue)
 	if len(value.Languages) != 2 || value.Languages[0] != "zh-Hans" || value.Languages[1] != "zh-Hant" {
 		t.Fatalf("languages = %v, want [zh-Hans zh-Hant]", value.Languages)
+	}
+}
+
+// TestSubtitleResolverKeepsBCP47TagsTogether pins that a hyphen inside a BCP 47
+// tag does not split it into words. The tag is one token and reaches file.sub.*
+// as its full language — the same value sub.* reads from the whole suffix.
+func TestSubtitleResolverKeepsBCP47TagsTogether(t *testing.T) {
+	for _, tc := range []struct{ suffix, want string }{
+		{"zh-Hans", "zh-Hans"},
+		{"zh-CN", "zh-Hans"},
+		{"zh-Hant", "zh-Hant"},
+		{"zh-TW", "zh-Hant"},
+		{"en-US", "en"},
+	} {
+		input := subtitleInput("Show - 01."+tc.suffix+".ass", "Show - 01."+tc.suffix, "ass", "subtitle")
+		value := resolveSingle(t, subtitleResolver{}, input).Value.(subtitleValue)
+		if len(value.Languages) != 1 || value.Languages[0] != tc.want || value.PrimaryLanguage != tc.want {
+			t.Fatalf("%q: languages = %v primary = %q, want [%s]", tc.suffix, value.Languages, value.PrimaryLanguage, tc.want)
+		}
+	}
+}
+
+// TestSubtitleResolverSplitsHyphenBetweenLanguages keeps the list reading: a
+// hyphen between two spellings that each carry a language still separates
+// them, in file order.
+func TestSubtitleResolverSplitsHyphenBetweenLanguages(t *testing.T) {
+	for _, tc := range []struct {
+		suffix string
+		want   []string
+	}{
+		{"chs-jpn", []string{"zh-Hans", "ja"}},
+		{"sc-tc", []string{"zh-Hans", "zh-Hant"}},
+	} {
+		input := subtitleInput("Show - 01."+tc.suffix+".ass", "Show - 01."+tc.suffix, "ass", "subtitle")
+		value := resolveSingle(t, subtitleResolver{}, input).Value.(subtitleValue)
+		if !reflect.DeepEqual(value.Languages, tc.want) {
+			t.Fatalf("%q: languages = %v, want %v", tc.suffix, value.Languages, tc.want)
+		}
 	}
 }
 

@@ -2080,7 +2080,7 @@ describe("AnimeTabs 标签过滤卡片", () => {
     expect(screen.queryByText(t("anibtTags.title"))).not.toBeInTheDocument();
   });
 
-  it("标题解析行：候选为本番出现过的标签并显示次数，从词表添加后保存", async () => {
+  it("标题解析行：候选为词表固定值，出现过的标签显示次数，从词表添加后保存", async () => {
     const fetchMock = stubRulesFetch();
     const workspace = anibtWorkspace();
     workspace.releases = [1, 2].map((n) => ({
@@ -2095,6 +2095,11 @@ describe("AnimeTabs 标签过滤卡片", () => {
     const card = tagCard();
     const titleRow = (await within(card).findByText(t("titleTags.title"))).closest("section")!;
     expect(await within(titleRow).findAllByTestId("tag-row-entry")).toHaveLength(1);
+    // The candidates are the vocabulary's fixed values, whether or not this anime has seen them
+    // (the selected TC is shown as an entry above, not as a candidate).
+    for (const fixed of ["2160p", "1080p", "720p", "SC", "JPSC"]) {
+      expect(within(titleRow).getByRole("button", { name: fixed })).toBeInTheDocument();
+    }
     const sc = await within(titleRow).findByRole("button", { name: "SC" });
     expect(sc).toHaveAttribute("title", expect.stringContaining(t("tagFilters.count", { n: 2 })));
     // Candidates default to require; switching to exclude adds there; added tags can change role.
