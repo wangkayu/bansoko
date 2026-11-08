@@ -174,9 +174,9 @@ export const factsCopy = {
       description: "采集值：原始完整文件名。",
     },
     rt: {
-      codec: {
-        label: "文件 reltitle 编码",
-        description: "解析值：reltitle 从文件名读出的视频编码。",
+      audio_codec: {
+        label: "文件 reltitle 音频编码",
+        description: "解析值：reltitle 从文件名读出的音频编码。",
       },
       resolution: {
         label: "文件 reltitle 分辨率",
@@ -209,6 +209,10 @@ export const factsCopy = {
       version: {
         label: "文件 reltitle Rev",
         description: "解析值：reltitle 从文件名读出的 Rev，例如 v2；文件名没有时为空。",
+      },
+      video_codec: {
+        label: "文件 reltitle 视频编码",
+        description: "解析值：reltitle 从文件名读出的视频编码。",
       },
     },
     size: {
@@ -381,9 +385,9 @@ export const factsCopy = {
     },
   },
   rt: {
-    codec: {
-      label: "reltitle 编码",
-      description: "解析值：reltitle 从发布标题读出的视频编码。",
+    audio_codec: {
+      label: "reltitle 音频编码",
+      description: "解析值：reltitle 从发布标题读出的音频编码。",
     },
     resolution: {
       label: "reltitle 分辨率",
@@ -416,6 +420,10 @@ export const factsCopy = {
     version: {
       label: "reltitle Rev",
       description: "解析值：reltitle 从标题读出的 Rev，例如 v2；标题没有时为空。",
+    },
+    video_codec: {
+      label: "reltitle 视频编码",
+      description: "解析值：reltitle 从发布标题读出的视频编码。",
     },
   },
   sub: {
@@ -687,9 +695,9 @@ export const enFactsCopy = {
       description: "Collected: Original full file name.",
     },
     rt: {
-      codec: {
-        label: "File reltitle Codec",
-        description: "Parsed: Video codec reltitle read from the file name.",
+      audio_codec: {
+        label: "File reltitle Audio codec",
+        description: "Parsed: Audio codec reltitle read from the file name.",
       },
       resolution: {
         label: "File reltitle Resolution",
@@ -722,6 +730,10 @@ export const enFactsCopy = {
       version: {
         label: "File reltitle Rev",
         description: "Parsed: The Rev reltitle read from the file name, such as v2. Empty when the file name has none.",
+      },
+      video_codec: {
+        label: "File reltitle Video codec",
+        description: "Parsed: Video codec reltitle read from the file name.",
       },
     },
     size: {
@@ -894,9 +906,9 @@ export const enFactsCopy = {
     },
   },
   rt: {
-    codec: {
-      label: "reltitle Codec",
-      description: "Parsed: Video codec reltitle read from the release title.",
+    audio_codec: {
+      label: "reltitle Audio codec",
+      description: "Parsed: Audio codec reltitle read from the release title.",
     },
     resolution: {
       label: "reltitle Resolution",
@@ -929,6 +941,10 @@ export const enFactsCopy = {
     version: {
       label: "reltitle Rev",
       description: "Parsed: The Rev reltitle read from the title, such as v2. Empty when the title has none.",
+    },
+    video_codec: {
+      label: "reltitle Video codec",
+      description: "Parsed: Video codec reltitle read from the release title.",
     },
   },
   sub: {

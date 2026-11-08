@@ -26,6 +26,8 @@ func TestVarsInputV1AcceptsTheBuiltFactObject(t *testing.T) {
 	}
 	// Inputs frozen before rt.version was introduced remain valid unchanged.
 	delete(v.Object["facts"].Object["rt"].Object, "version")
+	// The same holds for rt.audio_codec, added after the first frozen inputs.
+	delete(v.Object["facts"].Object["rt"].Object, "audio_codec")
 	if err := Validate("VarsInputV1", v); err != nil {
 		t.Fatalf("old input without rt.version rejected: %v", err)
 	}

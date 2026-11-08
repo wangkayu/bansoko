@@ -757,15 +757,16 @@ var systemFacts = []Fact{
 // are rt.*'s own, read from the file name instead of the release title, and the
 // description says which source the value came from.
 var fileReltitleCopy = map[string]Text{
-	"title":      {"reltitle 从文件名读出的作品标题。", "Title reltitle read from the file name."},
-	"subgroup":   {"reltitle 从文件名读出的字幕组。", "Group reltitle read from the file name."},
-	"version":    {"reltitle 从文件名读出的 Rev，例如 v2；文件名没有时为空。", "The Rev reltitle read from the file name, such as v2. Empty when the file name has none."},
-	"resolution": {"reltitle 从文件名读出的分辨率。", "Resolution reltitle read from the file name."},
-	"source":     {"reltitle 从文件名读出的片源类型。", "Source type reltitle read from the file name."},
-	"codec":      {"reltitle 从文件名读出的视频编码。", "Video codec reltitle read from the file name."},
-	"sub_lang":   {"reltitle 从文件名读出的字幕语言，多个用 + 连接。", "Subtitle language reltitle read from the file name; several join with +."},
-	"sub_flag":   {"reltitle 从文件名读出的字幕方式标志（soft、hard、ex），多个用 + 连接；文件名没有明确的字幕方式时为空。", "Subtitle mode flag reltitle read from the file name (soft, hard, ex); several join with +. Empty when the file name names none explicitly."},
-	"uncensored": {"文件名标有无修正（UNCENSORED）时为是。", "Yes when the file name is marked uncensored (UNCENSORED)."},
+	"title":       {"reltitle 从文件名读出的作品标题。", "Title reltitle read from the file name."},
+	"subgroup":    {"reltitle 从文件名读出的字幕组。", "Group reltitle read from the file name."},
+	"version":     {"reltitle 从文件名读出的 Rev，例如 v2；文件名没有时为空。", "The Rev reltitle read from the file name, such as v2. Empty when the file name has none."},
+	"resolution":  {"reltitle 从文件名读出的分辨率。", "Resolution reltitle read from the file name."},
+	"source":      {"reltitle 从文件名读出的片源类型。", "Source type reltitle read from the file name."},
+	"video_codec": {"reltitle 从文件名读出的视频编码。", "Video codec reltitle read from the file name."},
+	"audio_codec": {"reltitle 从文件名读出的音频编码。", "Audio codec reltitle read from the file name."},
+	"sub_lang":    {"reltitle 从文件名读出的字幕语言，多个用 + 连接。", "Subtitle language reltitle read from the file name; several join with +."},
+	"sub_flag":    {"reltitle 从文件名读出的字幕方式标志（soft、hard、ex），多个用 + 连接；文件名没有明确的字幕方式时为空。", "Subtitle mode flag reltitle read from the file name (soft, hard, ex); several join with +. Empty when the file name names none explicitly."},
+	"uncensored":  {"文件名标有无修正（UNCENSORED）时为是。", "Yes when the file name is marked uncensored (UNCENSORED)."},
 }
 
 // namespaceFacts registers the rt and anibt value namespaces, and the source

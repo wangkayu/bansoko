@@ -145,7 +145,7 @@ var unsafePayloadKey = regexp.MustCompile(`(secret|token|password|credential|url
 // sanitizes each value (nil drops it to null). Every rt/anibt key is present
 // (null when absent; rt.uncensored is a boolean); a Vars key is present only when the output has it.
 // Undecodable source facts yield no rt/anibt values. The SQL twin is
-// notification_value_facts (migration 283); a parity test keeps them equal.
+// notification_value_facts (migration 130); a parity test keeps them equal.
 func ValueFacts(vars map[string]any, sourceFacts []byte, text func(string) any) map[string]any {
 	facts := make(map[string]any, len(ValueFactKeys)+len(vars))
 	for _, key := range ValueFactKeys {

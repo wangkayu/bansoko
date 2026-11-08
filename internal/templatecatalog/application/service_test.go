@@ -615,7 +615,7 @@ func TestPreviewNamingValueNamespaces(t *testing.T) {
 	for _, field := range catalog.Fields {
 		paths[field.Path] = field.Nullable
 	}
-	for _, path := range []string{"rt.title", "rt.subgroup", "rt.resolution", "rt.source", "rt.codec", "rt.sub_lang", "anibt.resolution", "anibt.subtitle", "anibt.language", "anibt.format", "anibt.tag"} {
+	for _, path := range []string{"rt.title", "rt.subgroup", "rt.resolution", "rt.source", "rt.video_codec", "rt.audio_codec", "rt.sub_lang", "anibt.resolution", "anibt.subtitle", "anibt.language", "anibt.format", "anibt.tag"} {
 		if nullable, ok := paths[path]; !ok || !nullable {
 			t.Fatalf("catalog field %s present=%v nullable=%v", path, ok, nullable)
 		}

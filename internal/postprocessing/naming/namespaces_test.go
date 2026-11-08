@@ -68,7 +68,7 @@ func TestMissingNamespaceValueIsNullUnderExplicitFallback(t *testing.T) {
 	ctx := namespaceContext(nil, nil)
 	for source, want := range map[string]string{
 		"${anibt.language ? `[${anibt.language}]` : ''}x.${file.ext}": "x.mkv",
-		"${rt.codec ?? 'none'}.${file.ext}":                           "none.mkv",
+		"${rt.video_codec ?? 'none'}.${file.ext}":                     "none.mkv",
 		"${defaultValue('raw', rt.title)}.${file.ext}":                "raw.mkv",
 		// No cross-namespace fallback exists: the template must say so itself.
 		"${coalesce(rt.sub_lang, anibt.language, 'und')}.${file.ext}": "und.mkv",

@@ -95,6 +95,7 @@ func TestNotificationPayloadKeysAreRegistryPaths(t *testing.T) {
 	}
 	for _, retired := range []string{
 		"info.hdr", "anime.custom_title", "episode.raw", "episode.number", "episode.display", "episode.offset",
+		"rt.codec",
 		"bangumi.id", "bangumi.episode_title", "tmdb.media_kind", "torrent.info_hash_v1", "torrent.info_hash_v2",
 		"event.occurred_at", "download.client_name", "download.task_name",
 		"file.basename", "file.extension", "file.size_bytes", "file.media_kind",

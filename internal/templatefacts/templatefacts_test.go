@@ -14,15 +14,13 @@ func TestReltitleValuesProjectTitleTagSet(t *testing.T) {
 		ValueTags: []string{"title:进击的巨人", "group:示例字幕组", "version:v2"},
 	}
 	got := ReltitleValues(set)
-	want := Values{"Title": "进击的巨人", "Subgroup": "示例字幕组", "Version": "v2", "Resolution": "1080p+720p", "Source": "WEBRip", "Codec": "HEVC", "SubLang": "SC+TC", "SubFlag": "hard", "Uncensored": "true", "ContentRating": "UNCENSORED"}
+	want := Values{"Title": "进击的巨人", "Subgroup": "示例字幕组", "Version": "v2", "Resolution": "1080p+720p", "Source": "WEBRip", "Codec": "HEVC", "AudioCodec": "AAC", "SubLang": "SC+TC", "SubFlag": "hard", "Uncensored": "true", "ContentRating": "UNCENSORED"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ReltitleValues = %#v, want %#v", got, want)
 	}
 	// Whitelisted but default-off outputs never become fields.
-	for _, key := range []string{"Container", "AudioCodec"} {
-		if _, ok := got.Get(key); ok {
-			t.Fatalf("unexposed reltitle output %s projected", key)
-		}
+	if _, ok := got.Get("Container"); ok {
+		t.Fatal("unexposed reltitle output Container projected")
 	}
 }
 
@@ -171,7 +169,7 @@ func TestFieldKeysAreTemplateIdentifiers(t *testing.T) {
 			seen[field.Key] = true
 		}
 	}
-	if len(ReltitleFields) != 9 || len(AniBTTagFields) != 5 {
+	if len(ReltitleFields) != 10 || len(AniBTTagFields) != 5 {
 		t.Fatalf("field counts = %d/%d", len(ReltitleFields), len(AniBTTagFields))
 	}
 }
