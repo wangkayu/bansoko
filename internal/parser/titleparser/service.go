@@ -222,10 +222,8 @@ func (s *Service) Check(ctx context.Context) (Status, error) {
 
 func (s *Service) checkLocked(ctx context.Context) (Status, error) {
 	checkedAt := s.now().UTC()
-	current := s.runningVersion()
-	line := rtruntime.LineOf(current)
-	if line == "" {
-		err := fmt.Errorf("%w: the running parser version %q has no major.minor line", ErrChannel, current)
+	line, err := channelLine()
+	if err != nil {
 		s.recordFailure(checkedAt, err)
 		return s.statusLocked(), err
 	}
@@ -247,8 +245,8 @@ func (s *Service) Install(ctx context.Context) (Status, error) {
 
 	checkedAt := s.now().UTC()
 	current := s.runningVersion()
-	if line := rtruntime.LineOf(current); line == "" {
-		err := fmt.Errorf("%w: the running parser version %q has no major.minor line", ErrChannel, current)
+	line, err := channelLine()
+	if err != nil {
 		s.recordFailure(checkedAt, err)
 		return s.statusLocked(), err
 	}
@@ -257,6 +255,7 @@ func (s *Service) Install(ctx context.Context) (Status, error) {
 		Lane:           s.lane,
 		Client:         s.client,
 		CurrentVersion: current,
+		ChannelLine:    line,
 		BuiltinVersion: reltitletags.BuiltinVersion(),
 		Now:            s.now,
 	})
@@ -354,6 +353,20 @@ func (s *Service) runningVersion() string {
 		return reltitletags.BuiltinVersion()
 	}
 	return strings.TrimPrefix(s.parser.ActiveVersion(), "reltitle@")
+}
+
+// channelLine is the reltitle line the channel is read from: the line of the
+// version compiled into bansoko, not of the binary currently installed. The
+// compiled-in version is this build's compatibility claim, so an installed
+// binary left on a retired line still reads the current line and can advance
+// onto it.
+func channelLine() (string, error) {
+	builtin := reltitletags.BuiltinVersion()
+	line := rtruntime.LineOf(builtin)
+	if line == "" {
+		return "", fmt.Errorf("%w: the builtin parser version %q has no major.minor line", ErrChannel, builtin)
+	}
+	return line, nil
 }
 
 // runningSource reflects the backend answering now. A mid-flight transport

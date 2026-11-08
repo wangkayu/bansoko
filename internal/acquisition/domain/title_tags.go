@@ -36,9 +36,9 @@ const (
 	TitleValueDimensionVersion = "version"
 )
 
-// The uncensored marker: the only value of the content_rating filter-tag
-// dimension (reltitle's lexicon normalizes it as UNCENSORED). The other
-// content_rating values are never projected.
+// The content_rating filter-tag dimension (reltitle's lexicon normalizes its
+// values as UNCENSORED, CENSORED and AGE_RESTRICTED). TitleTagUncensored is
+// the uncensored marker the Uncensored template fact reads.
 const (
 	TitleDimensionContentRating = "content_rating"
 	TitleTagUncensored          = TitleDimensionContentRating + ":UNCENSORED"

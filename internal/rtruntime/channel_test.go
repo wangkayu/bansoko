@@ -308,6 +308,32 @@ func TestUpdateInstallsANewerBuild(t *testing.T) {
 	}
 }
 
+// An installed binary can lag behind the line this build was compiled with.
+// The caller names the line, so the pass reads the current one instead of the
+// retired line the running version would select.
+func TestUpdateReadsTheLineTheCallerNames(t *testing.T) {
+	artifact := []byte("#!/bin/sh\necho reltitle\n")
+	server := channelServer(t, "0.1.1", artifact, func(document map[string]any) {
+		document["line"] = "0.1"
+	})
+	withChannelRoot(t, server)
+	root := t.TempDir()
+	result, err := Update(context.Background(), UpdateOptions{
+		ConfigRoot:     root,
+		Lane:           "test",
+		Client:         server.Client(),
+		CurrentVersion: "0.0.4-test.10",
+		ChannelLine:    "0.1",
+		Probe:          func(ctx context.Context, path string) error { return nil },
+	})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if !result.Installed || result.Version != "0.1.1" {
+		t.Fatalf("result = %+v", result)
+	}
+}
+
 func TestUpdateSkipsABuildThatIsNotNewer(t *testing.T) {
 	for _, version := range []string{"0.0.3", "0.0.2"} {
 		t.Run(version, func(t *testing.T) {

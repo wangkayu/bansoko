@@ -3,6 +3,7 @@ package httpapi
 import (
 	"net/http"
 
+	acquisitiondomain "bansoko/internal/acquisition/domain"
 	"bansoko/internal/parser/reltitletags"
 	"bansoko/internal/qualityprofile"
 	"bansoko/internal/transport/httpapi/generated"
@@ -11,11 +12,12 @@ import (
 // rtCompareDimensions maps a ranked rt.* comparison item to its reltitle
 // dictionary dimension.
 var rtCompareDimensions = map[string]string{
-	qualityprofile.KeyRtResolution: "resolution",
-	qualityprofile.KeyRtSubLang:    "sub_lang",
-	qualityprofile.KeyRtSubFlag:    "sub_flag",
-	qualityprofile.KeyRtSource:     "source_type",
-	qualityprofile.KeyRtCodec:      "video_codec",
+	qualityprofile.KeyRtResolution:    "resolution",
+	qualityprofile.KeyRtSubLang:       "sub_lang",
+	qualityprofile.KeyRtSubFlag:       "sub_flag",
+	qualityprofile.KeyRtSource:        "source_type",
+	qualityprofile.KeyRtCodec:         "video_codec",
+	qualityprofile.KeyRtContentRating: acquisitiondomain.TitleDimensionContentRating,
 }
 
 // GetReplacementCompareVocabulary returns the candidate values of every ranked

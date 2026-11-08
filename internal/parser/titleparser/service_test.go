@@ -225,6 +225,38 @@ func TestCheckReportsTheChannelAndNewer(t *testing.T) {
 	}
 }
 
+// A binary installed from a retired line still reads the line compiled into
+// this build, so the channel can advance it across the line move instead of
+// asking for a manifest that no longer exists.
+func TestChannelLineFollowsTheBuiltinParser(t *testing.T) {
+	parser := newFakeParser()
+	parser.version = "reltitle@0.0.4-test.10"
+	above := channelVersionAbove(t)
+	_, channel, fetch, update := channelFixture(t, above, []byte("#!/bin/sh\necho reltitle\n"))
+	service := newService(t, parser, fetch, update, SourceChannel)
+
+	status, err := service.Check(context.Background())
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	if status.Channel == nil || status.Channel.Version != channel.Version || !status.Channel.Newer {
+		t.Fatalf("channel = %+v, want the builtin line's newer build", status.Channel)
+	}
+
+	var readLine string
+	baseUpdate := service.update
+	service.update = func(ctx context.Context, options rtruntime.UpdateOptions) (rtruntime.UpdateResult, error) {
+		readLine = options.ChannelLine
+		return baseUpdate(ctx, options)
+	}
+	if _, err := service.Install(context.Background()); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if readLine != "0.1" {
+		t.Fatalf("update read line %q, want the builtin line 0.1", readLine)
+	}
+}
+
 func TestCheckFailureKeepsTheLastSuccessfulAnswer(t *testing.T) {
 	parser := newFakeParser()
 	_, _, fetch, update := channelFixture(t, "0.1.0", []byte("artifact"))

@@ -11,7 +11,6 @@ import {
   removeEntry,
   removeItem,
   setKey,
-  setFlagDirection,
   suggestions,
   candidateValues,
   unusedItems,
@@ -31,7 +30,7 @@ describe("quality profile model", () => {
     expect(COMPARE_ITEMS.map((item) => item.key)).toEqual([
       "subgroup.score", "release.lang", "release.resolution", "release.revision",
       "anibt.resolution", "anibt.language", "anibt.subtitle", "anibt.format",
-      "rt.resolution", "rt.sub_lang", "rt.sub_flag", "rt.source", "rt.codec", "rt.uncensored",
+      "rt.resolution", "rt.sub_lang", "rt.sub_flag", "rt.source", "rt.codec", "rt.content_rating",
     ]);
     expect(COMPARE_ITEMS.filter((item) => item.kind === "multi").map((item) => item.key)).toEqual(["anibt.language", "rt.sub_lang", "rt.sub_flag"]);
   });
@@ -42,8 +41,8 @@ describe("quality profile model", () => {
     expect(removeItem(profile, 0).items.map((item) => item.key)).toEqual(["anibt.language", "release.resolution"]);
     expect(addItem(profile, "rt.codec").items.at(-1)).toEqual({ key: "rt.codec", ranks: [] });
     expect(addItem(profile, "subgroup.score")).toBe(profile);
-    expect(addItem(profile, "rt.uncensored").items.at(-1)).toEqual({ key: "rt.uncensored", ranks: [["true"]] });
-    expect(setFlagDirection(addItem(profile, "rt.uncensored"), "rt.uncensored", false).items.at(-1)?.ranks).toEqual([["false"]]);
+    // The content rating starts empty: the user adds and orders the values.
+    expect(addItem(profile, "rt.content_rating").items.at(-1)).toEqual({ key: "rt.content_rating", ranks: [] });
     expect(unusedItems(profile).map((item) => item.key)).not.toContain("anibt.language");
   });
 

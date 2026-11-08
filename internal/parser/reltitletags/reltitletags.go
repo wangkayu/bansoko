@@ -59,10 +59,10 @@ var Dimensions = []string{
 }
 
 // lexiconDimensions are the dimensions whose values come from the lexicon
-// rather than the canonical dictionary, with the only values bansoko uses.
+// rather than the canonical dictionary, with the values bansoko projects.
 // The values are looked up in the loaded lexicon and must exist there.
 var lexiconDimensions = map[string][]string{
-	acquisitiondomain.TitleDimensionContentRating: {"UNCENSORED"},
+	acquisitiondomain.TitleDimensionContentRating: {"UNCENSORED", "CENSORED", "AGE_RESTRICTED"},
 }
 
 // DimensionVocabulary is one dimension's canonical values from the pinned

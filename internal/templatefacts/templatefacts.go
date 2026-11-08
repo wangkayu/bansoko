@@ -202,7 +202,9 @@ func FromTagSets(title *acquisitiondomain.TitleTagSet, anibt *acquisitiondomain.
 // come only from the ValueTags of a set of the current schema; the other fields
 // from its tags. Uncensored is a yes/no field: present ("true"/"false") only
 // when the set is of the current schema and its parse succeeded, true exactly
-// when the tags carry content_rating:UNCENSORED.
+// when the tags carry content_rating:UNCENSORED. ContentRating is a
+// compare-only value (not an exposed template field): the content_rating values
+// the tags carry, joined with "+", present only when at least one is.
 func ReltitleValues(set *acquisitiondomain.TitleTagSet) Values {
 	values := Values{}
 	if set == nil {
@@ -215,10 +217,19 @@ func ReltitleValues(set *acquisitiondomain.TitleTagSet) Values {
 	project(values, ReltitleFields, tags)
 	if set.Schema == acquisitiondomain.TitleTagSchema && set.Diagnostic == "" {
 		uncensored := false
+		ratings := []string{}
 		for _, tag := range set.Tags {
-			uncensored = uncensored || tag == acquisitiondomain.TitleTagUncensored
+			if tag == acquisitiondomain.TitleTagUncensored {
+				uncensored = true
+			}
+			if value, ok := strings.CutPrefix(tag, acquisitiondomain.TitleDimensionContentRating+":"); ok {
+				ratings = append(ratings, value)
+			}
 		}
 		values["Uncensored"] = strconv.FormatBool(uncensored)
+		if len(ratings) > 0 {
+			values["ContentRating"] = strings.Join(ratings, "+")
+		}
 	}
 	return values
 }

@@ -138,16 +138,18 @@ describe("QualityCompareEditor", () => {
     expect(screen.getByText(new RegExp(t("qualityCompare.subFlagHint")))).toBeInTheDocument();
   });
 
-  it("adds the uncensored preference and flips its direction", async () => {
+  it("adds the content rating item with an empty ranking", async () => {
     renderWithQuery(<Harness />);
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: t("qualityCompare.addItem") }));
     const menu = await screen.findByRole("menu");
-    await user.click(within(menu).getByRole("menuitem", { name: compareItemName("rt.uncensored") }));
-    expect(latest.items.at(-1)).toEqual({ key: "rt.uncensored", ranks: [["true"]] });
-    expect(screen.getByText(t("qualityCompare.uncensoredHint"))).toBeInTheDocument();
-    await user.click(screen.getByRole("radio", { name: t("qualityCompare.censoredFirst") }));
-    expect(latest.items.at(-1)).toEqual({ key: "rt.uncensored", ranks: [["false"]] });
+    await user.click(within(menu).getByRole("menuitem", { name: compareItemName("rt.content_rating") }));
+    expect(latest.items.at(-1)).toEqual({ key: "rt.content_rating", ranks: [] });
+    expect(screen.getByText(new RegExp(t("qualityCompare.contentRatingHint")))).toBeInTheDocument();
+    const input = screen.getByLabelText(t("qualityCompare.valueAria", { item: compareItemName("rt.content_rating") }));
+    await user.type(input, "UNCENSORED");
+    await user.click(screen.getByRole("button", { name: t("qualityCompare.addValueAria", { item: compareItemName("rt.content_rating") }) }));
+    expect(latest.items.at(-1)?.ranks).toEqual([["UNCENSORED"]]);
   });
 
   it("adds a combination ahead of narrower entries and rejects the same set again", async () => {

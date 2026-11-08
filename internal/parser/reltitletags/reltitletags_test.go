@@ -148,7 +148,7 @@ func TestSubtitleLanguagesReadsCompositeCodes(t *testing.T) {
 	}
 }
 
-func TestExtractFreezesOnlyUncensoredAsContentRatingTag(t *testing.T) {
+func TestExtractProjectsContentRatingTags(t *testing.T) {
 	has := func(set acquisitiondomain.TitleTagSet, tag string) bool {
 		for _, item := range set.Tags {
 			if item == tag {
@@ -157,14 +157,14 @@ func TestExtractFreezesOnlyUncensoredAsContentRatingTag(t *testing.T) {
 		}
 		return false
 	}
-	if got := Extract("[Group] Show - 03 [1080p][无修正]"); !has(got, acquisitiondomain.TitleTagUncensored) {
-		t.Fatalf("uncensored missing from tags: %v", got.Tags)
-	}
-	for _, other := range []string{"[Group] Show - 03 [1080p][R18]", "[Group] Show - 03 [1080p]"} {
-		for _, tag := range Extract(other).Tags {
-			if strings.HasPrefix(tag, "content_rating:") {
-				t.Fatalf("%q: only UNCENSORED may be projected, got %v", other, tag)
-			}
+	for title, want := range map[string]string{
+		"[Group] Show - 03 [1080p][无修正]":      acquisitiondomain.TitleTagUncensored,
+		"[Group] Show - 03 [1080p][R18]":      "content_rating:AGE_RESTRICTED",
+		"[Group] Show - 03 [1080p][censored]": "content_rating:CENSORED",
+	} {
+		got := Extract(title)
+		if !has(got, want) {
+			t.Fatalf("%q: missing %s in tags: %v", title, want, got.Tags)
 		}
 	}
 	for _, tag := range Extract("[Group] Show - 03 [1080p][无修正]").ValueTags {
@@ -174,20 +174,20 @@ func TestExtractFreezesOnlyUncensoredAsContentRatingTag(t *testing.T) {
 	}
 }
 
-// The content_rating dimension takes its only value from the embedded
-// lexicon: it is listed in the vocabulary, resolves canonically, and a lexicon
-// without it fails the load.
+// The content_rating dimension takes its values from the embedded lexicon: it
+// is listed in the vocabulary with the three normalized values, resolves
+// canonically, and a lexicon without them fails the load.
 func TestContentRatingDimensionReadsLexicon(t *testing.T) {
 	if value, ok := CanonicalValue("content_rating", "uncensored"); !ok || value != "UNCENSORED" {
 		t.Fatalf("CanonicalValue = %q, %v", value, ok)
 	}
-	if _, ok := CanonicalValue("content_rating", "R18"); ok {
-		t.Fatal("only UNCENSORED belongs to the content_rating dimension")
+	if _, ok := CanonicalValue("content_rating", "r18"); ok {
+		t.Fatal("R18 is not a normalized content_rating value")
 	}
 	found := false
 	for _, entry := range Vocabulary() {
 		if entry.Dimension == "content_rating" {
-			found = reflect.DeepEqual(entry.Values, []string{"UNCENSORED"})
+			found = reflect.DeepEqual(entry.Values, []string{"UNCENSORED", "CENSORED", "AGE_RESTRICTED"})
 		}
 	}
 	if !found {
@@ -199,6 +199,6 @@ func TestContentRatingDimensionReadsLexicon(t *testing.T) {
 	}
 	cfg.Lexicon.Entries = nil
 	if _, _, err := canonicalVocabulary(cfg.DictCanonicalValues.Canonical, cfg.Lexicon); err == nil {
-		t.Fatal("a lexicon without UNCENSORED must fail the vocabulary")
+		t.Fatal("a lexicon without content_rating values must fail the vocabulary")
 	}
 }

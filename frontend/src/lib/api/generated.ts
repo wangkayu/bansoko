@@ -2099,7 +2099,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Fetch and decode the published reltitle channel for the running parser's major.minor line. The answer is cached for GET /title-parser. A channel that cannot be read leaves the previous answer visible and the failure in `channel.error`, and the request answers 502 rather than a silent success. */
+        /** @description Fetch and decode the published reltitle channel for the compiled-in parser's major.minor line. The answer is cached for GET /title-parser. A channel that cannot be read leaves the previous answer visible and the failure in `channel.error`, and the request answers 502 rather than a silent success. */
         post: operations["checkTitleParser"];
         delete?: never;
         options?: never;
@@ -7967,13 +7967,13 @@ export interface components {
             version: "profile-v1";
             items: components["schemas"]["QualityCompareItem"][];
         };
-        /** @description One comparison item. ranks lists value sets best first; a release hits an entry when its values contain every value of the entry (order- and case-insensitive) and takes its best-ranked hit; a release that hits nothing, or has no value, ranks last. Only multi-valued items (anibt.language, rt.sub_lang, rt.sub_flag) take entries of several values; a duplicate value set is rejected. subgroup.score and release.revision take no ranks (subscription subgroup score; numeric Rev vN, absent = v1). rt.uncensored is a two-way boolean preference: ranks is exactly [["true"]] (uncensored first) or [["false"]] (censored first); equal values tie. */
+        /** @description One comparison item. ranks lists value sets best first; a release hits an entry when its values contain every value of the entry (order- and case-insensitive) and takes its best-ranked hit; a release that hits nothing, or has no value, ranks last. Only multi-valued items (anibt.language, rt.sub_lang, rt.sub_flag) take entries of several values; a duplicate value set is rejected. subgroup.score and release.revision take no ranks (subscription subgroup score; numeric Rev vN, absent = v1). rt.content_rating ranks the content_rating values reltitle read from the title (UNCENSORED, CENSORED, AGE_RESTRICTED), one value per entry, in the order the user prefers. */
         QualityCompareItem: {
             key: components["schemas"]["QualityCompareKey"];
             ranks: string[][];
         };
         /** @enum {string} */
-        QualityCompareKey: "subgroup.score" | "release.lang" | "release.resolution" | "release.revision" | "anibt.resolution" | "anibt.language" | "anibt.subtitle" | "anibt.format" | "rt.resolution" | "rt.sub_lang" | "rt.sub_flag" | "rt.source" | "rt.codec" | "rt.uncensored";
+        QualityCompareKey: "subgroup.score" | "release.lang" | "release.resolution" | "release.revision" | "anibt.resolution" | "anibt.language" | "anibt.subtitle" | "anibt.format" | "rt.resolution" | "rt.sub_lang" | "rt.sub_flag" | "rt.source" | "rt.codec" | "rt.content_rating";
         /** @description Candidate values per ranked comparison item: release.* from the active attribute rules, anibt.* from values seen on releases (of the anime when one is named), rt.* from the pinned reltitle dictionary (empty when it is unavailable). Values are suggestions; any value can be ranked. */
         ReplacementCompareVocabulary: {
             items: components["schemas"]["RetentionCompareVocabularyItem"][];

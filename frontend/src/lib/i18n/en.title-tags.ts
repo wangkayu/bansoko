@@ -36,7 +36,7 @@ export const enTitleTagsCopy = {
     sub_flag: "Subtitle type",
     audio_lang: "Audio language",
     audio_flag: "Audio track",
-    content_rating: "Uncensored",
+    content_rating: "Content rating",
   },
   // Only values whose display name differs from the normalized value are listed.
   value: {
@@ -72,6 +72,8 @@ export const enTitleTagsCopy = {
     },
     content_rating: {
       UNCENSORED: "Uncensored",
+      CENSORED: "Censored",
+      AGE_RESTRICTED: "Age restricted",
     },
     audio_lang: {
       CMN: "Mandarin",

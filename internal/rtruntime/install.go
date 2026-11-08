@@ -24,8 +24,14 @@ type UpdateOptions struct {
 	// a plain one.
 	Client *http.Client
 	// CurrentVersion is the version the deployment is actually running, which
-	// decides the line to read and whether the channel is an advance.
+	// decides whether the channel is an advance.
 	CurrentVersion string
+	// ChannelLine is the major.minor line to read. The caller sets it from the
+	// reltitle version this bansoko build was compiled against: that version is
+	// the compatibility claim, so a binary left on a retired line still reads
+	// this build's line and can be advanced. Empty reads the line of
+	// CurrentVersion.
+	ChannelLine string
 	// BuiltinVersion lets the default probe note an older-than-builtin binary.
 	BuiltinVersion string
 	// Probe runs the adoption chain over the temporary download. Nil selects
@@ -53,9 +59,12 @@ type UpdateResult struct {
 // Adoption into the running process is the caller's next step; a failed pass
 // leaves the previous binary in place either way.
 func Update(ctx context.Context, options UpdateOptions) (UpdateResult, error) {
-	line := LineOf(options.CurrentVersion)
+	line := options.ChannelLine
 	if line == "" {
-		return UpdateResult{}, fmt.Errorf("%w: current version %q has no major.minor line", ErrChannel, options.CurrentVersion)
+		line = LineOf(options.CurrentVersion)
+	}
+	if _, ok := parseLine(line); !ok {
+		return UpdateResult{}, fmt.Errorf("%w: channel line %q has no major.minor form", ErrChannel, line)
 	}
 	channel, err := FetchChannel(ctx, options.Client, options.Lane, line)
 	if err != nil {

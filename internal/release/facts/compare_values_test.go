@@ -32,7 +32,7 @@ func TestCompareValuesFreezesEachNamespace(t *testing.T) {
 		qualityprofile.KeyRtSubFlag:         {"ex", "soft"},
 		qualityprofile.KeyRtSource:          {"WEBRip"},
 		qualityprofile.KeyRtCodec:           {"HEVC"},
-		qualityprofile.KeyRtUncensored:      {"true"},
+		qualityprofile.KeyRtContentRating:   {"UNCENSORED"},
 	}
 	if !reflect.DeepEqual(values.Values, want) {
 		t.Fatalf("values = %#v\nwant %#v", values.Values, want)

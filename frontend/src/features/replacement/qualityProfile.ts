@@ -8,7 +8,7 @@ import { ANIBT_TAG_PRESETS, isAniBTDimension } from "../../lib/anibtTags";
 // reject are refused here with a problem code, never silently rewritten.
 
 export type CompareNamespace = "subgroup" | "release" | "anibt" | "rt";
-export type CompareKind = "score" | "revision" | "single" | "multi" | "flag";
+export type CompareKind = "score" | "revision" | "single" | "multi";
 export type CompareItemDef = { key: QualityCompareKey; namespace: CompareNamespace; kind: CompareKind };
 
 /** Registry in catalog order (namespace, then attribute). */
@@ -26,22 +26,10 @@ export const COMPARE_ITEMS: readonly CompareItemDef[] = [
   { key: "rt.sub_flag", namespace: "rt", kind: "multi" },
   { key: "rt.source", namespace: "rt", kind: "single" },
   { key: "rt.codec", namespace: "rt", kind: "single" },
-  { key: "rt.uncensored", namespace: "rt", kind: "flag" },
+  { key: "rt.content_rating", namespace: "rt", kind: "single" },
 ];
 
 export const COMPARE_NAMESPACES: readonly CompareNamespace[] = ["subgroup", "release", "anibt", "rt"];
-
-export const FLAG_TRUE = "true";
-export const FLAG_FALSE = "false";
-
-/** Direction of a flag item: true = the flagged side ranks first. */
-export function flagFirst(ranks: readonly string[][]): boolean {
-  return ranks[0]?.[0] !== FLAG_FALSE;
-}
-
-export function setFlagDirection(profile: QualityProfile, key: QualityCompareKey, first: boolean): QualityProfile {
-  return withRanks(profile, key, () => [[first ? FLAG_TRUE : FLAG_FALSE]]);
-}
 
 export const MAX_RANKS = 64;
 export const MAX_SET_VALUES = 8;
@@ -69,9 +57,8 @@ export function unusedItems(profile: QualityProfile): CompareItemDef[] {
 
 export function addItem(profile: QualityProfile, key: QualityCompareKey): QualityProfile {
   if (profile.items.some((item) => item.key === key)) return profile;
-  // A flag item always carries its direction: uncensored first by default.
-  const ranks: string[][] = itemDef(key).kind === "flag" ? [[FLAG_TRUE]] : [];
-  return { ...profile, items: [...profile.items, { key, ranks }] };
+  // A ranked item starts with no values: the user adds and orders them.
+  return { ...profile, items: [...profile.items, { key, ranks: [] }] };
 }
 
 export function removeItem(profile: QualityProfile, index: number): QualityProfile {

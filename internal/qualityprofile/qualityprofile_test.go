@@ -311,46 +311,41 @@ func mustJSON(t *testing.T, profile Profile) []byte {
 	return raw
 }
 
-// rt.uncensored is a registered two-way flag item outside the default order;
-// its ranking states the preferred value, and a side without data ties.
-func TestUncensoredFlagItemPrefersOneDirection(t *testing.T) {
-	def, ok := Lookup(KeyRtUncensored)
-	if !ok || def.Namespace != NamespaceRt || def.Kind != KindFlag {
-		t.Fatalf("rt.uncensored registration = %+v, %v", def, ok)
+// rt.content_rating is a registered single-value ranked item outside the
+// default order: the user orders the values, an unlisted value ranks worst,
+// and a side without a rating ties on it.
+func TestContentRatingItemRanksUserOrderedValues(t *testing.T) {
+	def, ok := Lookup(KeyRtContentRating)
+	if !ok || def.Namespace != NamespaceRt || def.Kind != KindSingle {
+		t.Fatalf("rt.content_rating registration = %+v, %v", def, ok)
 	}
-	if profile, err := Parse(DefaultJSON()); err != nil || strings.Contains(strings.Join(profile.Keys(), ","), KeyRtUncensored) {
-		t.Fatalf("rt.uncensored must not be in the default order: %v %v", profile.Keys(), err)
+	if defaultProfile := Default(); strings.Contains(strings.Join(defaultProfile.Keys(), ","), KeyRtContentRating) {
+		t.Fatalf("rt.content_rating must not be in the default order: %v", defaultProfile.Keys())
 	}
-	for _, ranks := range [][][]string{{}, {{"yes"}}, {{"true"}, {"false"}}, {{"true", "false"}}} {
-		bad := Profile{Version: Version, Items: []Item{{Key: KeyRtUncensored, Ranks: ranks}}}
-		if _, err := Parse(mustJSON(t, bad)); err == nil {
-			t.Fatalf("ranks %v must be rejected", ranks)
+	bad := Profile{Version: Version, Items: []Item{{Key: KeyRtContentRating, Ranks: [][]string{{"UNCENSORED", "CENSORED"}}}}}
+	if _, err := Parse(mustJSON(t, bad)); err == nil {
+		t.Fatal("rt.content_rating must reject combinations")
+	}
+	profile := Profile{Version: Version, Items: []Item{{Key: KeyRtContentRating, Ranks: [][]string{{"UNCENSORED"}, {"AGE_RESTRICTED"}, {"CENSORED"}}}}}
+	order := []string{"UNCENSORED", "AGE_RESTRICTED", "CENSORED"}
+	for i := 0; i+1 < len(order); i++ {
+		better := subject(map[string][]string{KeyRtContentRating: {order[i]}}, nil, nil)
+		worse := subject(map[string][]string{KeyRtContentRating: {order[i+1]}}, nil, nil)
+		if result := Compare(better, worse, profile); !result.Better || result.Decided != KeyRtContentRating {
+			t.Fatalf("%s must beat %s: %+v", order[i], order[i+1], result)
+		}
+		if result := Compare(worse, better, profile); result.Better {
+			t.Fatalf("%s must not beat %s: %+v", order[i+1], order[i], result)
 		}
 	}
-	open := subject(map[string][]string{KeyRtUncensored: {"true"}}, nil, nil)
-	cut := subject(map[string][]string{KeyRtUncensored: {"false"}}, nil, nil)
-	for prefer, wantOpenBetter := range map[string]bool{FlagTrue: true, FlagFalse: false} {
-		profile := Profile{Version: Version, Items: []Item{{Key: KeyRtUncensored, Ranks: [][]string{{prefer}}}}}
-		if _, err := Parse(mustJSON(t, profile)); err != nil {
-			t.Fatalf("prefer %s rejected: %v", prefer, err)
-		}
-		forward, backward := Compare(open, cut, profile), Compare(cut, open, profile)
-		if forward.Decided != KeyRtUncensored || forward.Better != wantOpenBetter || backward.Decided != KeyRtUncensored || backward.Better == wantOpenBetter {
-			t.Fatalf("prefer %s: open vs cut %+v, cut vs open %+v", prefer, forward, backward)
-		}
+	unlisted := subject(map[string][]string{KeyRtContentRating: {"R18"}}, nil, nil)
+	none := subject(map[string][]string{}, nil, nil)
+	listed := subject(map[string][]string{KeyRtContentRating: {"UNCENSORED"}}, nil, nil)
+	if result := Compare(listed, unlisted, profile); !result.Better || result.Decided != KeyRtContentRating {
+		t.Fatalf("an unlisted rating must rank below a listed one: %+v", result)
 	}
-	// Equal values tie, and so does a side with no frozen value; the next item decides.
-	profile := Profile{Version: Version, Items: []Item{
-		{Key: KeyRtUncensored, Ranks: [][]string{{FlagTrue}}},
-		{Key: KeyRtResolution, Ranks: [][]string{{"1080p"}, {"720p"}}},
-	}}
-	better := subject(map[string][]string{KeyRtUncensored: {"false"}, KeyRtResolution: {"1080p"}}, nil, nil)
-	same := subject(map[string][]string{KeyRtUncensored: {"false"}, KeyRtResolution: {"720p"}}, nil, nil)
-	none := subject(map[string][]string{KeyRtResolution: {"720p"}}, nil, nil)
-	for name, other := range map[string]Subject{"both false": same, "no data": none} {
-		if result := Compare(better, other, profile); !result.Better || result.Decided != KeyRtResolution {
-			t.Fatalf("%s must tie and the next item decide: %+v", name, result)
-		}
+	if result := Compare(none, none, profile); !result.Equal {
+		t.Fatalf("two sides without a rating must tie: %+v", result)
 	}
 }
 

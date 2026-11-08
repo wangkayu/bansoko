@@ -14,7 +14,7 @@ func TestReltitleValuesProjectTitleTagSet(t *testing.T) {
 		ValueTags: []string{"title:进击的巨人", "group:示例字幕组", "version:v2"},
 	}
 	got := ReltitleValues(set)
-	want := Values{"Title": "进击的巨人", "Subgroup": "示例字幕组", "Version": "v2", "Resolution": "1080p+720p", "Source": "WEBRip", "Codec": "HEVC", "SubLang": "SC+TC", "SubFlag": "hard", "Uncensored": "true"}
+	want := Values{"Title": "进击的巨人", "Subgroup": "示例字幕组", "Version": "v2", "Resolution": "1080p+720p", "Source": "WEBRip", "Codec": "HEVC", "SubLang": "SC+TC", "SubFlag": "hard", "Uncensored": "true", "ContentRating": "UNCENSORED"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ReltitleValues = %#v, want %#v", got, want)
 	}
@@ -43,9 +43,16 @@ func TestReltitleUncensoredIsBooleanAndNeedsASuccessfulParse(t *testing.T) {
 	failed.Diagnostic = acquisitiondomain.TitleTagDiagnosticParseFailed
 	unknown := &acquisitiondomain.TitleTagSet{Schema: "reltitle-attrs-v0", Tags: []string{"content_rating:UNCENSORED"}}
 	for name, set := range map[string]*acquisitiondomain.TitleTagSet{"failed": failed, "unknown schema": unknown, "none": nil} {
-		if got, present := ReltitleValues(set).Get("Uncensored"); present {
+		values := ReltitleValues(set)
+		if got, present := values.Get("Uncensored"); present {
 			t.Fatalf("%s must leave Uncensored absent, got %q", name, got)
 		}
+		if got, present := values.Get("ContentRating"); present {
+			t.Fatalf("%s must leave ContentRating absent, got %q", name, got)
+		}
+	}
+	if got, _ := ReltitleValues(ok("content_rating:CENSORED", "content_rating:AGE_RESTRICTED")).Get("ContentRating"); got != "CENSORED+AGE_RESTRICTED" {
+		t.Fatalf("several ratings = %q", got)
 	}
 	fact, found := Lookup("rt.uncensored")
 	if !found || fact.Type != TypeBoolean || !fact.NullableIn(ScenarioNaming) {
