@@ -101,17 +101,20 @@ async function makePolicyDirty() {
   expect(await screen.findByText(t("act.unsavedCount", { n: 1 }))).toBeInTheDocument();
 }
 
-// The provider page's (mikan) page-level draft: picking subgroups from dictionary search into the roster card.
+// The provider page's (mikan) page-level draft: picking subgroups from dictionary search in the
+//   roster dialog, then closing it.
 async function makeProviderDirty() {
+  fireEvent.click(await screen.findByRole("button", { name: t("settings.provider.groups.manageAria", { label: "Mikan" }) }));
   const input = await screen.findByLabelText(t("settings.provider.groups.searchAria", { label: "Mikan" }));
   fireEvent.change(input, { target: { value: "SampleGroup" } });
   // Roster entries store only dictionary keys: clicking a search result adds the group_ref to the draft.
   fireEvent.click(await screen.findByRole("button", { name: t("settings.provider.groups.resultAria", { name: "SampleGroup" }) }));
+  fireEvent.click(screen.getByRole("button", { name: t("settings.provider.groups.done") }));
   expect(await screen.findByText(t("act.unsavedCount", { n: 1 }))).toBeInTheDocument();
 }
 
-function groupsCardName(label: "Mikan" | "AniBT") {
-  return t("settings.provider.groups.dialogTitle", { label });
+function groupsCardName(_label: "Mikan" | "AniBT") {
+  return t("settings.provider.groups.title");
 }
 
 describe("SettingsDialog 切分区 dirty 确认（批次 4）", () => {
@@ -166,7 +169,11 @@ describe("SettingsDialog 切分区 dirty 确认（批次 4）", () => {
     fireEvent.click(buttonByRole(t("ui.cancel")));
     expect(screen.queryByText(t("common.discardEditsTitle"))).not.toBeInTheDocument();
     expect(buttonByRole(t("act.save"))).toBeEnabled();
-    expect(buttonByRole(t("settings.provider.groups.remove", { name: "SampleGroup" }))).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        t("settings.provider.groups.summary", { mode: t("settings.provider.groups.modeBlacklist"), score: 50, n: 1 }),
+      ),
+    ).toBeInTheDocument();
   });
 
   it("history back dirty 时取消留在设置，确认后回到目录", async () => {

@@ -490,6 +490,38 @@ test.describe("settings fixture coverage", () => {
     await expect(dialog.getByText("字幕组名单", { exact: true })).toBeVisible();
   });
 
+  // 名单与名称评分的编辑入口都在二级弹窗里（桌面/手机共用）：卡片只留摘要与
+  // 管理按钮，弹窗在视口内、页面不横向滚动，添加规则确认后落成卡片里的一行。
+  test("名单与名称评分在弹窗里编辑，窄视口不横向溢出", async ({ page }) => {
+    await openSettings(page, "/#/settings/mikan");
+    const settingsDialog = page.getByRole("dialog");
+    await expect(settingsDialog.getByRole("heading", { name: "Mikan 配置" }).first()).toBeVisible({ timeout: 10000 });
+
+    await settingsDialog.getByRole("button", { name: "管理 Mikan 字幕组名单" }).click();
+    const roster = page.getByRole("dialog", { name: "Mikan 字幕组名单" });
+    await expect(roster).toBeVisible();
+    await expect(roster.getByRole("radiogroup", { name: "名单模式" })).toBeVisible();
+    await expect(roster.getByRole("textbox", { name: "Mikan 字典搜索" })).toBeVisible();
+    const box = await roster.boundingBox();
+    const viewport = page.viewportSize()!;
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.width).toBeLessThanOrEqual(viewport.width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await roster.getByRole("button", { name: "完成" }).click();
+    await expect(roster).toBeHidden();
+
+    await settingsDialog.getByRole("button", { name: "添加 Mikan 名称评分规则" }).click();
+    const ruleDialog = page.getByRole("dialog", { name: "添加名称评分规则" });
+    await expect(ruleDialog).toBeVisible();
+    await ruleDialog.getByLabel("关键词").fill("简繁");
+    await ruleDialog.getByLabel("评分（-100 到 100）").fill("-30");
+    await ruleDialog.getByRole("button", { name: "添加" }).click();
+    await expect(ruleDialog).toBeHidden();
+    await expect(settingsDialog.getByLabel("Mikan 规则 1 关键词")).toHaveValue("简繁");
+    await expect(settingsDialog.getByLabel("Mikan 规则 1 评分")).toHaveValue("-30");
+  });
+
   test("下载与入库 / 订阅数量与对齐 / 默认规则 可达并渲染 mock 数据", async ({ page }, testInfo) => {
     test.skip(isMobile(page), "sidebar 链接交互是桌面形态，手机另有两级导航用例");
     await openSettings(page, "/#/settings/download");

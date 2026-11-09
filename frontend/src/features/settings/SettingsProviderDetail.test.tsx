@@ -182,11 +182,30 @@ async function waitForSettings(label: "Mikan" | "AniBT" = "Mikan") {
 
 const footerSave = () => screen.getByRole("button", { name: t("act.save") });
 
-/** The subgroup roster card once loaded, edited in place. */
+/** The subgroup roster card once loaded: a summary plus the management entry. */
 async function groupsCard(label: "Mikan" | "AniBT" = "Mikan") {
   await waitForSettings(label);
-  const card = await screen.findByRole("group", { name: t("settings.provider.groups.dialogTitle", { label }) });
+  const card = await screen.findByRole("group", { name: t("settings.provider.groups.title") });
   return card;
+}
+
+/** Opens the roster dialog (mode, base score, dictionary search, roster) and returns it. */
+async function openGroupsDialog(label: "Mikan" | "AniBT" = "Mikan") {
+  await waitForSettings(label);
+  fireEvent.click(screen.getByRole("button", { name: t("settings.provider.groups.manageAria", { label }) }));
+  const search = await screen.findByLabelText(t("settings.provider.groups.searchAria", { label }));
+  const dialog = search.closest("[role='dialog']");
+  if (!dialog) throw new Error("group roster dialog not found");
+  return dialog as HTMLElement;
+}
+
+/** Opens the add-rule dialog and returns it. */
+async function openAddRuleDialog(label: "Mikan" | "AniBT" = "Mikan") {
+  fireEvent.click(await screen.findByRole("button", { name: t("settings.provider.rules.addAria", { label }) }));
+  const field = await screen.findByLabelText(t("settings.provider.rules.keywordField"));
+  const dialog = field.closest("[role='dialog']");
+  if (!dialog) throw new Error("add-rule dialog not found");
+  return dialog as HTMLElement;
 }
 
 /** Opens the dictionary dialog (the dictionary list: filtering, inline pinned scores, deletion). */
@@ -211,41 +230,51 @@ const withMikanGroups = (groups: string[]): GlobalSectionView => ({
   },
 });
 
-// The roster card, edited in place: search the dictionary -> click a result (lookup is the filter,
-//   clicking is adding). A roster entry stores only its key with no free-text entry; changes go into
+// The roster card: a summary plus one management entry; mode, base score, dictionary search and the
+//   roster live in a dialog (so the form works at phone width). Clicking a search result adds its
+//   key to the draft; a roster entry stores only that key with no free-text entry; changes go into
 //   the page draft, saved by the footer.
-describe("SettingsProviderDetail 字幕组名单（就地编辑，从字典挑）", () => {
+describe("SettingsProviderDetail 字幕组名单（弹窗管理，从字典挑）", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
   });
 
-  it("卡片就地编辑：没有管理弹窗与页头保存按钮", async () => {
+  it("卡片只留摘要与管理入口；名单在弹窗里编辑", async () => {
     stubSectionFetch();
     renderProvider("mikan");
     const card = await groupsCard();
 
-    expect(within(card).getByRole("radiogroup", { name: t("settings.provider.groups.modeAria") })).toBeInTheDocument();
-    expect(within(card).getByRole("radio", { name: t("settings.provider.groups.modeBlacklist") })).toHaveAttribute("aria-checked", "true");
-    expect(within(card).getByLabelText(t("settings.provider.groups.searchAria", { label: "Mikan" }))).toBeInTheDocument();
-    expect(within(card).getByText(t("settings.provider.groups.listEmpty"))).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: t("settings.provider.groups.manageAria", { label: "Mikan" }) })).toBeInTheDocument();
+    expect(
+      within(card).getByText(
+        t("settings.provider.groups.summary", { mode: t("settings.provider.groups.modeBlacklist"), score: 50, n: 0 }),
+      ),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     // The page has only the footer's single save, disabled until something changes.
     expect(screen.getAllByRole("button", { name: t("act.save") })).toHaveLength(1);
     expect(footerSave()).toBeDisabled();
+
+    const dialog = await openGroupsDialog();
+    expect(within(dialog).getByRole("radiogroup", { name: t("settings.provider.groups.modeAria") })).toBeInTheDocument();
+    expect(within(dialog).getByRole("radio", { name: t("settings.provider.groups.modeBlacklist") })).toHaveAttribute("aria-checked", "true");
+    expect(within(dialog).getByLabelText(t("settings.provider.groups.searchAria", { label: "Mikan" }))).toBeInTheDocument();
+    expect(within(dialog).getByText(t("settings.provider.groups.listEmpty"))).toBeInTheDocument();
   });
 
   it("从字典搜索点选加入名单，footer 保存随 PUT 上送", async () => {
     const fetchMock = stubSectionFetch({ search: (q) => (q.toLowerCase().includes("samplegroup") ? [LOLIHOUSE] : []) });
     renderProvider("mikan");
-    const card = await groupsCard();
+    const dialog = await openGroupsDialog();
 
-    fireEvent.change(within(card).getByLabelText(t("settings.provider.groups.searchAria", { label: "Mikan" })), { target: { value: "SampleGroup" } });
-    fireEvent.click(await within(card).findByRole("button", { name: t("settings.provider.groups.resultAria", { name: "SampleGroup" }) }));
+    fireEvent.change(within(dialog).getByLabelText(t("settings.provider.groups.searchAria", { label: "Mikan" })), { target: { value: "SampleGroup" } });
+    fireEvent.click(await within(dialog).findByRole("button", { name: t("settings.provider.groups.resultAria", { name: "SampleGroup" }) }));
     // The roster is a set of wrap-around badges, not a row-per-entry table.
-    const badges = within(card).getByRole("list", { name: t("settings.provider.groups.listTitle") });
+    const badges = within(dialog).getByRole("list", { name: t("settings.provider.groups.listTitle") });
     expect(within(badges).getAllByRole("listitem")).toHaveLength(1);
-    expect(within(card).getByRole("button", { name: t("settings.provider.groups.remove", { name: "SampleGroup" }) })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: t("settings.provider.groups.remove", { name: "SampleGroup" }) })).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings.provider.groups.done") }));
     expect(await screen.findByText(t("act.unsavedCount", { n: 1 }))).toBeInTheDocument();
     expect(sectionPutCalls(fetchMock)).toHaveLength(0);
 
@@ -261,17 +290,18 @@ describe("SettingsProviderDetail 字幕组名单（就地编辑，从字典挑�
   it("模式与默认分写草稿并随保存上送；非法默认分提示且不写入", async () => {
     const fetchMock = stubSectionFetch();
     renderProvider("mikan");
-    const card = await groupsCard();
+    const dialog = await openGroupsDialog();
 
-    fireEvent.click(within(card).getByRole("radio", { name: t("settings.provider.groups.modeWhitelist") }));
-    expect(within(card).getByText(t("settings.provider.groups.whitelistHelp"))).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("radio", { name: t("settings.provider.groups.modeWhitelist") }));
+    expect(within(dialog).getByText(t("settings.provider.groups.whitelistHelp"))).toBeInTheDocument();
 
-    const score = within(card).getByLabelText(t("settings.site.defaultScoreRange"));
+    const score = within(dialog).getByLabelText(t("settings.site.defaultScoreRange"));
     fireEvent.change(score, { target: { value: "0" } });
-    expect(within(card).getByRole("alert")).toHaveTextContent(t("settings.site.defaultScoreInvalid"));
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(t("settings.site.defaultScoreInvalid"));
     fireEvent.change(score, { target: { value: "70" } });
-    expect(within(card).queryByRole("alert")).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument();
 
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings.provider.groups.done") }));
     fireEvent.click(footerSave());
     await waitFor(() => expect(sectionPutCalls(fetchMock)).toHaveLength(1));
     expect(putBody(fetchMock).value.provider_defaults.mikan).toEqual({ mode: "whitelist", score: 70, groups: [] });
@@ -280,29 +310,31 @@ describe("SettingsProviderDetail 字幕组名单（就地编辑，从字典挑�
   it("名单拒绝自由文本：搜索框回车不会把文本当作名单项", async () => {
     stubSectionFetch({ search: (q) => (q.toLowerCase().includes("samplegroup") ? [LOLIHOUSE] : []) });
     renderProvider("mikan");
-    const card = await groupsCard();
+    const dialog = await openGroupsDialog();
 
-    const searchBox = within(card).getByLabelText(t("settings.provider.groups.searchAria", { label: "Mikan" }));
+    const searchBox = within(dialog).getByLabelText(t("settings.provider.groups.searchAria", { label: "Mikan" }));
     fireEvent.change(searchBox, { target: { value: "58" } });
     fireEvent.keyDown(searchBox, { key: "Enter" });
 
     // The roster stays empty: the search box filters the dictionary only, and adding happens by clicking a result (whose key came from the dictionary).
-    await waitFor(() => expect(within(card).queryByRole("button", { name: t("settings.provider.groups.resultAria", { name: "58" }) })).not.toBeInTheDocument());
-    expect(within(card).getByText(t("settings.provider.groups.listEmpty"))).toBeInTheDocument();
+    await waitFor(() => expect(within(dialog).queryByRole("button", { name: t("settings.provider.groups.resultAria", { name: "58" }) })).not.toBeInTheDocument());
+    expect(within(dialog).getByText(t("settings.provider.groups.listEmpty"))).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings.provider.groups.done") }));
     expect(footerSave()).toBeDisabled();
   });
 
-  it("搜不到想要的组时给出提示并可跳到字典弹窗", async () => {
+  it("搜不到想要的组时给出提示，并可跳到字典弹窗（名单弹窗先关闭）", async () => {
     stubSectionFetch({ search: () => [] });
     renderProvider("mikan");
-    const card = await groupsCard();
+    const dialog = await openGroupsDialog();
 
-    fireEvent.change(within(card).getByLabelText(t("settings.provider.groups.searchAria", { label: "Mikan" })), { target: { value: "没人有的组" } });
+    fireEvent.change(within(dialog).getByLabelText(t("settings.provider.groups.searchAria", { label: "Mikan" })), { target: { value: "没人有的组" } });
 
-    expect(await within(card).findByText(t("settings.provider.groups.searchEmpty"))).toBeInTheDocument();
-    fireEvent.click(within(card).getByRole("button", { name: t("settings.provider.groups.goToDictionary") }));
+    expect(await within(dialog).findByText(t("settings.provider.groups.searchEmpty"))).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings.provider.groups.goToDictionary") }));
 
     expect(await screen.findByLabelText(t("settings.provider.dictionary.filterAria", { label: "Mikan" }))).toBeInTheDocument();
+    expect(screen.queryByLabelText(t("settings.provider.groups.searchAria", { label: "Mikan" }))).not.toBeInTheDocument();
   });
 
   it("名单里未知键只显示键，解析不到名字也不报错", async () => {
@@ -312,11 +344,11 @@ describe("SettingsProviderDetail 字幕组名单（就地编辑，从字典挑�
       search: () => [NANRAWS],
     });
     renderProvider("mikan");
-    const card = await groupsCard();
+    const dialog = await openGroupsDialog();
 
     // Only the key node exists (no secondary name row).
-    await waitFor(() => expect(within(card).getAllByTitle("58")).toHaveLength(1));
-    expect(within(card).getByRole("button", { name: t("settings.provider.groups.remove", { name: "58" }) })).toBeInTheDocument();
+    await waitFor(() => expect(within(dialog).getAllByTitle("58")).toHaveLength(1));
+    expect(within(dialog).getByRole("button", { name: t("settings.provider.groups.remove", { name: "58" }) })).toBeInTheDocument();
     expect(screen.queryByText("NanRaws")).not.toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
@@ -324,21 +356,21 @@ describe("SettingsProviderDetail 字幕组名单（就地编辑，从字典挑�
   it("名单里未知键解析到名字后显示 名称 + 键", async () => {
     stubSectionFetch({ section: withMikanGroups(["58"]), search: () => [LOLIHOUSE] });
     renderProvider("mikan");
-    const card = await groupsCard();
+    const dialog = await openGroupsDialog();
 
     // The primary label is the name; the secondary identifier is the saved key.
-    expect(await within(card).findByText("SampleGroup")).toBeInTheDocument();
-    expect(within(card).getByTitle("58")).toBeInTheDocument();
+    expect(await within(dialog).findByText("SampleGroup")).toBeInTheDocument();
+    expect(within(dialog).getByTitle("58")).toBeInTheDocument();
   });
 
   it("已在名单的字典项在结果里标记", async () => {
     stubSectionFetch({ section: withMikanGroups(["58"]), search: () => [LOLIHOUSE] });
     renderProvider("mikan");
-    const card = await groupsCard();
+    const dialog = await openGroupsDialog();
 
-    fireEvent.change(within(card).getByLabelText(t("settings.provider.groups.searchAria", { label: "Mikan" })), { target: { value: "SampleGroup" } });
+    fireEvent.change(within(dialog).getByLabelText(t("settings.provider.groups.searchAria", { label: "Mikan" })), { target: { value: "SampleGroup" } });
 
-    const result = await within(card).findByRole("button", { name: t("settings.provider.groups.resultAria", { name: "SampleGroup" }) });
+    const result = await within(dialog).findByRole("button", { name: t("settings.provider.groups.resultAria", { name: "SampleGroup" }) });
     expect(result).toBeDisabled();
     expect(within(result).getByText(t("settings.provider.groups.inList"))).toBeInTheDocument();
   });
@@ -346,9 +378,10 @@ describe("SettingsProviderDetail 字幕组名单（就地编辑，从字典挑�
   it("移除名单项写草稿，保存后上送剩余名单", async () => {
     const fetchMock = stubSectionFetch({ section: withMikanGroups(["58", "99"]), search: (q) => (q === "58" ? [LOLIHOUSE] : q === "99" ? [NANRAWS] : []) });
     renderProvider("mikan");
-    const card = await groupsCard();
+    const dialog = await openGroupsDialog();
 
-    fireEvent.click(await within(card).findByRole("button", { name: t("settings.provider.groups.remove", { name: "SampleGroup" }) }));
+    fireEvent.click(await within(dialog).findByRole("button", { name: t("settings.provider.groups.remove", { name: "SampleGroup" }) }));
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings.provider.groups.done") }));
     expect(await screen.findByText(t("act.unsavedCount", { n: 1 }))).toBeInTheDocument();
     fireEvent.click(footerSave());
     await waitFor(() => expect(sectionPutCalls(fetchMock)).toHaveLength(1));
@@ -761,8 +794,10 @@ describe("SettingsProviderDetail 单 provider 页 + 409 冲突块", () => {
     renderProvider("mikan");
     const card = await groupsCard();
 
-    fireEvent.change(within(card).getByLabelText(t("settings.provider.groups.searchAria", { label: "Mikan" })), { target: { value: "SampleGroup" } });
-    fireEvent.click(await within(card).findByRole("button", { name: t("settings.provider.groups.resultAria", { name: "SampleGroup" }) }));
+    const dialog = await openGroupsDialog();
+    fireEvent.change(within(dialog).getByLabelText(t("settings.provider.groups.searchAria", { label: "Mikan" })), { target: { value: "SampleGroup" } });
+    fireEvent.click(await within(dialog).findByRole("button", { name: t("settings.provider.groups.resultAria", { name: "SampleGroup" }) }));
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings.provider.groups.done") }));
 
     fireEvent.click(footerSave());
     expect(await screen.findByText(t("common.versionConflict"))).toBeInTheDocument();
@@ -780,8 +815,14 @@ describe("SettingsProviderDetail 单 provider 页 + 409 冲突块", () => {
     await waitFor(() => expect(sectionGets()).toBeGreaterThan(getsBefore));
     await waitFor(() => expect(screen.queryByText(t("common.versionConflict"))).not.toBeInTheDocument());
     // After the refresh the server's latest values load and the local draft is dropped.
-    await waitFor(() => expect(within(card).getByText(t("settings.provider.groups.listEmpty"))).toBeInTheDocument());
-    expect(within(card).queryByRole("button", { name: t("settings.provider.groups.remove", { name: "SampleGroup" }) })).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        within(card).getByText(
+          t("settings.provider.groups.summary", { mode: t("settings.provider.groups.modeBlacklist"), score: 50, n: 0 }),
+        ),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole("button", { name: t("settings.provider.groups.remove", { name: "SampleGroup" }) })).not.toBeInTheDocument();
     await waitFor(() => expect(footerSave()).toBeDisabled());
   });
 });
@@ -800,9 +841,11 @@ describe("SettingsProviderDetail 名称评分", () => {
     renderProvider("mikan");
     await waitForSettings();
 
-    fireEvent.click(screen.getByRole("button", { name: t("settings.provider.rules.addAria", { label: "Mikan" }) }));
-    fireEvent.change(screen.getByLabelText(t("settings.provider.rules.keywordAria", { label: "Mikan", index: 1 })), { target: { value: "v2" } });
-    fireEvent.change(screen.getByLabelText(t("settings.provider.rules.scoreAria", { label: "Mikan", index: 1 })), { target: { value: "-30" } });
+    const dialog = await openAddRuleDialog();
+    fireEvent.change(within(dialog).getByLabelText(t("settings.provider.rules.keywordField")), { target: { value: "v2" } });
+    fireEvent.change(within(dialog).getByLabelText(t("settings.provider.rules.scoreField")), { target: { value: "-30" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings.provider.rules.addConfirm") }));
+    await waitFor(() => expect(screen.queryByLabelText(t("settings.provider.rules.keywordField"))).not.toBeInTheDocument());
 
     fireEvent.click(footerSave());
     const { toast } = await import("sonner");
@@ -862,26 +905,34 @@ describe("SettingsProviderDetail 名称评分", () => {
     expect(putBody(fetchMock).value.name_keywords.anibt).toEqual([{ keyword: "简繁", score: 20 }]);
   });
 
-  it("非法行内联标错：空关键词 / 越界分数 / 大小写重复", async () => {
+  it("添加弹窗内联校验：空关键词 / 越界分数 / 大小写重复", async () => {
     stubSectionFetch();
     renderProvider("mikan");
     await waitForSettings();
 
-    fireEvent.click(screen.getByRole("button", { name: t("settings.provider.rules.addAria", { label: "Mikan" }) }));
-    expect(screen.getByText(t("settings.provider.rules.keywordEmpty"))).toBeInTheDocument();
+    const dialog = await openAddRuleDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings.provider.rules.addConfirm") }));
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(t("settings.provider.rules.keywordEmpty"));
 
-    fireEvent.change(screen.getByLabelText(t("settings.provider.rules.keywordAria", { label: "Mikan", index: 1 })), { target: { value: "ABC" } });
-    fireEvent.change(screen.getByLabelText(t("settings.provider.rules.scoreAria", { label: "Mikan", index: 1 })), { target: { value: "101" } });
-    expect(screen.getByText(t("settings.site.scoreRange"))).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText(t("settings.provider.rules.keywordField")), { target: { value: "ABC" } });
+    fireEvent.change(within(dialog).getByLabelText(t("settings.provider.rules.scoreField")), { target: { value: "101" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings.provider.rules.addConfirm") }));
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(t("settings.site.scoreRange"));
 
-    fireEvent.change(screen.getByLabelText(t("settings.provider.rules.scoreAria", { label: "Mikan", index: 1 })), { target: { value: "5" } });
-    fireEvent.click(screen.getByRole("button", { name: t("settings.provider.rules.addAria", { label: "Mikan" }) }));
-    fireEvent.change(screen.getByLabelText(t("settings.provider.rules.keywordAria", { label: "Mikan", index: 2 })), { target: { value: "abc" } });
-    expect(screen.getByText(t("settings.provider.rules.keywordDuplicate"))).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText(t("settings.provider.rules.scoreField")), { target: { value: "5" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings.provider.rules.addConfirm") }));
+    await waitFor(() => expect(screen.queryByLabelText(t("settings.provider.rules.keywordField"))).not.toBeInTheDocument());
 
-    // The error disappears after deleting the conflicting row.
-    fireEvent.click(screen.getByRole("button", { name: t("settings.provider.rules.removeAria", { label: "Mikan", index: 2 }) }));
-    expect(screen.queryByText(t("settings.provider.rules.keywordDuplicate"))).not.toBeInTheDocument();
+    const second = await openAddRuleDialog();
+    fireEvent.change(within(second).getByLabelText(t("settings.provider.rules.keywordField")), { target: { value: "abc" } });
+    fireEvent.click(within(second).getByRole("button", { name: t("settings.provider.rules.addConfirm") }));
+    expect(within(second).getByRole("alert")).toHaveTextContent(t("settings.provider.rules.keywordDuplicate"));
+
+    // The dialog closes without adding; the existing row stays the only one.
+    fireEvent.click(within(second).getAllByRole("button", { name: t("settings.edit.close") })[0]!);
+    await waitFor(() => expect(screen.queryByLabelText(t("settings.provider.rules.keywordField"))).not.toBeInTheDocument());
+    expect(screen.getByLabelText(t("settings.provider.rules.keywordAria", { label: "Mikan", index: 1 }))).toHaveValue("ABC");
+    expect(screen.queryByLabelText(t("settings.provider.rules.keywordAria", { label: "Mikan", index: 2 }))).not.toBeInTheDocument();
   });
 });
 
@@ -938,8 +989,10 @@ describe("SettingsProviderDetail 目录自动刷新偏好", () => {
     renderProvider("mikan");
     await waitForSettings();
 
-    fireEvent.click(screen.getByRole("button", { name: t("settings.provider.rules.addAria", { label: "Mikan" }) }));
-    fireEvent.change(screen.getByLabelText(t("settings.provider.rules.keywordAria", { label: "Mikan", index: 1 })), { target: { value: "v2" } });
+    const ruleDialog = await openAddRuleDialog();
+    fireEvent.change(within(ruleDialog).getByLabelText(t("settings.provider.rules.keywordField")), { target: { value: "v2" } });
+    fireEvent.click(within(ruleDialog).getByRole("button", { name: t("settings.provider.rules.addConfirm") }));
+    await waitFor(() => expect(screen.queryByLabelText(t("settings.provider.rules.keywordField"))).not.toBeInTheDocument());
     fireEvent.click(await refreshSwitch());
     expect(await screen.findByText(t("act.unsavedCount", { n: 2 }))).toBeInTheDocument();
 
@@ -960,8 +1013,10 @@ describe("SettingsProviderDetail 目录自动刷新偏好", () => {
     renderProvider("mikan");
     await waitForSettings();
 
-    fireEvent.click(screen.getByRole("button", { name: t("settings.provider.rules.addAria", { label: "Mikan" }) }));
-    fireEvent.change(screen.getByLabelText(t("settings.provider.rules.keywordAria", { label: "Mikan", index: 1 })), { target: { value: "v2" } });
+    const ruleDialog = await openAddRuleDialog();
+    fireEvent.change(within(ruleDialog).getByLabelText(t("settings.provider.rules.keywordField")), { target: { value: "v2" } });
+    fireEvent.click(within(ruleDialog).getByRole("button", { name: t("settings.provider.rules.addConfirm") }));
+    await waitFor(() => expect(screen.queryByLabelText(t("settings.provider.rules.keywordField"))).not.toBeInTheDocument());
     fireEvent.click(await refreshSwitch());
     expect(await screen.findByText(t("act.unsavedCount", { n: 2 }))).toBeInTheDocument();
 

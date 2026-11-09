@@ -44,8 +44,9 @@ import { cn } from "@/lib/utils";
 //   - name_keywords: name keyword scoring (keyword + adjustment, -100..100);
 //   - catalog auto-refresh: this/next season refresh toggles (a per-provider owner row);
 //   - hidden anime: this provider's catalog suppressions (saved immediately).
-//   The roster / name scoring / catalog auto-refresh are all in-place-edited page drafts, committed
-//   in order by the settings dialog footer's single save: first the subgroups section with a whole
+//   The roster (managed in its own dialog) / name scoring (rows edited in place, new rules added in a
+//   dialog) / catalog auto-refresh are all page drafts, committed in order by the settings dialog
+//   footer's single save: first the subgroups section with a whole
 //   section CAS (the draft starts from the complete section value — max_rss, entries, and the other
 //   provider's fields pass through untouched, never wiping what the subscription policy page or the
 //   sibling provider page owns), then the catalog refresh preference. The dictionary and hidden list
@@ -904,11 +905,13 @@ function SubgroupDiscoverDialog({
   );
 }
 
-// The name scoring card: edits keywords plus adjustments (-100..100) inline, into the page draft,
+// The name scoring card: existing rules are edited inline and new ones are added in a dialog (the
+//   dialog holds just the two fields, so adding works at phone width), all into the page draft,
 //   saved by the settings dialog footer's single section-wide CAS. Row validation aligns with the
 //   backend's ValidateNameKeywordRules: non-empty keywords, integer scores of -100..100,
-//   case-insensitive keyword dedup; an illegal row is flagged inline, never silently dropped. Its
-//   scope follows the roster mode, read here once as policy.mode.
+//   case-insensitive keyword dedup; an illegal row is flagged inline, never silently dropped. The
+//   add dialog performs the same checks before it writes, so a new rule starts valid. Its scope
+//   follows the roster mode, read here once as policy.mode.
 function NameKeywordRulesCard({
   provider,
   rules,
@@ -921,6 +924,7 @@ function NameKeywordRulesCard({
   onChange: (rules: NameKeywordRule[]) => void;
 }) {
   const label = LABELS[provider];
+  const [addOpen, setAddOpen] = useState(false);
 
   function updateRule(index: number, patch: Partial<NameKeywordRule>) {
     onChange(rules.map((rule, i) => (i === index ? { ...rule, ...patch } : rule)));
@@ -928,10 +932,6 @@ function NameKeywordRulesCard({
 
   function removeRule(index: number) {
     onChange(rules.filter((_, i) => i !== index));
-  }
-
-  function addRule() {
-    onChange([...rules, { keyword: "", score: 0 }]);
   }
 
   const seen = new Set<string>();
@@ -951,7 +951,7 @@ function NameKeywordRulesCard({
     <div className="settings-provider-card">
       <div className="settings-provider-header">
         <h3 className="settings-provider-card-title text-body">{t("settings.provider.rules.title")}</h3>
-        <Button variant="ghost" size="sm" aria-label={t("settings.provider.rules.addAria", { label })} onClick={addRule}>
+        <Button variant="ghost" size="sm" aria-label={t("settings.provider.rules.addAria", { label })} onClick={() => setAddOpen(true)}>
           <Plus size={14} />
           {t("settings.provider.rules.add")}
         </Button>
@@ -1006,15 +1006,122 @@ function NameKeywordRulesCard({
           ))}
         </div>
       )}
+      {addOpen ? (
+        <NameKeywordRuleDialog
+          open
+          onOpenChange={setAddOpen}
+          label={label}
+          rules={rules}
+          onAdd={(rule) => onChange([...rules, rule])}
+        />
+      ) : null}
     </div>
   );
 }
 
-// The subgroup scoring card (edited in place): mode + base score + roster all write the page draft
-//   directly, saved by the settings dialog footer's single CAS.
-//   The roster may only be picked from the dictionary: the search box filters dictionary candidates
-//   only (list…?q=, a local read), and clicking a result adds its group_ref to the draft — no free
-//   text entry and no "add" button (search lives on the dictionary card).
+// The add-rule dialog: keyword plus adjustment, validated against the same rules the backend
+//   enforces; confirming appends one valid rule to the page draft and closes. Rows themselves stay
+//   editable in the card.
+function NameKeywordRuleDialog({
+  open,
+  onOpenChange,
+  label,
+  rules,
+  onAdd,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  label: string;
+  rules: NameKeywordRule[];
+  onAdd: (rule: NameKeywordRule) => void;
+}) {
+  const [keyword, setKeyword] = useState("");
+  const [scoreText, setScoreText] = useState("0");
+  const [error, setError] = useState<string>();
+
+  useEffect(() => {
+    if (!open) return;
+    setKeyword("");
+    setScoreText("0");
+    setError(undefined);
+  }, [open]);
+
+  function confirm() {
+    const text = keyword.trim();
+    const score = scoreText.trim() === "" ? Number.NaN : Number(scoreText);
+    if (text === "") return setError(t("settings.provider.rules.keywordEmpty"));
+    if (text.length > 256) return setError(t("settings.provider.rules.keywordTooLong"));
+    if (!Number.isInteger(score) || score < -100 || score > 100) return setError(t("settings.site.scoreRange"));
+    const key = text.toLowerCase();
+    if (rules.some((rule) => rule.keyword.trim().toLowerCase() === key)) {
+      return setError(t("settings.provider.rules.keywordDuplicate"));
+    }
+    onAdd({ keyword: text, score });
+    onOpenChange(false);
+  }
+
+  return (
+    <SettingsEditDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t("settings.provider.rules.addTitle", { label })}
+      description={t("settings.provider.rules.addHint")}
+      footer={
+        <>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            {t("settings.edit.close")}
+          </Button>
+          <Button variant="primary" onClick={confirm}>
+            {t("settings.provider.rules.addConfirm")}
+          </Button>
+        </>
+      }
+    >
+      <div className="settings-provider-form">
+        <label className="settings-provider-field text-caption">
+          <span>{t("settings.provider.rules.keywordField")}</span>
+          <Input
+            value={keyword}
+            placeholder={t("settings.provider.rules.keywordPlaceholder")}
+            onChange={(event) => {
+              setKeyword(event.target.value);
+              setError(undefined);
+            }}
+          />
+        </label>
+        <label className="settings-provider-field text-caption">
+          <span>{t("settings.provider.rules.scoreField")}</span>
+          <Input
+            type="number"
+            min={-100}
+            max={100}
+            step={1}
+            className="tw:w-32"
+            fullWidth={false}
+            value={scoreText}
+            onChange={(event) => {
+              setScoreText(event.target.value);
+              setError(undefined);
+            }}
+          />
+        </label>
+        {error ? (
+          <p role="alert" className="settings-provider-error text-caption">
+            {error}
+          </p>
+        ) : null}
+      </div>
+    </SettingsEditDialog>
+  );
+}
+
+// The subgroup scoring card: a summary with one management entry. Mode, base score and roster are
+//   edited in a dialog, because the inline form (a search field, a result list and the roster) does
+//   not fit a phone screen. The dialog writes the page draft directly, saved by the settings dialog
+//   footer's single CAS.
+//   The roster may only be picked from the dictionary: the dialog's search box filters dictionary
+//   candidates only (list…?q=, a local read), and clicking a result adds its group_ref to the draft —
+//   no free text entry and no "add" button (search lives on the dictionary card).
 //   A roster entry's display name resolves through useDictionaryNames; when unresolvable only the
 //   key shows, with no error and no spinner.
 function ProviderGroupPolicyCard({
@@ -1029,17 +1136,83 @@ function ProviderGroupPolicyCard({
   onOpenDictionary: () => void;
 }) {
   const label = LABELS[provider];
+  const [open, setOpen] = useState(false);
+  const modeLabel = t(
+    policy.mode === "blacklist"
+      ? "settings.provider.groups.modeBlacklist"
+      : "settings.provider.groups.modeWhitelist",
+  );
+
+  return (
+    <div className="settings-provider-card" aria-label={t("settings.provider.groups.title")} role="group">
+      <div className="settings-provider-header">
+        <h3 className="settings-provider-card-title text-body">{t("settings.provider.groups.title")}</h3>
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label={t("settings.provider.groups.manageAria", { label })}
+          onClick={() => setOpen(true)}
+        >
+          {t("settings.provider.groups.manage")}
+        </Button>
+      </div>
+      <p className="settings-provider-description text-caption">
+        {t("settings.provider.groups.summary", { mode: modeLabel, score: policy.score, n: policy.groups.length })}
+      </p>
+      <p className="settings-provider-description text-caption">
+        {t(policy.mode === "blacklist" ? "settings.provider.groups.blacklistHelp" : "settings.provider.groups.whitelistHelp")}
+      </p>
+      {open ? (
+        <SubgroupRosterDialog
+          open
+          onOpenChange={setOpen}
+          provider={provider}
+          policy={policy}
+          onChange={onChange}
+          onOpenDictionary={onOpenDictionary}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+// The roster dialog: mode, base score, the dictionary search and the roster all in one scrollable
+//   form, so management works at phone width. Edits write the page draft; the footer's "完成" only
+//   closes (the page's single save commits). The dictionary link closes this dialog first, since the
+//   dictionary is its own management dialog.
+function SubgroupRosterDialog({
+  open,
+  onOpenChange,
+  provider,
+  policy,
+  onChange,
+  onOpenDictionary,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  provider: ProviderKey;
+  policy: ProviderGroupDefault;
+  onChange: (policy: ProviderGroupDefault) => void;
+  onOpenDictionary: () => void;
+}) {
+  const label = LABELS[provider];
   const [search, setSearch] = useState("");
   // A just-typed illegal base score; undefined means the input reflects the draft value directly.
   const [pendingScore, setPendingScore] = useState<string>();
   const scoreInput = pendingScore ?? String(policy.score);
   const scoreValid = pendingScore === undefined;
 
+  useEffect(() => {
+    if (!open) return;
+    setSearch("");
+    setPendingScore(undefined);
+  }, [open]);
+
   const query = search.trim();
   const searchResult = useQuery({
     queryKey: subgroupDictionaryKeys.search(provider, query),
     queryFn: () => listSubgroupGroupCandidates(provider, { q: query }),
-    enabled: query !== "",
+    enabled: open && query !== "",
   });
   const candidates = useMemo(() => searchResult.data?.candidates ?? [], [searchResult.data]);
   const nameCache = useDictionaryNames(provider, policy.groups, candidates);
@@ -1053,10 +1226,17 @@ function ProviderGroupPolicyCard({
   }
 
   return (
-    <div className="settings-provider-card" aria-label={t("settings.provider.groups.dialogTitle", { label })} role="group">
-      <div className="settings-provider-header">
-        <h3 className="settings-provider-card-title text-body">{t("settings.provider.groups.title")}</h3>
-      </div>
+    <SettingsEditDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t("settings.provider.groups.dialogTitle", { label })}
+      description={t("settings.provider.groups.dialogHint")}
+      footer={
+        <Button variant="primary" onClick={() => onOpenChange(false)}>
+          {t("settings.provider.groups.done")}
+        </Button>
+      }
+    >
       <div className="settings-provider-form">
         <div className="settings-provider-form-section">
           <Segmented<PolicyMode>
@@ -1132,7 +1312,14 @@ function ProviderGroupPolicyCard({
               <div className="settings-provider-form-section">
                 <p className="settings-provider-description text-caption">{t("settings.provider.groups.searchEmpty")}</p>
                 <div>
-                  <Button variant="secondary" size="sm" onClick={onOpenDictionary}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      onOpenChange(false);
+                      onOpenDictionary();
+                    }}
+                  >
                     {t("settings.provider.groups.goToDictionary")}
                   </Button>
                 </div>
@@ -1175,7 +1362,7 @@ function ProviderGroupPolicyCard({
           <p className="settings-provider-description text-caption">{t("settings.provider.groups.listEmpty")}</p>
         )}
       </div>
-    </div>
+    </SettingsEditDialog>
   );
 }
 
