@@ -4,3 +4,5 @@
 - When picking seeds for a one-shot download, a selection belongs to the subtitle group you are browsing: after switching to another group the earlier picks are no longer kept, the selected count starts again from zero, and returning to a group you already opened does not restore them.
 - Season 0 now names its folder Specials, so the full path is /Specials. Files already imported keep their current name; only newly imported files use Specials.
 - The owner password minimum length is now 8 characters.
+- A download that fails on a timeout (over the no-progress limit or the maximum download time) now has its task and files removed from the download client; a task that already existed before this download and any other failure keep the task so it can be retried.
+- Adding group-list and name-scoring rules now happens in dialogs and works on mobile; the roster dialog browses and filters the name dictionary so an entry can be picked directly.
