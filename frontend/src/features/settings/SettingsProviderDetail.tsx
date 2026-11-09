@@ -44,7 +44,7 @@ import { cn } from "@/lib/utils";
 //   - name_keywords: name keyword scoring (keyword + adjustment, -100..100);
 //   - catalog auto-refresh: this/next season refresh toggles (a per-provider owner row);
 //   - hidden anime: this provider's catalog suppressions (saved immediately).
-//   The roster (managed in its own dialog) / name scoring (rows edited in place, new rules added in a
+//   The roster (listed in its card, edited in its own dialog) / name scoring (rows edited in place, new rules added in a
 //   dialog) / catalog auto-refresh are all page drafts, committed in order by the settings dialog
 //   footer's single save: first the subgroups section with a whole
 //   section CAS (the draft starts from the complete section value — max_rss, entries, and the other
@@ -1114,10 +1114,11 @@ function NameKeywordRuleDialog({
   );
 }
 
-// The subgroup scoring card: a summary with one management entry. Mode, base score and roster are
-//   edited in a dialog, because the inline form (a search field, a result list and the roster) does
-//   not fit a phone screen. The dialog writes the page draft directly, saved by the settings dialog
-//   footer's single CAS.
+// The subgroup scoring card: the summary, the help line and the roster itself, with one management
+//   entry into the editing dialog. Only the form (mode, base score, the dictionary filter and the
+//   roster's remove buttons) is separated into the dialog, because it does not fit a phone screen;
+//   the card keeps showing what the list contains. The dialog writes the page draft directly, saved
+//   by the settings dialog footer's single CAS.
 //   The roster may only be picked from the dictionary: the dialog's search box filters dictionary
 //   candidates only (list…?q=, a local read), and clicking a result adds its group_ref to the draft —
 //   no free text entry and no "add" button (search lives on the dictionary card).
@@ -1141,6 +1142,7 @@ function ProviderGroupPolicyCard({
       ? "settings.provider.groups.modeBlacklist"
       : "settings.provider.groups.modeWhitelist",
   );
+  const names = useDictionaryNames(provider, policy.groups);
 
   return (
     <div className="settings-provider-card" aria-label={t("settings.provider.groups.title")} role="group">
@@ -1161,6 +1163,31 @@ function ProviderGroupPolicyCard({
       <p className="settings-provider-description text-caption">
         {t(policy.mode === "blacklist" ? "settings.provider.groups.blacklistHelp" : "settings.provider.groups.whitelistHelp")}
       </p>
+      {/* The roster stays visible in the card; only the editing form lives in the dialog. Rendered as
+          wrap-around badges, one per group: out of a dictionary of several hundred groups only a few
+          are picked, so a horizontal layout shows the list's content and length at a glance. */}
+      {policy.groups.length > 0 ? (
+        <ul
+          className="tw:m-0 tw:flex tw:list-none tw:flex-wrap tw:items-center tw:gap-1.5 tw:p-0"
+          aria-label={t("settings.provider.groups.listTitle")}
+        >
+          {policy.groups.map((key) => {
+            const name = names.get(key);
+            const primary = name ? name : key;
+            return (
+              <li
+                key={key}
+                className="tw:inline-flex tw:max-w-full tw:items-center tw:gap-1 tw:rounded-[0.25rem] tw:border tw:border-border tw:bg-muted/60 tw:px-2 tw:py-0.5 tw:text-xs tw:font-medium tw:leading-normal"
+              >
+                <span className="tw:truncate" title={primary}>{primary}</span>
+                {name ? <span className="tw:shrink-0 tw:text-muted-foreground" title={key}>{key}</span> : null}
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="settings-provider-description text-caption">{t("settings.provider.groups.listEmpty")}</p>
+      )}
       {open ? (
         <SubgroupRosterDialog
           open

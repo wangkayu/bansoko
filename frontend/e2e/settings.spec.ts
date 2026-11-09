@@ -507,9 +507,9 @@ test.describe("settings fixture coverage", () => {
     await expect(dialog.getByText("字幕组名单", { exact: true })).toBeVisible();
   });
 
-  // 名单与名称评分的编辑入口都在二级弹窗里（桌面/手机共用）：卡片只留摘要与
-  // 管理按钮，弹窗在视口内、页面不横向滚动，添加规则确认后落成卡片里的一行。
-  test("名单与名称评分在弹窗里编辑，窄视口不横向溢出", async ({ page }) => {
+  // 名单直接显示在卡片里，编辑表单（模式/默认分/字典点选/移除）在二级弹窗里
+  // （桌面/手机共用）：弹窗在视口内、页面不横向滚动，添加规则确认后落成卡片里的一行。
+  test("名单在卡片里展示、在弹窗里编辑，窄视口不横向溢出", async ({ page }) => {
     await openSettings(page, "/#/settings/mikan");
     const settingsDialog = page.getByRole("dialog");
     await expect(settingsDialog.getByRole("heading", { name: "Mikan 配置" }).first()).toBeVisible({ timeout: 10000 });
@@ -533,6 +533,10 @@ test.describe("settings fixture coverage", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await roster.getByRole("button", { name: "完成" }).click();
     await expect(roster).toBeHidden();
+    // 完成后面包的名单直接显示在卡片里，不需要再打开弹窗。
+    const rosterCard = settingsDialog.getByRole("group", { name: "字幕组名单" });
+    await expect(rosterCard.getByRole("list", { name: "名单" })).toContainText("示例字幕组 A");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
     await settingsDialog.getByRole("button", { name: "添加 Mikan 名称评分规则" }).click();
     const ruleDialog = page.getByRole("dialog", { name: "添加名称评分规则" });

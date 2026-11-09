@@ -230,18 +230,18 @@ const withMikanGroups = (groups: string[]): GlobalSectionView => ({
   },
 });
 
-// The roster card: a summary plus one management entry; mode, base score, the browsable dictionary
-//   and the roster live in a dialog (so the form works at phone width). The dialog lists the whole
-//   usable dictionary on open and the filter narrows it; clicking a row adds its key to the draft; a
-//   roster entry stores only that key with no free-text entry; changes go into the page draft, saved
-//   by the footer.
-describe("SettingsProviderDetail 字幕组名单（弹窗管理，浏览字典点选）", () => {
+// The roster card: the summary, the help line and the roster itself; the editing form (mode, base
+//   score, the browsable dictionary and the roster's remove buttons) lives in a dialog (so the form
+//   works at phone width). The dialog lists the whole usable dictionary on open and the filter narrows
+//   it; clicking a row adds its key to the draft; a roster entry stores only that key with no free-text
+//   entry; changes go into the page draft, saved by the footer.
+describe("SettingsProviderDetail 字幕组名单（卡片展示名单，弹窗编辑）", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
   });
 
-  it("卡片只留摘要与管理入口；名单在弹窗里编辑", async () => {
+  it("卡片展示摘要、名单与管理入口；编辑在弹窗里", async () => {
     stubSectionFetch({ browse: () => dictionaryPage([LOLIHOUSE]) });
     renderProvider("mikan");
     const card = await groupsCard();
@@ -252,6 +252,8 @@ describe("SettingsProviderDetail 字幕组名单（弹窗管理，浏览字典�
         t("settings.provider.groups.summary", { mode: t("settings.provider.groups.modeBlacklist"), score: 50, n: 0 }),
       ),
     ).toBeInTheDocument();
+    // The empty roster is stated in the card itself, not only in the dialog.
+    expect(within(card).getByText(t("settings.provider.groups.listEmpty"))).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     // The page has only the footer's single save, disabled until something changes.
     expect(screen.getAllByRole("button", { name: t("act.save") })).toHaveLength(1);
@@ -266,6 +268,25 @@ describe("SettingsProviderDetail 字幕组名单（弹窗管理，浏览字典�
       await within(dialog).findByRole("button", { name: t("settings.provider.groups.resultAria", { name: "SampleGroup" }) }),
     ).toBeInTheDocument();
     expect(within(dialog).getByText(t("settings.provider.groups.listEmpty"))).toBeInTheDocument();
+  });
+
+  it("已有的名单直接显示在卡片里，移除只在弹窗里做", async () => {
+    stubSectionFetch({
+      section: withMikanGroups(["58"]),
+      // Resolving 58's display name for the card.
+      search: (q) => (q === "58" ? [LOLIHOUSE] : []),
+    });
+    renderProvider("mikan");
+    const card = await groupsCard();
+
+    const badges = await within(card).findByRole("list", { name: t("settings.provider.groups.listTitle") });
+    await waitFor(() => expect(within(badges).getByText("SampleGroup")).toBeInTheDocument());
+    expect(within(badges).getAllByRole("listitem")).toHaveLength(1);
+    // Removal is editing: the card shows the entry, the dialog carries the button.
+    expect(within(card).queryByRole("button", { name: t("settings.provider.groups.remove", { name: "SampleGroup" }) })).not.toBeInTheDocument();
+
+    const dialog = await openGroupsDialog();
+    expect(within(dialog).getByRole("button", { name: t("settings.provider.groups.remove", { name: "SampleGroup" }) })).toBeInTheDocument();
   });
 
   it("弹窗内直接浏览字典，输入关键词即筛选", async () => {
@@ -303,6 +324,9 @@ describe("SettingsProviderDetail 字幕组名单（弹窗管理，浏览字典�
     expect(within(dialog).getByRole("button", { name: t("settings.provider.groups.remove", { name: "SampleGroup" }) })).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: t("settings.provider.groups.done") }));
     expect(await screen.findByText(t("act.unsavedCount", { n: 1 }))).toBeInTheDocument();
+    // The added group shows in the card's own list once the dialog closes.
+    const cardBadges = within(await groupsCard()).getByRole("list", { name: t("settings.provider.groups.listTitle") });
+    expect(within(cardBadges).getAllByRole("listitem")).toHaveLength(1);
     expect(sectionPutCalls(fetchMock)).toHaveLength(0);
 
     fireEvent.click(footerSave());
