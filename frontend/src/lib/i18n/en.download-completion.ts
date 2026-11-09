@@ -7,7 +7,7 @@ export const enDownloadCompletionCopy = {
   title: "After Download",
   hint: "What to do with the download client task once all files are imported",
   helpLabel: "About after download",
-  help: "Runs only after all files of the torrent have been processed. A failed download keeps its task so it can be retried. A change only affects torrents whose download starts afterwards.",
+  help: "Runs only after all files of the torrent have been processed. A download that fails on a timeout has its task and files removed; any other failure keeps the task so it can be retried. A change only affects torrents whose download starts afterwards.",
   field: "Action",
   action: {
     seed: "Keep seeding",

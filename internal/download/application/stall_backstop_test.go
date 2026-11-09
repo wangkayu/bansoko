@@ -103,11 +103,12 @@ FROM download_tasks WHERE id = $1`, taskID).Scan(&highwater, &lastProgress); err
 	return state, failureCode, failureReason, correlation, highwater, lastProgress
 }
 
-// TestQBSyncStallTimeoutFailsTaskWithStalledCodeAndLeavesTheTorrentAlone is the
-// migrated backstop case: a reliable high-water mark that stopped growing past
-// the frozen stall window fails as DOWNLOAD_STALLED, and nothing is deleted or
-// re-submitted on the way out.
-func TestQBSyncStallTimeoutFailsTaskWithStalledCodeAndLeavesTheTorrentAlone(t *testing.T) {
+// TestQBSyncStallTimeoutFailsTaskWithStalledCodeAndLeavesTheDownloadToCleanup
+// is the migrated backstop case: a reliable high-water mark that stopped
+// growing past the frozen stall window fails as DOWNLOAD_STALLED. The sync
+// handler deletes nothing and re-submits nothing on the way out; the
+// asynchronous completion pass removes the task and its files.
+func TestQBSyncStallTimeoutFailsTaskWithStalledCodeAndLeavesTheDownloadToCleanup(t *testing.T) {
 	db := openDownloadDB(t)
 	seedDownloadTask(t, db, "task-qb-stalled", "downloading", "null")
 	total := int64(1000)
@@ -136,8 +137,8 @@ func TestQBSyncStallTimeoutFailsTaskWithStalledCodeAndLeavesTheTorrentAlone(t *t
 	if state != "failed" || failureCode.String != "DOWNLOAD_STALLED" {
 		t.Fatalf("stalled task state=%q code=%q", state, failureCode.String)
 	}
-	if !strings.Contains(failureReason.String, "已完成字节") || !strings.Contains(failureReason.String, "未删除任何文件") {
-		t.Fatalf("stall reason does not state the observation and the non-action: %q", failureReason.String)
+	if !strings.Contains(failureReason.String, "已完成字节") || !strings.Contains(failureReason.String, "将删除") {
+		t.Fatalf("stall reason does not state the observation and the cleanup: %q", failureReason.String)
 	}
 	if correlation.ExternalID != "tag:qb:release-qb-test" {
 		t.Fatalf("stall verdict dropped the correlation: %+v", correlation)
@@ -148,9 +149,9 @@ func TestQBSyncStallTimeoutFailsTaskWithStalledCodeAndLeavesTheTorrentAlone(t *t
 		t.Fatalf("stall verdict rewrote the high-water mark: %+v", highwater)
 	}
 
-	// R3: nothing was removed, paused or re-submitted. The Provider port has no
-	// removal method at all, so the strongest available assertion is that the
-	// backstop issued exactly one read and no write of any kind.
+	// R3: the sync handler itself removed, paused and re-submitted nothing. The
+	// Provider port has no removal method at all here; the task and its files
+	// are removed afterwards by the asynchronous completion pass.
 	if provider.syncCalls != 1 || provider.fileSubmitCalls != 0 || provider.lookupCalls != 0 {
 		t.Fatalf("stall backstop called the provider beyond one sync: %+v", provider)
 	}

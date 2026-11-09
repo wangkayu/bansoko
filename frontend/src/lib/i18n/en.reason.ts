@@ -65,6 +65,7 @@ export const enReasonCopy = {
   removed_with_data: "Task and its files removed from the download client",
   task_absent: "The task is no longer in the download client",
   skipped_torrent_shared: "Another download still uses this task, nothing was changed",
+  skipped_torrent_adopted: "The task was not created by this download, it was kept",
   qb_task_unknown: "The task in the download client was not recorded, nothing can be done",
   qb_unavailable: QB_UNAVAILABLE,
   qb_verify_failed: "The download client did not apply the change, will retry",

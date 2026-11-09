@@ -152,7 +152,7 @@ func TestDownloadFinishSyncPausedPastStallSingleFailureAndResume(t *testing.T) {
 			if reply.State != "failed" || reply.Code != want || strings.Contains(reply.Text, "连续多次") {
 				t.Fatalf("reply=%s", raw)
 			}
-			if failure && (!strings.Contains(reply.Text, "本轮") || !strings.Contains(reply.Text, "种子仍保留") || !strings.Contains(reply.Text, "未删除")) {
+			if failure && (!strings.Contains(reply.Text, "本轮") || !strings.Contains(reply.Text, "将删除")) {
 				t.Fatalf("misleading reason: %s", reply.Text)
 			}
 			var errors, next int

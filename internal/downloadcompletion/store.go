@@ -54,28 +54,40 @@ type Store struct {
 	Work *workitems.Store
 }
 
-// candidate is a succeeded download acquisition without a completion row yet.
+// candidate is a still-detailed download acquisition without a completion row
+// yet: a succeeded root that needs its frozen action, or a failed root whose
+// download ended in a timeout verdict and whose task and files must go.
 type candidate struct {
 	AcquisitionID string
 	ReleaseID     string
 	Correlation   []byte
 	FrozenInput   []byte
+	Timeout       bool
 }
 
-// listCandidates returns succeeded, still-detailed download acquisitions that
-// have no completion row. acquisitions.completion_open marks exactly those
-// roots (acquisition_write_terminal sets it, the download_completions insert
-// clears it in the same transaction), so the scan reads only open roots; the
-// full predicate is kept so the flag can only narrow, never widen, the set.
+// listCandidates returns download acquisitions that have no completion row.
+//
+// A succeeded root is marked by acquisitions.completion_open
+// (acquisition_write_terminal sets it, the download_completions insert clears
+// it in the same transaction), so the scan reads only open roots; the full
+// predicate is kept so the flag can only narrow, never widen, the set.
+//
+// A failed root is a timeout cleanup when the database classifies its failure
+// code as a time-window verdict (download_failure_is_timeout): the download is
+// not kept for a retry, so the task and its files are removed. Every other
+// failure keeps its task.
+//
 // An acquisition is seen again only if its earlier pass attempt rolled back.
 func (s *Store) listCandidates(ctx context.Context, limit int) ([]candidate, error) {
 	rows, err := s.DB.QueryContext(ctx, `
-SELECT a.id, t.release_id, COALESCE(t.provider_correlation::text, ''), t.frozen_input::text
+SELECT a.id, t.release_id, COALESCE(t.provider_correlation::text, ''), t.frozen_input::text,
+       a.state = 'failed'
 FROM acquisitions a
 JOIN download_tasks t ON t.acquisition_id = a.id
-WHERE a.completion_open
-  AND a.state = 'succeeded' AND a.execution_branch = 'download' AND a.record_state = 'full'
+WHERE a.execution_branch = 'download' AND a.record_state = 'full'
   AND NOT EXISTS (SELECT 1 FROM download_completions c WHERE c.acquisition_id = a.id)
+  AND ((a.completion_open AND a.state = 'succeeded')
+       OR (a.state = 'failed' AND t.state = 'failed' AND download_failure_is_timeout(t.failure_code)))
 ORDER BY a.terminal_at, a.id
 LIMIT $1`, limit)
 	if err != nil {
@@ -86,7 +98,7 @@ LIMIT $1`, limit)
 	for rows.Next() {
 		var c candidate
 		var correlation, frozen string
-		if err := rows.Scan(&c.AcquisitionID, &c.ReleaseID, &correlation, &frozen); err != nil {
+		if err := rows.Scan(&c.AcquisitionID, &c.ReleaseID, &correlation, &frozen, &c.Timeout); err != nil {
 			return nil, err
 		}
 		c.Correlation, c.FrozenInput = []byte(correlation), []byte(frozen)
@@ -172,10 +184,26 @@ func factsOf(c candidate) frozenFacts {
 	return result
 }
 
+// adoptedTask reports whether the download adopted a qBittorrent task that
+// already existed. Adoption is recorded in the frozen input; a cleanup must
+// keep such a task even when the download ends in a timeout, because the data
+// is not this download's.
+func adoptedTask(c candidate) bool {
+	var frozen struct {
+		AdoptionProvenance *struct {
+			Kind string `json:"kind"`
+		} `json:"adoption_provenance"`
+	}
+	_ = json.Unmarshal(c.FrozenInput, &frozen)
+	return frozen.AdoptionProvenance != nil && frozen.AdoptionProvenance.Kind == "unique_infohash_path"
+}
+
 // create writes the completion row of one acquisition and, for an action that
 // has work to do, its WorkItem, in one transaction. It reports whether the
-// row was created (false: another pass already did).
-func (s *Store) create(ctx context.Context, acquisitionID, action string, limits *batchplan.SeedLimits, f frozenFacts) (created bool, err error) {
+// row was created (false: another pass already did). settled, when set, writes
+// the row already succeeded with that result instead of queueing work: the
+// pass has decided the outcome and no qBittorrent action follows.
+func (s *Store) create(ctx context.Context, acquisitionID, action string, limits *batchplan.SeedLimits, f frozenFacts, settled string) (created bool, err error) {
 	if action != ActionSeed {
 		limits = nil
 	}
@@ -192,6 +220,8 @@ func (s *Store) create(ctx context.Context, acquisitionID, action string, limits
 		state, result := StatePending, sql.NullString{}
 		reason := sql.NullString{}
 		switch {
+		case settled != "":
+			state, result = StateSucceeded, sql.NullString{String: settled, Valid: true}
 		case action == ActionSeed && limits == nil:
 			state, result = StateSucceeded, sql.NullString{String: ResultSeedKept, Valid: true}
 		case f.InfoHash == "":

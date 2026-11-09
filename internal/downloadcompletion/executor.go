@@ -18,6 +18,9 @@ const (
 	ResultRemovedData   = "removed_with_data"
 	ResultTaskAbsent    = "task_absent"
 	ResultTorrentShared = "skipped_torrent_shared"
+	// ResultTorrentAdopted settles a timeout cleanup of a task the download
+	// adopted from another owner: the task is kept, nothing was deleted.
+	ResultTorrentAdopted = "skipped_torrent_adopted"
 
 	FailureTaskUnknown      = "qb_task_unknown"
 	FailureQBUnavailable    = "qb_unavailable"

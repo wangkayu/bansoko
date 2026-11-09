@@ -328,12 +328,16 @@ func deriveAcquisitionStages(f acquisitionGraphFacts) []AcquisitionStage {
 }
 
 // completionStage is the download-completion action on the qBittorrent task.
-// It only exists for a succeeded download root; before the completion pass
-// has written its row the stage is not reached yet. A seed completion is a
-// succeeded stage whose result says the task was left seeding.
+// A succeeded download root has one once the completion pass has written its
+// row; before that the stage is not reached yet. A failed root normally has
+// none, but a timeout failure is cleaned up through a completion row, which is
+// shown here. A seed completion is a succeeded stage whose result says the
+// task was left seeding.
 func completionStage(f acquisitionGraphFacts) AcquisitionStage {
 	switch {
-	case f.Branch == "adopted" || f.RootState == "failed" || f.RootState == "cancelled":
+	case f.Branch == "adopted" || f.RootState == "cancelled":
+		return absentStage(AcquisitionStageCompletion, AcquisitionStageNotApplicable)
+	case f.RootState == "failed" && f.Completion == nil:
 		return absentStage(AcquisitionStageCompletion, AcquisitionStageNotApplicable)
 	case f.RootState == "running" || f.Completion == nil:
 		return absentStage(AcquisitionStageCompletion, AcquisitionStageNotReached)

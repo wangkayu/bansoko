@@ -8,8 +8,12 @@
 // qBittorrent identity of the task. A seed row without limits is already
 // settled; seed limits are written to qBittorrent once and the product lets go. Any other action is carried by one retryable
 // completion_execute WorkItem, whose result is written back to the row and
-// shown as the completion stage of the acquisition detail. Only a succeeded
-// acquisition acts; a failed one keeps its task so a retry can adopt it again.
+// shown as the completion stage of the acquisition detail. Every other failure
+// keeps its task so a retry can adopt it again; a download that failed on a
+// time-window verdict (no verifiable progress within the stall window, or the
+// whole download over the wall budget) is not kept: its row is frozen as
+// remove_with_data, so the qBittorrent task and its files are deleted under the
+// same safety rule.
 //
 // The product never deletes a file itself: remove_with_data asks qBittorrent
 // to delete the task's own files after CheckRemoveWithData has proved no
@@ -85,9 +89,10 @@ type PassResult struct {
 	Created int
 }
 
-// RunPass writes the completion row of every successful download acquisition
-// that has none, freezing the action its release was accepted under. It is
-// idempotent and restart-safe: the row is the marker.
+// RunPass writes the completion row of every download acquisition that has
+// none: a succeeded root freezes the action its release was accepted under; a
+// timeout failure freezes remove_with_data so its task and files are removed.
+// It is idempotent and restart-safe: the row is the marker.
 func (s *Service) RunPass(ctx context.Context) (PassResult, error) {
 	var result PassResult
 	candidates, err := s.store.listCandidates(ctx, s.batch)
@@ -95,11 +100,21 @@ func (s *Service) RunPass(ctx context.Context) (PassResult, error) {
 		return result, err
 	}
 	for _, c := range candidates {
-		action, limits, err := s.frozenAction(ctx, c.ReleaseID)
-		if err != nil {
-			return result, fmt.Errorf("read frozen completion action of %s: %w", c.AcquisitionID, err)
+		action, limits, settled := "", (*batchplan.SeedLimits)(nil), ""
+		if c.Timeout {
+			action = ActionRemoveWithData
+			if adoptedTask(c) {
+				// The task existed before this download; deleting its files
+				// would destroy data the download never created.
+				settled = ResultTorrentAdopted
+			}
+		} else {
+			action, limits, err = s.frozenAction(ctx, c.ReleaseID)
+			if err != nil {
+				return result, fmt.Errorf("read frozen completion action of %s: %w", c.AcquisitionID, err)
+			}
 		}
-		created, err := s.store.create(ctx, c.AcquisitionID, action, limits, factsOf(c))
+		created, err := s.store.create(ctx, c.AcquisitionID, action, limits, factsOf(c), settled)
 		if err != nil {
 			return result, err
 		}

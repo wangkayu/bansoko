@@ -203,6 +203,79 @@ func TestPassFreezesTheAcceptedActionAndEnqueuesOnce(t *testing.T) {
 	}
 }
 
+// A download that ended on a timeout verdict is not kept for a retry: the pass
+// freezes remove_with_data whatever the release's completion action says, and
+// the action removes the qBittorrent task with its files.
+func TestATimedOutDownloadRemovesItsTaskAndFiles(t *testing.T) {
+	f := newFixture(t, fakeSnapshots{"release-timeout": ActionSeed})
+	root, _ := seedRoot(t, f.owner, "timeout", correlationJSON(hashA), "failed")
+	if _, err := f.owner.Exec(`UPDATE download_tasks SET state='failed', failure_code='DOWNLOAD_STALLED', failure_reason='fixture', version=version+1 WHERE acquisition_id=$1`, root); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if result, err := f.service.RunPass(ctx); err != nil || result.Created != 1 {
+		t.Fatalf("pass = %+v %v", result, err)
+	}
+	if row := f.row(t, root); row.Action != ActionRemoveWithData || row.State != StatePending || row.InfoHash != hashA {
+		t.Fatalf("timed-out row = %+v", row)
+	}
+	f.qb.torrent = &Torrent{Hash: hashA, State: "stalledDL", SavePath: "/downloads", ContentPath: "/downloads/Show", FileNames: []string{"Show/a.mkv"}}
+	f.runOne(t)
+	if row := f.row(t, root); row.State != StateSucceeded || row.ResultCode != ResultRemovedData || f.qb.torrent != nil {
+		t.Fatalf("cleaned row = %+v (task left: %v)", row, f.qb.torrent != nil)
+	}
+	if !slices.Contains(f.qb.calls, "delete+data:"+hashA) {
+		t.Fatalf("qBittorrent calls = %v", f.qb.calls)
+	}
+}
+
+// Every other failure keeps its task: the error budget means the client was
+// unreadable and the submit budget ran out before the download started; neither
+// is a time-window verdict on the download.
+func TestAFailedDownloadThatIsNotATimeoutKeepsItsTask(t *testing.T) {
+	f := newFixture(t, fakeSnapshots{"release-error-budget": ActionRemoveWithData, "release-submit-budget": ActionRemoveWithData})
+	ctx := context.Background()
+	for name, code := range map[string]string{"error-budget": "SYNC_ERROR_BUDGET_EXHAUSTED", "submit-budget": "SUBMIT_BUDGET_EXHAUSTED"} {
+		root, _ := seedRoot(t, f.owner, name, correlationJSON(hashA), "failed")
+		if _, err := f.owner.Exec(`UPDATE download_tasks SET state='failed', failure_code=$2, failure_reason='fixture', version=version+1 WHERE acquisition_id=$1`, root, code); err != nil {
+			t.Fatal(err)
+		}
+		if result, err := f.service.RunPass(ctx); err != nil || result.Created != 0 {
+			t.Fatalf("%s pass = %+v %v", code, result, err)
+		}
+		if row, err := f.store.ByAcquisition(ctx, root); err != nil || row != nil {
+			t.Fatalf("%s has a completion row: %+v %v", code, row, err)
+		}
+	}
+}
+
+// An adopted task existed before this download; a timeout cleanup keeps it and
+// records the decision without touching qBittorrent.
+func TestATimedOutAdoptedTaskIsKept(t *testing.T) {
+	f := newFixture(t, fakeSnapshots{"release-adopted": ActionRemoveWithData})
+	root, _ := seedRoot(t, f.owner, "adopted", correlationJSON(hashA), "failed")
+	if _, err := f.owner.Exec(`UPDATE download_tasks
+SET frozen_input = frozen_input || '{"adoption_provenance":{"kind":"unique_infohash_path"}}'::jsonb,
+    state='failed', failure_code='DOWNLOAD_STALLED', failure_reason='fixture', version=version+1
+WHERE acquisition_id=$1`, root); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if result, err := f.service.RunPass(ctx); err != nil || result.Created != 1 {
+		t.Fatalf("pass = %+v %v", result, err)
+	}
+	row := f.row(t, root)
+	if row.Action != ActionRemoveWithData || row.State != StateSucceeded || row.ResultCode != ResultTorrentAdopted {
+		t.Fatalf("adopted row = %+v", row)
+	}
+	if n := f.count(t, `SELECT count(*) FROM work_items WHERE owner_type='download_completion'`); n != 0 {
+		t.Fatalf("an adopted cleanup queued %d work items", n)
+	}
+	if len(f.qb.calls) != 0 {
+		t.Fatalf("an adopted cleanup touched qBittorrent: %v", f.qb.calls)
+	}
+}
+
 func TestEditingTheConfigurationDoesNotChangeAFrozenAction(t *testing.T) {
 	snapshots := fakeSnapshots{"release-frozen": ActionPause}
 	f := newFixture(t, snapshots)

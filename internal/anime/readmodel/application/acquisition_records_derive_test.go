@@ -86,10 +86,10 @@ func TestDeriveAcquisitionStages(t *testing.T) {
 			Requirements: &acquisitionRequirementFacts{Items: 1, Required: 1}, Operations: 1, DeliveredOK: 1,
 			Completion: &acquisitionCompletionFacts{State: "failed", ResultCode: ptr("placement_inside_content"), CreatedAt: now, UpdatedAt: now}},
 			"succeeded,succeeded,succeeded,succeeded,succeeded,succeeded,failed"},
-		{"completion row of a failed root is not shown", acquisitionGraphFacts{Branch: "download", RootState: "failed", Task: owner("completed"), Artifact: owner("verified"), Plan: owner("succeeded"),
+		{"completion row of a timed-out failed root is shown", acquisitionGraphFacts{Branch: "download", RootState: "failed", Task: owner("completed"), Artifact: owner("verified"), Plan: owner("succeeded"),
 			Requirements: &acquisitionRequirementFacts{Items: 1, Required: 1}, Operations: 1, DeliveredFailed: 1, FirstFailedReason: ptr("X"),
-			Completion: &acquisitionCompletionFacts{State: "succeeded", ResultCode: ptr("seed_kept"), CreatedAt: now, UpdatedAt: now}},
-			"succeeded,succeeded,succeeded,succeeded,failed,failed,<not_applicable>"},
+			Completion: &acquisitionCompletionFacts{State: "succeeded", ResultCode: ptr("removed_with_data"), CreatedAt: now, UpdatedAt: now}},
+			"succeeded,succeeded,succeeded,succeeded,failed,failed,succeeded"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -20198,11 +20198,13 @@ components:
         retry) and whose started_at is the start of the latest run. The
         completion stage is the download-completion action on the
         qBittorrent task: not_applicable unless the record succeeded and
-        downloaded, pending/running while the action is queued, succeeded or
-        failed with its result in reason_code (seed_kept, seed_limits_set,
+        downloaded, or the download failed on a timeout and was cleaned up
+        (a timeout removes the task and its files, so the stage is present),
+        pending/running while the action is queued, succeeded or failed with
+        its result in reason_code (seed_kept, seed_limits_set,
         seed_limits_set_global_action, paused, removed, removed_with_data,
-        task_absent, skipped_torrent_shared; or a typed refusal such as
-        placement_inside_content).
+        task_absent, skipped_torrent_shared, skipped_torrent_adopted; or a
+        typed refusal such as placement_inside_content).
       required: [stage, availability]
       properties:
         stage:

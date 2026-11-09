@@ -63,6 +63,7 @@ export const reasonCopy = {
   removed_with_data: "已删除下载器中的任务和文件",
   task_absent: "下载器中已没有这个任务",
   skipped_torrent_shared: "另一个下载还在使用这个任务，未处理",
+  skipped_torrent_adopted: "任务不是这次下载创建的，已保留",
   qb_task_unknown: "没有记录下载器中的任务，无法处理",
   qb_unavailable: QB_UNAVAILABLE,
   qb_verify_failed: "下载器没有按要求处理任务，将重试",

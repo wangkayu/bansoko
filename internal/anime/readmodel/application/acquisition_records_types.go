@@ -27,7 +27,8 @@ const (
 	AcquisitionStageFileExecution = "file_execution"
 	AcquisitionStageSettlement    = "settlement"
 	// AcquisitionStageCompletion is the download-completion action on the
-	// qBittorrent task: not_applicable unless the record succeeded.
+	// qBittorrent task: not_applicable unless the record succeeded, or the
+	// download failed on a timeout and its task and files were removed.
 	AcquisitionStageCompletion = "completion"
 )
 
