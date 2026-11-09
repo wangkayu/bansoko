@@ -79,6 +79,23 @@ async function mockSettingsReads(page: Page) {
   await page.route("**/api/v1/config/network-routes", (route) =>
     getOnly(route, () => route.fulfill({ status: 200, contentType: "application/json", body: "[]" })),
   );
+  // 字幕组字典（本地读）：名单弹窗打开即浏览，字典/名单共用这一页。
+  await page.route("**/api/v1/config/subgroups/groups**", (route) =>
+    getOnly(route, () =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          candidates: [
+            { provider: "mikan", group_ref: "901", display_name: "示例字幕组 A", source: "collected", available: true },
+            { provider: "mikan", group_ref: "902", display_name: "示例字幕组 B", source: "user", available: true },
+          ],
+          next_offset: null,
+          total: 2,
+        }),
+      }),
+    ),
+  );
   // 当前契约的八个全局 section 全量返回：下载与入库/规则/订阅策略读各自的 section，
   // AniBT/Mikan provider 页读 subgroups。
   await page.route("**/api/v1/config/global-sections", (route) =>
@@ -502,6 +519,12 @@ test.describe("settings fixture coverage", () => {
     await expect(roster).toBeVisible();
     await expect(roster.getByRole("radiogroup", { name: "名单模式" })).toBeVisible();
     await expect(roster.getByRole("textbox", { name: "Mikan 字典搜索" })).toBeVisible();
+    // 打开即浏览字典，不用先输入关键词；点一行即加入名单。
+    const sampleRow = roster.getByRole("button", { name: "把字幕组 示例字幕组 A 加入名单" });
+    await expect(sampleRow).toBeVisible();
+    await sampleRow.click();
+    await expect(sampleRow).toBeDisabled();
+    await expect(sampleRow.getByText("已在名单")).toBeVisible();
     const box = await roster.boundingBox();
     const viewport = page.viewportSize()!;
     expect(box).not.toBeNull();

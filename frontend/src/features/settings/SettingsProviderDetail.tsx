@@ -51,9 +51,8 @@ import { cn } from "@/lib/utils";
 //   provider's fields pass through untouched, never wiping what the subscription policy page or the
 //   sibling provider page owns), then the catalog refresh preference. The dictionary and hidden list
 //   are independent resources that take effect immediately in their own management dialogs.
-//   Hard rule: the roster may only reference keys already in the dictionary, and search exists only
-//   on the dictionary card — the roster's search box filters dictionary candidates and accepts no
-//   free text.
+//   Hard rule: the roster may only reference keys already in the dictionary; the roster dialog's
+//   filter narrows that same dictionary list (free text is never a roster entry).
 
 export type ProviderKey = "anibt" | "mikan";
 
@@ -1176,10 +1175,11 @@ function ProviderGroupPolicyCard({
   );
 }
 
-// The roster dialog: mode, base score, the dictionary search and the roster all in one scrollable
-//   form, so management works at phone width. Edits write the page draft; the footer's "完成" only
-//   closes (the page's single save commits). The dictionary link closes this dialog first, since the
-//   dictionary is its own management dialog.
+// The roster dialog: mode, base score, the browsable dictionary and the roster all in one scrollable
+//   form, so management works at phone width. The dictionary list is shown in full (retired collected
+//   entries hidden) and the filter narrows it, so picking never requires guessing a search term.
+//   Edits write the page draft; the footer's "完成" only closes (the page's single save commits). The
+//   dictionary link closes this dialog first, since the dictionary is its own management dialog.
 function SubgroupRosterDialog({
   open,
   onOpenChange,
@@ -1209,12 +1209,27 @@ function SubgroupRosterDialog({
   }, [open]);
 
   const query = search.trim();
-  const searchResult = useQuery({
-    queryKey: subgroupDictionaryKeys.search(provider, query),
-    queryFn: () => listSubgroupGroupCandidates(provider, { q: query }),
-    enabled: open && query !== "",
+  const filtering = query !== "";
+  // The dialog has room to browse the dictionary itself, so an empty filter lists every usable group
+  //   (retired collected entries hidden) and typing narrows both layers by name/key. It shares the
+  //   dictionary dialog's cache key and page sizes, so switching between the two views is warm.
+  const list = useInfiniteQuery({
+    queryKey: subgroupDictionaryKeys.list(provider, query),
+    queryFn: ({ pageParam }) =>
+      listSubgroupGroupCandidates(provider, {
+        q: query,
+        hide_retired: !filtering,
+        limit: filtering ? DICTIONARY_FILTER_LIMIT : DICTIONARY_BROWSE_LIMIT,
+        offset: pageParam,
+      }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.next_offset ?? undefined,
+    enabled: open,
   });
-  const candidates = useMemo(() => searchResult.data?.candidates ?? [], [searchResult.data]);
+  const candidates = useMemo(() => list.data?.pages.flatMap((page) => page.candidates) ?? [], [list.data]);
+  const total = list.data?.pages[0]?.total ?? 0;
+  const listError = list.error;
+  const loading = list.isFetching && !list.isFetchingNextPage;
   const nameCache = useDictionaryNames(provider, policy.groups, candidates);
 
   function addGroup(key: string) {
@@ -1275,17 +1290,42 @@ function SubgroupRosterDialog({
         {!scoreValid && <p role="alert" className="settings-provider-error text-caption">{t("settings.site.defaultScoreInvalid")}</p>}
 
         <div className="settings-provider-form-section">
-          <label className="settings-provider-field text-caption">
-            <span>{t("settings.provider.groups.listTitle")}</span>
-            <Input
-              value={search}
-              placeholder={t("settings.provider.groups.searchPlaceholder")}
-              aria-label={t("settings.provider.groups.searchAria", { label })}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-          </label>
-          {query !== "" &&
-            (candidates.length > 0 ? (
+          <Input
+            value={search}
+            placeholder={t("settings.provider.groups.searchPlaceholder")}
+            aria-label={t("settings.provider.groups.searchAria", { label })}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <h4 className="settings-provider-card-title text-caption">
+            {filtering
+              ? t("settings.provider.dictionary.filterTitle", { n: total })
+              : t("settings.provider.dictionary.listTitle", { n: total })}
+          </h4>
+          {!filtering && (
+            <p className="settings-provider-description text-caption">{t("settings.provider.dictionary.retiredHidden")}</p>
+          )}
+          {listError ? (
+            <Alert tone="error" title={toUserMessage(listError, t("settings.provider.dictionary.loadFailed"))} />
+          ) : loading && candidates.length === 0 ? null : candidates.length === 0 ? (
+            <div className="settings-provider-form-section">
+              <p className="settings-provider-description text-caption">
+                {filtering ? t("settings.provider.groups.searchEmpty") : t("settings.provider.dictionary.listEmpty")}
+              </p>
+              <div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    onOpenChange(false);
+                    onOpenDictionary();
+                  }}
+                >
+                  {t("settings.provider.groups.goToDictionary")}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <>
               <ul className="settings-provider-list">
                 {candidates.map((candidate) => {
                   const name = candidate.display_name || candidate.group_ref;
@@ -1308,56 +1348,55 @@ function SubgroupRosterDialog({
                   );
                 })}
               </ul>
-            ) : searchResult.isFetching ? null : (
-              <div className="settings-provider-form-section">
-                <p className="settings-provider-description text-caption">{t("settings.provider.groups.searchEmpty")}</p>
-                <div>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => {
-                      onOpenChange(false);
-                      onOpenDictionary();
-                    }}
-                  >
-                    {t("settings.provider.groups.goToDictionary")}
-                  </Button>
-                </div>
-              </div>
-            ))}
+              {list.hasNextPage ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="tw:self-center"
+                  loading={list.isFetchingNextPage}
+                  onClick={() => void list.fetchNextPage()}
+                >
+                  {t("settings.provider.dictionary.loadMore")}
+                </Button>
+              ) : null}
+            </>
+          )}
         </div>
 
         {policy.groups.length > 0 ? (
-          // The roster is the set of excluded/allowed groups, not a per-item editing table: rendered as
-//           wrap-around badges, one per group, with X removing it from the draft. Out of a dictionary
-//           of several hundred groups only a few are picked, so a horizontal layout saves space and
-//           shows the roster's length at a glance.
-          <ul
-            className="tw:m-0 tw:flex tw:list-none tw:flex-wrap tw:items-center tw:gap-1.5 tw:p-0"
-            aria-label={t("settings.provider.groups.listTitle")}
-          >
-            {policy.groups.map((key) => {
-              const name = nameCache.get(key);
-              const primary = name ? name : key;
-              return (
-                <li
-                  key={key}
-                  className="tw:inline-flex tw:max-w-full tw:items-center tw:gap-1 tw:rounded-[0.25rem] tw:border tw:border-border tw:bg-muted/60 tw:px-2 tw:py-0.5 tw:text-xs tw:font-medium tw:leading-normal"
-                >
-                  <span className="tw:truncate" title={primary}>{primary}</span>
-                  {name ? <span className="tw:shrink-0 tw:text-muted-foreground" title={key}>{key}</span> : null}
-                  <button
-                    type="button"
-                    aria-label={t("settings.provider.groups.remove", { name: primary })}
-                    onClick={() => removeGroup(key)}
-                    className="tw:grid tw:shrink-0 tw:place-items-center tw:rounded-[2px] tw:text-muted-foreground tw:hover:text-foreground tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-ring"
+          <div className="settings-provider-form-section">
+            <h4 className="settings-provider-card-title text-caption">{t("settings.provider.groups.listTitle")}</h4>
+            {/* The roster is the set of excluded/allowed groups, not a per-item editing table: rendered as
+                wrap-around badges, one per group, with X removing it from the draft. Out of a dictionary
+                of several hundred groups only a few are picked, so a horizontal layout saves space and
+                shows the roster's length at a glance. */}
+            <ul
+              className="tw:m-0 tw:flex tw:list-none tw:flex-wrap tw:items-center tw:gap-1.5 tw:p-0"
+              aria-label={t("settings.provider.groups.listTitle")}
+            >
+              {policy.groups.map((key) => {
+                const name = nameCache.get(key);
+                const primary = name ? name : key;
+                return (
+                  <li
+                    key={key}
+                    className="tw:inline-flex tw:max-w-full tw:items-center tw:gap-1 tw:rounded-[0.25rem] tw:border tw:border-border tw:bg-muted/60 tw:px-2 tw:py-0.5 tw:text-xs tw:font-medium tw:leading-normal"
                   >
-                    <X size={12} aria-hidden />
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+                    <span className="tw:truncate" title={primary}>{primary}</span>
+                    {name ? <span className="tw:shrink-0 tw:text-muted-foreground" title={key}>{key}</span> : null}
+                    <button
+                      type="button"
+                      aria-label={t("settings.provider.groups.remove", { name: primary })}
+                      onClick={() => removeGroup(key)}
+                      className="tw:grid tw:shrink-0 tw:place-items-center tw:rounded-[2px] tw:text-muted-foreground tw:hover:text-foreground tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-ring"
+                    >
+                      <X size={12} aria-hidden />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         ) : (
           <p className="settings-provider-description text-caption">{t("settings.provider.groups.listEmpty")}</p>
         )}

@@ -49,15 +49,13 @@ export const configKeys = {
   namingVars: ["config", "naming-vars"] as const,
 };
 
-/** The subgroup dictionary (the provider pool): read locally, keyed by provider. `search` is
- *  the type-to-filter dictionary query of the scoring card; `user` is the layer you added,
- *  feeding both the summary count and the delete list. */
+/** The subgroup dictionary (the provider pool): read locally, keyed by provider. `user` is the
+ *  layer you added, feeding both the summary count and the delete list. */
 export const subgroupDictionaryKeys = {
   prefix: ["config", "subgroup-dictionary"] as const,
   provider: (provider: string) => ["config", "subgroup-dictionary", provider] as const,
   user: (provider: string) => ["config", "subgroup-dictionary", provider, "user"] as const,
-  search: (provider: string, q: string) => ["config", "subgroup-dictionary", provider, "search", q] as const,
-  /** The dictionary dialog's paged list (an empty q means the whole dictionary, with stale harvested entries hidden). */
+  /** The paged dictionary list shared by the dictionary and roster dialogs (an empty q means the whole dictionary, with stale harvested entries hidden). */
   list: (provider: string, q: string) => ["config", "subgroup-dictionary", provider, "list", q] as const,
 };
 

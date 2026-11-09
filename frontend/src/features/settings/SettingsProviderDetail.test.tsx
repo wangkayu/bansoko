@@ -10,11 +10,11 @@ import { t } from "../../lib/i18n";
 // One provider's configuration page (SettingsProviderDetail, shared by anibt/mikan): a subgroup
 //   dictionary (an independently owned resource — discover/instant-add/delete save immediately;
 //   inline pinned scores go into the page draft), subgroup scoring (mode/default score/roster,
-//   edited in place) and name scoring both write the page draft, and catalog auto-refresh is a draft
-//   too. The settings dialog footer's single save first submits subgroups with a whole-section CAS
-//   (the draft starts from the complete section value — max_rss, entries, and the other provider's
-//   fields pass through untouched, never wiped), then submits the refresh preference. Hidden-anime
-//   statistics filter to the current provider.
+//   managed in a dialog) and name scoring both write the page draft, and catalog auto-refresh is a
+//   draft too. The settings dialog footer's single save first submits subgroups with a whole-section
+//   CAS (the draft starts from the complete section value — max_rss, entries, and the other
+//   provider's fields pass through untouched, never wiped), then submits the refresh preference.
+//   Hidden-anime statistics filter to the current provider.
 //   Hard rule: the roster may reference only keys already in the dictionary, and online lookup
 //   exists only in the dictionary card's discover.
 
@@ -230,18 +230,19 @@ const withMikanGroups = (groups: string[]): GlobalSectionView => ({
   },
 });
 
-// The roster card: a summary plus one management entry; mode, base score, dictionary search and the
-//   roster live in a dialog (so the form works at phone width). Clicking a search result adds its
-//   key to the draft; a roster entry stores only that key with no free-text entry; changes go into
-//   the page draft, saved by the footer.
-describe("SettingsProviderDetail 字幕组名单（弹窗管理，从字典挑）", () => {
+// The roster card: a summary plus one management entry; mode, base score, the browsable dictionary
+//   and the roster live in a dialog (so the form works at phone width). The dialog lists the whole
+//   usable dictionary on open and the filter narrows it; clicking a row adds its key to the draft; a
+//   roster entry stores only that key with no free-text entry; changes go into the page draft, saved
+//   by the footer.
+describe("SettingsProviderDetail 字幕组名单（弹窗管理，浏览字典点选）", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
   });
 
   it("卡片只留摘要与管理入口；名单在弹窗里编辑", async () => {
-    stubSectionFetch();
+    stubSectionFetch({ browse: () => dictionaryPage([LOLIHOUSE]) });
     renderProvider("mikan");
     const card = await groupsCard();
 
@@ -260,7 +261,33 @@ describe("SettingsProviderDetail 字幕组名单（弹窗管理，从字典挑�
     expect(within(dialog).getByRole("radiogroup", { name: t("settings.provider.groups.modeAria") })).toBeInTheDocument();
     expect(within(dialog).getByRole("radio", { name: t("settings.provider.groups.modeBlacklist") })).toHaveAttribute("aria-checked", "true");
     expect(within(dialog).getByLabelText(t("settings.provider.groups.searchAria", { label: "Mikan" }))).toBeInTheDocument();
+    // The dictionary is browsable without typing anything.
+    expect(
+      await within(dialog).findByRole("button", { name: t("settings.provider.groups.resultAria", { name: "SampleGroup" }) }),
+    ).toBeInTheDocument();
     expect(within(dialog).getByText(t("settings.provider.groups.listEmpty"))).toBeInTheDocument();
+  });
+
+  it("弹窗内直接浏览字典，输入关键词即筛选", async () => {
+    stubSectionFetch({
+      browse: () => dictionaryPage([LOLIHOUSE, NANRAWS]),
+      search: (q) => (q.toLowerCase().includes("nan") ? [NANRAWS] : []),
+    });
+    renderProvider("mikan");
+    const dialog = await openGroupsDialog();
+
+    expect(
+      await within(dialog).findByRole("button", { name: t("settings.provider.groups.resultAria", { name: "NanRaws" }) }),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: t("settings.provider.groups.resultAria", { name: "SampleGroup" }) })).toBeInTheDocument();
+
+    fireEvent.change(within(dialog).getByLabelText(t("settings.provider.groups.searchAria", { label: "Mikan" })), { target: { value: "Nan" } });
+    expect(
+      await within(dialog).findByRole("button", { name: t("settings.provider.groups.resultAria", { name: "NanRaws" }) }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole("button", { name: t("settings.provider.groups.resultAria", { name: "SampleGroup" }) }),
+    ).not.toBeInTheDocument();
   });
 
   it("从字典搜索点选加入名单，footer 保存随 PUT 上送", async () => {
