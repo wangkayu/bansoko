@@ -1,10 +1,10 @@
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import { rssListKeys } from "../queryKeys";
-import { refreshOwnerRss } from "./refreshOwnerRss";
+import { beginScopedOwnerRssRefresh, refreshOwnerRss } from "./refreshOwnerRss";
 
 describe("owner RSS refresh coordination", () => {
-  it("shares the read for the same workspace snapshot but not later events", async () => {
+  it("shares the read for the same workspace snapshot but not a later snapshot", async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
     const queryKey = rssListKeys.owner("anime-1");
     client.setQueryData(queryKey, { version: 0 });
@@ -15,10 +15,8 @@ describe("owner RSS refresh coordination", () => {
     await refreshOwnerRss(client, "anime-1", workspace);
     await refreshOwnerRss(client, "anime-1", workspace);
     expect(queryFn).toHaveBeenCalledTimes(1);
-    await refreshOwnerRss(client, "anime-1", workspace, true);
-    expect(queryFn).toHaveBeenCalledTimes(2);
     await refreshOwnerRss(client, "anime-1", { version: 2 });
-    expect(queryFn).toHaveBeenCalledTimes(3);
+    expect(queryFn).toHaveBeenCalledTimes(2);
     unsubscribe();
     client.clear();
   });
@@ -33,5 +31,19 @@ describe("owner RSS refresh coordination", () => {
     expect(spies[0]).toHaveBeenCalledTimes(2);
     expect(spies[1]).toHaveBeenCalledTimes(1);
     clients.forEach(client => client.clear());
+  });
+
+  it("lets a scoped event own the observer pass until workspace settles", async () => {
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, "invalidateQueries").mockResolvedValue();
+    const finish = beginScopedOwnerRssRefresh(client, "anime-1");
+
+    await refreshOwnerRss(client, "anime-1", { version: 1 });
+    expect(invalidate).not.toHaveBeenCalled();
+    finish();
+    finish();
+    await refreshOwnerRss(client, "anime-1", { version: 2 });
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    client.clear();
   });
 });

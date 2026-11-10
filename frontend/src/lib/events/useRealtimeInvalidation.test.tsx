@@ -1,6 +1,7 @@
+import { useEffect, useRef, type ReactNode } from "react";
 import { refreshOwnerRss } from "./refreshOwnerRss";
 import { act, renderHook } from "@testing-library/react";
-import { QueryClient, QueryObserver } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, QueryObserver, useQuery } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useSessionStore } from "../../shell/sessionStore";
 import {
@@ -117,7 +118,8 @@ describe("useRealtimeInvalidation", () => {
       await act(async () => lastStream!.onEvent({ target: "rss", managedAnimeId: "anime-1" }));
       expect(invalidate).toHaveBeenCalledWith({ queryKey: animeKeys.workspace("anime-1") });
       expect(invalidate).toHaveBeenCalledWith({ queryKey: rssListKeys.owner("anime-1") });
-      expect(invalidate).toHaveBeenCalledTimes(2);
+      expect(invalidate).toHaveBeenCalledTimes(6);
+      invalidate.mockClear();
       emit({ target: "records" });
       emit({ target: "records" });
       await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
@@ -126,13 +128,13 @@ describe("useRealtimeInvalidation", () => {
       expect(invalidate).toHaveBeenCalledWith({ queryKey: fileManagerKeys.all });
       expect(invalidate).toHaveBeenCalledWith({ queryKey: acquisitionRecordKeys.all });
       expect(invalidate).toHaveBeenCalledWith({ queryKey: animeKeys.list });
-      expect(invalidate).toHaveBeenCalledTimes(6);
+      expect(invalidate).toHaveBeenCalledTimes(4);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("rss/records 合并为一次订阅列表刷新", () => {
+  it("rss/records 同批立即合并为一次订阅列表刷新", async () => {
     vi.useFakeTimers();
     try {
       initRealtimeInvalidation(client);
@@ -149,40 +151,66 @@ describe("useRealtimeInvalidation", () => {
         }).length;
       expect(listCalls()).toBe(0);
 
-      act(() => vi.advanceTimersByTime(1000));
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
       expect(invalidate).not.toHaveBeenCalledWith({ queryKey: catalogKeys.listTab("all") });
       expect(invalidate).toHaveBeenCalledWith({ queryKey: animeKeys.list });
       expect(listCalls()).toBe(1);
 
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      expect(listCalls()).toBe(1);
+
       emit({ target: "catalog" });
       expect(listCalls()).toBe(2);
-      act(() => vi.advanceTimersByTime(1000));
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
       expect(listCalls()).toBe(2);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("coalesces a scoped event with the workspace observer and preserves unchanged events", async () => {
+  it("starts scoped RSS before workspace settles and coalesces its observer", async () => {
     const key = animeKeys.workspace("anime-1");
     const rssKey = rssListKeys.owner("anime-1");
     client.setQueryDefaults(key, { staleTime: Infinity });
     client.setQueryDefaults(rssKey, { staleTime: Infinity });
     client.setQueryData(key, { version: 0 });
     client.setQueryData(rssKey, { version: 0 });
-    const workspace = new QueryObserver(client, { queryKey: key, queryFn: async () => ({ version: 1 }) });
+    let settleWorkspace!: () => void;
+    const workspaceGate = new Promise<void>(resolve => { settleWorkspace = resolve; });
+    const readWorkspace = vi.fn(async () => {
+      await workspaceGate;
+      return { version: 1 };
+    });
     const readRSS = vi.fn(async () => ({ version: 1 }));
     const rss = new QueryObserver(client, { queryKey: rssKey, queryFn: readRSS });
-    let last = client.getQueryData(key);
-    const unsubscribeWorkspace = workspace.subscribe(result => {
-      if (result.data === last) return;
-      last = result.data;
-      void refreshOwnerRss(client, "anime-1", result.data);
-    });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const { unmount } = renderHook(() => {
+      const query = useQuery({
+        queryKey: key,
+        queryFn: readWorkspace,
+        staleTime: Infinity,
+      });
+      const current = query.data;
+      const last = useRef(current);
+      useEffect(() => {
+        if (last.current === current) return;
+        last.current = current;
+        void refreshOwnerRss(client, "anime-1", current);
+      }, [current]);
+      return query;
+    }, { wrapper });
     const unsubscribeRss = rss.subscribe(() => undefined);
     initRealtimeInvalidation(client);
     await act(async () => {
       lastStream!.onEvent({ target: "rss", managedAnimeId: "anime-1" });
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+    expect(readRSS).toHaveBeenCalledTimes(1);
+    expect(readWorkspace).toHaveBeenCalledTimes(1);
+    settleWorkspace();
+    await act(async () => {
       await new Promise(resolve => setTimeout(resolve, 0));
     });
     expect(readRSS).toHaveBeenCalledTimes(1);
@@ -191,8 +219,44 @@ describe("useRealtimeInvalidation", () => {
       await new Promise(resolve => setTimeout(resolve, 0));
     });
     expect(readRSS).toHaveBeenCalledTimes(2);
-    unsubscribeWorkspace();
+    unmount();
     unsubscribeRss();
+    client.clear();
+  });
+
+  it("keeps slow scoped RSS reads independent by anime", async () => {
+    const firstKey = rssListKeys.owner("anime-1");
+    const secondKey = rssListKeys.owner("anime-2");
+    client.setQueryDefaults(firstKey, { staleTime: Infinity });
+    client.setQueryDefaults(secondKey, { staleTime: Infinity });
+    client.setQueryData(firstKey, { version: 0 });
+    client.setQueryData(secondKey, { version: 0 });
+    let settleFirst!: () => void;
+    const firstGate = new Promise<void>(resolve => { settleFirst = resolve; });
+    const readFirst = vi.fn(async () => {
+      await firstGate;
+      return { version: 1 };
+    });
+    const readSecond = vi.fn(async () => ({ version: 1 }));
+    const first = new QueryObserver(client, { queryKey: firstKey, queryFn: readFirst });
+    const second = new QueryObserver(client, { queryKey: secondKey, queryFn: readSecond });
+    const unsubscribeFirst = first.subscribe(() => undefined);
+    const unsubscribeSecond = second.subscribe(() => undefined);
+    initRealtimeInvalidation(client);
+
+    await act(async () => {
+      lastStream!.onEvent({ target: "rss", managedAnimeId: "anime-1" });
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+    expect(readFirst).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      lastStream!.onEvent({ target: "rss", managedAnimeId: "anime-2" });
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+    expect(readSecond).toHaveBeenCalledTimes(1);
+    settleFirst();
+    unsubscribeFirst();
+    unsubscribeSecond();
     client.clear();
   });
 

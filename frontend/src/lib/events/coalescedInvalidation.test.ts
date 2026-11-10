@@ -18,9 +18,8 @@ describe("coalesced event invalidation", () => {
     const queue = createCoalescedInvalidation(client);
     queue.enqueue([["logs", "records"], ["acquisitions"]]);
     queue.enqueue([["logs"], ["acquisitions"], ["logs", "details"]]);
-    await vi.advanceTimersByTimeAsync(999);
     expect(invalidate).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(1);
+    await vi.advanceTimersByTimeAsync(0);
     expect(invalidate.mock.calls).toEqual([[{ queryKey: ["acquisitions"] }], [{ queryKey: ["logs"] }]]);
     queue.dispose();
     client.clear();
@@ -32,7 +31,7 @@ describe("coalesced event invalidation", () => {
     const invalidate = vi.spyOn(client, "invalidateQueries").mockReturnValueOnce(gate.promise).mockResolvedValue();
     const queue = createCoalescedInvalidation(client);
     queue.enqueue([["records"]]);
-    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(0);
     queue.enqueue([["records"]]);
     queue.enqueue([["records"]]);
     await vi.advanceTimersByTimeAsync(10_000);
@@ -52,7 +51,7 @@ describe("coalesced event invalidation", () => {
     const invalidate = vi.spyOn(client, "invalidateQueries").mockReturnValue(gate.promise);
     const queue = createCoalescedInvalidation(client);
     queue.enqueue([["records"]]);
-    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(0);
     queue.enqueue([["records"]]);
     queue.dispose();
     gate.resolve();
@@ -67,7 +66,7 @@ describe("coalesced event invalidation", () => {
     const invalidate = vi.spyOn(client, "invalidateQueries").mockRejectedValueOnce(new Error("offline")).mockResolvedValue();
     const queue = createCoalescedInvalidation(client);
     queue.enqueue([["records"]]);
-    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(0);
     queue.enqueue([["records"]]);
     await vi.advanceTimersByTimeAsync(1000);
     expect(invalidate).toHaveBeenCalledTimes(2);
@@ -111,7 +110,7 @@ describe("coalesced event invalidation", () => {
     const unsubscribe = observer.subscribe(() => undefined);
     const queue = createCoalescedInvalidation(client);
     queue.enqueue([key]);
-    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(0);
     version = 2;
     queue.enqueue([key]);
     queue.enqueue([key]);
