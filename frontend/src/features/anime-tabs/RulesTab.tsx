@@ -193,14 +193,15 @@ function OwnerRulesTab({
     queryFn: getTitleTagVocabulary,
     staleTime: Infinity,
   });
+  const tagSource = "release_summary" in workspace ? workspace.release_summary.tag_observations : workspace.releases;
   const anibtObservations = useMemo(() => {
-    const lists = workspace.releases.map((release) => release.source_facts.anibt?.tags);
+    const lists = tagSource.map(item => "anibt_tags" in item ? item.anibt_tags : item.source_facts.anibt?.tags);
     return { tags: observedExtraTags(lists), counts: countTags(lists) };
-  }, [workspace.releases]);
+  }, [tagSource]);
   const titleObservations = useMemo(() => {
-    const lists = workspace.releases.map((release) => release.source_facts.title_tags?.tags);
+    const lists = tagSource.map(item => "title_tags" in item ? item.title_tags : item.source_facts.title_tags?.tags);
     return { tags: lists.flatMap((tags) => tags ?? []), counts: countTags(lists) };
-  }, [workspace.releases]);
+  }, [tagSource]);
 
   async function save() {
     if (!edit) return { ok: true as const };

@@ -41,7 +41,7 @@ export function LogRawView({ onBack }: { onBack: () => void }) {
   const [copied, setCopied] = useState(false);
   const query = useQuery({
     queryKey: observabilityKeys.runtimeLog(level),
-    queryFn: () => getRuntimeLog({ level, limit: LINE_LIMIT }),
+    queryFn: ({ signal }) => getRuntimeLog({ level, limit: LINE_LIMIT }, signal),
   });
   const lines = query.data?.lines ?? [];
   const text = rawLogText(lines);

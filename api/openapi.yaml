@@ -1593,6 +1593,25 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+  /anime/{managed_anime_id}/workspace-configuration:
+    get:
+      tags: [Anime]
+      operationId: getAnimeWorkspaceConfiguration
+      x-scope: read
+      description: Read configuration owners and all-history release summaries without materializing the execution history.
+      parameters:
+        - $ref: '#/components/parameters/ManagedAnimeID'
+      responses:
+        '200':
+          description: Configuration workspace with the same owner versions and retirement facts as the full workspace.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnimeWorkspaceConfiguration'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /anime/{managed_anime_id}/custom-feed-snapshots:fetch:
     post:
       tags: [Anime]
@@ -14424,6 +14443,98 @@ components:
         updated_at:
           type: string
           format: date-time
+    AnimeWorkspaceConfiguration:
+      type: object
+      additionalProperties: false
+      required: [managed_anime, subscription, metadata, metadata_hold, subgroups, rules, rss_sources, rss_source_runtimes, episode_progress, config_waiting_files, release_summary]
+      properties:
+        managed_anime:
+          $ref: '#/components/schemas/ManagedAnime'
+        subscription:
+          $ref: '#/components/schemas/Subscription'
+        metadata:
+          $ref: '#/components/schemas/AnimeMetadata'
+        metadata_hold:
+          $ref: '#/components/schemas/MetadataHold'
+        subgroups:
+          $ref: '#/components/schemas/SubgroupsOwnerResult'
+        rules:
+          $ref: '#/components/schemas/AnimeRules'
+        rss_sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/RSSSource'
+        rss_source_runtimes:
+          type: array
+          items:
+            $ref: '#/components/schemas/RSSSourceRuntime'
+        config_waiting_files:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Downloaded files waiting for configuration, identical to the full workspace count.
+        episode_progress:
+          type: object
+          nullable: true
+          required: [episodes, done]
+          additionalProperties: false
+          description: Placement-derived progress, identical to the full workspace; total comes only from metadata.
+          properties:
+            episodes:
+              type: array
+              items:
+                type: integer
+                minimum: 0
+              uniqueItems: true
+            total:
+              type: integer
+              minimum: 1
+            done:
+              type: boolean
+        release_summary:
+          $ref: '#/components/schemas/AnimeWorkspaceReleaseSummary'
+    AnimeWorkspaceReleaseSummary:
+      type: object
+      additionalProperties: false
+      required: [count, owner_chain_stable, tag_observations]
+      properties:
+        count:
+          type: integer
+          format: int64
+          minimum: 0
+          description: All releases across every source, without a history window.
+        latest_published_at:
+          type: string
+          description: Lexical maximum of the full workspace raw_facts.published_at strings; absent when none exists. Never falls back to discovered_at.
+        owner_chain_stable:
+          type: boolean
+          description: >-
+            True only when at least one source is custom RSS or effectively selected and every such source is stable.
+            An empty source requires a runtime with non-unknown health. Otherwise every release must be stable:
+            its current task's artifacts are all failed or verified with an operation, and all their operations
+            are completed or failed; without artifacts its task must be failed; without a task its verdict must be
+            waiting_metadata, subscription_stopped, source_unavailable, parse_failed, filtered, adopted_existing,
+            acquisition_failed, resume_baseline, or start_baseline. Historical releases are never truncated.
+        tag_observations:
+          type: array
+          description: >-
+            Per-release tags in full-workspace release order, omitting only releases with both tag arrays empty.
+            Preserve original spelling, case, array order and duplicates; clients retain their existing tag counting rules.
+          items:
+            $ref: '#/components/schemas/AnimeWorkspaceTagObservation'
+    AnimeWorkspaceTagObservation:
+      type: object
+      additionalProperties: false
+      required: [anibt_tags, title_tags]
+      properties:
+        anibt_tags:
+          type: array
+          items:
+            type: string
+        title_tags:
+          type: array
+          items:
+            type: string
     AnimeWorkspace:
       type: object
       additionalProperties: false

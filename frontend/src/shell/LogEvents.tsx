@@ -280,7 +280,7 @@ function EventsList({
 }) {
   const query = useInfiniteQuery({
     queryKey: observabilityKeys.businessLine(eventView, state, animeId, q, from, to),
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       listObservabilityRecords({
         kind: ["business", "plugin"],
         event_view: eventView,
@@ -291,7 +291,7 @@ function EventsList({
         to,
         limit: PAGE_LIMIT,
         cursor: pageParam,
-      }),
+      }, signal),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
   });
@@ -666,7 +666,7 @@ function BatchItem({
     // The inline preview stays short so the batch head, its preview and the
     // "view all" link fit one dialog screen; everything past it lives in the
     // nested details dialog.
-    queryFn: () => listReleaseBatchEntries(batchKey, { limit: 6 }),
+    queryFn: ({ signal }) => listReleaseBatchEntries(batchKey, { limit: 6 }, signal),
     enabled: expanded && batchKey !== "",
     staleTime: 30_000,
   });
@@ -727,7 +727,7 @@ function BatchDialog({
 }) {
   const query = useInfiniteQuery({
     queryKey: observabilityKeys.releaseBatch(`${batchKey}:all`),
-    queryFn: ({ pageParam }) => listReleaseBatchEntries(batchKey, { limit: 50, cursor: pageParam }),
+    queryFn: ({ pageParam, signal }) => listReleaseBatchEntries(batchKey, { limit: 50, cursor: pageParam }, signal),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
   });

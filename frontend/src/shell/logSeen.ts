@@ -120,12 +120,12 @@ export function useLogFailureBadge(): LogFailureBadge {
   const diagnosticsSeen = useLogSeen("diagnostics");
   const failures = useQuery({
     queryKey: observabilityKeys.badgeRecords,
-    queryFn: () =>
-      listObservabilityRecords({ kind: ["business", "plugin"], entry_kind: ["acquisition_settled"], state: "failure", limit: BADGE_LIMIT }),
+    queryFn: ({ signal }) =>
+      listObservabilityRecords({ kind: ["business", "plugin"], entry_kind: ["acquisition_settled"], state: "failure", limit: BADGE_LIMIT }, signal),
   });
   const open = useQuery({
     queryKey: observabilityKeys.badgeDiagnostics,
-    queryFn: () => listObservabilityDiagnostics({ state: "open", limit: BADGE_LIMIT }),
+    queryFn: ({ signal }) => listObservabilityDiagnostics({ state: "open", limit: BADGE_LIMIT }, signal),
   });
   const count = newBadgeRecords(failures.data?.records ?? [], recordsSeen).length + newOpenEpisodes(open.data?.episodes ?? [], diagnosticsSeen).length;
   return {

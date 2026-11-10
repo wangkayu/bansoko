@@ -14,6 +14,7 @@ import {
   retryRSSSourceRuntime,
   toUserMessage,
   type AnimeMetadataPreview,
+  type AnimeWorkspace,
   type Release,
   type PreviewFeedSnapshotRef,
   type RSSListGroup,
@@ -27,6 +28,7 @@ import { DraftSubgroupRefresh } from "../anime-config/DraftSubgroupRefresh";
 import { useRecordLink } from "../../shell/recordLinkContext";
 import { refreshEligibleRSSSources, rssActions } from "../workspace/rssActions";
 import { offsetConversionLine } from "../rss-list/offsetConversion";
+import { refreshOwnerRss } from "../../lib/events/refreshOwnerRss";
 import { ownerViewModel, type OffsetDrawerSource, type RetryTarget } from "../rss-list/ownerModel";
 import { RssListViewPanel } from "../rss-list/RssListViewPanel";
 import { RssWorkspace } from "../rss-list/RssWorkspace";
@@ -75,6 +77,12 @@ export function RssTab({
   /** Whether this tab is the active one (all tabs stay mounted; mounted is not the same as viewed). */
   active?: boolean;
 }) {
+  const incomingHistory = host.mode === "owner" && "releases" in host.workspace ? host.workspace : undefined;
+  const [retainedHistory, setRetainedHistory] = useState(incomingHistory);
+  // Keep the visited RSS panel mounted while other tabs use the light read. This
+  // retains its filters, expansion and drawers; it is never a source for config saves.
+  if (incomingHistory && incomingHistory !== retainedHistory) setRetainedHistory(incomingHistory);
+  const history = incomingHistory ?? (host.mode === "owner" && retainedHistory?.managed_anime.id === host.animeID ? retainedHistory : undefined);
   if (host.mode === "draft") {
     return <DraftRssTab host={host} onViewRead={onViewRead} active={active} />;
   }
@@ -93,9 +101,11 @@ export function RssTab({
       />
     );
   }
+  if (!history) return active ? <StateBlock kind="busy" title={t("config.reading")} /> : null;
   return (
     <OwnerRssTab
-      host={host}
+      host={{ ...host, workspace: history }}
+      active={active}
       rulesPreviewSections={rulesPreviewSections}
       metadataPreview={metadataPreview}
       onExitRulesPreview={onExitRulesPreview}
@@ -291,8 +301,10 @@ function OwnerRssTab({
   metadataPreview,
   onExitRulesPreview,
   onViewRead,
+  active = true,
 }: {
-  host: OwnerTabHost;
+  host: Omit<OwnerTabHost, "workspace"> & { workspace: AnimeWorkspace };
+  active?: boolean;
   rulesPreviewSections?: RulesSections;
   metadataPreview?: AnimeMetadataPreview;
   onExitRulesPreview: () => void;
@@ -335,7 +347,8 @@ function OwnerRssTab({
       previewMode ? JSON.stringify([rulesPreviewSections ?? null, metadataPreview ?? null]) : "",
     ),
     retry: false,
-    queryFn: async (): Promise<RSSListView> => {
+    enabled: active,
+    queryFn: async ({ signal }): Promise<RSSListView> => {
       const view = await readAnimeRSSListView(
         previewMode
           ? {
@@ -346,6 +359,7 @@ function OwnerRssTab({
               limit_per_group: OWNER_ITEMS_PER_GROUP,
             }
           : { input_source: "owner", managed_anime_id: animeID, limit_per_group: OWNER_ITEMS_PER_GROUP },
+        signal,
       );
       // The runtime payload is an external boundary: a response missing groups must fail closed
       // into an error state, never let the whole panel throw while rendering.
@@ -362,18 +376,17 @@ function OwnerRssTab({
     if (view) onViewRead?.(view);
   }, [view, onViewRead]);
 
-  // The owner read model is the server's projection of workspace facts: after every workspace
-  // re-read (polling advancing downloads/verification/imports, or a new Release; an SSE `rss`
-  // event without an anime id also reaches here through the workspace re-read, while an event with
-  // an id invalidates this anime's list key directly), the anime's RSS list re-reads exactly once,
-  // otherwise the panel would stay on a stale result. react-query reuses the old object for
-  // deeply-equal data, so the re-read triggers only on a real change.
+  // The owner read model projects workspace facts, so a changed workspace must refresh it.
+  // Share the snapshot marker with scoped SSE events to avoid two reads for the same update.
+  // Polling and unscoped events reach this effect through the workspace query; deeply-equal
+  // data retains its old reference. Scoped events also refresh unchanged snapshots when only
+  // the RSS projection changed.
   const lastWorkspace = useRef(workspace);
   useEffect(() => {
-    if (lastWorkspace.current === workspace) return;
+    if (!active || lastWorkspace.current === workspace) return;
     lastWorkspace.current = workspace;
-    void queryClient.invalidateQueries({ queryKey: rssListKeys.owner(animeID) });
-  }, [workspace, queryClient, animeID]);
+    void refreshOwnerRss(queryClient, animeID, workspace);
+  }, [workspace, queryClient, animeID, active]);
 
   /** The re-read after an action: read-model invalidation + the outer workspace re-read (keeping the existing polling-window semantics). */
   const handleChanged = () => {

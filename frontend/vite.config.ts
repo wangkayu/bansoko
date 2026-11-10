@@ -3,6 +3,8 @@ import react from "@vitejs/plugin-react-swc";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import { VitePWA } from "vite-plugin-pwa";
+import { precompressedAssets } from "./build/precompressedAssets";
+import { preloadApp } from "./build/preloadApp";
 
 // https://vitejs.dev/config/
 export default defineConfig(() => ({
@@ -32,6 +34,8 @@ export default defineConfig(() => ({
   plugins: [
     react(),
     tailwindcss(),
+    preloadApp(),
+    precompressedAssets(),
     VitePWA({
       registerType: 'autoUpdate',
       devOptions: {
@@ -47,6 +51,10 @@ export default defineConfig(() => ({
           '**/LogDialogEntry-*.js',
           '**/SettingsDialogEntry-*.js',
           '**/CodeEditor-*.js',
+          '**/zh-CN-*.js',
+          '**/en-*.js',
+          '**/*.br',
+          '**/*.gz',
         ],
       },
     }),

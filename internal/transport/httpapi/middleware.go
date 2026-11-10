@@ -555,14 +555,16 @@ func frontendHandler(dir string) http.Handler {
 		// index.html must revalidate on every load: it references bundles named by
 		// content hash, and a heuristically cached stale HTML keeps the browser
 		// loading old code (the classic "new feature seems missing" cause).
-		// Hashed asset names are their own version, so their default caching is
-		// fine.
+		// Hashed assets use immutable caching and optional build-time compression.
 		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
 			w.Header().Set("Cache-Control", "no-cache")
 		}
 		setBaselineHeaders(w.Header())
 		if r.URL.Path == "/" || strings.HasSuffix(r.URL.Path, ".html") {
 			w.Header().Set("Content-Security-Policy", DocumentContentSecurityPolicy)
+		}
+		if serveFrontendAsset(w, r, dir) {
+			return
 		}
 		fileServer.ServeHTTP(w, r)
 	})

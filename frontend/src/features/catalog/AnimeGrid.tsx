@@ -194,7 +194,7 @@ export function AnimeGrid() {
   const subscribedCatalog = useCatalog("all", season, { enabled: resolvingAnime && tab !== "all" });
   // The subscription list follows import progress through push invalidation; while the stream is
   // disconnected it falls back to bounded polling.
-  useBoundedRefresh(tab === "all" ? [catalogKeys.listTab("all")] : []);
+  useBoundedRefresh(tab === "all" ? [animeKeys.list] : []);
   const blacklist = useBlacklist();
   const { add: addBlacklist } = useBlacklistActions();
   // The key carries the provider: the same bare ref is two entries under two providers.

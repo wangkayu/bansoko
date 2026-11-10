@@ -959,7 +959,8 @@ describe("AnimeTabs owner RSS read model preview", () => {
     expect(screen.getByRole("button", { name: t("rss.scan") })).toBeDisabled();
     expect(screen.getByRole("checkbox", { name: t("rss.showFiltered") })).toHaveAttribute("aria-disabled", "true");
     const inputSources = calls.map(({ body }) => body && typeof body === "object" && "input_source" in body ? body.input_source : undefined);
-    expect(inputSources).toEqual(["owner", "owner_draft"]);
+    // The inactive RSS tab no longer reads the unused owner view before preview.
+    expect(inputSources).toEqual(["owner_draft"]);
 
     fireEvent.click(screen.getByRole("tab", { name: t("field.subgroup") }));
     await waitFor(() => expect(screen.queryByText(t("rss.previewBadge"))).not.toBeInTheDocument());
@@ -1071,7 +1072,7 @@ describe("AnimeTabs owner RSS read model preview", () => {
     fireEvent.click(screen.getByRole("tab", { name: t("tabs.names.metadata") }));
     fireEvent.click(screen.getByRole("tab", { name: "RSS" }));
     await waitFor(() => expect(screen.queryByText(t("rss.previewBadge"))).not.toBeInTheDocument());
-    expect(screen.getByRole("button", { name: t("rss.refresh") })).toBeEnabled();
+    expect(await screen.findByRole("button", { name: t("rss.refresh") })).toBeEnabled();
   });
 
   it("字幕组编辑不清空最近一次服务端订阅事实", async () => {

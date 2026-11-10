@@ -94,6 +94,7 @@ type ReadmodelService interface {
 	ReadAnimeRSSListView(ctx context.Context, input readmodelapplication.ReadRSSListViewInput) (readmodelapplication.RSSListView, error)
 	PreviewSubgroupsSelection(ctx context.Context, input readmodelapplication.SubgroupsSelectionPreviewInput) (readmodelapplication.SubgroupsSelectionPreview, error)
 	GetAnimeWorkspaceApplication(ctx context.Context, managedAnimeID string) (readmodelapplication.AnimeWorkspace, error)
+	GetAnimeWorkspaceConfigurationApplication(ctx context.Context, managedAnimeID string) (readmodelapplication.AnimeWorkspaceConfiguration, error)
 	// Execution records: the read-only list, detail and file page of
 	// accepted acquisitions.
 	ListAcquisitionRecords(ctx context.Context, query readmodelapplication.AcquisitionRecordQuery) (readmodelapplication.AcquisitionRecordPage, error)

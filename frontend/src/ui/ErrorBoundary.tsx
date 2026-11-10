@@ -13,7 +13,7 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-export class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryState> {
+export class ErrorBoundary extends Component<{ children: ReactNode; reloadOnRetry?: boolean }, ErrorBoundaryState> {
   state: ErrorBoundaryState = { error: null };
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
@@ -25,6 +25,10 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBound
   }
 
   private handleRetry = () => {
+    if (this.props.reloadOnRetry) {
+      window.location.reload();
+      return;
+    }
     this.setState({ error: null });
   };
 

@@ -64,8 +64,8 @@ export function LogDiagnostics({
   const [type, setType] = useState<TypeFilter>("");
   const query = useInfiniteQuery({
     queryKey: observabilityKeys.diagnosticsFiltered(state),
-    queryFn: ({ pageParam }) =>
-      listObservabilityDiagnostics({ state: state === "" ? undefined : state, limit: PAGE_LIMIT, cursor: pageParam }),
+    queryFn: ({ pageParam, signal }) =>
+      listObservabilityDiagnostics({ state: state === "" ? undefined : state, limit: PAGE_LIMIT, cursor: pageParam }, signal),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage: DiagnosticEpisodePage) => lastPage.next_cursor ?? undefined,
   });

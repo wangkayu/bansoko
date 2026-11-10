@@ -1,3 +1,4 @@
+import { ownerIndexes, type OwnerIndexes } from "./ownerIndexes";
 import type { ReactNode } from "react";
 import { File, FileText, FileVideo, ListTree, Pencil, RotateCcw } from "lucide-react";
 import type { AcquisitionTarget, AnimeWorkspace, Release, ReleaseFile, RSSListFile, RSSListGroup, RSSListItem, RSSListView, RSSSource, TargetObservation } from "../../lib/api/client";
@@ -74,16 +75,16 @@ function groupIdentity(group: RSSListGroup): string {
   return group.scope.rss_source_id ?? `${group.scope.provider}:${group.scope.provider_entry_ref}:${group.scope.provider_group_ref}`;
 }
 
-function releaseForItem(item: RSSListItem, workspace: AnimeWorkspace): Release | undefined {
+function releaseForItem(item: RSSListItem, index: OwnerIndexes): Release | undefined {
   const match = /^release:(.+)$/.exec(item.snapshot_id);
-  return match ? workspace.releases.find((release) => release.id === match[1]) : undefined;
+  return match ? index.releases.get(match[1]) : undefined;
 }
 
-function terminalRows(release: Release | undefined, workspace: AnimeWorkspace): ReactNode[] {
+function terminalRows(release: Release | undefined, index: OwnerIndexes): ReactNode[] {
   if (!release) return [];
-  const task = workspace.download_tasks.find((entry) => entry.id === release.download_task_id);
-  const artifacts = task ? workspace.artifacts.filter((entry) => entry.download_task_id === task.id) : [];
-  const operations = artifacts.flatMap((artifact) => workspace.file_operations.filter((operation) => operation.artifact_id === artifact.id));
+  const task = index.tasks.get(release.download_task_id ?? "");
+  const artifacts = task ? index.artifacts.get(task.id) ?? [] : [];
+  const operations = artifacts.flatMap((artifact) => index.operations.get(artifact.id) ?? []);
   const rows: ReactNode[] = [];
   // The three stage owners' retry buttons are retired: only state and reason remain on the row.
   const row = (key: string, tone: StatePillTone, state: string, detail: string | undefined, note?: string) => (
@@ -399,7 +400,7 @@ function OwnerReleaseDetail({ item, release }: { item: RSSListItem; release?: Re
   );
 }
 
-function ownerItem(item: RSSListItem, release: Release | undefined, workspace: AnimeWorkspace, handlers: OwnerViewHandlers, preview: boolean, hold: RSSListView["metadata_hold"]): RssItemModel {
+function ownerItem(item: RSSListItem, release: Release | undefined, workspace: AnimeWorkspace, index: OwnerIndexes, handlers: OwnerViewHandlers, preview: boolean, hold: RSSListView["metadata_hold"]): RssItemModel {
   const evaluation = item.evaluation;
   const verdict = evaluation.verdict;
   const reasonCode = evaluationReasonCode(evaluation.reason_code, evaluation.reason_detail);
@@ -410,9 +411,9 @@ function ownerItem(item: RSSListItem, release: Release | undefined, workspace: A
       ? { label: releaseVerdictLabelWithHold(verdict, hold, filteredWithReason ? tagFilterReasonLabel(evaluation.reason_code, evaluation.reason_detail) ?? reasonLabel(reasonCode) : undefined), tone: releaseVerdictTone(verdict) }
       : { label: evaluation.state === "not_selected" ? t("verdict.notSelected") : t("verdict.unparsed"), tone: "muted" as StatePillTone };
   const task = release?.download_task_id
-    ? workspace.download_tasks.find((entry) => entry.id === release.download_task_id)
+    ? index.tasks.get(release.download_task_id ?? "")
     : undefined;
-  const retries = terminalRows(release, workspace);
+  const retries = terminalRows(release, index);
   // Why the seed refuses to run again (the retry decision's stable reason), shown on the disabled
   // button: a release whose files were released from management reads 文件已解除管理 instead of the
   // bare label.
@@ -469,11 +470,11 @@ function ownerItem(item: RSSListItem, release: Release | undefined, workspace: A
   };
 }
 
-function ownerGroup(group: RSSListGroup, workspace: AnimeWorkspace, handlers: OwnerViewHandlers, preview: boolean, names: ReadonlyMap<string, string>, hold: RSSListView["metadata_hold"]): RssGroupModel {
+function ownerGroup(group: RSSListGroup, workspace: AnimeWorkspace, index: OwnerIndexes, handlers: OwnerViewHandlers, preview: boolean, names: ReadonlyMap<string, string>, hold: RSSListView["metadata_hold"]): RssGroupModel {
   const displayName = groupLabel(names, group.scope.provider, group.scope.provider_group_ref, group.display_name);
   const sourceID = group.scope.rss_source_id;
-  const source = sourceID ? workspace.rss_sources.find((candidate) => candidate.id === sourceID) : undefined;
-  const runtime = sourceID ? workspace.rss_source_runtimes.find((candidate) => candidate.rss_source_id === sourceID) : undefined;
+  const source = sourceID ? index.sources.get(sourceID) : undefined;
+  const runtime = sourceID ? index.runtimes.get(sourceID) : undefined;
   // The score shares its source with the subgroups page: the effective selection's effective_score.
 //   The owner read model's group.score is not a computed value (the owner path leaves it empty,
 //   always 0) and is not read; groups without an effective selection (custom) show no score.
@@ -501,7 +502,7 @@ function ownerGroup(group: RSSListGroup, workspace: AnimeWorkspace, handlers: Ow
     feedDetail: describeReason(group.feed.error_code)
       ?? (runtimeFailed ? describeReason(runtime.reason_code, runtime.reason_detail) ?? t("rss.refreshFailedNoReason") : undefined),
     actions,
-    items: group.items.map((item) => ownerItem(item, releaseForItem(item, workspace), workspace, handlers, preview, hold)),
+    items: group.items.map((item) => ownerItem(item, releaseForItem(item, index), workspace, index, handlers, preview, hold)),
     emptyText: t("rss.emptyOwnerGroup"),
   };
 }
@@ -510,8 +511,9 @@ function ownerGroup(group: RSSListGroup, workspace: AnimeWorkspace, handlers: Ow
 export function ownerViewModel(view: RSSListView, workspace: AnimeWorkspace, handlers: OwnerViewHandlers): RssWorkspaceModel {
   const preview = view.mode === "owner_draft";
   const names = disambiguateGroupNames(view.groups.map(groupNameInput));
+  const index = ownerIndexes(workspace);
   return {
-    groups: view.groups.map((group) => ownerGroup(group, workspace, handlers, preview, names, view.metadata_hold)),
+    groups: view.groups.map((group) => ownerGroup(group, workspace, index, handlers, preview, names, view.metadata_hold)),
     emptyText: view.groups.length === 0
       ? t("rss.emptyNoSources")
       : undefined,

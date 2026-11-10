@@ -32,7 +32,8 @@ func (s *Service) GetAnimeWorkspaceApplication(ctx context.Context, managedAnime
 	return s.readAnimeWorkspace(ctx, managedAnimeID, workspaceReadOptions{})
 }
 
-func (s *Service) readAnimeWorkspace(ctx context.Context, managedAnimeID string, options workspaceReadOptions) (AnimeWorkspace, error) {
+// readWorkspaceOwners reads only configuration owners shared by all workspace views.
+func (s *Service) readWorkspaceOwners(ctx context.Context, managedAnimeID string) (AnimeWorkspace, error) {
 	var bgmWorkID, tmdbWorkID, tmdbMediaKind, ownerMediaKind sql.NullString
 	var tmdbSeason, totalEpisodes, year, ownerSeason sql.NullInt32
 	var titleOverride, providerTitle, originEntryRef, instanceLabel, entrySeason sql.NullString
@@ -115,6 +116,19 @@ WHERE a.id = $1`, managedAnimeID).Scan(
 	if err != nil {
 		return AnimeWorkspace{}, err
 	}
+	return AnimeWorkspace{
+		ManagedAnime: managedAnime, Metadata: metadata,
+		MetadataHold: metadataHoldFromApplication(metadata.BGM, metadata.TMDB, allowMissingLinkage), Subscription: subscription,
+		Subgroups: subgroups, Rules: rules, RSSSources: sources, RSSSourceRuntimes: runtimes,
+	}, nil
+}
+
+func (s *Service) readAnimeWorkspace(ctx context.Context, managedAnimeID string, options workspaceReadOptions) (AnimeWorkspace, error) {
+	workspace, err := s.readWorkspaceOwners(ctx, managedAnimeID)
+	if err != nil {
+		return AnimeWorkspace{}, err
+	}
+	subscription := workspace.Subscription
 	var (
 		targets      []AcquisitionTarget
 		observations []TargetObservation
@@ -130,13 +144,9 @@ WHERE a.id = $1`, managedAnimeID).Scan(
 	if err != nil {
 		return AnimeWorkspace{}, err
 	}
+	workspace.Releases = releases
 	if options.releasesOnly {
-		return AnimeWorkspace{
-			ManagedAnime: managedAnime, Metadata: metadata,
-			MetadataHold: metadataHoldFromApplication(metadata.BGM, metadata.TMDB, allowMissingLinkage), Subscription: subscription,
-			Subgroups: subgroups, Rules: rules, RSSSources: sources, RSSSourceRuntimes: runtimes,
-			Releases: releases,
-		}, nil
+		return workspace, nil
 	}
 	tasks, err := s.readDownloadTasksApplication(ctx, subscription.ID)
 	if err != nil {
@@ -158,6 +168,18 @@ WHERE a.id = $1`, managedAnimeID).Scan(
 	if err != nil {
 		return AnimeWorkspace{}, err
 	}
+	workspace.DownloadTasks, workspace.Artifacts, workspace.FileOperations = tasks, artifacts, operations
+	workspace.PlacementHandoffs, workspace.Logs = placementHandoffs, logs
+	workspace.AcquisitionTargets, workspace.TargetObservations = &targets, &observations
+	if err := s.readWorkspaceConfigurationProgress(ctx, &workspace); err != nil {
+		return AnimeWorkspace{}, err
+	}
+	return workspace, nil
+}
+
+// readWorkspaceConfigurationProgress uses narrow aggregates, never file contents.
+// The RSS releases-only view deliberately does not call this helper.
+func (s *Service) readWorkspaceConfigurationProgress(ctx context.Context, workspace *AnimeWorkspace) error {
 	var progressEpisodes sql.NullString
 	if err := s.db.QueryRowContext(ctx, `
 SELECT ARRAY_TO_STRING(ARRAY_AGG(DISTINCT keys.episode ORDER BY keys.episode), ',')
@@ -166,13 +188,10 @@ FROM (
   FROM placements p JOIN placement_coverage pc ON pc.placement_id = p.id
   WHERE p.managed_anime_id = $1 AND p.state = 'active' AND p.verification_state = 'verified'
     AND p.replacement_eligible AND pc.observation_key ~ '^tv:(?:s[0-9]+:)?e[0-9]+$'
-) keys`, managedAnimeID).Scan(&progressEpisodes); err != nil {
-		return AnimeWorkspace{}, fmt.Errorf("read anime episode progress: %w", err)
+) keys`, workspace.ManagedAnime.ID).Scan(&progressEpisodes); err != nil {
+		return fmt.Errorf("read anime episode progress: %w", err)
 	}
-	var episodeProgress *EpisodeProgress
-	if value := buildApplicationEpisodeProgress(progressEpisodes, metadata.TotalEpisodes, nil); value != nil {
-		episodeProgress = value
-	}
+	workspace.EpisodeProgress = buildApplicationEpisodeProgress(progressEpisodes, workspace.Metadata.TotalEpisodes, nil)
 	// A waiting plan of a settled root (the instance was deleted while it
 	// waited) no longer waits for anything.
 	var configWaitingFiles int64
@@ -184,16 +203,9 @@ WHERE p.state = 'waiting_config' AND EXISTS (
   SELECT 1 FROM download_tasks t
   JOIN releases rel ON rel.id = t.release_id
   JOIN rss_sources src ON src.id = rel.rss_source_id
-  WHERE t.acquisition_id = r.id AND src.subscription_id = $1)`, subscription.ID).Scan(&configWaitingFiles); err != nil {
-		return AnimeWorkspace{}, fmt.Errorf("read anime imports waiting for configuration: %w", err)
+  WHERE t.acquisition_id = r.id AND src.subscription_id = $1)`, workspace.Subscription.ID).Scan(&configWaitingFiles); err != nil {
+		return fmt.Errorf("read anime imports waiting for configuration: %w", err)
 	}
-	return AnimeWorkspace{
-		ManagedAnime: managedAnime, Metadata: metadata,
-		MetadataHold: metadataHoldFromApplication(metadata.BGM, metadata.TMDB, allowMissingLinkage), Subscription: subscription,
-		Subgroups: subgroups, Rules: rules, RSSSources: sources, RSSSourceRuntimes: runtimes,
-		Releases: releases, DownloadTasks: tasks, Artifacts: artifacts, FileOperations: operations,
-		PlacementHandoffs:  placementHandoffs,
-		AcquisitionTargets: &targets, TargetObservations: &observations, Logs: logs, EpisodeProgress: episodeProgress,
-		ConfigWaitingFiles: configWaitingFiles,
-	}, nil
+	workspace.ConfigWaitingFiles = configWaitingFiles
+	return nil
 }

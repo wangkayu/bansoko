@@ -8,6 +8,7 @@ import type { CatalogProvider } from "../../lib/providers/port";
 import type { CatalogEntryView } from "../../lib/providers/viewmodels";
 import { draftFromEntry } from "../catalog/entryDraft";
 import { AnimeConfigDialog } from "./AnimeConfigDialog";
+import { workspaceConfiguration } from "../workspace/configuration";
 import { RecordLinkContext } from "../../shell/recordLinkContext";
 import { t } from "../../lib/i18n";
 import { presetRuleSections } from "./businessDraft";
@@ -230,7 +231,8 @@ function ownerRssListView(seedTitle = "[测试字幕组] 测试番 - 01"): unkno
 // The execution-records entries (an RSS row's processing, the footer's records) are driven by the opener the app shell provides.
 const openRecordSpy = vi.fn();
 
-function renderDialog(responses: AnimeWorkspace[], staleTime = 0, entryOverride?: CatalogEntryView) {
+function renderDialog(responses: AnimeWorkspace[], staleTime = 0, entryOverride?: CatalogEntryView, initialTab = "rss") {
+  const workspaceReads: string[] = [];
   let requestCount = 0;
   let viewCount = 0;
   const rssViews = [ownerRssListView(), ownerRssListView("[测试字幕组] 测试番 - 02")];
@@ -277,8 +279,9 @@ function renderDialog(responses: AnimeWorkspace[], staleTime = 0, entryOverride?
       return new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     const body = responses[Math.min(requestCount, responses.length - 1)]!;
+    workspaceReads.push(url);
     requestCount += 1;
-    return new Response(JSON.stringify(body), {
+    return new Response(JSON.stringify(url.endsWith("/workspace-configuration") ? workspaceConfiguration(body) : body), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -297,7 +300,7 @@ function renderDialog(responses: AnimeWorkspace[], staleTime = 0, entryOverride?
           entry={entryOverride ?? entry}
           sourceLabel={t("grid.tabCustom")}
           onSubscribed={() => {}}
-          initialTab="rss"
+          initialTab={initialTab}
         />
       </RecordLinkContext.Provider>
     </QueryClientProvider>
@@ -305,6 +308,8 @@ function renderDialog(responses: AnimeWorkspace[], staleTime = 0, entryOverride?
   const view = render(dialog(true));
   return {
     requestCount: () => requestCount,
+    workspaceReads,
+    viewCount: () => viewCount,
     setOpen: (open: boolean) => view.rerender(dialog(open)),
   };
 }
@@ -327,6 +332,101 @@ describe("AnimeConfigDialog subscribed workspace polling", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("configuration tabs poll only the light read and stop at the same stable state", async () => {
+    const { workspaceReads, viewCount } = renderDialog([workspaceFixture(), completedWorkspace()], 0, undefined, "metadata");
+    await flushQuery();
+    await flushQuery();
+    expect(workspaceReads).toEqual(["/api/v1/anime/anime-1/workspace-configuration"]);
+    expect(viewCount()).toBe(0);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    await flushQuery();
+    expect(workspaceReads).toHaveLength(2);
+    expect(workspaceReads.every(url => url.endsWith("/workspace-configuration"))).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(workspaceReads).toHaveLength(2);
+    expect(viewCount()).toBe(0);
+  });
+
+  it("switches read shapes without losing unsaved rules or RSS expansion", async () => {
+    const { workspaceReads, viewCount } = renderDialog([completedWorkspace()], 0, undefined, "rules");
+    await flushQuery();
+    await flushQuery();
+    const filter = screen.getByLabelText(t("settings.rules.titleNot"));
+    fireEvent.change(filter, { target: { value: "local-unsaved" } });
+    expect(workspaceReads.every(url => url.endsWith("/workspace-configuration"))).toBe(true);
+    expect(viewCount()).toBe(0);
+    fireEvent.click(screen.getByRole("tab", { name: "RSS" }));
+    await flushQuery();
+    await flushQuery();
+    expect(workspaceReads.at(-1)).toBe("/api/v1/anime/anime-1/workspace");
+    fireEvent.click(screen.getByRole("button", { name: t("rss.expandGroup", { name: "测试字幕组" }) }));
+    expect(screen.getByText("[测试字幕组] 测试番 - 01")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: t("tabs.names.rules") }));
+    await flushQuery();
+    expect(screen.getByLabelText(t("settings.rules.titleNot"))).toHaveValue("local-unsaved");
+    const reads = viewCount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+    expect(viewCount()).toBe(reads);
+    fireEvent.click(screen.getByRole("tab", { name: "RSS" }));
+    await flushQuery();
+    await flushQuery();
+    expect(screen.getByRole("button", { name: t("rss.collapseGroup", { name: "测试字幕组" }) })).toBeInTheDocument();
+  });
+
+  it("revalidates the inactive read shape even inside the general fresh-cache window", async () => {
+    const { workspaceReads } = renderDialog([workspaceFixture(), completedWorkspace()], 60_000);
+    await flushQuery();
+    await flushQuery();
+    fireEvent.click(screen.getByRole("tab", { name: t("tabs.names.rules") }));
+    await flushQuery();
+    fireEvent.click(screen.getByRole("tab", { name: "RSS" }));
+    await flushQuery();
+    expect(workspaceReads).toEqual([
+      "/api/v1/anime/anime-1/workspace",
+      "/api/v1/anime/anime-1/workspace-configuration",
+      "/api/v1/anime/anime-1/workspace",
+    ]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+    expect(workspaceReads).toHaveLength(3);
+  });
+
+  it("keeps dirty editors when the newly selected history read fails", async () => {
+    renderDialog([completedWorkspace()], 0, undefined, "rules");
+    await flushQuery();
+    await flushQuery();
+    fireEvent.change(screen.getByLabelText(t("settings.rules.titleNot")), { target: { value: "keep-on-error" } });
+    const original = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation((input, init) => String(input).endsWith("/workspace")
+      ? Promise.resolve(new Response(JSON.stringify({ code: "INTERNAL_ERROR", message: "failed" }), { status: 500 }))
+      : original(input, init));
+    fireEvent.click(screen.getByRole("tab", { name: "RSS" }));
+    await flushQuery();
+    await flushQuery();
+    expect(screen.getByRole("button", { name: t("act.retry") })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: t("tabs.names.rules") }));
+    await flushQuery();
+    expect(screen.getByLabelText(t("settings.rules.titleNot"))).toHaveValue("keep-on-error");
+  });
+
+  it("cancels a pending full read when returning to a configuration tab", async () => {
+    renderDialog([completedWorkspace()], 0, undefined, "rules");
+    await flushQuery();
+    const original = vi.mocked(fetch).getMockImplementation()!;
+    let signal: AbortSignal | undefined;
+    vi.mocked(fetch).mockImplementation((input, init) => {
+      if (!String(input).endsWith("/workspace")) return original(input, init);
+      signal = init?.signal ?? undefined;
+      return new Promise((_resolve, reject) => signal?.addEventListener("abort", () => reject(signal?.reason), { once: true }));
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "RSS" }));
+    await flushQuery();
+    expect(signal?.aborted).toBe(false);
+    fireEvent.click(screen.getByRole("tab", { name: t("tabs.names.rules") }));
+    await flushQuery();
+    expect(signal?.aborted).toBe(true);
+    expect(screen.queryByRole("button", { name: t("act.retry") })).not.toBeInTheDocument();
   });
 
   // A subscribed entry's four-tab dialog opens on RSS (the result/action face) by default; a draft keeps metadata.
@@ -473,7 +573,7 @@ describe("AnimeConfigDialog 已订阅的订阅设置", () => {
         }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
       if (url.includes("/anime/anime-1/workspace")) {
-        return new Response(JSON.stringify(workspaceFixture()), {
+        return new Response(JSON.stringify(url.endsWith("/workspace-configuration") ? workspaceConfiguration(workspaceFixture()) : workspaceFixture()), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
@@ -527,7 +627,7 @@ describe("AnimeConfigDialog 已订阅的订阅设置", () => {
         });
       }
       if (url.includes("/anime/anime-1/workspace")) {
-        return new Response(JSON.stringify(workspaceFixture()), {
+        return new Response(JSON.stringify(url.endsWith("/workspace-configuration") ? workspaceConfiguration(workspaceFixture()) : workspaceFixture()), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
@@ -585,7 +685,7 @@ describe("AnimeConfigDialog subscribed discard confirmation", () => {
           headers: { "Content-Type": "application/json" },
         });
       }
-      return new Response(JSON.stringify(workspaceFixture()), {
+      return new Response(JSON.stringify(url.endsWith("/workspace-configuration") ? workspaceConfiguration(workspaceFixture()) : workspaceFixture()), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });

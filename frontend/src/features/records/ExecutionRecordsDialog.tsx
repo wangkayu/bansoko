@@ -251,7 +251,7 @@ function RecordList({
   const entryKind = segment === "subscription" ? entry : "";
   const query = useInfiniteQuery({
     queryKey: acquisitionRecordKeys.list({ managedAnimeID: animeFilter, state, entryKind, origin: segment }),
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       listAcquisitionRecords({
         origin: segment,
         managed_anime_id: animeFilter || undefined,
@@ -259,7 +259,7 @@ function RecordList({
         entry_kind: entryKind || undefined,
         limit: PAGE_LIMIT,
         cursor: pageParam,
-      }),
+      }, signal),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     // Keeps the previous counts while switching segments so the numbers on segment labels do not flicker.
@@ -404,7 +404,7 @@ function RecordDetail({
 }) {
   const query = useQuery({
     queryKey: acquisitionRecordKeys.detail(acquisitionID),
-    queryFn: () => getAcquisitionRecord(acquisitionID),
+    queryFn: ({ signal }) => getAcquisitionRecord(acquisitionID, signal),
   });
   const back = (
     <Button size="sm" variant="link" className="tw:justify-self-start" onClick={onShowList}>
@@ -670,7 +670,7 @@ function OutcomeSection({ outcome }: { outcome: NonNullable<AcquisitionRecordDet
 function FileSection({ acquisitionID }: { acquisitionID: string }) {
   const query = useInfiniteQuery({
     queryKey: acquisitionRecordKeys.files(acquisitionID),
-    queryFn: ({ pageParam }) => listAcquisitionRecordFiles(acquisitionID, { limit: FILE_PAGE_LIMIT, cursor: pageParam }),
+    queryFn: ({ pageParam, signal }) => listAcquisitionRecordFiles(acquisitionID, { limit: FILE_PAGE_LIMIT, cursor: pageParam }, signal),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     retry: (failureCount, error) => !(error instanceof ApiError && [404, 409, 410].includes(error.status)) && failureCount < 2,

@@ -1,6 +1,9 @@
+import { uiCopy as zhUI } from "./zh-CN.ui";
+import { enUiCopy as enUI } from "./en.ui";
+import { errorDetailsCopy as zhErrors } from "./zh-CN.bootstrap";
+import { errorDetailsCopy as enErrors } from "./en.bootstrap";
 import { useSyncExternalStore } from "react";
-import { zhCN } from "./zh-CN";
-import { en } from "./en";
+import type { zhCN } from "./zh-CN";
 
 // The copy-table read entry. Every user-facing string lives in a copy object, read with
 //   `t(key, vars)`; zh-CN is the source of keys, and en is typechecked against the same key set
@@ -24,7 +27,31 @@ export type Locale = (typeof LOCALES)[number];
 /** Each language option shows its own native name and is never translated with the UI language. */
 export const LOCALE_NAMES: Record<Locale, string> = { "zh-CN": "简体中文", en: "English" };
 
-export const catalogs: Record<Locale, unknown> = { "zh-CN": zhCN, en };
+export const catalogs: Partial<Record<Locale, unknown>> = {};
+const loads = new Map<Locale, Promise<void>>();
+// The existing crash surface must work even when a catalog chunk cannot load.
+const bootstrapCatalogs = {
+  "zh-CN": { ui: zhUI, errorDetails: zhErrors },
+  en: { ui: enUI, errorDetails: enErrors },
+};
+
+/** Load only the selected catalog before rendering; failed loads remain retryable. */
+export function loadLocale(locale: Locale): Promise<void> {
+  if (catalogs[locale]) return Promise.resolve();
+  const pending = loads.get(locale);
+  if (pending) return pending;
+  const load = (locale === "zh-CN"
+    ? import("./zh-CN").then(module => module?.zhCN)
+    : import("./en").then(module => module?.en))
+    .then(catalog => {
+      if (!catalog) throw new Error("Language catalog unavailable");
+      catalogs[locale] = catalog;
+    })
+    .finally(() => loads.delete(locale));
+  loads.set(locale, load);
+  return load;
+}
+let selection = 0;
 
 export const LOCALE_STORAGE_KEY = "locale";
 
@@ -67,7 +94,17 @@ export function getLocale(): Locale {
  * Switches the UI language: saves to this browser (not saved when `persist: false`), updates
  *   <html lang>, and notifies subscribers to re-render.
  */
-export function setLocale(locale: Locale, options: { persist?: boolean } = {}): void {
+export function setLocale(locale: Locale, options: { persist?: boolean } = {}): void | Promise<void> {
+  const request = ++selection;
+  if (!catalogs[locale]) {
+    return loadLocale(locale).then(() => {
+      if (request === selection) applyLocale(locale, options);
+    });
+  }
+  applyLocale(locale, options);
+}
+
+function applyLocale(locale: Locale, options: { persist?: boolean }): void {
   if (options.persist !== false) {
     try {
       globalThis.localStorage?.setItem(LOCALE_STORAGE_KEY, locale);
@@ -94,7 +131,7 @@ export function useLocale(): Locale {
 }
 
 function lookup(key: string): string | undefined {
-  let node: unknown = catalogs[activeLocale];
+  let node: unknown = catalogs[activeLocale] ?? bootstrapCatalogs[activeLocale];
   for (const part of key.split(".")) {
     if (node === null || typeof node !== "object") return undefined;
     node = (node as Record<string, unknown>)[part];

@@ -43,6 +43,34 @@ func MapAnimeWorkspace(value readmodelapplication.AnimeWorkspace) (generated.Ani
 	}, nil
 }
 
+// MapAnimeWorkspaceConfiguration maps only configuration fields and the compact
+// summary; it cannot accidentally serialize empty execution-history arrays.
+func MapAnimeWorkspaceConfiguration(value readmodelapplication.AnimeWorkspaceConfiguration) (generated.AnimeWorkspaceConfiguration, error) {
+	rules, err := mapRulesOwner(value.Rules)
+	if err != nil {
+		return generated.AnimeWorkspaceConfiguration{}, err
+	}
+	observations := make([]generated.AnimeWorkspaceTagObservation, 0, len(value.ReleaseSummary.TagObservations))
+	for _, observation := range value.ReleaseSummary.TagObservations {
+		observations = append(observations, generated.AnimeWorkspaceTagObservation{
+			AnibtTags: append([]string{}, observation.AniBTTags...),
+			TitleTags: append([]string{}, observation.TitleTags...),
+		})
+	}
+	return generated.AnimeWorkspaceConfiguration{
+		ManagedAnime: mapWorkspaceManagedAnime(value.ManagedAnime),
+		Subscription: mapSubscription(value.Subscription),
+		Metadata:     mapWorkspaceMetadata(value.Metadata), MetadataHold: mapWorkspaceMetadataHold(value.MetadataHold),
+		Subgroups: mapWorkspaceSubgroups(value.Subgroups), Rules: rules,
+		RssSources: mapWorkspaceSources(value.RSSSources), RssSourceRuntimes: mapWorkspaceRuntimes(value.RSSSourceRuntimes),
+		EpisodeProgress: mapWorkspaceEpisodeProgress(value.EpisodeProgress), ConfigWaitingFiles: value.ConfigWaitingFiles,
+		ReleaseSummary: generated.AnimeWorkspaceReleaseSummary{
+			Count: value.ReleaseSummary.Count, LatestPublishedAt: cloneWorkspaceString(value.ReleaseSummary.LatestPublishedAt),
+			OwnerChainStable: value.ReleaseSummary.OwnerChainStable, TagObservations: observations,
+		},
+	}, nil
+}
+
 func mapWorkspaceManagedAnime(value animeapplication.ManagedAnime) generated.ManagedAnime {
 	return generated.ManagedAnime{
 		Id:            generated.ID(value.ID),

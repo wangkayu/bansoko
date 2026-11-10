@@ -4,6 +4,8 @@ import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { preset as businessPreset, loadDraftFromBusinessPreset } from "../../testing/businessPreset";
 import { t } from "../../lib/i18n";
+import { workspaceConfiguration } from "../workspace/configuration";
+import type { AnimeWorkspace } from "../../lib/api/client";
 
 // AnimeGrid integration surface: the two-area grid breakpoints (browse-area poster wall vs
 //   action-area wide cards), hidden entries never entering the lists, the hide toast wording; the
@@ -519,9 +521,10 @@ function stubFetch() {
       });
     }
     // The workspace read model read when a subscribed card opens the workspace dialog (retired reads this same one).
-    const workspaceMatch = url.match(/\/anime\/([^/?]+)\/workspace$/);
+    const workspaceMatch = url.match(/\/anime\/([^/?]+)\/workspace(-configuration)?$/);
     if (workspaceMatch && (!init?.method || init.method === "GET")) {
-      return new Response(JSON.stringify(animeWorkspaceFor(decodeURIComponent(workspaceMatch[1]!))), {
+      const full = animeWorkspaceFor(decodeURIComponent(workspaceMatch[1]!));
+      return new Response(JSON.stringify(workspaceMatch[2] ? workspaceConfiguration(full as AnimeWorkspace) : full), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -648,8 +651,10 @@ async function renderGrid(initialEntry = "/?source=mikan") {
 }
 
 describe("AnimeGrid（fixture 目录）", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetModules();
+    const { loadLocale } = await import("../../lib/i18n");
+    await Promise.all([loadLocale("zh-CN"), loadLocale("en")]);
     vi.useFakeTimers();
     vi.setSystemTime(FIXED_NOW);
     vi.clearAllMocks();
@@ -1340,7 +1345,7 @@ describe("AnimeGrid（fixture 目录）", () => {
     ).length;
     deletedManagedAnimeIDs.add("anime:cand-m2");
     await act(async () => {
-      await queryClient.invalidateQueries({ queryKey: ["catalog"] });
+      await queryClient.invalidateQueries({ queryKey: ["anime", "list"] });
     });
     await flush();
     const animeGetsAfterRefresh = fetchMock.mock.calls.filter(
@@ -1420,8 +1425,10 @@ describe("AnimeGrid（fixture 目录）", () => {
 //   nothing, confirming calls store.delete. The candidate store goes through the
 //   /anime-config-candidates fetch stub; store.delete IS the DELETE request.
 describe("AnimeGrid 自定义预设", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetModules();
+    const { loadLocale } = await import("../../lib/i18n");
+    await Promise.all([loadLocale("zh-CN"), loadLocale("en")]);
     vi.useFakeTimers();
     vi.setSystemTime(FIXED_NOW);
     suppressions = [];
@@ -1539,8 +1546,10 @@ describe("AnimeGrid 自定义预设", () => {
 //   "running", ones missing BGM/TMDB as "awaiting metadata match"; "stopped" is kept by the
 //   subscription PATCH's response state.
 describe("AnimeGrid 已订阅计数 chip（G2b）", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetModules();
+    const { loadLocale } = await import("../../lib/i18n");
+    await Promise.all([loadLocale("zh-CN"), loadLocale("en")]);
     vi.useFakeTimers();
     vi.setSystemTime(FIXED_NOW);
     vi.clearAllMocks();
@@ -1760,8 +1769,10 @@ describe("AnimeGrid 已订阅计数 chip（G2b）", () => {
 //   SEARCH_NOT_SUPPORTED, shown as the "not supported" error state; returning to the catalog is
 //   possible.
 describe("AnimeGrid 加载失败错误态 + 重试（E1）", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetModules();
+    const { loadLocale } = await import("../../lib/i18n");
+    await Promise.all([loadLocale("zh-CN"), loadLocale("en")]);
     vi.useFakeTimers();
     vi.setSystemTime(FIXED_NOW);
     vi.clearAllMocks();

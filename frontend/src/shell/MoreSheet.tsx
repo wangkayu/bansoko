@@ -1,3 +1,4 @@
+import { toast } from "../ui/toast";
 import { useTheme } from "next-themes";
 import {
   ArrowUpRight,
@@ -151,7 +152,7 @@ export function MoreSheet({
             aria-label={t("account.language")}
             value={locale}
             onValueChange={(next) => {
-              if (isLocale(next)) setLocale(next);
+              if (isLocale(next)) void Promise.resolve(setLocale(next)).catch(() => toast.error(t("common.operationFailed")));
             }}
             // Language names are written in their own locale, never translated with the UI language.
             options={LOCALES.map((value) => ({ value, label: <span lang={value}>{LOCALE_NAMES[value]}</span> }))}

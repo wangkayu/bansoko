@@ -1,3 +1,4 @@
+import { errorDetailsCopy } from "./zh-CN.bootstrap";
 import { errorCopy } from "./zh-CN.error";
 import { namingFactCopy, reasonCopy } from "./zh-CN.reason";
 import { animeCopy, catalogCopy, fileCopy, replacementCopy, settingsCopy } from "./zh-CN.core";
@@ -67,17 +68,7 @@ export const zhCN = {
   },
 
   // 错误“详情”折叠区（toast / Alert 共用）。
-  errorDetails: {
-    toggle: "详情",
-    copy: "复制",
-    copied: "已复制",
-    copyFailed: "复制失败，已选中文本，请手动复制",
-    code: "错误码",
-    status: "状态",
-    message: "服务端信息",
-    fields: "字段",
-    requestId: "请求 ID",
-  },
+  errorDetails: errorDetailsCopy,
 
   // 种子状态标签（三处共用）。
   verdict: {

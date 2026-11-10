@@ -1,6 +1,7 @@
 import { test, expect, type Page, type Route } from "@playwright/test";
 import type { AnimeListItem, AnimeWorkspace, CatalogWorkspace, DiagnosticEpisodePage, GlobalSectionView, NamingTemplateCatalog, NamingTemplateLibraryView, ObservabilityRecordPage, ReleaseRetryResult, RSSRefreshAccepted } from "../src/lib/api/client";
 import { ownerRSSView } from "./fixtures/ownerRSSView";
+import { workspaceConfiguration } from "../src/features/workspace/configuration";
 import { selectSubscribed } from "./catalog-nav";
 import { mockSignedIn } from "./session";
 
@@ -277,9 +278,10 @@ async function mockWorkspaceAndActions(page: Page) {
     return ok(route, 200, ownerRSSView(ownerWorkspace(retried)));
   });
 
-  await page.route("**/api/v1/anime/*/workspace", async (route) => {
+  await page.route(/\/api\/v1\/anime\/[^/]+\/workspace(?:-configuration)?$/, async (route) => {
     if (route.request().method() !== "GET") return methodNotAllowed(route, "GET");
-    return ok(route, 200, ownerWorkspace(retried));
+    const full = ownerWorkspace(retried);
+    return ok(route, 200, route.request().url().endsWith("/workspace-configuration") ? workspaceConfiguration(full) : full);
   });
   await page.route("**/api/v1/rss-sources/*/refresh", async (route) => {
     if (route.request().method() !== "POST") return methodNotAllowed(route, "POST");

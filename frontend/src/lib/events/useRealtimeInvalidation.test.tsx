@@ -1,5 +1,6 @@
+import { refreshOwnerRss } from "./refreshOwnerRss";
 import { act, renderHook } from "@testing-library/react";
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useSessionStore } from "../../shell/sessionStore";
 import {
@@ -84,42 +85,51 @@ describe("useRealtimeInvalidation", () => {
     expect(lastStream!.stop).toHaveBeenCalledTimes(1);
   });
 
-  it("catalog/subscribed/rss/records 映射到正确 query key 前缀", () => {
+  it("catalog/subscribed/rss/records 映射到正确 query key 前缀", async () => {
     initRealtimeInvalidation(client);
     useSessionStore.getState().setAuthenticated("owner");
     const invalidate = vi.spyOn(client, "invalidateQueries");
 
     emit({ target: "catalog" });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: catalogKeys.all });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: animeKeys.list });
+    expect(invalidate).toHaveBeenCalledTimes(2);
 
     invalidate.mockClear();
     emit({ target: "subscribed" });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: animeKeys.list });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: catalogKeys.all });
 
-    invalidate.mockClear();
-    emit({ target: "rss" });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: animeKeys.workspacePrefix });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: fileManagerKeys.all });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: acquisitionRecordKeys.all });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: observabilityKeys.records });
-    expect(invalidate).toHaveBeenCalledTimes(4);
+    vi.useFakeTimers();
+    try {
+      invalidate.mockClear();
+      emit({ target: "rss" });
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: animeKeys.workspacePrefix });
+      expect(invalidate).toHaveBeenCalledTimes(1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: fileManagerKeys.all });
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: acquisitionRecordKeys.all });
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: observabilityKeys.records });
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: animeKeys.list });
+      expect(invalidate).toHaveBeenCalledTimes(5);
 
-    invalidate.mockClear();
-    emit({ target: "rss", managedAnimeId: "anime-1" });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: animeKeys.workspace("anime-1") });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: rssListKeys.owner("anime-1") });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: fileManagerKeys.all });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: acquisitionRecordKeys.all });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: observabilityKeys.records });
-    expect(invalidate).toHaveBeenCalledTimes(5);
-
-    invalidate.mockClear();
-    emit({ target: "records" });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: observabilityKeys.all });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: fileManagerKeys.all });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: acquisitionRecordKeys.all });
-    expect(invalidate).toHaveBeenCalledTimes(3);
+      invalidate.mockClear();
+      await act(async () => lastStream!.onEvent({ target: "rss", managedAnimeId: "anime-1" }));
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: animeKeys.workspace("anime-1") });
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: rssListKeys.owner("anime-1") });
+      expect(invalidate).toHaveBeenCalledTimes(2);
+      emit({ target: "records" });
+      emit({ target: "records" });
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: observabilityKeys.all });
+      expect(invalidate).not.toHaveBeenCalledWith({ queryKey: observabilityKeys.records });
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: fileManagerKeys.all });
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: acquisitionRecordKeys.all });
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: animeKeys.list });
+      expect(invalidate).toHaveBeenCalledTimes(6);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("rss/records 合并为一次订阅列表刷新", () => {
@@ -140,14 +150,96 @@ describe("useRealtimeInvalidation", () => {
       expect(listCalls()).toBe(0);
 
       act(() => vi.advanceTimersByTime(1000));
-      expect(invalidate).toHaveBeenCalledWith({ queryKey: catalogKeys.listTab("all") });
+      expect(invalidate).not.toHaveBeenCalledWith({ queryKey: catalogKeys.listTab("all") });
       expect(invalidate).toHaveBeenCalledWith({ queryKey: animeKeys.list });
-      expect(listCalls()).toBe(2);
+      expect(listCalls()).toBe(1);
 
       emit({ target: "catalog" });
+      expect(listCalls()).toBe(2);
       act(() => vi.advanceTimersByTime(1000));
       expect(listCalls()).toBe(2);
     } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("coalesces a scoped event with the workspace observer and preserves unchanged events", async () => {
+    const key = animeKeys.workspace("anime-1");
+    const rssKey = rssListKeys.owner("anime-1");
+    client.setQueryDefaults(key, { staleTime: Infinity });
+    client.setQueryDefaults(rssKey, { staleTime: Infinity });
+    client.setQueryData(key, { version: 0 });
+    client.setQueryData(rssKey, { version: 0 });
+    const workspace = new QueryObserver(client, { queryKey: key, queryFn: async () => ({ version: 1 }) });
+    const readRSS = vi.fn(async () => ({ version: 1 }));
+    const rss = new QueryObserver(client, { queryKey: rssKey, queryFn: readRSS });
+    let last = client.getQueryData(key);
+    const unsubscribeWorkspace = workspace.subscribe(result => {
+      if (result.data === last) return;
+      last = result.data;
+      void refreshOwnerRss(client, "anime-1", result.data);
+    });
+    const unsubscribeRss = rss.subscribe(() => undefined);
+    initRealtimeInvalidation(client);
+    await act(async () => {
+      lastStream!.onEvent({ target: "rss", managedAnimeId: "anime-1" });
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+    expect(readRSS).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      lastStream!.onEvent({ target: "rss", managedAnimeId: "anime-1" });
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+    expect(readRSS).toHaveBeenCalledTimes(2);
+    unsubscribeWorkspace();
+    unsubscribeRss();
+    client.clear();
+  });
+
+  it("scoped events refresh the active configuration read without fetching inactive history", async () => {
+    const fullKey = animeKeys.workspace("anime-1");
+    const configKey = animeKeys.workspaceConfiguration("anime-1");
+    const readFull = vi.fn(async () => ({ version: 2 }));
+    const readConfig = vi.fn(async () => ({ version: 2 }));
+    client.setQueryDefaults(fullKey, { staleTime: Infinity, queryFn: readFull });
+    client.setQueryData(fullKey, { version: 1 });
+    client.setQueryData(configKey, { version: 1 });
+    const configuration = new QueryObserver(client, { queryKey: configKey, queryFn: readConfig });
+    const unsubscribe = configuration.subscribe(() => undefined);
+    initRealtimeInvalidation(client);
+    await act(async () => {
+      lastStream!.onEvent({ target: "rss", managedAnimeId: "anime-1" });
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+    expect(readConfig).toHaveBeenCalledTimes(1);
+    expect(readFull).not.toHaveBeenCalled();
+    expect(client.getQueryState(fullKey)?.isInvalidated).toBe(true);
+    unsubscribe();
+  });
+
+  it("drops queued refreshes on logout or client replacement", async () => {
+    vi.useFakeTimers();
+    const replacement = new QueryClient();
+    try {
+      initRealtimeInvalidation(client);
+      useSessionStore.getState().setAuthenticated("owner");
+      const invalidate = vi.spyOn(client, "invalidateQueries");
+      emit({ target: "records" });
+      useSessionStore.getState().clearSession();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(invalidate).not.toHaveBeenCalled();
+      useSessionStore.getState().setAuthenticated("owner");
+      emit({ target: "records" });
+      initRealtimeInvalidation(replacement);
+      const nextInvalidate = vi.spyOn(replacement, "invalidateQueries");
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(invalidate).not.toHaveBeenCalled();
+      expect(nextInvalidate).not.toHaveBeenCalled();
+      emit({ target: "records" });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(nextInvalidate).toHaveBeenCalledWith({ queryKey: observabilityKeys.all });
+    } finally {
+      replacement.clear();
       vi.useRealTimers();
     }
   });

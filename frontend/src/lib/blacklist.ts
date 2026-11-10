@@ -6,7 +6,7 @@ import {
   unsuppressCatalogEntry,
   type CatalogSuppression,
 } from "./api/client";
-import { catalogKeys } from "./queryKeys";
+import { animeKeys, catalogKeys } from "./queryKeys";
 import { t } from "./i18n";
 
 // Hidden anime (called "hidden" in the UI; the API and code keep the suppression/blacklist
@@ -92,7 +92,10 @@ export function useBlacklistActions(): {
   const invalidate = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: blacklistQueryKey });
     // The server fills a catalog entry's preference from suppressions, so a re-read is required after hiding.
-    await queryClient.invalidateQueries({ queryKey: catalogKeys.all });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: catalogKeys.all }),
+      queryClient.invalidateQueries({ queryKey: animeKeys.list }),
+    ]);
   }, [queryClient]);
 
   const suppress = useMutation({

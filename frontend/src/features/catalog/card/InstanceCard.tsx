@@ -6,7 +6,7 @@ import { ProgressTrack } from "./ProgressTrack";
 import { t } from "../../../lib/i18n";
 import { labelValue } from "../../../lib/i18n/format";
 import { lifecycleStateLabel, metadataHoldBlocking, subscriptionStateLabel } from "../../../lib/labels";
-import { importedCount, progressDone, progressSummary } from "../../../lib/progress";
+import { progressPresentation } from "../../../lib/progress";
 import { useRecordLink } from "../../../shell/recordLinkContext";
 import type { RouteAnimeTab } from "../../../shell/routeDialogs";
 
@@ -75,11 +75,9 @@ export function InstanceCard({
     ? t("grid.card.viewFor", { title: entry.title })
     : t("grid.card.openConfig", { title: entry.title });
 
-  const progress = entry.episodeProgress;
-  const hasEpisodes = importedCount(progress) > 0;
-  const summary = progressSummary(progress);
-  const shortSummary = progressSummary(progress, true);
-  const done = progressDone(progress);
+  const progress = progressPresentation(entry.episodeProgress);
+  const { summary, shortSummary, done } = progress;
+  const hasEpisodes = progress.count > 0;
 
   // The menu items (tailored to the instance's capabilities): start subscription (not yet started) / stop, start -> duplicate -> execution records -> files -> unsubscribe / delete local records.
   const managedAnimeID = entry.managedAnimeRef;
@@ -235,7 +233,7 @@ export function InstanceCard({
             )}
           </span>
         </p>
-        <ProgressTrack entry={entry} />
+        <ProgressTrack entry={entry} progress={progress} />
       </div>
     </article>
   );

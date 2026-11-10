@@ -1,4 +1,5 @@
 import { test, expect, type Page, type Route } from "@playwright/test";
+import { workspaceConfiguration } from "../src/features/workspace/configuration";
 import type {
   AnimeConfigCandidate,
   AnimeDraft,
@@ -375,7 +376,7 @@ async function mockWorkspace(page: Page) {
     const workspace = workspaceFixture(input.managed_anime_id, "星际邮差艾拉", state);
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(ownerRSSView(workspace)) });
   });
-  await page.route("**/api/v1/anime/**/workspace", async (route) => {
+  await page.route(/\/api\/v1\/anime\/[^/]+\/workspace(?:-configuration)?$/, async (route) => {
     const request = route.request();
     // workspace 是 GET-only 读模型；错误方法显式 405。
     if (request.method() !== "GET") {
@@ -386,7 +387,9 @@ async function mockWorkspace(page: Page) {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify(workspaceFixture(id, "星际邮差艾拉", state)),
+      body: JSON.stringify(request.url().endsWith("/workspace-configuration")
+        ? workspaceConfiguration(workspaceFixture(id, "星际邮差艾拉", state))
+        : workspaceFixture(id, "星际邮差艾拉", state)),
     });
   });
 }
@@ -1808,7 +1811,7 @@ test.describe("AnimeGrid", () => {
     let metadataVersion = 1;
     let metadataPatch: unknown;
     const state = fixtureStateFor(page);
-    await page.route("**/api/v1/anime/**/workspace", async (route) => {
+    await page.route(/\/api\/v1\/anime\/[^/]+\/workspace(?:-configuration)?$/, async (route) => {
       const request = route.request();
       if (request.method() !== "GET") {
         await fulfillMethodNotAllowed(route, "GET");
@@ -1822,7 +1825,7 @@ test.describe("AnimeGrid", () => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(body),
+        body: JSON.stringify(request.url().endsWith("/workspace-configuration") ? workspaceConfiguration(body) : body),
       });
     });
     await page.route("**/api/v1/anime/**/metadata", async (route) => {

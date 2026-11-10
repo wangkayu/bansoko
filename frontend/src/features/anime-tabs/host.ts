@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import type {
   AnimeDraft,
-  AnimeWorkspace,
   BusinessPresetView,
   CustomSnapshotFetchInput,
   PreviewFeedSnapshotRef,
@@ -10,6 +9,7 @@ import type {
 } from "../../lib/api/client";
 import type { CatalogEntryView } from "../../lib/providers/viewmodels";
 import type { WorkspaceCapability } from "../workspace/capability";
+import type { WorkspaceConfiguration } from "../workspace/configuration";
 
 // The sole parameter surface of an anime's four tabs (metadata/subgroups/rules/RSS): before
 // subscribing (a draft, the in-memory draft saved as a whole candidate then activated) and after
@@ -62,7 +62,7 @@ export type DraftTabHost = {
 export type OwnerTabHost = {
   mode: "owner";
   animeID: string;
-  workspace: AnimeWorkspace;
+  workspace: WorkspaceConfiguration;
   /**
    * 本工作区的 UI 能力权威。retired owner 打开同一 workspace 时这里是只读模式：
    * 历史（Release/DownloadTask/Artifact/FileOperation/执行记录/log）照常可读，所有

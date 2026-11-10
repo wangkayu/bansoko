@@ -31,6 +31,33 @@ type AnimeWorkspace struct {
 	TargetObservations *[]TargetObservation
 }
 
+// AnimeWorkspaceConfiguration has configuration owners but no execution-history arrays.
+type AnimeWorkspaceConfiguration struct {
+	ManagedAnime       ManagedAnime
+	Subscription       Subscription
+	Metadata           AnimeMetadata
+	MetadataHold       MetadataHold
+	Subgroups          SubgroupsOwnerResult
+	Rules              RulesOwner
+	RSSSources         []RSSSource
+	RSSSourceRuntimes  []RSSSourceRuntime
+	EpisodeProgress    *EpisodeProgress
+	ConfigWaitingFiles int64
+	ReleaseSummary     AnimeWorkspaceReleaseSummary
+}
+
+type AnimeWorkspaceReleaseSummary struct {
+	Count             int64
+	LatestPublishedAt *string
+	OwnerChainStable  bool
+	TagObservations   []AnimeWorkspaceTagObservation
+}
+
+type AnimeWorkspaceTagObservation struct {
+	AniBTTags []string
+	TitleTags []string
+}
+
 type WorkspaceDownloadTask struct {
 	FailedWorkItemID    *string
 	FailureCode         *string

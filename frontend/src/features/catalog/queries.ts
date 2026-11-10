@@ -6,14 +6,15 @@ import type {
   CatalogEntryView,
   CatalogSnapshotView,
 } from "../../lib/providers/viewmodels";
-import { catalogKeys as centralizedCatalogKeys, type CatalogTabKey } from "../../lib/queryKeys";
+import { animeKeys, catalogKeys as centralizedCatalogKeys, type CatalogTabKey } from "../../lib/queryKeys";
+import type { AnimeListItem } from "../../lib/api/client";
 
 export type { CatalogTabKey } from "../../lib/queryKeys";
 // The catalog's query layer, where the four columns' data sources converge.
 //   - all: created subscription instances (aggregated via catalogProvider, across providers)
 //   - mikan/anibt: the server's catalog read model (via catalogProvider)
 //   - custom: the server's custom presets (via catalogProvider)
-//   Query keys are built centrally; after a mutation invalidation targets catalogKeys.all precisely.
+//   Subscription reads share animeKeys.list; provider reads use catalogKeys.
 
 export interface GridRow {
   provider: CatalogProvider;
@@ -27,12 +28,12 @@ export interface CatalogResult {
 
 export const catalogKeys = centralizedCatalogKeys;
 
-async function fetchCatalog(tab: CatalogTabKey, season: string): Promise<CatalogResult> {
-  if (tab === "all") {
-    const provider = getLibraryProvider();
-    const items = await listCatalogSubscriptions();
-    return { rows: items.map((item) => ({ provider, entry: mapAnimeListItem(item) })) };
-  }
+function subscriptionCatalog(items: AnimeListItem[]): CatalogResult {
+  const provider = getLibraryProvider();
+  return { rows: items.map((item) => ({ provider, entry: mapAnimeListItem(item) })) };
+}
+
+async function fetchCatalog(tab: Exclude<CatalogTabKey, "all">, season: string): Promise<CatalogResult> {
   const provider = getCatalogProvider(tab);
   const view = await provider.getCatalog(season);
   return {
@@ -42,9 +43,19 @@ async function fetchCatalog(tab: CatalogTabKey, season: string): Promise<Catalog
 }
 
 export function useCatalog(tab: CatalogTabKey, season: string, options: { enabled?: boolean } = {}) {
-  return useQuery({
-    queryKey: catalogKeys.list(tab, season),
-    queryFn: () => fetchCatalog(tab, season),
-    enabled: options.enabled ?? true,
+  const enabled = options.enabled ?? true;
+  // The wall, log filters and management dialog observe the same raw list.
+  // Card projection is local to this observer, never stored over the raw data.
+  const subscriptions = useQuery({
+    queryKey: animeKeys.list,
+    queryFn: listCatalogSubscriptions,
+    select: subscriptionCatalog,
+    enabled: enabled && tab === "all",
   });
+  const catalog = useQuery({
+    queryKey: catalogKeys.list(tab, season),
+    queryFn: () => fetchCatalog(tab as Exclude<CatalogTabKey, "all">, season),
+    enabled: enabled && tab !== "all",
+  });
+  return tab === "all" ? subscriptions : catalog;
 }

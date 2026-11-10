@@ -33,7 +33,7 @@ import { reasonLabel } from "../../lib/i18n/reasons";
 // frontend never computes a selection.
 
 /** After subscribing: the effective selection the server computed in the workspace (the saved state). */
-function ownerSelectionFacts(workspace: AnimeWorkspace): ServerSelectionFact[] {
+function ownerSelectionFacts(workspace: Pick<AnimeWorkspace, "subgroups">): ServerSelectionFact[] {
   return workspace.subgroups.effective_selection.map((selection) => ({
     provider: selection.provider,
     group_ref: selection.group_ref,

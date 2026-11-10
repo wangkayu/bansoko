@@ -10,6 +10,7 @@ import { mapCatalogItem } from "../../lib/providers/catalogProvider";
 import type { CatalogProvider } from "../../lib/providers/port";
 import type { CatalogEntryView, ProviderKey, SearchProviderKey } from "../../lib/providers/viewmodels";
 import { catalogKeys } from "./queries";
+import { animeKeys } from "../../lib/queryKeys";
 import { configKeys } from "../../lib/queryKeys";
 import { StateBlock } from "../../ui/StateBlock";
 import { Dialog, Input, Segmented } from "../../ui/base";
@@ -234,6 +235,7 @@ export function GlobalSearchDialog({
 
   function handleSubscribed() {
     void queryClient.invalidateQueries({ queryKey: catalogKeys.all });
+    void queryClient.invalidateQueries({ queryKey: animeKeys.list });
   }
 
   const busy = mode === "program" ? searching : seedSearching;

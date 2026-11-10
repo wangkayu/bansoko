@@ -162,6 +162,7 @@ export type ManualRetryInput = Schema<"ManualRetryInput">;
 export type ManualRetryResult = Schema<"ManualRetryResult">;
 export type PlacementHandoffView = Schema<"PlacementHandoffView">;
 export type AnimeWorkspace = Schema<"AnimeWorkspace">;
+export type AnimeWorkspaceConfiguration = Schema<"AnimeWorkspaceConfiguration">;
 export type SubscriptionLogEntry = Schema<"SubscriptionLogEntry">;
 export type RSSSourceOffsetPatch = Schema<"RSSSourceOffsetPatch">;
 export type ProviderGroupOffsetPut = Schema<"ProviderGroupOffsetPut">;
@@ -382,6 +383,7 @@ function encodePathSegment(value: string): string {
 }
 
 type RequestOptions = {
+  signal?: AbortSignal;
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
   bearerToken?: string;
@@ -439,6 +441,7 @@ async function request<Result>(path: string, options: RequestOptions): Promise<R
   try {
     response = await fetch(`${apiRoot}${path}`, {
       method: options.method,
+      signal: options.signal,
       headers,
       // The browser session is an HttpOnly cookie, so the request must carry
       // same-origin credentials or the cookie is never attached. A bearer
@@ -447,6 +450,7 @@ async function request<Result>(path: string, options: RequestOptions): Promise<R
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
     });
   } catch (cause) {
+    if (options.signal?.aborted) throw cause;
     throw new ApiError({
       status: 0,
       code: "NETWORK_ERROR",
@@ -457,7 +461,10 @@ async function request<Result>(path: string, options: RequestOptions): Promise<R
   if (options.responseType === "text" && response.ok) {
     return (await response.text()) as Result;
   }
-  const payload = response.status === 204 ? undefined : await response.json().catch(() => undefined);
+  const payload = response.status === 204 ? undefined : await response.json().catch((cause: unknown) => {
+    if (options.signal?.aborted) throw cause;
+    return undefined;
+  });
   if (!response.ok) {
     if (options.acceptStatuses?.includes(response.status)) {
       return payload as Result;
@@ -665,8 +672,8 @@ export function listAnime(): Promise<AnimeListItem[]> {
  * content_hash); a selected subgroup without an identity is judged refresh_required by the
  * server instead of degrading into "the latest snapshot".
  */
-export function readAnimeRSSListView(input: RSSListViewInput): Promise<RSSListView> {
-  return request("/anime/rss-list-view", { method: "POST", body: input });
+export function readAnimeRSSListView(input: RSSListViewInput, signal?: AbortSignal): Promise<RSSListView> {
+  return request("/anime/rss-list-view", { method: "POST", body: input, signal });
 }
 
 /**
@@ -725,8 +732,12 @@ export function subscribeAnime(draft: AnimeDraft, idempotencyKey: string): Promi
 
 // --- Anime workspace owners ----------------------------------------------------
 
-export function getAnimeWorkspace(managedAnimeID: string): Promise<AnimeWorkspace> {
-  return request(`/anime/${encodePathSegment(managedAnimeID)}/workspace`, { method: "GET" });
+export function getAnimeWorkspace(managedAnimeID: string, signal?: AbortSignal): Promise<AnimeWorkspace> {
+  return request(`/anime/${encodePathSegment(managedAnimeID)}/workspace`, { method: "GET", signal });
+}
+
+export function getAnimeWorkspaceConfiguration(managedAnimeID: string, signal?: AbortSignal): Promise<AnimeWorkspaceConfiguration> {
+  return request(`/anime/${encodePathSegment(managedAnimeID)}/workspace-configuration`, { method: "GET", signal });
 }
 
 /**
@@ -1448,8 +1459,9 @@ function queryString(params: Record<string, string | number | boolean | readonly
 
 export function listObservabilityRecords(
   query: ObservabilityRecordsQuery = {},
+  signal?: AbortSignal,
 ): Promise<ObservabilityRecordPage> {
-  return request(`/observability/records${queryString(query)}`, { method: "GET" });
+  return request(`/observability/records${queryString(query)}`, { method: "GET", signal });
 }
 
 export type ReleaseBatchEntriesQuery = NonNullable<
@@ -1460,32 +1472,34 @@ export type ReleaseBatchEntriesQuery = NonNullable<
 export function listReleaseBatchEntries(
   batchKey: string,
   query: ReleaseBatchEntriesQuery = {},
+  signal?: AbortSignal,
 ): Promise<ObservabilityRecordPage> {
-  return request(`/observability/release-batches/${encodeURIComponent(batchKey)}${queryString(query)}`, { method: "GET" });
+  return request(`/observability/release-batches/${encodeURIComponent(batchKey)}${queryString(query)}`, { method: "GET", signal });
 }
 
 export function listObservabilityDiagnostics(
   query: ObservabilityDiagnosticsQuery = {},
+  signal?: AbortSignal,
 ): Promise<DiagnosticEpisodePage> {
-  return request(`/observability/diagnostics${queryString(query)}`, { method: "GET" });
+  return request(`/observability/diagnostics${queryString(query)}`, { method: "GET", signal });
 }
 
 export type RuntimeLogQuery = NonNullable<operations["getRuntimeLog"]["parameters"]["query"]>;
 
-export function getRuntimeLog(query: RuntimeLogQuery = {}): Promise<Schema<"RuntimeLogPage">> {
-  return request(`/observability/runtime-log${queryString(query)}`, { method: "GET" });
+export function getRuntimeLog(query: RuntimeLogQuery = {}, signal?: AbortSignal): Promise<Schema<"RuntimeLogPage">> {
+  return request(`/observability/runtime-log${queryString(query)}`, { method: "GET", signal });
 }
 
 // Execution records: the read-only list, detail and file pages of admitted acquisitions. Reads never retry, reorder or recover anything.
 export type AcquisitionRecordsQuery = NonNullable<operations["listAcquisitionRecords"]["parameters"]["query"]>;
 export type AcquisitionFilesQuery = NonNullable<operations["listAcquisitionRecordFiles"]["parameters"]["query"]>;
 
-export function listAcquisitionRecords(query: AcquisitionRecordsQuery = {}): Promise<AcquisitionRecordPage> {
-  return request(`/acquisitions${queryString(query)}`, { method: "GET" });
+export function listAcquisitionRecords(query: AcquisitionRecordsQuery = {}, signal?: AbortSignal): Promise<AcquisitionRecordPage> {
+  return request(`/acquisitions${queryString(query)}`, { method: "GET", signal });
 }
 
-export function getAcquisitionRecord(acquisitionID: string): Promise<AcquisitionRecordDetail> {
-  return request(`/acquisitions/${encodePathSegment(acquisitionID)}`, { method: "GET" });
+export function getAcquisitionRecord(acquisitionID: string, signal?: AbortSignal): Promise<AcquisitionRecordDetail> {
+  return request(`/acquisitions/${encodePathSegment(acquisitionID)}`, { method: "GET", signal });
 }
 
 /** Retries the failed import stage: re-runs every failed file of this record; imported files
@@ -1518,8 +1532,8 @@ export function cancelAcquisitionDownload(
   });
 }
 
-export function listAcquisitionRecordFiles(acquisitionID: string, query: AcquisitionFilesQuery = {}): Promise<AcquisitionFilePage> {
-  return request(`/acquisitions/${encodePathSegment(acquisitionID)}/files${queryString(query)}`, { method: "GET" });
+export function listAcquisitionRecordFiles(acquisitionID: string, query: AcquisitionFilesQuery = {}, signal?: AbortSignal): Promise<AcquisitionFilePage> {
+  return request(`/acquisitions/${encodePathSegment(acquisitionID)}/files${queryString(query)}`, { method: "GET", signal });
 }
 
 // The file manager: the owner-added library directories (roots) are the whole

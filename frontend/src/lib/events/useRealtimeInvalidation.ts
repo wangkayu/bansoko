@@ -1,47 +1,34 @@
 import { useSyncExternalStore } from "react";
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
-import { acquisitionRecordKeys, animeKeys, catalogKeys, fileManagerKeys, observabilityKeys, rssListKeys } from "../queryKeys";
+import { acquisitionRecordKeys, animeKeys, catalogKeys, fileManagerKeys, observabilityKeys } from "../queryKeys";
+import { refreshOwnerRss } from "./refreshOwnerRss";
+import { createCoalescedInvalidation } from "./coalescedInvalidation";
 import { useSessionStore } from "../../shell/sessionStore";
 import { createRealtimeEventStream, type RealtimeEvent, type RealtimeStreamHandle } from "./sseClient";
 
-// Realtime invalidation runtime (G1): one module-level SSE connection shared
-// by the whole app, started once the session is authenticated and stopped on
-// logout. Each event target maps to the TanStack Query key prefixes that own
-// the corresponding read model:
+// One SSE connection is shared by the authenticated app. Catalog and subscription
+// events refresh both browse projections and the shared subscription list.
+// Scoped RSS events read the workspace before coordinating its RSS list refresh
+// with RssTab; unchanged workspace snapshots still allow RSS-only updates.
+// Unscoped RSS events refresh workspaces, whose observers refresh changed lists.
 //
-//   catalog    → ["catalog"]            (the four-section list + the auto-refresh preference)
-//   subscribed → ["anime", "list"] + ["catalog"]  (card summaries come from the catalog all aggregation)
-//   rss        → scoped (event carries managed_anime_id):
-//                  ["anime", "workspace", id] + ["rss-list-view", "owner", id]
-//                  so only that anime's workspace and RSS list re-read;
-//                unscoped (no id): ["anime", "workspace"] — an open RssTab
-//                  re-reads its own list when its workspace changes.
-//                The 30s polling window stays as the disconnected fallback.
-//   records    → ["observability"]      (events + diagnostics)
-//   rss and records also re-read ["file-manager"]: file states derive from
-//   the owner rows those events report (imports, alignments, deletions, version replacements).
-//   rss and records also re-read ["acquisition-records"] (execution records) and
-//   ["observability", "records"] (events): the download, artifact and file
-//   operation work items that move an acquisition forward publish rss; the
-//   settlement pass publishes rss and records; completion and newly written
-//   business log entries publish records.
-//   rss and records also re-read the subscription list (["catalog", "list", "all"]
-//   + ["anime", "list"]): its cards show import progress and RSS health, which
-//   that work moves. A download or import run publishes in bursts, so the list
-//   re-read is coalesced into one trailing refetch per second.
-//
-// Manual refresh buttons are untouched and remain the ultimate fallback.
+// RSS/record bursts also affect file-manager, execution-record and log queries.
+// Coalesce these scopes for one second, collapse overlapping prefixes and queue
+// a fresh pass for events received during a read. Never discard loaded pages.
+// The shared subscription summary keeps its separate one-second window so a
+// long history read cannot hold back card progress and health.
+// Manual refresh and visible-page disconnected fallback polling are unchanged.
 
 const ACQUISITION_PROGRESS_KEYS: ReadonlyArray<QueryKey> = [fileManagerKeys.all, acquisitionRecordKeys.all, observabilityKeys.records];
 
 const TARGET_QUERY_KEYS: Record<RealtimeEvent["target"], ReadonlyArray<QueryKey>> = {
-  catalog: [catalogKeys.all],
+  catalog: [catalogKeys.all, animeKeys.list],
   subscribed: [animeKeys.list, catalogKeys.all],
-  rss: [animeKeys.workspacePrefix, ...ACQUISITION_PROGRESS_KEYS],
+  rss: [animeKeys.workspacePrefix],
   records: [observabilityKeys.all, fileManagerKeys.all, acquisitionRecordKeys.all],
 };
 
-const SUBSCRIPTION_LIST_KEYS: ReadonlyArray<QueryKey> = [catalogKeys.listTab("all"), animeKeys.list];
+const SUBSCRIPTION_LIST_KEYS: ReadonlyArray<QueryKey> = [animeKeys.list];
 const SUBSCRIPTION_LIST_COALESCE_MS = 1000;
 
 type Listener = () => void;
@@ -51,17 +38,12 @@ let stream: RealtimeStreamHandle | undefined;
 let running = false;
 let connected = false;
 let subscriptionListTimer: ReturnType<typeof setTimeout> | undefined;
+let progressRefresh: ReturnType<typeof createCoalescedInvalidation> | undefined;
+let unsubscribeSession: (() => void) | undefined;
 const listeners = new Set<Listener>();
 
 function emitChange() {
   for (const listener of listeners) listener();
-}
-
-function queryKeysFor(event: RealtimeEvent): ReadonlyArray<QueryKey> {
-  if (event.target === "rss" && event.managedAnimeId) {
-    return [animeKeys.workspace(event.managedAnimeId), rssListKeys.owner(event.managedAnimeId), ...ACQUISITION_PROGRESS_KEYS];
-  }
-  return TARGET_QUERY_KEYS[event.target];
 }
 
 function scheduleSubscriptionListRefresh() {
@@ -75,12 +57,43 @@ function scheduleSubscriptionListRefresh() {
   }, SUBSCRIPTION_LIST_COALESCE_MS);
 }
 
+const rssRefreshes = new Map<string, object>();
+
 function handleEvent(event: RealtimeEvent) {
   if (!queryClient) return;
-  for (const queryKey of queryKeysFor(event)) {
-    void queryClient.invalidateQueries({ queryKey });
+  const client = queryClient;
+  if (event.target === "rss" && event.managedAnimeId) {
+    const animeID = event.managedAnimeId;
+    const key = animeKeys.workspace(animeID);
+    const before = client.getQueryData(key);
+    const refresh = {};
+    rssRefreshes.set(animeID, refresh);
+    void client.invalidateQueries({ queryKey: key }).then(() => {
+      // A newer event owns the trailing read if this workspace read was cancelled.
+      if (rssRefreshes.get(animeID) !== refresh || queryClient !== client) return;
+      rssRefreshes.delete(animeID);
+      const workspace = client.getQueryData(key);
+      // Even unchanged/absent workspace data must not swallow an RSS-only event.
+      void refreshOwnerRss(client, animeID, workspace, workspace === before);
+    });
+  } else if (event.target !== "records") {
+    for (const queryKey of TARGET_QUERY_KEYS[event.target]) {
+      void client.invalidateQueries({ queryKey });
+    }
   }
-  if (event.target === "rss" || event.target === "records") scheduleSubscriptionListRefresh();
+  if (event.target === "rss" || event.target === "records") {
+    progressRefresh ??= createCoalescedInvalidation(client);
+    progressRefresh.enqueue(event.target === "rss" ? ACQUISITION_PROGRESS_KEYS : TARGET_QUERY_KEYS.records);
+    scheduleSubscriptionListRefresh();
+  }
+}
+
+function clearPendingRefreshes() {
+  progressRefresh?.dispose();
+  progressRefresh = undefined;
+  clearTimeout(subscriptionListTimer);
+  subscriptionListTimer = undefined;
+  rssRefreshes.clear();
 }
 
 function syncWithSession() {
@@ -91,6 +104,7 @@ function syncWithSession() {
   } else if (!authenticated && running) {
     running = false;
     stream?.stop();
+    clearPendingRefreshes();
     if (connected) {
       connected = false;
       emitChange();
@@ -101,6 +115,8 @@ function syncWithSession() {
 /** Binds the realtime runtime to the app's QueryClient. Idempotent. */
 export function initRealtimeInvalidation(client: QueryClient): void {
   if (queryClient === client) return;
+  clearPendingRefreshes();
+  unsubscribeSession?.();
   queryClient = client;
   stream ??= createRealtimeEventStream({
     isAuthenticated: () => useSessionStore.getState().authenticated,
@@ -113,13 +129,14 @@ export function initRealtimeInvalidation(client: QueryClient): void {
     onUnauthorized: () => useSessionStore.getState().clearSession(),
   });
   syncWithSession();
-  useSessionStore.subscribe(syncWithSession);
+  unsubscribeSession = useSessionStore.subscribe(syncWithSession);
 }
 
 /** Test hook: tear the singleton down between suites. */
 export function resetRealtimeInvalidationForTests(): void {
-  clearTimeout(subscriptionListTimer);
-  subscriptionListTimer = undefined;
+  clearPendingRefreshes();
+  unsubscribeSession?.();
+  unsubscribeSession = undefined;
   stream?.stop();
   stream = undefined;
   queryClient = undefined;
@@ -127,10 +144,7 @@ export function resetRealtimeInvalidationForTests(): void {
   connected = false;
 }
 
-/**
- * Whether the realtime stream is currently connected. Data surfaces use this
- * to decide if they can rely on push invalidation or must keep polling.
- */
+/** Whether surfaces can rely on push invalidation instead of fallback polling. */
 export function useRealtimeConnected(): boolean {
   return useSyncExternalStore(
     (listener) => {

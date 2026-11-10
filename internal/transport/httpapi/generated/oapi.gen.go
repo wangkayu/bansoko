@@ -3699,6 +3699,53 @@ type AnimeWorkspace struct {
 	TargetObservations *[]TargetObservation `json:"target_observations,omitempty"`
 }
 
+// AnimeWorkspaceConfiguration defines model for AnimeWorkspaceConfiguration.
+type AnimeWorkspaceConfiguration struct {
+	// ConfigWaitingFiles Downloaded files waiting for configuration, identical to the full workspace count.
+	ConfigWaitingFiles int64 `json:"config_waiting_files"`
+
+	// EpisodeProgress Placement-derived progress, identical to the full workspace; total comes only from metadata.
+	EpisodeProgress *struct {
+		Done     bool  `json:"done"`
+		Episodes []int `json:"episodes"`
+		Total    *int  `json:"total,omitempty"`
+	} `json:"episode_progress"`
+
+	// ManagedAnime Formal anime owner. The id is the sole formal owner identity. Provider refs, custom RSS locators/URLs, labels, titles, and other external attributes are not owner identity and may collide across owners.
+	ManagedAnime      ManagedAnime                 `json:"managed_anime"`
+	Metadata          AnimeMetadata                `json:"metadata"`
+	MetadataHold      MetadataHold                 `json:"metadata_hold"`
+	ReleaseSummary    AnimeWorkspaceReleaseSummary `json:"release_summary"`
+	RssSourceRuntimes []RSSSourceRuntime           `json:"rss_source_runtimes"`
+	RssSources        []RSSSource                  `json:"rss_sources"`
+	Rules             AnimeRules                   `json:"rules"`
+	Subgroups         SubgroupsOwnerResult         `json:"subgroups"`
+
+	// Subscription The single subscription owned by one ManagedAnime. Its active/stopped state is reversible automation intent; lifecycle_state is the separate irreversible active/retired owner boundary. Its external origin and origin_entry_ref are provenance attributes and are not formal owner identity; managed_anime_id points to the sole owner identity.
+	Subscription Subscription `json:"subscription"`
+}
+
+// AnimeWorkspaceReleaseSummary defines model for AnimeWorkspaceReleaseSummary.
+type AnimeWorkspaceReleaseSummary struct {
+	// Count All releases across every source, without a history window.
+	Count int64 `json:"count"`
+
+	// LatestPublishedAt Lexical maximum of the full workspace raw_facts.published_at strings; absent when none exists. Never falls back to discovered_at.
+	LatestPublishedAt *string `json:"latest_published_at,omitempty"`
+
+	// OwnerChainStable True only when at least one source is custom RSS or effectively selected and every such source is stable. An empty source requires a runtime with non-unknown health. Otherwise every release must be stable: its current task's artifacts are all failed or verified with an operation, and all their operations are completed or failed; without artifacts its task must be failed; without a task its verdict must be waiting_metadata, subscription_stopped, source_unavailable, parse_failed, filtered, adopted_existing, acquisition_failed, resume_baseline, or start_baseline. Historical releases are never truncated.
+	OwnerChainStable bool `json:"owner_chain_stable"`
+
+	// TagObservations Per-release tags in full-workspace release order, omitting only releases with both tag arrays empty. Preserve original spelling, case, array order and duplicates; clients retain their existing tag counting rules.
+	TagObservations []AnimeWorkspaceTagObservation `json:"tag_observations"`
+}
+
+// AnimeWorkspaceTagObservation defines model for AnimeWorkspaceTagObservation.
+type AnimeWorkspaceTagObservation struct {
+	AnibtTags []string `json:"anibt_tags"`
+	TitleTags []string `json:"title_tags"`
+}
+
 // ApiToken Metadata of an active long-lived API token. Revoked tokens are deleted and never returned.
 type ApiToken struct {
 	CreatedAt  time.Time      `json:"created_at"`
@@ -12587,6 +12634,9 @@ type ServerInterface interface {
 	// (GET /anime/{managed_anime_id}/workspace)
 	GetAnimeWorkspace(w http.ResponseWriter, r *http.Request, managedAnimeId ManagedAnimeID)
 
+	// (GET /anime/{managed_anime_id}/workspace-configuration)
+	GetAnimeWorkspaceConfiguration(w http.ResponseWriter, r *http.Request, managedAnimeId ManagedAnimeID)
+
 	// (GET /api-tokens)
 	ListApiTokens(w http.ResponseWriter, r *http.Request)
 
@@ -14704,6 +14754,37 @@ func (siw *ServerInterfaceWrapper) GetAnimeWorkspace(w http.ResponseWriter, r *h
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetAnimeWorkspace(w, r, managedAnimeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAnimeWorkspaceConfiguration operation middleware
+func (siw *ServerInterfaceWrapper) GetAnimeWorkspaceConfiguration(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "managed_anime_id" -------------
+	var managedAnimeId ManagedAnimeID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "managed_anime_id", r.PathValue("managed_anime_id"), &managedAnimeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "managed_anime_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAnimeWorkspaceConfiguration(w, r, managedAnimeId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -20425,6 +20506,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("GET "+options.BaseURL+"/anime/{managed_anime_id}/tmdb/seasons", wrapper.ListAnimeTMDBSeasons)
 	m.HandleFunc("GET "+options.BaseURL+"/anime/{managed_anime_id}/tmdb/seasons/{season}/episodes", wrapper.ListAnimeTMDBSeasonEpisodes)
 	m.HandleFunc("GET "+options.BaseURL+"/anime/{managed_anime_id}/workspace", wrapper.GetAnimeWorkspace)
+	m.HandleFunc("GET "+options.BaseURL+"/anime/{managed_anime_id}/workspace-configuration", wrapper.GetAnimeWorkspaceConfiguration)
 	m.HandleFunc("GET "+options.BaseURL+"/api-tokens", wrapper.ListApiTokens)
 	m.HandleFunc("POST "+options.BaseURL+"/api-tokens", wrapper.CreateApiToken)
 	m.HandleFunc("DELETE "+options.BaseURL+"/api-tokens/{api_token_id}", wrapper.RevokeApiToken)

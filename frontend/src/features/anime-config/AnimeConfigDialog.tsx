@@ -12,6 +12,7 @@ import { AlertTriangle, CheckCircle2, Loader2, Play } from "lucide-react";
 import {
   ApiError,
   getAnimeWorkspace,
+  getAnimeWorkspaceConfiguration,
   isVersionConflict,
   patchAnimeSubscription,
   getBusinessPreset,
@@ -21,7 +22,6 @@ import {
   type AnimeConfigCandidate,
   type AnimeDraft,
   type AnimeMetadataDraft,
-  type AnimeWorkspace,
   type PreviewFeedSnapshotRef,
   type ProviderGroupDiscoveryGroup,
   type RSSListObservationRef,
@@ -34,7 +34,7 @@ import type { CatalogEntryView, CatalogMetadataMatch } from "../../lib/providers
 import { SaveStatus } from "../../ui/SaveFooter";
 import { AnimeTabs } from "../anime-tabs/AnimeTabs";
 import type { DraftTabHost } from "../anime-tabs/host";
-import { isWorkspaceOwnerChainStable } from "../workspace/ownerChain";
+import { workspaceOverview, workspaceStable, type WorkspaceConfiguration } from "../workspace/configuration";
 import { workspaceCapability } from "../workspace/capability";
 import { animeKeys, catalogKeys, configKeys } from "../../lib/queryKeys";
 import { draftFromEntry } from "../catalog/entryDraft";
@@ -93,7 +93,7 @@ function draftHeaderMetadataMatch(metadata: AnimeMetadataDraft): CatalogMetadata
 }
 
 /** workspace read model -> title-area facts: holds and bindings both follow the workspace, never falling back to the frozen entry. */
-function workspaceHeaderMetadata(workspace: AnimeWorkspace): HeaderMetadata {
+function workspaceHeaderMetadata(workspace: WorkspaceConfiguration): HeaderMetadata {
   const tmdb = workspace.metadata.tmdb ?? undefined;
   return {
     metadataMatch: {
@@ -406,17 +406,47 @@ function SubscribedBody({
     if (open && managedAnimeRef !== "") setPollingDeadline(Date.now() + 30_000);
   }, [open, managedAnimeRef]);
 
-  const workspace = useQuery({
-    queryKey: animeKeys.workspace(managedAnimeRef),
-    queryFn: () => getAnimeWorkspace(managedAnimeRef),
+  const [activeTab, setActiveTab] = useState(initialTab ?? "metadata");
+  const selectedTab = useRef(activeTab);
+  const handleTabChange = useCallback((tab: string) => {
+    if (tab !== selectedTab.current) {
+      // The other shape was inactive while this tab refreshed. Do not reuse it
+      // as fresh just because the app's general staleTime has not elapsed yet.
+      void queryClient.invalidateQueries({
+        queryKey: tab === "rss" ? animeKeys.workspace(managedAnimeRef) : animeKeys.workspaceConfiguration(managedAnimeRef),
+        exact: true,
+        refetchType: "none",
+      });
+      selectedTab.current = tab;
+      setActiveTab(tab);
+    }
+    onTabChange?.(tab);
+  }, [onTabChange, queryClient, managedAnimeRef]);
+  const needsHistory = activeTab === "rss";
+  const workspaceQuery = useQuery<WorkspaceConfiguration>({
+    queryKey: needsHistory ? animeKeys.workspace(managedAnimeRef) : animeKeys.workspaceConfiguration(managedAnimeRef),
+    queryFn: ({ signal }) => needsHistory
+      ? getAnimeWorkspace(managedAnimeRef, signal)
+      : getAnimeWorkspaceConfiguration(managedAnimeRef, signal),
+    // Keep the editors mounted across read shapes, without showing another owner's data.
+    placeholderData: previous => previous?.managed_anime.id === managedAnimeRef ? previous : undefined,
     enabled: open && managedAnimeRef !== "",
     retry: false,
     refetchInterval: (query) => {
       if (!open || managedAnimeRef === "" || query.state.error || !query.state.data) return false;
       if (Date.now() >= pollingDeadline) return false;
-      return isWorkspaceOwnerChainStable(query.state.data) ? false : 1_000;
+      return workspaceStable(query.state.data) ? false : 1_000;
     },
   });
+
+  // A failed shape switch must not unmount dirty editors. Keep the last successful
+  // same-owner read alongside the visible error, just as a failed ordinary refetch does.
+  const [lastRead, setLastRead] = useState<WorkspaceConfiguration>();
+  if (workspaceQuery.data && workspaceQuery.data !== lastRead) setLastRead(workspaceQuery.data);
+  const workspace = {
+    ...workspaceQuery,
+    data: workspaceQuery.data ?? (lastRead?.managed_anime.id === managedAnimeRef ? lastRead : undefined),
+  };
 
   // After a match is saved the workspace re-reads and the title area updates with it (the catalog snapshot is not waited on).
   useEffect(() => {
@@ -429,9 +459,11 @@ function SubscribedBody({
 
   function handleChanged() {
     setPollingDeadline(Date.now() + 30_000);
-    void workspace.refetch();
+    // Mark both read shapes stale; only the currently observed one is fetched.
+    void queryClient.invalidateQueries({ queryKey: animeKeys.workspace(managedAnimeRef) });
     // Owner saves/retries change card-visible state (e.g. a metadata hold), so the catalog list is invalidated too.
     void queryClient.invalidateQueries({ queryKey: catalogKeys.all });
+    void queryClient.invalidateQueries({ queryKey: animeKeys.list });
   }
 
   // Lifecycle-driven read-only gating: a retired owner opens the very same workspace read
@@ -439,6 +471,7 @@ function SubscribedBody({
   // the capability module.
   const capability = workspaceCapability(workspace.data?.subscription.lifecycle_state);
   const pending = !capability.readOnly && workspace.data?.subscription.state === "pending";
+  const summary = useMemo(() => workspace.data ? workspaceOverview(workspace.data) : undefined, [workspace.data]);
 
   // Not started → running: the ordinary first start (no baseline recovery), CAS on the workspace version.
   async function startSubscription() {
@@ -514,8 +547,8 @@ function SubscribedBody({
             />
           ) : (
             <WorkspaceSummaryRow
-              seedCount={workspace.data.releases.length}
-              latestAt={latestReleasePublishedAt(workspace.data)}
+              seedCount={summary?.count}
+              latestAt={summary?.latest_published_at}
             />
           )}
           <AnimeTabs
@@ -537,7 +570,7 @@ function SubscribedBody({
               // own copy through BusinessSnapshotFields.
             }}
             initialTab={initialTab}
-            onTabChange={onTabChange}
+            onTabChange={handleTabChange}
             onDirtyChange={onDirtyChange}
             matchRequest={matchRequest}
             footerStart={footerStart}
@@ -951,7 +984,7 @@ function DraftBody({
       const attempt = activationAttemptRef.current;
       const result = await candidateStore.subscribe(attempt.candidateId, attempt.expectedVersion, attempt.idempotencyKey, { revision: targetRevision });
       activationAttemptRef.current = null;
-      announceSubscribed(result, entry.title, () => queryClient.invalidateQueries({ queryKey: catalogKeys.all }));
+      announceSubscribed(result, entry.title, () => Promise.all([queryClient.invalidateQueries({ queryKey: catalogKeys.all }), queryClient.invalidateQueries({ queryKey: animeKeys.list })]).then(() => undefined));
       onSubscribed();
     } catch (cause) {
       if (cause instanceof CandidateAlreadyActivated) {
@@ -1151,17 +1184,6 @@ function DraftBody({
 
 
 // --- Header summary row (the overview face's content folded into the four-tab dialog, no separate panel) ---
-
-// "Last updated" takes the newest seed's publish time from the read model; with no time fact at
-// all it returns undefined and the cell shows the "—" placeholder. The contract has logs, but
-// their semantics are the subscription operation ledger, not a source for "last updated".
-function latestReleasePublishedAt(workspace: AnimeWorkspace): string | undefined {
-  return workspace.releases
-    .map((release) => release.raw_facts.published_at)
-    .filter((value): value is string => value !== undefined)
-    .sort()
-    .at(-1);
-}
 
 // The compact info row: seeds collected · last updated. The subscription state lives only in
 // the title pill, metadata links in the title area, and when blocked the whole row becomes a

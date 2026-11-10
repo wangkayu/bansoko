@@ -58,7 +58,7 @@ export function OwnerNewReleasesOnly({
   onChanged,
 }: {
   animeID: string;
-  workspace: AnimeWorkspace;
+  workspace: Pick<AnimeWorkspace, "subscription">;
   capability: WorkspaceCapability;
   onChanged: () => void;
 }) {

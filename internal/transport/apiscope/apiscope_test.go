@@ -123,6 +123,7 @@ func TestSecretRevealingOperationsArePinned(t *testing.T) {
 		"getAnimeBusinessEdit",
 		"getAnimeConfigCandidate",
 		"getAnimeWorkspace",
+		"getAnimeWorkspaceConfiguration",
 		"getOneShotAcquisition",
 		"getOneShotExecutionAttempt",
 		"listAnimeConfigCandidates",
@@ -145,6 +146,7 @@ func TestMatchFindsTheServingOperation(t *testing.T) {
 	}{
 		{http.MethodPost, "/api/v1/anime/rss-list-view", "readAnimeRSSListView", ScopeRead},
 		{http.MethodGet, "/api/v1/anime-config-candidates/c-1", "getAnimeConfigCandidate", ScopeRead},
+		{http.MethodGet, "/api/v1/anime/a-1/workspace-configuration", "getAnimeWorkspaceConfiguration", ScopeRead},
 		{http.MethodPatch, "/api/v1/anime-config-candidates/c-1", "patchAnimeConfigCandidate", ScopeWrite},
 		{http.MethodHead, "/api/v1/anime-config-candidates", "listAnimeConfigCandidates", ScopeRead},
 		{http.MethodGet, "/api/v1/api-tokens/t-1/raw", "readApiTokenRaw", ScopeSecrets},

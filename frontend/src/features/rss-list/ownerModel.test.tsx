@@ -1,3 +1,5 @@
+import { renderToStaticMarkup } from "react-dom/server";
+import { ownerIndexes } from "./ownerIndexes";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { AnimeWorkspace, ReleaseFile, RSSListGroup, RSSListItem, RSSListView, RSSListFile } from "../../lib/api/client";
@@ -913,5 +915,38 @@ describe("ownerViewModel", () => {
     expect(onOpenOffset).not.toHaveBeenCalled();
     expect(onOpenStructure).not.toHaveBeenCalled();
     expect(onRetry).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("owner history indexes", () => {
+  it("reuses unchanged arrays and preserves source ordering", () => {
+    const first = ownerIndexes(WORKSPACE);
+    const same = ownerIndexes({ ...WORKSPACE });
+    expect(same.releases).toBe(first.releases);
+    expect(same.tasks).toBe(first.tasks);
+    expect(same.artifacts.get("task-1")).toEqual(WORKSPACE.artifacts);
+    expect(same.operations.get("artifact-1")).toEqual([WORKSPACE.file_operations[0]]);
+    const changed = ownerIndexes({ ...WORKSPACE, releases: [...WORKSPACE.releases] });
+    expect(changed.releases).not.toBe(first.releases);
+    expect(changed.tasks).toBe(first.tasks);
+  });
+
+  it("keeps visible output unchanged with 10,000 unrelated historical releases", () => {
+    const history = Array.from({ length: 10_000 }, (_, index) => ({ ...WORKSPACE.releases[0], id: `history-${index}` }));
+    const workspace = { ...WORKSPACE, releases: [...history, ...WORKSPACE.releases] };
+    const rss = view("owner");
+    const markup = (value: AnimeWorkspace) => {
+      const model = ownerViewModel(rss, value, {});
+      return renderToStaticMarkup(<><RssListViewPanel model={model} showFiltered />{model.groups.flatMap(group => group.items.map(item => <div key={item.key}>{item.extras}{item.actions}{item.detail}</div>))}</>);
+    };
+    expect(markup(workspace)).toBe(markup(WORKSPACE));
+    const scan = vi.spyOn(workspace.releases, Symbol.iterator);
+    const find = vi.spyOn(workspace.releases, "find");
+    ownerViewModel(rss, workspace, { busyKey: "release:release-1" });
+    expect(scan).not.toHaveBeenCalled();
+    expect(find).not.toHaveBeenCalled();
+    scan.mockRestore();
+    find.mockRestore();
   });
 });

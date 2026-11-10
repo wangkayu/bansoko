@@ -21,17 +21,26 @@ export function useBoundedRefresh(queryKeys: readonly QueryKey[]): void {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let stopped = false;
     const refetch = () => {
-      if (stopped) return;
+      if (stopped || document.hidden) return;
       for (const key of keysRef.current) {
-        void queryClient.refetchQueries({ queryKey: key, type: "active" });
+        void queryClient.refetchQueries({ queryKey: key, type: "active" }, { cancelRefetch: false });
       }
       delay = Math.min(delay * 2, 15000);
       timer = setTimeout(refetch, delay);
     };
-    timer = setTimeout(refetch, delay);
+    const resume = () => {
+      if (timer) clearTimeout(timer);
+      delay = 1000;
+      // SSE deliberately disconnects in hidden tabs. Do not turn that pause
+      // into background polling; give its reconnect the first chance to read.
+      if (!document.hidden) timer = setTimeout(refetch, delay);
+    };
+    resume();
+    document.addEventListener("visibilitychange", resume);
     return () => {
       stopped = true;
       if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", resume);
     };
   }, [connected, queryClient]);
 

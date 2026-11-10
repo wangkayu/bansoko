@@ -1,9 +1,33 @@
 import { describe, expect, it } from "vitest";
 
-import { t } from "./i18n";
-import { importedCount, progressDone, progressRatio, progressSummary } from "./progress";
+import { setLocale, t } from "./i18n";
+import { importedCount, progressDone, progressPresentation, progressRatio, progressSummary, type EpisodeProgressLike } from "./progress";
 
 // Progress counts by number only: imported episodes are compared against the total, never aligned by episode number and never inferring gaps.
+
+describe("progressPresentation", () => {
+  const samples: Array<EpisodeProgressLike | undefined> = [
+    undefined, { episodes: [] }, { episodes: [], total: 12 },
+    { episodes: [1, 2, 2, 7], total: 12 }, { episodes: [9], total: 0 },
+    { episodes: [1, 2, 3], total: 2 }, { episodes: [1], total: 12, done: true },
+    { episodes: [1, 2, 3], total: 2, done: false },
+  ];
+  it.each(samples)("preserves the existing helpers for %j", (progress) => {
+    expect(progressPresentation(progress)).toEqual({
+      count: importedCount(progress), done: progressDone(progress), ratio: progressRatio(progress),
+      summary: progressSummary(progress), shortSummary: progressSummary(progress, true),
+    });
+  });
+
+  it("renders the current language without caching translated text", () => {
+    const progress = { episodes: [1, 2], total: 12 };
+    setLocale("zh-CN", { persist: false });
+    const chinese = progressPresentation(progress).summary;
+    setLocale("en", { persist: false });
+    expect(progressPresentation(progress).summary).toBe(progressSummary(progress));
+    expect(progressPresentation(progress).summary).not.toBe(chinese);
+  });
+});
 
 describe("importedCount", () => {
   it("按去重后的集数计", () => {

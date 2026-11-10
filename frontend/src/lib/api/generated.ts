@@ -731,6 +731,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/anime/{managed_anime_id}/workspace-configuration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read configuration owners and all-history release summaries without materializing the execution history. */
+        get: operations["getAnimeWorkspaceConfiguration"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/anime/{managed_anime_id}/custom-feed-snapshots:fetch": {
         parameters: {
             query?: never;
@@ -5690,6 +5707,45 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
         };
+        AnimeWorkspaceConfiguration: {
+            managed_anime: components["schemas"]["ManagedAnime"];
+            subscription: components["schemas"]["Subscription"];
+            metadata: components["schemas"]["AnimeMetadata"];
+            metadata_hold: components["schemas"]["MetadataHold"];
+            subgroups: components["schemas"]["SubgroupsOwnerResult"];
+            rules: components["schemas"]["AnimeRules"];
+            rss_sources: components["schemas"]["RSSSource"][];
+            rss_source_runtimes: components["schemas"]["RSSSourceRuntime"][];
+            /**
+             * Format: int64
+             * @description Downloaded files waiting for configuration, identical to the full workspace count.
+             */
+            config_waiting_files: number;
+            /** @description Placement-derived progress, identical to the full workspace; total comes only from metadata. */
+            episode_progress: {
+                episodes: number[];
+                total?: number;
+                done: boolean;
+            } | null;
+            release_summary: components["schemas"]["AnimeWorkspaceReleaseSummary"];
+        };
+        AnimeWorkspaceReleaseSummary: {
+            /**
+             * Format: int64
+             * @description All releases across every source, without a history window.
+             */
+            count: number;
+            /** @description Lexical maximum of the full workspace raw_facts.published_at strings; absent when none exists. Never falls back to discovered_at. */
+            latest_published_at?: string;
+            /** @description True only when at least one source is custom RSS or effectively selected and every such source is stable. An empty source requires a runtime with non-unknown health. Otherwise every release must be stable: its current task's artifacts are all failed or verified with an operation, and all their operations are completed or failed; without artifacts its task must be failed; without a task its verdict must be waiting_metadata, subscription_stopped, source_unavailable, parse_failed, filtered, adopted_existing, acquisition_failed, resume_baseline, or start_baseline. Historical releases are never truncated. */
+            owner_chain_stable: boolean;
+            /** @description Per-release tags in full-workspace release order, omitting only releases with both tag arrays empty. Preserve original spelling, case, array order and duplicates; clients retain their existing tag counting rules. */
+            tag_observations: components["schemas"]["AnimeWorkspaceTagObservation"][];
+        };
+        AnimeWorkspaceTagObservation: {
+            anibt_tags: string[];
+            title_tags: string[];
+        };
         AnimeWorkspace: {
             managed_anime: components["schemas"]["ManagedAnime"];
             subscription: components["schemas"]["Subscription"];
@@ -9840,6 +9896,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AnimeWorkspace"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getAnimeWorkspaceConfiguration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                managed_anime_id: components["parameters"]["ManagedAnimeID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Configuration workspace with the same owner versions and retirement facts as the full workspace. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnimeWorkspaceConfiguration"];
                 };
             };
             401: components["responses"]["Unauthorized"];

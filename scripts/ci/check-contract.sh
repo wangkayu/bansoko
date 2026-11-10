@@ -96,6 +96,7 @@ required_paths = {
   "/provider-feed-snapshots/{snapshot_id}/seeds/{stable_seed_key}/expand" => ["post"],
   "/anime/subscribe" => ["post"],
   "/anime/{managed_anime_id}/workspace" => ["get"],
+  "/anime/{managed_anime_id}/workspace-configuration" => ["get"],
   "/anime/{managed_anime_id}/custom-feed-snapshots:fetch" => ["post"],
   "/anime/{managed_anime_id}/releases/reevaluate" => ["post"],
   "/anime/{managed_anime_id}/metadata" => ["patch"],

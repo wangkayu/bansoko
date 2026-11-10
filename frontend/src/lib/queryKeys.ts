@@ -19,6 +19,8 @@ export const animeKeys = {
   list: ["anime", "list"] as const,
   workspacePrefix: ["anime", "workspace"] as const,
   workspace: (managedAnimeRef: string) => ["anime", "workspace", managedAnimeRef] as const,
+  // Nested under the full-read prefix so every existing owner invalidation covers both views.
+  workspaceConfiguration: (managedAnimeRef: string) => ["anime", "workspace", managedAnimeRef, "configuration"] as const,
 };
 
 /**

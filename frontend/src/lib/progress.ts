@@ -28,11 +28,26 @@ export function progressTotal(progress: EpisodeProgressLike | undefined): number
  *  - with total -> 已入库 n/total (short: n/total)
  *  - without total -> 已入库 n 集 */
 export function progressSummary(progress: EpisodeProgressLike | undefined, short = false): string {
-  const count = importedCount(progress);
+  return progressText(importedCount(progress), progressTotal(progress), short);
+}
+
+function progressText(count: number, total: number | undefined, short: boolean): string {
   if (count === 0) return t("grid.progress.waiting");
-  const total = progressTotal(progress);
   if (total === undefined) return t("grid.progress.summaryNoTotal", { stored: count });
   return t(short ? "grid.progress.summaryShort" : "grid.progress.summary", { stored: count, total });
+}
+
+/** One count for all of a card's progress labels and bar; text stays locale-current. */
+export function progressPresentation(progress: EpisodeProgressLike | undefined) {
+  const count = importedCount(progress);
+  const total = progressTotal(progress);
+  return {
+    count,
+    done: progress?.done ?? (total !== undefined && count >= total),
+    ratio: total === undefined ? undefined : Math.min(1, count / total),
+    summary: progressText(count, total, false),
+    shortSummary: progressText(count, total, true),
+  };
 }
 
 /** All announced episodes are imported (count >= total). Prefers the

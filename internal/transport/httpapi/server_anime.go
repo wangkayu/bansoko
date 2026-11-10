@@ -109,6 +109,26 @@ func (s *Server) GetAnimeWorkspace(w http.ResponseWriter, r *http.Request, manag
 	writeJSON(w, r.Context(), http.StatusOK, mapped)
 }
 
+// GetAnimeWorkspaceConfiguration reads configuration without execution history.
+func (s *Server) GetAnimeWorkspaceConfiguration(w http.ResponseWriter, r *http.Request, managedAnimeID generated.ManagedAnimeID) {
+	readmodel := s.deps.Readmodel
+	if readmodel == nil {
+		writeError(w, r, errors.New("readmodel service is not configured"))
+		return
+	}
+	workspace, err := readmodel.GetAnimeWorkspaceConfigurationApplication(r.Context(), string(managedAnimeID))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	mapped, err := mapAnimeWorkspaceConfiguration(workspace)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, r.Context(), http.StatusOK, mapped)
+}
+
 // ReevaluateAnimeReleases schedules current-rule evaluation for unsubmitted
 // releases and leaves submitted download work untouched.
 func (s *Server) ReevaluateAnimeReleases(w http.ResponseWriter, r *http.Request, managedAnimeID generated.ManagedAnimeID) {

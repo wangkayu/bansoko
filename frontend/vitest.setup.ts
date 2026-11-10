@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { afterEach } from "vitest";
 import { cleanup } from "@testing-library/react";
-import { setLocale } from "./src/lib/i18n";
+import { loadLocale, setLocale } from "./src/lib/i18n";
 
 // vitest runs with globals: false, so Testing Library's auto-cleanup is not
 // registered by default — unmount after each test to avoid DOM leakage.
@@ -13,6 +13,7 @@ afterEach(cleanup);
 if (globalThis.navigator) {
   Object.defineProperty(globalThis.navigator, "language", { value: "zh-CN", configurable: true });
 }
+await Promise.all([loadLocale("zh-CN"), loadLocale("en")]);
 setLocale("zh-CN", { persist: false });
 afterEach(() => {
   setLocale("zh-CN", { persist: false });

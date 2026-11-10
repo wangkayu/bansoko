@@ -1,5 +1,7 @@
 import { createRoot } from 'react-dom/client'
-import App from './App.tsx'
+import { Suspense, lazy } from 'react'
+import { getLocale, loadLocale } from './lib/i18n'
+import { ErrorBoundary } from './ui/ErrorBoundary'
 import { installStaleChunkReload } from './lib/staleChunkReload'
 // Self-hosted web fonts (OFL-1.1; texts in public/fonts-licenses.txt).
 // Nothing is fetched from a font CDN: the CSP allows font-src 'self' only.
@@ -12,4 +14,10 @@ import '@fontsource/ibm-plex-mono/500.css'
 import './index.css'
 
 installStaleChunkReload();
-createRoot(document.getElementById("root")!).render(<App />);
+const App = lazy(async () => {
+  await loadLocale(getLocale());
+  return import('./App.tsx');
+});
+createRoot(document.getElementById("root")!).render(
+  <ErrorBoundary reloadOnRetry><Suspense fallback={null}><App /></Suspense></ErrorBoundary>,
+);
