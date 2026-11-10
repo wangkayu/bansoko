@@ -281,7 +281,7 @@ func runServe(args []string) {
 	if err != nil {
 		fatalStartup(runtimeLogger, "anime service build failed", "anime_service_build_failed")
 	}
-	ownershipService, err := provideOwnershipService(db, workStore, configService)
+	ownershipService, err := provideOwnershipService(db, workStore, configService, eventHub)
 	if err != nil {
 		fatalStartup(runtimeLogger, "ownership service build failed", "ownership_service_build_failed")
 	}

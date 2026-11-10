@@ -173,7 +173,7 @@ type Invalidator struct {
 }
 
 // NewInvalidator returns the shared read-model invalidation publisher for one
-// event hub. A nil hub makes Publish a no-op.
+// event hub. A nil hub makes publication a no-op.
 func NewInvalidator(hub *events.Hub) *Invalidator {
 	return &Invalidator{hub: hub}
 }
@@ -185,6 +185,15 @@ func (i *Invalidator) Publish(targets ...string) {
 	for _, target := range targets {
 		i.hub.Publish(events.Event{Target: target})
 	}
+}
+
+// PublishFor narrows one invalidation to a single managed anime. Cache-only
+// writes use the scoped form even when the owner rows themselves did not change.
+func (i *Invalidator) PublishFor(target, managedAnimeID string) {
+	if i == nil || i.hub == nil {
+		return
+	}
+	i.hub.Publish(events.Event{Target: target, ManagedAnimeID: managedAnimeID})
 }
 
 type Discovery struct {

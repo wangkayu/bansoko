@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
-import { acquisitionRecordKeys, animeKeys, catalogKeys, fileManagerKeys, observabilityKeys, rssListKeys } from "../queryKeys";
+import { acquisitionRecordKeys, animeKeys, catalogKeys, fileMaintenanceKeys, fileManagerKeys, observabilityKeys, reconciliationKeys, rssListKeys } from "../queryKeys";
 import { beginScopedOwnerRssRefresh, clearScopedOwnerRssRefreshes, markScopedOwnerRssSnapshot } from "./refreshOwnerRss";
 import { createCoalescedInvalidation } from "./coalescedInvalidation";
 import { useSessionStore } from "../../shell/sessionStore";
@@ -11,6 +11,8 @@ import { createRealtimeEventStream, type RealtimeEvent, type RealtimeStreamHandl
 // Scoped RSS events start workspace and RSS invalidation together. A scoped
 // lifecycle marker prevents RssTab's workspace observer from repeating the RSS
 // read; unchanged or absent workspace snapshots never swallow an RSS-only event.
+// The same scoped batch refreshes file and path-diff previews after a
+// cache-only metadata refresh, whose owner versions deliberately stay unchanged.
 // Unscoped RSS events refresh workspaces, whose observers refresh changed lists.
 //
 // RSS/record bursts also affect file-manager, execution-record and log queries.
@@ -57,7 +59,11 @@ function handleEvent(event: RealtimeEvent) {
       refresh = createCoalescedInvalidation(client);
       scopedRssRefreshes.set(animeID, refresh);
     }
-    refresh.enqueue([rssListKeys.owner(animeID)]);
+    refresh.enqueue([
+      rssListKeys.owner(animeID),
+      fileMaintenanceKeys.files(animeID),
+      reconciliationKeys.pathDiffs(animeID, 0),
+    ]);
     const workspaceKey = animeKeys.workspace(animeID);
     const settled = () => {
       markScopedOwnerRssSnapshot(client, animeID, client.getQueryData(workspaceKey));

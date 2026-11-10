@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"bansoko/internal/apperrors"
+	"bansoko/internal/events"
 	"bansoko/internal/testutil/animetest"
 	"bansoko/internal/workitems"
 )
@@ -50,10 +51,13 @@ func TestRefreshAnimeMetadataApplicationRePullsEachBoundWorkOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewService(db, Dependencies{WorkItems: store})
+	hub := events.NewHub()
+	service, err := NewService(db, Dependencies{WorkItems: store, EventHub: hub})
 	if err != nil {
 		t.Fatal(err)
 	}
+	published, cancel := hub.Subscribe()
+	defer cancel()
 	if _, err := db.ExecContext(ctx, `INSERT INTO managed_anime(id, title) VALUES ('anime-refresh', 'Show')`); err != nil {
 		t.Fatal(err)
 	}
@@ -76,6 +80,19 @@ VALUES ('anime-refresh', '10', '42', 'tv', 1, 12)`); err != nil {
 	}
 	if view.TotalEpisodes == nil || *view.TotalEpisodes != 12 || view.Version != 1 {
 		t.Fatalf("the answer projects the owner rows verbatim: %+v", view)
+	}
+	select {
+	case event := <-published:
+		if event.Target != events.TargetRSS || event.ManagedAnimeID != "anime-refresh" {
+			t.Fatalf("refresh publishes its scoped read-model invalidation, got %+v", event)
+		}
+	default:
+		t.Fatal("a successful metadata refresh must invalidate the anime's dependent read models")
+	}
+	select {
+	case event := <-published:
+		t.Fatalf("one refresh publishes exactly one invalidation, got an extra %+v", event)
+	default:
 	}
 	// Nothing was written: the metadata row keeps its version, its bindings
 	// and its episode count.
@@ -130,10 +147,13 @@ func TestRefreshAnimeMetadataApplicationFailsTyped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewService(db, Dependencies{WorkItems: store})
+	hub := events.NewHub()
+	service, err := NewService(db, Dependencies{WorkItems: store, EventHub: hub})
 	if err != nil {
 		t.Fatal(err)
 	}
+	published, cancel := hub.Subscribe()
+	defer cancel()
 	if _, err := db.ExecContext(ctx, `INSERT INTO managed_anime(id, title) VALUES ('anime-refresh-unbound', 'Show')`); err != nil {
 		t.Fatal(err)
 	}
@@ -165,6 +185,11 @@ func TestRefreshAnimeMetadataApplicationFailsTyped(t *testing.T) {
 	}
 	if len(refresher.requests) != 1 {
 		t.Fatalf("a failed first work stops the click before the second, got %v", refresher.requests)
+	}
+	select {
+	case event := <-published:
+		t.Fatalf("an unbound or failed refresh must not publish a successful invalidation, got %+v", event)
+	default:
 	}
 }
 

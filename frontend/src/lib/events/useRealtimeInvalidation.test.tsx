@@ -10,7 +10,7 @@ import {
   useRealtimeConnected,
 } from "./useRealtimeInvalidation";
 import type { RealtimeEvent } from "./sseClient";
-import { acquisitionRecordKeys, animeKeys, catalogKeys, fileManagerKeys, observabilityKeys, rssListKeys } from "../queryKeys";
+import { acquisitionRecordKeys, animeKeys, catalogKeys, fileMaintenanceKeys, fileManagerKeys, observabilityKeys, reconciliationKeys, rssListKeys } from "../queryKeys";
 
 // Hook unit tests: the target → query key prefix invalidation mapping, connected state
 // propagation and the session lifecycle (started on login, stopped on logout). sseClient is
@@ -118,7 +118,9 @@ describe("useRealtimeInvalidation", () => {
       await act(async () => lastStream!.onEvent({ target: "rss", managedAnimeId: "anime-1" }));
       expect(invalidate).toHaveBeenCalledWith({ queryKey: animeKeys.workspace("anime-1") });
       expect(invalidate).toHaveBeenCalledWith({ queryKey: rssListKeys.owner("anime-1") });
-      expect(invalidate).toHaveBeenCalledTimes(6);
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: fileMaintenanceKeys.files("anime-1") });
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: reconciliationKeys.pathDiffs("anime-1", 0) });
+      expect(invalidate).toHaveBeenCalledTimes(8);
       invalidate.mockClear();
       emit({ target: "records" });
       emit({ target: "records" });

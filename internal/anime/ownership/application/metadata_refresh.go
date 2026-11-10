@@ -7,6 +7,7 @@ import (
 
 	animeapplication "bansoko/internal/anime/application"
 	"bansoko/internal/apperrors"
+	"bansoko/internal/events"
 )
 
 // MetadataWorkRefresher re-pulls one bound work straight from its provider,
@@ -36,7 +37,8 @@ func (s *Service) SetMetadataWorkRefresher(refresher MetadataWorkRefresher) {
 // Failure semantics: an anime with no binding at all is METADATA_NOT_BOUND; a
 // re-pull that cannot reach its provider is a typed METADATA_REFRESH_FAILED
 // (or TMDB_CREDENTIAL_NOT_CONFIGURED) and the cache rows stay as they were.
-// The answer is the unchanged metadata owner view.
+// The answer is the unchanged metadata owner view. Only a complete success
+// publishes the scoped RSS invalidation that refreshes cache-dependent views.
 func (s *Service) RefreshAnimeMetadataApplication(ctx context.Context, managedAnimeID string) (animeapplication.AnimeMetadata, error) {
 	if s == nil || s.db == nil {
 		return animeapplication.AnimeMetadata{}, fmt.Errorf("ownership service is not configured")
@@ -81,6 +83,10 @@ WHERE ma.id = $1`, managedAnimeID).Scan(&titleOverride, &bgmWorkID, &tmdbWorkID,
 			return animeapplication.AnimeMetadata{}, err
 		}
 	}
+	// Owner versions deliberately stay unchanged, so this scoped signal is the
+	// only prompt for title suggestions, RSS renders and file previews to reread.
+	// The periodic sweep reaches the same boundary through this method.
+	s.invalidator.PublishFor(events.TargetRSS, managedAnimeID)
 	return animeapplication.AnimeMetadata{
 		ManagedAnimeID: managedAnimeID,
 		BGM:            animeApplicationBGM(bgmWorkID.String),

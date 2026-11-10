@@ -166,9 +166,11 @@ func provideTemplateCatalogService(runtime *pluginRuntime) httpapi.TemplateCatal
 // provideOwnershipService constructs the anime owner-mutation service. Its
 // owner-set ports are injected by the file-maintenance and automation graphs
 // after construction, so the graph keeps one instance shared by the HTTP
-// ownership slot, the readmodel owner readers, and the naming renderer.
-func provideOwnershipService(db *sql.DB, workStore *workitems.Store, connections groupsource.ConnectionSource) (*ownershipapplication.Service, error) {
-	return ownershipapplication.NewService(db, ownershipapplication.Dependencies{WorkItems: workStore, Connections: connections})
+// ownership slot, the readmodel owner readers, and the naming renderer. The
+// shared event hub must be present at construction: cache-only refreshes and
+// owner writes otherwise silently lose every read-model invalidation.
+func provideOwnershipService(db *sql.DB, workStore *workitems.Store, connections groupsource.ConnectionSource, eventHub *events.Hub) (*ownershipapplication.Service, error) {
+	return ownershipapplication.NewService(db, ownershipapplication.Dependencies{WorkItems: workStore, EventHub: eventHub, Connections: connections})
 }
 
 // provideDraftService constructs the candidate-draft service, the owner of
