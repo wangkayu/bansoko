@@ -402,6 +402,21 @@
     "exit_condition": "retain while product owner uses fenced DML; update inventory before changing privileges"
   },
   {
+    "table": "bangumi_data_snapshots",
+    "privileges": [
+      "INSERT",
+      "UPDATE"
+    ],
+    "reason": "single reusable reference-data snapshot; reads use the runtime reader grant and no runtime deletion exists",
+    "direct_access": [
+      "internal/metadata/adapter/persistence/query.sql",
+      "internal/metadata/adapter/persistence/generated/query.sql.go",
+      "internal/metadata/adapter/persistence/generated/querier.go"
+    ],
+    "closure_slice": "retained product owner",
+    "exit_condition": "retain while the CDN refresher owns the singleton snapshot"
+  },
+  {
     "table": "episode_title_cache",
     "privileges": [
       "INSERT",

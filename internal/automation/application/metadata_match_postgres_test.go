@@ -162,6 +162,45 @@ FROM anime_metadata WHERE managed_anime_id = 'anime-meta-partial'`).Scan(&bgm, &
 	}
 }
 
+func TestMetadataMatchNextCycleUsesExistingBGMIDForIndexLookup(t *testing.T) {
+	db := openDispatcherTestDB(t)
+	ctx := context.Background()
+	insertMetadataSubscriptionFixture(t, db, "anime-meta-existing-bgm", "sub-meta-existing-bgm", "Title Not In Index")
+	if _, err := db.ExecContext(ctx, `UPDATE anime_metadata SET bgm_work_id = '123' WHERE managed_anime_id = 'anime-meta-existing-bgm'`); err != nil {
+		t.Fatal(err)
+	}
+	store, err := workitems.NewStore(db, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	activityWriter, err := observabilityapplication.NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatcher := &Dispatcher{
+		DB:        db,
+		WorkItems: store,
+		MetadataMatcher: matcher.NewMatcher(matcher.NewBangumiDataIndex([]matcher.DataItem{{
+			BgmID: "123", TmdbID: "movie/456", // no title key: only the stored BGM ID can find this item
+		}}), nil, nil, nil),
+		ActivityWriter: activityWriter,
+	}
+	counts, err := dispatcher.matchOne(ctx, "anime-meta-existing-bgm", "Title Not In Index", "custom", "",
+		sql.NullString{String: "123", Valid: true}, sql.NullString{}, sql.NullString{}, sql.NullString{},
+		sql.NullInt64{}, sql.NullInt64{}, sql.NullInt64{}, sql.NullInt64{}, 1)
+	if err != nil || counts.errors != 0 {
+		t.Fatalf("existing-BGM metadata dispatch: counts=%+v err=%v", counts, err)
+	}
+	var bgm, tmdb, kind string
+	var season int
+	if err := db.QueryRowContext(ctx, `SELECT bgm_work_id, tmdb_work_id, tmdb_media_kind, tmdb_season FROM anime_metadata WHERE managed_anime_id = 'anime-meta-existing-bgm'`).Scan(&bgm, &tmdb, &kind, &season); err != nil {
+		t.Fatal(err)
+	}
+	if bgm != "123" || tmdb != "456" || kind != "movie" || season != 0 {
+		t.Fatalf("existing BGM ID must unlock the next cycle's TMDB mapping: %q %q %q %d", bgm, tmdb, kind, season)
+	}
+}
+
 func TestMetadataMatchIgnoresPendingAndStoppedSubscriptions(t *testing.T) {
 	db := openDispatcherTestDB(t)
 	ctx := context.Background()

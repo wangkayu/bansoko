@@ -40,7 +40,9 @@ import (
 	hardeningtransport "bansoko/internal/hardening/transport"
 	identitymetadataadapter "bansoko/internal/identitymetadata/adapter"
 	identitymetadatapersistence "bansoko/internal/identitymetadata/adapter/persistence"
+	metadatapersistence "bansoko/internal/metadata/adapter/persistence"
 	"bansoko/internal/metadata/matcher"
+	metadatarefresh "bansoko/internal/metadata/refresh"
 	"bansoko/internal/namingvars"
 	namingvarspersistence "bansoko/internal/namingvars/adapter/persistence"
 	observabilityapplication "bansoko/internal/observability/application"
@@ -495,13 +497,13 @@ func runServe(args []string) {
 	// are background producers owned by the BackgroundRuntime below (it is
 	// wired after the dispatcher exists).
 
-	// Metadata matcher: three-layer pipeline (bangumi-data index -> BGM API -> TMDB API).
-	// The bangumi-data index is loaded non-blocking; failure is logged but does not
-	// prevent startup since the BGM/TMDB API layers serve as fallback.
-	metadataIndex, err := matcher.LoadBangumiData(ctx, &http.Client{Timeout: 30 * time.Second, Transport: hardeningtransport.DirectTransport()})
+	// Metadata matching restores the last local bangumi-data snapshot only.
+	// The background producer performs all CDN access after startup.
+	metadataSnapshotStore := metadatapersistence.NewRepository(db)
+	metadataIndex, err := metadatarefresh.Restore(ctx, metadataSnapshotStore)
 	if err != nil {
 		runtimeLogger.Warn(ctx, observabilityport.RuntimeEvent{
-			Message:    "bangumi-data index load failed (API fallback will be used)",
+			Message:    "bangumi-data snapshot restore failed (API fallback will be used)",
 			Component:  "runtime",
 			Operation:  "startup",
 			Outcome:    "warning",
@@ -525,6 +527,7 @@ func runServe(args []string) {
 		Trimmer:        metadataTrimmer,
 	}
 	metadataMatcher := matcher.NewMatcher(metadataIndex, bgmMatcher, tmdbMatcher, runtimeLogger)
+	bangumiDataRefresher := metadatarefresh.NewService(metadataSnapshotStore, metadataMatcher, &http.Client{Timeout: 30 * time.Second, Transport: hardeningtransport.DirectTransport()}, runtimeLogger, metadataIndex != nil)
 	metadataMatcher.SetDiagnostics(observabilityService)
 	// B13 P2: the file manager's match lists the bound show's seasons and
 	// episodes through the same connections and egress routes, with an
@@ -594,6 +597,7 @@ func runServe(args []string) {
 		func(ctx context.Context) { runQBSyncDispatcher(ctx, downloadService, runtimeLogger) },
 		func(ctx context.Context) { runRecordRetentionMaintenance(ctx, retentionJanitor, runtimeLogger) },
 		func(ctx context.Context) { runMetadataRefreshSweep(ctx, metadataRefreshSweep, runtimeLogger) },
+		bangumiDataRefresher.Run,
 		func(ctx context.Context) {
 			runOneShotReclaimMaintenance(ctx, oneShotReclaim, oneShotDrainDue, eventHub, runtimeLogger)
 		},

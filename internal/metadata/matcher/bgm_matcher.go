@@ -103,6 +103,20 @@ func (m *BGMMatcher) resolve(ctx context.Context) (string, *http.Client) {
 	return endpoint, client
 }
 
+// MatchByID fetches the actual subject facts for an already resolved ID.
+func (m *BGMMatcher) MatchByID(ctx context.Context, bgmID string) (*BGMMatchResult, error) {
+	id, err := strconv.Atoi(strings.TrimSpace(bgmID))
+	if err != nil || id <= 0 {
+		return nil, fmt.Errorf("invalid bangumi subject id")
+	}
+	endpoint, client := m.resolve(ctx)
+	subject, err := m.getSubjectDetail(ctx, endpoint, client, id)
+	if err != nil {
+		return nil, fmt.Errorf("bgm subject detail %d: %w", id, err)
+	}
+	return &BGMMatchResult{BgmID: strconv.Itoa(id), Subject: subject, Confidence: 1, Method: "id", TotalEpisodes: subject.Eps, Year: providerYearFromDate(subject.AirDate)}, nil
+}
+
 // Match searches Bangumi by title. Returns nil (no error) when no result
 // meets the confidence threshold.
 func (m *BGMMatcher) Match(ctx context.Context, title string) (*BGMMatchResult, error) {

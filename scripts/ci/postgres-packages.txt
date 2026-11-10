@@ -25,6 +25,7 @@
 ./internal/filemanager/persistence
 ./internal/fileoperation/application
 ./internal/identitymetadata/adapter/persistence
+./internal/metadata/adapter/persistence
 ./internal/integration
 ./internal/namingvars/adapter/persistence
 ./internal/namingvars/editor

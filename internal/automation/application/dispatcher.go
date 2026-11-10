@@ -1279,10 +1279,26 @@ func (d *Dispatcher) matchOne(ctx context.Context, managedAnimeID, title, origin
 	bgmWorkID, tmdbWorkID, tmdbKind, ownerMediaKind sql.NullString, tmdbSeason, totalEpisodes, year, ownerSeason sql.NullInt64, metadataVersion int64) (dispatchCounts, error) {
 	var counts dispatchCounts
 
-	skipBgm := bgmWorkID.Valid
-	skipTmdb := tmdbWorkID.Valid && tmdbKind.Valid && tmdbSeason.Valid
+	request := matcher.MatchRequest{
+		Origin: origin, EntryRef: entryRef, Title: title,
+		SkipBgm:  bgmWorkID.Valid,
+		SkipTmdb: tmdbWorkID.Valid && tmdbKind.Valid && tmdbSeason.Valid,
+	}
+	if bgmWorkID.Valid {
+		request.BgmID = bgmWorkID.String
+	}
+	if tmdbWorkID.Valid {
+		request.TmdbWorkID = tmdbWorkID.String
+	}
+	if tmdbKind.Valid {
+		request.TmdbKind = tmdbKind.String
+	}
+	if tmdbSeason.Valid {
+		season := int(tmdbSeason.Int64)
+		request.TmdbSeason = &season
+	}
 
-	result, err := d.MetadataMatcher.Match(matcher.WithAffectedAnime(ctx, managedAnimeID), origin, entryRef, title, skipBgm, skipTmdb)
+	result, err := d.MetadataMatcher.MatchRequest(matcher.WithAffectedAnime(ctx, managedAnimeID), request)
 	if err != nil {
 		d.recordMetadataMatchOutcome(ctx, managedAnimeID, "failure", metadataMatchErrorCode(err), safeDispatchError(err))
 		return counts, fmt.Errorf("match: %w", err)

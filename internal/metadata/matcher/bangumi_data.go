@@ -1,55 +1,53 @@
 package matcher
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
-	"time"
-
-	hardeningtransport "bansoko/internal/hardening/transport"
-	"bansoko/internal/runtime/buildinfo"
 )
 
-// bangumiDataURL is the CDN source for the bangumi-data project's static JSON
-// dataset (~7 MB, ~8.5k anime entries). The dataset maps titles and external
-// site IDs (mikan, bgm, tmdb, etc.) cross-reference.
-const bangumiDataURL = "https://unpkg.com/bangumi-data@0.3/dist/data.json"
-
-// DataItem is a single bangumi-data entry indexed by mikan ID and/or title.
+// DataItem is the matching subset of one bangumi-data entry. Begin is only a
+// season-selection clue; owner metadata facts still come from provider APIs.
 type DataItem struct {
-	BgmID  string // bangumi subject id (numeric string)
-	TmdbID string // "tv/85937" or "movie/12345"
-	Titles []string
+	BgmID   string
+	MikanID string
+	TmdbID  string // movie/ID or tv/ID[/season/N[/episode/N]]
+	Titles  []string
+	Begin   string
 }
 
-// BangumiDataIndex is an in-memory lookup over the bangumi-data dataset. It is
-// built once at startup and reused across dispatcher cycles.
+// BangumiDataIndex is an immutable in-memory lookup over one data snapshot.
+// A refresh builds a new index and atomically publishes it as a whole.
 type BangumiDataIndex struct {
+	byBgmID   map[string]*DataItem
 	byMikanID map[string]*DataItem
 	byTitle   map[string]*DataItem
 }
 
-// NewBangumiDataIndex builds the same normalized lookup used by the remote
-// bangumi-data loader. It is also useful for deterministic application tests.
+// NewBangumiDataIndex builds the same normalized lookup used by the CDN
+// snapshot parser. It also keeps deterministic fixtures independent of HTTP.
 func NewBangumiDataIndex(items []DataItem) *BangumiDataIndex {
 	idx := &BangumiDataIndex{
+		byBgmID:   make(map[string]*DataItem),
 		byMikanID: make(map[string]*DataItem),
 		byTitle:   make(map[string]*DataItem),
 	}
 	for i := range items {
 		item := &items[i]
-		if item.BgmID == "" && item.TmdbID == "" {
-			continue
+		item.BgmID = strings.TrimSpace(item.BgmID)
+		item.MikanID = strings.TrimSpace(item.MikanID)
+		item.TmdbID = strings.TrimSpace(item.TmdbID)
+		item.Begin = strings.TrimSpace(item.Begin)
+		if item.BgmID != "" {
+			idx.byBgmID[item.BgmID] = item
 		}
-		if item.Titles == nil {
-			continue
+		if item.MikanID != "" {
+			idx.byMikanID[item.MikanID] = item
 		}
 		for _, title := range item.Titles {
 			key := normalizeLookupKey(title)
 			if key != "" {
+				// Keep the existing deterministic first-write-wins title policy.
 				if _, exists := idx.byTitle[key]; !exists {
 					idx.byTitle[key] = item
 				}
@@ -66,6 +64,7 @@ type bgmDataPayload struct {
 type bgmDataItem struct {
 	Title          string              `json:"title"`
 	TitleTranslate map[string][]string `json:"titleTranslate"`
+	Begin          string              `json:"begin"`
 	Sites          []bgmDataSite       `json:"sites"`
 }
 
@@ -74,87 +73,57 @@ type bgmDataSite struct {
 	ID   string `json:"id"`
 }
 
-// LoadBangumiData downloads the bangumi-data JSON from CDN and builds the
-// mikan-ID and title indexes. A nil index (no error) is returned when the
-// dataset is temporarily unavailable so callers can proceed with API fallback.
-func LoadBangumiData(ctx context.Context, client *http.Client) (*BangumiDataIndex, error) {
-	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second, Transport: hardeningtransport.DirectTransport()}
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, bangumiDataURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("build bangumi-data request: %w", err)
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", buildinfo.UserAgent("metadata-matcher"))
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fetch bangumi-data: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("bangumi-data CDN returned HTTP %d", resp.StatusCode)
-	}
-
-	var payload bgmDataPayload
-	decoder := json.NewDecoder(io.LimitReader(resp.Body, 32<<20)) // 32 MB cap
-	if err := decoder.Decode(&payload); err != nil {
+// ParseBangumiData validates and indexes one complete CDN payload.
+func ParseBangumiData(payload []byte) (*BangumiDataIndex, error) {
+	var decoded bgmDataPayload
+	if err := json.Unmarshal(payload, &decoded); err != nil {
 		return nil, fmt.Errorf("decode bangumi-data JSON: %w", err)
 	}
-
-	idx := &BangumiDataIndex{
-		byMikanID: make(map[string]*DataItem),
-		byTitle:   make(map[string]*DataItem),
+	if len(decoded.Items) == 0 {
+		return nil, fmt.Errorf("bangumi-data payload has no items")
 	}
-	for i := range payload.Items {
-		item := &payload.Items[i]
-		var bgmID, mikanID, tmdbID string
+	items := make([]DataItem, 0, len(decoded.Items))
+	for i := range decoded.Items {
+		item := &decoded.Items[i]
+		dataItem := DataItem{
+			Titles: collectTitles(item),
+			Begin:  strings.TrimSpace(item.Begin),
+		}
 		for _, site := range item.Sites {
 			switch site.Site {
 			case "bangumi":
-				bgmID = site.ID
+				dataItem.BgmID = strings.TrimSpace(site.ID)
 			case "mikan":
-				mikanID = site.ID
+				dataItem.MikanID = strings.TrimSpace(site.ID)
 			case "tmdb":
-				tmdbID = site.ID
+				dataItem.TmdbID = strings.TrimSpace(site.ID)
 			}
 		}
-		// Only index entries that have at least one useful ID.
-		if bgmID == "" && tmdbID == "" {
+		if dataItem.BgmID == "" && dataItem.MikanID == "" && dataItem.TmdbID == "" {
 			continue
 		}
-		dataItem := &DataItem{
-			BgmID:  bgmID,
-			TmdbID: tmdbID,
-			Titles: collectTitles(item),
-		}
-		if mikanID != "" {
-			idx.byMikanID[mikanID] = dataItem
-		}
-		for _, title := range dataItem.Titles {
-			key := normalizeLookupKey(title)
-			if key != "" {
-				// First-write-wins: earlier entries keep the slot.
-				if _, exists := idx.byTitle[key]; !exists {
-					idx.byTitle[key] = dataItem
-				}
-			}
-		}
+		items = append(items, dataItem)
 	}
-	return idx, nil
+	if len(items) == 0 {
+		return nil, fmt.Errorf("bangumi-data payload has no usable items")
+	}
+	return NewBangumiDataIndex(items), nil
 }
 
-// LookupByMikanID returns the bangumi-data entry for the given mikan anime ID,
-// or nil if no entry maps to it.
+func (idx *BangumiDataIndex) LookupByBgmID(bgmID string) *DataItem {
+	if idx == nil {
+		return nil
+	}
+	return idx.byBgmID[strings.TrimSpace(bgmID)]
+}
+
 func (idx *BangumiDataIndex) LookupByMikanID(mikanID string) *DataItem {
 	if idx == nil {
 		return nil
 	}
-	return idx.byMikanID[mikanID]
+	return idx.byMikanID[strings.TrimSpace(mikanID)]
 }
 
-// LookupByTitle returns the bangumi-data entry whose title (or translated
-// title) matches the given query after normalization, or nil if no match.
 func (idx *BangumiDataIndex) LookupByTitle(title string) *DataItem {
 	if idx == nil {
 		return nil

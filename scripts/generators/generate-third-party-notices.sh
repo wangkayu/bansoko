@@ -77,6 +77,10 @@ with open(out, "w") as f:
     f.write("\n## Frontend production dependencies\n\n| Package | Version | License | Author |\n|---|---|---|---|\n")
     for r in frows:
         f.write("| " + " | ".join(esc(x) for x in r) + " |\n")
+    f.write("\n## Runtime reference data\n\n")
+    f.write("The service downloads unmodified bangumi-data 0.3.x snapshots at runtime for provider-ID lookup.\n\n")
+    f.write("| Data | Source | License | Attribution |\n|---|---|---|---|\n")
+    f.write("| bangumi-data | https://github.com/bangumi-data/bangumi-data | CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/) | bangumi-data contributors |\n")
 unknown = [r[0] for r in rows + frows if r[2] in ("UNKNOWN", "")]
 print("go:", len(rows), "frontend:", len(frows), file=sys.stderr)
 if unknown:

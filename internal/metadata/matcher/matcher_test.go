@@ -36,6 +36,29 @@ func TestMatcherCompletesBangumiDataMovieWithSeasonZero(t *testing.T) {
 	}
 }
 
+func TestParseTmdbRef(t *testing.T) {
+	tests := []struct {
+		ref, kind, id string
+		season        int
+	}{
+		{"movie/12", "movie", "12", -1},
+		{"tv/42", "tv", "42", -1},
+		{"tv/42/season/2", "tv", "42", 2},
+		{"tv/42/season/1/episode/13", "tv", "42", 1},
+	}
+	for _, test := range tests {
+		kind, id, season := parseTmdbRef(test.ref)
+		if kind != test.kind || id != test.id || (test.season < 0 && season != nil) || (test.season >= 0 && (season == nil || *season != test.season)) {
+			t.Errorf("parseTmdbRef(%q) = %q, %q, %v", test.ref, kind, id, season)
+		}
+	}
+	for _, ref := range []string{"tv/308934-mofusand", "tv/42/foo/2", "movie/12/season/1", "tv/42/season/x", "tv/42/season/1/episode/x", "other/42"} {
+		if kind, id, season := parseTmdbRef(ref); kind != "" || id != "" || season != nil {
+			t.Errorf("invalid reference %q was accepted: %q %q %v", ref, kind, id, season)
+		}
+	}
+}
+
 func TestMatcherReportsPartialBangumiDataResult(t *testing.T) {
 	result, err := NewMatcher(NewBangumiDataIndex([]DataItem{{BgmID: "1234", Titles: []string{"Only BGM"}}}), nil, nil, nil).Match(context.Background(), "custom", "", "Only BGM", false, false)
 	if err != nil {

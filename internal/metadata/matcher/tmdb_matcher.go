@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -85,36 +86,102 @@ func (m *TMDBMatcher) trimmer() *TitleTrimmer {
 const tmdbMinConfidence = 0.7
 const tmdbYearTolerance = 1
 
-// Match searches TMDB for the given title. Returns nil (no error) when no
-// result meets the confidence threshold. Missing or ambiguous configuration is
-// returned as a typed config error so automatic dispatch can distinguish it.
+// Match searches TMDB without a separate target air-date clue.
 func (m *TMDBMatcher) Match(ctx context.Context, title string) (*TMDBMatchResult, error) {
+	return m.MatchWithTargetDate(ctx, title, "")
+}
+
+// MatchWithTargetDate searches for a work and then resolves its season using
+// the original title and the BGM air date. Trimming never erases those clues.
+func (m *TMDBMatcher) MatchWithTargetDate(ctx context.Context, title, targetAirDate string) (*TMDBMatchResult, error) {
 	if strings.TrimSpace(title) == "" {
 		return nil, nil
 	}
+	client, endpoint, apiKey, err := m.resolveAccess(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result, err := m.searchAndScore(ctx, client, endpoint, apiKey, title, "tv", targetAirDate)
+	if err != nil {
+		return nil, &MatchError{Kind: ErrorProvider, Layer: "tmdb", Err: fmt.Errorf("tmdb tv search: %w", err)}
+	}
+	if result != nil && result.Confidence >= tmdbMinConfidence {
+		result.Method = "tv"
+		return result, nil
+	}
+	movieResult, err := m.searchAndScore(ctx, client, endpoint, apiKey, title, "movie", targetAirDate)
+	if err != nil {
+		return nil, &MatchError{Kind: ErrorProvider, Layer: "tmdb", Err: fmt.Errorf("tmdb movie search: %w", err)}
+	}
+	if movieResult != nil && movieResult.Confidence >= tmdbMinConfidence {
+		movieResult.Method = "movie"
+		return movieResult, nil
+	}
+	return nil, nil
+}
+
+// MatchReference resolves the exact work supplied by bangumi-data or an
+// existing binding. It never searches for and combines a different work.
+func (m *TMDBMatcher) MatchReference(ctx context.Context, title, mediaKind, workID string, mappedSeason *int, targetAirDate string) (*TMDBMatchResult, error) {
+	if mediaKind != "tv" && mediaKind != "movie" || !numericID(workID) {
+		return nil, nil
+	}
+	id, err := strconv.Atoi(workID)
+	if err != nil || id <= 0 {
+		return nil, nil
+	}
+	client, endpoint, apiKey, err := m.resolveAccess(ctx)
+	if err != nil {
+		return nil, err
+	}
+	details, err := m.getDetails(ctx, client, endpoint, apiKey, mediaKind, id)
+	if err != nil {
+		return nil, &MatchError{Kind: ErrorProvider, Layer: "tmdb", Err: fmt.Errorf("tmdb work details: %w", err)}
+	}
+	season := 0
+	if mediaKind == "tv" {
+		requested := m.trimmer().ExtractSeasonNumber(title)
+		identified, ok, err := m.selectSeason(ctx, client, endpoint, apiKey, id, details.Seasons, requested, mappedSeason, targetAirDate)
+		if err != nil {
+			return nil, &MatchError{Kind: ErrorProvider, Layer: "tmdb", Err: err}
+		}
+		if !ok {
+			return nil, nil
+		}
+		season = identified
+	}
+	return &TMDBMatchResult{
+		WorkID: workID, MediaKind: mediaKind, Season: season, Confidence: 1, Method: "reference",
+		TitleCN:       strings.TrimSpace(firstNonEmpty(details.Name, details.Title)),
+		OriginalTitle: strings.TrimSpace(firstNonEmpty(details.OriginalName, details.OriginalTitle)),
+		Overview:      strings.TrimSpace(details.Overview), Year: providerYearFromDate(firstNonEmpty(details.FirstAirDate, details.ReleaseDate)),
+	}, nil
+}
+
+func (m *TMDBMatcher) resolveAccess(ctx context.Context) (*http.Client, string, string, error) {
 	if m.Connections == nil {
-		return nil, &MatchError{Kind: ErrorConfig, Layer: "tmdb", Err: errors.New("TMDB connection source is not configured")}
+		return nil, "", "", &MatchError{Kind: ErrorConfig, Layer: "tmdb", Err: errors.New("TMDB connection source is not configured")}
 	}
 	connections, err := m.Connections.ListConnections(ctx)
 	if err != nil {
-		return nil, &MatchError{Kind: ErrorProvider, Layer: "tmdb", Err: fmt.Errorf("list tmdb connections: %w", err)}
+		return nil, "", "", &MatchError{Kind: ErrorProvider, Layer: "tmdb", Err: fmt.Errorf("list tmdb connections: %w", err)}
 	}
 	conn, err := configurationdomain.SelectSingleEnabledConnection(connections, configurationdomain.ConnectionTMDB)
 	if err != nil {
-		return nil, &MatchError{Kind: ErrorConfig, Layer: "tmdb", Err: err}
+		return nil, "", "", &MatchError{Kind: ErrorConfig, Layer: "tmdb", Err: err}
 	}
 	if conn.SecretRef == "" || m.Secrets == nil {
-		return nil, &MatchError{Kind: ErrorConfig, Layer: "tmdb", Err: errors.New("TMDB API key is not configured")}
+		return nil, "", "", &MatchError{Kind: ErrorConfig, Layer: "tmdb", Err: errors.New("TMDB API key is not configured")}
 	}
 	apiKey, ok := m.Secrets.Resolve(conn.SecretRef)
 	if !ok || strings.TrimSpace(apiKey) == "" {
-		return nil, &MatchError{Kind: ErrorConfig, Layer: "tmdb", Err: errors.New("TMDB API key is unavailable")}
+		return nil, "", "", &MatchError{Kind: ErrorConfig, Layer: "tmdb", Err: errors.New("TMDB API key is unavailable")}
 	}
 	client := m.Client
 	if m.ClientResolver != nil {
 		resolved, resolveErr := m.ClientResolver.ClientForConnection(ctx, conn)
 		if resolveErr != nil {
-			return nil, &MatchError{Kind: ErrorProvider, Layer: "tmdb", Err: fmt.Errorf("resolve tmdb network route: %w", resolveErr)}
+			return nil, "", "", &MatchError{Kind: ErrorProvider, Layer: "tmdb", Err: fmt.Errorf("resolve tmdb network route: %w", resolveErr)}
 		}
 		if resolved != nil {
 			client = resolved
@@ -123,37 +190,13 @@ func (m *TMDBMatcher) Match(ctx context.Context, title string) (*TMDBMatchResult
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second, Transport: hardeningtransport.DirectTransport()}
 	}
-	endpoint := stripConfigurationSuffix(conn.Endpoint)
-
-	// 1. Try TV search first.
-	result, err := m.searchAndScore(ctx, client, endpoint, apiKey, title, "tv")
-	if err != nil {
-		return nil, &MatchError{Kind: ErrorProvider, Layer: "tmdb", Err: fmt.Errorf("tmdb tv search: %w", err)}
-	}
-	if result != nil && result.Confidence >= tmdbMinConfidence {
-		result.Method = "tv"
-		return result, nil
-	}
-
-	// 2. Fallback to movie search.
-	movieResult, err := m.searchAndScore(ctx, client, endpoint, apiKey, title, "movie")
-	if err != nil {
-		return nil, &MatchError{Kind: ErrorProvider, Layer: "tmdb", Err: fmt.Errorf("tmdb movie search: %w", err)}
-	}
-	if movieResult != nil && movieResult.Confidence >= tmdbMinConfidence {
-		movieResult.Method = "movie"
-		return movieResult, nil
-	}
-
-	// Neither media kind met the automatic-match threshold. Leave the owner
-	// unresolved so the next schedule cycle or manual candidate selection can
-	// decide; a weak guess must never be persisted as an automatic binding.
-	return nil, nil
+	return client, stripConfigurationSuffix(conn.Endpoint), apiKey, nil
 }
 
-func (m *TMDBMatcher) searchAndScore(ctx context.Context, client *http.Client, endpoint, apiKey, query, mediaKind string) (*TMDBMatchResult, error) {
+func (m *TMDBMatcher) searchAndScore(ctx context.Context, client *http.Client, endpoint, apiKey, query, mediaKind, targetAirDate string) (*TMDBMatchResult, error) {
+	requestedSeason := m.trimmer().ExtractSeasonNumber(query)
 	// Try original title first.
-	result, err := m.trySearch(ctx, client, endpoint, apiKey, query, mediaKind, nil)
+	result, err := m.trySearch(ctx, client, endpoint, apiKey, query, mediaKind, nil, requestedSeason, targetAirDate)
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +207,7 @@ func (m *TMDBMatcher) searchAndScore(ctx context.Context, client *http.Client, e
 	// Try trimmed title.
 	trimmed := m.trimmer().TrimTitle(query)
 	if trimmed != query {
-		r2, err := m.trySearch(ctx, client, endpoint, apiKey, trimmed, mediaKind, nil)
+		r2, err := m.trySearch(ctx, client, endpoint, apiKey, trimmed, mediaKind, nil, requestedSeason, targetAirDate)
 		if err != nil {
 			return nil, err
 		}
@@ -179,7 +222,7 @@ func (m *TMDBMatcher) searchAndScore(ctx context.Context, client *http.Client, e
 	// Try extracting year from title for better matching.
 	year := m.trimmer().ExtractYear(query)
 	if year != nil {
-		r3, err := m.trySearch(ctx, client, endpoint, apiKey, trimmed, mediaKind, year)
+		r3, err := m.trySearch(ctx, client, endpoint, apiKey, trimmed, mediaKind, year, requestedSeason, targetAirDate)
 		if err != nil {
 			return nil, err
 		}
@@ -218,10 +261,17 @@ type tmdbSeason struct {
 }
 
 type tmdbDetailsResponse struct {
-	Seasons []tmdbSeason `json:"seasons"`
+	Name          string       `json:"name"`
+	OriginalName  string       `json:"original_name"`
+	Title         string       `json:"title"`
+	OriginalTitle string       `json:"original_title"`
+	Overview      string       `json:"overview"`
+	FirstAirDate  string       `json:"first_air_date"`
+	ReleaseDate   string       `json:"release_date"`
+	Seasons       []tmdbSeason `json:"seasons"`
 }
 
-func (m *TMDBMatcher) trySearch(ctx context.Context, client *http.Client, endpoint, apiKey, query, mediaKind string, year *int) (*TMDBMatchResult, error) {
+func (m *TMDBMatcher) trySearch(ctx context.Context, client *http.Client, endpoint, apiKey, query, mediaKind string, year *int, requestedSeason *int, targetAirDate string) (*TMDBMatchResult, error) {
 	searchURL, err := buildTMDBSearchURL(endpoint, apiKey, query, mediaKind, year)
 	if err != nil {
 		return nil, err
@@ -264,14 +314,17 @@ func (m *TMDBMatcher) trySearch(ctx context.Context, client *http.Client, endpoi
 	// silently turn a failed or empty details response into season 1.
 	season := 0 // movies have no season; zero is the explicit tuple value.
 	if mediaKind == "tv" {
-		details, err := m.getDetails(ctx, client, endpoint, apiKey, best.ID)
+		details, err := m.getDetails(ctx, client, endpoint, apiKey, mediaKind, best.ID)
 		if err != nil {
 			return nil, fmt.Errorf("get tv details for %d: %w", best.ID, err)
 		}
 		if details == nil {
 			return nil, nil
 		}
-		identified, ok := identifySeason(details.Seasons, m.trimmer().ExtractSeasonNumber(query))
+		identified, ok, err := m.selectSeason(ctx, client, endpoint, apiKey, best.ID, details.Seasons, requestedSeason, nil, targetAirDate)
+		if err != nil {
+			return nil, err
+		}
 		if !ok {
 			return nil, nil
 		}
@@ -296,8 +349,8 @@ func (m *TMDBMatcher) trySearch(ctx context.Context, client *http.Client, endpoi
 	}, nil
 }
 
-func (m *TMDBMatcher) getDetails(ctx context.Context, client *http.Client, endpoint, apiKey string, tmdbID int) (*tmdbDetailsResponse, error) {
-	detailsURL, err := buildTMDBDetailsURL(endpoint, apiKey, tmdbID)
+func (m *TMDBMatcher) getDetails(ctx context.Context, client *http.Client, endpoint, apiKey, mediaKind string, tmdbID int) (*tmdbDetailsResponse, error) {
+	detailsURL, err := buildTMDBDetailsURL(endpoint, apiKey, mediaKind, tmdbID)
 	if err != nil {
 		return nil, err
 	}
@@ -446,69 +499,170 @@ func tmdbResultOriginalTitle(r *tmdbSearchResult) string {
 
 // --- Season identification ---
 
-// identifySeason applies a five-rule strategy to pick the correct season
-// number from the TMDB details seasons array.
-func identifySeason(seasons []tmdbSeason, requested *int) (int, bool) {
-	if len(seasons) == 0 {
-		return 0, false
-	}
-
-	// Rule 1: Ignore specials (season 0), then honor an explicit season marker
-	// from the source title when TMDB contains that season.
-	var regular []tmdbSeason
-	for _, s := range seasons {
-		if s.SeasonNumber > 0 {
-			regular = append(regular, s)
+// selectSeason uses explicit references and the original title first, then
+// season and episode air dates. A known conflict never falls through to the
+// unique/recent-season heuristic. Episode matches never produce an EP offset.
+func (m *TMDBMatcher) selectSeason(ctx context.Context, client *http.Client, endpoint, apiKey string, workID int, seasons []tmdbSeason, requested, mapped *int, targetAirDate string) (int, bool, error) {
+	for _, explicit := range []*int{mapped, requested} {
+		if explicit == nil {
+			continue
+		}
+		for _, season := range seasons {
+			if season.SeasonNumber == *explicit {
+				return season.SeasonNumber, true, nil
+			}
 		}
 	}
+	regular := regularSeasons(seasons)
+	if len(regular) == 0 {
+		return 0, false, nil
+	}
+
+	target, hasTarget := providerDate(targetAirDate)
+	if hasTarget {
+		best, ok := closestSeasonByAirDate(regular, target)
+		if ok {
+			return best, true, nil
+		}
+		ordered := append([]tmdbSeason(nil), regular...)
+		sort.SliceStable(ordered, func(i, j int) bool {
+			left, lok := providerDate(ordered[i].AirDate)
+			right, rok := providerDate(ordered[j].AirDate)
+			if lok != rok {
+				return lok
+			}
+			if lok {
+				leftBefore, rightBefore := !left.After(target), !right.After(target)
+				if leftBefore != rightBefore {
+					return leftBefore
+				}
+				return dateDistance(left, target) < dateDistance(right, target)
+			}
+			return ordered[i].SeasonNumber < ordered[j].SeasonNumber
+		})
+		for _, season := range ordered {
+			matched, err := m.seasonHasEpisodeNear(ctx, client, endpoint, apiKey, workID, season.SeasonNumber, target)
+			if err != nil {
+				return 0, false, err
+			}
+			if matched {
+				return season.SeasonNumber, true, nil
+			}
+		}
+		return 0, false, nil
+	}
+	if requested != nil || mapped != nil {
+		return 0, false, nil
+	}
+	season, ok := identifySeason(regular, nil)
+	return season, ok, nil
+}
+
+func regularSeasons(seasons []tmdbSeason) []tmdbSeason {
+	regular := make([]tmdbSeason, 0, len(seasons))
+	for _, season := range seasons {
+		if season.SeasonNumber > 0 {
+			regular = append(regular, season)
+		}
+	}
+	return regular
+}
+
+func providerDate(value string) (time.Time, bool) {
+	value = strings.TrimSpace(value)
+	if parsed, err := time.Parse("2006-01-02", value); err == nil {
+		return parsed, true
+	}
+	parsed, err := time.Parse(time.RFC3339, value)
+	return parsed, err == nil
+}
+
+func dateDistance(a, b time.Time) time.Duration {
+	delta := a.Sub(b)
+	if delta < 0 {
+		return -delta
+	}
+	return delta
+}
+
+func closestSeasonByAirDate(seasons []tmdbSeason, target time.Time) (int, bool) {
+	best := 0
+	var bestDistance time.Duration
+	for _, season := range seasons {
+		date, ok := providerDate(season.AirDate)
+		if !ok {
+			continue
+		}
+		distance := dateDistance(date, target)
+		if distance <= 72*time.Hour && (best == 0 || distance < bestDistance) {
+			best, bestDistance = season.SeasonNumber, distance
+		}
+	}
+	return best, best != 0
+}
+
+type tmdbSeasonDetailsResponse struct {
+	Episodes []struct {
+		AirDate string `json:"air_date"`
+	} `json:"episodes"`
+}
+
+func (m *TMDBMatcher) seasonHasEpisodeNear(ctx context.Context, client *http.Client, endpoint, apiKey string, workID, season int, target time.Time) (bool, error) {
+	rawURL, err := buildTMDBSeasonURL(endpoint, apiKey, workID, season)
+	if err != nil {
+		return false, err
+	}
+	var response tmdbSeasonDetailsResponse
+	if err := m.getJSON(ctx, client, rawURL, apiKey, &response); err != nil {
+		return false, fmt.Errorf("get tv season %d episodes: %w", season, err)
+	}
+	for _, episode := range response.Episodes {
+		date, ok := providerDate(episode.AirDate)
+		if ok && dateDistance(date, target) <= 72*time.Hour {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// identifySeason is the lightweight no-clue fallback used by direct callers.
+func identifySeason(seasons []tmdbSeason, requested *int) (int, bool) {
+	regular := regularSeasons(seasons)
 	if len(regular) == 0 {
 		return 0, false
 	}
 	if requested != nil {
-		for _, s := range regular {
-			if s.SeasonNumber == *requested {
-				return s.SeasonNumber, true
+		for _, season := range regular {
+			if season.SeasonNumber == *requested {
+				return season.SeasonNumber, true
 			}
 		}
+		return 0, false
 	}
 	if len(regular) == 1 {
 		return regular[0].SeasonNumber, true
 	}
 
-	// Rule 2: Match by air date within ±3 days.
-	// (We don't have the anime's air date here, so skip to rule 3.)
-	// In a future enhancement we could pass the air date through.
-
-	// Rule 3: Use the most recently aired season (avoid future seasons).
 	now := time.Now()
 	var bestSeason *tmdbSeason
-	var minTimeDiff = time.Hour * 24 * 365 * 10
+	var minTimeDiff time.Duration
 	for i := range regular {
-		s := &regular[i]
-		if s.AirDate == "" {
+		season := &regular[i]
+		seasonDate, ok := providerDate(season.AirDate)
+		if !ok || seasonDate.After(now) {
 			continue
 		}
-		seasonDate, err := time.Parse("2006-01-02", s.AirDate)
-		if err != nil {
-			continue
-		}
-		if seasonDate.Before(now) || seasonDate.Equal(now) {
-			diff := now.Sub(seasonDate)
-			if diff < minTimeDiff {
-				minTimeDiff = diff
-				bestSeason = s
-			}
+		if diff := now.Sub(seasonDate); bestSeason == nil || diff < minTimeDiff {
+			minTimeDiff, bestSeason = diff, season
 		}
 	}
 	if bestSeason != nil {
 		return bestSeason.SeasonNumber, true
 	}
-
-	// Rule 4: All seasons are in the future — use the earliest.
 	earliest := regular[0]
-	for _, s := range regular {
-		if s.SeasonNumber < earliest.SeasonNumber {
-			earliest = s
+	for _, season := range regular {
+		if season.SeasonNumber < earliest.SeasonNumber {
+			earliest = season
 		}
 	}
 	return earliest.SeasonNumber, true
@@ -540,12 +694,12 @@ func buildTMDBSearchURL(endpoint, apiKey, query, mediaKind string, year *int) (s
 	return u.String(), nil
 }
 
-func buildTMDBDetailsURL(endpoint, apiKey string, tmdbID int) (string, error) {
+func buildTMDBDetailsURL(endpoint, apiKey, mediaKind string, tmdbID int) (string, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil {
 		return "", fmt.Errorf("parse tmdb endpoint: %w", err)
 	}
-	u.Path = strings.TrimSuffix(u.Path, "/") + "/tv/" + strconv.Itoa(tmdbID)
+	u.Path = strings.TrimSuffix(u.Path, "/") + "/" + mediaKind + "/" + strconv.Itoa(tmdbID)
 	q := u.Query()
 	if !isBearerToken(apiKey) {
 		q.Set("api_key", apiKey)
@@ -553,6 +707,30 @@ func buildTMDBDetailsURL(endpoint, apiKey string, tmdbID int) (string, error) {
 	q.Set("language", "zh-CN")
 	u.RawQuery = q.Encode()
 	return u.String(), nil
+}
+
+func buildTMDBSeasonURL(endpoint, apiKey string, tmdbID, season int) (string, error) {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return "", fmt.Errorf("parse tmdb endpoint: %w", err)
+	}
+	u.Path = strings.TrimSuffix(u.Path, "/") + "/tv/" + strconv.Itoa(tmdbID) + "/season/" + strconv.Itoa(season)
+	q := u.Query()
+	if !isBearerToken(apiKey) {
+		q.Set("api_key", apiKey)
+	}
+	q.Set("language", "zh-CN")
+	u.RawQuery = q.Encode()
+	return u.String(), nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 // isBearerToken detects TMDB v4 read-access tokens (JWT format starting with

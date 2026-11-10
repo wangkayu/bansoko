@@ -32,6 +32,7 @@
 2	./internal/deployment
 2	./internal/downloadcompletion
 2	./internal/identitymetadata/adapter/persistence
+2	./internal/metadata/adapter/persistence
 2	./internal/integration
 2	./internal/namingvars/adapter/persistence
 2	./internal/namingvars/editor

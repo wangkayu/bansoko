@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
+	"sync/atomic"
 
 	identitymetadatadomain "bansoko/internal/identitymetadata/domain"
 	observabilityport "bansoko/internal/observability/port"
@@ -71,6 +73,7 @@ type MatchResult struct {
 	// bangumi-data static index supplied the id). They are provider facts for
 	// the accepted binding, never inferred from the title.
 	BgmYear, TmdbYear *int
+	bgmAirDate        string
 }
 
 // WorkTitles returns the native names this result carries for the works it
@@ -122,7 +125,7 @@ func (r *MatchResult) setStatus() {
 // Matcher combines the bangumi-data index, BGM API search, and TMDB API
 // search into a single three-layer matching pipeline.
 type Matcher struct {
-	bangumiIndex *BangumiDataIndex
+	bangumiIndex atomic.Pointer[BangumiDataIndex]
 	bgmMatcher   *BGMMatcher
 	tmdbMatcher  *TMDBMatcher
 	logger       observabilityport.RuntimeLogger
@@ -135,12 +138,31 @@ func NewMatcher(bangumiIndex *BangumiDataIndex, bgmMatcher *BGMMatcher, tmdbMatc
 	if logger == nil {
 		logger = observabilityport.NopRuntimeLogger{}
 	}
-	return &Matcher{
-		bangumiIndex: bangumiIndex,
-		bgmMatcher:   bgmMatcher,
-		tmdbMatcher:  tmdbMatcher,
-		logger:       logger,
+	m := &Matcher{
+		bgmMatcher:  bgmMatcher,
+		tmdbMatcher: tmdbMatcher,
+		logger:      logger,
 	}
+	m.bangumiIndex.Store(bangumiIndex)
+	return m
+}
+
+// ReplaceBangumiDataIndex atomically publishes a complete immutable index.
+// In-flight matches keep using the index snapshot they started with.
+func (m *Matcher) ReplaceBangumiDataIndex(index *BangumiDataIndex) {
+	if m != nil {
+		m.bangumiIndex.Store(index)
+	}
+}
+
+// MatchRequest carries both provider lookup keys and already confirmed IDs.
+// SkipBgm suppresses title search, not detail lookup for an existing BGM ID.
+type MatchRequest struct {
+	Origin, EntryRef, Title string
+	BgmID                   string
+	TmdbWorkID, TmdbKind    string
+	TmdbSeason              *int
+	SkipBgm, SkipTmdb       bool
 }
 
 // logf emits a structured failure event. Raw error text never enters the
@@ -154,62 +176,83 @@ func (m *Matcher) logf(ctx context.Context, event observabilityport.RuntimeEvent
 	m.logger.Warn(ctx, event)
 }
 
-// Match runs the three-layer matching pipeline for a single anime.
-//
-//   - origin: subscription origin ("anibt", "mikan", "custom")
-//   - entryRef: provider catalog entry ref (mikan ID for mikan origin; empty otherwise)
-//   - title: the anime title to search with
-//   - skipBgm: if true, skip BGM API search
-//   - skipTmdb: if true, skip TMDB API search
-//
-// Layer 1 (bangumi-data index) is always attempted first because it is
-// instantaneous. Layer 2 (BGM API) runs only if BGM ID is still missing
-// and skipBgm is false. Layer 3 (TMDB API) runs only if TMDB ID is still
-// missing and skipTmdb is false.
+// Match retains the one-click matching API. Automatic retries use MatchRequest
+// so an already confirmed BGM ID remains available as an index key.
 func (m *Matcher) Match(ctx context.Context, origin, entryRef, title string, skipBgm, skipTmdb bool) (*MatchResult, error) {
+	return m.MatchRequest(ctx, MatchRequest{Origin: origin, EntryRef: entryRef, Title: title, SkipBgm: skipBgm, SkipTmdb: skipTmdb})
+}
+
+// MatchRequest runs one match against a single immutable index snapshot.
+func (m *Matcher) MatchRequest(ctx context.Context, request MatchRequest) (*MatchResult, error) {
 	result := &MatchResult{}
+	if id := strings.TrimSpace(request.BgmID); id != "" {
+		result.BgmID = &id
+	}
+	if id := strings.TrimSpace(request.TmdbWorkID); id != "" {
+		result.TmdbWorkID = &id
+	}
+	if kind := strings.TrimSpace(request.TmdbKind); kind != "" {
+		result.TmdbKind = &kind
+	}
+	result.TmdbSeason = request.TmdbSeason
+
 	var matchErrs []error
+	var bgmDetailErr error
+	index := m.bangumiIndex.Load()
+	item := m.applyBangumiData(index, request, result)
 
-	// --- Layer 1: bangumi-data index lookup ---
-	m.applyBangumiData(origin, entryRef, title, result)
-
-	// --- Layer 2: BGM API search ---
-	if result.BgmID == nil && !skipBgm && m.bgmMatcher != nil {
-		bgmResult, err := m.bgmMatcher.Match(ctx, title)
+	// A BGM ID alone is not enough: actual matching still needs the subject's
+	// title, episode count and air date. Existing IDs therefore fetch details
+	// directly instead of repeating a title search.
+	if result.BgmID != nil && m.bgmMatcher != nil {
+		bgmResult, err := m.bgmMatcher.MatchByID(ctx, *result.BgmID)
 		m.observe(ctx, sourceBGM, err)
 		if err != nil {
-			matchErr := &MatchError{Kind: ErrorProvider, Layer: "bgm", Err: err}
-			matchErrs = append(matchErrs, matchErr)
-			m.logf(ctx, observabilityport.RuntimeEvent{
-				Message:    "bgm api search failed",
-				Operation:  "bgm_search",
-				ReasonCode: "bgm_search_failed",
-				ErrorClass: "bgm",
-			})
+			bgmDetailErr = &MatchError{Kind: ErrorProvider, Layer: "bgm", Err: err}
+			m.logf(ctx, observabilityport.RuntimeEvent{Message: "bgm subject detail failed", Operation: "bgm_detail", ReasonCode: "bgm_detail_failed", ErrorClass: "bgm"})
+		} else {
+			applyBGMResult(result, bgmResult)
+		}
+	} else if result.BgmID == nil && !request.SkipBgm && m.bgmMatcher != nil {
+		bgmResult, err := m.bgmMatcher.Match(ctx, request.Title)
+		m.observe(ctx, sourceBGM, err)
+		if err != nil {
+			matchErrs = append(matchErrs, &MatchError{Kind: ErrorProvider, Layer: "bgm", Err: err})
+			m.logf(ctx, observabilityport.RuntimeEvent{Message: "bgm api search failed", Operation: "bgm_search", ReasonCode: "bgm_search_failed", ErrorClass: "bgm"})
 		} else if bgmResult != nil {
-			id := bgmResult.BgmID
-			result.BgmID = &id
-			if bgmResult.Subject != nil {
-				result.BgmTitle, result.BgmTitleCN = strings.TrimSpace(bgmResult.Subject.Name), strings.TrimSpace(bgmResult.Subject.NameCN)
-			}
-			result.BgmYear = bgmResult.Year
-			// BGM subject eps is the sole source of total_episodes. TMDB no
-			// longer decodes number_of_episodes because multi-season shows make
-			// the TMDB show-level count unreliable for a single cour.
-			if result.TotalEpisodes == nil && bgmResult.TotalEpisodes != nil {
-				episodes := *bgmResult.TotalEpisodes
-				result.TotalEpisodes = &episodes
+			applyBGMResult(result, bgmResult)
+			if item == nil && index != nil {
+				item = index.LookupByBgmID(bgmResult.BgmID)
+				applyDataItem(item, result)
 			}
 		}
 	}
 
-	// --- Layer 3: TMDB API search ---
-	// bangumi-data can provide a TV/movie ID and kind, but never a season.
-	// Continue to TMDB while any part of the atomic tuple is missing.
-	if (result.TmdbWorkID == nil || result.TmdbKind == nil || result.TmdbSeason == nil) && !skipTmdb && m.tmdbMatcher != nil {
-		// If we have a BGM subject with a Japanese title, try it as TMDB query.
-		tmdbQuery := title
-		tmdbResult, err := m.tmdbMatcher.Match(ctx, tmdbQuery)
+	targetAirDate := ""
+	if result.BgmID != nil && m.bgmMatcher != nil {
+		// applyBGMResult does not retain the full subject in the public result;
+		// the season matcher receives the date through this private lookup below.
+		targetAirDate = result.bgmAirDate
+	}
+	if targetAirDate == "" && item != nil {
+		targetAirDate = item.Begin
+	}
+
+	if (result.TmdbWorkID == nil || result.TmdbKind == nil || result.TmdbSeason == nil) && !request.SkipTmdb && m.tmdbMatcher != nil {
+		var tmdbResult *TMDBMatchResult
+		var err error
+		if result.TmdbWorkID != nil && result.TmdbKind != nil {
+			var mappedSeason *int
+			if item != nil {
+				refKind, refID, refSeason := parseTmdbRef(item.TmdbID)
+				if refKind == *result.TmdbKind && refID == *result.TmdbWorkID {
+					mappedSeason = refSeason
+				}
+			}
+			tmdbResult, err = m.tmdbMatcher.MatchReference(ctx, request.Title, *result.TmdbKind, *result.TmdbWorkID, mappedSeason, targetAirDate)
+		} else {
+			tmdbResult, err = m.tmdbMatcher.MatchWithTargetDate(ctx, request.Title, targetAirDate)
+		}
 		m.observe(ctx, sourceTMDB, err)
 		if err != nil {
 			var matchErr *MatchError
@@ -217,86 +260,128 @@ func (m *Matcher) Match(ctx context.Context, origin, entryRef, title string, ski
 				matchErr = &MatchError{Kind: ErrorProvider, Layer: "tmdb", Err: err}
 			}
 			matchErrs = append(matchErrs, matchErr)
-			m.logf(ctx, observabilityport.RuntimeEvent{
-				Message:    "tmdb api search failed",
-				Operation:  "tmdb_search",
-				ReasonCode: "tmdb_search_failed",
-				ErrorClass: "tmdb",
-			})
+			m.logf(ctx, observabilityport.RuntimeEvent{Message: "tmdb api match failed", Operation: "tmdb_match", ReasonCode: "tmdb_match_failed", ErrorClass: "tmdb"})
 		} else if tmdbResult != nil && tmdbResult.Confidence >= tmdbMinConfidence {
-			// A title-search result must be applied as one atomic TMDB tuple. Do
-			// not combine a bangumi-data work ID with another work's season.
-			if result.TmdbWorkID == nil {
-				workID := tmdbResult.WorkID
-				result.TmdbWorkID = &workID
-				kind := tmdbResult.MediaKind
-				result.TmdbKind = &kind
-				season := tmdbResult.Season
-				result.TmdbSeason = &season
-				result.TmdbTitleCN, result.TmdbOriginalTitle = tmdbResult.TitleCN, tmdbResult.OriginalTitle
-				result.TmdbOverview = tmdbResult.Overview
-				result.TmdbYear = tmdbResult.Year
-			} else if result.TmdbKind != nil && *result.TmdbKind == tmdbResult.MediaKind && *result.TmdbWorkID == tmdbResult.WorkID {
-				season := tmdbResult.Season
-				result.TmdbSeason = &season
-				result.TmdbYear = tmdbResult.Year
-			}
+			applyTMDBResult(result, tmdbResult)
 		}
 	}
 
 	result.setStatus()
+	if bgmDetailErr != nil && !result.IsComplete() {
+		// A completed TMDB tuple remains usable when the supplemental BGM
+		// detail request fails. Otherwise keep the failure retryable instead of
+		// silently accepting a season without its date clue.
+		matchErrs = append(matchErrs, bgmDetailErr)
+	}
 	if len(matchErrs) > 0 {
 		return result, errors.Join(matchErrs...)
 	}
 	return result, nil
 }
 
-// applyBangumiData fills in any missing IDs from the bangumi-data static index.
-func (m *Matcher) applyBangumiData(origin, entryRef, title string, result *MatchResult) {
-	if m.bangumiIndex == nil {
-		return
+func (m *Matcher) applyBangumiData(index *BangumiDataIndex, request MatchRequest, result *MatchResult) *DataItem {
+	if index == nil {
+		return nil
 	}
-
 	var item *DataItem
-	if origin == "mikan" && entryRef != "" {
-		item = m.bangumiIndex.LookupByMikanID(entryRef)
+	if result.BgmID != nil {
+		item = index.LookupByBgmID(*result.BgmID)
 	}
-	if item == nil && title != "" {
-		item = m.bangumiIndex.LookupByTitle(title)
+	if item == nil && request.Origin == "mikan" && request.EntryRef != "" {
+		item = index.LookupByMikanID(request.EntryRef)
 	}
+	if item == nil && request.Title != "" {
+		item = index.LookupByTitle(request.Title)
+	}
+	if item != nil && result.BgmID != nil && item.BgmID != "" && item.BgmID != *result.BgmID {
+		// A title/Mikan hit for another BGM subject must not lend its TMDB
+		// identity to the already confirmed BGM binding.
+		return nil
+	}
+	applyDataItem(item, result)
+	return item
+}
+
+func applyDataItem(item *DataItem, result *MatchResult) {
 	if item == nil {
 		return
 	}
-
 	if result.BgmID == nil && item.BgmID != "" {
 		id := item.BgmID
 		result.BgmID = &id
 	}
 	if result.TmdbWorkID == nil && item.TmdbID != "" {
-		// Parse "tv/85937" or "movie/12345". bangumi-data does not carry
-		// season info, so leave TV bindings incomplete until TMDB details resolve it.
-		kind, id := parseTmdbRef(item.TmdbID)
+		kind, id, _ := parseTmdbRef(item.TmdbID)
 		if kind != "" && id != "" {
 			result.TmdbWorkID = &id
 			result.TmdbKind = &kind
 			if kind == "movie" {
-				season := 0
-				result.TmdbSeason = &season
+				zero := 0
+				result.TmdbSeason = &zero
 			}
 		}
 	}
 }
 
-// parseTmdbRef splits a bangumi-data reference such as "tv/85937" into
-// the normalized media kind and the numeric database ID stored in work_id.
-func parseTmdbRef(ref string) (kind, workID string) {
-	for _, prefix := range []string{"tv/", "movie/"} {
-		if len(ref) > len(prefix) && strings.HasPrefix(ref, prefix) {
-			id := strings.TrimSpace(strings.TrimPrefix(ref, prefix))
-			if id != "" {
-				return strings.TrimSuffix(prefix, "/"), id
-			}
+func applyBGMResult(result *MatchResult, bgmResult *BGMMatchResult) {
+	if bgmResult == nil {
+		return
+	}
+	id := bgmResult.BgmID
+	result.BgmID = &id
+	if bgmResult.Subject != nil {
+		result.BgmTitle = strings.TrimSpace(bgmResult.Subject.Name)
+		result.BgmTitleCN = strings.TrimSpace(bgmResult.Subject.NameCN)
+		result.bgmAirDate = strings.TrimSpace(bgmResult.Subject.AirDate)
+	}
+	result.BgmYear = bgmResult.Year
+	if result.TotalEpisodes == nil && bgmResult.TotalEpisodes != nil {
+		episodes := *bgmResult.TotalEpisodes
+		result.TotalEpisodes = &episodes
+	}
+}
+
+func applyTMDBResult(result *MatchResult, matched *TMDBMatchResult) {
+	workID, kind, season := matched.WorkID, matched.MediaKind, matched.Season
+	result.TmdbWorkID, result.TmdbKind, result.TmdbSeason = &workID, &kind, &season
+	result.TmdbTitleCN, result.TmdbOriginalTitle = matched.TitleCN, matched.OriginalTitle
+	result.TmdbOverview, result.TmdbYear = matched.Overview, matched.Year
+}
+
+// parseTmdbRef accepts only numeric TMDB work references and optional TV
+// season/episode suffixes. The episode component is deliberately not an offset.
+func parseTmdbRef(ref string) (kind, workID string, season *int) {
+	parts := strings.Split(strings.Trim(strings.TrimSpace(ref), "/"), "/")
+	if len(parts) != 2 && len(parts) != 4 && len(parts) != 6 {
+		return "", "", nil
+	}
+	if parts[0] != "tv" && parts[0] != "movie" || !numericID(parts[1]) {
+		return "", "", nil
+	}
+	if len(parts) == 2 {
+		return parts[0], parts[1], nil
+	}
+	if parts[0] != "tv" || parts[2] != "season" || !numericID(parts[3]) {
+		return "", "", nil
+	}
+	n, err := strconv.Atoi(parts[3])
+	if err != nil || n < 0 {
+		return "", "", nil
+	}
+	if len(parts) == 6 && (parts[4] != "episode" || !numericID(parts[5])) {
+		return "", "", nil
+	}
+	return "tv", parts[1], &n
+}
+
+func numericID(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
 		}
 	}
-	return "", ""
+	return true
 }
