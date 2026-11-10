@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AnimeMetadataDraft } from "../../lib/api/client";
+import type { AnimeMetadataDraft, SubscriptionOrigin } from "../../lib/api/client";
 import type { MetadataCandidate, MetadataProvider, MetadataSearcher } from "../../lib/metadata/types";
 import { MetadataFields } from "./MetadataFields";
 import { t } from "../../lib/i18n";
@@ -28,6 +28,8 @@ function Controlled({
   initial = { bgm: null, tmdb: null },
   onChange,
   title = "沉默魔女的秘密",
+  origin = "custom",
+  originEntryRef,
   matchQueryCandidates,
   onMatchTitle,
   onMatchCandidate,
@@ -36,6 +38,8 @@ function Controlled({
   initial?: AnimeMetadataDraft;
   onChange?: (next: AnimeMetadataDraft) => void;
   title?: string;
+  origin?: SubscriptionOrigin;
+  originEntryRef?: string;
   matchQueryCandidates?: string[];
   onMatchTitle?: (title: string) => void;
   onMatchCandidate?: (candidate: MetadataCandidate) => void;
@@ -49,6 +53,8 @@ function Controlled({
       <MetadataFields
         idPrefix="test"
         title={title}
+        origin={origin}
+        originEntryRef={originEntryRef}
         matchQueryCandidates={matchQueryCandidates}
         onMatchTitle={onMatchTitle}
         onMatchCandidate={onMatchCandidate}
@@ -85,7 +91,11 @@ const tmdbCandidate: MetadataCandidate = {
 };
 
 function searcherReturning(candidates: MetadataCandidate[]): MetadataSearcher {
-  return { isMock: false, search: vi.fn().mockResolvedValue(candidates) };
+  return {
+    isMock: false,
+    search: vi.fn().mockResolvedValue(candidates),
+    searchAutomatic: vi.fn().mockResolvedValue(candidates),
+  };
 }
 
 function clickMatch(provider: "bgm" | "tmdb") {
@@ -146,6 +156,44 @@ describe("MetadataMatchDialog", () => {
     expect(onChange).toHaveBeenCalledWith({ bgm: { work_id: "486109" }, tmdb: null });
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(screen.getByRole("link", { name: /486109/ })).toBeInTheDocument();
+  });
+
+  it("自动查询使用管线输入并预选节目和 season，确认前不写回表单", async () => {
+    const searcher = searcherReturning([tmdbCandidate]);
+    const onChange = vi.fn();
+    render(
+      <Controlled
+        searcher={searcher}
+        origin="mikan"
+        originEntryRef="3967"
+        initial={{ bgm: { work_id: "486109" }, tmdb: { work_id: "265010", media_kind: "tv", season: 1 } }}
+        onChange={onChange}
+      />,
+    );
+
+    clickMatch("tmdb");
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByRole("textbox", { name: t("forms.titleQuery") }), { target: { value: "手动修改的查询词" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("forms.autoSearch") }));
+
+    await waitFor(() => expect(searcher.searchAutomatic).toHaveBeenCalledWith("tmdb", {
+      title: "沉默魔女的秘密",
+      origin: "mikan",
+      originEntryRef: "3967",
+      bgmWorkId: "486109",
+      tmdbWorkId: "265010",
+      tmdbMediaKind: "tv",
+      tmdbSeason: 1,
+    }));
+    expect(searcher.search).not.toHaveBeenCalled();
+    expect(await within(dialog).findByRole("option", { name: /星际邮差艾拉/ })).toHaveAttribute("aria-selected", "true");
+    expect(within(dialog).getByRole("combobox", { name: t("forms.applySeason") })).toHaveTextContent("2");
+    expect(onChange).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: t("forms.confirmMatch") }));
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      tmdb: { work_id: "265010", media_kind: "tv", season: 2 },
+    }));
   });
 
   it("确认匹配时把所选候选交给宿主", async () => {
@@ -348,7 +396,7 @@ describe("MetadataMatchDialog", () => {
   });
 
   it("空结果显示空态", async () => {
-    render(<Controlled searcher={{ isMock: false, search: vi.fn().mockResolvedValue([]) }} />);
+    render(<Controlled searcher={searcherReturning([])} />);
 
     clickMatch("bgm");
     const dialog = await screen.findByRole("dialog");
@@ -358,7 +406,9 @@ describe("MetadataMatchDialog", () => {
   });
 
   it("搜索失败显示错误", async () => {
-    render(<Controlled searcher={{ isMock: false, search: vi.fn().mockRejectedValue(new Error("网络错误")) }} />);
+    const searcher = searcherReturning([]);
+    vi.mocked(searcher.search).mockRejectedValue(new Error("网络错误"));
+    render(<Controlled searcher={searcher} />);
 
     clickMatch("bgm");
     const dialog = await screen.findByRole("dialog");

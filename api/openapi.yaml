@@ -5959,6 +5959,34 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '422':
           $ref: '#/components/responses/Unprocessable'
+  /metadata/search/automatic:
+    post:
+      tags: [Metadata]
+      operationId: searchMetadataAutomatically
+      x-scope: read
+      description: >-
+        Runs the same bangumi-data, Bangumi and TMDB matching pipeline used by
+        automatic metadata matching, without applying a binding. Returns at most
+        one candidate for the requested provider, with the resolved TMDB season
+        as its suggestion. The caller must still review and explicitly confirm
+        the candidate to change a draft or subscription.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MetadataAutomaticSearchInput'
+      responses:
+        '200':
+          description: The automatically matched provider candidate, or an empty list while no safe match exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetadataSearchResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
   /media-recognition/previews:
     post:
       tags: [Releases]
@@ -18612,6 +18640,36 @@ components:
         is_special:
           type: boolean
           description: True when season_number is 0.
+    MetadataAutomaticSearchInput:
+      type: object
+      additionalProperties: false
+      required: [provider, title, origin]
+      properties:
+        provider:
+          type: string
+          enum: [bgm, tmdb]
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        origin:
+          $ref: '#/components/schemas/SubscriptionOrigin'
+        origin_entry_ref:
+          type: string
+          maxLength: 512
+        bgm_work_id:
+          type: string
+          pattern: '^[0-9]+$'
+        tmdb_work_id:
+          type: string
+          pattern: '^[0-9]+$'
+        tmdb_media_kind:
+          type: string
+          enum: [tv, movie]
+        tmdb_season:
+          type: integer
+          minimum: 0
+          maximum: 999
     MetadataSearchCandidate:
       type: object
       additionalProperties: false
@@ -18651,8 +18709,10 @@ components:
           type: integer
           nullable: true
           description: >-
-            Optional season suggestion selected only from the returned seasons;
-            it is never inferred as a fixed default.
+            Optional season suggestion. Direct searches select it only from the
+            returned seasons; automatic searches use the season resolved by the
+            matching pipeline, including an existing binding or an explicitly
+            mapped special season 0.
         year:
           type: integer
           description: >-

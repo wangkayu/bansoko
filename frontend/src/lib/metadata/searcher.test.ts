@@ -80,6 +80,45 @@ describe("API metadata searcher", () => {
     vi.unstubAllGlobals();
   });
 
+  it("sends pipeline context as one JSON object and maps the automatic season", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({
+      provider: "tmdb",
+      query: "Show S2",
+      candidates: [{
+        provider: "tmdb",
+        provider_work_id: "42",
+        title: "Show",
+        media_kind: "tv",
+        details_status: "available",
+        seasons: [{ season_number: 2, name: "Season 2", episode_count: 12, is_special: false }],
+        suggested_season: 2,
+      }],
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(apiMetadataSearcher.searchAutomatic("tmdb", {
+      title: "Show S2",
+      origin: "mikan",
+      originEntryRef: "3967",
+      bgmWorkId: "123",
+      tmdbWorkId: "42",
+      tmdbMediaKind: "tv",
+      tmdbSeason: 1,
+    })).resolves.toEqual([expect.objectContaining({ workId: "42", suggestedSeason: 2 })]);
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(init.body as string)).toEqual({
+      provider: "tmdb",
+      title: "Show S2",
+      origin: "mikan",
+      origin_entry_ref: "3967",
+      bgm_work_id: "123",
+      tmdb_work_id: "42",
+      tmdb_media_kind: "tv",
+      tmdb_season: 1,
+    });
+    vi.unstubAllGlobals();
+  });
+
   it("preserves an empty server result", async () => {
     const fetchMock = vi.fn().mockResolvedValue(response({ provider: "tmdb", query: "unknown", candidates: [] }));
     vi.stubGlobal("fetch", fetchMock);

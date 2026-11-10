@@ -63,6 +63,56 @@ func (s *Server) SearchMetadata(w http.ResponseWriter, r *http.Request, params g
 	})
 }
 
+func (s *Server) SearchMetadataAutomatically(w http.ResponseWriter, r *http.Request) {
+	service := s.metadataService(w, r)
+	if service == nil {
+		return
+	}
+	var body generated.MetadataAutomaticSearchInput
+	if err := decodeJSON(w, r, &body); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	if strings.TrimSpace(body.Title) == "" {
+		writeError(w, r, metadataSearchInvalid(generated.ErrorDetail{Code: "QUERY_REQUIRED", Message: "title must not be empty."}))
+		return
+	}
+	switch body.Provider {
+	case generated.MetadataAutomaticSearchInputProviderBgm, generated.MetadataAutomaticSearchInputProviderTmdb:
+	default:
+		writeError(w, r, metadataSearchInvalid(generated.ErrorDetail{Code: "PROVIDER_UNSUPPORTED", Message: "provider must be one of: bgm, tmdb."}))
+		return
+	}
+	input := identitymetadatadomain.AutomaticSearchInput{
+		Provider: string(body.Provider), Title: strings.TrimSpace(body.Title),
+		Origin: string(body.Origin), TmdbSeason: body.TmdbSeason,
+	}
+	if body.OriginEntryRef != nil {
+		input.EntryRef = *body.OriginEntryRef
+	}
+	if body.BgmWorkId != nil {
+		input.BgmID = *body.BgmWorkId
+	}
+	if body.TmdbWorkId != nil {
+		input.TmdbWorkID = *body.TmdbWorkId
+	}
+	if body.TmdbMediaKind != nil {
+		input.TmdbKind = string(*body.TmdbMediaKind)
+	}
+	candidates, err := service.SearchMetadataAutomatically(r.Context(), input)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	mapped := mapMetadataCandidates(candidates)
+	s.proxyCandidatePosters(r.Context(), mapped)
+	writeJSON(w, r.Context(), http.StatusOK, generated.MetadataSearchResult{
+		Provider:   generated.MetadataSearchResultProvider(body.Provider),
+		Query:      input.Title,
+		Candidates: mapped,
+	})
+}
+
 func mapMetadataCandidates(candidates []identitymetadatadomain.SearchCandidate) []generated.MetadataSearchCandidate {
 	mapped := make([]generated.MetadataSearchCandidate, 0, len(candidates))
 	for _, candidate := range candidates {

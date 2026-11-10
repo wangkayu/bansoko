@@ -36,6 +36,25 @@ func TestMatchRequestReusesExistingBGMIDAndResolvesMappedSeason(t *testing.T) {
 	}
 }
 
+func TestMatchRequestInteractivePreviewLoadsExistingTMDBDetails(t *testing.T) {
+	tmdbServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/3/tv/42" {
+			t.Fatalf("existing work must be queried directly: %s", r.URL.Path)
+		}
+		_, _ = fmt.Fprint(w, `{"name":"节目","original_name":"Show","seasons":[{"season_number":1,"name":"S1","episode_count":12},{"season_number":2,"name":"S2","episode_count":13}]}`)
+	}))
+	defer tmdbServer.Close()
+	matched := NewMatcher(nil, nil, newReferenceTMDBMatcher(tmdbServer), nil)
+	season := 2
+	result, err := matched.MatchRequest(context.Background(), MatchRequest{
+		Title: "Show", TmdbWorkID: "42", TmdbKind: "tv", TmdbSeason: &season,
+		SkipBgm: true, LoadTmdbDetails: true,
+	})
+	if err != nil || result.TmdbSeason == nil || *result.TmdbSeason != 2 || result.TmdbTitleCN != "节目" || len(result.TmdbSeasons) != 2 || result.TmdbSeasons[1].EpisodeCount != 13 {
+		t.Fatalf("interactive preview must load facts and retain the existing season: result=%+v err=%v", result, err)
+	}
+}
+
 func TestMatchRequestLooksUpBangumiDataAfterBGMTitleSearch(t *testing.T) {
 	bgmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

@@ -179,6 +179,7 @@ type GlobalSectionService interface {
 // identity-metadata candidate searcher.
 type MetadataSearchService interface {
 	SearchMetadata(ctx context.Context, provider, query string, limit int) ([]identitymetadatadomain.SearchCandidate, error)
+	SearchMetadataAutomatically(ctx context.Context, input identitymetadatadomain.AutomaticSearchInput) ([]identitymetadatadomain.SearchCandidate, error)
 }
 
 // ObservabilityService is the read-only observability projection boundary.

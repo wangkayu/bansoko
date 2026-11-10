@@ -989,14 +989,40 @@ async function mockCatalogAndAnime(page: Page) {
   });
 
   await page.route("**/api/v1/metadata/search**", async (route) => {
-    if (route.request().method() !== "GET") {
+    const request = route.request();
+    const url = new URL(request.url());
+    const automatic = request.method() === "POST" && url.pathname.endsWith("/metadata/search/automatic");
+    if (request.method() !== "GET" && !automatic) {
       await fulfillMethodNotAllowed(route, "GET");
       return;
     }
-    const url = new URL(route.request().url());
-    const provider = url.searchParams.get("provider") === "tmdb" ? "tmdb" : "bgm";
-    const query = url.searchParams.get("query") ?? "";
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ provider, query, candidates: [{ provider, provider_work_id: provider === "bgm" ? "486109" : "265010", title: provider === "bgm" ? "进击的巨人" : "星际邮差艾拉", media_kind: "tv", details_status: provider === "tmdb" ? "available" : "not_applicable", seasons: provider === "tmdb" ? [{ season_number: 1, name: "第一季", episode_count: 12, air_date: "2024-01-01", is_special: false }] : undefined, suggested_season: provider === "tmdb" ? 1 : undefined, score: 0.96 }] }) });
+    const input = automatic ? request.postDataJSON() as { provider?: string; title?: string } : undefined;
+    const provider = (input?.provider ?? url.searchParams.get("provider")) === "tmdb" ? "tmdb" : "bgm";
+    const query = input?.title ?? url.searchParams.get("query") ?? "";
+    const seasons = provider === "tmdb"
+      ? [
+          { season_number: 1, name: "第一季", episode_count: 12, air_date: "2024-01-01", is_special: false },
+          ...(automatic ? [{ season_number: 2, name: "第二季", episode_count: 13, air_date: "2025-01-01", is_special: false }] : []),
+        ]
+      : undefined;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        provider,
+        query,
+        candidates: [{
+          provider,
+          provider_work_id: provider === "bgm" ? "486109" : "265010",
+          title: provider === "bgm" ? "进击的巨人" : "星际邮差艾拉",
+          media_kind: "tv",
+          details_status: provider === "tmdb" ? "available" : "not_applicable",
+          seasons,
+          suggested_season: provider === "tmdb" ? (automatic ? 2 : 1) : undefined,
+          score: 0.96,
+        }],
+      }),
+    });
   });
 }
 // 目录分栏导航（桌面顶栏 button / 手机底部标签栏 + 页内 Segmented）见 ./catalog-nav。
@@ -1965,13 +1991,41 @@ test.describe("AnimeGrid", () => {
     await dialog.getByRole("button", { name: "匹配 Bangumi", exact: true }).click();
     const matchDialog = pageDialog(page).last();
     await matchDialog.getByRole("button", { name: "自动查询", exact: true }).click();
-    // 本地演示候选（fixture searcher）命中进击的巨人，点选写回草稿绑定。
-    const candidate = matchDialog.getByRole("listbox", { name: "匹配结果" }).getByText("进击的巨人", { exact: true });
+    // 自动查询命中后立即预选，不需要再点候选；确认前不改变草稿绑定。
+    const candidate = matchDialog.getByRole("option", { name: /进击的巨人/ });
     await expect(candidate).toBeVisible();
-    await candidate.click();
+    await expect(candidate).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("button", { name: "匹配 Bangumi", exact: true, includeHidden: true })).toHaveCount(1);
     await expect(matchDialog.getByRole("button", { name: "确认匹配", exact: true })).toBeEnabled();
     await matchDialog.getByRole("button", { name: "确认匹配", exact: true }).click();
     await expect(dialog.getByRole("button", { name: "清除 Bangumi 条目 关联" })).toBeVisible();
+  });
+
+  test("automatically selects the matched work and season before draft confirmation", async ({ page }) => {
+    await enterApp(page);
+    const card = await openProvider(page, "Mikan");
+    const dialog = await openConfigFromCard(page, card);
+    await dialog.getByRole("button", { name: "匹配 TMDB", exact: true }).click();
+    const matchDialog = pageDialog(page).last();
+
+    // 普通查询只列候选，不自动选择。
+    await matchDialog.getByRole("button", { name: "查询", exact: true }).click();
+    const ordinaryCandidate = matchDialog.getByRole("option", { name: /星际邮差艾拉/ });
+    await expect(ordinaryCandidate).toBeVisible();
+    await expect(ordinaryCandidate).toHaveAttribute("aria-selected", "false");
+    await expect(matchDialog.getByRole("button", { name: "确认匹配", exact: true })).toBeDisabled();
+
+    // 自动查询使用匹配管线返回的作品和 season，但确认前仍不写回草稿。
+    await matchDialog.getByRole("button", { name: "自动查询", exact: true }).click();
+    const automaticCandidate = matchDialog.getByRole("option", { name: /星际邮差艾拉/ });
+    await expect(automaticCandidate).toHaveAttribute("aria-selected", "true");
+    await expect(matchDialog.getByRole("combobox", { name: t("forms.applySeason") })).toContainText("S2 · 第二季");
+    await expect(page.getByRole("button", { name: "匹配 TMDB", exact: true, includeHidden: true })).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "清除 TMDB 条目 关联", includeHidden: true })).toHaveCount(0);
+
+    await matchDialog.getByRole("button", { name: "确认匹配", exact: true }).click();
+    await expect(dialog.getByRole("button", { name: "清除 TMDB 条目 关联" })).toBeVisible();
+    await expect(dialog.locator('.metadata-card a[href="https://www.themoviedb.org/tv/265010"]')).toContainText(t("forms.seasonN", { n: "2" }));
   });
 
   test("opens subscribed workspace with four tabs and no embedded log", async ({ page }) => {

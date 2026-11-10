@@ -16,6 +16,7 @@ import (
 
 	configurationdomain "bansoko/internal/configuration/domain"
 	hardeningtransport "bansoko/internal/hardening/transport"
+	identitymetadatadomain "bansoko/internal/identitymetadata/domain"
 	"bansoko/internal/runtime/buildinfo"
 )
 
@@ -51,6 +52,8 @@ type TMDBMatchResult struct {
 	// Overview is the work summary TMDB reported, recorded with the titles
 	// so acceptance freezes it (tmdb.summary).
 	Overview string
+	// Seasons is the real TV season list returned by the work details request.
+	Seasons []identitymetadatadomain.SearchSeason
 	// Year is the work's first air/release year as TMDB reported it
 	// (first_air_date for tv, release_date for movie); nil when the provider
 	// gave no usable date.
@@ -155,6 +158,7 @@ func (m *TMDBMatcher) MatchReference(ctx context.Context, title, mediaKind, work
 		TitleCN:       strings.TrimSpace(firstNonEmpty(details.Name, details.Title)),
 		OriginalTitle: strings.TrimSpace(firstNonEmpty(details.OriginalName, details.OriginalTitle)),
 		Overview:      strings.TrimSpace(details.Overview), Year: providerYearFromDate(firstNonEmpty(details.FirstAirDate, details.ReleaseDate)),
+		Seasons: tmdbSearchSeasons(details.Seasons),
 	}, nil
 }
 
@@ -257,6 +261,8 @@ type tmdbSearchResponse struct {
 
 type tmdbSeason struct {
 	SeasonNumber int    `json:"season_number"`
+	Name         string `json:"name"`
+	EpisodeCount int    `json:"episode_count"`
 	AirDate      string `json:"air_date"`
 }
 
@@ -313,6 +319,7 @@ func (m *TMDBMatcher) trySearch(ctx context.Context, client *http.Client, endpoi
 	// not a complete TV binding until its details provide a real season; do not
 	// silently turn a failed or empty details response into season 1.
 	season := 0 // movies have no season; zero is the explicit tuple value.
+	var seasons []identitymetadatadomain.SearchSeason
 	if mediaKind == "tv" {
 		details, err := m.getDetails(ctx, client, endpoint, apiKey, mediaKind, best.ID)
 		if err != nil {
@@ -329,6 +336,7 @@ func (m *TMDBMatcher) trySearch(ctx context.Context, client *http.Client, endpoi
 			return nil, nil
 		}
 		season = identified
+		seasons = tmdbSearchSeasons(details.Seasons)
 	}
 
 	titleCN, original := best.Name, best.OriginalName
@@ -346,7 +354,25 @@ func (m *TMDBMatcher) trySearch(ctx context.Context, client *http.Client, endpoi
 		OriginalTitle: strings.TrimSpace(original),
 		Overview:      strings.TrimSpace(best.Overview),
 		Year:          providerYearFromDate(releaseDate),
+		Seasons:       seasons,
 	}, nil
+}
+
+func tmdbSearchSeasons(seasons []tmdbSeason) []identitymetadatadomain.SearchSeason {
+	if seasons == nil {
+		return nil
+	}
+	result := make([]identitymetadatadomain.SearchSeason, 0, len(seasons))
+	for _, season := range seasons {
+		result = append(result, identitymetadatadomain.SearchSeason{
+			SeasonNumber: season.SeasonNumber,
+			Name:         strings.TrimSpace(season.Name),
+			EpisodeCount: season.EpisodeCount,
+			AirDate:      strings.TrimSpace(season.AirDate),
+			IsSpecial:    season.SeasonNumber == 0,
+		})
+	}
+	return result
 }
 
 func (m *TMDBMatcher) getDetails(ctx context.Context, client *http.Client, endpoint, apiKey, mediaKind string, tmdbID int) (*tmdbDetailsResponse, error) {

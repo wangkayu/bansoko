@@ -13,10 +13,12 @@ import (
 )
 
 type metadataSearchSpy struct {
-	calls    int
-	provider string
-	query    string
-	limit    int
+	calls     int
+	provider  string
+	query     string
+	limit     int
+	autoInput identitymetadatadomain.AutomaticSearchInput
+	auto      []identitymetadatadomain.SearchCandidate
 }
 
 func (s *metadataSearchSpy) SearchMetadata(ctx context.Context, provider, query string, limit int) ([]identitymetadatadomain.SearchCandidate, error) {
@@ -25,7 +27,44 @@ func (s *metadataSearchSpy) SearchMetadata(ctx context.Context, provider, query 
 	return []identitymetadatadomain.SearchCandidate{}, nil
 }
 
-// TestSearchMetadataRejectsInvalidInputWithTyped422 verifies that contract
+func (s *metadataSearchSpy) SearchMetadataAutomatically(_ context.Context, input identitymetadatadomain.AutomaticSearchInput) ([]identitymetadatadomain.SearchCandidate, error) {
+	s.calls++
+	s.autoInput = input
+	return s.auto, nil
+}
+
+func TestSearchMetadataAutomaticallyPassesPipelineContextWithoutApplying(t *testing.T) {
+	season := 2
+	spy := &metadataSearchSpy{auto: []identitymetadatadomain.SearchCandidate{{
+		Provider: "tmdb", ProviderWorkID: "42", Title: "Show", MediaKind: "tv",
+		DetailsStatus:   identitymetadatadomain.DetailsStatusAvailable,
+		Seasons:         []identitymetadatadomain.SearchSeason{{SeasonNumber: 2, Name: "Season 2"}},
+		SuggestedSeason: &season, Score: 1,
+	}}}
+	server := &Server{deps: Dependencies{MetadataSearch: spy}}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/metadata/search/automatic", strings.NewReader(`{
+		"provider":"tmdb","title":"Show S2","origin":"mikan","origin_entry_ref":"3967",
+		"bgm_work_id":"123","tmdb_work_id":"42","tmdb_media_kind":"tv","tmdb_season":1
+	}`))
+
+	server.SearchMetadataAutomatically(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if spy.autoInput.Origin != "mikan" || spy.autoInput.EntryRef != "3967" || spy.autoInput.BgmID != "123" || spy.autoInput.TmdbWorkID != "42" || spy.autoInput.TmdbSeason == nil || *spy.autoInput.TmdbSeason != 1 {
+		t.Fatalf("automatic input=%+v", spy.autoInput)
+	}
+	var response generated.MetadataSearchResult
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Candidates) != 1 || response.Candidates[0].SuggestedSeason == nil || *response.Candidates[0].SuggestedSeason != 2 {
+		t.Fatalf("response=%+v", response)
+	}
+}
+
 // violations (unknown provider enum, out-of-range limit) surface as the
 // structured 422 Unprocessable response declared by api/openapi.yaml
 // instead of a generic 500 INTERNAL, and never leak stack traces.

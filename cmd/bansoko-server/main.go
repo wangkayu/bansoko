@@ -527,6 +527,7 @@ func runServe(args []string) {
 		Trimmer:        metadataTrimmer,
 	}
 	metadataMatcher := matcher.NewMatcher(metadataIndex, bgmMatcher, tmdbMatcher, runtimeLogger)
+	metadataSearcher.SetMatcher(metadataMatcher)
 	bangumiDataRefresher := metadatarefresh.NewService(metadataSnapshotStore, metadataMatcher, &http.Client{Timeout: 30 * time.Second, Transport: hardeningtransport.DirectTransport()}, runtimeLogger, metadataIndex != nil)
 	metadataMatcher.SetDiagnostics(observabilityService)
 	// B13 P2: the file manager's match lists the bound show's seasons and

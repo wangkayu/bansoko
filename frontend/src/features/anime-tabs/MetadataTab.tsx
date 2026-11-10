@@ -7,6 +7,7 @@ import {
   type AnimeMetadata,
   type AnimeMetadataDraft,
   type AnimeMetadataPreview,
+  type SubscriptionOrigin,
   type TitleSuggestion,
 } from "../../lib/api/client";
 import type { MetadataCandidate } from "../../lib/metadata/types";
@@ -225,6 +226,8 @@ function MetadataTabView({
   onMediaKindChange,
   mediaKind,
   searchTitle,
+  origin,
+  originEntryRef,
   matchProvider,
   onMatchProviderChange,
   onMatchCandidate,
@@ -243,6 +246,8 @@ function MetadataTabView({
   onMediaKindChange: (next: "tv" | "movie") => void;
   mediaKind?: "tv" | "movie" | null;
   searchTitle: string;
+  origin: SubscriptionOrigin;
+  originEntryRef?: string;
   matchProvider?: "bgm" | "tmdb";
   onMatchProviderChange: (provider: "bgm" | "tmdb" | undefined) => void;
   /** A confirmed match hands its candidate to the caller, which offers the candidate's titles. */
@@ -263,6 +268,8 @@ function MetadataTabView({
       <MetadataFields
         idPrefix={idPrefix}
         title={searchTitle}
+        origin={origin}
+        originEntryRef={originEntryRef}
         value={value}
         onChange={onValueChange}
         titleOffer={readOnly ? undefined : titleOffer}
@@ -313,6 +320,8 @@ function DraftMetadataTab({
         />
       }
       searchTitle={draftTitle}
+      origin={draft.origin}
+      originEntryRef={draft.origin_entry_ref ?? undefined}
       value={draft.metadata}
       onValueChange={(metadata, mediaKind, title) => {
         const next = mediaKind ? { ...metadata, media_kind: mediaKind } : metadata;
@@ -474,6 +483,8 @@ function OwnerMetadataTab({
         />
       }
       searchTitle={effectiveTitle}
+      origin={workspace.subscription.origin}
+      originEntryRef={workspace.subscription.origin_entry_ref ?? undefined}
       readOnly={readOnly}
       busy={busy}
       value={edit.metadata}

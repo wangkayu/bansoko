@@ -1089,6 +1089,8 @@ export function OneShotDialog({
                   showYear
                   showSeason
                   title={draft.title}
+                  origin={draft.origin}
+                  originEntryRef={draft.origin_entry_ref ?? undefined}
                   matchQueryCandidates={matchQueryCandidates}
                   onMatchTitle={(matched) => {
                     // Only fills an empty title; a title the user already has is never overwritten.

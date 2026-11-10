@@ -19,6 +19,19 @@ type SearchSeason struct {
 	IsSpecial    bool   `json:"is_special"`
 }
 
+// AutomaticSearchInput carries the original provider identity and the current
+// draft bindings into the read-only automatic matching pipeline.
+type AutomaticSearchInput struct {
+	Provider   string
+	Title      string
+	Origin     string
+	EntryRef   string
+	BgmID      string
+	TmdbWorkID string
+	TmdbKind   string
+	TmdbSeason *int
+}
+
 // SearchCandidate is a normalized result from an external metadata provider.
 // Returning a candidate never changes a binding; callers must explicitly apply
 // a complete metadata selection.

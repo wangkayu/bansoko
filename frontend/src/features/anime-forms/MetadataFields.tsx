@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Check, Eraser, LoaderCircle, Pencil, Search, Sparkles } from "lucide-react";
-import { toUserMessage, type AnimeMetadataDraft } from "../../lib/api/client";
+import { toUserMessage, type AnimeMetadataDraft, type SubscriptionOrigin } from "../../lib/api/client";
 import { t } from "../../lib/i18n";
 import { metadataSearcher } from "../../lib/metadata/searcher";
 import { useAuthedImage } from "../../lib/useAuthedImage";
@@ -31,6 +31,8 @@ export function MetadataFields({
   onChange,
   idPrefix,
   title = "",
+  origin = "custom",
+  originEntryRef,
   searcher = metadataSearcher,
   matchProvider,
   onMatchProviderChange,
@@ -55,6 +57,9 @@ export function MetadataFields({
   onChange: (next: AnimeMetadataDraft, mediaKind?: "tv" | "movie", title?: string) => void;
   idPrefix: string;
   title?: string;
+  /** Provider identity and current draft bindings used only by automatic search. */
+  origin?: SubscriptionOrigin;
+  originEntryRef?: string;
   searcher?: MetadataSearcher;
   /** Controlled: which provider the match dialog is open for (undefined = closed). */
   matchProvider?: MetadataProvider;
@@ -220,6 +225,9 @@ export function MetadataFields({
         <MetadataMatchDialog
           provider={matchProvider}
           title={title}
+          origin={origin}
+          originEntryRef={originEntryRef}
+          current={value}
           queryCandidates={matchQueryCandidates}
           searcher={searcher}
           titleOffer={titleOffer}
@@ -944,6 +952,9 @@ function CandidatePoster({ url }: { url?: string }) {
 function MetadataMatchDialog({
   provider,
   title,
+  origin,
+  originEntryRef,
+  current,
   queryCandidates,
   searcher,
   titleOffer,
@@ -954,11 +965,14 @@ function MetadataMatchDialog({
 }: {
   provider: MetadataProvider;
   title: string;
+  origin: SubscriptionOrigin;
+  originEntryRef?: string;
+  current: AnimeMetadataDraft;
   /** Suggested search terms, best first; the first seeds the search box only while the title is empty. */
   queryCandidates?: readonly string[];
   searcher: MetadataSearcher;
   titleOffer?: { current: string; provider: string };
-  /** The season row's unbound staging preference: when present it wins over the candidate inference as the season editor's initial value. */
+  /** The season row's staging preference for manual selection; automatic matching uses its resolved season first. */
   preferredSeason?: number;
   onClose: () => void;
   onSelectBGM: (candidate: MetadataCandidate) => void;
@@ -980,7 +994,7 @@ function MetadataMatchDialog({
   // "Also set the title" (TMDB only): pre-checked only while the title is still the provider's.
   const [setTitle, setSetTitle] = useState(false);
 
-  async function search(queryOverride = query) {
+  async function search(queryOverride = query, automatic = false) {
     const nextQuery = queryOverride.trim();
     if (!nextQuery || searching) return;
     setQuery(nextQuery);
@@ -989,7 +1003,19 @@ function MetadataMatchDialog({
     setError(undefined);
     setSelected(undefined);
     try {
-      setCandidates(await searcher.search(provider, nextQuery));
+      const nextCandidates = automatic
+        ? await searcher.searchAutomatic(provider, {
+            title: nextQuery,
+            origin,
+            originEntryRef,
+            bgmWorkId: current.bgm?.work_id,
+            tmdbWorkId: current.tmdb?.work_id,
+            tmdbMediaKind: current.tmdb?.media_kind,
+            tmdbSeason: current.tmdb?.season,
+          })
+        : await searcher.search(provider, nextQuery);
+      setCandidates(nextCandidates);
+      if (automatic && nextCandidates[0]) pick(nextCandidates[0]);
     } catch (cause) {
       setCandidates([]);
       setError(toUserMessage(cause, t("forms.queryFailed")));
@@ -1114,7 +1140,7 @@ function MetadataMatchDialog({
             className="metadata-match-search-action"
             size="sm"
             variant="ghost"
-            onClick={() => void search(title)}
+            onClick={() => void search(title, true)}
             disabled={searching || title.trim() === ""}
           >
             <Sparkles className="metadata-match-action-icon" />

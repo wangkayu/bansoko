@@ -2441,6 +2441,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/metadata/search/automatic": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Runs the same bangumi-data, Bangumi and TMDB matching pipeline used by automatic metadata matching, without applying a binding. Returns at most one candidate for the requested provider, with the resolved TMDB season as its suggestion. The caller must still review and explicitly confirm the candidate to change a draft or subscription. */
+        post: operations["searchMetadataAutomatically"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/media-recognition/previews": {
         parameters: {
             query?: never;
@@ -7515,6 +7532,18 @@ export interface components {
             /** @description True when season_number is 0. */
             is_special: boolean;
         };
+        MetadataAutomaticSearchInput: {
+            /** @enum {string} */
+            provider: "bgm" | "tmdb";
+            title: string;
+            origin: components["schemas"]["SubscriptionOrigin"];
+            origin_entry_ref?: string;
+            bgm_work_id?: string;
+            tmdb_work_id?: string;
+            /** @enum {string} */
+            tmdb_media_kind?: "tv" | "movie";
+            tmdb_season?: number;
+        };
         MetadataSearchCandidate: {
             /** @enum {string} */
             provider: "bgm" | "tmdb";
@@ -7532,7 +7561,7 @@ export interface components {
             details_status: components["schemas"]["MetadataDetailsStatus"];
             /** @description Real provider seasons. An empty array means details succeeded but the work has no seasons; omission means no season list is applicable or details enrichment failed. */
             seasons?: components["schemas"]["MetadataSearchSeason"][];
-            /** @description Optional season suggestion selected only from the returned seasons; it is never inferred as a fixed default. */
+            /** @description Optional season suggestion. Direct searches select it only from the returned seasons; automatic searches use the season resolved by the matching pipeline, including an existing binding or an explicitly mapped special season 0. */
             suggested_season?: number | null;
             /** @description The work's year as the provider reports it: TMDB first_air_date (TV) or release_date (movie), Bangumi date. Absent when the provider gives no usable date; never defaulted. */
             year?: number;
@@ -13133,6 +13162,32 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Provider-owned metadata search candidates. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetadataSearchResult"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    searchMetadataAutomatically: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MetadataAutomaticSearchInput"];
+            };
+        };
+        responses: {
+            /** @description The automatically matched provider candidate, or an empty list while no safe match exists. */
             200: {
                 headers: {
                     [name: string]: unknown;

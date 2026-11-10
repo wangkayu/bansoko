@@ -316,3 +316,7 @@ type staticMetadataSearch struct {
 func (s staticMetadataSearch) SearchMetadata(context.Context, string, string, int) ([]identitymetadatadomain.SearchCandidate, error) {
 	return s.candidates, nil
 }
+
+func (s staticMetadataSearch) SearchMetadataAutomatically(context.Context, identitymetadatadomain.AutomaticSearchInput) ([]identitymetadatadomain.SearchCandidate, error) {
+	return s.candidates, nil
+}

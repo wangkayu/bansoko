@@ -271,6 +271,7 @@ export type ErrorDetail = Schema<"ErrorDetail">;
 
 export type MetadataSearchResult = Schema<"MetadataSearchResult">;
 export type MetadataSearchCandidate = Schema<"MetadataSearchCandidate">;
+export type MetadataAutomaticSearchInput = Schema<"MetadataAutomaticSearchInput">;
 
 export function searchMetadata(
   provider: "bgm" | "tmdb",
@@ -280,6 +281,10 @@ export function searchMetadata(
   const params = new URLSearchParams({ provider, query });
   if (limit !== undefined) params.set("limit", String(limit));
   return request(`/metadata/search?${params.toString()}`, { method: "GET" });
+}
+
+export function searchMetadataAutomatically(input: MetadataAutomaticSearchInput): Promise<MetadataSearchResult> {
+  return request("/metadata/search/automatic", { method: "POST", body: input });
 }
 
 // --- Errors ----------------------------------------------------------------

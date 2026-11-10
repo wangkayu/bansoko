@@ -1127,6 +1127,18 @@ const (
 	MediaRecognitionItemResultDispositionUnclassified MediaRecognitionItemResultDisposition = "unclassified"
 )
 
+// Defines values for MetadataAutomaticSearchInputProvider.
+const (
+	MetadataAutomaticSearchInputProviderBgm  MetadataAutomaticSearchInputProvider = "bgm"
+	MetadataAutomaticSearchInputProviderTmdb MetadataAutomaticSearchInputProvider = "tmdb"
+)
+
+// Defines values for MetadataAutomaticSearchInputTmdbMediaKind.
+const (
+	MetadataAutomaticSearchInputTmdbMediaKindMovie MetadataAutomaticSearchInputTmdbMediaKind = "movie"
+	MetadataAutomaticSearchInputTmdbMediaKindTv    MetadataAutomaticSearchInputTmdbMediaKind = "tv"
+)
+
 // Defines values for MetadataDetailsStatus.
 const (
 	MetadataDetailsStatusAvailable     MetadataDetailsStatus = "available"
@@ -5950,6 +5962,26 @@ type MediaRecognitionPreviewResult struct {
 	ResolverVersion string                       `json:"resolver_version"`
 }
 
+// MetadataAutomaticSearchInput defines model for MetadataAutomaticSearchInput.
+type MetadataAutomaticSearchInput struct {
+	BgmWorkId *string `json:"bgm_work_id,omitempty"`
+
+	// Origin The unique four-value source-of-subscription enum: anibt | mikan are discovery providers, custom is a user-supplied manual source, agent is reserved for one-shot acquisition: an agent draft is a candidate snapshot for acquire-seed-once and the temporary one-shot mount carries it, but it can never be subscribed or activated (422 ORIGIN_NOT_SUBSCRIBABLE). This is the only four-value enum; ProviderKind stays a two-value discovery enum, SnapshotSeedProvider is the separate seed-provenance vocabulary (anibt | mikan | custom), and RSS SourceKind stays provider_group | custom_rss.
+	Origin         SubscriptionOrigin                         `json:"origin"`
+	OriginEntryRef *string                                    `json:"origin_entry_ref,omitempty"`
+	Provider       MetadataAutomaticSearchInputProvider       `json:"provider"`
+	Title          string                                     `json:"title"`
+	TmdbMediaKind  *MetadataAutomaticSearchInputTmdbMediaKind `json:"tmdb_media_kind,omitempty"`
+	TmdbSeason     *int                                       `json:"tmdb_season,omitempty"`
+	TmdbWorkId     *string                                    `json:"tmdb_work_id,omitempty"`
+}
+
+// MetadataAutomaticSearchInputProvider defines model for MetadataAutomaticSearchInput.Provider.
+type MetadataAutomaticSearchInputProvider string
+
+// MetadataAutomaticSearchInputTmdbMediaKind defines model for MetadataAutomaticSearchInput.TmdbMediaKind.
+type MetadataAutomaticSearchInputTmdbMediaKind string
+
 // MetadataDetailsStatus Status of the bounded provider-details enrichment. available means the candidate has one or more real seasons; empty means details succeeded but the provider returned no seasons; error means details failed; and not_applicable means the candidate does not use TV details enrichment.
 type MetadataDetailsStatus string
 
@@ -6017,7 +6049,7 @@ type MetadataSearchCandidate struct {
 	// Seasons Real provider seasons. An empty array means details succeeded but the work has no seasons; omission means no season list is applicable or details enrichment failed.
 	Seasons *[]MetadataSearchSeason `json:"seasons,omitempty"`
 
-	// SuggestedSeason Optional season suggestion selected only from the returned seasons; it is never inferred as a fixed default.
+	// SuggestedSeason Optional season suggestion. Direct searches select it only from the returned seasons; automatic searches use the season resolved by the matching pipeline, including an existing binding or an explicitly mapped special season 0.
 	SuggestedSeason *int   `json:"suggested_season"`
 	Title           string `json:"title"`
 
@@ -10602,6 +10634,9 @@ type AddFileManagerRootJSONRequestBody = FileManagerRootAddRequest
 // PreviewMediaRecognitionJSONRequestBody defines body for PreviewMediaRecognition for application/json ContentType.
 type PreviewMediaRecognitionJSONRequestBody = MediaRecognitionPreviewInput
 
+// SearchMetadataAutomaticallyJSONRequestBody defines body for SearchMetadataAutomatically for application/json ContentType.
+type SearchMetadataAutomaticallyJSONRequestBody = MetadataAutomaticSearchInput
+
 // ActivateNamingVarsVersionJSONRequestBody defines body for ActivateNamingVarsVersion for application/json ContentType.
 type ActivateNamingVarsVersionJSONRequestBody = NamingVarsActivateInput
 
@@ -12951,6 +12986,9 @@ type ServerInterface interface {
 
 	// (GET /metadata/search)
 	SearchMetadata(w http.ResponseWriter, r *http.Request, params SearchMetadataParams)
+
+	// (POST /metadata/search/automatic)
+	SearchMetadataAutomatically(w http.ResponseWriter, r *http.Request)
 
 	// (GET /naming-vars)
 	GetNamingVars(w http.ResponseWriter, r *http.Request)
@@ -18244,6 +18282,26 @@ func (siw *ServerInterfaceWrapper) SearchMetadata(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// SearchMetadataAutomatically operation middleware
+func (siw *ServerInterfaceWrapper) SearchMetadataAutomatically(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SearchMetadataAutomatically(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetNamingVars operation middleware
 func (siw *ServerInterfaceWrapper) GetNamingVars(w http.ResponseWriter, r *http.Request) {
 
@@ -20612,6 +20670,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("GET "+options.BaseURL+"/livez", wrapper.GetLivez)
 	m.HandleFunc("POST "+options.BaseURL+"/media-recognition/previews", wrapper.PreviewMediaRecognition)
 	m.HandleFunc("GET "+options.BaseURL+"/metadata/search", wrapper.SearchMetadata)
+	m.HandleFunc("POST "+options.BaseURL+"/metadata/search/automatic", wrapper.SearchMetadataAutomatically)
 	m.HandleFunc("GET "+options.BaseURL+"/naming-vars", wrapper.GetNamingVars)
 	m.HandleFunc("PUT "+options.BaseURL+"/naming-vars/active", wrapper.ActivateNamingVarsVersion)
 	m.HandleFunc("POST "+options.BaseURL+"/naming-vars/dry-runs", wrapper.DryRunNamingVars)

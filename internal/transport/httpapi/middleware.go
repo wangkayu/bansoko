@@ -95,6 +95,7 @@ var readOnlyWritePathPatterns = []struct {
 	{`^/api/v1/parse/release-title$`, "pure parse"},
 	{`^/api/v1/parse/torrent-files$`, "pure parse"},
 	{`^/api/v1/media-recognition/previews$`, "pure media recognition"},
+	{`^/api/v1/metadata/search/automatic$`, "automatic metadata candidate preview: applies no binding"},
 	{`^/api/v1/template-previews/notification$`, "pure render"},
 	{`^/api/v1/template-previews/naming$`, "pure render"},
 	{`^/api/v1/naming-vars/dry-runs$`, "pure evaluation, nothing stored"},

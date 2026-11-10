@@ -206,6 +206,7 @@ required_paths = {
   "/naming-vars/export" => ["get"],
   "/naming-vars/imports" => ["post"],
   "/metadata/search" => ["get"],
+  "/metadata/search/automatic" => ["post"],
   "/parse/release-title" => ["post"],
   "/media-recognition/previews" => ["post"],
   "/parser-catalog" => ["get"],

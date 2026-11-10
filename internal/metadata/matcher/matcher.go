@@ -63,7 +63,11 @@ type MatchResult struct {
 	// that produced the id; bangumi-data matches carry none. TmdbTitleCN is
 	// the title the TMDB request language returned (zh-CN everywhere).
 	BgmTitle, BgmTitleCN           string
+	BgmPosterURL                   string
 	TmdbTitleCN, TmdbOriginalTitle string
+	// TmdbSeasons carries the provider details used to resolve the season so a
+	// read-only interactive match can present the same real season choices.
+	TmdbSeasons []identitymetadatadomain.SearchSeason
 	// TmdbOverview is the work summary TMDB reported for the matched work,
 	// set only by the same API layer that set the TMDB tuple. Acceptance
 	// freezes it alongside the titles (tmdb.summary).
@@ -162,7 +166,10 @@ type MatchRequest struct {
 	BgmID                   string
 	TmdbWorkID, TmdbKind    string
 	TmdbSeason              *int
-	SkipBgm, SkipTmdb       bool
+	// LoadTmdbDetails refreshes provider facts for a complete existing binding
+	// in an interactive preview; the existing season remains the strong mapping.
+	LoadTmdbDetails   bool
+	SkipBgm, SkipTmdb bool
 }
 
 // logf emits a structured failure event. Raw error text never enters the
@@ -238,12 +245,13 @@ func (m *Matcher) MatchRequest(ctx context.Context, request MatchRequest) (*Matc
 		targetAirDate = item.Begin
 	}
 
-	if (result.TmdbWorkID == nil || result.TmdbKind == nil || result.TmdbSeason == nil) && !request.SkipTmdb && m.tmdbMatcher != nil {
+	tmdbIncomplete := result.TmdbWorkID == nil || result.TmdbKind == nil || result.TmdbSeason == nil
+	if (tmdbIncomplete || request.LoadTmdbDetails) && !request.SkipTmdb && m.tmdbMatcher != nil {
 		var tmdbResult *TMDBMatchResult
 		var err error
 		if result.TmdbWorkID != nil && result.TmdbKind != nil {
-			var mappedSeason *int
-			if item != nil {
+			mappedSeason := request.TmdbSeason
+			if item != nil && mappedSeason == nil {
 				refKind, refID, refSeason := parseTmdbRef(item.TmdbID)
 				if refKind == *result.TmdbKind && refID == *result.TmdbWorkID {
 					mappedSeason = refSeason
@@ -332,6 +340,7 @@ func applyBGMResult(result *MatchResult, bgmResult *BGMMatchResult) {
 	if bgmResult.Subject != nil {
 		result.BgmTitle = strings.TrimSpace(bgmResult.Subject.Name)
 		result.BgmTitleCN = strings.TrimSpace(bgmResult.Subject.NameCN)
+		result.BgmPosterURL = strings.TrimSpace(bgmResult.Subject.Images.Common)
 		result.bgmAirDate = strings.TrimSpace(bgmResult.Subject.AirDate)
 	}
 	result.BgmYear = bgmResult.Year
@@ -345,6 +354,7 @@ func applyTMDBResult(result *MatchResult, matched *TMDBMatchResult) {
 	workID, kind, season := matched.WorkID, matched.MediaKind, matched.Season
 	result.TmdbWorkID, result.TmdbKind, result.TmdbSeason = &workID, &kind, &season
 	result.TmdbTitleCN, result.TmdbOriginalTitle = matched.TitleCN, matched.OriginalTitle
+	result.TmdbSeasons = append([]identitymetadatadomain.SearchSeason(nil), matched.Seasons...)
 	result.TmdbOverview, result.TmdbYear = matched.Overview, matched.Year
 }
 
