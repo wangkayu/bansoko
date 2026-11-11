@@ -28,6 +28,7 @@ import { recordsCopy } from "./zh-CN.records";
 import { fileManagerCopy } from "./zh-CN.file-manager";
 import { qualityCompareCopy } from "./zh-CN.quality-compare";
 import { oneshotCopy } from "./zh-CN.oneshot";
+import { fileNumberingCopy } from "./zh-CN.file-numbering";
 
 // zh-CN 文案表。按区域分组：common / errorDetails / field / verdict / error / reason。
 
@@ -193,6 +194,7 @@ export const zhCN = {
   records: recordsCopy,
   fileManager: fileManagerCopy,
   oneshot: oneshotCopy,
+  fileNumbering: fileNumberingCopy,
 
   error: errorCopy,
   reason: reasonCopy,

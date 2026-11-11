@@ -10,19 +10,21 @@ import (
 	"testing"
 	"time"
 
+	"bansoko/internal/batchplan"
 	"bansoko/internal/download/domain"
 	"bansoko/internal/episodeidentity"
 	"bansoko/internal/parser"
 	facts "bansoko/internal/release/facts"
 	mediapersistence "bansoko/internal/release/facts/adapter/persistence/media"
 	"bansoko/internal/runtime/worker"
+	"bansoko/internal/testutil/mediafactsfixture"
 )
 
-// seedMovieFactSnapshot freezes one Release media fact snapshot whose binding
-// and parser evidence are fully movie-shaped. The frozen release evidence
-// deliberately claims a TV episode (7) so the test proves the movie binding
-// short-circuits before any release/file evidence is consulted.
-func seedMovieFactSnapshot(t *testing.T, db *sql.DB, snapshotID, releaseID, mediaKind string, season int, releaseEpisode string, fingerprint string, config string) {
+// seedMovieFactSnapshot freezes one Release media fact snapshot whose binding,
+// parser evidence and planned file identity have the shape admission persists.
+// The frozen release evidence deliberately claims a TV episode (7) so the movie
+// test proves the frozen file plan, not a fresh filename decision, is projected.
+func seedMovieFactSnapshot(t *testing.T, db *sql.DB, snapshotID, releaseID, mediaKind string, season int, releaseEpisode string, fingerprint string, config string, filePath, fileEpisode string) {
 	t.Helper()
 	releaseEvidence := episodeidentity.NewValueEvidence(
 		episodeidentity.EpisodeSourceReleaseParser, "release_title", releaseEpisode)
@@ -43,6 +45,13 @@ func seedMovieFactSnapshot(t *testing.T, db *sql.DB, snapshotID, releaseID, medi
 		MediaKind:    mediaKind,
 		FileEvidence: releaseEvidence,
 	})
+	fileIdentity := episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{
+		MediaKind: mediaKind,
+		FileEvidence: episodeidentity.NewValueEvidence(
+			episodeidentity.EpisodeSourceFileParser, "file_name", fileEpisode),
+	})
+	plan := mediafactsfixture.Plan(t, batchplan.RouteSkip, mediafactsfixture.PlanVideo{Path: filePath, Identity: fileIdentity})
+	releaseFacts.BatchPlan = &plan
 	factsRaw, err := json.Marshal(releaseFacts)
 	if err != nil {
 		t.Fatal(err)
@@ -106,7 +115,7 @@ func TestMovieBindingFileFactsUseFrozenBindingPostgres(t *testing.T) {
 	// the file itself, first level), not the absolute path on disk.
 	correlation := `{"external_id":"tag:movie-artifact","artifact_path":"` + canonicalPath + `","file_count":1,"files":[{"path":"Some Movie 2024 [1080p].mkv","size_bytes":11,"media_kind":"video","progress":1}]}`
 	seedArtifactOwner(t, db, "artifact-movie", "task-movie", "completed", "pending", correlation, `{}`)
-	seedMovieFactSnapshot(t, db, "snapshot-movie", "release-artifact-test", "movie", 0, "7", parser.NilConfigFingerprint(), "")
+	seedMovieFactSnapshot(t, db, "snapshot-movie", "release-artifact-test", "movie", 0, "7", parser.NilConfigFingerprint(), "", "Some Movie 2024 [1080p].mkv", "0")
 	seedCurrentMetadataBinding(t, db, "anime-artifact-test", "movie", 0)
 
 	claim, store := claimArtifactWorkItem(t, db, "artifact-movie", []byte(`{"download_task_id":"task-movie","provider_task_id":"tag:movie-artifact","local_root":"`+root+`"}`))
@@ -176,7 +185,7 @@ func TestTVBindingFileFactsIgnoreMetadataSeasonPostgres(t *testing.T) {
 	// first level), not the absolute path on disk.
 	correlation := `{"external_id":"tag:tv-artifact","artifact_path":"` + canonicalPath + `","file_count":1,"files":[{"path":"Show/Show - 07 [1080p].mkv","size_bytes":8,"media_kind":"video","progress":1}]}`
 	seedArtifactOwner(t, db, "artifact-tv", "task-tv", "completed", "pending", correlation, `{}`)
-	seedMovieFactSnapshot(t, db, "snapshot-tv", "release-artifact-test", "tv", 5, "7", parser.NilConfigFingerprint(), "")
+	seedMovieFactSnapshot(t, db, "snapshot-tv", "release-artifact-test", "tv", 5, "7", parser.NilConfigFingerprint(), "", "Show/Show - 07 [1080p].mkv", "7")
 	seedCurrentMetadataBinding(t, db, "anime-artifact-test", "tv", 5)
 
 	claim, store := claimArtifactWorkItem(t, db, "artifact-tv", []byte(`{"download_task_id":"task-tv","provider_task_id":"tag:tv-artifact","local_root":"`+root+`"}`))

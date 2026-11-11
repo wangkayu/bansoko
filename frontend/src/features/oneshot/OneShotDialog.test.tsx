@@ -1743,6 +1743,32 @@ describe("OneShotDialog 手动选择文件", () => {
     expect(pack).toHaveAttribute("aria-checked", "false");
   });
 
+  it("按文件覆盖进入预览与提交；季号留空跟随主设置，默认文件选择保持省略", async () => {
+    stubPicker();
+    await renderAndEnter();
+    await advanceToSettings([SEED_A]);
+    fireEvent.click(await screen.findByRole("button", { name: t("fileNumbering.title") }));
+    const editor = await screen.findByRole("dialog", { name: t("fileNumbering.title") });
+    fireEvent.click(within(editor).getByRole("checkbox", { name: t("fileNumbering.checkRow", { path: VIDEO }) }));
+    fireEvent.change(within(editor).getByRole("spinbutton", { name: `${t("fileNumbering.season")} ${VIDEO}` }), { target: { value: "" } });
+    fireEvent.change(within(editor).getByRole("spinbutton", { name: `${t("fileNumbering.episode")} ${VIDEO}` }), { target: { value: "7" } });
+    fireEvent.click(within(editor).getByRole("button", { name: t("fileNumbering.confirm", { n: 1 }) }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: t("fileNumbering.title") })).not.toBeInTheDocument());
+    await waitFor(() => expect(reads().at(-1)!.body).toMatchObject({
+      file_selections: [{
+        snapshot_id: "snap-1",
+        stable_seed_key: "seed-a",
+        source_paths: [SUB, VIDEO].sort(),
+        overrides: [{ path: VIDEO, episode: 7 }],
+      }],
+    }));
+    fireEvent.click(button(t("oneshot.create", { n: 1 })));
+    await waitFor(() => expect(screen.getByText(t("oneshot.resultOk"))).toBeInTheDocument());
+    expect(downloads()[0]!.body).toMatchObject({ overrides: [{ path: VIDEO, episode: 7 }] });
+    expect(downloads()[0]!.body).not.toHaveProperty("file_selection");
+  });
+
   it("确认只读一次预览，卡片按所选文件列出，下载请求带 file_selection", async () => {
     stubPicker();
     await renderAndEnter();

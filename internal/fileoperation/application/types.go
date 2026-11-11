@@ -257,6 +257,7 @@ type artifactFileContext struct {
 	relativePath      string
 	sourcePath        string
 	mediaKind         string
+	namingSeason      *int
 	sizeBytes         int64
 	fingerprint       json.RawMessage
 	facts             json.RawMessage

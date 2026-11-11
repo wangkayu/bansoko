@@ -1,0 +1,32 @@
+import type { CopyShape } from "./types";
+import type { fileNumberingCopy } from "./zh-CN.file-numbering";
+
+export const enFileNumberingCopy = {
+  title: "Set File Numbering",
+  hint: "Checked rows form the editing batch and the final apply scope; unchecked rows keep their previous state",
+  seasonHint: "Leave season empty to follow the main setting; manual episode numbers do not receive the episode offset",
+  filterPlaceholder: "Filter paths, for example S01",
+  filterLabel: "Filter files by path",
+  selectFiltered: "Select Filtered",
+  unselectFiltered: "Unselect Filtered",
+  showing: "Showing {shown}/{total} videos · {overrides} overridden",
+  checked: "{checked}/{total} checked",
+  bulkSeason: "Season for all",
+  seasonPlaceholder: "Main setting",
+  applySeason: "Change Season Only",
+  sequenceStart: "First episode",
+  fillSequence: "Number Checked in Order",
+  restoreChecked: "Restore Checked to Automatic",
+  restoreAll: "Restore All to Automatic",
+  manual: "Overridden · no offset applied",
+  automatic: "Automatically recognized",
+  inheritedSeason: "Season follows the main setting",
+  subtitles: "{n} subtitles",
+  restoreRow: "Restore automatic",
+  season: "Season",
+  episode: "Episode",
+  checkRow: "Batch edit {path}",
+  invalid: "Checked rows need a valid episode; leave season empty or enter an integer of 0 or more",
+  confirm: "Apply Checked Changes ({n})",
+  empty: "No matching files",
+} as const satisfies CopyShape<typeof fileNumberingCopy>;

@@ -33,6 +33,8 @@ import type { MetadataProvider } from "../../lib/metadata/types";
 import { ParserKindSelect } from "../parser/ParserKindSelect";
 import { useParserKindOptions } from "../parser/useParserKindOptions";
 import { ConflictDialog } from "./ConflictDialog";
+import { FileNumberingDialog } from "../file-numbering/FileNumberingDialog";
+import { sanitizeOverrides, type FileEpisodeOverride, type FileNumberingItem } from "../file-numbering/model";
 import { useIdempotencyKeys } from "./batch";
 
 // RecognitionDialog — the complex window behind 识别…: the naming core one-shot
@@ -137,6 +139,8 @@ export function RecognitionDialog({
   const [error, setError] = useState<string | null>(null);
   const [planChanged, setPlanChanged] = useState(false);
   const [conflictOpen, setConflictOpen] = useState(false);
+  const [numberingOpen, setNumberingOpen] = useState(false);
+  const [overrides, setOverrides] = useState<FileEpisodeOverride[]>([]);
 
   // The library's default template seeds the draft once; it is also the state
   // 「恢复默认」 returns to. Afterwards the bodies are this operation's own.
@@ -156,6 +160,7 @@ export function RecognitionDialog({
     JSON.stringify([rules.parser, rules.naming]) !== JSON.stringify([baseline.current.parser, baseline.current.naming]);
   function restoreDefaults() {
     setDraft({ ...INITIAL_DRAFT, rules: baseline.current });
+    setOverrides([]);
   }
 
   const episode = wholeNumber(episodeText, 1, 99999);
@@ -175,6 +180,7 @@ export function RecognitionDialog({
     metadata,
     episodeText,
     offsetText,
+    overrides,
   };
   const debounced = useDebounced(inputs, DEBOUNCE_MS);
   const settled = Object.keys(debounced).every((key) => debounced[key as keyof typeof debounced] === inputs[key as keyof typeof inputs]);
@@ -202,6 +208,7 @@ export function RecognitionDialog({
           ? { id: "regex", ...(d.patterns.length > 0 ? { config: { episode_patterns: d.patterns } } : {}) }
           : { id: "reltitle" },
       naming: d.naming,
+      ...(d.overrides.length > 0 ? { overrides: d.overrides } : {}),
       ...(loadRuntimeFacts ? { load_runtime_facts: true } : {}),
       ...(hasMatch
         ? {
@@ -247,6 +254,13 @@ export function RecognitionDialog({
     else setLoadRuntimeFacts(true);
   }
   const rows = data?.rows ?? [];
+  const numberingItems: FileNumberingItem[] = rows.flatMap((row) => row.kind === "video" ? [{
+    path: row.path,
+    automaticSeason: metadata.season ?? null,
+    automaticEpisode: automaticRecognitionNumber(row, offset ?? 0),
+    automaticLabel: t("fileNumbering.automatic"),
+    subtitleCount: rows.filter((subtitle) => subtitle.kind === "subtitle" && subtitle.group === row.group).length,
+  }] : []);
   const hasBlockers = rows.some((row) => row.disposition === "error");
   const blockedCount = rows.filter((row) => row.disposition === "error").length;
   const actionable = rows.filter((row) => row.disposition === "rename" || row.disposition === "move").length;
@@ -526,10 +540,25 @@ export function RecognitionDialog({
                 />
               </Field>
             </div>
+            <div className="tw:grid tw:justify-items-start tw:gap-1.5">
+              <Button variant="secondary" disabled={busy || numberingItems.length === 0} onClick={() => setNumberingOpen(true)}>
+                {t("fileNumbering.title")}
+              </Button>
+              <p className="tw:m-0 tw:text-xs tw:text-muted-foreground">{t("fileNumbering.seasonHint")}</p>
+            </div>
             <p className="tw:m-0 tw:text-xs tw:text-muted-foreground">{t("fileManager.recognize.applyHint")}</p>
           </TaskConfigPanel>
         </TaskSplitLayout>
       </Dialog>
+      {numberingOpen && data ? (
+        <FileNumberingDialog
+          title={t("fileManager.recognize.title")}
+          items={numberingItems}
+          overrides={overrides}
+          onApply={(next) => setOverrides(sanitizeOverrides(next, new Set(numberingItems.map((item) => item.path))))}
+          onClose={() => setNumberingOpen(false)}
+        />
+      ) : null}
       {conflictOpen && data ? (
         <ConflictDialog
           targets={conflicts}
@@ -741,6 +770,20 @@ function skippedByConflicts(rows: readonly FileManagerRecognitionRow[], conflict
       .map((row) => row.path),
   );
   return dropped.size;
+}
+
+function automaticRecognitionNumber(row: FileManagerRecognitionRow, automaticOffset: number): number | null {
+  const episode = row.episode;
+  if (!episode) return null;
+  // A per-file override keeps the parser's raw evidence. Reapply the current
+  // operation offset to reconstruct the automatic value, not the manual result.
+  if (episode.source === "manual" && episode.raw?.trim()) {
+    const raw = Number(episode.raw);
+    const automatic = raw + automaticOffset;
+    if (Number.isInteger(raw) && Number.isInteger(automatic) && automatic >= 1) return automatic;
+  }
+  const number = Number(episode.number);
+  return Number.isInteger(number) && number >= 1 ? number : null;
 }
 
 function wholeNumber(text: string, min: number, max: number): number | null {

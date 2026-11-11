@@ -192,6 +192,9 @@ type File struct {
 	Rule string `json:"rule,omitempty"`
 	// Identity is the filename identity of a first-level video the rules keep.
 	Identity *episodeidentity.EpisodeIdentity `json:"identity,omitempty"`
+	// Season is an optional per-video owner naming season. Nil inherits the
+	// release's main naming season; an explicit zero is preserved.
+	Season *int `json:"season,omitempty"`
 	// CoverageKey is the identity's coverage key; empty for an unknown video.
 	// For a multi-episode file it is the first member's key.
 	CoverageKey string `json:"coverage_key,omitempty"`
@@ -299,6 +302,11 @@ type Input struct {
 	Files         []InputFile
 	RuleExclusion func(sourcePath string) string
 	Identity      func(sourcePath string) (episodeidentity.EpisodeIdentity, error)
+	// ManualIdentity supplies an explicit final identity for an overridden
+	// video. It takes precedence over movie and filename recognition and never
+	// applies an offset. NamingSeason supplies its optional owner season.
+	ManualIdentity func(sourcePath string) (episodeidentity.EpisodeIdentity, bool)
+	NamingSeason   func(sourcePath string) *int
 }
 
 // NormalizePath is the canonical manifest path form the plan is keyed by.
@@ -360,6 +368,9 @@ func Classify(in Input) (Plan, error) {
 	for _, file := range ordered {
 		kind, ignored := filekinds.EligibilityIn(in.FileKindsVersion, file.SourcePath, in.Selection)
 		entry := File{SourcePath: file.SourcePath, Kind: kind, Level: LevelFirst}
+		if in.NamingSeason != nil {
+			entry.Season = in.NamingSeason(file.SourcePath)
+		}
 		if !filekinds.FirstLevel(file.SourcePath) {
 			entry.Level = LevelNested
 		}
@@ -398,7 +409,14 @@ func Classify(in Input) (Plan, error) {
 			continue
 		}
 		var identity episodeidentity.EpisodeIdentity
+		manual := false
+		if in.ManualIdentity != nil {
+			identity, manual = in.ManualIdentity(file.SourcePath)
+		}
 		switch {
+		case manual:
+			// An explicit final episode replaces the whole automatic identity,
+			// including a range/list's additional coverage keys.
 		case in.Movie && file.SourcePath == movieMain:
 			identity = in.MovieIdentity
 		case in.Movie:

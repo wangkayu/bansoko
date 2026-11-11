@@ -2810,7 +2810,10 @@ type AcquireSeedOnceInput struct {
 
 	// InputSource Config input source discriminator. Omitted means the legacy saved-revision body (candidate_id + revision).
 	InputSource *AcquireSeedOnceInputInputSource `json:"input_source,omitempty"`
-	Revision    *int64                           `json:"revision,omitempty"`
+
+	// Overrides Sparse manual final numbering for selected videos of selected_seed. These values join the frozen input and idempotency request identity.
+	Overrides *[]FileEpisodeOverride `json:"overrides,omitempty"`
+	Revision  *int64                 `json:"revision,omitempty"`
 
 	// SelectedSeed The seed a one-shot admits, in one of two forms. Locator form (the frontend and HTTP path): locator, title and published_at are required, the snapshot identity (snapshot_id, snapshot_version, snapshot_content_hash, stable_seed_key) binds the seed to the persisted feed snapshot it was copied from, and at least one strong content identity (info_hash or expected_payload_digest) is mandatory. Reference form (agents; no download URL ever leaves the server): locator is omitted and snapshot_id, snapshot_version, snapshot_content_hash and stable_seed_key name one seed of one persisted snapshot of the provider/provider_entry_ref/provider_group_ref feed. The server reads that exact snapshot and resolves the seed into the locator form before anything is hashed or frozen, so the frozen input snapshot, the replay identity and every later stage are exactly those of the locator form for the same seed. A missing, superseded, stale or mismatching snapshot, or a stable_seed_key that is not in it, is a 422 SEED_PREVIEW_STALE with zero writes (refresh the snapshot and choose again). Seed facts (title, published_at, size_bytes, info_hash, expected_payload_digest) are optional in the reference form; each supplied fact must equal the snapshot's value or the request is a 422 SEED_PREVIEW_STALE. A reference without the complete snapshot identity is a 422 SEED_INVALID. Replaying the same Idempotency-Key with the same reference returns the original handle even after the snapshot was superseded. A custom seed (provider=custom) is the locator-form seed of one frozen custom/oneshot draft source's own feed snapshot: provider_entry_ref is that snapshot's frozen custom-source identity, provider_group_ref its frozen custom-group identity, and the seed identity inside it is stable_seed_key plus a strong content identity (info_hash or expected_payload_digest). The custom source identity is derived by the server from the draft's own frozen locator and group, so a seed whose entry/group does not belong to the submitted draft is a 422 SEED_PREVIEW_STALE with zero writes.
 	SelectedSeed SelectedSeedInput `json:"selected_seed"`
@@ -4881,6 +4884,13 @@ type FileEffectRulesReplace struct {
 // FileEffectRulesReplaceMode defines model for FileEffectRulesReplace.Mode.
 type FileEffectRulesReplaceMode string
 
+// FileEpisodeOverride One selected video's manual final numbering. An omitted season follows the request's main naming season. Episode is the explicit final integer: the automatic episode offset is never applied to it. Bound subtitles inherit both values from their video. Paths must be unique within one request and name selected videos; stale or duplicate paths are invalid.
+type FileEpisodeOverride struct {
+	Episode int    `json:"episode"`
+	Path    string `json:"path"`
+	Season  *int   `json:"season,omitempty"`
+}
+
 // FileFilterRules go-re2-v1 search matching with one pattern per field. Empty means unrestricted; not_in takes precedence. Case is controlled only by inline flags such as (?i). Invalid or over-budget patterns are rejected. Each pattern is bounded to 4096 UTF-8 bytes (not Unicode characters). Separate policy instances match the exact release title (8192 bytes maximum) or the filename of a first-level video (the part after the last separator of the torrent-relative path; never a directory, the torrent name, or an OS absolute source path). A file rule containing "/" is rejected on save with the typed validation code FILE_RULE_PATH_SEPARATOR. File rules do not apply to subtitles, which follow a selected video by filename prefix; files below the first level and files that are neither video nor subtitle are never processed. File policies only select organization: no selected video means no download; partial selection downloads and verifies the complete torrent inventory. No manual file selection or filter override is part of this shape.
 type FileFilterRules = RegexFilter
 
@@ -5409,9 +5419,12 @@ type FileManagerRecognitionRequest struct {
 	LoadRuntimeFacts *bool `json:"load_runtime_facts,omitempty"`
 
 	// Match The optional anime facts source of the render. Three forms: a managed anime (`managed_anime_id`, optionally overlaid with `anime` as the operation's temporary draft), a draft alone (`anime` without `managed_anime_id`) for naming with facts the user typed or matched from a metadata provider, exactly as one-shot's task draft, or a bare episode adjustment (`episode` and/or a non-zero `offset`) over a pure parse of the file names. A match carrying none of these is refused.
-	Match  *FileManagerRecognitionMatch  `json:"match,omitempty"`
-	Naming NamingRules                   `json:"naming"`
-	Parser *FileManagerRecognitionParser `json:"parser,omitempty"`
+	Match  *FileManagerRecognitionMatch `json:"match,omitempty"`
+	Naming NamingRules                  `json:"naming"`
+
+	// Overrides Sparse manual final numbering for selected videos. Unlisted videos keep parser results and the recognition offset; subtitles follow their videos. Preview and submit must carry identical overrides.
+	Overrides *[]FileEpisodeOverride        `json:"overrides,omitempty"`
+	Parser    *FileManagerRecognitionParser `json:"parser,omitempty"`
 
 	// Paths Absolute paths of the selected files, all in one directory.
 	Paths []string `json:"paths"`
@@ -5463,10 +5476,13 @@ type FileManagerRecognitionSubmitRequest struct {
 	LoadRuntimeFacts *bool `json:"load_runtime_facts,omitempty"`
 
 	// Match The optional anime facts source of the render. Three forms: a managed anime (`managed_anime_id`, optionally overlaid with `anime` as the operation's temporary draft), a draft alone (`anime` without `managed_anime_id`) for naming with facts the user typed or matched from a metadata provider, exactly as one-shot's task draft, or a bare episode adjustment (`episode` and/or a non-zero `offset`) over a pure parse of the file names. A match carrying none of these is refused.
-	Match  *FileManagerRecognitionMatch  `json:"match,omitempty"`
-	Naming NamingRules                   `json:"naming"`
-	Parser *FileManagerRecognitionParser `json:"parser,omitempty"`
-	Paths  []string                      `json:"paths"`
+	Match  *FileManagerRecognitionMatch `json:"match,omitempty"`
+	Naming NamingRules                  `json:"naming"`
+
+	// Overrides Must exactly match the overrides of the confirmed preview.
+	Overrides *[]FileEpisodeOverride        `json:"overrides,omitempty"`
+	Parser    *FileManagerRecognitionParser `json:"parser,omitempty"`
+	Paths     []string                      `json:"paths"`
 }
 
 // FileManagerRecognitionUnknownRoute The instance unclassified-route policy the plan read.
@@ -6856,11 +6872,14 @@ type OneShotInputSnapshot struct {
 	EpisodeOffset *int `json:"episode_offset,omitempty"`
 
 	// InputSource Config input source of the captured admission; null for the legacy saved-revision spelling.
-	InputSource     *OneShotInputSnapshotInputSource `json:"input_source"`
-	Parser          *ParserProvenance                `json:"parser"`
-	Revision        *int64                           `json:"revision"`
-	SectionSchemas  map[string]string                `json:"section_schemas"`
-	SectionVersions map[string]int64                 `json:"section_versions"`
+	InputSource *OneShotInputSnapshotInputSource `json:"input_source"`
+
+	// Overrides The frozen sparse per-file final episode and optional naming-season overrides. Legacy marker rows omit it.
+	Overrides       *[]FileEpisodeOverride `json:"overrides,omitempty"`
+	Parser          *ParserProvenance      `json:"parser"`
+	Revision        *int64                 `json:"revision"`
+	SectionSchemas  map[string]string      `json:"section_schemas"`
+	SectionVersions map[string]int64       `json:"section_versions"`
 
 	// SelectedSeed One selected seed as frozen into a one-shot input snapshot (always the resolved locator form; see SelectedSeedInput for the request). For a provider=custom seed the entry/group refs are the frozen custom-source and custom-group identities of a custom/oneshot draft source's own feed snapshot, never a discoverable provider entry. provider/provider_entry_ref/provider_group_ref are provenance and authorization facts; title/published_at/size_bytes are frozen snapshot facts; neither group alone is content identity. At least one strong content identity is mandatory: a canonical info_hash or a SHA-256 expected_payload_digest. When both are supplied both must match the fetched torrent exactly.
 	SelectedSeed SelectedSeed         `json:"selected_seed"`
@@ -7834,9 +7853,11 @@ type RSSListFileSubLangSource string
 
 // RSSListFileSelection defines model for RSSListFileSelection.
 type RSSListFileSelection struct {
-	SnapshotId    ID       `json:"snapshot_id"`
-	SourcePaths   []string `json:"source_paths"`
-	StableSeedKey string   `json:"stable_seed_key"`
+	// Overrides Sparse manual numbering for this seed's selected videos. Preview and download consume the same values; unlisted videos are automatic.
+	Overrides     *[]FileEpisodeOverride `json:"overrides,omitempty"`
+	SnapshotId    ID                     `json:"snapshot_id"`
+	SourcePaths   []string               `json:"source_paths"`
+	StableSeedKey string                 `json:"stable_seed_key"`
 }
 
 // RSSListGroup defines model for RSSListGroup.
@@ -8968,6 +8989,9 @@ type SnapshotSeedDownloadInput struct {
 	// FileSelection Optional manual file selection: the source paths (as listed in the item's manifest_files) of the files to import, at any depth. Omitted means the default files (first-level videos and subtitles the file rules keep). The selection replaces only the first-level gate: the chosen files are named, bound and placed exactly like first-level ones, under the same file rules, episode recognition, unknown-file route and collision policy, and a subtitle binds to a selected video of its own folder. The download itself is unchanged (the whole torrent; no file priorities): an unselected file stays in the download location untouched. Every path must be a file of this seed's torrent, of the video or subtitle kind; a selected video must pass the file rules; at least one video is selected; and every selected subtitle must follow a selected video of its folder. Otherwise 422 FILE_SELECTION_INVALID with zero writes. The selection is part of the request identity and freezes with the acceptance.
 	FileSelection *[]string                            `json:"file_selection,omitempty"`
 	InputSource   SnapshotSeedDownloadInputInputSource `json:"input_source"`
+
+	// Overrides Sparse manual numbering for selected videos. Unlisted files keep automatic recognition and the episode offset. The overrides are sanitized against the selected videos, join the request identity, and freeze with the acceptance.
+	Overrides *[]FileEpisodeOverride `json:"overrides,omitempty"`
 
 	// Provider Provenance provider of one selected one-shot seed. It repeats the two discovery provider kinds, adds nyaa and jackett for seeds read from keyword search snapshots (search-only: neither is ever a discovery provider), and adds custom for a seed read from a frozen custom/oneshot draft source's own feed snapshot. It is a seed-provenance vocabulary only: ProviderKind stays a two-value discovery enum, and a custom seed never becomes a discoverable provider, a subgroup, or a subscribable origin.
 	Provider         SnapshotSeedProvider `json:"provider"`

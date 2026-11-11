@@ -156,6 +156,7 @@ func mapAcquireSeedInput(value generated.AcquireSeedOnceJSONRequestBody) (onesho
 	if value.EpisodeOffset != nil {
 		input.EpisodeOffset = *value.EpisodeOffset
 	}
+	input.Overrides = mapFileEpisodeOverrides(value.Overrides)
 	return input, nil
 }
 

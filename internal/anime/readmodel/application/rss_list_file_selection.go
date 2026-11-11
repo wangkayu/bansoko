@@ -23,6 +23,7 @@ type RSSListFileSelectionInput struct {
 	SnapshotID    string
 	StableSeedKey string
 	SourcePaths   []string
+	Overrides     []acquisitiontarget.FileEpisodeOverride
 }
 
 // Manifest file recognitions (RSSListManifestFile.Recognition).
@@ -48,16 +49,22 @@ type RSSListManifestFile struct {
 	BoundVideoSourcePath string
 }
 
+// rssListFileSelection is one seed's canonical selection and sparse numbering.
+type rssListFileSelection struct {
+	selection *filekinds.Selection
+	overrides []acquisitiontarget.FileEpisodeOverride
+}
+
 // rssListFileSelections indexes a read's manual selections by seed identity.
-type rssListFileSelections map[string]*filekinds.Selection
+type rssListFileSelections map[string]rssListFileSelection
 
 func rssListSelectionKey(snapshotID, stableSeedKey string) string {
 	return snapshotID + "\x00" + stableSeedKey
 }
 
-func newRSSListFileSelections(inputs []RSSListFileSelectionInput) rssListFileSelections {
+func newRSSListFileSelections(inputs []RSSListFileSelectionInput) (rssListFileSelections, error) {
 	if len(inputs) == 0 {
-		return nil
+		return nil, nil
 	}
 	out := rssListFileSelections{}
 	for _, input := range inputs {
@@ -65,17 +72,21 @@ func newRSSListFileSelections(inputs []RSSListFileSelectionInput) rssListFileSel
 		if paths == nil {
 			paths = []string{}
 		}
-		out[rssListSelectionKey(input.SnapshotID, input.StableSeedKey)] = filekinds.NewSelection(paths)
+		overrides, err := acquisitiontarget.CanonicalFileEpisodeOverrides(input.Overrides)
+		if err != nil {
+			return nil, err
+		}
+		out[rssListSelectionKey(input.SnapshotID, input.StableSeedKey)] = rssListFileSelection{selection: filekinds.NewSelection(paths), overrides: overrides}
 	}
-	return out
+	return out, nil
 }
 
 // forSnapshot is the selections of one snapshot keyed by stable seed key.
-func (s rssListFileSelections) forSnapshot(snapshotID string) map[string]*filekinds.Selection {
+func (s rssListFileSelections) forSnapshot(snapshotID string) map[string]rssListFileSelection {
 	if len(s) == 0 {
 		return nil
 	}
-	out := map[string]*filekinds.Selection{}
+	out := map[string]rssListFileSelection{}
 	prefix := snapshotID + "\x00"
 	for key, selection := range s {
 		if stable, ok := strings.CutPrefix(key, prefix); ok {
@@ -100,9 +111,22 @@ func (s rssListFileSelections) identity() string {
 	hash := sha256.New()
 	for _, key := range keys {
 		hash.Write([]byte(key))
-		for _, value := range s[key].Paths() {
+		selection := s[key]
+		for _, value := range selection.selection.Paths() {
 			hash.Write([]byte{0})
 			hash.Write([]byte(value))
+		}
+		for _, override := range selection.overrides {
+			hash.Write([]byte{2})
+			hash.Write([]byte(override.Path))
+			hash.Write([]byte{0})
+			hash.Write([]byte(strconv.Itoa(override.Episode)))
+			hash.Write([]byte{0})
+			if override.Season == nil {
+				hash.Write([]byte("inherit"))
+			} else {
+				hash.Write([]byte(strconv.Itoa(*override.Season)))
+			}
 		}
 		hash.Write([]byte{1})
 	}

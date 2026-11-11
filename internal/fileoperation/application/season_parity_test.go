@@ -166,3 +166,24 @@ func TestPlannerKeepsADotDirectoryInTheLibraryRoot(t *testing.T) {
 		t.Fatalf("subtitle target %q, %v", subtitle, err)
 	}
 }
+
+func TestPerFileNamingSeasonOverridesMainAndSubtitleInherits(t *testing.T) {
+	const title = "[Group] Show - 01 [1080p]"
+	year, mainSeason := int64(2025), int64(1)
+	evidence := namingvars.ReleaseEvidence{AnimeEvidence: namingvars.AnimeEvidence{AnimeYear: &year, AnimeSeason: &mainSeason}, ReleaseTitle: title}
+	evidence.TmdbID, evidence.TmdbKind, evidence.TmdbSeason = "tmdb-1", "tv", &mainSeason
+	frozen := namingvars.FrozenEvaluation{Input: namingvars.Input{ReleaseTitle: title, Facts: namingvars.BuildInput(evidence).Facts}, Output: namingvars.Vars{}, Status: "ok"}
+	artifact := artifactContext{animeTitle: "Show", acceptedFacts: true, acceptedResolution: "1080p"}
+	artifact.tmdbSeason = frozenSeasonColumn(1, false)
+	zero := 0
+	episode := &naming.FrozenEpisodeNamingFacts{Raw: "1", Number: "7", Display: "7"}
+	for _, kind := range []string{"video", "subtitle"} {
+		resolved, err := buildNamingContext(artifact, artifactFileContext{sourcePath: "Show - 01.mkv", mediaKind: kind, namingSeason: &zero}, episode, &frozen)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resolved.Context.Anime.Season == nil || *resolved.Context.Anime.Season != 0 {
+			t.Fatalf("%s season = %v, want explicit zero", kind, resolved.Context.Anime.Season)
+		}
+	}
+}

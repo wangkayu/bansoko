@@ -1,9 +1,6 @@
 package application
 
-import (
-	domain "bansoko/internal/anime/domain"
-	"bansoko/internal/filekinds"
-)
+import domain "bansoko/internal/anime/domain"
 
 type previewEvaluation struct {
 	Files    []domain.PreviewFileResult
@@ -12,7 +9,7 @@ type previewEvaluation struct {
 	// picker), and Selections (input) are the manual file selections of this
 	// snapshot's seeds keyed by stable seed key.
 	OneShot    bool
-	Selections map[string]*filekinds.Selection
+	Selections map[string]rssListFileSelection
 	// ManifestFiles (output) are the picker rows per stable seed key.
 	ManifestFiles map[string][]RSSListManifestFile
 }

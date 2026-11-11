@@ -3049,6 +3049,12 @@ export interface components {
         ID: string;
         /** Format: int64 */
         Version: number;
+        /** @description One selected video's manual final numbering. An omitted season follows the request's main naming season. Episode is the explicit final integer: the automatic episode offset is never applied to it. Bound subtitles inherit both values from their video. Paths must be unique within one request and name selected videos; stale or duplicate paths are invalid. */
+        FileEpisodeOverride: {
+            path: string;
+            season?: number;
+            episode: number;
+        };
         /** @description One persisted seed to download. Only identities are accepted: the locator, title, published time and strong content identity are read from the named snapshot server-side, so a browser never echoes back the raw source location. A provider=custom seed names the frozen custom-source and custom-group identities of a custom/oneshot draft source's own feed snapshot, so the same second step downloads a custom seed without any new locator ever leaving the server. A keyword search seed is the same shape: provider_entry_ref/provider_group_ref are the derived search-scope and search-query refs, the server proves the named snapshot is the `search` kind, and the admission must be a current_input one-shot. */
         SnapshotSeedDownloadInput: {
             provider: components["schemas"]["SnapshotSeedProvider"];
@@ -3065,6 +3071,8 @@ export interface components {
             episode_offset?: number;
             /** @description Optional manual file selection: the source paths (as listed in the item's manifest_files) of the files to import, at any depth. Omitted means the default files (first-level videos and subtitles the file rules keep). The selection replaces only the first-level gate: the chosen files are named, bound and placed exactly like first-level ones, under the same file rules, episode recognition, unknown-file route and collision policy, and a subtitle binds to a selected video of its own folder. The download itself is unchanged (the whole torrent; no file priorities): an unselected file stays in the download location untouched. Every path must be a file of this seed's torrent, of the video or subtitle kind; a selected video must pass the file rules; at least one video is selected; and every selected subtitle must follow a selected video of its folder. Otherwise 422 FILE_SELECTION_INVALID with zero writes. The selection is part of the request identity and freezes with the acceptance. */
             file_selection?: string[];
+            /** @description Sparse manual numbering for selected videos. Unlisted files keep automatic recognition and the episode offset. The overrides are sanitized against the selected videos, join the request identity, and freeze with the acceptance. */
+            overrides?: components["schemas"]["FileEpisodeOverride"][];
         };
         /** @description One seed of one exact persisted snapshot to expand. It carries identities only, exactly like SnapshotSeedDownloadInput: the stable seed key is the path segment and the locator, title and published identity are read server-side from the snapshot, so expansion can only ever fetch the locator the snapshot already published for that seed. A keyword search seed names its derived search-scope/search-query refs the same way, and the server proves the snapshot's own kind before expanding. */
         SnapshotSeedExpandInput: {
@@ -3166,6 +3174,8 @@ export interface components {
             snapshot_id: components["schemas"]["ID"];
             stable_seed_key: string;
             source_paths: string[];
+            /** @description Sparse manual numbering for this seed's selected videos. Preview and download consume the same values; unlisted videos are automatic. */
+            overrides?: components["schemas"]["FileEpisodeOverride"][];
         };
         /** @description One file of a seed's exact torrent manifest, at any depth, for the one-shot file picker. It is the server's decision under the read's draft (file rules, parser, episode offset): which files may be chosen, which the default list holds, each video's own filename episode recognition, and the video each subtitle follows. */
         RSSListManifestFile: {
@@ -5850,6 +5860,8 @@ export interface components {
             selected_seed: components["schemas"]["SelectedSeedInput"];
             /** @description The one episode offset of this one-shot. It is written to the one-shot's placeholder RSS link and frozen into the input snapshot and the idempotency request identity; it is never read from an existing subscription, link or the submitted draft. Omitted means 0. Out of range is a 422 OFFSET_OUT_OF_RANGE with zero writes. */
             episode_offset?: number;
+            /** @description Sparse manual final numbering for selected videos of selected_seed. These values join the frozen input and idempotency request identity. */
+            overrides?: components["schemas"]["FileEpisodeOverride"][];
         };
         /** @description The seed a one-shot admits, in one of two forms. Locator form (the frontend and HTTP path): locator, title and published_at are required, the snapshot identity (snapshot_id, snapshot_version, snapshot_content_hash, stable_seed_key) binds the seed to the persisted feed snapshot it was copied from, and at least one strong content identity (info_hash or expected_payload_digest) is mandatory. Reference form (agents; no download URL ever leaves the server): locator is omitted and snapshot_id, snapshot_version, snapshot_content_hash and stable_seed_key name one seed of one persisted snapshot of the provider/provider_entry_ref/provider_group_ref feed. The server reads that exact snapshot and resolves the seed into the locator form before anything is hashed or frozen, so the frozen input snapshot, the replay identity and every later stage are exactly those of the locator form for the same seed. A missing, superseded, stale or mismatching snapshot, or a stable_seed_key that is not in it, is a 422 SEED_PREVIEW_STALE with zero writes (refresh the snapshot and choose again). Seed facts (title, published_at, size_bytes, info_hash, expected_payload_digest) are optional in the reference form; each supplied fact must equal the snapshot's value or the request is a 422 SEED_PREVIEW_STALE. A reference without the complete snapshot identity is a 422 SEED_INVALID. Replaying the same Idempotency-Key with the same reference returns the original handle even after the snapshot was superseded. A custom seed (provider=custom) is the locator-form seed of one frozen custom/oneshot draft source's own feed snapshot: provider_entry_ref is that snapshot's frozen custom-source identity, provider_group_ref its frozen custom-group identity, and the seed identity inside it is stable_seed_key plus a strong content identity (info_hash or expected_payload_digest). The custom source identity is derived by the server from the draft's own frozen locator and group, so a seed whose entry/group does not belong to the submitted draft is a 422 SEED_PREVIEW_STALE with zero writes. */
         SelectedSeedInput: {
@@ -5945,6 +5957,8 @@ export interface components {
             selected_seed: components["schemas"]["SelectedSeed"];
             /** @description The frozen one-shot episode offset from the admission request. Legacy marker rows omit it. */
             episode_offset?: number;
+            /** @description The frozen sparse per-file final episode and optional naming-season overrides. Legacy marker rows omit it. */
+            overrides?: components["schemas"]["FileEpisodeOverride"][];
             effective_sections: {
                 [key: string]: unknown;
             };
@@ -6526,6 +6540,8 @@ export interface components {
             match?: components["schemas"]["FileManagerRecognitionMatch"];
             /** @description Explicitly read each selected video's current MediaInfo facts and resolve referenced provider episode titles through the persistent cache before rendering. Preview and submit must use the same value; submit reads the facts again and confirms the resulting plan digest. */
             load_runtime_facts?: boolean;
+            /** @description Sparse manual final numbering for selected videos. Unlisted videos keep parser results and the recognition offset; subtitles follow their videos. Preview and submit must carry identical overrides. */
+            overrides?: components["schemas"]["FileEpisodeOverride"][];
         };
         /**
          * @description What recognition does with one file: rename or move it, leave it because its rendered name is its own name (`unchanged`), leave it because the unclassified route is `skip`, or refuse it (`error`, with a blocker).
@@ -6605,6 +6621,8 @@ export interface components {
             match?: components["schemas"]["FileManagerRecognitionMatch"];
             /** @description Must match the confirmed preview. Reads current MediaInfo facts and referenced provider episode titles again before checking the digest. */
             load_runtime_facts?: boolean;
+            /** @description Must exactly match the overrides of the confirmed preview. */
+            overrides?: components["schemas"]["FileEpisodeOverride"][];
             /** @description The `plan_digest` the preview returned. */
             expected_plan_digest: string;
             conflict: components["schemas"]["FileManagerRecognitionConflictChoice"];

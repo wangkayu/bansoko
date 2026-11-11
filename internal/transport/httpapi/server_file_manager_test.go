@@ -543,7 +543,8 @@ func TestFileManagerRecognitionHandlers(t *testing.T) {
 		`"subtitle_suffix_template":"sub"}`
 	recorder, body := postFileManager(t, service, "/api/v1/file-manager/recognition/preview", "",
 		`{"paths":["/srv/library/Show/Show - 01.mkv","/srv/library/Show/Show - 01.zh.ass"],"parser":{"id":"regex","config":{"episode_patterns":["S(\\d+)"]}},`+
-			namingJSON+`,"load_runtime_facts":true,"match":{"managed_anime_id":"anime-1","season":1,"offset":2}}`)
+			namingJSON+`,"load_runtime_facts":true,"match":{"managed_anime_id":"anime-1","season":1,"offset":2},`+
+			`"overrides":[{"path":"/srv/library/Show/Show - 01.mkv","season":0,"episode":7}]}`)
 	if recorder.Code != http.StatusOK || recorder.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("preview: %d %v", recorder.Code, body)
 	}
@@ -553,7 +554,9 @@ func TestFileManagerRecognitionHandlers(t *testing.T) {
 		request.Naming.Unknown.DirectoryTemplate != "/srv/library/Show/Extras" || request.Naming.SubtitleSuffixTemplate != "sub" ||
 		request.Naming.Language != "js-naming-1" ||
 		request.Match == nil || request.Match.ManagedAnimeID != "anime-1" || request.Match.Season == nil || *request.Match.Season != 1 ||
-		request.Match.Episode != nil || request.Match.Offset != 2 {
+		request.Match.Episode != nil || request.Match.Offset != 2 || len(request.Overrides) != 1 ||
+		request.Overrides[0].Path != "/srv/library/Show/Show - 01.mkv" || request.Overrides[0].Episode != 7 ||
+		request.Overrides[0].Season == nil || *request.Overrides[0].Season != 0 {
 		t.Fatalf("preview request: %+v", request)
 	}
 	rows := body["rows"].([]any)
@@ -573,7 +576,7 @@ func TestFileManagerRecognitionHandlers(t *testing.T) {
 
 	recorder, body = postFileManager(t, service, "/api/v1/file-manager/recognition", "rec-1",
 		`{"paths":["/srv/library/Show/Show - 01.mkv"],`+namingJSON+
-			`,"load_runtime_facts":true,"expected_plan_digest":"plan-1","conflict":"version"}`)
+			`,"overrides":[{"path":"/srv/library/Show/Show - 01.mkv","episode":9}],"load_runtime_facts":true,"expected_plan_digest":"plan-1","conflict":"version"}`)
 	if recorder.Code != http.StatusAccepted {
 		t.Fatalf("submit: %d %v", recorder.Code, body)
 	}
@@ -582,7 +585,8 @@ func TestFileManagerRecognitionHandlers(t *testing.T) {
 		!submit.LoadRuntimeFacts || submit.Conflict != filemanager.RecognitionConflictVersion ||
 		submit.Naming.TV.VideoFilenameTemplate != "${ep.number}.${file.ext}" ||
 		submit.Naming.SubtitleSuffixTemplate != "sub" || submit.Match != nil ||
-		submit.Parser.ID != "" || len(submit.Parser.Config) != 0 {
+		submit.Parser.ID != "" || len(submit.Parser.Config) != 0 || len(submit.Overrides) != 1 ||
+		submit.Overrides[0].Path != "/srv/library/Show/Show - 01.mkv" || submit.Overrides[0].Episode != 9 || submit.Overrides[0].Season != nil {
 		t.Fatalf("submit request: %+v", submit)
 	}
 	operations := body["operations"].([]any)
@@ -597,6 +601,14 @@ func TestFileManagerRecognitionHandlers(t *testing.T) {
 		`{"paths":["/srv/library/Show/Show - 01.mkv"],`+namingJSON+`,"expected_plan_digest":"stale","conflict":"block"}`)
 	if recorder.Code != http.StatusConflict || body["code"] != filemanager.CodeRecognitionPlanChanged {
 		t.Fatalf("stale plan: %d %v", recorder.Code, body)
+	}
+
+	invalid := &fakeFileManager{err: &filemanager.Error{Kind: filemanager.ErrorInvalid,
+		Code: filemanager.CodeRecognitionInvalid, Message: "invalid override"}}
+	recorder, body = postFileManager(t, invalid, "/api/v1/file-manager/recognition/preview", "",
+		`{"paths":["/srv/library/Show/Show - 01.mkv"],`+namingJSON+`,"overrides":[{"path":"/srv/library/Show/stale.mkv","episode":2}]}`)
+	if recorder.Code != http.StatusUnprocessableEntity || body["code"] != filemanager.CodeRecognitionInvalid {
+		t.Fatalf("invalid override: %d %v", recorder.Code, body)
 	}
 
 	if !isReadOnlyPath(http.MethodPost, "/api/v1/file-manager/recognition/preview") {

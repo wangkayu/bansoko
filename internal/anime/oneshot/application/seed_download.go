@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	acquisitiontarget "bansoko/internal/acquisition/target"
 	animeapplication "bansoko/internal/anime/application"
 	animedomain "bansoko/internal/anime/domain"
 	"bansoko/internal/apperrors"
@@ -35,6 +36,9 @@ type SnapshotSeedDownloadInput struct {
 	// FileSelection is the manual file selection (nil = the default files);
 	// see AcquireSeedInput.FileSelection.
 	FileSelection []string
+	// Overrides are the sparse final per-file numbering values; see
+	// AcquireSeedInput.Overrides.
+	Overrides []acquisitiontarget.FileEpisodeOverride
 }
 
 // DownloadSnapshotSeed admits one finite one-shot download for one persisted
@@ -109,6 +113,7 @@ func (s *Service) DownloadSnapshotSeed(ctx context.Context, input SnapshotSeedDo
 		Seed:          seed,
 		EpisodeOffset: input.EpisodeOffset,
 		FileSelection: input.FileSelection,
+		Overrides:     input.Overrides,
 		Caller:        AcquireSeedCaller{Kind: AcquireSeedCallerHuman},
 	}
 	switch input.InputSource {

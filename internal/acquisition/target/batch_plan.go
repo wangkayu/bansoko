@@ -25,6 +25,9 @@ type BatchPlanInput struct {
 	// Selection is the one-shot's explicit manual file selection (nil = the
 	// product default). The plan freezes it as selected_paths.
 	Selection *filekinds.Selection
+	// Overrides are sparse final per-video identities and optional naming
+	// seasons. They participate in both the plan and its frozen media snapshot.
+	Overrides []FileEpisodeOverride
 	// DownloadCompletion is the resolved download-completion action the plan
 	// freezes (seed, pause, remove, remove_with_data).
 	DownloadCompletion string
@@ -56,6 +59,15 @@ func BuildBatchPlan(ctx context.Context, in BatchPlanInput) (batchplan.Plan, err
 	if err := validSeedLimits(completion, in.DownloadCompletionSeedLimits); err != nil {
 		return batchplan.Plan{}, err
 	}
+	overrides, err := CanonicalFileEpisodeOverrides(in.Overrides)
+	if err != nil {
+		return batchplan.Plan{}, err
+	}
+	byOverride := fileEpisodeOverrideMap(overrides)
+	remaining := make(map[string]bool, len(byOverride))
+	for sourcePath := range byOverride {
+		remaining[sourcePath] = true
+	}
 	filenames := make(map[string]string, len(in.Files))
 	files := make([]batchplan.InputFile, 0, len(in.Files))
 	for _, file := range in.Files {
@@ -69,6 +81,18 @@ func BuildBatchPlan(ctx context.Context, in BatchPlanInput) (batchplan.Plan, err
 		}
 		filenames[sourcePath] = filename
 		files = append(files, batchplan.InputFile{SourcePath: sourcePath, SizeBytes: file.SizeBytes})
+		if _, overridden := byOverride[sourcePath]; overridden {
+			kind, ignored := filekinds.EligibilityIn(filekinds.Version, sourcePath, in.Selection)
+			if ignored != "" || kind != filekinds.KindVideo || animedomain.ManifestFileExclusionIn(filekinds.Version, in.FileFilter, sourcePath, in.Selection) != "" {
+				return batchplan.Plan{}, fmt.Errorf("%w: %q is not an eligible selected video", ErrFileEpisodeOverrideInvalid, sourcePath)
+			}
+			delete(remaining, sourcePath)
+		}
+	}
+	if len(remaining) > 0 {
+		for sourcePath := range remaining {
+			return batchplan.Plan{}, fmt.Errorf("%w: %q is not a file of this torrent", ErrFileEpisodeOverrideInvalid, sourcePath)
+		}
 	}
 	evidence := in.Evidence
 	return batchplan.Classify(batchplan.Input{
@@ -86,6 +110,21 @@ func BuildBatchPlan(ctx context.Context, in BatchPlanInput) (batchplan.Plan, err
 		Identity: func(sourcePath string) (episodeidentity.EpisodeIdentity, error) {
 			identity, _, err := ResolveFileEpisode(ctx, evidence, filenames[sourcePath])
 			return identity, err
+		},
+		ManualIdentity: func(sourcePath string) (episodeidentity.EpisodeIdentity, bool) {
+			override, ok := byOverride[sourcePath]
+			if !ok {
+				return episodeidentity.EpisodeIdentity{}, false
+			}
+			return ManualFileEpisodeIdentity(sourcePath, override.Episode), true
+		},
+		NamingSeason: func(sourcePath string) *int {
+			override, ok := byOverride[sourcePath]
+			if !ok || override.Season == nil {
+				return nil
+			}
+			season := *override.Season
+			return &season
 		},
 	})
 }

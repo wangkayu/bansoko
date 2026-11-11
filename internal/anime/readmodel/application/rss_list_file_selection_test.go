@@ -3,8 +3,10 @@ package application
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 
+	acquisitiontarget "bansoko/internal/acquisition/target"
 	animedomain "bansoko/internal/anime/domain"
 	animecatalogdomain "bansoko/internal/catalog/domain"
 )
@@ -90,10 +92,13 @@ func TestOneShotReadListsEveryManifestFileForThePicker(t *testing.T) {
 // is planned with a target and the default first-level video becomes
 // ignored_unselected.
 func TestOneShotReadRendersThePreviewSelection(t *testing.T) {
-	selections := newRSSListFileSelections([]RSSListFileSelectionInput{{
+	selections, err := newRSSListFileSelections([]RSSListFileSelectionInput{{
 		SnapshotID: "snap-12", StableSeedKey: "seed-01",
 		SourcePaths: []string{"Pack/SPs/Preview Show - 02.mkv", "Pack/SPs/Preview Show - 02.zh-Hans.ass"},
 	}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	item := pickerRead(t, selections)
 	files := map[string]RSSListFile{}
 	for _, file := range item.Files {
@@ -111,5 +116,56 @@ func TestOneShotReadRendersThePreviewSelection(t *testing.T) {
 	}
 	if rows := manifestRows(item); !rows["Pack/Preview Show - 01.mkv"].DefaultSelected {
 		t.Fatal("default_selected follows the default plan, not the selection")
+	}
+}
+
+func TestOneShotReadRendersSparseFinalNumberingOverrides(t *testing.T) {
+	zero := 0
+	selections, err := newRSSListFileSelections([]RSSListFileSelectionInput{{
+		SnapshotID: "snap-12", StableSeedKey: "seed-01",
+		SourcePaths: []string{"Pack/Preview Show - 01.mkv", "Pack/Preview Show - 01.zh-Hans.ass"},
+		Overrides:   []acquisitiontarget.FileEpisodeOverride{{Path: "Pack/Preview Show - 01.mkv", Season: &zero, Episode: 8}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := pickerRead(t, selections)
+	files := map[string]RSSListFile{}
+	for _, file := range item.Files {
+		files[file.SourcePath] = file
+	}
+	video := files["Pack/Preview Show - 01.mkv"]
+	subtitle := files["Pack/Preview Show - 01.zh-Hans.ass"]
+	for _, file := range []RSSListFile{video, subtitle} {
+		if !file.Included || !strings.Contains(file.RenderedTarget, "S00E08") || !strings.Contains(file.RenderedTarget, "/Specials/") {
+			t.Fatalf("override target = %+v, want season 0 and final episode 8", file)
+		}
+	}
+	// The picker still reports automatic recognition, so reopening the editor
+	// starts from parser evidence rather than the current manual override.
+	if got := manifestRows(item)["Pack/Preview Show - 01.mkv"].Episodes; !reflect.DeepEqual(got, []int{1}) {
+		t.Fatalf("automatic picker episodes = %v, want [1]", got)
+	}
+}
+
+func TestRSSListSelectionIdentityIncludesCanonicalOverrides(t *testing.T) {
+	input := []RSSListFileSelectionInput{{
+		SnapshotID: "snap-12", StableSeedKey: "seed-01", SourcePaths: []string{"Pack/a.mkv"},
+		Overrides: []acquisitiontarget.FileEpisodeOverride{{Path: "Pack/b.mkv", Episode: 2}, {Path: "Pack/a.mkv", Episode: 1}},
+	}}
+	first, err := newRSSListFileSelections(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reordered, err := newRSSListFileSelections([]RSSListFileSelectionInput{{
+		SnapshotID: "snap-12", StableSeedKey: "seed-01", SourcePaths: []string{"Pack/a.mkv"},
+		Overrides: []acquisitiontarget.FileEpisodeOverride{input[0].Overrides[1], input[0].Overrides[0]},
+	}})
+	if err != nil || first.identity() != reordered.identity() {
+		t.Fatalf("canonical override order changed identity: %v", err)
+	}
+	plain, err := newRSSListFileSelections([]RSSListFileSelectionInput{{SnapshotID: "snap-12", StableSeedKey: "seed-01", SourcePaths: []string{"Pack/a.mkv"}}})
+	if err != nil || plain.identity() == first.identity() {
+		t.Fatalf("overrides did not enter config identity: %v", err)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	acquisitiontarget "bansoko/internal/acquisition/target"
 	animedomain "bansoko/internal/anime/domain"
 	oneshotapplication "bansoko/internal/anime/oneshot/application"
 	readmodelapplication "bansoko/internal/anime/readmodel/application"
@@ -12,6 +13,22 @@ import (
 	animeworkspace "bansoko/internal/transport/animeworkspace"
 	"bansoko/internal/transport/httpapi/generated"
 )
+
+func mapFileEpisodeOverrides(values *[]generated.FileEpisodeOverride) []acquisitiontarget.FileEpisodeOverride {
+	if values == nil {
+		return nil
+	}
+	out := make([]acquisitiontarget.FileEpisodeOverride, 0, len(*values))
+	for _, value := range *values {
+		override := acquisitiontarget.FileEpisodeOverride{Path: value.Path, Episode: value.Episode}
+		if value.Season != nil {
+			season := *value.Season
+			override.Season = &season
+		}
+		out = append(out, override)
+	}
+	return out
+}
 
 // mapPreviewFeedSnapshotRefs projects the advisory provider feed snapshot
 // identities of one read request. PreviewFeedSnapshotRef survives the flat
@@ -62,6 +79,7 @@ func mapRSSListReadInput(value generated.RSSListViewInput) (readmodelapplication
 				SnapshotID:    string(selection.SnapshotId),
 				StableSeedKey: selection.StableSeedKey,
 				SourcePaths:   append([]string{}, selection.SourcePaths...),
+				Overrides:     mapFileEpisodeOverrides(selection.Overrides),
 			})
 		}
 	}
@@ -156,6 +174,7 @@ func mapSnapshotSeedDownloadInput(snapshotID, stableSeedKey string, value genera
 	if value.FileSelection != nil {
 		input.FileSelection = append([]string{}, *value.FileSelection...)
 	}
+	input.Overrides = mapFileEpisodeOverrides(value.Overrides)
 	switch string(value.InputSource) {
 	case "current_input":
 		if value.Draft == nil {

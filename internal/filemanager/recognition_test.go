@@ -472,6 +472,151 @@ func TestRecognitionManualEpisodeReachesTheRender(t *testing.T) {
 	}
 }
 
+func TestRecognitionEpisodeOverridesAreFinalAndInheritedBySubtitles(t *testing.T) {
+	f := newCommandFixture(t)
+	renderer := &fakeRecognitionRenderer{render: func(input filemaintenance.RecognitionRenderInput) (filemaintenance.RecognitionRendered, error) {
+		return filemaintenance.RecognitionRendered{
+			Directory: input.Rules.TV.DirectoryTemplate,
+			Filename:  input.Episode + "-" + input.FileName,
+		}, nil
+	}}
+	f.service.SetRecognition(renderer, nil, fakeRecognitionPolicy{})
+	first := f.abs("Loose/Show - 01.mkv")
+	second := f.abs("Loose/Show - 02.mkv")
+	third := f.abs("Loose/Show - 03.mkv")
+	subtitle := f.abs("Loose/Show - 01.zh.ass")
+	writeFile(t, first, 4)
+	writeFile(t, second, 4)
+	writeFile(t, third, 4)
+	writeFile(t, subtitle, 4)
+	request := recognitionRequest(first, second, third, subtitle)
+	request.Match = &RecognitionMatch{Season: intPointer(2), Offset: 10}
+	request.Overrides = []RecognitionEpisodeOverride{
+		{Path: "  " + first + "  ", Season: intPointer(0), Episode: 7},
+		{Path: third, Episode: 5},
+	}
+
+	preview, err := f.service.PreviewRecognition(context.Background(), request)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	firstRow := recognitionRow(t, preview, "Show - 01.mkv")
+	if firstRow.Episode == nil || firstRow.Episode.Raw != "1" || firstRow.Episode.Number != "7" ||
+		firstRow.Episode.Offset != 0 || firstRow.Episode.Source != "manual" || firstRow.TargetName != "7-Show - 01.mkv" {
+		t.Fatalf("overridden video = %+v", firstRow)
+	}
+	secondRow := recognitionRow(t, preview, "Show - 02.mkv")
+	if secondRow.Episode == nil || secondRow.Episode.Number != "12" || secondRow.Episode.Offset != 10 ||
+		secondRow.Episode.Source != "file_parser" || secondRow.TargetName != "12-Show - 02.mkv" {
+		t.Fatalf("unoverridden video = %+v", secondRow)
+	}
+	subtitleRow := recognitionRow(t, preview, "Show - 01.zh.ass")
+	if subtitleRow.Episode == nil || subtitleRow.Episode.Number != "7" || subtitleRow.Episode.Offset != 0 ||
+		subtitleRow.TargetName != "7-Show - 01.sub.ass" {
+		t.Fatalf("bound subtitle = %+v", subtitleRow)
+	}
+	seasons := map[string]*int{}
+	offsets := map[string]int{}
+	for _, input := range renderer.inputs {
+		seasons[input.FileName] = input.Season
+		offsets[input.FileName] = input.EpisodeOffset
+	}
+	for _, name := range []string{"Show - 01.mkv", "Show - 01.zh.ass"} {
+		if seasons[name] == nil || *seasons[name] != 0 || offsets[name] != 0 {
+			t.Fatalf("%s did not inherit the explicit zero season and final episode: season=%v offset=%d", name, seasons[name], offsets[name])
+		}
+	}
+	if seasons["Show - 02.mkv"] == nil || *seasons["Show - 02.mkv"] != 2 || offsets["Show - 02.mkv"] != 10 {
+		t.Fatalf("unoverridden render lost the main settings: %+v", renderer.inputs)
+	}
+	thirdRow := recognitionRow(t, preview, "Show - 03.mkv")
+	if thirdRow.Episode == nil || thirdRow.Episode.Number != "5" || thirdRow.Episode.Offset != 0 ||
+		seasons["Show - 03.mkv"] == nil || *seasons["Show - 03.mkv"] != 2 {
+		t.Fatalf("an omitted override season must inherit the main season: row=%+v season=%v", thirdRow, seasons["Show - 03.mkv"])
+	}
+}
+
+func TestRecognitionEpisodeOverridesAreValidated(t *testing.T) {
+	f := newRecognitionFixture(t, fakeRecognitionPolicy{})
+	video := f.abs("Loose/Show - 01.mkv")
+	subtitle := f.abs("Loose/Show - 01.zh.ass")
+	stale := f.abs("Loose/Show - 02.mkv")
+	writeFile(t, video, 4)
+	writeFile(t, subtitle, 4)
+	writeFile(t, stale, 4)
+	for _, tc := range []struct {
+		name      string
+		overrides []RecognitionEpisodeOverride
+	}{
+		{name: "stale", overrides: []RecognitionEpisodeOverride{{Path: stale, Episode: 2}}},
+		{name: "subtitle", overrides: []RecognitionEpisodeOverride{{Path: subtitle, Episode: 2}}},
+		{name: "duplicate", overrides: []RecognitionEpisodeOverride{{Path: video, Episode: 2}, {Path: " " + video + " ", Episode: 3}}},
+		{name: "empty path", overrides: []RecognitionEpisodeOverride{{Path: " ", Episode: 2}}},
+		{name: "relative path", overrides: []RecognitionEpisodeOverride{{Path: "Show - 01.mkv", Episode: 2}}},
+		{name: "negative season", overrides: []RecognitionEpisodeOverride{{Path: video, Season: intPointer(-1), Episode: 2}}},
+		{name: "zero episode", overrides: []RecognitionEpisodeOverride{{Path: video, Episode: 0}}},
+		{name: "episode too large", overrides: []RecognitionEpisodeOverride{{Path: video, Episode: maxMatchEpisode + 1}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			request := recognitionRequest(video, subtitle)
+			request.Overrides = tc.overrides
+			_, err := f.service.PreviewRecognition(context.Background(), request)
+			mustCode(t, err, CodeRecognitionInvalid)
+		})
+	}
+}
+
+func TestRecognitionEpisodeOverridesJoinCanonicalDigests(t *testing.T) {
+	f := newRecognitionFixture(t, fakeRecognitionPolicy{})
+	first := f.abs("Loose/Show - 01.mkv")
+	second := f.abs("Loose/Show - 02.mkv")
+	writeFile(t, first, 4)
+	writeFile(t, second, 4)
+	plain, err := f.service.PreviewRecognition(context.Background(), recognitionRequest(first, second))
+	if err != nil {
+		t.Fatalf("plain preview: %v", err)
+	}
+	request := recognitionRequest(first, second)
+	request.Overrides = []RecognitionEpisodeOverride{
+		{Path: second, Episode: 2},
+		{Path: first, Episode: 1},
+	}
+	preview, err := f.service.PreviewRecognition(context.Background(), request)
+	if err != nil {
+		t.Fatalf("override preview: %v", err)
+	}
+	if preview.PlanDigest == plain.PlanDigest {
+		t.Fatal("overrides must join the plan digest even when the rendered rows do not change")
+	}
+	reordered := recognitionRequest(first, second)
+	reordered.Overrides = []RecognitionEpisodeOverride{
+		{Path: " " + first + " ", Episode: 1},
+		{Path: second, Episode: 2},
+	}
+	canonical, err := f.service.PreviewRecognition(context.Background(), reordered)
+	if err != nil {
+		t.Fatalf("canonical preview: %v", err)
+	}
+	if canonical.PlanDigest != preview.PlanDigest {
+		t.Fatal("override order and surrounding whitespace must not change the plan digest")
+	}
+	if _, err := f.service.SubmitRecognition(context.Background(), SubmitRecognitionRequest{
+		IdempotencyKey: "override-canonical", ExpectedPlanDigest: preview.PlanDigest, RecognitionRequest: reordered,
+	}); err != nil {
+		t.Fatalf("canonical submit: %v", err)
+	}
+
+	plainSubmit := SubmitRecognitionRequest{RecognitionRequest: recognitionRequest(first, second)}
+	overrideSubmit := SubmitRecognitionRequest{RecognitionRequest: request}
+	reorderedSubmit := SubmitRecognitionRequest{RecognitionRequest: reordered}
+	if recognitionRequestDigest(overrideSubmit) == recognitionRequestDigest(plainSubmit) {
+		t.Fatal("overrides must join the idempotency request digest")
+	}
+	if recognitionRequestDigest(overrideSubmit) != recognitionRequestDigest(reorderedSubmit) {
+		t.Fatal("the idempotency request digest must use canonical overrides")
+	}
+}
+
 func TestRecognitionRuntimeFactsAreExplicitAndPerVideo(t *testing.T) {
 	f := newCommandFixture(t)
 	renderer := &fakeRecognitionRenderer{render: func(input filemaintenance.RecognitionRenderInput) (filemaintenance.RecognitionRendered, error) {

@@ -427,6 +427,10 @@ func (s *Service) ReadAnimeRSSListView(ctx context.Context, input ReadRSSListVie
 	if len(input.FileSelections) > 0 && !input.OneShot {
 		return RSSListView{}, &apperrors.Business{Status: 400, Code: "INPUT_SOURCE_INVALID", Message: "file_selections apply to one_shot reads only."}
 	}
+	fileSelections, err := newRSSListFileSelections(input.FileSelections)
+	if err != nil {
+		return RSSListView{}, &apperrors.Business{Status: 422, Code: "FILE_SELECTION_INVALID", Message: err.Error()}
+	}
 	switch input.InputSource {
 	case "current_input":
 		if input.Draft == nil {
@@ -436,7 +440,7 @@ func (s *Service) ReadAnimeRSSListView(ctx context.Context, input ReadRSSListVie
 		if err != nil {
 			return RSSListView{}, err
 		}
-		return s.readRSSListViewForDraft(ctx, *input.Draft, input.Feed, input.Observation, input.PreviewEpisodeOffset, input.OneShot, scope, newRSSListFileSelections(input.FileSelections))
+		return s.readRSSListViewForDraft(ctx, *input.Draft, input.Feed, input.Observation, input.PreviewEpisodeOffset, input.OneShot, scope, fileSelections)
 	case "candidate_revision":
 		if strings.TrimSpace(input.CandidateID) == "" || input.Revision < 1 {
 			return RSSListView{}, &apperrors.Business{Status: 400, Code: "INPUT_SOURCE_INVALID", Message: "input_source=candidate_revision requires candidate_id and revision."}
@@ -880,7 +884,7 @@ func (s *Service) composeOwnerRSSListView(ctx context.Context, mode string, work
 		// Both owner modes project the batch coverage from the current rules and
 		// source offset. The persisted release verdict below remains the execution
 		// record, but it must not freeze the RSS tab's rendering preview.
-		if err := previewBatchPlan(ctx, &evaluated, item, manifest, evidence, effective, unknownRoute, nil); err != nil {
+		if err := previewBatchPlan(ctx, &evaluated, item, manifest, evidence, effective, unknownRoute, nil, nil); err != nil {
 			return RSSListView{}, fmt.Errorf("plan release files %s: %w", release.ID, err)
 		}
 		if mode == "owner" {
@@ -918,7 +922,7 @@ func (s *Service) composeOwnerRSSListView(ctx context.Context, mode string, work
 				evaluated.FrozenVars = &frozen
 			}
 		}
-		previewFiles, err := previewFilesForItem(ctx, item, release.StableItemKey, evaluated, manifest, evalInput, effective, workspace.ManagedAnime.Title, rules, evidence, unknownRoute, nil)
+		previewFiles, err := previewFilesForItem(ctx, item, release.StableItemKey, evaluated, manifest, evalInput, effective, workspace.ManagedAnime.Title, rules, evidence, unknownRoute, nil, nil)
 		if err != nil {
 			return RSSListView{}, fmt.Errorf("resolve release file episodes %s: %w", release.ID, err)
 		}

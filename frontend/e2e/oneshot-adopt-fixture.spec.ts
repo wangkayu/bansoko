@@ -371,6 +371,33 @@ function unifiedView(): RSSListView {
   };
 }
 
+function numberingView(): RSSListView {
+  const view = unifiedView();
+  const item = view.groups[0].items[0];
+  const first = `${TITLE} - 01.mkv`;
+  const second = `${TITLE} - 02.mkv`;
+  const subtitle = `${TITLE} - 01.zh-Hans.ass`;
+  if (item.torrent?.manifest) item.torrent.manifest.file_count = 3;
+  item.manifest_files = [
+    { source_path: first, size_bytes: 734003200, media_kind: "video", selectable: true, default_selected: true, recognition: "episode", episodes: [1] },
+    { source_path: second, size_bytes: 734003200, media_kind: "video", selectable: true, default_selected: true, recognition: "episode", episodes: [2] },
+    { source_path: subtitle, size_bytes: 2000, media_kind: "subtitle", selectable: true, default_selected: true, bound_video_source_path: first },
+  ];
+  item.files = [first, second, subtitle].map((path, ordinal) => ({
+    file_ref: `sha256:${String(ordinal + 4).repeat(64)}`,
+    ordinal,
+    source_path: path,
+    filename: path,
+    size_bytes: path.endsWith(".ass") ? 2000 : 734003200,
+    media_kind: path.endsWith(".ass") ? "subtitle" as const : "video" as const,
+    included: true,
+    rendered_target: `${TITLE}/Season 01/${path}`,
+    safety: "valid" as const,
+    ...(path.endsWith(".ass") ? { bound_video_source_path: first } : {}),
+  }));
+  return view;
+}
+
 test.describe("统一 RSS 工作区持久化种子下载（fixture UI 走查）", () => {
   test.beforeEach(() => {
     test.skip(!fixtureOnly, "fixture UI walkthrough runs only with BANSOKO_E2E_FIXTURES=1");
@@ -443,5 +470,82 @@ test.describe("统一 RSS 工作区持久化种子下载（fixture UI 走查）"
     await expect(task.getByRole("button", { name: /^开始下载/ })).toHaveCount(0);
     await expect(task.getByRole("button", { name: "完成" })).toBeVisible();
     expect(download.submissions()).toBe(1);
+  });
+
+  test("按文件编号在桌面和手机保持可用，预览与提交使用同一覆盖", async ({ page }) => {
+    await mockSignedIn(page);
+    await mockShellReads(page);
+    await mockCandidates(page);
+    await mockDiscovery(page);
+    await mockSeedRead(page);
+    const download = await mockSnapshotDownload(page);
+    const previews: { file_selections?: { overrides?: { path: string; season?: number; episode: number }[] }[] }[] = [];
+    await page.route("**/api/v1/anime/rss-list-view", async (route) => {
+      const body = route.request().postDataJSON();
+      previews.push(body);
+      const view = numberingView();
+      const overrides = body.file_selections?.[0]?.overrides ?? [];
+      for (const file of view.groups[0].items[0].files) {
+        const override = overrides.find((candidate: { path: string }) => candidate.path === file.source_path);
+        if (override) file.rendered_target = `${TITLE}/Specials/${TITLE} - S00E${String(override.episode).padStart(2, "0")}`;
+      }
+      await ok(route, 200, view);
+    });
+
+    await page.goto("/");
+    if ((page.viewportSize()?.width ?? 1280) <= 600) {
+      await page.getByRole("navigation", { name: "底部导航" }).getByRole("button", { name: "发现", exact: true }).click();
+      await page.getByRole("radiogroup", { name: "主导航" }).getByRole("radio", { name: "AniBT", exact: true }).click();
+    } else {
+      await page.getByRole("button", { name: "AniBT", exact: true }).click();
+    }
+    const card = page.getByRole("listitem").filter({ hasText: TITLE }).first();
+    await card.getByRole("button", { name: `浏览《${TITLE}》的种子` }).click();
+    const task = page.getByRole("dialog", { name: "浏览种子" });
+    const title = `[${GROUP}] ${TITLE} - 01 [1080p]`;
+    await task.getByRole("checkbox", { name: title }).click();
+    await task.getByRole("button", { name: "下一步（1）" }).click();
+
+    await task.getByRole("button", { name: "设置文件编号", exact: true }).click();
+    const editor = page.getByRole("dialog", { name: "设置文件编号" });
+    await expect(editor).toBeVisible();
+    await expect(editor.locator("[data-numbering-row]")).toHaveCount(2);
+    const geometry = await editor.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const rows = [...element.querySelectorAll("[data-numbering-row]")].map((row) => {
+        const box = row.getBoundingClientRect();
+        return { left: box.left, right: box.right, scrollWidth: (row as HTMLElement).scrollWidth, clientWidth: (row as HTMLElement).clientWidth };
+      });
+      return { left: rect.left, right: rect.right, viewport: window.innerWidth, pageWidth: document.documentElement.scrollWidth, rows };
+    });
+    expect(geometry.left).toBeGreaterThanOrEqual(0);
+    expect(geometry.right).toBeLessThanOrEqual(geometry.viewport);
+    expect(geometry.pageWidth).toBeLessThanOrEqual(geometry.viewport);
+    for (const row of geometry.rows) {
+      expect(row.left).toBeGreaterThanOrEqual(geometry.left);
+      expect(row.right).toBeLessThanOrEqual(geometry.right);
+      expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth + 1);
+    }
+    await editor.screenshot({ path: test.info().outputPath(`file-numbering-${test.info().project.name}.png`), animations: "disabled" });
+
+    await editor.getByRole("button", { name: "全选筛选结果" }).click();
+    await editor.getByRole("spinbutton", { name: "统一季号" }).fill("0");
+    await editor.getByRole("spinbutton", { name: "起始集号" }).fill("7");
+    await editor.getByRole("button", { name: "勾选项顺序填入" }).click();
+    await editor.getByRole("textbox", { name: "按路径筛选文件" }).fill("02");
+    await expect(editor.locator("[data-numbering-row]")).toHaveCount(1);
+    await expect(editor.getByRole("spinbutton", { name: `集数 ${TITLE} - 02.mkv` })).toHaveValue("8");
+    await editor.getByRole("button", { name: "取消筛选结果" }).click();
+    await editor.getByRole("textbox", { name: "按路径筛选文件" }).clear();
+    await expect(editor.getByRole("spinbutton", { name: `集数 ${TITLE} - 01.mkv` })).toHaveValue("7");
+    await editor.getByRole("button", { name: "应用勾选修改（1）" }).click();
+
+    const expected = [{ path: `${TITLE} - 01.mkv`, season: 0, episode: 7 }];
+    await expect.poll(() => previews.at(-1)?.file_selections?.[0]?.overrides).toEqual(expected);
+    await expect(task.getByRole("region", { name: "预览" }).getByText(`${TITLE}/Specials/${TITLE} - S00E07`, { exact: true })).toBeVisible();
+    await task.getByRole("button", { name: "开始下载（1）" }).click();
+    await expect.poll(() => download.submittedRequest()).toBeTruthy();
+    expect(download.submittedRequest()).toMatchObject({ overrides: expected });
+    expect(download.submittedRequest()).not.toHaveProperty("file_selection");
   });
 });

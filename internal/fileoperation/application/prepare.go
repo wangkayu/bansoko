@@ -160,12 +160,15 @@ func (s *Service) prepareForArtifactTxWithOverrides(ctx context.Context, tx *sql
 	selection := newFileSelection(artifact.frozenInput, frozen.fileKindsVersion, frozen.plan.Selection())
 	videos := make([]artifactFileContext, 0, len(artifact.files))
 	subtitles := make([]artifactFileContext, 0)
+	videoSeasons := map[string]*int{}
 	for _, file := range artifact.files {
 		kind, ignored := selection.classify(file)
 		if ignored != "" {
 			continue
 		}
 		if kind == filekinds.KindVideo {
+			file.namingSeason = frozenPlanNamingSeason(frozen.plan, file.relativePath)
+			videoSeasons[file.fileRef] = file.namingSeason
 			videos = append(videos, file)
 		} else {
 			subtitles = append(subtitles, file)
@@ -186,6 +189,14 @@ func (s *Service) prepareForArtifactTxWithOverrides(ctx context.Context, tx *sql
 		}
 	}
 	unknownVideos := movieExtras(artifact, finalVideos)
+	for _, video := range finalVideos {
+		if !unknownVideos[video.fileRef] {
+			continue
+		}
+		if entry, ok := frozen.plan.File(video.relativePath); ok && entry.Identity != nil && entry.Identity.Kind == episodeidentity.KindTVEpisode {
+			delete(unknownVideos, video.fileRef)
+		}
+	}
 	eligibleVideos := videos
 	videos = finalVideos
 	// Every video the rules keep must agree with the frozen plan: the
@@ -271,6 +282,9 @@ func (s *Service) prepareForArtifactTxWithOverrides(ctx context.Context, tx *sql
 		if !prep.admitsFile(file.fileRef) {
 			continue
 		}
+		if file.boundVideoFileRef.Valid {
+			file.namingSeason = videoSeasons[file.boundVideoFileRef.String]
+		}
 		if s.excludedReason(file.fileRef) != "" {
 			continue
 		}
@@ -340,6 +354,15 @@ func (s *Service) excludeDuplicateSubtitleTargets(subtitles []artifactFileContex
 		}
 	}
 	b.operations = kept
+}
+
+func frozenPlanNamingSeason(plan *batchplan.Plan, sourcePath string) *int {
+	entry, ok := plan.File(sourcePath)
+	if !ok || entry.Season == nil {
+		return nil
+	}
+	season := *entry.Season
+	return &season
 }
 
 // planDrift marks the TV videos whose inspected identity disagrees with the

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	terminaldomain "bansoko/internal/acquisition/terminal/domain"
+	"bansoko/internal/batchplan"
 	catalog "bansoko/internal/catalog/domain"
 	"bansoko/internal/download/domain"
 	"bansoko/internal/episodeidentity"
@@ -1486,6 +1487,10 @@ type fileFactsContext struct {
 	// FileKindsVersion is the file kind list frozen on the snapshot.
 	FileKindsVersion string
 	Parser           frozenParserEvidence
+	// BatchPlan is the frozen authority for every planned video's final
+	// identity. Inspection may collect filename evidence, but never makes a
+	// second episode decision that could disagree with admission.
+	BatchPlan *batchplan.Plan
 	// Selected is the batch plan's frozen manual file selection (one-shot):
 	// a selected video at any depth is parsed like a first-level one. nil is
 	// the product default.
@@ -1554,17 +1559,13 @@ func (s *Service) loadFileFactsContext(ctx context.Context, query interface {
 	}
 	context.EffectiveOffset = frozenReleaseOffset(releaseFactsRaw, releaseIdentityRaw)
 	var frozenKinds struct {
-		FileKindsVersion string `json:"file_kinds_version"`
-		BatchPlan        *struct {
-			SelectedPaths []string `json:"selected_paths"`
-			Files         []struct {
-				SourcePath string `json:"source_path"`
-			} `json:"files"`
-		} `json:"batch_plan"`
+		FileKindsVersion string          `json:"file_kinds_version"`
+		BatchPlan        *batchplan.Plan `json:"batch_plan"`
 	}
 	if len(releaseFactsRaw) > 0 && json.Unmarshal(releaseFactsRaw, &frozenKinds) == nil {
 		context.FileKindsVersion = strings.TrimSpace(frozenKinds.FileKindsVersion)
-		if frozenKinds.BatchPlan != nil && frozenKinds.BatchPlan.SelectedPaths != nil {
+		if frozenKinds.BatchPlan != nil {
+			context.BatchPlan = frozenKinds.BatchPlan
 			context.Selected = filekinds.NewSelection(frozenKinds.BatchPlan.SelectedPaths)
 			context.Manifest = make(map[string]struct{}, len(frozenKinds.BatchPlan.Files))
 			for _, file := range frozenKinds.BatchPlan.Files {
@@ -1589,6 +1590,31 @@ func selectedArtifactFile(selection *filekinds.Selection, manifest map[string]st
 	return ok && selection.Has(path)
 }
 
+// frozenBatchPlanFile finds the artifact file's admission entry through the
+// same rootless-path mapping used by the frozen manual selection.
+func frozenBatchPlanFile(plan *batchplan.Plan, manifest map[string]struct{}, relativePath string) (batchplan.File, bool) {
+	if plan == nil {
+		return batchplan.File{}, false
+	}
+	path, ok := filekinds.MapManifestPath(manifest, filepath.ToSlash(relativePath))
+	if !ok {
+		return batchplan.File{}, false
+	}
+	return plan.File(path)
+}
+
+// frozenPlannedFileIdentity projects the accepted final identity of a planned
+// video. Both parser-derived and owner-overridden identities have already been
+// resolved in the BatchPlan; inspection must not apply the automatic offset a
+// second time or reinterpret an explicit final episode.
+func frozenPlannedFileIdentity(plan *batchplan.Plan, manifest map[string]struct{}, relativePath string) (episodeidentity.EpisodeIdentity, bool) {
+	entry, ok := frozenBatchPlanFile(plan, manifest, relativePath)
+	if !ok || entry.Outcome != batchplan.OutcomePlanned || entry.Identity == nil {
+		return episodeidentity.EpisodeIdentity{}, false
+	}
+	return *entry.Identity, true
+}
+
 // frozenReleaseOffset reads the one effective offset directly from the frozen
 // snapshot columns. The current link offset is deliberately not consulted: the
 // snapshot is the only offset authority for per-file recognition.
@@ -1607,16 +1633,20 @@ func frozenReleaseOffset(releaseFactsRaw, releaseIdentityRaw []byte) int {
 	return 0
 }
 
-// persistFileFactsTx parses every relevant artifact filename with the parser
-// selection frozen on the Release media fact snapshot, resolves one independent
-// EpisodeIdentity per video, and freezes the EffectiveFileFacts rows into that
-// snapshot. Missing/unsupported file evidence produces an unresolved identity
-// with no coverage — it never invents an episode. Subtitle and other files
-// carry evidence but no identity. A movie binding short-circuits every file to
-// the canonical movie:0 identity regardless of filename digits. A selection or
-// parse failure is returned as an explicit error: an unusable frozen parser
-// must not silently become "this artifact has no episode facts". Offset is not
-// applied by the parser; the identity resolver applies it exactly once.
+// persistFileFactsTx collects artifact evidence with the parser selection
+// frozen on the Release media fact snapshot and freezes one EffectiveFileFacts
+// row per file. A planned video's final identity comes exclusively from its
+// frozen BatchPlan entry, whether admission derived it from the filename or an
+// explicit owner override. The parser still supplies evidence, but never makes
+// a second episode decision for a planned file. Every eligible video must have
+// a frozen plan entry, and every planned video must have its final identity;
+// an unknown or otherwise unplanned video keeps evidence-only recognition. A
+// snapshot without those placement facts is incomplete and fails instead of
+// using a legacy filename-resolution fallback. Subtitle and other files carry
+// evidence but no identity. A selection or parse failure is returned as an
+// explicit error: an unusable frozen parser must not silently become "this
+// artifact has no episode facts". Offset is applied only by the admission
+// identity resolver.
 func (s *Service) prepareFileFacts(ctx context.Context, artifactID string, files []artifactFilePlan) (string, []map[string]any, error) {
 	if s.mediaFacts == nil {
 		return "", nil, nil
@@ -1642,13 +1672,14 @@ func (s *Service) prepareFileFacts(ctx context.Context, artifactID string, files
 		// other file keeps an evidence row but an unresolved identity: a
 		// nested file, a subtitle or another kind never gets an episode.
 		eligible := (file.firstLevel || selectedArtifactFile(context.Selected, context.Manifest, file.relativePath)) && filekinds.Classify(context.FileKindsVersion, name) == filekinds.KindVideo
+		planned, hasPlannedIdentity := frozenPlannedFileIdentity(context.BatchPlan, context.Manifest, file.relativePath)
+		plannedFile, hasPlanEntry := frozenBatchPlanFile(context.BatchPlan, context.Manifest, file.relativePath)
+		if eligible && (!hasPlanEntry || plannedFile.Outcome == batchplan.OutcomePlanned && !hasPlannedIdentity) {
+			return "", nil, fmt.Errorf("release media fact snapshot has no frozen batch-plan identity for eligible file %q", name)
+		}
 		input := episodeidentity.EpisodeIdentityInput{
 			MediaKind: context.MediaKind,
 			FileRef:   file.fileRef,
-			// The frozen offset is the one offset the Release evaluation
-			// resolved with; it is applied exactly once and the current link
-			// offset is never re-read.
-			Offset: context.EffectiveOffset,
 		}
 		var fileEvidence episodeidentity.EpisodeEvidence
 		if eligible {
@@ -1666,6 +1697,9 @@ func (s *Service) prepareFileFacts(ctx context.Context, artifactID string, files
 		}
 		input.FileEvidence = fileEvidence
 		identity := episodeidentity.NewResolver().Resolve(input)
+		if hasPlannedIdentity {
+			identity = planned
+		}
 		// A resolved identity is frozen only in its registered shape: one key
 		// (IdentityV1) or a multi-episode file's consecutive keys (IdentityV2).
 		if err := terminaldomain.ValidateResolvedIdentity(identity); err != nil {

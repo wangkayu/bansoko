@@ -1232,7 +1232,7 @@ VALUES ($1, 'artifact-file-test', 'file-fixture-root', 'primary', $5, $2, 'video
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	seedFixtureEpisodeSnapshot(t, db, manifest)
+	seedFixtureEpisodeSnapshot(t, db, manifest, policyJSON)
 }
 
 func newFixtureService(t *testing.T, db *sql.DB, fixture fileFixture) *Service {

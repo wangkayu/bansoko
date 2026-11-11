@@ -325,6 +325,7 @@ type OneShotRequest struct {
 	// A one-shot is an explicit command: its plan is never deduplicated.
 	UnclassifiedRoute string
 	FileSelection     *filekinds.Selection
+	Overrides         []FileEpisodeOverride
 	// Group is the provider-namespaced external identity of the release's RSS
 	// source (Mikan's numeric group id / AniBT's group slug), from the same
 	// frozen evidence as GroupName. It is zero when the source records none.
@@ -355,6 +356,7 @@ type PlanInput struct {
 	UnclassifiedRoute   string
 	// FileSelection is OneShotRequest.FileSelection (nil for every other path).
 	FileSelection *filekinds.Selection
+	Overrides     []FileEpisodeOverride
 	// Group is the provider-namespaced external identity of the release's RSS
 	// source (Mikan's numeric group id / AniBT's group slug), read from the same
 	// frozen evidence as GroupName. The zero value means the source records none.
@@ -435,6 +437,7 @@ func PreflightOneShot(ctx context.Context, request OneShotRequest, probe Probe) 
 		Preview:             request.Preview,
 		UnclassifiedRoute:   request.UnclassifiedRoute,
 		FileSelection:       request.FileSelection,
+		Overrides:           request.Overrides,
 	}, probe)
 }
 
@@ -511,7 +514,7 @@ func preflight(ctx context.Context, input PlanInput, probe Probe) PlanResult {
 	if input.BatchPlan != nil {
 		plan = cloneBatchPlan(*input.BatchPlan)
 	} else {
-		plan, err = BuildBatchPlan(ctx, BatchPlanInput{Evidence: evidence, Files: files, FileFilter: input.Effective.Rules.FileFilter, UnclassifiedRoute: input.UnclassifiedRoute, Selection: input.FileSelection, DownloadCompletion: string(input.Effective.DownloadCompletion.Rules.Action), DownloadCompletionSeedLimits: input.Effective.DownloadCompletion.Rules.SeedLimits})
+		plan, err = BuildBatchPlan(ctx, BatchPlanInput{Evidence: evidence, Files: files, FileFilter: input.Effective.Rules.FileFilter, UnclassifiedRoute: input.UnclassifiedRoute, Selection: input.FileSelection, Overrides: input.Overrides, DownloadCompletion: string(input.Effective.DownloadCompletion.Rules.Action), DownloadCompletionSeedLimits: input.Effective.DownloadCompletion.Rules.SeedLimits})
 		if err != nil {
 			return fail("file_parser_unavailable", strings.TrimSpace(err.Error()))
 		}
@@ -585,16 +588,15 @@ func preflight(ctx context.Context, input PlanInput, probe Probe) PlanResult {
 			setTargetDiagnostic(file, "target_entry_size_unknown", "目标路径生成失败，文件大小未知，未执行重命名")
 			return fail("target_entry_size_unknown", "included torrent entry has no exact byte size")
 		}
-		manifestFile := animedomain.ManifestFileInput{SourcePath: sourcePath, Filename: filename, MediaKind: file.MediaKind, SizeBytes: *file.SizeBytes}
-		if plan.MediaKind != batchplan.MediaKindFilm {
-			// The plan froze this video's own filename identity; naming
-			// renders from exactly that identity.
-			var identity episodeidentity.EpisodeIdentity
-			if planned.Identity != nil {
-				identity = *planned.Identity
-			}
-			manifestFile.FrozenEpisode, manifestFile.PerFileEpisode = ParserEvidence{Identity: identity}.NamingFacts(), true
+		manifestFile := animedomain.ManifestFileInput{SourcePath: sourcePath, Filename: filename, MediaKind: file.MediaKind, SizeBytes: *file.SizeBytes, Season: planned.Season}
+		// The plan froze this video's final identity for both TV and movie
+		// releases. A movie's canonical main-video identity renders exactly as
+		// before; an explicit per-file episode must not be discarded here.
+		var identity episodeidentity.EpisodeIdentity
+		if planned.Identity != nil {
+			identity = *planned.Identity
 		}
+		manifestFile.FrozenEpisode, manifestFile.PerFileEpisode = ParserEvidence{Identity: identity}.NamingFacts(), true
 		rendered := animedomain.PreviewExactFile(previewItem, preview, manifestFile, input.Effective, animeTitle, source, rules)
 		if !rendered.Included {
 			continue

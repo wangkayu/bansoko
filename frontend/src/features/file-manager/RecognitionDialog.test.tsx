@@ -100,6 +100,9 @@ beforeEach(() => {
       if (request.load_runtime_facts && runtimePreviewStatus !== 200) {
         return json({ code: "SERVICE_UNAVAILABLE", message: "unavailable" }, runtimePreviewStatus);
       }
+      if (request.overrides?.length) {
+        return json({ ...previewBody, rows: [{ ...renamed[0], episode: { raw: "1", number: "8", offset: 0, source: "manual" } }, renamed[1]] });
+      }
       return json(previewBody);
     }
     if (url.pathname === "/api/v1/file-manager/recognition" && init?.method === "POST") {
@@ -161,6 +164,33 @@ describe("RecognitionDialog", () => {
       conflict: "block",
     });
     await waitFor(() => expect(onFinished).toHaveBeenCalledWith(result, 0));
+  });
+
+  it("previews and submits the same sparse per-file numbering overrides", async () => {
+    renderDialog();
+    await screen.findByText("/media/anime/Show - 01.mkv", undefined, { timeout: 3000 });
+    fireEvent.click(screen.getByRole("button", { name: t("fileNumbering.title") }));
+    const editor = await screen.findByRole("dialog", { name: t("fileNumbering.title") });
+    fireEvent.click(within(editor).getByRole("checkbox", { name: t("fileNumbering.checkRow", { path: "/media/anime/ep01.mkv" }) }));
+    fireEvent.change(within(editor).getByRole("spinbutton", { name: `${t("fileNumbering.episode")} /media/anime/ep01.mkv` }), { target: { value: "8" } });
+    fireEvent.click(within(editor).getByRole("button", { name: t("fileNumbering.confirm", { n: 1 }) }));
+
+    const overrides = [{ path: "/media/anime/ep01.mkv", episode: 8 }];
+    await waitFor(() => expect(posts("/api/v1/file-manager/recognition/preview").at(-1)).toMatchObject({ overrides }), { timeout: 3000 });
+
+    // Reopening keeps the current manual draft. Restoring it starts from the
+    // parser's raw evidence plus the current offset, not the manual result.
+    fireEvent.click(screen.getByRole("button", { name: t("fileNumbering.title") }));
+    const reopened = await screen.findByRole("dialog", { name: t("fileNumbering.title") });
+    const episodeInput = () => within(reopened).getByRole("spinbutton", { name: `${t("fileNumbering.episode")} /media/anime/ep01.mkv` });
+    expect(episodeInput()).toHaveValue(8);
+    fireEvent.click(within(reopened).getByRole("checkbox", { name: t("fileNumbering.checkRow", { path: "/media/anime/ep01.mkv" }) }));
+    fireEvent.click(within(reopened).getByRole("button", { name: t("fileNumbering.restoreChecked") }));
+    expect(episodeInput()).toHaveValue(1);
+    fireEvent.click(within(reopened).getByRole("button", { name: t("act.cancel") }));
+
+    fireEvent.click(screen.getByRole("button", { name: t("fileManager.recognize.apply") }));
+    expect(posts("/api/v1/file-manager/recognition")[0]).toMatchObject({ expected_plan_digest: "digest-1", overrides });
   });
 
   it("asks how to settle occupied targets and submits the skip choice", async () => {

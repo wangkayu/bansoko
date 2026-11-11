@@ -148,6 +148,9 @@ type OneShotInputSnapshot struct {
 	// FileSelection is the frozen manual file selection (canonical manifest
 	// paths, ascending); absent for the product default.
 	FileSelection []string `json:"file_selection,omitempty"`
+	// Overrides are the frozen sparse final episode and optional naming-season
+	// values, canonical by path. Absent preserves legacy snapshots.
+	Overrides []acquisitiontarget.FileEpisodeOverride `json:"overrides,omitempty"`
 }
 
 // oneShotInputSnapshotJSON is the wire form of the stored snapshot. A
@@ -170,6 +173,7 @@ type oneShotInputSnapshotJSON struct {
 	DraftDigest       string                                  `json:"draft_digest,omitempty"`
 	Draft             json.RawMessage                         `json:"draft,omitempty"`
 	FileSelection     []string                                `json:"file_selection,omitempty"`
+	Overrides         []acquisitiontarget.FileEpisodeOverride `json:"overrides,omitempty"`
 }
 
 type oneShotSelectedSeedJSON struct {
@@ -207,6 +211,7 @@ func (snapshot OneShotInputSnapshot) MarshalJSON() ([]byte, error) {
 		DraftDigest:       snapshot.DraftDigest,
 		Draft:             snapshot.Draft,
 		FileSelection:     snapshot.FileSelection,
+		Overrides:         snapshot.Overrides,
 	}
 	if snapshot.CandidateID != "" {
 		candidateID := snapshot.CandidateID
@@ -243,6 +248,7 @@ func (snapshot *OneShotInputSnapshot) UnmarshalJSON(raw []byte) error {
 	snapshot.DraftDigest = value.DraftDigest
 	snapshot.Draft = append(json.RawMessage(nil), value.Draft...)
 	snapshot.FileSelection = value.FileSelection
+	snapshot.Overrides = value.Overrides
 	return nil
 }
 
@@ -374,9 +380,13 @@ type AcquireSeedInput struct {
 	// of the replay identity, is validated against the seed's own manifest
 	// and file rules inside the admission transaction, and freezes into the
 	// batch plan and the input snapshot.
-	FileSelection   []string          `json:"file_selection,omitempty"`
-	Caller          AcquireSeedCaller `json:"caller"`
-	EffectiveDigest string            `json:"-"`
+	FileSelection []string `json:"file_selection,omitempty"`
+	// Overrides replace selected videos' final identities and optionally their
+	// owner naming seasons. They are canonical before hashing and frozen with
+	// the exact input; an explicit final episode never receives EpisodeOffset.
+	Overrides       []acquisitiontarget.FileEpisodeOverride `json:"overrides,omitempty"`
+	Caller          AcquireSeedCaller                       `json:"caller"`
+	EffectiveDigest string                                  `json:"-"`
 }
 
 // isCurrentInput reports whether this admission captures the request's unsaved
@@ -548,6 +558,11 @@ func (s *Service) AcquireSeedOnce(ctx context.Context, input AcquireSeedInput, r
 		return OneShotAdmissionResult{}, err
 	}
 	input.FileSelection = selection
+	overrides, err := acquisitiontarget.CanonicalFileEpisodeOverrides(input.Overrides)
+	if err != nil {
+		return OneShotAdmissionResult{}, fileSelectionInvalid("overrides: %v", err)
+	}
+	input.Overrides = overrides
 
 	// The input variants are mutually exclusive; a mixed or mis-discriminated
 	// body is a structural request error before any config read or marker
@@ -1031,6 +1046,9 @@ VALUES ($1, $2, 'custom_rss', $3, $4, $5, $6, $7)`,
 	if err != nil {
 		return OneShotAdmissionResult{}, err
 	}
+	if err := validateOneShotFileOverrides(input.Overrides, item.ReleaseFiles, effective.Rules.FileFilter, fileSelection); err != nil {
+		return OneShotAdmissionResult{}, err
+	}
 	if err := validateOneShotFilterGate(item, effective, fileSelection); err != nil {
 		return OneShotAdmissionResult{}, err
 	}
@@ -1090,6 +1108,7 @@ VALUES ($1, $2, 'custom_rss', $3, $4, $5, $6, $7)`,
 		planned := evidence
 		request := oneShotTargetRequest(releaseID, draft, groupName, episodeOffset, parserKind, effective, item, evaluation, &planned, route)
 		request.FileSelection = fileSelection
+		request.Overrides = input.Overrides
 		targetPlan = planOneShotTargets(ctx, s.targetProbe, request)
 		switch targetPlan.Admission.Admission {
 		case acquisitiontarget.AdmissionDownload:
@@ -1128,6 +1147,7 @@ VALUES ($1, $2, 'custom_rss', $3, $4, $5, $6, $7)`,
 		Parser:            parserEvidence,
 		TargetFacts:       targetFactsRaw,
 		FileSelection:     fileSelection.Paths(),
+		Overrides:         input.Overrides,
 	}
 	if input.isCurrentInput() {
 		draftRaw, err := json.Marshal(draft)
@@ -1202,7 +1222,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
 	// planning ran, otherwise the plain classification under the route.
 	snapshotInput := acquisitiontarget.ReleaseMediaSnapshotInput{
 		ReleaseID: releaseID, Title: item.Title, BGMWorkID: bgmWorkID, TMDBWorkID: tmdbWorkID, Evidence: evidence,
-		Files: item.ReleaseFiles, FileFilter: effective.Rules.FileFilter, UnclassifiedRoute: route, Selection: fileSelection,
+		Files: item.ReleaseFiles, FileFilter: effective.Rules.FileFilter, UnclassifiedRoute: route, Selection: fileSelection, Overrides: input.Overrides,
 		DownloadCompletion: string(effective.DownloadCompletion.Rules.Action), DownloadCompletionSeedLimits: effective.DownloadCompletion.Rules.SeedLimits,
 	}
 	if targetPlan.BatchPlan.Version != "" {
@@ -1934,10 +1954,16 @@ type oneShotCanonicalRequest struct {
 	EpisodeOffset int `json:"episode_offset,omitempty"`
 	// FileSelection is omitted without a manual selection so a default
 	// request keeps its replay identity.
-	FileSelection []string `json:"file_selection,omitempty"`
+	FileSelection []string                                `json:"file_selection,omitempty"`
+	Overrides     []acquisitiontarget.FileEpisodeOverride `json:"overrides,omitempty"`
 }
 
 func canonicalOneShotRequestHash(input AcquireSeedInput, key string) (string, error) {
+	overrides, err := acquisitiontarget.CanonicalFileEpisodeOverrides(input.Overrides)
+	if err != nil {
+		return "", err
+	}
+	input.Overrides = overrides
 	return animeapplication.CanonicalJSONHash(oneShotCanonicalRequest{
 		Kind:            "acquire_seed_once",
 		IdempotencyKey:  key,
@@ -1947,6 +1973,7 @@ func canonicalOneShotRequestHash(input AcquireSeedInput, key string) (string, er
 		SelectedSeed:    input.Seed,
 		EpisodeOffset:   input.EpisodeOffset,
 		FileSelection:   input.FileSelection,
+		Overrides:       input.Overrides,
 	})
 }
 
@@ -1957,15 +1984,21 @@ func canonicalOneShotRequestHash(input AcquireSeedInput, key string) (string, er
 // always decided against the originally captured input, never re-resolved
 // against changed configuration.
 type oneShotCurrentInputCanonicalRequest struct {
-	Kind           string       `json:"kind"`
-	IdempotencyKey string       `json:"idempotency_key"`
-	DraftDigest    string       `json:"draft_digest"`
-	SelectedSeed   SelectedSeed `json:"selected_seed"`
-	EpisodeOffset  int          `json:"episode_offset,omitempty"`
-	FileSelection  []string     `json:"file_selection,omitempty"`
+	Kind           string                                  `json:"kind"`
+	IdempotencyKey string                                  `json:"idempotency_key"`
+	DraftDigest    string                                  `json:"draft_digest"`
+	SelectedSeed   SelectedSeed                            `json:"selected_seed"`
+	EpisodeOffset  int                                     `json:"episode_offset,omitempty"`
+	FileSelection  []string                                `json:"file_selection,omitempty"`
+	Overrides      []acquisitiontarget.FileEpisodeOverride `json:"overrides,omitempty"`
 }
 
 func canonicalOneShotCurrentInputRequestHash(draftDigest string, input AcquireSeedInput, key string) (string, error) {
+	overrides, err := acquisitiontarget.CanonicalFileEpisodeOverrides(input.Overrides)
+	if err != nil {
+		return "", err
+	}
+	input.Overrides = overrides
 	return animeapplication.CanonicalJSONHash(oneShotCurrentInputCanonicalRequest{
 		Kind:           "acquire_seed_once_current_input",
 		IdempotencyKey: key,
@@ -1973,6 +2006,7 @@ func canonicalOneShotCurrentInputRequestHash(draftDigest string, input AcquireSe
 		SelectedSeed:   input.Seed,
 		EpisodeOffset:  input.EpisodeOffset,
 		FileSelection:  input.FileSelection,
+		Overrides:      input.Overrides,
 	})
 }
 

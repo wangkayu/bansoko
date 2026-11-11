@@ -30,6 +30,7 @@ import { enRecordsCopy } from "./en.records";
 import { enFileManagerCopy } from "./en.file-manager";
 import { enQualityCompareCopy } from "./en.quality-compare";
 import { enOneshotCopy } from "./en.oneshot";
+import { enFileNumberingCopy } from "./en.file-numbering";
 
 // English copy catalog. The key set is the zh-CN catalog's; a missing or extra
 // key fails typecheck.
@@ -190,6 +191,7 @@ export const en = {
   records: enRecordsCopy,
   fileManager: enFileManagerCopy,
   oneshot: enOneshotCopy,
+  fileNumbering: enFileNumberingCopy,
 
   error: enErrorCopy,
   reason: enReasonCopy,

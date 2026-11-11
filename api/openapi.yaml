@@ -7852,6 +7852,27 @@ components:
       type: integer
       format: int64
       minimum: 1
+    FileEpisodeOverride:
+      type: object
+      additionalProperties: false
+      required: [path, episode]
+      description: >-
+        One selected video's manual final numbering. An omitted season follows
+        the request's main naming season. Episode is the explicit final integer:
+        the automatic episode offset is never applied to it. Bound subtitles
+        inherit both values from their video. Paths must be unique within one
+        request and name selected videos; stale or duplicate paths are invalid.
+      properties:
+        path:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        season:
+          type: integer
+          minimum: 0
+        episode:
+          type: integer
+          minimum: 1
     SnapshotSeedDownloadInput:
       type: object
       additionalProperties: false
@@ -7935,6 +7956,16 @@ components:
             of its folder. Otherwise 422 FILE_SELECTION_INVALID with zero
             writes. The selection is part of the request identity and freezes
             with the acceptance.
+        overrides:
+          type: array
+          maxItems: 10000
+          items:
+            $ref: '#/components/schemas/FileEpisodeOverride'
+          description: >-
+            Sparse manual numbering for selected videos. Unlisted files keep
+            automatic recognition and the episode offset. The overrides are
+            sanitized against the selected videos, join the request identity,
+            and freeze with the acceptance.
     SnapshotSeedExpandInput:
       type: object
       additionalProperties: false
@@ -8265,6 +8296,14 @@ components:
             type: string
             minLength: 1
             maxLength: 2048
+        overrides:
+          type: array
+          maxItems: 10000
+          items:
+            $ref: '#/components/schemas/FileEpisodeOverride'
+          description: >-
+            Sparse manual numbering for this seed's selected videos. Preview
+            and download consume the same values; unlisted videos are automatic.
     RSSListManifestFile:
       type: object
       additionalProperties: false
@@ -14822,6 +14861,14 @@ components:
             and the idempotency request identity; it is never read from an
             existing subscription, link or the submitted draft. Omitted means 0.
             Out of range is a 422 OFFSET_OUT_OF_RANGE with zero writes.
+        overrides:
+          type: array
+          maxItems: 10000
+          items:
+            $ref: '#/components/schemas/FileEpisodeOverride'
+          description: >-
+            Sparse manual final numbering for selected videos of selected_seed.
+            These values join the frozen input and idempotency request identity.
     SelectedSeedInput:
       type: object
       additionalProperties: false
@@ -15101,6 +15148,14 @@ components:
           description: >-
             The frozen one-shot episode offset from the admission request. Legacy
             marker rows omit it.
+        overrides:
+          type: array
+          maxItems: 10000
+          items:
+            $ref: '#/components/schemas/FileEpisodeOverride'
+          description: >-
+            The frozen sparse per-file final episode and optional naming-season
+            overrides. Legacy marker rows omit it.
         effective_sections:
           type: object
           additionalProperties: true
@@ -16391,6 +16446,15 @@ components:
             resolve referenced provider episode titles through the persistent
             cache before rendering. Preview and submit must use the same value;
             submit reads the facts again and confirms the resulting plan digest.
+        overrides:
+          type: array
+          maxItems: 256
+          items:
+            $ref: '#/components/schemas/FileEpisodeOverride'
+          description: >-
+            Sparse manual final numbering for selected videos. Unlisted videos
+            keep parser results and the recognition offset; subtitles follow
+            their videos. Preview and submit must carry identical overrides.
     FileManagerRecognitionDisposition:
       type: string
       description: >-
@@ -16581,6 +16645,12 @@ components:
           description: >-
             Must match the confirmed preview. Reads current MediaInfo facts and
             referenced provider episode titles again before checking the digest.
+        overrides:
+          type: array
+          maxItems: 256
+          items:
+            $ref: '#/components/schemas/FileEpisodeOverride'
+          description: Must exactly match the overrides of the confirmed preview.
         expected_plan_digest:
           type: string
           description: The `plan_digest` the preview returned.

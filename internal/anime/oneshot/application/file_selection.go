@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	acquisitiondomain "bansoko/internal/acquisition/domain"
+	acquisitiontarget "bansoko/internal/acquisition/target"
 	animedomain "bansoko/internal/anime/domain"
 	"bansoko/internal/apperrors"
 	"bansoko/internal/filekinds"
@@ -61,6 +62,31 @@ func canonicalOneShotFileSelection(paths []string) ([]string, error) {
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+func validateOneShotFileOverrides(overrides []acquisitiontarget.FileEpisodeOverride, files []acquisitiondomain.ReleaseFile, rules animedomain.FileFilterRules, selection *filekinds.Selection) error {
+	manifest := make(map[string]struct{}, len(files))
+	for _, file := range files {
+		sourcePath := filekinds.NormalizePath(file.SourcePath)
+		if sourcePath == "" {
+			sourcePath = filekinds.NormalizePath(file.Filename)
+		}
+		manifest[sourcePath] = struct{}{}
+	}
+	for _, override := range overrides {
+		sourcePath := override.Path
+		if _, ok := manifest[sourcePath]; !ok {
+			return fileSelectionInvalid("override path %q is not a file of this torrent", sourcePath)
+		}
+		kind, ignored := filekinds.EligibilityIn(filekinds.Version, sourcePath, selection)
+		if ignored != "" || kind != filekinds.KindVideo {
+			return fileSelectionInvalid("override path %q is not a selected video", sourcePath)
+		}
+		if reason := animedomain.ManifestFileExclusionIn(filekinds.Version, rules, sourcePath, selection); reason != "" {
+			return fileSelectionInvalid("override path %q is excluded by the file rules (%s)", sourcePath, reason)
+		}
+	}
+	return nil
 }
 
 // resolveOneShotFileSelection proves a canonical manual selection against the

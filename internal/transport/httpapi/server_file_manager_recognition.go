@@ -16,6 +16,15 @@ import (
 // naming rules and optional match; the submit additionally names the digest
 // the preview returned and how it settles occupied targets.
 
+func writeFileManagerRecognitionError(w http.ResponseWriter, r *http.Request, err error) {
+	var typed *filemanager.Error
+	if errors.As(err, &typed) && typed.Kind == filemanager.ErrorInvalid && typed.Code == filemanager.CodeRecognitionInvalid {
+		writeError(w, r, &APIError{Status: http.StatusUnprocessableEntity, Code: typed.Code, Message: typed.Message})
+		return
+	}
+	writeFileManagerError(w, r, err)
+}
+
 // PreviewFileManagerRecognition renders what recognizing the selected files
 // would name them.
 func (s *Server) PreviewFileManagerRecognition(w http.ResponseWriter, r *http.Request) {
@@ -30,7 +39,7 @@ func (s *Server) PreviewFileManagerRecognition(w http.ResponseWriter, r *http.Re
 	}
 	preview, err := s.previewFileManagerRecognition(r.Context(), input)
 	if err != nil {
-		writeFileManagerError(w, r, err)
+		writeFileManagerRecognitionError(w, r, err)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -38,7 +47,7 @@ func (s *Server) PreviewFileManagerRecognition(w http.ResponseWriter, r *http.Re
 }
 
 func (s *Server) previewFileManagerRecognition(ctx context.Context, input generated.FileManagerRecognitionRequest) (generated.FileManagerRecognitionPreview, error) {
-	request, err := mapFileManagerRecognitionRequest(input.Paths, input.Naming, input.Parser, input.Match)
+	request, err := mapFileManagerRecognitionRequest(input.Paths, input.Naming, input.Parser, input.Match, input.Overrides)
 	if err != nil {
 		return generated.FileManagerRecognitionPreview{}, err
 	}
@@ -64,7 +73,7 @@ func (s *Server) SubmitFileManagerRecognition(w http.ResponseWriter, r *http.Req
 	}
 	result, err := s.submitFileManagerRecognition(r.Context(), string(params.IdempotencyKey), input)
 	if err != nil {
-		writeFileManagerError(w, r, err)
+		writeFileManagerRecognitionError(w, r, err)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -72,7 +81,7 @@ func (s *Server) SubmitFileManagerRecognition(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) submitFileManagerRecognition(ctx context.Context, idempotencyKey string, input generated.FileManagerRecognitionSubmitRequest) (generated.FileManagerRecognitionResult, error) {
-	request, err := mapFileManagerRecognitionRequest(input.Paths, input.Naming, input.Parser, input.Match)
+	request, err := mapFileManagerRecognitionRequest(input.Paths, input.Naming, input.Parser, input.Match, input.Overrides)
 	if err != nil {
 		return generated.FileManagerRecognitionResult{}, err
 	}
@@ -98,10 +107,18 @@ func (s *Server) submitFileManagerRecognition(ctx context.Context, idempotencyKe
 // preview and the submit. The naming rules are the operation's own, exactly the
 // value one-shot renders with. A parser config that is not an object is
 // refused.
-func mapFileManagerRecognitionRequest(paths []string, rules generated.NamingRules, parser *generated.FileManagerRecognitionParser, match *generated.FileManagerRecognitionMatch) (filemanager.RecognitionRequest, error) {
+func mapFileManagerRecognitionRequest(paths []string, rules generated.NamingRules, parser *generated.FileManagerRecognitionParser, match *generated.FileManagerRecognitionMatch, overrides *[]generated.FileEpisodeOverride) (filemanager.RecognitionRequest, error) {
 	request := filemanager.RecognitionRequest{
 		Paths:  append([]string{}, paths...),
 		Naming: mapFileManagerNamingRules(rules),
+	}
+	if overrides != nil {
+		request.Overrides = make([]filemanager.RecognitionEpisodeOverride, 0, len(*overrides))
+		for _, override := range *overrides {
+			request.Overrides = append(request.Overrides, filemanager.RecognitionEpisodeOverride{
+				Path: override.Path, Season: override.Season, Episode: override.Episode,
+			})
+		}
 	}
 	if parser != nil {
 		if parser.Id != nil {

@@ -8,6 +8,7 @@ import (
 
 	"bansoko/internal/batchplan"
 	"bansoko/internal/episodeidentity"
+	"bansoko/internal/organizingpolicy"
 	facts "bansoko/internal/release/facts"
 	"bansoko/internal/testutil/mediafactsfixture"
 )
@@ -21,9 +22,25 @@ import (
 // number as a duplicate target). Naming reads episodes only from this snapshot.
 // A test that needs other identities inserts its own snapshot afterwards; the
 // newest snapshot of a release wins.
-func seedFixtureEpisodeSnapshot(t *testing.T, db *sql.DB, manifest json.RawMessage) {
+func seedFixtureEpisodeSnapshot(t *testing.T, db *sql.DB, manifest json.RawMessage, policyJSON string) {
 	t.Helper()
 	ctx := context.Background()
+	var policy struct {
+		MediaValues struct {
+			TMDB struct {
+				Value struct {
+					Kind string `json:"kind"`
+				} `json:"value"`
+			} `json:"tmdb"`
+		} `json:"fixture_media_values"`
+	}
+	if err := json.Unmarshal([]byte(policyJSON), &policy); err != nil {
+		t.Fatal(err)
+	}
+	mediaKind := "tv"
+	if policy.MediaValues.TMDB.Value.Kind == "movie" {
+		mediaKind = "movie"
+	}
 	var files []struct {
 		FileRef      string `json:"file_ref"`
 		RelativePath string `json:"relative_path"`
@@ -41,7 +58,7 @@ func seedFixtureEpisodeSnapshot(t *testing.T, db *sql.DB, manifest json.RawMessa
 			episode = "1"
 		}
 		return episodeidentity.NewResolver().Resolve(episodeidentity.EpisodeIdentityInput{
-			MediaKind:    "tv",
+			MediaKind:    mediaKind,
 			FileEvidence: episodeidentity.NewValueEvidence(episodeidentity.EpisodeSourceFileParser, "file_name", episode),
 		})
 	}
@@ -52,14 +69,30 @@ func seedFixtureEpisodeSnapshot(t *testing.T, db *sql.DB, manifest json.RawMessa
 	}
 	refs := map[string]episodeidentity.EpisodeIdentity{}
 	manifestPaths := map[string]string{}
-	for _, file := range files {
+	movieCandidates := []organizingpolicy.Video{}
+	for index, file := range files {
 		if file.MediaKind == "video" {
 			refs[file.FileRef] = resolve(file.Episode)
 			manifestPaths[file.FileRef] = file.RelativePath
+			size := uint64(max(file.Size, 0))
+			movieCandidates = append(movieCandidates, organizingpolicy.Video{
+				Ref: organizingpolicy.FileRef(file.FileRef), Order: uint32(index), Size: &size, Eligible: true,
+			})
 		}
 	}
-	planVideos := fixturePlanVideos(t, db, refs, manifestPaths)
-	releaseFacts := mediafactsfixture.ReleaseFactsJSON(t, nil, batchplan.RouteSkip, planVideos...)
+	planRefs := refs
+	if mediaKind == "movie" {
+		// Inspection records the canonical movie identity for every eligible
+		// video, while admission plans only the stable main video.
+		main := organizingpolicy.SelectMovie(movieCandidates).Main
+		planRefs = map[string]episodeidentity.EpisodeIdentity{string(main): refs[string(main)]}
+	}
+	planVideos := fixturePlanVideos(t, db, planRefs, manifestPaths)
+	fields := map[string]any(nil)
+	if mediaKind == "movie" {
+		fields = map[string]any{"media_kind": mediaKind}
+	}
+	releaseFacts := mediafactsfixture.ReleaseFactsJSON(t, fields, batchplan.RouteSkip, planVideos...)
 	if _, err := db.ExecContext(ctx, `
 INSERT INTO media_fact_snapshots(id, release_id, schema_version, resolver_version, parser_kind, input_digest, release_identity, release_facts)
 VALUES ('snap-fixture-default', 'release-file-test', $1, $2, 'regex', 'digest-fixture-default', $3::jsonb, $4::jsonb)`,

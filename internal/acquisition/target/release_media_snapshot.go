@@ -42,6 +42,10 @@ type ReleaseMediaSnapshotInput struct {
 	UnclassifiedRoute string
 	// Selection is the manual file selection a nil Plan classifies under.
 	Selection *filekinds.Selection
+	// Overrides are the sparse final per-file numbering inputs. They enter the
+	// input digest and a nil Plan's classification; a supplied Plan already
+	// carries their identities and seasons.
+	Overrides []FileEpisodeOverride
 	// DownloadCompletion is the action a nil Plan freezes (empty = seed).
 	DownloadCompletion string
 	// DownloadCompletionSeedLimits are the seed limits a nil Plan freezes.
@@ -94,7 +98,7 @@ func FreezeReleaseMediaSnapshotTx(ctx context.Context, scope txscope.Tx, store f
 	if in.Plan != nil {
 		plan = *in.Plan
 	} else {
-		built, err := BuildBatchPlan(ctx, BatchPlanInput{Evidence: evidence, Files: in.Files, FileFilter: in.FileFilter, UnclassifiedRoute: in.UnclassifiedRoute, Selection: in.Selection, DownloadCompletion: in.DownloadCompletion, DownloadCompletionSeedLimits: in.DownloadCompletionSeedLimits})
+		built, err := BuildBatchPlan(ctx, BatchPlanInput{Evidence: evidence, Files: in.Files, FileFilter: in.FileFilter, UnclassifiedRoute: in.UnclassifiedRoute, Selection: in.Selection, Overrides: in.Overrides, DownloadCompletion: in.DownloadCompletion, DownloadCompletionSeedLimits: in.DownloadCompletionSeedLimits})
 		if err != nil {
 			return fmt.Errorf("classify release files: %w", err)
 		}
@@ -160,6 +164,17 @@ func FreezeReleaseMediaSnapshotTx(ctx context.Context, scope txscope.Tx, store f
 // binding and the one episode offset. Any change produces a different digest.
 func ReleaseMediaInputDigest(in ReleaseMediaSnapshotInput) string {
 	e := in.Evidence
+	overrides, err := CanonicalFileEpisodeOverrides(in.Overrides)
+	if err != nil {
+		// Admission canonicalizes before this digest is read. Keep an invalid
+		// direct call distinguishable instead of silently dropping its input.
+		overrides = in.Overrides
+	}
+	overridesRaw, _ := json.Marshal(overrides)
+	overrideDigest := ""
+	if len(overrides) > 0 {
+		overrideDigest = string(overridesRaw)
+	}
 	return episodeidentity.InputDigest(
 		in.Title, e.Parsed.ParserID, e.Parsed.ParserImplementationVersion, e.Parsed.ResultDigest,
 		e.Selection.ConfigFingerprint,
@@ -171,5 +186,6 @@ func ReleaseMediaInputDigest(in ReleaseMediaSnapshotInput) string {
 		fmt.Sprintf("%d", e.Season),
 		fmt.Sprintf("%t", e.SeasonBound),
 		fmt.Sprintf("%d", e.Selection.Offset),
+		overrideDigest,
 	)
 }

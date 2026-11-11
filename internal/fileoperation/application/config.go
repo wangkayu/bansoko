@@ -308,6 +308,10 @@ func namingContextFacts(artifact artifactContext, file artifactFileContext, froz
 	// anime.season is the owner-edited season frozen the same way; an input
 	// accepted before it was frozen names the season its binding named.
 	ctx.Anime.Season = naming.FrozenAnimeSeason(evaluations[0].Input.Facts, ctx.Anime.TMDB)
+	if file.namingSeason != nil {
+		season := *file.namingSeason
+		ctx.Anime.Season = &season
+	}
 	return naming.WithVars(ctx, evaluations[0].Output)
 }
 

@@ -71,7 +71,7 @@ func seedFrozenProfileArtifact(t *testing.T, fingerprint, config string) (*sql.D
 		`","file_count":1,"files":[{"path":"` + frozenProfileFile + `","size_bytes":` + strconv.Itoa(size) +
 		`,"media_kind":"video","progress":1}]}`
 	seedArtifactOwner(t, db, "artifact-frozen-profile", "task-frozen-profile", "completed", "pending", correlation, `{}`)
-	seedMovieFactSnapshot(t, db, "snapshot-frozen-profile", "release-artifact-test", "tv", 1, "7", fingerprint, config)
+	seedMovieFactSnapshot(t, db, "snapshot-frozen-profile", "release-artifact-test", "tv", 1, "7", fingerprint, config, frozenProfileFile, "42")
 
 	claim, store := claimArtifactWorkItem(t, db, "artifact-frozen-profile",
 		[]byte(`{"download_task_id":"task-frozen-profile","provider_task_id":"tag:frozen-profile","local_root":"`+root+`"}`))

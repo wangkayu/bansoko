@@ -46,6 +46,8 @@ import { ParserKindSelect } from "../parser/ParserKindSelect";
 import { useParserKindOptions } from "../parser/useParserKindOptions";
 import { useOneShotSeedSource, type SearchSeedBrowse } from "./useOneShotSeeds";
 import { FilePickerDialog } from "./FilePicker";
+import { FileNumberingDialog } from "../file-numbering/FileNumberingDialog";
+import { sanitizeOverrides, type FileEpisodeOverride, type FileNumberingItem } from "../file-numbering/model";
 import { effectiveFileSelection, sanitizeFileSelection, selectedVideoCount } from "./fileSelection";
 
 // The one-shot download: a centered dialog opened by a card's "browse seeds". Two steps:
@@ -167,36 +169,77 @@ function FileRow({ file, subtitles, onJump }: { file: RSSListFile; subtitles: RS
 
 type UnclassifiedRoute = NonNullable<AnimeDraft["business"]>["unclassified_route"];
 
-/** The preview read's per-seed manual selections: only seeds whose choice differs from the defaults. */
-function fileSelectionsFor(rows: readonly OneShotSeedRow[], choices: ReadonlyMap<string, string[]>): RSSListFileSelection[] {
-  return rows.flatMap((row) => {
-    const choice = sanitizeFileSelection(row.item.manifest_files ?? [], choices.get(row.key));
-    return choice ? [{ snapshot_id: row.snapshotID, stable_seed_key: row.stableSeedKey, source_paths: choice }] : [];
+type SeedOverrides = ReadonlyMap<string, readonly FileEpisodeOverride[]>;
+
+function seedOverridesFor(
+  row: OneShotSeedRow,
+  choice: readonly string[] | undefined,
+  overrides: readonly FileEpisodeOverride[] | undefined,
+): FileEpisodeOverride[] {
+  const files = row.item.manifest_files ?? [];
+  const selection = effectiveFileSelection(files, choice);
+  const videos = new Set(files.filter((file) => file.selectable && file.media_kind === "video" && selection.has(file.source_path)).map((file) => file.source_path));
+  return sanitizeOverrides(overrides, videos);
+}
+
+function seedNumberingItems(row: OneShotSeedRow, choice: readonly string[] | undefined, season: number | null): FileNumberingItem[] {
+  const files = row.item.manifest_files ?? [];
+  const selection = effectiveFileSelection(files, choice);
+  return files.flatMap((file) => {
+    if (!file.selectable || file.media_kind !== "video" || !selection.has(file.source_path)) return [];
+    return [{
+      path: file.source_path,
+      sizeBytes: file.size_bytes,
+      automaticSeason: season,
+      automaticEpisode: file.recognition === "episode" ? file.episodes?.[0] ?? null : null,
+      automaticLabel: t("fileNumbering.automatic"),
+      subtitleCount: files.filter((subtitle) => subtitle.media_kind === "subtitle" && subtitle.selectable && subtitle.bound_video_source_path === file.source_path && selection.has(subtitle.source_path)).length,
+    }];
   });
 }
 
-/** A seed's file control: the button opening its picker dialog with the checked count, and the manual-choice state beside it. */
+/** The preview read's per-seed manual selections and sparse file numbering. */
+function fileSelectionsFor(rows: readonly OneShotSeedRow[], choices: ReadonlyMap<string, string[]>, overrides: SeedOverrides): RSSListFileSelection[] {
+  return rows.flatMap((row) => {
+    const choice = sanitizeFileSelection(row.item.manifest_files ?? [], choices.get(row.key));
+    const numbered = seedOverridesFor(row, choice, overrides.get(row.key));
+    if (!choice && numbered.length === 0) return [];
+    const sourcePaths = choice ?? [...effectiveFileSelection(row.item.manifest_files ?? [], undefined)].sort();
+    return [{ snapshot_id: row.snapshotID, stable_seed_key: row.stableSeedKey, source_paths: sourcePaths, ...(numbered.length > 0 ? { overrides: numbered } : {}) }];
+  });
+}
+
+/** A seed's file controls: choose the files, then optionally assign their final season/episode values. */
 function SeedFiles({
   row,
   choice,
   route,
+  mainSeason,
+  overrides,
   onChange,
+  onOverridesChange,
 }: {
   row: OneShotSeedRow;
   choice: string[] | undefined;
   route: UnclassifiedRoute | undefined;
+  mainSeason: number | null;
+  overrides: readonly FileEpisodeOverride[];
   onChange: (next: string[] | undefined) => void;
+  onOverridesChange: (next: FileEpisodeOverride[]) => void;
 }) {
   const [picking, setPicking] = useState(false);
+  const [numbering, setNumbering] = useState(false);
   const files = row.item.manifest_files ?? [];
   if (files.length === 0) return null;
   const selection = effectiveFileSelection(files, choice);
   const selectable = files.filter((file) => file.selectable).length;
+  const items = seedNumberingItems(row, choice, mainSeason);
   return (
     <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
       <Button size="sm" onClick={() => setPicking(true)}>
         {t("oneshot.filePickerToggle", { n: selection.size, total: selectable })}
       </Button>
+      {items.length > 0 && <Button size="sm" variant="secondary" onClick={() => setNumbering(true)}>{t("fileNumbering.title")}</Button>}
       {choice && <StatePill tone="warning">{t("oneshot.filePickerCustom")}</StatePill>}
       {choice && (
         <button type="button" className={cn(inlineLink, "text-caption tw:text-muted-foreground")} onClick={() => onChange(undefined)}>
@@ -205,6 +248,9 @@ function SeedFiles({
       )}
       {picking && (
         <FilePickerDialog seedTitle={row.title} files={files} choice={choice} route={route} onApply={onChange} onClose={() => setPicking(false)} />
+      )}
+      {numbering && (
+        <FileNumberingDialog title={row.title} items={items} overrides={overrides} onApply={onOverridesChange} onClose={() => setNumbering(false)} />
       )}
     </div>
   );
@@ -219,7 +265,10 @@ function SeedRender({
   refreshing,
   fileChoice,
   route,
+  mainSeason,
+  fileOverrides,
   onFileChoiceChange,
+  onFileOverridesChange,
 }: {
   row: OneShotSeedRow;
   expandError?: string;
@@ -229,7 +278,10 @@ function SeedRender({
   refreshing: boolean;
   fileChoice: string[] | undefined;
   route: UnclassifiedRoute | undefined;
+  mainSeason: number | null;
+  fileOverrides: readonly FileEpisodeOverride[];
   onFileChoiceChange: (next: string[] | undefined) => void;
+  onFileOverridesChange: (next: FileEpisodeOverride[]) => void;
 }) {
   const files = row.item.files;
   const groups = groupBoundSubtitles(files, (file) => file.source_path, (file) => file.bound_video_source_path);
@@ -255,12 +307,12 @@ function SeedRender({
         </span>
       ) : files.length === 0 ? (
         <>
-          <SeedFiles row={row} choice={fileChoice} route={route} onChange={onFileChoiceChange} />
+          <SeedFiles row={row} choice={fileChoice} route={route} mainSeason={mainSeason} overrides={fileOverrides} onChange={onFileChoiceChange} onOverridesChange={onFileOverridesChange} />
           <p className="text-muted text-caption tw:m-0">{t("oneshot.previewEmpty")}</p>
         </>
       ) : (
         <>
-          <SeedFiles row={row} choice={fileChoice} route={route} onChange={onFileChoiceChange} />
+          <SeedFiles row={row} choice={fileChoice} route={route} mainSeason={mainSeason} overrides={fileOverrides} onChange={onFileChoiceChange} onOverridesChange={onFileOverridesChange} />
           {/* Episodes, the per-video-unit file count and library overlap are peer meta facts: one line joined with " · ". */}
           <p className="text-caption tw:m-0 tw:text-muted-foreground">
             {episode && <span>{episode} · </span>}
@@ -332,6 +384,9 @@ export function OneShotDialog({
   // Per-seed manual file choices (row key -> chosen paths). A seed without an entry downloads its
   //   default files and its request carries no file_selection.
   const [fileChoices, setFileChoices] = useState<ReadonlyMap<string, string[]>>(new Map());
+  // Sparse per-video final numbering, keyed by seed. Entries are re-sanitized against the current
+  // selection whenever a preview or submit body is built.
+  const [fileOverrides, setFileOverrides] = useState<ReadonlyMap<string, FileEpisodeOverride[]>>(new Map());
   // A file choice is applied only by an explicit confirm and is the one change that re-reads on
   //   demand: the picker's ticks are local, so the choice itself is not an effect dependency.
   const [previewTick, setPreviewTick] = useState(0);
@@ -446,8 +501,8 @@ export function OneShotDialog({
     source.setDraft(withDraftParserKind(draft, kind, baselineParser.current));
   }
   // The preview input is a read-only ref: the effect re-runs on its own triggers, and a re-read uses the latest inputs.
-  const previewInput = useRef({ draft, offset: effectiveOffset, rows: selectedRows, choices: fileChoices });
-  previewInput.current = { draft, offset: effectiveOffset, rows: selectedRows, choices: fileChoices };
+  const previewInput = useRef({ draft, offset: effectiveOffset, rows: selectedRows, choices: fileChoices, overrides: fileOverrides });
+  previewInput.current = { draft, offset: effectiveOffset, rows: selectedRows, choices: fileChoices, overrides: fileOverrides };
 
   /** Expands a seed (fetching bytes only), then re-reads the view under the current draft and offset on success. */
   async function expandRow(row: OneShotSeedRow): Promise<string | undefined> {
@@ -461,8 +516,8 @@ export function OneShotDialog({
         return next;
       });
       if (!outcome.error) {
-        const { draft: current, offset, rows, choices } = previewInput.current;
-        await sourceRef.current.preview(current, offset, fileSelectionsFor(rows, choices));
+        const { draft: current, offset, rows, choices, overrides } = previewInput.current;
+        await sourceRef.current.preview(current, offset, fileSelectionsFor(rows, choices, overrides));
       }
       return outcome.error;
     } finally {
@@ -486,7 +541,7 @@ export function OneShotDialog({
     const seq = ++previewSeq.current;
     const timer = window.setTimeout(() => {
       void (async () => {
-        const { draft: current, offset, rows, choices } = previewInput.current;
+        const { draft: current, offset, rows, choices, overrides } = previewInput.current;
         const errors = new Map<string, string>();
         for (const row of rows) {
           if (!needsExpand(row)) continue;
@@ -495,7 +550,7 @@ export function OneShotDialog({
         }
         if (seq !== previewSeq.current) return;
         setExpandErrors(errors);
-        await sourceRef.current.preview(current, offset, fileSelectionsFor(rows, choices));
+        await sourceRef.current.preview(current, offset, fileSelectionsFor(rows, choices, overrides));
       })();
     }, PREVIEW_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
@@ -551,8 +606,9 @@ export function OneShotDialog({
   /** Resets the naming / file-filter / parser sections and the episode offset to their task-start values. */
   function restoreDefaults() {
     setOffsetText(String(source.initialOffset));
-    if (fileChoices.size > 0) {
+    if (fileChoices.size > 0 || fileOverrides.size > 0) {
       setFileChoices(new Map());
+      setFileOverrides(new Map());
       setPreviewTick((tick) => tick + 1);
     }
     const base = baseline.current;
@@ -607,11 +663,34 @@ export function OneShotDialog({
     return sanitizeFileSelection(row.item.manifest_files ?? [], fileChoices.get(row.key));
   }
 
+  /** Only selected, still-selectable videos can carry an override. */
+  function fileOverridesOf(row: OneShotSeedRow): FileEpisodeOverride[] {
+    return seedOverridesFor(row, fileChoiceOf(row), fileOverrides.get(row.key));
+  }
+
   /** Applies a seed's confirmed file choice and asks for the one preview read that shows its result. */
   function changeFileChoice(row: OneShotSeedRow, next: string[] | undefined) {
+    const choice = sanitizeFileSelection(row.item.manifest_files ?? [], next);
     setFileChoices((current) => {
       const updated = new Map(current);
-      if (next) updated.set(row.key, next);
+      if (choice) updated.set(row.key, choice);
+      else updated.delete(row.key);
+      return updated;
+    });
+    setFileOverrides((current) => {
+      const updated = new Map(current);
+      const cleaned = seedOverridesFor(row, choice, current.get(row.key));
+      if (cleaned.length > 0) updated.set(row.key, cleaned);
+      else updated.delete(row.key);
+      return updated;
+    });
+    setPreviewTick((tick) => tick + 1);
+  }
+
+  function changeFileOverrides(row: OneShotSeedRow, next: FileEpisodeOverride[]) {
+    setFileOverrides((current) => {
+      const updated = new Map(current);
+      if (next.length > 0) updated.set(row.key, next);
       else updated.delete(row.key);
       return updated;
     });
@@ -621,6 +700,7 @@ export function OneShotDialog({
   function requestFor(row: OneShotSeedRow, prepared: AnimeDraft): SnapshotSeedDownloadInput {
     const provider = row.scope.provider;
     if (provider === "oneshot") throw new TypeError("A one-shot origin is not a seed provider");
+    const overrides = fileOverridesOf(row);
     return {
       provider,
       provider_entry_ref: row.scope.provider_entry_ref,
@@ -631,6 +711,7 @@ export function OneShotDialog({
       draft: prepared,
       ...(effectiveOffset !== 0 ? { episode_offset: effectiveOffset } : {}),
       ...(fileChoiceOf(row) ? { file_selection: fileChoiceOf(row) } : {}),
+      ...(overrides.length > 0 ? { overrides } : {}),
     };
   }
 
@@ -1002,7 +1083,10 @@ export function OneShotDialog({
                     refreshing={source.pending}
                     fileChoice={fileChoiceOf(row)}
                     route={draft?.business?.unclassified_route}
+                    mainSeason={draft?.metadata.season ?? null}
+                    fileOverrides={fileOverridesOf(row)}
                     onFileChoiceChange={(next) => changeFileChoice(row, next)}
+                    onFileOverridesChange={(next) => changeFileOverrides(row, next)}
                   />
                 ))}
               </ul>

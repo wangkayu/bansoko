@@ -208,9 +208,20 @@ type RecognitionRequest struct {
 	Parser RecognitionParser
 	Naming naming.NamingRules
 	Match  *RecognitionMatch
+	// Overrides sparsely replace selected videos' parsed numbering with final
+	// manual values. Their paths are canonicalized, unique and sorted.
+	Overrides []RecognitionEpisodeOverride
 	// LoadRuntimeFacts explicitly reads current video media facts and resolves
 	// referenced provider episode titles. Preview and submit share this switch.
 	LoadRuntimeFacts bool
+}
+
+// RecognitionEpisodeOverride is one selected video's final manual numbering.
+// A nil season inherits the request's main season; an explicit zero is kept.
+type RecognitionEpisodeOverride struct {
+	Path    string
+	Season  *int
+	Episode int
 }
 
 // RecognitionEpisode is the episode identity recognition gave one file.
@@ -357,6 +368,67 @@ func normalizeRecognitionParser(value RecognitionParser) (parser.ParserSelection
 		return parser.ParserSelection{}, invalid(CodeRecognitionInvalid, "parser selection is not valid")
 	}
 	return selection, nil
+}
+
+// canonicalRecognitionOverrides validates and canonicalizes sparse manual
+// numbering. It returns the canonical form even with an error so the request
+// digest remains deterministic for a rejected request.
+func canonicalRecognitionOverrides(overrides []RecognitionEpisodeOverride) ([]RecognitionEpisodeOverride, error) {
+	if len(overrides) == 0 {
+		return nil, nil
+	}
+	canonical := append([]RecognitionEpisodeOverride(nil), overrides...)
+	var validationErr error
+	for index := range canonical {
+		override := &canonical[index]
+		override.Path = strings.TrimSpace(override.Path)
+		if cleaned, ok := cleanAbsolute(override.Path); ok {
+			override.Path = cleaned
+		} else if validationErr == nil {
+			validationErr = invalid(CodeRecognitionInvalid, "an episode override needs an absolute video path")
+		}
+		if override.Season != nil && (*override.Season < 0 || *override.Season > maxMatchSeason) && validationErr == nil {
+			validationErr = invalid(CodeRecognitionInvalid, "an episode override season is out of range")
+		}
+		if (override.Episode < 1 || override.Episode > maxMatchEpisode) && validationErr == nil {
+			validationErr = invalid(CodeRecognitionInvalid, "an episode override episode is out of range")
+		}
+	}
+	sort.SliceStable(canonical, func(left, right int) bool {
+		return canonical[left].Path < canonical[right].Path
+	})
+	for index := 1; index < len(canonical); index++ {
+		if canonical[index-1].Path == canonical[index].Path && validationErr == nil {
+			validationErr = invalid(CodeRecognitionInvalid, "a video has more than one episode override")
+		}
+	}
+	return canonical, validationErr
+}
+
+// bindRecognitionOverrides restricts overrides to videos in this selection.
+// The entries have already been inspected, so their absolute paths are the
+// canonical paths the rest of the plan uses.
+func bindRecognitionOverrides(files []recognitionFile, overrides []RecognitionEpisodeOverride) error {
+	videos := make(map[string]bool, len(files))
+	for _, file := range files {
+		if file.kind == filekinds.KindVideo {
+			videos[file.inspection.absolute] = true
+		}
+	}
+	for _, override := range overrides {
+		if !videos[override.Path] {
+			return invalid(CodeRecognitionInvalid, "an episode override must name a selected video")
+		}
+	}
+	return nil
+}
+
+func recognitionOverride(overrides []RecognitionEpisodeOverride, path string) *RecognitionEpisodeOverride {
+	index := sort.Search(len(overrides), func(index int) bool { return overrides[index].Path >= path })
+	if index < len(overrides) && overrides[index].Path == path {
+		return &overrides[index]
+	}
+	return nil
 }
 
 func validateRecognitionMatch(match *RecognitionMatch) error {
@@ -586,11 +658,22 @@ func recognitionGroups(files []recognitionFile) []recognitionGroup {
 	return groups
 }
 
-// recognitionEpisode is the episode of one video: an episode the user chose
-// (with the operation offset applied) is final; otherwise the parser's
-// resolved identity, which already carries its own offset. nil means the video
-// is unclassified.
-func recognitionEpisode(identity episodeidentity.EpisodeIdentity, match *RecognitionMatch) *RecognitionEpisode {
+// recognitionEpisode is the episode of one video. A per-file override is a
+// final manual value and never receives the operation offset. Otherwise an
+// episode the user chose for the whole operation (with its offset applied) is
+// final; the parser's resolved identity already carries its own offset. nil
+// means the video is unclassified.
+func recognitionEpisode(identity episodeidentity.EpisodeIdentity, match *RecognitionMatch, override *RecognitionEpisodeOverride) *RecognitionEpisode {
+	if override != nil {
+		number := strconv.Itoa(override.Episode)
+		raw := number
+		if identity.RawEpisode != nil {
+			// Preserve the parser's pre-offset evidence for the editor's automatic
+			// baseline; Number alone is the final manual value.
+			raw = string(*identity.RawEpisode)
+		}
+		return &RecognitionEpisode{Raw: raw, Number: number, Source: "manual"}
+	}
 	if match != nil && match.Episode != nil {
 		number := *match.Episode + match.Offset
 		if number < 0 {
@@ -630,6 +713,13 @@ func recognitionMatchSeason(match *RecognitionMatch) *int {
 	return match.Season
 }
 
+func recognitionSeason(match *RecognitionMatch, override *RecognitionEpisodeOverride) *int {
+	if override != nil && override.Season != nil {
+		return override.Season
+	}
+	return recognitionMatchSeason(match)
+}
+
 // recognitionAnimeDraft maps the operation's temporary draft onto the render
 // input. nil keeps the matched anime's stored rows.
 func recognitionAnimeDraft(match *RecognitionMatch) *filemaintenance.RecognitionAnimeDraft {
@@ -654,7 +744,7 @@ func recognitionAnimeDraft(match *RecognitionMatch) *filemaintenance.Recognition
 	return draft
 }
 
-func recognitionRenderInput(plan *recognitionPlan, file recognitionFile, episode *RecognitionEpisode) filemaintenance.RecognitionRenderInput {
+func recognitionRenderInput(plan *recognitionPlan, file recognitionFile, episode *RecognitionEpisode, season *int) filemaintenance.RecognitionRenderInput {
 	match := plan.request.Match
 	input := filemaintenance.RecognitionRenderInput{
 		Rules:            plan.request.Naming,
@@ -662,7 +752,7 @@ func recognitionRenderInput(plan *recognitionPlan, file recognitionFile, episode
 		FileName:         file.inspection.detail.Entry.Name,
 		FileKind:         file.kind,
 		ManagedAnimeID:   recognitionMatchID(match),
-		Season:           recognitionMatchSeason(match),
+		Season:           season,
 		AnimeDraft:       recognitionAnimeDraft(match),
 		Media:            file.media,
 		LoadRuntimeFacts: plan.request.LoadRuntimeFacts,
@@ -725,6 +815,11 @@ func recognitionRenderBlocker(err error) (*RecognitionBlocker, error) {
 // recognitionPlan renders one request. It reads the filesystem and owner facts
 // but writes nothing.
 func (s *Service) recognitionPlan(ctx context.Context, request RecognitionRequest) (recognitionPlan, error) {
+	overrides, err := canonicalRecognitionOverrides(request.Overrides)
+	request.Overrides = overrides
+	if err != nil {
+		return recognitionPlan{}, err
+	}
 	if err := validateRecognitionMatch(request.Match); err != nil {
 		return recognitionPlan{}, err
 	}
@@ -748,6 +843,9 @@ func (s *Service) recognitionPlan(ctx context.Context, request RecognitionReques
 	}
 	files, directory, err := s.recognitionEntries(ctx, request.Paths)
 	if err != nil {
+		return recognitionPlan{}, err
+	}
+	if err := bindRecognitionOverrides(files, request.Overrides); err != nil {
 		return recognitionPlan{}, err
 	}
 	offset := 0
@@ -792,9 +890,12 @@ func (s *Service) buildRecognitionRows(ctx context.Context, plan *recognitionPla
 	for groupIndex, group := range plan.groups {
 		switch {
 		case group.video >= 0:
-			episode := recognitionEpisode(plan.files[group.video].identity, plan.request.Match)
+			videoPath := plan.files[group.video].inspection.absolute
+			override := recognitionOverride(plan.request.Overrides, videoPath)
+			episode := recognitionEpisode(plan.files[group.video].identity, plan.request.Match, override)
+			season := recognitionSeason(plan.request.Match, override)
 			videoRowIndex := len(plan.rows)
-			videoRow := s.recognitionRenderRow(ctx, plan, groupIndex, group.video, episode)
+			videoRow := s.recognitionRenderRow(ctx, plan, groupIndex, group.video, episode, season)
 			plan.rows = append(plan.rows, videoRow)
 			if recognitionActionable(videoRow) {
 				s.recordRecognitionOperation(plan, videoRowIndex, groupIndex, videoRowIndex, filekinds.KindVideo, group.video, videoRow.TargetPath, "", "")
@@ -820,7 +921,7 @@ func (s *Service) buildRecognitionRows(ctx context.Context, plan *recognitionPla
 						Blockers: []RecognitionBlocker{{Code: RecognitionBlockerVideoFailed}},
 					}
 				default:
-					row = s.recognitionSubtitleRow(ctx, plan, groupIndex, index, episode, videoRow.TargetPath)
+					row = s.recognitionSubtitleRow(ctx, plan, groupIndex, index, episode, season, videoRow.TargetPath)
 				}
 				plan.rows = append(plan.rows, row)
 				if recognitionActionable(row) {
@@ -842,7 +943,7 @@ func (s *Service) buildRecognitionRows(ctx context.Context, plan *recognitionPla
 		default:
 			for _, index := range group.others {
 				rowIndex := len(plan.rows)
-				row := s.recognitionRenderRow(ctx, plan, groupIndex, index, nil)
+				row := s.recognitionRenderRow(ctx, plan, groupIndex, index, nil, recognitionMatchSeason(plan.request.Match))
 				plan.rows = append(plan.rows, row)
 				if recognitionActionable(row) {
 					s.recordRecognitionOperation(plan, rowIndex, groupIndex, -1, filekinds.KindOther, index, row.TargetPath, "", "")
@@ -869,7 +970,7 @@ func (s *Service) recordRecognitionOperation(plan *recognitionPlan, row, group, 
 
 // recognitionRenderRow renders one file's target with the operation's own
 // naming rules and resolves it against the instance's writable space.
-func (s *Service) recognitionRenderRow(ctx context.Context, plan *recognitionPlan, groupIndex, fileIndex int, episode *RecognitionEpisode) RecognitionRow {
+func (s *Service) recognitionRenderRow(ctx context.Context, plan *recognitionPlan, groupIndex, fileIndex int, episode *RecognitionEpisode, season *int) RecognitionRow {
 	file := plan.files[fileIndex]
 	row := RecognitionRow{
 		Path: file.inspection.absolute, Name: file.inspection.detail.Entry.Name,
@@ -882,7 +983,7 @@ func (s *Service) recognitionRenderRow(ctx context.Context, plan *recognitionPla
 		row.Blockers = []RecognitionBlocker{{Code: RecognitionBlockerRuntimeFacts}}
 		return row
 	}
-	rendered, blocker, err := s.renderRecognition(ctx, recognitionRenderInput(plan, file, episode))
+	rendered, blocker, err := s.renderRecognition(ctx, recognitionRenderInput(plan, file, episode, season))
 	if err != nil {
 		row.Disposition = RecognitionError
 		row.Blockers = []RecognitionBlocker{{Code: RecognitionBlockerTemplateInvalid}}
@@ -927,7 +1028,7 @@ func (s *Service) recognitionRenderRow(ctx context.Context, plan *recognitionPla
 
 // recognitionSubtitleRow renders a subtitle's suffix over the same facts as its
 // video and composes the target from the video's rendered path.
-func (s *Service) recognitionSubtitleRow(ctx context.Context, plan *recognitionPlan, groupIndex, fileIndex int, episode *RecognitionEpisode, videoTarget string) RecognitionRow {
+func (s *Service) recognitionSubtitleRow(ctx context.Context, plan *recognitionPlan, groupIndex, fileIndex int, episode *RecognitionEpisode, season *int, videoTarget string) RecognitionRow {
 	file := plan.files[fileIndex]
 	row := RecognitionRow{
 		Path: file.inspection.absolute, Name: file.inspection.detail.Entry.Name,
@@ -935,7 +1036,7 @@ func (s *Service) recognitionSubtitleRow(ctx context.Context, plan *recognitionP
 		Revision: file.inspection.detail.Revision, Episode: episode,
 		Disposition: RecognitionRename,
 	}
-	input := recognitionRenderInput(plan, file, episode)
+	input := recognitionRenderInput(plan, file, episode, season)
 	// The suffix follows the video's execution-time media facts; a subtitle is
 	// never probed as if it were a video of its own.
 	input.Media = plan.files[plan.groups[groupIndex].video].media
@@ -1107,8 +1208,9 @@ func recognitionPlanDigest(plan recognitionPlan, selection parser.ParserSelectio
 		UnknownRoute     string
 		LoadRuntimeFacts bool
 		Match            recognitionMatchDigest
+		Overrides        []RecognitionEpisodeOverride
 		Rows             []rowDigest
-	}{plan.directory, selection.ID, string(selection.Config), request.Naming, plan.unknownRoute, request.LoadRuntimeFacts, digestRecognitionMatch(request.Match), rows})
+	}{plan.directory, selection.ID, string(selection.Config), request.Naming, plan.unknownRoute, request.LoadRuntimeFacts, digestRecognitionMatch(request.Match), request.Overrides, rows})
 }
 
 type recognitionMatchDigest struct {
@@ -1154,6 +1256,7 @@ func digestRecognitionMatch(match *RecognitionMatch) recognitionMatchDigest {
 // recognitionRequestDigest is the idempotency identity of one recognition
 // request; it does not depend on what the filesystem looked like when it ran.
 func recognitionRequestDigest(request SubmitRecognitionRequest) string {
+	overrides, _ := canonicalRecognitionOverrides(request.Overrides)
 	return requestDigest(struct {
 		Paths            []string
 		ParserID         string
@@ -1161,8 +1264,9 @@ func recognitionRequestDigest(request SubmitRecognitionRequest) string {
 		Naming           naming.NamingRules
 		LoadRuntimeFacts bool
 		Match            recognitionMatchDigest
+		Overrides        []RecognitionEpisodeOverride
 		Conflict         RecognitionConflictChoice
-	}{request.Paths, request.Parser.ID, string(request.Parser.Config), request.Naming, request.LoadRuntimeFacts, digestRecognitionMatch(request.Match), request.Conflict})
+	}{request.Paths, request.Parser.ID, string(request.Parser.Config), request.Naming, request.LoadRuntimeFacts, digestRecognitionMatch(request.Match), overrides, request.Conflict})
 }
 
 // PreviewRecognition renders the plan of one recognition request and writes
