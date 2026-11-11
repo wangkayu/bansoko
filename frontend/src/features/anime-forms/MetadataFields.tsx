@@ -1,12 +1,14 @@
 import { useState } from "react";
-import { Check, Eraser, LoaderCircle, Pencil, Search, Sparkles } from "lucide-react";
+import { Check, Eraser, ListOrdered, LoaderCircle, Pencil, Search, Sparkles } from "lucide-react";
 import { toUserMessage, type AnimeMetadataDraft, type SubscriptionOrigin } from "../../lib/api/client";
 import { t } from "../../lib/i18n";
 import { metadataSearcher } from "../../lib/metadata/searcher";
+import { metadataEpisodeLoader } from "../../lib/metadata/episodeLoader";
 import { useAuthedImage } from "../../lib/useAuthedImage";
-import type { MetadataCandidate, MetadataProvider, MetadataSearcher } from "../../lib/metadata/types";
+import type { MetadataCandidate, MetadataEpisodeLoader, MetadataProvider, MetadataSearcher } from "../../lib/metadata/types";
 import { SegmentedControl, Button, Field, Input } from "../../ui";
 import { Checkbox, Dialog, Select, type SelectOption } from "../../ui/base";
+import { MetadataEpisodeDialog } from "./MetadataEpisodeDialog";
 
 // The metadata binding fact rows: the resting state is only "linked ID with an external link /
 // unmatched + clear". Search matching lives in MetadataMatchDialog (opened through a controlled
@@ -34,6 +36,7 @@ export function MetadataFields({
   origin = "custom",
   originEntryRef,
   searcher = metadataSearcher,
+  episodeLoader = metadataEpisodeLoader,
   matchProvider,
   onMatchProviderChange,
   busy = false,
@@ -61,6 +64,8 @@ export function MetadataFields({
   origin?: SubscriptionOrigin;
   originEntryRef?: string;
   searcher?: MetadataSearcher;
+  /** Optional read-only EP reference source; component tests override it. */
+  episodeLoader?: MetadataEpisodeLoader;
   /** Controlled: which provider the match dialog is open for (undefined = closed). */
   matchProvider?: MetadataProvider;
   onMatchProviderChange?: (provider: MetadataProvider | undefined) => void;
@@ -230,6 +235,7 @@ export function MetadataFields({
           current={value}
           queryCandidates={matchQueryCandidates}
           searcher={searcher}
+          episodeLoader={episodeLoader}
           titleOffer={titleOffer}
           preferredSeason={season ?? undefined}
           onClose={() => onMatchProviderChange(undefined)}
@@ -957,6 +963,7 @@ function MetadataMatchDialog({
   current,
   queryCandidates,
   searcher,
+  episodeLoader,
   titleOffer,
   preferredSeason,
   onClose,
@@ -971,6 +978,7 @@ function MetadataMatchDialog({
   /** Suggested search terms, best first; the first seeds the search box only while the title is empty. */
   queryCandidates?: readonly string[];
   searcher: MetadataSearcher;
+  episodeLoader?: MetadataEpisodeLoader;
   titleOffer?: { current: string; provider: string };
   /** The season row's staging preference for manual selection; automatic matching uses its resolved season first. */
   preferredSeason?: number;
@@ -981,6 +989,7 @@ function MetadataMatchDialog({
   const [query, setQuery] = useState(title.trim() ? title : (queryCandidates?.[0] ?? ""));
   const [candidates, setCandidates] = useState<MetadataCandidate[]>([]);
   const [selected, setSelected] = useState<MetadataCandidate>();
+  const [episodeReference, setEpisodeReference] = useState<MetadataCandidate>();
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState<string>();
@@ -1274,40 +1283,65 @@ function MetadataMatchDialog({
           <div className="metadata-match-candidates" role="listbox" aria-label={t("forms.candidatesAria")}>
             {candidates.map((candidate) => {
               const active = selected?.workId === candidate.workId;
+              const canBrowseEpisodes = episodeLoader && (
+                provider === "bgm" ||
+                (provider === "tmdb" && candidate.mediaKind !== "movie" && candidate.detailsStatus === "available" && (candidate.seasons?.length ?? 0) > 0)
+              );
               return (
-                <button
-                  key={`${candidate.provider}:${candidate.workId}`}
-                  type="button"
-                  role="option"
-                  aria-selected={active}
-                  onClick={() => pick(candidate)}
-                  className={active ? "metadata-match-option metadata-match-option-active" : "metadata-match-option"}
-                >
-                  <CandidatePoster url={candidate.posterUrl} />
-                  <span className="metadata-match-option-content">
-                    <span className="metadata-match-title">
-                      {candidate.title}
-                    </span>
-                    {candidate.originalTitle && (
-                      <span className="metadata-match-original-title">
-                        {candidate.originalTitle}
+                <div key={`${candidate.provider}:${candidate.workId}`} role="presentation" className="metadata-match-option-wrap">
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    onClick={() => pick(candidate)}
+                    className={active ? "metadata-match-option metadata-match-option-active" : "metadata-match-option"}
+                  >
+                    <CandidatePoster url={candidate.posterUrl} />
+                    <span className="metadata-match-option-content">
+                      <span className="metadata-match-title">
+                        {candidate.title}
                       </span>
-                    )}
-                    <span className="metadata-match-meta">
-                      {candidate.year || t("forms.yearUnknown")}
-                      {candidate.mediaKind ? ` · ${candidate.mediaKind === "movie" ? t("forms.movie") : t("forms.tv")}` : ""}
-                      {provider === "tmdb" && candidate.mediaKind !== "movie" && candidate.suggestedSeason !== undefined
-                        ? ` · ${t("forms.suggestedSeason", { n: candidate.suggestedSeason })}`
-                        : ""}
+                      {candidate.originalTitle && (
+                        <span className="metadata-match-original-title">
+                          {candidate.originalTitle}
+                        </span>
+                      )}
+                      <span className="metadata-match-meta">
+                        {candidate.year || t("forms.yearUnknown")}
+                        {candidate.mediaKind ? ` · ${candidate.mediaKind === "movie" ? t("forms.movie") : t("forms.tv")}` : ""}
+                        {provider === "tmdb" && candidate.mediaKind !== "movie" && candidate.suggestedSeason !== undefined
+                          ? ` · ${t("forms.suggestedSeason", { n: candidate.suggestedSeason })}`
+                          : ""}
+                      </span>
                     </span>
-                  </span>
-                  {active && <Check className="metadata-match-selected-icon" />}
-                </button>
+                    {active && <Check className="metadata-match-selected-icon" />}
+                  </button>
+                  {canBrowseEpisodes && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="metadata-match-episodes-action"
+                      aria-label={t("forms.browseCandidateEpisodes", { title: candidate.title })}
+                      onClick={() => setEpisodeReference(candidate)}
+                    >
+                      <ListOrdered aria-hidden="true" />
+                      {t("forms.episodeListAction")}
+                    </Button>
+                  )}
+                </div>
               );
             })}
           </div>
         )}
       </div>
+      {episodeReference && episodeLoader && (
+        <MetadataEpisodeDialog
+          key={`${episodeReference.provider}:${episodeReference.workId}`}
+          candidate={episodeReference}
+          loader={episodeLoader}
+          onClose={() => setEpisodeReference(undefined)}
+        />
+      )}
     </Dialog>
   );
 }

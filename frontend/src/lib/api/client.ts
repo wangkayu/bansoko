@@ -258,6 +258,8 @@ export type TMDBSeason = Schema<"TMDBSeason">;
 export type TMDBSeasonList = Schema<"TMDBSeasonList">;
 export type TMDBEpisode = Schema<"TMDBEpisode">;
 export type TMDBSeasonEpisodeList = Schema<"TMDBSeasonEpisodeList">;
+export type BGMEpisode = Schema<"BGMEpisode">;
+export type BGMEpisodeList = Schema<"BGMEpisodeList">;
 export type GlobalSectionName = Schema<"GlobalSectionName">;
 export type GlobalSectionView = Schema<"GlobalSectionView">;
 export type GlobalSectionInput = Schema<"GlobalSectionInput">;
@@ -1632,6 +1634,16 @@ export function listAnimeTMDBSeasons(managedAnimeID: string): Promise<TMDBSeason
 
 export function listAnimeTMDBSeasonEpisodes(managedAnimeID: string, season: number): Promise<TMDBSeasonEpisodeList> {
   return request(`/anime/${encodePathSegment(managedAnimeID)}/tmdb/seasons/${season}/episodes`, { method: "GET" });
+}
+
+/** Read-only episodes of one season of a TMDB work returned by metadata search, before any binding. */
+export function listTMDBCandidateEpisodes(workID: string, season: number): Promise<TMDBSeasonEpisodeList> {
+  return request(`/metadata/tmdb/works/${encodePathSegment(workID)}/seasons/${season}/episodes`, { method: "GET" });
+}
+
+/** Read-only main episodes and specials of a Bangumi work returned by metadata search, before any binding. */
+export function listBGMCandidateEpisodes(workID: string): Promise<BGMEpisodeList> {
+  return request(`/metadata/bgm/works/${encodePathSegment(workID)}/episodes`, { method: "GET" });
 }
 
 export function locateFileManagerAnime(managedAnimeID: string): Promise<FileManagerLocation> {

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnimeMetadataDraft, SubscriptionOrigin } from "../../lib/api/client";
-import type { MetadataCandidate, MetadataProvider, MetadataSearcher } from "../../lib/metadata/types";
+import type { MetadataCandidate, MetadataEpisodeLoader, MetadataProvider, MetadataSearcher } from "../../lib/metadata/types";
 import { MetadataFields } from "./MetadataFields";
 import { t } from "../../lib/i18n";
 import { setSessionTokenProvider } from "../../lib/api/client";
@@ -25,6 +25,7 @@ async function pickSeason(dialog: HTMLElement, optionName: string | RegExp) {
 
 function Controlled({
   searcher,
+  episodeLoader,
   initial = { bgm: null, tmdb: null },
   onChange,
   title = "沉默魔女的秘密",
@@ -35,6 +36,7 @@ function Controlled({
   onMatchCandidate,
 }: {
   searcher: MetadataSearcher;
+  episodeLoader?: MetadataEpisodeLoader;
   initial?: AnimeMetadataDraft;
   onChange?: (next: AnimeMetadataDraft) => void;
   title?: string;
@@ -64,6 +66,7 @@ function Controlled({
           onChange?.(next);
         }}
         searcher={searcher}
+        episodeLoader={episodeLoader}
         matchProvider={matchProvider}
         onMatchProviderChange={setMatchProvider}
       />
@@ -194,6 +197,71 @@ describe("MetadataMatchDialog", () => {
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
       tmdb: { work_id: "265010", media_kind: "tv", season: 2 },
     }));
+  });
+
+  it("候选选中前即可浏览 EP，浏览季号不会写入匹配设置", async () => {
+    const onChange = vi.fn();
+    const episodeLoader = vi.fn(async (_candidate: MetadataCandidate, season?: number) => [
+      { episode: 1, title: `第${season}季第一集`, airDate: "2025-01-01" },
+    ]);
+    render(<Controlled searcher={searcherReturning([tmdbCandidate])} episodeLoader={episodeLoader} onChange={onChange} />);
+
+    clickMatch("tmdb");
+    const matchDialog = await screen.findByRole("dialog", { name: t("forms.matchTitle", { provider: "TMDB" }) });
+    fireEvent.click(within(matchDialog).getByRole("button", { name: t("forms.search") }));
+    const candidate = await within(matchDialog).findByRole("option", { name: /星际邮差艾拉/ });
+    expect(candidate).toHaveAttribute("aria-selected", "false");
+    expect(within(matchDialog).getByRole("button", { name: t("forms.confirmMatch") })).toBeDisabled();
+
+    fireEvent.click(within(matchDialog).getByRole("button", { name: t("forms.browseCandidateEpisodes", { title: tmdbCandidate.title }) }));
+    let episodeDialog = await screen.findByRole("dialog", { name: t("forms.episodeListTitle") });
+    expect(await within(episodeDialog).findByText("第2季第一集")).toBeInTheDocument();
+    expect(episodeLoader).toHaveBeenCalledWith(tmdbCandidate, 2);
+    expect(candidate).toHaveAttribute("aria-selected", "false");
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(within(episodeDialog).getAllByRole("button", { name: t("ui.close") })[1]!);
+
+    fireEvent.click(candidate);
+    expect(within(matchDialog).getByRole("combobox", { name: t("forms.applySeason") })).toHaveTextContent("2");
+    fireEvent.click(within(matchDialog).getByRole("button", { name: t("forms.browseCandidateEpisodes", { title: tmdbCandidate.title }) }));
+    episodeDialog = await screen.findByRole("dialog", { name: t("forms.episodeListTitle") });
+    await userEvent.click(within(episodeDialog).getByRole("combobox", { name: t("forms.browseSeason") }));
+    await userEvent.click(await screen.findByRole("option", { name: /^S12 ·/ }));
+    expect(await within(episodeDialog).findByText("第12季第一集")).toBeInTheDocument();
+    fireEvent.click(within(episodeDialog).getAllByRole("button", { name: t("ui.close") })[1]!);
+
+    expect(within(matchDialog).getByRole("combobox", { name: t("forms.applySeason") })).toHaveTextContent("2");
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("BGM 直接浏览条目 EP，按正片与 SP 分组且没有季度选择", async () => {
+    const onChange = vi.fn();
+    const episodeLoader = vi.fn(async (_candidate: MetadataCandidate, _season?: number) => [
+      { episode: 1, title: "正片第一集", section: "main" as const },
+      { episode: 1, title: "特别篇第一集", section: "special" as const },
+    ]);
+    render(<Controlled searcher={searcherReturning([bgmCandidate])} episodeLoader={episodeLoader} onChange={onChange} />);
+
+    clickMatch("bgm");
+    const matchDialog = await screen.findByRole("dialog", { name: t("forms.matchTitle", { provider: "Bangumi" }) });
+    fireEvent.click(within(matchDialog).getByRole("button", { name: t("forms.search") }));
+    const candidate = await within(matchDialog).findByRole("option", { name: /沉默魔女的秘密/ });
+    fireEvent.click(within(matchDialog).getByRole("button", { name: t("forms.browseCandidateEpisodes", { title: bgmCandidate.title }) }));
+
+    const episodeDialog = await screen.findByRole("dialog", { name: t("forms.episodeListTitle") });
+    expect(await within(episodeDialog).findByText("正片第一集")).toBeInTheDocument();
+    expect(within(episodeDialog).getByText("特别篇第一集")).toBeInTheDocument();
+    expect(within(episodeDialog).getByRole("heading", { name: /正片/ })).toBeInTheDocument();
+    expect(within(episodeDialog).getByRole("heading", { name: /SP/ })).toBeInTheDocument();
+    expect(within(episodeDialog).queryByRole("combobox", { name: t("forms.browseSeason") })).not.toBeInTheDocument();
+    expect(episodeLoader).toHaveBeenCalledWith(bgmCandidate, undefined);
+
+    fireEvent.change(within(episodeDialog).getByLabelText(t("forms.episodeFilter")), { target: { value: "特别篇" } });
+    expect(within(episodeDialog).queryByText("正片第一集")).not.toBeInTheDocument();
+    expect(within(episodeDialog).getByText("特别篇第一集")).toBeInTheDocument();
+    fireEvent.click(within(episodeDialog).getAllByRole("button", { name: t("ui.close") })[1]!);
+    expect(candidate).toHaveAttribute("aria-selected", "false");
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it("确认匹配时把所选候选交给宿主", async () => {

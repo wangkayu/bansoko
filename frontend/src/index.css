@@ -2659,6 +2659,45 @@ h1, h2, h3, h4, h5, h6 {
 .metadata-match-editors { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
 .metadata-match-season-field { display: flex; align-items: center; gap: 0.375rem; color: hsl(var(--muted-foreground)); font-size: 0.75rem; line-height: 1.5; }
 .metadata-match-movie-note { color: hsl(var(--muted-foreground)); font-size: 0.75rem; line-height: 1.5; }
+.metadata-match-option-wrap { position: relative; min-width: 0; }
+.metadata-match-option-wrap .metadata-match-option { width: 100%; min-width: 0; }
+.metadata-match-option-wrap .metadata-match-meta { padding-right: 4.75rem; }
+.metadata-match-option-wrap .metadata-match-selected-icon { position: absolute; top: 0.75rem; right: 0.75rem; }
+.metadata-match-episodes-action { position: absolute; right: 0.375rem; bottom: 0.375rem; min-height: 2.25rem; padding: 0.375rem 0.5rem; color: hsl(var(--muted-foreground)); font-size: 0.6875rem; }
+.metadata-match-episodes-action:hover { color: hsl(var(--primary)); }
+.metadata-match-episodes-action svg { width: 0.8125rem; height: 0.8125rem; }
+.metadata-episode-browser { display: flex; min-height: 0; flex: 1; flex-direction: column; }
+.metadata-episode-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; border-bottom: 1px solid hsl(var(--border)); padding: 0.75rem 1.25rem; }
+.metadata-episode-season { display: flex; align-items: center; gap: 0.375rem; color: hsl(var(--muted-foreground)); font-size: 0.75rem; }
+.metadata-episode-filter { min-width: 12rem; flex: 1; }
+.metadata-episode-count { margin-left: auto; color: hsl(var(--muted-foreground)); font-size: 0.6875rem; white-space: nowrap; }
+.metadata-episode-hint { margin: 0; border-bottom: 1px solid hsl(var(--border)); background: hsl(var(--muted) / 0.16); padding: 0.5rem 1.25rem; color: hsl(var(--muted-foreground)); font-size: 0.6875rem; }
+.metadata-episode-head,
+.metadata-episode-row { display: grid; grid-template-columns: 4rem minmax(0, 1fr) 6rem; align-items: center; gap: 0.875rem; }
+.metadata-episode-head { flex: none; border-bottom: 1px solid hsl(var(--border)); padding: 0.5rem 1.25rem; color: hsl(var(--muted-foreground)); font-size: 0.625rem; font-weight: 700; letter-spacing: 0.06em; }
+.metadata-episode-scroll { min-height: 0; flex: 1; overflow-y: auto; }
+.metadata-episode-list { margin: 0; padding: 0 1.25rem 0.5rem; list-style: none; }
+.metadata-episode-groups { display: grid; gap: 0.5rem; padding-top: 0.5rem; }
+.metadata-episode-group-title { display: flex; align-items: baseline; gap: 0.5rem; margin: 0; padding: 0.375rem 1.25rem 0; font-size: 0.75rem; font-weight: 600; }
+.metadata-episode-group-title span { color: hsl(var(--muted-foreground)); font-size: 0.6875rem; font-weight: 400; }
+.metadata-episode-groups .metadata-episode-list { padding-bottom: 0.25rem; }
+.metadata-episode-row { min-height: 3rem; border-bottom: 1px solid hsl(var(--border) / 0.7); padding: 0.5rem 0; }
+.metadata-episode-number { color: hsl(var(--primary)); font-family: var(--font-mono); font-size: 0.75rem; font-weight: 500; }
+.metadata-episode-title { min-width: 0; overflow-wrap: anywhere; font-size: 0.75rem; font-weight: 500; }
+.metadata-episode-date { color: hsl(var(--muted-foreground)); font-size: 0.6875rem; text-align: right; font-variant-numeric: tabular-nums; }
+.metadata-episode-readonly { margin-right: auto; color: hsl(var(--muted-foreground)); font-size: 0.6875rem; }
+@media (width <= 600px) {
+  .metadata-match-episodes-action { min-height: 2.75rem; padding-inline: 0.625rem; }
+  .metadata-episode-tools { gap: 0.5rem; padding: 0.625rem 1rem; }
+  .metadata-episode-season { white-space: nowrap; }
+  .metadata-episode-filter { min-width: 10rem; }
+  .metadata-episode-hint { padding: 0.5rem 1rem; }
+  .metadata-episode-head { padding: 0.5rem 1rem; }
+  .metadata-episode-list { padding: 0 1rem 0.5rem; }
+  .metadata-episode-group-title { padding-inline: 1rem; }
+  .metadata-episode-head,
+  .metadata-episode-row { grid-template-columns: 3rem minmax(0, 1fr) 4.75rem; gap: 0.5rem; }
+}
 @media (prefers-reduced-motion: reduce) { .metadata-match-spinner { animation: none; } }
 
 /* Phone browse-section segmented control: fills the row, options share it

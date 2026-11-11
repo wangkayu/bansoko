@@ -320,3 +320,11 @@ func (s staticMetadataSearch) SearchMetadata(context.Context, string, string, in
 func (s staticMetadataSearch) SearchMetadataAutomatically(context.Context, identitymetadatadomain.AutomaticSearchInput) ([]identitymetadatadomain.SearchCandidate, error) {
 	return s.candidates, nil
 }
+
+func (s staticMetadataSearch) TMDBCandidateEpisodes(context.Context, string, int) ([]identitymetadatadomain.CandidateEpisode, error) {
+	return []identitymetadatadomain.CandidateEpisode{}, nil
+}
+
+func (s staticMetadataSearch) BGMCandidateEpisodes(context.Context, string) ([]identitymetadatadomain.CandidateEpisode, error) {
+	return []identitymetadatadomain.CandidateEpisode{}, nil
+}

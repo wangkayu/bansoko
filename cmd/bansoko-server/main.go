@@ -543,6 +543,22 @@ func runServe(args []string) {
 		Clients:       map[episodetitle.Source]episodetitle.Client{episodetitle.SourceTMDB: tmdbEpisodes},
 		SeasonClients: map[episodetitle.Source]episodetitle.SeasonClient{episodetitle.SourceTMDB: tmdbEpisodes},
 	})
+	// Candidate browsing reads the same providers before a binding exists. It
+	// uses its own in-process cache, never the persistent episode-title cache
+	// naming renders read, and is read-only.
+	bgmEpisodes := episodetitleadapter.BGMClient{
+		Connections:    catalogDBSource,
+		ClientResolver: runtimeConfiguration,
+		Client:         &http.Client{Timeout: 15 * time.Second, Transport: hardeningtransport.DirectTransport()},
+	}
+	candidateEpisodeLookup := episodetitle.New(episodetitle.Options{
+		Clients: map[episodetitle.Source]episodetitle.Client{
+			episodetitle.SourceTMDB: tmdbEpisodes,
+			episodetitle.SourceBGM:  bgmEpisodes,
+		},
+		SectionClients: map[episodetitle.Source]episodetitle.SectionedClient{episodetitle.SourceBGM: bgmEpisodes},
+	})
+	metadataSearcher.SetEpisodeListLookup(candidateEpisodeLookup)
 	// B13 P1: the file manager's writes.
 	if err := wireFileManagerCommands(fileMaintenanceGraph, db, workStore, observabilityService, observabilityService, eventHub, reconciliationService, episodeTitleLookup); err != nil {
 		fatalStartup(runtimeLogger, "file manager commands failed", "file_manager_commands_failed")

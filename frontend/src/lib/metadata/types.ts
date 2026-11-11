@@ -41,3 +41,14 @@ export interface MetadataSearcher {
   search(provider: MetadataProvider, query: string): Promise<MetadataCandidate[]>;
   searchAutomatic(provider: MetadataProvider, input: MetadataAutomaticSearchInput): Promise<MetadataCandidate[]>;
 }
+
+export interface MetadataEpisode {
+  episode: number;
+  title?: string;
+  airDate?: string;
+  /** BGM's item-level episode sections; TMDB season lists leave this unset. */
+  section?: "main" | "special";
+}
+
+/** Read-only candidate reference. Browsing never selects the candidate or changes the apply-season editor. */
+export type MetadataEpisodeLoader = (candidate: MetadataCandidate, season?: number) => Promise<MetadataEpisode[]>;

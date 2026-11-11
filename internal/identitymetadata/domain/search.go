@@ -108,3 +108,14 @@ type SearchSnapshot struct {
 	Version    int64             `json:"version"`
 	ObservedAt time.Time         `json:"observed_at"`
 }
+
+// CandidateEpisode is one entry of a candidate's provider episode list. It is
+// read-only reference data: browsing never changes a candidate or a binding.
+// Section is "main" or "special" for providers that distinguish them (Bangumi);
+// TMDB season lists leave it empty because a season is one section.
+type CandidateEpisode struct {
+	Number  int    `json:"episode"`
+	Title   string `json:"title,omitempty"`
+	AirDate string `json:"air_date,omitempty"`
+	Section string `json:"section,omitempty"`
+}

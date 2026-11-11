@@ -133,7 +133,7 @@ var pinnedTools = []string{
 	"reevaluate_releases", "match_metadata", "discover_subgroups", "patch_subscription", "set_new_releases_only", "set_ignore_multi_video_releases", "set_provider_group_offset", "automation_run",
 	"patch_anime_metadata", "patch_anime_rules", "delete_candidate", "delete_subscription", "duplicate_subscription",
 	"list_execution_records", "get_execution_record", "list_execution_record_files",
-	"list_tmdb_seasons", "list_tmdb_season_episodes", "preview_file_match", "match_file", "release_file_entry",
+	"list_tmdb_seasons", "list_tmdb_season_episodes", "list_tmdb_candidate_episodes", "list_bgm_candidate_episodes", "preview_file_match", "match_file", "release_file_entry",
 	"list_placement_issues", "redownload_placement", "release_placement",
 	"list_anime_files", "align_anime_files", "delete_placement",
 	"list_feed_sites",
@@ -384,6 +384,16 @@ func TestPathAndQueryArgumentsReachTheAPI(t *testing.T) {
 	callTool(t, cli, "list_tmdb_season_episodes", map[string]any{"managed_anime_id": "a1", "season": 2})
 	if got := api.last(t); got.Path != "/api/v1/anime/a1/tmdb/seasons/2/episodes" {
 		t.Fatalf("season argument sent %s", got.Path)
+	}
+
+	// Candidate reference reads keep their work id in the path and touch no owner record.
+	callTool(t, cli, "list_tmdb_candidate_episodes", map[string]any{"work_id": "265010", "season": 2})
+	if got := api.last(t); got.Path != "/api/v1/metadata/tmdb/works/265010/seasons/2/episodes" {
+		t.Fatalf("candidate season sent %s", got.Path)
+	}
+	callTool(t, cli, "list_bgm_candidate_episodes", map[string]any{"work_id": "486109"})
+	if got := api.last(t); got.Path != "/api/v1/metadata/bgm/works/486109/episodes" {
+		t.Fatalf("candidate BGM subject sent %s", got.Path)
 	}
 
 	callTool(t, cli, "list_execution_records", map[string]any{"from": "2026-01-01T00:00:00Z", "limit": 10, "state": "failed"})

@@ -1040,6 +1040,60 @@ async function openShellTool(page: Page, name: "日志") {
   await page.getByRole("button", { name: "日志", exact: true }).click();
 }
 
+// Candidate EP reference: the match dialog lists a candidate's episodes before
+// selection through two read-only endpoints. Register these after enterApp so
+// they take precedence over its default metadata search route.
+async function mockCandidateSearch(page: Page, candidates: unknown[]) {
+  await page.route("**/api/v1/metadata/search**", async (route) => {
+    const request = route.request();
+    if (request.method() !== "GET") {
+      await fulfillMethodNotAllowed(route, "GET");
+      return;
+    }
+    const url = new URL(request.url());
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        provider: url.searchParams.get("provider") ?? "bgm",
+        query: url.searchParams.get("query") ?? "",
+        candidates,
+      }),
+    });
+  });
+}
+
+type EpisodeRow = { episode: number; title?: string; air_date?: string; section?: "main" | "special" };
+
+function episodeRows(count: number, year: number): EpisodeRow[] {
+  return Array.from({ length: count }, (_, index) => ({
+    episode: index + 1,
+    title: `第 ${index + 1} 话`,
+    air_date: `${year}-${String(1 + Math.floor(index / 4)).padStart(2, "0")}-${String(3 + (index % 4) * 7).padStart(2, "0")}`,
+  }));
+}
+
+async function mockEpisodeRoute(page: Page, path: string, body: unknown) {
+  await page.route(`**${path}`, async (route) => {
+    if (route.request().method() !== "GET") {
+      await fulfillMethodNotAllowed(route, "GET");
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+}
+
+async function expectInsideViewport(page: Page, selector: string) {
+  const box = await page.locator(selector).boundingBox();
+  expect(box).not.toBeNull();
+  const viewport = page.viewportSize()!;
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width + 1);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height + 1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+}
+
 async function enterApp(page: Page) {
   await mockSignedIn(page);
   await mockCandidates(page);
@@ -2026,6 +2080,120 @@ test.describe("AnimeGrid", () => {
     await matchDialog.getByRole("button", { name: "确认匹配", exact: true }).click();
     await expect(dialog.getByRole("button", { name: "清除 TMDB 条目 关联" })).toBeVisible();
     await expect(dialog.locator('.metadata-card a[href="https://www.themoviedb.org/tv/265010"]')).toContainText(t("forms.seasonN", { n: "2" }));
+  });
+
+  test("browses a TMDB candidate's EP list before the candidate is selected", async ({ page }, testInfo) => {
+    await enterApp(page);
+    await mockCandidateSearch(page, [{
+      provider: "tmdb",
+      provider_work_id: "265010",
+      title: "星际邮差艾拉",
+      media_kind: "tv",
+      details_status: "available",
+      seasons: [
+        { season_number: 1, name: "第一季", episode_count: 12, air_date: "2023-01-03", is_special: false },
+        { season_number: 2, name: "第二季", episode_count: 24, air_date: "2025-01-03", is_special: false },
+      ],
+      suggested_season: 2,
+      score: 0.96,
+    }]);
+    await mockEpisodeRoute(page, "/api/v1/metadata/tmdb/works/265010/seasons/2/episodes", { season: 2, episodes: episodeRows(24, 2025) });
+    await mockEpisodeRoute(page, "/api/v1/metadata/tmdb/works/265010/seasons/1/episodes", { season: 1, episodes: episodeRows(12, 2023) });
+
+    const card = await openProvider(page, "Mikan");
+    const dialog = await openConfigFromCard(page, card);
+    await dialog.getByRole("button", { name: "匹配 TMDB", exact: true }).click();
+    const match = page.getByRole("dialog", { name: "匹配 TMDB 条目", exact: true, includeHidden: true });
+    await match.getByRole("button", { name: "查询", exact: true }).click();
+
+    const option = match.getByRole("option", { name: /星际邮差艾拉/, includeHidden: true });
+    await expect(option).toBeVisible();
+    await expect(option).toHaveAttribute("aria-selected", "false");
+    await expect(match.getByRole("button", { name: "确认匹配", exact: true, includeHidden: true })).toBeDisabled();
+    const entry = match.getByRole("button", { name: "浏览星际邮差艾拉的 EP 列表", exact: true });
+    await expect(entry).toBeVisible();
+    const cardBox = await option.boundingBox();
+    const entryBox = await entry.boundingBox();
+    expect(cardBox).not.toBeNull();
+    expect(entryBox).not.toBeNull();
+    expect(entryBox!.x).toBeGreaterThanOrEqual(cardBox!.x);
+    expect(entryBox!.y).toBeGreaterThanOrEqual(cardBox!.y);
+    expect(entryBox!.x + entryBox!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width + 1);
+    expect(entryBox!.y + entryBox!.height).toBeLessThanOrEqual(cardBox!.y + cardBox!.height + 1);
+    if (testInfo.project.name === "mobile") expect(entryBox!.height).toBeGreaterThanOrEqual(44);
+
+    await entry.click();
+    const browser = page.getByRole("dialog", { name: "EP 列表", exact: true });
+    await expect(browser).toBeVisible();
+    await expect(browser.locator(".metadata-episode-row")).toHaveCount(24);
+    await expectInsideViewport(page, ".metadata-episode-browser");
+    await expect(option).toHaveAttribute("aria-selected", "false");
+    await expect(match.getByRole("button", { name: "确认匹配", exact: true, includeHidden: true })).toBeDisabled();
+    await browser.getByLabel("筛选 EP 列表", { exact: true }).fill("24");
+    await expect(browser.locator(".metadata-episode-row")).toHaveCount(1);
+    await browser.getByLabel("筛选 EP 列表", { exact: true }).fill("");
+    await browser.getByRole("combobox", { name: "浏览季度", exact: true }).click();
+    await page.getByRole("option", { name: /^S1 · 第一季/ }).click();
+    await expect(browser.locator(".metadata-episode-row")).toHaveCount(12);
+    await browser.getByRole("button", { name: "关闭", exact: true }).last().click();
+    await expect(browser).toBeHidden();
+    await expect(entry).toBeFocused();
+    await expect(option).toHaveAttribute("aria-selected", "false");
+
+    await option.click();
+    const applySeason = match.getByRole("combobox", { name: t("forms.applySeason"), includeHidden: true });
+    await expect(applySeason).toContainText("S2 · 第二季");
+    await entry.click();
+    const reopened = page.getByRole("dialog", { name: "EP 列表", exact: true });
+    await expect(reopened.locator(".metadata-episode-row")).toHaveCount(24);
+    await reopened.getByRole("button", { name: "关闭", exact: true }).last().click();
+    await expect(applySeason).toContainText("S2 · 第二季");
+  });
+
+  test("browses a Bangumi candidate's main episodes and specials without a season picker", async ({ page }) => {
+    await enterApp(page);
+    await mockCandidateSearch(page, [{
+      provider: "bgm",
+      provider_work_id: "486109",
+      title: "沉默魔女的秘密",
+      media_kind: "tv",
+      details_status: "not_applicable",
+      score: 0.9,
+    }]);
+    await mockEpisodeRoute(page, "/api/v1/metadata/bgm/works/486109/episodes", {
+      episodes: [
+        ...episodeRows(12, 2025),
+        { episode: 1, title: "特别篇：课后的秘密", air_date: "2025-08-01", section: "special" },
+        { episode: 2, title: "特别篇：冬日来信", air_date: "2025-12-01", section: "special" },
+      ],
+    });
+
+    const card = await openProvider(page, "Mikan");
+    const dialog = await openConfigFromCard(page, card);
+    await dialog.getByRole("button", { name: "清除 Bangumi 条目 关联" }).click();
+    await dialog.getByRole("button", { name: "匹配 Bangumi", exact: true }).click();
+    const match = page.getByRole("dialog", { name: "匹配 Bangumi 条目", exact: true, includeHidden: true });
+    await match.getByRole("button", { name: "查询", exact: true }).click();
+
+    const option = match.getByRole("option", { name: /沉默魔女的秘密/, includeHidden: true });
+    await expect(option).toBeVisible();
+    await expect(option).toHaveAttribute("aria-selected", "false");
+    const entry = match.getByRole("button", { name: "浏览沉默魔女的秘密的 EP 列表", exact: true });
+    await entry.click();
+    const browser = page.getByRole("dialog", { name: "EP 列表", exact: true });
+    await expect(browser).toBeVisible();
+    await expect(browser).toContainText("沉默魔女的秘密 · Bangumi");
+    await expect(browser.getByRole("combobox", { name: "浏览季度", exact: true })).toHaveCount(0);
+    await expect(browser.locator(".metadata-episode-row")).toHaveCount(14);
+    await expect(browser.getByRole("heading", { name: /正片/ })).toBeVisible();
+    await expect(browser.getByRole("heading", { name: /SP/ })).toBeVisible();
+    await expectInsideViewport(page, ".metadata-episode-browser");
+    await browser.getByLabel("筛选 EP 列表", { exact: true }).fill("特别篇");
+    await expect(browser.locator(".metadata-episode-row")).toHaveCount(2);
+    await expect(browser.getByRole("heading", { name: /正片/ })).toHaveCount(0);
+    await expect(option).toHaveAttribute("aria-selected", "false");
+    await browser.getByRole("button", { name: "关闭", exact: true }).last().click();
+    await expect(entry).toBeFocused();
   });
 
   test("opens subscribed workspace with four tabs and no embedded log", async ({ page }) => {

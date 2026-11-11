@@ -113,6 +113,111 @@ func (s *Server) SearchMetadataAutomatically(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+// ListTMDBCandidateEpisodes lists one season of an arbitrary TMDB TV work
+// returned by metadata search. Read-only and independent of any anime binding.
+func (s *Server) ListTMDBCandidateEpisodes(w http.ResponseWriter, r *http.Request, workID string, season int) {
+	service := s.metadataService(w, r)
+	if service == nil {
+		return
+	}
+	if !candidateWorkIDValid(workID) {
+		writeError(w, r, metadataSearchInvalid(generated.ErrorDetail{
+			Code: "WORK_ID_INVALID", Message: "work_id must be a positive decimal id.",
+		}))
+		return
+	}
+	if season < 0 || season > 9999 {
+		writeError(w, r, metadataSearchInvalid(generated.ErrorDetail{
+			Code: "SEASON_OUT_OF_RANGE", Message: "season must be between 0 and 9999.",
+		}))
+		return
+	}
+	episodes, err := service.TMDBCandidateEpisodes(r.Context(), workID, season)
+	if err != nil {
+		writeError(w, r, metadataUnavailable())
+		return
+	}
+	result := generated.TMDBSeasonEpisodeList{Season: season, Episodes: make([]generated.TMDBEpisode, 0, len(episodes))}
+	for _, episode := range episodes {
+		mapped := generated.TMDBEpisode{Episode: episode.Number}
+		if episode.Title != "" {
+			title := episode.Title
+			mapped.Title = &title
+		}
+		if episode.AirDate != "" {
+			date := episode.AirDate
+			mapped.AirDate = &date
+		}
+		result.Episodes = append(result.Episodes, mapped)
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, r.Context(), http.StatusOK, result)
+}
+
+// ListBGMCandidateEpisodes lists an arbitrary Bangumi subject's main episodes
+// and specials. Read-only; no season is involved.
+func (s *Server) ListBGMCandidateEpisodes(w http.ResponseWriter, r *http.Request, workID string) {
+	service := s.metadataService(w, r)
+	if service == nil {
+		return
+	}
+	if !candidateWorkIDValid(workID) {
+		writeError(w, r, metadataSearchInvalid(generated.ErrorDetail{
+			Code: "WORK_ID_INVALID", Message: "work_id must be a positive decimal id.",
+		}))
+		return
+	}
+	episodes, err := service.BGMCandidateEpisodes(r.Context(), workID)
+	if err != nil {
+		writeError(w, r, metadataUnavailable())
+		return
+	}
+	result := generated.BGMEpisodeList{Episodes: make([]generated.BGMEpisode, 0, len(episodes))}
+	for _, episode := range episodes {
+		mapped := generated.BGMEpisode{Episode: episode.Number}
+		switch episode.Section {
+		case "special":
+			mapped.Section = generated.BGMEpisodeSectionSpecial
+		default:
+			mapped.Section = generated.BGMEpisodeSectionMain
+		}
+		if episode.Title != "" {
+			title := episode.Title
+			mapped.Title = &title
+		}
+		if episode.AirDate != "" {
+			date := episode.AirDate
+			mapped.AirDate = &date
+		}
+		result.Episodes = append(result.Episodes, mapped)
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, r.Context(), http.StatusOK, result)
+}
+
+// candidateWorkIDValid checks the contract's ^[1-9][0-9]{0,11}$ work-id
+// pattern. The generated binder binds path values into Go types but does not
+// enforce string patterns.
+func candidateWorkIDValid(workID string) bool {
+	if len(workID) == 0 || len(workID) > 12 {
+		return false
+	}
+	for index := 0; index < len(workID); index++ {
+		digit := workID[index]
+		if digit < '0' || digit > '9' || (index == 0 && digit == '0') {
+			return false
+		}
+	}
+	return true
+}
+
+// metadataUnavailable is the typed 503 both candidate episode reads declare.
+// Every lookup failure is transient by contract; a definite missing work is an
+// empty list, not an error.
+func metadataUnavailable() *APIError {
+	return unavailable("METADATA_PROVIDER_UNAVAILABLE", "the metadata provider could not be reached")
+}
+
 func mapMetadataCandidates(candidates []identitymetadatadomain.SearchCandidate) []generated.MetadataSearchCandidate {
 	mapped := make([]generated.MetadataSearchCandidate, 0, len(candidates))
 	for _, candidate := range candidates {

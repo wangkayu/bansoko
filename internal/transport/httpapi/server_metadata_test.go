@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -31,6 +32,14 @@ func (s *metadataSearchSpy) SearchMetadataAutomatically(_ context.Context, input
 	s.calls++
 	s.autoInput = input
 	return s.auto, nil
+}
+
+func (s *metadataSearchSpy) TMDBCandidateEpisodes(context.Context, string, int) ([]identitymetadatadomain.CandidateEpisode, error) {
+	return []identitymetadatadomain.CandidateEpisode{}, nil
+}
+
+func (s *metadataSearchSpy) BGMCandidateEpisodes(context.Context, string) ([]identitymetadatadomain.CandidateEpisode, error) {
+	return []identitymetadatadomain.CandidateEpisode{}, nil
 }
 
 func TestSearchMetadataAutomaticallyPassesPipelineContextWithoutApplying(t *testing.T) {
@@ -255,4 +264,79 @@ func defaultInt(value *int, fallback int) int {
 		return fallback
 	}
 	return *value
+}
+
+type candidateEpisodeSearch struct {
+	tmdb, bgm []identitymetadatadomain.CandidateEpisode
+	err       error
+	workID    string
+	season    int
+}
+
+func (s *candidateEpisodeSearch) SearchMetadata(context.Context, string, string, int) ([]identitymetadatadomain.SearchCandidate, error) {
+	return nil, nil
+}
+
+func (s *candidateEpisodeSearch) SearchMetadataAutomatically(context.Context, identitymetadatadomain.AutomaticSearchInput) ([]identitymetadatadomain.SearchCandidate, error) {
+	return nil, nil
+}
+
+func (s *candidateEpisodeSearch) TMDBCandidateEpisodes(_ context.Context, workID string, season int) ([]identitymetadatadomain.CandidateEpisode, error) {
+	s.workID, s.season = workID, season
+	return s.tmdb, s.err
+}
+
+func (s *candidateEpisodeSearch) BGMCandidateEpisodes(_ context.Context, workID string) ([]identitymetadatadomain.CandidateEpisode, error) {
+	s.workID = workID
+	return s.bgm, s.err
+}
+
+func TestTMDBCandidateEpisodesMapTheSeasonAndRejectBadWorkIDs(t *testing.T) {
+	service := &candidateEpisodeSearch{tmdb: []identitymetadatadomain.CandidateEpisode{{Number: 1, Title: "第一话", AirDate: "2024-01-01"}}}
+	server := &Server{deps: Dependencies{MetadataSearch: service}}
+	recorder := httptest.NewRecorder()
+	server.ListTMDBCandidateEpisodes(recorder, httptest.NewRequest(http.MethodGet, "/metadata/tmdb/works/265010/seasons/2/episodes", nil), "265010", 2)
+	if recorder.Code != http.StatusOK || service.workID != "265010" || service.season != 2 {
+		t.Fatalf("status %d, query %q/%d", recorder.Code, service.workID, service.season)
+	}
+	var body generated.TMDBSeasonEpisodeList
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Season != 2 || len(body.Episodes) != 1 || body.Episodes[0].Title == nil || *body.Episodes[0].Title != "第一话" {
+		t.Fatalf("body = %+v", body)
+	}
+
+	recorder = httptest.NewRecorder()
+	server.ListTMDBCandidateEpisodes(recorder, httptest.NewRequest(http.MethodGet, "/metadata/tmdb/works/0265010/seasons/2/episodes", nil), "0265010", 2)
+	if recorder.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("leading zero work id: status %d", recorder.Code)
+	}
+}
+
+func TestBGMCandidateEpisodesKeepSectionsAndMapUnavailable(t *testing.T) {
+	service := &candidateEpisodeSearch{bgm: []identitymetadatadomain.CandidateEpisode{
+		{Number: 1, Title: "第一话", Section: "main"},
+		{Number: 1, Title: "SP", Section: "special"},
+	}}
+	server := &Server{deps: Dependencies{MetadataSearch: service}}
+	recorder := httptest.NewRecorder()
+	server.ListBGMCandidateEpisodes(recorder, httptest.NewRequest(http.MethodGet, "/metadata/bgm/works/486109/episodes", nil), "486109")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status %d", recorder.Code)
+	}
+	var body generated.BGMEpisodeList
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Episodes) != 2 || body.Episodes[0].Section != generated.BGMEpisodeSectionMain || body.Episodes[1].Section != generated.BGMEpisodeSectionSpecial {
+		t.Fatalf("body = %+v", body)
+	}
+
+	service.err = errors.New("provider down")
+	recorder = httptest.NewRecorder()
+	server.ListBGMCandidateEpisodes(recorder, httptest.NewRequest(http.MethodGet, "/metadata/bgm/works/486109/episodes", nil), "486109")
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("unavailable: status %d", recorder.Code)
+	}
 }

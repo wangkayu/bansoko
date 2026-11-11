@@ -429,6 +429,12 @@ const (
 	BGMConnectionInputKindBgm BGMConnectionInputKind = "bgm"
 )
 
+// Defines values for BGMEpisodeSection.
+const (
+	BGMEpisodeSectionMain    BGMEpisodeSection = "main"
+	BGMEpisodeSectionSpecial BGMEpisodeSection = "special"
+)
+
 // Defines values for BackupRestoreUnavailableReason.
 const (
 	BackupRestoreUnavailableReasonDatabaseUnsupported    BackupRestoreUnavailableReason = "database_unsupported"
@@ -3957,6 +3963,24 @@ type BGMConnectionInput struct {
 
 // BGMConnectionInputKind defines model for BGMConnectionInput.Kind.
 type BGMConnectionInputKind string
+
+// BGMEpisode defines model for BGMEpisode.
+type BGMEpisode struct {
+	AirDate *string `json:"air_date,omitempty"`
+	Episode int     `json:"episode"`
+
+	// Section Bangumi's item-level section: a regular episode (main) or a special (special). OP/ED, trailers and other item types stay out.
+	Section BGMEpisodeSection `json:"section"`
+	Title   *string           `json:"title,omitempty"`
+}
+
+// BGMEpisodeSection Bangumi's item-level section: a regular episode (main) or a special (special). OP/ED, trailers and other item types stay out.
+type BGMEpisodeSection string
+
+// BGMEpisodeList defines model for BGMEpisodeList.
+type BGMEpisodeList struct {
+	Episodes []BGMEpisode `json:"episodes"`
+}
 
 // BackupDownloadTicket defines model for BackupDownloadTicket.
 type BackupDownloadTicket struct {
@@ -12984,11 +13008,17 @@ type ServerInterface interface {
 	// (POST /media-recognition/previews)
 	PreviewMediaRecognition(w http.ResponseWriter, r *http.Request)
 
+	// (GET /metadata/bgm/works/{work_id}/episodes)
+	ListBGMCandidateEpisodes(w http.ResponseWriter, r *http.Request, workId string)
+
 	// (GET /metadata/search)
 	SearchMetadata(w http.ResponseWriter, r *http.Request, params SearchMetadataParams)
 
 	// (POST /metadata/search/automatic)
 	SearchMetadataAutomatically(w http.ResponseWriter, r *http.Request)
+
+	// (GET /metadata/tmdb/works/{work_id}/seasons/{season}/episodes)
+	ListTMDBCandidateEpisodes(w http.ResponseWriter, r *http.Request, workId string, season int)
 
 	// (GET /naming-vars)
 	GetNamingVars(w http.ResponseWriter, r *http.Request)
@@ -18219,6 +18249,37 @@ func (siw *ServerInterfaceWrapper) PreviewMediaRecognition(w http.ResponseWriter
 	handler.ServeHTTP(w, r)
 }
 
+// ListBGMCandidateEpisodes operation middleware
+func (siw *ServerInterfaceWrapper) ListBGMCandidateEpisodes(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "work_id" -------------
+	var workId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "work_id", r.PathValue("work_id"), &workId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "work_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListBGMCandidateEpisodes(w, r, workId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // SearchMetadata operation middleware
 func (siw *ServerInterfaceWrapper) SearchMetadata(w http.ResponseWriter, r *http.Request) {
 
@@ -18293,6 +18354,46 @@ func (siw *ServerInterfaceWrapper) SearchMetadataAutomatically(w http.ResponseWr
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.SearchMetadataAutomatically(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListTMDBCandidateEpisodes operation middleware
+func (siw *ServerInterfaceWrapper) ListTMDBCandidateEpisodes(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "work_id" -------------
+	var workId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "work_id", r.PathValue("work_id"), &workId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "work_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "season" -------------
+	var season int
+
+	err = runtime.BindStyledParameterWithOptions("simple", "season", r.PathValue("season"), &season, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "season", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTMDBCandidateEpisodes(w, r, workId, season)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -20669,8 +20770,10 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("GET "+options.BaseURL+"/images/poster/{bgm_id}", wrapper.ReadImagePoster)
 	m.HandleFunc("GET "+options.BaseURL+"/livez", wrapper.GetLivez)
 	m.HandleFunc("POST "+options.BaseURL+"/media-recognition/previews", wrapper.PreviewMediaRecognition)
+	m.HandleFunc("GET "+options.BaseURL+"/metadata/bgm/works/{work_id}/episodes", wrapper.ListBGMCandidateEpisodes)
 	m.HandleFunc("GET "+options.BaseURL+"/metadata/search", wrapper.SearchMetadata)
 	m.HandleFunc("POST "+options.BaseURL+"/metadata/search/automatic", wrapper.SearchMetadataAutomatically)
+	m.HandleFunc("GET "+options.BaseURL+"/metadata/tmdb/works/{work_id}/seasons/{season}/episodes", wrapper.ListTMDBCandidateEpisodes)
 	m.HandleFunc("GET "+options.BaseURL+"/naming-vars", wrapper.GetNamingVars)
 	m.HandleFunc("PUT "+options.BaseURL+"/naming-vars/active", wrapper.ActivateNamingVarsVersion)
 	m.HandleFunc("POST "+options.BaseURL+"/naming-vars/dry-runs", wrapper.DryRunNamingVars)

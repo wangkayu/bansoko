@@ -112,3 +112,71 @@ func TestRejectsNonNumericWorkID(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func bgmTestClient(endpoint string) BGMClient {
+	return BGMClient{
+		Connections: testConnections{{ID: "bgm", Kind: configurationdomain.ConnectionBGM, Endpoint: endpoint, State: configurationdomain.ConnectionConfigured}},
+	}
+}
+
+func TestBGMSectionedEpisodesKeepMainAndSpecials(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v0/subjects/486109/episodes" {
+			t.Errorf("unexpected request %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("limit") != "100" || r.URL.Query().Get("offset") != "0" {
+			t.Errorf("unexpected paging %s", r.URL.RawQuery)
+		}
+		_, _ = fmt.Fprint(w, `{"data":[
+			{"type":0,"ep":1,"name":"第一话","name_cn":"第一话","airdate":"2025-01-04"},
+			{"type":2,"ep":1,"name":"OP"},
+			{"type":1,"ep":0,"name":"SP1"},
+			{"type":0,"ep":"2","name":"第二话","airdate":"2025-01-11"},
+			{"type":1,"ep":null,"name":"SP2"}
+		],"total":5}`)
+	}))
+	defer server.Close()
+
+	list, err := bgmTestClient(server.URL).SectionedEpisodes(context.Background(), episodetitle.Key{Source: episodetitle.SourceBGM, WorkID: "486109"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []episodetitle.SectionedEpisode{
+		{Number: 1, Title: "第一话", AirDate: "2025-01-04", Section: episodetitle.SectionMain},
+		{Number: 1, Title: "SP1", Section: episodetitle.SectionSpecial},
+		{Number: 2, Title: "第二话", AirDate: "2025-01-11", Section: episodetitle.SectionMain},
+		{Number: 2, Title: "SP2", Section: episodetitle.SectionSpecial},
+	}
+	if fmt.Sprint(list.Episodes) != fmt.Sprint(want) {
+		t.Fatalf("episodes = %v, want %v", list.Episodes, want)
+	}
+}
+
+func TestBGMSectionedEpisodesFetchEveryPage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		offset := r.URL.Query().Get("offset")
+		var body strings.Builder
+		body.WriteString(`{"data":[`)
+		first, count := 0, 100
+		if offset == "100" {
+			first, count = 100, 1
+		}
+		for index := first; index < first+count; index++ {
+			if index > first {
+				body.WriteString(",")
+			}
+			_, _ = fmt.Fprintf(&body, `{"type":0,"ep":%d,"name":"E%d"}`, index+1, index+1)
+		}
+		_, _ = fmt.Fprintf(&body, `],"total":101}`)
+		_, _ = fmt.Fprint(w, body.String())
+	}))
+	defer server.Close()
+
+	list, err := bgmTestClient(server.URL).SectionedEpisodes(context.Background(), episodetitle.Key{Source: episodetitle.SourceBGM, WorkID: "486109"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Episodes) != 101 || list.Episodes[100].Number != 101 {
+		t.Fatalf("got %d episodes, last %+v", len(list.Episodes), list.Episodes[len(list.Episodes)-1])
+	}
+}

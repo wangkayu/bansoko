@@ -39,6 +39,31 @@ type Episode struct {
 	AirDate string
 }
 
+// Section classifies one entry of a provider's episode list. Candidate
+// browsing shows main episodes and specials apart; naming never reads it.
+type Section string
+
+const (
+	SectionMain    Section = "main"
+	SectionSpecial Section = "special"
+)
+
+// SectionedEpisode is one entry of a sectioned provider episode list. Number
+// is the provider's integer episode number when it has one, else the entry's
+// ordinal within its section.
+type SectionedEpisode struct {
+	Number  int
+	Title   string
+	AirDate string
+	Section Section
+}
+
+// SectionedList is a provider's whole episode list of one work, main episodes
+// and specials included.
+type SectionedList struct {
+	Episodes []SectionedEpisode
+}
+
 // Season is one season of a provider show.
 type Season struct {
 	Number       int
@@ -60,6 +85,13 @@ type Client interface {
 	Episodes(ctx context.Context, key Key) (List, error)
 }
 
+// SectionedClient fetches one whole episode list with each entry's section.
+// It is a separate capability from Client: the naming lookup needs numbered
+// regular episodes only, while candidate browsing also shows specials.
+type SectionedClient interface {
+	SectionedEpisodes(ctx context.Context, key Key) (SectionedList, error)
+}
+
 var (
 	// ErrNotFound is a definite "work/season does not exist" answer.
 	ErrNotFound = errors.New("episode list not found")
@@ -70,6 +102,8 @@ var (
 // Options configures a Lookup. Zero values take the documented defaults.
 type Options struct {
 	Clients map[Source]Client
+	// SectionClients list a work's main episodes and specials per source.
+	SectionClients map[Source]SectionedClient
 	// SeasonClients list the seasons of a show per source (TMDB only).
 	SeasonClients map[Source]SeasonClient
 	Now           func() time.Time // default time.Now
@@ -93,31 +127,53 @@ type entry struct {
 	fetchedAt time.Time
 }
 
+type sectionEntry struct {
+	list      SectionedList
+	fetchedAt time.Time
+}
+
 // Lookup is a concurrency-safe cached season and episode list reader.
 type Lookup struct {
-	clients       map[Source]Client
-	seasonClients map[Source]SeasonClient
-	now           func() time.Time
-	ttl           time.Duration
-	queryTimeout  time.Duration
-	sems          map[Source]chan struct{}
+	clients          map[Source]Client
+	sectionedClients map[Source]SectionedClient
+	seasonClients    map[Source]SeasonClient
+	now              func() time.Time
+	ttl              time.Duration
+	queryTimeout     time.Duration
+	sems             map[Source]chan struct{}
 
-	mu      sync.Mutex
-	cache   map[Key]entry
-	seasons map[seasonKey]seasonEntry
-	group   singleflight.Group
+	mu        sync.Mutex
+	cache     map[Key]entry
+	sectioned map[Key]sectionEntry
+	seasons   map[seasonKey]seasonEntry
+	group     singleflight.Group
 }
 
 // New builds a Lookup from o, applying defaults.
 func New(o Options) *Lookup {
 	l := &Lookup{
-		clients:      make(map[Source]Client, len(o.Clients)),
-		now:          o.Now,
-		ttl:          o.TTL,
-		queryTimeout: o.QueryTimeout,
-		sems:         make(map[Source]chan struct{}, len(o.Clients)),
-		cache:        map[Key]entry{},
-		seasons:      map[seasonKey]seasonEntry{},
+		clients:          make(map[Source]Client, len(o.Clients)),
+		sectionedClients: make(map[Source]SectionedClient, len(o.SectionClients)),
+		now:              o.Now,
+		ttl:              o.TTL,
+		queryTimeout:     o.QueryTimeout,
+		sems:             make(map[Source]chan struct{}, len(o.Clients)),
+		cache:            map[Key]entry{},
+		sectioned:        map[Key]sectionEntry{},
+		seasons:          map[seasonKey]seasonEntry{},
+	}
+	for source, client := range o.SectionClients {
+		if client == nil {
+			continue
+		}
+		l.sectionedClients[source] = client
+		if l.sems[source] == nil {
+			limit := o.Concurrency[source]
+			if limit <= 0 {
+				limit = defaultConcurrency
+			}
+			l.sems[source] = make(chan struct{}, limit)
+		}
 	}
 	l.seasonClients = make(map[Source]SeasonClient, len(o.SeasonClients))
 	for source, client := range o.SeasonClients {
@@ -314,6 +370,91 @@ func (l *Lookup) store(key Key, list List) {
 		return
 	}
 	l.cache[key] = entry{list: list, fetchedAt: fetchedAt}
+}
+
+// SectionedEpisodes returns a work's whole episode list with each entry's
+// section. A work the provider positively does not know is an empty list.
+// Within the cache lifetime (TTL) the stored list is reused; bypassCache
+// forces one fresh client call. A transient failure returns an error wrapping
+// ErrTransient and is not cached.
+func (l *Lookup) SectionedEpisodes(ctx context.Context, key Key, bypassCache bool) (SectionedList, error) {
+	if err := ctx.Err(); err != nil {
+		return SectionedList{}, transient(err)
+	}
+	client := l.sectionedClients[key.Source]
+	if client == nil {
+		return SectionedList{}, transient(fmt.Errorf("no sectioned episode list client for source %q", key.Source))
+	}
+	if !bypassCache {
+		if list, ok := l.freshSectioned(key); ok {
+			return list, nil
+		}
+	}
+	flightKey := fmt.Sprintf("sectioned\x00%s\x00%s\x00%d", key.Source, key.WorkID, key.Season)
+	if bypassCache {
+		flightKey += "\x00bypass"
+	}
+	detached := context.WithoutCancel(ctx)
+	ch := l.group.DoChan(flightKey, func() (any, error) {
+		if !bypassCache {
+			if list, ok := l.freshSectioned(key); ok {
+				return list, nil
+			}
+		}
+		return l.fetchSectioned(detached, client, key)
+	})
+	select {
+	case <-ctx.Done():
+		return SectionedList{}, transient(ctx.Err())
+	case result := <-ch:
+		if result.Err != nil {
+			return SectionedList{}, result.Err
+		}
+		return result.Val.(SectionedList), nil
+	}
+}
+
+// freshSectioned returns the cached sectioned list when it is younger than the
+// TTL.
+func (l *Lookup) freshSectioned(key Key) (SectionedList, bool) {
+	l.mu.Lock()
+	e, ok := l.sectioned[key]
+	l.mu.Unlock()
+	age := l.now().Sub(e.fetchedAt)
+	return e.list, ok && age < l.ttl
+}
+
+// fetchSectioned performs one rate-limited, time-bounded client call and
+// caches a definite answer. ctx is detached from caller cancellation.
+func (l *Lookup) fetchSectioned(ctx context.Context, client SectionedClient, key Key) (SectionedList, error) {
+	sem := l.sems[key.Source]
+	waitCtx, cancelWait := context.WithTimeout(ctx, l.queryTimeout)
+	select {
+	case sem <- struct{}{}:
+		cancelWait()
+	case <-waitCtx.Done():
+		cancelWait()
+		return SectionedList{}, transient(fmt.Errorf("wait for %s query slot: %w", key.Source, waitCtx.Err()))
+	}
+	defer func() { <-sem }()
+
+	callCtx, cancel := context.WithTimeout(ctx, l.queryTimeout)
+	defer cancel()
+	list, err := client.SectionedEpisodes(callCtx, key)
+	switch {
+	case errors.Is(err, ErrNotFound):
+		list = SectionedList{}
+	case err != nil:
+		return SectionedList{}, transient(err)
+	}
+	list = SectionedList{Episodes: append([]SectionedEpisode(nil), list.Episodes...)}
+	fetchedAt := l.now()
+	l.mu.Lock()
+	if prev, ok := l.sectioned[key]; !ok || !prev.fetchedAt.After(fetchedAt) {
+		l.sectioned[key] = sectionEntry{list: list, fetchedAt: fetchedAt}
+	}
+	l.mu.Unlock()
+	return list, nil
 }
 
 func transient(err error) error {

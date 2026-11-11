@@ -830,6 +830,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/metadata/tmdb/works/{work_id}/seasons/{season}/episodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The episodes (number, title, air date) of one season of an arbitrary TMDB TV work returned by metadata search. Read-only and independent of any existing anime binding. An unknown season is an empty list. */
+        get: operations["listTMDBCandidateEpisodes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/metadata/bgm/works/{work_id}/episodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The main episodes and specials of an arbitrary Bangumi work returned by metadata search. Read-only and independent of any existing anime binding. Each episode carries its item-level section; no season is involved. */
+        get: operations["listBGMCandidateEpisodes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/anime/{managed_anime_id}/tmdb/seasons": {
         parameters: {
             query?: never;
@@ -6598,6 +6632,19 @@ export interface components {
             season: number;
             episodes: components["schemas"]["TMDBEpisode"][];
         };
+        BGMEpisode: {
+            episode: number;
+            title?: string;
+            air_date?: string;
+            /**
+             * @description Bangumi's item-level section: a regular episode (main) or a special (special). OP/ED, trailers and other item types stay out.
+             * @enum {string}
+             */
+            section: "main" | "special";
+        };
+        BGMEpisodeList: {
+            episodes: components["schemas"]["BGMEpisode"][];
+        };
         FileManagerReleaseRequest: {
             /** @description Absolute path of the managed video to unlock. */
             path: string;
@@ -10092,6 +10139,57 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    listTMDBCandidateEpisodes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                work_id: string;
+                season: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The candidate season's episodes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TMDBSeasonEpisodeList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            422: components["responses"]["Unprocessable"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listBGMCandidateEpisodes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                work_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The candidate's main episodes and specials. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BGMEpisodeList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            422: components["responses"]["Unprocessable"];
+            503: components["responses"]["Unavailable"];
         };
     };
     listAnimeTMDBSeasons: {

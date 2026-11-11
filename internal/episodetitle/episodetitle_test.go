@@ -361,3 +361,51 @@ func TestSeasonsAreCachedAndNotFoundIsEmpty(t *testing.T) {
 		t.Fatalf("expected transient, got %v", err)
 	}
 }
+
+type fakeSectionedClient struct {
+	calls atomic.Int32
+	fn    func(context.Context, Key) (SectionedList, error)
+}
+
+func (f *fakeSectionedClient) SectionedEpisodes(ctx context.Context, key Key) (SectionedList, error) {
+	f.calls.Add(1)
+	return f.fn(ctx, key)
+}
+
+func TestSectionedEpisodesAreCachedSeparatelyAndKeepSections(t *testing.T) {
+	clock := &fakeClock{now: time.Unix(1_700_000_000, 0)}
+	sectioned := &fakeSectionedClient{fn: func(context.Context, Key) (SectionedList, error) {
+		return SectionedList{Episodes: []SectionedEpisode{
+			{Number: 1, Title: "One", Section: SectionMain},
+			{Number: 1, Title: "Special", Section: SectionSpecial},
+		}}, nil
+	}}
+	naming := staticClient([]Episode{{Number: 1, Title: "One"}}, nil)
+	lookup := New(Options{
+		Clients:        map[Source]Client{SourceBGM: naming},
+		SectionClients: map[Source]SectionedClient{SourceBGM: sectioned},
+		Now:            clock.Now,
+	})
+	key := Key{Source: SourceBGM, WorkID: "486109"}
+	list, err := lookup.SectionedEpisodes(context.Background(), key, false)
+	if err != nil || len(list.Episodes) != 2 || list.Episodes[1].Section != SectionSpecial {
+		t.Fatalf("got %+v %v", list, err)
+	}
+	if _, err := lookup.SectionedEpisodes(context.Background(), key, false); err != nil || sectioned.calls.Load() != 1 {
+		t.Fatalf("a fresh sectioned list must be reused: %v, %d calls", err, sectioned.calls.Load())
+	}
+	if _, err := lookup.SectionedEpisodes(context.Background(), key, true); err != nil || sectioned.calls.Load() != 2 {
+		t.Fatalf("bypass must refetch: %v, %d calls", err, sectioned.calls.Load())
+	}
+	// The naming list has its own cache entry: browsing never primes or reads it.
+	if _, err := lookup.Season(context.Background(), key, false); err != nil || naming.calls.Load() != 1 {
+		t.Fatalf("the naming list must be fetched independently: %v, %d calls", err, naming.calls.Load())
+	}
+}
+
+func TestSectionedEpisodesMissingClientIsTransient(t *testing.T) {
+	lookup := New(Options{})
+	if _, err := lookup.SectionedEpisodes(context.Background(), Key{Source: SourceBGM, WorkID: "1"}, false); !errors.Is(err, ErrTransient) {
+		t.Fatalf("expected transient, got %v", err)
+	}
+}
