@@ -220,10 +220,11 @@ export const fileManagerCopy = {
     invalidNumber: "集数或偏移需要填写完整的整数",
     willProcess: "将处理 {n} 项",
     apply: "应用",
+    actions: "文件操作",
+    numberingOverrides: "已覆盖 {n} 个视频",
     runtimeFacts: {
       load: "加载元数据",
       reload: "重新加载元数据",
-      hint: "读取文件媒体信息；模板引用分集标题时也会查询",
       loaded: "已加载；未取得的信息会在对应文件旁标注",
       failed: "元数据加载失败，请重试",
     },

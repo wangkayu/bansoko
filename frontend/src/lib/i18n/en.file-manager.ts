@@ -222,10 +222,11 @@ export const enFileManagerCopy = {
     invalidNumber: "Episode and offset must be whole numbers",
     willProcess: "{n} to process",
     apply: "Apply",
+    actions: "File actions",
+    numberingOverrides: "{n} videos overridden",
     runtimeFacts: {
       load: "Load metadata",
       reload: "Reload metadata",
-      hint: "Reads media information from the files and episode titles referenced by the templates",
       loaded: "Loaded; unavailable values are marked beside their files",
       failed: "Couldn't load metadata; try again",
     },

@@ -356,6 +356,18 @@ describe("RecognitionDialog", () => {
     await waitFor(() => expect(onFinished).toHaveBeenCalledWith(result, 0));
   });
 
+  it("keeps both file actions in the toolbar above the preview list", async () => {
+    renderDialog();
+    await screen.findByText("/media/anime/Show - 01.mkv", undefined, { timeout: 3000 });
+    const toolbar = screen.getByRole("toolbar", { name: t("fileManager.recognize.actions") });
+    expect(within(toolbar).getByRole("button", { name: t("fileManager.recognize.runtimeFacts.load") })).toBeInTheDocument();
+    expect(within(toolbar).getByRole("button", { name: t("fileNumbering.title") })).toBeInTheDocument();
+    // The settings column keeps fields only; the same actions must not appear there.
+    const panel = screen.getByRole("region", { name: t("fileManager.recognize.configAria") });
+    expect(within(panel).queryByRole("button", { name: t("fileManager.recognize.runtimeFacts.load") })).not.toBeInTheDocument();
+    expect(within(panel).queryByRole("button", { name: t("fileNumbering.title") })).not.toBeInTheDocument();
+  });
+
   it("keeps apply closed when runtime metadata loading fails", async () => {
     runtimePreviewStatus = 503;
     renderDialog();

@@ -80,6 +80,7 @@ fixture_specs=(
   e2e/qb-manager.spec.ts
   e2e/execution-records.spec.ts
   e2e/log-events.spec.ts
+  e2e/file-manager-recognition.spec.ts
 )
 
 report="$(mktemp)"

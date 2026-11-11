@@ -370,6 +370,48 @@ export function RecognitionDialog({
                 {t("fileManager.recognize.preview.folder", { path: data.directory })}
               </p>
             ) : null}
+            {/* The list's own actions: both results land in the rows below
+                (loaded facts are annotated beside each file, numbering changes
+                their episode numbers), so they sit above the list rather than
+                in the settings column. */}
+            <div
+              role="toolbar"
+              aria-label={t("fileManager.recognize.actions")}
+              className="tw:flex tw:flex-wrap tw:items-center tw:gap-2 tw:rounded-control tw:border tw:border-border tw:bg-muted tw:px-2.5 tw:py-2"
+            >
+              <Button
+                size="compact"
+                variant="secondary"
+                loading={runtimeFactsLoading}
+                disabled={busy || namingEmpty || numberInvalid || runtimeFactsLoading}
+                onClick={loadFacts}
+              >
+                {t(loadRuntimeFacts ? "fileManager.recognize.runtimeFacts.reload" : "fileManager.recognize.runtimeFacts.load")}
+              </Button>
+              <Button
+                size="compact"
+                variant="secondary"
+                title={t("fileNumbering.seasonHint")}
+                disabled={busy || numberingItems.length === 0}
+                onClick={() => setNumberingOpen(true)}
+              >
+                {t("fileNumbering.title")}
+                {overrides.length > 0 ? (
+                  <span
+                    aria-hidden="true"
+                    title={t("fileManager.recognize.numberingOverrides", { n: overrides.length })}
+                    className="tw:ml-1 tw:rounded-full tw:bg-accent tw:px-1.5 tw:text-xs tw:font-semibold tw:text-accent-foreground"
+                  >
+                    {overrides.length}
+                  </span>
+                ) : null}
+              </Button>
+              {loadRuntimeFacts && data && settled && !preview.isFetching && !preview.isError ? (
+                <span className="tw:ml-auto tw:text-xs tw:text-muted-foreground tw:phone:ml-0">
+                  {t("fileManager.recognize.runtimeFacts.loaded")}
+                </span>
+              ) : null}
+            </div>
             {namingEmpty ? (
               <Alert tone="warning" title={t("fileManager.recognize.preview.emptyTemplate")} />
             ) : numberInvalid ? (
@@ -487,23 +529,6 @@ export function RecognitionDialog({
                 mediaKind={metadata.media_kind ?? null}
               />
             </div>
-            <div className="tw:grid tw:justify-items-start tw:gap-1.5">
-              <Button
-                variant="secondary"
-                loading={runtimeFactsLoading}
-                disabled={busy || namingEmpty || numberInvalid || runtimeFactsLoading}
-                onClick={loadFacts}
-              >
-                {t(loadRuntimeFacts ? "fileManager.recognize.runtimeFacts.reload" : "fileManager.recognize.runtimeFacts.load")}
-              </Button>
-              <p className="tw:m-0 tw:text-xs tw:text-muted-foreground">
-                {t(
-                  loadRuntimeFacts && data && settled && !preview.isFetching && !preview.isError
-                    ? "fileManager.recognize.runtimeFacts.loaded"
-                    : "fileManager.recognize.runtimeFacts.hint",
-                )}
-              </p>
-            </div>
             {singleVideo ? (
               <div className="tw:grid tw:gap-1.5">
                 <Field label={t("fileManager.recognize.match.episode")}>
@@ -539,12 +564,6 @@ export function RecognitionDialog({
                   disabled={busy}
                 />
               </Field>
-            </div>
-            <div className="tw:grid tw:justify-items-start tw:gap-1.5">
-              <Button variant="secondary" disabled={busy || numberingItems.length === 0} onClick={() => setNumberingOpen(true)}>
-                {t("fileNumbering.title")}
-              </Button>
-              <p className="tw:m-0 tw:text-xs tw:text-muted-foreground">{t("fileNumbering.seasonHint")}</p>
             </div>
             <p className="tw:m-0 tw:text-xs tw:text-muted-foreground">{t("fileManager.recognize.applyHint")}</p>
           </TaskConfigPanel>
