@@ -1,6 +1,6 @@
 module bansoko
 
-go 1.26.11
+go 1.26.10
 
 require (
 	github.com/PuerkitoBio/goquery v1.11.0
