@@ -1,0 +1,766 @@
+{
+  "schema_version": "release-manifest-1",
+  "release_sequence": 216,
+  "release_id": "v0.1.2",
+  "version": "0.1.2",
+  "channel": "stable",
+  "published_at": "2026-11-11T00:25:42Z",
+  "source_commit": "79b9d58664765c85174b0d030247ed70cc0f30bd",
+  "api_contract_version": "v1",
+  "target_migration_version": "132_bangumi_data_snapshots",
+  "required_downtime": true,
+  "backup_required": true,
+  "rollback_class": "restore_required",
+  "migrations": [
+    {
+      "id": "001_baseline.sql",
+      "checksum": "f0b2505e38f949c8e2ccda581a429a41fe6a08f86003f2e8f31d3e9a172722fb",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "002_receipt_reserve_version_object_closure.sql",
+      "checksum": "e8b0c7a807e139dd318d9b58c2e15e0f914a5bbc06bdb2a5c98f0f1ae573e4da",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "003_receipt_object_nested_closure.sql",
+      "checksum": "ed6e6bd29e557b1c88c293eda8289990181d591f587e0b460e645a4a5c642052",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "004_filefact_source_group_relation.sql",
+      "checksum": "9d81709a0063a6b34d02fb308cacef8ee0a12ff48bd57215205bbedf8676067c",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "005_anime_metadata_media_kind_override.sql",
+      "checksum": "4a6b1004f6af5117ac46a2f3fa101c68d5d19dbe1b7167c37c3f87f125e00532",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "006_group_dictionary.sql",
+      "checksum": "e46c7bfb7219b05bcd4bc3e82e8e48e4f70db63bed897a8eaf495a23079a3d32",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "007_metadata_work_titles_tmdb_title_cn.sql",
+      "checksum": "83fee8f4e17cc095580001d6941f9bad7ca69f5cbc5af8f16e3c6eadd93cd63f",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "008_managed_anime_provider_title.sql",
+      "checksum": "56cbbaeb02f44c61d6d79375f8d48a130918404279362267854ec53779bf78f2",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "009_file_manager_without_root.sql",
+      "checksum": "a387ba2bebf49dd19344c6616af768a3c13bfeec14393c109fdc8bfcbf6f12bf",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "010_no_configured_library_root.sql",
+      "checksum": "68ce18840184ebaac9e64d8f4a8734bd9f424aaa57140dcfbe52af99005d9633",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "011_metadata_work_titles_year.sql",
+      "checksum": "8c89cca96e59b357372286fedd7adfecb4ee360981ded6ee71d84aad7fd9371e",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "012_parser_policy_regex.sql",
+      "checksum": "5f214f02ba0e8a5cc0ed00d16aad0b2bbe034a0da0d58dfaacd5c3abde593d2c",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "013_seed_torrent_cache.sql",
+      "checksum": "05221f5bd9ac46aef22fd98189b15278de66b4f0a4a0a05ec60ad8a20596bd8f",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "014_seed_torrent_cache_least_privilege.sql",
+      "checksum": "a0520cf894d1a7a846cbdc0424b6eb6daa33d99c224f0e9038e228ed42d996b4",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "015_snapshot_seed_anibt_tags.sql",
+      "checksum": "17b4b9c6ef5bf0d6537ebd79989fdb5d480a1068b01c7d0fae109664a358b626",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "016_discovery_release_retention.sql",
+      "checksum": "f1c8fd4ffe2adcd47cb822f1f9a98e8fe6220e6cab251cc8f4616729c96c2263",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "017_placement_companions_reclaim_delete.sql",
+      "checksum": "13357ebe7459d5cd49118f71c4c27e0f09a968566eeb6b6b6920d938fc2d0837",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "018_tag_filters_additive.sql",
+      "checksum": "d870e8d41b286108674435082a752bd3d8d8a850f0ebe287ca30323dabc599df",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "019_maintenance_retention_resume_baseline.sql",
+      "checksum": "3f147c7caacde0125b88b025a7910fe73dbd8155ae2c367f829e79ac924290ed",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "020_parser_kind_value_checks.sql",
+      "checksum": "f0e3dfc5f9c75f1ce01c5743f846aba084c10d2c8332391598b3514795cbbccb",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "021_subscription_pending_state.sql",
+      "checksum": "e5c2df18bcdbc6cac86d9b8d23062c3be79468a061b83d81008897fd28757adc",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "022_unmanaged_overwrite.sql",
+      "checksum": "c97751160bb279aaf80166ef1235a859c416474f4217a5b35bb9374f2b1ca410",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "023_anime_metadata_year.sql",
+      "checksum": "8fc143c36c63da6da9050ca54b75f638fbc1f7a7e6d606352438d6f9b5a77890",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "024_placement_displaced.sql",
+      "checksum": "0a039efe64b89f83490c85317416a659f0a80bc43ee25965c97232083d7db24f",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "025_naming_execution_placeholders.sql",
+      "checksum": "6d8633bde4fe480d14f5025e7cdb306c3b3ccd0f3584a6df6f3643d3a169abc5",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "026_anime_metadata_release_format.sql",
+      "checksum": "cc8ea4fa16aee02b4eb931d0b593b45505ebea4999fa93d8198be44ee24b0df9",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "027_subtitle_suffix_default.sql",
+      "checksum": "cbdf5329a59c1d69708365e491c7b5fd080bbbaf059e971ee5be8e3e49c9cb27",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "028_drop_anime_metadata_release_format.sql",
+      "checksum": "3c1e62e230ebdc71e0de06ab84f8b9b3c2d9ca3099e7d86755fec931e5b364db",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "029_naming_template_library.sql",
+      "checksum": "9cca58d5a8e43f1981d4d9bb07bb3559ae9d00ccabf7518c44ffc9e96b6238b5",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "030_cleanup_group_scope_generations.sql",
+      "checksum": "6dbd9dd25661b637ac10c793d72914d6432a50d79d8d4f3bd091716b8f0003c9",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "034_download_completion_global.sql",
+      "checksum": "909b651e55f067a079a90945f8fec837fae3cbb276b14103660dcf61f9eaba74",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "035_downloader_deletion_cancels.sql",
+      "checksum": "26e7594ef590602fd47d23a185ff37584951bf6a970e2d37e8b48bb436ffd93f",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "036_managed_anime_fixed_title.sql",
+      "checksum": "6bf19f1eee403c06dad9fd42ea235dea514071aae5718875ec3bf38449d6e359",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "037_download_timeouts_global.sql",
+      "checksum": "2946f0b08c7c1a297e05d2df99202a89b09f2446e082ca7fc5944aec452f90bc",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "038_drop_backup_runs.sql",
+      "checksum": "ae8eb2d90a454ac2c1e11d62c5935e88dd58d884f2e68a548b1d40700e2752f2",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "039_path_level_publication.sql",
+      "checksum": "f71cd1700f746ab021515e13fb0767a1b96ab1cc606d90fb61fd269279d1a4ff",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "040_anibt_tag_subdimensions.sql",
+      "checksum": "3feaf2a0c9afd031d1faa263c49691dcfa099ac85b16cb1caff5dc9e8b821d8f",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "041_import_stage_retry.sql",
+      "checksum": "aeb3e0bfe86d1e265b998d86b612156e66edb0f77e837e19baeb454acc83b394",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "042_one_time_section_input.sql",
+      "checksum": "10c7b6d21d35cc5c9f23f236bedd3e9db5d5532f85a4233a104574fa7b240c60",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "043_new_releases_only.sql",
+      "checksum": "3bf7a2f6d82c121df89bf6197d97bef9a97857bf3411520e1789be7dfa844355",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "044_anime_metadata_season.sql",
+      "checksum": "634e5e3959fe9d2e662adef1aa3a268ff1105c79ebee992110466ab6aee0aec1",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "045_naming_template_body.sql",
+      "checksum": "4c069b68ccb648072fb86cda25c711264d7ad62eaef6bdaad8f607ecf6b2e785",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "046_episode_title_cache.sql",
+      "checksum": "fad2f46f5ec497923c113d190f24d6e5640801860430c4ae43ae8e09440456f7",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "047_tmdb_work_overview.sql",
+      "checksum": "d3010322dc67ba8d64afe46c68e52a11be9392934f9174b22ee4848785782231",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "048_file_success_notification_hdr.sql",
+      "checksum": "be50afaffe1341e1ed95fc7af64e71322e487cc06997f72b881491f13842e7b2",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "049_release_src_payload_key.sql",
+      "checksum": "a7843ed56e71214a6e5fde77fba375b3d1b9ee7bec79f795ae0a5d600aaf10bb",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "050_media_fact_payload_rename.sql",
+      "checksum": "b99c829674411451085222b6a2a317843aed8df5b60e59fbf4868c0192a4d0c6",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "051_release_sub_flag_payload_key.sql",
+      "checksum": "9bdd0a17eff97c64cb1688e5469f426ea109dde43b2ddcc7aad8a0d277c14777",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "052_metadata_refresh_global.sql",
+      "checksum": "8c5010d0fc2211146cee7e342e5ae86bb3d88d725dafa7e406f63470d943acd5",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "053_lang_tag_fact_rename.sql",
+      "checksum": "ad3ae5f146eea7a7980ac5fc8d6f6405b0b954ce918deb5caa990145a25fcb1e",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "054_notification_payload_unified_keys.sql",
+      "checksum": "1253de06fd28345a5735a4e120c9adaaff2865ef9d315a7cbef50fb0bcaf2e07",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "055_rt_version_payload_key.sql",
+      "checksum": "49e11218b0ede56a0d38e875c3a294dd5781cf686cc701c8b60cf1274b21a6ba",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "056_feed_snapshot_kind.sql",
+      "checksum": "11d1693248544d7d9828c095e67f2852e5219aed20686ff8862d456c14b34a51",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "057_placement_recovery_generation.sql",
+      "checksum": "1b986e672d6ba44ef7c1be31a6e1fdd2261b1e517344a03ac45a1ae064120b41",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "058_replacement_direct_delete.sql",
+      "checksum": "26b62d19c8b919fcc45f0294436b165394994b62357d0676b4d1c803e384ad66",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "059_nyaa_search_source.sql",
+      "checksum": "8de636364c7dfe4b99ae73da65581c5a616b3325eba5541e4d09373fd3ca02ff",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "060_replacement_group_identity.sql",
+      "checksum": "cacb5165bd870907b969b8eb855f549adae764dac31b2faf73d50374892d3eea",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "061_subgroup_score_rules.sql",
+      "checksum": "edd5a8d95d10356129fd178c868442a7f8383719de48b69b5558ef050afab2d2",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "062_replacement_fallback.sql",
+      "checksum": "8a2d70f39207ada2640c2acc02e6e52d882f8c227e72fadcf8b5c14f58019554",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "063_retention_renames.sql",
+      "checksum": "2d2147c9a2323a30311f461e8870286d8e8857a45f6822c860c030ba2414dcdf",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "064_language_compare_defaults.sql",
+      "checksum": "f681c5c7920a0d1964846617a6fe42974d3cf27267a1b23dba821a415ea30361",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "065_rt_sub_flag_compare_item.sql",
+      "checksum": "8e71a88558eb681084a044edd4bad92c04df309f4a0adc169de63838a630a3ec",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "066_rt_uncensored.sql",
+      "checksum": "dbd15945e4460bc5e98280b72135927aa0c7bc597a1fb76f26a6249d644dc696",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "067_compare_defaults_anibt_spelling.sql",
+      "checksum": "7765ded7038eabefd5a5d558f178155ed4af9b0ec6bf1d1bbe1d8df2968510cc",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "068_anibt_resolution_defaults.sql",
+      "checksum": "dbcdecb4819b50a73d07a45f5027fc9e18c966756253c130d3199182462e60d6",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "069_download_failure_occupied.sql",
+      "checksum": "05405c5a3a5c4dac26541562267ac2a581a947891e850be11096e49005526575",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "070_anibt_tag_notification_merge.sql",
+      "checksum": "741c63055636859b6d9092fa22fa3c3e4d53be32d288a8e7204584fcf226de74",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "080_file_execute_stranded_revival.sql",
+      "checksum": "903e1b2f77240929751384e01c4a283ccd12437fa2717698e8b25c22242a62fa",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "081_subscription_competition.sql",
+      "checksum": "9ca36e3690efaf419c0c2698c8adaee25f1d9d0679b6770eca6605c6aa0baacc",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "082_file_busy_requeue.sql",
+      "checksum": "e98959f7b8360a3fb04e53be8fd607fcd1fbd2904a51796613b8df30007e77b9",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "083_replacement_deletion_notification.sql",
+      "checksum": "83f42007ba79cfaa0914c688c6c191b7444c2222400b7607d267b30803fd5b61",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "084_cleanup_failed_activity.sql",
+      "checksum": "7cf3db1692de3c7663271da1bf48815997c27f4321035220cd34d3eaf6f2f957",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "090_replacement_above_collision_policy.sql",
+      "checksum": "08d411ad4ff266ae0248ec2b93b94df9202499dce621fc2986f3eedc36ddcb7b",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "091_acquisition_settle_liveness.sql",
+      "checksum": "dd70ef768cc9e5622077a43f77c2b0be050c65b10f694f96a0e326f253572d6f",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "092_activity_message_codes.sql",
+      "checksum": "7ac6512b62e3147619d0c4ea710a212b0428f4a0f27ee3b3a1a54c88ad18e656",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "093_diagnostic_conditions.sql",
+      "checksum": "f9fb58fb54b3dc1b13dd0a67e94ae11677f2a1aa6a74e06cf0f001349f1a9f41",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "094_rt_sub_lang_combined_defaults.sql",
+      "checksum": "05197e6cb6222a323a04196d153deeccbf46e7b8178529ee9d55b336d0ef0a26",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "095_seasonless_episode_identity.sql",
+      "checksum": "6211216d6629011647338cac0ac3715b6186a35ecd6363781e8b141171544563",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "096_seasonless_key_rewrite.sql",
+      "checksum": "0463a910461a49932f1f5548d4152bfb0c86abcad41774bb7517e28ee1071266",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "097_import_waiting_config.sql",
+      "checksum": "444fb79c0bea0c76b0b33cf7f295a3f189a5519c6e2429df6bb5ac85da71fdaf",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "098_offset_alignment_requests.sql",
+      "checksum": "b951c6070c20fb600b55f980949486b8c27adf765b536dfa1ddd3a10de8352f6",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "099_config_scan_requests.sql",
+      "checksum": "a38c4ea96aa857b6780b3972e258139cd8c3ad1fdca45745731c2f410a966168",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "100_media_kind_rename.sql",
+      "checksum": "df497e9066e6b4debf8ab4179c6208f23daf0d8b4dc4741d842be2ce9889a633",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "101_frozen_target_set_reference.sql",
+      "checksum": "f42e28a42250f31a3b967d4d0f98f0467a75745acc95af4a966d891d433af2ce",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "102_path_level_inspection.sql",
+      "checksum": "b3c7402452652574ba50f58882adcc7ac7bb8c71386f1ffe6a5f4e0ea172df1a",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "103_deselect_cancels_downloads.sql",
+      "checksum": "d01a87af6b399348b7cfac7810401184b22a5bedf84988a3cf26e0e6453314bb",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "104_one_shot_false_block_resume.sql",
+      "checksum": "f80967f92cbde8f94e2b4af986bfd184e14be6c9510e343e02d2e173d8320054",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "105_candidate_draft_group_offsets.sql",
+      "checksum": "282c1fa0c0355b695750c6623c14f67ec78177e0962930eb9fbc09c5c305c6cc",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "106_jackett_search_source.sql",
+      "checksum": "a37ccfd99a355f17c042d558fac49d09ffcf214f01e13fb3e4c05cd60997248b",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "107_github_update_route.sql",
+      "checksum": "2a06cbbc044735a5da3f0d830d5dba1615ddf77e7c08f6b5c8a6fca4caa28c42",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "108_subscription_entry_season.sql",
+      "checksum": "2bec0a6d594ee249fa118fb9cc3faadf4f27d03386f058f0cc0ea5b6163dec7a",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "109_release_feed_verdict.sql",
+      "checksum": "aeb45c334b84ba7aadc80512dbd9e4e95d34cd57e849a476ed65dabed83ec33e",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "110_replacement_notifications.sql",
+      "checksum": "10c21115f4647d97eee0ad2c595c3d08691343c9d6456866e3d2806a76f1ff15",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "111_subscription_ignore_multi_video.sql",
+      "checksum": "1180c427024b29c78b306f13f7ddcdd0a6658ad35eee19cb1248e71945ba3a2d",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "112_subscription_defaults_global.sql",
+      "checksum": "99dc576f8bafc518a2cc5a92f5b9c12c93fe9bc916b570568d360c90ef24358b",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "113_release_batch_activities.sql",
+      "checksum": "0b4ea608bfeae49c53fe3a6613d2ba8a4fb180df7bcf7758e639c343d6337a6f",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "114_group_selected_release_batch.sql",
+      "checksum": "8c1d4d184a0bd33c4bb3235d4eb145af33ba20eaf23413bd6bdb7629e55b8e0b",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "115_file_manager_overwrite.sql",
+      "checksum": "91a123aac4cacdb2f9422f8bb75af3fa22f992141c285423598af661580f3fc5",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "116_file_manager_roots.sql",
+      "checksum": "2ee677e8055bbd210befc81bd1b0c8f3071bb064bf125c36a1544658576bc616",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "117_release_feed_facts_digest.sql",
+      "checksum": "b09afb2adcb3208c1c05027b298e3cce7121c0131cbd493e7cd71fcb8ceaeff2",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "118_maintenance_receipts.sql",
+      "checksum": "6d7b17912b7d196606eea5afdb8e67ffe640cc91a875576d9a585c5ca5d252a8",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "119_metadata_hold_global.sql",
+      "checksum": "e960a146eab6fa626c12e51776c8f90d8d8f37f36ecdd0e703d072c4e40b7762",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "120_offset_ep_reconciliation.sql",
+      "checksum": "70a7af5b8d8de52d3bbdbe4d3ab3f4330872652338036c95da6d6269579585b7",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "121_drop_user_file_recovery.sql",
+      "checksum": "5682d34934e6f8dc57bf59d09cbb812ea42296c6de16870b5424951c895983f6",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "122_drop_retired_offset_executor.sql",
+      "checksum": "d4f7df7ea0c55176f228eee4d7578a4d022758952f92179e9cf6b70949c50f53",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "123_drop_artifact_inspection_requirements_status.sql",
+      "checksum": "59fce1bfde7842fdcec71b2f49ba4218162396fd7ddb0f213f3507b63a8d289d",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "124_drop_acquisition_receipt_until.sql",
+      "checksum": "d17a6b04201d835d6c117e1447d3e3b852e067e8f14c175e1dcf2ab62e721fd7",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "125_drop_redundant_indexes.sql",
+      "checksum": "a195da2b08c89d758bf83501f4f97802b1a50661c32d2cbfff765c8800e7ced6",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "126_maintenance_receipt_lifecycle.sql",
+      "checksum": "108ade8a6a288972c27c2d80b7446aaffdce231f3ac80b2e694c8451ef7fe333",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "127_update_egress.sql",
+      "checksum": "8bf4eab3269dcbe5cf0771dd5838fdfc4c09c87f514129b9c0e9dcba3819e184",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "128_github_update_connection.sql",
+      "checksum": "545b1000349c64511c7d6c68cc72602ca2df0f7c9a56c35b7786aea2fbb464f2",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "129_rt_content_rating.sql",
+      "checksum": "dad3f2dc8620c204634bb18da944753619f871f500b69724590e7a5978cd6fe9",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "130_rt_codec_payload_full_names.sql",
+      "checksum": "916f5c7c9f878dfdd1dd2c619477d131ce87fa9b8709455cecd9957e9623d342",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "131_timeout_failure_removes_task_and_files.sql",
+      "checksum": "c7d9fa472f0b00fba02993934d495e7577558586914fd61998c931dcafa897be",
+      "reversible": false,
+      "compatibility": "forward-only"
+    },
+    {
+      "id": "132_bangumi_data_snapshots.sql",
+      "checksum": "16517624c6be5d0a5172440250207b7dad2af5dd2be5c258b9d904527fc69745",
+      "reversible": false,
+      "compatibility": "forward-only"
+    }
+  ],
+  "images": [
+    {
+      "name": "bansoko",
+      "digest": "sha256:13dec88c2a312f9c2cdeec034a16f42ea3d85f01827fdef2f147f9d190857ffe",
+      "platform": "linux/amd64"
+    }
+  ],
+  "compose_ref": "deployment/maintainer/docker-compose.production.yml",
+  "frontend_ref": "sha256:8f48323d9b11412e57600429728873cc620a6a0a8e8a61a0db5f4a955877c687",
+  "artifacts": [
+    {
+      "platform": "linux",
+      "architecture": "amd64",
+      "digest": "27b2740ff8edff21bbe819713c53f5670f03e53af6a44b6e2cff4a24f3d1e714",
+      "size": 40460414
+    }
+  ],
+  "sbom_ref": "sha256:64fa3d2dbb1ae42d95cffdfcbe4410f79ff2025ec603e3f890d6107af4c8cf25",
+  "provenance_ref": "sha256:b47699408afef434c4e9ccda953d32f868e3200f88a2ab2e62b9fcd64f797ce6",
+  "artifact_digest": "27b2740ff8edff21bbe819713c53f5670f03e53af6a44b6e2cff4a24f3d1e714",
+  "immutable": true,
+  "embedded_update": {
+    "format_version": "embedded-update-v1",
+    "platform": "linux",
+    "architecture": "amd64",
+    "payload_digest": "539c0e629f16651cabc82c36daf4ffce60de46ba38bc9964c8f1912fd9f2c383",
+    "payload_size": 21254658,
+    "bootstrap_min_version": "embedded-bootstrap-unified",
+    "min_image_version": "base-v1",
+    "target_release_id": "v0.1.2",
+    "target_version": "0.1.2",
+    "target_schema_version": "132_bangumi_data_snapshots",
+    "release_sequence": 216
+  },
+  "release_notes": [
+    {
+      "version": "0.1.2",
+      "published_at": "2026-11-11T00:00:00Z",
+      "notes": {
+        "zh-CN": "## 改进\n\n- 自动元数据匹配现在优先通过本地 bangumi-data 快照定位 Bangumi、Mikan 和 TMDB 的对应关系。快照在后台每 6 小时检查更新，失败时继续使用旧数据；已有 Bangumi ID 的订阅也能在后续匹配中直接回查。\n- 自动匹配 TMDB 季时会结合 bangumi-data 的季映射、原标题季号、季首播日期和分集播出日期。目标季不存在且日期明显不符时保持等待，不再用最近一季兜底；分集日期只用于确认季，不会自动修改 EP 偏移。\n- 元数据匹配对话框的“自动查询”现在使用同一套自动匹配逻辑，自动选中识别出的节目和 TMDB 季，再由用户确认；普通“查询”仍按当前输入列出候选。\n- 实时事件现在立即触发首批界面刷新，只在读取期间合并后续更新；单番 RSS 不再等待工作区读取完成后才刷新。\n- 手动或周期元数据刷新成功后，当前条目的标题候选、RSS 渲染、文件预览和订阅列表会同步重新读取，不再停留在刷新前的数据。\n",
+        "en": "## Improved\n\n- Automatic metadata matching now uses a local bangumi-data snapshot first to resolve Bangumi, Mikan and TMDB mappings. The snapshot checks for updates every six hours in the background and keeps the old data after a failed refresh; subscriptions with an existing Bangumi ID can use it directly on later match attempts.\n- TMDB season matching now considers bangumi-data's season reference, the season number in the original title, season premiere dates and episode air dates. If the requested season is absent and the dates clearly conflict, matching waits instead of falling back to the latest season. Episode dates confirm only the season and never set an EP offset automatically.\n- Auto Search in the metadata match dialog now runs the automatic matching pipeline and preselects the resolved work and TMDB season, leaving final confirmation to the user. Search still lists direct candidates for the current input.\n- Realtime events now start the first interface refresh immediately and coalesce only later updates received during a read. An anime's RSS list no longer waits for its workspace read to finish before refreshing.\n- After a manual or periodic metadata refresh succeeds, the anime's title suggestions, RSS rendering, file preview and subscription list now reread their data instead of retaining the pre-refresh view.\n"
+      }
+    },
+    {
+      "version": "0.1.1",
+      "published_at": "2026-11-09T00:00:00Z",
+      "notes": {
+        "zh-CN": "## 改进\n\n- 应用更新改为服务连接中的一个 GitHub 连接：更新请求的地址可在「更新地址」里改成自己的反向代理，出口则从「网络代理」中选择，代理地址和凭据只需在「网络代理」中维护一处。地址默认官方地址，保存后下一次更新生效；停用该连接或停用所选代理时，更新回到官方地址直连。「测试」会按当前地址和代理读取更新频道，结果显示在行内。\n- 一次性下载选择种子时，勾选只在当前字幕组内有效：切换到其他字幕组后，之前的勾选不再保留，已选数量从零开始，返回已进入过的组时也不会恢复。\n- 第 0 季的文件夹现在命名为 Specials，完整路径为 /Specials。已入库的文件保持原来的名称，只有新入库的文件使用 Specials。\n- 所有者密码的最短长度改为 8 个字符。\n- 下载因超时失败时（无进度超时或超过最长下载时间），现在会删除下载器中的任务和文件；这次下载之前就已存在的任务和其他原因的失败仍保留任务，方便重试。\n- 字幕组名单和名称评分的添加规则改为在对话框里编辑，移动端也能使用；名单内容直接显示在卡片上，编辑表单（模式、默认分、从字典点选、移除）在对话框里。\n",
+        "en": "## Improved\n\n- App updates are now a GitHub connection in Connections: \"Update URL\" can point at your own reverse proxy, and the egress is picked from \"Proxy\", so a proxy's address and credentials are maintained only under \"Proxy\". The URL defaults to the official address and takes effect on the next update once saved; disabling the connection or the selected proxy sends updates back to the official address directly. \"Test\" reads the update channel through the current URL and proxy and shows the result in the row.\n- When picking seeds for a one-shot download, a selection belongs to the subtitle group you are browsing: after switching to another group the earlier picks are no longer kept, the selected count starts again from zero, and returning to a group you already opened does not restore them.\n- Season 0 now names its folder Specials, so the full path is /Specials. Files already imported keep their current name; only newly imported files use Specials.\n- The owner password minimum length is now 8 characters.\n- A download that fails on a timeout (the no-progress timeout or the maximum download time) now has its task and files removed from the download client; a task that already existed before this download and any other failure keep the task so it can be retried.\n- Adding group-list and name-scoring rules now happens in dialogs and works on mobile; the group list itself stays visible in its card, while the editing form (mode, default score, dictionary picking and removal) is in the dialog.\n"
+      }
+    },
+    {
+      "version": "0.1.0",
+      "published_at": "2026-11-06T00:00:00Z",
+      "notes": {
+        "zh-CN": "## 新增\n\n- 已订阅页新增批量管理：按状态、进度、创建入口和创建时所在的季度目录筛选，同一作品的多份订阅相邻显示，可批量开始、暂停和退订；入口与季度是两个独立维度，搜索和自定义创建的订阅归入「无季度」。\n- 种子搜索可接入 Jackett：只需在服务连接中配置地址和 API Key，即可通过 Jackett 已配置的站点聚合检索，并显示每条结果的来源站点和公开、私有或半私有类型。\n- 种子搜索新增 Nyaa 来源，可在连接设置中单独管理其访问方式。\n- 检查更新时显示新版本的更新说明。\n- 一次性下载可单独选择未识别集数的文件是跳过还是按「未知内容」整理。\n- 一次性下载的设置步骤可逐个种子勾选要下载的文件，包括子文件夹里的视频和字幕；同一集选了多份时按全局冲突策略处理。\n- 执行记录显示种子信息：列表中有字幕组、主要标签、版本、大小和种子标题，替换旧版本的记录带「替换版本」标记；详情中可查看来源站点、发布时间、info hash（可复制）和全部标签。\n- 订阅开始前也能按字幕组设置集数偏移：草稿和未开始的订阅在 RSS 页的每个字幕组上都可调整，试运行立即按新集数重算；偏移对话框显示换算示例，例如「第 53 集 → 第 5 集」。\n- 编辑番剧标题时（包括一次性下载的设置步骤），TMDB、BGM 的中文名与原名和来源标题显示为候选，点击即可填入；匹配 TMDB 时可勾选同时把标题改为匹配到的名称。\n- 缺少 TMDB/BGM 匹配或模板用到的变量不存在时，下载完成的文件进入「等待配置」：文件留在下载目录，补全设置后自动继续入库，不计为失败。\n- 文件管理的识别使用与一次性下载相同的命名模板：模板给出目标文件夹（绝对路径，须在文件管理的授权目录内）和文件名（TV、电影、未知各有自己的变体，字幕使用后缀），所选文件夹只决定文件从哪里读取；目标不是绝对路径或落在授权目录之外时逐行提示原因。\n- 浏览页和搜索结果的海报卡右上角可以查看简介：阅读器显示来源页给出的整段简介，以及该页写明的放送星期、集数、标签、播出形式和季度；简介里含「[简介原文]」且两侧都有内容时分页显示，其余情况保留整段。\n- 订阅策略新增「无元数据放行」，默认关闭：开启后，未匹配 TMDB/BGM 的订阅资源也可进入下载与入库，已有等待元数据的资源会立即重新评估；命名仍只使用人工填写的信息。\n- 硬链接落位遇同名同内容文件时按覆盖策略替换目标，与移动的行为一致，不再直接拒绝；标题解析子进程的异常应答在读取时即封顶，重启后重新握手校验协议，失败退出会关闭残留进程，旧进程的失败也不会误伤新采用的解析器；解析器更新通道的 lane 值配置错误时启动告警，不再静默按 stable 处理。\n- 节目文件菜单现在可删除已停用字幕组的已入库文件：一次确认会永久删除视频及绑定字幕，仍选中的字幕组与自定义来源不提供该操作；原「恢复文件」流程已移除。\n\n## 改进\n\n- 日志中的内部错误明确显示累计次数，并可展开按请求操作查看；封面上游暂时不可用仍返回失败并记录日志，但不再计为服务内部错误。\n- 备注只用来区分同一作品的多份订阅：直接订阅不再把标题写成备注，复制副本时填写备注，自定义预设本来就需要备注；没有备注时列表只显示标题，不再重复。\n- 账户设置中的用户名和密码合并为一次修改；用户名或新密码留空时保持原值。\n- 连接设置中可直接添加 RSS 访问；内置连接只能编辑。\n- 代理与下载器对话框在提交前校验输入，布局与文案更清晰。\n- 字幕组「必选」不再占用自动选择名额，组分最高为 100。\n- 番剧配置标题区绑定 TMDB 电影时显示 Movie，并链接到电影页面。\n- 海报墙铺满窗口宽度，窗口越宽，浏览页每行显示的番剧越多。\n- AniBT 浏览列表和搜索结果在海报左上角显示站点评分。\n- 同集多版本的默认排序中，「reltitle 字幕语言」改为简日繁日双语优先，其次是简日。升级只更新全局设置中未改动过的这一项；已添加的订阅保持原有设置，如需新排序请在该订阅中修改。\n- 浏览页和搜索中点击已订阅的番剧会打开已有订阅，不再新建草稿；需要第二个订阅时，在订阅卡片上使用「复制为新订阅」。\n- 番剧的「类型」（剧集/电影）改为独立设置：首次匹配 TMDB 时预填一次，之后更换或清除匹配都不会改变它。\n- 修改订阅的标题、季度、年份或 TMDB/BGM 匹配后，已入库的文件也按新设置重新命名，与修改命名模板时相同；缺少匹配或模板用到的变量不存在时，文件留在原处并在文件列表中显示原因。\n- 修改字幕组集数偏移后，已入库的文件换到新集数：同一集的文件按同集多版本的保留方式比较，留下优先的一份，其余删除；都保留时按冲突策略处理，结果记录在订阅动态中。偏移对话框说明这些影响。\n- 对齐文件时，目标位置已有同一订阅同一集的文件，先按同集多版本的保留方式比较，再移动保留的文件；其他情况按冲突策略处理。\n- 下载期间修改了订阅设置的文件，入库后自动移到按当前设置生成的位置，不受「自动对齐」开关影响。\n- 修改标题、绑定、季度、年份、类型或命名规则后，订阅的文件会按当前设置重新检查；开启「自动对齐」时移到新位置，不会重新下载。\n- 保存元数据时，未提交的资源会在同一次保存中重新评估，不再需要单独的重新评估。\n- 浏览页的季度下拉固定为往后两季到往前两年，本季始终可以直接选到；更早的季度用箭头翻页，或用搜索查找作品。\n- 取消选择字幕组时，该组在订阅中尚未完成的下载随之取消，并在 qBittorrent 中连同已下载的数据一起删除，同一集改由其他字幕组的资源下载；已完成下载或正在入库的不受影响，也不发送失败通知。\n- 重新选择字幕组后，之前因未选择而跳过的资源立即重新评估，不必等待 RSS 刷新或新资源出现；订阅停止期间重新选择的，在恢复订阅时重新评估。\n- 执行记录中可取消尚未入库的下载（也可通过 API、MCP 和命令行取消），记录显示「已取消」；订阅中的资源可用「重试」重新下载，一次性下载取消后不能重试。\n- 识别对话框中的应用按钮被禁用时，悬停显示原因：模板未填、集数无效、预览生成中、预览失败、有无法处理的文件（含数量）或没有需要处理的更改。\n- 文件管理的识别可显式加载元数据：逐文件读取媒体信息，并按模板引用补充分集标题；空值与读取失败会直接显示，提交前重新核对计划。\n- RSS 页的失败行说明跳过原因：目标位置被占用且同名文件处理为「跳过」时，显示「目标位置已被占用，按「跳过」策略未覆盖」；规划期被挡下的目标同样说明，不再只说同名。\n- 匹配 TMDB 时，所选作品的类型和季度固定在候选列表上方，命中结果较多时也不会随列表滚动而看不到。\n- 文件管理的「隐藏受管理」开关连同纯受管理的文件夹一起隐藏：目录下（含子目录）只有受管理或进行中的文件时，该文件夹不再显示；空文件夹和含有未受管理文件的文件夹仍会显示。\n- 库目录可以直接浏览文件夹选择：从文件系统根目录逐层进入，选中后填入路径再添加；仍可手工输入绝对路径，重复或不可用的路径照常报错，移除库目录不会删除文件。\n\n## 修复\n\n- 字幕组策略保存成功后，页面不再误报「1 处未保存」或要求放弃已经保存的修改。\n- qB 没有可清理的残留标签时正常显示零清理，不再因空结果报错。\n- 拖动同集多版本设置中的两张大语言卡时，拖动预览保持原卡片尺寸，不再显示异常放大的整卡影像；其他比较项的拖动方式不变。\n- 订阅开始前给字幕组设集数偏移后，节目配置能正常保存，不再报内部错误。\n- 草稿中保存的字幕组偏移在点击订阅后会完整保留；只出现在 RSS 观察结果中的字幕组也不会丢失偏移，后续发现仍沿用保存值。\n- 已订阅 RSS 页按当前字幕组偏移和命名设置预览种子集数、合集覆盖范围及每个文件的目标；当前无法渲染时显示真实原因，不再用旧受理记录中的集数或路径掩盖。下载和执行记录仍保留当时的事实。\n\n- 文件管理器中，一次性下载或已退订番剧留下的文件可以正常移动、重命名和删除，不再在提交后提示「文件已发生变化」而实际没有执行。\n- 已有下载和入库记录时，升级不再因数据库迁移冲突而失败并回滚。\n- 文件名带 JPSC、JPTC 标记的字幕现在能识别语言，简日与繁日字幕不再因同名只保留一个。\n- 标题解析更新：四位数年份不再被当作集数范围，形如「2024 - 27」的标题能识别出末尾的集数；方括号里的日期（如 [2020-04-14]）也不再产生多余的集数范围。\n- 展开种子查看文件列表时，torrent 现在走该来源连接配置的代理，不再直连。\n- 带 AniBT 编码、位深等标签的种子入库后不再卡在收尾；文件已复制却一直显示「入库 进行中」的记录，升级后会自动完成。\n- 手机上用下拉选择季度后不再跳回本季度；在设置等页面切换栏目时保留所选季度。\n- 新订阅多个来源同时刷新时，同一集不再重复下载：同一订阅的候选先进入「等待比较」，统一比较后只下载一份。\n- 冲突策略为「跳过」或「加版本号」时，洗版换到同一路径的新版本不再因目标已存在而入库失败；活动记录在受理时显示「将替换」，入库完成后才显示「已替换」。\n- 媒体库文件正被播放器等占用时，洗版删除旧版本和覆盖入库会每 5 分钟自动重试，最长 24 小时；仍失败时写入活动记录并发送通知，不再让部署恢复卡住，也不再一律提示「没有权限写入目标位置」。\n- 清除 TMDB 匹配时，一并清空由它预填的季度、年份和总集数；更换匹配时改用新匹配的值，不再沿用第一次匹配的结果。\n- 海报因服务重启或网络波动加载失败后会自动重试，窗口回到前台或网络恢复时立即重试，不再需要刷新页面。\n- 下载和入库进展时，订阅列表的入库进度和状态会自动更新，不再需要手动刷新。\n- 下载过程中修改 TMDB 季度后，同一集不再被当作新的一集再下载一份：集数识别只看订阅和集号，季度只用于命名。\n- 顶栏状态中的「下次自动任务」时间到点后会自动更新，打开状态面板时也会重新读取，不再一直显示已过去的时间。\n- 编辑标题时，候选标题不再遮住输入框的选中边框。\n- 模板变量列表中示例很长的变量（如 InfoHash、文件名）在条目内换行，不再把一次性下载设置等窄栏撑出窗口。\n- 一次性下载整季合集（如 24 集加附带文件）提交时不再报内部错误；包含数百个文件的合集同样可以下载。文件过多、无法记录的种子会提示「种子包含的文件过多，无法下载」，订阅中的这类种子标记为同样的原因。\n- 包含 128 个以上文件的种子下载完成后，不再在校验文件阶段失败，合集里的视频都能入库。\n- 校验文件只核对每个文件的大小和位置，不再读取整个文件，大体积合集的校验时间不再随体积增长。\n- 合集中每个视频单独读取分辨率、编码等媒体信息，排在后面的视频不再因共用的时间上限缺少这些信息。\n- 字幕后缀模板留空时，带字幕的资源不再在入库整理阶段失败。\n- 一次性下载在文件校验完成、等待整理时不再被错误收尾；已经因此卡在「进行中」的记录，升级后会自动继续整理和入库。\n- 在文件管理器中删除文件或文件夹后，所在目录不再留下空的临时文件夹；之前版本遗留的空文件夹会在启动时清理。\n\n## 注意\n\n- 目前只支持一个下载器，下载目录改为必填。\n- 升级时，如果同一订阅里已有属于不同季的文件，只保留当前季的文件参与替换版本；其他季的文件留在原处，并在订阅动态中记录数量，可按需手动清理。\n- 订阅已有入库文件，或有未完成的下载、入库时，不能在剧集和电影之间切换类型。\n- API 与 MCP 中番剧元数据的类型字段改名为 media_kind；调用它的脚本或助手需改用新字段名。\n- API 中一次性下载和下载任务的 target_facts 不再逐个列出目标，改为给出目标数量 target_count；升级时已有记录一并改写。\n- API 中文件的指纹改为 metadata 形式（文件大小，以及可取得时的设备号与 inode），不再是 sha256 内容摘要；升级时已有记录一并改写。\n",
+        "en": "## New\n\n- The subscribed page gains bulk management: filter by state, progress, the entry the subscription was created from and the season catalog it was created on, with several subscriptions of the same show kept adjacent, and start, pause or unsubscribe in bulk. Entry and season are independent dimensions; search-created and custom subscriptions fall under \"no season\".\n- Torrent search can use Jackett: configure only its address and API key under service connections to search the trackers already aggregated by Jackett, with each result's source site and public, private or semi-private type shown.\n- Torrent search adds Nyaa as a source, with its own access settings under connections.\n- The update check shows the release notes of newer versions.\n- One-shot downloads can choose whether files without an episode number are skipped or organized as unknown content.\n- The one-shot settings step lets you pick the files of each seed, including videos and subtitles in subfolders; several picked copies of one episode follow the global collision policy.\n- Execution records show the seed: list rows carry the subtitle group, main tags, version, size and torrent title, and replacements carry a \"Replaces a version\" mark; details add the source site, published time, info hash (copyable) and all tags.\n- Episode offsets can be set per subtitle group before a subscription starts: drafts and not-yet-started subscriptions offer the offset on every group in the RSS tab, and the test run re-numbers immediately. The offset dialog shows a conversion example such as \"Episode 53 → Episode 5\".\n- While editing an anime title (including the one-shot settings step), the localized and original TMDB and BGM names and the source title appear as suggestions you can click to fill in; confirming a TMDB match can also set the title to the matched name.\n- When a TMDB/BGM match is missing or the template uses a variable that does not exist, finished downloads wait for configuration: the files stay in the download folder, the import continues by itself once the settings are complete, and it does not count as a failure.\n- File-manager recognition uses the same naming templates as a one-shot download: the template renders an absolute target folder (inside the file manager's authorized roots) and a filename (TV, movie and unknown each with their own variant, subtitles using the suffix), while the selected folder only says where the files are read from; a target that is not absolute or falls outside the authorized roots is reported per row.\n- Browse and search poster cards gain a synopsis reader at the top-right: it shows the whole text the source page gives, plus the broadcast weekday, episode count, tags, release format and season that page states; a synopsis containing a [简介原文] marker with content on both sides splits into two tabs, and every other shape stays one block.\n- Subscription policy adds \"Release without metadata\", off by default: when enabled, subscription releases without a TMDB/BGM match can proceed to download and import, and releases already waiting for metadata are evaluated again immediately; naming still uses only manually entered information.\n- A hardlink that lands on a same-named, same-content file now replaces the target following the overwrite policy, same as a move, instead of being refused; the title parser subprocess's oversized answer is cut off at the cap while it is being read, a restarted parser re-handshakes and checks the protocol, a failing exit closes the leftover process, and an old process's failure no longer brings down a newly adopted parser; a wrong lane value for the parser update channel warns at startup instead of silently using the stable lane.\n- An anime's file menu can now delete imported files from deselected subtitle groups: one confirmation permanently deletes the video and its bound subtitles, while selected groups and custom sources do not offer the action. The former file-recovery workflow has been removed.\n\n## Improved\n\n- Internal errors in Logs now show their cumulative count and can expand into per-request-operation details; a temporarily unavailable cover host still returns a failure and writes a log entry, but no longer counts as an internal server fault.\n- The note exists only to tell several subscriptions of one show apart: creating a subscription no longer copies the title into its note, a copy asks you for one, and a custom preset already requires one; a list shows only the title when there is no note, never the same text twice.\n- Account settings update the username and password together; leave either replacement blank to keep its current value.\n- RSS access can be added directly in connection settings; built-in connections can only be edited.\n- The proxy and downloader dialogs check input before saving, with clearer layout and wording.\n- Required subtitle groups no longer take an automatic selection slot, and a group score is at most 100.\n- When an anime is bound to a TMDB movie, the config title area shows Movie and links to the movie page.\n- The poster wall uses the full window width, and the browse page shows more titles per row as the window widens.\n- AniBT browse and search cards show the site's rating at the top-left of the poster.\n- In the default order for multiple versions of an episode, \"reltitle Subtitle language\" now ranks combined Simplified+Traditional/Japanese first, then Simplified/Japanese. The upgrade updates only this item of the global setting, and only if you never changed it; existing subscriptions keep their settings, so change a subscription yourself to use the new order.\n- Clicking an anime you already subscribe to in Browse or search opens that subscription instead of a new draft; for a second subscription, use \"Duplicate as New Subscription\" on the subscription card.\n- An anime's type (TV or movie) is now its own setting: it is filled once from the first TMDB match and is not changed when the match is replaced or cleared.\n- After you change a subscription's title, season, year or TMDB/BGM match, its library files are renamed to the new settings, as when the naming template changes; when a match is missing or the template uses a variable that does not exist, the file stays where it is and the file list shows why.\n- After you change a subgroup's episode offset, library files move to their new episode: files of the same episode are compared under the subscription's version-keeping mode, the preferred one is kept and the others are deleted; when all are kept, the collision policy applies, and the subscription activity records the result. The offset dialog explains these effects.\n- When a file is aligned onto a path that already holds the same episode of the same subscription, the two are compared by the version-keeping mode first and the kept file moves; other cases follow the collision policy.\n- A file whose subscription settings changed while it downloaded moves to the path the current settings give right after import, whether or not automatic alignment is on.\n- After the title, bindings, season, year, type or naming rules change, a subscription's files are checked again against the current settings; with automatic alignment on they move to the new place, and nothing is downloaded again.\n- Saving metadata now re-evaluates the unsubmitted releases in the same save, with no separate re-evaluation.\n- The browse season dropdown always offers the next two seasons back to two years ago, so the current season is always one pick away; reach older seasons with the arrows, or find works by search.\n- Deselecting a subgroup cancels its unfinished downloads in the subscription and deletes them from qBittorrent together with their downloaded data, and other subgroups' releases download the episode instead; finished downloads and imports in progress are not touched, and no failure notification is sent.\n- After a subgroup is selected again, the releases skipped while it was deselected are evaluated again right away, without waiting for an RSS refresh or a new release; when it is selected while the subscription is stopped, they are evaluated when the subscription resumes.\n- A download that has not been imported yet can be cancelled in the execution record dialog (also through the API, MCP and CLI), and its record shows Cancelled; a subscription release can be downloaded again with Retry, while a cancelled one-shot download cannot be retried.\n- A disabled Apply button in the recognition dialog shows why on hover: the template is empty, an episode number is invalid, the preview is rendering, the preview failed, files cannot be processed (with the count), or there is nothing to change.\n- File-manager recognition can explicitly load metadata: media information is read per file and referenced episode titles are filled in; empty values and read failures are shown, and the plan is checked again before submitting.\n- Failure rows on the RSS page name the skip: when the target location is occupied and the same-name policy is Skip, the row says the Skip policy left it untouched; a target blocked at planning time is explained the same way instead of only naming the existing file.\n- When matching TMDB, the selected work's type and season pickers stay above the candidate list, so a long list never scrolls them out of view.\n- The file manager's hide-managed switch also hides purely managed folders: a directory whose every file below it, subfolders included, is managed or in progress no longer shows; an empty folder and a folder holding an unmanaged file still show.\n- A library directory can be chosen by browsing folders: walk down from the filesystem root and pick the folder, which fills the path to add. Typing an absolute path still works, a duplicate or unusable path still reports its real error, and removing a directory never deletes files.\n\n## Fixed\n\n- Saving subtitle-group policies no longer leaves a false unsaved change or asks you to discard changes that were already saved.\n- Cleaning qB tags with nothing left to remove now reports zero removals instead of failing on the empty result.\n- Dragging the two large language cards in multiple-version settings now keeps the drag preview at the card's original size instead of showing an oversized image; other comparison items keep their existing drag behavior.\n- The anime configuration saves again after a per-subtitle-group episode offset is set before a subscription starts, instead of reporting an internal error.\n- Subtitle-group offsets saved in a draft now carry into the subscription, including groups observed only in RSS; later discovery keeps the saved offset.\n- The subscribed RSS tab now previews release episodes, batch coverage and every file's target from the current subtitle-group offsets and naming settings. A current rendering failure shows its real reason instead of being hidden by an episode or path from the old admission record; download and execution records still retain their original facts.\n\n- In the file manager, files left by one-shot downloads or unsubscribed anime can be moved, renamed and deleted again, instead of being refused with \"The file has changed\" and left where they are.\n- Upgrading with existing download and import records no longer fails and rolls back because of a database migration conflict.\n- Subtitles tagged JPSC or JPTC in their file names now get a language, so Simplified/Japanese and Traditional/Japanese subtitles no longer collide on one name.\n- A four-digit year is no longer an episode-range bound, so 2024 - 27 yields the trailing episode; a bracketed date like [2020-04-14] leaves no stray range.\n- Opening a seed's file list now fetches its torrent through the source's configured proxy instead of a direct connection.\n- Releases carrying AniBT codec, bit-depth and similar tags no longer get stuck at the end of import; records whose files were copied but still show import in progress complete on their own after upgrading.\n- On phones, picking a season from the dropdown no longer jumps back to the current season, and switching sections from settings keeps the chosen season.\n- A new subscription whose sources refresh at the same time no longer downloads the same episode twice: its candidates wait for comparison and only one copy is downloaded.\n- With the collision policy set to skip or add version, a quality replacement that lands on the same path no longer fails to import because the target exists; the activity log shows \"will replace\" at acceptance and \"replaced\" only after the import completes.\n- When a library file is held open (by a player, for example), deleting a replaced version and overwriting on import retry every 5 minutes for up to 24 hours; a final failure is logged and notified, no longer blocks deployment recovery, and no longer always reads as missing write permission.\n- Clearing a TMDB match also clears the season, year and total episodes it pre-filled; replacing the match uses the new match's values instead of keeping the first match's.\n- Posters that failed to load during a service restart or a network blip now retry on their own, and at once when the window regains focus or the network comes back, so the page no longer needs a reload.\n- The subscription list now updates its import progress and status as downloads and imports move, without a manual refresh.\n- Changing the TMDB season while downloading no longer downloads the same episode a second time as a different episode: episodes are identified by subscription and episode number, and the season is used only for naming.\n- The next automatic task time in the top-bar status now updates once it passes and is re-read when the status panel opens, instead of showing a time already gone.\n- When editing a title, the title suggestions no longer cover the input's focus outline.\n- Template variables with long examples (such as the info hash or the file name) wrap inside their item instead of pushing narrow columns such as the one-shot settings out of the window.\n- Submitting a one-shot download of a season batch (24 episodes with extra files, for example) no longer fails with an internal error, and box sets listing several hundred files download as well. A torrent that lists too many files to record is refused with \"This torrent lists too many files to download.\", and such a torrent in a subscription is marked with the same reason.\n- Torrents with more than 128 files no longer fail at file verification once downloaded, and every video of a box set is imported.\n- File verification checks each file's size and location instead of reading the whole file, so verifying a large box set no longer takes longer as it grows.\n- Each video in a box set gets its own media check for resolution, codec and similar details, so later videos no longer lose them to a shared time limit.\n- With an empty subtitle suffix template, releases that include subtitles no longer fail while their files are prepared for import.\n- One-shot downloads no longer get finalized prematurely after file verification while import planning is still pending; records already stuck in progress resume planning and file import automatically after upgrading.\n- Deleting a file or folder in the file manager no longer leaves an empty temporary folder behind in the same directory; empty ones left by earlier versions are cleaned up at startup.\n\n## Important\n\n- Only one downloader is supported, and its download folder is now required.\n- On upgrade, if one subscription already holds files from different seasons, only the current season's files take part in version replacement; the others stay where they are, and the subscription activity records how many, for manual cleanup.\n- An anime's type cannot be switched between TV and movie while it has library files or unfinished downloads or imports.\n- The anime metadata type field is renamed media_kind in the API and MCP; scripts and assistants that use it need the new name.\n- In the API, target_facts of one-shot downloads and download tasks no longer list each target; they give the number of targets as target_count, and existing records are rewritten on upgrade.\n- In the API, file fingerprints use the metadata form (the file size and, when available, the device and inode) instead of a sha256 content digest; existing records are rewritten on upgrade.\n"
+      }
+    }
+  ]
+}
