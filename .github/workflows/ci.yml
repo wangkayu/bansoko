@@ -62,7 +62,7 @@ jobs:
   persistence-freshness:
     name: persistence freshness
     runs-on: [self-hosted, bansoko-ci]
-    container: golang:1.26.10-bookworm
+    container: golang:1.26.11-bookworm
     timeout-minutes: 30
     steps:
       - name: install checkout prerequisites
@@ -90,7 +90,7 @@ jobs:
     name: contract + boundary
     needs: [persistence-freshness]
     runs-on: [self-hosted, bansoko-ci]
-    container: golang:1.26.10-bookworm
+    container: golang:1.26.11-bookworm
     timeout-minutes: 30
     steps:
       - name: install the job's tools
@@ -138,7 +138,7 @@ jobs:
   go-unit-static:
     name: go unit + static
     runs-on: [self-hosted, bansoko-ci]
-    container: golang:1.26.10-bookworm
+    container: golang:1.26.11-bookworm
     timeout-minutes: 45
     steps:
       - name: install node for actions/checkout and ruby for the gate scripts
@@ -202,7 +202,7 @@ jobs:
   vulnerability-scan-go:
     name: vulnerability scan (go, non-blocking)
     runs-on: [self-hosted, bansoko-ci]
-    container: golang:1.26.10-bookworm
+    container: golang:1.26.11-bookworm
     timeout-minutes: 20
     continue-on-error: true
     steps:
@@ -244,7 +244,7 @@ jobs:
   postgres-integration-shard-1:
     name: postgres integration (shard 1/3)
     runs-on: [self-hosted, bansoko-ci]
-    container: golang:1.26.10-bookworm
+    container: golang:1.26.11-bookworm
     timeout-minutes: 60
     services:
       postgres:
@@ -306,7 +306,7 @@ jobs:
   postgres-integration-shard-2:
     name: postgres integration (shard 2/3)
     runs-on: [self-hosted, bansoko-ci]
-    container: golang:1.26.10-bookworm
+    container: golang:1.26.11-bookworm
     timeout-minutes: 60
     services:
       postgres:
@@ -356,7 +356,7 @@ jobs:
   postgres-integration-shard-3:
     name: postgres integration (shard 3/3)
     runs-on: [self-hosted, bansoko-ci]
-    container: golang:1.26.10-bookworm
+    container: golang:1.26.11-bookworm
     timeout-minutes: 60
     services:
       postgres:

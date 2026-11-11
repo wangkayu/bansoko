@@ -152,7 +152,7 @@ anime_check() {
 
 run_probe() {
   local probe="$1" tmp="$2" fakebin="$2/bin" fixture="$2/internal/anime"
-  printf 'module bansoko\n\ngo 1.26.10\n' > "$tmp/go.mod"
+  printf 'module bansoko\n\ngo 1.26.11\n' > "$tmp/go.mod"
   mkdir -p "$fixture/domain" "$fixture/application" "$fakebin"
   printf 'package domain\n' > "$fixture/domain/domain.go"
   printf 'package application\n' > "$fixture/application/app.go"

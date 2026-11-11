@@ -7,3 +7,7 @@
 ## Improved
 
 - Accepted downloads now use their frozen per-file identities during artifact inspection instead of parsing filenames a second time to make another episode decision.
+
+## Fixed
+
+- Upgraded the build and CI toolchain to Go 1.26.11 to fix the standard-library HTTP/1 server header race.
