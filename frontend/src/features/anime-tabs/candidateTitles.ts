@@ -32,3 +32,24 @@ export function boundTitleSuggestions(
   ];
   return bindings.flatMap((key) => (key ? (matched[key] ?? []) : []));
 }
+
+/**
+ * Keeps the workspace's cached candidates only while their saved work binding is still in the
+ * draft. The workspace read cannot follow an unsaved clear or replacement; the newly matched
+ * candidate's own titles are added separately by boundTitleSuggestions.
+ */
+export function savedTitleSuggestions(
+  suggestions: readonly TitleSuggestion[] | undefined,
+  saved: AnimeMetadataDraft,
+  current: AnimeMetadataDraft,
+): TitleSuggestion[] {
+  const bgmChanged = (saved.bgm?.work_id ?? null) !== (current.bgm?.work_id ?? null);
+  const tmdbChanged =
+    (saved.tmdb?.work_id ?? null) !== (current.tmdb?.work_id ?? null) ||
+    (saved.tmdb?.media_kind ?? null) !== (current.tmdb?.media_kind ?? null);
+  return (suggestions ?? []).filter((suggestion) => {
+    if (suggestion.source === "bgm_cn" || suggestion.source === "bgm") return !bgmChanged;
+    if (suggestion.source === "tmdb_cn" || suggestion.source === "tmdb_original") return !tmdbChanged;
+    return true;
+  });
+}

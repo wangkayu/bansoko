@@ -11,7 +11,7 @@ import {
   type TitleSuggestion,
 } from "../../lib/api/client";
 import type { MetadataCandidate } from "../../lib/metadata/types";
-import { boundTitleSuggestions, candidateTitleSuggestions } from "./candidateTitles";
+import { boundTitleSuggestions, candidateTitleSuggestions, savedTitleSuggestions } from "./candidateTitles";
 import { metadataDraftFromOwner, valuesEqual } from "../../lib/draft";
 import { useSavePart } from "../../lib/saveParts";
 import { MetadataFields } from "../anime-forms/MetadataFields";
@@ -467,7 +467,7 @@ function OwnerMetadataTab({
   if (!edit) return <StateBlock kind="busy" title={t("tabs.metadata.reading")} />;
   const effectiveTitle = normalizedTitle(edit.titleOverride) ?? baseTitle;
   const titleSuggestions = [
-    ...(workspace.metadata.title_suggestions ?? []),
+    ...savedTitleSuggestions(workspace.metadata.title_suggestions, saved.metadata, edit.metadata),
     ...boundTitleSuggestions(matched, edit.metadata),
   ];
   return (

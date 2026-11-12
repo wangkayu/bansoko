@@ -1526,6 +1526,55 @@ describe("AnimeTabs 元数据标题/季度行编辑", () => {
     expect(metadataPatchBodies(fetchMock)[0]).toMatchObject({ title_override: "Candidate B" });
   });
 
+  it("标题候选：清理并更换已保存的 TMDB 绑定后，旧作品候选立即消失", async () => {
+    stubMetadataPatchFetch();
+    const workspace = workspaceFixture();
+    workspace.metadata = {
+      managed_anime_id: "anime-1",
+      bgm: { work_id: "486109" },
+      tmdb: { work_id: "100", media_kind: "tv", season: 1 },
+      media_kind: "tv",
+      title_suggestions: [
+        { source: "tmdb_cn", text: "旧作品中文名" },
+        { source: "tmdb_original", text: "Old Work" },
+        { source: "bgm_cn", text: "BGM 作品名" },
+        { source: "provider", text: "测试番" },
+      ],
+      version: 1,
+    };
+    renderTabs({ animeID: "anime-1", workspace, onChanged: () => {}, initialTab: "metadata" });
+
+    const suggestionTexts = () =>
+      within(screen.getByRole("group", { name: t("tabs.metadata.suggestionsAria") }))
+        .getAllByRole("button")
+        .map((badge) => badge.textContent ?? "");
+
+    fireEvent.click(titleEditButton());
+    expect(suggestionTexts().some((text) => text.includes("旧作品中文名"))).toBe(true);
+    fireEvent.click(within(titleRegion()).getByRole("button", { name: t("act.cancel") }));
+
+    fireEvent.click(
+      within(screen.getByRole("region", { name: t("forms.tmdb") })).getByRole("button", {
+        name: t("forms.clearAria", { label: t("forms.tmdb") }),
+      }),
+    );
+    fireEvent.click(titleEditButton());
+    expect(suggestionTexts().some((text) => text.includes("旧作品中文名"))).toBe(false);
+    expect(suggestionTexts().some((text) => text.includes("Old Work"))).toBe(false);
+    expect(suggestionTexts().some((text) => text.includes("BGM 作品名"))).toBe(true);
+    fireEvent.click(within(titleRegion()).getByRole("button", { name: t("act.cancel") }));
+
+    const dialog = await confirmTmdbMatch();
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: alsoSetTitleName }));
+    fireEvent.click(within(dialog).getByRole("button", { name: t("forms.confirmMatch") }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+    fireEvent.click(titleEditButton());
+    expect(suggestionTexts().some((text) => text.includes("旧作品中文名"))).toBe(false);
+    expect(suggestionTexts().some((text) => text.includes("匹配到的番名"))).toBe(true);
+    expect(suggestionTexts().some((text) => text.includes("BGM 作品名"))).toBe(true);
+  });
+
   async function confirmTmdbMatch() {
     const tmdbRegion = screen.getByRole("region", { name: t("forms.tmdb") });
     fireEvent.click(within(tmdbRegion).getByRole("button", { name: t("forms.matchProvider", { provider: "TMDB" }) }));
