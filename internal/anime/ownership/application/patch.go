@@ -635,8 +635,9 @@ func (s *Service) scheduleUnsubmittedReleaseEvaluation(ctx context.Context, tx *
 	return err
 }
 
-func (s *Service) scheduleUnsubmittedReleaseEvaluationCount(ctx context.Context, tx *sql.Tx, query, scopeID, trigger string) (int, error) {
-	rows, err := tx.QueryContext(ctx, query, scopeID)
+func (s *Service) scheduleUnsubmittedReleaseEvaluationCount(ctx context.Context, tx *sql.Tx, query, scopeID, trigger string, queryArgs ...any) (int, error) {
+	args := append([]any{scopeID}, queryArgs...)
+	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return 0, fmt.Errorf("list unsubmitted releases: %w", err)
 	}

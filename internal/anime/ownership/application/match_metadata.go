@@ -340,6 +340,13 @@ FROM anime_metadata WHERE managed_anime_id = $1 FOR UPDATE`, managedAnimeID).Sca
 			merged := mergedMetadata(current, plan.Merged)
 			merged.Version = expectedVersion + 1
 			current = merged
+			if _, err := s.scheduleNamingRecoveryReleaseEvaluation(ctx, tx, managedAnimeID, metadataChange{
+				mediaKind: plan.NewMediaKind,
+				year:      plan.NewYear,
+				season:    plan.NewSeason,
+			}); err != nil {
+				return MetadataMatchResult{}, err
+			}
 			if plan.Merged.Complete() {
 				if err := s.scheduleMetadataReleaseEvaluation(ctx, tx, managedAnimeID); err != nil {
 					return MetadataMatchResult{}, err

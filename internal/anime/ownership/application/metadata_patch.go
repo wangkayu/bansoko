@@ -132,6 +132,16 @@ RETURNING title_override`,
 		}
 		reevaluated = &scheduled
 	}
+	recovered, err := s.scheduleNamingRecoveryReleaseEvaluation(ctx, tx, managedAnimeID, change)
+	if err != nil {
+		return AnimeMetadata{}, err
+	}
+	if recovered > 0 {
+		if reevaluated == nil {
+			reevaluated = new(int)
+		}
+		*reevaluated += recovered
+	}
 	if patch.BGM != nil && patch.TMDB != nil && change.bindingsOrKindOrTotal() {
 		if err := s.scheduleMetadataReleaseEvaluation(ctx, tx, managedAnimeID); err != nil {
 			return AnimeMetadata{}, err
