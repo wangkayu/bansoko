@@ -780,11 +780,45 @@ func ManifestFileExclusion(fileKindsVersion string, rules FileFilterRules, sourc
 	return ManifestFileExclusionIn(fileKindsVersion, rules, sourcePath, nil)
 }
 
+// ManifestFileExclusionWithCompiled applies a pre-compiled file filter to one
+// manifest file. It is the batch form of ManifestFileExclusionIn: the caller
+// compiles once and reuses the result across all files in a manifest. The
+// eligibility check runs before the regex match, so subtitles and non-video
+// files are never subject to file rules.
+func ManifestFileExclusionWithCompiled(compiled CompiledRegexFilter, fileKindsVersion string, sourcePath string, selection *filekinds.Selection) string {
+	kind, ignored := filekinds.EligibilityIn(fileKindsVersion, sourcePath, selection)
+	if ignored != "" {
+		return ignored
+	}
+	if kind != filekinds.KindVideo {
+		return ""
+	}
+	if decision := compiled.MatchFilename(sourcePath); !decision.Allowed {
+		return "file_" + decision.Reason
+	}
+	return ""
+}
+
+// ManifestFileExclusionBatch compiles the rules once and returns the per-file
+// decision for a manifest. An invalid filter still falls back to the original
+// per-file path: callers invoke the decision only after video eligibility, so a
+// manifest without an eligible video does not newly report file_filter_invalid.
+func ManifestFileExclusionBatch(fileKindsVersion string, rules FileFilterRules, selection *filekinds.Selection) func(string) string {
+	compiled, compileErr := CompileRegexFilter(rules)
+	return func(sourcePath string) string {
+		if compileErr != nil {
+			return ManifestFileExclusionIn(fileKindsVersion, rules, sourcePath, selection)
+		}
+		return ManifestFileExclusionWithCompiled(compiled, fileKindsVersion, sourcePath, selection)
+	}
+}
+
 // ManifestFileExclusionIn is ManifestFileExclusion under an explicit manual
 // file selection: the selection replaces the first-level gate (an unselected
 // video or subtitle is ignored_unselected, a selected one at any depth is a
-// candidate); the kind gate and the file rules apply unchanged. A nil
-// selection is the product default.
+// candidate); the kind gate and the file rules apply unchanged. A nil selection
+// is the product default. Batch callers can reuse a successfully compiled filter
+// with ManifestFileExclusionWithCompiled.
 func ManifestFileExclusionIn(fileKindsVersion string, rules FileFilterRules, sourcePath string, selection *filekinds.Selection) string {
 	kind, ignored := filekinds.EligibilityIn(fileKindsVersion, sourcePath, selection)
 	if ignored != "" {

@@ -34,7 +34,11 @@ func TestResolvedSectionsDecodeMatchesLiveResolution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve sections: %v", err)
 	}
-	stored, err := EffectiveConfigFromSections(resolved)
+	decoded, err := DecodeEffectiveSections(resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := NewEffectiveConfig(decoded, DefaultResolvedTagFilters(), DefaultResolvedDownloadCompletion())
 	if err != nil {
 		t.Fatalf("decode resolved sections: %v", err)
 	}

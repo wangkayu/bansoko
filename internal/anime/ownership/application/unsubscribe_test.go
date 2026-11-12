@@ -343,7 +343,7 @@ VALUES ('subgroups', 'subgroups-v1', '{"entries":[],"max_rss":99}', 1)`); err !=
 	if err != nil {
 		t.Fatal(err)
 	}
-	freshEffective, err := freshRevision.EffectiveConfig()
+	freshEffective, err := freshRevision.DecodedSections()
 	if err != nil {
 		t.Fatal(err)
 	}

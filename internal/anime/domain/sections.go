@@ -529,10 +529,10 @@ type EffectiveConfig struct {
 	Rules     EffectiveRules
 	// Versions identifies each resolved section source version.
 	Versions map[string]int64
-	// TagFilters is the live-resolved tag_filters section. It is not part of
-	// the six frozen sections (Rules/Versions) and never enters their JSON or
-	// digests. A frozen envelope decodes it as the code default; only live
-	// instance resolution loads the stored Global/override value.
+	// TagFilters is the explicitly supplied tag_filters policy. It is not part
+	// of the six frozen sections (Rules/Versions) and never enters their JSON or
+	// digests. Decoding a frozen envelope does not invent it; NewEffectiveConfig
+	// requires the caller to choose the live, revision, or neutral policy.
 	TagFilters ResolvedTagFilters `json:"-"`
 	// DownloadCompletion is the live-resolved Global download_completion
 	// setting, outside the six frozen sections for the same reason as
@@ -541,56 +541,32 @@ type EffectiveConfig struct {
 	DownloadCompletion ResolvedDownloadCompletion `json:"-"`
 }
 
-// ResolveEffective resolves an instance's complete effective configuration
-// from the section values it stores, tag_filters included. A missing section
-// fails closed. DownloadCompletion is Global-only and left unset: a caller that
-// needs it applies the Global value (animeconfig.LoadDownloadCompletion).
-func ResolveEffective(subgroupsOverride OverrideValue, rulesOverrides map[string]OverrideValue) (EffectiveConfig, error) {
-	result, err := resolveStoredEffective(subgroupsOverride, rulesOverrides)
+// ResolveStoredSectionsWithTags resolves all per-instance configuration without
+// inventing a Global download-completion policy. Read projections consume these
+// values directly; execution callers must explicitly construct EffectiveConfig.
+func ResolveStoredSectionsWithTags(subgroupsOverride OverrideValue, rulesOverrides map[string]OverrideValue) (DecodedEffectiveSections, ResolvedTagFilters, error) {
+	decoded, err := DecodeStoredSections(subgroupsOverride, rulesOverrides)
 	if err != nil {
-		return EffectiveConfig{}, err
+		return DecodedEffectiveSections{}, ResolvedTagFilters{}, err
 	}
 	tagFilters, err := ResolveTagFilters(rulesOverrides[SectionTagFilters])
 	if err != nil {
-		return EffectiveConfig{}, err
+		return DecodedEffectiveSections{}, ResolvedTagFilters{}, err
 	}
-	result.TagFilters = tagFilters
-	return result, nil
+	return decoded, tagFilters, nil
 }
 
-// resolveStoredEffective decodes the six frozen sections from stored values.
-func resolveStoredEffective(subgroupsOverride OverrideValue, rulesOverrides map[string]OverrideValue) (EffectiveConfig, error) {
-	result := EffectiveConfig{Versions: map[string]int64{}}
-	decode := func(section string, override OverrideValue, target any) error {
-		raw, version, err := storedSectionValue(section, override)
-		if err != nil {
-			return err
+// DecodeStoredSections decodes the six frozen sections from stored override
+// values without installing tag-filter or download-completion defaults. The
+// result is a DecodedEffectiveSections; use NewEffectiveConfig to build a
+// complete EffectiveConfig with explicit policies.
+func DecodeStoredSections(subgroupsOverride OverrideValue, rulesOverrides map[string]OverrideValue) (DecodedEffectiveSections, error) {
+	return decodeEffectiveSectionValues(func(section string) (json.RawMessage, int64, error) {
+		if section == SectionSubgroups {
+			return storedSectionValue(section, subgroupsOverride)
 		}
-		if err := json.Unmarshal(raw, target); err != nil {
-			return fmt.Errorf("decode effective section %s: %w", section, err)
-		}
-		result.Versions[section] = version
-		return nil
-	}
-	if err := decode(SectionSubgroups, subgroupsOverride, &result.Selection); err != nil {
-		return EffectiveConfig{}, err
-	}
-	if err := decode(SectionParser, rulesOverrides[SectionParser], &result.Rules.Parser); err != nil {
-		return EffectiveConfig{}, err
-	}
-	if err := decode(SectionReleaseRules, rulesOverrides[SectionReleaseRules], &result.Rules.ReleaseFilter); err != nil {
-		return EffectiveConfig{}, err
-	}
-	if err := decode(SectionFileRules, rulesOverrides[SectionFileRules], &result.Rules.FileFilter); err != nil {
-		return EffectiveConfig{}, err
-	}
-	if err := decode(SectionNamingRules, rulesOverrides[SectionNamingRules], &result.Rules.Naming); err != nil {
-		return EffectiveConfig{}, err
-	}
-	if err := decode(SectionFileEffect, rulesOverrides[SectionFileEffect], &result.Rules.FileEffect); err != nil {
-		return EffectiveConfig{}, err
-	}
-	return result, nil
+		return storedSectionValue(section, rulesOverrides[section])
+	})
 }
 
 // ResolveDraftEffective resolves the complete section values a pre-subscribe
@@ -616,15 +592,15 @@ func ResolveDraftEffectiveWithVars(draft AnimeDraft, vars map[string]map[string]
 		}
 		return EffectiveConfig{}, fmt.Errorf("rules override %s: %s", violation.Field, violation.Message)
 	}
-	result, err := resolveStoredEffective(subgroupsOverride, rulesOverrides)
+	decoded, err := DecodeStoredSections(subgroupsOverride, rulesOverrides)
 	if err != nil {
 		return EffectiveConfig{}, err
 	}
-	if result.TagFilters, err = ResolveDraftTagFilters(draft); err != nil {
+	tagFilters, err := ResolveDraftTagFilters(draft)
+	if err != nil {
 		return EffectiveConfig{}, err
 	}
-	result.DownloadCompletion = DefaultResolvedDownloadCompletion()
-	return result, nil
+	return NewEffectiveConfig(decoded, tagFilters, DefaultResolvedDownloadCompletion())
 }
 
 // MaxPinnedGroupScores bounds one provider's pinned scores, like its group list.

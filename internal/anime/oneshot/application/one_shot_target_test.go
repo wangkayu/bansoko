@@ -252,15 +252,22 @@ func TestOneShotTargetFailureKeepsTheTypedReason(t *testing.T) {
 	}
 }
 
-// The wired production boundary fails closed when the probe is missing: the
-// shared planner returns target_probe_unavailable and the command maps it to a
-// typed 503 instead of continuing with a probe-less submission.
+// The shared planner returns target_probe_unavailable when the probe is
+// missing. The caller (AcquireSeedOnce) does NOT synchronously refuse this:
+// oneShotTargetRefusesAdmission returns false for target_probe_unavailable,
+// so the admission continues with a diagnostic and the download proceeds.
+// The typed 503 mapping is available if a future caller chooses to refuse.
 func TestOneShotTargetAdmissionFailsClosedWithoutProbe(t *testing.T) {
 	request := oneShotTargetRequest("release-one-shot-target", oneShotTargetDraft(), "RealGroup", 0, "regex", oneShotTargetEffective(t), oneShotTargetItem(), oneShotTargetPreview(), nil, "skip")
 	plan := planOneShotTargets(context.Background(), nil, request)
 	if plan.Admission.Reason != "target_probe_unavailable" {
 		t.Fatalf("failure reason = %q, want target_probe_unavailable", plan.Admission.Reason)
 	}
+	// The refusal mapper does NOT include probe failures: the caller continues.
+	if oneShotTargetRefusesAdmission(plan) {
+		t.Fatal("probe unavailable must not be a synchronous refusal")
+	}
+	// The error mapper produces a typed 503 if a caller chooses to refuse.
 	err := oneShotTargetFailure(plan)
 	var business *apperrors.Business
 	if !errors.As(err, &business) || business.Code != "TARGET_PROBE_UNAVAILABLE" {

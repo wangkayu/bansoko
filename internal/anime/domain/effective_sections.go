@@ -21,9 +21,10 @@ var EffectiveSectionOrder = []string{
 	SectionFileEffect,
 }
 
-// ResolvedSections is the complete resolved effective configuration as typed
+// ResolvedSections is the complete resolved six-section configuration as typed
 // whole-section values plus their provenance. It is the storage- and
-// digest-ready form of what ResolveEffective decodes into EffectiveConfig.
+// digest-ready form that DecodeEffectiveSections decodes without installing
+// tag-filter or download-completion policies.
 type ResolvedSections struct {
 	// Sections maps section_name to the complete resolved typed value.
 	Sections map[string]json.RawMessage
@@ -130,44 +131,77 @@ func ResolvedSectionsFromStored(effective, sectionVersions, sectionSchemas json.
 	return resolved, nil
 }
 
-// EffectiveConfigFromSections decodes the typed EffectiveConfig from resolved
-// whole-section values. It mirrors ResolveEffective's decode targets exactly so
-// a saved revision and a live resolution agree.
-func EffectiveConfigFromSections(resolved ResolvedSections) (EffectiveConfig, error) {
-	// The frozen six-section envelope carries no tag_filters or
-	// download_completion: decode them as the code defaults (filter nothing,
-	// keep seeding). Live instance resolution replaces them.
-	result := EffectiveConfig{Versions: map[string]int64{}, TagFilters: DefaultResolvedTagFilters(), DownloadCompletion: DefaultResolvedDownloadCompletion()}
-	decode := func(section string, target any) error {
+// DecodedEffectiveSections is the typed result of decoding the six frozen
+// sections from their resolved JSON values. It contains no TagFilters or
+// DownloadCompletion: those live outside the frozen envelope and must be
+// supplied explicitly when constructing a full EffectiveConfig.
+type DecodedEffectiveSections struct {
+	Selection SubgroupsSection
+	Rules     EffectiveRules
+	Versions  map[string]int64
+}
+
+// DecodeEffectiveSections decodes the typed DecodedEffectiveSections from
+// resolved whole-section values. It mirrors DecodeStoredSections' decode targets
+// exactly so a saved revision and a live resolution agree. The result carries
+// no tag_filters or download_completion policy.
+func DecodeEffectiveSections(resolved ResolvedSections) (DecodedEffectiveSections, error) {
+	return decodeEffectiveSectionValues(func(section string) (json.RawMessage, int64, error) {
 		raw, ok := resolved.Sections[section]
 		if !ok || len(raw) == 0 {
-			return fmt.Errorf("resolved section %s is missing", section)
+			return nil, 0, fmt.Errorf("resolved section %s is missing", section)
 		}
-		if err := json.Unmarshal(raw, target); err != nil {
-			return fmt.Errorf("decode effective section %s: %w", section, err)
+		return raw, resolved.Versions[section], nil
+	})
+}
+
+// Both storage forms decode the same six targets in the same order. The value
+// reader retains each form's validation and provenance before JSON decoding.
+func decodeEffectiveSectionValues(value func(string) (json.RawMessage, int64, error)) (DecodedEffectiveSections, error) {
+	result := DecodedEffectiveSections{Versions: map[string]int64{}}
+	for _, section := range []struct {
+		name   string
+		target any
+	}{
+		{SectionSubgroups, &result.Selection},
+		{SectionParser, &result.Rules.Parser},
+		{SectionReleaseRules, &result.Rules.ReleaseFilter},
+		{SectionFileRules, &result.Rules.FileFilter},
+		{SectionNamingRules, &result.Rules.Naming},
+		{SectionFileEffect, &result.Rules.FileEffect},
+	} {
+		raw, version, err := value(section.name)
+		if err != nil {
+			return DecodedEffectiveSections{}, err
 		}
-		result.Versions[section] = resolved.Versions[section]
-		return nil
-	}
-	if err := decode(SectionSubgroups, &result.Selection); err != nil {
-		return EffectiveConfig{}, err
-	}
-	if err := decode(SectionParser, &result.Rules.Parser); err != nil {
-		return EffectiveConfig{}, err
-	}
-	if err := decode(SectionReleaseRules, &result.Rules.ReleaseFilter); err != nil {
-		return EffectiveConfig{}, err
-	}
-	if err := decode(SectionFileRules, &result.Rules.FileFilter); err != nil {
-		return EffectiveConfig{}, err
-	}
-	if err := decode(SectionNamingRules, &result.Rules.Naming); err != nil {
-		return EffectiveConfig{}, err
-	}
-	if err := decode(SectionFileEffect, &result.Rules.FileEffect); err != nil {
-		return EffectiveConfig{}, err
+		if err := json.Unmarshal(raw, section.target); err != nil {
+			return DecodedEffectiveSections{}, fmt.Errorf("decode effective section %s: %w", section.name, err)
+		}
+		result.Versions[section.name] = version
 	}
 	return result, nil
+}
+
+// NewEffectiveConfig constructs a complete EffectiveConfig from decoded six
+// sections and explicit tag-filter / download-completion policies. The caller
+// must supply both policies; a zero-value ResolvedTagFilters or
+// ResolvedDownloadCompletion is an internal construction error. Use the
+// explicit default resolvers (DefaultResolvedTagFilters,
+// DefaultResolvedDownloadCompletion) when a default is intended.
+func NewEffectiveConfig(decoded DecodedEffectiveSections, tagFilters ResolvedTagFilters, downloadCompletion ResolvedDownloadCompletion) (EffectiveConfig, error) {
+	if tagFilters.Digest == "" {
+		return EffectiveConfig{}, fmt.Errorf("tag filters are unresolved: use DefaultResolvedTagFilters or ResolveTagFilters")
+	}
+	if downloadCompletion.Rules.Action == "" {
+		return EffectiveConfig{}, fmt.Errorf("download completion is unresolved: use DefaultResolvedDownloadCompletion or ResolveDownloadCompletion")
+	}
+	return EffectiveConfig{
+		Selection:          decoded.Selection,
+		Rules:              decoded.Rules,
+		Versions:           decoded.Versions,
+		TagFilters:         tagFilters,
+		DownloadCompletion: downloadCompletion,
+	}, nil
 }
 
 // EffectiveDigest returns the canonical sha256 over the resolved section values

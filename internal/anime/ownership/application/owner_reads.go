@@ -55,7 +55,7 @@ func (s *Service) readSubgroupsOwnerApplication(ctx context.Context, managedAnim
 	if err != nil {
 		return SubgroupsOwnerResult{}, err
 	}
-	effective, err := animedomain.ResolveEffective(subgroupsOverride, rulesOverrides)
+	effective, _, err := animedomain.ResolveStoredSectionsWithTags(subgroupsOverride, rulesOverrides)
 	if err != nil {
 		return SubgroupsOwnerResult{}, err
 	}

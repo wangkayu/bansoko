@@ -38,15 +38,15 @@ func (r CandidateRevision) Resolved() (animedomain.ResolvedSections, error) {
 	return animedomain.ResolvedSectionsFromStored(r.Effective, r.SectionVersions, r.SectionSchemas)
 }
 
-// EffectiveConfig decodes the stored revision without reading any current
-// global configuration. Execution and preview must use this, never a fresh
-// ResolveDraftEffective against latest globals.
-func (r CandidateRevision) EffectiveConfig() (animedomain.EffectiveConfig, error) {
+// DecodedSections decodes the stored revision's six frozen sections without
+// reading any current global configuration. The result carries no tag filters
+// or download completion; use NewEffectiveConfig to build a complete config.
+func (r CandidateRevision) DecodedSections() (animedomain.DecodedEffectiveSections, error) {
 	resolved, err := r.Resolved()
 	if err != nil {
-		return animedomain.EffectiveConfig{}, err
+		return animedomain.DecodedEffectiveSections{}, err
 	}
-	return animedomain.EffectiveConfigFromSections(resolved)
+	return animedomain.DecodeEffectiveSections(resolved)
 }
 
 // VerifyIntegrity recomputes the draft, effective and parser-policy digests from
@@ -111,14 +111,14 @@ func (r CandidateRevision) VerifyIntegrity() error {
 // `animedomain.FrozenMediaBinding` is the single projection (BGM-only/unbound
 // stays the unbound TV default, never a guessed movie).
 func (r CandidateRevision) ParserSelectionInput(resolved animedomain.ResolvedSections) (acquisitiontarget.ParserSelectionInput, error) {
-	effective, err := animedomain.EffectiveConfigFromSections(resolved)
+	decoded, err := animedomain.DecodeEffectiveSections(resolved)
 	if err != nil {
 		return acquisitiontarget.ParserSelectionInput{}, err
 	}
 	mediaKind, season, seasonBound := animedomain.FrozenMediaBinding(r.Draft.Metadata.Tmdb, r.Draft.Metadata.BackfilledMediaKind())
 	return acquisitiontarget.ParserSelectionInput{
 		Kind:              r.ParserPolicy.Kind,
-		EpisodePatterns:   effective.Rules.Parser.EpisodePatterns,
+		EpisodePatterns:   decoded.Rules.Parser.EpisodePatterns,
 		MediaKind:         mediaKind,
 		Season:            season,
 		SeasonBound:       seasonBound,

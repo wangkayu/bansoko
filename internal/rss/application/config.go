@@ -180,16 +180,7 @@ func (s *Service) loadEffectiveConfig(ctx context.Context, managedAnimeID string
 }
 
 func loadResolvedConfig(ctx context.Context, q queryer, managedAnimeID string) (animedomain.ResolvedSections, animedomain.EffectiveConfig, error) {
-	resolved, live, err := animeconfig.LoadResolvedWithLive(ctx, q, managedAnimeID)
-	if err != nil {
-		return animedomain.ResolvedSections{}, animedomain.EffectiveConfig{}, err
-	}
-	effective, err := animedomain.EffectiveConfigFromSections(resolved)
-	if err != nil {
-		return animedomain.ResolvedSections{}, animedomain.EffectiveConfig{}, err
-	}
-	live.Apply(&effective)
-	return resolved, effective, nil
+	return animeconfig.LoadResolvedEffective(ctx, q, managedAnimeID)
 }
 
 // loadEffectiveConfig resolves one instance's effective rules against saved

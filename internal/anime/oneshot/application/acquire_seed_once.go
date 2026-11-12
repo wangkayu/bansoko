@@ -301,20 +301,6 @@ func cloneStoredAniBTTags(stored *acquisitiondomain.StoredAniBTTags) *acquisitio
 	return &clone
 }
 
-func encodeOneShotInputSnapshot(snapshot OneShotInputSnapshot) (json.RawMessage, error) {
-	raw, err := json.Marshal(snapshot)
-	if err != nil {
-		return nil, fmt.Errorf("marshal one-shot input snapshot: %w", err)
-	}
-	if len(raw) == 0 || raw[0] != '{' || raw[len(raw)-1] != '}' {
-		return nil, errors.New("one-shot input snapshot must be a JSON object")
-	}
-	if len(raw) > maxOneShotInputSnapshotBytes {
-		return nil, torrentTooLargeError()
-	}
-	return raw, nil
-}
-
 // torrentTooLargeError is the typed refusal of an admission whose frozen
 // record would exceed a stored bound (terminal.TorrentTooLargeCode). No frozen
 // carrier grows with the target count; what remains bounded by the file
@@ -525,7 +511,13 @@ func (s *Service) loadOneShotCandidateRevision(ctx context.Context, input Acquir
 	if candidate.CurrentRevisionDigest != nil && *candidate.CurrentRevisionDigest != revision.EffectiveDigest {
 		return animeapplication.CandidateRevision{}, animedomain.ResolvedSections{}, animedomain.EffectiveConfig{}, s.candidateDigestMismatchError()
 	}
-	effective, err := animedomain.EffectiveConfigFromSections(resolved)
+	decoded, err := animedomain.DecodeEffectiveSections(resolved)
+	if err != nil {
+		return animeapplication.CandidateRevision{}, animedomain.ResolvedSections{}, animedomain.EffectiveConfig{}, s.candidateDigestMismatchError()
+	}
+	// One-shot evaluates the selected seed without tag filtering. Completion
+	// is unused here; the real policy is read at the later plan freeze point.
+	effective, err := animedomain.NewEffectiveConfig(decoded, animedomain.DefaultResolvedTagFilters(), animedomain.DefaultResolvedDownloadCompletion())
 	if err != nil {
 		return animeapplication.CandidateRevision{}, animedomain.ResolvedSections{}, animedomain.EffectiveConfig{}, s.candidateDigestMismatchError()
 	}
@@ -883,7 +875,14 @@ FOR UPDATE`, input.CandidateID).Scan(&candidateCurrentRevision, &candidateCurren
 		}
 		envelope = draft.Business.Parser
 		resolved = sections
-		effective, err = animedomain.EffectiveConfigFromSections(resolved)
+		decoded, err := animedomain.DecodeEffectiveSections(resolved)
+		if err != nil {
+			return OneShotAdmissionResult{}, s.candidateDigestMismatchError()
+		}
+		// One-shot admission explicitly does not filter by tags; the code
+		// default is the correct neutral policy for this stage. Download
+		// completion is applied later, at the batch-plan freeze point.
+		effective, err = animedomain.NewEffectiveConfig(decoded, animedomain.DefaultResolvedTagFilters(), animedomain.DefaultResolvedDownloadCompletion())
 		if err != nil {
 			return OneShotAdmissionResult{}, s.candidateDigestMismatchError()
 		}
@@ -1100,13 +1099,22 @@ VALUES ($1, $2, 'custom_rss', $3, $4, $5, $6, $7)`,
 	}
 	// The frozen sections carry no download_completion; a one-shot takes the
 	// Global default and freezes it into the batch plan.
-	if effective.DownloadCompletion, err = oneShotDownloadCompletion(ctx, tx); err != nil {
+	completion, err := oneShotDownloadCompletion(ctx, tx)
+	if err != nil {
+		return OneShotAdmissionResult{}, err
+	}
+	planConfig, err := animedomain.NewEffectiveConfig(animedomain.DecodedEffectiveSections{
+		Selection: effective.Selection,
+		Rules:     effective.Rules,
+		Versions:  effective.Versions,
+	}, effective.TagFilters, completion)
+	if err != nil {
 		return OneShotAdmissionResult{}, err
 	}
 	if s.targetAcquisitionConfigured {
 		parserKind := string(evidence.Selection.Kind())
 		planned := evidence
-		request := oneShotTargetRequest(releaseID, draft, groupName, episodeOffset, parserKind, effective, item, evaluation, &planned, route)
+		request := oneShotTargetRequest(releaseID, draft, groupName, episodeOffset, parserKind, planConfig, item, evaluation, &planned, route)
 		request.FileSelection = fileSelection
 		request.Overrides = input.Overrides
 		targetPlan = planOneShotTargets(ctx, s.targetProbe, request)
@@ -1222,8 +1230,8 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
 	// planning ran, otherwise the plain classification under the route.
 	snapshotInput := acquisitiontarget.ReleaseMediaSnapshotInput{
 		ReleaseID: releaseID, Title: item.Title, BGMWorkID: bgmWorkID, TMDBWorkID: tmdbWorkID, Evidence: evidence,
-		Files: item.ReleaseFiles, FileFilter: effective.Rules.FileFilter, UnclassifiedRoute: route, Selection: fileSelection, Overrides: input.Overrides,
-		DownloadCompletion: string(effective.DownloadCompletion.Rules.Action), DownloadCompletionSeedLimits: effective.DownloadCompletion.Rules.SeedLimits,
+		Files: item.ReleaseFiles, FileFilter: planConfig.Rules.FileFilter, UnclassifiedRoute: route, Selection: fileSelection, Overrides: input.Overrides,
+		DownloadCompletion: string(planConfig.DownloadCompletion.Rules.Action), DownloadCompletionSeedLimits: planConfig.DownloadCompletion.Rules.SeedLimits,
 	}
 	if targetPlan.BatchPlan.Version != "" {
 		frozenPlan := targetPlan.BatchPlan
@@ -1561,15 +1569,6 @@ func oneShotOutcomePointer(value *string) *OneShotTerminalOutcome {
 	return &outcome
 }
 
-// optionalStringPointerEqual compares two optional identities by value; both
-// nil is equal. An adopted one-shot has no download task on either side.
-func optionalStringPointerEqual(left, right *string) bool {
-	if left == nil || right == nil {
-		return left == nil && right == nil
-	}
-	return *left == *right
-}
-
 // releaseFilesFromInternalFacts passes the stored release_files through in the
 // same shape the evaluation path writes.
 func releaseFilesFromInternalFacts(internalFacts []byte) json.RawMessage {
@@ -1586,29 +1585,6 @@ func releaseFilesFromInternalFacts(internalFacts []byte) json.RawMessage {
 		return nil
 	}
 	return stored.ReleaseFiles
-}
-
-// oneShotReplayDecision decides marker-owned replay against the locked marker
-// row: the same canonical request returns the original handle; a different
-// body or selected seed under the same key is a typed conflict. Snapshot
-// integrity is checked against the locked row's anchors.
-func oneShotReplayDecision(record animeport.OneShotMarkerRecord, requestHash string) (OneShotAdmissionResult, error) {
-	if record.RequestHash != requestHash {
-		return OneShotAdmissionResult{}, &apperrors.Business{Status: 409, Code: "IDEMPOTENCY_KEY_REUSED", Message: "The idempotency key was already used with a different one-shot request."}
-	}
-	var result OneShotAdmissionResult
-	if err := json.Unmarshal(record.ResultSnapshot, &result); err != nil {
-		return OneShotAdmissionResult{}, fmt.Errorf("decode one-shot replay snapshot: %w", err)
-	}
-	if result.OneShotID != record.ID ||
-		result.ManagedAnimeID != record.ManagedAnimeID ||
-		result.SubscriptionID != record.SubscriptionID ||
-		result.RSSSourceID != record.RSSSourceID ||
-		result.ReleaseID != record.ReleaseID ||
-		!optionalStringPointerEqual(result.DownloadTaskID, record.DownloadTaskID) {
-		return OneShotAdmissionResult{}, &apperrors.Business{Status: 409, Code: "IDEMPOTENCY_KEY_REUSED", Message: "The one-shot replay record is inconsistent with its anchors."}
-	}
-	return result, nil
 }
 
 // IsTemporaryOneShotMount encodes the reclamation-selection rule as code: a
@@ -1938,215 +1914,6 @@ func canonicalSelectedSeed(seed SelectedSeed) SelectedSeed {
 	canonical := "sha256:" + normalizeDigestHex(trimmed)
 	seed.ExpectedPayloadDigest = &canonical
 	return seed
-}
-
-// oneShotCanonicalRequest is the deterministic replay identity: the HTTP
-// idempotency key plus the exact saved candidate revision and selected seed.
-type oneShotCanonicalRequest struct {
-	Kind            string       `json:"kind"`
-	IdempotencyKey  string       `json:"idempotency_key"`
-	CandidateID     string       `json:"candidate_id"`
-	Revision        int64        `json:"revision"`
-	EffectiveDigest string       `json:"effective_digest"`
-	SelectedSeed    SelectedSeed `json:"selected_seed"`
-	// EpisodeOffset is omitted at 0 so an offset-free request keeps its
-	// replay identity; any other value is a different request.
-	EpisodeOffset int `json:"episode_offset,omitempty"`
-	// FileSelection is omitted without a manual selection so a default
-	// request keeps its replay identity.
-	FileSelection []string                                `json:"file_selection,omitempty"`
-	Overrides     []acquisitiontarget.FileEpisodeOverride `json:"overrides,omitempty"`
-}
-
-func canonicalOneShotRequestHash(input AcquireSeedInput, key string) (string, error) {
-	overrides, err := acquisitiontarget.CanonicalFileEpisodeOverrides(input.Overrides)
-	if err != nil {
-		return "", err
-	}
-	input.Overrides = overrides
-	return animeapplication.CanonicalJSONHash(oneShotCanonicalRequest{
-		Kind:            "acquire_seed_once",
-		IdempotencyKey:  key,
-		CandidateID:     input.CandidateID,
-		Revision:        input.Revision,
-		EffectiveDigest: input.EffectiveDigest,
-		SelectedSeed:    input.Seed,
-		EpisodeOffset:   input.EpisodeOffset,
-		FileSelection:   input.FileSelection,
-		Overrides:       input.Overrides,
-	})
-}
-
-// oneShotCurrentInputCanonicalRequest is the replay identity of a captured
-// unsaved-draft admission. It is deliberately request-derived only: the
-// idempotency key, the canonical draft digest and the selected seed. No
-// resolved value (globals, effective digest) participates, so a replay is
-// always decided against the originally captured input, never re-resolved
-// against changed configuration.
-type oneShotCurrentInputCanonicalRequest struct {
-	Kind           string                                  `json:"kind"`
-	IdempotencyKey string                                  `json:"idempotency_key"`
-	DraftDigest    string                                  `json:"draft_digest"`
-	SelectedSeed   SelectedSeed                            `json:"selected_seed"`
-	EpisodeOffset  int                                     `json:"episode_offset,omitempty"`
-	FileSelection  []string                                `json:"file_selection,omitempty"`
-	Overrides      []acquisitiontarget.FileEpisodeOverride `json:"overrides,omitempty"`
-}
-
-func canonicalOneShotCurrentInputRequestHash(draftDigest string, input AcquireSeedInput, key string) (string, error) {
-	overrides, err := acquisitiontarget.CanonicalFileEpisodeOverrides(input.Overrides)
-	if err != nil {
-		return "", err
-	}
-	input.Overrides = overrides
-	return animeapplication.CanonicalJSONHash(oneShotCurrentInputCanonicalRequest{
-		Kind:           "acquire_seed_once_current_input",
-		IdempotencyKey: key,
-		DraftDigest:    draftDigest,
-		SelectedSeed:   input.Seed,
-		EpisodeOffset:  input.EpisodeOffset,
-		FileSelection:  input.FileSelection,
-		Overrides:      input.Overrides,
-	})
-}
-
-func oneShotReplayRequestHash(record animeport.OneShotMarkerRecord, input AcquireSeedInput, key string) (string, error) {
-	snapshot := decodeOneShotInputSnapshot(record.InputSnapshot)
-	if snapshot == nil {
-		return "", &apperrors.Business{Status: 409, Code: "IDEMPOTENCY_KEY_REUSED", Message: "The one-shot replay record has no valid frozen input snapshot."}
-	}
-	if snapshot.InputSource == AcquireSeedInputSourceCurrentInput {
-		return oneShotCurrentInputReplayRequestHash(*snapshot, input, key)
-	}
-	return oneShotSavedRevisionReplayRequestHash(*snapshot, input, key)
-}
-
-// oneShotCurrentInputReplayRequestHash recomputes a captured-input replay
-// identity: the request's draft must hash to the stored draft digest and the
-// selected seed must match; the stored digest then fixes the request hash.
-func oneShotCurrentInputReplayRequestHash(snapshot OneShotInputSnapshot, input AcquireSeedInput, key string) (string, error) {
-	if strings.TrimSpace(snapshot.DraftDigest) == "" || len(snapshot.Draft) == 0 {
-		return "", &apperrors.Business{Status: 409, Code: "IDEMPOTENCY_KEY_REUSED", Message: "The one-shot replay record has no captured draft."}
-	}
-	if !input.isCurrentInput() || input.Draft == nil {
-		return "", &apperrors.Business{Status: 409, Code: "IDEMPOTENCY_KEY_REUSED", Message: "The idempotency key was already used with a captured current_input draft."}
-	}
-	requestDigest, err := animeapplication.CanonicalAnimeDraftHash(*input.Draft)
-	if err != nil {
-		return "", fmt.Errorf("hash replayed one-shot draft: %w", err)
-	}
-	if requestDigest != snapshot.DraftDigest {
-		return "", &apperrors.Business{Status: 409, Code: "IDEMPOTENCY_KEY_REUSED", Message: "The idempotency key was already used with a different captured draft."}
-	}
-	storedSeedHash, err := animeapplication.CanonicalJSONHash(snapshot.SelectedSeed)
-	if err != nil {
-		return "", fmt.Errorf("hash stored one-shot selected seed: %w", err)
-	}
-	requestSeedHash, err := animeapplication.CanonicalJSONHash(input.Seed)
-	if err != nil {
-		return "", fmt.Errorf("hash replayed one-shot selected seed: %w", err)
-	}
-	if storedSeedHash != requestSeedHash {
-		return "", &apperrors.Business{Status: 409, Code: "IDEMPOTENCY_KEY_REUSED", Message: "The idempotency key was already used with a different selected seed."}
-	}
-	if snapshot.EpisodeOffset != input.EpisodeOffset {
-		return "", oneShotOffsetReusedError()
-	}
-	return canonicalOneShotCurrentInputRequestHash(snapshot.DraftDigest, input, key)
-}
-
-// oneShotSavedRevisionReplayRequestHash is the unchanged legacy replay
-// identity: the canonical saved candidate revision and selected seed.
-func oneShotSavedRevisionReplayRequestHash(snapshot OneShotInputSnapshot, input AcquireSeedInput, key string) (string, error) {
-	if strings.TrimSpace(snapshot.CandidateID) == "" || snapshot.Revision < 1 || strings.TrimSpace(snapshot.EffectiveDigest) == "" {
-		return "", &apperrors.Business{Status: 409, Code: "IDEMPOTENCY_KEY_REUSED", Message: "The one-shot replay record has no valid frozen input snapshot."}
-	}
-	if snapshot.CandidateID != input.CandidateID || snapshot.Revision != input.Revision {
-		return "", &apperrors.Business{Status: 409, Code: "IDEMPOTENCY_KEY_REUSED", Message: "The idempotency key was already used with a different saved candidate revision."}
-	}
-	storedSeedHash, err := animeapplication.CanonicalJSONHash(snapshot.SelectedSeed)
-	if err != nil {
-		return "", fmt.Errorf("hash stored one-shot selected seed: %w", err)
-	}
-	requestSeedHash, err := animeapplication.CanonicalJSONHash(input.Seed)
-	if err != nil {
-		return "", fmt.Errorf("hash replayed one-shot selected seed: %w", err)
-	}
-	if storedSeedHash != requestSeedHash {
-		return "", &apperrors.Business{Status: 409, Code: "IDEMPOTENCY_KEY_REUSED", Message: "The idempotency key was already used with a different selected seed."}
-	}
-	if snapshot.EpisodeOffset != input.EpisodeOffset {
-		return "", oneShotOffsetReusedError()
-	}
-	if input.EffectiveDigest != "" && input.EffectiveDigest != snapshot.EffectiveDigest {
-		return "", &apperrors.Business{Status: 409, Code: "IDEMPOTENCY_KEY_REUSED", Message: "The idempotency key was already used with a different effective configuration."}
-	}
-	input.EffectiveDigest = snapshot.EffectiveDigest
-	return canonicalOneShotRequestHash(input, key)
-}
-
-// validateOneShotEpisodeOffset applies the shared episode-offset range to a
-// one-shot request: out of range is a typed 422 before any read or write.
-func validateOneShotEpisodeOffset(offset int) error {
-	if animedomain.EpisodeOffsetInRange(offset) {
-		return nil
-	}
-	return &apperrors.Business{Status: 422, Code: "OFFSET_OUT_OF_RANGE", Message: animedomain.EpisodeOffsetRangeMessage() + "."}
-}
-
-func oneShotOffsetReusedError() error {
-	return &apperrors.Business{Status: 409, Code: "IDEMPOTENCY_KEY_REUSED", Message: "The idempotency key was already used with a different episode_offset."}
-}
-
-// oneShotInstanceLabel derives the display-only instance label required by the
-// origin=oneshot mount constraint. Agent drafts carry their own label; human
-// provider drafts derive one from the draft title. The label is never an
-// execution key.
-func oneShotInstanceLabel(draft animedomain.AnimeDraft) string {
-	if draft.InstanceLabel != nil {
-		if trimmed := strings.TrimSpace(*draft.InstanceLabel); trimmed != "" {
-			return truncateRunes(trimmed, 256)
-		}
-	}
-	return truncateRunes("one-shot "+strings.TrimSpace(draft.Title), 256)
-}
-
-func truncateRunes(value string, max int) string {
-	runes := []rune(strings.TrimSpace(value))
-	if len(runes) > max {
-		runes = runes[:max]
-	}
-	if len(runes) == 0 {
-		return "one-shot acquisition"
-	}
-	return string(runes)
-}
-
-// encodeOneShotTargetFacts is the carrier reference to the admitted target
-// set (acquisitiontarget.FrozenFacts): the set's rows and observations are
-// persisted once in acquisition_targets, and the snapshot names them by digest
-// and count. A failed plan persists no set, so it names none.
-func encodeOneShotTargetFacts(plan acquisitiontarget.PlanResult, configured, failed bool) (json.RawMessage, error) {
-	value := acquisitiontarget.UnplannedFrozenFacts()
-	if configured {
-		// ReasonCode is the typed planner admission reason (e.g.
-		// target_not_absolute, parser_identity_unresolved); Reason keeps the
-		// human-readable plan detail.
-		value = acquisitiontarget.FrozenFacts{
-			Admission:  string(plan.Admission.Admission),
-			ReasonCode: strings.TrimSpace(plan.Admission.Reason),
-			Reason:     plan.PlanReason,
-		}
-		if !failed {
-			value.TargetSetDigest = plan.Set.Digest
-			value.TargetCount = len(plan.Set.Targets)
-		}
-	}
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return nil, fmt.Errorf("encode one-shot target facts: %w", err)
-	}
-	return raw, nil
 }
 
 // buildOneShotFeedItem constructs the FeedItem equivalent of the fetched

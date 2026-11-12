@@ -259,6 +259,43 @@ func TestRSSListPendingOwnerReadIsTheDraftBench(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// A saved revision previews its own non-default tags. An owner preview
+	// independently uses its stored tags, including when an unsaved rules patch
+	// omits that optional section. Exercise the public read path, not just the
+	// config constructor.
+	const blockingTags = `{"anibt":{"require":[],"exclude":[]},"title":{"require":[],"exclude":["resolution:1080p"]}}`
+	var taggedRules generated.RulesSections
+	if err := json.Unmarshal([]byte(`{"tag_filters":{"mode":"replace","value":`+blockingTags+`}}`), &taggedRules); err != nil {
+		t.Fatal(err)
+	}
+	submitted.Rules.Sections.TagFilters = taggedRules.TagFilters
+	taggedCandidate := saveCandidate(t, root, submitted)
+	taggedRevision, err := readmodel.ReadAnimeRSSListView(ctx, ReadRSSListViewInput{InputSource: "candidate_revision", CandidateID: string(taggedCandidate.Id), Revision: 1, Feed: feed})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(taggedRevision.Groups) != 1 || len(taggedRevision.Groups[0].Items) != 1 || taggedRevision.Groups[0].Items[0].Evaluation.Verdict != "filtered" {
+		t.Fatalf("revision lost its tag filter: %+v", taggedRevision.Groups)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE anime_config_overrides SET value = $2::jsonb WHERE managed_anime_id = $1 AND section_name = 'tag_filters'`, animeID, blockingTags); err != nil {
+		t.Fatal(err)
+	}
+	omittedSections := submitted.Rules.Sections
+	omittedSections.TagFilters = nil
+	omittedTags := RulesPreviewInput{Sections: mustRulesSectionsDomain(t, omittedSections)}
+	for _, request := range []ReadRSSListViewInput{
+		{InputSource: "owner", ManagedAnimeID: animeID, Feed: feed},
+		{InputSource: "owner_draft", ManagedAnimeID: animeID, RulesPreview: &omittedTags, Feed: feed},
+	} {
+		filtered, err := readmodel.ReadAnimeRSSListView(ctx, request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(filtered.Groups) != 1 || len(filtered.Groups[0].Items) != 1 || filtered.Groups[0].Items[0].Evaluation.Verdict != "filtered" {
+			t.Fatalf("%s lost stored tags: %+v", request.InputSource, filtered.Groups)
+		}
+	}
+
 	// Started, the same read is the ordinary owner view again.
 	if _, err := db.ExecContext(ctx, `UPDATE subscriptions SET state = 'active', version = version + 1 WHERE id = $1`, activated.Subscription.ID); err != nil {
 		t.Fatal(err)

@@ -94,6 +94,9 @@ func BuildBatchPlan(ctx context.Context, in BatchPlanInput) (batchplan.Plan, err
 			return batchplan.Plan{}, fmt.Errorf("%w: %q is not a file of this torrent", ErrFileEpisodeOverrideInvalid, sourcePath)
 		}
 	}
+	// Compile the file filter once for the whole batch. The shared batch
+	// decision preserves the original video-triggered invalid-regex reporting.
+	ruleExclusion := animedomain.ManifestFileExclusionBatch(filekinds.Version, in.FileFilter, in.Selection)
 	evidence := in.Evidence
 	return batchplan.Classify(batchplan.Input{
 		FileKindsVersion:             filekinds.Version,
@@ -104,9 +107,7 @@ func BuildBatchPlan(ctx context.Context, in BatchPlanInput) (batchplan.Plan, err
 		MovieIdentity:                evidence.Identity,
 		Selection:                    in.Selection,
 		Files:                        files,
-		RuleExclusion: func(sourcePath string) string {
-			return animedomain.ManifestFileExclusionIn(filekinds.Version, in.FileFilter, sourcePath, in.Selection)
-		},
+		RuleExclusion:                ruleExclusion,
 		Identity: func(sourcePath string) (episodeidentity.EpisodeIdentity, error) {
 			identity, _, err := ResolveFileEpisode(ctx, evidence, filenames[sourcePath])
 			return identity, err

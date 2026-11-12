@@ -112,7 +112,11 @@ VALUES ('qb-movie-test', 'qbittorrent', 'movie-test', 'http://127.0.0.1:1', 'sec
 	if err != nil {
 		t.Fatalf("resolve revision sections: %v", err)
 	}
-	effective, err := revision.EffectiveConfig()
+	decoded, err := revision.DecodedSections()
+	if err != nil {
+		t.Fatal(err)
+	}
+	effective, err := animedomain.NewEffectiveConfig(decoded, animedomain.DefaultResolvedTagFilters(), animedomain.DefaultResolvedDownloadCompletion())
 	if err != nil {
 		t.Fatalf("effective config: %v", err)
 	}

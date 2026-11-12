@@ -67,7 +67,7 @@ func TestResolveDraftSectionsFromBusinessKeepsTheDraftSubgroupsWithoutEntries(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	effective, err := EffectiveConfigFromSections(sections)
+	effective, err := DecodeEffectiveSections(sections)
 	if err != nil {
 		t.Fatal(err)
 	}

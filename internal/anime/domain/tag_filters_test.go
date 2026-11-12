@@ -66,15 +66,15 @@ func TestResolveTagFiltersStoredValueAndDefault(t *testing.T) {
 
 	subgroups, rules := storedDefaultSections(t)
 	rules[SectionTagFilters] = OverrideValue{Value: json.RawMessage(`{"anibt":{"require":["language:CHS"],"exclude":[]},"title":{"require":[],"exclude":[]}}`)}
-	effective, err := ResolveEffective(subgroups, rules)
-	if err != nil || effective.TagFilters.Digest != stored.Digest {
-		t.Fatalf("ResolveEffective tag filters = %#v, %v", effective.TagFilters, err)
+	effective, tags, err := ResolveStoredSectionsWithTags(subgroups, rules)
+	if err != nil || tags.Digest != stored.Digest {
+		t.Fatalf("stored tag filters = %#v, %v", tags, err)
 	}
 	if _, ok := effective.Versions[SectionTagFilters]; ok {
 		t.Fatal("tag_filters must not enter the six-section version map")
 	}
 	delete(rules, SectionTagFilters)
-	if _, err := ResolveEffective(subgroups, rules); err == nil {
+	if _, _, err := ResolveStoredSectionsWithTags(subgroups, rules); err == nil {
 		t.Fatal("an instance without a stored tag_filters value must fail closed")
 	}
 }

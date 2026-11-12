@@ -78,12 +78,16 @@ func TestResolveDownloadCompletionGlobalAndDefault(t *testing.T) {
 	if _, err := ResolveDownloadCompletion(map[string]GlobalSection{SectionDownloadCompletion: {Value: json.RawMessage(`{"action":"wipe"}`), Version: 2}}); err == nil {
 		t.Fatal("an invalid stored value resolved")
 	}
-	// Anime sections play no part: ResolveEffective never resolves it, even
-	// when a stale stored map carries the section; callers apply the Global row.
+	// Per-instance sections cannot supply download completion, even when a
+	// stale map carries it. The constructor uses the explicit Global policy.
 	subgroups, rules := storedDefaultSections(t)
 	rules[SectionDownloadCompletion] = OverrideValue{Value: json.RawMessage(`{"action":"pause"}`)}
-	effective, err := ResolveEffective(subgroups, rules)
-	if err != nil || effective.DownloadCompletion.Rules.Action != "" {
+	decoded, tags, err := ResolveStoredSectionsWithTags(subgroups, rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	effective, err := NewEffectiveConfig(decoded, tags, resolved)
+	if err != nil || !effective.DownloadCompletion.Rules.Equal(resolved.Rules) {
 		t.Fatalf("effective = %#v %v", effective.DownloadCompletion, err)
 	}
 }
@@ -122,7 +126,7 @@ func TestDownloadCompletionIsAGlobalOnlySetting(t *testing.T) {
 	if SectionSchemaVersions[SectionDownloadCompletion] != "download-completion-v2" {
 		t.Fatalf("schema = %q", SectionSchemaVersions[SectionDownloadCompletion])
 	}
-	// A frozen envelope decodes it as the code default (seed).
+	// A frozen envelope excludes it; only an explicit policy supplies it.
 	subgroups, rules := storedDefaultSections(t)
 	resolved, err := ResolveEffectiveSections(subgroups, rules)
 	if err != nil {
@@ -131,7 +135,11 @@ func TestDownloadCompletionIsAGlobalOnlySetting(t *testing.T) {
 	if _, present := resolved.Sections[SectionDownloadCompletion]; present {
 		t.Fatal("download_completion entered the frozen envelope")
 	}
-	effective, err := EffectiveConfigFromSections(resolved)
+	decoded, err := DecodeEffectiveSections(resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	effective, err := NewEffectiveConfig(decoded, DefaultResolvedTagFilters(), DefaultResolvedDownloadCompletion())
 	if err != nil || effective.DownloadCompletion.Rules.Action != DownloadCompletionSeed {
 		t.Fatalf("frozen envelope = %#v %v", effective.DownloadCompletion, err)
 	}

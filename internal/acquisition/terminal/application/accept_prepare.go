@@ -49,7 +49,13 @@ func evaluateAdmission(ctx context.Context, c admissionCapture, intent acquisiti
 		return admissionEvaluation{}, materialError("inventory", nil)
 	}
 	b := c.material.config.business
-	effective, err := anime.EffectiveConfigFromSections(captureSections(c.material))
+	decoded, err := anime.DecodeEffectiveSections(captureSections(c.material))
+	if err != nil {
+		return admissionEvaluation{}, err
+	}
+	// Terminal admission does not re-apply real tag filters or download
+	// completion; it evaluates the captured material with neutral defaults.
+	effective, err := anime.NewEffectiveConfig(decoded, anime.DefaultResolvedTagFilters(), anime.DefaultResolvedDownloadCompletion())
 	if err != nil {
 		return admissionEvaluation{}, err
 	}
@@ -91,19 +97,20 @@ func evaluateAdmission(ctx context.Context, c admissionCapture, intent acquisiti
 	// A required file is a first-level video the file rules select (under a
 	// one-shot manual selection: a selected video at any depth): nested or
 	// unselected files, other kinds and rule-excluded videos are never
-	// required, and subtitles only follow a video.
+	// required, and subtitles only follow a video. The filter is compiled once
+	// for the whole manifest.
+	exclusion := anime.ManifestFileExclusionBatch(filekinds.Version, effective.Rules.FileFilter, intent.fileSelection)
 	for _, file := range seed.Manifest.Files {
 		if filekinds.Classify(filekinds.Version, file.SourcePath) != filekinds.KindVideo {
 			continue
 		}
-		if anime.ManifestFileExclusionIn(filekinds.Version, effective.Rules.FileFilter, file.SourcePath, intent.fileSelection) == "" {
+		if exclusion(file.SourcePath) == "" {
 			required = append(required, file.FileRef)
 		}
 	}
 	if len(required) == 0 {
 		return admissionEvaluation{}, acceptError(422, "NO_REQUIRED_FILES", "no_required_files", nil)
 	}
-	sort.Strings(required)
 	// No simplified input is persisted. Every execution group is validated by
 	// the existing closed registry; external transport cannot pass this value.
 	var completion varsEvaluationCompletion

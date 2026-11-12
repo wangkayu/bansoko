@@ -316,7 +316,7 @@ func (s *Service) readRulesOwnerApplication(ctx context.Context, managedAnimeID 
 	if err != nil {
 		return RulesOwner{}, err
 	}
-	effective, err := animedomain.ResolveEffective(subgroupsOverride, rulesOverrides)
+	effective, tags, err := animedomain.ResolveStoredSectionsWithTags(subgroupsOverride, rulesOverrides)
 	if err != nil {
 		return RulesOwner{}, err
 	}
@@ -332,7 +332,7 @@ SELECT EXISTS(
 		ManagedAnimeID:      managedAnimeID,
 		Sections:            rulesSectionsFromDomainOverrides(rulesOverrides),
 		Effective:           effective.Rules,
-		EffectiveTagFilters: effective.TagFilters.Rules,
+		EffectiveTagFilters: tags.Rules,
 		HasAniBTSource:      hasAniBTSource,
 		Version:             ownerVersion,
 	}, nil

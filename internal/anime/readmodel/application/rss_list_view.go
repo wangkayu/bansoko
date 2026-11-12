@@ -630,19 +630,42 @@ func (s *Service) resolveDraftEffective(ctx context.Context, draft animedomain.A
 	return effective, nil
 }
 
+// revisionPreviewConfig uses the revision's own tags, not the neutral policy
+// used by one-shot admission. Neither policy is loaded from current globals.
+func revisionPreviewConfig(row animeapplication.CandidateRevision) (animedomain.EffectiveConfig, error) {
+	decoded, err := row.DecodedSections()
+	if err != nil {
+		return animedomain.EffectiveConfig{}, err
+	}
+	tags, err := animedomain.ResolveDraftTagFilters(row.Draft)
+	if err != nil {
+		return animedomain.EffectiveConfig{}, sectionResolutionError(err)
+	}
+	return animedomain.NewEffectiveConfig(decoded, tags, animedomain.DefaultResolvedDownloadCompletion())
+}
+
+// ownerPreviewConfig receives the already overlaid owner sections. Resolve them
+// before reading completion, retaining the original error and I/O order.
+func ownerPreviewConfig(ctx context.Context, q animeconfig.Querier, subgroups animedomain.OverrideValue, rules map[string]animedomain.OverrideValue) (animedomain.EffectiveConfig, error) {
+	decoded, tags, err := animedomain.ResolveStoredSectionsWithTags(subgroups, rules)
+	if err != nil {
+		return animedomain.EffectiveConfig{}, sectionResolutionError(err)
+	}
+	completion, err := animeconfig.LoadDownloadCompletion(ctx, q)
+	if err != nil {
+		return animedomain.EffectiveConfig{}, err
+	}
+	return animedomain.NewEffectiveConfig(decoded, tags, completion)
+}
+
 func (s *Service) readRSSListViewForRevision(ctx context.Context, candidateID string, revision int64, feed []PreviewFeedSnapshotRef, previewOffset int) (RSSListView, error) {
 	row, err := s.ReadVerifiedAnimeConfigCandidateRevision(ctx, candidateID, revision)
 	if err != nil {
 		return RSSListView{}, err
 	}
-	effective, err := row.EffectiveConfig()
+	effective, err := revisionPreviewConfig(row)
 	if err != nil {
 		return RSSListView{}, err
-	}
-	// tag_filters is not frozen in the revision's six sections: it is the
-	// revision draft's own value, as the activated instance will store it.
-	if effective.TagFilters, err = animedomain.ResolveDraftTagFilters(row.Draft); err != nil {
-		return RSSListView{}, sectionResolutionError(err)
 	}
 	resolved, err := row.Resolved()
 	if err != nil {
@@ -696,11 +719,8 @@ func (s *Service) readRSSListViewForOwner(ctx context.Context, input ReadRSSList
 		}
 		rulesOverrides = patched
 	}
-	effective, err := animedomain.ResolveEffective(subgroupsOverride, rulesOverrides)
+	effective, err := ownerPreviewConfig(ctx, s.db, subgroupsOverride, rulesOverrides)
 	if err != nil {
-		return RSSListView{}, sectionResolutionError(err)
-	}
-	if effective.DownloadCompletion, err = animeconfig.LoadDownloadCompletion(ctx, s.db); err != nil {
 		return RSSListView{}, err
 	}
 	if pendingBenchApplies(workspace) {

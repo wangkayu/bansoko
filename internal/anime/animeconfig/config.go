@@ -29,54 +29,61 @@ type Querier interface {
 // from the values it stores. A missing section fails closed. It performs no
 // writes.
 func LoadEffective(ctx context.Context, q Querier, managedAnimeID string) (animedomain.EffectiveConfig, error) {
-	resolved, live, err := LoadResolvedWithLive(ctx, q, managedAnimeID)
-	if err != nil {
-		return animedomain.EffectiveConfig{}, err
-	}
-	effective, err := animedomain.EffectiveConfigFromSections(resolved)
-	if err != nil {
-		return animedomain.EffectiveConfig{}, err
-	}
-	live.Apply(&effective)
-	return effective, nil
+	_, effective, err := LoadResolvedEffective(ctx, q, managedAnimeID)
+	return effective, err
 }
 
-// LiveSections are the sections resolved next to the six frozen ones:
+// LoadResolvedEffective resolves the complete effective configuration and its
+// digest-ready ResolvedSections in one pass. It eliminates the need for callers
+// to apply live sections after decoding: the returned EffectiveConfig already
+// carries the instance's real tag filters and the Global download completion.
+func LoadResolvedEffective(ctx context.Context, q Querier, managedAnimeID string) (animedomain.ResolvedSections, animedomain.EffectiveConfig, error) {
+	resolved, live, err := loadResolvedWithLive(ctx, q, managedAnimeID)
+	if err != nil {
+		return animedomain.ResolvedSections{}, animedomain.EffectiveConfig{}, err
+	}
+	decoded, err := animedomain.DecodeEffectiveSections(resolved)
+	if err != nil {
+		return animedomain.ResolvedSections{}, animedomain.EffectiveConfig{}, err
+	}
+	effective, err := animedomain.NewEffectiveConfig(decoded, live.TagFilters, live.DownloadCompletion)
+	if err != nil {
+		return animedomain.ResolvedSections{}, animedomain.EffectiveConfig{}, err
+	}
+	return resolved, effective, nil
+}
+
+// liveSections are the sections resolved next to the six frozen ones:
 // the instance's stored tag_filters and the Global-only download_completion.
 // They never enter ResolvedSections, so frozen envelopes and digests keep
-// their shapes.
-type LiveSections struct {
+// their shapes. This type is an internal intermediate; callers should use
+// LoadResolvedEffective or LoadEffective instead of applying live sections
+// manually.
+type liveSections struct {
 	TagFilters         animedomain.ResolvedTagFilters
 	DownloadCompletion animedomain.ResolvedDownloadCompletion
 }
 
-// Apply copies the live sections onto an effective configuration decoded from
-// the six frozen ones.
-func (l LiveSections) Apply(effective *animedomain.EffectiveConfig) {
-	effective.TagFilters = l.TagFilters
-	effective.DownloadCompletion = l.DownloadCompletion
-}
-
-// LoadResolvedWithLive is LoadResolved plus the instance's tag_filters and the
+// loadResolvedWithLive is LoadResolved plus the instance's tag_filters and the
 // Global-only download_completion setting.
-func LoadResolvedWithLive(ctx context.Context, q Querier, managedAnimeID string) (animedomain.ResolvedSections, LiveSections, error) {
+func loadResolvedWithLive(ctx context.Context, q Querier, managedAnimeID string) (animedomain.ResolvedSections, liveSections, error) {
 	subgroupsOverride, rulesOverrides, err := LoadStoredSections(ctx, q, managedAnimeID)
 	if err != nil {
-		return animedomain.ResolvedSections{}, LiveSections{}, err
+		return animedomain.ResolvedSections{}, liveSections{}, err
 	}
 	resolved, err := animedomain.ResolveEffectiveSections(subgroupsOverride, rulesOverrides)
 	if err != nil {
-		return animedomain.ResolvedSections{}, LiveSections{}, err
+		return animedomain.ResolvedSections{}, liveSections{}, err
 	}
 	tagFilters, err := animedomain.ResolveTagFilters(rulesOverrides[animedomain.SectionTagFilters])
 	if err != nil {
-		return animedomain.ResolvedSections{}, LiveSections{}, err
+		return animedomain.ResolvedSections{}, liveSections{}, err
 	}
 	downloadCompletion, err := LoadDownloadCompletion(ctx, q)
 	if err != nil {
-		return animedomain.ResolvedSections{}, LiveSections{}, err
+		return animedomain.ResolvedSections{}, liveSections{}, err
 	}
-	return resolved, LiveSections{TagFilters: tagFilters, DownloadCompletion: downloadCompletion}, nil
+	return resolved, liveSections{TagFilters: tagFilters, DownloadCompletion: downloadCompletion}, nil
 }
 
 // LoadResolved resolves the complete effective configuration from the

@@ -162,7 +162,7 @@ WHERE subscription_id = $1 AND provider = $2 AND group_ref = $3`, subscriptionID
 	if err != nil {
 		return "", false, err
 	}
-	effective, err := animedomain.ResolveEffective(subgroups, rules)
+	effective, _, err := animedomain.ResolveStoredSectionsWithTags(subgroups, rules)
 	if err != nil {
 		return "", false, err
 	}
