@@ -293,7 +293,7 @@ export const reasonCopy = {
   file_adopted: "已使用媒体库中的文件",
   file_retained: "媒体库中的文件已符合要求",
   acquisition_succeeded: "获取完成",
-  acquisition_failed: "获取失败",
+  acquisition_failed: "下载或入库失败",
   activity_consume_failed: "写入事件失败，将自动重试",
   file_execution_interrupted: "上次处理中断，为避免重复操作已停止",
   file_execution_cancelled: "入库已取消",

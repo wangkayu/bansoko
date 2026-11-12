@@ -82,7 +82,7 @@ export const en = {
     filtered: "Filtered",
     filteredWithReason: "Filtered ({reason})",
     adopted_existing: "Already on disk",
-    acquisition_failed: "Failed",
+    acquisition_failed: "Not accepted",
     resume_baseline: "Present at resume",
     start_baseline: "Published before subscribing",
     awaiting_competition: "Awaiting comparison",

@@ -82,7 +82,7 @@ export const zhCN = {
     filtered: "已过滤",
     filteredWithReason: "已过滤（{reason}）",
     adopted_existing: "已有文件",
-    acquisition_failed: "获取失败",
+    acquisition_failed: "未能受理",
     resume_baseline: "恢复时已存在",
     start_baseline: "订阅前发布",
     awaiting_competition: "等待比较",
